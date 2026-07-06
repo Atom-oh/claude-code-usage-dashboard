@@ -18,6 +18,16 @@ resource "kubernetes_service_account" "clickhouse" {
   }
 }
 
+# CHI의 default 유저는 오퍼레이터가 비밀번호를 요구하도록 막아놔서(값을 모름) 스키마 초기화/백업은
+# otel_writer로 접속한다 — 어차피 이 계정이 쓰기 권한을 가져야 하는 계정이라 이 쪽이 맞다.
+resource "kubernetes_secret" "clickhouse_writer" {
+  metadata {
+    name      = "clickhouse-writer"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+  }
+  data = { CH_PASSWORD = var.clickhouse_writer_password }
+}
+
 locals {
   ch_toleration    = [{ key = "claude-code", operator = "Equal", value = "true", effect = "NoSchedule" }]
   ch_node_selector = { "node-type" = "claude-code" }
@@ -74,8 +84,9 @@ resource "kubectl_manifest" "chi" {
     metadata   = { name = "cc-ab", namespace = kubernetes_namespace.claude_code.metadata[0].name }
     spec = {
       configuration = {
-        clusters  = [{ name = "replicated", layout = { shardsCount = 1, replicasCount = 2 } }]
-        zookeeper = { nodes = [{ host = "keeper.${var.k8s_namespace}.svc.cluster.local", port = 2181 }] }
+        clusters = [{ name = "replicated", layout = { shardsCount = 1, replicasCount = 2 } }]
+        # CHK 서비스 이름은 <chk 이름>-<cluster 이름>이라 "keeper-keeper" (실측 확인: kubectl get svc).
+        zookeeper = { nodes = [{ host = "keeper-keeper.${var.k8s_namespace}.svc.cluster.local", port = 2181 }] }
         users = {
           "otel_writer/password_sha256_hex" = sha256(var.clickhouse_writer_password)
           "otel_writer/networks/ip"         = "10.0.0.0/8"
@@ -174,10 +185,18 @@ resource "kubernetes_job_v1" "schema_init" {
         }
         node_selector = local.ch_node_selector
         container {
-          name  = "schema-init"
-          image = "clickhouse/clickhouse-server:24.8"
-          command = ["clickhouse-client", "--host", local.chi_service,
-          "--user", "default", "--multiquery", "--queries-file", "/sql/schema.sql"]
+          name    = "schema-init"
+          image   = "clickhouse/clickhouse-server:24.8"
+          command = ["sh", "-c", "clickhouse-client --host ${local.chi_service} --user otel_writer --password \"$CH_PASSWORD\" --multiquery --queries-file /sql/schema.sql"]
+          env {
+            name = "CH_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.clickhouse_writer.metadata[0].name
+                key  = "CH_PASSWORD"
+              }
+            }
+          }
           volume_mount {
             name       = "sql"
             mount_path = "/sql"
@@ -220,10 +239,19 @@ resource "kubernetes_cron_job_v1" "backup" {
               name  = "backup"
               image = "clickhouse/clickhouse-server:24.8"
               command = ["sh", "-c", <<-EOT
-                clickhouse-client --host ${local.chi_service} --user default \
+                clickhouse-client --host ${local.chi_service} --user otel_writer --password "$CH_PASSWORD" \
                   --query "BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/$(date +%Y-%m-%d)')"
               EOT
               ]
+              env {
+                name = "CH_PASSWORD"
+                value_from {
+                  secret_key_ref {
+                    name = kubernetes_secret.clickhouse_writer.metadata[0].name
+                    key  = "CH_PASSWORD"
+                  }
+                }
+              }
             }
           }
         }

@@ -41,13 +41,8 @@ data "aws_route53_zone" "public" {
 }
 
 # 이미 발급된 와일드카드 인증서 재사용 — 신규 발급/검증 없음 (다른 리포 상태와 결합되지 않는
-# 읽기 전용 참조).
-data "aws_acm_certificate" "wildcard_regional" {
-  domain      = "*.${var.domain}"
-  statuses    = ["ISSUED"]
-  most_recent = true
-}
-
+# 읽기 전용 참조). CloudFront(us-east-1)에서만 필요 — NLB는 TCP passthrough라 리전 인증서 불필요
+# (CloudFront VPC Origin이 NLB의 TLS 리스너를 허용하지 않음: "Use a TCP listener").
 data "aws_acm_certificate" "wildcard_cloudfront" {
   provider    = aws.us_east_1
   domain      = "*.${var.domain}"

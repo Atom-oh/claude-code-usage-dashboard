@@ -25,13 +25,16 @@ locals {
 }
 
 resource "aws_cloudfront_vpc_origin" "dashboard" {
+  # NLB는 TCP passthrough(TLS 리스너 불가 — CloudFront VPC Origin 제약)이므로 http-only로
+  # 붙는다. viewer<->CloudFront는 여전히 HTTPS(아래 aws_cloudfront_distribution 참고);
+  # 이 구간은 VPC origin ENI를 통한 AWS 백본 내부 트래픽이라 평문이어도 인터넷에 노출되지 않음.
   vpc_origin_endpoint_config {
     name                   = "cc-ab-dashboard"
     arn                    = local.dashboard_nlb_arn
-    http_port              = 80
-    https_port             = 443
-    origin_protocol_policy = "https-only"
-    origin_ssl_protocols {
+    http_port              = 443  # 실제로 쓰이는 포트 (NLB TCP 리스너)
+    https_port             = 8443 # http-only 정책이라 미사용, http_port와 달라야 해서 채운 placeholder
+    origin_protocol_policy = "http-only"
+    origin_ssl_protocols { # http-only라 미사용, 스키마상 필수 블록
       quantity = 1
       items    = ["TLSv1.2"]
     }
@@ -42,10 +45,10 @@ resource "aws_cloudfront_vpc_origin" "ch_ingest" {
   vpc_origin_endpoint_config {
     name                   = "cc-ab-ch-ingest"
     arn                    = local.ch_nlb_arn
-    http_port              = 80
-    https_port             = 443
-    origin_protocol_policy = "https-only"
-    origin_ssl_protocols {
+    http_port              = 443  # 실제로 쓰이는 포트 (NLB TCP 리스너)
+    https_port             = 8443 # http-only 정책이라 미사용, http_port와 달라야 해서 채운 placeholder
+    origin_protocol_policy = "http-only"
+    origin_ssl_protocols { # http-only라 미사용, 스키마상 필수 블록
       quantity = 1
       items    = ["TLSv1.2"]
     }

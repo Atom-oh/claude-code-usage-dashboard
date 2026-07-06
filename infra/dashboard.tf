@@ -23,6 +23,9 @@ resource "kubernetes_secret" "clickhouse_reader" {
 }
 
 resource "kubernetes_deployment_v1" "dashboard" {
+  # ECR엔 아직 이미지가 없다 — apply 시점에 rollout이 안 끝나는 게 정상이므로 여기서 막지 않는다.
+  # 이미지 push 후 `kubectl rollout restart`로 실제로 뜬다.
+  wait_for_rollout = false
   metadata {
     name      = "dashboard"
     namespace = kubernetes_namespace.claude_code.metadata[0].name
@@ -93,18 +96,20 @@ resource "kubernetes_service" "dashboard_nlb" {
     name      = "dashboard-nlb"
     namespace = kubernetes_namespace.claude_code.metadata[0].name
     annotations = {
+      # CloudFront VPC Origin은 NLB에 TLS 리스너를 허용하지 않는다("Use a TCP listener") —
+      # 그래서 TLS 종료 없이 순수 TCP passthrough로 둔다. 이 구간은 VPC origin ENI를 통한
+      # AWS 백본 내부 트래픽이라 평문이어도 인터넷에 노출되지 않음 (viewer<->CloudFront는 계속 HTTPS).
       "service.beta.kubernetes.io/aws-load-balancer-type"            = "external"
       "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
       "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internal"
       "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", data.aws_subnets.private.ids)
-      "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"        = data.aws_acm_certificate.wildcard_regional.arn
-      "service.beta.kubernetes.io/aws-load-balancer-ssl-ports"       = "443"
       "service.beta.kubernetes.io/aws-load-balancer-security-groups" = aws_security_group.internal_nlb.id
     }
   }
   spec {
-    type     = "LoadBalancer"
-    selector = { app = "dashboard" }
+    type                = "LoadBalancer"
+    load_balancer_class = "service.k8s.aws/nlb"
+    selector            = { app = "dashboard" }
     port {
       name        = "https"
       port        = 443
@@ -121,18 +126,18 @@ resource "kubernetes_service" "clickhouse_ingest_nlb" {
     name      = "clickhouse-ingest-nlb"
     namespace = kubernetes_namespace.claude_code.metadata[0].name
     annotations = {
+      # dashboard-nlb와 동일한 이유로 TLS 리스너 annotation 없음 — TCP passthrough.
       "service.beta.kubernetes.io/aws-load-balancer-type"            = "external"
       "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
       "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internal"
       "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", data.aws_subnets.private.ids)
-      "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"        = data.aws_acm_certificate.wildcard_regional.arn
-      "service.beta.kubernetes.io/aws-load-balancer-ssl-ports"       = "443"
       "service.beta.kubernetes.io/aws-load-balancer-security-groups" = aws_security_group.internal_nlb.id
     }
   }
   spec {
-    type     = "LoadBalancer"
-    selector = { "clickhouse.altinity.com/chi" = "cc-ab" }
+    type                = "LoadBalancer"
+    load_balancer_class = "service.k8s.aws/nlb"
+    selector            = { "clickhouse.altinity.com/chi" = "cc-ab" }
     port {
       name        = "https"
       port        = 443
@@ -143,10 +148,34 @@ resource "kubernetes_service" "clickhouse_ingest_nlb" {
   depends_on             = [kubectl_manifest.chi]
 }
 
+# NLB -> 노드(파드 ENI) 인바운드 — target-type=ip NLB는 헬스체크/트래픽이 NLB의 ENI에서
+# 나가는데, EKS 클러스터 SG(파드가 상속)엔 이걸 허용하는 규칙이 원래 없어서 따로 열어준다.
+# 실측: NLB 직접 헬스체크가 Target.FailedHealthChecks로 실패해서 발견 — pod_direct curl은
+# 되는데 NLB->pod 경로만 막혀 있었음.
+resource "aws_security_group_rule" "cluster_from_nlb_dashboard" {
+  type                     = "ingress"
+  security_group_id        = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  from_port                = 8080
+  to_port                  = 8080
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.internal_nlb.id
+  description              = "dashboard-nlb health check and traffic"
+}
+
+resource "aws_security_group_rule" "cluster_from_nlb_ch_ingest" {
+  type                     = "ingress"
+  security_group_id        = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  from_port                = 8123
+  to_port                  = 8123
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.internal_nlb.id
+  description              = "clickhouse-ingest-nlb health check and traffic"
+}
+
 # NLB SG — CloudFront origin-facing prefix list에서만 443 인바운드. 최소권한.
 resource "aws_security_group" "internal_nlb" {
   name        = "cc-ab-internal-nlb"
-  description = "CloudFront VPC Origin -> internal NLB (dashboard + clickhouse ingest)"
+  description = "CloudFront VPC Origin to internal NLB (dashboard + clickhouse ingest)"
   vpc_id      = data.aws_vpc.this.id
 
   ingress {
