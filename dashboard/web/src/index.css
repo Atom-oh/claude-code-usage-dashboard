@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* dataviz 스킬 reference palette — light/dark 모두 선택 (references/palette.md) */
+:root {
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --series-bedrock: #2a78d6; /* categorical slot 1: blue */
+  --series-enterprise: #1baf7a; /* categorical slot 2: aqua */
+  --series-unknown: #898781; /* muted, not a real series */
+  --status-good: #0ca30c;
+  --status-critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --series-bedrock: #3987e5;
+    --series-enterprise: #199e70;
+    --status-good: #0ca30c;
+    --status-critical: #e66767;
+  }
+}
+body {
+  background: var(--page);
+  color: var(--text-primary);
+}

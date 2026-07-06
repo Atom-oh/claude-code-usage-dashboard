@@ -1,0 +1,234 @@
+# ClickHouse — claude-code 네임스페이스에 신규 CHI(2 레플리카) + CHK(Keeper 3노드).
+# 기존 observability/fsi-demo-ch(1레플리카, ArgoCD 관리)는 건드리지 않는다.
+#
+# ponytail: 백업은 별도 clickhouse-backup 툴 대신 ClickHouse 네이티브 BACKUP 커맨드 +
+# 이미 구성한 S3 disk(cold_s3, IRSA 자격증명 재사용)로 — 이미지/자격증명 관리가 하나 줄어든다.
+
+resource "kubernetes_namespace" "claude_code" {
+  metadata { name = var.k8s_namespace }
+}
+
+resource "kubernetes_service_account" "clickhouse" {
+  metadata {
+    name      = "clickhouse"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.clickhouse_s3.arn
+    }
+  }
+}
+
+locals {
+  ch_toleration    = [{ key = "claude-code", operator = "Equal", value = "true", effect = "NoSchedule" }]
+  ch_node_selector = { "node-type" = "claude-code" }
+  cold_s3_endpoint = "https://${aws_s3_bucket.clickhouse.bucket}.s3.${var.region}.amazonaws.com/cold/"
+  # Altinity operator의 서비스 네이밍 규칙(clickhouse-<CHI 이름>) — CHI를 apply한 뒤 실측 확인 필요
+  # (kubectl -n claude-code get svc). 다르면 이 값만 고치면 된다.
+  chi_service = "clickhouse-cc-ab.${var.k8s_namespace}.svc.cluster.local"
+}
+
+# ── Keeper 3노드 ────────────────────────────────────────────────────────
+resource "kubectl_manifest" "chk" {
+  yaml_body = yamlencode({
+    apiVersion = "clickhouse-keeper.altinity.com/v1"
+    kind       = "ClickHouseKeeperInstallation"
+    metadata   = { name = "keeper", namespace = kubernetes_namespace.claude_code.metadata[0].name }
+    spec = {
+      configuration = { clusters = [{ name = "keeper", layout = { replicasCount = 3 } }] }
+      templates = {
+        podTemplates = [{
+          name = "keeper-pod"
+          spec = {
+            tolerations  = local.ch_toleration
+            nodeSelector = local.ch_node_selector
+            containers = [{
+              name  = "clickhouse-keeper"
+              image = "clickhouse/clickhouse-keeper:24.8"
+              resources = {
+                requests = { cpu = "0.5", memory = "512Mi" }
+                limits   = { cpu = "1", memory = "1Gi" }
+              }
+            }]
+          }
+        }]
+        volumeClaimTemplates = [{
+          name = "keeper-data"
+          spec = {
+            accessModes      = ["ReadWriteOnce"]
+            storageClassName = "gp3"
+            resources        = { requests = { storage = "10Gi" } }
+          }
+        }]
+      }
+      defaults = { templates = { podTemplate = "keeper-pod", dataVolumeClaimTemplate = "keeper-data" } }
+    }
+  })
+  depends_on = [kubectl_manifest.claude_code_nodepool]
+}
+
+# ── CHI: 2 레플리카 ReplicatedMergeTree ─────────────────────────────────
+resource "kubectl_manifest" "chi" {
+  yaml_body = yamlencode({
+    apiVersion = "clickhouse.altinity.com/v1"
+    kind       = "ClickHouseInstallation"
+    metadata   = { name = "cc-ab", namespace = kubernetes_namespace.claude_code.metadata[0].name }
+    spec = {
+      configuration = {
+        clusters  = [{ name = "replicated", layout = { shardsCount = 1, replicasCount = 2 } }]
+        zookeeper = { nodes = [{ host = "keeper.${var.k8s_namespace}.svc.cluster.local", port = 2181 }] }
+        users = {
+          "otel_writer/password_sha256_hex" = sha256(var.clickhouse_writer_password)
+          "otel_writer/networks/ip"         = "10.0.0.0/8"
+          "otel_reader/password_sha256_hex" = sha256(var.clickhouse_reader_password)
+          "otel_reader/networks/ip"         = "10.0.0.0/8"
+          "otel_reader/profile"             = "readonly"
+        }
+        profiles = { "readonly/readonly" = "1" }
+        # 콜드 티어링: hot(EBS gp3, 기본 disk) → cold(S3), TTL로 이동. 실제 TTL은 스키마 쪽
+        # (ConfigMap clickhouse-schema-replicated)에서 `TTL ... TO VOLUME 'cold'`로 건다.
+        files = {
+          "config.d/storage.xml" = <<-XML
+            <clickhouse>
+              <storage_configuration>
+                <disks>
+                  <cold_s3>
+                    <type>s3</type>
+                    <endpoint>${local.cold_s3_endpoint}</endpoint>
+                    <use_environment_credentials>1</use_environment_credentials>
+                  </cold_s3>
+                </disks>
+                <policies>
+                  <hot_cold>
+                    <volumes>
+                      <hot><disk>default</disk></hot>
+                      <cold><disk>cold_s3</disk></cold>
+                    </volumes>
+                    <move_factor>0.1</move_factor>
+                  </hot_cold>
+                </policies>
+              </storage_configuration>
+            </clickhouse>
+          XML
+        }
+      }
+      templates = {
+        podTemplates = [{
+          name = "chi-pod"
+          spec = {
+            tolerations        = local.ch_toleration
+            nodeSelector       = local.ch_node_selector
+            serviceAccountName = kubernetes_service_account.clickhouse.metadata[0].name
+            containers = [{
+              name  = "clickhouse"
+              image = "clickhouse/clickhouse-server:24.8"
+              resources = {
+                requests = { cpu = "2", memory = "6Gi" }
+                limits   = { cpu = "3.5", memory = "13Gi" }
+              }
+            }]
+          }
+        }]
+        volumeClaimTemplates = [{
+          name = "hot-data"
+          spec = {
+            accessModes      = ["ReadWriteOnce"]
+            storageClassName = "gp3"
+            resources        = { requests = { storage = "100Gi" } }
+          }
+        }]
+      }
+      defaults = { templates = { podTemplate = "chi-pod", dataVolumeClaimTemplate = "hot-data" } }
+    }
+  })
+  depends_on = [kubectl_manifest.chk]
+}
+
+# 원본 clickhouse-schema.sql을 ON CLUSTER + ReplicatedMergeTree + TTL TO VOLUME 'cold'로
+# 변환한 버전. 컬럼/MATERIALIZED 정의는 원본과 동일 — engine과 클러스터 절만 다르다.
+resource "kubernetes_config_map" "schema" {
+  metadata {
+    name      = "clickhouse-schema-replicated"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+  }
+  data = {
+    "schema.sql" = file("${path.module}/files/clickhouse-schema-replicated.sql")
+  }
+}
+
+resource "kubernetes_job_v1" "schema_init" {
+  metadata {
+    name      = "clickhouse-schema-init"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+  }
+  spec {
+    backoff_limit = 6
+    template {
+      metadata {}
+      spec {
+        restart_policy = "OnFailure"
+        toleration {
+          key      = "claude-code"
+          operator = "Equal"
+          value    = "true"
+          effect   = "NoSchedule"
+        }
+        node_selector = local.ch_node_selector
+        container {
+          name  = "schema-init"
+          image = "clickhouse/clickhouse-server:24.8"
+          command = ["clickhouse-client", "--host", local.chi_service,
+          "--user", "default", "--multiquery", "--queries-file", "/sql/schema.sql"]
+          volume_mount {
+            name       = "sql"
+            mount_path = "/sql"
+          }
+        }
+        volume {
+          name = "sql"
+          config_map { name = kubernetes_config_map.schema.metadata[0].name }
+        }
+      }
+    }
+  }
+  wait_for_completion = false
+  depends_on          = [kubectl_manifest.chi]
+}
+
+# 일별 백업 — ClickHouse 네이티브 BACKUP, cold_s3 disk(IRSA 자격증명) 재사용.
+resource "kubernetes_cron_job_v1" "backup" {
+  metadata {
+    name      = "clickhouse-backup"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+  }
+  spec {
+    schedule = "0 18 * * *" # 03:00 KST
+    job_template {
+      metadata {}
+      spec {
+        template {
+          metadata {}
+          spec {
+            restart_policy = "OnFailure"
+            toleration {
+              key      = "claude-code"
+              operator = "Equal"
+              value    = "true"
+              effect   = "NoSchedule"
+            }
+            node_selector = local.ch_node_selector
+            container {
+              name  = "backup"
+              image = "clickhouse/clickhouse-server:24.8"
+              command = ["sh", "-c", <<-EOT
+                clickhouse-client --host ${local.chi_service} --user default \
+                  --query "BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/$(date +%Y-%m-%d)')"
+              EOT
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+  depends_on = [kubernetes_job_v1.schema_init]
+}

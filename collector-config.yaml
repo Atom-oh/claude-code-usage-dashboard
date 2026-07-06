@@ -1,0 +1,105 @@
+# =============================================================================
+# OTel Collector config — EC2 로컬 sidecar (Claude Code A/B)
+# 배포 경로: /etc/otelcol/config.yaml
+# env(/etc/otelcol/env)에서 주입되는 값: EXPERIMENT_GROUP, CH_HOST, CH_PORT,
+#   CH_DB, CH_USER, CH_PASSWORD
+# =============================================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317   # 로컬만 수신 (외부 노출 없음)
+      # http는 쓰지 않으면 열지 않는다. 필요 시 127.0.0.1:4318 추가.
+
+processors:
+  # ---- (a) A/B 그룹 태깅 강제 --------------------------------------------
+  # managed-settings의 OTEL_RESOURCE_ATTRIBUTES로도 들어오지만, Collector에서
+  # 한 번 더 upsert 해두면 인스턴스 오설정 시에도 그룹이 보장된다.
+  resource:
+    attributes:
+      - key: experiment.group
+        value: ${env:EXPERIMENT_GROUP}
+        action: upsert
+
+  # ---- (b) metric 화이트리스트 -------------------------------------------
+  # Claude Code 공식 8개 metric만 통과. 버전업으로 새 metric 생겨도 안 샌다.
+  filter/metrics:
+    error_mode: ignore
+    metrics:
+      metric:
+        - >-
+          not (
+            name == "claude_code.session.count" or
+            name == "claude_code.lines_of_code.count" or
+            name == "claude_code.commit.count" or
+            name == "claude_code.pull_request.count" or
+            name == "claude_code.cost.usage" or
+            name == "claude_code.token.usage" or
+            name == "claude_code.code_edit_tool.decision" or
+            name == "claude_code.active_time.total"
+          )
+
+  # ---- (c) 민감정보 스크럽 (logs) ----------------------------------------
+  # 프롬프트 본문은 기본 미포함이지만, 방어적으로 대표 키를 삭제.
+  # tool_parameters 안의 bash_command 등은 감사에 필요하면 남기고,
+  # FSI 규제상 완전 차단이 필요하면 delete로.
+  transform/scrub_logs:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - delete_key(attributes, "prompt")
+          - delete_key(attributes, "prompt_text")
+          # bash_command 완전 차단이 필요하면 아래 주석 해제
+          # - delete_key(attributes, "tool_parameters")
+
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+    send_batch_max_size: 1024
+
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+
+exporters:
+  clickhouse:
+    endpoint: tcp://${env:CH_HOST}:${env:CH_PORT}?secure=true
+    database: ${env:CH_DB}
+    username: ${env:CH_USER}
+    password: ${env:CH_PASSWORD}
+    # 스키마는 위 SQL로 미리 생성 → false. (true면 exporter가 자체 생성)
+    create_schema: false
+    metrics_tables:
+      sum:
+        name: otel_metrics_sum
+      gauge:
+        name: otel_metrics_gauge
+    logs_table_name: otel_logs
+    ttl: 0                    # TTL은 테이블 정의에서 관리
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 1000
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/metrics, resource, batch]
+      exporters: [clickhouse]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/scrub_logs, resource, batch]
+      exporters: [clickhouse]
+  telemetry:
+    logs:
+      level: info
