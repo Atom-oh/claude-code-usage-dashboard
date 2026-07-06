@@ -120,6 +120,15 @@ resource "kubectl_manifest" "chi" {
               </storage_configuration>
             </clickhouse>
           XML
+          # BACKUP TO Disk('cold_s3', ...)를 쓰려면 이 allowlist가 필요 — 없으면
+          # INVALID_CONFIG_PARAMETER로 거부된다 (실측: 백업 CronJob 수동 실행 중 발견).
+          "config.d/backups.xml" = <<-XML
+            <clickhouse>
+              <backups>
+                <allowed_disk>cold_s3</allowed_disk>
+              </backups>
+            </clickhouse>
+          XML
         }
       }
       templates = {
