@@ -1,45 +1,28 @@
-export function Card({ title, children, className = "" }) {
-  return (
-    <div
-      className={`rounded-lg border p-4 ${className}`}
-      style={{ background: "var(--surface-1)", borderColor: "var(--grid)" }}
-    >
-      {title && (
-        <h3 className="mb-3 text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
-          {title}
-        </h3>
-      )}
-      {children}
-    </div>
-  );
-}
+import { cn } from "../cn.js";
 
-export function KpiTile({ label, value, sub }) {
+// ../awsops web/components/ui/Card.tsx 포팅 — white surface, ink-100 hairline, radius-lg, shadow-card.
+export function Card({ children, title, subtitle, right, padded = true, className }) {
+  const hasHeader = title != null || subtitle != null || right != null;
   return (
-    <div className="flex-1 min-w-[140px]">
-      <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-        {label}
-      </div>
-      <div className="text-2xl font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
-        {value}
-      </div>
-      {sub && (
-        <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          {sub}
+    <div className={cn("bg-card border border-ink-100 rounded-lg shadow-card overflow-hidden", className)}>
+      {hasHeader && (
+        <div className="flex items-start justify-between gap-4 px-4 pt-4 pb-3 border-b border-ink-100">
+          <div className="min-w-0">
+            {title != null && <div className="text-[14px] font-semibold text-ink-800 truncate">{title}</div>}
+            {subtitle != null && <div className="text-[12px] text-ink-500 mt-0.5">{subtitle}</div>}
+          </div>
+          {right != null && <div className="shrink-0">{right}</div>}
         </div>
       )}
+      <div className={cn(padded && "p-4")}>{children}</div>
     </div>
   );
 }
 
 export function Loading() {
-  return <div style={{ color: "var(--text-muted)" }}>불러오는 중...</div>;
+  return <div className="text-ink-400 text-sm">불러오는 중...</div>;
 }
 
 export function ErrorBox({ error }) {
-  return (
-    <div className="text-sm" style={{ color: "var(--status-critical)" }}>
-      오류: {error.message}
-    </div>
-  );
+  return <div className="text-negative text-sm">오류: {error.message}</div>;
 }

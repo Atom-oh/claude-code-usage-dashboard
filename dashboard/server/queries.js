@@ -141,6 +141,59 @@ export async function skillUsage(from, to) {
   );
 }
 
+// 모델별 일간 지출 트렌드 (Cost 페이지 스택 바).
+export async function costByModelDaily(from, to) {
+  return query(
+    `${GROUP_CTE}
+    SELECT toDate(m.TimeUnix) AS day, ${GROUP_EXPR} AS "group", m.Model AS model,
+        sum(m.Value) AS cost
+    FROM claude_code.otel_metrics_sum m
+    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    WHERE m.MetricName = 'claude_code.cost.usage' AND m.Model != ''
+      AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime}
+    GROUP BY day, "group", model ORDER BY day`,
+    range(from, to)
+  );
+}
+
+// MCP 커넥터(서버) 사용 현황 — 실제 제품의 "읽기/쓰기" 구분은 우리 텔레메트리에 그 의미가
+// 없어서(도구 이름 휴리스틱은 부정확) 유저수/호출수/성공률로 단순화.
+export async function mcpConnectorUsage(from, to) {
+  return query(
+    `${GROUP_CTE}
+    SELECT ${GROUP_EXPR} AS "group", l.McpServerName AS connector,
+        uniqExact(l.UserEmail)      AS users,
+        count()                     AS calls,
+        countIf(l.Success = 'true') AS ok
+    FROM claude_code.otel_logs l
+    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    WHERE l.EventName = 'claude_code.tool_result' AND l.McpServerName != ''
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
+    GROUP BY "group", connector ORDER BY "group", calls DESC`,
+    range(from, to)
+  );
+}
+
+// "에이전틱함" = 프롬프트 1개당 평균 툴 호출 수. claude_code.user_prompt 이벤트가 실제로
+// 오는지 실측 필요(clickhouse-schema.sql 주석에 있던 후보 이벤트명) — 없으면 prompts=0으로
+// 나와 이 지표는 그냥 비게 된다(기능 자체는 죽지 않음).
+export async function agenticness(from, to, intervalHours = 24) {
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        toStartOfInterval(l.Timestamp, INTERVAL {intervalHours:UInt32} HOUR) AS t,
+        ${GROUP_EXPR} AS "group",
+        countIf(l.EventName = 'claude_code.user_prompt') AS prompts,
+        countIf(l.EventName = 'claude_code.tool_result')  AS tool_calls,
+        round(tool_calls / nullIf(prompts, 0), 2)          AS tool_calls_per_prompt
+    FROM claude_code.otel_logs l
+    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    WHERE l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
+    GROUP BY t, "group" ORDER BY t`,
+    { ...range(from, to), intervalHours }
+  );
+}
+
 // 패널8: tool/MCP 사용 패턴 (logs)
 export async function toolMcpUsage(from, to) {
   return query(
@@ -155,6 +208,68 @@ export async function toolMcpUsage(from, to) {
     WHERE l.EventName = 'claude_code.tool_result'
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY "group", tool, mcp_server ORDER BY "group", total DESC LIMIT 50`,
+    range(from, to)
+  );
+}
+
+// Cost 페이지: 그룹별 근사 비용/토큰 요약 — cost.usage는 근사치라 A/B 실비용 비교엔 안 쓴다는
+// 원칙은 유지, 여기선 "얼마나 쓰는지" 참고용 표시로만 사용.
+export async function costSummary(from, to) {
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        sumIf(m.Value, m.MetricName = 'claude_code.cost.usage')                            AS total_cost,
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')  AS input_tokens,
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output') AS output_tokens,
+        sumIf(m.Value, m.MetricName = 'claude_code.session.count')                          AS sessions
+    FROM claude_code.otel_metrics_sum m
+    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    WHERE m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime}
+    GROUP BY "group" ORDER BY "group"`,
+    range(from, to)
+  );
+}
+
+// Cost 페이지: 모델별 비용/토큰 (cost.usage 행에도 model attribute가 실려있다고 가정 — 실측 필요).
+export async function costByModel(from, to) {
+  return query(
+    `${GROUP_CTE}
+    SELECT ${GROUP_EXPR} AS "group", m.Model AS model,
+        sumIf(m.Value, m.MetricName = 'claude_code.cost.usage')    AS cost,
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage')   AS tokens
+    FROM claude_code.otel_metrics_sum m
+    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    WHERE m.Model != '' AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime}
+    GROUP BY "group", model ORDER BY "group", cost DESC`,
+    range(from, to)
+  );
+}
+
+// 유저별 어떤 tool을 얼마나 썼는지 (Usage/Users 페이지의 "사용자별 사용 내역").
+export async function userToolUsage(from, to) {
+  return query(
+    `${GROUP_CTE}
+    SELECT l.UserEmail AS user, any(${GROUP_EXPR}) AS "group", l.ToolName AS tool, count() AS uses
+    FROM claude_code.otel_logs l
+    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    WHERE l.EventName = 'claude_code.tool_result' AND l.UserEmail != ''
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
+    GROUP BY user, tool ORDER BY user, uses DESC`,
+    range(from, to)
+  );
+}
+
+// 유저별 어떤 skill을 얼마나 썼는지.
+export async function userSkillUsage(from, to) {
+  return query(
+    `${GROUP_CTE}
+    SELECT m.UserEmail AS user, any(${GROUP_EXPR}) AS "group", m.SkillName AS skill, count() AS invocations
+    FROM claude_code.otel_metrics_sum m
+    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    WHERE m.MetricName = 'claude_code.cost.usage' AND m.SkillName != '' AND m.UserEmail != ''
+      AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime}
+    GROUP BY user, skill ORDER BY user, invocations DESC`,
     range(from, to)
   );
 }

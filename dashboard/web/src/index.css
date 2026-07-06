@@ -2,37 +2,127 @@
 @tailwind components;
 @tailwind utilities;
 
-/* dataviz 스킬 reference palette — light/dark 모두 선택 (references/palette.md) */
+/* ../awsops의 cobalt 테마 토큰을 그대로 포팅 (light 단일 — 사용자 요청). 그룹 색상은 우연히
+   정확히 맞아떨어짐: bedrock = chart-1(blue), enterprise = chart-2(teal). */
 :root {
-  --surface-1: #fcfcfb;
-  --page: #f9f9f7;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --series-bedrock: #2a78d6; /* categorical slot 1: blue */
-  --series-enterprise: #1baf7a; /* categorical slot 2: aqua */
-  --series-unknown: #898781; /* muted, not a real series */
-  --status-good: #0ca30c;
-  --status-critical: #d03b3b;
+  --ink-50: #f4f6f8;
+  --ink-100: #e7ecef;
+  --ink-200: #d3dae0;
+  --ink-300: #afbac3;
+  --ink-400: #7d8a96;
+  --ink-500: #5a6873;
+  --ink-600: #3d4852;
+  --ink-700: #2a333b;
+  --ink-800: #16202a;
+  --ink-900: #0c141c;
+  --paper: #f4f6f8;
+  --paper-muted: #ebeff2;
+  --white: #ffffff;
+
+  --brand-50: #eaf1fe;
+  --brand-100: #d2e2fd;
+  --brand-200: #a9c7fb;
+  --brand-300: #7fa9f9;
+  --brand-400: #5e96f8;
+  --brand-500: #528df8;
+  --brand-600: #2e6be6;
+  --brand-700: #1f54c2;
+  --brand-800: #1b4196;
+  --brand-900: #15306b;
+  --brand-action: #2e6be6;
+  --brand-action-hover: #1f54c2;
+
+  --surface-chrome: #ffffff;
+  --surface-chrome-muted: #f4f6f8;
+  --chrome-fg: var(--ink-800);
+  --chrome-fg-muted: var(--ink-500);
+  --chrome-border: var(--ink-100);
+  --chrome-active-bg: var(--brand-50);
+  --chrome-active-fg: var(--brand-700);
+  --chrome-active-border: var(--brand-500);
+
+  --positive: #01a88d;
+  --positive-surface: #e6f6f2;
+  --positive-text: #00715d;
+  --positive-border: #8fd9cc;
+  --negative: #d13212;
+  --negative-surface: #fdece8;
+  --negative-text: #a32a0f;
+  --negative-border: #f5c3b5;
+  --warning: #f59e0b;
+  --warning-surface: #fef3e2;
+  --warning-text: #b26b05;
+  --warning-border: #fad9a0;
+
+  --chart-1: #528df8;
+  --chart-2: #01a88d;
+  --chart-3: #7b26ff;
+  --chart-4: #39c2b0;
+  --chart-5: #7d8a96;
+  --chart-grid: #e7ecef;
+  --chart-axis: #7d8a96;
+  --chart-tooltip-bg: #16202a;
+  --chart-tooltip-fg: #f4f6f8;
+
+  --surface-page: var(--paper);
+  --surface-sunken: var(--paper-muted);
+  --surface-card: var(--white);
+  --text-primary: var(--ink-800);
+  --text-secondary: var(--ink-500);
+  --text-muted: var(--ink-400);
+  --text-faint: var(--ink-300);
+  --text-brand: var(--brand-700);
+  --border-subtle: var(--ink-100);
+  --border-default: var(--ink-200);
+  --border-brand: var(--brand-200);
+
+  --shadow-card: 0 1px 2px rgba(16, 32, 42, 0.04), 0 4px 16px rgba(16, 32, 42, 0.06);
+  --shadow-sm: 0 1px 2px rgba(16, 32, 42, 0.06);
+  --shadow-pop: 0 6px 24px rgba(16, 32, 42, 0.18);
+  --shadow-focus: 0 0 0 3px rgba(82, 141, 248, 0.26);
+
+  /* A/B 그룹 — 우연히 cobalt의 chart-1/chart-2와 일치 */
+  --series-bedrock: var(--chart-1);
+  --series-enterprise: var(--chart-2);
+  --series-unknown: var(--ink-400);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --surface-1: #1a1a19;
-    --page: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --series-bedrock: #3987e5;
-    --series-enterprise: #199e70;
-    --status-good: #0ca30c;
-    --status-critical: #e66767;
+
+body {
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Pretendard', 'Helvetica Neue', Arial,
+    sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'ss02';
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
-body {
-  background: var(--page);
-  color: var(--text-primary);
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ink-200);
+  border-radius: 999px;
+  border: 2px solid var(--paper);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

@@ -53,6 +53,13 @@ route("/api/productivity/active-time", (from, to, query) => q.activeTimeSeries(f
 route("/api/usage/tool-mcp", (from, to) => q.toolMcpUsage(from, to));
 route("/api/usage/skills", (from, to) => q.skillUsage(from, to));
 route("/api/users/leaderboard", async (from, to) => withProductivityScore(await q.userLeaderboard(from, to), from, to));
+route("/api/users/tools", (from, to) => q.userToolUsage(from, to));
+route("/api/users/skills", (from, to) => q.userSkillUsage(from, to));
+route("/api/cost/summary", (from, to) => q.costSummary(from, to));
+route("/api/cost/by-model", (from, to) => q.costByModel(from, to));
+route("/api/cost/by-model-daily", (from, to) => q.costByModelDaily(from, to));
+route("/api/usage/connectors", (from, to) => q.mcpConnectorUsage(from, to));
+route("/api/productivity/agenticness", (from, to, query) => q.agenticness(from, to, Number(query.intervalHours) || 24));
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));

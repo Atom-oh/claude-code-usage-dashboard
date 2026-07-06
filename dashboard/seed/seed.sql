@@ -114,3 +114,15 @@ CROSS JOIN (
     UNION ALL SELECT 'bob@example.com', 'Bash', '', 'true'
     UNION ALL SELECT 'carol@example.com', 'mcp__notion__search', 'notion', 'true'
 ) r;
+
+-- "에이전틱함" 지표(프롬프트당 툴호출수)용 user_prompt 이벤트 — 실제 이벤트명 실측 전 임시.
+INSERT INTO claude_code.otel_logs
+(Timestamp, TraceId, SpanId, SeverityText, SeverityNumber, ServiceName, Body, ResourceAttributes, LogAttributes)
+SELECT now() - INTERVAL di DAY, '', '', 'INFO', 9, 'claude-code', '', map('user.email', email),
+       map('event.name', 'claude_code.user_prompt')
+FROM (SELECT arrayJoin(range(4)) AS di) d
+CROSS JOIN (
+    SELECT '111111111111@ws' AS email UNION ALL SELECT '111111111111@ws'
+    UNION ALL SELECT '222222222222@ws' UNION ALL SELECT 'alice@example.com'
+    UNION ALL SELECT 'bob@example.com' UNION ALL SELECT 'carol@example.com'
+) r;
