@@ -41,7 +41,7 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
 1. Collector 생존 확인: `systemctl status otelcol`, `journalctl -u otelcol -n 50`
 2. ClickHouse에 두 그룹 데이터가 다 들어오는지: `SELECT ExperimentGroup, MetricName, count() FROM claude_code.otel_metrics_sum GROUP BY ExperimentGroup, MetricName` — 단, 이 워크샵에서는 `ExperimentGroup`(ResourceAttributes 기반)이 아니라 대시보드가 계산하는 그룹을 봐야 한다.
 3. attribute 실제 키 이름 실측 (`Attributes`/`LogAttributes`의 `mapKeys`) — Claude Code 버전이 바뀌면 `model`, `session.id`, `decision` 등의 키 이름이 달라질 수 있다. 달라지면 `dashboard/server/grouping.js`와 `dashboard/server/queries.js` 두 파일만 고치면 된다.
-4. temporality(`cumulative`) 설정이 실제로 적용됐는지 — 데이터가 안 들어오면 1순위 의심 지점.
+4. temporality — 운영 설정은 `cumulative`(30초마다 세션 누적값 export)다. 초기엔 대시보드 쿼리가 전부 `sum(Value)`라 세션이 길수록 토큰/비용/세션 수가 배수로 과대집계되는 버그가 있었지만(실측: 1600억 토큰), `queries.js`를 세션(`session.id`)별 경계 diff(구간 끝 누적값 - 구간 시작 직전 누적값, Prometheus increase()와 동일 원리)로 재작성해 delta/cumulative 둘 다 정확히 처리한다. `SELECT DISTINCT AggregationTemporality FROM claude_code.otel_metrics_sum`로 2(cumulative)가 나오는 게 정상이며, delta(1) 데이터가 섞여도(레거시 배포 등) 문제없다.
 5. 프롬프트 본문 유출 여부 (`otel_logs`의 `Body`/`LogAttributes`에 prompt 텍스트가 남아있지 않은지) — FSI 워크샵이면 필수 확인.
 
 ## 5. Admin 인프라(이 리포 `infra/`)와 참가자 인프라(워크샵 CFN)의 경계

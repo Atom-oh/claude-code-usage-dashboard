@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     Team            LowCardinality(String) MATERIALIZED ResourceAttributes['team'],
     UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
     Model           LowCardinality(String) MATERIALIZED Attributes['model'],
+    SessionId       String                 MATERIALIZED Attributes['session.id'],
     TokenType       LowCardinality(String) MATERIALIZED Attributes['type'],
     QuerySource     LowCardinality(String) MATERIALIZED Attributes['query_source'],
     Decision        LowCardinality(String) MATERIALIZED Attributes['decision'],

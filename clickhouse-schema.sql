@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
     Team            LowCardinality(String) MATERIALIZED ResourceAttributes['team'],
     UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
     Model           LowCardinality(String) MATERIALIZED Attributes['model'],
+    -- session.id는 cumulative counter의 series identity(경계 diff 계산 단위)로 쓰인다.
+    -- 실측 후 session.id가 ResourceAttributes로 오면 ALTER로 이 정의만 교체하면 됨.
+    SessionId       String                 MATERIALIZED Attributes['session.id'],
     TokenType       LowCardinality(String) MATERIALIZED Attributes['type'],
     QuerySource     LowCardinality(String) MATERIALIZED Attributes['query_source'],
     Decision        LowCardinality(String) MATERIALIZED Attributes['decision'],
