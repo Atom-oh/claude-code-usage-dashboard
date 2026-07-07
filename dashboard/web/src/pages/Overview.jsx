@@ -14,6 +14,7 @@ export default function Overview() {
   const tokens = useApi("/api/overview/tokens-timeseries");
   const cache = useApi("/api/overview/cache-efficiency");
   const models = useApi("/api/overview/model-distribution");
+  const adoption = useApi("/api/adoption/levels");
 
   const totals = (kpi.data || []).reduce(
     (acc, r) => ({
@@ -35,6 +36,26 @@ export default function Overview() {
           <StatTile label="토큰" value={fmt(totals.tokens)} />
           <StatTile label="추가 라인" value={fmt(totals.loc)} />
         </div>
+
+        {adoption.loading ? (
+          <Loading />
+        ) : adoption.error ? (
+          <ErrorBox error={adoption.error} />
+        ) : (
+          <Card title="도입 수준 & 고착도" subtitle="세션이 1건 이상 있었던 유저 기준">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <StatTile label="전체 멤버" value={fmt(adoption.data.total_members)} />
+              <StatTile label="월간 활성 (MAU)" value={fmt(adoption.data.mau)} />
+              <StatTile label="주간 활성 (WAU)" value={fmt(adoption.data.wau)} />
+              <StatTile label="일간 활성 (DAU)" value={fmt(adoption.data.dau)} variant="accent" />
+              <StatTile
+                label="DAU/MAU 고착도"
+                value={adoption.data.mau > 0 ? `${((adoption.data.dau / adoption.data.mau) * 100).toFixed(0)}%` : "—"}
+                hint="일간 활성 ÷ 월간 활성"
+              />
+            </div>
+          </Card>
+        )}
 
         <Card title="그룹별 KPI 요약">
           {kpi.loading ? (

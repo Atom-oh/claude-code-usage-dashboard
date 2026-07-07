@@ -1,4 +1,4 @@
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { colorFor } from "../colors.js";
 import { pivotByGroup, pivotByKey, groupsPresent } from "../pivot.js";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
@@ -78,6 +78,39 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
             <Bar key={s} dataKey={s} name={s} stackId="a" fill={c.palette[i % c.palette.length]} radius={i === series.length - 1 ? [4, 4, 0, 0] : 0} />
           ))}
         </BarChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+// 단위가 다른 두 지표를 한 화면에 — "도입률"(사용자 vs 세션), "사용자당 PR"처럼 좌/우 축이 다른 시계열.
+// lines: [{key, label, color, axis: "left" | "right"}] — rows는 이미 xKey 기준으로 wide한 형태여야 함.
+export function DualLineChart({ title, subtitle, right, rows, xKey, lines, height = 240, tickFormatter }) {
+  const c = useChartColors();
+  const hasRight = lines.some((l) => l.axis === "right");
+  return (
+    <Card title={title} subtitle={subtitle} right={right}>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={rows || []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
+          <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={tickFormatter} minTickGap={24} />
+          <YAxis yAxisId="left" tick={axisTick(c)} tickLine={false} axisLine={false} width={48} />
+          {hasRight && <YAxis yAxisId="right" orientation="right" tick={axisTick(c)} tickLine={false} axisLine={false} width={48} />}
+          <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {lines.map((l, i) => (
+            <Line
+              key={l.key}
+              yAxisId={l.axis === "right" ? "right" : "left"}
+              type="monotone"
+              dataKey={l.key}
+              name={l.label || l.key}
+              stroke={l.color || c.palette[i % c.palette.length]}
+              strokeWidth={2}
+              dot={false}
+            />
+          ))}
+        </LineChart>
       </ResponsiveContainer>
     </Card>
   );
