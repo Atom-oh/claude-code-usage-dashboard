@@ -8,6 +8,7 @@ import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
+import { useRange } from "../RangeContext.jsx";
 
 const fmtTick = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -15,11 +16,14 @@ const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractio
 
 export default function Cost() {
   const [intervalHours, setIntervalHours] = useState(24);
+  const { from, to } = useRange();
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");
   const byUserModel = useApi("/api/cost/by-user-model");
   const byModelDaily = useApi("/api/cost/by-model-daily", { intervalHours });
   const compare = useApi("/api/cost/by-model-compare");
+  const tiers = useApi("/api/cost/tiers");
+  const efficiency = useApi("/api/users/cost-efficiency");
   const prevCostByModel = new Map((compare.data || []).map((r) => [r.model, r.cost === null ? null : Number(r.prev_cost)]));
 
   const totals = (summary.data || []).reduce(
@@ -38,17 +42,37 @@ export default function Cost() {
 
   const modelTotals = new Map();
   for (const r of byModel.data || []) {
-    const prev = modelTotals.get(r.model) || { model: r.model, cost: 0, reportedCost: 0, tokens: 0, unpriced: false };
+    const prev =
+      modelTotals.get(r.model) || { model: r.model, cost: 0, reportedCost: 0, inputTokens: 0, outputTokens: 0, unpriced: false };
     if (r.cost === null) prev.unpriced = true;
     else prev.cost += Number(r.cost);
     prev.reportedCost += Number(r.reported_cost);
-    prev.tokens += Number(r.tokens);
+    prev.inputTokens += Number(r.input_tokens);
+    prev.outputTokens += Number(r.output_tokens);
     modelTotals.set(r.model, prev);
   }
   const modelRows = [...modelTotals.values()].sort((a, b) => b.cost - a.cost);
   const totalModelCost = modelRows.reduce((s, r) => s + (r.unpriced ? 0 : r.cost), 0);
 
   const userModelRows = [...(byUserModel.data || [])].sort((a, b) => (b.cost || 0) - (a.cost || 0));
+
+  const daysInRange = Math.max(1, (to - from) / 86400000);
+  const projection30d = (totals.cost / daysInRange) * 30;
+  const developerCount = new Set((byUserModel.data || []).map((r) => r.user)).size;
+  const spendPerDeveloper = developerCount > 0 ? totals.cost / developerCount : 0;
+
+  const tierRows = tiers.data
+    ? [
+        { tier: "캐시 읽기", cost: tiers.data.cacheRead },
+        { tier: "캐시 쓰기", cost: tiers.data.cacheWrite },
+        { tier: "출력", cost: tiers.data.output },
+        { tier: "비캐시 입력", cost: tiers.data.uncachedInput },
+      ]
+    : [];
+
+  const efficiencyRows = [...(efficiency.data || [])]
+    .filter((r) => r.loc > 0)
+    .sort((a, b) => a.cost_per_loc - b.cost_per_loc);
 
   return (
     <div>
@@ -76,7 +100,17 @@ export default function Cost() {
             <StatTile label="캐시 읽기 토큰" value={fmt(totals.cacheRead)} />
             <StatTile label="캐시 쓰기 토큰" value={fmt(totals.cacheWrite)} />
             <StatTile label="세션" value={fmt(totals.sessions)} />
+            <StatTile label="30일 프로젝션" value={usd(projection30d)} hint="현재 기간 일평균 × 30" />
+            <StatTile label="개발자당 지출" value={usd(spendPerDeveloper)} hint={`${developerCount}명 기준`} />
           </div>
+        )}
+
+        {tiers.loading ? (
+          <Loading />
+        ) : tiers.error ? (
+          <ErrorBox error={tiers.error} />
+        ) : (
+          <DonutBreakdown title="캐시 티어별 지출" subtitle="비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력" data={tierRows} nameKey="tier" valueKey="cost" valuePrefix="$" />
         )}
 
         {byModel.loading ? (
@@ -137,7 +171,8 @@ export default function Cost() {
                 );
               },
             },
-            { key: "tokens", label: "토큰", render: fmt },
+            { key: "inputTokens", label: "입력 토큰", render: fmt },
+            { key: "outputTokens", label: "출력 토큰", render: fmt },
           ]}
           rows={modelRows}
           groupKey="__none__"
@@ -160,6 +195,27 @@ export default function Cost() {
               { key: "tokens", label: "토큰", render: fmt },
             ]}
             rows={userModelRows}
+          />
+        )}
+
+        {efficiency.loading ? (
+          <Loading />
+        ) : efficiency.error ? (
+          <ErrorBox error={efficiency.error} />
+        ) : (
+          <DataTable
+            title="비용 효율 ($/LOC · $/커밋)"
+            subtitle="라인당 계산 비용이 낮은 순 — 성과 평가가 아니라 비용 신호"
+            columns={[
+              { key: "user", label: "사용자" },
+              { key: "group", label: "그룹" },
+              { key: "cost", label: "지출 (계산)", render: usd },
+              { key: "loc", label: "추가 라인", render: fmt },
+              { key: "commits", label: "커밋", render: fmt },
+              { key: "cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "—" : `$${v.toFixed(4)}`) },
+              { key: "cost_per_commit", label: "$/커밋", render: (v) => (v == null ? "—" : usd(v)) },
+            ]}
+            rows={efficiencyRows}
           />
         )}
       </div>

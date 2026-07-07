@@ -13,21 +13,25 @@
 //   - organization.id는 ResourceAttributes가 아니라 **Attributes(datapoint별)**에 실린다
 //     (실측 전 가정이 틀렸던 지점 — 원래 ResourceAttributes로 짜여있던 걸 수정).
 //
-// ponytail: session.id 단위가 더 정밀하지만 otel_metrics_sum엔 SessionId가 promoted column으로 없다
-// (otel_logs에만 있음). UserEmail(이미 MATERIALIZED)로 묶는 것으로 충분 — 세션 단위가 필요해지면
-// Attributes['session.id']로 GROUP BY를 바꾸면 됨.
+// 실측 확인(2026-07-07): 인증 방식(Bedrock env var vs Enterprise 로그인)은 프로세스/세션 시작 시
+// 고정되고 세션 도중 바뀌지 않는다 — 판별은 세션(SessionId) 단위여야 정확하다. UserEmail 단위로
+// 판별하면 한 이메일이 여러 세션에 걸쳐 다른 방식을 쓴 경우(테스트/재로그인 등) "bedrock 스타일
+// 모델을 한 번이라도 호출했으면 유저 전체를 bedrock 확정"하는 OR 휴리스틱이 소수의 bedrock
+// 세션만으로 그 유저의 나머지 enterprise 세션까지 전부 bedrock으로 덮어써버린다(실측: 15세션 중
+// 3개만 bedrock인데 유저 전체가 bedrock으로 나옴). SessionId는 otel_metrics_sum(ALTER로 추가)과
+// otel_logs(원래 스키마) 양쪽에 이미 promoted column이라 스키마 변경 없이 그레인만 바꾸면 된다.
 export const GROUP_CTE = `
-WITH user_group AS (
+WITH session_group AS (
     SELECT
-        UserEmail,
+        SessionId,
         multiIf(
             countIf(Model LIKE '%anthropic.%' OR Model LIKE '%:%') > 0, 'bedrock',
             countIf(Attributes['organization.id'] != '') > 0, 'enterprise',
             'unknown'
         ) AS grp
     FROM claude_code.otel_metrics_sum
-    WHERE UserEmail != ''
-    GROUP BY UserEmail
+    WHERE SessionId != ''
+    GROUP BY SessionId
 )`;
 
 // ponytail: ClickHouse 기본 설정(join_use_nulls=0)에서 LEFT JOIN 미매칭은 NULL이 아니라

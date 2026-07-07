@@ -29,6 +29,22 @@ export function priceFor(model) {
   return PRICING[normalizeModelId(model)] || null;
 }
 
+// Cost 페이지 "캐시 티어별 지출" 카드용 — costByModel() 같은 행 배열(모델별 4토큰 합계)을 받아
+// 토큰 티어(비캐시 입력/캐시 읽기/캐시 쓰기/출력) 단위로 $ 총합을 묶는다. 단가표에 없는 모델은
+// 조용히 건너뛴다(withComputedCost의 unpriced 플래그와 동일 정책 — 전체가 깨지지 않게).
+export function tierCosts(rows) {
+  const t = { uncachedInput: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  for (const r of rows) {
+    const p = priceFor(r.model);
+    if (!p) continue;
+    t.uncachedInput += (Number(r.input_tokens) * p.input) / 1e6;
+    t.cacheRead += (Number(r.cache_read_tokens) * p.cacheRead) / 1e6;
+    t.cacheWrite += (Number(r.cache_write_tokens) * p.cacheWrite) / 1e6;
+    t.output += (Number(r.output_tokens) * p.output) / 1e6;
+  }
+  return t;
+}
+
 // rows는 input_tokens/output_tokens/cache_read_tokens/cache_write_tokens를 갖고 있어야 한다.
 // cost(계산 비용, 미산정 모델이면 null) + unpriced 플래그를 추가한다. reported_cost는 그대로 통과.
 export function withComputedCost(rows) {

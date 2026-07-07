@@ -1,6 +1,7 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost } from "./pricing.js";
+import { rollupActiveUsers } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -38,17 +39,20 @@ const seriesKey = "cityHash64(toString(Attributes))";
 // 세션(SessionId) × temporality × 속성 단위로 구간 증가량을 미리 계산하는 서브쿼리. 결과 컬럼명을
 // 원본 테이블과 동일하게(Value/MetricName/Model/...) 맞춰서, 기존 sumIf(m.Value, ...) 패턴을 건드리지
 // 않고 FROM만 이 서브쿼리로 바꿔 끼울 수 있게 한다.
+// ToolName은 otel_metrics_sum엔 승격 컬럼이 없어(otel_logs에만 있음) Attributes에서 바로 뽑는다 —
+// code_edit_tool.decision의 tool_name(edit/multi_edit/write/notebook_edit)을 툴별로 쪼개는 데만 쓴다.
 function incFlat(metricFilter = "") {
   return `(
     SELECT
         SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
+        Attributes['tool_name'] AS ToolName,
         if(temp = 2,
             greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
             sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
     FROM claude_code.otel_metrics_sum
     WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
       ${metricFilter}
-    GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName
+    GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
   )`;
 }
 
@@ -100,7 +104,7 @@ export async function kpiSummary(from, to) {
         'claude_code.session.count', 'claude_code.commit.count', 'claude_code.pull_request.count',
         'claude_code.token.usage', 'claude_code.lines_of_code.count'
       )`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group" ORDER BY "group"`,
     range(from, to)
   );
@@ -118,7 +122,27 @@ export async function tokenTimeseries(from, to, intervalHours = 24) {
       `toStartOfInterval(TimeUnix, INTERVAL {intervalHours:UInt32} HOUR)`,
       `AND MetricName = 'claude_code.token.usage'`
     )} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    GROUP BY t, "group" ORDER BY t`,
+    { ...range(from, to), intervalHours }
+  );
+}
+
+// LOC 추가/삭제 시계열 — lines_of_code.count의 type attribute(added/removed)는 token.usage와 같은
+// 승격 컬럼(TokenType = Attributes['type'])에 실린다. 일별(intervalHours=24) 버킷 기본.
+export async function locTimeseries(from, to, intervalHours = 24) {
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        t,
+        ${GROUP_EXPR} AS "group",
+        sumIf(m.Value, m.TokenType = 'added')   AS loc_added,
+        sumIf(m.Value, m.TokenType = 'removed') AS loc_removed
+    FROM ${incBucketed(
+      `toStartOfInterval(TimeUnix, INTERVAL {intervalHours:UInt32} HOUR)`,
+      `AND MetricName = 'claude_code.lines_of_code.count'`
+    )} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY t, "group" ORDER BY t`,
     { ...range(from, to), intervalHours }
   );
@@ -134,7 +158,7 @@ export async function cacheEfficiency(from, to) {
         sumIf(m.Value, m.TokenType IN ('input', 'cacheRead', 'cacheCreation'))  AS input_side,
         round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio
     FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group" ORDER BY "group"`,
     range(from, to)
   );
@@ -146,7 +170,7 @@ export async function modelDistribution(from, to) {
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, sum(m.Value) AS tokens
     FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group", model ORDER BY "group", tokens DESC`,
     range(from, to)
   );
@@ -166,7 +190,7 @@ export async function normalizedProductivity(from, to) {
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.lines_of_code.count', 'claude_code.token.usage', 'claude_code.commit.count'
       )`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group" ORDER BY "group"`,
     range(from, to)
   );
@@ -178,8 +202,23 @@ export async function codeEditDecisions(from, to) {
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.Decision AS decision, sum(m.Value) AS n
     FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group", decision ORDER BY "group", decision`,
+    range(from, to)
+  );
+}
+
+// 패널5 확장: 툴 종류별(edit/multi_edit/write/notebook_edit) 수락/거부 — 그룹 합계만 보여주던
+// codeEditDecisions를 tool_name 차원으로 쪼갠 버전. ToolName이 비어있는 행(구버전 텔레메트리 등
+// tool_name attribute가 없는 경우)은 집계에서 제외한다.
+export async function codeEditDecisionsByTool(from, to) {
+  return query(
+    `${GROUP_CTE}
+    SELECT ${GROUP_EXPR} AS "group", m.ToolName AS tool, m.Decision AS decision, sum(m.Value) AS n
+    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.ToolName != ''
+    GROUP BY "group", tool, decision ORDER BY "group", tool`,
     range(from, to)
   );
 }
@@ -199,7 +238,7 @@ export async function activeTimeSeries(from, to, intervalHours = 24) {
       `toStartOfInterval(TimeUnix, INTERVAL {intervalHours:UInt32} HOUR)`,
       `AND MetricName = 'claude_code.active_time.total'`
     )} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY t, "group" ORDER BY t`,
     { ...range(from, to), intervalHours }
   );
@@ -214,7 +253,7 @@ export async function skillUsage(from, to) {
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations, sum(m.Value) AS est_cost_usd
     FROM ${incFlat(`AND MetricName = 'claude_code.cost.usage'`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.SkillName != ''
     GROUP BY "group", skill ORDER BY "group", invocations DESC`,
     range(from, to)
@@ -235,7 +274,7 @@ export async function costByModelDaily(from, to, intervalHours = 24) {
       `toStartOfInterval(TimeUnix, INTERVAL {intervalDays:UInt32} DAY)`,
       `AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`
     )} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != ''
     GROUP BY day, "group", model ORDER BY day`,
     { ...range(from, to), intervalDays }
@@ -309,6 +348,21 @@ export async function adoptionLevels(from, to) {
   return rows[0] || { total_members: 0, mau: 0, wau: 0, dau: 0 };
 }
 
+// adoptionLevels(스냅샷)의 시계열 버전 — 일자×유저 존재만 뽑아오고 DAU/WAU/MAU 롤링 윈도우는
+// activity.js(순수 함수, 단위 테스트 있음)에서 계산한다. wau/mau가 정확하려면 from보다 29일 전
+// 데이터까지 봐야 하므로 조회 구간을 넓힌다.
+export async function activeUsersTimeseries(from, to) {
+  const rows = await query(
+    `SELECT toDate(TimeUnix) AS day, UserEmail
+     FROM claude_code.otel_metrics_sum
+     WHERE MetricName = 'claude_code.session.count' AND UserEmail != ''
+       AND TimeUnix >= {from:DateTime} - INTERVAL 29 DAY AND TimeUnix < {to:DateTime}
+     GROUP BY day, UserEmail`,
+    range(from, to)
+  );
+  return rollupActiveUsers(rows, from, to);
+}
+
 // 일별 사용자·세션·PR — Productivity 페이지의 "도입률"/"사용자당 PR" 이중축 시계열 하나로 둘 다 커버.
 // 그룹 구분 없이 조직 전체 트렌드.
 export async function dailyEngagement(from, to) {
@@ -339,7 +393,7 @@ export async function mcpConnectorUsage(from, to) {
         count()                     AS calls,
         countIf(l.Success = 'true') AS ok
     FROM claude_code.otel_logs l
-    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result' AND l.McpServerName != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY "group", connector ORDER BY "group", calls DESC`,
@@ -360,7 +414,7 @@ export async function agenticness(from, to, intervalHours = 24) {
         countIf(l.EventName = 'tool_result')  AS tool_calls,
         round(tool_calls / nullIf(prompts, 0), 2)          AS tool_calls_per_prompt
     FROM claude_code.otel_logs l
-    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY t, "group" ORDER BY t`,
     { ...range(from, to), intervalHours }
@@ -377,7 +431,7 @@ export async function toolMcpUsage(from, to) {
         countIf(l.Success = 'false') AS fail,
         count()                      AS total
     FROM claude_code.otel_logs l
-    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result'
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY "group", tool, mcp_server ORDER BY "group", total DESC LIMIT 50`,
@@ -399,7 +453,7 @@ export async function costSummary(from, to) {
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.cost.usage', 'claude_code.token.usage', 'claude_code.session.count'
       )`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group", model ORDER BY "group"`,
     range(from, to)
   );
@@ -441,7 +495,7 @@ export async function costByModel(from, to) {
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != ''
     GROUP BY "group", model ORDER BY "group"`,
     range(from, to)
@@ -452,14 +506,15 @@ export async function costByModel(from, to) {
   }));
 }
 
-// Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 GROUP_CTE의 유저 단위
-// 판별을 그대로 붙인다 — 유저×모델 단위로 집계하면 그룹 구분은 자동으로 따라온다.
+// Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 세션 단위로 판별한 뒤
+// topK(1)로 그 유저의 세션들 중 다수결 그룹 하나를 뽑는다(한 유저가 두 방식을 다 쓴 경우
+// any()처럼 비결정적으로 흔들리지 않고, 세션이 더 많은 쪽으로 안정적으로 붙는다).
 export async function costByUserModel(from, to) {
   const rows = await query(
     `${GROUP_CTE}
-    SELECT m.UserEmail AS user, any(${GROUP_EXPR}) AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
+    SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' AND m.UserEmail != ''
     GROUP BY user, model ORDER BY user`,
     range(from, to)
@@ -474,9 +529,9 @@ export async function costByUserModel(from, to) {
 export async function userToolUsage(from, to) {
   return query(
     `${GROUP_CTE}
-    SELECT l.UserEmail AS user, any(${GROUP_EXPR}) AS "group", l.ToolName AS tool, count() AS uses
+    SELECT l.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", l.ToolName AS tool, count() AS uses
     FROM claude_code.otel_logs l
-    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result' AND l.UserEmail != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY user, tool ORDER BY user, uses DESC`,
@@ -488,9 +543,9 @@ export async function userToolUsage(from, to) {
 export async function userSkillUsage(from, to) {
   return query(
     `${GROUP_CTE}
-    SELECT m.UserEmail AS user, any(${GROUP_EXPR}) AS "group", m.SkillName AS skill, count() AS invocations
+    SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", m.SkillName AS skill, count() AS invocations
     FROM claude_code.otel_metrics_sum m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.MetricName = 'claude_code.cost.usage' AND m.SkillName != '' AND m.UserEmail != ''
       AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime}
     GROUP BY user, skill ORDER BY user, invocations DESC`,
@@ -511,7 +566,7 @@ export async function userLeaderboard(from, to) {
     )
     SELECT
         m.UserEmail AS user,
-        any(${GROUP_EXPR}) AS "group",
+        topK(1)(${GROUP_EXPR})[1] AS "group",
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')                                    AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                       AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count')                                AS loc,
@@ -524,7 +579,7 @@ export async function userLeaderboard(from, to) {
         'claude_code.session.count', 'claude_code.token.usage', 'claude_code.lines_of_code.count',
         'claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.code_edit_tool.decision'
       )`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
     WHERE m.UserEmail != ''
     GROUP BY user ORDER BY tokens DESC`,

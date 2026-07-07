@@ -1,0 +1,22 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { userCostEfficiency } from "./costEfficiency.js";
+
+test("userCostEfficiency joins per-user cost onto loc/commits and derives unit costs", () => {
+  const leaderboard = [
+    { user: "a@x.com", group: "bedrock", loc: 100, commits: 4 },
+    { user: "b@x.com", group: "enterprise", loc: 0, commits: 0 },
+  ];
+  const costByUserModel = [
+    { user: "a@x.com", model: "claude-sonnet-4-5", cost: 3 },
+    { user: "a@x.com", model: "claude-opus-4-8", cost: 7 },
+    { user: "b@x.com", model: "some-unknown-model", cost: null },
+  ];
+  const out = userCostEfficiency(leaderboard, costByUserModel);
+  assert.equal(out[0].cost, 10);
+  assert.equal(out[0].cost_per_loc, 0.1);
+  assert.equal(out[0].cost_per_commit, 2.5);
+  assert.equal(out[1].cost, 0); // unpriced-only rows contribute nothing
+  assert.equal(out[1].cost_per_loc, null); // loc=0 guards divide-by-zero
+  assert.equal(out[1].cost_per_commit, null);
+});
