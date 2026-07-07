@@ -1,15 +1,26 @@
+import { useState } from "react";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
+import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { GroupAreaChart, GroupBarChart } from "../components/GroupCharts.jsx";
 import { useApi } from "../useApi.js";
+import { useRange } from "../RangeContext.jsx";
+import { makeTickFmt } from "../fmt.js";
 
-const fmtTick = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 const fmt = (n) => Number(n || 0).toLocaleString();
+const TOKEN_VIEWS = [
+  { value: "tokens", label: "전체" },
+  { value: "input_tokens", label: "입력" },
+  { value: "output_tokens", label: "출력" },
+];
 
 export default function Overview() {
+  const [tokenView, setTokenView] = useState("tokens");
+  const { intervalHours } = useRange();
+  const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
   const tokens = useApi("/api/overview/tokens-timeseries");
   const cache = useApi("/api/overview/cache-efficiency");
@@ -21,9 +32,11 @@ export default function Overview() {
       users: acc.users + Number(r.users),
       sessions: acc.sessions + Number(r.sessions),
       tokens: acc.tokens + Number(r.total_tokens),
+      inputTokens: acc.inputTokens + Number(r.input_tokens),
+      outputTokens: acc.outputTokens + Number(r.output_tokens),
       loc: acc.loc + Number(r.lines_of_code),
     }),
-    { users: 0, sessions: 0, tokens: 0, loc: 0 }
+    { users: 0, sessions: 0, tokens: 0, inputTokens: 0, outputTokens: 0, loc: 0 }
   );
 
   return (
@@ -33,8 +46,10 @@ export default function Overview() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatTile label="전체 유저" value={fmt(totals.users)} variant="accent" />
           <StatTile label="세션" value={fmt(totals.sessions)} />
-          <StatTile label="토큰" value={fmt(totals.tokens)} />
           <StatTile label="추가 라인" value={fmt(totals.loc)} />
+          <StatTile label="전체 토큰" value={fmt(totals.tokens)} />
+          <StatTile label="입력 토큰" value={fmt(totals.inputTokens)} />
+          <StatTile label="출력 토큰" value={fmt(totals.outputTokens)} />
         </div>
 
         {adoption.loading ? (
@@ -66,7 +81,7 @@ export default function Overview() {
             <table className="w-full text-[14px]">
               <thead>
                 <tr>
-                  {["그룹", "유저", "세션", "커밋", "PR", "토큰", "추가 라인"].map((h) => (
+                  {["그룹", "유저", "세션", "커밋", "PR", "입력 토큰", "출력 토큰", "전체 토큰", "추가 라인"].map((h) => (
                     <th key={h} className="text-left text-[11px] uppercase tracking-[0.04em] font-medium text-ink-400 py-2 px-2 border-b border-ink-100">
                       {h}
                     </th>
@@ -86,6 +101,8 @@ export default function Overview() {
                     <td className="py-2 px-2 tabular">{fmt(r.sessions)}</td>
                     <td className="py-2 px-2 tabular">{fmt(r.commits)}</td>
                     <td className="py-2 px-2 tabular">{fmt(r.prs)}</td>
+                    <td className="py-2 px-2 tabular">{fmt(r.input_tokens)}</td>
+                    <td className="py-2 px-2 tabular">{fmt(r.output_tokens)}</td>
                     <td className="py-2 px-2 tabular">{fmt(r.total_tokens)}</td>
                     <td className="py-2 px-2 tabular">{fmt(r.lines_of_code)}</td>
                   </tr>
@@ -97,7 +114,14 @@ export default function Overview() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           {tokens.loading ? <Loading /> : tokens.error ? <ErrorBox error={tokens.error} /> : (
-            <GroupAreaChart title="토큰 사용량 시계열" rows={tokens.data} xKey="t" valueKey="tokens" tickFormatter={fmtTick} />
+            <GroupAreaChart
+              title="토큰 사용량 시계열"
+              right={<SegmentedControl options={TOKEN_VIEWS} value={tokenView} onChange={setTokenView} />}
+              rows={tokens.data}
+              xKey="t"
+              valueKey={tokenView}
+              tickFormatter={fmtTick}
+            />
           )}
           {cache.loading ? <Loading /> : cache.error ? <ErrorBox error={cache.error} /> : (
             <GroupBarChart title="캐시 재사용률" subtitle="cacheRead / (input + cacheRead)" rows={cache.data} valueKey="cache_read_ratio" />
@@ -115,7 +139,9 @@ export default function Overview() {
             columns={[
               { key: "group", label: "그룹" },
               { key: "model", label: "모델" },
-              { key: "tokens", label: "토큰", render: fmt },
+              { key: "input_tokens", label: "입력 토큰", render: fmt },
+              { key: "output_tokens", label: "출력 토큰", render: fmt },
+              { key: "tokens", label: "전체 토큰", render: fmt },
             ]}
             rows={models.data}
           />

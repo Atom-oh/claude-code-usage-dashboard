@@ -8,13 +8,16 @@ import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
+import { useRange } from "../RangeContext.jsx";
+import { makeTickFmt } from "../fmt.js";
 
-const fmtTick = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 export default function Cost() {
-  const [intervalHours, setIntervalHours] = useState(24);
+  const { intervalHours: defaultIntervalHours } = useRange();
+  const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
+  const fmtTick = makeTickFmt(intervalHours);
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");
   const byUserModel = useApi("/api/cost/by-user-model");
@@ -50,6 +53,13 @@ export default function Cost() {
 
   const userModelRows = [...(byUserModel.data || [])].sort((a, b) => (b.cost || 0) - (a.cost || 0));
 
+  const tokenTypeRows = [
+    { type: "입력", tokens: totals.input },
+    { type: "출력", tokens: totals.output },
+    { type: "캐시 읽기", tokens: totals.cacheRead },
+    { type: "캐시 쓰기", tokens: totals.cacheWrite },
+  ].filter((r) => r.tokens > 0);
+
   return (
     <div>
       <PageHeader
@@ -79,13 +89,22 @@ export default function Cost() {
           </div>
         )}
 
-        {byModel.loading ? (
-          <Loading />
-        ) : byModel.error ? (
-          <ErrorBox error={byModel.error} />
-        ) : (
-          <DonutBreakdown title="모델별 지출 비중" data={modelRows} nameKey="model" valueKey="cost" valuePrefix="$" />
-        )}
+        <div className="grid gap-4 md:grid-cols-2">
+          {byModel.loading ? (
+            <Loading />
+          ) : byModel.error ? (
+            <ErrorBox error={byModel.error} />
+          ) : (
+            <DonutBreakdown title="모델별 지출 비중" data={modelRows} nameKey="model" valueKey="cost" valuePrefix="$" />
+          )}
+          {summary.loading ? (
+            <Loading />
+          ) : summary.error ? (
+            <ErrorBox error={summary.error} />
+          ) : (
+            <DonutBreakdown title="토큰 타입별 비중" data={tokenTypeRows} nameKey="type" valueKey="tokens" />
+          )}
+        </div>
 
         {byModelDaily.loading ? (
           <Loading />
@@ -93,10 +112,14 @@ export default function Cost() {
           <ErrorBox error={byModelDaily.error} />
         ) : (
           <SeriesBarChart
-            title="일간 모델별 지출"
+            title="모델별 지출 추이"
             right={
               <SegmentedControl
-                options={[{ value: "24", label: "일간" }, { value: "168", label: "주간" }]}
+                options={[
+                  { value: "1", label: "시간별" },
+                  { value: "24", label: "일간" },
+                  { value: "168", label: "주간" },
+                ]}
                 value={String(intervalHours)}
                 onChange={(v) => setIntervalHours(Number(v))}
               />

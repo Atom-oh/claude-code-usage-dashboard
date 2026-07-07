@@ -9,10 +9,42 @@ function range(from, to) {
   return { from: toChDateTime(from), to: toChDateTime(to) };
 }
 
-// claude-fable-5[1m] 같은 컨텍스트 윈도우 접미사는 같은 모델의 변형일 뿐이라(사용자가 고르는 게
-// 아니라 Claude Code가 세션 상황에 따라 자동으로 붙임) 모델 분포/비용 집계에서는 하나로 합친다.
+// us.anthropic.claude-fable-5 / global.anthropic.claude-fable-5 / claude-fable-5[1m] 등은 같은
+// 모델의 변형일 뿐이라(리전 라우팅·컨텍스트 윈도우는 사용자가 고르는 게 아니라 Bedrock/Claude Code가
+// 자동으로 붙임) 모델 분포/비용 집계에서는 하나로 합친다. pricing.js normalizeModelId()와 동일한
+// 5단계 규칙의 SQL 버전 — 표시용 모델명도 단가표 키와 같은 형태로 통일한다.
 function normModel(col) {
-  return `replaceRegexpOne(${col}, '\\\\[.*\\\\]$', '')`;
+  const strip = (expr, pattern) => `replaceRegexpOne(${expr}, '${pattern}', '')`;
+  let expr = col;
+  expr = strip(expr, "\\\\[.*\\\\]$"); // [1m] 컨텍스트 윈도우 접미사
+  expr = strip(expr, "^(us|global|eu|apac)\\\\."); // cross-region 추론 프로파일 접두사
+  expr = strip(expr, "^anthropic\\\\."); // bedrock provider 접두사
+  expr = strip(expr, "-v\\\\d+:\\\\d+$"); // bedrock 버전 접미사 -v1:0
+  expr = strip(expr, "-\\\\d{8}$"); // 날짜 스냅샷 접미사 -20250929
+  return expr;
+}
+
+// 대시보드 전역 필터(group/user/model) — 미지정이면 전부 통과. group은 정확매치(bedrock/enterprise/
+// unknown), user/model은 부분일치(대소문자 무시)로 좁힌다. cols는 쿼리마다 실제 참조 가능한 컬럼/식을
+// 넘긴다(alias가 함수마다 다르고, 로그 테이블엔 Model이 없어 model 필터가 적용 안 되는 경우도 있음).
+// ponytail: model 필터는 Model attribute가 없는 지표(session.count 등)에는 매치가 안 돼 그 지표가
+// 0으로 빠진다 — 세션/커밋처럼 모델 귀속이 없는 값과 model 필터를 같이 켜면 생기는 알려진 트레이드오프.
+function filterCond(filters = {}, cols = {}) {
+  const conds = [];
+  const params = {};
+  if (filters.group && cols.group) {
+    conds.push(`${cols.group} = {fGroup:String}`);
+    params.fGroup = filters.group;
+  }
+  if (filters.user && cols.user) {
+    conds.push(`positionCaseInsensitive(${cols.user}, {fUser:String}) > 0`);
+    params.fUser = filters.user;
+  }
+  if (filters.model && cols.model) {
+    conds.push(`positionCaseInsensitive(${normModel(cols.model)}, {fModel:String}) > 0`);
+    params.fModel = filters.model;
+  }
+  return { where: conds.map((c) => `AND ${c}`).join(" "), params };
 }
 
 // OTel AggregationTemporality: UNSPECIFIED=0, DELTA=1, CUMULATIVE=2. Claude Code는 세션(session.id)
@@ -75,6 +107,15 @@ function incBucketed(bucketExpr, metricFilter = "") {
   )`;
 }
 
+// intervalHours < 24 → HOUR 버킷, >= 24 → DAY 버킷. ClickHouse의 toStartOfInterval(..., INTERVAL n HOUR)은
+// n>24에서 날짜 경계를 못 넘어가고 매일 0시로 리셋되는 동작이 있어(costByModelDaily가 원래 겪던 문제),
+// 24시간 이상 구간은 항상 DAY 단위로 계산해 그 quirk를 피한다.
+function bucket(intervalHours, col = "TimeUnix") {
+  return intervalHours >= 24
+    ? { expr: `toStartOfInterval(${col}, INTERVAL {intervalDays:UInt32} DAY)`, params: { intervalDays: Math.max(1, Math.round(intervalHours / 24)) } }
+    : { expr: `toStartOfInterval(${col}, INTERVAL {intervalHours:UInt32} HOUR)`, params: { intervalHours } };
+}
+
 // 비용 계산에 필요한 토큰 타입별 합계 + Claude Code 자체 보고 비용(비교용). withComputedCost()
 // (pricing.js)가 이 4개 토큰 컬럼 + reported_cost를 받아 단가표 기반 cost를 계산한다.
 const TOKEN_SUMS = `
@@ -85,7 +126,8 @@ const TOKEN_SUMS = `
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens`;
 
 // 패널1: 그룹별 KPI 요약
-export async function kpiSummary(from, to) {
+export async function kpiSummary(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -94,38 +136,44 @@ export async function kpiSummary(from, to) {
         uniqExactIf(m.UserEmail, m.UserEmail != '')                     AS users,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits,
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')  AS prs,
-        sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS total_tokens,
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count') AS lines_of_code
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                AS total_tokens,
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')       AS input_tokens,
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')      AS output_tokens,
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count')                         AS lines_of_code
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.commit.count', 'claude_code.pull_request.count',
         'claude_code.token.usage', 'claude_code.lines_of_code.count'
       )`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
 // 패널2: 토큰 시계열
-export async function tokenTimeseries(from, to, intervalHours = 24) {
+export async function tokenTimeseries(from, to, intervalHours = 24, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const b = bucket(intervalHours);
   return query(
     `${GROUP_CTE}
     SELECT
         t,
         ${GROUP_EXPR} AS "group",
-        sum(m.Value) AS tokens
-    FROM ${incBucketed(
-      `toStartOfInterval(TimeUnix, INTERVAL {intervalHours:UInt32} HOUR)`,
-      `AND MetricName = 'claude_code.token.usage'`
-    )} m
+        sum(m.Value) AS tokens,
+        sumIf(m.Value, m.TokenType = 'input')  AS input_tokens,
+        sumIf(m.Value, m.TokenType = 'output') AS output_tokens
+    FROM ${incBucketed(b.expr, `AND MetricName = 'claude_code.token.usage'`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), intervalHours }
+    { ...range(from, to), ...b.params, ...f.params }
   );
 }
 
 // 패널3: 캐시 효율
-export async function cacheEfficiency(from, to) {
+export async function cacheEfficiency(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -135,25 +183,32 @@ export async function cacheEfficiency(from, to) {
         round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio
     FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
 // 패널6: 모델별 토큰 분포 (교란 점검)
-export async function modelDistribution(from, to) {
+export async function modelDistribution(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
-    SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, sum(m.Value) AS tokens
+    SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model,
+        sum(m.Value) AS tokens,
+        sumIf(m.Value, m.TokenType = 'input')  AS input_tokens,
+        sumIf(m.Value, m.TokenType = 'output') AS output_tokens
     FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group", tokens DESC`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
 // 패널4: 토큰 정규화 생산성 (핵심 A/B 지표)
-export async function normalizedProductivity(from, to) {
+export async function normalizedProductivity(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -167,20 +222,23 @@ export async function normalizedProductivity(from, to) {
         'claude_code.lines_of_code.count', 'claude_code.token.usage', 'claude_code.commit.count'
       )`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
 // 패널5: 코드 수락률
-export async function codeEditDecisions(from, to) {
+export async function codeEditDecisions(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.Decision AS decision, sum(m.Value) AS n
     FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY "group", decision ORDER BY "group", decision`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
@@ -188,20 +246,20 @@ export async function codeEditDecisions(from, to) {
 // 실측 확인(2026-07-06, 실제 claude 세션): active_time.total은 gauge가 아니라 sum 테이블로
 // 들어온다 — grafana-ab-queries.sql 패널9의 주석("gauge로 안 들어오면 sum으로 교체")이 실제로
 // 맞았다. otel_metrics_gauge 테이블/스키마는 그대로 두고 이 쿼리만 sum을 본다.
-export async function activeTimeSeries(from, to, intervalHours = 24) {
+export async function activeTimeSeries(from, to, intervalHours = 24, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const b = bucket(intervalHours);
   return query(
     `${GROUP_CTE}
     SELECT
         t,
         ${GROUP_EXPR} AS "group",
         sum(m.Value) AS active_seconds
-    FROM ${incBucketed(
-      `toStartOfInterval(TimeUnix, INTERVAL {intervalHours:UInt32} HOUR)`,
-      `AND MetricName = 'claude_code.active_time.total'`
-    )} m
+    FROM ${incBucketed(b.expr, `AND MetricName = 'claude_code.active_time.total'`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), intervalHours }
+    { ...range(from, to), ...b.params, ...f.params }
   );
 }
 
@@ -209,36 +267,33 @@ export async function activeTimeSeries(from, to, intervalHours = 24) {
 // 없어 토큰 기반으로 계산할 수 없다 — Claude Code 보고 비용(cost.usage) 그대로 사용. count()는
 // incFlat이 세션 단위로 이미 접어놓은 뒤라 "세션 수" 근사다(delta였을 때도 export 횟수 근사였던
 // 것과 마찬가지로 정확한 invocation 수는 아님).
-export async function skillUsage(from, to) {
+export async function skillUsage(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations, sum(m.Value) AS est_cost_usd
     FROM ${incFlat(`AND MetricName = 'claude_code.cost.usage'`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.SkillName != ''
+    WHERE m.SkillName != '' ${f.where}
     GROUP BY "group", skill ORDER BY "group", invocations DESC`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
-// 모델별 일간/주간 지출 트렌드 (Cost 페이지 스택 바). intervalHours=24|168로 일간/주간 토글.
-// ponytail: toStartOfInterval(..., INTERVAL n HOUR)은 n>24에서 날짜 경계를 못 넘어가는
-// ClickHouse 동작(HOUR 단위는 24 초과 시 매일 0시로 리셋)이 있어 DAY 단위로 바꿔서 계산한다.
-export async function costByModelDaily(from, to, intervalHours = 24) {
-  const intervalDays = Math.max(1, Math.round(intervalHours / 24));
+// 모델별 지출 트렌드 (Cost 페이지 스택 바). intervalHours로 시간별/일간/주간 토글.
+export async function costByModelDaily(from, to, intervalHours = 24, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const b = bucket(intervalHours);
   const rows = await query(
     `${GROUP_CTE}
     SELECT t AS day,
         ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model,
         ${TOKEN_SUMS}
-    FROM ${incBucketed(
-      `toStartOfInterval(TimeUnix, INTERVAL {intervalDays:UInt32} DAY)`,
-      `AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`
-    )} m
+    FROM ${incBucketed(b.expr, `AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.Model != ''
+    WHERE m.Model != '' ${f.where}
     GROUP BY day, "group", model ORDER BY day`,
-    { ...range(from, to), intervalDays }
+    { ...range(from, to), ...b.params, ...f.params }
   );
   // cost 키 이름을 유지해 SeriesBarChart(valueKey="cost")가 그대로 동작하게 한다.
   return withComputedCost(rows);
@@ -247,10 +302,12 @@ export async function costByModelDaily(from, to, intervalHours = 24) {
 // 모델별 지출 vs 이전 동일 길이 기간. cumulative의 진짜 이점이 여기서 나온다 — 두 구간(현재/이전)
 // × 5개 값(보고비용+토큰4타입)을 각 세션의 경계 3점(prevFrom/from/to)만 diff해서 얻고, N개 delta
 // row를 매번 다시 합산할 필요가 없다. cost/prev_cost는 각 구간 토큰 합계에 단가표를 적용해 JS에서
-// 계산(withComputedCost 2회 호출).
-export async function costByModelCompare(from, to, prevFrom) {
+// 계산(withComputedCost 2회 호출). group/user 필터를 걸려면 session_group을 여기서도 조인한다.
+export async function costByModelCompare(from, to, prevFrom, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", model: "Model" });
   const rows = await query(
-    `SELECT model,
+    `${GROUP_CTE}
+    SELECT model,
         sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
         sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
         sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
@@ -263,7 +320,7 @@ export async function costByModelCompare(from, to, prevFrom) {
         sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')       AS prev_cache_write_tokens
     FROM (
         SELECT
-            ${normModel("Model")} AS model, MetricName, TokenType,
+            SessionId, UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
             if(AggregationTemporality = 2,
                 greatest(maxIf(Value, TimeUnix < {from:DateTime}) - maxIf(Value, TimeUnix < {prevFrom:DateTime}), 0),
                 sumIf(Value, TimeUnix >= {prevFrom:DateTime} AND TimeUnix < {from:DateTime})) AS prev_v,
@@ -273,10 +330,12 @@ export async function costByModelCompare(from, to, prevFrom) {
         FROM claude_code.otel_metrics_sum
         WHERE MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''
           AND TimeUnix >= {prevFrom:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
-        GROUP BY ${seriesKey}, SessionId, AggregationTemporality, model, MetricName, TokenType
-    )
+        GROUP BY ${seriesKey}, SessionId, UserEmail, AggregationTemporality, model, MetricName, TokenType
+    ) m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY model`,
-    { ...range(from, to), prevFrom: toChDateTime(prevFrom) }
+    { ...range(from, to), prevFrom: toChDateTime(prevFrom), ...f.params }
   );
   return withComputedCost(rows).map((r) => {
     const [prev] = withComputedCost([
@@ -293,45 +352,53 @@ export async function costByModelCompare(from, to, prevFrom) {
 }
 
 // 도입 수준 — 전체/월간/주간/일간 활성 유저 + DAU/MAU 고착도(고착도는 클라에서 dau/mau).
-// 그룹 구분 없이 조직 전체 기준(스크린샷의 "How are you using Claude" 패널과 동일한 의미).
+// group/user 필터를 걸면 그 하위집합만의 고착도를 볼 수 있다(예: bedrock 그룹만의 DAU/MAU).
+// model 필터는 session.count에 model 귀속이 없어 의미가 없다 — cols에서 아예 뺀다.
 // uniqExact류는 "존재 여부"만 보므로 cumulative 중복 누적치에 영향받지 않아 원본 테이블을 그대로 쓴다.
-export async function adoptionLevels(from, to) {
+export async function adoptionLevels(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail" });
   const rows = await query(
-    `SELECT
+    `${GROUP_CTE}
+    SELECT
         uniqExact(UserEmail)                                                AS total_members,
         uniqExactIf(UserEmail, TimeUnix >= {to:DateTime} - INTERVAL 30 DAY) AS mau,
         uniqExactIf(UserEmail, TimeUnix >= {to:DateTime} - INTERVAL 7 DAY)  AS wau,
         uniqExactIf(UserEmail, TimeUnix >= {to:DateTime} - INTERVAL 1 DAY) AS dau
-    FROM claude_code.otel_metrics_sum
-    WHERE MetricName = 'claude_code.session.count' AND UserEmail != '' AND TimeUnix < {to:DateTime}`,
-    { to: toChDateTime(to) }
+    FROM claude_code.otel_metrics_sum m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE MetricName = 'claude_code.session.count' AND UserEmail != '' AND TimeUnix < {to:DateTime} ${f.where}`,
+    { to: toChDateTime(to), ...f.params }
   );
   return rows[0] || { total_members: 0, mau: 0, wau: 0, dau: 0 };
 }
 
-// 일별 사용자·세션·PR — Productivity 페이지의 "도입률"/"사용자당 PR" 이중축 시계열 하나로 둘 다 커버.
-// 그룹 구분 없이 조직 전체 트렌드.
-export async function dailyEngagement(from, to) {
+// 사용자·세션·PR 시계열 — Productivity 페이지의 "도입률"/"사용자당 PR" 이중축 시계열 하나로 둘 다 커버.
+// model 필터는 이 두 지표에 model 귀속이 없어 의미가 없다 — cols에서 아예 뺀다.
+export async function dailyEngagement(from, to, intervalHours = 24, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
+  const b = bucket(intervalHours);
   return query(
-    `SELECT
+    `${GROUP_CTE}
+    SELECT
         t,
-        uniqExactIf(UserEmail, MetricName = 'claude_code.session.count') AS users,
-        sumIf(Value, MetricName = 'claude_code.session.count')          AS sessions,
-        sumIf(Value, MetricName = 'claude_code.pull_request.count')     AS prs,
-        round(sumIf(Value, MetricName = 'claude_code.pull_request.count')
-              / nullIf(uniqExactIf(UserEmail, MetricName = 'claude_code.session.count'), 0), 2) AS prs_per_user
-    FROM ${incBucketed(
-      `toDate(TimeUnix)`,
-      `AND MetricName IN ('claude_code.session.count', 'claude_code.pull_request.count')`
-    )} m
+        uniqExactIf(m.UserEmail, m.MetricName = 'claude_code.session.count') AS users,
+        sumIf(m.Value, m.MetricName = 'claude_code.session.count')          AS sessions,
+        sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')     AS prs,
+        round(sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')
+              / nullIf(uniqExactIf(m.UserEmail, m.MetricName = 'claude_code.session.count'), 0), 2) AS prs_per_user
+    FROM ${incBucketed(b.expr, `AND MetricName IN ('claude_code.session.count', 'claude_code.pull_request.count')`)} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY t ORDER BY t`,
-    range(from, to)
+    { ...range(from, to), ...b.params, ...f.params }
   );
 }
 
 // MCP 커넥터(서버) 사용 현황 — 실제 제품의 "읽기/쓰기" 구분은 우리 텔레메트리에 그 의미가
-// 없어서(도구 이름 휴리스틱은 부정확) 유저수/호출수/성공률로 단순화.
-export async function mcpConnectorUsage(from, to) {
+// 없어서(도구 이름 휴리스틱은 부정확) 유저수/호출수/성공률로 단순화. logs 테이블엔 Model이 없어
+// model 필터는 cols에서 뺀다.
+export async function mcpConnectorUsage(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", l.McpServerName AS connector,
@@ -341,34 +408,37 @@ export async function mcpConnectorUsage(from, to) {
     FROM claude_code.otel_logs l
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result' AND l.McpServerName != ''
-      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", connector ORDER BY "group", calls DESC`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
 // "에이전틱함" = 프롬프트 1개당 평균 툴 호출 수. claude_code.user_prompt 이벤트가 실제로
 // 오는지 실측 필요(clickhouse-schema.sql 주석에 있던 후보 이벤트명) — 없으면 prompts=0으로
-// 나와 이 지표는 그냥 비게 된다(기능 자체는 죽지 않음).
-export async function agenticness(from, to, intervalHours = 24) {
+// 나와 이 지표는 그냥 비게 된다(기능 자체는 죽지 않음). logs 테이블엔 Model이 없어 model 필터는 뺀다.
+export async function agenticness(from, to, intervalHours = 24, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const b = bucket(intervalHours, "l.Timestamp");
   return query(
     `${GROUP_CTE}
     SELECT
-        toStartOfInterval(l.Timestamp, INTERVAL {intervalHours:UInt32} HOUR) AS t,
+        ${b.expr} AS t,
         ${GROUP_EXPR} AS "group",
         countIf(l.EventName = 'user_prompt') AS prompts,
         countIf(l.EventName = 'tool_result')  AS tool_calls,
         round(tool_calls / nullIf(prompts, 0), 2)          AS tool_calls_per_prompt
     FROM claude_code.otel_logs l
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
-    WHERE l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
+    WHERE l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), intervalHours }
+    { ...range(from, to), ...b.params, ...f.params }
   );
 }
 
-// 패널8: tool/MCP 사용 패턴 (logs)
-export async function toolMcpUsage(from, to) {
+// 패널8: tool/MCP 사용 패턴 (logs). logs 테이블엔 Model이 없어 model 필터는 뺀다.
+export async function toolMcpUsage(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -379,16 +449,17 @@ export async function toolMcpUsage(from, to) {
     FROM claude_code.otel_logs l
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result'
-      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", tool, mcp_server ORDER BY "group", total DESC LIMIT 50`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
 // Cost 페이지: 그룹별 비용/토큰 요약. 비용은 토큰 실측 × 단가표(pricing.js)로 계산 —
 // Claude Code 자체 보고 비용(reported_cost)은 비교용으로만 같이 내려준다.
 // 단가는 모델별로 다르므로 SQL은 그룹+모델 단위로 집계하고, 그룹 합계는 JS에서 fold한다.
-export async function costSummary(from, to) {
+export async function costSummary(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -400,8 +471,9 @@ export async function costSummary(from, to) {
         'claude_code.cost.usage', 'claude_code.token.usage', 'claude_code.session.count'
       )`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
   const byGroup = new Map();
   for (const r of withComputedCost(rows)) {
@@ -436,15 +508,16 @@ export async function costSummary(from, to) {
 
 // Cost 페이지: 모델별 비용/토큰. cost는 토큰 실측 × 단가표로 계산한 값, reported_cost는
 // Claude Code 자체 보고값(비교용). 단가표에 없는 모델은 cost: null + unpriced: true로 노출.
-export async function costByModel(from, to) {
+export async function costByModel(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.Model != ''
+    WHERE m.Model != '' ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
   return withComputedCost(rows).map((r) => ({
     ...r,
@@ -454,15 +527,16 @@ export async function costByModel(from, to) {
 
 // Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 GROUP_CTE의 유저 단위
 // 판별을 그대로 붙인다 — 유저×모델 단위로 집계하면 그룹 구분은 자동으로 따라온다.
-export async function costByUserModel(from, to) {
+export async function costByUserModel(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.Model != '' AND m.UserEmail != ''
+    WHERE m.Model != '' AND m.UserEmail != '' ${f.where}
     GROUP BY user, model ORDER BY user`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
   return withComputedCost(rows).map((r) => ({
     ...r,
@@ -470,37 +544,42 @@ export async function costByUserModel(from, to) {
   }));
 }
 
-// 유저별 어떤 tool을 얼마나 썼는지 (Usage/Users 페이지의 "사용자별 사용 내역").
-export async function userToolUsage(from, to) {
+// 유저별 어떤 tool을 얼마나 썼는지 (Usage/Users 페이지의 "사용자별 사용 내역"). logs 테이블엔
+// Model이 없어 model 필터는 뺀다.
+export async function userToolUsage(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
   return query(
     `${GROUP_CTE}
     SELECT l.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", l.ToolName AS tool, count() AS uses
     FROM claude_code.otel_logs l
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result' AND l.UserEmail != ''
-      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY user, tool ORDER BY user, uses DESC`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
-// 유저별 어떤 skill을 얼마나 썼는지. (skillUsage와 동일한 이유로 cost.usage 기준 유지)
-export async function userSkillUsage(from, to) {
+// 유저별 어떤 skill을 얼마나 썼는지. (skillUsage와 동일한 이유로 cost.usage 기준 유지 — cost.usage는
+// Model을 갖고 있어 model 필터도 걸 수 있다)
+export async function userSkillUsage(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
     SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", m.SkillName AS skill, count() AS invocations
     FROM claude_code.otel_metrics_sum m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.MetricName = 'claude_code.cost.usage' AND m.SkillName != '' AND m.UserEmail != ''
-      AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime}
+      AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}
     GROUP BY user, skill ORDER BY user, invocations DESC`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }
 
 // 패널10 확장: 유저별 리더보드 (생산성 점수는 이 raw 값을 productivity.js에서 계산). active_days는
 // "존재하는 날짜 수"라 temporality와 무관 — 원본 테이블에서 바로 distinct count로 구해 별도 CTE로 조인.
-export async function userLeaderboard(from, to) {
+export async function userLeaderboard(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE},
     active_days AS (
@@ -514,6 +593,8 @@ export async function userLeaderboard(from, to) {
         topK(1)(${GROUP_EXPR})[1] AS "group",
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')                                    AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                       AS tokens,
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')             AS input_tokens,
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')            AS output_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count')                                AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')                                      AS commits,
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')                                AS prs,
@@ -526,8 +607,8 @@ export async function userLeaderboard(from, to) {
       )`)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
-    WHERE m.UserEmail != ''
+    WHERE m.UserEmail != '' ${f.where}
     GROUP BY user ORDER BY tokens DESC`,
-    range(from, to)
+    { ...range(from, to), ...f.params }
   );
 }

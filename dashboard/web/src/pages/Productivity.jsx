@@ -5,12 +5,15 @@ import { GroupAreaChart, GroupBarChart, DualLineChart } from "../components/Grou
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
+import { useRange } from "../RangeContext.jsx";
+import { makeTickFmt } from "../fmt.js";
 
-const fmtTick = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 const fmt = (n) => Number(n || 0).toLocaleString();
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
 
 export default function Productivity() {
+  const { intervalHours } = useRange();
+  const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
   const norm = useApi("/api/productivity/normalized");
   const decisions = useApi("/api/productivity/decisions");

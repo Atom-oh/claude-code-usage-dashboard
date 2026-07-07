@@ -8,7 +8,9 @@ export function RangeProvider({ children }) {
   const value = useMemo(() => {
     const to = new Date();
     const from = new Date(to.getTime() - days * 86400000);
-    return { from, to, days, setDays };
+    // 짧은 기간(<=2일)을 골랐는데 일 단위 버킷을 쓰면 점 1~2개로 붕괴한다 — 시간 단위로 전환.
+    const intervalHours = days <= 2 ? 1 : 24;
+    return { from, to, days, setDays, intervalHours };
   }, [days]);
   return <RangeContext.Provider value={value}>{children}</RangeContext.Provider>;
 }
