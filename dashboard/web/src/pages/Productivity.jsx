@@ -17,6 +17,7 @@ export default function Productivity() {
   const kpi = useApi("/api/overview/kpi");
   const norm = useApi("/api/productivity/normalized");
   const decisions = useApi("/api/productivity/decisions");
+  const decisionsByTool = useApi("/api/productivity/decisions-by-tool");
   const active = useApi("/api/productivity/active-time");
   const agentic = useApi("/api/productivity/agenticness");
   const engagement = useApi("/api/productivity/engagement");
@@ -98,26 +99,48 @@ export default function Productivity() {
           )}
         </div>
 
-        {decisions.loading ? (
-          <Loading />
-        ) : decisions.error ? (
-          <ErrorBox error={decisions.error} />
-        ) : (
-          <GroupBarChart
-            title="코드 편집 수락/거부"
-            subtitle="그룹별"
-            right={
-              <div className="flex gap-2">
-                <Badge tone="positive" dot>accept</Badge>
-                <Badge tone="negative" dot>reject</Badge>
-              </div>
-            }
-            rows={decisions.data}
-            xKey="group"
-            valueKey="n"
-            colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}
-          />
-        )}
+        <div className="grid gap-4 md:grid-cols-2">
+          {decisions.loading ? (
+            <Loading />
+          ) : decisions.error ? (
+            <ErrorBox error={decisions.error} />
+          ) : (
+            <GroupBarChart
+              title="코드 편집 수락/거부"
+              subtitle="그룹별"
+              right={
+                <div className="flex gap-2">
+                  <Badge tone="positive" dot>accept</Badge>
+                  <Badge tone="negative" dot>reject</Badge>
+                </div>
+              }
+              rows={decisions.data}
+              xKey="group"
+              valueKey="n"
+              colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}
+            />
+          )}
+          {decisionsByTool.loading ? (
+            <Loading />
+          ) : decisionsByTool.error ? (
+            <ErrorBox error={decisionsByTool.error} />
+          ) : (
+            <GroupBarChart
+              title="도구별 수락/거부"
+              subtitle="edit / multi_edit / write / notebook_edit"
+              right={
+                <div className="flex gap-2">
+                  <Badge tone="positive" dot>accept</Badge>
+                  <Badge tone="negative" dot>reject</Badge>
+                </div>
+              }
+              rows={decisionsByTool.data}
+              xKey="tool"
+              valueKey="n"
+              colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}
+            />
+          )}
+        </div>
 
         {active.loading ? <Loading /> : active.error ? <ErrorBox error={active.error} /> : (
           <GroupAreaChart title="활성 사용 시간" subtitle="시간, 그룹별 시계열" rows={activeHours} xKey="t" valueKey="active_seconds" tickFormatter={fmtTick} />

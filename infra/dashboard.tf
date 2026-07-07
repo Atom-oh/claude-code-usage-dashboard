@@ -22,6 +22,55 @@ resource "kubernetes_secret" "clickhouse_reader" {
   data = { CH_PASSWORD = var.clickhouse_reader_password }
 }
 
+# Ask Claude 챗(dashboard/server/chat.js)이 Bedrock ConverseStream을 호출하려면 자격증명이
+# 필요하다 — clickhouse_s3(s3.tf)와 동일한 IRSA 패턴: 이 SA만 assume 가능하도록 trust를
+# namespace/이름으로 좁힌다.
+resource "kubernetes_service_account" "dashboard" {
+  metadata {
+    name      = "dashboard"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.dashboard_bedrock.arn
+    }
+  }
+}
+
+resource "aws_iam_role" "dashboard_bedrock" {
+  name = "cc-ab-dashboard-bedrock"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = data.aws_iam_openid_connect_provider.eks.arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${local.oidc_issuer}:sub" = "system:serviceaccount:${var.k8s_namespace}:dashboard"
+          "${local.oidc_issuer}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+}
+
+# InvokeModel* 리소스는 foundation-model(리전 무관 ARN)과 inference-profile 둘 다 필요 —
+# global.anthropic.* 프로파일이 내부적으로 여러 리전의 foundation-model ARN을 참조한다.
+resource "aws_iam_role_policy" "dashboard_bedrock" {
+  name = "bedrock-invoke"
+  role = aws_iam_role.dashboard_bedrock.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+      Resource = [
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5",
+        "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*"
+      ]
+    }]
+  })
+}
+
 resource "kubernetes_deployment_v1" "dashboard" {
   # ECR엔 아직 이미지가 없다 — apply 시점에 rollout이 안 끝나는 게 정상이므로 여기서 막지 않는다.
   # 이미지 push 후 `kubectl rollout restart`로 실제로 뜬다.
@@ -42,7 +91,8 @@ resource "kubernetes_deployment_v1" "dashboard" {
           value    = "true"
           effect   = "NoSchedule"
         }
-        node_selector = local.ch_node_selector
+        node_selector        = local.ch_node_selector
+        service_account_name = kubernetes_service_account.dashboard.metadata[0].name
         container {
           name  = "dashboard"
           image = "${aws_ecr_repository.dashboard.repository_url}:${var.dashboard_image_tag}"
@@ -50,6 +100,14 @@ resource "kubernetes_deployment_v1" "dashboard" {
           env {
             name  = "CH_URL"
             value = "http://${local.chi_service}:8123"
+          }
+          env {
+            name  = "AWS_REGION"
+            value = var.region
+          }
+          env {
+            name  = "CHAT_MODEL_ID"
+            value = "global.anthropic.claude-sonnet-5"
           }
           env {
             name  = "CH_DB"

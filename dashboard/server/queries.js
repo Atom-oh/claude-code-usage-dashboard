@@ -44,6 +44,16 @@ function filterCond(filters = {}, cols = {}) {
     conds.push(`positionCaseInsensitive(${normModel(cols.model)}, {fModel:String}) > 0`);
     params.fModel = filters.model;
   }
+  // 로그 테이블(otel_logs)엔 Model이 없다 — 세션이 실제로 쓴 모델을 otel_metrics_sum에서
+  // 찾아 세미조인. 의미론: "세션이 이 모델을 한 번이라도 썼으면 그 세션의 로그 이벤트 전부 통과".
+  // 세션 내 모델 전환이 드물어 필터 용도로는 이 근사가 충분(이벤트 단위 정밀 귀속은 api_request
+  // 조인이 필요한데, 필터링만 할 땐 오버킬).
+  if (filters.model && cols.modelViaSession) {
+    conds.push(`${cols.modelViaSession} IN (
+      SELECT SessionId FROM claude_code.otel_metrics_sum
+      WHERE SessionId != '' AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)`);
+    params.fModel = filters.model;
+  }
   return { where: conds.map((c) => `AND ${c}`).join(" "), params };
 }
 
@@ -395,10 +405,10 @@ export async function dailyEngagement(from, to, intervalHours = 24, filters = {}
 }
 
 // MCP 커넥터(서버) 사용 현황 — 실제 제품의 "읽기/쓰기" 구분은 우리 텔레메트리에 그 의미가
-// 없어서(도구 이름 휴리스틱은 부정확) 유저수/호출수/성공률로 단순화. logs 테이블엔 Model이 없어
-// model 필터는 cols에서 뺀다.
+// 없어서(도구 이름 휴리스틱은 부정확) 유저수/호출수/성공률로 단순화. model 필터는 세션
+// 세미조인으로 적용(세션이 쓴 모델 기준).
 export async function mcpConnectorUsage(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", l.McpServerName AS connector,
@@ -416,9 +426,9 @@ export async function mcpConnectorUsage(from, to, filters = {}) {
 
 // "에이전틱함" = 프롬프트 1개당 평균 툴 호출 수. claude_code.user_prompt 이벤트가 실제로
 // 오는지 실측 필요(clickhouse-schema.sql 주석에 있던 후보 이벤트명) — 없으면 prompts=0으로
-// 나와 이 지표는 그냥 비게 된다(기능 자체는 죽지 않음). logs 테이블엔 Model이 없어 model 필터는 뺀다.
+// 나와 이 지표는 그냥 비게 된다(기능 자체는 죽지 않음). model 필터는 세션 세미조인으로 적용.
 export async function agenticness(from, to, intervalHours = 24, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
   const b = bucket(intervalHours, "l.Timestamp");
   return query(
     `${GROUP_CTE}
@@ -436,9 +446,9 @@ export async function agenticness(from, to, intervalHours = 24, filters = {}) {
   );
 }
 
-// 패널8: tool/MCP 사용 패턴 (logs). logs 테이블엔 Model이 없어 model 필터는 뺀다.
+// 패널8: tool/MCP 사용 패턴 (logs). model 필터는 세션 세미조인으로 적용.
 export async function toolMcpUsage(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -544,10 +554,10 @@ export async function costByUserModel(from, to, filters = {}) {
   }));
 }
 
-// 유저별 어떤 tool을 얼마나 썼는지 (Usage/Users 페이지의 "사용자별 사용 내역"). logs 테이블엔
-// Model이 없어 model 필터는 뺀다.
+// 유저별 어떤 tool을 얼마나 썼는지 (Usage/Users 페이지의 "사용자별 사용 내역"). model 필터는
+// 세션 세미조인으로 적용.
 export async function userToolUsage(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT l.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", l.ToolName AS tool, count() AS uses
@@ -573,6 +583,99 @@ export async function userSkillUsage(from, to, filters = {}) {
       AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}
     GROUP BY user, skill ORDER BY user, invocations DESC`,
     { ...range(from, to), ...f.params }
+  );
+}
+
+// Trends 페이지: 일별 DAU/WAU/MAU 시계열. 롤링 윈도우(7일/30일)는 ClickHouse에서 일별 유저
+// 집합만 뽑고 JS에서 접는다 — 유저 수가 수백 명 수준이라 집합 union이 싸고, SQL 셀프조인보다
+// 단순하다. uniq류는 존재 여부만 보므로 cumulative 중복 누적에 영향받지 않아 원본 테이블 사용.
+export async function adoptionTimeseries(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT toDate(m.TimeUnix) AS d, groupUniqArray(m.UserEmail) AS users
+    FROM claude_code.otel_metrics_sum m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.MetricName = 'claude_code.session.count' AND m.UserEmail != ''
+      AND m.TimeUnix >= {from:DateTime} - INTERVAL 30 DAY AND m.TimeUnix < {to:DateTime} ${f.where}
+    GROUP BY d ORDER BY d`,
+    { ...range(from, to), ...f.params }
+  );
+  const byDay = new Map(rows.map((r) => [r.d, r.users]));
+  const DAY = 86400000;
+  const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const out = [];
+  for (let t = Math.ceil(from.getTime() / DAY) * DAY; t < to.getTime(); t += DAY) {
+    const union = (days) => {
+      const s = new Set();
+      for (let i = 0; i < days; i++) for (const u of byDay.get(dayKey(t - i * DAY)) || []) s.add(u);
+      return s.size;
+    };
+    const dau = union(1), mau = union(30);
+    out.push({ t: dayKey(t), dau, wau: union(7), mau, stickiness: mau > 0 ? Number(((dau / mau) * 100).toFixed(1)) : 0 });
+  }
+  return out;
+}
+
+// 도구별(edit/multi_edit/write/notebook_edit) 수락/거부. tool_name attribute는 승격 컬럼이
+// 아니라 incFlat 결과에 없어서, 같은 diff 패턴에 tool만 추가한 전용 서브쿼리를 쓴다.
+export async function codeEditDecisionsByTool(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  return query(
+    `${GROUP_CTE}
+    SELECT m.tool AS tool, m.Decision AS decision, sum(m.Value) AS n
+    FROM (
+        SELECT SessionId, AggregationTemporality AS temp, UserEmail, Model, Decision,
+            Attributes['tool_name'] AS tool,
+            if(temp = 2,
+                greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+                sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
+        FROM claude_code.otel_metrics_sum
+        WHERE MetricName = 'claude_code.code_edit_tool.decision'
+          AND TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+        GROUP BY ${seriesKey}, SessionId, temp, UserEmail, Model, Decision, tool
+    ) m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.tool != '' ${f.where}
+    GROUP BY tool, decision ORDER BY tool, decision`,
+    { ...range(from, to), ...f.params }
+  );
+}
+
+// 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열.
+export async function userDaily(from, to, email) {
+  const b = bucket(24);
+  return query(
+    `SELECT t,
+        sumIf(m.Value, m.MetricName = 'claude_code.session.count')       AS sessions,
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count') AS loc,
+        sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS tokens,
+        sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits
+    FROM ${incBucketed(b.expr, `AND MetricName IN (
+        'claude_code.session.count', 'claude_code.lines_of_code.count',
+        'claude_code.token.usage', 'claude_code.commit.count'
+      )`)} m
+    WHERE m.UserEmail = {email:String}
+    GROUP BY t ORDER BY t`,
+    { ...range(from, to), ...b.params, email }
+  );
+}
+
+// 유저 드릴다운: 특정 유저의 도구별 수락/거부.
+export async function userDecisionsByTool(from, to, email) {
+  return codeEditDecisionsByTool(from, to, { user: email });
+}
+
+// 유저 드릴다운: GitHub식 활동 히트맵 — to 기준 지난 91일(13주)의 일별 세션 수.
+// 세션 수는 SessionId 존재 기반(uniqExact)이라 temporality 무관.
+export async function userHeatmap(to, email, days = 91) {
+  return query(
+    `SELECT toDate(TimeUnix) AS d, uniqExact(SessionId) AS sessions
+    FROM claude_code.otel_metrics_sum
+    WHERE UserEmail = {email:String}
+      AND TimeUnix >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND TimeUnix < {to:DateTime}
+    GROUP BY d ORDER BY d`,
+    { to: toChDateTime(to), email, days }
   );
 }
 

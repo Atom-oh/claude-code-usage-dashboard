@@ -5,6 +5,7 @@ import basicAuth from "express-basic-auth";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
 import { ping } from "./clickhouse.js";
+import { handleChat } from "./chat.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -70,6 +71,13 @@ route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(fr
 route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, Number(query.intervalHours) || 24, filters));
 route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters));
 route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
+route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
+route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || "")));
+route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || "")));
+route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || "")));
+
+app.post("/api/chat", express.json(), handleChat);
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));

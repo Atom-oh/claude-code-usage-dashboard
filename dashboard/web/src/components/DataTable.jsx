@@ -13,7 +13,7 @@ function compareValues(a, b, dir) {
   return dir === "asc" ? cmp : -cmp;
 }
 
-export function DataTable({ columns, rows, groupKey = "group", title, subtitle, right }) {
+export function DataTable({ columns, rows, groupKey = "group", title, subtitle, right, onRowClick }) {
   const [sort, setSort] = useState(null);
 
   const sortedRows = useMemo(() => {
@@ -56,7 +56,11 @@ export function DataTable({ columns, rows, groupKey = "group", title, subtitle, 
           </thead>
           <tbody>
             {sortedRows.map((r, i) => (
-              <tr key={i} className="border-t border-ink-100 hover:bg-ink-50">
+              <tr
+                key={i}
+                onClick={onRowClick ? () => onRowClick(r) : undefined}
+                className={`border-t border-ink-100 hover:bg-ink-50 ${onRowClick ? "cursor-pointer" : ""}`}
+              >
                 {columns.map((c) => (
                   <td key={c.key} className="py-2.5 px-3 text-ink-800 align-top tabular">
                     {c.key === groupKey ? (

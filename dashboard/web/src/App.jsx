@@ -3,7 +3,10 @@ import { RangeProvider } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { FilterBar } from "./components/FilterBar.jsx";
+import { FloatingChat } from "./components/FloatingChat.jsx";
 import Overview from "./pages/Overview.jsx";
+import Executive from "./pages/Executive.jsx";
+import Trends from "./pages/Trends.jsx";
 import Productivity from "./pages/Productivity.jsx";
 import Usage from "./pages/Usage.jsx";
 import Users from "./pages/Users.jsx";
@@ -21,6 +24,8 @@ export default function App() {
             </div>
             <Routes>
               <Route path="/" element={<Overview />} />
+              <Route path="/exec" element={<Executive />} />
+              <Route path="/trends" element={<Trends />} />
               <Route path="/productivity" element={<Productivity />} />
               <Route path="/usage" element={<Usage />} />
               <Route path="/users" element={<Users />} />
@@ -28,6 +33,7 @@ export default function App() {
             </Routes>
           </main>
         </div>
+        <FloatingChat />
       </FilterProvider>
     </RangeProvider>
   );

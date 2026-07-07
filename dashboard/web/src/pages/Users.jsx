@@ -3,6 +3,8 @@ import { Loading, ErrorBox } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
+import { UserDrawer } from "../components/UserDrawer.jsx";
+import { HBarList } from "../components/GroupCharts.jsx";
 import { topPerUser } from "../pivot.js";
 import { useApi } from "../useApi.js";
 
@@ -11,9 +13,14 @@ const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 
 export default function Users() {
   const [q, setQ] = useState("");
+  const [selected, setSelected] = useState(null);
   const leaderboard = useApi("/api/users/leaderboard");
   const tools = useApi("/api/users/tools");
   const skills = useApi("/api/users/skills");
+
+  const top10 = [...(leaderboard.data || [])]
+    .sort((a, b) => Number(b.productivity_score) - Number(a.productivity_score))
+    .slice(0, 10);
 
   const topTool = topPerUser(tools.data, "tool", "uses");
   const topSkill = topPerUser(skills.data, "skill", "invocations");
@@ -49,8 +56,19 @@ export default function Users() {
         ) : leaderboard.error ? (
           <ErrorBox error={leaderboard.error} />
         ) : (
+          <HBarList
+            title="Top 10 — 생산성 점수"
+            subtitle="아래 리더보드 행을 클릭하면 유저 상세(히트맵·일별 추이)가 열립니다"
+            data={top10.map((r) => ({ ...r, score: Number(r.productivity_score) }))}
+            labelKey="user"
+            valueKey="score"
+          />
+        )}
+
+        {leaderboard.loading ? null : leaderboard.error ? null : (
           <DataTable
             title="유저별 생산성 리더보드"
+            onRowClick={setSelected}
             subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day), 각 /day 항목은 절대 상한(캡)으로 정규화 — 캡 값은 초기 추정치"
             columns={[
               { key: "group", label: "그룹" },
@@ -106,6 +124,7 @@ export default function Users() {
           />
         )}
       </div>
+      <UserDrawer row={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

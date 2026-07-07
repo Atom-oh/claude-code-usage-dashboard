@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
-import { DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { DonutBreakdown, HBarList, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
@@ -13,10 +13,31 @@ import { makeTickFmt } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const GROUP_TABS = [
+  { value: "", label: "전체" },
+  { value: "bedrock", label: "bedrock" },
+  { value: "enterprise", label: "enterprise" },
+];
+
+function foldModelRows(rows) {
+  const totals = new Map();
+  for (const r of rows) {
+    const prev = totals.get(r.model) || { model: r.model, cost: 0, reportedCost: 0, tokens: 0, unpriced: false };
+    if (r.cost === null) prev.unpriced = true;
+    else prev.cost += Number(r.cost);
+    prev.reportedCost += Number(r.reported_cost);
+    prev.tokens += Number(r.tokens);
+    totals.set(r.model, prev);
+  }
+  return [...totals.values()].sort((a, b) => b.cost - a.cost);
+}
 
 export default function Cost() {
   const { intervalHours: defaultIntervalHours } = useRange();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
+  // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 재동기화 —
+  // 안 그러면 7일 보다가 1일로 바꿔도 "일간" 버킷에 머물러 바 하나만 나온다.
+  useEffect(() => setIntervalHours(defaultIntervalHours), [defaultIntervalHours]);
   const fmtTick = makeTickFmt(intervalHours);
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");
@@ -39,25 +60,41 @@ export default function Cost() {
     { cost: 0, reported: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, unpricedTokens: 0, sessions: 0 }
   );
 
-  const modelTotals = new Map();
-  for (const r of byModel.data || []) {
-    const prev = modelTotals.get(r.model) || { model: r.model, cost: 0, reportedCost: 0, tokens: 0, unpriced: false };
-    if (r.cost === null) prev.unpriced = true;
-    else prev.cost += Number(r.cost);
-    prev.reportedCost += Number(r.reported_cost);
-    prev.tokens += Number(r.tokens);
-    modelTotals.set(r.model, prev);
-  }
-  const modelRows = [...modelTotals.values()].sort((a, b) => b.cost - a.cost);
+  const modelRows = foldModelRows(byModel.data || []);
   const totalModelCost = modelRows.reduce((s, r) => s + (r.unpriced ? 0 : r.cost), 0);
 
   const userModelRows = [...(byUserModel.data || [])].sort((a, b) => (b.cost || 0) - (a.cost || 0));
 
+  const userTotals = new Map();
+  for (const r of byUserModel.data || []) {
+    if (r.cost === null) continue;
+    userTotals.set(r.user, (userTotals.get(r.user) || 0) + Number(r.cost));
+  }
+  const top10Users = [...userTotals.entries()]
+    .map(([user, cost]) => ({ user, cost }))
+    .sort((a, b) => b.cost - a.cost)
+    .slice(0, 10);
+
+  const [modelDonutGroup, setModelDonutGroup] = useState("");
+  const modelDonutRows = foldModelRows((byModel.data || []).filter((r) => !modelDonutGroup || r.group === modelDonutGroup));
+
+  const [tokenDonutGroup, setTokenDonutGroup] = useState("");
+  const tokenTotals = (summary.data || [])
+    .filter((r) => !tokenDonutGroup || r.group === tokenDonutGroup)
+    .reduce(
+      (acc, r) => ({
+        input: acc.input + Number(r.input_tokens),
+        output: acc.output + Number(r.output_tokens),
+        cacheRead: acc.cacheRead + Number(r.cache_read_tokens),
+        cacheWrite: acc.cacheWrite + Number(r.cache_write_tokens),
+      }),
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+    );
   const tokenTypeRows = [
-    { type: "입력", tokens: totals.input },
-    { type: "출력", tokens: totals.output },
-    { type: "캐시 읽기", tokens: totals.cacheRead },
-    { type: "캐시 쓰기", tokens: totals.cacheWrite },
+    { type: "입력", tokens: tokenTotals.input },
+    { type: "출력", tokens: tokenTotals.output },
+    { type: "캐시 읽기", tokens: tokenTotals.cacheRead },
+    { type: "캐시 쓰기", tokens: tokenTotals.cacheWrite },
   ].filter((r) => r.tokens > 0);
 
   return (
@@ -95,14 +132,27 @@ export default function Cost() {
           ) : byModel.error ? (
             <ErrorBox error={byModel.error} />
           ) : (
-            <DonutBreakdown title="모델별 지출 비중" data={modelRows} nameKey="model" valueKey="cost" valuePrefix="$" />
+            <DonutBreakdown
+              title="모델별 지출 비중"
+              right={<SegmentedControl options={GROUP_TABS} value={modelDonutGroup} onChange={setModelDonutGroup} />}
+              data={modelDonutRows}
+              nameKey="model"
+              valueKey="cost"
+              valuePrefix="$"
+            />
           )}
           {summary.loading ? (
             <Loading />
           ) : summary.error ? (
             <ErrorBox error={summary.error} />
           ) : (
-            <DonutBreakdown title="토큰 타입별 비중" data={tokenTypeRows} nameKey="type" valueKey="tokens" />
+            <DonutBreakdown
+              title="토큰 타입별 비중"
+              right={<SegmentedControl options={GROUP_TABS} value={tokenDonutGroup} onChange={setTokenDonutGroup} />}
+              data={tokenTypeRows}
+              nameKey="type"
+              valueKey="tokens"
+            />
           )}
         </div>
 
@@ -165,6 +215,14 @@ export default function Cost() {
           rows={modelRows}
           groupKey="__none__"
         />
+
+        {byUserModel.loading ? (
+          <Loading />
+        ) : byUserModel.error ? (
+          <ErrorBox error={byUserModel.error} />
+        ) : (
+          <HBarList title="Top 10 — 지출 유저" subtitle="계산 비용 기준" data={top10Users} labelKey="user" valueKey="cost" valuePrefix="$" />
+        )}
 
         {byUserModel.loading ? (
           <Loading />

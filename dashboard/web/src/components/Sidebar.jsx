@@ -1,10 +1,12 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, TrendingUp, Wrench, Users as UsersIcon, DollarSign } from "lucide-react";
+import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign } from "lucide-react";
 import { cn } from "../cn.js";
 
 // ../awsops web/components/shell/Sidebar.tsx 포팅 (256px, 고정 nav — 계정/리전 셀렉터 등은 해당 없음).
 const NAV = [
   { to: "/", label: "Overview", hint: "KPI 및 요약", icon: LayoutDashboard, exact: true },
+  { to: "/exec", label: "Executive", hint: "경영 보고용 원페이지", icon: Briefcase },
+  { to: "/trends", label: "Trends", hint: "DAU / WAU / MAU", icon: LineChart },
   { to: "/productivity", label: "Productivity", hint: "토큰 정규화 생산성", icon: TrendingUp },
   { to: "/usage", label: "Usage", hint: "Tool / MCP / Skill", icon: Wrench },
   { to: "/users", label: "Users", hint: "유저별 생산성", icon: UsersIcon },
