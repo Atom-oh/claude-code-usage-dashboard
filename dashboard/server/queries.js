@@ -100,7 +100,7 @@ export async function kpiSummary(from, to) {
         'claude_code.session.count', 'claude_code.commit.count', 'claude_code.pull_request.count',
         'claude_code.token.usage', 'claude_code.lines_of_code.count'
       )`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group" ORDER BY "group"`,
     range(from, to)
   );
@@ -118,7 +118,7 @@ export async function tokenTimeseries(from, to, intervalHours = 24) {
       `toStartOfInterval(TimeUnix, INTERVAL {intervalHours:UInt32} HOUR)`,
       `AND MetricName = 'claude_code.token.usage'`
     )} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY t, "group" ORDER BY t`,
     { ...range(from, to), intervalHours }
   );
@@ -134,7 +134,7 @@ export async function cacheEfficiency(from, to) {
         sumIf(m.Value, m.TokenType IN ('input', 'cacheRead', 'cacheCreation'))  AS input_side,
         round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio
     FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group" ORDER BY "group"`,
     range(from, to)
   );
@@ -146,7 +146,7 @@ export async function modelDistribution(from, to) {
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, sum(m.Value) AS tokens
     FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group", model ORDER BY "group", tokens DESC`,
     range(from, to)
   );
@@ -166,7 +166,7 @@ export async function normalizedProductivity(from, to) {
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.lines_of_code.count', 'claude_code.token.usage', 'claude_code.commit.count'
       )`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group" ORDER BY "group"`,
     range(from, to)
   );
@@ -178,7 +178,7 @@ export async function codeEditDecisions(from, to) {
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.Decision AS decision, sum(m.Value) AS n
     FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group", decision ORDER BY "group", decision`,
     range(from, to)
   );
@@ -199,7 +199,7 @@ export async function activeTimeSeries(from, to, intervalHours = 24) {
       `toStartOfInterval(TimeUnix, INTERVAL {intervalHours:UInt32} HOUR)`,
       `AND MetricName = 'claude_code.active_time.total'`
     )} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY t, "group" ORDER BY t`,
     { ...range(from, to), intervalHours }
   );
@@ -214,7 +214,7 @@ export async function skillUsage(from, to) {
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations, sum(m.Value) AS est_cost_usd
     FROM ${incFlat(`AND MetricName = 'claude_code.cost.usage'`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.SkillName != ''
     GROUP BY "group", skill ORDER BY "group", invocations DESC`,
     range(from, to)
@@ -235,7 +235,7 @@ export async function costByModelDaily(from, to, intervalHours = 24) {
       `toStartOfInterval(TimeUnix, INTERVAL {intervalDays:UInt32} DAY)`,
       `AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`
     )} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != ''
     GROUP BY day, "group", model ORDER BY day`,
     { ...range(from, to), intervalDays }
@@ -339,7 +339,7 @@ export async function mcpConnectorUsage(from, to) {
         count()                     AS calls,
         countIf(l.Success = 'true') AS ok
     FROM claude_code.otel_logs l
-    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result' AND l.McpServerName != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY "group", connector ORDER BY "group", calls DESC`,
@@ -360,7 +360,7 @@ export async function agenticness(from, to, intervalHours = 24) {
         countIf(l.EventName = 'tool_result')  AS tool_calls,
         round(tool_calls / nullIf(prompts, 0), 2)          AS tool_calls_per_prompt
     FROM claude_code.otel_logs l
-    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY t, "group" ORDER BY t`,
     { ...range(from, to), intervalHours }
@@ -377,7 +377,7 @@ export async function toolMcpUsage(from, to) {
         countIf(l.Success = 'false') AS fail,
         count()                      AS total
     FROM claude_code.otel_logs l
-    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result'
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY "group", tool, mcp_server ORDER BY "group", total DESC LIMIT 50`,
@@ -399,7 +399,7 @@ export async function costSummary(from, to) {
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.cost.usage', 'claude_code.token.usage', 'claude_code.session.count'
       )`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY "group", model ORDER BY "group"`,
     range(from, to)
   );
@@ -441,7 +441,7 @@ export async function costByModel(from, to) {
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != ''
     GROUP BY "group", model ORDER BY "group"`,
     range(from, to)
@@ -457,9 +457,9 @@ export async function costByModel(from, to) {
 export async function costByUserModel(from, to) {
   const rows = await query(
     `${GROUP_CTE}
-    SELECT m.UserEmail AS user, any(${GROUP_EXPR}) AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
+    SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' AND m.UserEmail != ''
     GROUP BY user, model ORDER BY user`,
     range(from, to)
@@ -474,9 +474,9 @@ export async function costByUserModel(from, to) {
 export async function userToolUsage(from, to) {
   return query(
     `${GROUP_CTE}
-    SELECT l.UserEmail AS user, any(${GROUP_EXPR}) AS "group", l.ToolName AS tool, count() AS uses
+    SELECT l.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", l.ToolName AS tool, count() AS uses
     FROM claude_code.otel_logs l
-    LEFT JOIN user_group ug ON l.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result' AND l.UserEmail != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime}
     GROUP BY user, tool ORDER BY user, uses DESC`,
@@ -488,9 +488,9 @@ export async function userToolUsage(from, to) {
 export async function userSkillUsage(from, to) {
   return query(
     `${GROUP_CTE}
-    SELECT m.UserEmail AS user, any(${GROUP_EXPR}) AS "group", m.SkillName AS skill, count() AS invocations
+    SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", m.SkillName AS skill, count() AS invocations
     FROM claude_code.otel_metrics_sum m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.MetricName = 'claude_code.cost.usage' AND m.SkillName != '' AND m.UserEmail != ''
       AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime}
     GROUP BY user, skill ORDER BY user, invocations DESC`,
@@ -511,7 +511,7 @@ export async function userLeaderboard(from, to) {
     )
     SELECT
         m.UserEmail AS user,
-        any(${GROUP_EXPR}) AS "group",
+        topK(1)(${GROUP_EXPR})[1] AS "group",
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')                                    AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                       AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count')                                AS loc,
@@ -524,7 +524,7 @@ export async function userLeaderboard(from, to) {
         'claude_code.session.count', 'claude_code.token.usage', 'claude_code.lines_of_code.count',
         'claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.code_edit_tool.decision'
       )`)} m
-    LEFT JOIN user_group ug ON m.UserEmail = ug.UserEmail
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
     WHERE m.UserEmail != ''
     GROUP BY user ORDER BY tokens DESC`,
