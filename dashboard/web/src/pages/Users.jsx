@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
@@ -9,6 +10,7 @@ const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 
 export default function Users() {
+  const [q, setQ] = useState("");
   const leaderboard = useApi("/api/users/leaderboard");
   const tools = useApi("/api/users/tools");
   const skills = useApi("/api/users/skills");
@@ -16,15 +18,31 @@ export default function Users() {
   const topTool = topPerUser(tools.data, "tool", "uses");
   const topSkill = topPerUser(skills.data, "skill", "invocations");
 
-  const rows = (leaderboard.data || []).map((r) => ({
-    ...r,
-    top_tool: topTool.get(r.user)?.key ?? "—",
-    top_skill: topSkill.get(r.user)?.key ?? "—",
-  }));
+  const rows = (leaderboard.data || [])
+    .map((r) => ({
+      ...r,
+      top_tool: topTool.get(r.user)?.key ?? "—",
+      top_skill: topSkill.get(r.user)?.key ?? "—",
+    }))
+    .filter((r) => r.user.toLowerCase().includes(q.trim().toLowerCase()));
 
   return (
     <div>
-      <PageHeader title="Users" subtitle="유저별 생산성 점수 + 무엇을 썼는지" right={<RangePicker />} />
+      <PageHeader
+        title="Users"
+        subtitle="유저별 생산성 점수 + 무엇을 썼는지. 정렬은 헤더 클릭."
+        right={
+          <div className="flex items-center gap-2">
+            <RangePicker />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="이메일 검색..."
+              className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-56"
+            />
+          </div>
+        }
+      />
       <div className="p-8 flex flex-col gap-4">
         {leaderboard.loading ? (
           <Loading />
@@ -41,6 +59,7 @@ export default function Users() {
               { key: "sessions", label: "세션", render: fmt },
               { key: "tokens", label: "토큰", render: fmt },
               { key: "loc", label: "추가 라인", render: fmt },
+              { key: "prs", label: "PR", render: fmt },
               { key: "commits", label: "커밋", render: fmt },
               { key: "accept_rate", label: "수락률", render: pct },
               { key: "active_days", label: "활성일", render: fmt },

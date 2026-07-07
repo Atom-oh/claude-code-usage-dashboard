@@ -57,9 +57,13 @@ route("/api/users/tools", (from, to) => q.userToolUsage(from, to));
 route("/api/users/skills", (from, to) => q.userSkillUsage(from, to));
 route("/api/cost/summary", (from, to) => q.costSummary(from, to));
 route("/api/cost/by-model", (from, to) => q.costByModel(from, to));
-route("/api/cost/by-model-daily", (from, to) => q.costByModelDaily(from, to));
+route("/api/cost/by-user-model", (from, to) => q.costByUserModel(from, to));
+route("/api/cost/by-model-daily", (from, to, query) => q.costByModelDaily(from, to, Number(query.intervalHours) || 24));
+route("/api/cost/by-model-compare", (from, to) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from))));
 route("/api/usage/connectors", (from, to) => q.mcpConnectorUsage(from, to));
 route("/api/productivity/agenticness", (from, to, query) => q.agenticness(from, to, Number(query.intervalHours) || 24));
+route("/api/adoption/levels", (from, to) => q.adoptionLevels(from, to));
+route("/api/productivity/engagement", (from, to) => q.dailyEngagement(from, to));
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));

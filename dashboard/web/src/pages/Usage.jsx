@@ -62,6 +62,7 @@ export default function Usage() {
         ) : (
           <DataTable
             title="Skill 사용 분포"
+            subtitle="비용은 Claude Code 보고값(cost.usage) 기준 — skill 사용은 토큰에 귀속되지 않아 계산 비용을 낼 수 없다"
             columns={[
               { key: "group", label: "그룹" },
               { key: "skill", label: "Skill" },
