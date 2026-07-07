@@ -5,7 +5,6 @@ const GROUP_OPTIONS = [
   { value: "", label: "전체" },
   { value: "bedrock", label: "bedrock" },
   { value: "enterprise", label: "enterprise" },
-  { value: "unknown", label: "unknown" },
 ];
 
 // 모든 페이지에서 useApi가 이 값을 자동으로 요청에 실어보낸다(useApi.js) — 페이지별로 따로 붙일
