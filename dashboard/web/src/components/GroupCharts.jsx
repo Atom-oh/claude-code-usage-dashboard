@@ -120,7 +120,11 @@ export function DualLineChart({ title, subtitle, right, rows, xKey, lines, heigh
 export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey, valuePrefix = "" }) {
   const c = useChartColors();
   const total = data.reduce((s, d) => s + (Number(d[valueKey]) || 0), 0);
-  const fmt = (v) => (valuePrefix === "$" ? `$${Math.round(v).toLocaleString()}` : v.toLocaleString());
+  // Math.round만 쓰면 짧은 기간의 소액 tier(몇 센트)가 전부 "$0"으로 보인다 — $10 미만은 소수 2자리.
+  const fmt = (v) =>
+    valuePrefix === "$"
+      ? `$${Number(v) < 10 ? v.toFixed(2) : Math.round(v).toLocaleString()}`
+      : v.toLocaleString();
 
   return (
     <Card title={title} subtitle={subtitle} right={right}>

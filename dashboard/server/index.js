@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import basicAuth from "express-basic-auth";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
+import { tierCosts } from "./pricing.js";
+import { userCostEfficiency } from "./costEfficiency.js";
 import { ping } from "./clickhouse.js";
 import { handleChat } from "./chat.js";
 
@@ -71,8 +73,17 @@ route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(fr
 route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, Number(query.intervalHours) || 24, filters));
 route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters));
 route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, Number(query.intervalHours) || 24, filters));
+// 우리(필터 지원, DAU/WAU/MAU + 고착도, Trends/Executive가 사용) 버전을 채택 — main의
+// activeUsersTimeseries(필터 없음, activity.js 순수 함수 롤업)는 반환 shape가 상위집합
+// ({t,dau,wau,mau} vs {t,dau,wau,mau,stickiness})이라 Overview.jsx도 그대로 동작한다.
 route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
 route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
+route("/api/productivity/loc-timeseries", (from, to, query) => q.locTimeseries(from, to, Number(query.intervalHours) || 24));
+route("/api/cost/tiers", async (from, to, _q, filters) => tierCosts(await q.costByModel(from, to, filters)));
+route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
+  const [leaderboard, byUserModel] = await Promise.all([q.userLeaderboard(from, to, filters), q.costByUserModel(from, to, filters)]);
+  return userCostEfficiency(leaderboard, byUserModel);
+});
 route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || "")));
 route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || "")));
 route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || "")));

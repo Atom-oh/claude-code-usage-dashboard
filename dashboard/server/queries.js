@@ -1,6 +1,7 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost, normalizeModelId } from "./pricing.js";
+import { rollupActiveUsers, MAU_WINDOW_DAYS } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -107,17 +108,20 @@ const seriesKey = "cityHash64(toString(Attributes))";
 // 세션(SessionId) × temporality × 속성 단위로 구간 증가량을 미리 계산하는 서브쿼리. 결과 컬럼명을
 // 원본 테이블과 동일하게(Value/MetricName/Model/...) 맞춰서, 기존 sumIf(m.Value, ...) 패턴을 건드리지
 // 않고 FROM만 이 서브쿼리로 바꿔 끼울 수 있게 한다.
+// ToolName은 otel_metrics_sum엔 승격 컬럼이 없어(otel_logs에만 있음) Attributes에서 바로 뽑는다 —
+// code_edit_tool.decision의 tool_name(edit/multi_edit/write/notebook_edit)을 툴별로 쪼개는 데만 쓴다.
 function incFlat(metricFilter = "") {
   return `(
     SELECT
         SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
+        Attributes['tool_name'] AS ToolName,
         if(temp = 2,
             greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
             sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
     FROM claude_code.otel_metrics_sum
     WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
       ${metricFilter}
-    GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName
+    GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
   )`;
 }
 
@@ -176,7 +180,7 @@ export async function kpiSummary(from, to, filters = {}) {
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                AS total_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')       AS input_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')      AS output_tokens,
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count')                         AS lines_of_code
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS lines_of_code
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.commit.count', 'claude_code.pull_request.count',
         'claude_code.token.usage', 'claude_code.lines_of_code.count'
@@ -205,6 +209,29 @@ export async function tokenTimeseries(from, to, intervalHours = 24, filters = {}
     WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
     { ...range(from, to), ...b.params, ...f.params }
+  );
+}
+
+// LOC 추가/삭제 시계열 — lines_of_code.count의 type attribute(added/removed)는 token.usage와 같은
+// 승격 컬럼(TokenType = Attributes['type'])에 실린다. 일별(intervalHours=24) 버킷 기본.
+// costByModelDaily와 동일하게 HOUR을 DAY로 접는다 — ClickHouse의 INTERVAL n HOUR은 n>24에서
+// 날짜 경계를 못 넘고 매일 0시로 리셋되는 quirk가 있다(168h 주간 버킷 요청 시 조용히 깨짐).
+export async function locTimeseries(from, to, intervalHours = 24) {
+  const intervalDays = Math.max(1, Math.round(intervalHours / 24));
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        t,
+        ${GROUP_EXPR} AS "group",
+        sumIf(m.Value, m.TokenType = 'added')   AS loc_added,
+        sumIf(m.Value, m.TokenType = 'removed') AS loc_removed
+    FROM ${incBucketed(
+      `toStartOfInterval(TimeUnix, INTERVAL {intervalDays:UInt32} DAY)`,
+      `AND MetricName = 'claude_code.lines_of_code.count'`
+    )} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    GROUP BY t, "group" ORDER BY t`,
+    { ...range(from, to), intervalDays }
   );
 }
 
@@ -250,7 +277,7 @@ export async function normalizedProductivity(from, to, filters = {}) {
     `${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count') AS loc,
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS tokens,
         round(loc / nullIf(tokens, 0) * 1000000, 2)                      AS loc_per_million_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits,
@@ -275,6 +302,24 @@ export async function codeEditDecisions(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", decision ORDER BY "group", decision`,
+    { ...range(from, to), ...f.params }
+  );
+}
+
+// 패널5 확장: 툴 종류별(edit/multi_edit/write/notebook_edit) 수락/거부 — 그룹 합계만 보여주던
+// codeEditDecisions를 tool_name 차원으로 쪼갠 버전. ToolName이 비어있는 행(구버전 텔레메트리 등
+// tool_name attribute가 없는 경우)은 집계에서 제외한다.
+// 실측 확인(2026-07-08, 프로덕션 mapKeys 쿼리): code_edit_tool.decision 83,070행 전부에
+// tool_name 키 존재(Edit 48,404 / Write 34,666) — WHERE tool != ''로 빈 패널이 될 일 없음.
+export async function codeEditDecisionsByTool(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  return query(
+    `${GROUP_CTE}
+    SELECT ${GROUP_EXPR} AS "group", m.ToolName AS tool, m.Decision AS decision, sum(m.Value) AS n
+    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.ToolName != '' ${f.where}
+    GROUP BY "group", tool, decision ORDER BY "group", tool`,
     { ...range(from, to), ...f.params }
   );
 }
@@ -408,6 +453,22 @@ export async function adoptionLevels(from, to, filters = {}) {
     { to: toChDateTime(to), ...f.params }
   );
   return rows[0] || { total_members: 0, mau: 0, wau: 0, dau: 0 };
+}
+
+// adoptionLevels(스냅샷)의 시계열 버전 — 일자×유저 존재만 뽑아오고 DAU/WAU/MAU 롤링 윈도우는
+// activity.js(순수 함수, 단위 테스트 있음)에서 계산한다. wau/mau가 정확하려면 from보다 29일 전
+// 데이터까지 봐야 하므로 조회 구간을 넓힌다. 현재 라우트에서는 안 쓰지만(어댑션 timeseries는
+// adoptionTimeseries가 담당, 아래) activity.js와 짝인 순수 계산 경로라 보존한다.
+export async function activeUsersTimeseries(from, to) {
+  const rows = await query(
+    `SELECT toDate(TimeUnix, 'UTC') AS day, UserEmail
+     FROM claude_code.otel_metrics_sum
+     WHERE MetricName = 'claude_code.session.count' AND UserEmail != ''
+       AND TimeUnix >= {from:DateTime} - INTERVAL ${MAU_WINDOW_DAYS} DAY AND TimeUnix < {to:DateTime}
+     GROUP BY day, UserEmail`,
+    range(from, to)
+  );
+  return rollupActiveUsers(rows, from, to);
 }
 
 // 사용자·세션·PR 시계열 — Productivity 페이지의 "도입률"/"사용자당 PR" 이중축 시계열 하나로 둘 다 커버.
@@ -565,8 +626,10 @@ export async function costByModel(from, to, filters = {}) {
   }));
 }
 
-// Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 GROUP_CTE의 유저 단위
-// 판별을 그대로 붙인다 — 유저×모델 단위로 집계하면 그룹 구분은 자동으로 따라온다.
+// Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 세션 단위로 판별한 뒤 topK(1)로
+// 그 유저의 다수결 그룹 하나를 뽑는다(한 유저가 두 방식을 다 쓴 경우 any()처럼 비결정적으로
+// 흔들리지 않는다) — 단, incFlat이 세션당 여러 row(속성 조합별)를 낼 수 있어 정확히는 "세션 수"가
+// 아니라 incFlat이 생성한 row 개수(세션×속성 조합) 가중 다수결이다.
 export async function costByUserModel(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
@@ -649,33 +712,6 @@ export async function adoptionTimeseries(from, to, filters = {}) {
   return out;
 }
 
-// 도구별(edit/multi_edit/write/notebook_edit) 수락/거부. tool_name attribute는 승격 컬럼이
-// 아니라 incFlat 결과에 없어서, 같은 diff 패턴에 tool만 추가한 전용 서브쿼리를 쓴다.
-// 실측 확인(2026-07-08, 프로덕션 mapKeys 쿼리): code_edit_tool.decision 83,070행 전부에
-// tool_name 키 존재(Edit 48,404 / Write 34,666) — WHERE tool != ''로 빈 패널이 될 일 없음.
-export async function codeEditDecisionsByTool(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  return query(
-    `${GROUP_CTE}
-    SELECT m.tool AS tool, m.Decision AS decision, sum(m.Value) AS n
-    FROM (
-        SELECT SessionId, AggregationTemporality AS temp, UserEmail, Model, Decision,
-            Attributes['tool_name'] AS tool,
-            if(temp = 2,
-                greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
-                sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
-        FROM claude_code.otel_metrics_sum
-        WHERE MetricName = 'claude_code.code_edit_tool.decision'
-          AND TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
-        GROUP BY ${seriesKey}, SessionId, temp, UserEmail, Model, Decision, tool
-    ) m
-    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.tool != '' ${f.where}
-    GROUP BY tool, decision ORDER BY tool, decision`,
-    { ...range(from, to), ...f.params }
-  );
-}
-
 // 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열.
 export async function userDaily(from, to, email) {
   const b = bucket(24);
@@ -738,7 +774,7 @@ export async function userLeaderboard(from, to, filters = {}) {
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                       AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')             AS input_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')            AS output_tokens,
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count')                                AS loc,
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added')      AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')                                      AS commits,
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')                                AS prs,
         sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision' AND m.Decision = 'accept')  AS accepted,

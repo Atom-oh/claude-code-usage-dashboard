@@ -1,7 +1,7 @@
 import { Badge } from "../components/Badge.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
-import { GroupAreaChart, GroupBarChart, DualLineChart } from "../components/GroupCharts.jsx";
+import { GroupAreaChart, GroupBarChart, DualLineChart, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
@@ -21,6 +21,7 @@ export default function Productivity() {
   const active = useApi("/api/productivity/active-time");
   const agentic = useApi("/api/productivity/agenticness");
   const engagement = useApi("/api/productivity/engagement");
+  const locTrend = useApi("/api/productivity/loc-timeseries");
 
   const activeHours = active.data?.map((r) => ({ ...r, active_seconds: r.active_seconds / 3600 }));
 
@@ -100,26 +101,36 @@ export default function Productivity() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {decisions.loading ? (
-            <Loading />
-          ) : decisions.error ? (
-            <ErrorBox error={decisions.error} />
-          ) : (
-            <GroupBarChart
-              title="코드 편집 수락/거부"
-              subtitle="그룹별"
-              right={
-                <div className="flex gap-2">
-                  <Badge tone="positive" dot>accept</Badge>
-                  <Badge tone="negative" dot>reject</Badge>
-                </div>
-              }
-              rows={decisions.data}
-              xKey="group"
-              valueKey="n"
-              colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}
-            />
+          {locTrend.loading ? <Loading /> : locTrend.error ? <ErrorBox error={locTrend.error} /> : (
+            <GroupAreaChart title="추가된 라인 (일별)" rows={locTrend.data} xKey="t" valueKey="loc_added" tickFormatter={fmtTick} />
           )}
+          {locTrend.loading ? <Loading /> : locTrend.error ? <ErrorBox error={locTrend.error} /> : (
+            <GroupAreaChart title="제거된 라인 (일별)" rows={locTrend.data} xKey="t" valueKey="loc_removed" tickFormatter={fmtTick} />
+          )}
+        </div>
+
+        {decisions.loading ? (
+          <Loading />
+        ) : decisions.error ? (
+          <ErrorBox error={decisions.error} />
+        ) : (
+          <GroupBarChart
+            title="코드 편집 수락/거부"
+            subtitle="그룹별"
+            right={
+              <div className="flex gap-2">
+                <Badge tone="positive" dot>accept</Badge>
+                <Badge tone="negative" dot>reject</Badge>
+              </div>
+            }
+            rows={decisions.data}
+            xKey="group"
+            valueKey="n"
+            colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}
+          />
+        )}
+
+        <div className="grid gap-4 md:grid-cols-2">
           {decisionsByTool.loading ? (
             <Loading />
           ) : decisionsByTool.error ? (
@@ -138,6 +149,20 @@ export default function Productivity() {
               xKey="tool"
               valueKey="n"
               colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}
+            />
+          )}
+          {decisionsByTool.loading ? (
+            <Loading />
+          ) : decisionsByTool.error ? (
+            <ErrorBox error={decisionsByTool.error} />
+          ) : (
+            <SeriesBarChart
+              title="툴 별 수락/거부"
+              subtitle="edit / multi_edit / write / notebook_edit — 그룹 합산"
+              rows={decisionsByTool.data}
+              xKey="tool"
+              seriesKey="decision"
+              valueKey="n"
             />
           )}
         </div>
