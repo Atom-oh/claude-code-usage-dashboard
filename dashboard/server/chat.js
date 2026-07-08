@@ -8,26 +8,57 @@ const MAX_HOPS = 4;
 
 const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || "us-east-1" });
 
+// FROM 절의 테이블 참조 위치(FROM/JOIN 직후, FROM 절 내 comma cross-join 직후)에 identifier(가
+// 오면 거부한다 — 테이블 함수(url/s3/remote/file/...)라는 카테고리 전체를 괄호 깊이·JOIN 종류
+// 무관하게 막는 구조적 규칙. 정상 테이블 참조는 순수 식별자(otel_metrics_sum 등)나 서브쿼리
+// `(SELECT ...)`뿐이다. 이전엔 `\b(from|join)\s+\w+\s*\(` 정규식이었는데 FROM/JOIN 직후 첫
+// 토큰만 봐서 comma cross-join(`FROM otel_logs, url(...)`)으로 우회됐다(실측: 리뷰에서 확인).
+// SELECT/WHERE의 스칼라·집계 함수(max()/toDate()...)는 테이블 위치가 아니라 그대로 통과한다.
+// 전제: 진입부에서 주석(--,/**/)·백틱·세미콜론을 이미 거부해 토큰 경계가 단순하다(문자열
+// 리터럴은 스캔 직전에 지운다).
+function assertNoTableFunctions(sqlNoStrings) {
+  const stack = [{ inFrom: false, expectTable: false }]; // 괄호 깊이별 파싱 상태
+  const top = () => stack[stack.length - 1];
+  const endKw = new Set(["where", "prewhere", "group", "order", "limit", "having", "settings", "union", "window", "qualify"]);
+  // word(바로 뒤따르는 `(` 포함) | 단독 ( ) , | 기타 non-space 1글자
+  const re = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(\s*\()?|([(),])|(\S)/g;
+  let m;
+  while ((m = re.exec(sqlNoStrings))) {
+    const [, word, fnParen, punc] = m;
+    if (word !== undefined) {
+      const f = top();
+      const lw = word.toLowerCase();
+      if (fnParen && f.expectTable) throw new Error("테이블 함수는 허용되지 않습니다");
+      if (lw === "from" || lw === "join") { f.inFrom = true; f.expectTable = true; }
+      else if (endKw.has(lw)) { f.inFrom = false; f.expectTable = false; }
+      else if (lw === "on" || lw === "using") { f.expectTable = false; }
+      else if (f.expectTable) { f.expectTable = false; } // 테이블 이름 소비
+      if (fnParen) stack.push({ inFrom: false, expectTable: false }); // 함수 호출 → 새 괄호 프레임
+    } else if (punc === "(") {
+      top().expectTable = false; // 서브쿼리 테이블 참조는 허용
+      stack.push({ inFrom: false, expectTable: false });
+    } else if (punc === ")") {
+      if (stack.length > 1) stack.pop();
+    } else if (punc === "," && top().inFrom) {
+      top().expectTable = true; // comma cross-join → 다음 테이블 참조
+    }
+  }
+}
+
 // SELECT/WITH 단일 문장만 통과 — 나머지는 전부 거부. queryReadonly의 readonly=1이 2차 방어라
-// 여기는 명백한 것만 거른다(정교한 SQL 파서는 오버킬).
-// 테이블 함수(url/s3/remote/...)는 readonly=1이 막지 *않는다* — SELECT 안에서 외부 URL이나
-// 내부망(EKS 노드 메타데이터 169.254.169.254 등)을 읽을 수 있는 SSRF 벡터다. 개별 함수명을
-// denylist로 나열하는 방식은 urlCluster()처럼 word-boundary만 피한 변형이나 향후 ClickHouse가
-// 추가하는 새 테이블 함수에 계속 뚫린다(실측: 리뷰에서 urlCluster 우회 확인) — 그래서 "FROM/JOIN
-// 뒤에 identifier( 형태가 오면 전부 거부"라는 구조적 규칙으로 테이블 함수라는 카테고리 자체를
-// 막는다. 서브쿼리(`FROM (SELECT ...)`)는 identifier 없이 바로 `(`가 오므로 이 규칙에 안 걸린다.
-// 주석(`url/**/(...)`)과 백틱 인용으로 위 토큰 검사를 우회할 수 있어(ClickHouse 토크나이저는
-// 블록 주석을 공백으로 취급) 주석/백틱 자체도 거부 — 챗이 만드는 정상 쿼리엔 필요 없다.
+// 여기는 명백한 것만 거른다(정교한 SQL 파서는 오버킬). 테이블 함수는 readonly=1이 막지 *않아*
+// (SSRF: 169.254.169.254 IMDS·file()·내부망) assertNoTableFunctions로 구조적 차단한다.
+// 주석(`url/**/(...)`)·백틱은 토큰 경계를 흐려 우회 벡터라 거부 — 정상 쿼리엔 불필요.
 // system/information_schema는 타 사용자의 쿼리 텍스트(query_log) 등이 보여 거부.
-function sanitizeSql(sql) {
+export function sanitizeSql(sql) {
   const s = String(sql || "").trim().replace(/;+\s*$/, "");
   if (!/^(select|with)\b/i.test(s)) throw new Error("SELECT/WITH 쿼리만 허용됩니다");
   if (/;/.test(s)) throw new Error("다중 문장은 허용되지 않습니다");
   if (/--|\/\*|`/.test(s)) throw new Error("주석/백틱은 허용되지 않습니다");
   if (/\b(insert|alter|drop|truncate|create|rename|grant|attach|detach|optimize|system|kill)\b/i.test(s))
     throw new Error("읽기 전용 쿼리만 허용됩니다");
-  if (/\b(from|join)\s+\w+\s*\(/i.test(s)) throw new Error("테이블 함수는 허용되지 않습니다");
-  if (/\b(information_schema|INFORMATION_SCHEMA)\s*\./.test(s)) throw new Error("claude_code 스키마만 조회할 수 있습니다");
+  if (/\binformation_schema\s*\./i.test(s)) throw new Error("claude_code 스키마만 조회할 수 있습니다");
+  assertNoTableFunctions(s.replace(/'(?:[^'\\]|\\.|'')*'/g, " ")); // 문자열 리터럴 제거 후 스캔
   return s;
 }
 
@@ -56,14 +87,33 @@ const TOOLS = {
   ],
 };
 
+// 인증된(혹은 탈취된) 크리덴셜 하나로 hop×Bedrock ConverseStream을 무제한 호출하면 비용 증폭/DoS라
+// per-IP 분당 상한을 둔다. ponytail: 단일 파드 in-memory sliding window — 멀티 레플리카로 가면
+// 파드별 카운터라 한도가 N배 느슨해지니 그때 공유 스토어(Redis 등)로 옮긴다.
+const RATE_MAX = 10, RATE_WINDOW_MS = 60_000, MAX_MESSAGES = 30;
+const rateHits = new Map();
+function rateLimited(ip) {
+  const now = Date.now();
+  const hits = (rateHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  hits.push(now);
+  rateHits.set(ip, hits);
+  if (rateHits.size > 5000) for (const [k, v] of rateHits) if (!v.some((t) => now - t < RATE_WINDOW_MS)) rateHits.delete(k);
+  return hits.length > RATE_MAX;
+}
+
 // POST /api/chat {messages:[{role,content}]} → SSE(status/text/done/error 이벤트) 스트림.
 export async function handleChat(req, res) {
+  if (rateLimited(req.ip)) {
+    res.status(429).json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." });
+    return;
+  }
   res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
   try {
     const messages = (req.body?.messages || [])
       .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
+      .slice(-MAX_MESSAGES)
       .map((m) => ({ role: m.role, content: [{ text: String(m.content).slice(0, 8000) }] }));
     if (!messages.length) throw new Error("메시지가 비어 있습니다");
 

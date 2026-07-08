@@ -25,6 +25,17 @@ export default function Productivity() {
 
   const activeHours = active.data?.map((r) => ({ ...r, active_seconds: r.active_seconds / 3600 }));
 
+  // decisionsByTool은 group×tool×decision 원본이라 xKey="tool" 막대차트에 그대로 넣으면 전역 그룹
+  // 필터가 꺼진 상태(양 그룹 모두)에서 같은 tool/decision 막대가 그룹별로 중복 렌더된다 →
+  // "도구별 총량"으로 오독된다. tool+decision으로 합산해 넘긴다(필터가 켜져 한 그룹뿐이면 no-op).
+  const decisionsByToolAgg = Object.values(
+    (decisionsByTool.data || []).reduce((acc, r) => {
+      const k = `${r.tool}|${r.decision}`;
+      (acc[k] ||= { tool: r.tool, decision: r.decision, n: 0 }).n += Number(r.n);
+      return acc;
+    }, {})
+  );
+
   const outcomeTotals = (kpi.data || []).reduce(
     (acc, r) => ({ prs: acc.prs + Number(r.prs), loc: acc.loc + Number(r.lines_of_code) }),
     { prs: 0, loc: 0 }
@@ -145,7 +156,7 @@ export default function Productivity() {
                   <Badge tone="negative" dot>reject</Badge>
                 </div>
               }
-              rows={decisionsByTool.data}
+              rows={decisionsByToolAgg}
               xKey="tool"
               valueKey="n"
               colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}

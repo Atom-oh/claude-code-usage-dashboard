@@ -13,6 +13,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// CloudFront → NLB → EKS 뒤라 소켓 peer는 항상 프록시 IP다. XFF를 신뢰해야 /api/chat rate limit이
+// 클라이언트 단위로 걸린다(안 그러면 전원이 한 버킷에 뭉쳐 오탐 429). ponytail: 클라이언트가 XFF를
+// 위조하면 한도를 우회할 수 있으나 이 상한은 인증(basic auth) 뒤의 비용/DoS 안전망이지 인가 경계가 아니다.
+app.set("trust proxy", true);
+
 // ponytail: Basic Auth only when creds are set — local dev / cluster-internal probes skip it.
 if (process.env.BASIC_AUTH_USER && process.env.BASIC_AUTH_PASSWORD) {
   app.use(
@@ -78,7 +83,7 @@ route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngag
 // ({t,dau,wau,mau} vs {t,dau,wau,mau,stickiness})이라 Overview.jsx도 그대로 동작한다.
 route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
 route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
-route("/api/productivity/loc-timeseries", (from, to, query) => q.locTimeseries(from, to, Number(query.intervalHours) || 24));
+route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, Number(query.intervalHours) || 24, filters));
 route("/api/cost/tiers", async (from, to, _q, filters) => tierCosts(await q.costByModel(from, to, filters)));
 route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
   const [leaderboard, byUserModel] = await Promise.all([q.userLeaderboard(from, to, filters), q.costByUserModel(from, to, filters)]);

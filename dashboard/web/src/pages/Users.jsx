@@ -13,7 +13,11 @@ const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 
 export default function Users() {
   const [q, setQ] = useState("");
-  const [selected, setSelected] = useState(null);
+  // 클릭한 유저 email만 저장하고 헤더/StatTile용 row는 현재 leaderboard에서 파생한다 — row 객체를
+  // 통째로 스냅샷하면 드로어를 연 채 기간을 바꿀 때 상단 타일(리더보드 값)과 하단 차트(재조회)의
+  // 모수가 어긋난다. 기간 변경 시 leaderboard가 재조회되면 타일도 자동 갱신되고, 새 기간에 해당
+  // 유저가 없으면 row=undefined라 드로어가 자연스럽게 닫힌다.
+  const [selectedEmail, setSelectedEmail] = useState(null);
   const leaderboard = useApi("/api/users/leaderboard");
   const tools = useApi("/api/users/tools");
   const skills = useApi("/api/users/skills");
@@ -68,7 +72,7 @@ export default function Users() {
         {leaderboard.loading ? null : leaderboard.error ? null : (
           <DataTable
             title="유저별 생산성 리더보드"
-            onRowClick={setSelected}
+            onRowClick={(r) => setSelectedEmail(r.user)}
             subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day), 각 /day 항목은 절대 상한(캡)으로 정규화 — 캡 값은 초기 추정치"
             columns={[
               { key: "group", label: "그룹" },
@@ -124,7 +128,7 @@ export default function Users() {
           />
         )}
       </div>
-      <UserDrawer row={selected} onClose={() => setSelected(null)} />
+      <UserDrawer row={selectedEmail ? (leaderboard.data || []).find((r) => r.user === selectedEmail) || null : null} onClose={() => setSelectedEmail(null)} />
     </div>
   );
 }

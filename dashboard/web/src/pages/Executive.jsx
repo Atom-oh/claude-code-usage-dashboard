@@ -29,14 +29,14 @@ function ScoreGauge({ score }) {
 }
 
 export default function Executive() {
-  const { from, to, days } = useRange();
+  const { from, to, days, intervalHours } = useRange();
   const { model } = useFilters();
-  const fmtTick = makeTickFmt(24);
+  const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
   const adoption = useApi("/api/adoption/levels");
   const adoptionTs = useApi("/api/adoption/timeseries");
   const costSummary = useApi("/api/cost/summary");
-  const costDaily = useApi("/api/cost/by-model-daily", { intervalHours: 24 });
+  const costDaily = useApi("/api/cost/by-model-daily");
   const decisions = useApi("/api/productivity/decisions");
   const leaderboard = useApi("/api/users/leaderboard");
 

@@ -5,11 +5,12 @@ import { MessageCircle, Send, X } from "lucide-react";
 import { cn } from "../cn.js";
 
 // Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/status/done/error)를 그대로 읽는다.
-async function streamChat(messages, { onText, onStatus }) {
+async function streamChat(messages, { onText, onStatus, signal }) {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ messages }),
+    signal,
   });
   if (!res.ok) throw new Error(`chat -> ${res.status}`);
   const reader = res.body.getReader();
@@ -26,7 +27,12 @@ async function streamChat(messages, { onText, onStatus }) {
       const event = /^event: (.+)$/m.exec(chunk)?.[1];
       const data = /^data: (.+)$/m.exec(chunk)?.[1];
       if (!event || !data) continue;
-      const payload = JSON.parse(data);
+      let payload;
+      try {
+        payload = JSON.parse(data);
+      } catch {
+        continue; // 잘린/깨진 SSE 라인은 무시
+      }
       if (event === "text") onText(payload.text);
       else if (event === "status") onStatus(payload.message);
       else if (event === "error") throw new Error(payload.message);
@@ -47,10 +53,22 @@ export function FloatingChat() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const bottomRef = useRef(null);
+  const abortRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, status]);
+
+  // 언마운트 시 진행 중인 스트림 취소 — 안 그러면 fetch reader 루프가 계속 돌며 죽은 컴포넌트 state를 갱신한다.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  // 챗을 닫으면 진행 중인 스트림도 취소하고 상태를 초기화한다.
+  const stop = () => {
+    abortRef.current?.abort();
+    setBusy(false);
+    setStatus("");
+    setOpen(false);
+  };
 
   const ask = async (text) => {
     const q = text.trim();
@@ -58,10 +76,16 @@ export function FloatingChat() {
     setInput("");
     setBusy(true);
     setStatus("");
-    const history = [...msgs, { role: "user", content: q }];
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    // 이전 오류 말풍선(error:true)은 서버로 다시 보내지 않는다 — 모델 컨텍스트에 "오류:" 텍스트가
+    // assistant 발화로 재주입되면 다음 답변이 오염된다.
+    const history = [...msgs.filter((m) => !m.error), { role: "user", content: q }];
     setMsgs([...history, { role: "assistant", content: "" }]);
     try {
       await streamChat(history, {
+        signal: ac.signal,
         onText: (t) =>
           setMsgs((m) => {
             const next = [...m];
@@ -71,14 +95,17 @@ export function FloatingChat() {
         onStatus: setStatus,
       });
     } catch (err) {
+      if (ac.signal.aborted) return; // 사용자가 닫거나 다시 보낸 경우 — 오류로 표시하지 않는다
       setMsgs((m) => {
         const next = [...m];
-        next[next.length - 1] = { role: "assistant", content: `오류: ${err.message}` };
+        next[next.length - 1] = { role: "assistant", content: `오류: ${err.message}`, error: true };
         return next;
       });
     } finally {
-      setBusy(false);
-      setStatus("");
+      if (!ac.signal.aborted) {
+        setBusy(false);
+        setStatus("");
+      }
     }
   };
 
@@ -91,7 +118,7 @@ export function FloatingChat() {
               <div className="text-[14px] font-semibold text-ink-800">Ask Claude</div>
               <div className="text-[11px] text-ink-400">sonnet-5 · ClickHouse 직접 조회</div>
             </div>
-            <button onClick={() => setOpen(false)} className="rounded-md p-1 text-ink-400 hover:bg-ink-100">
+            <button onClick={stop} className="rounded-md p-1 text-ink-400 hover:bg-ink-100">
               <X size={16} />
             </button>
           </div>
@@ -158,7 +185,7 @@ export function FloatingChat() {
         </div>
       )}
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? stop() : setOpen(true))}
         className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-brand-500 px-4 py-3 text-[13px] font-semibold text-white shadow-lg hover:bg-brand-600 print:hidden"
       >
         <MessageCircle size={16} />

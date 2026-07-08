@@ -45,7 +45,7 @@ resource "aws_iam_role" "dashboard_bedrock" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-          "${local.oidc_issuer}:sub" = "system:serviceaccount:${var.k8s_namespace}:dashboard"
+          "${local.oidc_issuer}:sub" = "system:serviceaccount:${kubernetes_namespace.claude_code.metadata[0].name}:dashboard"
           "${local.oidc_issuer}:aud" = "sts.amazonaws.com"
         }
       }

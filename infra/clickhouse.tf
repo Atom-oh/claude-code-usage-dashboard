@@ -93,6 +93,10 @@ resource "kubectl_manifest" "chi" {
           "otel_reader/password_sha256_hex" = sha256(var.clickhouse_reader_password)
           "otel_reader/networks/ip"         = "10.0.0.0/8"
           "otel_reader/profile"             = "readonly"
+          # 명시 grant를 두면 기본 전체권한이 사라져 테이블 함수(url/s3/remote/file → 각각
+          # URL/S3/REMOTE/FILE grant 필요)와 system DB가 서버 측에서 거부된다 — Ask Claude 챗의
+          # sanitizeSql SSRF 방어(chat.js)의 defense-in-depth. 대시보드는 claude_code.*만 조회한다.
+          "otel_reader/grants/query" = "GRANT SELECT ON claude_code.*"
         }
         profiles = { "readonly/readonly" = "1" }
         # 콜드 티어링: hot(EBS gp3, 기본 disk) → cold(S3), TTL로 이동. 실제 TTL은 스키마 쪽

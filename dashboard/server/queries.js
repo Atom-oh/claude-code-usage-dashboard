@@ -216,7 +216,8 @@ export async function tokenTimeseries(from, to, intervalHours = 24, filters = {}
 // 승격 컬럼(TokenType = Attributes['type'])에 실린다. 일별(intervalHours=24) 버킷 기본.
 // costByModelDaily와 동일하게 HOUR을 DAY로 접는다 — ClickHouse의 INTERVAL n HOUR은 n>24에서
 // 날짜 경계를 못 넘고 매일 0시로 리셋되는 quirk가 있다(168h 주간 버킷 요청 시 조용히 깨짐).
-export async function locTimeseries(from, to, intervalHours = 24) {
+export async function locTimeseries(from, to, intervalHours = 24, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const intervalDays = Math.max(1, Math.round(intervalHours / 24));
   return query(
     `${GROUP_CTE}
@@ -230,8 +231,9 @@ export async function locTimeseries(from, to, intervalHours = 24) {
       `AND MetricName = 'claude_code.lines_of_code.count'`
     )} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), intervalDays }
+    { ...range(from, to), intervalDays, ...f.params }
   );
 }
 
@@ -682,13 +684,13 @@ export async function userSkillUsage(from, to, filters = {}) {
 // Trends 페이지: 일별 DAU/WAU/MAU 시계열. 롤링 윈도우(7일/30일)는 ClickHouse에서 일별 유저
 // 집합만 뽑고 JS에서 접는다 — 유저 수가 수백 명 수준이라 집합 union이 싸고, SQL 셀프조인보다
 // 단순하다. uniq류는 존재 여부만 보므로 cumulative 중복 누적에 영향받지 않아 원본 테이블 사용.
-// 전제: ClickHouse 서버 TZ = UTC (현 배포 기본값). 아니면 toDate()의 날짜 키와 JS
-// toISOString() 날짜 키가 하루 어긋나 union 조회가 빗나간다.
+// 날짜 키는 toDate(..., 'UTC')로 고정 — JS는 toISOString()(UTC)로 롤링 union하므로 서버 TZ가
+// UTC가 아니어도 하루 어긋나지 않는다(activeUsersTimeseries와 동일 규칙).
 export async function adoptionTimeseries(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
   const rows = await query(
     `${GROUP_CTE}
-    SELECT toDate(m.TimeUnix) AS d, groupUniqArray(m.UserEmail) AS users
+    SELECT toDate(m.TimeUnix, 'UTC') AS d, groupUniqArray(m.UserEmail) AS users
     FROM claude_code.otel_metrics_sum m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.MetricName = 'claude_code.session.count' AND m.UserEmail != ''
@@ -718,7 +720,7 @@ export async function userDaily(from, to, email) {
   return query(
     `SELECT t,
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')       AS sessions,
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count') AS loc,
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits
     FROM ${incBucketed(b.expr, `AND MetricName IN (
@@ -741,7 +743,7 @@ export async function userDecisionsByTool(from, to, email) {
 // 세션 수는 SessionId 존재 기반(uniqExact)이라 temporality 무관.
 export async function userHeatmap(to, email, days = 91) {
   return query(
-    `SELECT toDate(TimeUnix) AS d, uniqExact(SessionId) AS sessions
+    `SELECT toDate(TimeUnix, 'UTC') AS d, uniqExact(SessionId) AS sessions
     FROM claude_code.otel_metrics_sum
     WHERE UserEmail = {email:String}
       AND TimeUnix >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND TimeUnix < {to:DateTime}
@@ -761,7 +763,7 @@ export async function userLeaderboard(from, to, filters = {}) {
   return query(
     `${GROUP_CTE},
     active_days AS (
-        SELECT UserEmail, uniqExact(toDate(TimeUnix)) AS active_days
+        SELECT UserEmail, uniqExact(toDate(TimeUnix, 'UTC')) AS active_days
         FROM claude_code.otel_metrics_sum m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
         WHERE UserEmail != '' AND TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} ${fAd.where}
