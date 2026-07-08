@@ -5,7 +5,12 @@ function toDay(d) {
   return d.toISOString().slice(0, 10);
 }
 
-// rows: [{day: 'YYYY-MM-DD', UserEmail}] — from-29d 이전부터 to까지 조회된 것이어야 wau/mau가 맞다.
+// queries.js의 activeUsersTimeseries가 조회 창을 이 값만큼 넓혀야 mau가 맞다 — 한쪽만 바꾸면
+// 조용히 under-count 되므로 상수 하나로 공유한다.
+export const MAU_WINDOW_DAYS = 29;
+
+// rows: [{day: 'YYYY-MM-DD', UserEmail}] — from-MAU_WINDOW_DAYS일 이전부터 to까지 조회된 것이어야
+// wau/mau가 맞다.
 export function rollupActiveUsers(rows, from, to) {
   const usersByDay = new Map(); // 'YYYY-MM-DD' -> Set<email>
   for (const r of rows) {
@@ -15,8 +20,9 @@ export function rollupActiveUsers(rows, from, to) {
   }
 
   // from을 그날 자정으로 내리면(floor) from이 정오 같은 중간 시각일 때 첫 point가 요청 range
-  // 이전(자정~from) 활동까지 끌어온다. 다른 시계열 차트(incBucketed의 WHERE t >= from)와 같은
-  // 절단 규칙을 쓰려면 from 이후의 첫 자정부터 시작해야 한다(from이 이미 자정이면 그대로).
+  // 이전(자정~from) 활동까지 끌어온다 — from 이후의 첫 자정부터 시작해 그 부분 day를 통째로
+  // 버린다(from이 이미 자정이면 그대로). 즉 RangeContext의 "지금 - N일"처럼 자정에 안 맞는
+  // from에서는 이 차트의 첫날이 항상 빠진다 — range가 짧을수록 눈에 띄는 트레이드오프.
   const DAY = 86400000;
   const days = [];
   for (let t = Math.ceil(from.getTime() / DAY) * DAY; t < to.getTime(); t += DAY) {
@@ -38,6 +44,6 @@ export function rollupActiveUsers(rows, from, to) {
     t: day,
     dau: usersByDay.get(day)?.size || 0,
     wau: unionSince(day, 6),
-    mau: unionSince(day, 29),
+    mau: unionSince(day, MAU_WINDOW_DAYS),
   }));
 }

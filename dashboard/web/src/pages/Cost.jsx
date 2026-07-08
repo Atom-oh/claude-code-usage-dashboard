@@ -70,10 +70,11 @@ export default function Cost() {
       ]
     : [];
 
-  // unpriced(미산정 모델 사용) 유저는 cost_per_loc이 null — 오름차순 정렬에서 항상 맨 뒤로 보내야
-  // $0.0000/LOC로 "가장 효율적"에 잘못 노출되지 않는다.
+  // loc=0이어도 commits>0인 유저(라인 없이 커밋만 한 경우)는 $/커밋 컬럼에 값이 있으므로 테이블에서
+  // 지우면 안 된다. unpriced(미산정 모델 사용) 유저는 cost_per_loc이 null — 오름차순 정렬에서 항상
+  // 맨 뒤로 보내야 $0.0000/LOC로 "가장 효율적"에 잘못 노출되지 않는다.
   const efficiencyRows = [...(efficiency.data || [])]
-    .filter((r) => r.loc > 0)
+    .filter((r) => r.loc > 0 || r.commits > 0)
     .sort((a, b) => (a.cost_per_loc == null) - (b.cost_per_loc == null) || a.cost_per_loc - b.cost_per_loc);
 
   return (

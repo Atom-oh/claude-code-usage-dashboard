@@ -1,4 +1,4 @@
-// Cost 페이지 "$/LOC, $/커밋 효율" 테이블 — 이미 있는 두 쿼리(userLeaderboard의 loc_added/commits,
+// Cost 페이지 "$/LOC, $/커밋 효율" 테이블 — 이미 있는 두 쿼리(userLeaderboard의 loc(added만)/commits,
 // costByUserModel의 모델별 계산비용)를 새 SQL 없이 유저 단위로 합치기만 하면 된다.
 export function userCostEfficiency(leaderboardRows, costByUserModelRows) {
   const costByUser = new Map();
@@ -15,7 +15,7 @@ export function userCostEfficiency(leaderboardRows, costByUserModelRows) {
   return leaderboardRows.map((u) => {
     const unpriced = unpricedUsers.has(u.user);
     const cost = costByUser.get(u.user) || 0;
-    const loc = Number(u.loc_added); // added만 — removed까지 합치면 $/LOC가 실제보다 낮게 나온다
+    const loc = Number(u.loc); // userLeaderboard가 이미 TokenType='added'로 필터한 값
     const commits = Number(u.commits);
     return {
       user: u.user,

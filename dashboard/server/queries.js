@@ -1,7 +1,7 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost } from "./pricing.js";
-import { rollupActiveUsers } from "./activity.js";
+import { rollupActiveUsers, MAU_WINDOW_DAYS } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -99,7 +99,7 @@ export async function kpiSummary(from, to) {
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits,
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')  AS prs,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS total_tokens,
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count') AS lines_of_code
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS lines_of_code
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.commit.count', 'claude_code.pull_request.count',
         'claude_code.token.usage', 'claude_code.lines_of_code.count'
@@ -185,7 +185,7 @@ export async function normalizedProductivity(from, to) {
     `${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count') AS loc,
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS tokens,
         round(loc / nullIf(tokens, 0) * 1000000, 2)                      AS loc_per_million_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits,
@@ -359,7 +359,7 @@ export async function activeUsersTimeseries(from, to) {
     `SELECT toDate(TimeUnix) AS day, UserEmail
      FROM claude_code.otel_metrics_sum
      WHERE MetricName = 'claude_code.session.count' AND UserEmail != ''
-       AND TimeUnix >= {from:DateTime} - INTERVAL 29 DAY AND TimeUnix < {to:DateTime}
+       AND TimeUnix >= {from:DateTime} - INTERVAL ${MAU_WINDOW_DAYS} DAY AND TimeUnix < {to:DateTime}
      GROUP BY day, UserEmail`,
     range(from, to)
   );
@@ -509,9 +509,10 @@ export async function costByModel(from, to) {
   }));
 }
 
-// Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 세션 단위로 판별한 뒤
-// topK(1)로 그 유저의 세션들 중 다수결 그룹 하나를 뽑는다(한 유저가 두 방식을 다 쓴 경우
-// any()처럼 비결정적으로 흔들리지 않고, 세션이 더 많은 쪽으로 안정적으로 붙는다).
+// Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 세션 단위로 판별한 뒤 topK(1)로
+// 그 유저의 다수결 그룹 하나를 뽑는다(한 유저가 두 방식을 다 쓴 경우 any()처럼 비결정적으로
+// 흔들리지 않는다) — 단, incFlat이 세션당 여러 row(속성 조합별)를 낼 수 있어 정확히는 "세션 수"가
+// 아니라 incFlat이 생성한 row 개수(세션×속성 조합) 가중 다수결이다.
 export async function costByUserModel(from, to) {
   const rows = await query(
     `${GROUP_CTE}
@@ -572,8 +573,7 @@ export async function userLeaderboard(from, to) {
         topK(1)(${GROUP_EXPR})[1] AS "group",
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')                                    AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                       AS tokens,
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count')                                AS loc,
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added')      AS loc_added,
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added')      AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')                                      AS commits,
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')                                AS prs,
         sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision' AND m.Decision = 'accept')  AS accepted,
