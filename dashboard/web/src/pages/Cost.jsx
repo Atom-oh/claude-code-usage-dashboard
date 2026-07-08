@@ -85,10 +85,10 @@ export default function Cost() {
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
-        {summary.loading ? (
+        {summary.loading || byUserModel.loading ? (
           <Loading />
-        ) : summary.error ? (
-          <ErrorBox error={summary.error} />
+        ) : summary.error || byUserModel.error ? (
+          <ErrorBox error={summary.error || byUserModel.error} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatTile
@@ -104,6 +104,8 @@ export default function Cost() {
             <StatTile label="캐시 쓰기 토큰" value={fmt(totals.cacheWrite)} />
             <StatTile label="세션" value={fmt(totals.sessions)} />
             <StatTile label="30일 프로젝션" value={usd(projection30d)} hint="현재 기간 일평균 × 30" />
+            {/* developerCount/spendPerDeveloper는 byUserModel에서 나온다 — summary만 게이트하면
+                byUserModel이 아직 로딩 중이거나 에러여도 "$0 / 0명 기준"이 실제 값처럼 보인다. */}
             <StatTile label="개발자당 지출" value={usd(spendPerDeveloper)} hint={`${developerCount}명 기준`} />
           </div>
         )}

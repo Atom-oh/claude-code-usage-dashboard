@@ -5,8 +5,10 @@ function toDay(d) {
   return d.toISOString().slice(0, 10);
 }
 
-// queries.js의 activeUsersTimeseries가 조회 창을 이 값만큼 넓혀야 mau가 맞다 — 한쪽만 바꾸면
-// 조용히 under-count 되므로 상수 하나로 공유한다.
+// unionSince(day, N)은 day를 포함해 양끝 inclusive로 세므로 29는 "당일 포함 trailing 30일"이다
+// (adoptionLevels의 스냅샷 쿼리가 쓰는 INTERVAL 30 DAY와 정의가 일치). queries.js의
+// activeUsersTimeseries가 조회 창을 이 값만큼 넓혀야 mau가 맞다 — 한쪽만 바꾸면 조용히
+// under-count 되므로 상수 하나로 공유한다.
 export const MAU_WINDOW_DAYS = 29;
 
 // rows: [{day: 'YYYY-MM-DD', UserEmail}] — from-MAU_WINDOW_DAYS일 이전부터 to까지 조회된 것이어야

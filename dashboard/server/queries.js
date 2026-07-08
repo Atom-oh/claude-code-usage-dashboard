@@ -356,7 +356,7 @@ export async function adoptionLevels(from, to) {
 // 데이터까지 봐야 하므로 조회 구간을 넓힌다.
 export async function activeUsersTimeseries(from, to) {
   const rows = await query(
-    `SELECT toDate(TimeUnix) AS day, UserEmail
+    `SELECT toDate(TimeUnix, 'UTC') AS day, UserEmail
      FROM claude_code.otel_metrics_sum
      WHERE MetricName = 'claude_code.session.count' AND UserEmail != ''
        AND TimeUnix >= {from:DateTime} - INTERVAL ${MAU_WINDOW_DAYS} DAY AND TimeUnix < {to:DateTime}
