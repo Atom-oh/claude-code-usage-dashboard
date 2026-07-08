@@ -600,6 +600,8 @@ export async function userSkillUsage(from, to, filters = {}) {
 // Trends 페이지: 일별 DAU/WAU/MAU 시계열. 롤링 윈도우(7일/30일)는 ClickHouse에서 일별 유저
 // 집합만 뽑고 JS에서 접는다 — 유저 수가 수백 명 수준이라 집합 union이 싸고, SQL 셀프조인보다
 // 단순하다. uniq류는 존재 여부만 보므로 cumulative 중복 누적에 영향받지 않아 원본 테이블 사용.
+// 전제: ClickHouse 서버 TZ = UTC (현 배포 기본값). 아니면 toDate()의 날짜 키와 JS
+// toISOString() 날짜 키가 하루 어긋나 union 조회가 빗나간다.
 export async function adoptionTimeseries(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
   const rows = await query(

@@ -10,12 +10,16 @@ const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || "us-
 
 // SELECT/WITH 단일 문장만 통과 — 나머지는 전부 거부. queryReadonly의 readonly=1이 2차 방어라
 // 여기는 명백한 것만 거른다(정교한 SQL 파서는 오버킬).
+// 단, 테이블 함수(url/s3/remote/...)는 readonly=1이 막지 *않는다* — SELECT 안에서 외부 URL이나
+// 내부망(EKS 노드 메타데이터 169.254.169.254 등)을 읽을 수 있는 SSRF 벡터라 명시적으로 거부한다.
 function sanitizeSql(sql) {
   const s = String(sql || "").trim().replace(/;+\s*$/, "");
   if (!/^(select|with)\b/i.test(s)) throw new Error("SELECT/WITH 쿼리만 허용됩니다");
   if (/;/.test(s)) throw new Error("다중 문장은 허용되지 않습니다");
   if (/\b(insert|alter|drop|truncate|create|rename|grant|attach|detach|optimize|system|kill)\b/i.test(s))
     throw new Error("읽기 전용 쿼리만 허용됩니다");
+  if (/\b(url|s3|s3Cluster|remote|remoteSecure|mysql|postgresql|jdbc|odbc|hdfs|file|azureBlobStorage|gcs|deltaLake|iceberg|hudi|mongodb|redis|sqlite|dictionary|cluster|clusterAllReplicas|executable)\s*\(/i.test(s))
+    throw new Error("테이블 함수는 허용되지 않습니다");
   return s;
 }
 
