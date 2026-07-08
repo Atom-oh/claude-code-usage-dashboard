@@ -1,6 +1,6 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { withComputedCost } from "./pricing.js";
+import { withComputedCost, normalizeModelId } from "./pricing.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -32,6 +32,10 @@ function normModel(col) {
 function filterCond(filters = {}, cols = {}) {
   const conds = [];
   const params = {};
+  // 저장된 Model은 normModel()로 정규화된 값과 비교하므로, 검색어도 같이 정규화한다 —
+  // 안 그러면 유저가 raw Bedrock ID("global.anthropic.claude-sonnet-5")로 검색할 때
+  // 정규화된 저장값("claude-sonnet-5")과 접두사가 어긋나 매치가 빗나간다.
+  const fModel = filters.model ? normalizeModelId(filters.model) : filters.model;
   if (filters.group && cols.group) {
     conds.push(`${cols.group} = {fGroup:String}`);
     params.fGroup = filters.group;
@@ -47,12 +51,12 @@ function filterCond(filters = {}, cols = {}) {
   }
   if (filters.model && cols.model) {
     conds.push(`positionCaseInsensitive(${normModel(cols.model)}, {fModel:String}) > 0`);
-    params.fModel = filters.model;
+    params.fModel = fModel;
   }
   // 서브쿼리에서 이미 normModel()로 정규화된 alias를 참조할 때 — normModel 이중 적용을 피한다.
   if (filters.model && cols.modelNorm) {
     conds.push(`positionCaseInsensitive(${cols.modelNorm}, {fModel:String}) > 0`);
-    params.fModel = filters.model;
+    params.fModel = fModel;
   }
   // 혼합 지표 쿼리(kpiSummary 등)용 — session/commit/PR 행은 Model attribute가 비어 있어
   // row-level 매치만 쓰면 model 필터를 켜는 순간 그 지표들이 전부 0으로 떨어진다.
@@ -64,7 +68,7 @@ function filterCond(filters = {}, cols = {}) {
         SELECT SessionId FROM claude_code.otel_metrics_sum
         WHERE SessionId != '' AND TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
           AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)))`);
-    params.fModel = filters.model;
+    params.fModel = fModel;
   }
   // 로그 테이블(otel_logs)엔 Model이 없다 — 세션이 실제로 쓴 모델을 otel_metrics_sum에서
   // 찾아 세미조인. 의미론: "세션이 이 모델을 한 번이라도 썼으면 그 세션의 로그 이벤트 전부 통과".
@@ -75,7 +79,7 @@ function filterCond(filters = {}, cols = {}) {
       SELECT SessionId FROM claude_code.otel_metrics_sum
       WHERE SessionId != '' AND TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
         AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)`);
-    params.fModel = filters.model;
+    params.fModel = fModel;
   }
   return { where: conds.map((c) => `AND ${c}`).join(" "), params };
 }
@@ -493,7 +497,9 @@ export async function toolMcpUsage(from, to, filters = {}) {
 // Claude Code 자체 보고 비용(reported_cost)은 비교용으로만 같이 내려준다.
 // 단가는 모델별로 다르므로 SQL은 그룹+모델 단위로 집계하고, 그룹 합계는 JS에서 fold한다.
 export async function costSummary(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  // model 필터는 SELECT에 model 정규화 컬럼이 있지만, sessions는 Model attribute가 없는
+  // session.count 행을 합산하는 혼합 지표라 kpiSummary와 같은 modelMixed가 필요.
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   const rows = await query(
     `${GROUP_CTE}
     SELECT

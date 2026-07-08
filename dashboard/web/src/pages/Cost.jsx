@@ -9,6 +9,7 @@ import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
+import { useFilters } from "../FilterContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -33,6 +34,7 @@ function foldModelRows(rows) {
 }
 
 export default function Cost() {
+  const { group: globalGroup } = useFilters();
   const { intervalHours: defaultIntervalHours } = useRange();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
   // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 재동기화 —
@@ -75,10 +77,14 @@ export default function Cost() {
     .sort((a, b) => b.cost - a.cost)
     .slice(0, 10);
 
+  // 전역 group 필터가 바뀌면 로컬 도넛 탭을 리셋 — 안 그러면 전역=bedrock, 로컬=enterprise처럼
+  // 서로 겹치지 않는 조합이 남아 도넛이 조용히 빈 채로 렌더된다.
   const [modelDonutGroup, setModelDonutGroup] = useState("");
+  useEffect(() => setModelDonutGroup(""), [globalGroup]);
   const modelDonutRows = foldModelRows((byModel.data || []).filter((r) => !modelDonutGroup || r.group === modelDonutGroup));
 
   const [tokenDonutGroup, setTokenDonutGroup] = useState("");
+  useEffect(() => setTokenDonutGroup(""), [globalGroup]);
   const tokenTotals = (summary.data || [])
     .filter((r) => !tokenDonutGroup || r.group === tokenDonutGroup)
     .reduce(

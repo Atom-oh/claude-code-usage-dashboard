@@ -127,7 +127,7 @@ export default function Productivity() {
           ) : (
             <GroupBarChart
               title="도구별 수락/거부"
-              subtitle="edit / multi_edit / write / notebook_edit"
+              subtitle="실측: Edit / Write (multi_edit·notebook_edit은 위 값 미확인)"
               right={
                 <div className="flex gap-2">
                   <Badge tone="positive" dot>accept</Badge>

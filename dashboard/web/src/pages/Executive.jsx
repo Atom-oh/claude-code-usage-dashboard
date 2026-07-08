@@ -6,6 +6,7 @@ import { SectionLabel } from "../components/SectionLabel.jsx";
 import { DualLineChart, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
+import { useFilters } from "../FilterContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -29,6 +30,7 @@ function ScoreGauge({ score }) {
 
 export default function Executive() {
   const { from, to, days } = useRange();
+  const { model } = useFilters();
   const fmtTick = makeTickFmt(24);
   const kpi = useApi("/api/overview/kpi");
   const adoption = useApi("/api/adoption/levels");
@@ -108,6 +110,11 @@ export default function Executive() {
           <>
             <div>
               <SectionLabel>People</SectionLabel>
+              {/* DAU/MAU는 session.count에 Model attribute가 없어 model 필터가 적용되지
+                  않는다 — Productivity/Cost 섹션은 필터되므로 침묵 불일치를 배지로 알린다. */}
+              {model && (
+                <p className="text-[11px] text-warning-text mt-1">⚠ model 필터는 People 지표에 적용되지 않습니다(전체 모델 기준)</p>
+              )}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
                 <StatTile label="활성 개발자" value={fmt(t.users)} variant="accent" hint="기간 내 세션 1건 이상" />
                 <StatTile label="평균 DAU" value={avgDau.toFixed(1)} hint={`피크 ${peakDau}`} />

@@ -4,12 +4,16 @@ import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { DualLineChart } from "../components/GroupCharts.jsx";
 import { useApi } from "../useApi.js";
+import { useFilters } from "../FilterContext.jsx";
 
 const fmtDate = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 
 export default function Trends() {
   const ts = useApi("/api/adoption/timeseries");
   const levels = useApi("/api/adoption/levels");
+  // DAU/WAU/MAU는 session.count에 Model attribute가 없어 model 필터가 안 걸린다 —
+  // Cost/Productivity 페이지는 필터되는데 이 페이지만 전체-모델 기준이라는 침묵 불일치를 배지로 알린다.
+  const { model } = useFilters();
 
   const last = (ts.data || [])[ts.data?.length - 1];
   const prev = (ts.data || [])[ts.data?.length - 2];
@@ -17,7 +21,16 @@ export default function Trends() {
 
   return (
     <div>
-      <PageHeader title="Trends" subtitle="일간/주간/월간 활성 유저 추이 — WAU/MAU는 각 시점 기준 롤링 7일/30일" live right={<RangePicker />} />
+      <PageHeader
+        title="Trends"
+        subtitle={
+          model
+            ? "일간/주간/월간 활성 유저 추이 — WAU/MAU는 각 시점 기준 롤링 7일/30일. ⚠ model 필터는 이 페이지에 적용되지 않습니다(전체 모델 기준)."
+            : "일간/주간/월간 활성 유저 추이 — WAU/MAU는 각 시점 기준 롤링 7일/30일"
+        }
+        live
+        right={<RangePicker />}
+      />
       <div className="p-8 flex flex-col gap-4">
         {levels.loading ? (
           <Loading />
