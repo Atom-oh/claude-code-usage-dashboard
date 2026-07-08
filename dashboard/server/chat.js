@@ -12,14 +12,20 @@ const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || "us-
 // 여기는 명백한 것만 거른다(정교한 SQL 파서는 오버킬).
 // 단, 테이블 함수(url/s3/remote/...)는 readonly=1이 막지 *않는다* — SELECT 안에서 외부 URL이나
 // 내부망(EKS 노드 메타데이터 169.254.169.254 등)을 읽을 수 있는 SSRF 벡터라 명시적으로 거부한다.
+// 주석(`url/**/(...)`)과 백틱 인용(`` `url`(...) ``)으로 아래 토큰 검사를 우회할 수 있어(ClickHouse
+// 토크나이저는 블록 주석을 공백으로 취급) 주석/백틱 자체를 통째로 거부한다 — 챗이 생성하는
+// 정상 쿼리에 주석이 필요할 일은 없다. system/information_schema는 타 사용자의 쿼리 텍스트
+// (query_log) 등이 보여 claude_code 밖 스키마 참조도 거부.
 function sanitizeSql(sql) {
   const s = String(sql || "").trim().replace(/;+\s*$/, "");
   if (!/^(select|with)\b/i.test(s)) throw new Error("SELECT/WITH 쿼리만 허용됩니다");
   if (/;/.test(s)) throw new Error("다중 문장은 허용되지 않습니다");
+  if (/--|\/\*|`/.test(s)) throw new Error("주석/백틱은 허용되지 않습니다");
   if (/\b(insert|alter|drop|truncate|create|rename|grant|attach|detach|optimize|system|kill)\b/i.test(s))
     throw new Error("읽기 전용 쿼리만 허용됩니다");
   if (/\b(url|s3|s3Cluster|remote|remoteSecure|mysql|postgresql|jdbc|odbc|hdfs|file|azureBlobStorage|gcs|deltaLake|iceberg|hudi|mongodb|redis|sqlite|dictionary|cluster|clusterAllReplicas|executable)\s*\(/i.test(s))
     throw new Error("테이블 함수는 허용되지 않습니다");
+  if (/\b(information_schema|INFORMATION_SCHEMA)\s*\./.test(s)) throw new Error("claude_code 스키마만 조회할 수 있습니다");
   return s;
 }
 

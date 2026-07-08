@@ -76,8 +76,10 @@ export function UserDrawer({ row, onClose }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-[18px] font-semibold text-ink-800 truncate">{row.user}</h2>
+            {/* 아래 차트들은 전역 필터(group/model) 미적용 — 유저 개인의 전체 활동 기준.
+                리더보드 행(필터 적용 집계)과 모수가 다를 수 있어 라벨로 명시한다. */}
             <p className="text-[12px] text-ink-400 mt-0.5">
-              {row.group} · 최근 {days}일 · 생산성 점수 {Number(row.productivity_score).toFixed(1)}
+              {row.group} · 최근 {days}일 · 생산성 점수 {Number(row.productivity_score).toFixed(1)} · 전체 활동 기준(필터 미적용)
             </p>
           </div>
           <button onClick={onClose} className="shrink-0 rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-600">

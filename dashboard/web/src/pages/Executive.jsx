@@ -38,8 +38,11 @@ export default function Executive() {
   const decisions = useApi("/api/productivity/decisions");
   const leaderboard = useApi("/api/users/leaderboard");
 
-  const loading = kpi.loading || adoption.loading || costSummary.loading || decisions.loading;
-  const error = kpi.error || adoption.error || costSummary.error || decisions.error;
+  // leaderboard(orgScore·게이지·헤드라인)와 adoptionTs(평균/피크 DAU)도 게이트에 포함 —
+  // 빠지면 로딩/실패 중에 "생산성 점수 0/100", "평균 DAU 0.0"이 정상 수치처럼 렌더되고
+  // PDF로도 출력된다(경영 보고용 페이지라 특히 위험).
+  const loading = kpi.loading || adoption.loading || costSummary.loading || decisions.loading || leaderboard.loading || adoptionTs.loading;
+  const error = kpi.error || adoption.error || costSummary.error || decisions.error || leaderboard.error || adoptionTs.error;
 
   const t = (kpi.data || []).reduce(
     (a, r) => ({

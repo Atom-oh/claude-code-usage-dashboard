@@ -54,6 +54,18 @@ function filterCond(filters = {}, cols = {}) {
     conds.push(`positionCaseInsensitive(${cols.modelNorm}, {fModel:String}) > 0`);
     params.fModel = filters.model;
   }
+  // 혼합 지표 쿼리(kpiSummary 등)용 — session/commit/PR 행은 Model attribute가 비어 있어
+  // row-level 매치만 쓰면 model 필터를 켜는 순간 그 지표들이 전부 0으로 떨어진다.
+  // Model이 있는 행(토큰/비용)은 정밀 매치, 없는 행은 세션 세미조인으로 통과시킨다.
+  if (filters.model && cols.modelMixed) {
+    const { model, session } = cols.modelMixed;
+    conds.push(`(positionCaseInsensitive(${normModel(model)}, {fModel:String}) > 0
+      OR (${model} = '' AND ${session} IN (
+        SELECT SessionId FROM claude_code.otel_metrics_sum
+        WHERE SessionId != '' AND TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+          AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)))`);
+    params.fModel = filters.model;
+  }
   // 로그 테이블(otel_logs)엔 Model이 없다 — 세션이 실제로 쓴 모델을 otel_metrics_sum에서
   // 찾아 세미조인. 의미론: "세션이 이 모델을 한 번이라도 썼으면 그 세션의 로그 이벤트 전부 통과".
   // 세션 내 모델 전환이 드물어 필터 용도로는 이 근사가 충분(이벤트 단위 정밀 귀속은 api_request
@@ -61,7 +73,8 @@ function filterCond(filters = {}, cols = {}) {
   if (filters.model && cols.modelViaSession) {
     conds.push(`${cols.modelViaSession} IN (
       SELECT SessionId FROM claude_code.otel_metrics_sum
-      WHERE SessionId != '' AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)`);
+      WHERE SessionId != '' AND TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+        AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)`);
     params.fModel = filters.model;
   }
   return { where: conds.map((c) => `AND ${c}`).join(" "), params };
@@ -147,7 +160,7 @@ const TOKEN_SUMS = `
 
 // 패널1: 그룹별 KPI 요약
 export async function kpiSummary(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -228,7 +241,7 @@ export async function modelDistribution(from, to, filters = {}) {
 
 // 패널4: 토큰 정규화 생산성 (핵심 A/B 지표)
 export async function normalizedProductivity(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -632,6 +645,8 @@ export async function adoptionTimeseries(from, to, filters = {}) {
 
 // 도구별(edit/multi_edit/write/notebook_edit) 수락/거부. tool_name attribute는 승격 컬럼이
 // 아니라 incFlat 결과에 없어서, 같은 diff 패턴에 tool만 추가한 전용 서브쿼리를 쓴다.
+// 실측 확인(2026-07-08, 프로덕션 mapKeys 쿼리): code_edit_tool.decision 83,070행 전부에
+// tool_name 키 존재(Edit 48,404 / Write 34,666) — WHERE tool != ''로 빈 패널이 될 일 없음.
 export async function codeEditDecisionsByTool(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
@@ -696,11 +711,11 @@ export async function userHeatmap(to, email, days = 91) {
 // 패널10 확장: 유저별 리더보드 (생산성 점수는 이 raw 값을 productivity.js에서 계산). active_days는
 // "존재하는 날짜 수"라 temporality와 무관 — 원본 테이블에서 바로 distinct count로 구해 별도 CTE로 조인.
 export async function userLeaderboard(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   // active_days에도 같은 필터를 건다(컬럼 참조만 CTE 기준으로) — 안 걸면 group/model 필터 상태에서
   // sessions/loc는 필터되는데 활성일수(점수 가중치 0.15)만 전체 활동 기준이라 점수가 불일치한다.
   // 파라미터 이름/값이 f와 동일해 중복 병합은 무해.
-  const fAd = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", model: "Model" });
+  const fAd = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelMixed: { model: "Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE},
     active_days AS (
