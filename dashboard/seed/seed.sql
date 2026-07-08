@@ -30,9 +30,21 @@ SELECT
         metric = 'claude_code.token.usage' AND extra['type'] = 'output', toFloat64(800 + ui * 150),
         metric = 'claude_code.token.usage' AND extra['type'] = 'cacheRead', toFloat64(3000 + ui * 500),
         metric = 'claude_code.token.usage' AND extra['type'] = 'cacheCreation', toFloat64(600 + ui * 100),
-        metric = 'claude_code.lines_of_code.count', toFloat64(60 + ui * 20 + di * 5),
-        metric = 'claude_code.code_edit_tool.decision' AND extra['decision'] = 'accept', toFloat64(12 + ui * 2),
-        metric = 'claude_code.code_edit_tool.decision' AND extra['decision'] = 'reject', toFloat64(2 + ui % 2),
+        metric = 'claude_code.lines_of_code.count' AND extra['type'] = 'added', toFloat64(60 + ui * 20 + di * 5),
+        metric = 'claude_code.lines_of_code.count' AND extra['type'] = 'removed', toFloat64(10 + ui * 4 + di),
+        metric = 'claude_code.code_edit_tool.decision' AND extra['decision'] = 'accept',
+            multiIf(
+                extra['tool_name'] = 'edit', toFloat64(12 + ui * 2),
+                extra['tool_name'] = 'multi_edit', toFloat64(6 + ui),
+                extra['tool_name'] = 'write', toFloat64(3 + ui % 2),
+                toFloat64(1)
+            ),
+        metric = 'claude_code.code_edit_tool.decision' AND extra['decision'] = 'reject',
+            multiIf(
+                extra['tool_name'] = 'edit', toFloat64(2 + ui % 2),
+                extra['tool_name'] = 'multi_edit', toFloat64(1),
+                0.0
+            ),
         -- 토큰 실측(input/output/cacheRead/cacheCreation) × sonnet-4-5 단가(3/15/0.3/3.75 per 1M) × 1.05
         -- (Claude Code 자체 보고 비용은 실제 단가와 ~5% 드리프트가 있다는 걸 데모에서 보여주기 위한 의도적 오차)
         metric = 'claude_code.cost.usage',
@@ -52,9 +64,16 @@ CROSS JOIN (
     UNION ALL SELECT 'claude_code.token.usage', map('type', 'output')
     UNION ALL SELECT 'claude_code.token.usage', map('type', 'cacheRead')
     UNION ALL SELECT 'claude_code.token.usage', map('type', 'cacheCreation')
-    UNION ALL SELECT 'claude_code.lines_of_code.count', map()
-    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept')
-    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject')
+    UNION ALL SELECT 'claude_code.lines_of_code.count', map('type', 'added')
+    UNION ALL SELECT 'claude_code.lines_of_code.count', map('type', 'removed')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept', 'tool_name', 'edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject', 'tool_name', 'edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept', 'tool_name', 'multi_edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject', 'tool_name', 'multi_edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept', 'tool_name', 'write')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject', 'tool_name', 'write')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept', 'tool_name', 'notebook_edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject', 'tool_name', 'notebook_edit')
     UNION ALL SELECT 'claude_code.cost.usage', map('skill.name', 'code-review')
 ) m;
 
@@ -81,9 +100,21 @@ SELECT
         metric = 'claude_code.token.usage' AND extra['type'] = 'output', toFloat64(700 + ui * 120),
         metric = 'claude_code.token.usage' AND extra['type'] = 'cacheRead', toFloat64(2200 + ui * 400),
         metric = 'claude_code.token.usage' AND extra['type'] = 'cacheCreation', toFloat64(500 + ui * 80),
-        metric = 'claude_code.lines_of_code.count', toFloat64(90 + ui * 30 + di * 8),
-        metric = 'claude_code.code_edit_tool.decision' AND extra['decision'] = 'accept', toFloat64(15 + ui * 3),
-        metric = 'claude_code.code_edit_tool.decision' AND extra['decision'] = 'reject', toFloat64(1 + ui % 2),
+        metric = 'claude_code.lines_of_code.count' AND extra['type'] = 'added', toFloat64(90 + ui * 30 + di * 8),
+        metric = 'claude_code.lines_of_code.count' AND extra['type'] = 'removed', toFloat64(15 + ui * 5 + di),
+        metric = 'claude_code.code_edit_tool.decision' AND extra['decision'] = 'accept',
+            multiIf(
+                extra['tool_name'] = 'edit', toFloat64(15 + ui * 3),
+                extra['tool_name'] = 'multi_edit', toFloat64(7 + ui),
+                extra['tool_name'] = 'write', toFloat64(4 + ui % 2),
+                toFloat64(1)
+            ),
+        metric = 'claude_code.code_edit_tool.decision' AND extra['decision'] = 'reject',
+            multiIf(
+                extra['tool_name'] = 'edit', toFloat64(1 + ui % 2),
+                extra['tool_name'] = 'multi_edit', toFloat64(1),
+                0.0
+            ),
         -- 토큰 실측(input/output/cacheRead/cacheCreation) × sonnet-4-5 단가(3/15/0.3/3.75 per 1M) × 1.05
         metric = 'claude_code.cost.usage',
             1.05 * ((1200 + ui * 250 + di * 80) * 3 + (700 + ui * 120) * 15
@@ -102,9 +133,16 @@ CROSS JOIN (
     UNION ALL SELECT 'claude_code.token.usage', map('type', 'output')
     UNION ALL SELECT 'claude_code.token.usage', map('type', 'cacheRead')
     UNION ALL SELECT 'claude_code.token.usage', map('type', 'cacheCreation')
-    UNION ALL SELECT 'claude_code.lines_of_code.count', map()
-    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept')
-    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject')
+    UNION ALL SELECT 'claude_code.lines_of_code.count', map('type', 'added')
+    UNION ALL SELECT 'claude_code.lines_of_code.count', map('type', 'removed')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept', 'tool_name', 'edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject', 'tool_name', 'edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept', 'tool_name', 'multi_edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject', 'tool_name', 'multi_edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept', 'tool_name', 'write')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject', 'tool_name', 'write')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'accept', 'tool_name', 'notebook_edit')
+    UNION ALL SELECT 'claude_code.code_edit_tool.decision', map('decision', 'reject', 'tool_name', 'notebook_edit')
     UNION ALL SELECT 'claude_code.cost.usage', map('skill.name', 'brainstorming')
 ) m;
 

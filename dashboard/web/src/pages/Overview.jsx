@@ -3,7 +3,7 @@ import { DataTable } from "../components/DataTable.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { StatTile } from "../components/StatTile.jsx";
-import { GroupAreaChart, GroupBarChart } from "../components/GroupCharts.jsx";
+import { GroupAreaChart, GroupBarChart, DualLineChart } from "../components/GroupCharts.jsx";
 import { useApi } from "../useApi.js";
 
 const fmtTick = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
@@ -15,6 +15,7 @@ export default function Overview() {
   const cache = useApi("/api/overview/cache-efficiency");
   const models = useApi("/api/overview/model-distribution");
   const adoption = useApi("/api/adoption/levels");
+  const activeTrend = useApi("/api/adoption/timeseries");
 
   const totals = (kpi.data || []).reduce(
     (acc, r) => ({
@@ -94,6 +95,25 @@ export default function Overview() {
             </table>
           )}
         </Card>
+
+        {activeTrend.loading ? (
+          <Loading />
+        ) : activeTrend.error ? (
+          <ErrorBox error={activeTrend.error} />
+        ) : (
+          <DualLineChart
+            title="활성 사용자 추이"
+            subtitle="DAU / WAU / MAU — 그룹 구분 없이 조직 전체"
+            rows={activeTrend.data}
+            xKey="t"
+            tickFormatter={fmtTick}
+            lines={[
+              { key: "mau", label: "MAU" },
+              { key: "wau", label: "WAU" },
+              { key: "dau", label: "DAU" },
+            ]}
+          />
+        )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           {tokens.loading ? <Loading /> : tokens.error ? <ErrorBox error={tokens.error} /> : (

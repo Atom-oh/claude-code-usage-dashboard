@@ -16,7 +16,7 @@ SELECT
     sumIf(Value, MetricName = 'claude_code.commit.count')       AS commits,
     sumIf(Value, MetricName = 'claude_code.pull_request.count') AS prs,
     sumIf(Value, MetricName = 'claude_code.token.usage')        AS total_tokens,
-    sumIf(Value, MetricName = 'claude_code.lines_of_code.count')AS lines_of_code
+    sumIf(Value, MetricName = 'claude_code.lines_of_code.count' AND TokenType = 'added') AS lines_of_code
 FROM claude_code.otel_metrics_sum
 WHERE $__timeFilter(TimeUnix)
 GROUP BY ExperimentGroup
@@ -53,7 +53,7 @@ ORDER BY ExperimentGroup;
 -- 비용 대신 토큰당 산출물로 비교 → Bedrock/Enterprise 요금 차이 교란 제거
 SELECT
     ExperimentGroup,
-    sumIf(Value, MetricName = 'claude_code.lines_of_code.count')          AS loc,
+    sumIf(Value, MetricName = 'claude_code.lines_of_code.count' AND TokenType = 'added') AS loc,
     sumIf(Value, MetricName = 'claude_code.token.usage')                  AS tokens,
     round(loc / nullIf(tokens, 0) * 1000000, 2)                           AS loc_per_million_tokens,
     sumIf(Value, MetricName = 'claude_code.commit.count')                 AS commits,

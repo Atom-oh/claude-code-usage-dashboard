@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeModelId, priceFor, withComputedCost } from "./pricing.js";
+import { normalizeModelId, priceFor, withComputedCost, tierCosts } from "./pricing.js";
 
 test("normalizeModelId strips bedrock/date/context-window variants", () => {
   assert.equal(normalizeModelId("us.anthropic.claude-sonnet-4-5-20250929-v1:0"), "claude-sonnet-4-5");
@@ -28,6 +28,21 @@ test("withComputedCost multiplies token sums by per-type unit price", () => {
   const [row] = withComputedCost(rows);
   assert.equal(row.unpriced, false);
   assert.ok(Math.abs(row.cost - 0.4268) < 0.0005, `expected ~0.4268, got ${row.cost}`);
+});
+
+test("tierCosts sums $ per token tier across rows, skipping unpriced models", () => {
+  const rows = [
+    { model: "claude-sonnet-4-5", input_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
+    { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 1_000_000, cache_read_tokens: 0, cache_write_tokens: 0 },
+    { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 1_000_000, cache_write_tokens: 0 },
+    { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000 },
+    { model: "some-unknown-model", input_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
+  ];
+  const t = tierCosts(rows);
+  assert.equal(t.uncachedInput, 3); // $3/M input
+  assert.equal(t.output, 15); // $15/M output
+  assert.equal(t.cacheRead, 0.3); // $0.3/M cacheRead
+  assert.equal(t.cacheWrite, 3.75); // $3.75/M cacheWrite
 });
 
 test("withComputedCost flags unpriced models without dropping reported_cost", () => {
