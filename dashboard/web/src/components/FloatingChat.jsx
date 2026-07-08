@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { MessageCircle, Send, X } from "lucide-react";
 import { cn } from "../cn.js";
 
 // Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/status/done/error)를 그대로 읽는다.
-// markdown 렌더러는 안 붙인다(표는 원문 그대로 보여도 충분) — 필요해지면 그때 추가.
 async function streamChat(messages, { onText, onStatus }) {
   const res = await fetch("/api/chat", {
     method: "POST",
@@ -113,11 +114,21 @@ export function FloatingChat() {
               <div
                 key={i}
                 className={cn(
-                  "max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-[13px] leading-relaxed",
-                  m.role === "user" ? "self-end bg-brand-500 text-white" : "self-start bg-ink-100 text-ink-800"
+                  "max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed",
+                  m.role === "user"
+                    ? "self-end whitespace-pre-wrap bg-brand-500 text-white"
+                    : "self-start bg-ink-100 text-ink-800 chat-md"
                 )}
               >
-                {m.content || (busy && i === msgs.length - 1 ? "…" : "")}
+                {m.role === "user" ? (
+                  m.content
+                ) : m.content ? (
+                  <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
+                ) : busy && i === msgs.length - 1 ? (
+                  "…"
+                ) : (
+                  ""
+                )}
               </div>
             ))}
             {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
