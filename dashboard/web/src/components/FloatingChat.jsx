@@ -85,7 +85,7 @@ export function FloatingChat() {
   return (
     <>
       {open && (
-        <div className="fixed bottom-20 right-6 z-50 flex h-[520px] w-[400px] flex-col overflow-hidden rounded-xl border border-ink-100 bg-card shadow-xl">
+        <div className="fixed bottom-20 right-6 z-50 flex h-[520px] max-h-[calc(100vh-7rem)] w-[400px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border border-ink-100 bg-card shadow-xl">
           <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
             <div>
               <div className="text-[14px] font-semibold text-ink-800">Ask Claude</div>

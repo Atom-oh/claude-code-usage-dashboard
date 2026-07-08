@@ -40,8 +40,18 @@ function filterCond(filters = {}, cols = {}) {
     conds.push(`positionCaseInsensitive(${cols.user}, {fUser:String}) > 0`);
     params.fUser = filters.user;
   }
+  // 유저 드릴다운(드로어) 전용 — 부분일치면 kim@x.com 드로어에 joakim@x.com 데이터가 섞인다.
+  if (filters.userExact && cols.user) {
+    conds.push(`${cols.user} = {fUser:String}`);
+    params.fUser = filters.userExact;
+  }
   if (filters.model && cols.model) {
     conds.push(`positionCaseInsensitive(${normModel(cols.model)}, {fModel:String}) > 0`);
+    params.fModel = filters.model;
+  }
+  // 서브쿼리에서 이미 normModel()로 정규화된 alias를 참조할 때 — normModel 이중 적용을 피한다.
+  if (filters.model && cols.modelNorm) {
+    conds.push(`positionCaseInsensitive(${cols.modelNorm}, {fModel:String}) > 0`);
     params.fModel = filters.model;
   }
   // 로그 테이블(otel_logs)엔 Model이 없다 — 세션이 실제로 쓴 모델을 otel_metrics_sum에서
@@ -314,7 +324,8 @@ export async function costByModelDaily(from, to, intervalHours = 24, filters = {
 // row를 매번 다시 합산할 필요가 없다. cost/prev_cost는 각 구간 토큰 합계에 단가표를 적용해 JS에서
 // 계산(withComputedCost 2회 호출). group/user 필터를 걸려면 session_group을 여기서도 조인한다.
 export async function costByModelCompare(from, to, prevFrom, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", model: "Model" });
+  // outer는 서브쿼리 m의 projection만 보인다 — 원본 Model 컬럼이 아니라 정규화된 alias(model)로 필터.
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelNorm: "model" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT model,
@@ -661,9 +672,10 @@ export async function userDaily(from, to, email) {
   );
 }
 
-// 유저 드릴다운: 특정 유저의 도구별 수락/거부.
+// 유저 드릴다운: 특정 유저의 도구별 수락/거부. userDaily/userHeatmap과 같은 exact match —
+// 부분일치({user})면 kim@x.com 드로어에 joakim@x.com 데이터가 섞인다.
 export async function userDecisionsByTool(from, to, email) {
-  return codeEditDecisionsByTool(from, to, { user: email });
+  return codeEditDecisionsByTool(from, to, { userExact: email });
 }
 
 // 유저 드릴다운: GitHub식 활동 히트맵 — to 기준 지난 91일(13주)의 일별 세션 수.
@@ -683,12 +695,17 @@ export async function userHeatmap(to, email, days = 91) {
 // "존재하는 날짜 수"라 temporality와 무관 — 원본 테이블에서 바로 distinct count로 구해 별도 CTE로 조인.
 export async function userLeaderboard(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  // active_days에도 같은 필터를 건다(컬럼 참조만 CTE 기준으로) — 안 걸면 group/model 필터 상태에서
+  // sessions/loc는 필터되는데 활성일수(점수 가중치 0.15)만 전체 활동 기준이라 점수가 불일치한다.
+  // 파라미터 이름/값이 f와 동일해 중복 병합은 무해.
+  const fAd = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", model: "Model" });
   return query(
     `${GROUP_CTE},
     active_days AS (
         SELECT UserEmail, uniqExact(toDate(TimeUnix)) AS active_days
-        FROM claude_code.otel_metrics_sum
-        WHERE UserEmail != '' AND TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime}
+        FROM claude_code.otel_metrics_sum m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE UserEmail != '' AND TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} ${fAd.where}
         GROUP BY UserEmail
     )
     SELECT
@@ -712,6 +729,6 @@ export async function userLeaderboard(from, to, filters = {}) {
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
     WHERE m.UserEmail != '' ${f.where}
     GROUP BY user ORDER BY tokens DESC`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to), ...f.params, ...fAd.params }
   );
 }

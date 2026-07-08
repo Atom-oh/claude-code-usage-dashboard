@@ -100,8 +100,8 @@ export async function handleChat(req, res) {
         const { toolUseId, input } = block.toolUse;
         send("status", { message: "쿼리 실행 중...", sql: input.sql });
         try {
-          const rows = await queryReadonly(sanitizeSql(input.sql));
-          results.push({ toolResult: { toolUseId, content: [{ json: { rows } }] } });
+          const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql));
+          results.push({ toolResult: { toolUseId, content: [{ json: { rows, truncated } }] } });
         } catch (err) {
           results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${err.message}` }], status: "error" } });
         }

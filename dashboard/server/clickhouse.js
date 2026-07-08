@@ -21,15 +21,27 @@ export async function query(sql, query_params = {}) {
 // 챗봇 run_sql 툴 전용. otel_reader 계정 프로필이 서버 쪽에서 이미 readonly=1을 강제해
 // 쓰기는 원천 차단되지만, 그 결과 클라이언트가 clickhouse_settings로 *어떤* 세션 설정을
 // 바꾸는 것도(readonly 자체는 물론 max_result_rows 같은 무관한 값도) 거부한다
-// (실측: "Cannot modify 'max_result_rows' setting in readonly mode") — 그래서 행수/시간
-// 상한은 여기서 걸지 않고 JS 쪽(slice + race timeout)에서 건다. sanitize(chat.js)가 1차 방어.
+// (실측: "Cannot modify 'max_result_rows' setting in readonly mode") — 그래서 행수 상한은
+// SQL을 LIMIT 201 서브쿼리로 감싸 서버 쪽에서 강제하고(201행이면 잘린 것), 타임아웃은
+// AbortController로 HTTP 요청 자체를 취소해 ClickHouse가 쿼리를 kill하게 한다.
+// sanitize(chat.js)가 1차 방어.
 export async function queryReadonly(sql) {
-  const rs = await Promise.race([
-    client.query({ query: sql, format: "JSONEachRow" }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("쿼리 30초 초과")), 30000)),
-  ]);
-  const rows = await rs.json();
-  return rows.slice(0, 200);
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 30000);
+  try {
+    const rs = await client.query({
+      query: `SELECT * FROM (${sql}) LIMIT 201`,
+      format: "JSONEachRow",
+      abort_signal: abort.signal,
+    });
+    const rows = await rs.json();
+    return { rows: rows.slice(0, 200), truncated: rows.length > 200 };
+  } catch (err) {
+    if (abort.signal.aborted) throw new Error("쿼리 30초 초과");
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function ping() {
