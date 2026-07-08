@@ -130,7 +130,10 @@ export async function tokenTimeseries(from, to, intervalHours = 24) {
 
 // LOC 추가/삭제 시계열 — lines_of_code.count의 type attribute(added/removed)는 token.usage와 같은
 // 승격 컬럼(TokenType = Attributes['type'])에 실린다. 일별(intervalHours=24) 버킷 기본.
+// costByModelDaily와 동일하게 HOUR을 DAY로 접는다 — ClickHouse의 INTERVAL n HOUR은 n>24에서
+// 날짜 경계를 못 넘고 매일 0시로 리셋되는 quirk가 있다(168h 주간 버킷 요청 시 조용히 깨짐).
 export async function locTimeseries(from, to, intervalHours = 24) {
+  const intervalDays = Math.max(1, Math.round(intervalHours / 24));
   return query(
     `${GROUP_CTE}
     SELECT
@@ -139,12 +142,12 @@ export async function locTimeseries(from, to, intervalHours = 24) {
         sumIf(m.Value, m.TokenType = 'added')   AS loc_added,
         sumIf(m.Value, m.TokenType = 'removed') AS loc_removed
     FROM ${incBucketed(
-      `toStartOfInterval(TimeUnix, INTERVAL {intervalHours:UInt32} HOUR)`,
+      `toStartOfInterval(TimeUnix, INTERVAL {intervalDays:UInt32} DAY)`,
       `AND MetricName = 'claude_code.lines_of_code.count'`
     )} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), intervalHours }
+    { ...range(from, to), intervalDays }
   );
 }
 
@@ -570,6 +573,7 @@ export async function userLeaderboard(from, to) {
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')                                    AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                       AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count')                                AS loc,
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added')      AS loc_added,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')                                      AS commits,
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')                                AS prs,
         sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision' AND m.Decision = 'accept')  AS accepted,

@@ -70,9 +70,11 @@ export default function Cost() {
       ]
     : [];
 
+  // unpriced(미산정 모델 사용) 유저는 cost_per_loc이 null — 오름차순 정렬에서 항상 맨 뒤로 보내야
+  // $0.0000/LOC로 "가장 효율적"에 잘못 노출되지 않는다.
   const efficiencyRows = [...(efficiency.data || [])]
     .filter((r) => r.loc > 0)
-    .sort((a, b) => a.cost_per_loc - b.cost_per_loc);
+    .sort((a, b) => (a.cost_per_loc == null) - (b.cost_per_loc == null) || a.cost_per_loc - b.cost_per_loc);
 
   return (
     <div>
@@ -110,7 +112,18 @@ export default function Cost() {
         ) : tiers.error ? (
           <ErrorBox error={tiers.error} />
         ) : (
-          <DonutBreakdown title="캐시 티어별 지출" subtitle="비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력" data={tierRows} nameKey="tier" valueKey="cost" valuePrefix="$" />
+          <DonutBreakdown
+            title="캐시 티어별 지출"
+            subtitle={
+              totals.unpricedTokens > 0
+                ? `비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력 — 미산정 모델 토큰 ${fmt(totals.unpricedTokens)}개는 제외`
+                : "비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력"
+            }
+            data={tierRows}
+            nameKey="tier"
+            valueKey="cost"
+            valuePrefix="$"
+          />
         )}
 
         {byModel.loading ? (
@@ -209,7 +222,7 @@ export default function Cost() {
             columns={[
               { key: "user", label: "사용자" },
               { key: "group", label: "그룹" },
-              { key: "cost", label: "지출 (계산)", render: usd },
+              { key: "cost", label: "지출 (계산)", render: (v, r) => (r.unpriced ? <Badge tone="neutral">미산정 포함</Badge> : usd(v)) },
               { key: "loc", label: "추가 라인", render: fmt },
               { key: "commits", label: "커밋", render: fmt },
               { key: "cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "—" : `$${v.toFixed(4)}`) },

@@ -70,7 +70,10 @@ route("/api/productivity/engagement", (from, to) => q.dailyEngagement(from, to))
 route("/api/productivity/loc-timeseries", (from, to, query) => q.locTimeseries(from, to, Number(query.intervalHours) || 24));
 route("/api/productivity/decisions-by-tool", (from, to) => q.codeEditDecisionsByTool(from, to));
 route("/api/cost/tiers", async (from, to) => tierCosts(await q.costByModel(from, to)));
-route("/api/users/cost-efficiency", async (from, to) => userCostEfficiency(await q.userLeaderboard(from, to), await q.costByUserModel(from, to)));
+route("/api/users/cost-efficiency", async (from, to) => {
+  const [leaderboard, byUserModel] = await Promise.all([q.userLeaderboard(from, to), q.costByUserModel(from, to)]);
+  return userCostEfficiency(leaderboard, byUserModel);
+});
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));

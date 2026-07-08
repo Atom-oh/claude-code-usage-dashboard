@@ -14,9 +14,13 @@ export function rollupActiveUsers(rows, from, to) {
     usersByDay.get(day).add(r.UserEmail);
   }
 
+  // from을 그날 자정으로 내리면(floor) from이 정오 같은 중간 시각일 때 첫 point가 요청 range
+  // 이전(자정~from) 활동까지 끌어온다. 다른 시계열 차트(incBucketed의 WHERE t >= from)와 같은
+  // 절단 규칙을 쓰려면 from 이후의 첫 자정부터 시작해야 한다(from이 이미 자정이면 그대로).
+  const DAY = 86400000;
   const days = [];
-  for (let d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate())); d < to; d.setUTCDate(d.getUTCDate() + 1)) {
-    days.push(toDay(d));
+  for (let t = Math.ceil(from.getTime() / DAY) * DAY; t < to.getTime(); t += DAY) {
+    days.push(toDay(new Date(t)));
   }
 
   const unionSince = (day, windowDays) => {
