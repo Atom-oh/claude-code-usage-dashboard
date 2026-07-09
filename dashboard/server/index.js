@@ -7,13 +7,21 @@ import { withProductivityScore } from "./productivity.js";
 import { tierCosts } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping } from "./clickhouse.js";
+import { handleChat } from "./chat.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// CloudFront(VPC Origin) → 내부 NLB(TCP passthrough) → 파드 구조라 신뢰할 프록시 홉은 딱 1개다.
+// CloudFront가 실클라이언트 IP를 X-Forwarded-For에 append하므로 hop=1이면 req.ip가 그 값이 되고,
+// 클라이언트가 스스로 prepend한 위조 XFF 엔트리는 무시된다. true(전 홉 신뢰)로 두면 위조 XFF로
+// per-IP rate limit(/api/chat)을 우회할 수 있어 홉 수로 고정한다.
+app.set("trust proxy", 1);
+
 // ponytail: Basic Auth only when creds are set — local dev / cluster-internal probes skip it.
-if (process.env.BASIC_AUTH_USER && process.env.BASIC_AUTH_PASSWORD) {
+const authEnabled = !!(process.env.BASIC_AUTH_USER && process.env.BASIC_AUTH_PASSWORD);
+if (authEnabled) {
   app.use(
     "/",
     (req, res, next) => (req.path === "/healthz" ? next() : basicAuth({
@@ -33,11 +41,17 @@ function parseRange(req) {
   return { from, to };
 }
 
+// 전역 필터(group/user/model) — 쿼리 파라미터로 안 오면 undefined라 filterCond()가 그냥 건너뛴다.
+function parseFilters(req) {
+  const { group, user, model } = req.query;
+  return { group, user, model };
+}
+
 function route(path, handler) {
   app.get(path, async (req, res) => {
     try {
       const { from, to } = parseRange(req);
-      res.json(await handler(from, to, req.query));
+      res.json(await handler(from, to, req.query, parseFilters(req)));
     } catch (err) {
       console.error(path, err);
       res.status(500).json({ error: err.message });
@@ -45,35 +59,51 @@ function route(path, handler) {
   });
 }
 
-route("/api/overview/kpi", (from, to) => q.kpiSummary(from, to));
-route("/api/overview/tokens-timeseries", (from, to, query) => q.tokenTimeseries(from, to, Number(query.intervalHours) || 24));
-route("/api/overview/cache-efficiency", (from, to) => q.cacheEfficiency(from, to));
-route("/api/overview/model-distribution", (from, to) => q.modelDistribution(from, to));
-route("/api/productivity/normalized", (from, to) => q.normalizedProductivity(from, to));
-route("/api/productivity/decisions", (from, to) => q.codeEditDecisions(from, to));
-route("/api/productivity/active-time", (from, to, query) => q.activeTimeSeries(from, to, Number(query.intervalHours) || 24));
-route("/api/usage/tool-mcp", (from, to) => q.toolMcpUsage(from, to));
-route("/api/usage/skills", (from, to) => q.skillUsage(from, to));
-route("/api/users/leaderboard", async (from, to) => withProductivityScore(await q.userLeaderboard(from, to), from, to));
-route("/api/users/tools", (from, to) => q.userToolUsage(from, to));
-route("/api/users/skills", (from, to) => q.userSkillUsage(from, to));
-route("/api/cost/summary", (from, to) => q.costSummary(from, to));
-route("/api/cost/by-model", (from, to) => q.costByModel(from, to));
-route("/api/cost/by-user-model", (from, to) => q.costByUserModel(from, to));
-route("/api/cost/by-model-daily", (from, to, query) => q.costByModelDaily(from, to, Number(query.intervalHours) || 24));
-route("/api/cost/by-model-compare", (from, to) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from))));
-route("/api/usage/connectors", (from, to) => q.mcpConnectorUsage(from, to));
-route("/api/productivity/agenticness", (from, to, query) => q.agenticness(from, to, Number(query.intervalHours) || 24));
-route("/api/adoption/levels", (from, to) => q.adoptionLevels(from, to));
-route("/api/adoption/timeseries", (from, to) => q.activeUsersTimeseries(from, to));
-route("/api/productivity/engagement", (from, to) => q.dailyEngagement(from, to));
-route("/api/productivity/loc-timeseries", (from, to, query) => q.locTimeseries(from, to, Number(query.intervalHours) || 24));
-route("/api/productivity/decisions-by-tool", (from, to) => q.codeEditDecisionsByTool(from, to));
-route("/api/cost/tiers", async (from, to) => tierCosts(await q.costByModel(from, to)));
-route("/api/users/cost-efficiency", async (from, to) => {
-  const [leaderboard, byUserModel] = await Promise.all([q.userLeaderboard(from, to), q.costByUserModel(from, to)]);
+route("/api/overview/kpi", (from, to, _q, filters) => q.kpiSummary(from, to, filters));
+route("/api/overview/active-users", (from, to, _q, filters) => q.activeUsers(from, to, filters));
+route("/api/overview/tokens-timeseries", (from, to, query, filters) => q.tokenTimeseries(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/overview/cache-efficiency", (from, to, _q, filters) => q.cacheEfficiency(from, to, filters));
+route("/api/overview/model-distribution", (from, to, _q, filters) => q.modelDistribution(from, to, filters));
+route("/api/productivity/normalized", (from, to, _q, filters) => q.normalizedProductivity(from, to, filters));
+route("/api/productivity/decisions", (from, to, _q, filters) => q.codeEditDecisions(from, to, filters));
+route("/api/productivity/active-time", (from, to, query, filters) => q.activeTimeSeries(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/usage/tool-mcp", (from, to, _q, filters) => q.toolMcpUsage(from, to, filters));
+route("/api/usage/skills", (from, to, _q, filters) => q.skillUsage(from, to, filters));
+route("/api/users/leaderboard", async (from, to, _q, filters) => withProductivityScore(await q.userLeaderboard(from, to, filters), from, to));
+route("/api/users/tools", (from, to, _q, filters) => q.userToolUsage(from, to, filters));
+route("/api/users/skills", (from, to, _q, filters) => q.userSkillUsage(from, to, filters));
+route("/api/cost/summary", (from, to, _q, filters) => q.costSummary(from, to, filters));
+route("/api/cost/by-model", (from, to, _q, filters) => q.costByModel(from, to, filters));
+route("/api/cost/by-user-model", (from, to, _q, filters) => q.costByUserModel(from, to, filters));
+route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/cost/by-model-compare", (from, to, _q, filters) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from)), filters));
+route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(from, to, filters));
+route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters));
+route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, Number(query.intervalHours) || 24, filters));
+// 우리(필터 지원, DAU/WAU/MAU + 고착도, Trends/Executive가 사용) 버전을 채택 — main의
+// activeUsersTimeseries(필터 없음, activity.js 순수 함수 롤업)는 반환 shape가 상위집합
+// ({t,dau,wau,mau} vs {t,dau,wau,mau,stickiness})이라 Overview.jsx도 그대로 동작한다.
+route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
+route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
+route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/cost/tiers", async (from, to, _q, filters) => tierCosts(await q.costByModel(from, to, filters)));
+route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
+  const [leaderboard, byUserModel] = await Promise.all([q.userLeaderboard(from, to, filters), q.costByUserModel(from, to, filters)]);
   return userCostEfficiency(leaderboard, byUserModel);
 });
+route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || "")));
+route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || "")));
+route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || "")));
+
+// 챗은 Bedrock 호출 + 임의 read-only SELECT라 다른 데이터 API보다 리스크가 높다. auth env가
+// 없으면 fail-open이 아니라 fail-closed — 명시적으로 CHAT_ALLOW_INSECURE=1을 켠 로컬 dev에서만 무인증 허용.
+const chatAllowed = authEnabled || process.env.CHAT_ALLOW_INSECURE === "1";
+app.post(
+  "/api/chat",
+  express.json(),
+  chatAllowed ? handleChat : (_req, res) => res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" })
+);
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));

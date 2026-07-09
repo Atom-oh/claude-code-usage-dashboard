@@ -9,6 +9,7 @@
     "dev": "node --watch index.js"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1080.0",
     "@clickhouse/client": "^1.9.1",
     "express": "^4.21.2",
     "express-basic-auth": "^1.2.1"

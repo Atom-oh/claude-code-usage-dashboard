@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
-import { DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { DonutBreakdown, HBarList, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
@@ -9,14 +9,44 @@ import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
+import { useFilters } from "../FilterContext.jsx";
+import { makeTickFmt } from "../fmt.js";
 
-const fmtTick = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const GROUP_TABS = [
+  { value: "", label: "전체" },
+  { value: "bedrock", label: "bedrock" },
+  { value: "enterprise", label: "enterprise" },
+];
+
+function foldModelRows(rows) {
+  const totals = new Map();
+  for (const r of rows) {
+    const prev =
+      totals.get(r.model) ||
+      { model: r.model, cost: 0, reportedCost: 0, tokens: 0, inputTokens: 0, outputTokens: 0, unpriced: false };
+    if (r.cost === null) prev.unpriced = true;
+    else prev.cost += Number(r.cost);
+    prev.reportedCost += Number(r.reported_cost);
+    prev.tokens += Number(r.tokens);
+    prev.inputTokens += Number(r.input_tokens);
+    prev.outputTokens += Number(r.output_tokens);
+    totals.set(r.model, prev);
+  }
+  return [...totals.values()].sort((a, b) => b.cost - a.cost);
+}
 
 export default function Cost() {
-  const [intervalHours, setIntervalHours] = useState(24);
-  const { from, to } = useRange();
+  const { group: globalGroup } = useFilters();
+  const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
+  const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
+  // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 기본값으로 재동기화 —
+  // 안 그러면 7일 보다가 1일로 바꿔도 "일간" 버킷에 머문다. days도 dependency에 넣는다: 주간(168)을
+  // 수동 선택한 뒤 30일→7일로 바꾸면 defaultIntervalHours(24)는 불변이라 effect가 안 돌아 주간 버킷이
+  // 남는데(7일=바 1개), days가 바뀌므로 이때도 기본 granularity로 리셋된다.
+  useEffect(() => setIntervalHours(defaultIntervalHours), [defaultIntervalHours, days]);
+  const fmtTick = makeTickFmt(intervalHours);
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");
   const byUserModel = useApi("/api/cost/by-user-model");
@@ -40,21 +70,46 @@ export default function Cost() {
     { cost: 0, reported: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, unpricedTokens: 0, sessions: 0 }
   );
 
-  const modelTotals = new Map();
-  for (const r of byModel.data || []) {
-    const prev =
-      modelTotals.get(r.model) || { model: r.model, cost: 0, reportedCost: 0, inputTokens: 0, outputTokens: 0, unpriced: false };
-    if (r.cost === null) prev.unpriced = true;
-    else prev.cost += Number(r.cost);
-    prev.reportedCost += Number(r.reported_cost);
-    prev.inputTokens += Number(r.input_tokens);
-    prev.outputTokens += Number(r.output_tokens);
-    modelTotals.set(r.model, prev);
-  }
-  const modelRows = [...modelTotals.values()].sort((a, b) => b.cost - a.cost);
+  const modelRows = foldModelRows(byModel.data || []);
   const totalModelCost = modelRows.reduce((s, r) => s + (r.unpriced ? 0 : r.cost), 0);
 
   const userModelRows = [...(byUserModel.data || [])].sort((a, b) => (b.cost || 0) - (a.cost || 0));
+
+  const userTotals = new Map();
+  for (const r of byUserModel.data || []) {
+    if (r.cost === null) continue;
+    userTotals.set(r.user, (userTotals.get(r.user) || 0) + Number(r.cost));
+  }
+  const top10Users = [...userTotals.entries()]
+    .map(([user, cost]) => ({ user, cost }))
+    .sort((a, b) => b.cost - a.cost)
+    .slice(0, 10);
+
+  // 전역 group 필터가 바뀌면 로컬 도넛 탭을 리셋 — 안 그러면 전역=bedrock, 로컬=enterprise처럼
+  // 서로 겹치지 않는 조합이 남아 도넛이 조용히 빈 채로 렌더된다.
+  const [modelDonutGroup, setModelDonutGroup] = useState("");
+  useEffect(() => setModelDonutGroup(""), [globalGroup]);
+  const modelDonutRows = foldModelRows((byModel.data || []).filter((r) => !modelDonutGroup || r.group === modelDonutGroup));
+
+  const [tokenDonutGroup, setTokenDonutGroup] = useState("");
+  useEffect(() => setTokenDonutGroup(""), [globalGroup]);
+  const tokenTotals = (summary.data || [])
+    .filter((r) => !tokenDonutGroup || r.group === tokenDonutGroup)
+    .reduce(
+      (acc, r) => ({
+        input: acc.input + Number(r.input_tokens),
+        output: acc.output + Number(r.output_tokens),
+        cacheRead: acc.cacheRead + Number(r.cache_read_tokens),
+        cacheWrite: acc.cacheWrite + Number(r.cache_write_tokens),
+      }),
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+    );
+  const tokenTypeRows = [
+    { type: "입력", tokens: tokenTotals.input },
+    { type: "출력", tokens: tokenTotals.output },
+    { type: "캐시 읽기", tokens: tokenTotals.cacheRead },
+    { type: "캐시 쓰기", tokens: tokenTotals.cacheWrite },
+  ].filter((r) => r.tokens > 0);
 
   const daysInRange = Math.max(1, (to - from) / 86400000);
   const projection30d = (totals.cost / daysInRange) * 30;
@@ -129,13 +184,35 @@ export default function Cost() {
           />
         )}
 
-        {byModel.loading ? (
-          <Loading />
-        ) : byModel.error ? (
-          <ErrorBox error={byModel.error} />
-        ) : (
-          <DonutBreakdown title="모델별 지출 비중" data={modelRows} nameKey="model" valueKey="cost" valuePrefix="$" />
-        )}
+        <div className="grid gap-4 md:grid-cols-2">
+          {byModel.loading ? (
+            <Loading />
+          ) : byModel.error ? (
+            <ErrorBox error={byModel.error} />
+          ) : (
+            <DonutBreakdown
+              title="모델별 지출 비중"
+              right={<SegmentedControl options={GROUP_TABS} value={modelDonutGroup} onChange={setModelDonutGroup} />}
+              data={modelDonutRows}
+              nameKey="model"
+              valueKey="cost"
+              valuePrefix="$"
+            />
+          )}
+          {summary.loading ? (
+            <Loading />
+          ) : summary.error ? (
+            <ErrorBox error={summary.error} />
+          ) : (
+            <DonutBreakdown
+              title="토큰 타입별 비중"
+              right={<SegmentedControl options={GROUP_TABS} value={tokenDonutGroup} onChange={setTokenDonutGroup} />}
+              data={tokenTypeRows}
+              nameKey="type"
+              valueKey="tokens"
+            />
+          )}
+        </div>
 
         {byModelDaily.loading ? (
           <Loading />
@@ -143,10 +220,14 @@ export default function Cost() {
           <ErrorBox error={byModelDaily.error} />
         ) : (
           <SeriesBarChart
-            title="일간 모델별 지출"
+            title="모델별 지출 추이"
             right={
               <SegmentedControl
-                options={[{ value: "24", label: "일간" }, { value: "168", label: "주간" }]}
+                options={[
+                  { value: "1", label: "시간별" },
+                  { value: "24", label: "일간" },
+                  { value: "168", label: "주간" },
+                ]}
                 value={String(intervalHours)}
                 onChange={(v) => setIntervalHours(Number(v))}
               />
@@ -193,6 +274,14 @@ export default function Cost() {
           rows={modelRows}
           groupKey="__none__"
         />
+
+        {byUserModel.loading ? (
+          <Loading />
+        ) : byUserModel.error ? (
+          <ErrorBox error={byUserModel.error} />
+        ) : (
+          <HBarList title="Top 10 — 지출 유저" subtitle="계산 비용 기준" data={top10Users} labelKey="user" valueKey="cost" valuePrefix="$" />
+        )}
 
         {byUserModel.loading ? (
           <Loading />

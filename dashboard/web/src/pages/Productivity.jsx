@@ -5,22 +5,36 @@ import { GroupAreaChart, GroupBarChart, DualLineChart, SeriesBarChart } from "..
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
+import { useRange } from "../RangeContext.jsx";
+import { makeTickFmt } from "../fmt.js";
 
-const fmtTick = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 const fmt = (n) => Number(n || 0).toLocaleString();
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
 
 export default function Productivity() {
+  const { intervalHours } = useRange();
+  const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
   const norm = useApi("/api/productivity/normalized");
   const decisions = useApi("/api/productivity/decisions");
+  const decisionsByTool = useApi("/api/productivity/decisions-by-tool");
   const active = useApi("/api/productivity/active-time");
   const agentic = useApi("/api/productivity/agenticness");
   const engagement = useApi("/api/productivity/engagement");
   const locTrend = useApi("/api/productivity/loc-timeseries");
-  const decisionsByTool = useApi("/api/productivity/decisions-by-tool");
 
   const activeHours = active.data?.map((r) => ({ ...r, active_seconds: r.active_seconds / 3600 }));
+
+  // decisionsByTool은 group×tool×decision 원본이라 xKey="tool" 막대차트에 그대로 넣으면 전역 그룹
+  // 필터가 꺼진 상태(양 그룹 모두)에서 같은 tool/decision 막대가 그룹별로 중복 렌더된다 →
+  // "도구별 총량"으로 오독된다. tool+decision으로 합산해 넘긴다(필터가 켜져 한 그룹뿐이면 no-op).
+  const decisionsByToolAgg = Object.values(
+    (decisionsByTool.data || []).reduce((acc, r) => {
+      const k = `${r.tool}|${r.decision}`;
+      (acc[k] ||= { tool: r.tool, decision: r.decision, n: 0 }).n += Number(r.n);
+      return acc;
+    }, {})
+  );
 
   const outcomeTotals = (kpi.data || []).reduce(
     (acc, r) => ({ prs: acc.prs + Number(r.prs), loc: acc.loc + Number(r.lines_of_code) }),
@@ -106,21 +120,6 @@ export default function Productivity() {
           )}
         </div>
 
-        {decisionsByTool.loading ? (
-          <Loading />
-        ) : decisionsByTool.error ? (
-          <ErrorBox error={decisionsByTool.error} />
-        ) : (
-          <SeriesBarChart
-            title="툴 별 수락/거부"
-            subtitle="edit / multi_edit / write / notebook_edit — 그룹 합산"
-            rows={decisionsByTool.data}
-            xKey="tool"
-            seriesKey="decision"
-            valueKey="n"
-          />
-        )}
-
         {decisions.loading ? (
           <Loading />
         ) : decisions.error ? (
@@ -141,6 +140,43 @@ export default function Productivity() {
             colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}
           />
         )}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {decisionsByTool.loading ? (
+            <Loading />
+          ) : decisionsByTool.error ? (
+            <ErrorBox error={decisionsByTool.error} />
+          ) : (
+            <GroupBarChart
+              title="도구별 수락/거부"
+              subtitle="실측: Edit / Write (multi_edit·notebook_edit은 위 값 미확인)"
+              right={
+                <div className="flex gap-2">
+                  <Badge tone="positive" dot>accept</Badge>
+                  <Badge tone="negative" dot>reject</Badge>
+                </div>
+              }
+              rows={decisionsByToolAgg}
+              xKey="tool"
+              valueKey="n"
+              colorFn={(r) => STATUS_COLOR[r.decision] || "var(--ink-400)"}
+            />
+          )}
+          {decisionsByTool.loading ? (
+            <Loading />
+          ) : decisionsByTool.error ? (
+            <ErrorBox error={decisionsByTool.error} />
+          ) : (
+            <SeriesBarChart
+              title="툴 별 수락/거부"
+              subtitle="edit / multi_edit / write / notebook_edit — 그룹 합산"
+              rows={decisionsByTool.data}
+              xKey="tool"
+              seriesKey="decision"
+              valueKey="n"
+            />
+          )}
+        </div>
 
         {active.loading ? <Loading /> : active.error ? <ErrorBox error={active.error} /> : (
           <GroupAreaChart title="활성 사용 시간" subtitle="시간, 그룹별 시계열" rows={activeHours} xKey="t" valueKey="active_seconds" tickFormatter={fmtTick} />
