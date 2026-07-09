@@ -3,6 +3,12 @@ import { queryReadonly } from "./clickhouse.js";
 
 // Ask Claude — Bedrock ConverseStream + run_sql 툴콜 루프 (whchoi98 대시보드의 Analyze 상당,
 // 대상 저장소만 Athena → 우리 ClickHouse). 모델은 운영 결정에 따라 sonnet-5 고정.
+// 신뢰 경계: run_sql은 basic auth(index.js) 통과자 전원에게 claude_code.* 전 컬럼(UserEmail,
+// Attributes 등 raw telemetry 포함) 읽기를 허용한다 — SYSTEM 프롬프트가 안내하는 컬럼 목록은
+// 힌트일 뿐 권한 경계가 아니다. 이 대시보드의 다른 curated API(리더보드 등)도 이미 같은 단일
+// 공유 크리덴셜 뒤에서 전체 유저 이메일을 노출하므로, 챗의 권한 표면은 새 신뢰 계층이 아니라
+// 기존 "basic auth = 단일 admin 신뢰" 설계의 연장이다(의도된 설계, 리뷰에서 확인 요청됨).
+// 유저별 인증/멀티테넌시가 들어오면 이 가정이 깨지므로 그때 aggregate/컬럼 allowlist로 전환한다.
 const MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-sonnet-5";
 const MAX_HOPS = 4;
 

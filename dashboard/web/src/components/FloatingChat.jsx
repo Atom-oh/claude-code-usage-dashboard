@@ -79,12 +79,19 @@ export function FloatingChat() {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    // 이전 오류 말풍선(error:true)은 서버로 다시 보내지 않는다 — 모델 컨텍스트에 "오류:" 텍스트가
-    // assistant 발화로 재주입되면 다음 답변이 오염된다. content가 빈 assistant 말풍선(첫 토큰
-    // 도착 전에 stop()으로 닫은 낙관적 placeholder)도 함께 걸러낸다 — 안 그러면 서버가 falsy
-    // content를 드롭해 연속된 user 턴만 남고, Bedrock Converse가 이를 거부해 리로드 전까지
-    // 챗이 먹통이 된다(실측: 리뷰에서 확인).
-    const history = [...msgs.filter((m) => m.content && !m.error), { role: "user", content: q }];
+    // 이전 오류 말풍선(error:true)과 빈 assistant placeholder(content 없음)는 서버로 다시
+    // 보내지 않는다 — 걸러도 앞선 user 턴이 그대로 남을 수 있다(예: 에러 후 재질문 시
+    // [user:Q1, assistant:오류] 에서 오류만 빠지면 [user:Q1, user:Q2]로 연속 user 턴이 되고,
+    // Bedrock Converse가 역할 교차를 요구해 거부 → 리로드 전까지 챗이 먹통이 된다(실측: 리뷰에서
+    // 확인). 그래서 필터 후 같은 role이 연속되면 하나로 합쳐 항상 user/assistant가 교차하게
+    // 만든다 — 어떤 필터 조합에서도 안전하다.
+    const history = [];
+    for (const m of [...msgs, { role: "user", content: q }]) {
+      if (!m.content || m.error) continue;
+      const last = history[history.length - 1];
+      if (last && last.role === m.role) last.content += "\n" + m.content;
+      else history.push({ role: m.role, content: m.content });
+    }
     setMsgs([...history, { role: "assistant", content: "" }]);
     try {
       await streamChat(history, {
@@ -140,27 +147,24 @@ export function FloatingChat() {
                 ))}
               </div>
             )}
-            {msgs.map((m, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed",
-                  m.role === "user"
-                    ? "self-end whitespace-pre-wrap bg-brand-500 text-white"
-                    : "self-start bg-ink-100 text-ink-800 chat-md"
-                )}
-              >
-                {m.role === "user" ? (
-                  m.content
-                ) : m.content ? (
-                  <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
-                ) : busy && i === msgs.length - 1 ? (
-                  "…"
-                ) : (
-                  ""
-                )}
-              </div>
-            ))}
+            {msgs.map((m, i) => {
+              // 첫 토큰 도착 전 닫혔다가 다시 열린 빈 assistant placeholder는 진행 중이 아니면
+              // 렌더하지 않는다 — 그냥 두면 빈 회색 버블이 잔상으로 남는다.
+              if (!m.content && !(busy && i === msgs.length - 1)) return null;
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    "max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed",
+                    m.role === "user"
+                      ? "self-end whitespace-pre-wrap bg-brand-500 text-white"
+                      : "self-start bg-ink-100 text-ink-800 chat-md"
+                  )}
+                >
+                  {m.role === "user" ? m.content : m.content ? <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown> : "…"}
+                </div>
+              );
+            })}
             {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
             <div ref={bottomRef} />
           </div>

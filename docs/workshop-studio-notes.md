@@ -53,6 +53,12 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
    - `SELECT * FROM system.query_log LIMIT 1`도 `ACCESS_DENIED`가 나야 한다 — claude_code 외
      DB 접근이 막혀 있는지 별도 확인(system DB는 `sanitizeSql`도 앱 계층에서 이미 거부하지만,
      grant까지 걸려 있으면 defense-in-depth가 이중이 된다).
+7. Ask Claude 챗의 권한 경계 — `run_sql`은 basic auth 통과자 전원에게 `claude_code.*`의 전
+   컬럼(`UserEmail`, `Attributes` 등 raw telemetry 포함)을 읽기 허용한다. 컬럼별 마스킹은 없다
+   — 이 대시보드의 다른 curated API(리더보드 등)도 같은 단일 공유 크리덴셜 뒤에서 전체 유저
+   이메일을 노출하므로 새 권한 확대가 아니라 기존 "basic auth = 단일 admin 신뢰" 설계의
+   연장이다(의도된 설계). 워크샵 참가자에게 챗 접근을 개별로 나눠줄 계획이면 이 가정이
+   깨지므로 그 전에 aggregate/컬럼 allowlist 도입이 필요하다.
 
 ## 5. Admin 인프라(이 리포 `infra/`)와 참가자 인프라(워크샵 CFN)의 경계
 

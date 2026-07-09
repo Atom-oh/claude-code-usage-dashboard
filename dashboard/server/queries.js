@@ -216,7 +216,9 @@ export async function tokenTimeseries(from, to, intervalHours = 24, filters = {}
 // 승격 컬럼(TokenType = Attributes['type'])에 실린다. 다른 시계열과 동일하게 bucket()으로 버킷 —
 // 1~2일 뷰(intervalHours=1)에서 시간별 다중 점을 그려야 LOC만 하루 1~2점으로 붕괴하지 않는다.
 export async function locTimeseries(from, to, intervalHours = 24, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  // lines_of_code.count 행엔 Model attribute가 없다(row-level model 매치는 항상 미매치) —
+  // kpiSummary와 동일한 modelMixed 세미조인으로 통일한다(실측: 리뷰에서 확인).
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   const b = bucket(intervalHours);
   return query(
     `${GROUP_CTE}
@@ -292,7 +294,8 @@ export async function normalizedProductivity(from, to, filters = {}) {
 
 // 패널5: 코드 수락률
 export async function codeEditDecisions(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  // code_edit_tool.decision 행엔 Model attribute가 없다 — locTimeseries와 동일한 이유로 modelMixed.
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.Decision AS decision, sum(m.Value) AS n
@@ -310,7 +313,8 @@ export async function codeEditDecisions(from, to, filters = {}) {
 // 실측 확인(2026-07-08, 프로덕션 mapKeys 쿼리): code_edit_tool.decision 83,070행 전부에
 // tool_name 키 존재(Edit 48,404 / Write 34,666) — WHERE tool != ''로 빈 패널이 될 일 없음.
 export async function codeEditDecisionsByTool(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  // code_edit_tool.decision 행엔 Model attribute가 없다 — codeEditDecisions와 동일하게 modelMixed.
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.ToolName AS tool, m.Decision AS decision, sum(m.Value) AS n
@@ -327,7 +331,8 @@ export async function codeEditDecisionsByTool(from, to, filters = {}) {
 // 들어온다 — grafana-ab-queries.sql 패널9의 주석("gauge로 안 들어오면 sum으로 교체")이 실제로
 // 맞았다. otel_metrics_gauge 테이블/스키마는 그대로 두고 이 쿼리만 sum을 본다.
 export async function activeTimeSeries(from, to, intervalHours = 24, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  // active_time.total 행엔 Model attribute가 없다 — locTimeseries와 동일한 이유로 modelMixed.
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   const b = bucket(intervalHours);
   return query(
     `${GROUP_CTE}

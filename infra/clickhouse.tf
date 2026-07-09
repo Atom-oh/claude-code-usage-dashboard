@@ -101,7 +101,19 @@ resource "kubectl_manifest" "chi" {
           # apply 후 실효성은 docs/workshop-studio-notes.md §4 검증 절차(url() → ACCESS_DENIED)로 확인.
           "otel_reader/grants/query" = "GRANT SELECT ON claude_code.*"
         }
-        profiles = { "readonly/readonly" = "1" }
+        # LIMIT 201 래핑(clickhouse.js)과 30초 AbortController(chat.js)는 행수/응답시간만
+        # 제한한다 — 무거운 self-join이나 repeat('x', N) 같은 거대 셀은 여전히 ClickHouse
+        # 메모리·CPU를 소모해 DoS/비용 증폭이 가능하다(실측: 리뷰에서 확인). run_sql이 이
+        # 프로필(otel_reader)만 쓰므로 여기 상한을 둬도 대시보드 자체 쿼리(default 유저)는
+        # 영향받지 않는다. max_execution_time은 clickhouse.js의 30초 abort보다 살짝 넉넉하게
+        # 잡아 abort가 항상 먼저 걸리게 하고, 이건 그 abort가 놓친 경우의 backstop이다.
+        profiles = {
+          "readonly/readonly"           = "1"
+          "readonly/max_execution_time" = "60"
+          "readonly/max_memory_usage"   = "4000000000"
+          "readonly/max_result_bytes"   = "104857600"
+          "readonly/max_rows_to_read"   = "2000000000"
+        }
         # 콜드 티어링: hot(EBS gp3, 기본 disk) → cold(S3), TTL로 이동. 실제 TTL은 스키마 쪽
         # (ConfigMap clickhouse-schema-replicated)에서 `TTL ... TO VOLUME 'cold'`로 건다.
         files = {
