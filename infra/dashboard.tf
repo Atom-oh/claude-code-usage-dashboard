@@ -54,7 +54,12 @@ resource "aws_iam_role" "dashboard_bedrock" {
 }
 
 # InvokeModel* 리소스는 foundation-model(리전 무관 ARN)과 inference-profile 둘 다 필요 —
-# global.anthropic.* 프로파일이 내부적으로 여러 리전의 foundation-model ARN을 참조한다.
+# global.anthropic.* 프로파일이 내부적으로 여러 리전의 foundation-model ARN을 참조하므로
+# foundation-model은 리전 와일드카드(*)를 유지한다. inference-profile은 사용 모델 하나로 좁힌다.
+# chat_model_id에서 리전 프리픽스(global./us./eu./apac.)를 떼면 foundation-model 이름이 된다.
+locals {
+  chat_foundation_model = replace(var.chat_model_id, "/^(global|us|eu|apac)\\./", "")
+}
 resource "aws_iam_role_policy" "dashboard_bedrock" {
   name = "bedrock-invoke"
   role = aws_iam_role.dashboard_bedrock.id
@@ -64,8 +69,8 @@ resource "aws_iam_role_policy" "dashboard_bedrock" {
       Effect = "Allow"
       Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
       Resource = [
-        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5",
-        "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*"
+        "arn:aws:bedrock:*::foundation-model/${local.chat_foundation_model}",
+        "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/${var.chat_model_id}"
       ]
     }]
   })
@@ -107,7 +112,7 @@ resource "kubernetes_deployment_v1" "dashboard" {
           }
           env {
             name  = "CHAT_MODEL_ID"
-            value = "global.anthropic.claude-sonnet-5"
+            value = var.chat_model_id
           }
           env {
             name  = "CH_DB"

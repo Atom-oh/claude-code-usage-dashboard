@@ -8,6 +8,7 @@ import { StatTile } from "../components/StatTile.jsx";
 import { GroupAreaChart, GroupBarChart, DualLineChart } from "../components/GroupCharts.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
+import { useFilters } from "../FilterContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -20,24 +21,27 @@ const TOKEN_VIEWS = [
 export default function Overview() {
   const [tokenView, setTokenView] = useState("tokens");
   const { intervalHours } = useRange();
+  const { model } = useFilters();
   const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
+  const activeUsers = useApi("/api/overview/active-users");
   const tokens = useApi("/api/overview/tokens-timeseries");
   const cache = useApi("/api/overview/cache-efficiency");
   const models = useApi("/api/overview/model-distribution");
   const adoption = useApi("/api/adoption/levels");
   const activeTrend = useApi("/api/adoption/timeseries");
 
+  // users는 그룹별 kpi 합산 대신 ungrouped uniq(active-users)로 — 세션 그레인 판별상 한 유저가
+  // 양 그룹에 걸치면 합산이 중복 카운트된다.
   const totals = (kpi.data || []).reduce(
     (acc, r) => ({
-      users: acc.users + Number(r.users),
       sessions: acc.sessions + Number(r.sessions),
       tokens: acc.tokens + Number(r.total_tokens),
       inputTokens: acc.inputTokens + Number(r.input_tokens),
       outputTokens: acc.outputTokens + Number(r.output_tokens),
       loc: acc.loc + Number(r.lines_of_code),
     }),
-    { users: 0, sessions: 0, tokens: 0, inputTokens: 0, outputTokens: 0, loc: 0 }
+    { sessions: 0, tokens: 0, inputTokens: 0, outputTokens: 0, loc: 0 }
   );
 
   return (
@@ -45,7 +49,7 @@ export default function Overview() {
       <PageHeader title="Overview" subtitle="bedrock vs enterprise — 텔레메트리 기반 그룹 자동 판별" live right={<RangePicker />} />
       <div className="p-8 flex flex-col gap-6">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatTile label="전체 유저" value={fmt(totals.users)} variant="accent" />
+          <StatTile label="전체 유저" value={fmt(activeUsers.data?.users)} variant="accent" />
           <StatTile label="세션" value={fmt(totals.sessions)} />
           <StatTile label="추가 라인" value={fmt(totals.loc)} />
           <StatTile label="전체 토큰" value={fmt(totals.tokens)} />
@@ -58,7 +62,14 @@ export default function Overview() {
         ) : adoption.error ? (
           <ErrorBox error={adoption.error} />
         ) : (
-          <Card title="도입 수준 & 고착도" subtitle="세션이 1건 이상 있었던 유저 기준">
+          <Card
+            title="도입 수준 & 고착도"
+            subtitle={
+              model
+                ? "세션이 1건 이상 있었던 유저 기준 · ⚠ model 필터는 이 카드에 적용되지 않습니다(전체 모델 기준)"
+                : "세션이 1건 이상 있었던 유저 기준"
+            }
+          >
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <StatTile label="전체 멤버" value={fmt(adoption.data.total_members)} />
               <StatTile label="월간 활성 (MAU)" value={fmt(adoption.data.mau)} />

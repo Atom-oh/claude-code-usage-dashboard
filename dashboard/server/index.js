@@ -13,13 +13,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// CloudFront → NLB → EKS 뒤라 소켓 peer는 항상 프록시 IP다. XFF를 신뢰해야 /api/chat rate limit이
-// 클라이언트 단위로 걸린다(안 그러면 전원이 한 버킷에 뭉쳐 오탐 429). ponytail: 클라이언트가 XFF를
-// 위조하면 한도를 우회할 수 있으나 이 상한은 인증(basic auth) 뒤의 비용/DoS 안전망이지 인가 경계가 아니다.
-app.set("trust proxy", true);
+// CloudFront(VPC Origin) → 내부 NLB(TCP passthrough) → 파드 구조라 신뢰할 프록시 홉은 딱 1개다.
+// CloudFront가 실클라이언트 IP를 X-Forwarded-For에 append하므로 hop=1이면 req.ip가 그 값이 되고,
+// 클라이언트가 스스로 prepend한 위조 XFF 엔트리는 무시된다. true(전 홉 신뢰)로 두면 위조 XFF로
+// per-IP rate limit(/api/chat)을 우회할 수 있어 홉 수로 고정한다.
+app.set("trust proxy", 1);
 
 // ponytail: Basic Auth only when creds are set — local dev / cluster-internal probes skip it.
-if (process.env.BASIC_AUTH_USER && process.env.BASIC_AUTH_PASSWORD) {
+const authEnabled = !!(process.env.BASIC_AUTH_USER && process.env.BASIC_AUTH_PASSWORD);
+if (authEnabled) {
   app.use(
     "/",
     (req, res, next) => (req.path === "/healthz" ? next() : basicAuth({
@@ -58,6 +60,7 @@ function route(path, handler) {
 }
 
 route("/api/overview/kpi", (from, to, _q, filters) => q.kpiSummary(from, to, filters));
+route("/api/overview/active-users", (from, to, _q, filters) => q.activeUsers(from, to, filters));
 route("/api/overview/tokens-timeseries", (from, to, query, filters) => q.tokenTimeseries(from, to, Number(query.intervalHours) || 24, filters));
 route("/api/overview/cache-efficiency", (from, to, _q, filters) => q.cacheEfficiency(from, to, filters));
 route("/api/overview/model-distribution", (from, to, _q, filters) => q.modelDistribution(from, to, filters));
@@ -93,7 +96,14 @@ route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(quer
 route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || "")));
 route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || "")));
 
-app.post("/api/chat", express.json(), handleChat);
+// 챗은 Bedrock 호출 + 임의 read-only SELECT라 다른 데이터 API보다 리스크가 높다. auth env가
+// 없으면 fail-open이 아니라 fail-closed — 명시적으로 CHAT_ALLOW_INSECURE=1을 켠 로컬 dev에서만 무인증 허용.
+const chatAllowed = authEnabled || process.env.CHAT_ALLOW_INSECURE === "1";
+app.post(
+  "/api/chat",
+  express.json(),
+  chatAllowed ? handleChat : (_req, res) => res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" })
+);
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));

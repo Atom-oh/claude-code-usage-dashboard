@@ -48,13 +48,15 @@ function assertNoTableFunctions(sqlNoStrings) {
 // SELECT/WITH 단일 문장만 통과 — 나머지는 전부 거부. queryReadonly의 readonly=1이 2차 방어라
 // 여기는 명백한 것만 거른다(정교한 SQL 파서는 오버킬). 테이블 함수는 readonly=1이 막지 *않아*
 // (SSRF: 169.254.169.254 IMDS·file()·내부망) assertNoTableFunctions로 구조적 차단한다.
-// 주석(`url/**/(...)`)·백틱은 토큰 경계를 흐려 우회 벡터라 거부 — 정상 쿼리엔 불필요.
+// 주석(`--`, `/* */`, `#`)·인용부호(백틱·큰따옴표)는 스캐너의 토큰 경계를 흐려 테이블 함수
+// 우회 벡터가 된다: ClickHouse는 `"quoted"` 식별자와 `#` 단행 주석을 지원해 `FROM "url"(...)`,
+// `FROM url #x\n(...)`이 identifier( 인접성 검사를 깬다 — 전부 거부한다(정상 쿼리엔 불필요).
 // system/information_schema는 타 사용자의 쿼리 텍스트(query_log) 등이 보여 거부.
 export function sanitizeSql(sql) {
   const s = String(sql || "").trim().replace(/;+\s*$/, "");
   if (!/^(select|with)\b/i.test(s)) throw new Error("SELECT/WITH 쿼리만 허용됩니다");
   if (/;/.test(s)) throw new Error("다중 문장은 허용되지 않습니다");
-  if (/--|\/\*|`/.test(s)) throw new Error("주석/백틱은 허용되지 않습니다");
+  if (/--|\/\*|[`#"]/.test(s)) throw new Error("주석/인용부호는 허용되지 않습니다");
   if (/\b(insert|alter|drop|truncate|create|rename|grant|attach|detach|optimize|system|kill)\b/i.test(s))
     throw new Error("읽기 전용 쿼리만 허용됩니다");
   if (/\binformation_schema\s*\./i.test(s)) throw new Error("claude_code 스키마만 조회할 수 있습니다");
@@ -69,8 +71,13 @@ const SYSTEM = `당신은 Claude Code 사용량 대시보드의 분석 어시스
    MetricName 값: claude_code.session.count / .token.usage / .cost.usage / .lines_of_code.count / .commit.count / .pull_request.count / .code_edit_tool.decision / .active_time.total
 2. otel_logs — 이벤트. 컬럼: Timestamp, EventName(tool_result/user_prompt 등), UserEmail, SessionId, ToolName, McpServerName, Success.
 
-중요 — cumulative 함정: otel_metrics_sum은 세션 단위 누적 카운터를 30초마다 재보고하므로 sum(Value)를 그대로 쓰면 심하게 과대집계됩니다. 합계가 필요하면 반드시 세션·시리즈 단위 max()를 먼저 취하세요:
-SELECT sum(v) FROM (SELECT max(Value) AS v FROM otel_metrics_sum WHERE MetricName='...' GROUP BY cityHash64(toString(Attributes)), SessionId)
+중요 — cumulative 함정: otel_metrics_sum은 세션 단위 누적 카운터를 30초마다 재보고하므로 sum(Value)를 그대로 쓰면 심하게 과대집계됩니다. 또한 세션이 조회 기간(from) 이전에 시작했으면 그 세션의 누적값 전체가 기간 안에 잡혀 과대집계됩니다. 기간 [시작, 끝) 안의 실제 증가량을 구하려면 세션·시리즈 단위로 "끝 직전 누적값 - 시작 직전 누적값"을 diff하세요(음수 방지 greatest):
+SELECT sum(inc) FROM (
+  SELECT greatest(maxIf(Value, TimeUnix < {끝}) - maxIf(Value, TimeUnix < {시작}), 0) AS inc
+  FROM otel_metrics_sum
+  WHERE MetricName='...' AND TimeUnix < {끝}
+  GROUP BY cityHash64(toString(Attributes)), SessionId)
+(기간 전체 총량이면 {시작}=조회 시작 시각. 대시보드 서버 쿼리도 이 boundary-diff 방식을 씁니다.)
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
 규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.`;
@@ -160,7 +167,9 @@ export async function handleChat(req, res) {
       for (const block of content) {
         if (!block.toolUse) continue;
         const { toolUseId, input } = block.toolUse;
-        send("status", { message: "쿼리 실행 중...", sql: input.sql });
+        // SQL 원문은 클라이언트로 보내지 않는다 — 모델이 만든 쿼리에 이메일/세션ID 등 민감 telemetry
+        // 조건이 실릴 수 있어 화면공유/로그로 노출된다. FloatingChat은 message만 렌더한다.
+        send("status", { message: "쿼리 실행 중..." });
         try {
           const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql));
           results.push({ toolResult: { toolUseId, content: [{ json: { rows, truncated } }] } });

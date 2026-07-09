@@ -96,6 +96,9 @@ resource "kubectl_manifest" "chi" {
           # 명시 grant를 두면 기본 전체권한이 사라져 테이블 함수(url/s3/remote/file → 각각
           # URL/S3/REMOTE/FILE grant 필요)와 system DB가 서버 측에서 거부된다 — Ask Claude 챗의
           # sanitizeSql SSRF 방어(chat.js)의 defense-in-depth. 대시보드는 claude_code.*만 조회한다.
+          # 이 grants/query는 config 기반(users.xml) 유저의 <grants> 요소로 렌더되며, SQL 명령 기반
+          # 접근제어(access_management=1)와 무관하게 동작한다 — 별도 access_management 설정 불필요.
+          # apply 후 실효성은 docs/workshop-studio-notes.md §4 검증 절차(url() → ACCESS_DENIED)로 확인.
           "otel_reader/grants/query" = "GRANT SELECT ON claude_code.*"
         }
         profiles = { "readonly/readonly" = "1" }

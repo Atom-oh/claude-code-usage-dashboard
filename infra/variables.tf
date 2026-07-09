@@ -10,6 +10,12 @@ variable "k8s_namespace" {
   default = "claude-code"
 }
 
+# Ask Claude 챗이 호출하는 Bedrock 모델(inference profile id). 변경 시 env(CHAT_MODEL_ID)와
+# IAM policy의 foundation-model/inference-profile ARN이 이 변수 하나로 함께 좁혀진다.
+variable "chat_model_id" {
+  default = "global.anthropic.claude-sonnet-5"
+}
+
 variable "domain" {
   default = "atomai.click"
 }

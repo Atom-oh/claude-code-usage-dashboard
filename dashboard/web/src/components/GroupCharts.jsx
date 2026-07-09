@@ -126,6 +126,15 @@ export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey
       ? `$${Number(v) < 10 ? v.toFixed(2) : Math.round(v).toLocaleString()}`
       : v.toLocaleString();
 
+  // 전역/로컬 group 필터가 서로 겹치지 않으면 데이터가 비는데, 빈 도넛만 렌더되면 로딩/버그처럼 보인다.
+  if (total <= 0) {
+    return (
+      <Card title={title} subtitle={subtitle} right={right}>
+        <div className="flex h-[170px] items-center justify-center text-[13px] text-ink-400">표시할 데이터가 없습니다</div>
+      </Card>
+    );
+  }
+
   return (
     <Card title={title} subtitle={subtitle} right={right}>
       <div className="flex items-center gap-4">

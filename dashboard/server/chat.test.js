@@ -33,7 +33,11 @@ const REJECT_OTHER = [
   "DROP TABLE otel_logs",
   "SELECT 1; SELECT 2",
   "SELECT 1 FROM otel_logs -- comment",
+  "SELECT 1 FROM otel_logs # comment", // # 단행 주석
   "SELECT 1 FROM `otel_logs`",
+  'SELECT 1 FROM "url"(\'http://169.254.169.254/\')', // 큰따옴표 식별자로 테이블 함수 우회 시도
+  'SELECT 1 FROM otel_logs, "s3"(\'http://evil/\')', // 큰따옴표 + comma cross-join
+  "SELECT 1 FROM url #x\n('http://evil/')", // # 주석으로 identifier( 인접성 깨기
   "SELECT * FROM information_schema.tables",
   "SELECT * FROM INFORMATION_SCHEMA.tables", // 대소문자 혼합
   "SELECT * FROM system.query_log",

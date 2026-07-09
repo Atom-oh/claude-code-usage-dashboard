@@ -39,11 +39,13 @@ function foldModelRows(rows) {
 
 export default function Cost() {
   const { group: globalGroup } = useFilters();
-  const { intervalHours: defaultIntervalHours, from, to } = useRange();
+  const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
-  // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 재동기화 —
-  // 안 그러면 7일 보다가 1일로 바꿔도 "일간" 버킷에 머물러 바 하나만 나온다.
-  useEffect(() => setIntervalHours(defaultIntervalHours), [defaultIntervalHours]);
+  // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 기본값으로 재동기화 —
+  // 안 그러면 7일 보다가 1일로 바꿔도 "일간" 버킷에 머문다. days도 dependency에 넣는다: 주간(168)을
+  // 수동 선택한 뒤 30일→7일로 바꾸면 defaultIntervalHours(24)는 불변이라 effect가 안 돌아 주간 버킷이
+  // 남는데(7일=바 1개), days가 바뀌므로 이때도 기본 granularity로 리셋된다.
+  useEffect(() => setIntervalHours(defaultIntervalHours), [defaultIntervalHours, days]);
   const fmtTick = makeTickFmt(intervalHours);
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");

@@ -32,7 +32,9 @@ export default function Executive() {
   const { from, to, days, intervalHours } = useRange();
   const { model } = useFilters();
   const fmtTick = makeTickFmt(intervalHours);
+  const fmtDaily = makeTickFmt(24); // adoptionTs는 항상 일별 버킷 — range 해상도를 따르지 않는다
   const kpi = useApi("/api/overview/kpi");
+  const activeUsers = useApi("/api/overview/active-users");
   const adoption = useApi("/api/adoption/levels");
   const adoptionTs = useApi("/api/adoption/timeseries");
   const costSummary = useApi("/api/cost/summary");
@@ -40,22 +42,23 @@ export default function Executive() {
   const decisions = useApi("/api/productivity/decisions");
   const leaderboard = useApi("/api/users/leaderboard");
 
-  // leaderboard(orgScore·게이지·헤드라인)와 adoptionTs(평균/피크 DAU)도 게이트에 포함 —
-  // 빠지면 로딩/실패 중에 "생산성 점수 0/100", "평균 DAU 0.0"이 정상 수치처럼 렌더되고
-  // PDF로도 출력된다(경영 보고용 페이지라 특히 위험).
-  const loading = kpi.loading || adoption.loading || costSummary.loading || decisions.loading || leaderboard.loading || adoptionTs.loading;
-  const error = kpi.error || adoption.error || costSummary.error || decisions.error || leaderboard.error || adoptionTs.error;
+  // leaderboard(orgScore·게이지·헤드라인), adoptionTs(평균/피크 DAU), activeUsers(개발자 수·costPerDev)도
+  // 게이트에 포함 — 빠지면 로딩/실패 중에 "생산성 점수 0/100", "활성 개발자 0" 같은 값이 정상 수치처럼
+  // 렌더되고 PDF로도 출력된다(경영 보고용 페이지라 특히 위험).
+  const loading = kpi.loading || activeUsers.loading || adoption.loading || costSummary.loading || decisions.loading || leaderboard.loading || adoptionTs.loading;
+  const error = kpi.error || activeUsers.error || adoption.error || costSummary.error || decisions.error || leaderboard.error || adoptionTs.error;
 
   const t = (kpi.data || []).reduce(
     (a, r) => ({
-      users: a.users + Number(r.users),
       sessions: a.sessions + Number(r.sessions),
       commits: a.commits + Number(r.commits),
       prs: a.prs + Number(r.prs),
       loc: a.loc + Number(r.lines_of_code),
     }),
-    { users: 0, sessions: 0, commits: 0, prs: 0, loc: 0 }
+    { sessions: 0, commits: 0, prs: 0, loc: 0 }
   );
+  // 활성 개발자 수는 ungrouped uniq — 세션 그레인 판별상 그룹별 users 합산은 중복 카운트된다.
+  const users = activeUsers.data?.users ?? 0;
   const d = (decisions.data || []).reduce(
     (a, r) => ({ accept: a.accept + (r.decision === "accept" ? Number(r.n) : 0), total: a.total + Number(r.n) }),
     { accept: 0, total: 0 }
@@ -64,11 +67,11 @@ export default function Executive() {
   const cost = (costSummary.data || []).reduce((a, r) => a + Number(r.computed_cost), 0);
 
   // 파생 지표 — 전부 이 화면 안에서만 쓰는 클라이언트 계산.
-  const costPerDev = t.users > 0 ? cost / t.users : 0;
+  const costPerDev = users > 0 ? cost / users : 0;
   const dailyAvg = cost / Math.max(1, days);
   const projection30d = dailyAvg * 30;
   const costPerKloc = t.loc > 0 ? cost / (t.loc / 1000) : 0;
-  const sessionsPerDevDay = t.users > 0 ? t.sessions / t.users / Math.max(1, days) : 0;
+  const sessionsPerDevDay = users > 0 ? t.sessions / users / Math.max(1, days) : 0;
   // 조직 종합 점수 — 리더보드 개인 점수(productivity.js와 동일 공식)의 평균.
   const orgScore = (leaderboard.data || []).length
     ? leaderboard.data.reduce((a, r) => a + Number(r.productivity_score), 0) / leaderboard.data.length
@@ -80,7 +83,7 @@ export default function Executive() {
   const peakDau = (adoptionTs.data || []).reduce((a, r) => Math.max(a, r.dau), 0);
 
   const headline =
-    `지난 ${days}일간 ${fmt(t.users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
+    `지난 ${days}일간 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
     `${fmt(t.loc)} 라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)을 작성했으며 제안 수락률은 ${(acceptRate * 100).toFixed(0)}%입니다. ` +
     `기간 지출은 ${usd(cost)}, 현재 추세로는 30일 기준 ${usd(projection30d)}가 예상됩니다. 조직 생산성 점수는 ${Math.round(orgScore)}/100입니다.`;
 
@@ -116,7 +119,7 @@ export default function Executive() {
                 <p className="text-[11px] text-warning-text mt-1">⚠ model 필터는 People 지표에 적용되지 않습니다(전체 모델 기준)</p>
               )}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-                <StatTile label="활성 개발자" value={fmt(t.users)} variant="accent" hint="기간 내 세션 1건 이상" />
+                <StatTile label="활성 개발자" value={fmt(users)} variant="accent" hint="기간 내 세션 1건 이상" />
                 <StatTile label="평균 DAU" value={avgDau.toFixed(1)} hint={`피크 ${peakDau}`} />
                 <StatTile label="MAU" value={fmt(adoption.data?.mau)} hint={`전체 멤버 ${fmt(adoption.data?.total_members)}`} />
                 <StatTile
@@ -169,7 +172,7 @@ export default function Executive() {
                   title="일간 활성 유저"
                   rows={adoptionTs.data}
                   xKey="t"
-                  tickFormatter={fmtTick}
+                  tickFormatter={fmtDaily}
                   lines={[{ key: "dau", label: "DAU", axis: "left" }]}
                 />
               )}
