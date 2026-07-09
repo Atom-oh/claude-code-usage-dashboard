@@ -43,6 +43,24 @@ const REJECT_OTHER = [
   "SELECT * FROM system.query_log",
 ];
 
+// otel_reader의 ClickHouse grant(claude_code.*)가 apply 전이거나 미적용이면, DB 스코프를 앱
+// 계층에서도 강제하지 않는 한 다른 DB를 그대로 조회할 수 있다 — 전량 거부되어야 한다.
+const CROSS_DB = [
+  "SELECT 1 FROM otherdb.some_table",
+  "SELECT 1 FROM otel_logs, otherdb.some_table", // comma cross-join으로 다른 DB
+  "SELECT 1 FROM otel_logs a JOIN otherdb.some_table b ON 1=1",
+  "SELECT * FROM default.otel_logs", // claude_code 외 어떤 DB명이든 거부(대시보드는 claude_code만 씀)
+];
+
+// queryReadonly가 `SELECT * FROM (${sql}) LIMIT 201`로 감싸므로, sql 안에 짝 안 맞는 `)`가
+// 있으면 그 래핑 괄호를 조기에 닫고 이어지는 `UNION ALL SELECT ... WHERE (...`로 LIMIT 201을
+// 우회할 수 있다 — 괄호 불균형은 방향(초과 `)` / 초과 `(`) 무관하게 전량 거부되어야 한다.
+const UNBALANCED_PARENS = [
+  "SELECT 1 FROM otel_logs) UNION ALL SELECT sensitive FROM other_table WHERE (1=1",
+  "SELECT 1 FROM otel_logs WHERE (1=1", // 초과 `(`
+  "SELECT 1 FROM otel_logs)", // 초과 `)`
+];
+
 test("normal queries pass", () => {
   for (const sql of OK) assert.doesNotThrow(() => sanitizeSql(sql), sql);
 });
@@ -53,6 +71,14 @@ test("table function bypass attempts are rejected", () => {
 
 test("other disallowed queries are rejected", () => {
   for (const sql of REJECT_OTHER) assert.throws(() => sanitizeSql(sql), sql);
+});
+
+test("cross-database table references are rejected", () => {
+  for (const sql of CROSS_DB) assert.throws(() => sanitizeSql(sql), /claude_code 스키마/, sql);
+});
+
+test("unbalanced parentheses are rejected (LIMIT 201 wrapper breakout)", () => {
+  for (const sql of UNBALANCED_PARENS) assert.throws(() => sanitizeSql(sql), /괄호/, sql);
 });
 
 // url이 문자열 리터럴 안에 있으면 테이블 함수가 아니다 — false positive 없어야 한다.

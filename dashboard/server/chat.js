@@ -8,12 +8,24 @@ const MAX_HOPS = 4;
 
 const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || "us-east-1" });
 
-// FROM 절의 테이블 참조 위치(FROM/JOIN 직후, FROM 절 내 comma cross-join 직후)에 identifier(가
-// 오면 거부한다 — 테이블 함수(url/s3/remote/file/...)라는 카테고리 전체를 괄호 깊이·JOIN 종류
-// 무관하게 막는 구조적 규칙. 정상 테이블 참조는 순수 식별자(otel_metrics_sum 등)나 서브쿼리
-// `(SELECT ...)`뿐이다. 이전엔 `\b(from|join)\s+\w+\s*\(` 정규식이었는데 FROM/JOIN 직후 첫
-// 토큰만 봐서 comma cross-join(`FROM otel_logs, url(...)`)으로 우회됐다(실측: 리뷰에서 확인).
-// SELECT/WHERE의 스칼라·집계 함수(max()/toDate()...)는 테이블 위치가 아니라 그대로 통과한다.
+// FROM 절의 테이블 참조 위치(FROM/JOIN 직후, FROM 절 내 comma cross-join 직후)에서 두 가지를
+// 검사한다: (1) identifier( 형태면 거부 — 테이블 함수(url/s3/remote/file/...)라는 카테고리
+// 전체를 괄호 깊이·JOIN 종류 무관하게 막는 구조적 규칙. 정상 테이블 참조는 순수 식별자
+// (otel_metrics_sum 등)나 서브쿼리 `(SELECT ...)`뿐이다. 이전엔 `\b(from|join)\s+\w+\s*\(`
+// 정규식이었는데 FROM/JOIN 직후 첫 토큰만 봐서 comma cross-join(`FROM otel_logs, url(...)`)으로
+// 우회됐다(실측: 리뷰에서 확인). (2) `db.table` 형태면 db가 claude_code인지 검사 — otel_reader의
+// ClickHouse grant(`GRANT SELECT ON claude_code.*`)가 apply 전이거나 operator가 config
+// `<grants>`를 렌더하지 않으면 앱 계층 방어가 전무해 `FROM otherdb.some_table`로 cross-DB 조회가
+// 새는 구조적 결함이었다(실측: 리뷰에서 확인) — DB 미지정 참조는 세션 기본 DB(claude_code, 접속
+// 설정에서 고정)로 풀리므로 그대로 허용.
+// SELECT/WHERE의 스칼라·집계 함수(max()/toDate()...)나 alias.column(m.Value 등)은 테이블 참조
+// 위치가 아니라 이 검사에 걸리지 않는다.
+// 또한 stack 깊이가 0인데 `)`가 더 나오면 즉시 거부한다 — 이전엔 `if (stack.length > 1)`로
+// 조용히 무시해, sanitize를 통과한 SQL에 남는 여분의 `)`가 queryReadonly의
+// `SELECT * FROM (${sql}) LIMIT 201` 래핑 괄호를 조기에 닫아 `UNION ALL SELECT ... WHERE (...`
+// 로 LIMIT 201 서버 캡을 우회하는 breakout 경로였다(실측: 리뷰에서 확인). 함수 끝에서 괄호가
+// 전부 안 닫혔으면(stack.length !== 1)도 마찬가지로 거부 — 어느 쪽이든 래핑을 깨는 방향의
+// 불균형은 전부 막는다.
 // 전제: 진입부에서 주석(--,/**/)·백틱·세미콜론을 이미 거부해 토큰 경계가 단순하다(문자열
 // 리터럴은 스캔 직전에 지운다).
 function assertNoTableFunctions(sqlNoStrings) {
@@ -32,17 +44,24 @@ function assertNoTableFunctions(sqlNoStrings) {
       if (lw === "from" || lw === "join") { f.inFrom = true; f.expectTable = true; }
       else if (endKw.has(lw)) { f.inFrom = false; f.expectTable = false; }
       else if (lw === "on" || lw === "using") { f.expectTable = false; }
-      else if (f.expectTable) { f.expectTable = false; } // 테이블 이름 소비
+      else if (f.expectTable) {
+        f.expectTable = false; // 테이블 이름 소비
+        const dot = word.indexOf(".");
+        if (dot >= 0 && word.slice(0, dot).toLowerCase() !== "claude_code")
+          throw new Error("claude_code 스키마만 조회할 수 있습니다");
+      }
       if (fnParen) stack.push({ inFrom: false, expectTable: false }); // 함수 호출 → 새 괄호 프레임
     } else if (punc === "(") {
       top().expectTable = false; // 서브쿼리 테이블 참조는 허용
       stack.push({ inFrom: false, expectTable: false });
     } else if (punc === ")") {
-      if (stack.length > 1) stack.pop();
+      if (stack.length === 1) throw new Error("괄호가 맞지 않습니다");
+      stack.pop();
     } else if (punc === "," && top().inFrom) {
       top().expectTable = true; // comma cross-join → 다음 테이블 참조
     }
   }
+  if (stack.length !== 1) throw new Error("괄호가 맞지 않습니다");
 }
 
 // SELECT/WITH 단일 문장만 통과 — 나머지는 전부 거부. queryReadonly의 readonly=1이 2차 방어라

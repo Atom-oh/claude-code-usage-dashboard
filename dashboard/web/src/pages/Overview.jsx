@@ -48,14 +48,26 @@ export default function Overview() {
     <div>
       <PageHeader title="Overview" subtitle="bedrock vs enterprise — 텔레메트리 기반 그룹 자동 판별" live right={<RangePicker />} />
       <div className="p-8 flex flex-col gap-6">
+        {/* activeUsers도 게이트에 포함 — 안 그러면 로딩/실패 중 "전체 유저 0"이 정상 수치처럼 보인다. */}
+        {kpi.loading || activeUsers.loading ? (
+          <Loading />
+        ) : kpi.error || activeUsers.error ? (
+          <ErrorBox error={kpi.error || activeUsers.error} />
+        ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatTile label="전체 유저" value={fmt(activeUsers.data?.users)} variant="accent" />
+          <StatTile
+            label="전체 유저"
+            value={fmt(activeUsers.data?.users)}
+            variant="accent"
+            hint={model ? "⚠ model 필터 미적용" : undefined}
+          />
           <StatTile label="세션" value={fmt(totals.sessions)} />
           <StatTile label="추가 라인" value={fmt(totals.loc)} />
           <StatTile label="전체 토큰" value={fmt(totals.tokens)} />
           <StatTile label="입력 토큰" value={fmt(totals.inputTokens)} />
           <StatTile label="출력 토큰" value={fmt(totals.outputTokens)} />
         </div>
+        )}
 
         {adoption.loading ? (
           <Loading />

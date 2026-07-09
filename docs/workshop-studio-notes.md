@@ -43,11 +43,16 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
 3. attribute 실제 키 이름 실측 (`Attributes`/`LogAttributes`의 `mapKeys`) — Claude Code 버전이 바뀌면 `model`, `session.id`, `decision` 등의 키 이름이 달라질 수 있다. 달라지면 `dashboard/server/grouping.js`와 `dashboard/server/queries.js` 두 파일만 고치면 된다.
 4. temporality — 운영 설정은 `cumulative`(30초마다 세션 누적값 export)다. 초기엔 대시보드 쿼리가 전부 `sum(Value)`라 세션이 길수록 토큰/비용/세션 수가 배수로 과대집계되는 버그가 있었지만(실측: 1600억 토큰), `queries.js`를 세션(`session.id`)별 경계 diff(구간 끝 누적값 - 구간 시작 직전 누적값, Prometheus increase()와 동일 원리)로 재작성해 delta/cumulative 둘 다 정확히 처리한다. `SELECT DISTINCT AggregationTemporality FROM claude_code.otel_metrics_sum`로 2(cumulative)가 나오는 게 정상이며, delta(1) 데이터가 섞여도(레거시 배포 등) 문제없다.
 5. 프롬프트 본문 유출 여부 (`otel_logs`의 `Body`/`LogAttributes`에 prompt 텍스트가 남아있지 않은지) — FSI 워크샵이면 필수 확인.
-6. ClickHouse reader grant 실효성 (Ask Claude SSRF 2차 방어) — `otel_reader`로 접속해
-   `SELECT * FROM url('http://example.com', 'CSV', 'x String')`를 실행하면 `ACCESS_DENIED`가 나야
-   정상이다. 통과하면 `infra/clickhouse.tf`의 `otel_reader/grants/query`(`GRANT SELECT ON
-   claude_code.*`)가 실제로 적용되지 않은 것 — operator가 `<grants>`를 렌더했는지
-   (`SHOW GRANTS FOR otel_reader`), config 반영 여부를 확인한다.
+6. ClickHouse reader grant 실효성 (Ask Claude SSRF 2차 방어 — 1차 방어는 `chat.js`의
+   `sanitizeSql`이 앱 계층에서 직접 강제하지만, 이 grant는 그 우회 시나리오의 최후 방어선이다):
+   - `otel_reader`로 접속해 `SHOW GRANTS FOR otel_reader`를 실행 — `GRANT SELECT ON
+     claude_code.*`만 보여야 한다. 아무 grant도 안 보이면 operator가 `infra/clickhouse.tf`의
+     `otel_reader/grants/query`(`<grants>` config)를 렌더하지 않은 것 — apply 재확인.
+   - `SELECT * FROM url('http://example.com', 'CSV', 'x String')`를 실행하면 `ACCESS_DENIED`가
+     나야 정상이다. 통과하면 grant가 실제로 적용되지 않은 것.
+   - `SELECT * FROM system.query_log LIMIT 1`도 `ACCESS_DENIED`가 나야 한다 — claude_code 외
+     DB 접근이 막혀 있는지 별도 확인(system DB는 `sanitizeSql`도 앱 계층에서 이미 거부하지만,
+     grant까지 걸려 있으면 defense-in-depth가 이중이 된다).
 
 ## 5. Admin 인프라(이 리포 `infra/`)와 참가자 인프라(워크샵 CFN)의 경계
 
@@ -57,9 +62,9 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
 - **collector-config.yaml의 exporter 프로토콜을 HTTP로 바꿔야 한다.** CloudFront는 HTTP(S)만 중계한다 — 이 리포의 `collector-config.yaml` 원본은 `endpoint: tcp://${CH_HOST}:${CH_PORT}?secure=true`(네이티브 TCP, 9440)를 쓰는데, 그건 admin과 같은 VPC 안에서 직결할 때만 맞다. 워크샵 참가자는 별도 계정/VPC라 CloudFront를 거쳐야 하므로, exporter를 HTTP 프로토콜로 바꿔 `https://ch.atomai.click:443`을 바라보게 해야 한다(ClickHouse OTel exporter는 HTTP도 지원). CFN에서 이 collector-config를 만들 때 원본을 그대로 복사하지 말고 이 차이를 반영할 것.
 - **인증**: NLB의 otel_writer 계정(HTTP Basic Auth)로 인증한다. CloudFront 배포(`aws_cloudfront_distribution.ch_ingest`)는 `AllViewer` origin request policy라 `Authorization` 헤더를 그대로 백엔드까지 전달한다 — CFN의 managed-settings에서 collector-config의 clickhouse exporter에 `headers: {Authorization: "Basic ..."}` 형태로 자격증명을 넣게 될 것(SSM SecureString에서 런타임 조합).
 - **admin 인프라는 참가자 계정과 독립**이다(다른 AWS 계정, `AWS-Demo-Platform` 리포의 공유 ALB/인증서와도 별개로 자체 NLB/CloudFront/ACM 데이터소스 참조만 함). 워크샵 CFN 쪽에서 admin 인프라를 만들 필요는 없다 — `ch.atomai.click`/`ccdash.atomai.click`이 이미 떠 있다고 가정하고 참가자 CFN은 그 주소로 나가는 아웃바운드만 신경 쓰면 된다.
-- **아직 실제 apply는 하지 않았다** — `terraform plan`까지만 검증(에러 없음). 현재 `infra/`의 resource 블록은 34개(2026-07-08 기준, Bedrock IRSA role/policy·SA 포함) — apply 전 `terraform plan`으로 add 개수를 재확인한다. 워크샵 배포 전에 `terraform apply`로 실제로 띄우고 4번(배포 후 실측 검증) 절차를 거쳐야 한다.
+- **아직 실제 apply는 하지 않았다** — `terraform plan`까지만 검증(에러 없음). `infra/`는 EKS/ClickHouse operator/대시보드 배포/Bedrock IRSA(role·policy·ServiceAccount)/DNS·CDN 리소스로 구성 — 하드코딩된 리소스 개수는 무관한 TF 편집에도 드리프트하므로 남기지 않는다. apply 전 `terraform plan`으로 add/change/destroy 개수를 그때그때 확인한다. 워크샵 배포 전에 `terraform apply`로 실제로 띄우고 4번(배포 후 실측 검증) 절차를 거쳐야 한다.
 - **Ask Claude 챗(Bedrock) 배포 전제**: 대시보드의 Ask Claude 기능은 Bedrock을 호출하므로 아래가 갖춰져야 뜬다(안 그러면 대시보드는 떠도 챗만 `AccessDenied`/timeout이 난다).
-  - **Bedrock model access 활성화**: admin 계정에서 `CHAT_MODEL_ID`(기본 `global.anthropic.claude-sonnet-5`) 모델의 access를 켠다. 파드에는 `AWS_REGION = var.region`(기본 `ap-northeast-2`)가 항상 주입되므로 — 코드 fallback은 us-east-1이지만 Terraform 배포에선 쓰이지 않는다 — **`var.region`(ap-northeast-2) 기준으로 cross-region inference profile이 가용해야 한다.** us-east-1만 켜면 파드가 ap-northeast-2로 호출해 `AccessDenied`/timeout이 난다.
+  - **Bedrock model access 활성화**: admin 계정에서 `CHAT_MODEL_ID`(기본 `global.anthropic.claude-sonnet-5` — `global.` 프리픽스가 붙은 global inference profile) 모델의 access를 켠다. 파드에는 `AWS_REGION = var.region`(기본 `ap-northeast-2`)가 항상 주입되므로 — 코드 fallback은 us-east-1이지만 Terraform 배포에선 쓰이지 않는다 — **`var.region`(ap-northeast-2) 기준으로 이 global 프로파일이 가용해야 한다.** us-east-1만 켜면 파드가 ap-northeast-2로 호출해 `AccessDenied`/timeout이 난다.
   - **IRSA**: `infra/dashboard.tf`가 파드 ServiceAccount에 `bedrock:InvokeModel*` 최소권한 role을 붙인다(`aws_iam_role.dashboard_bedrock`). 신규 IAM role/policy + SA annotation 리소스가 추가됐다. inference-profile ARN은 `var.chat_model_id` 하나로 좁혀지고, foundation-model ARN은 여기서 리전 프리픽스를 떼어 파생한다(global 프로파일 특성상 리전은 와일드카드).
   - **env / 모델 변경**: 모델을 바꾸려면 `var.chat_model_id` 변수 하나만 고치면 env(`CHAT_MODEL_ID`)와 IAM policy ARN이 함께 반영된다(코드/IAM 두 곳 수동 동기화 불필요). `AWS_REGION`은 `var.region`.
   - **베이스 이미지**: `node:24-alpine`(AWS SDK v3 deprecation 대응) — Node 20에서 올리면 SDK 경고가 뜬다.

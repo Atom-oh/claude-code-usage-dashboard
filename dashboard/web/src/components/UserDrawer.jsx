@@ -67,6 +67,17 @@ export function UserDrawer({ row, onClose }) {
     };
   }, [row?.user, from.getTime(), to.getTime()]);
 
+  // state.byTool은 group×tool×decision 원본(codeEditDecisionsByTool)이라, 이 유저가 bedrock/
+  // enterprise 세션을 모두 가지면 같은 tool+decision이 그룹별 다중 row로 내려와 GroupBarChart가
+  // 중복 렌더한다 — Productivity.jsx의 decisionsByToolAgg와 동일하게 tool+decision으로 합산.
+  const decisionsByToolAgg = Object.values(
+    (state.byTool || []).reduce((acc, r) => {
+      const k = `${r.tool}|${r.decision}`;
+      (acc[k] ||= { tool: r.tool, decision: r.decision, n: 0 }).n += Number(r.n);
+      return acc;
+    }, {})
+  );
+
   if (!row) return null;
 
   return (
@@ -116,7 +127,7 @@ export function UserDrawer({ row, onClose }) {
             />
             <GroupBarChart
               title="도구별 수락/거부"
-              rows={state.byTool}
+              rows={decisionsByToolAgg}
               xKey="tool"
               valueKey="n"
               height={180}

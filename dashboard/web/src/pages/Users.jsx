@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
@@ -21,6 +21,14 @@ export default function Users() {
   const leaderboard = useApi("/api/users/leaderboard");
   const tools = useApi("/api/users/tools");
   const skills = useApi("/api/users/skills");
+
+  // 필터/기간 변경으로 선택 유저가 leaderboard에서 사라지면 selectedEmail을 비운다 — 안 그러면
+  // 나중에 그 유저가 다시 나타났을 때(예: 필터를 되돌림) 재클릭 없이 드로어가 조용히 재오픈된다.
+  useEffect(() => {
+    if (selectedEmail && leaderboard.data && !leaderboard.data.some((r) => r.user === selectedEmail)) {
+      setSelectedEmail(null);
+    }
+  }, [selectedEmail, leaderboard.data]);
 
   const top10 = [...(leaderboard.data || [])]
     .sort((a, b) => Number(b.productivity_score) - Number(a.productivity_score))

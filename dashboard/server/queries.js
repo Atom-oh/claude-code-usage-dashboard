@@ -457,8 +457,13 @@ export async function adoptionLevels(from, to, filters = {}) {
 // enterprise 두 그룹 행에 걸칠 수 있어 kpiSummary의 그룹별 users를 클라이언트에서 합산하면 중복
 // 카운트된다 — Overview "전체 유저"·Executive "활성 개발자"는 이 단일 uniq 값을 써야 한다.
 // 세션 존재 기반(uniqExact)이라 cumulative diff 불필요, 원본 테이블 직접 조회.
+// model 필터는 cols에서 뺀다 — adoptionLevels/adoptionTimeseries(같은 People/adoption 섹션의
+// DAU/WAU/MAU)도 session.count엔 model 귀속이 없다는 이유로 model 필터를 안 받는다. 이 지표만
+// modelViaSession 세미조인으로 반응하면 "model 필터는 People 지표에 적용되지 않습니다" 배지가
+// 뜬 화면에서 활성 개발자 수만 조용히 필터되어 DAU/MAU와 반대로 움직이는 모순이 생긴다(실측:
+// 리뷰에서 확인). People 섹션 전체가 같은 규칙(model 필터 미적용)을 따르도록 통일한다.
 export async function activeUsers(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelViaSession: "m.SessionId" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
