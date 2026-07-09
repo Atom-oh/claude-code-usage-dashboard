@@ -151,9 +151,9 @@ if [ -s "$WORK/degraded-models.txt" ]; then
 fi
 
 # Kiro diff truncation 가시화 — 대형 diff 는 run-panel.sh 의 KIRO_DIFF_CAP 을 넘으면 Kiro
-# 셀에 prefix 만 전달된다. truncation 은 VERDICT 를 강제하진 않되(codex 는 전체 diff 를
-# 계속 봄) 신호 없이 넘기면 "Kiro 셀들이 diff 뒷부분은 못 본 채 정상 응답으로 집계됐다"는
-# 사실이 리뷰에서 안 보인다.
+# 셀에 prefix 만 전달된다(argv 커널 한도 회피, 의도된 트레이드오프). truncation 은 VERDICT
+# 를 강제하진 않되(codex 는 여전히 전체 diff 를 봄) 신호 없이 넘기면 "Kiro 셀이 diff 뒷부분은
+# 못 본 채 정상 응답으로 집계됐다"는 사실이 리뷰에서 안 보인다.
 if [ -f "$WORK/kiro-diff-truncated.flag" ]; then
   { echo "✂️ **Kiro diff truncated**: diff 가 KIRO_DIFF_CAP 을 초과해 Kiro 셀은 앞부분만 리뷰함 — codex 는 전체 diff 를 봤으므로 뒷부분 이슈는 codex 단일 벤더 커버리지."
     echo ""
@@ -162,7 +162,8 @@ if [ -f "$WORK/kiro-diff-truncated.flag" ]; then
 fi
 
 # 심각도 상향(run-panel.sh 의 coverage-severe.flag) — codex 가 죽거나 kiro 모델 전체가
-# 죽으면(둘 중 하나라도, DEAD_VENDORS 축 — 모델 개수 축이 아님) 살아남은 벤더가 최대 1개뿐이라 "lens당 교차확인"이 성립하지 않는다. 이 경우는 경고만으로
+# 죽으면(둘 중 하나라도, DEAD_VENDORS 축 — 모델 개수 축이 아님) 살아남은 벤더가 최대 1개뿐이라
+# "lens당 교차확인"이 성립하지 않는다. 이 경우는 경고만으로
 # 끝내지 않고 체어의 판정과 무관하게 VERDICT 를 강제 FAIL 한다(fail-closed 계약 보존).
 # VERDICT 는 파일의 마지막 줄이어야 하므로 기존 VERDICT 줄을 지우고 새로 붙인다. GNU sed 의
 # `0,/re/d` 는 패턴이 한 번도 매치하지 않으면 파일 전체를 지우므로, 매치가 있을 때만
