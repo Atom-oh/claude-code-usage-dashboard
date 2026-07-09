@@ -13,6 +13,7 @@ const OK = [
   "SELECT * FROM claude_code.otel_logs",
   "SELECT UserEmail FROM otel_logs WHERE Success IN (SELECT 1)",
   "select uniqExact(UserEmail) from otel_metrics_sum",
+  "SELECT * FROM claude_code . otel_logs", // 점 주변 공백 — claude_code면 정상 허용
 ];
 
 // 테이블 함수 우회 시도 — 전량 거부되어야 한다.
@@ -50,6 +51,8 @@ const CROSS_DB = [
   "SELECT 1 FROM otel_logs, otherdb.some_table", // comma cross-join으로 다른 DB
   "SELECT 1 FROM otel_logs a JOIN otherdb.some_table b ON 1=1",
   "SELECT * FROM default.otel_logs", // claude_code 외 어떤 DB명이든 거부(대시보드는 claude_code만 씀)
+  "SELECT 1 FROM otherdb . some_table", // 점 주변 공백으로 dot 검사 우회 시도
+  "SELECT 1 FROM default\t.\totel_logs", // 탭도 마찬가지
 ];
 
 // queryReadonly가 `SELECT * FROM (${sql}) LIMIT 201`로 감싸므로, sql 안에 짝 안 맞는 `)`가

@@ -80,8 +80,11 @@ export function FloatingChat() {
     const ac = new AbortController();
     abortRef.current = ac;
     // 이전 오류 말풍선(error:true)은 서버로 다시 보내지 않는다 — 모델 컨텍스트에 "오류:" 텍스트가
-    // assistant 발화로 재주입되면 다음 답변이 오염된다.
-    const history = [...msgs.filter((m) => !m.error), { role: "user", content: q }];
+    // assistant 발화로 재주입되면 다음 답변이 오염된다. content가 빈 assistant 말풍선(첫 토큰
+    // 도착 전에 stop()으로 닫은 낙관적 placeholder)도 함께 걸러낸다 — 안 그러면 서버가 falsy
+    // content를 드롭해 연속된 user 턴만 남고, Bedrock Converse가 이를 거부해 리로드 전까지
+    // 챗이 먹통이 된다(실측: 리뷰에서 확인).
+    const history = [...msgs.filter((m) => m.content && !m.error), { role: "user", content: q }];
     setMsgs([...history, { role: "assistant", content: "" }]);
     try {
       await streamChat(history, {

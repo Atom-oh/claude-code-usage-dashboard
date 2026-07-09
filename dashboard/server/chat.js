@@ -28,26 +28,30 @@ const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || "us-
 // 불균형은 전부 막는다.
 // 전제: 진입부에서 주석(--,/**/)·백틱·세미콜론을 이미 거부해 토큰 경계가 단순하다(문자열
 // 리터럴은 스캔 직전에 지운다).
+// ClickHouse는 `db . table`처럼 점 주변 공백을 허용하는데, 이전 정규식은 점이 식별자에
+// 바로 인접해야만 `db.table` 하나의 word로 묶었다 — 공백이 끼면 `otherdb`가 단독 테이블명으로
+// 소비돼 dot 검사를 건너뛰고 cross-DB 조회가 샜다(실측: 리뷰에서 확인). 정규식이 점 앞뒤
+// 공백을 삼키고, 비교용 lw에서 남은 공백을 전부 제거해 정규화한 뒤 dot을 찾는다.
 function assertNoTableFunctions(sqlNoStrings) {
   const stack = [{ inFrom: false, expectTable: false }]; // 괄호 깊이별 파싱 상태
   const top = () => stack[stack.length - 1];
   const endKw = new Set(["where", "prewhere", "group", "order", "limit", "having", "settings", "union", "window", "qualify"]);
   // word(바로 뒤따르는 `(` 포함) | 단독 ( ) , | 기타 non-space 1글자
-  const re = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(\s*\()?|([(),])|(\S)/g;
+  const re = /([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)(\s*\()?|([(),])|(\S)/g;
   let m;
   while ((m = re.exec(sqlNoStrings))) {
     const [, word, fnParen, punc] = m;
     if (word !== undefined) {
       const f = top();
-      const lw = word.toLowerCase();
+      const lw = word.replace(/\s+/g, "").toLowerCase();
       if (fnParen && f.expectTable) throw new Error("테이블 함수는 허용되지 않습니다");
       if (lw === "from" || lw === "join") { f.inFrom = true; f.expectTable = true; }
       else if (endKw.has(lw)) { f.inFrom = false; f.expectTable = false; }
       else if (lw === "on" || lw === "using") { f.expectTable = false; }
       else if (f.expectTable) {
         f.expectTable = false; // 테이블 이름 소비
-        const dot = word.indexOf(".");
-        if (dot >= 0 && word.slice(0, dot).toLowerCase() !== "claude_code")
+        const dot = lw.indexOf(".");
+        if (dot >= 0 && lw.slice(0, dot) !== "claude_code")
           throw new Error("claude_code 스키마만 조회할 수 있습니다");
       }
       if (fnParen) stack.push({ inFrom: false, expectTable: false }); // 함수 호출 → 새 괄호 프레임
