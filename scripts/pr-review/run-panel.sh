@@ -7,8 +7,8 @@
 # diff 전달 경로는 CLI 별로 다름: Codex 는 stdin(`< "$DIFF"` 직접 리다이렉트, 파일이라
 # TTY 아님 → no-hang); Kiro 는 stdin 을 무시하고 어떤 툴도 못 받으므로(아래 Kiro 셀 주석
 # 참조) size-capped argv 텍스트로 직접 embed 한다. timeout 백스톱 + 비대화형 플래그로
-# 멈춤 방지. 셀이 비면 최대 PANEL_RETRIES 회 재시도(gpt-5.5/bedrock-mantle 등 transient
-# 흡수). 매 시도마다 재실행.
+# 멈춤 방지. 셀이 비고 종료코드가 0이 아니면 최대 PANEL_RETRIES 회 재시도(gpt-5.5/
+# bedrock-mantle 등 transient 흡수). 매 시도마다 재실행.
 # 모든 셀(모델 수 × lens 수)이 병렬(&+wait) — 벽시계 ≈ 최슬로우 셀 하나, 순차합 아님.
 set -uo pipefail
 DIFF="$(realpath "$1" 2>/dev/null)" \
@@ -52,12 +52,13 @@ fi
 #   try_panel <slot> <err> <cmd...>   (stdin=$DIFF, stdout=slot, stderr=err)
 try_panel() {
   local slot="$1" err="$2"; shift 2
-  local a
+  local a rc=1
   for a in $(seq 1 "$RETRIES"); do
-    "$@" > "$slot" 2>"$err" < "$DIFF" || true
-    [ -s "$slot" ] && break
+    "$@" > "$slot" 2>"$err" < "$DIFF"; rc=$?
+    [ -s "$slot" ] && [ "$rc" -eq 0 ] && break
     [ "$a" -lt "$RETRIES" ] && echo "[retry $a/$RETRIES] $(basename "$slot" .md)" >&2
   done
+  echo "$rc" > "$slot.rc"
 }
 
 # Kiro 셀은 어떤 툴도 부여받지 않는다(`--trust-tools=`, 아래) — 이전 리비전은 `fs_read`를
@@ -151,10 +152,9 @@ echo "Panel responded ($(wc -l < "$RESP") / $(( (${#KIRO_MODELS[@]} + 1) * ${#LE
 
 # 커버리지 floor — 모델 하나(플래그 무효화/바이너리 부재/전면 인증 실패 등)가 lens 전부에서
 # 응답 없으면, 매트릭스가 조용히 그 모델 없이 축소된 채 VERDICT: PASS 로 이어질 수 있다
-# (예: kiro-cli 신규 플래그(`--mode default --trust-tools=`)가 이 러너에서 무효면 Kiro
-# 12셀 전부 graceful skip → 실질 4셀짜리 리뷰인데 코멘트만 봐선 눈에 안 띌 수 있음).
-# 모델별 row 가 완전히 비면 경고 + synthesize.sh 가 리뷰 본문에 명시하도록 파일로 전달.
-TOTAL_MODELS=$(( ${#KIRO_MODELS[@]} + 1 ))
+# (예: kiro-cli 플래그(`--mode default --trust-tools=`)가 이 러너에서 무효거나 모델 ID 가
+# 계정에 프로비저닝 안 되면 Kiro 12셀 전부 graceful skip → 실질 4셀짜리 리뷰인데 코멘트만
+# 봐선 눈에 안 띌 수 있음). 모델별 row 가 완전히 비면 경고 + synthesize.sh 가 명시하도록 전달.
 : > "$WORK/degraded-models.txt"
 for model_tag in codex "${KIRO_MODELS[@]##*:}"; do
   # grep -c 는 매치가 0건이어도 "0"을 찍고 exit 1 한다(매치 없음 = grep 관점의 "실패") —
@@ -178,16 +178,28 @@ done
 # 3개가 각 lens 를 여전히 교차확인하므로 이 PR 도입 시 설계한 대로 사람이 배너로만 인지해도
 # 된다는 원 판단은 유효). 신규 kiro-cli 플래그가 처음 실전 투입되는 시점(3개 kiro 모델이
 # 동시에 전멸하는 경우가 바로 이 기준을 정확히 친다)이 이 게이트가 노리는 실제 사례다.
-DEGRADED_COUNT=$(wc -l < "$WORK/degraded-models.txt")
-if [ "$DEGRADED_COUNT" -ge "$((TOTAL_MODELS - 1))" ]; then
-  echo "::error::coverage collapsed to ≤1 vendor ($DEGRADED_COUNT/$TOTAL_MODELS models degraded) — forcing VERDICT: FAIL, no cross-model check remains for any lens" >&2
+# claude-code-usage-dashboard PR #4 리뷰(MAJOR)에서 발견: 옛 조건은 degraded 개수를
+# TOTAL_MODELS-1 과 비교했을 뿐 벤더 축이 아니었다 -- codex 단독 탈락(모델 1개)은 남은
+# 3개가 전부 kiro(벤더 1개)인데도 "1 >= 3"이 거짓이라 severe 가 안 걸렸다. 에러 메시지
+# 자신의 "≤1 vendor" 주장과 반대로 동작하던 버그. codex 가 죽거나 kiro 가 전멸(둘 중
+# 하나라도)하면 남는 벤더가 최대 1개이므로 그 자체로 severe.
+CODEX_DEAD=0
+grep -qx "codex" "$WORK/degraded-models.txt" 2>/dev/null && CODEX_DEAD=1
+KIRO_TOTAL=${#KIRO_MODELS[@]}
+# `|| echo 0` 폴백 없음 — grep -c 는 매치가 0건이어도 "0"을 stdout 에 찍고 exit 1
+# 하므로, 폴백을 붙이면 "0\n0"이 된다(정수 비교에 노이즈 stderr 유발).
+KIRO_DEGRADED_COUNT="$(grep -c "^kiro-" "$WORK/degraded-models.txt" 2>/dev/null)"
+KIRO_ALL_DEAD=0
+[ "$KIRO_TOTAL" -gt 0 ] && [ "${KIRO_DEGRADED_COUNT:-0}" -ge "$KIRO_TOTAL" ] && KIRO_ALL_DEAD=1
+if [ "$CODEX_DEAD" = 1 ] || [ "$KIRO_ALL_DEAD" = 1 ]; then
+  echo "::error::coverage collapsed to ≤1 vendor (codex dead=$CODEX_DEAD, kiro fully dead=$KIRO_ALL_DEAD) — forcing VERDICT: FAIL, no cross-vendor check remains for any lens" >&2
   : > "$WORK/coverage-severe.flag"
 fi
 
 # skip 원인 노출: 빈 슬롯인데 stderr 가 있으면 stderr 의 끝(실제 에러)을 로그에 찍는다.
-# public repo 라 이 Actions 로그는 누구나 읽을 수 있다 — synthesize.sh 의 셀과 동일한
-# scrub_secrets() 를 통과시켜 stderr(에러 메시지·스택트레이스) 경로로 새어나올 수 있는
-# 우발적 크리덴셜 노출을 막는다.
+# public repo 라 이 Actions 로그는 누구나 읽을 수 있고, stderr(에러 메시지·스택트레이스)에
+# 우연히 크리덴셜성 값이 섞여 나오는 경로가 원시로 찍으면 스크럽 없는 유출구가 된다.
+# synthesize.sh 의 셀과 동일한 scrub_secrets() 를 통과시킨다.
 for e in "$SLOT"/*.err; do
   [ -s "$e" ] || continue
   b="$(basename "$e" .err)"
