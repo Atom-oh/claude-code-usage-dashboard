@@ -1,12 +1,18 @@
 import { createClient } from "@clickhouse/client";
 
 // ponytail: single shared client, no pool wrapper — @clickhouse/client already pools HTTP keep-alive connections.
+// max_open_connections 기본값 10은 index.js의 캐시 warmer(배치당 5개 동시 쿼리)와 실제 브라우저
+// 트래픽(useApi가 페이지당 7~9개 동시 요청)이 겹치면 쉽게 고갈된다 — 소켓 대기가 request_timeout에
+// 포함되어 정상 쿼리(leaderboard 등, ClickHouse 자체 처리는 2~3초)가 타임아웃으로 잡히는 원인이었다
+// (실측 2026-07-10: warm /api/users/leaderboard Timeout error). 30으로 늘려 warmer 배치 + 동시
+// 브라우저 요청을 함께 감당한다.
 const client = createClient({
   url: process.env.CH_URL || `http://${process.env.CH_HOST || "localhost"}:${process.env.CH_PORT || "8123"}`,
   database: process.env.CH_DB || "claude_code",
   username: process.env.CH_USER || "default",
   password: process.env.CH_PASSWORD || "",
-  request_timeout: 15000,
+  request_timeout: 30000,
+  max_open_connections: 30,
 });
 
 export function toChDateTime(date) {

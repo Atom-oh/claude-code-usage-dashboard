@@ -3,6 +3,9 @@
 -- 공통: 모든 쿼리는 ExperimentGroup 으로 분리해 bedrock vs enterprise 비교
 --       $__timeFilter / $__fromTime / $__toTime 은 Grafana ClickHouse 매크로
 -- 주의: cost.usage 는 근사치라 "실비용 비교" 금지 → 토큰 정규화로 대체
+-- 주의: 대시보드(dashboard/server)는 2026-07-10부터 시간별 rollup(otel_metrics_sum_hourly,
+--       clickhouse-schema.sql)을 읽는다. 아래 레거시 패널은 원본 테이블을 그대로 읽으며 유효
+--       — 단 cumulative 이중합산 이슈(sum(Value) 직접 합산 금지)는 여기서도 동일하게 적용된다.
 -- =============================================================================
 
 

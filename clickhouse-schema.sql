@@ -42,12 +42,76 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
     Decision        LowCardinality(String) MATERIALIZED Attributes['decision'],
     Language        LowCardinality(String) MATERIALIZED Attributes['language'],
     SkillName       LowCardinality(String) MATERIALIZED Attributes['skill.name'],
-    AgentName       LowCardinality(String) MATERIALIZED Attributes['agent.name']
+    AgentName       LowCardinality(String) MATERIALIZED Attributes['agent.name'],
+    -- 진짜 OTel 시리즈 식별자(Attributes 맵 전체 해시) — queries.js의 incFlat/incBucketed가 세션 내
+    -- 서로 다른 누적 스트림이 섞이는 걸 막는 GROUP BY 키로 쓴다. 예전엔 매 쿼리마다
+    -- cityHash64(toString(Attributes))를 인라인 계산했는데, 420만 row 스캔 기준 1.2초 중 대부분이
+    -- 이 문자열 직렬화였다(실측 2026-07-10) — MATERIALIZED로 INSERT 시점에 한 번만 계산하도록
+    -- 옮기니 같은 쿼리가 0.11초로 줄었다. 인라인 계산과 값이 100% 일치함을 확인(mismatch=0).
+    SeriesKey       UInt64                 MATERIALIZED cityHash64(toString(Attributes))
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(TimeUnix)
 ORDER BY (ExperimentGroup, MetricName, Model, toUnixTimestamp(TimeUnix))
 TTL toDateTime(TimeUnix) + INTERVAL 180 DAY;
+
+-- -----------------------------------------------------------------------------
+-- 1b. 시간별 rollup — 대시보드 쿼리가 실제로 읽는 테이블 (queries.js incFlat/incBucketed)
+-- -----------------------------------------------------------------------------
+-- 누적 카운터는 (SeriesKey, SessionId, 버킷)당 "버킷 종료 시점 누적값" = max(Value)만 있으면
+-- 구간 diff가 가능하다. 원본은 세션이 살아있는 동안 10초마다 전 시리즈를 재-export해서
+-- 실측(2026-07-10) 3일 만에 9.5M행(+3M행/일) — 매 쿼리 풀스캔이 26M read rows, 단독 2~4.5초,
+-- 동시 9~11초까지 갔다. 시간별로 접으면 ~110K행(86x)이고 증가율도 ~40K행/일로 준다.
+--
+-- AggregatingMergeTree에서 ORDER BY가 곧 집계 identity — 쿼리가 구분해야 하는 모든 차원
+-- 컬럼이 키에 있어야 한다. SeriesKey(Attributes 해시)만으로는 MetricName(attribute가 아님)/
+-- UserEmail(ResourceAttributes)/AggregationTemporality를 구분하지 못한다.
+-- SimpleAggregateFunction이라 쿼리는 반드시 재집계(GROUP BY) 형태로 읽어야 한다(머지가
+-- 비동기라 부분 행이 존재할 수 있음) — incFlat/incBucketed의 GROUP BY 모양이 이미 그렇다.
+-- TTL 없음: 원본이 180일 TTL로 지워진 뒤에도 diff baseline을 보존한다(의도된 보너스).
+CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
+(
+    hour                   DateTime,
+    MetricName             LowCardinality(String),
+    SessionId              String,
+    SeriesKey              UInt64,
+    UserEmail              LowCardinality(String),
+    AggregationTemporality Int32,
+    Model                  LowCardinality(String),
+    TokenType              LowCardinality(String),
+    Decision               LowCardinality(String),
+    SkillName              LowCardinality(String),
+    ToolName               LowCardinality(String),
+    max_value SimpleAggregateFunction(max, Float64),  -- cumulative(temp=2): 버킷 종료 시점 누적값
+    sum_value SimpleAggregateFunction(sum, Float64),  -- delta(temp=1): 버킷 내 증가량 합
+    has_org   SimpleAggregateFunction(max, UInt8)     -- organization.id 존재 — 그룹 판별(grouping.js)용
+)
+ENGINE = AggregatingMergeTree
+PARTITION BY toYYYYMM(hour)
+ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
+          Model, TokenType, Decision, SkillName, ToolName, hour);
+
+-- MV는 인서트를 받은 노드에서 발화해 TO 테이블에 쓴다. 컬럼을 전부 명시(SELECT * 금지 —
+-- MATERIALIZED 소스 컬럼은 명시 참조해야 MV에서 해석된다). MV가 throw하면 원본 인서트가
+-- 실패해 텔레메트리 수집이 멈추므로, 정의 변경은 반드시 로컬에서 테스트 인서트로 검증할 것.
+-- 기존 데이터가 있는 클러스터에 처음 적용할 때는 MV의 SELECT에 정각 워터마크
+-- (AND TimeUnix >= toDateTime('<W>'))를 넣어 생성하고, W 이후 수 분 지나서
+--   INSERT INTO claude_code.otel_metrics_sum_hourly (동일 SELECT) WHERE TimeUnix < '<W>'
+-- 백필을 한 레플리카에서 1회만 실행한다(sum_value는 재시도 시 중복 — 실패하면 pre-W 파티션
+-- drop 후 재실행). 신규 설치는 테이블과 함께 생성되므로 워터마크 불필요.
+CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.otel_metrics_sum_hourly_mv
+TO claude_code.otel_metrics_sum_hourly AS
+SELECT
+    toStartOfHour(toDateTime(TimeUnix)) AS hour,
+    MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
+    Model, TokenType, Decision, SkillName,
+    Attributes['tool_name'] AS ToolName,
+    max(Value) AS max_value,
+    sum(Value) AS sum_value,
+    max(Attributes['organization.id'] != '') AS has_org
+FROM claude_code.otel_metrics_sum
+GROUP BY hour, MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
+         Model, TokenType, Decision, SkillName, ToolName;
 
 -- Gauge 계열 (active_time 등 일부)
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge
@@ -89,10 +153,14 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_logs
     UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
     EventName       LowCardinality(String) MATERIALIZED LogAttributes['event.name'],
     SessionId       String                 MATERIALIZED LogAttributes['session.id'],
-    -- tool_result 이벤트용
+    -- tool_result 이벤트용. mcp_server_name/mcp_tool_name은 LogAttributes 최상위 키가 아니라
+    -- tool_name='mcp_tool'일 때 LogAttributes['tool_parameters'](JSON 문자열) 안에 중첩되어
+    -- 온다(실측 2026-07-09: LogAttributes['mcp_server_name'] 직접 참조는 늘 빈 문자열이라
+    -- McpServerName != '' 필터에 항상 걸려 대시보드 MCP 패널이 비었음) — JSONExtractString으로
+    -- 그 문자열을 파싱한다. tool_parameters가 비어있거나 그 키가 없으면 빈 문자열을 그대로 반환.
     ToolName        LowCardinality(String) MATERIALIZED LogAttributes['tool_name'],
-    McpServerName   LowCardinality(String) MATERIALIZED LogAttributes['mcp_server_name'],
-    McpToolName     LowCardinality(String) MATERIALIZED LogAttributes['mcp_tool_name'],
+    McpServerName   LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_server_name'),
+    McpToolName     LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_tool_name'),
     Success         LowCardinality(String) MATERIALIZED LogAttributes['success']
 )
 ENGINE = MergeTree

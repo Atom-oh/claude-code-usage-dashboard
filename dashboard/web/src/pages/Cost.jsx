@@ -1,24 +1,19 @@
 import { useEffect, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
-import { DonutBreakdown, HBarList, SeriesBarChart } from "../components/GroupCharts.jsx";
-import { Loading, ErrorBox } from "../components/Card.jsx";
+import { DonutBody, DonutBreakdown, HBarList, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { Card, Loading, ErrorBox } from "../components/Card.jsx";
+import { useChartColors } from "../useChartColors.js";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
-import { useFilters } from "../FilterContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-const GROUP_TABS = [
-  { value: "", label: "전체" },
-  { value: "bedrock", label: "bedrock" },
-  { value: "enterprise", label: "enterprise" },
-];
 
 function foldModelRows(rows) {
   const totals = new Map();
@@ -38,7 +33,6 @@ function foldModelRows(rows) {
 }
 
 export default function Cost() {
-  const { group: globalGroup } = useFilters();
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
   // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 기본값으로 재동기화 —
@@ -85,31 +79,33 @@ export default function Cost() {
     .sort((a, b) => b.cost - a.cost)
     .slice(0, 10);
 
-  // 전역 group 필터가 바뀌면 로컬 도넛 탭을 리셋 — 안 그러면 전역=bedrock, 로컬=enterprise처럼
-  // 서로 겹치지 않는 조합이 남아 도넛이 조용히 빈 채로 렌더된다.
-  const [modelDonutGroup, setModelDonutGroup] = useState("");
-  useEffect(() => setModelDonutGroup(""), [globalGroup]);
-  const modelDonutRows = foldModelRows((byModel.data || []).filter((r) => !modelDonutGroup || r.group === modelDonutGroup));
+  // bedrock/enterprise 도넛 두 개를 한 카드에 — 같은 모델은 양쪽에서 같은 색이어야 하므로
+  // 전체 지출 순위(modelRows) 기준으로 색을 먼저 고정하고 두 도넛에 같은 맵을 넘긴다.
+  const chartColors = useChartColors();
+  const modelColor = new Map(modelRows.map((r, i) => [r.model, chartColors.palette[i % chartColors.palette.length]]));
+  const bedrockModelRows = foldModelRows((byModel.data || []).filter((r) => r.group === "bedrock"));
+  const enterpriseModelRows = foldModelRows((byModel.data || []).filter((r) => r.group === "enterprise"));
 
-  const [tokenDonutGroup, setTokenDonutGroup] = useState("");
-  useEffect(() => setTokenDonutGroup(""), [globalGroup]);
-  const tokenTotals = (summary.data || [])
-    .filter((r) => !tokenDonutGroup || r.group === tokenDonutGroup)
-    .reduce(
-      (acc, r) => ({
-        input: acc.input + Number(r.input_tokens),
-        output: acc.output + Number(r.output_tokens),
-        cacheRead: acc.cacheRead + Number(r.cache_read_tokens),
-        cacheWrite: acc.cacheWrite + Number(r.cache_write_tokens),
-      }),
-      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-    );
-  const tokenTypeRows = [
-    { type: "입력", tokens: tokenTotals.input },
-    { type: "출력", tokens: tokenTotals.output },
-    { type: "캐시 읽기", tokens: tokenTotals.cacheRead },
-    { type: "캐시 쓰기", tokens: tokenTotals.cacheWrite },
-  ].filter((r) => r.tokens > 0);
+  // 탭으로 그룹을 고르던 방식 대신 bedrock/enterprise 카드를 좌우로 분리 — 각 카드는 그 그룹만의 합계.
+  function tokenTypeRowsFor(group) {
+    const totals = (summary.data || [])
+      .filter((r) => r.group === group)
+      .reduce(
+        (acc, r) => ({
+          input: acc.input + Number(r.input_tokens),
+          output: acc.output + Number(r.output_tokens),
+          cacheRead: acc.cacheRead + Number(r.cache_read_tokens),
+          cacheWrite: acc.cacheWrite + Number(r.cache_write_tokens),
+        }),
+        { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+      );
+    return [
+      { type: "입력", tokens: totals.input },
+      { type: "출력", tokens: totals.output },
+      { type: "캐시 읽기", tokens: totals.cacheRead },
+      { type: "캐시 쓰기", tokens: totals.cacheWrite },
+    ].filter((r) => r.tokens > 0);
+  }
 
   const daysInRange = Math.max(1, (to - from) / 86400000);
   const projection30d = (totals.cost / daysInRange) * 30;
@@ -190,27 +186,37 @@ export default function Cost() {
           ) : byModel.error ? (
             <ErrorBox error={byModel.error} />
           ) : (
-            <DonutBreakdown
-              title="모델별 지출 비중"
-              right={<SegmentedControl options={GROUP_TABS} value={modelDonutGroup} onChange={setModelDonutGroup} />}
-              data={modelDonutRows}
-              nameKey="model"
-              valueKey="cost"
-              valuePrefix="$"
-            />
+            <>
+              <Card title="모델별 지출 비중 — bedrock" subtitle="같은 모델은 enterprise 카드와 같은 색">
+                <DonutBody data={bedrockModelRows} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => modelColor.get(name)} />
+              </Card>
+              <Card title="모델별 지출 비중 — enterprise" subtitle="같은 모델은 bedrock 카드와 같은 색">
+                <DonutBody data={enterpriseModelRows} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => modelColor.get(name)} />
+              </Card>
+            </>
           )}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
           {summary.loading ? (
             <Loading />
           ) : summary.error ? (
             <ErrorBox error={summary.error} />
           ) : (
-            <DonutBreakdown
-              title="토큰 타입별 비중"
-              right={<SegmentedControl options={GROUP_TABS} value={tokenDonutGroup} onChange={setTokenDonutGroup} />}
-              data={tokenTypeRows}
-              nameKey="type"
-              valueKey="tokens"
-            />
+            <>
+              <DonutBreakdown
+                title="토큰 타입별 비중 — bedrock"
+                data={tokenTypeRowsFor("bedrock")}
+                nameKey="type"
+                valueKey="tokens"
+              />
+              <DonutBreakdown
+                title="토큰 타입별 비중 — enterprise"
+                data={tokenTypeRowsFor("enterprise")}
+                nameKey="type"
+                valueKey="tokens"
+              />
+            </>
           )}
         </div>
 

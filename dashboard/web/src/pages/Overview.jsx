@@ -18,6 +18,14 @@ const TOKEN_VIEWS = [
   { value: "output_tokens", label: "출력" },
 ];
 
+// group을 카드 제목으로 좌우 분리해 보여주므로 테이블 안에서는 그룹 컬럼을 뺀다.
+const MODEL_DIST_COLUMNS = [
+  { key: "model", label: "모델" },
+  { key: "input_tokens", label: "입력 토큰", render: fmt },
+  { key: "output_tokens", label: "출력 토큰", render: fmt },
+  { key: "tokens", label: "전체 토큰", render: fmt },
+];
+
 export default function Overview() {
   const [tokenView, setTokenView] = useState("tokens");
   const { intervalHours } = useRange();
@@ -176,18 +184,17 @@ export default function Overview() {
         ) : models.error ? (
           <ErrorBox error={models.error} />
         ) : (
-          <DataTable
-            title="모델별 토큰 분포"
-            subtitle="그룹 간 모델 차이 — 교란 요인 점검용"
-            columns={[
-              { key: "group", label: "그룹" },
-              { key: "model", label: "모델" },
-              { key: "input_tokens", label: "입력 토큰", render: fmt },
-              { key: "output_tokens", label: "출력 토큰", render: fmt },
-              { key: "tokens", label: "전체 토큰", render: fmt },
-            ]}
-            rows={models.data}
-          />
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => (
+              <DataTable
+                key={g}
+                title={`모델별 토큰 분포 — ${g}`}
+                subtitle="교란 요인 점검용"
+                columns={MODEL_DIST_COLUMNS}
+                rows={(models.data || []).filter((r) => r.group === g)}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>

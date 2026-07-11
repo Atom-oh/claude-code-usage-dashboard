@@ -29,7 +29,15 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
 
 `user-data.sh`는 이미 EC2 Launch Template 시나리오로 작성돼 있다. CFN 템플릿을 새로 쓸 때 그대로 재사용할 부분:
 
-- otelcol-contrib 설치 + systemd 서비스 등록 블록 (`/usr/local/bin/otelcol-contrib`, `/etc/systemd/system/otelcol.service`)
+- otelcol-contrib 설치 + systemd 서비스 등록 블록 (`/usr/local/bin/otelcol-contrib`, `/etc/systemd/system/otelcol.service`) —
+  **반드시 `Restart=always` + `RestartSec` 짧게(5s)를 포함해야 한다.** 실측(2026-07-07): 개발 환경에서
+  otelcol을 로그인 쉘에서 foreground로 띄운 채 방치했다가, ClickHouse endpoint DNS 조회가 한 번
+  일시적으로 타임아웃(`i/o timeout`)나면서 프로세스가 그대로 죽었고, 재시작 로직이 없어 그 뒤
+  43시간 동안 텔레메트리가 전혀 안 들어갔다(대시보드는 에러 없이 "데이터가 갈수록 줄어드는" 것처럼만
+  보임 — 필터/쿼리 버그로 오인하기 쉽다). 참가자 인스턴스가 수백 대인 워크샵에서 이 실패 모드가
+  퍼지면 발표 중 그룹별 데이터가 조용히 마르는 것과 동일하다. README.md "Telemetry Ingestion" 절의
+  유닛 파일을 그대로 쓸 것 — `Type=simple` + `Restart=always`가 핵심이고, `UserData`에 맨 `&`
+  백그라운드나 `nohup`으로만 띄우는 방식은 이 결함을 그대로 재현하므로 금지.
 - Claude Code managed-settings 배포 경로: `/etc/claude-code/managed-settings.json` (사용자 홈 `~/.claude/`가 아니라 이 경로여야 우선순위가 보장됨)
 - ClickHouse 쓰기 비밀번호는 SSM SecureString에서 런타임에 `aws ssm get-parameter --with-decryption`으로 꺼낸다 — CFN에 평문으로 넣지 않는다.
 - `collector-config.yaml`은 S3에서 다운로드하는 대신, 참가자 계정에는 아웃바운드 S3 접근이 제한적일 수 있으니 CFN의 `UserData`에 인라인으로 넣는 것도 검토(참가자 수 대비 파일 크기 작음).
@@ -38,7 +46,12 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
 
 `clickhouse-schema.sql`의 원 작업지시서 STEP 6과 동일하게, 워크샵 참가자 인스턴스 몇 개로 반드시 확인:
 
-1. Collector 생존 확인: `systemctl status otelcol`, `journalctl -u otelcol -n 50`
+1. Collector 생존 확인: `systemctl status otelcol`, `journalctl -u otelcol -n 50`. `systemctl status`가
+   `active (running)`이어도 ClickHouse로의 export가 죽어있을 수 있으니(예: DNS 장애 후 재시도
+   루프만 도는 상태), 반드시 신선도까지 확인한다: `SELECT max(TimeUnix) FROM
+   claude_code.otel_metrics_sum` (또는 `otel_logs`의 `max(Timestamp)`)가 `now()`와 몇 분 이상
+   벌어져 있으면 실질적으로 죽은 것 — collector.log의 최근 에러(`dial tcp: ... i/o timeout` 등)를
+   확인하고 `systemctl restart otelcol`.
 2. ClickHouse에 두 그룹 데이터가 다 들어오는지: `SELECT ExperimentGroup, MetricName, count() FROM claude_code.otel_metrics_sum GROUP BY ExperimentGroup, MetricName` — 단, 이 워크샵에서는 `ExperimentGroup`(ResourceAttributes 기반)이 아니라 대시보드가 계산하는 그룹을 봐야 한다.
 3. attribute 실제 키 이름 실측 (`Attributes`/`LogAttributes`의 `mapKeys`) — Claude Code 버전이 바뀌면 `model`, `session.id`, `decision` 등의 키 이름이 달라질 수 있다. 달라지면 `dashboard/server/grouping.js`와 `dashboard/server/queries.js` 두 파일만 고치면 된다.
 4. temporality — 운영 설정은 `cumulative`(30초마다 세션 누적값 export)다. 초기엔 대시보드 쿼리가 전부 `sum(Value)`라 세션이 길수록 토큰/비용/세션 수가 배수로 과대집계되는 버그가 있었지만(실측: 1600억 토큰), `queries.js`를 세션(`session.id`)별 경계 diff(구간 끝 누적값 - 구간 시작 직전 누적값, Prometheus increase()와 동일 원리)로 재작성해 delta/cumulative 둘 다 정확히 처리한다. `SELECT DISTINCT AggregationTemporality FROM claude_code.otel_metrics_sum`로 2(cumulative)가 나오는 게 정상이며, delta(1) 데이터가 섞여도(레거시 배포 등) 문제없다.

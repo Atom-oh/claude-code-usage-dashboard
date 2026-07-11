@@ -1,18 +1,58 @@
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useRef, useState } from "react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { colorFor } from "../colors.js";
 import { pivotByGroup, pivotByKey, groupsPresent } from "../pivot.js";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
+import { useRange } from "../RangeContext.jsx";
 import { Card } from "./Card.jsx";
+
+// 시계열 차트에서 좌우로 드래그하면 그 구간으로 전역 range를 좁힌다(RangeContext.setRange) —
+// 페이지의 모든 차트가 같이 줌인되고 해상도도 자동으로 세밀해진다. Recharts 카테고리 x축은
+// activeLabel(현재 x값)로 드래그 구간을 잡고, ReferenceArea로 하이라이트한다. 라벨이 날짜로
+// 파싱되지 않으면(카테고리 축: 모델명·툴명 등) 조용히 no-op이라 별도 opt-in prop이 필요없다.
+function useDragZoom() {
+  const { setRange } = useRange();
+  const startRef = useRef(null);
+  const [area, setArea] = useState(null); // { left, right } — 드래그 중 하이라이트 구간
+  const cancel = () => { startRef.current = null; setArea(null); };
+  const handlers = {
+    onMouseDown: (e) => {
+      if (!e || e.activeLabel == null) return;
+      startRef.current = e.activeLabel;
+      setArea({ left: e.activeLabel, right: e.activeLabel });
+    },
+    // activeLabel이 잠깐 비는 순간(점 사이·플롯 밖)은 마지막 유효 구간을 유지한다.
+    onMouseMove: (e) => {
+      if (startRef.current == null || !e || e.activeLabel == null) return;
+      setArea({ left: startRef.current, right: e.activeLabel });
+    },
+    onMouseUp: () => {
+      const a = area;
+      cancel();
+      if (!a) return;
+      const d1 = new Date(a.left), d2 = new Date(a.right);
+      if (isNaN(d1) || isNaN(d2)) return; // 카테고리 축 → no-op
+      const from = d1 <= d2 ? d1 : d2, to = d1 <= d2 ? d2 : d1;
+      if (to - from < 10 * 60000) return; // 클릭·미세 드래그 무시(최소 10분)
+      setRange(from, to);
+    },
+    onMouseLeave: cancel,
+  };
+  const dragging = area && area.left !== area.right;
+  const overlay = dragging ? <ReferenceArea x1={area.left} x2={area.right} strokeOpacity={0} fill="#6366f1" fillOpacity={0.12} /> : null;
+  return { handlers, overlay, className: dragging ? "select-none" : "" };
+}
 
 // 시계열, 그룹별 area 하나씩 — ../awsops AreaTrend와 같은 그라디언트 기법, 그룹 색상만 다중.
 export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, height = 240, tickFormatter }) {
   const c = useChartColors();
+  const zoom = useDragZoom();
   const data = pivotByGroup(rows, xKey, valueKey);
   const groups = groupsPresent(rows);
   return (
     <Card title={title} subtitle={subtitle} right={right}>
-      <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={height} className={zoom.className}>
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} {...zoom.handlers}>
           <defs>
             {groups.map((g) => (
               <linearGradient key={g} id={`area-${g}`} x1="0" y1="0" x2="0" y2="1">
@@ -29,6 +69,7 @@ export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, h
           {groups.map((g) => (
             <Area key={g} type="monotone" dataKey={g} name={g} stroke={colorFor(g)} strokeWidth={2} fill={`url(#area-${g})`} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
           ))}
+          {zoom.overlay}
         </AreaChart>
       </ResponsiveContainer>
     </Card>
@@ -63,12 +104,13 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
 // 임의 카테고리(예: model)별 일간 스택 바 — 그룹(bedrock/enterprise) 전용이 아닌 범용 버전.
 export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height = 260, tickFormatter, valuePrefix = "" }) {
   const c = useChartColors();
+  const zoom = useDragZoom();
   const { data, series } = pivotByKey(rows, xKey, seriesKey, valueKey);
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
   return (
     <Card title={title} subtitle={subtitle} right={right}>
-      <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={data} margin={{ left: 8, right: 8 }}>
+      <ResponsiveContainer width="100%" height={height} className={zoom.className}>
+        <BarChart data={data} margin={{ left: 8, right: 8 }} {...zoom.handlers}>
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={tickFormatter} />
           <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} tickFormatter={fmt} />
@@ -77,6 +119,7 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
           {series.map((s, i) => (
             <Bar key={s} dataKey={s} name={s} stackId="a" fill={c.palette[i % c.palette.length]} radius={i === series.length - 1 ? [4, 4, 0, 0] : 0} />
           ))}
+          {zoom.overlay}
         </BarChart>
       </ResponsiveContainer>
     </Card>
@@ -87,11 +130,12 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
 // lines: [{key, label, color, axis: "left" | "right"}] — rows는 이미 xKey 기준으로 wide한 형태여야 함.
 export function DualLineChart({ title, subtitle, right, rows, xKey, lines, height = 240, tickFormatter }) {
   const c = useChartColors();
+  const zoom = useDragZoom();
   const hasRight = lines.some((l) => l.axis === "right");
   return (
     <Card title={title} subtitle={subtitle} right={right}>
-      <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={rows || []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={height} className={zoom.className}>
+        <LineChart data={rows || []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} {...zoom.handlers}>
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={tickFormatter} minTickGap={24} />
           <YAxis yAxisId="left" tick={axisTick(c)} tickLine={false} axisLine={false} width={48} />
@@ -110,15 +154,19 @@ export function DualLineChart({ title, subtitle, right, rows, xKey, lines, heigh
               dot={false}
             />
           ))}
+          {zoom.overlay}
         </LineChart>
       </ResponsiveContainer>
     </Card>
   );
 }
 
-// ../awsops DonutBreakdown 포팅 — innerRadius 55/outerRadius 80, 중앙 합계 라벨 + 사이드 범례.
-export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey, valuePrefix = "" }) {
+// 도넛 본체 (Card 없음) — 한 카드에 도넛을 여러 개 넣을 때 직접 조합한다 (예: Cost의
+// 모델별 지출 비중 bedrock/enterprise 나란히). colorOf(name, i)로 색을 넘기면 도넛 간에
+// 같은 항목이 같은 색을 갖도록 밖에서 고정할 수 있다.
+export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", colorOf }) {
   const c = useChartColors();
+  const color = (name, i) => (colorOf ? colorOf(name, i) : c.palette[i % c.palette.length]);
   const total = data.reduce((s, d) => s + (Number(d[valueKey]) || 0), 0);
   // Math.round만 쓰면 짧은 기간의 소액 tier(몇 센트)가 전부 "$0"으로 보인다 — $10 미만은 소수 2자리.
   const fmt = (v) =>
@@ -126,42 +174,48 @@ export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey
       ? `$${Number(v) < 10 ? v.toFixed(2) : Math.round(v).toLocaleString()}`
       : v.toLocaleString();
 
-  // 전역/로컬 group 필터가 서로 겹치지 않으면 데이터가 비는데, 빈 도넛만 렌더되면 로딩/버그처럼 보인다.
-  if (total <= 0) {
-    return (
-      <Card title={title} subtitle={subtitle} right={right}>
+  return (
+    <div className="min-w-0">
+      {label && <div className="mb-2 text-[12px] font-medium text-ink-600">{label}</div>}
+      {/* 전역/로컬 group 필터가 서로 겹치지 않으면 데이터가 비는데, 빈 도넛만 렌더되면 로딩/버그처럼 보인다. */}
+      {total <= 0 ? (
         <div className="flex h-[170px] items-center justify-center text-[13px] text-ink-400">표시할 데이터가 없습니다</div>
-      </Card>
-    );
-  }
+      ) : (
+        <div className="flex items-center gap-4">
+          <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
+            <PieChart width={170} height={170}>
+              <Pie data={data} dataKey={valueKey} nameKey={nameKey} innerRadius={55} outerRadius={80} paddingAngle={2} stroke="none">
+                {data.map((d, i) => (
+                  <Cell key={i} fill={color(String(d[nameKey]), i)} />
+                ))}
+              </Pie>
+              <Tooltip {...tooltipStyles(c)} formatter={(v, n) => [fmt(Number(v)), n]} />
+            </PieChart>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <div className="tabular text-[20px] font-semibold leading-none text-ink-800">{fmt(total)}</div>
+              <div className="text-[10px] uppercase tracking-[0.04em] text-ink-400 mt-1">합계</div>
+            </div>
+          </div>
+          <ul className="min-w-0 flex-1 space-y-1.5">
+            {data.map((d, i) => (
+              <li key={i} className="flex items-center gap-2 text-[12px]">
+                <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color(String(d[nameKey]), i) }} />
+                <span className="min-w-0 flex-1 truncate text-ink-600">{String(d[nameKey])}</span>
+                <span className="tabular shrink-0 font-medium text-ink-800">{fmt(Number(d[valueKey]))}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
+// ../awsops DonutBreakdown 포팅 — innerRadius 55/outerRadius 80, 중앙 합계 라벨 + 사이드 범례.
+export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey, valuePrefix = "" }) {
   return (
     <Card title={title} subtitle={subtitle} right={right}>
-      <div className="flex items-center gap-4">
-        <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
-          <PieChart width={170} height={170}>
-            <Pie data={data} dataKey={valueKey} nameKey={nameKey} innerRadius={55} outerRadius={80} paddingAngle={2} stroke="none">
-              {data.map((_, i) => (
-                <Cell key={i} fill={c.palette[i % c.palette.length]} />
-              ))}
-            </Pie>
-            <Tooltip {...tooltipStyles(c)} formatter={(v, n) => [fmt(Number(v)), n]} />
-          </PieChart>
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <div className="tabular text-[20px] font-semibold leading-none text-ink-800">{fmt(total)}</div>
-            <div className="text-[10px] uppercase tracking-[0.04em] text-ink-400 mt-1">합계</div>
-          </div>
-        </div>
-        <ul className="min-w-0 flex-1 space-y-1.5">
-          {data.map((d, i) => (
-            <li key={i} className="flex items-center gap-2 text-[12px]">
-              <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.palette[i % c.palette.length] }} />
-              <span className="min-w-0 flex-1 truncate text-ink-600">{String(d[nameKey])}</span>
-              <span className="tabular shrink-0 font-medium text-ink-800">{fmt(Number(d[valueKey]))}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <DonutBody data={data} nameKey={nameKey} valueKey={valueKey} valuePrefix={valuePrefix} />
     </Card>
   );
 }
