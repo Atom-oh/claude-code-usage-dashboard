@@ -55,6 +55,17 @@ PARTITION BY toYYYYMM(TimeUnix)
 ORDER BY (ExperimentGroup, MetricName, Model, toUnixTimestamp(TimeUnix))
 TTL toDateTime(TimeUnix) + INTERVAL 180 DAY;
 
+-- CREATE TABLE IF NOT EXISTS는 테이블이 이미 있는 기존 클러스터에는 no-op이라 SeriesKey가
+-- 위 CREATE TABLE 블록에만 있으면 생기지 않는다(리뷰에서 CRITICAL로 확인: 기존 배포에
+-- 적용 시 아래 MV 생성이 "unknown column SeriesKey"로 실패). ALTER로 명시적으로 백필한다.
+-- 신규 설치는 CREATE TABLE에 이미 있어 이 ALTER가 안전한 no-op(컬럼 이미 존재).
+-- 실행 순서: 이 ALTER → 아래 otel_metrics_sum_hourly 테이블/MV 생성 → 필요시 백필(주석 참고).
+ALTER TABLE claude_code.otel_metrics_sum
+    ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes));
+-- ADD COLUMN만으로는 기존 파트의 값이 채워지지 않는다(신규 insert부터만 계산) — rollup
+-- 백필(아래)이 기존 데이터의 SeriesKey를 읽으므로 반드시 MATERIALIZE로 기존 파트까지 채운다.
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN SeriesKey;
+
 -- -----------------------------------------------------------------------------
 -- 1b. 시간별 rollup — 대시보드 쿼리가 실제로 읽는 테이블 (queries.js incFlat/incBucketed)
 -- -----------------------------------------------------------------------------
@@ -167,6 +178,17 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(Timestamp)
 ORDER BY (ExperimentGroup, EventName, toUnixTimestamp(Timestamp))
 TTL toDateTime(Timestamp) + INTERVAL 90 DAY;
+
+-- McpServerName/McpToolName은 기존 클러스터에 이미 있던 컬럼(예전 정의:
+-- LogAttributes['mcp_server_name'] 직접 참조 — 항상 빈 문자열)이라 CREATE TABLE IF NOT
+-- EXISTS로는 위의 JSONExtractString 새 정의가 반영되지 않는다. MODIFY COLUMN으로 표현식을
+-- 교체하고, MATERIALIZE로 기존 파트의 값을 재계산한다(신규 설치는 CREATE TABLE에 이미
+-- 새 정의가 있어 이 블록이 안전한 no-op).
+ALTER TABLE claude_code.otel_logs
+    MODIFY COLUMN McpServerName LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_server_name'),
+    MODIFY COLUMN McpToolName   LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_tool_name');
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN McpServerName;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN McpToolName;
 
 -- -----------------------------------------------------------------------------
 -- 참고: attribute 실제 키 이름(event.name / tool_name / mcp_server_name 등)은

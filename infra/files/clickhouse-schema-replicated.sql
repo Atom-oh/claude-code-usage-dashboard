@@ -39,8 +39,15 @@ TTL toDateTime(TimeUnix) + INTERVAL 90 DAY TO VOLUME 'cold',
     toDateTime(TimeUnix) + INTERVAL 180 DAY DELETE
 SETTINGS storage_policy = 'hot_cold';
 
+-- CREATE TABLE IF NOT EXISTS는 기존 클러스터에 no-op이라 SeriesKey가 생기지 않는다 —
+-- ../../clickhouse-schema.sql(참조 사본)과 동일한 근거·순서로 ALTER + MATERIALIZE.
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
+    ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes));
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN SeriesKey;
+
 -- 시간별 rollup — 대시보드 쿼리가 실제로 읽는 테이블. 설계 근거/키 규칙/컷오버(워터마크+백필)
--- 절차는 ../../../clickhouse-schema.sql(참조 사본)의 주석 참고 — 두 파일 동기화 유지.
+-- 절차는 ../../clickhouse-schema.sql(참조 사본, infra/files/ 기준 두 단계 위가 repo root)의
+-- 주석 참고 — 두 파일 동기화 유지.
 -- MV는 인서트를 받은 레플리카에서만 발화하고 복제 파트는 재발화하지 않으므로(중복 없음),
 -- 인서트가 LB로 아무 레플리카에나 도착하는 이 클러스터에선 ON CLUSTER로 전 레플리카에 생성한다.
 -- TTL/콜드 티어링 없음: 행이 적어(~40K/일) 항상 hot에 둬도 부담이 없고, 원본이 180일 TTL로
@@ -132,3 +139,11 @@ ORDER BY (ExperimentGroup, EventName, toUnixTimestamp(Timestamp))
 TTL toDateTime(Timestamp) + INTERVAL 45 DAY TO VOLUME 'cold',
     toDateTime(Timestamp) + INTERVAL 90 DAY DELETE
 SETTINGS storage_policy = 'hot_cold';
+
+-- McpServerName/McpToolName은 기존 클러스터에 이미 있던 컬럼(예전 정의: 항상 빈 문자열) —
+-- ../../clickhouse-schema.sql(참조 사본)과 동일한 근거로 MODIFY + MATERIALIZE.
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated'
+    MODIFY COLUMN McpServerName LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_server_name'),
+    MODIFY COLUMN McpToolName   LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_tool_name');
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN McpServerName;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN McpToolName;

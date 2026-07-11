@@ -13,8 +13,8 @@ function resolutionForSpan(spanMs) {
 }
 
 export function RangeProvider({ children }) {
-  // 워크샵 기간 기본 2일 — 서버 warmer(index.js)가 이 기본 뷰(2일·필터 없음)를 15초마다
-  // 미리 캐싱하므로, 기본값을 바꾸면 warmer의 WARM_DAYS도 같이 바꿔야 한다.
+  // 워크샵 기간 기본 2일 — 서버 warmer(index.js)가 이 기본 뷰(2일·필터 없음)를 QUANT_MS
+  // 경계마다 미리 캐싱하므로, 기본값을 바꾸면 warmer의 WARM_DAYS도 같이 바꿔야 한다.
   const [days, setDays] = useState(2);
   // 차트 드래그로 고른 임의 구간. null이면 프리셋(days) 모드. 프리셋을 다시 고르면 클리어된다.
   const [custom, setCustom] = useState(null);

@@ -6,8 +6,10 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
 
 ## Key Files
 - `src/main.jsx`, `App.jsx` -- entry point, route table
-- `src/RangeContext.jsx` -- global `from`/`to`/`intervalHours` state (`intervalHours = days
-  <= 2 ? 1 : 24`)
+- `src/RangeContext.jsx` -- global `from`/`to`/`intervalHours` state. Two modes: preset
+  (`intervalHours = days <= 2 ? 1 : 24`) or custom (set via chart drag-zoom's `setRange()`,
+  `intervalHours` derived from the zoomed span down to minute buckets, see
+  `RESOLUTION_LADDER_MIN`)
 - `src/FilterContext.jsx` -- global `group`/`user`/`model` filter state
 - `src/useApi.js` -- shared fetch hook; auto-forwards range+filters to every endpoint call
 - `src/pages/*.jsx` -- one file per dashboard page (Overview, Cost, Productivity, Users,

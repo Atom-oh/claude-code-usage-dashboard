@@ -107,7 +107,10 @@ export default function Cost() {
     ].filter((r) => r.tokens > 0);
   }
 
-  const daysInRange = Math.max(1, (to - from) / 86400000);
+  // 최소 하한을 1일로 두면 드래그 줌으로 고른 <1일 구간(예: 10분)의 지출이 "일평균"으로
+  // 잘못 간주돼 ×30이 크게 부풀려진다(리뷰에서 MINOR로 확인) — 실제 구간 길이(분 단위까지)로
+  // 나눠야 짧은 줌 구간에서도 선형 비례가 유지된다. 최소 1분만 하한(0으로 나누기 방지).
+  const daysInRange = Math.max(1 / 1440, (to - from) / 86400000);
   const projection30d = (totals.cost / daysInRange) * 30;
   const developerCount = new Set((byUserModel.data || []).map((r) => r.user)).size;
   const spendPerDeveloper = developerCount > 0 ? totals.cost / developerCount : 0;

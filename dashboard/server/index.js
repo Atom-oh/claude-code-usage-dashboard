@@ -114,10 +114,10 @@ function route(path, handler, { warm = true } = {}) {
 }
 
 // ── 캐시 warmer ──────────────────────────────────────────────────────────
-// 기본 뷰(2일·필터 없음·시간 버킷)를 QUANT_MS(30초) 경계마다 서버가 스스로 조회해 캐시를
-// 채운다 — 첫 방문자든 새 세션이든 캐시 히트로 즉각 응답한다. 클라이언트(useApi)가 to를 같은
-// 30초 경계로 내림(quantize)하므로 warmer가 만든 키와 문자 그대로 일치한다. 워크샵 기본값이
-// 바뀌면 WARM_DAYS와 RangeContext.jsx의 기본 days를 같이 바꿔야 한다.
+// 기본 뷰(2일·필터 없음·시간 버킷)를 QUANT_MS(현재 120초) 경계마다 서버가 스스로 조회해
+// 캐시를 채운다 — 첫 방문자든 새 세션이든 캐시 히트로 즉각 응답한다. 클라이언트(useApi)가
+// to를 같은 QUANT_MS 경계로 내림(quantize)하므로 warmer가 만든 키와 문자 그대로 일치한다.
+// 워크샵 기본값이 바뀌면 WARM_DAYS와 RangeContext.jsx의 기본 days를 같이 바꿔야 한다.
 // 한꺼번에 다 쏘면 ClickHouse 동시성 스파이크가 생기므로(실측 2026-07-10: 두 파드가 부팅 시
 // 동시에 9개씩 워밍하자 가장 무거운 leaderboard가 15초 클라이언트 타임아웃) 배치로 나눠
 // 분산한다. 실측(2026-07-10, otel_metrics_sum ~9.5M행): 배치 크기 5에서 쿼리 1건이 단독
@@ -218,7 +218,7 @@ app.get("*", (_req, res) => res.sendFile(path.join(webDist, "index.html")));
 
 app.listen(PORT, () => {
   console.log(`dashboard listening on :${PORT}`);
-  // 부팅 직후 즉시 한 번 데우고(배포 직후 첫 방문자도 히트), 이후 15초 경계마다 반복.
+  // 부팅 직후 즉시 한 번 데우고(배포 직후 첫 방문자도 히트), 이후 QUANT_MS 경계마다 반복.
   warmCache().catch((err) => console.error("warmCache(boot)", err));
   scheduleWarmer();
 });

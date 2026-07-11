@@ -30,7 +30,7 @@ function normModel(col) {
 // 넘긴다(alias가 함수마다 다르고, 로그 테이블엔 Model이 없어 model 필터가 적용 안 되는 경우도 있음).
 // ponytail: model 필터는 Model attribute가 없는 지표(session.count 등)에는 매치가 안 돼 그 지표가
 // 0으로 빠진다 — 세션/커밋처럼 모델 귀속이 없는 값과 model 필터를 같이 켜면 생기는 알려진 트레이드오프.
-function filterCond(filters = {}, cols = {}) {
+export function filterCond(filters = {}, cols = {}) {
   const conds = [];
   const params = {};
   // 저장된 Model은 normModel()로 정규화된 값과 비교하므로, 검색어도 같이 정규화한다 —
@@ -39,8 +39,11 @@ function filterCond(filters = {}, cols = {}) {
   const fModel = filters.model ? normalizeModelId(filters.model) : filters.model;
   // unknown(모델/organization.id 신호가 전혀 없는 세션 — 실측 2026-07-09: 44세션 중 5개, ~11%)은
   // bedrock/enterprise 어느 쪽으로도 판별 불가능해 A/B 비교에 노이즈만 더한다 — group 필터를 받는
-  // 모든 쿼리에서 무조건 제외한다(사용자가 group 필터를 안 걸어도).
-  if (cols.group) conds.push(`${cols.group} != 'unknown'`);
+  // 쿼리에서는 기본적으로 무조건 제외한다(사용자가 group 필터를 안 걸어도).
+  // 단, "총계" 지표(activeUsers/adoptionLevels — A/B 비교가 아니라 전체 유저/DAU/MAU 스냅샷)는
+  // excludeUnknown: false로 unknown 세션도 포함해야 한다 — 안 그러면 그룹 무관 총계에서도
+  // ~11%가 조용히 빠져 "전체 유저 수"가 실제보다 작게 나온다(리뷰에서 MAJOR로 확인).
+  if (cols.group && filters.excludeUnknown !== false) conds.push(`${cols.group} != 'unknown'`);
   if (filters.group && cols.group) {
     conds.push(`${cols.group} = {fGroup:String}`);
     params.fGroup = filters.group;
@@ -466,9 +469,13 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
             if(AggregationTemporality = 2,
                 greatest(maxIf(max_value, hour < toStartOfHour({from:DateTime})) - maxIf(max_value, hour < toStartOfHour({prevFrom:DateTime})), 0),
                 sumIf(sum_value, hour >= toStartOfHour({prevFrom:DateTime}) AND hour < toStartOfHour({from:DateTime}))) AS prev_v,
+            -- cur 쪽 경계도 prev와 동일하게 toStartOfHour(to)로 정렬 — 안 그러면 prev는 정각
+            -- 경계인데 cur만 정각이 아니라(to가 quantize된 임의 시각) "이전 기간 대비" 비교가
+            -- 비대칭 창으로 어긋난다(리뷰에서 MAJOR로 확인). 이 함수는 신선도보다 두 구간의
+            -- 정합성이 우선이므로, incFlat/incBucketed처럼 to의 부분-시간 신선도를 살리지 않는다.
             if(AggregationTemporality = 2,
-                greatest(maxIf(max_value, hour < {to:DateTime}) - maxIf(max_value, hour < toStartOfHour({from:DateTime})), 0),
-                sumIf(sum_value, hour >= toStartOfHour({from:DateTime}) AND hour < {to:DateTime})) AS cur_v
+                greatest(maxIf(max_value, hour < toStartOfHour({to:DateTime})) - maxIf(max_value, hour < toStartOfHour({from:DateTime})), 0),
+                sumIf(sum_value, hour >= toStartOfHour({from:DateTime}) AND hour < toStartOfHour({to:DateTime}))) AS cur_v
         FROM claude_code.otel_metrics_sum_hourly
         WHERE MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''
           AND hour >= toStartOfHour({prevFrom:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
@@ -499,8 +506,11 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
 // uniqExact류는 "존재 여부"만 보므로 시간별 rollup으로 접혀도 값이 같다(키 보존) — total_members가
 // 전 기간을 봐야 해서 하한 없는 스캔인데, 원본(9.5M행+) 기준으론 이 쿼리가 데이터와 함께 무한히
 // 느려지는 구조였다. rollup은 ~86x 작아 무제한이어도 저렴하다.
+// excludeUnknown: false — 이건 그룹 A/B 비교가 아니라 전체 스냅샷(total_members/mau/wau/dau)이라
+// unknown 세션도 포함해야 실제 "전체" 값이 된다(사용자가 명시적으로 group 필터를 걸면 그 그룹만
+// 보이는 기존 동작은 유지 — filters.group 조건은 그대로 살아있다).
 export async function adoptionLevels(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail" });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "UserEmail" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -525,8 +535,9 @@ export async function adoptionLevels(from, to, filters = {}) {
 // modelViaSession 세미조인으로 반응하면 "model 필터는 People 지표에 적용되지 않습니다" 배지가
 // 뜬 화면에서 활성 개발자 수만 조용히 필터되어 DAU/MAU와 반대로 움직이는 모순이 생긴다(실측:
 // 리뷰에서 확인). People 섹션 전체가 같은 규칙(model 필터 미적용)을 따르도록 통일한다.
+// excludeUnknown: false — adoptionLevels와 동일한 이유(총계 지표, A/B 비교 아님).
 export async function activeUsers(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
