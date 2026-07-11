@@ -74,12 +74,18 @@ setInterval(() => {
   for (const [k, v] of cache) if (v.expires < now) cache.delete(k);
 }, CACHE_TTL_MS).unref();
 
-// 캐시 키는 파라미터를 이름순으로 정렬한 canonical 형태 — 브라우저(useApi의 객체 삽입 순서)와
-// warmer(아래)가 파라미터를 다른 순서로 넣어도 같은 뷰면 같은 키가 나와야 한다.
+// 캐시 키는 핸들러가 실제로 읽는 파라미터(from/to/group/user/model/intervalHours/email)만
+// 화이트리스트로 넣은 canonical 형태 — 브라우저(useApi의 객체 삽입 순서)와 warmer(아래)가
+// 파라미터를 다른 순서로 넣어도 같은 뷰면 같은 키가 나와야 한다.
+// 리뷰에서 MAJOR로 확인: 예전엔 req.query 전체를 키에 넣어, 인증된 클라이언트가 핸들러가
+// 안 읽는 무의미한 파라미터(?x=1,2,3...)만 바꿔가며 반복 요청하면 매번 새 키로 캐시 미스
+// (in-flight dedup 우회) + cache Map이 만료 전까지 무제한으로 커질 수 있었다. 화이트리스트로
+// 좁히면 그 파라미터가 뭐든 canonical 키는 유효한 뷰 개수(from×to×filters 조합)만큼만 존재한다.
+const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "intervalHours", "email"];
 function cacheKey(path, query) {
-  const entries = Object.entries(query)
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => a.localeCompare(b));
+  const entries = CACHE_KEY_PARAMS.filter((k) => query[k] !== undefined)
+    .sort()
+    .map((k) => [k, query[k]]);
   return `${path}?${new URLSearchParams(entries).toString()}`;
 }
 

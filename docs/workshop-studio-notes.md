@@ -53,6 +53,16 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
    벌어져 있으면 실질적으로 죽은 것 — collector.log의 최근 에러(`dial tcp: ... i/o timeout` 등)를
    확인하고 `systemctl restart otelcol`.
 2. ClickHouse에 두 그룹 데이터가 다 들어오는지: `SELECT ExperimentGroup, MetricName, count() FROM claude_code.otel_metrics_sum GROUP BY ExperimentGroup, MetricName` — 단, 이 워크샵에서는 `ExperimentGroup`(ResourceAttributes 기반)이 아니라 대시보드가 계산하는 그룹을 봐야 한다.
+2b. **시간별 rollup(`otel_metrics_sum_hourly`) 신선도·완전성 — 대시보드가 실제로 읽는 테이블**
+   (`dashboard/server/queries.js`의 `incFlat`/`incBucketed`/`GROUP_CTE`는 원본이 아니라 이
+   rollup만 읽는다). MV(`otel_metrics_sum_hourly_mv`)는 생성 "이후" insert만 반영하므로,
+   기존 클러스터에 새로 적용했다면 과거 데이터가 rollup에 없을 수 있다 — 반드시 확인:
+   - `SELECT max(hour) FROM claude_code.otel_metrics_sum_hourly` — `now()`와 몇 분 이상
+     벌어지면 MV가 안 돌고 있는 것(원본은 신선한데 rollup만 stale).
+   - `SELECT min(hour) FROM claude_code.otel_metrics_sum_hourly` vs
+     `SELECT min(toStartOfHour(TimeUnix)) FROM claude_code.otel_metrics_sum` — rollup의
+     min이 원본의 min보다 늦으면 백필이 안 된 것. `scripts/backfill-hourly-rollup.sh`를
+     1회 실행(`clickhouse-schema.sql`의 백필 절차 주석 참고).
 3. attribute 실제 키 이름 실측 (`Attributes`/`LogAttributes`의 `mapKeys`) — Claude Code 버전이 바뀌면 `model`, `session.id`, `decision` 등의 키 이름이 달라질 수 있다. 달라지면 `dashboard/server/grouping.js`와 `dashboard/server/queries.js` 두 파일만 고치면 된다.
 4. temporality — 운영 설정은 `cumulative`(30초마다 세션 누적값 export)다. 초기엔 대시보드 쿼리가 전부 `sum(Value)`라 세션이 길수록 토큰/비용/세션 수가 배수로 과대집계되는 버그가 있었지만(실측: 1600억 토큰), `queries.js`를 세션(`session.id`)별 경계 diff(구간 끝 누적값 - 구간 시작 직전 누적값, Prometheus increase()와 동일 원리)로 재작성해 delta/cumulative 둘 다 정확히 처리한다. `SELECT DISTINCT AggregationTemporality FROM claude_code.otel_metrics_sum`로 2(cumulative)가 나오는 게 정상이며, delta(1) 데이터가 섞여도(레거시 배포 등) 문제없다.
 5. 프롬프트 본문 유출 여부 (`otel_logs`의 `Body`/`LogAttributes`에 prompt 텍스트가 남아있지 않은지) — FSI 워크샵이면 필수 확인.

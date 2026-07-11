@@ -1,17 +1,29 @@
 import { useRef, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { cn } from "../cn.js";
 import { colorFor } from "../colors.js";
 import { pivotByGroup, pivotByKey, groupsPresent } from "../pivot.js";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
 import { useRange } from "../RangeContext.jsx";
 import { Card } from "./Card.jsx";
 
+// 서버가 내려주는 t 값은 ClickHouse DateTime을 그대로 문자열화한 "YYYY-MM-DD HH:MM:SS"
+// (또는 toDate 계열은 "YYYY-MM-DD") — 타임존 표기가 없다. new Date(그 문자열)로 바로 파싱하면
+// 브라우저가 "로컬 타임"으로 해석해, UTC가 아닌 클라이언트에서 드래그로 고른 구간이 tz offset만큼
+// 밀려서 서버에 전송된다(리뷰에서 MAJOR로 확인 — 틱 라벨 표시용 파싱과 달리 이 값은 그대로
+// setRange→useApi→toISOString()에 실려 쿼리 경계가 되므로 오차가 실제 데이터 오차로 이어진다).
+// ClickHouse 값은 UTC 기준으로 저장/포맷되므로 "Z"를 붙여 명시적으로 UTC로 파싱한다.
+function parseUtc(label) {
+  const s = String(label);
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00Z` : `${s.replace(" ", "T")}Z`);
+}
+
 // 시계열 차트에서 좌우로 드래그하면 그 구간으로 전역 range를 좁힌다(RangeContext.setRange) —
 // 페이지의 모든 차트가 같이 줌인되고 해상도도 자동으로 세밀해진다. Recharts 카테고리 x축은
 // activeLabel(현재 x값)로 드래그 구간을 잡고, ReferenceArea로 하이라이트한다. 라벨이 날짜로
 // 파싱되지 않으면(카테고리 축: 모델명·툴명 등) 조용히 no-op이라 별도 opt-in prop이 필요없다.
-function useDragZoom() {
-  const { setRange } = useRange();
+function useDragZoom(yAxisId) {
+  const { setRange, intervalHours } = useRange();
   const startRef = useRef(null);
   const [area, setArea] = useState(null); // { left, right } — 드래그 중 하이라이트 구간
   const cancel = () => { startRef.current = null; setArea(null); };
@@ -30,16 +42,24 @@ function useDragZoom() {
       const a = area;
       cancel();
       if (!a) return;
-      const d1 = new Date(a.left), d2 = new Date(a.right);
+      const d1 = parseUtc(a.left), d2 = parseUtc(a.right);
       if (isNaN(d1) || isNaN(d2)) return; // 카테고리 축 → no-op
-      const from = d1 <= d2 ? d1 : d2, to = d1 <= d2 ? d2 : d1;
+      const from = d1 <= d2 ? d1 : d2;
+      // 라벨은 버킷 "시작" 값인데 서버는 [from,to) exclusive라, 우측 끝 라벨을 그대로 to로 넘기면
+      // 그 버킷 자체가 통째로 잘려나간다(리뷰에서 MINOR로 확인) — 현재 버킷 크기(intervalHours)만큼
+      // 밀어 그 버킷의 끝까지 포함시킨다.
+      const to = new Date((d1 <= d2 ? d2 : d1).getTime() + intervalHours * 3600000);
       if (to - from < 10 * 60000) return; // 클릭·미세 드래그 무시(최소 10분)
       setRange(from, to);
     },
     onMouseLeave: cancel,
   };
   const dragging = area && area.left !== area.right;
-  const overlay = dragging ? <ReferenceArea x1={area.left} x2={area.right} strokeOpacity={0} fill="#6366f1" fillOpacity={0.12} /> : null;
+  // yAxisId — DualLineChart처럼 명명된 축(left/right)을 쓰는 차트는 ReferenceArea에도 같은
+  // id를 지정해야 한다. 없으면 Recharts가 기본 축으로 렌더를 시도하다 못 찾아 하이라이트가 안
+  // 뜬다(기능은 정상 동작, 시각 피드백만 누락 — 리뷰에서 MINOR로 확인). 명명된 축이 없는
+  // Area/Bar 차트는 yAxisId=undefined로 기본 동작 그대로.
+  const overlay = dragging ? <ReferenceArea yAxisId={yAxisId} x1={area.left} x2={area.right} strokeOpacity={0} fill="#6366f1" fillOpacity={0.12} /> : null;
   return { handlers, overlay, className: dragging ? "select-none" : "" };
 }
 
@@ -130,7 +150,7 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
 // lines: [{key, label, color, axis: "left" | "right"}] — rows는 이미 xKey 기준으로 wide한 형태여야 함.
 export function DualLineChart({ title, subtitle, right, rows, xKey, lines, height = 240, tickFormatter }) {
   const c = useChartColors();
-  const zoom = useDragZoom();
+  const zoom = useDragZoom("left"); // 명명된 축(left/right) 중 left에 하이라이트를 붙인다.
   const hasRight = lines.some((l) => l.axis === "right");
   return (
     <Card title={title} subtitle={subtitle} right={right}>
@@ -166,7 +186,10 @@ export function DualLineChart({ title, subtitle, right, rows, xKey, lines, heigh
 // 같은 항목이 같은 색을 갖도록 밖에서 고정할 수 있다.
 export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", colorOf }) {
   const c = useChartColors();
-  const color = (name, i) => (colorOf ? colorOf(name, i) : c.palette[i % c.palette.length]);
+  // colorOf가 전역 top-N에서 만든 고정 맵이면, 그 top-N 밖 모델이 이 도넛에 등장할 때
+  // undefined를 반환할 수 있다 — Cell fill/범례 스와치가 깨지지 않도록 팔레트로 폴백한다
+  // (리뷰에서 MINOR로 확인).
+  const color = (name, i) => colorOf?.(name, i) ?? c.palette[i % c.palette.length];
   const total = data.reduce((s, d) => s + (Number(d[valueKey]) || 0), 0);
   // Math.round만 쓰면 짧은 기간의 소액 tier(몇 센트)가 전부 "$0"으로 보인다 — $10 미만은 소수 2자리.
   const fmt = (v) =>
@@ -221,7 +244,8 @@ export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey
 }
 
 // ../awsops HBarList 포팅 — recharts 아님, label / 트랙+채움 / 우측 정렬 금액의 단순 flex 리스트.
-export function HBarList({ title, subtitle, right, data, labelKey, valueKey, valuePrefix = "" }) {
+// color: 지정하면 채움 막대를 브랜드색 대신 그 색으로(예: 그룹별로 나란히 놓은 카드에서 colorFor(group)).
+export function HBarList({ title, subtitle, right, data, labelKey, valueKey, valuePrefix = "", color }) {
   const max = data.reduce((m, d) => Math.max(m, Number(d[valueKey]) || 0), 0);
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
 
@@ -237,7 +261,10 @@ export function HBarList({ title, subtitle, right, data, labelKey, valueKey, val
                 {String(d[labelKey])}
               </span>
               <span className="h-2 flex-1 overflow-hidden rounded-full bg-ink-100">
-                <span className="block h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
+                <span
+                  className={cn("block h-full rounded-full", !color && "bg-brand-500")}
+                  style={{ width: `${pct}%`, ...(color ? { backgroundColor: color } : {}) }}
+                />
               </span>
               <span className="tabular w-20 shrink-0 text-right text-[12px] font-medium text-ink-800">{fmt(n)}</span>
             </li>

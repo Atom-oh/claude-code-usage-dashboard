@@ -135,6 +135,15 @@ const seriesKey = "SeriesKey";
 // (kpiSummary의 uniqExactIf(UserEmail...), skillUsage의 count())이 창과 무관한 전 기간
 // 세션·유저까지 세게 된다 — 원본과 동일한 lookback 창을 유지해 기존 의미론을 그대로 보존한다.
 // ToolName은 rollup에 실컬럼으로 접혀 있다(code_edit_tool.decision의 tool_name).
+//
+// to를 정각으로 내리지 않는 이유(리뷰에서 hour 경계 스큐로 지적된 지점 — 검토 후 현재
+// 형태 유지가 맞다고 판단): to가 과거의 임의 시각(드래그 줌 등)이면 그 hour 버킷 전체(최대
+// 59분)가 포함돼 과대집계될 수 있다 — 이건 실재하는 오차다. 하지만 to=현재(기본 뷰, 압도적
+// 다수 케이스)인 경우 그 hour는 아직 채워지는 중이라 "지금까지 들어온 데이터"만 있어 과대집계가
+// 아니라 단지 신선하다. costByModelCompare(vs. "이전 기간" 비교, 신선도보다 두 구간의 정합성이
+// 목적)와 달리 이 함수는 기본 뷰 KPI 카드의 실시간성이 핵심 요구사항이라, to를 정각으로 내리면
+// 기본 뷰에서 매번 최대 59분의 최신 데이터가 사라지는 회귀가 더 크다 — 과거/커스텀 구간의 경계
+// 오차(최대 59분)를 감내하는 쪽을 선택한다.
 function incFlat(metricFilter = "") {
   return `(
     SELECT
@@ -783,8 +792,11 @@ export async function userSkillUsage(from, to, filters = {}) {
 // 단순하다. uniq류는 존재 여부만 보므로 시간별 rollup으로 접혀도 값이 같다(키 보존).
 // 날짜 키는 toDate(..., 'UTC')로 고정 — JS는 toISOString()(UTC)로 롤링 union하므로 서버 TZ가
 // UTC가 아니어도 하루 어긋나지 않는다(activeUsersTimeseries와 동일 규칙).
+// excludeUnknown: false — activeUsers/adoptionLevels와 같은 "총계/DAU·WAU·MAU" 계열이라
+// 그룹 무관 모수여야 한다. 빠뜨리면 이 시계열만 unknown ~11%가 빠져 Trends의 DAU/WAU/MAU가
+// Overview 스냅샷(adoptionLevels)보다 낮게 나오는 모순이 생긴다(리뷰에서 MAJOR로 확인).
 export async function adoptionTimeseries(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT toDate(m.hour, 'UTC') AS d, groupUniqArray(m.UserEmail) AS users

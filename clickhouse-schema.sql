@@ -105,11 +105,11 @@ ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
 -- MV는 인서트를 받은 노드에서 발화해 TO 테이블에 쓴다. 컬럼을 전부 명시(SELECT * 금지 —
 -- MATERIALIZED 소스 컬럼은 명시 참조해야 MV에서 해석된다). MV가 throw하면 원본 인서트가
 -- 실패해 텔레메트리 수집이 멈추므로, 정의 변경은 반드시 로컬에서 테스트 인서트로 검증할 것.
--- 기존 데이터가 있는 클러스터에 처음 적용할 때는 MV의 SELECT에 정각 워터마크
--- (AND TimeUnix >= toDateTime('<W>'))를 넣어 생성하고, W 이후 수 분 지나서
---   INSERT INTO claude_code.otel_metrics_sum_hourly (동일 SELECT) WHERE TimeUnix < '<W>'
--- 백필을 한 레플리카에서 1회만 실행한다(sum_value는 재시도 시 중복 — 실패하면 pre-W 파티션
--- drop 후 재실행). 신규 설치는 테이블과 함께 생성되므로 워터마크 불필요.
+-- 기존 데이터가 있는 클러스터에서는 이 MV(위 CREATE TABLE/MV, 아래)를 적용한 뒤
+-- scripts/backfill-hourly-rollup.sh를 1회 실행할 것 — MV는 생성 "이후"의 insert만
+-- 반영하므로, 그 전 데이터를 원본에서 재집계해 넣어야 과거 구간이 비지 않는다(신규 설치는
+-- 백필 불필요 — 테이블이 데이터와 함께 생성됨). 스크립트는 rollup에 이미 있는 가장 오래된
+-- hour를 워터마크로 자동 탐지해 그 이전 구간만 멱등하게 INSERT한다(재실행해도 중복 없음).
 CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.otel_metrics_sum_hourly_mv
 TO claude_code.otel_metrics_sum_hourly AS
 SELECT
