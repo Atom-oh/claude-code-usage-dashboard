@@ -155,6 +155,7 @@ export default function Overview() {
             rows={activeTrend.data}
             xKey="t"
             tickFormatter={fmtTick}
+            bucketHours={24}
             lines={[
               { key: "mau", label: "MAU" },
               { key: "wau", label: "WAU" },

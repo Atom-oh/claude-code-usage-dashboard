@@ -42,14 +42,21 @@ ch() {
   clickhouse-client --host "$CH_HOST" --user "$CH_USER" --config-file "$CH_CONF" --query "$1"
 }
 
-WATERMARK=$(ch "SELECT toString(min(hour)) FROM claude_code.otel_metrics_sum_hourly")
+# ClickHouse의 min(DateTime)은 빈 테이블에서 빈 문자열이 아니라 기본값 '1970-01-01 00:00:00'을
+# 반환한다(실측 확인) — 예전엔 이를 몰라 `[ -z "$WATERMARK" ]`로 empty를 판정했는데, 이 조건이
+# 절대 걸리지 않아 MV가 첫 insert를 쓰기도 전에 스크립트를 돌리면 WHERE TimeUnix < '1970-...'로
+# 아무것도 INSERT하지 않고도 "백필 완료"를 출력해 운영자가 필수 백필을 완료했다고 오인하게 만드는
+# CRITICAL이었다(리뷰에서 확인). count()로 명확하게 empty를 판정한다.
+ROW_COUNT=$(ch "SELECT count() FROM claude_code.otel_metrics_sum_hourly")
 
-if [ -z "$WATERMARK" ]; then
+if [ "$ROW_COUNT" = "0" ]; then
   echo "otel_metrics_sum_hourly가 비어 있음 — 백필할 게 없음(신규 설치와 동일 상태)."
   echo "주의: MV가 아직 한 번도 insert를 쓰지 않았다면(생성 직후) 이건 '아직 데이터 없음'이지"
   echo "'백필 불필요'가 아니다 — 몇 분 뒤 rollup에 최소 1행이 쓰인 걸 확인하고 재실행할 것."
   exit 0
 fi
+
+WATERMARK=$(ch "SELECT toString(min(hour)) FROM claude_code.otel_metrics_sum_hourly")
 
 echo "워터마크(rollup에 이미 있는 가장 오래된 hour): $WATERMARK"
 echo "그보다 이전 구간(원본 otel_metrics_sum)을 재집계해 백필합니다..."

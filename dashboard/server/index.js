@@ -42,6 +42,18 @@ function parseRange(req) {
   return { from, to };
 }
 
+// intervalHours<1(분 버킷)이면 incBucketedRaw가 원본 otel_metrics_sum을 lookback 3일 포함해
+// 직접 스캔한다(rollup 최적화 우회) — 서버가 요청 구간 크기를 검증하지 않으면, 인증 사용자가
+// from을 오래전으로 잡고 반복 호출해 매번 대형 raw scan을 유발할 수 있다(리뷰에서 MAJOR로
+// 확인). 클라이언트(RangeContext의 resolutionForSpan)는 항상 좁은 드래그 줌 구간에만 분 버킷을
+// 고르지만, 서버가 그 전제를 강제하지 않는 것 자체가 신뢰 경계 밖 입력을 검증 안 하는 문제 —
+// 분 버킷 요청은 이 최대 구간(넉넉히 4시간)을 넘지 못하게 막는다.
+const MAX_MINUTE_BUCKET_RANGE_MS = 4 * 3600000;
+function clampIntervalHours(intervalHours, from, to) {
+  if (intervalHours < 1 && to - from > MAX_MINUTE_BUCKET_RANGE_MS) return 1; // 시간 버킷(rollup)으로 강제
+  return intervalHours;
+}
+
 // 전역 필터(group/user/model) — 쿼리 파라미터로 안 오면 undefined라 filterCond()가 그냥 건너뛴다.
 function parseFilters(req) {
   const { group, user, model } = req.query;
@@ -180,12 +192,12 @@ function scheduleWarmer() {
 
 route("/api/overview/kpi", (from, to, _q, filters) => q.kpiSummary(from, to, filters));
 route("/api/overview/active-users", (from, to, _q, filters) => q.activeUsers(from, to, filters));
-route("/api/overview/tokens-timeseries", (from, to, query, filters) => q.tokenTimeseries(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/overview/tokens-timeseries", (from, to, query, filters) => q.tokenTimeseries(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 route("/api/overview/cache-efficiency", (from, to, _q, filters) => q.cacheEfficiency(from, to, filters));
 route("/api/overview/model-distribution", (from, to, _q, filters) => q.modelDistribution(from, to, filters));
 route("/api/productivity/normalized", (from, to, _q, filters) => q.normalizedProductivity(from, to, filters));
 route("/api/productivity/decisions", (from, to, _q, filters) => q.codeEditDecisions(from, to, filters));
-route("/api/productivity/active-time", (from, to, query, filters) => q.activeTimeSeries(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/productivity/active-time", (from, to, query, filters) => q.activeTimeSeries(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 route("/api/usage/tool-mcp", (from, to, _q, filters) => q.toolMcpUsage(from, to, filters));
 route("/api/usage/skills", (from, to, _q, filters) => q.skillUsage(from, to, filters));
 route("/api/users/leaderboard", async (from, to, _q, filters) => withProductivityScore(await q.userLeaderboard(from, to, filters), from, to));
@@ -194,18 +206,18 @@ route("/api/users/skills", (from, to, _q, filters) => q.userSkillUsage(from, to,
 route("/api/cost/summary", (from, to, _q, filters) => q.costSummary(from, to, filters));
 route("/api/cost/by-model", (from, to, _q, filters) => q.costByModel(from, to, filters));
 route("/api/cost/by-user-model", (from, to, _q, filters) => q.costByUserModel(from, to, filters));
-route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 route("/api/cost/by-model-compare", (from, to, _q, filters) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from)), filters));
 route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(from, to, filters));
 route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, Number(query.intervalHours) || 24, filters));
 route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters));
-route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 // 우리(필터 지원, DAU/WAU/MAU + 고착도, Trends/Executive가 사용) 버전을 채택 — main의
 // activeUsersTimeseries(필터 없음, activity.js 순수 함수 롤업)는 반환 shape가 상위집합
 // ({t,dau,wau,mau} vs {t,dau,wau,mau,stickiness})이라 Overview.jsx도 그대로 동작한다.
 route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
 route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
-route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, Number(query.intervalHours) || 24, filters));
+route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 route("/api/cost/tiers", async (from, to, _q, filters) => tierCostsByGroup(await q.costByModel(from, to, filters)));
 route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
   const [leaderboard, byUserModel] = await Promise.all([q.userLeaderboard(from, to, filters), q.costByUserModel(from, to, filters)]);

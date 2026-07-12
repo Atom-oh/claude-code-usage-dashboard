@@ -130,6 +130,10 @@ export default function Cost() {
   // 캐시율(cacheRead / (input+cacheRead+cacheCreation)) — /api/overview/cache-efficiency가
   // 이미 그룹별로 계산해주는 값을 그대로 재사용(중복 계산 없음).
   const cacheRatioFor = (group) => Number((cacheEff.data || []).find((r) => r.group === group)?.cache_read_ratio || 0);
+  // 미산정 토큰도 그룹별로 — 전체 합계(totals.unpricedTokens)를 양쪽 카드에 그대로 쓰면 한쪽
+  // 그룹에만 미산정 모델이 있어도 반대쪽 카드에 잘못된 "미산정 N개 제외" 안내가 뜬다(리뷰에서
+  // MINOR로 확인). summary.data가 이미 그룹별 unpriced_tokens를 갖고 있으니 그대로 찾는다.
+  const unpricedTokensFor = (group) => Number((summary.data || []).find((r) => r.group === group)?.unpriced_tokens || 0);
 
   // loc=0이어도 commits>0인 유저(라인 없이 커밋만 한 경우)는 $/커밋 컬럼에 값이 있으므로 테이블에서
   // 지우면 안 된다. unpriced(미산정 모델 사용) 유저는 cost_per_loc이 null — 오름차순 정렬에서 항상
@@ -182,7 +186,7 @@ export default function Cost() {
                 key={g}
                 title={`캐시 티어별 지출 — ${g}`}
                 subtitle={`캐시율(재사용률) ${(cacheRatioFor(g) * 100).toFixed(1)}% · 비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력${
-                  totals.unpricedTokens > 0 ? ` — 미산정 모델 토큰 ${fmt(totals.unpricedTokens)}개는 제외` : ""
+                  unpricedTokensFor(g) > 0 ? ` — 미산정 모델 토큰 ${fmt(unpricedTokensFor(g))}개는 제외` : ""
                 }`}
                 right={<Badge tone="brand">캐시율 {(cacheRatioFor(g) * 100).toFixed(1)}%</Badge>}
                 data={tierRowsFor(g)}

@@ -13,14 +13,23 @@ import { rollupActiveUsers, MAU_WINDOW_DAYS } from "./activity.js";
 // 반대로 to=현재인 기본 뷰에서 정각으로 내리면 매번 최대 59분의 최신 데이터가 사라지는 회귀가
 // 더 크므로, 그 경우는 그대로 둔다. 10분 여유는 useApi의 quantize grace(150초)보다 넉넉해
 // 실시간 뷰를 절대 과거로 오판하지 않는다.
+//
+// from은 정렬하지 않는다 — from까지 toStartOfHour로 내리면, 분 단위 드래그 줌처럼 from/to가
+// 같은 시간(hour) 안에 있는 짧은 과거 구간(예: 10:15~10:45)에서 to만 정각(10:00)으로 내려가
+// from(10:15)보다 작아져 range가 역전되고 빈 결과가 나온다(리뷰에서 CRITICAL로 확인 — 이 PR의
+// 핵심 신기능인 분 단위 드래그 줌이 "1시간 미만 과거 구간 확대"에서 통째로 깨지는 회귀였다).
+// alignHistoricalTo(to)가 from보다 앞서면(=같은 hour 안의 짧은 구간) 정렬을 포기하고 원본
+// to를 쓴다 — 이 좁은 구간에서는 어차피 hour 버킷 부분-포함 오차가 구간 자체보다 크므로,
+// 애초에 rollup(hour 그레인)이 아니라 원본 폴백(incBucketedRaw)이 담당해야 할 스케일이다.
 const LIVE_TOLERANCE_MS = 10 * 60000;
 export function alignHistoricalTo(to) {
   const isLive = Date.now() - to.getTime() < LIVE_TOLERANCE_MS;
   return isLive ? to : new Date(Math.floor(to.getTime() / 3600000) * 3600000);
 }
 
-function range(from, to) {
-  return { from: toChDateTime(from), to: toChDateTime(alignHistoricalTo(to)) };
+export function range(from, to) {
+  const aligned = alignHistoricalTo(to);
+  return { from: toChDateTime(from), to: toChDateTime(aligned < from ? to : aligned) };
 }
 
 // us.anthropic.claude-fable-5 / global.anthropic.claude-fable-5 / claude-fable-5[1m] 등은 같은
@@ -176,28 +185,32 @@ function incFlat(metricFilter = "") {
 // lookback 구간의 버킷은 첫 실구간 버킷의 diff baseline으로만 쓰이고 바깥 WHERE t >= from에서
 // 걸러진다. 분(MINUTE) 버킷은 rollup(hour 그레인)으로 못 만드므로 incBucket()이 원본 폴백을 태운다.
 //
-// 검증(2026-07-12): 리뷰에서 "WHERE t>=from이 lagInFrame과 같은 SELECT 레벨에 있으면
-// ClickHouse가 WHERE를 window 계산보다 먼저 적용해 lookback 버킷이 지워지고 baseline이
-// 사라질 수 있다"는 지적이 있어, 합성 임시 테이블로 실측 검증했다 — WHERE를 한 겹 바깥으로
-// 감싼 버전과 지금 이 구조(WHERE가 window와 같은 SELECT)를 같은 데이터로 나란히 실행한
-// 결과 완전히 동일했다(둘 다 lag가 lookback의 실제 이전 값을 정확히 반환). ClickHouse는
-// WHERE를 최종 결과에만 적용하고 window 함수는 GROUP BY 직후의 전체 파티션에 대해 계산하므로
-// (EXPLAIN PLAN상 Window가 Filter보다 나중 단계) 우려한 문제가 실재하지 않는다 — 오탐.
+// 3단 중첩 필수(집계 → window → 바깥 WHERE t>=from) — window와 WHERE t>=from을 같은 SELECT
+// 레벨에 두면 ClickHouse가 WHERE를 먼저 적용해 lookback 버킷(t<from)을 지운 뒤 window를
+// 계산해, 각 시리즈의 첫 실구간 버킷 lagInFrame이 항상 0(fallback)을 반환한다 — cumulative
+// 시계열의 첫 버킷이 "증가량"이 아니라 "누적 전량"으로 뻥튀기된다.
+// 2026-07-12: 이 함수를 처음 작성했을 때 이미 이 문제를 의심해 "검증"했으나, 그 실험이
+// 실수로 이미-안전한 3단 구조를 재현해놓고 "동일하다"고 오판했다(라운드 3 커밋의 잘못된
+// 주석). 이번엔 라이브 ClickHouse에서 프로덕션과 동일한 2단 구조(버그 재현: lag=0, baseline
+// 유실)와 3단 구조(정상: lag=이전 버킷값)를 나란히 실행해 실제로 값이 다르다는 것을
+// 직접 확인했다 — 3단 구조가 유일하게 안전하다.
 function incBucketed(bucketExpr, metricFilter = "") {
   return `(
-    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
-        if(temp = 2,
-            greatest(cum - lagInFrame(cum, 1, 0) OVER (
-                PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
-            ), 0),
-            cum) AS Value
-    FROM (
-        SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
-            if(AggregationTemporality = 2, max(max_value), sum(sum_value)) AS cum
-        FROM claude_code.otel_metrics_sum_hourly
-        WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
-          ${metricFilter}
-        GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
+    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
+        SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
+            if(temp = 2,
+                greatest(cum - lagInFrame(cum, 1, 0) OVER (
+                    PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
+                ), 0),
+                cum) AS Value
+        FROM (
+            SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
+                if(AggregationTemporality = 2, max(max_value), sum(sum_value)) AS cum
+            FROM claude_code.otel_metrics_sum_hourly
+            WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+              ${metricFilter}
+            GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
+        )
     )
     WHERE t >= {from:DateTime}
   )`;
@@ -205,22 +218,24 @@ function incBucketed(bucketExpr, metricFilter = "") {
 
 // incBucketed의 원본 테이블 버전 — 차트 드래그 줌의 분(MINUTE) 버킷 전용. 줌 구간은 좁고 드물어
 // 콜드 허용(원본 스캔 비용은 lookback이 지배하지만 rollup으로 baseline만 따로 얻는 최적화는
-// 필요해질 때 한다).
+// 필요해질 때 한다). incBucketed와 동일한 이유로 3단 중첩(집계 → window → 바깥 WHERE) 필수.
 function incBucketedRaw(bucketExpr, metricFilter = "") {
   return `(
-    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
-        if(temp = 2,
-            greatest(cum - lagInFrame(cum, 1, 0) OVER (
-                PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
-            ), 0),
-            cum) AS Value
-    FROM (
-        SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
-            if(AggregationTemporality = 2, max(Value), sum(Value)) AS cum
-        FROM claude_code.otel_metrics_sum
-        WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
-          ${metricFilter}
-        GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
+    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
+        SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
+            if(temp = 2,
+                greatest(cum - lagInFrame(cum, 1, 0) OVER (
+                    PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
+                ), 0),
+                cum) AS Value
+        FROM (
+            SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
+                if(AggregationTemporality = 2, max(Value), sum(Value)) AS cum
+            FROM claude_code.otel_metrics_sum
+            WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+              ${metricFilter}
+            GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
+        )
     )
     WHERE t >= {from:DateTime}
   )`;

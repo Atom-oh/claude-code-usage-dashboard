@@ -73,9 +73,9 @@ function useDragZoom(yAxisId, bucketHoursOverride) {
 }
 
 // 시계열, 그룹별 area 하나씩 — ../awsops AreaTrend와 같은 그라디언트 기법, 그룹 색상만 다중.
-export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, height = 240, tickFormatter }) {
+export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours }) {
   const c = useChartColors();
-  const zoom = useDragZoom();
+  const zoom = useDragZoom(undefined, bucketHours);
   const data = pivotByGroup(rows, xKey, valueKey);
   const groups = groupsPresent(rows);
   return (
@@ -157,9 +157,9 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
 
 // 단위가 다른 두 지표를 한 화면에 — "도입률"(사용자 vs 세션), "사용자당 PR"처럼 좌/우 축이 다른 시계열.
 // lines: [{key, label, color, axis: "left" | "right"}] — rows는 이미 xKey 기준으로 wide한 형태여야 함.
-export function DualLineChart({ title, subtitle, right, rows, xKey, lines, height = 240, tickFormatter }) {
+export function DualLineChart({ title, subtitle, right, rows, xKey, lines, height = 240, tickFormatter, bucketHours }) {
   const c = useChartColors();
-  const zoom = useDragZoom("left"); // 명명된 축(left/right) 중 left에 하이라이트를 붙인다.
+  const zoom = useDragZoom("left", bucketHours); // 명명된 축(left/right) 중 left에 하이라이트를 붙인다.
   const hasRight = lines.some((l) => l.axis === "right");
   return (
     <Card title={title} subtitle={subtitle} right={right}>

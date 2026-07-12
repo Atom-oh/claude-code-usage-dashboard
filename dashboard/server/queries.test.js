@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucket, filterCond, alignHistoricalTo } from "./queries.js";
+import { bucket, filterCond, alignHistoricalTo, range } from "./queries.js";
+import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 
 // bucket()이 intervalHours를 세 가지 버킷(분/시/일)으로 올바르게 매핑하는지 — 차트 드래그 줌이
 // 넘기는 fractional intervalHours(예: 15분=0.25)가 UInt32 MINUTE로 환산되는 게 핵심.
@@ -40,4 +41,21 @@ test("alignHistoricalTo leaves live `to` untouched, aligns historical `to` to th
   const past = new Date(now.getTime() - 3 * 3600000 - 17 * 60000); // 3시간 17분 전
   const aligned = alignHistoricalTo(past);
   assert.equal(aligned.getTime(), Math.floor(past.getTime() / 3600000) * 3600000); // 정각으로 내림
+});
+
+// range()가 alignHistoricalTo(to)를 무조건 적용하면, from/to가 같은 시간(hour) 안에 있는 짧은
+// 과거 구간(분 단위 드래그 줌)에서 to만 정각으로 내려가 from보다 작아져 역전된다 — 서버가
+// "WHERE ... >= from AND ... < to"에서 from > to면 빈 결과를 낸다(PR #9 리뷰에서 CRITICAL로
+// 확인: 이 PR의 핵심 신기능인 분 단위 드래그 줌이 통째로 깨지는 회귀였다).
+test("range() never produces an inverted from>to window for short historical spans", () => {
+  // 3시간 전의 :15~:45(같은 hour 안, 30분 구간) — alignHistoricalTo(to)가 정렬하면 to는
+  // 그 hour의 :00으로 내려가 from(:15)보다 앞서게 된다(역전). range()는 이 경우 정렬을
+  // 포기하고 원본 to를 써야 한다.
+  const now = new Date();
+  const hourAgo3 = new Date(Math.floor((now.getTime() - 3 * 3600000) / 3600000) * 3600000); // 3시간 전의 정각
+  const from = new Date(hourAgo3.getTime() + 15 * 60000); // :15
+  const to = new Date(hourAgo3.getTime() + 45 * 60000); // :45
+  const r = range(from, to);
+  assert.ok(new Date(r.from) <= new Date(r.to), `expected from<=to, got ${r.from} > ${r.to}`);
+  assert.equal(r.to, toChDateTime(to)); // 역전 위험 시 원본 to 그대로 유지
 });

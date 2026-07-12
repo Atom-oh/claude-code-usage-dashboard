@@ -29,7 +29,7 @@ function ScoreGauge({ score }) {
 }
 
 export default function Executive() {
-  const { from, to, days, intervalHours } = useRange();
+  const { from, to, intervalHours } = useRange();
   const { model } = useFilters();
   const fmtTick = makeTickFmt(intervalHours);
   const fmtDaily = makeTickFmt(24); // adoptionTs는 항상 일별 버킷 — range 해상도를 따르지 않는다
@@ -67,11 +67,16 @@ export default function Executive() {
   const cost = (costSummary.data || []).reduce((a, r) => a + Number(r.computed_cost), 0);
 
   // 파생 지표 — 전부 이 화면 안에서만 쓰는 클라이언트 계산.
+  // days(마지막 프리셋 값)가 아니라 실제 (to-from) 일수를 써야 한다 — 커스텀 드래그 줌 모드에서는
+  // from/to가 줌 구간으로 바뀌어도 days는 마지막 프리셋 값(예: 2)에 머물러 있어, days로 나누면
+  // 10분 줌에도 "일평균"이 2일 기준으로 계산되는 회귀였다(리뷰에서 MAJOR로 확인 — Cost.jsx는
+  // 이미 (to-from) 기준으로 고쳐졌지만 이 페이지는 그대로 남아 있었음).
+  const daysInRange = Math.max(1 / 1440, (to - from) / 86400000);
   const costPerDev = users > 0 ? cost / users : 0;
-  const dailyAvg = cost / Math.max(1, days);
+  const dailyAvg = cost / daysInRange;
   const projection30d = dailyAvg * 30;
   const costPerKloc = t.loc > 0 ? cost / (t.loc / 1000) : 0;
-  const sessionsPerDevDay = users > 0 ? t.sessions / users / Math.max(1, days) : 0;
+  const sessionsPerDevDay = users > 0 ? t.sessions / users / daysInRange : 0;
   // 조직 종합 점수 — 리더보드 개인 점수(productivity.js와 동일 공식)의 평균.
   const orgScore = (leaderboard.data || []).length
     ? leaderboard.data.reduce((a, r) => a + Number(r.productivity_score), 0) / leaderboard.data.length
@@ -83,7 +88,7 @@ export default function Executive() {
   const peakDau = (adoptionTs.data || []).reduce((a, r) => Math.max(a, r.dau), 0);
 
   const headline =
-    `지난 ${days}일간 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
+    `지난 ${Math.ceil(daysInRange)}일간 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
     `${fmt(t.loc)} 라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)을 작성했으며 제안 수락률은 ${(acceptRate * 100).toFixed(0)}%입니다. ` +
     `기간 지출은 ${usd(cost)}, 현재 추세로는 30일 기준 ${usd(projection30d)}가 예상됩니다. 조직 생산성 점수는 ${Math.round(orgScore)}/100입니다.`;
 
@@ -91,7 +96,7 @@ export default function Executive() {
     <div>
       <PageHeader
         title="Executive"
-        subtitle={`${from.toLocaleDateString("ko-KR")} → ${to.toLocaleDateString("ko-KR")} (${days}일) — 모든 KPI는 선택 기간 집계`}
+        subtitle={`${from.toLocaleDateString("ko-KR")} → ${to.toLocaleDateString("ko-KR")} (${Math.ceil(daysInRange)}일) — 모든 KPI는 선택 기간 집계`}
         right={
           <div className="flex items-center gap-2 print:hidden">
             <RangePicker />
@@ -173,6 +178,7 @@ export default function Executive() {
                   rows={adoptionTs.data}
                   xKey="t"
                   tickFormatter={fmtDaily}
+                  bucketHours={24}
                   lines={[{ key: "dau", label: "DAU", axis: "left" }]}
                 />
               )}
