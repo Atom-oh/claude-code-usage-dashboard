@@ -84,7 +84,13 @@ resource "kubectl_manifest" "chi" {
     metadata   = { name = "cc-ab", namespace = kubernetes_namespace.claude_code.metadata[0].name }
     spec = {
       configuration = {
-        clusters = [{ name = "replicated", layout = { shardsCount = 1, replicasCount = 2 } }]
+        # replicasCount=2→3: 실측(2026-07-10) 확인 — 기존 두 레플리카가 뜬 노드(m8g.xlarge ×2)가
+        # 이미 CPU limit 합계 153~178%로 오버커밋 상태라, 페이지 하나가 useApi로 7~9개 API를
+        # 동시에 쏘면 cgroup CPU throttling이 실제로 발생한다(9개 동시 쿼리 발사 시 컨테이너의
+        # /sys/fs/cgroup/cpu.stat nr_throttled가 10회 증가 — 커널이 강제로 CPU를 끊은 횟수).
+        # Karpenter가 이 nodepool(claude-code)을 관리하며 limits.cpu=16(현재 8 사용)이라
+        # 여유가 있어, 세 번째 레플리카는 새 m8g.xlarge 노드에 자동 프로비저닝될 것으로 예상.
+        clusters = [{ name = "replicated", layout = { shardsCount = 1, replicasCount = 3 } }]
         # CHK 서비스 이름은 <chk 이름>-<cluster 이름>이라 "keeper-keeper" (실측 확인: kubectl get svc).
         zookeeper = { nodes = [{ host = "keeper-keeper.${var.k8s_namespace}.svc.cluster.local", port = 2181 }] }
         users = {

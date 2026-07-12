@@ -9,7 +9,9 @@ const GROUP_OPTIONS = [
 
 // 모든 페이지에서 useApi가 이 값을 자동으로 요청에 실어보낸다(useApi.js) — 페이지별로 따로 붙일
 // 필요 없음. model/user는 부분일치(대소문자 무시)라 텍스트 입력(300ms debounce는 FilterContext),
-// group은 세그먼트(unknown은 사용자 결정으로 탭에서 제외 — 데이터 분류에는 존재).
+// group은 세그먼트 — unknown(모델/organization.id 신호가 없어 판별 불가능한 세션)은 A/B 비교
+// 쿼리에서만 드롭되고(전체 응답의 ~11%), 사용자가 명시적으로 고를 그룹 옵션이 아니라 "필터
+// 없음"과 겹치는 상태라 탭으로 넣지 않는다(queries.js filterCond 정책표 참고).
 export function FilterBar() {
   const { group, setGroup, userInput, setUser, modelInput, setModel } = useFilters();
   return (

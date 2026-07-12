@@ -6,8 +6,38 @@ import { rollupActiveUsers, MAU_WINDOW_DAYS } from "./activity.js";
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
 
-function range(from, to) {
-  return { from: toChDateTime(from), to: toChDateTime(to) };
+// to가 "지금"(기본 실시간 뷰)에 가까우면 그대로 두고, 과거의 임의 시각(드래그 줌·히스토리컬
+// 커스텀 구간)이면 정각(toStartOfHour)으로 내린다. incFlat/incBucketed의 `hour < {to:DateTime}`가
+// to가 정각이 아니면 그 hour 버킷 전체(최대 59분)를 포함해 과대집계하는데(리뷰에서 MAJOR로
+// 확인), 이건 "임의 과거 to"를 만드는 드래그 줌이 이 PR에서 새로 생긴 뒤로 실제 문제가 됐다.
+// 반대로 to=현재인 기본 뷰에서 정각으로 내리면 매번 최대 59분의 최신 데이터가 사라지는 회귀가
+// 더 크므로, 그 경우는 그대로 둔다. 10분 여유는 useApi의 quantize grace(150초)보다 넉넉해
+// 실시간 뷰를 절대 과거로 오판하지 않는다.
+//
+// from은 정렬하지 않는다 — from까지 toStartOfHour로 내리면, 분 단위 드래그 줌처럼 from/to가
+// 같은 시간(hour) 안에 있는 짧은 과거 구간(예: 10:15~10:45)에서 to만 정각(10:00)으로 내려가
+// from(10:15)보다 작아져 range가 역전되고 빈 결과가 나온다(리뷰에서 CRITICAL로 확인 — 이 PR의
+// 핵심 신기능인 분 단위 드래그 줌이 "1시간 미만 과거 구간 확대"에서 통째로 깨지는 회귀였다).
+// alignHistoricalTo(to)가 from보다 앞서거나 "같으면"(=from이 정각인 경우까지 포함) 정렬을
+// 포기하고 원본 to를 쓴다 — `aligned < from`만 검사하면 from=10:00(정각)/to=10:45에서
+// aligned=10:00이 from과 같아 통과해버려 [10:00,10:00) 빈 창이 되는 경계 케이스를 놓친다
+// (리뷰에서 MAJOR로 재확인). 이 좁은 구간에서는 어차피 hour 버킷 부분-포함 오차가 구간
+// 자체보다 크므로, 애초에 rollup(hour 그레인)이 아니라 원본 폴백(incBucketedRaw)이 담당해야
+// 할 스케일이다.
+const LIVE_TOLERANCE_MS = 10 * 60000;
+export function alignHistoricalTo(to) {
+  const isLive = Date.now() - to.getTime() < LIVE_TOLERANCE_MS;
+  return isLive ? to : new Date(Math.floor(to.getTime() / 3600000) * 3600000);
+}
+
+// raw=true(분 버킷, incBucketedRaw 경로)면 hour 정렬을 아예 적용하지 않는다 — incBucketedRaw는
+// TimeUnix(원본, 나노초 정밀도)로 경계를 직접 계산해 부분-hour 과대집계 문제 자체가 없다.
+// 정렬이 오히려 해가 된다: 과거 2.5시간 같은 드래그 줌(raw 경로가 허용하는 범위, 리뷰에서
+// MAJOR로 확인)에서 to를 정각으로 내리면 선택한 마지막 최대 59분이 통째로 사라진다.
+export function range(from, to, raw = false) {
+  if (raw) return { from: toChDateTime(from), to: toChDateTime(to) };
+  const aligned = alignHistoricalTo(to);
+  return { from: toChDateTime(from), to: toChDateTime(aligned <= from ? to : aligned) };
 }
 
 // us.anthropic.claude-fable-5 / global.anthropic.claude-fable-5 / claude-fable-5[1m] 등은 같은
@@ -30,13 +60,34 @@ function normModel(col) {
 // 넘긴다(alias가 함수마다 다르고, 로그 테이블엔 Model이 없어 model 필터가 적용 안 되는 경우도 있음).
 // ponytail: model 필터는 Model attribute가 없는 지표(session.count 등)에는 매치가 안 돼 그 지표가
 // 0으로 빠진다 — 세션/커밋처럼 모델 귀속이 없는 값과 model 필터를 같이 켜면 생기는 알려진 트레이드오프.
-function filterCond(filters = {}, cols = {}) {
+export function filterCond(filters = {}, cols = {}) {
   const conds = [];
   const params = {};
   // 저장된 Model은 normModel()로 정규화된 값과 비교하므로, 검색어도 같이 정규화한다 —
   // 안 그러면 유저가 raw Bedrock ID("global.anthropic.claude-sonnet-5")로 검색할 때
   // 정규화된 저장값("claude-sonnet-5")과 접두사가 어긋나 매치가 빗나간다.
   const fModel = filters.model ? normalizeModelId(filters.model) : filters.model;
+  // unknown(모델/organization.id 신호가 전혀 없는 세션 — 실측 2026-07-09: 44세션 중 5개, ~11%)은
+  // bedrock/enterprise 어느 쪽으로도 판별 불가능해 A/B 비교에 노이즈만 더한다 — group 필터를 받는
+  // 쿼리에서는 기본적으로 무조건 제외한다(사용자가 group 필터를 안 걸어도).
+  // 단, "총계" 지표(activeUsers/adoptionLevels — A/B 비교가 아니라 전체 유저/DAU/MAU 스냅샷)는
+  // excludeUnknown: false로 unknown 세션도 포함해야 한다 — 안 그러면 그룹 무관 총계에서도
+  // ~11%가 조용히 빠져 "전체 유저 수"가 실제보다 작게 나온다(리뷰에서 MAJOR로 확인).
+  //
+  // 정책 정리(리뷰 제안 #6 — A/B 지표 vs 총계 지표를 excludeUnknown 기준으로 표로 명시):
+  //   - excludeUnknown: false(unknown 포함) — activeUsers, activeUsersTimeseries, adoptionLevels,
+  //     adoptionTimeseries, userLeaderboard의 active_days CTE, kpiSummary, costSummary(및 동일
+  //     패턴의 cost 계열). kpiSummary/costSummary는 GROUP BY grp로 그룹별 비교도 같이 보여주지만,
+  //     응답 전체를 합산하는 소비자(Executive.jsx의 총 지출/토큰, costPerDev)가 있어 activeUsers와
+  //     같은 모수를 쓰도록 통일했다 — 안 그러면 분자(cost, unknown 제외)·분모(users, unknown
+  //     포함)가 어긋난다(리뷰에서 MAJOR로 확인).
+  //   - excludeUnknown 기본값(true, unknown 제외) — 그 외 순수 A/B 비교 쿼리(모델별 지출,
+  //     캐시 효율 등 group으로만 나눠 보고 총계로는 안 쓰는 지표). unknown은 어느 쪽에도
+  //     못 넣으므로 A/B 비교에서는 계속 제외한다.
+  // filters.group==='unknown'이면 기본 제외를 건너뛴다 — 안 그러면 `grp != 'unknown' AND
+  // grp = 'unknown'`이 되어 항상 빈 결과가 된다. 지금 UI(FilterBar)는 unknown 탭이 없어
+  // 실질적으로 발생하지 않지만, API를 직접 호출하는 경로에 대한 방어(리뷰에서 확인).
+  if (cols.group && filters.excludeUnknown !== false && filters.group !== "unknown") conds.push(`${cols.group} != 'unknown'`);
   if (filters.group && cols.group) {
     conds.push(`${cols.group} = {fGroup:String}`);
     params.fGroup = filters.group;
@@ -66,8 +117,8 @@ function filterCond(filters = {}, cols = {}) {
     const { model, session } = cols.modelMixed;
     conds.push(`(positionCaseInsensitive(${normModel(model)}, {fModel:String}) > 0
       OR (${model} = '' AND ${session} IN (
-        SELECT SessionId FROM claude_code.otel_metrics_sum
-        WHERE SessionId != '' AND TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+        SELECT SessionId FROM claude_code.otel_metrics_sum_hourly
+        WHERE SessionId != '' AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
           AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)))`);
     params.fModel = fModel;
   }
@@ -77,8 +128,8 @@ function filterCond(filters = {}, cols = {}) {
   // 조인이 필요한데, 필터링만 할 땐 오버킬).
   if (filters.model && cols.modelViaSession) {
     conds.push(`${cols.modelViaSession} IN (
-      SELECT SessionId FROM claude_code.otel_metrics_sum
-      WHERE SessionId != '' AND TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+      SELECT SessionId FROM claude_code.otel_metrics_sum_hourly
+      WHERE SessionId != '' AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
         AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)`);
     params.fModel = fModel;
   }
@@ -102,59 +153,267 @@ const LOOKBACK_DAYS = 3; // from 이전에 시작한 세션의 diff baseline을 
 // plugin.name 등 승격되지 않은 attribute도 실려 있어, 이걸 무시하고 SessionId+승격컬럼만으로
 // GROUP BY하면 서로 다른 누적 스트림이 한 키에 섞여 max()가 작은 스트림을 잃는다(실측: 같은 키
 // 안에서 Value가 줄어드는 지점이 세션당 수백~수천 회, 전체 토큰 5% 과소집계). Attributes 맵
-// 전체를 해시한 sk가 진짜 시리즈 키 — 이 키로 파티션하면 전부 단조 증가(drops=0)임을 확인했다.
-const seriesKey = "cityHash64(toString(Attributes))";
+// 전체를 해시한 값이 진짜 시리즈 키 — 이 키로 파티션하면 전부 단조 증가(drops=0)임을 확인했다.
+// 실측(2026-07-10): 이 해시(cityHash64(toString(Attributes)))를 매 쿼리마다 인라인으로 계산하면
+// 420만 row 스캔 기준 1.2초 중 대부분(1.9GB 문자열 직렬화)을 차지해 페이지 하나가 useApi로
+// 7~9개 요청을 동시에 쏘면 ClickHouse CPU 경쟁까지 겹쳐 개별 쿼리가 10초 이상으로 늘어졌다.
+// otel_metrics_sum에 SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes)) 컬럼을
+// 추가(clickhouse-schema.sql 참조)해 INSERT 시점에 한 번만 계산하도록 옮기니 같은 쿼리가
+// 0.11초로 줄었다(11배) — 인라인 계산과 값이 100% 일치함을 확인(mismatch=0).
+const seriesKey = "SeriesKey";
 
 // 세션(SessionId) × temporality × 속성 단위로 구간 증가량을 미리 계산하는 서브쿼리. 결과 컬럼명을
 // 원본 테이블과 동일하게(Value/MetricName/Model/...) 맞춰서, 기존 sumIf(m.Value, ...) 패턴을 건드리지
 // 않고 FROM만 이 서브쿼리로 바꿔 끼울 수 있게 한다.
-// ToolName은 otel_metrics_sum엔 승격 컬럼이 없어(otel_logs에만 있음) Attributes에서 바로 뽑는다 —
-// code_edit_tool.decision의 tool_name(edit/multi_edit/write/notebook_edit)을 툴별로 쪼개는 데만 쓴다.
-function incFlat(metricFilter = "") {
+//
+// 원본이 아니라 시간별 rollup(otel_metrics_sum_hourly, clickhouse-schema.sql)을 읽는다.
+// 근거(실측 2026-07-10): 살아있는 세션이 10초마다 전 시리즈를 재-export해 원본이 3일 만에
+// 9.5M행(+3M행/일) — 원본 스캔 쿼리가 단독 2~4.5초, 동시 실행 시 9~11초까지 갔다. 누적 카운터는
+// 버킷당 "버킷 종료 시점 누적값"(max_value)만 있으면 경계 diff가 가능하므로 시간별로 접은
+// rollup(~86x 작음)으로 충분하다. 경계 baseline은 toStartOfHour({from})으로 정렬해 정확하게
+// 만든다(창이 [정각(from), to)로 최대 59분 넓어지는 대신 부분-버킷 오차가 없다). to 쪽 부분
+// 버킷은 to~현재(quantize 유예 ~2.5분)의 증가분까지 포함 — 더 신선할 뿐 해롭지 않다.
+//
+// lookback을 rollup에서도 유지하는 이유: 스캔을 무제한(hour < to)으로 열면 diff 수식은 오히려
+// 더 정확해지지만(3일 초과 세션 baseline 보존), incFlat 출력 행의 "존재" 자체를 세는 소비자들
+// (kpiSummary의 uniqExactIf(UserEmail...), skillUsage의 count())이 창과 무관한 전 기간
+// 세션·유저까지 세게 된다 — 원본과 동일한 lookback 창을 유지해 기존 의미론을 그대로 보존한다.
+// ToolName은 rollup에 실컬럼으로 접혀 있다(code_edit_tool.decision의 tool_name).
+//
+// to를 정각으로 내리지 않는 이유(리뷰에서 hour 경계 스큐로 지적된 지점 — 검토 후 현재
+// 형태 유지가 맞다고 판단): to가 과거의 임의 시각(드래그 줌 등)이면 그 hour 버킷 전체(최대
+// 59분)가 포함돼 과대집계될 수 있다 — 이건 실재하는 오차다. 하지만 to=현재(기본 뷰, 압도적
+// 다수 케이스)인 경우 그 hour는 아직 채워지는 중이라 "지금까지 들어온 데이터"만 있어 과대집계가
+// 아니라 단지 신선하다. costByModelCompare(vs. "이전 기간" 비교, 신선도보다 두 구간의 정합성이
+// 목적)와 달리 이 함수는 기본 뷰 KPI 카드의 실시간성이 핵심 요구사항이라, to를 정각으로 내리면
+// 기본 뷰에서 매번 최대 59분의 최신 데이터가 사라지는 회귀가 더 크다 — 과거/커스텀 구간의 경계
+// 오차(최대 59분)를 감내하는 쪽을 선택한다.
+//
+// span(from,to 사이)이 짧으면(sub-hour/수시간 드래그 줌) 위 트레이드오프의 전제 자체가
+// 깨진다 — hour < to의 "신선도" 이점은 사라지고, toStartOfHour(from)이 왼쪽 경계까지 최대
+// 59분 넓혀 KPI 스냅샷(incFlat)이 같은 화면의 시계열보다 큰 값을 보이는 불일치가 된다(리뷰에서
+// MAJOR로 확인). 이 좁은 구간에서는 원본 테이블로 직접 diff하는 게 정확하고(rollup 최적화가
+// 필요한 스케일도 아님) incBucketedRaw와 동일한 sk/lookback 규칙을 따른다.
+//
+// 임계값을 1시간이 아니라 index.js MAX_MINUTE_BUCKET_RANGE_MS(4시간)와 맞춘다 — 프론트
+// resolutionForSpan이 분 버킷(intervalHours<1)을 고르는 구간(최대 4시간)과 정확히 겹쳐야
+// 같은 화면의 timeseries(incBucketedRaw, 이 구간에서 원본을 씀)와 스냅샷(incFlat)이 항상
+// 같은 소스 테이블·같은 경계를 본다(리뷰에서 재확인 — 1시간 임계는 1~4시간 구간에서
+// 여전히 어긋났다). raw=true를 반환해 호출부가 range(from, to, raw)에 그대로 넘기게 한다 —
+// SQL의 {from}/{to} 바인딩 자체가 정렬되면 raw 분기가 무의미해지므로(리뷰에서 CONFIRMED),
+// incFlat과 range()가 반드시 같은 raw 판정을 공유해야 한다.
+const MAX_SNAPSHOT_RAW_RANGE_MS = 4 * 3600000;
+// index.js clampIntervalHours는 `to - from > 4h`일 때만 클램프(정확히 4h는 raw 허용) — 여기서
+// `<`를 쓰면 정확히 4h(1시간 버킷 4개짜리 드래그 등으로 실제 생성 가능)에서 시계열은 raw인데
+// 스냅샷은 rollup을 보는 off-by-one이 재발한다(리뷰에서 확인). `<=`로 맞춘다.
+export function incFlatRaw(spanMs) {
+  return spanMs <= MAX_SNAPSHOT_RAW_RANGE_MS;
+}
+export function incFlat(metricFilter = "", spanMs = Infinity) {
+  if (incFlatRaw(spanMs)) {
+    // ToolName은 rollup에서만 실컬럼(code_edit_tool.decision의 tool_name을 접어놓음) — 원본
+    // otel_metrics_sum에는 없어서 그대로 SELECT하면 "Unknown expression identifier"로 쿼리가
+    // 깨진다(실측 확인). Attributes['tool_name']에서 직접 뽑아 같은 별칭으로 맞춘다.
+    return `(
+      SELECT
+          SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
+          Attributes['tool_name'] AS ToolName,
+          if(temp = 2,
+              greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+              sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
+      FROM claude_code.otel_metrics_sum
+      WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+        ${metricFilter}
+      GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+    )`;
+  }
+  // cumulative(temp=2) baseline의 hour 경계 처리 — 세 가지 접근을 실측으로 검증했다. hour는
+  // "그 버킷 종료 시점" 누적값이라 어느 쪽으로 근사해도 오차가 생긴다:
+  //   - `hour < toStartOfHour(from)`(원래 방식): baseline이 너무 작아짐 → diff 과대집계.
+  //   - `hour < from`(라운드 9): baseline이 너무 커짐(from-hour 종료 시점 값) → diff 과소집계.
+  //   - UNION ALL로 from-hour rollup 행을 raw stitch로 "대체"(라운드 10): current 쪽도 그
+  //     대체된(pre-from만 담은) 행을 보게 되어, 세션이 from-hour 안에서만 성장하고 그 뒤 rollup
+  //     행이 아직 없으면 post-from 성장분이 baseline과 current 양쪽에서 사라져 diff가 0으로
+  //     소실된다(리뷰에서 MAJOR로 재확인 — 대체가 아니라 보정이어야 했다).
+  // 정확한 해법: 원본 rollup 행은 그대로 두고(current=maxIf(max_value, hour<to)는 항상 정확 —
+  // to가 속한 hour까지의 실제 상태를 담고 있음), baseline만 raw로 보정한다:
+  // `greatest(rollup의 이전 hour까지 max, raw로 구한 정확한 from 시점 값)`. 라이브 클러스터로
+  // 두 시나리오(to가 다음 hour/같은 hour) 모두 정확한 diff(27,066)가 나옴을 확인했다.
+  //
+  // delta(temp=1)는 sum이라 이 방식이 안 통한다 — sub-hour 분해가 필요하므로 from-hour의
+  // sum_value를 통째로 raw의 [from, hour 끝) 재계산값으로 교체한다(원본 hour 자체를 지우고
+  // 그 구간만 다시 합산 — cumulative처럼 "이전 값과 비교"가 아니라 "그 구간의 합"이라 교체가
+  // 정확하다. from-hour 이전/이후 다른 hour는 그대로).
+  //
+  // incBucketed(시계열)는 여전히 다른 결함이 있다 — 버킷 경계가 항상 정각이라 `WHERE t >=
+  // from`이 from이 속한 부분 시간 버킷을 통째로 걸러낸다. 실측(라이브 클러스터, 실제
+  // useApi.js quantize 로직으로 만든 기본 2일 뷰 from/to 그대로 재현): KPI와 시계열 합계가
+  // 1.58%(약 3100만) 차이 — [from, 다음 정각) 구간의 실제 증가량과 정확히 일치. 시계열 버킷
+  // 경계 재구성이 필요해 이 PR 스코프를 넘어선다. 알려진 잔여 불일치로 남긴다.
   return `(
     SELECT
-        SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
-        Attributes['tool_name'] AS ToolName,
+        SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
         if(temp = 2,
-            greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
-            sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
-    FROM claude_code.otel_metrics_sum
-    WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
-      ${metricFilter}
-    GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+            greatest(
+                maxIf(mv, hh < {to:DateTime})
+                - greatest(maxIf(mv, hh < toStartOfHour({from:DateTime})), max(from_hour_raw_baseline)),
+                0
+            ),
+            sumIf(sv, hh > toStartOfHour({from:DateTime}) AND hh < {to:DateTime}) + max(from_hour_raw_delta)
+        ) AS Value
+    FROM (
+        SELECT hour AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
+            max_value AS mv, sum_value AS sv,
+            0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta
+        FROM claude_code.otel_metrics_sum_hourly
+        WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+          ${metricFilter}
+        UNION ALL
+        SELECT
+            toStartOfHour({from:DateTime}) AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
+            Attributes['tool_name'] AS ToolName,
+            0 AS mv, 0 AS sv,
+            maxIf(Value, TimeUnix < {from:DateTime}) AS from_hour_raw_baseline,
+            sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR) AS from_hour_raw_delta
+        FROM claude_code.otel_metrics_sum
+        WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR
+          ${metricFilter}
+        GROUP BY sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+    )
+    GROUP BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
   )`;
 }
 
-// incFlat의 시계열(버킷) 버전. 버킷별로 cumulative는 "그 버킷의 마지막 누적값 - 이전 버킷의 마지막
-// 누적값"(lagInFrame), delta는 버킷 내 합(이미 그 버킷의 증가량)을 쓴다. lookback 구간의 버킷은
-// 첫 실구간 버킷의 diff baseline으로만 쓰이고 바깥 WHERE t >= from에서 걸러진다.
-function incBucketed(bucketExpr, metricFilter = "") {
+// from이 속한 버킷의 시작/끝 경계 — incBucketed의 first-bucket raw stitch(아래)가 이 경계로
+// "그 버킷 안에서 from 이후만" 만큼만 보정한다. bucket()과 동일한 HOUR/DAY 규칙을
+// {from:DateTime}에 그대로 적용해(분 버킷은 incBucketedRaw 담당이라 여기 안 옴), 실제
+// bucketExpr이 만드는 버킷 폭과 항상 일치시킨다 — 하드코딩된 toStartOfHour(from)이었다면
+// day 버킷(intervalHours>=24)에서 폭이 안 맞아 보정이 어긋났을 것.
+function fromBucketBounds(intervalHours) {
+  const start = bucket(intervalHours, "{from:DateTime}");
+  const width = intervalHours >= 24 ? "{intervalDays:UInt32} DAY" : "{intervalHours:UInt32} HOUR";
+  return { startExpr: start.expr, endExpr: `${start.expr} + INTERVAL ${width}` };
+}
+
+// incFlat의 시계열(버킷) 버전 — rollup을 hour/day 버킷으로 재집계한다. 버킷별로 cumulative는
+// "그 버킷의 마지막 누적값 - 이전 버킷의 마지막 누적값"(lagInFrame), delta는 버킷 내 합을 쓴다.
+// lookback 구간의 버킷은 첫 실구간 버킷의 diff baseline으로만 쓰이고 바깥 WHERE t >= from에서
+// 걸러진다. 분(MINUTE) 버킷은 rollup(hour 그레인)으로 못 만드므로 incBucket()이 원본 폴백을 태운다.
+//
+// 3단 중첩 필수(집계 → window → 바깥 WHERE t>=from) — window와 WHERE t>=from을 같은 SELECT
+// 레벨에 두면 ClickHouse가 WHERE를 먼저 적용해 lookback 버킷(t<from)을 지운 뒤 window를
+// 계산해, 각 시리즈의 첫 실구간 버킷 lagInFrame이 항상 0(fallback)을 반환한다 — cumulative
+// 시계열의 첫 버킷이 "증가량"이 아니라 "누적 전량"으로 뻥튀기된다.
+// 2026-07-12: 이 함수를 처음 작성했을 때 이미 이 문제를 의심해 "검증"했으나, 그 실험이
+// 실수로 이미-안전한 3단 구조를 재현해놓고 "동일하다"고 오판했다(라운드 3 커밋의 잘못된
+// 주석). 이번엔 라이브 ClickHouse에서 프로덕션과 동일한 2단 구조(버그 재현: lag=0, baseline
+// 유실)와 3단 구조(정상: lag=이전 버킷값)를 나란히 실행해 실제로 값이 다르다는 것을
+// 직접 확인했다 — 3단 구조가 유일하게 안전하다.
+//
+// first-bucket raw stitch(라운드 12 추가): 위 3단 구조로도 t=from이 속한 첫 버킷은 여전히
+// [버킷 시작, 버킷 끝) 전체를 담아, WHERE t>=from을 통과하려면 t(버킷 시작)>=from이어야 하는데
+// from이 정각/자정이 아니면 t<from이라 그 버킷 전체가 탈락한다 — incFlat(스냅샷)은 같은 구간을
+// raw로 보정해서 잡는데 시계열은 놓쳐, 기본 2일 뷰에서 KPI 합계와 시계열 합계가 실측 1.58%
+// 어긋났다(리뷰에서 4/4 모델 합의 MAJOR). incFlat과 동일한 UNION ALL raw-stitch를 여기도
+// 적용한다 — cumulative는 baseline을 greatest(이전 버킷 cum, raw로 구한 정확한 from 시점 값)로
+// 보정(다른 버킷의 from_bucket_raw_baseline은 항상 0이라 무해), delta는 첫 버킷의 cum 자체를
+// raw [from, 버킷 끝) 재계산값으로 통째 교체한다(다른 버킷은 그대로). 바깥 WHERE도
+// `t >= from`에서 `t >= startExpr`로 바꿔야 한다 — 안 그러면 보정된 첫 버킷의 t 라벨(=버킷
+// 시작, 항상 from보다 이르거나 같음)이 여전히 필터에 걸려 통째로 버려진다(라이브 클러스터로
+// 최초 구현에서 이 실수를 했다가 재현·발견: 보정값은 정확했는데 최종 합계에 안 들어갔었음).
+export function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
+  const { startExpr, endExpr } = fromBucketBounds(intervalHours);
+  // cumulative(temp=2)의 첫 버킷 cum(=max(mv), rollup의 자연스러운 버킷-끝 값)은 delta처럼
+  // least(endExpr,{to}) 캡을 받지 않는다(리뷰에서 지적) — 이론상 to가 그 버킷 "안"에서 끝나면
+  // rollup이 이미 그 hour 전체(버킷 끝까지)를 반영해 [from,to) 밖 증가분이 섞일 수 있다. 하지만
+  // 실제로 발생하는 경로가 없다: historical to는 range()가 항상 hour로 내림해(alignHistoricalTo)
+  // hour-그레인 경계와 정확히 맞아 겹칠 여지가 없고, live to는 지금(now) 근처라 "미래" 데이터가
+  // 존재하지 않는다(초 단위 인입 지연 정도만). intervalHours=1 + to-from<1h인 직접 API 호출로만
+  // 재현 가능하고 UI(resolutionForSpan)는 이 조합을 만들지 않는다 — 방어적으로만 고치면 3번째
+  // raw stitch 값이 더 필요해 복잡도가 이득보다 크다고 판단해 문서화로 남긴다.
   return `(
-    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
-        if(temp = 2,
-            greatest(cum - lagInFrame(cum, 1, 0) OVER (
-                PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
-            ), 0),
-            cum) AS Value
-    FROM (
-        SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
-            if(AggregationTemporality = 2, max(Value), sum(Value)) AS cum
-        FROM claude_code.otel_metrics_sum
-        WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
-          ${metricFilter}
-        GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
+    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
+        SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
+            if(temp = 2,
+                greatest(cum - greatest(lagInFrame(cum, 1, 0) OVER (
+                    PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
+                ), from_bucket_raw_baseline), 0),
+                if(t = ${startExpr}, from_bucket_raw_delta, cum)) AS Value
+        FROM (
+            SELECT t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision,
+                if(temp = 2, max(mv), sum(sv)) AS cum,
+                max(from_bucket_raw_baseline) AS from_bucket_raw_baseline,
+                max(from_bucket_raw_delta) AS from_bucket_raw_delta
+            FROM (
+                SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
+                    max_value AS mv, sum_value AS sv, 0 AS from_bucket_raw_baseline, 0 AS from_bucket_raw_delta
+                FROM claude_code.otel_metrics_sum_hourly
+                WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+                  ${metricFilter}
+                UNION ALL
+                SELECT ${startExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
+                    0 AS mv, 0 AS sv,
+                    maxIf(Value, TimeUnix < {from:DateTime}) AS from_bucket_raw_baseline,
+                    -- endExpr(버킷 끝)이 아니라 least(endExpr, {to})로 캡 — 요청 구간이 버킷
+                    -- 폭보다 짧으면(예: intervalHours=1인데 to-from=30분) endExpr가 {to}를 넘어가
+                    -- [from,to) 밖의 delta까지 새 들어온다(리뷰에서 MAJOR로 확인 — UI의
+                    -- resolutionForSpan은 이 조합을 안 만들지만 서버가 강제하지 않고 있었다).
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < least(${endExpr}, {to:DateTime})) AS from_bucket_raw_delta
+                FROM claude_code.otel_metrics_sum
+                WHERE TimeUnix >= ${startExpr} AND TimeUnix < least(${endExpr}, {to:DateTime})
+                  ${metricFilter}
+                GROUP BY sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision
+            )
+            GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
+        )
+    )
+    WHERE t >= ${startExpr}
+  )`;
+}
+
+// incBucketed의 원본 테이블 버전 — 차트 드래그 줌의 분(MINUTE) 버킷 전용. 줌 구간은 좁고 드물어
+// 콜드 허용(원본 스캔 비용은 lookback이 지배하지만 rollup으로 baseline만 따로 얻는 최적화는
+// 필요해질 때 한다). incBucketed와 동일한 이유로 3단 중첩(집계 → window → 바깥 WHERE) 필수.
+function incBucketedRaw(bucketExpr, metricFilter = "") {
+  return `(
+    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
+        SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
+            if(temp = 2,
+                greatest(cum - lagInFrame(cum, 1, 0) OVER (
+                    PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
+                ), 0),
+                cum) AS Value
+        FROM (
+            SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
+                if(AggregationTemporality = 2, max(Value), sum(Value)) AS cum
+            FROM claude_code.otel_metrics_sum
+            WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+              ${metricFilter}
+            GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
+        )
     )
     WHERE t >= {from:DateTime}
   )`;
 }
 
-// intervalHours < 24 → HOUR 버킷, >= 24 → DAY 버킷. ClickHouse의 toStartOfInterval(..., INTERVAL n HOUR)은
-// n>24에서 날짜 경계를 못 넘어가고 매일 0시로 리셋되는 동작이 있어(costByModelDaily가 원래 겪던 문제),
-// 24시간 이상 구간은 항상 DAY 단위로 계산해 그 quirk를 피한다.
-function bucket(intervalHours, col = "TimeUnix") {
-  return intervalHours >= 24
-    ? { expr: `toStartOfInterval(${col}, INTERVAL {intervalDays:UInt32} DAY)`, params: { intervalDays: Math.max(1, Math.round(intervalHours / 24)) } }
-    : { expr: `toStartOfInterval(${col}, INTERVAL {intervalHours:UInt32} HOUR)`, params: { intervalHours } };
+// 시계열 쿼리 공용 진입점 — 그레인에 맞는 버킷식과 소스 테이블(rollup vs 원본)을 함께 고른다.
+// 호출부는 FROM ${b.sub} m + { ...b.params } 형태로 쓴다.
+function incBucket(intervalHours, metricFilter = "") {
+  const raw = intervalHours < 1; // 분 버킷은 hour-그레인 rollup으로 만들 수 없다
+  const b = bucket(intervalHours, raw ? "TimeUnix" : "hour");
+  return { sub: raw ? incBucketedRaw(b.expr, metricFilter) : incBucketed(intervalHours, b.expr, metricFilter), params: b.params, raw };
+}
+
+// intervalHours < 1 → MINUTE 버킷(차트 드래그 줌), < 24 → HOUR 버킷, >= 24 → DAY 버킷.
+// ClickHouse의 toStartOfInterval(..., INTERVAL n HOUR)은 n>24에서 날짜 경계를 못 넘어가고 매일
+// 0시로 리셋되는 동작이 있어(costByModelDaily가 원래 겪던 문제), 24시간 이상 구간은 항상 DAY
+// 단위로 계산해 그 quirk를 피한다. intervalHours는 UInt32로 바인딩되므로 분 버킷은 분 단위로 환산.
+export function bucket(intervalHours, col = "TimeUnix") {
+  if (intervalHours >= 24)
+    return { expr: `toStartOfInterval(${col}, INTERVAL {intervalDays:UInt32} DAY)`, params: { intervalDays: Math.max(1, Math.round(intervalHours / 24)) } };
+  if (intervalHours < 1)
+    return { expr: `toStartOfInterval(${col}, INTERVAL {intervalMinutes:UInt32} MINUTE)`, params: { intervalMinutes: Math.max(1, Math.round(intervalHours * 60)) } };
+  return { expr: `toStartOfInterval(${col}, INTERVAL {intervalHours:UInt32} HOUR)`, params: { intervalHours } };
 }
 
 // 비용 계산에 필요한 토큰 타입별 합계 + Claude Code 자체 보고 비용(비교용). withComputedCost()
@@ -166,9 +425,14 @@ const TOKEN_SUMS = `
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens`;
 
-// 패널1: 그룹별 KPI 요약
+// 패널1: 그룹별 KPI 요약. excludeUnknown: false — 이 응답의 합계(클라이언트에서 groupBy 없이
+// reduce)가 Overview/Executive의 "전체 세션/토큰/라인" 총계로 쓰인다. activeUsers(unknown
+// 포함)와 짝을 이루는 분자이므로 같은 모수 정책을 따라야 한다(리뷰에서 MAJOR로 확인 —
+// 안 그러면 costPerDev 같은 파생 비율이 분자·분모 모수가 다른 값이 된다). 그룹별로 나눠 보는
+// UI(bedrock/enterprise 카드)는 정확한 group 문자열로만 필터링하므로 unknown 행이 섞여도
+// 영향 없다.
 export async function kpiSummary(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -184,18 +448,18 @@ export async function kpiSummary(from, to, filters = {}) {
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.commit.count', 'claude_code.pull_request.count',
         'claude_code.token.usage', 'claude_code.lines_of_code.count'
-      )`)} m
+      )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
 // 패널2: 토큰 시계열
 export async function tokenTimeseries(from, to, intervalHours = 24, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  const b = bucket(intervalHours);
+  const b = incBucket(intervalHours, `AND MetricName = 'claude_code.token.usage'`);
   return query(
     `${GROUP_CTE}
     SELECT
@@ -204,11 +468,11 @@ export async function tokenTimeseries(from, to, intervalHours = 24, filters = {}
         sum(m.Value) AS tokens,
         sumIf(m.Value, m.TokenType = 'input')  AS input_tokens,
         sumIf(m.Value, m.TokenType = 'output') AS output_tokens
-    FROM ${incBucketed(b.expr, `AND MetricName = 'claude_code.token.usage'`)} m
+    FROM ${b.sub} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
 }
 
@@ -219,7 +483,7 @@ export async function locTimeseries(from, to, intervalHours = 24, filters = {}) 
   // lines_of_code.count 행엔 Model attribute가 없다(row-level model 매치는 항상 미매치) —
   // kpiSummary와 동일한 modelMixed 세미조인으로 통일한다(실측: 리뷰에서 확인).
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
-  const b = bucket(intervalHours);
+  const b = incBucket(intervalHours, `AND MetricName = 'claude_code.lines_of_code.count'`);
   return query(
     `${GROUP_CTE}
     SELECT
@@ -227,11 +491,11 @@ export async function locTimeseries(from, to, intervalHours = 24, filters = {}) 
         ${GROUP_EXPR} AS "group",
         sumIf(m.Value, m.TokenType = 'added')   AS loc_added,
         sumIf(m.Value, m.TokenType = 'removed') AS loc_removed
-    FROM ${incBucketed(b.expr, `AND MetricName = 'claude_code.lines_of_code.count'`)} m
+    FROM ${b.sub} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
 }
 
@@ -245,11 +509,11 @@ export async function cacheEfficiency(from, to, filters = {}) {
         sumIf(m.Value, m.TokenType = 'cacheRead')                              AS cache_read,
         sumIf(m.Value, m.TokenType IN ('input', 'cacheRead', 'cacheCreation'))  AS input_side,
         round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio
-    FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -262,11 +526,11 @@ export async function modelDistribution(from, to, filters = {}) {
         sum(m.Value) AS tokens,
         sumIf(m.Value, m.TokenType = 'input')  AS input_tokens,
         sumIf(m.Value, m.TokenType = 'output') AS output_tokens
-    FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group", tokens DESC`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -284,11 +548,11 @@ export async function normalizedProductivity(from, to, filters = {}) {
         round(commits / nullIf(tokens, 0) * 1000000, 3)                  AS commits_per_million_tokens
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.lines_of_code.count', 'claude_code.token.usage', 'claude_code.commit.count'
-      )`)} m
+      )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -299,11 +563,11 @@ export async function codeEditDecisions(from, to, filters = {}) {
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.Decision AS decision, sum(m.Value) AS n
-    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", decision ORDER BY "group", decision`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -318,11 +582,11 @@ export async function codeEditDecisionsByTool(from, to, filters = {}) {
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.ToolName AS tool, m.Decision AS decision, sum(m.Value) AS n
-    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.ToolName != '' ${f.where}
     GROUP BY "group", tool, decision ORDER BY "group", tool`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -333,18 +597,18 @@ export async function codeEditDecisionsByTool(from, to, filters = {}) {
 export async function activeTimeSeries(from, to, intervalHours = 24, filters = {}) {
   // active_time.total 행엔 Model attribute가 없다 — locTimeseries와 동일한 이유로 modelMixed.
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
-  const b = bucket(intervalHours);
+  const b = incBucket(intervalHours, `AND MetricName = 'claude_code.active_time.total'`);
   return query(
     `${GROUP_CTE}
     SELECT
         t,
         ${GROUP_EXPR} AS "group",
         sum(m.Value) AS active_seconds
-    FROM ${incBucketed(b.expr, `AND MetricName = 'claude_code.active_time.total'`)} m
+    FROM ${b.sub} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
 }
 
@@ -357,28 +621,28 @@ export async function skillUsage(from, to, filters = {}) {
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations, sum(m.Value) AS est_cost_usd
-    FROM ${incFlat(`AND MetricName = 'claude_code.cost.usage'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.cost.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.SkillName != '' ${f.where}
     GROUP BY "group", skill ORDER BY "group", invocations DESC`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
 // 모델별 지출 트렌드 (Cost 페이지 스택 바). intervalHours로 시간별/일간/주간 토글.
 export async function costByModelDaily(from, to, intervalHours = 24, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  const b = bucket(intervalHours);
+  const b = incBucket(intervalHours, `AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`);
   const rows = await query(
     `${GROUP_CTE}
     SELECT t AS day,
         ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model,
         ${TOKEN_SUMS}
-    FROM ${incBucketed(b.expr, `AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
+    FROM ${b.sub} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' ${f.where}
     GROUP BY day, "group", model ORDER BY day`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
   // cost 키 이름을 유지해 SeriesBarChart(valueKey="cost")가 그대로 동작하게 한다.
   return withComputedCost(rows);
@@ -391,38 +655,150 @@ export async function costByModelDaily(from, to, intervalHours = 24, filters = {
 export async function costByModelCompare(from, to, prevFrom, filters = {}) {
   // outer는 서브쿼리 m의 projection만 보인다 — 원본 Model 컬럼이 아니라 정규화된 alias(model)로 필터.
   const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelNorm: "model" });
-  const rows = await query(
-    `${GROUP_CTE}
-    SELECT model,
-        sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
-        sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
-        sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
-        sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')               AS prev_input_tokens,
-        sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')               AS output_tokens,
-        sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')              AS prev_output_tokens,
-        sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')            AS cache_read_tokens,
-        sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')           AS prev_cache_read_tokens,
-        sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')        AS cache_write_tokens,
-        sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')       AS prev_cache_write_tokens
-    FROM (
-        SELECT
-            SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
-            if(AggregationTemporality = 2,
-                greatest(maxIf(Value, TimeUnix < {from:DateTime}) - maxIf(Value, TimeUnix < {prevFrom:DateTime}), 0),
-                sumIf(Value, TimeUnix >= {prevFrom:DateTime} AND TimeUnix < {from:DateTime})) AS prev_v,
-            if(AggregationTemporality = 2,
-                greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
-                sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS cur_v
-        FROM claude_code.otel_metrics_sum
-        WHERE MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''
-          AND TimeUnix >= {prevFrom:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
-        GROUP BY ${seriesKey}, SessionId, AggregationTemporality, model, MetricName, TokenType
-    ) m
-    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE 1 = 1 ${f.where}
-    GROUP BY model`,
-    { ...range(from, to), prevFrom: toChDateTime(prevFrom), ...f.params }
-  );
+  const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''";
+  // rollup 분기의 WITH절이 curFrom/curTo/prevFrom을 SQL 스칼라로 재계산하는데, 그 절은 같은
+  // SELECT 레벨의 표현식에만 보이고 FROM의 nested 서브쿼리(raw stitch branch)에는 안 보인다 —
+  // 그 서브쿼리들은 {prevFrom:DateTime} bind param(JS가 넘긴 "정렬 전" 값)만 참조할 수 있다.
+  // prevFrom-hour raw stitch가 SQL의 실제 정렬된 prevFrom과 같은 시각을 봐야 하므로, 여기서
+  // JS로 동일하게 재계산해 별도 bind param(alignedPrevFrom)으로 넘긴다(리뷰에서 발견 — 처음엔
+  // bind param prevFrom을 그대로 썼다가 정렬 전/후 값이 달라 stitch가 엉뚱한 hour를 보는
+  // 버그였음). 두 번째 회귀(라이브 클러스터 riview에서 확인): curToAligned를 raw `to`로
+  // 계산했는데, SQL의 {to:DateTime} bind param은 range(from,to)를 거쳐 alignHistoricalTo()로
+  // 이미 정렬된 값이다 — historical(라이브 아님) + `to`가 정각 아님 조합에서 둘이 달라져
+  // stitch가 SQL이 실제로 쓰는 prevHourStart와 다른 hour를 보게 된다. range()와 정확히
+  // 동일한 정렬 규칙(정렬값이 from보다 앞서거나 같으면 포기)을 여기서도 적용한다.
+  const curFromAligned = new Date(from);
+  curFromAligned.setUTCMinutes(0, 0, 0);
+  const alignedToCandidate = alignHistoricalTo(to);
+  const effectiveTo = alignedToCandidate <= from ? to : alignedToCandidate;
+  const curToAligned = new Date(Math.max(effectiveTo.getTime(), curFromAligned.getTime() + 3600000));
+  const alignedPrevFrom = new Date(curFromAligned.getTime() - (curToAligned.getTime() - curFromAligned.getTime()));
+  // span<=4h(incFlatRaw와 동일 임계)면 rollup의 hour 라운딩(curFrom=toStartOfHour(from) 등)을
+  // 전혀 타지 않고 raw 테이블에서 정확한 [prevFrom,from)/[from,to) 창을 직접 계산한다 —
+  // costSummary/costByModel(incFlat 경로)이 같은 구간에서 이미 이 정밀도를 쓰므로, 형제 Cost
+  // 카드와 동일한 모수를 비교하게 된다(리뷰에서 MAJOR로 확인: rollup 경로만 쓰면 드래그 줌
+  // sub-4h 구간에서 "이전 기간 대비" 카드가 나머지 카드와 다른 창을 봤다).
+  const rows = incFlatRaw(to - from)
+    ? await query(
+        `${GROUP_CTE}
+        SELECT model,
+            sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
+            sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')               AS prev_input_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')               AS output_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')              AS prev_output_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')            AS cache_read_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')           AS prev_cache_read_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')        AS cache_write_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')       AS prev_cache_write_tokens
+        FROM (
+            SELECT ${seriesKey} AS sk, SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
+                if(AggregationTemporality = 2,
+                    greatest(maxIf(Value, TimeUnix < {from:DateTime}) - maxIf(Value, TimeUnix < {prevFrom:DateTime}), 0),
+                    sumIf(Value, TimeUnix >= {prevFrom:DateTime} AND TimeUnix < {from:DateTime})) AS prev_v,
+                if(AggregationTemporality = 2,
+                    greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS cur_v
+            FROM claude_code.otel_metrics_sum
+            WHERE TimeUnix >= {prevFrom:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+              ${metricFilter}
+            GROUP BY sk, SessionId, AggregationTemporality, model, MetricName, TokenType
+        ) m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE 1 = 1 ${f.where}
+        GROUP BY model`,
+        { from: toChDateTime(from), to: toChDateTime(to), prevFrom: toChDateTime(prevFrom), ...f.params }
+      )
+    : await query(
+        `${GROUP_CTE}
+        SELECT model,
+            sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
+            sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')               AS prev_input_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')               AS output_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')              AS prev_output_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')            AS cache_read_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')           AS prev_cache_read_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')        AS cache_write_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')       AS prev_cache_write_tokens
+        FROM (
+            -- prevFrom을 정렬된 경계(cur = [toStartOfHour(from), toStartOfHour(to)))의 실제 길이로
+            -- 재계산한다 — JS에서 넘어온 prevFrom은 정렬 "전" (to-from)로 계산돼, from/to가 같은
+            -- hour 안이 아니면 정렬 후 cur/prev 창 길이가 달라진다(예: from=10:15,to=11:45면 원래
+            -- prevFrom=08:45인데 정렬 후 cur=[10:00,11:00)=1h, prev=[08:00,10:00)=2h로 비대칭 —
+            -- 리뷰에서 MAJOR로 확인). curFrom/curTo로 정렬 후 길이를 구하고 그만큼을 prevFrom에
+            -- 다시 뺀다.
+            -- from/to가 같은 hour 안(드래그 줌으로 만들 수 있는 sub-hour 구간, 예: 10:15~10:45)이면
+            -- curFrom==curTo가 되어 cur 창이 0초로 붕괴해 비교 카드가 전부 0/empty로 나온다(리뷰에서
+            -- MAJOR로 확인). 이 지표는 "이전 동일 기간 대비"가 목적이라 최소 1시간 창을 보장한다.
+            -- curTo는 {to:DateTime} 자체를 다시 toStartOfHour로 내림하면 안 된다 — {to}는 이미
+            -- range(from,to)가 alignHistoricalTo()로 정렬을 마친 값이다(라이브 to는 정렬을
+            -- "건너뛰어" 그대로 둔다). 여기서 다시 내림하면 라이브 뷰에서 가장 최근 최대 59분의
+            -- 활동이 통째로 사라져 costSummary/costByModel(incFlat, 라이브 to를 안 내림)보다
+            -- 훨씬 낮게 나온다(라이브 클러스터 실측: 8h33m 구간에서 -17.7%, 제거 후 +4.4%로
+            -- incFlat 자체의 오차 수준과 같아짐 — 리뷰에서 MAJOR로 확인).
+            WITH toStartOfHour({from:DateTime}) AS curFrom,
+                 greatest({to:DateTime}, curFrom + INTERVAL 1 HOUR) AS curTo,
+                 curFrom - (curTo - curFrom) AS prevFrom,
+                 toStartOfHour(prevFrom) AS prevHourStart
+            SELECT
+                SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
+                -- prev_v의 baseline(hh < prevFrom)도 cur_v와 같은 결함을 갖는다 — curTo가 라이브
+                -- to를 그대로 쓰게 되면서(위 주석) prevFrom = curFrom - (curTo-curFrom)도 curFrom과
+                -- 달리 정각이 아닐 수 있게 됐다(예전엔 curTo가 항상 정각이라 prevFrom도 자동으로
+                -- 정각이었음). raw stitch로 동일하게 보정(리뷰에서 3/4 모델 독립 지적 — 값은
+                -- 세션의 활동 패턴에 따라 드물게만 드러나지만, incFlat과 동일한 근본 원인이라
+                -- 구조적으로 고친다).
+                if(AggregationTemporality = 2,
+                    greatest(maxIf(mv, hh < curFrom) - greatest(maxIf(mv, hh < prevHourStart), max(prev_hour_raw_baseline)), 0),
+                    sumIf(sv, hh > prevHourStart AND hh < curFrom) + max(prev_hour_raw_delta)) AS prev_v,
+                -- cur_v의 baseline(hh < curFrom)은 incFlat이 고친 것과 동일한 결함(hour가 "버킷
+                -- 종료 시점" 값이라 curFrom=toStartOfHour(from)이 정확히 from 시점이 아님)을
+                -- 그대로 갖고 있었다 — costSummary/costByModel과 다른 baseline을 써서 같은
+                -- 화면의 "이전 기간 대비" 카드가 나머지 카드와 어긋났다(리뷰에서 MAJOR로 확인).
+                -- incFlat과 동일한 raw stitch로 보정: rollup의 이전 hour까지 max와 raw로 구한
+                -- 정확한 from 시점 값 중 더 큰 쪽을 baseline으로 쓴다.
+                if(AggregationTemporality = 2,
+                    greatest(maxIf(mv, hh < curTo) - greatest(maxIf(mv, hh < curFrom), max(from_hour_raw_baseline)), 0),
+                    sumIf(sv, hh > curFrom AND hh < curTo) + max(from_hour_raw_delta)) AS cur_v
+            FROM (
+                SELECT hour AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType,
+                    max_value AS mv, sum_value AS sv, 0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta, 0 AS prev_hour_raw_baseline, 0 AS prev_hour_raw_delta
+                FROM claude_code.otel_metrics_sum_hourly
+                WHERE hour >= toStartOfHour({prevFrom:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+                  ${metricFilter}
+                UNION ALL
+                SELECT
+                    toStartOfHour({from:DateTime}) AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType,
+                    0 AS mv, 0 AS sv,
+                    maxIf(Value, TimeUnix < {from:DateTime}) AS from_hour_raw_baseline,
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR) AS from_hour_raw_delta,
+                    0 AS prev_hour_raw_baseline, 0 AS prev_hour_raw_delta
+                FROM claude_code.otel_metrics_sum
+                WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR
+                  ${metricFilter}
+                GROUP BY sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType
+                UNION ALL
+                SELECT
+                    toStartOfHour({alignedPrevFrom:DateTime}) AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType,
+                    0 AS mv, 0 AS sv,
+                    0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta,
+                    maxIf(Value, TimeUnix < {alignedPrevFrom:DateTime}) AS prev_hour_raw_baseline,
+                    sumIf(Value, TimeUnix >= {alignedPrevFrom:DateTime} AND TimeUnix < toStartOfHour({alignedPrevFrom:DateTime}) + INTERVAL 1 HOUR) AS prev_hour_raw_delta
+                FROM claude_code.otel_metrics_sum
+                WHERE TimeUnix >= toStartOfHour({alignedPrevFrom:DateTime}) AND TimeUnix < toStartOfHour({alignedPrevFrom:DateTime}) + INTERVAL 1 HOUR
+                  ${metricFilter}
+                GROUP BY sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType
+            )
+            GROUP BY sk, SessionId, AggregationTemporality, model, MetricName, TokenType
+        ) m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE 1 = 1 ${f.where}
+        GROUP BY model`,
+        { ...range(from, to), prevFrom: toChDateTime(prevFrom), alignedPrevFrom: toChDateTime(alignedPrevFrom), ...f.params }
+      );
   return withComputedCost(rows).map((r) => {
     const [prev] = withComputedCost([
       {
@@ -440,20 +816,25 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
 // 도입 수준 — 전체/월간/주간/일간 활성 유저 + DAU/MAU 고착도(고착도는 클라에서 dau/mau).
 // group/user 필터를 걸면 그 하위집합만의 고착도를 볼 수 있다(예: bedrock 그룹만의 DAU/MAU).
 // model 필터는 session.count에 model 귀속이 없어 의미가 없다 — cols에서 아예 뺀다.
-// uniqExact류는 "존재 여부"만 보므로 cumulative 중복 누적치에 영향받지 않아 원본 테이블을 그대로 쓴다.
+// uniqExact류는 "존재 여부"만 보므로 시간별 rollup으로 접혀도 값이 같다(키 보존) — total_members가
+// 전 기간을 봐야 해서 하한 없는 스캔인데, 원본(9.5M행+) 기준으론 이 쿼리가 데이터와 함께 무한히
+// 느려지는 구조였다. rollup은 ~86x 작아 무제한이어도 저렴하다.
+// excludeUnknown: false — 이건 그룹 A/B 비교가 아니라 전체 스냅샷(total_members/mau/wau/dau)이라
+// unknown 세션도 포함해야 실제 "전체" 값이 된다(사용자가 명시적으로 group 필터를 걸면 그 그룹만
+// 보이는 기존 동작은 유지 — filters.group 조건은 그대로 살아있다).
 export async function adoptionLevels(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail" });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "UserEmail" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
-        uniqExact(UserEmail)                                                AS total_members,
-        uniqExactIf(UserEmail, TimeUnix >= {to:DateTime} - INTERVAL 30 DAY) AS mau,
-        uniqExactIf(UserEmail, TimeUnix >= {to:DateTime} - INTERVAL 7 DAY)  AS wau,
-        uniqExactIf(UserEmail, TimeUnix >= {to:DateTime} - INTERVAL 1 DAY) AS dau
-    FROM claude_code.otel_metrics_sum m
+        uniqExact(UserEmail)                                             AS total_members,
+        uniqExactIf(UserEmail, hour >= {to:DateTime} - INTERVAL 30 DAY) AS mau,
+        uniqExactIf(UserEmail, hour >= {to:DateTime} - INTERVAL 7 DAY)  AS wau,
+        uniqExactIf(UserEmail, hour >= {to:DateTime} - INTERVAL 1 DAY)  AS dau
+    FROM claude_code.otel_metrics_sum_hourly m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE MetricName = 'claude_code.session.count' AND UserEmail != '' AND TimeUnix < {to:DateTime} ${f.where}`,
-    { to: toChDateTime(to), ...f.params }
+    WHERE MetricName = 'claude_code.session.count' AND UserEmail != '' AND hour < {to:DateTime} ${f.where}`,
+    { to: toChDateTime(alignHistoricalTo(to)), ...f.params }
   );
   return rows[0] || { total_members: 0, mau: 0, wau: 0, dau: 0 };
 }
@@ -461,23 +842,42 @@ export async function adoptionLevels(from, to, filters = {}) {
 // 기간 [from,to) 내 고유 활성 유저 수(ungrouped). 그룹 판별이 세션 단위라 한 유저가 bedrock/
 // enterprise 두 그룹 행에 걸칠 수 있어 kpiSummary의 그룹별 users를 클라이언트에서 합산하면 중복
 // 카운트된다 — Overview "전체 유저"·Executive "활성 개발자"는 이 단일 uniq 값을 써야 한다.
-// 세션 존재 기반(uniqExact)이라 cumulative diff 불필요, 원본 테이블 직접 조회.
+// 세션 존재 기반(uniqExact)이라 cumulative diff 불필요, rollup 직접 조회(키 보존이라 값 동일).
 // model 필터는 cols에서 뺀다 — adoptionLevels/adoptionTimeseries(같은 People/adoption 섹션의
 // DAU/WAU/MAU)도 session.count엔 model 귀속이 없다는 이유로 model 필터를 안 받는다. 이 지표만
 // modelViaSession 세미조인으로 반응하면 "model 필터는 People 지표에 적용되지 않습니다" 배지가
 // 뜬 화면에서 활성 개발자 수만 조용히 필터되어 DAU/MAU와 반대로 움직이는 모순이 생긴다(실측:
 // 리뷰에서 확인). People 섹션 전체가 같은 규칙(model 필터 미적용)을 따르도록 통일한다.
+// excludeUnknown: false — adoptionLevels와 동일한 이유(총계 지표, A/B 비교 아님).
+// 좌경계 fuzz — hour >= toStartOfHour(from)이라 from이 정각이 아니면 최대 59분 앞선 활동까지
+// uniq에 잡힐 수 있다. 기본 48h 뷰에선 <2%로 무시할 수준이지만, 이 PR의 핵심 신기능인 좁은
+// 드래그 줌(예: 10분)에서는 왜곡이 커지고 costPerDev/productivity score로 전파된다(리뷰에서
+// 2라운드 연속 MAJOR로 재확인 — Round 12에선 "document" 판정으로 남겼으나 반복 지적돼 이번엔
+// 고친다). incFlat/costByModelCompare와 동일한 span<=4h(incFlatRaw) 임계로 raw 폴백 —
+// adoptionLevels/adoptionTimeseries/userLeaderboard.active_days는 각각 30일/91일/선택 구간
+// 전체를 보는 스냅샷·롤링 윈도우라 "좁은 드래그 줌" 시나리오가 성립하지 않아(구간이 넓을수록
+// 좌경계 59분의 상대 영향이 이미 작음) 이번 라운드에선 activeUsers만 고친다.
 export async function activeUsers(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
-  const rows = await query(
-    `${GROUP_CTE}
-    SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
-    FROM claude_code.otel_metrics_sum m
-    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.MetricName = 'claude_code.session.count'
-      AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}`,
-    { ...range(from, to), ...f.params }
-  );
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
+  const rows = incFlatRaw(to - from)
+    ? await query(
+        `${GROUP_CTE}
+        SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
+        FROM claude_code.otel_metrics_sum m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE m.MetricName = 'claude_code.session.count'
+          AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}`,
+        { from: toChDateTime(from), to: toChDateTime(to), ...f.params }
+      )
+    : await query(
+        `${GROUP_CTE}
+        SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
+        FROM claude_code.otel_metrics_sum_hourly m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE m.MetricName = 'claude_code.session.count'
+          AND m.hour >= toStartOfHour({from:DateTime}) AND m.hour < {to:DateTime} ${f.where}`,
+        { ...range(from, to), ...f.params }
+      );
   return rows[0] || { users: 0 };
 }
 
@@ -487,10 +887,10 @@ export async function activeUsers(from, to, filters = {}) {
 // adoptionTimeseries가 담당, 아래) activity.js와 짝인 순수 계산 경로라 보존한다.
 export async function activeUsersTimeseries(from, to) {
   const rows = await query(
-    `SELECT toDate(TimeUnix, 'UTC') AS day, UserEmail
-     FROM claude_code.otel_metrics_sum
+    `SELECT toDate(hour, 'UTC') AS day, UserEmail
+     FROM claude_code.otel_metrics_sum_hourly
      WHERE MetricName = 'claude_code.session.count' AND UserEmail != ''
-       AND TimeUnix >= {from:DateTime} - INTERVAL ${MAU_WINDOW_DAYS} DAY AND TimeUnix < {to:DateTime}
+       AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${MAU_WINDOW_DAYS} DAY AND hour < {to:DateTime}
      GROUP BY day, UserEmail`,
     range(from, to)
   );
@@ -503,7 +903,7 @@ export async function activeUsersTimeseries(from, to) {
 // 같은 페이지의 필터된 KPI/leaderboard와 모수가 어긋난다.
 export async function dailyEngagement(from, to, intervalHours = 24, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
-  const b = bucket(intervalHours);
+  const b = incBucket(intervalHours, `AND MetricName IN ('claude_code.session.count', 'claude_code.pull_request.count')`);
   return query(
     `${GROUP_CTE}
     SELECT
@@ -513,11 +913,11 @@ export async function dailyEngagement(from, to, intervalHours = 24, filters = {}
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')     AS prs,
         round(sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')
               / nullIf(uniqExactIf(m.UserEmail, m.MetricName = 'claude_code.session.count'), 0), 2) AS prs_per_user
-    FROM ${incBucketed(b.expr, `AND MetricName IN ('claude_code.session.count', 'claude_code.pull_request.count')`)} m
+    FROM ${b.sub} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY t ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
 }
 
@@ -537,7 +937,11 @@ export async function mcpConnectorUsage(from, to, filters = {}) {
     WHERE l.EventName = 'tool_result' AND l.McpServerName != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", connector ORDER BY "group", calls DESC`,
-    { ...range(from, to), ...f.params }
+    // raw=true — 이 쿼리는 rollup이 아니라 otel_logs(Timestamp 정밀 비교)를 직접 스캔한다.
+    // range()의 historical-to 정각 내림은 rollup의 부분-hour 버킷 과대집계를 막기 위한 것으로,
+    // 이 로그 테이블엔 그 문제가 없다 — 정렬하면 오히려 드래그 줌에서 최근 최대 59분의 로그가
+    // 순수하게 사라진다(리뷰에서 MAJOR로 확인).
+    { ...range(from, to, true), ...f.params }
   );
 }
 
@@ -559,7 +963,8 @@ export async function agenticness(from, to, intervalHours = 24, filters = {}) {
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    // raw=true — otel_logs 직접 스캔(rollup 없음), mcpConnectorUsage와 동일 이유.
+    { ...range(from, to, true), ...b.params, ...f.params }
   );
 }
 
@@ -578,17 +983,21 @@ export async function toolMcpUsage(from, to, filters = {}) {
     WHERE l.EventName = 'tool_result'
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", tool, mcp_server ORDER BY "group", total DESC LIMIT 50`,
-    { ...range(from, to), ...f.params }
+    // raw=true — otel_logs 직접 스캔(rollup 없음), mcpConnectorUsage와 동일 이유.
+    { ...range(from, to, true), ...f.params }
   );
 }
 
 // Cost 페이지: 그룹별 비용/토큰 요약. 비용은 토큰 실측 × 단가표(pricing.js)로 계산 —
 // Claude Code 자체 보고 비용(reported_cost)은 비교용으로만 같이 내려준다.
 // 단가는 모델별로 다르므로 SQL은 그룹+모델 단위로 집계하고, 그룹 합계는 JS에서 fold한다.
+// excludeUnknown: false — kpiSummary와 동일한 이유(응답 전체 합계가 "총 지출/개발자당 지출"
+// 총계로 쓰인다, Cost.jsx/Executive.jsx). unknown을 빼면 activeUsers(unknown 포함) 대비
+// 분자가 작아져 개발자당 지출이 실제보다 낮게 나온다(리뷰에서 MAJOR로 확인).
 export async function costSummary(from, to, filters = {}) {
   // model 필터는 SELECT에 model 정규화 컬럼이 있지만, sessions는 Model attribute가 없는
   // session.count 행을 합산하는 혼합 지표라 kpiSummary와 같은 modelMixed가 필요.
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -598,11 +1007,11 @@ export async function costSummary(from, to, filters = {}) {
         sumIf(m.Value, m.MetricName = 'claude_code.session.count') AS sessions
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.cost.usage', 'claude_code.token.usage', 'claude_code.session.count'
-      )`)} m
+      )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
   const byGroup = new Map();
   for (const r of withComputedCost(rows)) {
@@ -642,11 +1051,11 @@ export async function costByModel(from, to, filters = {}) {
   const rows = await query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
-    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
+    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
   return withComputedCost(rows).map((r) => ({
     ...r,
@@ -663,11 +1072,11 @@ export async function costByUserModel(from, to, filters = {}) {
   const rows = await query(
     `${GROUP_CTE}
     SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
-    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
+    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' AND m.UserEmail != '' ${f.where}
     GROUP BY user, model ORDER BY user`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
   return withComputedCost(rows).map((r) => ({
     ...r,
@@ -687,12 +1096,16 @@ export async function userToolUsage(from, to, filters = {}) {
     WHERE l.EventName = 'tool_result' AND l.UserEmail != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY user, tool ORDER BY user, uses DESC`,
-    { ...range(from, to), ...f.params }
+    // raw=true — otel_logs 직접 스캔(rollup 없음). mcpConnectorUsage/toolMcpUsage와 같은 이유로
+    // 리뷰가 명시적으로 지적한 건 아니지만 동일 카테고리 버그라 같이 고친다.
+    { ...range(from, to, true), ...f.params }
   );
 }
 
 // 유저별 어떤 skill을 얼마나 썼는지. (skillUsage와 동일한 이유로 cost.usage 기준 유지 — cost.usage는
 // Model을 갖고 있어 model 필터도 걸 수 있다)
+// 원본 테이블을 유지하는 유일한 스냅샷 쿼리 — invocations가 count()(원시 export-tick 행 수 근사)라
+// 시간별 rollup으로 접으면 값이 달라진다. cost.usage+SkillName!='' 필터가 좁아 원본이어도 저렴.
 export async function userSkillUsage(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
@@ -703,24 +1116,30 @@ export async function userSkillUsage(from, to, filters = {}) {
     WHERE m.MetricName = 'claude_code.cost.usage' AND m.SkillName != '' AND m.UserEmail != ''
       AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}
     GROUP BY user, skill ORDER BY user, invocations DESC`,
-    { ...range(from, to), ...f.params }
+    // raw=true — otel_metrics_sum 원본 직접 스캔(rollup 없음), mcpConnectorUsage와 동일 이유.
+    { ...range(from, to, true), ...f.params }
   );
 }
 
 // Trends 페이지: 일별 DAU/WAU/MAU 시계열. 롤링 윈도우(7일/30일)는 ClickHouse에서 일별 유저
 // 집합만 뽑고 JS에서 접는다 — 유저 수가 수백 명 수준이라 집합 union이 싸고, SQL 셀프조인보다
-// 단순하다. uniq류는 존재 여부만 보므로 cumulative 중복 누적에 영향받지 않아 원본 테이블 사용.
+// 단순하다. uniq류는 존재 여부만 보므로 시간별 rollup으로 접혀도 값이 같다(키 보존).
 // 날짜 키는 toDate(..., 'UTC')로 고정 — JS는 toISOString()(UTC)로 롤링 union하므로 서버 TZ가
 // UTC가 아니어도 하루 어긋나지 않는다(activeUsersTimeseries와 동일 규칙).
+// excludeUnknown: false — activeUsers/adoptionLevels와 같은 "총계/DAU·WAU·MAU" 계열이라
+// 그룹 무관 모수여야 한다. 빠뜨리면 이 시계열만 unknown ~11%가 빠져 Trends의 DAU/WAU/MAU가
+// Overview 스냅샷(adoptionLevels)보다 낮게 나오는 모순이 생긴다(리뷰에서 MAJOR로 확인).
+// 좌경계 fuzz는 activeUsers 위 주석과 동일(document 판정) — 여긴 30일 lookback의 시작점에만
+// 영향을 줘 활동 밀도상 영향이 더 작다.
 export async function adoptionTimeseries(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail" });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
   const rows = await query(
     `${GROUP_CTE}
-    SELECT toDate(m.TimeUnix, 'UTC') AS d, groupUniqArray(m.UserEmail) AS users
-    FROM claude_code.otel_metrics_sum m
+    SELECT toDate(m.hour, 'UTC') AS d, groupUniqArray(m.UserEmail) AS users
+    FROM claude_code.otel_metrics_sum_hourly m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.MetricName = 'claude_code.session.count' AND m.UserEmail != ''
-      AND m.TimeUnix >= {from:DateTime} - INTERVAL 30 DAY AND m.TimeUnix < {to:DateTime} ${f.where}
+      AND m.hour >= toStartOfHour({from:DateTime}) - INTERVAL 30 DAY AND m.hour < {to:DateTime} ${f.where}
     GROUP BY d ORDER BY d`,
     { ...range(from, to), ...f.params }
   );
@@ -742,20 +1161,20 @@ export async function adoptionTimeseries(from, to, filters = {}) {
 
 // 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열.
 export async function userDaily(from, to, email) {
-  const b = bucket(24);
+  const b = incBucket(24, `AND MetricName IN (
+        'claude_code.session.count', 'claude_code.lines_of_code.count',
+        'claude_code.token.usage', 'claude_code.commit.count'
+      )`);
   return query(
     `SELECT t,
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')       AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits
-    FROM ${incBucketed(b.expr, `AND MetricName IN (
-        'claude_code.session.count', 'claude_code.lines_of_code.count',
-        'claude_code.token.usage', 'claude_code.commit.count'
-      )`)} m
+    FROM ${b.sub} m
     WHERE m.UserEmail = {email:String}
     GROUP BY t ORDER BY t`,
-    { ...range(from, to), ...b.params, email }
+    { ...range(from, to, b.raw), ...b.params, email }
   );
 }
 
@@ -769,30 +1188,37 @@ export async function userDecisionsByTool(from, to, email) {
 // 세션 수는 SessionId 존재 기반(uniqExact)이라 temporality 무관.
 export async function userHeatmap(to, email, days = 91) {
   return query(
-    `SELECT toDate(TimeUnix, 'UTC') AS d, uniqExact(SessionId) AS sessions
-    FROM claude_code.otel_metrics_sum
+    `SELECT toDate(hour, 'UTC') AS d, uniqExact(SessionId) AS sessions
+    FROM claude_code.otel_metrics_sum_hourly
     WHERE UserEmail = {email:String} AND MetricName = 'claude_code.session.count' AND SessionId != ''
-      AND TimeUnix >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND TimeUnix < {to:DateTime}
+      AND hour >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND hour < {to:DateTime}
     GROUP BY d ORDER BY d`,
     { to: toChDateTime(to), email, days }
   );
 }
 
 // 패널10 확장: 유저별 리더보드 (생산성 점수는 이 raw 값을 productivity.js에서 계산). active_days는
-// "존재하는 날짜 수"라 temporality와 무관 — 원본 테이블에서 바로 distinct count로 구해 별도 CTE로 조인.
+// "존재하는 날짜 수"라 temporality와 무관 — rollup에서 바로 distinct count로 구해 별도 CTE로 조인.
 export async function userLeaderboard(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   // active_days에도 같은 필터를 건다(컬럼 참조만 CTE 기준으로) — 안 걸면 group/model 필터 상태에서
   // sessions/loc는 필터되는데 활성일수(점수 가중치 0.15)만 전체 활동 기준이라 점수가 불일치한다.
   // 파라미터 이름/값이 f와 동일해 중복 병합은 무해.
+  // active_days CTE의 MetricName='claude_code.session.count' 필터: "존재 여부"만 보므로 활동이
+  // 있는 날엔 반드시 session.count 행이 있어(30초마다 재보고) 의미 손실이 없고(adoptionLevels/
+  // userHeatmap과 동일 근거), 전체 metric을 스캔할 때보다 3배 빠르다(실측 2026-07-10: 8.0→2.5초 —
+  // 필터가 없으면 이 쿼리가 워밍/실요청에서 ClickHouse 클라이언트 15초 타임아웃까지 갔다).
+  // 좌경계 fuzz는 activeUsers 위 주석과 동일(document 판정) — 여기선 active_days가 생산성
+  // 점수 가중치 0.15의 입력이라 극단적으로 좁은 커스텀 구간에서 ±1일 정도의 왜곡 가능성 인지.
   const fAd = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelMixed: { model: "Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE},
     active_days AS (
-        SELECT UserEmail, uniqExact(toDate(TimeUnix, 'UTC')) AS active_days
-        FROM claude_code.otel_metrics_sum m
+        SELECT UserEmail, uniqExact(toDate(hour, 'UTC')) AS active_days
+        FROM claude_code.otel_metrics_sum_hourly m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-        WHERE UserEmail != '' AND TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} ${fAd.where}
+        WHERE UserEmail != '' AND MetricName = 'claude_code.session.count'
+          AND hour >= toStartOfHour({from:DateTime}) AND hour < {to:DateTime} ${fAd.where}
         GROUP BY UserEmail
     )
     SELECT
@@ -811,11 +1237,11 @@ export async function userLeaderboard(from, to, filters = {}) {
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.token.usage', 'claude_code.lines_of_code.count',
         'claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.code_edit_tool.decision'
-      )`)} m
+      )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
     WHERE m.UserEmail != '' ${f.where}
     GROUP BY user ORDER BY tokens DESC`,
-    { ...range(from, to), ...f.params, ...fAd.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params, ...fAd.params }
   );
 }

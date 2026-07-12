@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeModelId, priceFor, withComputedCost, tierCosts } from "./pricing.js";
+import { normalizeModelId, priceFor, withComputedCost, tierCosts, tierCostsByGroup } from "./pricing.js";
 
 test("normalizeModelId strips bedrock/date/context-window variants", () => {
   assert.equal(normalizeModelId("us.anthropic.claude-sonnet-4-5-20250929-v1:0"), "claude-sonnet-4-5");
@@ -43,6 +43,18 @@ test("tierCosts sums $ per token tier across rows, skipping unpriced models", ()
   assert.equal(t.output, 15); // $15/M output
   assert.equal(t.cacheRead, 0.3); // $0.3/M cacheRead
   assert.equal(t.cacheWrite, 3.75); // $3.75/M cacheWrite
+});
+
+test("tierCostsByGroup splits tierCosts by bedrock/enterprise group", () => {
+  const rows = [
+    { group: "bedrock", model: "claude-sonnet-4-5", input_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
+    { group: "enterprise", model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 1_000_000, cache_read_tokens: 0, cache_write_tokens: 0 },
+  ];
+  const t = tierCostsByGroup(rows);
+  assert.equal(t.bedrock.uncachedInput, 3);
+  assert.equal(t.bedrock.output, 0);
+  assert.equal(t.enterprise.output, 15);
+  assert.equal(t.enterprise.uncachedInput, 0);
 });
 
 test("withComputedCost flags unpriced models without dropping reported_cost", () => {

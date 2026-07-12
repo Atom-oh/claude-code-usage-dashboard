@@ -57,12 +57,16 @@ export default function Trends() {
           <ErrorBox error={ts.error} />
         ) : (
           <>
+            {/* adoption/timeseries는 항상 일 단위(24h) 버킷 — 전역 intervalHours(1~24h)와
+                무관하므로 드래그 줌 우측 보정에 실제 버킷 크기를 명시해야 한다(리뷰에서 MAJOR로
+                확인: 안 넘기면 전역이 시간 단위일 때 우측 끝 날짜의 대부분이 잘려나간다). */}
             <DualLineChart
               title="활성 유저 (DAU · WAU · MAU)"
               rows={ts.data}
               xKey="t"
               height={300}
               tickFormatter={fmtDate}
+              bucketHours={24}
               lines={[
                 { key: "dau", label: "DAU", axis: "left" },
                 { key: "wau", label: "WAU", axis: "left" },
@@ -75,6 +79,7 @@ export default function Trends() {
               rows={ts.data}
               xKey="t"
               tickFormatter={fmtDate}
+              bucketHours={24}
               lines={[{ key: "stickiness", label: "고착도 %", axis: "left" }]}
             />
           </>

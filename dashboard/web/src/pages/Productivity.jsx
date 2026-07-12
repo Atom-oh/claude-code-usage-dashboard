@@ -1,7 +1,8 @@
 import { Badge } from "../components/Badge.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
-import { GroupAreaChart, GroupBarChart, DualLineChart, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { GroupAreaChart, GroupBarChart, DualLineChart, SeriesBarChart, HBarList } from "../components/GroupCharts.jsx";
+import { DataTable } from "../components/DataTable.jsx";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
@@ -9,6 +10,7 @@ import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
+const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
 
 export default function Productivity() {
@@ -22,6 +24,7 @@ export default function Productivity() {
   const agentic = useApi("/api/productivity/agenticness");
   const engagement = useApi("/api/productivity/engagement");
   const locTrend = useApi("/api/productivity/loc-timeseries");
+  const leaderboard = useApi("/api/users/leaderboard");
 
   const activeHours = active.data?.map((r) => ({ ...r, active_seconds: r.active_seconds / 3600 }));
 
@@ -46,6 +49,10 @@ export default function Productivity() {
   );
   const acceptRate = decisionTotals.total > 0 ? decisionTotals.accept / decisionTotals.total : 0;
 
+  const top10ByScore = [...(leaderboard.data || [])]
+    .sort((a, b) => Number(b.productivity_score) - Number(a.productivity_score))
+    .slice(0, 10);
+
   return (
     <div>
       <PageHeader
@@ -69,6 +76,39 @@ export default function Productivity() {
               hint="추정치: 작성 라인 × 수락률"
             />
           </div>
+        )}
+
+        {leaderboard.loading ? (
+          <Loading />
+        ) : leaderboard.error ? (
+          <ErrorBox error={leaderboard.error} />
+        ) : (
+          <HBarList
+            title="사용자별 생산성 — Top 10"
+            subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day)"
+            data={top10ByScore.map((r) => ({ ...r, score: Number(r.productivity_score) }))}
+            labelKey="user"
+            valueKey="score"
+          />
+        )}
+
+        {leaderboard.loading ? null : leaderboard.error ? null : (
+          <DataTable
+            title="사용자별 생산성"
+            subtitle="Users 페이지 리더보드와 동일 지표 — 상세 히트맵/일별 추이는 Users 페이지에서"
+            columns={[
+              { key: "group", label: "그룹" },
+              { key: "user", label: "유저" },
+              { key: "productivity_score", label: "생산성 점수", render: (v) => Number(v).toFixed(1) },
+              { key: "loc", label: "추가 라인", render: fmt },
+              { key: "commits", label: "커밋", render: fmt },
+              { key: "prs", label: "PR", render: fmt },
+              { key: "accept_rate", label: "수락률", render: pct },
+              { key: "sessions", label: "세션", render: fmt },
+              { key: "active_days", label: "활성일", render: fmt },
+            ]}
+            rows={leaderboard.data || []}
+          />
         )}
 
         {engagement.loading ? (

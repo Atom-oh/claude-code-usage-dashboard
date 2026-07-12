@@ -20,16 +20,20 @@
 // 세션만으로 그 유저의 나머지 enterprise 세션까지 전부 bedrock으로 덮어써버린다(실측: 15세션 중
 // 3개만 bedrock인데 유저 전체가 bedrock으로 나옴). SessionId는 otel_metrics_sum(ALTER로 추가)과
 // otel_logs(원래 스키마) 양쪽에 이미 promoted column이라 스키마 변경 없이 그레인만 바꾸면 된다.
+// 원본이 아니라 시간별 rollup(otel_metrics_sum_hourly)을 읽는다 — 이 CTE는 모든 대시보드
+// 쿼리 앞에 붙는데 시간 조건이 없어서(세션의 그룹은 창 밖 행으로 판별될 수 있음) 원본 기준으론
+// 쿼리마다 전체 테이블 풀스캔이었다(실측 2026-07-10: 9.5M행, 쿼리당 read_rows 26M의 주요 지분).
+// rollup은 ~86x 작고 organization.id 존재 여부가 has_org로 미리 접혀 있어 무제한 스캔이 저렴하다.
 export const GROUP_CTE = `
 WITH session_group AS (
     SELECT
         SessionId,
         multiIf(
             countIf(Model LIKE '%anthropic.%' OR Model LIKE '%:%') > 0, 'bedrock',
-            countIf(Attributes['organization.id'] != '') > 0, 'enterprise',
+            max(has_org) = 1, 'enterprise',
             'unknown'
         ) AS grp
-    FROM claude_code.otel_metrics_sum
+    FROM claude_code.otel_metrics_sum_hourly
     WHERE SessionId != ''
     GROUP BY SessionId
 )`;
