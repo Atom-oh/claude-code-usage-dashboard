@@ -41,7 +41,10 @@ export default function Cost() {
   // 안 그러면 7일 보다가 1일로 바꿔도 "일간" 버킷에 머문다. days도 dependency에 넣는다: 주간(168)을
   // 수동 선택한 뒤 30일→7일로 바꾸면 defaultIntervalHours(24)는 불변이라 effect가 안 돌아 주간 버킷이
   // 남는데(7일=바 1개), days가 바뀌므로 이때도 기본 granularity로 리셋된다.
-  useEffect(() => setIntervalHours(defaultIntervalHours), [defaultIntervalHours, days]);
+  // from/to의 getTime()도 필요하다 — 드래그 줌으로 커스텀 구간을 옮겨도(days는 프리셋 전용이라
+  // 안 바뀌고 defaultIntervalHours도 같은 해상도로 우연히 같은 값이면) effect가 재실행되지 않아
+  // 이 페이지의 차트만 옛 구간의 intervalHours에 머문다(리뷰에서 MINOR로 확인).
+  useEffect(() => setIntervalHours(defaultIntervalHours), [defaultIntervalHours, days, from.getTime(), to.getTime()]);
   const fmtTick = makeTickFmt(intervalHours);
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");

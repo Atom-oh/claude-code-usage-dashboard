@@ -10,6 +10,18 @@ export function parseUtc(label) {
   return new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00Z` : `${s.replace(" ", "T")}Z`);
 }
 
+// 기간 길이를 사람이 읽는 단위로 — daysInRange(fractional day)를 무조건 "N일"로 올림 표시하면
+// 드래그 줌으로 만든 10분/2시간짜리 커스텀 구간도 "지난 1일간"으로 나온다(리뷰에서 MINOR로
+// 확인 — daysInRange 자체의 계산은 이미 (to-from) 기준으로 정확하고, 표시 라벨만 오해를 준다).
+// 1일 미만이면 분/시간 단위로, 그 이상이면 기존처럼 올림한 일수로 표시한다.
+export function formatDuration(daysInRange) {
+  if (daysInRange >= 1) return `${Math.ceil(daysInRange)}일`;
+  const totalMinutes = Math.round(daysInRange * 1440);
+  if (totalMinutes < 60) return `${totalMinutes}분`;
+  const hours = Math.round(totalMinutes / 60);
+  return `${hours}시간`;
+}
+
 // 버킷 크기에 맞춰 라벨 세밀도를 바꾼다 — 안 그러면 같은 값이 반복 표시돼 구분이 안 된다.
 // 분 버킷(<1h, 드래그 줌)일 땐 분까지, 시간 버킷(<24h)일 땐 시각까지, 일/주 버킷일 땐 날짜만.
 export const makeTickFmt = (intervalHours) => (t) =>
