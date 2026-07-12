@@ -102,15 +102,21 @@ test("incFlat falls back to the raw table for spans under the 4h minute-bucket t
   assert.match(defaultSpan, /FROM claude_code\.otel_metrics_sum_hourly/);
 });
 
-// rollup 분기(span≥4h, 기본 2일 뷰 포함)의 cumulative baseline은 `hour < from`이어야 한다 —
-// `hour < toStartOfHour(from)`을 쓰면 baseline이 from이 속한 hour 버킷 하나만큼 더 이전
-// 시점을 봐, diff(끝값-baseline)가 그 부분 hour의 실제 증가분만큼 과대집계된다(라이브
-// 클러스터 실측, 2026-07-12: 한 세션에서 504만 토큰 차이로 재현 — 기본 뷰에서도 상시
-// 발생하던 MAJOR).
-test("incFlat's rollup branch baselines cumulative counters at `from`, not toStartOfHour(from)", () => {
+// rollup 분기(span≥4h, 기본 2일 뷰 포함)의 cumulative baseline은 from이 속한 hour 버킷을
+// 원본 테이블로 stitch해야 한다 — hour는 "그 버킷 종료 시점" 값이라 어느 쪽 근사(toStartOfHour
+// 내림 또는 hour<from 그대로)도 단독으로는 부정확하다:
+//   - hour < toStartOfHour(from): baseline이 너무 작아짐 → diff 과대집계(라이브 실측: 한
+//     세션에서 504만 토큰 차이).
+//   - hour < from (라운드 9 시도): from이 속한 hour 버킷의 "종료 시점"(최대 59분 미래) 값을
+//     baseline으로 씀 → diff 과소집계(라이브 실측: 같은 종류 세션에서 27,066 차이 재현,
+//     리뷰에서 재확인 — 방향이 반대인 별개의 오차였다).
+// UNION ALL로 from이 속한 hour만 원본 stitch 서브쿼리로 대체하는 게 유일한 정확한 해법 —
+// 라이브 클러스터에서 전체 SQL을 실행해 정확한 diff(27,066)가 나옴을 확인했다.
+test("incFlat's rollup branch stitches the from-hour bucket from the raw table for exact baseline", () => {
   const rollup = incFlat("", 6 * 3600000); // 4h 초과 → rollup 분기
-  assert.match(rollup, /maxIf\(max_value, hour < \{from:DateTime\}\)/);
-  assert.doesNotMatch(rollup, /maxIf\(max_value, hour < toStartOfHour\(\{from:DateTime\}\)\)/);
+  assert.match(rollup, /UNION ALL/);
+  assert.match(rollup, /maxIf\(Value, TimeUnix < \{from:DateTime\}\) AS mv/);
+  assert.match(rollup, /hour != toStartOfHour\(\{from:DateTime\}\)/);
 });
 
 // incFlatRaw()의 임계값이 index.js의 clampIntervalHours(`to-from > 4h`일 때만 클램프 — 정확히

@@ -227,23 +227,54 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
       GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
     )`;
   }
-  // cumulative(temp=2) baseline은 hour < toStartOfHour(from)이 아니라 hour < from을 써야
-  // 한다 — 실측(라이브 클러스터, 2026-07-12): 한 세션에서 toStartOfHour(from) 기준 baseline이
-  // 581,553,473인데 실제 from 시점 값은 586,596,065라 diff가 504만 더 크게 나왔다(리뷰에서
-  // MAJOR로 확인 — 기본 2일 뷰를 포함한 모든 rollup 경로 스냅샷에서 상시 발생). hour가 항상
-  // 정각이라 `hour < from`은 from이 속한 hour 버킷까지 포함해 그 시점의 실제 누적값을 보게
-  // 되므로(라이브 검증: hour<from ≡ hour<=toStartOfHour(from)), toStartOfHour로 내림하지
-  // 않아도 baseline이 부정확해지지 않는다 — 왼쪽 경계 확장은 없어진다.
+  // cumulative(temp=2) baseline의 hour 경계 처리 — 두 방향 오류를 모두 실측으로 확인했다.
+  // hour는 "그 버킷 종료 시점" 누적값이라 어느 쪽으로 근사해도 오차가 생긴다:
+  //   - `hour < toStartOfHour(from)`(원래 방식): from이 속한 hour 버킷 자체를 baseline에서
+  //     빼 baseline이 너무 작아짐 → diff가 그 부분 hour의 실제 증가분만큼 과대집계.
+  //   - `hour < from`(라운드 9에서 시도): from이 속한 hour 버킷의 "종료 시점" 값(최대 59분
+  //     미래)을 baseline으로 씀 → diff가 그만큼 과소집계(리뷰에서 재확인 — 라이브 클러스터로
+  //     실제 세션 하나에서 baseline이 정확값보다 27,066 더 크게 잡혀 diff가 그만큼 작게
+  //     나오는 걸 직접 검증했다).
+  // 유일한 정확한 해법: from이 속한 hour 버킷만 원본 테이블로 대체(stitch)한다 — 그 버킷의
+  // "정확히 from 시점까지"의 값을 raw에서 구해 rollup의 그 버킷 자리에 끼운다. span≥4h(이
+  // 분기의 전제)에서는 from과 to가 같은 hour에 속할 수 없어 to 쪽 stitch는 필요 없다.
+  //
+  // 이 stitch로 incFlat(스냅샷)은 이제 정확하지만, incBucketed(시계열)는 여전히 다른 결함이
+  // 있다 — 버킷 경계가 항상 정각(bucketExpr이 rollup의 정각 hour 컬럼 기반)이라 `WHERE t >=
+  // from`이 from이 속한 부분 시간 버킷을 통째로 걸러낸다. 실측(라이브 클러스터, 실제
+  // useApi.js quantize 로직으로 만든 기본 2일 뷰 from/to 그대로 재현): KPI 1,975,497,445 vs
+  // 시계열 합계 1,944,228,273 — 차이 31,269,172(1.58%), [from, 다음 정각) 구간의 실제 증가량과
+  // 정확히 일치. **워크샵 기본 뷰에서 상시 발생하는 실질적 크기의 차이**(quantize가 120초
+  // 단위라 from이 정각에 맞을 확률은 거의 0) — "작다"고 단정할 수 없다. incBucketed의 첫
+  // 버킷도 같은 stitch를 적용해야 완전히 해소되나, 시계열 버킷 경계 자체를 재구성해야 해서
+  // 이 PR 스코프를 넘어선다. 알려진 잔여 불일치로 남기고 후속 작업으로 넘긴다 — incFlat(총계
+  // 카드)이 정확해진 것이 핵심 목표였고, incBucketed(차트 막대/선)는 여전히 rollup의 hour
+  // 그레인이 만드는 근본적 제약을 받는다.
   return `(
     SELECT
         SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
         if(temp = 2,
-            greatest(maxIf(max_value, hour < {to:DateTime}) - maxIf(max_value, hour < {from:DateTime}), 0),
-            sumIf(sum_value, hour >= toStartOfHour({from:DateTime}) AND hour < {to:DateTime})) AS Value
-    FROM claude_code.otel_metrics_sum_hourly
-    WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
-      ${metricFilter}
-    GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+            greatest(maxIf(mv, h < {to:DateTime}) - maxIf(mv, h < {from:DateTime}), 0),
+            sumIf(sv, h >= toStartOfHour({from:DateTime}) AND h < {to:DateTime})) AS Value
+    FROM (
+        SELECT hour AS h, SeriesKey AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
+            max_value AS mv, sum_value AS sv
+        FROM claude_code.otel_metrics_sum_hourly
+        WHERE hour != toStartOfHour({from:DateTime})
+          AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+          ${metricFilter}
+        UNION ALL
+        SELECT
+            toStartOfHour({from:DateTime}) AS h, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
+            Attributes['tool_name'] AS ToolName,
+            maxIf(Value, TimeUnix < {from:DateTime}) AS mv,
+            sumIf(Value, TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < {from:DateTime}) AS sv
+        FROM claude_code.otel_metrics_sum
+        WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR
+          ${metricFilter}
+        GROUP BY sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+    )
+    GROUP BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
   )`;
 }
 
