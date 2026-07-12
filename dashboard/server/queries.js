@@ -284,6 +284,17 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
   )`;
 }
 
+// from이 속한 버킷의 시작/끝 경계 — incBucketed의 first-bucket raw stitch(아래)가 이 경계로
+// "그 버킷 안에서 from 이후만" 만큼만 보정한다. bucket()과 동일한 HOUR/DAY 규칙을
+// {from:DateTime}에 그대로 적용해(분 버킷은 incBucketedRaw 담당이라 여기 안 옴), 실제
+// bucketExpr이 만드는 버킷 폭과 항상 일치시킨다 — 하드코딩된 toStartOfHour(from)이었다면
+// day 버킷(intervalHours>=24)에서 폭이 안 맞아 보정이 어긋났을 것.
+function fromBucketBounds(intervalHours) {
+  const start = bucket(intervalHours, "{from:DateTime}");
+  const width = intervalHours >= 24 ? "{intervalDays:UInt32} DAY" : "{intervalHours:UInt32} HOUR";
+  return { startExpr: start.expr, endExpr: `${start.expr} + INTERVAL ${width}` };
+}
+
 // incFlat의 시계열(버킷) 버전 — rollup을 hour/day 버킷으로 재집계한다. 버킷별로 cumulative는
 // "그 버킷의 마지막 누적값 - 이전 버킷의 마지막 누적값"(lagInFrame), delta는 버킷 내 합을 쓴다.
 // lookback 구간의 버킷은 첫 실구간 버킷의 diff baseline으로만 쓰이고 바깥 WHERE t >= from에서
@@ -298,21 +309,46 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
 // 주석). 이번엔 라이브 ClickHouse에서 프로덕션과 동일한 2단 구조(버그 재현: lag=0, baseline
 // 유실)와 3단 구조(정상: lag=이전 버킷값)를 나란히 실행해 실제로 값이 다르다는 것을
 // 직접 확인했다 — 3단 구조가 유일하게 안전하다.
-function incBucketed(bucketExpr, metricFilter = "") {
+//
+// first-bucket raw stitch(라운드 12 추가): 위 3단 구조로도 t=from이 속한 첫 버킷은 여전히
+// [버킷 시작, 버킷 끝) 전체를 담아, WHERE t>=from을 통과하려면 t(버킷 시작)>=from이어야 하는데
+// from이 정각/자정이 아니면 t<from이라 그 버킷 전체가 탈락한다 — incFlat(스냅샷)은 같은 구간을
+// raw로 보정해서 잡는데 시계열은 놓쳐, 기본 2일 뷰에서 KPI 합계와 시계열 합계가 실측 1.58%
+// 어긋났다(리뷰에서 4/4 모델 합의 MAJOR). incFlat과 동일한 UNION ALL raw-stitch를 여기도
+// 적용한다 — cumulative는 baseline을 greatest(이전 버킷 cum, raw로 구한 정확한 from 시점 값)로
+// 보정(다른 버킷의 from_bucket_raw_baseline은 항상 0이라 무해), delta는 첫 버킷의 cum 자체를
+// raw [from, 버킷 끝) 재계산값으로 통째 교체한다(다른 버킷은 그대로).
+function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
+  const { startExpr, endExpr } = fromBucketBounds(intervalHours);
   return `(
     SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
         SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
             if(temp = 2,
-                greatest(cum - lagInFrame(cum, 1, 0) OVER (
+                greatest(cum - greatest(lagInFrame(cum, 1, 0) OVER (
                     PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
-                ), 0),
-                cum) AS Value
+                ), from_bucket_raw_baseline), 0),
+                if(t = ${startExpr}, from_bucket_raw_delta, cum)) AS Value
         FROM (
-            SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
-                if(AggregationTemporality = 2, max(max_value), sum(sum_value)) AS cum
-            FROM claude_code.otel_metrics_sum_hourly
-            WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
-              ${metricFilter}
+            SELECT t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision,
+                if(temp = 2, max(mv), sum(sv)) AS cum,
+                max(from_bucket_raw_baseline) AS from_bucket_raw_baseline,
+                max(from_bucket_raw_delta) AS from_bucket_raw_delta
+            FROM (
+                SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
+                    max_value AS mv, sum_value AS sv, 0 AS from_bucket_raw_baseline, 0 AS from_bucket_raw_delta
+                FROM claude_code.otel_metrics_sum_hourly
+                WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+                  ${metricFilter}
+                UNION ALL
+                SELECT ${startExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
+                    0 AS mv, 0 AS sv,
+                    maxIf(Value, TimeUnix < {from:DateTime}) AS from_bucket_raw_baseline,
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < ${endExpr}) AS from_bucket_raw_delta
+                FROM claude_code.otel_metrics_sum
+                WHERE TimeUnix >= ${startExpr} AND TimeUnix < ${endExpr}
+                  ${metricFilter}
+                GROUP BY sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision
+            )
             GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
         )
     )
@@ -350,7 +386,7 @@ function incBucketedRaw(bucketExpr, metricFilter = "") {
 function incBucket(intervalHours, metricFilter = "") {
   const raw = intervalHours < 1; // 분 버킷은 hour-그레인 rollup으로 만들 수 없다
   const b = bucket(intervalHours, raw ? "TimeUnix" : "hour");
-  return { sub: raw ? incBucketedRaw(b.expr, metricFilter) : incBucketed(b.expr, metricFilter), params: b.params, raw };
+  return { sub: raw ? incBucketedRaw(b.expr, metricFilter) : incBucketed(intervalHours, b.expr, metricFilter), params: b.params, raw };
 }
 
 // intervalHours < 1 → MINUTE 버킷(차트 드래그 줌), < 24 → HOUR 버킷, >= 24 → DAY 버킷.
@@ -604,50 +640,114 @@ export async function costByModelDaily(from, to, intervalHours = 24, filters = {
 export async function costByModelCompare(from, to, prevFrom, filters = {}) {
   // outer는 서브쿼리 m의 projection만 보인다 — 원본 Model 컬럼이 아니라 정규화된 alias(model)로 필터.
   const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelNorm: "model" });
-  const rows = await query(
-    `${GROUP_CTE}
-    SELECT model,
-        sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
-        sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
-        sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
-        sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')               AS prev_input_tokens,
-        sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')               AS output_tokens,
-        sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')              AS prev_output_tokens,
-        sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')            AS cache_read_tokens,
-        sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')           AS prev_cache_read_tokens,
-        sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')        AS cache_write_tokens,
-        sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')       AS prev_cache_write_tokens
-    FROM (
-        -- prevFrom을 정렬된 경계(cur = [toStartOfHour(from), toStartOfHour(to)))의 실제 길이로
-        -- 재계산한다 — JS에서 넘어온 prevFrom은 정렬 "전" (to-from)로 계산돼, from/to가 같은
-        -- hour 안이 아니면 정렬 후 cur/prev 창 길이가 달라진다(예: from=10:15,to=11:45면 원래
-        -- prevFrom=08:45인데 정렬 후 cur=[10:00,11:00)=1h, prev=[08:00,10:00)=2h로 비대칭 —
-        -- 리뷰에서 MAJOR로 확인). curFrom/curTo로 정렬 후 길이를 구하고 그만큼을 prevFrom에
-        -- 다시 뺀다.
-        -- from/to가 같은 hour 안(드래그 줌으로 만들 수 있는 sub-hour 구간, 예: 10:15~10:45)이면
-        -- curFrom==curTo가 되어 cur 창이 0초로 붕괴해 비교 카드가 전부 0/empty로 나온다(리뷰에서
-        -- MAJOR로 확인). 이 지표는 "이전 동일 기간 대비"가 목적이라 최소 1시간 창을 보장한다.
-        WITH toStartOfHour({from:DateTime}) AS curFrom,
-             greatest(toStartOfHour({to:DateTime}), curFrom + INTERVAL 1 HOUR) AS curTo,
-             curFrom - (curTo - curFrom) AS prevFrom
-        SELECT
-            SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
-            if(AggregationTemporality = 2,
-                greatest(maxIf(max_value, hour < curFrom) - maxIf(max_value, hour < prevFrom), 0),
-                sumIf(sum_value, hour >= prevFrom AND hour < curFrom)) AS prev_v,
-            if(AggregationTemporality = 2,
-                greatest(maxIf(max_value, hour < curTo) - maxIf(max_value, hour < curFrom), 0),
-                sumIf(sum_value, hour >= curFrom AND hour < curTo)) AS cur_v
-        FROM claude_code.otel_metrics_sum_hourly
-        WHERE MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''
-          AND hour >= toStartOfHour({prevFrom:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
-        GROUP BY ${seriesKey}, SessionId, AggregationTemporality, model, MetricName, TokenType
-    ) m
-    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE 1 = 1 ${f.where}
-    GROUP BY model`,
-    { ...range(from, to), prevFrom: toChDateTime(prevFrom), ...f.params }
-  );
+  const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''";
+  // span<=4h(incFlatRaw와 동일 임계)면 rollup의 hour 라운딩(curFrom=toStartOfHour(from) 등)을
+  // 전혀 타지 않고 raw 테이블에서 정확한 [prevFrom,from)/[from,to) 창을 직접 계산한다 —
+  // costSummary/costByModel(incFlat 경로)이 같은 구간에서 이미 이 정밀도를 쓰므로, 형제 Cost
+  // 카드와 동일한 모수를 비교하게 된다(리뷰에서 MAJOR로 확인: rollup 경로만 쓰면 드래그 줌
+  // sub-4h 구간에서 "이전 기간 대비" 카드가 나머지 카드와 다른 창을 봤다).
+  const rows = incFlatRaw(to - from)
+    ? await query(
+        `${GROUP_CTE}
+        SELECT model,
+            sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
+            sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')               AS prev_input_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')               AS output_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')              AS prev_output_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')            AS cache_read_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')           AS prev_cache_read_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')        AS cache_write_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')       AS prev_cache_write_tokens
+        FROM (
+            SELECT ${seriesKey} AS sk, SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
+                if(AggregationTemporality = 2,
+                    greatest(maxIf(Value, TimeUnix < {from:DateTime}) - maxIf(Value, TimeUnix < {prevFrom:DateTime}), 0),
+                    sumIf(Value, TimeUnix >= {prevFrom:DateTime} AND TimeUnix < {from:DateTime})) AS prev_v,
+                if(AggregationTemporality = 2,
+                    greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS cur_v
+            FROM claude_code.otel_metrics_sum
+            WHERE TimeUnix >= {prevFrom:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+              ${metricFilter}
+            GROUP BY sk, SessionId, AggregationTemporality, model, MetricName, TokenType
+        ) m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE 1 = 1 ${f.where}
+        GROUP BY model`,
+        { from: toChDateTime(from), to: toChDateTime(to), prevFrom: toChDateTime(prevFrom), ...f.params }
+      )
+    : await query(
+        `${GROUP_CTE}
+        SELECT model,
+            sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
+            sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')               AS prev_input_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')               AS output_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')              AS prev_output_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')            AS cache_read_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheRead')           AS prev_cache_read_tokens,
+            sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')        AS cache_write_tokens,
+            sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')       AS prev_cache_write_tokens
+        FROM (
+            -- prevFrom을 정렬된 경계(cur = [toStartOfHour(from), toStartOfHour(to)))의 실제 길이로
+            -- 재계산한다 — JS에서 넘어온 prevFrom은 정렬 "전" (to-from)로 계산돼, from/to가 같은
+            -- hour 안이 아니면 정렬 후 cur/prev 창 길이가 달라진다(예: from=10:15,to=11:45면 원래
+            -- prevFrom=08:45인데 정렬 후 cur=[10:00,11:00)=1h, prev=[08:00,10:00)=2h로 비대칭 —
+            -- 리뷰에서 MAJOR로 확인). curFrom/curTo로 정렬 후 길이를 구하고 그만큼을 prevFrom에
+            -- 다시 뺀다.
+            -- from/to가 같은 hour 안(드래그 줌으로 만들 수 있는 sub-hour 구간, 예: 10:15~10:45)이면
+            -- curFrom==curTo가 되어 cur 창이 0초로 붕괴해 비교 카드가 전부 0/empty로 나온다(리뷰에서
+            -- MAJOR로 확인). 이 지표는 "이전 동일 기간 대비"가 목적이라 최소 1시간 창을 보장한다.
+            -- curTo는 {to:DateTime} 자체를 다시 toStartOfHour로 내림하면 안 된다 — {to}는 이미
+            -- range(from,to)가 alignHistoricalTo()로 정렬을 마친 값이다(라이브 to는 정렬을
+            -- "건너뛰어" 그대로 둔다). 여기서 다시 내림하면 라이브 뷰에서 가장 최근 최대 59분의
+            -- 활동이 통째로 사라져 costSummary/costByModel(incFlat, 라이브 to를 안 내림)보다
+            -- 훨씬 낮게 나온다(라이브 클러스터 실측: 8h33m 구간에서 -17.7%, 제거 후 +4.4%로
+            -- incFlat 자체의 오차 수준과 같아짐 — 리뷰에서 MAJOR로 확인).
+            WITH toStartOfHour({from:DateTime}) AS curFrom,
+                 greatest({to:DateTime}, curFrom + INTERVAL 1 HOUR) AS curTo,
+                 curFrom - (curTo - curFrom) AS prevFrom
+            SELECT
+                SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
+                if(AggregationTemporality = 2,
+                    greatest(maxIf(mv, hh < curFrom) - maxIf(mv, hh < prevFrom), 0),
+                    sumIf(sv, hh >= prevFrom AND hh < curFrom)) AS prev_v,
+                -- cur_v의 baseline(hh < curFrom)은 incFlat이 고친 것과 동일한 결함(hour가 "버킷
+                -- 종료 시점" 값이라 curFrom=toStartOfHour(from)이 정확히 from 시점이 아님)을
+                -- 그대로 갖고 있었다 — costSummary/costByModel과 다른 baseline을 써서 같은
+                -- 화면의 "이전 기간 대비" 카드가 나머지 카드와 어긋났다(리뷰에서 MAJOR로 확인).
+                -- incFlat과 동일한 raw stitch로 보정: rollup의 이전 hour까지 max와 raw로 구한
+                -- 정확한 from 시점 값 중 더 큰 쪽을 baseline으로 쓴다.
+                if(AggregationTemporality = 2,
+                    greatest(maxIf(mv, hh < curTo) - greatest(maxIf(mv, hh < curFrom), max(from_hour_raw_baseline)), 0),
+                    sumIf(sv, hh > curFrom AND hh < curTo) + max(from_hour_raw_delta)) AS cur_v
+            FROM (
+                SELECT hour AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType,
+                    max_value AS mv, sum_value AS sv, 0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta
+                FROM claude_code.otel_metrics_sum_hourly
+                WHERE hour >= toStartOfHour({prevFrom:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+                  ${metricFilter}
+                UNION ALL
+                SELECT
+                    toStartOfHour({from:DateTime}) AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType,
+                    0 AS mv, 0 AS sv,
+                    maxIf(Value, TimeUnix < {from:DateTime}) AS from_hour_raw_baseline,
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR) AS from_hour_raw_delta
+                FROM claude_code.otel_metrics_sum
+                WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR
+                  ${metricFilter}
+                GROUP BY sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType
+            )
+            GROUP BY sk, SessionId, AggregationTemporality, model, MetricName, TokenType
+        ) m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE 1 = 1 ${f.where}
+        GROUP BY model`,
+        { ...range(from, to), prevFrom: toChDateTime(prevFrom), ...f.params }
+      );
   return withComputedCost(rows).map((r) => {
     const [prev] = withComputedCost([
       {
