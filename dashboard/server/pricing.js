@@ -45,6 +45,15 @@ export function tierCosts(rows) {
   return t;
 }
 
+// tierCosts()를 bedrock/enterprise로 나눠서 — costByModel()이 이미 group 컬럼을 갖고 있으니
+// 그룹별로 필터링만 하면 된다. bedrock/enterprise 사용자의 캐시 티어 지출 구성비를 나란히 비교.
+export function tierCostsByGroup(rows) {
+  return {
+    bedrock: tierCosts(rows.filter((r) => r.group === "bedrock")),
+    enterprise: tierCosts(rows.filter((r) => r.group === "enterprise")),
+  };
+}
+
 // rows는 input_tokens/output_tokens/cache_read_tokens/cache_write_tokens를 갖고 있어야 한다.
 // cost(계산 비용, 미산정 모델이면 null) + unpriced 플래그를 추가한다. reported_cost는 그대로 통과.
 export function withComputedCost(rows) {

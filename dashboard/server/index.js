@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import basicAuth from "express-basic-auth";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
-import { tierCosts } from "./pricing.js";
+import { tierCostsByGroup } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping } from "./clickhouse.js";
 import { handleChat } from "./chat.js";
@@ -206,7 +206,7 @@ route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngag
 route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
 route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
 route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, Number(query.intervalHours) || 24, filters));
-route("/api/cost/tiers", async (from, to, _q, filters) => tierCosts(await q.costByModel(from, to, filters)));
+route("/api/cost/tiers", async (from, to, _q, filters) => tierCostsByGroup(await q.costByModel(from, to, filters)));
 route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
   const [leaderboard, byUserModel] = await Promise.all([q.userLeaderboard(from, to, filters), q.costByUserModel(from, to, filters)]);
   return userCostEfficiency(leaderboard, byUserModel);

@@ -47,6 +47,7 @@ export default function Cost() {
   const byModelDaily = useApi("/api/cost/by-model-daily", { intervalHours });
   const compare = useApi("/api/cost/by-model-compare");
   const tiers = useApi("/api/cost/tiers");
+  const cacheEff = useApi("/api/overview/cache-efficiency");
   const efficiency = useApi("/api/users/cost-efficiency");
   const prevCostByModel = new Map((compare.data || []).map((r) => [r.model, r.cost === null ? null : Number(r.prev_cost)]));
 
@@ -115,14 +116,20 @@ export default function Cost() {
   const developerCount = new Set((byUserModel.data || []).map((r) => r.user)).size;
   const spendPerDeveloper = developerCount > 0 ? totals.cost / developerCount : 0;
 
-  const tierRows = tiers.data
-    ? [
-        { tier: "캐시 읽기", cost: tiers.data.cacheRead },
-        { tier: "캐시 쓰기", cost: tiers.data.cacheWrite },
-        { tier: "출력", cost: tiers.data.output },
-        { tier: "비캐시 입력", cost: tiers.data.uncachedInput },
-      ]
-    : [];
+  // 그룹별 캐시 티어별 지출 — bedrock/enterprise 좌우 분리(다른 카드들과 동일 패턴).
+  function tierRowsFor(group) {
+    const t = tiers.data?.[group];
+    if (!t) return [];
+    return [
+      { tier: "캐시 읽기", cost: t.cacheRead },
+      { tier: "캐시 쓰기", cost: t.cacheWrite },
+      { tier: "출력", cost: t.output },
+      { tier: "비캐시 입력", cost: t.uncachedInput },
+    ];
+  }
+  // 캐시율(cacheRead / (input+cacheRead+cacheCreation)) — /api/overview/cache-efficiency가
+  // 이미 그룹별로 계산해주는 값을 그대로 재사용(중복 계산 없음).
+  const cacheRatioFor = (group) => Number((cacheEff.data || []).find((r) => r.group === group)?.cache_read_ratio || 0);
 
   // loc=0이어도 commits>0인 유저(라인 없이 커밋만 한 경우)는 $/커밋 컬럼에 값이 있으므로 테이블에서
   // 지우면 안 된다. unpriced(미산정 모델 사용) 유저는 cost_per_loc이 null — 오름차순 정렬에서 항상
@@ -164,23 +171,27 @@ export default function Cost() {
           </div>
         )}
 
-        {tiers.loading ? (
+        {tiers.loading || cacheEff.loading ? (
           <Loading />
-        ) : tiers.error ? (
-          <ErrorBox error={tiers.error} />
+        ) : tiers.error || cacheEff.error ? (
+          <ErrorBox error={tiers.error || cacheEff.error} />
         ) : (
-          <DonutBreakdown
-            title="캐시 티어별 지출"
-            subtitle={
-              totals.unpricedTokens > 0
-                ? `비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력 — 미산정 모델 토큰 ${fmt(totals.unpricedTokens)}개는 제외`
-                : "비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력"
-            }
-            data={tierRows}
-            nameKey="tier"
-            valueKey="cost"
-            valuePrefix="$"
-          />
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => (
+              <DonutBreakdown
+                key={g}
+                title={`캐시 티어별 지출 — ${g}`}
+                subtitle={`캐시율(재사용률) ${(cacheRatioFor(g) * 100).toFixed(1)}% · 비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력${
+                  totals.unpricedTokens > 0 ? ` — 미산정 모델 토큰 ${fmt(totals.unpricedTokens)}개는 제외` : ""
+                }`}
+                right={<Badge tone="brand">캐시율 {(cacheRatioFor(g) * 100).toFixed(1)}%</Badge>}
+                data={tierRowsFor(g)}
+                nameKey="tier"
+                valueKey="cost"
+                valuePrefix="$"
+              />
+            ))}
+          </div>
         )}
 
         <div className="grid gap-4 md:grid-cols-2">

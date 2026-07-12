@@ -23,7 +23,7 @@ filters)`).
   (model name normalization)
 - `grouping.js` -- `GROUP_CTE`/`GROUP_EXPR`, session-scoped bedrock/enterprise inference (reads
   the hourly rollup's `has_org` column)
-- `pricing.js` -- per-model token pricing, `withComputedCost`, `tierCosts`
+- `pricing.js` -- per-model token pricing, `withComputedCost`, `tierCosts`, `tierCostsByGroup`
 - `productivity.js` -- productivity score derivation (pure function, used by leaderboard)
 - `costEfficiency.js` -- `$/LOC`, `$/commit` derivation (pure function)
 - `activity.js` -- DAU/WAU/MAU rollup from raw day x user rows (pure function,
