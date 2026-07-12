@@ -245,11 +245,11 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
   // 그 구간만 다시 합산 — cumulative처럼 "이전 값과 비교"가 아니라 "그 구간의 합"이라 교체가
   // 정확하다. from-hour 이전/이후 다른 hour는 그대로).
   //
-  // incBucketed(시계열)는 여전히 다른 결함이 있다 — 버킷 경계가 항상 정각이라 `WHERE t >=
-  // from`이 from이 속한 부분 시간 버킷을 통째로 걸러낸다. 실측(라이브 클러스터, 실제
-  // useApi.js quantize 로직으로 만든 기본 2일 뷰 from/to 그대로 재현): KPI와 시계열 합계가
-  // 1.58%(약 3100만) 차이 — [from, 다음 정각) 구간의 실제 증가량과 정확히 일치. 시계열 버킷
-  // 경계 재구성이 필요해 이 PR 스코프를 넘어선다. 알려진 잔여 불일치로 남긴다.
+  // incBucketed(시계열)도 처음엔 같은 종류의 결함이 있었다 — 버킷 경계가 항상 정각이라
+  // `WHERE t >= from`이 from이 속한 부분 시간 버킷을 통째로 걸러져, 기본 2일 뷰에서 KPI와
+  // 시계열 합계가 실측 1.58%(약 3100만) 어긋났다. incBucketed에도 동일한 first-bucket raw
+  // stitch를 적용하고 바깥 WHERE를 버킷 경계 기준으로 고쳐 해소됨(incBucketed 위 주석,
+  // "first-bucket raw stitch" 참고 — 라이브 클러스터로 diff=0 확인).
   return `(
     SELECT
         SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
