@@ -111,6 +111,9 @@ ORDER BY ExperimentGroup, invocations DESC;
 
 
 -- 【패널 8】tool use / MCP 사용 패턴 (logs 테이블) — plugin/tool 세밀 추적
+-- McpServerName은 컬럼명으로 참조(인라인 Attributes['mcp_server_name']이 아님)이므로, 스키마
+-- 쪽에서 그 컬럼의 MATERIALIZED 정의를 JSONExtractString(...tool_parameters...)으로 교체(2026-07)해도
+-- 이 패널은 자동으로 고쳐진 값을 읽는다 — 별도 갱신 불필요(리뷰에서 확인, diff 대조).
 SELECT
     ExperimentGroup,
     ToolName,

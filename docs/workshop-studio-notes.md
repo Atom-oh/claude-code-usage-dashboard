@@ -61,9 +61,13 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
      `now()`와 직접 비교하면 healthy한 MV를 stale로 오판한다(리뷰에서 MAJOR로 확인).
      `SELECT max(hour) >= toStartOfHour(now()) FROM claude_code.otel_metrics_sum_hourly`가
      `0`(false)이면 그때 진짜 stale — MV가 안 돌고 있는 것(원본은 신선한데 rollup만 정지).
-   - `SELECT min(hour) FROM claude_code.otel_metrics_sum_hourly` vs
-     `SELECT min(toStartOfHour(TimeUnix)) FROM claude_code.otel_metrics_sum` — rollup의
-     min이 원본의 min보다 늦으면 백필이 안 된 것. `scripts/backfill-hourly-rollup.sh`를
+   - rollup이 비어 있으면 `min(hour)`가 `1970-01-01`(ClickHouse의 빈 테이블 `min(DateTime)`
+     기본값)을 반환해 "백필 완료"로 오판할 수 있다(리뷰에서 확인 — `backfill-hourly-rollup.sh`는
+     이미 `count()=0`으로 이 경우를 먼저 걸러낸다). 먼저 `SELECT count() FROM
+     claude_code.otel_metrics_sum_hourly`로 비어있지 않은지 확인한 뒤,
+     `SELECT min(hour) FROM claude_code.otel_metrics_sum_hourly` vs
+     `SELECT min(toStartOfHour(TimeUnix)) FROM claude_code.otel_metrics_sum`을 비교한다 —
+     rollup의 min이 원본의 min보다 늦으면 백필이 안 된 것. `scripts/backfill-hourly-rollup.sh`를
      1회 실행(`clickhouse-schema.sql`의 백필 절차 주석 참고).
 3. attribute 실제 키 이름 실측 (`Attributes`/`LogAttributes`의 `mapKeys`) — Claude Code 버전이 바뀌면 `model`, `session.id`, `decision` 등의 키 이름이 달라질 수 있다. 달라지면 `dashboard/server/grouping.js`와 `dashboard/server/queries.js` 두 파일만 고치면 된다.
 4. temporality — 운영 설정은 `cumulative`(30초마다 세션 누적값 export)다. 초기엔 대시보드 쿼리가 전부 `sum(Value)`라 세션이 길수록 토큰/비용/세션 수가 배수로 과대집계되는 버그가 있었지만(실측: 1600억 토큰), `queries.js`를 세션(`session.id`)별 경계 diff(구간 끝 누적값 - 구간 시작 직전 누적값, Prometheus increase()와 동일 원리)로 재작성해 delta/cumulative 둘 다 정확히 처리한다. `SELECT DISTINCT AggregationTemporality FROM claude_code.otel_metrics_sum`로 2(cumulative)가 나오는 게 정상이며, delta(1) 데이터가 섞여도(레거시 배포 등) 문제없다.

@@ -185,7 +185,31 @@ const seriesKey = "SeriesKey";
 // 목적)와 달리 이 함수는 기본 뷰 KPI 카드의 실시간성이 핵심 요구사항이라, to를 정각으로 내리면
 // 기본 뷰에서 매번 최대 59분의 최신 데이터가 사라지는 회귀가 더 크다 — 과거/커스텀 구간의 경계
 // 오차(최대 59분)를 감내하는 쪽을 선택한다.
-function incFlat(metricFilter = "") {
+//
+// span(from,to 사이)이 1시간 미만이면(sub-hour 드래그 줌) 위 트레이드오프의 전제 자체가
+// 깨진다 — hour < to의 "신선도" 이점은 사라지고, toStartOfHour(from)이 왼쪽 경계까지 최대
+// 59분 넓혀 KPI 스냅샷(incFlat)이 같은 화면의 시계열(incBucketedRaw, from을 그대로 씀)보다
+// 큰 값을 보이는 불일치가 된다(리뷰에서 MAJOR로 확인). 이 좁은 구간에서는 원본 테이블로
+// 직접 diff하는 게 정확하고(rollup 최적화가 필요한 스케일도 아님) incBucketedRaw와 동일한
+// sk/lookback 규칙을 따른다.
+export function incFlat(metricFilter = "", spanMs = Infinity) {
+  if (spanMs < 3600000) {
+    // ToolName은 rollup에서만 실컬럼(code_edit_tool.decision의 tool_name을 접어놓음) — 원본
+    // otel_metrics_sum에는 없어서 그대로 SELECT하면 "Unknown expression identifier"로 쿼리가
+    // 깨진다(실측 확인). Attributes['tool_name']에서 직접 뽑아 같은 별칭으로 맞춘다.
+    return `(
+      SELECT
+          SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
+          Attributes['tool_name'] AS ToolName,
+          if(temp = 2,
+              greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+              sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
+      FROM claude_code.otel_metrics_sum
+      WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+        ${metricFilter}
+      GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+    )`;
+  }
   return `(
     SELECT
         SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
@@ -312,7 +336,7 @@ export async function kpiSummary(from, to, filters = {}) {
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.commit.count', 'claude_code.pull_request.count',
         'claude_code.token.usage', 'claude_code.lines_of_code.count'
-      )`)} m
+      )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
@@ -373,7 +397,7 @@ export async function cacheEfficiency(from, to, filters = {}) {
         sumIf(m.Value, m.TokenType = 'cacheRead')                              AS cache_read,
         sumIf(m.Value, m.TokenType IN ('input', 'cacheRead', 'cacheCreation'))  AS input_side,
         round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio
-    FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
@@ -390,7 +414,7 @@ export async function modelDistribution(from, to, filters = {}) {
         sum(m.Value) AS tokens,
         sumIf(m.Value, m.TokenType = 'input')  AS input_tokens,
         sumIf(m.Value, m.TokenType = 'output') AS output_tokens
-    FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group", tokens DESC`,
@@ -412,7 +436,7 @@ export async function normalizedProductivity(from, to, filters = {}) {
         round(commits / nullIf(tokens, 0) * 1000000, 3)                  AS commits_per_million_tokens
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.lines_of_code.count', 'claude_code.token.usage', 'claude_code.commit.count'
-      )`)} m
+      )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
@@ -427,7 +451,7 @@ export async function codeEditDecisions(from, to, filters = {}) {
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.Decision AS decision, sum(m.Value) AS n
-    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", decision ORDER BY "group", decision`,
@@ -446,7 +470,7 @@ export async function codeEditDecisionsByTool(from, to, filters = {}) {
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.ToolName AS tool, m.Decision AS decision, sum(m.Value) AS n
-    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.code_edit_tool.decision'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.ToolName != '' ${f.where}
     GROUP BY "group", tool, decision ORDER BY "group", tool`,
@@ -485,7 +509,7 @@ export async function skillUsage(from, to, filters = {}) {
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations, sum(m.Value) AS est_cost_usd
-    FROM ${incFlat(`AND MetricName = 'claude_code.cost.usage'`)} m
+    FROM ${incFlat(`AND MetricName = 'claude_code.cost.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.SkillName != '' ${f.where}
     GROUP BY "group", skill ORDER BY "group", invocations DESC`,
@@ -539,7 +563,11 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
         -- prevFrom=08:45인데 정렬 후 cur=[10:00,11:00)=1h, prev=[08:00,10:00)=2h로 비대칭 —
         -- 리뷰에서 MAJOR로 확인). curFrom/curTo로 정렬 후 길이를 구하고 그만큼을 prevFrom에
         -- 다시 뺀다.
-        WITH toStartOfHour({from:DateTime}) AS curFrom, toStartOfHour({to:DateTime}) AS curTo,
+        -- from/to가 같은 hour 안(드래그 줌으로 만들 수 있는 sub-hour 구간, 예: 10:15~10:45)이면
+        -- curFrom==curTo가 되어 cur 창이 0초로 붕괴해 비교 카드가 전부 0/empty로 나온다(리뷰에서
+        -- MAJOR로 확인). 이 지표는 "이전 동일 기간 대비"가 목적이라 최소 1시간 창을 보장한다.
+        WITH toStartOfHour({from:DateTime}) AS curFrom,
+             greatest(toStartOfHour({to:DateTime}), curFrom + INTERVAL 1 HOUR) AS curTo,
              curFrom - (curTo - curFrom) AS prevFrom
         SELECT
             SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
@@ -743,7 +771,7 @@ export async function costSummary(from, to, filters = {}) {
         sumIf(m.Value, m.MetricName = 'claude_code.session.count') AS sessions
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.cost.usage', 'claude_code.token.usage', 'claude_code.session.count'
-      )`)} m
+      )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
@@ -787,7 +815,7 @@ export async function costByModel(from, to, filters = {}) {
   const rows = await query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
-    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
+    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
@@ -808,7 +836,7 @@ export async function costByUserModel(from, to, filters = {}) {
   const rows = await query(
     `${GROUP_CTE}
     SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
-    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`)} m
+    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' AND m.UserEmail != '' ${f.where}
     GROUP BY user, model ORDER BY user`,
@@ -966,7 +994,7 @@ export async function userLeaderboard(from, to, filters = {}) {
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.token.usage', 'claude_code.lines_of_code.count',
         'claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.code_edit_tool.decision'
-      )`)} m
+      )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
     WHERE m.UserEmail != '' ${f.where}

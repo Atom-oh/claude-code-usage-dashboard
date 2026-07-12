@@ -1,9 +1,9 @@
 # Server Module
 
 ## Role
-Express API layer. Every route is `GET`, read-only, and backed by a ClickHouse query. Also
-hosts the Bedrock-backed `/api/chat` SQL assistant and serves the built `web/dist` as static
-files.
+Express API layer. Every data route is `GET`, read-only, and backed by a ClickHouse query.
+Also hosts the Bedrock-backed `POST /api/chat` SQL assistant (SSE stream) and serves the
+built `web/dist` as static files.
 
 ## Endpoints
 See [docs/api-reference.md](../../docs/api-reference.md) for the full list. Route

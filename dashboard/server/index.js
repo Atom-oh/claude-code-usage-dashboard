@@ -209,7 +209,10 @@ route("/api/cost/by-user-model", (from, to, _q, filters) => q.costByUserModel(fr
 route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 route("/api/cost/by-model-compare", (from, to, _q, filters) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from)), filters));
 route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(from, to, filters));
-route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, Number(query.intervalHours) || 24, filters));
+// agenticness는 otel_logs(lookback 없음, 요청 구간만 스캔)를 직접 읽어 다른 rollup 경로들과
+// 위협 모델이 다르지만, intervalHours<1(분 버킷) 요청을 검증 없이 받는 건 형제 라우트들과
+// 비대칭이라 일관성 차원에서 같은 가드를 적용한다(리뷰에서 MAJOR로 확인).
+route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters));
 route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 // 우리(필터 지원, DAU/WAU/MAU + 고착도, Trends/Executive가 사용) 버전을 채택 — main의

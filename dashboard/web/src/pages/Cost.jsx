@@ -48,6 +48,11 @@ export default function Cost() {
   const compare = useApi("/api/cost/by-model-compare");
   const tiers = useApi("/api/cost/tiers");
   const cacheEff = useApi("/api/overview/cache-efficiency");
+  // 개발자당 지출의 분모 — byUserModel(excludeUnknown 기본값, unknown 유저 제외)이 아니라
+  // activeUsers(excludeUnknown:false, "전체 개발자 수" 총계)를 써야 한다. totals.cost(costSummary,
+  // 이 PR에서 excludeUnknown:false로 바뀜)와 짝을 맞추지 않으면 분자·분모 모수가 달라 지출이
+  // 과대 계산된다(리뷰에서 MAJOR로 확인 — Executive.jsx는 이미 activeUsers로 통일했었음).
+  const activeUsers = useApi("/api/overview/active-users");
   const efficiency = useApi("/api/users/cost-efficiency");
   const prevCostByModel = new Map((compare.data || []).map((r) => [r.model, r.cost === null ? null : Number(r.prev_cost)]));
 
@@ -113,7 +118,7 @@ export default function Cost() {
   // 나눠야 짧은 줌 구간에서도 선형 비례가 유지된다. 최소 1분만 하한(0으로 나누기 방지).
   const daysInRange = Math.max(1 / 1440, (to - from) / 86400000);
   const projection30d = (totals.cost / daysInRange) * 30;
-  const developerCount = new Set((byUserModel.data || []).map((r) => r.user)).size;
+  const developerCount = activeUsers.data?.users ?? 0;
   const spendPerDeveloper = developerCount > 0 ? totals.cost / developerCount : 0;
 
   // 그룹별 캐시 티어별 지출 — bedrock/enterprise 좌우 분리(다른 카드들과 동일 패턴).
@@ -150,10 +155,10 @@ export default function Cost() {
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
-        {summary.loading || byUserModel.loading ? (
+        {summary.loading || byUserModel.loading || activeUsers.loading ? (
           <Loading />
-        ) : summary.error || byUserModel.error ? (
-          <ErrorBox error={summary.error || byUserModel.error} />
+        ) : summary.error || byUserModel.error || activeUsers.error ? (
+          <ErrorBox error={summary.error || byUserModel.error || activeUsers.error} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatTile
@@ -169,8 +174,8 @@ export default function Cost() {
             <StatTile label="캐시 쓰기 토큰" value={fmt(totals.cacheWrite)} />
             <StatTile label="세션" value={fmt(totals.sessions)} />
             <StatTile label="30일 프로젝션" value={usd(projection30d)} hint="현재 기간 일평균 × 30" />
-            {/* developerCount/spendPerDeveloper는 byUserModel에서 나온다 — summary만 게이트하면
-                byUserModel이 아직 로딩 중이거나 에러여도 "$0 / 0명 기준"이 실제 값처럼 보인다. */}
+            {/* developerCount/spendPerDeveloper는 activeUsers에서 나온다 — summary만 게이트하면
+                activeUsers가 아직 로딩 중이거나 에러여도 "$0 / 0명 기준"이 실제 값처럼 보인다. */}
             <StatTile label="개발자당 지출" value={usd(spendPerDeveloper)} hint={`${developerCount}명 기준`} />
           </div>
         )}

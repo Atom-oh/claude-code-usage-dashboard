@@ -20,6 +20,7 @@ Every route below accepts these (parsed by `parseRange()` / `route()` in `index.
 | `user` | string | No | Filter by user email (partial match) |
 | `model` | string | No | Filter by model name (partial match, normalized) |
 | `intervalHours` | number | No | Bucket size for timeseries endpoints (fractional hours like `0.25` = 15 min for chart drag-zoom, 1 = hourly, 24 = daily, 168 = weekly). Only honored by endpoints marked *timeseries* below. Requests with `intervalHours < 1` are clamped to `1` server-side if the `from`/`to` span exceeds 4 hours (minute-bucket queries fall back to scanning the raw table, which is only cheap for narrow ranges). |
+| `email` | string | Only for `GET /api/users/{daily,decisions-by-tool,heatmap}` | Exact-match user email for the per-user drilldown endpoints. Not a general filter — ignored by every other route. |
 
 ## Endpoints
 
@@ -30,6 +31,7 @@ endpoints). There are no request bodies. Errors return `{"error": "<message>"}` 
 | Path | Returns |
 |---|---|
 | `GET /api/overview/kpi` | Group-level session/user/commit/PR/token/LOC summary |
+| `GET /api/overview/active-users` | Ungrouped unique active user count (excludes `unknown` — a "totals" endpoint, see `group` param above) |
 | `GET /api/overview/tokens-timeseries` | *timeseries* — token usage per group over time |
 | `GET /api/overview/cache-efficiency` | Cache read ratio per group |
 | `GET /api/overview/model-distribution` | Token distribution by group x model |
@@ -59,6 +61,9 @@ endpoints). There are no request bodies. Errors return `{"error": "<message>"}` 
 | `GET /api/users/tools` | Per-user tool usage |
 | `GET /api/users/skills` | Per-user skill usage |
 | `GET /api/users/cost-efficiency` | Per-user `$/LOC`, `$/commit` |
+| `GET /api/users/daily` | *timeseries* — daily sessions/LOC/tokens/commits for one user. **Requires `email` param** (exact match, not filtered by `user`/`group`/`model`). Not covered by the cache warmer. |
+| `GET /api/users/decisions-by-tool` | Accept/reject counts per tool for one user. **Requires `email` param.** Not covered by the cache warmer. |
+| `GET /api/users/heatmap` | GitHub-style daily session-count heatmap, last 91 days from `to`. **Requires `email` param**; ignores `from`. Not covered by the cache warmer. |
 
 ### Cost
 | Path | Returns |

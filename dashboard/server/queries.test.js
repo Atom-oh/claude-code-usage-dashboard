@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucket, filterCond, alignHistoricalTo, range } from "./queries.js";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 
 // bucket()이 intervalHours를 세 가지 버킷(분/시/일)으로 올바르게 매핑하는지 — 차트 드래그 줌이
@@ -82,4 +82,18 @@ test("range() skips hour-alignment entirely when raw=true, even for long histori
   const to = new Date(now.getTime() - 3 * 3600000 - 45 * 60000); // 3시간 45분 전 (2.5시간 구간)
   const r = range(from, to, true);
   assert.equal(r.to, toChDateTime(to)); // 정렬 없이 원본 to 그대로
+});
+
+// incFlat(KPI 스냅샷)이 span<1h(sub-hour 드래그 줌)일 때 rollup(hour 그레인) 대신 원본
+// otel_metrics_sum으로 폴백해야 한다 — 안 그러면 toStartOfHour(from)이 왼쪽 경계를 최대
+// 59분 넓혀, 같은 화면의 시계열(incBucketedRaw, from을 그대로 씀)보다 KPI 카드 합계가 커지는
+// 불일치가 생긴다(리뷰에서 MAJOR로 확인).
+test("incFlat falls back to the raw table for sub-hour spans, uses the rollup otherwise", () => {
+  const sub = incFlat("", 30 * 60000); // 30분 span
+  assert.match(sub, /FROM claude_code\.otel_metrics_sum\b/);
+  assert.doesNotMatch(sub, /otel_metrics_sum_hourly/);
+  const normal = incFlat("", 3 * 3600000); // 3시간 span
+  assert.match(normal, /FROM claude_code\.otel_metrics_sum_hourly/);
+  const defaultSpan = incFlat(); // spanMs 생략 → Infinity → 항상 rollup(기본 뷰 전제)
+  assert.match(defaultSpan, /FROM claude_code\.otel_metrics_sum_hourly/);
 });
