@@ -59,3 +59,27 @@ test("range() never produces an inverted from>to window for short historical spa
   assert.ok(new Date(r.from) <= new Date(r.to), `expected from<=to, got ${r.from} > ${r.to}`);
   assert.equal(r.to, toChDateTime(to)); // 역전 위험 시 원본 to 그대로 유지
 });
+
+// 경계 케이스: from이 이미 정각이면 alignHistoricalTo(to)가 from과 "같아질" 수 있다 —
+// `aligned < from`만 검사하면 이 경우를 놓쳐 [10:00,10:00) 빈 창이 된다(리뷰에서 MAJOR로
+// 재확인). `aligned <= from`으로 같음도 역전으로 취급해야 한다.
+test("range() handles the exact-hour-boundary edge case (from is already on the hour)", () => {
+  const now = new Date();
+  const hourAgo3 = new Date(Math.floor((now.getTime() - 3 * 3600000) / 3600000) * 3600000); // 정각
+  const from = hourAgo3; // :00 그대로
+  const to = new Date(hourAgo3.getTime() + 45 * 60000); // :45 — 정렬하면 to도 :00 → from과 같음
+  const r = range(from, to);
+  assert.ok(new Date(r.from) < new Date(r.to), `expected from<to, got ${r.from} >= ${r.to}`);
+  assert.equal(r.to, toChDateTime(to));
+});
+
+// raw=true(분 버킷, incBucketedRaw 경로)면 hour 정렬을 절대 적용하지 않는다 — 이 경로는
+// TimeUnix로 경계를 직접 계산해 부분-hour 과대집계 문제가 없으므로, 정렬하면 오히려 마지막
+// 최대 59분이 잘려나간다(리뷰에서 MAJOR로 확인: 2.5시간 같은 raw 허용 구간에서 재현).
+test("range() skips hour-alignment entirely when raw=true, even for long historical spans", () => {
+  const now = new Date();
+  const from = new Date(now.getTime() - 5 * 3600000 - 15 * 60000); // 5시간 15분 전
+  const to = new Date(now.getTime() - 3 * 3600000 - 45 * 60000); // 3시간 45분 전 (2.5시간 구간)
+  const r = range(from, to, true);
+  assert.equal(r.to, toChDateTime(to)); // 정렬 없이 원본 to 그대로
+});

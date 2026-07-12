@@ -72,6 +72,9 @@ export default function Executive() {
   // 10분 줌에도 "일평균"이 2일 기준으로 계산되는 회귀였다(리뷰에서 MAJOR로 확인 — Cost.jsx는
   // 이미 (to-from) 기준으로 고쳐졌지만 이 페이지는 그대로 남아 있었음).
   const daysInRange = Math.max(1 / 1440, (to - from) / 86400000);
+  // cost(costSummary — A/B 비교 목적이라 unknown 그룹 ~11% 제외)와 users(activeUsers — "전체
+  // 개발자 수" 총계라 unknown 포함)는 분자·분모 모수가 다르다(queries.js filterCond 주석 참조) —
+  // costPerDev는 그만큼 과소평가되는 근사치다(리뷰에서 MAJOR로 확인, 정책 재검토 전까지는 근사로 둠).
   const costPerDev = users > 0 ? cost / users : 0;
   const dailyAvg = cost / daysInRange;
   const projection30d = dailyAvg * 30;

@@ -28,7 +28,6 @@ function parseUtc(label) {
 // range를 만든다(리뷰에서 MAJOR로 확인).
 function useDragZoom(yAxisId, bucketHoursOverride) {
   const { setRange, intervalHours: globalIntervalHours } = useRange();
-  const intervalHours = bucketHoursOverride ?? globalIntervalHours;
   const startRef = useRef(null);
   const [area, setArea] = useState(null); // { left, right } — 드래그 중 하이라이트 구간
   const cancel = () => { startRef.current = null; setArea(null); };
@@ -57,7 +56,12 @@ function useDragZoom(yAxisId, bucketHoursOverride) {
       const from = d1 <= d2 ? d1 : d2;
       // 라벨은 버킷 "시작" 값인데 서버는 [from,to) exclusive라, 우측 끝 라벨을 그대로 to로 넘기면
       // 그 버킷 자체가 통째로 잘려나간다(리뷰에서 MINOR로 확인) — 현재 버킷 크기(intervalHours)만큼
-      // 밀어 그 버킷의 끝까지 포함시킨다.
+      // 밀어 그 버킷의 끝까지 포함시킨다. bucketHoursOverride가 없을 때 date-only 라벨(YYYY-MM-DD,
+      // 일 버킷)이면 전역 intervalHours 대신 24h를 쓴다 — opt-in(bucketHours prop)에만 의존하면
+      // 앞으로 추가되는 일 버킷 차트가 그 prop을 깜빡했을 때 마지막 날이 조용히 잘린다(리뷰에서
+      // MAJOR로 확인 — 지금은 Trends/Executive/Overview가 명시적으로 넘겨서 우회하고 있을 뿐).
+      const rightLabel = String(d1 <= d2 ? a.right : a.left);
+      const intervalHours = bucketHoursOverride ?? (/^\d{4}-\d{2}-\d{2}$/.test(rightLabel) ? 24 : globalIntervalHours);
       const to = new Date((d1 <= d2 ? d2 : d1).getTime() + intervalHours * 3600000);
       setRange(from, to);
     },

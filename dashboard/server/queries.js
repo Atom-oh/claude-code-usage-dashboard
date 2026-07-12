@@ -18,18 +18,26 @@ import { rollupActiveUsers, MAU_WINDOW_DAYS } from "./activity.js";
 // 같은 시간(hour) 안에 있는 짧은 과거 구간(예: 10:15~10:45)에서 to만 정각(10:00)으로 내려가
 // from(10:15)보다 작아져 range가 역전되고 빈 결과가 나온다(리뷰에서 CRITICAL로 확인 — 이 PR의
 // 핵심 신기능인 분 단위 드래그 줌이 "1시간 미만 과거 구간 확대"에서 통째로 깨지는 회귀였다).
-// alignHistoricalTo(to)가 from보다 앞서면(=같은 hour 안의 짧은 구간) 정렬을 포기하고 원본
-// to를 쓴다 — 이 좁은 구간에서는 어차피 hour 버킷 부분-포함 오차가 구간 자체보다 크므로,
-// 애초에 rollup(hour 그레인)이 아니라 원본 폴백(incBucketedRaw)이 담당해야 할 스케일이다.
+// alignHistoricalTo(to)가 from보다 앞서거나 "같으면"(=from이 정각인 경우까지 포함) 정렬을
+// 포기하고 원본 to를 쓴다 — `aligned < from`만 검사하면 from=10:00(정각)/to=10:45에서
+// aligned=10:00이 from과 같아 통과해버려 [10:00,10:00) 빈 창이 되는 경계 케이스를 놓친다
+// (리뷰에서 MAJOR로 재확인). 이 좁은 구간에서는 어차피 hour 버킷 부분-포함 오차가 구간
+// 자체보다 크므로, 애초에 rollup(hour 그레인)이 아니라 원본 폴백(incBucketedRaw)이 담당해야
+// 할 스케일이다.
 const LIVE_TOLERANCE_MS = 10 * 60000;
 export function alignHistoricalTo(to) {
   const isLive = Date.now() - to.getTime() < LIVE_TOLERANCE_MS;
   return isLive ? to : new Date(Math.floor(to.getTime() / 3600000) * 3600000);
 }
 
-export function range(from, to) {
+// raw=true(분 버킷, incBucketedRaw 경로)면 hour 정렬을 아예 적용하지 않는다 — incBucketedRaw는
+// TimeUnix(원본, 나노초 정밀도)로 경계를 직접 계산해 부분-hour 과대집계 문제 자체가 없다.
+// 정렬이 오히려 해가 된다: 과거 2.5시간 같은 드래그 줌(raw 경로가 허용하는 범위, 리뷰에서
+// MAJOR로 확인)에서 to를 정각으로 내리면 선택한 마지막 최대 59분이 통째로 사라진다.
+export function range(from, to, raw = false) {
+  if (raw) return { from: toChDateTime(from), to: toChDateTime(to) };
   const aligned = alignHistoricalTo(to);
-  return { from: toChDateTime(from), to: toChDateTime(aligned < from ? to : aligned) };
+  return { from: toChDateTime(from), to: toChDateTime(aligned <= from ? to : aligned) };
 }
 
 // us.anthropic.claude-fable-5 / global.anthropic.claude-fable-5 / claude-fable-5[1m] 등은 같은
@@ -65,6 +73,17 @@ export function filterCond(filters = {}, cols = {}) {
   // 단, "총계" 지표(activeUsers/adoptionLevels — A/B 비교가 아니라 전체 유저/DAU/MAU 스냅샷)는
   // excludeUnknown: false로 unknown 세션도 포함해야 한다 — 안 그러면 그룹 무관 총계에서도
   // ~11%가 조용히 빠져 "전체 유저 수"가 실제보다 작게 나온다(리뷰에서 MAJOR로 확인).
+  //
+  // 정책 정리(리뷰 제안 #6 — A/B 지표 vs 총계 지표를 excludeUnknown 기준으로 표로 명시):
+  //   - excludeUnknown: false(unknown 포함) — activeUsers, activeUsersTimeseries, adoptionLevels,
+  //     adoptionTimeseries, userLeaderboard의 active_days CTE. 전부 "그룹 무관 전체 값"이 목적.
+  //   - excludeUnknown 기본값(true, unknown 제외) — kpiSummary/cost 계열(costSummary 등) 등
+  //     GROUP BY grp로 bedrock/enterprise를 나란히 비교하는 모든 쿼리. unknown은 어느 쪽에도
+  //     못 넣으므로 A/B 비교에서 제외한다.
+  //   - 알려진 트레이드오프: Executive.jsx의 costPerDev = cost(unknown 제외, costSummary 합계) /
+  //     users(unknown 포함, activeUsers) — 분자·분모 모수가 다르다(대략 -11%p 과소평가 방향).
+  //     costSummary는 그룹별 비교가 본 목적이라 정책을 바꾸지 않고, 이 화면 한정 근사임을
+  //     Executive.jsx 쪽에 주석으로 남겨둔다(재결정 시 이 주석부터 갱신할 것).
   if (cols.group && filters.excludeUnknown !== false) conds.push(`${cols.group} != 'unknown'`);
   if (filters.group && cols.group) {
     conds.push(`${cols.group} = {fGroup:String}`);
@@ -246,7 +265,7 @@ function incBucketedRaw(bucketExpr, metricFilter = "") {
 function incBucket(intervalHours, metricFilter = "") {
   const raw = intervalHours < 1; // 분 버킷은 hour-그레인 rollup으로 만들 수 없다
   const b = bucket(intervalHours, raw ? "TimeUnix" : "hour");
-  return { sub: raw ? incBucketedRaw(b.expr, metricFilter) : incBucketed(b.expr, metricFilter), params: b.params };
+  return { sub: raw ? incBucketedRaw(b.expr, metricFilter) : incBucketed(b.expr, metricFilter), params: b.params, raw };
 }
 
 // intervalHours < 1 → MINUTE 버킷(차트 드래그 줌), < 24 → HOUR 버킷, >= 24 → DAY 버킷.
@@ -270,9 +289,14 @@ const TOKEN_SUMS = `
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens`;
 
-// 패널1: 그룹별 KPI 요약
+// 패널1: 그룹별 KPI 요약. excludeUnknown: false — 이 응답의 합계(클라이언트에서 groupBy 없이
+// reduce)가 Overview/Executive의 "전체 세션/토큰/라인" 총계로 쓰인다. activeUsers(unknown
+// 포함)와 짝을 이루는 분자이므로 같은 모수 정책을 따라야 한다(리뷰에서 MAJOR로 확인 —
+// 안 그러면 costPerDev 같은 파생 비율이 분자·분모 모수가 다른 값이 된다). 그룹별로 나눠 보는
+// UI(bedrock/enterprise 카드)는 정확한 group 문자열로만 필터링하므로 unknown 행이 섞여도
+// 영향 없다.
 export async function kpiSummary(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -312,7 +336,7 @@ export async function tokenTimeseries(from, to, intervalHours = 24, filters = {}
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
 }
 
@@ -335,7 +359,7 @@ export async function locTimeseries(from, to, intervalHours = 24, filters = {}) 
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
 }
 
@@ -448,7 +472,7 @@ export async function activeTimeSeries(from, to, intervalHours = 24, filters = {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
 }
 
@@ -482,7 +506,7 @@ export async function costByModelDaily(from, to, intervalHours = 24, filters = {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' ${f.where}
     GROUP BY day, "group", model ORDER BY day`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
   // cost 키 이름을 유지해 SeriesBarChart(valueKey="cost")가 그대로 동작하게 한다.
   return withComputedCost(rows);
@@ -509,18 +533,22 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
         sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')        AS cache_write_tokens,
         sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'cacheCreation')       AS prev_cache_write_tokens
     FROM (
+        -- prevFrom을 정렬된 경계(cur = [toStartOfHour(from), toStartOfHour(to)))의 실제 길이로
+        -- 재계산한다 — JS에서 넘어온 prevFrom은 정렬 "전" (to-from)로 계산돼, from/to가 같은
+        -- hour 안이 아니면 정렬 후 cur/prev 창 길이가 달라진다(예: from=10:15,to=11:45면 원래
+        -- prevFrom=08:45인데 정렬 후 cur=[10:00,11:00)=1h, prev=[08:00,10:00)=2h로 비대칭 —
+        -- 리뷰에서 MAJOR로 확인). curFrom/curTo로 정렬 후 길이를 구하고 그만큼을 prevFrom에
+        -- 다시 뺀다.
+        WITH toStartOfHour({from:DateTime}) AS curFrom, toStartOfHour({to:DateTime}) AS curTo,
+             curFrom - (curTo - curFrom) AS prevFrom
         SELECT
             SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
             if(AggregationTemporality = 2,
-                greatest(maxIf(max_value, hour < toStartOfHour({from:DateTime})) - maxIf(max_value, hour < toStartOfHour({prevFrom:DateTime})), 0),
-                sumIf(sum_value, hour >= toStartOfHour({prevFrom:DateTime}) AND hour < toStartOfHour({from:DateTime}))) AS prev_v,
-            -- cur 쪽 경계도 prev와 동일하게 toStartOfHour(to)로 정렬 — 안 그러면 prev는 정각
-            -- 경계인데 cur만 정각이 아니라(to가 quantize된 임의 시각) "이전 기간 대비" 비교가
-            -- 비대칭 창으로 어긋난다(리뷰에서 MAJOR로 확인). 이 함수는 신선도보다 두 구간의
-            -- 정합성이 우선이므로, incFlat/incBucketed처럼 to의 부분-시간 신선도를 살리지 않는다.
+                greatest(maxIf(max_value, hour < curFrom) - maxIf(max_value, hour < prevFrom), 0),
+                sumIf(sum_value, hour >= prevFrom AND hour < curFrom)) AS prev_v,
             if(AggregationTemporality = 2,
-                greatest(maxIf(max_value, hour < toStartOfHour({to:DateTime})) - maxIf(max_value, hour < toStartOfHour({from:DateTime})), 0),
-                sumIf(sum_value, hour >= toStartOfHour({from:DateTime}) AND hour < toStartOfHour({to:DateTime}))) AS cur_v
+                greatest(maxIf(max_value, hour < curTo) - maxIf(max_value, hour < curFrom), 0),
+                sumIf(sum_value, hour >= curFrom AND hour < curTo)) AS cur_v
         FROM claude_code.otel_metrics_sum_hourly
         WHERE MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''
           AND hour >= toStartOfHour({prevFrom:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
@@ -631,7 +659,7 @@ export async function dailyEngagement(from, to, intervalHours = 24, filters = {}
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY t ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
 }
 
@@ -699,10 +727,13 @@ export async function toolMcpUsage(from, to, filters = {}) {
 // Cost 페이지: 그룹별 비용/토큰 요약. 비용은 토큰 실측 × 단가표(pricing.js)로 계산 —
 // Claude Code 자체 보고 비용(reported_cost)은 비교용으로만 같이 내려준다.
 // 단가는 모델별로 다르므로 SQL은 그룹+모델 단위로 집계하고, 그룹 합계는 JS에서 fold한다.
+// excludeUnknown: false — kpiSummary와 동일한 이유(응답 전체 합계가 "총 지출/개발자당 지출"
+// 총계로 쓰인다, Cost.jsx/Executive.jsx). unknown을 빼면 activeUsers(unknown 포함) 대비
+// 분자가 작아져 개발자당 지출이 실제보다 낮게 나온다(리뷰에서 MAJOR로 확인).
 export async function costSummary(from, to, filters = {}) {
   // model 필터는 SELECT에 model 정규화 컬럼이 있지만, sessions는 Model attribute가 없는
   // session.count 행을 합산하는 혼합 지표라 kpiSummary와 같은 modelMixed가 필요.
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -874,7 +905,7 @@ export async function userDaily(from, to, email) {
     FROM ${b.sub} m
     WHERE m.UserEmail = {email:String}
     GROUP BY t ORDER BY t`,
-    { ...range(from, to), ...b.params, email }
+    { ...range(from, to, b.raw), ...b.params, email }
   );
 }
 
