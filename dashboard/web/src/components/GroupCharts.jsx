@@ -2,21 +2,11 @@ import { useRef, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn } from "../cn.js";
 import { colorFor } from "../colors.js";
+import { parseUtc } from "../fmt.js";
 import { pivotByGroup, pivotByKey, groupsPresent } from "../pivot.js";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
 import { useRange } from "../RangeContext.jsx";
 import { Card } from "./Card.jsx";
-
-// 서버가 내려주는 t 값은 ClickHouse DateTime을 그대로 문자열화한 "YYYY-MM-DD HH:MM:SS"
-// (또는 toDate 계열은 "YYYY-MM-DD") — 타임존 표기가 없다. new Date(그 문자열)로 바로 파싱하면
-// 브라우저가 "로컬 타임"으로 해석해, UTC가 아닌 클라이언트에서 드래그로 고른 구간이 tz offset만큼
-// 밀려서 서버에 전송된다(리뷰에서 MAJOR로 확인 — 틱 라벨 표시용 파싱과 달리 이 값은 그대로
-// setRange→useApi→toISOString()에 실려 쿼리 경계가 되므로 오차가 실제 데이터 오차로 이어진다).
-// ClickHouse 값은 UTC 기준으로 저장/포맷되므로 "Z"를 붙여 명시적으로 UTC로 파싱한다.
-function parseUtc(label) {
-  const s = String(label);
-  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00Z` : `${s.replace(" ", "T")}Z`);
-}
 
 // 시계열 차트에서 좌우로 드래그하면 그 구간으로 전역 range를 좁힌다(RangeContext.setRange) —
 // 페이지의 모든 차트가 같이 줌인되고 해상도도 자동으로 세밀해진다. Recharts 카테고리 x축은

@@ -155,10 +155,13 @@ export default function Cost() {
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
-        {summary.loading || byUserModel.loading || activeUsers.loading ? (
+        {/* byUserModel은 이 카드 블록에서 안 쓴다(developerCount는 이제 activeUsers 기반) —
+            여기 게이트에 넣으면 이 카드와 무관한 API 로딩/에러가 렌더를 불필요하게 묶는다
+            (리뷰에서 확인). byUserModel을 실제로 쓰는 아래 랭킹 섹션이 자체 게이트를 갖는다. */}
+        {summary.loading || activeUsers.loading ? (
           <Loading />
-        ) : summary.error || byUserModel.error || activeUsers.error ? (
-          <ErrorBox error={summary.error || byUserModel.error || activeUsers.error} />
+        ) : summary.error || activeUsers.error ? (
+          <ErrorBox error={summary.error || activeUsers.error} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatTile

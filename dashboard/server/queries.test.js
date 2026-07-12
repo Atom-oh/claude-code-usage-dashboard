@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucket, filterCond, alignHistoricalTo, range, incFlat } from "./queries.js";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 
 // bucket()이 intervalHours를 세 가지 버킷(분/시/일)으로 올바르게 매핑하는지 — 차트 드래그 줌이
@@ -84,16 +84,28 @@ test("range() skips hour-alignment entirely when raw=true, even for long histori
   assert.equal(r.to, toChDateTime(to)); // 정렬 없이 원본 to 그대로
 });
 
-// incFlat(KPI 스냅샷)이 span<1h(sub-hour 드래그 줌)일 때 rollup(hour 그레인) 대신 원본
+// incFlat(KPI 스냅샷)이 span<4h(index.js MAX_MINUTE_BUCKET_RANGE_MS와 동일 임계 — 프론트
+// resolutionForSpan이 분 버킷을 고르는 구간)일 때 rollup(hour 그레인) 대신 원본
 // otel_metrics_sum으로 폴백해야 한다 — 안 그러면 toStartOfHour(from)이 왼쪽 경계를 최대
-// 59분 넓혀, 같은 화면의 시계열(incBucketedRaw, from을 그대로 씀)보다 KPI 카드 합계가 커지는
-// 불일치가 생긴다(리뷰에서 MAJOR로 확인).
-test("incFlat falls back to the raw table for sub-hour spans, uses the rollup otherwise", () => {
+// 59분 넓혀, 같은 화면의 시계열(이 구간에서 incBucketedRaw를 타 from을 그대로 씀)보다
+// KPI 카드 합계가 커지는 불일치가 생긴다(리뷰에서 MAJOR로 확인 — 처음엔 1h를 임계로 썼는데
+// 1h~4h 밴드에서 여전히 어긋나 4h로 재조정).
+test("incFlat falls back to the raw table for spans under the 4h minute-bucket threshold", () => {
   const sub = incFlat("", 30 * 60000); // 30분 span
   assert.match(sub, /FROM claude_code\.otel_metrics_sum\b/);
   assert.doesNotMatch(sub, /otel_metrics_sum_hourly/);
-  const normal = incFlat("", 3 * 3600000); // 3시간 span
+  const midBand = incFlat("", 3 * 3600000); // 3시간 span(1h~4h 밴드, 리뷰가 처음 잡아낸 회귀)
+  assert.match(midBand, /FROM claude_code\.otel_metrics_sum\b/);
+  const normal = incFlat("", 6 * 3600000); // 6시간 span → 4시간 초과, rollup
   assert.match(normal, /FROM claude_code\.otel_metrics_sum_hourly/);
   const defaultSpan = incFlat(); // spanMs 생략 → Infinity → 항상 rollup(기본 뷰 전제)
   assert.match(defaultSpan, /FROM claude_code\.otel_metrics_sum_hourly/);
+});
+
+// incFlatRaw()의 임계값이 index.js의 MAX_MINUTE_BUCKET_RANGE_MS(4시간)와 반드시 일치해야
+// 한다 — 프론트가 분 버킷을 고르는 구간과 스냅샷이 raw로 폴백하는 구간이 어긋나면 다시
+// KPI/차트 불일치가 재발한다(server/web 상수는 분리돼 있어 이 값이 유일한 교차검증 지점).
+test("incFlatRaw threshold matches the 4-hour minute-bucket boundary", () => {
+  assert.equal(incFlatRaw(4 * 3600000 - 1), true);
+  assert.equal(incFlatRaw(4 * 3600000), false);
 });

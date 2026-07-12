@@ -84,7 +84,10 @@ export function filterCond(filters = {}, cols = {}) {
   //   - excludeUnknown 기본값(true, unknown 제외) — 그 외 순수 A/B 비교 쿼리(모델별 지출,
   //     캐시 효율 등 group으로만 나눠 보고 총계로는 안 쓰는 지표). unknown은 어느 쪽에도
   //     못 넣으므로 A/B 비교에서는 계속 제외한다.
-  if (cols.group && filters.excludeUnknown !== false) conds.push(`${cols.group} != 'unknown'`);
+  // filters.group==='unknown'이면 기본 제외를 건너뛴다 — 안 그러면 `grp != 'unknown' AND
+  // grp = 'unknown'`이 되어 항상 빈 결과가 된다. 지금 UI(FilterBar)는 unknown 탭이 없어
+  // 실질적으로 발생하지 않지만, API를 직접 호출하는 경로에 대한 방어(리뷰에서 확인).
+  if (cols.group && filters.excludeUnknown !== false && filters.group !== "unknown") conds.push(`${cols.group} != 'unknown'`);
   if (filters.group && cols.group) {
     conds.push(`${cols.group} = {fGroup:String}`);
     params.fGroup = filters.group;
@@ -186,14 +189,25 @@ const seriesKey = "SeriesKey";
 // 기본 뷰에서 매번 최대 59분의 최신 데이터가 사라지는 회귀가 더 크다 — 과거/커스텀 구간의 경계
 // 오차(최대 59분)를 감내하는 쪽을 선택한다.
 //
-// span(from,to 사이)이 1시간 미만이면(sub-hour 드래그 줌) 위 트레이드오프의 전제 자체가
+// span(from,to 사이)이 짧으면(sub-hour/수시간 드래그 줌) 위 트레이드오프의 전제 자체가
 // 깨진다 — hour < to의 "신선도" 이점은 사라지고, toStartOfHour(from)이 왼쪽 경계까지 최대
-// 59분 넓혀 KPI 스냅샷(incFlat)이 같은 화면의 시계열(incBucketedRaw, from을 그대로 씀)보다
-// 큰 값을 보이는 불일치가 된다(리뷰에서 MAJOR로 확인). 이 좁은 구간에서는 원본 테이블로
-// 직접 diff하는 게 정확하고(rollup 최적화가 필요한 스케일도 아님) incBucketedRaw와 동일한
-// sk/lookback 규칙을 따른다.
+// 59분 넓혀 KPI 스냅샷(incFlat)이 같은 화면의 시계열보다 큰 값을 보이는 불일치가 된다(리뷰에서
+// MAJOR로 확인). 이 좁은 구간에서는 원본 테이블로 직접 diff하는 게 정확하고(rollup 최적화가
+// 필요한 스케일도 아님) incBucketedRaw와 동일한 sk/lookback 규칙을 따른다.
+//
+// 임계값을 1시간이 아니라 index.js MAX_MINUTE_BUCKET_RANGE_MS(4시간)와 맞춘다 — 프론트
+// resolutionForSpan이 분 버킷(intervalHours<1)을 고르는 구간(최대 4시간)과 정확히 겹쳐야
+// 같은 화면의 timeseries(incBucketedRaw, 이 구간에서 원본을 씀)와 스냅샷(incFlat)이 항상
+// 같은 소스 테이블·같은 경계를 본다(리뷰에서 재확인 — 1시간 임계는 1~4시간 구간에서
+// 여전히 어긋났다). raw=true를 반환해 호출부가 range(from, to, raw)에 그대로 넘기게 한다 —
+// SQL의 {from}/{to} 바인딩 자체가 정렬되면 raw 분기가 무의미해지므로(리뷰에서 CONFIRMED),
+// incFlat과 range()가 반드시 같은 raw 판정을 공유해야 한다.
+const MAX_SNAPSHOT_RAW_RANGE_MS = 4 * 3600000;
+export function incFlatRaw(spanMs) {
+  return spanMs < MAX_SNAPSHOT_RAW_RANGE_MS;
+}
 export function incFlat(metricFilter = "", spanMs = Infinity) {
-  if (spanMs < 3600000) {
+  if (incFlatRaw(spanMs)) {
     // ToolName은 rollup에서만 실컬럼(code_edit_tool.decision의 tool_name을 접어놓음) — 원본
     // otel_metrics_sum에는 없어서 그대로 SELECT하면 "Unknown expression identifier"로 쿼리가
     // 깨진다(실측 확인). Attributes['tool_name']에서 직접 뽑아 같은 별칭으로 맞춘다.
@@ -340,7 +354,7 @@ export async function kpiSummary(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -401,7 +415,7 @@ export async function cacheEfficiency(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -418,7 +432,7 @@ export async function modelDistribution(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group", tokens DESC`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -440,7 +454,7 @@ export async function normalizedProductivity(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group" ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -455,7 +469,7 @@ export async function codeEditDecisions(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", decision ORDER BY "group", decision`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -474,7 +488,7 @@ export async function codeEditDecisionsByTool(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.ToolName != '' ${f.where}
     GROUP BY "group", tool, decision ORDER BY "group", tool`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -513,7 +527,7 @@ export async function skillUsage(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.SkillName != '' ${f.where}
     GROUP BY "group", skill ORDER BY "group", invocations DESC`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
 }
 
@@ -775,7 +789,7 @@ export async function costSummary(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
   const byGroup = new Map();
   for (const r of withComputedCost(rows)) {
@@ -819,7 +833,7 @@ export async function costByModel(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
   return withComputedCost(rows).map((r) => ({
     ...r,
@@ -840,7 +854,7 @@ export async function costByUserModel(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' AND m.UserEmail != '' ${f.where}
     GROUP BY user, model ORDER BY user`,
-    { ...range(from, to), ...f.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
   return withComputedCost(rows).map((r) => ({
     ...r,
@@ -999,6 +1013,6 @@ export async function userLeaderboard(from, to, filters = {}) {
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
     WHERE m.UserEmail != '' ${f.where}
     GROUP BY user ORDER BY tokens DESC`,
-    { ...range(from, to), ...f.params, ...fAd.params }
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params, ...fAd.params }
   );
 }

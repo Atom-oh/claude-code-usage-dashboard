@@ -31,7 +31,7 @@ endpoints). There are no request bodies. Errors return `{"error": "<message>"}` 
 | Path | Returns |
 |---|---|
 | `GET /api/overview/kpi` | Group-level session/user/commit/PR/token/LOC summary |
-| `GET /api/overview/active-users` | Ungrouped unique active user count (excludes `unknown` — a "totals" endpoint, see `group` param above) |
+| `GET /api/overview/active-users` | Ungrouped unique active user count (includes `unknown` sessions — a "totals" endpoint, see `group` param above) |
 | `GET /api/overview/tokens-timeseries` | *timeseries* — token usage per group over time |
 | `GET /api/overview/cache-efficiency` | Cache read ratio per group |
 | `GET /api/overview/model-distribution` | Token distribution by group x model |
