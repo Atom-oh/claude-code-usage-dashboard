@@ -57,8 +57,10 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
    (`dashboard/server/queries.js`의 `incFlat`/`incBucketed`/`GROUP_CTE`는 원본이 아니라 이
    rollup만 읽는다). MV(`otel_metrics_sum_hourly_mv`)는 생성 "이후" insert만 반영하므로,
    기존 클러스터에 새로 적용했다면 과거 데이터가 rollup에 없을 수 있다 — 반드시 확인:
-   - `SELECT max(hour) FROM claude_code.otel_metrics_sum_hourly` — `now()`와 몇 분 이상
-     벌어지면 MV가 안 돌고 있는 것(원본은 신선한데 rollup만 stale).
+   - `hour`는 `toStartOfHour`라 정상 상태에서도 `now()`와 최대 59분+ 벌어져 보인다 —
+     `now()`와 직접 비교하면 healthy한 MV를 stale로 오판한다(리뷰에서 MAJOR로 확인).
+     `SELECT max(hour) >= toStartOfHour(now()) FROM claude_code.otel_metrics_sum_hourly`가
+     `0`(false)이면 그때 진짜 stale — MV가 안 돌고 있는 것(원본은 신선한데 rollup만 정지).
    - `SELECT min(hour) FROM claude_code.otel_metrics_sum_hourly` vs
      `SELECT min(toStartOfHour(TimeUnix)) FROM claude_code.otel_metrics_sum` — rollup의
      min이 원본의 min보다 늦으면 백필이 안 된 것. `scripts/backfill-hourly-rollup.sh`를

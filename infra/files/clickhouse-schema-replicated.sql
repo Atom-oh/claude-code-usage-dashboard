@@ -50,8 +50,10 @@ ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COL
 -- 주석 참고 — 두 파일 동기화 유지.
 -- MV는 인서트를 받은 레플리카에서만 발화하고 복제 파트는 재발화하지 않으므로(중복 없음),
 -- 인서트가 LB로 아무 레플리카에나 도착하는 이 클러스터에선 ON CLUSTER로 전 레플리카에 생성한다.
--- TTL/콜드 티어링 없음: 행이 적어(~40K/일) 항상 hot에 둬도 부담이 없고, 원본이 180일 TTL로
--- 지워진 뒤에도 diff baseline을 보존한다.
+-- TTL을 원본과 동일하게(90일 후 cold, 180일 후 삭제) 둔다 — UserEmail을 무기한 보존하는 별도
+-- 저장소가 되지 않도록(리뷰에서 MAJOR로 확인, FSI 워크샵 PII 요구사항). 행이 적어(~40K/일)
+-- 콜드 티어링 자체는 부담이 아니고, LOOKBACK_DAYS(3일)보다 180일이 훨씬 넉넉해 diff baseline
+-- 보존 목적은 유지된다.
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly ON CLUSTER 'replicated'
 (
     hour                   DateTime,
@@ -72,7 +74,10 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly ON CLUSTER 'repli
 ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-          Model, TokenType, Decision, SkillName, ToolName, hour);
+          Model, TokenType, Decision, SkillName, ToolName, hour)
+TTL toDateTime(hour) + INTERVAL 90 DAY TO VOLUME 'cold',
+    toDateTime(hour) + INTERVAL 180 DAY DELETE
+SETTINGS storage_policy = 'hot_cold';
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.otel_metrics_sum_hourly_mv ON CLUSTER 'replicated'
 TO claude_code.otel_metrics_sum_hourly AS

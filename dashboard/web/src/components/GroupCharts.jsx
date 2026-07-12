@@ -22,8 +22,13 @@ function parseUtc(label) {
 // 페이지의 모든 차트가 같이 줌인되고 해상도도 자동으로 세밀해진다. Recharts 카테고리 x축은
 // activeLabel(현재 x값)로 드래그 구간을 잡고, ReferenceArea로 하이라이트한다. 라벨이 날짜로
 // 파싱되지 않으면(카테고리 축: 모델명·툴명 등) 조용히 no-op이라 별도 opt-in prop이 필요없다.
-function useDragZoom(yAxisId) {
-  const { setRange, intervalHours } = useRange();
+// bucketHoursOverride: 차트가 전역 intervalHours가 아니라 page-local 버킷 크기로 데이터를
+// 조회·표시할 때(예: Cost.jsx의 SegmentedControl) 실제 렌더링 중인 버킷 크기를 넘긴다 — 안
+// 그러면 우측 끝 보정(아래)이 전역 intervalHours를 쓰다 화면에 보이는 버킷과 어긋난 custom
+// range를 만든다(리뷰에서 MAJOR로 확인).
+function useDragZoom(yAxisId, bucketHoursOverride) {
+  const { setRange, intervalHours: globalIntervalHours } = useRange();
+  const intervalHours = bucketHoursOverride ?? globalIntervalHours;
   const startRef = useRef(null);
   const [area, setArea] = useState(null); // { left, right } — 드래그 중 하이라이트 구간
   const cancel = () => { startRef.current = null; setArea(null); };
@@ -44,12 +49,16 @@ function useDragZoom(yAxisId) {
       if (!a) return;
       const d1 = parseUtc(a.left), d2 = parseUtc(a.right);
       if (isNaN(d1) || isNaN(d2)) return; // 카테고리 축 → no-op
+      // 클릭/미세드래그 가드는 우측 버킷 확장(아래) "전의" raw delta로 판정해야 한다 — 순수 클릭은
+      // d1===d2라 delta가 0인데, 확장 후 to-from을 기준으로 삼으면 항상 버킷 하나 크기(예: 1시간)가
+      // 되어 가드를 통과해버린다(리뷰에서 CRITICAL로 확인: 툴팁을 보려는 클릭마다 전역이 그 버킷
+      // 하나로 줌인되는 오동작). 그래서 순수 클릭 판정은 raw delta 기준으로 먼저 걸러낸다.
+      if (Math.abs(d2 - d1) < 10 * 60000) return; // 클릭·미세 드래그 무시(최소 10분)
       const from = d1 <= d2 ? d1 : d2;
       // 라벨은 버킷 "시작" 값인데 서버는 [from,to) exclusive라, 우측 끝 라벨을 그대로 to로 넘기면
       // 그 버킷 자체가 통째로 잘려나간다(리뷰에서 MINOR로 확인) — 현재 버킷 크기(intervalHours)만큼
       // 밀어 그 버킷의 끝까지 포함시킨다.
       const to = new Date((d1 <= d2 ? d2 : d1).getTime() + intervalHours * 3600000);
-      if (to - from < 10 * 60000) return; // 클릭·미세 드래그 무시(최소 10분)
       setRange(from, to);
     },
     onMouseLeave: cancel,
@@ -122,9 +131,9 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
 }
 
 // 임의 카테고리(예: model)별 일간 스택 바 — 그룹(bedrock/enterprise) 전용이 아닌 범용 버전.
-export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height = 260, tickFormatter, valuePrefix = "" }) {
+export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height = 260, tickFormatter, valuePrefix = "", bucketHours }) {
   const c = useChartColors();
-  const zoom = useDragZoom();
+  const zoom = useDragZoom(undefined, bucketHours);
   const { data, series } = pivotByKey(rows, xKey, seriesKey, valueKey);
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
   return (

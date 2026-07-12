@@ -79,7 +79,10 @@ ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN SeriesKey;
 -- UserEmail(ResourceAttributes)/AggregationTemporality를 구분하지 못한다.
 -- SimpleAggregateFunction이라 쿼리는 반드시 재집계(GROUP BY) 형태로 읽어야 한다(머지가
 -- 비동기라 부분 행이 존재할 수 있음) — incFlat/incBucketed의 GROUP BY 모양이 이미 그렇다.
--- TTL 없음: 원본이 180일 TTL로 지워진 뒤에도 diff baseline을 보존한다(의도된 보너스).
+-- TTL을 원본과 동일하게(180일) 둔다 — UserEmail을 담는 별도 저장소인데 TTL이 없으면 원본이
+-- 삭제된 뒤에도 이 rollup에 사용자 이메일이 무기한 남아 retention 정책을 우회하게 된다(리뷰에서
+-- MAJOR로 확인, FSI 워크샵 맥락이라 PII 보존 기간은 실제 요구사항). LOOKBACK_DAYS(3일)보다
+-- 180일이 훨씬 넉넉하므로 diff baseline 보존 목적은 그대로 유지된다.
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
 (
     hour                   DateTime,
@@ -100,7 +103,8 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-          Model, TokenType, Decision, SkillName, ToolName, hour);
+          Model, TokenType, Decision, SkillName, ToolName, hour)
+TTL toDateTime(hour) + INTERVAL 180 DAY;
 
 -- MV는 인서트를 받은 노드에서 발화해 TO 테이블에 쓴다. 컬럼을 전부 명시(SELECT * 금지 —
 -- MATERIALIZED 소스 컬럼은 명시 참조해야 MV에서 해석된다). MV가 throw하면 원본 인서트가

@@ -68,6 +68,11 @@ function parseFilters(req) {
 // QUANT_MS를 120초로 늘려 창당 여유를 4배로 키움.
 const QUANT_MS = 120_000;
 const CACHE_TTL_MS = 320_000;
+// 화이트리스트(CACHE_KEY_PARAMS, 아래)로 무의미한 파라미터 폭증은 막았지만, from/to/user/model/
+// email은 여전히 자유 문자열이라 인증된 클라이언트가 그 값만 계속 바꾸면 만료 전까지 distinct
+// 엔트리가 계속 늘 수 있다(리뷰에서 MAJOR로 확인) — 상한을 두고 초과 시 가장 오래된(생성 순서)
+// 엔트리부터 제거한다. Map은 삽입 순서를 보존하므로 키를 삭제 후 재삽입하면 자연히 LRU가 된다.
+const CACHE_MAX_ENTRIES = 2000; // 워밍 대상(~25개) × 실제 뷰 조합 수 대비 넉넉한 여유치.
 const cache = new Map(); // key -> { expires, promise }
 setInterval(() => {
   const now = Date.now();
@@ -96,6 +101,8 @@ function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
     const req = { query };
     const { from, to } = parseRange(req);
     entry = { expires: Date.now() + ttlMs, promise: Promise.resolve(handler(from, to, query, parseFilters(req))) };
+    // 상한 초과 시 가장 오래 전에 삽입된 엔트리부터 제거(Map은 삽입 순서 보존 — 첫 키가 가장 오래됨).
+    if (cache.size >= CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value);
     cache.set(key, entry);
     // 핸들러가 실패하면 그 실패를 캐시하지 않는다 — 다음 요청이 재시도할 수 있어야 한다.
     entry.promise.catch(() => cache.delete(key));

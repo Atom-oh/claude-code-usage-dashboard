@@ -6,8 +6,21 @@ import { rollupActiveUsers, MAU_WINDOW_DAYS } from "./activity.js";
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
 
+// to가 "지금"(기본 실시간 뷰)에 가까우면 그대로 두고, 과거의 임의 시각(드래그 줌·히스토리컬
+// 커스텀 구간)이면 정각(toStartOfHour)으로 내린다. incFlat/incBucketed의 `hour < {to:DateTime}`가
+// to가 정각이 아니면 그 hour 버킷 전체(최대 59분)를 포함해 과대집계하는데(리뷰에서 MAJOR로
+// 확인), 이건 "임의 과거 to"를 만드는 드래그 줌이 이 PR에서 새로 생긴 뒤로 실제 문제가 됐다.
+// 반대로 to=현재인 기본 뷰에서 정각으로 내리면 매번 최대 59분의 최신 데이터가 사라지는 회귀가
+// 더 크므로, 그 경우는 그대로 둔다. 10분 여유는 useApi의 quantize grace(150초)보다 넉넉해
+// 실시간 뷰를 절대 과거로 오판하지 않는다.
+const LIVE_TOLERANCE_MS = 10 * 60000;
+export function alignHistoricalTo(to) {
+  const isLive = Date.now() - to.getTime() < LIVE_TOLERANCE_MS;
+  return isLive ? to : new Date(Math.floor(to.getTime() / 3600000) * 3600000);
+}
+
 function range(from, to) {
-  return { from: toChDateTime(from), to: toChDateTime(to) };
+  return { from: toChDateTime(from), to: toChDateTime(alignHistoricalTo(to)) };
 }
 
 // us.anthropic.claude-fable-5 / global.anthropic.claude-fable-5 / claude-fable-5[1m] 등은 같은
@@ -162,6 +175,14 @@ function incFlat(metricFilter = "") {
 // "그 버킷의 마지막 누적값 - 이전 버킷의 마지막 누적값"(lagInFrame), delta는 버킷 내 합을 쓴다.
 // lookback 구간의 버킷은 첫 실구간 버킷의 diff baseline으로만 쓰이고 바깥 WHERE t >= from에서
 // 걸러진다. 분(MINUTE) 버킷은 rollup(hour 그레인)으로 못 만드므로 incBucket()이 원본 폴백을 태운다.
+//
+// 검증(2026-07-12): 리뷰에서 "WHERE t>=from이 lagInFrame과 같은 SELECT 레벨에 있으면
+// ClickHouse가 WHERE를 window 계산보다 먼저 적용해 lookback 버킷이 지워지고 baseline이
+// 사라질 수 있다"는 지적이 있어, 합성 임시 테이블로 실측 검증했다 — WHERE를 한 겹 바깥으로
+// 감싼 버전과 지금 이 구조(WHERE가 window와 같은 SELECT)를 같은 데이터로 나란히 실행한
+// 결과 완전히 동일했다(둘 다 lag가 lookback의 실제 이전 값을 정확히 반환). ClickHouse는
+// WHERE를 최종 결과에만 적용하고 window 함수는 GROUP BY 직후의 전체 파티션에 대해 계산하므로
+// (EXPLAIN PLAN상 Window가 Filter보다 나중 단계) 우려한 문제가 실재하지 않는다 — 오탐.
 function incBucketed(bucketExpr, metricFilter = "") {
   return `(
     SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
@@ -530,7 +551,7 @@ export async function adoptionLevels(from, to, filters = {}) {
     FROM claude_code.otel_metrics_sum_hourly m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE MetricName = 'claude_code.session.count' AND UserEmail != '' AND hour < {to:DateTime} ${f.where}`,
-    { to: toChDateTime(to), ...f.params }
+    { to: toChDateTime(alignHistoricalTo(to)), ...f.params }
   );
   return rows[0] || { total_members: 0, mau: 0, wau: 0, dau: 0 };
 }

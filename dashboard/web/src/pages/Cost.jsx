@@ -247,6 +247,7 @@ export default function Cost() {
             valueKey="cost"
             tickFormatter={fmtTick}
             valuePrefix="$"
+            bucketHours={intervalHours}
           />
         )}
 
