@@ -10,7 +10,8 @@ HTTP Basic Auth, applied globally by Express middleware in `dashboard/server/ind
 vars are unset (local dev) and always skipped for `GET /healthz`.
 
 ## Common Query Parameters
-Every route below accepts these (parsed by `parseRange()` / `route()` in `index.js`):
+Every data route below accepts these (parsed by `parseRange()` / `route()` in `index.js`).
+`POST /api/chat` (see the Chat section) is the one exception — it takes a JSON body instead.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -24,8 +25,9 @@ Every route below accepts these (parsed by `parseRange()` / `route()` in `index.
 
 ## Endpoints
 
-All endpoints are `GET` and return JSON (array of rows, or a single object for snapshot
-endpoints). There are no request bodies. Errors return `{"error": "<message>"}` with HTTP 500.
+All data endpoints below are `GET`, take no request body, and return JSON (array of rows, or
+a single object for snapshot endpoints). `POST /api/chat` is the sole exception (JSON body,
+SSE response) — see the Chat section. Errors return `{"error": "<message>"}` with HTTP 500.
 
 ### Overview
 | Path | Returns |

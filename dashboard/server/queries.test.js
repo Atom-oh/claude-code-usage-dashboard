@@ -102,21 +102,28 @@ test("incFlat falls back to the raw table for spans under the 4h minute-bucket t
   assert.match(defaultSpan, /FROM claude_code\.otel_metrics_sum_hourly/);
 });
 
-// rollup 분기(span≥4h, 기본 2일 뷰 포함)의 cumulative baseline은 from이 속한 hour 버킷을
-// 원본 테이블로 stitch해야 한다 — hour는 "그 버킷 종료 시점" 값이라 어느 쪽 근사(toStartOfHour
-// 내림 또는 hour<from 그대로)도 단독으로는 부정확하다:
-//   - hour < toStartOfHour(from): baseline이 너무 작아짐 → diff 과대집계(라이브 실측: 한
-//     세션에서 504만 토큰 차이).
-//   - hour < from (라운드 9 시도): from이 속한 hour 버킷의 "종료 시점"(최대 59분 미래) 값을
-//     baseline으로 씀 → diff 과소집계(라이브 실측: 같은 종류 세션에서 27,066 차이 재현,
-//     리뷰에서 재확인 — 방향이 반대인 별개의 오차였다).
-// UNION ALL로 from이 속한 hour만 원본 stitch 서브쿼리로 대체하는 게 유일한 정확한 해법 —
-// 라이브 클러스터에서 전체 SQL을 실행해 정확한 diff(27,066)가 나옴을 확인했다.
-test("incFlat's rollup branch stitches the from-hour bucket from the raw table for exact baseline", () => {
+// rollup 분기(span≥4h, 기본 2일 뷰 포함)의 cumulative baseline — 세 가지 근사를 모두 실측으로
+// 검증했다. hour는 "그 버킷 종료 시점" 값이라 근사마다 오차가 생긴다:
+//   - hour < toStartOfHour(from): baseline이 너무 작아짐 → diff 과대집계(라이브 실측: 504만).
+//   - hour < from (라운드 9): baseline이 너무 커짐(from-hour 종료 시점 값) → diff 과소집계
+//     (라이브 실측: 27,066).
+//   - from-hour rollup 행을 raw stitch로 "대체"(라운드 10, UNION ALL): 세션이 from-hour
+//     안에서만 성장하고 그 뒤 rollup 행이 없으면 대체된 행(pre-from만 담음)이 baseline·current
+//     양쪽에서 선택돼 post-from 성장분이 통째로 사라진다(리뷰에서 재확인 — 대체가 아니라
+//     보정이어야 했다).
+// 정확한 해법: 원본 rollup 행은 그대로 두고(current는 항상 정확), baseline만
+// `greatest(이전 hour까지의 rollup max, raw로 구한 정확한 from 시점 값)`로 보정한다. delta는
+// sum이라 같은 방식이 안 통해 from-hour의 sum_value 자체를 raw의 [from, hour 끝) 재계산값으로
+// 대체한다. 라이브 클러스터로 to가 from-hour 안/다음 hour인 두 시나리오 모두 정확한
+// diff(27,066)가 나옴을 확인했다.
+test("incFlat's rollup branch corrects (not replaces) the from-hour baseline via raw lookup", () => {
   const rollup = incFlat("", 6 * 3600000); // 4h 초과 → rollup 분기
   assert.match(rollup, /UNION ALL/);
-  assert.match(rollup, /maxIf\(Value, TimeUnix < \{from:DateTime\}\) AS mv/);
-  assert.match(rollup, /hour != toStartOfHour\(\{from:DateTime\}\)/);
+  assert.match(rollup, /maxIf\(Value, TimeUnix < \{from:DateTime\}\) AS from_hour_raw_baseline/);
+  assert.match(rollup, /greatest\(maxIf\(mv, hh < toStartOfHour\(\{from:DateTime\}\)\), max\(from_hour_raw_baseline\)\)/);
+  // 원본 rollup 행이 대체되지 않고 그대로 살아있어야 한다 — "hour != toStartOfHour(from)"로
+  // 제외하지 않는다(라운드 10의 결함).
+  assert.doesNotMatch(rollup, /hour != toStartOfHour/);
 });
 
 // incFlatRaw()의 임계값이 index.js의 clampIntervalHours(`to-from > 4h`일 때만 클램프 — 정확히

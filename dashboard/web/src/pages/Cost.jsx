@@ -9,6 +9,7 @@ import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
+import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 
@@ -34,6 +35,7 @@ function foldModelRows(rows) {
 
 export default function Cost() {
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
+  const { model } = useFilters();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
   // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 기본값으로 재동기화 —
   // 안 그러면 7일 보다가 1일로 바꿔도 "일간" 버킷에 머문다. days도 dependency에 넣는다: 주간(168)을
@@ -120,6 +122,13 @@ export default function Cost() {
   const projection30d = (totals.cost / daysInRange) * 30;
   const developerCount = activeUsers.data?.users ?? 0;
   const spendPerDeveloper = developerCount > 0 ? totals.cost / developerCount : 0;
+  // model 필터가 켜져 있으면 totals.cost(costSummary, modelMixed로 model 필터 적용)와
+  // developerCount(activeUsers, model 필터 미적용 — People 섹션 규칙)의 모수 축이 어긋난다 —
+  // "이 모델 지출 / 전체 개발자"가 되어 실제보다 낮게 나온다(리뷰에서 MAJOR로 확인). 정확한
+  // model-aware 분모가 없으므로, 필터가 켜진 상태에선 오해를 막기 위해 힌트로 명시한다.
+  const spendPerDeveloperHint = model
+    ? `${fmt(developerCount)}명 기준 — model 필터가 켜져 있어 분자만 필터링됨(참고용)`
+    : `${fmt(developerCount)}명 기준`;
 
   // 그룹별 캐시 티어별 지출 — bedrock/enterprise 좌우 분리(다른 카드들과 동일 패턴).
   function tierRowsFor(group) {
@@ -179,7 +188,7 @@ export default function Cost() {
             <StatTile label="30일 프로젝션" value={usd(projection30d)} hint="현재 기간 일평균 × 30" />
             {/* developerCount/spendPerDeveloper는 activeUsers에서 나온다 — summary만 게이트하면
                 activeUsers가 아직 로딩 중이거나 에러여도 "$0 / 0명 기준"이 실제 값처럼 보인다. */}
-            <StatTile label="개발자당 지출" value={usd(spendPerDeveloper)} hint={`${developerCount}명 기준`} />
+            <StatTile label="개발자당 지출" value={usd(spendPerDeveloper)} hint={spendPerDeveloperHint} />
           </div>
         )}
 

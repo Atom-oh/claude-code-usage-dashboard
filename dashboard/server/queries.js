@@ -227,48 +227,54 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
       GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
     )`;
   }
-  // cumulative(temp=2) baseline의 hour 경계 처리 — 두 방향 오류를 모두 실측으로 확인했다.
-  // hour는 "그 버킷 종료 시점" 누적값이라 어느 쪽으로 근사해도 오차가 생긴다:
-  //   - `hour < toStartOfHour(from)`(원래 방식): from이 속한 hour 버킷 자체를 baseline에서
-  //     빼 baseline이 너무 작아짐 → diff가 그 부분 hour의 실제 증가분만큼 과대집계.
-  //   - `hour < from`(라운드 9에서 시도): from이 속한 hour 버킷의 "종료 시점" 값(최대 59분
-  //     미래)을 baseline으로 씀 → diff가 그만큼 과소집계(리뷰에서 재확인 — 라이브 클러스터로
-  //     실제 세션 하나에서 baseline이 정확값보다 27,066 더 크게 잡혀 diff가 그만큼 작게
-  //     나오는 걸 직접 검증했다).
-  // 유일한 정확한 해법: from이 속한 hour 버킷만 원본 테이블로 대체(stitch)한다 — 그 버킷의
-  // "정확히 from 시점까지"의 값을 raw에서 구해 rollup의 그 버킷 자리에 끼운다. span≥4h(이
-  // 분기의 전제)에서는 from과 to가 같은 hour에 속할 수 없어 to 쪽 stitch는 필요 없다.
+  // cumulative(temp=2) baseline의 hour 경계 처리 — 세 가지 접근을 실측으로 검증했다. hour는
+  // "그 버킷 종료 시점" 누적값이라 어느 쪽으로 근사해도 오차가 생긴다:
+  //   - `hour < toStartOfHour(from)`(원래 방식): baseline이 너무 작아짐 → diff 과대집계.
+  //   - `hour < from`(라운드 9): baseline이 너무 커짐(from-hour 종료 시점 값) → diff 과소집계.
+  //   - UNION ALL로 from-hour rollup 행을 raw stitch로 "대체"(라운드 10): current 쪽도 그
+  //     대체된(pre-from만 담은) 행을 보게 되어, 세션이 from-hour 안에서만 성장하고 그 뒤 rollup
+  //     행이 아직 없으면 post-from 성장분이 baseline과 current 양쪽에서 사라져 diff가 0으로
+  //     소실된다(리뷰에서 MAJOR로 재확인 — 대체가 아니라 보정이어야 했다).
+  // 정확한 해법: 원본 rollup 행은 그대로 두고(current=maxIf(max_value, hour<to)는 항상 정확 —
+  // to가 속한 hour까지의 실제 상태를 담고 있음), baseline만 raw로 보정한다:
+  // `greatest(rollup의 이전 hour까지 max, raw로 구한 정확한 from 시점 값)`. 라이브 클러스터로
+  // 두 시나리오(to가 다음 hour/같은 hour) 모두 정확한 diff(27,066)가 나옴을 확인했다.
   //
-  // 이 stitch로 incFlat(스냅샷)은 이제 정확하지만, incBucketed(시계열)는 여전히 다른 결함이
-  // 있다 — 버킷 경계가 항상 정각(bucketExpr이 rollup의 정각 hour 컬럼 기반)이라 `WHERE t >=
+  // delta(temp=1)는 sum이라 이 방식이 안 통한다 — sub-hour 분해가 필요하므로 from-hour의
+  // sum_value를 통째로 raw의 [from, hour 끝) 재계산값으로 교체한다(원본 hour 자체를 지우고
+  // 그 구간만 다시 합산 — cumulative처럼 "이전 값과 비교"가 아니라 "그 구간의 합"이라 교체가
+  // 정확하다. from-hour 이전/이후 다른 hour는 그대로).
+  //
+  // incBucketed(시계열)는 여전히 다른 결함이 있다 — 버킷 경계가 항상 정각이라 `WHERE t >=
   // from`이 from이 속한 부분 시간 버킷을 통째로 걸러낸다. 실측(라이브 클러스터, 실제
-  // useApi.js quantize 로직으로 만든 기본 2일 뷰 from/to 그대로 재현): KPI 1,975,497,445 vs
-  // 시계열 합계 1,944,228,273 — 차이 31,269,172(1.58%), [from, 다음 정각) 구간의 실제 증가량과
-  // 정확히 일치. **워크샵 기본 뷰에서 상시 발생하는 실질적 크기의 차이**(quantize가 120초
-  // 단위라 from이 정각에 맞을 확률은 거의 0) — "작다"고 단정할 수 없다. incBucketed의 첫
-  // 버킷도 같은 stitch를 적용해야 완전히 해소되나, 시계열 버킷 경계 자체를 재구성해야 해서
-  // 이 PR 스코프를 넘어선다. 알려진 잔여 불일치로 남기고 후속 작업으로 넘긴다 — incFlat(총계
-  // 카드)이 정확해진 것이 핵심 목표였고, incBucketed(차트 막대/선)는 여전히 rollup의 hour
-  // 그레인이 만드는 근본적 제약을 받는다.
+  // useApi.js quantize 로직으로 만든 기본 2일 뷰 from/to 그대로 재현): KPI와 시계열 합계가
+  // 1.58%(약 3100만) 차이 — [from, 다음 정각) 구간의 실제 증가량과 정확히 일치. 시계열 버킷
+  // 경계 재구성이 필요해 이 PR 스코프를 넘어선다. 알려진 잔여 불일치로 남긴다.
   return `(
     SELECT
         SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
         if(temp = 2,
-            greatest(maxIf(mv, h < {to:DateTime}) - maxIf(mv, h < {from:DateTime}), 0),
-            sumIf(sv, h >= toStartOfHour({from:DateTime}) AND h < {to:DateTime})) AS Value
+            greatest(
+                maxIf(mv, hh < {to:DateTime})
+                - greatest(maxIf(mv, hh < toStartOfHour({from:DateTime})), max(from_hour_raw_baseline)),
+                0
+            ),
+            sumIf(sv, hh > toStartOfHour({from:DateTime}) AND hh < {to:DateTime}) + max(from_hour_raw_delta)
+        ) AS Value
     FROM (
-        SELECT hour AS h, SeriesKey AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
-            max_value AS mv, sum_value AS sv
+        SELECT hour AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
+            max_value AS mv, sum_value AS sv,
+            0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta
         FROM claude_code.otel_metrics_sum_hourly
-        WHERE hour != toStartOfHour({from:DateTime})
-          AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+        WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
           ${metricFilter}
         UNION ALL
         SELECT
-            toStartOfHour({from:DateTime}) AS h, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
+            toStartOfHour({from:DateTime}) AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
             Attributes['tool_name'] AS ToolName,
-            maxIf(Value, TimeUnix < {from:DateTime}) AS mv,
-            sumIf(Value, TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < {from:DateTime}) AS sv
+            0 AS mv, 0 AS sv,
+            maxIf(Value, TimeUnix < {from:DateTime}) AS from_hour_raw_baseline,
+            sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR) AS from_hour_raw_delta
         FROM claude_code.otel_metrics_sum
         WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR
           ${metricFilter}
