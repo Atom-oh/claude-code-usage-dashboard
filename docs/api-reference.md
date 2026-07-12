@@ -15,7 +15,7 @@ Every data route below accepts these (parsed by `parseRange()` / `route()` in `i
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `from` | ISO 8601 datetime | No | Range start. Default: `to - 2 days` (workshop default) |
+| `from` | ISO 8601 datetime | No | Range start. Default: `to - 2 days` (workshop default). For uniq/existence endpoints (`overview/active-users`, `adoption/levels`, `adoption/timeseries`, and the leaderboard's active-days count), `from` is rounded down to the containing hour server-side, so up to 59 minutes of activity just before `from` can be included — a deliberate rollup-grain trade-off, negligible on multi-day ranges but noticeable on narrow (sub-hour) custom ranges |
 | `to` | ISO 8601 datetime | No | Range end. Default: now |
 | `group` | string (`bedrock`\|`enterprise`) | No | Filter by inferred experiment group. `unknown` sessions are excluded from group-scoped queries by default (~11% of sessions have no bedrock/enterprise signal) — a few "totals" endpoints (`active-users`, `adoption/levels`, `adoption/timeseries`, `cost/summary`, `overview/kpi`) include them instead since they report org-wide totals, not an A/B split |
 | `user` | string | No | Filter by user email (partial match) |

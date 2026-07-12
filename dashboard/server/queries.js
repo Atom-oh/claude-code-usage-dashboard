@@ -1062,6 +1062,8 @@ export async function userSkillUsage(from, to, filters = {}) {
 // excludeUnknown: false — activeUsers/adoptionLevels와 같은 "총계/DAU·WAU·MAU" 계열이라
 // 그룹 무관 모수여야 한다. 빠뜨리면 이 시계열만 unknown ~11%가 빠져 Trends의 DAU/WAU/MAU가
 // Overview 스냅샷(adoptionLevels)보다 낮게 나오는 모순이 생긴다(리뷰에서 MAJOR로 확인).
+// 좌경계 fuzz는 activeUsers 위 주석과 동일(document 판정) — 여긴 30일 lookback의 시작점에만
+// 영향을 줘 활동 밀도상 영향이 더 작다.
 export async function adoptionTimeseries(from, to, filters = {}) {
   const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
   const rows = await query(
@@ -1139,6 +1141,8 @@ export async function userLeaderboard(from, to, filters = {}) {
   // 있는 날엔 반드시 session.count 행이 있어(30초마다 재보고) 의미 손실이 없고(adoptionLevels/
   // userHeatmap과 동일 근거), 전체 metric을 스캔할 때보다 3배 빠르다(실측 2026-07-10: 8.0→2.5초 —
   // 필터가 없으면 이 쿼리가 워밍/실요청에서 ClickHouse 클라이언트 15초 타임아웃까지 갔다).
+  // 좌경계 fuzz는 activeUsers 위 주석과 동일(document 판정) — 여기선 active_days가 생산성
+  // 점수 가중치 0.15의 입력이라 극단적으로 좁은 커스텀 구간에서 ±1일 정도의 왜곡 가능성 인지.
   const fAd = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelMixed: { model: "Model", session: "m.SessionId" } });
   return query(
     `${GROUP_CTE},
