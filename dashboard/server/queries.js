@@ -203,8 +203,11 @@ const seriesKey = "SeriesKey";
 // SQL의 {from}/{to} 바인딩 자체가 정렬되면 raw 분기가 무의미해지므로(리뷰에서 CONFIRMED),
 // incFlat과 range()가 반드시 같은 raw 판정을 공유해야 한다.
 const MAX_SNAPSHOT_RAW_RANGE_MS = 4 * 3600000;
+// index.js clampIntervalHours는 `to - from > 4h`일 때만 클램프(정확히 4h는 raw 허용) — 여기서
+// `<`를 쓰면 정확히 4h(1시간 버킷 4개짜리 드래그 등으로 실제 생성 가능)에서 시계열은 raw인데
+// 스냅샷은 rollup을 보는 off-by-one이 재발한다(리뷰에서 확인). `<=`로 맞춘다.
 export function incFlatRaw(spanMs) {
-  return spanMs < MAX_SNAPSHOT_RAW_RANGE_MS;
+  return spanMs <= MAX_SNAPSHOT_RAW_RANGE_MS;
 }
 export function incFlat(metricFilter = "", spanMs = Infinity) {
   if (incFlatRaw(spanMs)) {
@@ -224,11 +227,18 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
       GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
     )`;
   }
+  // cumulative(temp=2) baseline은 hour < toStartOfHour(from)이 아니라 hour < from을 써야
+  // 한다 — 실측(라이브 클러스터, 2026-07-12): 한 세션에서 toStartOfHour(from) 기준 baseline이
+  // 581,553,473인데 실제 from 시점 값은 586,596,065라 diff가 504만 더 크게 나왔다(리뷰에서
+  // MAJOR로 확인 — 기본 2일 뷰를 포함한 모든 rollup 경로 스냅샷에서 상시 발생). hour가 항상
+  // 정각이라 `hour < from`은 from이 속한 hour 버킷까지 포함해 그 시점의 실제 누적값을 보게
+  // 되므로(라이브 검증: hour<from ≡ hour<=toStartOfHour(from)), toStartOfHour로 내림하지
+  // 않아도 baseline이 부정확해지지 않는다 — 왼쪽 경계 확장은 없어진다.
   return `(
     SELECT
         SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
         if(temp = 2,
-            greatest(maxIf(max_value, hour < {to:DateTime}) - maxIf(max_value, hour < toStartOfHour({from:DateTime})), 0),
+            greatest(maxIf(max_value, hour < {to:DateTime}) - maxIf(max_value, hour < {from:DateTime}), 0),
             sumIf(sum_value, hour >= toStartOfHour({from:DateTime}) AND hour < {to:DateTime})) AS Value
     FROM claude_code.otel_metrics_sum_hourly
     WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}

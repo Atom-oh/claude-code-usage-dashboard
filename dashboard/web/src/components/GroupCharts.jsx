@@ -17,6 +17,7 @@ import { Card } from "./Card.jsx";
 // 그러면 우측 끝 보정(아래)이 전역 intervalHours를 쓰다 화면에 보이는 버킷과 어긋난 custom
 // range를 만든다(리뷰에서 MAJOR로 확인).
 function useDragZoom(yAxisId, bucketHoursOverride) {
+  const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
   const startRef = useRef(null);
   const [area, setArea] = useState(null); // { left, right } — 드래그 중 하이라이트 구간
@@ -62,7 +63,9 @@ function useDragZoom(yAxisId, bucketHoursOverride) {
   // id를 지정해야 한다. 없으면 Recharts가 기본 축으로 렌더를 시도하다 못 찾아 하이라이트가 안
   // 뜬다(기능은 정상 동작, 시각 피드백만 누락 — 리뷰에서 MINOR로 확인). 명명된 축이 없는
   // Area/Bar 차트는 yAxisId=undefined로 기본 동작 그대로.
-  const overlay = dragging ? <ReferenceArea yAxisId={yAxisId} x1={area.left} x2={area.right} strokeOpacity={0} fill="#6366f1" fillOpacity={0.12} /> : null;
+  // fill 색상은 하드코딩 대신 useChartColors().lead(테마 CSS 변수, 다크모드 대응)를 쓴다
+  // (리뷰에서 MINOR로 확인 — 고정 #6366f1은 다크 테마에서 대비가 어긋날 수 있었다).
+  const overlay = dragging ? <ReferenceArea yAxisId={yAxisId} x1={area.left} x2={area.right} strokeOpacity={0} fill={chartColors.lead} fillOpacity={0.12} /> : null;
   return { handlers, overlay, className: dragging ? "select-none" : "" };
 }
 

@@ -276,7 +276,7 @@ export default function Cost() {
 
         <DataTable
           title="모델 · 지출 & 토큰"
-          subtitle="계산 비용 기준 정렬 · 이전 기간 대비는 현재와 동일한 길이의 직전 구간과 비교"
+          subtitle="계산 비용 기준 정렬 · 이전 기간 대비는 현재와 동일한 길이의 직전 구간과 비교(1시간 미만 드래그 줌은 최소 1시간 창으로 비교됨)"
           columns={[
             { key: "model", label: "모델" },
             { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)) },

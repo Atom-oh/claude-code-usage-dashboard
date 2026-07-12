@@ -102,10 +102,23 @@ test("incFlat falls back to the raw table for spans under the 4h minute-bucket t
   assert.match(defaultSpan, /FROM claude_code\.otel_metrics_sum_hourly/);
 });
 
-// incFlatRaw()의 임계값이 index.js의 MAX_MINUTE_BUCKET_RANGE_MS(4시간)와 반드시 일치해야
-// 한다 — 프론트가 분 버킷을 고르는 구간과 스냅샷이 raw로 폴백하는 구간이 어긋나면 다시
-// KPI/차트 불일치가 재발한다(server/web 상수는 분리돼 있어 이 값이 유일한 교차검증 지점).
-test("incFlatRaw threshold matches the 4-hour minute-bucket boundary", () => {
+// rollup 분기(span≥4h, 기본 2일 뷰 포함)의 cumulative baseline은 `hour < from`이어야 한다 —
+// `hour < toStartOfHour(from)`을 쓰면 baseline이 from이 속한 hour 버킷 하나만큼 더 이전
+// 시점을 봐, diff(끝값-baseline)가 그 부분 hour의 실제 증가분만큼 과대집계된다(라이브
+// 클러스터 실측, 2026-07-12: 한 세션에서 504만 토큰 차이로 재현 — 기본 뷰에서도 상시
+// 발생하던 MAJOR).
+test("incFlat's rollup branch baselines cumulative counters at `from`, not toStartOfHour(from)", () => {
+  const rollup = incFlat("", 6 * 3600000); // 4h 초과 → rollup 분기
+  assert.match(rollup, /maxIf\(max_value, hour < \{from:DateTime\}\)/);
+  assert.doesNotMatch(rollup, /maxIf\(max_value, hour < toStartOfHour\(\{from:DateTime\}\)\)/);
+});
+
+// incFlatRaw()의 임계값이 index.js의 clampIntervalHours(`to-from > 4h`일 때만 클램프 — 정확히
+// 4h는 raw 허용)와 정확히 같은 경계에서 갈려야 한다. `<`를 쓰면 정확히 4h(1시간 버킷 4개짜리
+// 드래그 등으로 실제 생성 가능)에서 시계열은 raw인데 스냅샷은 rollup을 보는 off-by-one이
+// 재발한다(리뷰에서 확인) — `<=`라 정확히 4h도 raw여야 한다.
+test("incFlatRaw threshold matches clampIntervalHours' >4h boundary (inclusive at exactly 4h)", () => {
   assert.equal(incFlatRaw(4 * 3600000 - 1), true);
-  assert.equal(incFlatRaw(4 * 3600000), false);
+  assert.equal(incFlatRaw(4 * 3600000), true); // 정확히 4h: clampIntervalHours도 raw 허용 -> 일치해야 함
+  assert.equal(incFlatRaw(4 * 3600000 + 1), false);
 });

@@ -69,6 +69,15 @@ OTEL_RESOURCE_ATTRIBUTES: !Sub "user.email=${AWS::AccountId}@ws"
      `SELECT min(toStartOfHour(TimeUnix)) FROM claude_code.otel_metrics_sum`을 비교한다 —
      rollup의 min이 원본의 min보다 늦으면 백필이 안 된 것. `scripts/backfill-hourly-rollup.sh`를
      1회 실행(`clickhouse-schema.sql`의 백필 절차 주석 참고).
+2c. **ClickHouse 레플리카 3 증설 확인** — `infra/clickhouse.tf`의 `replicasCount: 3`은
+   Karpenter가 새 노드를 자동 프로비저닝할 것을 전제한다(코드 주석은 "예상"으로만 적혀
+   있음, 실제 보장 아님). 적용 후 반드시 확인: `kubectl --context fsi-demo-cluster -n
+   claude-code get chi cc-ab -o jsonpath='{.status.status}'`가 `Completed`인지,
+   `kubectl ... get pods -l clickhouse.altinity.com/chi=cc-ab`로 3개 파드가 모두
+   `Running`인지. 새 노드 프로비저닝이 지연되면(Karpenter 노드풀 한도 등) 세 번째
+   레플리카가 `Pending`으로 오래 머물 수 있다 — 이 경우 replicasCount를 되돌리거나
+   nodepool 여유(`infra/nodepool.tf`의 `limits.cpu`)를 확인할 것. EBS(hot 티어) 볼륨도
+   레플리카당 추가되므로 스토리지 비용 증가를 전제할 것.
 3. attribute 실제 키 이름 실측 (`Attributes`/`LogAttributes`의 `mapKeys`) — Claude Code 버전이 바뀌면 `model`, `session.id`, `decision` 등의 키 이름이 달라질 수 있다. 달라지면 `dashboard/server/grouping.js`와 `dashboard/server/queries.js` 두 파일만 고치면 된다.
 4. temporality — 운영 설정은 `cumulative`(30초마다 세션 누적값 export)다. 초기엔 대시보드 쿼리가 전부 `sum(Value)`라 세션이 길수록 토큰/비용/세션 수가 배수로 과대집계되는 버그가 있었지만(실측: 1600억 토큰), `queries.js`를 세션(`session.id`)별 경계 diff(구간 끝 누적값 - 구간 시작 직전 누적값, Prometheus increase()와 동일 원리)로 재작성해 delta/cumulative 둘 다 정확히 처리한다. `SELECT DISTINCT AggregationTemporality FROM claude_code.otel_metrics_sum`로 2(cumulative)가 나오는 게 정상이며, delta(1) 데이터가 섞여도(레거시 배포 등) 문제없다.
 5. 프롬프트 본문 유출 여부 (`otel_logs`의 `Body`/`LogAttributes`에 prompt 텍스트가 남아있지 않은지) — FSI 워크샵이면 필수 확인.
