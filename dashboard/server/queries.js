@@ -76,14 +76,14 @@ export function filterCond(filters = {}, cols = {}) {
   //
   // 정책 정리(리뷰 제안 #6 — A/B 지표 vs 총계 지표를 excludeUnknown 기준으로 표로 명시):
   //   - excludeUnknown: false(unknown 포함) — activeUsers, activeUsersTimeseries, adoptionLevels,
-  //     adoptionTimeseries, userLeaderboard의 active_days CTE. 전부 "그룹 무관 전체 값"이 목적.
-  //   - excludeUnknown 기본값(true, unknown 제외) — kpiSummary/cost 계열(costSummary 등) 등
-  //     GROUP BY grp로 bedrock/enterprise를 나란히 비교하는 모든 쿼리. unknown은 어느 쪽에도
-  //     못 넣으므로 A/B 비교에서 제외한다.
-  //   - 알려진 트레이드오프: Executive.jsx의 costPerDev = cost(unknown 제외, costSummary 합계) /
-  //     users(unknown 포함, activeUsers) — 분자·분모 모수가 다르다(대략 -11%p 과소평가 방향).
-  //     costSummary는 그룹별 비교가 본 목적이라 정책을 바꾸지 않고, 이 화면 한정 근사임을
-  //     Executive.jsx 쪽에 주석으로 남겨둔다(재결정 시 이 주석부터 갱신할 것).
+  //     adoptionTimeseries, userLeaderboard의 active_days CTE, kpiSummary, costSummary(및 동일
+  //     패턴의 cost 계열). kpiSummary/costSummary는 GROUP BY grp로 그룹별 비교도 같이 보여주지만,
+  //     응답 전체를 합산하는 소비자(Executive.jsx의 총 지출/토큰, costPerDev)가 있어 activeUsers와
+  //     같은 모수를 쓰도록 통일했다 — 안 그러면 분자(cost, unknown 제외)·분모(users, unknown
+  //     포함)가 어긋난다(리뷰에서 MAJOR로 확인).
+  //   - excludeUnknown 기본값(true, unknown 제외) — 그 외 순수 A/B 비교 쿼리(모델별 지출,
+  //     캐시 효율 등 group으로만 나눠 보고 총계로는 안 쓰는 지표). unknown은 어느 쪽에도
+  //     못 넣으므로 A/B 비교에서는 계속 제외한다.
   if (cols.group && filters.excludeUnknown !== false) conds.push(`${cols.group} != 'unknown'`);
   if (filters.group && cols.group) {
     conds.push(`${cols.group} = {fGroup:String}`);
