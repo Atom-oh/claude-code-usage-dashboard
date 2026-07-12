@@ -323,6 +323,14 @@ function fromBucketBounds(intervalHours) {
 // 최초 구현에서 이 실수를 했다가 재현·발견: 보정값은 정확했는데 최종 합계에 안 들어갔었음).
 export function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
   const { startExpr, endExpr } = fromBucketBounds(intervalHours);
+  // cumulative(temp=2)의 첫 버킷 cum(=max(mv), rollup의 자연스러운 버킷-끝 값)은 delta처럼
+  // least(endExpr,{to}) 캡을 받지 않는다(리뷰에서 지적) — 이론상 to가 그 버킷 "안"에서 끝나면
+  // rollup이 이미 그 hour 전체(버킷 끝까지)를 반영해 [from,to) 밖 증가분이 섞일 수 있다. 하지만
+  // 실제로 발생하는 경로가 없다: historical to는 range()가 항상 hour로 내림해(alignHistoricalTo)
+  // hour-그레인 경계와 정확히 맞아 겹칠 여지가 없고, live to는 지금(now) 근처라 "미래" 데이터가
+  // 존재하지 않는다(초 단위 인입 지연 정도만). intervalHours=1 + to-from<1h인 직접 API 호출로만
+  // 재현 가능하고 UI(resolutionForSpan)는 이 조합을 만들지 않는다 — 방어적으로만 고치면 3번째
+  // raw stitch 값이 더 필요해 복잡도가 이득보다 크다고 판단해 문서화로 남긴다.
   return `(
     SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
         SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
@@ -654,10 +662,16 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
   // prevFrom-hour raw stitch가 SQL의 실제 정렬된 prevFrom과 같은 시각을 봐야 하므로, 여기서
   // JS로 동일하게 재계산해 별도 bind param(alignedPrevFrom)으로 넘긴다(리뷰에서 발견 — 처음엔
   // bind param prevFrom을 그대로 썼다가 정렬 전/후 값이 달라 stitch가 엉뚱한 hour를 보는
-  // 버그였음).
+  // 버그였음). 두 번째 회귀(라이브 클러스터 riview에서 확인): curToAligned를 raw `to`로
+  // 계산했는데, SQL의 {to:DateTime} bind param은 range(from,to)를 거쳐 alignHistoricalTo()로
+  // 이미 정렬된 값이다 — historical(라이브 아님) + `to`가 정각 아님 조합에서 둘이 달라져
+  // stitch가 SQL이 실제로 쓰는 prevHourStart와 다른 hour를 보게 된다. range()와 정확히
+  // 동일한 정렬 규칙(정렬값이 from보다 앞서거나 같으면 포기)을 여기서도 적용한다.
   const curFromAligned = new Date(from);
   curFromAligned.setUTCMinutes(0, 0, 0);
-  const curToAligned = new Date(Math.max(to.getTime(), curFromAligned.getTime() + 3600000));
+  const alignedToCandidate = alignHistoricalTo(to);
+  const effectiveTo = alignedToCandidate <= from ? to : alignedToCandidate;
+  const curToAligned = new Date(Math.max(effectiveTo.getTime(), curFromAligned.getTime() + 3600000));
   const alignedPrevFrom = new Date(curFromAligned.getTime() - (curToAligned.getTime() - curFromAligned.getTime()));
   // span<=4h(incFlatRaw와 동일 임계)면 rollup의 hour 라운딩(curFrom=toStartOfHour(from) 등)을
   // 전혀 타지 않고 raw 테이블에서 정확한 [prevFrom,from)/[from,to) 창을 직접 계산한다 —
@@ -835,25 +849,35 @@ export async function adoptionLevels(from, to, filters = {}) {
 // 뜬 화면에서 활성 개발자 수만 조용히 필터되어 DAU/MAU와 반대로 움직이는 모순이 생긴다(실측:
 // 리뷰에서 확인). People 섹션 전체가 같은 규칙(model 필터 미적용)을 따르도록 통일한다.
 // excludeUnknown: false — adoptionLevels와 동일한 이유(총계 지표, A/B 비교 아님).
-// 좌경계 fuzz(라운드 12 검토, "document" 판정): hour >= toStartOfHour(from)이라 from이 정각이
-// 아니면 최대 59분 앞선 활동까지 uniq에 잡힐 수 있다(리뷰에서 3/4 모델 합의 MAJOR로 지적).
-// activeUsers/adoptionLevels/adoptionTimeseries/userLeaderboard의 active_days CTE가 전부
-// 이 패턴을 공유한다. incFlat처럼 raw stitch로 정확히 고칠 수도 있지만, uniq/존재 판정은
-// "그 시간에 활동했다"는 이진값이라 경계에 걸친 세션 하나가 있고 없고의 차이가 카운트에
-// ±1로만 반영돼 incFlat의 토큰/비용 합계형 오차(누적값이 그대로 배수로 새는 것)보다 영향이
-// 훨씬 작다 — 기본 뷰(48h)에서 59분은 <2%지만, 좁은 드래그 줌(예: 10분)에서는 왜곡이 커질 수
-// 있음을 인지한 채로 남겨둔다. `docs/api-reference.md`에 이 그레인 한계를 명시.
+// 좌경계 fuzz — hour >= toStartOfHour(from)이라 from이 정각이 아니면 최대 59분 앞선 활동까지
+// uniq에 잡힐 수 있다. 기본 48h 뷰에선 <2%로 무시할 수준이지만, 이 PR의 핵심 신기능인 좁은
+// 드래그 줌(예: 10분)에서는 왜곡이 커지고 costPerDev/productivity score로 전파된다(리뷰에서
+// 2라운드 연속 MAJOR로 재확인 — Round 12에선 "document" 판정으로 남겼으나 반복 지적돼 이번엔
+// 고친다). incFlat/costByModelCompare와 동일한 span<=4h(incFlatRaw) 임계로 raw 폴백 —
+// adoptionLevels/adoptionTimeseries/userLeaderboard.active_days는 각각 30일/91일/선택 구간
+// 전체를 보는 스냅샷·롤링 윈도우라 "좁은 드래그 줌" 시나리오가 성립하지 않아(구간이 넓을수록
+// 좌경계 59분의 상대 영향이 이미 작음) 이번 라운드에선 activeUsers만 고친다.
 export async function activeUsers(from, to, filters = {}) {
   const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
-  const rows = await query(
-    `${GROUP_CTE}
-    SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
-    FROM claude_code.otel_metrics_sum_hourly m
-    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.MetricName = 'claude_code.session.count'
-      AND m.hour >= toStartOfHour({from:DateTime}) AND m.hour < {to:DateTime} ${f.where}`,
-    { ...range(from, to), ...f.params }
-  );
+  const rows = incFlatRaw(to - from)
+    ? await query(
+        `${GROUP_CTE}
+        SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
+        FROM claude_code.otel_metrics_sum m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE m.MetricName = 'claude_code.session.count'
+          AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}`,
+        { from: toChDateTime(from), to: toChDateTime(to), ...f.params }
+      )
+    : await query(
+        `${GROUP_CTE}
+        SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
+        FROM claude_code.otel_metrics_sum_hourly m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE m.MetricName = 'claude_code.session.count'
+          AND m.hour >= toStartOfHour({from:DateTime}) AND m.hour < {to:DateTime} ${f.where}`,
+        { ...range(from, to), ...f.params }
+      );
   return rows[0] || { users: 0 };
 }
 
