@@ -346,9 +346,13 @@ export function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
                 SELECT ${startExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
                     0 AS mv, 0 AS sv,
                     maxIf(Value, TimeUnix < {from:DateTime}) AS from_bucket_raw_baseline,
-                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < ${endExpr}) AS from_bucket_raw_delta
+                    -- endExpr(버킷 끝)이 아니라 least(endExpr, {to})로 캡 — 요청 구간이 버킷
+                    -- 폭보다 짧으면(예: intervalHours=1인데 to-from=30분) endExpr가 {to}를 넘어가
+                    -- [from,to) 밖의 delta까지 새 들어온다(리뷰에서 MAJOR로 확인 — UI의
+                    -- resolutionForSpan은 이 조합을 안 만들지만 서버가 강제하지 않고 있었다).
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < least(${endExpr}, {to:DateTime})) AS from_bucket_raw_delta
                 FROM claude_code.otel_metrics_sum
-                WHERE TimeUnix >= ${startExpr} AND TimeUnix < ${endExpr}
+                WHERE TimeUnix >= ${startExpr} AND TimeUnix < least(${endExpr}, {to:DateTime})
                   ${metricFilter}
                 GROUP BY sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision
             )
@@ -644,6 +648,17 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
   // outer는 서브쿼리 m의 projection만 보인다 — 원본 Model 컬럼이 아니라 정규화된 alias(model)로 필터.
   const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelNorm: "model" });
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''";
+  // rollup 분기의 WITH절이 curFrom/curTo/prevFrom을 SQL 스칼라로 재계산하는데, 그 절은 같은
+  // SELECT 레벨의 표현식에만 보이고 FROM의 nested 서브쿼리(raw stitch branch)에는 안 보인다 —
+  // 그 서브쿼리들은 {prevFrom:DateTime} bind param(JS가 넘긴 "정렬 전" 값)만 참조할 수 있다.
+  // prevFrom-hour raw stitch가 SQL의 실제 정렬된 prevFrom과 같은 시각을 봐야 하므로, 여기서
+  // JS로 동일하게 재계산해 별도 bind param(alignedPrevFrom)으로 넘긴다(리뷰에서 발견 — 처음엔
+  // bind param prevFrom을 그대로 썼다가 정렬 전/후 값이 달라 stitch가 엉뚱한 hour를 보는
+  // 버그였음).
+  const curFromAligned = new Date(from);
+  curFromAligned.setUTCMinutes(0, 0, 0);
+  const curToAligned = new Date(Math.max(to.getTime(), curFromAligned.getTime() + 3600000));
+  const alignedPrevFrom = new Date(curFromAligned.getTime() - (curToAligned.getTime() - curFromAligned.getTime()));
   // span<=4h(incFlatRaw와 동일 임계)면 rollup의 hour 라운딩(curFrom=toStartOfHour(from) 등)을
   // 전혀 타지 않고 raw 테이블에서 정확한 [prevFrom,from)/[from,to) 창을 직접 계산한다 —
   // costSummary/costByModel(incFlat 경로)이 같은 구간에서 이미 이 정밀도를 쓰므로, 형제 Cost
@@ -712,12 +727,19 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
             -- incFlat 자체의 오차 수준과 같아짐 — 리뷰에서 MAJOR로 확인).
             WITH toStartOfHour({from:DateTime}) AS curFrom,
                  greatest({to:DateTime}, curFrom + INTERVAL 1 HOUR) AS curTo,
-                 curFrom - (curTo - curFrom) AS prevFrom
+                 curFrom - (curTo - curFrom) AS prevFrom,
+                 toStartOfHour(prevFrom) AS prevHourStart
             SELECT
                 SessionId, any(UserEmail) AS UserEmail, ${normModel("Model")} AS model, MetricName, TokenType,
+                -- prev_v의 baseline(hh < prevFrom)도 cur_v와 같은 결함을 갖는다 — curTo가 라이브
+                -- to를 그대로 쓰게 되면서(위 주석) prevFrom = curFrom - (curTo-curFrom)도 curFrom과
+                -- 달리 정각이 아닐 수 있게 됐다(예전엔 curTo가 항상 정각이라 prevFrom도 자동으로
+                -- 정각이었음). raw stitch로 동일하게 보정(리뷰에서 3/4 모델 독립 지적 — 값은
+                -- 세션의 활동 패턴에 따라 드물게만 드러나지만, incFlat과 동일한 근본 원인이라
+                -- 구조적으로 고친다).
                 if(AggregationTemporality = 2,
-                    greatest(maxIf(mv, hh < curFrom) - maxIf(mv, hh < prevFrom), 0),
-                    sumIf(sv, hh >= prevFrom AND hh < curFrom)) AS prev_v,
+                    greatest(maxIf(mv, hh < curFrom) - greatest(maxIf(mv, hh < prevHourStart), max(prev_hour_raw_baseline)), 0),
+                    sumIf(sv, hh > prevHourStart AND hh < curFrom) + max(prev_hour_raw_delta)) AS prev_v,
                 -- cur_v의 baseline(hh < curFrom)은 incFlat이 고친 것과 동일한 결함(hour가 "버킷
                 -- 종료 시점" 값이라 curFrom=toStartOfHour(from)이 정확히 from 시점이 아님)을
                 -- 그대로 갖고 있었다 — costSummary/costByModel과 다른 baseline을 써서 같은
@@ -729,7 +751,7 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
                     sumIf(sv, hh > curFrom AND hh < curTo) + max(from_hour_raw_delta)) AS cur_v
             FROM (
                 SELECT hour AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType,
-                    max_value AS mv, sum_value AS sv, 0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta
+                    max_value AS mv, sum_value AS sv, 0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta, 0 AS prev_hour_raw_baseline, 0 AS prev_hour_raw_delta
                 FROM claude_code.otel_metrics_sum_hourly
                 WHERE hour >= toStartOfHour({prevFrom:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
                   ${metricFilter}
@@ -738,9 +760,21 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
                     toStartOfHour({from:DateTime}) AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType,
                     0 AS mv, 0 AS sv,
                     maxIf(Value, TimeUnix < {from:DateTime}) AS from_hour_raw_baseline,
-                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR) AS from_hour_raw_delta
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR) AS from_hour_raw_delta,
+                    0 AS prev_hour_raw_baseline, 0 AS prev_hour_raw_delta
                 FROM claude_code.otel_metrics_sum
                 WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR
+                  ${metricFilter}
+                GROUP BY sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType
+                UNION ALL
+                SELECT
+                    toStartOfHour({alignedPrevFrom:DateTime}) AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType,
+                    0 AS mv, 0 AS sv,
+                    0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta,
+                    maxIf(Value, TimeUnix < {alignedPrevFrom:DateTime}) AS prev_hour_raw_baseline,
+                    sumIf(Value, TimeUnix >= {alignedPrevFrom:DateTime} AND TimeUnix < toStartOfHour({alignedPrevFrom:DateTime}) + INTERVAL 1 HOUR) AS prev_hour_raw_delta
+                FROM claude_code.otel_metrics_sum
+                WHERE TimeUnix >= toStartOfHour({alignedPrevFrom:DateTime}) AND TimeUnix < toStartOfHour({alignedPrevFrom:DateTime}) + INTERVAL 1 HOUR
                   ${metricFilter}
                 GROUP BY sk, SessionId, AggregationTemporality, UserEmail, Model, MetricName, TokenType
             )
@@ -749,7 +783,7 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
         WHERE 1 = 1 ${f.where}
         GROUP BY model`,
-        { ...range(from, to), prevFrom: toChDateTime(prevFrom), ...f.params }
+        { ...range(from, to), prevFrom: toChDateTime(prevFrom), alignedPrevFrom: toChDateTime(alignedPrevFrom), ...f.params }
       );
   return withComputedCost(rows).map((r) => {
     const [prev] = withComputedCost([
@@ -879,7 +913,11 @@ export async function mcpConnectorUsage(from, to, filters = {}) {
     WHERE l.EventName = 'tool_result' AND l.McpServerName != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", connector ORDER BY "group", calls DESC`,
-    { ...range(from, to), ...f.params }
+    // raw=true — 이 쿼리는 rollup이 아니라 otel_logs(Timestamp 정밀 비교)를 직접 스캔한다.
+    // range()의 historical-to 정각 내림은 rollup의 부분-hour 버킷 과대집계를 막기 위한 것으로,
+    // 이 로그 테이블엔 그 문제가 없다 — 정렬하면 오히려 드래그 줌에서 최근 최대 59분의 로그가
+    // 순수하게 사라진다(리뷰에서 MAJOR로 확인).
+    { ...range(from, to, true), ...f.params }
   );
 }
 
@@ -901,7 +939,8 @@ export async function agenticness(from, to, intervalHours = 24, filters = {}) {
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY t, "group" ORDER BY t`,
-    { ...range(from, to), ...b.params, ...f.params }
+    // raw=true — otel_logs 직접 스캔(rollup 없음), mcpConnectorUsage와 동일 이유.
+    { ...range(from, to, true), ...b.params, ...f.params }
   );
 }
 
@@ -920,7 +959,8 @@ export async function toolMcpUsage(from, to, filters = {}) {
     WHERE l.EventName = 'tool_result'
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", tool, mcp_server ORDER BY "group", total DESC LIMIT 50`,
-    { ...range(from, to), ...f.params }
+    // raw=true — otel_logs 직접 스캔(rollup 없음), mcpConnectorUsage와 동일 이유.
+    { ...range(from, to, true), ...f.params }
   );
 }
 
@@ -1032,7 +1072,9 @@ export async function userToolUsage(from, to, filters = {}) {
     WHERE l.EventName = 'tool_result' AND l.UserEmail != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY user, tool ORDER BY user, uses DESC`,
-    { ...range(from, to), ...f.params }
+    // raw=true — otel_logs 직접 스캔(rollup 없음). mcpConnectorUsage/toolMcpUsage와 같은 이유로
+    // 리뷰가 명시적으로 지적한 건 아니지만 동일 카테고리 버그라 같이 고친다.
+    { ...range(from, to, true), ...f.params }
   );
 }
 
@@ -1050,7 +1092,8 @@ export async function userSkillUsage(from, to, filters = {}) {
     WHERE m.MetricName = 'claude_code.cost.usage' AND m.SkillName != '' AND m.UserEmail != ''
       AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}
     GROUP BY user, skill ORDER BY user, invocations DESC`,
-    { ...range(from, to), ...f.params }
+    // raw=true — otel_metrics_sum 원본 직접 스캔(rollup 없음), mcpConnectorUsage와 동일 이유.
+    { ...range(from, to, true), ...f.params }
   );
 }
 

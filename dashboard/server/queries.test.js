@@ -148,3 +148,11 @@ test("incBucketed keeps the raw-stitched first bucket alive — outer WHERE must
   assert.doesNotMatch(sql, /WHERE t >= \{from:DateTime\}/);
   assert.match(sql, /WHERE t >= toStartOfInterval\(\{from:DateTime\}/);
 });
+
+// 첫 버킷의 raw delta 스캔이 버킷 끝(endExpr)이 아니라 요청 구간의 {to}도 상한으로 잡아야 한다 —
+// 안 그러면 요청 구간이 버킷 폭보다 짧을 때(예: intervalHours=1인데 to-from=30분) endExpr가
+// {to}를 넘어가 [from,to) 밖의 delta까지 새 들어온다(리뷰에서 MAJOR로 확인).
+test("incBucketed caps the first-bucket raw delta scan at least(bucket-end, {to}), not bucket-end alone", () => {
+  const sql = incBucketed(1, "toStartOfInterval(hour, INTERVAL {intervalHours:UInt32} HOUR)", "");
+  assert.match(sql, /TimeUnix < least\(.*\{to:DateTime\}\)/);
+});
