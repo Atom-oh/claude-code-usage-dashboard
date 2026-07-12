@@ -317,8 +317,11 @@ function fromBucketBounds(intervalHours) {
 // 어긋났다(리뷰에서 4/4 모델 합의 MAJOR). incFlat과 동일한 UNION ALL raw-stitch를 여기도
 // 적용한다 — cumulative는 baseline을 greatest(이전 버킷 cum, raw로 구한 정확한 from 시점 값)로
 // 보정(다른 버킷의 from_bucket_raw_baseline은 항상 0이라 무해), delta는 첫 버킷의 cum 자체를
-// raw [from, 버킷 끝) 재계산값으로 통째 교체한다(다른 버킷은 그대로).
-function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
+// raw [from, 버킷 끝) 재계산값으로 통째 교체한다(다른 버킷은 그대로). 바깥 WHERE도
+// `t >= from`에서 `t >= startExpr`로 바꿔야 한다 — 안 그러면 보정된 첫 버킷의 t 라벨(=버킷
+// 시작, 항상 from보다 이르거나 같음)이 여전히 필터에 걸려 통째로 버려진다(라이브 클러스터로
+// 최초 구현에서 이 실수를 했다가 재현·발견: 보정값은 정확했는데 최종 합계에 안 들어갔었음).
+export function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
   const { startExpr, endExpr } = fromBucketBounds(intervalHours);
   return `(
     SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
@@ -352,7 +355,7 @@ function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
             GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
         )
     )
-    WHERE t >= {from:DateTime}
+    WHERE t >= ${startExpr}
   )`;
 }
 
@@ -798,6 +801,14 @@ export async function adoptionLevels(from, to, filters = {}) {
 // 뜬 화면에서 활성 개발자 수만 조용히 필터되어 DAU/MAU와 반대로 움직이는 모순이 생긴다(실측:
 // 리뷰에서 확인). People 섹션 전체가 같은 규칙(model 필터 미적용)을 따르도록 통일한다.
 // excludeUnknown: false — adoptionLevels와 동일한 이유(총계 지표, A/B 비교 아님).
+// 좌경계 fuzz(라운드 12 검토, "document" 판정): hour >= toStartOfHour(from)이라 from이 정각이
+// 아니면 최대 59분 앞선 활동까지 uniq에 잡힐 수 있다(리뷰에서 3/4 모델 합의 MAJOR로 지적).
+// activeUsers/adoptionLevels/adoptionTimeseries/userLeaderboard의 active_days CTE가 전부
+// 이 패턴을 공유한다. incFlat처럼 raw stitch로 정확히 고칠 수도 있지만, uniq/존재 판정은
+// "그 시간에 활동했다"는 이진값이라 경계에 걸친 세션 하나가 있고 없고의 차이가 카운트에
+// ±1로만 반영돼 incFlat의 토큰/비용 합계형 오차(누적값이 그대로 배수로 새는 것)보다 영향이
+// 훨씬 작다 — 기본 뷰(48h)에서 59분은 <2%지만, 좁은 드래그 줌(예: 10분)에서는 왜곡이 커질 수
+// 있음을 인지한 채로 남겨둔다. `docs/api-reference.md`에 이 그레인 한계를 명시.
 export async function activeUsers(from, to, filters = {}) {
   const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
   const rows = await query(

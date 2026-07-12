@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw } from "./queries.js";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 
 // bucket()이 intervalHours를 세 가지 버킷(분/시/일)으로 올바르게 매핑하는지 — 차트 드래그 줌이
@@ -134,4 +134,17 @@ test("incFlatRaw threshold matches clampIntervalHours' >4h boundary (inclusive a
   assert.equal(incFlatRaw(4 * 3600000 - 1), true);
   assert.equal(incFlatRaw(4 * 3600000), true); // 정확히 4h: clampIntervalHours도 raw 허용 -> 일치해야 함
   assert.equal(incFlatRaw(4 * 3600000 + 1), false);
+});
+
+// incBucketed(시계열)가 첫 부분 버킷(t=from이 속한 버킷)을 raw-stitch로 보정해도, 최종 WHERE가
+// 여전히 `t >= {from:DateTime}`이면 그 버킷의 t 라벨(항상 from보다 이르거나 같은 버킷 시작)이
+// 필터에 걸려 보정된 값 자체가 통째로 버려진다 — 라이브 클러스터로 재현된 실제 회귀(값은
+// 정확한데 최종 합계에 반영이 안 됨). WHERE가 `t >= startExpr`(그 버킷의 시작, from이 아니라
+// 버킷 경계 기준)로 바뀌어야 첫 버킷이 살아남는다.
+test("incBucketed keeps the raw-stitched first bucket alive — outer WHERE must use the bucket boundary, not {from}", () => {
+  const sql = incBucketed(1, "toStartOfInterval(hour, INTERVAL {intervalHours:UInt32} HOUR)", "");
+  assert.match(sql, /from_bucket_raw_baseline/);
+  assert.match(sql, /from_bucket_raw_delta/);
+  assert.doesNotMatch(sql, /WHERE t >= \{from:DateTime\}/);
+  assert.match(sql, /WHERE t >= toStartOfInterval\(\{from:DateTime\}/);
 });
