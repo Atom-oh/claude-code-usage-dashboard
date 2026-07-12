@@ -1,0 +1,7 @@
+# Must NOT trigger .claude/hooks/secret-scan.sh
+
+dGhpcyBpcyBhIHRlc3Q=
+password = ""
+CH_PASSWORD=
+CH_PASSWORD=$CH_PASSWORD_SECRET
+BASIC_AUTH_USER=admin
