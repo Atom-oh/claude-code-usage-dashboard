@@ -7,6 +7,7 @@ import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { GroupAreaChart, DonutBody, DualLineChart } from "../components/GroupCharts.jsx";
 import { Badge } from "../components/Badge.jsx";
+import { GROUP_ORDER } from "../colors.js";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
@@ -189,15 +190,14 @@ export default function Overview() {
           <ErrorBox error={cache.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => {
+            {GROUP_ORDER.map((g) => {
               const r = (cache.data || []).find((row) => row.group === g);
-              const ratio = Number(r?.cache_read_ratio || 0);
               return (
                 <Card
                   key={g}
                   title={`캐시 효율 — ${g}`}
                   subtitle="입력측 캐시 구성과 입력/출력 비중"
-                  right={<Badge tone="brand">캐시율 {(ratio * 100).toFixed(1)}%</Badge>}
+                  right={<Badge tone="brand">캐시율 {r ? `${(Number(r.cache_read_ratio) * 100).toFixed(1)}%` : "—"}</Badge>}
                 >
                   <div className="flex flex-wrap gap-4">
                     <DonutBody

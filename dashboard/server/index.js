@@ -227,9 +227,12 @@ route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
   return userCostEfficiency(leaderboard, byUserModel);
 });
 // email 파라미터 필수(유저 드릴다운) — 기본 뷰가 성립하지 않아 warmer에서 제외.
-route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || "")), { warm: false });
-route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || "")), { warm: false });
-route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || "")), { warm: false });
+// group은 옵션 — Users 페이지가 유저×그룹 리더보드 행에서 여는 드로어는 그 행의 group을
+// 넘겨 상단 StatTile과 여기 드릴다운의 모수를 맞춘다. 안 넘기면(예: 다른 진입 경로) 유저
+// 전체 활동을 보여준다(기존 동작).
+route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || ""), query.group), { warm: false });
+route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || ""), query.group), { warm: false });
+route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || ""), 91, query.group), { warm: false });
 
 // 챗은 Bedrock 호출 + 임의 read-only SELECT라 다른 데이터 API보다 리스크가 높다. auth env가
 // 없으면 fail-open이 아니라 fail-closed — 명시적으로 CHAT_ALLOW_INSECURE=1을 켠 로컬 dev에서만 무인증 허용.

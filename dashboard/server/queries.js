@@ -1164,41 +1164,56 @@ export async function adoptionTimeseries(from, to, filters = {}) {
   return out;
 }
 
-// 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열.
-export async function userDaily(from, to, email) {
+// 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열. group을 넘기면 그 그룹 세션만 —
+// Users 페이지의 리더보드 행이 이제 유저×그룹으로 갈라져 있어(userLeaderboard), 드로어를 그
+// 행에서 열었을 때 상단 StatTile(그 행의 그룹 값)과 여기 시계열의 모수가 같아야 한다(안 그러면
+// straddler의 한쪽 그룹 행을 열어도 양 그룹 합산 차트가 나와 숫자가 안 맞는다).
+export async function userDaily(from, to, email, group) {
   const b = incBucket(24, `AND MetricName IN (
         'claude_code.session.count', 'claude_code.lines_of_code.count',
         'claude_code.token.usage', 'claude_code.commit.count'
       )`);
+  // excludeUnknown: false — group 미지정(드로어를 그룹 무관 컨텍스트에서 열 때)이면 이 유저의
+  // 전체 활동을 봐야 한다. 기본값(true)이면 group을 안 넘겨도 unknown 세션이 조용히 빠진다.
+  const f = filterCond({ group, excludeUnknown: false }, { group: GROUP_EXPR });
   return query(
-    `SELECT t,
+    `${GROUP_CTE}
+    SELECT t,
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')       AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits
     FROM ${b.sub} m
-    WHERE m.UserEmail = {email:String}
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.UserEmail = {email:String} ${f.where}
     GROUP BY t ORDER BY t`,
-    { ...range(from, to, b.raw), ...b.params, email }
+    { ...range(from, to, b.raw), ...b.params, email, ...f.params }
   );
 }
 
 // 유저 드릴다운: 특정 유저의 도구별 수락/거부. userDaily/userHeatmap과 같은 exact match —
-// 부분일치({user})면 kim@x.com 드로어에 joakim@x.com 데이터가 섞인다.
-export async function userDecisionsByTool(from, to, email) {
-  return codeEditDecisionsByTool(from, to, { userExact: email });
+// 부분일치({user})면 kim@x.com 드로어에 joakim@x.com 데이터가 섞인다. group도 userDaily와
+// 같은 이유로 전달.
+export async function userDecisionsByTool(from, to, email, group) {
+  return codeEditDecisionsByTool(from, to, { userExact: email, group });
 }
 
-// 유저 드릴다운: GitHub식 활동 히트맵 — to 기준 지난 91일(13주)의 일별 세션 수.
-// 세션 수는 SessionId 존재 기반(uniqExact)이라 temporality 무관.
-export async function userHeatmap(to, email, days = 91) {
+// 유저 드릴다운: GitHub식 활동 히트맵 — to 기준 지난 91일(13주)의 일별 세션 수. group을 넘기면
+// 그 그룹 세션만(userDaily와 동일 이유). 세션 수는 SessionId 존재 기반(uniqExact)이라
+// temporality와 무관.
+export async function userHeatmap(to, email, days = 91, group) {
+  // excludeUnknown: false — group 미지정(드로어를 그룹 무관 컨텍스트에서 열 때)이면 이 유저의
+  // 전체 활동을 봐야 한다. 기본값(true)이면 group을 안 넘겨도 unknown 세션이 조용히 빠진다.
+  const f = filterCond({ group, excludeUnknown: false }, { group: GROUP_EXPR });
   return query(
-    `SELECT toDate(hour, 'UTC') AS d, uniqExact(SessionId) AS sessions
-    FROM claude_code.otel_metrics_sum_hourly
-    WHERE UserEmail = {email:String} AND MetricName = 'claude_code.session.count' AND SessionId != ''
-      AND hour >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND hour < {to:DateTime}
+    `${GROUP_CTE}
+    SELECT toDate(m.hour, 'UTC') AS d, uniqExact(m.SessionId) AS sessions
+    FROM claude_code.otel_metrics_sum_hourly m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.UserEmail = {email:String} AND m.MetricName = 'claude_code.session.count' AND m.SessionId != ''
+      AND m.hour >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND m.hour < {to:DateTime} ${f.where}
     GROUP BY d ORDER BY d`,
-    { to: toChDateTime(to), email, days }
+    { to: toChDateTime(to), email, days, ...f.params }
   );
 }
 

@@ -23,6 +23,12 @@ Every data route below accepts these (parsed by `parseRange()` / `route()` in `i
 | `intervalHours` | number | No | Bucket size for timeseries endpoints (fractional hours like `0.25` = 15 min for chart drag-zoom, 1 = hourly, 24 = daily, 168 = weekly). Only honored by endpoints marked *timeseries* below. Requests with `intervalHours < 1` are clamped to `1` server-side if the `from`/`to` span exceeds 4 hours (minute-bucket queries fall back to scanning the raw table, which is only cheap for narrow ranges). |
 | `email` | string | Only for `GET /api/users/{daily,decisions-by-tool,heatmap}` | Exact-match user email for the per-user drilldown endpoints. Not a general filter — ignored by every other route. |
 
+For the three drilldown endpoints (`daily`/`decisions-by-tool`/`heatmap`), `group` is optional:
+omitted, they return the user's full activity across both groups (as before); passed, they
+scope to that session group — used by the Users page drawer, which now opens from a
+per-user-x-group leaderboard row and passes that row's `group` so the drilldown matches the
+row's own numbers.
+
 ## Endpoints
 
 All data endpoints below are `GET`, take no request body, and return JSON (array of rows, or

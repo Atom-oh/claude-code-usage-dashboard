@@ -58,14 +58,16 @@ export function UserDrawer({ row, onClose }) {
     if (!row) return;
     let cancelled = false;
     setState((s) => ({ ...s, loading: true, error: null }));
-    const params = { from: from.toISOString(), to: to.toISOString(), email: row.user };
+    // group을 넘겨 리더보드 행(유저×그룹, 필터된 값)과 드릴다운 모수를 맞춘다 — 안 그러면
+    // straddler의 bedrock 행을 열어도 아래 차트는 양 그룹 합산으로 나와 상단 타일과 안 맞는다.
+    const params = { from: from.toISOString(), to: to.toISOString(), email: row.user, group: row.group };
     Promise.all([apiGet("/api/users/daily", params), apiGet("/api/users/decisions-by-tool", params), apiGet("/api/users/heatmap", params)])
       .then(([daily, byTool, heatmap]) => !cancelled && setState({ loading: false, error: null, daily, byTool, heatmap }))
       .catch((error) => !cancelled && setState((s) => ({ ...s, loading: false, error })));
     return () => {
       cancelled = true;
     };
-  }, [row?.user, from.getTime(), to.getTime()]);
+  }, [row?.user, row?.group, from.getTime(), to.getTime()]);
 
   // state.byTool은 group×tool×decision 원본(codeEditDecisionsByTool)이라, 이 유저가 bedrock/
   // enterprise 세션을 모두 가지면 같은 tool+decision이 그룹별 다중 row로 내려와 GroupBarChart가
@@ -87,10 +89,10 @@ export function UserDrawer({ row, onClose }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-[18px] font-semibold text-ink-800 truncate">{row.user}</h2>
-            {/* 아래 차트들은 전역 필터(group/model) 미적용 — 유저 개인의 전체 활동 기준.
-                리더보드 행(필터 적용 집계)과 모수가 다를 수 있어 라벨로 명시한다. */}
+            {/* 아래 차트들은 row.group(이 유저×그룹 행)으로만 필터 — 전역 model 필터는 여전히
+                미적용이라 model 필터가 켜진 상태에서 리더보드 행과 정확히 일치하진 않는다. */}
             <p className="text-[12px] text-ink-400 mt-0.5">
-              {row.group} · 최근 {days}일 · 생산성 점수 {Number(row.productivity_score).toFixed(1)} · 전체 활동 기준(필터 미적용)
+              {row.group} · 최근 {days}일 · 생산성 점수 {Number(row.productivity_score).toFixed(1)} · 이 그룹 활동 기준(model 필터 미적용)
             </p>
           </div>
           <button onClick={onClose} className="shrink-0 rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-600">
