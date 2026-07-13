@@ -35,7 +35,7 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 | `GET /api/overview/kpi` | Group-level session/user/commit/PR/token/LOC summary |
 | `GET /api/overview/active-users` | Ungrouped unique active user count (includes `unknown` sessions — a "totals" endpoint, see `group` param above) |
 | `GET /api/overview/tokens-timeseries` | *timeseries* — token usage per group over time |
-| `GET /api/overview/cache-efficiency` | Cache read ratio per group |
+| `GET /api/overview/cache-efficiency` | Cache read ratio + token-type breakdown (cache read/write, uncached input, output) per group |
 | `GET /api/overview/model-distribution` | Token distribution by group x model |
 
 ### Productivity
@@ -59,10 +59,10 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 ### Users
 | Path | Returns |
 |---|---|
-| `GET /api/users/leaderboard` | Per-user metrics + productivity score |
-| `GET /api/users/tools` | Per-user tool usage |
-| `GET /api/users/skills` | Per-user skill usage |
-| `GET /api/users/cost-efficiency` | Per-user `$/LOC`, `$/commit` |
+| `GET /api/users/leaderboard` | Per-user x group metrics + productivity score (real session group, not majority-vote — a user active in both groups gets one row per group) |
+| `GET /api/users/tools` | Per-user x group tool usage |
+| `GET /api/users/skills` | Per-user x group skill usage |
+| `GET /api/users/cost-efficiency` | Per-user x group `$/LOC`, `$/commit` |
 | `GET /api/users/daily` | *timeseries* — daily sessions/LOC/tokens/commits for one user. **Requires `email` param** (exact match, not filtered by `user`/`group`/`model`). Not covered by the cache warmer. |
 | `GET /api/users/decisions-by-tool` | Accept/reject counts per tool for one user. **Requires `email` param.** Not covered by the cache warmer. |
 | `GET /api/users/heatmap` | GitHub-style daily session-count heatmap, last 91 days from `to`. **Requires `email` param**; ignores `from`. Not covered by the cache warmer. |
@@ -72,7 +72,7 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 |---|---|
 | `GET /api/cost/summary` | Group-level computed + reported cost, token breakdown |
 | `GET /api/cost/by-model` | Cost/tokens per group x model |
-| `GET /api/cost/by-user-model` | Cost/tokens per user x model |
+| `GET /api/cost/by-user-model` | Cost/tokens per user x group x model (real session group, not majority-vote) |
 | `GET /api/cost/by-model-daily` | *timeseries* — cost per group x model over time |
 | `GET /api/cost/by-model-compare` | Current vs. previous equal-length period, per model |
 | `GET /api/cost/tiers` | Cost broken down by token tier (uncachedInput/cacheRead/cacheWrite/output), split by group: `{"bedrock": {...}, "enterprise": {...}}` |

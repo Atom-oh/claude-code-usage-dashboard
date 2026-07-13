@@ -508,7 +508,10 @@ export async function cacheEfficiency(from, to, filters = {}) {
         ${GROUP_EXPR} AS "group",
         sumIf(m.Value, m.TokenType = 'cacheRead')                              AS cache_read,
         sumIf(m.Value, m.TokenType IN ('input', 'cacheRead', 'cacheCreation'))  AS input_side,
-        round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio
+        round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio,
+        sumIf(m.Value, m.TokenType = 'input')                                  AS uncached_input,
+        sumIf(m.Value, m.TokenType = 'cacheCreation')                          AS cache_write,
+        sumIf(m.Value, m.TokenType = 'output')                                 AS output_tokens
     FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
@@ -1063,19 +1066,19 @@ export async function costByModel(from, to, filters = {}) {
   }));
 }
 
-// Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 세션 단위로 판별한 뒤 topK(1)로
-// 그 유저의 다수결 그룹 하나를 뽑는다(한 유저가 두 방식을 다 쓴 경우 any()처럼 비결정적으로
-// 흔들리지 않는다) — 단, incFlat이 세션당 여러 row(속성 조합별)를 낼 수 있어 정확히는 "세션 수"가
-// 아니라 incFlat이 생성한 row 개수(세션×속성 조합) 가중 다수결이다.
+// Cost 페이지: 유저 × 그룹 × 모델별 비용/토큰. group은 세션 단위 실제 값 — userCostEfficiency가
+// 이 결과를 userLeaderboard(유저×그룹 행)와 그룹까지 맞춰 조인해야 하므로(안 그러면 두 그룹을
+// 오간 유저의 전체 비용이 양쪽 그룹 행에 중복으로 붙는다), 여기도 topK(1) 다수결이 아니라 실제
+// 그룹으로 쪼갠다.
 export async function costByUserModel(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
     `${GROUP_CTE}
-    SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
+    SELECT m.UserEmail AS user, ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' AND m.UserEmail != '' ${f.where}
-    GROUP BY user, model ORDER BY user`,
+    GROUP BY user, "group", model ORDER BY user`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
   return withComputedCost(rows).map((r) => ({
@@ -1085,17 +1088,18 @@ export async function costByUserModel(from, to, filters = {}) {
 }
 
 // 유저별 어떤 tool을 얼마나 썼는지 (Usage/Users 페이지의 "사용자별 사용 내역"). model 필터는
-// 세션 세미조인으로 적용.
+// 세션 세미조인으로 적용. group은 세션 단위 실제 값(다수결 아님) — 유저가 두 그룹을 오가면
+// 유저×그룹×tool로 행이 갈라진다(Users 페이지가 그룹별 카드로 나눠 보여줌).
 export async function userToolUsage(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
-    SELECT l.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", l.ToolName AS tool, count() AS uses
+    SELECT l.UserEmail AS user, ${GROUP_EXPR} AS "group", l.ToolName AS tool, count() AS uses
     FROM claude_code.otel_logs l
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result' AND l.UserEmail != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
-    GROUP BY user, tool ORDER BY user, uses DESC`,
+    GROUP BY user, "group", tool ORDER BY user, uses DESC`,
     // raw=true — otel_logs 직접 스캔(rollup 없음). mcpConnectorUsage/toolMcpUsage와 같은 이유로
     // 리뷰가 명시적으로 지적한 건 아니지만 동일 카테고리 버그라 같이 고친다.
     { ...range(from, to, true), ...f.params }
@@ -1106,16 +1110,17 @@ export async function userToolUsage(from, to, filters = {}) {
 // Model을 갖고 있어 model 필터도 걸 수 있다)
 // 원본 테이블을 유지하는 유일한 스냅샷 쿼리 — invocations가 count()(원시 export-tick 행 수 근사)라
 // 시간별 rollup으로 접으면 값이 달라진다. cost.usage+SkillName!='' 필터가 좁아 원본이어도 저렴.
+// group은 세션 단위 실제 값(다수결 아님) — userToolUsage와 동일 이유.
 export async function userSkillUsage(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
-    SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", m.SkillName AS skill, count() AS invocations
+    SELECT m.UserEmail AS user, ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations
     FROM claude_code.otel_metrics_sum m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.MetricName = 'claude_code.cost.usage' AND m.SkillName != '' AND m.UserEmail != ''
       AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}
-    GROUP BY user, skill ORDER BY user, invocations DESC`,
+    GROUP BY user, "group", skill ORDER BY user, invocations DESC`,
     // raw=true — otel_metrics_sum 원본 직접 스캔(rollup 없음), mcpConnectorUsage와 동일 이유.
     { ...range(from, to, true), ...f.params }
   );
@@ -1199,6 +1204,11 @@ export async function userHeatmap(to, email, days = 91) {
 
 // 패널10 확장: 유저별 리더보드 (생산성 점수는 이 raw 값을 productivity.js에서 계산). active_days는
 // "존재하는 날짜 수"라 temporality와 무관 — rollup에서 바로 distinct count로 구해 별도 CTE로 조인.
+// group은 세션 단위 실제 값(다수결 아님) — 유저가 두 그룹을 오가면 유저×그룹으로 행이 갈라진다
+// (Users 페이지가 그룹별 리더보드로 나눠 보여줌). active_days CTE는 그룹 무관(유저 전체 활성일) —
+// ponytail: 두 그룹을 쓰는 유저는 그룹별 점수의 activeDayShare(가중 0.15)가 살짝 과대평가된다.
+// 그룹별로 쪼개려면 active_days CTE에도 group을 추가하고 join key를 (user, group)으로 넓혀야
+// 하는데, 드문 straddler를 위해 CTE 하나를 더 조인할 값어치는 아니다 — 필요해지면 그때 추가.
 export async function userLeaderboard(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   // active_days에도 같은 필터를 건다(컬럼 참조만 CTE 기준으로) — 안 걸면 group/model 필터 상태에서
@@ -1223,7 +1233,7 @@ export async function userLeaderboard(from, to, filters = {}) {
     )
     SELECT
         m.UserEmail AS user,
-        topK(1)(${GROUP_EXPR})[1] AS "group",
+        ${GROUP_EXPR} AS "group",
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')                                    AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                       AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')             AS input_tokens,
@@ -1241,7 +1251,7 @@ export async function userLeaderboard(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
     WHERE m.UserEmail != '' ${f.where}
-    GROUP BY user ORDER BY tokens DESC`,
+    GROUP BY user, "group" ORDER BY tokens DESC`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params, ...fAd.params }
   );
 }
