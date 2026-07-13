@@ -23,6 +23,12 @@ Every data route below accepts these (parsed by `parseRange()` / `route()` in `i
 | `intervalHours` | number | No | Bucket size for timeseries endpoints (fractional hours like `0.25` = 15 min for chart drag-zoom, 1 = hourly, 24 = daily, 168 = weekly). Only honored by endpoints marked *timeseries* below. Requests with `intervalHours < 1` are clamped to `1` server-side if the `from`/`to` span exceeds 4 hours (minute-bucket queries fall back to scanning the raw table, which is only cheap for narrow ranges). |
 | `email` | string | Only for `GET /api/users/{daily,decisions-by-tool,heatmap}` | Exact-match user email for the per-user drilldown endpoints. Not a general filter — ignored by every other route. |
 
+For the three drilldown endpoints (`daily`/`decisions-by-tool`/`heatmap`), `group` is honored
+and optional: omitted, they return the user's full activity across all sessions (including
+`unknown`); passed, they scope to that session group — used by the Users page drawer, which
+now opens from a per-user-x-group leaderboard row and passes that row's `group` so the
+drilldown matches the row's own numbers.
+
 ## Endpoints
 
 All data endpoints below are `GET`, take no request body, and return JSON (array of rows, or
@@ -35,7 +41,7 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 | `GET /api/overview/kpi` | Group-level session/user/commit/PR/token/LOC summary |
 | `GET /api/overview/active-users` | Ungrouped unique active user count (includes `unknown` sessions — a "totals" endpoint, see `group` param above) |
 | `GET /api/overview/tokens-timeseries` | *timeseries* — token usage per group over time |
-| `GET /api/overview/cache-efficiency` | Cache read ratio per group |
+| `GET /api/overview/cache-efficiency` | Cache read ratio + token-type breakdown (cache read/write, uncached input, output) per group |
 | `GET /api/overview/model-distribution` | Token distribution by group x model |
 
 ### Productivity
@@ -59,20 +65,20 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 ### Users
 | Path | Returns |
 |---|---|
-| `GET /api/users/leaderboard` | Per-user metrics + productivity score |
-| `GET /api/users/tools` | Per-user tool usage |
-| `GET /api/users/skills` | Per-user skill usage |
-| `GET /api/users/cost-efficiency` | Per-user `$/LOC`, `$/commit` |
-| `GET /api/users/daily` | *timeseries* — daily sessions/LOC/tokens/commits for one user. **Requires `email` param** (exact match, not filtered by `user`/`group`/`model`). Not covered by the cache warmer. |
-| `GET /api/users/decisions-by-tool` | Accept/reject counts per tool for one user. **Requires `email` param.** Not covered by the cache warmer. |
-| `GET /api/users/heatmap` | GitHub-style daily session-count heatmap, last 91 days from `to`. **Requires `email` param**; ignores `from`. Not covered by the cache warmer. |
+| `GET /api/users/leaderboard` | Per-user x group metrics + productivity score (real session group, not majority-vote — a user active in both groups gets one row per group). Also includes `user_active_days`: group-agnostic distinct active days, identical across a straddling user's group rows — used to recompute an org-wide (ungrouped) productivity score without double-counting days a user was active in both groups |
+| `GET /api/users/tools` | Per-user x group tool usage |
+| `GET /api/users/skills` | Per-user x group skill usage |
+| `GET /api/users/cost-efficiency` | Per-user x group `$/LOC`, `$/commit` |
+| `GET /api/users/daily` | *timeseries* — daily sessions/LOC/tokens/commits for one user. **Requires `email` param** (exact match; not filtered by `user`/`model`). Optional `group` scopes to that session group. Not covered by the cache warmer. |
+| `GET /api/users/decisions-by-tool` | Accept/reject counts per tool for one user. **Requires `email` param.** Optional `group` scopes to that session group. Not covered by the cache warmer. |
+| `GET /api/users/heatmap` | GitHub-style daily session-count heatmap, last 91 days from `to`. **Requires `email` param**; ignores `from`. Optional `group` scopes to that session group. Not covered by the cache warmer. |
 
 ### Cost
 | Path | Returns |
 |---|---|
 | `GET /api/cost/summary` | Group-level computed + reported cost, token breakdown |
 | `GET /api/cost/by-model` | Cost/tokens per group x model |
-| `GET /api/cost/by-user-model` | Cost/tokens per user x model |
+| `GET /api/cost/by-user-model` | Cost/tokens per user x group x model (real session group, not majority-vote) |
 | `GET /api/cost/by-model-daily` | *timeseries* — cost per group x model over time |
 | `GET /api/cost/by-model-compare` | Current vs. previous equal-length period, per model |
 | `GET /api/cost/tiers` | Cost broken down by token tier (uncachedInput/cacheRead/cacheWrite/output), split by group: `{"bedrock": {...}, "enterprise": {...}}` |

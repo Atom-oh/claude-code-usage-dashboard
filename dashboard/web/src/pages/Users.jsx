@@ -14,6 +14,8 @@ const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 
 // bedrock/enterprise 대결 밴드 — 이 대시보드의 정체성(A/B 실험)을 Users 페이지 상단에도 드러낸다.
 // 검색창(q) 필터는 적용하지 않는다 — 그룹 전체의 인원/수락률 등 요약 지표라 이름 검색과 무관해야 함.
+// 인원(count)은 straddler(두 그룹 모두 세션이 있는 유저)를 양쪽에 셀 수 있다 — leaderboard가
+// 유저×그룹으로 행이 갈라져 있기 때문(GROUP_ORDER 합계 ≥ distinct 유저 수).
 function GroupFaceOff({ rows }) {
   const stats = GROUP_ORDER.map((g) => {
     const grows = (rows || []).filter((r) => r.group === g);
@@ -76,22 +78,23 @@ function GroupFaceOff({ rows }) {
 
 export default function Users() {
   const [q, setQ] = useState("");
-  // 클릭한 유저 email만 저장하고 헤더/StatTile용 row는 현재 leaderboard에서 파생한다 — row 객체를
-  // 통째로 스냅샷하면 드로어를 연 채 기간을 바꿀 때 상단 타일(리더보드 값)과 하단 차트(재조회)의
+  // 클릭한 유저 email+group만 저장하고 헤더/StatTile용 row는 현재 leaderboard에서 파생한다 — row
+  // 객체를 통째로 스냅샷하면 드로어를 연 채 기간을 바꿀 때 상단 타일(리더보드 값)과 하단 차트(재조회)의
   // 모수가 어긋난다. 기간 변경 시 leaderboard가 재조회되면 타일도 자동 갱신되고, 새 기간에 해당
-  // 유저가 없으면 row=undefined라 드로어가 자연스럽게 닫힌다.
-  const [selectedEmail, setSelectedEmail] = useState(null);
+  // 유저가 없으면 row=undefined라 드로어가 자연스럽게 닫힌다. group까지 저장하는 이유: 리더보드가
+  // 유저×그룹으로 행이 갈라져 있어(userLeaderboard) email만으로는 straddler의 행이 모호하다.
+  const [selected, setSelected] = useState(null); // { user, group } | null
   const leaderboard = useApi("/api/users/leaderboard");
   const tools = useApi("/api/users/tools");
   const skills = useApi("/api/users/skills");
 
-  // 필터/기간 변경으로 선택 유저가 leaderboard에서 사라지면 selectedEmail을 비운다 — 안 그러면
-  // 나중에 그 유저가 다시 나타났을 때(예: 필터를 되돌림) 재클릭 없이 드로어가 조용히 재오픈된다.
+  // 필터/기간 변경으로 선택 행이 leaderboard에서 사라지면 selected를 비운다 — 안 그러면
+  // 나중에 그 행이 다시 나타났을 때(예: 필터를 되돌림) 재클릭 없이 드로어가 조용히 재오픈된다.
   useEffect(() => {
-    if (selectedEmail && leaderboard.data && !leaderboard.data.some((r) => r.user === selectedEmail)) {
-      setSelectedEmail(null);
+    if (selected && leaderboard.data && !leaderboard.data.some((r) => r.user === selected.user && r.group === selected.group)) {
+      setSelected(null);
     }
-  }, [selectedEmail, leaderboard.data]);
+  }, [selected, leaderboard.data]);
 
   const top10For = (g) =>
     (leaderboard.data || [])
@@ -106,8 +109,8 @@ export default function Users() {
   const rows = (leaderboard.data || [])
     .map((r) => ({
       ...r,
-      top_tool: topTool.get(r.user)?.key ?? "—",
-      top_skill: topSkill.get(r.user)?.key ?? "—",
+      top_tool: topTool.get(`${r.user}|${r.group}`)?.key ?? "—",
+      top_skill: topSkill.get(`${r.user}|${r.group}`)?.key ?? "—",
     }))
     .filter((r) => r.user.toLowerCase().includes(q.trim().toLowerCase()));
 
@@ -159,46 +162,54 @@ export default function Users() {
           </>
         )}
 
-        {leaderboard.loading ? null : leaderboard.error ? null : (
-          <DataTable
-            title="유저별 생산성 리더보드"
-            onRowClick={(r) => setSelectedEmail(r.user)}
-            subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day), 각 /day 항목은 절대 상한(캡)으로 정규화 — 캡 값은 초기 추정치"
-            columns={[
-              { key: "group", label: "그룹" },
-              { key: "user", label: "유저" },
-              { key: "productivity_score", label: "생산성 점수", render: (v) => v.toFixed(1) },
-              { key: "sessions", label: "세션", render: fmt },
-              { key: "input_tokens", label: "입력 토큰", render: fmt },
-              { key: "output_tokens", label: "출력 토큰", render: fmt },
-              { key: "tokens", label: "전체 토큰", render: fmt },
-              { key: "loc", label: "추가 라인", render: fmt },
-              { key: "prs", label: "PR", render: fmt },
-              { key: "commits", label: "커밋", render: fmt },
-              { key: "accept_rate", label: "수락률", render: pct },
-              { key: "active_days", label: "활성일", render: fmt },
-              { key: "top_tool", label: "주요 도구" },
-              { key: "top_skill", label: "주요 스킬" },
-            ]}
-            rows={rows}
-          />
-        )}
+        {leaderboard.loading
+          ? null
+          : leaderboard.error
+            ? null
+            : GROUP_ORDER.map((g) => (
+                <DataTable
+                  key={g}
+                  title={`유저별 생산성 리더보드 — ${g}`}
+                  onRowClick={(r) => setSelected({ user: r.user, group: r.group })}
+                  subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day), 각 /day 항목은 절대 상한(캡)으로 정규화 — 캡 값은 초기 추정치"
+                  columns={[
+                    { key: "user", label: "유저" },
+                    { key: "productivity_score", label: "생산성 점수", render: (v) => v.toFixed(1) },
+                    { key: "sessions", label: "세션", render: fmt },
+                    { key: "input_tokens", label: "입력 토큰", render: fmt },
+                    { key: "output_tokens", label: "출력 토큰", render: fmt },
+                    { key: "tokens", label: "전체 토큰", render: fmt },
+                    { key: "loc", label: "추가 라인", render: fmt },
+                    { key: "prs", label: "PR", render: fmt },
+                    { key: "commits", label: "커밋", render: fmt },
+                    { key: "accept_rate", label: "수락률", render: pct },
+                    { key: "active_days", label: "활성일", render: fmt },
+                    { key: "top_tool", label: "주요 도구" },
+                    { key: "top_skill", label: "주요 스킬" },
+                  ]}
+                  rows={rows.filter((r) => r.group === g)}
+                />
+              ))}
 
         {tools.loading ? (
           <Loading />
         ) : tools.error ? (
           <ErrorBox error={tools.error} />
         ) : (
-          <DataTable
-            title="유저별 도구 사용 내역"
-            columns={[
-              { key: "group", label: "그룹" },
-              { key: "user", label: "유저" },
-              { key: "tool", label: "도구" },
-              { key: "uses", label: "사용 횟수", render: fmt },
-            ]}
-            rows={tools.data}
-          />
+          <div className="grid gap-4 md:grid-cols-2">
+            {GROUP_ORDER.map((g) => (
+              <DataTable
+                key={g}
+                title={`유저별 도구 사용 내역 — ${g}`}
+                columns={[
+                  { key: "user", label: "유저" },
+                  { key: "tool", label: "도구" },
+                  { key: "uses", label: "사용 횟수", render: fmt },
+                ]}
+                rows={(tools.data || []).filter((r) => r.group === g)}
+              />
+            ))}
+          </div>
         )}
 
         {skills.loading ? (
@@ -206,19 +217,26 @@ export default function Users() {
         ) : skills.error ? (
           <ErrorBox error={skills.error} />
         ) : (
-          <DataTable
-            title="유저별 Skill 사용 내역"
-            columns={[
-              { key: "group", label: "그룹" },
-              { key: "user", label: "유저" },
-              { key: "skill", label: "Skill" },
-              { key: "invocations", label: "호출 수", render: fmt },
-            ]}
-            rows={skills.data}
-          />
+          <div className="grid gap-4 md:grid-cols-2">
+            {GROUP_ORDER.map((g) => (
+              <DataTable
+                key={g}
+                title={`유저별 Skill 사용 내역 — ${g}`}
+                columns={[
+                  { key: "user", label: "유저" },
+                  { key: "skill", label: "Skill" },
+                  { key: "invocations", label: "호출 수", render: fmt },
+                ]}
+                rows={(skills.data || []).filter((r) => r.group === g)}
+              />
+            ))}
+          </div>
         )}
       </div>
-      <UserDrawer row={selectedEmail ? (leaderboard.data || []).find((r) => r.user === selectedEmail) || null : null} onClose={() => setSelectedEmail(null)} />
+      <UserDrawer
+        row={selected ? (leaderboard.data || []).find((r) => r.user === selected.user && r.group === selected.group) || null : null}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }

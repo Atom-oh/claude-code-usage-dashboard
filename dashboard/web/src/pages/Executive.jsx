@@ -85,10 +85,53 @@ export default function Executive() {
   const projection30d = dailyAvg * 30;
   const costPerKloc = t.loc > 0 ? cost / (t.loc / 1000) : 0;
   const sessionsPerDevDay = users > 0 ? t.sessions / users / daysInRange : 0;
-  // 조직 종합 점수 — 리더보드 개인 점수(productivity.js와 동일 공식)의 평균.
-  const orgScore = (leaderboard.data || []).length
-    ? leaderboard.data.reduce((a, r) => a + Number(r.productivity_score), 0) / leaderboard.data.length
-    : 0;
+  // 조직 종합 점수 — 리더보드는 유저×그룹 행(userLeaderboard)이라, 두 그룹을 오간 유저의
+  // 그룹별 productivity_score를 그냥 평균 내면 안 된다: 그 점수 공식(productivity.js)이
+  // 항별 상한(Math.min(x/cap,1))로 캡되고 수락률도 decision 수로 가중되는 비선형 공식이라,
+  // "그룹별 점수 평균" ≠ "유저 전체 raw 지표를 합쳐서 재계산한 점수"다(리뷰에서 MAJOR로
+  // 확인). 이 PR 이전엔 topK 다수결로 유저 전체 활동이 한 행에 합산돼 있어 자동으로 맞았던
+  // 계산을, raw 지표(loc/commits/sessions/accepted/decisions/active_days)를 유저 단위로 먼저
+  // 합산한 뒤 같은 공식으로 재계산해 복원한다. 상수/가중치는 productivity.js와 동일해야
+  // 한다(normModel/normalizeModelId처럼 두 파일을 같이 고칠 것).
+  const LOC_PER_DAY_CAP = 300, COMMITS_PER_DAY_CAP = 3, SESSIONS_PER_DAY_CAP = 4;
+  const rawByUser = new Map();
+  for (const r of leaderboard.data || []) {
+    const prev = rawByUser.get(r.user) || { loc: 0, commits: 0, sessions: 0, accepted: 0, decisions: 0 };
+    rawByUser.set(r.user, {
+      loc: prev.loc + Number(r.loc),
+      commits: prev.commits + Number(r.commits),
+      sessions: prev.sessions + Number(r.sessions),
+      accepted: prev.accepted + Number(r.accepted),
+      decisions: prev.decisions + Number(r.decisions),
+      // active_days는 그룹별 값(r.active_days)을 합산하지 않는다 — 같은 날 두 그룹 모두
+      // 활동한 straddler는 그 날이 이중 계상된다. userLeaderboard가 유저 단위(그룹 무관)
+      // distinct 활성일을 user_active_days로 따로 내려주므로 그 값을 그대로 쓴다(그룹 행마다
+      // 동일한 값이라 마지막 값이 곧 유저 값).
+      active_days: Number(r.user_active_days),
+    });
+  }
+  // daysInRange(위, 다른 파생 지표용)는 sub-day 드래그 줌 하한이 1/1440일이라 여기 재계산에
+  // 그대로 쓰면 안 된다 — productivity.js:11의 서버 공식은 하한이 1일(Math.max(1, ...))이라,
+  // 다른 분모를 쓰면 sub-day 구간에서 locPerDay/commitsPerDay/sessionsPerDay가 최대 1440배
+  // 부풀어 orgScore가 리더보드 개별 productivity_score와 전혀 다른 값(사실상 만점)이 된다
+  // (리뷰에서 MAJOR로 확인). 서버와 동일한 하한을 쓰는 별도 변수로 재계산한다.
+  const scoreDays = Math.max(1, (to - from) / 86400000);
+  const perUserScores = [...rawByUser.values()].map((u) => {
+    const locPerDay = u.loc / scoreDays;
+    const commitsPerDay = u.commits / scoreDays;
+    const sessionsPerDay = u.sessions / scoreDays;
+    const acceptRate = u.decisions > 0 ? u.accepted / u.decisions : 0;
+    const activeDayShare = Math.min(u.active_days / scoreDays, 1);
+    return (
+      100 *
+      (0.3 * Math.min(locPerDay / LOC_PER_DAY_CAP, 1) +
+        0.25 * acceptRate +
+        0.2 * Math.min(commitsPerDay / COMMITS_PER_DAY_CAP, 1) +
+        0.15 * activeDayShare +
+        0.1 * Math.min(sessionsPerDay / SESSIONS_PER_DAY_CAP, 1))
+    );
+  });
+  const orgScore = perUserScores.length ? perUserScores.reduce((a, s) => a + s, 0) / perUserScores.length : 0;
 
   const avgDau = (adoptionTs.data || []).length
     ? adoptionTs.data.reduce((a, r) => a + r.dau, 0) / adoptionTs.data.length

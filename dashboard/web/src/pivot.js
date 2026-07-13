@@ -36,13 +36,16 @@ export function pivotByKey(rows, xKey, seriesKey, valueKey) {
   return { data, series };
 }
 
-// [{user, key, count}] → {user: {key, count}} — 유저별 1위 항목만 뽑는다 (leaderboard용 "주요 도구/스킬" 컬럼).
+// [{user, group, key, count}] → {"user|group": {key, count}} — 유저×그룹별 1위 항목만 뽑는다
+// (leaderboard용 "주요 도구/스킬" 컬럼). group까지 키에 넣는 이유: 리더보드가 유저×그룹으로
+// 행이 갈라져 있어(userLeaderboard) user만으로 조회하면 다른 그룹의 top이 잘못 붙는다.
 export function topPerUser(rows, keyField, countField) {
   const top = new Map();
   for (const r of rows || []) {
-    const prev = top.get(r.user);
+    const k = `${r.user}|${r.group}`;
+    const prev = top.get(k);
     if (!prev || Number(r[countField]) > prev.count) {
-      top.set(r.user, { key: r[keyField], count: Number(r[countField]) });
+      top.set(k, { key: r[keyField], count: Number(r[countField]) });
     }
   }
   return top;

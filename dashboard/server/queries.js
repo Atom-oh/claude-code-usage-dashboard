@@ -508,7 +508,10 @@ export async function cacheEfficiency(from, to, filters = {}) {
         ${GROUP_EXPR} AS "group",
         sumIf(m.Value, m.TokenType = 'cacheRead')                              AS cache_read,
         sumIf(m.Value, m.TokenType IN ('input', 'cacheRead', 'cacheCreation'))  AS input_side,
-        round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio
+        round(cache_read / nullIf(input_side, 0), 3)              AS cache_read_ratio,
+        sumIf(m.Value, m.TokenType = 'input')                                  AS uncached_input,
+        sumIf(m.Value, m.TokenType = 'cacheCreation')                          AS cache_write,
+        sumIf(m.Value, m.TokenType = 'output')                                 AS output_tokens
     FROM ${incFlat(`AND MetricName = 'claude_code.token.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
@@ -1063,19 +1066,19 @@ export async function costByModel(from, to, filters = {}) {
   }));
 }
 
-// Cost 페이지: 유저 × 모델별 비용/토큰. 그룹(bedrock/enterprise)은 세션 단위로 판별한 뒤 topK(1)로
-// 그 유저의 다수결 그룹 하나를 뽑는다(한 유저가 두 방식을 다 쓴 경우 any()처럼 비결정적으로
-// 흔들리지 않는다) — 단, incFlat이 세션당 여러 row(속성 조합별)를 낼 수 있어 정확히는 "세션 수"가
-// 아니라 incFlat이 생성한 row 개수(세션×속성 조합) 가중 다수결이다.
+// Cost 페이지: 유저 × 그룹 × 모델별 비용/토큰. group은 세션 단위 실제 값 — userCostEfficiency가
+// 이 결과를 userLeaderboard(유저×그룹 행)와 그룹까지 맞춰 조인해야 하므로(안 그러면 두 그룹을
+// 오간 유저의 전체 비용이 양쪽 그룹 행에 중복으로 붙는다), 여기도 topK(1) 다수결이 아니라 실제
+// 그룹으로 쪼갠다.
 export async function costByUserModel(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
     `${GROUP_CTE}
-    SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
+    SELECT m.UserEmail AS user, ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' AND m.UserEmail != '' ${f.where}
-    GROUP BY user, model ORDER BY user`,
+    GROUP BY user, "group", model ORDER BY user`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
   return withComputedCost(rows).map((r) => ({
@@ -1085,17 +1088,18 @@ export async function costByUserModel(from, to, filters = {}) {
 }
 
 // 유저별 어떤 tool을 얼마나 썼는지 (Usage/Users 페이지의 "사용자별 사용 내역"). model 필터는
-// 세션 세미조인으로 적용.
+// 세션 세미조인으로 적용. group은 세션 단위 실제 값(다수결 아님) — 유저가 두 그룹을 오가면
+// 유저×그룹×tool로 행이 갈라진다(Users 페이지가 그룹별 카드로 나눠 보여줌).
 export async function userToolUsage(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
-    SELECT l.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", l.ToolName AS tool, count() AS uses
+    SELECT l.UserEmail AS user, ${GROUP_EXPR} AS "group", l.ToolName AS tool, count() AS uses
     FROM claude_code.otel_logs l
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'tool_result' AND l.UserEmail != ''
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
-    GROUP BY user, tool ORDER BY user, uses DESC`,
+    GROUP BY user, "group", tool ORDER BY user, uses DESC`,
     // raw=true — otel_logs 직접 스캔(rollup 없음). mcpConnectorUsage/toolMcpUsage와 같은 이유로
     // 리뷰가 명시적으로 지적한 건 아니지만 동일 카테고리 버그라 같이 고친다.
     { ...range(from, to, true), ...f.params }
@@ -1106,16 +1110,17 @@ export async function userToolUsage(from, to, filters = {}) {
 // Model을 갖고 있어 model 필터도 걸 수 있다)
 // 원본 테이블을 유지하는 유일한 스냅샷 쿼리 — invocations가 count()(원시 export-tick 행 수 근사)라
 // 시간별 rollup으로 접으면 값이 달라진다. cost.usage+SkillName!='' 필터가 좁아 원본이어도 저렴.
+// group은 세션 단위 실제 값(다수결 아님) — userToolUsage와 동일 이유.
 export async function userSkillUsage(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
-    SELECT m.UserEmail AS user, topK(1)(${GROUP_EXPR})[1] AS "group", m.SkillName AS skill, count() AS invocations
+    SELECT m.UserEmail AS user, ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations
     FROM claude_code.otel_metrics_sum m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.MetricName = 'claude_code.cost.usage' AND m.SkillName != '' AND m.UserEmail != ''
       AND m.TimeUnix >= {from:DateTime} AND m.TimeUnix < {to:DateTime} ${f.where}
-    GROUP BY user, skill ORDER BY user, invocations DESC`,
+    GROUP BY user, "group", skill ORDER BY user, invocations DESC`,
     // raw=true — otel_metrics_sum 원본 직접 스캔(rollup 없음), mcpConnectorUsage와 동일 이유.
     { ...range(from, to, true), ...f.params }
   );
@@ -1159,46 +1164,70 @@ export async function adoptionTimeseries(from, to, filters = {}) {
   return out;
 }
 
-// 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열.
-export async function userDaily(from, to, email) {
+// 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열. group을 넘기면 그 그룹 세션만 —
+// Users 페이지의 리더보드 행이 이제 유저×그룹으로 갈라져 있어(userLeaderboard), 드로어를 그
+// 행에서 열었을 때 상단 StatTile(그 행의 그룹 값)과 여기 시계열의 모수가 같아야 한다(안 그러면
+// straddler의 한쪽 그룹 행을 열어도 양 그룹 합산 차트가 나와 숫자가 안 맞는다).
+export async function userDaily(from, to, email, group) {
   const b = incBucket(24, `AND MetricName IN (
         'claude_code.session.count', 'claude_code.lines_of_code.count',
         'claude_code.token.usage', 'claude_code.commit.count'
       )`);
+  // excludeUnknown: false — group 미지정(드로어를 그룹 무관 컨텍스트에서 열 때)이면 이 유저의
+  // 전체 활동을 봐야 한다. 기본값(true)이면 group을 안 넘겨도 unknown 세션이 조용히 빠진다.
+  const f = filterCond({ group, excludeUnknown: false }, { group: GROUP_EXPR });
   return query(
-    `SELECT t,
+    `${GROUP_CTE}
+    SELECT t,
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')       AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')         AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.commit.count')        AS commits
     FROM ${b.sub} m
-    WHERE m.UserEmail = {email:String}
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.UserEmail = {email:String} ${f.where}
     GROUP BY t ORDER BY t`,
-    { ...range(from, to, b.raw), ...b.params, email }
+    { ...range(from, to, b.raw), ...b.params, email, ...f.params }
   );
 }
 
 // 유저 드릴다운: 특정 유저의 도구별 수락/거부. userDaily/userHeatmap과 같은 exact match —
-// 부분일치({user})면 kim@x.com 드로어에 joakim@x.com 데이터가 섞인다.
-export async function userDecisionsByTool(from, to, email) {
-  return codeEditDecisionsByTool(from, to, { userExact: email });
+// 부분일치({user})면 kim@x.com 드로어에 joakim@x.com 데이터가 섞인다. group/excludeUnknown도
+// userDaily와 같은 이유로 전달 — 안 그러면 group 미지정 시 이 차트만 unknown 세션을 제외해
+// 드로어의 나머지 두 차트(전체 활동 기준)와 모수가 어긋난다.
+export async function userDecisionsByTool(from, to, email, group) {
+  return codeEditDecisionsByTool(from, to, { userExact: email, group, excludeUnknown: false });
 }
 
-// 유저 드릴다운: GitHub식 활동 히트맵 — to 기준 지난 91일(13주)의 일별 세션 수.
-// 세션 수는 SessionId 존재 기반(uniqExact)이라 temporality 무관.
-export async function userHeatmap(to, email, days = 91) {
+// 유저 드릴다운: GitHub식 활동 히트맵 — to 기준 지난 91일(13주)의 일별 세션 수. group을 넘기면
+// 그 그룹 세션만(userDaily와 동일 이유). 세션 수는 SessionId 존재 기반(uniqExact)이라
+// temporality와 무관.
+export async function userHeatmap(to, email, days = 91, group) {
+  // excludeUnknown: false — group 미지정(드로어를 그룹 무관 컨텍스트에서 열 때)이면 이 유저의
+  // 전체 활동을 봐야 한다. 기본값(true)이면 group을 안 넘겨도 unknown 세션이 조용히 빠진다.
+  const f = filterCond({ group, excludeUnknown: false }, { group: GROUP_EXPR });
   return query(
-    `SELECT toDate(hour, 'UTC') AS d, uniqExact(SessionId) AS sessions
-    FROM claude_code.otel_metrics_sum_hourly
-    WHERE UserEmail = {email:String} AND MetricName = 'claude_code.session.count' AND SessionId != ''
-      AND hour >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND hour < {to:DateTime}
+    `${GROUP_CTE}
+    SELECT toDate(m.hour, 'UTC') AS d, uniqExact(m.SessionId) AS sessions
+    FROM claude_code.otel_metrics_sum_hourly m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.UserEmail = {email:String} AND m.MetricName = 'claude_code.session.count' AND m.SessionId != ''
+      AND m.hour >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND m.hour < {to:DateTime} ${f.where}
     GROUP BY d ORDER BY d`,
-    { to: toChDateTime(to), email, days }
+    { to: toChDateTime(to), email, days, ...f.params }
   );
 }
 
 // 패널10 확장: 유저별 리더보드 (생산성 점수는 이 raw 값을 productivity.js에서 계산). active_days는
 // "존재하는 날짜 수"라 temporality와 무관 — rollup에서 바로 distinct count로 구해 별도 CTE로 조인.
+// group은 세션 단위 실제 값(다수결 아님) — 유저가 두 그룹을 오가면 유저×그룹으로 행이 갈라진다
+// (Users 페이지가 그룹별 리더보드로 나눠 보여줌). active_days는 두 CTE로 나눠 조인한다:
+//   - active_days(UserEmail, group) — 표시 컬럼 "활성일"/점수의 그룹별 activeDayShare(가중
+//     0.15)용. user 단위로만 조인하면 straddler의 그룹별 값이 유저 전체 활성일로 부푼다.
+//   - active_days_user(UserEmail) — 그룹 무관 distinct 활성일. Executive.jsx의 orgScore가
+//     유저×그룹 행을 user 단위로 접어 점수를 재계산할 때 쓴다 — 그룹별 값을 그냥 합산하면
+//     같은 날 두 그룹 모두 활동한 유저의 그 날이 이중 계상되므로(리뷰에서 MAJOR로 확인),
+//     distinct는 SQL에서 한 번에 구해 별도 컬럼(user_active_days)으로 내려준다.
 export async function userLeaderboard(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   // active_days에도 같은 필터를 건다(컬럼 참조만 CTE 기준으로) — 안 걸면 group/model 필터 상태에서
@@ -1214,6 +1243,18 @@ export async function userLeaderboard(from, to, filters = {}) {
   return query(
     `${GROUP_CTE},
     active_days AS (
+        SELECT UserEmail, ${GROUP_EXPR} AS "group", uniqExact(toDate(hour, 'UTC')) AS active_days
+        FROM claude_code.otel_metrics_sum_hourly m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE UserEmail != '' AND MetricName = 'claude_code.session.count'
+          AND hour >= toStartOfHour({from:DateTime}) AND hour < {to:DateTime} ${fAd.where}
+        GROUP BY UserEmail, "group"
+    ),
+    -- 그룹 무관(유저 전체) distinct 활성일 — Executive.jsx의 orgScore가 유저×그룹 행을 다시
+    -- user 단위로 접어 점수를 재계산할 때 쓴다. 위 active_days(그룹별)를 유저 단위로 그냥
+    -- 합산하면 같은 날 두 그룹 모두 활동한 straddler의 그 날이 이중 계상된다(리뷰에서 MAJOR로
+    -- 확인) — distinct 날짜는 SQL로 한 번에 구해야 정확하다.
+    active_days_user AS (
         SELECT UserEmail, uniqExact(toDate(hour, 'UTC')) AS active_days
         FROM claude_code.otel_metrics_sum_hourly m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
@@ -1223,7 +1264,7 @@ export async function userLeaderboard(from, to, filters = {}) {
     )
     SELECT
         m.UserEmail AS user,
-        topK(1)(${GROUP_EXPR})[1] AS "group",
+        ${GROUP_EXPR} AS "group",
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')                                    AS sessions,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                       AS tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')             AS input_tokens,
@@ -1233,15 +1274,17 @@ export async function userLeaderboard(from, to, filters = {}) {
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')                                AS prs,
         sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision' AND m.Decision = 'accept')  AS accepted,
         sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision')                            AS decisions,
-        any(ad.active_days)                                                                             AS active_days
+        any(ad.active_days)                                                                             AS active_days,
+        any(adu.active_days)                                                                            AS user_active_days
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.token.usage', 'claude_code.lines_of_code.count',
         'claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.code_edit_tool.decision'
       )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail
+    LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail AND ${GROUP_EXPR} = ad."group"
+    LEFT JOIN active_days_user adu ON m.UserEmail = adu.UserEmail
     WHERE m.UserEmail != '' ${f.where}
-    GROUP BY user ORDER BY tokens DESC`,
+    GROUP BY user, "group" ORDER BY tokens DESC`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params, ...fAd.params }
   );
 }
