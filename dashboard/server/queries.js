@@ -1221,9 +1221,13 @@ export async function userHeatmap(to, email, days = 91, group) {
 // 패널10 확장: 유저별 리더보드 (생산성 점수는 이 raw 값을 productivity.js에서 계산). active_days는
 // "존재하는 날짜 수"라 temporality와 무관 — rollup에서 바로 distinct count로 구해 별도 CTE로 조인.
 // group은 세션 단위 실제 값(다수결 아님) — 유저가 두 그룹을 오가면 유저×그룹으로 행이 갈라진다
-// (Users 페이지가 그룹별 리더보드로 나눠 보여줌). active_days CTE도 group으로 조인 키를 넓혀
-// (UserEmail, group) 단위로 집계한다 — user 단위로만 조인하면 straddler의 그룹별 activeDayShare
-// (가중 0.15)가 유저 전체 활성일로 부풀어 표시 컬럼("활성일")과 점수 둘 다 그룹별 값이 아니게 된다.
+// (Users 페이지가 그룹별 리더보드로 나눠 보여줌). active_days는 두 CTE로 나눠 조인한다:
+//   - active_days(UserEmail, group) — 표시 컬럼 "활성일"/점수의 그룹별 activeDayShare(가중
+//     0.15)용. user 단위로만 조인하면 straddler의 그룹별 값이 유저 전체 활성일로 부푼다.
+//   - active_days_user(UserEmail) — 그룹 무관 distinct 활성일. Executive.jsx의 orgScore가
+//     유저×그룹 행을 user 단위로 접어 점수를 재계산할 때 쓴다 — 그룹별 값을 그냥 합산하면
+//     같은 날 두 그룹 모두 활동한 유저의 그 날이 이중 계상되므로(리뷰에서 MAJOR로 확인),
+//     distinct는 SQL에서 한 번에 구해 별도 컬럼(user_active_days)으로 내려준다.
 export async function userLeaderboard(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   // active_days에도 같은 필터를 건다(컬럼 참조만 CTE 기준으로) — 안 걸면 group/model 필터 상태에서
@@ -1245,6 +1249,18 @@ export async function userLeaderboard(from, to, filters = {}) {
         WHERE UserEmail != '' AND MetricName = 'claude_code.session.count'
           AND hour >= toStartOfHour({from:DateTime}) AND hour < {to:DateTime} ${fAd.where}
         GROUP BY UserEmail, "group"
+    ),
+    -- 그룹 무관(유저 전체) distinct 활성일 — Executive.jsx의 orgScore가 유저×그룹 행을 다시
+    -- user 단위로 접어 점수를 재계산할 때 쓴다. 위 active_days(그룹별)를 유저 단위로 그냥
+    -- 합산하면 같은 날 두 그룹 모두 활동한 straddler의 그 날이 이중 계상된다(리뷰에서 MAJOR로
+    -- 확인) — distinct 날짜는 SQL로 한 번에 구해야 정확하다.
+    active_days_user AS (
+        SELECT UserEmail, uniqExact(toDate(hour, 'UTC')) AS active_days
+        FROM claude_code.otel_metrics_sum_hourly m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE UserEmail != '' AND MetricName = 'claude_code.session.count'
+          AND hour >= toStartOfHour({from:DateTime}) AND hour < {to:DateTime} ${fAd.where}
+        GROUP BY UserEmail
     )
     SELECT
         m.UserEmail AS user,
@@ -1258,13 +1274,15 @@ export async function userLeaderboard(from, to, filters = {}) {
         sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count')                                AS prs,
         sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision' AND m.Decision = 'accept')  AS accepted,
         sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision')                            AS decisions,
-        any(ad.active_days)                                                                             AS active_days
+        any(ad.active_days)                                                                             AS active_days,
+        any(adu.active_days)                                                                            AS user_active_days
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.token.usage', 'claude_code.lines_of_code.count',
         'claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.code_edit_tool.decision'
       )`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     LEFT JOIN active_days ad ON m.UserEmail = ad.UserEmail AND ${GROUP_EXPR} = ad."group"
+    LEFT JOIN active_days_user adu ON m.UserEmail = adu.UserEmail
     WHERE m.UserEmail != '' ${f.where}
     GROUP BY user, "group" ORDER BY tokens DESC`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params, ...fAd.params }

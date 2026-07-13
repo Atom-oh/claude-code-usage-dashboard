@@ -96,16 +96,18 @@ export default function Executive() {
   const LOC_PER_DAY_CAP = 300, COMMITS_PER_DAY_CAP = 3, SESSIONS_PER_DAY_CAP = 4;
   const rawByUser = new Map();
   for (const r of leaderboard.data || []) {
-    const prev = rawByUser.get(r.user) || { loc: 0, commits: 0, sessions: 0, accepted: 0, decisions: 0, active_days: 0 };
+    const prev = rawByUser.get(r.user) || { loc: 0, commits: 0, sessions: 0, accepted: 0, decisions: 0 };
     rawByUser.set(r.user, {
       loc: prev.loc + Number(r.loc),
       commits: prev.commits + Number(r.commits),
       sessions: prev.sessions + Number(r.sessions),
       accepted: prev.accepted + Number(r.accepted),
       decisions: prev.decisions + Number(r.decisions),
-      // active_days도 그룹별로 갈라져 있어 유저 단위 근사는 합산 — 공식이 min(.../daysInRange,1)로
-      // 캡하므로 같은 날 두 그룹 모두 활동한 드문 경우에만 상한에 더 빨리 닿는 정도의 근사 오차.
-      active_days: prev.active_days + Number(r.active_days),
+      // active_days는 그룹별 값(r.active_days)을 합산하지 않는다 — 같은 날 두 그룹 모두
+      // 활동한 straddler는 그 날이 이중 계상된다. userLeaderboard가 유저 단위(그룹 무관)
+      // distinct 활성일을 user_active_days로 따로 내려주므로 그 값을 그대로 쓴다(그룹 행마다
+      // 동일한 값이라 마지막 값이 곧 유저 값).
+      active_days: Number(r.user_active_days),
     });
   }
   const perUserScores = [...rawByUser.values()].map((u) => {

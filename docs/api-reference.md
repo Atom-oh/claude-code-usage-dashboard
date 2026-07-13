@@ -65,7 +65,7 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 ### Users
 | Path | Returns |
 |---|---|
-| `GET /api/users/leaderboard` | Per-user x group metrics + productivity score (real session group, not majority-vote — a user active in both groups gets one row per group) |
+| `GET /api/users/leaderboard` | Per-user x group metrics + productivity score (real session group, not majority-vote — a user active in both groups gets one row per group). Also includes `user_active_days`: group-agnostic distinct active days, identical across a straddling user's group rows — used to recompute an org-wide (ungrouped) productivity score without double-counting days a user was active in both groups |
 | `GET /api/users/tools` | Per-user x group tool usage |
 | `GET /api/users/skills` | Per-user x group skill usage |
 | `GET /api/users/cost-efficiency` | Per-user x group `$/LOC`, `$/commit` |
