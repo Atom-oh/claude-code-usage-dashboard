@@ -85,16 +85,44 @@ export default function Executive() {
   const projection30d = dailyAvg * 30;
   const costPerKloc = t.loc > 0 ? cost / (t.loc / 1000) : 0;
   const sessionsPerDevDay = users > 0 ? t.sessions / users / daysInRange : 0;
-  // 조직 종합 점수 — 리더보드 개인 점수(productivity.js와 동일 공식)의 평균. 리더보드는
-  // 유저×그룹 행(userLeaderboard)이라 행을 그대로 평균 내면 두 그룹을 오간 유저(straddler)가
-  // 이중 가중된다 — 유저 단위로 먼저 접어(그룹 간 점수 평균) 유저 1명 = 가중치 1로 맞춘다.
-  const scoreByUser = new Map();
+  // 조직 종합 점수 — 리더보드는 유저×그룹 행(userLeaderboard)이라, 두 그룹을 오간 유저의
+  // 그룹별 productivity_score를 그냥 평균 내면 안 된다: 그 점수 공식(productivity.js)이
+  // 항별 상한(Math.min(x/cap,1))로 캡되고 수락률도 decision 수로 가중되는 비선형 공식이라,
+  // "그룹별 점수 평균" ≠ "유저 전체 raw 지표를 합쳐서 재계산한 점수"다(리뷰에서 MAJOR로
+  // 확인). 이 PR 이전엔 topK 다수결로 유저 전체 활동이 한 행에 합산돼 있어 자동으로 맞았던
+  // 계산을, raw 지표(loc/commits/sessions/accepted/decisions/active_days)를 유저 단위로 먼저
+  // 합산한 뒤 같은 공식으로 재계산해 복원한다. 상수/가중치는 productivity.js와 동일해야
+  // 한다(normModel/normalizeModelId처럼 두 파일을 같이 고칠 것).
+  const LOC_PER_DAY_CAP = 300, COMMITS_PER_DAY_CAP = 3, SESSIONS_PER_DAY_CAP = 4;
+  const rawByUser = new Map();
   for (const r of leaderboard.data || []) {
-    const prev = scoreByUser.get(r.user);
-    const score = Number(r.productivity_score);
-    scoreByUser.set(r.user, prev ? { sum: prev.sum + score, n: prev.n + 1 } : { sum: score, n: 1 });
+    const prev = rawByUser.get(r.user) || { loc: 0, commits: 0, sessions: 0, accepted: 0, decisions: 0, active_days: 0 };
+    rawByUser.set(r.user, {
+      loc: prev.loc + Number(r.loc),
+      commits: prev.commits + Number(r.commits),
+      sessions: prev.sessions + Number(r.sessions),
+      accepted: prev.accepted + Number(r.accepted),
+      decisions: prev.decisions + Number(r.decisions),
+      // active_days도 그룹별로 갈라져 있어 유저 단위 근사는 합산 — 공식이 min(.../daysInRange,1)로
+      // 캡하므로 같은 날 두 그룹 모두 활동한 드문 경우에만 상한에 더 빨리 닿는 정도의 근사 오차.
+      active_days: prev.active_days + Number(r.active_days),
+    });
   }
-  const perUserScores = [...scoreByUser.values()].map((v) => v.sum / v.n);
+  const perUserScores = [...rawByUser.values()].map((u) => {
+    const locPerDay = u.loc / daysInRange;
+    const commitsPerDay = u.commits / daysInRange;
+    const sessionsPerDay = u.sessions / daysInRange;
+    const acceptRate = u.decisions > 0 ? u.accepted / u.decisions : 0;
+    const activeDayShare = Math.min(u.active_days / daysInRange, 1);
+    return (
+      100 *
+      (0.3 * Math.min(locPerDay / LOC_PER_DAY_CAP, 1) +
+        0.25 * acceptRate +
+        0.2 * Math.min(commitsPerDay / COMMITS_PER_DAY_CAP, 1) +
+        0.15 * activeDayShare +
+        0.1 * Math.min(sessionsPerDay / SESSIONS_PER_DAY_CAP, 1))
+    );
+  });
   const orgScore = perUserScores.length ? perUserScores.reduce((a, s) => a + s, 0) / perUserScores.length : 0;
 
   const avgDau = (adoptionTs.data || []).length
