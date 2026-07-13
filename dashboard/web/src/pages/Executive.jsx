@@ -110,12 +110,18 @@ export default function Executive() {
       active_days: Number(r.user_active_days),
     });
   }
+  // daysInRange(위, 다른 파생 지표용)는 sub-day 드래그 줌 하한이 1/1440일이라 여기 재계산에
+  // 그대로 쓰면 안 된다 — productivity.js:11의 서버 공식은 하한이 1일(Math.max(1, ...))이라,
+  // 다른 분모를 쓰면 sub-day 구간에서 locPerDay/commitsPerDay/sessionsPerDay가 최대 1440배
+  // 부풀어 orgScore가 리더보드 개별 productivity_score와 전혀 다른 값(사실상 만점)이 된다
+  // (리뷰에서 MAJOR로 확인). 서버와 동일한 하한을 쓰는 별도 변수로 재계산한다.
+  const scoreDays = Math.max(1, (to - from) / 86400000);
   const perUserScores = [...rawByUser.values()].map((u) => {
-    const locPerDay = u.loc / daysInRange;
-    const commitsPerDay = u.commits / daysInRange;
-    const sessionsPerDay = u.sessions / daysInRange;
+    const locPerDay = u.loc / scoreDays;
+    const commitsPerDay = u.commits / scoreDays;
+    const sessionsPerDay = u.sessions / scoreDays;
     const acceptRate = u.decisions > 0 ? u.accepted / u.decisions : 0;
-    const activeDayShare = Math.min(u.active_days / daysInRange, 1);
+    const activeDayShare = Math.min(u.active_days / scoreDays, 1);
     return (
       100 *
       (0.3 * Math.min(locPerDay / LOC_PER_DAY_CAP, 1) +
