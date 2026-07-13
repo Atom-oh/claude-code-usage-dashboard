@@ -85,10 +85,17 @@ export default function Executive() {
   const projection30d = dailyAvg * 30;
   const costPerKloc = t.loc > 0 ? cost / (t.loc / 1000) : 0;
   const sessionsPerDevDay = users > 0 ? t.sessions / users / daysInRange : 0;
-  // 조직 종합 점수 — 리더보드 개인 점수(productivity.js와 동일 공식)의 평균.
-  const orgScore = (leaderboard.data || []).length
-    ? leaderboard.data.reduce((a, r) => a + Number(r.productivity_score), 0) / leaderboard.data.length
-    : 0;
+  // 조직 종합 점수 — 리더보드 개인 점수(productivity.js와 동일 공식)의 평균. 리더보드는
+  // 유저×그룹 행(userLeaderboard)이라 행을 그대로 평균 내면 두 그룹을 오간 유저(straddler)가
+  // 이중 가중된다 — 유저 단위로 먼저 접어(그룹 간 점수 평균) 유저 1명 = 가중치 1로 맞춘다.
+  const scoreByUser = new Map();
+  for (const r of leaderboard.data || []) {
+    const prev = scoreByUser.get(r.user);
+    const score = Number(r.productivity_score);
+    scoreByUser.set(r.user, prev ? { sum: prev.sum + score, n: prev.n + 1 } : { sum: score, n: 1 });
+  }
+  const perUserScores = [...scoreByUser.values()].map((v) => v.sum / v.n);
+  const orgScore = perUserScores.length ? perUserScores.reduce((a, s) => a + s, 0) / perUserScores.length : 0;
 
   const avgDau = (adoptionTs.data || []).length
     ? adoptionTs.data.reduce((a, r) => a + r.dau, 0) / adoptionTs.data.length

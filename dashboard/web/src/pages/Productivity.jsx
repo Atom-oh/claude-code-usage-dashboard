@@ -49,9 +49,14 @@ export default function Productivity() {
   );
   const acceptRate = decisionTotals.total > 0 ? decisionTotals.accept / decisionTotals.total : 0;
 
+  // leaderboard는 유저×그룹 행(userLeaderboard)이라 그대로 슬라이스하면 두 그룹을 오간
+  // 유저(straddler)가 같은 이름으로 중복 노출되고 어느 그룹 점수인지 안 보인다 — 라벨에
+  // 그룹을 붙여 구분한다(Users 페이지처럼 그룹별로 아예 나누는 대신, 여기는 조직 전체
+  // Top 10 하나로 유지 — 아래 표에 이미 그룹 컬럼이 있는 상세 뷰가 따로 있다).
   const top10ByScore = [...(leaderboard.data || [])]
     .sort((a, b) => Number(b.productivity_score) - Number(a.productivity_score))
-    .slice(0, 10);
+    .slice(0, 10)
+    .map((r) => ({ ...r, label: `${r.user} (${r.group})` }));
 
   return (
     <div>
@@ -85,9 +90,9 @@ export default function Productivity() {
         ) : (
           <HBarList
             title="사용자별 생산성 — Top 10"
-            subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day)"
+            subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day) — 유저×그룹별 행(두 그룹을 오간 유저는 그룹당 1행)"
             data={top10ByScore.map((r) => ({ ...r, score: Number(r.productivity_score) }))}
-            labelKey="user"
+            labelKey="label"
             valueKey="score"
           />
         )}

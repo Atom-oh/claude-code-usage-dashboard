@@ -197,7 +197,7 @@ export default function Overview() {
                   key={g}
                   title={`캐시 효율 — ${g}`}
                   subtitle="입력측 캐시 구성과 입력/출력 비중"
-                  right={<Badge tone="brand">캐시율 {r ? `${(Number(r.cache_read_ratio) * 100).toFixed(1)}%` : "—"}</Badge>}
+                  right={<Badge tone="brand">캐시율 {r?.cache_read_ratio == null ? "—" : `${(Number(r.cache_read_ratio) * 100).toFixed(1)}%`}</Badge>}
                 >
                   <div className="flex flex-wrap gap-4">
                     <DonutBody

@@ -23,11 +23,11 @@ Every data route below accepts these (parsed by `parseRange()` / `route()` in `i
 | `intervalHours` | number | No | Bucket size for timeseries endpoints (fractional hours like `0.25` = 15 min for chart drag-zoom, 1 = hourly, 24 = daily, 168 = weekly). Only honored by endpoints marked *timeseries* below. Requests with `intervalHours < 1` are clamped to `1` server-side if the `from`/`to` span exceeds 4 hours (minute-bucket queries fall back to scanning the raw table, which is only cheap for narrow ranges). |
 | `email` | string | Only for `GET /api/users/{daily,decisions-by-tool,heatmap}` | Exact-match user email for the per-user drilldown endpoints. Not a general filter — ignored by every other route. |
 
-For the three drilldown endpoints (`daily`/`decisions-by-tool`/`heatmap`), `group` is optional:
-omitted, they return the user's full activity across both groups (as before); passed, they
-scope to that session group — used by the Users page drawer, which now opens from a
-per-user-x-group leaderboard row and passes that row's `group` so the drilldown matches the
-row's own numbers.
+For the three drilldown endpoints (`daily`/`decisions-by-tool`/`heatmap`), `group` is honored
+and optional: omitted, they return the user's full activity across all sessions (including
+`unknown`); passed, they scope to that session group — used by the Users page drawer, which
+now opens from a per-user-x-group leaderboard row and passes that row's `group` so the
+drilldown matches the row's own numbers.
 
 ## Endpoints
 
@@ -69,9 +69,9 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 | `GET /api/users/tools` | Per-user x group tool usage |
 | `GET /api/users/skills` | Per-user x group skill usage |
 | `GET /api/users/cost-efficiency` | Per-user x group `$/LOC`, `$/commit` |
-| `GET /api/users/daily` | *timeseries* — daily sessions/LOC/tokens/commits for one user. **Requires `email` param** (exact match, not filtered by `user`/`group`/`model`). Not covered by the cache warmer. |
-| `GET /api/users/decisions-by-tool` | Accept/reject counts per tool for one user. **Requires `email` param.** Not covered by the cache warmer. |
-| `GET /api/users/heatmap` | GitHub-style daily session-count heatmap, last 91 days from `to`. **Requires `email` param**; ignores `from`. Not covered by the cache warmer. |
+| `GET /api/users/daily` | *timeseries* — daily sessions/LOC/tokens/commits for one user. **Requires `email` param** (exact match; not filtered by `user`/`model`). Optional `group` scopes to that session group. Not covered by the cache warmer. |
+| `GET /api/users/decisions-by-tool` | Accept/reject counts per tool for one user. **Requires `email` param.** Optional `group` scopes to that session group. Not covered by the cache warmer. |
+| `GET /api/users/heatmap` | GitHub-style daily session-count heatmap, last 91 days from `to`. **Requires `email` param**; ignores `from`. Optional `group` scopes to that session group. Not covered by the cache warmer. |
 
 ### Cost
 | Path | Returns |
