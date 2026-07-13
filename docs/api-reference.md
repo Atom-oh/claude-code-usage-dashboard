@@ -41,7 +41,7 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 | `GET /api/overview/kpi` | Group-level session/user/commit/PR/token/LOC summary |
 | `GET /api/overview/active-users` | Ungrouped unique active user count (includes `unknown` sessions — a "totals" endpoint, see `group` param above) |
 | `GET /api/overview/tokens-timeseries` | *timeseries* — token usage per group over time |
-| `GET /api/overview/cache-efficiency` | Cache read ratio + token-type breakdown (cache read/write, uncached input, output) per group |
+| `GET /api/overview/cache-efficiency` | Cache read ratio (`cache_read_ratio`) + token-type breakdown per group: `cache_read`, `input_side` (input + cacheRead + cacheCreation, the ratio's denominator), `uncached_input`, `cache_write`, `output_tokens` |
 | `GET /api/overview/model-distribution` | Token distribution by group x model |
 
 ### Productivity
