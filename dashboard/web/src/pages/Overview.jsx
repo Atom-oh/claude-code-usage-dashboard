@@ -5,13 +5,11 @@ import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
-import { GroupAreaChart, DonutBody, DualLineChart } from "../components/GroupCharts.jsx";
-import { Badge } from "../components/Badge.jsx";
-import { GROUP_ORDER } from "../colors.js";
+import { GroupAreaChart, RingGauge, DualLineChart } from "../components/GroupCharts.jsx";
+import { GROUP_ORDER, colorFor } from "../colors.js";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
-import { useChartColors } from "../useChartColors.js";
 import { makeTickFmt } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -20,11 +18,6 @@ const TOKEN_VIEWS = [
   { value: "input_tokens", label: "입력" },
   { value: "output_tokens", label: "출력" },
 ];
-
-// Cost.jsx 캐시 티어 도넛(tierRowsFor)과 같은 이름은 같은 팔레트 인덱스를 쓰도록 순서를 맞춘다
-// — "출력"·"캐시 읽기"·"캐시 쓰기"·"비캐시 입력"이 두 페이지에서 다른 색으로 보이면 혼란스럽다.
-const SLICE_COLOR_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시 입력", "입력측"];
-const sliceColor = (palette) => (name) => palette[Math.max(0, SLICE_COLOR_ORDER.indexOf(name)) % palette.length];
 
 // group을 카드 제목으로 좌우 분리해 보여주므로 테이블 안에서는 그룹 컬럼을 뺀다.
 const MODEL_DIST_COLUMNS = [
@@ -39,7 +32,6 @@ export default function Overview() {
   const { intervalHours } = useRange();
   const { model } = useFilters();
   const fmtTick = makeTickFmt(intervalHours);
-  const colorOf = sliceColor(useChartColors().palette);
   const kpi = useApi("/api/overview/kpi");
   const activeUsers = useApi("/api/overview/active-users");
   const tokens = useApi("/api/overview/tokens-timeseries");
@@ -192,43 +184,14 @@ export default function Overview() {
           <div className="grid gap-4 md:grid-cols-2">
             {GROUP_ORDER.map((g) => {
               const r = (cache.data || []).find((row) => row.group === g);
+              const inputSide = Number(r?.input_side) || 0;
+              const readPct = r?.cache_read_ratio == null ? null : Number(r.cache_read_ratio);
+              const writePct = inputSide > 0 ? Number(r.cache_write) / inputSide : null;
               return (
-                <Card
-                  key={g}
-                  title={`캐시 효율 — ${g}`}
-                  subtitle="입력측 캐시 구성과 입력/출력 비중"
-                  right={<Badge tone="brand">캐시율 {r?.cache_read_ratio == null ? "—" : `${(Number(r.cache_read_ratio) * 100).toFixed(1)}%`}</Badge>}
-                >
-                  <div className="flex flex-wrap gap-4">
-                    <DonutBody
-                      label="입력 캐시 구성"
-                      data={
-                        r
-                          ? [
-                              { tier: "캐시 읽기", tokens: Number(r.cache_read) },
-                              { tier: "캐시 쓰기", tokens: Number(r.cache_write) },
-                              { tier: "비캐시 입력", tokens: Number(r.uncached_input) },
-                            ]
-                          : []
-                      }
-                      nameKey="tier"
-                      valueKey="tokens"
-                      colorOf={colorOf}
-                    />
-                    <DonutBody
-                      label="입력 vs 출력"
-                      data={
-                        r
-                          ? [
-                              { side: "입력측", tokens: Number(r.input_side) },
-                              { side: "출력", tokens: Number(r.output_tokens) },
-                            ]
-                          : []
-                      }
-                      nameKey="side"
-                      valueKey="tokens"
-                      colorOf={colorOf}
-                    />
+                <Card key={g} title={`캐시 효율 — ${g}`} subtitle="입력측 토큰 중 캐시 읽기/쓰기 비율">
+                  <div className="flex justify-center gap-10 py-2">
+                    <RingGauge pct={readPct} color={colorFor(g)} label="읽기캐시" sub={r ? `${fmt(r.cache_read)} tok` : undefined} />
+                    <RingGauge pct={writePct} color={colorFor(g)} label="쓰기캐시" sub={r ? `${fmt(r.cache_write)} tok` : undefined} />
                   </div>
                 </Card>
               );

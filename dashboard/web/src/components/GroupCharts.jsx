@@ -187,6 +187,29 @@ export function DualLineChart({ title, subtitle, right, rows, xKey, lines, heigh
   );
 }
 
+// 채움형 링 게이지 — 구성 비율을 보여주는 DonutBody와 달리 단일 비율(0~1)을 "그 %만큼만
+// 링을 채워서" 보여준다(예: 96% → 링의 96%). Executive.jsx의 ScoreGauge와 같은 SVG 패턴이지만
+// 점수 색 램프가 없다 — 색은 호출부가 주입(그룹 색 등).
+export function RingGauge({ pct, color, label, sub }) {
+  const r = 26, c = 2 * Math.PI * r;
+  const filled = Math.max(0, Math.min(1, pct || 0));
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="relative h-16 w-16">
+        <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+          <circle cx="32" cy="32" r={r} fill="none" stroke="var(--ink-100)" strokeWidth="6" />
+          <circle cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${filled * c} ${c}`} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center tabular text-[14px] font-semibold text-ink-800">
+          {pct == null ? "—" : `${(filled * 100).toFixed(filled * 100 < 10 ? 1 : 0)}%`}
+        </div>
+      </div>
+      <div className="text-[11px] font-semibold text-ink-600">{label}</div>
+      {sub && <div className="text-[10px] text-ink-400 tabular">{sub}</div>}
+    </div>
+  );
+}
+
 // 도넛 본체 (Card 없음) — 한 카드에 도넛을 여러 개 넣을 때 직접 조합한다 (예: Cost의
 // 모델별 지출 비중 bedrock/enterprise 나란히). colorOf(name, i)로 색을 넘기면 도넛 간에
 // 같은 항목이 같은 색을 갖도록 밖에서 고정할 수 있다.
