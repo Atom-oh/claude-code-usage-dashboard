@@ -184,11 +184,17 @@ export default function Overview() {
           <div className="grid gap-4 md:grid-cols-2">
             {GROUP_ORDER.map((g) => {
               const r = (cache.data || []).find((row) => row.group === g);
-              const inputSide = Number(r?.input_side) || 0;
-              const readPct = r?.cache_read_ratio == null ? null : Number(r.cache_read_ratio);
-              const writePct = inputSide > 0 ? Number(r.cache_write) / inputSide : null;
+              // 캐시 적중률 방식 — 각각 "그 유형이 비캐시입력 대비 얼마나 큰지"를 독립적으로 본다
+              // (입력측 전체를 읽기/쓰기/비캐시로 3분할하는 방식과 달리 둘의 합이 100%일 필요 없음).
+              // 캐시 쓰기는 분모에서 뺀다 — "캐시로 절약된 비율"의 기준은 캐시가 없었다면 그대로
+              // 입력이었을 양(비캐시입력+캐시읽기)이어야지, 캐시 쓰기까지 포함한 입력측 전체가 아니다.
+              const uncachedInput = Number(r?.uncached_input) || 0;
+              const cacheRead = Number(r?.cache_read) || 0;
+              const cacheWrite = Number(r?.cache_write) || 0;
+              const readPct = r && cacheRead + uncachedInput > 0 ? cacheRead / (cacheRead + uncachedInput) : null;
+              const writePct = r && cacheWrite + uncachedInput > 0 ? cacheWrite / (cacheWrite + uncachedInput) : null;
               return (
-                <Card key={g} title={`캐시 효율 — ${g}`} subtitle="입력측 토큰 중 캐시 읽기/쓰기 비율">
+                <Card key={g} title={`캐시 효율 — ${g}`} subtitle="비캐시 입력 대비 캐시 읽기/쓰기 비중">
                   <div className="flex justify-center gap-10 py-2">
                     <RingGauge pct={readPct} color={colorFor(g)} label="읽기캐시" sub={r ? `${fmt(r.cache_read)} tok` : undefined} />
                     <RingGauge pct={writePct} color={colorFor(g)} label="쓰기캐시" sub={r ? `${fmt(r.cache_write)} tok` : undefined} />
