@@ -195,17 +195,17 @@ export function RingGauge({ pct, color, label, sub }) {
   const filled = Math.max(0, Math.min(1, pct || 0));
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="relative h-24 w-24">
-        <svg viewBox="0 0 64 64" className="h-24 w-24 -rotate-90">
+      <div className="relative h-32 w-32">
+        <svg viewBox="0 0 64 64" className="h-32 w-32 -rotate-90">
           <circle cx="32" cy="32" r={r} fill="none" stroke="var(--ink-100)" strokeWidth="6" />
           <circle cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${filled * c} ${c}`} />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center tabular text-[20px] font-semibold text-ink-800">
+        <div className="absolute inset-0 flex items-center justify-center tabular text-[26px] font-semibold text-ink-800">
           {pct == null ? "—" : `${(filled * 100).toFixed(filled * 100 < 10 ? 1 : 0)}%`}
         </div>
       </div>
-      <div className="text-[13px] font-semibold text-ink-600">{label}</div>
-      {sub && <div className="text-[12px] text-ink-400 tabular">{sub}</div>}
+      <div className="text-[15px] font-semibold text-ink-600">{label}</div>
+      {sub && <div className="text-[13px] text-ink-400 tabular">{sub}</div>}
     </div>
   );
 }
