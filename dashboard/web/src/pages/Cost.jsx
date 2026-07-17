@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
-import { DonutBody, DonutBreakdown, HBarList, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { DonutBody, DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
 import { useChartColors } from "../useChartColors.js";
 import { PageHeader } from "../components/PageHeader.jsx";
@@ -37,6 +37,7 @@ export default function Cost() {
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
   const { model } = useFilters();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
+  const [topN, setTopN] = useState(20);
   // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 기본값으로 재동기화 —
   // 안 그러면 7일 보다가 1일로 바꿔도 "일간" 버킷에 머문다. days도 dependency에 넣는다: 주간(168)을
   // 수동 선택한 뒤 30일→7일로 바꾸면 defaultIntervalHours(24)는 불변이라 effect가 안 돌아 주간 버킷이
@@ -85,10 +86,16 @@ export default function Cost() {
     if (r.cost === null) continue;
     userTotals.set(r.user, (userTotals.get(r.user) || 0) + Number(r.cost));
   }
-  const top10Users = [...userTotals.entries()]
+  const topUsers = [...userTotals.entries()]
     .map(([user, cost]) => ({ user, cost }))
     .sort((a, b) => b.cost - a.cost)
-    .slice(0, 10);
+    .slice(0, topN);
+
+  // pivotByKey는 자체 정렬/제한이 없고 행의 등장 순서를 그대로 유지한다(비-날짜 xKey일 때) — 그래서
+  // topUsers(지출 내림차순)를 순회하며 그 유저의 행만 그 순서로 모아야 스택 바도 지출 순으로 나온다.
+  const topUserModelRows = topUsers.flatMap((u) =>
+    (byUserModel.data || []).filter((r) => r.user === u.user && r.cost !== null)
+  );
 
   // bedrock/enterprise 도넛 두 개를 한 카드에 — 같은 모델은 양쪽에서 같은 색이어야 하므로
   // 전체 지출 순위(modelRows) 기준으로 색을 먼저 고정하고 두 도넛에 같은 맵을 넘긴다.
@@ -325,7 +332,23 @@ export default function Cost() {
         ) : byUserModel.error ? (
           <ErrorBox error={byUserModel.error} />
         ) : (
-          <HBarList title="Top 10 — 지출 유저" subtitle="계산 비용 기준" data={top10Users} labelKey="user" valueKey="cost" valuePrefix="$" />
+          <SeriesBarChart
+            title={`Top ${topN} — 지출 유저`}
+            subtitle="계산 비용 기준 · 모델별 스택"
+            right={
+              <SegmentedControl
+                options={[10, 20, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+                value={String(topN)}
+                onChange={(v) => setTopN(Number(v))}
+              />
+            }
+            rows={topUserModelRows}
+            xKey="user"
+            seriesKey="model"
+            valueKey="cost"
+            valuePrefix="$"
+            tickFormatter={(email) => String(email).replace(/@.*/, "")}
+          />
         )}
 
         {byUserModel.loading ? (
