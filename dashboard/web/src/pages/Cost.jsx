@@ -348,6 +348,7 @@ export default function Cost() {
             valueKey="cost"
             valuePrefix="$"
             tickFormatter={(email) => String(email).replace(/@.*/, "")}
+            horizontal
           />
         )}
 
