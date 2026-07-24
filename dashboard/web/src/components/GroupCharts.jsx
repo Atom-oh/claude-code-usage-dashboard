@@ -128,23 +128,38 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
 }
 
 // 임의 카테고리(예: model)별 일간 스택 바 — 그룹(bedrock/enterprise) 전용이 아닌 범용 버전.
-export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height = 260, tickFormatter, valuePrefix = "", bucketHours }) {
+// horizontal: 카테고리가 많거나(예: 유저 20명) 라벨이 길 때(이메일) 세로 막대는 라벨이 겹치거나
+// 다 안 보인다 — Recharts의 layout="vertical"(막대는 가로)로 뒤집고 카테고리 축을 Y로 옮긴다.
+// 드래그 줌은 카테고리 축이 날짜가 아니면 어차피 no-op이라 orientation과 무관하게 그대로 둔다.
+export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false }) {
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours);
   const { data, series } = pivotByKey(rows, xKey, seriesKey, valueKey);
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
+  const h = height ?? (horizontal ? Math.max(220, data.length * 28) : 260);
   return (
     <Card title={title} subtitle={subtitle} right={right}>
-      <ResponsiveContainer width="100%" height={height} className={zoom.className}>
-        <BarChart data={data} margin={{ left: 8, right: 8 }} {...zoom.handlers}>
-          <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
-          <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={tickFormatter} />
-          <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} tickFormatter={fmt} />
+      <ResponsiveContainer width="100%" height={h} className={zoom.className}>
+        <BarChart data={data} layout={horizontal ? "vertical" : "horizontal"} margin={{ left: horizontal ? 8 : 8, right: 8 }} {...zoom.handlers}>
+          <CartesianGrid strokeDasharray="2 4" stroke={c.grid} horizontal={!horizontal} vertical={horizontal} />
+          {horizontal ? (
+            <>
+              <XAxis type="number" tick={axisTick(c)} tickLine={false} axisLine={false} tickFormatter={fmt} />
+              <YAxis type="category" dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={tickFormatter} width={140} />
+            </>
+          ) : (
+            <>
+              <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={tickFormatter} />
+              <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} tickFormatter={fmt} />
+            </>
+          )}
           <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} formatter={(v) => fmt(v)} />
           {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
-          {series.map((s, i) => (
-            <Bar key={s} dataKey={s} name={s} stackId="a" fill={c.palette[i % c.palette.length]} radius={i === series.length - 1 ? [4, 4, 0, 0] : 0} />
-          ))}
+          {series.map((s, i) => {
+            const outermost = i === series.length - 1;
+            const radius = horizontal ? (outermost ? [0, 4, 4, 0] : 0) : outermost ? [4, 4, 0, 0] : 0;
+            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={c.palette[i % c.palette.length]} radius={radius} />;
+          })}
           {zoom.overlay}
         </BarChart>
       </ResponsiveContainer>
@@ -184,6 +199,29 @@ export function DualLineChart({ title, subtitle, right, rows, xKey, lines, heigh
         </LineChart>
       </ResponsiveContainer>
     </Card>
+  );
+}
+
+// 채움형 링 게이지 — 구성 비율을 보여주는 DonutBody와 달리 단일 비율(0~1)을 "그 %만큼만
+// 링을 채워서" 보여준다(예: 96% → 링의 96%). Executive.jsx의 ScoreGauge와 같은 SVG 패턴이지만
+// 점수 색 램프가 없다 — 색은 호출부가 주입(그룹 색 등).
+export function RingGauge({ pct, color, label, sub }) {
+  const r = 26, c = 2 * Math.PI * r;
+  const filled = Math.max(0, Math.min(1, pct || 0));
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative h-32 w-32">
+        <svg viewBox="0 0 64 64" className="h-32 w-32 -rotate-90">
+          <circle cx="32" cy="32" r={r} fill="none" stroke="var(--ink-100)" strokeWidth="6" />
+          <circle cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${filled * c} ${c}`} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center tabular text-[26px] font-semibold text-ink-800">
+          {pct == null ? "—" : `${(filled * 100).toFixed(filled * 100 < 10 ? 1 : 0)}%`}
+        </div>
+      </div>
+      <div className="text-[15px] font-semibold text-ink-600">{label}</div>
+      {sub && <div className="text-[13px] text-ink-400 tabular">{sub}</div>}
+    </div>
   );
 }
 

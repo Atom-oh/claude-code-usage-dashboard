@@ -22,6 +22,17 @@ export function formatDuration(daysInRange) {
   return `${hours}시간`;
 }
 
+// 개인정보 보호 — 테이블/차트 표시용. 조인/드릴다운 키(row.user, API의 email 파라미터)는
+// 원본 이메일을 그대로 써야 하므로 렌더링 시점에만 마스킹한다(서버는 건드리지 않음).
+// 정규식 lookahead 없이 앞 2글자만 자르면 로컬 파트가 1글자인 주소(x@y.com)에서 "."가 "@"까지
+// 먹어버려 도메인이 통째로 가려진다 — indexOf로 "@" 위치를 먼저 찾고 그 앞부분만 자른다.
+export const maskEmail = (s) => {
+  const str = String(s ?? "");
+  if (!str) return str;
+  const at = str.indexOf("@");
+  return at === -1 ? `${str.slice(0, 2)}******` : `${str.slice(0, Math.min(2, at))}******${str.slice(at)}`;
+};
+
 // 버킷 크기에 맞춰 라벨 세밀도를 바꾼다 — 안 그러면 같은 값이 반복 표시돼 구분이 안 된다.
 // 분 버킷(<1h, 드래그 줌)일 땐 분까지, 시간 버킷(<24h)일 땐 시각까지, 일/주 버킷일 땐 날짜만.
 export const makeTickFmt = (intervalHours) => (t) =>

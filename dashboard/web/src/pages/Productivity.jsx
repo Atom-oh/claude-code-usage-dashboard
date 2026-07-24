@@ -7,7 +7,7 @@ import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
-import { makeTickFmt } from "../fmt.js";
+import { makeTickFmt, maskEmail } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
@@ -56,7 +56,7 @@ export default function Productivity() {
   const top10ByScore = [...(leaderboard.data || [])]
     .sort((a, b) => Number(b.productivity_score) - Number(a.productivity_score))
     .slice(0, 10)
-    .map((r) => ({ ...r, label: `${r.user} (${r.group})` }));
+    .map((r) => ({ ...r, label: `${maskEmail(r.user)} (${r.group})` }));
 
   return (
     <div>
@@ -103,7 +103,7 @@ export default function Productivity() {
             subtitle="Users 페이지 리더보드와 동일 지표 — 상세 히트맵/일별 추이는 Users 페이지에서"
             columns={[
               { key: "group", label: "그룹" },
-              { key: "user", label: "유저" },
+              { key: "user", label: "유저", render: maskEmail },
               { key: "productivity_score", label: "생산성 점수", render: (v) => Number(v).toFixed(1) },
               { key: "loc", label: "추가 라인", render: fmt },
               { key: "commits", label: "커밋", render: fmt },

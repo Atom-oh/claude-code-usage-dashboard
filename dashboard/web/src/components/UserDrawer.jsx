@@ -5,7 +5,7 @@ import { useRange } from "../RangeContext.jsx";
 import { Card, Loading, ErrorBox } from "./Card.jsx";
 import { StatTile } from "./StatTile.jsx";
 import { DualLineChart, GroupBarChart } from "./GroupCharts.jsx";
-import { makeTickFmt } from "../fmt.js";
+import { makeTickFmt, maskEmail } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
@@ -88,7 +88,7 @@ export function UserDrawer({ row, onClose }) {
       <aside className="fixed right-0 top-0 z-50 h-screen w-full max-w-xl overflow-y-auto bg-page border-l border-ink-100 shadow-xl p-6 flex flex-col gap-4 animate-fade-in">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-[18px] font-semibold text-ink-800 truncate">{row.user}</h2>
+            <h2 className="text-[18px] font-semibold text-ink-800 truncate">{maskEmail(row.user)}</h2>
             {/* 아래 차트들은 row.group(이 유저×그룹 행)으로만 필터 — 전역 model 필터는 여전히
                 미적용이라 model 필터가 켜진 상태에서 리더보드 행과 정확히 일치하진 않는다. */}
             <p className="text-[12px] text-ink-400 mt-0.5">

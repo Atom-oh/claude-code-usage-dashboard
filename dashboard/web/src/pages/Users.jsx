@@ -8,6 +8,7 @@ import { HBarList } from "../components/GroupCharts.jsx";
 import { GROUP_ORDER, colorFor } from "../colors.js";
 import { topPerUser } from "../pivot.js";
 import { useApi } from "../useApi.js";
+import { maskEmail } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
@@ -147,7 +148,7 @@ export default function Users() {
                     key={g}
                     title={`Top 10 — 생산성 점수 — ${g}`}
                     subtitle="아래 리더보드 행을 클릭하면 유저 상세(히트맵·일별 추이)가 열립니다"
-                    data={data}
+                    data={data.map((d) => ({ ...d, user: maskEmail(d.user) }))}
                     labelKey="user"
                     valueKey="score"
                     color={colorFor(g)}
@@ -173,7 +174,7 @@ export default function Users() {
                   onRowClick={(r) => setSelected({ user: r.user, group: r.group })}
                   subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day), 각 /day 항목은 절대 상한(캡)으로 정규화 — 캡 값은 초기 추정치"
                   columns={[
-                    { key: "user", label: "유저" },
+                    { key: "user", label: "유저", render: maskEmail },
                     { key: "productivity_score", label: "생산성 점수", render: (v) => v.toFixed(1) },
                     { key: "sessions", label: "세션", render: fmt },
                     { key: "input_tokens", label: "입력 토큰", render: fmt },
@@ -202,7 +203,7 @@ export default function Users() {
                 key={g}
                 title={`유저별 도구 사용 내역 — ${g}`}
                 columns={[
-                  { key: "user", label: "유저" },
+                  { key: "user", label: "유저", render: maskEmail },
                   { key: "tool", label: "도구" },
                   { key: "uses", label: "사용 횟수", render: fmt },
                 ]}
@@ -223,7 +224,7 @@ export default function Users() {
                 key={g}
                 title={`유저별 Skill 사용 내역 — ${g}`}
                 columns={[
-                  { key: "user", label: "유저" },
+                  { key: "user", label: "유저", render: maskEmail },
                   { key: "skill", label: "Skill" },
                   { key: "invocations", label: "호출 수", render: fmt },
                 ]}
