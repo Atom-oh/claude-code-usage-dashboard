@@ -11,7 +11,7 @@ import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
-import { makeTickFmt } from "../fmt.js";
+import { makeTickFmt, maskEmail } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -347,7 +347,7 @@ export default function Cost() {
             seriesKey="model"
             valueKey="cost"
             valuePrefix="$"
-            tickFormatter={(email) => String(email).replace(/@.*/, "")}
+            tickFormatter={maskEmail}
             horizontal
           />
         )}
@@ -361,7 +361,7 @@ export default function Cost() {
             title="사용자 · 모델별 지출"
             subtitle="계산 비용 기준 정렬 · 그룹(bedrock/enterprise)은 사용자가 실제로 호출한 모델로 자동 판별"
             columns={[
-              { key: "user", label: "사용자" },
+              { key: "user", label: "사용자", render: maskEmail },
               { key: "group", label: "그룹" },
               { key: "model", label: "모델" },
               { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)) },
@@ -381,7 +381,7 @@ export default function Cost() {
             title="비용 효율 ($/LOC · $/커밋)"
             subtitle="라인당 계산 비용이 낮은 순 — 성과 평가가 아니라 비용 신호"
             columns={[
-              { key: "user", label: "사용자" },
+              { key: "user", label: "사용자", render: maskEmail },
               { key: "group", label: "그룹" },
               { key: "cost", label: "지출 (계산)", render: (v, r) => (r.unpriced ? <Badge tone="neutral">미산정 포함</Badge> : usd(v)) },
               { key: "loc", label: "추가 라인", render: fmt },
