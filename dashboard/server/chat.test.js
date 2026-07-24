@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeSql } from "./chat.js";
+import { sanitizeSql, maskEmailValues } from "./chat.js";
 
 // 정상 쿼리는 통과해야 한다 — 특히 cumulative 함정을 피하는 max() 서브쿼리 패턴,
 // CTE, JOIN, SELECT/WHERE의 스칼라·집계 함수는 테이블 함수가 아니므로 거부되면 안 된다.
@@ -87,4 +87,19 @@ test("unbalanced parentheses are rejected (LIMIT 201 wrapper breakout)", () => {
 // url이 문자열 리터럴 안에 있으면 테이블 함수가 아니다 — false positive 없어야 한다.
 test("url inside a string literal is not a table function", () => {
   assert.doesNotThrow(() => sanitizeSql("SELECT 'from x, url(' AS s FROM otel_logs"));
+});
+
+// run_sql 결과가 모델에게 돌아가기 전에 이메일을 마스킹 — 컬럼명이 아니라 값 형태로 판단하므로
+// `SELECT UserEmail AS user` 같은 별칭도 잡혀야 하고, 이메일이 아닌 문자열/숫자는 그대로여야 한다.
+test("maskEmailValues masks email-shaped strings regardless of column alias", () => {
+  const rows = [
+    { UserEmail: "ojs0106@gmail.com", n: 921 },
+    { user: "x@y.com", model: "claude-3" }, // 별칭 컬럼 + 1글자 로컬 파트
+    { note: "not-an-email", count: 5 },
+  ];
+  assert.deepEqual(maskEmailValues(rows), [
+    { UserEmail: "oj******@gmail.com", n: 921 },
+    { user: "x******@y.com", model: "claude-3" },
+    { note: "not-an-email", count: 5 },
+  ]);
 });
