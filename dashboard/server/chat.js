@@ -5,10 +5,29 @@ import { queryReadonly } from "./clickhouse.js";
 // 대상 저장소만 Athena → 우리 ClickHouse). 모델은 운영 결정에 따라 sonnet-5 고정.
 // 신뢰 경계: run_sql은 basic auth(index.js) 통과자 전원에게 claude_code.* 전 컬럼(UserEmail,
 // Attributes 등 raw telemetry 포함) 읽기를 허용한다 — SYSTEM 프롬프트가 안내하는 컬럼 목록은
-// 힌트일 뿐 권한 경계가 아니다. 이 대시보드의 다른 curated API(리더보드 등)도 이미 같은 단일
-// 공유 크리덴셜 뒤에서 전체 유저 이메일을 노출하므로, 챗의 권한 표면은 새 신뢰 계층이 아니라
-// 기존 "basic auth = 단일 admin 신뢰" 설계의 연장이다(의도된 설계, 리뷰에서 확인 요청됨).
+// 힌트일 뿐 권한 경계가 아니다. 다만 화면 노출(개인정보) 관점에서는 다른 curated API처럼
+// UserEmail을 그대로 보여주면 안 되므로, run_sql의 결과 행이 모델에게 돌아가기 *전에*
+// maskEmailValues로 마스킹한다 — 모델이 원본 이메일을 아예 보지 못하므로 답변 텍스트에도
+// 마스킹된 값만 나온다(스트리밍 텍스트를 사후에 정규식으로 마스킹하는 방식은 SSE 청크 경계가
+// 이메일 문자열 중간에서 끊길 수 있어 깨지기 쉽다 — 툴 결과 단계에서 막는 게 더 안전).
 // 유저별 인증/멀티테넌시가 들어오면 이 가정이 깨지므로 그때 aggregate/컬럼 allowlist로 전환한다.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// web/src/fmt.js의 maskEmail과 동일 규칙(앞 2글자 + ****** + @도메인) — server/web은 의존성을
+// 안 섞으므로(dashboard/CLAUDE.md) 복제. 컬럼명이 아니라 값이 이메일 형태인지로 판단해야
+// `SELECT UserEmail AS user`처럼 모델이 별칭을 붙여도 걸린다.
+function maskEmail(s) {
+  const at = s.indexOf("@");
+  return at === -1 ? s : `${s.slice(0, Math.min(2, at))}******${s.slice(at)}`;
+}
+
+export function maskEmailValues(rows) {
+  return rows.map((row) => {
+    const out = {};
+    for (const [k, v] of Object.entries(row)) out[k] = typeof v === "string" && EMAIL_RE.test(v) ? maskEmail(v) : v;
+    return out;
+  });
+}
 const MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-sonnet-5";
 const MAX_HOPS = 4;
 
@@ -109,7 +128,8 @@ SELECT sum(inc) FROM (
 (기간 전체 총량이면 {시작}=조회 시작 시각. 대시보드 서버 쿼리도 이 boundary-diff 방식을 씁니다.)
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
-규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.`;
+규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.
+UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com) — 그룹핑/집계에는 그대로 써도 되지만, 마스킹된 값을 원본처럼 되돌리거나 추측하지 마세요.`;
 
 const TOOLS = {
   tools: [
@@ -201,7 +221,7 @@ export async function handleChat(req, res) {
         send("status", { message: "쿼리 실행 중..." });
         try {
           const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql));
-          results.push({ toolResult: { toolUseId, content: [{ json: { rows, truncated } }] } });
+          results.push({ toolResult: { toolUseId, content: [{ json: { rows: maskEmailValues(rows), truncated } }] } });
         } catch (err) {
           results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${err.message}` }], status: "error" } });
         }
