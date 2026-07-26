@@ -135,18 +135,28 @@ test("maskEmailValues: distinct emails can collide on the same masked label (doc
 // SELECT map(UserEmail, count()) ...처럼 ClickHouse Map을 JSON으로 직렬화하면 이메일이
 // object의 key로 내려온다 — value만 재귀하면 key는 원문 그대로 새므로 key도 마스킹해야 한다
 // (리뷰에서 MAJOR로 확인된 우회 경로).
-test("maskEmailValues masks email-shaped object keys, not just values", () => {
+// map(UserEmail, ...)처럼 원본 key가 이메일 형태였던 항목은 충돌 여부와 무관하게 항상
+// {values: [...]}로 감싼다 — 충돌 없어도(각 라벨당 유저 1명) 이 모양을 유지해야 "배열이면
+// 충돌"이라는 추측 없이 모델이 일관되게 처리할 수 있다.
+test("maskEmailValues wraps email-shaped object keys' values in {values:[...]}, even without collision", () => {
   const rows = [{ "ojs0106@gmail.com": 921, "ssminji@amazon.com": 50 }];
-  assert.deepEqual(maskEmailValues(rows), [{ "oj******@gmail.com": 921, "ss******@amazon.com": 50 }]);
+  assert.deepEqual(maskEmailValues(rows), [{ "oj******@gmail.com": { values: [921] }, "ss******@amazon.com": { values: [50] } }]);
 });
 
 // 같은 도메인(@amazon.com)에 로컬 파트 앞 2글자까지 겹치는 두 유저의 map(UserEmail, count())
-// 결과처럼, 서로 다른 key가 같은 마스킹 라벨로 충돌하면 {[mk]: mv} 재구성의 last-wins로 앞
-// entry의 집계값이 조용히 사라진다 — 배열로 누적해 두 값 다 보존해야 한다(리뷰에서 MAJOR로
-// 확인된 데이터 정확성 결함).
+// 결과처럼, 서로 다른 key가 같은 마스킹 라벨로 충돌해도 values 배열에 둘 다 남아야 한다
+// (리뷰에서 MAJOR로 확인된 데이터 정확성 결함 — last-wins로 값이 사라졌던 최초 버전의 회귀 방지).
 test("maskEmailValues preserves both values when two object keys collide on the same masked label", () => {
   const rows = [{ "ssminji@amazon.com": 50, "sskim@amazon.com": 30 }];
-  assert.deepEqual(maskEmailValues(rows), [{ "ss******@amazon.com": [50, 30] }]);
+  assert.deepEqual(maskEmailValues(rows), [{ "ss******@amazon.com": { values: [50, 30] } }]);
+});
+
+// map(UserEmail, groupArray(...))처럼 값 자체가 배열일 때, 충돌한 두 유저의 배열이
+// Array.prototype.concat으로 평탄화돼 섞이면 유저 경계가 사라진다(리뷰에서 MAJOR로 재확인된
+// 회귀) — values 배열의 각 원소로 원본 배열이 그대로, 안 섞인 채 들어가야 한다.
+test("maskEmailValues does not flatten array values when colliding object keys both hold arrays", () => {
+  const rows = [{ "aa1@x.com": [1, 2], "aa2@x.com": [3, 4] }];
+  assert.deepEqual(maskEmailValues(rows), [{ "aa******@x.com": { values: [[1, 2], [3, 4]] } }]);
 });
 
 // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(toDateTime(UserEmail) → "Cannot parse

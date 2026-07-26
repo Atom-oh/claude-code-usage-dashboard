@@ -39,10 +39,14 @@ export function maskEmailText(s) {
 // 컬럼명이 아니라 값 형태로 판단해야 `SELECT UserEmail AS user`처럼 별칭을 붙여도 걸린다.
 // object key도 마스킹해야 한다 — `SELECT map(UserEmail, count()) ...`처럼 ClickHouse Map을
 // JSON으로 직렬화하면 이메일이 key로 내려온다(리뷰에서 MAJOR로 확인된 우회 경로).
-// 마스킹은 many-to-one이라 두 원본 key가 같은 마스킹 라벨로 충돌할 수 있다 — `{[mk]: mv}`로
-// 단순 재구성(Object.fromEntries의 last-wins)하면 이 워크숍처럼 같은 도메인(@amazon.com)에
-// 로컬 파트 앞 2글자까지 겹치는 유저가 몰릴 때 앞선 집계값이 조용히 사라진다(리뷰에서 MAJOR로
-// 확인 — 프라이버시가 아니라 데이터 정확성 결함). Map으로 충돌을 감지해 배열로 누적해 보존한다.
+// 마스킹은 many-to-one이라 두 원본 key가 같은 마스킹 라벨로 충돌할 수 있다 — 처음엔 `{[mk]: mv}`
+// 단순 재구성(Object.fromEntries의 last-wins)으로 값이 사라졌고(리뷰 MAJOR), 그다음엔
+// `[].concat(prev, mv)`로 고쳤더니 값 자체가 배열이면(groupArray 등) 1단계 평탄화되어 두 유저의
+// 배열이 하나로 섞이고, 원래부터 배열인 단일 유저 값과 충돌 결과 배열을 구분할 수 없게 됐다
+// (리뷰 MAJOR, 재발). 근본 해결: "원본 key가 이메일 형태였는지"(mk !== k)로 판단해, 그런
+// map 항목만 충돌 여부와 무관하게 항상 `{values: [...]}`로 감싼다 — 모양이 매번 동일해 모델이
+// "배열이면 충돌" 같은 추측을 할 필요가 없다. 이메일이 아닌 보통 필드명(예: "nested")은 마스킹해도
+// mk===k이므로 스칼라 그대로 둔다(기존 curated 필드 구조를 건드리지 않음).
 function maskValue(v) {
   if (typeof v === "string") return maskEmailText(v);
   if (Array.isArray(v)) return v.map(maskValue);
@@ -51,7 +55,13 @@ function maskValue(v) {
     for (const [k, vv] of Object.entries(v)) {
       const mk = maskEmailText(k);
       const mv = maskValue(vv);
-      grouped.set(mk, grouped.has(mk) ? [].concat(grouped.get(mk), mv) : mv);
+      if (mk === k) {
+        grouped.set(mk, mv);
+        continue;
+      }
+      const prev = grouped.get(mk);
+      if (prev) prev.values.push(mv);
+      else grouped.set(mk, { values: [mv] });
     }
     return Object.fromEntries(grouped);
   }
@@ -162,7 +172,7 @@ SELECT sum(inc) FROM (
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
 규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.
-UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com). 집계(합계/카운트/그룹핑)는 반드시 SQL의 GROUP BY에서 원본 UserEmail 기준으로 끝내고 결과를 받으세요 — 마스킹된 라벨은 서로 다른 유저가 같은 문자열로 겹칠 수 있어 고유 식별자가 아니므로, 응답을 작성할 때 같은 마스킹 라벨을 가진 행이라도 절대 하나로 합치거나 재집계하지 마세요. map(UserEmail, ...)처럼 이메일이 key인 결과에서 두 유저가 같은 마스킹 라벨로 충돌하면 값이 배열로 내려옵니다(둘 다 보존됨, 병합된 게 아님) — 그대로 각각 별개 유저의 값으로 다루세요. 마스킹된 값을 원본처럼 되돌리거나 추측하지도 마세요.`;
+UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com). 집계(합계/카운트/그룹핑)는 반드시 SQL의 GROUP BY에서 원본 UserEmail 기준으로 끝내고 결과를 받으세요 — 마스킹된 라벨은 서로 다른 유저가 같은 문자열로 겹칠 수 있어 고유 식별자가 아니므로, 응답을 작성할 때 같은 마스킹 라벨을 가진 행이라도 절대 하나로 합치거나 재집계하지 마세요. map(UserEmail, ...)처럼 이메일이 key인 결과는 항상 "마스킹라벨": {values: [...]} 형태로 내려옵니다(유저 충돌 여부와 무관하게 매번 이 모양) — values 배열의 원소 하나하나가 그 라벨로 마스킹된 각 유저의 값이니(충돌 없으면 1개, 있으면 여러 개) 그대로 개별 유저 값으로 다루고, 배열 길이가 1보다 크다고 해서 하나의 값으로 합치지 마세요. 마스킹된 값을 원본처럼 되돌리거나 추측하지도 마세요.`;
 
 const TOOLS = {
   tools: [
