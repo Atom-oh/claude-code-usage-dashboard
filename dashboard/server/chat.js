@@ -30,16 +30,24 @@ function maskEmail(match) {
   return `${match.slice(0, Math.min(2, at))}******${match.slice(at)}`;
 }
 
+// 임의 문자열(에러 메시지 등)에 박힌 이메일도 같은 규칙으로 마스킹 — ClickHouse 파싱 오류가
+// 입력값을 에코하는 경로(toDateTime(UserEmail) → "Cannot parse string 'x@y.com' ...")를 막는다.
+export function maskEmailText(s) {
+  return String(s).replace(EMAIL_RE, maskEmail);
+}
+
 // 컬럼명이 아니라 값 형태로 판단해야 `SELECT UserEmail AS user`처럼 별칭을 붙여도 걸린다.
+// object key도 마스킹해야 한다 — `SELECT map(UserEmail, count()) ...`처럼 ClickHouse Map을
+// JSON으로 직렬화하면 이메일이 key로 내려온다(리뷰에서 MAJOR로 확인된 우회 경로).
 function maskValue(v) {
-  if (typeof v === "string") return v.replace(EMAIL_RE, maskEmail);
+  if (typeof v === "string") return maskEmailText(v);
   if (Array.isArray(v)) return v.map(maskValue);
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, vv]) => [k, maskValue(vv)]));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, vv]) => [maskEmailText(k), maskValue(vv)]));
   return v;
 }
 
 export function maskEmailValues(rows) {
-  return rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, maskValue(v)])));
+  return rows.map(maskValue); // row 자체가 object이므로 maskValue의 object 분기가 key까지 마스킹한다
 }
 const MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-sonnet-5";
 const MAX_HOPS = 4;
@@ -236,7 +244,10 @@ export async function handleChat(req, res) {
           const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql));
           results.push({ toolResult: { toolUseId, content: [{ json: { rows: maskEmailValues(rows), truncated } }] } });
         } catch (err) {
-          results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${err.message}` }], status: "error" } });
+          // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(예: toDateTime(UserEmail) →
+          // "Cannot parse string 'ojs0106@gmail.com' ...") — 모델이 이 텍스트를 답변에 인용해
+          // 화면에 그대로 노출될 수 있으므로 다른 경로와 동일하게 마스킹한다(리뷰에서 MAJOR로 확인).
+          results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${maskEmailText(err.message)}` }], status: "error" } });
         }
       }
       messages.push({ role: "user", content: results });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeSql, maskEmailValues } from "./chat.js";
+import { sanitizeSql, maskEmailValues, maskEmailText } from "./chat.js";
 
 // 정상 쿼리는 통과해야 한다 — 특히 cumulative 함정을 피하는 max() 서브쿼리 패턴,
 // CTE, JOIN, SELECT/WHERE의 스칼라·집계 함수는 테이블 함수가 아니므로 거부되면 안 된다.
@@ -130,4 +130,37 @@ test("maskEmailValues masks an email embedded inside a larger string", () => {
 test("maskEmailValues: distinct emails can collide on the same masked label (documented), non-strings pass through", () => {
   const rows = [{ a: "ab1@corp.com", b: "ab2@corp.com", n: null, flag: true, count: 3 }];
   assert.deepEqual(maskEmailValues(rows), [{ a: "ab******@corp.com", b: "ab******@corp.com", n: null, flag: true, count: 3 }]);
+});
+
+// SELECT map(UserEmail, count()) ...처럼 ClickHouse Map을 JSON으로 직렬화하면 이메일이
+// object의 key로 내려온다 — value만 재귀하면 key는 원문 그대로 새므로 key도 마스킹해야 한다
+// (리뷰에서 MAJOR로 확인된 우회 경로).
+test("maskEmailValues masks email-shaped object keys, not just values", () => {
+  const rows = [{ "ojs0106@gmail.com": 921, "ssminji@amazon.com": 50 }];
+  assert.deepEqual(maskEmailValues(rows), [{ "oj******@gmail.com": 921, "ss******@amazon.com": 50 }]);
+});
+
+// ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(toDateTime(UserEmail) → "Cannot parse
+// string 'x@y.com' ...") — 이 경로로도 원본 이메일이 모델→화면에 노출되면 안 된다
+// (리뷰에서 MAJOR로 확인된 우회 경로).
+test("maskEmailText masks emails embedded in error messages", () => {
+  assert.equal(
+    maskEmailText("Code: 27. DB::Exception: Cannot parse string 'ojs0106@gmail.com' as DateTime"),
+    "Code: 27. DB::Exception: Cannot parse string 'oj******@gmail.com' as DateTime"
+  );
+});
+
+// server/web은 의존성을 안 섞으므로(dashboard/CLAUDE.md) web/src/fmt.js의 maskEmail을 그대로
+// import할 수 없다 — 여기 복제해 두고 대표 입력에서 두 구현이 같은 출력을 내는지 고정한다.
+// 어긋나면(예: 한쪽만 수정) 이 테스트가 실패해 silent divergence를 잡는다.
+function webMaskEmail(s) {
+  const str = String(s ?? "");
+  if (!str) return str;
+  const at = str.indexOf("@");
+  return at === -1 ? `${str.slice(0, 2)}******` : `${str.slice(0, Math.min(2, at))}******${str.slice(at)}`;
+}
+test("server maskEmailText agrees with web fmt.js's maskEmail on full-string email inputs", () => {
+  for (const s of ["ojs0106@gmail.com", "x@y.com", "ab@c.com", "test.user@corp.io"]) {
+    assert.equal(maskEmailText(s), webMaskEmail(s), s);
+  }
 });
