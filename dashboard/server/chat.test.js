@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeSql } from "./chat.js";
+import { sanitizeSql, maskEmailValues, maskEmailText } from "./chat.js";
 
 // 정상 쿼리는 통과해야 한다 — 특히 cumulative 함정을 피하는 max() 서브쿼리 패턴,
 // CTE, JOIN, SELECT/WHERE의 스칼라·집계 함수는 테이블 함수가 아니므로 거부되면 안 된다.
@@ -87,4 +87,99 @@ test("unbalanced parentheses are rejected (LIMIT 201 wrapper breakout)", () => {
 // url이 문자열 리터럴 안에 있으면 테이블 함수가 아니다 — false positive 없어야 한다.
 test("url inside a string literal is not a table function", () => {
   assert.doesNotThrow(() => sanitizeSql("SELECT 'from x, url(' AS s FROM otel_logs"));
+});
+
+// run_sql 결과가 모델에게 돌아가기 전에 이메일을 마스킹 — 컬럼명이 아니라 값 형태로 판단하므로
+// `SELECT UserEmail AS user` 같은 별칭도 잡혀야 하고, 이메일이 아닌 문자열/숫자는 그대로여야 한다.
+test("maskEmailValues masks email-shaped strings regardless of column alias", () => {
+  const rows = [
+    { UserEmail: "ojs0106@gmail.com", n: 921 },
+    { user: "x@y.com", model: "claude-3" }, // 별칭 컬럼 + 1글자 로컬 파트
+    { note: "not-an-email", count: 5 },
+  ];
+  assert.deepEqual(maskEmailValues(rows), [
+    { UserEmail: "oj******@gmail.com", n: 921 },
+    { user: "x******@y.com", model: "claude-3" },
+    { note: "not-an-email", count: 5 },
+  ]);
+});
+
+// groupArray(UserEmail)/Attributes map처럼 배열·객체로 내려오는 값도 재귀적으로 마스킹해야
+// 한다 — 리뷰에서 MAJOR로 확인된 우회 경로(top-level string만 검사하면 통째로 샘).
+test("maskEmailValues recurses into arrays and nested objects", () => {
+  const rows = [
+    { emails: ["ojs0106@gmail.com", "ssminji@amazon.com"], n: 2 },
+    { attrs: { UserEmail: "comeddy@gmail.com", nested: { again: "x@y.com" } } },
+  ];
+  assert.deepEqual(maskEmailValues(rows), [
+    { emails: ["oj******@gmail.com", "ss******@amazon.com"], n: 2 },
+    { attrs: { UserEmail: "co******@gmail.com", nested: { again: "x******@y.com" } } },
+  ]);
+});
+
+// concat('user=', UserEmail)처럼 이메일이 문자열 중간에 박혀 있어도(값 전체 일치가 아님)
+// 마스킹돼야 한다 — 리뷰에서 MAJOR로 확인된 우회 경로.
+test("maskEmailValues masks an email embedded inside a larger string", () => {
+  const rows = [{ label: "user=ojs0106@gmail.com done" }];
+  assert.deepEqual(maskEmailValues(rows), [{ label: "user=oj******@gmail.com done" }]);
+});
+
+// 마스킹은 many-to-one이라 로컬 파트가 같은 두 글자로 시작하는 서로 다른 이메일은 같은 라벨로
+// 충돌한다 — 이건 알려진/받아들여진 동작(SYSTEM 프롬프트가 모델에게 재집계 금지로 안내)이므로
+// 회귀 여부만 문서화해 둔다. null/숫자/불리언 등 비문자열 값은 그대로 통과해야 한다.
+test("maskEmailValues: distinct emails can collide on the same masked label (documented), non-strings pass through", () => {
+  const rows = [{ a: "ab1@corp.com", b: "ab2@corp.com", n: null, flag: true, count: 3 }];
+  assert.deepEqual(maskEmailValues(rows), [{ a: "ab******@corp.com", b: "ab******@corp.com", n: null, flag: true, count: 3 }]);
+});
+
+// SELECT map(UserEmail, count()) ...처럼 ClickHouse Map을 JSON으로 직렬화하면 이메일이
+// object의 key로 내려온다 — value만 재귀하면 key는 원문 그대로 새므로 key도 마스킹해야 한다
+// (리뷰에서 MAJOR로 확인된 우회 경로).
+// map(UserEmail, ...)처럼 원본 key가 이메일 형태였던 항목은 충돌 여부와 무관하게 항상
+// {values: [...]}로 감싼다 — 충돌 없어도(각 라벨당 유저 1명) 이 모양을 유지해야 "배열이면
+// 충돌"이라는 추측 없이 모델이 일관되게 처리할 수 있다.
+test("maskEmailValues wraps email-shaped object keys' values in {values:[...]}, even without collision", () => {
+  const rows = [{ "ojs0106@gmail.com": 921, "ssminji@amazon.com": 50 }];
+  assert.deepEqual(maskEmailValues(rows), [{ "oj******@gmail.com": { values: [921] }, "ss******@amazon.com": { values: [50] } }]);
+});
+
+// 같은 도메인(@amazon.com)에 로컬 파트 앞 2글자까지 겹치는 두 유저의 map(UserEmail, count())
+// 결과처럼, 서로 다른 key가 같은 마스킹 라벨로 충돌해도 values 배열에 둘 다 남아야 한다
+// (리뷰에서 MAJOR로 확인된 데이터 정확성 결함 — last-wins로 값이 사라졌던 최초 버전의 회귀 방지).
+test("maskEmailValues preserves both values when two object keys collide on the same masked label", () => {
+  const rows = [{ "ssminji@amazon.com": 50, "sskim@amazon.com": 30 }];
+  assert.deepEqual(maskEmailValues(rows), [{ "ss******@amazon.com": { values: [50, 30] } }]);
+});
+
+// map(UserEmail, groupArray(...))처럼 값 자체가 배열일 때, 충돌한 두 유저의 배열이
+// Array.prototype.concat으로 평탄화돼 섞이면 유저 경계가 사라진다(리뷰에서 MAJOR로 재확인된
+// 회귀) — values 배열의 각 원소로 원본 배열이 그대로, 안 섞인 채 들어가야 한다.
+test("maskEmailValues does not flatten array values when colliding object keys both hold arrays", () => {
+  const rows = [{ "aa1@x.com": [1, 2], "aa2@x.com": [3, 4] }];
+  assert.deepEqual(maskEmailValues(rows), [{ "aa******@x.com": { values: [[1, 2], [3, 4]] } }]);
+});
+
+// ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(toDateTime(UserEmail) → "Cannot parse
+// string 'x@y.com' ...") — 이 경로로도 원본 이메일이 모델→화면에 노출되면 안 된다
+// (리뷰에서 MAJOR로 확인된 우회 경로).
+test("maskEmailText masks emails embedded in error messages", () => {
+  assert.equal(
+    maskEmailText("Code: 27. DB::Exception: Cannot parse string 'ojs0106@gmail.com' as DateTime"),
+    "Code: 27. DB::Exception: Cannot parse string 'oj******@gmail.com' as DateTime"
+  );
+});
+
+// server/web은 의존성을 안 섞으므로(dashboard/CLAUDE.md) web/src/fmt.js의 maskEmail을 그대로
+// import할 수 없다 — 여기 복제해 두고 대표 입력에서 두 구현이 같은 출력을 내는지 고정한다.
+// 어긋나면(예: 한쪽만 수정) 이 테스트가 실패해 silent divergence를 잡는다.
+function webMaskEmail(s) {
+  const str = String(s ?? "");
+  if (!str) return str;
+  const at = str.indexOf("@");
+  return at === -1 ? `${str.slice(0, 2)}******` : `${str.slice(0, Math.min(2, at))}******${str.slice(at)}`;
+}
+test("server maskEmailText agrees with web fmt.js's maskEmail on full-string email inputs", () => {
+  for (const s of ["ojs0106@gmail.com", "x@y.com", "ab@c.com", "test.user@corp.io"]) {
+    assert.equal(maskEmailText(s), webMaskEmail(s), s);
+  }
 });

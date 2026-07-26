@@ -5,10 +5,72 @@ import { queryReadonly } from "./clickhouse.js";
 // 대상 저장소만 Athena → 우리 ClickHouse). 모델은 운영 결정에 따라 sonnet-5 고정.
 // 신뢰 경계: run_sql은 basic auth(index.js) 통과자 전원에게 claude_code.* 전 컬럼(UserEmail,
 // Attributes 등 raw telemetry 포함) 읽기를 허용한다 — SYSTEM 프롬프트가 안내하는 컬럼 목록은
-// 힌트일 뿐 권한 경계가 아니다. 이 대시보드의 다른 curated API(리더보드 등)도 이미 같은 단일
-// 공유 크리덴셜 뒤에서 전체 유저 이메일을 노출하므로, 챗의 권한 표면은 새 신뢰 계층이 아니라
-// 기존 "basic auth = 단일 admin 신뢰" 설계의 연장이다(의도된 설계, 리뷰에서 확인 요청됨).
+// 힌트일 뿐 권한 경계가 아니다. 다만 화면 노출(개인정보) 관점에서는 다른 curated API처럼
+// UserEmail을 그대로 보여주면 안 되므로, run_sql의 결과 행이 모델에게 돌아가기 *전에*
+// maskEmailValues로 마스킹한다(스트리밍 텍스트를 사후에 정규식으로 마스킹하는 방식은 SSE 청크
+// 경계가 이메일 문자열 중간에서 끊길 수 있어 깨지기 쉽다 — 툴 결과 단계에서 막는 게 더 안전).
+// 이건 "모델이 원본을 아예 볼 수 없다"는 보장이 아니라 화면 노출 완화용 2차 방어다 —
+// sanitizeSql처럼 정교한 파서 없이 값 패턴으로만 판단하므로 reverse()/hex()/base64Encode()
+// 등으로 텍스트 형태 자체를 바꿔 버리면(즉 결과가 더 이상 이메일처럼 안 보이면) 못 잡는다.
+// 값 전체 일치가 아니라 replace로 문자열 내부 어디든 찾아 마스킹하고(concat('x=', UserEmail)
+// 같은 케이스), 배열/객체 값도 재귀 순회한다(groupArray(UserEmail)/Attributes map 등이 통째로
+// 새는 걸 막음 — 리뷰에서 MAJOR로 확인된 실제 우회 경로).
 // 유저별 인증/멀티테넌시가 들어오면 이 가정이 깨지므로 그때 aggregate/컬럼 allowlist로 전환한다.
+// 로컬 파트를 `[^\s@]+`(공백/@만 제외)로 느슨하게 잡으면 "user=ojs0106@gmail.com"처럼 앞에
+// 인접한 비-이메일 문자(=, ' 등)까지 그리디하게 로컬 파트로 삼켜, 실제 마스킹은 그 삼켜진
+// 구간의 뒷부분 2글자만 남기고 앞부분(prefix)까지 가려버린다(테스트에서 확인된 회귀) — 실제
+// 이메일 로컬 파트에 쓰이는 문자 집합으로 좁혀 프리픽스와의 경계를 명확히 한다.
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
+// web/src/fmt.js의 maskEmail과 동일 규칙(앞 2글자 + ****** + @도메인, 서로 다른 이메일이 같은
+// 라벨로 충돌할 수 있음도 동일) — server/web은 의존성을 안 섞으므로(dashboard/CLAUDE.md) 복제,
+// 한쪽을 바꾸면 반대쪽도 맞춰야 한다(normModel()/normalizeModelId()와 같은 관례).
+function maskEmail(match) {
+  const at = match.indexOf("@");
+  return `${match.slice(0, Math.min(2, at))}******${match.slice(at)}`;
+}
+
+// 임의 문자열(에러 메시지 등)에 박힌 이메일도 같은 규칙으로 마스킹 — ClickHouse 파싱 오류가
+// 입력값을 에코하는 경로(toDateTime(UserEmail) → "Cannot parse string 'x@y.com' ...")를 막는다.
+export function maskEmailText(s) {
+  return String(s).replace(EMAIL_RE, maskEmail);
+}
+
+// 컬럼명이 아니라 값 형태로 판단해야 `SELECT UserEmail AS user`처럼 별칭을 붙여도 걸린다.
+// object key도 마스킹해야 한다 — `SELECT map(UserEmail, count()) ...`처럼 ClickHouse Map을
+// JSON으로 직렬화하면 이메일이 key로 내려온다(리뷰에서 MAJOR로 확인된 우회 경로).
+// 마스킹은 many-to-one이라 두 원본 key가 같은 마스킹 라벨로 충돌할 수 있다 — 처음엔 `{[mk]: mv}`
+// 단순 재구성(Object.fromEntries의 last-wins)으로 값이 사라졌고(리뷰 MAJOR), 그다음엔
+// `[].concat(prev, mv)`로 고쳤더니 값 자체가 배열이면(groupArray 등) 1단계 평탄화되어 두 유저의
+// 배열이 하나로 섞이고, 원래부터 배열인 단일 유저 값과 충돌 결과 배열을 구분할 수 없게 됐다
+// (리뷰 MAJOR, 재발). 근본 해결: "원본 key가 이메일 형태였는지"(mk !== k)로 판단해, 그런
+// map 항목만 충돌 여부와 무관하게 항상 `{values: [...]}`로 감싼다 — 모양이 매번 동일해 모델이
+// "배열이면 충돌" 같은 추측을 할 필요가 없다. 이메일이 아닌 보통 필드명(예: "nested")은 마스킹해도
+// mk===k이므로 스칼라 그대로 둔다(기존 curated 필드 구조를 건드리지 않음).
+function maskValue(v) {
+  if (typeof v === "string") return maskEmailText(v);
+  if (Array.isArray(v)) return v.map(maskValue);
+  if (v && typeof v === "object") {
+    const grouped = new Map();
+    for (const [k, vv] of Object.entries(v)) {
+      const mk = maskEmailText(k);
+      const mv = maskValue(vv);
+      if (mk === k) {
+        grouped.set(mk, mv);
+        continue;
+      }
+      const prev = grouped.get(mk);
+      if (prev) prev.values.push(mv);
+      else grouped.set(mk, { values: [mv] });
+    }
+    return Object.fromEntries(grouped);
+  }
+  return v;
+}
+
+export function maskEmailValues(rows) {
+  return rows.map(maskValue); // row 자체가 object이므로 maskValue의 object 분기가 key까지 마스킹한다
+}
 const MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-sonnet-5";
 const MAX_HOPS = 4;
 
@@ -109,7 +171,8 @@ SELECT sum(inc) FROM (
 (기간 전체 총량이면 {시작}=조회 시작 시각. 대시보드 서버 쿼리도 이 boundary-diff 방식을 씁니다.)
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
-규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.`;
+규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.
+UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com). 집계(합계/카운트/그룹핑)는 반드시 SQL의 GROUP BY에서 원본 UserEmail 기준으로 끝내고 결과를 받으세요 — 마스킹된 라벨은 서로 다른 유저가 같은 문자열로 겹칠 수 있어 고유 식별자가 아니므로, 응답을 작성할 때 같은 마스킹 라벨을 가진 행이라도 절대 하나로 합치거나 재집계하지 마세요. map(UserEmail, ...)처럼 이메일이 key인 결과는 항상 "마스킹라벨": {values: [...]} 형태로 내려옵니다(유저 충돌 여부와 무관하게 매번 이 모양) — values 배열의 원소 하나하나가 그 라벨로 마스킹된 각 유저의 값이니(충돌 없으면 1개, 있으면 여러 개) 그대로 개별 유저 값으로 다루고, 배열 길이가 1보다 크다고 해서 하나의 값으로 합치지 마세요. 마스킹된 값을 원본처럼 되돌리거나 추측하지도 마세요.`;
 
 const TOOLS = {
   tools: [
@@ -201,9 +264,12 @@ export async function handleChat(req, res) {
         send("status", { message: "쿼리 실행 중..." });
         try {
           const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql));
-          results.push({ toolResult: { toolUseId, content: [{ json: { rows, truncated } }] } });
+          results.push({ toolResult: { toolUseId, content: [{ json: { rows: maskEmailValues(rows), truncated } }] } });
         } catch (err) {
-          results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${err.message}` }], status: "error" } });
+          // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(예: toDateTime(UserEmail) →
+          // "Cannot parse string 'ojs0106@gmail.com' ...") — 모델이 이 텍스트를 답변에 인용해
+          // 화면에 그대로 노출될 수 있으므로 다른 경로와 동일하게 마스킹한다(리뷰에서 MAJOR로 확인).
+          results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${maskEmailText(err.message)}` }], status: "error" } });
         }
       }
       messages.push({ role: "user", content: results });

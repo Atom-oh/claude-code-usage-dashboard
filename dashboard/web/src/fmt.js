@@ -26,6 +26,9 @@ export function formatDuration(daysInRange) {
 // 원본 이메일을 그대로 써야 하므로 렌더링 시점에만 마스킹한다(서버는 건드리지 않음).
 // 정규식 lookahead 없이 앞 2글자만 자르면 로컬 파트가 1글자인 주소(x@y.com)에서 "."가 "@"까지
 // 먹어버려 도메인이 통째로 가려진다 — indexOf로 "@" 위치를 먼저 찾고 그 앞부분만 자른다.
+// server/chat.js의 maskEmail(run_sql 결과 마스킹용)이 같은 규칙(앞 2글자+******+@도메인)을
+// 복제해 쓴다 — server/web은 의존성을 안 섞으므로(dashboard/CLAUDE.md) 한쪽을 바꾸면 반대쪽도
+// 맞춰야 한다(normModel()/normalizeModelId()와 같은 관례).
 export const maskEmail = (s) => {
   const str = String(s ?? "");
   if (!str) return str;
