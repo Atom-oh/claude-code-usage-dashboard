@@ -103,3 +103,31 @@ test("maskEmailValues masks email-shaped strings regardless of column alias", ()
     { note: "not-an-email", count: 5 },
   ]);
 });
+
+// groupArray(UserEmail)/Attributes map처럼 배열·객체로 내려오는 값도 재귀적으로 마스킹해야
+// 한다 — 리뷰에서 MAJOR로 확인된 우회 경로(top-level string만 검사하면 통째로 샘).
+test("maskEmailValues recurses into arrays and nested objects", () => {
+  const rows = [
+    { emails: ["ojs0106@gmail.com", "ssminji@amazon.com"], n: 2 },
+    { attrs: { UserEmail: "comeddy@gmail.com", nested: { again: "x@y.com" } } },
+  ];
+  assert.deepEqual(maskEmailValues(rows), [
+    { emails: ["oj******@gmail.com", "ss******@amazon.com"], n: 2 },
+    { attrs: { UserEmail: "co******@gmail.com", nested: { again: "x******@y.com" } } },
+  ]);
+});
+
+// concat('user=', UserEmail)처럼 이메일이 문자열 중간에 박혀 있어도(값 전체 일치가 아님)
+// 마스킹돼야 한다 — 리뷰에서 MAJOR로 확인된 우회 경로.
+test("maskEmailValues masks an email embedded inside a larger string", () => {
+  const rows = [{ label: "user=ojs0106@gmail.com done" }];
+  assert.deepEqual(maskEmailValues(rows), [{ label: "user=oj******@gmail.com done" }]);
+});
+
+// 마스킹은 many-to-one이라 로컬 파트가 같은 두 글자로 시작하는 서로 다른 이메일은 같은 라벨로
+// 충돌한다 — 이건 알려진/받아들여진 동작(SYSTEM 프롬프트가 모델에게 재집계 금지로 안내)이므로
+// 회귀 여부만 문서화해 둔다. null/숫자/불리언 등 비문자열 값은 그대로 통과해야 한다.
+test("maskEmailValues: distinct emails can collide on the same masked label (documented), non-strings pass through", () => {
+  const rows = [{ a: "ab1@corp.com", b: "ab2@corp.com", n: null, flag: true, count: 3 }];
+  assert.deepEqual(maskEmailValues(rows), [{ a: "ab******@corp.com", b: "ab******@corp.com", n: null, flag: true, count: 3 }]);
+});

@@ -7,26 +7,39 @@ import { queryReadonly } from "./clickhouse.js";
 // Attributes 등 raw telemetry 포함) 읽기를 허용한다 — SYSTEM 프롬프트가 안내하는 컬럼 목록은
 // 힌트일 뿐 권한 경계가 아니다. 다만 화면 노출(개인정보) 관점에서는 다른 curated API처럼
 // UserEmail을 그대로 보여주면 안 되므로, run_sql의 결과 행이 모델에게 돌아가기 *전에*
-// maskEmailValues로 마스킹한다 — 모델이 원본 이메일을 아예 보지 못하므로 답변 텍스트에도
-// 마스킹된 값만 나온다(스트리밍 텍스트를 사후에 정규식으로 마스킹하는 방식은 SSE 청크 경계가
-// 이메일 문자열 중간에서 끊길 수 있어 깨지기 쉽다 — 툴 결과 단계에서 막는 게 더 안전).
+// maskEmailValues로 마스킹한다(스트리밍 텍스트를 사후에 정규식으로 마스킹하는 방식은 SSE 청크
+// 경계가 이메일 문자열 중간에서 끊길 수 있어 깨지기 쉽다 — 툴 결과 단계에서 막는 게 더 안전).
+// 이건 "모델이 원본을 아예 볼 수 없다"는 보장이 아니라 화면 노출 완화용 2차 방어다 —
+// sanitizeSql처럼 정교한 파서 없이 값 패턴으로만 판단하므로 reverse()/hex()/base64Encode()
+// 등으로 텍스트 형태 자체를 바꿔 버리면(즉 결과가 더 이상 이메일처럼 안 보이면) 못 잡는다.
+// 값 전체 일치가 아니라 replace로 문자열 내부 어디든 찾아 마스킹하고(concat('x=', UserEmail)
+// 같은 케이스), 배열/객체 값도 재귀 순회한다(groupArray(UserEmail)/Attributes map 등이 통째로
+// 새는 걸 막음 — 리뷰에서 MAJOR로 확인된 실제 우회 경로).
 // 유저별 인증/멀티테넌시가 들어오면 이 가정이 깨지므로 그때 aggregate/컬럼 allowlist로 전환한다.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 로컬 파트를 `[^\s@]+`(공백/@만 제외)로 느슨하게 잡으면 "user=ojs0106@gmail.com"처럼 앞에
+// 인접한 비-이메일 문자(=, ' 등)까지 그리디하게 로컬 파트로 삼켜, 실제 마스킹은 그 삼켜진
+// 구간의 뒷부분 2글자만 남기고 앞부분(prefix)까지 가려버린다(테스트에서 확인된 회귀) — 실제
+// 이메일 로컬 파트에 쓰이는 문자 집합으로 좁혀 프리픽스와의 경계를 명확히 한다.
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 
-// web/src/fmt.js의 maskEmail과 동일 규칙(앞 2글자 + ****** + @도메인) — server/web은 의존성을
-// 안 섞으므로(dashboard/CLAUDE.md) 복제. 컬럼명이 아니라 값이 이메일 형태인지로 판단해야
-// `SELECT UserEmail AS user`처럼 모델이 별칭을 붙여도 걸린다.
-function maskEmail(s) {
-  const at = s.indexOf("@");
-  return at === -1 ? s : `${s.slice(0, Math.min(2, at))}******${s.slice(at)}`;
+// web/src/fmt.js의 maskEmail과 동일 규칙(앞 2글자 + ****** + @도메인, 서로 다른 이메일이 같은
+// 라벨로 충돌할 수 있음도 동일) — server/web은 의존성을 안 섞으므로(dashboard/CLAUDE.md) 복제,
+// 한쪽을 바꾸면 반대쪽도 맞춰야 한다(normModel()/normalizeModelId()와 같은 관례).
+function maskEmail(match) {
+  const at = match.indexOf("@");
+  return `${match.slice(0, Math.min(2, at))}******${match.slice(at)}`;
+}
+
+// 컬럼명이 아니라 값 형태로 판단해야 `SELECT UserEmail AS user`처럼 별칭을 붙여도 걸린다.
+function maskValue(v) {
+  if (typeof v === "string") return v.replace(EMAIL_RE, maskEmail);
+  if (Array.isArray(v)) return v.map(maskValue);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, vv]) => [k, maskValue(vv)]));
+  return v;
 }
 
 export function maskEmailValues(rows) {
-  return rows.map((row) => {
-    const out = {};
-    for (const [k, v] of Object.entries(row)) out[k] = typeof v === "string" && EMAIL_RE.test(v) ? maskEmail(v) : v;
-    return out;
-  });
+  return rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, maskValue(v)])));
 }
 const MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-sonnet-5";
 const MAX_HOPS = 4;
@@ -129,7 +142,7 @@ SELECT sum(inc) FROM (
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
 규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.
-UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com) — 그룹핑/집계에는 그대로 써도 되지만, 마스킹된 값을 원본처럼 되돌리거나 추측하지 마세요.`;
+UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com). 집계(합계/카운트/그룹핑)는 반드시 SQL의 GROUP BY에서 원본 UserEmail 기준으로 끝내고 결과를 받으세요 — 마스킹된 라벨은 서로 다른 유저가 같은 문자열로 겹칠 수 있어 고유 식별자가 아니므로, 응답을 작성할 때 같은 마스킹 라벨을 가진 행이라도 절대 하나로 합치거나 재집계하지 마세요. 마스킹된 값을 원본처럼 되돌리거나 추측하지도 마세요.`;
 
 const TOOLS = {
   tools: [
