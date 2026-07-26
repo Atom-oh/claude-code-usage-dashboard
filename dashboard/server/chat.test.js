@@ -140,6 +140,15 @@ test("maskEmailValues masks email-shaped object keys, not just values", () => {
   assert.deepEqual(maskEmailValues(rows), [{ "oj******@gmail.com": 921, "ss******@amazon.com": 50 }]);
 });
 
+// 같은 도메인(@amazon.com)에 로컬 파트 앞 2글자까지 겹치는 두 유저의 map(UserEmail, count())
+// 결과처럼, 서로 다른 key가 같은 마스킹 라벨로 충돌하면 {[mk]: mv} 재구성의 last-wins로 앞
+// entry의 집계값이 조용히 사라진다 — 배열로 누적해 두 값 다 보존해야 한다(리뷰에서 MAJOR로
+// 확인된 데이터 정확성 결함).
+test("maskEmailValues preserves both values when two object keys collide on the same masked label", () => {
+  const rows = [{ "ssminji@amazon.com": 50, "sskim@amazon.com": 30 }];
+  assert.deepEqual(maskEmailValues(rows), [{ "ss******@amazon.com": [50, 30] }]);
+});
+
 // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(toDateTime(UserEmail) → "Cannot parse
 // string 'x@y.com' ...") — 이 경로로도 원본 이메일이 모델→화면에 노출되면 안 된다
 // (리뷰에서 MAJOR로 확인된 우회 경로).

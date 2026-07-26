@@ -39,10 +39,22 @@ export function maskEmailText(s) {
 // 컬럼명이 아니라 값 형태로 판단해야 `SELECT UserEmail AS user`처럼 별칭을 붙여도 걸린다.
 // object key도 마스킹해야 한다 — `SELECT map(UserEmail, count()) ...`처럼 ClickHouse Map을
 // JSON으로 직렬화하면 이메일이 key로 내려온다(리뷰에서 MAJOR로 확인된 우회 경로).
+// 마스킹은 many-to-one이라 두 원본 key가 같은 마스킹 라벨로 충돌할 수 있다 — `{[mk]: mv}`로
+// 단순 재구성(Object.fromEntries의 last-wins)하면 이 워크숍처럼 같은 도메인(@amazon.com)에
+// 로컬 파트 앞 2글자까지 겹치는 유저가 몰릴 때 앞선 집계값이 조용히 사라진다(리뷰에서 MAJOR로
+// 확인 — 프라이버시가 아니라 데이터 정확성 결함). Map으로 충돌을 감지해 배열로 누적해 보존한다.
 function maskValue(v) {
   if (typeof v === "string") return maskEmailText(v);
   if (Array.isArray(v)) return v.map(maskValue);
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, vv]) => [maskEmailText(k), maskValue(vv)]));
+  if (v && typeof v === "object") {
+    const grouped = new Map();
+    for (const [k, vv] of Object.entries(v)) {
+      const mk = maskEmailText(k);
+      const mv = maskValue(vv);
+      grouped.set(mk, grouped.has(mk) ? [].concat(grouped.get(mk), mv) : mv);
+    }
+    return Object.fromEntries(grouped);
+  }
   return v;
 }
 
@@ -150,7 +162,7 @@ SELECT sum(inc) FROM (
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
 규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.
-UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com). 집계(합계/카운트/그룹핑)는 반드시 SQL의 GROUP BY에서 원본 UserEmail 기준으로 끝내고 결과를 받으세요 — 마스킹된 라벨은 서로 다른 유저가 같은 문자열로 겹칠 수 있어 고유 식별자가 아니므로, 응답을 작성할 때 같은 마스킹 라벨을 가진 행이라도 절대 하나로 합치거나 재집계하지 마세요. 마스킹된 값을 원본처럼 되돌리거나 추측하지도 마세요.`;
+UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com). 집계(합계/카운트/그룹핑)는 반드시 SQL의 GROUP BY에서 원본 UserEmail 기준으로 끝내고 결과를 받으세요 — 마스킹된 라벨은 서로 다른 유저가 같은 문자열로 겹칠 수 있어 고유 식별자가 아니므로, 응답을 작성할 때 같은 마스킹 라벨을 가진 행이라도 절대 하나로 합치거나 재집계하지 마세요. map(UserEmail, ...)처럼 이메일이 key인 결과에서 두 유저가 같은 마스킹 라벨로 충돌하면 값이 배열로 내려옵니다(둘 다 보존됨, 병합된 게 아님) — 그대로 각각 별개 유저의 값으로 다루세요. 마스킹된 값을 원본처럼 되돌리거나 추측하지도 마세요.`;
 
 const TOOLS = {
   tools: [
