@@ -3,7 +3,6 @@ import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { DonutBody, DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
-import { useChartColors } from "../useChartColors.js";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
@@ -12,9 +11,14 @@ import { useApi } from "../useApi.js";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
+import { modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer } from "../colors.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+// bedrock/enterprise로 나뉘는 도넛 3종(캐시 티어·토큰 타입)의 라벨 순서 — 그룹 색상 배정이
+// 데이터 등장 순서가 아니라 이 고정 순서를 따르게 한다(colors.js makeGroupBreakdownColorer).
+const TIER_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시 입력"];
+const TOKEN_TYPE_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "입력"];
 
 function foldModelRows(rows) {
   const totals = new Map();
@@ -97,10 +101,9 @@ export default function Cost() {
     (byUserModel.data || []).filter((r) => r.user === u.user && r.cost !== null)
   );
 
-  // bedrock/enterprise 도넛 두 개를 한 카드에 — 같은 모델은 양쪽에서 같은 색이어야 하므로
-  // 전체 지출 순위(modelRows) 기준으로 색을 먼저 고정하고 두 도넛에 같은 맵을 넘긴다.
-  const chartColors = useChartColors();
-  const modelColor = new Map(modelRows.map((r, i) => [r.model, chartColors.palette[i % chartColors.palette.length]]));
+  // bedrock/enterprise 도넛은 그룹=색상 계열 규칙을 따른다(사용자 지시) — 같은 모델이라도
+  // bedrock 카드에선 블루, enterprise 카드에선 틸로 다르게 보인다(groupModelColorFor). 모델
+  // 정체성은 그 계열 안의 명도로 표현되지, 색조(hue)로 표현되지 않는다 — 그룹이 우선.
   const bedrockModelRows = foldModelRows((byModel.data || []).filter((r) => r.group === "bedrock"));
   const enterpriseModelRows = foldModelRows((byModel.data || []).filter((r) => r.group === "enterprise"));
 
@@ -220,6 +223,7 @@ export default function Cost() {
                 nameKey="tier"
                 valueKey="cost"
                 valuePrefix="$"
+                colorOf={makeGroupBreakdownColorer(g, TIER_LABEL_ORDER)}
               />
             ))}
           </div>
@@ -232,11 +236,11 @@ export default function Cost() {
             <ErrorBox error={byModel.error} />
           ) : (
             <>
-              <Card title="모델별 지출 비중 — bedrock" subtitle="같은 모델은 enterprise 카드와 같은 색">
-                <DonutBody data={bedrockModelRows} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => modelColor.get(name)} />
+              <Card title="모델별 지출 비중 — bedrock" subtitle="블루 계열 · 명도로 모델 구분(신버전일수록 진하게)">
+                <DonutBody data={bedrockModelRows} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => groupModelColorFor("bedrock", name)} />
               </Card>
-              <Card title="모델별 지출 비중 — enterprise" subtitle="같은 모델은 bedrock 카드와 같은 색">
-                <DonutBody data={enterpriseModelRows} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => modelColor.get(name)} />
+              <Card title="모델별 지출 비중 — enterprise" subtitle="틸 계열 · 명도로 모델 구분(신버전일수록 진하게)">
+                <DonutBody data={enterpriseModelRows} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => groupModelColorFor("enterprise", name)} />
               </Card>
             </>
           )}
@@ -254,12 +258,14 @@ export default function Cost() {
                 data={tokenTypeRowsFor("bedrock")}
                 nameKey="type"
                 valueKey="tokens"
+                colorOf={makeGroupBreakdownColorer("bedrock", TOKEN_TYPE_LABEL_ORDER)}
               />
               <DonutBreakdown
                 title="토큰 타입별 비중 — enterprise"
                 data={tokenTypeRowsFor("enterprise")}
                 nameKey="type"
                 valueKey="tokens"
+                colorOf={makeGroupBreakdownColorer("enterprise", TOKEN_TYPE_LABEL_ORDER)}
               />
             </>
           )}
@@ -287,6 +293,8 @@ export default function Cost() {
             xKey="day"
             seriesKey="model"
             valueKey="cost"
+            colorOf={modelColorFor}
+            seriesSort={byModelLegendOrder}
             tickFormatter={fmtTick}
             valuePrefix="$"
             bucketHours={intervalHours}
@@ -346,6 +354,8 @@ export default function Cost() {
             xKey="user"
             seriesKey="model"
             valueKey="cost"
+            colorOf={modelColorFor}
+            seriesSort={byModelLegendOrder}
             valuePrefix="$"
             tickFormatter={maskEmail}
             horizontal

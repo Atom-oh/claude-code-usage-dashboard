@@ -131,10 +131,13 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
 // horizontal: 카테고리가 많거나(예: 유저 20명) 라벨이 길 때(이메일) 세로 막대는 라벨이 겹치거나
 // 다 안 보인다 — Recharts의 layout="vertical"(막대는 가로)로 뒤집고 카테고리 축을 Y로 옮긴다.
 // 드래그 줌은 카테고리 축이 날짜가 아니면 어차피 no-op이라 orientation과 무관하게 그대로 둔다.
-export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false }) {
+export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort }) {
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours);
-  const { data, series } = pivotByKey(rows, xKey, seriesKey, valueKey);
+  const { data, series: rawSeries } = pivotByKey(rows, xKey, seriesKey, valueKey);
+  // seriesSort는 모델 차트처럼 값(지출 순위)과 무관한 고정 범례 순서가 필요할 때만 쓴다 —
+  // 기본은 데이터 등장 순(pivotByKey)을 그대로 둔다(예: tool/skill 시리즈는 이 순서 그대로가 맞음).
+  const series = seriesSort ? [...rawSeries].sort(seriesSort) : rawSeries;
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
   const h = height ?? (horizontal ? Math.max(220, data.length * 28) : 260);
   return (
@@ -158,7 +161,7 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
           {series.map((s, i) => {
             const outermost = i === series.length - 1;
             const radius = horizontal ? (outermost ? [0, 4, 4, 0] : 0) : outermost ? [4, 4, 0, 0] : 0;
-            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={c.palette[i % c.palette.length]} radius={radius} />;
+            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={colorOf?.(s) ?? c.palette[i % c.palette.length]} radius={radius} />;
           })}
           {zoom.overlay}
         </BarChart>
@@ -279,10 +282,10 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", co
 }
 
 // ../awsops DonutBreakdown 포팅 — innerRadius 55/outerRadius 80, 중앙 합계 라벨 + 사이드 범례.
-export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey, valuePrefix = "" }) {
+export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey, valuePrefix = "", colorOf }) {
   return (
     <Card title={title} subtitle={subtitle} right={right}>
-      <DonutBody data={data} nameKey={nameKey} valueKey={valueKey} valuePrefix={valuePrefix} />
+      <DonutBody data={data} nameKey={nameKey} valueKey={valueKey} valuePrefix={valuePrefix} colorOf={colorOf} />
     </Card>
   );
 }
