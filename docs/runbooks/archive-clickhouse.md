@@ -23,6 +23,12 @@ your own (permanent) AWS account.
 Once, shortly before the workshop account is torn down. Re-runnable if a prior run failed
 partway (set `SKIP_BACKUP=1` to skip re-taking the snapshot and just re-sync).
 
+**Sequencing matters**: this PR also fixes `infra/s3.tf`'s lifecycle filter so it actually
+expires backups after 30 days (it previously matched nothing — see Notes). Run this archive
+script and confirm it passes verification **before** applying that Terraform change. If you
+`terraform apply` the corrected lifecycle first, backups older than 30 days can expire out of
+the source bucket before you've copied them anywhere permanent.
+
 ## Prerequisites
 - `~/.aws/credentials` with a profile for the workshop account, with `s3:ListBucket` and
   `s3:GetObject` on the `cc-ab-clickhouse-*` bucket (the pod's IRSA role has write access —
@@ -41,6 +47,10 @@ partway (set `SKIP_BACKUP=1` to skip re-taking the snapshot and just re-sync).
   (the script prints that account ID in step 1 — check it before the long sync starts).
 - `kubectl` context `fsi-demo-cluster`, access to namespace `claude-code` (same as
   [`incident-response.md`](incident-response.md)).
+- If the workshop's bucket was created in a region other than `ap-northeast-2`
+  (`REGION`'s default, matching `infra/variables.tf`), set `REGION` explicitly — the source
+  bucket name is reconstructed from the account ID and region, so a wrong region means a wrong
+  (likely nonexistent) bucket name.
 - Local disk space for the **entire `cold/backup/` prefix**, not just one backup. Don't
   estimate this from the "~30 days of backups" assumption — the lifecycle rule that's supposed
   to expire that prefix after 30 days had a prefix mismatch bug (fixed in this same PR; see
@@ -67,11 +77,16 @@ ARCHIVE_BUCKET=my-permanent-bucket ./scripts/archive-clickhouse.sh
 This takes a fresh `BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/final-<UTC
 timestamp>')` inside the cluster (same mechanism as the daily `clickhouse-backup` CronJob in
 `infra/clickhouse.tf`), then syncs the whole `cold/backup/` prefix — including the still-live
-daily backups — plus a copy of the schema files to
-`s3://$ARCHIVE_BUCKET/$ARCHIVE_PREFIX/` (default prefix `clickhouse-ab-workshop`).
+daily backups — plus a copy of three schema/reference files
+(`clickhouse-schema.sql`, `infra/files/clickhouse-schema-replicated.sql`,
+`grafana-ab-queries.sql`) to `s3://$ARCHIVE_BUCKET/$ARCHIVE_PREFIX/` (default prefix
+`clickhouse-ab-workshop`).
 
-The script verifies object count, total bytes, and schema-file count match between source and
-destination and exits non-zero if they don't.
+The script verifies success by re-running the same `aws s3 sync` as a `--dryrun` and checking
+it reports nothing left to copy — not by comparing the live source's current object
+count/bytes against the archive, since those can legitimately diverge afterwards (e.g. a
+daily backup in the source expires between the upload and the check) without meaning the
+archive is wrong.
 
 ### 3. Restore rehearsal (recommended while the workshop account is still alive)
 Point a ClickHouse instance at the archive bucket and confirm a real restore works — this is
@@ -103,7 +118,7 @@ of letting `RESTORE` create them from the embedded DDL:
     <disks>
       <archive_s3>
         <type>s3</type>
-        <endpoint>https://<your-bucket>.s3.<region>.amazonaws.com/clickhouse-ab-workshop/</endpoint>
+        <endpoint>https://<your-bucket>.s3.<region>.amazonaws.com/<your-archive-prefix>/</endpoint>
         <access_key_id>...</access_key_id>   <!-- rehearsal only — prefer IAM role/temp creds where possible, revoke/rotate after -->
         <secret_access_key>...</secret_access_key>
       </archive_s3>
@@ -125,6 +140,8 @@ SHOW CREATE TABLE claude_code.otel_metrics_sum;  -- confirm materialized SeriesK
 ```
 Record the date this was last actually run (following `incident-response.md`'s "Last
 verified" convention) — an untested restore procedure is a hypothesis, not a plan.
+
+**Last verified: not yet run** — update this line after the first real rehearsal.
 
 ## Notes
 - Only the `cold/backup/` prefix is archived — TTL-moved *table data* parts living elsewhere
@@ -165,6 +182,12 @@ verified" convention) — an untested restore procedure is a hypothesis, not a p
 워크샵 계정이 삭제되기 직전 1회. 이전 실행이 중간에 실패했다면 재실행 가능(`SKIP_BACKUP=1`로
 새 스냅샷 없이 재동기화만).
 
+**순서가 중요합니다**: 이 PR은 `infra/s3.tf`의 라이프사이클 필터도 함께 고쳐 30일 후 백업이
+실제로 만료되게 만듭니다(이전엔 아무것도 매칭하지 않았습니다 — 참고 섹션 참조). 이 아카이브
+스크립트를 먼저 실행해 검증까지 통과시킨 **다음에** 그 Terraform 변경을 적용하세요. 수정된
+라이프사이클을 먼저 `terraform apply`하면, 아직 아무 데도 영구 복사되지 않은 30일 초과
+백업이 소스 버킷에서 먼저 만료될 수 있습니다.
+
 ## 사전 준비
 - `~/.aws/credentials`에 워크샵 계정 프로필 1개, `cc-ab-clickhouse-*` 버킷에 대한
   `s3:ListBucket`/`s3:GetObject` 권한 포함(파드의 IRSA 롤은 쓰기 권한이 있지만 — `infra/s3.tf`
@@ -183,6 +206,9 @@ verified" convention) — an untested restore procedure is a hypothesis, not a p
   시작되기 전에 확인하세요).
 - `kubectl` context `fsi-demo-cluster`, 네임스페이스 `claude-code` 접근 권한
   ([`incident-response.md`](incident-response.md)와 동일).
+- 워크샵 버킷이 `ap-northeast-2`(`REGION` 기본값, `infra/variables.tf`와 동일) 외의 리전에
+  생성됐다면 `REGION`을 명시적으로 지정하세요 — 소스 버킷명은 계정 ID와 리전으로
+  재구성되므로, 리전이 틀리면 존재하지 않는 버킷명을 만들어냅니다.
 - **백업 1개가 아니라 `cold/backup/` 프리픽스 전체** 분량의 로컬 디스크 여유 공간. "30일치
   백업"이라는 가정으로 용량을 추정하지 마세요 — 이 프리픽스를 30일 후 만료시켜야 할
   라이프사이클 규칙 자체가 prefix 불일치 버그로 실제 경로에 매칭되지 않고 있었습니다(이번
@@ -208,11 +234,15 @@ ARCHIVE_BUCKET=my-permanent-bucket ./scripts/archive-clickhouse.sh
 ```
 클러스터 안에서 새 `BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/final-<UTC
 타임스탬프>')`를 실행하고(`infra/clickhouse.tf`의 일별 `clickhouse-backup` CronJob과 동일한
-메커니즘), `cold/backup/` 프리픽스 전체(아직 살아있는 일별 백업 포함)와 스키마 파일 사본을
-`s3://$ARCHIVE_BUCKET/$ARCHIVE_PREFIX/`(기본 프리픽스 `clickhouse-ab-workshop`)로 동기화합니다.
+메커니즘), `cold/backup/` 프리픽스 전체(아직 살아있는 일별 백업 포함)와 스키마/참조 파일 3개
+(`clickhouse-schema.sql`, `infra/files/clickhouse-schema-replicated.sql`,
+`grafana-ab-queries.sql`)를 `s3://$ARCHIVE_BUCKET/$ARCHIVE_PREFIX/`(기본 프리픽스
+`clickhouse-ab-workshop`)로 동기화합니다.
 
-스크립트는 소스/대상의 객체 수, 총 바이트, 스키마 파일 수가 일치하는지 검증하고, 불일치 시
-non-zero로 종료합니다.
+스크립트는 같은 `aws s3 sync`를 `--dryrun`으로 다시 돌려 남은 작업이 없는지로 성공을
+검증합니다 — 라이브 소스의 현재 객체 수/바이트를 아카이브와 직접 비교하지 않습니다. 그
+비교는 업로드와 검증 사이에 소스의 일별 백업이 만료되는 등 정상적인 이유로도 어긋날 수
+있어 아카이브가 잘못됐다는 뜻이 아닐 수 있기 때문입니다.
 
 ### 3. 복원 리허설 (워크샵 계정이 아직 살아있을 때 권장)
 ClickHouse 인스턴스를 아카이브 버킷을 가리키게 설정하고 실제 복원이 되는지 확인합니다 —
@@ -243,7 +273,7 @@ non-replicated 엔진으로 직접 만들어 둡니다(`ReplicatedMergeTree(...)
     <disks>
       <archive_s3>
         <type>s3</type>
-        <endpoint>https://<내버킷>.s3.<리전>.amazonaws.com/clickhouse-ab-workshop/</endpoint>
+        <endpoint>https://<내버킷>.s3.<리전>.amazonaws.com/<내아카이브프리픽스>/</endpoint>
         <access_key_id>...</access_key_id>   <!-- 리허설 전용 — 가능하면 IAM role/임시 자격증명, 사용 후 폐기/회전 -->
         <secret_access_key>...</secret_access_key>
       </archive_s3>
@@ -265,6 +295,8 @@ SHOW CREATE TABLE claude_code.otel_metrics_sum;  -- materialized SeriesKey가 �
 ```
 이 절차를 실제로 마지막에 실행한 날짜를 기록해 두세요(`incident-response.md`의 "최종
 검증일" 관례와 동일) — 실제로 안 돌려본 복원 절차는 계획이 아니라 가설일 뿐입니다.
+
+**최종 검증일: 아직 실행 안 함** — 첫 실제 리허설 후 이 줄을 갱신하세요.
 
 ## 참고
 - `cold/backup/` 프리픽스만 아카이브합니다 — `cold/` 아래 다른 위치의 TTL 이동 테이블 파트는

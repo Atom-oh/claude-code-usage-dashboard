@@ -41,7 +41,10 @@ Kubernetes Operator, ECR, S3, and DNS/CDN for the dashboard's public endpoint.
 ### 5. Cross-references
 - Related modules: [infra/CLAUDE.md](../../infra/CLAUDE.md)
 - Related ADRs: (none yet)
-- Related runbooks: [docs/runbooks/deploy-production.md](../runbooks/deploy-production.md)
+- Related runbooks: [docs/runbooks/deploy-production.md](../runbooks/deploy-production.md),
+  [docs/runbooks/archive-clickhouse.md](../runbooks/archive-clickhouse.md) (the only script in
+  the repo using a named AWS CLI profile rather than the ambient credential chain or IRSA used
+  everywhere else in `infra/`)
 
 <a id="korean"></a>
 ## 한국어
@@ -81,4 +84,6 @@ Kubernetes Operator, ECR, S3, and DNS/CDN for the dashboard's public endpoint.
 ### 5. 상호 참조
 - 관련 모듈: [infra/CLAUDE.md](../../infra/CLAUDE.md)
 - 관련 ADR: (아직 없음)
-- 관련 런북: [docs/runbooks/deploy-production.md](../runbooks/deploy-production.md)
+- 관련 런북: [docs/runbooks/deploy-production.md](../runbooks/deploy-production.md),
+  [docs/runbooks/archive-clickhouse.md](../runbooks/archive-clickhouse.md) (`infra/`에서 유일하게
+  앰비언트 자격증명 체인이나 IRSA 대신 named AWS CLI 프로필을 쓰는 스크립트)

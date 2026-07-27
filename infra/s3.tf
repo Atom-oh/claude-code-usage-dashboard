@@ -10,9 +10,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "clickhouse" {
     id     = "expire-backups"
     status = "Enabled"
     # cold_s3 디스크 endpoint가 이미 .../cold/로 끝나므로(clickhouse.tf의 cold_s3_endpoint)
-    # Disk('cold_s3', 'backup/...')로 쓴 백업의 실제 S3 객체 경로는 cold/backup/... 이다.
-    # prefix가 "backup/"이던 이전 버전은 아무 객체도 매칭하지 못해 백업이 무기한 누적되고
-    # 있었을 가능성이 있다(PR #18 리뷰에서 확인) — 실제 경로로 수정.
+    # Disk('cold_s3', 'backup/...')로 쓴 백업의 실제 S3 객체 경로는 cold/backup/... 이다 —
+    # prefix가 "backup/"이면 아무 객체도 매칭하지 못해 만료가 걸리지 않는다.
     filter { prefix = "cold/backup/" }
     expiration { days = 30 }
   }

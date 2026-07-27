@@ -7,9 +7,13 @@ set -euo pipefail
 # 배경: 일별 백업(infra/clickhouse.tf의 clickhouse-backup CronJob)은 워크샵 계정 버킷
 # cc-ab-clickhouse-<acct>-<region>의 cold/backup/ 아래에 쓰이고(cold_s3 디스크 endpoint가
 # 이미 .../cold/로 끝나므로 Disk('cold_s3','backup/...')의 실제 S3 경로는 cold/backup/...),
-# 그 상위 backup/ 프리픽스엔 30일 만료 라이프사이클이 걸려 있다(infra/s3.tf). 워크샵 계정이
-# 삭제되면 버킷도 백업도 같이 사라진다 — 이 스크립트로 마지막 스냅샷을 하나 더 뜨고 기존
-# 백업 전체를 내 계정 버킷으로 옮긴다.
+# 그 프리픽스엔 30일 만료 라이프사이클이 걸려 있다(infra/s3.tf). 워크샵 계정이 삭제되면
+# 버킷도 백업도 같이 사라진다 — 이 스크립트로 마지막 스냅샷을 하나 더 뜨고 기존 백업 전체를
+# 내 계정 버킷으로 옮긴다.
+#
+# 이 아카이브는 append-only다: 대상 측에 --delete를 쓰지 않고, 검증도 "지금 이 실행이 올린
+# 파일들이 실제로 대상에 있는가"만 확인한다(라이브 소스 전체와의 정확일치는 요구하지 않음) —
+# 재실행 사이에 소스의 일별 백업이 만료되어도 이전에 옮겨둔 아카이브를 건드리지 않는다.
 #
 # 사전 준비 — 워크샵 계정용 ~/.aws/credentials 프로필 1개:
 #   [workshop]
@@ -29,7 +33,7 @@ set -euo pipefail
 #   ARCHIVE_PROFILE    내 계정 aws profile (기본 빈 값 = EC2 인스턴스 프로필 사용)
 #   ARCHIVE_BUCKET     내 계정 버킷 이름 (필수)
 #   ARCHIVE_PREFIX     내 버킷 안 저장 경로 (기본 clickhouse-ab-workshop)
-#   LOCAL_DIR          중간 다운로드 디렉터리 (기본 ./ch-archive)
+#   LOCAL_DIR          중간 다운로드 디렉터리의 부모 경로 (기본 ./ch-archive)
 #   KUBE_CONTEXT       kubectl context (기본 fsi-demo-cluster)
 #   NAMESPACE          k8s namespace (기본 claude-code)
 #   REGION             워크샵 버킷 리전 (기본 ap-northeast-2, infra/variables.tf 기본값)
@@ -43,16 +47,12 @@ WORKSHOP_PROFILE="${WORKSHOP_PROFILE:-workshop}"
 ARCHIVE_PROFILE="${ARCHIVE_PROFILE:-}"
 ARCHIVE_BUCKET="${ARCHIVE_BUCKET:?ARCHIVE_BUCKET env var required (destination bucket in your own account)}"
 ARCHIVE_PREFIX="${ARCHIVE_PREFIX:-clickhouse-ab-workshop}"
-LOCAL_DIR="${LOCAL_DIR:-./ch-archive}"
+LOCAL_DIR_ROOT="${LOCAL_DIR:-./ch-archive}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-fsi-demo-cluster}"
 NAMESPACE="${NAMESPACE:-claude-code}"
 REGION="${REGION:-ap-northeast-2}"
 
 kube() { kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" "$@"; }
-
-# 로컬 스테이징에 UserEmail 등 PII 전체가 평문으로 잠깐 머문다 — 다른 로컬 유저가 못 읽게
-# 생성 권한을 좁히고, 성공적으로 올린 뒤엔 지운다.
-umask 077
 
 # ARCHIVE_PROFILE이 비어 있으면 --profile을 아예 안 붙여 기본 자격증명 체인(EC2 인스턴스
 # 프로필 등)을 쓴다 — `--profile ""`로 넘기면 aws가 프로필 없음 에러를 낸다.
@@ -64,37 +64,37 @@ archive_aws() {
   fi
 }
 
+# 파드 안에서 clickhouse-client를 실행한다. 비밀번호는 kubectl exec argv가 아니라 stdin으로
+# 넘기고 파드 내부에서 env로 승격 — ps에 노출되지 않는다. clickhouse-client는
+# CLICKHOUSE_PASSWORD env를 자동 인식하므로 --password 플래그는 쓰지 않는다: 같은 커맨드
+# 라인에서 `VAR=$(cmd) other --flag "$VAR"` 형태로 쓰면 그 $VAR는 프리픽스 대입이 적용되기
+# 전에 확장되어 항상 빈 문자열이 되고 인증이 실패한다.
+ch_query() {
+  printf '%s' "$CH_PASSWORD" | kube exec -i "$POD" -- sh -c \
+    "CLICKHOUSE_PASSWORD=\$(cat) clickhouse-client --user otel_writer --query \"$1\""
+}
+
 echo "== 1. 자격증명 확인 =="
 WORKSHOP_ACCOUNT=$(aws sts get-caller-identity --profile "$WORKSHOP_PROFILE" --query Account --output text)
 ARCHIVE_ACCOUNT=$(archive_aws sts get-caller-identity --query Account --output text)
 echo "workshop account: $WORKSHOP_ACCOUNT"
 echo "archive  account: $ARCHIVE_ACCOUNT (profile: ${ARCHIVE_PROFILE:-<default/instance profile>})"
 
-# 버킷명 오타 + 타 계정의 write-open 버킷이 겹치면 PII가 엉뚱한 계정으로 올라갈 수 있다 —
-# 캐셔가 확인한 caller identity가 아니라 버킷 소유자 자체를 대상 sync/ls에서 검사한다.
-EXPECTED_OWNER_ARGS=(--expected-bucket-owner "$ARCHIVE_ACCOUNT")
+# 버킷명 오타 + 타 계정의 write-open 버킷이 겹치면 PII가 엉뚱한 계정으로 올라갈 수 있다.
+# --expected-bucket-owner는 s3api류(head-bucket 등) 옵션이고 고수준 `aws s3 sync`/`aws s3 ls`는
+# 이 플래그를 모른다("Unknown options"로 즉시 실패) — 그래서 sync/ls에는 절대 붙이지 않고,
+# 소유자 검증은 s3api head-bucket으로 시작 시점에 한 번만 한다.
+archive_aws s3api head-bucket --bucket "$ARCHIVE_BUCKET" --expected-bucket-owner "$ARCHIVE_ACCOUNT"
+echo "archive bucket owner 확인됨: $ARCHIVE_BUCKET (account $ARCHIVE_ACCOUNT)"
 
 # infra/s3.tf의 네이밍 규칙(cc-ab-clickhouse-<acct>-<region>)과 동일 — 버킷 하나뿐이라
 # terraform output을 안 읽어도 account_id만 있으면 이름을 재구성할 수 있다.
 SRC_BUCKET="cc-ab-clickhouse-${WORKSHOP_ACCOUNT}-${REGION}"
-# cold_s3 디스크의 endpoint 자체가 이미 .../cold/ 로 끝난다(infra/clickhouse.tf:34) — 따라서
+# cold_s3 디스크의 endpoint 자체가 이미 .../cold/ 로 끝난다(infra/clickhouse.tf) — 따라서
 # Disk('cold_s3', 'backup/...')의 'backup/'은 그 디스크 루트(=S3 cold/ 밑) 기준 상대 경로이고,
-# 실제 S3 객체는 cold/backup/ 아래에 생성된다. 이걸 몰라 루트 backup/를 sync하면 항상 빈
-# prefix를 복사하고도 0 objects == 0 objects로 검증이 조용히 통과한다(PR #18 리뷰 CRITICAL).
+# 실제 S3 객체는 cold/backup/ 아래에 생성된다.
 SRC_PREFIX="cold/backup"
 echo "source bucket: $SRC_BUCKET (prefix: ${SRC_PREFIX}/)"
-
-# 문서에 "~30x 한 백업 크기"로 추정치를 적어뒀었지만, infra/s3.tf의 lifecycle prefix가 실제
-# 백업 경로(cold/backup/)와 달라 백업이 만료되지 않고 무기한 누적됐을 수 있어 추정이 틀릴 수
-# 있다(PR #18 리뷰 MAJOR) — 추측 대신 실제 소스 크기를 재고 로컬 여유 공간과 비교한다.
-mkdir -p "$LOCAL_DIR"
-SRC_BYTES=$(aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/${SRC_PREFIX}/" --profile "$WORKSHOP_PROFILE" | grep "Total Size" | awk '{print $NF}')
-FREE_BYTES=$(df -kP "$LOCAL_DIR" | awk 'NR==2 {print $4*1024}')
-echo "source size: ${SRC_BYTES:-0} bytes, local free space: ${FREE_BYTES:-unknown} bytes"
-if [ -n "$FREE_BYTES" ] && [ "${SRC_BYTES:-0}" -gt "$FREE_BYTES" ]; then
-  echo "여유 공간 부족으로 보입니다 — LOCAL_DIR을 더 큰 볼륨으로 옮기거나 공간을 확보하세요." >&2
-  exit 1
-fi
 
 if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   echo "== 2. 최종 BACKUP 생성 =="
@@ -104,83 +104,83 @@ if [ "${SKIP_BACKUP:-0}" != "1" ]; then
     exit 1
   fi
   CH_PASSWORD=$(kube get secret clickhouse-writer -o jsonpath='{.data.CH_PASSWORD}' | base64 -d)
-  # 마지막이자 되돌릴 수 없는 스냅샷이므로 replicated 테이블 전부(clickhouse-schema-replicated.sql
-  # 기준 4개)를 동기화하고, 하나라도 실패하면 중단한다 — otel_metrics_sum 하나만 돌리고 실패를
-  # 삼키면(이전 버전) 이 파드가 lag 중일 때 다른 테이블의 최신 데이터가 조용히 빠질 수 있다
-  # (PR #18 리뷰 MAJOR).
-  for tbl in otel_metrics_sum otel_metrics_sum_hourly otel_metrics_gauge otel_logs; do
+
+  # 마지막이자 되돌릴 수 없는 스냅샷이므로 이 파드가 replication lag 중이면 안 된다 —
+  # 어떤 테이블이 replicated인지 하드코딩하지 않고 system.replicas에서 직접 목록을 얻어
+  # 전부 동기화하고, 하나라도 실패하면(set -e) 스크립트를 중단한다.
+  REPLICATED_TABLES=$(ch_query "SELECT table FROM system.replicas WHERE database = 'claude_code'")
+  echo "$REPLICATED_TABLES" | while IFS= read -r tbl; do
+    [ -n "$tbl" ] || continue
     echo "SYSTEM SYNC REPLICA: claude_code.${tbl}"
-    printf '%s' "$CH_PASSWORD" | kube exec -i "$POD" -- sh -c \
-      "CLICKHOUSE_PASSWORD=\$(cat) clickhouse-client --user otel_writer \
-         --query \"SYSTEM SYNC REPLICA claude_code.${tbl}\""
+    ch_query "SYSTEM SYNC REPLICA claude_code.${tbl}"
   done
+
   BACKUP_TAG="final-$(date -u +%Y%m%dT%H%M%SZ)"
-  # clickhouse-client 24.8은 CLICKHOUSE_PASSWORD env를 자동 인식한다 — --password "$VAR" 형태로
-  # 같은 커맨드 라인에서 넘기면 그 $VAR는 앞의 프리픽스 대입이 적용되기 전에 확장되어 항상
-  # 빈 문자열이 되고 인증이 실패한다(PR #18 리뷰 CRITICAL). env만 승격하고 --password는 뺀다.
-  # 비밀번호를 kubectl exec argv에 넣으면 ps로 노출되므로 stdin으로 넘긴다.
-  printf '%s' "$CH_PASSWORD" | kube exec -i "$POD" -- sh -c \
-    "CLICKHOUSE_PASSWORD=\$(cat) clickhouse-client --user otel_writer \
-       --query \"BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/${BACKUP_TAG}')\""
+  ch_query "BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/${BACKUP_TAG}')"
   echo "backup done: ${SRC_PREFIX}/${BACKUP_TAG}"
 else
   echo "== 2. SKIP_BACKUP=1 — 새 백업 생성 스킵, 기존 ${SRC_PREFIX}/ 프리픽스만 이관 =="
 fi
 
-echo "== 3. 워크샵 계정 -> 로컬 다운로드 =="
-# 재실행 시 이전 실행에서 남은 파일이 검증(count/bytes)을 어긋나게 하거나 오염된 아카이브를
-# 남길 수 있어(PR #18 리뷰 MAJOR) 매번 새 스테이징 디렉터리를 쓴다.
-LOCAL_DIR="${LOCAL_DIR}/$(date -u +%Y%m%dT%H%M%SZ)"
+echo "== 3. 디스크 여유 공간 확인 =="
+# 새 BACKUP을 이미 떴다면(2단계) 그만큼 소스가 커진 뒤에 재는 것이 맞다 — 백업 생성 전에
+# 재면 방금 만든 스냅샷의 용량이 반영되지 않는다. "30일치 백업"이라는 가정으로 추정하지
+# 않는다: infra/s3.tf의 lifecycle prefix가 실제 백업 경로와 달라 오랫동안 아무것도 만료되지
+# 않고 누적됐을 수 있어(이번 변경에서 함께 수정) 실제 크기를 재는 쪽이 안전하다.
+mkdir -p "$LOCAL_DIR_ROOT"
+SRC_BYTES=$(aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/${SRC_PREFIX}/" --profile "$WORKSHOP_PROFILE" | grep "Total Size" | awk '{print $NF}')
+FREE_BYTES=$(df -kP "$LOCAL_DIR_ROOT" | awk 'NR==2 {print $4*1024}')
+echo "source size: ${SRC_BYTES:-0} bytes, local free space: ${FREE_BYTES:-unknown} bytes"
+if [ -n "$FREE_BYTES" ] && [ "${SRC_BYTES:-0}" -gt "$FREE_BYTES" ]; then
+  echo "여유 공간 부족으로 보입니다 — LOCAL_DIR을 더 큰 볼륨으로 옮기거나 공간을 확보하세요." >&2
+  exit 1
+fi
+
+echo "== 4. 워크샵 계정 -> 로컬 다운로드 =="
+# 재실행 시 이전 실행에서 남은 파일이 이번 검증을 오염시킬 수 있어 매번 새 스테이징
+# 디렉터리를 쓴다. UserEmail 등 PII가 평문으로 잠깐 머무르므로, 생성 권한을 좁히고
+# (umask) 스크립트가 어떻게 끝나든(성공/실패 모두) 종료 시 반드시 지운다(trap).
+umask 077
+LOCAL_DIR="${LOCAL_DIR_ROOT}/$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$LOCAL_DIR"
+trap 'rm -rf "$LOCAL_DIR"' EXIT
 aws s3 sync "s3://${SRC_BUCKET}/${SRC_PREFIX}/" "${LOCAL_DIR}/backup/" --profile "$WORKSHOP_PROFILE"
 
-echo "== 4. 스키마 사본 포함 =="
+SRC_OBJECT_COUNT=$(find "${LOCAL_DIR}/backup" -type f | wc -l)
+if [ "$SRC_OBJECT_COUNT" -eq 0 ]; then
+  echo "검증 실패: 소스 ${SRC_PREFIX}/에서 받아온 파일이 0개입니다 — 빈 프리픽스를 이관한 것으로 보입니다." >&2
+  exit 1
+fi
+
+echo "== 5. 스키마 사본 포함 =="
 mkdir -p "${LOCAL_DIR}/schema"
-# 실패를 삼키면(2>/dev/null || true) 스키마 없이도 "성공"으로 끝나 나중에야 빠진 걸 알게 된다
-# (PR #18 리뷰 MAJOR) — 레포 루트에서 실행하지 않았다는 신호이므로 바로 죽는다.
+# 실패를 삼키면 스키마 없이도 "성공"으로 끝나 나중에야 빠진 걸 알게 된다 — 레포 루트에서
+# 실행하지 않았다는 신호이므로 바로 죽는다.
 cp "$(dirname "$0")/../clickhouse-schema.sql" "${LOCAL_DIR}/schema/"
 cp "$(dirname "$0")/../infra/files/clickhouse-schema-replicated.sql" "${LOCAL_DIR}/schema/"
 cp "$(dirname "$0")/../grafana-ab-queries.sql" "${LOCAL_DIR}/schema/"
 
-echo "== 5. 로컬 -> 내 계정 업로드 =="
-# --delete는 쓰지 않는다: 이 아카이브는 append-only여야 한다. LOCAL_DIR을 매번 새 타임스탬프로
-# 만들기 때문에 --delete를 쓰면 "이번 실행에서 안 받아온 것 = 소스에 이제 없는 것"으로 간주해
-# 지워버리는데, 소스가 만료/축소된 상태(예: 재실행 시점에 일부 일별 백업이 이미 30일 만료로
-# 사라진 뒤)라면 이전에 이미 옮겨둔 아카이브까지 지운다 — "0==0으로 조용히 통과"의 또 다른
-# 형태다(PR #18 리뷰 MAJOR). 아카이브 버킷 소유자가 예상과 다르면 즉시 실패하도록 명시한다.
-archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" "${EXPECTED_OWNER_ARGS[@]}"
+echo "== 6. 로컬 -> 내 계정 업로드 =="
+# --delete는 쓰지 않는다: 아카이브는 append-only다. 대상 버킷 소유자는 1단계에서 이미
+# head-bucket으로 확인했으므로 여기서는 반복하지 않는다(sync는 이 플래그를 지원하지 않음).
+archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/"
 
-echo "== 6. 검증 (객체 수 + 총 바이트, backup/ + schema/ 모두) =="
-src_summary() {
-  aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/${SRC_PREFIX}/" --profile "$WORKSHOP_PROFILE" | tail -2
-  find "${LOCAL_DIR}/schema" -type f | wc -l
-}
-dst_summary() {
-  archive_aws s3 ls --recursive --summarize "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/backup/" "${EXPECTED_OWNER_ARGS[@]}" | tail -2
-  archive_aws s3 ls --recursive "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/schema/" "${EXPECTED_OWNER_ARGS[@]}" | wc -l
-}
-
-SRC=$(src_summary)
-DST=$(dst_summary)
-echo "source (+ local schema file count):"; echo "$SRC"
-echo "archive (+ remote schema file count):"; echo "$DST"
-
-# --delete 없이 append-only sync만으로는 "옮길 게 하나도 없어도" 검증이 통과할 수 있다 —
-# 소스가 실제로 비어 있는데도 0==0으로 넘어가는 걸 막기 위해 소스 쪽 object count가
-# 0보다 커야 한다는 조건을 명시적으로 추가한다(PR #18 리뷰 MAJOR).
-SRC_OBJECT_COUNT=$(aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/${SRC_PREFIX}/" --profile "$WORKSHOP_PROFILE" | grep "Total Objects" | awk '{print $NF}')
-if [ "${SRC_OBJECT_COUNT:-0}" -eq 0 ]; then
-  echo "검증 실패: 소스 ${SRC_PREFIX}/에 객체가 0개입니다 — 빈 프리픽스를 이관한 것으로 보입니다." >&2
+echo "== 7. 검증 =="
+# "라이브 소스 전체 == 아카이브 전체" 정확일치는 append-only 설계와 모순된다: 소스의 일별
+# 백업이 검증 시점 사이에 만료되면(정상 동작) 아카이브가 소스의 초집합이 되어 오탐이 나고,
+# 반대로 검증 타이밍에 소스가 갱신되면(TOCTOU) 방금 올린 것과 달라져도 오탐이 난다.
+# 대신 "이번에 로컬로 받아온 파일들이 실제로 대상에 다 있는가"만 확인한다 — 방금 실행한
+# sync를 --dryrun으로 다시 돌려 보류 작업이 남았는지 보는 것으로 충분하다.
+PENDING=$(archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --dryrun)
+if [ -n "$PENDING" ]; then
+  echo "검증 실패: 업로드 후에도 대상과 차이가 남아 있습니다:" >&2
+  echo "$PENDING" >&2
   exit 1
 fi
-
-if [ "$SRC" != "$DST" ]; then
-  echo "검증 실패: 소스/아카이브의 객체 수, 총 바이트, 또는 스키마 파일 수가 다릅니다." >&2
-  exit 1
-fi
-
-rm -rf "$LOCAL_DIR"
 
 echo "== 완료 =="
 echo "아카이브 위치: s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/"
 echo "복원 절차: docs/runbooks/archive-clickhouse.md 참조"
+echo ""
+echo "*** infra/s3.tf의 lifecycle 수정을 적용(terraform apply)하기 전에 위 검증이 통과했는지"
+echo "*** 다시 한번 확인하세요 — 적용하면 그 시점부터 30일 초과 백업이 실제로 만료됩니다."
