@@ -8,7 +8,7 @@ import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { makeTickFmt, formatDuration } from "../fmt.js";
-import { modelColorFor } from "../colors.js";
+import { modelColorFor, byModelLegendOrder } from "../colors.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -246,6 +246,7 @@ export default function Executive() {
                   seriesKey="model"
                   valueKey="cost"
                   colorOf={modelColorFor}
+                  seriesSort={byModelLegendOrder}
                   tickFormatter={fmtTick}
                   valuePrefix="$"
                 />

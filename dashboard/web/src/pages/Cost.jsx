@@ -12,7 +12,7 @@ import { useApi } from "../useApi.js";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
-import { modelColorFor } from "../colors.js";
+import { modelColorFor, byModelLegendOrder } from "../colors.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -291,6 +291,7 @@ export default function Cost() {
             seriesKey="model"
             valueKey="cost"
             colorOf={modelColorFor}
+            seriesSort={byModelLegendOrder}
             tickFormatter={fmtTick}
             valuePrefix="$"
             bucketHours={intervalHours}
@@ -351,6 +352,7 @@ export default function Cost() {
             seriesKey="model"
             valueKey="cost"
             colorOf={modelColorFor}
+            seriesSort={byModelLegendOrder}
             valuePrefix="$"
             tickFormatter={maskEmail}
             horizontal
