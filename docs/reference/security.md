@@ -31,7 +31,7 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
 
 ### 4. Code Pointers
 - `dashboard/server/index.js:24` -- Basic Auth middleware registration
-- `dashboard/server/chat.js:84` -- `sanitizeSql()`
+- `dashboard/server/chat.js:151` -- `sanitizeSql()`
 - `dashboard/server/clickhouse.js` -- `queryReadonly()` export
 - `infra/dashboard.tf` -- env injection from k8s Secret
 
@@ -68,7 +68,7 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
 
 ### 4. 코드 포인터
 - `dashboard/server/index.js:24` -- Basic Auth 미들웨어 등록
-- `dashboard/server/chat.js:84` -- `sanitizeSql()`
+- `dashboard/server/chat.js:151` -- `sanitizeSql()`
 - `dashboard/server/clickhouse.js` -- `queryReadonly()` export
 - `infra/dashboard.tf` -- k8s Secret에서 env 주입
 

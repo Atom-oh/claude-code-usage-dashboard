@@ -17,6 +17,11 @@ CREATE DATABASE IF NOT EXISTS claude_code;
 -- -----------------------------------------------------------------------------
 
 -- Counter/monotonic sum 계열 (session/loc/commit/pr/cost/token/decision)
+-- ScopeName부터 Exemplars.*까지는 OTel ClickHouse exporter가 기본으로 만드는 부기(bookkeeping)
+-- 컬럼이다 — 이 DDL이 원래 가독성을 위해 생략했었는데, exporter가 라이브 클러스터에 자체
+-- 기본 스키마로 테이블을 먼저 만들어 실제로는 이 컬럼들이 존재한다(실측: DESCRIBE TABLE로 확인,
+-- 2026-07-27). 신규 설치 시 이 DDL로 만든 테이블이 라이브와 다른 스키마가 되는 걸 막기 위해
+-- 그대로 맞춘다.
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
 (
     ResourceAttributes   Map(LowCardinality(String), String) CODEC(ZSTD(1)),
@@ -34,15 +39,36 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
     Team            LowCardinality(String) MATERIALIZED ResourceAttributes['team'],
     UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
     Model           LowCardinality(String) MATERIALIZED Attributes['model'],
-    -- session.id는 cumulative counter의 series identity(경계 diff 계산 단위)로 쓰인다.
-    -- 실측 후 session.id가 ResourceAttributes로 오면 ALTER로 이 정의만 교체하면 됨.
-    SessionId       String                 MATERIALIZED Attributes['session.id'],
     TokenType       LowCardinality(String) MATERIALIZED Attributes['type'],
     QuerySource     LowCardinality(String) MATERIALIZED Attributes['query_source'],
     Decision        LowCardinality(String) MATERIALIZED Attributes['decision'],
     Language        LowCardinality(String) MATERIALIZED Attributes['language'],
     SkillName       LowCardinality(String) MATERIALIZED Attributes['skill.name'],
     AgentName       LowCardinality(String) MATERIALIZED Attributes['agent.name'],
+
+    -- ResourceSchemaUrl부터 Exemplars.*까지는 OTel ClickHouse exporter가 기본으로 만드는
+    -- 부기(bookkeeping) 컬럼이다 — 이 DDL이 원래 가독성을 위해 생략했었는데, exporter가 라이브
+    -- 클러스터에 이 컬럼들까지 포함한 스키마로 테이블을 만든다(실측: SHOW CREATE TABLE로 확인,
+    -- 2026-07-27). 신규 설치 시 이 DDL로 만든 테이블이 라이브와 다른 스키마가 되는 걸 막기 위해
+    -- 정확한 컬럼명·순서·DEFAULT까지 그대로 맞춘다.
+    ResourceSchemaUrl     String DEFAULT '',
+    ScopeVersion          String DEFAULT '',
+    ScopeAttributes       Map(LowCardinality(String), String) DEFAULT map(),
+    ScopeDroppedAttrCount UInt32 DEFAULT 0,
+    ScopeSchemaUrl        String DEFAULT '',
+    ServiceName           LowCardinality(String) DEFAULT '',
+    MetricDescription     String DEFAULT '',
+    MetricUnit            String DEFAULT '',
+    Flags                 UInt32 DEFAULT 0,
+    "Exemplars.FilteredAttributes" Array(Map(LowCardinality(String), String)),
+    "Exemplars.TimeUnix"           Array(DateTime64(9)),
+    "Exemplars.Value"              Array(Float64),
+    "Exemplars.SpanId"             Array(String),
+    "Exemplars.TraceId"            Array(String),
+
+    -- session.id는 cumulative counter의 series identity(경계 diff 계산 단위)로 쓰인다.
+    -- 실측 후 session.id가 ResourceAttributes로 오면 ALTER로 이 정의만 교체하면 됨.
+    SessionId       String                 MATERIALIZED Attributes['session.id'],
     -- 진짜 OTel 시리즈 식별자(Attributes 맵 전체 해시) — queries.js의 incFlat/incBucketed가 세션 내
     -- 서로 다른 누적 스트림이 섞이는 걸 막는 GROUP BY 키로 쓴다. 예전엔 매 쿼리마다
     -- cityHash64(toString(Attributes))를 인라인 계산했는데, 420만 row 스캔 기준 1.2초 중 대부분이
@@ -50,10 +76,14 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
     -- 옮기니 같은 쿼리가 0.11초로 줄었다. 인라인 계산과 값이 100% 일치함을 확인(mismatch=0).
     SeriesKey       UInt64                 MATERIALIZED cityHash64(toString(Attributes))
 )
-ENGINE = MergeTree
+-- Replicated + hot/cold storage policy는 CLAUDE.md/docs/architecture.md에 문서화된 실제 인프라
+-- (EKS 클러스터, S3 cold tier)를 그대로 반영한다 — 라이브 클러스터 실측(SHOW CREATE TABLE,
+-- 2026-07-27)으로 정확한 볼륨명('cold')/구간(90일→cold, 180일→삭제)까지 확인.
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum', '{replica}')
 PARTITION BY toYYYYMM(TimeUnix)
 ORDER BY (ExperimentGroup, MetricName, Model, toUnixTimestamp(TimeUnix))
-TTL toDateTime(TimeUnix) + INTERVAL 180 DAY;
+TTL toDateTime(TimeUnix) + toIntervalDay(90) TO VOLUME 'cold', toDateTime(TimeUnix) + toIntervalDay(180)
+SETTINGS storage_policy = 'hot_cold';
 
 -- CREATE TABLE IF NOT EXISTS는 테이블이 이미 있는 기존 클러스터에는 no-op이라 SeriesKey가
 -- 위 CREATE TABLE 블록에만 있으면 생기지 않는다(리뷰에서 CRITICAL로 확인: 기존 배포에
@@ -100,11 +130,16 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
     sum_value SimpleAggregateFunction(sum, Float64),  -- delta(temp=1): 버킷 내 증가량 합
     has_org   SimpleAggregateFunction(max, UInt8)     -- organization.id 존재 — 그룹 판별(grouping.js)용
 )
-ENGINE = AggregatingMergeTree
+-- 실측(라이브 클러스터, 2026-07-27): 이 rollup은 ReplicatedAggregatingMergeTree로 떠 있고
+-- **TTL이 없다** — 위 설계 의도(원본과 동일 180일 TTL, UserEmail을 담는 별도 저장소가 원본
+-- 삭제 뒤에도 무기한 남으면 안 된다)와 실제 배포가 어긋나 있다. 이 파일은 라이브 스키마를
+-- 그대로 반영하는 참고 문서이므로 TTL 없는 상태를 그대로 두지만 — PII 보존 정책 위반이니
+-- `ALTER TABLE claude_code.otel_metrics_sum_hourly MODIFY TTL toDateTime(hour) + INTERVAL
+-- 180 DAY`를 운영 클러스터에 적용할지는 별도로 결정할 것.
+ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-          Model, TokenType, Decision, SkillName, ToolName, hour)
-TTL toDateTime(hour) + INTERVAL 180 DAY;
+          Model, TokenType, Decision, SkillName, ToolName, hour);
 
 -- MV는 인서트를 받은 노드에서 발화해 TO 테이블에 쓴다. 컬럼을 전부 명시(SELECT * 금지 —
 -- MATERIALIZED 소스 컬럼은 명시 참조해야 MV에서 해석된다). MV가 throw하면 원본 인서트가
@@ -128,7 +163,8 @@ FROM claude_code.otel_metrics_sum
 GROUP BY hour, MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
          Model, TokenType, Decision, SkillName, ToolName;
 
--- Gauge 계열 (active_time 등 일부)
+-- Gauge 계열 (active_time 등 일부). otel_metrics_sum과 동일하게 exporter 기본 부기 컬럼이
+-- 실제로 존재한다(실측 2026-07-27).
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge
 (
     ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
@@ -141,12 +177,28 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge
 
     ExperimentGroup LowCardinality(String) MATERIALIZED ResourceAttributes['experiment.group'],
     UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
-    Model           LowCardinality(String) MATERIALIZED Attributes['model']
+    Model           LowCardinality(String) MATERIALIZED Attributes['model'],
+
+    ResourceSchemaUrl     String DEFAULT '',
+    ScopeVersion          String DEFAULT '',
+    ScopeAttributes       Map(LowCardinality(String), String) DEFAULT map(),
+    ScopeDroppedAttrCount UInt32 DEFAULT 0,
+    ScopeSchemaUrl        String DEFAULT '',
+    ServiceName           LowCardinality(String) DEFAULT '',
+    MetricDescription     String DEFAULT '',
+    MetricUnit            String DEFAULT '',
+    Flags                 UInt32 DEFAULT 0,
+    "Exemplars.FilteredAttributes" Array(Map(LowCardinality(String), String)),
+    "Exemplars.TimeUnix"           Array(DateTime64(9)),
+    "Exemplars.Value"              Array(Float64),
+    "Exemplars.SpanId"             Array(String),
+    "Exemplars.TraceId"            Array(String)
 )
-ENGINE = MergeTree
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_metrics_gauge', '{replica}')
 PARTITION BY toYYYYMM(TimeUnix)
 ORDER BY (ExperimentGroup, MetricName, toUnixTimestamp(TimeUnix))
-TTL toDateTime(TimeUnix) + INTERVAL 180 DAY;
+TTL toDateTime(TimeUnix) + toIntervalDay(90) TO VOLUME 'cold', toDateTime(TimeUnix) + toIntervalDay(180)
+SETTINGS storage_policy = 'hot_cold';
 
 -- -----------------------------------------------------------------------------
 -- 2. Logs/Events — tool_result, user_prompt, api_request, tool_decision 등
@@ -176,12 +228,26 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_logs
     ToolName        LowCardinality(String) MATERIALIZED LogAttributes['tool_name'],
     McpServerName   LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_server_name'),
     McpToolName     LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_tool_name'),
-    Success         LowCardinality(String) MATERIALIZED LogAttributes['success']
+    Success         LowCardinality(String) MATERIALIZED LogAttributes['success'],
+
+    -- TimestampTime부터 ScopeAttributes까지는 OTel ClickHouse exporter 기본 부기 컬럼(실측
+    -- 2026-07-27, DESCRIBE TABLE) — otel_metrics_sum과 같은 사유로 명시한다.
+    TimestampTime   DateTime DEFAULT toDateTime(Timestamp),
+    TraceFlags      UInt8 DEFAULT 0,
+    ResourceSchemaUrl LowCardinality(String) DEFAULT '',
+    ScopeSchemaUrl  LowCardinality(String) DEFAULT '',
+    ScopeName       String DEFAULT '',
+    ScopeVersion    LowCardinality(String) DEFAULT '',
+    ScopeAttributes Map(LowCardinality(String), String) DEFAULT map()
 )
-ENGINE = MergeTree
+-- 실측(라이브 클러스터, 2026-07-27): 45일→cold, 90일→삭제 — 위 주석의 "90일" 원래 의도보다
+-- hot 구간이 짧다(45일 뒤 cold volume으로 이동, 삭제 자체는 90일에 일어남). ENGINE도
+-- ReplicatedMergeTree + storage_policy = 'hot_cold'로 CLAUDE.md에 문서화된 실제 인프라와 맞춘다.
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_logs', '{replica}')
 PARTITION BY toYYYYMM(Timestamp)
 ORDER BY (ExperimentGroup, EventName, toUnixTimestamp(Timestamp))
-TTL toDateTime(Timestamp) + INTERVAL 90 DAY;
+TTL toDateTime(Timestamp) + toIntervalDay(45) TO VOLUME 'cold', toDateTime(Timestamp) + toIntervalDay(90)
+SETTINGS storage_policy = 'hot_cold';
 
 -- McpServerName/McpToolName은 기존 클러스터에 이미 있던 컬럼(예전 정의:
 -- LogAttributes['mcp_server_name'] 직접 참조 — 항상 빈 문자열)이라 CREATE TABLE IF NOT

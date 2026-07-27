@@ -1,5 +1,7 @@
 import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { queryReadonly } from "./clickhouse.js";
+import { GROUP_CTE } from "./grouping.js";
+import { PRICING_PROMPT_TABLE } from "./pricing.js";
 
 // Ask Claude — Bedrock ConverseStream + run_sql 툴콜 루프 (whchoi98 대시보드의 Analyze 상당,
 // 대상 저장소만 Athena → 우리 ClickHouse). 모델은 운영 결정에 따라 sonnet-5 고정.
@@ -159,21 +161,86 @@ export function sanitizeSql(sql) {
   return s;
 }
 
+// 스키마·집계 규칙 설명만 따로 export한다 — chat.test.js가 실측 스키마와의 드리프트를
+// 잡아낼 수 있게(문자열 하나를 통째로 바꿔도 회귀 테스트가 실패하도록), 그리고 SYSTEM 안에서
+// "무엇을 조회할 수 있는가"와 "규칙"을 시각적으로 분리한다.
+export const SCHEMA_CONTEXT = `테이블(우선순위 순):
+1. otel_metrics_sum_hourly — 시간당 롤업. **대시보드의 모든 쿼리가 이걸 쓴다. 특별히 분 단위
+   해상도가 필요한 경우가 아니면 항상 이 테이블부터 쓰세요** (원본보다 ~86배 작아 스캔이 훨씬
+   저렴합니다). 컬럼: hour(DateTime, 시간 버킷), MetricName, SessionId, SeriesKey(UInt64, 시리즈
+   식별자), UserEmail, AggregationTemporality(1=delta, 2=cumulative), Model, TokenType, Decision
+   (accept/reject), SkillName, ToolName, max_value(그 시간 버킷 종료 시점 누적값 — temporality=2
+   경계 diff에 사용), sum_value(그 시간 버킷 내 증가량 합 — temporality=1 구간 합계에 사용),
+   has_org(그 시간 버킷에 organization.id가 관측됐으면 1).
+2. otel_metrics_sum — 원본 메트릭(분 단위 이하 해상도가 필요할 때만). 컬럼: TimeUnix(DateTime),
+   MetricName, Value(Float64), UserEmail, SessionId, SeriesKey(UInt64, 시리즈 식별자 — 이미
+   컬럼으로 있으니 cityHash64 등으로 직접 만들지 마세요), Model, TokenType, Decision, SkillName,
+   AggregationTemporality, Attributes(Map).
+   MetricName 값(8개, 이 외 값 없음): claude_code.session.count / .token.usage / .cost.usage /
+   .lines_of_code.count / .commit.count / .pull_request.count / .code_edit_tool.decision /
+   .active_time.total.
+3. otel_logs — 이벤트. 컬럼: Timestamp, TimestampTime(DateTime), EventName, UserEmail, SessionId,
+   ToolName, McpServerName, McpToolName, Success, LogAttributes(Map).
+   EventName 주요 값: hook_execution_start/complete, api_request, tool_decision, tool_result,
+   assistant_response, user_prompt, mcp_server_connection, api_error, api_retries_exhausted,
+   compaction, skill_activated, subagent_completed.
+
+중요 — temporality 분기(단정하지 말 것): AggregationTemporality는 거의 항상 2(cumulative)지만
+session.count 등 일부 데이터포인트는 1(delta)로도 옵니다. 대시보드 서버(queries.js)도 매번
+if(AggregationTemporality = 2, ..., ...)로 분기합니다 — 2로 가정하고 max()만 쓰면 delta 행이
+섞인 시리즈에서 틀립니다.
+- temporality=2(cumulative): 세션 단위 누적 카운터를 재보고하므로 sum(Value)/sum(max_value)를
+  그대로 쓰면 심하게 과대집계됩니다. 세션이 조회 기간(from) 이전에 시작했으면 그 세션의 누적값
+  전체가 기간 안에 잡혀 과대집계되기도 합니다. 기간 [시작, 끝) 안의 실제 증가량은 세션·시리즈
+  단위로 "끝 직전 누적값 - 시작 직전 누적값"을 diff합니다(음수 방지 greatest).
+- temporality=1(delta): 이미 구간 증가분이므로 diff하면 안 됩니다 — 그냥 구간 sum(sumIf)입니다.
+otel_metrics_sum_hourly 기준 두 분기를 함께 쓰는 형태:
+SELECT sum(inc) FROM (
+  SELECT if(AggregationTemporality = 2,
+             greatest(maxIf(max_value, hour < {끝}) - maxIf(max_value, hour < {시작}), 0),
+             sumIf(sum_value, hour >= {시작} AND hour < {끝})) AS inc
+  FROM otel_metrics_sum_hourly
+  WHERE MetricName='...' AND hour < {끝}
+  GROUP BY SessionId, SeriesKey, AggregationTemporality)
+(기간 전체 총량이면 {시작}=조회 시작 시각. 원본 otel_metrics_sum을 쓸 때는 hour 대신 TimeUnix,
+ max_value/sum_value 대신 Value, GROUP BY에 SeriesKey, SessionId, AggregationTemporality.)
+유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
+
+중요 — TokenType은 MetricName마다 다른 의미입니다(공통 컬럼을 재사용):
+- claude_code.token.usage: input / output / cacheRead / cacheCreation
+- claude_code.lines_of_code.count: added / removed
+- claude_code.active_time.total: cli / user
+- 그 외 메트릭(session.count/commit.count/pull_request.count/cost.usage/code_edit_tool.decision):
+  항상 빈 문자열입니다.
+
+중요 — 비용 용어를 섞지 마세요(reported cost ≠ computed cost):
+- claude_code.cost.usage("reported_cost")는 Claude Code 클라이언트가 자체 계산해 보고하는
+  값입니다. 참고용이며, 대시보드가 보여주는 값과 다를 수 있습니다.
+- 대시보드 Cost 페이지 카드가 보여주는 비용("computed cost")은 이 값이 아니라, token.usage의
+  4개 TokenType(input/output/cacheRead/cacheCreation) 토큰 수 × 아래 모델별 단가(1M 토큰당
+  USD)를 곱해 서버(pricing.js)에서 계산한 값입니다:
+${PRICING_PROMPT_TABLE}
+  모델명은 정규화(us./global./eu./apac./anthropic. 접두사, -v숫자:숫자/날짜(-YYYYMMDD)/[1m]
+  접미사 제거) 후 위 표와 매칭합니다 — 원본 Model 값 그대로는 표에 없을 수 있습니다.
+- 사용자가 그냥 "비용"을 물으면 기본으로 cost.usage(reported_cost)를 조회해 답하되, 반드시
+  "Claude Code 자체 보고 비용"임을 명시하세요. 대시보드 카드 값과 비교/일치를 요구하면 위 단가로
+  직접 계산한 뒤 "계산 비용(단가표 기준)"이라고 구분해서 답하세요. 두 값을 같은 것처럼 뭉뚱그려
+  답하지 마세요 — 실제로 서로 다른 숫자입니다.`;
+
+// GROUP_CTE(grouping.js)를 그대로 인용한다 — 대시보드 서버가 쓰는 규칙과 프롬프트가 여기서
+// 드리프트하면(예: has_org 판별 로직이 바뀌는데 프롬프트는 그대로면) 모델이 대시보드와 다른
+// 숫자를 답한다. 복제하지 않고 import해서 원본이 바뀌면 프롬프트도 자동으로 따라간다.
 const SYSTEM = `당신은 Claude Code 사용량 대시보드의 분석 어시스턴트입니다. ClickHouse(claude_code DB)를 조회해 질문에 답하세요.
 
-테이블:
-1. otel_metrics_sum — 메트릭. 컬럼: TimeUnix(DateTime), MetricName, Value(Float64), UserEmail, SessionId, Model, TokenType(input/output/cacheRead/cacheCreation), Decision(accept/reject), SkillName, AggregationTemporality(2=cumulative), Attributes(Map).
-   MetricName 값: claude_code.session.count / .token.usage / .cost.usage / .lines_of_code.count / .commit.count / .pull_request.count / .code_edit_tool.decision / .active_time.total
-2. otel_logs — 이벤트. 컬럼: Timestamp, EventName(tool_result/user_prompt 등), UserEmail, SessionId, ToolName, McpServerName, Success.
+${SCHEMA_CONTEXT}
 
-중요 — cumulative 함정: otel_metrics_sum은 세션 단위 누적 카운터를 30초마다 재보고하므로 sum(Value)를 그대로 쓰면 심하게 과대집계됩니다. 또한 세션이 조회 기간(from) 이전에 시작했으면 그 세션의 누적값 전체가 기간 안에 잡혀 과대집계됩니다. 기간 [시작, 끝) 안의 실제 증가량을 구하려면 세션·시리즈 단위로 "끝 직전 누적값 - 시작 직전 누적값"을 diff하세요(음수 방지 greatest):
-SELECT sum(inc) FROM (
-  SELECT greatest(maxIf(Value, TimeUnix < {끝}) - maxIf(Value, TimeUnix < {시작}), 0) AS inc
-  FROM otel_metrics_sum
-  WHERE MetricName='...' AND TimeUnix < {끝}
-  GROUP BY cityHash64(toString(Attributes)), SessionId)
-(기간 전체 총량이면 {시작}=조회 시작 시각. 대시보드 서버 쿼리도 이 boundary-diff 방식을 씁니다.)
-유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
+중요 — bedrock/enterprise 그룹: 이 값은 어떤 컬럼에도 그대로 저장돼 있지 않습니다(참가자가 로그인
+방식을 자유롭게 고르는 워크숍이라 정적 플래그를 심을 수 없음). 대시보드 서버가 쓰는 것과 똑같은
+아래 CTE로 세션 단위 사후 추론하세요(유저 단위로 판별하면 안 됩니다 — 한 유저가 세션마다 다른
+방식을 썼을 수 있습니다):
+${GROUP_CTE}
+group by할 때는 이 CTE를 SessionId로 LEFT JOIN하고, 미매칭은 NULL이 아니라 빈 문자열('')이
+돌아오니 if(grp = '', 'unknown', grp)로 처리하세요(coalesce는 걸리지 않습니다).
 
 규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.
 UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com). 집계(합계/카운트/그룹핑)는 반드시 SQL의 GROUP BY에서 원본 UserEmail 기준으로 끝내고 결과를 받으세요 — 마스킹된 라벨은 서로 다른 유저가 같은 문자열로 겹칠 수 있어 고유 식별자가 아니므로, 응답을 작성할 때 같은 마스킹 라벨을 가진 행이라도 절대 하나로 합치거나 재집계하지 마세요. map(UserEmail, ...)처럼 이메일이 key인 결과는 항상 "마스킹라벨": {values: [...]} 형태로 내려옵니다(유저 충돌 여부와 무관하게 매번 이 모양) — values 배열의 원소 하나하나가 그 라벨로 마스킹된 각 유저의 값이니(충돌 없으면 1개, 있으면 여러 개) 그대로 개별 유저 값으로 다루고, 배열 길이가 1보다 크다고 해서 하나의 값으로 합치지 마세요. 마스킹된 값을 원본처럼 되돌리거나 추측하지도 마세요.`;
@@ -204,6 +271,54 @@ function rateLimited(ip) {
   return hits.length > RATE_MAX;
 }
 
+// 툴 결과가 hop마다 messages에 쌓여 다음 hop 입력으로 재전송된다(MAX_HOPS번 누적) — 200행
+// JSON이라도 몇 hop 겹치면 다음 요청의 입력이 눈덩이처럼 불어나 maxTokens를 넘기는 원인이 된다.
+// queryReadonly의 행 상한(200)과 별개로 문자수 상한을 둬서 모델에 돌려주는 텍스트 크기 자체를 캡한다.
+const TOOL_RESULT_CHAR_CAP = 20_000;
+export function capToolResultJson(rows, truncated) {
+  const json = { rows: maskEmailValues(rows), truncated };
+  const s = JSON.stringify(json);
+  if (s.length <= TOOL_RESULT_CHAR_CAP) return json;
+  // 행 단위로 잘라 유효한 JSON을 유지한다 — 문자열을 그냥 slice하면 깨진 JSON을 모델에 준다.
+  let cut = json.rows.length;
+  while (cut > 0 && JSON.stringify({ rows: json.rows.slice(0, cut), truncated: true }).length > TOOL_RESULT_CHAR_CAP) cut = Math.floor(cut / 2);
+  return { rows: json.rows.slice(0, cut), truncated: true };
+}
+
+// AWS SDK 에러를 화면에 보여줄 분류로 좁힌다 — 내부 테이블명/권한 정보는 절대 노출하지 않지만,
+// "왜" 실패했는지 정도는 알려줘야 사용자가 재시도할지 기다릴지 판단할 수 있다.
+export function classifyChatError(err) {
+  const status = err?.$metadata?.httpStatusCode;
+  const requestId = err?.$metadata?.requestId;
+  const suffix = requestId ? ` (요청ID: ${requestId})` : "";
+  if (err?.name === "ThrottlingException" || status === 429)
+    return `요청이 몰려 일시적으로 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.${suffix}`;
+  if (err?.name === "AccessDeniedException" || status === 403)
+    return `모델 접근 권한이 없습니다. 관리자에게 문의해 주세요.${suffix}`;
+  if (err?.name === "ValidationException")
+    return `대화가 너무 길어졌습니다. 새 질문으로 다시 시도해 주세요.${suffix}`;
+  return `요청을 처리하지 못했습니다. 다시 시도해 주세요.${suffix}`;
+}
+
+// ThrottlingException은 hop 안에서 스트림이 시작되기 *전에* 던져지므로(SDK가 스트림 자체를
+// 재시도하지 않음) 여기서 짧은 지수 백오프로 재시도한다 — 스트림이 이미 일부 텍스트를 보낸
+// 뒤의 실패는 재시도하지 않는다(중복 답변 방지).
+async function sendConverseWithRetry(cmd, abortSignal) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await client.send(cmd, { abortSignal });
+    } catch (err) {
+      if (err?.name !== "ThrottlingException" || attempt >= 2) throw err;
+      await new Promise((r) => setTimeout(r, 300 * 2 ** attempt));
+    }
+  }
+}
+
+// 한 턴 안에서 모델이 실제로 실행할 수 있는 run_sql 총 횟수 상한 — MAX_HOPS(왕복 수)와는 다른
+// 축이다. 한 hop 응답에 toolUse 블록이 여러 개(병렬 툴콜) 실리면 hop 수보다 SQL 실행이 더 많이
+// 나갈 수 있어, 왕복 상한만으로는 총 실행 횟수가 안 막힌다.
+const MAX_SQL_CALLS = 8;
+
 // POST /api/chat {messages:[{role,content}]} → SSE(status/text/done/error 이벤트) 스트림.
 export async function handleChat(req, res) {
   if (rateLimited(req.ip)) {
@@ -211,8 +326,30 @@ export async function handleChat(req, res) {
     return;
   }
   res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  // res.write 자체는 성공/실패를 던지지 않지만, 클라이언트가 이미 연결을 끊은 뒤 write하면
+  // 예외가 나거나(소켓 파괴 상태) 조용히 버려진다 — 어느 쪽이든 매 send() 호출부에서 방어하지
+  // 않아도 되게 여기서 한 번만 가드한다.
+  const send = (event, data) => {
+    if (res.writableEnded) return;
+    try {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch {
+      // 소켓이 이미 닫혔다 — 버린다.
+    }
+  };
 
+  // 브라우저가 탭을 닫거나 새 질문으로 이전 요청을 abort()하면(useChatStream.js) 이 SSE 연결도
+  // 끊긴다 — 그때 이미 시작된 Bedrock ConverseStream/ClickHouse 쿼리를 계속 돌리는 건 낭비다.
+  // res.writableEnded가 아직 false인 상태로 'close'가 오면 정상 완료가 아니라 클라이언트가
+  // 먼저 끊은 경우이므로 abort한다.
+  const abortController = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) abortController.abort();
+  });
+
+  let hop = 0;
+  let sqlCalls = 0;
+  let stopReason = null;
   try {
     const messages = (req.body?.messages || [])
       .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
@@ -220,32 +357,47 @@ export async function handleChat(req, res) {
       .map((m) => ({ role: m.role, content: [{ text: String(m.content).slice(0, 8000) }] }));
     if (!messages.length) throw new Error("메시지가 비어 있습니다");
 
-    for (let hop = 0; hop <= MAX_HOPS; hop++) {
+    // hop < MAX_HOPS(이전엔 <=였다 — MAX_HOPS=4인데 hop 0..4로 5회 왕복하는 off-by-one이었다)로
+    // 정확히 MAX_HOPS회 왕복 안에서 끝나야 한다. 루프가 break 없이 다 돌면(마지막 hop도 여전히
+    // tool_use) hop이 MAX_HOPS까지 증가한 상태로 끝나므로, 루프 뒤 `hop === MAX_HOPS`가 곧
+    // "왕복을 다 쓰고도 모델이 더 조회하려 했다"는 뜻이다.
+    for (; hop < MAX_HOPS; hop++) {
+      stopReason = null;
       const cmd = new ConverseStreamCommand({
         modelId: MODEL_ID,
         system: [{ text: SYSTEM }],
         messages,
         toolConfig: TOOLS,
-        inferenceConfig: { maxTokens: 2000 },
+        inferenceConfig: { maxTokens: 8000 },
       });
-      const { stream } = await client.send(cmd);
+      const { stream } = await sendConverseWithRetry(cmd, abortController.signal);
 
-      let stopReason = null;
       const content = [];
       let curText = null;
       let curTool = null;
+      // maxTokens에 걸려 이 hop에서 툴 입력 JSON이 중간에 잘린 toolUseId들 — 스트림을 죽이지
+      // 않고 아래 결과 루프에서 전용 오류로 모델에 되돌려준다.
+      const truncatedToolIds = new Set();
       for await (const ev of stream) {
         if (ev.contentBlockStart?.start?.toolUse) {
           curTool = { ...ev.contentBlockStart.start.toolUse, input: "" };
         } else if (ev.contentBlockDelta?.delta?.toolUse) {
-          curTool.input += ev.contentBlockDelta.delta.toolUse.input || "";
+          // contentBlockStart 없이 toolUse delta가 먼저 오는 스트림 오류를 방어 — curTool이 없으면
+          // 이 delta는 버린다(누락된 몇 글자보다 전체 스트림이 죽는 게 더 나쁘다).
+          if (curTool) curTool.input += ev.contentBlockDelta.delta.toolUse.input || "";
         } else if (ev.contentBlockDelta?.delta?.text) {
           const t = ev.contentBlockDelta.delta.text;
           curText = (curText || "") + t;
           send("text", { text: t });
         } else if (ev.contentBlockStop) {
           if (curTool) {
-            content.push({ toolUse: { toolUseId: curTool.toolUseId, name: curTool.name, input: JSON.parse(curTool.input || "{}") } });
+            let input = {};
+            try {
+              input = JSON.parse(curTool.input || "{}");
+            } catch {
+              truncatedToolIds.add(curTool.toolUseId);
+            }
+            content.push({ toolUse: { toolUseId: curTool.toolUseId, name: curTool.name, input } });
             curTool = null;
           } else if (curText !== null) {
             content.push({ text: curText });
@@ -263,12 +415,21 @@ export async function handleChat(req, res) {
       for (const block of content) {
         if (!block.toolUse) continue;
         const { toolUseId, input } = block.toolUse;
+        if (truncatedToolIds.has(toolUseId)) {
+          results.push({ toolResult: { toolUseId, content: [{ text: "쿼리 오류: 입력이 너무 길어 잘렸습니다. 더 짧은 쿼리로 다시 시도하세요." }], status: "error" } });
+          continue;
+        }
+        if (sqlCalls >= MAX_SQL_CALLS) {
+          results.push({ toolResult: { toolUseId, content: [{ text: "쿼리 오류: 이 턴에서 실행 가능한 쿼리 횟수를 모두 사용했습니다." }], status: "error" } });
+          continue;
+        }
+        sqlCalls++;
         // SQL 원문은 클라이언트로 보내지 않는다 — 모델이 만든 쿼리에 이메일/세션ID 등 민감 telemetry
         // 조건이 실릴 수 있어 화면공유/로그로 노출된다. FloatingChat은 message만 렌더한다.
         send("status", { message: "쿼리 실행 중..." });
         try {
-          const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql));
-          results.push({ toolResult: { toolUseId, content: [{ json: { rows: maskEmailValues(rows), truncated } }] } });
+          const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql), abortController.signal);
+          results.push({ toolResult: { toolUseId, content: [{ json: capToolResultJson(rows, truncated) }] } });
         } catch (err) {
           // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(예: toDateTime(UserEmail) →
           // "Cannot parse string 'ojs0106@gmail.com' ...") — 모델이 이 텍스트를 답변에 인용해
@@ -278,13 +439,26 @@ export async function handleChat(req, res) {
       }
       messages.push({ role: "user", content: results });
     }
+    // 스트림이 성공적으로 끝났어도 stopReason이 "성공"을 뜻하지 않는 두 경우를 구분해 알린다 —
+    // 안 그러면 잘린 답변/미완료 조회가 그냥 done으로 넘어가 사용자가 잘못된 확신을 갖게 된다.
+    if (hop === MAX_HOPS) send("text", { text: "\n\n_(데이터 조회 횟수를 모두 사용했습니다 — 질문을 더 구체적으로 나눠서 다시 물어봐 주세요.)_" });
+    else if (stopReason === "max_tokens") send("text", { text: "\n\n_(응답이 길어 일부가 잘렸을 수 있습니다 — 필요하면 더 구체적으로 나눠서 다시 물어봐 주세요.)_" });
     send("done", {});
   } catch (err) {
+    if (abortController.signal.aborted) return; // 클라이언트가 이미 떠났다 — 로그/응답 낼 필요 없음
     // basic auth 뒤라 위험도는 낮지만, ClickHouse/AWS SDK 원문 에러(내부 테이블명·권한
-    // 정보)를 클라이언트에 그대로 보내지 않는다 — 서버 로그에만 전체 스택을 남긴다.
-    console.error("/api/chat", err);
-    send("error", { message: "요청을 처리하지 못했습니다. 다시 시도해 주세요." });
+    // 정보)를 클라이언트에 그대로 보내지 않는다 — 서버 로그에는 분류에 필요한 필드를 구조화해 남긴다.
+    console.error("/api/chat", {
+      hop,
+      modelId: MODEL_ID,
+      name: err?.name,
+      status: err?.$metadata?.httpStatusCode,
+      requestId: err?.$metadata?.requestId,
+      message: err?.message,
+      stack: err?.stack,
+    });
+    send("error", { message: classifyChatError(err) });
   } finally {
-    res.end();
+    if (!res.writableEnded) res.end();
   }
 }

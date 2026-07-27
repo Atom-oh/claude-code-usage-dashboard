@@ -9,7 +9,12 @@ export async function streamChat(messages, { onText, onStatus, signal }) {
     body: JSON.stringify({ messages }),
     signal,
   });
-  if (!res.ok) throw new Error(`chat -> ${res.status}`);
+  if (!res.ok) {
+    // 429/503은 서버가 이미 한국어 안내 문구를 JSON body에 담아 보낸다(index.js/chat.js) —
+    // 버리지 않고 그대로 쓴다. body 파싱이 실패하면(예상 밖 5xx) 상태코드로 폴백.
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || `chat -> ${res.status}`);
+  }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "";

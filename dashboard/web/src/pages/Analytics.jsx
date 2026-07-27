@@ -104,8 +104,9 @@ export default function Analytics() {
               {msgs.map((m, i) => {
                 // 첫 토큰 도착 전 빈 assistant placeholder는 진행 중이 아니면 렌더하지 않는다.
                 if (!m.content && !(busy && i === msgs.length - 1)) return null;
-                // 서버가 인증 미설정으로 503을 주면(dashboard/server/index.js) 안내 문구로 대체.
-                const authDisabled = m.error && /503$/.test(m.content);
+                // useChatStream이 비-2xx 응답의 JSON body.error를 그대로 err.message로 쓰므로
+                // (index.js/chat.js가 이미 사용자용 한국어 문구를 준다) 여기서 상태코드로 문구를
+                // 되짚어 재구성할 필요가 없다.
                 return (
                   <div
                     key={i}
@@ -118,8 +119,6 @@ export default function Analytics() {
                   >
                     {m.role === "user" ? (
                       m.content
-                    ) : authDisabled ? (
-                      "챗이 비활성화되어 있습니다 — 관리자가 BASIC_AUTH를 설정해야 사용할 수 있습니다."
                     ) : m.content ? (
                       <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
                     ) : (

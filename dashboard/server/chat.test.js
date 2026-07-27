@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeSql, maskEmailValues, maskEmailText } from "./chat.js";
+import { sanitizeSql, maskEmailValues, maskEmailText, capToolResultJson, classifyChatError, SCHEMA_CONTEXT } from "./chat.js";
+import { GROUP_CTE } from "./grouping.js";
+import { PRICING_PROMPT_TABLE } from "./pricing.js";
 
 // 정상 쿼리는 통과해야 한다 — 특히 cumulative 함정을 피하는 max() 서브쿼리 패턴,
 // CTE, JOIN, SELECT/WHERE의 스칼라·집계 함수는 테이블 함수가 아니므로 거부되면 안 된다.
@@ -182,4 +184,95 @@ test("server maskEmailText agrees with web fmt.js's maskEmail on full-string ema
   for (const s of ["ojs0106@gmail.com", "x@y.com", "ab@c.com", "test.user@corp.io"]) {
     assert.equal(maskEmailText(s), webMaskEmail(s), s);
   }
+});
+
+// SYSTEM 프롬프트가 GROUP_CTE(grouping.js)를 모델에게 그대로 가르친다 — 모델이 그 CTE 형태의
+// bedrock/enterprise 그룹핑 쿼리를 쓸 것이므로, sanitizeSql이 실제 CTE + LEFT JOIN 쿼리를
+// 통과시키는지 회귀 테스트로 고정한다(회귀하면 프롬프트가 가르친 대로 써도 챗이 막힌다).
+test("sanitizeSql passes the real bedrock/enterprise GROUP_CTE joined against the hourly rollup", () => {
+  const sql = `${GROUP_CTE}
+SELECT g.grp AS grp, h.Model AS model, sum(h.inc) AS cost
+FROM (
+  SELECT SessionId, SeriesKey, Model,
+         greatest(maxIf(max_value, hour < now()) - maxIf(max_value, hour < now() - INTERVAL 2 DAY), 0) AS inc
+  FROM claude_code.otel_metrics_sum_hourly
+  WHERE MetricName = 'claude_code.cost.usage' GROUP BY SessionId, SeriesKey, Model
+) h
+LEFT JOIN session_group g ON g.SessionId = h.SessionId
+GROUP BY grp, model HAVING cost > 0 ORDER BY grp, cost DESC`;
+  assert.doesNotThrow(() => sanitizeSql(sql));
+});
+
+// 200행 상한과 별개로 hop마다 messages에 누적되는 툴 결과 텍스트 자체를 캡해야 한다 — 안 그러면
+// MAX_HOPS번 왕복하는 동안 다음 hop 입력이 눈덩이처럼 불어나 maxTokens를 넘긴다(실제 증상: 긴
+// 대화 뒤 챗이 죽음). 잘려도 유효한 JSON이어야 한다.
+test("capToolResultJson caps large row sets and stays valid JSON", () => {
+  const rows = Array.from({ length: 5000 }, (_, i) => ({ UserEmail: `user${i}@x.com`, cost: i }));
+  const out = capToolResultJson(rows, false);
+  assert.ok(JSON.stringify(out).length <= 20_000);
+  assert.equal(out.truncated, true);
+  assert.ok(out.rows.length < rows.length);
+});
+
+test("capToolResultJson leaves small row sets untouched", () => {
+  const rows = [{ UserEmail: "a@x.com", cost: 1 }];
+  assert.deepEqual(capToolResultJson(rows, false), { rows: [{ UserEmail: "a******@x.com", cost: 1 }], truncated: false });
+});
+
+// AWS SDK 에러 이름/상태코드로 사용자에게 보일 분류 문구가 갈리는지 — 이게 깨지면 모든 실패가
+// 다시 "요청을 처리하지 못했습니다" 하나로 뭉개진다(원래 버그).
+// SCHEMA_CONTEXT는 챗이 실제로 조회 가능한 스키마/집계 규칙을 모델에게 가르치는 유일한
+// 자리다 — 이 지식이 빠지면 모델이 (a) temporality=1(delta) 행을 cumulative처럼 diff하거나,
+// (b) lines_of_code.count/active_time.total의 TokenType을 token.usage 것과 혼동하거나,
+// (c) cost.usage(reported)와 대시보드 계산 비용을 같은 값처럼 답하는 회귀가 조용히 재발한다.
+// 실측(라이브 클러스터, DESCRIBE + GROUP BY)으로 확인한 사실이 프롬프트 문자열에서 삭제되면
+// 이 테스트가 잡는다.
+test("SCHEMA_CONTEXT teaches the temporality branch (cumulative vs delta), not just cumulative", () => {
+  assert.match(SCHEMA_CONTEXT, /AggregationTemporality\s*=\s*2/);
+  assert.match(SCHEMA_CONTEXT, /temporality\s*=\s*1\(delta\)/);
+  assert.match(SCHEMA_CONTEXT, /sumIf/);
+});
+
+test("SCHEMA_CONTEXT documents TokenType's per-metric meaning (not just token.usage's)", () => {
+  assert.match(SCHEMA_CONTEXT, /lines_of_code\.count[\s\S]*?added\s*\/\s*removed/);
+  assert.match(SCHEMA_CONTEXT, /active_time\.total[\s\S]*?cli\s*\/\s*user/);
+});
+
+// pricing.js가 단가를 바꾸면(PRICING) 이 문자열도 같이 바뀌어야 챗이 대시보드 Cost 카드와
+// 같은 숫자를 계산할 수 있다 — 인용이 아니라 하드코딩된 복제로 되돌아가면(리뷰에서 실제로
+// 있었던 실수 유형) 값이 조용히 드리프트한다.
+test("SCHEMA_CONTEXT quotes pricing.js's PRICING_PROMPT_TABLE verbatim, not a hand-copied duplicate", () => {
+  assert.ok(SCHEMA_CONTEXT.includes(PRICING_PROMPT_TABLE));
+});
+
+test("SCHEMA_CONTEXT distinguishes reported cost (cost.usage) from the dashboard's computed cost", () => {
+  assert.match(SCHEMA_CONTEXT, /reported_cost/);
+  assert.match(SCHEMA_CONTEXT, /computed cost/);
+});
+
+// SYSTEM이 SCHEMA_CONTEXT에 가르치는 대로 temporality를 분기하는 실제 쿼리를 쓸 것이므로,
+// sanitizeSql이 그 형태(중첩 if/greatest/sumIf, GROUP BY에 AggregationTemporality 포함)를
+// 통과시키는지 고정한다 — 회귀하면 프롬프트가 가르친 대로 써도 챗이 막힌다.
+test("sanitizeSql passes the temporality-branching (cumulative vs delta) query taught in SCHEMA_CONTEXT", () => {
+  const sql = `
+SELECT sum(inc) FROM (
+  SELECT if(AggregationTemporality = 2,
+             greatest(maxIf(max_value, hour < now()) - maxIf(max_value, hour < now() - INTERVAL 2 DAY), 0),
+             sumIf(sum_value, hour >= now() - INTERVAL 2 DAY AND hour < now())) AS inc
+  FROM claude_code.otel_metrics_sum_hourly
+  WHERE MetricName='claude_code.cost.usage' AND hour < now()
+  GROUP BY SessionId, SeriesKey, AggregationTemporality)`;
+  assert.doesNotThrow(() => sanitizeSql(sql));
+});
+
+test("classifyChatError maps known AWS error names to distinct Korean messages", () => {
+  const throttled = classifyChatError({ name: "ThrottlingException", $metadata: { requestId: "r1" } });
+  const denied = classifyChatError({ name: "AccessDeniedException" });
+  const unknown = classifyChatError({ name: "SomeOtherError" });
+  assert.match(throttled, /몰려/);
+  assert.match(throttled, /r1/);
+  assert.match(denied, /권한/);
+  assert.match(unknown, /요청을 처리하지 못했습니다/);
+  assert.notEqual(throttled, denied);
+  assert.notEqual(denied, unknown);
 });
