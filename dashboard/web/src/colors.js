@@ -34,13 +34,17 @@ const MODEL_COLOR = {
   "claude-opus-4-8": "#E8690C",
   "claude-opus-4-7": "#F2933F",
   "claude-opus-4-6": "#F8B26E",
+  "claude-opus-4-5": "#FBCA9A",
   "claude-haiku-4-5": "#82C716",
   "claude-haiku-3-5": "#A9E34B",
   "claude-3-5-haiku": "#A9E34B",
   "claude-fable-5": "#C2255C",
 };
 // 미등록 신버전도 계열 기본색으로 — 아예 모르는 모델(null)은 호출부가 기존 팔레트로 폴백.
-const FAMILY_FALLBACK = { sonnet: "#647FE6", opus: "#D2600F", haiku: "#94D82D", fable: "#E64980" };
+// 폴백 톤은 위 검증된 명도 사다리 *밖*의 값이고 등록색과 겹치지 않게 고른다(같은 차트에서
+// 등록 모델과 동일색으로 합쳐 보이는 것 방지) — 새 버전이 데이터에 보이면 MODEL_COLOR에
+// 정식 등록하고 재검증하는 게 정도.
+const FAMILY_FALLBACK = { sonnet: "#4C68E0", opus: "#D2600F", haiku: "#94D82D", fable: "#E64980" };
 
 export function modelColorFor(model) {
   const m = String(model || "");

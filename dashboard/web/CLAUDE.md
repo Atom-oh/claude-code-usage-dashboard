@@ -18,7 +18,8 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   `SegmentedControl`, `DataTable`, `GroupCharts`, `FloatingChat`, `PageHeader`, `RangePicker`)
 - `src/pivot.js` -- reshapes flat `[{t, group, value}]` rows into one-row-per-x-tick for
   Recharts (`pivotByGroup`, `pivotByKey`)
-- `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette,
+- `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +
+  model-family palette (`modelColorFor` — fixed per-family hues, single source `MODEL_COLOR`),
   CSS-variable-based chart colors
 
 ## Rules

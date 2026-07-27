@@ -99,7 +99,7 @@ export default function Cost() {
   );
 
   // bedrock/enterprise 도넛 두 개를 한 카드에 — 같은 모델은 양쪽에서 같은 색이어야 한다.
-  // 계열별 고정 색상(modelColorFor: sonnet=블루/opus=그린/haiku=앰버/fable=블랙)을 우선 쓰고,
+  // 계열별 고정 색상(modelColorFor — 실제 색상군은 colors.js의 MODEL_COLOR가 단일 소스)을 우선 쓰고,
   // 계열을 모르는 모델만 기존처럼 지출 순위 기반 팔레트로 폴백 — 순위 폴백은 기간/필터로
   // 순위가 바뀌면 색이 흔들리므로 어디까지나 최후 수단.
   const chartColors = useChartColors();
