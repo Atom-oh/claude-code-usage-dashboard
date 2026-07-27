@@ -18,7 +18,7 @@ const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractio
 // bedrock/enterprise로 나뉘는 도넛 3종(캐시 티어·토큰 타입)의 라벨 순서 — 그룹 색상 배정이
 // 데이터 등장 순서가 아니라 이 고정 순서를 따르게 한다(colors.js makeGroupBreakdownColorer).
 const TIER_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시 입력"];
-const TOKEN_TYPE_LABEL_ORDER = ["입력", "출력", "캐시 읽기", "캐시 쓰기"];
+const TOKEN_TYPE_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "입력"];
 
 function foldModelRows(rows) {
   const totals = new Map();
