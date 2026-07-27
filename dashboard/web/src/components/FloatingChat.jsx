@@ -83,7 +83,9 @@ export function FloatingChat() {
                 </div>
               );
             })}
-            <ChatTrace thinking={trace.thinking} sqls={trace.sqls} />
+            {/* key=턴 수 — 새 질문마다 리마운트해서 접힘 상태로 되돌린다(이전 trace를
+                펼쳐둔 채 다음 질문을 보내면 기본 접힘 의도와 달리 펼쳐진 채 나타난다). */}
+            <ChatTrace key={msgs.length} thinking={trace.thinking} sqls={trace.sqls} />
             {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
             <div ref={bottomRef} />
           </div>

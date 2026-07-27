@@ -62,12 +62,17 @@ have drifted, which shouldn't happen since the former is generated from the latt
 The client resends the *entire* message history every turn (`useChatStream.js`), and the server
 appends every tool result to `messages` across up to `MAX_HOPS` round-trips within one turn. A
 long conversation (many preset questions clicked in a row) inflates the next request's input.
-Check the logged `hop` field: if it's high, this is context growth, not a code regression.
-`capToolResultJson()` caps each tool result's size, `maxTokens` was raised to 8000, and
-`MAX_SQL_CALLS` bounds the total `run_sql` executions per turn (independent of `MAX_HOPS`
-round-trips — a single hop can carry several parallel tool calls) — all specifically for this.
-If it still reproduces, the conversation needs to be reset (client has no way to trim history
-other than starting a new chat).
+The logged `hop` is **not** a growth signal — it resets to 0 on every request and is bounded by
+`MAX_HOPS` (4), so it can never exceed 3 in an error log. What it tells you is *where* in the turn
+the failure happened, not how much context accumulated. To judge growth, look at the size of the
+history the client sent and how many `run_sql` calls the turn made.
+
+The mitigations in place: `capToolResultJson()` caps each tool result's size (this is the one that
+actually bounds cross-hop growth), and `MAX_SQL_CALLS` bounds total `run_sql` executions per turn
+(independent of `MAX_HOPS` round-trips — a single hop can carry several parallel tool calls). Note
+`maxTokens` (8000) is an **output** cap and does not limit input/context growth. If it still
+reproduces, the conversation needs to be reset (client has no way to trim history other than
+starting a new chat).
 
 ### 5. Scenario — `AccessDeniedException` / `ThrottlingException` in logs
 - `AccessDeniedException`: Bedrock model access for `CHAT_MODEL_ID` is not enabled in
@@ -144,12 +149,16 @@ LEFT JOIN)를 ClickHouse에 직접 돌려 확인하세요. 직접 쿼리는 되�
 ### 4. 시나리오 — 긴 대화 뒤 일반 에러
 클라이언트는 매 턴 **전체 메시지 히스토리를 재전송**하고(`useChatStream.js`), 서버는 한 턴 안에서
 최대 `MAX_HOPS`회 왕복하는 동안 매 툴 결과를 `messages`에 계속 덧붙입니다. 프리셋 질문을 여러
-번 연속으로 누른 긴 대화는 다음 요청의 입력을 부풀립니다. 로그의 `hop` 필드가 높으면 코드
-회귀가 아니라 컨텍스트 팽창입니다. `capToolResultJson()`이 툴 결과 크기를 캡하고, `maxTokens`도
-8000으로 올렸고, `MAX_SQL_CALLS`가 한 턴의 총 `run_sql` 실행 수를 상한합니다(`MAX_HOPS`
-왕복 수와는 별개 축 — 한 hop에 병렬 툴콜이 여러 개 실릴 수 있어서) — 모두 이 문제 전용으로
-추가됐습니다. 그래도 재현되면 대화를 리셋해야 합니다(클라이언트에는 새 대화 시작 외에
-히스토리를 줄일 방법이 없습니다).
+번 연속으로 누른 긴 대화는 다음 요청의 입력을 부풀립니다. 로그의 `hop`은 **팽창 신호가
+아닙니다** — 매 요청 0으로 초기화되고 `MAX_HOPS`(4)로 상한이라 에러 로그에서 3을 넘을 수
+없습니다. `hop`이 알려주는 건 턴의 *어느 지점*에서 실패했는지이고, 컨텍스트가 얼마나 쌓였는지는
+아닙니다. 팽창 여부는 클라이언트가 보낸 히스토리 크기와 그 턴의 `run_sql` 실행 횟수로 판단하세요.
+
+현재 적용된 완화책: `capToolResultJson()`이 툴 결과 크기를 캡하고(hop 간 누적 팽창을 실제로
+막는 것은 이쪽입니다), `MAX_SQL_CALLS`가 한 턴의 총 `run_sql` 실행 수를 상한합니다(`MAX_HOPS`
+왕복 수와는 별개 축 — 한 hop에 병렬 툴콜이 여러 개 실릴 수 있어서). `maxTokens`(8000)는
+**출력** 상한이라 입력/컨텍스트 팽창을 직접 줄이지는 않습니다. 그래도 재현되면 대화를
+리셋해야 합니다(클라이언트에는 새 대화 시작 외에 히스토리를 줄일 방법이 없습니다).
 
 ### 5. 시나리오 — 로그에 `AccessDeniedException` / `ThrottlingException`
 - `AccessDeniedException`: 이 계정에서 `BEDROCK_REGION`/`AWS_REGION` 기준 `CHAT_MODEL_ID`의

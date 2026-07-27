@@ -17,7 +17,7 @@ CREATE DATABASE IF NOT EXISTS claude_code;
 -- -----------------------------------------------------------------------------
 
 -- Counter/monotonic sum 계열 (session/loc/commit/pr/cost/token/decision)
--- ScopeName부터 Exemplars.*까지는 OTel ClickHouse exporter가 기본으로 만드는 부기(bookkeeping)
+-- ResourceSchemaUrl부터 Exemplars.*까지는 OTel ClickHouse exporter가 기본으로 만드는 부기(bookkeeping)
 -- 컬럼이다 — 이 DDL이 원래 가독성을 위해 생략했었는데, exporter가 라이브 클러스터에 자체
 -- 기본 스키마로 테이블을 먼저 만들어 실제로는 이 컬럼들이 존재한다(실측: DESCRIBE TABLE로 확인,
 -- 2026-07-27). 신규 설치 시 이 DDL로 만든 테이블이 라이브와 다른 스키마가 되는 걸 막기 위해
@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
 -- Replicated + hot/cold storage policy는 CLAUDE.md/docs/architecture.md에 문서화된 실제 인프라
 -- (EKS 클러스터, S3 cold tier)를 그대로 반영한다 — 라이브 클러스터 실측(SHOW CREATE TABLE,
 -- 2026-07-27)으로 정확한 볼륨명('cold')/구간(90일→cold, 180일→삭제)까지 확인.
+-- TTL을 toIntervalDay(n)으로 적은 것은 SHOW CREATE TABLE의 렌더 형식을 그대로 옮긴 것이다 —
+-- infra/files/clickhouse-schema-replicated.sql처럼 INTERVAL n DAY로 써도 의미는 완전히 같다.
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum', '{replica}')
 PARTITION BY toYYYYMM(TimeUnix)
 ORDER BY (ExperimentGroup, MetricName, Model, toUnixTimestamp(TimeUnix))
@@ -130,16 +132,26 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
     sum_value SimpleAggregateFunction(sum, Float64),  -- delta(temp=1): 버킷 내 증가량 합
     has_org   SimpleAggregateFunction(max, UInt8)     -- organization.id 존재 — 그룹 판별(grouping.js)용
 )
--- 실측(라이브 클러스터, 2026-07-27): 이 rollup은 ReplicatedAggregatingMergeTree로 떠 있고
--- **TTL이 없다** — 위 설계 의도(원본과 동일 180일 TTL, UserEmail을 담는 별도 저장소가 원본
--- 삭제 뒤에도 무기한 남으면 안 된다)와 실제 배포가 어긋나 있다. 이 파일은 라이브 스키마를
--- 그대로 반영하는 참고 문서이므로 TTL 없는 상태를 그대로 두지만 — PII 보존 정책 위반이니
--- `ALTER TABLE claude_code.otel_metrics_sum_hourly MODIFY TTL toDateTime(hour) + INTERVAL
--- 180 DAY`를 운영 클러스터에 적용할지는 별도로 결정할 것.
+-- TTL은 원본·배포본과 동일하게(90일 후 cold, 180일 후 삭제) 둔다 —
+-- infra/files/clickhouse-schema-replicated.sql(terraform이 ConfigMap으로 배포하는 실제 스키마)이
+-- 이미 이 TTL을 갖고 있고, UserEmail을 담는 별도 저장소가 원본 삭제 뒤에도 남으면 retention
+-- 정책을 우회한다.
+--
+-- 실측 드리프트(라이브 클러스터, 2026-07-27): 운영 중인 otel_metrics_sum_hourly에는 **TTL이
+-- 없다**. CREATE TABLE IF NOT EXISTS가 이미 존재하는 테이블에 no-op이라 TTL 절이 적용된 적이
+-- 없는 것으로 보인다 — 배포본의 의도가 아니라 미적용 상태다. 이 파일은 의도(=배포본)를 기준으로
+-- 두고, 라이브를 맞추려면 아래를 1회 실행할 것:
+--   ALTER TABLE claude_code.otel_metrics_sum_hourly ON CLUSTER 'replicated'
+--     MODIFY TTL toDateTime(hour) + toIntervalDay(90) TO VOLUME 'cold',
+--                toDateTime(hour) + toIntervalDay(180);
+-- 적용 전까지는 180일이 지난 구간에서 원본(삭제됨)과 롤업(잔존)의 집계가 발산하므로, 그 구간을
+-- 조회하는 쿼리는 두 테이블 중 어느 쪽을 읽는지에 따라 총량이 달라진다.
 ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-          Model, TokenType, Decision, SkillName, ToolName, hour);
+          Model, TokenType, Decision, SkillName, ToolName, hour)
+TTL toDateTime(hour) + toIntervalDay(90) TO VOLUME 'cold', toDateTime(hour) + toIntervalDay(180)
+SETTINGS storage_policy = 'hot_cold';
 
 -- MV는 인서트를 받은 노드에서 발화해 TO 테이블에 쓴다. 컬럼을 전부 명시(SELECT * 금지 —
 -- MATERIALIZED 소스 컬럼은 명시 참조해야 MV에서 해석된다). MV가 throw하면 원본 인서트가

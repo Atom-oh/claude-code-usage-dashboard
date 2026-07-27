@@ -250,6 +250,23 @@ test("SCHEMA_CONTEXT distinguishes reported cost (cost.usage) from the dashboard
   assert.match(SCHEMA_CONTEXT, /computed cost/);
 });
 
+// TokenType 값은 cacheCreation인데 PRICING 단가 필드명은 cacheWrite다 — 매핑을 명시하지 않으면
+// 모델이 캐시 생성 비용을 누락하거나 존재하지 않는 TokenType='cacheWrite'로 조회해 Cost 카드와
+// 다른 값을 낸다(리뷰에서 MAJOR로 확인). 두 이름이 실제로 어긋나 있음을 여기서 함께 고정한다.
+test("SCHEMA_CONTEXT maps the cacheCreation TokenType onto pricing's cacheWrite field", () => {
+  assert.match(PRICING_PROMPT_TABLE, /cacheWrite/); // 단가표 쪽 이름
+  assert.doesNotMatch(PRICING_PROMPT_TABLE, /cacheCreation/); // 단가표에는 없는 이름
+  assert.match(SCHEMA_CONTEXT, /cacheCreation\s*→\s*cacheWrite/);
+  assert.match(SCHEMA_CONTEXT, /TokenType='cacheWrite'는[\s\S]*?존재하지 않/);
+});
+
+// 롤업은 시간 버킷이라 정각이 아닌 경계에서 최대 1시간 오차가 난다 — 프롬프트가 이걸 "구간의
+// 실제 증가량"이라고만 제시하면 모델이 분 단위 질문에도 롤업을 쓴다(리뷰에서 MAJOR로 확인).
+test("SCHEMA_CONTEXT warns that the hourly rollup is an hour-granular approximation", () => {
+  assert.match(SCHEMA_CONTEXT, /시간 단위 근사/);
+  assert.match(SCHEMA_CONTEXT, /toStartOfHour/);
+});
+
 // SYSTEM이 SCHEMA_CONTEXT에 가르치는 대로 temporality를 분기하는 실제 쿼리를 쓸 것이므로,
 // sanitizeSql이 그 형태(중첩 if/greatest/sumIf, GROUP BY에 AggregationTemporality 포함)를
 // 통과시키는지 고정한다 — 회귀하면 프롬프트가 가르친 대로 써도 챗이 막힌다.

@@ -3,7 +3,7 @@ import { useState } from "react";
 // Ask Claude 챗의 사고 과정(thinking)과 실행한 SQL을 접이식으로 보여준다 — FloatingChat과
 // Analytics가 공유. 기본은 접힘: 대부분의 질문에서 답변만 보면 되고, 근거를 확인하려는
 // 사용자만 펼친다(둘 다 펼쳐두면 답변이 스크롤 밖으로 밀린다).
-export function ChatTrace({ thinking, sqls }) {
+export function ChatTrace({ thinking, sqls = [] }) {
   const [open, setOpen] = useState(false);
   if (!thinking && !sqls.length) return null;
   return (

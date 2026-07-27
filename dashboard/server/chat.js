@@ -4,7 +4,7 @@ import { GROUP_CTE } from "./grouping.js";
 import { PRICING_PROMPT_TABLE } from "./pricing.js";
 
 // Ask Claude — Bedrock ConverseStream + run_sql 툴콜 루프 (whchoi98 대시보드의 Analyze 상당,
-// 대상 저장소만 Athena → 우리 ClickHouse). 모델은 운영 결정에 따라 sonnet-5 고정.
+// 대상 저장소만 Athena → 우리 ClickHouse). 모델 기본값은 sonnet-5이고 CHAT_MODEL_ID로 바꿀 수 있다.
 // 신뢰 경계: run_sql은 basic auth(index.js) 통과자 전원에게 claude_code.* 전 컬럼(UserEmail,
 // Attributes 등 raw telemetry 포함) 읽기를 허용한다 — SYSTEM 프롬프트가 안내하는 컬럼 목록은
 // 힌트일 뿐 권한 경계가 아니다. 다만 화면 노출(개인정보) 관점에서는 다른 curated API처럼
@@ -204,6 +204,9 @@ SELECT sum(inc) FROM (
   GROUP BY SessionId, SeriesKey, AggregationTemporality)
 (기간 전체 총량이면 {시작}=조회 시작 시각. 원본 otel_metrics_sum을 쓸 때는 hour 대신 TimeUnix,
  max_value/sum_value 대신 Value, GROUP BY에 SeriesKey, SessionId, AggregationTemporality.)
+주의 — 롤업은 시간 단위 근사입니다: hour는 시간 버킷이라 경계가 정각이 아닌 구간(예: 10:30~12:30)은
+버킷 전체가 포함/제외되어 최대 1시간 오차가 납니다. 정각 경계로 정렬(toStartOfHour)해서 "시간 단위"
+라고 밝히거나, 분 단위 정확도가 필요하면 원본 otel_metrics_sum을 TimeUnix로 쓰세요.
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
 중요 — TokenType은 MetricName마다 다른 의미입니다(공통 컬럼을 재사용):
@@ -220,6 +223,12 @@ SELECT sum(inc) FROM (
   4개 TokenType(input/output/cacheRead/cacheCreation) 토큰 수 × 아래 모델별 단가(1M 토큰당
   USD)를 곱해 서버(pricing.js)에서 계산한 값입니다:
 ${PRICING_PROMPT_TABLE}
+  **단가표의 필드명과 TokenType 값이 다릅니다** — 매핑은 다음과 같고, TokenType='cacheWrite'는
+  데이터에 존재하지 않으니 그런 조건으로 조회하지 마세요:
+    input → input, output → output, cacheRead → cacheRead, **cacheCreation → cacheWrite**
+  즉 계산 비용 = (input 토큰×input) + (output 토큰×output) + (cacheRead 토큰×cacheRead)
+                + (cacheCreation 토큰×cacheWrite), 전부 1e6으로 나눕니다. TokenType별 합계는
+  sumIf(inc, TokenType='input') 처럼 위 boundary-diff 결과에 조건 집계로 뽑으세요.
   모델명은 정규화(us./global./eu./apac./anthropic. 접두사, -v숫자:숫자/날짜(-YYYYMMDD)/[1m]
   접미사 제거) 후 위 표와 매칭합니다 — 원본 Model 값 그대로는 표에 없을 수 있습니다.
 - 사용자가 그냥 "비용"을 물으면 기본으로 cost.usage(reported_cost)를 조회해 답하되, 반드시
