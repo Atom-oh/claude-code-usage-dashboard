@@ -6,6 +6,7 @@ import { cn } from "../cn.js";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { Card } from "../components/Card.jsx";
 import { useChatStream } from "../useChatStream.js";
+import { ChatTrace } from "../components/ChatTrace.jsx";
 import { useRange } from "../RangeContext.jsx";
 
 // 카테고리별 미리 준비된 분석 질문 — 클릭하면 그대로 /api/chat 에이전트(chat.js의 run_sql
@@ -46,7 +47,7 @@ const CATEGORIES = [
 export default function Analytics() {
   const { days } = useRange();
   const [input, setInput] = useState("");
-  const { msgs, busy, status, ask } = useChatStream();
+  const { msgs, busy, status, trace, ask } = useChatStream();
   const bottomRef = useRef(null);
   const started = msgs.length > 0;
 
@@ -127,6 +128,7 @@ export default function Analytics() {
                   </div>
                 );
               })}
+              <ChatTrace thinking={trace.thinking} sqls={trace.sqls} />
               {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
               <div ref={bottomRef} />
             </div>

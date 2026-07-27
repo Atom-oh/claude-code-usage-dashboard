@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { MessageCircle, Send, X } from "lucide-react";
 import { cn } from "../cn.js";
 import { useChatStream } from "../useChatStream.js";
+import { ChatTrace } from "./ChatTrace.jsx";
 
 // Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/status/done/error)를 읽는
 // 공용 로직은 useChatStream.js에 있다 — Analytics 탭도 같은 훅을 쓴다.
@@ -17,7 +18,7 @@ const SUGGESTIONS = [
 export function FloatingChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
-  const { msgs, busy, status, ask, stop: stopStream } = useChatStream();
+  const { msgs, busy, status, trace, ask, stop: stopStream } = useChatStream();
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -82,6 +83,7 @@ export function FloatingChat() {
                 </div>
               );
             })}
+            <ChatTrace thinking={trace.thinking} sqls={trace.sqls} />
             {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
             <div ref={bottomRef} />
           </div>

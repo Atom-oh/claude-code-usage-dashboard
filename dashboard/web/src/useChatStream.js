@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 // Ask Claude 챗 공용 로직 — FloatingChat(우하단 위젯)과 Analytics(전용 탭)가 공유한다.
 // POST /api/chat SSE(text/status/done/error)를 그대로 읽는다.
-export async function streamChat(messages, { onText, onStatus, signal }) {
+export async function streamChat(messages, { onText, onStatus, onThinking, signal }) {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -36,7 +36,8 @@ export async function streamChat(messages, { onText, onStatus, signal }) {
         continue; // 잘린/깨진 SSE 라인은 무시
       }
       if (event === "text") onText(payload.text);
-      else if (event === "status") onStatus(payload.message);
+      else if (event === "thinking") onThinking?.(payload.text);
+      else if (event === "status") onStatus(payload.message, payload.sql);
       else if (event === "error") throw new Error(payload.message);
     }
   }
@@ -46,6 +47,9 @@ export function useChatStream() {
   const [msgs, setMsgs] = useState([]); // {role, content}
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  // 진행 중인 턴의 사고 과정과 실행한 SQL — 답변 말풍선과 별개로 접이식 영역에 렌더한다.
+  // 답변이 시작되면 지우지 않는다(무엇을 근거로 답했는지 확인하려는 게 이 기능의 목적).
+  const [trace, setTrace] = useState({ thinking: "", sqls: [] });
   const abortRef = useRef(null);
 
   // 언마운트 시 진행 중인 스트림 취소 — 안 그러면 fetch reader 루프가 계속 돌며 죽은 컴포넌트 state를 갱신한다.
@@ -64,6 +68,7 @@ export function useChatStream() {
     if (!q || busy) return;
     setBusy(true);
     setStatus("");
+    setTrace({ thinking: "", sqls: [] }); // 새 질문마다 초기화 — 이전 턴의 추론/쿼리가 섞이면 오해를 부른다
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -95,7 +100,11 @@ export function useChatStream() {
             return next;
           });
         },
-        onStatus: setStatus,
+        onThinking: (t) => setTrace((tr) => ({ ...tr, thinking: tr.thinking + t })),
+        onStatus: (message, sql) => {
+          setStatus(message);
+          if (sql) setTrace((tr) => ({ ...tr, sqls: [...tr.sqls, sql] }));
+        },
       });
     } catch (err) {
       if (ac.signal.aborted) return; // 사용자가 닫거나 다시 보낸 경우 — 오류로 표시하지 않는다
@@ -112,5 +121,5 @@ export function useChatStream() {
     }
   };
 
-  return { msgs, busy, status, ask, stop };
+  return { msgs, busy, status, trace, ask, stop };
 }

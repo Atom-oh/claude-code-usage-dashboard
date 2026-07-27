@@ -325,6 +325,13 @@ async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
     messages,
     ...(allowTools ? { toolConfig: TOOLS } : {}),
     inferenceConfig: { maxTokens: 8000 },
+    // 확장 추론(thinking)을 켠다 — 켜지 않으면 첫 응답 전 수 초가 완전한 공백이라 멈춘 것처럼
+    // 보인다. 두 값 모두 이 모델 세대에서 필수 형태다:
+    //   - type: "adaptive" — 구버전 {type:"enabled", budget_tokens:N}는 sonnet-5에서 400.
+    //     모델이 문제 난이도에 따라 사고량을 스스로 조절한다(고정 토큰 예산 개념 자체가 폐기됨).
+    //   - display: "summarized" — sonnet-5의 기본값은 "omitted"이고, 그 경우 reasoning 블록이
+    //     빈 문자열로 와서 화면에 보여줄 내용이 없다. 요약이라도 받으려면 명시해야 한다.
+    additionalModelRequestFields: { thinking: { type: "adaptive", display: "summarized" } },
   });
   const { stream } = await sendConverseWithRetry(cmd, abortSignal);
 
@@ -332,10 +339,15 @@ async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
   const content = [];
   let curText = null;
   let curTool = null;
+  // reasoning 블록은 text와 signature를 **수정 없이** 그대로 assistant 메시지에 되돌려줘야
+  // 한다(AWS SDK 문서 명시). 툴콜 루프는 매 hop마다 assistant 메시지를 다시 보내므로, 이걸
+  // 빠뜨리거나 텍스트만 남기면 다음 hop이 서명 검증에서 거부된다.
+  let curReasoning = null;
   // maxTokens에 걸려 이 hop에서 툴 입력 JSON이 중간에 잘린 toolUseId들 — 스트림을 죽이지
   // 않고 호출부에서 전용 오류로 모델에 되돌려준다.
   const truncatedToolIds = new Set();
   for await (const ev of stream) {
+    const rd = ev.contentBlockDelta?.delta?.reasoningContent;
     if (ev.contentBlockStart?.start?.toolUse) {
       curTool = { ...ev.contentBlockStart.start.toolUse, input: "" };
       // 모델이 SQL을 다 쓸 때까지(toolUse delta 누적, 수 초 이상 걸릴 수 있음) 클라이언트는
@@ -347,6 +359,16 @@ async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
       // contentBlockStart 없이 toolUse delta가 먼저 오는 스트림 오류를 방어 — curTool이 없으면
       // 이 delta는 버린다(누락된 몇 글자보다 전체 스트림이 죽는 게 더 나쁘다).
       if (curTool) curTool.input += ev.contentBlockDelta.delta.toolUse.input || "";
+    } else if (rd) {
+      curReasoning = curReasoning || { text: "", signature: undefined, redactedContent: undefined };
+      if (rd.text) {
+        curReasoning.text += rd.text;
+        send("thinking", { text: rd.text });
+      }
+      // signature는 블록 끝에 한 번 오고, redactedContent는 안전상 암호화된 변형이다 —
+      // 둘 다 화면에 보낼 게 없고 되돌려줄 때만 필요하다.
+      if (rd.signature) curReasoning.signature = rd.signature;
+      if (rd.redactedContent) curReasoning.redactedContent = rd.redactedContent;
     } else if (ev.contentBlockDelta?.delta?.text) {
       const t = ev.contentBlockDelta.delta.text;
       curText = (curText || "") + t;
@@ -361,6 +383,15 @@ async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
         }
         content.push({ toolUse: { toolUseId: curTool.toolUseId, name: curTool.name, input } });
         curTool = null;
+      } else if (curReasoning) {
+        // redactedContent와 reasoningText는 서로 배타적인 union 멤버다 — 둘을 한 객체에 같이
+        // 넣으면 직렬화가 거부되므로 온 쪽만 그대로 돌려준다.
+        content.push(
+          curReasoning.redactedContent
+            ? { reasoningContent: { redactedContent: curReasoning.redactedContent } }
+            : { reasoningContent: { reasoningText: { text: curReasoning.text, signature: curReasoning.signature } } }
+        );
+        curReasoning = null;
       } else if (curText !== null) {
         content.push({ text: curText });
         curText = null;
@@ -447,9 +478,12 @@ export async function handleChat(req, res) {
           continue;
         }
         sqlCalls++;
-        // SQL 원문은 클라이언트로 보내지 않는다 — 모델이 만든 쿼리에 이메일/세션ID 등 민감 telemetry
-        // 조건이 실릴 수 있어 화면공유/로그로 노출된다. FloatingChat은 message만 렌더한다.
-        send("status", { message: "쿼리 실행 중..." });
+        // SQL 원문을 클라이언트로 보낸다. 원래는 "모델이 만든 쿼리에 이메일/세션ID 등 민감
+        // telemetry 조건이 실려 화면공유로 노출된다"는 이유로 숨겼는데, 진행 상황이 안 보여
+        // 멈춘 것처럼 느껴진다는 실제 사용자 피드백으로 노출하는 쪽을 택했다(명시적 결정).
+        // 이메일은 최소한 마스킹한다 — 다른 모든 경로(툴 결과·에러 메시지)가 이미 그렇게 하고
+        // 있어서 SQL만 원문으로 새면 그 방어가 무의미해진다. 세션ID 등은 그대로 보인다.
+        send("status", { message: "쿼리 실행 중...", sql: maskEmailText(input.sql || "") });
         try {
           const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql), abortController.signal);
           results.push({ toolResult: { toolUseId, content: [{ json: capToolResultJson(rows, truncated) }] } });
