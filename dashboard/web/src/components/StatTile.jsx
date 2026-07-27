@@ -8,12 +8,13 @@ function trendTone(trend) {
   return "bg-ink-100 text-ink-600";
 }
 
-export function StatTile({ label, value, eyebrow, trend, hint, variant = "default", className }) {
+// style은 그룹/계열 색 틴트처럼 값이 동적인 색상만 넘기는 용도 — 정적 스타일은 className으로.
+export function StatTile({ label, value, eyebrow, trend, hint, variant = "default", className, style }) {
   const border = variant === "accent" ? "border-brand-200" : variant === "danger" ? "border-negative-border" : "border-ink-100";
   const valueColor = variant === "danger" ? "text-negative-text" : variant === "warn" ? "text-brand-700" : "text-ink-800";
 
   return (
-    <div className={cn("relative overflow-hidden bg-card border rounded-lg shadow-card p-4", border, className)}>
+    <div className={cn("relative overflow-hidden bg-card border rounded-lg shadow-card p-4", border, className)} style={style}>
       <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400">{eyebrow ?? label}</div>
       <div className={cn("tabular text-[26px] font-semibold leading-tight mt-1", valueColor)}>{value}</div>
       {(trend || hint != null) && (
