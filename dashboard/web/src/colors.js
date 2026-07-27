@@ -83,17 +83,64 @@ export function byModelLegendOrder(a, b) {
   return modelLegendRank(a) - modelLegendRank(b);
 }
 
-// Cost 페이지 "토큰 타입별 비중" 도넛 — colorOf를 안 넘기면 DonutBody가 범용
-// useChartColors().palette로 폴백하는데, 그 팔레트의 3번째 슬롯(--chart-3, 진한 바이올렛
-// #7b26ff)이 캐시 읽기 자리에 배정돼 유독 진하게 튀었다(리뷰에서 확인) — 위 모델 팔레트와
-// 같은 파스텔 무드로 4종 전용 색을 고정한다.
-const TOKEN_TYPE_COLOR = {
-  "입력": "#8FA8EC",
-  "출력": "#6FC2B4",
-  "캐시 읽기": "#B7A6E0",
-  "캐시 쓰기": "#F0B872",
+// bedrock/enterprise로 나뉘는 도넛(모델별 지출 비중 · 캐시 티어별 지출 · 토큰 타입별 비중)은
+// 의도적으로 "그룹 = 색상 계열" 규칙을 따른다 — bedrock 카드 안의 모든 조각은 블루 계열만,
+// enterprise 카드 안의 모든 조각은 틸 계열만(사용자 명시 지시). 위쪽 MODEL_COLOR(계열별
+// 무지개 팔레트)와는 별도 축이다 — 그 팔레트는 그룹과 무관하게 "모델별 지출 추이"/"Top 지출
+// 유저" 같이 bedrock+enterprise가 한 차트에 섞여 나오는 곳에서만 쓴다. 이 두 축을 섞으면
+// "같은 모델이 그룹에 따라 다른 색"이 되는데, 그건 이 규칙에서 의도된 트레이드오프다 — 그룹
+// 정체성이 모델 정체성보다 우선한다.
+// 램프는 브랜드 블루(--brand-700~100)를 그대로 재사용하고, 틸은 같은 명도 단계로 새로 만들되
+// 기존 토큰(positive #01a88d, chart-4 #39c2b0)을 중간 단계에 그대로 끼워 넣어 나머지 색상
+// 시스템과 어긋나지 않게 했다.
+const BLUE_RAMP = ["#1F54C2", "#2E6BE6", "#528DF8", "#7FA9F9", "#A9C7FB", "#D2E2FD"];
+const TEAL_RAMP = ["#0F6B57", "#128577", "#01A88D", "#39C2B0", "#8FDFD1", "#D2F3EC"];
+
+// 그룹 안에서 조각(모델/캐시 티어/토큰 타입)을 몇 단계 밝기로 나눌지 — 데이터 등장 순서가
+// 아니라 고정된 라벨/모델 목록에서의 위치로 정해야 필터·기간이 바뀌어도 흔들리지 않는다.
+// 현재 활성 6모델(fable-5/opus-5/opus-4-8/sonnet-5/sonnet-4-5/haiku-4-5)이 정확히 6단계 램프를
+// 채우고, 활성 도메인 밖의 구버전은 같은 계열의 가장 가까운 활성 버전 슬롯을 재사용한다(램프
+// 길이가 유한하므로 구버전끼리는 명도가 겹칠 수 있음 — 실데이터에 안 나오면 문제 없음).
+const GROUP_MODEL_ORDER = [
+  "claude-fable-5",
+  "claude-opus-5",
+  "claude-opus-4-8",
+  "claude-sonnet-5",
+  "claude-sonnet-4-5",
+  "claude-haiku-4-5",
+];
+const GROUP_MODEL_ALIAS = {
+  "claude-opus-4-7": "claude-opus-4-8",
+  "claude-opus-4-6": "claude-opus-4-8",
+  "claude-opus-4-5": "claude-opus-4-8",
+  "claude-sonnet-4-6": "claude-sonnet-4-5",
+  "claude-haiku-3-5": "claude-haiku-4-5",
+  "claude-3-5-haiku": "claude-haiku-4-5",
 };
 
-export function tokenTypeColorFor(type) {
-  return TOKEN_TYPE_COLOR[type] ?? null;
+function rampFor(group) {
+  return group === "bedrock" ? BLUE_RAMP : group === "enterprise" ? TEAL_RAMP : null;
+}
+
+export function groupModelColorFor(group, model) {
+  const ramp = rampFor(group);
+  if (!ramp) return null;
+  const m = String(model || "");
+  const canonical = GROUP_MODEL_ORDER.includes(m) ? m : GROUP_MODEL_ALIAS[m];
+  const idx = canonical ? GROUP_MODEL_ORDER.indexOf(canonical) : ramp.length - 1; // 완전 미지 모델 → 가장 밝은 끝
+  return ramp[idx];
+}
+
+// 캐시 티어(4종)·토큰 타입(4종) 도넛용 — 라벨 순서만 다르고 로직은 동일해서 라벨 배열을
+// 받는 팩토리 하나로 처리한다. 6단 램프에서 4개를 고르게 뽑아 인접 조각끼리 너무 붙지 않게.
+const BREAKDOWN_PICKS = [0, 2, 4, 5];
+
+export function makeGroupBreakdownColorer(group, labelOrder) {
+  const ramp = rampFor(group);
+  return (label) => {
+    if (!ramp) return null;
+    const idx = labelOrder.indexOf(label);
+    const pick = BREAKDOWN_PICKS[(idx === -1 ? labelOrder.length : idx) % BREAKDOWN_PICKS.length];
+    return ramp[pick];
+  };
 }
