@@ -11,7 +11,7 @@ import { useApi } from "../useApi.js";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
-import { modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer } from "../colors.js";
+import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer } from "../colors.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -215,7 +215,19 @@ export default function Cost() {
             {["bedrock", "enterprise"].map((g) => (
               <StatTile
                 key={g}
-                label={`사용자당 평균 — ${g}`}
+                // 그룹 색 틴트 — 두 타일이 나란히 있어 라벨만으로는 구분이 약하다. Users.jsx의
+                // GroupFaceOff와 같은 8% color-mix 패턴이되, 카드가 페이지 배경 위에 직접 놓이므로
+                // transparent가 아니라 surface-card와 섞어 불투명하게 유지한다.
+                style={{
+                  background: `color-mix(in srgb, ${colorFor(g)} 8%, var(--surface-card))`,
+                  borderColor: `color-mix(in srgb, ${colorFor(g)} 35%, var(--surface-card))`,
+                }}
+                label={
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full" style={{ background: colorFor(g) }} />
+                    {`사용자당 평균 — ${g}`}
+                  </span>
+                }
                 value={usd(spendPerUserFor(g))}
                 hint={
                   model
