@@ -15,6 +15,15 @@ test("priceFor returns null for unknown models", () => {
   assert.ok(priceFor("claude-sonnet-4-5"));
 });
 
+// opus-5 출시 직후 단가표에 없어서 unpriced로 새던 회귀 방지 — 실측 raw 문자열 두 형태
+// (bare / [1m] 접미사)가 모두 단가에 매칭되어야 한다.
+test("priceFor covers claude-opus-5 in both observed raw forms", () => {
+  assert.ok(priceFor("claude-opus-5"));
+  assert.ok(priceFor("claude-opus-5[1m]"));
+  assert.equal(priceFor("claude-opus-5").input, 5);
+  assert.equal(priceFor("claude-opus-5").output, 25);
+});
+
 test("withComputedCost multiplies token sums by per-type unit price", () => {
   const rows = [
     {
