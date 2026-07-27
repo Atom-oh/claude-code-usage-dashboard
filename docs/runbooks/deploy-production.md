@@ -23,6 +23,10 @@ tree at build time, so the checked-out branch/commit matters.
 - `aws` CLI authenticated with ECR push access to `180294183052.dkr.ecr.ap-northeast-2.amazonaws.com`
 - `docker buildx` with `linux/arm64` support (the nodepool is Graviton)
 - Server tests pass and the web build succeeds locally first (see `/test-all`)
+- Bedrock model access for `var.chat_model_id` enabled in `var.bedrock_region` (independent of
+  `var.region`; default `ap-northeast-2` in this admin environment — set to `us-west-2` when
+  porting the built image to the workshop account) — see `docs/workshop-studio-notes.md` §5, "Ask
+  Claude 챗(Bedrock) 배포 전제"
 
 ## Procedure
 
@@ -93,6 +97,9 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
 - `180294183052.dkr.ecr.ap-northeast-2.amazonaws.com`에 push 가능한 `aws` CLI 인증
 - `linux/arm64`를 지원하는 `docker buildx`(노드풀이 Graviton)
 - 로컬에서 서버 테스트 통과 및 웹 빌드 성공 확인(`/test-all` 참고)
+- `var.bedrock_region`(`var.region`과 별개; 이 admin 환경 기본값은 `ap-northeast-2` — 빌드한
+  이미지를 워크샵 계정으로 이식할 때 `us-west-2`로 바꿔서 apply) 계정에서 `var.chat_model_id`
+  모델 access 활성화 — `docs/workshop-studio-notes.md` §5 "Ask Claude 챗(Bedrock) 배포 전제" 참고
 
 ## 절차
 

@@ -131,6 +131,15 @@ resource "kubernetes_deployment_v1" "dashboard" {
               }
             }
           }
+          # 새 env는 리스트 끝에 둔다 — k8s 프로바이더는 env 블록을 순서 있는 리스트로 diff해서
+          # 중간에 삽입하면 뒤 항목 전체가 "변경"으로 잡히는 노이즈가 생긴다(terraform plan 확인).
+          dynamic "env" {
+            for_each = var.bedrock_region == "" ? [] : [var.bedrock_region]
+            content {
+              name  = "BEDROCK_REGION"
+              value = env.value
+            }
+          }
           env_from {
             secret_ref { name = kubernetes_secret.dashboard_basic_auth.metadata[0].name }
           }

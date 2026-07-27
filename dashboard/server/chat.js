@@ -74,7 +74,11 @@ export function maskEmailValues(rows) {
 const MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-sonnet-5";
 const MAX_HOPS = 4;
 
-const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || "us-east-1" });
+// 워크샵 계정은 Bedrock 호출을 us-west-2만 허용 — 인프라 리전(AWS_REGION)과 달라야 하므로
+// Bedrock 전용 오버라이드를 둔다. 미설정 시 기존 동작(AWS_REGION → us-east-1) 그대로.
+const client = new BedrockRuntimeClient({
+  region: process.env.BEDROCK_REGION || process.env.AWS_REGION || "us-east-1",
+});
 
 // FROM 절의 테이블 참조 위치(FROM/JOIN 직후, FROM 절 내 comma cross-join 직후)에서 두 가지를
 // 검사한다: (1) identifier( 형태면 거부 — 테이블 함수(url/s3/remote/file/...)라는 카테고리

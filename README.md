@@ -85,6 +85,7 @@ Environment variables consumed by `dashboard/server`:
 | `BASIC_AUTH_PASSWORD` | Basic Auth password | unset (auth disabled) |
 | `CHAT_MODEL_ID` | Bedrock model ID for the "Ask Claude" chat assistant | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | AWS region for the Bedrock client | `us-east-1` |
+| `BEDROCK_REGION` | Overrides `AWS_REGION` for the Bedrock call only (e.g. accounts limited to one region) | unset (falls back to `AWS_REGION`) |
 | `CLAUDE_NOTIFY_WEBHOOK` | Optional webhook for Claude Code hook notifications (harness tooling, not the app) | unset (disabled) |
 
 See `.env.example` for a copy-paste template.
@@ -266,6 +267,7 @@ SPA 서빙)을 엽니다.
 | `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 미설정(인증 비활성) |
 | `CHAT_MODEL_ID` | "Ask Claude" 채팅 어시스턴트용 Bedrock 모델 ID | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | Bedrock 클라이언트용 AWS 리전 | `us-east-1` |
+| `BEDROCK_REGION` | Bedrock 호출에서만 `AWS_REGION`을 덮어씀(예: 특정 리전만 허용하는 계정) | 미설정(`AWS_REGION`을 따름) |
 | `CLAUDE_NOTIFY_WEBHOOK` | Claude Code 훅 알림용 옵션 웹훅(앱이 아니라 하니스 도구) | 미설정(비활성) |
 
 복사-붙여넣기 템플릿은 `.env.example`을 참고하세요.

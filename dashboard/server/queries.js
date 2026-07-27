@@ -860,12 +860,19 @@ export async function adoptionLevels(from, to, filters = {}) {
 // adoptionLevels/adoptionTimeseries/userLeaderboard.active_days는 각각 30일/91일/선택 구간
 // 전체를 보는 스냅샷·롤링 윈도우라 "좁은 드래그 줌" 시나리오가 성립하지 않아(구간이 넓을수록
 // 좌경계 59분의 상대 영향이 이미 작음) 이번 라운드에선 activeUsers만 고친다.
+// bedrock_users/enterprise_users는 A/B 그룹별 "사용자당 평균 지출"(Cost 페이지)의 분모다 —
+// 양쪽 총지출만으로는 그룹의 사용자 수가 다르면 비교가 안 된다. GROUP BY가 아니라 uniqExactIf
+// 조건 집계로 뽑는 이유: 그룹 판별이 세션 단위라 한 유저가 두 그룹에 걸칠 수 있어(grouping.js)
+// 총계 users는 그룹 합이 아닌 전역 uniq여야 하고, GROUP BY로는 두 그레인을 한 쿼리에서 못 낸다.
 export async function activeUsers(from, to, filters = {}) {
   const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
+  const uniqs = `uniqExactIf(m.UserEmail, m.UserEmail != '') AS users,
+        uniqExactIf(m.UserEmail, m.UserEmail != '' AND ${GROUP_EXPR} = 'bedrock') AS bedrock_users,
+        uniqExactIf(m.UserEmail, m.UserEmail != '' AND ${GROUP_EXPR} = 'enterprise') AS enterprise_users`;
   const rows = incFlatRaw(to - from)
     ? await query(
         `${GROUP_CTE}
-        SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
+        SELECT ${uniqs}
         FROM claude_code.otel_metrics_sum m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
         WHERE m.MetricName = 'claude_code.session.count'
@@ -874,14 +881,14 @@ export async function activeUsers(from, to, filters = {}) {
       )
     : await query(
         `${GROUP_CTE}
-        SELECT uniqExactIf(m.UserEmail, m.UserEmail != '') AS users
+        SELECT ${uniqs}
         FROM claude_code.otel_metrics_sum_hourly m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
         WHERE m.MetricName = 'claude_code.session.count'
           AND m.hour >= toStartOfHour({from:DateTime}) AND m.hour < {to:DateTime} ${f.where}`,
         { ...range(from, to), ...f.params }
       );
-  return rows[0] || { users: 0 };
+  return rows[0] || { users: 0, bedrock_users: 0, enterprise_users: 0 };
 }
 
 // adoptionLevels(스냅샷)의 시계열 버전 — 일자×유저 존재만 뽑아오고 DAU/WAU/MAU 롤링 윈도우는
