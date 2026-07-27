@@ -11,7 +11,7 @@ import { useApi } from "../useApi.js";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
-import { modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer } from "../colors.js";
+import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer } from "../colors.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -143,6 +143,13 @@ export default function Cost() {
     ? `${fmt(developerCount)}명 기준 — model 필터가 켜져 있어 분자만 필터링됨(참고용)`
     : `${fmt(developerCount)}명 기준`;
 
+  // A/B 비교의 핵심 지표 — 그룹별 총지출은 그룹의 사용자 수가 다르면 비교가 안 되므로
+  // 사용자당 평균으로 정규화한다. 분자는 summary(그룹별 computed_cost), 분모는 activeUsers의
+  // 그룹별 uniq — 위 spendPerDeveloper와 같은 모수 규칙(excludeUnknown:false)을 그대로 따른다.
+  const groupUserCount = (g) => Number(activeUsers.data?.[`${g}_users`] ?? 0);
+  const groupCost = (g) => Number((summary.data || []).find((r) => r.group === g)?.computed_cost || 0);
+  const spendPerUserFor = (g) => (groupUserCount(g) > 0 ? groupCost(g) / groupUserCount(g) : 0);
+
   // 그룹별 캐시 티어별 지출 — bedrock/enterprise 좌우 분리(다른 카드들과 동일 패턴).
   function tierRowsFor(group) {
     const t = tiers.data?.[group];
@@ -202,6 +209,33 @@ export default function Cost() {
             {/* developerCount/spendPerDeveloper는 activeUsers에서 나온다 — summary만 게이트하면
                 activeUsers가 아직 로딩 중이거나 에러여도 "$0 / 0명 기준"이 실제 값처럼 보인다. */}
             <StatTile label="개발자당 지출" value={usd(spendPerDeveloper)} hint={spendPerDeveloperHint} />
+            {/* A/B 비교용 — 총지출이 아니라 사용자당 평균이라야 그룹 간 사용자 수 차이가 상쇄된다.
+                전체(개발자당 지출)는 그룹 합이 아니다: 한 유저가 두 그룹에 걸칠 수 있어(세션 단위
+                판별, grouping.js) 전역 uniq 분모가 그룹 분모의 합보다 작을 수 있다. */}
+            {["bedrock", "enterprise"].map((g) => (
+              <StatTile
+                key={g}
+                // 그룹 색 틴트 — 두 타일이 나란히 있어 라벨만으로는 구분이 약하다. Users.jsx의
+                // GroupFaceOff와 같은 8% color-mix 패턴이되, 카드가 페이지 배경 위에 직접 놓이므로
+                // transparent가 아니라 surface-card와 섞어 불투명하게 유지한다.
+                style={{
+                  background: `color-mix(in srgb, ${colorFor(g)} 8%, var(--surface-card))`,
+                  borderColor: `color-mix(in srgb, ${colorFor(g)} 35%, var(--surface-card))`,
+                }}
+                label={
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full" style={{ background: colorFor(g) }} />
+                    {`사용자당 평균 — ${g}`}
+                  </span>
+                }
+                value={usd(spendPerUserFor(g))}
+                hint={
+                  model
+                    ? `${fmt(groupUserCount(g))}명 기준 — model 필터로 분자만 필터링됨(참고용)`
+                    : `${fmt(groupUserCount(g))}명 · 총 ${usd(groupCost(g))}`
+                }
+              />
+            ))}
           </div>
         )}
 

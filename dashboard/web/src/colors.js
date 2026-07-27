@@ -45,10 +45,21 @@ const MODEL_COLOR = {
 // 새 버전이 데이터에 보이면 MODEL_COLOR에 정식 등록하는 게 정도.
 const FAMILY_FALLBACK = { sonnet: "#8290E8", opus: "#EDB48E", haiku: "#93D2B0", fable: "#D67CA0" };
 
+// 모델 id에서 계열만 뽑는다(정규화된 이름/Bedrock 프리픽스 붙은 이름 모두 대응) — 계열별
+// 색상·범례 순서·계열 단위 집계가 전부 같은 규칙을 쓰도록 한 곳으로 모은다.
+export function modelFamily(model) {
+  return String(model || "").match(/sonnet|opus|haiku|fable/)?.[0] ?? null;
+}
+
+// 계열 색 스와치 — 등록 모델 색과 겹치지 않는 중간 톤이라 "계열 대표색"으로도 그대로 쓴다.
+export function familyColorFor(family) {
+  return FAMILY_FALLBACK[family] ?? null;
+}
+
 export function modelColorFor(model) {
   const m = String(model || "");
   if (MODEL_COLOR[m]) return MODEL_COLOR[m];
-  const fam = m.match(/sonnet|opus|haiku|fable/)?.[0];
+  const fam = modelFamily(m);
   return fam ? FAMILY_FALLBACK[fam] : null;
 }
 
@@ -56,7 +67,7 @@ export function modelColorFor(model) {
 // 최신 모델이 먼저 오게(버전 랭크 0이 최신). 지출 순위 등 데이터 값에 따라 흔들리지 않는
 // 고정 순서라는 점이 색상 배정 규칙(엔티티를 따라감)과 동일한 이유다. 미등록 모델/계열
 // 밖 값은 각각 그 계열의 마지막, 아예 모르는 값은 전체 마지막으로 보낸다.
-const FAMILY_LEGEND_ORDER = ["fable", "opus", "sonnet", "haiku"];
+export const FAMILY_LEGEND_ORDER = ["fable", "opus", "sonnet", "haiku"];
 const VERSION_RANK = {
   "claude-fable-5": 0,
   "claude-opus-5": 0,
@@ -74,7 +85,7 @@ const VERSION_RANK = {
 
 export function modelLegendRank(model) {
   const m = String(model || "");
-  const fam = m.match(/sonnet|opus|haiku|fable/)?.[0];
+  const fam = modelFamily(m);
   const famIdx = fam ? FAMILY_LEGEND_ORDER.indexOf(fam) : FAMILY_LEGEND_ORDER.length;
   return famIdx * 100 + (VERSION_RANK[m] ?? 99);
 }

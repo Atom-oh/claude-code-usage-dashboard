@@ -98,7 +98,11 @@ setInterval(() => {
 // 안 읽는 무의미한 파라미터(?x=1,2,3...)만 바꿔가며 반복 요청하면 매번 새 키로 캐시 미스
 // (in-flight dedup 우회) + cache Map이 만료 전까지 무제한으로 커질 수 있었다. 화이트리스트로
 // 좁히면 그 파라미터가 뭐든 canonical 키는 유효한 뷰 개수(from×to×filters 조합)만큼만 존재한다.
-const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "intervalHours", "email"];
+// includeUnknown이 빠져 있으면 /api/cost/by-user-model을 서로 다른 값으로 부르는 두 소비자
+// (Cost 유저 랭킹=기본, Users 계열별 평균=1)가 같은 키를 공유해, 먼저 도착한 쪽의 응답이 다른
+// 쪽에 그대로 나간다(실측: 두 요청이 동일 결과를 반환해 확인). warmer는 기본 뷰만 데우므로
+// includeUnknown=1 뷰는 첫 조회가 콜드다 — 정확성 우선.
+const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "intervalHours", "email", "includeUnknown"];
 function cacheKey(path, query) {
   const entries = CACHE_KEY_PARAMS.filter((k) => query[k] !== undefined)
     .sort()
@@ -205,7 +209,12 @@ route("/api/users/tools", (from, to, _q, filters) => q.userToolUsage(from, to, f
 route("/api/users/skills", (from, to, _q, filters) => q.userSkillUsage(from, to, filters));
 route("/api/cost/summary", (from, to, _q, filters) => q.costSummary(from, to, filters));
 route("/api/cost/by-model", (from, to, _q, filters) => q.costByModel(from, to, filters));
-route("/api/cost/by-user-model", (from, to, _q, filters) => q.costByUserModel(from, to, filters));
+// includeUnknown=1이면 unknown 그룹도 포함한다 — queries.js filterCond의 정책표대로, 이 응답을
+// 그룹으로 나누지 않고 통째로 합산하는 "총계" 소비자(Users 페이지의 모델 계열별 사용자당 평균)는
+// excludeUnknown:false여야 한다. 기본값(제외)은 A/B 조인 소비자(userCostEfficiency, Cost 페이지의
+// 유저 랭킹)를 위해 그대로 둔다 — 그쪽은 group으로 갈라 보는 지표라 unknown을 넣을 자리가 없다.
+route("/api/cost/by-user-model", (from, to, query, filters) =>
+  q.costByUserModel(from, to, query.includeUnknown === "1" ? { ...filters, excludeUnknown: false } : filters));
 route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
 route("/api/cost/by-model-compare", (from, to, _q, filters) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from)), filters));
 route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(from, to, filters));
