@@ -338,6 +338,11 @@ async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
   for await (const ev of stream) {
     if (ev.contentBlockStart?.start?.toolUse) {
       curTool = { ...ev.contentBlockStart.start.toolUse, input: "" };
+      // 모델이 SQL을 다 쓸 때까지(toolUse delta 누적, 수 초 이상 걸릴 수 있음) 클라이언트는
+      // 아무 이벤트도 못 받아 멈춘 것처럼 보인다(실측: "응답이 없는 것 같다" 리포트) — 툴콜이
+      // 시작되는 즉시 상태를 보내 그 공백을 채운다. 실제 실행 시작 시(handleChat) "쿼리
+      // 실행 중..."으로 다시 갈아탄다.
+      send("status", { message: "쿼리 작성 중..." });
     } else if (ev.contentBlockDelta?.delta?.toolUse) {
       // contentBlockStart 없이 toolUse delta가 먼저 오는 스트림 오류를 방어 — curTool이 없으면
       // 이 delta는 버린다(누락된 몇 글자보다 전체 스트림이 죽는 게 더 나쁘다).
@@ -415,6 +420,10 @@ export async function handleChat(req, res) {
     // tool_use) hop이 MAX_HOPS까지 증가한 상태로 끝나므로, 루프 뒤 `hop === MAX_HOPS`가 곧
     // "왕복을 다 쓰고도 모델이 더 조회하려 했다"는 뜻이다.
     for (; hop < MAX_HOPS; hop++) {
+      // 툴 결과를 보낸 뒤 다음 Bedrock 응답이 올 때까지(모델이 결과를 "읽는" 시간, 수 초~수십초)
+      // 클라이언트가 아무 이벤트도 못 받는 공백이 있다(실측: "응답이 없는 것 같다" 리포트) —
+      // 매 hop 시작 시 즉시 상태를 갈아줘서 사용자가 계속 진행 중임을 알 수 있게 한다.
+      send("status", { message: hop === 0 ? "질문을 이해하는 중..." : "조회 결과를 확인하는 중..." });
       const { content, stopReason: sr, truncatedToolIds } = await runConverseTurn({
         messages,
         allowTools: true,
@@ -459,6 +468,7 @@ export async function handleChat(req, res) {
     // 한 번 더 호출해 이미 모은 데이터로 반드시 텍스트 답을 내게 강제한다(툴을 다시 요청할 수
     // 없으니 무한 루프가 될 수 없다).
     if (hop === MAX_HOPS && stopReason === "tool_use") {
+      send("status", { message: "답변을 정리하는 중..." });
       const { content: finalContent, stopReason: finalStop } = await runConverseTurn({
         messages,
         allowTools: false,

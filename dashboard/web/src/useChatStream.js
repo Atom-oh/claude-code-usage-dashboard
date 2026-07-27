@@ -84,12 +84,17 @@ export function useChatStream() {
     try {
       await streamChat(history, {
         signal: ac.signal,
-        onText: (t) =>
+        onText: (t) => {
+          // 실제 답변 텍스트가 오면 직전 hop의 상태 문구("쿼리 작성 중..." 등)는 이미 낡은
+          // 정보다 — 안 지우면 답변이 스트리밍되는 동안 위/아래에 안 맞는 상태줄이 계속 남아
+          // 있는 것처럼 보인다.
+          setStatus("");
           setMsgs((m) => {
             const next = [...m];
             next[next.length - 1] = { role: "assistant", content: next[next.length - 1].content + t };
             return next;
-          }),
+          });
+        },
         onStatus: setStatus,
       });
     } catch (err) {
