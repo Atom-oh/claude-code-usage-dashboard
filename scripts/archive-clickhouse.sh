@@ -5,9 +5,11 @@ set -euo pipefail
 # 워크샵 계정 소멸 전 ClickHouse 영구 아카이브 (workshop 계정 -> 내 계정 S3)
 #
 # 배경: 일별 백업(infra/clickhouse.tf의 clickhouse-backup CronJob)은 워크샵 계정 버킷
-# cc-ab-clickhouse-<acct>-<region>/backup/ 에 쓰이고, 그 프리픽스엔 30일 만료 라이프사이클이
-# 걸려 있다(infra/s3.tf). 워크샵 계정이 삭제되면 버킷도 백업도 같이 사라진다 — 이 스크립트로
-# 마지막 스냅샷을 하나 더 뜨고 기존 백업 전체를 내 계정 버킷으로 옮긴다.
+# cc-ab-clickhouse-<acct>-<region>의 cold/backup/ 아래에 쓰이고(cold_s3 디스크 endpoint가
+# 이미 .../cold/로 끝나므로 Disk('cold_s3','backup/...')의 실제 S3 경로는 cold/backup/...),
+# 그 상위 backup/ 프리픽스엔 30일 만료 라이프사이클이 걸려 있다(infra/s3.tf). 워크샵 계정이
+# 삭제되면 버킷도 백업도 같이 사라진다 — 이 스크립트로 마지막 스냅샷을 하나 더 뜨고 기존
+# 백업 전체를 내 계정 버킷으로 옮긴다.
 #
 # 사전 준비 — 워크샵 계정용 ~/.aws/credentials 프로필 1개:
 #   [workshop]
@@ -64,7 +66,12 @@ echo "archive  account: $ARCHIVE_ACCOUNT (profile: ${ARCHIVE_PROFILE:-<default/i
 # infra/s3.tf의 네이밍 규칙(cc-ab-clickhouse-<acct>-<region>)과 동일 — 버킷 하나뿐이라
 # terraform output을 안 읽어도 account_id만 있으면 이름을 재구성할 수 있다.
 SRC_BUCKET="cc-ab-clickhouse-${WORKSHOP_ACCOUNT}-${REGION}"
-echo "source bucket: $SRC_BUCKET"
+# cold_s3 디스크의 endpoint 자체가 이미 .../cold/ 로 끝난다(infra/clickhouse.tf:34) — 따라서
+# Disk('cold_s3', 'backup/...')의 'backup/'은 그 디스크 루트(=S3 cold/ 밑) 기준 상대 경로이고,
+# 실제 S3 객체는 cold/backup/ 아래에 생성된다. 이걸 몰라 루트 backup/를 sync하면 항상 빈
+# prefix를 복사하고도 0 objects == 0 objects로 검증이 조용히 통과한다(PR #18 리뷰 CRITICAL).
+SRC_PREFIX="cold/backup"
+echo "source bucket: $SRC_BUCKET (prefix: ${SRC_PREFIX}/)"
 
 if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   echo "== 2. 최종 BACKUP 생성 =="
@@ -73,41 +80,57 @@ if [ "${SKIP_BACKUP:-0}" != "1" ]; then
     echo "ClickHouse pod를 찾지 못했습니다 (label clickhouse.altinity.com/chi=cc-ab)" >&2
     exit 1
   fi
+  # 마지막 스냅샷이므로 이 파드가 replication lag 중이면 최신 데이터가 빠질 수 있다 — 백업 전
+  # 강제 동기화.
+  kube exec "$POD" -- clickhouse-client --query "SYSTEM SYNC REPLICA claude_code.otel_metrics_sum" || true
   CH_PASSWORD=$(kube get secret clickhouse-writer -o jsonpath='{.data.CH_PASSWORD}' | base64 -d)
   BACKUP_TAG="final-$(date -u +%Y%m%dT%H%M%SZ)"
-  # 비밀번호를 kubectl exec argv에 넣으면 ps로 노출된다(backfill-hourly-rollup.sh와 동일 원칙) —
-  # stdin으로 넘기고 파드 안에서 env로 승격한다.
+  # clickhouse-client 24.8은 CLICKHOUSE_PASSWORD env를 자동 인식한다 — --password "$VAR" 형태로
+  # 같은 커맨드 라인에서 넘기면 그 $VAR는 앞의 프리픽스 대입이 적용되기 전에 확장되어 항상
+  # 빈 문자열이 되고 인증이 실패한다(PR #18 리뷰 CRITICAL). env만 승격하고 --password는 뺀다.
+  # 비밀번호를 kubectl exec argv에 넣으면 ps로 노출되므로 stdin으로 넘긴다.
   printf '%s' "$CH_PASSWORD" | kube exec -i "$POD" -- sh -c \
-    "CLICKHOUSE_PASSWORD=\$(cat) clickhouse-client --user otel_writer --password \"\$CLICKHOUSE_PASSWORD\" \
+    "CLICKHOUSE_PASSWORD=\$(cat) clickhouse-client --user otel_writer \
        --query \"BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/${BACKUP_TAG}')\""
-  echo "backup done: backup/${BACKUP_TAG}"
+  echo "backup done: ${SRC_PREFIX}/${BACKUP_TAG}"
 else
-  echo "== 2. SKIP_BACKUP=1 — 새 백업 생성 스킵, 기존 backup/ 프리픽스만 이관 =="
+  echo "== 2. SKIP_BACKUP=1 — 새 백업 생성 스킵, 기존 ${SRC_PREFIX}/ 프리픽스만 이관 =="
 fi
 
 echo "== 3. 워크샵 계정 -> 로컬 다운로드 =="
+# 재실행 시 이전 실행에서 남은 파일이 검증(count/bytes)을 어긋나게 하거나 오염된 아카이브를
+# 남길 수 있어(PR #18 리뷰 MAJOR) 매번 새 스테이징 디렉터리를 쓴다.
+LOCAL_DIR="${LOCAL_DIR}/$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$LOCAL_DIR"
-aws s3 sync "s3://${SRC_BUCKET}/backup/" "${LOCAL_DIR}/backup/" --profile "$WORKSHOP_PROFILE"
+aws s3 sync "s3://${SRC_BUCKET}/${SRC_PREFIX}/" "${LOCAL_DIR}/backup/" --profile "$WORKSHOP_PROFILE"
 
 echo "== 4. 스키마 사본 포함 =="
 mkdir -p "${LOCAL_DIR}/schema"
-cp clickhouse-schema.sql "${LOCAL_DIR}/schema/" 2>/dev/null || true
-cp infra/files/clickhouse-schema-replicated.sql "${LOCAL_DIR}/schema/" 2>/dev/null || true
+# 실패를 삼키면(2>/dev/null || true) 스키마 없이도 "성공"으로 끝나 나중에야 빠진 걸 알게 된다
+# (PR #18 리뷰 MAJOR) — 레포 루트에서 실행하지 않았다는 신호이므로 바로 죽는다.
+cp "$(dirname "$0")/../clickhouse-schema.sql" "${LOCAL_DIR}/schema/"
+cp "$(dirname "$0")/../infra/files/clickhouse-schema-replicated.sql" "${LOCAL_DIR}/schema/"
 
 echo "== 5. 로컬 -> 내 계정 업로드 =="
-archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/"
+archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --delete
 
-echo "== 6. 검증 (객체 수 + 총 바이트) =="
-src_summary() { aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/backup/" --profile "$WORKSHOP_PROFILE" | tail -2; }
-dst_summary() { archive_aws s3 ls --recursive --summarize "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/backup/" | tail -2; }
+echo "== 6. 검증 (객체 수 + 총 바이트, backup/ + schema/ 모두) =="
+src_summary() {
+  aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/${SRC_PREFIX}/" --profile "$WORKSHOP_PROFILE" | tail -2
+  find "${LOCAL_DIR}/schema" -type f | wc -l
+}
+dst_summary() {
+  archive_aws s3 ls --recursive --summarize "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/backup/" | tail -2
+  archive_aws s3 ls --recursive "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/schema/" | wc -l
+}
 
 SRC=$(src_summary)
 DST=$(dst_summary)
-echo "source:"; echo "$SRC"
-echo "archive:"; echo "$DST"
+echo "source (+ local schema file count):"; echo "$SRC"
+echo "archive (+ remote schema file count):"; echo "$DST"
 
 if [ "$SRC" != "$DST" ]; then
-  echo "검증 실패: 소스/아카이브의 객체 수 또는 총 바이트가 다릅니다." >&2
+  echo "검증 실패: 소스/아카이브의 객체 수, 총 바이트, 또는 스키마 파일 수가 다릅니다." >&2
   exit 1
 fi
 
