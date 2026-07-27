@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeSql, maskEmailValues, maskEmailText, capToolResultJson, classifyChatError, SCHEMA_CONTEXT } from "./chat.js";
+import { sanitizeSql, maskEmailValues, maskEmailText, capToolResultJson, classifyChatError, SCHEMA_CONTEXT, SYSTEM } from "./chat.js";
 import { GROUP_CTE } from "./grouping.js";
 import { PRICING_PROMPT_TABLE } from "./pricing.js";
 
@@ -263,6 +263,18 @@ SELECT sum(inc) FROM (
   WHERE MetricName='claude_code.cost.usage' AND hour < now()
   GROUP BY SessionId, SeriesKey, AggregationTemporality)`;
   assert.doesNotThrow(() => sanitizeSql(sql));
+});
+
+// 실측(라이브 클러스터, 2026-07-27): 모델이 별칭에 큰따옴표(예: AS "그룹")를 쓰면 sanitizeSql이
+// "주석/인용부호는 허용되지 않습니다"로 쿼리 전체를 거부한다 — 인용부호 자체는 무해한데도
+// 테이블 함수 우회 방어(assertNoTableFunctions)가 인용부호가 있으면 토큰 경계를 신뢰할 수
+// 없다는 전제로 전부 차단하기 때문이다(보안 샌드박스는 건드리지 않는다). 실측 확인: 프리셋
+// 질문 하나에서 hop 4개 중 3개가 이 사유로 ClickHouse에 도달하지도 못하고 낭비됐다. 프롬프트가
+// 이 함정을 명시적으로 경고하지 않으면 회귀한다.
+test("SYSTEM warns the model against double-quoted/backtick aliases (sanitizeSql rejects them outright)", () => {
+  assert.match(SYSTEM, /큰따옴표.*백틱|따옴표/);
+  assert.doesNotThrow(() => sanitizeSql(`SELECT count() AS total FROM otel_logs`));
+  assert.throws(() => sanitizeSql(`SELECT count() AS "total" FROM otel_logs`), /주석\/인용부호/);
 });
 
 test("classifyChatError maps known AWS error names to distinct Korean messages", () => {

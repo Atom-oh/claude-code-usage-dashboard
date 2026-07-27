@@ -230,7 +230,7 @@ ${PRICING_PROMPT_TABLE}
 // GROUP_CTE(grouping.js)를 그대로 인용한다 — 대시보드 서버가 쓰는 규칙과 프롬프트가 여기서
 // 드리프트하면(예: has_org 판별 로직이 바뀌는데 프롬프트는 그대로면) 모델이 대시보드와 다른
 // 숫자를 답한다. 복제하지 않고 import해서 원본이 바뀌면 프롬프트도 자동으로 따라간다.
-const SYSTEM = `당신은 Claude Code 사용량 대시보드의 분석 어시스턴트입니다. ClickHouse(claude_code DB)를 조회해 질문에 답하세요.
+export const SYSTEM = `당신은 Claude Code 사용량 대시보드의 분석 어시스턴트입니다. ClickHouse(claude_code DB)를 조회해 질문에 답하세요.
 
 ${SCHEMA_CONTEXT}
 
@@ -243,6 +243,7 @@ group by할 때는 이 CTE를 SessionId로 LEFT JOIN하고, 미매칭은 NULL이
 돌아오니 if(grp = '', 'unknown', grp)로 처리하세요(coalesce는 걸리지 않습니다).
 
 규칙: run_sql로 필요한 데이터를 조회(최대 ${MAX_HOPS}회)한 뒤 한국어로 간결히 답하세요. 표가 어울리면 markdown 표를 쓰세요. 결과는 200행으로 잘립니다.
+SQL에 **큰따옴표(")나 백틱(\`)을 절대 쓰지 마세요** — 별칭이든 식별자든 어디에 있든 큰따옴표/백틱이 하나라도 있으면 쿼리 전체가 거부됩니다(보안 샌드박스가 인용부호를 전부 차단, 예외 없음). 별칭에 한국어나 예약어(group 등)를 쓰고 싶으면 그냥 인용부호 없이 쓰거나(ClickHouse는 별칭에 인용부호가 필요 없습니다), 답변을 작성할 때 컬럼명을 한국어로 바꿔서 설명하세요. 조회 횟수는 한정돼 있으니(최대 ${MAX_HOPS}회) 인용부호 실수로 낭비하지 마세요.
 UserEmail 값은 개인정보 보호를 위해 이미 마스킹되어 반환됩니다(예: oj******@gmail.com). 집계(합계/카운트/그룹핑)는 반드시 SQL의 GROUP BY에서 원본 UserEmail 기준으로 끝내고 결과를 받으세요 — 마스킹된 라벨은 서로 다른 유저가 같은 문자열로 겹칠 수 있어 고유 식별자가 아니므로, 응답을 작성할 때 같은 마스킹 라벨을 가진 행이라도 절대 하나로 합치거나 재집계하지 마세요. map(UserEmail, ...)처럼 이메일이 key인 결과는 항상 "마스킹라벨": {values: [...]} 형태로 내려옵니다(유저 충돌 여부와 무관하게 매번 이 모양) — values 배열의 원소 하나하나가 그 라벨로 마스킹된 각 유저의 값이니(충돌 없으면 1개, 있으면 여러 개) 그대로 개별 유저 값으로 다루고, 배열 길이가 1보다 크다고 해서 하나의 값으로 합치지 마세요. 마스킹된 값을 원본처럼 되돌리거나 추측하지도 마세요.`;
 
 const TOOLS = {
@@ -314,6 +315,58 @@ async function sendConverseWithRetry(cmd, abortSignal) {
   }
 }
 
+// 한 번의 Bedrock ConverseStream 왕복(스트림 소비 + 텍스트 전송 + 콘텐츠 블록 조립)을 캡슐화한다.
+// handleChat의 툴콜 루프와 "hop 예산 소진 뒤 강제 마무리 호출"이 이 로직을 공유해야
+// (아래 참고) 마무리 호출에서 파싱/방어 로직이 중복·드리프트되지 않는다.
+async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
+  const cmd = new ConverseStreamCommand({
+    modelId: MODEL_ID,
+    system: [{ text: SYSTEM }],
+    messages,
+    ...(allowTools ? { toolConfig: TOOLS } : {}),
+    inferenceConfig: { maxTokens: 8000 },
+  });
+  const { stream } = await sendConverseWithRetry(cmd, abortSignal);
+
+  let stopReason = null;
+  const content = [];
+  let curText = null;
+  let curTool = null;
+  // maxTokens에 걸려 이 hop에서 툴 입력 JSON이 중간에 잘린 toolUseId들 — 스트림을 죽이지
+  // 않고 호출부에서 전용 오류로 모델에 되돌려준다.
+  const truncatedToolIds = new Set();
+  for await (const ev of stream) {
+    if (ev.contentBlockStart?.start?.toolUse) {
+      curTool = { ...ev.contentBlockStart.start.toolUse, input: "" };
+    } else if (ev.contentBlockDelta?.delta?.toolUse) {
+      // contentBlockStart 없이 toolUse delta가 먼저 오는 스트림 오류를 방어 — curTool이 없으면
+      // 이 delta는 버린다(누락된 몇 글자보다 전체 스트림이 죽는 게 더 나쁘다).
+      if (curTool) curTool.input += ev.contentBlockDelta.delta.toolUse.input || "";
+    } else if (ev.contentBlockDelta?.delta?.text) {
+      const t = ev.contentBlockDelta.delta.text;
+      curText = (curText || "") + t;
+      send("text", { text: t });
+    } else if (ev.contentBlockStop) {
+      if (curTool) {
+        let input = {};
+        try {
+          input = JSON.parse(curTool.input || "{}");
+        } catch {
+          truncatedToolIds.add(curTool.toolUseId);
+        }
+        content.push({ toolUse: { toolUseId: curTool.toolUseId, name: curTool.name, input } });
+        curTool = null;
+      } else if (curText !== null) {
+        content.push({ text: curText });
+        curText = null;
+      }
+    } else if (ev.messageStop) {
+      stopReason = ev.messageStop.stopReason;
+    }
+  }
+  return { content, stopReason, truncatedToolIds };
+}
+
 // 한 턴 안에서 모델이 실제로 실행할 수 있는 run_sql 총 횟수 상한 — MAX_HOPS(왕복 수)와는 다른
 // 축이다. 한 hop 응답에 toolUse 블록이 여러 개(병렬 툴콜) 실리면 hop 수보다 SQL 실행이 더 많이
 // 나갈 수 있어, 왕복 상한만으로는 총 실행 횟수가 안 막힌다.
@@ -362,52 +415,13 @@ export async function handleChat(req, res) {
     // tool_use) hop이 MAX_HOPS까지 증가한 상태로 끝나므로, 루프 뒤 `hop === MAX_HOPS`가 곧
     // "왕복을 다 쓰고도 모델이 더 조회하려 했다"는 뜻이다.
     for (; hop < MAX_HOPS; hop++) {
-      stopReason = null;
-      const cmd = new ConverseStreamCommand({
-        modelId: MODEL_ID,
-        system: [{ text: SYSTEM }],
+      const { content, stopReason: sr, truncatedToolIds } = await runConverseTurn({
         messages,
-        toolConfig: TOOLS,
-        inferenceConfig: { maxTokens: 8000 },
+        allowTools: true,
+        send,
+        abortSignal: abortController.signal,
       });
-      const { stream } = await sendConverseWithRetry(cmd, abortController.signal);
-
-      const content = [];
-      let curText = null;
-      let curTool = null;
-      // maxTokens에 걸려 이 hop에서 툴 입력 JSON이 중간에 잘린 toolUseId들 — 스트림을 죽이지
-      // 않고 아래 결과 루프에서 전용 오류로 모델에 되돌려준다.
-      const truncatedToolIds = new Set();
-      for await (const ev of stream) {
-        if (ev.contentBlockStart?.start?.toolUse) {
-          curTool = { ...ev.contentBlockStart.start.toolUse, input: "" };
-        } else if (ev.contentBlockDelta?.delta?.toolUse) {
-          // contentBlockStart 없이 toolUse delta가 먼저 오는 스트림 오류를 방어 — curTool이 없으면
-          // 이 delta는 버린다(누락된 몇 글자보다 전체 스트림이 죽는 게 더 나쁘다).
-          if (curTool) curTool.input += ev.contentBlockDelta.delta.toolUse.input || "";
-        } else if (ev.contentBlockDelta?.delta?.text) {
-          const t = ev.contentBlockDelta.delta.text;
-          curText = (curText || "") + t;
-          send("text", { text: t });
-        } else if (ev.contentBlockStop) {
-          if (curTool) {
-            let input = {};
-            try {
-              input = JSON.parse(curTool.input || "{}");
-            } catch {
-              truncatedToolIds.add(curTool.toolUseId);
-            }
-            content.push({ toolUse: { toolUseId: curTool.toolUseId, name: curTool.name, input } });
-            curTool = null;
-          } else if (curText !== null) {
-            content.push({ text: curText });
-            curText = null;
-          }
-        } else if (ev.messageStop) {
-          stopReason = ev.messageStop.stopReason;
-        }
-      }
-
+      stopReason = sr;
       messages.push({ role: "assistant", content });
       if (stopReason !== "tool_use") break;
 
@@ -439,10 +453,24 @@ export async function handleChat(req, res) {
       }
       messages.push({ role: "user", content: results });
     }
-    // 스트림이 성공적으로 끝났어도 stopReason이 "성공"을 뜻하지 않는 두 경우를 구분해 알린다 —
-    // 안 그러면 잘린 답변/미완료 조회가 그냥 done으로 넘어가 사용자가 잘못된 확신을 갖게 된다.
-    if (hop === MAX_HOPS) send("text", { text: "\n\n_(데이터 조회 횟수를 모두 사용했습니다 — 질문을 더 구체적으로 나눠서 다시 물어봐 주세요.)_" });
-    else if (stopReason === "max_tokens") send("text", { text: "\n\n_(응답이 길어 일부가 잘렸을 수 있습니다 — 필요하면 더 구체적으로 나눠서 다시 물어봐 주세요.)_" });
+    // hop 예산이 끝났는데 방금 hop의 툴 실행 결과가 messages에 있다면(stopReason이 여전히
+    // "tool_use") — 그 결과를 모델이 한 번도 못 보고 그냥 "조회 횟수를 다 썼다"는 문구만 나가는
+    // 게 원래 동작이었다(실측: 성공한 쿼리 결과가 버려지고 빈 답변으로 끝남). toolConfig 없이
+    // 한 번 더 호출해 이미 모은 데이터로 반드시 텍스트 답을 내게 강제한다(툴을 다시 요청할 수
+    // 없으니 무한 루프가 될 수 없다).
+    if (hop === MAX_HOPS && stopReason === "tool_use") {
+      const { content: finalContent, stopReason: finalStop } = await runConverseTurn({
+        messages,
+        allowTools: false,
+        send,
+        abortSignal: abortController.signal,
+      });
+      messages.push({ role: "assistant", content: finalContent });
+      stopReason = finalStop;
+    }
+    // 스트림이 성공적으로 끝났어도 stopReason이 "성공"을 뜻하지 않는 경우를 알린다 — 안 그러면
+    // 잘린 답변이 그냥 done으로 넘어가 사용자가 잘못된 확신을 갖게 된다.
+    if (stopReason === "max_tokens") send("text", { text: "\n\n_(응답이 길어 일부가 잘렸을 수 있습니다 — 필요하면 더 구체적으로 나눠서 다시 물어봐 주세요.)_" });
     send("done", {});
   } catch (err) {
     if (abortController.signal.aborted) return; // 클라이언트가 이미 떠났다 — 로그/응답 낼 필요 없음
