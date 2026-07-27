@@ -131,7 +131,7 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
 // horizontal: 카테고리가 많거나(예: 유저 20명) 라벨이 길 때(이메일) 세로 막대는 라벨이 겹치거나
 // 다 안 보인다 — Recharts의 layout="vertical"(막대는 가로)로 뒤집고 카테고리 축을 Y로 옮긴다.
 // 드래그 줌은 카테고리 축이 날짜가 아니면 어차피 no-op이라 orientation과 무관하게 그대로 둔다.
-export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false }) {
+export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf }) {
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours);
   const { data, series } = pivotByKey(rows, xKey, seriesKey, valueKey);
@@ -158,7 +158,7 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
           {series.map((s, i) => {
             const outermost = i === series.length - 1;
             const radius = horizontal ? (outermost ? [0, 4, 4, 0] : 0) : outermost ? [4, 4, 0, 0] : 0;
-            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={c.palette[i % c.palette.length]} radius={radius} />;
+            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={colorOf?.(s) ?? c.palette[i % c.palette.length]} radius={radius} />;
           })}
           {zoom.overlay}
         </BarChart>
