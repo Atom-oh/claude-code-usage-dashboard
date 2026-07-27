@@ -32,6 +32,7 @@ const MODEL_COLOR = {
   "claude-opus-5": "#0B8563",
   "claude-opus-4-8": "#45CDAA",
   "claude-opus-4-7": "#7FE3C4",
+  "claude-opus-4-6": "#A5EBD3",
   "claude-haiku-4-5": "#B45309",
   "claude-haiku-3-5": "#E8940F",
   "claude-3-5-haiku": "#E8940F",
