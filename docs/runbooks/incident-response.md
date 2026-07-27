@@ -126,6 +126,9 @@ RESTORE DATABASE claude_code FROM Disk('cold_s3', 'backup/YYYY-MM-DD')
 ```
 Restoring overwrites current data — confirm the backup date covers what you need first.
 
+Permanent archive before account teardown (e.g. workshop ending): see
+[`archive-clickhouse.md`](archive-clickhouse.md).
+
 ## Notes
 - Last verified: 2026-07-09
 - The 2026-07-07 telemetry gap (15+ hours) was found only by querying `max(TimeUnix)`
@@ -252,6 +255,8 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 RESTORE DATABASE claude_code FROM Disk('cold_s3', 'backup/YYYY-MM-DD')
 ```
 복원은 현재 데이터를 덮어씁니다 — 백업 날짜가 필요한 범위를 포함하는지 먼저 확인합니다.
+
+계정 삭제(워크샵 종료 등) 전 영구 아카이브는 [`archive-clickhouse.md`](archive-clickhouse.md) 참조.
 
 ## 참고
 - 최종 검증일: 2026-07-09
