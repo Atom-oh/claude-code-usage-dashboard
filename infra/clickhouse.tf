@@ -188,8 +188,9 @@ resource "kubectl_manifest" "chi" {
   depends_on = [kubectl_manifest.chk]
 }
 
-# 원본 clickhouse-schema.sql을 ON CLUSTER + ReplicatedMergeTree + TTL TO VOLUME 'cold'로
-# 변환한 버전. 컬럼/MATERIALIZED 정의는 원본과 동일 — engine과 클러스터 절만 다르다.
+# 원본 clickhouse-schema.sql(로컬/참조용 MergeTree 사본)을 ON CLUSTER + ReplicatedMergeTree +
+# TTL TO VOLUME 'cold'로 변환한 버전. 컬럼/MATERIALIZED 정의는 원본과 동일 — engine, 클러스터
+# 절, ZooKeeper 경로, storage_policy가 다르다.
 resource "kubernetes_config_map" "schema" {
   metadata {
     name      = "clickhouse-schema-replicated"
@@ -200,9 +201,16 @@ resource "kubernetes_config_map" "schema" {
   }
 }
 
+# Job 이름에 스키마 파일 해시를 넣어 스키마가 바뀌면 새 Job으로 교체되게 한다. 이름이 고정이면
+# ConfigMap 내용만 바뀌어도 Job spec에는 diff가 없어 terraform이 아무것도 하지 않고, 이미 완료된
+# Job은 다시 실행되지 않는다 — 스키마 파일에 추가한 ALTER(SeriesKey 백필, hourly TTL 보정)가
+# 영원히 적용되지 않는다는 뜻이다(리뷰에서 CRITICAL로 확인: hourly 롤업이 TTL 없이 UserEmail을
+# 무기한 보존하던 실제 원인). 스키마 파일에 INSERT는 없고 전부 IF NOT EXISTS/멱등 ALTER라 재실행이
+# 안전하다 — 유일한 비용은 MATERIALIZE COLUMN 뮤테이션이 다시 도는 것이고, 스키마 파일이 바뀔 때만
+# 일어난다.
 resource "kubernetes_job_v1" "schema_init" {
   metadata {
-    name      = "clickhouse-schema-init"
+    name      = "clickhouse-schema-init-${substr(filemd5("${path.module}/files/clickhouse-schema-replicated.sql"), 0, 8)}"
     namespace = kubernetes_namespace.claude_code.metadata[0].name
   }
   spec {

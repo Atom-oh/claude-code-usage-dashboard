@@ -72,16 +72,16 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
     -- 옮기니 같은 쿼리가 0.11초로 줄었다. 인라인 계산과 값이 100% 일치함을 확인(mismatch=0).
     SeriesKey       UInt64                 MATERIALIZED cityHash64(toString(Attributes))
 )
--- Replicated + hot/cold storage policy는 CLAUDE.md/docs/architecture.md에 문서화된 실제 인프라
--- (EKS 클러스터, S3 cold tier)를 그대로 반영한다 — 라이브 클러스터 실측(SHOW CREATE TABLE,
--- 2026-07-27)으로 정확한 볼륨명('cold')/구간(90일→cold, 180일→삭제)까지 확인.
--- TTL을 toIntervalDay(n)으로 적은 것은 SHOW CREATE TABLE의 렌더 형식을 그대로 옮긴 것이다 —
--- infra/files/clickhouse-schema-replicated.sql처럼 INTERVAL n DAY로 써도 의미는 완전히 같다.
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum', '{replica}')
+-- ENGINE/TTL은 단일 노드 기준으로 둔다 — 이 파일은 로컬(dashboard/docker-compose.yml, README가
+-- 안내하는 경로)과 참조용 사본이고, 그 ClickHouse에는 Keeper·{shard}/{replica} macro·hot_cold
+-- storage policy가 없어 Replicated/TO VOLUME 정의를 쓰면 테이블 생성이 전부 실패한다.
+-- 라이브(EKS)는 ReplicatedMergeTree + storage_policy='hot_cold'로 90일 후 S3 volume 'cold'
+-- 이동·180일 삭제다(실측 SHOW CREATE TABLE, 2026-07-27) — 그 정의는
+-- infra/files/clickhouse-schema-replicated.sql가 갖고 있고 terraform이 실제 적용하는 것도 그쪽이다.
+ENGINE = MergeTree
 PARTITION BY toYYYYMM(TimeUnix)
 ORDER BY (ExperimentGroup, MetricName, Model, toUnixTimestamp(TimeUnix))
-TTL toDateTime(TimeUnix) + toIntervalDay(90) TO VOLUME 'cold', toDateTime(TimeUnix) + toIntervalDay(180)
-SETTINGS storage_policy = 'hot_cold';
+TTL toDateTime(TimeUnix) + INTERVAL 180 DAY;
 
 -- CREATE TABLE IF NOT EXISTS는 테이블이 이미 있는 기존 클러스터에는 no-op이라 SeriesKey가
 -- 위 CREATE TABLE 블록에만 있으면 생기지 않는다(리뷰에서 CRITICAL로 확인: 기존 배포에
@@ -135,16 +135,17 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
 --
 -- 실측 드리프트(라이브 클러스터, 2026-07-27): 운영 중인 otel_metrics_sum_hourly에는 **TTL이
 -- 없었다**. CREATE TABLE IF NOT EXISTS가 이미 존재하는 테이블에 no-op이라 TTL 절이 적용된 적이
--- 없는 것으로 보인다 — 배포본의 의도가 아니라 미적용 상태다. 라이브를 맞추는 ALTER는 SeriesKey와
--- 같은 패턴으로 infra/files/clickhouse-schema-replicated.sql에 **실행되는 문장**으로 들어있다
--- (이 파일은 참조 사본이라 여기 적어도 실행되지 않는다). 적용 전까지는 180일이 지난 구간에서
--- 원본(삭제됨)과 롤업(잔존)의 집계가 발산한다.
-ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
+-- 없다 — 배포본의 의도가 아니라 미적용 상태다. 라이브를 맞추는 ALTER는 SeriesKey와 같은 패턴으로
+-- infra/files/clickhouse-schema-replicated.sql에 실행되는 문장으로 들어있고, 그 파일이 바뀌면
+-- schema_init Job이 해시 기반 이름으로 교체돼 다시 실행된다(infra/clickhouse.tf 주석 참고 —
+-- 이름이 고정이던 동안엔 재실행되지 않아 이 드리프트가 방치됐다). 적용 전까지는 180일이 지난
+-- 구간에서 원본(삭제됨)과 롤업(잔존)의 집계가 발산한다.
+-- 이 파일은 참조/로컬 사본이라 여기 적은 정의는 실행되지 않는다.
+ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
           Model, TokenType, Decision, SkillName, ToolName, hour)
-TTL toDateTime(hour) + toIntervalDay(90) TO VOLUME 'cold', toDateTime(hour) + toIntervalDay(180)
-SETTINGS storage_policy = 'hot_cold';
+TTL toDateTime(hour) + INTERVAL 180 DAY;
 
 -- MV는 인서트를 받은 노드에서 발화해 TO 테이블에 쓴다. 컬럼을 전부 명시(SELECT * 금지 —
 -- MATERIALIZED 소스 컬럼은 명시 참조해야 MV에서 해석된다). MV가 throw하면 원본 인서트가
@@ -168,7 +169,9 @@ FROM claude_code.otel_metrics_sum
 GROUP BY hour, MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
          Model, TokenType, Decision, SkillName, ToolName;
 
--- Gauge 계열 (active_time 등 일부). otel_metrics_sum과 동일하게 exporter 기본 부기 컬럼이
+-- Gauge 계열 — exporter가 gauge 타입 메트릭을 받으면 쓰는 테이블. Claude Code가 실제로 보내는
+-- 메트릭은 전부 counter(sum)로 들어오고(active_time.total 포함 — queries.js:597 실측), 이 테이블은
+-- 사실상 비어 있다. otel_metrics_sum과 동일하게 exporter 기본 부기 컬럼이
 -- 실제로 존재한다(실측 2026-07-27).
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge
 (
@@ -199,11 +202,10 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge
     "Exemplars.SpanId"             Array(String),
     "Exemplars.TraceId"            Array(String)
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_metrics_gauge', '{replica}')
+ENGINE = MergeTree
 PARTITION BY toYYYYMM(TimeUnix)
 ORDER BY (ExperimentGroup, MetricName, toUnixTimestamp(TimeUnix))
-TTL toDateTime(TimeUnix) + toIntervalDay(90) TO VOLUME 'cold', toDateTime(TimeUnix) + toIntervalDay(180)
-SETTINGS storage_policy = 'hot_cold';
+TTL toDateTime(TimeUnix) + INTERVAL 180 DAY;
 
 -- -----------------------------------------------------------------------------
 -- 2. Logs/Events — tool_result, user_prompt, api_request, tool_decision 등
@@ -245,14 +247,12 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_logs
     ScopeVersion    LowCardinality(String) DEFAULT '',
     ScopeAttributes Map(LowCardinality(String), String) DEFAULT map()
 )
--- 실측(라이브 클러스터, 2026-07-27): 45일→cold, 90일→삭제 — 위 주석의 "90일" 원래 의도보다
--- hot 구간이 짧다(45일 뒤 cold volume으로 이동, 삭제 자체는 90일에 일어남). ENGINE도
--- ReplicatedMergeTree + storage_policy = 'hot_cold'로 CLAUDE.md에 문서화된 실제 인프라와 맞춘다.
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_logs', '{replica}')
+-- 라이브(EKS)는 45일→cold volume 이동, 90일→삭제다(실측 2026-07-27) — 삭제 시점은 아래와 같고
+-- cold 이동만 추가된 형태다. 그 정의는 infra/files/clickhouse-schema-replicated.sql에 있다.
+ENGINE = MergeTree
 PARTITION BY toYYYYMM(Timestamp)
 ORDER BY (ExperimentGroup, EventName, toUnixTimestamp(Timestamp))
-TTL toDateTime(Timestamp) + toIntervalDay(45) TO VOLUME 'cold', toDateTime(Timestamp) + toIntervalDay(90)
-SETTINGS storage_policy = 'hot_cold';
+TTL toDateTime(Timestamp) + INTERVAL 90 DAY;
 
 -- McpServerName/McpToolName은 기존 클러스터에 이미 있던 컬럼(예전 정의:
 -- LogAttributes['mcp_server_name'] 직접 참조 — 항상 빈 문자열)이라 CREATE TABLE IF NOT

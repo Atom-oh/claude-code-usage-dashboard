@@ -2,7 +2,8 @@
 -- 컬럼/MATERIALIZED 정의·ENGINE·TTL 모두 원본(참조 사본)과 동일하다 — OTel exporter 기본
 -- 부기 컬럼 포함(아래 각 테이블 주석 참고). 남은 차이는 ON CLUSTER 절과 ZooKeeper 경로뿐이다.
 -- TTL은 테이블마다 다르다: metrics(sum/gauge/hourly)는 90일 후 S3 volume 'cold'로 이동·180일 후
--- 삭제, otel_logs만 45일 이동·90일 삭제(실측 2026-07-27, 라이브와 일치). cold 볼륨도 같은 계정의
+-- 삭제, otel_logs만 45일 이동·90일 삭제. sum/gauge/logs는 라이브와 일치하고(실측 2026-07-27),
+-- hourly 롤업만 라이브에 TTL이 없어 아래 ALTER로 맞춘다. cold 볼륨도 같은 계정의
 -- S3라 이동은 비용 단계일 뿐이고 PII 보존 기간을 끝내는 건 DELETE 쪽이다 —
 -- docs/reference/security.md 참고.
 -- 실측 후 attribute 키가 다르면 이 파일과 ../clickhouse-schema.sql 둘 다 갱신할 것.

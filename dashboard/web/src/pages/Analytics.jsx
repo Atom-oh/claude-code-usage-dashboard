@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Send } from "lucide-react";
 import { cn } from "../cn.js";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { Card } from "../components/Card.jsx";
-import { useChatStream } from "../useChatStream.js";
+import { useChatStream, useStickToBottom } from "../useChatStream.js";
 import { ChatTrace } from "../components/ChatTrace.jsx";
 import { useRange } from "../RangeContext.jsx";
 
@@ -48,14 +48,9 @@ export default function Analytics() {
   const { days } = useRange();
   const [input, setInput] = useState("");
   const { msgs, busy, status, trace, ask } = useChatStream();
-  const bottomRef = useRef(null);
   const started = msgs.length > 0;
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    // trace도 의존성 — thinking 스트리밍이나 SQL 추가로 ChatTrace 높이가 늘면 최신 내용/status가
-    // viewport 밖으로 밀린다.
-  }, [msgs, status, trace]);
+  const { containerRef, bottomRef, onScroll } = useStickToBottom([msgs, status, trace]);
 
   const submit = (text) => {
     if (!text.trim() || busy) return;
@@ -103,7 +98,7 @@ export default function Analytics() {
 
         {started && (
           <Card padded={false} className="flex flex-col">
-            <div className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
+            <div ref={containerRef} onScroll={onScroll} className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
               {msgs.map((m, i) => {
                 // 첫 토큰 도착 전 빈 assistant placeholder는 진행 중이 아니면 렌더하지 않는다.
                 if (!m.content && !(busy && i === msgs.length - 1)) return null;

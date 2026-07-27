@@ -74,8 +74,9 @@ The mitigations in place: `capToolResultJson()` caps each tool result's size (th
 actually bounds cross-hop growth), and `MAX_SQL_CALLS` bounds total `run_sql` executions per turn
 (independent of `MAX_HOPS` round-trips — a single hop can carry several parallel tool calls). Note
 `maxTokens` (8000) is an **output** cap and does not limit input/context growth. If it still
-reproduces, the conversation needs to be reset (client has no way to trim history other than
-starting a new chat).
+reproduces, the conversation needs to be reset. There is no reset button: the client keeps `msgs`
+in component state and resends all of it, so the user has to reload the page (`FloatingChat`'s X
+only cancels the stream and keeps the history). Tell them to refresh.
 
 ### 5. Scenario — `AccessDeniedException` / `ThrottlingException` in logs
 - `AccessDeniedException`: Bedrock model access for `CHAT_MODEL_ID` is not enabled in
@@ -126,6 +127,8 @@ enterprise 구분이 없습니다" — 실제로는 틀림, Scenario 2 참고)�
 kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=200 --prefix | grep -A8 '/api/chat'
 ```
 사용자에게 보인 `(요청ID: ...)`로 바쁜 로그에서 정확한 실패 호출을 grep할 수 있습니다.
+`-A8`이 중요합니다: `console.error("/api/chat", {...})`는 객체를 여러 줄에 걸쳐 출력하므로
+`grep`만 쓰면 첫 줄만 잡히고 requestId·stack이 빠집니다.
 
 ### 2. 시나리오 — 어시스턴트가 구분/컬럼이 "없다"고 답함
 가장 흔한 실패이며 **데이터 문제가 아닙니다**. `otel_metrics_sum_hourly`의 존재나
@@ -162,7 +165,8 @@ LEFT JOIN)를 ClickHouse에 직접 돌려 확인하세요. 직접 쿼리는 되�
 막는 것은 이쪽입니다), `MAX_SQL_CALLS`가 한 턴의 총 `run_sql` 실행 수를 상한합니다(`MAX_HOPS`
 왕복 수와는 별개 축 — 한 hop에 병렬 툴콜이 여러 개 실릴 수 있어서). `maxTokens`(8000)는
 **출력** 상한이라 입력/컨텍스트 팽창을 직접 줄이지는 않습니다. 그래도 재현되면 대화를
-리셋해야 합니다(클라이언트에는 새 대화 시작 외에 히스토리를 줄일 방법이 없습니다).
+리셋해야 합니다. 리셋 버튼은 없습니다 — 클라이언트가 `msgs`를 컴포넌트 state에 들고 전부 재전송하는
+구조라 **페이지를 새로고침**해야 합니다(`FloatingChat`의 X는 스트림만 취소하고 히스토리는 유지합니다).
 
 ### 5. 시나리오 — 로그에 `AccessDeniedException` / `ThrottlingException`
 - `AccessDeniedException`: 이 계정에서 `BEDROCK_REGION`/`AWS_REGION` 기준 `CHAT_MODEL_ID`의

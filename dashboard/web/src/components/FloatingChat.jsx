@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MessageCircle, Send, X } from "lucide-react";
 import { cn } from "../cn.js";
-import { useChatStream } from "../useChatStream.js";
+import { useChatStream, useStickToBottom } from "../useChatStream.js";
 import { ChatTrace } from "./ChatTrace.jsx";
 
 // Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/status/done/error)를 읽는
@@ -19,13 +19,7 @@ export function FloatingChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const { msgs, busy, status, trace, ask, stop: stopStream } = useChatStream();
-  const bottomRef = useRef(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    // trace도 의존성 — thinking 스트리밍이나 SQL 추가로 ChatTrace 높이가 늘면 최신 내용/status가
-    // viewport 밖으로 밀린다.
-  }, [msgs, status, trace]);
+  const { containerRef, bottomRef, onScroll } = useStickToBottom([msgs, status, trace]);
 
   // 챗을 닫으면 진행 중인 스트림도 취소한다(대화 내용은 유지 — useChatStream 참고).
   const stop = () => {
@@ -52,7 +46,7 @@ export function FloatingChat() {
               <X size={16} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
             {msgs.length === 0 && (
               <div className="flex flex-col gap-2">
                 <div className="text-[11px] uppercase tracking-[0.04em] text-ink-400">이렇게 물어보세요</div>

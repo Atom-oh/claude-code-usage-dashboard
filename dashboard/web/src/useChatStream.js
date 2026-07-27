@@ -43,6 +43,27 @@ export async function streamChat(messages, { onText, onStatus, onThinking, signa
   }
 }
 
+// 새 내용이 오면 맨 아래로 따라가되, 사용자가 위로 스크롤해 읽고 있으면 따라가지 않는다.
+// thinking은 델타마다 오므로(한 턴에 수십 번) 무조건 scrollIntoView하면 위로 스크롤 자체가
+// 불가능해진다(리뷰에서 확인). FloatingChat/Analytics가 같은 로직을 쓰므로 여기서 공유한다.
+export function useStickToBottom(deps) {
+  const containerRef = useRef(null);
+  const bottomRef = useRef(null);
+  const stick = useRef(true);
+
+  const onScroll = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; // 하단 80px 이내면 따라간다
+  };
+
+  useEffect(() => {
+    if (stick.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, deps);
+
+  return { containerRef, bottomRef, onScroll };
+}
+
 export function useChatStream() {
   const [msgs, setMsgs] = useState([]); // {role, content}
   const [busy, setBusy] = useState(false);

@@ -39,8 +39,11 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
   `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table, so the clause was never applied.
   The reconciling `ALTER ... MODIFY TTL` is now an executable statement in
   `infra/files/clickhouse-schema-replicated.sql` (the schema terraform actually applies, same
-  pattern as the `SeriesKey` backfill `ALTER`); it takes effect on the next schema apply, and the
-  rollup is out of policy until then.
+  pattern as the `SeriesKey` backfill `ALTER`). It had no execution path before: the schema-init
+  Job's name was fixed, so editing the ConfigMap produced no Job diff and a completed Job never
+  re-ran -- which is why the TTL never landed in the first place. The Job name now includes the
+  schema file's `filemd5`, so a schema change replaces the Job and re-runs it on `terraform apply`.
+  The rollup stays out of policy until that apply happens.
 - **The chat's SQL trace is exposed to any authenticated user** -- `/api/chat` streams the
   model-authored SQL to the client (rendered by `ChatTrace`). Emails in it are masked with the
   same `maskEmailText()` used on tool results, but other telemetry literals a query may
@@ -103,7 +106,10 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
   NOT EXISTS`가 기존 테이블에 no-op이라 TTL 절이 적용된 적이 없습니다. 맞추는
   `ALTER ... MODIFY TTL`은 이제 terraform이 실제 적용하는
   `infra/files/clickhouse-schema-replicated.sql`에 **실행되는 문장**으로 들어있습니다(`SeriesKey`
-  백필 `ALTER`와 같은 패턴) — 다음 스키마 적용 시 반영되며, 그전까지는 정책 위반 상태입니다.
+  백필 `ALTER`와 같은 패턴). 그전에는 실행 경로 자체가 없었습니다 — schema-init Job 이름이
+  고정이라 ConfigMap만 바꿔도 Job spec에 diff가 없고, 이미 완료된 Job은 다시 실행되지 않습니다.
+  TTL이 애초에 적용되지 않은 이유가 이것입니다. 이제 Job 이름에 스키마 파일 `filemd5`가 들어가
+  스키마가 바뀌면 Job이 교체·재실행됩니다. 그 apply가 일어나기 전까지는 정책 위반 상태입니다.
 - **챗의 SQL trace는 인증된 모든 사용자에게 노출됩니다** -- `/api/chat`가 모델이 작성한 SQL을
   클라이언트로 스트리밍하고 `ChatTrace`가 렌더합니다. 안의 이메일은 툴 결과와 동일한
   `maskEmailText()`로 마스킹되지만, 쿼리에 실릴 수 있는 다른 telemetry 리터럴 — 특히

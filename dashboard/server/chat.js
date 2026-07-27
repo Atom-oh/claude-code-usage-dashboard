@@ -176,7 +176,8 @@ export const SCHEMA_CONTEXT = `테이블(우선순위 순):
    MetricName, Value(Float64), UserEmail, SessionId, SeriesKey(UInt64, 시리즈 식별자 — 이미
    컬럼으로 있으니 cityHash64 등으로 직접 만들지 마세요), Model, TokenType, Decision, SkillName,
    AggregationTemporality, Attributes(Map).
-   MetricName 값(8개, 이 외 값 없음): claude_code.session.count / .token.usage / .cost.usage /
+   MetricName 값(실측 2026-07-27 기준 8개 — 새 메트릭이 추가될 수 있으니 원하는 값이 목록에 없으면
+   SELECT DISTINCT MetricName으로 확인하세요): claude_code.session.count / .token.usage / .cost.usage /
    .lines_of_code.count / .commit.count / .pull_request.count / .code_edit_tool.decision /
    .active_time.total.
 3. otel_logs — 이벤트. 컬럼: Timestamp, TimestampTime(DateTime), EventName, UserEmail, SessionId,
