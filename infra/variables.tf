@@ -16,6 +16,14 @@ variable "chat_model_id" {
   default = "global.anthropic.claude-sonnet-5"
 }
 
+# Bedrock ConverseStream 호출 리전. var.region(EKS/ClickHouse 리전)과 독립 — 워크샵 계정으로
+# 이식할 때는 us-west-2(Bedrock 허용 리전만)로 바꾼다. 지금 이 admin 환경은 워크샵 계정이
+# 아니라 리전 제한이 없으므로 var.region과 동일한 ap-northeast-2. 빈 문자열이면 env 주입을
+# 생략하고 AWS_REGION을 따른다.
+variable "bedrock_region" {
+  default = "ap-northeast-2"
+}
+
 variable "domain" {
   default = "atomai.click"
 }

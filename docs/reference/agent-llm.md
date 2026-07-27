@@ -15,7 +15,7 @@ a bounded tool-use loop.
 | Component | Path | Purpose |
 |---|---|---|
 | Chat handler | `dashboard/server/chat.js` | SSE endpoint, system prompt, tool-use loop, SQL sandbox |
-| Bedrock client | `dashboard/server/chat.js` | `BedrockRuntimeClient` + `ConverseStreamCommand`, model via `CHAT_MODEL_ID` |
+| Bedrock client | `dashboard/server/chat.js` | `BedrockRuntimeClient` + `ConverseStreamCommand`, model via `CHAT_MODEL_ID`, region via `BEDROCK_REGION` (falls back to `AWS_REGION`, then `us-east-1`) |
 | Chat UI | `dashboard/web/src/components/FloatingChat.jsx` | Floating chat widget, SSE consumer, markdown rendering |
 
 ### 3. Key Decisions
@@ -53,7 +53,7 @@ a bounded tool-use loop.
 | 구성요소 | 경로 | 목적 |
 |---|---|---|
 | 채팅 핸들러 | `dashboard/server/chat.js` | SSE 엔드포인트, 시스템 프롬프트, 툴콜 루프, SQL 샌드박스 |
-| Bedrock 클라이언트 | `dashboard/server/chat.js` | `BedrockRuntimeClient` + `ConverseStreamCommand`, `CHAT_MODEL_ID`로 모델 지정 |
+| Bedrock 클라이언트 | `dashboard/server/chat.js` | `BedrockRuntimeClient` + `ConverseStreamCommand`, `CHAT_MODEL_ID`로 모델 지정, 리전은 `BEDROCK_REGION`(없으면 `AWS_REGION`, 없으면 `us-east-1`) |
 | 채팅 UI | `dashboard/web/src/components/FloatingChat.jsx` | 플로팅 채팅 위젯, SSE 소비, 마크다운 렌더링 |
 
 ### 3. 주요 결정
