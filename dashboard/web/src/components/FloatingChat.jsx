@@ -23,7 +23,9 @@ export function FloatingChat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, status]);
+    // trace도 의존성 — thinking 스트리밍이나 SQL 추가로 ChatTrace 높이가 늘면 최신 내용/status가
+    // viewport 밖으로 밀린다.
+  }, [msgs, status, trace]);
 
   // 챗을 닫으면 진행 중인 스트림도 취소한다(대화 내용은 유지 — useChatStream 참고).
   const stop = () => {

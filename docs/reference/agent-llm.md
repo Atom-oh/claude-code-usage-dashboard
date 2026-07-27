@@ -43,14 +43,14 @@ a bounded tool-use loop.
   AWS error name/status) is still only ever logged server-side, never sent to the client.
 
 ### 4. Code Pointers
-- `dashboard/server/chat.js:76` -- `MODEL_ID`, `MAX_HOPS`
-- `dashboard/server/chat.js:167` -- `SCHEMA_CONTEXT` (exported separately from `SYSTEM` so `chat.test.js` can assert on it directly -- schema, temporality branch, per-metric `TokenType` meaning, reported-vs-computed cost, quotes `pricing.js`'s `PRICING_PROMPT_TABLE`)
-- `dashboard/server/chat.js:242` -- `SYSTEM` prompt (intro + `SCHEMA_CONTEXT` + `GROUP_CTE` interpolation + output rules)
-- `dashboard/server/chat.js:258` -- `TOOLS` (the `run_sql` tool spec)
-- `dashboard/server/chat.js:288` -- `capToolResultJson()` (char-capped tool results, guards against cross-hop context growth)
-- `dashboard/server/chat.js:300` -- `classifyChatError()` (AWS error -> user-facing Korean message + requestId)
-- `dashboard/server/chat.js:418` -- `MAX_SQL_CALLS` (total run_sql executions per turn, independent of `MAX_HOPS` round-trips)
-- `dashboard/server/chat.js:421` -- `handleChat()` (SSE stream + tool-use loop; wires an `AbortController` to `res`'s `close` event so a dropped browser connection cancels the in-flight Bedrock call and ClickHouse query, not just the SSE write)
+- `dashboard/server/chat.js` -- `MODEL_ID`, `MAX_HOPS`
+- `dashboard/server/chat.js` -- `SCHEMA_CONTEXT` (exported separately from `SYSTEM` so `chat.test.js` can assert on it directly -- schema, temporality branch, per-metric `TokenType` meaning, reported-vs-computed cost, quotes `pricing.js`'s `PRICING_PROMPT_TABLE`)
+- `dashboard/server/chat.js` -- `SYSTEM` prompt (intro + `SCHEMA_CONTEXT` + `GROUP_CTE` interpolation + output rules)
+- `dashboard/server/chat.js` -- `TOOLS` (the `run_sql` tool spec)
+- `dashboard/server/chat.js` -- `capToolResultJson()` (char-capped tool results, guards against cross-hop context growth)
+- `dashboard/server/chat.js` -- `classifyChatError()` (AWS error -> user-facing Korean message + requestId)
+- `dashboard/server/chat.js` -- `MAX_SQL_CALLS` (total run_sql executions per turn, independent of `MAX_HOPS` round-trips)
+- `dashboard/server/chat.js` -- `handleChat()` (SSE stream + tool-use loop; wires an `AbortController` to `res`'s `close` event so a dropped browser connection cancels the in-flight Bedrock call and ClickHouse query, not just the SSE write)
 - `dashboard/server/grouping.js` -- `GROUP_CTE` (imported by `chat.js`, not duplicated)
 - `dashboard/server/pricing.js` -- `PRICING_PROMPT_TABLE` (imported by `chat.js`, not duplicated -- keeps the chat's cost answers in sync with the Cost page's `withComputedCost`)
 - `dashboard/web/src/components/FloatingChat.jsx` -- client-side SSE consumer
@@ -100,14 +100,14 @@ a bounded tool-use loop.
   절대 노출되지 않습니다.
 
 ### 4. 코드 포인터
-- `dashboard/server/chat.js:76` -- `MODEL_ID`, `MAX_HOPS`
-- `dashboard/server/chat.js:167` -- `SCHEMA_CONTEXT`(`SYSTEM`과 분리 export — `chat.test.js`가 직접 단언할 수 있게. 스키마, temporality 분기, 메트릭별 `TokenType` 의미, reported vs computed 비용 구분, `pricing.js`의 `PRICING_PROMPT_TABLE` 인용)
-- `dashboard/server/chat.js:242` -- `SYSTEM` 프롬프트(intro + `SCHEMA_CONTEXT` + `GROUP_CTE` 보간 + 출력 규칙)
-- `dashboard/server/chat.js:258` -- `TOOLS`(`run_sql` 툴 스펙)
-- `dashboard/server/chat.js:288` -- `capToolResultJson()`(문자수 상한 툴 결과 — hop 간 컨텍스트 팽창 방지)
-- `dashboard/server/chat.js:300` -- `classifyChatError()`(AWS 에러 → 사용자용 한국어 문구 + requestId)
-- `dashboard/server/chat.js:418` -- `MAX_SQL_CALLS`(한 턴의 총 run_sql 실행 상한 — 왕복 수인 `MAX_HOPS`와는 별개 축)
-- `dashboard/server/chat.js:421` -- `handleChat()`(SSE 스트림 + 툴콜 루프; `res`의 `close` 이벤트에 `AbortController`를 연결해 브라우저 연결이 끊기면 SSE write뿐 아니라 진행 중인 Bedrock 호출·ClickHouse 쿼리도 취소)
+- `dashboard/server/chat.js` -- `MODEL_ID`, `MAX_HOPS`
+- `dashboard/server/chat.js` -- `SCHEMA_CONTEXT`(`SYSTEM`과 분리 export — `chat.test.js`가 직접 단언할 수 있게. 스키마, temporality 분기, 메트릭별 `TokenType` 의미, reported vs computed 비용 구분, `pricing.js`의 `PRICING_PROMPT_TABLE` 인용)
+- `dashboard/server/chat.js` -- `SYSTEM` 프롬프트(intro + `SCHEMA_CONTEXT` + `GROUP_CTE` 보간 + 출력 규칙)
+- `dashboard/server/chat.js` -- `TOOLS`(`run_sql` 툴 스펙)
+- `dashboard/server/chat.js` -- `capToolResultJson()`(문자수 상한 툴 결과 — hop 간 컨텍스트 팽창 방지)
+- `dashboard/server/chat.js` -- `classifyChatError()`(AWS 에러 → 사용자용 한국어 문구 + requestId)
+- `dashboard/server/chat.js` -- `MAX_SQL_CALLS`(한 턴의 총 run_sql 실행 상한 — 왕복 수인 `MAX_HOPS`와는 별개 축)
+- `dashboard/server/chat.js` -- `handleChat()`(SSE 스트림 + 툴콜 루프; `res`의 `close` 이벤트에 `AbortController`를 연결해 브라우저 연결이 끊기면 SSE write뿐 아니라 진행 중인 Bedrock 호출·ClickHouse 쿼리도 취소)
 - `dashboard/server/grouping.js` -- `GROUP_CTE`(`chat.js`가 import, 복제 없음)
 - `dashboard/server/pricing.js` -- `PRICING_PROMPT_TABLE`(`chat.js`가 import, 복제 없음 — 챗의 비용 답변이 Cost 페이지의 `withComputedCost`와 드리프트하지 않게)
 - `dashboard/web/src/components/FloatingChat.jsx` -- 클라이언트 측 SSE 소비

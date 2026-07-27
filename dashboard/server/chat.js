@@ -194,14 +194,21 @@ if(AggregationTemporality = 2, ..., ...)로 분기합니다 — 2로 가정하�
   전체가 기간 안에 잡혀 과대집계되기도 합니다. 기간 [시작, 끝) 안의 실제 증가량은 세션·시리즈
   단위로 "끝 직전 누적값 - 시작 직전 누적값"을 diff합니다(음수 방지 greatest).
 - temporality=1(delta): 이미 구간 증가분이므로 diff하면 안 됩니다 — 그냥 구간 sum(sumIf)입니다.
-otel_metrics_sum_hourly 기준 두 분기를 함께 쓰는 형태(모델·TokenType별로 쪼개는 예):
+먼저 테이블을 고르세요 — 롤업은 정각 경계에서만 정확합니다:
+- 조회 구간의 시작·끝이 **둘 다 정각**(예: 최근 2일, 어제 00:00~00:00, 오늘 09:00~18:00)이면
+  otel_metrics_sum_hourly를 쓰세요. 정확합니다.
+- 경계가 정각이 아니거나(예: 10:30~12:30) 분 단위 정확도가 필요하면 **반드시 원본
+  otel_metrics_sum을 TimeUnix로 쓰세요**. 롤업으로 근사하지 마세요: hour는 시간 버킷이라
+  경계 버킷이 통째로 포함되거나 빠지고, 그때 틀리는 양은 "1시간"이 아니라 **그 경계 시간대에
+  실제로 일어난 증가량**입니다 — 사용량이 몰린 시간대면 오차가 임의로 커집니다.
+otel_metrics_sum_hourly 기준 두 분기를 함께 쓰는 형태(정각 경계 전제, 모델·TokenType별로 쪼개는 예):
 SELECT Model, TokenType, sum(inc) AS inc FROM (
   SELECT Model, TokenType,
          if(AggregationTemporality = 2,
-             greatest(maxIf(max_value, hour < toStartOfHour({끝})) - maxIf(max_value, hour < toStartOfHour({시작})), 0),
-             sumIf(sum_value, hour >= toStartOfHour({시작}) AND hour < toStartOfHour({끝}))) AS inc
+             greatest(maxIf(max_value, hour < {끝}) - maxIf(max_value, hour < {시작}), 0),
+             sumIf(sum_value, hour >= {시작} AND hour < {끝})) AS inc
   FROM otel_metrics_sum_hourly
-  WHERE MetricName='...' AND hour < toStartOfHour({끝})
+  WHERE MetricName='...' AND hour < {끝}
   GROUP BY Model, TokenType, SessionId, SeriesKey, AggregationTemporality)
 GROUP BY Model, TokenType
 (기간 전체 총량이면 {시작}=조회 시작 시각. 나중에 바깥에서 그룹핑하거나 sumIf 조건으로 쓸 컬럼은
@@ -209,9 +216,9 @@ GROUP BY Model, TokenType
  참조할 수 없습니다. 총량만 필요하면 Model/TokenType을 양쪽에서 빼면 됩니다. 원본
  otel_metrics_sum을 쓸 때는 hour 대신 TimeUnix, max_value/sum_value 대신 Value, GROUP BY에
  SeriesKey, SessionId, AggregationTemporality.)
-주의 — 롤업은 시간 단위 근사입니다: hour는 시간 버킷이라 경계가 정각이 아닌 구간(예: 10:30~12:30)은
-버킷 전체가 포함/제외되어 최대 1시간 오차가 납니다. 위 예시처럼 경계를 toStartOfHour로 정규화하고
-답변에 "시간 단위"라고 밝히거나, 분 단위 정확도가 필요하면 원본 otel_metrics_sum을 TimeUnix로 쓰세요.
+사용자가 "최근 N시간"처럼 지금 시각 기준으로 물으면 경계가 정각이 아니므로, 원본을 쓰거나
+경계를 toStartOfHour로 내려 정각 구간으로 바꾼 뒤 **어느 구간을 실제로 집계했는지 답변에
+밝히세요**(예: "10:00~12:00 기준"). 조용히 근사하지 마세요.
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
 중요 — TokenType은 MetricName마다 다른 의미입니다(공통 컬럼을 재사용):
@@ -233,7 +240,8 @@ ${PRICING_PROMPT_TABLE}
     input → input, output → output, cacheRead → cacheRead, **cacheCreation → cacheWrite**
   즉 계산 비용 = (input 토큰×input) + (output 토큰×output) + (cacheRead 토큰×cacheRead)
                 + (cacheCreation 토큰×cacheWrite), 전부 1e6으로 나눕니다. TokenType별 합계는
-  sumIf(inc, TokenType='input') 처럼 위 boundary-diff 결과에 조건 집계로 뽑으세요.
+  sumIf(inc, TokenType='input') 처럼 위 boundary-diff 결과에 조건 집계로 뽑되, **Model별 GROUP BY를
+  유지하세요** — 여러 모델의 토큰을 먼저 합치고 단가 하나를 곱하면 대시보드 값과 발산합니다.
   모델명은 정규화(us./global./eu./apac./anthropic. 접두사, -v숫자:숫자/날짜(-YYYYMMDD)/[1m]
   접미사 제거) 후 위 표와 매칭합니다 — 원본 Model 값 그대로는 표에 없을 수 있습니다.
 - 사용자가 그냥 "비용"을 물으면 기본으로 cost.usage(reported_cost)를 조회해 답하되, 반드시
@@ -534,14 +542,17 @@ export async function handleChat(req, res) {
     if (abortController.signal.aborted) return; // 클라이언트가 이미 떠났다 — 로그/응답 낼 필요 없음
     // basic auth 뒤라 위험도는 낮지만, ClickHouse/AWS SDK 원문 에러(내부 테이블명·권한
     // 정보)를 클라이언트에 그대로 보내지 않는다 — 서버 로그에는 분류에 필요한 필드를 구조화해 남긴다.
+    // 이메일은 로그에 적재하기 전에 마스킹한다 — ClickHouse 파싱 에러는 문제가 된 SQL을 그대로
+    // 에코하므로 UserEmail 리터럴이 파드 로그에 평문으로 남을 수 있다(런북이 이 로그를 grep하도록
+    // 안내하므로 로그 접근자 전원에게 노출된다). 응답 경로에만 마스킹이 있었다.
     console.error("/api/chat", {
       hop,
       modelId: MODEL_ID,
       name: err?.name,
       status: err?.$metadata?.httpStatusCode,
       requestId: err?.$metadata?.requestId,
-      message: err?.message,
-      stack: err?.stack,
+      message: maskEmailText(err?.message ?? ""),
+      stack: maskEmailText(err?.stack ?? ""),
     });
     send("error", { message: classifyChatError(err) });
   } finally {

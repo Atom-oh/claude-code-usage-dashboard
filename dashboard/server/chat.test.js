@@ -267,10 +267,14 @@ test("SCHEMA_CONTEXT maps the cacheCreation TokenType onto pricing's cacheWrite 
   assert.match(SCHEMA_CONTEXT, /TokenType='cacheWrite'는[\s\S]*?존재하지 않/);
 });
 
-// 롤업은 시간 버킷이라 정각이 아닌 경계에서 최대 1시간 오차가 난다 — 프롬프트가 이걸 "구간의
-// 실제 증가량"이라고만 제시하면 모델이 분 단위 질문에도 롤업을 쓴다(리뷰에서 MAJOR로 확인).
-test("SCHEMA_CONTEXT warns that the hourly rollup is an hour-granular approximation", () => {
-  assert.match(SCHEMA_CONTEXT, /시간 단위 근사/);
+// 롤업은 시간 버킷이라 정각이 아닌 경계에서는 경계 버킷이 통째로 포함/제외된다 — 틀리는 양은
+// "1시간"이 아니라 그 시간대의 실제 증가량이라 사용량이 몰리면 임의로 커진다(리뷰에서 MAJOR로
+// 확인: 처음엔 양쪽 경계를 toStartOfHour로 내리고 "최대 1시간 오차"라고만 적었다). 그래서
+// 프롬프트는 "정각 경계일 때만 롤업, 아니면 원본 강제"를 규칙으로 못박아야 한다.
+test("SCHEMA_CONTEXT forces the raw table when the range boundaries are not whole hours", () => {
+  assert.match(SCHEMA_CONTEXT, /\*\*둘 다 정각\*\*/);
+  assert.match(SCHEMA_CONTEXT, /반드시 원본\s*\n?\s*otel_metrics_sum을 TimeUnix로/);
+  assert.match(SCHEMA_CONTEXT, /"1시간"이 아니라/);
   assert.match(SCHEMA_CONTEXT, /toStartOfHour/);
 });
 

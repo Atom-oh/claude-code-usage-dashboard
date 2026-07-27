@@ -53,7 +53,9 @@ export default function Analytics() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, status]);
+    // trace도 의존성 — thinking 스트리밍이나 SQL 추가로 ChatTrace 높이가 늘면 최신 내용/status가
+    // viewport 밖으로 밀린다.
+  }, [msgs, status, trace]);
 
   const submit = (text) => {
     if (!text.trim() || busy) return;

@@ -64,7 +64,9 @@ The client resends the *entire* message history every turn (`useChatStream.js`),
 appends every tool result to `messages` across up to `MAX_HOPS` round-trips within one turn. A
 long conversation (many preset questions clicked in a row) inflates the next request's input.
 The logged `hop` is **not** a growth signal — it resets to 0 on every request and is bounded by
-`MAX_HOPS` (4), so it can never exceed 3 in an error log. What it tells you is *where* in the turn
+`MAX_HOPS` (4). Inside the loop it never exceeds 3; a logged `hop` of exactly 4 means the failure
+happened in the forced tool-disabled wrap-up call made after the hop budget ran out. What it tells
+you is *where* in the turn
 the failure happened, not how much context accumulated. To judge growth, look at the size of the
 history the client sent and how many `run_sql` calls the turn made.
 
@@ -151,8 +153,9 @@ LEFT JOIN)를 ClickHouse에 직접 돌려 확인하세요. 직접 쿼리는 되�
 클라이언트는 매 턴 **전체 메시지 히스토리를 재전송**하고(`useChatStream.js`), 서버는 한 턴 안에서
 최대 `MAX_HOPS`회 왕복하는 동안 매 툴 결과를 `messages`에 계속 덧붙입니다. 프리셋 질문을 여러
 번 연속으로 누른 긴 대화는 다음 요청의 입력을 부풀립니다. 로그의 `hop`은 **팽창 신호가
-아닙니다** — 매 요청 0으로 초기화되고 `MAX_HOPS`(4)로 상한이라 에러 로그에서 3을 넘을 수
-없습니다. `hop`이 알려주는 건 턴의 *어느 지점*에서 실패했는지이고, 컨텍스트가 얼마나 쌓였는지는
+아닙니다** — 매 요청 0으로 초기화되고 `MAX_HOPS`(4)로 상한입니다. 루프 안에서는 3을 넘지 않고,
+로그에 `hop`이 정확히 4로 찍혔다면 hop 예산을 다 쓴 뒤의 강제 마무리 호출(툴 비활성)에서 실패한
+것입니다. `hop`이 알려주는 건 턴의 *어느 지점*에서 실패했는지이고, 컨텍스트가 얼마나 쌓였는지는
 아닙니다. 팽창 여부는 클라이언트가 보낸 히스토리 크기와 그 턴의 `run_sql` 실행 횟수로 판단하세요.
 
 현재 적용된 완화책: `capToolResultJson()`이 툴 결과 크기를 캡하고(hop 간 누적 팽창을 실제로

@@ -1,7 +1,10 @@
 -- ../clickhouse-schema.sql를 CHI(replicated 클러스터, 2레플리카)용으로 변환한 버전.
--- 컬럼/MATERIALIZED 정의는 원본과 동일(OTel exporter 기본 부기 컬럼 포함 — 아래 각 테이블의
--- 주석 참고) — 다른 점: ON CLUSTER, ReplicatedMergeTree,
--- 콜드 티어링 TTL(90일 후 S3 volume 'cold'로 이동, 180일 후 삭제 — 원본과 동일한 삭제 시점).
+-- 컬럼/MATERIALIZED 정의·ENGINE·TTL 모두 원본(참조 사본)과 동일하다 — OTel exporter 기본
+-- 부기 컬럼 포함(아래 각 테이블 주석 참고). 남은 차이는 ON CLUSTER 절과 ZooKeeper 경로뿐이다.
+-- TTL은 테이블마다 다르다: metrics(sum/gauge/hourly)는 90일 후 S3 volume 'cold'로 이동·180일 후
+-- 삭제, otel_logs만 45일 이동·90일 삭제(실측 2026-07-27, 라이브와 일치). cold 볼륨도 같은 계정의
+-- S3라 이동은 비용 단계일 뿐이고 PII 보존 기간을 끝내는 건 DELETE 쪽이다 —
+-- docs/reference/security.md 참고.
 -- 실측 후 attribute 키가 다르면 이 파일과 ../clickhouse-schema.sql 둘 다 갱신할 것.
 
 CREATE DATABASE IF NOT EXISTS claude_code ON CLUSTER 'replicated';
@@ -22,7 +25,6 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     Team            LowCardinality(String) MATERIALIZED ResourceAttributes['team'],
     UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
     Model           LowCardinality(String) MATERIALIZED Attributes['model'],
-    SessionId       String                 MATERIALIZED Attributes['session.id'],
     TokenType       LowCardinality(String) MATERIALIZED Attributes['type'],
     QuerySource     LowCardinality(String) MATERIALIZED Attributes['query_source'],
     Decision        LowCardinality(String) MATERIALIZED Attributes['decision'],
@@ -51,6 +53,9 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     "Exemplars.SpanId"             Array(String),
     "Exemplars.TraceId"            Array(String),
 
+    -- SessionId는 cumulative counter의 series identity(경계 diff 단위) — 컬럼 순서까지
+    -- clickhouse-schema.sql(참조 사본)과 동일하게 부기 블록 뒤에 둔다.
+    SessionId       String                 MATERIALIZED Attributes['session.id'],
     -- 진짜 OTel 시리즈 식별자 — clickhouse-schema.sql(참조 사본)과 동기화 유지.
     -- 매 쿼리 인라인 cityHash64(toString(Attributes))는 1.2초, 이 컬럼은 0.11초(실측 2026-07-10).
     SeriesKey       UInt64                 MATERIALIZED cityHash64(toString(Attributes))

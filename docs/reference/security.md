@@ -48,10 +48,18 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
   and to any proxy logging the SSE body. This reverses an earlier decision to withhold the SQL;
   it was taken deliberately to make long turns legible, and it is a real exposure surface to
   weigh if the auth boundary ever becomes multi-tenant.
+- **The same applies to the streamed reasoning summary** -- `send("thinking", ...)` forwards the
+  model's summarized reasoning verbatim, with no masking pass at all. If the model restates a
+  `SessionId` or an email it read from a tool result, that text reaches the client unmasked.
+  Same trust boundary and same deliberate trade-off as the SQL trace; revisit both together.
+- **Emails are masked before they reach the server log too** -- a ClickHouse parse error echoes
+  the offending SQL, so `err.message`/`err.stack` can carry a `UserEmail` literal, and the runbook
+  tells operators to grep those pod logs. `maskEmailText()` is applied before `console.error`.
+  `SessionId` in an echoed query is still logged as-is, same accepted trade-off as above.
 
 ### 4. Code Pointers
-- `dashboard/server/index.js:24` -- Basic Auth middleware registration
-- `dashboard/server/chat.js:152` -- `sanitizeSql()`
+- `dashboard/server/index.js` -- Basic Auth middleware registration
+- `dashboard/server/chat.js` -- `sanitizeSql()`
 - `dashboard/server/clickhouse.js` -- `queryReadonly()` export
 - `infra/dashboard.tf` -- env injection from k8s Secret
 
@@ -102,10 +110,18 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
   `SessionId` — 은 **마스킹되지 않고** 화면·DOM·SSE 본문을 로깅하는 프록시에 그대로 남습니다.
   이는 SQL을 숨기던 이전 결정을 뒤집은 것으로, 긴 턴의 진행 상황을 읽을 수 있게 하려고 의도적으로
   택했습니다. 인증 경계가 멀티테넌트로 바뀌면 반드시 재검토해야 하는 노출 경로입니다.
+- **스트리밍되는 추론 요약(thinking)도 동일합니다** -- `send("thinking", ...)`는 모델의 요약된
+  추론을 마스킹 없이 그대로 전달합니다. 모델이 툴 결과에서 읽은 `SessionId`나 이메일을 다시
+  언급하면 그 텍스트가 마스킹 없이 클라이언트에 도달합니다. SQL trace와 같은 신뢰 경계·같은
+  의도적 트레이드오프이므로 재검토도 함께 해야 합니다.
+- **이메일은 서버 로그에 적재되기 전에도 마스킹합니다** -- ClickHouse 파싱 에러가 문제가 된 SQL을
+  그대로 에코하므로 `err.message`/`err.stack`에 `UserEmail` 리터럴이 실릴 수 있고, 런북이 그 파드
+  로그를 grep하도록 안내합니다. 그래서 `console.error` 앞에 `maskEmailText()`를 적용합니다.
+  에코된 쿼리 안의 `SessionId`는 위와 같은 사유로 여전히 그대로 남습니다.
 
 ### 4. 코드 포인터
-- `dashboard/server/index.js:24` -- Basic Auth 미들웨어 등록
-- `dashboard/server/chat.js:152` -- `sanitizeSql()`
+- `dashboard/server/index.js` -- Basic Auth 미들웨어 등록
+- `dashboard/server/chat.js` -- `sanitizeSql()`
 - `dashboard/server/clickhouse.js` -- `queryReadonly()` export
 - `infra/dashboard.tf` -- k8s Secret에서 env 주입
 
