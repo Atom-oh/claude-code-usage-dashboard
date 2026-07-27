@@ -12,7 +12,10 @@ export function ChatTrace({ thinking, sqls = [] }) {
         onClick={() => setOpen((o) => !o)}
         className="text-ink-400 hover:text-ink-600"
       >
-        {open ? "▾" : "▸"} 사고 과정{sqls.length > 0 && ` · 쿼리 ${sqls.length}개`}
+        {/* thinking 없이 SQL만 있는 턴도 있다(모델이 추론 없이 바로 쿼리) — 그때 "사고 과정"은 거짓 라벨 */}
+        {open ? "▾" : "▸"} {thinking ? "사고 과정" : "실행한 쿼리"}
+        {sqls.length > 0 && thinking && ` · 쿼리 ${sqls.length}개`}
+        {sqls.length > 0 && !thinking && ` ${sqls.length}개`}
       </button>
       {open && (
         <div className="mt-1 flex flex-col gap-2 rounded-lg border border-ink-100 bg-ink-50 p-2">

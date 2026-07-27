@@ -203,6 +203,13 @@ GROUP BY grp, model HAVING cost > 0 ORDER BY grp, cost DESC`;
   assert.doesNotThrow(() => sanitizeSql(sql));
 });
 
+// 위 테스트는 CTE가 샌드박스를 통과하는지만 본다 — 프롬프트가 그 CTE를 실제로 가르치는지는
+// 별개 회귀다(문자열이 손으로 복사돼 grouping.js와 드리프트하면 챗이 다시 "그룹 구분 정보가
+// 없다"고 답한다 — 이 PR이 고친 원래 버그).
+test("SYSTEM embeds grouping.js's GROUP_CTE verbatim, not a hand-copied duplicate", () => {
+  assert.ok(SYSTEM.includes(GROUP_CTE));
+});
+
 // 200행 상한과 별개로 hop마다 messages에 누적되는 툴 결과 텍스트 자체를 캡해야 한다 — 안 그러면
 // MAX_HOPS번 왕복하는 동안 다음 hop 입력이 눈덩이처럼 불어나 maxTokens를 넘긴다(실제 증상: 긴
 // 대화 뒤 챗이 죽음). 잘려도 유효한 JSON이어야 한다.

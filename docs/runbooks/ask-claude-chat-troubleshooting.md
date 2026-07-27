@@ -31,10 +31,11 @@ Scenario 2).
 
 ### 1. Get the classified message and requestId from the user, then the raw error from logs
 ```bash
-kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=200 --prefix | grep '/api/chat'
+kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=200 --prefix | grep -A8 '/api/chat'
 ```
 The requestId shown to the user (in `(요청ID: ...)`) lets you grep the exact failing call out of
-a busy log.
+a busy log. `-A8` matters: `console.error("/api/chat", {...})` prints the object across several
+lines, so a bare `grep` returns only the first line and drops the requestId and stack.
 
 ### 2. Scenario — assistant says a distinction/column "doesn't exist"
 This is the most common failure and is **not a data problem**. The model doesn't know
@@ -120,7 +121,7 @@ enterprise 구분이 없습니다" — 실제로는 틀림, Scenario 2 참고)�
 
 ### 1. 사용자가 본 분류 문구·요청ID를 받고, 로그에서 원문 에러를 찾는다
 ```bash
-kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=200 --prefix | grep '/api/chat'
+kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=200 --prefix | grep -A8 '/api/chat'
 ```
 사용자에게 보인 `(요청ID: ...)`로 바쁜 로그에서 정확한 실패 호출을 grep할 수 있습니다.
 

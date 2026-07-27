@@ -16,12 +16,8 @@ CREATE DATABASE IF NOT EXISTS claude_code;
 --    여기서는 Claude Code metric이 대부분 counter(sum)/gauge라, 두 테이블만 튜닝.
 -- -----------------------------------------------------------------------------
 
--- Counter/monotonic sum 계열 (session/loc/commit/pr/cost/token/decision)
--- ResourceSchemaUrl부터 Exemplars.*까지는 OTel ClickHouse exporter가 기본으로 만드는 부기(bookkeeping)
--- 컬럼이다 — 이 DDL이 원래 가독성을 위해 생략했었는데, exporter가 라이브 클러스터에 자체
--- 기본 스키마로 테이블을 먼저 만들어 실제로는 이 컬럼들이 존재한다(실측: DESCRIBE TABLE로 확인,
--- 2026-07-27). 신규 설치 시 이 DDL로 만든 테이블이 라이브와 다른 스키마가 되는 걸 막기 위해
--- 그대로 맞춘다.
+-- Counter/monotonic sum 계열 (session/loc/commit/pr/cost/token/decision/active_time —
+-- active_time.total은 이름과 달리 gauge가 아니라 이 sum 테이블로 들어온다, queries.js:597 실측)
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
 (
     ResourceAttributes   Map(LowCardinality(String), String) CODEC(ZSTD(1)),
@@ -138,14 +134,11 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
 -- 정책을 우회한다.
 --
 -- 실측 드리프트(라이브 클러스터, 2026-07-27): 운영 중인 otel_metrics_sum_hourly에는 **TTL이
--- 없다**. CREATE TABLE IF NOT EXISTS가 이미 존재하는 테이블에 no-op이라 TTL 절이 적용된 적이
--- 없는 것으로 보인다 — 배포본의 의도가 아니라 미적용 상태다. 이 파일은 의도(=배포본)를 기준으로
--- 두고, 라이브를 맞추려면 아래를 1회 실행할 것:
---   ALTER TABLE claude_code.otel_metrics_sum_hourly ON CLUSTER 'replicated'
---     MODIFY TTL toDateTime(hour) + toIntervalDay(90) TO VOLUME 'cold',
---                toDateTime(hour) + toIntervalDay(180);
--- 적용 전까지는 180일이 지난 구간에서 원본(삭제됨)과 롤업(잔존)의 집계가 발산하므로, 그 구간을
--- 조회하는 쿼리는 두 테이블 중 어느 쪽을 읽는지에 따라 총량이 달라진다.
+-- 없었다**. CREATE TABLE IF NOT EXISTS가 이미 존재하는 테이블에 no-op이라 TTL 절이 적용된 적이
+-- 없는 것으로 보인다 — 배포본의 의도가 아니라 미적용 상태다. 라이브를 맞추는 ALTER는 SeriesKey와
+-- 같은 패턴으로 infra/files/clickhouse-schema-replicated.sql에 **실행되는 문장**으로 들어있다
+-- (이 파일은 참조 사본이라 여기 적어도 실행되지 않는다). 적용 전까지는 180일이 지난 구간에서
+-- 원본(삭제됨)과 롤업(잔존)의 집계가 발산한다.
 ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,

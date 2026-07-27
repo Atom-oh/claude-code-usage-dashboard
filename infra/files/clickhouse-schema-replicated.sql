@@ -1,5 +1,6 @@
 -- ../clickhouse-schema.sql를 CHI(replicated 클러스터, 2레플리카)용으로 변환한 버전.
--- 컬럼/MATERIALIZED 정의는 원본과 동일 — 다른 점: ON CLUSTER, ReplicatedMergeTree,
+-- 컬럼/MATERIALIZED 정의는 원본과 동일(OTel exporter 기본 부기 컬럼 포함 — 아래 각 테이블의
+-- 주석 참고) — 다른 점: ON CLUSTER, ReplicatedMergeTree,
 -- 콜드 티어링 TTL(90일 후 S3 volume 'cold'로 이동, 180일 후 삭제 — 원본과 동일한 삭제 시점).
 -- 실측 후 attribute 키가 다르면 이 파일과 ../clickhouse-schema.sql 둘 다 갱신할 것.
 
@@ -28,6 +29,28 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     Language        LowCardinality(String) MATERIALIZED Attributes['language'],
     SkillName       LowCardinality(String) MATERIALIZED Attributes['skill.name'],
     AgentName       LowCardinality(String) MATERIALIZED Attributes['agent.name'],
+
+    -- ResourceSchemaUrl부터 Exemplars.*까지는 OTel ClickHouse exporter가 자체 기본 스키마로
+    -- 테이블을 만들 때 넣는 부기(bookkeeping) 컬럼이다 — 라이브 클러스터는 exporter가 먼저
+    -- 테이블을 만들어 실제로 존재한다(실측 2026-07-27). 이 파일이 먼저 실행되는 신규 설치에서
+    -- 컬럼이 빠지면 exporter 인서트가 없는 컬럼을 지정해 실패하므로 그대로 맞춘다
+    -- (기존 클러스터에는 CREATE TABLE IF NOT EXISTS가 no-op이라 영향 없음).
+    -- ../clickhouse-schema.sql(참조 사본)과 동기화 유지.
+    ResourceSchemaUrl     String DEFAULT '',
+    ScopeVersion          String DEFAULT '',
+    ScopeAttributes       Map(LowCardinality(String), String) DEFAULT map(),
+    ScopeDroppedAttrCount UInt32 DEFAULT 0,
+    ScopeSchemaUrl        String DEFAULT '',
+    ServiceName           LowCardinality(String) DEFAULT '',
+    MetricDescription     String DEFAULT '',
+    MetricUnit            String DEFAULT '',
+    Flags                 UInt32 DEFAULT 0,
+    "Exemplars.FilteredAttributes" Array(Map(LowCardinality(String), String)),
+    "Exemplars.TimeUnix"           Array(DateTime64(9)),
+    "Exemplars.Value"              Array(Float64),
+    "Exemplars.SpanId"             Array(String),
+    "Exemplars.TraceId"            Array(String),
+
     -- 진짜 OTel 시리즈 식별자 — clickhouse-schema.sql(참조 사본)과 동기화 유지.
     -- 매 쿼리 인라인 cityHash64(toString(Attributes))는 1.2초, 이 컬럼은 0.11초(실측 2026-07-10).
     SeriesKey       UInt64                 MATERIALIZED cityHash64(toString(Attributes))
@@ -79,6 +102,14 @@ TTL toDateTime(hour) + INTERVAL 90 DAY TO VOLUME 'cold',
     toDateTime(hour) + INTERVAL 180 DAY DELETE
 SETTINGS storage_policy = 'hot_cold';
 
+-- 위 CREATE TABLE IF NOT EXISTS는 롤업 테이블이 이미 있는 기존 클러스터에 no-op이라 TTL 절이
+-- 적용되지 않는다 — 실측(2026-07-27) 라이브 롤업에는 TTL이 없었다(SeriesKey/McpServerName과
+-- 완전히 같은 함정). TTL 없이 두면 UserEmail을 담은 롤업이 원본 삭제(180일) 뒤에도 무기한
+-- 남아 retention을 우회하고, 그 구간에서 원본/롤업 집계가 발산한다. 이미 TTL이 같으면 no-op.
+ALTER TABLE claude_code.otel_metrics_sum_hourly ON CLUSTER 'replicated'
+    MODIFY TTL toDateTime(hour) + INTERVAL 90 DAY TO VOLUME 'cold',
+               toDateTime(hour) + INTERVAL 180 DAY DELETE;
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.otel_metrics_sum_hourly_mv ON CLUSTER 'replicated'
 TO claude_code.otel_metrics_sum_hourly AS
 SELECT
@@ -105,7 +136,23 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge ON CLUSTER 'replicated
 
     ExperimentGroup LowCardinality(String) MATERIALIZED ResourceAttributes['experiment.group'],
     UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
-    Model           LowCardinality(String) MATERIALIZED Attributes['model']
+    Model           LowCardinality(String) MATERIALIZED Attributes['model'],
+
+    -- otel_metrics_sum과 같은 exporter 기본 부기 컬럼 — 같은 사유로 명시.
+    ResourceSchemaUrl     String DEFAULT '',
+    ScopeVersion          String DEFAULT '',
+    ScopeAttributes       Map(LowCardinality(String), String) DEFAULT map(),
+    ScopeDroppedAttrCount UInt32 DEFAULT 0,
+    ScopeSchemaUrl        String DEFAULT '',
+    ServiceName           LowCardinality(String) DEFAULT '',
+    MetricDescription     String DEFAULT '',
+    MetricUnit            String DEFAULT '',
+    Flags                 UInt32 DEFAULT 0,
+    "Exemplars.FilteredAttributes" Array(Map(LowCardinality(String), String)),
+    "Exemplars.TimeUnix"           Array(DateTime64(9)),
+    "Exemplars.Value"              Array(Float64),
+    "Exemplars.SpanId"             Array(String),
+    "Exemplars.TraceId"            Array(String)
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_metrics_gauge', '{replica}')
 PARTITION BY toYYYYMM(TimeUnix)
@@ -136,7 +183,17 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_logs ON CLUSTER 'replicated'
     ToolName        LowCardinality(String) MATERIALIZED LogAttributes['tool_name'],
     McpServerName   LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_server_name'),
     McpToolName     LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_tool_name'),
-    Success         LowCardinality(String) MATERIALIZED LogAttributes['success']
+    Success         LowCardinality(String) MATERIALIZED LogAttributes['success'],
+
+    -- TimestampTime부터 ScopeAttributes까지는 exporter 기본 부기 컬럼(실측 2026-07-27) —
+    -- otel_metrics_sum과 같은 사유로 명시. clickhouse-schema.sql(참조 사본)과 동기화 유지.
+    TimestampTime   DateTime DEFAULT toDateTime(Timestamp),
+    TraceFlags      UInt8 DEFAULT 0,
+    ResourceSchemaUrl LowCardinality(String) DEFAULT '',
+    ScopeSchemaUrl  LowCardinality(String) DEFAULT '',
+    ScopeName       String DEFAULT '',
+    ScopeVersion    LowCardinality(String) DEFAULT '',
+    ScopeAttributes Map(LowCardinality(String), String) DEFAULT map()
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_logs', '{replica}')
 PARTITION BY toYYYYMM(Timestamp)

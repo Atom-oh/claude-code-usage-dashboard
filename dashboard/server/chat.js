@@ -194,19 +194,24 @@ if(AggregationTemporality = 2, ..., ...)로 분기합니다 — 2로 가정하�
   전체가 기간 안에 잡혀 과대집계되기도 합니다. 기간 [시작, 끝) 안의 실제 증가량은 세션·시리즈
   단위로 "끝 직전 누적값 - 시작 직전 누적값"을 diff합니다(음수 방지 greatest).
 - temporality=1(delta): 이미 구간 증가분이므로 diff하면 안 됩니다 — 그냥 구간 sum(sumIf)입니다.
-otel_metrics_sum_hourly 기준 두 분기를 함께 쓰는 형태:
-SELECT sum(inc) FROM (
-  SELECT if(AggregationTemporality = 2,
-             greatest(maxIf(max_value, hour < {끝}) - maxIf(max_value, hour < {시작}), 0),
-             sumIf(sum_value, hour >= {시작} AND hour < {끝})) AS inc
+otel_metrics_sum_hourly 기준 두 분기를 함께 쓰는 형태(모델·TokenType별로 쪼개는 예):
+SELECT Model, TokenType, sum(inc) AS inc FROM (
+  SELECT Model, TokenType,
+         if(AggregationTemporality = 2,
+             greatest(maxIf(max_value, hour < toStartOfHour({끝})) - maxIf(max_value, hour < toStartOfHour({시작})), 0),
+             sumIf(sum_value, hour >= toStartOfHour({시작}) AND hour < toStartOfHour({끝}))) AS inc
   FROM otel_metrics_sum_hourly
-  WHERE MetricName='...' AND hour < {끝}
-  GROUP BY SessionId, SeriesKey, AggregationTemporality)
-(기간 전체 총량이면 {시작}=조회 시작 시각. 원본 otel_metrics_sum을 쓸 때는 hour 대신 TimeUnix,
- max_value/sum_value 대신 Value, GROUP BY에 SeriesKey, SessionId, AggregationTemporality.)
+  WHERE MetricName='...' AND hour < toStartOfHour({끝})
+  GROUP BY Model, TokenType, SessionId, SeriesKey, AggregationTemporality)
+GROUP BY Model, TokenType
+(기간 전체 총량이면 {시작}=조회 시작 시각. 나중에 바깥에서 그룹핑하거나 sumIf 조건으로 쓸 컬럼은
+ 반드시 서브쿼리의 SELECT와 GROUP BY에 함께 넣으세요 — 서브쿼리에 없는 컬럼은 바깥 스코프에서
+ 참조할 수 없습니다. 총량만 필요하면 Model/TokenType을 양쪽에서 빼면 됩니다. 원본
+ otel_metrics_sum을 쓸 때는 hour 대신 TimeUnix, max_value/sum_value 대신 Value, GROUP BY에
+ SeriesKey, SessionId, AggregationTemporality.)
 주의 — 롤업은 시간 단위 근사입니다: hour는 시간 버킷이라 경계가 정각이 아닌 구간(예: 10:30~12:30)은
-버킷 전체가 포함/제외되어 최대 1시간 오차가 납니다. 정각 경계로 정렬(toStartOfHour)해서 "시간 단위"
-라고 밝히거나, 분 단위 정확도가 필요하면 원본 otel_metrics_sum을 TimeUnix로 쓰세요.
+버킷 전체가 포함/제외되어 최대 1시간 오차가 납니다. 위 예시처럼 경계를 toStartOfHour로 정규화하고
+답변에 "시간 단위"라고 밝히거나, 분 단위 정확도가 필요하면 원본 otel_metrics_sum을 TimeUnix로 쓰세요.
 유저 수/세션 수 존재 여부(uniqExact)는 원본 테이블을 그대로 써도 됩니다.
 
 중요 — TokenType은 MetricName마다 다른 의미입니다(공통 컬럼을 재사용):

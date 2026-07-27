@@ -49,7 +49,10 @@ export function useChatStream() {
   const [status, setStatus] = useState("");
   // 진행 중인 턴의 사고 과정과 실행한 SQL — 답변 말풍선과 별개로 접이식 영역에 렌더한다.
   // 답변이 시작되면 지우지 않는다(무엇을 근거로 답했는지 확인하려는 게 이 기능의 목적).
-  const [trace, setTrace] = useState({ thinking: "", sqls: [] });
+  // turn은 단조 증가하는 턴 번호 — 렌더 쪽 <ChatTrace key>로 쓴다. msgs.length는 key가 될 수 없다:
+  // ask()가 오류 말풍선을 걸러내고 연속 user 턴을 합치므로 재질문 후 길이가 그대로일 수 있고,
+  // 그러면 리마운트가 안 돼 이전 턴의 펼침 상태가 남는다(리뷰에서 확인).
+  const [trace, setTrace] = useState({ thinking: "", sqls: [], turn: 0 });
   const abortRef = useRef(null);
 
   // 언마운트 시 진행 중인 스트림 취소 — 안 그러면 fetch reader 루프가 계속 돌며 죽은 컴포넌트 state를 갱신한다.
@@ -68,7 +71,8 @@ export function useChatStream() {
     if (!q || busy) return;
     setBusy(true);
     setStatus("");
-    setTrace({ thinking: "", sqls: [] }); // 새 질문마다 초기화 — 이전 턴의 추론/쿼리가 섞이면 오해를 부른다
+    // 새 질문마다 초기화 — 이전 턴의 추론/쿼리가 섞이면 오해를 부른다
+    setTrace((t) => ({ thinking: "", sqls: [], turn: t.turn + 1 }));
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;

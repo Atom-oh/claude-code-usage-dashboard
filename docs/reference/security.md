@@ -29,13 +29,18 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
   fetched via `kubectl get secret ... -o jsonpath` for local debugging, never written to disk
   in the repo.
 - **PII retention is enforced by table TTL, and every store that holds `UserEmail` must carry
-  one** -- `otel_metrics_sum` and `otel_metrics_gauge` drop at 180 days, `otel_logs` at 90. The
-  hourly rollup `otel_metrics_sum_hourly` also holds `UserEmail`, so it carries the same 180-day
-  deletion as the raw table it summarizes; without it the rollup would retain user emails
-  indefinitely after the source rows were deleted, silently bypassing retention. **Measured
-  drift (2026-07-27): the live rollup has no TTL** -- `CREATE TABLE IF NOT EXISTS` is a no-op on
-  an existing table, so the clause in the deployment schema was never applied. The reconciling
-  `ALTER` is in `clickhouse-schema.sql`; until it runs, the rollup is out of policy.
+  one** -- `otel_metrics_sum` and `otel_metrics_gauge` move to the S3 cold volume at 90 days and
+  drop at 180; `otel_logs` moves at 45 and drops at 90. The cold tier is the same S3 bucket under
+  the same account, so moving is a storage-cost step, not a retention step -- only the `DELETE`
+  leg discharges the PII obligation. The hourly rollup `otel_metrics_sum_hourly` also holds
+  `UserEmail`, so it carries the same 90/180-day TTL as the raw table it summarizes; without it
+  the rollup would retain user emails indefinitely after the source rows were deleted, silently
+  bypassing retention. **Measured drift (2026-07-27): the live rollup had no TTL** --
+  `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table, so the clause was never applied.
+  The reconciling `ALTER ... MODIFY TTL` is now an executable statement in
+  `infra/files/clickhouse-schema-replicated.sql` (the schema terraform actually applies, same
+  pattern as the `SeriesKey` backfill `ALTER`); it takes effect on the next schema apply, and the
+  rollup is out of policy until then.
 - **The chat's SQL trace is exposed to any authenticated user** -- `/api/chat` streams the
   model-authored SQL to the client (rendered by `ChatTrace`). Emails in it are masked with the
   same `maskEmailText()` used on tool results, but other telemetry literals a query may
@@ -81,12 +86,16 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
   로컬 디버깅 시 `kubectl get secret ... -o jsonpath`로 가져오되 저장소에 파일로 남기지
   않습니다.
 - **PII 보존 기간은 테이블 TTL로 강제하며, `UserEmail`을 담는 모든 저장소가 TTL을 가져야
-  합니다** -- `otel_metrics_sum`·`otel_metrics_gauge`는 180일, `otel_logs`는 90일에 삭제됩니다.
-  시간별 롤업 `otel_metrics_sum_hourly`도 `UserEmail`을 담으므로 원본과 동일한 180일 삭제를
+  합니다** -- `otel_metrics_sum`·`otel_metrics_gauge`는 90일에 S3 cold 볼륨으로 이동하고 180일에
+  삭제되며, `otel_logs`는 45일 이동·90일 삭제입니다. cold 티어도 같은 계정의 같은 S3 버킷이라
+  이동은 스토리지 비용 단계일 뿐이고, PII 의무를 실제로 해소하는 건 `DELETE` 쪽뿐입니다.
+  시간별 롤업 `otel_metrics_sum_hourly`도 `UserEmail`을 담으므로 원본과 동일한 90/180일 TTL을
   가집니다 — 없으면 원본이 삭제된 뒤에도 롤업에 사용자 이메일이 무기한 남아 보존 정책을 조용히
-  우회합니다. **실측 드리프트(2026-07-27): 라이브 롤업에는 TTL이 없습니다** — `CREATE TABLE IF
-  NOT EXISTS`가 기존 테이블에 no-op이라 배포 스키마의 TTL 절이 적용된 적이 없습니다. 맞추는
-  `ALTER`는 `clickhouse-schema.sql`에 있고, 실행 전까지 롤업은 정책 위반 상태입니다.
+  우회합니다. **실측 드리프트(2026-07-27): 라이브 롤업에는 TTL이 없었습니다** — `CREATE TABLE IF
+  NOT EXISTS`가 기존 테이블에 no-op이라 TTL 절이 적용된 적이 없습니다. 맞추는
+  `ALTER ... MODIFY TTL`은 이제 terraform이 실제 적용하는
+  `infra/files/clickhouse-schema-replicated.sql`에 **실행되는 문장**으로 들어있습니다(`SeriesKey`
+  백필 `ALTER`와 같은 패턴) — 다음 스키마 적용 시 반영되며, 그전까지는 정책 위반 상태입니다.
 - **챗의 SQL trace는 인증된 모든 사용자에게 노출됩니다** -- `/api/chat`가 모델이 작성한 SQL을
   클라이언트로 스트리밍하고 `ChatTrace`가 렌더합니다. 안의 이메일은 툴 결과와 동일한
   `maskEmailText()`로 마스킹되지만, 쿼리에 실릴 수 있는 다른 telemetry 리터럴 — 특히
