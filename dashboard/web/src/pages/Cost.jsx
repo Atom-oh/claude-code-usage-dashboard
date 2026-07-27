@@ -12,7 +12,7 @@ import { useApi } from "../useApi.js";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
-import { modelColorFor, byModelLegendOrder } from "../colors.js";
+import { modelColorFor, byModelLegendOrder, tokenTypeColorFor } from "../colors.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -257,12 +257,14 @@ export default function Cost() {
                 data={tokenTypeRowsFor("bedrock")}
                 nameKey="type"
                 valueKey="tokens"
+                colorOf={tokenTypeColorFor}
               />
               <DonutBreakdown
                 title="토큰 타입별 비중 — enterprise"
                 data={tokenTypeRowsFor("enterprise")}
                 nameKey="type"
                 valueKey="tokens"
+                colorOf={tokenTypeColorFor}
               />
             </>
           )}

@@ -82,3 +82,18 @@ export function modelLegendRank(model) {
 export function byModelLegendOrder(a, b) {
   return modelLegendRank(a) - modelLegendRank(b);
 }
+
+// Cost 페이지 "토큰 타입별 비중" 도넛 — colorOf를 안 넘기면 DonutBody가 범용
+// useChartColors().palette로 폴백하는데, 그 팔레트의 3번째 슬롯(--chart-3, 진한 바이올렛
+// #7b26ff)이 캐시 읽기 자리에 배정돼 유독 진하게 튀었다(리뷰에서 확인) — 위 모델 팔레트와
+// 같은 파스텔 무드로 4종 전용 색을 고정한다.
+const TOKEN_TYPE_COLOR = {
+  "입력": "#8FA8EC",
+  "출력": "#6FC2B4",
+  "캐시 읽기": "#B7A6E0",
+  "캐시 쓰기": "#F0B872",
+};
+
+export function tokenTypeColorFor(type) {
+  return TOKEN_TYPE_COLOR[type] ?? null;
+}

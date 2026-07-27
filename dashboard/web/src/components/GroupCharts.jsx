@@ -282,10 +282,10 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", co
 }
 
 // ../awsops DonutBreakdown 포팅 — innerRadius 55/outerRadius 80, 중앙 합계 라벨 + 사이드 범례.
-export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey, valuePrefix = "" }) {
+export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey, valuePrefix = "", colorOf }) {
   return (
     <Card title={title} subtitle={subtitle} right={right}>
-      <DonutBody data={data} nameKey={nameKey} valueKey={valueKey} valuePrefix={valuePrefix} />
+      <DonutBody data={data} nameKey={nameKey} valueKey={valueKey} valuePrefix={valuePrefix} colorOf={colorOf} />
     </Card>
   );
 }
