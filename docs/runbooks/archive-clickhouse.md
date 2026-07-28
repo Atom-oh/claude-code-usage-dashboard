@@ -34,14 +34,22 @@ a full backup→restore→row-count round trip, see Notes.
 Once, shortly before the workshop account is torn down. Re-runnable if a prior run failed
 partway (set `SKIP_BACKUP=1` to skip re-taking the snapshot and just re-sync).
 
-**Sequencing matters**: `infra/s3.tf`'s lifecycle filter (`prefix = "backup/"`) already exists on
-`main` and this PR does not change it — what this PR changes is `infra/clickhouse.tf`'s backup
-destination (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`, writing to that same `backup/` path
-for the first time; see Notes). In other words, applying this PR's `clickhouse.tf` change is what
-makes that pre-existing 30-day filter start actually matching something. Run this archive script
-and confirm it passes verification **before** `terraform apply`ing the `clickhouse.tf` change. If
-you apply first, backups older than 30 days can expire out of the source bucket before you've
-copied any of them anywhere permanent.
+**There is no strict ordering requirement against `terraform apply`.** This script's own
+Step 2 (`BACKUP DATABASE claude_code TO S3(...)`) issues that command directly over the
+`otel_writer` connection using the pod's existing IRSA credentials — it does not depend on
+`infra/clickhouse.tf`'s CronJob being updated first, and works identically whether or not that
+change has been applied. Run it once, close to account teardown, either way.
+
+What *does* depend on timing is the pre-existing 30-day lifecycle filter on `infra/s3.tf`
+(`prefix = "backup/"`, unchanged by this PR — see Notes): before `infra/clickhouse.tf`'s change
+is applied, nothing is written to `backup/` at all (the old `Disk('cold_s3', ...)` mechanism
+wrote elsewhere), so that filter has nothing to expire regardless of when you apply. After it's
+applied, the daily CronJob starts writing real objects there, each starting at age 0 — applying
+does **not** cause anything to expire immediately. The actual risk is longer-horizon: once
+applied, don't go **more than 30 days** without running this script again, or the earliest
+post-apply daily backups can age out before you've copied them anywhere permanent. Before
+tearing down the account, always run this script one last time regardless of how recently you
+last ran it.
 
 ## Prerequisites
 - `~/.aws/credentials` with a profile for the workshop account, with `s3:ListBucket` and
@@ -180,7 +188,7 @@ SHOW CREATE TABLE claude_code.otel_metrics_sum;  -- confirm materialized SeriesK
 -- Aggregate columns need decoding to compare values, not just row counts. This schema uses
 -- SimpleAggregateFunction (plain sum(), not sumMerge() — sumMerge is for AggregateFunction
 -- columns and errors with ILLEGAL_TYPE_OF_ARGUMENT against SimpleAggregateFunction):
-SELECT round(sum(sum_value)) FROM claude_code.otel_metrics_sum_hourly;
+SELECT round(sum(sum_value)) FROM claude_code.otel_metrics_sum_hourly WHERE hour < '<cutoff-no-longer-being-written-to>';
 ```
 
 Record the date this was last actually run (following `incident-response.md`'s "Last
@@ -404,7 +412,7 @@ SHOW CREATE TABLE claude_code.otel_metrics_sum;  -- materialized SeriesKey가 �
 -- SimpleAggregateFunction을 쓰므로 sumMerge()가 아니라 그냥 sum()으로 디코딩합니다
 -- (sumMerge는 AggregateFunction 컬럼용이라 SimpleAggregateFunction엔
 -- ILLEGAL_TYPE_OF_ARGUMENT 에러가 납니다):
-SELECT round(sum(sum_value)) FROM claude_code.otel_metrics_sum_hourly;
+SELECT round(sum(sum_value)) FROM claude_code.otel_metrics_sum_hourly WHERE hour < '<cutoff-no-longer-being-written-to>';
 ```
 
 이 절차를 실제로 마지막에 실행한 날짜를 기록해 두세요(`incident-response.md`의 "최종

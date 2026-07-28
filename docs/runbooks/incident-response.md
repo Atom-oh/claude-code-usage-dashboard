@@ -119,38 +119,59 @@ kubectl --context fsi-demo-cluster -n claude-code rollout undo deployment/dashbo
 kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard
 ```
 Data recovery (last resort — corrupted/dropped tables): daily backups run at 03:00 KST
-(`clickhouse-backup` CronJob) to `S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD')`
-(same bucket, IRSA credentials — no extra params needed from inside the cluster). `RESTORE`
-does **not** overwrite existing non-empty tables — it fails with `CANNOT_RESTORE_TABLE` if the
-target already has data (verified live 2026-07-27), so drop the corrupted database first:
+(`clickhouse-backup` CronJob) to `S3('https://<bucket>.s3.<region>.amazonaws.com/backup/<UTC
+date>_<HHMMSS>')` (same bucket, IRSA credentials — no extra params needed from inside the
+cluster; the timestamp includes time-of-day so a same-day retry doesn't collide with an
+existing backup — find the exact path with `aws s3 ls s3://<bucket>/backup/`).
+
+This cluster is **3-replica ReplicatedMergeTree** (`infra/clickhouse.tf`:
+`shardsCount = 1, replicasCount = 3`) with **literal Keeper paths** that don't include the
+database name (`/clickhouse/tables/{shard}/otel_metrics_sum`,
+`infra/files/clickhouse-schema-replicated.sql`). Two things that look like they'd work do not,
+verified live on a scratch replicated table (2026-07-27):
+
+- **`RESTORE` does not overwrite existing non-empty tables** — it fails with
+  `CANNOT_RESTORE_TABLE` if the target already has data, so you can't just point `RESTORE` at
+  the corrupted database as-is.
+- **Dropping and restoring on one replica alone does not restore anything.** `DROP DATABASE
+  claude_code SYNC` without `ON CLUSTER` only drops the table on the node you're connected to —
+  the other 2 replicas and their Keeper registration are untouched. Recreating the table there
+  (which is what `RESTORE` does, using the replicated engine from the backup's embedded DDL)
+  just re-registers it as a replica of the *same* Keeper path and it immediately re-syncs
+  whatever the other 2 replicas already have — the (possibly still-corrupted) live data, not
+  the backup. Restoring into a differently-named database (`RESTORE DATABASE claude_code AS
+  claude_code_restore`) doesn't avoid this either, since the Keeper path has no database-name
+  component — it collides with the live table's path exactly the same way and fails with
+  `REPLICA_ALREADY_EXISTS`.
+
+The verified working procedure drops the database **cluster-wide** first, so there is no live
+replica left to resync from, then restores it **cluster-wide** so all 3 replicas end up
+populated from the backup, not just the one you're connected to:
 ```sql
-DROP DATABASE claude_code SYNC;
-RESTORE DATABASE claude_code FROM S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD');
+DROP DATABASE claude_code ON CLUSTER 'replicated' SYNC;
+RESTORE DATABASE claude_code ON CLUSTER 'replicated' FROM S3('https://<bucket>.s3.<region>.amazonaws.com/backup/<UTC-date>_<HHMMSS>');
 ```
-If only some tables are affected and you'd rather not drop the whole database, restore into a
-throwaway database and swap the affected tables in with `RENAME TABLE` instead:
-```sql
-CREATE DATABASE claude_code_restore;
-CREATE DATABASE IF NOT EXISTS claude_code_old;
-RESTORE DATABASE claude_code AS claude_code_restore FROM S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD');
--- verify claude_code_restore.<table>, then:
-RENAME TABLE claude_code.<table> TO claude_code_old.<table>, claude_code_restore.<table> TO claude_code.<table>;
-```
-Confirm the backup date covers what you need first — this is a last resort, not a rollback: the
-old data is gone (or, with the throwaway-database approach, only recoverable from
-`claude_code_old` until you drop it). The 30-day lifecycle on `backup/` (`infra/s3.tf`) means
-dates older than that are gone — for
-anything further back, see the permanent archive below.
+This drops and restores every table in the database — there is no verified way to recover a
+single table in place on this replicated setup without restoring the whole database; if you
+need finer granularity, treat it as a research task before relying on it, not something to
+improvise during an incident.
+
+Confirm the backup date covers what you need first — this is a last resort, not a rollback:
+`DROP DATABASE ... SYNC` is irreversible except by restoring from a backup, and the pre-drop
+data is gone once you run it. The 30-day lifecycle on `backup/` (`infra/s3.tf`) means dates
+older than that are gone — for anything further back, see the permanent archive below.
 
 Permanent archive before account teardown (e.g. workshop ending): see
 [`archive-clickhouse.md`](archive-clickhouse.md).
 
 ## Notes
-- Last verified: 2026-07-09 for Scenarios 1-5 above. The data-recovery `RESTORE ... FROM
-  S3(...)` syntax and the drop-first / throwaway-database procedures were verified live against
-  the workshop cluster on 2026-07-27 (see [`archive-clickhouse.md`](archive-clickhouse.md) for
-  the underlying measurements) — but only at the single-table level, not a full `RESTORE
-  DATABASE claude_code` end to end. Re-verify the full-database path before relying on it.
+- Last verified: 2026-07-09 for Scenarios 1-5 above. The data-recovery `DROP DATABASE ...
+  ON CLUSTER ... SYNC` + `RESTORE DATABASE ... ON CLUSTER ... FROM S3(...)` procedure was
+  verified live end-to-end on 2026-07-27, on a scratch 3-replica `ReplicatedMergeTree` table
+  (not `claude_code` itself) matching the real schema's Keeper-path shape — confirmed data
+  present and consistent on all 3 replicas after restore. Earlier drafts of this procedure
+  (drop without `ON CLUSTER`, restore into a differently-named database) were tried first and
+  confirmed broken the same way, which is why this runbook no longer offers those as options.
 - The 2026-07-07 telemetry gap (15+ hours) was found only by querying `max(TimeUnix)`
   directly — the dashboard rendered fine on stale data. Check the data first, always.
 
@@ -270,35 +291,56 @@ kubectl --context fsi-demo-cluster -n claude-code rollout undo deployment/dashbo
 kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard
 ```
 데이터 복구 (최후 수단 — 테이블 손상/삭제 시): 매일 03:00 KST에 `clickhouse-backup` CronJob이
-`S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD')`로 백업합니다(같은 버킷, IRSA
-자격증명 — 클러스터 안에서는 추가 파라미터 불필요). `RESTORE`는 이미 데이터가 있는 테이블을
-**덮어쓰지 않습니다** — 대상에 데이터가 있으면 `CANNOT_RESTORE_TABLE`로 실패합니다(2026-07-27
-실측 확인). 손상된 데이터베이스를 먼저 지우고 복원하세요:
+`S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/<UTC날짜>_<HHMMSS>')`로 백업합니다(같은
+버킷, IRSA 자격증명 — 클러스터 안에서는 추가 파라미터 불필요. 시각까지 넣은 건 같은 날
+재시도 시 기존 백업과 경로가 겹치지 않게 하기 위함 — 정확한 경로는
+`aws s3 ls s3://<버킷>/backup/`로 확인).
+
+이 클러스터는 **3-replica ReplicatedMergeTree**(`infra/clickhouse.tf`의
+`shardsCount = 1, replicasCount = 3`)이고, Keeper 경로가 **데이터베이스명을 포함하지 않는
+literal 경로**입니다(`/clickhouse/tables/{shard}/otel_metrics_sum`,
+`infra/files/clickhouse-schema-replicated.sql`). 될 것처럼 보이지만 안 되는 방법 두 가지를
+스크래치 replicated 테이블로 직접 실측했습니다(2026-07-27):
+
+- **`RESTORE`는 이미 데이터가 있는 테이블을 덮어쓰지 않습니다** — 대상에 데이터가 있으면
+  `CANNOT_RESTORE_TABLE`로 실패하므로, 손상된 데이터베이스를 그대로 두고 `RESTORE`만
+  돌릴 수는 없습니다.
+- **한 레플리카에서만 지우고 복원해도 아무것도 복구되지 않습니다.** `ON CLUSTER` 없이
+  `DROP DATABASE claude_code SYNC`를 실행하면 접속한 노드에서만 테이블이 지워집니다 — 다른
+  2개 레플리카와 그 Keeper 등록 정보는 그대로 남습니다. 그 노드에 테이블을 다시
+  만들면(`RESTORE`가 백업에 캡처된 replicated 엔진으로 정확히 이렇게 합니다) 같은 Keeper
+  경로의 레플리카로 재등록될 뿐이라, 즉시 다른 2개 레플리카가 이미 갖고 있던 데이터로
+  동기화됩니다 — 손상돼 있었다면 백업이 아니라 그 손상된 데이터가 돌아옵니다. 다른 이름의
+  데이터베이스로 복원해도(`RESTORE DATABASE claude_code AS claude_code_restore`) 마찬가지로
+  피할 수 없습니다 — Keeper 경로에 데이터베이스명이 없으므로 살아있는 테이블의 경로와
+  똑같이 충돌해 `REPLICA_ALREADY_EXISTS`로 실패합니다.
+
+실측으로 검증된 절차는 먼저 **클러스터 전체에서** 데이터베이스를 지워 되돌아 동기화할
+레플리카를 없앤 뒤, **클러스터 전체를 대상으로** 복원해 3개 레플리카 모두 백업 데이터로
+채워지게 합니다(접속한 노드 하나만이 아니라):
 ```sql
-DROP DATABASE claude_code SYNC;
-RESTORE DATABASE claude_code FROM S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD');
+DROP DATABASE claude_code ON CLUSTER 'replicated' SYNC;
+RESTORE DATABASE claude_code ON CLUSTER 'replicated' FROM S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/<UTC날짜>_<HHMMSS>');
 ```
-일부 테이블만 손상돼 전체를 지우고 싶지 않다면, 임시 데이터베이스로 복원한 뒤 `RENAME TABLE`로
-해당 테이블만 교체하세요:
-```sql
-CREATE DATABASE claude_code_restore;
-CREATE DATABASE IF NOT EXISTS claude_code_old;
-RESTORE DATABASE claude_code AS claude_code_restore FROM S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD');
--- claude_code_restore.<테이블>을 검증한 뒤:
-RENAME TABLE claude_code.<테이블> TO claude_code_old.<테이블>, claude_code_restore.<테이블> TO claude_code.<테이블>;
-```
+이 방식은 데이터베이스 안의 모든 테이블을 지우고 복원합니다 — 이 replicated 구성에서 테이블
+하나만 제자리에서 복구하는 검증된 방법은 없습니다. 더 세밀한 단위가 필요하다면 장애 대응
+중에 즉석으로 시도하지 말고 사전에 별도로 검증하세요.
+
 백업 날짜가 필요한 범위를 포함하는지 먼저 확인하세요 — 이건 최후 수단이지 롤백이 아닙니다:
-기존 데이터는 사라집니다(임시 데이터베이스 방식을 쓰면 `claude_code_old`를 지우기 전까지만
-복구 가능). `backup/`의 30일 라이프사이클(`infra/s3.tf`)로 그보다 오래된 날짜는 이미
-사라졌습니다 — 더 과거가 필요하면 아래 영구 아카이브를 참조하세요.
+`DROP DATABASE ... SYNC`는 백업에서 복원하는 것 외에는 되돌릴 수 없고, 실행하는 즉시 지우기
+전 데이터는 사라집니다. `backup/`의 30일 라이프사이클(`infra/s3.tf`)로 그보다 오래된 날짜는
+이미 사라졌습니다 — 더 과거가 필요하면 아래 영구 아카이브를 참조하세요.
 
 계정 삭제(워크샵 종료 등) 전 영구 아카이브는 [`archive-clickhouse.md`](archive-clickhouse.md) 참조.
 
 ## 참고
-- 최종 검증일: 위 시나리오 1-5는 2026-07-09. 데이터 복구 절의 `RESTORE ... FROM S3(...)`
-  문법과 drop-후-복원/임시 데이터베이스 절차는 2026-07-27 워크샵 클러스터에서 실측
-  확인했습니다([`archive-clickhouse.md`](archive-clickhouse.md)의 실측 근거 참조) — 다만
-  단일 테이블 단위까지만이고, 전체 `RESTORE DATABASE claude_code`를 종단으로 검증한 것은
-  아닙니다. 전체 DB 복원 경로는 의존하기 전에 다시 검증하세요.
+- 최종 검증일: 위 시나리오 1-5는 2026-07-09. 데이터 복구 절의
+  `DROP DATABASE ... ON CLUSTER ... SYNC` + `RESTORE DATABASE ... ON CLUSTER ... FROM S3(...)`
+  절차는 2026-07-27, 실제 스키마의 Keeper 경로 형태를 그대로 흉내낸 스크래치 3-replica
+  `ReplicatedMergeTree` 테이블로(`claude_code` 자체가 아니라) 종단까지 실측
+  검증했습니다 — 복원 후 3개 레플리카 모두에 데이터가 일치함을 확인했습니다. 이 절차의
+  이전 버전(`ON CLUSTER` 없는 drop, 다른 이름 데이터베이스로 복원)은 먼저 시도했다가 같은
+  방식으로 실패함을 확인하고 제외했습니다 — 그래서 이 런북은 그 방법들을 더 이상 옵션으로
+  제시하지 않습니다.
 - 2026-07-07 텔레메트리 공백(15시간+)은 `max(TimeUnix)` 직접 조회로만 발견됐습니다 —
   대시보드는 오래된 데이터로도 정상 렌더링됩니다. 항상 데이터부터 확인하세요.

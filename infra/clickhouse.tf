@@ -285,8 +285,12 @@ resource "kubernetes_cron_job_v1" "backup" {
               name  = "backup"
               image = "clickhouse/clickhouse-server:24.8"
               command = ["sh", "-c", <<-EOT
+                # ponytail: 날짜(초 단위 없이)만 쓰면 같은 날 재시도(OnFailure로 컨테이너 재시작)
+                # 시 BACKUP_ALREADY_EXISTS로 계속 실패한다(실측 확인) — 시각까지 넣어 재시도마다
+                # 다른 목적지가 되게 한다. 정확한 경로는 archive-clickhouse.sh가 backup/ 프리픽스
+                # 전체를 이관하므로 몰라도 되고, 수동 확인은 aws s3 ls로.
                 clickhouse-client --host ${local.chi_service} --user otel_writer --password "$CH_PASSWORD" \
-                  --query "BACKUP DATABASE claude_code TO S3('${local.backup_s3_prefix}/$(date +%Y-%m-%d)')"
+                  --query "BACKUP DATABASE claude_code TO S3('${local.backup_s3_prefix}/$(date -u +%Y-%m-%d_%H%M%S)')"
               EOT
               ]
               env {

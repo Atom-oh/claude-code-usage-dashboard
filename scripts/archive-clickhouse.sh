@@ -56,6 +56,11 @@ LOCAL_DIR_ROOT="${LOCAL_DIR:-./ch-archive}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-fsi-demo-cluster}"
 NAMESPACE="${NAMESPACE:-claude-code}"
 REGION="${REGION:-ap-northeast-2}"
+# REGION은 BACKUP SQL 문자열에 그대로 들어간다 — 오타로 SQL 문자열이 깨지는 걸 조기에 잡는다.
+case "$REGION" in
+  [a-z][a-z]-[a-z]*-[0-9]) ;;
+  *) echo "REGION 형식이 이상합니다: '$REGION' (예: ap-northeast-2)" >&2; exit 1 ;;
+esac
 
 kube() { kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" "$@"; }
 
@@ -153,6 +158,10 @@ if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   # 마지막이자 되돌릴 수 없는 스냅샷이므로 이 파드가 replication lag 중이면 안 된다 —
   # 어떤 테이블이 replicated인지 하드코딩하지 않고 system.replicas에서 직접 목록을 얻어
   # 전부 동기화하고, 하나라도 실패하면(set -e) 스크립트를 중단한다.
+  # ponytail: 이 최종 스냅샷 실행 중에도 참가자 EC2의 otelcol이 계속 쓰기를 보내면, SYNC
+  # 시점 이후 도착한 마지막 몇 초의 데이터는 이 백업에 빠질 수 있다 — teardown 직전 실행이라
+  # 실무상 문제되는 경우는 드물지만, 완전한 보장이 필요하면 워크샵 참가자 인스턴스의
+  # otelcol을 먼저 멈추고 이 스크립트를 실행할 것.
   REPLICATED_TABLES=$(ch_query "SELECT table FROM system.replicas WHERE database = 'claude_code'")
   echo "$REPLICATED_TABLES" | while IFS= read -r tbl; do
     [ -n "$tbl" ] || continue
@@ -197,29 +206,29 @@ echo "== 4. 워크샵 계정 -> 로컬 다운로드 =="
 # 디렉터리를 쓴다. UserEmail 등 PII가 평문으로 잠깐 머무르므로, 생성 권한을 좁히고
 # (umask) 스크립트가 어떻게 끝나든(성공/실패 모두) 종료 시 반드시 지운다(trap).
 umask 077
-LOCAL_DIR="${LOCAL_DIR_ROOT}/$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir -p "$LOCAL_DIR"
-trap 'rm -rf "$LOCAL_DIR"' EXIT
-aws s3 sync "s3://${SRC_BUCKET}/${SRC_PREFIX}/" "${LOCAL_DIR}/backup/" --profile "$WORKSHOP_PROFILE"
+STAGING_DIR="${LOCAL_DIR_ROOT}/$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$STAGING_DIR"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+aws s3 sync "s3://${SRC_BUCKET}/${SRC_PREFIX}/" "${STAGING_DIR}/backup/" --profile "$WORKSHOP_PROFILE"
 
-SRC_OBJECT_COUNT=$(find "${LOCAL_DIR}/backup" -type f | wc -l)
+SRC_OBJECT_COUNT=$(find "${STAGING_DIR}/backup" -type f | wc -l)
 if [ "$SRC_OBJECT_COUNT" -eq 0 ]; then
   echo "검증 실패: 소스 ${SRC_PREFIX}/에서 받아온 파일이 0개입니다 — 빈 프리픽스를 이관한 것으로 보입니다." >&2
   exit 1
 fi
 
 echo "== 5. 스키마 사본 포함 =="
-mkdir -p "${LOCAL_DIR}/schema"
+mkdir -p "${STAGING_DIR}/schema"
 # 실패를 삼키면 스키마 없이도 "성공"으로 끝나 나중에야 빠진 걸 알게 된다 — 레포 루트에서
 # 실행하지 않았다는 신호이므로 바로 죽는다.
-cp "$(dirname "$0")/../clickhouse-schema.sql" "${LOCAL_DIR}/schema/"
-cp "$(dirname "$0")/../infra/files/clickhouse-schema-replicated.sql" "${LOCAL_DIR}/schema/"
-cp "$(dirname "$0")/../grafana-ab-queries.sql" "${LOCAL_DIR}/schema/"
+cp "$(dirname "$0")/../clickhouse-schema.sql" "${STAGING_DIR}/schema/"
+cp "$(dirname "$0")/../infra/files/clickhouse-schema-replicated.sql" "${STAGING_DIR}/schema/"
+cp "$(dirname "$0")/../grafana-ab-queries.sql" "${STAGING_DIR}/schema/"
 
 echo "== 6. 로컬 -> 내 계정 업로드 =="
 # --delete는 쓰지 않는다: 아카이브는 append-only다. 대상 버킷 소유자는 1단계에서 이미
 # head-bucket으로 확인했으므로 여기서는 반복하지 않는다(sync는 이 플래그를 지원하지 않음).
-archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --sse AES256
+archive_aws s3 sync "${STAGING_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --sse AES256
 
 echo "== 7. 검증 =="
 # "라이브 소스 전체 == 아카이브 전체" 정확일치는 append-only 설계와 모순된다: 소스의 일별
@@ -227,7 +236,7 @@ echo "== 7. 검증 =="
 # 반대로 검증 타이밍에 소스가 갱신되면(TOCTOU) 방금 올린 것과 달라져도 오탐이 난다.
 # 대신 "이번에 로컬로 받아온 파일들이 실제로 대상에 다 있는가"만 확인한다 — 방금 실행한
 # sync를 --dryrun으로 다시 돌려 보류 작업이 남았는지 보는 것으로 충분하다.
-PENDING=$(archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --sse AES256 --dryrun)
+PENDING=$(archive_aws s3 sync "${STAGING_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --sse AES256 --dryrun)
 if [ -n "$PENDING" ]; then
   echo "검증 실패: 업로드 후에도 대상과 차이가 남아 있습니다:" >&2
   echo "$PENDING" >&2
@@ -238,6 +247,6 @@ echo "== 완료 =="
 echo "아카이브 위치: s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/"
 echo "복원 절차: docs/runbooks/archive-clickhouse.md 참조"
 echo ""
-echo "*** infra/clickhouse.tf의 백업 목적지 변경(BACKUP TO S3(...))을 terraform apply하기 전에"
-echo "*** 위 검증이 통과했는지 다시 한번 확인하세요 — 적용하는 순간부터 infra/s3.tf에 이미 있던"
-echo "*** 30일 lifecycle 필터가 backup/를 실제로 매칭해 초과분을 만료시키기 시작합니다."
+echo "*** infra/clickhouse.tf의 백업 목적지 변경(BACKUP TO S3(...))이 적용됐다면, 그 이후로는"
+echo "*** infra/s3.tf에 이미 있던 30일 lifecycle 필터가 backup/를 실제로 만료시킵니다 —"
+echo "*** 이 스크립트를 30일 넘게 재실행하지 않고 방치하지 말고, 계정 삭제 직전엔 꼭 한 번 더 돌리세요."
