@@ -95,6 +95,18 @@ ARCHIVE_ACCOUNT=$(archive_aws sts get-caller-identity --query Account --output t
 echo "workshop account: $WORKSHOP_ACCOUNT"
 echo "archive  account: $ARCHIVE_ACCOUNT (profile: ${ARCHIVE_PROFILE:-<default/instance profile>})"
 
+# ARCHIVE_PROFILE을 비워두면 기본 자격증명 체인을 쓰므로, 이 스크립트를 워크샵 계정 안의
+# EC2에서 돌리면 두 계정이 같아진다 — 이 스크립트의 목적 자체(계정 삭제 후에도 데이터 생존)가
+# 조용히 무효화되고, 계정이 삭제된 뒤에는 발견해도 되돌릴 수 없다. 의도적으로 같은 계정에
+# 보관하려면 ARCHIVE_SAME_ACCOUNT_OK=1로 명시적으로 확인한다.
+if [ "$WORKSHOP_ACCOUNT" = "$ARCHIVE_ACCOUNT" ] && [ "${ARCHIVE_SAME_ACCOUNT_OK:-0}" != "1" ]; then
+  echo "중단: 워크샵 계정과 아카이브 계정이 동일합니다 ($WORKSHOP_ACCOUNT)." >&2
+  echo "  이 계정이 삭제되면 아카이브도 함께 사라져 이 스크립트의 목적이 무효화됩니다." >&2
+  echo "  ARCHIVE_PROFILE(또는 실행 EC2의 인스턴스 프로필)이 내 영구 계정을 가리키는지 확인하세요." >&2
+  echo "  의도적으로 같은 계정에 두려면 ARCHIVE_SAME_ACCOUNT_OK=1을 지정하세요." >&2
+  exit 1
+fi
+
 # 버킷명 오타 + 타 계정의 write-open 버킷이 겹치면 PII가 엉뚱한 계정으로 올라갈 수 있다.
 # --expected-bucket-owner는 s3api류(head-bucket 등) 옵션이고 고수준 `aws s3 sync`/`aws s3 ls`는
 # 이 플래그를 모른다("Unknown options"로 즉시 실패) — 그래서 sync/ls에는 절대 붙이지 않고,
@@ -130,11 +142,19 @@ echo "archive bucket public access block 확인됨"
 
 # PAB은 public 접근만 막는다 — 특정 외부 principal에게 열린 bucket policy는 PAB을 그대로
 # 통과한다. 대상 버킷은 운영자 소유가 전제이므로 fail-closed는 과하고, 경고만 남긴다.
-if BUCKET_POLICY=$(archive_aws s3api get-bucket-policy --bucket "$ARCHIVE_BUCKET" --query Policy --output text 2>/dev/null); then
+# policy가 없는 정상 케이스(NoSuchBucketPolicy)와 권한 부족 등 다른 에러를 구분한다 —
+# 구분 없이 2>/dev/null로 다 삼키면 "점검을 못 했다"와 "policy가 없다"를 구별할 수 없다.
+BUCKET_POLICY_ERR=$(mktemp)
+if BUCKET_POLICY=$(archive_aws s3api get-bucket-policy --bucket "$ARCHIVE_BUCKET" --query Policy --output text 2>"$BUCKET_POLICY_ERR"); then
   echo "경고: $ARCHIVE_BUCKET 에 bucket policy가 설정되어 있습니다 — PII를 담는 버킷이므로" >&2
   echo "  의도한 principal에게만 열려 있는지 확인하세요:" >&2
   echo "$BUCKET_POLICY" >&2
+elif ! grep -q "NoSuchBucketPolicy" "$BUCKET_POLICY_ERR"; then
+  echo "경고: $ARCHIVE_BUCKET 의 bucket policy를 점검하지 못했습니다(policy가 없는 것과는" >&2
+  echo "  다름) — 아래 에러를 확인하세요:" >&2
+  cat "$BUCKET_POLICY_ERR" >&2
 fi
+rm -f "$BUCKET_POLICY_ERR"
 
 if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   echo "== 2. 최종 BACKUP 생성 =="
@@ -166,9 +186,14 @@ if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   REPLICATED_TABLES=$(ch_query "SELECT table FROM system.replicas WHERE database = 'claude_code'")
   echo "$REPLICATED_TABLES" | while IFS= read -r tbl; do
     [ -n "$tbl" ] || continue
+    # 서버에서 받아온 값이지만 identifier로 SQL에 다시 들어간다 — 백틱 quoting은 이미 하고
+    # 있지만, 테이블명에 백틱이 들어있으면 그것만으로는 안 막힌다. 신뢰 경계 안의 값이라
+    # 실위험은 낮지만(이런 테이블명을 만들려면 이미 DDL 권한이 필요), 저비용 방어로 문자
+    # 집합을 제한한다.
+    case "$tbl" in
+      *[!A-Za-z0-9_]*) echo "중단: 예상치 못한 테이블명 문자: '$tbl'" >&2; exit 1 ;;
+    esac
     echo "SYSTEM SYNC REPLICA: claude_code.${tbl}"
-    # 서버에서 받아온 값이지만 identifier로 SQL에 다시 들어가므로 백틱으로 quoting —
-    # 신뢰 경계 안의 값이라 실위험은 낮지만 방어적으로 처리한다.
     ch_query "SYSTEM SYNC REPLICA claude_code.\`${tbl}\`"
   done
 

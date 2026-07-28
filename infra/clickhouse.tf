@@ -1,4 +1,4 @@
-# ClickHouse — claude-code 네임스페이스에 신규 CHI(2 레플리카) + CHK(Keeper 3노드).
+# ClickHouse — claude-code 네임스페이스에 신규 CHI(3 레플리카) + CHK(Keeper 3노드).
 # 기존 observability/fsi-demo-ch(1레플리카, ArgoCD 관리)는 건드리지 않는다.
 #
 # ponytail: 백업은 별도 clickhouse-backup 툴 대신 ClickHouse 네이티브 BACKUP 커맨드로 — 이미지
@@ -91,7 +91,7 @@ resource "kubectl_manifest" "chk" {
   depends_on = [kubectl_manifest.claude_code_nodepool]
 }
 
-# ── CHI: 2 레플리카 ReplicatedMergeTree ─────────────────────────────────
+# ── CHI: 3 레플리카 ReplicatedMergeTree ─────────────────────────────────
 resource "kubectl_manifest" "chi" {
   yaml_body = yamlencode({
     apiVersion = "clickhouse.altinity.com/v1"
@@ -317,6 +317,9 @@ resource "kubernetes_cron_job_v1" "backup" {
                 REPLICATED_TABLES=$(ch "SELECT table FROM system.replicas WHERE database = 'claude_code'")
                 echo "$REPLICATED_TABLES" | while read -r tbl; do
                   [ -n "$tbl" ] || continue
+                  case "$tbl" in
+                    *[!A-Za-z0-9_]*) echo "unexpected table name char: '$tbl'" >&2; exit 1 ;;
+                  esac
                   ch "SYSTEM SYNC REPLICA claude_code.\`$tbl\`"
                 done
                 ch "BACKUP DATABASE claude_code TO S3('${local.backup_s3_prefix}/$(date -u +%Y-%m-%d_%H%M%S)')"
