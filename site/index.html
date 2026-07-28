@@ -30,9 +30,11 @@
           <p class="eyebrow">Measured, not estimated</p>
           <h1>Claude Code 사용량을<br />텔레메트리로 실측하는 대시보드</h1>
           <p class="lede">
-            Claude Code가 내보내는 OpenTelemetry 메트릭·로그를 ClickHouse에 모아, 비용 · 도입 ·
-            생산성 KPI로 집계합니다. Amazon Bedrock으로 쓴 세션과 Claude Enterprise로 쓴 세션을
-            자동으로 갈라 나란히 비교하는 게 이 대시보드의 목적입니다.
+            Claude Code가 내보내는 OpenTelemetry 메트릭·로그를 <strong>ClickHouse</strong>에 모아,
+            비용 · 도입 · 생산성 KPI로 집계합니다. Amazon Bedrock으로 쓴 세션과 Claude Enterprise로
+            쓴 세션을 자동으로 갈라 나란히 비교하고, 화면에 없는 질문은
+            <strong>AI 에이전트가 ClickHouse를 직접 조회해</strong> 답합니다. 애플리케이션은 컨테이너
+            하나라 <strong>EKS든 ECS든</strong> 같은 이미지로 돌아갑니다.
           </p>
 
           <div class="video-frame">
@@ -145,6 +147,103 @@
               <code>unknown</code> 세션이 약 11% 있고, 한 유저가 두 그룹에 모두 등장할 수 있습니다.
               그룹 비교 화면은 <code>unknown</code>을 제외하고, 조직 전체 합계를 보여주는 몇몇
               엔드포인트는 포함합니다.
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2>AI로 분석 — 화면에 없는 질문은 물어보면 된다</h2>
+          <p>
+            KPI 화면은 미리 정한 질문에만 답합니다. Analytics 탭의 에이전트는 자연어 질문을 받아
+            <strong>ClickHouse에 읽기 전용 SQL을 직접 실행</strong>하고, 그 결과로 표와 요약을
+            만들어 줍니다. Amazon Bedrock의 Claude가 뒤에 있고, 응답은 SSE로 스트리밍됩니다.
+          </p>
+
+          <div class="cards">
+            <div class="card">
+              <h3>미리 준비된 질문</h3>
+              <p>
+                비용 · 도입/활동 · 생산성 · 이상 탐지 네 갈래로 프리셋이 있습니다 — "최근 N일간
+                bedrock과 enterprise 그룹의 모델별 비용을 비교해줘", "텔레메트리 수집이 끊긴 구간이
+                있는지 찾아줘" 같은 것들. 누르면 그대로 에이전트에게 갑니다.
+              </p>
+            </div>
+            <div class="card">
+              <h3>스키마를 아는 프롬프트</h3>
+              <p>
+                누적 카운터 diff, 세션 단위 그룹 판별, 수집 끊김은 "행 도착 여부로 본다" 같은 이
+                데이터셋의 함정이 시스템 프롬프트에 들어 있습니다. 모델이 <code>sum(Value)</code>로
+                과대집계하거나 존재하지 않는 그룹 컬럼을 찾아다니지 않도록 하는 장치입니다.
+              </p>
+            </div>
+            <div class="card">
+              <h3>SQL 샌드박스</h3>
+              <p>
+                LLM이 만든 SQL은 <code>sanitizeSql()</code>을 통과해야 합니다 —
+                <code>SELECT</code>/<code>WITH</code> 단일 문장만, 테이블 함수
+                (<code>url()</code>·<code>s3()</code>·<code>file()</code>) 차단,
+                <code>claude_code</code> 스키마 밖 조회 차단, 결과 200행 상한. ClickHouse 쪽 계정도
+                읽기 전용입니다.
+              </p>
+            </div>
+          </div>
+
+          <div class="note">
+            <p>
+              에이전트가 보는 결과 행은 이메일 마스킹을 거칠 수 있고(<code>PII_MASK_ENABLED</code>),
+              ClickHouse 오류 메시지가 입력값을 에코하는 경로는 플래그와 무관하게 항상 마스킹합니다.
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2>EKS든 ECS든 — 필요한 건 ClickHouse 하나</h2>
+          <p>
+            대시보드는 <strong>컨테이너 하나</strong>입니다. 멀티스테이지 빌드로 React SPA를
+            <code>dist/</code>로 만들고, Node 서버가 API와 정적 파일을 같이 서빙합니다
+            (<code>PORT=8080</code>, non-root). 쿠버네티스에 의존하는 코드는 없습니다 — 현재
+            운영은 EKS(Graviton 노드풀)지만, 같은 이미지를 ECS/Fargate 태스크로 그대로 띄울 수
+            있습니다.
+          </p>
+
+          <div class="cards">
+            <div class="card">
+              <h3>런타임이 요구하는 것</h3>
+              <p>
+                HTTP로 닿는 ClickHouse(기본 8123)와 접속 정보 4개
+                (<code>CH_URL</code>/<code>CH_DB</code>/<code>CH_USER</code>/<code>CH_PASSWORD</code>).
+                그 외는 전부 선택입니다.
+              </p>
+            </div>
+            <div class="card">
+              <h3>EKS (현재)</h3>
+              <p>
+                Deployment 2 replica + ClickHouse Kubernetes Operator, ClickHouse Keeper는 별도
+                StatefulSet. Terraform 전체가 <code>infra/</code>에 있습니다.
+              </p>
+            </div>
+            <div class="card">
+              <h3>ECS / Fargate</h3>
+              <p>
+                <code>linux/arm64</code> 태스크 정의 + ALB 타깃 8080, 헬스체크는
+                <code>/healthz</code>(Basic Auth 면제). Ask Claude 챗을 쓰려면 태스크 롤에 Bedrock
+                <code>InvokeModelWithResponseStream</code> 권한만 주면 됩니다.
+              </p>
+            </div>
+            <div class="card">
+              <h3>로컬 / 온프렘</h3>
+              <p>
+                <code>docker compose</code> 한 줄로 ClickHouse까지 함께 뜁니다. ClickHouse가
+                자체 호스팅이든 매니지드든 앱은 구분하지 않습니다.
+              </p>
+            </div>
+          </div>
+
+          <div class="note">
+            <p>
+              단, 이 저장소의 Terraform은 <strong>EKS 기준</strong>으로만 작성돼 있습니다. ECS로
+              옮기려면 태스크 정의·서비스·ALB IaC는 따로 써야 합니다 — 애플리케이션 이미지와 환경
+              변수는 그대로입니다.
             </p>
           </div>
         </section>

@@ -6,7 +6,7 @@
     <title>Architecture — Claude Code Usage Dashboard</title>
     <meta
       name="description"
-      content="Claude Code → OTel Collector → ClickHouse → Node.js API → React SPA. 누적 카운터 처리, 시간별 rollup, 세션 단위 그룹 판별."
+      content="Claude Code → OTel Collector → ClickHouse → Node.js API → React SPA. 누적 카운터 처리, 시간별 rollup, 세션 단위 그룹 판별, EKS/ECS 어디서나 같은 이미지."
     />
     <link rel="stylesheet" href="assets/site.css" />
   </head>
@@ -46,13 +46,13 @@
           </div>
           <div class="arrow">→</div>
           <div class="stage">
-            <b>ClickHouse on EKS</b>
-            <span>ReplicatedMergeTree · hot/cold(S3) · 시간별 rollup</span>
+            <b>ClickHouse</b>
+            <span>ReplicatedMergeTree · hot/cold(S3) · 시간별 rollup — 이 스택의 심장</span>
           </div>
           <div class="arrow">→</div>
           <div class="stage">
             <b>Node.js API + React SPA</b>
-            <span>단일 Docker 이미지, Graviton 노드풀</span>
+            <span>컨테이너 1개(포트 8080) — EKS · ECS · 로컬 동일</span>
           </div>
         </div>
 
@@ -156,6 +156,73 @@
         <pre><code>global.anthropic.claude-sonnet-5   →  claude-sonnet-5
 us.anthropic.claude-opus-4-8-v1:0  →  claude-opus-4-8
 claude-haiku-4-5-20251001          →  claude-haiku-4-5</code></pre>
+      </section>
+
+      <section>
+        <h2>배포 대상 — 특정 오케스트레이터에 종속되지 않는다</h2>
+        <p>
+          애플리케이션은 컨테이너 하나입니다. 멀티스테이지 빌드가 React SPA를 <code>dist/</code>로
+          만들고, 같은 이미지의 Node 서버가 API와 그 정적 파일을 함께 서빙합니다. 쿠버네티스 API를
+          호출하는 코드도, 사이드카 전제도 없습니다 — 상태는 전부 ClickHouse에 있고 프로세스는
+          무상태입니다.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>대상</th><th>필요한 것</th><th>비고</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>EKS (현재 운영)</td>
+                <td>Deployment 2 replica, Graviton 노드풀, ClickHouse Operator + Keeper</td>
+                <td>Terraform 전체가 <code>infra/</code>에 있음</td>
+              </tr>
+              <tr>
+                <td>ECS / Fargate</td>
+                <td><code>linux/arm64</code> 태스크(포트 8080) + ALB, 태스크 롤에 Bedrock 권한(챗을 쓸 때만)</td>
+                <td>이미지·환경변수는 동일. 태스크/서비스/ALB IaC는 새로 작성해야 함</td>
+              </tr>
+              <tr>
+                <td>로컬 / 온프렘</td>
+                <td><code>docker compose -f dashboard/docker-compose.yml up</code></td>
+                <td>ClickHouse까지 함께 뜬다</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          공통 전제는 하나뿐입니다 — <strong>HTTP로 닿는 ClickHouse</strong>. 자체 호스팅이든
+          매니지드든 앱은 구분하지 않습니다. 헬스체크는 <code>/healthz</code>(Basic Auth 면제,
+          ClickHouse ping 포함)를 쓰면 됩니다.
+        </p>
+      </section>
+
+      <section>
+        <h2>AI 분석 경로</h2>
+        <p>
+          <code>POST /api/chat</code>은 Bedrock ConverseStream에 <code>run_sql</code> 툴 하나를
+          붙인 루프입니다(최대 4 hop). 모델이 SQL을 만들고, 서버가
+          <code>sanitizeSql()</code>로 검사한 뒤 읽기 전용 계정으로 ClickHouse에 실행하고, 결과
+          행(최대 200)을 모델에게 돌려주고, 모델이 한국어 요약과 표를 스트리밍합니다.
+        </p>
+        <ul>
+          <li>
+            <strong>프롬프트가 스키마를 안다</strong> — 누적 카운터 boundary diff, 세션 단위 그룹
+            판별 CTE, "수집 끊김은 행 도착 여부로 본다"가 시스템 프롬프트에 들어 있습니다. 이게
+            없으면 모델이 <code>sum(Value)</code>로 과대집계하거나 존재하지 않는 그룹 컬럼을
+            찾아다닙니다(실제로 겪은 실패입니다).
+          </li>
+          <li>
+            <strong>샌드박스는 구조로 막는다</strong> — <code>SELECT</code>/<code>WITH</code> 단일
+            문장만 허용하고, 주석·인용부호를 거부해 토큰 경계를 단순하게 유지한 뒤, FROM/JOIN의
+            테이블 참조 위치에서 <code>identifier(</code> 형태(테이블 함수 전체)와
+            <code>claude_code</code> 밖 스키마를 거부합니다. <code>readonly=1</code>이 막지 못하는
+            SSRF 벡터(<code>url()</code>·<code>file()</code>·IMDS)가 여기서 걸립니다.
+          </li>
+          <li>
+            <strong>PII는 결과 단계에서 가린다</strong> — 스트리밍 텍스트를 사후에 정규식으로
+            고치는 방식은 SSE 청크 경계에서 깨지므로, 툴 결과가 모델에게 돌아가기 전에 마스킹합니다.
+            ClickHouse 오류가 입력값을 에코하는 경로는 플래그와 무관하게 항상 마스킹합니다.
+          </li>
+        </ul>
       </section>
 
       <section>
