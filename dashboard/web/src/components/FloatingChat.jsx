@@ -19,7 +19,7 @@ export function FloatingChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const { msgs, busy, status, trace, ask, stop: stopStream } = useChatStream();
-  const { containerRef, bottomRef, onScroll, onUserScroll } = useStickToBottom([msgs, status, trace], trace.turn);
+  const { containerRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
 
   // 챗을 닫으면 진행 중인 스트림도 취소한다(대화 내용은 유지 — useChatStream 참고).
   const stop = () => {
@@ -46,7 +46,7 @@ export function FloatingChat() {
               <X size={16} />
             </button>
           </div>
-          <div ref={containerRef} onScroll={onScroll} onWheel={onUserScroll} onTouchMove={onUserScroll} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
             {msgs.length === 0 && (
               <div className="flex flex-col gap-2">
                 <div className="text-[11px] uppercase tracking-[0.04em] text-ink-400">이렇게 물어보세요</div>
@@ -83,7 +83,6 @@ export function FloatingChat() {
                 펼쳐둔 채 다음 질문을 보내면 기본 접힘 의도와 달리 펼쳐진 채 나타난다). */}
             <ChatTrace key={trace.turn} thinking={trace.thinking} sqls={trace.sqls} />
             {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
-            <div ref={bottomRef} />
           </div>
           <form
             onSubmit={(e) => {

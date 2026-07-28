@@ -50,26 +50,20 @@ export async function streamChat(messages, { onText, onStatus, onThinking, signa
 // 새 답변은 따라가야 한다(안 그러면 FloatingChat에서 응답이 온 걸 못 본다).
 export function useStickToBottom(deps, resetKey) {
   const containerRef = useRef(null);
-  const bottomRef = useRef(null);
   const stick = useRef(true);
-  const autoScrollUntil = useRef(0);
 
+  // 자동 스크롤은 즉시 이동(scrollTop = scrollHeight)이다 — behavior:"smooth"를 쓰면 스크롤이
+  // 끝날 때까지 중간 scroll 이벤트가 계속 나오고, 그 순간 distance는 아직 80px보다 커서 사용자
+  // 스크롤로 오인된다. 그래서 원래는 "자동 스크롤 직후 700ms는 무시"하는 시간 창을 뒀는데,
+  // thinking 델타가 700ms보다 촘촘히 와 창이 스트리밍 내내 재연장됐고 결국 사용자 스크롤이
+  // 전부 무시됐다 — wheel/touch만 예외 처리해도 스크롤바 드래그와 키보드(PgUp/↑/Space)는
+  // 여전히 막혔다(리뷰에서 MAJOR 2회 확인). 즉시 이동은 중간 이벤트를 만들지 않으므로 창이
+  // 아예 필요 없다: 자동 스크롤이 만든 유일한 scroll 이벤트는 distance≈0이라 stick을 유지하고,
+  // 사용자가 어떤 방식으로 올리든 그 즉시 실제 위치로 판정된다.
   const onScroll = () => {
     const el = containerRef.current;
-    // behavior:"smooth"는 스크롤이 끝날 때까지 중간 scroll 이벤트를 계속 뿜는다 — 그 순간의
-    // distance는 아직 80px보다 크므로 사용자 스크롤로 오인해 stick을 꺼버린다(thinking 델타가
-    // 쏟아지는 동안 하단 고정이 간헐적으로 풀리는 원인). 자동 스크롤 직후 짧은 창은 무시한다.
-    if (!el || Date.now() < autoScrollUntil.current) return;
+    if (!el) return;
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; // 하단 80px 이내면 따라간다
-  };
-
-  // 억제 창(autoScrollUntil)은 델타마다 700ms씩 재연장되는데 thinking 델타는 그보다 촘촘히
-  // 오므로, 스트리밍 내내 창이 닫히지 않아 onScroll이 사용자 스크롤을 전부 무시했다 — 즉 훅의
-  // 목적("위로 올려 읽는 중이면 따라가지 않는다")이 정작 스트리밍 중에 무력화됐다(리뷰에서
-  // MAJOR로 확인, 3개 모델 독립 지적). 자동 스크롤은 wheel/touch 이벤트를 만들지 않으므로,
-  // 사용자 입력이 오면 창을 즉시 무효화해 뒤따르는 scroll 이벤트가 실제 위치로 판단하게 한다.
-  const onUserScroll = () => {
-    autoScrollUntil.current = 0;
   };
 
   useEffect(() => {
@@ -77,12 +71,12 @@ export function useStickToBottom(deps, resetKey) {
   }, [resetKey]);
 
   useEffect(() => {
-    if (!stick.current) return;
-    autoScrollUntil.current = Date.now() + 700; // smooth 스크롤 지속시간보다 넉넉하게
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = containerRef.current;
+    if (!stick.current || !el) return;
+    el.scrollTop = el.scrollHeight;
   }, deps);
 
-  return { containerRef, bottomRef, onScroll, onUserScroll };
+  return { containerRef, onScroll };
 }
 
 export function useChatStream() {

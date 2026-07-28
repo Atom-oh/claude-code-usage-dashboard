@@ -50,7 +50,7 @@ export default function Analytics() {
   const { msgs, busy, status, trace, ask } = useChatStream();
   const started = msgs.length > 0;
 
-  const { containerRef, bottomRef, onScroll, onUserScroll } = useStickToBottom([msgs, status, trace], trace.turn);
+  const { containerRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
 
   const submit = (text) => {
     if (!text.trim() || busy) return;
@@ -98,7 +98,7 @@ export default function Analytics() {
 
         {started && (
           <Card padded={false} className="flex flex-col">
-            <div ref={containerRef} onScroll={onScroll} onWheel={onUserScroll} onTouchMove={onUserScroll} className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
+            <div ref={containerRef} onScroll={onScroll} className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
               {msgs.map((m, i) => {
                 // 첫 토큰 도착 전 빈 assistant placeholder는 진행 중이 아니면 렌더하지 않는다.
                 if (!m.content && !(busy && i === msgs.length - 1)) return null;
@@ -129,7 +129,6 @@ export default function Analytics() {
                   펼쳐둔 채 다음 질문을 보내면 기본 접힘 의도와 달리 펼쳐진 채 나타난다). */}
               <ChatTrace key={trace.turn} thinking={trace.thinking} sqls={trace.sqls} />
               {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
-              <div ref={bottomRef} />
             </div>
             <form
               onSubmit={(e) => {

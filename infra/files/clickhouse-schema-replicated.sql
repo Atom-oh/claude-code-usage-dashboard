@@ -1,4 +1,4 @@
--- ../../clickhouse-schema.sql를 CHI(replicated 클러스터, 2레플리카)용으로 변환한 버전.
+-- ../../clickhouse-schema.sql를 CHI(replicated 클러스터, 3레플리카 — infra/clickhouse.tf replicasCount)용으로 변환한 버전.
 -- 컬럼/MATERIALIZED 정의는 원본(참조 사본)과 동일하다 — OTel exporter 기본 부기 컬럼 포함
 -- (아래 각 테이블 주석 참고). 다른 점: ON CLUSTER 절과 ZooKeeper 경로, MergeTree 대신
 -- ReplicatedMergeTree, 그리고 storage_policy='hot_cold'와 그에 딸린 cold 볼륨 이동 TTL
