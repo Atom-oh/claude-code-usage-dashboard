@@ -74,6 +74,19 @@ function maskValue(v) {
 export function maskEmailValues(rows) {
   return rows.map(maskValue); // row 자체가 object이므로 maskValue의 object 분기가 key까지 마스킹한다
 }
+
+// 마스킹은 외부 공개 데모(화면공유/공개 URL) 전용 옵션 — 워크샵 계정 이메일은 {accountid}@ws
+// 형태의 가짜 주소라 실제 개인정보가 아니고, 참가자가 리더보드에서 자기 행을 못 찾는 쪽이 더
+// 문제다. 그래서 기본은 OFF, PII_MASK_ENABLED=1일 때만 켠다. 함수 자체는 순수하게 두고
+// 호출 지점에서만 분기한다(테스트가 마스킹 규칙을 env와 무관하게 고정할 수 있게).
+// 단, 이 플래그가 끄는 건 run_sql "결과 행"뿐이다 — ClickHouse 에러 메시지 에코 경로는 env와
+// 무관하게 항상 마스킹한다(handleChat). 참가자가 자기 행을 찾는 데 필요한 건 결과 행이고 에러
+// 문구가 아닌데, 그 경로는 과거 리뷰에서 실 gmail 주소가 에코된 게 확인돼 추가된 방어라
+// (toDateTime(UserEmail) → "Cannot parse string '...'") env 누락 하나로 조용히 풀리면 안 된다.
+// 프론트(web/src/fmt.js maskEmail)도 GET /api/config로 이 값을 받아 같이 따른다.
+// "1"만 받으면 PII_MASK_ENABLED=true로 쓴 오타가 조용히 OFF로 떨어져 공개 배포에서 원본이
+// 노출된다(리뷰 지적) — 둘 다 받는다.
+export const piiMaskEnabled = ["1", "true"].includes((process.env.PII_MASK_ENABLED || "").toLowerCase());
 const MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-sonnet-5";
 const MAX_HOPS = 4;
 
@@ -520,8 +533,8 @@ export async function handleChat(req, res) {
         // 있어서 SQL만 원문으로 새면 그 방어가 무의미해진다. 세션ID 등은 그대로 보인다.
         send("status", { message: "쿼리 실행 중...", sql: maskEmailText(input.sql || "") });
         try {
-          const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql), abortController.signal);
-          results.push({ toolResult: { toolUseId, content: [{ json: capToolResultJson(rows, truncated) }] } });
+          const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql));
+          results.push({ toolResult: { toolUseId, content: [{ json: { rows: piiMaskEnabled ? maskEmailValues(rows) : rows, truncated } }] } });
         } catch (err) {
           // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(예: toDateTime(UserEmail) →
           // "Cannot parse string 'ojs0106@gmail.com' ...") — 모델이 이 텍스트를 답변에 인용해

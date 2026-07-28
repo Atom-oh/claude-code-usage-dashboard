@@ -140,6 +140,13 @@ resource "kubernetes_deployment_v1" "dashboard" {
               value = env.value
             }
           }
+          dynamic "env" {
+            for_each = var.pii_mask_enabled ? ["1"] : []
+            content {
+              name  = "PII_MASK_ENABLED"
+              value = env.value
+            }
+          }
           env_from {
             secret_ref { name = kubernetes_secret.dashboard_basic_auth.metadata[0].name }
           }

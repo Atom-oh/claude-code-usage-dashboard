@@ -7,7 +7,7 @@ import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping } from "./clickhouse.js";
-import { handleChat } from "./chat.js";
+import { handleChat, piiMaskEnabled } from "./chat.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -254,6 +254,11 @@ app.post(
   express.json(),
   chatAllowed ? handleChat : (_req, res) => res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" })
 );
+
+// 이메일 마스킹 on/off를 프론트에 런타임으로 알려준다 — 이미지는 한 번만 빌드해 여러 배포에
+// 재사용하므로(dashboard/Dockerfile) 빌드타임 VITE_ 변수로는 배포별로 못 바꾼다. ClickHouse도
+// 구간 파라미터도 안 쓰므로 route() 래퍼(캐시/range 파싱)를 거치지 않는다.
+app.get("/api/config", (_req, res) => res.json({ piiMask: piiMaskEnabled }));
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));
