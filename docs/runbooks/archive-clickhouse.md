@@ -156,11 +156,15 @@ tables yourself first using non-replicated engines (swap `ReplicatedMergeTree(..
 column definitions: a mismatched `PARTITION BY` makes `RESTORE` fail with `CORRUPTED_DATA`
 because the part's embedded partition ID no longer matches the freshly-computed one — this was
 hit and fixed during verification, see Notes). `RESTORE DATABASE` restores every table in the
-backup, so pre-create **all** of them this way, not just one — as of this writing that's
-`otel_logs`, `otel_metrics_gauge`, `otel_metrics_sum`, and `otel_metrics_sum_hourly` (confirmed
-live via `SELECT table FROM system.replicas WHERE database = 'claude_code'`); any table you skip
-makes `RESTORE` try to create it with the embedded replicated DDL and fail the same way a
-straight `RESTORE` would:
+backup, so pre-create **all** of them this way, not just one — as of this writing that's the
+4 **tables** confirmed live via `SELECT table FROM system.replicas WHERE database =
+'claude_code'`: `otel_logs`, `otel_metrics_gauge`, `otel_metrics_sum`, and
+`otel_metrics_sum_hourly`. That query doesn't list `otel_metrics_sum_hourly_mv`
+(`infra/files/clickhouse-schema-replicated.sql`) because it's a materialized view with no
+storage of its own — but `RESTORE DATABASE` restores its DDL too, and it will be recreated
+automatically once its target table (`otel_metrics_sum_hourly`) exists, no separate pre-create
+needed for it. Any of the 4 real tables you skip makes `RESTORE` try to create it with the
+embedded replicated DDL and fail the same way a straight `RESTORE` would:
 ```sql
 -- 1. Create claude_code and ALL FOUR tables first, using non-replicated engines. Column
 --    lists come from clickhouse-schema.sql (uploaded alongside the backup under schema/) —
@@ -390,11 +394,15 @@ non-replicated 엔진으로 직접 만들어 둡니다(`ReplicatedMergeTree(...)
 `PARTITION BY`가 다르면 파트에 박힌 partition ID와 새로 계산한 ID가 달라 `RESTORE`가
 `CORRUPTED_DATA`로 실패합니다 — 검증 중 실제로 겪고 고친 문제입니다, 아래 참고 참조).
 `RESTORE DATABASE`는 백업 안의 모든 테이블을 복원하므로, 테이블 하나가 아니라 **전부**
-이 방식으로 미리 만들어야 합니다 — 작성 시점 기준 `otel_logs`, `otel_metrics_gauge`,
-`otel_metrics_sum`, `otel_metrics_sum_hourly` 4개입니다(`SELECT table FROM system.replicas
-WHERE database = 'claude_code'`로 실측 확인). 하나라도 빠뜨리면 `RESTORE`가 그 테이블만
-백업에 캡처된 replicated DDL로 새로 만들려다 실패합니다 — 애초에 이 옵션을 쓰는 이유와
-같은 문제입니다:
+이 방식으로 미리 만들어야 합니다 — `SELECT table FROM system.replicas WHERE database =
+'claude_code'`로 실측 확인한 **테이블** 4개는 `otel_logs`, `otel_metrics_gauge`,
+`otel_metrics_sum`, `otel_metrics_sum_hourly`입니다. 이 쿼리에는
+`otel_metrics_sum_hourly_mv`(`infra/files/clickhouse-schema-replicated.sql`)가 안 잡히는데,
+자체 저장소가 없는 materialized view(`TO otel_metrics_sum_hourly AS SELECT ...`)라서
+그렇습니다 — 다만 `RESTORE DATABASE`는 이 뷰의 DDL도 함께 복원하고, 대상 테이블
+(`otel_metrics_sum_hourly`)이 있으면 자동으로 재생성되므로 별도로 미리 만들 필요는 없습니다.
+위 4개 테이블 중 하나라도 빠뜨리면 `RESTORE`가 그 테이블만 백업에 캡처된 replicated DDL로
+새로 만들려다 실패합니다 — 애초에 이 옵션을 쓰는 이유와 같은 문제입니다:
 ```sql
 -- 1. claude_code와 4개 테이블 전부를 non-replicated 엔진으로 먼저 생성. 컬럼 목록은
 --    clickhouse-schema.sql(schema/ 아래 업로드된 사본)과 동일하게 두고 ENGINE/PARTITION
