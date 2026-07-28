@@ -94,6 +94,11 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 |---|---|
 | `POST /api/chat` | Server-Sent Events stream. Body: `{"messages": [{"role": "user"\|"assistant", "content": "..."}]}`. Backed by Bedrock; internally allowed to run read-only ClickHouse SQL via a sandboxed tool — see `sanitizeSql()` in `dashboard/server/chat.js`. |
 
+### Config
+| Path | Returns |
+|---|---|
+| `GET /api/config` | `{"piiMask": bool}` — whether the frontend should mask user emails (`oj******@gmail.com`). Reflects the server's `PII_MASK_ENABLED` env var (`"1"` or `"true"`, case-insensitive = on; anything else = off). Fetched once by `web/src/main.jsx` before the first render (3s timeout), since the image is built once and reused across deployments. **Two-layer default:** the app defaults to off when the env var is unset, but the standard Terraform deployment sets `var.pii_mask_enabled = true` (public demo URL) and so ships masking **on** — the workshop account is the one that flips it to `false`. The frontend is fail-closed: if this endpoint errors, times out, or returns a non-`false` `piiMask`, it masks. |
+
 ## Error Codes
 
 | Code | Description |
