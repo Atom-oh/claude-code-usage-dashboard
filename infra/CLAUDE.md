@@ -9,7 +9,10 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
 - `nodepool.tf` -- Graviton (arm64) EKS managed node group
 - `clickhouse.tf` -- ClickHouse Operator install, `Cluster` resource, `hot_cold` storage
   policy (local EBS `default` disk + `cold_s3` disk)
-- `dashboard.tf` -- dashboard k8s Deployment/Service, env injection from k8s Secret
+- `dashboard.tf` -- dashboard k8s Deployment/Service, env injection from k8s Secret;
+  `var.pii_mask_enabled` (default `true`) injects `PII_MASK_ENABLED=1` for email masking — the
+  app itself defaults to off, so this variable is what makes the standard deployment masked.
+  Workshop accounts set it to `false` so participants can find their own row
 - `ecr.tf` -- ECR repository for `cc-ab-dashboard`
 - `s3.tf` -- cold-tier storage + backups
 - `dns_cdn.tf` -- Route53 + CloudFront for the public dashboard endpoint

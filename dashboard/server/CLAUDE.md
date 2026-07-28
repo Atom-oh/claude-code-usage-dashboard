@@ -11,6 +11,12 @@ registration lives in `index.js`; the actual SQL is in `queries.js` (one exporte
 endpoint, mostly following the pattern `export async function xyz(from, to, ...params,
 filters)`).
 
+`GET /api/config` is the one non-data route besides `/healthz`: it returns
+`{piiMask}` from `PII_MASK_ENABLED` (`"1"`/`"true"` = on, unset = off) so the SPA can decide
+whether to mask emails at render time — the image is built once and reused across deployments,
+so this can't be a build-time `VITE_` flag. It intentionally skips the `route()` wrapper (no
+ClickHouse, no range params) but still inherits the global Basic Auth.
+
 ## Key Files
 - `index.js` -- route table, `route()` wrapper (range/query parsing + error handling + TTL
   cache with in-flight dedup; see `QUANT_MS`/`CACHE_TTL_MS` constants for current timing math),
