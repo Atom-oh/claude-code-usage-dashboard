@@ -56,11 +56,12 @@ LOCAL_DIR_ROOT="${LOCAL_DIR:-./ch-archive}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-fsi-demo-cluster}"
 NAMESPACE="${NAMESPACE:-claude-code}"
 REGION="${REGION:-ap-northeast-2}"
-# REGION은 BACKUP SQL 문자열에 그대로 들어간다 — 오타로 SQL 문자열이 깨지는 걸 조기에 잡는다.
-case "$REGION" in
-  [a-z][a-z]-[a-z]*-[0-9]) ;;
-  *) echo "REGION 형식이 이상합니다: '$REGION' (예: ap-northeast-2)" >&2; exit 1 ;;
-esac
+# REGION은 BACKUP SQL 문자열에 그대로 들어간다 — glob의 *는 알파벳이 아닌 임의 문자(예:
+# 따옴표)도 허용하므로 case 패턴이 아니라 문자 집합을 엄격히 제한하는 grep -E로 검증한다.
+if ! printf '%s' "$REGION" | grep -Eq '^[a-z]{2}-[a-z]+-[0-9]$'; then
+  echo "REGION 형식이 이상합니다: '$REGION' (예: ap-northeast-2)" >&2
+  exit 1
+fi
 
 kube() { kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" "$@"; }
 

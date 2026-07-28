@@ -13,7 +13,7 @@
 The workshop AWS account will be deleted. The only ClickHouse backups live in that account's
 S3 bucket, under `cc-ab-clickhouse-<workshop-account-id>-<region>/backup/` — the daily
 `clickhouse-backup` CronJob (`infra/clickhouse.tf`) runs `BACKUP DATABASE claude_code TO
-S3('https://<bucket>.s3.<region>.amazonaws.com/backup/<date>')` directly, which writes real,
+S3('https://<bucket>.s3.<region>.amazonaws.com/backup/<UTC date>_<HHMMSS>')` directly, which writes real,
 self-contained objects there (a `.backup` manifest plus `data/<db>/<table>/...` parts) — nothing
 about restoring them depends on anything else in the account. That prefix has a 30-day expiry
 lifecycle (`infra/s3.tf`), and everything disappears with the account regardless of the
@@ -65,9 +65,11 @@ last ran it.
   uses the ambient credential chain — i.e. the instance profile of the EC2 box you run it on.
   Set `ARCHIVE_PROFILE=<name>` only if you'd rather use a named profile.
 - A pre-existing S3 bucket in your own account to hold the archive (`ARCHIVE_BUCKET`), with
-  `s3:PutObject`/`s3:ListBucket` for whichever identity the destination side resolves to (the
-  script prints that account ID in step 1 — check it before the long sync starts), a Public
-  Access Block fully enabled (the script fails closed if it isn't — see Notes on PII), and
+  `s3:PutObject`/`s3:ListBucket`/`s3:GetBucketPublicAccessBlock` for whichever identity the
+  destination side resolves to (the script prints that account ID in step 1 — check it before
+  the long sync starts; without `s3:GetBucketPublicAccessBlock` the fail-closed PAB check in
+  step 1 can't even run), a Public Access Block fully enabled (the script fails closed if it
+  isn't — see Notes on PII), and
   encryption at rest (the script uploads with `--sse AES256`; bucket default encryption is a
   reasonable belt-and-suspenders addition but not required by the script).
 - `kubectl` context `fsi-demo-cluster`, access to namespace `claude-code`: `get`/`exec` on the
@@ -213,9 +215,10 @@ have not been separately rehearsed — re-verify before relying on either.
   `otel_metrics_sum` via `scripts/backfill-hourly-rollup.sh` when the rollup table already has
   at least one row (that script no-ops on a fully empty table) — don't rely on it as a full
   substitute for the archived rollup data itself.
-- This is the first script in the repo to use a named AWS CLI profile (`--profile`, for the
-  workshop side only) rather than purely the ambient credential chain or in-cluster IRSA — see
-  `docs/reference/iac.md` if adding more.
+- This is the first script in the repo to use a named AWS CLI profile: required on the workshop
+  (source) side, and supported but optional on the archive (destination) side via
+  `ARCHIVE_PROFILE` — the destination defaults to the ambient credential chain or in-cluster
+  IRSA, same as everywhere else in the repo — see `docs/reference/iac.md` if adding more.
 - Archived data retains whatever PII/session data was in `otel_logs`/`otel_metrics_sum`
   (e.g. `UserEmail`) beyond the source cluster's 90/180-day TTLs, indefinitely — the script
   enforces a Public Access Block on the archive bucket before uploading and encrypts objects
@@ -251,7 +254,7 @@ have not been separately rehearsed — re-verify before relying on either.
 워크샵 AWS 계정이 삭제될 예정입니다. ClickHouse 백업은 그 계정의 S3 버킷
 `cc-ab-clickhouse-<워크샵계정ID>-<리전>`의 `backup/` 아래에만 존재합니다 — 일별
 `clickhouse-backup` CronJob(`infra/clickhouse.tf`)이 직접
-`BACKUP DATABASE claude_code TO S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/<날짜>')`를
+`BACKUP DATABASE claude_code TO S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/<UTC날짜>_<HHMMSS>')`를
 실행하므로, 거기 쓰인 객체(`.backup` 매니페스트 + `data/<db>/<table>/...` 파트)는 계정 안의
 다른 무엇에도 의존하지 않는 자기완결적 결과물입니다. 이 프리픽스엔 30일 만료 라이프사이클이
 걸려 있고(`infra/s3.tf`), 라이프사이클 타이머와 무관하게 계정이 사라지면 모두 같이
@@ -272,13 +275,20 @@ metadata 없이는 복원이 불가능합니다. 지금 쓰는 `BACKUP ... TO S3
 워크샵 계정이 삭제되기 직전 1회. 이전 실행이 중간에 실패했다면 재실행 가능(`SKIP_BACKUP=1`로
 새 스냅샷 없이 재동기화만).
 
-**순서가 중요합니다**: `infra/s3.tf`의 라이프사이클 필터(`prefix = "backup/"`)는 `main`에
-이미 존재하고 이 PR은 그 값을 바꾸지 않습니다 — 이 PR이 바꾸는 건 `infra/clickhouse.tf`의
-백업 목적지입니다(`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`, 처음으로 그 `backup/` 경로에
-실제로 쓰기 시작 — 참고 섹션 참조). 즉 이 PR의 `clickhouse.tf` 변경을 적용해야 원래 있던 30일
-필터가 비로소 매칭 대상을 갖게 됩니다. 이 아카이브 스크립트를 먼저 실행해 검증까지 통과시킨
-**다음에** `clickhouse.tf` 변경을 `terraform apply`하세요. 먼저 적용하면, 아직 아무 데도 영구
-복사되지 않은 30일 초과 백업이 소스 버킷에서 먼저 만료될 수 있습니다.
+**`terraform apply`와의 순서 제약은 없습니다.** 이 스크립트의 2단계
+(`BACKUP DATABASE claude_code TO S3(...)`)는 `otel_writer` 연결로 그 커맨드를 직접 실행합니다
+— 파드에 이미 있는 IRSA 자격증명을 쓸 뿐, `infra/clickhouse.tf`의 CronJob이 갱신됐는지와
+무관하게 동일하게 동작합니다. 계정 삭제 직전 언제든 한 번 돌리면 됩니다.
+
+시점에 따라 달라지는 건 `infra/s3.tf`의 기존 30일 라이프사이클 필터(`prefix = "backup/"`,
+이 PR은 이 값을 바꾸지 않습니다 — 참고 섹션 참조)입니다. `infra/clickhouse.tf`의 변경이
+적용되기 전에는 `backup/`에 아무것도 쓰이지 않으므로(예전 `Disk('cold_s3', ...)` 방식은 딴
+곳에 썼습니다) 그 필터가 만료시킬 대상이 원래 없고, 적용을 언제 하든 그 자체로 뭔가가
+즉시 만료되지는 않습니다 — 적용 후 CronJob이 실제 객체를 쓰기 시작하고, 각 객체는 age
+0부터 시작합니다. 실제 위험은 더 긴 시간 축에 있습니다: 한번 적용된 뒤로는 이 스크립트를
+**30일 넘게** 재실행하지 않고 방치하지 마세요 — 그러면 적용 직후 만들어진 초기 일별 백업이
+영구 이관되기 전에 만료될 수 있습니다. 워크샵 계정을 삭제하기 전에는 최근에 실행했는지와
+무관하게 항상 이 스크립트를 한 번 더 돌리세요.
 
 ## 사전 준비
 - `~/.aws/credentials`에 워크샵 계정 프로필 1개, `cc-ab-clickhouse-*` 버킷에 대한
@@ -294,9 +304,11 @@ metadata 없이는 복원이 불가능합니다. 지금 쓰는 `BACKUP ... TO S3
   기본 자격증명 체인 — 즉 이 스크립트를 실행하는 EC2의 인스턴스 프로필 — 을 씁니다. 명명된
   프로필을 쓰고 싶을 때만 `ARCHIVE_PROFILE=<이름>`을 지정합니다.
 - 아카이브를 담을, 내 계정에 이미 존재하는 S3 버킷(`ARCHIVE_BUCKET`)과 대상 측 자격증명에 대한
-  `s3:PutObject`/`s3:ListBucket` 권한(스크립트 1단계에서 그 계정 ID를 출력합니다 — 긴 sync가
-  시작되기 전에 확인하세요), Public Access Block이 4개 항목 모두 활성화(스크립트가 아니면
-  fail-closed로 중단 — PII 관련 참고 참조), 저장 시 암호화(스크립트가 업로드 시
+  `s3:PutObject`/`s3:ListBucket`/`s3:GetBucketPublicAccessBlock` 권한(스크립트 1단계에서 그
+  계정 ID를 출력합니다 — 긴 sync가 시작되기 전에 확인하세요; `s3:GetBucketPublicAccessBlock`이
+  없으면 1단계의 fail-closed PAB 점검 자체가 실행되지 않습니다), Public Access Block이 4개
+  항목 모두 활성화(스크립트가 아니면 fail-closed로 중단 — PII 관련 참고 참조), 저장 시
+  암호화(스크립트가 업로드 시
   `--sse AES256`을 붙이지만, 버킷 기본 암호화를 추가로 걸어두면 이중 안전장치가 됩니다).
 - `kubectl` context `fsi-demo-cluster`, `claude-code` 네임스페이스에서 `chi-cc-ab-*` 파드
   `get`/`exec`와 Secret `clickhouse-writer` `get` 권한
@@ -436,8 +448,9 @@ SELECT round(sum(sum_value)) FROM claude_code.otel_metrics_sum_hourly WHERE hour
 - `otel_metrics_sum_hourly`는 백업에 포함되지만, `scripts/backfill-hourly-rollup.sh`는 rollup
   테이블에 최소 1행이 있어야 동작합니다(완전히 비어 있으면 no-op) — 완전 손실 상황에서는
   백업된 rollup 데이터 자체를 대체할 수 없으니 재생성 가능성을 과신하지 마세요.
-- 이 레포에서 named AWS CLI 프로필(`--profile`, 워크샵 계정 쪽에만)을 처음 쓰는 스크립트입니다
-  (기존엔 앰비언트 자격증명 체인이나 클러스터 내 IRSA만 사용) — 더 늘어나면
+- 이 레포에서 named AWS CLI 프로필을 처음 쓰는 스크립트입니다: 워크샵(소스) 쪽은 필수이고,
+  아카이브(대상) 쪽도 `ARCHIVE_PROFILE`로 선택적으로 지원합니다 — 대상 쪽 기본값은 다른
+  곳과 동일하게 앰비언트 자격증명 체인이나 클러스터 내 IRSA입니다 — 더 늘어나면
   `docs/reference/iac.md` 참고.
 - 아카이브에는 소스 클러스터의 90/180일 TTL을 넘어서도 `otel_logs`/`otel_metrics_sum`의
   `UserEmail` 등 PII/세션 데이터가 무기한 그대로 남습니다 — 스크립트가 업로드 전 아카이브

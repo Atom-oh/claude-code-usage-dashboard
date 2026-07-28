@@ -124,11 +124,13 @@ date>_<HHMMSS>')` (same bucket, IRSA credentials — no extra params needed from
 cluster; the timestamp includes time-of-day so a same-day retry doesn't collide with an
 existing backup — find the exact path with `aws s3 ls s3://<bucket>/backup/`).
 
-This cluster is **3-replica ReplicatedMergeTree** (`infra/clickhouse.tf`:
-`shardsCount = 1, replicasCount = 3`) with **literal Keeper paths** that don't include the
-database name (`/clickhouse/tables/{shard}/otel_metrics_sum`,
-`infra/files/clickhouse-schema-replicated.sql`). Two things that look like they'd work do not,
-verified live on a scratch replicated table (2026-07-27):
+Run the following as the `otel_writer` account (the IRSA credentials only cover S3 access for
+the `S3()` function itself, not the ClickHouse SQL connection). This cluster is **3-replica
+ReplicatedMergeTree** (`infra/clickhouse.tf`: `shardsCount = 1, replicasCount = 3`) with
+**literal Keeper paths** that don't include the database name
+(`/clickhouse/tables/{shard}/otel_metrics_sum`, `infra/files/clickhouse-schema-replicated.sql`).
+Two things that look like they'd work do not, verified live on a scratch replicated table
+(2026-07-27):
 
 - **`RESTORE` does not overwrite existing non-empty tables** — it fails with
   `CANNOT_RESTORE_TABLE` if the target already has data, so you can't just point `RESTORE` at
@@ -296,9 +298,10 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 재시도 시 기존 백업과 경로가 겹치지 않게 하기 위함 — 정확한 경로는
 `aws s3 ls s3://<버킷>/backup/`로 확인).
 
-이 클러스터는 **3-replica ReplicatedMergeTree**(`infra/clickhouse.tf`의
-`shardsCount = 1, replicasCount = 3`)이고, Keeper 경로가 **데이터베이스명을 포함하지 않는
-literal 경로**입니다(`/clickhouse/tables/{shard}/otel_metrics_sum`,
+아래는 `otel_writer` 계정으로 실행하세요(IRSA 자격증명은 `S3()` 함수의 S3 접근만 담당하고
+ClickHouse SQL 접속과는 별개입니다). 이 클러스터는 **3-replica ReplicatedMergeTree**
+(`infra/clickhouse.tf`의 `shardsCount = 1, replicasCount = 3`)이고, Keeper 경로가
+**데이터베이스명을 포함하지 않는 literal 경로**입니다(`/clickhouse/tables/{shard}/otel_metrics_sum`,
 `infra/files/clickhouse-schema-replicated.sql`). 될 것처럼 보이지만 안 되는 방법 두 가지를
 스크래치 replicated 테이블로 직접 실측했습니다(2026-07-27):
 
