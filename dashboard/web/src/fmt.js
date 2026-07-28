@@ -29,9 +29,17 @@ export function formatDuration(daysInRange) {
 // server/chat.js의 maskEmail(run_sql 결과 마스킹용)이 같은 규칙(앞 2글자+******+@도메인)을
 // 복제해 쓴다 — server/web은 의존성을 안 섞으므로(dashboard/CLAUDE.md) 한쪽을 바꾸면 반대쪽도
 // 맞춰야 한다(normModel()/normalizeModelId()와 같은 관례).
+// 마스킹은 외부 공개 데모용 옵션이라 기본 OFF — 워크샵 이메일은 {accountid}@ws 형태의 가짜
+// 주소라 참가자가 자기 행을 찾을 수 있는 게 더 중요하다. 서버 env PII_MASK_ENABLED=1이면
+// main.jsx가 첫 렌더 전에 setPiiMask(true)를 호출해 켠다(GET /api/config).
+let piiMask = false;
+export const setPiiMask = (v) => {
+  piiMask = !!v;
+};
+
 export const maskEmail = (s) => {
   const str = String(s ?? "");
-  if (!str) return str;
+  if (!piiMask || !str) return str;
   const at = str.indexOf("@");
   return at === -1 ? `${str.slice(0, 2)}******` : `${str.slice(0, Math.min(2, at))}******${str.slice(at)}`;
 };

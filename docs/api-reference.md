@@ -94,6 +94,11 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 |---|---|
 | `POST /api/chat` | Server-Sent Events stream. Body: `{"messages": [{"role": "user"\|"assistant", "content": "..."}]}`. Backed by Bedrock; internally allowed to run read-only ClickHouse SQL via a sandboxed tool — see `sanitizeSql()` in `dashboard/server/chat.js`. |
 
+### Config
+| Path | Returns |
+|---|---|
+| `GET /api/config` | `{"piiMask": bool}` — whether the frontend should mask user emails (`oj******@gmail.com`). Reflects the server's `PII_MASK_ENABLED` env var (`"1"` = on, default off). Fetched once by `web/src/main.jsx` before the first render, since the image is built once and reused across deployments. |
+
 ## Error Codes
 
 | Code | Description |

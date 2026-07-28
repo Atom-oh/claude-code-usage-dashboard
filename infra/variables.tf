@@ -24,6 +24,15 @@ variable "bedrock_region" {
   default = "ap-northeast-2"
 }
 
+# 이메일 마스킹(앞 2글자 + ****** + @도메인). 이 배포는 공개 URL(dashboard_hostname)로 데모를
+# 돌리므로 true. 워크샵 계정에 이식할 때는 false — 이메일이 {accountid}@ws 형태의 가짜 주소라
+# 개인정보가 아니고, 참가자가 리더보드에서 자기 행을 찾아야 한다. 앱 기본값도 false(env 없으면
+# 마스킹 안 함)이므로 이 변수는 "공개 데모용 켜기" 스위치다.
+variable "pii_mask_enabled" {
+  type    = bool
+  default = true
+}
+
 variable "domain" {
   default = "atomai.click"
 }
