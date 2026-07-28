@@ -46,19 +46,31 @@ export async function streamChat(messages, { onText, onStatus, onThinking, signa
 // 새 내용이 오면 맨 아래로 따라가되, 사용자가 위로 스크롤해 읽고 있으면 따라가지 않는다.
 // thinking은 델타마다 오므로(한 턴에 수십 번) 무조건 scrollIntoView하면 위로 스크롤 자체가
 // 불가능해진다(리뷰에서 확인). FloatingChat/Analytics가 같은 로직을 쓰므로 여기서 공유한다.
-export function useStickToBottom(deps) {
+// resetKey(턴 번호)가 바뀌면 다시 따라가기 시작한다 — 위로 올려 읽던 상태에서 새 질문을 보내면
+// 새 답변은 따라가야 한다(안 그러면 FloatingChat에서 응답이 온 걸 못 본다).
+export function useStickToBottom(deps, resetKey) {
   const containerRef = useRef(null);
   const bottomRef = useRef(null);
   const stick = useRef(true);
+  const autoScrollUntil = useRef(0);
 
   const onScroll = () => {
     const el = containerRef.current;
-    if (!el) return;
+    // behavior:"smooth"는 스크롤이 끝날 때까지 중간 scroll 이벤트를 계속 뿜는다 — 그 순간의
+    // distance는 아직 80px보다 크므로 사용자 스크롤로 오인해 stick을 꺼버린다(thinking 델타가
+    // 쏟아지는 동안 하단 고정이 간헐적으로 풀리는 원인). 자동 스크롤 직후 짧은 창은 무시한다.
+    if (!el || Date.now() < autoScrollUntil.current) return;
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; // 하단 80px 이내면 따라간다
   };
 
   useEffect(() => {
-    if (stick.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    stick.current = true;
+  }, [resetKey]);
+
+  useEffect(() => {
+    if (!stick.current) return;
+    autoScrollUntil.current = Date.now() + 700; // smooth 스크롤 지속시간보다 넉넉하게
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, deps);
 
   return { containerRef, bottomRef, onScroll };

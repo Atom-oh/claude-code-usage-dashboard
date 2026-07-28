@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sanitizeSql, maskEmailValues, maskEmailText, capToolResultJson, classifyChatError, SCHEMA_CONTEXT, SYSTEM } from "./chat.js";
 import { GROUP_CTE } from "./grouping.js";
-import { PRICING_PROMPT_TABLE } from "./pricing.js";
+import { PRICING_PROMPT_TABLE, normalizeModelId } from "./pricing.js";
+import { normModel } from "./queries.js";
 
 // 정상 쿼리는 통과해야 한다 — 특히 cumulative 함정을 피하는 max() 서브쿼리 패턴,
 // CTE, JOIN, SELECT/WHERE의 스칼라·집계 함수는 테이블 함수가 아니므로 거부되면 안 된다.
@@ -189,14 +190,20 @@ test("server maskEmailText agrees with web fmt.js's maskEmail on full-string ema
 // SYSTEM 프롬프트가 GROUP_CTE(grouping.js)를 모델에게 그대로 가르친다 — 모델이 그 CTE 형태의
 // bedrock/enterprise 그룹핑 쿼리를 쓸 것이므로, sanitizeSql이 실제 CTE + LEFT JOIN 쿼리를
 // 통과시키는지 회귀 테스트로 고정한다(회귀하면 프롬프트가 가르친 대로 써도 챗이 막힌다).
+// 픽스처는 프롬프트가 가르치는 형태를 그대로 쓴다(temporality 분기 + 정각 경계 + 바깥에서 쓸
+// 컬럼을 서브쿼리 GROUP BY에 포함) — 픽스처가 프롬프트와 어긋나면 "sanitize는 통과하지만
+// 프롬프트가 가르친 쿼리는 막힌다"를 잡지 못한다.
 test("sanitizeSql passes the real bedrock/enterprise GROUP_CTE joined against the hourly rollup", () => {
   const sql = `${GROUP_CTE}
 SELECT g.grp AS grp, h.Model AS model, sum(h.inc) AS cost
 FROM (
   SELECT SessionId, SeriesKey, Model,
-         greatest(maxIf(max_value, hour < now()) - maxIf(max_value, hour < now() - INTERVAL 2 DAY), 0) AS inc
+         if(AggregationTemporality = 2,
+            greatest(maxIf(max_value, hour < toStartOfHour(now())) - maxIf(max_value, hour < toStartOfHour(now()) - INTERVAL 2 DAY), 0),
+            sumIf(sum_value, hour >= toStartOfHour(now()) - INTERVAL 2 DAY AND hour < toStartOfHour(now()))) AS inc
   FROM claude_code.otel_metrics_sum_hourly
-  WHERE MetricName = 'claude_code.cost.usage' GROUP BY SessionId, SeriesKey, Model
+  WHERE MetricName = 'claude_code.cost.usage' AND hour < toStartOfHour(now())
+  GROUP BY SessionId, SeriesKey, Model, AggregationTemporality
 ) h
 LEFT JOIN session_group g ON g.SessionId = h.SessionId
 GROUP BY grp, model HAVING cost > 0 ORDER BY grp, cost DESC`;
@@ -208,6 +215,23 @@ GROUP BY grp, model HAVING cost > 0 ORDER BY grp, cost DESC`;
 // 없다"고 답한다 — 이 PR이 고친 원래 버그).
 test("SYSTEM embeds grouping.js's GROUP_CTE verbatim, not a hand-copied duplicate", () => {
   assert.ok(SYSTEM.includes(GROUP_CTE));
+});
+
+// 단가 숫자만 SSOT여도 부족하다 — 원본 Model을 단가표 key로 바꾸는 정규화가 프롬프트에서
+// 산문으로만 설명되면 모델이 다르게 정규화해 단가 매칭이 빗나가고, 계산 비용이 대시보드보다
+// 작게 나온다(리뷰에서 MAJOR로 확인). queries.js의 SQL 식을 그대로 인용하는지 고정한다.
+test("SCHEMA_CONTEXT quotes queries.js's normModel() SQL, not a prose description of it", () => {
+  assert.ok(SCHEMA_CONTEXT.includes(normModel("Model")));
+});
+
+// normModel(SQL)과 normalizeModelId(JS)는 같은 5단계를 서로 다른 언어로 구현한 쌍이다 —
+// 한쪽만 바뀌면 챗(SQL)과 서버(JS)의 단가 매칭이 갈린다. 단계 수/패턴 순서를 함께 고정한다.
+test("normModel and normalizeModelId apply the same 5 normalization steps in the same order", () => {
+  const patterns = [...normModel("Model").matchAll(/'([^']*)'/g)].map((m) => m[1]).filter((p) => p !== "");
+  // SQL 문자열 리터럴에 들어가는 형태라 백슬래시가 한 번 더 이스케이프돼 있다(`\\[` 등).
+  assert.deepEqual(patterns, ["\\\\[.*\\\\]$", "^(us|global|eu|apac)\\\\.", "^anthropic\\\\.", "-v\\\\d+:\\\\d+$", "-\\\\d{8}$"]);
+  assert.equal(normalizeModelId("us.anthropic.claude-haiku-4-5-20251001-v1:0"), "claude-haiku-4-5");
+  assert.equal(normalizeModelId("claude-fable-5[1m]"), "claude-fable-5");
 });
 
 // 200행 상한과 별개로 hop마다 messages에 누적되는 툴 결과 텍스트 자체를 캡해야 한다 — 안 그러면

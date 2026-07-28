@@ -30,8 +30,11 @@ a bounded tool-use loop.
   raw table, and interpolates `GROUP_CTE` from `grouping.js` verbatim for the bedrock/enterprise
   heuristic instead of re-describing it in prose. If the prompt only describes the schema from
   memory (as it did before this was caught), the model can answer "no bedrock/enterprise
-  distinction exists in the data" when it does -- it just doesn't know the join. **Any schema or
-  grouping-rule change must update this prompt in the same change**, the same sync discipline as
+  distinction exists in the data" when it does -- it just doesn't know the join. What is
+  interpolated tracks its source automatically: `GROUP_CTE` (`grouping.js`), `PRICING_PROMPT_TABLE`
+  (`pricing.js`), `normModel()` (`queries.js`). **What must be updated by hand in the same change
+  is the hardcoded part of `SCHEMA_CONTEXT`** -- table/column lists, the metric and `TokenType`
+  value domains, and the rollup-vs-raw rule -- the same sync discipline as
   `grafana-ab-queries.sql` (see root `CLAUDE.md`).
 - **Model is Bedrock-hosted (`CHAT_MODEL_ID`, default `global.anthropic.claude-sonnet-5`)** --
   consistent with the rest of the AWS-native infra; no external LLM API dependency.
@@ -88,8 +91,11 @@ a bounded tool-use loop.
   `grouping.js`의 `GROUP_CTE`를 그대로 보간해서 씁니다(산문으로 재설명하지 않음). 프롬프트가
   스키마를 기억만으로 서술하면(이 문제가 발견되기 전 실제로 그랬음) 모델이 실제로는 있는
   bedrock/enterprise 구분을 "데이터에 없다"고 답할 수 있습니다 — join 방법을 모를 뿐입니다.
-  **스키마나 그룹핑 규칙이 바뀌면 이 프롬프트도 같은 변경에서 함께 갱신해야 합니다** —
-  `grafana-ab-queries.sql`과 같은 동기화 원칙(루트 `CLAUDE.md` 참고).
+  보간되는 부분은 출처를 자동으로 따라갑니다: `GROUP_CTE`(`grouping.js`),
+  `PRICING_PROMPT_TABLE`(`pricing.js`), `normModel()`(`queries.js`).
+  **같은 변경에서 손으로 갱신해야 하는 건 `SCHEMA_CONTEXT`의 하드코딩 부분입니다** — 테이블·컬럼
+  목록, MetricName/`TokenType` 값 도메인, 롤업 vs 원본 선택 규칙 — `grafana-ab-queries.sql`과
+  같은 동기화 원칙(루트 `CLAUDE.md` 참고).
 - **Bedrock 호스팅 모델(`CHAT_MODEL_ID`, 기본값 `global.anthropic.claude-sonnet-5`)** --
   AWS-네이티브 인프라의 나머지 부분과 일관됨. 외부 LLM API 의존성 없음.
 - 스트리밍은 WebSocket이 아니라 SSE(`text/event-stream`) -- 다른 모든 엔드포인트와 같은

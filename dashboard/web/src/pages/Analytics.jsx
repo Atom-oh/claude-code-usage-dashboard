@@ -50,7 +50,7 @@ export default function Analytics() {
   const { msgs, busy, status, trace, ask } = useChatStream();
   const started = msgs.length > 0;
 
-  const { containerRef, bottomRef, onScroll } = useStickToBottom([msgs, status, trace]);
+  const { containerRef, bottomRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
 
   const submit = (text) => {
     if (!text.trim() || busy) return;

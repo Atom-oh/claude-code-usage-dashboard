@@ -202,6 +202,9 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge
     "Exemplars.SpanId"             Array(String),
     "Exemplars.TraceId"            Array(String)
 )
+-- gauge도 UserEmail을 MATERIALIZED로 담으므로 sum과 동일한 TTL을 가진다(UserEmail을 담는 모든
+-- 저장소가 TTL을 가져야 한다는 원칙 — docs/reference/security.md). 라이브는 90일 cold 이동 +
+-- 180일 삭제.
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(TimeUnix)
 ORDER BY (ExperimentGroup, MetricName, toUnixTimestamp(TimeUnix))

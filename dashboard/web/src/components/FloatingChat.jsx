@@ -19,7 +19,7 @@ export function FloatingChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const { msgs, busy, status, trace, ask, stop: stopStream } = useChatStream();
-  const { containerRef, bottomRef, onScroll } = useStickToBottom([msgs, status, trace]);
+  const { containerRef, bottomRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
 
   // 챗을 닫으면 진행 중인 스트림도 취소한다(대화 내용은 유지 — useChatStream 참고).
   const stop = () => {

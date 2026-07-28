@@ -1,6 +1,7 @@
 import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { queryReadonly } from "./clickhouse.js";
 import { GROUP_CTE } from "./grouping.js";
+import { normModel } from "./queries.js";
 import { PRICING_PROMPT_TABLE } from "./pricing.js";
 
 // Ask Claude — Bedrock ConverseStream + run_sql 툴콜 루프 (whchoi98 대시보드의 Analyze 상당,
@@ -202,6 +203,9 @@ if(AggregationTemporality = 2, ..., ...)로 분기합니다 — 2로 가정하�
   otel_metrics_sum을 TimeUnix로 쓰세요**. 롤업으로 근사하지 마세요: hour는 시간 버킷이라
   경계 버킷이 통째로 포함되거나 빠지고, 그때 틀리는 양은 "1시간"이 아니라 **그 경계 시간대에
   실제로 일어난 증가량**입니다 — 사용량이 몰린 시간대면 오차가 임의로 커집니다.
+- 필터·그룹핑에 쓸 차원이 롤업 컬럼 목록에 없으면(QuerySource, Language, AgentName, Attributes
+  맵의 임의 키 등) 경계가 정각이어도 **원본 otel_metrics_sum을 쓰세요**. 롤업은 위에 나열한
+  컬럼으로만 집계돼 있어서, 없는 차원으로 필터하면 그 조건이 조용히 무시된 총량이 나옵니다.
 otel_metrics_sum_hourly 기준 두 분기를 함께 쓰는 형태(정각 경계 전제, 모델·TokenType별로 쪼개는 예):
 SELECT Model, TokenType, sum(inc) AS inc FROM (
   SELECT Model, TokenType,
@@ -243,8 +247,11 @@ ${PRICING_PROMPT_TABLE}
                 + (cacheCreation 토큰×cacheWrite), 전부 1e6으로 나눕니다. TokenType별 합계는
   sumIf(inc, TokenType='input') 처럼 위 boundary-diff 결과에 조건 집계로 뽑되, **Model별 GROUP BY를
   유지하세요** — 여러 모델의 토큰을 먼저 합치고 단가 하나를 곱하면 대시보드 값과 발산합니다.
-  모델명은 정규화(us./global./eu./apac./anthropic. 접두사, -v숫자:숫자/날짜(-YYYYMMDD)/[1m]
-  접미사 제거) 후 위 표와 매칭합니다 — 원본 Model 값 그대로는 표에 없을 수 있습니다.
+  원본 Model 값(us.anthropic.claude-sonnet-5-20250929-v1:0 등)은 위 표에 없습니다 — 반드시 아래
+  SQL 식으로 정규화한 값을 표의 key와 매칭하고, GROUP BY도 이 식으로 하세요(대시보드가 쓰는 것과
+  같은 식이라 이걸 그대로 쓰면 값이 일치합니다. 직접 다르게 정규화하면 단가 매칭이 빗나가 계산
+  비용이 대시보드보다 작게 나옵니다):
+    ${normModel("Model")}
 - 사용자가 그냥 "비용"을 물으면 기본으로 cost.usage(reported_cost)를 조회해 답하되, 반드시
   "Claude Code 자체 보고 비용"임을 명시하세요. 대시보드 카드 값과 비교/일치를 요구하면 위 단가로
   직접 계산한 뒤 "계산 비용(단가표 기준)"이라고 구분해서 답하세요. 두 값을 같은 것처럼 뭉뚱그려
@@ -385,8 +392,13 @@ async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
     } else if (rd) {
       curReasoning = curReasoning || { text: "", signature: undefined, redactedContent: undefined };
       if (rd.text) {
+        // curReasoning.text는 **원문 그대로** 누적해야 한다 — 다음 hop에서 signature와 함께
+        // 되돌려보내는 값이라 한 글자라도 바꾸면 Bedrock이 거부한다. 클라이언트로 나가는 사본만
+        // 마스킹한다(SQL trace/툴 결과/에러와 같은 규율). 델타 단위 정규식이라 이메일이 청크
+        // 경계에서 쪼개지면 놓칠 수 있는 best-effort다 — 툴 결과는 모델에게 가기 전에 이미
+        // 마스킹되므로(위 maskEmailValues) 모델이 원본 이메일을 알 경로는 사용자 입력뿐이다.
         curReasoning.text += rd.text;
-        send("thinking", { text: rd.text });
+        send("thinking", { text: maskEmailText(rd.text) });
       }
       // signature는 블록 끝에 한 번 오고, redactedContent는 안전상 암호화된 변형이다 —
       // 둘 다 화면에 보낼 게 없고 되돌려줄 때만 필요하다.
