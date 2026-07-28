@@ -29,4 +29,7 @@ fetch("/api/config", { signal: ac.signal })
         </BrowserRouter>
       </StrictMode>
     );
-  });
+  })
+  // render()가 동기 throw하면 promise 체인이 삼켜서 콘솔에 아무것도 안 남고 영구 blank가 된다
+  // (기존 동기 코드에선 즉시 표면화됐다) — 최소한 표면화는 시킨다.
+  .catch((err) => console.error("render failed", err));

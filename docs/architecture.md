@@ -62,6 +62,11 @@ method at runtime rather than a static experiment flag.
 - **Basic Auth** (global Express middleware) -- gates the whole dashboard except `/healthz`.
 - **SQL sandbox** (`sanitizeSql()` + ClickHouse `readonly=1`) -- two independent layers
   restricting the chat assistant to read-only `SELECT`/`WITH` queries.
+- **Email masking toggle** (`PII_MASK_ENABLED`, surfaced to the SPA via `GET /api/config`) --
+  display-level masking of user emails, on in the standard Terraform deployment
+  (`var.pii_mask_enabled = true`) and off in workshop accounts, where the addresses are synthetic
+  `{accountid}@ws` values participants need to recognize. ClickHouse error echoes in the chat
+  path are masked regardless of the flag.
 
 ### Infrastructure Layer
 - **Terraform** (`infra/`) -- EKS (Graviton nodepool), ClickHouse Kubernetes Operator, ECR,
@@ -131,7 +136,7 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
 |--------|-----------|-------------|
 | `infra/nodepool.tf` | EKS managed node group | Graviton (m8g.xlarge, arm64) nodes |
 | `infra/clickhouse.tf` | ClickHouse Operator, Cluster, storage policy | `hot_cold` policy: local EBS + `cold_s3` disk |
-| `infra/dashboard.tf` | Deployment, Service | Dashboard app, env from k8s Secret |
+| `infra/dashboard.tf` | Deployment, Service | Dashboard app, env from k8s Secret; `var.pii_mask_enabled` -> `PII_MASK_ENABLED` |
 | `infra/ecr.tf` | ECR repository | `cc-ab-dashboard` image registry |
 | `infra/s3.tf` | S3 buckets | ClickHouse cold tier, backups |
 | `infra/dns_cdn.tf` | Route53, CloudFront | Public dashboard endpoint |
@@ -214,6 +219,10 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
 
 ### Security Layer
 - **Basic Auth**(전역 Express 미들웨어) -- `/healthz`를 제외한 대시보드 전체를 게이트.
+- **이메일 마스킹 토글**(`PII_MASK_ENABLED`, `GET /api/config`로 SPA에 전달) -- 표시 단계
+  마스킹. 표준 Terraform 배포는 ON(`var.pii_mask_enabled = true`), 워크샵 계정은 OFF —
+  주소가 참가자가 알아봐야 하는 `{accountid}@ws` 가짜 값이기 때문. 챗 경로의 ClickHouse
+  에러 에코는 플래그와 무관하게 항상 마스킹.
 - **SQL 샌드박스**(`sanitizeSql()` + ClickHouse `readonly=1`) -- 채팅 어시스턴트를 읽기 전용
   `SELECT`/`WITH` 쿼리로 제한하는 독립된 2개 레이어.
 
