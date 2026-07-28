@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Operations — Claude Code Usage Dashboard</title>
+    <meta name="description" content="배포 절차, 환경 변수, 장애 대응 — 대시보드 운영 요약." />
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap">
+        <a class="brand" href="index.html"><span class="mark">CC</span> Usage Dashboard</a>
+        <nav class="tabs">
+          <a href="index.html">Overview</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="api.html">API</a>
+          <a href="operations.html" aria-current="page">Operations</a>
+          <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="hero">
+        <p class="eyebrow">Operations</p>
+        <h1>배포와 운영</h1>
+        <p class="lede">
+          배포는 커밋 기반이 아니라 <strong>이미지 기반</strong>입니다 — 이미지는 빌드 시점의 작업
+          트리를 반영하므로, 어느 브랜치에 서 있는지가 곧 배포 내용입니다.
+        </p>
+      </div>
+
+      <section>
+        <h2>배포 (EKS)</h2>
+        <p>
+          아래는 저장소의 <code>docs/runbooks/deploy-production.md</code> 요약입니다. 계정 ID와
+          클러스터 이름은 자리표시자로 바꿔 두었습니다.
+        </p>
+        <h3>1. 무엇을 배포하는지 확인</h3>
+        <pre><code>git status
+git branch --show-current
+git log -1 --oneline</code></pre>
+        <p>관련 없는 변경이 섞여 있으면 먼저 <code>git stash</code> 합니다.</p>
+
+        <h3>2. 사전 검사</h3>
+        <pre><code>cd dashboard/server &amp;&amp; node --test *.test.js
+cd dashboard/web &amp;&amp; npm install &amp;&amp; npm run build</code></pre>
+
+        <h3>3. 빌드 &amp; 푸시 (Graviton = arm64)</h3>
+        <pre><code>TAG=$(date -u +%Y%m%d-%H%M%S)
+aws ecr get-login-password --region &lt;region&gt; \
+  | docker login --username AWS --password-stdin &lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com
+
+docker buildx build --platform linux/arm64 \
+  -t &lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com/cc-ab-dashboard:$TAG \
+  -t &lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com/cc-ab-dashboard:latest \
+  --push dashboard/</code></pre>
+
+        <h3>4. 롤아웃 &amp; 검증</h3>
+        <pre><code>kubectl --context &lt;cluster&gt; -n claude-code set image deployment/dashboard \
+  dashboard=&lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com/cc-ab-dashboard:$TAG
+kubectl --context &lt;cluster&gt; -n claude-code rollout status deployment/dashboard --timeout=120s
+kubectl --context &lt;cluster&gt; -n claude-code get pods -l app=dashboard</code></pre>
+        <p>
+          기대 상태: 파드 2/2 <code>Running</code>, deployment 이미지가 방금 태그와 일치,
+          로그에 <code>dashboard listening on :8080</code>만 있고 스택트레이스 없음.
+        </p>
+        <div class="note">
+          <p>
+            롤백은 <code>kubectl rollout undo deployment/dashboard</code>. 크래시 루프면 먼저
+            의심할 것: 이름이 바뀐 환경 변수, ClickHouse 접속 실패(<code>CH_URL</code> /
+            <code>CH_PASSWORD</code>), Basic Auth 값 오류. <code>/healthz</code>는 Basic Auth
+            면제이므로 포트포워딩으로 직접 찔러 보는 게 가장 빠릅니다.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2>환경 변수</h2>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>변수</th><th>역할</th><th>기본값</th></tr></thead>
+            <tbody>
+              <tr><td><code>CH_URL</code> / <code>CH_DB</code> / <code>CH_USER</code> / <code>CH_PASSWORD</code></td><td>ClickHouse 접속(읽기 전용 계정)</td><td>—</td></tr>
+              <tr><td><code>BASIC_AUTH_USER</code> / <code>BASIC_AUTH_PASSWORD</code></td><td>전역 Basic Auth. 둘 다 비면 인증 없음(로컬 개발)</td><td>미설정</td></tr>
+              <tr><td><code>CHAT_MODEL_ID</code></td><td>Ask Claude 챗이 호출하는 Bedrock inference profile</td><td><code>global.anthropic.claude-sonnet-5</code></td></tr>
+              <tr><td><code>BEDROCK_REGION</code></td><td>Bedrock 호출 리전. 인프라 리전과 독립</td><td><code>AWS_REGION</code> → <code>us-east-1</code></td></tr>
+              <tr><td><code>PII_MASK_ENABLED</code></td><td>이메일 마스킹(<code>"1"</code> / <code>"true"</code> = ON)</td><td>앱 기본 OFF · Terraform 기본 ON</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          모델·리전 같은 값은 Terraform 변수 한 곳(<code>infra/variables.tf</code>)만 고치면 env와
+          IAM 정책 ARN이 함께 반영됩니다. <code>kubectl set env</code>로 손으로 바꾸면 다음
+          <code>terraform apply</code>에서 되돌아갑니다.
+        </p>
+      </section>
+
+      <section>
+        <h2>흔한 증상과 첫 확인 지점</h2>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>증상</th><th>먼저 볼 것</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>숫자가 비현실적으로 큼(100배 단위)</td>
+                <td>누적 카운터를 <code>sum(Value)</code>로 더한 쿼리가 새로 들어왔는지 —
+                  <a href="architecture.html">boundary diff</a>를 쓰지 않으면 반드시 이렇게 됩니다.</td>
+              </tr>
+              <tr>
+                <td>대시보드는 뜨는데 값이 전부 0</td>
+                <td>수집이 끊겼는지: 시간 버킷별 <em>행 수</em>가 0인 구간을 찾습니다(값의 변화가
+                  아니라 행 도착 여부로 판단).</td>
+              </tr>
+              <tr>
+                <td>쿼리가 갑자기 느려짐</td>
+                <td>rollup(<code>otel_metrics_sum_hourly</code>) 대신 원본을 읽는 쿼리가
+                  섞였는지, 그리고 materialized view가 살아 있는지.</td>
+              </tr>
+              <tr>
+                <td>그룹이 전부 <code>unknown</code></td>
+                <td>rollup의 <code>has_org</code> 컬럼과 MV 정의 — <code>organization.id</code>는
+                  ResourceAttributes가 아니라 datapoint <code>Attributes</code>에 실립니다.</td>
+              </tr>
+              <tr>
+                <td>Ask Claude 챗이 답을 못 함 / 느림</td>
+                <td>Bedrock 모델 접근 권한과 리전, 그리고 질문 1건이 직렬 호출 3~5회(hop)라는
+                  구조. 체감 지연은 첫 토큰(TTFT)이 지배합니다.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>이 저장소의 관례</h2>
+        <ul>
+          <li>
+            <strong>절대 <code>sum(Value)</code> 금지</strong> —
+            <code>incFlat()</code>/<code>incBucketed()</code>를 씁니다.
+          </li>
+          <li>
+            프로모션/머티리얼라이즈 컬럼을 건드리면 <code>clickhouse-schema.sql</code>,
+            <code>grafana-ab-queries.sql</code>, 아키텍처 문서를 함께 고칩니다 — 과거 리뷰에서 세
+            파일이 어긋난 적이 있습니다.
+          </li>
+          <li>
+            새 엔드포인트는 <code>index.js</code>의 공용 <code>route()</code> 래퍼를 통과시킵니다
+            (범위 파싱 · 오류 처리 · TTL 캐시 + in-flight 중복 제거).
+          </li>
+          <li>
+            <code>sanitizeSql()</code>은 LLM이 만든 SQL이 ClickHouse에 닿는 유일한 지점입니다 —
+            여기 변경은 보안 리뷰 수준의 검토가 필요합니다.
+          </li>
+          <li>
+            주석은 "왜"가 비자명할 때만. 이 저장소는 실측 결과(<code>실측 확인: …</code>)와
+            의도한 단순화(<code>ponytail: …</code>)를 주석으로 남기는 스타일을 유지합니다.
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        claude-code-usage-dashboard ·
+        <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a> · 이 페이지의
+        계정 ID · 클러스터 이름 · 호스트명은 자리표시자로 대체돼 있습니다.
+      </div>
+    </footer>
+  </body>
+</html>

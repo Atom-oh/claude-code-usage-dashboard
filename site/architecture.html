@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture — Claude Code Usage Dashboard</title>
+    <meta
+      name="description"
+      content="Claude Code → OTel Collector → ClickHouse → Node.js API → React SPA. 누적 카운터 처리, 시간별 rollup, 세션 단위 그룹 판별."
+    />
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap">
+        <a class="brand" href="index.html"><span class="mark">CC</span> Usage Dashboard</a>
+        <nav class="tabs">
+          <a href="index.html">Overview</a>
+          <a href="architecture.html" aria-current="page">Architecture</a>
+          <a href="api.html">API</a>
+          <a href="operations.html">Operations</a>
+          <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="hero">
+        <p class="eyebrow">Architecture</p>
+        <h1>파이프라인</h1>
+        <p class="lede">
+          클라이언트에 커스텀 계측이 없습니다 — Claude Code의 native OTel export를 그대로 받습니다.
+        </p>
+      </div>
+
+      <section>
+        <div class="pipe">
+          <div class="stage">
+            <b>Claude Code</b>
+            <span>참가자 CLI가 OTLP로 메트릭·로그를 내보냄</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="stage">
+            <b>OTel Collector</b>
+            <span><code>collector-config.yaml</code> · clickhouse exporter</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="stage">
+            <b>ClickHouse on EKS</b>
+            <span>ReplicatedMergeTree · hot/cold(S3) · 시간별 rollup</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="stage">
+            <b>Node.js API + React SPA</b>
+            <span>단일 Docker 이미지, Graviton 노드풀</span>
+          </div>
+        </div>
+
+        <h3>저장 계층</h3>
+        <ul>
+          <li>
+            <code>otel_metrics_sum</code> — 원본 메트릭. <code>ReplicatedMergeTree</code>, 3
+            replica, hot/cold 정책(로컬 EBS gp3 → 45~90일 후 S3 → 90~180일 후 삭제). Model /
+            TokenType / Decision / SkillName / UserEmail / SessionId 등을 promoted materialized
+            column으로 올려 쿼리마다 <code>Attributes</code> map을 뒤지지 않습니다.
+          </li>
+          <li>
+            <code>otel_metrics_sum_hourly</code> — 대시보드가 실제로 읽는 시간별 rollup
+            (<code>AggregatingMergeTree</code> + materialized view). 원본은 세션이 살아있는 동안
+            10초마다 전 시리즈를 재-export해서 3일에 9.5M행(+3M행/일)까지 갔고, 매 쿼리 풀스캔이
+            26M read rows·단독 2~4.5초였습니다. 시간별로 접으면 약 <strong>86배</strong> 작아집니다.
+          </li>
+          <li><code>otel_logs</code> — 이벤트(tool_result, user_prompt 등). Tool/MCP 사용량 화면의 소스.</li>
+          <li><code>otel_metrics_gauge</code> — active_time 등 gauge 계열.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>누적 카운터 함정</h2>
+        <p>
+          <code>otel_metrics_sum</code>의 값은 델타가 아니라 <strong>세션 단위 누적</strong>입니다.
+          <code>sum(Value)</code>를 그대로 쓰면 100배 이상 과대집계됩니다 — 과거에 실제로 당한
+          문제이고, 이 저장소에서 가장 지키는 규칙입니다.
+        </p>
+        <p>
+          기간 <code>[시작, 끝)</code>의 실제 증가량은 (시리즈 × 세션) 단위로 "끝 직전 누적값 −
+          시작 직전 누적값"을 diff해서 구합니다. Prometheus의 <code>increase()</code>와 같은 모양이고,
+          서버에서는 <code>incFlat</code>(스냅샷) / <code>incBucketed</code>(시계열) 헬퍼가 담당합니다.
+        </p>
+        <pre><code>SELECT sum(inc) FROM (
+  SELECT greatest(maxIf(Value, TimeUnix &lt; {끝}) - maxIf(Value, TimeUnix &lt; {시작}), 0) AS inc
+  FROM otel_metrics_sum
+  WHERE MetricName = 'claude_code.cost.usage' AND TimeUnix &lt; {끝}
+  GROUP BY cityHash64(toString(Attributes)), SessionId
+)</code></pre>
+        <div class="note">
+          <p>
+            같은 이유로 "수집이 끊겼는지"는 값의 변화가 아니라 <strong>행 도착 여부</strong>로 봐야
+            합니다. 세션이 살아있으면 같은 누적값이 계속 재보고되므로, 시간당 행 수가 고정된 구간은
+            정상(신규 활동만 없음)이고 끊김은 버킷에 행이 0인 구간입니다.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2>그룹 판별 (bedrock / enterprise)</h2>
+        <p>
+          Workshop Studio 시나리오에서는 같은 이미지를 쓰고 참가자가 로그인 방식을 고르기 때문에,
+          <code>EXPERIMENT_GROUP</code> 같은 정적 플래그를 심을 수 없습니다. 그래서 텔레메트리로
+          사후 판별합니다.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>우선순위</th>
+                <th>규칙</th>
+                <th>결과</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>세션이 호출한 모델 이름에 <code>anthropic.</code> 또는 <code>:</code> 포함</td>
+                <td><code>bedrock</code></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>Bedrock 신호가 없고 datapoint <code>Attributes</code>에 <code>organization.id</code> 존재</td>
+                <td><code>enterprise</code></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td>둘 다 아님</td>
+                <td><code>unknown</code> (약 11%)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          그레인은 <strong>SessionId</strong>입니다. 리전 프리픽스는 <code>us.</code>일 수도
+          <code>global.</code>일 수도 있어 프리픽스가 아니라 <code>anthropic.</code> 포함 여부로
+          판별합니다. <code>organization.id</code>는 ResourceAttributes가 아니라 datapoint별
+          <code>Attributes</code>에 실립니다 — 처음 가정이 틀렸던 지점입니다.
+        </p>
+      </section>
+
+      <section>
+        <h2>모델 이름 정규화</h2>
+        <p>
+          Bedrock의 리전·날짜·버전 접미사를 떼어 같은 모델이 비용/사용량 breakdown에서 한 줄로
+          모이게 합니다. 서버에는 같은 5단계 정규식이 두 곳(<code>normModel()</code> in
+          <code>queries.js</code>, <code>normalizeModelId()</code> in <code>pricing.js</code>)에
+          있고 서로 동기 상태를 유지해야 합니다.
+        </p>
+        <pre><code>global.anthropic.claude-sonnet-5   →  claude-sonnet-5
+us.anthropic.claude-opus-4-8-v1:0  →  claude-opus-4-8
+claude-haiku-4-5-20251001          →  claude-haiku-4-5</code></pre>
+      </section>
+
+      <section>
+        <h2>인프라</h2>
+        <ul>
+          <li>EKS (Graviton/arm64 노드풀) + ClickHouse Kubernetes Operator, ClickHouse Keeper 별도 StatefulSet</li>
+          <li>ECR — 대시보드 단일 이미지(<code>linux/arm64</code>), web은 멀티스테이지 빌드로 <code>dist/</code>를 만들어 서버가 정적 서빙</li>
+          <li>S3 — ClickHouse cold tier</li>
+          <li>Route53 + CloudFront — 대시보드와 ClickHouse ingest 각각의 배포</li>
+          <li>Terraform 전체 (<code>infra/</code>) — 모델·리전 같은 운영 값은 변수 한 곳만 고치면 env와 IAM 정책 ARN이 함께 따라갑니다</li>
+        </ul>
+        <div class="note">
+          <p>
+            비용 절감 메모: 대시보드 쿼리를 원본에서 rollup으로 옮긴 것이 가장 큰 효과였습니다
+            (읽는 행 수 ~86배 감소). PII 보존은 원본과 rollup 모두 180일 TTL로 맞춰, 원본이 지워진
+            뒤 rollup에 이메일이 남는 우회 경로를 막았습니다.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        claude-code-usage-dashboard ·
+        <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
+      </div>
+    </footer>
+  </body>
+</html>

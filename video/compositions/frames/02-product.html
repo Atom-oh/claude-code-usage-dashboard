@@ -1,0 +1,159 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      font-family: "Inter", sans-serif;
+    }
+    .pd-bg {
+      position: absolute;
+      inset: 0;
+      background: #f4f6f9;
+    }
+    .pd-world {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+    .pd-eyebrow {
+      position: absolute;
+      left: 0;
+      top: 26px;
+      width: 1920px;
+      text-align: center;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #506cc6;
+      will-change: transform, opacity;
+    }
+    /* 창(카드) — 제품 화면을 담는 흰 카드. 그림자는 아주 약하게(프리셋은 shadow none이지만
+       "떠 있는 창"이 이 블루프린트의 히어로라 1단계만 허용). */
+    .pd-card {
+      position: absolute;
+      left: 438px;
+      top: 62px;
+      width: 1044px;
+      height: 844px;
+      padding: 12px;
+      border-radius: 14px;
+      background: #ffffff;
+      border: 1.5px solid rgba(97, 131, 240, 0.2);
+      box-shadow: 0 18px 50px rgba(15, 23, 42, 0.1);
+      will-change: transform, opacity;
+    }
+    .pd-shot {
+      display: block;
+      width: 1020px;
+      height: 820px;
+      object-fit: cover;
+      object-position: top left;
+      border-radius: 8px;
+    }
+    .pd-blurable {
+      will-change: filter;
+    }
+    .pd-chip {
+      position: absolute;
+      padding: 7px 14px;
+      border-radius: 100px;
+      background: #ffffff;
+      border: 1.5px solid #6183f0;
+      color: #506cc6;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      will-change: transform, opacity;
+    }
+    .pd-band {
+      position: absolute;
+      height: 30px;
+      border-radius: 6px;
+      transform-origin: 0% 50%;
+      will-change: transform;
+    }
+  </style>
+
+  <div id="root" data-composition-id="02-product" data-start="0" data-duration="5" data-width="1920" data-height="1080">
+    <div class="clip pd-bg" id="pd-bg" data-start="0" data-duration="5" data-track-index="0"></div>
+    <div class="clip pd-world" id="pd-world" data-layout-allow-overflow data-start="0" data-duration="5" data-track-index="1">
+      <div class="pd-blurable" id="pd-blurable">
+        <div class="pd-card" id="pd-card" data-layout-allow-overflow>
+          <img class="pd-shot" src="assets/overview.png" alt="" />
+        </div>
+      </div>
+      <div class="pd-chip" id="pd-chip-1" style="left: 706px; top: 196px">72 users</div>
+      <div class="pd-chip" id="pd-chip-2" style="left: 906px; top: 196px">1,587 sessions</div>
+      <div class="pd-chip" id="pd-chip-3" style="left: 1146px; top: 196px">46,539 lines</div>
+      <div class="pd-band" id="pd-band-1" style="left: 700px; top: 780px; width: 670px; background: rgba(97, 131, 240, 0.28)"></div>
+      <div class="pd-band" id="pd-band-2" style="left: 700px; top: 818px; width: 670px; background: rgba(63, 156, 121, 0.28)"></div>
+    </div>
+    <div class="clip pd-eyebrow" id="pd-eyebrow" data-start="0" data-duration="5" data-track-index="2">The dashboard</div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["02-product"] = tl;
+
+      // 가상 카메라 — 단일 wrapper에 translate(x,y) scale(S) 합성. 화면 중앙으로 타깃을
+      // 보내는 보정은 T = -offset × S (viewport-change 규칙의 단일 wrapper 형태).
+      const world = document.getElementById("pd-world");
+      const cam = { scale: 1, x: 0, y: 0 };
+      const applyCam = () => {
+        world.style.transform = "translate(" + cam.x + "px, " + cam.y + "px) scale(" + cam.scale + ")";
+      };
+      applyCam();
+
+      const CX = 960;
+      const CY = 540;
+      // KPI 타일 행의 월드 좌표 중심(카드 안 이미지 상단 좌측 영역)
+      const kpi = { x: 1043, y: 270, s: 1.35 };
+      // 그룹별 KPI 표의 월드 좌표 중심(카드 하단)
+      const tbl = { x: 960, y: 756, s: 1.15 };
+
+      const camTo = (t, at, dur, ease) =>
+        tl.to(
+          cam,
+          {
+            scale: t.s,
+            x: -(t.x - CX) * t.s,
+            y: -(t.y - CY) * t.s,
+            duration: dur,
+            ease: ease,
+            onUpdate: applyCam,
+          },
+          at
+        );
+
+      // Scene 1 (0.0–0.8s) — 창이 아래에서 올라와 앉는다. 히어로는 0.5s 안에 보인다.
+      tl.fromTo("#pd-eyebrow", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: "power3.out" }, 0);
+      tl.fromTo(
+        "#pd-card",
+        { y: 70, scale: 0.94, opacity: 0 },
+        { y: 0, scale: 1, opacity: 1, duration: 0.62, ease: "back.out(1.1)" },
+        0
+      );
+
+      // Scene 2 (0.8–2.2s) — KPI 타일 행으로 push, 주변은 blur로 물러난다.
+      camTo(kpi, 0.8, 1.4, "power2.inOut");
+      tl.fromTo("#pd-blurable", { filter: "blur(0px)" }, { filter: "blur(3px)", duration: 1.0, ease: "power2.out" }, 1.1);
+
+      // Scene 3 (2.2–3.4s) — 콜아웃 칩 3개가 스태거로 붙는다(합 0.24s, 한 박자로 읽힘).
+      ["#pd-chip-1", "#pd-chip-2", "#pd-chip-3"].forEach((sel, i) => {
+        tl.fromTo(sel, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.44, ease: "back.out(2)" }, 2.2 + i * 0.12);
+      });
+
+      // Scene 4 (3.4–5.0s) — 표로 pan하며 살짝 물러나고 blur가 풀린다. 두 그룹 행에 밴드가 그려진다.
+      camTo(tbl, 3.4, 1.3, "power2.inOut");
+      tl.fromTo("#pd-blurable", { filter: "blur(3px)" }, { filter: "blur(0px)", duration: 0.9, ease: "power2.out" }, 3.5);
+      tl.fromTo("#pd-band-1", { scaleX: 0 }, { scaleX: 1, duration: 0.55, ease: "power3.out" }, 4.1);
+      tl.fromTo("#pd-band-2", { scaleX: 0 }, { scaleX: 1, duration: 0.55, ease: "power3.out" }, 4.28);
+    })();
+  </script>
+</template>

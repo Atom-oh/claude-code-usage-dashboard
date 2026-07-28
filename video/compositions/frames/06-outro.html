@@ -1,0 +1,140 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      font-family: "Inter", sans-serif;
+    }
+    .ou-bg {
+      position: absolute;
+      inset: 0;
+      background: #f4f6f9;
+    }
+    .ou-world {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+    .ou-glow {
+      position: absolute;
+      left: 660px;
+      top: 160px;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(97, 131, 240, 0.4) 0%, rgba(97, 131, 240, 0) 70%);
+      will-change: transform, opacity;
+    }
+    .ou-mark {
+      position: absolute;
+      left: 880px;
+      top: 250px;
+      width: 160px;
+      height: 160px;
+      border-radius: 38px;
+      background: #6183f0;
+      color: #ffffff;
+      font-size: 62px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      text-align: center;
+      line-height: 160px;
+      will-change: transform, opacity;
+    }
+    .ou-title {
+      position: absolute;
+      left: 0;
+      top: 470px;
+      width: 1920px;
+      text-align: center;
+      font-size: 82px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .ou-title span {
+      display: inline-block;
+      will-change: transform, opacity;
+    }
+    .ou-rule {
+      position: absolute;
+      left: 760px;
+      top: 610px;
+      width: 400px;
+      height: 3px;
+      border-radius: 6px;
+      background: rgba(97, 131, 240, 0.6);
+      transform-origin: 0% 50%;
+      will-change: transform;
+    }
+    .ou-sub {
+      position: absolute;
+      left: 0;
+      top: 654px;
+      width: 1920px;
+      text-align: center;
+      font-size: 30px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      color: #8e8e8e;
+      will-change: transform, opacity;
+    }
+    .ou-foot {
+      position: absolute;
+      left: 0;
+      top: 730px;
+      width: 1920px;
+      text-align: center;
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      color: #506cc6;
+      will-change: transform, opacity;
+    }
+  </style>
+
+  <div id="root" data-composition-id="06-outro" data-start="0" data-duration="3.5" data-width="1920" data-height="1080">
+    <div class="clip ou-bg" id="ou-bg" data-start="0" data-duration="3.5" data-track-index="0"></div>
+    <div class="clip ou-world" id="ou-world" data-start="0" data-duration="3.5" data-track-index="1">
+      <div class="ou-glow" id="ou-glow"></div>
+      <div class="ou-mark" id="ou-mark">CC</div>
+      <div class="ou-title" id="ou-title">
+        <span>Claude</span><span>&nbsp;</span><span>Code</span><span>&nbsp;</span><span>Usage</span><span>&nbsp;</span><span>Dashboard</span>
+      </div>
+      <div class="ou-rule" id="ou-rule"></div>
+      <div class="ou-sub" id="ou-sub">bedrock vs enterprise &nbsp;·&nbsp; OTel → ClickHouse</div>
+      <div class="ou-foot" id="ou-foot">docs · architecture · runbooks</div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["06-outro"] = tl;
+
+      // Scene 1 (0.0–0.6s) — 브랜드 마크가 스프링으로 선다.
+      tl.fromTo("#ou-mark", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.55, ease: "back.out(1.8)" }, 0);
+
+      // Scene 2 (0.6–1.6s) — 제목이 단어 단위로 조립된다(waterfall-entry).
+      const words = gsap.utils.toArray("#ou-title span");
+      words.forEach((w, i) => {
+        const at = 0.6 + i * 0.055;
+        tl.set(w, { opacity: 1 }, at);
+        tl.fromTo(w, { y: 46 }, { y: 0, duration: 0.5, ease: "power4.out" }, at);
+      });
+      gsap.set(words, { opacity: 0 });
+
+      // Scene 3 (1.6–2.5s) — 규칙선이 좌→우로 그려지고 서브라인이 올라온다.
+      tl.fromTo("#ou-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.55, ease: "power3.out" }, 1.6);
+      tl.fromTo("#ou-sub", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: "power3.out" }, 1.85);
+      tl.fromTo("#ou-foot", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: "power3.out" }, 2.1);
+
+      // Scene 4 (2.5–3.5s) — 마지막 프레임이므로 settle 허용: 광이 한 번 피고 전체가 숨을 고른다.
+      tl.fromTo("#ou-glow", { scale: 0.75, opacity: 0 }, { scale: 1, opacity: 0.32, duration: 0.9, ease: "power2.out" }, 2.4);
+      tl.fromTo("#ou-world", { scale: 1 }, { scale: 1.02, duration: 1.0, ease: "sine.inOut" }, 2.5);
+    })();
+  </script>
+</template>
