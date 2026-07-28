@@ -77,6 +77,38 @@ kubectl --context &lt;cluster&gt; -n claude-code get pods -l app=dashboard</code
       </section>
 
       <section>
+        <h2>ECS / Fargate에 올리기</h2>
+        <p>
+          이미지는 그대로 씁니다 — 위 3번까지가 동일하고, 롤아웃만 ECS 방식으로 바뀝니다. 앱이
+          쿠버네티스에 의존하지 않으므로 코드 변경은 없습니다.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>항목</th><th>값</th></tr></thead>
+            <tbody>
+              <tr><td>태스크 아키텍처</td><td><code>ARM64</code> (이미지가 <code>linux/arm64</code>) · Fargate</td></tr>
+              <tr><td>컨테이너 포트</td><td><code>8080</code> (<code>PORT</code> env로 변경 가능)</td></tr>
+              <tr><td>헬스체크</td><td><code>GET /healthz</code> — Basic Auth 면제, ClickHouse ping 포함</td></tr>
+              <tr><td>필수 env</td><td><code>CH_URL</code> · <code>CH_DB</code> · <code>CH_USER</code> · <code>CH_PASSWORD</code></td></tr>
+              <tr><td>태스크 롤</td><td>Ask Claude 챗을 쓸 때만 Bedrock <code>InvokeModelWithResponseStream</code> (해당 inference profile ARN으로 좁힐 것)</td></tr>
+              <tr><td>시크릿</td><td>ClickHouse 비밀번호와 Basic Auth는 Secrets Manager/SSM <code>secrets</code>로 주입</td></tr>
+              <tr><td>네트워크</td><td>ClickHouse에 HTTP(기본 8123)로 닿는 서브넷 · ALB 타깃 그룹 8080</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><code>aws ecs update-service --cluster &lt;cluster&gt; --service dashboard \
+  --task-definition dashboard:&lt;revision&gt; --force-new-deployment
+aws ecs wait services-stable --cluster &lt;cluster&gt; --services dashboard</code></pre>
+        <div class="note">
+          <p>
+            이 저장소의 Terraform은 EKS 기준이라 태스크 정의·서비스·ALB는 새로 작성해야 합니다.
+            반대로 ClickHouse 쪽은 손댈 게 없습니다 — 앱은 ClickHouse가 EKS 위의 오퍼레이터든,
+            별도 클러스터든, 매니지드든 <code>CH_URL</code>만 봅니다.
+          </p>
+        </div>
+      </section>
+
+      <section>
         <h2>환경 변수</h2>
         <div class="table-scroll">
           <table>
