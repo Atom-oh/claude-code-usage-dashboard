@@ -34,11 +34,14 @@ a full backup→restore→row-count round trip, see Notes.
 Once, shortly before the workshop account is torn down. Re-runnable if a prior run failed
 partway (set `SKIP_BACKUP=1` to skip re-taking the snapshot and just re-sync).
 
-**Sequencing matters**: this PR also fixes `infra/s3.tf`'s lifecycle filter so it actually
-expires backups after 30 days (it previously matched nothing — see Notes). Run this archive
-script and confirm it passes verification **before** applying that Terraform change. If you
-`terraform apply` the corrected lifecycle first, backups older than 30 days can expire out of
-the source bucket before you've copied them anywhere permanent.
+**Sequencing matters**: `infra/s3.tf`'s lifecycle filter (`prefix = "backup/"`) already exists on
+`main` and this PR does not change it — what this PR changes is `infra/clickhouse.tf`'s backup
+destination (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`, writing to that same `backup/` path
+for the first time; see Notes). In other words, applying this PR's `clickhouse.tf` change is what
+makes that pre-existing 30-day filter start actually matching something. Run this archive script
+and confirm it passes verification **before** `terraform apply`ing the `clickhouse.tf` change. If
+you apply first, backups older than 30 days can expire out of the source bucket before you've
+copied any of them anywhere permanent.
 
 ## Prerequisites
 - `~/.aws/credentials` with a profile for the workshop account, with `s3:ListBucket` and
@@ -67,13 +70,14 @@ the source bucket before you've copied them anywhere permanent.
   bucket name is reconstructed from the account ID and region, so a wrong region means a wrong
   (likely nonexistent) bucket name.
 - Local disk space for the **entire `backup/` prefix**, not just one backup. Don't estimate
-  this from the "~30 days of backups" assumption — the lifecycle rule that's supposed to expire
-  that prefix after 30 days had a prefix mismatch bug (fixed in this same PR; see Notes), so
-  backups may have accumulated unbounded for longer than 30 days depending on when it's applied.
-  The script measures the real source size with `aws s3 ls --summarize` and compares it against
-  free space on `LOCAL_DIR` before doing anything destructive-adjacent — but if that preflight
-  check fails, don't just add disk and retry blindly; check *why* the prefix is larger than
-  expected first.
+  this from the "~30 days of backups" assumption — until this PR's `clickhouse.tf` change is
+  applied, nothing has ever been written to `backup/` (the old `Disk('cold_s3', ...)` mechanism
+  wrote elsewhere entirely — see Notes), so the existing 30-day lifecycle filter has never had
+  anything to expire and `backup/` may be empty, or may already hold an unknown amount once the
+  CronJob starts writing there. The script measures the real source size with
+  `aws s3 ls --summarize` and compares it against free space on `LOCAL_DIR` before doing anything
+  destructive-adjacent — but if that preflight check fails, don't just add disk and retry
+  blindly; check *why* the prefix is larger than expected first.
 - Single shard only: the script picks one pod (`clickhouse.altinity.com/chi=cc-ab`, `head -1`)
   and backs up from it. It asserts `shardsCount = 1` (`infra/clickhouse.tf`) via
   `system.clusters` and refuses to run otherwise — a multi-shard cluster needs a different
@@ -126,9 +130,12 @@ straight `RESTORE`. Two ways to actually rehearse it:
 matching `infra/clickhouse.tf`'s shape (same macros) and run:
 ```sql
 RESTORE DATABASE claude_code
-  FROM S3('https://<archive-bucket>.s3.<region>.amazonaws.com/<archive-prefix>/final-<timestamp>',
+  FROM S3('https://<archive-bucket>.s3.<region>.amazonaws.com/<archive-prefix>/backup/final-<timestamp>',
           '<ACCESS_KEY_ID>', '<SECRET_ACCESS_KEY>');
-  -- rehearsal only — use short-lived/temporary credentials where possible, revoke after
+  -- rehearsal only — use short-lived/temporary credentials where possible, revoke after.
+  -- If using STS temporary credentials instead of a long-lived IAM user, ClickHouse's S3()
+  -- takes the session token as a 4th positional argument:
+  --   S3('<url>', '<ACCESS_KEY_ID>', '<SECRET_ACCESS_KEY>', '<SESSION_TOKEN>')
 ```
 Most faithful, most setup.
 
@@ -138,12 +145,18 @@ tables yourself first using non-replicated engines (swap `ReplicatedMergeTree(..
 `ON CLUSTER`/keeper-path arguments — **the partition/order key must match exactly**, not just
 column definitions: a mismatched `PARTITION BY` makes `RESTORE` fail with `CORRUPTED_DATA`
 because the part's embedded partition ID no longer matches the freshly-computed one — this was
-hit and fixed during verification, see Notes):
+hit and fixed during verification, see Notes). `RESTORE DATABASE` restores every table in the
+backup, so pre-create **all** of them this way, not just one — as of this writing that's
+`otel_logs`, `otel_metrics_gauge`, `otel_metrics_sum`, and `otel_metrics_sum_hourly` (confirmed
+live via `SELECT table FROM system.replicas WHERE database = 'claude_code'`); any table you skip
+makes `RESTORE` try to create it with the embedded replicated DDL and fail the same way a
+straight `RESTORE` would:
 ```sql
--- 1. Create claude_code and its tables first, using non-replicated engines. Column list
---    comes from clickhouse-schema.sql (uploaded alongside the backup under schema/) —
---    only the ENGINE/PARTITION BY/ORDER BY change, columns stay identical. Verified
---    working PARTITION BY / ORDER BY for otel_metrics_sum_hourly:
+-- 1. Create claude_code and ALL FOUR tables first, using non-replicated engines. Column
+--    lists come from clickhouse-schema.sql (uploaded alongside the backup under schema/) —
+--    only the ENGINE/PARTITION BY/ORDER BY change, columns stay identical. Verified working
+--    PARTITION BY / ORDER BY for otel_metrics_sum_hourly (adapt the same pattern for the
+--    other three using their PARTITION BY / ORDER BY from clickhouse-schema.sql):
 CREATE TABLE claude_code.otel_metrics_sum_hourly (
   -- ... same columns as clickhouse-schema.sql ...
 )
@@ -151,15 +164,19 @@ CREATE TABLE claude_code.otel_metrics_sum_hourly (
   PARTITION BY toYYYYMM(hour)
   ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality, Model,
             TokenType, Decision, SkillName, ToolName, hour);
+-- ... repeat for otel_logs, otel_metrics_gauge, otel_metrics_sum ...
 
 -- 2. Then restore data into the tables you just created:
 RESTORE DATABASE claude_code
-  FROM S3('https://<archive-bucket>.s3.<region>.amazonaws.com/<archive-prefix>/final-<timestamp>',
+  FROM S3('https://<archive-bucket>.s3.<region>.amazonaws.com/<archive-prefix>/backup/final-<timestamp>',
           '<ACCESS_KEY_ID>', '<SECRET_ACCESS_KEY>')
   SETTINGS allow_different_table_def = 1, allow_non_empty_tables = 1;
 
-SELECT count() FROM claude_code.otel_metrics_sum;
 SHOW CREATE TABLE claude_code.otel_metrics_sum;  -- confirm materialized SeriesKey survived
+-- Row counts on AggregatingMergeTree/otel_metrics_sum_hourly can differ from the source by
+-- background merge state alone (parts collapse over time) even when the data is intact — a
+-- count() match can be coincidental and a mismatch isn't necessarily a real problem. Compare
+-- decoded aggregate values instead, over a time window you know is no longer being written to.
 -- Aggregate columns need decoding to compare values, not just row counts. This schema uses
 -- SimpleAggregateFunction (plain sum(), not sumMerge() — sumMerge is for AggregateFunction
 -- columns and errors with ILLEGAL_TYPE_OF_ARGUMENT against SimpleAggregateFunction):
@@ -196,10 +213,12 @@ have not been separately rehearsed — re-verify before relying on either.
   enforces a Public Access Block on the archive bucket before uploading and encrypts objects
   with `--sse AES256`, but decide a retention/deletion policy for the archive bucket itself if
   this matters for your use case.
-- `infra/s3.tf`'s lifecycle rule used to filter on prefix `cold/backup/`, which (as measured
-  above) never matched any real object — fixed in this change to filter on `backup/`, matching
-  where `BACKUP ... TO S3(...)` actually writes. Before this fix, daily backups accumulated
-  unbounded rather than expiring after 30 days as intended.
+- `infra/s3.tf`'s lifecycle rule already filters on prefix `backup/` on `main` — this PR does
+  not change that filter. What changes is where daily backups actually land: before this PR's
+  `infra/clickhouse.tf` change, backups went to `Disk('cold_s3', ...)`, which (as measured above)
+  never wrote anything to `backup/` at all, so the filter had nothing to expire regardless of
+  its value. After this PR, `BACKUP ... TO S3(...)` writes real objects under `backup/`, and the
+  pre-existing filter starts matching them for the first time.
 - **Why `S3(...)` and not `Disk('cold_s3', ...)`**: measured live against the workshop cluster
   on 2026-07-27 — `aws s3 ls --recursive s3://cc-ab-clickhouse-<acct>-<region>/cold/` returned
   only randomized blob keys, zero matches under `cold/backup/`; the actual backup manifests live
@@ -245,11 +264,13 @@ metadata 없이는 복원이 불가능합니다. 지금 쓰는 `BACKUP ... TO S3
 워크샵 계정이 삭제되기 직전 1회. 이전 실행이 중간에 실패했다면 재실행 가능(`SKIP_BACKUP=1`로
 새 스냅샷 없이 재동기화만).
 
-**순서가 중요합니다**: 이 PR은 `infra/s3.tf`의 라이프사이클 필터도 함께 고쳐 30일 후 백업이
-실제로 만료되게 만듭니다(이전엔 아무것도 매칭하지 않았습니다 — 참고 섹션 참조). 이 아카이브
-스크립트를 먼저 실행해 검증까지 통과시킨 **다음에** 그 Terraform 변경을 적용하세요. 수정된
-라이프사이클을 먼저 `terraform apply`하면, 아직 아무 데도 영구 복사되지 않은 30일 초과
-백업이 소스 버킷에서 먼저 만료될 수 있습니다.
+**순서가 중요합니다**: `infra/s3.tf`의 라이프사이클 필터(`prefix = "backup/"`)는 `main`에
+이미 존재하고 이 PR은 그 값을 바꾸지 않습니다 — 이 PR이 바꾸는 건 `infra/clickhouse.tf`의
+백업 목적지입니다(`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`, 처음으로 그 `backup/` 경로에
+실제로 쓰기 시작 — 참고 섹션 참조). 즉 이 PR의 `clickhouse.tf` 변경을 적용해야 원래 있던 30일
+필터가 비로소 매칭 대상을 갖게 됩니다. 이 아카이브 스크립트를 먼저 실행해 검증까지 통과시킨
+**다음에** `clickhouse.tf` 변경을 `terraform apply`하세요. 먼저 적용하면, 아직 아무 데도 영구
+복사되지 않은 30일 초과 백업이 소스 버킷에서 먼저 만료될 수 있습니다.
 
 ## 사전 준비
 - `~/.aws/credentials`에 워크샵 계정 프로필 1개, `cc-ab-clickhouse-*` 버킷에 대한
@@ -276,13 +297,13 @@ metadata 없이는 복원이 불가능합니다. 지금 쓰는 `BACKUP ... TO S3
   생성됐다면 `REGION`을 명시적으로 지정하세요 — 소스 버킷명은 계정 ID와 리전으로
   재구성되므로, 리전이 틀리면 존재하지 않는 버킷명을 만들어냅니다.
 - **백업 1개가 아니라 `backup/` 프리픽스 전체** 분량의 로컬 디스크 여유 공간. "30일치
-  백업"이라는 가정으로 용량을 추정하지 마세요 — 이 프리픽스를 30일 후 만료시켜야 할
-  라이프사이클 규칙 자체가 prefix 불일치 버그로 실제 경로에 매칭되지 않고 있었습니다(이번
-  변경에서 함께 수정 — 아래 참고 및 `s3.tf` diff 참조). 그 버그가 적용되기 전이었다면
-  백업이 30일보다 훨씬 오래 무제한 누적됐을 수 있습니다. 스크립트는 실제 소스 크기를
-  `aws s3 ls --summarize`로 측정해 `LOCAL_DIR`의 여유 공간과 비교한 뒤에만 진행합니다 — 이
-  사전 점검에서 실패하면 무작정 디스크만 늘려 재시도하지 말고 왜 프리픽스가 예상보다 큰지
-  먼저 확인하세요.
+  백업"이라는 가정으로 용량을 추정하지 마세요 — 이 PR의 `infra/clickhouse.tf` 변경이
+  적용되기 전에는 `backup/`에 아무것도 쓰인 적이 없습니다(예전 `Disk('cold_s3', ...)`
+  메커니즘은 전혀 다른 곳에 썼습니다 — 아래 참고 참조). 그래서 기존 30일 라이프사이클
+  필터는 지금까지 만료시킬 대상이 없었고, CronJob이 `backup/`에 쓰기 시작한 뒤로는 얼마나
+  쌓여 있을지 알 수 없습니다. 스크립트는 실제 소스 크기를 `aws s3 ls --summarize`로 측정해
+  `LOCAL_DIR`의 여유 공간과 비교한 뒤에만 진행합니다 — 이 사전 점검에서 실패하면 무작정
+  디스크만 늘려 재시도하지 말고 왜 프리픽스가 예상보다 큰지 먼저 확인하세요.
 - 단일 shard 전제: 스크립트는 pod 하나(`clickhouse.altinity.com/chi=cc-ab`, `head -1`)만
   선택해 그 파드에서 백업을 뜹니다. `system.clusters`로 `shardsCount = 1`
   (`infra/clickhouse.tf`)을 확인하고 아니면 실행을 거부합니다 — 다중 shard 클러스터는
@@ -333,9 +354,12 @@ Keeper가 없는 단일 노드(`dashboard/docker-compose.yml` 그대로)에서�
 스크래치 Keeper + replicated ClickHouse를 세우고:
 ```sql
 RESTORE DATABASE claude_code
-  FROM S3('https://<아카이브버킷>.s3.<리전>.amazonaws.com/<아카이브프리픽스>/final-<타임스탬프>',
+  FROM S3('https://<아카이브버킷>.s3.<리전>.amazonaws.com/<아카이브프리픽스>/backup/final-<타임스탬프>',
           '<ACCESS_KEY_ID>', '<SECRET_ACCESS_KEY>');
-  -- 리허설 전용 — 가능하면 단기 임시 자격증명, 사용 후 폐기
+  -- 리허설 전용 — 가능하면 단기 임시 자격증명, 사용 후 폐기.
+  -- 장기 IAM 사용자 키가 아니라 STS 임시 자격증명을 쓴다면, ClickHouse S3()는 4번째
+  -- 위치 인자로 세션 토큰을 받습니다:
+  --   S3('<url>', '<ACCESS_KEY_ID>', '<SECRET_ACCESS_KEY>', '<SESSION_TOKEN>')
 ```
 가장 충실하지만 준비가 가장 많이 필요합니다.
 
@@ -344,11 +368,18 @@ non-replicated 엔진으로 직접 만들어 둡니다(`ReplicatedMergeTree(...)
 `ReplicatedAggregatingMergeTree(...)` → `AggregatingMergeTree()`로 바꾸고 `ON CLUSTER`/keeper
 경로 인자는 제거 — **컬럼 정의뿐 아니라 partition/order key도 정확히 일치**해야 합니다:
 `PARTITION BY`가 다르면 파트에 박힌 partition ID와 새로 계산한 ID가 달라 `RESTORE`가
-`CORRUPTED_DATA`로 실패합니다 — 검증 중 실제로 겪고 고친 문제입니다, 아래 참고 참조):
+`CORRUPTED_DATA`로 실패합니다 — 검증 중 실제로 겪고 고친 문제입니다, 아래 참고 참조).
+`RESTORE DATABASE`는 백업 안의 모든 테이블을 복원하므로, 테이블 하나가 아니라 **전부**
+이 방식으로 미리 만들어야 합니다 — 작성 시점 기준 `otel_logs`, `otel_metrics_gauge`,
+`otel_metrics_sum`, `otel_metrics_sum_hourly` 4개입니다(`SELECT table FROM system.replicas
+WHERE database = 'claude_code'`로 실측 확인). 하나라도 빠뜨리면 `RESTORE`가 그 테이블만
+백업에 캡처된 replicated DDL로 새로 만들려다 실패합니다 — 애초에 이 옵션을 쓰는 이유와
+같은 문제입니다:
 ```sql
--- 1. claude_code와 테이블들을 non-replicated 엔진으로 먼저 생성. 컬럼 목록은
+-- 1. claude_code와 4개 테이블 전부를 non-replicated 엔진으로 먼저 생성. 컬럼 목록은
 --    clickhouse-schema.sql(schema/ 아래 업로드된 사본)과 동일하게 두고 ENGINE/PARTITION
---    BY/ORDER BY만 바꿉니다. otel_metrics_sum_hourly에서 실제로 검증된 값:
+--    BY/ORDER BY만 바꿉니다. otel_metrics_sum_hourly에서 실제로 검증된 값(나머지 세
+--    테이블도 clickhouse-schema.sql의 PARTITION BY / ORDER BY를 그대로 옮겨 적용):
 CREATE TABLE claude_code.otel_metrics_sum_hourly (
   -- ... clickhouse-schema.sql과 동일한 컬럼 ...
 )
@@ -356,15 +387,19 @@ CREATE TABLE claude_code.otel_metrics_sum_hourly (
   PARTITION BY toYYYYMM(hour)
   ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality, Model,
             TokenType, Decision, SkillName, ToolName, hour);
+-- ... otel_logs, otel_metrics_gauge, otel_metrics_sum도 동일하게 반복 ...
 
 -- 2. 그 다음 방금 만든 테이블에 복원:
 RESTORE DATABASE claude_code
-  FROM S3('https://<아카이브버킷>.s3.<리전>.amazonaws.com/<아카이브프리픽스>/final-<타임스탬프>',
+  FROM S3('https://<아카이브버킷>.s3.<리전>.amazonaws.com/<아카이브프리픽스>/backup/final-<타임스탬프>',
           '<ACCESS_KEY_ID>', '<SECRET_ACCESS_KEY>')
   SETTINGS allow_different_table_def = 1, allow_non_empty_tables = 1;
 
-SELECT count() FROM claude_code.otel_metrics_sum;
 SHOW CREATE TABLE claude_code.otel_metrics_sum;  -- materialized SeriesKey가 살아있는지 확인
+-- AggregatingMergeTree/otel_metrics_sum_hourly의 행수는 백그라운드 merge로 파트가
+-- collapse되면서 소스와 자연히 달라질 수 있습니다(데이터가 온전해도) — count() 일치는
+-- 우연일 수 있고 불일치가 곧 문제라는 뜻도 아닙니다. 더 이상 쓰기가 없는 구간을 잡아
+-- 디코딩한 집계 값으로 비교하세요.
 -- 집계 컬럼은 행수만으론 부족하고 값 디코딩까지 확인해야 합니다. 이 스키마는
 -- SimpleAggregateFunction을 쓰므로 sumMerge()가 아니라 그냥 sum()으로 디코딩합니다
 -- (sumMerge는 AggregateFunction 컬럼용이라 SimpleAggregateFunction엔
@@ -400,10 +435,12 @@ SELECT round(sum(sum_value)) FROM claude_code.otel_metrics_sum_hourly;
   `UserEmail` 등 PII/세션 데이터가 무기한 그대로 남습니다 — 스크립트가 업로드 전 아카이브
   버킷의 Public Access Block을 강제하고 `--sse AES256`으로 암호화하지만, 필요하다면 아카이브
   버킷 자체의 보존/삭제 정책을 별도로 정하세요.
-- `infra/s3.tf`의 라이프사이클 규칙은 원래 prefix `cold/backup/`을 필터링했는데, 위 실측대로
-  실제 객체와 전혀 매칭되지 않았습니다 — 이번 변경에서 `BACKUP ... TO S3(...)`가 실제로 쓰는
-  `backup/`으로 고쳤습니다. 이 수정 전이라면 일별 백업이 30일로 만료되지 않고 무제한
-  누적됐을 수 있습니다.
+- `infra/s3.tf`의 라이프사이클 규칙은 `main`에서부터 이미 prefix `backup/`을 필터링하고
+  있었고, 이 PR은 그 값을 바꾸지 않습니다. 실제로 바뀌는 건 백업이 쓰이는 위치입니다 — 이
+  PR의 `infra/clickhouse.tf` 변경 전에는 백업이 `Disk('cold_s3', ...)`로 갔고, 위 실측대로
+  `backup/`에는 애초에 아무것도 쓰이지 않아 필터 값과 무관하게 만료시킬 대상이 없었습니다.
+  이 PR 이후 `BACKUP ... TO S3(...)`가 `backup/` 아래에 실제 객체를 쓰기 시작하면서, 원래
+  있던 필터가 처음으로 매칭 대상을 갖게 됩니다.
 - **왜 `S3(...)`이고 `Disk('cold_s3', ...)`가 아닌가**: 2026-07-27 워크샵 클러스터를 실측한
   결과 — `aws s3 ls --recursive s3://cc-ab-clickhouse-<acct>-<region>/cold/`는 랜덤 blob
   키뿐이었고 `cold/backup/` 아래는 0건 매칭; 실제 백업 매니페스트는 ClickHouse 파드의 로컬

@@ -122,6 +122,14 @@ if [ "$PAB" != "$(printf 'True\tTrue\tTrue\tTrue')" ]; then
 fi
 echo "archive bucket public access block 확인됨"
 
+# PAB은 public 접근만 막는다 — 특정 외부 principal에게 열린 bucket policy는 PAB을 그대로
+# 통과한다. 대상 버킷은 운영자 소유가 전제이므로 fail-closed는 과하고, 경고만 남긴다.
+if BUCKET_POLICY=$(archive_aws s3api get-bucket-policy --bucket "$ARCHIVE_BUCKET" --query Policy --output text 2>/dev/null); then
+  echo "경고: $ARCHIVE_BUCKET 에 bucket policy가 설정되어 있습니다 — PII를 담는 버킷이므로" >&2
+  echo "  의도한 principal에게만 열려 있는지 확인하세요:" >&2
+  echo "$BUCKET_POLICY" >&2
+fi
+
 if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   echo "== 2. 최종 BACKUP 생성 =="
   POD=$(kube get pod -l clickhouse.altinity.com/chi=cc-ab -o name | head -1)
@@ -149,7 +157,9 @@ if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   echo "$REPLICATED_TABLES" | while IFS= read -r tbl; do
     [ -n "$tbl" ] || continue
     echo "SYSTEM SYNC REPLICA: claude_code.${tbl}"
-    ch_query "SYSTEM SYNC REPLICA claude_code.${tbl}"
+    # 서버에서 받아온 값이지만 identifier로 SQL에 다시 들어가므로 백틱으로 quoting —
+    # 신뢰 경계 안의 값이라 실위험은 낮지만 방어적으로 처리한다.
+    ch_query "SYSTEM SYNC REPLICA claude_code.\`${tbl}\`"
   done
 
   BACKUP_TAG="final-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -162,8 +172,10 @@ fi
 echo "== 3. 디스크 여유 공간 확인 =="
 # 새 BACKUP을 이미 떴다면(2단계) 그만큼 소스가 커진 뒤에 재는 것이 맞다 — 백업 생성 전에
 # 재면 방금 만든 스냅샷의 용량이 반영되지 않는다. "30일치 백업"이라는 가정으로 추정하지
-# 않는다: infra/s3.tf의 lifecycle prefix가 실제 백업 경로와 달라 오랫동안 아무것도 만료되지
-# 않고 누적됐을 수 있어(이번 변경에서 함께 수정) 실제 크기를 재는 쪽이 안전하다.
+# 않는다: infra/s3.tf의 30일 lifecycle 필터 자체는 기존에도 있었지만, 이 PR 전에는
+# backup/에 아무것도 안 쓰였으니(구 Disk('cold_s3', ...) 백업은 딴 곳에 씀) 만료시킬
+# 대상이 없었다 — CronJob이 실제로 쓰기 시작한 뒤 얼마나 쌓였는지 알 수 없으니
+# 실제 크기를 재는 쪽이 안전하다.
 mkdir -p "$LOCAL_DIR_ROOT"
 # 프리픽스가 비어 있으면 `grep "Total Size"`가 실패해 set -e로 이유 없이 죽는다 — 명시적으로 잡는다.
 SRC_LS=$(aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/${SRC_PREFIX}/" --profile "$WORKSHOP_PROFILE")
@@ -226,5 +238,6 @@ echo "== 완료 =="
 echo "아카이브 위치: s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/"
 echo "복원 절차: docs/runbooks/archive-clickhouse.md 참조"
 echo ""
-echo "*** infra/s3.tf의 lifecycle 수정을 적용(terraform apply)하기 전에 위 검증이 통과했는지"
-echo "*** 다시 한번 확인하세요 — 적용하면 그 시점부터 30일 초과 백업이 실제로 만료됩니다."
+echo "*** infra/clickhouse.tf의 백업 목적지 변경(BACKUP TO S3(...))을 terraform apply하기 전에"
+echo "*** 위 검증이 통과했는지 다시 한번 확인하세요 — 적용하는 순간부터 infra/s3.tf에 이미 있던"
+echo "*** 30일 lifecycle 필터가 backup/를 실제로 매칭해 초과분을 만료시키기 시작합니다."

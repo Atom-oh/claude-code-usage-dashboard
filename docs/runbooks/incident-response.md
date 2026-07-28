@@ -120,20 +120,37 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 ```
 Data recovery (last resort — corrupted/dropped tables): daily backups run at 03:00 KST
 (`clickhouse-backup` CronJob) to `S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD')`
-(same bucket, IRSA credentials — no extra params needed from inside the cluster). Restore with
-the `otel_writer` account:
+(same bucket, IRSA credentials — no extra params needed from inside the cluster). `RESTORE`
+does **not** overwrite existing non-empty tables — it fails with `CANNOT_RESTORE_TABLE` if the
+target already has data (verified live 2026-07-27), so drop the corrupted database first:
 ```sql
-RESTORE DATABASE claude_code FROM S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD')
+DROP DATABASE claude_code SYNC;
+RESTORE DATABASE claude_code FROM S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD');
 ```
-Restoring overwrites current data — confirm the backup date covers what you need first. The
-30-day lifecycle on `backup/` (`infra/s3.tf`) means dates older than that are gone — for
+If only some tables are affected and you'd rather not drop the whole database, restore into a
+throwaway database and swap the affected tables in with `RENAME TABLE` instead:
+```sql
+CREATE DATABASE claude_code_restore;
+CREATE DATABASE IF NOT EXISTS claude_code_old;
+RESTORE DATABASE claude_code AS claude_code_restore FROM S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD');
+-- verify claude_code_restore.<table>, then:
+RENAME TABLE claude_code.<table> TO claude_code_old.<table>, claude_code_restore.<table> TO claude_code.<table>;
+```
+Confirm the backup date covers what you need first — this is a last resort, not a rollback: the
+old data is gone (or, with the throwaway-database approach, only recoverable from
+`claude_code_old` until you drop it). The 30-day lifecycle on `backup/` (`infra/s3.tf`) means
+dates older than that are gone — for
 anything further back, see the permanent archive below.
 
 Permanent archive before account teardown (e.g. workshop ending): see
 [`archive-clickhouse.md`](archive-clickhouse.md).
 
 ## Notes
-- Last verified: 2026-07-09
+- Last verified: 2026-07-09 for Scenarios 1-5 above. The data-recovery `RESTORE ... FROM
+  S3(...)` syntax and the drop-first / throwaway-database procedures were verified live against
+  the workshop cluster on 2026-07-27 (see [`archive-clickhouse.md`](archive-clickhouse.md) for
+  the underlying measurements) — but only at the single-table level, not a full `RESTORE
+  DATABASE claude_code` end to end. Re-verify the full-database path before relying on it.
 - The 2026-07-07 telemetry gap (15+ hours) was found only by querying `max(TimeUnix)`
   directly — the dashboard rendered fine on stale data. Check the data first, always.
 
@@ -254,17 +271,34 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 ```
 데이터 복구 (최후 수단 — 테이블 손상/삭제 시): 매일 03:00 KST에 `clickhouse-backup` CronJob이
 `S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD')`로 백업합니다(같은 버킷, IRSA
-자격증명 — 클러스터 안에서는 추가 파라미터 불필요). `otel_writer` 계정으로 복원합니다:
+자격증명 — 클러스터 안에서는 추가 파라미터 불필요). `RESTORE`는 이미 데이터가 있는 테이블을
+**덮어쓰지 않습니다** — 대상에 데이터가 있으면 `CANNOT_RESTORE_TABLE`로 실패합니다(2026-07-27
+실측 확인). 손상된 데이터베이스를 먼저 지우고 복원하세요:
 ```sql
-RESTORE DATABASE claude_code FROM S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD')
+DROP DATABASE claude_code SYNC;
+RESTORE DATABASE claude_code FROM S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD');
 ```
-복원은 현재 데이터를 덮어씁니다 — 백업 날짜가 필요한 범위를 포함하는지 먼저 확인합니다.
-`backup/`의 30일 라이프사이클(`infra/s3.tf`)로 그보다 오래된 날짜는 이미 사라졌습니다 — 더
-과거가 필요하면 아래 영구 아카이브를 참조하세요.
+일부 테이블만 손상돼 전체를 지우고 싶지 않다면, 임시 데이터베이스로 복원한 뒤 `RENAME TABLE`로
+해당 테이블만 교체하세요:
+```sql
+CREATE DATABASE claude_code_restore;
+CREATE DATABASE IF NOT EXISTS claude_code_old;
+RESTORE DATABASE claude_code AS claude_code_restore FROM S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD');
+-- claude_code_restore.<테이블>을 검증한 뒤:
+RENAME TABLE claude_code.<테이블> TO claude_code_old.<테이블>, claude_code_restore.<테이블> TO claude_code.<테이블>;
+```
+백업 날짜가 필요한 범위를 포함하는지 먼저 확인하세요 — 이건 최후 수단이지 롤백이 아닙니다:
+기존 데이터는 사라집니다(임시 데이터베이스 방식을 쓰면 `claude_code_old`를 지우기 전까지만
+복구 가능). `backup/`의 30일 라이프사이클(`infra/s3.tf`)로 그보다 오래된 날짜는 이미
+사라졌습니다 — 더 과거가 필요하면 아래 영구 아카이브를 참조하세요.
 
 계정 삭제(워크샵 종료 등) 전 영구 아카이브는 [`archive-clickhouse.md`](archive-clickhouse.md) 참조.
 
 ## 참고
-- 최종 검증일: 2026-07-09
+- 최종 검증일: 위 시나리오 1-5는 2026-07-09. 데이터 복구 절의 `RESTORE ... FROM S3(...)`
+  문법과 drop-후-복원/임시 데이터베이스 절차는 2026-07-27 워크샵 클러스터에서 실측
+  확인했습니다([`archive-clickhouse.md`](archive-clickhouse.md)의 실측 근거 참조) — 다만
+  단일 테이블 단위까지만이고, 전체 `RESTORE DATABASE claude_code`를 종단으로 검증한 것은
+  아닙니다. 전체 DB 복원 경로는 의존하기 전에 다시 검증하세요.
 - 2026-07-07 텔레메트리 공백(15시간+)은 `max(TimeUnix)` 직접 조회로만 발견됐습니다 —
   대시보드는 오래된 데이터로도 정상 렌더링됩니다. 항상 데이터부터 확인하세요.
