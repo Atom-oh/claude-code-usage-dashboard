@@ -9,6 +9,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "clickhouse" {
   rule {
     id     = "expire-backups"
     status = "Enabled"
+    # 백업은 BACKUP TO S3('.../backup/<date>')로 버킷 루트의 backup/ 아래에 논리 경로 그대로
+    # 쓰인다(clickhouse.tf의 backup_s3_prefix) — 이 prefix로만 만료가 걸린다.
+    # cold/ 아래는 절대 넣지 말 것: type=s3 디스크의 랜덤 blob 키가 살아있는 테이블 데이터와
+    # 섞여 있어 prefix로 백업만 골라낼 수 없고, 만료시키면 테이블이 깨진다.
     filter { prefix = "backup/" }
     expiration { days = 30 }
   }

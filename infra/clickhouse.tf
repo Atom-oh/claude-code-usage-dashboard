@@ -1,8 +1,10 @@
-# ClickHouse — claude-code 네임스페이스에 신규 CHI(2 레플리카) + CHK(Keeper 3노드).
+# ClickHouse — claude-code 네임스페이스에 신규 CHI(3 레플리카) + CHK(Keeper 3노드).
 # 기존 observability/fsi-demo-ch(1레플리카, ArgoCD 관리)는 건드리지 않는다.
 #
-# ponytail: 백업은 별도 clickhouse-backup 툴 대신 ClickHouse 네이티브 BACKUP 커맨드 +
-# 이미 구성한 S3 disk(cold_s3, IRSA 자격증명 재사용)로 — 이미지/자격증명 관리가 하나 줄어든다.
+# ponytail: 백업은 별도 clickhouse-backup 툴 대신 ClickHouse 네이티브 BACKUP 커맨드로 — 이미지
+# 관리가 하나 줄어든다. cold_s3 disk와 동일한 IRSA(use_environment_credentials)를 그대로
+# 재사용하지만, 대상은 그 disk가 아니라 BACKUP TO S3(...)로 직접 쓴다 — 아래 backup_s3_prefix
+# 주석 참조(Disk('cold_s3', ...)는 S3에 논리 경로를 안 만들어 복원이 불가능함을 실측 확인).
 
 resource "kubernetes_namespace" "claude_code" {
   metadata { name = var.k8s_namespace }
@@ -32,9 +34,22 @@ locals {
   ch_toleration    = [{ key = "claude-code", operator = "Equal", value = "true", effect = "NoSchedule" }]
   ch_node_selector = { "node-type" = "claude-code" }
   cold_s3_endpoint = "https://${aws_s3_bucket.clickhouse.bucket}.s3.${var.region}.amazonaws.com/cold/"
+  # 백업은 cold_s3 디스크를 재사용하지 않고 BACKUP TO S3(...)로 직접 쓴다 — 실측 확인
+  # (2026-07-27): type=s3 디스크는 논리 경로를 파드 로컬 metadata(/var/lib/clickhouse/disks/
+  # cold_s3/backup/<date>/)에만 두고 S3에는 랜덤 blob 키(cold/aaa/bzscpv...)로 저장한다.
+  # 따라서 Disk('cold_s3','backup/X') 백업은 S3에 backup/ 경로를 아예 만들지 않고(실측:
+  # cold/backup/ 객체 0개), PVC 없이는 blob만 복사해도 복원이 불가능하다. S3(...) 방식은
+  # .backup 매니페스트 + data/<db>/<table>/... 논리 경로를 그대로 써서 자기완결적이다.
+  backup_s3_prefix = "https://${aws_s3_bucket.clickhouse.bucket}.s3.${var.region}.amazonaws.com/backup"
   # Altinity operator의 서비스 네이밍 규칙(clickhouse-<CHI 이름>) — CHI를 apply한 뒤 실측 확인 필요
   # (kubectl -n claude-code get svc). 다르면 이 값만 고치면 된다.
   chi_service = "clickhouse-cc-ab.${var.k8s_namespace}.svc.cluster.local"
+  # chi_service는 3개 replica 앞의 로드밸런싱 Service라 호출마다 다른 pod에 붙을 수 있다 —
+  # 백업 CronJob은 SYSTEM SYNC REPLICA와 BACKUP을 반드시 같은 replica에서 실행해야 하므로
+  # (아니면 sync 안 된 replica에서 BACKUP이 뜰 수 있다), operator가 replica별로 만들어주는
+  # 전용 headless Service(chi-<chi>-<cluster>-<shard>-<replica>, 실측 확인: endpoint 1개뿐)로
+  # 고정한다. replica 0은 replicasCount=3(위)이 유지되는 한 항상 존재.
+  chi_replica0_service = "chi-cc-ab-replicated-0-0.${var.k8s_namespace}.svc.cluster.local"
 }
 
 # ── Keeper 3노드 ────────────────────────────────────────────────────────
@@ -76,7 +91,7 @@ resource "kubectl_manifest" "chk" {
   depends_on = [kubectl_manifest.claude_code_nodepool]
 }
 
-# ── CHI: 2 레플리카 ReplicatedMergeTree ─────────────────────────────────
+# ── CHI: 3 레플리카 ReplicatedMergeTree ─────────────────────────────────
 resource "kubectl_manifest" "chi" {
   yaml_body = yamlencode({
     apiVersion = "clickhouse.altinity.com/v1"
@@ -147,6 +162,10 @@ resource "kubectl_manifest" "chi" {
           XML
           # BACKUP TO Disk('cold_s3', ...)를 쓰려면 이 allowlist가 필요 — 없으면
           # INVALID_CONFIG_PARAMETER로 거부된다 (실측: 백업 CronJob 수동 실행 중 발견).
+          # 일별 CronJob과 archive-clickhouse.sh는 이제 BACKUP TO S3(...)를 쓰므로(위
+          # backup_s3_prefix 주석 참조) 이 allowlist에 더 의존하지 않는다 — Disk 방식은 S3
+          # 상에 논리 경로가 생기지 않는다는 게 실측으로 확인된 문제라 자동화에서 제외됐다.
+          # 다만 임시 수동 점검용 `BACKUP TO Disk('cold_s3', ...)`를 계속 쓸 수 있게 남겨둔다.
           "config.d/backups.xml" = <<-XML
             <clickhouse>
               <backups>
@@ -255,7 +274,8 @@ resource "kubernetes_job_v1" "schema_init" {
   depends_on          = [kubectl_manifest.chi]
 }
 
-# 일별 백업 — ClickHouse 네이티브 BACKUP, cold_s3 disk(IRSA 자격증명) 재사용.
+# 일별 백업 — ClickHouse 네이티브 BACKUP을 S3로 직접(자기완결적 아카이브, locals 주석 참조).
+# 자격증명은 cold_s3와 동일하게 파드의 IRSA(use_environment_credentials)를 쓴다.
 resource "kubernetes_cron_job_v1" "backup" {
   metadata {
     name      = "clickhouse-backup"
@@ -281,12 +301,40 @@ resource "kubernetes_cron_job_v1" "backup" {
               name  = "backup"
               image = "clickhouse/clickhouse-server:24.8"
               command = ["sh", "-c", <<-EOT
-                clickhouse-client --host ${local.chi_service} --user otel_writer --password "$CH_PASSWORD" \
-                  --query "BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/$(date +%Y-%m-%d)')"
+                set -eu
+                # replica0 전용 headless Service로 고정 — 실측 확인(2026-07-27): 로드밸런싱
+                # Service(clickhouse-cc-ab)는 클라이언트 연결마다 다른 pod에 붙을 수 있어, SYNC
+                # REPLICA와 BACKUP이 서로 다른 replica에서 실행되면 sync 안 된 replica 기준의
+                # BACKUP이 조용히 생길 수 있다(archive-clickhouse.sh는 POD=... | head -1로 하나의
+                # pod에 kubectl exec를 고정해서 이 문제가 없음 — 여기도 동일한 "항상 같은 대상"
+                # 보장이 필요해 전용 Service로 고정). replica0은 replicasCount=3이 유지되는 한
+                # 항상 존재.
+                # 비밀번호는 --password argv가 아니라 CLICKHOUSE_PASSWORD env로 넘긴다 —
+                # clickhouse-client가 이 env를 자동 인식하므로 --password 플래그 자체가 필요
+                # 없다(archive-clickhouse.sh가 stdin+env로 argv 노출을 피하는 것과 같은 이유 —
+                # 이 컨테이너는 ps 네임스페이스가 파드 안에서만 보이므로 실위험은 낮지만, 같은
+                # PR에서 이 커맨드를 다시 쓰는 김에 통일한다).
+                ch() { clickhouse-client --host ${local.chi_replica0_service} --user otel_writer --query "$1"; }
+                # ponytail: 날짜(초 단위 없이)만 쓰면 같은 날 재시도(OnFailure로 컨테이너 재시작)
+                # 시 BACKUP_ALREADY_EXISTS로 계속 실패한다(실측 확인) — 시각까지 넣어 재시도마다
+                # 다른 목적지가 되게 한다. 정확한 경로는 archive-clickhouse.sh가 backup/ 프리픽스
+                # 전체를 이관하므로 몰라도 되고, 수동 확인은 aws s3 ls로.
+                #
+                # archive-clickhouse.sh와 동일 패턴: 파이프로 바로 넘기지 않고 변수로 먼저
+                # 받아 set -e가 SELECT 실패를 파이프라인 뒤에서 놓치지 않게 한다(pipefail 불필요).
+                REPLICATED_TABLES=$(ch "SELECT table FROM system.replicas WHERE database = 'claude_code'")
+                echo "$REPLICATED_TABLES" | while read -r tbl; do
+                  [ -n "$tbl" ] || continue
+                  case "$tbl" in
+                    *[!A-Za-z0-9_]*) echo "unexpected table name char: '$tbl'" >&2; exit 1 ;;
+                  esac
+                  ch "SYSTEM SYNC REPLICA claude_code.\`$tbl\`"
+                done
+                ch "BACKUP DATABASE claude_code TO S3('${local.backup_s3_prefix}/$(date -u +%Y-%m-%d_%H%M%S)')"
               EOT
               ]
               env {
-                name = "CH_PASSWORD"
+                name = "CLICKHOUSE_PASSWORD"
                 value_from {
                   secret_key_ref {
                     name = kubernetes_secret.clickhouse_writer.metadata[0].name

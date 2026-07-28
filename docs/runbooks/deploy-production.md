@@ -72,6 +72,15 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
 
 ## Notes
 - Last verified: 2026-07-08
+- If the pending `terraform apply` includes `infra/clickhouse.tf`'s ClickHouse backup
+  destination change (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`), there's no ordering
+  requirement against `scripts/archive-clickhouse.sh` — its own final-snapshot step doesn't
+  depend on this Terraform change being applied. What the change does is make
+  `infra/s3.tf`'s pre-existing 30-day lifecycle filter start actually matching daily backups
+  going forward (previously it had nothing to match). Once applied, don't go more than 30 days
+  without running `scripts/archive-clickhouse.sh` again, and always run it once more right
+  before the workshop account is torn down — see
+  [`archive-clickhouse.md`](archive-clickhouse.md#when-to-use).
 - Local verification against the live ClickHouse cluster: port-forward
   `svc/clickhouse-cc-ab` (port 8123) and the reader credentials from k8s Secret
   `clickhouse-reader`, then run `dashboard/server` locally against it before deploying —
@@ -161,6 +170,15 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 
 ## 참고
 - 최종 검증일: 2026-07-08
+- 적용 대기 중인 `terraform apply`에 `infra/clickhouse.tf`의 ClickHouse 백업 목적지 변경
+  (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`)이 포함되어 있어도
+  `scripts/archive-clickhouse.sh`와의 순서 제약은 없습니다 — 그 스크립트의 최종 스냅샷
+  단계는 이 Terraform 변경 적용 여부와 무관하게 동작합니다. 이 변경이 실제로 하는 일은
+  `infra/s3.tf`에 이미 있던 30일 라이프사이클 필터가 이후의 일별 백업을 실제로 매칭하기
+  시작하게 만드는 것입니다(이전엔 매칭 대상이 없었습니다). 적용한 뒤로는
+  `scripts/archive-clickhouse.sh`를 30일 넘게 재실행하지 않고 방치하지 마세요, 그리고
+  워크샵 계정을 삭제하기 직전에는 항상 한 번 더 실행하세요 —
+  [`archive-clickhouse.md`](archive-clickhouse.md#사용-시점) 참조.
 - 실 ClickHouse 클러스터 대상 로컬 검증: `svc/clickhouse-cc-ab`(8123 포트)를 port-forward하고
   k8s Secret `clickhouse-reader`의 리더 자격증명을 받아 `dashboard/server`를 로컬에서 그
   클러스터에 붙여 실행 — 실 ClickHouse에 안 붙는 유닛 테스트가 놓친 쿼리 버그를 이 방식으로
