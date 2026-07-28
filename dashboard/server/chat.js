@@ -77,7 +77,9 @@ export function maskEmailValues(rows) {
 // 문제다. 그래서 기본은 OFF, PII_MASK_ENABLED=1일 때만 켠다. 함수 자체는 순수하게 두고
 // 호출 지점에서만 분기한다(테스트가 마스킹 규칙을 env와 무관하게 고정할 수 있게).
 // 프론트(web/src/fmt.js maskEmail)도 GET /api/config로 이 값을 받아 같이 따른다.
-export const piiMaskEnabled = process.env.PII_MASK_ENABLED === "1";
+// "1"만 받으면 PII_MASK_ENABLED=true로 쓴 오타가 조용히 OFF로 떨어져 공개 배포에서 원본이
+// 노출된다(리뷰 지적) — 둘 다 받는다.
+export const piiMaskEnabled = ["1", "true"].includes((process.env.PII_MASK_ENABLED || "").toLowerCase());
 const MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-sonnet-5";
 const MAX_HOPS = 4;
 
