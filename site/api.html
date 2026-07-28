@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API — Claude Code Usage Dashboard</title>
+    <meta name="description" content="대시보드 API 레퍼런스 — 공통 쿼리 파라미터와 엔드포인트 목록." />
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap">
+        <a class="brand" href="index.html"><span class="mark">CC</span> Usage Dashboard</a>
+        <nav class="tabs">
+          <a href="index.html">Overview</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="api.html" aria-current="page">API</a>
+          <a href="operations.html">Operations</a>
+          <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="hero">
+        <p class="eyebrow">API</p>
+        <h1>엔드포인트</h1>
+        <p class="lede">
+          데이터 라우트는 전부 <code>GET</code>, 읽기 전용, ClickHouse 쿼리 하나가 뒤에 있습니다.
+          공개 base URL은 없습니다 — Basic Auth 뒤의 배포 도메인이나 로컬
+          <code>http://localhost:8080</code>으로 접근합니다.
+        </p>
+      </div>
+
+      <section>
+        <h2>공통 쿼리 파라미터</h2>
+        <p>
+          아래 파라미터는 모든 데이터 라우트가 받습니다(<code>POST /api/chat</code>만 JSON 본문을
+          받는 예외).
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>파라미터</th><th>타입</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>from</code></td>
+                <td>ISO 8601</td>
+                <td>범위 시작. 기본값 <code>to - 2일</code>(워크샵 기본). uniq/존재 여부 계열
+                  엔드포인트는 서버에서 시각을 시간 단위로 내림하므로 좁은(1시간 미만) 범위에서는
+                  최대 59분이 더 포함될 수 있습니다 — rollup 그레인과의 의도된 트레이드오프.</td>
+              </tr>
+              <tr><td><code>to</code></td><td>ISO 8601</td><td>범위 끝. 기본값 now</td></tr>
+              <tr>
+                <td><code>group</code></td>
+                <td><code>bedrock</code> | <code>enterprise</code></td>
+                <td>세션 그룹 필터. 그룹 스코프 쿼리는 <code>unknown</code>을 기본 제외하고,
+                  조직 전체 합계를 보는 몇몇 엔드포인트는 포함합니다.</td>
+              </tr>
+              <tr><td><code>user</code></td><td>string</td><td>이메일 부분 일치 필터</td></tr>
+              <tr><td><code>model</code></td><td>string</td><td>모델명 부분 일치(정규화 후) 필터</td></tr>
+              <tr>
+                <td><code>intervalHours</code></td>
+                <td>number</td>
+                <td>시계열 버킷 크기. <code>0.25</code>=15분(차트 드래그 줌), <code>1</code>=시간,
+                  <code>24</code>=일, <code>168</code>=주. <code>1</code> 미만은 범위가 4시간을
+                  넘으면 서버에서 <code>1</code>로 클램프됩니다(분 버킷은 원본 테이블을 스캔).</td>
+              </tr>
+              <tr>
+                <td><code>email</code></td>
+                <td>string</td>
+                <td>유저 드릴다운 3개 라우트 전용(정확 일치). 다른 라우트는 무시합니다.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Overview · Adoption</h2>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Path</th><th>반환</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /api/overview/kpi</code></td><td>그룹별 세션·유저·커밋·PR·토큰·LOC 요약</td></tr>
+              <tr><td><code>GET /api/overview/active-users</code></td><td>그룹 무관 고유 활성 유저 수(<code>unknown</code> 포함)</td></tr>
+              <tr><td><code>GET /api/overview/tokens-timeseries</code></td><td>시계열 — 그룹별 토큰 사용량</td></tr>
+              <tr><td><code>GET /api/overview/cache-efficiency</code></td><td>캐시 재사용률 + 토큰 타입 분해</td></tr>
+              <tr><td><code>GET /api/overview/model-distribution</code></td><td>그룹 × 모델 토큰 분포</td></tr>
+              <tr><td><code>GET /api/adoption/levels</code></td><td>DAU/WAU/MAU 스냅샷 + 전체 멤버</td></tr>
+              <tr><td><code>GET /api/adoption/timeseries</code></td><td>시계열 — 일별 DAU/WAU/MAU 롤링</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Productivity · Usage</h2>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Path</th><th>반환</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /api/productivity/normalized</code></td><td>백만 토큰당 LOC/커밋</td></tr>
+              <tr><td><code>GET /api/productivity/decisions</code></td><td>그룹별 수락/거절 수</td></tr>
+              <tr><td><code>GET /api/productivity/decisions-by-tool</code></td><td>그룹 × 툴 수락/거절</td></tr>
+              <tr><td><code>GET /api/productivity/active-time</code></td><td>시계열 — 활성 시간(초)</td></tr>
+              <tr><td><code>GET /api/productivity/agenticness</code></td><td>시계열 — 프롬프트당 툴 호출 수</td></tr>
+              <tr><td><code>GET /api/productivity/engagement</code></td><td>시계열 — 일별 유저/세션/PR</td></tr>
+              <tr><td><code>GET /api/productivity/loc-timeseries</code></td><td>시계열 — 추가/삭제 라인</td></tr>
+              <tr><td><code>GET /api/usage/tool-mcp</code></td><td>툴 · MCP 호출 수</td></tr>
+              <tr><td><code>GET /api/usage/skills</code></td><td>스킬 호출 수(OTel 리댁션 영향 받음)</td></tr>
+              <tr><td><code>GET /api/usage/connectors</code></td><td>MCP 커넥터 사용량</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Users</h2>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Path</th><th>반환</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>GET /api/users/leaderboard</code></td>
+                <td>유저 × 그룹 지표 + 생산성 점수. 두 그룹에 걸친 유저는 그룹당 1행이고,
+                  <code>user_active_days</code>는 그룹 무관 값이라 조직 전체 점수를 다시 계산할 때
+                  활성일이 이중 계산되지 않습니다.</td>
+              </tr>
+              <tr><td><code>GET /api/users/tools</code></td><td>유저 × 그룹 툴 사용량</td></tr>
+              <tr><td><code>GET /api/users/skills</code></td><td>유저 × 그룹 스킬 사용량</td></tr>
+              <tr><td><code>GET /api/users/cost-efficiency</code></td><td>유저 × 그룹 <code>$/LOC</code>, <code>$/commit</code></td></tr>
+              <tr><td><code>GET /api/users/daily</code></td><td>시계열 — 한 유저의 일별 세션/LOC/토큰/커밋. <code>email</code> 필수</td></tr>
+              <tr><td><code>GET /api/users/decisions-by-tool</code></td><td>한 유저의 툴별 수락/거절. <code>email</code> 필수</td></tr>
+              <tr><td><code>GET /api/users/heatmap</code></td><td>최근 91일 일별 세션 히트맵. <code>email</code> 필수, <code>from</code> 무시</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Cost</h2>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Path</th><th>반환</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /api/cost/summary</code></td><td>그룹별 계산 비용 + 보고 비용, 토큰 분해</td></tr>
+              <tr><td><code>GET /api/cost/by-model</code></td><td>그룹 × 모델 비용·토큰</td></tr>
+              <tr><td><code>GET /api/cost/by-user-model</code></td><td>유저 × 그룹 × 모델 비용·토큰</td></tr>
+              <tr><td><code>GET /api/cost/by-model-daily</code></td><td>시계열 — 그룹 × 모델 일별 비용</td></tr>
+              <tr><td><code>GET /api/cost/by-model-compare</code></td><td>직전 동일 길이 기간과의 모델별 비교</td></tr>
+              <tr><td><code>GET /api/cost/tiers</code></td><td>토큰 티어별(uncachedInput/cacheRead/cacheWrite/output) 비용, 그룹 분리</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note">
+          <p>
+            <strong>계산 비용 vs 보고 비용.</strong> 화면의 기본값은 토큰 실측 × 모델 단가로 계산한
+            값입니다. Claude Code가 자체 보고하는 <code>cost.usage</code>는 근사치라 A/B 비교의
+            기준으로 쓰지 않고, 참고용으로 나란히 보여줍니다.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Chat · Config</h2>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Path</th><th>반환</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>POST /api/chat</code></td>
+                <td>SSE 스트림. 본문 <code>{"messages":[{"role","content"}]}</code>. Bedrock
+                  ConverseStream + 읽기 전용 SQL 툴콜 루프(최대 4 hop). LLM이 만든 SQL은
+                  <code>sanitizeSql()</code> 샌드박스를 통과해야 하고, 결과는 200행으로 잘립니다.</td>
+              </tr>
+              <tr>
+                <td><code>GET /api/config</code></td>
+                <td><code>{"piiMask": bool}</code> — 프론트가 이메일을 마스킹할지. 이미지는 한 번
+                  빌드해 여러 배포에서 재사용하므로 빌드타임 플래그가 아니라 런타임 값입니다.
+                  프론트는 fail-closed(오류·타임아웃이면 마스킹).</td>
+              </tr>
+              <tr><td><code>GET /healthz</code></td><td>Basic Auth 면제. ClickHouse ping 결과 포함</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note">
+          <p>
+            마스킹은 <strong>표시 계층</strong>에만 적용됩니다 — 데이터 엔드포인트는 항상 원본
+            이메일을 반환하므로, Basic Auth를 통과한 사람은 네트워크 탭에서 볼 수 있습니다. 화면
+            공유나 공개 URL을 가리는 장치이고, 데이터 자체의 접근 제어가 아닙니다.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2>오류 · 레이트 리밋</h2>
+        <ul>
+          <li><code>401</code> — Basic Auth 누락/불일치 (<code>BASIC_AUTH_*</code>가 설정된 경우에만)</li>
+          <li><code>500</code> — 대개 ClickHouse 쿼리 오류. 응답은 <code>{"error": "..."}</code>, 원문 스택은 서버 로그에만 남습니다</li>
+          <li><code>429</code> — <code>POST /api/chat</code>의 IP당 분당 상한(단일 파드 in-memory)</li>
+        </ul>
+        <p>
+          데이터 라우트에는 애플리케이션 레벨 레이트 리밋이 없습니다. 워크샵 소규모 코호트를
+          전제한 결정이며, 전제가 바뀌면 이 문장을 지우기 전에 리밋을 먼저 넣어야 합니다.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        claude-code-usage-dashboard ·
+        <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
+      </div>
+    </footer>
+  </body>
+</html>

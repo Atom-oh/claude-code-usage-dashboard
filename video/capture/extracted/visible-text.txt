@@ -1,0 +1,20 @@
+Claude Code Usage Dashboard — A/B Dashboard
+bedrock vs enterprise — 텔레메트리 기반 그룹 자동 판별
+
+페이지: Overview(KPI 및 요약) · Executive(경영 보고용 원페이지) · Trends(DAU/WAU/MAU) ·
+Productivity(토큰 정규화 생산성) · Usage(Tool/MCP/Skill) · Users(유저별 생산성) ·
+Cost(토큰·모델별 비용 근사치) · Analytics(AI 분석 에이전트)
+
+실측 수치 (2026-07-26 ~ 07-28, 2일):
+- 전체 유저 72 · 세션 1,587 · 추가 라인 46,539 · 전체 토큰 405,422,042
+- 입력 토큰 3,870,239 · 출력 토큰 7,134,574
+- 계산 비용 합계 $507.88 · Claude Code 보고 비용 $540.41 · 30일 프로젝션 $7,618.27
+- 개발자당 지출 $7.05 (72명) · 사용자당 평균 bedrock $5.51 · enterprise $3.4
+- 캐시율 bedrock 91.7% / enterprise 94.0%
+- 제안 수락률 98% · 작성 라인 46,539 · 커밋 115 · PR 0
+- 그룹별: bedrock 52명/599세션, enterprise 65명/753세션, unknown 63명/235세션
+- 생산성 점수 평균: bedrock 58.1 vs enterprise 48.1 · 조직 점수 72/100
+- 모델 계열별 사용자당 평균 지출: OPUS $6.81 · SONNET $0.47 · HAIKU $0.04
+- COST / 1K LOC $11 · 일평균 지출 $254
+
+Analytics 탭: 미리 준비된 질문을 누르면 에이전트가 ClickHouse를 직접 조회해 답합니다.

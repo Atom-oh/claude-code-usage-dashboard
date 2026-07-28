@@ -1,0 +1,215 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      font-family: "Inter", sans-serif;
+    }
+    .ct-bg {
+      position: absolute;
+      inset: 0;
+      background: #f4f6f9;
+    }
+    .ct-world {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+    .ct-eyebrow {
+      position: absolute;
+      left: 140px;
+      top: 170px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #506cc6;
+      will-change: transform, opacity;
+    }
+    .ct-tile {
+      position: absolute;
+      border-radius: 14px;
+      background: rgba(97, 131, 240, 0.05);
+      border: 1.5px solid rgba(97, 131, 240, 0.2);
+      padding: 26px 30px;
+      will-change: transform, opacity;
+    }
+    .ct-hero {
+      left: 140px;
+      top: 240px;
+      width: 560px;
+      height: 300px;
+      padding: 40px 44px;
+      background: #ffffff;
+    }
+    .ct-tile-label {
+      font-size: 16px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #6d6d6d;
+    }
+    .ct-hero-num {
+      margin-top: 26px;
+      font-size: 104px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: #6183f0;
+      font-variant-numeric: tabular-nums;
+      will-change: transform;
+    }
+    .ct-hero-foot {
+      margin-top: 18px;
+      font-size: 22px;
+      font-weight: 500;
+      color: #0f172a;
+    }
+    .ct-small {
+      width: 380px;
+      height: 132px;
+      left: 140px;
+    }
+    .ct-small-num {
+      margin-top: 12px;
+      font-size: 46px;
+      font-weight: 700;
+      line-height: 1;
+      color: #6183f0;
+      font-variant-numeric: tabular-nums;
+    }
+    .ct-shotcard {
+      position: absolute;
+      left: 1180px;
+      top: 120px;
+      width: 652px;
+      padding: 6px;
+      border-radius: 12px;
+      background: #ffffff;
+      border: 1.5px solid rgba(97, 131, 240, 0.2);
+      will-change: transform, opacity;
+    }
+    .ct-shot {
+      display: block;
+      width: 640px;
+      height: 515px;
+      object-fit: cover;
+      object-position: bottom left;
+      border-radius: 7px;
+    }
+    /* 줌 구간(S≈2.2)에서 읽히도록 작게 authored — 확대되면 약 20px로 보인다. */
+    .ct-chip {
+      position: absolute;
+      padding: 3px 7px;
+      border-radius: 100px;
+      background: #ffffff;
+      border: 0.8px solid #6183f0;
+      color: #506cc6;
+      font-size: 9px;
+      font-weight: 600;
+      white-space: nowrap;
+      will-change: transform, opacity;
+    }
+    .ct-blurable {
+      will-change: filter;
+    }
+  </style>
+
+  <div id="root" data-composition-id="04-cost" data-start="0" data-duration="5" data-width="1920" data-height="1080">
+    <div class="clip ct-bg" id="ct-bg" data-start="0" data-duration="5" data-track-index="0"></div>
+    <div class="clip ct-world" id="ct-world" data-layout-allow-overflow data-start="0" data-duration="5" data-track-index="1">
+      <div class="ct-shotcard" id="ct-shotcard">
+        <img class="ct-shot" src="assets/cost.png" alt="" />
+      </div>
+      <div class="ct-blurable" id="ct-blurable">
+        <div class="ct-eyebrow" id="ct-eyebrow">What it costs</div>
+        <div class="ct-tile ct-hero" id="ct-hero">
+          <div class="ct-tile-label">computed spend · 2 days</div>
+          <div class="ct-hero-num" id="ct-hero-num">$0.00</div>
+          <div class="ct-hero-foot">72 developers · 1,587 sessions</div>
+        </div>
+        <div class="ct-tile ct-small" id="ct-s1" style="top: 570px">
+          <div class="ct-tile-label">30-day projection</div>
+          <div class="ct-small-num">$7,618</div>
+        </div>
+        <div class="ct-tile ct-small" id="ct-s2" style="top: 570px; left: 540px">
+          <div class="ct-tile-label">per developer</div>
+          <div class="ct-small-num">$7.05</div>
+        </div>
+        <div class="ct-tile ct-small" id="ct-s3" style="top: 722px">
+          <div class="ct-tile-label">per 1K lines</div>
+          <div class="ct-small-num">$11</div>
+        </div>
+      </div>
+      <div class="ct-chip" id="ct-chip-1" style="left: 1372px; top: 496px">91.7% cached</div>
+      <div class="ct-chip" id="ct-chip-2" style="left: 1604px; top: 496px">94.0% cached</div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["04-cost"] = tl;
+
+      const world = document.getElementById("ct-world");
+      const cam = { scale: 1, x: 0, y: 0 };
+      const applyCam = () => {
+        world.style.transform = "translate(" + cam.x + "px, " + cam.y + "px) scale(" + cam.scale + ")";
+      };
+      applyCam();
+
+      // Scene 1 (0.0–0.5s) — eyebrow + 히어로 타일이 동시에 선다.
+      tl.fromTo("#ct-eyebrow", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.36, ease: "power3.out" }, 0);
+      tl.fromTo("#ct-hero", { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.5)" }, 0);
+      tl.fromTo("#ct-shotcard", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.15);
+
+      // Scene 2 (0.5–1.8s) — 보조 타일 3개가 스태거로 조립(합 0.3s).
+      ["#ct-s1", "#ct-s2", "#ct-s3"].forEach((sel, i) => {
+        tl.fromTo(
+          sel,
+          { y: 40, scale: 0.92, opacity: 0 },
+          { y: 0, scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.4)" },
+          0.6 + i * 0.15
+        );
+      });
+
+      // Scene 3 (1.8–3.0s) — 히어로 금액 카운트업(소수 2자리 고정) + 값과 함께 자라는 scale.
+      const heroNum = document.getElementById("ct-hero-num");
+      const v = { n: 0 };
+      tl.to(
+        v,
+        {
+          n: 507.88,
+          duration: 1.15,
+          ease: "power2.out",
+          onUpdate: () => {
+            heroNum.textContent = "$" + v.n.toFixed(2);
+          },
+        },
+        1.8
+      );
+      tl.fromTo("#ct-hero-num", { scale: 0.92 }, { scale: 1, duration: 1.15, ease: "power2.out" }, 1.8);
+
+      // Scene 4 (3.0–5.0s) — 타일 그리드는 blur로 물러나고, 캐시 티어 도넛으로 파고든다.
+      tl.fromTo("#ct-blurable", { filter: "blur(0px)" }, { filter: "blur(5px)", duration: 0.8, ease: "power2.out" }, 3.0);
+      const donut = { x: 1528, y: 569, s: 2.2 };
+      tl.to(
+        cam,
+        {
+          scale: donut.s,
+          x: -(donut.x - 960) * donut.s,
+          y: -(donut.y - 540) * donut.s,
+          duration: 1.5,
+          ease: "power2.inOut",
+          onUpdate: applyCam,
+        },
+        3.0
+      );
+      tl.fromTo("#ct-chip-1", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(2)" }, 4.4);
+      tl.fromTo("#ct-chip-2", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(2)" }, 4.55);
+    })();
+  </script>
+</template>

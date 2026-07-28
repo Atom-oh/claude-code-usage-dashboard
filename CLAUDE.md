@@ -27,6 +27,11 @@ dashboard/           - The application (deployed as a single Docker image)
   seed/              - Demo/workshop seed data (SQL) for ClickHouse
 infra/               - Terraform: EKS, ClickHouse operator, ECR, DNS/CDN, dashboard deployment
 docs/                - Architecture docs, ADRs, runbooks, implementation reference
+site/                - Public docs site published to GitHub Pages (static HTML, no build step;
+                       deployed by .github/workflows/pages.yml). Curated + sanitized — no account
+                       IDs, no hostnames, participant labels anonymized in the screenshots
+video/               - HyperFrames project that renders site/assets/video/dashboard-demo.mp4
+                       (npx hyperframes, Node >= 22; renders/ + snapshots/ are gitignored)
 scripts/             - Operational scripts (setup, git hooks, PR review automation)
 grafana-ab-queries.sql   - Legacy Grafana panel queries (kept in sync with dashboard/server SQL)
 clickhouse-schema.sql   - Reference schema for otel_metrics_sum / otel_logs

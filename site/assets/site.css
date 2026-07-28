@@ -1,0 +1,479 @@
+/* claude-code-usage-dashboard — docs site.
+   대시보드 UI와 같은 토큰을 쓴다: 밝은 회백 캔버스, bedrock 파랑 / enterprise 초록.
+   빌드 단계 없음 — 정적 HTML + 이 파일 하나. */
+
+:root {
+  --canvas: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #0f172a;
+  --ink-soft: #46526b;
+  --ink-mute: #6d7789;
+  --line: #e2e8f0;
+  --bedrock: #4a63be;
+  --bedrock-bright: #6183f0;
+  --enterprise: #2f7a5e;
+  --enterprise-bright: #3f9c79;
+  --code-bg: #f1f4f9;
+  --radius: 14px;
+  --wrap: 1080px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0d1117;
+    --surface: #151b24;
+    --ink: #e8ecf3;
+    --ink-soft: #b3bccd;
+    --ink-mute: #8b94a7;
+    --line: #232c39;
+    --bedrock: #8ba4f7;
+    --bedrock-bright: #8ba4f7;
+    --enterprise: #66c19f;
+    --enterprise-bright: #66c19f;
+    --code-bg: #10161f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: var(--wrap);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* — top bar / tabs — */
+header.top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--canvas) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.top .wrap {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  min-height: 62px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.brand .mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--bedrock-bright);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+nav.tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+nav.tabs a {
+  padding: 7px 13px;
+  border-radius: 100px;
+  color: var(--ink-mute);
+  text-decoration: none;
+  font-size: 14.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+nav.tabs a:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+nav.tabs a[aria-current="page"] {
+  color: var(--bedrock);
+  background: color-mix(in srgb, var(--bedrock-bright) 12%, transparent);
+  font-weight: 600;
+}
+
+/* — hero — */
+.hero {
+  padding: 64px 0 8px;
+}
+
+.eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bedrock);
+  margin: 0 0 14px;
+}
+
+h1 {
+  margin: 0 0 18px;
+  font-size: clamp(34px, 5vw, 52px);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.lede {
+  margin: 0;
+  max-width: 66ch;
+  font-size: clamp(17px, 2.1vw, 20px);
+  color: var(--ink-soft);
+}
+
+.video-frame {
+  margin: 34px 0 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 10px;
+  overflow: hidden;
+}
+
+.video-frame video {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* 메타데이터 로드 전에도 박스가 접히지 않게 종횡비를 고정한다(포스터와 동일한 16:9). */
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: var(--canvas);
+}
+
+.caption {
+  margin: 10px 2px 0;
+  font-size: 13.5px;
+  color: var(--ink-mute);
+}
+
+/* — sections — */
+section {
+  padding: 46px 0;
+  border-top: 1px solid var(--line);
+}
+
+section:first-of-type {
+  border-top: none;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: clamp(23px, 3vw, 30px);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+h3 {
+  margin: 32px 0 8px;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+p {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  max-width: 74ch;
+}
+
+a {
+  color: var(--bedrock);
+}
+
+ul,
+ol {
+  color: var(--ink-soft);
+  max-width: 74ch;
+  padding-left: 22px;
+}
+
+li {
+  margin: 5px 0;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+pre {
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+/* — KPI tiles — */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin: 26px 0 6px;
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+}
+
+.tile .k {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.tile .v {
+  margin-top: 8px;
+  font-size: 33px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--bedrock);
+}
+
+.tile.green .v {
+  color: var(--enterprise);
+}
+
+.tile .n {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-mute);
+}
+
+/* — cards / groups — */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 16px;
+  margin: 24px 0 4px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+}
+
+.card h3 {
+  margin: 0 0 6px;
+}
+
+.card p:last-child {
+  margin-bottom: 0;
+}
+
+.card.bedrock {
+  border-color: color-mix(in srgb, var(--bedrock-bright) 45%, var(--line));
+}
+
+.card.enterprise {
+  border-color: color-mix(in srgb, var(--enterprise-bright) 45%, var(--line));
+}
+
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
+/* — tables — */
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin: 20px 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+td {
+  color: var(--ink-soft);
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+td code {
+  white-space: nowrap;
+}
+
+/* — screenshot gallery — */
+.shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+  margin: 26px 0 0;
+}
+
+figure {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+figcaption {
+  padding: 10px 6px 3px;
+  font-size: 13.5px;
+  color: var(--ink-mute);
+}
+
+/* — pipeline diagram (CSS only, no JS/CDN) — */
+.pipe {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  flex-wrap: wrap;
+  margin: 26px 0 8px;
+}
+
+.pipe .stage {
+  flex: 1 1 190px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+
+.pipe .stage b {
+  display: block;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.pipe .stage span {
+  display: block;
+  margin-top: 5px;
+  font-size: 13px;
+  color: var(--ink-mute);
+}
+
+.pipe .arrow {
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  color: var(--bedrock);
+  font-size: 18px;
+}
+
+.note {
+  border-left: 3px solid var(--bedrock-bright);
+  background: color-mix(in srgb, var(--bedrock-bright) 6%, transparent);
+  border-radius: 0 10px 10px 0;
+  padding: 14px 18px;
+  margin: 20px 0;
+}
+
+.note p:last-child {
+  margin-bottom: 0;
+}
+
+footer {
+  border-top: 1px solid var(--line);
+  padding: 30px 0 60px;
+  color: var(--ink-mute);
+  font-size: 14px;
+}
+
+footer a {
+  color: var(--ink-mute);
+}
+
+@media (max-width: 640px) {
+  .pipe .arrow {
+    flex-basis: 100%;
+    transform: rotate(90deg);
+    padding: 4px 0;
+  }
+  .hero {
+    padding-top: 40px;
+  }
+}

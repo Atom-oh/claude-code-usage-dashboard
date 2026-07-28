@@ -1,0 +1,144 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      font-family: "Inter", sans-serif;
+    }
+    .hk-bg {
+      position: absolute;
+      inset: 0;
+      background: #f4f6f9;
+    }
+    .hk-world {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+    .hk-glow {
+      position: absolute;
+      left: 460px;
+      top: 180px;
+      width: 1000px;
+      height: 620px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(97, 131, 240, 0.45) 0%, rgba(97, 131, 240, 0) 70%);
+      will-change: transform, opacity;
+    }
+    .hk-eyebrow {
+      position: absolute;
+      left: 0;
+      top: 250px;
+      width: 1920px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #506cc6;
+      will-change: transform, opacity;
+    }
+    .hk-counter {
+      position: absolute;
+      left: 0;
+      top: 360px;
+      width: 1920px;
+      text-align: center;
+      font-size: 168px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: #6183f0;
+      font-variant-numeric: tabular-nums;
+      will-change: transform;
+    }
+    .hk-sub {
+      position: absolute;
+      left: 0;
+      top: 600px;
+      width: 1920px;
+      text-align: center;
+      font-size: 30px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: #0f172a;
+    }
+    .hk-sub span {
+      display: inline-block;
+      will-change: transform, opacity;
+    }
+    .hk-rule {
+      position: absolute;
+      left: 910px;
+      top: 700px;
+      width: 100px;
+      height: 4px;
+      border-radius: 6px;
+      background: #6183f0;
+      transform-origin: 0% 50%;
+      will-change: transform;
+    }
+  </style>
+
+  <div id="root" data-composition-id="01-hook" data-start="0" data-duration="4.5" data-width="1920" data-height="1080">
+    <div class="clip hk-bg" id="hk-bg" data-start="0" data-duration="4.5" data-track-index="0"></div>
+    <div class="clip hk-world" id="hk-world" data-start="0" data-duration="4.5" data-track-index="1">
+      <div class="hk-glow" id="hk-glow"></div>
+      <div class="hk-eyebrow" id="hk-eyebrow">Measured, not estimated</div>
+      <div class="hk-counter" id="hk-counter">0</div>
+      <div class="hk-sub" id="hk-sub">
+        <span>tokens</span><span>&nbsp;·&nbsp;</span><span>2 days</span><span>&nbsp;·&nbsp;</span><span>72 developers</span>
+      </div>
+      <div class="hk-rule" id="hk-rule"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["01-hook"] = tl;
+
+      const counter = document.getElementById("hk-counter");
+      // 천단위 콤마를 직접 넣는다 — toLocaleString은 렌더 머신 로케일에 따라 구분자가 바뀔 수 있어
+      // 결정성이 깨진다(headless Chrome의 ICU 기본값에 의존하지 않는다).
+      const comma = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      const val = { n: 0 };
+      const TARGET = 405422042;
+
+      // Scene 1 (0.0–0.6s) — eyebrow가 아래에서 올라오고 카운터가 스프링으로 선다.
+      tl.fromTo("#hk-eyebrow", { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.42, ease: "power3.out" }, 0);
+      tl.fromTo("#hk-counter", { scale: 0.72, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.6)" }, 0.1);
+
+      // Scene 2 (0.6–2.4s) — 값이 오르며 scale이 함께 자란다(counting-dynamic-scale).
+      tl.to(
+        val,
+        {
+          n: TARGET,
+          duration: 1.8,
+          ease: "power2.out",
+          onUpdate: () => {
+            counter.textContent = comma(Math.round(val.n));
+          },
+        },
+        0.6
+      );
+      tl.fromTo("#hk-counter", { scale: 1 }, { scale: 1.12, duration: 1.8, ease: "power2.out" }, 0.6);
+      tl.fromTo("#hk-glow", { scale: 0.7, opacity: 0 }, { scale: 1, opacity: 0.35, duration: 1.5, ease: "power2.out" }, 0.6);
+
+      // Scene 3 (2.4–3.2s) — 서브라벨이 단어 단위로 도착(waterfall-entry: 계단식, 페이드 아님).
+      const words = gsap.utils.toArray("#hk-sub span");
+      words.forEach((w, i) => {
+        tl.set(w, { opacity: 1 }, 2.4 + i * 0.06);
+        tl.fromTo(w, { y: 34 }, { y: 0, duration: 0.42, ease: "power4.out" }, 2.4 + i * 0.06);
+      });
+      gsap.set(words, { opacity: 0 });
+      tl.fromTo("#hk-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power3.out" }, 2.75);
+
+      // Scene 4 (3.2–4.0s) — 카메라가 아주 살짝 다가오며 정지.
+      tl.fromTo("#hk-world", { scale: 1 }, { scale: 1.04, duration: 0.8, ease: "power1.inOut" }, 3.2);
+    })();
+  </script>
+</template>
