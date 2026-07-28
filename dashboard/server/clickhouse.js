@@ -31,14 +31,19 @@ export async function query(sql, query_params = {}) {
 // SQL을 LIMIT 201 서브쿼리로 감싸 서버 쪽에서 강제하고(201행이면 잘린 것), 타임아웃은
 // AbortController로 HTTP 요청 자체를 취소해 ClickHouse가 쿼리를 kill하게 한다.
 // sanitize(chat.js)가 1차 방어.
-export async function queryReadonly(sql) {
+// externalSignal(브라우저가 SSE 연결을 끊었을 때 chat.js가 넘기는 신호)이 걸리면 30초를
+// 기다리지 않고 즉시 이 쿼리도 취소한다 — 클라이언트가 사라진 뒤에도 ClickHouse가 계속
+// 풀스캔을 도는 걸 막는다. 타임아웃 abort와 외부 abort를 구분해야 에러 메시지가 정확하다
+// (외부 abort는 "30초 초과"가 아니므로 그대로 AbortError를 던져 위로 전달한다).
+export async function queryReadonly(sql, externalSignal) {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 30000);
+  const signal = externalSignal ? AbortSignal.any([abort.signal, externalSignal]) : abort.signal;
   try {
     const rs = await client.query({
       query: `SELECT * FROM (${sql}) LIMIT 201`,
       format: "JSONEachRow",
-      abort_signal: abort.signal,
+      abort_signal: signal,
     });
     const rows = await rs.json();
     return { rows: rows.slice(0, 200), truncated: rows.length > 200 };

@@ -15,6 +15,13 @@ const PRICING = {
   "claude-fable-5": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 },
 };
 
+// Ask Claude 챗의 SYSTEM 프롬프트(chat.js)가 이 문자열을 그대로 인용한다 — Cost 페이지 카드가
+// 보여주는 "계산 비용"(withComputedCost, 아래)과 챗이 답하는 비용이 서로 다른 숫자를 쓰게
+// 드리프트하지 않도록, 단가를 PRICING에서만 유지하고 여기서 렌더링만 한다.
+export const PRICING_PROMPT_TABLE = Object.entries(PRICING)
+  .map(([model, p]) => `${model}: input $${p.input}, output $${p.output}, cacheWrite $${p.cacheWrite}, cacheRead $${p.cacheRead} (1M 토큰당 USD)`)
+  .join("\n");
+
 // us.anthropic.claude-sonnet-4-5-20250929-v1:0 / global.anthropic.claude-opus-4-8
 // / anthropic.claude-* / claude-sonnet-4-5-20250929 / claude-fable-5[1m] → 단가표 key
 export function normalizeModelId(raw) {

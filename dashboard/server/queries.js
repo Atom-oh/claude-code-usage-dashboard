@@ -44,7 +44,9 @@ export function range(from, to, raw = false) {
 // 모델의 변형일 뿐이라(리전 라우팅·컨텍스트 윈도우는 사용자가 고르는 게 아니라 Bedrock/Claude Code가
 // 자동으로 붙임) 모델 분포/비용 집계에서는 하나로 합친다. pricing.js normalizeModelId()와 동일한
 // 5단계 규칙의 SQL 버전 — 표시용 모델명도 단가표 키와 같은 형태로 통일한다.
-function normModel(col) {
+// chat.js의 SYSTEM 프롬프트도 이 함수의 결과를 그대로 인용한다(PRICING_PROMPT_TABLE과 같은 이유):
+// 챗이 산문 설명을 보고 즉흥적으로 정규화하면 단가표 키와 어긋나 계산 비용이 대시보드와 발산한다.
+export function normModel(col) {
   const strip = (expr, pattern) => `replaceRegexpOne(${expr}, '${pattern}', '')`;
   let expr = col;
   expr = strip(expr, "\\\\[.*\\\\]$"); // [1m] 컨텍스트 윈도우 접미사

@@ -76,6 +76,22 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
   `svc/clickhouse-cc-ab` (port 8123) and the reader credentials from k8s Secret
   `clickhouse-reader`, then run `dashboard/server` locally against it before deploying —
   this has caught query bugs that unit tests (which don't touch live ClickHouse) missed.
+- **ClickHouse schema changes are a separate path from the image deploy.** Editing
+  `infra/files/clickhouse-schema-replicated.sql` changes the `filemd5` in the schema-init Job's
+  name, so `terraform apply` replaces and re-runs it. Terraform does **not** wait for it
+  (`wait_for_completion = false`), so verify by hand:
+  ```bash
+  kubectl --context fsi-demo-cluster -n claude-code get jobs | grep clickhouse-schema-init
+  kubectl --context fsi-demo-cluster -n claude-code wait --for=condition=complete \
+    job/clickhouse-schema-init-<hash> --timeout=300s
+  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
+    -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
+  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
+    -- clickhouse-client -q "SELECT table, command, is_done FROM system.mutations WHERE is_done = 0"
+  ```
+  The `SHOW CREATE TABLE` is the actual check — a Job that completed doesn't prove every
+  statement applied (e.g. the rollup `TTL` clause was missing for weeks while the Job showed
+  `Complete`, because the Job never re-ran after the file changed).
 
 ---
 
@@ -149,3 +165,19 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
   k8s Secret `clickhouse-reader`의 리더 자격증명을 받아 `dashboard/server`를 로컬에서 그
   클러스터에 붙여 실행 — 실 ClickHouse에 안 붙는 유닛 테스트가 놓친 쿼리 버그를 이 방식으로
   여러 번 잡았습니다.
+- **ClickHouse 스키마 변경은 이미지 배포와 별개 경로입니다.**
+  `infra/files/clickhouse-schema-replicated.sql`를 수정하면 schema-init Job 이름의 `filemd5`가
+  바뀌어 `terraform apply`가 Job을 교체·재실행합니다. terraform은 완료를 기다리지 않으므로
+  (`wait_for_completion = false`) 직접 확인하세요:
+  ```bash
+  kubectl --context fsi-demo-cluster -n claude-code get jobs | grep clickhouse-schema-init
+  kubectl --context fsi-demo-cluster -n claude-code wait --for=condition=complete \
+    job/clickhouse-schema-init-<hash> --timeout=300s
+  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
+    -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
+  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
+    -- clickhouse-client -q "SELECT table, command, is_done FROM system.mutations WHERE is_done = 0"
+  ```
+  실제 확인은 `SHOW CREATE TABLE`입니다 — Job이 Complete여도 모든 문장이 적용됐다는 보장은
+  아닙니다(롤업 `TTL`이 수 주간 빠져 있었는데 Job은 계속 `Complete`였습니다. 파일이 바뀐 뒤에도
+  Job이 재실행되지 않았기 때문입니다).

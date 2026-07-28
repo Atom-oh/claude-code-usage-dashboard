@@ -130,16 +130,33 @@ LIMIT 50;
 
 
 -- 【패널 9】활성 사용시간 (adoption 지표, 그룹별 시계열)
-SELECT
-    $__timeInterval(TimeUnix) AS t,
-    ExperimentGroup,
-    sum(Value) AS active_seconds
-FROM claude_code.otel_metrics_gauge
-WHERE MetricName = 'claude_code.active_time.total'
-  AND $__timeFilter(TimeUnix)
+-- active_time.total은 이름과 달리 gauge가 아니라 sum(counter) 테이블로 들어온다
+-- (실측 2026-07-06, dashboard/server/queries.js:597) — 예전 패널은 otel_metrics_gauge를 읽어
+-- 항상 빈 결과였다. 누적 카운터라 sum(Value)는 과대집계이므로 시리즈(SeriesKey)·세션 단위
+-- 경계 diff로 버킷별 증가량을 만든다(대시보드 incBucketed와 같은 규칙).
+SELECT t, ExperimentGroup, sum(inc) AS active_seconds
+FROM (
+    SELECT t, ExperimentGroup,
+        if(temp = 2,
+           greatest(cum - lagInFrame(cum, 1, 0) OVER (
+               PARTITION BY sk, SessionId, temp, ExperimentGroup ORDER BY t
+           ), 0),
+           cum) AS inc
+    FROM (
+        SELECT $__timeInterval(TimeUnix) AS t,
+               SeriesKey AS sk, SessionId, AggregationTemporality AS temp, ExperimentGroup,
+               if(AggregationTemporality = 2, max(Value), sum(Value)) AS cum
+        FROM claude_code.otel_metrics_sum
+        WHERE MetricName = 'claude_code.active_time.total'
+          AND $__timeFilter(TimeUnix)
+        GROUP BY t, sk, SessionId, temp, ExperimentGroup
+    )
+)
 GROUP BY t, ExperimentGroup
 ORDER BY t;
--- active_time이 sum 계열로 들어오면 위 테이블명을 otel_metrics_sum 으로 교체.
+-- 대시보드(queries.js)와 다른 점: 첫 버킷의 baseline을 조회 구간 이전 원본에서 끌어오는
+-- stitch가 없어서, 구간 시작 전에 시작된 세션의 첫 버킷이 그 세션 누적값만큼 과대집계된다.
+-- 패널 용도(추이 비교)에는 충분하고 정확한 총량은 대시보드를 쓴다.
 
 
 -- 【패널 10】유저별 채택 편차 (그룹 내 소수가 사용량 독점하는지)

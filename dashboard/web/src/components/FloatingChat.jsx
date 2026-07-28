@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MessageCircle, Send, X } from "lucide-react";
 import { cn } from "../cn.js";
-import { useChatStream } from "../useChatStream.js";
+import { useChatStream, useStickToBottom } from "../useChatStream.js";
+import { ChatTrace } from "./ChatTrace.jsx";
 
 // Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/status/done/error)를 읽는
 // 공용 로직은 useChatStream.js에 있다 — Analytics 탭도 같은 훅을 쓴다.
@@ -17,12 +18,8 @@ const SUGGESTIONS = [
 export function FloatingChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
-  const { msgs, busy, status, ask, stop: stopStream } = useChatStream();
-  const bottomRef = useRef(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, status]);
+  const { msgs, busy, status, trace, ask, stop: stopStream } = useChatStream();
+  const { containerRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
 
   // 챗을 닫으면 진행 중인 스트림도 취소한다(대화 내용은 유지 — useChatStream 참고).
   const stop = () => {
@@ -49,7 +46,7 @@ export function FloatingChat() {
               <X size={16} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
             {msgs.length === 0 && (
               <div className="flex flex-col gap-2">
                 <div className="text-[11px] uppercase tracking-[0.04em] text-ink-400">이렇게 물어보세요</div>
@@ -82,8 +79,10 @@ export function FloatingChat() {
                 </div>
               );
             })}
+            {/* key=단조 증가 턴 번호(trace.turn) — 새 질문마다 리마운트해서 접힘 상태로 되돌린다(이전 trace를
+                펼쳐둔 채 다음 질문을 보내면 기본 접힘 의도와 달리 펼쳐진 채 나타난다). */}
+            <ChatTrace key={trace.turn} thinking={trace.thinking} sqls={trace.sqls} />
             {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
-            <div ref={bottomRef} />
           </div>
           <form
             onSubmit={(e) => {

@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Send } from "lucide-react";
 import { cn } from "../cn.js";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { Card } from "../components/Card.jsx";
-import { useChatStream } from "../useChatStream.js";
+import { useChatStream, useStickToBottom } from "../useChatStream.js";
+import { ChatTrace } from "../components/ChatTrace.jsx";
 import { useRange } from "../RangeContext.jsx";
 
 // 카테고리별 미리 준비된 분석 질문 — 클릭하면 그대로 /api/chat 에이전트(chat.js의 run_sql
@@ -46,13 +47,10 @@ const CATEGORIES = [
 export default function Analytics() {
   const { days } = useRange();
   const [input, setInput] = useState("");
-  const { msgs, busy, status, ask } = useChatStream();
-  const bottomRef = useRef(null);
+  const { msgs, busy, status, trace, ask } = useChatStream();
   const started = msgs.length > 0;
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, status]);
+  const { containerRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
 
   const submit = (text) => {
     if (!text.trim() || busy) return;
@@ -100,12 +98,13 @@ export default function Analytics() {
 
         {started && (
           <Card padded={false} className="flex flex-col">
-            <div className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
+            <div ref={containerRef} onScroll={onScroll} className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
               {msgs.map((m, i) => {
                 // 첫 토큰 도착 전 빈 assistant placeholder는 진행 중이 아니면 렌더하지 않는다.
                 if (!m.content && !(busy && i === msgs.length - 1)) return null;
-                // 서버가 인증 미설정으로 503을 주면(dashboard/server/index.js) 안내 문구로 대체.
-                const authDisabled = m.error && /503$/.test(m.content);
+                // useChatStream이 비-2xx 응답의 JSON body.error를 그대로 err.message로 쓰므로
+                // (index.js/chat.js가 이미 사용자용 한국어 문구를 준다) 여기서 상태코드로 문구를
+                // 되짚어 재구성할 필요가 없다.
                 return (
                   <div
                     key={i}
@@ -118,8 +117,6 @@ export default function Analytics() {
                   >
                     {m.role === "user" ? (
                       m.content
-                    ) : authDisabled ? (
-                      "챗이 비활성화되어 있습니다 — 관리자가 BASIC_AUTH를 설정해야 사용할 수 있습니다."
                     ) : m.content ? (
                       <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
                     ) : (
@@ -128,8 +125,10 @@ export default function Analytics() {
                   </div>
                 );
               })}
+              {/* key=단조 증가 턴 번호(trace.turn) — 새 질문마다 리마운트해서 접힘 상태로 되돌린다(이전 trace를
+                  펼쳐둔 채 다음 질문을 보내면 기본 접힘 의도와 달리 펼쳐진 채 나타난다). */}
+              <ChatTrace key={trace.turn} thinking={trace.thinking} sqls={trace.sqls} />
               {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
-              <div ref={bottomRef} />
             </div>
             <form
               onSubmit={(e) => {
