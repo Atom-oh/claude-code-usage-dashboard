@@ -119,12 +119,15 @@ kubectl --context fsi-demo-cluster -n claude-code rollout undo deployment/dashbo
 kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard
 ```
 Data recovery (last resort — corrupted/dropped tables): daily backups run at 03:00 KST
-(`clickhouse-backup` CronJob) to `Disk('cold_s3', 'backup/YYYY-MM-DD')`. Restore with the
-`otel_writer` account:
+(`clickhouse-backup` CronJob) to `S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD')`
+(same bucket, IRSA credentials — no extra params needed from inside the cluster). Restore with
+the `otel_writer` account:
 ```sql
-RESTORE DATABASE claude_code FROM Disk('cold_s3', 'backup/YYYY-MM-DD')
+RESTORE DATABASE claude_code FROM S3('https://<bucket>.s3.<region>.amazonaws.com/backup/YYYY-MM-DD')
 ```
-Restoring overwrites current data — confirm the backup date covers what you need first.
+Restoring overwrites current data — confirm the backup date covers what you need first. The
+30-day lifecycle on `backup/` (`infra/s3.tf`) means dates older than that are gone — for
+anything further back, see the permanent archive below.
 
 Permanent archive before account teardown (e.g. workshop ending): see
 [`archive-clickhouse.md`](archive-clickhouse.md).
@@ -250,11 +253,14 @@ kubectl --context fsi-demo-cluster -n claude-code rollout undo deployment/dashbo
 kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard
 ```
 데이터 복구 (최후 수단 — 테이블 손상/삭제 시): 매일 03:00 KST에 `clickhouse-backup` CronJob이
-`Disk('cold_s3', 'backup/YYYY-MM-DD')`로 백업합니다. `otel_writer` 계정으로 복원합니다:
+`S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD')`로 백업합니다(같은 버킷, IRSA
+자격증명 — 클러스터 안에서는 추가 파라미터 불필요). `otel_writer` 계정으로 복원합니다:
 ```sql
-RESTORE DATABASE claude_code FROM Disk('cold_s3', 'backup/YYYY-MM-DD')
+RESTORE DATABASE claude_code FROM S3('https://<버킷>.s3.<리전>.amazonaws.com/backup/YYYY-MM-DD')
 ```
 복원은 현재 데이터를 덮어씁니다 — 백업 날짜가 필요한 범위를 포함하는지 먼저 확인합니다.
+`backup/`의 30일 라이프사이클(`infra/s3.tf`)로 그보다 오래된 날짜는 이미 사라졌습니다 — 더
+과거가 필요하면 아래 영구 아카이브를 참조하세요.
 
 계정 삭제(워크샵 종료 등) 전 영구 아카이브는 [`archive-clickhouse.md`](archive-clickhouse.md) 참조.
 

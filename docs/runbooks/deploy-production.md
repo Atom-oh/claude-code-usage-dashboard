@@ -68,6 +68,11 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
 
 ## Notes
 - Last verified: 2026-07-08
+- If the pending `terraform apply` includes `infra/s3.tf`'s ClickHouse backup lifecycle change,
+  do it **after** running `scripts/archive-clickhouse.sh` and confirming it passes verification —
+  see [`archive-clickhouse.md`](archive-clickhouse.md#when-to-use). Applying the corrected
+  lifecycle first can let backups older than 30 days expire before they've been copied anywhere
+  permanent.
 - Local verification against the live ClickHouse cluster: port-forward
   `svc/clickhouse-cc-ab` (port 8123) and the reader credentials from k8s Secret
   `clickhouse-reader`, then run `dashboard/server` locally against it before deploying —
@@ -138,6 +143,11 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 
 ## 참고
 - 최종 검증일: 2026-07-08
+- 적용 대기 중인 `terraform apply`에 `infra/s3.tf`의 ClickHouse 백업 라이프사이클 변경이
+  포함되어 있다면, `scripts/archive-clickhouse.sh`를 먼저 실행해 검증까지 통과시킨 **다음에**
+  적용하세요 — [`archive-clickhouse.md`](archive-clickhouse.md#사용-시점) 참조. 수정된
+  라이프사이클을 먼저 적용하면 아직 영구 이관되지 않은 30일 초과 백업이 먼저 만료될 수
+  있습니다.
 - 실 ClickHouse 클러스터 대상 로컬 검증: `svc/clickhouse-cc-ab`(8123 포트)를 port-forward하고
   k8s Secret `clickhouse-reader`의 리더 자격증명을 받아 `dashboard/server`를 로컬에서 그
   클러스터에 붙여 실행 — 실 ClickHouse에 안 붙는 유닛 테스트가 놓친 쿼리 버그를 이 방식으로

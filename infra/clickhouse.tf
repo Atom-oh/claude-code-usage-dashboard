@@ -32,6 +32,13 @@ locals {
   ch_toleration    = [{ key = "claude-code", operator = "Equal", value = "true", effect = "NoSchedule" }]
   ch_node_selector = { "node-type" = "claude-code" }
   cold_s3_endpoint = "https://${aws_s3_bucket.clickhouse.bucket}.s3.${var.region}.amazonaws.com/cold/"
+  # 백업은 cold_s3 디스크를 재사용하지 않고 BACKUP TO S3(...)로 직접 쓴다 — 실측 확인
+  # (2026-07-27): type=s3 디스크는 논리 경로를 파드 로컬 metadata(/var/lib/clickhouse/disks/
+  # cold_s3/backup/<date>/)에만 두고 S3에는 랜덤 blob 키(cold/aaa/bzscpv...)로 저장한다.
+  # 따라서 Disk('cold_s3','backup/X') 백업은 S3에 backup/ 경로를 아예 만들지 않고(실측:
+  # cold/backup/ 객체 0개), PVC 없이는 blob만 복사해도 복원이 불가능하다. S3(...) 방식은
+  # .backup 매니페스트 + data/<db>/<table>/... 논리 경로를 그대로 써서 자기완결적이다.
+  backup_s3_prefix = "https://${aws_s3_bucket.clickhouse.bucket}.s3.${var.region}.amazonaws.com/backup"
   # Altinity operator의 서비스 네이밍 규칙(clickhouse-<CHI 이름>) — CHI를 apply한 뒤 실측 확인 필요
   # (kubectl -n claude-code get svc). 다르면 이 값만 고치면 된다.
   chi_service = "clickhouse-cc-ab.${var.k8s_namespace}.svc.cluster.local"
@@ -147,6 +154,10 @@ resource "kubectl_manifest" "chi" {
           XML
           # BACKUP TO Disk('cold_s3', ...)를 쓰려면 이 allowlist가 필요 — 없으면
           # INVALID_CONFIG_PARAMETER로 거부된다 (실측: 백업 CronJob 수동 실행 중 발견).
+          # 일별 CronJob과 archive-clickhouse.sh는 이제 BACKUP TO S3(...)를 쓰므로(위
+          # backup_s3_prefix 주석 참조) 이 allowlist에 더 의존하지 않는다 — Disk 방식은 S3
+          # 상에 논리 경로가 생기지 않는다는 게 실측으로 확인된 문제라 자동화에서 제외됐다.
+          # 다만 임시 수동 점검용 `BACKUP TO Disk('cold_s3', ...)`를 계속 쓸 수 있게 남겨둔다.
           "config.d/backups.xml" = <<-XML
             <clickhouse>
               <backups>
@@ -247,7 +258,8 @@ resource "kubernetes_job_v1" "schema_init" {
   depends_on          = [kubectl_manifest.chi]
 }
 
-# 일별 백업 — ClickHouse 네이티브 BACKUP, cold_s3 disk(IRSA 자격증명) 재사용.
+# 일별 백업 — ClickHouse 네이티브 BACKUP을 S3로 직접(자기완결적 아카이브, locals 주석 참조).
+# 자격증명은 cold_s3와 동일하게 파드의 IRSA(use_environment_credentials)를 쓴다.
 resource "kubernetes_cron_job_v1" "backup" {
   metadata {
     name      = "clickhouse-backup"
@@ -274,7 +286,7 @@ resource "kubernetes_cron_job_v1" "backup" {
               image = "clickhouse/clickhouse-server:24.8"
               command = ["sh", "-c", <<-EOT
                 clickhouse-client --host ${local.chi_service} --user otel_writer --password "$CH_PASSWORD" \
-                  --query "BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/$(date +%Y-%m-%d)')"
+                  --query "BACKUP DATABASE claude_code TO S3('${local.backup_s3_prefix}/$(date +%Y-%m-%d)')"
               EOT
               ]
               env {

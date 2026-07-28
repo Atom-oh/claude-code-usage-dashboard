@@ -4,12 +4,16 @@ set -euo pipefail
 # =============================================================================
 # 워크샵 계정 소멸 전 ClickHouse 영구 아카이브 (workshop 계정 -> 내 계정 S3)
 #
-# 배경: 일별 백업(infra/clickhouse.tf의 clickhouse-backup CronJob)은 워크샵 계정 버킷
-# cc-ab-clickhouse-<acct>-<region>의 cold/backup/ 아래에 쓰이고(cold_s3 디스크 endpoint가
-# 이미 .../cold/로 끝나므로 Disk('cold_s3','backup/...')의 실제 S3 경로는 cold/backup/...),
-# 그 프리픽스엔 30일 만료 라이프사이클이 걸려 있다(infra/s3.tf). 워크샵 계정이 삭제되면
-# 버킷도 백업도 같이 사라진다 — 이 스크립트로 마지막 스냅샷을 하나 더 뜨고 기존 백업 전체를
-# 내 계정 버킷으로 옮긴다.
+# 배경: 일별 백업(infra/clickhouse.tf의 clickhouse-backup CronJob)은 BACKUP TO S3(...)로
+# 워크샵 계정 버킷 cc-ab-clickhouse-<acct>-<region>의 backup/ 아래에 쓰이고, 그 프리픽스엔
+# 30일 만료 라이프사이클이 걸려 있다(infra/s3.tf). 워크샵 계정이 삭제되면 버킷도 백업도 같이
+# 사라진다 — 이 스크립트로 마지막 스냅샷을 하나 더 뜨고 기존 백업 전체를 내 계정 버킷으로 옮긴다.
+#
+# 왜 Disk('cold_s3', ...)가 아니라 S3(...)인가 — 실측 확인(2026-07-27): type=s3 디스크는 논리
+# 경로를 파드 로컬 metadata에만 두고 S3에는 랜덤 blob 키(cold/aaa/bzscpv...)로 저장한다.
+# 그 방식으로 뜬 백업은 S3에 backup/ 경로가 생기지 않아(cold/backup/ 객체 0개) 옮길 대상이
+# 없고, blob만 복사해도 PVC의 metadata 없이는 복원이 불가능하다. S3(...)는 .backup 매니페스트
+# 와 data/<db>/<table>/... 논리 경로를 그대로 써서 버킷만 있으면 복원된다.
 #
 # 이 아카이브는 append-only다: 대상 측에 --delete를 쓰지 않고, 검증도 "지금 이 실행이 올린
 # 파일들이 실제로 대상에 있는가"만 확인한다(라이브 소스 전체와의 정확일치는 요구하지 않음) —
@@ -37,7 +41,7 @@ set -euo pipefail
 #   KUBE_CONTEXT       kubectl context (기본 fsi-demo-cluster)
 #   NAMESPACE          k8s namespace (기본 claude-code)
 #   REGION             워크샵 버킷 리전 (기본 ap-northeast-2, infra/variables.tf 기본값)
-#   SKIP_BACKUP=1      새 BACKUP을 안 돌리고 기존 cold/backup/ 프리픽스만 이관 (재실행/사전 점검용)
+#   SKIP_BACKUP=1      새 BACKUP을 안 돌리고 기존 backup/ 프리픽스만 이관 (재실행/사전 점검용)
 #
 # 필요 RBAC (KUBE_CONTEXT/NAMESPACE): pods 조회, 특정 파드 exec, Secret clickhouse-writer get.
 # 아카이브는 append-only(--delete 안 씀)이므로 대상 측 자격증명에 s3:DeleteObject는 필요 없다.
@@ -47,6 +51,7 @@ WORKSHOP_PROFILE="${WORKSHOP_PROFILE:-workshop}"
 ARCHIVE_PROFILE="${ARCHIVE_PROFILE:-}"
 ARCHIVE_BUCKET="${ARCHIVE_BUCKET:?ARCHIVE_BUCKET env var required (destination bucket in your own account)}"
 ARCHIVE_PREFIX="${ARCHIVE_PREFIX:-clickhouse-ab-workshop}"
+ARCHIVE_PREFIX="${ARCHIVE_PREFIX%/}"   # trailing slash를 붙여 넘겨도 s3://.../prefix//... 가 되지 않게
 LOCAL_DIR_ROOT="${LOCAL_DIR:-./ch-archive}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-fsi-demo-cluster}"
 NAMESPACE="${NAMESPACE:-claude-code}"
@@ -69,9 +74,13 @@ archive_aws() {
 # CLICKHOUSE_PASSWORD env를 자동 인식하므로 --password 플래그는 쓰지 않는다: 같은 커맨드
 # 라인에서 `VAR=$(cmd) other --flag "$VAR"` 형태로 쓰면 그 $VAR는 프리픽스 대입이 적용되기
 # 전에 확장되어 항상 빈 문자열이 되고 인증이 실패한다.
+#
+# SQL도 원격 `sh -c` 문자열에 보간하지 않는다: 비밀번호 다음 줄부터를 쿼리로 읽어
+# --queries-file /dev/stdin으로 넘긴다. 테이블명처럼 서버(system.replicas)에서 받아온 값이
+# 쿼리에 들어가도 파드 안에서 shell로 재해석되지 않는다.
 ch_query() {
-  printf '%s' "$CH_PASSWORD" | kube exec -i "$POD" -- sh -c \
-    "CLICKHOUSE_PASSWORD=\$(cat) clickhouse-client --user otel_writer --query \"$1\""
+  printf '%s\n%s' "$CH_PASSWORD" "$1" | kube exec -i "$POD" -- sh -c \
+    'IFS= read -r pw; CLICKHOUSE_PASSWORD=$pw exec clickhouse-client --user otel_writer --queries-file /dev/stdin'
 }
 
 echo "== 1. 자격증명 확인 =="
@@ -90,11 +99,28 @@ echo "archive bucket owner 확인됨: $ARCHIVE_BUCKET (account $ARCHIVE_ACCOUNT)
 # infra/s3.tf의 네이밍 규칙(cc-ab-clickhouse-<acct>-<region>)과 동일 — 버킷 하나뿐이라
 # terraform output을 안 읽어도 account_id만 있으면 이름을 재구성할 수 있다.
 SRC_BUCKET="cc-ab-clickhouse-${WORKSHOP_ACCOUNT}-${REGION}"
-# cold_s3 디스크의 endpoint 자체가 이미 .../cold/ 로 끝난다(infra/clickhouse.tf) — 따라서
-# Disk('cold_s3', 'backup/...')의 'backup/'은 그 디스크 루트(=S3 cold/ 밑) 기준 상대 경로이고,
-# 실제 S3 객체는 cold/backup/ 아래에 생성된다.
-SRC_PREFIX="cold/backup"
+# BACKUP TO S3('.../backup/<date>')가 쓰는 버킷 루트의 backup/ (infra/clickhouse.tf의
+# backup_s3_prefix). cold/ 아래는 건드리지 않는다 — 랜덤 blob 키뿐이라 옮겨도 복원 불가.
+SRC_PREFIX="backup"
 echo "source bucket: $SRC_BUCKET (prefix: ${SRC_PREFIX}/)"
+
+# 소스 쪽도 동일하게 소유자를 못 박는다 — 워크샵 계정 ID로 이름을 재구성하므로 정상적으로는
+# 맞지만, REGION이 틀리면 남의 계정의 같은 이름 버킷을 읽을 수 있다.
+aws s3api head-bucket --bucket "$SRC_BUCKET" --expected-bucket-owner "$WORKSHOP_ACCOUNT" --profile "$WORKSHOP_PROFILE"
+
+# 여기 올라가는 데이터는 UserEmail 등 PII를 담고, 소스 클러스터의 90/180일 TTL과 달리 무기한
+# 남는다. 소스 버킷엔 Public Access Block이 걸려 있으므로(infra/s3.tf) 대상도 최소 동일해야
+# 한다 — 4개 항목이 모두 true가 아니면 업로드 전에 멈춘다(fail-closed).
+PAB=$(archive_aws s3api get-public-access-block --bucket "$ARCHIVE_BUCKET" \
+  --query 'PublicAccessBlockConfiguration.[BlockPublicAcls,IgnorePublicAcls,BlockPublicPolicy,RestrictPublicBuckets]' \
+  --output text 2>/dev/null || true)
+if [ "$PAB" != "$(printf 'True\tTrue\tTrue\tTrue')" ]; then
+  echo "중단: $ARCHIVE_BUCKET 의 Public Access Block이 완전하지 않습니다 (현재: ${PAB:-설정 없음})." >&2
+  echo "  aws s3api put-public-access-block --bucket $ARCHIVE_BUCKET \\" >&2
+  echo "    --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" >&2
+  exit 1
+fi
+echo "archive bucket public access block 확인됨"
 
 if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   echo "== 2. 최종 BACKUP 생성 =="
@@ -104,6 +130,17 @@ if [ "${SKIP_BACKUP:-0}" != "1" ]; then
     exit 1
   fi
   CH_PASSWORD=$(kube get secret clickhouse-writer -o jsonpath='{.data.CH_PASSWORD}' | base64 -d)
+
+  # ponytail: 단일 pod(head -1)만 보는 건 shardsCount=1(infra/clickhouse.tf) 전제다 —
+  # shard가 늘면 이 pod가 전체 데이터를 갖고 있지 않아 BACKUP이 조용히 일부만 백업한다.
+  # 실측 확인(2026-07-27): uniqExact(shard_num)=1. 늘어나면 pod별 반복 또는
+  # BACKUP ... ON CLUSTER로 재설계 필요 — 여기서는 미리 죽는 쪽을 선택한다.
+  SHARD_COUNT=$(ch_query "SELECT uniqExact(shard_num) FROM system.clusters WHERE cluster = 'replicated'")
+  if [ "$SHARD_COUNT" != "1" ]; then
+    echo "중단: cluster 'replicated'의 shard 수가 ${SHARD_COUNT}입니다 — 이 스크립트는 단일" >&2
+    echo "  shard(head -1로 고른 pod 하나)만 백업합니다. 다중 shard 지원이 필요합니다." >&2
+    exit 1
+  fi
 
   # 마지막이자 되돌릴 수 없는 스냅샷이므로 이 파드가 replication lag 중이면 안 된다 —
   # 어떤 테이블이 replicated인지 하드코딩하지 않고 system.replicas에서 직접 목록을 얻어
@@ -116,7 +153,7 @@ if [ "${SKIP_BACKUP:-0}" != "1" ]; then
   done
 
   BACKUP_TAG="final-$(date -u +%Y%m%dT%H%M%SZ)"
-  ch_query "BACKUP DATABASE claude_code TO Disk('cold_s3', 'backup/${BACKUP_TAG}')"
+  ch_query "BACKUP DATABASE claude_code TO S3('https://${SRC_BUCKET}.s3.${REGION}.amazonaws.com/${SRC_PREFIX}/${BACKUP_TAG}')"
   echo "backup done: ${SRC_PREFIX}/${BACKUP_TAG}"
 else
   echo "== 2. SKIP_BACKUP=1 — 새 백업 생성 스킵, 기존 ${SRC_PREFIX}/ 프리픽스만 이관 =="
@@ -128,7 +165,14 @@ echo "== 3. 디스크 여유 공간 확인 =="
 # 않는다: infra/s3.tf의 lifecycle prefix가 실제 백업 경로와 달라 오랫동안 아무것도 만료되지
 # 않고 누적됐을 수 있어(이번 변경에서 함께 수정) 실제 크기를 재는 쪽이 안전하다.
 mkdir -p "$LOCAL_DIR_ROOT"
-SRC_BYTES=$(aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/${SRC_PREFIX}/" --profile "$WORKSHOP_PROFILE" | grep "Total Size" | awk '{print $NF}')
+# 프리픽스가 비어 있으면 `grep "Total Size"`가 실패해 set -e로 이유 없이 죽는다 — 명시적으로 잡는다.
+SRC_LS=$(aws s3 ls --recursive --summarize "s3://${SRC_BUCKET}/${SRC_PREFIX}/" --profile "$WORKSHOP_PROFILE")
+if ! SRC_BYTES=$(printf '%s' "$SRC_LS" | grep "Total Size" | awk '{print $NF}') || [ -z "$SRC_BYTES" ]; then
+  echo "중단: s3://${SRC_BUCKET}/${SRC_PREFIX}/ 에 객체가 없습니다." >&2
+  echo "  일별 백업 CronJob이 BACKUP TO S3(...) 방식으로 갱신됐는지(infra/clickhouse.tf) 확인하세요 —" >&2
+  echo "  구버전 Disk('cold_s3', ...) 백업은 S3에 backup/ 경로를 만들지 않습니다." >&2
+  exit 1
+fi
 FREE_BYTES=$(df -kP "$LOCAL_DIR_ROOT" | awk 'NR==2 {print $4*1024}')
 echo "source size: ${SRC_BYTES:-0} bytes, local free space: ${FREE_BYTES:-unknown} bytes"
 if [ -n "$FREE_BYTES" ] && [ "${SRC_BYTES:-0}" -gt "$FREE_BYTES" ]; then
@@ -163,7 +207,7 @@ cp "$(dirname "$0")/../grafana-ab-queries.sql" "${LOCAL_DIR}/schema/"
 echo "== 6. 로컬 -> 내 계정 업로드 =="
 # --delete는 쓰지 않는다: 아카이브는 append-only다. 대상 버킷 소유자는 1단계에서 이미
 # head-bucket으로 확인했으므로 여기서는 반복하지 않는다(sync는 이 플래그를 지원하지 않음).
-archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/"
+archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --sse AES256
 
 echo "== 7. 검증 =="
 # "라이브 소스 전체 == 아카이브 전체" 정확일치는 append-only 설계와 모순된다: 소스의 일별
@@ -171,7 +215,7 @@ echo "== 7. 검증 =="
 # 반대로 검증 타이밍에 소스가 갱신되면(TOCTOU) 방금 올린 것과 달라져도 오탐이 난다.
 # 대신 "이번에 로컬로 받아온 파일들이 실제로 대상에 다 있는가"만 확인한다 — 방금 실행한
 # sync를 --dryrun으로 다시 돌려 보류 작업이 남았는지 보는 것으로 충분하다.
-PENDING=$(archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --dryrun)
+PENDING=$(archive_aws s3 sync "${LOCAL_DIR}/" "s3://${ARCHIVE_BUCKET}/${ARCHIVE_PREFIX}/" --sse AES256 --dryrun)
 if [ -n "$PENDING" ]; then
   echo "검증 실패: 업로드 후에도 대상과 차이가 남아 있습니다:" >&2
   echo "$PENDING" >&2

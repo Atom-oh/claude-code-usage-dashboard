@@ -42,9 +42,10 @@ Kubernetes Operator, ECR, S3, and DNS/CDN for the dashboard's public endpoint.
 - Related modules: [infra/CLAUDE.md](../../infra/CLAUDE.md)
 - Related ADRs: (none yet)
 - Related runbooks: [docs/runbooks/deploy-production.md](../runbooks/deploy-production.md),
-  [docs/runbooks/archive-clickhouse.md](../runbooks/archive-clickhouse.md) (the only script in
-  the repo using a named AWS CLI profile rather than the ambient credential chain or IRSA used
-  everywhere else in `infra/`)
+  [docs/runbooks/archive-clickhouse.md](../runbooks/archive-clickhouse.md) — its
+  `scripts/archive-clickhouse.sh` is the first script in the repo (not part of `infra/` itself)
+  to use a named AWS CLI profile, for the workshop side only — the archive destination still
+  uses the ambient credential chain or IRSA, same as everywhere else
 
 <a id="korean"></a>
 ## 한국어
@@ -85,5 +86,7 @@ Kubernetes Operator, ECR, S3, and DNS/CDN for the dashboard's public endpoint.
 - 관련 모듈: [infra/CLAUDE.md](../../infra/CLAUDE.md)
 - 관련 ADR: (아직 없음)
 - 관련 런북: [docs/runbooks/deploy-production.md](../runbooks/deploy-production.md),
-  [docs/runbooks/archive-clickhouse.md](../runbooks/archive-clickhouse.md) (`infra/`에서 유일하게
-  앰비언트 자격증명 체인이나 IRSA 대신 named AWS CLI 프로필을 쓰는 스크립트)
+  [docs/runbooks/archive-clickhouse.md](../runbooks/archive-clickhouse.md) — 그 안의
+  `scripts/archive-clickhouse.sh`가 이 레포에서 (`infra/` 자체가 아니라) 처음으로 named AWS
+  CLI 프로필을 쓰는 스크립트이며, 워크샵 쪽에만 해당합니다 — 아카이브 대상 쪽은 여전히
+  다른 곳과 동일하게 앰비언트 자격증명 체인이나 IRSA를 씁니다
