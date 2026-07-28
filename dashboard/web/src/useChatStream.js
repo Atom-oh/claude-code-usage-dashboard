@@ -63,6 +63,15 @@ export function useStickToBottom(deps, resetKey) {
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; // 하단 80px 이내면 따라간다
   };
 
+  // 억제 창(autoScrollUntil)은 델타마다 700ms씩 재연장되는데 thinking 델타는 그보다 촘촘히
+  // 오므로, 스트리밍 내내 창이 닫히지 않아 onScroll이 사용자 스크롤을 전부 무시했다 — 즉 훅의
+  // 목적("위로 올려 읽는 중이면 따라가지 않는다")이 정작 스트리밍 중에 무력화됐다(리뷰에서
+  // MAJOR로 확인, 3개 모델 독립 지적). 자동 스크롤은 wheel/touch 이벤트를 만들지 않으므로,
+  // 사용자 입력이 오면 창을 즉시 무효화해 뒤따르는 scroll 이벤트가 실제 위치로 판단하게 한다.
+  const onUserScroll = () => {
+    autoScrollUntil.current = 0;
+  };
+
   useEffect(() => {
     stick.current = true;
   }, [resetKey]);
@@ -73,7 +82,7 @@ export function useStickToBottom(deps, resetKey) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, deps);
 
-  return { containerRef, bottomRef, onScroll };
+  return { containerRef, bottomRef, onScroll, onUserScroll };
 }
 
 export function useChatStream() {

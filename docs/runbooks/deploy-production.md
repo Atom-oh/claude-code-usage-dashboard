@@ -86,6 +86,8 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
     job/clickhouse-schema-init-<hash> --timeout=300s
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
     -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
+  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
+    -- clickhouse-client -q "SELECT table, command, is_done FROM system.mutations WHERE is_done = 0"
   ```
   The `SHOW CREATE TABLE` is the actual check — a Job that completed doesn't prove every
   statement applied (e.g. the rollup `TTL` clause was missing for weeks while the Job showed
@@ -173,6 +175,8 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
     job/clickhouse-schema-init-<hash> --timeout=300s
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
     -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
+  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
+    -- clickhouse-client -q "SELECT table, command, is_done FROM system.mutations WHERE is_done = 0"
   ```
   실제 확인은 `SHOW CREATE TABLE`입니다 — Job이 Complete여도 모든 문장이 적용됐다는 보장은
   아닙니다(롤업 `TTL`이 수 주간 빠져 있었는데 Job은 계속 `Complete`였습니다. 파일이 바뀐 뒤에도

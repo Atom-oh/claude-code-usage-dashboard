@@ -51,10 +51,11 @@ gate, a read-only API by construction, and a sandboxed SQL tool for the Bedrock 
   and to any proxy logging the SSE body. This reverses an earlier decision to withhold the SQL;
   it was taken deliberately to make long turns legible, and it is a real exposure surface to
   weigh if the auth boundary ever becomes multi-tenant.
-- **The same applies to the streamed reasoning summary** -- `send("thinking", ...)` forwards the
-  model's summarized reasoning verbatim, with no masking pass at all. If the model restates a
-  `SessionId` or an email it read from a tool result, that text reaches the client unmasked.
-  Same trust boundary and same deliberate trade-off as the SQL trace; revisit both together.
+- **The same largely applies to the streamed reasoning summary** -- `send("thinking", ...)` runs
+  `maskEmailText()` over each delta, but that is best-effort only: the regex sees one delta at a
+  time, so an email split across a chunk boundary passes through unmasked. `SessionId` gets no
+  masking at all. Same trust boundary and same deliberate trade-off as the SQL trace; revisit
+  both together (a server-side accumulating buffer would close the chunk-boundary gap).
 - **Emails are masked before they reach the server log too** -- a ClickHouse parse error echoes
   the offending SQL, so `err.message`/`err.stack` can carry a `UserEmail` literal, and the runbook
   tells operators to grep those pod logs. `maskEmailText()` is applied before `console.error`.

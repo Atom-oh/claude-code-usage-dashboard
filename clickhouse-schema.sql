@@ -17,7 +17,7 @@ CREATE DATABASE IF NOT EXISTS claude_code;
 -- -----------------------------------------------------------------------------
 
 -- Counter/monotonic sum 계열 (session/loc/commit/pr/cost/token/decision/active_time —
--- active_time.total은 이름과 달리 gauge가 아니라 이 sum 테이블로 들어온다, queries.js:597 실측)
+-- active_time.total은 이름과 달리 gauge가 아니라 이 sum 테이블로 들어온다, queries.js의 activeTimeSeries 실측)
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
 (
     ResourceAttributes   Map(LowCardinality(String), String) CODEC(ZSTD(1)),
@@ -170,7 +170,7 @@ GROUP BY hour, MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporali
          Model, TokenType, Decision, SkillName, ToolName;
 
 -- Gauge 계열 — exporter가 gauge 타입 메트릭을 받으면 쓰는 테이블. Claude Code가 실제로 보내는
--- 메트릭은 전부 counter(sum)로 들어오고(active_time.total 포함 — queries.js:597 실측), 이 테이블은
+-- 메트릭은 전부 counter(sum)로 들어오고(active_time.total 포함 — queries.js의 activeTimeSeries 실측), 이 테이블은
 -- 사실상 비어 있다. otel_metrics_sum과 동일하게 exporter 기본 부기 컬럼이
 -- 실제로 존재한다(실측 2026-07-27).
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge

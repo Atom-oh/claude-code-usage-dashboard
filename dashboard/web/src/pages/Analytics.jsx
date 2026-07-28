@@ -50,7 +50,7 @@ export default function Analytics() {
   const { msgs, busy, status, trace, ask } = useChatStream();
   const started = msgs.length > 0;
 
-  const { containerRef, bottomRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
+  const { containerRef, bottomRef, onScroll, onUserScroll } = useStickToBottom([msgs, status, trace], trace.turn);
 
   const submit = (text) => {
     if (!text.trim() || busy) return;
@@ -98,7 +98,7 @@ export default function Analytics() {
 
         {started && (
           <Card padded={false} className="flex flex-col">
-            <div ref={containerRef} onScroll={onScroll} className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
+            <div ref={containerRef} onScroll={onScroll} onWheel={onUserScroll} onTouchMove={onUserScroll} className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
               {msgs.map((m, i) => {
                 // 첫 토큰 도착 전 빈 assistant placeholder는 진행 중이 아니면 렌더하지 않는다.
                 if (!m.content && !(busy && i === msgs.length - 1)) return null;

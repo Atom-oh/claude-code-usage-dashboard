@@ -1,6 +1,8 @@
 -- ../../clickhouse-schema.sql를 CHI(replicated 클러스터, 2레플리카)용으로 변환한 버전.
--- 컬럼/MATERIALIZED 정의·ENGINE·TTL 모두 원본(참조 사본)과 동일하다 — OTel exporter 기본
--- 부기 컬럼 포함(아래 각 테이블 주석 참고). 남은 차이는 ON CLUSTER 절과 ZooKeeper 경로뿐이다.
+-- 컬럼/MATERIALIZED 정의는 원본(참조 사본)과 동일하다 — OTel exporter 기본 부기 컬럼 포함
+-- (아래 각 테이블 주석 참고). 다른 점: ON CLUSTER 절과 ZooKeeper 경로, MergeTree 대신
+-- ReplicatedMergeTree, 그리고 storage_policy='hot_cold'와 그에 딸린 cold 볼륨 이동 TTL
+-- (로컬 참조 사본에는 cold tier가 없어 삭제 TTL만 있다 — 삭제 시점 자체는 양쪽 동일).
 -- TTL은 테이블마다 다르다: metrics(sum/gauge/hourly)는 90일 후 S3 volume 'cold'로 이동·180일 후
 -- 삭제, otel_logs만 45일 이동·90일 삭제. sum/gauge/logs는 라이브와 일치하고(실측 2026-07-27),
 -- hourly 롤업만 라이브에 TTL이 없어 아래 ALTER로 맞춘다. cold 볼륨도 같은 계정의
