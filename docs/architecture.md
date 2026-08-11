@@ -32,6 +32,12 @@ method at runtime rather than a static experiment flag.
   storage policy (local EBS gp3 -> S3 after 45-90 days, dropped after 90-180 days). Promoted
   materialized columns (Model, TokenType, Decision, SkillName, UserEmail, SessionId, ...)
   avoid `Attributes` map lookups in every query.
+- **ClickHouse (`otel_traces`, beta, added 2026-08-11)** -- same replication/TTL pattern as
+  `otel_logs` (45d cold / 90d delete). Holds `claude_code.interaction`/`llm_request`/`tool`/
+  `tool.blocked_on_user`/`tool.execution`/`hook` spans, gated behind
+  `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` on the client. Did not exist before this date — the
+  ClickHouse exporter has `create_schema: false`, so the DDL had to be added and run against
+  the live cluster before any trace data could land.
 - **ClickHouse (`otel_metrics_sum_hourly`)** -- `ReplicatedAggregatingMergeTree` hourly rollup
   fed by a materialized view on `otel_metrics_sum`. Dashboard queries read this table instead
   of the raw one (~86x fewer rows; raw grows ~3M rows/day from 10s cumulative re-exports).
@@ -159,6 +165,12 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
   automatically (45-90d hot depending on table, dropped at 90-180d).
 - Read-only API by construction, with the one write-adjacent surface (`/api/chat`'s SQL tool)
   guarded by two independent layers (string sanitizer + ClickHouse `readonly=1`).
+- Verify Claude Code's own attribute/event documentation against live telemetry before trusting
+  it (2026-08-11) -- the public monitoring docs turned out to be missing several emitted
+  events; the schema and query changes in this sync are keyed to a measured attribute census,
+  not the docs alone. See [ADR-001](decisions/ADR-001-local-diff-over-shared-incflat-extension.md)
+  and [ADR-002](decisions/ADR-002-bedrock-identity-fallback.md) for the two non-obvious
+  trade-offs made in that sync.
 
 ## Operations
 - Deployment: see [docs/runbooks/deploy-production.md](runbooks/deploy-production.md)
@@ -192,6 +204,12 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
   hot/cold 스토리지 정책(로컬 EBS gp3 -> 45~90일 후 S3, 90~180일에 삭제). 승격된 materialized
   컬럼(Model, TokenType, Decision, SkillName, UserEmail, SessionId 등)으로 매 쿼리마다
   `Attributes` 맵 조회를 피함.
+- **ClickHouse(`otel_traces`, beta, 2026-08-11 추가)** -- `otel_logs`와 동일한 복제/TTL
+  정책(45일 cold / 90일 삭제). `claude_code.interaction`/`llm_request`/`tool`/
+  `tool.blocked_on_user`/`tool.execution`/`hook` 스팬을 담으며, 클라이언트의
+  `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`이 켜져야 데이터가 들어온다. 이 날짜 이전엔 아예
+  존재하지 않았다 — ClickHouse exporter가 `create_schema: false`라 trace 데이터가 들어오기
+  전에 DDL을 먼저 만들어 라이브 클러스터에 실행해야 했다.
 - **ClickHouse(`otel_metrics_sum_hourly`)** -- `otel_metrics_sum` 위의 materialized view가
   채우는 시간별 rollup(`ReplicatedAggregatingMergeTree`). 대시보드 쿼리는 원본 대신 이
   테이블을 읽는다(행 수 ~86x 감소; 원본은 10초 누적 재-export로 하루 ~300만 행씩 증가).
@@ -317,6 +335,12 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
   따라 hot 45~90일, 90~180일에 삭제).
 - 구조적으로 읽기 전용인 API, 쓰기에 가까운 유일한 표면(`/api/chat`의 SQL 도구)은 독립된
   2개 레이어(문자열 sanitizer + ClickHouse `readonly=1`)로 보호.
+- Claude Code 자체의 속성/이벤트 문서를 신뢰하기 전에 라이브 텔레메트리로 검증(2026-08-11) --
+  공개 모니터링 문서가 실제로 emit되는 이벤트 몇 개를 빠뜨리고 있었다. 이번 동기화의
+  스키마·쿼리 변경은 문서가 아니라 실측 attribute census를 기준으로 했다.
+  [ADR-001](decisions/ADR-001-local-diff-over-shared-incflat-extension.md),
+  [ADR-002](decisions/ADR-002-bedrock-identity-fallback.md)에 이번 동기화의 비직관적인
+  트레이드오프 2건을 기록.
 
 ## 운영
 - 배포: [docs/runbooks/deploy-production.md](runbooks/deploy-production.md) 참고

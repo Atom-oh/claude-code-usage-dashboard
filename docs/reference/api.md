@@ -7,7 +7,7 @@
 ## English
 
 ### 1. Overview
-A single Express app (`dashboard/server/index.js`) exposes ~25 read-only `GET /api/*`
+A single Express app (`dashboard/server/index.js`) exposes ~35 read-only `GET /api/*`
 endpoints backed by ClickHouse queries, plus a Bedrock-backed `/api/chat` SQL-assistant
 endpoint. All routes share one `from`/`to`/filter-parsing wrapper.
 
@@ -30,6 +30,19 @@ endpoint. All routes share one `from`/`to`/filter-parsing wrapper.
   semi-join against `otel_metrics_sum`).
 - **No auth on individual routes** -- auth is a single global Basic Auth middleware
   (`BASIC_AUTH_USER`/`PASSWORD` env vars), applied before all routes except `/healthz`.
+- **2026-08-11 telemetry-sync endpoints don't extend `incFlat`/`incBucketed`** -- the two new
+  version-cohort endpoints (`/api/integrity/version-cohort-*`) need `AppVersion` as an extra
+  grouping dimension on a cumulative-counter diff, but that shared diff engine already has
+  ~40 consumers and a long history of subtle boundary bugs (see `dashboard/server/CLAUDE.md`).
+  Rather than widen its `GROUP BY`, these two endpoints duplicate the same session-boundary
+  diff formula in a small self-contained query. Trade-off: no rollup optimization (always
+  scans `otel_metrics_sum` directly), acceptable because these are integrity-check endpoints,
+  not primary dashboard KPIs.
+- **traces-beta endpoints return `{unsupported, rows}`, not a plain array** -- `/api/productivity/
+  permission-wait` and `/api/productivity/ttft` read `otel_traces`, which is new (2026-08-11) and
+  may be empty (beta env not rolled out, or the client is below the version that emits a given
+  span type). Returning `[]` would be indistinguishable from "confirmed zero" on a KPI card,
+  so an empty result comes back as `{unsupported: true, minVersion, rows: []}` instead.
 
 ### 4. Code Pointers
 - `dashboard/server/index.js:129` -- `route()` wrapper (from/to parsing, error handling)
@@ -48,7 +61,7 @@ endpoint. All routes share one `from`/`to`/filter-parsing wrapper.
 
 ### 1. 개요
 단일 Express 앱(`dashboard/server/index.js`)이 ClickHouse 쿼리 기반의 읽기 전용
-`GET /api/*` 엔드포인트 25개 가량과, Bedrock 기반 `/api/chat` SQL 어시스턴트 엔드포인트를
+`GET /api/*` 엔드포인트 35개 가량과, Bedrock 기반 `/api/chat` SQL 어시스턴트 엔드포인트를
 제공합니다. 모든 라우트가 하나의 `from`/`to`/필터 파싱 래퍼를 공유합니다.
 
 ### 2. 구성요소
@@ -69,6 +82,18 @@ endpoint. All routes share one `from`/`to`/filter-parsing wrapper.
   모델 필터링이 `otel_metrics_sum`과의 세션 세미조인을 거칩니다).
 - **개별 라우트에 인증 없음** -- 인증은 단일 전역 Basic Auth 미들웨어(`BASIC_AUTH_USER`/
   `PASSWORD` 환경변수)이며 `/healthz`를 제외한 모든 라우트 앞에 적용됩니다.
+- **2026-08-11 텔레메트리 동기화 엔드포인트는 `incFlat`/`incBucketed`를 확장하지 않음** --
+  버전 코호트 엔드포인트 2개(`/api/integrity/version-cohort-*`)는 누적 카운터 diff에
+  `AppVersion`이라는 새 그레인을 얹어야 하는데, 이 공유 diff 엔진은 이미 40여 개 소비자가
+  쓰고 있고 경계 버그 이력이 길다(`dashboard/server/CLAUDE.md` 참고). `GROUP BY`를 넓히는
+  대신, 이 두 엔드포인트만 같은 세션-경계 diff 공식을 로컬로 복제한다. 트레이드오프: rollup
+  최적화 없이 항상 `otel_metrics_sum` 원본을 스캔 — 검증용 엔드포인트라 KPI 카드만큼 자주
+  조회되지 않는다는 전제로 감내.
+- **traces beta 엔드포인트는 배열이 아니라 `{unsupported, rows}`를 반환** -- `/api/
+  productivity/permission-wait`와 `/api/productivity/ttft`는 신설된(2026-08-11) `otel_traces`를
+  읽는데, beta env 미배포나 그 스팬을 아직 안 내는 클라이언트 버전 때문에 비어 있을 수 있다.
+  `[]`는 KPI 카드에서 "확인된 0"과 구분이 안 되므로, 빈 결과는 대신
+  `{unsupported: true, minVersion, rows: []}`로 내려간다.
 
 ### 4. 코드 포인터
 - `dashboard/server/index.js:129` -- `route()` 래퍼(from/to 파싱, 에러 처리)

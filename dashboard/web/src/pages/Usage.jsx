@@ -30,10 +30,27 @@ const SKILL_COLUMNS = [
   { key: "cost_per_use", label: "사용당 비용($)", render: (_v, r) => (Number(r.est_cost_usd) / (Number(r.invocations) || 1)).toFixed(3) },
 ];
 
+// 2026-08-11 — STEP 3 신규 이벤트 패널. skill_activated의 trigger가 'claude-proactive'인
+// 비율이 "우리가 만든 스킬이 실제로 자동 발동하는지"의 핵심 지표(원본 지시서 강조 사항).
+const SKILL_ACTIVATION_COLUMNS = [
+  { key: "skill", label: "Skill" },
+  { key: "trigger", label: "발동 방식" },
+  { key: "invocations", label: "건수", render: fmt },
+];
+
+const PLUGIN_COLUMNS = [
+  { key: "plugin", label: "플러그인" },
+  { key: "marketplace", label: "마켓플레이스" },
+  { key: "session_loads", label: "세션 로드 수", render: fmt },
+  { key: "sessions", label: "세션 수", render: fmt },
+];
+
 export default function Usage() {
   const toolMcp = useApi("/api/usage/tool-mcp");
   const skills = useApi("/api/usage/skills");
   const connectors = useApi("/api/usage/connectors");
+  const skillActivations = useApi("/api/usage/skill-activations");
+  const plugins = useApi("/api/usage/plugins");
 
   return (
     <div>
@@ -91,6 +108,37 @@ export default function Usage() {
               />
             ))}
           </div>
+        )}
+
+        {skillActivations.loading ? (
+          <Loading />
+        ) : skillActivations.error ? (
+          <ErrorBox error={skillActivations.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => (
+              <DataTable
+                key={g}
+                title={`스킬 발동 방식 — ${g}`}
+                subtitle="claude-proactive 비율이 높을수록 스킬이 사용자 개입 없이 자동 발동한다는 뜻"
+                columns={SKILL_ACTIVATION_COLUMNS}
+                rows={(skillActivations.data || []).filter((r) => r.group === g)}
+              />
+            ))}
+          </div>
+        )}
+
+        {plugins.loading ? (
+          <Loading />
+        ) : plugins.error ? (
+          <ErrorBox error={plugins.error} />
+        ) : (
+          <DataTable
+            title="플러그인 인벤토리 (플릿 전체)"
+            subtitle="그룹 구분 없음 — 세션 시작마다 로드된 플러그인 집계"
+            columns={PLUGIN_COLUMNS}
+            rows={plugins.data || []}
+          />
         )}
       </div>
     </div>

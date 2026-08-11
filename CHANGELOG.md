@@ -17,6 +17,25 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Added (2026-08-11 telemetry spec sync)
+- Add cost/token attribution columns (effort, agent.name, plugin.name, marketplace.name,
+  mcp_server.name, mcp_tool.name, speed, start_type, source) plus `app.version`/`enduser.id`
+  identity columns, verified against live telemetry rather than the (incomplete) public docs
+- Add a beta traces pipeline (`otel_traces`) and permission-wait / TTFT / subagent-fanout panels
+- Add skill-activation, compaction, refusal-rate, retries-exhausted, and plugin-inventory panels
+  from newly-collected log events, plus a version-cohort integrity check for the A/B comparison
+- Add `clickhouse-migration-002.sql` (additive `ADD COLUMN IF NOT EXISTS`, no table drops)
+
+### Changed
+- Filter `agents_view` (the `claude agents` dashboard process, not a conversation) out of every
+  session-count panel
+- Fall back per-user identity to `enduser.id` when `user.email` is absent (Bedrock sessions have
+  no Claude account and thus no email)
+
+### Fixed
+- Fix Panel 8 (tool/MCP usage) always returning zero rows — `EventName` is stored bare
+  (`tool_result`), not prefixed (`claude_code.tool_result`)
+
 ### Added
 - Add the Claude Code A/B telemetry pipeline, dashboard app, and EKS infrastructure
 - Add adoption/engagement panels and per-user x model cost breakdown
@@ -56,6 +75,26 @@ This project has not been tagged yet — everything below is unreleased.
 이 프로젝트는 아직 태그된 릴리스가 없습니다 — 아래 항목 전부 미출시(Unreleased)입니다.
 
 ## [Unreleased]
+
+### Added (2026-08-11 텔레메트리 스펙 동기화)
+- cost/token attribution 속성 추가(effort, agent.name, plugin.name, marketplace.name,
+  mcp_server.name, mcp_tool.name, speed, start_type, source) + app.version/enduser.id identity
+  컬럼 — 공식 문서(불완전)가 아니라 라이브 텔레메트리 실측으로 검증
+- traces 파이프라인(beta, otel_traces) 신설 + 권한 대기/TTFT/서브에이전트 팬아웃 패널 추가
+- skill_activated/compaction/api_refusal/api_retries_exhausted/plugin_loaded 이벤트로부터
+  스킬 발동·컴팩션 압박·refusal율·재시도 소진·플러그인 인벤토리 패널 추가, A/B 버전 혼재
+  검증(코호트별 이중계상 실측) 패널 추가
+- `clickhouse-migration-002.sql` 추가(전부 `ADD COLUMN IF NOT EXISTS`, 테이블 DROP 없음)
+
+### Changed (2026-08-11)
+- 모든 세션 카운트 패널에서 `agents_view`(claude agents 대시보드 프로세스, 대화 세션 아님)
+  제외
+- user.email이 없을 때(Bedrock 세션은 Claude 계정 자체가 없어 이메일이 없음) enduser.id로
+  유저 식별 폴백
+
+### Fixed (2026-08-11)
+- Panel 8(tool/MCP 사용)이 항상 0행을 반환하던 버그 수정 — EventName은 프리픽스 없이
+  bare(`tool_result`)로 저장됨, `claude_code.tool_result`가 아님
 
 ### Added
 - Claude Code A/B 텔레메트리 파이프라인, 대시보드 앱, EKS 인프라 추가

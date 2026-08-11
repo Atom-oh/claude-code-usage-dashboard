@@ -1,4 +1,6 @@
-# Project Context
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
 Claude Code Usage Dashboard — an internal telemetry pipeline and web dashboard for an
@@ -19,6 +21,33 @@ login.
 - **CI**: GitHub Actions multi-AI PR review (`.github/workflows/pr-review.yml`), orchestrated by
   scripts under `scripts/pr-review/`
 
+## Architecture
+
+Request/data flow, in order — understanding this end-to-end matters more than any single file:
+
+1. Claude Code clients export native OTel metrics/logs (and, since 2026-08-11, beta traces) to
+   a local `otelcol-contrib` sidecar (`collector-config.yaml`), which writes them into
+   ClickHouse (`otel_metrics_sum`, `otel_logs`, `otel_traces`). Claude Code never talks to
+   ClickHouse directly, and Claude Code never talks to `dashboard/server` directly either —
+   the collector is the only write path, and it runs outside the EKS cluster on each
+   participant's EC2 instance (`user-data.sh`), not as a cluster workload.
+2. `dashboard/server` is the only reader. `queries.js` holds one exported function per API
+   endpoint (`index.js` just does routing/caching/range-parsing); `grouping.js` infers
+   bedrock/enterprise per session; `pricing.js`/`productivity.js`/`costEfficiency.js` are pure
+   functions applied to query results. `chat.js` is the one place an LLM (via Bedrock) writes
+   its own ClickHouse SQL, sandboxed by `sanitizeSql()` + `readonly=1`.
+3. `dashboard/web` is a React SPA that calls `dashboard/server`'s `GET /api/*` routes and is
+   served as static files by that same Express process (one image, one process — see
+   `dashboard/CLAUDE.md`).
+4. `infra/` (Terraform) provisions the EKS cluster the server/web image runs on and the
+   ClickHouse Operator cluster it queries — but does **not** provision the EC2 fleet or the
+   collector sidecar; that's `user-data.sh` + `scripts/setup-test-telemetry.sh` (tester
+   self-service path), which are separate from the Terraform-managed pieces.
+
+Module-local `CLAUDE.md` files (`dashboard/server/`, `dashboard/web/`, `infra/`) have the
+per-module rules; `docs/reference/*.md` has layer-by-layer implementation detail;
+`docs/architecture.md` has the full diagram.
+
 ## Project Structure
 ```
 dashboard/           - The application (deployed as a single Docker image)
@@ -34,7 +63,9 @@ video/               - HyperFrames project that renders site/assets/video/dashbo
                        (npx hyperframes, Node >= 22; renders/ + snapshots/ are gitignored)
 scripts/             - Operational scripts (setup, git hooks, PR review automation)
 grafana-ab-queries.sql   - Legacy Grafana panel queries (kept in sync with dashboard/server SQL)
-clickhouse-schema.sql   - Reference schema for otel_metrics_sum / otel_logs
+clickhouse-schema.sql   - Reference schema for otel_metrics_sum / otel_logs / otel_traces (beta)
+clickhouse-migration-002.sql - Additive migration (2026-08-11 telemetry spec sync); run this
+                       directly against the live cluster, it's not applied by Terraform
 collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHouse)
 .claude/             - Claude Code settings, hooks, skills (gitignored — local tooling only)
 ```
@@ -47,6 +78,14 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
   counters, not deltas. Never `sum(Value)` directly — always diff via the `incFlat`/`incBucketed`
   helpers in `dashboard/server/queries.js` (session-boundary diff, matching Prometheus
   `increase()`). Direct summing has caused 100x+ overcounting in the past.
+- **Don't trust Claude Code's own telemetry docs without checking live data first.** The
+  2026-08-11 spec sync found `code.claude.com/docs/en/monitoring-usage.md` missing several
+  events actually being emitted — schema/query changes there are keyed to a measured attribute
+  census (`SELECT arrayJoin(mapKeys(Attributes)) ...`), not the docs alone. See
+  `docs/decisions/ADR-001-*.md` / `ADR-002-*.md` for the two non-obvious trade-offs from that
+  sync (why `incFlat`/`incBucketed` weren't extended for the new `AppVersion`/`EndUserId`
+  dimensions, and why the Bedrock-identity fallback only covers new queries, not all ~90
+  pre-existing `UserEmail` references).
 - **bedrock/enterprise grouping is session-scoped**, not user-scoped — one user can straddle
   both in different sessions. See `dashboard/server/grouping.js` for the heuristic and its
   measured edge cases.
@@ -58,6 +97,12 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
 - SQL changes to promoted/materialized columns (`otel_metrics_sum`, `otel_logs`) must be
   mirrored in `grafana-ab-queries.sql` if that query file references the same metric — a past
   review caught these drifting out of sync.
+- **The OTel Collector must run as a supervised systemd service (`Restart=always`), never
+  foreground/`nohup`.** If it dies (DNS blip, node reboot, crash), the dashboard shows a
+  silently shrinking data window with no error anywhere — this has already caused an
+  unnoticed ~43h telemetry gap in production. See the "Telemetry Ingestion" section of
+  `README.md` for the exact unit file and how to verify it's actually writing
+  (`SELECT max(TimeUnix) FROM claude_code.otel_metrics_sum`).
 
 ## Key Commands
 ```bash
@@ -65,13 +110,19 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
 npm install
 npm start                 # node index.js
 npm run dev               # node --watch index.js
-node --test *.test.js     # unit tests (node:test, no framework)
+node --test *.test.js     # all unit tests (node:test, no framework, no separate runner)
+node --test queries.test.js          # a single test file
+node --test --test-name-pattern="incFlat" *.test.js   # tests matching a name
 
 # Web (dashboard/web)
 npm install
 npm run dev               # vite dev server
-npm run build             # vite build -> dist/
+npm run build             # vite build -> dist/ (no dedicated web test suite yet)
 npm run preview
+
+# Claude Code harness tests (hooks, settings.json, repo structure — not app logic)
+bash tests/run-all.sh              # all
+bash tests/run-all.sh hooks        # only hooks/*.sh tests (pattern matches subdir/filename)
 
 # Local full stack
 docker compose -f dashboard/docker-compose.yml up

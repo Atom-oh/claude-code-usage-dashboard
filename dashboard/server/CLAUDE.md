@@ -26,7 +26,9 @@ ClickHouse, no range params) but still inherits the global Basic Auth.
 - `queries.js` -- all ClickHouse SQL; `incFlat`/`incBucketed` (cumulative-counter diffing over
   the hourly rollup `otel_metrics_sum_hourly` — MINUTE-bucket drag-zoom falls back to the raw
   table via `incBucketedRaw`), `filterCond` (global group/user/model filters), `normModel`
-  (model name normalization)
+  (model name normalization). 2026-08-11 additions (below the `userLeaderboard` marker comment)
+  cover the traces/logs/version-cohort panels added in that sync — see the "Rules" bullets
+  below for the two patterns they establish (local diff subqueries, `{unsupported}` shape)
 - `grouping.js` -- `GROUP_CTE`/`GROUP_EXPR`, session-scoped bedrock/enterprise inference (reads
   the hourly rollup's `has_org` column)
 - `pricing.js` -- per-model token pricing, `withComputedCost`, `tierCosts`, `tierCostsByGroup`
@@ -55,3 +57,22 @@ ClickHouse, no range params) but still inherits the global Basic Auth.
   `app.get(...)` that bypasses the shared error handling and range parsing.
 - `chat.js`'s `sanitizeSql()` is the only place user/LLM-influenced SQL reaches ClickHouse —
   any change there needs security-auditor-level scrutiny (see `.claude/agents/security-auditor.yml`).
+- **Don't widen `incFlat`/`incBucketed`'s `GROUP BY` for a new dimension without reading
+  ADR-001 first** (`docs/decisions/ADR-001-local-diff-over-shared-incflat-extension.md`). They
+  have ~40 consumers and a history of subtle boundary bugs. If a cumulative-counter diff needs
+  a dimension those functions don't carry (e.g. `AppVersion`, `EndUserId`), the established
+  pattern (see `versionCohortSessions`/`versionCohortCost`) is a small self-contained local
+  diff subquery, not a shared-function extension — until a second/third real need makes
+  extension the better trade-off.
+- **Per-user identity is `UserEmail`-only in most existing functions, not
+  `coalesce(UserEmail, EndUserId)`.** Bedrock sessions have no `user.email` (see ADR-002,
+  `docs/reference/data.md` §1b) — `userLeaderboard` and the ~90 other `UserEmail` references
+  in this file were *not* retrofitted with the coalesce fallback during the 2026-08-11
+  telemetry sync (only new functions and `grafana-ab-queries.sql` were). Bedrock users without
+  a synthetic tester email are invisible on the Users leaderboard today — a known, open gap,
+  not an oversight to silently "fix" as a side effect of an unrelated change.
+- Traces-beta query functions (`permissionWaitOverhead`, `ttftComparison`) return
+  `{unsupported: boolean, minVersion, rows}`, not a bare array — `otel_traces` can be
+  legitimately empty (beta not rolled out, or client version too old for that span type), and a
+  KPI consumer must not render that as a confirmed zero. Follow this shape for any new
+  `otel_traces`-backed endpoint.

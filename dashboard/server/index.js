@@ -246,6 +246,20 @@ route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(quer
 route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || ""), groupParam(query)), { warm: false });
 route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || ""), 91, groupParam(query)), { warm: false });
 
+// 2026-08-11 스펙 동기화 — STEP 2/3/4 신규 패널. traces beta(권한 대기/TTFT)는 아직 라이브
+// 데이터가 없을 수 있어 warm: false(빈 결과를 매 사이클 워밍하는 낭비를 피함) — 데이터가
+// 쌓이면 warm: true로 되돌릴 것.
+route("/api/productivity/permission-wait", (from, to, _q, filters) => q.permissionWaitOverhead(from, to, filters), { warm: false });
+route("/api/productivity/ttft", (from, to, _q, filters) => q.ttftComparison(from, to, filters), { warm: false });
+route("/api/usage/subagent-fanout", (from, to, _q, filters) => q.subagentFanout(from, to, filters));
+route("/api/usage/skill-activations", (from, to, _q, filters) => q.skillActivations(from, to, filters));
+route("/api/usage/compaction", (from, to, _q, filters) => q.compactionPressure(from, to, filters));
+route("/api/reliability/refusals", (from, to, _q, filters) => q.refusalRate(from, to, filters));
+route("/api/reliability/retries-exhausted", (from, to, _q, filters) => q.retriesExhausted(from, to, filters));
+route("/api/usage/plugins", (from, to) => q.pluginInventory(from, to));
+route("/api/integrity/version-cohort-sessions", (from, to, _q, filters) => q.versionCohortSessions(from, to, filters));
+route("/api/integrity/version-cohort-cost", (from, to, _q, filters) => q.versionCohortCost(from, to, filters));
+
 // 챗은 Bedrock 호출 + 임의 read-only SELECT라 다른 데이터 API보다 리스크가 높다. auth env가
 // 없으면 fail-open이 아니라 fail-closed — 명시적으로 CHAT_ALLOW_INSECURE=1을 켠 로컬 dev에서만 무인증 허용.
 const chatAllowed = authEnabled || process.env.CHAT_ALLOW_INSECURE === "1";

@@ -34,6 +34,18 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     Language        LowCardinality(String) MATERIALIZED Attributes['language'],
     SkillName       LowCardinality(String) MATERIALIZED Attributes['skill.name'],
     AgentName       LowCardinality(String) MATERIALIZED Attributes['agent.name'],
+    -- 2026-08-11 스펙 동기화 — ../../clickhouse-schema.sql(참조 사본)과 동기화 유지.
+    -- clickhouse-migration-002.sql이 실행 시 이 정의와 동일한 ALTER를 기존 클러스터에 적용한다.
+    PluginName      LowCardinality(String) MATERIALIZED Attributes['plugin.name'],
+    MarketplaceName LowCardinality(String) MATERIALIZED Attributes['marketplace.name'],
+    McpServerName   LowCardinality(String) MATERIALIZED Attributes['mcp_server.name'],
+    McpToolName     LowCardinality(String) MATERIALIZED Attributes['mcp_tool.name'],
+    Effort          LowCardinality(String) MATERIALIZED Attributes['effort'],
+    Speed           LowCardinality(String) MATERIALIZED Attributes['speed'],
+    StartType       LowCardinality(String) MATERIALIZED Attributes['start_type'],
+    Source          LowCardinality(String) MATERIALIZED Attributes['source'],
+    EndUserId       LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
 
     -- ResourceSchemaUrl부터 Exemplars.*까지는 OTel ClickHouse exporter가 자체 기본 스키마로
     -- 테이블을 만들 때 넣는 부기(bookkeeping) 컬럼이다 — 라이브 클러스터는 exporter가 먼저
@@ -76,6 +88,29 @@ ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes));
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN SeriesKey;
 
+-- 2026-08-11 스펙 동기화 — clickhouse-migration-002.sql(실행용)과 동일 정의.
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
+    ADD COLUMN IF NOT EXISTS PluginName      LowCardinality(String) MATERIALIZED Attributes['plugin.name'],
+    ADD COLUMN IF NOT EXISTS MarketplaceName LowCardinality(String) MATERIALIZED Attributes['marketplace.name'],
+    ADD COLUMN IF NOT EXISTS McpServerName   LowCardinality(String) MATERIALIZED Attributes['mcp_server.name'],
+    ADD COLUMN IF NOT EXISTS McpToolName     LowCardinality(String) MATERIALIZED Attributes['mcp_tool.name'],
+    ADD COLUMN IF NOT EXISTS Effort          LowCardinality(String) MATERIALIZED Attributes['effort'],
+    ADD COLUMN IF NOT EXISTS Speed           LowCardinality(String) MATERIALIZED Attributes['speed'],
+    ADD COLUMN IF NOT EXISTS StartType       LowCardinality(String) MATERIALIZED Attributes['start_type'],
+    ADD COLUMN IF NOT EXISTS Source          LowCardinality(String) MATERIALIZED Attributes['source'],
+    ADD COLUMN IF NOT EXISTS EndUserId       LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    ADD COLUMN IF NOT EXISTS AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'];
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN PluginName;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN MarketplaceName;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN McpServerName;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN McpToolName;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN Effort;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN Speed;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN StartType;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN Source;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN EndUserId;
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN AppVersion;
+
 -- exporter 부기 컬럼도 같은 이유로 백필한다 — 위 CREATE 블록에만 있으면 이 DDL의 옛 버전으로
 -- 만들어진 기존 테이블에는 붙지 않고, 그 상태에서 exporter가 해당 컬럼을 지정해 INSERT하면
 -- 실패한다(라이브는 exporter가 테이블을 먼저 만들어 이미 있으므로 no-op).
@@ -117,6 +152,11 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly ON CLUSTER 'repli
     Decision               LowCardinality(String),
     SkillName              LowCardinality(String),
     ToolName               LowCardinality(String),
+    -- 2026-08-11: StartType/AppVersion 승격 — ../../clickhouse-schema.sql(참조 사본)과
+    -- 동기화 유지. 라이브 기존 클러스터는 clickhouse-migration-002.sql의 ADD COLUMN(정렬 키
+    -- 변경 불가로 컬럼만 추가)이 담당 — 이 CREATE TABLE 블록은 신규 설치에서만 실행된다.
+    StartType              LowCardinality(String),
+    AppVersion             LowCardinality(String),
     max_value SimpleAggregateFunction(max, Float64),
     sum_value SimpleAggregateFunction(sum, Float64),
     has_org   SimpleAggregateFunction(max, UInt8)
@@ -124,7 +164,7 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly ON CLUSTER 'repli
 ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-          Model, TokenType, Decision, SkillName, ToolName, hour)
+          Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion, hour)
 TTL toDateTime(hour) + INTERVAL 90 DAY TO VOLUME 'cold',
     toDateTime(hour) + INTERVAL 180 DAY DELETE
 SETTINGS storage_policy = 'hot_cold';
@@ -144,12 +184,17 @@ SELECT
     MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
     Model, TokenType, Decision, SkillName,
     Attributes['tool_name'] AS ToolName,
+    Attributes['start_type'] AS StartType,
+    ResourceAttributes['service.version'] AS AppVersion,
     max(Value) AS max_value,
     sum(Value) AS sum_value,
     max(Attributes['organization.id'] != '') AS has_org
 FROM claude_code.otel_metrics_sum
 GROUP BY hour, MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-         Model, TokenType, Decision, SkillName, ToolName;
+         Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion;
+-- 신규 설치는 CREATE MATERIALIZED VIEW IF NOT EXISTS라 위 정의로 바로 만들어진다. 기존
+-- 클러스터의 MV 갱신은 clickhouse-migration-002.sql의 CREATE OR REPLACE가 담당(이 파일은
+-- IF NOT EXISTS라 기존 배포에는 no-op).
 
 CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_gauge ON CLUSTER 'replicated'
 (
@@ -229,6 +274,25 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_logs ON CLUSTER 'replicated'
     McpToolName     LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_tool_name'),
     Success         LowCardinality(String) MATERIALIZED LogAttributes['success'],
 
+    -- 2026-08-11 스펙 동기화 — ../../clickhouse-schema.sql(참조 사본)과 동기화 유지. 속성 키는
+    -- 문서가 아니라 실측(mapKeys(LogAttributes), 2026-08-11) 기준.
+    SkillName            LowCardinality(String) MATERIALIZED LogAttributes['skill.name'],
+    InvocationTrigger    LowCardinality(String) MATERIALIZED LogAttributes['invocation_trigger'],
+    SkillSource          LowCardinality(String) MATERIALIZED LogAttributes['skill.source'],
+    PluginName           LowCardinality(String) MATERIALIZED LogAttributes['plugin.name'],
+    MarketplaceName      LowCardinality(String) MATERIALIZED LogAttributes['marketplace.name'],
+    RefusalCategory      LowCardinality(String) MATERIALIZED LogAttributes['category'],
+    ServerFallbackHop    LowCardinality(String) MATERIALIZED LogAttributes['server_fallback_hop'],
+    CompactionTrigger    LowCardinality(String) MATERIALIZED LogAttributes['trigger'],
+    PreTokens            UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['pre_tokens']),
+    PostTokens           UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['post_tokens']),
+    DurationMs           UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['duration_ms']),
+    TotalAttempts        UInt32 MATERIALIZED toUInt32OrZero(LogAttributes['total_attempts']),
+    TotalRetryDurationMs UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['total_retry_duration_ms']),
+    PromptId             String MATERIALIZED LogAttributes['prompt.id'],
+    EndUserId            LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    AppVersion           LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
+
     -- TimestampTime부터 ScopeAttributes까지는 exporter 기본 부기 컬럼(실측 2026-07-27) —
     -- otel_metrics_sum과 같은 사유로 명시. clickhouse-schema.sql(참조 사본)과 동기화 유지.
     TimestampTime   DateTime DEFAULT toDateTime(Timestamp),
@@ -263,3 +327,90 @@ ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated'
     ADD COLUMN IF NOT EXISTS ScopeName String DEFAULT '',
     ADD COLUMN IF NOT EXISTS ScopeVersion LowCardinality(String) DEFAULT '',
     ADD COLUMN IF NOT EXISTS ScopeAttributes Map(LowCardinality(String), String) DEFAULT map();
+
+-- otel_logs 신규 컬럼(2026-08-11)도 같은 사유로 백필 — clickhouse-migration-002.sql(실행용)과
+-- 동일 정의.
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated'
+    ADD COLUMN IF NOT EXISTS SkillName            LowCardinality(String) MATERIALIZED LogAttributes['skill.name'],
+    ADD COLUMN IF NOT EXISTS InvocationTrigger    LowCardinality(String) MATERIALIZED LogAttributes['invocation_trigger'],
+    ADD COLUMN IF NOT EXISTS SkillSource          LowCardinality(String) MATERIALIZED LogAttributes['skill.source'],
+    ADD COLUMN IF NOT EXISTS PluginName           LowCardinality(String) MATERIALIZED LogAttributes['plugin.name'],
+    ADD COLUMN IF NOT EXISTS MarketplaceName      LowCardinality(String) MATERIALIZED LogAttributes['marketplace.name'],
+    ADD COLUMN IF NOT EXISTS RefusalCategory      LowCardinality(String) MATERIALIZED LogAttributes['category'],
+    ADD COLUMN IF NOT EXISTS ServerFallbackHop    LowCardinality(String) MATERIALIZED LogAttributes['server_fallback_hop'],
+    ADD COLUMN IF NOT EXISTS CompactionTrigger    LowCardinality(String) MATERIALIZED LogAttributes['trigger'],
+    ADD COLUMN IF NOT EXISTS PreTokens            UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['pre_tokens']),
+    ADD COLUMN IF NOT EXISTS PostTokens           UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['post_tokens']),
+    ADD COLUMN IF NOT EXISTS DurationMs           UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['duration_ms']),
+    ADD COLUMN IF NOT EXISTS TotalAttempts        UInt32 MATERIALIZED toUInt32OrZero(LogAttributes['total_attempts']),
+    ADD COLUMN IF NOT EXISTS TotalRetryDurationMs UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['total_retry_duration_ms']),
+    ADD COLUMN IF NOT EXISTS PromptId             String MATERIALIZED LogAttributes['prompt.id'],
+    ADD COLUMN IF NOT EXISTS EndUserId            LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    ADD COLUMN IF NOT EXISTS AppVersion           LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'];
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN SkillName;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN InvocationTrigger;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN SkillSource;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN PluginName;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN MarketplaceName;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN RefusalCategory;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN ServerFallbackHop;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN CompactionTrigger;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN PreTokens;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN PostTokens;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN DurationMs;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN TotalAttempts;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN TotalRetryDurationMs;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN PromptId;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN EndUserId;
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated' MATERIALIZE COLUMN AppVersion;
+
+-- -----------------------------------------------------------------------------
+-- Traces (beta, 2026-08-11) — ../../clickhouse-schema.sql "2c. Traces (beta)" 섹션과 동일
+-- 정의. otel_logs와 같은 45일 cold 이동 + 90일 삭제 정책. 신규 테이블이라 기존 클러스터에도
+-- CREATE TABLE IF NOT EXISTS만으로 안전 — clickhouse-migration-002.sql과 동일 문장(중복 실행
+-- 시 IF NOT EXISTS라 두 번째는 no-op).
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS claude_code.otel_traces ON CLUSTER 'replicated'
+(
+    Timestamp         DateTime64(9) CODEC(Delta, ZSTD(1)),
+    TraceId           String CODEC(ZSTD(1)),
+    SpanId            String CODEC(ZSTD(1)),
+    ParentSpanId      String CODEC(ZSTD(1)),
+    TraceState        String CODEC(ZSTD(1)),
+    SpanName          LowCardinality(String) CODEC(ZSTD(1)),
+    SpanKind          LowCardinality(String) CODEC(ZSTD(1)),
+    ServiceName       LowCardinality(String) CODEC(ZSTD(1)),
+    ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    ScopeName         String CODEC(ZSTD(1)),
+    ScopeVersion      String CODEC(ZSTD(1)),
+    SpanAttributes    Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    Duration          Int64 CODEC(ZSTD(1)),
+    StatusCode        LowCardinality(String) CODEC(ZSTD(1)),
+    StatusMessage     String CODEC(ZSTD(1)),
+    "Events.Timestamp"  Array(DateTime64(9)),
+    "Events.Name"       Array(LowCardinality(String)),
+    "Events.Attributes" Array(Map(LowCardinality(String), String)),
+    "Links.TraceId"     Array(String),
+    "Links.SpanId"      Array(String),
+    "Links.TraceState"  Array(String),
+    "Links.Attributes"  Array(Map(LowCardinality(String), String)),
+
+    ExperimentGroup LowCardinality(String) MATERIALIZED ResourceAttributes['experiment.group'],
+    UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
+    EndUserId       LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
+    SessionId       String                 MATERIALIZED SpanAttributes['session.id'],
+    SpanType        LowCardinality(String) MATERIALIZED SpanAttributes['span.type'],
+    DurationMs      UInt64 MATERIALIZED toUInt64OrZero(SpanAttributes['duration_ms']),
+    TtftMs          UInt64 MATERIALIZED toUInt64OrZero(SpanAttributes['ttft_ms']),
+    AgentId         String MATERIALIZED SpanAttributes['agent_id'],
+    ParentAgentId   String MATERIALIZED SpanAttributes['parent_agent_id'],
+    Model           LowCardinality(String) MATERIALIZED SpanAttributes['model'],
+    Decision        LowCardinality(String) MATERIALIZED SpanAttributes['decision']
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_traces', '{replica}')
+PARTITION BY toYYYYMM(Timestamp)
+ORDER BY (ExperimentGroup, SpanType, toUnixTimestamp(Timestamp))
+TTL toDateTime(Timestamp) + INTERVAL 45 DAY TO VOLUME 'cold',
+    toDateTime(Timestamp) + INTERVAL 90 DAY DELETE
+SETTINGS storage_policy = 'hot_cold';

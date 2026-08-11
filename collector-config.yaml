@@ -44,6 +44,12 @@ processors:
   # 프롬프트 본문은 기본 미포함이지만, 방어적으로 대표 키를 삭제.
   # tool_parameters 안의 bash_command 등은 감사에 필요하면 남기고,
   # FSI 규제상 완전 차단이 필요하면 delete로.
+  # 2026-08-11: STEP 3에서 요청된 신규 이벤트(skill_activated/compaction/api_refusal/
+  # api_retries_exhausted/plugin_loaded 등)는 이미 여기를 그대로 통과하고 있다 — 이
+  # transform 자체가 화이트리스트가 아니라 두 개의 민감 키만 지우는 스크럽이고, 로그
+  # 이벤트 이름에 대한 필터는 이 config 전체에 존재하지 않는다(실측 확인, 2026-08-11).
+  # 즉 collector 쪽 변경은 필요 없고, 새 이벤트를 쓰려면 clickhouse-schema.sql/
+  # clickhouse-migration-002.sql의 promoted 컬럼 + grafana-ab-queries.sql 패널만 있으면 된다.
   transform/scrub_logs:
     error_mode: ignore
     log_statements:
@@ -71,6 +77,9 @@ exporters:
     username: ${env:CH_USER}
     password: ${env:CH_PASSWORD}
     # 스키마는 위 SQL로 미리 생성 → false. (true면 exporter가 자체 생성)
+    # otel_traces는 clickhouse-migration-002.sql/clickhouse-schema.sql이 미리 만들어야 한다 —
+    # create_schema: false라 exporter가 대신 만들어주지 않는다(2026-08-11 실측: 라이브
+    # system.tables에 otel_traces가 없었음).
     create_schema: false
     metrics_tables:
       sum:
@@ -78,6 +87,7 @@ exporters:
       gauge:
         name: otel_metrics_gauge
     logs_table_name: otel_logs
+    traces_table_name: otel_traces
     ttl: 0                    # TTL은 테이블 정의에서 관리
     timeout: 10s
     retry_on_failure:
@@ -99,6 +109,14 @@ service:
     logs:
       receivers: [otlp]
       processors: [memory_limiter, transform/scrub_logs, resource, batch]
+      exporters: [clickhouse]
+    # traces (beta, 2026-08-11) — CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1 +
+    # OTEL_TRACES_EXPORTER=otlp(user-data.sh)가 켜져야 데이터가 들어온다. resource
+    # 프로세서를 metrics/logs와 공유하므로 experiment.group upsert가 traces에도 동일하게
+    # 적용된다 — 별도 처리 불필요.
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
       exporters: [clickhouse]
   telemetry:
     logs:

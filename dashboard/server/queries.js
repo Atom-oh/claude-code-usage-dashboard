@@ -1297,3 +1297,240 @@ export async function userLeaderboard(from, to, filters = {}) {
     { ...range(from, to, incFlatRaw(to - from)), ...f.params, ...fAd.params }
   );
 }
+
+// =============================================================================
+// 2026-08-11 스펙 동기화 — STEP 2/3/4 신규 패널의 앱 계층. 아래 함수들은 일부러 incFlat/
+// incBucketed를 건드리지 않는다 — 그 두 함수는 40여 개 소비자가 공유하는 세션-경계 diff
+// 엔진이고, 과거 리뷰에서 "3단 중첩 필수"/"first-bucket raw stitch" 같은 미묘한 버그를 여러
+// 차례 겪은 코드다(위 주석 참고). AppVersion/EndUserId 같은 새 차원을 그 GROUP BY에 얹는
+// 것도 이론적으로는 안전하지만(추가 차원은 다른 소비자의 재집계 결과를 바꾸지 않음), 검증
+// 목적의 이 패널들까지 그 위험을 감수할 필요가 없어 각자 자기 완결적인 쿼리로 짠다.
+// =============================================================================
+
+// 4-2 검증: 버전 코호트별 세션 수 — 두 그룹이 실제로 같은 Claude Code 버전을 쓰는지 확인.
+// sum(Value) 대신 uniqExact(SessionId)로 "존재 여부"만 본다(adoptionLevels와 동일 근거) —
+// 세션 하나가 30초마다 재-export하는 session.count를 그대로 sum하면 안 된다.
+export async function versionCohortSessions(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        AppVersion AS app_version,
+        uniqExact(SessionId) AS sessions
+    FROM claude_code.otel_metrics_sum m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE MetricName = 'claude_code.session.count' AND AppVersion != ''
+      AND TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} ${f.where}
+    GROUP BY "group", app_version ORDER BY "group", sessions DESC`,
+    // raw=true — otel_metrics_sum 직접 스캔. 검증용 쿼리라 rollup 최적화(StartType/AppVersion이
+    // 막 추가돼 과거분이 비어 있는 rollup)에 의존하지 않는 게 오히려 안전하다.
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// 4-2 검증: 버전 코호트별 cost.usage/token.usage 실측 diff — v2.1.214 이전 이중계상 주장을
+// 실측으로 검증한다(문서에 없는 주장이라 단정하지 않고 비율을 그대로 보여준다). incFlat과
+// 동일한 세션-경계 diff 공식(greatest(끝값-시작값,0) / 구간 sumIf)을 AppVersion 그레인으로
+// 로컬 복제 — LOOKBACK_DAYS도 incFlat과 동일 상수를 재사용해 baseline 정책을 맞춘다.
+// 버전 비교는 문자열이 아니라 (major,minor,patch) 정수 튜플로 한다 — 문자열 사전순 비교는
+// '2.1.30' < '2.1.214'를 false로 잘못 판정한다('3' > '2', 실제로는 30 < 214) — 지금
+// 관측된 버전(2.1.202~2.1.226)이 전부 세 자리라 우연히 안 틀렸을 뿐이다. grafana-ab-queries.sql
+// 패널 20과 동일한 수정.
+export async function versionCohortCost(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        if(
+            (toUInt32OrZero(splitByChar('.', app_version)[1]),
+             toUInt32OrZero(splitByChar('.', app_version)[2]),
+             toUInt32OrZero(splitByChar('.', app_version)[3])) < (2, 1, 214),
+            'pre-2.1.214', '>=2.1.214'
+        ) AS version_cohort,
+        sum(inc_cost)   AS cost_usd,
+        sum(inc_tokens) AS tokens,
+        round(sum(inc_cost) / nullIf(sum(inc_tokens), 0) * 1000000, 4) AS usd_per_million_tokens
+    FROM (
+        SELECT SessionId, AppVersion AS app_version,
+            sumIf(inc, MetricName = 'claude_code.cost.usage')  AS inc_cost,
+            sumIf(inc, MetricName = 'claude_code.token.usage') AS inc_tokens
+        FROM (
+            SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, AppVersion,
+                if(temp = 2,
+                    greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+                    sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
+            FROM claude_code.otel_metrics_sum
+            WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+              AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
+              AND AppVersion != ''
+            GROUP BY sk, SessionId, temp, MetricName, AppVersion
+        )
+        GROUP BY SessionId, app_version
+    ) m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
+    GROUP BY "group", version_cohort ORDER BY "group", version_cohort`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// STEP 2 패널 13: 서브에이전트 팬아웃 — traces beta가 아니라 otel_logs의 subagent_completed로
+// (오늘 실데이터 존재, 베타 플래그 불필요). PromptId(인터랙션 단위)당 완료 건수 분포.
+export async function subagentFanout(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        count()                    AS subagent_completions,
+        uniqExact(l.PromptId)      AS interactions,
+        round(count() / nullIf(uniqExact(l.PromptId), 0), 2) AS avg_subagents_per_interaction
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'subagent_completed' AND l.PromptId != ''
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group" ORDER BY "group"`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// STEP 3 패널 14: 스킬 발동 분포 — skill.name × invocation_trigger. claude-proactive 비율이
+// "우리가 만든 스킬이 실제로 자동 발동하는지"의 핵심 지표.
+export async function skillActivations(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.SkillName AS skill,
+        l.InvocationTrigger AS trigger,
+        count() AS invocations
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'skill_activated'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", skill, trigger ORDER BY "group", invocations DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// STEP 3 패널 15: compaction 압박 — 세션당 발생 횟수 + 압축률(1 - post/pre tokens).
+export async function compactionPressure(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.CompactionTrigger AS trigger,
+        count() AS compactions,
+        uniqExact(l.SessionId) AS sessions,
+        round(count() / nullIf(uniqExact(l.SessionId), 0), 2) AS compactions_per_session,
+        round(avg(1 - l.PostTokens / nullIf(l.PreTokens, 0)), 3) AS avg_compression_ratio
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'compaction' AND l.PreTokens > 0
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", trigger ORDER BY "group", compactions DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// STEP 3 패널 16: refusal 율 — server_fallback_hop='true'(사용자가 못 본 refusal)은
+// user_visible_refusals에서 제외하고 별도 컬럼으로 둔다(최종 집계에 합산 금지).
+export async function refusalRate(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        countIf(l.ServerFallbackHop != 'true') AS user_visible_refusals,
+        countIf(l.ServerFallbackHop = 'true')  AS server_hidden_refusals
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'api_refusal'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group" ORDER BY "group"`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// STEP 3 패널 17: 재시도 소진 — Bedrock 쿼터 병목 탐지에 직결.
+export async function retriesExhausted(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        count() AS exhausted_retries,
+        round(avg(l.TotalAttempts), 1)        AS avg_total_attempts,
+        round(avg(l.TotalRetryDurationMs), 0) AS avg_retry_duration_ms
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'api_retries_exhausted'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group" ORDER BY "group"`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// STEP 3 패널 18: 플러그인 인벤토리 — 그룹 무관, 플릿 전체에서 어떤 플러그인이 활성인지.
+export async function pluginInventory(from, to) {
+  return query(
+    `SELECT PluginName AS plugin, MarketplaceName AS marketplace,
+        count() AS session_loads, uniqExact(SessionId) AS sessions
+    FROM claude_code.otel_logs
+    WHERE EventName = 'plugin_loaded' AND PluginName != ''
+      AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+    GROUP BY plugin, marketplace ORDER BY session_loads DESC`,
+    range(from, to, true)
+  );
+}
+
+// STEP 2 패널 11: 권한 대기 오버헤드 (traces beta) — claude_code.tool.blocked_on_user의
+// DurationMs p50/p95, 그룹별. 이 스팬은 v2.1.214+에서만 나온다 — 결정 3(앞으로의 구현이
+// 우선, 구버전 호환은 범위 밖)에 따라 데이터가 없는 구간은 0으로 위장하지 않고
+// {unsupported:true}를 반환해 프론트가 "데이터 없음"으로 구분해 그릴 수 있게 한다.
+export async function permissionWaitOverhead(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "t.UserEmail" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        t.AppVersion AS app_version,
+        quantile(0.5)(t.DurationMs)  AS p50_wait_ms,
+        quantile(0.95)(t.DurationMs) AS p95_wait_ms,
+        count() AS n
+    FROM claude_code.otel_traces t
+    LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
+    WHERE t.SpanType = 'claude_code.tool.blocked_on_user'
+      AND t.Timestamp >= {from:DateTime} AND t.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", app_version ORDER BY "group", app_version`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: "2.1.214", rows: [] };
+}
+
+// STEP 2 패널 12: TTFT 비교 (traces beta) — claude_code.llm_request의 TtftMs p50/p95를
+// 그룹 × 모델로. normModel()과 동일한 5단계 regex를 인라인 재현(JS 함수라 SQL에서 직접
+// 호출 불가 — grafana-ab-queries.sql 패널 12와 동일한 이유).
+export async function ttftComparison(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "t.UserEmail", model: "t.Model" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        ${normModel("t.Model")} AS model,
+        quantile(0.5)(t.TtftMs)  AS p50_ttft_ms,
+        quantile(0.95)(t.TtftMs) AS p95_ttft_ms,
+        count() AS n
+    FROM claude_code.otel_traces t
+    LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
+    WHERE t.SpanType = 'claude_code.llm_request'
+      AND t.Timestamp >= {from:DateTime} AND t.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", model ORDER BY "group", n DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: null, rows: [] };
+}

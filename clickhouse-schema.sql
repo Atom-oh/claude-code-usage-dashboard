@@ -41,6 +41,31 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
     Language        LowCardinality(String) MATERIALIZED Attributes['language'],
     SkillName       LowCardinality(String) MATERIALIZED Attributes['skill.name'],
     AgentName       LowCardinality(String) MATERIALIZED Attributes['agent.name'],
+    -- 2026-08-11 스펙 동기화(clickhouse-migration-002.sql) — cost.usage/token.usage에 추가된
+    -- attribution 속성. 전부 실측(라이브 클러스터, 345M행) 확인: 8개 전부 실제로 채워져
+    -- 들어온다. Speed는 실측 0행(이 플릿은 fast 모드를 쓴 적이 없음) — 컬럼은 향후 대비로 둔다.
+    PluginName      LowCardinality(String) MATERIALIZED Attributes['plugin.name'],
+    MarketplaceName LowCardinality(String) MATERIALIZED Attributes['marketplace.name'],
+    McpServerName   LowCardinality(String) MATERIALIZED Attributes['mcp_server.name'],
+    McpToolName     LowCardinality(String) MATERIALIZED Attributes['mcp_tool.name'],
+    Effort          LowCardinality(String) MATERIALIZED Attributes['effort'],
+    Speed           LowCardinality(String) MATERIALIZED Attributes['speed'],
+    -- session.count의 시작 유형. agents_view는 `claude agents` 대시보드 프로세스 실행이라
+    -- 대화 세션이 아니다 — 세션 카운트 패널은 반드시 이 값으로 그 프로세스를 제외해야 한다
+    -- (grafana-ab-queries.sql 패널 1/10, dashboard/server/queries.js의 세션 카운트 소비자).
+    StartType       LowCardinality(String) MATERIALIZED Attributes['start_type'],
+    -- code_edit_tool.decision의 decision 근거(config/hook/user_permanent/...). Source라는
+    -- 이름이 이벤트 쪽 EventName과 헷갈릴 수 있으니 주의 — 이건 metric attribute다.
+    Source          LowCardinality(String) MATERIALIZED Attributes['source'],
+    -- 4-1: Bedrock 그룹은 Claude 계정이 없어 organization.id/user.account_uuid/user.account_id가
+    -- 비어 있다(user-data.sh의 enduser.id 주입 참고). ResourceAttributes에서 승격 —
+    -- OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false로 전환해도 살아남게 하려면 Attributes가
+    -- 아니라 ResourceAttributes 쪽에서 와야 한다(이 값은 커스텀 리소스 속성이라 이미 그렇다).
+    EndUserId       LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    -- 4-2: OTEL_METRICS_INCLUDE_VERSION 없이도 이미 채워져 있음(실측: 345M행 100%,
+    -- service.version 자체가 OTel SDK 표준 리소스 속성). 이중계상(v2.1.214 하한)·MCP 의미
+    -- 변경(v2.1.222) 검증에 쓴다 — grafana-ab-queries.sql 패널 19/20.
+    AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
 
     -- ResourceSchemaUrl부터 Exemplars.*까지는 OTel ClickHouse exporter가 기본으로 만드는
     -- 부기(bookkeeping) 컬럼이다 — 이 DDL이 원래 가독성을 위해 생략했었는데, exporter가 라이브
@@ -94,6 +119,31 @@ ALTER TABLE claude_code.otel_metrics_sum
 -- 백필(아래)이 기존 데이터의 SeriesKey를 읽으므로 반드시 MATERIALIZE로 기존 파트까지 채운다.
 ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN SeriesKey;
 
+-- 2026-08-11 스펙 동기화 — 기존 클러스터에는 위 CREATE 블록만으로 새 컬럼이 생기지 않는다
+-- (SeriesKey와 동일한 함정). 실행은 clickhouse-migration-002.sql이 담당하고, 여기 아래
+-- 블록은 참조 사본이 그 마이그레이션과 동일한 정의를 유지하도록 남긴다.
+ALTER TABLE claude_code.otel_metrics_sum
+    ADD COLUMN IF NOT EXISTS PluginName      LowCardinality(String) MATERIALIZED Attributes['plugin.name'],
+    ADD COLUMN IF NOT EXISTS MarketplaceName LowCardinality(String) MATERIALIZED Attributes['marketplace.name'],
+    ADD COLUMN IF NOT EXISTS McpServerName   LowCardinality(String) MATERIALIZED Attributes['mcp_server.name'],
+    ADD COLUMN IF NOT EXISTS McpToolName     LowCardinality(String) MATERIALIZED Attributes['mcp_tool.name'],
+    ADD COLUMN IF NOT EXISTS Effort          LowCardinality(String) MATERIALIZED Attributes['effort'],
+    ADD COLUMN IF NOT EXISTS Speed           LowCardinality(String) MATERIALIZED Attributes['speed'],
+    ADD COLUMN IF NOT EXISTS StartType       LowCardinality(String) MATERIALIZED Attributes['start_type'],
+    ADD COLUMN IF NOT EXISTS Source          LowCardinality(String) MATERIALIZED Attributes['source'],
+    ADD COLUMN IF NOT EXISTS EndUserId       LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    ADD COLUMN IF NOT EXISTS AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'];
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN PluginName;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN MarketplaceName;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN McpServerName;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN McpToolName;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN Effort;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN Speed;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN StartType;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN Source;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN EndUserId;
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN AppVersion;
+
 -- -----------------------------------------------------------------------------
 -- 1b. 시간별 rollup — 대시보드 쿼리가 실제로 읽는 테이블 (queries.js incFlat/incBucketed)
 -- -----------------------------------------------------------------------------
@@ -124,6 +174,15 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
     Decision               LowCardinality(String),
     SkillName              LowCardinality(String),
     ToolName               LowCardinality(String),
+    -- 2026-08-11: StartType을 키 컬럼으로 추가 — session.count 롤업 경로에서도
+    -- `StartType != 'agents_view'` 필터가 가능해야 한다(원본 직접 조회 경로와 동일한 필터).
+    -- 값은 빈 문자열이 정상(agents_view 이외 metric은 이 attribute가 없음)이라
+    -- `!= 'agents_view'`는 빈 값도 그대로 통과시킨다. AppVersion도 같이 승격 —
+    -- 패널 19/20(버전 코호트) 대시보드 앱 계층이 rollup 경로로도 코호트 분해를 할 수 있게.
+    -- MV 갱신 "이후" insert부터만 값이 채워진다(신규 키 컬럼의 일반적 한계) — 과거분은
+    -- scripts/backfill-hourly-rollup.sh 재실행으로 메운다.
+    StartType              LowCardinality(String),
+    AppVersion             LowCardinality(String),
     max_value SimpleAggregateFunction(max, Float64),  -- cumulative(temp=2): 버킷 종료 시점 누적값
     sum_value SimpleAggregateFunction(sum, Float64),  -- delta(temp=1): 버킷 내 증가량 합
     has_org   SimpleAggregateFunction(max, UInt8)     -- organization.id 존재 — 그룹 판별(grouping.js)용
@@ -144,7 +203,7 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-          Model, TokenType, Decision, SkillName, ToolName, hour)
+          Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion, hour)
 TTL toDateTime(hour) + INTERVAL 180 DAY;
 
 -- MV는 인서트를 받은 노드에서 발화해 TO 테이블에 쓴다. 컬럼을 전부 명시(SELECT * 금지 —
@@ -162,12 +221,14 @@ SELECT
     MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
     Model, TokenType, Decision, SkillName,
     Attributes['tool_name'] AS ToolName,
+    Attributes['start_type'] AS StartType,
+    ResourceAttributes['service.version'] AS AppVersion,
     max(Value) AS max_value,
     sum(Value) AS sum_value,
     max(Attributes['organization.id'] != '') AS has_org
 FROM claude_code.otel_metrics_sum
 GROUP BY hour, MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-         Model, TokenType, Decision, SkillName, ToolName;
+         Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion;
 
 -- Gauge 계열 — exporter가 gauge 타입 메트릭을 받으면 쓰는 테이블. Claude Code가 실제로 보내는
 -- 메트릭은 전부 counter(sum)로 들어오고(active_time.total 포함 — queries.js의 activeTimeSeries 실측), 이 테이블은
@@ -240,6 +301,39 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_logs
     McpToolName     LowCardinality(String) MATERIALIZED JSONExtractString(LogAttributes['tool_parameters'], 'mcp_tool_name'),
     Success         LowCardinality(String) MATERIALIZED LogAttributes['success'],
 
+    -- 2026-08-11 스펙 동기화 — skill_activated/compaction/api_refusal/api_retries_exhausted/
+    -- plugin_loaded 이벤트용 승격 컬럼(패널 14~18, grafana-ab-queries.sql). 이 5개 이벤트는
+    -- monitoring-usage.md 문서에는 없지만 라이브 클러스터에 실제로 존재한다(실측: 각각
+    -- skill_activated 521건, compaction 124건, api_refusal 71건, api_retries_exhausted 31건,
+    -- plugin_loaded 5750건) — 속성 키는 문서가 아니라 이 실측(mapKeys(LogAttributes))을 기준으로
+    -- 정의했다. skill.kind는 실측상 존재하지 않아 넣지 않았다.
+    SkillName          LowCardinality(String) MATERIALIZED LogAttributes['skill.name'],
+    InvocationTrigger  LowCardinality(String) MATERIALIZED LogAttributes['invocation_trigger'],
+    SkillSource        LowCardinality(String) MATERIALIZED LogAttributes['skill.source'],
+    PluginName         LowCardinality(String) MATERIALIZED LogAttributes['plugin.name'],
+    MarketplaceName    LowCardinality(String) MATERIALIZED LogAttributes['marketplace.name'],
+    -- api_refusal. category는 has_category='true'일 때만 채워짐(OTEL_LOG_TOOL_DETAILS 게이팅) —
+    -- 실측상 has_category 값 분포는 별도 확인 필요, 빈 값은 "카테고리 미공개"로 취급.
+    RefusalCategory    LowCardinality(String) MATERIALIZED LogAttributes['category'],
+    -- server_fallback_hop='true'는 사용자가 못 본 refusal — 패널 16에서 최종 집계 제외 대상.
+    ServerFallbackHop  LowCardinality(String) MATERIALIZED LogAttributes['server_fallback_hop'],
+    -- compaction. trigger/pre_tokens/post_tokens/duration_ms로 압축률·세션당 발생 빈도를 본다.
+    CompactionTrigger  LowCardinality(String) MATERIALIZED LogAttributes['trigger'],
+    PreTokens          UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['pre_tokens']),
+    PostTokens         UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['post_tokens']),
+    -- DurationMs는 compaction 이벤트 전용이 아니다 — duration_ms 키를 쓰는 이벤트(compaction 등)
+    -- 전체에서 공유. 이벤트별 의미가 다르니 EventName과 함께 해석할 것.
+    DurationMs         UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['duration_ms']),
+    -- api_retries_exhausted.
+    TotalAttempts        UInt32 MATERIALIZED toUInt32OrZero(LogAttributes['total_attempts']),
+    TotalRetryDurationMs UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['total_retry_duration_ms']),
+    -- 서브에이전트 팬아웃(패널 13)이 prompt.id로 인터랙션당 subagent_completed 건수를 묶는다.
+    PromptId           String MATERIALIZED LogAttributes['prompt.id'],
+    -- 4-1/4-2 — otel_metrics_sum과 동일한 식, 동일한 이유(ResourceAttributes에서 승격해
+    -- OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES 전환에 영향받지 않게).
+    EndUserId          LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    AppVersion         LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
+
     -- TimestampTime부터 ScopeAttributes까지는 OTel ClickHouse exporter 기본 부기 컬럼(실측
     -- 2026-07-27, DESCRIBE TABLE) — otel_metrics_sum과 같은 사유로 명시한다.
     TimestampTime   DateTime DEFAULT toDateTime(Timestamp),
@@ -268,10 +362,142 @@ ALTER TABLE claude_code.otel_logs
 ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN McpServerName;
 ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN McpToolName;
 
+-- 2026-08-11 스펙 동기화 — 기존 클러스터 백필(SeriesKey/McpServerName과 동일한 패턴).
+-- 실행은 clickhouse-migration-002.sql이 담당, 여기는 참조 사본 동기화용.
+ALTER TABLE claude_code.otel_logs
+    ADD COLUMN IF NOT EXISTS SkillName            LowCardinality(String) MATERIALIZED LogAttributes['skill.name'],
+    ADD COLUMN IF NOT EXISTS InvocationTrigger    LowCardinality(String) MATERIALIZED LogAttributes['invocation_trigger'],
+    ADD COLUMN IF NOT EXISTS SkillSource          LowCardinality(String) MATERIALIZED LogAttributes['skill.source'],
+    ADD COLUMN IF NOT EXISTS PluginName           LowCardinality(String) MATERIALIZED LogAttributes['plugin.name'],
+    ADD COLUMN IF NOT EXISTS MarketplaceName      LowCardinality(String) MATERIALIZED LogAttributes['marketplace.name'],
+    ADD COLUMN IF NOT EXISTS RefusalCategory      LowCardinality(String) MATERIALIZED LogAttributes['category'],
+    ADD COLUMN IF NOT EXISTS ServerFallbackHop    LowCardinality(String) MATERIALIZED LogAttributes['server_fallback_hop'],
+    ADD COLUMN IF NOT EXISTS CompactionTrigger    LowCardinality(String) MATERIALIZED LogAttributes['trigger'],
+    ADD COLUMN IF NOT EXISTS PreTokens            UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['pre_tokens']),
+    ADD COLUMN IF NOT EXISTS PostTokens           UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['post_tokens']),
+    ADD COLUMN IF NOT EXISTS DurationMs           UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['duration_ms']),
+    ADD COLUMN IF NOT EXISTS TotalAttempts        UInt32 MATERIALIZED toUInt32OrZero(LogAttributes['total_attempts']),
+    ADD COLUMN IF NOT EXISTS TotalRetryDurationMs UInt64 MATERIALIZED toUInt64OrZero(LogAttributes['total_retry_duration_ms']),
+    ADD COLUMN IF NOT EXISTS PromptId             String MATERIALIZED LogAttributes['prompt.id'],
+    ADD COLUMN IF NOT EXISTS EndUserId            LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    ADD COLUMN IF NOT EXISTS AppVersion           LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'];
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN SkillName;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN InvocationTrigger;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN SkillSource;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN PluginName;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN MarketplaceName;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN RefusalCategory;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN ServerFallbackHop;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN CompactionTrigger;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN PreTokens;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN PostTokens;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN DurationMs;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN TotalAttempts;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN TotalRetryDurationMs;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN PromptId;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN EndUserId;
+ALTER TABLE claude_code.otel_logs MATERIALIZE COLUMN AppVersion;
+
+-- -----------------------------------------------------------------------------
+-- 2c. Traces (beta) — claude_code.interaction / llm_request / hook / tool /
+--     tool.blocked_on_user / tool.execution 스팬. CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1 +
+--     OTEL_TRACES_EXPORTER=otlp가 켜져야 데이터가 들어온다(user-data.sh). exporter가
+--     create_schema: false라 이 DDL을 먼저 실행해야 한다 — otel_traces는 라이브 클러스터에
+--     아직 존재하지 않는다(실측: system.tables에 없음, 2026-08-11).
+--
+--     blocked_on_user/execution 스팬은 v2.1.214+에서만 나온다(문서 확인). 플릿에 그 이전
+--     버전이 섞여 있어도(실측: 2.1.202부터 혼재) 과거 호환은 신경 쓰지 않는다 — 앞으로의
+--     구현이 우선이라는 결정에 따라, 데이터가 없는 구간은 빈 결과로 그대로 둔다(집계 쿼리
+--     레벨에서 "데이터 없음" 처리는 대시보드 앱 계층이 담당).
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS claude_code.otel_traces
+(
+    Timestamp         DateTime64(9) CODEC(Delta, ZSTD(1)),
+    TraceId           String CODEC(ZSTD(1)),
+    SpanId            String CODEC(ZSTD(1)),
+    ParentSpanId      String CODEC(ZSTD(1)),
+    TraceState        String CODEC(ZSTD(1)),
+    SpanName          LowCardinality(String) CODEC(ZSTD(1)),
+    SpanKind          LowCardinality(String) CODEC(ZSTD(1)),
+    ServiceName       LowCardinality(String) CODEC(ZSTD(1)),
+    ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    ScopeName         String CODEC(ZSTD(1)),
+    ScopeVersion      String CODEC(ZSTD(1)),
+    SpanAttributes    Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+    Duration          Int64 CODEC(ZSTD(1)),
+    StatusCode        LowCardinality(String) CODEC(ZSTD(1)),
+    StatusMessage     String CODEC(ZSTD(1)),
+    "Events.Timestamp"  Array(DateTime64(9)),
+    "Events.Name"       Array(LowCardinality(String)),
+    "Events.Attributes" Array(Map(LowCardinality(String), String)),
+    "Links.TraceId"     Array(String),
+    "Links.SpanId"      Array(String),
+    "Links.TraceState"  Array(String),
+    "Links.Attributes"  Array(Map(LowCardinality(String), String)),
+
+    ExperimentGroup LowCardinality(String) MATERIALIZED ResourceAttributes['experiment.group'],
+    UserEmail       LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
+    EndUserId       LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+    AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
+    SessionId       String                 MATERIALIZED SpanAttributes['session.id'],
+    -- span.type은 모든 스팬 종류(claude_code.interaction/llm_request/tool/
+    -- tool.blocked_on_user/tool.execution/hook)에 공통으로 붙는 상수 속성 — 패널이 이 값으로
+    -- 스팬 종류를 구분한다(SpanName도 같은 값을 담지만, SpanAttributes 쪽이 문서 기준 정의).
+    SpanType        LowCardinality(String) MATERIALIZED SpanAttributes['span.type'],
+    -- duration_ms는 스팬 종류별로 의미가 다르다(llm_request: 재시도 포함 전체, tool: 권한 대기
+    -- + 실행, tool.blocked_on_user: 권한 대기만, tool.execution: 실행만) — SpanType과 함께
+    -- 해석할 것. 패널 11/12가 이 컬럼을 쓴다.
+    DurationMs      UInt64 MATERIALIZED toUInt64OrZero(SpanAttributes['duration_ms']),
+    TtftMs          UInt64 MATERIALIZED toUInt64OrZero(SpanAttributes['ttft_ms']),
+    AgentId         String MATERIALIZED SpanAttributes['agent_id'],
+    ParentAgentId   String MATERIALIZED SpanAttributes['parent_agent_id'],
+    Model           LowCardinality(String) MATERIALIZED SpanAttributes['model'],
+    Decision        LowCardinality(String) MATERIALIZED SpanAttributes['decision']
+)
+-- 로컬 참조 사본이라 삭제 TTL만(cold tier 없음) — otel_logs와 동일 정책(90일), 라이브는
+-- infra/files/clickhouse-schema-replicated.sql에서 45일 cold 이동 + 90일 삭제.
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(Timestamp)
+ORDER BY (ExperimentGroup, SpanType, toUnixTimestamp(Timestamp))
+TTL toDateTime(Timestamp) + INTERVAL 90 DAY;
+
 -- -----------------------------------------------------------------------------
 -- 참고: attribute 실제 키 이름(event.name / tool_name / mcp_server_name 등)은
 --       Claude Code 버전에 따라 다를 수 있음. 최초 수집 후 아래로 실측 확인:
 --   SELECT DISTINCT arrayJoin(mapKeys(LogAttributes)) FROM claude_code.otel_logs LIMIT 100;
 --   SELECT DISTINCT arrayJoin(mapKeys(Attributes))    FROM claude_code.otel_metrics_sum LIMIT 100;
 -- 실측값과 MATERIALIZED 정의가 다르면 컬럼 정의만 ALTER 하면 됨.
+-- -----------------------------------------------------------------------------
+
+-- -----------------------------------------------------------------------------
+-- STEP 5 참고: 카디널리티 및 temporality 검증 (2026-08-11)
+-- -----------------------------------------------------------------------------
+
+-- (a) temporality 검증 — 문서 기본값은 delta인데 이 배포는 user-data.sh의
+--     OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE="cumulative"로 명시 고정한다.
+--     실측(2026-08-11, 라이브 클러스터): AggregationTemporality=2(cumulative) 345,193,089행,
+--     =1(delta) 2행 — 사실상 전부 cumulative. incFlat/incBucketed와 grafana-ab-queries.sql
+--     패널 9가 이미 두 값 모두 분기하므로 delta가 소수 섞여도 문제없다.
+-- SELECT AggregationTemporality, count() AS rows
+-- FROM claude_code.otel_metrics_sum
+-- GROUP BY AggregationTemporality
+-- ORDER BY rows DESC;
+
+-- (b) 시리즈 수 추정 — Effort/AgentName/SkillName/McpToolName 같은 신규 라벨이 metric label로
+--     붙으면서 시리즈 수가 곱셈으로 늘 수 있다. OTEL_METRICS_INCLUDE_SESSION_ID=false /
+--     OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false 전환 판단에 이 값을 참고할 것 —
+--     SeriesKey는 Attributes 맵 전체 해시라 라벨 조합 수를 그대로 반영한다.
+-- SELECT MetricName, uniqExact(SeriesKey) AS series
+-- FROM claude_code.otel_metrics_sum
+-- GROUP BY MetricName
+-- ORDER BY series DESC;
+
+-- SELECT
+--     uniqExact(Effort)      AS n_effort,
+--     uniqExact(AgentName)   AS n_agent,
+--     uniqExact(SkillName)   AS n_skill,
+--     uniqExact(McpToolName) AS n_mcp_tool,
+--     uniqExact(Model)       AS n_model
+-- FROM claude_code.otel_metrics_sum
+-- WHERE MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage');
 -- -----------------------------------------------------------------------------

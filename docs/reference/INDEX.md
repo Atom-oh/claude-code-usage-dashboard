@@ -7,7 +7,7 @@ follows the same structure: Overview, Components, Key Decisions, Code Pointers, 
 | Layer | Doc | Covers |
 |---|---|---|
 | Infrastructure | [infrastructure.md](infrastructure.md) | Docker image, EKS deployment, ECR, DNS/CDN |
-| Data | [data.md](data.md) | ClickHouse schema, cumulative-counter diffing, bedrock/enterprise grouping |
+| Data | [data.md](data.md) | ClickHouse schema (metrics/logs/traces-beta), cumulative-counter diffing, bedrock/enterprise grouping |
 | API | [api.md](api.md) | Express routes, query layer, chat SQL sandbox |
 | IaC | [iac.md](iac.md) | Terraform: EKS, ClickHouse Operator, networking |
 | Frontend | [frontend.md](frontend.md) | React SPA structure, shared state, data fetching |

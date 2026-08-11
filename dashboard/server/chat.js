@@ -183,22 +183,41 @@ export const SCHEMA_CONTEXT = `테이블(우선순위 순):
    해상도가 필요한 경우가 아니면 항상 이 테이블부터 쓰세요** (원본보다 ~86배 작아 스캔이 훨씬
    저렴합니다). 컬럼: hour(DateTime, 시간 버킷), MetricName, SessionId, SeriesKey(UInt64, 시리즈
    식별자), UserEmail, AggregationTemporality(1=delta, 2=cumulative), Model, TokenType, Decision
-   (accept/reject), SkillName, ToolName, max_value(그 시간 버킷 종료 시점 누적값 — temporality=2
-   경계 diff에 사용), sum_value(그 시간 버킷 내 증가량 합 — temporality=1 구간 합계에 사용),
-   has_org(그 시간 버킷에 organization.id가 관측됐으면 1).
+   (accept/reject), SkillName, ToolName, StartType(session.count의 시작 유형 — 'agents_view'는
+   claude agents 대시보드 프로세스 실행이라 대화 세션이 아니니 세션 카운트에서 제외할 것),
+   AppVersion(Claude Code 버전, 2026-08-11부터 승격 — 과거분은 이 마이그레이션 이전 데이터라
+   빈 문자열일 수 있음), max_value(그 시간 버킷 종료 시점 누적값 — temporality=2 경계 diff에
+   사용), sum_value(그 시간 버킷 내 증가량 합 — temporality=1 구간 합계에 사용), has_org(그
+   시간 버킷에 organization.id가 관측됐으면 1).
 2. otel_metrics_sum — 원본 메트릭(분 단위 이하 해상도가 필요할 때만). 컬럼: TimeUnix(DateTime),
-   MetricName, Value(Float64), UserEmail, SessionId, SeriesKey(UInt64, 시리즈 식별자 — 이미
-   컬럼으로 있으니 cityHash64 등으로 직접 만들지 마세요), Model, TokenType, Decision, SkillName,
-   AggregationTemporality, Attributes(Map).
-   MetricName 값(실측 2026-07-27 기준 8개 — 새 메트릭이 추가될 수 있으니 원하는 값이 목록에 없으면
+   MetricName, Value(Float64), UserEmail, EndUserId(Bedrock 그룹은 UserEmail이 비어 있음 —
+   coalesce(nullIf(UserEmail,''), nullIf(EndUserId,''))로 폴백할 것), SessionId, SeriesKey
+   (UInt64, 시리즈 식별자 — 이미 컬럼으로 있으니 cityHash64 등으로 직접 만들지 마세요), Model,
+   TokenType, Decision, SkillName, AgentName, PluginName, MarketplaceName, McpServerName,
+   McpToolName, Effort(low/medium/high/xhigh/max), Speed('fast'만 존재, 없으면 fast 아님),
+   StartType, Source, AppVersion, AggregationTemporality, Attributes(Map).
+   MetricName 값(실측 2026-08-11 기준 8개 — 새 메트릭이 추가될 수 있으니 원하는 값이 목록에 없으면
    SELECT DISTINCT MetricName으로 확인하세요): claude_code.session.count / .token.usage / .cost.usage /
    .lines_of_code.count / .commit.count / .pull_request.count / .code_edit_tool.decision /
    .active_time.total.
-3. otel_logs — 이벤트. 컬럼: Timestamp, TimestampTime(DateTime), EventName, UserEmail, SessionId,
-   ToolName, McpServerName, McpToolName, Success, LogAttributes(Map).
+3. otel_logs — 이벤트. 컬럼: Timestamp, TimestampTime(DateTime), EventName, UserEmail, EndUserId,
+   SessionId, PromptId(인터랙션 단위 식별자), ToolName, McpServerName, McpToolName, Success,
+   SkillName, InvocationTrigger('user-slash'/'claude-proactive'/'nested-skill'), SkillSource,
+   PluginName, MarketplaceName, RefusalCategory, ServerFallbackHop('true'면 사용자가 못 본
+   refusal — 집계에서 빼야 함), CompactionTrigger, PreTokens, PostTokens, DurationMs
+   (이벤트마다 의미가 다름 — EventName과 함께 해석), TotalAttempts, TotalRetryDurationMs,
+   AppVersion, LogAttributes(Map).
    EventName 주요 값: hook_execution_start/complete, api_request, tool_decision, tool_result,
    assistant_response, user_prompt, mcp_server_connection, api_error, api_retries_exhausted,
-   compaction, skill_activated, subagent_completed.
+   compaction, skill_activated, subagent_completed, api_refusal, plugin_loaded.
+4. otel_traces — 스팬(2026-08-11 신설, beta — CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1 켠
+   인스턴스에서만 데이터 존재). 컬럼: Timestamp, TraceId, SpanId, ParentSpanId, SpanType(claude_
+   code.interaction/llm_request/tool/tool.blocked_on_user/tool.execution/hook 중 하나),
+   DurationMs, TtftMs(llm_request 전용), AgentId, ParentAgentId, Model, Decision
+   (tool.blocked_on_user 전용), UserEmail, EndUserId, SessionId, AppVersion. tool.
+   blocked_on_user/tool.execution 스팬은 Claude Code v2.1.214 이전 버전에서는 나오지 않는다
+   — 특정 버전 구간에서 이 스팬이 0건이면 "그 그룹의 권한 대기가 0"이 아니라 "그 버전이
+   이 스팬을 안 낸다"는 뜻일 수 있으니 AppVersion을 같이 확인하고 단정하지 말 것.
 
 중요 — temporality 분기(단정하지 말 것): AggregationTemporality는 거의 항상 2(cumulative)지만
 session.count 등 일부 데이터포인트는 1(delta)로도 옵니다. 대시보드 서버(queries.js)도 매번
@@ -268,7 +287,16 @@ ${PRICING_PROMPT_TABLE}
 - 사용자가 그냥 "비용"을 물으면 기본으로 cost.usage(reported_cost)를 조회해 답하되, 반드시
   "Claude Code 자체 보고 비용"임을 명시하세요. 대시보드 카드 값과 비교/일치를 요구하면 위 단가로
   직접 계산한 뒤 "계산 비용(단가표 기준)"이라고 구분해서 답하세요. 두 값을 같은 것처럼 뭉뚱그려
-  답하지 마세요 — 실제로 서로 다른 숫자입니다.`;
+  답하지 마세요 — 실제로 서로 다른 숫자입니다.
+
+중요 — 그룹 간 직접 비교가 위험한 값(2026-08-11, 문서로 확인된 동작):
+- claude_code.internal_error는 Bedrock에서는 emit되지 않습니다. 에러율을 bedrock/enterprise로
+  나눠 비교하는 질문을 받으면, Bedrock의 낮은(또는 0) 건수가 "더 안정적"이 아니라 "그 이벤트
+  자체가 안 잡힘"일 수 있다고 반드시 알려주세요.
+- McpServerName의 의미가 Claude Code v2.1.222 전후로 다릅니다(이전: MCP 도구 호출 이후 모든
+  요청에 붙음, 이후: 툴 결과를 실제로 소비한 요청에만 붙음). MCP 사용량을 시간축으로 비교하는
+  질문에 AppVersion이 v2.1.222 경계를 걸치면, 그 경계에서 보이는 하락이 실사용 감소가 아니라
+  이 의미 변경 때문일 수 있다고 알려주세요.`;
 
 // GROUP_CTE(grouping.js)를 그대로 인용한다 — 대시보드 서버가 쓰는 규칙과 프롬프트가 여기서
 // 드리프트하면(예: has_org 판별 로직이 바뀌는데 프롬프트는 그대로면) 모델이 대시보드와 다른

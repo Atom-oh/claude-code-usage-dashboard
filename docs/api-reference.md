@@ -54,6 +54,8 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 | `GET /api/productivity/agenticness` | *timeseries* — tool calls per prompt per group |
 | `GET /api/productivity/engagement` | *timeseries* — daily users/sessions/PRs |
 | `GET /api/productivity/loc-timeseries` | *timeseries* — lines added/removed per group |
+| `GET /api/productivity/permission-wait` | *(2026-08-11, traces beta)* p50/p95 `claude_code.tool.blocked_on_user` wait time per group x `app_version`. Returns `{unsupported: true, minVersion: "2.1.214", rows: []}` instead of a zero row when no matching spans exist in range — that span type only exists on Claude Code ≥2.1.214 and requires `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` on the client. Not covered by the cache warmer (empty until the beta env rolls out). |
+| `GET /api/productivity/ttft` | *(2026-08-11, traces beta)* p50/p95 time-to-first-token per group x model, from `claude_code.llm_request` spans. Same `{unsupported, rows}` shape as `permission-wait` (here `minVersion` is `null` — TTFT isn't version-gated, an empty result just means tracing isn't enabled yet). Not covered by the cache warmer. |
 
 ### Usage
 | Path | Returns |
@@ -61,6 +63,22 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 | `GET /api/usage/tool-mcp` | Tool/MCP invocation counts |
 | `GET /api/usage/skills` | Skill invocation counts (subject to OTel redaction of third-party skill names) |
 | `GET /api/usage/connectors` | MCP connector usage |
+| `GET /api/usage/subagent-fanout` | *(2026-08-11)* Subagent completions per group, from `otel_logs`' `subagent_completed` event (not traces — this event needs no beta flag and has data today). Includes `avg_subagents_per_interaction` (keyed by `prompt.id`). |
+| `GET /api/usage/skill-activations` | *(2026-08-11)* `skill_activated` event counts per group x skill x `invocation_trigger` (`user-slash`/`claude-proactive`/`nested-skill`) — the `claude-proactive` share is the signal for whether a skill fires on its own. |
+| `GET /api/usage/compaction` | *(2026-08-11)* Compaction frequency + average compression ratio (`1 - post_tokens/pre_tokens`) per group x trigger, from `otel_logs`' `compaction` event. |
+| `GET /api/usage/plugins` | *(2026-08-11)* Fleet-wide plugin inventory (no group split) from `plugin_loaded` events — plugin x marketplace, session-load and distinct-session counts. |
+
+### Reliability
+| Path | Returns |
+|---|---|
+| `GET /api/reliability/refusals` | *(2026-08-11)* `api_refusal` counts per group, split into `user_visible_refusals` and `server_hidden_refusals` (`server_fallback_hop='true'` — the server already retried on a different model, so the user never saw it; keep this out of any refusal-rate total). |
+| `GET /api/reliability/retries-exhausted` | *(2026-08-11)* `api_retries_exhausted` counts per group + average attempts/retry duration — a direct signal for Bedrock quota throttling. |
+
+### Integrity (A/B validity checks)
+| Path | Returns |
+|---|---|
+| `GET /api/integrity/version-cohort-sessions` | *(2026-08-11)* Distinct session count per group x `app_version` (via `uniqExact(SessionId)`, not a `sum(Value)` of the cumulative counter) — surfaces whether the two groups are actually running the same Claude Code version. As of the 2026-08-11 spec sync, this fleet had 20 versions in play (2.1.202–2.1.226). |
+| `GET /api/integrity/version-cohort-cost` | *(2026-08-11)* `cost.usage`/`token.usage`, session-boundary-diffed (same math as `incFlat`, computed locally rather than through it — see `dashboard/server/CLAUDE.md`), grouped by group x version cohort (`pre-2.1.214` / `>=2.1.214`). Exists to check, not assume, whether the pre-2.1.214 double-counting bug (usage streamed across multiple frames, each counted as a separate request) is present in this fleet's data. |
 
 ### Users
 | Path | Returns |

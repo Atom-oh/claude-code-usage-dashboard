@@ -104,6 +104,14 @@ kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-
 - **Users in the wrong bedrock/enterprise group**: grouping is session-scoped and heuristic —
   see `dashboard/server/grouping.js` for the rules and known edge cases before assuming a bug.
 - **Data missing for a recent window only**: that is Scenario 3, not a query bug.
+- **Bedrock group's error rate looks near-zero**: may not be a bug — `claude_code.internal_error`
+  is not emitted on Bedrock (confirmed against the docs, 2026-08-11). Account for this
+  asymmetry before comparing error rates across groups directly.
+- **A/B metrics diverge sharply between groups**: check whether both groups are actually
+  running the same Claude Code version first, via `/api/integrity/version-cohort-sessions`
+  (2026-08-11 telemetry sync — see `docs/decisions/ADR-001-local-diff-over-shared-incflat-extension.md`). This fleet has had 20
+  versions in play at once (2.1.202-2.1.226), and versions below v2.1.214 may have had a
+  cost.usage/token.usage double-counting bug.
 
 ## Verification
 - [ ] `kubectl get pods -n claude-code` all `Running`/`Ready`
@@ -278,6 +286,13 @@ kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-
 - **bedrock/enterprise 그룹 오분류**: 그루핑은 세션 단위 휴리스틱입니다 — 버그로 단정하기 전에
   `dashboard/server/grouping.js`의 규칙과 알려진 엣지 케이스를 확인합니다.
 - **최근 구간만 데이터 없음**: 쿼리 버그가 아니라 시나리오 3입니다.
+- **Bedrock 그룹의 에러율이 0에 가까움**: 버그가 아닐 수 있습니다 —
+  `claude_code.internal_error`는 Bedrock에서 emit되지 않습니다(2026-08-11 문서 확인). 그룹
+  간 에러율을 직접 비교하기 전에 이 비대칭을 감안하세요.
+- **A/B 지표가 그룹 간 크게 벌어짐**: 두 그룹이 실제로 같은 Claude Code 버전을 쓰는지
+  `/api/integrity/version-cohort-sessions`로 먼저 확인하세요(2026-08-11 스펙 동기화 —
+  `docs/decisions/ADR-001-local-diff-over-shared-incflat-extension.md`). 이 플릿은 한때 2.1.202~2.1.226 20개 버전이 혼재해 있었고,
+  v2.1.214 이전 버전은 cost.usage/token.usage 이중계상 버그가 있었을 수 있습니다.
 
 ## 검증
 - [ ] `kubectl get pods -n claude-code` 전체 `Running`/`Ready`
