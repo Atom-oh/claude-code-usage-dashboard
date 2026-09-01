@@ -23,6 +23,26 @@ const RETRY_COLUMNS = [
   { key: "avg_retry_duration_ms", label: "평균 재시도 시간(ms)", render: fmt },
 ];
 
+// 2026-08-31 — API 에러율. 서버가 {byModel, byStatus} 두 갈래를 한 응답으로 내려준다(다른
+// 라우트들처럼 배열이 아니다).
+// error_rate 분모는 api_request + api_error다 — api_request가 실패 요청을 포함하는지가 실측으로
+// 확정되지 않아 두 해석 모두에서 [0,1]에 갇히는 쪽을 골랐다(queries.js apiErrors 주석 참고).
+const API_ERROR_MODEL_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "model", label: "모델" },
+  { key: "requests", label: "api_request", render: fmt },
+  { key: "errors", label: "api_error", render: fmt },
+  { key: "error_rate", label: "에러율", render: (v) => `${(Number(v || 0) * 100).toFixed(2)}%` },
+];
+
+// 'no-http-status'는 status_code 자체가 없는 에러(실측 2026-08-31: 580건 중 35건) — HTTP 상태가
+// 아니라 전송 계층 실패(예: Stream idle timeout)라 숫자 상태코드와 섞이지 않게 라벨을 달리 준다.
+const API_ERROR_STATUS_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "status_code", label: "HTTP 상태", render: (v) => (v === "no-http-status" ? "HTTP 상태 없음" : v) },
+  { key: "errors", label: "에러 건수", render: fmt },
+];
+
 const VERSION_SESSION_COLUMNS = [
   { key: "group", label: "그룹" },
   { key: "app_version", label: "Claude Code 버전" },
@@ -40,6 +60,7 @@ const VERSION_COST_COLUMNS = [
 export default function Reliability() {
   const refusals = useApi("/api/reliability/refusals");
   const retries = useApi("/api/reliability/retries-exhausted");
+  const apiErrors = useApi("/api/reliability/api-errors");
   const versionSessions = useApi("/api/integrity/version-cohort-sessions");
   const versionCost = useApi("/api/integrity/version-cohort-cost");
 
@@ -75,6 +96,27 @@ export default function Reliability() {
             columns={RETRY_COLUMNS}
             rows={retries.data || []}
           />
+        )}
+
+        {apiErrors.loading ? (
+          <Loading />
+        ) : apiErrors.error ? (
+          <ErrorBox error={apiErrors.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <DataTable
+              title="API 에러율"
+              subtitle="Bedrock 스로틀링/검증 오류의 조기 신호 — 에러가 한쪽 그룹에만 몰리면 그 그룹의 생산성 하락은 장애 탓이다"
+              columns={API_ERROR_MODEL_COLUMNS}
+              rows={apiErrors.data?.byModel || []}
+            />
+            <DataTable
+              title="API 에러 상태코드 분포"
+              subtitle="'HTTP 상태 없음'은 상태코드가 아예 없는 전송 계층 실패(예: Stream idle timeout) — 버리지 않고 따로 센다"
+              columns={API_ERROR_STATUS_COLUMNS}
+              rows={apiErrors.data?.byStatus || []}
+            />
+          </div>
         )}
 
         {versionSessions.loading ? (

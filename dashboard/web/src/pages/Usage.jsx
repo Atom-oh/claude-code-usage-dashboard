@@ -16,6 +16,20 @@ const TOOL_MCP_COLUMNS = [
   { key: "total", label: "합계", render: fmt },
 ];
 
+// 2026-08-31 — 툴 권한 결정 퍼널. source가 핵심: config는 사전 허용(개발자를 안 멈춤),
+// user_temporary는 매번 물어봤다는 뜻, user_permanent는 사용자가 직접 허용목록에 넣은 것.
+// 상위 20개 툴 × source라 그룹당 수십 행 — SUBAGENT_FANOUT_COLUMNS 주석의 판단 기준상
+// group 컬럼 하나로 합치는 쪽이 아니라 TOOL_MCP_COLUMNS처럼 그룹별 카드로 좌우 분리한다.
+// 합계(n)가 수락+거부와 다르면 accept/reject 외의 decision 값이 새로 생긴 것.
+const TOOL_DECISION_COLUMNS = [
+  { key: "tool", label: "도구" },
+  { key: "source", label: "허용 출처" },
+  { key: "accepts", label: "수락", render: fmt },
+  { key: "rejects", label: "거부", render: fmt },
+  { key: "accept_rate", label: "수락률", render: (v) => `${(Number(v || 0) * 100).toFixed(0)}%` },
+  { key: "n", label: "합계", render: fmt },
+];
+
 const CONNECTOR_COLUMNS = [
   { key: "connector", label: "커넥터" },
   { key: "users", label: "유저", render: fmt },
@@ -66,6 +80,7 @@ const COMPACTION_COLUMNS = [
 
 export default function Usage() {
   const toolMcp = useApi("/api/usage/tool-mcp");
+  const toolDecisions = useApi("/api/usage/tool-decisions");
   const skills = useApi("/api/usage/skills");
   const connectors = useApi("/api/usage/connectors");
   const skillActivations = useApi("/api/usage/skill-activations");
@@ -90,6 +105,24 @@ export default function Usage() {
                 subtitle="성공/실패"
                 columns={TOOL_MCP_COLUMNS}
                 rows={(toolMcp.data || []).filter((r) => r.group === g)}
+              />
+            ))}
+          </div>
+        )}
+
+        {toolDecisions.loading ? (
+          <Loading />
+        ) : toolDecisions.error ? (
+          <ErrorBox error={toolDecisions.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => (
+              <DataTable
+                key={g}
+                title={`툴 권한 결정 퍼널 — ${g}`}
+                subtitle="config = 사전 허용(개발자를 멈추지 않음), user_temporary = 매번 물어봄, user_permanent = 사용자가 허용목록에 넣음 — 상위 20개 툴"
+                columns={TOOL_DECISION_COLUMNS}
+                rows={(toolDecisions.data || []).filter((r) => r.group === g)}
               />
             ))}
           </div>

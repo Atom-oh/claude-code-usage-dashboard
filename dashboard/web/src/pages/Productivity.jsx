@@ -32,6 +32,19 @@ const TTFT_COLUMNS = [
   { key: "n", label: "샘플 수", render: fmt },
 ];
 
+// 2026-08-31 — 인터랙션 시간 분해. 비중 합계가 1을 넘을 수 있다(자식 스팬은 동시 실행될 수 있고
+// tool 스팬 duration_ms는 권한 대기 + 실행을 함께 담는다) — 구성비가 아니라 "인터랙션 총 시간
+// 대비 각 종류가 쓴 시간의 배수"다. 100%를 넘는 값이 보이면 버그가 아니다.
+const INTERACTION_BREAKDOWN_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "interactions", label: "인터랙션 수", render: fmt },
+  { key: "p50_interaction_ms", label: "p50 소요(ms)", render: fmt },
+  { key: "p95_interaction_ms", label: "p95 소요(ms)", render: fmt },
+  { key: "llm_share", label: "LLM 비중", render: pct },
+  { key: "tool_exec_share", label: "툴 실행 비중", render: pct },
+  { key: "blocked_share", label: "권한 대기 비중", render: pct },
+];
+
 function TracesBetaPanel({ resp, title, subtitle, columns }) {
   if (resp.loading) return <Loading />;
   if (resp.error) return <ErrorBox error={resp.error} />;
@@ -62,6 +75,7 @@ export default function Productivity() {
   const leaderboard = useApi("/api/users/leaderboard");
   const permissionWait = useApi("/api/productivity/permission-wait");
   const ttft = useApi("/api/productivity/ttft");
+  const interactionBreakdown = useApi("/api/productivity/interaction-breakdown");
 
   const activeHours = active.data?.map((r) => ({ ...r, active_seconds: r.active_seconds / 3600 }));
 
@@ -290,6 +304,12 @@ export default function Productivity() {
           title="TTFT (첫 토큰까지 시간)"
           subtitle="Bedrock vs Enterprise 체감 응답성 비교에 가장 직접적인 지표"
           columns={TTFT_COLUMNS}
+        />
+        <TracesBetaPanel
+          resp={interactionBreakdown}
+          title="인터랙션 시간 분해"
+          subtitle="느린 원인이 모델(llm_request)인지, 툴 실행(tool.execution)인지, 권한 대기(tool.blocked_on_user)인지를 가른다 — 비중 합계는 1을 넘을 수 있다"
+          columns={INTERACTION_BREAKDOWN_COLUMNS}
         />
       </div>
     </div>
