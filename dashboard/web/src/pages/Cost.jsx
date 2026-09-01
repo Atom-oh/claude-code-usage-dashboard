@@ -87,10 +87,24 @@ export default function Cost() {
   const modelRows = foldModelRows(byModel.data || []);
   const totalModelCost = modelRows.reduce((s, r) => s + (r.unpriced ? 0 : r.cost), 0);
 
-  const userModelRows = [...(byUserModel.data || [])].sort((a, b) => (b.cost || 0) - (a.cost || 0));
+  // 양 그룹을 오간 유저(straddler)는 normModel 이후 모델명이 같아 그룹 점만 다른 두 줄로 보인다
+  // (사용자 지시: 이 드릴다운은 그룹 구분 없이 user×model 병합 — 그룹 비교는 다른 패널 몫).
+  // 병합 키에 model이 들어가므로 unpriced는 병합 조각끼리 항상 동일하다(같은 정규화 모델 = 같은 단가표 상태).
+  const mergedUserModel = [...(byUserModel.data || [])
+    .reduce((m, r) => {
+      const k = `${r.user}|${r.model}`;
+      const acc = m.get(k) || { user: r.user, model: r.model, unpriced: r.unpriced, cost: r.cost === null ? null : 0, reported_cost: 0, tokens: 0 };
+      if (acc.cost !== null) acc.cost += Number(r.cost);
+      acc.reported_cost += Number(r.reported_cost || 0);
+      acc.tokens += Number(r.tokens || 0);
+      return m.set(k, acc);
+    }, new Map())
+    .values()];
+
+  const userModelRows = [...mergedUserModel].sort((a, b) => (b.cost || 0) - (a.cost || 0));
 
   const userTotals = new Map();
-  for (const r of byUserModel.data || []) {
+  for (const r of mergedUserModel) {
     if (r.cost === null) continue;
     userTotals.set(r.user, (userTotals.get(r.user) || 0) + Number(r.cost));
   }
@@ -102,7 +116,7 @@ export default function Cost() {
   // pivotByKey는 자체 정렬/제한이 없고 행의 등장 순서를 그대로 유지한다(비-날짜 xKey일 때) — 그래서
   // topUsers(지출 내림차순)를 순회하며 그 유저의 행만 그 순서로 모아야 스택 바도 지출 순으로 나온다.
   const topUserModelRows = topUsers.flatMap((u) =>
-    (byUserModel.data || []).filter((r) => r.user === u.user && r.cost !== null)
+    mergedUserModel.filter((r) => r.user === u.user && r.cost !== null)
   );
 
   // bedrock/enterprise 도넛은 그룹=색상 계열 규칙을 따른다(사용자 지시) — 같은 모델이라도
@@ -461,10 +475,9 @@ export default function Cost() {
         ) : (
           <DataTable
             title="사용자 · 모델별 지출"
-            subtitle="계산 비용 기준 정렬 · 그룹(bedrock/enterprise)은 사용자가 실제로 호출한 모델로 자동 판별"
+            subtitle="계산 비용 기준 정렬 · 그룹 무관 user×model 병합 — 그룹별로 보려면 상단 필터 사용"
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
-              { key: "group", label: "그룹" },
               { key: "model", label: "모델" },
               { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)) },
               { key: "reported_cost", label: "보고 비용", render: usd },
