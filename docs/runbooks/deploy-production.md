@@ -57,11 +57,25 @@ kubectl --context fsi-demo-cluster -n claude-code set image deployment/dashboard
 kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard --timeout=120s
 ```
 
+### 4. Invalidate the CloudFront cache
+```bash
+DIST_ID=$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[?contains(to_string(Aliases.Items), 'ccdash')].Id" --output text)
+INV_ID=$(aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" \
+  --query 'Invalidation.Id' --output text)
+aws cloudfront wait invalidation-completed --distribution-id "$DIST_ID" --id "$INV_ID"
+```
+CloudFront caches `index.html`, so without this step `ccdash.atomai.click` keeps serving the
+previous build's asset hashes even after a successful rollout — the pods are new but nobody
+sees them (실측 2026-09-01: 롤아웃 성공 후에도 라이브 HTML이 직전 배포의 `assets/index-*.js`를
+참조하고 있었고, invalidation 완료 즉시 새 해시로 전환됨).
+
 ## Verification
 - [ ] `kubectl get pods -l app=dashboard` shows 2/2 `Running` on the new ReplicaSet
 - [ ] `kubectl get deployment dashboard -o jsonpath='{.spec.template.spec.containers[0].image}'` matches `$TAG`
 - [ ] Pod logs show `dashboard listening on :8080` with no stack traces
 - [ ] `/healthz` returns `{"ok": true}` (via port-forward if not publicly reachable)
+- [ ] `https://ccdash.atomai.click/`의 `assets/index-*.js` 해시가 로컬 `dashboard/web/dist/index.html`과 일치 (Basic Auth 필요)
 
 ## Rollback
 ```bash
