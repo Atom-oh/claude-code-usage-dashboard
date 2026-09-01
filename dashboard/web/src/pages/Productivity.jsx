@@ -45,6 +45,12 @@ const INTERACTION_BREAKDOWN_COLUMNS = [
   { key: "blocked_share", label: "권한 대기 비중", render: pct },
 ];
 
+const LANGUAGE_COLUMNS = [
+  { key: "language", label: "언어" },
+  { key: "edits", label: "편집", render: fmt },
+  { key: "accept_rate", label: "수락률", render: pct },
+];
+
 function TracesBetaPanel({ resp, title, subtitle, columns }) {
   if (resp.loading) return <Loading />;
   if (resp.error) return <ErrorBox error={resp.error} />;
@@ -76,6 +82,8 @@ export default function Productivity() {
   const permissionWait = useApi("/api/productivity/permission-wait");
   const ttft = useApi("/api/productivity/ttft");
   const interactionBreakdown = useApi("/api/productivity/interaction-breakdown");
+  const activeSummary = useApi("/api/productivity/active-time-summary");
+  const languages = useApi("/api/productivity/languages");
 
   const activeHours = active.data?.map((r) => ({ ...r, active_seconds: r.active_seconds / 3600 }));
 
@@ -99,6 +107,20 @@ export default function Productivity() {
     { accept: 0, total: 0 }
   );
   const acceptRate = decisionTotals.total > 0 ? decisionTotals.accept / decisionTotals.total : 0;
+
+  const activeTotals = (activeSummary.data || []).reduce(
+    (acc, r) => ({ user: acc.user + Number(r.user_seconds), cli: acc.cli + Number(r.cli_seconds) }),
+    { user: 0, cli: 0 }
+  );
+  const userHours = activeTotals.user / 3600;
+  const cliHours = activeTotals.cli / 3600;
+
+  const langRowsFor = (g) =>
+    (languages.data || [])
+      .filter((r) => r.group === g && Number(r.edits) > 0)
+      .map((r) => ({ ...r, accept_rate: Number(r.accepted) / Number(r.edits) }))
+      .sort((a, b) => Number(b.edits) - Number(a.edits))
+      .slice(0, 10);
 
   // leaderboard는 유저×그룹 행(userLeaderboard)이라 그대로 슬라이스하면 두 그룹을 오간
   // 유저(straddler)가 같은 이름으로 중복 노출되고 어느 그룹 점수인지 안 보인다 — 라벨에
@@ -276,6 +298,46 @@ export default function Productivity() {
 
         {active.loading ? <Loading /> : active.error ? <ErrorBox error={active.error} /> : (
           <GroupAreaChart title="활성 사용 시간" subtitle="시간, 그룹별 시계열" rows={activeHours} xKey="t" valueKey="active_seconds" tickFormatter={fmtTick} />
+        )}
+
+        {activeSummary.loading || kpi.loading ? (
+          <Loading />
+        ) : activeSummary.error || kpi.error ? (
+          <ErrorBox error={activeSummary.error || kpi.error} />
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatTile label="개발자 활성 시간" value={`${userHours.toFixed(1)}h`} hint="active_time.total 중 user 시간, 그룹 합산" />
+            <StatTile label="CLI 구동 시간" value={`${cliHours.toFixed(1)}h`} hint="active_time.total 중 cli 시간, 그룹 합산" />
+            <StatTile
+              label="자동화 배율"
+              value={activeTotals.user > 0 ? `×${(activeTotals.cli / activeTotals.user).toFixed(1)}` : "—"}
+              variant="accent"
+              hint="개발자가 지켜본 1시간당 CLI가 일한 시간"
+            />
+            <StatTile
+              label="시간당 작성 라인"
+              value={userHours > 0 ? fmt(Math.round(outcomeTotals.loc / userHours)) : "—"}
+              hint="작성 라인 ÷ 개발자 활성 시간"
+            />
+          </div>
+        )}
+
+        {languages.loading ? (
+          <Loading />
+        ) : languages.error ? (
+          <ErrorBox error={languages.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => (
+              <DataTable
+                key={g}
+                title={`언어별 코드 편집 — ${g}`}
+                subtitle="편집 수 상위 10개 언어 — 수락률 = accept 결정 ÷ 전체 편집"
+                columns={LANGUAGE_COLUMNS}
+                rows={langRowsFor(g)}
+              />
+            ))}
+          </div>
         )}
 
         {agentic.loading ? (

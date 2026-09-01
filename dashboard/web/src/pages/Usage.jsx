@@ -1,11 +1,14 @@
 import { DataTable } from "../components/DataTable.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
-import { Loading, ErrorBox } from "../components/Card.jsx";
+import { Card, Loading, ErrorBox } from "../components/Card.jsx";
+import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (ok, total) => (total > 0 ? `${((ok / total) * 100).toFixed(0)}%` : "—");
+// ClickHouse quantile()은 float를 그대로 내려보낸다 — ms 컬럼은 반올림해서 표시.
+const ms = (v) => fmt(Math.round(Number(v) || 0));
 
 // group을 카드 제목으로 좌우 분리해 보여주므로 테이블 안에서는 그룹 컬럼을 뺀다.
 const TOOL_MCP_COLUMNS = [
@@ -28,6 +31,31 @@ const TOOL_DECISION_COLUMNS = [
   { key: "rejects", label: "거부", render: fmt },
   { key: "accept_rate", label: "수락률", render: (v) => `${(Number(v || 0) * 100).toFixed(0)}%` },
   { key: "n", label: "합계", render: fmt },
+];
+
+const TOOL_LATENCY_COLUMNS = [
+  { key: "tool", label: "도구" },
+  { key: "uses", label: "실행", render: fmt },
+  { key: "errors", label: "오류", render: (v) => (Number(v) > 0 ? <span className="text-negative-text font-medium">{fmt(v)}</span> : fmt(v)) },
+  { key: "p50_ms", label: "p50(ms)", render: ms },
+  { key: "p95_ms", label: "p95(ms)", render: ms },
+];
+
+const COMMAND_COLUMNS = [
+  { key: "command", label: "커맨드" },
+  { key: "uses", label: "사용", render: fmt },
+  { key: "users", label: "사용자", render: fmt },
+];
+
+// MCP 서버는 그룹당 몇 개뿐이라 SUBAGENT_FANOUT_COLUMNS 주석의 판단 기준대로 좌우 카드 분리
+// 대신 group 컬럼 하나로 합친다 — 커넥터 사용 현황(호출량, 수십 행)과 다르게 가는 의도적 선택.
+const MCP_HEALTH_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "server", label: "서버" },
+  { key: "attempts", label: "시도", render: fmt },
+  { key: "connected", label: "성공", render: fmt },
+  { key: "failed", label: "실패", render: (v) => (Number(v) > 0 ? <span className="text-negative-text font-medium">{fmt(v)}</span> : fmt(v)) },
+  { key: "p95_ms", label: "p95(ms)", render: ms },
 ];
 
 const CONNECTOR_COLUMNS = [
@@ -87,6 +115,10 @@ export default function Usage() {
   const plugins = useApi("/api/usage/plugins");
   const subagentFanout = useApi("/api/usage/subagent-fanout");
   const compaction = useApi("/api/usage/compaction");
+  const toolLatency = useApi("/api/usage/tool-latency");
+  const commands = useApi("/api/usage/commands");
+  const hookOverhead = useApi("/api/usage/hook-overhead");
+  const mcpHealth = useApi("/api/usage/mcp-health");
 
   return (
     <div>
@@ -128,6 +160,27 @@ export default function Usage() {
           </div>
         )}
 
+        {toolLatency.loading ? (
+          <Loading />
+        ) : toolLatency.error ? (
+          <ErrorBox error={toolLatency.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => (
+              <DataTable
+                key={g}
+                title={`도구 실행 레이턴시 — ${g}`}
+                subtitle="tool_result 이벤트 기준 — 실행 수 상위 10개 도구"
+                columns={TOOL_LATENCY_COLUMNS}
+                rows={(toolLatency.data || [])
+                  .filter((r) => r.group === g)
+                  .sort((a, b) => Number(b.uses) - Number(a.uses))
+                  .slice(0, 10)}
+              />
+            ))}
+          </div>
+        )}
+
         {connectors.loading ? (
           <Loading />
         ) : connectors.error ? (
@@ -144,6 +197,19 @@ export default function Usage() {
               />
             ))}
           </div>
+        )}
+
+        {mcpHealth.loading ? (
+          <Loading />
+        ) : mcpHealth.error ? (
+          <ErrorBox error={mcpHealth.error} />
+        ) : (
+          <DataTable
+            title="MCP 연결 헬스"
+            subtitle="mcp_server_connection 이벤트 기준 — 세션 시작 시 서버별 연결 성공/실패"
+            columns={MCP_HEALTH_COLUMNS}
+            rows={mcpHealth.data || []}
+          />
         )}
 
         {skills.loading ? (
@@ -219,6 +285,67 @@ export default function Usage() {
             columns={COMPACTION_COLUMNS}
             rows={compaction.data || []}
           />
+        )}
+
+        {commands.loading ? (
+          <Loading />
+        ) : commands.error ? (
+          <ErrorBox error={commands.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => (
+              <DataTable
+                key={g}
+                title={`슬래시 커맨드 사용 — ${g}`}
+                subtitle="user_prompt의 command_name 기준 — 커맨드 없는 일반 프롬프트는 제외"
+                columns={COMMAND_COLUMNS}
+                rows={(commands.data?.commands || []).filter((r) => r.group === g)}
+              />
+            ))}
+          </div>
+        )}
+
+        {commands.loading ? (
+          <Loading />
+        ) : commands.error ? (
+          <ErrorBox error={commands.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => {
+              const r = (commands.data?.prompts || []).find((row) => row.group === g);
+              return (
+                <Card key={g} title={`프롬프트 길이 — ${g}`} subtitle="user_prompt의 prompt_length 분포">
+                  <div className="grid grid-cols-3 gap-4">
+                    <StatTile label="프롬프트 수" value={r ? fmt(r.prompts) : "—"} />
+                    <StatTile label="p50 길이" value={r ? fmt(Math.round(Number(r.p50_len) || 0)) : "—"} />
+                    <StatTile label="p95 길이" value={r ? fmt(Math.round(Number(r.p95_len) || 0)) : "—"} />
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+
+        {hookOverhead.loading ? (
+          <Loading />
+        ) : hookOverhead.error ? (
+          <ErrorBox error={hookOverhead.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => {
+              const r = (hookOverhead.data || []).find((row) => row.group === g);
+              return (
+                <Card key={g} title={`Hook 오버헤드 — ${g}`} subtitle="hook_execution_complete 기준 — 총 소요는 초, p95는 ms">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <StatTile label="실행 수" value={r ? fmt(r.executions) : "—"} />
+                    <StatTile label="총 소요(s)" value={r ? fmt(Math.round(Number(r.total_seconds) || 0)) : "—"} />
+                    <StatTile label="p95(ms)" value={r ? ms(r.p95_ms) : "—"} />
+                    <StatTile label="차단 수" value={r ? fmt(r.blocked) : "—"} variant={Number(r?.blocked) > 0 ? "danger" : "default"} />
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

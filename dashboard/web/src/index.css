@@ -57,8 +57,12 @@
   --chart-1: #528df8;
   --chart-2: #01a88d;
   --chart-3: #7b26ff;
-  --chart-4: #39c2b0;
-  --chart-5: #7d8a96;
+  /* 실측 확인: dataviz validate_palette 하드 FAIL 2건 — #7d8a96은 chroma floor(회색으로 읽힘),
+     #39c2b0은 magenta 교체 후 인접 CVD ΔE 2.2(deutan). 각각 레퍼런스 팔레트의 같은 순번
+     (4=yellow, 5=magenta)으로만 교체. 축/보조 회색은 --chart-axis가 따로 들고 있어 무관하고,
+     colors.js TEAL_RAMP의 #39C2B0 리터럴은 그룹 램프 축이라 이 팔레트와 별개. */
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
   --chart-grid: #e7ecef;
   --chart-axis: #7d8a96;
   --chart-tooltip-bg: #16202a;
@@ -85,6 +89,9 @@
   --series-bedrock: var(--chart-1);
   --series-enterprise: var(--chart-2);
   --series-unknown: var(--ink-400);
+  /* ABScoreboard 좌우 틴트 — series 색이 var() 참조라 rgba()로 알파를 못 얹어 color-mix로 만든다 */
+  --series-bedrock-tint: color-mix(in srgb, var(--series-bedrock) 6%, transparent);
+  --series-enterprise-tint: color-mix(in srgb, var(--series-enterprise) 6%, transparent);
 }
 
 body {

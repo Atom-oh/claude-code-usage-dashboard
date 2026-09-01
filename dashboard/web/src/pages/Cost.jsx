@@ -3,6 +3,7 @@ import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { DonutBody, DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
+import LowerBoundNote from "../components/LowerBoundNote.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
@@ -15,10 +16,11 @@ import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGr
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-// bedrock/enterprise로 나뉘는 도넛 3종(캐시 티어·토큰 타입)의 라벨 순서 — 그룹 색상 배정이
+// bedrock/enterprise로 나뉘는 도넛들(캐시 티어·토큰 타입·Effort)의 라벨 순서 — 그룹 색상 배정이
 // 데이터 등장 순서가 아니라 이 고정 순서를 따르게 한다(colors.js makeGroupBreakdownColorer).
 const TIER_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시 입력"];
 const TOKEN_TYPE_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "입력"];
+const EFFORT_LABEL_ORDER = ["medium", "high", "xhigh", "unknown"];
 
 function foldModelRows(rows) {
   const totals = new Map();
@@ -64,6 +66,8 @@ export default function Cost() {
   // 과대 계산된다(리뷰에서 MAJOR로 확인 — Executive.jsx는 이미 activeUsers로 통일했었음).
   const activeUsers = useApi("/api/overview/active-users");
   const efficiency = useApi("/api/users/cost-efficiency");
+  const effortMix = useApi("/api/cost/effort-mix");
+  const agentCost = useApi("/api/cost/by-agent");
   const prevCostByModel = new Map((compare.data || []).map((r) => [r.model, r.cost === null ? null : Number(r.prev_cost)]));
 
   const totals = (summary.data || []).reduce(
@@ -169,6 +173,15 @@ export default function Cost() {
   // MINOR로 확인). summary.data가 이미 그룹별 unpriced_tokens를 갖고 있으니 그대로 찾는다.
   const unpricedTokensFor = (group) => Number((summary.data || []).find((r) => r.group === group)?.unpriced_tokens || 0);
 
+  const effortOrder = (e) => {
+    const i = EFFORT_LABEL_ORDER.indexOf(e);
+    return i === -1 ? EFFORT_LABEL_ORDER.length : i;
+  };
+  const effortRowsFor = (group) =>
+    (effortMix.data || [])
+      .filter((r) => r.group === group && Number(r.cost_usd) > 0)
+      .sort((a, b) => effortOrder(a.effort) - effortOrder(b.effort));
+
   // loc=0이어도 commits>0인 유저(라인 없이 커밋만 한 경우)는 $/커밋 컬럼에 값이 있으므로 테이블에서
   // 지우면 안 된다. unpriced(미산정 모델 사용) 유저는 cost_per_loc이 null — 오름차순 정렬에서 항상
   // 맨 뒤로 보내야 $0.0000/LOC로 "가장 효율적"에 잘못 노출되지 않는다.
@@ -239,6 +252,8 @@ export default function Cost() {
           </div>
         )}
 
+        <LowerBoundNote />
+
         {tiers.loading || cacheEff.loading ? (
           <Loading />
         ) : tiers.error || cacheEff.error ? (
@@ -259,6 +274,31 @@ export default function Cost() {
                 valuePrefix="$"
                 colorOf={makeGroupBreakdownColorer(g, TIER_LABEL_ORDER)}
               />
+            ))}
+          </div>
+        )}
+
+        {effortMix.loading ? (
+          <Loading />
+        ) : effortMix.error ? (
+          <ErrorBox error={effortMix.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {["bedrock", "enterprise"].map((g) => (
+              <Card
+                key={g}
+                title={`Effort별 지출 — ${g}`}
+                subtitle="reasoning effort별 계산 비용 · effort 미보고 세션은 unknown"
+              >
+                <DonutBody
+                  data={effortRowsFor(g)}
+                  nameKey="effort"
+                  valueKey="cost_usd"
+                  valuePrefix="$"
+                  colorOf={makeGroupBreakdownColorer(g, EFFORT_LABEL_ORDER)}
+                />
+                <p className="mt-3 text-[12px] text-ink-400">xhigh/high 비중이 클수록 thinking 미계상 리스크가 크다.</p>
+              </Card>
             ))}
           </div>
         )}
@@ -368,6 +408,24 @@ export default function Cost() {
           rows={modelRows}
           groupKey="__none__"
         />
+
+        {agentCost.loading ? (
+          <Loading />
+        ) : agentCost.error ? (
+          <ErrorBox error={agentCost.error} />
+        ) : (
+          <DataTable
+            title="에이전트별 지출"
+            subtitle="계산 비용 기준 상위 15개 — 에이전트 미지정(메인 세션) 지출 포함"
+            columns={[
+              { key: "agent", label: "에이전트", render: (v) => (v === "main" ? "메인 세션" : v) },
+              { key: "group", label: "그룹" },
+              { key: "cost_usd", label: "지출", render: usd },
+              { key: "tokens", label: "토큰", render: fmt },
+            ]}
+            rows={(agentCost.data || []).slice(0, 15)}
+          />
+        )}
 
         {byUserModel.loading ? (
           <Loading />

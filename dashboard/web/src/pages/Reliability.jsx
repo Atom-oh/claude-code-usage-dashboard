@@ -10,6 +10,25 @@ const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractio
 // 2026-08-11 STEP 3/4 — 신뢰성(refusal/재시도) + A/B 무결성(버전 코호트) 신규 패널 전용 페이지.
 // 기존 페이지(Productivity/Usage)와 성격이 달라(생산성/사용량이 아니라 "이 A/B 비교를 믿어도
 // 되는가") 별도 페이지로 분리한다.
+// 2026-09-01 — API 레이턴시. 레이턴시는 에러율보다 먼저 움직이는 선행 신뢰성 신호라 페이지 첫
+// 행에 둔다. 서버가 {byModel, byEffort} 두 갈래를 한 응답으로 내려준다(apiErrors와 같은 형태).
+// 실측 7d: p50 5968ms / p95 36262ms.
+const API_LATENCY_MODEL_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "model", label: "모델" },
+  { key: "requests", label: "요청", render: fmt },
+  { key: "p50_ms", label: "p50 (ms)", render: fmt },
+  { key: "p95_ms", label: "p95 (ms)", render: fmt },
+];
+
+const API_LATENCY_EFFORT_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "effort", label: "Effort", render: (v) => (v === "" || v == null ? "unknown" : v) },
+  { key: "requests", label: "요청", render: fmt },
+  { key: "p50_ms", label: "p50 (ms)", render: fmt },
+  { key: "p95_ms", label: "p95 (ms)", render: fmt },
+];
+
 const REFUSAL_COLUMNS = [
   { key: "group", label: "그룹" },
   { key: "user_visible_refusals", label: "사용자가 본 refusal", render: fmt },
@@ -58,6 +77,7 @@ const VERSION_COST_COLUMNS = [
 ];
 
 export default function Reliability() {
+  const apiLatency = useApi("/api/reliability/api-latency");
   const refusals = useApi("/api/reliability/refusals");
   const retries = useApi("/api/reliability/retries-exhausted");
   const apiErrors = useApi("/api/reliability/api-errors");
@@ -72,6 +92,27 @@ export default function Reliability() {
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
+        {apiLatency.loading ? (
+          <Loading />
+        ) : apiLatency.error ? (
+          <ErrorBox error={apiLatency.error} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <DataTable
+              title="API 레이턴시 (모델별)"
+              subtitle="api_request duration_ms 기준 — 같은 모델의 p95가 그룹 간 크게 벌어지면 쿼터/인프라 문제를 먼저 의심할 것"
+              columns={API_LATENCY_MODEL_COLUMNS}
+              rows={apiLatency.data?.byModel || []}
+            />
+            <DataTable
+              title="API 레이턴시 (Effort별)"
+              subtitle="effort가 높을수록 느린 것이 정상 — 같은 effort에서 그룹 간 차이가 나는지를 볼 것"
+              columns={API_LATENCY_EFFORT_COLUMNS}
+              rows={apiLatency.data?.byEffort || []}
+            />
+          </div>
+        )}
+
         {refusals.loading ? (
           <Loading />
         ) : refusals.error ? (

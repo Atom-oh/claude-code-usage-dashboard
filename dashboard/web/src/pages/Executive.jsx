@@ -4,6 +4,7 @@ import { Loading, ErrorBox, Card } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { SectionLabel } from "../components/SectionLabel.jsx";
 import { DualLineChart, SeriesBarChart } from "../components/GroupCharts.jsx";
+import ABScoreboard from "../components/ABScoreboard.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
@@ -42,12 +43,13 @@ export default function Executive() {
   const costDaily = useApi("/api/cost/by-model-daily");
   const decisions = useApi("/api/productivity/decisions");
   const leaderboard = useApi("/api/users/leaderboard");
+  const activeTime = useApi("/api/productivity/active-time-summary");
 
   // leaderboard(orgScore·게이지·헤드라인), adoptionTs(평균/피크 DAU), activeUsers(개발자 수·costPerDev)도
   // 게이트에 포함 — 빠지면 로딩/실패 중에 "생산성 점수 0/100", "활성 개발자 0" 같은 값이 정상 수치처럼
   // 렌더되고 PDF로도 출력된다(경영 보고용 페이지라 특히 위험).
-  const loading = kpi.loading || activeUsers.loading || adoption.loading || costSummary.loading || decisions.loading || leaderboard.loading || adoptionTs.loading;
-  const error = kpi.error || activeUsers.error || adoption.error || costSummary.error || decisions.error || leaderboard.error || adoptionTs.error;
+  const loading = kpi.loading || activeUsers.loading || adoption.loading || costSummary.loading || decisions.loading || leaderboard.loading || adoptionTs.loading || activeTime.loading;
+  const error = kpi.error || activeUsers.error || adoption.error || costSummary.error || decisions.error || leaderboard.error || adoptionTs.error || activeTime.error;
 
   const t = (kpi.data || []).reduce(
     (a, r) => ({
@@ -139,6 +141,39 @@ export default function Executive() {
     : 0;
   const peakDau = (adoptionTs.data || []).reduce((a, r) => Math.max(a, r.dau), 0);
 
+  // 스코어보드는 그룹 판별된 세션만 맞세운다(unknown 그룹 행 제외) — 위 합계 StatTile들
+  // (users/cost 등, excludeUnknown:false)과 모수가 다른 게 의도. 없는 그룹 값은 null → '—'.
+  const pickAB = (rows, key) => {
+    const v = (grp) => {
+      const r = (rows || []).find((x) => x.group === grp);
+      return r ? Number(r[key]) : null;
+    };
+    return { bedrock: v("bedrock"), enterprise: v("enterprise") };
+  };
+  const abDevs = { bedrock: Number(activeUsers.data?.bedrock_users ?? 0), enterprise: Number(activeUsers.data?.enterprise_users ?? 0) };
+  const abCost = pickAB(costSummary.data, "computed_cost");
+  const abLoc = pickAB(kpi.data, "lines_of_code");
+  // active_time.total의 TokenType은 'user'(사람 상호작용 시간)/'cli'(Claude 구동 시간) 분리
+  // (실측 7d: cli 123h vs user 2.8h) — "개발자 활성 시간"은 user 쪽, 자동화 배율은 cli÷user.
+  const abUserSec = pickAB(activeTime.data, "user_seconds");
+  const abCliSec = pickAB(activeTime.data, "cli_seconds");
+  const abAcceptRate = (grp) => {
+    const g = (decisions.data || []).filter((r) => r.group === grp);
+    const total = g.reduce((a, r) => a + Number(r.n), 0);
+    return total > 0 ? g.reduce((a, r) => a + (r.decision === "accept" ? Number(r.n) : 0), 0) / total : null;
+  };
+  const abCostPerDev = (grp) => (abDevs[grp] > 0 && abCost[grp] != null ? abCost[grp] / abDevs[grp] : null);
+  const abAutoRatio = (grp) => (abUserSec[grp] > 0 ? abCliSec[grp] / abUserSec[grp] : null);
+  const scoreboardRows = [
+    { label: "활성 개발자", bedrock: abDevs.bedrock, enterprise: abDevs.enterprise, format: "number", betterIs: "high" },
+    { label: "기간 지출", bedrock: abCost.bedrock, enterprise: abCost.enterprise, format: "usd", betterIs: null },
+    { label: "개발자당 지출", bedrock: abCostPerDev("bedrock"), enterprise: abCostPerDev("enterprise"), format: "usd", betterIs: "low" },
+    { label: "작성 라인", bedrock: abLoc.bedrock, enterprise: abLoc.enterprise, format: "number", betterIs: "high" },
+    { label: "제안 수락률", bedrock: abAcceptRate("bedrock"), enterprise: abAcceptRate("enterprise"), format: "pct", betterIs: "high" },
+    { label: "개발자 활성 시간", bedrock: abUserSec.bedrock != null ? abUserSec.bedrock / 3600 : null, enterprise: abUserSec.enterprise != null ? abUserSec.enterprise / 3600 : null, format: "hours", betterIs: null },
+    { label: "자동화 배율", bedrock: abAutoRatio("bedrock"), enterprise: abAutoRatio("enterprise"), format: "number", betterIs: "high" },
+  ];
+
   const headline =
     `지난 ${formatDuration(daysInRange)}간 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
     `${fmt(t.loc)} 라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)을 작성했으며 제안 수락률은 ${(acceptRate * 100).toFixed(0)}%입니다. ` +
@@ -168,6 +203,18 @@ export default function Executive() {
           <ErrorBox error={error} />
         ) : (
           <>
+            <Card
+              title={
+                <>
+                  <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400 mb-0.5">A/B 실험 현황</span>
+                  Bedrock vs Enterprise 스코어보드
+                </>
+              }
+              subtitle="그룹 판별된 세션 기준 — unknown 그룹 제외"
+            >
+              <ABScoreboard rows={scoreboardRows} />
+            </Card>
+
             <div>
               <SectionLabel>People</SectionLabel>
               {/* DAU/MAU는 session.count에 Model attribute가 없어 model 필터가 적용되지
