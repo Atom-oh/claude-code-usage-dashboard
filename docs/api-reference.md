@@ -56,11 +56,13 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 | `GET /api/productivity/loc-timeseries` | *timeseries* — lines added/removed per group |
 | `GET /api/productivity/permission-wait` | *(2026-08-11, traces beta)* p50/p95 `claude_code.tool.blocked_on_user` wait time per group x `app_version`. Returns `{unsupported: true, minVersion: "2.1.214", rows: []}` instead of a zero row when no matching spans exist in range — that span type only exists on Claude Code ≥2.1.214 and requires `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` on the client. Not covered by the cache warmer (empty until the beta env rolls out). |
 | `GET /api/productivity/ttft` | *(2026-08-11, traces beta)* p50/p95 time-to-first-token per group x model, from `claude_code.llm_request` spans. Same `{unsupported, rows}` shape as `permission-wait` (here `minVersion` is `null` — TTFT isn't version-gated, an empty result just means tracing isn't enabled yet). Not covered by the cache warmer. |
+| `GET /api/productivity/interaction-breakdown` | *(2026-08-31, traces beta)* p50/p95 `claude_code.interaction` span duration per group, plus the share of that time spent in child spans (`llm_request` / `tool.execution` / `tool.blocked_on_user`), joined to the root interaction by `TraceId`. Same `{unsupported, rows}` shape as `permission-wait`, with `minVersion: "2.1.214"`. The three shares can sum to **more than 1** — child spans can overlap and a `tool` span's `duration_ms` covers permission wait + execution together, so read them as "time spent in this span type per unit of interaction time", not as a composition. Not covered by the cache warmer. |
 
 ### Usage
 | Path | Returns |
 |---|---|
 | `GET /api/usage/tool-mcp` | Tool/MCP invocation counts |
+| `GET /api/usage/tool-decisions` | *(2026-08-31)* `tool_decision` event counts per group x tool x permission `source` (`config` = pre-allowed, `user_temporary` = prompted every time, `user_permanent` = user-allowlisted), with `accepts`/`rejects`/`n`/`accept_rate`. Limited to the top ~20 tools by fleet-wide volume (deliberately not per-group, so both groups are compared over the same tool set). `n != accepts + rejects` would mean a third `decision` value appeared. |
 | `GET /api/usage/skills` | Skill invocation counts (subject to OTel redaction of third-party skill names) |
 | `GET /api/usage/connectors` | MCP connector usage |
 | `GET /api/usage/subagent-fanout` | *(2026-08-11)* Subagent completions per group, from `otel_logs`' `subagent_completed` event (not traces — this event needs no beta flag and has data today). Includes `avg_subagents_per_interaction` (keyed by `prompt.id`). |
@@ -73,6 +75,7 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 |---|---|
 | `GET /api/reliability/refusals` | *(2026-08-11)* `api_refusal` counts per group, split into `user_visible_refusals` and `server_hidden_refusals` (`server_fallback_hop='true'` — the server already retried on a different model, so the user never saw it; keep this out of any refusal-rate total). |
 | `GET /api/reliability/retries-exhausted` | *(2026-08-11)* `api_retries_exhausted` counts per group + average attempts/retry duration — a direct signal for Bedrock quota throttling. |
+| `GET /api/reliability/api-errors` | *(2026-08-31)* Returns `{byModel, byStatus}` — **an object, not a bare array**. `byModel`: per group x model `requests` (`api_request`), `errors` (`api_error`), `total`, `error_rate`. `byStatus`: per group x HTTP `status_code`, with the sentinel `no-http-status` for errors that carry no status code at all (transport-level failures such as a stream idle timeout — measured 35 of 580, deliberately not dropped). `error_rate`'s denominator is `requests + errors` because whether `api_request` also fires for failed requests is not documented or measurable; at measured volumes the two readings differ by 0.33% relative, and the union denominator keeps the value inside [0,1] under either reading. |
 
 ### Integrity (A/B validity checks)
 | Path | Returns |

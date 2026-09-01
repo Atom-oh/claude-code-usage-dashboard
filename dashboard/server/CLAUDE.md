@@ -28,7 +28,9 @@ ClickHouse, no range params) but still inherits the global Basic Auth.
   table via `incBucketedRaw`), `filterCond` (global group/user/model filters), `normModel`
   (model name normalization). 2026-08-11 additions (below the `userLeaderboard` marker comment)
   cover the traces/logs/version-cohort panels added in that sync — see the "Rules" bullets
-  below for the two patterns they establish (local diff subqueries, `{unsupported}` shape)
+  below for the two patterns they establish (local diff subqueries, `{unsupported}` shape). The
+  2026-08-31 additions (`apiErrors`, `toolDecisionFunnel`, `interactionBreakdown`) sit at the end
+  of the file and follow those same patterns
 - `grouping.js` -- `GROUP_CTE`/`GROUP_EXPR`, session-scoped bedrock/enterprise inference (reads
   the hourly rollup's `has_org` column)
 - `pricing.js` -- per-model token pricing, `withComputedCost`, `tierCosts`, `tierCostsByGroup`
@@ -80,3 +82,13 @@ ClickHouse, no range params) but still inherits the global Basic Auth.
   legitimately empty (beta not rolled out, or client version too old for that span type), and a
   KPI consumer must not render that as a confirmed zero. Follow this shape for any new
   `otel_traces`-backed endpoint.
+- **A query function may return a keyed object instead of a bare array** — `apiErrors` returns
+  `{byModel, byStatus}` because one panel needs two different groupings of the same event scan,
+  and issuing two endpoints would double the `otel_logs` scan for one card. Consumers must use
+  `data?.byModel || []`, not `data || []`; the `route()` wrapper and the cache are shape-agnostic.
+  Prefer this over a bespoke `app.get(...)` or a second route whose only difference is `GROUP BY`.
+- **`otel_logs` has no `Model`/`Decision`/`Source`/`status_code` promoted column.** Only
+  `ToolName`, `Success`, and the 2026-08-11 batch are promoted (see `clickhouse-schema.sql`
+  §2) — anything else has to be read as `LogAttributes['<key>']`, and a model name read that way
+  still needs `normModel()` applied to match the pricing-table keys. `apiErrors` /
+  `toolDecisionFunnel` are the reference examples.
