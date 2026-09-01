@@ -263,6 +263,17 @@ route("/api/usage/plugins", (from, to) => q.pluginInventory(from, to));
 route("/api/integrity/version-cohort-sessions", (from, to, _q, filters) => q.versionCohortSessions(from, to, filters));
 route("/api/integrity/version-cohort-cost", (from, to, _q, filters) => q.versionCohortCost(from, to, filters));
 
+// 2026-09-01 추가 패널 — 전부 오늘 실데이터가 있는 소스(metrics/logs)라 기본 warm 대상.
+route("/api/productivity/active-time-summary", (from, to, _q, filters) => q.activeTimeSummary(from, to, filters));
+route("/api/cost/effort-mix", (from, to, _q, filters) => q.effortMix(from, to, filters));
+route("/api/productivity/languages", (from, to, _q, filters) => q.languageBreakdown(from, to, filters));
+route("/api/reliability/api-latency", (from, to, _q, filters) => q.apiLatency(from, to, filters));
+route("/api/usage/tool-latency", (from, to, _q, filters) => q.toolLatency(from, to, filters));
+route("/api/usage/commands", (from, to, _q, filters) => q.commandAdoption(from, to, filters));
+route("/api/usage/hook-overhead", (from, to, _q, filters) => q.hookOverhead(from, to, filters));
+route("/api/usage/mcp-health", (from, to, _q, filters) => q.mcpHealth(from, to, filters));
+route("/api/cost/by-agent", (from, to, _q, filters) => q.agentCost(from, to, filters));
+
 // 챗은 Bedrock 호출 + 임의 read-only SELECT라 다른 데이터 API보다 리스크가 높다. auth env가
 // 없으면 fail-open이 아니라 fail-closed — 명시적으로 CHAT_ALLOW_INSECURE=1을 켠 로컬 dev에서만 무인증 허용.
 const chatAllowed = authEnabled || process.env.CHAT_ALLOW_INSECURE === "1";
