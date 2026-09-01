@@ -13,6 +13,41 @@ const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
 
+// 2026-08-11 traces beta 패널(권한대기/TTFT) — 서버가 {unsupported, rows} 모양을 내려준다.
+// unsupported=true는 "0"이 아니라 "이 구간엔 해당 스팬이 없음"(베타 미배포 또는 v2.1.214
+// 미만)이라는 뜻이라 DataTable의 기본 "데이터 없음"과 구분되는 안내를 별도로 보여준다.
+const PERMISSION_WAIT_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "app_version", label: "Claude Code 버전" },
+  { key: "p50_wait_ms", label: "p50 대기(ms)", render: fmt },
+  { key: "p95_wait_ms", label: "p95 대기(ms)", render: fmt },
+  { key: "n", label: "샘플 수", render: fmt },
+];
+
+const TTFT_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "model", label: "모델" },
+  { key: "p50_ttft_ms", label: "p50 TTFT(ms)", render: fmt },
+  { key: "p95_ttft_ms", label: "p95 TTFT(ms)", render: fmt },
+  { key: "n", label: "샘플 수", render: fmt },
+];
+
+function TracesBetaPanel({ resp, title, subtitle, columns }) {
+  if (resp.loading) return <Loading />;
+  if (resp.error) return <ErrorBox error={resp.error} />;
+  if (resp.data?.unsupported) {
+    return (
+      <DataTable
+        title={title}
+        subtitle={`${subtitle} — 데이터 없음: traces beta(CLAUDE_CODE_ENHANCED_TELEMETRY_BETA)가 아직 이 구간에 배포되지 않았거나${resp.data.minVersion ? `, 이 스팬 자체가 Claude Code v${resp.data.minVersion} 미만에서는 나오지 않습니다` : "요"} — 0이 아니라 "미수집"입니다.`}
+        columns={columns}
+        rows={[]}
+      />
+    );
+  }
+  return <DataTable title={title} subtitle={subtitle} columns={columns} rows={resp.data?.rows || []} />;
+}
+
 export default function Productivity() {
   const { intervalHours } = useRange();
   const fmtTick = makeTickFmt(intervalHours);
@@ -25,6 +60,8 @@ export default function Productivity() {
   const engagement = useApi("/api/productivity/engagement");
   const locTrend = useApi("/api/productivity/loc-timeseries");
   const leaderboard = useApi("/api/users/leaderboard");
+  const permissionWait = useApi("/api/productivity/permission-wait");
+  const ttft = useApi("/api/productivity/ttft");
 
   const activeHours = active.data?.map((r) => ({ ...r, active_seconds: r.active_seconds / 3600 }));
 
@@ -241,6 +278,19 @@ export default function Productivity() {
             tickFormatter={fmtTick}
           />
         )}
+
+        <TracesBetaPanel
+          resp={permissionWait}
+          title="권한 대기 오버헤드"
+          subtitle="claude_code.tool.blocked_on_user 대기 시간 — 크면 권한 설정이 생산성을 깎고 있다는 뜻"
+          columns={PERMISSION_WAIT_COLUMNS}
+        />
+        <TracesBetaPanel
+          resp={ttft}
+          title="TTFT (첫 토큰까지 시간)"
+          subtitle="Bedrock vs Enterprise 체감 응답성 비교에 가장 직접적인 지표"
+          columns={TTFT_COLUMNS}
+        />
       </div>
     </div>
   );

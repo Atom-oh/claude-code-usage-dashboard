@@ -65,12 +65,16 @@ ClickHouse, no range params) but still inherits the global Basic Auth.
   diff subquery, not a shared-function extension — until a second/third real need makes
   extension the better trade-off.
 - **Per-user identity is `UserEmail`-only in most existing functions, not
-  `coalesce(UserEmail, EndUserId)`.** Bedrock sessions have no `user.email` (see ADR-002,
-  `docs/reference/data.md` §1b) — `userLeaderboard` and the ~90 other `UserEmail` references
-  in this file were *not* retrofitted with the coalesce fallback during the 2026-08-11
-  telemetry sync (only new functions and `grafana-ab-queries.sql` were). Bedrock users without
-  a synthetic tester email are invisible on the Users leaderboard today — a known, open gap,
-  not an oversight to silently "fix" as a side effect of an unrelated change.
+  `coalesce(UserEmail, EndUserId)`.** This was a real gap (see ADR-002) fixed at the source
+  instead: `user-data.sh` now force-injects `user.email` for the Bedrock group specifically
+  (same `Email` instance tag it already read for `enduser.id`), so `UserEmail` itself is
+  populated and `userLeaderboard`'s ~90 pre-existing `UserEmail` references need no change.
+  This only helps instances whose Launch Template actually sets that tag
+  (`InstanceMetadataTags=enabled`) — if that's missing, those sessions fall back to being
+  merely `coalesce`-visible (new query functions and `grafana-ab-queries.sql` only) rather than
+  fully invisible. See ADR-002's 2026-08-11 update for why the injection is Bedrock-only (an
+  Enterprise session's real authenticated `user.email` must never be at risk of getting
+  overwritten by this).
 - Traces-beta query functions (`permissionWaitOverhead`, `ttftComparison`) return
   `{unsupported: boolean, minVersion, rows}`, not a bare array — `otel_traces` can be
   legitimately empty (beta not rolled out, or client version too old for that span type), and a

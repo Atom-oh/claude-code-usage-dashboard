@@ -216,7 +216,7 @@ ORDER BY ExperimentGroup, AppVersion;
 -- normModel(Model)은 dashboard/server/queries.js의 JS 헬퍼라 여기선 직접 호출할 수 없다 —
 -- 같은 5단계 regex를 인라인으로 재현한다(normModel()과 반드시 동기 유지: [1m] 컨텍스트
 -- 윈도우 접미사 → cross-region 프로파일 접두사 → bedrock provider 접두사 → bedrock 버전
--- 접미사 → 날짜 스냅샷 접미사).
+-- 접미사(-v1:0 / 맨 -v1 둘 다) → 날짜 스냅샷 접미사).
 SELECT
     ExperimentGroup,
     replaceRegexpOne(
@@ -226,7 +226,7 @@ SELECT
                     replaceRegexpOne(Model, '\\[.*\\]$', ''),
                     '^(us|global|eu|apac)\\.', ''),
                 '^anthropic\\.', ''),
-            '-v\\d+:\\d+$', ''),
+            '-v\\d+(:\\d+)?$', ''),
         '-\\d{8}$', '') AS model,
     quantile(0.5)(TtftMs)  AS p50_ttft_ms,
     quantile(0.95)(TtftMs) AS p95_ttft_ms,

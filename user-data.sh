@@ -90,6 +90,20 @@ if [ "$EXPERIMENT_GROUP" = "bedrock" ] && [ -z "$END_USER_ID" ]; then
   echo "WARN: bedrock 그룹인데 enduser.id를 못 구함 — 이 인스턴스는 유저별 패널에서 빈 값으로 잡힘. IMDS 인스턴스 태그(Email) 또는 END_USER_ID_SSM_PARAM을 확인할 것"
 fi
 
+# 2026-08-11 결정: Bedrock 그룹은 user.email 자체를 강제 주입해 "빈 곳이 없게" 한다(워크숍
+# 운영 요구사항 — 설치 스크립트가 항상 값을 채워야 함). enduser.id/coalesce 폴백(위)은 이
+# 주입이 실패했을 때의 방어용으로 그대로 남긴다 — 이게 주 경로다.
+# Bedrock 그룹에만 적용하는 이유: Enterprise 세션은 Claude Code 자신이 OAuth 인증된 실제
+# user.email을 이미 표준 속성으로 채운다(문서 확인) — 여기서 OTEL_RESOURCE_ATTRIBUTES로
+# user.email을 한 번 더 주입하면 그 실제 값과 충돌/덮어쓰기 위험이 있다(SDK가 리소스
+# 속성을 병합하는 정확한 우선순위를 확인하지 않았다 — 검증 안 된 값으로 실제 이메일을
+# 덮어쓰는 리스크를 감수할 이유가 없다). Bedrock은 애초에 채워질 값이 없으므로 주입만
+# 이득이고 충돌 리스크가 없다.
+FORCED_USER_EMAIL=""
+if [ "$EXPERIMENT_GROUP" = "bedrock" ] && [ -n "$END_USER_ID" ]; then
+  FORCED_USER_EMAIL="$END_USER_ID"
+fi
+
 # ---- 2. SSM에서 ClickHouse 비밀번호 로드 -----------------------------------
 # 인스턴스 프로파일에 ssm:GetParameter + kms:Decrypt 권한 필요
 CH_PASSWORD="$(aws ssm get-parameter \
@@ -183,6 +197,11 @@ fi
 RESOURCE_ATTRS="experiment.group=${EXPERIMENT_GROUP},team=fsi"
 if [ -n "$END_USER_ID" ]; then
   RESOURCE_ATTRS="${RESOURCE_ATTRS},enduser.id=${END_USER_ID}"
+fi
+# FORCED_USER_EMAIL은 위에서 이미 bedrock 그룹 + 값 존재로 게이팅됐다 — Enterprise는 항상
+# 빈 문자열이라 이 줄이 실행되지 않는다(실제 인증된 user.email을 덮어쓰지 않음).
+if [ -n "$FORCED_USER_EMAIL" ]; then
+  RESOURCE_ATTRS="${RESOURCE_ATTRS},user.email=${FORCED_USER_EMAIL}"
 fi
 
 cat > /etc/claude-code/managed-settings.json <<EOF

@@ -12,6 +12,7 @@ import Usage from "./pages/Usage.jsx";
 import Users from "./pages/Users.jsx";
 import Cost from "./pages/Cost.jsx";
 import Analytics from "./pages/Analytics.jsx";
+import Reliability from "./pages/Reliability.jsx";
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
               <Route path="/usage" element={<Usage />} />
               <Route path="/users" element={<Users />} />
               <Route path="/cost" element={<Cost />} />
+              <Route path="/reliability" element={<Reliability />} />
               <Route path="/analytics" element={<Analytics />} />
             </Routes>
           </main>

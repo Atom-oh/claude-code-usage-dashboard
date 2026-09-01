@@ -29,7 +29,7 @@ export function normalizeModelId(raw) {
     .replace(/\[[^\]]*\]$/, "") // [1m] 컨텍스트 윈도우 접미사
     .replace(/^(?:us|global|eu|apac)\./, "") // cross-region 추론 프로파일 접두사
     .replace(/^anthropic\./, "") // bedrock provider 접두사
-    .replace(/-v\d+:\d+$/, "") // bedrock 버전 접미사 -v1:0
+    .replace(/-v\d+(?::\d+)?$/, "") // bedrock 버전 접미사 -v1:0 / -v1
     .replace(/-\d{8}$/, ""); // 날짜 스냅샷 접미사 -20250929
 }
 

@@ -8,6 +8,10 @@ test("normalizeModelId strips bedrock/date/context-window variants", () => {
   assert.equal(normalizeModelId("claude-sonnet-4-5-20250929"), "claude-sonnet-4-5");
   assert.equal(normalizeModelId("claude-fable-5[1m]"), "claude-fable-5");
   assert.equal(normalizeModelId("anthropic.claude-haiku-4-5"), "claude-haiku-4-5");
+  // 실측: bedrock 버전 접미사가 항상 -v1:0 형태인 건 아니다 — :0 없는 맨 -vN도 관측됨.
+  // 4번째 단계가 -v\d+:\d+$만 벗기면 이 형태가 남아 단가표 매칭이 빗나간다(unpriced로 샘).
+  assert.equal(normalizeModelId("global.anthropic.claude-opus-4-6-v1"), "claude-opus-4-6");
+  assert.equal(normalizeModelId("claude-haiku-4-5-20251001-v2"), "claude-haiku-4-5");
 });
 
 test("priceFor returns null for unknown models", () => {
@@ -22,6 +26,11 @@ test("priceFor covers claude-opus-5 in both observed raw forms", () => {
   assert.ok(priceFor("claude-opus-5[1m]"));
   assert.equal(priceFor("claude-opus-5").input, 5);
   assert.equal(priceFor("claude-opus-5").output, 25);
+});
+
+// 맨 -v<n> bedrock 접미사(:0 없는 버전)가 unpriced로 새던 회귀 방지.
+test("priceFor matches the bare -v<n> bedrock suffix form", () => {
+  assert.ok(priceFor("global.anthropic.claude-opus-4-6-v1"));
 });
 
 test("withComputedCost multiplies token sums by per-type unit price", () => {

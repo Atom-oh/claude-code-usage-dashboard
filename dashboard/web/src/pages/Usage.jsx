@@ -45,12 +45,33 @@ const PLUGIN_COLUMNS = [
   { key: "sessions", label: "세션 수", render: fmt },
 ];
 
+// 2026-08-11 — 서브에이전트 팬아웃(otel_logs의 subagent_completed, 베타 불필요)과 compaction
+// 압박(컨텍스트 한도 프록시). 둘 다 그룹당 행이 적어(≤몇 개) bedrock/enterprise 카드 분리 없이
+// group 컬럼 하나로 충분하다 — 위 tool/skill 패턴과 다르게 가는 의도적 선택.
+const SUBAGENT_FANOUT_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "subagent_completions", label: "완료 건수", render: fmt },
+  { key: "interactions", label: "인터랙션 수", render: fmt },
+  { key: "avg_subagents_per_interaction", label: "인터랙션당 평균 서브에이전트" },
+];
+
+const COMPACTION_COLUMNS = [
+  { key: "group", label: "그룹" },
+  { key: "trigger", label: "트리거" },
+  { key: "compactions", label: "압축 횟수", render: fmt },
+  { key: "sessions", label: "세션 수", render: fmt },
+  { key: "compactions_per_session", label: "세션당 압축" },
+  { key: "avg_compression_ratio", label: "평균 압축률", render: (v) => `${(Number(v) * 100).toFixed(0)}%` },
+];
+
 export default function Usage() {
   const toolMcp = useApi("/api/usage/tool-mcp");
   const skills = useApi("/api/usage/skills");
   const connectors = useApi("/api/usage/connectors");
   const skillActivations = useApi("/api/usage/skill-activations");
   const plugins = useApi("/api/usage/plugins");
+  const subagentFanout = useApi("/api/usage/subagent-fanout");
+  const compaction = useApi("/api/usage/compaction");
 
   return (
     <div>
@@ -138,6 +159,32 @@ export default function Usage() {
             subtitle="그룹 구분 없음 — 세션 시작마다 로드된 플러그인 집계"
             columns={PLUGIN_COLUMNS}
             rows={plugins.data || []}
+          />
+        )}
+
+        {subagentFanout.loading ? (
+          <Loading />
+        ) : subagentFanout.error ? (
+          <ErrorBox error={subagentFanout.error} />
+        ) : (
+          <DataTable
+            title="서브에이전트 팬아웃"
+            subtitle="인터랙션(prompt.id) 하나당 서브에이전트가 몇 개 뜨는지 — traces beta 없이도 오늘 실데이터로 동작"
+            columns={SUBAGENT_FANOUT_COLUMNS}
+            rows={subagentFanout.data || []}
+          />
+        )}
+
+        {compaction.loading ? (
+          <Loading />
+        ) : compaction.error ? (
+          <ErrorBox error={compaction.error} />
+        ) : (
+          <DataTable
+            title="Compaction 압박"
+            subtitle="컨텍스트 압박 프록시 — 압축률이 낮거나 빈도가 높으면 세션이 컨텍스트 한도에 자주 부딪힌다"
+            columns={COMPACTION_COLUMNS}
+            rows={compaction.data || []}
           />
         )}
       </div>

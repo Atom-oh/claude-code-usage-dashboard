@@ -52,7 +52,7 @@ export function normModel(col) {
   expr = strip(expr, "\\\\[.*\\\\]$"); // [1m] 컨텍스트 윈도우 접미사
   expr = strip(expr, "^(us|global|eu|apac)\\\\."); // cross-region 추론 프로파일 접두사
   expr = strip(expr, "^anthropic\\\\."); // bedrock provider 접두사
-  expr = strip(expr, "-v\\\\d+:\\\\d+$"); // bedrock 버전 접미사 -v1:0
+  expr = strip(expr, "-v\\\\d+(:\\\\d+)?$"); // bedrock 버전 접미사 -v1:0 / -v1
   expr = strip(expr, "-\\\\d{8}$"); // 날짜 스냅샷 접미사 -20250929
   return expr;
 }
