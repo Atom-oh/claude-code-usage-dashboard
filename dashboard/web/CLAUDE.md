@@ -16,6 +16,12 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   Trends, Executive)
 - `src/components/*.jsx` -- shared presentational components (`Card`, `StatTile`, `Badge`,
   `SegmentedControl`, `DataTable`, `GroupCharts`, `FloatingChat`, `PageHeader`, `RangePicker`)
+- `src/components/ABScoreboard.jsx` / `LowerBoundNote.jsx` -- 2026-09-01 additions:
+  the Executive hero split-band (one row per KPI, bedrock left / enterprise right around a
+  center label, single 6px split bar — note `pct` format expects a 0-1 fraction, not a
+  percentage) and the reusable "dashboard cost is a lower bound of real billing" warning
+  callout (thinking tokens + non-instrumented channels excluded), used on Executive and Cost
+  respectively
 - `src/pivot.js` -- reshapes flat `[{t, group, value}]` rows into one-row-per-x-tick for
   Recharts (`pivotByGroup`, `pivotByKey`)
 - `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +

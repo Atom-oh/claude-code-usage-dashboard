@@ -92,3 +92,9 @@ ClickHouse, no range params) but still inherits the global Basic Auth.
   §2) — anything else has to be read as `LogAttributes['<key>']`, and a model name read that way
   still needs `normModel()` applied to match the pricing-table keys. `apiErrors` /
   `toolDecisionFunnel` are the reference examples.
+- The 2026-09-01 batch (`activeTimeSummary` through `agentCost`, end of `queries.js`) adds no
+  new rules — `effortMix`/`languageBreakdown`/`agentCost` are further local-diff instances
+  (Effort/Language/AgentName aren't `incFlat` dimensions, ADR-001), the rest are `otel_logs`
+  scans with `quantile()` percentiles over `LogAttributes` durations, and `apiLatency` /
+  `commandAdoption` return keyed objects (`{byModel, byEffort}` / `{commands, prompts}`) per
+  the `apiErrors` precedent.

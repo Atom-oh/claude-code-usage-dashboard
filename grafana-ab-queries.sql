@@ -492,3 +492,60 @@ LEFT JOIN (
 ) c ON i.TraceId = c.TraceId
 GROUP BY ExperimentGroup
 ORDER BY ExperimentGroup;
+
+
+-- 【패널 24】활성 사용시간 user/cli 분해 — active_time.total의 type attribute('user'|'cli')는
+-- token.usage와 같은 승격 컬럼(TokenType)에 실린다(실측 7d: cli 123h vs user 2.8h — cli/user
+-- 비율이 "자동화 배율"). 누적 카운터라 sum(Value) 직접 합산 금지 — 패널 9와 동일한
+-- 세션-경계 diff를 쓰되, 시계열 대신 그룹 × 타입 스냅샷으로 접는다. 대시보드 대응:
+-- /api/productivity/active-time-summary (queries.js activeTimeSummary).
+SELECT ExperimentGroup, TokenType, round(sum(inc) / 3600, 1) AS hours
+FROM (
+    SELECT ExperimentGroup, TokenType,
+        if(temp = 2,
+           greatest(cum - lagInFrame(cum, 1, 0) OVER (
+               PARTITION BY sk, SessionId, temp, ExperimentGroup, TokenType ORDER BY t
+           ), 0),
+           cum) AS inc
+    FROM (
+        SELECT $__timeInterval(TimeUnix) AS t,
+               SeriesKey AS sk, SessionId, AggregationTemporality AS temp, ExperimentGroup, TokenType,
+               if(AggregationTemporality = 2, max(Value), sum(Value)) AS cum
+        FROM claude_code.otel_metrics_sum
+        WHERE MetricName = 'claude_code.active_time.total'
+          AND $__timeFilter(TimeUnix)
+        GROUP BY t, sk, SessionId, temp, ExperimentGroup, TokenType
+    )
+)
+GROUP BY ExperimentGroup, TokenType
+ORDER BY ExperimentGroup, TokenType;
+-- 패널 9와 같은 한계: 구간 시작 전에 시작된 세션의 첫 버킷이 그 세션 누적값만큼 과대집계된다.
+-- 비율(cli/user) 비교엔 충분하고 정확한 총량은 대시보드를 쓴다.
+
+
+-- 【패널 25】effort 믹스 — 그룹 × effort 토큰 분포. 파일 상단 주의(실비용 비교 금지)에 따라
+-- cost.usage가 아니라 token.usage로 비교한다(대시보드 /api/cost/effort-mix는 보고 비용도 내지만
+-- 여기선 토큰 정규화 원칙 유지). Effort는 승격 컬럼(clickhouse-migration-002.sql; Speed는 실측
+-- 0행이라 안 본다), ''는 effort attribute가 없는 행 — 'unknown'으로 묶는다(실측 7d cost 기준
+-- medium ≫ high > '' > xhigh). token.usage도 누적 카운터라 패널 24와 동일한 세션-경계 diff
+-- (첫 버킷 과대집계 한계도 동일).
+SELECT ExperimentGroup, if(Effort = '', 'unknown', Effort) AS effort, sum(inc) AS tokens
+FROM (
+    SELECT ExperimentGroup, Effort,
+        if(temp = 2,
+           greatest(cum - lagInFrame(cum, 1, 0) OVER (
+               PARTITION BY sk, SessionId, temp, ExperimentGroup, Effort ORDER BY t
+           ), 0),
+           cum) AS inc
+    FROM (
+        SELECT $__timeInterval(TimeUnix) AS t,
+               SeriesKey AS sk, SessionId, AggregationTemporality AS temp, ExperimentGroup, Effort,
+               if(AggregationTemporality = 2, max(Value), sum(Value)) AS cum
+        FROM claude_code.otel_metrics_sum
+        WHERE MetricName = 'claude_code.token.usage'
+          AND $__timeFilter(TimeUnix)
+        GROUP BY t, sk, SessionId, temp, ExperimentGroup, Effort
+    )
+)
+GROUP BY ExperimentGroup, effort
+ORDER BY ExperimentGroup, tokens DESC;
