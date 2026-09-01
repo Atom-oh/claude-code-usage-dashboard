@@ -1534,3 +1534,153 @@ export async function ttftComparison(from, to, filters = {}) {
   );
   return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: null, rows: [] };
 }
+
+// STEP 3 패널 21: API 에러율 — 그룹 × 모델. Bedrock 스로틀링·검증 오류의 조기 신호로,
+// 에러가 한쪽 그룹에만 몰리면 그 그룹의 생산성 하락이 "플랫폼 특성"이 아니라 "장애"다.
+// api_request/api_error는 로그 이벤트라 누적 카운터가 아니다 — refusalRate/retriesExhausted와
+// 동일하게 incFlat/incBucketed 없이 그대로 센다.
+//
+// 분모 선택(errors / (requests + errors)): api_request가 실패 요청까지 포함하는지(= api_error가
+// 부분집합인지)는 문서에도 실측에도 없다. 실측 2026-08-31: api_request 176,597행 / api_error
+// 580행이라 두 해석의 상대 차이는 0.33%로 이 패널의 해석 정밀도보다 훨씬 작다. 합집합을 분모로
+// 쓰는 이유는 정확도가 아니라 안전성이다 — 두 해석 중 어느 쪽이든 값이 [0,1]을 벗어나지 않는다
+// (disjoint일 때 errors/requests는 에러가 폭증하면 1을 넘어 "에러율 137%"가 나온다).
+// requests/errors 원본 카운트를 같이 내려 소비자가 다른 분모로 재계산할 수 있게 남긴다.
+//
+// 실측 2026-08-31(mapKeys(LogAttributes)): api_error는 model·error·duration_ms·attempt 키가
+// 100%, status_code는 545/580(94%). api_request는 model 키 100%. otel_logs엔 Model 승격 컬럼이
+// 없어 LogAttributes['model']을 normModel()로 정규화한다(ttftComparison이 otel_traces의 Model에
+// 하는 것과 같은 5단계 규칙).
+export async function apiErrors(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  const params = { ...range(from, to, true), ...f.params };
+  const [byModel, byStatus] = await Promise.all([
+    query(
+      `${GROUP_CTE}
+      SELECT
+          ${GROUP_EXPR} AS "group",
+          ${normModel("l.LogAttributes['model']")} AS model,
+          countIf(l.EventName = 'api_request') AS requests,
+          countIf(l.EventName = 'api_error')   AS errors,
+          count()                              AS total,
+          round(errors / nullIf(total, 0), 4)  AS error_rate
+      FROM claude_code.otel_logs l
+      LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+      WHERE l.EventName IN ('api_request', 'api_error')
+        AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+      GROUP BY "group", model ORDER BY "group", total DESC`,
+      params
+    ),
+    // status_code가 빈 문자열인 에러(실측 2026-08-31: 580건 중 35건)는 HTTP 상태가 아예 없는
+    // 전송 계층 실패(예: Stream idle timeout)다 — 버리면 가장 중요한 케이스가 사라지므로
+    // 'no-http-status' 센티널로 따로 남긴다(프론트가 이 리터럴을 그대로 분기한다).
+    query(
+      `${GROUP_CTE}
+      SELECT
+          ${GROUP_EXPR} AS "group",
+          if(l.LogAttributes['status_code'] = '', 'no-http-status', l.LogAttributes['status_code']) AS status_code,
+          count() AS errors
+      FROM claude_code.otel_logs l
+      LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+      WHERE l.EventName = 'api_error'
+        AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+      GROUP BY "group", status_code ORDER BY "group", errors DESC`,
+      params
+    ),
+  ]);
+  return { byModel, byStatus };
+}
+
+// STEP 3 패널 22: 툴 권한 결정 퍼널 — tool_decision 이벤트를 툴 × 허용 출처(source) × 수락/거부로
+// 분해한다. source가 핵심 지표다: config는 사전 허용(개발자를 안 멈춤), user_temporary는 매번
+// 물어봤다는 뜻(권한 대기로 생산성이 깎임), user_permanent는 사용자가 직접 허용목록에 넣은 것.
+// 실측 2026-08-31: tool_decision 169,862행, tool_name/decision/source 키 전부 100%.
+//
+// decision(accept/reject)을 행 차원이 아니라 countIf 컬럼으로 펴는 이유: refusalRate와 동일한
+// 스타일이고, 그래야 accept_rate가 행마다 바로 나온다(decision이 행이면 비율이 얹힐 행이 없다).
+// n = count()를 같이 두는 건 n != accepts + rejects인 행이 보이면 accept/reject 외의 decision
+// 값이 새로 생겼다는 신호이기 때문 — 실측 시점엔 두 값뿐이다.
+// tool_name은 승격 컬럼 ToolName(= LogAttributes['tool_name'])을 쓴다(toolMcpUsage와 동일).
+// 상위 20개 툴 서브쿼리는 그룹을 안 나눈다 — 그룹별 상위 20개를 뽑으면 두 그룹의 툴 집합이
+// 달라져 A/B 비교 자체가 성립하지 않는다.
+export async function toolDecisionFunnel(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.ToolName AS tool,
+        l.LogAttributes['source'] AS source,
+        countIf(l.LogAttributes['decision'] = 'accept') AS accepts,
+        countIf(l.LogAttributes['decision'] = 'reject') AS rejects,
+        count() AS n,
+        round(accepts / nullIf(accepts + rejects, 0), 3) AS accept_rate
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'tool_decision' AND l.ToolName != ''
+      AND l.ToolName IN (
+          SELECT ToolName FROM claude_code.otel_logs
+          WHERE EventName = 'tool_decision' AND ToolName != ''
+            AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+          GROUP BY ToolName ORDER BY count() DESC LIMIT 20
+      )
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", tool, source ORDER BY "group", n DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// STEP 2 패널 23: 인터랙션 시간 분해 (traces beta) — claude_code.interaction 스팬의 DurationMs
+// p50/p95와, 그 시간 중 자식 스팬(llm_request / tool.execution / tool.blocked_on_user)이 차지한
+// 시간의 비중. "느린 게 모델 때문인가, 툴 실행 때문인가, 권한 대기 때문인가"를 한 표로 가른다.
+//
+// 자식은 TraceId로 붙인다(한 인터랙션의 스팬들은 TraceId를 공유하고 interaction 스팬이 루트).
+// 자식을 TraceId 단위로 먼저 접은 뒤 1:1로 조인하는 게 필수다 — SpanType별 자식 행을 그대로
+// 조인하면 interaction 행이 자식 종류 수만큼 복제돼 quantile과 분모 sum(i.DurationMs)가 그 배수로
+// 뻥튀기된다. join_use_nulls=0이라 자식이 없는 인터랙션은 NULL이 아니라 0으로 들어와 그대로 합산된다.
+//
+// 비중 합계는 1을 넘을 수 있다 — 자식 스팬은 동시에 진행될 수 있고, tool 스팬의 duration_ms는
+// 권한 대기 + 실행을 함께 담는다(clickhouse-schema.sql 2c 주석). "구성비"가 아니라 "인터랙션 총
+// 시간 대비 각 종류가 쓴 시간의 배수"로 읽어야 한다.
+// SpanType만으로 루트를 특정한다 — ParentSpanId = ''는 컬렉터가 루트를 어떻게 표기하는지
+// 실측으로 확인되지 않아(실측 2026-08-31: otel_traces 0행) 넣지 않는다. 조건을 더 걸어 패널이
+// 조용히 비는 쪽이 더 위험하다.
+// otel_traces는 라이브에 테이블은 있으나 0행이다(실측 2026-08-31) — ttftComparison/
+// permissionWaitOverhead와 동일하게 {unsupported:true}를 반환해 프론트가 "0"과 "미수집"을
+// 구분할 수 있게 한다. minVersion "2.1.214"는 tool.blocked_on_user / tool.execution 스팬이
+// 그 버전부터 나오기 때문(문서 확인).
+export async function interactionBreakdown(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "i.UserEmail" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        count() AS interactions,
+        quantile(0.5)(i.DurationMs)  AS p50_interaction_ms,
+        quantile(0.95)(i.DurationMs) AS p95_interaction_ms,
+        round(sum(c.llm_ms)       / nullIf(sum(i.DurationMs), 0), 3) AS llm_share,
+        round(sum(c.tool_exec_ms) / nullIf(sum(i.DurationMs), 0), 3) AS tool_exec_share,
+        round(sum(c.blocked_ms)   / nullIf(sum(i.DurationMs), 0), 3) AS blocked_share
+    FROM (
+        SELECT TraceId, SessionId, UserEmail, DurationMs
+        FROM claude_code.otel_traces
+        WHERE SpanType = 'claude_code.interaction'
+          AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+    ) i
+    LEFT JOIN (
+        SELECT TraceId,
+            sumIf(DurationMs, SpanType = 'claude_code.llm_request')          AS llm_ms,
+            sumIf(DurationMs, SpanType = 'claude_code.tool.execution')       AS tool_exec_ms,
+            sumIf(DurationMs, SpanType = 'claude_code.tool.blocked_on_user') AS blocked_ms
+        FROM claude_code.otel_traces
+        WHERE SpanType IN ('claude_code.llm_request', 'claude_code.tool.execution', 'claude_code.tool.blocked_on_user')
+          AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+        GROUP BY TraceId
+    ) c ON i.TraceId = c.TraceId
+    LEFT JOIN session_group ug ON i.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
+    GROUP BY "group" ORDER BY "group"`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: "2.1.214", rows: [] };
+}
