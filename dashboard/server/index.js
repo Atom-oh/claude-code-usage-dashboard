@@ -8,6 +8,7 @@ import { tierCostsByGroup, pricingConfig } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping } from "./clickhouse.js";
 import { probeSegmentAwareSeriesKey } from "./schema.js";
+import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./freshness.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,11 +22,15 @@ const PORT = process.env.PORT || 8080;
 app.set("trust proxy", 1);
 
 // ponytail: Basic Auth only when creds are set — local dev / cluster-internal probes skip it.
+// /healthz(liveness)와 /readyz(readiness)만 무인증 — kubelet은 Authorization 헤더를 붙이지
+// 않는다. /api/health/data는 SPA가 부르는 데이터 라우트라 여기 들어가지 않는다: 마지막 수집
+// 시각은 운영 정보다.
+const AUTH_BYPASS_PATHS = new Set(["/healthz", "/readyz"]);
 const authEnabled = !!(process.env.BASIC_AUTH_USER && process.env.BASIC_AUTH_PASSWORD);
 if (authEnabled) {
   app.use(
     "/",
-    (req, res, next) => (req.path === "/healthz" ? next() : basicAuth({
+    (req, res, next) => (AUTH_BYPASS_PATHS.has(req.path) ? next() : basicAuth({
       users: { [process.env.BASIC_AUTH_USER]: process.env.BASIC_AUTH_PASSWORD },
       challenge: true,
     })(req, res, next))
@@ -34,6 +39,18 @@ if (authEnabled) {
 
 app.get("/healthz", async (_req, res) => {
   res.json({ ok: await ping().catch(() => false) });
+});
+
+// SIGTERM이 도착한 뒤에도 진행 중인 요청은 마무리해야 하므로, 종료 신호는 리스너를 닫기
+// 전에 이 플래그부터 뒤집는다(아래 종료 핸들러 참고).
+let shuttingDown = false;
+
+// k8s readiness. /healthz(liveness)와 의도적으로 다르다: 여기서는 ClickHouse 접속 실패도
+// not-ready로 본다(읽을 데이터가 없는 파드에 트래픽을 보낼 이유가 없다). 반대로 liveness를
+// 이렇게 만들면 클러스터 장애가 정상 파드를 재시작 루프에 빠뜨린다.
+app.get("/readyz", async (_req, res) => {
+  const ready = !shuttingDown && (await ping().catch(() => false));
+  res.status(ready ? 200 : 503).json({ ready: !!ready });
 });
 
 function parseRange(req) {
@@ -103,6 +120,25 @@ const refreshSchemaProbe = () => {
 };
 refreshSchemaProbe();
 setInterval(refreshSchemaProbe, 10 * 60 * 1000).unref();
+
+// 여러 탭이 60초마다 /api/health/data를 폴링하므로(web FreshnessContext.jsx) 원본
+// otel_metrics_sum 스캔을 30초 메모로 묶는다 — 스키마 프로브처럼 타이머로 미리 돌리지 않는
+// 이유는, 신선도는 "요청 시점" 기준이어야 의미가 있고 10분 지난 스냅샷은 그 자체로 오해라서다.
+// probeLatestTelemetryMs는 절대 throw하지 않으므로(freshness.js) 이 promise는 reject되지 않아,
+// route()의 캐시처럼 실패를 무효화하는 처리가 필요 없다.
+const FRESHNESS_MEMO_MS = 30_000;
+let freshnessMemo = { expires: 0, promise: null };
+function freshnessSnapshot() {
+  if (freshnessMemo.expires < Date.now()) {
+    freshnessMemo = {
+      expires: Date.now() + FRESHNESS_MEMO_MS,
+      promise: probeLatestTelemetryMs().then((latestMs) =>
+        classifyFreshness({ latestMs, nowMs: Date.now(), staleAfterMinutes })
+      ),
+    };
+  }
+  return freshnessMemo.promise;
+}
 
 // 캐시 키는 핸들러가 실제로 읽는 파라미터(from/to/group/user/model/intervalHours/email)만
 // 화이트리스트로 넣은 canonical 형태 — 브라우저(useApi의 객체 삽입 순서)와 warmer(아래)가
@@ -308,13 +344,43 @@ app.get("/api/config", (_req, res) =>
   })
 );
 
+// /healthz, /api/config에 이어 route() 래퍼를 거치지 않는 세 번째 라우트다 — 구간 파라미터가
+// 없고, 상태가 나쁠 때 503을 내려야 하는데 route()는 성공 200 / 에러 500만 낸다.
+// stale과 unknown을 같은 503으로 묶는 게 의도다: 측정할 수 없을 때 조용해지면 README
+// "Telemetry Ingestion"이 기록한 장애(~43시간 공백을 아무도 몰랐음)를 그대로 재현한다.
+app.get("/api/health/data", async (_req, res) => {
+  const snapshot = await freshnessSnapshot();
+  // 30초 메모는 서버 쪽 캐시다 — 브라우저나 중간 CDN이 이 응답을 더 오래 붙들면 수집 중단이
+  // 화면에 늦게 뜬다.
+  res.set("Cache-Control", "no-store");
+  res.status(snapshot.status === "ok" ? 200 : 503).json(snapshot);
+});
+
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));
 app.get("*", (_req, res) => res.sendFile(path.join(webDist, "index.html")));
 
-app.listen(PORT, () => {
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+const server = app.listen(PORT, () => {
   console.log(`dashboard listening on :${PORT}`);
   // 부팅 직후 즉시 한 번 데우고(배포 직후 첫 방문자도 히트), 이후 QUANT_MS 경계마다 반복.
   warmCache().catch((err) => console.error("warmCache(boot)", err));
   scheduleWarmer();
 });
+
+// k8s 롤링 업데이트에서 SIGTERM은 파드가 Service endpoints에서 빠지기 *전에* 도착한다 —
+// 그래서 먼저 shuttingDown을 세워 /readyz를 503으로 뒤집고(로드밸런서가 드레인할 시간을 준다),
+// 그 다음 리스너를 닫아 진행 중인 요청만 마무리한다. 순서를 뒤집으면 아직 엔드포인트에 남아
+// 있는 파드가 연결을 거절해 배포마다 짧은 5xx가 난다.
+// 상한 타이머는 keep-alive 소켓이 남아 close() 콜백이 오지 않는 경우의 안전망이고, unref()해서
+// 이 타이머 자체가 정상 종료를 붙들지 않게 한다. 기존 주기 타이머(캐시 스윕, 스키마 프로브,
+// warmer 체인)는 이미 전부 unref()되어 있어 별도 정리가 필요 없다.
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.on(signal, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received — readiness now failing, draining connections`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
+  });
+}
