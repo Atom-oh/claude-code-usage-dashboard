@@ -151,7 +151,10 @@ LIMIT 50;
 -- active_time.total은 이름과 달리 gauge가 아니라 sum(counter) 테이블로 들어온다
 -- (실측 2026-07-06, dashboard/server/queries.js:597) — 예전 패널은 otel_metrics_gauge를 읽어
 -- 항상 빈 결과였다. 누적 카운터라 sum(Value)는 과대집계이므로 시리즈(SeriesKey)·세션 단위
--- 경계 diff로 버킷별 증가량을 만든다(대시보드 incBucketed와 같은 규칙).
+-- 경계 diff로 버킷별 증가량을 만든다(대시보드 incBucketed와 같은 규칙). SeriesKey는 이제
+-- 시리즈×프로세스 세그먼트 식별자다(StartTimeUnix를 해시에 접어 넣음, clickhouse-migration-003.sql
+-- / ADR-003) — `--resume` 등으로 카운터가 재시작돼도 그 세그먼트가 새 키를 받아 이전 구간의
+-- 증가량이 유실되지 않는다.
 SELECT t, ExperimentGroup, sum(inc) AS active_seconds
 FROM (
     SELECT t, ExperimentGroup,
@@ -497,7 +500,8 @@ ORDER BY ExperimentGroup;
 -- 【패널 24】활성 사용시간 user/cli 분해 — active_time.total의 type attribute('user'|'cli')는
 -- token.usage와 같은 승격 컬럼(TokenType)에 실린다(실측 7d: cli 123h vs user 2.8h — cli/user
 -- 비율이 "자동화 배율"). 누적 카운터라 sum(Value) 직접 합산 금지 — 패널 9와 동일한
--- 세션-경계 diff를 쓰되, 시계열 대신 그룹 × 타입 스냅샷으로 접는다. 대시보드 대응:
+-- 세션-경계 diff를 쓰되, 시계열 대신 그룹 × 타입 스냅샷으로 접는다. SeriesKey의 세그먼트
+-- 의미는 패널 9 주석 참고. 대시보드 대응:
 -- /api/productivity/active-time-summary (queries.js activeTimeSummary).
 SELECT ExperimentGroup, TokenType, round(sum(inc) / 3600, 1) AS hours
 FROM (
@@ -528,7 +532,7 @@ ORDER BY ExperimentGroup, TokenType;
 -- 여기선 토큰 정규화 원칙 유지). Effort는 승격 컬럼(clickhouse-migration-002.sql; Speed는 실측
 -- 0행이라 안 본다), ''는 effort attribute가 없는 행 — 'unknown'으로 묶는다(실측 7d cost 기준
 -- medium ≫ high > '' > xhigh). token.usage도 누적 카운터라 패널 24와 동일한 세션-경계 diff
--- (첫 버킷 과대집계 한계도 동일).
+-- (첫 버킷 과대집계 한계도 동일). SeriesKey의 세그먼트 의미는 패널 9 주석 참고.
 SELECT ExperimentGroup, if(Effort = '', 'unknown', Effort) AS effort, sum(inc) AS tokens
 FROM (
     SELECT ExperimentGroup, Effort,

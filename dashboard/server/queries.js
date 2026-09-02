@@ -142,8 +142,11 @@ export function filterCond(filters = {}, cols = {}) {
 // 단위로 "지금까지 합계"를 30초마다 export한다(운영 설정: cumulative). cumulative 행을 그대로
 // sum(Value)하면 세션이 길수록 같은 총합이 배수로 다시 더해져 토큰/비용/세션 수가 천문학적으로
 // 과대집계된다(실측: 토큰 총합이 1600억까지 나온 사례). 정답은 세션별로 "구간 끝 누적값 - 구간
-// 시작 직전 누적값"만 diff하는 것 — Prometheus increase()가 하는 일과 같다. 세션 재시작 = 새
-// session.id라 카운터 리셋 감지가 따로 필요 없다(방어적으로 greatest(diff, 0)만 둔다). delta
+// 시작 직전 누적값"만 diff하는 것 — Prometheus increase()가 하는 일과 같다. resume/헬퍼
+// 프로세스는 같은 session.id를 유지한 채 카운터를 재시작한다(실측 2026-09-02) — 리셋 경계는
+// session.id가 아니라 SeriesKey가 나른다(StartTimeUnix를 접어 넣음, clickhouse-migration-003.sql
+// / ADR-003). 그래서 diff 쪽에 별도 드롭 감지가 여전히 필요 없고(방어적으로 greatest(diff, 0)만
+// 둔다). delta
 // 데이터(레거시 배포/구 seed)는 그냥 구간 sumIf면 되므로, 아래 두 헬퍼가 temporality별로 알맞은
 // 계산을 세션 단위로 미리 접어(inc subquery) 기존 쿼리들이 원본과 똑같은
 // sumIf(m.Value, m.MetricName = ...) 모양을 그대로 쓰게 한다.
@@ -162,6 +165,8 @@ const LOOKBACK_DAYS = 3; // from 이전에 시작한 세션의 diff baseline을 
 // otel_metrics_sum에 SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes)) 컬럼을
 // 추가(clickhouse-schema.sql 참조)해 INSERT 시점에 한 번만 계산하도록 옮기니 같은 쿼리가
 // 0.11초로 줄었다(11배) — 인라인 계산과 값이 100% 일치함을 확인(mismatch=0).
+// SeriesKey는 이제 프로세스 세그먼트 단위(StartTimeUnix까지 해시에 포함, clickhouse-migration-003.sql
+// / ADR-003) — session.count만 예외로 세그먼트 구분 없이 세션당 하나의 키를 유지한다.
 const seriesKey = "SeriesKey";
 
 // 세션(SessionId) × temporality × 속성 단위로 구간 증가량을 미리 계산하는 서브쿼리. 결과 컬럼명을

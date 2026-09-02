@@ -181,8 +181,9 @@ export function sanitizeSql(sql) {
 export const SCHEMA_CONTEXT = `테이블(우선순위 순):
 1. otel_metrics_sum_hourly — 시간당 롤업. **대시보드의 모든 쿼리가 이걸 쓴다. 특별히 분 단위
    해상도가 필요한 경우가 아니면 항상 이 테이블부터 쓰세요** (원본보다 ~86배 작아 스캔이 훨씬
-   저렴합니다). 컬럼: hour(DateTime, 시간 버킷), MetricName, SessionId, SeriesKey(UInt64, 시리즈
-   식별자), UserEmail, AggregationTemporality(1=delta, 2=cumulative), Model, TokenType, Decision
+   저렴합니다). 컬럼: hour(DateTime, 시간 버킷), MetricName, SessionId, SeriesKey(UInt64,
+   시리즈×프로세스 세그먼트 식별자 — '--resume' 등 카운터 재시작마다 새 값; session.count만
+   예외), UserEmail, AggregationTemporality(1=delta, 2=cumulative), Model, TokenType, Decision
    (accept/reject), SkillName, ToolName, StartType(session.count의 시작 유형 — 'agents_view'는
    claude agents 대시보드 프로세스 실행이라 대화 세션이 아니니 세션 카운트에서 제외할 것),
    AppVersion(Claude Code 버전, 2026-08-11부터 승격 — 과거분은 이 마이그레이션 이전 데이터라
@@ -192,7 +193,8 @@ export const SCHEMA_CONTEXT = `테이블(우선순위 순):
 2. otel_metrics_sum — 원본 메트릭(분 단위 이하 해상도가 필요할 때만). 컬럼: TimeUnix(DateTime),
    MetricName, Value(Float64), UserEmail, EndUserId(Bedrock 그룹은 UserEmail이 비어 있음 —
    coalesce(nullIf(UserEmail,''), nullIf(EndUserId,''))로 폴백할 것), SessionId, SeriesKey
-   (UInt64, 시리즈 식별자 — 이미 컬럼으로 있으니 cityHash64 등으로 직접 만들지 마세요), Model,
+   (UInt64, 시리즈×프로세스 세그먼트 식별자 — '--resume' 등 카운터 재시작마다 새 값;
+   session.count만 예외 — 이미 컬럼으로 있으니 cityHash64 등으로 직접 만들지 마세요), Model,
    TokenType, Decision, SkillName, AgentName, PluginName, MarketplaceName, McpServerName,
    McpToolName, Effort(low/medium/high/xhigh/max), Speed('fast'만 존재, 없으면 fast 아님),
    StartType, Source, AppVersion, AggregationTemporality, Attributes(Map).
