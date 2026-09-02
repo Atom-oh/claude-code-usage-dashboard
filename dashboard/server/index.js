@@ -7,6 +7,7 @@ import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping } from "./clickhouse.js";
+import { probeSegmentAwareSeriesKey } from "./schema.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -90,6 +91,18 @@ setInterval(() => {
   const now = Date.now();
   for (const [k, v] of cache) if (v.expires < now) cache.delete(k);
 }, CACHE_TTL_MS).unref();
+
+// 스키마 마이그레이션(migration-003) 적용 여부는 가정하지 않고 실측한다 — /api/config는
+// 동기 응답을 유지해야 하므로(요청 경로에서 ClickHouse를 만지지 않는다) 부팅 시 한 번 +
+// 10분마다 갱신해 최신값만 들고 있는다. 실패는 null로 접혀 경고 문구가 유지된다(fail-safe).
+let segmentAwareSeriesKey = null;
+const refreshSchemaProbe = () => {
+  probeSegmentAwareSeriesKey().then((v) => {
+    segmentAwareSeriesKey = v;
+  });
+};
+refreshSchemaProbe();
+setInterval(refreshSchemaProbe, 10 * 60 * 1000).unref();
 
 // 캐시 키는 핸들러가 실제로 읽는 파라미터(from/to/group/user/model/intervalHours/email)만
 // 화이트리스트로 넣은 canonical 형태 — 브라우저(useApi의 객체 삽입 순서)와 warmer(아래)가
@@ -287,7 +300,13 @@ app.post(
 // 재사용하므로(dashboard/Dockerfile) 빌드타임 VITE_ 변수로는 배포별로 못 바꾼다. ClickHouse도
 // 구간 파라미터도 안 쓰므로 route() 래퍼(캐시/range 파싱)를 거치지 않는다.
 // 같은 이유로 캐시쓰기 TTL 가정(pricingConfig)도 런타임에 노출한다 — build-once-deploy-many.
-app.get("/api/config", (_req, res) => res.json({ piiMask: piiMaskEnabled, pricing: pricingConfig }));
+app.get("/api/config", (_req, res) =>
+  res.json({
+    piiMask: piiMaskEnabled,
+    pricing: pricingConfig,
+    schema: { segmentAwareSeriesKey },
+  })
+);
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));

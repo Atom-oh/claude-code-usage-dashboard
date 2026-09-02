@@ -20,11 +20,18 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   the Executive hero split-band (one row per KPI, bedrock left / enterprise right around a
   center label, single 6px split bar — note `pct` format expects a 0-1 fraction, not a
   percentage) and the reusable "dashboard cost is a lower bound of real billing" warning
-  callout, used on Executive and Cost respectively. Its four causes are measured facts, keep
-  them in sync with the data layer: un-instrumented launch paths (telemetry env missing),
-  `--resume` counter resets lost by the session-boundary diff, the >200K long-context premium
-  not being priced, and non-instrumented channels. Thinking tokens ARE included in OTel
-  output (measured 2026-09-02) — an earlier version of the copy claimed otherwise
+  callout, used on Executive and Cost respectively. Its causes are measured facts, keep them
+  in sync with the data layer: un-instrumented launch paths (telemetry env missing),
+  `--resume` counter resets lost by the session-boundary diff, the unpriced-model exclusion
+  (models absent from the pricing table — Bedrock's non-Anthropic models — are excluded from
+  computed cost and shown separately as `unpriced_tokens`; the old ">200K long-context premium
+  not priced" claim was factually wrong and has been removed, see ADR-003/pricing.js), and
+  non-instrumented channels. The causes are now conditional on the schema probe:
+  `LowerBoundNote` fetches `/api/config` and drops the `--resume` cause only when
+  `schema.segmentAwareSeriesKey === true`; any other value (`false`/`null`/undefined/failed or
+  aborted fetch/older server with no `schema` key) fails safe to the full cause list. Thinking
+  tokens ARE included in OTel output (measured 2026-09-02) — an earlier version of the copy
+  claimed otherwise
 - `src/pivot.js` -- reshapes flat `[{t, group, value}]` rows into one-row-per-x-tick for
   Recharts (`pivotByGroup`, `pivotByKey`)
 - `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +

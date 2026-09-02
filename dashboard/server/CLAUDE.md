@@ -12,7 +12,7 @@ endpoint, mostly following the pattern `export async function xyz(from, to, ...p
 filters)`).
 
 `GET /api/config` is the one non-data route besides `/healthz`: it returns
-`{piiMask, pricing}`. `piiMask` comes from `PII_MASK_ENABLED` (`"1"`/`"true"` = on, unset =
+`{piiMask, pricing, schema}`. `piiMask` comes from `PII_MASK_ENABLED` (`"1"`/`"true"` = on, unset =
 off) so the SPA can decide whether to mask emails at render time — the image is built once and
 reused across deployments, so this can't be a build-time `VITE_` flag. `pricing` is
 `pricing.js`'s `pricingConfig` (`{cacheWriteTtl, overriddenModels}`), passed straight through
@@ -22,9 +22,15 @@ measured at the 1h rate) or `"5m"`; any other value throws at startup. `overridd
 lists the normalized model keys supplied via `PRICING_JSON` -- a JSON object of normalized
 model key -> `{input, output, cacheWrite?, cacheRead?, cacheWrite1h?}` merged over the
 built-in table, with omitted cache fields derived from `input` (`×1.25`/`×0.1`/`×2`); invalid
-JSON, a missing/negative `input`/`output`, or a non-normalized key throws at startup. It
-intentionally skips the `route()` wrapper (no ClickHouse, no range params) but still inherits
-the global Basic Auth.
+JSON, a missing/negative `input`/`output`, or a non-normalized key throws at startup.
+`schema.segmentAwareSeriesKey` is `true`/`false`/`null`, probed (not assumed) from the newest
+`claude_code.cost.usage` rows at boot and refreshed every 10 minutes -- `true` means the
+migration-003 segment-aware `SeriesKey` expression is in force on the cluster, `false` means
+the legacy expression still is, and `null` means undetermined (mixed keys mid-
+`MATERIALIZE COLUMN`, no recent rows, or any probe error). It intentionally skips the
+`route()` wrapper (no ClickHouse, no range params) but still inherits the global Basic Auth --
+the probe itself runs on its own timer rather than in the request path, so the route stays
+synchronous and still touches no ClickHouse at request time.
 
 ## Key Files
 - `index.js` -- route table, `route()` wrapper (range/query parsing + error handling + TTL
@@ -51,6 +57,10 @@ the global Basic Auth.
   `MAU_WINDOW_DAYS` constant shared with `queries.js`)
 - `chat.js` -- Bedrock ConverseStream chat assistant, `sanitizeSql()` SQL sandbox
 - `clickhouse.js` -- `query()` / `queryReadonly()` / `ping()`
+- `schema.js` -- `classifySeriesKeyProbe` (pure, unit-tested) classifies a `{seg, legacy}` row
+  count pair into `true`/`false`/`null`; `probeSegmentAwareSeriesKey` runs the ClickHouse probe
+  and never throws -- it folds every error to `null`, since the value feeds a fail-safe warning
+  rather than a request path
 - `*.test.js` -- `node:test` unit tests for the pure functions above
 
 ## Rules
@@ -109,3 +119,8 @@ the global Basic Auth.
   scans with `quantile()` percentiles over `LogAttributes` durations, and `apiLatency` /
   `commandAdoption` return keyed objects (`{byModel, byEffort}` / `{commands, prompts}`) per
   the `apiErrors` precedent.
+- **`SeriesKey` identifies a per-process counter SEGMENT**, not just a series
+  (`StartTimeUnix` folded in — `clickhouse-migration-003.sql` / ADR-003), except for
+  `claude_code.session.count`, whose key definition is deliberately unchanged. **Never
+  re-derive it inline** in a query — read the column; the one place that must compute it
+  explicitly (`scripts/backfill-hourly-rollup.sh`) copies the expression verbatim.

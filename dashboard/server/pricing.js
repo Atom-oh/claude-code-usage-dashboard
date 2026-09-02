@@ -9,6 +9,8 @@
 // 티어인지 알 수 없다 — 그래서 위와 같은 명시적 가정이 필요하다.
 // sonnet-5 단가 보정(실측: Claude Enterprise 청구서 대조): 기존 $3/$15 → $2/$10. 구 단가로는
 // 계산 비용이 실제 청구의 1.5배로 과대계상되고 있었다.
+// [1m] 접미사 제거는 단가 갭이 아님: Claude 4.6+ 모델은 1M 컨텍스트 전체가 표준 단가
+// (2026-09-02 pricing 페이지 확인).
 const BASE_PRICING = {
   "claude-sonnet-4-5": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
