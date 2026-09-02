@@ -41,8 +41,9 @@ app.get("/healthz", async (_req, res) => {
   res.json({ ok: await ping().catch(() => false) });
 });
 
-// SIGTERM이 도착한 뒤에도 진행 중인 요청은 마무리해야 하므로, 종료 신호는 리스너를 닫기
-// 전에 이 플래그부터 뒤집는다(아래 종료 핸들러 참고).
+// SIGTERM 이후 이미 열려 있는 keep-alive 연결로 들어오는 /readyz에 503을 돌려주기 위한 플래그
+// (아래 종료 핸들러 참고). server.close()는 새 연결만 거절하고 기존 연결의 요청은 그대로
+// 처리하므로, 이 플래그가 없으면 드레인 중인 파드가 {"ready":true}를 계속 답한다(실측 2026-09-02).
 let shuttingDown = false;
 
 // k8s readiness. /healthz(liveness)와 의도적으로 다르다: 여기서는 ClickHouse 접속 실패도
@@ -369,9 +370,11 @@ const server = app.listen(PORT, () => {
 });
 
 // k8s 롤링 업데이트에서 SIGTERM은 파드가 Service endpoints에서 빠지기 *전에* 도착한다 —
-// 그래서 먼저 shuttingDown을 세워 /readyz를 503으로 뒤집고(로드밸런서가 드레인할 시간을 준다),
-// 그 다음 리스너를 닫아 진행 중인 요청만 마무리한다. 순서를 뒤집으면 아직 엔드포인트에 남아
-// 있는 파드가 연결을 거절해 배포마다 짧은 5xx가 난다.
+// 드레인 중인 파드가 계속 ready라고 답하면 안 되므로 shuttingDown을 세워 /readyz를 503으로
+// 뒤집는다. 단, 플래그와 server.close()는 같은 동기 틱에서 실행되므로 둘의 순서는 의미가 없고
+// (어떤 요청 핸들러도 한쪽만 관측할 수 없다), close()는 리스너를 즉시 닫아 SIGTERM 이후의
+// *새* 연결은 503이 아니라 거절된다(실측 2026-09-02, 열린 연결을 붙든 상태에서 확인). 엔드포인트
+// 제거가 전파될 시간은 이 코드가 아니라 preStop 훅/terminationGracePeriod에서 나와야 한다.
 // 상한 타이머는 keep-alive 소켓이 남아 close() 콜백이 오지 않는 경우의 안전망이고, unref()해서
 // 이 타이머 자체가 정상 종료를 붙들지 않게 한다. 기존 주기 타이머(캐시 스윕, 스키마 프로브,
 // warmer 체인)는 이미 전부 unref()되어 있어 별도 정리가 필요 없다.
