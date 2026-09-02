@@ -20,9 +20,12 @@ AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-northeast-2}"
 CH_HOST="admin-clickhouse.internal"
 CH_PORT="9440"                                       # native TLS
 CH_DB="claude_code"
-CH_USER="otel_writer"
+# 컬렉터는 INSERT 범위 계정으로 붙는다 — otel_writer는 DDL/DROP·테이블 함수·system DB까지
+# 가능한 계정이라 워크숍 참가자 인스턴스에 둘 자격증명이 아니다. 이 파라미터는 terraform이
+# 만들지 않으므로, 새 인스턴스를 띄우기 전에 운영자가 먼저 만들어야 한다.
+CH_USER="otel_ingest"
 # 비밀번호는 하드코딩 금지 → SSM Parameter Store(SecureString)에서 로드
-CH_PASSWORD_SSM_PARAM="/claude-code/ab/clickhouse-writer-password"
+CH_PASSWORD_SSM_PARAM="/claude-code/ab/clickhouse-ingest-password"
 
 OTELCOL_VERSION="0.119.0"
 

@@ -30,6 +30,21 @@ resource "kubernetes_secret" "clickhouse_writer" {
   data = { CH_PASSWORD = var.clickhouse_writer_password }
 }
 
+# 컬렉터(EC2 플릿)는 이제 INSERT 범위 계정으로만 쓴다 — otel_writer는 grants가 없어 기본
+# 전체권한(테이블 함수·system DB·DDL/DROP)을 갖는데, 컬렉터에 필요한 건 INSERT뿐이다.
+# otel_writer는 아래 스키마 Job과 백업 CronJob이 계속 쓰므로 남긴다.
+#
+# 클러스터 안에서 이 Secret을 읽는 워크로드는 없다. 그래도 두는 이유: 이 값이 아래
+# password_sha256_hex의 원본과 같은 출처라서, 운영자가 SSM 파라미터(별도 생성)를 만들거나
+# `SHOW GRANTS`로 계정을 확인할 때 tfvars 파일을 다시 열지 않고 여기서 읽을 수 있다.
+resource "kubernetes_secret" "clickhouse_ingest" {
+  metadata {
+    name      = "clickhouse-ingest"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+  }
+  data = { CH_PASSWORD = var.clickhouse_ingest_password }
+}
+
 locals {
   ch_toleration    = [{ key = "claude-code", operator = "Equal", value = "true", effect = "NoSchedule" }]
   ch_node_selector = { "node-type" = "claude-code" }
@@ -121,6 +136,24 @@ resource "kubectl_manifest" "chi" {
           # 접근제어(access_management=1)와 무관하게 동작한다 — 별도 access_management 설정 불필요.
           # apply 후 실효성은 docs/workshop-studio-notes.md §4 검증 절차(url() → ACCESS_DENIED)로 확인.
           "otel_reader/grants/query" = "GRANT SELECT ON claude_code.*"
+          # 컬렉터 전용 계정. grants가 두 줄인 이유가 핵심이다: otel_metrics_sum_hourly_mv가
+          # 보안절(DEFINER/SQL SECURITY) 없이 만들어져 있어, INSERT 시점에 MV의 SELECT가 "쓰는
+          # 유저" 권한으로 검사된다. 실측(2026-09-02, clickhouse/clickhouse-server:24.8.14.39
+          # 컨테이너): INSERT만 주면 원본 INSERT 자체가 Code 497 ACCESS_DENIED로 실패한다
+          # (`SELECT(TimeUnix, MetricName, …) ON claude_code.otel_metrics_sum` 부족) — 롤업만
+          # 비는 게 아니라 수집이 전부 멈춘다. 소스 테이블 SELECT를 한 줄 더하면 INSERT 성공 +
+          # 롤업 1행 적재까지 확인됐고, 그 상태에서도 롤업 SELECT·url() 테이블 함수·DROP은
+          # 전부 ACCESS_DENIED다.
+          # ponytail: MV에 DEFINER를 붙이면 INSERT만으로도 되지만(실측 확인), 라이브에서는
+          # CREATE MATERIALIZED VIEW IF NOT EXISTS가 no-op이라 기존 MV에 적용되지 않는다 —
+          # 계정만 좁히고 MV는 그대로면 컬렉터가 조용히 죽는다. grant 두 줄은 DDL 마이그레이션
+          # 선행 조건이 없는 쪽이다.
+          "otel_ingest/password_sha256_hex" = sha256(var.clickhouse_ingest_password)
+          "otel_ingest/networks/ip"         = "10.0.0.0/8"
+          "otel_ingest/grants/query" = [
+            "GRANT INSERT ON claude_code.*",
+            "GRANT SELECT ON claude_code.otel_metrics_sum",
+          ]
         }
         # LIMIT 201 래핑(clickhouse.js)과 30초 AbortController(chat.js)는 행수/응답시간만
         # 제한한다 — 무거운 self-join이나 repeat('x', N) 같은 거대 셀은 여전히 ClickHouse
@@ -242,7 +275,15 @@ resource "kubernetes_job_v1" "schema_init" {
     namespace = kubernetes_namespace.claude_code.metadata[0].name
   }
   spec {
-    backoff_limit = 6
+    # 6 → 2: 재시도가 싼 작업이 아니다. --multiquery는 첫 실패에서 abort하지만 그 앞의
+    # statement는 이미 실행된 뒤라, 실패가 계속되면 재시도마다 MATERIALIZE COLUMN 뮤테이션이
+    # 다시 돈다(실측 2026-08-12: 7회 backoff × 11개 = 77개 뮤테이션이 494M행 테이블에 재실행).
+    # 연결 대기는 이제 아래 컨테이너 안에서 처리하므로 재시도로 흡수할 이유도 없어졌다.
+    backoff_limit = 2
+    # 300초(연결 대기 상한) + 1200초(ON CLUSTER DDL·뮤테이션 여유) = 1500초. terraform 쪽
+    # create 타임아웃(30분)보다 짧게 둬서, 멈춘 Job은 apply가 아니라 Job이 먼저
+    # DeadlineExceeded로 끝나 원인이 파드 상태에 남게 한다.
+    active_deadline_seconds = 1500
     template {
       metadata {}
       spec {
@@ -255,9 +296,31 @@ resource "kubernetes_job_v1" "schema_init" {
         }
         node_selector = local.ch_node_selector
         container {
-          name    = "schema-init"
-          image   = "clickhouse/clickhouse-server:24.8"
-          command = ["sh", "-c", "clickhouse-client --host ${local.chi_service} --user otel_writer --password \"$CH_PASSWORD\" --multiquery --queries-file /sql/schema.sql"]
+          name  = "schema-init"
+          image = "clickhouse/clickhouse-server:24.8"
+          command = ["sh", "-c", <<-EOT
+            set -eu
+            # 신규 클러스터에서는 CHI 파드가 뜨기 전에 이 Job이 스케줄될 수 있다. 예전에는 그
+            # 연결 실패를 Job 재시작 backoff로 흡수했는데, 재시작 한 번이 곧 뮤테이션 재실행
+            # 이라 비싸다(위 backoff_limit 주석) — 연결 준비를 컨테이너 안에서 기다리면
+            # 재시작 자체가 생기지 않는다. 상한 60회 × 5초 = 300초.
+            i=0
+            until clickhouse-client --host ${local.chi_service} --user otel_writer --password "$CH_PASSWORD" --query 'SELECT 1' >/dev/null 2>&1; do
+              i=$((i+1))
+              if [ "$i" -ge 60 ]; then
+                echo "clickhouse-client could not reach ${local.chi_service} after 60 tries (300s)" >&2
+                exit 1
+              fi
+              sleep 5
+            done
+            # --echo: --multiquery는 첫 실패에서 abort하므로, 마지막으로 echo된 statement가
+            # 곧 실패한 statement다 — 이게 없으면 파드 로그에 에러만 있고 어느 문장인지가 없다.
+            # --distributed_ddl_task_timeout=600: ON CLUSTER DDL이 3 레플리카 전부에서 끝나길
+            # 기다리는 시간. 기본값은 뮤테이션이 돌고 있는 레플리카에서 부족하다.
+            exec clickhouse-client --host ${local.chi_service} --user otel_writer --password "$CH_PASSWORD" \
+              --echo --distributed_ddl_task_timeout=600 --multiquery --queries-file /sql/schema.sql
+          EOT
+          ]
           env {
             name = "CH_PASSWORD"
             value_from {

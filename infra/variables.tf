@@ -67,3 +67,9 @@ variable "clickhouse_writer_password" {
 variable "clickhouse_reader_password" {
   sensitive = true
 }
+
+# 컬렉터(EC2 플릿)가 쓰는 INSERT 범위 계정의 비밀번호. 기본값 없음 — apply 시 주입한다.
+# 이 값의 SSM 파라미터(/claude-code/ab/clickhouse-ingest-password)는 terraform이 만들지 않는다.
+variable "clickhouse_ingest_password" {
+  sensitive = true
+}
