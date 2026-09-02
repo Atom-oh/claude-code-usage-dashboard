@@ -1,6 +1,7 @@
-// Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 모든 모델에 공통: cacheWrite(5m) = 입력×1.25,
-// cacheWrite1h = 입력×2, cacheRead = 입력×0.1. Bedrock cross-region(us./global./eu./apac.) 추론
-// 프로파일은 기본 모델과 동일 단가.
+// Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 cacheWrite(5m) = 입력×1.25,
+// cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
+// 0.025x인 예외라 값을 명시한다(아래 주석). Bedrock cross-region(us./us-gov./eu./apac./jp./au./
+// global.) 추론 프로파일은 기본 모델과 동일 단가.
 // 캐시 쓰기 TTL 기본값이 "1h"인 이유: Claude Code 메인 대화가 캐시 쓰기 볼륨의 대부분을 차지하고
 // 메인 스레드는 1h TTL로 청구된다(실측 2026-09-01/02: opus-5 메인 스레드 $10/M = 5×2, 5×1.25=$6.25
 // 가 아니었음). haiku/sonnet 보조 호출은 5m TTL을 쓰므로 "1h" 기본값은 보조 호출 비용을 다소
@@ -24,6 +25,13 @@ const BASE_PRICING = {
   "claude-haiku-3-5": { input: 0.8, output: 4, cacheWrite: 1, cacheRead: 0.08 },
   "claude-3-5-haiku": { input: 0.8, output: 4, cacheWrite: 1, cacheRead: 0.08 },
   "claude-fable-5": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 },
+  // fable-5-1 / mythos-5-1: cache read $0.25 (0.025x 예외, 2026-09-02 pricing 페이지 확인)
+  "claude-fable-5-1": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25 },
+  "claude-mythos-5": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 },
+  "claude-mythos-5-1": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25 },
+  "claude-opus-4-1": { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5 },
+  "claude-opus-4": { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5 },
+  "claude-sonnet-4": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
 };
 
 // us.anthropic.claude-sonnet-4-5-20250929-v1:0 / global.anthropic.claude-opus-4-8
@@ -31,7 +39,7 @@ const BASE_PRICING = {
 export function normalizeModelId(raw) {
   return String(raw || "")
     .replace(/\[[^\]]*\]$/, "") // [1m] 컨텍스트 윈도우 접미사
-    .replace(/^(?:us|global|eu|apac)\./, "") // cross-region 추론 프로파일 접두사
+    .replace(/^(?:us|us-gov|eu|apac|jp|au|global)\./, "") // cross-region 추론 프로파일 접두사
     .replace(/^anthropic\./, "") // bedrock provider 접두사
     .replace(/-v\d+(?::\d+)?$/, "") // bedrock 버전 접미사 -v1:0 / -v1
     .replace(/-\d{8}$/, ""); // 날짜 스냅샷 접미사 -20250929

@@ -283,3 +283,51 @@ test("PRICING_PROMPT_TABLE renders the in-effect rate and the TTL assumption, wi
   assert.match(PRICING_PROMPT_TABLE, /PRICING_CACHE_WRITE_TTL/);
   assert.doesNotMatch(PRICING_PROMPT_TABLE, /cacheCreation/);
 });
+
+// 2026-09-02 단가표 보강: 이 6개 계열이 표에 없어 토큰이 unpriced로 새고 있었다(계산 비용에서
+// 통째로 제외 — LowerBoundNote가 경고하는 원인 중 하나). cacheWrite1h는 표에 안 적고
+// buildPricing이 입력×2로 파생한다.
+test("priceFor covers the 2026-09-02 additions with the derived 1h cache-write rate", () => {
+  assert.equal(priceFor("claude-mythos-5").input, 10);
+  assert.equal(priceFor("claude-mythos-5").cacheRead, 1);
+  assert.equal(priceFor("claude-fable-5-1").cacheWrite1h, 20); // 10 × 2
+  assert.equal(priceFor("claude-opus-4-1").cacheWrite1h, 30); // 15 × 2
+  assert.equal(priceFor("claude-opus-4").output, 75);
+  assert.equal(priceFor("claude-sonnet-4").cacheWrite, 3.75);
+});
+
+// fable-5-1/mythos-5-1의 cacheRead는 입력×0.1(=1.0)이 아니라 0.25다 — 모듈의 파생 규칙을
+// 그대로 믿으면 4배 과대계상된다. 표에 명시된 값이 살아있는지 고정한다.
+test("the -5-1 models keep their explicit 0.025x cacheRead instead of the derived 0.1x", () => {
+  assert.equal(priceFor("claude-fable-5-1").cacheRead, 0.25);
+  assert.equal(priceFor("claude-mythos-5-1").cacheRead, 0.25);
+  // 대조군: 같은 입력 단가($10)의 fable-5/mythos-5는 파생 규칙대로 1.0이다 — 이게 없으면
+  // 위 두 단정문이 "모든 $10 모델이 0.25"인 잘못된 구현도 통과시킨다.
+  assert.equal(priceFor("claude-fable-5").cacheRead, 1);
+  assert.equal(priceFor("claude-mythos-5").cacheRead, 1);
+});
+
+// -\d{8}$(날짜 스냅샷) 단계가 -4 / -1 같은 마이너 버전까지 먹으면 다른 모델 행으로 매칭돼
+// 조용한 오가격이 된다. 두 방향 모두 고정한다.
+test("normalizeModelId strips the date snapshot without eating a minor version", () => {
+  assert.equal(normalizeModelId("us.anthropic.claude-opus-4-1-20250805-v1:0"), "claude-opus-4-1");
+  assert.equal(normalizeModelId("claude-opus-4-20250514"), "claude-opus-4");
+  assert.equal(normalizeModelId("claude-sonnet-4-20250514"), "claude-sonnet-4");
+  // fable-5-1이 fable-5로 접히면 cacheRead가 0.25가 아니라 1.0으로 잡힌다(4배).
+  assert.equal(normalizeModelId("claude-fable-5-1"), "claude-fable-5-1");
+  assert.equal(normalizeModelId("claude-fable-5-1[1m]"), "claude-fable-5-1");
+  assert.equal(priceFor("claude-fable-5-1").cacheRead, 0.25);
+});
+
+// 실측: Bedrock cross-region 추론 프로파일 접두사는 us./global./eu./apac. 외에
+// us-gov./jp./au.도 있다. 안 벗기면 모델 분포가 리전별로 쪼개지고 단가표에도 안 맞는다.
+test("normalizeModelId strips the us-gov/jp/au cross-region profile prefixes", () => {
+  assert.equal(normalizeModelId("jp.anthropic.claude-sonnet-5"), "claude-sonnet-5");
+  assert.equal(normalizeModelId("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0"), "claude-haiku-4-5");
+  assert.equal(normalizeModelId("au.anthropic.claude-opus-5"), "claude-opus-5");
+  // us-gov는 us보다 뒤에 오는 대안이라(정규식 순서) us가 먼저 매칭됐다가 백트래킹으로
+  // us-gov를 잡는다 — 위 두 번째 단정문이 그 백트래킹을 고정한다.
+  assert.equal(priceFor("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0").input, 1);
+  // 대조군: 접두사처럼 보이지만 목록에 없는 값은 그대로 남아야 한다(과잉 매칭 방지).
+  assert.equal(normalizeModelId("us-gov-west.anthropic.claude-opus-5"), "us-gov-west.anthropic.claude-opus-5");
+});

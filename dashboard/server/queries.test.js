@@ -24,6 +24,9 @@ test("bucket maps intervalHours to minute/hour/day intervals", () => {
 test("normModel SQL mirrors normalizeModelId's -v<n> (with optional :n) suffix rule", () => {
   const sql = normModel("Model");
   assert.ok(sql.includes("-v\\\\d+(:\\\\d+)?$"), `expected the bare -vN suffix pattern in: ${sql}`);
+  // us-gov/jp/au 리전 프로파일까지 벗기는지 — 다섯 사본(pricing.js / 이 SQL /
+  // grafana-ab-queries.sql 두 곳 / chat.test.js 핀) 중 하나만 고치는 드리프트를 잡는다.
+  assert.ok(sql.includes("us-gov|eu|apac|jp|au|global"), `expected the widened geo-prefix alternation in: ${sql}`);
 });
 
 // activeUsers/adoptionLevels(총계 지표)는 excludeUnknown:false로 unknown 세션도 포함해야

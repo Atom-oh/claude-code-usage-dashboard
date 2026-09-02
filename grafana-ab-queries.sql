@@ -227,7 +227,7 @@ SELECT
             replaceRegexpOne(
                 replaceRegexpOne(
                     replaceRegexpOne(Model, '\\[.*\\]$', ''),
-                    '^(us|global|eu|apac)\\.', ''),
+                    '^(us|us-gov|eu|apac|jp|au|global)\\.', ''),
                 '^anthropic\\.', ''),
             '-v\\d+(:\\d+)?$', ''),
         '-\\d{8}$', '') AS model,
@@ -401,7 +401,7 @@ SELECT
             replaceRegexpOne(
                 replaceRegexpOne(
                     replaceRegexpOne(LogAttributes['model'], '\\[.*\\]$', ''),
-                    '^(us|global|eu|apac)\\.', ''),
+                    '^(us|us-gov|eu|apac|jp|au|global)\\.', ''),
                 '^anthropic\\.', ''),
             '-v\\d+(:\\d+)?$', ''),
         '-\\d{8}$', '') AS model,
