@@ -225,8 +225,17 @@ resource "kubernetes_config_map" "schema" {
 # Job은 다시 실행되지 않는다 — 스키마 파일에 추가한 ALTER(SeriesKey 백필, hourly TTL 보정)가
 # 영원히 적용되지 않는다는 뜻이다(리뷰에서 CRITICAL로 확인: hourly 롤업이 TTL 없이 UserEmail을
 # 무기한 보존하던 실제 원인). 스키마 파일에 INSERT는 없고 전부 IF NOT EXISTS/멱등 ALTER라 재실행이
-# 안전하다 — 유일한 비용은 MATERIALIZE COLUMN 뮤테이션이 다시 도는 것이고, 스키마 파일이 바뀔 때만
-# 일어난다.
+# 안전하다 — 비용은 MATERIALIZE COLUMN 뮤테이션이 다시 도는 것인데, 스키마 파일이 바뀔 때만이 아니라
+# **실패한 재시도마다** 다시 든다: --multiquery는 첫 오류에서 abort하지만 그 앞의 statement는 이미
+# 실행된 뒤라, 실측(2026-08-12, prod system.mutations) 한 statement가 계속 실패하는 동안 backoff 7회
+# × 11개 MATERIALIZE COLUMN = 77개 뮤테이션이 494M행 테이블에 다시 돌았다.
+#
+# wait_for_completion = true: 실측(2026-08-12~09-02) Job이 7회 전부 실패했는데 terraform apply는
+# 성공으로 끝나 3주간 아무도 몰랐다(대시보드 쿼리는 실패하지 않고, 롤업 TTL 미적용은 조용한
+# retention 우회라 드러나지 않는다). 기다리면 apply가 Job 실패에서 멈추고 `kubectl logs job/...`이
+# 실패 statement를 그대로 보여준다. MATERIALIZE COLUMN은 비동기 뮤테이션이라 clickhouse-client는
+# 바로 반환하므로 Job 자체는 수 분 안에 끝난다 — 30분 타임아웃은 신규 클러스터에서 CHI 파드가 뜨기
+# 전 연결 실패로 소모되는 backoff(최대 ~10분)를 감안한 값.
 resource "kubernetes_job_v1" "schema_init" {
   metadata {
     name      = "clickhouse-schema-init-${substr(filemd5("${path.module}/files/clickhouse-schema-replicated.sql"), 0, 8)}"
@@ -270,8 +279,11 @@ resource "kubernetes_job_v1" "schema_init" {
       }
     }
   }
-  wait_for_completion = false
-  depends_on          = [kubectl_manifest.chi]
+  wait_for_completion = true
+  timeouts {
+    create = "30m"
+  }
+  depends_on = [kubectl_manifest.chi]
 }
 
 # 일별 백업 — ClickHouse 네이티브 BACKUP을 S3로 직접(자기완결적 아카이브, locals 주석 참조).

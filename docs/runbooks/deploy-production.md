@@ -101,12 +101,14 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
   this has caught query bugs that unit tests (which don't touch live ClickHouse) missed.
 - **ClickHouse schema changes are a separate path from the image deploy.** Editing
   `infra/files/clickhouse-schema-replicated.sql` changes the `filemd5` in the schema-init Job's
-  name, so `terraform apply` replaces and re-runs it. Terraform does **not** wait for it
-  (`wait_for_completion = false`), so verify by hand:
+  name, so `terraform apply` replaces and re-runs it. Terraform waits for the Job
+  (`wait_for_completion = true`, 30m timeout) and **fails the apply if the Job fails** — the
+  `--multiquery` client aborts at the first failing statement, so read the Job pod's logs for the
+  exact statement (`kubectl -n claude-code logs job/clickhouse-schema-init-<hash>`); everything
+  after it in the file was not applied. Before 2026-09-02 the apply reported success while the
+  Job failed 7/7 retries for three weeks. Still verify the end state by hand:
   ```bash
   kubectl --context fsi-demo-cluster -n claude-code get jobs | grep clickhouse-schema-init
-  kubectl --context fsi-demo-cluster -n claude-code wait --for=condition=complete \
-    job/clickhouse-schema-init-<hash> --timeout=300s
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
     -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
@@ -199,12 +201,14 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
   여러 번 잡았습니다.
 - **ClickHouse 스키마 변경은 이미지 배포와 별개 경로입니다.**
   `infra/files/clickhouse-schema-replicated.sql`를 수정하면 schema-init Job 이름의 `filemd5`가
-  바뀌어 `terraform apply`가 Job을 교체·재실행합니다. terraform은 완료를 기다리지 않으므로
-  (`wait_for_completion = false`) 직접 확인하세요:
+  바뀌어 `terraform apply`가 Job을 교체·재실행합니다. terraform은 Job 완료를 기다리며
+  (`wait_for_completion = true`, 타임아웃 30분) **Job이 실패하면 apply도 실패합니다** —
+  `--multiquery` 클라이언트는 첫 실패 statement에서 abort하므로 Job 파드 로그
+  (`kubectl -n claude-code logs job/clickhouse-schema-init-<hash>`)에서 실패한 statement를
+  확인하세요. 그 뒤의 statement는 적용되지 않은 상태입니다. 2026-09-02 이전에는 Job이 7회 전부
+  실패해도 apply가 성공으로 끝나 3주간 발견되지 않았습니다. 끝 상태는 여전히 직접 확인하세요:
   ```bash
   kubectl --context fsi-demo-cluster -n claude-code get jobs | grep clickhouse-schema-init
-  kubectl --context fsi-demo-cluster -n claude-code wait --for=condition=complete \
-    job/clickhouse-schema-init-<hash> --timeout=300s
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
     -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \

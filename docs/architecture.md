@@ -41,13 +41,19 @@ method at runtime rather than a static experiment flag.
 - **ClickHouse (`otel_metrics_sum_hourly`)** -- `ReplicatedAggregatingMergeTree` hourly rollup
   fed by a materialized view on `otel_metrics_sum`. Dashboard queries read this table instead
   of the raw one (~86x fewer rows; raw grows ~3M rows/day from 10s cumulative re-exports).
-  Cumulative counters keep `max(Value)` per (SeriesKey, SessionId, hour). The schema gives it the same
-  90-day cold / 180-day delete TTL as the raw table (in effect once the schema-init Job re-runs): it holds `UserEmail`, so an untilled rollup
-  would keep user emails after the raw rows were deleted, bypassing retention. That supersedes
-  the original "no TTL so diff baselines outlive the raw TTL" rationale -- baselines are unaffected
-  because `LOOKBACK_DAYS` is 3, far inside 180. Measured 2026-07-27: the live rollup had no TTL at
-  all, because `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table and the schema-init Job
-  never re-ran; both are fixed in `infra/`. See `clickhouse-schema.sql` for cutover notes.
+  Cumulative counters keep `max(Value)` per (SeriesKey, SessionId, hour). The schema gives it a
+  DELETE-only 180-day TTL (no cold-tier move, unlike the raw table): it holds `UserEmail`, so an
+  untilled rollup would keep user emails after the raw rows were deleted, bypassing retention. That
+  supersedes the original "no TTL so diff baselines outlive the raw TTL" rationale -- baselines are
+  unaffected because `LOOKBACK_DAYS` is 3, far inside 180. Measured 2026-07-27: the live rollup had
+  no TTL at all, because `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table and the
+  schema-init Job never re-ran. Measured 2026-09-02: the first fix (`TTL ... TO VOLUME 'cold'`)
+  failed 7/7 Job retries with `BAD_TTL_EXPRESSION` because the live rollup sits on
+  `storage_policy=default` (no `cold` volume) and ClickHouse refuses `MODIFY SETTING
+  storage_policy` unless the new policy contains every old volume name -- hence DELETE-only, which
+  is policy-independent. The Job now runs with `wait_for_completion = true` so a failing statement
+  fails `terraform apply` instead of being discovered weeks later. See `clickhouse-schema.sql` for
+  cutover notes.
 - **ClickHouse Keeper** -- coordination for the replicated cluster (separate StatefulSet).
 
 ### Processing / Query Layer

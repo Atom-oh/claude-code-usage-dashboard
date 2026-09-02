@@ -16,8 +16,13 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
 - `ecr.tf` -- ECR repository for `cc-ab-dashboard`
 - `s3.tf` -- cold-tier storage + backups
 - `dns_cdn.tf` -- Route53 + CloudFront for the public dashboard endpoint
-- `files/clickhouse-schema-replicated.sql` -- schema applied by the operator (kept in sync
-  with the root `clickhouse-schema.sql` reference copy)
+- `files/clickhouse-schema-replicated.sql` -- schema applied by the `schema_init` Job in
+  `clickhouse.tf` (kept in sync with the root `clickhouse-schema.sql` reference copy). The Job is
+  named by the file's md5 so any edit re-runs it, and `wait_for_completion = true` makes a failing
+  statement fail `terraform apply` — the client is `--multiquery`, so nothing after the failing
+  statement is applied; read the Job pod logs, don't assume a green apply means the schema landed.
+  The hourly rollup's TTL is DELETE-only on purpose (the live table is on `storage_policy=default`
+  and cannot be moved to `hot_cold` in place — see the comment block in the SQL file)
 - `secrets.auto.tfvars`, `image.auto.tfvars` -- gitignored; injected at `terraform apply` time,
   never committed
 - `terraform.tfstate*` -- local state (gitignored); acceptable for a single-operator workshop
