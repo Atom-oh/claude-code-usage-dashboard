@@ -90,7 +90,11 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 Or explicitly redeploy the previous known-good tag with Step 3 above.
 
 ## Notes
-- Last verified: 2026-09-02
+- Last verified: 2026-07-08 (full procedure run). 2026-09-02: text re-synced against
+  `infra/ecr.tf` / `server/index.js`, no deploy run. The `IMMUTABLE` tag policy and the
+  `/readyz` probe take effect on the live cluster only after the next `terraform apply`
+  and image rollout — until then the repository is still `MUTABLE` and a stale `latest`
+  tag remains.
 - If the pending `terraform apply` includes `infra/clickhouse.tf`'s ClickHouse backup
   destination change (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`), there's no ordering
   requirement against `scripts/archive-clickhouse.sh` — its own final-snapshot step doesn't
@@ -195,7 +199,10 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 또는 위 3단계로 이전에 확인된 정상 태그를 명시적으로 재배포합니다.
 
 ## 참고
-- 최종 검증일: 2026-09-02
+- 최종 검증일: 2026-07-08 (전체 절차 실행). 2026-09-02에는 `infra/ecr.tf` / `server/index.js`
+  기준으로 문서만 재동기화했고 배포는 실행하지 않았습니다. `IMMUTABLE` 태그 정책과 `/readyz`
+  probe는 다음 `terraform apply`와 이미지 롤아웃 이후에야 라이브 클러스터에 반영됩니다 — 그
+  전까지 리포지토리는 여전히 `MUTABLE`이고 오래된 `latest` 태그가 남아 있습니다.
 - 적용 대기 중인 `terraform apply`에 `infra/clickhouse.tf`의 ClickHouse 백업 목적지 변경
   (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`)이 포함되어 있어도
   `scripts/archive-clickhouse.sh`와의 순서 제약은 없습니다 — 그 스크립트의 최종 스냅샷

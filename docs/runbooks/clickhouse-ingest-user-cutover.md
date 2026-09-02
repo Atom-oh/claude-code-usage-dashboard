@@ -106,7 +106,8 @@ be left in place — it is inert if nothing authenticates as it.
   INSERT-only account cannot insert into a table that has a materialized view created without
   an explicit security clause, because the view's `SELECT` is checked against the inserting
   user; the minimal fix is `SELECT` on the source table only.
-- Last verified: 2026-09-02
+- Last verified: 2026-09-02 — grants only, on a throwaway local `clickhouse-server:24.8.14.39`
+  container. The cutover procedure itself has not yet been run against the production cluster.
 
 ---
 
@@ -209,4 +210,5 @@ IP 허용목록이 걸려 있다). 이건 이 전환의 일부가 아니라 후�
   명시적 보안절 없이 만들어진 materialized view가 걸린 테이블에는 INSERT 전용 계정이 insert할
   수 없다 — view의 `SELECT`가 insert하는 유저의 권한으로 검사되기 때문이다. 최소한의 해결책은
   소스 테이블에 대한 `SELECT`뿐이다.
-- 최종 검증일: 2026-09-02
+- 최종 검증일: 2026-09-02 — grant 부분만, 일회용 로컬 `clickhouse-server:24.8.14.39` 컨테이너에서
+  확인했다. 컷오버 절차 자체는 아직 프로덕션 클러스터에서 실행한 적이 없다.
