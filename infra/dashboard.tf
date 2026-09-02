@@ -3,6 +3,30 @@ variable "dashboard_image_tag" {
   default     = "latest"
 }
 
+variable "data_stale_minutes" {
+  description = "GET /api/health/data가 stale로 판정하는 기준(분). 서버 기본값과 같은 360."
+  type        = number
+  default     = 360
+}
+
+# 아래 둘은 null이면 env를 아예 주입하지 않는다 — 서버가 자기 기본 단가표/캐시 TTL을 쓴다.
+# 빈 문자열로 주입하면 서버가 부팅 시점에 파싱 실패로 죽으므로 null과 구분해야 한다.
+variable "pricing_json" {
+  type    = string
+  default = null
+}
+
+variable "pricing_cache_write_ttl" {
+  type    = string
+  default = null
+  validation {
+    # 서버가 받아주는 값은 이 둘뿐이고, 그 밖의 값은 모듈 로드 시점에 부팅을 막는다 —
+    # 잘못된 값이 롤아웃까지 가지 않게 여기서 먼저 거른다.
+    condition     = var.pricing_cache_write_ttl == null || contains(["1h", "5m"], var.pricing_cache_write_ttl)
+    error_message = "pricing_cache_write_ttl must be \"1h\" or \"5m\" when set."
+  }
+}
+
 resource "kubernetes_secret" "dashboard_basic_auth" {
   metadata {
     name      = "dashboard-basic-auth"
@@ -87,6 +111,16 @@ resource "kubernetes_deployment_v1" "dashboard" {
   spec {
     replicas = 2
     selector { match_labels = { app = "dashboard" } }
+    # max_unavailable=0: 롤아웃 중에도 ready 파드가 2 미만으로 내려가지 않는다. max_surge=1이라
+    # 새 파드가 readiness를 통과한 뒤에 옛 파드가 빠진다 — 이 두 값과 아래 readiness_probe가
+    # 같이 있어야 "무중단"이 성립한다(둘 중 하나만 있으면 의미가 없다).
+    strategy {
+      type = "RollingUpdate"
+      rolling_update {
+        max_unavailable = "0"
+        max_surge       = "1"
+      }
+    }
     template {
       metadata { labels = { app = "dashboard" } }
       spec {
@@ -96,8 +130,25 @@ resource "kubernetes_deployment_v1" "dashboard" {
           value    = "true"
           effect   = "NoSchedule"
         }
-        node_selector        = local.ch_node_selector
-        service_account_name = kubernetes_service_account.dashboard.metadata[0].name
+        # replicas=2가 한 노드에 몰리면 그 노드가 빠질 때 두 파드가 같이 죽어 PDB도 못 막는다.
+        # required가 아니라 preferred인 이유: 이 nodepool은 Karpenter가 관리해 노드가 한 대로
+        # 줄어드는 구간이 있고, 그때 스케줄 자체가 막히면 대시보드가 아예 안 뜬다.
+        affinity {
+          pod_anti_affinity {
+            preferred_during_scheduling_ignored_during_execution {
+              weight = 100
+              pod_affinity_term {
+                topology_key = "kubernetes.io/hostname"
+                label_selector {
+                  match_labels = { app = "dashboard" }
+                }
+              }
+            }
+          }
+        }
+        node_selector                    = local.ch_node_selector
+        service_account_name             = kubernetes_service_account.dashboard.metadata[0].name
+        termination_grace_period_seconds = 30
         container {
           name  = "dashboard"
           image = "${aws_ecr_repository.dashboard.repository_url}:${var.dashboard_image_tag}"
@@ -147,6 +198,24 @@ resource "kubernetes_deployment_v1" "dashboard" {
               value = env.value
             }
           }
+          env {
+            name  = "DATA_STALE_MINUTES"
+            value = tostring(var.data_stale_minutes)
+          }
+          dynamic "env" {
+            for_each = var.pricing_json == null ? [] : [var.pricing_json]
+            content {
+              name  = "PRICING_JSON"
+              value = env.value
+            }
+          }
+          dynamic "env" {
+            for_each = var.pricing_cache_write_ttl == null ? [] : [var.pricing_cache_write_ttl]
+            content {
+              name  = "PRICING_CACHE_WRITE_TTL"
+              value = env.value
+            }
+          }
           env_from {
             secret_ref { name = kubernetes_secret.dashboard_basic_auth.metadata[0].name }
           }
@@ -157,6 +226,31 @@ resource "kubernetes_deployment_v1" "dashboard" {
             }
             initial_delay_seconds = 5
           }
+          # liveness(/healthz)와 readiness(/readyz)는 다른 걸 본다: /readyz는 SIGTERM 이후
+          # 503으로 뒤집히고 ClickHouse ping이 실패해도 503이라, 준비 안 된 파드가 Service
+          # endpoints에서 빠진다. liveness에 /readyz를 쓰면 ClickHouse 장애가 파드 재시작
+          # 루프로 번지므로 두 엔드포인트를 그대로 분리해서 쓴다.
+          readiness_probe {
+            http_get {
+              path = "/readyz"
+              port = 8080
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 10
+            failure_threshold     = 3
+          }
+          # SIGTERM은 파드가 Service endpoints에서 빠지기 *전에* 도착하고, /readyz를 503으로
+          # 뒤집는 플래그와 server.close()는 같은 tick에 실행된다 — close()가 리스너를 즉시
+          # 닫으므로 SIGTERM 이후의 새 연결은 503을 받는 게 아니라 거부된다(실측 2026-09-02,
+          # dashboard/server/CLAUDE.md의 종료 시퀀스). 즉 endpoint 제거가 전파될 시간을 벌어주는
+          # 건 이 preStop sleep뿐이고, 앱 쪽 플래그로는 대체할 수 없다.
+          lifecycle {
+            pre_stop {
+              exec {
+                command = ["sleep", "5"]
+              }
+            }
+          }
           resources {
             requests = { cpu = "100m", memory = "128Mi" }
             limits   = { cpu = "500m", memory = "256Mi" }
@@ -166,6 +260,28 @@ resource "kubernetes_deployment_v1" "dashboard" {
     }
   }
   depends_on = [kubernetes_job_v1.schema_init]
+  # 실제로 돌고 있는 이미지는 배포 런북의 `kubectl set image`가 소유한다 —
+  # var.dashboard_image_tag는 첫 롤아웃의 시드값일 뿐이다. 이걸 무시하지 않으면 다음
+  # terraform apply가 라이브 이미지를 image.auto.tfvars의 (오래된) 태그로 되돌린다.
+  lifecycle {
+    ignore_changes = [spec[0].template[0].spec[0].container[0].image]
+  }
+}
+
+# 자발적 축출(노드 드레인, Karpenter 축소)은 롤아웃과 다른 경로라 strategy의 max_unavailable=0이
+# 막지 못한다 — 두 파드가 동시에 evict되는 걸 막는 건 이 PDB뿐이다. min_available=1: replicas=2
+# 에서 한 번에 한 파드만 비운다.
+resource "kubernetes_pod_disruption_budget_v1" "dashboard" {
+  metadata {
+    name      = "dashboard"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+  }
+  spec {
+    min_available = "1"
+    selector {
+      match_labels = { app = "dashboard" }
+    }
+  }
 }
 
 # 내부 NLB — CloudFront VPC Origin이 붙는 대상. TLS는 NLB에서 종료(기존 와일드카드 인증서
