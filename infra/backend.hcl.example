@@ -1,0 +1,12 @@
+# S3 remote backend 설정 템플릿. 이 파일이 있다는 것만으로 백엔드가 바뀌지는 않는다 —
+# 이 스택은 다른 리포의 원격 상태와 독립적으로 두기로 한 로컬 state가 기록된 결정이고
+# (providers.tf의 backend "s3" 블록은 주석 처리된 상태), 옮기는 절차는 infra/CLAUDE.md의
+# "moving to remote state"에 있다. 값을 채운 backend.hcl은 gitignore된다.
+#
+# use_lockfile은 DynamoDB 없이 S3 객체로 state lock을 잡는 방식이라 Terraform 1.10 이상이
+# 필요하다. providers.tf의 required_version은 ">= 1.9"이므로, 이 백엔드로 옮길 때는 그
+# 하한도 함께 올려야 한다 — 안 올리면 1.9로 실행하는 사람에게만 lock이 조용히 빠진다.
+bucket       = "REPLACE-WITH-YOUR-TFSTATE-BUCKET"
+key          = "claude-code-usage-dashboard/infra/terraform.tfstate"
+region       = "ap-northeast-2"
+use_lockfile = true
