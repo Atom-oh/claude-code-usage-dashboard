@@ -39,6 +39,24 @@ function foldModelRows(rows) {
   return [...totals.values()].sort((a, b) => b.cost - a.cost);
 }
 
+// 양 그룹을 오간 유저(straddler)는 normModel 이후 모델명이 같아 그룹 점만 다른 두 줄로 보인다
+// (사용자 지시: 이 드릴다운은 그룹 구분 없이 user×model 병합 — 그룹 비교는 다른 패널 몫).
+// 병합 키에 model이 들어가므로 unpriced는 병합 조각끼리 항상 동일하다(같은 정규화 모델 = 같은 단가표 상태).
+// 랭킹(기본 뷰)과 표시용 테이블(unknown 포함 전환 가능)이 서로 다른 응답을 같은 규칙으로
+// 접어야 해서 함수로 분리했다.
+function mergeUserModelRows(rows) {
+  return [...rows
+    .reduce((m, r) => {
+      const k = `${r.user}|${r.model}`;
+      const acc = m.get(k) || { user: r.user, model: r.model, unpriced: r.unpriced, cost: r.cost === null ? null : 0, reported_cost: 0, tokens: 0 };
+      if (acc.cost !== null) acc.cost += Number(r.cost);
+      acc.reported_cost += Number(r.reported_cost || 0);
+      acc.tokens += Number(r.tokens || 0);
+      return m.set(k, acc);
+    }, new Map())
+    .values()];
+}
+
 export default function Cost() {
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
   const { model } = useFilters();
@@ -56,6 +74,13 @@ export default function Cost() {
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");
   const byUserModel = useApi("/api/cost/by-user-model");
+  // 표시용 per-user 테이블만 unknown 그룹 포함 뷰로 전환한다. 위 byUserModel을 쓰는 지출 유저
+  // 랭킹과 서버의 userCostEfficiency는 A/B 조인 소비자라 기본(제외) 뷰를 계속 써야 한다 —
+  // index.js의 /api/cost/by-user-model 주석에 있는 정책 그대로.
+  // 체크가 꺼져 있으면 이 호출은 위와 문자 그대로 같은 요청이라 서버 TTL 캐시에 히트한다.
+  // 항상 includeUnknown=1을 받아두는 대안은 warmer가 데우지 않는 콜드 뷰를 매 방문마다 긁게 만든다.
+  const [includeUnknown, setIncludeUnknown] = useState(false);
+  const byUserModelTable = useApi("/api/cost/by-user-model", includeUnknown ? { includeUnknown: "1" } : {});
   const byModelDaily = useApi("/api/cost/by-model-daily", { intervalHours });
   const compare = useApi("/api/cost/by-model-compare");
   const tiers = useApi("/api/cost/tiers");
@@ -87,21 +112,8 @@ export default function Cost() {
   const modelRows = foldModelRows(byModel.data || []);
   const totalModelCost = modelRows.reduce((s, r) => s + (r.unpriced ? 0 : r.cost), 0);
 
-  // 양 그룹을 오간 유저(straddler)는 normModel 이후 모델명이 같아 그룹 점만 다른 두 줄로 보인다
-  // (사용자 지시: 이 드릴다운은 그룹 구분 없이 user×model 병합 — 그룹 비교는 다른 패널 몫).
-  // 병합 키에 model이 들어가므로 unpriced는 병합 조각끼리 항상 동일하다(같은 정규화 모델 = 같은 단가표 상태).
-  const mergedUserModel = [...(byUserModel.data || [])
-    .reduce((m, r) => {
-      const k = `${r.user}|${r.model}`;
-      const acc = m.get(k) || { user: r.user, model: r.model, unpriced: r.unpriced, cost: r.cost === null ? null : 0, reported_cost: 0, tokens: 0 };
-      if (acc.cost !== null) acc.cost += Number(r.cost);
-      acc.reported_cost += Number(r.reported_cost || 0);
-      acc.tokens += Number(r.tokens || 0);
-      return m.set(k, acc);
-    }, new Map())
-    .values()];
-
-  const userModelRows = [...mergedUserModel].sort((a, b) => (b.cost || 0) - (a.cost || 0));
+  const mergedUserModel = mergeUserModelRows(byUserModel.data || []);
+  const userModelRows = mergeUserModelRows(byUserModelTable.data || []).sort((a, b) => (b.cost || 0) - (a.cost || 0));
 
   const userTotals = new Map();
   for (const r of mergedUserModel) {
@@ -302,7 +314,7 @@ export default function Cost() {
               <Card
                 key={g}
                 title={`Effort별 지출 — ${g}`}
-                subtitle="reasoning effort별 계산 비용 · effort 미보고 세션은 unknown"
+                subtitle="reasoning effort별 보고 비용(Claude Code cost.usage) · effort 미보고 세션은 unknown"
               >
                 <DonutBody
                   data={effortRowsFor(g)}
@@ -312,8 +324,7 @@ export default function Cost() {
                   colorOf={makeGroupBreakdownColorer(g, EFFORT_LABEL_ORDER)}
                 />
                 <p className="mt-3 text-[12px] text-ink-400">
-                  thinking 토큰은 output 토큰에 포함돼 이미 계산 비용에 반영된다 — xhigh/high 비중은 출력 단가
-                  노출도를 보는 지표다.
+                  thinking 토큰은 output 토큰에 포함된다 — xhigh/high 비중은 출력 단가 노출도를 보는 지표다.
                 </p>
               </Card>
             ))}
@@ -433,7 +444,7 @@ export default function Cost() {
         ) : (
           <DataTable
             title="에이전트별 지출"
-            subtitle="계산 비용 기준 상위 15개 — 에이전트 미지정(메인 세션) 지출 포함"
+            subtitle="보고 비용(cost.usage) 기준 상위 15개 — 에이전트 미지정(메인 세션) 지출 포함"
             columns={[
               { key: "agent", label: "에이전트", render: (v) => (v === "main" ? "메인 세션" : v) },
               { key: "group", label: "그룹" },
@@ -471,14 +482,25 @@ export default function Cost() {
           />
         )}
 
-        {byUserModel.loading ? (
+        {byUserModelTable.loading ? (
           <Loading />
-        ) : byUserModel.error ? (
-          <ErrorBox error={byUserModel.error} />
+        ) : byUserModelTable.error ? (
+          <ErrorBox error={byUserModelTable.error} />
         ) : (
           <DataTable
             title="사용자 · 모델별 지출"
             subtitle="계산 비용 기준 정렬 · 그룹 무관 user×model 병합 — 그룹별로 보려면 상단 필터 사용"
+            right={
+              <label className="flex items-center gap-1.5 text-[12px] text-ink-600 select-none cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeUnknown}
+                  onChange={(e) => setIncludeUnknown(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-ink-200 accent-brand-500"
+                />
+                unknown 그룹 포함
+              </label>
+            }
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
               { key: "model", label: "모델" },

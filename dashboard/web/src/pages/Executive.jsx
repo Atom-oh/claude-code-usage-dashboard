@@ -5,6 +5,7 @@ import { StatTile } from "../components/StatTile.jsx";
 import { SectionLabel } from "../components/SectionLabel.jsx";
 import { DualLineChart, SeriesBarChart } from "../components/GroupCharts.jsx";
 import ABScoreboard from "../components/ABScoreboard.jsx";
+import LowerBoundNote from "../components/LowerBoundNote.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
@@ -68,6 +69,9 @@ export default function Executive() {
   );
   const acceptRate = d.total > 0 ? d.accept / d.total : 0;
   const cost = (costSummary.data || []).reduce((a, r) => a + Number(r.computed_cost), 0);
+  // 단가표에 없는 모델의 토큰은 계산 비용에서 통째로 빠진다 — 지출 타일이 하한선임을 이
+  // 화면에서도 알 수 있어야 한다(Cost 페이지는 이미 그룹별로 같은 값을 노출한다).
+  const unpricedTokens = (costSummary.data || []).reduce((a, r) => a + Number(r.unpriced_tokens || 0), 0);
 
   // 파생 지표 — 전부 이 화면 안에서만 쓰는 클라이언트 계산.
   // days(마지막 프리셋 값)가 아니라 실제 (to-from) 일수를 써야 한다 — 커스텀 드래그 줌 모드에서는
@@ -253,10 +257,18 @@ export default function Executive() {
             <div>
               <SectionLabel>Cost</SectionLabel>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-                <StatTile label="기간 지출 (계산)" value={usd(cost)} variant="accent" hint={`${usd(costPerDev)}/개발자`} />
+                <StatTile
+                  label="기간 지출 (계산)"
+                  value={usd(cost)}
+                  variant="accent"
+                  hint={unpricedTokens > 0 ? `${usd(costPerDev)}/개발자 · 미산정 ${fmt(unpricedTokens)} 토큰` : `${usd(costPerDev)}/개발자`}
+                />
                 <StatTile label="30일 프로젝션" value={usd(projection30d)} hint={`일평균 ${usd(dailyAvg)} × 30`} />
                 <StatTile label="Cost / 1K LOC" value={usd(costPerKloc)} hint="지출 ÷ (라인 ÷ 1000)" />
                 <StatTile label="일평균 지출" value={usd(dailyAvg)} />
+              </div>
+              <div className="mt-3">
+                <LowerBoundNote />
               </div>
             </div>
 
