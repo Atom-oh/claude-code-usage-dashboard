@@ -20,8 +20,11 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   the Executive hero split-band (one row per KPI, bedrock left / enterprise right around a
   center label, single 6px split bar — note `pct` format expects a 0-1 fraction, not a
   percentage) and the reusable "dashboard cost is a lower bound of real billing" warning
-  callout (thinking tokens + non-instrumented channels excluded), used on Executive and Cost
-  respectively
+  callout, used on Executive and Cost respectively. Its four causes are measured facts, keep
+  them in sync with the data layer: un-instrumented launch paths (telemetry env missing),
+  `--resume` counter resets lost by the session-boundary diff, the >200K long-context premium
+  not being priced, and non-instrumented channels. Thinking tokens ARE included in OTel
+  output (measured 2026-09-02) — an earlier version of the copy claimed otherwise
 - `src/pivot.js` -- reshapes flat `[{t, group, value}]` rows into one-row-per-x-tick for
   Recharts (`pivotByGroup`, `pivotByKey`)
 - `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +

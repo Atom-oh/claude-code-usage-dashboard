@@ -311,7 +311,10 @@ export default function Cost() {
                   valuePrefix="$"
                   colorOf={makeGroupBreakdownColorer(g, EFFORT_LABEL_ORDER)}
                 />
-                <p className="mt-3 text-[12px] text-ink-400">xhigh/high 비중이 클수록 thinking 미계상 리스크가 크다.</p>
+                <p className="mt-3 text-[12px] text-ink-400">
+                  thinking 토큰은 output 토큰에 포함돼 이미 계산 비용에 반영된다 — xhigh/high 비중은 출력 단가
+                  노출도를 보는 지표다.
+                </p>
               </Card>
             ))}
           </div>
