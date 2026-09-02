@@ -41,7 +41,9 @@ method at runtime rather than a static experiment flag.
 - **ClickHouse (`otel_metrics_sum_hourly`)** -- `ReplicatedAggregatingMergeTree` hourly rollup
   fed by a materialized view on `otel_metrics_sum`. Dashboard queries read this table instead
   of the raw one (~86x fewer rows; raw grows ~3M rows/day from 10s cumulative re-exports).
-  Cumulative counters keep `max(Value)` per (SeriesKey, SessionId, hour). The schema gives it a
+  Cumulative counters keep `max(Value)` per (SeriesKey, SessionId, hour); `SeriesKey` has been
+  per-process-segment since migration-003 (`StartTimeUnix` folded in), `session.count`
+  excepted. The schema gives it a
   DELETE-only 180-day TTL (no cold-tier move, unlike the raw table): it holds `UserEmail`, so an
   untilled rollup would keep user emails after the raw rows were deleted, bypassing retention. That
   supersedes the original "no TTL so diff baselines outlive the raw TTL" rationale -- baselines are
@@ -176,7 +178,9 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
   events; the schema and query changes in this sync are keyed to a measured attribute census,
   not the docs alone. See [ADR-001](decisions/ADR-001-local-diff-over-shared-incflat-extension.md)
   and [ADR-002](decisions/ADR-002-bedrock-identity-fallback.md) for the two non-obvious
-  trade-offs made in that sync.
+  trade-offs made in that sync. See also
+  [ADR-003](decisions/ADR-003-fold-start-time-into-series-key.md) for the segment-aware
+  `SeriesKey` cutover, from a separate 2026-09-02 investigation.
 
 ## Operations
 - Deployment: see [docs/runbooks/deploy-production.md](runbooks/deploy-production.md)
@@ -219,7 +223,9 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
 - **ClickHouse(`otel_metrics_sum_hourly`)** -- `otel_metrics_sum` 위의 materialized view가
   채우는 시간별 rollup(`ReplicatedAggregatingMergeTree`). 대시보드 쿼리는 원본 대신 이
   테이블을 읽는다(행 수 ~86x 감소; 원본은 10초 누적 재-export로 하루 ~300만 행씩 증가).
-  누적 카운터는 (SeriesKey, SessionId, hour)당 `max(Value)`만 보존한다. 스키마상 TTL은 원본과 동일하게
+  누적 카운터는 (SeriesKey, SessionId, hour)당 `max(Value)`만 보존한다. `SeriesKey`는
+  migration-003 이후 프로세스별 세그먼트 단위다(`StartTimeUnix`를 접어 넣음), `session.count`는
+  예외. 스키마상 TTL은 원본과 동일하게
   90일 cold 이동 / 180일 삭제이며(schema-init Job이 재실행되면 반영된다) — `UserEmail`을 담는 저장소라 TTL이 없으면 원본이 삭제된 뒤에도
   사용자 이메일이 남아 보존 정책을 우회한다. 이는 원래의 "TTL을 두지 않아 원본 TTL 이후에도 diff
   baseline이 남는다"는 근거를 대체한다 — `LOOKBACK_DAYS`가 3일이라 180일 안쪽이고 baseline에는
@@ -346,7 +352,8 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
   스키마·쿼리 변경은 문서가 아니라 실측 attribute census를 기준으로 했다.
   [ADR-001](decisions/ADR-001-local-diff-over-shared-incflat-extension.md),
   [ADR-002](decisions/ADR-002-bedrock-identity-fallback.md)에 이번 동기화의 비직관적인
-  트레이드오프 2건을 기록.
+  트레이드오프 2건을 기록. 별도의 2026-09-02 조사인 세그먼트 인식 `SeriesKey` 컷오버는
+  [ADR-003](decisions/ADR-003-fold-start-time-into-series-key.md) 참고.
 
 ## 운영
 - 배포: [docs/runbooks/deploy-production.md](runbooks/deploy-production.md) 참고

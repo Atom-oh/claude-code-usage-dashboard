@@ -66,6 +66,8 @@ grafana-ab-queries.sql   - Legacy Grafana panel queries (kept in sync with dashb
 clickhouse-schema.sql   - Reference schema for otel_metrics_sum / otel_logs / otel_traces (beta)
 clickhouse-migration-002.sql - Additive migration (2026-08-11 telemetry spec sync); run this
                        directly against the live cluster, it's not applied by Terraform
+clickhouse-migration-003.sql - Segment-aware SeriesKey cutover + hourly-rollup rebuild; run
+                       this directly against the live cluster, it's not applied by Terraform
 collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHouse)
 .claude/             - Claude Code settings, hooks, skills (gitignored — local tooling only)
 ```
@@ -77,7 +79,9 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
 - **Cumulative OTel temporality**: `otel_metrics_sum` values are cumulative per-session
   counters, not deltas. Never `sum(Value)` directly — always diff via the `incFlat`/`incBucketed`
   helpers in `dashboard/server/queries.js` (session-boundary diff, matching Prometheus
-  `increase()`). Direct summing has caused 100x+ overcounting in the past.
+  `increase()`). Direct summing has caused 100x+ overcounting in the past. `SeriesKey` is
+  segment-scoped since migration-003 (`StartTimeUnix` folded in), `claude_code.session.count`
+  excepted.
 - **Don't trust Claude Code's own telemetry docs without checking live data first.** The
   2026-08-11 spec sync found `code.claude.com/docs/en/monitoring-usage.md` missing several
   events actually being emitted — schema/query changes there are keyed to a measured attribute
@@ -85,7 +89,8 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
   `docs/decisions/ADR-001-*.md` / `ADR-002-*.md` for the two non-obvious trade-offs from that
   sync (why `incFlat`/`incBucketed` weren't extended for the new `AppVersion`/`EndUserId`
   dimensions, and why the Bedrock-identity fallback only covers new queries, not all ~90
-  pre-existing `UserEmail` references).
+  pre-existing `UserEmail` references). A separate, later (2026-09-02) investigation into
+  per-process counter resets is recorded in `docs/decisions/ADR-003-*.md`.
 - **bedrock/enterprise grouping is session-scoped**, not user-scoped — one user can straddle
   both in different sessions. See `dashboard/server/grouping.js` for the heuristic and its
   measured edge cases.

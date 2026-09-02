@@ -18,6 +18,7 @@ deltas, which drives most of the query-layer complexity.
 | ClickHouse schema (reference) | `clickhouse-schema.sql` | `otel_metrics_sum` / `otel_logs` / `otel_traces` DDL with promoted/materialized columns |
 | ClickHouse schema (replicated) | `infra/files/clickhouse-schema-replicated.sql` | Same schema, applied by the ClickHouse operator on the EKS cluster |
 | Migration (additive) | `clickhouse-migration-002.sql` | `ADD COLUMN IF NOT EXISTS` for the 2026-08-11 attribute/event/traces sync, run directly against the live cluster (no table drops) |
+| Migration (segment-aware SeriesKey cutover) | `clickhouse-migration-003.sql` | Segment-aware `SeriesKey` cutover (folds `StartTimeUnix` in) + hourly-rollup rebuild via shadow table; run by an operator against the live cluster following `docs/runbooks/rollup-rebuild-segment-key.md` (not applied by Terraform) |
 | Hourly rollup | `otel_metrics_sum_hourly` (in `clickhouse-schema.sql`), fed by a materialized view on `otel_metrics_sum` | ~86x fewer rows than the raw table; dashboard queries read this instead of `otel_metrics_sum` directly (raw grows ~3M rows/day from 10s cumulative re-exports) |
 | Grouping heuristic | `dashboard/server/grouping.js` | Session-scoped bedrock/enterprise classification (`GROUP_CTE`), reads the rollup's `has_org` column |
 | Pricing table | `dashboard/server/pricing.js` | Per-model token pricing, model name normalization |
@@ -68,9 +69,15 @@ not the doc's.
   at ~86x fewer rows. Only the chart drag-zoom's minute-grain buckets fall back to scanning
   `otel_metrics_sum` directly (`incBucketedRaw`), since minute buckets can't be built from an
   hourly rollup.
-- **True series key is `cityHash64(toString(Attributes))`, not promoted columns** -- promoted
-  columns (Model/TokenType/Decision/SkillName) alone collapse distinct OTel series and lose
-  monotonicity; see `seriesKey` in `queries.js`.
+- **True series key is `cityHash64(toString(Attributes))` folded with `StartTimeUnix`, not
+  promoted columns alone** -- promoted columns (Model/TokenType/Decision/SkillName) alone
+  collapse distinct OTel series and lose monotonicity, and since migration-003 the raw
+  `cityHash64(toString(Attributes))` alone is also insufficient: a same-`session.id` process
+  restart (e.g. `--resume`) resets its counters, and without the `StartTimeUnix` component
+  folded in, that reset is invisible to the diff logic. `claude_code.session.count` is excepted
+  (it keeps the label-only key) because the dashboard's session unit is `session.id`, not the
+  process. See `seriesKey` in `queries.js` and
+  [ADR-003](../decisions/ADR-003-fold-start-time-into-series-key.md).
 - **bedrock/enterprise grouping is a session-level heuristic**, not a stored flag -- inferred
   from `Model` (Bedrock-style names) and `Attributes['organization.id']`, because Workshop
   Studio participants choose their auth path at runtime.
@@ -90,6 +97,7 @@ not the doc's.
 - `dashboard/server/pricing.js` -- `normalizeModelId()`, per-token pricing table
 - `clickhouse-schema.sql` -- promoted/materialized column definitions
 - `clickhouse-migration-002.sql` -- 2026-08-11 additive migration (run against the live cluster)
+- `clickhouse-migration-003.sql` -- segment-aware `SeriesKey` cutover + hourly-rollup rebuild (run against the live cluster)
 
 ### 5. Cross-references
 - Related modules: [dashboard/server/CLAUDE.md](../../dashboard/server/CLAUDE.md)
@@ -112,6 +120,7 @@ beta로 추가된 `otel_traces`)에 쌓이며, hot/cold 스토리지 정책(로�
 | ClickHouse 스키마(참조용) | `clickhouse-schema.sql` | 승격/materialized 컬럼을 포함한 `otel_metrics_sum`/`otel_logs`/`otel_traces` DDL |
 | ClickHouse 스키마(레플리카) | `infra/files/clickhouse-schema-replicated.sql` | EKS 클러스터의 ClickHouse operator가 적용하는 동일 스키마 |
 | 마이그레이션(추가형) | `clickhouse-migration-002.sql` | 2026-08-11 속성/이벤트/traces 동기화용 `ADD COLUMN IF NOT EXISTS` — 라이브 클러스터에 직접 실행(테이블 DROP 없음) |
+| 마이그레이션(세그먼트 인식 SeriesKey 컷오버) | `clickhouse-migration-003.sql` | 세그먼트 인식 `SeriesKey` 컷오버(`StartTimeUnix` 접어 넣기) + shadow 테이블을 통한 시간별 rollup 재구축 — `docs/runbooks/rollup-rebuild-segment-key.md`를 따라 오퍼레이터가 라이브 클러스터에 직접 실행(Terraform 미적용) |
 | 시간별 rollup | `otel_metrics_sum_hourly`(`clickhouse-schema.sql` 안), `otel_metrics_sum` 위 materialized view가 채움 | 원본보다 행 수 ~86x 적음 — 대시보드 쿼리는 `otel_metrics_sum`을 직접 읽지 않고 이 테이블을 읽음(원본은 10초 누적 재-export로 하루 ~300만 행 증가) |
 | 그룹 판별 로직 | `dashboard/server/grouping.js` | 세션 단위 bedrock/enterprise 판별(`GROUP_CTE`), rollup의 `has_org` 컬럼을 읽음 |
 | 단가표 | `dashboard/server/pricing.js` | 모델별 토큰 단가, 모델명 정규화 |
@@ -160,9 +169,15 @@ beta로 추가된 `otel_traces`)에 쌓이며, hot/cold 스토리지 정책(로�
   (SeriesKey, SessionId, hour)당 `max(Value)`/`sum(Value)`만 보존, 같은 diff 수식이 ~86x
   적은 행으로 동작. 차트 드래그 줌의 분 단위 버킷만 원본 `otel_metrics_sum`을 직접 스캔
   (`incBucketedRaw`) — 분 버킷은 시간별 rollup으로 만들 수 없어서.
-- **진짜 시리즈 키는 `cityHash64(toString(Attributes))`**, 승격 컬럼만으로는 부족 -- 승격
-  컬럼(Model/TokenType/Decision/SkillName)만으로 GROUP BY하면 서로 다른 OTel 시리즈가 섞여
-  단조성이 깨집니다(`queries.js`의 `seriesKey`).
+- **진짜 시리즈 키는 `cityHash64(toString(Attributes))`에 `StartTimeUnix`를 접어 넣은 것**,
+  승격 컬럼만으로는 부족 -- 승격 컬럼(Model/TokenType/Decision/SkillName)만으로 GROUP BY하면
+  서로 다른 OTel 시리즈가 섞여 단조성이 깨지고, migration-003 이후로는
+  `cityHash64(toString(Attributes))` 단독으로도 부족하다: 같은 `session.id`를 유지하는
+  프로세스 재시작(`--resume` 등)은 카운터를 리셋하는데, `StartTimeUnix` 컴포넌트를 접어
+  넣지 않으면 diff 로직에 이 리셋이 보이지 않는다. `claude_code.session.count`는 예외라
+  라벨 전용 키를 유지한다 — 대시보드의 세션 단위가 프로세스가 아니라 `session.id`이기
+  때문이다. `queries.js`의 `seriesKey`와
+  [ADR-003](../decisions/ADR-003-fold-start-time-into-series-key.md) 참고.
 - **bedrock/enterprise 그룹은 저장된 플래그가 아니라 세션 단위 휴리스틱** -- `Model`(Bedrock
   스타일 이름)과 `Attributes['organization.id']`로 추론합니다. Workshop Studio 참가자가
   런타임에 인증 방식을 고르기 때문입니다.
@@ -182,6 +197,7 @@ beta로 추가된 `otel_traces`)에 쌓이며, hot/cold 스토리지 정책(로�
 - `dashboard/server/pricing.js` -- `normalizeModelId()`, 토큰별 단가표
 - `clickhouse-schema.sql` -- 승격/materialized 컬럼 정의
 - `clickhouse-migration-002.sql` -- 2026-08-11 추가형 마이그레이션(라이브 클러스터에 실행)
+- `clickhouse-migration-003.sql` -- 세그먼트 인식 `SeriesKey` 컷오버 + 시간별 rollup 재구축(라이브 클러스터에 실행)
 
 ### 5. 상호 참조
 - 관련 모듈: [dashboard/server/CLAUDE.md](../../dashboard/server/CLAUDE.md)
