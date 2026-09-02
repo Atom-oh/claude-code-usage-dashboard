@@ -1,5 +1,5 @@
 // pricing.js는 모듈 로드 시 한 번 process.env를 읽어 PRICING/CACHE_WRITE_TTL을 고정하고,
-// tierCosts/withComputedCost는 시그니처에 TTL 파라미터를 받지 않는다(설계 §A) — 그래서 5m
+// tierCosts/withComputedCost는 시그니처에 TTL 파라미터를 받지 않는다(pricing.js 헤더 주석 참조) — 그래서 5m
 // 티어를 end-to-end로 검증하는 유일한 방법은 env를 바꾸고 "새" 모듈 인스턴스를 만드는 것뿐이다.
 // 이 파일은 그 목적 하나로 존재한다: `?v=` 쿼리스트링으로 Node ESM 캐시를 무효화해 매번
 // process.env를 다시 읽게 만든다. pricing.test.js에 합치면 정적 import가 먼저 평가되어
