@@ -73,7 +73,12 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     SessionId       String                 MATERIALIZED Attributes['session.id'],
     -- 진짜 OTel 시리즈 식별자 — clickhouse-schema.sql(참조 사본)과 동기화 유지.
     -- 매 쿼리 인라인 cityHash64(toString(Attributes))는 1.2초, 이 컬럼은 0.11초(실측 2026-07-10).
-    SeriesKey       UInt64                 MATERIALIZED cityHash64(toString(Attributes))
+    -- 전체 근거·2026-09-02 세그먼트 인식 전환 배경은 clickhouse-schema.sql의 동일 컬럼 주석과
+    -- docs/decisions/ADR-003-fold-start-time-into-series-key.md를 참고.
+    SeriesKey       UInt64                 MATERIALIZED
+        if(MetricName = 'claude_code.session.count',
+           cityHash64(toString(Attributes)),
+           cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum', '{replica}')
 PARTITION BY toYYYYMM(TimeUnix)
@@ -85,8 +90,19 @@ SETTINGS storage_policy = 'hot_cold';
 -- CREATE TABLE IF NOT EXISTS는 기존 클러스터에 no-op이라 SeriesKey가 생기지 않는다 —
 -- ../../clickhouse-schema.sql(참조 사본)과 동일한 근거·순서로 ALTER + MATERIALIZE.
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
-    ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes));
+    ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED
+        if(MetricName = 'claude_code.session.count',
+           cityHash64(toString(Attributes)),
+           cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)));
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN SeriesKey;
+
+-- 2026-09-02 세그먼트 인식 SeriesKey 전환(ADR-003) — 이 파일에는 의도적으로 MODIFY COLUMN을
+-- 추가하지 않는다. 이 파일은 infra/clickhouse.tf의 schema_init Job이 파일이 바뀔 때마다(Job
+-- 이름이 파일 md5) 재실행한다 — raw 키를 여기서 조율 없이 바꾸면 그 순간 살아있던 세션들의
+-- 롤업이 누군가 재구축하기 전까지 이중집계된다. 전환은 롤업 재구축과 함께 조율되어야 하므로
+-- clickhouse-migration-003.sql + docs/runbooks/rollup-rebuild-segment-key.md로 사람이 직접
+-- 수행한다. 신규 설치는 위 CREATE에서 바로 새 키를 받고, 기존 클러스터는 migration-003으로만
+-- 전환된다.
 
 -- 2026-08-11 스펙 동기화 — clickhouse-migration-002.sql(실행용)과 동일 정의.
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
@@ -155,6 +171,10 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly ON CLUSTER 'repli
     -- 2026-08-11: StartType/AppVersion 승격 — ../../clickhouse-schema.sql(참조 사본)과
     -- 동기화 유지. 라이브 기존 클러스터는 clickhouse-migration-002.sql의 ADD COLUMN(정렬 키
     -- 변경 불가로 컬럼만 추가)이 담당 — 이 CREATE TABLE 블록은 신규 설치에서만 실행된다.
+    -- 실측 드리프트: 그래서 라이브 ORDER BY에는 StartType/AppVersion이 빠져 있다(정렬 키는
+    -- MergeTree에서 in-place로 못 바꾸므로 컬럼만 추가됐다). clickhouse-migration-003.sql의
+    -- shadow 테이블 재구축(EXCHANGE TABLES)이 이 드리프트를 닫는다 — 그 절차가 끝나면 라이브
+    -- 테이블도 아래 CREATE와 동일한 13컬럼 ORDER BY를 갖게 된다.
     StartType              LowCardinality(String),
     AppVersion             LowCardinality(String),
     max_value SimpleAggregateFunction(max, Float64),

@@ -95,7 +95,20 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
     -- cityHash64(toString(Attributes))를 인라인 계산했는데, 420만 row 스캔 기준 1.2초 중 대부분이
     -- 이 문자열 직렬화였다(실측 2026-07-10) — MATERIALIZED로 INSERT 시점에 한 번만 계산하도록
     -- 옮기니 같은 쿼리가 0.11초로 줄었다. 인라인 계산과 값이 100% 일치함을 확인(mismatch=0).
-    SeriesKey       UInt64                 MATERIALIZED cityHash64(toString(Attributes))
+    -- 2026-09-02 실측: 동일 (SessionId, SeriesKey)에 StartTimeUnix가 2개 이상인 비율이 cost.usage
+    -- 14일 기준 15.05%(155/1030) — --resume 등으로 카운터가 리셋되는데 session.id는 그대로라
+    -- 예전 키로는 두 프로세스가 한 시리즈로 뭉개졌다. Value가 StartTimeUnix 구간 내부에서 감소한
+    -- 사례는 0건, 구간 전환 지점에서는 334건(스위치 399회) — 경계가 정확히 StartTimeUnix다.
+    -- 30일 영향: cost $27,492 vs $24,394(+12.7%) · token 39.29B vs 34.12B(+15.16%) ·
+    -- lines_of_code 642,057 vs 590,891(+8.66%) · active_time 4,715,018 vs 4,360,270s(+8.14%).
+    -- session.count는 예외로 둔다 — 대시보드의 세션 단위는 session.id이고, 세그먼트 키를 쓰면
+    -- 리마인드마다 새 세션으로 잡혀 KPI가 +50%(455 → 684) 부풀려진다(자세한 내용은 ADR-003).
+    -- 이 식은 clickhouse-schema.sql(본 파일), infra/files/clickhouse-schema-replicated.sql,
+    -- clickhouse-migration-003.sql, scripts/backfill-hourly-rollup.sh 네 곳에 동일하게 있어야 한다.
+    SeriesKey       UInt64                 MATERIALIZED
+        if(MetricName = 'claude_code.session.count',
+           cityHash64(toString(Attributes)),
+           cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))
 )
 -- ENGINE/TTL은 단일 노드 기준으로 둔다 — 이 파일은 로컬(dashboard/docker-compose.yml, README가
 -- 안내하는 경로)과 참조용 사본이고, 그 ClickHouse에는 Keeper·{shard}/{replica} macro·hot_cold
@@ -113,8 +126,13 @@ TTL toDateTime(TimeUnix) + INTERVAL 180 DAY;
 -- 적용 시 아래 MV 생성이 "unknown column SeriesKey"로 실패). ALTER로 명시적으로 백필한다.
 -- 신규 설치는 CREATE TABLE에 이미 있어 이 ALTER가 안전한 no-op(컬럼 이미 존재).
 -- 실행 순서: 이 ALTER → 아래 otel_metrics_sum_hourly 테이블/MV 생성 → 필요시 백필(주석 참고).
+-- 기존 테이블에는 IF NOT EXISTS가 no-op이라(컬럼이 이미 있어 정의가 갱신되지 않음) 이 문장은
+-- 신규 설치에서만 의미가 있다 — 기존 클러스터의 세그먼트 키 전환은 아래 "003" 블록이 담당한다.
 ALTER TABLE claude_code.otel_metrics_sum
-    ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes));
+    ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED
+        if(MetricName = 'claude_code.session.count',
+           cityHash64(toString(Attributes)),
+           cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)));
 -- ADD COLUMN만으로는 기존 파트의 값이 채워지지 않는다(신규 insert부터만 계산) — rollup
 -- 백필(아래)이 기존 데이터의 SeriesKey를 읽으므로 반드시 MATERIALIZE로 기존 파트까지 채운다.
 ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN SeriesKey;
@@ -143,6 +161,21 @@ ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN StartType;
 ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN Source;
 ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN EndUserId;
 ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN AppVersion;
+
+-- 2026-09-02 세그먼트 인식 SeriesKey 전환(ADR-003) — 기존 클러스터 반영용. 위쪽의
+-- ADD COLUMN IF NOT EXISTS는 컬럼이 이미 있는 클러스터에는 정의를 갱신하지 않는다
+-- (SeriesKey/McpServerName에서 이미 겪은 함정과 동일) — 그래서 MODIFY COLUMN이 필요하다.
+-- 로컬(비-복제, 이 파일이 가리키는 docker-compose 스택)의 롤업 재구축은 TRUNCATE TABLE
+-- claude_code.otel_metrics_sum_hourly 후 scripts/backfill-hourly-rollup.sh 재실행이면 된다
+-- (로컬은 트래픽 우려가 없어 shadow 테이블 없이 바로 TRUNCATE). 라이브 클러스터 절차는 이 파일이
+-- 아니라 clickhouse-migration-003.sql이 담당하며, docs/runbooks/rollup-rebuild-segment-key.md를
+-- 따른다.
+ALTER TABLE claude_code.otel_metrics_sum
+    MODIFY COLUMN SeriesKey UInt64 MATERIALIZED
+        if(MetricName = 'claude_code.session.count',
+           cityHash64(toString(Attributes)),
+           cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)));
+ALTER TABLE claude_code.otel_metrics_sum MATERIALIZE COLUMN SeriesKey;
 
 -- -----------------------------------------------------------------------------
 -- 1b. 시간별 rollup — 대시보드 쿼리가 실제로 읽는 테이블 (queries.js incFlat/incBucketed)
@@ -489,11 +522,16 @@ TTL toDateTime(Timestamp) + INTERVAL 90 DAY;
 -- (b) 시리즈 수 추정 — Effort/AgentName/SkillName/McpToolName 같은 신규 라벨이 metric label로
 --     붙으면서 시리즈 수가 곱셈으로 늘 수 있다. OTEL_METRICS_INCLUDE_SESSION_ID=false /
 --     OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false 전환 판단에 이 값을 참고할 것 —
---     SeriesKey는 Attributes 맵 전체 해시라 라벨 조합 수를 그대로 반영한다.
--- SELECT MetricName, uniqExact(SeriesKey) AS series
+--     uniqExact(SeriesKey)는 2026-09-02부터 라벨 조합이 아니라 카운터 SEGMENT 수를 반영한다
+--     (--resume 등 리셋마다 새 세그먼트 → 새 SeriesKey, ADR-003). 라벨 조합 수(예전 SeriesKey의
+--     의미)가 필요하면 uniqExact(cityHash64(toString(Attributes)))를 따로 봐야 한다 —
+--     아래는 두 값을 함께 내려 어느 쪽이 세그먼트고 어느 쪽이 라벨 조합인지 명시한다.
+-- SELECT MetricName,
+--        uniqExact(SeriesKey) AS series_segments,
+--        uniqExact(cityHash64(toString(Attributes))) AS series_label_combos
 -- FROM claude_code.otel_metrics_sum
 -- GROUP BY MetricName
--- ORDER BY series DESC;
+-- ORDER BY series_segments DESC;
 
 -- SELECT
 --     uniqExact(Effort)      AS n_effort,
