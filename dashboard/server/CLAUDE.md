@@ -11,7 +11,15 @@ registration lives in `index.js`; the actual SQL is in `queries.js` (one exporte
 endpoint, mostly following the pattern `export async function xyz(from, to, ...params,
 filters)`).
 
-`GET /api/config` is the one non-data route besides `/healthz`: it returns
+There are four non-data routes. `/healthz` is **liveness** (always 200, body `{ok}` from a
+ClickHouse `ping()` — deliberately status-insensitive so a cluster incident cannot restart
+healthy pods) and `/readyz` is **readiness** (200/503, unauthenticated like `/healthz`, 503
+while draining after `SIGTERM` and 503 when `ping()` fails). `/api/health/data` is the
+authenticated data-freshness route: it classifies `max(TimeUnix)` on the raw
+`otel_metrics_sum` into `ok`/`stale`/`unknown`, answers 200 only for `ok`, memoizes for 30s
+because many tabs poll it every 60s, and — like `/api/config` — deliberately skips the
+`route()` wrapper (no range params, and `route()` cannot express a 503). `GET /api/config`
+returns
 `{piiMask, pricing, schema}`. `piiMask` comes from `PII_MASK_ENABLED` (`"1"`/`"true"` = on, unset =
 off) so the SPA can decide whether to mask emails at render time — the image is built once and
 reused across deployments, so this can't be a build-time `VITE_` flag. `pricing` is
@@ -61,6 +69,14 @@ synchronous and still touches no ClickHouse at request time.
   count pair into `true`/`false`/`null`; `probeSegmentAwareSeriesKey` runs the ClickHouse probe
   and never throws -- it folds every error to `null`, since the value feeds a fail-safe warning
   rather than a request path
+- `freshness.js` -- `classifyFreshness` (pure, unit-tested) turns a `{latestMs, nowMs,
+  staleAfterMinutes}` triple into `{status, latest, ageMinutes, staleAfterMinutes}`;
+  `probeLatestTelemetryMs` runs the ClickHouse probe and never throws (every error folds to
+  `null`, which classifies as `unknown`). Reads the **raw** `otel_metrics_sum`, not the hourly
+  rollup -- the rollup lags up to an hour, which is longer than the outage this exists to
+  catch. `staleAfterMinutes` comes from `DATA_STALE_MINUTES` (default `360`) and a
+  non-positive/non-numeric value throws at module load, same policy as
+  `PRICING_CACHE_WRITE_TTL`
 - `*.test.js` -- `node:test` unit tests for the pure functions above
 
 ## Rules
@@ -124,3 +140,24 @@ synchronous and still touches no ClickHouse at request time.
   `claude_code.session.count`, whose key definition is deliberately unchanged. **Never
   re-derive it inline** in a query — read the column; the one place that must compute it
   explicitly (`scripts/backfill-hourly-rollup.sh`) copies the expression verbatim.
+- **`SIGTERM`/`SIGINT` set the `shuttingDown` flag, which is what makes `/readyz` answer 503
+  for the rest of the process's life.** In a k8s rolling update the signal arrives *before* the
+  pod leaves the Service's endpoints, so a draining pod must not keep claiming to be ready.
+  `index.js` sets the flag in the handler, calls `server.close()`, and keeps a 10s
+  `.unref()`'d force-exit as the backstop. Two things measured on the running server
+  (2026-09-02), because both are easy to get wrong in either direction: **the flag is
+  load-bearing** — remove it and a draining pod still answers `{"ready":true}` on an open
+  connection — but **its position relative to `server.close()` is not**, since both statements
+  run in the same synchronous tick, so no request handler can ever observe one without the
+  other. Do not "fix" the ordering into something more elaborate, and do not delete the flag on
+  the theory that `close()` already covers it. Note also that `close()` stops the listener
+  immediately, so a *new* connection after `SIGTERM` is refused rather than 503'd: the window
+  for a Service endpoint removal to propagate comes from a `preStop` hook /
+  `terminationGracePeriod`, not from this flag. The existing periodic timers (cache sweep,
+  schema probe, warmer chain) are all `.unref()`'d, so no timer registry is needed.
+- **The pricing table's cache multipliers are not universal.** `cacheWrite = input × 1.25`,
+  `cacheWrite1h = input × 2` and `cacheRead = input × 0.1` hold for most rows, but
+  `claude-fable-5-1` and `claude-mythos-5-1` carry an explicit `cacheRead` of `$0.25` — a
+  0.025x exception verified against the published price list on 2026-09-02. Never "simplify" a
+  base row by deleting a field that looks derivable; only `cacheWrite1h` is actually derived
+  (in `buildPricing`), and `pricing.test.js` pins both the exception and its control cases.

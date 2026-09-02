@@ -50,7 +50,10 @@ the real schema/grouping rule — fix the prompt, not the data.
 ### 3. Scenario — chat's cost answer doesn't match the Cost page card
 Not a bug by itself. `claude_code.cost.usage` ("reported cost") is what the Claude Code client
 self-reports; the Cost page's cards show a *different* number ("computed cost") derived by
-multiplying token counts by the static price table in `pricing.js` (`withComputedCost`). The
+multiplying token counts by the price table in `pricing.js` (`withComputedCost`) — a built-in
+list-price table that an operator can override or extend per-deployment with the
+`PRICING_JSON` env var, so two deployments can legitimately compute different costs from the
+same tokens (`/api/config`'s `pricing.overriddenModels` says which keys were overridden). The
 chat's `SCHEMA_CONTEXT` (`dashboard/server/chat.js`) explicitly teaches this distinction and
 quotes `pricing.js`'s `PRICING_PROMPT_TABLE` so the model can compute either one and label which
 it used. If a user reports "the chat's cost number is wrong," first check *which* number they're

@@ -20,7 +20,9 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   the Executive hero split-band (one row per KPI, bedrock left / enterprise right around a
   center label, single 6px split bar — note `pct` format expects a 0-1 fraction, not a
   percentage) and the reusable "dashboard cost is a lower bound of real billing" warning
-  callout, used on Executive and Cost respectively. Its causes are measured facts, keep them
+  callout. `ABScoreboard` is Executive-only; `LowerBoundNote` is mounted on the Cost page and,
+  since 2026-09-02, on the Executive page's Cost section too — the two places a spend figure is
+  stated as if it were exact. Its causes are measured facts, keep them
   in sync with the data layer: un-instrumented launch paths (telemetry env missing),
   `--resume` counter resets lost by the session-boundary diff, the unpriced-model exclusion
   (models absent from the pricing table — Bedrock's non-Anthropic models — are excluded from
@@ -32,6 +34,17 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   aborted fetch/older server with no `schema` key) fails safe to the full cause list. Thinking
   tokens ARE included in OTel output (measured 2026-09-02) — an earlier version of the copy
   claimed otherwise
+- `src/FreshnessContext.jsx` / `src/components/FreshnessBanner.jsx` -- 2026-09-02 additions:
+  the provider polls `GET /api/health/data` every 60s and exposes
+  `{status: "loading"|"ok"|"stale"|"unknown", latest, ageMinutes, staleAfterMinutes}` via
+  `useFreshness()`. It parses the JSON body on **503 as well as 200**, because the endpoint
+  deliberately answers 503 for `stale`/`unknown` — treating 503 as a network error would make
+  the banner permanently say "unknown" and never show a real staleness age. A genuine fetch
+  failure or non-JSON body folds to `unknown`; an `AbortError` (next poll, or unmount) leaves
+  the state alone, same convention as `useApi.js`. The banner renders `null` for `ok` **and**
+  `loading` (so nothing flashes before the first response), takes a `className` rather than
+  being wrapped at the call site (a wrapper would leave a 12px gap on every healthy page,
+  since the component renders nothing), and reuses `LowerBoundNote`'s warning-callout classes
 - `src/pivot.js` -- reshapes flat `[{t, group, value}]` rows into one-row-per-x-tick for
   Recharts (`pivotByGroup`, `pivotByKey`)
 - `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +
@@ -57,3 +70,18 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
 - `pivotByKey`'s x-axis sort assumes date-like `xKey` values; if a page passes a categorical
   `xKey` (e.g. tool name), the sort intentionally falls back to insertion order (see the
   comment in `pivot.js`) rather than guessing.
+- **`PageHeader`'s `live` pill is gated on data freshness, not just the `live` prop.**
+  `live && status === "ok"` renders the 실시간 badge; `live && status === "stale"` renders a
+  warning-toned `수신 중단` pill instead; `loading`/`unknown` render neither (the
+  `FreshnessBanner` already states that case, and two simultaneous warnings read as two
+  problems). The stale pill is a hand-rolled `span` rather than a `Badge`, because `Badge` has
+  no `warning` tone and `cn()` is a plain string join, not `tailwind-merge`, so a tone class
+  cannot be overridden through `className`. Two pages pass `live`: `Overview` and `Trends`.
+- **The Cost page's Effort and Agent panels show Claude Code's REPORTED cost**
+  (`claude_code.cost.usage`), not the token×price computed cost every other card on that page
+  shows — `effortMix`/`agentCost` are `sumIf(inc, MetricName='claude_code.cost.usage')`
+  server-side. Their copy says 보고 비용 for that reason; do not "restore" 계산 비용 there.
+  The per-user table's `unknown 그룹 포함` checkbox is display-only: it re-fetches
+  `/api/cost/by-user-model` with `includeUnknown=1` for that table alone, while the spend
+  ranking above it keeps the default (unknown-excluded) view because it is an A/B-join
+  consumer (see the policy comment on that route in `server/index.js`).

@@ -140,6 +140,16 @@ Workshop/CFN provisioning must install this exact systemd unit (see
 `docs/workshop-studio-notes.md` §3) — a bare `otelcol-contrib &` in `UserData` will not survive
 a crash or reboot.
 
+**Since 2026-09-02 the dashboard notices this itself.** `GET /api/health/data` classifies the
+newest `otel_metrics_sum` row into `ok` / `stale` / `unknown` and answers HTTP **503** for the
+latter two, and the SPA renders a warning banner on every page while that holds — so the
+"silently shrinking data window with no error anywhere" failure above is now visible without
+anyone running the query by hand. The staleness threshold is the server env
+`DATA_STALE_MINUTES` (default `360`, i.e. 6 hours; a non-positive or non-numeric value refuses
+to boot). It reads the raw table rather than the hourly rollup precisely so a dead collector
+shows up in minutes rather than after the next rollup. It is a *detector*, not a fix: the
+systemd unit above is still what keeps ingestion alive.
+
 ## Project Structure
 ```
 claude-code-usage-dashboard/

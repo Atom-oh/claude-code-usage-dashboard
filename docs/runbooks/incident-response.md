@@ -54,6 +54,16 @@ curl -s http://localhost:8080/healthz
   deploy runbook Step 2-3 with a valid tag.
 
 ### 3. Telemetry stopped flowing
+**Check the dashboard's own freshness signal first (since 2026-09-02).** The SPA shows a
+`FreshnessBanner` at the top of every page when data has stopped arriving, and
+`GET /api/health/data` returns **503** with `{"status": "stale", "ageMinutes": N}` once the
+newest `otel_metrics_sum` row is older than `DATA_STALE_MINUTES` (default `360`); `"unknown"`
++ 503 means the server could not measure at all (usually ClickHouse unreachable). So the
+triage order is: (1) `GET /api/health/data`, (2) the collector's systemd unit on the
+participant instance, (3) `SELECT max(TimeUnix) FROM claude_code.otel_metrics_sum` directly.
+The direct query below is still the authority — the banner tells you *whether* to look, not
+*why*.
+
 First confirm from the data, not the dashboard (measured incident 2026-07-07: 15+ hour gap
 went unnoticed because the dashboard itself was healthy):
 ```bash
@@ -236,6 +246,14 @@ curl -s http://localhost:8080/healthz
   런북 2-3단계를 재실행합니다.
 
 ### 3. 텔레메트리 유입 중단
+**먼저 대시보드 자체의 신선도 신호를 본다(2026-09-02부터).** 수집이 멈추면 SPA가 모든 페이지
+상단에 `FreshnessBanner`를 띄우고, `GET /api/health/data`는 가장 최근 `otel_metrics_sum` 행이
+`DATA_STALE_MINUTES`(기본 `360`)보다 오래되면 `{"status": "stale", "ageMinutes": N}`과 함께
+**503**을 낸다. `"unknown"` + 503은 측정 자체가 불가능한 상태(보통 ClickHouse 접속 실패)다.
+따라서 확인 순서는 (1) `GET /api/health/data`, (2) 참가자 인스턴스의 collector systemd 유닛,
+(3) `SELECT max(TimeUnix) FROM claude_code.otel_metrics_sum` 직접 조회다. 아래 직접 조회가
+여전히 최종 근거다 — 배너는 *봐야 하는지*를 알려줄 뿐 *왜인지*는 알려주지 않는다.
+
 대시보드가 아니라 데이터로 먼저 확인합니다 (실측 장애 2026-07-07: 대시보드 자체는 정상이라
 15시간 이상의 공백을 늦게 발견):
 ```bash
