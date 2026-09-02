@@ -22,7 +22,7 @@ Every data route below accepts these (parsed by `parseRange()` / `route()` in `i
 | `group` | string (`bedrock`\|`enterprise`) | No | Filter by inferred experiment group. `unknown` sessions are excluded from group-scoped queries by default (~11% of sessions have no bedrock/enterprise signal) — a few "totals" endpoints (`active-users`, `adoption/levels`, `adoption/timeseries`, `cost/summary`, `overview/kpi`) include them instead since they report org-wide totals, not an A/B split |
 | `user` | string | No | Filter by user email (partial match) |
 | `model` | string | No | Filter by model name (partial match, normalized) |
-| `intervalHours` | number | No | Bucket size for timeseries endpoints (fractional hours like `0.25` = 15 min for chart drag-zoom, 1 = hourly, 24 = daily, 168 = weekly). Only honored by endpoints marked *timeseries* below. Requests with `intervalHours < 1` are clamped to `1` server-side if the `from`/`to` span exceeds 4 hours (minute-bucket queries fall back to scanning the raw table, which is only cheap for narrow ranges). |
+| `intervalHours` | number | No | Bucket size for timeseries endpoints (fractional hours like `0.25` = 15 min for chart drag-zoom, 1 = hourly, 24 = daily, 168 = weekly). Only honored by endpoints marked *timeseries* below. Requests with `intervalHours < 1` are clamped to `1` server-side if the `from`/`to` span exceeds 4 hours (minute-bucket queries fall back to scanning the raw table, which is only cheap for narrow ranges). A value that is not a finite number in `(0, 744]` (744 = 24×31) is now rejected with **400** before any query runs, instead of being silently coerced to 24. |
 | `email` | string | Only for `GET /api/users/{daily,decisions-by-tool,heatmap}` | Exact-match user email for the per-user drilldown endpoints. Not a general filter — ignored by every other route. |
 
 For the three drilldown endpoints (`daily`/`decisions-by-tool`/`heatmap`), `group` is honored
@@ -35,7 +35,10 @@ drilldown matches the row's own numbers.
 
 All data endpoints below are `GET`, take no request body, and return JSON (array of rows, or
 a single object for snapshot endpoints). `POST /api/chat` is the sole exception (JSON body,
-SSE response) — see the Chat section. Errors return `{"error": "<message>"}` with HTTP 500.
+SSE response) — see the Chat section. See the Error Codes table below for the full set; in
+short, a rejected query parameter returns `{"error": …, "detail": …}` with HTTP 400 before any
+ClickHouse query runs, and any other failure returns `{"error": "internal error", "id": …}`
+with HTTP 500.
 
 ### Overview
 | Path | Returns |
@@ -142,9 +145,10 @@ SSE response) — see the Chat section. Errors return `{"error": "<message>"}` w
 
 | Code | Description |
 |------|-------------|
+| 400 | Bad Request — a rejected query parameter, returned by every `route()`-wrapped `/api/*` endpoint **before** any ClickHouse query runs (so an invalid request never creates a cache entry). Body is `{"error": "invalid range"|"invalid intervalHours", "detail": "<which parameter and why>"}`. Causes: an unparseable `from`/`to`, `from >= to`, or an `intervalHours` outside `(0, 744]`. `detail` never echoes the submitted value. |
 | 401 | Unauthorized — missing/invalid Basic Auth credentials (only when `BASIC_AUTH_*` is configured) |
 | 503 | Service Unavailable — only from the two health routes: `/readyz` while draining or with ClickHouse unreachable, `/api/health/data` when data is `stale` or `unknown`. Data routes never return 503. |
-| 500 | Internal Server Error — usually a ClickHouse query error; check server logs for the underlying `ClickHouseError` |
+| 500 | Internal Server Error — usually a ClickHouse query error. Body is `{"error": "internal error", "id": "<uuid>"}` and **never** carries the underlying exception message: a `ClickHouseError` text embeds the whole failing SQL. Grep the pod log for `[<id>]` to get the real error. |
 
 ## Rate Limits
 None enforced at the application layer. The dashboard is used by a small workshop cohort;

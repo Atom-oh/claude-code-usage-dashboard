@@ -46,6 +46,9 @@ synchronous and still touches no ClickHouse at request time.
   cache warmer (pre-computes the default 2-day/no-filter view every `QUANT_MS` boundary; the web
   client quantizes `to` to the same boundary in `useApi.js` so keys match across sessions),
   global Basic Auth middleware, static file serving
+- `http.js` -- `ValidationError`, `parseRange`, `parseIntervalHours` (pure, unit-tested; they
+  live outside `index.js` because `index.js` calls `app.listen()` at module load and so cannot
+  be imported by a test)
 - `queries.js` -- all ClickHouse SQL; `incFlat`/`incBucketed` (cumulative-counter diffing over
   the hourly rollup `otel_metrics_sum_hourly` — MINUTE-bucket drag-zoom falls back to the raw
   table via `incBucketedRaw`), `filterCond` (global group/user/model filters), `normModel`
@@ -161,3 +164,9 @@ synchronous and still touches no ClickHouse at request time.
   0.025x exception verified against the published price list on 2026-09-02. Never "simplify" a
   base row by deleting a field that looks derivable; only `cacheWrite1h` is actually derived
   (in `buildPricing`), and `pricing.test.js` pins both the exception and its control cases.
+- **500 bodies never carry `err.message`** — a `ClickHouseError` text embeds the full SQL;
+  correlate a user report with the log via the `id` in the body (`[<id>] <path>` in the pod
+  log). Same bullet: every `route()` response (200, 400 and 500 alike) carries
+  `Cache-Control: no-store`, and **validation runs before `fetchCached`** so an invalid request
+  never allocates a cache key. The six `intervalHours` routes all go through `bucketHours()`;
+  nothing calls `Number(query.intervalHours)` directly any more.

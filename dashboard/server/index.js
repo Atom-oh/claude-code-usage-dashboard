@@ -1,7 +1,9 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import basicAuth from "express-basic-auth";
+import { ValidationError, parseRange, parseIntervalHours } from "./http.js";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
@@ -54,13 +56,6 @@ app.get("/readyz", async (_req, res) => {
   res.status(ready ? 200 : 503).json({ ready: !!ready });
 });
 
-function parseRange(req) {
-  const to = req.query.to ? new Date(req.query.to) : new Date();
-  // 기본 2일 — 프론트(RangeContext) 기본값과 정합. 워크샵 기간 기본 뷰.
-  const from = req.query.from ? new Date(req.query.from) : new Date(to.getTime() - 2 * 86400000);
-  return { from, to };
-}
-
 // intervalHours<1(분 버킷)이면 incBucketedRaw가 원본 otel_metrics_sum을 lookback 3일 포함해
 // 직접 스캔한다(rollup 최적화 우회) — 서버가 요청 구간 크기를 검증하지 않으면, 인증 사용자가
 // from을 오래전으로 잡고 반복 호출해 매번 대형 raw scan을 유발할 수 있다(리뷰에서 MAJOR로
@@ -73,9 +68,16 @@ function clampIntervalHours(intervalHours, from, to) {
   return intervalHours;
 }
 
+// 라우트 6곳이 공유하는 단일 진입점 — 예전에는 각 라우트가 `Number(query.intervalHours) || 24`를
+// 직접 써서 0·음수·"abc"가 검증 없이 bucket() SQL까지 그대로 갔다. 검증(parseIntervalHours,
+// 실패 시 400)과 분 버킷 구간 상한(clampIntervalHours)을 한 번에 적용한다.
+function bucketHours(query, from, to) {
+  return clampIntervalHours(parseIntervalHours(query.intervalHours), from, to);
+}
+
 // 전역 필터(group/user/model) — 쿼리 파라미터로 안 오면 undefined라 filterCond()가 그냥 건너뛴다.
-function parseFilters(req) {
-  const { group, user, model } = req.query;
+function parseFilters(query) {
+  const { group, user, model } = query;
   return { group, user, model };
 }
 
@@ -164,9 +166,8 @@ function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
   const key = cacheKey(path, query);
   let entry = cache.get(key);
   if (!entry || entry.expires < Date.now()) {
-    const req = { query };
-    const { from, to } = parseRange(req);
-    entry = { expires: Date.now() + ttlMs, promise: Promise.resolve(handler(from, to, query, parseFilters(req))) };
+    const { from, to } = parseRange(query);
+    entry = { expires: Date.now() + ttlMs, promise: Promise.resolve(handler(from, to, query, parseFilters(query))) };
     // 상한 초과 시 가장 오래 전에 삽입된 엔트리부터 제거(Map은 삽입 순서 보존 — 첫 키가 가장 오래됨).
     if (cache.size >= CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value);
     cache.set(key, entry);
@@ -183,11 +184,29 @@ const warmRoutes = [];
 function route(path, handler, { warm = true } = {}) {
   if (warm) warmRoutes.push({ path, handler });
   app.get(path, async (req, res) => {
+    // route()가 내려주는 모든 응답(200/400/500)에 no-store. 의도된 캐시 계층은 서버 쪽
+    // 메모 캐시(fetchCached)이고, CloudFront는 이미 CachingDisabled다 — 남은 건 브라우저의
+    // back/forward 캐시인데, range picker를 바꾼 뒤 뒤로 가기로 지난 KPI가 그대로 보이면
+    // 화면의 숫자와 선택된 구간이 어긋난다.
+    res.set("Cache-Control", "no-store");
     try {
+      // 검증은 fetchCached보다 먼저 — 잘못된 요청이 캐시 엔트리를 만들면 안 된다. 무효한
+      // from/to도 예전에는 고유한 캐시 키를 하나씩 차지했다(엔트리 상한을 무의미한 키로
+      // 밀어내는 형태).
+      parseRange(req.query);
+      parseIntervalHours(req.query.intervalHours);
       res.json(await fetchCached(path, handler, req.query));
     } catch (err) {
-      console.error(path, err);
-      res.status(500).json({ error: err.message });
+      if (err instanceof ValidationError) {
+        res.status(400).json({ error: err.message, detail: err.detail });
+        return;
+      }
+      // 500 본문에는 err.message를 절대 넣지 않는다 — ClickHouse 에러 텍스트에는 실패한
+      // 쿼리 SQL이 통째로 실려 있어서, 인증만 통과하면 스키마와 쿼리 구조가 그대로 노출된다.
+      // 클라이언트에는 id만 주고, 실제 원인은 파드 로그에서 [id]로 찾는다.
+      const id = randomUUID();
+      console.error(`[${id}] ${path}`, err);
+      res.status(500).json({ error: "internal error", id });
     }
   });
 }
@@ -246,12 +265,12 @@ function scheduleWarmer() {
 
 route("/api/overview/kpi", (from, to, _q, filters) => q.kpiSummary(from, to, filters));
 route("/api/overview/active-users", (from, to, _q, filters) => q.activeUsers(from, to, filters));
-route("/api/overview/tokens-timeseries", (from, to, query, filters) => q.tokenTimeseries(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
+route("/api/overview/tokens-timeseries", (from, to, query, filters) => q.tokenTimeseries(from, to, bucketHours(query, from, to), filters));
 route("/api/overview/cache-efficiency", (from, to, _q, filters) => q.cacheEfficiency(from, to, filters));
 route("/api/overview/model-distribution", (from, to, _q, filters) => q.modelDistribution(from, to, filters));
 route("/api/productivity/normalized", (from, to, _q, filters) => q.normalizedProductivity(from, to, filters));
 route("/api/productivity/decisions", (from, to, _q, filters) => q.codeEditDecisions(from, to, filters));
-route("/api/productivity/active-time", (from, to, query, filters) => q.activeTimeSeries(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
+route("/api/productivity/active-time", (from, to, query, filters) => q.activeTimeSeries(from, to, bucketHours(query, from, to), filters));
 route("/api/usage/tool-mcp", (from, to, _q, filters) => q.toolMcpUsage(from, to, filters));
 route("/api/usage/tool-decisions", (from, to, _q, filters) => q.toolDecisionFunnel(from, to, filters));
 route("/api/usage/skills", (from, to, _q, filters) => q.skillUsage(from, to, filters));
@@ -266,21 +285,21 @@ route("/api/cost/by-model", (from, to, _q, filters) => q.costByModel(from, to, f
 // 유저 랭킹)를 위해 그대로 둔다 — 그쪽은 group으로 갈라 보는 지표라 unknown을 넣을 자리가 없다.
 route("/api/cost/by-user-model", (from, to, query, filters) =>
   q.costByUserModel(from, to, query.includeUnknown === "1" ? { ...filters, excludeUnknown: false } : filters));
-route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
+route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, bucketHours(query, from, to), filters));
 route("/api/cost/by-model-compare", (from, to, _q, filters) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from)), filters));
 route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(from, to, filters));
 // agenticness는 otel_logs(lookback 없음, 요청 구간만 스캔)를 직접 읽어 다른 rollup 경로들과
 // 위협 모델이 다르지만, intervalHours<1(분 버킷) 요청을 검증 없이 받는 건 형제 라우트들과
 // 비대칭이라 일관성 차원에서 같은 가드를 적용한다(리뷰에서 MAJOR로 확인).
-route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
+route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, bucketHours(query, from, to), filters));
 route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters));
-route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
+route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, bucketHours(query, from, to), filters));
 // 우리(필터 지원, DAU/WAU/MAU + 고착도, Trends/Executive가 사용) 버전을 채택 — main의
 // activeUsersTimeseries(필터 없음, activity.js 순수 함수 롤업)는 반환 shape가 상위집합
 // ({t,dau,wau,mau} vs {t,dau,wau,mau,stickiness})이라 Overview.jsx도 그대로 동작한다.
 route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
 route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
-route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, clampIntervalHours(Number(query.intervalHours) || 24, from, to), filters));
+route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, bucketHours(query, from, to), filters));
 route("/api/cost/tiers", async (from, to, _q, filters) => tierCostsByGroup(await q.costByModel(from, to, filters)));
 route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
   const [leaderboard, byUserModel] = await Promise.all([q.userLeaderboard(from, to, filters), q.costByUserModel(from, to, filters)]);
