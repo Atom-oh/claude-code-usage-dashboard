@@ -106,11 +106,18 @@ fi
 
 # ---- 2. SSM에서 ClickHouse 비밀번호 로드 -----------------------------------
 # 인스턴스 프로파일에 ssm:GetParameter + kms:Decrypt 권한 필요
+#
+# 이 스크립트는 set -euxo pipefail로 돌기 때문에 이 대입문이 그대로 트레이스돼
+# /var/log/cloud-init-output.log에 비밀번호가 평문으로 남는다 — 실측 확인(bash 5.2.15): 명령
+# 치환 대입은 값을 두 번 찍는다(내부 명령 `++ …`와 대입 `+ CH_PASSWORD=…`). 읽는 구간만
+# xtrace를 끈다. `{ set +x; } 2>/dev/null` 형태여야 set +x 자신의 트레이스 한 줄도 안 남는다.
+{ set +x; } 2>/dev/null
 CH_PASSWORD="$(aws ssm get-parameter \
   --name "$CH_PASSWORD_SSM_PARAM" \
   --with-decryption \
   --region "$AWS_DEFAULT_REGION" \
   --query 'Parameter.Value' --output text)"
+set -x
 
 # ---- 3. OTel Collector (contrib) 설치 --------------------------------------
 ARCH="$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
@@ -124,6 +131,10 @@ install -m 0755 /opt/otelcol/otelcol-contrib /usr/local/bin/otelcol-contrib
 mkdir -p /etc/otelcol
 # collector config 본문은 별도 파일(collector-config.yaml)을 여기에 복사해두는 방식.
 # user-data 안에 인라인으로 넣고 싶으면 heredoc으로 바꿔도 됨.
+# heredoc 본문은 xtrace에 안 찍힌다(실측: 트레이스는 `+ cat` 한 줄뿐) — 그래도 이 구간을 끄는
+# 건 나중에 이 쓰기가 echo/printf로 바뀌어도 평문이 안 새게 하려는 것이다. 이 창을 지우려면
+# 위 대입문 가드부터 지워야 하는 게 아니라, 이 파일이 더 이상 비밀번호를 안 다뤄야 한다.
+{ set +x; } 2>/dev/null
 cat > /etc/otelcol/env <<EOF
 EXPERIMENT_GROUP=${EXPERIMENT_GROUP}
 CH_HOST=${CH_HOST}
@@ -132,6 +143,7 @@ CH_DB=${CH_DB}
 CH_USER=${CH_USER}
 CH_PASSWORD=${CH_PASSWORD}
 EOF
+set -x
 chmod 600 /etc/otelcol/env
 
 # collector-config.yaml 배포 (S3 등에서 받아오거나, AMI에 미리 포함).
