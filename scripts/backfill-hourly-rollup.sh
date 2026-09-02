@@ -61,20 +61,30 @@ WATERMARK=$(ch "SELECT toString(min(hour)) FROM claude_code.otel_metrics_sum_hou
 echo "워터마크(rollup에 이미 있는 가장 오래된 hour): $WATERMARK"
 echo "그보다 이전 구간(원본 otel_metrics_sum)을 재집계해 백필합니다..."
 
+# 컬럼 목록을 명시한다 — 2026-08-11 migration-002가 StartType/AppVersion을 ADD COLUMN AFTER
+# ToolName으로 끼워 넣어 롤업이 16열이 됐고, 예전의 14열 positional INSERT는 실측(2026-09-02
+# prod 스키마 대조)상 현재 테이블에 그대로 실패한다. SELECT 식은 otel_metrics_sum_hourly_mv의
+# 정의(infra/files/clickhouse-schema-replicated.sql)와 1:1로 같아야 MV 경로와 백필 경로의
+# 집계가 일치한다.
 ch "
 INSERT INTO claude_code.otel_metrics_sum_hourly
+    (hour, MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
+     Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion,
+     max_value, sum_value, has_org)
 SELECT
     toStartOfHour(toDateTime(TimeUnix)) AS hour,
     MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
     Model, TokenType, Decision, SkillName,
     Attributes['tool_name'] AS ToolName,
+    Attributes['start_type'] AS StartType,
+    ResourceAttributes['service.version'] AS AppVersion,
     max(Value) AS max_value,
     sum(Value) AS sum_value,
     max(Attributes['organization.id'] != '') AS has_org
 FROM claude_code.otel_metrics_sum
 WHERE toDateTime(TimeUnix) < toDateTime('$WATERMARK')
 GROUP BY hour, MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
-         Model, TokenType, Decision, SkillName, ToolName
+         Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion
 "
 
 echo "백필 완료. 검증:"

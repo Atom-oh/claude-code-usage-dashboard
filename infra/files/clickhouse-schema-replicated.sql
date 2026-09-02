@@ -165,17 +165,26 @@ ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
           Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion, hour)
-TTL toDateTime(hour) + INTERVAL 90 DAY TO VOLUME 'cold',
-    toDateTime(hour) + INTERVAL 180 DAY DELETE
+-- 롤업만 DELETE-only TTL(cold 이동 없음). 실측(2026-09-02, prod query_log): 라이브 롤업은
+-- SETTINGS 없이 만들어져 storage_policy=default(볼륨 'default' 하나)라 아래 ALTER의 예전 형태
+-- `... TO VOLUME 'cold'`가 Code 450 BAD_TTL_EXPRESSION(No such volume 'cold')으로 실패했고,
+-- --multiquery인 schema_init Job이 여기서 abort해 이 파일의 이후 statement(MV/gauge/logs/
+-- traces)가 IaC 경로로는 한 번도 적용되지 않았다(2026-08-12 7회 전부 실패). ClickHouse는
+-- MODIFY SETTING storage_policy로 정책을 바꿀 때 새 정책이 옛 정책의 볼륨 이름을 전부
+-- 포함해야 해서(StoragePolicy::checkCompatibleWith) default→hot_cold 전환도 거부된다.
+-- 롤업은 ~4.5MiB라 cold 티어의 실익이 없고, retention 목적(UserEmail 삭제)은 DELETE만으로
+-- 충분하다. CREATE와 ALTER의 TTL은 반드시 같아야 한다 — MODIFY TTL은 TTL 절 전체를 교체하므로
+-- 둘이 다르면 신규 설치와 기존 클러스터의 끝 상태가 조용히 갈라진다.
+TTL toDateTime(hour) + INTERVAL 180 DAY DELETE
 SETTINGS storage_policy = 'hot_cold';
 
 -- 위 CREATE TABLE IF NOT EXISTS는 롤업 테이블이 이미 있는 기존 클러스터에 no-op이라 TTL 절이
 -- 적용되지 않는다 — 실측(2026-07-27) 라이브 롤업에는 TTL이 없었다(SeriesKey/McpServerName과
 -- 완전히 같은 함정). TTL 없이 두면 UserEmail을 담은 롤업이 원본 삭제(180일) 뒤에도 무기한
 -- 남아 retention을 우회하고, 그 구간에서 원본/롤업 집계가 발산한다. 이미 TTL이 같으면 no-op.
+-- 볼륨을 참조하지 않으므로 storage_policy가 default든 hot_cold든 통과한다(위 주석 참고).
 ALTER TABLE claude_code.otel_metrics_sum_hourly ON CLUSTER 'replicated'
-    MODIFY TTL toDateTime(hour) + INTERVAL 90 DAY TO VOLUME 'cold',
-               toDateTime(hour) + INTERVAL 180 DAY DELETE;
+    MODIFY TTL toDateTime(hour) + INTERVAL 180 DAY DELETE;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.otel_metrics_sum_hourly_mv ON CLUSTER 'replicated'
 TO claude_code.otel_metrics_sum_hourly AS

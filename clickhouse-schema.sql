@@ -187,18 +187,21 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly
     sum_value SimpleAggregateFunction(sum, Float64),  -- delta(temp=1): 버킷 내 증가량 합
     has_org   SimpleAggregateFunction(max, UInt8)     -- organization.id 존재 — 그룹 판별(grouping.js)용
 )
--- TTL은 원본·배포본과 동일하게(90일 후 cold, 180일 후 삭제) 둔다 —
--- infra/files/clickhouse-schema-replicated.sql(terraform이 ConfigMap으로 배포하는 실제 스키마)이
--- 이미 이 TTL을 갖고 있고, UserEmail을 담는 별도 저장소가 원본 삭제 뒤에도 남으면 retention
--- 정책을 우회한다.
+-- TTL은 DELETE-only(180일)로, 원본(90일 후 cold 이동)과 달리 cold 이동이 없다 —
+-- infra/files/clickhouse-schema-replicated.sql(terraform이 ConfigMap으로 배포하는 실제 스키마)도
+-- 같은 TTL이다. UserEmail을 담는 별도 저장소가 원본 삭제 뒤에도 남으면 retention 정책을 우회한다.
 --
 -- 실측 드리프트(라이브 클러스터, 2026-07-27): 운영 중인 otel_metrics_sum_hourly에는 **TTL이
 -- 없었다**. CREATE TABLE IF NOT EXISTS가 이미 존재하는 테이블에 no-op이라 TTL 절이 적용된 적이
 -- 없다 — 배포본의 의도가 아니라 미적용 상태다. 라이브를 맞추는 ALTER는 SeriesKey와 같은 패턴으로
 -- infra/files/clickhouse-schema-replicated.sql에 실행되는 문장으로 들어있고, 그 파일이 바뀌면
--- schema_init Job이 해시 기반 이름으로 교체돼 다시 실행된다(infra/clickhouse.tf 주석 참고 —
--- 이름이 고정이던 동안엔 재실행되지 않아 이 드리프트가 방치됐다). 적용 전까지는 180일이 지난
--- 구간에서 원본(삭제됨)과 롤업(잔존)의 집계가 발산한다.
+-- schema_init Job이 해시 기반 이름으로 교체돼 다시 실행된다(infra/clickhouse.tf 주석 참고).
+-- 실측(2026-09-02, prod query_log): 그 ALTER의 예전 형태(`TO VOLUME 'cold'`)는 라이브 롤업이
+-- storage_policy=default(볼륨 'cold' 없음)라 Code 450 BAD_TTL_EXPRESSION으로 7회 전부 실패했고,
+-- --multiquery Job이 거기서 abort해 이후 statement가 IaC로 적용되지 않았다. default→hot_cold
+-- 정책 전환은 ClickHouse의 볼륨 이름 superset 규칙에 걸려 불가하므로 롤업(~4.5MiB)은 cold
+-- 이동을 포기하고 DELETE-only로 통일했다. 적용 전까지는 180일이 지난 구간에서 원본(삭제됨)과
+-- 롤업(잔존)의 집계가 발산한다.
 -- 이 파일은 참조/로컬 사본이라 여기 적은 정의는 실행되지 않는다.
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(hour)
