@@ -46,9 +46,12 @@ aws ecr get-login-password --region ap-northeast-2 \
   | docker login --username AWS --password-stdin 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com
 docker buildx build --platform linux/arm64 \
   -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG \
-  -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:latest \
   --push dashboard/
 ```
+The ECR repository is `IMMUTABLE`, so re-pushing an existing tag is rejected outright. A
+`latest` tag would have to move on every deploy to stay useful, and a moving tag means a
+rollout record no longer identifies a digest. The timestamp tag is the only tag pushed, and
+it's what `rollout undo` or an explicit redeploy resolves against.
 
 ### 3. Roll out
 ```bash
@@ -75,6 +78,8 @@ sees them (실측 2026-09-01: 롤아웃 성공 후에도 라이브 HTML이 직�
 - [ ] `kubectl get deployment dashboard -o jsonpath='{.spec.template.spec.containers[0].image}'` matches `$TAG`
 - [ ] Pod logs show `dashboard listening on :8080` with no stack traces
 - [ ] `/healthz` returns `{"ok": true}` (via port-forward if not publicly reachable)
+- [ ] `/readyz` returns 200 on a running pod — this is the endpoint the readiness probe uses,
+      so a pod that never becomes `Ready` should be diagnosed with it rather than with `/healthz`
 - [ ] `https://ccdash.atomai.click/`의 `assets/index-*.js` 해시가 로컬 `dashboard/web/dist/index.html`과 일치 (Basic Auth 필요)
 
 ## Rollback
@@ -85,7 +90,7 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 Or explicitly redeploy the previous known-good tag with Step 3 above.
 
 ## Notes
-- Last verified: 2026-07-08
+- Last verified: 2026-09-02
 - If the pending `terraform apply` includes `infra/clickhouse.tf`'s ClickHouse backup
   destination change (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`), there's no ordering
   requirement against `scripts/archive-clickhouse.sh` — its own final-snapshot step doesn't
@@ -160,9 +165,12 @@ aws ecr get-login-password --region ap-northeast-2 \
   | docker login --username AWS --password-stdin 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com
 docker buildx build --platform linux/arm64 \
   -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG \
-  -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:latest \
   --push dashboard/
 ```
+ECR 리포지토리가 `IMMUTABLE`이라 이미 존재하는 태그를 다시 푸시하면 그대로 거부됩니다.
+`latest` 태그는 계속 유용하려면 배포마다 옮겨 다녀야 하는데, 태그가 움직인다는 건 롤아웃
+기록이 더 이상 다이제스트를 가리키지 않는다는 뜻입니다. 타임스탬프 태그만 유일하게 푸시되고,
+`rollout undo`나 명시적 재배포도 이 태그를 기준으로 이미지를 찾습니다.
 
 ### 3. 롤아웃
 ```bash
@@ -176,6 +184,8 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 - [ ] `kubectl get deployment dashboard -o jsonpath='{.spec.template.spec.containers[0].image}'`가 `$TAG`와 일치
 - [ ] 파드 로그에 스택 트레이스 없이 `dashboard listening on :8080` 출력
 - [ ] `/healthz`가 `{"ok": true}` 응답(외부 노출 안 됐으면 port-forward로 확인)
+- [ ] `/readyz`가 실행 중인 파드에서 200 응답 — readiness probe가 실제로 보는 엔드포인트이므로,
+      파드가 `Ready`가 되지 않을 때는 `/healthz`가 아니라 이걸로 진단합니다
 
 ## 롤백
 ```bash
@@ -185,7 +195,7 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 또는 위 3단계로 이전에 확인된 정상 태그를 명시적으로 재배포합니다.
 
 ## 참고
-- 최종 검증일: 2026-07-08
+- 최종 검증일: 2026-09-02
 - 적용 대기 중인 `terraform apply`에 `infra/clickhouse.tf`의 ClickHouse 백업 목적지 변경
   (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`)이 포함되어 있어도
   `scripts/archive-clickhouse.sh`와의 순서 제약은 없습니다 — 그 스크립트의 최종 스냅샷
