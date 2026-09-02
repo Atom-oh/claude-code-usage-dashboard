@@ -1,9 +1,18 @@
-// Bedrock/Anthropic per-1M-token USD 단가. cacheWrite = 입력 단가×1.25(5분 TTL), cacheRead = 입력 단가×0.1.
-// Bedrock cross-region(us./global./eu./apac.) 추론 프로파일은 기본 모델과 동일 단가.
-const PRICING = {
+// Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 모든 모델에 공통: cacheWrite(5m) = 입력×1.25,
+// cacheWrite1h = 입력×2, cacheRead = 입력×0.1. Bedrock cross-region(us./global./eu./apac.) 추론
+// 프로파일은 기본 모델과 동일 단가.
+// 캐시 쓰기 TTL 기본값이 "1h"인 이유: Claude Code 메인 대화가 캐시 쓰기 볼륨의 대부분을 차지하고
+// 메인 스레드는 1h TTL로 청구된다(실측 2026-09-01/02: opus-5 메인 스레드 $10/M = 5×2, 5×1.25=$6.25
+// 가 아니었음). haiku/sonnet 보조 호출은 5m TTL을 쓰므로 "1h" 기본값은 보조 호출 비용을 다소
+// 과대계상한다 — 의도된 선택이며 PRICING_CACHE_WRITE_TTL=5m 이 탈출구다.
+// OTel의 token.usage cacheCreation TokenType은 5m/1h 티어를 구분하지 않으므로, 토큰 단위로 어느
+// 티어인지 알 수 없다 — 그래서 위와 같은 명시적 가정이 필요하다.
+// sonnet-5 단가 보정(실측: Claude Enterprise 청구서 대조): 기존 $3/$15 → $2/$10. 구 단가로는
+// 계산 비용이 실제 청구의 1.5배로 과대계상되고 있었다.
+const BASE_PRICING = {
   "claude-sonnet-4-5": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
-  "claude-sonnet-5": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  "claude-sonnet-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
   "claude-opus-4-5": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-4-6": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-4-7": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
@@ -15,13 +24,6 @@ const PRICING = {
   "claude-fable-5": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 },
 };
 
-// Ask Claude 챗의 SYSTEM 프롬프트(chat.js)가 이 문자열을 그대로 인용한다 — Cost 페이지 카드가
-// 보여주는 "계산 비용"(withComputedCost, 아래)과 챗이 답하는 비용이 서로 다른 숫자를 쓰게
-// 드리프트하지 않도록, 단가를 PRICING에서만 유지하고 여기서 렌더링만 한다.
-export const PRICING_PROMPT_TABLE = Object.entries(PRICING)
-  .map(([model, p]) => `${model}: input $${p.input}, output $${p.output}, cacheWrite $${p.cacheWrite}, cacheRead $${p.cacheRead} (1M 토큰당 USD)`)
-  .join("\n");
-
 // us.anthropic.claude-sonnet-4-5-20250929-v1:0 / global.anthropic.claude-opus-4-8
 // / anthropic.claude-* / claude-sonnet-4-5-20250929 / claude-fable-5[1m] → 단가표 key
 export function normalizeModelId(raw) {
@@ -32,6 +34,95 @@ export function normalizeModelId(raw) {
     .replace(/-v\d+(?::\d+)?$/, "") // bedrock 버전 접미사 -v1:0 / -v1
     .replace(/-\d{8}$/, ""); // 날짜 스냅샷 접미사 -20250929
 }
+
+// env(테스트 가능하도록 process.env를 직접 읽지 않고 인자로만 받음)로부터 실효 단가표를 만든다.
+// PRICING_CACHE_WRITE_TTL과 PRICING_JSON을 여기서 한 번만 파싱 — 두 번째 파싱 경로를 만들지 않는다.
+export function buildPricing(env) {
+  const ttlRaw = env.PRICING_CACHE_WRITE_TTL;
+  let cacheWriteTtl = "1h";
+  if (ttlRaw !== undefined && ttlRaw !== "") {
+    if (ttlRaw !== "1h" && ttlRaw !== "5m") {
+      throw new Error(`PRICING_CACHE_WRITE_TTL must be "1h" or "5m", got "${ttlRaw}"`);
+    }
+    cacheWriteTtl = ttlRaw;
+  }
+
+  // 리터럴을 깊은 복사 후 cacheWrite1h를 파생 — buildPricing을 여러 번 호출해도 BASE_PRICING을
+  // 공유 오염시키지 않는다(테스트가 같은 프로세스에서 반복 호출).
+  const table = {};
+  for (const [model, p] of Object.entries(BASE_PRICING)) {
+    table[model] = { ...p, cacheWrite1h: p.input * 2 };
+  }
+
+  const overriddenModels = [];
+  const jsonRaw = env.PRICING_JSON;
+  if (jsonRaw !== undefined && jsonRaw !== "") {
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonRaw);
+    } catch (err) {
+      throw new Error(`PRICING_JSON is not valid JSON: ${err.message}`);
+    }
+    if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
+      throw new Error("PRICING_JSON must be a JSON object of model key → rates");
+    }
+    for (const [key, row] of Object.entries(parsed)) {
+      // 정규화되지 않은 key는 priceFor()의 PRICING[normalizeModelId(model)] 조회에서 절대
+      // 매치되지 않아 오버라이드가 조용히 무시된다 — R2가 금지하는 "조용한 오가격" 그 자체이므로
+      // 문서화만 하지 않고 하드 에러로 막는다.
+      const normalized = normalizeModelId(key);
+      if (normalized !== key) {
+        throw new Error(`PRICING_JSON key "${key}" must be the normalized model id "${normalized}"`);
+      }
+      if (row === null || Array.isArray(row) || typeof row !== "object") {
+        throw new Error(`PRICING_JSON["${key}"] must be an object of rates`);
+      }
+      if (typeof row.input !== "number" || !Number.isFinite(row.input) || typeof row.output !== "number" || !Number.isFinite(row.output)) {
+        throw new Error(`PRICING_JSON["${key}"] requires numeric input and output`);
+      }
+      for (const field of ["input", "output", "cacheWrite", "cacheRead", "cacheWrite1h"]) {
+        if (row[field] === undefined) continue;
+        if (typeof row[field] !== "number" || !Number.isFinite(row[field]) || row[field] < 0) {
+          throw new Error(`PRICING_JSON["${key}"].${field} must be a non-negative number`);
+        }
+      }
+      // ??(not ||): cacheWrite/cacheRead/cacheWrite1h에 값 0을 명시적으로 설정(무료/프로모션
+      // 티어)해도 그대로 살아남아야 한다.
+      table[key] = {
+        input: row.input,
+        output: row.output,
+        cacheWrite: row.cacheWrite ?? row.input * 1.25,
+        cacheRead: row.cacheRead ?? row.input * 0.1,
+        cacheWrite1h: row.cacheWrite1h ?? row.input * 2,
+      };
+      overriddenModels.push(key);
+    }
+  }
+
+  return { table, cacheWriteTtl, overriddenModels };
+}
+
+const { table: PRICING, cacheWriteTtl: CACHE_WRITE_TTL, overriddenModels: OVERRIDDEN_MODELS } =
+  buildPricing(process.env);
+
+// /api/config가 그대로 내려주는 값 — 단가(negotiated rate)는 고객의 사업 조건이라 절대 노출하지
+// 않고, TTL 가정과 오버라이드된 모델 key 목록만 노출한다(R5: no secrets).
+export const pricingConfig = { cacheWriteTtl: CACHE_WRITE_TTL, overriddenModels: OVERRIDDEN_MODELS };
+
+// cache_write_tokens에 실제로 적용할 단가 — tierCosts/withComputedCost가 서로 다른 숫자를 쓰지
+// 않도록 단일 헬퍼로 통일.
+const effectiveCacheWrite = (p) => (CACHE_WRITE_TTL === "1h" ? p.cacheWrite1h : p.cacheWrite);
+
+// Ask Claude 챗의 SYSTEM 프롬프트(chat.js)가 이 문자열을 그대로 인용한다 — Cost 페이지 카드가
+// 보여주는 "계산 비용"(withComputedCost, 아래)과 챗이 답하는 비용이 서로 다른 숫자를 쓰게
+// 드리프트하지 않도록, 단가를 PRICING에서만 유지하고 여기서 렌더링만 한다.
+// cacheWrite 열은 실효 단가(effectiveCacheWrite) — cacheWrite1h를 별도 열로 추가하면 모델이
+// 두 숫자 중 하나를 골라야 해서 chat.js의 "cacheCreation → cacheWrite" 공식이 깨진다.
+export const PRICING_PROMPT_TABLE =
+  Object.entries(PRICING)
+    .map(([model, p]) => `${model}: input $${p.input}, output $${p.output}, cacheWrite $${effectiveCacheWrite(p)}, cacheRead $${p.cacheRead} (1M 토큰당 USD)`)
+    .join("\n") +
+  `\n(위 cacheWrite는 캐시 쓰기 TTL 가정 "${CACHE_WRITE_TTL}" 기준 단가다 — 서버 env PRICING_CACHE_WRITE_TTL로 1h/5m 전환)`;
 
 export function priceFor(model) {
   return PRICING[normalizeModelId(model)] || null;
@@ -47,7 +138,7 @@ export function tierCosts(rows) {
     if (!p) continue;
     t.uncachedInput += (Number(r.input_tokens) * p.input) / 1e6;
     t.cacheRead += (Number(r.cache_read_tokens) * p.cacheRead) / 1e6;
-    t.cacheWrite += (Number(r.cache_write_tokens) * p.cacheWrite) / 1e6;
+    t.cacheWrite += (Number(r.cache_write_tokens) * effectiveCacheWrite(p)) / 1e6;
     t.output += (Number(r.output_tokens) * p.output) / 1e6;
   }
   return t;
@@ -71,7 +162,7 @@ export function withComputedCost(rows) {
       ? (Number(r.input_tokens) * p.input +
           Number(r.output_tokens) * p.output +
           Number(r.cache_read_tokens) * p.cacheRead +
-          Number(r.cache_write_tokens) * p.cacheWrite) /
+          Number(r.cache_write_tokens) * effectiveCacheWrite(p)) /
         1e6
       : null;
     return { ...r, cost, unpriced: !p };

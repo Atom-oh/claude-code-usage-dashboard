@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import basicAuth from "express-basic-auth";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
-import { tierCostsByGroup } from "./pricing.js";
+import { tierCostsByGroup, pricingConfig } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping } from "./clickhouse.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
@@ -286,7 +286,8 @@ app.post(
 // 이메일 마스킹 on/off를 프론트에 런타임으로 알려준다 — 이미지는 한 번만 빌드해 여러 배포에
 // 재사용하므로(dashboard/Dockerfile) 빌드타임 VITE_ 변수로는 배포별로 못 바꾼다. ClickHouse도
 // 구간 파라미터도 안 쓰므로 route() 래퍼(캐시/range 파싱)를 거치지 않는다.
-app.get("/api/config", (_req, res) => res.json({ piiMask: piiMaskEnabled }));
+// 같은 이유로 캐시쓰기 TTL 가정(pricingConfig)도 런타임에 노출한다 — build-once-deploy-many.
+app.get("/api/config", (_req, res) => res.json({ piiMask: piiMaskEnabled, pricing: pricingConfig }));
 
 const webDist = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(webDist));

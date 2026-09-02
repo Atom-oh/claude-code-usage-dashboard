@@ -12,10 +12,19 @@ endpoint, mostly following the pattern `export async function xyz(from, to, ...p
 filters)`).
 
 `GET /api/config` is the one non-data route besides `/healthz`: it returns
-`{piiMask}` from `PII_MASK_ENABLED` (`"1"`/`"true"` = on, unset = off) so the SPA can decide
-whether to mask emails at render time — the image is built once and reused across deployments,
-so this can't be a build-time `VITE_` flag. It intentionally skips the `route()` wrapper (no
-ClickHouse, no range params) but still inherits the global Basic Auth.
+`{piiMask, pricing}`. `piiMask` comes from `PII_MASK_ENABLED` (`"1"`/`"true"` = on, unset =
+off) so the SPA can decide whether to mask emails at render time — the image is built once and
+reused across deployments, so this can't be a build-time `VITE_` flag. `pricing` is
+`pricing.js`'s `pricingConfig` (`{cacheWriteTtl, overriddenModels}`), passed straight through
+so the endpoint can't drift from the pricing module. `cacheWriteTtl` comes from
+`PRICING_CACHE_WRITE_TTL` -- `"1h"` (default, since the main conversation's cache writes are
+measured at the 1h rate) or `"5m"`; any other value throws at startup. `overriddenModels`
+lists the normalized model keys supplied via `PRICING_JSON` -- a JSON object of normalized
+model key -> `{input, output, cacheWrite?, cacheRead?, cacheWrite1h?}` merged over the
+built-in table, with omitted cache fields derived from `input` (`×1.25`/`×0.1`/`×2`); invalid
+JSON, a missing/negative `input`/`output`, or a non-normalized key throws at startup. It
+intentionally skips the `route()` wrapper (no ClickHouse, no range params) but still inherits
+the global Basic Auth.
 
 ## Key Files
 - `index.js` -- route table, `route()` wrapper (range/query parsing + error handling + TTL
@@ -33,7 +42,9 @@ ClickHouse, no range params) but still inherits the global Basic Auth.
   of the file and follow those same patterns
 - `grouping.js` -- `GROUP_CTE`/`GROUP_EXPR`, session-scoped bedrock/enterprise inference (reads
   the hourly rollup's `has_org` column)
-- `pricing.js` -- per-model token pricing, `withComputedCost`, `tierCosts`, `tierCostsByGroup`
+- `pricing.js` -- per-model token pricing (`buildPricing(env)`, env-overridable via
+  `PRICING_JSON`/`PRICING_CACHE_WRITE_TTL`, exports `pricingConfig`), `withComputedCost`,
+  `tierCosts`, `tierCostsByGroup`
 - `productivity.js` -- productivity score derivation (pure function, used by leaderboard)
 - `costEfficiency.js` -- `$/LOC`, `$/commit` derivation (pure function)
 - `activity.js` -- DAU/WAU/MAU rollup from raw day x user rows (pure function,
