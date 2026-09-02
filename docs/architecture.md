@@ -149,14 +149,16 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
 | Module | Resources | Description |
 |--------|-----------|-------------|
 | `infra/nodepool.tf` | EKS managed node group | Graviton (m8g.xlarge, arm64) nodes |
-| `infra/clickhouse.tf` | ClickHouse Operator, Cluster, storage policy | `hot_cold` policy: local EBS + `cold_s3` disk |
-| `infra/dashboard.tf` | Deployment, Service | Dashboard app, env from k8s Secret; `var.pii_mask_enabled` -> `PII_MASK_ENABLED` |
-| `infra/ecr.tf` | ECR repository | `cc-ab-dashboard` image registry |
+| `infra/clickhouse.tf` | ClickHouse Operator, Cluster, storage policy | `hot_cold` policy: local EBS + `cold_s3` disk; accounts `otel_writer` / `otel_reader` / `otel_ingest` (the last is the INSERT-scoped collector account) |
+| `infra/dashboard.tf` | Deployment, Service, PodDisruptionBudget | Dashboard app, env from k8s Secret; `var.pii_mask_enabled` -> `PII_MASK_ENABLED`; `/readyz` readiness probe + drain window |
+| `infra/ecr.tf` | ECR repository | `cc-ab-dashboard` image registry, immutable-tagged |
 | `infra/s3.tf` | S3 buckets | ClickHouse cold tier, backups |
-| `infra/dns_cdn.tf` | Route53, CloudFront | Public dashboard endpoint |
+| `infra/dns_cdn.tf` | Route53, CloudFront | Public dashboard endpoint; dashboard distribution carries the managed security-headers policy |
 
 ### Deployed Resources
-- Dashboard: internal NLB behind CloudFront, Basic Auth-gated
+- Dashboard: internal NLB behind CloudFront, Basic Auth-gated; `replicas 2` with
+  `max_unavailable=0` rolling updates, a `min_available=1` PodDisruptionBudget, and preferred
+  anti-affinity spreading replicas across hosts
 - ClickHouse: `clickhouse-cc-ab` Service (ClusterIP), 3 replicas + 3-node Keeper
 
 ## Key Design Decisions
@@ -323,14 +325,16 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
 | 모듈 | 리소스 | 설명 |
 |--------|-----------|-------------|
 | `infra/nodepool.tf` | EKS 관리형 노드 그룹 | Graviton(m8g.xlarge, arm64) 노드 |
-| `infra/clickhouse.tf` | ClickHouse Operator, Cluster, 스토리지 정책 | `hot_cold` 정책: 로컬 EBS + `cold_s3` disk |
-| `infra/dashboard.tf` | Deployment, Service | 대시보드 앱, k8s Secret에서 env 주입 |
-| `infra/ecr.tf` | ECR 리포지토리 | `cc-ab-dashboard` 이미지 레지스트리 |
+| `infra/clickhouse.tf` | ClickHouse Operator, Cluster, 스토리지 정책 | `hot_cold` 정책: 로컬 EBS + `cold_s3` disk; 계정 `otel_writer` / `otel_reader` / `otel_ingest`(마지막이 INSERT 범위 컬렉터 계정) |
+| `infra/dashboard.tf` | Deployment, Service, PodDisruptionBudget | 대시보드 앱, k8s Secret에서 env 주입; `/readyz` readiness probe + drain 창 |
+| `infra/ecr.tf` | ECR 리포지토리 | `cc-ab-dashboard` 이미지 레지스트리, 태그 불변(immutable) |
 | `infra/s3.tf` | S3 버킷 | ClickHouse cold tier, 백업 |
-| `infra/dns_cdn.tf` | Route53, CloudFront | 공개 대시보드 엔드포인트 |
+| `infra/dns_cdn.tf` | Route53, CloudFront | 공개 대시보드 엔드포인트; 대시보드 배포에 managed 보안 헤더 정책 적용 |
 
 ### 배포된 리소스
-- 대시보드: CloudFront 뒤의 내부 NLB, Basic Auth 게이트
+- 대시보드: CloudFront 뒤의 내부 NLB, Basic Auth 게이트; `replicas 2`에 `max_unavailable=0`
+  롤링 업데이트, `min_available=1` PodDisruptionBudget, 호스트 간 preferred 안티어피니티로
+  분산
 - ClickHouse: `clickhouse-cc-ab` Service(ClusterIP), 레플리카 3개 + 3노드 Keeper
 
 ## 주요 설계 결정

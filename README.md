@@ -140,6 +140,15 @@ Workshop/CFN provisioning must install this exact systemd unit (see
 `docs/workshop-studio-notes.md` §3) — a bare `otelcol-contrib &` in `UserData` will not survive
 a crash or reboot.
 
+The collector authenticates as `otel_ingest`, whose privileges are `INSERT ON claude_code.*`
+plus `SELECT ON claude_code.otel_metrics_sum`, with the password coming from the SSM
+SecureString parameter `/claude-code/ab/clickhouse-ingest-password` (created by an operator,
+not by Terraform). `user-data.sh` is a cloud-init template, so this applies to newly launched
+instances only — see `docs/runbooks/clickhouse-ingest-user-cutover.md` for the cutover
+procedure. The `SELECT` grant on the source table is required, not extra: the materialized
+view onto `otel_metrics_sum` is checked with the inserting user's privileges, so without it
+every insert fails with `ACCESS_DENIED`.
+
 **Since 2026-09-02 the dashboard notices this itself.** `GET /api/health/data` classifies the
 newest `otel_metrics_sum` row into `ok` / `stale` / `unknown` and answers HTTP **503** for the
 latter two, and the SPA renders a warning banner on every page while that holds — so the
@@ -329,6 +338,25 @@ kubectl -n claude-code exec chi-cc-ab-replicated-0-0-0 -- \
 서버 쿼리 로직은 이미 검증되어 정상입니다). 워크샵/CFN 프로비저닝은 반드시 이 systemd
 유닛 그대로 설치해야 합니다(`docs/workshop-studio-notes.md` §3 참고) — `UserData`에 맨
 `otelcol-contrib &`만 넣으면 크래시나 재부팅에서 살아남지 못합니다.
+
+컬렉터는 `otel_ingest` 계정으로 인증하며, 이 계정의 권한은 `INSERT ON claude_code.*`와
+`SELECT ON claude_code.otel_metrics_sum`이고 비밀번호는 SSM SecureString 파라미터
+`/claude-code/ab/clickhouse-ingest-password`에서 가져옵니다(terraform이 아니라 운영자가
+생성). `user-data.sh`는 cloud-init 템플릿이므로 이 변경은 새로 launch되는 인스턴스에만
+적용됩니다 — 컷오버 절차는 `docs/runbooks/clickhouse-ingest-user-cutover.md`를 참고하세요.
+소스 테이블에 대한 `SELECT` grant는 있으면 좋은 정도가 아니라 필수입니다: `otel_metrics_sum`
+위의 materialized view가 insert하는 유저의 권한으로 검사되기 때문에, 이 grant가 없으면
+모든 insert가 `ACCESS_DENIED`로 실패합니다.
+
+**2026-09-02부터 대시보드가 이 문제를 스스로 감지합니다.** `GET /api/health/data`가 가장
+최신 `otel_metrics_sum` 행을 `ok` / `stale` / `unknown`으로 분류하고, 후자 둘에 대해 HTTP
+**503**을 응답합니다. 그 상태가 유지되는 동안 SPA는 모든 페이지에 경고 배너를 렌더링합니다 —
+그 결과 위에서 설명한 "아무 에러 없이 조용히 데이터 창이 줄어드는" 장애가 누군가 쿼리를
+수동으로 돌리지 않아도 보이게 됩니다. 이 staleness 판정 기준은 서버 env
+`DATA_STALE_MINUTES`(기본값 `360`, 즉 6시간; 0 이하이거나 숫자가 아닌 값은 부팅을 거부)입니다.
+시간별 롤업이 아니라 원본 테이블을 읽는 이유는 정확히, 죽은 컬렉터가 다음 롤업까지 기다리지
+않고 몇 분 안에 드러나게 하기 위해서입니다. 이건 *탐지기*일 뿐 고치는 수단은 아닙니다 — 위의
+systemd 유닛이 여전히 인제스트를 살려두는 실제 수단입니다.
 
 ## 프로젝트 구조
 ```
