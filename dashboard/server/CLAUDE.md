@@ -90,6 +90,13 @@ session is `readonly`.
   catch. `staleAfterMinutes` comes from `DATA_STALE_MINUTES` (default `360`) and a
   non-positive/non-numeric value throws at module load, same policy as
   `PRICING_CACHE_WRITE_TTL`
+- `alerting.js` -- outbound telemetry-staleness alerting: `planAlert` (pure planner: debounce
+  two consecutive non-ok ticks, repeat while non-ok, one recovery message), `formatAlert` (the
+  one-line `[ccdash] …` texts), `postWebhook` (Slack-compatible `{"text"}` POST, `AbortController`
+  timeout, never throws) and `startAlertLoop` (returns `{tick, stop}` so a test can drive a tick
+  without timers). Import-safe: nothing starts unless `ALERT_WEBHOOK_URL` is set, and the first
+  tick is 60s in, never at boot. Each replica alerts independently, by design (ADR-005) -- the
+  pod name is in the message. The webhook URL carries a token and is never logged
 - `*.test.js` -- `node:test` unit tests for the pure functions above
 
 ## Rules
@@ -191,6 +198,10 @@ session is `readonly`.
   `Cache-Control: no-store`, and **validation runs before `fetchCached`** so an invalid request
   never allocates a cache key. The six `intervalHours` routes all go through `bucketHours()`;
   nothing calls `Number(query.intervalHours)` directly any more.
+- **Alerting must stay import-safe and only start when `ALERT_WEBHOOK_URL` is set.**
+  `app.test.js` imports `index.js`, so a timer or a network call at module scope would run
+  inside the unit suite. `ALERT_REPEAT_MINUTES` is validated at boot regardless of whether the
+  URL is set, same policy as `DATA_STALE_MINUTES`.
 - **The server refuses to boot without `BASIC_AUTH_USER` + `BASIC_AUTH_PASSWORD`**
   (`console.error` + `process.exit(1)`), unless `AUTH_ALLOW_INSECURE=1` is set, which logs one
   loud warning and serves every `/api/*` route unauthenticated. `AUTH_ALLOW_INSECURE` and

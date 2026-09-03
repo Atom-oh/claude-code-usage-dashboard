@@ -99,6 +99,8 @@ Environment variables consumed by `dashboard/server`:
 | `RANGE_CAP_DAYS` | Longest range a request may ask for; a longer span is a 400. Must be `>=` `DEFAULT_RANGE_DAYS` | `90` |
 | `PII_MASK_ENABLED` | Mask user emails in `GET /api/config`'s `piiMask` and the chat sandbox's result rows; on only for `"1"`/`"true"`, case-insensitive | unset (masking off) |
 | `DATA_STALE_MINUTES` | Age threshold for `GET /api/health/data`'s `stale` classification; a non-positive or non-numeric value refuses to boot | `360` |
+| `ALERT_WEBHOOK_URL` | Slack-compatible webhook that receives a message when `GET /api/health/data` has been `stale`/`unknown` for two consecutive 60 s ticks, again every `ALERT_REPEAT_MINUTES` while it stays that way, and once on recovery. Each replica alerts independently (the pod name is in the message). Treat as a secret | unset (alerting off) |
+| `ALERT_REPEAT_MINUTES` | Repeat interval while the data stays non-ok; a non-positive or non-numeric value refuses to boot | `60` |
 | `CHAT_MODEL_ID` | Bedrock model ID for the "Ask Claude" chat assistant | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | AWS region for the Bedrock client | `us-east-1` |
 | `BEDROCK_REGION` | Overrides `AWS_REGION` for the Bedrock call only (e.g. accounts limited to one region) | unset (falls back to `AWS_REGION`) |
@@ -333,6 +335,8 @@ SPA 서빙)을 엽니다.
 | `RANGE_CAP_DAYS` | 요청 가능한 최대 구간 — 넘으면 400. `DEFAULT_RANGE_DAYS` 이상이어야 한다 | `90` |
 | `PII_MASK_ENABLED` | `GET /api/config`의 `piiMask`와 챗 샌드박스 결과 행의 유저 이메일 마스킹; `"1"`/`"true"`(대소문자 무관)일 때만 켜짐 | 미설정(마스킹 꺼짐) |
 | `DATA_STALE_MINUTES` | `GET /api/health/data`의 `stale` 판정 임계(분); 0 이하이거나 숫자가 아니면 기동 거부 | `360` |
+| `ALERT_WEBHOOK_URL` | `GET /api/health/data`가 60초 틱 2회 연속 `stale`/`unknown`이면 메시지를 받는 Slack 호환 웹훅. 이후 `ALERT_REPEAT_MINUTES`마다 반복하고 복구 시 1회 더 보낸다. 레플리카마다 독립 판정이라 메시지에 pod 이름이 실린다. 비밀값으로 취급 | 미설정(알림 꺼짐) |
+| `ALERT_REPEAT_MINUTES` | non-ok가 지속될 때 재발송 간격(분); 0 이하이거나 숫자가 아니면 기동 거부 | `60` |
 | `CHAT_MODEL_ID` | "Ask Claude" 채팅 어시스턴트용 Bedrock 모델 ID | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | Bedrock 클라이언트용 AWS 리전 | `us-east-1` |
 | `BEDROCK_REGION` | Bedrock 호출에서만 `AWS_REGION`을 덮어씀(예: 특정 리전만 허용하는 계정) | 미설정(`AWS_REGION`을 따름) |

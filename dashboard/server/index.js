@@ -1,5 +1,6 @@
 import express from "express";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import basicAuth from "express-basic-auth";
@@ -11,6 +12,7 @@ import { userCostEfficiency } from "./costEfficiency.js";
 import { ping, assertReadonlySession } from "./clickhouse.js";
 import { probeSegmentAwareSeriesKey, probeMigrations } from "./schema.js";
 import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./freshness.js";
+import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,13 +51,22 @@ if (!authEnabled) {
 // 조직별 설정 — 잘못된 값은 조용히 기본값으로 접지 않고 기동을 거부한다(위 BASIC_AUTH_* 와
 // 같은 규약). DEFAULT_RANGE_DAYS 하나가 서버 warmer가 데우는 창과 parseRange의 기본 구간을
 // 동시에 정한다 — 예전에는 그 둘과 RangeContext.jsx의 기본 days가 각자 하드코딩된 2였다.
-let GROUP_MODE, DEFAULT_RANGE_DAYS, RANGE_CAP_DAYS;
+let GROUP_MODE, DEFAULT_RANGE_DAYS, RANGE_CAP_DAYS, alertRepeatMinutes;
 try {
   GROUP_MODE = parseGroupMode(process.env.GROUP_MODE);
   DEFAULT_RANGE_DAYS = parsePositiveInt(process.env.DEFAULT_RANGE_DAYS, 2);
   RANGE_CAP_DAYS = parsePositiveInt(process.env.RANGE_CAP_DAYS, 90);
   if (RANGE_CAP_DAYS < DEFAULT_RANGE_DAYS) {
     throw new Error(`RANGE_CAP_DAYS (${RANGE_CAP_DAYS}) must be >= DEFAULT_RANGE_DAYS (${DEFAULT_RANGE_DAYS})`);
+  }
+  // ALERT_WEBHOOK_URL이 없으면 쓰이지 않는 값이지만 검증은 무조건 한다 — 잘못된 값을 조용히
+  // 60으로 접으면 운영자가 바꿨다고 믿는 재발송 간격이 안 돌아간다(DATA_STALE_MINUTES와 같은
+  // 규약). parsePositiveInt의 메시지에는 변수명이 없으므로 여기서 이름을 붙여 다시 던진다:
+  // FATAL 한 줄만 보고 어떤 env가 문제인지 알 수 있어야 한다.
+  try {
+    alertRepeatMinutes = parsePositiveInt(process.env.ALERT_REPEAT_MINUTES, 60);
+  } catch (err) {
+    throw new Error(`ALERT_REPEAT_MINUTES ${err.message}`);
   }
 } catch (err) {
   console.error(`FATAL: ${err.message}`);
@@ -206,6 +217,12 @@ function freshnessSnapshot() {
   }
   return freshnessMemo.promise;
 }
+
+// 레플리카마다 독립 판정 — replicas=2면 전이 하나에 메시지가 두 개 온다. 메시지에 pod 이름을
+// 실어 구분하고, 리더 선출로 하나만 보내는 건 ADR-005의 검토한 대안(복잡도 대비 이득 없음).
+// URL이 없으면 startAlertLoop을 부르지 않는다 — 타이머도, import 시점 부작용도 없어야 한다
+// (app.test.js가 이 파일을 import한다).
+if (process.env.ALERT_WEBHOOK_URL) startAlertLoop({ url: process.env.ALERT_WEBHOOK_URL, getSnapshot: freshnessSnapshot, hostname: os.hostname(), repeatMs: alertRepeatMinutes * 60_000 });
 
 // 캐시 키는 핸들러가 실제로 읽는 파라미터(from/to/group/user/model/intervalHours/email)만
 // 화이트리스트로 넣은 canonical 형태 — 브라우저(useApi의 객체 삽입 순서)와 warmer(아래)가
