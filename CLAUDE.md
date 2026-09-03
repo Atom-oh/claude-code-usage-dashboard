@@ -135,7 +135,8 @@ node --test --test-name-pattern="incFlat" *.test.js   # tests matching a name
 # Web (dashboard/web)
 npm install
 npm run dev               # vite dev server
-npm run build             # vite build -> dist/ (no dedicated web test suite yet)
+npm test                  # vitest run (jsdom) — *.test.js / *.test.jsx under src/
+npm run build             # vite build -> dist/
 npm run preview
 
 # Claude Code harness tests (hooks, settings.json, repo structure — not app logic)

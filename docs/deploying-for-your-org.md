@@ -14,7 +14,9 @@ This is a walkthrough for standing up this dashboard for a new organization/clus
 entirely from commands that already exist in this repo's runbooks and README. Every command
 below carries an inline citation to where it is copied from. If a step you expected is
 missing, it is because no existing file states a command for it — this guide adds no new
-procedure, flag, or environment variable of its own.
+procedure, flag, or environment variable of its own. The one derivation is step 6b, which reads
+the ECR registry from Terraform's `ecr_repository_url` output instead of repeating the deploy
+runbook's literal registry (that literal is this project's own AWS account).
 
 ## 1. Prerequisites
 - `infra/terraform.tfvars.example` exists in the repo and is the template for the variables
@@ -60,24 +62,21 @@ with until they are re-provisioned (see `docs/runbooks/clickhouse-ingest-user-cu
 that parameter (`user-data.sh:111`); the collector's on-disk retry queue directory is set by
 `OTELCOL_QUEUE_DIR` (`user-data.sh:151`).
 
-## 5. Build and push the first image (ECR is immutable)
+## 5. Pick the first image tag (ECR is immutable)
 `infra/terraform.tfvars.example`'s comment on `dashboard_image_tag` states that ECR is
 `IMMUTABLE` here, so `latest` does not exist as a usable tag — `dashboard_image_tag` must be
-a timestamp tag that has actually been pushed (see `infra/terraform.tfvars.example`). Build
-and push it with the same steps `docs/runbooks/deploy-production.md` §2 uses:
+a timestamp tag (see `infra/terraform.tfvars.example`). In a **new** account the ECR
+repository does not exist until step 6 creates it, so the image cannot be pushed first; the
+variable's own description allows for this ("첫 apply 시점엔 아직 이미지가 없을 수 있음 — push 후
+재배포", `infra/dashboard.tf:2`) and the Deployment is applied with `wait_for_rollout = false`
+(`infra/dashboard.tf:105`), so an apply with a not-yet-pushed tag succeeds and the pods sit in
+`ImagePullBackOff` until step 6b pushes it. Choose the tag now and put it in
+`infra/terraform.tfvars`:
 ```bash
-TAG=$(date -u +%Y%m%d-%H%M%S)
-aws ecr get-login-password --region ap-northeast-2 \
-  | docker login --username AWS --password-stdin 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com
-docker buildx build --platform linux/arm64 \
-  -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG \
-  --push dashboard/
+TAG=$(date -u +%Y%m%d-%H%M%S)   # same tag scheme as docs/runbooks/deploy-production.md §2
 ```
-(see `docs/runbooks/deploy-production.md` §2 — adjust the registry/repository to your own ECR
-if you are not deploying into the same AWS account). Now go back and set
-`dashboard_image_tag` in `infra/terraform.tfvars` to `$TAG`.
 
-## 6. `terraform apply`
+## 6. `terraform apply`, then push the image
 Apply with the secret variables from step 3 supplied via `-var`, following the same pattern
 `docs/runbooks/clickhouse-ingest-user-cutover.md` §1 uses for one of them:
 ```bash
@@ -86,7 +85,25 @@ terraform apply -var="clickhouse_ingest_password=<value>"
 ```
 (see `docs/runbooks/clickhouse-ingest-user-cutover.md` §1). Supply the other three secret
 variables (`dashboard_basic_auth_password`, `clickhouse_writer_password`,
-`clickhouse_reader_password`) the same way, or via `secrets.auto.tfvars` (step 3).
+`clickhouse_reader_password`) the same way, or via `secrets.auto.tfvars` (step 3) — the
+latter keeps the values out of shell history.
+
+**6b.** Build and push `$TAG` to the repository the apply just created, with the same steps
+`docs/runbooks/deploy-production.md` §2 uses — the registry is read from Terraform's
+`ecr_repository_url` output (`infra/outputs.tf:9`) rather than copied from the runbook, whose
+literal registry is this project's own account:
+```bash
+REPO=$(terraform output -raw ecr_repository_url)          # <account>.dkr.ecr.<region>.amazonaws.com/cc-ab-dashboard
+REGISTRY=${REPO%%/*}
+REGION=$(echo "$REGISTRY" | sed -E 's/^[0-9]+\.dkr\.ecr\.([^.]+)\.amazonaws\.com$/\1/')
+aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+cd .. && docker buildx build --platform linux/arm64 -t "$REPO:$TAG" --push dashboard/
+```
+(see `docs/runbooks/deploy-production.md` §2; the region is whatever `var.region` was applied
+with, `ap-northeast-2` by default — `infra/variables.tf:1-3`). Once the push lands, kubelet's pull backoff retries and the pods
+come up on their own — `kubectl -n claude-code rollout status deployment/dashboard` (see
+`docs/runbooks/deploy-production.md` §3) confirms it. Later image updates follow
+`docs/runbooks/deploy-production.md` end to end.
 
 ## 7. Schema: new install vs. existing cluster
 - **New install** — a `terraform apply` that provisions ClickHouse for the first time needs
@@ -178,7 +195,9 @@ does not speculate about how or when they will be resolved:
 이 문서는 새 조직/클러스터에 이 대시보드를 세우는 절차를 안내합니다. 전부 이 저장소의
 런북과 README에 이미 있는 명령으로만 구성되어 있고, 아래 각 명령마다 어디서 가져왔는지
 인라인으로 출처를 남깁니다. 기대한 단계가 빠져 있다면 그건 기존 파일 어디에도 그 명령이
-없기 때문입니다 — 이 문서는 새로운 절차·플래그·환경변수를 스스로 만들지 않습니다.
+없기 때문입니다 — 이 문서는 새로운 절차·플래그·환경변수를 스스로 만들지 않습니다. 유일한
+파생은 6b단계로, 배포 런북의 리터럴 레지스트리(이 프로젝트 자체 AWS 계정)를 반복하지 않고
+Terraform 출력 `ecr_repository_url`에서 읽습니다.
 
 ## 1. 사전 요구 사항
 - `infra/terraform.tfvars.example`가 저장소에 있고, 아래에서 채울 변수들의 템플릿입니다
@@ -224,25 +243,21 @@ instances only" 참고). 인스턴스 프로파일은 이 파라미터에 대해
 `kms:Decrypt` 권한이 필요하고(`user-data.sh:111`), 컬렉터의 디스크 재시도 큐 디렉터리는
 `OTELCOL_QUEUE_DIR`로 설정됩니다(`user-data.sh:151`).
 
-## 5. 첫 이미지 빌드·푸시 (ECR은 IMMUTABLE)
+## 5. 첫 이미지 태그 정하기 (ECR은 IMMUTABLE)
 `infra/terraform.tfvars.example`의 `dashboard_image_tag` 주석은 여기서 ECR이
 `IMMUTABLE`이라 `latest`가 쓸 수 있는 태그로 존재하지 않는다고 명시합니다 —
-`dashboard_image_tag`는 실제로 push된 타임스탬프 태그여야 합니다
-(`infra/terraform.tfvars.example`). `docs/runbooks/deploy-production.md` §2와 같은 단계로
-빌드·푸시합니다:
+`dashboard_image_tag`는 타임스탬프 태그여야 합니다(`infra/terraform.tfvars.example`).
+**신규** 계정에서는 ECR 리포지토리가 6단계의 apply로 만들어지기 전까지 존재하지 않으므로
+이미지를 먼저 push할 수 없습니다. 변수 설명 자체가 이 경우를 허용하고("첫 apply 시점엔 아직
+이미지가 없을 수 있음 — push 후 재배포", `infra/dashboard.tf:2`), Deployment는
+`wait_for_rollout = false`로 적용되므로(`infra/dashboard.tf:105`) 아직 push되지 않은 태그로
+apply해도 성공하며, 파드는 6b단계에서 push할 때까지 `ImagePullBackOff` 상태로 대기합니다.
+지금 태그를 정해 `infra/terraform.tfvars`에 적어 둡니다:
 ```bash
-TAG=$(date -u +%Y%m%d-%H%M%S)
-aws ecr get-login-password --region ap-northeast-2 \
-  | docker login --username AWS --password-stdin 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com
-docker buildx build --platform linux/arm64 \
-  -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG \
-  --push dashboard/
+TAG=$(date -u +%Y%m%d-%H%M%S)   # docs/runbooks/deploy-production.md §2와 같은 태그 규칙
 ```
-(`docs/runbooks/deploy-production.md` §2 참고 — 같은 AWS 계정으로 배포하지 않는다면
-레지스트리/리포지토리를 자신의 ECR로 바꾸세요). 이제 다시 돌아가 `infra/terraform.tfvars`의
-`dashboard_image_tag`를 `$TAG`로 설정합니다.
 
-## 6. `terraform apply`
+## 6. `terraform apply` 후 이미지 push
 3단계의 비밀값 변수를 `-var`로 넘겨 apply합니다.
 `docs/runbooks/clickhouse-ingest-user-cutover.md` §1이 그중 하나에 쓰는 것과 같은 패턴입니다:
 ```bash
@@ -251,7 +266,25 @@ terraform apply -var="clickhouse_ingest_password=<value>"
 ```
 (`docs/runbooks/clickhouse-ingest-user-cutover.md` §1 참고). 나머지 세 비밀값 변수
 (`dashboard_basic_auth_password`, `clickhouse_writer_password`,
-`clickhouse_reader_password`)도 같은 방식이나 `secrets.auto.tfvars`(3단계)로 넘깁니다.
+`clickhouse_reader_password`)도 같은 방식이나 `secrets.auto.tfvars`(3단계)로 넘깁니다 —
+후자는 값이 셸 히스토리에 남지 않습니다.
+
+**6b.** apply가 막 만든 리포지토리에 `$TAG`를 빌드·push합니다.
+`docs/runbooks/deploy-production.md` §2와 같은 단계이지만, 레지스트리는 런북의 리터럴(이
+프로젝트 자체 계정)을 복사하지 않고 Terraform 출력 `ecr_repository_url`(`infra/outputs.tf:9`)에서
+읽습니다:
+```bash
+REPO=$(terraform output -raw ecr_repository_url)          # <account>.dkr.ecr.<region>.amazonaws.com/cc-ab-dashboard
+REGISTRY=${REPO%%/*}
+REGION=$(echo "$REGISTRY" | sed -E 's/^[0-9]+\.dkr\.ecr\.([^.]+)\.amazonaws\.com$/\1/')
+aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+cd .. && docker buildx build --platform linux/arm64 -t "$REPO:$TAG" --push dashboard/
+```
+(`docs/runbooks/deploy-production.md` §2 참고. 리전은 apply에 쓴 `var.region` 값이며 기본은
+`ap-northeast-2` — `infra/variables.tf:1-3`). push가 끝나면 kubelet의 pull 백오프가 재시도해
+파드가 스스로 올라옵니다 — `kubectl -n claude-code rollout status deployment/dashboard`
+(`docs/runbooks/deploy-production.md` §3)로 확인합니다. 이후 이미지 갱신은
+`docs/runbooks/deploy-production.md`를 처음부터 끝까지 따릅니다.
 
 ## 7. 스키마: 신규 설치 vs 기존 클러스터
 - **신규 설치** — ClickHouse를 처음 프로비저닝하는 `terraform apply`는 Terraform

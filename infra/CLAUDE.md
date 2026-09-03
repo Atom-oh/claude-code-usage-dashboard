@@ -57,9 +57,12 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
 - The `schema_init` Job's name embeds `filemd5(...)` of `files/clickhouse-schema-replicated.sql`
   (`clickhouse.tf`), so editing that file recreates and re-runs the Job on the next `apply` —
   most recently the `schema_migrations` ledger block added by `clickhouse-migration-004.sql`.
-  That re-run is safe on an already-provisioned cluster because every statement in the file is
-  `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` / guarded, so replaying the whole file against a
-  cluster that already has some of it is a no-op for those parts.
+  A re-run on an already-provisioned cluster is idempotent in outcome but not free: the
+  `CREATE … IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` / guarded-`INSERT` statements are no-ops,
+  but the 29 unguarded `ALTER TABLE … MATERIALIZE COLUMN` statements (`grep -c 'MATERIALIZE
+  COLUMN' files/clickhouse-schema-replicated.sql`, all executable, none in comments) each schedule a full-table mutation on
+  `otel_metrics_sum` / `otel_logs` again, so expect background mutation load after the apply
+  (`SELECT * FROM system.mutations WHERE NOT is_done`).
 - `secrets.auto.tfvars`, `image.auto.tfvars` -- gitignored; injected at `terraform apply` time,
   never committed
 - `terraform.tfstate*` -- local state (gitignored); acceptable for a single-operator workshop
