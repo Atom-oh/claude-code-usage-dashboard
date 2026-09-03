@@ -8,6 +8,36 @@ variable "data_stale_minutes" {
   default     = 360
 }
 
+variable "group_mode" {
+  description = "서버 GROUP_MODE. ab는 bedrock/enterprise 쌍 비교, single은 채널이 하나인 조직(SPA가 빈 두 번째 카드를 그리지 않음). 서버는 이 둘 외의 값이면 기동 실패(index.js) — 롤아웃까지 가지 않게 여기서 먼저 거른다."
+  type        = string
+  default     = "ab"
+  validation {
+    condition     = contains(["ab", "single"], var.group_mode)
+    error_message = "group_mode must be \"ab\" or \"single\"."
+  }
+}
+
+variable "default_range_days" {
+  description = "서버 DEFAULT_RANGE_DAYS. from 없이 온 요청의 기본 구간이자 캐시 warmer가 매 부팅마다 미리 데우는 창(README Configuration). 서버 기본값과 같은 2."
+  type        = number
+  default     = 2
+  validation {
+    condition     = var.default_range_days >= 1 && floor(var.default_range_days) == var.default_range_days
+    error_message = "default_range_days must be a positive integer."
+  }
+}
+
+variable "range_cap_days" {
+  description = "서버 RANGE_CAP_DAYS. 요청 가능한 최대 구간(넘으면 400). 서버는 DEFAULT_RANGE_DAYS보다 작으면 기동 실패 — 같은 조건을 여기서 먼저 거른다. 서버 기본값과 같은 90."
+  type        = number
+  default     = 90
+  validation {
+    condition     = var.range_cap_days >= var.default_range_days && floor(var.range_cap_days) == var.range_cap_days
+    error_message = "range_cap_days must be an integer >= default_range_days."
+  }
+}
+
 # 아래 둘은 null이면 env를 아예 주입하지 않는다 — 서버가 자기 기본 단가표/캐시 TTL을 쓴다.
 # 빈 문자열로 주입하면 서버가 부팅 시점에 파싱 실패로 죽으므로 null과 구분해야 한다.
 variable "pricing_json" {
@@ -214,6 +244,18 @@ resource "kubernetes_deployment_v1" "dashboard" {
               name  = "PRICING_CACHE_WRITE_TTL"
               value = env.value
             }
+          }
+          env {
+            name  = "GROUP_MODE"
+            value = var.group_mode
+          }
+          env {
+            name  = "DEFAULT_RANGE_DAYS"
+            value = tostring(var.default_range_days)
+          }
+          env {
+            name  = "RANGE_CAP_DAYS"
+            value = tostring(var.range_cap_days)
           }
           env_from {
             secret_ref { name = kubernetes_secret.dashboard_basic_auth.metadata[0].name }

@@ -14,3 +14,9 @@ ch_ingest_hostname = "ch.atomai.click"
 # ECR에 실제로 push된 태그. ECR이 IMMUTABLE이라 `latest`는 존재하지 않는다 —
 # 이미지를 먼저 push하고 그 타임스탬프 태그를 여기 넣는다(docs/runbooks/deploy-production.md).
 dashboard_image_tag = "REPLACE-WITH-A-PUSHED-TIMESTAMP-TAG"
+
+# 조직 단위 대시보드 동작(선택) — 기본값은 서버 기본값과 같다. docs/deploying-for-your-org.md §9.
+# group_mode         = "ab"   # "ab" | "single"
+# default_range_days = 2
+# range_cap_days     = 90     # default_range_days 이상
+# pii_mask_enabled   = true   # 워크샵 계정은 false
