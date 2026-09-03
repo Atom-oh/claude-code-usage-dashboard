@@ -95,6 +95,8 @@ Environment variables consumed by `dashboard/server`:
 | `GROUP_MODE` | `ab` compares the bedrock/enterprise pair; `single` tells the SPA this org has one channel and suppresses the empty second card. Any other value fails the boot | `ab` |
 | `DEFAULT_RANGE_DAYS` | Default range when a request omits `from`; also the window the server's cache warmer pre-computes | `2` |
 | `RANGE_CAP_DAYS` | Longest range a request may ask for; a longer span is a 400. Must be `>=` `DEFAULT_RANGE_DAYS` | `90` |
+| `PII_MASK_ENABLED` | Mask user emails in `GET /api/config`'s `piiMask` and the chat sandbox's result rows; on only for `"1"`/`"true"`, case-insensitive | unset (masking off) |
+| `DATA_STALE_MINUTES` | Age threshold for `GET /api/health/data`'s `stale` classification; a non-positive or non-numeric value refuses to boot | `360` |
 | `CHAT_MODEL_ID` | Bedrock model ID for the "Ask Claude" chat assistant | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | AWS region for the Bedrock client | `us-east-1` |
 | `BEDROCK_REGION` | Overrides `AWS_REGION` for the Bedrock call only (e.g. accounts limited to one region) | unset (falls back to `AWS_REGION`) |
@@ -209,8 +211,10 @@ CI checkout the harness suite reports the `.claude/`-dependent assertion groups 
 rather than failed, since `.claude/` is gitignored and absent there.
 
 ## API Documentation
-See [docs/api-reference.md](docs/api-reference.md) for the full endpoint list (~25 read-only
-`GET /api/*` routes plus the `/api/chat` SSE endpoint). See [docs/metrics.md](docs/metrics.md)
+See [docs/api-reference.md](docs/api-reference.md) for the full endpoint list (54 read-only
+`GET /api/*` routes — `grep -c '^route("' dashboard/server/index.js` gives 52, plus
+`GET /api/config` and `GET /api/health/data`, which skip the `route()` wrapper — plus the
+`/api/chat` SSE endpoint). See [docs/metrics.md](docs/metrics.md)
 for KPI definitions — what each tile/chart measures, its source metric, and the function that
 computes it.
 
@@ -317,6 +321,8 @@ SPA 서빙)을 엽니다.
 | `GROUP_MODE` | `ab`는 bedrock/enterprise 쌍을 비교, `single`은 채널이 하나인 조직 — SPA가 빈 두 번째 카드를 그리지 않는다. 그 외 값은 기동 실패 | `ab` |
 | `DEFAULT_RANGE_DAYS` | `from` 없이 온 요청의 기본 구간. 서버 캐시 warmer가 미리 데우는 창도 이 값이다 | `2` |
 | `RANGE_CAP_DAYS` | 요청 가능한 최대 구간 — 넘으면 400. `DEFAULT_RANGE_DAYS` 이상이어야 한다 | `90` |
+| `PII_MASK_ENABLED` | `GET /api/config`의 `piiMask`와 챗 샌드박스 결과 행의 유저 이메일 마스킹; `"1"`/`"true"`(대소문자 무관)일 때만 켜짐 | 미설정(마스킹 꺼짐) |
+| `DATA_STALE_MINUTES` | `GET /api/health/data`의 `stale` 판정 임계(분); 0 이하이거나 숫자가 아니면 기동 거부 | `360` |
 | `CHAT_MODEL_ID` | "Ask Claude" 채팅 어시스턴트용 Bedrock 모델 ID | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | Bedrock 클라이언트용 AWS 리전 | `us-east-1` |
 | `BEDROCK_REGION` | Bedrock 호출에서만 `AWS_REGION`을 덮어씀(예: 특정 리전만 허용하는 계정) | 미설정(`AWS_REGION`을 따름) |
@@ -428,7 +434,9 @@ bash tests/run-all.sh
 스위트는 `.claude/`에 의존하는 단정문 그룹을 실패가 아니라 **skipped**로 보고합니다.
 
 ## API 문서
-전체 엔드포인트 목록(읽기 전용 `GET /api/*` 라우트 약 25개 + `/api/chat` SSE 엔드포인트)은
+전체 엔드포인트 목록(읽기 전용 `GET /api/*` 라우트 54개 — `grep -c '^route("'
+dashboard/server/index.js`가 52개, 여기에 `route()` 래퍼를 건너뛰는 `GET /api/config`와
+`GET /api/health/data`를 더해서 54개 — 더하기 `/api/chat` SSE 엔드포인트)은
 [docs/api-reference.md](docs/api-reference.md)를 참고하세요. 각 타일/차트가 무엇을 측정하는지,
 원천 지표가 무엇인지, 어떤 함수가 계산하는지는 [docs/metrics.md](docs/metrics.md)(KPI 정의)를
 참고하세요.

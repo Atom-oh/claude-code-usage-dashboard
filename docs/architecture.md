@@ -25,7 +25,10 @@ method at runtime rather than a static experiment flag.
 - **Claude Code clients (workshop participants)** -- export OTel metrics/logs natively; no
   custom instrumentation needed on the client side.
 - **OpenTelemetry Collector** (`collector-config.yaml`) -- receives OTLP, writes into
-  ClickHouse via the `clickhouse` exporter.
+  ClickHouse via the `clickhouse` exporter. The exporter's `sending_queue` is backed by a
+  `file_storage` extension on disk (`OTELCOL_QUEUE_DIR`), so a ClickHouse outage longer than
+  the retry window queues to disk instead of dropping batches once `Restart=always` brings the
+  process back.
 
 ### Storage Layer
 - **ClickHouse (`otel_metrics_sum`, `otel_logs`)** -- `ReplicatedMergeTree`, 3 replicas, hot/cold
@@ -62,7 +65,9 @@ method at runtime rather than a static experiment flag.
 - **`dashboard/server`** (Express, Node.js ESM) -- one function per API endpoint in
   `queries.js`; diffs cumulative OTel counters at session boundaries (`incFlat`/`incBucketed`)
   instead of summing raw values; infers bedrock/enterprise group per session
-  (`grouping.js`).
+  (`grouping.js`). Boot-validated env (`GROUP_MODE`, `DEFAULT_RANGE_DAYS`, `RANGE_CAP_DAYS`)
+  is surfaced read-only to the SPA via `GET /api/config`; `groupMode` only changes what the
+  SPA renders, never what a query returns.
 
 ### Presentation Layer
 - **`dashboard/web`** (React 18 + Vite + Tailwind + Recharts) -- 6+ pages sharing one global
@@ -171,6 +176,10 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
   group can't be baked into the deployment.
 - Serve the SPA and API from one Express process/one Docker image -- this is a workshop tool,
   not a product; a separate static-hosting tier would add operational surface for no benefit.
+- `dashboard/docker-compose.yml` brings up ClickHouse (schema + seed data auto-loaded on first
+  init) alongside the dashboard app, so a local full stack needs nothing beyond Docker --
+  init order matters here, since the seed relies on the hourly rollup's materialized view
+  already existing.
 - ClickHouse hot/cold TTL policy instead of manual retention scripts -- disk growth is capped
   automatically (45-90d hot depending on table, dropped at 90-180d).
 - Read-only API by construction, with the one write-adjacent surface (`/api/chat`'s SQL tool)
@@ -209,7 +218,9 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
 - **Claude Code 클라이언트(워크샵 참가자)** -- OTel 메트릭/로그를 네이티브로 export, 클라이언트
   측 커스텀 계측 불필요.
 - **OpenTelemetry Collector**(`collector-config.yaml`) -- OTLP를 수신해 `clickhouse` exporter로
-  적재.
+  적재. exporter의 `sending_queue`는 디스크 기반 `file_storage` extension(`OTELCOL_QUEUE_DIR`)이
+  받쳐, 재시도 창을 넘는 ClickHouse 장애에서도 `Restart=always`로 프로세스가 돌아왔을 때 배치가
+  버려지지 않고 디스크 큐에 쌓인다.
 
 ### Storage Layer
 - **ClickHouse(`otel_metrics_sum`, `otel_logs`)** -- `ReplicatedMergeTree`, 레플리카 3개,
@@ -239,7 +250,9 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
 ### Processing / Query Layer
 - **`dashboard/server`**(Express, Node.js ESM) -- `queries.js`에 엔드포인트당 함수 하나씩;
   원본 값을 합산하는 대신 세션 경계에서 누적 OTel 카운터를 diff(`incFlat`/`incBucketed`);
-  세션 단위 bedrock/enterprise 그룹 추론(`grouping.js`).
+  세션 단위 bedrock/enterprise 그룹 추론(`grouping.js`). 부팅 시 검증되는 env(`GROUP_MODE`,
+  `DEFAULT_RANGE_DAYS`, `RANGE_CAP_DAYS`)는 `GET /api/config`로 SPA에 읽기 전용으로 노출된다;
+  `groupMode`는 SPA의 표시 방식만 바꾸고 쿼리 결과는 바꾸지 않는다.
 
 ### Presentation Layer
 - **`dashboard/web`**(React 18 + Vite + Tailwind + Recharts) -- 전역 날짜범위/필터 컨텍스트를
@@ -347,6 +360,9 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
   수 없습니다.
 - SPA와 API를 하나의 Express 프로세스/이미지로 서빙 -- 제품이 아니라 워크샵 도구라 별도
   정적 호스팅 계층은 이득 없이 운영 표면만 늘립니다.
+- `dashboard/docker-compose.yml`이 ClickHouse(스키마 + 시드 데이터가 첫 기동 시 자동 로드)를
+  대시보드 앱과 함께 띄워, 로컬 풀스택이 Docker 외에 아무것도 필요하지 않습니다 -- 시드가
+  시간별 rollup의 materialized view가 이미 있다고 전제하므로 init 순서가 중요합니다.
 - 수동 보존 스크립트 대신 ClickHouse hot/cold TTL 정책 -- 디스크 증가가 자동으로 캡됨(테이블에
   따라 hot 45~90일, 90~180일에 삭제).
 - 구조적으로 읽기 전용인 API, 쓰기에 가까운 유일한 표면(`/api/chat`의 SQL 도구)은 독립된

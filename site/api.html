@@ -177,11 +177,15 @@
               </tr>
               <tr>
                 <td><code>GET /api/config</code></td>
-                <td><code>{"piiMask": bool}</code> — 프론트가 이메일을 마스킹할지. 이미지는 한 번
-                  빌드해 여러 배포에서 재사용하므로 빌드타임 플래그가 아니라 런타임 값입니다.
-                  프론트는 fail-closed(오류·타임아웃이면 마스킹).</td>
+                <td><code>{"piiMask", "pricing", "schema", "groupMode", "defaultRangeDays", "rangeCapDays"}</code> —
+                  런타임 설정. 이미지는 한 번 빌드해 여러 배포에서 재사용하므로 빌드타임 플래그가
+                  아니라 런타임 값입니다. <code>piiMask</code>는 프론트가 이메일을 마스킹할지
+                  (fail-closed: 오류·타임아웃이면 마스킹), <code>groupMode</code>는
+                  <code>ab</code>(기본)/<code>single</code>(단일 채널 조직) 여부입니다.</td>
               </tr>
-              <tr><td><code>GET /healthz</code></td><td>Basic Auth 면제. ClickHouse ping 결과 포함</td></tr>
+              <tr><td><code>GET /healthz</code></td><td>Basic Auth 면제. Liveness — 항상 200, ClickHouse ping 결과를 body에 포함</td></tr>
+              <tr><td><code>GET /readyz</code></td><td>Basic Auth 면제. Readiness — ClickHouse에 닿고 종료 중이 아니면 200, 아니면 503</td></tr>
+              <tr><td><code>GET /api/health/data</code></td><td>데이터 신선도. 가장 최근 텔레메트리 행을 <code>ok</code>/<code>stale</code>/<code>unknown</code>으로 분류, <code>ok</code>만 200</td></tr>
             </tbody>
           </table>
         </div>
@@ -199,6 +203,7 @@
         <ul>
           <li><code>401</code> — Basic Auth 누락/불일치 (<code>BASIC_AUTH_*</code>가 설정된 경우에만)</li>
           <li><code>500</code> — 대개 ClickHouse 쿼리 오류. 응답은 <code>{"error": "..."}</code>, 원문 스택은 서버 로그에만 남습니다</li>
+          <li><code>503</code> — <code>/readyz</code>가 종료 중이거나 ClickHouse에 닿지 못할 때; <code>/api/health/data</code>가 <code>stale</code>/<code>unknown</code>일 때; <code>POST /api/chat</code>이 인증 미설정이거나 ClickHouse 세션이 readonly로 확인되지 않았을 때</li>
           <li><code>429</code> — <code>POST /api/chat</code>의 IP당 분당 상한(단일 파드 in-memory)</li>
         </ul>
         <p>
