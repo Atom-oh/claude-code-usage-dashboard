@@ -244,6 +244,7 @@ export default function Overview() {
                 subtitle="교란 요인 점검용"
                 columns={MODEL_DIST_COLUMNS}
                 rows={(models.data || []).filter((r) => r.group === g)}
+                exportName={`overview_model_tokens_${g}`}
               />
             ))}
           </div>

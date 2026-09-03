@@ -236,12 +236,13 @@ export default function Users() {
                     { key: "loc", label: "추가 라인", render: fmt },
                     { key: "prs", label: "PR", render: fmt },
                     { key: "commits", label: "커밋", render: fmt },
-                    { key: "accept_rate", label: "수락률", render: pct },
+                    { key: "accept_rate", label: "수락률", render: pct, toText: pct },
                     { key: "active_days", label: "활성일", render: fmt },
                     { key: "top_tool", label: "주요 도구" },
                     { key: "top_skill", label: "주요 스킬" },
                   ]}
                   rows={rows.filter((r) => r.group === g)}
+                  exportName={`users_leaderboard_${g}`}
                 />
               ))}
 
@@ -261,6 +262,7 @@ export default function Users() {
                   { key: "uses", label: "사용 횟수", render: fmt },
                 ]}
                 rows={(tools.data || []).filter((r) => r.group === g)}
+                exportName={`users_tools_${g}`}
               />
             ))}
           </div>
@@ -282,6 +284,7 @@ export default function Users() {
                   { key: "invocations", label: "호출 수", render: fmt },
                 ]}
                 rows={(skills.data || []).filter((r) => r.group === g)}
+                exportName={`users_skills_${g}`}
               />
             ))}
           </div>
