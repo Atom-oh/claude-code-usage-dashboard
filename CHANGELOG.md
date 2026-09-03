@@ -17,6 +17,24 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Added (2026-09-03 mobile nav, CSV export, schema ledger, org onboarding)
+- Add mobile navigation for the SPA below the `lg` (1024px) breakpoint — a top bar plus a
+  slide-over drawer, both driven by the same `NAV` table `Sidebar.jsx`'s desktop nav uses
+  (`src/components/MobileNav.jsx`)
+- Add a client-side "CSV" export button to every dashboard table that opts in, downloading
+  exactly what the table shows (current sort included) and honouring the PII mask on the
+  `user` column (`src/csv.js`, `DataTable.jsx`, wired across Overview/Users/Reliability/
+  Cost/Usage/Productivity)
+- Add the ClickHouse schema-migration ledger — `claude_code.schema_migrations`, introduced
+  by `clickhouse-migration-004.sql` (which also backfills `002`/`003` from column evidence)
+  and mirrored into both schema copies — surfaced at `GET /api/config`'s `schema.migrations`
+- Add `docs/runbooks/schema-migrations.md` (how to check/apply migrations and the header
+  every future migration file must carry) and `docs/runbooks/backup-and-restore.md`
+  (measured RPO/retention, an explicit "RTO not measured" statement, and a quarterly
+  restore-drill checklist)
+- Add `docs/deploying-for-your-org.md`, a walkthrough for standing up this stack for another
+  organization assembled entirely from commands already cited in the existing runbooks/README
+
 ### Changed (2026-09-02 data correctness)
 - Fold `StartTimeUnix` into `SeriesKey` so cumulative-counter diffing is segment-aware
   (`clickhouse-migration-003.sql`, ADR-003), with a runtime feature-detect surfaced via
@@ -138,6 +156,21 @@ This project has not been tagged yet — everything below is unreleased.
 이 프로젝트는 아직 태그된 릴리스가 없습니다 — 아래 항목 전부 미출시(Unreleased)입니다.
 
 ## [Unreleased]
+
+### Added (2026-09-03 모바일 내비게이션, CSV 내보내기, 스키마 원장, 조직 온보딩)
+- `lg`(1024px) 미만에서 SPA 모바일 내비게이션 추가 — 데스크톱 사이드바가 쓰는 것과 같은
+  `NAV` 테이블로 구동되는 상단 바 + 슬라이드오버 드로어(`src/components/MobileNav.jsx`)
+- 모든 대시보드 테이블에 opt-in "CSV" 내보내기 버튼 추가 — 현재 정렬 순서를 포함해 화면에
+  보이는 그대로 다운로드하고, `user` 컬럼은 PII 마스킹 설정을 그대로 따름(`src/csv.js`,
+  `DataTable.jsx`, Overview/Users/Reliability/Cost/Usage/Productivity 전 페이지에 연동)
+- ClickHouse 스키마 마이그레이션 원장 추가 — `clickhouse-migration-004.sql`이 신설하는
+  `claude_code.schema_migrations`(컬럼 증거로 `002`/`003`도 소급 기록), 두 스키마 사본에
+  동일하게 미러링, `GET /api/config`의 `schema.migrations`로 노출
+- `docs/runbooks/schema-migrations.md`(마이그레이션 확인·적용 절차와 향후 파일이 가져야
+  할 헤더 규칙) 및 `docs/runbooks/backup-and-restore.md`(실측된 RPO/보존 기간, "RTO
+  미측정"을 명시, 분기별 복구 드릴 체크리스트) 추가
+- `docs/deploying-for-your-org.md` 추가 — 기존 런북/README에 이미 있는 명령만으로 구성한,
+  다른 조직에 이 스택을 세우는 절차 안내서
 
 ### Changed (2026-09-02 데이터 정확성)
 - 누적 카운터 diff가 프로세스 세그먼트 단위로 동작하도록 `SeriesKey`에 `StartTimeUnix`를

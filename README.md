@@ -202,7 +202,11 @@ claude-code-usage-dashboard/
 cd dashboard/server
 npm test   # same as: node --test *.test.js
 
-# Web build check (no dedicated test suite yet)
+# Web unit tests (vitest, jsdom)
+cd dashboard/web
+npm test   # same as: vitest run
+
+# Web build check
 cd dashboard/web
 npm run build
 
@@ -429,7 +433,11 @@ claude-code-usage-dashboard/
 cd dashboard/server
 npm test   # node --test *.test.js와 동일
 
-# 웹 빌드 확인 (아직 전용 테스트 스위트 없음)
+# 웹 유닛 테스트 (vitest, jsdom)
+cd dashboard/web
+npm test   # vitest run과 동일
+
+# 웹 빌드 확인
 cd dashboard/web
 npm run build
 
