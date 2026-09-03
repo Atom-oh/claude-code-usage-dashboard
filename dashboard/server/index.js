@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import basicAuth from "express-basic-auth";
-import { ValidationError, parseRange, parseIntervalHours } from "./http.js";
+import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt } from "./http.js";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
@@ -45,6 +45,24 @@ if (!authEnabled && !authAllowInsecure) {
 if (!authEnabled) {
   console.warn("WARNING: AUTH_ALLOW_INSECURE=1 — every /api/* route is served WITHOUT authentication.");
 }
+
+// 조직별 설정 — 잘못된 값은 조용히 기본값으로 접지 않고 기동을 거부한다(위 BASIC_AUTH_* 와
+// 같은 규약). DEFAULT_RANGE_DAYS 하나가 서버 warmer가 데우는 창과 parseRange의 기본 구간을
+// 동시에 정한다 — 예전에는 그 둘과 RangeContext.jsx의 기본 days가 각자 하드코딩된 2였다.
+let GROUP_MODE, DEFAULT_RANGE_DAYS, RANGE_CAP_DAYS;
+try {
+  GROUP_MODE = parseGroupMode(process.env.GROUP_MODE);
+  DEFAULT_RANGE_DAYS = parsePositiveInt(process.env.DEFAULT_RANGE_DAYS, 2);
+  RANGE_CAP_DAYS = parsePositiveInt(process.env.RANGE_CAP_DAYS, 90);
+  if (RANGE_CAP_DAYS < DEFAULT_RANGE_DAYS) {
+    throw new Error(`RANGE_CAP_DAYS (${RANGE_CAP_DAYS}) must be >= DEFAULT_RANGE_DAYS (${DEFAULT_RANGE_DAYS})`);
+  }
+} catch (err) {
+  console.error(`FATAL: ${err.message}`);
+  process.exit(1);
+}
+const RANGE_OPTS = { defaultDays: DEFAULT_RANGE_DAYS, capDays: RANGE_CAP_DAYS };
+
 if (authEnabled) {
   app.use(
     "/",
@@ -207,7 +225,7 @@ function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
   const key = cacheKey(path, query);
   let entry = cache.get(key);
   if (!entry || entry.expires < Date.now()) {
-    const { from, to } = parseRange(query);
+    const { from, to } = parseRange(query, RANGE_OPTS);
     entry = { expires: Date.now() + ttlMs, promise: Promise.resolve(handler(from, to, query, parseFilters(query))) };
     // 상한 초과 시 가장 오래 전에 삽입된 엔트리부터 제거(Map은 삽입 순서 보존 — 첫 키가 가장 오래됨).
     if (cache.size >= CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value);
@@ -229,7 +247,7 @@ function route(path, handler, { warm = true } = {}) {
       // 검증은 fetchCached보다 먼저 — 잘못된 요청이 캐시 엔트리를 만들면 안 된다. 무효한
       // from/to도 예전에는 고유한 캐시 키를 하나씩 차지했다(엔트리 상한을 무의미한 키로
       // 밀어내는 형태).
-      parseRange(req.query);
+      parseRange(req.query, RANGE_OPTS);
       parseIntervalHours(req.query.intervalHours);
       res.json(await fetchCached(path, handler, req.query));
     } catch (err) {
@@ -251,7 +269,9 @@ function route(path, handler, { warm = true } = {}) {
 // 기본 뷰(2일·필터 없음·시간 버킷)를 QUANT_MS(현재 120초) 경계마다 서버가 스스로 조회해
 // 캐시를 채운다 — 첫 방문자든 새 세션이든 캐시 히트로 즉각 응답한다. 클라이언트(useApi)가
 // to를 같은 QUANT_MS 경계로 내림(quantize)하므로 warmer가 만든 키와 문자 그대로 일치한다.
-// 워크샵 기본값이 바뀌면 WARM_DAYS와 RangeContext.jsx의 기본 days를 같이 바꿔야 한다.
+// 기본 창은 DEFAULT_RANGE_DAYS 하나가 정한다 — 서버 warmer와 parseRange의 기본 구간, 그리고
+// /api/config를 통해 클라이언트 기본값까지 같은 값에서 나온다(따라다녀야 하는 상수가 더 이상
+// 없다).
 // 한꺼번에 다 쏘면 ClickHouse 동시성 스파이크가 생기므로(실측 2026-07-10: 두 파드가 부팅 시
 // 동시에 9개씩 워밍하자 가장 무거운 leaderboard가 15초 클라이언트 타임아웃) 배치로 나눠
 // 분산한다. 실측(2026-07-10, otel_metrics_sum ~9.5M행): 배치 크기 5에서 쿼리 1건이 단독
@@ -260,7 +280,6 @@ function route(path, handler, { warm = true } = {}) {
 // — QUANT_MS(120초) 창 안에 끝나야 하고, 클라이언트 WARM_GRACE_MS(useApi.js)가 이보다 커야
 // 항상 warm-완료 상태를 히트한다. 캐시가 파드 로컬 메모리라 파드마다 각자 데워야 한다(공유
 // 불가, 의도된 구조).
-const WARM_DAYS = 2;
 const WARM_BATCH = 3;
 const WARM_BATCH_GAP_MS = 2_000;
 
@@ -274,7 +293,7 @@ async function warmCache() {
   // 클라이언트가 요청하는 창과 영원히 어긋났다 — grace는 한쪽에서만 적용해야 한다.)
   const toMs = Math.floor(Date.now() / QUANT_MS) * QUANT_MS;
   const query = {
-    from: new Date(toMs - WARM_DAYS * 86400000).toISOString(),
+    from: new Date(toMs - DEFAULT_RANGE_DAYS * 86400000).toISOString(),
     to: new Date(toMs).toISOString(),
     intervalHours: "1", // days<=2일 때 프론트가 보내는 값과 동일(문자열 — URLSearchParams 정합)
   };
@@ -402,6 +421,9 @@ app.get("/api/config", (_req, res) =>
     piiMask: piiMaskEnabled,
     pricing: pricingConfig,
     schema: { segmentAwareSeriesKey },
+    groupMode: GROUP_MODE,
+    defaultRangeDays: DEFAULT_RANGE_DAYS,
+    rangeCapDays: RANGE_CAP_DAYS,
   })
 );
 

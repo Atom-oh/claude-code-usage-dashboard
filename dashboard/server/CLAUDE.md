@@ -50,7 +50,8 @@ session is `readonly`.
   cache warmer (pre-computes the default 2-day/no-filter view every `QUANT_MS` boundary; the web
   client quantizes `to` to the same boundary in `useApi.js` so keys match across sessions),
   global Basic Auth middleware, static file serving
-- `http.js` -- `ValidationError`, `parseRange`, `parseIntervalHours` (pure, unit-tested)
+- `http.js` -- `ValidationError`, `parseRange` (now takes `{defaultDays, capDays}`),
+  `parseIntervalHours`, `parseGroupMode`, `parsePositiveInt` (pure, unit-tested)
 - `app.test.js` -- drives the real Express app over an ephemeral socket (`app.listen(0)`) to pin
   the `route()` envelope itself: 400 mapping with a non-echoing `detail`, a 500 body of exactly
   `{error, id}` with no SQL or driver text, and `Cache-Control: no-store` on every `/api/*`
@@ -97,6 +98,12 @@ session is `readonly`.
   it. Everything else at module scope -- the fail-closed auth check, the schema and readonly
   probes, route registration -- still runs at import time and the test depends on that: keep any
   new boot side effect import-safe, or move it inside the `isMain` guard.
+- **`GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS` are validated at boot and a bad value
+  exits 1**, same policy as `BASIC_AUTH_*` and `DATA_STALE_MINUTES`. `DEFAULT_RANGE_DAYS` is the
+  single source for the cache warmer's window, `parseRange`'s default span and (via
+  `/api/config`) the SPA's default preset -- the three hard-coded `2`s those used to be are gone.
+  `RANGE_CAP_DAYS` is enforced in `parseRange`, so it covers the `route()` pre-validation and
+  `fetchCached` together.
 - **Never `sum(Value)` directly on `otel_metrics_sum`.** Values are cumulative per-session
   counters; use `incFlat()` (snapshot) or `incBucketed()` (timeseries) to get the actual
   increase over the requested range. See the long comment block above `incFlat` in

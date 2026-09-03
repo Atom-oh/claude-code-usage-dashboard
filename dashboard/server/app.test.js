@@ -72,7 +72,18 @@ test("GET /api/config는 200이고 no-store를 단다", async () => {
   const r = await fetch(`${base}/api/config`);
   assert.equal(r.status, 200);
   assert.equal(r.headers.get("cache-control"), "no-store");
-  assert.equal(typeof (await r.json()).piiMask, "boolean");
+  const body = await r.json();
+  assert.equal(typeof body.piiMask, "boolean");
+  assert.equal(body.groupMode, "ab");
+  // "2"라는 문자열도 truthy 체크는 통과한다 — typeof를 명시적으로 확인해야 그 버그를 잡는다.
+  assert.equal(typeof body.defaultRangeDays, "number");
+  assert.equal(typeof body.rangeCapDays, "number");
+});
+
+test("5개월짜리 range는 400 range too long", async () => {
+  const r = await fetch(`${base}/api/overview/kpi?from=2026-01-01T00:00:00Z&to=2026-06-01T00:00:00Z`);
+  assert.equal(r.status, 400);
+  assert.equal((await r.json()).error, "range too long");
 });
 
 test("healthz는 200, ClickHouse가 죽어 있으면 readyz는 503", async () => {

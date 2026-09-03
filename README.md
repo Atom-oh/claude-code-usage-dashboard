@@ -88,6 +88,9 @@ Environment variables consumed by `dashboard/server`:
 | `BASIC_AUTH_PASSWORD` | Basic Auth password | required unless `AUTH_ALLOW_INSECURE=1` |
 | `AUTH_ALLOW_INSECURE` | Run without Basic Auth; the server otherwise exits 1 at boot — local dev / cluster-internal probes only | unset (auth required) |
 | `CHAT_ALLOW_INSECURE` | Allow `POST /api/chat` without auth; independent of `AUTH_ALLOW_INSECURE` | unset (chat requires auth) |
+| `GROUP_MODE` | `ab` compares the bedrock/enterprise pair; `single` tells the SPA this org has one channel and suppresses the empty second card. Any other value fails the boot | `ab` |
+| `DEFAULT_RANGE_DAYS` | Default range when a request omits `from`; also the window the server's cache warmer pre-computes | `2` |
+| `RANGE_CAP_DAYS` | Longest range a request may ask for; a longer span is a 400. Must be `>=` `DEFAULT_RANGE_DAYS` | `90` |
 | `CHAT_MODEL_ID` | Bedrock model ID for the "Ask Claude" chat assistant | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | AWS region for the Bedrock client | `us-east-1` |
 | `BEDROCK_REGION` | Overrides `AWS_REGION` for the Bedrock call only (e.g. accounts limited to one region) | unset (falls back to `AWS_REGION`) |
@@ -297,6 +300,9 @@ SPA 서빙)을 엽니다.
 | `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
 | `AUTH_ALLOW_INSECURE` | Basic Auth 없이 실행; 미설정 시 서버가 기동 시 exit 1 — 로컬 dev / 클러스터 내부 프로브 전용 | 미설정(인증 필수) |
 | `CHAT_ALLOW_INSECURE` | `POST /api/chat`을 인증 없이 허용; `AUTH_ALLOW_INSECURE`와 독립 | 미설정(챗도 인증 필요) |
+| `GROUP_MODE` | `ab`는 bedrock/enterprise 쌍을 비교, `single`은 채널이 하나인 조직 — SPA가 빈 두 번째 카드를 그리지 않는다. 그 외 값은 기동 실패 | `ab` |
+| `DEFAULT_RANGE_DAYS` | `from` 없이 온 요청의 기본 구간. 서버 캐시 warmer가 미리 데우는 창도 이 값이다 | `2` |
+| `RANGE_CAP_DAYS` | 요청 가능한 최대 구간 — 넘으면 400. `DEFAULT_RANGE_DAYS` 이상이어야 한다 | `90` |
 | `CHAT_MODEL_ID` | "Ask Claude" 채팅 어시스턴트용 Bedrock 모델 ID | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | Bedrock 클라이언트용 AWS 리전 | `us-east-1` |
 | `BEDROCK_REGION` | Bedrock 호출에서만 `AWS_REGION`을 덮어씀(예: 특정 리전만 허용하는 계정) | 미설정(`AWS_REGION`을 따름) |
