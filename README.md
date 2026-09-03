@@ -54,6 +54,8 @@ cd claude-code-usage-dashboard
 # Install dependencies for both server and web
 bash scripts/setup.sh
 ```
+Deploying this stack for another organization (its own EKS cluster, ClickHouse, and secrets)
+is walked through in [docs/deploying-for-your-org.md](docs/deploying-for-your-org.md).
 
 ## Usage
 ```bash
@@ -282,6 +284,8 @@ cd claude-code-usage-dashboard
 # server, web 양쪽 의존성 설치
 bash scripts/setup.sh
 ```
+다른 조직(자체 EKS 클러스터, ClickHouse, 시크릿)에 이 스택을 배포하는 절차는
+[docs/deploying-for-your-org.md](docs/deploying-for-your-org.md)에 정리되어 있습니다.
 
 ## 사용법
 ```bash

@@ -69,3 +69,4 @@ comments in that file before writing any new aggregation query.
 ## Resources
 - Repository: https://github.com/Atom-oh/claude-code-usage-dashboard
 - Workshop notes: [`docs/workshop-studio-notes.md`](workshop-studio-notes.md)
+- Deploying for another organization: [`docs/deploying-for-your-org.md`](deploying-for-your-org.md)

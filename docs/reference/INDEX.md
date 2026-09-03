@@ -20,3 +20,7 @@ Regenerate this table with `/sync-docs` or `/add-reference-doc <layer>` after ad
 
 See also [docs/metrics.md](../metrics.md) -- per-KPI definitions, source metric/event, and the
 function that computes each one.
+
+See also [docs/deploying-for-your-org.md](../deploying-for-your-org.md) -- a walkthrough for
+standing up this dashboard for a new organization/cluster, assembled from commands already
+cited in the runbooks and README.
