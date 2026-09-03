@@ -5,8 +5,9 @@ import { StatTile } from "../components/StatTile.jsx";
 import { DualLineChart } from "../components/GroupCharts.jsx";
 import { useApi } from "../useApi.js";
 import { useFilters } from "../FilterContext.jsx";
+import { parseUtc } from "../fmt.js";
 
-const fmtDate = (t) => new Date(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+const fmtDate = (t) => parseUtc(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 
 export default function Trends() {
   const ts = useApi("/api/adoption/timeseries");

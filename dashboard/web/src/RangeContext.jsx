@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useState } from "react";
+import { useConfig } from "./ConfigContext.jsx";
 
 const RangeContext = createContext(null);
 
@@ -22,9 +23,11 @@ function resolutionForSpan(spanMs) {
 }
 
 export function RangeProvider({ children }) {
-  // 워크샵 기간 기본 2일 — 서버 warmer(index.js)가 이 기본 뷰(2일·필터 없음)를 QUANT_MS
-  // 경계마다 미리 캐싱하므로, 기본값을 바꾸면 warmer의 WARM_DAYS도 같이 바꿔야 한다.
-  const [days, setDays] = useState(2);
+  // 기본 창은 서버가 정한다(GET /api/config의 defaultRangeDays) — 서버 warmer가 데우는 창과
+  // 같은 값이어서 첫 진입이 캐시 히트다. 예전에는 여기 하드코딩된 2와 서버 index.js의
+  // WARM_DAYS가 서로 따라다녀야 했다.
+  const { defaultRangeDays } = useConfig();
+  const [days, setDays] = useState(defaultRangeDays);
   // 차트 드래그로 고른 임의 구간. null이면 프리셋(days) 모드. 프리셋을 다시 고르면 클리어된다.
   const [custom, setCustom] = useState(null);
   // ponytail: recompute only when inputs change, not every render — avoids refetch loops.
