@@ -3,6 +3,7 @@ import { RangeProvider } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
 import { FreshnessProvider } from "./FreshnessContext.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
+import { MobileNav } from "./components/MobileNav.jsx";
 import { FilterBar } from "./components/FilterBar.jsx";
 import { FloatingChat } from "./components/FloatingChat.jsx";
 import FreshnessBanner from "./components/FreshnessBanner.jsx";
@@ -21,7 +22,8 @@ export default function App() {
     <RangeProvider>
       <FilterProvider>
         <FreshnessProvider>
-          <div className="flex h-screen">
+          <div className="flex h-screen flex-col lg:flex-row">
+            <MobileNav />
             <Sidebar />
             <main className="flex-1 overflow-y-auto animate-fade-in">
               <FreshnessBanner className="mx-8 mt-3" />

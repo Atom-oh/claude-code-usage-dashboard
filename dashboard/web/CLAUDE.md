@@ -57,6 +57,11 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
 - `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +
   model-family palette (`modelColorFor` — fixed per-family hues, single source `MODEL_COLOR`),
   CSS-variable-based chart colors
+- `src/components/MobileNav.jsx` -- the `lg:hidden` top bar + slide-over drawer that renders
+  below the `lg` (1024px) breakpoint, where `Sidebar`'s `hidden lg:flex` leaves the SPA with
+  no navigation at all. Reuses `Sidebar.jsx`'s exported `NAV`/`NavItem` rather than
+  duplicating the active-state classes. Closes on backdrop click, the `X` button, `Escape`,
+  or any route change
 
 ## Rules
 - Any page-local granularity/interval control must re-sync from `RangeContext`'s
@@ -113,3 +118,13 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   `/api/cost/by-user-model` with `includeUnknown=1` for that table alone, while the spend
   ranking above it keeps the default (unknown-excluded) view because it is an A/B-join
   consumer (see the policy comment on that route in `server/index.js`).
+- **There is exactly one `<nav>` in the DOM unless the mobile drawer is open.**
+  `App.test.jsx`'s `container.querySelector("nav")` picks the **first** `<nav>` to assert the
+  route↔nav-link set, and `MobileNav` renders before `Sidebar` — so `MobileNav` renders its own
+  `<nav>` only inside its `open` branch. Rendering it while closed does **not** fail the suite
+  (실측 2026-09-03: deleting the `open &&` guard leaves `App.test.jsx` green, because
+  `MobileNav` reuses the same `NAV` and the two link lists are identical); it silently
+  re-points that assertion at the drawer and the sidebar stops being covered at all. That is
+  the failure mode to protect against — a lost assertion, not a red test. The same test pins
+  `main.children.length === 2` on every route, which is why `MobileNav`'s top bar is a sibling
+  of `<main>`, never a child.
