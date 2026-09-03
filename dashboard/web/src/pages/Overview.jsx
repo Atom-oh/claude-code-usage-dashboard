@@ -77,12 +77,13 @@ export default function Overview() {
             value={fmt(activeUsers.data?.users)}
             variant="accent"
             hint={model ? "⚠ model 필터 미적용" : undefined}
+            help="선택 기간에 세션이 1건 이상 있었던 고유 유저 수(그룹 무관)"
           />
-          <StatTile label="세션" value={fmt(totals.sessions)} />
-          <StatTile label="추가 라인" value={fmt(totals.loc)} />
-          <StatTile label="전체 토큰" value={fmt(totals.tokens)} />
-          <StatTile label="입력 토큰" value={fmt(totals.inputTokens)} />
-          <StatTile label="출력 토큰" value={fmt(totals.outputTokens)} />
+          <StatTile label="세션" value={fmt(totals.sessions)} help="선택 기간의 세션 수 합계" />
+          <StatTile label="추가 라인" value={fmt(totals.loc)} help="선택 기간에 추가된 코드 라인 수 합계" />
+          <StatTile label="전체 토큰" value={fmt(totals.tokens)} help="선택 기간의 토큰 사용량 합계(입력+출력+캐시)" />
+          <StatTile label="입력 토큰" value={fmt(totals.inputTokens)} help="선택 기간의 입력 방향 토큰 사용량 합계" />
+          <StatTile label="출력 토큰" value={fmt(totals.outputTokens)} help="선택 기간의 출력 방향 토큰 사용량 합계" />
         </div>
         )}
 
@@ -100,14 +101,32 @@ export default function Overview() {
             }
           >
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <StatTile label="전체 멤버" value={fmt(adoption.data.total_members)} />
-              <StatTile label="월간 활성 (MAU)" value={fmt(adoption.data.mau)} />
-              <StatTile label="주간 활성 (WAU)" value={fmt(adoption.data.wau)} />
-              <StatTile label="일간 활성 (DAU)" value={fmt(adoption.data.dau)} variant="accent" />
+              <StatTile
+                label="전체 멤버"
+                value={fmt(adoption.data.total_members)}
+                help="조직 전체 이력에서 한 번이라도 세션을 실행한 고유 유저 수"
+              />
+              <StatTile
+                label="월간 활성 (MAU)"
+                value={fmt(adoption.data.mau)}
+                help="조회 종료 시점 기준 최근 30일 내 세션이 있었던 고유 유저 수"
+              />
+              <StatTile
+                label="주간 활성 (WAU)"
+                value={fmt(adoption.data.wau)}
+                help="조회 종료 시점 기준 최근 7일 내 세션이 있었던 고유 유저 수"
+              />
+              <StatTile
+                label="일간 활성 (DAU)"
+                value={fmt(adoption.data.dau)}
+                variant="accent"
+                help="조회 종료 시점에 세션이 있었던 고유 유저 수"
+              />
               <StatTile
                 label="DAU/MAU 고착도"
                 value={adoption.data.mau > 0 ? `${((adoption.data.dau / adoption.data.mau) * 100).toFixed(0)}%` : "—"}
                 hint="일간 활성 ÷ 월간 활성"
+                help="DAU를 MAU로 나눈 값 — 월간 사용자 중 매일 돌아오는 비율"
               />
             </div>
           </Card>

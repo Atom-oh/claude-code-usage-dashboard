@@ -189,6 +189,18 @@ export default function Executive() {
     return fmtValue(row[g] ?? row.bedrock ?? row.enterprise, row.format);
   };
 
+  // single 모드 StatTile의 help 문구 — scoreboardRows(ABScoreboard와 공유)에 필드를 얹는 대신
+  // label로 조회하는 별도 맵으로 둔다. docs/metrics.md의 정의 문장과 동일한 어휘를 쓴다.
+  const SCOREBOARD_HELP = {
+    "활성 개발자": "선택 기간에 세션이 1건 이상 있었던 고유 유저 수(그룹 판별된 세션 기준)",
+    "기간 지출": "실측 토큰 수 × 모델별 단가표로 계산한 기간 지출 총합(하한선)",
+    "개발자당 지출": "그룹별 계산 비용 ÷ 그 그룹의 고유 유저 수",
+    "작성 라인": "선택 기간에 추가된 코드 라인 수 합계",
+    "제안 수락률": "코드 편집 제안 중 수락으로 판정된 비율",
+    "개발자 활성 시간": "사람이 실제로 상호작용한 시간(사용자 상호작용, CLI 구동 시간과는 다름)",
+    "자동화 배율": "CLI 구동 시간 ÷ 개발자 활성 시간",
+  };
+
   const headline =
     `지난 ${formatDuration(daysInRange)}간 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
     `${fmt(t.loc)} 라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)을 작성했으며 제안 수락률은 ${(acceptRate * 100).toFixed(0)}%입니다. ` +
@@ -229,7 +241,7 @@ export default function Executive() {
               <Card title="핵심 지표" subtitle="그룹 판별된 세션 기준 — unknown 그룹 제외">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {scoreboardRows.map((row) => (
-                    <StatTile key={row.label} label={row.label} value={singleValue(row)} />
+                    <StatTile key={row.label} label={row.label} value={singleValue(row)} help={SCOREBOARD_HELP[row.label]} />
                   ))}
                 </div>
               </Card>
@@ -258,13 +270,30 @@ export default function Executive() {
                 <EmptyState className="mt-2" />
               ) : (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-                  <StatTile label="활성 개발자" value={fmt(users)} variant="accent" hint="기간 내 세션 1건 이상" />
-                  <StatTile label="평균 DAU" value={avgDau.toFixed(1)} hint={`피크 ${peakDau}`} />
-                  <StatTile label="MAU" value={fmt(adoption.data?.mau)} hint={`전체 멤버 ${fmt(adoption.data?.total_members)}`} />
+                  <StatTile
+                    label="활성 개발자"
+                    value={fmt(users)}
+                    variant="accent"
+                    hint="기간 내 세션 1건 이상"
+                    help="선택 기간에 세션이 1건 이상 있었던 고유 유저 수(그룹 무관)"
+                  />
+                  <StatTile
+                    label="평균 DAU"
+                    value={avgDau.toFixed(1)}
+                    hint={`피크 ${peakDau}`}
+                    help="선택 기간 동안 일간 활성 유저 수의 평균"
+                  />
+                  <StatTile
+                    label="MAU"
+                    value={fmt(adoption.data?.mau)}
+                    hint={`전체 멤버 ${fmt(adoption.data?.total_members)}`}
+                    help="조회 종료 시점 기준 최근 30일 내 세션이 있었던 고유 유저 수"
+                  />
                   <StatTile
                     label="월간 도입률"
                     value={adoption.data?.total_members > 0 ? `${((adoption.data.mau / adoption.data.total_members) * 100).toFixed(0)}%` : "—"}
                     hint="MAU ÷ 전체 멤버"
+                    help="MAU를 조직 전체 멤버 수로 나눈 비율"
                   />
                 </div>
               )}
@@ -276,9 +305,22 @@ export default function Executive() {
                 <EmptyState className="mt-2" />
               ) : (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-                  <StatTile label="작성 라인" value={fmt(t.loc)} hint={`커밋 ${fmt(t.commits)} · PR ${fmt(t.prs)}`} />
-                  <StatTile label="제안 수락률" value={`${(acceptRate * 100).toFixed(0)}%`} />
-                  <StatTile label="세션/개발자/일" value={sessionsPerDevDay.toFixed(1)} />
+                  <StatTile
+                    label="작성 라인"
+                    value={fmt(t.loc)}
+                    hint={`커밋 ${fmt(t.commits)} · PR ${fmt(t.prs)}`}
+                    help="선택 기간에 추가된 코드 라인 수 합계"
+                  />
+                  <StatTile
+                    label="제안 수락률"
+                    value={`${(acceptRate * 100).toFixed(0)}%`}
+                    help="코드 편집 제안 중 수락으로 판정된 비율"
+                  />
+                  <StatTile
+                    label="세션/개발자/일"
+                    value={sessionsPerDevDay.toFixed(1)}
+                    help="총 세션 수 ÷ 활성 개발자 수 ÷ 기간(일)"
+                  />
                   <div className="relative overflow-hidden bg-card border border-ink-100 rounded-lg shadow-card p-4 flex items-center gap-4">
                     <ScoreGauge score={orgScore} />
                     <div>
@@ -302,10 +344,25 @@ export default function Executive() {
                       value={usd(cost)}
                       variant="accent"
                       hint={unpricedTokens > 0 ? `${usd(costPerDev)}/개발자 · 미산정 ${fmt(unpricedTokens)} 토큰` : `${usd(costPerDev)}/개발자`}
+                      help="실측 토큰 수 × 모델별 단가표로 계산한 기간 지출 총합(하한선)"
                     />
-                    <StatTile label="30일 프로젝션" value={usd(projection30d)} hint={`일평균 ${usd(dailyAvg)} × 30`} />
-                    <StatTile label="Cost / 1K LOC" value={usd(costPerKloc)} hint="지출 ÷ (라인 ÷ 1000)" />
-                    <StatTile label="일평균 지출" value={usd(dailyAvg)} />
+                    <StatTile
+                      label="30일 프로젝션"
+                      value={usd(projection30d)}
+                      hint={`일평균 ${usd(dailyAvg)} × 30`}
+                      help="현재 기간의 일평균 지출을 30일로 단순 외삽한 값"
+                    />
+                    <StatTile
+                      label="Cost / 1K LOC"
+                      value={usd(costPerKloc)}
+                      hint="지출 ÷ (라인 ÷ 1000)"
+                      help="기간 지출(계산)을 작성 라인 1000줄 단위로 나눈 값"
+                    />
+                    <StatTile
+                      label="일평균 지출"
+                      value={usd(dailyAvg)}
+                      help="기간 지출(계산)을 기간(일)으로 나눈 값"
+                    />
                   </div>
                   <div className="mt-3">
                     <LowerBoundNote />

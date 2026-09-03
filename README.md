@@ -202,7 +202,9 @@ rather than failed, since `.claude/` is gitignored and absent there.
 
 ## API Documentation
 See [docs/api-reference.md](docs/api-reference.md) for the full endpoint list (~25 read-only
-`GET /api/*` routes plus the `/api/chat` SSE endpoint).
+`GET /api/*` routes plus the `/api/chat` SSE endpoint). See [docs/metrics.md](docs/metrics.md)
+for KPI definitions — what each tile/chart measures, its source metric, and the function that
+computes it.
 
 ## Contributing
 ```
@@ -412,7 +414,9 @@ bash tests/run-all.sh
 
 ## API 문서
 전체 엔드포인트 목록(읽기 전용 `GET /api/*` 라우트 약 25개 + `/api/chat` SSE 엔드포인트)은
-[docs/api-reference.md](docs/api-reference.md)를 참고하세요.
+[docs/api-reference.md](docs/api-reference.md)를 참고하세요. 각 타일/차트가 무엇을 측정하는지,
+원천 지표가 무엇인지, 어떤 함수가 계산하는지는 [docs/metrics.md](docs/metrics.md)(KPI 정의)를
+참고하세요.
 
 ## 기여 방법
 ```
