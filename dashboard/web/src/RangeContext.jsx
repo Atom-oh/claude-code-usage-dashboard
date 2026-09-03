@@ -1,5 +1,7 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useConfig } from "./ConfigContext.jsx";
+import { parseUrlState, serializeUrlState } from "./urlState.js";
 
 const RangeContext = createContext(null);
 
@@ -26,10 +28,14 @@ export function RangeProvider({ children }) {
   // 기본 창은 서버가 정한다(GET /api/config의 defaultRangeDays) — 서버 warmer가 데우는 창과
   // 같은 값이어서 첫 진입이 캐시 히트다. 예전에는 여기 하드코딩된 2와 서버 index.js의
   // WARM_DAYS가 서로 따라다녀야 했다.
-  const { defaultRangeDays } = useConfig();
-  const [days, setDays] = useState(defaultRangeDays);
+  const { defaultRangeDays, piiMask } = useConfig();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // 마운트 시 한 번만 URL을 읽는다 — 이후에는 이쪽이 URL의 소유자다. useState 초기화 함수로
+  // 읽어야 리렌더마다 다시 파싱해 사용자가 고른 값을 URL의 옛 값으로 되돌리는 일이 없다.
+  const initial = useState(() => parseUrlState(searchParams, { defaultDays: defaultRangeDays, piiMask }))[0];
+  const [days, setDays] = useState(initial.range.days);
   // 차트 드래그로 고른 임의 구간. null이면 프리셋(days) 모드. 프리셋을 다시 고르면 클리어된다.
-  const [custom, setCustom] = useState(null);
+  const [custom, setCustom] = useState(initial.range.custom);
   // ponytail: recompute only when inputs change, not every render — avoids refetch loops.
   const value = useMemo(() => {
     const setRange = (from, to) => setCustom({ from, to });
@@ -45,6 +51,22 @@ export function RangeProvider({ children }) {
     const intervalHours = days <= 2 ? 1 : 24;
     return { from, to, days, setDays: selectDays, intervalHours, custom: null, setRange };
   }, [days, custom]);
+  // range 상태를 URL에 미러링한다 — 공유한 링크가 보낸 사람이 보던 구간으로 열린다.
+  // replace: true — 프리셋을 몇 번 눌렀는지가 브라우저 뒤로가기 스택을 채우면 안 된다.
+  // 필터 파라미터는 FilterContext가 소유하므로 여기서 건드리지 않고 그대로 보존한다.
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = serializeUrlState({ range: { days, custom }, filters: {}, piiMask });
+        for (const k of ["group", "user", "model"]) {
+          const v = prev.get(k);
+          if (v) next.set(k, v);
+        }
+        return next;
+      },
+      { replace: true }
+    );
+  }, [days, custom, piiMask, setSearchParams]);
   return <RangeContext.Provider value={value}>{children}</RangeContext.Provider>;
 }
 

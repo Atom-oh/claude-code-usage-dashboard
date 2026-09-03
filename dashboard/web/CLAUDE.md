@@ -47,6 +47,11 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   since the component renders nothing), and reuses `LowerBoundNote`'s warning-callout classes
 - `src/pivot.js` -- reshapes flat `[{t, group, value}]` rows into one-row-per-x-tick for
   Recharts (`pivotByGroup`, `pivotByKey`)
+- `src/urlState.js` -- pure URL-search-param <-> `{range, filters}` mapping
+  (`parseUrlState`/`serializeUrlState`), unit-tested in `urlState.test.js`. `RangeContext` owns
+  the `days`/`from`/`to` params and `FilterContext` owns `group`/`user`/`model`; each preserves
+  the other's keys when it writes, and both write with `replace: true` so the history stack is
+  not filled by preset clicks
 - `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +
   model-family palette (`modelColorFor` — fixed per-family hues, single source `MODEL_COLOR`),
   CSS-variable-based chart colors
@@ -56,6 +61,13 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   `intervalHours` via `useEffect`, not just a `useState` initializer — otherwise switching the
   global range preset (e.g. 7일 -> 1일) leaves the page's chart stuck on the old bucket size
   (a real bug, fixed once already on the Cost page).
+- **The `user` filter never enters the URL while `piiMask` is on.** Its value is the raw text the
+  operator typed and the server matches it against `UserEmail`, so it is an address --
+  `serializeUrlState` omits the key and `parseUrlState` refuses to read it back, which also stops
+  a hand-crafted link from populating the filter. Masking off (a workshop account, where emails
+  are synthetic `{accountid}@ws` addresses) is the only case where it is written.
+- URL state is hydrated **once, in a `useState` initializer**, not in an effect. Re-parsing on
+  every render would let the URL's stale value overwrite a selection the user just made.
 - Dragging on any time-series chart (`GroupAreaChart`/`DualLineChart`/`SeriesBarChart` in
   `GroupCharts.jsx`) zooms the **whole page**, not just that chart — it calls
   `RangeContext.setRange()` which sets a custom from/to and auto-picks a finer `intervalHours`
