@@ -6,9 +6,10 @@ import { RangePicker } from "../components/RangePicker.jsx";
 import { UserDrawer } from "../components/UserDrawer.jsx";
 import { HBarList } from "../components/GroupCharts.jsx";
 import { StatTile } from "../components/StatTile.jsx";
-import { GROUP_ORDER, colorFor, FAMILY_LEGEND_ORDER, familyColorFor, modelFamily } from "../colors.js";
-import { topPerUser } from "../pivot.js";
+import { colorFor, FAMILY_LEGEND_ORDER, familyColorFor, modelFamily } from "../colors.js";
+import { topPerUser, groupsShown, groupLabel } from "../pivot.js";
 import { useApi } from "../useApi.js";
+import { useConfig } from "../ConfigContext.jsx";
 import { maskEmail } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -20,7 +21,8 @@ const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 // 인원(count)은 straddler(두 그룹 모두 세션이 있는 유저)를 양쪽에 셀 수 있다 — leaderboard가
 // 유저×그룹으로 행이 갈라져 있기 때문(GROUP_ORDER 합계 ≥ distinct 유저 수).
 function GroupFaceOff({ rows }) {
-  const stats = GROUP_ORDER.map((g) => {
+  const { groupMode } = useConfig();
+  const stats = groupsShown(groupMode, rows).map((g) => {
     const grows = (rows || []).filter((r) => r.group === g);
     const decisions = grows.reduce((s, r) => s + Number(r.decisions || 0), 0);
     const accepted = grows.reduce((s, r) => s + Number(r.accepted || 0), 0);
@@ -35,7 +37,7 @@ function GroupFaceOff({ rows }) {
   });
 
   return (
-    <Card padded={false}>
+    <Card padded={false} title={groupLabel(groupMode, undefined, "그룹별 요약")}>
       <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-ink-100">
         {stats.map((s, i) => (
           <div key={s.group} className="relative flex-1">
@@ -81,6 +83,7 @@ function GroupFaceOff({ rows }) {
 
 export default function Users() {
   const [q, setQ] = useState("");
+  const { groupMode } = useConfig();
   // 클릭한 유저 email+group만 저장하고 헤더/StatTile용 row는 현재 leaderboard에서 파생한다 — row
   // 객체를 통째로 스냅샷하면 드로어를 연 채 기간을 바꿀 때 상단 타일(리더보드 값)과 하단 차트(재조회)의
   // 모수가 어긋난다. 기간 변경 시 leaderboard가 재조회되면 타일도 자동 갱신되고, 새 기간에 해당
@@ -162,7 +165,7 @@ export default function Users() {
           <>
             <GroupFaceOff rows={leaderboard.data} />
             <div className="grid gap-4 md:grid-cols-2">
-              {GROUP_ORDER.map((g) => {
+              {groupsShown(groupMode, leaderboard.data).map((g) => {
                 const data = top10For(g);
                 return data.length ? (
                   <HBarList
@@ -216,7 +219,7 @@ export default function Users() {
           ? null
           : leaderboard.error
             ? null
-            : GROUP_ORDER.map((g) => (
+            : groupsShown(groupMode, leaderboard.data).map((g) => (
                 <DataTable
                   key={g}
                   title={`유저별 생산성 리더보드 — ${g}`}
@@ -247,7 +250,7 @@ export default function Users() {
           <ErrorBox error={tools.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {GROUP_ORDER.map((g) => (
+            {groupsShown(groupMode, tools.data).map((g) => (
               <DataTable
                 key={g}
                 title={`유저별 도구 사용 내역 — ${g}`}
@@ -268,7 +271,7 @@ export default function Users() {
           <ErrorBox error={skills.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {GROUP_ORDER.map((g) => (
+            {groupsShown(groupMode, skills.data).map((g) => (
               <DataTable
                 key={g}
                 title={`유저별 Skill 사용 내역 — ${g}`}

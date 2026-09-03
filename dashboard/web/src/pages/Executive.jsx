@@ -4,11 +4,13 @@ import { Loading, ErrorBox, Card } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { SectionLabel } from "../components/SectionLabel.jsx";
 import { DualLineChart, SeriesBarChart } from "../components/GroupCharts.jsx";
-import ABScoreboard from "../components/ABScoreboard.jsx";
+import ABScoreboard, { fmtValue } from "../components/ABScoreboard.jsx";
 import LowerBoundNote from "../components/LowerBoundNote.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
+import { useConfig } from "../ConfigContext.jsx";
+import { groupsShown } from "../pivot.js";
 import { makeTickFmt, formatDuration } from "../fmt.js";
 import { modelColorFor, byModelLegendOrder } from "../colors.js";
 
@@ -34,6 +36,7 @@ function ScoreGauge({ score }) {
 export default function Executive() {
   const { from, to, intervalHours } = useRange();
   const { model } = useFilters();
+  const { groupMode } = useConfig();
   const fmtTick = makeTickFmt(intervalHours);
   const fmtDaily = makeTickFmt(24); // adoptionTs는 항상 일별 버킷 — range 해상도를 따르지 않는다
   const kpi = useApi("/api/overview/kpi");
@@ -178,6 +181,13 @@ export default function Executive() {
     { label: "자동화 배율", bedrock: abAutoRatio("bedrock"), enterprise: abAutoRatio("enterprise"), format: "number", betterIs: "high" },
   ];
 
+  // single 모드에선 맞세울 상대가 없다 — 데이터가 있는 그룹의 값을 그대로 하나만 보여준다.
+  // 포맷은 ABScoreboard의 fmtValue를 그대로 쓴다(pct는 0~1 분율 계약, $10 미만은 센트 유지).
+  const singleValue = (row) => {
+    const g = groupsShown(groupMode, (kpi.data || []))[0];
+    return fmtValue(row[g] ?? row.bedrock ?? row.enterprise, row.format);
+  };
+
   const headline =
     `지난 ${formatDuration(daysInRange)}간 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
     `${fmt(t.loc)} 라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)을 작성했으며 제안 수락률은 ${(acceptRate * 100).toFixed(0)}%입니다. ` +
@@ -207,17 +217,27 @@ export default function Executive() {
           <ErrorBox error={error} />
         ) : (
           <>
-            <Card
-              title={
-                <>
-                  <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400 mb-0.5">A/B 실험 현황</span>
-                  Bedrock vs Enterprise 스코어보드
-                </>
-              }
-              subtitle="그룹 판별된 세션 기준 — unknown 그룹 제외"
-            >
-              <ABScoreboard rows={scoreboardRows} />
-            </Card>
+            {groupMode === "single" ? (
+              <Card title="핵심 지표" subtitle="그룹 판별된 세션 기준 — unknown 그룹 제외">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  {scoreboardRows.map((row) => (
+                    <StatTile key={row.label} label={row.label} value={singleValue(row)} />
+                  ))}
+                </div>
+              </Card>
+            ) : (
+              <Card
+                title={
+                  <>
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400 mb-0.5">A/B 실험 현황</span>
+                    Bedrock vs Enterprise 스코어보드
+                  </>
+                }
+                subtitle="그룹 판별된 세션 기준 — unknown 그룹 제외"
+              >
+                <ABScoreboard rows={scoreboardRows} />
+              </Card>
+            )}
 
             <div>
               <SectionLabel>People</SectionLabel>

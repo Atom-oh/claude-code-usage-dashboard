@@ -89,6 +89,17 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   problems). The stale pill is a hand-rolled `span` rather than a `Badge`, because `Badge` has
   no `warning` tone and `cn()` is a plain string join, not `tailwind-merge`, so a tone class
   cannot be overridden through `className`. Two pages pass `live`: `Overview` and `Trends`.
+- **`groupsShown(groupMode, rows)` (`pivot.js`) is the single rule for which groups get a card.**
+  `ab` always renders both, deliberately -- an empty card distinguishes "no data yet" from "this
+  org has no such channel". `single` renders only the groups present in the response, falling back
+  to the first group so the card (and its empty state) still exists. Never iterate `GROUP_ORDER`
+  or a literal `["bedrock", "enterprise"]` directly in a page; the chart layer already derives its
+  own series from the response via `groupsPresent`.
+- **`unknown`-group exclusion is a server policy and `groupMode` does not change it.** Most A/B
+  endpoints exclude `unknown` while the "총계" endpoints (`activeUsers`, `adoptionLevels`,
+  `adoptionTimeseries`, `kpiSummary`, `costSummary`) include it -- see `queries.js`'s `filterCond`
+  policy comment. A single-channel org therefore still sees an `unknown` share in the totals, and
+  that is correct, not a bug in single mode.
 - **The Cost page's Effort and Agent panels show Claude Code's REPORTED cost**
   (`claude_code.cost.usage`), not the token×price computed cost every other card on that page
   shows — `effortMix`/`agentCost` are `sumIf(inc, MetricName='claude_code.cost.usage')`

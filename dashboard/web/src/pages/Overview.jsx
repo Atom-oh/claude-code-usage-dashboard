@@ -6,10 +6,12 @@ import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { GroupAreaChart, RingGauge, DualLineChart } from "../components/GroupCharts.jsx";
-import { GROUP_ORDER, colorFor } from "../colors.js";
+import { colorFor } from "../colors.js";
+import { groupsShown, groupLabel } from "../pivot.js";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
+import { useConfig } from "../ConfigContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -31,6 +33,7 @@ export default function Overview() {
   const [tokenView, setTokenView] = useState("tokens");
   const { intervalHours } = useRange();
   const { model } = useFilters();
+  const { groupMode } = useConfig();
   const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
   const activeUsers = useApi("/api/overview/active-users");
@@ -55,7 +58,12 @@ export default function Overview() {
 
   return (
     <div>
-      <PageHeader title="Overview" subtitle="bedrock vs enterprise — 텔레메트리 기반 그룹 자동 판별" live right={<RangePicker />} />
+      <PageHeader
+        title="Overview"
+        subtitle={groupLabel(groupMode, "bedrock vs enterprise — 텔레메트리 기반 그룹 자동 판별", "텔레메트리 기반 사용량 개요")}
+        live
+        right={<RangePicker />}
+      />
       <div className="p-8 flex flex-col gap-6">
         {/* activeUsers도 게이트에 포함 — 안 그러면 로딩/실패 중 "전체 유저 0"이 정상 수치처럼 보인다. */}
         {kpi.loading || activeUsers.loading ? (
@@ -182,7 +190,7 @@ export default function Overview() {
           <ErrorBox error={cache.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {GROUP_ORDER.map((g) => {
+            {groupsShown(groupMode, cache.data).map((g) => {
               const r = (cache.data || []).find((row) => row.group === g);
               // 진짜 캐시 적중률 = cache_read / input_side(비캐시입력+캐시읽기+캐시쓰기). 캐시 쓰기를
               // 분모에서 빼면 안 된다 — 캐시 미스는 실제로 uncached_input이 아니라 cache_write로
@@ -210,7 +218,7 @@ export default function Overview() {
           <ErrorBox error={models.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, models.data).map((g) => (
               <DataTable
                 key={g}
                 title={`모델별 토큰 분포 — ${g}`}

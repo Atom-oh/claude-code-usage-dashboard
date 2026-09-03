@@ -15,6 +15,22 @@ export function groupsPresent(rows) {
   return GROUP_ORDER.filter((g) => seen.has(g));
 }
 
+// 카드를 그룹별로 나란히 놓는 자리에서 "어떤 그룹을 그릴지"의 단일 규칙.
+// ab 모드는 항상 두 그룹 — 한쪽이 비어 있어도 빈 카드를 그리는 게 A/B 실험 대시보드의 의도다
+// (그 자리에 카드가 없으면 "아직 데이터가 없다"와 "그 채널이 없다"가 구별되지 않는다).
+// single 모드는 응답에 실제로 등장한 그룹만. 응답이 통째로 비었으면 첫 그룹 하나로 접어
+// 카드 자체는 남긴다 — 카드가 사라지면 왜 비었는지 말할 자리도 사라진다.
+export function groupsShown(groupMode, rows) {
+  if (groupMode !== "single") return GROUP_ORDER;
+  const present = groupsPresent(rows);
+  return present.length ? present : [GROUP_ORDER[0]];
+}
+
+// single 모드에서 "A/B", "bedrock vs enterprise" 같은 대결 표현을 중립 문구로 바꾼다.
+export function groupLabel(groupMode, abText, singleText) {
+  return groupMode === "single" ? singleText : abText;
+}
+
 // pivotByGroup의 일반화 버전 — 그룹이 아니라 임의의 카테고리 컬럼(예: model)으로 피벗.
 // 함께 등장하는 카테고리 값들도 반환(차트에서 어떤 시리즈를 그릴지 결정하는 데 씀).
 // xKey가 날짜가 아닌 카테고리 값(예: tool 이름)이면 new Date(...)가 Invalid Date가 되어 정렬

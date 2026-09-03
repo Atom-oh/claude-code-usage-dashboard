@@ -9,7 +9,7 @@ const COLS = "grid grid-cols-[1fr_10rem_1fr] items-stretch";
 
 // pct는 RingGauge와 같은 0~1 분율 계약(96% → 0.96) — %값(96)을 그대로 넘기면 9600%가 된다.
 // usd 소수 처리는 DonutBody의 fmt와 동일($10 미만은 센트 단위 유지).
-function fmtValue(v, format) {
+export function fmtValue(v, format) {
   const n = Number(v);
   if (v == null || !Number.isFinite(n)) return "—";
   if (format === "usd") return `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString()}`;
