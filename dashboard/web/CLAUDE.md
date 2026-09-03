@@ -50,8 +50,10 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
 - `src/urlState.js` -- pure URL-search-param <-> `{range, filters}` mapping
   (`parseUrlState`/`serializeUrlState`), unit-tested in `urlState.test.js`. `RangeContext` owns
   the `days`/`from`/`to` params and `FilterContext` owns `group`/`user`/`model`; each preserves
-  the other's keys when it writes, and both write with `replace: true` so the history stack is
-  not filled by preset clicks
+  the other's keys when it writes (except `user` while `piiMask` is on -- see the rule below),
+  and both write with `replace: true` so the history stack is not filled by preset clicks.
+  `permalink.test.jsx` mounts the real providers inside a `MemoryRouter` to pin this
+  round-trip; `urlState.test.js` only covers the pure mapping
 - `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +
   model-family palette (`modelColorFor` — fixed per-family hues, single source `MODEL_COLOR`),
   CSS-variable-based chart colors
@@ -64,7 +66,10 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
 - **The `user` filter never enters the URL while `piiMask` is on.** Its value is the raw text the
   operator typed and the server matches it against `UserEmail`, so it is an address --
   `serializeUrlState` omits the key and `parseUrlState` refuses to read it back, which also stops
-  a hand-crafted link from populating the filter. Masking off (a workshop account, where emails
+  a hand-crafted link from populating the filter, and `RangeContext`'s writer does not carry an
+  incoming `user` key over either -- both providers write the URL in the same tick at mount and
+  the outer one's `navigate` wins, so a blind "preserve the other side's keys" there resurrected
+  the address (measured 2026-09-03 in jsdom). Masking off (a workshop account, where emails
   are synthetic `{accountid}@ws` addresses) is the only case where it is written.
 - URL state is hydrated **once, in a `useState` initializer**, not in an effect. Re-parsing on
   every render would let the URL's stale value overwrite a selection the user just made.

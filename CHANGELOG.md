@@ -65,7 +65,8 @@ This project has not been tagged yet — everything below is unreleased.
 - Add single-channel presentation mode (`GROUP_MODE=single`) so an org with one Claude Code
   channel no longer sees a permanently empty second A/B card
 - Add URL permalinks for the selected range and group/user/model filters, with the user filter
-  omitted from the URL while email masking is on
+  omitted from the URL while email masking is on — including a `user` parameter arriving in a
+  pasted link, which the range writer no longer carries over (pinned by `permalink.test.jsx`)
 - Add a shared empty state, distinguishing "no telemetry has ever arrived" from "nothing in
   this range", wired at the chart, table, and Executive-section level
 - Add `docs/metrics.md`, a KPI glossary linked from the tiles via a help affordance and from
@@ -185,7 +186,8 @@ This project has not been tagged yet — everything below is unreleased.
 - 단일 채널 프리젠테이션 모드(`GROUP_MODE=single`) 추가 — Claude Code 채널이 하나뿐인 조직이
   더 이상 항상 빈 두 번째 A/B 카드를 보지 않음
 - 선택한 구간과 그룹/유저/모델 필터를 URL 퍼머링크로 추가 — 이메일 마스킹이 켜져 있으면
-  유저 필터는 URL에서 제외됨
+  유저 필터는 URL에서 제외됨(붙여넣은 링크에 들어온 `user` 파라미터도 구간 쪽 writer가 더는
+  옮겨 쓰지 않음, `permalink.test.jsx`로 고정)
 - "아직 수집된 텔레메트리가 없음"과 "이 구간에 데이터 없음"을 구분하는 공유 empty state
   추가 — 차트·테이블·Executive 섹션 단위로 적용
 - `docs/metrics.md`(KPI 용어집) 추가, 타일의 도움말 아이콘과 `README.md`에서 연결

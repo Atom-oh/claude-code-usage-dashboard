@@ -53,12 +53,15 @@ export function RangeProvider({ children }) {
   }, [days, custom]);
   // range 상태를 URL에 미러링한다 — 공유한 링크가 보낸 사람이 보던 구간으로 열린다.
   // replace: true — 프리셋을 몇 번 눌렀는지가 브라우저 뒤로가기 스택을 채우면 안 된다.
-  // 필터 파라미터는 FilterContext가 소유하므로 여기서 건드리지 않고 그대로 보존한다.
+  // 필터 파라미터는 FilterContext가 소유하므로 여기서 건드리지 않고 그대로 보존한다 — 단 user는
+  // 마스킹이 켜져 있으면 보존도 하지 않는다. 마운트 시 두 provider의 effect가 같은 틱에 돌고
+  // 마지막 navigate가 이기는데, 이쪽이 바깥 provider라 나중에 돈다: 들어온 링크의 user를 그대로
+  // 옮겨 쓰면 FilterContext가 지운 원본 이메일이 URL에 되살아난다(실측 2026-09-03, jsdom).
   useEffect(() => {
     setSearchParams(
       (prev) => {
         const next = serializeUrlState({ range: { days, custom }, filters: {}, piiMask });
-        for (const k of ["group", "user", "model"]) {
+        for (const k of piiMask ? ["group", "model"] : ["group", "user", "model"]) {
           const v = prev.get(k);
           if (v) next.set(k, v);
         }
