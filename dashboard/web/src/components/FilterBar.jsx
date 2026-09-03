@@ -1,3 +1,4 @@
+import { useConfig } from "../ConfigContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "./SegmentedControl.jsx";
 
@@ -14,9 +15,15 @@ const GROUP_OPTIONS = [
 // 없음"과 겹치는 상태라 탭으로 넣지 않는다(queries.js filterCond 정책표 참고).
 export function FilterBar() {
   const { group, setGroup, userInput, setUser, modelInput, setModel } = useFilters();
+  const { groupMode } = useConfig();
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <SegmentedControl options={GROUP_OPTIONS} value={group} onChange={setGroup} />
+      {/* single 모드에서는 이 컨트롤이 채널이 하나인 조직에 두 개의 채널 이름을 권하게 된다.
+          숨기는 건 어포던스만이고 API 계약은 그대로다 — group URL/필터 파라미터는 손대지 않으므로
+          (FilterContext/useApi 무변경) 손으로 ?group=를 붙인 링크는 여전히 서버에서 적용된다. */}
+      {groupMode !== "single" && (
+        <SegmentedControl options={GROUP_OPTIONS} value={group} onChange={setGroup} />
+      )}
       <input
         value={userInput}
         onChange={(e) => setUser(e.target.value)}

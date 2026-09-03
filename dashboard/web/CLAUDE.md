@@ -110,6 +110,11 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   to the first group so the card (and its empty state) still exists. Never iterate `GROUP_ORDER`
   or a literal `["bedrock", "enterprise"]` directly in a page; the chart layer already derives its
   own series from the response via `groupsPresent`.
+- **`FilterBar` hides the channel `SegmentedControl` in `single` mode** for the same reason a
+  single-channel org gets one card: offering two channel names to an org that has one is a
+  false affordance. The `group` param itself is untouched -- `FilterContext`, `useApi.js` and
+  `urlState.js` are unchanged, so a hand-typed `?group=bedrock` still applies server-side.
+  This hides the control, it does not change the API contract.
 - **`unknown`-group exclusion is a server policy and `groupMode` does not change it.** Most A/B
   endpoints exclude `unknown` while the "총계" endpoints (`activeUsers`, `adoptionLevels`,
   `adoptionTimeseries`, `kpiSummary`, `costSummary`) include it -- see `queries.js`'s `filterCond`
