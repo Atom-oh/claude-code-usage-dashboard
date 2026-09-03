@@ -244,13 +244,17 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
   테이블을 읽는다(행 수 ~86x 감소; 원본은 10초 누적 재-export로 하루 ~300만 행씩 증가).
   누적 카운터는 (SeriesKey, SessionId, hour)당 `max(Value)`만 보존한다. `SeriesKey`는
   migration-003 이후 프로세스별 세그먼트 단위다(`StartTimeUnix`를 접어 넣음), `session.count`는
-  예외. 스키마상 TTL은 원본과 동일하게
-  90일 cold 이동 / 180일 삭제이며(schema-init Job이 재실행되면 반영된다) — `UserEmail`을 담는 저장소라 TTL이 없으면 원본이 삭제된 뒤에도
-  사용자 이메일이 남아 보존 정책을 우회한다. 이는 원래의 "TTL을 두지 않아 원본 TTL 이후에도 diff
-  baseline이 남는다"는 근거를 대체한다 — `LOOKBACK_DAYS`가 3일이라 180일 안쪽이고 baseline에는
-  영향이 없다. 실측 2026-07-27: 라이브 롤업에는 TTL이 아예 없었다(`CREATE TABLE IF NOT EXISTS`가
-  기존 테이블에 no-op이고 schema-init Job이 재실행되지 않았기 때문 — 둘 다 `infra/`에서 수정).
-  컷오버 절차는 `clickhouse-schema.sql` 주석 참고.
+  예외. 스키마상 TTL은 DELETE-only 180일이다(원본과 달리 cold 이동 없음) — `UserEmail`을 담는
+  저장소라 TTL이 없으면 원본이 삭제된 뒤에도 사용자 이메일이 남아 보존 정책을 우회한다. 이는
+  원래의 "TTL을 두지 않아 원본 TTL 이후에도 diff baseline이 남는다"는 근거를 대체한다 —
+  `LOOKBACK_DAYS`가 3일이라 180일 안쪽이고 baseline에는 영향이 없다. 실측 2026-07-27: 라이브
+  롤업에는 TTL이 아예 없었다(`CREATE TABLE IF NOT EXISTS`가 기존 테이블에 no-op이고 schema-init
+  Job이 재실행되지 않았기 때문). 실측 2026-09-02: 첫 수정안(`TTL ... TO VOLUME 'cold'`)은 라이브
+  롤업이 `storage_policy=default`(`cold` 볼륨 없음)라 Job 7회 전부 `BAD_TTL_EXPRESSION`으로
+  실패했고, ClickHouse는 새 정책이 옛 볼륨 이름을 전부 포함하지 않으면 `MODIFY SETTING
+  storage_policy`를 거부하므로 정책과 무관한 DELETE-only로 확정했다. Job은 이제
+  `wait_for_completion = true`라 실패한 statement가 `terraform apply`를 실패시킨다. 컷오버
+  절차는 `clickhouse-schema.sql` 주석 참고.
 - **ClickHouse Keeper** -- 레플리카 클러스터 코디네이션(별도 StatefulSet).
 
 ### Processing / Query Layer
