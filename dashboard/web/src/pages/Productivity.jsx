@@ -6,8 +6,10 @@ import { DataTable } from "../components/DataTable.jsx";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
+import { useConfig } from "../ConfigContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
+import { groupsShown } from "../pivot.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
@@ -68,6 +70,7 @@ function TracesBetaPanel({ resp, title, subtitle, columns }) {
 }
 
 export default function Productivity() {
+  const { groupMode } = useConfig();
   const { intervalHours } = useRange();
   const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
@@ -328,7 +331,7 @@ export default function Productivity() {
           <ErrorBox error={languages.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, languages.data).map((g) => (
               <DataTable
                 key={g}
                 title={`언어별 코드 편집 — ${g}`}

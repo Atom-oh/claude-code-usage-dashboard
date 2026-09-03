@@ -4,6 +4,8 @@ import { RangePicker } from "../components/RangePicker.jsx";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
+import { useConfig } from "../ConfigContext.jsx";
+import { groupsShown } from "../pivot.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (ok, total) => (total > 0 ? `${((ok / total) * 100).toFixed(0)}%` : "—");
@@ -107,6 +109,7 @@ const COMPACTION_COLUMNS = [
 ];
 
 export default function Usage() {
+  const { groupMode } = useConfig();
   const toolMcp = useApi("/api/usage/tool-mcp");
   const toolDecisions = useApi("/api/usage/tool-decisions");
   const skills = useApi("/api/usage/skills");
@@ -130,7 +133,7 @@ export default function Usage() {
           <ErrorBox error={toolMcp.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, toolMcp.data).map((g) => (
               <DataTable
                 key={g}
                 title={`Tool / MCP 사용 패턴 — ${g}`}
@@ -148,7 +151,7 @@ export default function Usage() {
           <ErrorBox error={toolDecisions.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, toolDecisions.data).map((g) => (
               <DataTable
                 key={g}
                 title={`툴 권한 결정 퍼널 — ${g}`}
@@ -166,7 +169,7 @@ export default function Usage() {
           <ErrorBox error={toolLatency.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, toolLatency.data).map((g) => (
               <DataTable
                 key={g}
                 title={`도구 실행 레이턴시 — ${g}`}
@@ -187,7 +190,7 @@ export default function Usage() {
           <ErrorBox error={connectors.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, connectors.data).map((g) => (
               <DataTable
                 key={g}
                 title={`커넥터(MCP) 사용 현황 — ${g}`}
@@ -218,7 +221,7 @@ export default function Usage() {
           <ErrorBox error={skills.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, skills.data).map((g) => (
               <DataTable
                 key={g}
                 title={`Skill 사용 분포 — ${g}`}
@@ -236,7 +239,7 @@ export default function Usage() {
           <ErrorBox error={skillActivations.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, skillActivations.data).map((g) => (
               <DataTable
                 key={g}
                 title={`스킬 발동 방식 — ${g}`}
@@ -293,7 +296,7 @@ export default function Usage() {
           <ErrorBox error={commands.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, commands.data?.commands).map((g) => (
               <DataTable
                 key={g}
                 title={`슬래시 커맨드 사용 — ${g}`}
@@ -311,7 +314,7 @@ export default function Usage() {
           <ErrorBox error={commands.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => {
+            {groupsShown(groupMode, commands.data?.prompts).map((g) => {
               const r = (commands.data?.prompts || []).find((row) => row.group === g);
               return (
                 <Card key={g} title={`프롬프트 길이 — ${g}`} subtitle="user_prompt의 prompt_length 분포">
@@ -332,7 +335,7 @@ export default function Usage() {
           <ErrorBox error={hookOverhead.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => {
+            {groupsShown(groupMode, hookOverhead.data).map((g) => {
               const r = (hookOverhead.data || []).find((row) => row.group === g);
               return (
                 <Card key={g} title={`Hook 오버헤드 — ${g}`} subtitle="hook_execution_complete 기준 — 총 소요는 초, p95는 ms">

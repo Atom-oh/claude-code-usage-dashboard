@@ -9,10 +9,12 @@ import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
+import { useConfig } from "../ConfigContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer } from "../colors.js";
+import { groupsShown } from "../pivot.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -58,6 +60,7 @@ function mergeUserModelRows(rows) {
 }
 
 export default function Cost() {
+  const { groupMode } = useConfig();
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
   const { model } = useFilters();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
@@ -134,8 +137,10 @@ export default function Cost() {
   // bedrock/enterprise 도넛은 그룹=색상 계열 규칙을 따른다(사용자 지시) — 같은 모델이라도
   // bedrock 카드에선 블루, enterprise 카드에선 틸로 다르게 보인다(groupModelColorFor). 모델
   // 정체성은 그 계열 안의 명도로 표현되지, 색조(hue)로 표현되지 않는다 — 그룹이 우선.
-  const bedrockModelRows = foldModelRows((byModel.data || []).filter((r) => r.group === "bedrock"));
-  const enterpriseModelRows = foldModelRows((byModel.data || []).filter((r) => r.group === "enterprise"));
+  const modelRowsFor = (group) => foldModelRows((byModel.data || []).filter((r) => r.group === group));
+  // 계열 이름은 색상 규칙(위)의 사람 설명이라 그룹별로 다르다 — 카드가 groupsShown으로
+  // 순회되므로 문구도 그룹에서 끌어온다.
+  const MODEL_DONUT_HUE = { bedrock: "블루 계열", enterprise: "틸 계열" };
 
   // 탭으로 그룹을 고르던 방식 대신 bedrock/enterprise 카드를 좌우로 분리 — 각 카드는 그 그룹만의 합계.
   function tokenTypeRowsFor(group) {
@@ -251,7 +256,7 @@ export default function Cost() {
             {/* A/B 비교용 — 총지출이 아니라 사용자당 평균이라야 그룹 간 사용자 수 차이가 상쇄된다.
                 전체(개발자당 지출)는 그룹 합이 아니다: 한 유저가 두 그룹에 걸칠 수 있어(세션 단위
                 판별, grouping.js) 전역 uniq 분모가 그룹 분모의 합보다 작을 수 있다. */}
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, summary.data).map((g) => (
               <StatTile
                 key={g}
                 // 그룹 색 틴트 — 두 타일이 나란히 있어 라벨만으로는 구분이 약하다. Users.jsx의
@@ -286,7 +291,7 @@ export default function Cost() {
           <ErrorBox error={tiers.error || cacheEff.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, tiers.data).map((g) => (
               <DonutBreakdown
                 key={g}
                 title={`캐시 티어별 지출 — ${g}`}
@@ -310,7 +315,7 @@ export default function Cost() {
           <ErrorBox error={effortMix.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {["bedrock", "enterprise"].map((g) => (
+            {groupsShown(groupMode, effortMix.data).map((g) => (
               <Card
                 key={g}
                 title={`Effort별 지출 — ${g}`}
@@ -337,14 +342,11 @@ export default function Cost() {
           ) : byModel.error ? (
             <ErrorBox error={byModel.error} />
           ) : (
-            <>
-              <Card title="모델별 지출 비중 — bedrock" subtitle="블루 계열 · 명도로 모델 구분(신버전일수록 진하게)">
-                <DonutBody data={bedrockModelRows} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => groupModelColorFor("bedrock", name)} />
+            groupsShown(groupMode, byModel.data).map((g) => (
+              <Card key={g} title={`모델별 지출 비중 — ${g}`} subtitle={`${MODEL_DONUT_HUE[g] ?? "그룹 계열"} · 명도로 모델 구분(신버전일수록 진하게)`}>
+                <DonutBody data={modelRowsFor(g)} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => groupModelColorFor(g, name)} />
               </Card>
-              <Card title="모델별 지출 비중 — enterprise" subtitle="틸 계열 · 명도로 모델 구분(신버전일수록 진하게)">
-                <DonutBody data={enterpriseModelRows} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => groupModelColorFor("enterprise", name)} />
-              </Card>
-            </>
+            ))
           )}
         </div>
 
@@ -354,22 +356,16 @@ export default function Cost() {
           ) : summary.error ? (
             <ErrorBox error={summary.error} />
           ) : (
-            <>
+            groupsShown(groupMode, summary.data).map((g) => (
               <DonutBreakdown
-                title="토큰 타입별 비중 — bedrock"
-                data={tokenTypeRowsFor("bedrock")}
+                key={g}
+                title={`토큰 타입별 비중 — ${g}`}
+                data={tokenTypeRowsFor(g)}
                 nameKey="type"
                 valueKey="tokens"
-                colorOf={makeGroupBreakdownColorer("bedrock", TOKEN_TYPE_LABEL_ORDER)}
+                colorOf={makeGroupBreakdownColorer(g, TOKEN_TYPE_LABEL_ORDER)}
               />
-              <DonutBreakdown
-                title="토큰 타입별 비중 — enterprise"
-                data={tokenTypeRowsFor("enterprise")}
-                nameKey="type"
-                valueKey="tokens"
-                colorOf={makeGroupBreakdownColorer("enterprise", TOKEN_TYPE_LABEL_ORDER)}
-              />
-            </>
+            ))
           )}
         </div>
 
