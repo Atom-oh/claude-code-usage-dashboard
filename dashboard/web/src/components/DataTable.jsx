@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Card } from "./Card.jsx";
 import { colorFor } from "../colors.js";
+import EmptyState from "./EmptyState.jsx";
 
 // ../awsops web/components/ui/DataTable.tsx 포팅 (정렬 가능한 테이블, Card로 감쌈).
 function compareValues(a, b, dir) {
@@ -26,7 +27,7 @@ export function DataTable({ columns, rows, groupKey = "group", title, subtitle, 
   if (!rows || rows.length === 0) {
     return (
       <Card title={title} subtitle={subtitle} right={right} padded={false}>
-        <div className="py-6 px-3 text-center text-[14px] text-ink-400">데이터 없음</div>
+        <EmptyState className="m-3" />
       </Card>
     );
   }

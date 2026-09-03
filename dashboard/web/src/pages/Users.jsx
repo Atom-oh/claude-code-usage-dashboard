@@ -6,6 +6,7 @@ import { RangePicker } from "../components/RangePicker.jsx";
 import { UserDrawer } from "../components/UserDrawer.jsx";
 import { HBarList } from "../components/GroupCharts.jsx";
 import { StatTile } from "../components/StatTile.jsx";
+import EmptyState from "../components/EmptyState.jsx";
 import { colorFor, FAMILY_LEGEND_ORDER, familyColorFor, modelFamily } from "../colors.js";
 import { topPerUser, groupsShown, groupLabel } from "../pivot.js";
 import { useApi } from "../useApi.js";
@@ -179,7 +180,7 @@ export default function Users() {
                   />
                 ) : (
                   <Card key={g} title={`Top 10 — 생산성 점수 — ${g}`}>
-                    <div className="py-6 text-center text-[13px] text-ink-400">표시할 데이터가 없습니다</div>
+                    <EmptyState />
                   </Card>
                 );
               })}

@@ -7,6 +7,7 @@ import { pivotByGroup, pivotByKey, groupsPresent } from "../pivot.js";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
 import { useRange } from "../RangeContext.jsx";
 import { Card } from "./Card.jsx";
+import EmptyState from "./EmptyState.jsx";
 
 // 시계열 차트에서 좌우로 드래그하면 그 구간으로 전역 range를 좁힌다(RangeContext.setRange) —
 // 페이지의 모든 차트가 같이 줌인되고 해상도도 자동으로 세밀해진다. Recharts 카테고리 x축은
@@ -73,6 +74,13 @@ function useDragZoom(yAxisId, bucketHoursOverride) {
 export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours }) {
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours);
+  if ((rows || []).length === 0) {
+    return (
+      <Card title={title} subtitle={subtitle} right={right}>
+        <EmptyState />
+      </Card>
+    );
+  }
   const data = pivotByGroup(rows, xKey, valueKey);
   const groups = groupsPresent(rows);
   return (
@@ -106,6 +114,13 @@ export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, h
 // (accept/reject처럼 "상태"가 카테고리인 경우엔 colorFn으로 status 팔레트를 넘긴다).
 export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", valueKey, height = 220, colorFn }) {
   const c = useChartColors();
+  if ((rows || []).length === 0) {
+    return (
+      <Card title={title} subtitle={subtitle} right={right}>
+        <EmptyState />
+      </Card>
+    );
+  }
   const data = rows || [];
   const fill = colorFn || ((r) => colorFor(r.group));
   return (
@@ -134,6 +149,13 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
 export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort }) {
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours);
+  if ((rows || []).length === 0) {
+    return (
+      <Card title={title} subtitle={subtitle} right={right}>
+        <EmptyState />
+      </Card>
+    );
+  }
   const { data, series: rawSeries } = pivotByKey(rows, xKey, seriesKey, valueKey);
   // seriesSort는 모델 차트처럼 값(지출 순위)과 무관한 고정 범례 순서가 필요할 때만 쓴다 —
   // 기본은 데이터 등장 순(pivotByKey)을 그대로 둔다(예: tool/skill 시리즈는 이 순서 그대로가 맞음).
@@ -175,6 +197,13 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
 export function DualLineChart({ title, subtitle, right, rows, xKey, lines, height = 240, tickFormatter, bucketHours }) {
   const c = useChartColors();
   const zoom = useDragZoom("left", bucketHours); // 명명된 축(left/right) 중 left에 하이라이트를 붙인다.
+  if ((rows || []).length === 0) {
+    return (
+      <Card title={title} subtitle={subtitle} right={right}>
+        <EmptyState />
+      </Card>
+    );
+  }
   const hasRight = lines.some((l) => l.axis === "right");
   return (
     <Card title={title} subtitle={subtitle} right={right}>
@@ -249,7 +278,7 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", co
       {label && <div className="mb-2 text-[12px] font-medium text-ink-600">{label}</div>}
       {/* 전역/로컬 group 필터가 서로 겹치지 않으면 데이터가 비는데, 빈 도넛만 렌더되면 로딩/버그처럼 보인다. */}
       {total <= 0 ? (
-        <div className="flex h-[170px] items-center justify-center text-[13px] text-ink-400">표시할 데이터가 없습니다</div>
+        <EmptyState />
       ) : (
         <div className="flex items-center gap-4">
           <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
@@ -293,6 +322,13 @@ export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey
 // ../awsops HBarList 포팅 — recharts 아님, label / 트랙+채움 / 우측 정렬 금액의 단순 flex 리스트.
 // color: 지정하면 채움 막대를 브랜드색 대신 그 색으로(예: 그룹별로 나란히 놓은 카드에서 colorFor(group)).
 export function HBarList({ title, subtitle, right, data, labelKey, valueKey, valuePrefix = "", color }) {
+  if ((data || []).length === 0) {
+    return (
+      <Card title={title} subtitle={subtitle} right={right}>
+        <EmptyState />
+      </Card>
+    );
+  }
   const max = data.reduce((m, d) => Math.max(m, Number(d[valueKey]) || 0), 0);
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
 

@@ -6,6 +6,7 @@ import { SectionLabel } from "../components/SectionLabel.jsx";
 import { DualLineChart, SeriesBarChart } from "../components/GroupCharts.jsx";
 import ABScoreboard, { fmtValue } from "../components/ABScoreboard.jsx";
 import LowerBoundNote from "../components/LowerBoundNote.jsx";
+import EmptyState from "../components/EmptyState.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
@@ -193,6 +194,13 @@ export default function Executive() {
     `${fmt(t.loc)} 라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)을 작성했으며 제안 수락률은 ${(acceptRate * 100).toFixed(0)}%입니다. ` +
     `기간 지출은 ${usd(cost)}, 현재 추세로는 30일 기준 ${usd(projection30d)}가 예상됩니다. 조직 생산성 점수는 ${Math.round(orgScore)}/100입니다.`;
 
+  // 섹션별로 게이트한다 — 페이지 전체를 가리면 일부만 비어 있을 때도 아무것도 안 보이고,
+  // 반대로 게이트가 없으면 신규 설치가 "$0", "0%", "활성 개발자 0"을 실제 측정값처럼 보여준다.
+  const peopleEmpty = users === 0 && (adoptionTs.data || []).length === 0 && !adoption.data?.mau;
+  const productivityEmpty = (kpi.data || []).length === 0 && (decisions.data || []).length === 0 && (leaderboard.data || []).length === 0;
+  const costEmpty = (costSummary.data || []).length === 0;
+  const allEmpty = peopleEmpty && productivityEmpty && costEmpty;
+
   return (
     <div>
       <PageHeader
@@ -246,56 +254,74 @@ export default function Executive() {
               {model && (
                 <p className="text-[11px] text-warning-text mt-1">⚠ model 필터는 People 지표에 적용되지 않습니다(전체 모델 기준)</p>
               )}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-                <StatTile label="활성 개발자" value={fmt(users)} variant="accent" hint="기간 내 세션 1건 이상" />
-                <StatTile label="평균 DAU" value={avgDau.toFixed(1)} hint={`피크 ${peakDau}`} />
-                <StatTile label="MAU" value={fmt(adoption.data?.mau)} hint={`전체 멤버 ${fmt(adoption.data?.total_members)}`} />
-                <StatTile
-                  label="월간 도입률"
-                  value={adoption.data?.total_members > 0 ? `${((adoption.data.mau / adoption.data.total_members) * 100).toFixed(0)}%` : "—"}
-                  hint="MAU ÷ 전체 멤버"
-                />
-              </div>
+              {peopleEmpty ? (
+                <EmptyState className="mt-2" />
+              ) : (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
+                  <StatTile label="활성 개발자" value={fmt(users)} variant="accent" hint="기간 내 세션 1건 이상" />
+                  <StatTile label="평균 DAU" value={avgDau.toFixed(1)} hint={`피크 ${peakDau}`} />
+                  <StatTile label="MAU" value={fmt(adoption.data?.mau)} hint={`전체 멤버 ${fmt(adoption.data?.total_members)}`} />
+                  <StatTile
+                    label="월간 도입률"
+                    value={adoption.data?.total_members > 0 ? `${((adoption.data.mau / adoption.data.total_members) * 100).toFixed(0)}%` : "—"}
+                    hint="MAU ÷ 전체 멤버"
+                  />
+                </div>
+              )}
             </div>
 
             <div>
               <SectionLabel>Productivity</SectionLabel>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-                <StatTile label="작성 라인" value={fmt(t.loc)} hint={`커밋 ${fmt(t.commits)} · PR ${fmt(t.prs)}`} />
-                <StatTile label="제안 수락률" value={`${(acceptRate * 100).toFixed(0)}%`} />
-                <StatTile label="세션/개발자/일" value={sessionsPerDevDay.toFixed(1)} />
-                <div className="relative overflow-hidden bg-card border border-ink-100 rounded-lg shadow-card p-4 flex items-center gap-4">
-                  <ScoreGauge score={orgScore} />
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400">생산성 점수</div>
-                    <div className="text-[11px] text-ink-400 mt-1">개인 점수 평균 (0–100)</div>
+              {productivityEmpty ? (
+                <EmptyState className="mt-2" />
+              ) : (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
+                  <StatTile label="작성 라인" value={fmt(t.loc)} hint={`커밋 ${fmt(t.commits)} · PR ${fmt(t.prs)}`} />
+                  <StatTile label="제안 수락률" value={`${(acceptRate * 100).toFixed(0)}%`} />
+                  <StatTile label="세션/개발자/일" value={sessionsPerDevDay.toFixed(1)} />
+                  <div className="relative overflow-hidden bg-card border border-ink-100 rounded-lg shadow-card p-4 flex items-center gap-4">
+                    <ScoreGauge score={orgScore} />
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400">생산성 점수</div>
+                      <div className="text-[11px] text-ink-400 mt-1">개인 점수 평균 (0–100)</div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div>
               <SectionLabel>Cost</SectionLabel>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-                <StatTile
-                  label="기간 지출 (계산)"
-                  value={usd(cost)}
-                  variant="accent"
-                  hint={unpricedTokens > 0 ? `${usd(costPerDev)}/개발자 · 미산정 ${fmt(unpricedTokens)} 토큰` : `${usd(costPerDev)}/개발자`}
-                />
-                <StatTile label="30일 프로젝션" value={usd(projection30d)} hint={`일평균 ${usd(dailyAvg)} × 30`} />
-                <StatTile label="Cost / 1K LOC" value={usd(costPerKloc)} hint="지출 ÷ (라인 ÷ 1000)" />
-                <StatTile label="일평균 지출" value={usd(dailyAvg)} />
-              </div>
-              <div className="mt-3">
-                <LowerBoundNote />
-              </div>
+              {costEmpty ? (
+                <EmptyState className="mt-2" />
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
+                    <StatTile
+                      label="기간 지출 (계산)"
+                      value={usd(cost)}
+                      variant="accent"
+                      hint={unpricedTokens > 0 ? `${usd(costPerDev)}/개발자 · 미산정 ${fmt(unpricedTokens)} 토큰` : `${usd(costPerDev)}/개발자`}
+                    />
+                    <StatTile label="30일 프로젝션" value={usd(projection30d)} hint={`일평균 ${usd(dailyAvg)} × 30`} />
+                    <StatTile label="Cost / 1K LOC" value={usd(costPerKloc)} hint="지출 ÷ (라인 ÷ 1000)" />
+                    <StatTile label="일평균 지출" value={usd(dailyAvg)} />
+                  </div>
+                  <div className="mt-3">
+                    <LowerBoundNote />
+                  </div>
+                </>
+              )}
             </div>
 
             <Card>
-              <p className="text-[14px] leading-relaxed text-ink-800">
-                <span className="font-semibold">요약:</span> {headline}
-              </p>
+              {allEmpty ? (
+                <EmptyState />
+              ) : (
+                <p className="text-[14px] leading-relaxed text-ink-800">
+                  <span className="font-semibold">요약:</span> {headline}
+                </p>
+              )}
             </Card>
 
             <div className="grid gap-4 lg:grid-cols-2">
