@@ -73,6 +73,7 @@ clickhouse-migration-004.sql - Creates claude_code.schema_migrations (the schema
                        against the live cluster, it's not applied by Terraform -- see
                        docs/runbooks/schema-migrations.md
 collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHouse)
+LICENSE              - Proprietary, all rights reserved (ADR-004…007 era decision; see README §License)
 .claude/             - Claude Code settings, hooks, skills (gitignored — local tooling only)
 ```
 
@@ -94,7 +95,10 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
   sync (why `incFlat`/`incBucketed` weren't extended for the new `AppVersion`/`EndUserId`
   dimensions, and why the Bedrock-identity fallback only covers new queries, not all ~90
   pre-existing `UserEmail` references). A separate, later (2026-09-02) investigation into
-  per-process counter resets is recorded in `docs/decisions/ADR-003-*.md`.
+  per-process counter resets is recorded in `docs/decisions/ADR-003-*.md`. The 2026-09-03
+  production-readiness decision set is ADR-004 (Basic Auth baseline + SSO path, self sign-up
+  stays off), ADR-005 (outbound alerting), ADR-006 (PII masking baseline) and ADR-007
+  (Korean-first UI).
 - **bedrock/enterprise grouping is session-scoped**, not user-scoped — one user can straddle
   both in different sessions. See `dashboard/server/grouping.js` for the heuristic and its
   measured edge cases.
@@ -178,8 +182,8 @@ After exiting Plan mode (`/plan`), before starting implementation:
 - New API route in `dashboard/server/index.js` -> update `dashboard/server/CLAUDE.md`
 - ClickHouse schema/materialized column changed -> update `clickhouse-schema.sql`,
   `grafana-ab-queries.sql`, and `docs/architecture.md` Infrastructure section
-- Terraform changed under `infra/` -> update `docs/architecture.md` Infrastructure section and
-  `infra/CLAUDE.md`
+- Terraform changed under `infra/` (`infra/alerting.tf` included) -> update
+  `docs/architecture.md` Infrastructure section and `infra/CLAUDE.md`
 
 ### ADR Numbering
 Find the highest number in `docs/decisions/ADR-*.md` and increment by 1.

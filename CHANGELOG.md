@@ -17,6 +17,36 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Added (2026-09-03 production decisions)
+- Add outbound alerting for telemetry staleness — `dashboard/server/alerting.js` (pure
+  planner with a two-tick debounce, a repeat interval and a recovery message) driven by
+  `ALERT_WEBHOOK_URL` / `ALERT_REPEAT_MINUTES`, with the webhook URL held in a k8s Secret and
+  never logged
+- Add the Terraform surface for it — `alert_webhook_url` (sensitive, nullable) and
+  `alert_repeat_minutes` in `infra/dashboard.tf`, plus `infra/alerting.tf`'s optional
+  `var.alert_email`-gated CloudFront `5xxErrorRate` alarm → SNS e-mail and the
+  `alert_topic_arn` output; nothing is created while the variables are null
+- Add `docs/runbooks/alerting.md` (both legs, how to enable each, the three message shapes and
+  what to do for each, why two replicas send two messages)
+- Add ADR-004: Basic Auth is the shipped baseline, with an edge-side SSO upgrade path and self
+  sign-up staying off
+- Add ADR-005: outbound webhook alerting for telemetry staleness plus the edge 5xx alarm,
+  including the backup-CronJob gap it does not cover
+- Add ADR-006: client-side e-mail masking is the PII baseline; the server-side pseudonym design
+  is recorded but deferred
+- Add ADR-007: the UI stays Korean-first and i18n is deferred to a string table
+- Add `LICENSE` (proprietary, all rights reserved) and `"license": "UNLICENSED"` to both
+  `package.json` files
+
+### Fixed (2026-09-03 production decisions)
+- `FilterBar` no longer offers the bedrock/enterprise channel filter when `GROUP_MODE=single`
+  — a single-channel org was being offered two channel names; the `group` URL parameter is
+  unchanged, so a hand-typed `?group=` still applies server-side
+- `UserDrawer`'s background used the nonexistent `bg-page` token and rendered transparent; it
+  is `bg-paper` now (commit `d761cba`)
+- `docs/architecture.md`'s Korean half claimed a 90-day cold move for the hourly rollup's TTL,
+  which is DELETE-only at 180 days (commit `6454c01`)
+
 ### Added (2026-09-03 mobile nav, CSV export, schema ledger, org onboarding)
 - Add mobile navigation for the SPA below the `lg` (1024px) breakpoint — a top bar plus a
   slide-over drawer, both driven by the same `NAV` table `Sidebar.jsx`'s desktop nav uses
@@ -160,6 +190,35 @@ This project has not been tagged yet — everything below is unreleased.
 이 프로젝트는 아직 태그된 릴리스가 없습니다 — 아래 항목 전부 미출시(Unreleased)입니다.
 
 ## [Unreleased]
+
+### Added (2026-09-03 프로덕션 결정)
+- 텔레메트리 staleness에 대한 발신 알림 추가 — `dashboard/server/alerting.js`(2틱 디바운스,
+  반복 간격, 복구 메시지를 갖춘 순수 planner)가 `ALERT_WEBHOOK_URL` / `ALERT_REPEAT_MINUTES`로
+  구동되며, 웹훅 URL은 k8s Secret에 보관되고 절대 로그에 남지 않음
+- 이를 위한 Terraform 표면 추가 — `infra/dashboard.tf`의 `alert_webhook_url`(sensitive,
+  nullable)과 `alert_repeat_minutes`, 그리고 `infra/alerting.tf`의 선택적
+  `var.alert_email`-게이트 CloudFront `5xxErrorRate` 알람 → SNS 이메일과 `alert_topic_arn`
+  출력; 변수가 null인 동안은 아무것도 생성되지 않음
+- `docs/runbooks/alerting.md` 추가(두 경로, 각각 활성화하는 방법, 세 가지 메시지 형태와
+  각각에 대한 대응, 레플리카 2개가 메시지 2개를 보내는 이유)
+- ADR-004 추가: Basic Auth가 출시 기본값이며, 엣지 사이드 SSO 업그레이드 경로가 있고 self
+  sign-up은 계속 꺼둔다는 결정
+- ADR-005 추가: 텔레메트리 staleness에 대한 발신 웹훅 알림과 엣지 5xx 알람, 그리고 이것이
+  다루지 않는 백업 CronJob 공백
+- ADR-006 추가: 클라이언트 사이드 이메일 마스킹이 PII 기준선이며, 서버 사이드 pseudonym
+  설계는 기록되었지만 보류됨
+- ADR-007 추가: UI는 계속 한국어 우선을 유지하고 i18n은 문자열 테이블로 미룸
+- `LICENSE`(독점, 모든 권리 보유) 추가 및 두 `package.json` 파일에 `"license": "UNLICENSED"`
+  추가
+
+### Fixed (2026-09-03 프로덕션 결정)
+- `GROUP_MODE=single`일 때 `FilterBar`가 더 이상 bedrock/enterprise 채널 필터를 제공하지
+  않음 — 채널이 하나뿐인 조직에 채널 이름 두 개를 보여주고 있었음; `group` URL 파라미터는
+  변경되지 않았으므로 직접 입력한 `?group=`은 여전히 서버 사이드에 적용됨
+- `UserDrawer`의 배경이 존재하지 않는 `bg-page` 토큰을 써서 투명하게 렌더링되던 문제 —
+  이제 `bg-paper`로 수정됨(커밋 `d761cba`)
+- `docs/architecture.md` 한국어 반쪽이 시간별 롤업 TTL을 90일 콜드 이동이라고 잘못 기재했던
+  문제 — 실제로는 180일 DELETE-only임(커밋 `6454c01`)
 
 ### Added (2026-09-03 모바일 내비게이션, CSV 내보내기, 스키마 원장, 조직 온보딩)
 - `lg`(1024px) 미만에서 SPA 모바일 내비게이션 추가 — 데스크톱 사이드바가 쓰는 것과 같은

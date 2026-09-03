@@ -240,8 +240,10 @@ Pull requests against `main` run an automated multi-AI review
 (`.github/workflows/pr-review.yml`) and are blocked from merging on CRITICAL/MAJOR findings.
 
 ## License
-No license file is present in this repository (private/internal workshop project). Do not
-assume an open-source license applies until one is added.
+Proprietary — all rights reserved; see `LICENSE`. This is not open-source software: an
+organisation adopting it needs written permission from the maintainer (Contact below).
+Third-party dependencies keep their own licenses. Choosing an OSS license later is a one-file
+change plus the two `package.json` `license` fields.
 
 ## Contact
 - Maintainer: [Atom-oh](https://github.com/Atom-oh)
@@ -473,8 +475,10 @@ dashboard/server/index.js`가 52개, 여기에 `route()` 래퍼를 건너뛰는 
 CRITICAL/MAJOR 발견 시 머지가 막힙니다.
 
 ## 라이선스
-이 저장소에는 라이선스 파일이 없습니다(비공개/내부 워크샵 프로젝트). 라이선스 파일이
-추가되기 전까지 오픈소스 라이선스가 적용된다고 가정하지 마세요.
+독점(proprietary) — 모든 권리를 보유합니다; `LICENSE`를 참고하세요. 오픈소스 소프트웨어가
+아니므로, 이를 도입하려는 조직은 담당자(아래 연락처)의 서면 허가가 필요합니다. 서드파티
+의존성은 각자의 라이선스를 그대로 유지합니다. 이후 오픈소스 라이선스로 전환하는 것은
+파일 하나와 두 `package.json`의 `license` 필드만 바꾸면 되는 작업입니다.
 
 ## 연락처
 - 담당자: [Atom-oh](https://github.com/Atom-oh)

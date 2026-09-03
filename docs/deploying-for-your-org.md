@@ -180,12 +180,19 @@ Three checks, all read-only:
   `docs/api-reference.md` §"Health").
 - `GET /readyz` → **200** (see `docs/api-reference.md` §"Health").
 
-## 11. What this guide does not cover
-The following are pending decisions for this project, not gaps in this guide. This guide
-does not speculate about how or when they will be resolved:
-- **Authentication beyond Basic Auth.**
-- **Alerting** (e.g. on backup job failures or data staleness).
-- **Licensing.**
+## 11. Decisions this deployment inherits
+Each of these was an open question and is now a recorded decision with a documented way to
+overturn it. This guide states what you inherit and points at the ADR; it does not speculate
+beyond that.
+- **Authentication.** Basic Auth is the shipped baseline, fail-closed at boot. The upgrade
+  path is edge-side SSO (organisation OIDC or a Cognito User Pool) — see
+  `docs/decisions/ADR-004-basic-auth-baseline-and-sso-upgrade-path.md`. Self sign-up must stay
+  off: accounts are admin-created or invited only.
+- **Alerting.** Two independent, optional legs — `alert_webhook_url` for telemetry staleness
+  and `alert_email` for an edge 5xx alarm. Neither exists unless you set its variable. Runbook:
+  `docs/runbooks/alerting.md`; decision: `docs/decisions/ADR-005-outbound-webhook-alerting.md`.
+- **Licensing.** This repository is proprietary — see `LICENSE`. It is not open-source
+  software, so contact the maintainer for written permission before adopting it.
 
 ---
 
@@ -363,9 +370,16 @@ journalctl -u otelcol -n 50   # 또는: tail -f ~/.otelcol/collector.log
   (`docs/api-reference.md` §"Health" 참고).
 - `GET /readyz` → **200**(`docs/api-reference.md` §"Health" 참고).
 
-## 11. 이 가이드가 다루지 않는 것
-아래는 이 프로젝트의 **보류 중인 결정**이며, 이 가이드의 공백이 아닙니다. 이 가이드는 이들이
-언제·어떻게 해결될지 추측하지 않습니다:
-- **Basic Auth를 넘어서는 인증.**
-- **알림/경보** (백업 Job 실패나 데이터 staleness에 대한 알림 등).
-- **라이선싱.**
+## 11. 이 배포가 물려받는 결정
+아래 각 항목은 원래 열려 있던 질문이었고, 이제는 되돌릴 방법이 문서화된 결정입니다. 이
+가이드는 여러분이 무엇을 물려받는지 밝히고 해당 ADR을 가리킬 뿐, 그 이상을 추측하지 않습니다:
+- **인증.** Basic Auth가 출시 기본값이며, 기동 시 fail-closed입니다. 업그레이드 경로는
+  엣지 사이드 SSO(조직 OIDC 또는 Cognito User Pool)입니다 — 자세한 내용은
+  `docs/decisions/ADR-004-basic-auth-baseline-and-sso-upgrade-path.md`를 참고하세요. self
+  sign-up은 계속 꺼둔다 — 계정은 관리자 생성/초대 전용입니다.
+- **알림/경보.** 서로 독립적이고 선택적인 두 경로가 있습니다 — 텔레메트리 staleness를 위한
+  `alert_webhook_url`과 엣지 5xx 알람을 위한 `alert_email`입니다. 해당 변수를 설정하지 않으면
+  둘 다 존재하지 않습니다. 런북: `docs/runbooks/alerting.md`; 결정:
+  `docs/decisions/ADR-005-outbound-webhook-alerting.md`.
+- **라이선싱.** 이 저장소는 독점(proprietary)이며 오픈소스가 아니므로 도입 전 담당자의 서면
+  허가가 필요합니다 — `LICENSE`를 참고하세요.
