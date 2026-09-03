@@ -62,6 +62,11 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   no navigation at all. Reuses `Sidebar.jsx`'s exported `NAV`/`NavItem` rather than
   duplicating the active-state classes. Closes on backdrop click, the `X` button, `Escape`,
   or any route change
+- `src/csv.js` -- pure `toCsv`/`csvFilename`/`downloadCsv`, client-side only, no server
+  involvement, unit-tested in `csv.test.js`. `toCsv` never calls a column's `render` — a
+  `render` can return JSX, and even a string-returning one (thousand separators) stops a
+  spreadsheet reading the column as numeric — so the cell is `col.toText(v, r)` when present,
+  otherwise the raw value
 
 ## Rules
 - Any page-local granularity/interval control must re-sync from `RangeContext`'s
@@ -128,3 +133,10 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   the failure mode to protect against — a lost assertion, not a red test. The same test pins
   `main.children.length === 2` on every route, which is why `MobileNav`'s top bar is a sibling
   of `<main>`, never a child.
+- **The CSV export shows what the table shows.** A `DataTable` gains the button only when
+  its call site passes `exportName` (opt-in) — `toText` is added to a column only where the
+  raw value cannot reproduce the cell shown on screen, and a raw email is never exported
+  while `piiMask` is on: masking is applied inside `toCsv` for `key === "user"` and gated a
+  second time by `fmt.js`'s module flag, so a new user-bearing column must use the key
+  `user` to be covered. Group-split cards put the group in the `exportName` template (e.g.
+  `` `usage_tool_mcp_${g}` ``) so two cards do not collide on one filename.
