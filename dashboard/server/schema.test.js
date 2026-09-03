@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifySeriesKeyProbe } from "./schema.js";
+import { classifySeriesKeyProbe, classifyMigrations } from "./schema.js";
 
 test("classifySeriesKeyProbe returns true when only segment keys matched", () => {
   assert.strictEqual(classifySeriesKeyProbe({ seg: 2000, legacy: 0 }), true);
@@ -30,4 +30,41 @@ test("classifySeriesKeyProbe coerces string inputs (real client returns UInt64 a
 
 test("classifySeriesKeyProbe returns null on garbage input (Number.isFinite guard)", () => {
   assert.strictEqual(classifySeriesKeyProbe({}), null);
+});
+
+test("classifyMigrations returns a sorted unique array for number rows", () => {
+  assert.deepStrictEqual(classifyMigrations([{ version: 2 }, { version: 3 }]), [2, 3]);
+});
+
+test("classifyMigrations coerces string version rows and sorts them", () => {
+  assert.deepStrictEqual(classifyMigrations([{ version: "3" }, { version: "2" }]), [2, 3]);
+});
+
+test("classifyMigrations collapses duplicate versions", () => {
+  assert.deepStrictEqual(
+    classifyMigrations([{ version: 3 }, { version: 3 }, { version: 2 }]),
+    [2, 3]
+  );
+});
+
+test("classifyMigrations returns an empty array for an empty ledger (measured, not unknown)", () => {
+  assert.deepStrictEqual(classifyMigrations([]), []);
+});
+
+test("classifyMigrations returns null for undefined (undetermined)", () => {
+  assert.strictEqual(classifyMigrations(undefined), null);
+});
+
+test("classifyMigrations returns null for null (undetermined)", () => {
+  assert.strictEqual(classifyMigrations(null), null);
+});
+
+test("classifyMigrations returns null for a non-array", () => {
+  assert.strictEqual(classifyMigrations({}), null);
+});
+
+// 기본 Array#sort는 사전식이라 [10, 2]가 그대로 [10, 2]로 돌아온다 — 숫자 비교자
+// (a, b) => a - b가 없으면 이 케이스가 깨진다.
+test("classifyMigrations sorts numerically, not lexicographically", () => {
+  assert.deepStrictEqual(classifyMigrations([{ version: 10 }, { version: 2 }]), [2, 10]);
 });

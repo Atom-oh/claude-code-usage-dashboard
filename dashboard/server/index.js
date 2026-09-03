@@ -9,7 +9,7 @@ import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping, assertReadonlySession } from "./clickhouse.js";
-import { probeSegmentAwareSeriesKey } from "./schema.js";
+import { probeSegmentAwareSeriesKey, probeMigrations } from "./schema.js";
 import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./freshness.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 
@@ -160,10 +160,15 @@ setInterval(() => {
 // 스키마 마이그레이션(migration-003) 적용 여부는 가정하지 않고 실측한다 — /api/config는
 // 동기 응답을 유지해야 하므로(요청 경로에서 ClickHouse를 만지지 않는다) 부팅 시 한 번 +
 // 10분마다 갱신해 최신값만 들고 있는다. 실패는 null로 접혀 경고 문구가 유지된다(fail-safe).
+// 같은 10분 주기에 스키마 마이그레이션 원장(claude_code.schema_migrations) 조회도 얹는다.
 let segmentAwareSeriesKey = null;
+let schemaMigrations = null;
 const refreshSchemaProbe = () => {
   probeSegmentAwareSeriesKey().then((v) => {
     segmentAwareSeriesKey = v;
+  });
+  probeMigrations().then((v) => {
+    schemaMigrations = v;
   });
 };
 refreshSchemaProbe();
@@ -420,7 +425,7 @@ app.get("/api/config", (_req, res) =>
   res.json({
     piiMask: piiMaskEnabled,
     pricing: pricingConfig,
-    schema: { segmentAwareSeriesKey },
+    schema: { segmentAwareSeriesKey, migrations: schemaMigrations },
     groupMode: GROUP_MODE,
     defaultRangeDays: DEFAULT_RANGE_DAYS,
     rangeCapDays: RANGE_CAP_DAYS,

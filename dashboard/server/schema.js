@@ -51,3 +51,32 @@ export async function probeSegmentAwareSeriesKey() {
     return null;
   }
 }
+
+// 어느 마이그레이션이 적용됐는지는 이제 클러스터가 직접 기록한다
+// (clickhouse-migration-004.sql의 claude_code.schema_migrations). system.columns를 뒤지지
+// 않아도 되고, 원장 테이블은 claude_code.* 안이라 otel_reader의 GRANT SELECT로 읽힌다.
+const MIGRATIONS_SQL = `SELECT version FROM claude_code.schema_migrations ORDER BY version`;
+
+// 순수 함수 — 드라이버가 준 행 배열을 정렬된 유일 버전 배열로 접는다.
+// version은 UInt16이라 @clickhouse/client가 JSON 숫자로 준다(실측 2026-09-03:
+// {"version":2}, typeof === "number"). 문자열도 받아들이는 건 방어적 조치다 — 같은 파일의
+// classifySeriesKeyProbe의 Number() 강제 변환과 달리 실측된 동작을 고치는 게 아니다
+// (그쪽은 count() 집계라 UInt64이고, 실제로 문자열로 온다).
+// 배열이 아니면(undefined/null/에러) null — "확인되지 않음"과 "빈 목록"은 다른 상태다.
+export function classifyMigrations(rows) {
+  if (!Array.isArray(rows)) return null;
+  const versions = rows
+    .map((r) => Number(r?.version))
+    .filter((v) => Number.isFinite(v));
+  return [...new Set(versions)].sort((a, b) => a - b);
+}
+
+// 부팅/주기 실행 모두 비치명적 — 어떤 에러든 null로 접는다. 004 이전 클러스터에서는
+// 원장 테이블이 없어 UNKNOWN_TABLE(code 60)이 오는데, 그것도 "확인되지 않음"이다.
+export async function probeMigrations() {
+  try {
+    return classifyMigrations(await query(MIGRATIONS_SQL));
+  } catch {
+    return null;
+  }
+}
