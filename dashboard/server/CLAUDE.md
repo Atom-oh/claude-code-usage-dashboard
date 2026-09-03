@@ -50,9 +50,11 @@ session is `readonly`.
   cache warmer (pre-computes the default 2-day/no-filter view every `QUANT_MS` boundary; the web
   client quantizes `to` to the same boundary in `useApi.js` so keys match across sessions),
   global Basic Auth middleware, static file serving
-- `http.js` -- `ValidationError`, `parseRange`, `parseIntervalHours` (pure, unit-tested; they
-  live outside `index.js` because `index.js` calls `app.listen()` at module load and so cannot
-  be imported by a test)
+- `http.js` -- `ValidationError`, `parseRange`, `parseIntervalHours` (pure, unit-tested)
+- `app.test.js` -- drives the real Express app over an ephemeral socket (`app.listen(0)`) to pin
+  the `route()` envelope itself: 400 mapping with a non-echoing `detail`, a 500 body of exactly
+  `{error, id}` with no SQL or driver text, and `Cache-Control: no-store` on every `/api/*`
+  response including `/api/chat` and `/api/config`
 - `queries.js` -- all ClickHouse SQL; `incFlat`/`incBucketed` (cumulative-counter diffing over
   the hourly rollup `otel_metrics_sum_hourly` — MINUTE-bucket drag-zoom falls back to the raw
   table via `incBucketedRaw`), `filterCond` (global group/user/model filters), `normModel`
@@ -89,6 +91,11 @@ session is `readonly`.
 - `*.test.js` -- `node:test` unit tests for the pure functions above
 
 ## Rules
+- **`index.js` binds the port only when it is the entry module** (`isMain` via
+  `pathToFileURL(path.resolve(process.argv[1]))`) and exports `app`, so `app.test.js` can import
+  it. Everything else at module scope -- the fail-closed auth check, the schema and readonly
+  probes, route registration -- still runs at import time and the test depends on that: keep any
+  new boot side effect import-safe, or move it inside the `isMain` guard.
 - **Never `sum(Value)` directly on `otel_metrics_sum`.** Values are cumulative per-session
   counters; use `incFlat()` (snapshot) or `incBucketed()` (timeseries) to get the actual
   increase over the requested range. See the long comment block above `incFlat` in

@@ -1,6 +1,6 @@
 import express from "express";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import basicAuth from "express-basic-auth";
 import { ValidationError, parseRange, parseIntervalHours } from "./http.js";
@@ -54,6 +54,17 @@ if (authEnabled) {
     })(req, res, next))
   );
 }
+
+// /api/* 응답 전체에 no-store. 라우트마다 res.set을 부르던 예전 방식은 route() 래퍼를 거치는
+// 라우트만 덮었다 — POST /api/chat과 GET /api/config는 래퍼 밖이라 헤더가 아예 없었다(실측
+// 2026-09-03: /api/config 응답에 Cache-Control 없음). 의도된 캐시 계층은 서버 쪽 메모
+// 캐시(fetchCached)이고 CloudFront는 이미 CachingDisabled다 — 남은 건 브라우저의 back/forward
+// 캐시인데, range picker를 바꾼 뒤 뒤로 가기로 지난 KPI가 그대로 보이면 화면의 숫자와 선택된
+// 구간이 어긋난다.
+app.use("/api", (_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
 
 app.get("/healthz", async (_req, res) => {
   res.json({ ok: await ping().catch(() => false) });
@@ -214,11 +225,6 @@ const warmRoutes = [];
 function route(path, handler, { warm = true } = {}) {
   if (warm) warmRoutes.push({ path, handler });
   app.get(path, async (req, res) => {
-    // route()가 내려주는 모든 응답(200/400/500)에 no-store. 의도된 캐시 계층은 서버 쪽
-    // 메모 캐시(fetchCached)이고, CloudFront는 이미 CachingDisabled다 — 남은 건 브라우저의
-    // back/forward 캐시인데, range picker를 바꾼 뒤 뒤로 가기로 지난 KPI가 그대로 보이면
-    // 화면의 숫자와 선택된 구간이 어긋난다.
-    res.set("Cache-Control", "no-store");
     try {
       // 검증은 fetchCached보다 먼저 — 잘못된 요청이 캐시 엔트리를 만들면 안 된다. 무효한
       // from/to도 예전에는 고유한 캐시 키를 하나씩 차지했다(엔트리 상한을 무의미한 키로
@@ -416,28 +422,40 @@ app.use(express.static(webDist));
 app.get("*", (_req, res) => res.sendFile(path.join(webDist, "index.html")));
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
-const server = app.listen(PORT, () => {
-  console.log(`dashboard listening on :${PORT}`);
-  // 부팅 직후 즉시 한 번 데우고(배포 직후 첫 방문자도 히트), 이후 QUANT_MS 경계마다 반복.
-  warmCache().catch((err) => console.error("warmCache(boot)", err));
-  scheduleWarmer();
-});
 
-// k8s 롤링 업데이트에서 SIGTERM은 파드가 Service endpoints에서 빠지기 *전에* 도착한다 —
-// 드레인 중인 파드가 계속 ready라고 답하면 안 되므로 shuttingDown을 세워 /readyz를 503으로
-// 뒤집는다. 단, 플래그와 server.close()는 같은 동기 틱에서 실행되므로 둘의 순서는 의미가 없고
-// (어떤 요청 핸들러도 한쪽만 관측할 수 없다), close()는 리스너를 즉시 닫아 SIGTERM 이후의
-// *새* 연결은 503이 아니라 거절된다(실측 2026-09-02, 열린 연결을 붙든 상태에서 확인). 엔드포인트
-// 제거가 전파될 시간은 이 코드가 아니라 preStop 훅/terminationGracePeriod에서 나와야 한다.
-// 상한 타이머는 keep-alive 소켓이 남아 close() 콜백이 오지 않는 경우의 안전망이고, unref()해서
-// 이 타이머 자체가 정상 종료를 붙들지 않게 한다. 기존 주기 타이머(캐시 스윕, 스키마 프로브,
-// warmer 체인)는 이미 전부 unref()되어 있어 별도 정리가 필요 없다.
-for (const signal of ["SIGTERM", "SIGINT"]) {
-  process.on(signal, () => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    console.log(`${signal} received — readiness now failing, draining connections`);
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
+// app을 export하고 리스닝은 엔트리 모듈일 때만 — 모듈 로드가 곧 포트 바인딩이면 테스트에서
+// import할 수 없어서, route() 래퍼(400/500 매핑·no-store·500 본문에 SQL 안 싣기)가 통째로
+// 테스트 불가였다(실측: no-store 한 줄을 지워도 스위트가 그대로 통과). app.test.js가 이걸
+// import해 실제 소켓으로 검증한다 — 모듈 스코프의 부작용(인증 fail-closed 검사, 스키마/readonly
+// 프로브, 라우트 등록)은 그 import 시점에 그대로 돌아야 하므로 여기 가드 안으로 옮기지 않는다.
+export { app };
+
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+
+if (isMain) {
+  const server = app.listen(PORT, () => {
+    console.log(`dashboard listening on :${PORT}`);
+    // 부팅 직후 즉시 한 번 데우고(배포 직후 첫 방문자도 히트), 이후 QUANT_MS 경계마다 반복.
+    warmCache().catch((err) => console.error("warmCache(boot)", err));
+    scheduleWarmer();
   });
+
+  // k8s 롤링 업데이트에서 SIGTERM은 파드가 Service endpoints에서 빠지기 *전에* 도착한다 —
+  // 드레인 중인 파드가 계속 ready라고 답하면 안 되므로 shuttingDown을 세워 /readyz를 503으로
+  // 뒤집는다. 단, 플래그와 server.close()는 같은 동기 틱에서 실행되므로 둘의 순서는 의미가 없고
+  // (어떤 요청 핸들러도 한쪽만 관측할 수 없다), close()는 리스너를 즉시 닫아 SIGTERM 이후의
+  // *새* 연결은 503이 아니라 거절된다(실측 2026-09-02, 열린 연결을 붙든 상태에서 확인). 엔드포인트
+  // 제거가 전파될 시간은 이 코드가 아니라 preStop 훅/terminationGracePeriod에서 나와야 한다.
+  // 상한 타이머는 keep-alive 소켓이 남아 close() 콜백이 오지 않는 경우의 안전망이고, unref()해서
+  // 이 타이머 자체가 정상 종료를 붙들지 않게 한다. 기존 주기 타이머(캐시 스윕, 스키마 프로브,
+  // warmer 체인)는 이미 전부 unref()되어 있어 별도 정리가 필요 없다.
+  for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.on(signal, () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      console.log(`${signal} received — readiness now failing, draining connections`);
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
+    });
+  }
 }
