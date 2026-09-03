@@ -85,7 +85,7 @@ export function UserDrawer({ row, onClose }) {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
-      <aside className="fixed right-0 top-0 z-50 h-screen w-full max-w-xl overflow-y-auto bg-page border-l border-ink-100 shadow-xl p-6 flex flex-col gap-4 animate-fade-in">
+      <aside className="fixed right-0 top-0 z-50 h-screen w-full max-w-xl overflow-y-auto bg-paper border-l border-ink-100 shadow-xl p-6 flex flex-col gap-4 animate-fade-in">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-[18px] font-semibold text-ink-800 truncate">{maskEmail(row.user)}</h2>
