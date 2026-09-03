@@ -165,7 +165,9 @@ not by Terraform). `user-data.sh` is a cloud-init template, so this applies to n
 instances only — see `docs/runbooks/clickhouse-ingest-user-cutover.md` for the cutover
 procedure. The `SELECT` grant on the source table is required, not extra: the materialized
 view onto `otel_metrics_sum` is checked with the inserting user's privileges, so without it
-every insert fails with `ACCESS_DENIED`.
+every insert fails with `ACCESS_DENIED`. The ClickHouse data this collector writes has its own
+backup/restore posture — RPO, retention and the quarterly restore drill — documented in
+`docs/runbooks/backup-and-restore.md`.
 
 **Since 2026-09-02 the dashboard notices this itself.** `GET /api/health/data` classifies the
 newest `otel_metrics_sum` row into `ok` / `stale` / `unknown` and answers HTTP **503** for the
@@ -388,7 +390,9 @@ kubectl -n claude-code exec chi-cc-ab-replicated-0-0-0 -- \
 적용됩니다 — 컷오버 절차는 `docs/runbooks/clickhouse-ingest-user-cutover.md`를 참고하세요.
 소스 테이블에 대한 `SELECT` grant는 있으면 좋은 정도가 아니라 필수입니다: `otel_metrics_sum`
 위의 materialized view가 insert하는 유저의 권한으로 검사되기 때문에, 이 grant가 없으면
-모든 insert가 `ACCESS_DENIED`로 실패합니다.
+모든 insert가 `ACCESS_DENIED`로 실패합니다. 이 컬렉터가 쓰는 ClickHouse 데이터의 백업/복구
+현황 — RPO, 보존 기간, 분기별 복구 드릴 — 은 `docs/runbooks/backup-and-restore.md`에
+문서화되어 있습니다.
 
 **2026-09-02부터 대시보드가 이 문제를 스스로 감지합니다.** `GET /api/health/data`가 가장
 최신 `otel_metrics_sum` 행을 `ok` / `stale` / `unknown`으로 분류하고, 후자 둘에 대해 HTTP

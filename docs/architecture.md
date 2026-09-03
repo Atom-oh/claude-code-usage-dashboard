@@ -201,6 +201,7 @@ next `terraform apply` because the Job's name embeds that file's `filemd5`.
 ## Operations
 - Deployment: see [docs/runbooks/deploy-production.md](runbooks/deploy-production.md)
 - Incident Response: see [docs/runbooks/incident-response.md](runbooks/incident-response.md)
+- Backup & Restore: see [docs/runbooks/backup-and-restore.md](runbooks/backup-and-restore.md)
 
 ---
 
@@ -388,3 +389,4 @@ ClickHouse 스키마는 `claude_code.schema_migrations`(`clickhouse-migration-00
 ## 운영
 - 배포: [docs/runbooks/deploy-production.md](runbooks/deploy-production.md) 참고
 - 장애 대응: [docs/runbooks/incident-response.md](runbooks/incident-response.md) 참고
+- 백업·복구: [docs/runbooks/backup-and-restore.md](runbooks/backup-and-restore.md) 참고
