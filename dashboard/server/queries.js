@@ -1,6 +1,7 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost, normalizeModelId } from "./pricing.js";
+import { rollupAdoption } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -1127,7 +1128,7 @@ export async function userSkillUsage(from, to, filters = {}) {
 // 집합만 뽑고 JS에서 접는다 — 유저 수가 수백 명 수준이라 집합 union이 싸고, SQL 셀프조인보다
 // 단순하다. uniq류는 존재 여부만 보므로 시간별 rollup으로 접혀도 값이 같다(키 보존).
 // 날짜 키는 toDate(..., 'UTC')로 고정 — JS는 toISOString()(UTC)로 롤링 union하므로 서버 TZ가
-// UTC가 아니어도 하루 어긋나지 않는다(activity.js의 rollupActiveUsers와 동일 규칙).
+// UTC가 아니어도 하루 어긋나지 않는다(activity.js의 rollupAdoption이 그 규칙으로 접는다).
 // excludeUnknown: false — activeUsers/adoptionLevels와 같은 "총계/DAU·WAU·MAU" 계열이라
 // 그룹 무관 모수여야 한다. 빠뜨리면 이 시계열만 unknown ~11%가 빠져 Trends의 DAU/WAU/MAU가
 // Overview 스냅샷(adoptionLevels)보다 낮게 나오는 모순이 생긴다(리뷰에서 MAJOR로 확인).
@@ -1145,20 +1146,7 @@ export async function adoptionTimeseries(from, to, filters = {}) {
     GROUP BY d ORDER BY d`,
     { ...range(from, to), ...f.params }
   );
-  const byDay = new Map(rows.map((r) => [r.d, r.users]));
-  const DAY = 86400000;
-  const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
-  const out = [];
-  for (let t = Math.ceil(from.getTime() / DAY) * DAY; t < to.getTime(); t += DAY) {
-    const union = (days) => {
-      const s = new Set();
-      for (let i = 0; i < days; i++) for (const u of byDay.get(dayKey(t - i * DAY)) || []) s.add(u);
-      return s.size;
-    };
-    const dau = union(1), mau = union(30);
-    out.push({ t: dayKey(t), dau, wau: union(7), mau, stickiness: mau > 0 ? Number(((dau / mau) * 100).toFixed(1)) : 0 });
-  }
-  return out;
+  return rollupAdoption(rows, from, to);
 }
 
 // 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열. group을 넘기면 그 그룹 세션만 —

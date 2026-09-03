@@ -1,53 +1,29 @@
-// DAU/WAU/MAU 시계열 롤업 — SQL에서 날짜별로 30개의 uniqExactIf를 반복하는 대신, "일자×유저 존재"
-// 원자료만 ClickHouse에서 가져오고(queries.js dailyActiveUsers) 롤링 윈도우 집계는 여기서 한다.
-// 이 모듈은 현재 프로덕션 호출자가 없다 — queries.js의 adoptionTimeseries가 같은 롤링 윈도우를
-// 자체 정의(30일/7일 + stickiness)로 인라인 계산한다. 그래도 남겨두는 이유는 이 창 정의를
-// 단위 테스트(activity.test.js)로 검증하는 유일한 코드이기 때문이다.
-function toDay(d) {
-  return d.toISOString().slice(0, 10);
-}
-
-// unionSince(day, N)은 day를 포함해 양끝 inclusive로 세므로 29는 "당일 포함 trailing 30일"이다
-// (adoptionLevels의 스냅샷 쿼리가 쓰는 INTERVAL 30 DAY와 정의가 일치). 이 상수는 같은 파일의
-// rollupActiveUsers(unionSince(day, MAU_WINDOW_DAYS))가 소비하므로, rollupActiveUsers를
-// 호출하는 쪽은 조회 창을 이 값만큼 넓혀야 mau가 맞다.
-export const MAU_WINDOW_DAYS = 29;
-
-// rows: [{day: 'YYYY-MM-DD', UserEmail}] — from-MAU_WINDOW_DAYS일 이전부터 to까지 조회된 것이어야
-// wau/mau가 맞다.
-export function rollupActiveUsers(rows, from, to) {
-  const usersByDay = new Map(); // 'YYYY-MM-DD' -> Set<email>
-  for (const r of rows) {
-    const day = String(r.day).slice(0, 10);
-    if (!usersByDay.has(day)) usersByDay.set(day, new Set());
-    usersByDay.get(day).add(r.UserEmail);
-  }
-
-  // from을 그날 자정으로 내리면(floor) from이 정오 같은 중간 시각일 때 첫 point가 요청 range
-  // 이전(자정~from) 활동까지 끌어온다 — from 이후의 첫 자정부터 시작해 그 부분 day를 통째로
-  // 버린다(from이 이미 자정이면 그대로). 즉 RangeContext의 "지금 - N일"처럼 자정에 안 맞는
-  // from에서는 이 차트의 첫날이 항상 빠진다 — range가 짧을수록 눈에 띄는 트레이드오프.
+// DAU/WAU/MAU + 고착도 롤업 — /api/adoption/timeseries의 실제 집계다. SQL에서 날짜별로 30개의
+// uniqExactIf를 반복하는 대신 "일자 × 유저 집합" 원자료만 ClickHouse에서 가져오고(queries.js의
+// adoptionTimeseries) 롤링 윈도우는 여기서 접는다 — 유저 수가 수백 명 수준이라 집합 union이
+// 싸고 SQL 셀프조인보다 단순하다.
+//
+// 창 정의: 당일 포함 trailing 30일(mau) / 당일 포함 trailing 7일(wau). union(N)이 i=0..N-1로
+// 당일부터 거꾸로 세므로 N이 곧 일수다. 고착도 = dau/mau*100 소수 1자리, mau가 0이면 0.
+// 날짜 키는 toISOString()(UTC)로 고정 — queries.js가 toDate(..., 'UTC')로 뽑으므로 서버 TZ가
+// UTC가 아니어도 하루 어긋나지 않는다.
+//
+// from이 자정이 아니면(예: RangeContext의 "지금 - N일") Math.ceil로 다음 자정부터 시작해 그
+// 부분 day를 통째로 버린다 — 요청 range 이전(자정~from) 활동이 첫 point에 섞이지 않게 하는
+// 의도된 트레이드오프이고, range가 짧을수록 눈에 띈다.
+export function rollupAdoption(rows, from, to) {
+  const byDay = new Map(rows.map((r) => [r.d, r.users]));
   const DAY = 86400000;
-  const days = [];
+  const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const out = [];
   for (let t = Math.ceil(from.getTime() / DAY) * DAY; t < to.getTime(); t += DAY) {
-    days.push(toDay(new Date(t)));
+    const union = (days) => {
+      const s = new Set();
+      for (let i = 0; i < days; i++) for (const u of byDay.get(dayKey(t - i * DAY)) || []) s.add(u);
+      return s.size;
+    };
+    const dau = union(1), mau = union(30);
+    out.push({ t: dayKey(t), dau, wau: union(7), mau, stickiness: mau > 0 ? Number(((dau / mau) * 100).toFixed(1)) : 0 });
   }
-
-  const unionSince = (day, windowDays) => {
-    const end = new Date(`${day}T00:00:00Z`);
-    const start = new Date(end.getTime() - windowDays * 86400000);
-    const set = new Set();
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-      const s = usersByDay.get(toDay(d));
-      if (s) for (const email of s) set.add(email);
-    }
-    return set.size;
-  };
-
-  return days.map((day) => ({
-    t: day,
-    dau: usersByDay.get(day)?.size || 0,
-    wau: unionSince(day, 6),
-    mau: unionSince(day, MAU_WINDOW_DAYS),
-  }));
+  return out;
 }

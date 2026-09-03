@@ -70,9 +70,10 @@ session is `readonly`.
   `tierCosts`, `tierCostsByGroup`
 - `productivity.js` -- productivity score derivation (pure function, used by leaderboard)
 - `costEfficiency.js` -- `$/LOC`, `$/commit` derivation (pure function)
-- `activity.js` -- DAU/WAU/MAU rollup from raw day x user rows (pure function; its
-  `MAU_WINDOW_DAYS` constant is consumed only inside this module now -- see the Rules bullet
-  on `/api/adoption/timeseries` for why it is kept with no production caller)
+- `activity.js` -- `rollupAdoption(rows, from, to)`: the DAU/WAU/MAU + stickiness fold behind
+  `/api/adoption/timeseries` (pure function, unit-tested). Windows are trailing 30 and 7 days
+  *inclusive of the current day*; stickiness is `dau / mau * 100` to one decimal, and `0` when
+  `mau` is `0`
 - `chat.js` -- Bedrock ConverseStream chat assistant, `sanitizeSql()` SQL sandbox
 - `clickhouse.js` -- `query()` / `queryReadonly()` / `ping()`; `classifyReadonly` (pure,
   unit-tested tri-state) / `assertReadonlySession` (never throws, folds every error to `null`)
@@ -196,13 +197,11 @@ session is `readonly`.
   treated exactly like `false`. Local-dev consequence: a plain local ClickHouse `default`
   account has `readonly=0`, so chat answers 503 locally unless `CH_USER` points at a
   readonly-profiled account.
-- **`/api/adoption/timeseries` is `adoptionTimeseries`, which computes its rolling windows
-  inline** (`byDay` map, 30/7-day unions, plus `stickiness`). The old `activeUsersTimeseries`
-  export was deleted — it had zero callers. `activity.js` is retained even though it now has no
-  production caller: `rollupActiveUsers` is the only unit-tested statement of the DAU/WAU/MAU
-  window definition (`activity.test.js`, `MAU_WINDOW_DAYS = 29`). Do not delete it, and do not
-  rewire `adoptionTimeseries` through it — the windows differ (29/6 vs 30/7) and it would drop
-  `stickiness`.
+- **`/api/adoption/timeseries` is `adoptionTimeseries`, and its rolling-window fold lives in
+  `activity.js`'s `rollupAdoption`** -- the query returns only `[{d, users}]` day rows and the
+  30/7-day unions plus `stickiness` are folded in JS, where `activity.test.js` can pin them. The
+  older `activeUsersTimeseries` export and the unused 29/6-day `rollupActiveUsers` fold beside
+  it were both deleted; there is one window definition now, and it is the one the page renders.
 - **`npm test`** in `dashboard/server` runs `node --test *.test.js`. `engines.node` is `>=22`
   (local toolchain 22, runtime image 24). CI (`.github/workflows/ci.yml`) runs it on every push
   to `main`/`feat/**` and every pull request.
