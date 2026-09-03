@@ -3,7 +3,7 @@ variable "region" {
 }
 
 variable "eks_cluster_name" {
-  default = "fsi-demo-cluster"
+  description = "이 스택을 올릴 EKS 클러스터 이름. 기본값 없음 — tfvars로 반드시 지정한다."
 }
 
 variable "k8s_namespace" {
@@ -35,15 +35,15 @@ variable "pii_mask_enabled" {
 }
 
 variable "domain" {
-  default = "atomai.click"
+  description = "Route53 호스팅 존의 apex 도메인(예: example.com)."
 }
 
 variable "dashboard_hostname" {
-  default = "ccdash.atomai.click"
+  description = "대시보드 공개 호스트명. var.domain 안의 FQDN이어야 한다."
 }
 
 variable "ch_ingest_hostname" {
-  default = "ch.atomai.click"
+  description = "컬렉터가 OTLP를 쓰는 ClickHouse ingest 호스트명. var.domain 안의 FQDN."
 }
 
 variable "clickhouse_node_instance_type" {

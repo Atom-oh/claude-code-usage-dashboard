@@ -19,6 +19,9 @@ tree at build time, so the checked-out branch/commit matters.
 - After a Terraform change to `infra/dashboard.tf` that needs a new rollout to take effect
 
 ## Prerequisites
+- `infra/terraform.tfvars` exists — copy `infra/terraform.tfvars.example` to
+  `infra/terraform.tfvars` and fill it in. Five variables have no default, so `terraform
+  plan`/`apply` fails without it
 - `kubectl` context `fsi-demo-cluster` configured, access to namespace `claude-code`
 - `aws` CLI authenticated with ECR push access to `180294183052.dkr.ecr.ap-northeast-2.amazonaws.com`
 - `docker buildx` with `linux/arm64` support (the nodepool is Graviton)
@@ -150,6 +153,9 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
 - `infra/dashboard.tf`의 Terraform 변경을 반영하려면 새 롤아웃이 필요할 때
 
 ## 사전 요구 사항
+- `infra/terraform.tfvars` 준비 — `infra/terraform.tfvars.example`을
+  `infra/terraform.tfvars`로 복사해 값을 채운다. 기본값이 없는 변수가 5개라 없으면 `terraform
+  plan`/`apply`가 실패한다
 - `kubectl` context `fsi-demo-cluster` 설정, `claude-code` 네임스페이스 접근 권한
 - `180294183052.dkr.ecr.ap-northeast-2.amazonaws.com`에 push 가능한 `aws` CLI 인증
 - `linux/arm64`를 지원하는 `docker buildx`(노드풀이 Graviton)

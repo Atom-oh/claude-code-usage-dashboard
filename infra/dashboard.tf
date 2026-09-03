@@ -1,6 +1,5 @@
 variable "dashboard_image_tag" {
-  description = "ECR에 push된 이미지 태그. 첫 apply 시점엔 아직 이미지가 없을 수 있음 — push 후 재배포."
-  default     = "latest"
+  description = "ECR에 push된 이미지 태그. 첫 apply 시점엔 아직 이미지가 없을 수 있음 — push 후 재배포. 기본값 없음 — ECR 리포지터리가 IMMUTABLE이라 움직이는 `latest`가 존재하지 않는다(ecr.tf). 첫 apply 전에 이미지를 push하고 그 타임스탬프 태그를 지정한다."
 }
 
 variable "data_stale_minutes" {

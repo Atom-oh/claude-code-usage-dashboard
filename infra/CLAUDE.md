@@ -5,6 +5,10 @@ Single Terraform root module provisioning the EKS cluster, ClickHouse (via its K
 Operator), ECR, S3, and DNS/CDN for the dashboard.
 
 ## Key Files
+- `terraform.tfvars.example` -- the five variables with no default (`eks_cluster_name`,
+  `domain`, `dashboard_hostname`, `ch_ingest_hostname`, `dashboard_image_tag`). Copy to
+  `terraform.tfvars` and fill it in before the first `plan`; `*.tfvars` is gitignored but the
+  `.example` filename is not matched by that pattern, so this template is committed
 - `providers.tf`, `data.tf`, `variables.tf`, `outputs.tf` -- module scaffolding
 - `nodepool.tf` -- Graviton (arm64) EKS managed node group
 - `clickhouse.tf` -- ClickHouse Operator install, `Cluster` resource, `hot_cold` storage
@@ -29,9 +33,11 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   `min_available = 1`. Most importantly for anyone reading this file before an apply: the
   Deployment carries `lifecycle { ignore_changes = [...] }` on the container image, because the
   live image is owned by the deploy runbook's `kubectl set image` and `var.dashboard_image_tag`
-  only seeds the first rollout. Also wires `DATA_STALE_MINUTES` (from `var.data_stale_minutes`,
-  default `360`) and the optional `PRICING_JSON` / `PRICING_CACHE_WRITE_TTL` (nullable vars; no
-  env is injected when they're `null`).
+  only seeds the first rollout, with no default (the now-IMMUTABLE ECR repository has no
+  `latest` to fall back to — a value must come from `terraform.tfvars`). Also wires
+  `DATA_STALE_MINUTES` (from `var.data_stale_minutes`, default `360`) and the optional
+  `PRICING_JSON` / `PRICING_CACHE_WRITE_TTL` (nullable vars; no env is injected when they're
+  `null`).
 - `ecr.tf` -- ECR repository for `cc-ab-dashboard`, `image_tag_mutability = "IMMUTABLE"` — the
   deploy path therefore pushes only the timestamp tag; a `latest` re-push is rejected by the
   registry.
@@ -57,6 +63,10 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   itself is gitignored.
 
 ## Rules
+- **`terraform plan`/`apply` requires a `terraform.tfvars`.** Five variables deliberately have
+  no default -- an apply with no tfvars used to target this deployment's own cluster, domain and
+  hostnames, and a `latest` image tag the now-IMMUTABLE ECR repository rejects. Start from
+  `terraform.tfvars.example`.
 - Never commit `*.tfvars`, `terraform.tfstate*`, `backend.hcl`, or anything under
   `.terraform/` — all already gitignored, keep it that way.
 - If `clickhouse.tf` or `files/clickhouse-schema-replicated.sql` changes a promoted/materialized
