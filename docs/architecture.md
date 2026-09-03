@@ -155,10 +155,11 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
 |--------|-----------|-------------|
 | `infra/nodepool.tf` | EKS managed node group | Graviton (m8g.xlarge, arm64) nodes |
 | `infra/clickhouse.tf` | ClickHouse Operator, Cluster, storage policy | `hot_cold` policy: local EBS + `cold_s3` disk; accounts `otel_writer` / `otel_reader` / `otel_ingest` (the last is the INSERT-scoped collector account) |
-| `infra/dashboard.tf` | Deployment, Service, PodDisruptionBudget | Dashboard app, env from k8s Secret; `var.pii_mask_enabled` -> `PII_MASK_ENABLED`; `var.group_mode` / `var.default_range_days` / `var.range_cap_days` -> `GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS`; `/readyz` readiness probe + drain window |
+| `infra/dashboard.tf` | Deployment, Service, PodDisruptionBudget | Dashboard app, env from k8s Secret; `var.pii_mask_enabled` -> `PII_MASK_ENABLED`; `var.group_mode` / `var.default_range_days` / `var.range_cap_days` -> `GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS`; `/readyz` readiness probe + drain window; `var.alert_webhook_url` -> Secret `dashboard-alert` -> `ALERT_WEBHOOK_URL`; `var.alert_repeat_minutes` -> `ALERT_REPEAT_MINUTES` |
 | `infra/ecr.tf` | ECR repository | `cc-ab-dashboard` image registry, immutable-tagged |
 | `infra/s3.tf` | S3 buckets | ClickHouse cold tier, backups |
 | `infra/dns_cdn.tf` | Route53, CloudFront | Public dashboard endpoint; dashboard distribution carries the managed security-headers policy |
+| `infra/alerting.tf` | CloudWatch alarm, SNS topic + subscription | Optional edge-side 5xx alarm, gated on `var.alert_email` (null = nothing created); all in us-east-1 because CloudFront metrics live only there; `alert_topic_arn` output lets an org attach a second subscriber |
 
 ### Deployed Resources
 - Dashboard: internal NLB behind CloudFront, Basic Auth-gated; `replicas 2` with
@@ -170,6 +171,12 @@ The ClickHouse schema is versioned in `claude_code.schema_migrations` (created b
 `clickhouse-migration-004.sql`) and surfaced at `GET /api/config`'s `schema.migrations`;
 editing `infra/files/clickhouse-schema-replicated.sql` recreates the schema-init Job on the
 next `terraform apply` because the Job's name embeds that file's `filemd5`.
+
+Alerting has two independent legs: an in-app data-freshness webhook posted by the server
+itself (`dashboard/server/alerting.js`, `var.alert_webhook_url`) and an edge-side CloudFront
+5xx alarm in CloudWatch (`infra/alerting.tf`, `var.alert_email`). Neither exists unless its
+variable is set, and neither covers the other's failure mode — the in-app leg cannot report
+that the dashboard itself is down, and the edge alarm cannot see that ingestion stopped.
 
 ## Key Design Decisions
 
@@ -349,10 +356,11 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
 |--------|-----------|-------------|
 | `infra/nodepool.tf` | EKS 관리형 노드 그룹 | Graviton(m8g.xlarge, arm64) 노드 |
 | `infra/clickhouse.tf` | ClickHouse Operator, Cluster, 스토리지 정책 | `hot_cold` 정책: 로컬 EBS + `cold_s3` disk; 계정 `otel_writer` / `otel_reader` / `otel_ingest`(마지막이 INSERT 범위 컬렉터 계정) |
-| `infra/dashboard.tf` | Deployment, Service, PodDisruptionBudget | 대시보드 앱, k8s Secret에서 env 주입; `var.pii_mask_enabled` -> `PII_MASK_ENABLED`; `var.group_mode` / `var.default_range_days` / `var.range_cap_days` -> `GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS`; `/readyz` readiness probe + drain 창 |
+| `infra/dashboard.tf` | Deployment, Service, PodDisruptionBudget | 대시보드 앱, k8s Secret에서 env 주입; `var.pii_mask_enabled` -> `PII_MASK_ENABLED`; `var.group_mode` / `var.default_range_days` / `var.range_cap_days` -> `GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS`; `/readyz` readiness probe + drain 창; `var.alert_webhook_url` -> Secret `dashboard-alert` -> `ALERT_WEBHOOK_URL`; `var.alert_repeat_minutes` -> `ALERT_REPEAT_MINUTES` |
 | `infra/ecr.tf` | ECR 리포지토리 | `cc-ab-dashboard` 이미지 레지스트리, 태그 불변(immutable) |
 | `infra/s3.tf` | S3 버킷 | ClickHouse cold tier, 백업 |
 | `infra/dns_cdn.tf` | Route53, CloudFront | 공개 대시보드 엔드포인트; 대시보드 배포에 managed 보안 헤더 정책 적용 |
+| `infra/alerting.tf` | CloudWatch 알람, SNS 토픽 + 구독 | 선택적 엣지 5xx 알람, `var.alert_email`로 게이트(null이면 아무것도 만들지 않음); CloudFront 지표가 us-east-1에만 있어 전부 us-east-1; `alert_topic_arn` 출력으로 조직이 두 번째 구독자를 모듈 수정 없이 붙일 수 있다 |
 
 ### 배포된 리소스
 - 대시보드: CloudFront 뒤의 내부 NLB, Basic Auth 게이트; `replicas 2`에 `max_unavailable=0`
@@ -364,6 +372,12 @@ ClickHouse 스키마는 `claude_code.schema_migrations`(`clickhouse-migration-00
 버전 관리되며 `GET /api/config`의 `schema.migrations`로 노출됩니다. 또한
 `infra/files/clickhouse-schema-replicated.sql`을 수정하면 schema-init Job 이름이 그 파일의
 `filemd5`를 담고 있어 다음 `terraform apply`에서 Job이 재생성·재실행됩니다.
+
+알림은 서로 독립된 두 축으로 구성됩니다: 서버가 직접 발송하는 앱 내부 데이터 신선도 웹훅
+(`dashboard/server/alerting.js`, `var.alert_webhook_url`)과 CloudWatch의 엣지 CloudFront 5xx
+알람(`infra/alerting.tf`, `var.alert_email`)입니다. 둘 다 해당 변수가 설정되지 않으면
+존재하지 않으며, 어느 쪽도 상대의 실패 모드를 대신 감지하지 못합니다 — 앱 내부 축은
+대시보드 자체가 죽었다는 사실을 알릴 수 없고, 엣지 알람은 수집이 중단된 것을 볼 수 없습니다.
 
 ## 주요 설계 결정
 

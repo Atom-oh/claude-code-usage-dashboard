@@ -42,7 +42,10 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   `var.range_cap_days` (defaults `ab` / `2` / `90`, identical to the server defaults,
   validated in Terraform with the same rules the server enforces at boot — `ab|single`,
   positive integer, cap `>=` default) — always injected, so the first apply after they were
-  added rolls the Deployment once.
+  added rolls the Deployment once. `var.alert_webhook_url` (sensitive, nullable) becomes a
+  `dashboard-alert` k8s Secret mounted via a `dynamic env_from`, plus `ALERT_REPEAT_MINUTES`
+  as the last `env` entry -- both absent when null, so enabling alerting later rolls the
+  Deployment once.
 - `ecr.tf` -- ECR repository for `cc-ab-dashboard`, `image_tag_mutability = "IMMUTABLE"` — the
   deploy path therefore pushes only the timestamp tag; a `latest` re-push is rejected by the
   registry.
@@ -52,6 +55,15 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   (`67f7725c-6f97-4210-82d7-5512b31e9d03`) on its default cache behavior; the ClickHouse ingest
   distribution deliberately does not, because it serves an OTLP write path to a non-browser
   client and the policy's browser-oriented headers buy nothing there.
+- `alerting.tf` -- the optional edge-side alarm, independent of the in-app webhook in
+  `dashboard/server/alerting.js`: a CloudWatch `5xxErrorRate` alarm on the dashboard
+  CloudFront distribution (5 min x 2 periods over 5%, `treat_missing_data = notBreaching` so a
+  zero-traffic night does not fire) plus an SNS topic and e-mail subscription. Gated entirely
+  on `var.alert_email` -- null creates nothing. All three resources are in **us-east-1**
+  (`provider = aws.us_east_1`), because CloudFront publishes its metrics only there. The
+  e-mail subscription is not live until the recipient clicks AWS's confirmation mail. The
+  topic ARN is exported as `alert_topic_arn` so a second subscriber can be attached without
+  editing this module
 - `files/clickhouse-schema-replicated.sql` -- schema applied by the `schema_init` Job in
   `clickhouse.tf` (kept in sync with the root `clickhouse-schema.sql` reference copy). The Job is
   named by the file's md5 so any edit re-runs it, and `wait_for_completion = true` makes a failing
@@ -103,3 +115,7 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   `providers.tf`): uncomment the `backend "s3"` block, `cp backend.hcl.example backend.hcl`,
   fill it in, then `terraform init -backend-config=backend.hcl -migrate-state`. Keep
   `backend.hcl` out of git.
+- **`alert_webhook_url` is a secret** -- it carries a Slack token in its path. Never put it in
+  `terraform.tfvars.example`, never echo it in an output, and pass it only via
+  `secrets.auto.tfvars` or `-var`. The variable is marked `sensitive`, which keeps it out of
+  plan output but not out of state.

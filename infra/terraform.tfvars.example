@@ -20,3 +20,8 @@ dashboard_image_tag = "REPLACE-WITH-A-PUSHED-TIMESTAMP-TAG"
 # default_range_days = 2
 # range_cap_days     = 90     # default_range_days 이상
 # pii_mask_enabled   = true   # 워크샵 계정은 false
+
+# 알림(선택). docs/runbooks/alerting.md
+# alert_email          = "ops@example.com"   # CloudFront 5xx → SNS 이메일(구독 확인 메일 필요)
+# alert_repeat_minutes = 60
+# alert_webhook_url은 토큰이 든 secret — 이 파일이 아니라 secrets.auto.tfvars(비추적) 또는 -var로 넘긴다.

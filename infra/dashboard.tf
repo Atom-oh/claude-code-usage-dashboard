@@ -38,6 +38,23 @@ variable "range_cap_days" {
   }
 }
 
+variable "alert_webhook_url" {
+  description = "서버 ALERT_WEBHOOK_URL. Slack 호환 incoming webhook — 텔레메트리 신선도가 두 틱 연속 non-ok면 발송, ALERT_REPEAT_MINUTES마다 반복, 복구 시 1회. null이면 Secret/env를 만들지 않아 알림이 꺼진다. URL에 토큰이 들어 있으므로 secrets.auto.tfvars 같은 비추적 파일로만 넘긴다."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "alert_repeat_minutes" {
+  description = "서버 ALERT_REPEAT_MINUTES. non-ok가 지속될 때 재발송 간격(분). 서버는 0 이하/비숫자면 기동 실패 — 여기서 먼저 거른다. alert_webhook_url이 null이면 주입하지 않는다."
+  type        = number
+  default     = 60
+  validation {
+    condition     = var.alert_repeat_minutes >= 1 && floor(var.alert_repeat_minutes) == var.alert_repeat_minutes
+    error_message = "alert_repeat_minutes must be a positive integer."
+  }
+}
+
 # 아래 둘은 null이면 env를 아예 주입하지 않는다 — 서버가 자기 기본 단가표/캐시 TTL을 쓴다.
 # 빈 문자열로 주입하면 서버가 부팅 시점에 파싱 실패로 죽으므로 null과 구분해야 한다.
 variable "pricing_json" {
@@ -65,6 +82,16 @@ resource "kubernetes_secret" "dashboard_basic_auth" {
     BASIC_AUTH_USER     = var.dashboard_basic_auth_user
     BASIC_AUTH_PASSWORD = var.dashboard_basic_auth_password
   }
+}
+
+# 웹훅 URL은 토큰을 품고 있어 env value가 아니라 Secret으로 — null이면 Secret 자체가 없다.
+resource "kubernetes_secret" "dashboard_alert" {
+  count = var.alert_webhook_url == null ? 0 : 1
+  metadata {
+    name      = "dashboard-alert"
+    namespace = kubernetes_namespace.claude_code.metadata[0].name
+  }
+  data = { ALERT_WEBHOOK_URL = var.alert_webhook_url }
 }
 
 resource "kubernetes_secret" "clickhouse_reader" {
@@ -257,8 +284,21 @@ resource "kubernetes_deployment_v1" "dashboard" {
             name  = "RANGE_CAP_DAYS"
             value = tostring(var.range_cap_days)
           }
+          dynamic "env" {
+            for_each = var.alert_webhook_url == null ? [] : [tostring(var.alert_repeat_minutes)]
+            content {
+              name  = "ALERT_REPEAT_MINUTES"
+              value = env.value
+            }
+          }
           env_from {
             secret_ref { name = kubernetes_secret.dashboard_basic_auth.metadata[0].name }
+          }
+          dynamic "env_from" {
+            for_each = kubernetes_secret.dashboard_alert
+            content {
+              secret_ref { name = env_from.value.metadata[0].name }
+            }
           }
           liveness_probe {
             http_get {
