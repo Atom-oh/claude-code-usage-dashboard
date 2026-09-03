@@ -498,6 +498,40 @@ ORDER BY (ExperimentGroup, SpanType, toUnixTimestamp(Timestamp))
 TTL toDateTime(Timestamp) + INTERVAL 90 DAY;
 
 -- -----------------------------------------------------------------------------
+-- 004 블록 — 스키마 마이그레이션 원장 (clickhouse-migration-004.sql의 로컬/단일 노드 사본)
+--    신규 설치는 정의상 "004까지 적용된" 상태다 — 이 파일이 전부 실행되면 002/003의 컬럼
+--    증거가 이미 성립하므로 아래 가드가 세 행을 모두 남긴다. 기존 배포에 이 파일을 다시
+--    돌려도 두 번째 가드((b) 아직 기록되지 않았다)가 걸려 멱등이다(실측 2026-09-03,
+--    24.8.14.39 컨테이너: 재실행 후에도 정확히 3행).
+--    라이브 클러스터용 사본은 infra/files/clickhouse-schema-replicated.sql, 오퍼레이터가
+--    직접 실행하는 파일은 clickhouse-migration-004.sql이며 세 파일의 INSERT는 동일 텍스트다.
+--    절차는 docs/runbooks/schema-migrations.md.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS claude_code.schema_migrations
+(
+    version     UInt16,
+    name        String,
+    applied_at  DateTime DEFAULT now(),
+    checksum    String
+)
+ENGINE = MergeTree
+ORDER BY version;
+
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 2, '002-telemetry-spec-sync', 'd57685094b64edd241f79d48902cf9fd90bdc74bd391fe2eb4b608514609f8d8'
+FROM system.one
+WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'AppVersion') > 0
+  AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 2) = 0;
+
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'cc6dd94eaa6b0238f66834623a0a3c4d963022cf0d2ebf06080ae508554d0741'
+FROM system.one
+WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
+  AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;
+
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 4, '004-schema-migration-ledger', '29b114b2e242852ee208b4ef7fa6dc49d0e8b4b2daf988e18caa2543d62179a5'
+FROM system.one
+WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version = 4) = 0;
+
+-- -----------------------------------------------------------------------------
 -- 참고: attribute 실제 키 이름(event.name / tool_name / mcp_server_name 등)은
 --       Claude Code 버전에 따라 다를 수 있음. 최초 수집 후 아래로 실측 확인:
 --   SELECT DISTINCT arrayJoin(mapKeys(LogAttributes)) FROM claude_code.otel_logs LIMIT 100;
