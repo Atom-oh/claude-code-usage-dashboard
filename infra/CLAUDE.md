@@ -54,6 +54,12 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   statement is applied; read the Job pod logs, don't assume a green apply means the schema landed.
   The hourly rollup's TTL is DELETE-only on purpose (the live table is on `storage_policy=default`
   and cannot be moved to `hot_cold` in place — see the comment block in the SQL file)
+- The `schema_init` Job's name embeds `filemd5(...)` of `files/clickhouse-schema-replicated.sql`
+  (`clickhouse.tf`), so editing that file recreates and re-runs the Job on the next `apply` —
+  most recently the `schema_migrations` ledger block added by `clickhouse-migration-004.sql`.
+  That re-run is safe on an already-provisioned cluster because every statement in the file is
+  `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` / guarded, so replaying the whole file against a
+  cluster that already has some of it is a no-op for those parts.
 - `secrets.auto.tfvars`, `image.auto.tfvars` -- gitignored; injected at `terraform apply` time,
   never committed
 - `terraform.tfstate*` -- local state (gitignored); acceptable for a single-operator workshop

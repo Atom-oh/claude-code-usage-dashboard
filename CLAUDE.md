@@ -68,6 +68,10 @@ clickhouse-migration-002.sql - Additive migration (2026-08-11 telemetry spec syn
                        directly against the live cluster, it's not applied by Terraform
 clickhouse-migration-003.sql - Segment-aware SeriesKey cutover + hourly-rollup rebuild; run
                        this directly against the live cluster, it's not applied by Terraform
+clickhouse-migration-004.sql - Creates claude_code.schema_migrations (the schema-migration
+                       ledger) and backfills 002/003 from column evidence; run this directly
+                       against the live cluster, it's not applied by Terraform -- see
+                       docs/runbooks/schema-migrations.md
 collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHouse)
 .claude/             - Claude Code settings, hooks, skills (gitignored — local tooling only)
 ```
@@ -102,6 +106,11 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
 - SQL changes to promoted/materialized columns (`otel_metrics_sum`, `otel_logs`) must be
   mirrored in `grafana-ab-queries.sql` if that query file references the same metric — a past
   review caught these drifting out of sync.
+- Every hand-applied `clickhouse-migration-NNN.sql` records itself in
+  `claude_code.schema_migrations` with a guarded, self-recording `INSERT`, and the same block
+  is mirrored into both schema copies (`clickhouse-schema.sql`,
+  `infra/files/clickhouse-schema-replicated.sql`) so a new install is at `N` by definition —
+  see `docs/runbooks/schema-migrations.md`.
 - **The OTel Collector must run as a supervised systemd service (`Restart=always`), never
   foreground/`nohup`.** If it dies (DNS blip, node reboot, crash), the dashboard shows a
   silently shrinking data window with no error anywhere — this has already caused an

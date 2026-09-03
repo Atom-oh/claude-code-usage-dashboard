@@ -166,6 +166,11 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
   anti-affinity spreading replicas across hosts
 - ClickHouse: `clickhouse-cc-ab` Service (ClusterIP), 3 replicas + 3-node Keeper
 
+The ClickHouse schema is versioned in `claude_code.schema_migrations` (created by
+`clickhouse-migration-004.sql`) and surfaced at `GET /api/config`'s `schema.migrations`;
+editing `infra/files/clickhouse-schema-replicated.sql` recreates the schema-init Job on the
+next `terraform apply` because the Job's name embeds that file's `filemd5`.
+
 ## Key Design Decisions
 
 - Diff cumulative OTel counters at session boundaries instead of summing raw values -- Claude
@@ -349,6 +354,11 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
   롤링 업데이트, `min_available=1` PodDisruptionBudget, 호스트 간 preferred 안티어피니티로
   분산
 - ClickHouse: `clickhouse-cc-ab` Service(ClusterIP), 레플리카 3개 + 3노드 Keeper
+
+ClickHouse 스키마는 `claude_code.schema_migrations`(`clickhouse-migration-004.sql`이 생성)로
+버전 관리되며 `GET /api/config`의 `schema.migrations`로 노출됩니다. 또한
+`infra/files/clickhouse-schema-replicated.sql`을 수정하면 schema-init Job 이름이 그 파일의
+`filemd5`를 담고 있어 다음 `terraform apply`에서 Job이 재생성·재실행됩니다.
 
 ## 주요 설계 결정
 
