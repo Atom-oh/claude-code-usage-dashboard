@@ -6,10 +6,12 @@ Internal only, behind Basic Auth. No public base URL — access via the deployed
 
 ## Authentication
 HTTP Basic Auth, applied globally by Express middleware in `dashboard/server/index.js`
-(`BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` env vars). Auth is skipped entirely if both env
-vars are unset (local dev) and always skipped for `GET /healthz` and `GET /readyz` (kubelet
-probes send no `Authorization` header). `GET /api/health/data` is **not** exempt — it is a
-data route the SPA calls.
+(`BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` env vars). Both env vars are **required** — the
+server refuses to start (`process.exit(1)`) without them, unless `AUTH_ALLOW_INSECURE=1` is
+set explicitly for local dev / cluster-internal probes, in which case one loud warning is
+logged at boot and every `/api/*` route is served unauthenticated. `GET /healthz` and
+`GET /readyz` are always exempt from auth (kubelet probes send no `Authorization` header).
+`GET /api/health/data` is **not** exempt — it is a data route the SPA calls.
 
 ## Common Query Parameters
 Every data route below accepts these (parsed by `parseRange()` / `route()` in `index.js`).
@@ -146,7 +148,7 @@ with HTTP 500.
 | Code | Description |
 |------|-------------|
 | 400 | Bad Request — a rejected query parameter, returned by every `route()`-wrapped `/api/*` endpoint **before** any ClickHouse query runs (so an invalid request never creates a cache entry). Body is `{"error": "invalid range"|"invalid intervalHours", "detail": "<which parameter and why>"}`. Causes: an unparseable `from`/`to`, `from >= to`, or an `intervalHours` outside `(0, 744]`. `detail` never echoes the submitted value. |
-| 401 | Unauthorized — missing/invalid Basic Auth credentials (only when `BASIC_AUTH_*` is configured) |
+| 401 | Unauthorized — missing/invalid Basic Auth credentials. `BASIC_AUTH_USER`/`BASIC_AUTH_PASSWORD` are required: without both the server refuses to start (exit 1) unless `AUTH_ALLOW_INSECURE=1` is set, in which case no request is authenticated and nothing returns 401. |
 | 503 | Service Unavailable — only from the two health routes: `/readyz` while draining or with ClickHouse unreachable, `/api/health/data` when data is `stale` or `unknown`. Data routes never return 503. |
 | 500 | Internal Server Error — usually a ClickHouse query error. Body is `{"error": "internal error", "id": "<uuid>"}` and **never** carries the underlying exception message: a `ClickHouseError` text embeds the whole failing SQL. Grep the pod log for `[<id>]` to get the real error. |
 

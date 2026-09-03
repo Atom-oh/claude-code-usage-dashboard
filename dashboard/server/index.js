@@ -23,12 +23,28 @@ const PORT = process.env.PORT || 8080;
 // per-IP rate limit(/api/chat)을 우회할 수 있어 홉 수로 고정한다.
 app.set("trust proxy", 1);
 
-// ponytail: Basic Auth only when creds are set — local dev / cluster-internal probes skip it.
+// ponytail: 인증 env가 없으면 fail-open이 아니라 기동 거부다. 예전에는 BASIC_AUTH_* 중 하나가
+// 누락/오타 나면 파드가 모든 /api/*를 무인증으로 서빙하면서 경고 한 줄도 남기지 않았다 —
+// 배포가 성공한 것처럼 보이는 게 이 실패 모드의 핵심이다. 무인증 실행(로컬 dev, 클러스터
+// 내부 프로브)은 AUTH_ALLOW_INSECURE=1로 명시적으로만 허용한다. 챗의 CHAT_ALLOW_INSECURE와
+// 같은 규약이고, 둘은 독립이다: 인증 없이 서버를 띄우는 것과 인증 없이 임의 SELECT를 실행
+// 가능한 챗을 켜는 것은 위험이 다르다.
 // /healthz(liveness)와 /readyz(readiness)만 무인증 — kubelet은 Authorization 헤더를 붙이지
 // 않는다. /api/health/data는 SPA가 부르는 데이터 라우트라 여기 들어가지 않는다: 마지막 수집
 // 시각은 운영 정보다.
 const AUTH_BYPASS_PATHS = new Set(["/healthz", "/readyz"]);
 const authEnabled = !!(process.env.BASIC_AUTH_USER && process.env.BASIC_AUTH_PASSWORD);
+const authAllowInsecure = process.env.AUTH_ALLOW_INSECURE === "1";
+if (!authEnabled && !authAllowInsecure) {
+  console.error(
+    "FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required — refusing to start with authentication disabled. " +
+      "Set both, or set AUTH_ALLOW_INSECURE=1 to run unauthenticated (local dev / probes only)."
+  );
+  process.exit(1);
+}
+if (!authEnabled) {
+  console.warn("WARNING: AUTH_ALLOW_INSECURE=1 — every /api/* route is served WITHOUT authentication.");
+}
 if (authEnabled) {
   app.use(
     "/",
@@ -343,8 +359,10 @@ route("/api/usage/hook-overhead", (from, to, _q, filters) => q.hookOverhead(from
 route("/api/usage/mcp-health", (from, to, _q, filters) => q.mcpHealth(from, to, filters));
 route("/api/cost/by-agent", (from, to, _q, filters) => q.agentCost(from, to, filters));
 
-// 챗은 Bedrock 호출 + 임의 read-only SELECT라 다른 데이터 API보다 리스크가 높다. auth env가
-// 없으면 fail-open이 아니라 fail-closed — 명시적으로 CHAT_ALLOW_INSECURE=1을 켠 로컬 dev에서만 무인증 허용.
+// 챗은 Bedrock 호출 + 임의 read-only SELECT라 다른 데이터 API보다 리스크가 높다. 위의
+// AUTH_ALLOW_INSECURE와 같은 규약이지만 플래그는 따로 둔다 — 무인증으로 대시보드를 띄우는
+// 것(AUTH_ALLOW_INSECURE)과 그 상태에서 임의 SELECT를 실행하는 챗까지 켜는 것
+// (CHAT_ALLOW_INSECURE)은 위험이 다르고, 후자는 언제나 별도 opt-in이어야 한다.
 const chatAllowed = authEnabled || process.env.CHAT_ALLOW_INSECURE === "1";
 app.post(
   "/api/chat",

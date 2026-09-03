@@ -126,6 +126,13 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
   The `SHOW CREATE TABLE` is the actual check — a Job that completed doesn't prove every
   statement applied (e.g. the rollup `TTL` clause was missing for weeks while the Job showed
   `Complete`, because the Job never re-ran after the file changed).
+- A pod that crash-loops immediately after a rollout with
+  `FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required` in its log is the
+  **intended** fail-closed behaviour, not a regression — the `dashboard-basic-auth` Secret (fed
+  by `env_from` in `infra/dashboard.tf`) is missing or has a renamed key. Diagnose with
+  `kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=50`; the
+  message names both variables. Do not add `AUTH_ALLOW_INSECURE=1` to the cluster as a
+  workaround.
 
 ---
 
@@ -234,3 +241,9 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
   실제 확인은 `SHOW CREATE TABLE`입니다 — Job이 Complete여도 모든 문장이 적용됐다는 보장은
   아닙니다(롤업 `TTL`이 수 주간 빠져 있었는데 Job은 계속 `Complete`였습니다. 파일이 바뀐 뒤에도
   Job이 재실행되지 않았기 때문입니다).
+- 롤아웃 직후 파드가 로그에 `FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required`를
+  남기고 즉시 crash-loop에 빠지는 것은 **의도된** fail-closed 동작이며 회귀가 아닙니다 —
+  `infra/dashboard.tf`의 `env_from`이 참조하는 `dashboard-basic-auth` Secret이 없거나 키
+  이름이 바뀐 것입니다. `kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=50`
+  로 진단하세요; 메시지가 두 변수 이름을 모두 명시합니다. 우회책으로 클러스터에
+  `AUTH_ALLOW_INSECURE=1`을 추가하지 마세요.

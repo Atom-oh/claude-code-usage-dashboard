@@ -170,3 +170,8 @@ synchronous and still touches no ClickHouse at request time.
   `Cache-Control: no-store`, and **validation runs before `fetchCached`** so an invalid request
   never allocates a cache key. The six `intervalHours` routes all go through `bucketHours()`;
   nothing calls `Number(query.intervalHours)` directly any more.
+- **The server refuses to boot without `BASIC_AUTH_USER` + `BASIC_AUTH_PASSWORD`**
+  (`console.error` + `process.exit(1)`), unless `AUTH_ALLOW_INSECURE=1` is set, which logs one
+  loud warning and serves every `/api/*` route unauthenticated. `AUTH_ALLOW_INSECURE` and
+  `CHAT_ALLOW_INSECURE` are a deliberate pair of **independent** opt-ins, not one flag: booting
+  without auth and enabling an LLM-authored-SQL endpoint without auth are different risks.

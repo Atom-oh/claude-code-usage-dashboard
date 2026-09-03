@@ -56,13 +56,15 @@ bash scripts/setup.sh
 
 ## Usage
 ```bash
-# Local full stack (server + web), no live cluster needed if you point CH_* at a local ClickHouse
+# Brings up ClickHouse only (dashboard/docker-compose.yml defines no app service) — run the
+# server and web dev servers below against it
 cd dashboard
 docker compose up
 
-# Server only, dev mode with reload
+# Server only, dev mode with reload. AUTH_ALLOW_INSECURE=1 is required here: the server now
+# refuses to start without BASIC_AUTH_USER/BASIC_AUTH_PASSWORD.
 cd dashboard/server
-npm run dev
+AUTH_ALLOW_INSECURE=1 npm run dev
 
 # Web only, dev mode
 cd dashboard/web
@@ -81,8 +83,10 @@ Environment variables consumed by `dashboard/server`:
 | `CH_DB` | ClickHouse database name | `claude_code` |
 | `CH_USER` | ClickHouse user | none (required) |
 | `CH_PASSWORD` | ClickHouse password | none (required) |
-| `BASIC_AUTH_USER` | Basic Auth username for the whole dashboard | unset (auth disabled) |
-| `BASIC_AUTH_PASSWORD` | Basic Auth password | unset (auth disabled) |
+| `BASIC_AUTH_USER` | Basic Auth username for the whole dashboard | required unless `AUTH_ALLOW_INSECURE=1` |
+| `BASIC_AUTH_PASSWORD` | Basic Auth password | required unless `AUTH_ALLOW_INSECURE=1` |
+| `AUTH_ALLOW_INSECURE` | Run without Basic Auth; the server otherwise exits 1 at boot — local dev / cluster-internal probes only | unset (auth required) |
+| `CHAT_ALLOW_INSECURE` | Allow `POST /api/chat` without auth; independent of `AUTH_ALLOW_INSECURE` | unset (chat requires auth) |
 | `CHAT_MODEL_ID` | Bedrock model ID for the "Ask Claude" chat assistant | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | AWS region for the Bedrock client | `us-east-1` |
 | `BEDROCK_REGION` | Overrides `AWS_REGION` for the Bedrock call only (e.g. accounts limited to one region) | unset (falls back to `AWS_REGION`) |
@@ -257,13 +261,15 @@ bash scripts/setup.sh
 
 ## 사용법
 ```bash
-# 로컬 풀스택(server + web) — CH_*를 로컬 ClickHouse로 향하게 하면 라이브 클러스터 불필요
+# ClickHouse만 띄운다(dashboard/docker-compose.yml에는 앱 서비스가 없다) — 아래 server/web
+# 개발 서버를 이 인스턴스에 붙여서 실행
 cd dashboard
 docker compose up
 
-# 서버만, 리로드 개발 모드
+# 서버만, 리로드 개발 모드. AUTH_ALLOW_INSECURE=1이 필수다: 서버가 이제
+# BASIC_AUTH_USER/BASIC_AUTH_PASSWORD 없이는 기동을 거부한다.
 cd dashboard/server
-npm run dev
+AUTH_ALLOW_INSECURE=1 npm run dev
 
 # 웹만, 개발 모드
 cd dashboard/web
@@ -282,8 +288,10 @@ SPA 서빙)을 엽니다.
 | `CH_DB` | ClickHouse 데이터베이스 이름 | `claude_code` |
 | `CH_USER` | ClickHouse 유저 | 없음(필수) |
 | `CH_PASSWORD` | ClickHouse 비밀번호 | 없음(필수) |
-| `BASIC_AUTH_USER` | 대시보드 전체 Basic Auth 유저명 | 미설정(인증 비활성) |
-| `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 미설정(인증 비활성) |
+| `BASIC_AUTH_USER` | 대시보드 전체 Basic Auth 유저명 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
+| `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
+| `AUTH_ALLOW_INSECURE` | Basic Auth 없이 실행; 미설정 시 서버가 기동 시 exit 1 — 로컬 dev / 클러스터 내부 프로브 전용 | 미설정(인증 필수) |
+| `CHAT_ALLOW_INSECURE` | `POST /api/chat`을 인증 없이 허용; `AUTH_ALLOW_INSECURE`와 독립 | 미설정(챗도 인증 필요) |
 | `CHAT_MODEL_ID` | "Ask Claude" 채팅 어시스턴트용 Bedrock 모델 ID | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | Bedrock 클라이언트용 AWS 리전 | `us-east-1` |
 | `BEDROCK_REGION` | Bedrock 호출에서만 `AWS_REGION`을 덮어씀(예: 특정 리전만 허용하는 계정) | 미설정(`AWS_REGION`을 따름) |
