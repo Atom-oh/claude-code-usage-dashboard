@@ -18,6 +18,13 @@ import { groupsShown } from "../pivot.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+// render와 CSV 내보내기용 값이 같아야 하는 컬럼용. 원본 값만으로는 셀을 복원할 수 없는 경우다:
+// unpriced는 row의 플래그이고, agent의 'main'은 화면에서 '메인 세션'으로 바뀐다.
+// 화면의 —(값 없음)는 CSV에서 빈 셀로 내보낸다 — 숫자 컬럼에 em-dash가 들어가면
+// 스프레드시트가 그 열을 통째로 텍스트로 승격시킨다.
+const modelCostText = (_v, r) => (r.unpriced ? "미산정" : usd(r.cost));
+const userCostText = (v, r) => (r.unpriced ? "미산정 포함" : usd(v));
+const agentLabel = (v) => (v === "main" ? "메인 세션" : v);
 // bedrock/enterprise로 나뉘는 도넛들(캐시 티어·토큰 타입·Effort)의 라벨 순서 — 그룹 색상 배정이
 // 데이터 등장 순서가 아니라 이 고정 순서를 따르게 한다(colors.js makeGroupBreakdownColorer).
 const TIER_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시 입력"];
@@ -404,12 +411,13 @@ export default function Cost() {
           subtitle="계산 비용 기준 정렬 · 이전 기간 대비는 현재와 동일한 길이의 직전 구간과 비교(1시간 미만 드래그 줌은 최소 1시간 창으로 비교됨)"
           columns={[
             { key: "model", label: "모델" },
-            { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)) },
+            { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)), toText: modelCostText },
             { key: "reportedCost", label: "보고 비용", render: usd },
             {
               key: "share",
               label: "전체 대비",
               render: (_v, r) => (r.unpriced ? <span className="text-ink-400">—</span> : `${totalModelCost > 0 ? ((r.cost / totalModelCost) * 100).toFixed(1) : 0}%`),
+              toText: (_v, r) => (r.unpriced ? "" : `${totalModelCost > 0 ? ((r.cost / totalModelCost) * 100).toFixed(1) : 0}%`),
             },
             {
               key: "change",
@@ -425,12 +433,19 @@ export default function Cost() {
                   </Badge>
                 );
               },
+              toText: (_v, r) => {
+                const prev = prevCostByModel.get(r.model);
+                if (r.unpriced || prev === null || prev === undefined || prev <= 0) return "";
+                const p = ((r.cost - prev) / prev) * 100;
+                return `${p >= 0 ? "+" : ""}${p.toFixed(1)}%`;
+              },
             },
             { key: "inputTokens", label: "입력 토큰", render: fmt },
             { key: "outputTokens", label: "출력 토큰", render: fmt },
           ]}
           rows={modelRows}
           groupKey="__none__"
+          exportName="cost_by_model"
         />
 
         {agentCost.loading ? (
@@ -442,12 +457,13 @@ export default function Cost() {
             title="에이전트별 지출"
             subtitle="보고 비용(cost.usage) 기준 상위 15개 — 에이전트 미지정(메인 세션) 지출 포함"
             columns={[
-              { key: "agent", label: "에이전트", render: (v) => (v === "main" ? "메인 세션" : v) },
+              { key: "agent", label: "에이전트", render: agentLabel, toText: agentLabel },
               { key: "group", label: "그룹" },
               { key: "cost_usd", label: "지출", render: usd },
               { key: "tokens", label: "토큰", render: fmt },
             ]}
             rows={(agentCost.data || []).slice(0, 15)}
+            exportName="cost_by_agent"
           />
         )}
 
@@ -500,11 +516,12 @@ export default function Cost() {
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
               { key: "model", label: "모델" },
-              { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)) },
+              { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)), toText: modelCostText },
               { key: "reported_cost", label: "보고 비용", render: usd },
               { key: "tokens", label: "토큰", render: fmt },
             ]}
             rows={userModelRows}
+            exportName="cost_by_user_model"
           />
         )}
 
@@ -519,13 +536,14 @@ export default function Cost() {
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
               { key: "group", label: "그룹" },
-              { key: "cost", label: "지출 (계산)", render: (v, r) => (r.unpriced ? <Badge tone="neutral">미산정 포함</Badge> : usd(v)) },
+              { key: "cost", label: "지출 (계산)", render: (v, r) => (r.unpriced ? <Badge tone="neutral">미산정 포함</Badge> : usd(v)), toText: userCostText },
               { key: "loc", label: "추가 라인", render: fmt },
               { key: "commits", label: "커밋", render: fmt },
               { key: "cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "—" : `$${v.toFixed(4)}`) },
               { key: "cost_per_commit", label: "$/커밋", render: (v) => (v == null ? "—" : usd(v)) },
             ]}
             rows={efficiencyRows}
+            exportName="cost_efficiency_by_user"
           />
         )}
       </div>

@@ -11,6 +11,15 @@ const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (ok, total) => (total > 0 ? `${((ok / total) * 100).toFixed(0)}%` : "—");
 // ClickHouse quantile()은 float를 그대로 내려보낸다 — ms 컬럼은 반올림해서 표시.
 const ms = (v) => fmt(Math.round(Number(v) || 0));
+// render와 CSV 내보내기용 값이 같아야 하는 컬럼용 — 화면의 라벨/단위를 CSV에도 그대로 넣는다.
+const pct0 = (v) => `${(Number(v || 0) * 100).toFixed(0)}%`;
+// 압축률의 원본 render는 `Number(v)`였다(|| 0 없음) — 동작을 바꾸지 않기 위해 따로 둔다.
+const ratioPct0 = (v) => `${(Number(v) * 100).toFixed(0)}%`;
+// 오류/실패 컬럼의 render는 0보다 크면 강조용 <span>을 돌려준다 — CSV엔 원본 숫자를 넣는다.
+const count = (v) => Number(v) || 0;
+// 성공률·사용당 비용은 컬럼 자신의 값이 아니라 row의 다른 필드에서 나온다.
+const okRate = (v, r) => pct(v, r.calls);
+const costPerUse = (_v, r) => (Number(r.est_cost_usd) / (Number(r.invocations) || 1)).toFixed(3);
 
 // group을 카드 제목으로 좌우 분리해 보여주므로 테이블 안에서는 그룹 컬럼을 뺀다.
 const TOOL_MCP_COLUMNS = [
@@ -31,14 +40,14 @@ const TOOL_DECISION_COLUMNS = [
   { key: "source", label: "허용 출처" },
   { key: "accepts", label: "수락", render: fmt },
   { key: "rejects", label: "거부", render: fmt },
-  { key: "accept_rate", label: "수락률", render: (v) => `${(Number(v || 0) * 100).toFixed(0)}%` },
+  { key: "accept_rate", label: "수락률", render: pct0, toText: pct0 },
   { key: "n", label: "합계", render: fmt },
 ];
 
 const TOOL_LATENCY_COLUMNS = [
   { key: "tool", label: "도구" },
   { key: "uses", label: "실행", render: fmt },
-  { key: "errors", label: "오류", render: (v) => (Number(v) > 0 ? <span className="text-negative-text font-medium">{fmt(v)}</span> : fmt(v)) },
+  { key: "errors", label: "오류", render: (v) => (Number(v) > 0 ? <span className="text-negative-text font-medium">{fmt(v)}</span> : fmt(v)), toText: count },
   { key: "p50_ms", label: "p50(ms)", render: ms },
   { key: "p95_ms", label: "p95(ms)", render: ms },
 ];
@@ -56,7 +65,7 @@ const MCP_HEALTH_COLUMNS = [
   { key: "server", label: "서버" },
   { key: "attempts", label: "시도", render: fmt },
   { key: "connected", label: "성공", render: fmt },
-  { key: "failed", label: "실패", render: (v) => (Number(v) > 0 ? <span className="text-negative-text font-medium">{fmt(v)}</span> : fmt(v)) },
+  { key: "failed", label: "실패", render: (v) => (Number(v) > 0 ? <span className="text-negative-text font-medium">{fmt(v)}</span> : fmt(v)), toText: count },
   { key: "p95_ms", label: "p95(ms)", render: ms },
 ];
 
@@ -64,14 +73,14 @@ const CONNECTOR_COLUMNS = [
   { key: "connector", label: "커넥터" },
   { key: "users", label: "유저", render: fmt },
   { key: "calls", label: "호출", render: fmt },
-  { key: "ok", label: "성공률", render: (v, r) => pct(v, r.calls) },
+  { key: "ok", label: "성공률", render: okRate, toText: okRate },
 ];
 
 const SKILL_COLUMNS = [
   { key: "skill", label: "Skill" },
   { key: "invocations", label: "호출 수", render: fmt },
   { key: "est_cost_usd", label: "근사 비용($)", render: (v) => Number(v).toFixed(2) },
-  { key: "cost_per_use", label: "사용당 비용($)", render: (_v, r) => (Number(r.est_cost_usd) / (Number(r.invocations) || 1)).toFixed(3) },
+  { key: "cost_per_use", label: "사용당 비용($)", render: costPerUse, toText: costPerUse },
 ];
 
 // 2026-08-11 — STEP 3 신규 이벤트 패널. skill_activated의 trigger가 'claude-proactive'인
@@ -105,7 +114,7 @@ const COMPACTION_COLUMNS = [
   { key: "compactions", label: "압축 횟수", render: fmt },
   { key: "sessions", label: "세션 수", render: fmt },
   { key: "compactions_per_session", label: "세션당 압축" },
-  { key: "avg_compression_ratio", label: "평균 압축률", render: (v) => `${(Number(v) * 100).toFixed(0)}%` },
+  { key: "avg_compression_ratio", label: "평균 압축률", render: ratioPct0, toText: ratioPct0 },
 ];
 
 export default function Usage() {
@@ -140,6 +149,7 @@ export default function Usage() {
                 subtitle="성공/실패"
                 columns={TOOL_MCP_COLUMNS}
                 rows={(toolMcp.data || []).filter((r) => r.group === g)}
+                exportName={`usage_tool_mcp_${g}`}
               />
             ))}
           </div>
@@ -158,6 +168,7 @@ export default function Usage() {
                 subtitle="config = 사전 허용(개발자를 멈추지 않음), user_temporary = 매번 물어봄, user_permanent = 사용자가 허용목록에 넣음 — 상위 20개 툴"
                 columns={TOOL_DECISION_COLUMNS}
                 rows={(toolDecisions.data || []).filter((r) => r.group === g)}
+                exportName={`usage_tool_decisions_${g}`}
               />
             ))}
           </div>
@@ -179,6 +190,7 @@ export default function Usage() {
                   .filter((r) => r.group === g)
                   .sort((a, b) => Number(b.uses) - Number(a.uses))
                   .slice(0, 10)}
+                exportName={`usage_tool_latency_${g}`}
               />
             ))}
           </div>
@@ -197,6 +209,7 @@ export default function Usage() {
                 subtitle="읽기/쓰기 구분은 텔레메트리에 없어 유저수·호출수·성공률로 단순화"
                 columns={CONNECTOR_COLUMNS}
                 rows={(connectors.data || []).filter((r) => r.group === g)}
+                exportName={`usage_connectors_${g}`}
               />
             ))}
           </div>
@@ -212,6 +225,7 @@ export default function Usage() {
             subtitle="mcp_server_connection 이벤트 기준 — 세션 시작 시 서버별 연결 성공/실패"
             columns={MCP_HEALTH_COLUMNS}
             rows={mcpHealth.data || []}
+            exportName="usage_mcp_health"
           />
         )}
 
@@ -228,6 +242,7 @@ export default function Usage() {
                 subtitle="비용은 Claude Code 보고값(cost.usage) 기준 — skill 사용은 토큰에 귀속되지 않아 계산 비용을 낼 수 없다"
                 columns={SKILL_COLUMNS}
                 rows={(skills.data || []).filter((r) => r.group === g)}
+                exportName={`usage_skills_${g}`}
               />
             ))}
           </div>
@@ -246,6 +261,7 @@ export default function Usage() {
                 subtitle="claude-proactive 비율이 높을수록 스킬이 사용자 개입 없이 자동 발동한다는 뜻"
                 columns={SKILL_ACTIVATION_COLUMNS}
                 rows={(skillActivations.data || []).filter((r) => r.group === g)}
+                exportName={`usage_skill_activations_${g}`}
               />
             ))}
           </div>
@@ -261,6 +277,7 @@ export default function Usage() {
             subtitle="그룹 구분 없음 — 세션 시작마다 로드된 플러그인 집계"
             columns={PLUGIN_COLUMNS}
             rows={plugins.data || []}
+            exportName="usage_plugins"
           />
         )}
 
@@ -274,6 +291,7 @@ export default function Usage() {
             subtitle="인터랙션(prompt.id) 하나당 서브에이전트가 몇 개 뜨는지 — traces beta 없이도 오늘 실데이터로 동작"
             columns={SUBAGENT_FANOUT_COLUMNS}
             rows={subagentFanout.data || []}
+            exportName="usage_subagent_fanout"
           />
         )}
 
@@ -287,6 +305,7 @@ export default function Usage() {
             subtitle="컨텍스트 압박 프록시 — 압축률이 낮거나 빈도가 높으면 세션이 컨텍스트 한도에 자주 부딪힌다"
             columns={COMPACTION_COLUMNS}
             rows={compaction.data || []}
+            exportName="usage_compaction"
           />
         )}
 
@@ -303,6 +322,7 @@ export default function Usage() {
                 subtitle="user_prompt의 command_name 기준 — 커맨드 없는 일반 프롬프트는 제외"
                 columns={COMMAND_COLUMNS}
                 rows={(commands.data?.commands || []).filter((r) => r.group === g)}
+                exportName={`usage_commands_${g}`}
               />
             ))}
           </div>

@@ -42,18 +42,18 @@ const INTERACTION_BREAKDOWN_COLUMNS = [
   { key: "interactions", label: "인터랙션 수", render: fmt },
   { key: "p50_interaction_ms", label: "p50 소요(ms)", render: fmt },
   { key: "p95_interaction_ms", label: "p95 소요(ms)", render: fmt },
-  { key: "llm_share", label: "LLM 비중", render: pct },
-  { key: "tool_exec_share", label: "툴 실행 비중", render: pct },
-  { key: "blocked_share", label: "권한 대기 비중", render: pct },
+  { key: "llm_share", label: "LLM 비중", render: pct, toText: pct },
+  { key: "tool_exec_share", label: "툴 실행 비중", render: pct, toText: pct },
+  { key: "blocked_share", label: "권한 대기 비중", render: pct, toText: pct },
 ];
 
 const LANGUAGE_COLUMNS = [
   { key: "language", label: "언어" },
   { key: "edits", label: "편집", render: fmt },
-  { key: "accept_rate", label: "수락률", render: pct },
+  { key: "accept_rate", label: "수락률", render: pct, toText: pct },
 ];
 
-function TracesBetaPanel({ resp, title, subtitle, columns }) {
+function TracesBetaPanel({ resp, title, subtitle, columns, exportName }) {
   if (resp.loading) return <Loading />;
   if (resp.error) return <ErrorBox error={resp.error} />;
   if (resp.data?.unsupported) {
@@ -63,10 +63,11 @@ function TracesBetaPanel({ resp, title, subtitle, columns }) {
         subtitle={`${subtitle} — 데이터 없음: traces beta(CLAUDE_CODE_ENHANCED_TELEMETRY_BETA)가 아직 이 구간에 배포되지 않았거나${resp.data.minVersion ? `, 이 스팬 자체가 Claude Code v${resp.data.minVersion} 미만에서는 나오지 않습니다` : "요"} — 0이 아니라 "미수집"입니다.`}
         columns={columns}
         rows={[]}
+        exportName={exportName}
       />
     );
   }
-  return <DataTable title={title} subtitle={subtitle} columns={columns} rows={resp.data?.rows || []} />;
+  return <DataTable title={title} subtitle={subtitle} columns={columns} rows={resp.data?.rows || []} exportName={exportName} />;
 }
 
 export default function Productivity() {
@@ -184,11 +185,12 @@ export default function Productivity() {
               { key: "loc", label: "추가 라인", render: fmt },
               { key: "commits", label: "커밋", render: fmt },
               { key: "prs", label: "PR", render: fmt },
-              { key: "accept_rate", label: "수락률", render: pct },
+              { key: "accept_rate", label: "수락률", render: pct, toText: pct },
               { key: "sessions", label: "세션", render: fmt },
               { key: "active_days", label: "활성일", render: fmt },
             ]}
             rows={leaderboard.data || []}
+            exportName="productivity_by_user"
           />
         )}
 
@@ -338,6 +340,7 @@ export default function Productivity() {
                 subtitle="편집 수 상위 10개 언어 — 수락률 = accept 결정 ÷ 전체 편집"
                 columns={LANGUAGE_COLUMNS}
                 rows={langRowsFor(g)}
+                exportName={`productivity_languages_${g}`}
               />
             ))}
           </div>
@@ -363,18 +366,21 @@ export default function Productivity() {
           title="권한 대기 오버헤드"
           subtitle="claude_code.tool.blocked_on_user 대기 시간 — 크면 권한 설정이 생산성을 깎고 있다는 뜻"
           columns={PERMISSION_WAIT_COLUMNS}
+          exportName="productivity_permission_wait"
         />
         <TracesBetaPanel
           resp={ttft}
           title="TTFT (첫 토큰까지 시간)"
           subtitle="Bedrock vs Enterprise 체감 응답성 비교에 가장 직접적인 지표"
           columns={TTFT_COLUMNS}
+          exportName="productivity_ttft"
         />
         <TracesBetaPanel
           resp={interactionBreakdown}
           title="인터랙션 시간 분해"
           subtitle="느린 원인이 모델(llm_request)인지, 툴 실행(tool.execution)인지, 권한 대기(tool.blocked_on_user)인지를 가른다 — 비중 합계는 1을 넘을 수 있다"
           columns={INTERACTION_BREAKDOWN_COLUMNS}
+          exportName="productivity_interaction_breakdown"
         />
       </div>
     </div>
