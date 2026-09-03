@@ -37,7 +37,12 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   `latest` to fall back to — a value must come from `terraform.tfvars`). Also wires
   `DATA_STALE_MINUTES` (from `var.data_stale_minutes`, default `360`) and the optional
   `PRICING_JSON` / `PRICING_CACHE_WRITE_TTL` (nullable vars; no env is injected when they're
-  `null`).
+  `null`). Additionally wires the three org-level boot knobs `GROUP_MODE` /
+  `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS` from `var.group_mode` / `var.default_range_days` /
+  `var.range_cap_days` (defaults `ab` / `2` / `90`, identical to the server defaults,
+  validated in Terraform with the same rules the server enforces at boot — `ab|single`,
+  positive integer, cap `>=` default) — always injected, so the first apply after they were
+  added rolls the Deployment once.
 - `ecr.tf` -- ECR repository for `cc-ab-dashboard`, `image_tag_mutability = "IMMUTABLE"` — the
   deploy path therefore pushes only the timestamp tag; a `latest` re-push is rejected by the
   registry.

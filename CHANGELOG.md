@@ -34,6 +34,10 @@ This project has not been tagged yet — everything below is unreleased.
   restore-drill checklist)
 - Add `docs/deploying-for-your-org.md`, a walkthrough for standing up this stack for another
   organization assembled entirely from commands already cited in the existing runbooks/README
+- Expose the server's `GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS` as Terraform
+  variables `group_mode` / `default_range_days` / `range_cap_days` (`infra/dashboard.tf`),
+  validated with the same rules the server enforces at boot; the next `terraform apply` adds
+  three env entries and rolls the dashboard Deployment once
 
 ### Changed (2026-09-02 data correctness)
 - Fold `StartTimeUnix` into `SeriesKey` so cumulative-counter diffing is segment-aware
@@ -171,6 +175,10 @@ This project has not been tagged yet — everything below is unreleased.
   미측정"을 명시, 분기별 복구 드릴 체크리스트) 추가
 - `docs/deploying-for-your-org.md` 추가 — 기존 런북/README에 이미 있는 명령만으로 구성한,
   다른 조직에 이 스택을 세우는 절차 안내서
+- 서버의 `GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS`를 Terraform 변수
+  `group_mode` / `default_range_days` / `range_cap_days`로 노출(`infra/dashboard.tf`) —
+  서버가 부팅 시 강제하는 것과 같은 규칙으로 검증하며, 다음 `terraform apply`가 env 3개를
+  추가하면서 대시보드 Deployment를 한 번 롤링 재시작
 
 ### Changed (2026-09-02 데이터 정확성)
 - 누적 카운터 diff가 프로세스 세그먼트 단위로 동작하도록 `SeriesKey`에 `StartTimeUnix`를

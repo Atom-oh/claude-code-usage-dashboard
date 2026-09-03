@@ -151,23 +151,25 @@ journalctl -u otelcol -n 50   # or: tail -f ~/.otelcol/collector.log
 (see `README.md` "Telemetry Ingestion").
 
 ## 9. Choosing the four org-level env values
-These are `dashboard/server` env vars — decide them deliberately, not by leaving the default:
+These are `dashboard/server` env vars, set through the Terraform variables named in
+parentheses below (`infra/dashboard.tf`; there is a commented optional block at the end of
+`infra/terraform.tfvars.example`) — decide them deliberately, not by leaving the default:
 
-- **`GROUP_MODE`** — `ab` compares a bedrock/enterprise pair; `single` tells the SPA this org
-  has one channel and suppresses the empty second card. **Any value other than `ab` or
-  `single` fails the boot** (see `README.md` "Configuration"). Choose `ab` only if your org
-  actually runs both auth paths side by side.
-- **`DEFAULT_RANGE_DAYS`** — the default range when a request omits `from`, **and** the same
-  window the server's cache warmer pre-computes (see `README.md` "Configuration"). This is
-  not a free choice: raising it widens what the warmer keeps hot, at the cost of pre-warming
-  a larger range on every boot.
-- **`RANGE_CAP_DAYS`** — the longest range a request may ask for; a longer span is a 400, and
-  it must be `>=` `DEFAULT_RANGE_DAYS` (see `README.md` "Configuration"). Set it to the
-  longest range your org actually needs to look back, not larger than that.
-- **`PII_MASK_ENABLED`** — masks user emails in `GET /api/config`'s `piiMask` and the chat
-  sandbox's result rows; on only for `"1"`/`"true"`, case-insensitive (see `README.md`
-  "Configuration"). Turn this on for any deployment reachable by more people than the data
-  should be visible to on a shared screen.
+- **`GROUP_MODE`** (`group_mode`) — `ab` compares a bedrock/enterprise pair; `single` tells
+  the SPA this org has one channel and suppresses the empty second card. **Any value other
+  than `ab` or `single` fails the boot** (see `README.md` "Configuration"). Choose `ab` only
+  if your org actually runs both auth paths side by side.
+- **`DEFAULT_RANGE_DAYS`** (`default_range_days`) — the default range when a request omits
+  `from`, **and** the same window the server's cache warmer pre-computes (see `README.md`
+  "Configuration"). This is not a free choice: raising it widens what the warmer keeps hot,
+  at the cost of pre-warming a larger range on every boot.
+- **`RANGE_CAP_DAYS`** (`range_cap_days`) — the longest range a request may ask for; a longer
+  span is a 400, and it must be `>=` `DEFAULT_RANGE_DAYS` (see `README.md` "Configuration").
+  Set it to the longest range your org actually needs to look back, not larger than that.
+- **`PII_MASK_ENABLED`** (`pii_mask_enabled`) — masks user emails in `GET /api/config`'s
+  `piiMask` and the chat sandbox's result rows; on only for `"1"`/`"true"`, case-insensitive
+  (see `README.md` "Configuration"). Turn this on for any deployment reachable by more people
+  than the data should be visible to on a shared screen.
 
 ## 10. Verification
 Three checks, all read-only:
@@ -332,23 +334,25 @@ journalctl -u otelcol -n 50   # 또는: tail -f ~/.otelcol/collector.log
 (`README.md` "텔레메트리 수집" 참고).
 
 ## 9. 조직 단위 env 값 네 가지 정하기
-`dashboard/server`의 env 변수입니다 — 기본값을 그냥 두지 말고 의도적으로 정하세요:
+`dashboard/server`의 env 변수이며, 아래 괄호 안의 Terraform 변수로 설정합니다
+(`infra/dashboard.tf`; `infra/terraform.tfvars.example` 끝에 주석 처리된 선택 블록이
+있습니다) — 기본값을 그냥 두지 말고 의도적으로 정하세요:
 
-- **`GROUP_MODE`** — `ab`는 bedrock/enterprise 쌍을 비교하고, `single`은 채널이 하나인
-  조직임을 SPA에 알려 빈 두 번째 카드를 그리지 않게 합니다. **`ab`/`single` 외의 값은 기동을
-  실패시킵니다**(`README.md` "환경 설정" 참고). 조직이 실제로 두 인증 경로를 나란히
-  쓸 때만 `ab`를 선택하세요.
-- **`DEFAULT_RANGE_DAYS`** — `from` 없이 온 요청의 기본 구간이면서, **동시에** 서버 캐시
-  warmer가 미리 데우는 창이기도 합니다(`README.md` "환경 설정" 참고). 자유롭게 고를 값이
-  아닙니다 — 값을 올리면 warmer가 매 부팅마다 더 넓은 구간을 미리 데우는 대가로 더 넓게
-  캐시를 유지합니다.
-- **`RANGE_CAP_DAYS`** — 요청 가능한 최대 구간이며, 넘으면 400이고
+- **`GROUP_MODE`** (`group_mode`) — `ab`는 bedrock/enterprise 쌍을 비교하고, `single`은
+  채널이 하나인 조직임을 SPA에 알려 빈 두 번째 카드를 그리지 않게 합니다. **`ab`/`single`
+  외의 값은 기동을 실패시킵니다**(`README.md` "환경 설정" 참고). 조직이 실제로 두 인증
+  경로를 나란히 쓸 때만 `ab`를 선택하세요.
+- **`DEFAULT_RANGE_DAYS`** (`default_range_days`) — `from` 없이 온 요청의 기본 구간이면서,
+  **동시에** 서버 캐시 warmer가 미리 데우는 창이기도 합니다(`README.md` "환경 설정" 참고).
+  자유롭게 고를 값이 아닙니다 — 값을 올리면 warmer가 매 부팅마다 더 넓은 구간을 미리 데우는
+  대가로 더 넓게 캐시를 유지합니다.
+- **`RANGE_CAP_DAYS`** (`range_cap_days`) — 요청 가능한 최대 구간이며, 넘으면 400이고
   `DEFAULT_RANGE_DAYS` 이상이어야 합니다(`README.md` "환경 설정" 참고). 조직이 실제로
   되돌아볼 필요가 있는 최대 구간으로 설정하고 그보다 크게 잡지 마세요.
-- **`PII_MASK_ENABLED`** — `GET /api/config`의 `piiMask`와 챗 샌드박스 결과 행의 유저
-  이메일을 마스킹합니다. `"1"`/`"true"`(대소문자 무관)일 때만 켜집니다(`README.md` "환경
-  설정" 참고). 공유 화면에서 데이터를 볼 수 있는 사람보다 더 많은 사람이 접근 가능한
-  배포라면 켜세요.
+- **`PII_MASK_ENABLED`** (`pii_mask_enabled`) — `GET /api/config`의 `piiMask`와 챗 샌드박스
+  결과 행의 유저 이메일을 마스킹합니다. `"1"`/`"true"`(대소문자 무관)일 때만
+  켜집니다(`README.md` "환경 설정" 참고). 공유 화면에서 데이터를 볼 수 있는 사람보다 더 많은
+  사람이 접근 가능한 배포라면 켜세요.
 
 ## 10. 검증
 읽기 전용 세 가지 확인:
