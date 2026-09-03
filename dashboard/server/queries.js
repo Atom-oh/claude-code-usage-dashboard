@@ -1,7 +1,6 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost, normalizeModelId } from "./pricing.js";
-import { rollupActiveUsers, MAU_WINDOW_DAYS } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -77,7 +76,7 @@ export function filterCond(filters = {}, cols = {}) {
   // ~11%가 조용히 빠져 "전체 유저 수"가 실제보다 작게 나온다(리뷰에서 MAJOR로 확인).
   //
   // 정책 정리(리뷰 제안 #6 — A/B 지표 vs 총계 지표를 excludeUnknown 기준으로 표로 명시):
-  //   - excludeUnknown: false(unknown 포함) — activeUsers, activeUsersTimeseries, adoptionLevels,
+  //   - excludeUnknown: false(unknown 포함) — activeUsers, adoptionLevels,
   //     adoptionTimeseries, userLeaderboard의 active_days CTE, kpiSummary, costSummary(및 동일
   //     패턴의 cost 계열). kpiSummary/costSummary는 GROUP BY grp로 그룹별 비교도 같이 보여주지만,
   //     응답 전체를 합산하는 소비자(Executive.jsx의 총 지출/토큰, costPerDev)가 있어 activeUsers와
@@ -898,22 +897,6 @@ export async function activeUsers(from, to, filters = {}) {
   return rows[0] || { users: 0, bedrock_users: 0, enterprise_users: 0 };
 }
 
-// adoptionLevels(스냅샷)의 시계열 버전 — 일자×유저 존재만 뽑아오고 DAU/WAU/MAU 롤링 윈도우는
-// activity.js(순수 함수, 단위 테스트 있음)에서 계산한다. wau/mau가 정확하려면 from보다 29일 전
-// 데이터까지 봐야 하므로 조회 구간을 넓힌다. 현재 라우트에서는 안 쓰지만(어댑션 timeseries는
-// adoptionTimeseries가 담당, 아래) activity.js와 짝인 순수 계산 경로라 보존한다.
-export async function activeUsersTimeseries(from, to) {
-  const rows = await query(
-    `SELECT toDate(hour, 'UTC') AS day, UserEmail
-     FROM claude_code.otel_metrics_sum_hourly
-     WHERE MetricName = 'claude_code.session.count' AND UserEmail != ''
-       AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${MAU_WINDOW_DAYS} DAY AND hour < {to:DateTime}
-     GROUP BY day, UserEmail`,
-    range(from, to)
-  );
-  return rollupActiveUsers(rows, from, to);
-}
-
 // 사용자·세션·PR 시계열 — Productivity 페이지의 "도입률"/"사용자당 PR" 이중축 시계열 하나로 둘 다 커버.
 // session/PR 행에는 Model이 없지만, kpiSummary/normalizedProductivity/userLeaderboard와 동일하게
 // modelMixed 세션 세미조인으로 model 필터를 통과시킨다 — 안 그러면 이 시계열만 전체-모델 기준이라
@@ -1144,7 +1127,7 @@ export async function userSkillUsage(from, to, filters = {}) {
 // 집합만 뽑고 JS에서 접는다 — 유저 수가 수백 명 수준이라 집합 union이 싸고, SQL 셀프조인보다
 // 단순하다. uniq류는 존재 여부만 보므로 시간별 rollup으로 접혀도 값이 같다(키 보존).
 // 날짜 키는 toDate(..., 'UTC')로 고정 — JS는 toISOString()(UTC)로 롤링 union하므로 서버 TZ가
-// UTC가 아니어도 하루 어긋나지 않는다(activeUsersTimeseries와 동일 규칙).
+// UTC가 아니어도 하루 어긋나지 않는다(activity.js의 rollupActiveUsers와 동일 규칙).
 // excludeUnknown: false — activeUsers/adoptionLevels와 같은 "총계/DAU·WAU·MAU" 계열이라
 // 그룹 무관 모수여야 한다. 빠뜨리면 이 시계열만 unknown ~11%가 빠져 Trends의 DAU/WAU/MAU가
 // Overview 스냅샷(adoptionLevels)보다 낮게 나오는 모순이 생긴다(리뷰에서 MAJOR로 확인).

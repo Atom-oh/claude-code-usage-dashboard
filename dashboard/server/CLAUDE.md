@@ -188,3 +188,10 @@ session is `readonly`.
   treated exactly like `false`. Local-dev consequence: a plain local ClickHouse `default`
   account has `readonly=0`, so chat answers 503 locally unless `CH_USER` points at a
   readonly-profiled account.
+- **`/api/adoption/timeseries` is `adoptionTimeseries`, which computes its rolling windows
+  inline** (`byDay` map, 30/7-day unions, plus `stickiness`). The old `activeUsersTimeseries`
+  export was deleted — it had zero callers. `activity.js` is retained even though it now has no
+  production caller: `rollupActiveUsers` is the only unit-tested statement of the DAU/WAU/MAU
+  window definition (`activity.test.js`, `MAU_WINDOW_DAYS = 29`). Do not delete it, and do not
+  rewire `adoptionTimeseries` through it — the windows differ (29/6 vs 30/7) and it would drop
+  `stickiness`.

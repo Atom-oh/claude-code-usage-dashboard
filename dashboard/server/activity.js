@@ -1,14 +1,16 @@
 // DAU/WAU/MAU 시계열 롤업 — SQL에서 날짜별로 30개의 uniqExactIf를 반복하는 대신, "일자×유저 존재"
 // 원자료만 ClickHouse에서 가져오고(queries.js dailyActiveUsers) 롤링 윈도우 집계는 여기서 한다.
-// adoptionLevels(스냅샷)의 시계열 버전.
+// 이 모듈은 현재 프로덕션 호출자가 없다 — queries.js의 adoptionTimeseries가 같은 롤링 윈도우를
+// 자체 정의(30일/7일 + stickiness)로 인라인 계산한다. 그래도 남겨두는 이유는 이 창 정의를
+// 단위 테스트(activity.test.js)로 검증하는 유일한 코드이기 때문이다.
 function toDay(d) {
   return d.toISOString().slice(0, 10);
 }
 
 // unionSince(day, N)은 day를 포함해 양끝 inclusive로 세므로 29는 "당일 포함 trailing 30일"이다
-// (adoptionLevels의 스냅샷 쿼리가 쓰는 INTERVAL 30 DAY와 정의가 일치). queries.js의
-// activeUsersTimeseries가 조회 창을 이 값만큼 넓혀야 mau가 맞다 — 한쪽만 바꾸면 조용히
-// under-count 되므로 상수 하나로 공유한다.
+// (adoptionLevels의 스냅샷 쿼리가 쓰는 INTERVAL 30 DAY와 정의가 일치). 이 상수는 같은 파일의
+// rollupActiveUsers(unionSince(day, MAU_WINDOW_DAYS))가 소비하므로, rollupActiveUsers를
+// 호출하는 쪽은 조회 창을 이 값만큼 넓혀야 mau가 맞다.
 export const MAU_WINDOW_DAYS = 29;
 
 // rows: [{day: 'YYYY-MM-DD', UserEmail}] — from-MAU_WINDOW_DAYS일 이전부터 to까지 조회된 것이어야

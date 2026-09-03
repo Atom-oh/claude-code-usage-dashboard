@@ -324,9 +324,8 @@ route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(fr
 route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, bucketHours(query, from, to), filters));
 route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters));
 route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, bucketHours(query, from, to), filters));
-// 우리(필터 지원, DAU/WAU/MAU + 고착도, Trends/Executive가 사용) 버전을 채택 — main의
-// activeUsersTimeseries(필터 없음, activity.js 순수 함수 롤업)는 반환 shape가 상위집합
-// ({t,dau,wau,mau} vs {t,dau,wau,mau,stickiness})이라 Overview.jsx도 그대로 동작한다.
+// adoptionTimeseries를 채택 — 필터 지원, DAU/WAU/MAU + 고착도를 반환하고 Trends/Executive가
+// 이 값을 쓴다. 롤링 윈도우는 queries.js 안에서 자체 계산한다.
 route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
 route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
 route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, bucketHours(query, from, to), filters));
