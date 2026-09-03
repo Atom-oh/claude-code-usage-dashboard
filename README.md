@@ -183,7 +183,7 @@ claude-code-usage-dashboard/
 ```bash
 # Server unit tests (node:test, no framework)
 cd dashboard/server
-node --test *.test.js
+npm test   # same as: node --test *.test.js
 
 # Web build check (no dedicated test suite yet)
 cd dashboard/web
@@ -192,6 +192,10 @@ npm run build
 # Claude Code harness tests (hooks, settings.json, structure)
 bash tests/run-all.sh
 ```
+All three of the above, plus `terraform fmt`/`validate` on `infra/`, run in CI
+(`.github/workflows/ci.yml`) on every push to `main`/`feat/**` and on every pull request. On a
+CI checkout the harness suite reports the `.claude/`-dependent assertion groups as **skipped**
+rather than failed, since `.claude/` is gitignored and absent there.
 
 ## API Documentation
 See [docs/api-reference.md](docs/api-reference.md) for the full endpoint list (~25 read-only
@@ -386,7 +390,7 @@ claude-code-usage-dashboard/
 ```bash
 # 서버 유닛 테스트 (node:test, 프레임워크 없음)
 cd dashboard/server
-node --test *.test.js
+npm test   # node --test *.test.js와 동일
 
 # 웹 빌드 확인 (아직 전용 테스트 스위트 없음)
 cd dashboard/web
@@ -395,6 +399,10 @@ npm run build
 # Claude Code 하니스 테스트 (훅, settings.json, 구조)
 bash tests/run-all.sh
 ```
+위 세 가지에 더해 `infra/`에 대한 `terraform fmt`/`validate`까지 전부 CI
+(`.github/workflows/ci.yml`)에서 `main`/`feat/**`로의 모든 push와 모든 pull request에 대해
+실행됩니다. CI 체크아웃에서는 `.claude/`가 gitignore 대상이라 존재하지 않으므로, 하니스
+스위트는 `.claude/`에 의존하는 단정문 그룹을 실패가 아니라 **skipped**로 보고합니다.
 
 ## API 문서
 전체 엔드포인트 목록(읽기 전용 `GET /api/*` 라우트 약 25개 + `/api/chat` SSE 엔드포인트)은

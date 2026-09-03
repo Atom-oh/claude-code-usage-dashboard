@@ -68,8 +68,9 @@ session is `readonly`.
   `tierCosts`, `tierCostsByGroup`
 - `productivity.js` -- productivity score derivation (pure function, used by leaderboard)
 - `costEfficiency.js` -- `$/LOC`, `$/commit` derivation (pure function)
-- `activity.js` -- DAU/WAU/MAU rollup from raw day x user rows (pure function,
-  `MAU_WINDOW_DAYS` constant shared with `queries.js`)
+- `activity.js` -- DAU/WAU/MAU rollup from raw day x user rows (pure function; its
+  `MAU_WINDOW_DAYS` constant is consumed only inside this module now -- see the Rules bullet
+  on `/api/adoption/timeseries` for why it is kept with no production caller)
 - `chat.js` -- Bedrock ConverseStream chat assistant, `sanitizeSql()` SQL sandbox
 - `clickhouse.js` -- `query()` / `queryReadonly()` / `ping()`; `classifyReadonly` (pure,
   unit-tested tri-state) / `assertReadonlySession` (never throws, folds every error to `null`)
@@ -195,3 +196,6 @@ session is `readonly`.
   window definition (`activity.test.js`, `MAU_WINDOW_DAYS = 29`). Do not delete it, and do not
   rewire `adoptionTimeseries` through it — the windows differ (29/6 vs 30/7) and it would drop
   `stickiness`.
+- **`npm test`** in `dashboard/server` runs `node --test *.test.js`. `engines.node` is `>=22`
+  (local toolchain 22, runtime image 24). CI (`.github/workflows/ci.yml`) runs it on every push
+  to `main`/`feat/**` and every pull request.

@@ -14,7 +14,8 @@ logged at boot and every `/api/*` route is served unauthenticated. `GET /healthz
 `GET /api/health/data` is **not** exempt — it is a data route the SPA calls.
 
 ## Common Query Parameters
-Every data route below accepts these (parsed by `parseRange()` / `route()` in `index.js`).
+Every data route below accepts these (parsed by `parseRange()` in `http.js` / `route()` in
+`index.js`).
 `POST /api/chat` (see the Chat section) is the one exception — it takes a JSON body instead.
 
 | Parameter | Type | Required | Description |
@@ -149,8 +150,8 @@ with HTTP 500.
 |------|-------------|
 | 400 | Bad Request — a rejected query parameter, returned by every `route()`-wrapped `/api/*` endpoint **before** any ClickHouse query runs (so an invalid request never creates a cache entry). Body is `{"error": "invalid range"|"invalid intervalHours", "detail": "<which parameter and why>"}`. Causes: an unparseable `from`/`to`, `from >= to`, or an `intervalHours` outside `(0, 744]`. `detail` never echoes the submitted value. |
 | 401 | Unauthorized — missing/invalid Basic Auth credentials. `BASIC_AUTH_USER`/`BASIC_AUTH_PASSWORD` are required: without both the server refuses to start (exit 1) unless `AUTH_ALLOW_INSECURE=1` is set, in which case no request is authenticated and nothing returns 401. |
-| 503 | Service Unavailable — `/readyz` while draining or with ClickHouse unreachable; `/api/health/data` when data is `stale` or `unknown`; `POST /api/chat` when auth is not configured, or when the server has not confirmed its ClickHouse session is `readonly`. Data routes never return 503. |
 | 500 | Internal Server Error — usually a ClickHouse query error. Body is `{"error": "internal error", "id": "<uuid>"}` and **never** carries the underlying exception message: a `ClickHouseError` text embeds the whole failing SQL. Grep the pod log for `[<id>]` to get the real error. |
+| 503 | Service Unavailable — `/readyz` while draining or with ClickHouse unreachable; `/api/health/data` when data is `stale` or `unknown`; `POST /api/chat` when auth is not configured, or when the server has not confirmed its ClickHouse session is `readonly`. Data routes never return 503. |
 
 ## Rate Limits
 None enforced at the application layer. The dashboard is used by a small workshop cohort;
