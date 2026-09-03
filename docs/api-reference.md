@@ -129,7 +129,7 @@ with HTTP 500.
 ### Chat (AI Assistant)
 | Path | Returns |
 |---|---|
-| `POST /api/chat` | Server-Sent Events stream. Body: `{"messages": [{"role": "user"\|"assistant", "content": "..."}]}`. Backed by Bedrock; internally allowed to run read-only ClickHouse SQL via a sandboxed tool — see `sanitizeSql()` in `dashboard/server/chat.js`. |
+| `POST /api/chat` | Server-Sent Events stream. Body: `{"messages": [{"role": "user"\|"assistant", "content": "..."}]}`. Backed by Bedrock; internally allowed to run read-only ClickHouse SQL via a sandboxed tool — see `sanitizeSql()` in `dashboard/server/chat.js`. The route answers **503** unless auth is configured (or `CHAT_ALLOW_INSECURE=1`) **and** the server's boot probe (`assertReadonlySession()` in `clickhouse.js`, `SELECT toUInt8(getSetting('readonly'))`, re-run every 10 minutes) has confirmed the ClickHouse session is `readonly`. An undetermined probe (unreachable cluster, permission error) is treated the same as "not readonly" — fail-closed. |
 
 ### Health
 | Path | Returns |
@@ -149,7 +149,7 @@ with HTTP 500.
 |------|-------------|
 | 400 | Bad Request — a rejected query parameter, returned by every `route()`-wrapped `/api/*` endpoint **before** any ClickHouse query runs (so an invalid request never creates a cache entry). Body is `{"error": "invalid range"|"invalid intervalHours", "detail": "<which parameter and why>"}`. Causes: an unparseable `from`/`to`, `from >= to`, or an `intervalHours` outside `(0, 744]`. `detail` never echoes the submitted value. |
 | 401 | Unauthorized — missing/invalid Basic Auth credentials. `BASIC_AUTH_USER`/`BASIC_AUTH_PASSWORD` are required: without both the server refuses to start (exit 1) unless `AUTH_ALLOW_INSECURE=1` is set, in which case no request is authenticated and nothing returns 401. |
-| 503 | Service Unavailable — only from the two health routes: `/readyz` while draining or with ClickHouse unreachable, `/api/health/data` when data is `stale` or `unknown`. Data routes never return 503. |
+| 503 | Service Unavailable — `/readyz` while draining or with ClickHouse unreachable; `/api/health/data` when data is `stale` or `unknown`; `POST /api/chat` when auth is not configured, or when the server has not confirmed its ClickHouse session is `readonly`. Data routes never return 503. |
 | 500 | Internal Server Error — usually a ClickHouse query error. Body is `{"error": "internal error", "id": "<uuid>"}` and **never** carries the underlying exception message: a `ClickHouseError` text embeds the whole failing SQL. Grep the pod log for `[<id>]` to get the real error. |
 
 ## Rate Limits

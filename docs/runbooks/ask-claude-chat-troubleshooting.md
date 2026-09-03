@@ -81,7 +81,27 @@ reproduces, the conversation needs to be reset. There is no reset button: the cl
 in component state and resends all of it, so the user has to reload the page (`FloatingChat`'s X
 only cancels the stream and keeps the history). Tell them to refresh.
 
-### 5. Scenario — `AccessDeniedException` / `ThrottlingException` in logs
+### 5. Scenario — chat answers 503 with "readonly가 아니면 비활성화됩니다"
+Not the auth gate (that message is different — see the 503 row in
+[docs/api-reference.md](../api-reference.md)). This is the second, independent chat gate: at
+boot and every 10 minutes, `assertReadonlySession()` (`dashboard/server/clickhouse.js`) runs
+`SELECT toUInt8(getSetting('readonly'))` against `CH_USER`'s session and the server refuses to
+enable chat unless that probe has confirmed `readonly`. Two distinct causes look identical to
+the client:
+- the account really is writable (a deployment pointed `CH_USER` at `otel_writer` or a local
+  `default` account, both `readonly=0`)
+- the probe itself couldn't run (cluster unreachable, permission error)
+
+Both collapse to the same fail-closed result, so check the pod log for the line
+`chat disabled: ClickHouse session is not confirmed readonly (probe=…)`:
+`probe=false` means the account is writable; `probe=null` means the probe failed. The fix is
+always to point `CH_USER` at the readonly-profiled account (`otel_reader`, Secret
+`clickhouse-reader`) — never to relax the gate. Every other data route keeps working on a
+writable account; only chat is gated, because chat is the only path that runs LLM-authored
+SQL. There is also a sub-second window right after a pod starts, before the first probe
+returns, where chat is 503 by design — that is not a bug either.
+
+### 6. Scenario — `AccessDeniedException` / `ThrottlingException` in logs
 - `AccessDeniedException`: Bedrock model access for `CHAT_MODEL_ID` is not enabled in
   `BEDROCK_REGION`/`AWS_REGION` for this account, or the IRSA role
   (`aws_iam_role.dashboard_bedrock` in `infra/dashboard.tf`) doesn't grant the inference-profile
@@ -90,7 +110,7 @@ only cancels the stream and keeps the history). Tell them to refresh.
   (`sendConverseWithRetry`); if the user still sees it, the account is throttled harder than
   that budget covers — check Bedrock service quotas.
 
-### 6. Scenario — 429 from the dashboard itself, not Bedrock
+### 7. Scenario — 429 from the dashboard itself, not Bedrock
 That's the per-IP rate limiter (`RATE_MAX = 10`/minute, `chat.js`), not an AWS error. Expected
 under heavy demoing from one IP (e.g. behind a shared NAT/VPN). No action needed unless it's
 firing for a single legitimate user, in which case reconsider `RATE_MAX`.
@@ -171,7 +191,26 @@ LEFT JOIN)를 ClickHouse에 직접 돌려 확인하세요. 직접 쿼리는 되�
 리셋해야 합니다. 리셋 버튼은 없습니다 — 클라이언트가 `msgs`를 컴포넌트 state에 들고 전부 재전송하는
 구조라 **페이지를 새로고침**해야 합니다(`FloatingChat`의 X는 스트림만 취소하고 히스토리는 유지합니다).
 
-### 5. 시나리오 — 로그에 `AccessDeniedException` / `ThrottlingException`
+### 5. 시나리오 — 챗이 "readonly가 아니면 비활성화됩니다"로 503을 답함
+인증 게이트가 아닙니다(그 메시지는 다릅니다 — [docs/api-reference.md](../api-reference.md)의
+503 행 참고). 이건 두 번째, 독립적인 챗 게이트입니다: 부팅 시와 10분마다
+`assertReadonlySession()`(`dashboard/server/clickhouse.js`)이 `CH_USER`의 세션에
+`SELECT toUInt8(getSetting('readonly'))`를 실행하고, 이 프로브가 `readonly`를 확인하지
+못하면 서버는 챗을 켜지 않습니다. 클라이언트 입장에서 똑같이 보이는 두 가지 원인이 있습니다:
+- 계정이 실제로 쓰기 가능함(배포가 `CH_USER`를 `otel_writer`나 로컬 `default` 계정에
+  물렸고, 둘 다 `readonly=0`)
+- 프로브 자체가 실행되지 못함(클러스터 접속 불가, 권한 에러)
+
+둘 다 같은 fail-closed 결과로 접히므로, 파드 로그에서
+`chat disabled: ClickHouse session is not confirmed readonly (probe=…)` 줄을 확인하세요:
+`probe=false`는 계정이 쓰기 가능하다는 뜻이고, `probe=null`은 프로브가 실패했다는 뜻입니다.
+고치는 방법은 항상 `CH_USER`를 readonly 프로필 계정(`otel_reader`, Secret
+`clickhouse-reader`)에 맞추는 것입니다 — 절대 게이트를 완화하지 마세요. 다른 데이터 라우트는
+쓰기 가능한 계정에서도 그대로 동작합니다 — 챗만 게이트되는 이유는 챗이 LLM이 작성한 SQL을
+실행하는 유일한 경로이기 때문입니다. 파드가 막 시작한 직후 첫 프로브가 돌아오기 전 1초
+미만의 구간도 챗이 503을 답합니다 — 이것도 버그가 아니라 의도된 동작입니다.
+
+### 6. 시나리오 — 로그에 `AccessDeniedException` / `ThrottlingException`
 - `AccessDeniedException`: 이 계정에서 `BEDROCK_REGION`/`AWS_REGION` 기준 `CHAT_MODEL_ID`의
   Bedrock model access가 켜져 있지 않거나, IRSA 역할(`infra/dashboard.tf`의
   `aws_iam_role.dashboard_bedrock`)이 inference-profile ARN에 권한을 안 준 것입니다.
@@ -180,7 +219,7 @@ LEFT JOIN)를 ClickHouse에 직접 돌려 확인하세요. 직접 쿼리는 되�
   (`sendConverseWithRetry`). 그래도 사용자에게 보이면 그 예산을 넘는 수준의 throttling이므로
   Bedrock 서비스 쿼터를 확인하세요.
 
-### 6. 시나리오 — Bedrock이 아니라 대시보드 자체의 429
+### 7. 시나리오 — Bedrock이 아니라 대시보드 자체의 429
 per-IP 레이트리미터입니다(`RATE_MAX = 10`/분, `chat.js`) — AWS 에러가 아닙니다. 한 IP(공유
 NAT/VPN 뒤)에서 데모를 몰아서 할 때 정상적으로 발생합니다. 정상 사용자 1명에게만 계속
 뜬다면 `RATE_MAX`를 재검토하세요.

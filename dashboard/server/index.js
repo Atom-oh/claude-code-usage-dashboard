@@ -8,7 +8,7 @@ import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
-import { ping } from "./clickhouse.js";
+import { ping, assertReadonlySession } from "./clickhouse.js";
 import { probeSegmentAwareSeriesKey } from "./schema.js";
 import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./freshness.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
@@ -139,6 +139,20 @@ const refreshSchemaProbe = () => {
 };
 refreshSchemaProbe();
 setInterval(refreshSchemaProbe, 10 * 60 * 1000).unref();
+
+// 챗 SQL 샌드박스의 전제(계정이 readonly) 실측 — 위 스키마 프로브와 같은 패턴으로 부팅 시
+// 한 번 + 10분마다 갱신한다. null(프로브 실패/접속 불가)은 false와 같게 다룬다: 확인되지
+// 않은 계정으로 LLM이 만든 SELECT를 실행시키지 않는다(fail-closed). 부팅 직후 프로브가
+// 돌아오기 전 잠깐도 챗은 503이다 — 그게 fail-closed의 정의다.
+let chatSqlSafe = null;
+const refreshReadonlyProbe = () => {
+  assertReadonlySession().then((v) => {
+    chatSqlSafe = v;
+    if (v !== true) console.warn(`chat disabled: ClickHouse session is not confirmed readonly (probe=${String(v)})`);
+  });
+};
+refreshReadonlyProbe();
+setInterval(refreshReadonlyProbe, 10 * 60 * 1000).unref();
 
 // 여러 탭이 60초마다 /api/health/data를 폴링하므로(web FreshnessContext.jsx) 원본
 // otel_metrics_sum 스캔을 30초 메모로 묶는다 — 스키마 프로브처럼 타이머로 미리 돌리지 않는
@@ -364,11 +378,15 @@ route("/api/cost/by-agent", (from, to, _q, filters) => q.agentCost(from, to, fil
 // 것(AUTH_ALLOW_INSECURE)과 그 상태에서 임의 SELECT를 실행하는 챗까지 켜는 것
 // (CHAT_ALLOW_INSECURE)은 위험이 다르고, 후자는 언제나 별도 opt-in이어야 한다.
 const chatAllowed = authEnabled || process.env.CHAT_ALLOW_INSECURE === "1";
-app.post(
-  "/api/chat",
-  express.json(),
-  chatAllowed ? handleChat : (_req, res) => res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" })
-);
+app.post("/api/chat", express.json(), (req, res) => {
+  if (!chatAllowed) {
+    return res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" });
+  }
+  if (chatSqlSafe !== true) {
+    return res.status(503).json({ error: "챗은 ClickHouse 계정이 readonly가 아니면 비활성화됩니다" });
+  }
+  return handleChat(req, res);
+});
 
 // 이메일 마스킹 on/off를 프론트에 런타임으로 알려준다 — 이미지는 한 번만 빌드해 여러 배포에
 // 재사용하므로(dashboard/Dockerfile) 빌드타임 VITE_ 변수로는 배포별로 못 바꾼다. ClickHouse도

@@ -40,6 +40,10 @@ the legacy expression still is, and `null` means undetermined (mixed keys mid-
 the probe itself runs on its own timer rather than in the request path, so the route stays
 synchronous and still touches no ClickHouse at request time.
 
+`POST /api/chat` has two independent gates, both answering 503: auth must be configured (or
+`CHAT_ALLOW_INSECURE=1`), and the server's boot probe must have confirmed the ClickHouse
+session is `readonly`.
+
 ## Key Files
 - `index.js` -- route table, `route()` wrapper (range/query parsing + error handling + TTL
   cache with in-flight dedup; see `QUANT_MS`/`CACHE_TTL_MS` constants for current timing math),
@@ -67,7 +71,8 @@ synchronous and still touches no ClickHouse at request time.
 - `activity.js` -- DAU/WAU/MAU rollup from raw day x user rows (pure function,
   `MAU_WINDOW_DAYS` constant shared with `queries.js`)
 - `chat.js` -- Bedrock ConverseStream chat assistant, `sanitizeSql()` SQL sandbox
-- `clickhouse.js` -- `query()` / `queryReadonly()` / `ping()`
+- `clickhouse.js` -- `query()` / `queryReadonly()` / `ping()`; `classifyReadonly` (pure,
+  unit-tested tri-state) / `assertReadonlySession` (never throws, folds every error to `null`)
 - `schema.js` -- `classifySeriesKeyProbe` (pure, unit-tested) classifies a `{seg, legacy}` row
   count pair into `true`/`false`/`null`; `probeSegmentAwareSeriesKey` runs the ClickHouse probe
   and never throws -- it folds every error to `null`, since the value feeds a fail-safe warning
@@ -175,3 +180,11 @@ synchronous and still touches no ClickHouse at request time.
   loud warning and serves every `/api/*` route unauthenticated. `AUTH_ALLOW_INSECURE` and
   `CHAT_ALLOW_INSECURE` are a deliberate pair of **independent** opt-ins, not one flag: booting
   without auth and enabling an LLM-authored-SQL endpoint without auth are different risks.
+- **The chat sandbox's readonly premise is measured, not assumed.** `clickhouse_settings: {
+  readonly: 1 }` on `createClient()` is not the fix — the `otel_reader` profile rejects any
+  client-side session-setting change (recorded in the comment above `queryReadonly` in
+  `clickhouse.js`), so that would break every dashboard query, not just chat. Instead the
+  server probes `getSetting('readonly')` at boot and every 10 minutes; `null` (probe failed) is
+  treated exactly like `false`. Local-dev consequence: a plain local ClickHouse `default`
+  account has `readonly=0`, so chat answers 503 locally unless `CH_USER` points at a
+  readonly-profiled account.
