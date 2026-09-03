@@ -10,7 +10,13 @@ serves a React SPA (`web/`) as static files. Built into one Docker image
   base pinned by **digest** (the multi-arch image index digest, so it still builds on amd64),
   `npm ci` in both stages with a **mandatory** lockfile COPY (no `*`), and a `HEALTHCHECK` on
   `/readyz`
-- `docker-compose.yml` -- local dev stack (server + web)
+- `docker-compose.yml` -- the local full stack: a `clickhouse` service that auto-loads
+  `clickhouse-schema.sql` (the single-node reference copy) and `seed/seed.sql` from
+  `/docker-entrypoint-initdb.d/` on **first** init, plus a `dashboard` service built from this
+  directory. `down -v` drops the named volume, which is the only way to make the init scripts run
+  again. `POST /api/chat` answers 503 on this stack and that is correct -- auth is not configured
+  (`AUTH_ALLOW_INSECURE=1` only disables the requirement, it does not enable chat) and the local
+  `default` account is not `readonly`, so both chat gates are closed
 - `server/` -- see `server/CLAUDE.md`
 - `web/` -- see `web/CLAUDE.md`
 - `seed/*.sql` -- demo/workshop seed data loaded into ClickHouse; not part of the app runtime,

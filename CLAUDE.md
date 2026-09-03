@@ -129,8 +129,9 @@ npm run preview
 bash tests/run-all.sh              # all
 bash tests/run-all.sh hooks        # only hooks/*.sh tests (pattern matches subdir/filename)
 
-# Local full stack
-docker compose -f dashboard/docker-compose.yml up
+# Local full stack — ClickHouse (schema + seed auto-loaded on first init) + the dashboard on :8080
+docker compose -f dashboard/docker-compose.yml up -d --build
+# reset the data: docker compose -f dashboard/docker-compose.yml down -v
 
 # Deploy (see docs/runbooks/deploy-production.md)
 docker buildx build --platform linux/arm64 -t <ecr-repo>:<tag> --push dashboard/

@@ -57,13 +57,14 @@ bash scripts/setup.sh
 
 ## Usage
 ```bash
-# Brings up ClickHouse only (dashboard/docker-compose.yml defines no app service) — run the
-# server and web dev servers below against it
+# Local full stack: ClickHouse (schema + seed data auto-loaded on first init) and the dashboard
+# on http://localhost:8080. `down -v` removes the volume, which is what makes the init scripts
+# run again on the next `up`.
 cd dashboard
-docker compose up
+docker compose up -d --build
 
-# Server only, dev mode with reload. AUTH_ALLOW_INSECURE=1 is required here: the server now
-# refuses to start without BASIC_AUTH_USER/BASIC_AUTH_PASSWORD.
+# Or run the app from source against that ClickHouse. AUTH_ALLOW_INSECURE=1 is required here:
+# the server refuses to start without BASIC_AUTH_USER/BASIC_AUTH_PASSWORD.
 cd dashboard/server
 AUTH_ALLOW_INSECURE=1 npm run dev
 
@@ -71,6 +72,9 @@ AUTH_ALLOW_INSECURE=1 npm run dev
 cd dashboard/web
 npm run dev
 ```
+The "Ask Claude" chat answers 503 on the local stack — chat needs Basic Auth configured *and* a
+ClickHouse account whose session is `readonly`, and the compose stack has neither.
+
 Then open the printed Vite dev URL (web) or `http://localhost:8080` (server, serving the
 built SPA) in a browser.
 
@@ -271,12 +275,13 @@ bash scripts/setup.sh
 
 ## 사용법
 ```bash
-# ClickHouse만 띄운다(dashboard/docker-compose.yml에는 앱 서비스가 없다) — 아래 server/web
-# 개발 서버를 이 인스턴스에 붙여서 실행
+# 로컬 풀스택: ClickHouse(스키마 + 시드 데이터가 첫 기동 시 자동 로드)와 대시보드가
+# http://localhost:8080 에서 뜬다. `down -v`로 볼륨을 지워야 init 스크립트가 다음 `up`에서
+# 다시 돌아간다.
 cd dashboard
-docker compose up
+docker compose up -d --build
 
-# 서버만, 리로드 개발 모드. AUTH_ALLOW_INSECURE=1이 필수다: 서버가 이제
+# 또는 그 ClickHouse에 붙여서 소스로 앱을 실행한다. AUTH_ALLOW_INSECURE=1이 필수다: 서버가
 # BASIC_AUTH_USER/BASIC_AUTH_PASSWORD 없이는 기동을 거부한다.
 cd dashboard/server
 AUTH_ALLOW_INSECURE=1 npm run dev
@@ -285,6 +290,9 @@ AUTH_ALLOW_INSECURE=1 npm run dev
 cd dashboard/web
 npm run dev
 ```
+로컬 스택에서 "Ask Claude" 챗은 503이다 — 챗은 Basic Auth 설정과 세션이 `readonly`인
+ClickHouse 계정을 둘 다 요구하고, compose 스택은 둘 다 아니다.
+
 그다음 브라우저에서 출력된 Vite 개발 URL(web) 또는 `http://localhost:8080`(server, 빌드된
 SPA 서빙)을 엽니다.
 
