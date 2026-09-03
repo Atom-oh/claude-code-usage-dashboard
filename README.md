@@ -124,6 +124,7 @@ Wants=network-online.target
 Type=simple
 User=%i
 ExecStart=/home/%i/.local/bin/otelcol-contrib --config=/home/%i/.otelcol/config.yaml
+Environment=OTELCOL_QUEUE_DIR=/home/%i/.otelcol/queue
 Restart=always
 RestartSec=5
 StandardOutput=append:/home/%i/.otelcol/collector.log
@@ -136,7 +137,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now otelcol.service
 ```
 `Restart=always` means a DNS blip or ClickHouse restart no longer kills ingestion permanently —
-the collector retries and resumes on its own. Verify it's alive and actually writing:
+the collector retries and resumes on its own. `OTELCOL_QUEUE_DIR` puts the exporter's queue on
+disk, so batches already accepted from Claude Code survive a collector restart and a ClickHouse
+outage longer than the retry window instead of being dropped. Verify it's alive and actually
+writing:
 ```bash
 systemctl status otelcol.service
 journalctl -u otelcol -n 50   # or: tail -f ~/.otelcol/collector.log
@@ -341,6 +345,7 @@ Wants=network-online.target
 Type=simple
 User=%i
 ExecStart=/home/%i/.local/bin/otelcol-contrib --config=/home/%i/.otelcol/config.yaml
+Environment=OTELCOL_QUEUE_DIR=/home/%i/.otelcol/queue
 Restart=always
 RestartSec=5
 StandardOutput=append:/home/%i/.otelcol/collector.log
@@ -353,7 +358,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now otelcol.service
 ```
 `Restart=always`면 DNS 일시 장애나 ClickHouse 재시작이 인제스트를 영구히 끊지 않습니다 —
-컬렉터가 알아서 재시도하고 복구합니다. 살아있고 실제로 쓰고 있는지 확인:
+컬렉터가 알아서 재시도하고 복구합니다. `OTELCOL_QUEUE_DIR`은 exporter 큐를 디스크에 둔다 —
+이미 Claude Code에서 받아 둔 배치가 collector 재시작이나 재시도 창을 넘는 ClickHouse 장애에도
+유실되지 않고 이어서 전송된다. 살아있고 실제로 쓰고 있는지 확인:
 ```bash
 systemctl status otelcol.service
 journalctl -u otelcol -n 50   # 또는: tail -f ~/.otelcol/collector.log

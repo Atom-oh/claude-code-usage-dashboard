@@ -132,6 +132,9 @@ install -m 0755 /opt/otelcol/otelcol-contrib /usr/local/bin/otelcol-contrib
 
 # ---- 4. Collector 설정/시크릿 파일 -----------------------------------------
 mkdir -p /etc/otelcol
+# exporter 디스크 큐 디렉터리. file_storage의 create_directory=true가 만들긴 하지만, 부모가
+# 없으면 실패하므로 여기서 미리 만든다. 이 유닛은 root로 돌아 쓰기 권한이 있다.
+mkdir -p /var/lib/otelcol/queue
 # collector config 본문은 별도 파일(collector-config.yaml)을 여기에 복사해두는 방식.
 # user-data 안에 인라인으로 넣고 싶으면 heredoc으로 바꿔도 됨.
 # heredoc 본문은 xtrace에 안 찍힌다(실측: 트레이스는 `+ cat` 한 줄뿐) — 그래도 이 구간을 끄는
@@ -145,6 +148,7 @@ CH_PORT=${CH_PORT}
 CH_DB=${CH_DB}
 CH_USER=${CH_USER}
 CH_PASSWORD=${CH_PASSWORD}
+OTELCOL_QUEUE_DIR=/var/lib/otelcol/queue
 EOF
 set -x
 chmod 600 /etc/otelcol/env

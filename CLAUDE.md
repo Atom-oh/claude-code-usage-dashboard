@@ -107,7 +107,11 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
   silently shrinking data window with no error anywhere — this has already caused an
   unnoticed ~43h telemetry gap in production. See the "Telemetry Ingestion" section of
   `README.md` for the exact unit file and how to verify it's actually writing
-  (`SELECT max(TimeUnix) FROM claude_code.otel_metrics_sum`).
+  (`SELECT max(TimeUnix) FROM claude_code.otel_metrics_sum`). The exporter queue is on disk too
+  (`file_storage` extension, directory from `OTELCOL_QUEUE_DIR`), so `Restart=always` covers
+  the process dying and the queue covers the batches that were in flight when it did — a
+  ClickHouse outage now fills a bounded disk queue instead of dropping everything past the
+  retry window.
 
 ## Key Commands
 ```bash
