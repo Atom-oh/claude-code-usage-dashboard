@@ -476,9 +476,10 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_traces
     EndUserId       LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
     AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
     SessionId       String                 MATERIALIZED SpanAttributes['session.id'],
-    -- span.type은 모든 스팬 종류(claude_code.interaction/llm_request/tool/
-    -- tool.blocked_on_user/tool.execution/hook)에 공통으로 붙는 상수 속성 — 패널이 이 값으로
-    -- 스팬 종류를 구분한다(SpanName도 같은 값을 담지만, SpanAttributes 쪽이 문서 기준 정의).
+    -- span.type은 모든 스팬 종류에 공통으로 붙는 상수 속성 — 패널이 이 값으로 스팬 종류를
+    -- 구분한다. 실측 2026-09-04(v2.1.260): 값은 접두어 없는 'interaction'/'llm_request'/'tool'/
+    -- 'tool.execution'/'tool.blocked_on_user'이고, 'claude_code.' 접두어는 SpanName에만 붙는다.
+    -- interaction 스팬은 duration_ms 속성이 없다(DurationMs=0) — 스팬 Duration(ns) 컬럼을 쓸 것.
     SpanType        LowCardinality(String) MATERIALIZED SpanAttributes['span.type'],
     -- duration_ms는 스팬 종류별로 의미가 다르다(llm_request: 재시도 포함 전체, tool: 권한 대기
     -- + 실행, tool.blocked_on_user: 권한 대기만, tool.execution: 실행만) — SpanType과 함께

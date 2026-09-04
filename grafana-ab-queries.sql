@@ -208,7 +208,7 @@ SELECT
     quantile(0.95)(DurationMs) AS p95_wait_ms,
     count() AS n
 FROM claude_code.otel_traces
-WHERE SpanType = 'claude_code.tool.blocked_on_user'
+WHERE SpanType = 'tool.blocked_on_user'
   AND $__timeFilter(Timestamp)
 GROUP BY ExperimentGroup, AppVersion
 ORDER BY ExperimentGroup, AppVersion;
@@ -235,7 +235,7 @@ SELECT
     quantile(0.95)(TtftMs) AS p95_ttft_ms,
     count() AS n
 FROM claude_code.otel_traces
-WHERE SpanType = 'claude_code.llm_request'
+WHERE SpanType = 'llm_request'
   AND $__timeFilter(Timestamp)
 GROUP BY ExperimentGroup, Model
 ORDER BY ExperimentGroup, n DESC;
@@ -478,18 +478,18 @@ SELECT
     round(sum(c.tool_exec_ms) / nullIf(sum(i.DurationMs), 0), 3) AS tool_exec_share,
     round(sum(c.blocked_ms)   / nullIf(sum(i.DurationMs), 0), 3) AS blocked_share
 FROM (
-    SELECT TraceId, ExperimentGroup, DurationMs
+    SELECT TraceId, ExperimentGroup, intDiv(Duration, 1000000) AS DurationMs
     FROM claude_code.otel_traces
-    WHERE SpanType = 'claude_code.interaction'
+    WHERE SpanType = 'interaction'
       AND $__timeFilter(Timestamp)
 ) i
 LEFT JOIN (
     SELECT TraceId,
-        sumIf(DurationMs, SpanType = 'claude_code.llm_request')          AS llm_ms,
-        sumIf(DurationMs, SpanType = 'claude_code.tool.execution')       AS tool_exec_ms,
-        sumIf(DurationMs, SpanType = 'claude_code.tool.blocked_on_user') AS blocked_ms
+        sumIf(DurationMs, SpanType = 'llm_request')          AS llm_ms,
+        sumIf(DurationMs, SpanType = 'tool.execution')       AS tool_exec_ms,
+        sumIf(DurationMs, SpanType = 'tool.blocked_on_user') AS blocked_ms
     FROM claude_code.otel_traces
-    WHERE SpanType IN ('claude_code.llm_request', 'claude_code.tool.execution', 'claude_code.tool.blocked_on_user')
+    WHERE SpanType IN ('llm_request', 'tool.execution', 'tool.blocked_on_user')
       AND $__timeFilter(Timestamp)
     GROUP BY TraceId
 ) c ON i.TraceId = c.TraceId

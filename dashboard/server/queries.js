@@ -1480,7 +1480,7 @@ export async function permissionWaitOverhead(from, to, filters = {}) {
         count() AS n
     FROM claude_code.otel_traces t
     LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
-    WHERE t.SpanType = 'claude_code.tool.blocked_on_user'
+    WHERE t.SpanType = 'tool.blocked_on_user'
       AND t.Timestamp >= {from:DateTime} AND t.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", app_version ORDER BY "group", app_version`,
     { ...range(from, to, true), ...f.params }
@@ -1503,7 +1503,7 @@ export async function ttftComparison(from, to, filters = {}) {
         count() AS n
     FROM claude_code.otel_traces t
     LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
-    WHERE t.SpanType = 'claude_code.llm_request'
+    WHERE t.SpanType = 'llm_request'
       AND t.Timestamp >= {from:DateTime} AND t.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", model ORDER BY "group", n DESC`,
     { ...range(from, to, true), ...f.params }
@@ -1618,10 +1618,14 @@ export async function toolDecisionFunnel(from, to, filters = {}) {
 // 비중 합계는 1을 넘을 수 있다 — 자식 스팬은 동시에 진행될 수 있고, tool 스팬의 duration_ms는
 // 권한 대기 + 실행을 함께 담는다(clickhouse-schema.sql 2c 주석). "구성비"가 아니라 "인터랙션 총
 // 시간 대비 각 종류가 쓴 시간의 배수"로 읽어야 한다.
-// SpanType만으로 루트를 특정한다 — ParentSpanId = ''는 컬렉터가 루트를 어떻게 표기하는지
-// 실측으로 확인되지 않아(실측 2026-08-31: otel_traces 0행) 넣지 않는다. 조건을 더 걸어 패널이
-// 조용히 비는 쪽이 더 위험하다.
-// otel_traces는 라이브에 테이블은 있으나 0행이다(실측 2026-08-31) — ttftComparison/
+// 실측 2026-09-04(첫 트레이스 유입, v2.1.260): SpanType(span.type 속성)은 접두어 없는
+// 'interaction'/'llm_request'/'tool.execution'/'tool.blocked_on_user'이고, 'claude_code.' 접두어는
+// SpanName 쪽에만 붙는다 — 문서를 따라 접두어 값으로 필터하던 초기 구현은 데이터가 있어도 0행이라
+// 세 패널이 "미수집"으로 남았다. interaction 스팬은 duration_ms 속성이 없어(DurationMs=0) 스팬
+// 자체의 Duration(ns) 컬럼을 ms로 환산해 쓴다 — 자식 스팬은 두 값이 같다(실측 avg 동일).
+// interaction 5건 모두 ParentSpanId=''(루트)였지만 조건은 SpanType만으로 둔다 — 조건을 더 걸어
+// 패널이 조용히 비는 쪽이 더 위험하다.
+// 트레이스는 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA가 켜진 클라이언트에서만 온다 — ttftComparison/
 // permissionWaitOverhead와 동일하게 {unsupported:true}를 반환해 프론트가 "0"과 "미수집"을
 // 구분할 수 있게 한다. minVersion "2.1.214"는 tool.blocked_on_user / tool.execution 스팬이
 // 그 버전부터 나오기 때문(문서 확인).
@@ -1638,18 +1642,18 @@ export async function interactionBreakdown(from, to, filters = {}) {
         round(sum(c.tool_exec_ms) / nullIf(sum(i.DurationMs), 0), 3) AS tool_exec_share,
         round(sum(c.blocked_ms)   / nullIf(sum(i.DurationMs), 0), 3) AS blocked_share
     FROM (
-        SELECT TraceId, SessionId, UserEmail, DurationMs
+        SELECT TraceId, SessionId, UserEmail, intDiv(Duration, 1000000) AS DurationMs
         FROM claude_code.otel_traces
-        WHERE SpanType = 'claude_code.interaction'
+        WHERE SpanType = 'interaction'
           AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
     ) i
     LEFT JOIN (
         SELECT TraceId,
-            sumIf(DurationMs, SpanType = 'claude_code.llm_request')          AS llm_ms,
-            sumIf(DurationMs, SpanType = 'claude_code.tool.execution')       AS tool_exec_ms,
-            sumIf(DurationMs, SpanType = 'claude_code.tool.blocked_on_user') AS blocked_ms
+            sumIf(DurationMs, SpanType = 'llm_request')          AS llm_ms,
+            sumIf(DurationMs, SpanType = 'tool.execution')       AS tool_exec_ms,
+            sumIf(DurationMs, SpanType = 'tool.blocked_on_user') AS blocked_ms
         FROM claude_code.otel_traces
-        WHERE SpanType IN ('claude_code.llm_request', 'claude_code.tool.execution', 'claude_code.tool.blocked_on_user')
+        WHERE SpanType IN ('llm_request', 'tool.execution', 'tool.blocked_on_user')
           AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
         GROUP BY TraceId
     ) c ON i.TraceId = c.TraceId
