@@ -79,9 +79,9 @@ test("빈 URL은 config의 defaultRangeDays를 쓰고, 프리셋을 바꾸면 da
   const { container } = mount("/cost", cfg());
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   expect(activePreset(container)).toBe("7일");
-  fireEvent.click(presetButtons(container).find((b) => b.textContent === "14일"));
-  await waitFor(() => expect(new URLSearchParams(loc.search).get("days")).toBe("14"));
-  expect(activePreset(container)).toBe("14일");
+  fireEvent.click(presetButtons(container).find((b) => b.textContent === "30일"));
+  await waitFor(() => expect(new URLSearchParams(loc.search).get("days")).toBe("30"));
+  expect(activePreset(container)).toBe("30일");
 });
 
 test("마스킹 ON: 링크의 user는 필터로도 URL로도 살아나지 않고, group은 유지된다", async () => {
@@ -96,7 +96,34 @@ test("마스킹 ON: 링크의 user는 필터로도 URL로도 살아나지 않고
 
 test("rangeCapDays보다 긴 프리셋은 picker에 나오지 않는다", async () => {
   const fetchMock = stubFetch();
-  const { container } = mount("/cost", cfg({ rangeCapDays: 14, defaultRangeDays: 2 }));
+  const { container } = mount("/cost", cfg({ rangeCapDays: 7, defaultRangeDays: 2 }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-  expect(presetButtons(container).map((b) => b.textContent)).toEqual(["1일", "2일", "7일", "14일"]);
+  // "이번 달" 버튼은 presetButtons의 /^\d+일$/ 정규식에 걸리지 않아 여기 안 잡힌다.
+  expect(presetButtons(container).map((b) => b.textContent)).toEqual(["1일", "2일", "7일"]);
+});
+
+test("period=month는 필터가 바뀌어도 URL에 남고, 프리셋을 누르면 period가 사라진다", async () => {
+  const fetchMock = stubFetch();
+  const { container } = mount("/cost?period=month", cfg());
+  await waitFor(() => expect(dataCalls(fetchMock, "/api/cost").length).toBeGreaterThan(0));
+  fireEvent.click([...container.querySelectorAll("button")].find((b) => b.textContent === "bedrock"));
+  await waitFor(() => {
+    const p = new URLSearchParams(loc.search);
+    expect(p.get("period")).toBe("month");
+    expect(p.get("group")).toBe("bedrock");
+    expect(p.has("days")).toBe(false);
+  });
+  fireEvent.click(presetButtons(container).find((b) => b.textContent === "7일"));
+  await waitFor(() => {
+    const p = new URLSearchParams(loc.search);
+    expect(p.get("days")).toBe("7");
+    expect(p.has("period")).toBe(false);
+  });
+});
+
+test("days=7은 defaultRangeDays=7과 일치해 7일 프리셋이 그대로 활성 상태다", async () => {
+  const fetchMock = stubFetch();
+  const { container } = mount("/cost?days=7", cfg());
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  expect(activePreset(container)).toBe("7일");
 });
