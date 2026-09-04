@@ -234,3 +234,13 @@ session is `readonly`.
 - **`npm test`** in `dashboard/server` runs `node --test *.test.js`. `engines.node` is `>=22`
   (local toolchain 22, runtime image 24). CI (`.github/workflows/ci.yml`) runs it on every push
   to `main`/`feat/**` and every pull request.
+- **`reportedVsComputedByVersion` is the first query to price rows read from `otel_logs`
+  rather than from `otel_metrics_sum`**, at an `AppVersion` grain — this works because
+  `api_request` carries `cost_usd` plus all four token counts as log attributes (measured
+  2026-09-04, 100% of rows), and the `cache_creation_tokens` attribute must be aliased to
+  `cache_write_tokens` for `withComputedCost` to price it. `AppVersion` is the grain because
+  the reported cost is priced client-side and is therefore version-dependent. It is also the
+  one query whose model filter uses `filterCond`'s per-row `model:` column rather than
+  `modelViaSession:`, because this `otel_logs` event — unlike `tool_result`/`user_prompt`/
+  `hook_execution_complete` — does carry a `model` attribute. `userInteractions` needs no new
+  rule here; it is another `{unsupported}`-shape `otel_traces` query per the existing pattern.

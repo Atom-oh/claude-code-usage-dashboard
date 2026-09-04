@@ -554,3 +554,82 @@ FROM (
 )
 GROUP BY ExperimentGroup, effort
 ORDER BY ExperimentGroup, tokens DESC;
+
+
+-- 【패널 26】버전별 보고 비용 vs 계산 비용 — ExperimentGroup × AppVersion × 모델. api_request의
+-- cost_usd(클라이언트 자체 단가표로 클라이언트 사이드에서 매겨짐)는 AppVersion에 종속된다
+-- (실측 2026-09-03: v2.1.251이 claude-fable-5-1을 opus-5 단가로 보고, ≈0.5×). 파일 상단
+-- 주의사항("cost.usage는 근사치라 실비용 비교 금지")이 정확히 이 패널이 정량화하는 문제다.
+-- 대시보드의 reportedVsComputedByVersion과 달리 이 패널엔 cost/ratio 컬럼이 없다 — 계산
+-- 비용은 pricing.js의 단가표에서 나오고 SQL은 그 단가표를 호출할 수 없기 때문이다. 그래서
+-- 이 패널은 원료(reported_cost + 토큰 4종)만 내고, 나눗셈은 손으로 하거나
+-- /api/reliability/reported-vs-computed(대시보드 엔드포인트)가 대신 한다. cache_creation_tokens는
+-- 로그 속성명 그대로이며 cache_write_tokens 별칭을 유지한다 — 대시보드 쪽과 비교 가능하게 하기
+-- 위해서다. normModel()은 JS 헬퍼라 여기선 못 부르므로 패널 21과 동일한 5단계 regex를 인라인
+-- 재현한다(반드시 동기 유지).
+SELECT
+    ExperimentGroup,
+    AppVersion AS app_version,
+    replaceRegexpOne(
+        replaceRegexpOne(
+            replaceRegexpOne(
+                replaceRegexpOne(
+                    replaceRegexpOne(LogAttributes['model'], '\\[.*\\]$', ''),
+                    '^(us|us-gov|eu|apac|jp|au|global)\\.', ''),
+                '^anthropic\\.', ''),
+            '-v\\d+(:\\d+)?$', ''),
+        '-\\d{8}$', '') AS model,
+    count() AS requests,
+    sum(toFloat64OrZero(LogAttributes['cost_usd']))             AS reported_cost,
+    sum(toUInt64OrZero(LogAttributes['input_tokens']))          AS input_tokens,
+    sum(toUInt64OrZero(LogAttributes['output_tokens']))         AS output_tokens,
+    sum(toUInt64OrZero(LogAttributes['cache_read_tokens']))     AS cache_read_tokens,
+    sum(toUInt64OrZero(LogAttributes['cache_creation_tokens'])) AS cache_write_tokens
+FROM claude_code.otel_logs
+WHERE EventName = 'api_request'
+  AND $__timeFilter(Timestamp)
+GROUP BY ExperimentGroup, app_version, model
+ORDER BY ExperimentGroup, requests DESC;
+
+
+-- 【패널 27】유저 인터랙션 워터폴 — 플릿 전체 버전 (traces beta). 대시보드의 userInteractions는
+-- 유저 1명의 드릴다운이지만 Grafana엔 유저별 드로어가 없으므로, ExperimentGroup × 인터랙션으로
+-- 일반화해 트레이스 1건당 1행을 낸다. 루트는 패널 23과 동일하게 intDiv(Duration, 1000000)을
+-- 쓴다(interaction 스팬엔 duration_ms 속성이 없어 DurationMs가 0으로 잡히기 때문). 자식은
+-- TraceId로 접되(llm_ms/tool_exec_ms/blocked_ms/agents/llm_calls), 패널 23의 자식 서브쿼리와
+-- 달리 여기엔 SpanType IN (...) 필터가 없다 — AgentId는 스팬 타입을 가리지 않고 실리므로
+-- (실측 2026-09-04), 필터를 걸면 agents가 과소집계된다. SpanType 값은 접두사 없이
+-- 'interaction'/'llm_request'/'tool'/'tool.execution'/'tool.blocked_on_user'로 온다 —
+-- claude_code. 접두사는 SpanName에만 붙는다. ParentAgentId는 라이브 데이터에서 한 번도 채워진
+-- 적이 없다(실측 2026-09-04: 0행) — 그래서 에이전트 깊이/트리는 도출할 수 없고, 인터랙션당
+-- distinct 에이전트 수만 도출 가능하다. llm/tool/blocked 세 구간은 서로 겹칠 수 있어(tool
+-- 스팬의 duration_ms가 대기 + 실행을 함께 담음) 합이 interaction_ms를 넘을 수 있다.
+-- 주의: 패널 23과 동일 — otel_traces가 비어 있으면 "권한 대기 0"이 아니라 traces beta 미배포다.
+SELECT
+    i.ExperimentGroup AS ExperimentGroup,
+    i.TraceId         AS trace_id,
+    i.DurationMs      AS interaction_ms,
+    c.llm_ms          AS llm_ms,
+    c.tool_exec_ms    AS tool_exec_ms,
+    c.blocked_ms      AS blocked_ms,
+    c.agents          AS agents,
+    c.llm_calls       AS llm_calls
+FROM (
+    SELECT TraceId, ExperimentGroup, Timestamp, intDiv(Duration, 1000000) AS DurationMs
+    FROM claude_code.otel_traces
+    WHERE SpanType = 'interaction'
+      AND $__timeFilter(Timestamp)
+) i
+LEFT JOIN (
+    SELECT TraceId,
+        sumIf(DurationMs, SpanType = 'llm_request')          AS llm_ms,
+        sumIf(DurationMs, SpanType = 'tool.execution')       AS tool_exec_ms,
+        sumIf(DurationMs, SpanType = 'tool.blocked_on_user') AS blocked_ms,
+        uniqExactIf(AgentId, AgentId != '')                  AS agents,
+        countIf(SpanType = 'llm_request')                    AS llm_calls
+    FROM claude_code.otel_traces
+    WHERE $__timeFilter(Timestamp)
+    GROUP BY TraceId
+) c ON i.TraceId = c.TraceId
+ORDER BY i.Timestamp DESC
+LIMIT 200;
