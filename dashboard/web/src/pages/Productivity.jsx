@@ -13,6 +13,7 @@ import { makeTickFmt, maskEmail } from "../fmt.js";
 import { groupsShown } from "../pivot.js";
 import { colorFor, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { foldLeaderboardByUser } from "../score.js";
+import { decisionLabel, unclassifiedLabel } from "../labels.js";
 
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -56,18 +57,18 @@ const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
 // unsupported=true는 "0"이 아니라 "이 구간엔 해당 스팬이 없음"(베타 미배포 또는 v2.1.214
 // 미만)이라는 뜻이라 DataTable의 기본 "데이터 없음"과 구분되는 안내를 별도로 보여준다.
 const PERMISSION_WAIT_COLUMNS = [
-  { key: "group", label: "그룹" },
+  { key: "group", label: "채널" },
   { key: "app_version", label: "Claude Code 버전" },
-  { key: "p50_wait_ms", label: "p50 대기(ms)", render: fmt },
-  { key: "p95_wait_ms", label: "p95 대기(ms)", render: fmt },
+  { key: "p50_wait_ms", label: "p50 대기 (ms)", render: fmt },
+  { key: "p95_wait_ms", label: "p95 대기 (ms)", render: fmt },
   { key: "n", label: "샘플 수", render: fmt },
 ];
 
 const TTFT_COLUMNS = [
-  { key: "group", label: "그룹" },
+  { key: "group", label: "채널" },
   { key: "model", label: "모델" },
-  { key: "p50_ttft_ms", label: "p50 TTFT(ms)", render: fmt },
-  { key: "p95_ttft_ms", label: "p95 TTFT(ms)", render: fmt },
+  { key: "p50_ttft_ms", label: "p50 TTFT (ms)", render: fmt },
+  { key: "p95_ttft_ms", label: "p95 TTFT (ms)", render: fmt },
   { key: "n", label: "샘플 수", render: fmt },
 ];
 
@@ -75,36 +76,37 @@ const TTFT_COLUMNS = [
 // tool 스팬 duration_ms는 권한 대기 + 실행을 함께 담는다) — 구성비가 아니라 "인터랙션 총 시간
 // 대비 각 종류가 쓴 시간의 배수"다. 100%를 넘는 값이 보이면 버그가 아니다.
 const INTERACTION_BREAKDOWN_COLUMNS = [
-  { key: "group", label: "그룹" },
+  { key: "group", label: "채널" },
   { key: "interactions", label: "인터랙션 수", render: fmt },
-  { key: "p50_interaction_ms", label: "p50 소요(ms)", render: fmt },
-  { key: "p95_interaction_ms", label: "p95 소요(ms)", render: fmt },
-  { key: "llm_share", label: "LLM 비중", render: pct, toText: pct },
-  { key: "tool_exec_share", label: "툴 실행 비중", render: pct, toText: pct },
+  { key: "p50_interaction_ms", label: "p50 소요 (ms)", render: fmt },
+  { key: "p95_interaction_ms", label: "p95 소요 (ms)", render: fmt },
+  { key: "llm_share", label: "모델 응답 비중", render: pct, toText: pct },
+  { key: "tool_exec_share", label: "도구 실행 비중", render: pct, toText: pct },
   { key: "blocked_share", label: "권한 대기 비중", render: pct, toText: pct },
 ];
 
 const LANGUAGE_COLUMNS = [
-  { key: "language", label: "언어" },
-  { key: "edits", label: "편집", render: fmt },
+  { key: "language", label: "언어", render: unclassifiedLabel, toText: unclassifiedLabel },
+  { key: "edits", label: "편집 수", render: fmt },
   { key: "accept_rate", label: "수락률", render: pct, toText: pct },
 ];
 
-function TracesBetaPanel({ resp, title, subtitle, columns, exportName }) {
+function TracesBetaPanel({ resp, title, subtitle, help, columns, exportName }) {
   if (resp.loading) return <Loading />;
   if (resp.error) return <ErrorBox error={resp.error} />;
   if (resp.data?.unsupported) {
     return (
       <DataTable
         title={title}
-        subtitle={`${subtitle} — 데이터 없음: traces beta(CLAUDE_CODE_ENHANCED_TELEMETRY_BETA)가 아직 이 구간에 배포되지 않았거나${resp.data.minVersion ? `, 이 스팬 자체가 Claude Code v${resp.data.minVersion} 미만에서는 나오지 않습니다` : "요"} — 0이 아니라 "미수집"입니다.`}
+        subtitle="이 기간에는 수집되지 않은 지표입니다"
+        help="확장 텔레메트리 옵션이 켜진 최신 Claude Code에서만 수집되는 지표입니다. 값이 0이라는 뜻이 아니라 아직 수집된 데이터가 없다는 뜻입니다."
         columns={columns}
         rows={[]}
         exportName={exportName}
       />
     );
   }
-  return <DataTable title={title} subtitle={subtitle} columns={columns} rows={resp.data?.rows || []} exportName={exportName} />;
+  return <DataTable title={title} subtitle={subtitle} help={help} columns={columns} rows={resp.data?.rows || []} exportName={exportName} />;
 }
 
 export default function Productivity() {
@@ -195,7 +197,7 @@ export default function Productivity() {
     <div>
       <PageHeader
         title="Productivity"
-        subtitle="비용(cost.usage)은 근사치라 A/B 비교에 쓰지 않는다 — 토큰 정규화 지표로 대체"
+        subtitle="코드 산출물과 작업 시간으로 보는 채널별 생산성"
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
@@ -206,12 +208,12 @@ export default function Productivity() {
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatTile label="생성된 PR" value={fmt(outcomeTotals.prs)} variant="accent" />
-            <StatTile label="작성된 라인 수" value={fmt(outcomeTotals.loc)} />
+            <StatTile label="추가 코드 라인" value={fmt(outcomeTotals.loc)} />
             <StatTile label="제안 수락률" value={`${(acceptRate * 100).toFixed(0)}%`} />
             <StatTile
-              label="수락된 라인 수"
+              label="수락된 코드 라인"
               value={fmt(Math.round(outcomeTotals.loc * acceptRate))}
-              hint="추정치: 작성 라인 × 수락률"
+              hint="추가된 코드 라인에 제안 수락률을 적용한 추정치"
             />
           </div>
         )}
@@ -222,8 +224,9 @@ export default function Productivity() {
           <ErrorBox error={leaderboard.error} />
         ) : (
           <HBarList
-            title="사용자별 생산성 — Top 10"
-            subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day) — 유저×그룹별 행(두 그룹을 오간 유저는 그룹당 1행)"
+            title="생산성 점수 상위 10위"
+            subtitle="사용자별 생산성 점수, 100점 만점"
+            help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다. 두 채널을 모두 사용한 사용자는 채널별로 따로 집계되어 이름 뒤에 채널이 표시됩니다."
             data={top10ByScore.map((r) => ({ ...r, score: Number(r.productivity_score) }))}
             labelKey="label"
             valueKey="score"
@@ -233,13 +236,14 @@ export default function Productivity() {
         {leaderboard.loading ? null : leaderboard.error ? null : (
           <DataTable
             title="사용자별 생산성"
-            subtitle="유저당 1행(두 그룹을 오간 유저는 raw 지표 합산 후 점수 재계산 — score.js) · 비용 막대: 색 분할 = 그룹, 길이 = 최대 사용자 대비"
+            subtitle="사용자 단위로 합산 · 막대 색은 채널"
+            help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다. 두 채널을 모두 사용한 사용자는 원시 지표를 합산한 뒤 점수를 다시 계산합니다. 비용 막대의 색은 채널, 길이는 가장 큰 사용자 대비 비율입니다."
             columns={[
-              { key: "user", label: "유저", render: maskEmail },
+              { key: "user", label: "사용자", render: maskEmail },
               { key: "productivity_score", label: "생산성 점수", render: (v) => Number(v).toFixed(1), bar: true },
               {
                 key: "cost",
-                label: "비용 (계산)",
+                label: "비용",
                 render: (v, r) => (
                   <span className="inline-flex items-center gap-2">
                     <span className="min-w-[4rem]">{usd(v)}</span>
@@ -253,7 +257,7 @@ export default function Productivity() {
                   return split ? `${usd(v)} — ${split}` : usd(v);
                 },
               },
-              { key: "loc", label: "추가 라인", render: fmt, bar: true },
+              { key: "loc", label: "추가 코드 라인", render: fmt, bar: true },
               { key: "commits", label: "커밋", render: fmt },
               { key: "prs", label: "PR", render: fmt },
               { key: "accept_rate", label: "수락률", render: pct, toText: pct },
@@ -272,8 +276,8 @@ export default function Productivity() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             <DualLineChart
-              title="도입률"
-              subtitle="사용자 수 vs 세션 수"
+              title="사용자와 세션 추이"
+              subtitle="사용자 수와 세션 수"
               rows={engagement.data}
               xKey="t"
               tickFormatter={fmtTick}
@@ -284,7 +288,7 @@ export default function Productivity() {
             />
             <DualLineChart
               title="사용자당 PR"
-              subtitle="사용자 수 vs 사용자당 PR 수"
+              subtitle="사용자 수와 사용자당 PR 수"
               rows={engagement.data}
               xKey="t"
               tickFormatter={fmtTick}
@@ -298,19 +302,24 @@ export default function Productivity() {
 
         <div className="grid gap-4 md:grid-cols-2">
           {norm.loading ? <Loading /> : norm.error ? <ErrorBox error={norm.error} /> : (
-            <GroupBarChart title="추가 라인 / 백만 토큰" rows={norm.data} valueKey="loc_per_million_tokens" />
+            <GroupBarChart
+              title="백만 토큰당 추가 코드 라인"
+              help="채널 간 비교에는 비용 대신 토큰 사용량 기준으로 정규화한 지표를 사용합니다."
+              rows={norm.data}
+              valueKey="loc_per_million_tokens"
+            />
           )}
           {norm.loading ? <Loading /> : norm.error ? <ErrorBox error={norm.error} /> : (
-            <GroupBarChart title="커밋 / 백만 토큰" rows={norm.data} valueKey="commits_per_million_tokens" />
+            <GroupBarChart title="백만 토큰당 커밋" rows={norm.data} valueKey="commits_per_million_tokens" />
           )}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           {locTrend.loading ? <Loading /> : locTrend.error ? <ErrorBox error={locTrend.error} /> : (
-            <GroupAreaChart title="추가된 라인 (일별)" rows={locTrend.data} xKey="t" valueKey="loc_added" tickFormatter={fmtTick} />
+            <GroupAreaChart title="추가된 코드 라인 추이" rows={locTrend.data} xKey="t" valueKey="loc_added" tickFormatter={fmtTick} />
           )}
           {locTrend.loading ? <Loading /> : locTrend.error ? <ErrorBox error={locTrend.error} /> : (
-            <GroupAreaChart title="제거된 라인 (일별)" rows={locTrend.data} xKey="t" valueKey="loc_removed" tickFormatter={fmtTick} />
+            <GroupAreaChart title="제거된 코드 라인 추이" rows={locTrend.data} xKey="t" valueKey="loc_removed" tickFormatter={fmtTick} />
           )}
         </div>
 
@@ -321,11 +330,11 @@ export default function Productivity() {
         ) : (
           <GroupBarChart
             title="코드 편집 수락/거부"
-            subtitle="그룹별"
+            subtitle="채널별"
             right={
               <div className="flex gap-2">
-                <Badge tone="positive" dot>accept</Badge>
-                <Badge tone="negative" dot>reject</Badge>
+                <Badge tone="positive" dot>수락</Badge>
+                <Badge tone="negative" dot>거부</Badge>
               </div>
             }
             rows={decisions.data}
@@ -343,11 +352,11 @@ export default function Productivity() {
           ) : (
             <GroupBarChart
               title="도구별 수락/거부"
-              subtitle="실측: Edit / Write (multi_edit·notebook_edit은 위 값 미확인)"
+              subtitle="채널 합산"
               right={
                 <div className="flex gap-2">
-                  <Badge tone="positive" dot>accept</Badge>
-                  <Badge tone="negative" dot>reject</Badge>
+                  <Badge tone="positive" dot>수락</Badge>
+                  <Badge tone="negative" dot>거부</Badge>
                 </div>
               }
               rows={decisionsByToolAgg}
@@ -362,9 +371,9 @@ export default function Productivity() {
             <ErrorBox error={decisionsByTool.error} />
           ) : (
             <SeriesBarChart
-              title="툴 별 수락/거부"
-              subtitle="edit / multi_edit / write / notebook_edit — 그룹 합산"
-              rows={decisionsByTool.data}
+              title="도구별 결정 분포"
+              subtitle="수락·거부 누적 비교, 채널 합산"
+              rows={(decisionsByTool.data || []).map((r) => ({ ...r, decision: decisionLabel(r.decision) }))}
               xKey="tool"
               seriesKey="decision"
               valueKey="n"
@@ -373,7 +382,7 @@ export default function Productivity() {
         </div>
 
         {active.loading ? <Loading /> : active.error ? <ErrorBox error={active.error} /> : (
-          <GroupAreaChart title="활성 사용 시간" subtitle="시간, 그룹별 시계열" rows={activeHours} xKey="t" valueKey="active_seconds" tickFormatter={fmtTick} />
+          <GroupAreaChart title="활성 사용 시간" subtitle="채널별 추이 (단위: 시간)" rows={activeHours} xKey="t" valueKey="active_seconds" tickFormatter={fmtTick} />
         )}
 
         {activeSummary.loading || kpi.loading ? (
@@ -382,18 +391,18 @@ export default function Productivity() {
           <ErrorBox error={activeSummary.error || kpi.error} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatTile label="개발자 활성 시간" value={`${userHours.toFixed(1)}h`} hint="active_time.total 중 user 시간, 그룹 합산" />
-            <StatTile label="CLI 구동 시간" value={`${cliHours.toFixed(1)}h`} hint="active_time.total 중 cli 시간, 그룹 합산" />
+            <StatTile label="개발자 활성 시간" value={`${userHours.toFixed(1)}시간`} hint="개발자가 직접 사용한 시간, 채널 합산" />
+            <StatTile label="Claude Code 작업 시간" value={`${cliHours.toFixed(1)}시간`} hint="Claude Code가 작업한 시간, 채널 합산" />
             <StatTile
               label="자동화 배율"
               value={activeTotals.user > 0 ? `×${(activeTotals.cli / activeTotals.user).toFixed(1)}` : "—"}
               variant="accent"
-              hint="개발자가 지켜본 1시간당 CLI가 일한 시간"
+              hint="개발자 사용 1시간당 Claude Code 작업 시간"
             />
             <StatTile
-              label="시간당 작성 라인"
+              label="시간당 추가 코드 라인"
               value={userHours > 0 ? fmt(Math.round(outcomeTotals.loc / userHours)) : "—"}
-              hint="작성 라인 ÷ 개발자 활성 시간"
+              hint="추가된 코드 라인을 개발자 활성 시간으로 나눈 값"
             />
           </div>
         )}
@@ -408,7 +417,8 @@ export default function Productivity() {
               <DataTable
                 key={g}
                 title={`언어별 코드 편집 — ${g}`}
-                subtitle="편집 수 상위 10개 언어 — 수락률 = accept 결정 ÷ 전체 편집"
+                subtitle="편집 수 상위 10개 언어"
+                help="수락률은 전체 편집 중 수락된 편집의 비율입니다."
                 columns={LANGUAGE_COLUMNS}
                 rows={langRowsFor(g)}
                 exportName={`productivity_languages_${g}`}
@@ -423,8 +433,8 @@ export default function Productivity() {
           <ErrorBox error={agentic.error} />
         ) : (
           <GroupAreaChart
-            title="에이전틱함"
-            subtitle="프롬프트 1개당 평균 툴 호출 수 — 높을수록 더 많이 위임하는 것 (user_prompt 이벤트 실측 필요)"
+            title="프롬프트당 도구 호출 수"
+            subtitle="높을수록 한 번의 요청에 더 많은 작업을 위임"
             rows={agentic.data}
             xKey="t"
             valueKey="tool_calls_per_prompt"
@@ -434,22 +444,25 @@ export default function Productivity() {
 
         <TracesBetaPanel
           resp={permissionWait}
-          title="권한 대기 오버헤드"
-          subtitle="claude_code.tool.blocked_on_user 대기 시간 — 크면 권한 설정이 생산성을 깎고 있다는 뜻"
+          title="권한 승인 대기 시간"
+          subtitle="사용자 승인을 기다린 시간, Claude Code 버전별"
+          help="값이 클수록 권한 확인 때문에 작업이 오래 멈춘다는 뜻입니다."
           columns={PERMISSION_WAIT_COLUMNS}
           exportName="productivity_permission_wait"
         />
         <TracesBetaPanel
           resp={ttft}
-          title="TTFT (첫 토큰까지 시간)"
-          subtitle="Bedrock vs Enterprise 체감 응답성 비교에 가장 직접적인 지표"
+          title="첫 응답 시간 (TTFT)"
+          subtitle="모델별 첫 토큰 도착까지 걸린 시간"
+          help="채널 간 체감 응답 속도를 비교할 때 보는 지표입니다."
           columns={TTFT_COLUMNS}
           exportName="productivity_ttft"
         />
         <TracesBetaPanel
           resp={interactionBreakdown}
-          title="인터랙션 시간 분해"
-          subtitle="느린 원인이 모델(llm_request)인지, 툴 실행(tool.execution)인지, 권한 대기(tool.blocked_on_user)인지를 가른다 — 비중 합계는 1을 넘을 수 있다"
+          title="인터랙션 시간 구성"
+          subtitle="모델 응답, 도구 실행, 권한 대기가 차지한 비중"
+          help="각 비중은 인터랙션 전체 시간에 대한 배수입니다. 여러 작업이 동시에 진행될 수 있고 도구 실행 시간에는 권한 대기가 포함되어, 합계가 100%를 넘을 수 있습니다."
           columns={INTERACTION_BREAKDOWN_COLUMNS}
           exportName="productivity_interaction_breakdown"
         />
