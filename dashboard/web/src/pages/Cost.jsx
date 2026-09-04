@@ -3,7 +3,6 @@ import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { DonutBody, DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
-import LowerBoundNote from "../components/LowerBoundNote.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
@@ -289,8 +288,6 @@ export default function Cost() {
             ))}
           </div>
         )}
-
-        <LowerBoundNote />
 
         {tiers.loading || cacheEff.loading ? (
           <Loading />

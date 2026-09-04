@@ -5,7 +5,6 @@ import { StatTile } from "../components/StatTile.jsx";
 import { SectionLabel } from "../components/SectionLabel.jsx";
 import { DualLineChart, SeriesBarChart } from "../components/GroupCharts.jsx";
 import ABScoreboard, { fmtValue } from "../components/ABScoreboard.jsx";
-import LowerBoundNote from "../components/LowerBoundNote.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
@@ -363,9 +362,6 @@ export default function Executive() {
                       value={usd(dailyAvg)}
                       help="기간 지출(계산)을 기간(일)으로 나눈 값"
                     />
-                  </div>
-                  <div className="mt-3">
-                    <LowerBoundNote />
                   </div>
                 </>
               )}

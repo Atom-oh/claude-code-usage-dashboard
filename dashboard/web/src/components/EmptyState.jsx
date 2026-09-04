@@ -10,7 +10,7 @@ import { useFreshness } from "../FreshnessContext.jsx";
 // 보라고 하고, ok/stale이면 조직에는 데이터가 있고 이 구간에만 없다는 뜻이다. 둘을 한 문구로
 // 뭉치면 "설치가 잘못됐나"와 "기간을 늘려보자"가 구별되지 않는다. loading은 ok와 같이 다룬다 —
 // 첫 응답 전에 설치 실패를 암시하는 문구가 깜빡이면 그게 더 큰 오해다.
-// 레이아웃 클래스는 LowerBoundNote/FreshnessBanner의 콜아웃과 같지만 색은 warning이 아니라
+// 레이아웃 클래스는 FreshnessBanner의 콜아웃과 같지만 색은 warning이 아니라
 // 중립(ink)이다 — 데이터가 없는 건 장애가 아니다.
 export default function EmptyState({ className }) {
   const { status } = useFreshness();
