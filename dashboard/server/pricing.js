@@ -178,3 +178,33 @@ export function withComputedCost(rows) {
     return { ...r, cost, unpriced: !p };
   });
 }
+
+// effortMix/agentCost처럼 "그룹 컬럼 × model" 그레인으로 나온 쿼리 결과를 그룹 컬럼(keys) 단위로
+// 접는다. 단가 계산(withComputedCost)은 반드시 접기 전에 끝나야 한다 — model 컬럼이 사라진
+// 뒤에는 어느 단가를 쓸지 고를 수 없다. 그래서 SQL에서 바로 합계를 내지 않고 두 단계로 나눈다.
+// 단가표에 없는 모델은 cost에 0을 더하고(null이 아니다 — 합계가 null이 되면 도넛/표가 통째로
+// 비어 버린다) tokens/unpriced_tokens/reported_cost에는 그대로 반영한다.
+export function rollupComputedCost(rows, keys) {
+  const out = new Map();
+  for (const r of withComputedCost(rows)) {
+    // 구분자는 "\u0000"(NUL) — agent 이름은 Attributes['agent.name']에서 온 자유 문자열이라 공백을
+    // 포함할 수 있고, 공백을 구분자로 쓰면 ("a", "b c")와 ("a b", "c")가 한 키로 뭉개진다(실측).
+    const k = keys.map((key) => String(r[key])).join("\u0000");
+    let acc = out.get(k);
+    if (!acc) {
+      acc = {};
+      for (const key of keys) acc[key] = r[key];
+      Object.assign(acc, { cost: 0, reported_cost: 0, tokens: 0, unpriced_tokens: 0 });
+      out.set(k, acc);
+    }
+    // 드라이버가 집계값을 문자열로 돌려주는 경우가 있어 전부 Number()로 강제한다 — 빠뜨리면
+    // += 가 문자열 연결이 되어 "37" 같은 값이 나온다.
+    const tokens =
+      Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens);
+    if (!r.unpriced) acc.cost += Number(r.cost);
+    acc.reported_cost += Number(r.reported_cost);
+    acc.tokens += tokens;
+    if (r.unpriced) acc.unpriced_tokens += tokens;
+  }
+  return [...out.values()];
+}

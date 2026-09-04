@@ -217,7 +217,7 @@ export default function Cost() {
   };
   const effortRowsFor = (group) =>
     (effortMix.data || [])
-      .filter((r) => r.group === group && Number(r.cost_usd) > 0)
+      .filter((r) => r.group === group && Number(r.cost) > 0)
       .sort((a, b) => effortOrder(a.effort) - effortOrder(b.effort));
 
   // loc=0이어도 commits>0인 유저(라인 없이 커밋만 한 경우)는 $/커밋 컬럼에 값이 있으므로 테이블에서
@@ -326,17 +326,22 @@ export default function Cost() {
               <Card
                 key={g}
                 title={`Effort별 지출 — ${g}`}
-                subtitle="reasoning effort별 보고 비용(Claude Code cost.usage) · effort 미보고 세션은 unknown"
+                subtitle="reasoning effort별 계산 비용(토큰 × 모델 단가) · 보고 비용(Claude Code cost.usage)은 대조용 · effort 미보고 세션은 unknown"
               >
                 <DonutBody
                   data={effortRowsFor(g)}
                   nameKey="effort"
-                  valueKey="cost_usd"
+                  valueKey="cost"
                   valuePrefix="$"
                   colorOf={makeGroupBreakdownColorer(g, EFFORT_LABEL_ORDER)}
                 />
-                <p className="mt-3 text-[12px] text-ink-400">
-                  thinking 토큰은 output 토큰에 포함된다 — xhigh/high 비중은 출력 단가 노출도를 보는 지표다.
+                <ul className="mt-3 text-[12px] text-ink-400">
+                  {effortRowsFor(g).map((r) => (
+                    <li key={r.effort}>{`${r.effort} · 계산 ${usd(r.cost)} · 보고 ${usd(r.reported_cost)}`}</li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-[12px] text-ink-400">
+                  보고 비용은 Claude Code 클라이언트의 자체 단가표로 계산되어 버전에 따라 달라진다 (실측 2026-09-03: v2.1.251은 fable-5-1을 opus-5 단가로 보고 → 약 0.5×). thinking 토큰은 output 토큰에 포함된다.
                 </p>
               </Card>
             ))}
@@ -455,11 +460,12 @@ export default function Cost() {
         ) : (
           <DataTable
             title="에이전트별 지출"
-            subtitle="보고 비용(cost.usage) 기준 상위 15개 — 에이전트 미지정(메인 세션) 지출 포함"
+            subtitle="계산 비용(토큰 × 단가) 상위 15개 · 보고 비용은 대조용 — 에이전트 미지정(메인 세션) 지출 포함"
             columns={[
               { key: "agent", label: "에이전트", render: agentLabel, toText: agentLabel },
               { key: "group", label: "그룹" },
-              { key: "cost_usd", label: "지출", render: usd },
+              { key: "cost", label: "지출(계산)", render: usd },
+              { key: "reported_cost", label: "보고 비용", render: usd },
               { key: "tokens", label: "토큰", render: fmt },
             ]}
             rows={(agentCost.data || []).slice(0, 15)}

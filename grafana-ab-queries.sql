@@ -528,8 +528,9 @@ ORDER BY ExperimentGroup, TokenType;
 
 
 -- 【패널 25】effort 믹스 — 그룹 × effort 토큰 분포. 파일 상단 주의(실비용 비교 금지)에 따라
--- cost.usage가 아니라 token.usage로 비교한다(대시보드 /api/cost/effort-mix는 보고 비용도 내지만
--- 여기선 토큰 정규화 원칙 유지). Effort는 승격 컬럼(clickhouse-migration-002.sql; Speed는 실측
+-- cost.usage가 아니라 token.usage로 비교한다(대시보드 /api/cost/effort-mix는 2026-09-04부터
+-- 계산 비용(토큰 × pricing.js 단가)을 내고 보고 비용은 대조용 필드로 함께 내지만, 여기선 토큰
+-- 정규화 원칙 유지). Effort는 승격 컬럼(clickhouse-migration-002.sql; Speed는 실측
 -- 0행이라 안 본다), ''는 effort attribute가 없는 행 — 'unknown'으로 묶는다(실측 7d cost 기준
 -- medium ≫ high > '' > xhigh). token.usage도 누적 카운터라 패널 24와 동일한 세션-경계 diff
 -- (첫 버킷 과대집계 한계도 동일). SeriesKey의 세그먼트 의미는 패널 9 주석 참고.

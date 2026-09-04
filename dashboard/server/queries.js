@@ -1,6 +1,6 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { withComputedCost, normalizeModelId } from "./pricing.js";
+import { withComputedCost, normalizeModelId, rollupComputedCost } from "./pricing.js";
 import { rollupAdoption } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
@@ -1688,33 +1688,45 @@ export async function activeTimeSummary(from, to, filters = {}) {
   );
 }
 
-// effort별 비용/토큰 — cost_usd는 Claude Code 자체 보고 비용(cost.usage, versionCohortCost와
-// 동일 기준). Speed 컬럼은 실측 0행(이 플릿은 fast 모드 미사용)이라 안 본다. effort ''(실측
-// 7d cost 578)는 effort attribute가 없는 행 — 'unknown'으로 묶는다.
+// effort별 비용/토큰 — cost는 계산 비용(토큰 × pricing.js 단가, 이 페이지의 다른 Cost 카드와
+// 동일 기준)이고 reported_cost는 Claude Code 자체 보고값(대조용)이다. 실측 2026-09-03:
+// v2.1.251은 fable-5-1을 opus-5 단가로 보고해 보고 비용이 정가의 약 0.5×, v2.1.258은 정가 —
+// 보고 비용은 클라이언트 버전에 종속이라 패널 기준으로 쓸 수 없다. Speed 컬럼은 실측 0행(이
+// 플릿은 fast 모드 미사용)이라 안 본다. effort ''(실측 7d cost 578)는 effort attribute가 없는
+// 행 — 'unknown'으로 묶는다. 단가를 고르려면 model 그레인이 필요해서 바깥 SELECT에
+// normModel(m.Model)과 TokenType별 토큰 컬럼을 두고, group × effort까지는 JS에서
+// rollupComputedCost로 접는다(TokenType은 이미 SeriesKey에 포함돼 있어 GROUP BY에 추가해도
+// 행이 늘지 않는다 — incFlat 내부 서브쿼리와 동일한 패턴). m.Model != '' 필터는 일부러 걸지
+// 않는다 — 걸면 보고 비용까지 조용히 빠진다. model이 빈 행은 unpriced_tokens로 드러난다.
 export async function effortMix(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  return query(
+  const rows = await query(
     `${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
         if(m.Effort = '', 'unknown', m.Effort) AS effort,
-        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')  AS cost_usd,
-        sumIf(m.inc, m.MetricName = 'claude_code.token.usage') AS tokens
+        ${normModel("m.Model")} AS model,
+        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')                                     AS reported_cost,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')         AS input_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')        AS output_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens
     FROM (
-        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, Effort, any(UserEmail) AS UserEmail,
+        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, Effort, TokenType, any(UserEmail) AS UserEmail,
             if(temp = 2,
                 greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
                 sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
         FROM claude_code.otel_metrics_sum
         WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
           AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
-        GROUP BY sk, SessionId, temp, MetricName, Model, Effort
+        GROUP BY sk, SessionId, temp, MetricName, Model, Effort, TokenType
     ) m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
-    GROUP BY "group", effort ORDER BY "group", cost_usd DESC`,
+    GROUP BY "group", effort, model ORDER BY "group", effort`,
     { ...range(from, to, true), ...f.params }
   );
+  return rollupComputedCost(rows, ["group", "effort"]).sort((a, b) => a.group.localeCompare(b.group) || b.cost - a.cost);
 }
 
 // 언어별 편집 수락 — Language는 incFlat 미탑재 차원이라 effortMix와 동일한 로컬 diff
@@ -1902,29 +1914,37 @@ export async function mcpHealth(from, to, filters = {}) {
 
 // 에이전트(서브에이전트)별 비용/토큰 — AgentName은 incFlat 미탑재 차원이라 effortMix와 동일한
 // 로컬 diff(실측 7d: AgentName 비어있지 않은 행 4.56M). ''는 메인 스레드 귀속 — 'main'으로
-// 표기한다. cost_usd는 effortMix와 동일하게 Claude Code 자체 보고 비용(cost.usage).
+// 표기한다. cost/reported_cost의 의미와 model 그레인 · rollupComputedCost 접기는 effortMix와
+// 동일하다(실측 2026-09-03: 보고 비용은 클라이언트 버전에 종속 — v2.1.251이 fable-5-1을
+// opus-5 단가로 보고). 상위 30개 절단은 접은 뒤 JS에서 한다 — SQL LIMIT은 model로 쪼개진
+// 행에 걸려서 에이전트 하나의 비용이 잘린다.
 export async function agentCost(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  return query(
+  const rows = await query(
     `${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
         if(m.AgentName = '', 'main', m.AgentName) AS agent,
-        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')  AS cost_usd,
-        sumIf(m.inc, m.MetricName = 'claude_code.token.usage') AS tokens
+        ${normModel("m.Model")} AS model,
+        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')                                     AS reported_cost,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')         AS input_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')        AS output_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens
     FROM (
-        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, AgentName, any(UserEmail) AS UserEmail,
+        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, AgentName, TokenType, any(UserEmail) AS UserEmail,
             if(temp = 2,
                 greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
                 sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
         FROM claude_code.otel_metrics_sum
         WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
           AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
-        GROUP BY sk, SessionId, temp, MetricName, Model, AgentName
+        GROUP BY sk, SessionId, temp, MetricName, Model, AgentName, TokenType
     ) m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
-    GROUP BY "group", agent ORDER BY cost_usd DESC LIMIT 30`,
+    GROUP BY "group", agent, model ORDER BY "group", agent`,
     { ...range(from, to, true), ...f.params }
   );
+  return rollupComputedCost(rows, ["group", "agent"]).sort((a, b) => b.cost - a.cost).slice(0, 30);
 }

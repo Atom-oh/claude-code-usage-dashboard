@@ -4,6 +4,7 @@ import {
   normalizeModelId,
   priceFor,
   withComputedCost,
+  rollupComputedCost,
   tierCosts,
   tierCostsByGroup,
   buildPricing,
@@ -330,4 +331,101 @@ test("normalizeModelId strips the us-gov/jp/au cross-region profile prefixes", (
   assert.equal(priceFor("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0").input, 1);
   // 대조군: 접두사처럼 보이지만 목록에 없는 값은 그대로 남아야 한다(과잉 매칭 방지).
   assert.equal(normalizeModelId("us-gov-west.anthropic.claude-opus-5"), "us-gov-west.anthropic.claude-opus-5");
+});
+
+// rollupComputedCost: 그룹 컬럼 × model 그레인의 쿼리 결과를 그룹 컬럼 단위로 접는다. 이 헬퍼가
+// 없으면 effortMix/agentCost가 SQL에서 바로 합계를 내야 하는데, 그러면 model이 사라져 단가를
+// 고를 수 없다(그래서 두 패널이 계산 비용이 아니라 보고 비용을 쓰고 있었다).
+const rollupRow = (o) => ({
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_tokens: 0,
+  cache_write_tokens: 0,
+  reported_cost: 0,
+  ...o,
+});
+const M = 1000000;
+
+test("rollupComputedCost folds two models under one key into one computed-cost row", () => {
+  const [row, ...rest] = rollupComputedCost(
+    [
+      rollupRow({ group: "bedrock", effort: "high", model: "claude-opus-5", input_tokens: M, output_tokens: M, cache_read_tokens: M, cache_write_tokens: M, reported_cost: 30 }),
+      rollupRow({ group: "bedrock", effort: "high", model: "claude-fable-5", input_tokens: 2 * M, reported_cost: 12 }),
+    ],
+    ["group", "effort"]
+  );
+  assert.equal(rest.length, 0);
+  // opus-5: 5 + 25 + 0.5 + 10 = 40.5 (1M씩) · fable-5: 2M × $10/M = 20 → 60.5.
+  // 두 모델을 접기 전에 각자 단가로 계산해야만 나오는 값이다 — 접은 뒤에 아무 단가나 곱하면
+  // 6M 토큰 × 어떤 단가로도 60.5가 되지 않는다.
+  assert.deepEqual(row, {
+    group: "bedrock",
+    effort: "high",
+    cost: 60.5,
+    reported_cost: 42,
+    tokens: 6 * M,
+    unpriced_tokens: 0,
+  });
+});
+
+test("rollupComputedCost keeps unpriced-model tokens out of cost but inside tokens", () => {
+  const [row] = rollupComputedCost(
+    [
+      rollupRow({ group: "bedrock", effort: "high", model: "claude-opus-5", input_tokens: M, reported_cost: 3 }),
+      // 단가표에 없는 모델(withComputedCost가 unpriced: true, cost: null로 표시).
+      // reported_cost는 일부러 문자열 — 드라이버가 집계값을 문자열로 주는 경우를 고정한다.
+      // Number() 강제가 빠지면 += 가 문자열 연결이 되어 이 단정문이 "37"로 깨진다.
+      rollupRow({ group: "bedrock", effort: "high", model: "openai.gpt-5.6-sol", input_tokens: M, output_tokens: 500000, reported_cost: "7" }),
+    ],
+    ["group", "effort"]
+  );
+  assert.equal(row.cost, 5); // opus-5 1M 입력만 — 미산정 모델은 0을 더한다(null이 아니다)
+  assert.equal(typeof row.cost, "number");
+  assert.equal(row.reported_cost, 10);
+  assert.equal(row.tokens, 2.5 * M);
+  assert.equal(row.unpriced_tokens, 1.5 * M);
+});
+
+test("rollupComputedCost splits on every key column and preserves first-seen order", () => {
+  const rows = rollupComputedCost(
+    [
+      rollupRow({ group: "bedrock", agent: "main", model: "claude-opus-5", input_tokens: M, reported_cost: 4 }),
+      rollupRow({ group: "bedrock", agent: "code-reviewer", model: "claude-opus-5", input_tokens: 2 * M, reported_cost: 9 }),
+      rollupRow({ group: "enterprise", agent: "main", model: "claude-opus-5", input_tokens: 3 * M, reported_cost: 1 }),
+      rollupRow({ group: "enterprise", agent: "main", model: "claude-fable-5", input_tokens: M, reported_cost: 2 }),
+    ],
+    ["group", "agent"]
+  );
+  assert.equal(rows.length, 3);
+  assert.deepEqual(
+    rows.map((r) => `${r.group}/${r.agent}`),
+    ["bedrock/main", "bedrock/code-reviewer", "enterprise/main"]
+  );
+  // 같은 agent 이름이 그룹으로 갈라지는지 — 4행 중 마지막 두 행만 한 행으로 접힌다.
+  assert.equal(rows[2].cost, 25); // 3M × $5/M + 1M × $10/M
+  assert.equal(rows[2].reported_cost, 3);
+  assert.equal(rows[2].tokens, 4 * M);
+  assert.equal(rows[0].cost, 5);
+});
+
+test("rollupComputedCost returns an empty array for empty input", () => {
+  assert.deepEqual(rollupComputedCost([], ["group", "effort"]), []);
+});
+
+// fable-5-1의 cacheRead는 파생 규칙(입력×0.1 = 1.0)이 아니라 명시값 0.25다. priceFor 단위로는
+// 이미 고정되어 있지만(위쪽 테스트), 접기 경로에서도 살아있는지 따로 고정한다 — 접는 쪽이
+// 모델을 잃고 아무 단가로 재계산하면 여기서 4배가 된다.
+test("rollupComputedCost carries the fable-5-1 0.025x cacheRead through the fold", () => {
+  const rows = rollupComputedCost(
+    [
+      rollupRow({ group: "bedrock", effort: "high", model: "claude-fable-5-1", cache_read_tokens: 4 * M }),
+      // 대조군: 같은 입력 단가($10)의 fable-5는 파생 규칙대로 cacheRead $1 → 4.0.
+      rollupRow({ group: "bedrock", effort: "medium", model: "claude-fable-5", cache_read_tokens: 4 * M }),
+    ],
+    ["group", "effort"]
+  );
+  assert.equal(rows[0].cost, 1); // 4M × $0.25/M — 파생 규칙이었다면 대조군과 똑같이 4.0이 된다
+  assert.equal(rows[1].cost, 4);
+  assert.equal(rows[0].tokens, 4 * M);
+  assert.equal(rows[0].unpriced_tokens, 0);
 });

@@ -120,10 +120,15 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   `adoptionTimeseries`, `kpiSummary`, `costSummary`) include it -- see `queries.js`'s `filterCond`
   policy comment. A single-channel org therefore still sees an `unknown` share in the totals, and
   that is correct, not a bug in single mode.
-- **The Cost page's Effort and Agent panels show Claude Code's REPORTED cost**
-  (`claude_code.cost.usage`), not the token×price computed cost every other card on that page
-  shows — `effortMix`/`agentCost` are `sumIf(inc, MetricName='claude_code.cost.usage')`
-  server-side. Their copy says 보고 비용 for that reason; do not "restore" 계산 비용 there.
+- **The Cost page's Effort and Agent panels show the token×price COMPUTED cost**, like every
+  other card on that page, with Claude Code's reported `cost.usage` beside it as a secondary
+  contrast column — `effortMix`/`agentCost` return `rollupComputedCost()` output (`cost` +
+  `reported_cost` + `tokens` + `unpriced_tokens`) server-side. This reverses the earlier rule
+  that these two panels were the reported-cost pair: reported cost is priced client-side from
+  the client's own table, so it moves with the Claude Code version (measured 2026-09-03:
+  v2.1.251 prices `claude-fable-5-1` off the opus-5 row → ≈0.5× of list, v2.1.258 at list,
+  while `claude-fable-5` is ≈1.00 on every version), whereas tokens × `pricing.js` is
+  client-independent. Do not flip these two panels back to reported-only.
   The per-user table's `unknown 그룹 포함` checkbox is display-only: it re-fetches
   `/api/cost/by-user-model` with `includeUnknown=1` for that table alone, while the spend
   ranking above it keeps the default (unknown-excluded) view because it is an A/B-join

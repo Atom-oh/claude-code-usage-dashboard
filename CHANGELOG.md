@@ -17,6 +17,21 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Changed (2026-09-04 effort/agent cost basis)
+- The Cost page's Effort and Agent panels now show the **computed** cost (tokens ×
+  `pricing.js` rates) like every other card on that page, with Claude Code's reported
+  `cost.usage` kept beside it as a secondary column — `/api/cost/effort-mix` and
+  `/api/cost/by-agent` return `cost` + `reported_cost` + `tokens` + `unpriced_tokens` instead
+  of the reported-only `cost_usd`. Reported cost is priced client-side from the client's own
+  price table, so it moves with the Claude Code version: measured 2026-09-03, v2.1.251 prices
+  `claude-fable-5-1` off the opus-5 row (≈0.5× of list) while v2.1.258 prices it at list, and
+  the control model `claude-fable-5` is ≈1.00 on every version — so those two panels were
+  under-reporting exactly the fable-5-1 sessions by ~2× depending on which client emitted them
+- Add `rollupComputedCost()` to `dashboard/server/pricing.js` (pure, unit-tested): it applies
+  `withComputedCost` at a `model` grain and folds the rows onto coarser key columns, which is
+  what lets a per-effort/per-agent query use computed cost at all — the pricing has to be
+  applied before the model column is summed away, so it cannot be done in SQL
+
 ### Added (2026-09-03 production decisions)
 - Add outbound alerting for telemetry staleness — `dashboard/server/alerting.js` (pure
   planner with a two-tick debounce, a repeat interval and a recovery message) driven by
@@ -190,6 +205,20 @@ This project has not been tagged yet — everything below is unreleased.
 이 프로젝트는 아직 태그된 릴리스가 없습니다 — 아래 항목 전부 미출시(Unreleased)입니다.
 
 ## [Unreleased]
+
+### Changed (2026-09-04 effort/agent 비용 기준)
+- Cost 페이지의 Effort·에이전트 패널이 이제 다른 카드와 동일하게 **계산 비용**(토큰 ×
+  `pricing.js` 단가)을 보여주고, Claude Code 보고 비용(`cost.usage`)은 대조용 컬럼으로 함께
+  표시한다 — `/api/cost/effort-mix`와 `/api/cost/by-agent`가 보고 비용만 담은 `cost_usd`
+  대신 `cost` + `reported_cost` + `tokens` + `unpriced_tokens`를 반환한다. 보고 비용은
+  클라이언트가 자체 단가표로 계산하는 값이라 Claude Code 버전에 따라 달라진다: 실측
+  2026-09-03, v2.1.251은 `claude-fable-5-1`을 opus-5 단가로 보고(정가의 약 0.5×)하고
+  v2.1.258은 정가로 보고하며, 대조군 `claude-fable-5`는 모든 버전에서 약 1.00 — 즉 두 패널만
+  fable-5-1 세션을 어느 클라이언트가 보냈는지에 따라 약 2배 과소 보고하고 있었다
+- `dashboard/server/pricing.js`에 `rollupComputedCost()` 추가(순수 함수, 단위 테스트) —
+  `withComputedCost`를 model 그레인에서 적용한 뒤 더 굵은 키 컬럼으로 접는다. 단가는 model
+  컬럼이 합쳐지기 전에 적용해야 하므로 SQL만으로는 불가능하고, 이 헬퍼가 effort·에이전트별
+  계산 비용을 처음으로 가능하게 한다
 
 ### Added (2026-09-03 프로덕션 결정)
 - 텔레메트리 staleness에 대한 발신 알림 추가 — `dashboard/server/alerting.js`(2틱 디바운스,

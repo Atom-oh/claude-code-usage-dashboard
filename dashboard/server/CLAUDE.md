@@ -68,7 +68,10 @@ session is `readonly`.
   the hourly rollup's `has_org` column)
 - `pricing.js` -- per-model token pricing (`buildPricing(env)`, env-overridable via
   `PRICING_JSON`/`PRICING_CACHE_WRITE_TTL`, exports `pricingConfig`), `withComputedCost`,
-  `tierCosts`, `tierCostsByGroup`
+  `tierCosts`, `tierCostsByGroup`, `rollupComputedCost` (applies `withComputedCost` at a
+  `model` grain and then folds rows onto coarser key columns — the pricing has to be computed
+  before the model column is summed away, so a query that wants computed cost per
+  effort/agent cannot do it in SQL)
 - `productivity.js` -- productivity score derivation (pure function, used by leaderboard)
 - `costEfficiency.js` -- `$/LOC`, `$/commit` derivation (pure function)
 - `activity.js` -- `rollupAdoption(rows, from, to)`: the DAU/WAU/MAU + stickiness fold behind
@@ -165,7 +168,13 @@ session is `readonly`.
   (Effort/Language/AgentName aren't `incFlat` dimensions, ADR-001), the rest are `otel_logs`
   scans with `quantile()` percentiles over `LogAttributes` durations, and `apiLatency` /
   `commandAdoption` return keyed objects (`{byModel, byEffort}` / `{commands, prompts}`) per
-  the `apiErrors` precedent.
+  the `apiErrors` precedent. Since 2026-09-04 `effortMix`/`agentCost` carry a `model` grain and
+  per-`TokenType` token columns in their outer `SELECT` and return `pricing.js`'s
+  `rollupComputedCost()` output — computed `cost` + `reported_cost` + `unpriced_tokens` instead
+  of the old reported-only `cost_usd` — because `cost.usage` is priced by the client and
+  therefore version-dependent (measured 2026-09-03: v2.1.251 prices `claude-fable-5-1` off the
+  opus-5 row, ≈0.5× of list). Adding `TokenType` to those local-diff `GROUP BY`s adds no rows:
+  it is already folded into `SeriesKey`, exactly like `Model`.
 - **`SeriesKey` identifies a per-process counter SEGMENT**, not just a series
   (`StartTimeUnix` folded in — `clickhouse-migration-003.sql` / ADR-003), except for
   `claude_code.session.count`, whose key definition is deliberately unchanged. **Never
