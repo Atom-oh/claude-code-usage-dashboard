@@ -238,6 +238,5 @@ ALTER TABLE claude_code.schema_migrations DELETE WHERE version = N;
   마이그레이션)의 행뿐입니다.
 - `/api/config`의 `schema.segmentAwareSeriesKey`로 노출되는 segment-aware `SeriesKey` 감지는
   **별개의, 데이터 기반 프로브**입니다(원장이 아니라 최근 `claude_code.cost.usage` 행을
-  읽습니다). `--resume` 하한선 비용 문구의 근거는 계속 이 프로브가 담당합니다 — 원장은 어느
-  파일이 실행됐는지를 알려주고, 이 프로브는 실제 데이터에서 어느 동작이 지금 적용 중인지를
-  알려줍니다.
+  읽습니다). 원장은 어느 파일이 실행됐는지를 알려주고, 이 프로브는 실제 데이터에서 어느
+  동작이 지금 적용 중인지를 알려줍니다.

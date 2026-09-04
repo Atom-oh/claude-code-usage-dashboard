@@ -2,8 +2,7 @@ import { query } from "./clickhouse.js";
 
 // SeriesKey가 세그먼트 인식 정의(clickhouse-migration-003.sql / ADR-003)로 바뀌었는지를
 // 런타임에 감지한다. 마이그레이션 적용 여부를 코드가 가정하지 않게 하려는 것 — 미적용
-// 클러스터에서도 대시보드가 동작해야 하고, 하한선 경고 문구(LowerBoundNote)의 --resume
-// 원인은 적용된 클러스터에서만 빠져야 한다.
+// 클러스터에서도 대시보드가 동작해야 한다.
 //
 // 대상은 claude_code.cost.usage다. session.count는 설계상 키 정의가 바뀌지 않으므로
 // (프로세스당 1이라 세그먼트 키를 쓰면 resume마다 새 세션이 된다 — ADR-003의 예외)

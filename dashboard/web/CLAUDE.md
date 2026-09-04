@@ -25,27 +25,21 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   `CalendarDays` trigger; two `<input type="date">`s, UTC-day arithmetic, and the
   `rangeCapDays` check mirrored from the server's `parseRange`
 - `src/pages/*.jsx` -- one file per dashboard page (Overview, Cost, Productivity, Users,
-  Trends, Executive)
+  Trends, Executive, Usage, Reliability, Analytics)
 - `src/components/*.jsx` -- shared presentational components (`Card`, `StatTile`, `Badge`,
-  `SegmentedControl`, `DataTable`, `GroupCharts`, `FloatingChat`, `PageHeader`, `RangePicker`)
-- `src/components/ABScoreboard.jsx` / `LowerBoundNote.jsx` -- 2026-09-01 additions:
-  the Executive hero split-band (one row per KPI, bedrock left / enterprise right around a
-  center label, single 6px split bar — note `pct` format expects a 0-1 fraction, not a
-  percentage) and the reusable "dashboard cost is a lower bound of real billing" warning
-  callout. `ABScoreboard` is Executive-only; `LowerBoundNote` is mounted on the Cost page and,
-  since 2026-09-02, on the Executive page's Cost section too — the two places a spend figure is
-  stated as if it were exact. Its causes are measured facts, keep them
-  in sync with the data layer: un-instrumented launch paths (telemetry env missing),
-  `--resume` counter resets lost by the session-boundary diff, the unpriced-model exclusion
-  (models absent from the pricing table — Bedrock's non-Anthropic models — are excluded from
-  computed cost and shown separately as `unpriced_tokens`; the old ">200K long-context premium
-  not priced" claim was factually wrong and has been removed, see ADR-003/pricing.js), and
-  non-instrumented channels. The causes are now conditional on the schema probe:
-  `LowerBoundNote` fetches `/api/config` and drops the `--resume` cause only when
-  `schema.segmentAwareSeriesKey === true`; any other value (`false`/`null`/undefined/failed or
-  aborted fetch/older server with no `schema` key) fails safe to the full cause list. Thinking
-  tokens ARE included in OTel output (measured 2026-09-02) — an earlier version of the copy
-  claimed otherwise
+  `SegmentedControl`, `DataTable`, `GroupCharts`, `FloatingChat`, `PageHeader`, `RangePicker`).
+  `Card` and `StatTile` share the same optional `help` prop -- an `Info` icon beside the
+  title/label carrying the text as both `title` and `aria-label`; `DataTable` and every
+  Card-wrapping chart in `GroupCharts.jsx` forward it unchanged. A deleted subtitle/hint is
+  passed as `undefined`, never `""` -- `Card` renders any non-null subtitle as an empty 12px
+  row and `StatTile` does the same for a non-null `hint`
+- `src/components/ABScoreboard.jsx` -- 2026-09-01 addition: the Executive hero split-band
+  (one row per KPI, bedrock left / enterprise right around a center label, single 6px split
+  bar — note `pct` format expects a 0-1 fraction, not a percentage). Executive-only. The
+  dashboard's cost figures are a lower bound of real billing; the UI now states that fact only
+  as the `help` on the Executive `기간 비용` tile and the Cost `총 비용` tile. Thinking tokens
+  ARE included in OTel output (measured 2026-09-02) -- an earlier version of the copy claimed
+  otherwise; that fact is now also the last sentence of the Effort card's help
 - `src/FreshnessContext.jsx` / `src/components/FreshnessBanner.jsx` -- 2026-09-02 additions:
   the provider polls `GET /api/health/data` every 60s and exposes
   `{status: "loading"|"ok"|"stale"|"unknown", latest, ageMinutes, staleAfterMinutes}` via
@@ -56,7 +50,9 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   the state alone, same convention as `useApi.js`. The banner renders `null` for `ok` **and**
   `loading` (so nothing flashes before the first response), takes a `className` rather than
   being wrapped at the call site (a wrapper would leave a 12px gap on every healthy page,
-  since the component renders nothing), and reuses `LowerBoundNote`'s warning-callout classes
+  since the component renders nothing), and uses `rounded-lg border border-warning-border
+  bg-warning-surface px-4 py-3 shadow-sm` with an `AlertTriangle` icon and `role="status"`.
+  `EmptyState` uses the same layout in neutral ink tones rather than warning tones
 - `src/pivot.js` -- reshapes flat `[{t, group, value}]` rows into one-row-per-x-tick for
   Recharts (`pivotByGroup`, `pivotByKey`)
 - `src/urlState.js` -- pure URL-search-param <-> `{range, filters}` mapping
@@ -85,6 +81,12 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   `render` can return JSX, and even a string-returning one (thousand separators) stops a
   spreadsheet reading the column as numeric — so the cell is `col.toText(v, r)` when present,
   otherwise the raw value
+- `src/labels.js` -- three shared enum-to-label helpers: `effortLabel` (empty/`unknown` effort
+  renders `미지정`), `unclassifiedLabel` (the undetermined channel renders `미분류`),
+  `decisionLabel` (`accept`/`reject` render `수락`/`거부`). Raw enum values must never reach
+  the screen or the CSV, so an enum-mapped column takes both `render` and `toText` with the
+  same mapper. `Usage.jsx` keeps two page-local maps (permission source, Skill trigger) and
+  `Reliability.jsx` keeps a page-local `cohortLabel` -- each has exactly one consumer
 
 ## Rules
 - Any page-local granularity/interval control must re-sync from `RangeContext`'s
@@ -128,10 +130,10 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   to the first group so the card (and its empty state) still exists. Never iterate `GROUP_ORDER`
   or a literal `["bedrock", "enterprise"]` directly in a page; the chart layer already derives its
   own series from the response via `groupsPresent`. The one legitimate neighbour of this rule is a
-  **within-row** group split (the Cost page's 그룹 비중 stacked bar) -- that is not a
+  **within-row** group split (the Cost page's 채널 비중 stacked bar) -- that is not a
   card-visibility question, so it orders its segments by `colors.js`'s `GROUP_SEGMENT_ORDER`,
-  still a shared constant and never a literal in the page, and the column is dropped entirely
-  when `groupMode === "single"`.
+  still a shared constant and never a literal in the page, and in `single` mode the bars are
+  hidden while the columns themselves stay.
 - **`FilterBar` hides the channel `SegmentedControl` in `single` mode** for the same reason a
   single-channel org gets one card: offering two channel names to an org that has one is a
   false affordance. The `group` param itself is untouched -- `FilterContext`, `useApi.js` and
@@ -151,7 +153,7 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   v2.1.251 prices `claude-fable-5-1` off the opus-5 row → ≈0.5× of list, v2.1.258 at list,
   while `claude-fable-5` is ≈1.00 on every version), whereas tokens × `pricing.js` is
   client-independent. Do not flip these two panels back to reported-only.
-  The per-user table's `unknown 그룹 포함` checkbox is display-only: it re-fetches
+  The per-user table's `미분류 포함` checkbox is display-only: it re-fetches
   `/api/cost/by-user-model` with `includeUnknown=1` for that table alone, while the spend
   ranking above it keeps the default (unknown-excluded) view because it is an A/B-join
   consumer (see the policy comment on that route in `server/index.js`).

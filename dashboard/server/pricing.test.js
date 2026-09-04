@@ -286,7 +286,7 @@ test("PRICING_PROMPT_TABLE renders the in-effect rate and the TTL assumption, wi
 });
 
 // 2026-09-02 단가표 보강: 이 6개 계열이 표에 없어 토큰이 unpriced로 새고 있었다(계산 비용에서
-// 통째로 제외 — LowerBoundNote가 경고하는 원인 중 하나). cacheWrite1h는 표에 안 적고
+// 통째로 제외 — 대시보드 비용이 하한선이 되는 원인 중 하나). cacheWrite1h는 표에 안 적고
 // buildPricing이 입력×2로 파생한다.
 test("priceFor covers the 2026-09-02 additions with the derived 1h cache-write rate", () => {
   assert.equal(priceFor("claude-mythos-5").input, 10);

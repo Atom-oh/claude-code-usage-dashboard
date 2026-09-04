@@ -46,6 +46,30 @@ This project has not been tagged yet — everything below is unreleased.
   what lets a per-effort/per-agent query use computed cost at all — the pricing has to be
   applied before the model column is summed away, so it cannot be done in SQL
 
+### Changed (2026-09-04 UI copy)
+- Rewrote every user-facing string in the SPA to product-grade Korean: labels, titles and
+  subtitles now name what a number is, and the formulas, telemetry event/attribute names, raw
+  enum values and measurement notes that used to sit in subtitles moved into `help` tooltips or
+  were dropped outright. Unified the vocabulary across pages: 비용 (not 지출), 채널 (not 그룹),
+  사용자 (not 유저), 추가 코드 라인 (not 추가 라인 / 작성 라인), 미분류 (not `unknown`), 미지정
+  (not an empty effort), 단가 미등록 (not 미산정), 오류 (not 에러)
+- Give `Card` an optional `help` prop, rendered as the same `Info` icon `StatTile` already had,
+  with `DataTable` and the Card-wrapping charts in `GroupCharts.jsx` forwarding it unchanged —
+  this is where the page-level methodology now lives (`dashboard/web/src/components/Card.jsx`,
+  `DataTable.jsx`, `GroupCharts.jsx`)
+- Add `dashboard/web/src/labels.js` with `effortLabel` / `unclassifiedLabel` / `decisionLabel`,
+  so a raw enum value never reaches the screen or a CSV export — every mapped column now carries
+  both `render` and `toText`. `Reliability.jsx` dropped its own local `effortLabel` in favor of
+  the shared one
+- Remove `LowerBoundNote` and do not replace it; the fact it stated survives as one sentence at
+  the end of two `help` tooltips — the Executive `기간 비용` tile and the Cost `총 비용` tile.
+  `/api/config`'s `schema.segmentAwareSeriesKey` no longer drives any UI text as a result, which
+  is why both the rollup-rebuild and schema-migrations runbooks lost their "the callout updates
+  itself" step
+- Rename the per-user cost table's checkbox to `미분류 포함` (was `unknown 그룹 포함`), and
+  update the three test files that pinned the old string — the assertions themselves are
+  unchanged, only the pinned literals
+
 ### Added (2026-09-03 production decisions)
 - Add outbound alerting for telemetry staleness — `dashboard/server/alerting.js` (pure
   planner with a two-tick debounce, a repeat interval and a recovery message) driven by
@@ -247,6 +271,29 @@ This project has not been tagged yet — everything below is unreleased.
   `withComputedCost`를 model 그레인에서 적용한 뒤 더 굵은 키 컬럼으로 접는다. 단가는 model
   컬럼이 합쳐지기 전에 적용해야 하므로 SQL만으로는 불가능하고, 이 헬퍼가 effort·에이전트별
   계산 비용을 처음으로 가능하게 한다
+
+### Changed (2026-09-04 UI 문구)
+- SPA의 모든 사용자 노출 문구를 제품 수준 한국어로 다시 씀 — 라벨·타이틀·서브타이틀이 이제
+  숫자가 무엇인지 이름으로 말하고, 서브타이틀에 있던 수식·텔레메트리 이벤트/속성명·원본 enum
+  값·측정 노트는 `help` 툴팁으로 옮기거나 그대로 삭제함. 페이지 전역에서 용어를 통일: 비용
+  (지출 아님), 채널 (그룹 아님), 사용자 (유저 아님), 추가 코드 라인 (추가 라인 / 작성 라인
+  아님), 미분류 (`unknown` 아님), 미지정 (빈 effort 아님), 단가 미등록 (미산정 아님), 오류
+  (에러 아님)
+- `Card`에 선택적 `help` prop 추가 — `StatTile`이 이미 가진 것과 같은 `Info` 아이콘으로
+  렌더링되며, `DataTable`과 `GroupCharts.jsx`의 Card 래핑 차트들이 그대로 전달함 — 페이지별
+  방법론 설명이 이제 여기에 산다(`dashboard/web/src/components/Card.jsx`, `DataTable.jsx`,
+  `GroupCharts.jsx`)
+- `dashboard/web/src/labels.js` 신설(`effortLabel` / `unclassifiedLabel` / `decisionLabel`) —
+  원본 enum 값이 화면이나 CSV에 그대로 노출되지 않도록, 매핑되는 모든 컬럼이 `render`와
+  `toText`를 함께 갖게 됨. `Reliability.jsx`는 자체 `effortLabel`을 지우고 공용 헬퍼를 가져다
+  씀
+- `LowerBoundNote`를 제거하고 대체하지 않음 — 그 안내가 말하던 사실은 `help` 툴팁 두 곳(맨
+  끝 문장)에만 남음: Executive의 `기간 비용` 타일과 Cost의 `총 비용` 타일. 그 결과
+  `/api/config`의 `schema.segmentAwareSeriesKey`는 더 이상 어떤 UI 문구도 구동하지 않고,
+  이 때문에 rollup-rebuild·schema-migrations 두 런북에서 "안내문이 자동으로 갱신된다"는
+  단계가 사라짐
+- 사용자별 비용 표의 체크박스를 `미분류 포함`으로 변경(이전 `unknown 그룹 포함`) — 옛 문자열을
+  고정해 두던 테스트 파일 3개도 갱신함. 단정문 자체는 그대로고, 고정된 문자열만 바뀜
 
 ### Added (2026-09-03 프로덕션 결정)
 - 텔레메트리 staleness에 대한 발신 알림 추가 — `dashboard/server/alerting.js`(2틱 디바운스,

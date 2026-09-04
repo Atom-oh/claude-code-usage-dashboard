@@ -276,11 +276,6 @@ future rebuild exchanges it again) — not a sign that something is broken.
   session unit is `session.id`, not the counter segment — applying the segment key there would
   have counted every `--resume` as a new session (measured 30d: 441 distinct `session.id`,
   684 under an unconditional segment key, +50%), which is not what "how many sessions" means.
-- **The Cost page's lower-bound callout drops its `--resume` cause automatically** — no copy
-  change needed. `LowerBoundNote` fetches `/api/config` and reads
-  `schema.segmentAwareSeriesKey`; the server refreshes that value from a live probe at boot and
-  every 10 minutes. Allow up to ~10 minutes after this procedure completes for the callout to
-  update on its own, or restart the dashboard pod to force an immediate re-probe.
 
 ## Notes
 - Last verified: 2026-09-02
@@ -556,11 +551,6 @@ DROP TABLE claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
   카운터 세그먼트가 아니라 `session.id`이기 때문입니다. 여기에 세그먼트 키를 적용했다면
   `--resume`마다 새 세션으로 잡혔을 것입니다(30일 실측: distinct `session.id` 441개, 조건 없는
   세그먼트 키를 쓰면 684개, +50%) — 이는 "세션이 몇 개인가"라는 질문의 답이 아닙니다.
-- **Cost 페이지 하한선 안내문에서 `--resume` 원인이 자동으로 빠집니다** — 문구를 따로 고칠
-  필요 없습니다. `LowerBoundNote`가 `/api/config`를 호출해 `schema.segmentAwareSeriesKey`를
-  읽고, 서버는 부팅 시 + 10분마다 이 값을 실측 probe로 갱신합니다. 이 절차 완료 후 최대 약
-  10분을 기다리면 안내문이 자동으로 바뀌고, 즉시 반영하려면 대시보드 파드를 재시작해 probe를
-  강제로 다시 돌리세요.
 
 ## 참고
 - 최종 검증일: 2026-09-02
