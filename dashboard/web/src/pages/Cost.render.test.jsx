@@ -69,14 +69,14 @@ test("그룹별 모델 스택 바 두 줄: 줄=그룹, 색 분할=모델, 길이
   const { container } = mount("ab");
   await waitFor(() => expect(mirrorBars(container).length).toBeGreaterThan(0));
 
-  const lines = [...container.querySelectorAll("[aria-label]")].filter((d) => /^(bedrock|enterprise|unknown) /.test(d.getAttribute("aria-label") || ""));
+  const lines = [...container.querySelectorAll("[aria-label]")].filter((d) => /^(bedrock|enterprise|미분류) /.test(d.getAttribute("aria-label") || ""));
   const titles = lines.map((d) => d.getAttribute("aria-label"));
   // 지출 셀 — 그룹 합계 + 모델 내역이 hover에 담긴다
   expect(titles).toContain("bedrock $12.34 — claude-sonnet-5 $12.34");
   expect(titles).toContain("enterprise $7.21 — claude-sonnet-5 $7.21");
   // 토큰 셀 — 미산정 모델도 토큰 줄에는 있다
   expect(titles).toContain("bedrock 700토큰 — titan-text-lite 700토큰");
-  expect(titles).toContain("unknown 300토큰 — titan-text-lite 300토큰");
+  expect(titles).toContain("미분류 300토큰 — titan-text-lite 300토큰");
 
   // 지출 축 max = 12.34 → bedrock 줄 100%, enterprise 줄 58.43%. 폭은 줄의 안쪽 스택 컨테이너에.
   const bLine = lines.find((d) => d.getAttribute("aria-label") === "bedrock $12.34 — claude-sonnet-5 $12.34");
@@ -119,7 +119,7 @@ test("CSV 내보내기가 화면의 그룹 분해 문자열을 그대로 담는�
   const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   try {
     const btn = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent.includes("CSV") && b.closest("div")?.textContent?.includes("unknown 그룹 포함")
+      (b) => b.textContent.includes("CSV") && b.closest("div")?.textContent?.includes("미분류 포함")
     );
     expect(btn).toBeTruthy();
     btn.click();
@@ -128,7 +128,7 @@ test("CSV 내보내기가 화면의 그룹 분해 문자열을 그대로 담는�
     expect(text).toContain("$19.55 — bedrock $12.34 · enterprise $7.21");
     expect(text).toContain("$0");
     expect(text).toContain("bedrock 1,000토큰 · enterprise 500토큰");
-    expect(text).toContain("bedrock 700토큰 · unknown 300토큰");
+    expect(text).toContain("bedrock 700토큰 · 미분류 300토큰");
   } finally {
     clickSpy.mockRestore();
     URL.createObjectURL = origCreate;

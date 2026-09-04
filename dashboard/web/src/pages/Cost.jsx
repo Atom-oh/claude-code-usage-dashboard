@@ -15,6 +15,7 @@ import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { groupsShown } from "../pivot.js";
+import { effortLabel, unclassifiedLabel } from "../labels.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -22,14 +23,14 @@ const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractio
 // unpriced는 row의 플래그이고, agent의 'main'은 화면에서 '메인 세션'으로 바뀐다.
 // 화면의 —(값 없음)는 CSV에서 빈 셀로 내보낸다 — 숫자 컬럼에 em-dash가 들어가면
 // 스프레드시트가 그 열을 통째로 텍스트로 승격시킨다.
-const modelCostText = (_v, r) => (r.unpriced ? "미산정" : usd(r.cost));
-const userCostText = (v, r) => (r.unpriced ? "미산정 포함" : usd(v));
+const modelCostText = (_v, r) => (r.unpriced ? "단가 미등록" : usd(r.cost));
+const userCostText = (v, r) => (r.unpriced ? "단가 미등록 포함" : usd(v));
 const agentLabel = (v) => (v === "main" ? "메인 세션" : v);
 // bedrock/enterprise로 나뉘는 도넛들(캐시 티어·토큰 타입·Effort)의 라벨 순서 — 그룹 색상 배정이
 // 데이터 등장 순서가 아니라 이 고정 순서를 따르게 한다(colors.js makeGroupBreakdownColorer).
 const TIER_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시 입력"];
 const TOKEN_TYPE_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "입력"];
-const EFFORT_LABEL_ORDER = ["medium", "high", "xhigh", "unknown"];
+const EFFORT_LABEL_ORDER = ["medium", "high", "xhigh", "미지정"];
 
 function foldModelRows(rows) {
   const totals = new Map();
@@ -113,7 +114,7 @@ export function groupTotalsText(groups, metric) {
   const fmtVal = (v) => (metric === "tokens" ? `${fmt(v)}토큰` : usd(v));
   return GROUP_SEGMENT_ORDER.map((g) => {
     const line = groupModelSegments(groups, g, metric);
-    return line ? `${g} ${fmtVal(line.total)}` : null;
+    return line ? `${unclassifiedLabel(g)} ${fmtVal(line.total)}` : null;
   })
     .filter(Boolean)
     .join(" · ");
@@ -133,12 +134,12 @@ function UserGroupModelBars({ groups, metric, max }) {
         <BarTip
           key={group}
           className="flex items-center gap-1.5"
-          label={`${group} ${fmtVal(line.total)} — ${line.segs.map((x) => `${x.model} ${fmtVal(x.value)}`).join(" · ")}`}
+          label={`${unclassifiedLabel(group)} ${fmtVal(line.total)} — ${line.segs.map((x) => `${x.model} ${fmtVal(x.value)}`).join(" · ")}`}
           tip={
             <span className="flex flex-col gap-0.5">
               <span className="flex items-center gap-1.5 font-semibold">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorFor(group) }} />
-                {group}
+                {unclassifiedLabel(group)}
                 <span className="tabular ml-auto pl-4">{fmtVal(line.total)}</span>
               </span>
               {line.segs.map((x) => (
@@ -175,7 +176,7 @@ function GroupShareLegend({ groups }) {
       {groups.map((g) => (
         <span key={g} className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: colorFor(g) }} />
-          {g}
+          {unclassifiedLabel(g)}
         </span>
       ))}
     </span>
@@ -269,9 +270,6 @@ export default function Cost() {
   // bedrock 카드에선 블루, enterprise 카드에선 틸로 다르게 보인다(groupModelColorFor). 모델
   // 정체성은 그 계열 안의 명도로 표현되지, 색조(hue)로 표현되지 않는다 — 그룹이 우선.
   const modelRowsFor = (group) => foldModelRows((byModel.data || []).filter((r) => r.group === group));
-  // 계열 이름은 색상 규칙(위)의 사람 설명이라 그룹별로 다르다 — 카드가 groupsShown으로
-  // 순회되므로 문구도 그룹에서 끌어온다.
-  const MODEL_DONUT_HUE = { bedrock: "블루 계열", enterprise: "틸 계열" };
 
   // 탭으로 그룹을 고르던 방식 대신 bedrock/enterprise 카드를 좌우로 분리 — 각 카드는 그 그룹만의 합계.
   function tokenTypeRowsFor(group) {
@@ -342,6 +340,7 @@ export default function Cost() {
   const effortRowsFor = (group) =>
     (effortMix.data || [])
       .filter((r) => r.group === group && Number(r.cost) > 0)
+      .map((r) => ({ ...r, effort: effortLabel(r.effort) }))
       .sort((a, b) => effortOrder(a.effort) - effortOrder(b.effort));
 
   // loc=0이어도 commits>0인 유저(라인 없이 커밋만 한 경우)는 $/커밋 컬럼에 값이 있으므로 테이블에서
@@ -355,7 +354,7 @@ export default function Cost() {
     <div>
       <PageHeader
         title="Cost"
-        subtitle="토큰 실측 × 모델 단가(캐시 읽기/쓰기 포함)로 계산한 비용. '보고 비용'은 Claude Code 텔레메트리가 자체 보고하는 근사치 — 비교용."
+        subtitle="토큰 사용량에 모델 단가를 적용해 계산한 비용"
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
@@ -369,21 +368,31 @@ export default function Cost() {
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatTile
-              label="계산 비용 (합계)"
+              label="총 비용"
               value={usd(totals.cost)}
               variant="accent"
-              hint={totals.unpricedTokens > 0 ? `미산정 모델 토큰 ${fmt(totals.unpricedTokens)}개` : `${summary.data.length}개 그룹`}
+              help="토큰 사용량에 모델 단가를 적용해 계산한 비용입니다. 미분류 채널의 사용량도 포함합니다. 수집된 사용량으로 계산한 비용이며 실제 청구액과 다를 수 있습니다."
+              hint={totals.unpricedTokens > 0 ? `단가 미등록 토큰 ${fmt(totals.unpricedTokens)}개 제외` : "선택 기간 합계"}
             />
-            <StatTile label="보고 비용 (Claude Code)" value={usd(totals.reported)} />
+            <StatTile
+              label="Claude Code 보고 비용"
+              value={usd(totals.reported)}
+              help="Claude Code가 자체 단가표로 계산해 보고한 비용입니다. 참고용이며 Claude Code 버전에 따라 총 비용과 차이가 날 수 있습니다."
+            />
             <StatTile label="입력 토큰" value={fmt(totals.input)} />
-            <StatTile label="출력 토큰" value={fmt(totals.output)} />
+            <StatTile label="출력 토큰" value={fmt(totals.output)} help="Thinking 토큰이 포함됩니다." />
             <StatTile label="캐시 읽기 토큰" value={fmt(totals.cacheRead)} />
             <StatTile label="캐시 쓰기 토큰" value={fmt(totals.cacheWrite)} />
             <StatTile label="세션" value={fmt(totals.sessions)} />
-            <StatTile label="30일 프로젝션" value={usd(projection30d)} hint="현재 기간 일평균 × 30" />
+            <StatTile
+              label="30일 예상 비용"
+              value={usd(projection30d)}
+              help="선택한 기간의 일평균 비용을 30일 기준으로 환산한 값입니다."
+              hint="선택 기간의 일평균을 30일로 환산"
+            />
             {/* developerCount/spendPerDeveloper는 activeUsers에서 나온다 — summary만 게이트하면
                 activeUsers가 아직 로딩 중이거나 에러여도 "$0 / 0명 기준"이 실제 값처럼 보인다. */}
-            <StatTile label="개발자당 지출" value={usd(spendPerDeveloper)} hint={spendPerDeveloperHint} />
+            <StatTile label="개발자당 비용" value={usd(spendPerDeveloper)} hint={spendPerDeveloperHint} />
             {/* A/B 비교용 — 총지출이 아니라 사용자당 평균이라야 그룹 간 사용자 수 차이가 상쇄된다.
                 전체(개발자당 지출)는 그룹 합이 아니다: 한 유저가 두 그룹에 걸칠 수 있어(세션 단위
                 판별, grouping.js) 전역 uniq 분모가 그룹 분모의 합보다 작을 수 있다. */}
@@ -400,14 +409,14 @@ export default function Cost() {
                 label={
                   <span className="inline-flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full" style={{ background: colorFor(g) }} />
-                    {`사용자당 평균 — ${g}`}
+                    {`사용자당 비용 — ${g}`}
                   </span>
                 }
                 value={usd(spendPerUserFor(g))}
                 hint={
                   model
-                    ? `${fmt(groupUserCount(g))}명 기준 — model 필터로 분자만 필터링됨(참고용)`
-                    : `${fmt(groupUserCount(g))}명 · 총 ${usd(groupCost(g))}`
+                    ? `사용자 ${fmt(groupUserCount(g))}명 기준, 모델 필터는 비용에만 적용`
+                    : `사용자 ${fmt(groupUserCount(g))}명 · 총 비용 ${usd(groupCost(g))}`
                 }
               />
             ))}
@@ -423,10 +432,9 @@ export default function Cost() {
             {groupsShown(groupMode, tiers.data).map((g) => (
               <DonutBreakdown
                 key={g}
-                title={`캐시 티어별 지출 — ${g}`}
-                subtitle={`캐시율(재사용률) ${(cacheRatioFor(g) * 100).toFixed(1)}% · 비캐시 입력 / 캐시 읽기 / 캐시 쓰기 / 출력${
-                  unpricedTokensFor(g) > 0 ? ` — 미산정 모델 토큰 ${fmt(unpricedTokensFor(g))}개는 제외` : ""
-                }`}
+                title={`토큰 유형별 비용 — ${g}`}
+                subtitle={unpricedTokensFor(g) > 0 ? `단가 미등록 토큰 ${fmt(unpricedTokensFor(g))}개 제외` : undefined}
+                help="캐시 읽기, 캐시 쓰기, 출력, 캐시되지 않은 입력 토큰에 각각의 단가를 적용한 비용입니다. 캐시율은 전체 입력 토큰 중 캐시에서 읽은 비율입니다."
                 right={<Badge tone="brand">캐시율 {(cacheRatioFor(g) * 100).toFixed(1)}%</Badge>}
                 data={tierRowsFor(g)}
                 nameKey="tier"
@@ -447,8 +455,8 @@ export default function Cost() {
             {groupsShown(groupMode, effortMix.data).map((g) => (
               <Card
                 key={g}
-                title={`Effort별 지출 — ${g}`}
-                subtitle="reasoning effort별 계산 비용(토큰 × 모델 단가) · 보고 비용(Claude Code cost.usage)은 대조용 · effort 미보고 세션은 unknown"
+                title={`Effort 수준별 비용 — ${g}`}
+                help="토큰 사용량에 모델 단가를 적용해 계산한 비용입니다. Claude Code가 직접 보고한 비용은 참고용으로 함께 표시하며, Claude Code 버전에 따라 차이가 날 수 있습니다. Effort 정보가 없는 세션은 미지정으로 묶입니다. Thinking 토큰은 출력 토큰에 포함됩니다."
               >
                 <DonutBody
                   data={effortRowsFor(g)}
@@ -459,7 +467,7 @@ export default function Cost() {
                 />
                 <ul className="mt-3 text-[12px] text-ink-400">
                   {effortRowsFor(g).map((r) => (
-                    <li key={r.effort}>{`${r.effort} · 계산 ${usd(r.cost)} · 보고 ${usd(r.reported_cost)}`}</li>
+                    <li key={r.effort}>{`${effortLabel(r.effort)}: ${usd(r.cost)} (Claude Code 보고값 ${usd(r.reported_cost)})`}</li>
                   ))}
                 </ul>
               </Card>
@@ -474,7 +482,7 @@ export default function Cost() {
             <ErrorBox error={byModel.error} />
           ) : (
             groupsShown(groupMode, byModel.data).map((g) => (
-              <Card key={g} title={`모델별 지출 비중 — ${g}`} subtitle={`${MODEL_DONUT_HUE[g] ?? "그룹 계열"} · 명도로 모델 구분(신버전일수록 진하게)`}>
+              <Card key={g} title={`모델별 비용 비중 — ${g}`}>
                 <DonutBody data={modelRowsFor(g)} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => groupModelColorFor(g, name)} />
               </Card>
             ))
@@ -490,7 +498,7 @@ export default function Cost() {
             groupsShown(groupMode, summary.data).map((g) => (
               <DonutBreakdown
                 key={g}
-                title={`토큰 타입별 비중 — ${g}`}
+                title={`토큰 유형별 사용량 — ${g}`}
                 data={tokenTypeRowsFor(g)}
                 nameKey="type"
                 valueKey="tokens"
@@ -506,7 +514,7 @@ export default function Cost() {
           <ErrorBox error={byModelDaily.error} />
         ) : (
           <SeriesBarChart
-            title="모델별 지출 추이"
+            title="모델별 비용 추이"
             right={
               <SegmentedControl
                 options={[
@@ -531,12 +539,13 @@ export default function Cost() {
         )}
 
         <DataTable
-          title="모델 · 지출 & 토큰"
-          subtitle="계산 비용 기준 정렬 · 이전 기간 대비는 현재와 동일한 길이의 직전 구간과 비교(1시간 미만 드래그 줌은 최소 1시간 창으로 비교됨)"
+          title="모델별 비용과 토큰"
+          subtitle="비용 기준 정렬"
+          help="이전 기간 대비는 선택한 기간과 같은 길이의 직전 기간과 비교한 값입니다."
           columns={[
             { key: "model", label: "모델" },
-            { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)), toText: modelCostText },
-            { key: "reportedCost", label: "보고 비용", render: usd },
+            { key: "cost", label: "비용", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">단가 미등록</Badge> : usd(r.cost)), toText: modelCostText },
+            { key: "reportedCost", label: "Claude Code 보고값", render: usd },
             {
               key: "share",
               label: "전체 대비",
@@ -578,13 +587,14 @@ export default function Cost() {
           <ErrorBox error={agentCost.error} />
         ) : (
           <DataTable
-            title="에이전트별 지출"
-            subtitle="계산 비용(토큰 × 단가) 상위 15개 · 보고 비용은 대조용 — 에이전트 미지정(메인 세션) 지출 포함"
+            title="에이전트별 비용"
+            subtitle="비용 상위 15개"
+            help="에이전트가 지정되지 않은 사용량은 메인 세션으로 표시합니다. Claude Code 보고값은 참고용이며 Claude Code 버전에 따라 차이가 날 수 있습니다."
             columns={[
               { key: "agent", label: "에이전트", render: agentLabel, toText: agentLabel },
-              { key: "group", label: "그룹" },
-              { key: "cost", label: "지출(계산)", render: usd },
-              { key: "reported_cost", label: "보고 비용", render: usd },
+              { key: "group", label: "채널" },
+              { key: "cost", label: "비용", render: usd },
+              { key: "reported_cost", label: "Claude Code 보고값", render: usd },
               { key: "tokens", label: "토큰", render: fmt },
             ]}
             rows={(agentCost.data || []).slice(0, 15)}
@@ -598,8 +608,9 @@ export default function Cost() {
           <ErrorBox error={byUserModel.error} />
         ) : (
           <SeriesBarChart
-            title={`Top ${topN} — 지출 유저`}
-            subtitle="계산 비용 기준 · 모델별 스택"
+            title={`비용 상위 사용자 ${topN}명`}
+            subtitle="모델별 비용 구성"
+            help="미분류 채널의 사용량과 단가 미등록 모델의 토큰은 제외됩니다."
             right={
               <SegmentedControl
                 options={[10, 20, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
@@ -625,17 +636,22 @@ export default function Cost() {
           <ErrorBox error={byUserModelTable.error} />
         ) : (
           <DataTable
-            title="사용자 · 모델별 지출"
+            title="사용자 · 모델별 비용"
             // single 모드에선 그룹 줄 구분이 무의미해 막대를 빼므로 부제도 막대/범례를 말하지 않는다.
             subtitle={
               groupMode === "single" ? (
-                "계산 비용 기준 정렬 · 사용자 단위 병합"
+                "사용자 단위로 합산"
               ) : (
                 <span className="inline-flex flex-wrap items-center gap-x-1.5">
-                  계산 비용 기준 정렬 · 사용자 단위 병합(단가표 밖 모델은 $0 처리) · 숫자 옆 두 줄 = 그룹(줄 머리 점), 색 분할 = 모델 — hover로 모델별 값
+                  사용자 단위로 합산 · 막대의 줄은 채널, 색은 모델
                   <GroupShareLegend groups={shareGroups} />
                 </span>
               )
+            }
+            help={
+              groupMode === "single"
+                ? "미분류 채널은 기본으로 제외되며 체크박스로 포함할 수 있습니다."
+                : "같은 사용자가 두 채널을 모두 사용한 경우 한 행으로 합칩니다. 비용 옆 막대의 각 줄은 채널, 색은 모델이며 마우스를 올리면 모델별 값이 보입니다. 단가 미등록 모델은 비용 0으로 계산합니다. 미분류 채널은 기본으로 제외되며 체크박스로 포함할 수 있습니다."
             }
             right={
               <label className="flex items-center gap-1.5 text-[12px] text-ink-600 select-none cursor-pointer">
@@ -645,7 +661,7 @@ export default function Cost() {
                   onChange={(e) => setIncludeUnknown(e.target.checked)}
                   className="h-3.5 w-3.5 rounded border-ink-200 accent-brand-500"
                 />
-                unknown 그룹 포함
+                미분류 포함
               </label>
             }
             columns={[
@@ -654,7 +670,7 @@ export default function Cost() {
               // 이 막대(색 분할)와 hover가 나른다. single 모드에선 그룹 줄이 하나뿐이라 숫자만.
               {
                 key: "cost",
-                label: "지출 (계산)",
+                label: "비용",
                 render: (_v, r) => (
                   <span className="inline-flex items-center gap-3">
                     <span className="min-w-[4.5rem]">{usd(r.cost)}</span>
@@ -666,7 +682,7 @@ export default function Cost() {
                   return split ? `${usd(r.cost)} — ${split}` : usd(r.cost);
                 },
               },
-              { key: "reported_cost", label: "보고 비용", render: usd },
+              { key: "reported_cost", label: "Claude Code 보고값", render: usd },
               {
                 key: "tokens",
                 label: "토큰",
@@ -694,12 +710,13 @@ export default function Cost() {
         ) : (
           <DataTable
             title="비용 효율 ($/LOC · $/커밋)"
-            subtitle="라인당 계산 비용이 낮은 순 — 성과 평가가 아니라 비용 신호"
+            subtitle="코드 라인당 비용이 낮은 순"
+            help="추가된 코드 라인과 커밋 수로 비용을 나눈 값입니다. 개인 성과 평가가 아닌 비용 참고 지표입니다. 단가 미등록 모델을 사용한 사용자는 맨 아래에 표시됩니다."
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
-              { key: "group", label: "그룹" },
-              { key: "cost", label: "지출 (계산)", render: (v, r) => (r.unpriced ? <Badge tone="neutral">미산정 포함</Badge> : usd(v)), toText: userCostText },
-              { key: "loc", label: "추가 라인", render: fmt },
+              { key: "group", label: "채널" },
+              { key: "cost", label: "비용", render: (v, r) => (r.unpriced ? <Badge tone="neutral">단가 미등록 포함</Badge> : usd(v)), toText: userCostText },
+              { key: "loc", label: "추가 코드 라인", render: fmt },
               { key: "commits", label: "커밋", render: fmt },
               { key: "cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "—" : `$${v.toFixed(4)}`) },
               { key: "cost_per_commit", label: "$/커밋", render: (v) => (v == null ? "—" : usd(v)) },

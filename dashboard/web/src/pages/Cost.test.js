@@ -69,5 +69,5 @@ test("groupTotalsText: 그룹 합계만 — CSV/툴팁용", () => {
   expect(groupTotalsText(a.groups, "cost")).toBe("bedrock $15.34 · enterprise $7.21");
   const b = merged.find((r) => r.user === "b@x.com");
   expect(groupTotalsText(b.groups, "cost")).toBe("");
-  expect(groupTotalsText(b.groups, "tokens")).toBe("bedrock 700토큰 · unknown 300토큰");
+  expect(groupTotalsText(b.groups, "tokens")).toBe("bedrock 700토큰 · 미분류 300토큰");
 });
