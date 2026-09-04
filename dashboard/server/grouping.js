@@ -2,7 +2,9 @@
 //
 // Workshop Studio 시나리오에서는 EXPERIMENT_GROUP 환경변수를 EC2에 정적으로 심을 수 없다
 // (같은 이미지, 참가자가 로그인 방식을 선택). 그래서 텔레메트리 값으로 사후 판별한다:
-//   1순위 — 유저가 실제로 호출한 model 이름이 Bedrock 스타일(anthropic. 포함 또는 ':' 포함)이면 bedrock
+//   1순위 — 유저가 실제로 호출한 model 이름이 bare "claude-*"가 아니면 bedrock (Enterprise는
+//           bare claude-*만 낼 수 있음 — Bedrock ID는 [global.|us.|eu.|apac.]anthropic.* /
+//           anthropic.*(인리전) / -vN:M 접미사 / 비-Anthropic 프로바이더(openai., xai. 등))
 //   2순위 — model 정보가 없으면 organization.id 존재 여부로 enterprise 추정
 //   그 외 — unknown
 //
@@ -24,12 +26,22 @@
 // 쿼리 앞에 붙는데 시간 조건이 없어서(세션의 그룹은 창 밖 행으로 판별될 수 있음) 원본 기준으론
 // 쿼리마다 전체 테이블 풀스캔이었다(실측 2026-07-10: 9.5M행, 쿼리당 read_rows 26M의 주요 지분).
 // rollup은 ~86x 작고 organization.id 존재 여부가 has_org로 미리 접혀 있어 무제한 스캔이 저렴하다.
+// 실측 확인(2026-09-04): Bedrock은 비-Anthropic 모델도 서빙한다 — 라이브에 global.openai.gpt-5.6-sol,
+// global.xai.grok-4.6, moonshotai.kimi-k2.5, zai.glm-5, deepseek.v3.2, devstral-small-2,
+// minimax.minimax-m2.5, gemma-4-31b-vllm, qwen.qwen3-coder-next 9종이 존재하는데 전부
+// 'anthropic.' 미포함·':' 미포함이라 예전 1순위 조건에 안 걸렸다(그 결과 32세션이 unknown,
+// 2세션은 has_org 신호에 밀려 enterprise로 오분류). Enterprise(Claude 로그인)는 bare
+// "claude-*" 형태만 낼 수 있으므로(실측: has_org 세션의 모델은 전부 claude-* 또는
+// [global.|us.]anthropic.* — 후자는 resume으로 인증이 섞인 세션), bedrock 판별은
+// "빈 값이 아니고 claude-로 시작하지 않는 모델이 하나라도 있으면"으로 잡는다. 이 조건은
+// [1m] 접미사(claude-fable-5[1m])는 통과시키고, anthropic./us.anthropic./global.anthropic./
+// ':' 버전 접미사/비-Anthropic 프로바이더를 전부 포섭한다(예전 조건의 상위집합).
 export const GROUP_CTE = `
 WITH session_group AS (
     SELECT
         SessionId,
         multiIf(
-            countIf(Model LIKE '%anthropic.%' OR Model LIKE '%:%') > 0, 'bedrock',
+            countIf(Model != '' AND NOT startsWith(Model, 'claude-')) > 0, 'bedrock',
             max(has_org) = 1, 'enterprise',
             'unknown'
         ) AS grp
