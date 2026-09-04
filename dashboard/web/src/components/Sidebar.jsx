@@ -4,14 +4,14 @@ import { cn } from "../cn.js";
 
 // ../awsops web/components/shell/Sidebar.tsx 포팅 (256px, 고정 nav — 계정/리전 셀렉터 등은 해당 없음).
 export const NAV = [
-  { to: "/", label: "Overview", hint: "KPI 및 요약", icon: LayoutDashboard, exact: true },
-  { to: "/exec", label: "Executive", hint: "경영 보고용 원페이지", icon: Briefcase },
-  { to: "/trends", label: "Trends", hint: "DAU / WAU / MAU", icon: LineChart },
-  { to: "/productivity", label: "Productivity", hint: "토큰 정규화 생산성", icon: TrendingUp },
+  { to: "/", label: "Overview", hint: "핵심 지표 요약", icon: LayoutDashboard, exact: true },
+  { to: "/exec", label: "Executive", hint: "경영진 보고 요약", icon: Briefcase },
+  { to: "/trends", label: "Trends", hint: "활성 사용자 추이", icon: LineChart },
+  { to: "/productivity", label: "Productivity", hint: "생산성 지표", icon: TrendingUp },
   { to: "/usage", label: "Usage", hint: "Tool / MCP / Skill", icon: Wrench },
-  { to: "/users", label: "Users", hint: "유저별 생산성", icon: UsersIcon },
-  { to: "/cost", label: "Cost", hint: "토큰 · 모델별 비용(근사치)", icon: DollarSign },
-  { to: "/reliability", label: "Reliability", hint: "refusal/재시도 · 버전 무결성", icon: ShieldAlert },
+  { to: "/users", label: "Users", hint: "사용자별 생산성", icon: UsersIcon },
+  { to: "/cost", label: "Cost", hint: "토큰 사용량과 모델별 비용", icon: DollarSign },
+  { to: "/reliability", label: "Reliability", hint: "오류·재시도와 버전 현황", icon: ShieldAlert },
   { to: "/analytics", label: "Analytics", hint: "AI 분석 에이전트", icon: Sparkles },
 ];
 
@@ -60,7 +60,7 @@ export function Sidebar() {
       <div className="mt-4 border-t border-chrome-border pt-3">
         <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-chrome-fg-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-positive" />
-          <span>bedrock vs enterprise · 자동 판별</span>
+          <span>채널(bedrock / enterprise)은 세션별로 자동 판별</span>
         </div>
       </div>
     </aside>

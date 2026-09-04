@@ -35,10 +35,10 @@ test("single 모드에서는 채널 컨트롤이 통째로 사라진다", () => 
   expect(screen.queryByText("전체")).toBeNull();
 });
 
-test("single 모드에서도 유저/모델 검색 입력창은 그대로 렌더된다", () => {
+test("single 모드에서도 사용자/모델 검색 입력창은 그대로 렌더된다", () => {
   mount(cfg({ groupMode: "single" }));
-  expect(screen.getByPlaceholderText("유저 검색...")).toBeTruthy();
-  expect(screen.getByPlaceholderText("모델 검색...")).toBeTruthy();
+  expect(screen.getByPlaceholderText("사용자 검색")).toBeTruthy();
+  expect(screen.getByPlaceholderText("모델 검색")).toBeTruthy();
 });
 
 test("ConfigProvider가 없어도 기본값(ab)이라 채널 컨트롤이 보인다", () => {

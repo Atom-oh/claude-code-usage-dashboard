@@ -19,8 +19,8 @@ export default function FreshnessBanner({ className }) {
 
   const message =
     status === "stale"
-      ? `텔레메트리 수신이 멈춘 것으로 보입니다 — 마지막 데이터 ${formatAge(ageMinutes)} 전 (임계 ${staleAfterMinutes}분). 수집기(otelcol systemd 서비스)와 ClickHouse 쓰기 상태를 확인하세요 — docs/runbooks/incident-response.md §3.`
-      : "데이터 신선도를 확인할 수 없습니다 — /api/health/data가 응답하지 않습니다(ClickHouse 연결 확인).";
+      ? `${staleAfterMinutes}분 넘게 새 텔레메트리가 수신되지 않았습니다. 마지막 데이터는 ${formatAge(ageMinutes)} 전에 수신되었습니다. 텔레메트리 수집기가 실행 중인지 확인하세요.`
+      : "데이터 수신 상태를 확인할 수 없습니다. 텔레메트리 수집기와 서버 연결 상태를 확인하세요.";
 
   return (
     <div

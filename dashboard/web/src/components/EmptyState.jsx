@@ -24,10 +24,10 @@ export default function EmptyState({ className }) {
     >
       <Inbox size={15} className="mt-0.5 shrink-0 text-ink-400" aria-hidden="true" />
       <div className="text-[13px] leading-relaxed text-ink-400">
-        <div>{neverCollected ? "아직 수집된 텔레메트리가 없습니다" : "선택한 기간에 데이터가 없습니다"}</div>
+        <div>{neverCollected ? "아직 수집된 데이터가 없습니다." : "선택한 기간에 데이터가 없습니다."}</div>
         {neverCollected && (
           <div className="mt-0.5 text-[12px]">
-            README의 Telemetry Ingestion 절에서 collector 상태를 확인하세요
+            텔레메트리 수집기가 실행 중인지 확인하세요.
           </div>
         )}
       </div>

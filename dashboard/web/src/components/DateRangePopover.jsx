@@ -42,7 +42,7 @@ export function DateRangePopover() {
 
   const apply = () => {
     if (!fromStr || !toStr) {
-      setErr("시작일과 종료일을 모두 골라주세요");
+      setErr("시작일과 종료일을 모두 선택하세요");
       return;
     }
     const [y1, m1, d1] = fromStr.split("-").map(Number);

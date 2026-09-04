@@ -28,13 +28,13 @@ export function FilterBar() {
       <input
         value={userInput}
         onChange={(e) => setUser(e.target.value)}
-        placeholder="유저 검색..."
+        placeholder="사용자 검색"
         className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
       />
       <input
         value={modelInput}
         onChange={(e) => setModel(e.target.value)}
-        placeholder="모델 검색..."
+        placeholder="모델 검색"
         className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
       />
       <RefreshControl className="ml-auto" />

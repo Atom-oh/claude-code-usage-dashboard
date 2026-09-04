@@ -48,7 +48,7 @@ function CellBar({ value, max, color }) {
   );
 }
 
-export function DataTable({ columns, rows, groupKey = "group", title, subtitle, right, onRowClick, exportName }) {
+export function DataTable({ columns, rows, groupKey = "group", title, subtitle, help, right, onRowClick, exportName }) {
   const [sort, setSort] = useState(null);
 
   const sortedRows = useMemo(() => {
@@ -92,14 +92,14 @@ export function DataTable({ columns, rows, groupKey = "group", title, subtitle, 
 
   if (!rows || rows.length === 0) {
     return (
-      <Card title={title} subtitle={subtitle} right={rightWithExport} padded={false}>
+      <Card title={title} subtitle={subtitle} help={help} right={rightWithExport} padded={false}>
         <EmptyState className="m-3" />
       </Card>
     );
   }
 
   return (
-    <Card title={title} subtitle={subtitle} right={rightWithExport} padded={false}>
+    <Card title={title} subtitle={subtitle} help={help} right={rightWithExport} padded={false}>
       <div className="overflow-x-auto">
         <table className="w-full text-[14px]">
           <thead>

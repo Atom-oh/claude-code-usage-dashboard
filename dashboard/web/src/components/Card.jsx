@@ -1,14 +1,20 @@
+import { Info } from "lucide-react";
 import { cn } from "../cn.js";
 
 // ../awsops web/components/ui/Card.tsx 포팅 — white surface, ink-100 hairline, radius-lg, shadow-card.
-export function Card({ children, title, subtitle, right, padded = true, className }) {
+export function Card({ children, title, subtitle, help, right, padded = true, className }) {
   const hasHeader = title != null || subtitle != null || right != null;
   return (
     <div className={cn("bg-card border border-ink-100 rounded-lg shadow-card overflow-hidden", className)}>
       {hasHeader && (
         <div className="flex items-start justify-between gap-4 px-4 pt-4 pb-3 border-b border-ink-100">
           <div className="min-w-0">
-            {title != null && <div className="text-[14px] font-semibold text-ink-800 truncate">{title}</div>}
+            {title != null && (
+              <div className="flex items-center gap-1 min-w-0">
+                <div className="text-[14px] font-semibold text-ink-800 truncate">{title}</div>
+                {help && <Info size={12} className="shrink-0 text-ink-400" title={help} aria-label={help} />}
+              </div>
+            )}
             {subtitle != null && <div className="text-[12px] text-ink-500 mt-0.5">{subtitle}</div>}
           </div>
           {right != null && <div className="shrink-0">{right}</div>}
@@ -24,5 +30,5 @@ export function Loading() {
 }
 
 export function ErrorBox({ error }) {
-  return <div className="text-negative text-sm">오류: {error.message}</div>;
+  return <div className="text-negative text-sm" title={error.message}>데이터를 불러오지 못했습니다.</div>;
 }

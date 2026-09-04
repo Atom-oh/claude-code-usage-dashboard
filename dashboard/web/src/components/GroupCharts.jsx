@@ -83,12 +83,12 @@ function useDragZoom(yAxisId, bucketHoursOverride) {
 }
 
 // 시계열, 그룹별 area 하나씩 — ../awsops AreaTrend와 같은 그라디언트 기법, 그룹 색상만 다중.
-export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours }) {
+export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours }) {
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours);
   if ((rows || []).length === 0) {
     return (
-      <Card title={title} subtitle={subtitle} right={right}>
+      <Card title={title} subtitle={subtitle} help={help} right={right}>
         <EmptyState />
       </Card>
     );
@@ -96,7 +96,7 @@ export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, h
   const data = pivotByGroup(rows, xKey, valueKey);
   const groups = groupsPresent(rows);
   return (
-    <Card title={title} subtitle={subtitle} right={right}>
+    <Card title={title} subtitle={subtitle} help={help} right={right}>
       <ResponsiveContainer width="100%" height={height} className={zoom.className}>
         <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} {...zoom.handlers}>
           <defs>
@@ -124,11 +124,11 @@ export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, h
 
 // 그룹 간 단일 지표 비교 — 소수 카테고리 막대 비교. colorFn(row)이 없으면 그룹 색상을 그대로 씀
 // (accept/reject처럼 "상태"가 카테고리인 경우엔 colorFn으로 status 팔레트를 넘긴다).
-export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", valueKey, height = 220, colorFn }) {
+export function GroupBarChart({ title, subtitle, help, right, rows, xKey = "group", valueKey, height = 220, colorFn }) {
   const c = useChartColors();
   if ((rows || []).length === 0) {
     return (
-      <Card title={title} subtitle={subtitle} right={right}>
+      <Card title={title} subtitle={subtitle} help={help} right={right}>
         <EmptyState />
       </Card>
     );
@@ -136,7 +136,7 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
   const data = rows || [];
   const fill = colorFn || ((r) => colorFor(r.group));
   return (
-    <Card title={title} subtitle={subtitle} right={right}>
+    <Card title={title} subtitle={subtitle} help={help} right={right}>
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={data} margin={{ left: 8, right: 8 }}>
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
@@ -158,7 +158,7 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
 // horizontal: 카테고리가 많거나(예: 유저 20명) 라벨이 길 때(이메일) 세로 막대는 라벨이 겹치거나
 // 다 안 보인다 — Recharts의 layout="vertical"(막대는 가로)로 뒤집고 카테고리 축을 Y로 옮긴다.
 // 드래그 줌은 카테고리 축이 날짜가 아니면 어차피 no-op이라 orientation과 무관하게 그대로 둔다.
-export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort }) {
+export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort }) {
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours);
   // 엠퍼시스(dataviz: "한 시리즈가 주인공이면 나머지는 회색") — 범례 클릭으로 강조 대상을
@@ -167,7 +167,7 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
   const [focus, setFocus] = useState(null);
   if ((rows || []).length === 0) {
     return (
-      <Card title={title} subtitle={subtitle} right={right}>
+      <Card title={title} subtitle={subtitle} help={help} right={right}>
         <EmptyState />
       </Card>
     );
@@ -179,7 +179,7 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
   const h = height ?? (horizontal ? Math.max(220, data.length * 28) : 260);
   return (
-    <Card title={title} subtitle={subtitle} right={right}>
+    <Card title={title} subtitle={subtitle} help={help} right={right}>
       <ResponsiveContainer width="100%" height={h} className={zoom.className}>
         <BarChart data={data} layout={horizontal ? "vertical" : "horizontal"} margin={{ left: horizontal ? 8 : 8, right: 8 }} {...zoom.handlers}>
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} horizontal={!horizontal} vertical={horizontal} />
@@ -257,13 +257,13 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, showXAxis,
   );
 }
 
-export function DualLineChart({ title, subtitle, right, rows, xKey, lines, height = 240, tickFormatter, bucketHours }) {
+export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, bucketHours }) {
   const c = useChartColors();
   const zoomTop = useDragZoom(undefined, bucketHours);
   const zoomBottom = useDragZoom(undefined, bucketHours);
   if ((rows || []).length === 0) {
     return (
-      <Card title={title} subtitle={subtitle} right={right}>
+      <Card title={title} subtitle={subtitle} help={help} right={right}>
         <EmptyState />
       </Card>
     );
@@ -275,7 +275,7 @@ export function DualLineChart({ title, subtitle, right, rows, xKey, lines, heigh
   const panels = [top, bottom].filter((p) => p.length > 0);
   const panelH = Math.max(96, Math.floor((height - 8) / panels.length));
   return (
-    <Card title={title} subtitle={subtitle} right={right}>
+    <Card title={title} subtitle={subtitle} help={help} right={right}>
       <div className="space-y-1">
         {panels.map((panelLines, pi) => (
           <div key={pi}>
@@ -383,9 +383,9 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", co
 }
 
 // ../awsops DonutBreakdown 포팅 — innerRadius 55/outerRadius 80, 중앙 합계 라벨 + 사이드 범례.
-export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey, valuePrefix = "", colorOf }) {
+export function DonutBreakdown({ title, subtitle, help, right, data, nameKey, valueKey, valuePrefix = "", colorOf }) {
   return (
-    <Card title={title} subtitle={subtitle} right={right}>
+    <Card title={title} subtitle={subtitle} help={help} right={right}>
       <DonutBody data={data} nameKey={nameKey} valueKey={valueKey} valuePrefix={valuePrefix} colorOf={colorOf} />
     </Card>
   );
@@ -444,10 +444,10 @@ export function DumbbellChart({ title, subtitle, right, data, valuePrefix = "", 
 
 // ../awsops HBarList 포팅 — recharts 아님, label / 트랙+채움 / 우측 정렬 금액의 단순 flex 리스트.
 // color: 지정하면 채움 막대를 브랜드색 대신 그 색으로(예: 그룹별로 나란히 놓은 카드에서 colorFor(group)).
-export function HBarList({ title, subtitle, right, data, labelKey, valueKey, valuePrefix = "", color }) {
+export function HBarList({ title, subtitle, help, right, data, labelKey, valueKey, valuePrefix = "", color }) {
   if ((data || []).length === 0) {
     return (
-      <Card title={title} subtitle={subtitle} right={right}>
+      <Card title={title} subtitle={subtitle} help={help} right={right}>
         <EmptyState />
       </Card>
     );
@@ -456,7 +456,7 @@ export function HBarList({ title, subtitle, right, data, labelKey, valueKey, val
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
 
   return (
-    <Card title={title} subtitle={subtitle} right={right}>
+    <Card title={title} subtitle={subtitle} help={help} right={right}>
       <ul className="space-y-2.5">
         {data.map((d, i) => {
           const n = Number(d[valueKey]) || 0;
