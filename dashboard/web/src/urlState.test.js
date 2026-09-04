@@ -38,8 +38,10 @@ describe("urlState", () => {
 
   test("garbage falls back to the default", () => {
     // days=3 is a valid integer that is not an offered preset -- accepting an arbitrary
-    // integer would let a link request a range the picker cannot represent.
-    for (const qs of ["days=abc", "days=0", "days=3", "days="]) {
+    // integer would let a link request a range the picker cannot represent. days=14/90 were
+    // offered presets until the picker was cut to 1/2/7/30, so old links now fall back
+    // exactly like days=3.
+    for (const qs of ["days=abc", "days=0", "days=3", "days=14", "days=90", "days="]) {
       const parsed = parseUrlState(new URLSearchParams(qs), { defaultDays: 2 });
       expect(parsed.range.days).toBe(2);
     }
@@ -89,5 +91,44 @@ describe("urlState", () => {
   test("user is dropped on the way in too, while masking is on", () => {
     const parsed = parseUrlState(new URLSearchParams("user=a%40x.com"), { piiMask: true });
     expect(parsed.filters.user).toBe("");
+  });
+
+  test("period=month round trip", () => {
+    const p = serializeUrlState({
+      range: { days: 7, custom: null, month: true },
+      filters: {},
+      piiMask: true,
+    });
+    expect(p.get("period")).toBe("month");
+    expect(p.has("days")).toBe(false);
+    const parsed = parseUrlState(p);
+    expect(parsed.range.month).toBe(true);
+  });
+
+  test("period=garbage is not month", () => {
+    const parsed = parseUrlState(new URLSearchParams("period=garbage"));
+    expect(parsed.range.month).toBe(false);
+  });
+
+  test("from/to together with period=month -- custom wins", () => {
+    const parsed = parseUrlState(
+      new URLSearchParams("from=2026-08-01T00:00:00.000Z&to=2026-08-08T00:00:00.000Z&period=month")
+    );
+    expect(parsed.range.custom).not.toBe(null);
+    expect(parsed.range.month).toBe(false);
+  });
+
+  test("custom range with both bounds on UTC midnight is a calendar pick", () => {
+    const parsed = parseUrlState(
+      new URLSearchParams("from=2026-09-01T00:00:00.000Z&to=2026-09-05T00:00:00.000Z")
+    );
+    expect(parsed.range.custom.source).toBe("calendar");
+  });
+
+  test("custom range with bounds off UTC midnight is a zoom pick", () => {
+    const parsed = parseUrlState(
+      new URLSearchParams("from=2026-09-01T03:15:00.000Z&to=2026-09-01T07:45:00.000Z")
+    );
+    expect(parsed.range.custom.source).toBe("zoom");
   });
 });
