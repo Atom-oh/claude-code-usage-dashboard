@@ -1,6 +1,7 @@
 import { useConfig } from "../ConfigContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "./SegmentedControl.jsx";
+import { RefreshControl } from "./RefreshControl.jsx";
 
 const GROUP_OPTIONS = [
   { value: "", label: "전체" },
@@ -36,6 +37,7 @@ export function FilterBar() {
         placeholder="모델 검색..."
         className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
       />
+      <RefreshControl className="ml-auto" />
     </div>
   );
 }
