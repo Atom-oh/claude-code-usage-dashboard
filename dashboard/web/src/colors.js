@@ -14,6 +14,12 @@ export const GROUP_COLOR = {
 
 export const GROUP_ORDER = ["bedrock", "enterprise"];
 
+// 한 행 안에서 그룹 세그먼트를 나란히 그리는 자리(스택 바와 그 범례)의 고정 순서.
+// GROUP_ORDER는 "어떤 그룹에 카드를 줄지"를 답하는 상수라 unknown이 없어 여기엔 못 쓴다 —
+// unknown 행이 실제로 오는 뷰(Cost 페이지의 'unknown 그룹 포함' 체크)에서는 세 번째 세그먼트가
+// 필요하다. 색상은 GROUP_COLOR가, 순서는 이 상수가 소유한다.
+export const GROUP_SEGMENT_ORDER = [...GROUP_ORDER, "unknown"];
+
 export function colorFor(group) {
   return GROUP_COLOR[group] || GROUP_COLOR.unknown;
 }

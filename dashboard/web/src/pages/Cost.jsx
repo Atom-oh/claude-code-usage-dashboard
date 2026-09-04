@@ -12,7 +12,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
-import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer } from "../colors.js";
+import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { groupsShown } from "../pivot.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -52,17 +52,77 @@ function foldModelRows(rows) {
 // 병합 키에 model이 들어가므로 unpriced는 병합 조각끼리 항상 동일하다(같은 정규화 모델 = 같은 단가표 상태).
 // 랭킹(기본 뷰)과 표시용 테이블(unknown 포함 전환 가능)이 서로 다른 응답을 같은 규칙으로
 // 접어야 해서 함수로 분리했다.
-function mergeUserModelRows(rows) {
+// groups는 병합으로 버려지던 그룹 축을 행 안에 보존한 것 — 합계 컬럼들은 그대로 두고 "그룹 비중"
+// 막대만 이걸 읽는다(순수 추가). Cost.test.js가 import하므로 export다.
+export function mergeUserModelRows(rows) {
   return [...rows
     .reduce((m, r) => {
       const k = `${r.user}|${r.model}`;
-      const acc = m.get(k) || { user: r.user, model: r.model, unpriced: r.unpriced, cost: r.cost === null ? null : 0, reported_cost: 0, tokens: 0 };
+      const acc = m.get(k) || { user: r.user, model: r.model, unpriced: r.unpriced, cost: r.cost === null ? null : 0, reported_cost: 0, tokens: 0, groups: {} };
       if (acc.cost !== null) acc.cost += Number(r.cost);
       acc.reported_cost += Number(r.reported_cost || 0);
       acc.tokens += Number(r.tokens || 0);
+      // 미산정 행은 r.cost가 null이라 그룹 cost도 0으로만 누적된다 — 그래서 비중 기준이
+      // 토큰으로 내려간다(groupShareBasis). 응답에 없는 그룹 키는 만들지 않는다.
+      const g = acc.groups[r.group] || (acc.groups[r.group] = { cost: 0, tokens: 0 });
+      g.cost += Number(r.cost || 0);
+      g.tokens += Number(r.tokens || 0);
       return m.set(k, acc);
     }, new Map())
     .values()];
+}
+
+// 비중 막대의 기준 축 선택 — 계산 비용이 있으면 cost, 미산정 모델(cost null이라 그룹 cost가
+// 전부 0)이면 tokens로 내려간다. 세그먼트 순서는 등장 순서가 아니라 GROUP_SEGMENT_ORDER 고정:
+// enterprise를 먼저 쓴 행과 bedrock을 먼저 쓴 행의 막대가 좌우로 뒤집히면 비교가 안 된다.
+function groupShareBasis(groups) {
+  const present = GROUP_SEGMENT_ORDER.filter((g) => groups?.[g]);
+  const costTotal = present.reduce((s, g) => s + Number(groups[g].cost || 0), 0);
+  const key = costTotal > 0 ? "cost" : "tokens";
+  const segments = present.map((g) => ({ group: g, value: Number(groups[g][key] || 0) })).filter((s) => s.value > 0);
+  return { key, total: segments.reduce((s, x) => s + x.value, 0), segments };
+}
+
+// 막대의 title 툴팁과 CSV 셀이 같은 문자열을 쓴다 — toCsv는 render를 절대 호출하지 않으므로
+// (csv.js) toText가 없으면 이 컬럼은 CSV에서 빈 칸이 된다. 기준이 토큰일 때는 $가 없어 무슨
+// 수인지 알 수 없으니 단위를 붙인다.
+export function groupShareText(groups) {
+  const { key, total, segments } = groupShareBasis(groups);
+  if (!total) return "";
+  return segments
+    .map((s) => `${s.group} ${key === "cost" ? usd(s.value) : `${fmt(s.value)}토큰`} (${Math.round((s.value / total) * 100)}%)`)
+    .join(" · ");
+}
+
+function GroupShareBar({ groups }) {
+  const { total, segments } = groupShareBasis(groups);
+  // 기준값이 아예 없는 행은 이 표의 다른 파생 컬럼과 같은 —(값 없음) 표기 — CSV는 빈 칸이다.
+  if (!total) return <span className="text-ink-400">—</span>;
+  return (
+    <div className="flex h-2 w-full min-w-[96px] overflow-hidden rounded-full bg-ink-100" title={groupShareText(groups)}>
+      {segments.map((s) => (
+        // 0.x%짜리 조각도 최소 1px은 보이게 — 안 그러면 소액 그룹이 막대에서 사라지고 툴팁만
+        // 진실을 말한다.
+        <span key={s.group} style={{ width: `${(s.value / total) * 100}%`, minWidth: "1px", background: colorFor(s.group) }} />
+      ))}
+    </div>
+  );
+}
+
+// 범례는 DataTable의 right 슬롯이 아니라 subtitle에 넣는다 — right에는 이미 'unknown 그룹 포함'
+// 체크박스가 있고 DataTable이 거기에 CSV 버튼까지 shrink-0로 감싸므로, 세 번째 항목을 넣으면
+// 좁은 폭에서 카드 헤더가 넘친다.
+function GroupShareLegend({ groups }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      {groups.map((g) => (
+        <span key={g} className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: colorFor(g) }} />
+          {g}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 export default function Cost() {
@@ -123,6 +183,9 @@ export default function Cost() {
 
   const mergedUserModel = mergeUserModelRows(byUserModel.data || []);
   const userModelRows = mergeUserModelRows(byUserModelTable.data || []).sort((a, b) => (b.cost || 0) - (a.cost || 0));
+  // 범례는 실제로 등장한 그룹만 — 'unknown 그룹 포함'을 켰는데 unknown 행이 없으면 unknown 점을
+  // 띄우지 않는다(막대에도 안 나오므로 범례에도 없어야 한다).
+  const shareGroups = GROUP_SEGMENT_ORDER.filter((g) => userModelRows.some((r) => r.groups?.[g]));
 
   const userTotals = new Map();
   for (const r of mergedUserModel) {
@@ -504,7 +567,17 @@ export default function Cost() {
         ) : (
           <DataTable
             title="사용자 · 모델별 지출"
-            subtitle="계산 비용 기준 정렬 · 그룹 무관 user×model 병합 — 그룹별로 보려면 상단 필터 사용"
+            // single 모드에선 '그룹 비중' 컬럼 자체가 없으므로 부제도 막대/범례를 말하지 않는다.
+            subtitle={
+              groupMode === "single" ? (
+                "계산 비용 기준 정렬 · 그룹 무관 user×model 병합"
+              ) : (
+                <span className="inline-flex flex-wrap items-center gap-x-1.5">
+                  계산 비용 기준 정렬 · user×model 병합 · 그룹 비중 막대는 계산 비용 비율(미산정 행은 토큰 비율)
+                  <GroupShareLegend groups={shareGroups} />
+                </span>
+              )
+            }
             right={
               <label className="flex items-center gap-1.5 text-[12px] text-ink-600 select-none cursor-pointer">
                 <input
@@ -520,6 +593,11 @@ export default function Cost() {
               { key: "user", label: "사용자", render: maskEmail },
               { key: "model", label: "모델" },
               { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)), toText: modelCostText },
+              // single 모드에선 그룹이 하나라 막대가 늘 100% 한 색이 되어 정보량이 0이다 — 컬럼째로 뺀다.
+              // 헤더 클릭 정렬은 이 컬럼에서 무해한 no-op이다(셀이 두 값의 비율이라 단일 순서가 없다).
+              ...(groupMode === "single"
+                ? []
+                : [{ key: "groups", label: "그룹 비중", render: (v) => <GroupShareBar groups={v} />, toText: groupShareText }]),
               { key: "reported_cost", label: "보고 비용", render: usd },
               { key: "tokens", label: "토큰", render: fmt },
             ]}
