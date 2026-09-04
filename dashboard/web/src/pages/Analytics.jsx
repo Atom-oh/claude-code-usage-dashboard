@@ -45,7 +45,9 @@ const CATEGORIES = [
 ];
 
 export default function Analytics() {
-  const { days } = useRange();
+  const { from, to } = useRange();
+  // 이번 달·달력 구간에서는 days가 마지막 프리셋 값이라 질문에 엉뚱한 기간이 실린다.
+  const days = Math.max(1, Math.ceil((to - from) / 86400000));
   const [input, setInput] = useState("");
   const { msgs, busy, status, trace, ask } = useChatStream();
   const started = msgs.length > 0;

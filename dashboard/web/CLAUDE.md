@@ -6,12 +6,24 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
 
 ## Key Files
 - `src/main.jsx`, `App.jsx` -- entry point, route table
-- `src/RangeContext.jsx` -- global `from`/`to`/`intervalHours` state. Two modes: preset
-  (`intervalHours = days <= 2 ? 1 : 24`) or custom (set via chart drag-zoom's `setRange()`,
-  `intervalHours` derived from the zoomed span down to minute buckets, see
-  `RESOLUTION_LADDER_MIN`)
+- `src/RangeContext.jsx` -- global `from`/`to`/`intervalHours` state. Three modes: preset
+  (`intervalHours = days <= 2 ? 1 : 24`), month (이번 달 -- current UTC month to now, 24h
+  buckets), and custom (a from/to pair carrying a `source` flag: `"zoom"` from chart drag-zoom,
+  `intervalHours` derived from the zoomed span down to minute buckets via
+  `RESOLUTION_LADDER_MIN`; `"calendar"` from the date-range popover, which follows the preset
+  rule instead so the Cost page's granularity control still has a matching option)
 - `src/FilterContext.jsx` -- global `group`/`user`/`model` filter state
 - `src/useApi.js` -- shared fetch hook; auto-forwards range+filters to every endpoint call
+- `src/RefreshContext.jsx` -- auto-refresh state: a selectable interval
+  (`REFRESH_OPTIONS`, persisted in `localStorage` under `ccdash.refreshMs`), a `tick` counter
+  `useApi.js` depends on, a `dayKey` that changes at most once per UTC day (`RangeContext.jsx`
+  depends on that one instead of `tick`), and failure/backoff state consumed by
+  `RefreshControl.jsx`
+- `src/components/RefreshControl.jsx` -- the manual-refresh button + interval `<select>` +
+  last-refreshed/failed label mounted at the right edge of `FilterBar`
+- `src/components/DateRangePopover.jsx` -- the calendar popover behind `RangePicker`'s
+  `CalendarDays` trigger; two `<input type="date">`s, UTC-day arithmetic, and the
+  `rangeCapDays` check mirrored from the server's `parseRange`
 - `src/pages/*.jsx` -- one file per dashboard page (Overview, Cost, Productivity, Users,
   Trends, Executive)
 - `src/components/*.jsx` -- shared presentational components (`Card`, `StatTile`, `Badge`,
@@ -53,10 +65,16 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   the other's keys when it writes (except `user` while `piiMask` is on -- see the rule below),
   and both write with `replace: true` so the history stack is not filled by preset clicks.
   `permalink.test.jsx` mounts the real providers inside a `MemoryRouter` to pin this
-  round-trip; `urlState.test.js` only covers the pure mapping
+  round-trip; `urlState.test.js` only covers the pure mapping. `PRESET_DAYS` (`[1, 2, 7, 30]`)
+  lives here as the single source -- `RangePicker.jsx` appends `defaultRangeDays` to it rather
+  than keeping its own copy. The URL range is one of three shapes: `days` for a preset,
+  `period=month` for 이번 달, or `from`/`to` for a custom (drag-zoom or calendar) range.
 - `src/fmt.js`, `colors.js`, `useChartColors.js` -- tick formatting, group color palette +
   model-family palette (`modelColorFor` — fixed per-family hues, single source `MODEL_COLOR`),
-  CSS-variable-based chart colors
+  CSS-variable-based chart colors. `colors.js` also exports `GROUP_SEGMENT_ORDER` (bedrock ->
+  enterprise -> unknown, fixed), the order used wherever group segments are drawn *inside one
+  row* (a stacked bar and its legend) — distinct from `GROUP_ORDER`, which answers "which
+  groups get a card" and so has no `unknown`
 - `src/components/MobileNav.jsx` -- the `lg:hidden` top bar + slide-over drawer that renders
   below the `lg` (1024px) breakpoint, where `Sidebar`'s `hidden lg:flex` leaves the SPA with
   no navigation at all. Reuses `Sidebar.jsx`'s exported `NAV`/`NavItem` rather than
@@ -109,7 +127,11 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   org has no such channel". `single` renders only the groups present in the response, falling back
   to the first group so the card (and its empty state) still exists. Never iterate `GROUP_ORDER`
   or a literal `["bedrock", "enterprise"]` directly in a page; the chart layer already derives its
-  own series from the response via `groupsPresent`.
+  own series from the response via `groupsPresent`. The one legitimate neighbour of this rule is a
+  **within-row** group split (the Cost page's 그룹 비중 stacked bar) -- that is not a
+  card-visibility question, so it orders its segments by `colors.js`'s `GROUP_SEGMENT_ORDER`,
+  still a shared constant and never a literal in the page, and the column is dropped entirely
+  when `groupMode === "single"`.
 - **`FilterBar` hides the channel `SegmentedControl` in `single` mode** for the same reason a
   single-channel org gets one card: offering two channel names to an org that has one is a
   false affordance. The `group` param itself is untouched -- `FilterContext`, `useApi.js` and
@@ -150,3 +172,20 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   second time by `fmt.js`'s module flag, so a new user-bearing column must use the key
   `user` to be covered. Group-split cards put the group in the `exportName` template (e.g.
   `` `usage_tool_mcp_${g}` ``) so two cards do not collide on one filename.
+- **A dashboard day is a UTC day.** Both 이번 달's month start and the calendar popover's two
+  bounds are built with `Date.UTC`, because the server's buckets and `fmt.js`'s tick labels are
+  UTC -- a local month start renders a half-width first bucket.
+- **`RangeContext`'s `to` must not depend on the refresh tick.** It recomputes at most once per
+  UTC day via `dayKey` (`RefreshContext.jsx`); making the memo depend on `tick` instead would
+  reset `Cost.jsx`'s local granularity every minute.
+- **A tick-driven refetch never flips `loading`, never blanks populated data**, and is skipped
+  while a params load for the same key is already in flight; a byte-identical payload keeps the
+  previous `data` reference so Recharts does not re-animate and `DataTable`'s sort does not
+  reset.
+- **`period=month` is a range key and `FilterContext` must preserve it** alongside
+  `days`/`from`/`to` -- `setSearchParams(fn)` does not merge, so a range key `FilterContext`
+  fails to copy over is dropped the first time a filter changes.
+- **`useApi.js`'s `QUANT_MS`/`WARM_GRACE_MS` must still equal the server's.** They are what let
+  every session's request land on the same cache key and hit the server's cache warmer.
+- **`UserDrawer` is deliberately outside auto-refresh:** it calls `apiGet` directly with
+  un-quantised bounds and is a transient drill-down, not a page that should keep polling.

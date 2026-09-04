@@ -17,6 +17,20 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Added (2026-09-04 auto-refresh + range presets)
+- Add auto-refresh with a selectable interval (끔 / 15초 / 30초 / 1분 / 5분, default **1분**),
+  persisted in `localStorage` under `ccdash.refreshMs`, paused while the tab is hidden, one
+  tick skipped after a failure, and a manual refresh button in the filter bar. A tick never
+  flips a page into its loading state and never blanks data already on screen
+  (`src/RefreshContext.jsx`, `src/useApi.js`, `src/components/RefreshControl.jsx`)
+- Range presets are now exactly 1일 / 2일 / 7일 / 30일 (plus the server's `defaultRangeDays`
+  when it is not one of them), with **이번 달** (current UTC month, `period=month` in the URL)
+  and a calendar popover for an arbitrary UTC day range capped at `rangeCapDays`
+  (`src/urlState.js`, `src/RangeContext.jsx`, `src/components/RangePicker.jsx`,
+  `src/components/DateRangePopover.jsx`)
+- Old `days=14` / `days=90` links now fall back to the server default, the same way any
+  non-preset `days` value already did
+
 ### Changed (2026-09-04 effort/agent cost basis)
 - The Cost page's Effort and Agent panels now show the **computed** cost (tokens ×
   `pricing.js` rates) like every other card on that page, with Claude Code's reported
@@ -205,6 +219,20 @@ This project has not been tagged yet — everything below is unreleased.
 이 프로젝트는 아직 태그된 릴리스가 없습니다 — 아래 항목 전부 미출시(Unreleased)입니다.
 
 ## [Unreleased]
+
+### Added (2026-09-04 자동 새로고침 + 범위 프리셋)
+- 선택 가능한 간격(끔 / 15초 / 30초 / 1분 / 5분, 기본값 **1분**)의 자동 새로고침 추가 —
+  `localStorage`의 `ccdash.refreshMs`에 저장되고, 탭이 숨겨지면 멈추고, 실패 다음 tick은 한
+  번 건너뛰고, 필터 바에 수동 새로고침 버튼도 함께 추가. tick은 페이지를 로딩 상태로 만들지
+  않고 화면에 있는 데이터를 지우지도 않음(`src/RefreshContext.jsx`, `src/useApi.js`,
+  `src/components/RefreshControl.jsx`)
+- 범위 프리셋이 정확히 1일 / 2일 / 7일 / 30일로 바뀜(목록에 없으면 서버의
+  `defaultRangeDays`도 추가), **이번 달**(현재 UTC 월, URL의 `period=month`)과
+  `rangeCapDays`로 상한이 걸린 임의 UTC 일자 구간을 고르는 달력 팝오버 추가
+  (`src/urlState.js`, `src/RangeContext.jsx`, `src/components/RangePicker.jsx`,
+  `src/components/DateRangePopover.jsx`)
+- 기존 `days=14` / `days=90` 링크는 이제 서버 기본값으로 폴백함 — 프리셋에 없는 다른
+  `days` 값이 이미 그랬던 것과 동일한 동작
 
 ### Changed (2026-09-04 effort/agent 비용 기준)
 - Cost 페이지의 Effort·에이전트 패널이 이제 다른 카드와 동일하게 **계산 비용**(토큰 ×

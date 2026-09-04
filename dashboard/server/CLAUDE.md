@@ -113,7 +113,9 @@ session is `readonly`.
   single source for the cache warmer's window, `parseRange`'s default span and (via
   `/api/config`) the SPA's default preset -- the three hard-coded `2`s those used to be are gone.
   `RANGE_CAP_DAYS` is enforced in `parseRange`, so it covers the `route()` pre-validation and
-  `fetchCached` together.
+  `fetchCached` together. `DEFAULT_RANGE_DAYS` need not be one of the web's own presets
+  (`dashboard/web/src/urlState.js`'s `PRESET_DAYS`) — `RangePicker.jsx` appends it to that list
+  at render time, so a server default outside it still gets its own button.
 - **Never `sum(Value)` directly on `otel_metrics_sum`.** Values are cumulative per-session
   counters; use `incFlat()` (snapshot) or `incBucketed()` (timeseries) to get the actual
   increase over the requested range. See the long comment block above `incFlat` in
