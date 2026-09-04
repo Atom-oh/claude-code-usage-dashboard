@@ -38,6 +38,57 @@ function splitShare({ bedrock, enterprise }) {
   return Math.min(98, Math.max(2, (b / (b + e)) * 100));
 }
 
+// 지표별 격차를 한 축에 — 0(동률) 기준선에서 값이 큰 그룹 쪽으로 뻗는 다이버징 바(dataviz:
+// 기준선 대비 위/아래는 다이버징). 스코어보드는 지표당 한 행이라 "어느 지표의 격차가 가장
+// 큰가"는 못 보여준다 — 이 차트가 그 일을 맡는다. 격차는 (b−e)/평균의 대칭 백분율이라 어느
+// 쪽이 커도 같은 크기로 읽히고, ±100%로 캡. 색은 값이 큰 그룹의 시리즈 색(우세 판정 아님 —
+// 지출처럼 큰 게 나쁜 지표도 있어서 방향은 크기만 나른다).
+export function DeltaBars({ rows }) {
+  const items = (rows || [])
+    .map((r) => {
+      const b = Number(r.bedrock), e = Number(r.enterprise);
+      if (r.bedrock == null || r.enterprise == null || !Number.isFinite(b) || !Number.isFinite(e) || b + e === 0) return null;
+      const delta = ((b - e) / ((b + e) / 2)) * 100;
+      return { label: r.label, delta: Math.max(-100, Math.min(100, delta)) };
+    })
+    .filter(Boolean);
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.04em]">
+        <span style={{ color: "var(--series-bedrock)" }}>◀ Bedrock이 큼</span>
+        <span className="text-ink-400">동률</span>
+        <span style={{ color: "var(--series-enterprise)" }}>Enterprise가 큼 ▶</span>
+      </div>
+      <ul className="space-y-2">
+        {items.map((it) => {
+          const bedrockSide = it.delta > 0;
+          const w = Math.abs(it.delta) / 2; // 절반 트랙 기준 %
+          return (
+            <li key={it.label} className="flex items-center gap-3">
+              <span className="w-28 shrink-0 truncate text-right text-[12px] text-ink-600" title={it.label}>{it.label}</span>
+              <div className="relative h-4 flex-1" title={`${it.label}: ${bedrockSide ? "bedrock" : "enterprise"} +${Math.abs(it.delta).toFixed(0)}%`}>
+                <div className="absolute inset-y-1.5 left-0 right-0 rounded-full bg-ink-100" />
+                <div className="absolute inset-y-0 left-1/2 w-px bg-ink-300" />
+                <div
+                  className="absolute inset-y-1 rounded-full"
+                  style={{
+                    background: bedrockSide ? "var(--series-bedrock)" : "var(--series-enterprise)",
+                    ...(bedrockSide ? { right: "50%", width: `${w}%` } : { left: "50%", width: `${w}%` }),
+                  }}
+                />
+              </div>
+              <span className="tabular w-14 shrink-0 text-[12px] font-medium text-ink-800">
+                {it.delta === 0 ? "동률" : `+${Math.abs(it.delta).toFixed(0)}%`}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function ABScoreboard({ rows }) {
   return (
     <div className="overflow-hidden rounded-lg border border-ink-100 bg-card shadow-card">

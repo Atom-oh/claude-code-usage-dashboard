@@ -23,7 +23,7 @@ const pct2 = (v) => `${(Number(v || 0) * 100).toFixed(2)}%`;
 const API_LATENCY_MODEL_COLUMNS = [
   { key: "group", label: "그룹" },
   { key: "model", label: "모델" },
-  { key: "requests", label: "요청", render: fmt },
+  { key: "requests", label: "요청", render: fmt, bar: true },
   { key: "p50_ms", label: "p50 (ms)", render: fmt },
   { key: "p95_ms", label: "p95 (ms)", render: fmt },
 ];
@@ -31,7 +31,7 @@ const API_LATENCY_MODEL_COLUMNS = [
 const API_LATENCY_EFFORT_COLUMNS = [
   { key: "group", label: "그룹" },
   { key: "effort", label: "Effort", render: effortLabel, toText: effortLabel },
-  { key: "requests", label: "요청", render: fmt },
+  { key: "requests", label: "요청", render: fmt, bar: true },
   { key: "p50_ms", label: "p50 (ms)", render: fmt },
   { key: "p95_ms", label: "p95 (ms)", render: fmt },
 ];

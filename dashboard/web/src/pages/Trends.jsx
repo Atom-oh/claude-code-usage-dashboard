@@ -45,10 +45,11 @@ export default function Trends() {
               variant="accent"
               trend={dauTrend !== null ? `${dauTrend >= 0 ? "↑" : "↓"} ${Math.abs(dauTrend).toFixed(0)}%` : undefined}
               hint="전일 대비"
+              spark={(ts.data || []).map((r) => r.dau)}
             />
-            <StatTile label="WAU" value={last?.wau ?? levels.data.wau} hint="롤링 7일" />
-            <StatTile label="MAU" value={last?.mau ?? levels.data.mau} hint="롤링 30일" />
-            <StatTile label="DAU/MAU 고착도" value={last ? `${last.stickiness}%` : "—"} hint="일간 ÷ 월간 활성" />
+            <StatTile label="WAU" value={last?.wau ?? levels.data.wau} hint="롤링 7일" spark={(ts.data || []).map((r) => r.wau)} />
+            <StatTile label="MAU" value={last?.mau ?? levels.data.mau} hint="롤링 30일" spark={(ts.data || []).map((r) => r.mau)} />
+            <StatTile label="DAU/MAU 고착도" value={last ? `${last.stickiness}%` : "—"} hint="일간 ÷ 월간 활성" spark={(ts.data || []).map((r) => r.stickiness)} />
           </div>
         )}
 
