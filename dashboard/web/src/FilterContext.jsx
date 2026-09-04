@@ -31,14 +31,14 @@ export function FilterProvider({ children }) {
   }, [modelInput]);
 
   // 필터를 URL에 미러링한다 — debounce된 값 기준이라 타이핑 중에 URL이 글자마다 바뀌지 않는다.
-  // range 파라미터는 RangeContext가 소유하므로 보존만 하고 건드리지 않는다. 값이 비면 키를
+  // days/from/to/period는 RangeContext가 소유하므로 보존만 하고 건드리지 않는다. 값이 비면 키를
   // 아예 지운다(serializeUrlState가 생략한다) — ?group= 같은 빈 파라미터가 링크에 남으면
   // 필터가 걸린 것처럼 읽힌다.
   useEffect(() => {
     setSearchParams(
       (prev) => {
         const next = serializeUrlState({ range: null, filters: { group, user, model }, piiMask });
-        for (const k of ["days", "from", "to"]) {
+        for (const k of ["days", "from", "to", "period"]) {
           const v = prev.get(k);
           if (v) next.set(k, v);
         }

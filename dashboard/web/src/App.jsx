@@ -1,4 +1,5 @@
 import { Route, Routes } from "react-router-dom";
+import { RefreshProvider } from "./RefreshContext.jsx";
 import { RangeProvider } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
 import { FreshnessProvider } from "./FreshnessContext.jsx";
@@ -19,33 +20,35 @@ import Reliability from "./pages/Reliability.jsx";
 
 export default function App() {
   return (
-    <RangeProvider>
-      <FilterProvider>
-        <FreshnessProvider>
-          <div className="flex h-screen flex-col lg:flex-row">
-            <MobileNav />
-            <Sidebar />
-            <main className="flex-1 overflow-y-auto animate-fade-in">
-              <FreshnessBanner className="mx-8 mt-3" />
-              <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
-                <FilterBar />
-              </div>
-              <Routes>
-                <Route path="/" element={<Overview />} />
-                <Route path="/exec" element={<Executive />} />
-                <Route path="/trends" element={<Trends />} />
-                <Route path="/productivity" element={<Productivity />} />
-                <Route path="/usage" element={<Usage />} />
-                <Route path="/users" element={<Users />} />
-                <Route path="/cost" element={<Cost />} />
-                <Route path="/reliability" element={<Reliability />} />
-                <Route path="/analytics" element={<Analytics />} />
-              </Routes>
-            </main>
-          </div>
-          <FloatingChat />
-        </FreshnessProvider>
-      </FilterProvider>
-    </RangeProvider>
+    <RefreshProvider>
+      <RangeProvider>
+        <FilterProvider>
+          <FreshnessProvider>
+            <div className="flex h-screen flex-col lg:flex-row">
+              <MobileNav />
+              <Sidebar />
+              <main className="flex-1 overflow-y-auto animate-fade-in">
+                <FreshnessBanner className="mx-8 mt-3" />
+                <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
+                  <FilterBar />
+                </div>
+                <Routes>
+                  <Route path="/" element={<Overview />} />
+                  <Route path="/exec" element={<Executive />} />
+                  <Route path="/trends" element={<Trends />} />
+                  <Route path="/productivity" element={<Productivity />} />
+                  <Route path="/usage" element={<Usage />} />
+                  <Route path="/users" element={<Users />} />
+                  <Route path="/cost" element={<Cost />} />
+                  <Route path="/reliability" element={<Reliability />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                </Routes>
+              </main>
+            </div>
+            <FloatingChat />
+          </FreshnessProvider>
+        </FilterProvider>
+      </RangeProvider>
+    </RefreshProvider>
   );
 }
