@@ -5,6 +5,18 @@ import { colorFor } from "../colors.js";
 import { parseUtc } from "../fmt.js";
 import { pivotByGroup, pivotByKey, groupsPresent } from "../pivot.js";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
+
+// 공통 범례 스타일 — recharts 기본 Legend는 라벨 텍스트를 시리즈 색으로 칠한다(dataviz: 텍스트는
+// 잉크 토큰만, 색 정체성은 옆의 스와치가 나른다). formatter로 잉크색을 강제하고 스와치는 다른
+// 마크(도넛 사이드 범례의 h-2.5 원형 점)와 톤을 맞춰 원형으로 통일한다.
+function legendProps(c) {
+  return {
+    iconType: "circle",
+    iconSize: 8,
+    wrapperStyle: { fontSize: 12 },
+    formatter: (value) => <span style={{ color: c.ink }}>{value}</span>,
+  };
+}
 import { useRange } from "../RangeContext.jsx";
 import { Card } from "./Card.jsx";
 import EmptyState from "./EmptyState.jsx";
@@ -99,9 +111,9 @@ export function GroupAreaChart({ title, subtitle, right, rows, xKey, valueKey, h
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={tickFormatter} minTickGap={24} />
           <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} />
           <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} />
-          {groups.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+          {groups.length > 1 && <Legend {...legendProps(c)} />}
           {groups.map((g) => (
-            <Area key={g} type="monotone" dataKey={g} name={g} stroke={colorFor(g)} strokeWidth={2} fill={`url(#area-${g})`} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+            <Area key={g} type="monotone" dataKey={g} name={g} stroke={colorFor(g)} strokeWidth={2} fill={`url(#area-${g})`} dot={false} activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }} />
           ))}
           {zoom.overlay}
         </AreaChart>
@@ -149,6 +161,10 @@ export function GroupBarChart({ title, subtitle, right, rows, xKey = "group", va
 export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort }) {
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours);
+  // 엠퍼시스(dataviz: "한 시리즈가 주인공이면 나머지는 회색") — 범례 클릭으로 강조 대상을
+  // 고르고, 같은 항목을 다시 클릭하면 해제. 색을 재배정하는 게 아니라 나머지를 물리는
+  // 것이라 "색은 엔티티를 따라간다" 규칙과 충돌하지 않는다.
+  const [focus, setFocus] = useState(null);
   if ((rows || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} right={right}>
@@ -179,11 +195,20 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
             </>
           )}
           <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} formatter={(v) => fmt(v)} />
-          {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+          {series.length > 1 && (
+            <Legend
+              {...legendProps(c)}
+              onClick={(e) => setFocus((f) => (f === e.value ? null : e.value))}
+              wrapperStyle={{ fontSize: 12, cursor: "pointer" }}
+            />
+          )}
           {series.map((s, i) => {
             const outermost = i === series.length - 1;
             const radius = horizontal ? (outermost ? [0, 4, 4, 0] : 0) : outermost ? [4, 4, 0, 0] : 0;
-            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={colorOf?.(s) ?? c.palette[i % c.palette.length]} radius={radius} />;
+            const base = colorOf?.(s) ?? c.palette[i % c.palette.length];
+            // stroke=서피스색 1px — 스택 세그먼트/인접 막대 사이 2px 서피스 갭(dataviz 마크 스펙,
+            // 양쪽 1px씩 만나 2px). 카드 배경과 같은 색이라 막대 바깥 윤곽으로는 보이지 않는다.
+            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={focus && focus !== s ? c.mute : base} radius={radius} stroke={c.surface} strokeWidth={1} />;
           })}
           {zoom.overlay}
         </BarChart>
@@ -192,11 +217,50 @@ export function SeriesBarChart({ title, subtitle, right, rows, xKey, seriesKey, 
   );
 }
 
-// 단위가 다른 두 지표를 한 화면에 — "도입률"(사용자 vs 세션), "사용자당 PR"처럼 좌/우 축이 다른 시계열.
+// 단위가 다른 두 지표를 한 화면에 — "도입률"(사용자 vs 세션), "사용자당 PR"처럼 축이 다른 시계열.
 // lines: [{key, label, color, axis: "left" | "right"}] — rows는 이미 xKey 기준으로 wide한 형태여야 함.
+// 이중 y축(한 플롯에 두 스케일)은 dataviz 앙티패턴 #1이라 쓰지 않는다 — 같은 x축을 공유하는
+// 소형 멀티플(위/아래 패널, 축 하나씩)로 렌더한다. props API는 이전 이중축 버전과 동일해서
+// 호출부(Executive/Overview/Productivity/Trends)는 그대로다. axis:"left"/"right"는 이제
+// "위 패널"/"아래 패널" 배정으로 읽는다.
+function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, showXAxis, zoom, c }) {
+  return (
+    <ResponsiveContainer width="100%" height={height} className={zoom.className}>
+      <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} syncId="dual" {...zoom.handlers}>
+        <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
+        <XAxis
+          dataKey={xKey}
+          tick={showXAxis ? axisTick(c) : false}
+          tickLine={false}
+          axisLine={{ stroke: c.grid }}
+          tickFormatter={tickFormatter}
+          minTickGap={24}
+          height={showXAxis ? 30 : 4}
+        />
+        <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={48} />
+        <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} />
+        {panelLines.map((l, i) => (
+          <Line
+            key={l.key}
+            type="monotone"
+            dataKey={l.key}
+            name={l.label || l.key}
+            stroke={l.color || c.palette[i % c.palette.length]}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }}
+          />
+        ))}
+        {zoom.overlay}
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function DualLineChart({ title, subtitle, right, rows, xKey, lines, height = 240, tickFormatter, bucketHours }) {
   const c = useChartColors();
-  const zoom = useDragZoom("left", bucketHours); // 명명된 축(left/right) 중 left에 하이라이트를 붙인다.
+  const zoomTop = useDragZoom(undefined, bucketHours);
+  const zoomBottom = useDragZoom(undefined, bucketHours);
   if ((rows || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} right={right}>
@@ -204,32 +268,40 @@ export function DualLineChart({ title, subtitle, right, rows, xKey, lines, heigh
       </Card>
     );
   }
-  const hasRight = lines.some((l) => l.axis === "right");
+  // 색 인덱스는 lines 배열 전체 기준으로 고정 — 패널로 갈라도 이전 이중축 버전과 같은 색을 유지.
+  const colored = lines.map((l, i) => ({ ...l, color: l.color || c.palette[i % c.palette.length] }));
+  const top = colored.filter((l) => l.axis !== "right");
+  const bottom = colored.filter((l) => l.axis === "right");
+  const panels = [top, bottom].filter((p) => p.length > 0);
+  const panelH = Math.max(96, Math.floor((height - 8) / panels.length));
   return (
     <Card title={title} subtitle={subtitle} right={right}>
-      <ResponsiveContainer width="100%" height={height} className={zoom.className}>
-        <LineChart data={rows || []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} {...zoom.handlers}>
-          <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
-          <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={tickFormatter} minTickGap={24} />
-          <YAxis yAxisId="left" tick={axisTick(c)} tickLine={false} axisLine={false} width={48} />
-          {hasRight && <YAxis yAxisId="right" orientation="right" tick={axisTick(c)} tickLine={false} axisLine={false} width={48} />}
-          <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          {lines.map((l, i) => (
-            <Line
-              key={l.key}
-              yAxisId={l.axis === "right" ? "right" : "left"}
-              type="monotone"
-              dataKey={l.key}
-              name={l.label || l.key}
-              stroke={l.color || c.palette[i % c.palette.length]}
-              strokeWidth={2}
-              dot={false}
+      <div className="space-y-1">
+        {panels.map((panelLines, pi) => (
+          <div key={pi}>
+            {/* 패널 헤더가 범례를 대신한다 — 패널당 시리즈가 보통 1개라 별도 범례 박스는 과함.
+                스와치(원형 점) + 잉크색 라벨, 도넛 사이드 범례와 같은 문법. */}
+            <div className="mb-0.5 flex items-center gap-3 pl-12">
+              {panelLines.map((l) => (
+                <span key={l.key} className="flex items-center gap-1.5 text-[11px] text-ink-500">
+                  <span className="inline-block h-2 w-2 rounded-full" style={{ background: l.color }} />
+                  {l.label || l.key}
+                </span>
+              ))}
+            </div>
+            <MetricPanel
+              panelLines={panelLines}
+              rows={rows || []}
+              xKey={xKey}
+              height={panelH}
+              tickFormatter={tickFormatter}
+              showXAxis={pi === panels.length - 1}
+              zoom={pi === 0 ? zoomTop : zoomBottom}
+              c={c}
             />
-          ))}
-          {zoom.overlay}
-        </LineChart>
-      </ResponsiveContainer>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
@@ -315,6 +387,57 @@ export function DonutBreakdown({ title, subtitle, right, data, nameKey, valueKey
   return (
     <Card title={title} subtitle={subtitle} right={right}>
       <DonutBody data={data} nameKey={nameKey} valueKey={valueKey} valuePrefix={valuePrefix} colorOf={colorOf} />
+    </Card>
+  );
+}
+
+// 덤벨 — 항목별 before→after 비교(dataviz: "Before -> after per item"의 기본형). 이전 값은
+// 회색 점, 현재 값은 accent 점(colorOf로 항목별 색 주입 가능), 둘을 잇는 선이 변화 방향과
+// 크기를 나른다. 모든 행이 같은 스케일(전체 최대값)을 공유해야 행 간 비교가 성립한다.
+// data: [{label, prev, cur}] — prev/cur가 둘 다 숫자가 아닌 행은 건너뛴다.
+export function DumbbellChart({ title, subtitle, right, data, valuePrefix = "", colorOf }) {
+  const c = useChartColors();
+  const rows = (data || []).filter((d) => Number.isFinite(Number(d.prev)) && Number.isFinite(Number(d.cur)));
+  if (rows.length === 0) {
+    return (
+      <Card title={title} subtitle={subtitle} right={right}>
+        <EmptyState />
+      </Card>
+    );
+  }
+  const max = rows.reduce((m, d) => Math.max(m, Number(d.prev), Number(d.cur)), 0) || 1;
+  const fmt = (v) => `${valuePrefix}${valuePrefix === "$" && Number(v) < 10 ? Number(v).toFixed(2) : Math.round(Number(v)).toLocaleString()}`;
+  const pos = (v) => 2 + (Number(v) / max) * 96; // 좌우 2% 패딩 안에서의 %
+  return (
+    <Card title={title} subtitle={subtitle} right={right}>
+      <div className="mb-3 flex items-center gap-4 text-[11px] text-ink-500">
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full bg-ink-300" />이전 기간</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full" style={{ background: c.lead }} />이번 기간</span>
+      </div>
+      <ul className="space-y-3">
+        {rows.map((d, i) => {
+          const p = pos(d.prev), q = pos(d.cur);
+          const cur = colorOf?.(d.label) ?? c.lead;
+          const up = Number(d.cur) >= Number(d.prev);
+          return (
+            <li key={i} className="flex items-center gap-3" title={`${d.label}: ${fmt(d.prev)} → ${fmt(d.cur)}`}>
+              <span className="w-36 shrink-0 truncate text-[12px] text-ink-600" title={String(d.label)}>{String(d.label)}</span>
+              <div className="relative h-4 min-w-0 flex-1">
+                <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-ink-100" />
+                <div
+                  className="absolute top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-ink-300"
+                  style={{ left: `${Math.min(p, q)}%`, width: `${Math.abs(q - p)}%` }}
+                />
+                <span className="absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-300 ring-1 ring-card" style={{ left: `${p}%` }} />
+                <span className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card" style={{ left: `${q}%`, background: cur }} />
+              </div>
+              <span className="tabular w-24 shrink-0 text-right text-[12px] font-medium text-ink-800">
+                {fmt(d.cur)} <span className="text-[11px] font-normal text-ink-400">{up ? "↑" : "↓"}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </Card>
   );
 }
