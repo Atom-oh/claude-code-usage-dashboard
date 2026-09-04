@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import { apiGet } from "../api.js";
 import { useRange } from "../RangeContext.jsx";
 import { Card, Loading, ErrorBox } from "./Card.jsx";
@@ -50,7 +50,7 @@ function Heatmap({ rows, to }) {
 
 // 리더보드 행 클릭 → 우측 드로어. row는 리더보드가 이미 계산한 유저 집계(세션/LOC/점수 등).
 export function UserDrawer({ row, onClose }) {
-  const { from, to, days } = useRange();
+  const { from, to } = useRange();
   const fmtTick = makeTickFmt(24);
   const [state, setState] = useState({ loading: true, error: null, daily: [], byTool: [], heatmap: [] });
 
@@ -91,8 +91,14 @@ export function UserDrawer({ row, onClose }) {
             <h2 className="text-[18px] font-semibold text-ink-800 truncate">{maskEmail(row.user)}</h2>
             {/* 아래 차트들은 row.group(이 유저×그룹 행)으로만 필터 — 전역 model 필터는 여전히
                 미적용이라 model 필터가 켜진 상태에서 리더보드 행과 정확히 일치하진 않는다. */}
-            <p className="text-[12px] text-ink-400 mt-0.5">
-              {row.group} · 최근 {days}일 · 생산성 점수 {Number(row.productivity_score).toFixed(1)} · 이 그룹 활동 기준(model 필터 미적용)
+            <p className="text-[12px] text-ink-400 mt-0.5 inline-flex items-center gap-1">
+              {row.group} · 생산성 점수 {Number(row.productivity_score).toFixed(1)}
+              <Info
+                size={12}
+                className="shrink-0 text-ink-400"
+                title="이 채널에서의 활동만 집계합니다. 아래 차트에는 상단 모델 필터가 적용되지 않아, 필터를 켠 상태에서는 위 요약 수치와 차이가 날 수 있습니다."
+                aria-label="이 채널에서의 활동만 집계합니다. 아래 차트에는 상단 모델 필터가 적용되지 않아, 필터를 켠 상태에서는 위 요약 수치와 차이가 날 수 있습니다."
+              />
             </p>
           </div>
           <button onClick={onClose} className="shrink-0 rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-600">
@@ -102,7 +108,7 @@ export function UserDrawer({ row, onClose }) {
 
         <div className="grid grid-cols-2 gap-3">
           <StatTile label="세션" value={fmt(row.sessions)} />
-          <StatTile label="추가 라인" value={fmt(row.loc)} />
+          <StatTile label="추가 코드 라인" value={fmt(row.loc)} />
           <StatTile label="커밋 · PR" value={`${fmt(row.commits)} · ${fmt(row.prs)}`} />
           <StatTile label="수락률" value={`${(Number(row.accept_rate) * 100).toFixed(0)}%`} />
         </div>
@@ -124,7 +130,7 @@ export function UserDrawer({ row, onClose }) {
               tickFormatter={fmtTick}
               lines={[
                 { key: "sessions", label: "세션", axis: "left" },
-                { key: "loc", label: "추가 라인", axis: "right" },
+                { key: "loc", label: "추가 코드 라인", axis: "right" },
               ]}
             />
             <GroupBarChart

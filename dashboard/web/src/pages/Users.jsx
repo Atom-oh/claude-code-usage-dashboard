@@ -38,7 +38,7 @@ function GroupFaceOff({ rows }) {
   });
 
   return (
-    <Card padded={false} title={groupLabel(groupMode, undefined, "그룹별 요약")}>
+    <Card padded={false} title={groupLabel(groupMode, undefined, "채널 요약")}>
       <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-ink-100">
         {stats.map((s, i) => (
           <div key={s.group} className="relative flex-1">
@@ -50,14 +50,14 @@ function GroupFaceOff({ rows }) {
             <div className="p-4" style={{ background: `color-mix(in srgb, ${colorFor(s.group)} 8%, transparent)` }}>
               <div className="mb-3 flex items-center gap-2">
                 <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: colorFor(s.group) }} />
-                <span className="text-[13px] font-semibold capitalize text-ink-800">{s.group}</span>
+                <span className="text-[13px] font-semibold text-ink-800">{s.group}</span>
               </div>
               {s.count === 0 ? (
                 <div className="text-[12px] text-ink-400">데이터 없음</div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-[11px] text-ink-500">인원</div>
+                    <div className="text-[11px] text-ink-500">사용자</div>
                     <div className="tabular text-[16px] font-semibold text-ink-800">{fmt(s.count)}</div>
                   </div>
                   <div>
@@ -144,14 +144,14 @@ export default function Users() {
     <div>
       <PageHeader
         title="Users"
-        subtitle="유저별 생산성 점수 + 무엇을 썼는지. 정렬은 헤더 클릭."
+        subtitle="사용자별 생산성 점수와 도구·Skill 사용 현황"
         right={
           <div className="flex items-center gap-2">
             <RangePicker />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="이메일 검색..."
+              placeholder="사용자 검색"
               className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-56"
             />
           </div>
@@ -171,15 +171,15 @@ export default function Users() {
                 return data.length ? (
                   <HBarList
                     key={g}
-                    title={`Top 10 — 생산성 점수 — ${g}`}
-                    subtitle="아래 리더보드 행을 클릭하면 유저 상세(히트맵·일별 추이)가 열립니다"
+                    title={`생산성 점수 상위 10명 — ${g}`}
+                    subtitle="아래 리더보드에서 사용자를 클릭하면 상세 활동이 열립니다"
                     data={data.map((d) => ({ ...d, user: maskEmail(d.user) }))}
                     labelKey="user"
                     valueKey="score"
                     color={colorFor(g)}
                   />
                 ) : (
-                  <Card key={g} title={`Top 10 — 생산성 점수 — ${g}`}>
+                  <Card key={g} title={`생산성 점수 상위 10명 — ${g}`}>
                     <EmptyState />
                   </Card>
                 );
@@ -195,8 +195,9 @@ export default function Users() {
           <ErrorBox error={byUserModel.error} />
         ) : familyStats.length ? (
           <Card
-            title="모델 계열별 사용자당 평균 지출"
-            subtitle="계열을 실제로 쓴 유저 수로 나눈 값 — 계열별 사용자 수가 달라 총지출로는 비교되지 않는다. 한 유저가 여러 계열을 쓰면 각 계열에 모두 계수된다. 단가표에 없는 모델은 분자·분모에서 함께 제외."
+            title="모델 계열별 사용자당 평균 비용"
+            subtitle="해당 계열을 사용한 사용자 1인당 평균 비용"
+            help="각 모델 계열의 비용을 그 계열을 실제로 사용한 사용자 수로 나눈 값입니다. 여러 계열을 사용한 사용자는 각 계열에 모두 포함되며, 단가가 등록되지 않은 모델은 제외됩니다. 채널을 나누지 않은 값으로, 채널 미분류 세션도 포함됩니다."
           >
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {familyStats.map((s) => (
@@ -209,7 +210,7 @@ export default function Users() {
                     </span>
                   }
                   value={usd(s.avg)}
-                  hint={`${fmt(s.users)}명 · 총 ${usd(s.cost)}${s.unpriced ? " — 미산정 모델은 분자·분모 모두 제외" : ""}`}
+                  hint={`사용자 ${fmt(s.users)}명 · 총 비용 ${usd(s.cost)}${s.unpriced ? " (단가 미등록 모델 제외)" : ""}`}
                 />
               ))}
             </div>
@@ -223,23 +224,24 @@ export default function Users() {
             : groupsShown(groupMode, leaderboard.data).map((g) => (
                 <DataTable
                   key={g}
-                  title={`유저별 생산성 리더보드 — ${g}`}
+                  title={`사용자별 생산성 리더보드 — ${g}`}
                   onRowClick={(r) => setSelected({ user: r.user, group: r.group })}
-                  subtitle="점수 = 100 × (0.30×LOC/day + 0.25×수락률 + 0.20×commits/day + 0.15×활성일비율 + 0.10×sessions/day), 각 /day 항목은 절대 상한(캡)으로 정규화 — 캡 값은 초기 추정치"
+                  subtitle="코드 라인, 수락률, 커밋, 활성일, 세션을 종합한 점수"
+                  help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다."
                   columns={[
-                    { key: "user", label: "유저", render: maskEmail },
+                    { key: "user", label: "사용자", render: maskEmail },
                     { key: "productivity_score", label: "생산성 점수", render: (v) => v.toFixed(1) },
                     { key: "sessions", label: "세션", render: fmt },
                     { key: "input_tokens", label: "입력 토큰", render: fmt },
                     { key: "output_tokens", label: "출력 토큰", render: fmt },
                     { key: "tokens", label: "전체 토큰", render: fmt },
-                    { key: "loc", label: "추가 라인", render: fmt },
+                    { key: "loc", label: "추가 코드 라인", render: fmt },
                     { key: "prs", label: "PR", render: fmt },
                     { key: "commits", label: "커밋", render: fmt },
                     { key: "accept_rate", label: "수락률", render: pct, toText: pct },
                     { key: "active_days", label: "활성일", render: fmt },
                     { key: "top_tool", label: "주요 도구" },
-                    { key: "top_skill", label: "주요 스킬" },
+                    { key: "top_skill", label: "주요 Skill" },
                   ]}
                   rows={rows.filter((r) => r.group === g)}
                   exportName={`users_leaderboard_${g}`}
@@ -255,9 +257,9 @@ export default function Users() {
             {groupsShown(groupMode, tools.data).map((g) => (
               <DataTable
                 key={g}
-                title={`유저별 도구 사용 내역 — ${g}`}
+                title={`사용자별 도구 사용 내역 — ${g}`}
                 columns={[
-                  { key: "user", label: "유저", render: maskEmail },
+                  { key: "user", label: "사용자", render: maskEmail },
                   { key: "tool", label: "도구" },
                   { key: "uses", label: "사용 횟수", render: fmt },
                 ]}
@@ -277,11 +279,12 @@ export default function Users() {
             {groupsShown(groupMode, skills.data).map((g) => (
               <DataTable
                 key={g}
-                title={`유저별 Skill 사용 내역 — ${g}`}
+                title={`사용자별 Skill 사용 내역 — ${g}`}
+                help="Skill 사용 횟수는 텔레메트리 보고 횟수 기준의 근사값입니다."
                 columns={[
-                  { key: "user", label: "유저", render: maskEmail },
+                  { key: "user", label: "사용자", render: maskEmail },
                   { key: "skill", label: "Skill" },
-                  { key: "invocations", label: "호출 수", render: fmt },
+                  { key: "invocations", label: "사용 횟수", render: fmt },
                 ]}
                 rows={(skills.data || []).filter((r) => r.group === g)}
                 exportName={`users_skills_${g}`}
