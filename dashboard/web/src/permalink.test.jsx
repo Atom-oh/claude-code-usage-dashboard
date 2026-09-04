@@ -1,5 +1,9 @@
+// 이 파일의 달력 단정문은 로컬/UTC 포맷터 차이를 봐야 한다 — 이 머신과 CI가 모두 UTC라
+// TZ를 고정하지 않으면 하루 밀리는 버그가 보이지 않는다(한국 사용자에게만 보인다).
+process.env.TZ = "Asia/Seoul";
+
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "./App.jsx";
 import { ConfigProvider } from "./ConfigContext.jsx";
@@ -126,4 +130,73 @@ test("days=7은 defaultRangeDays=7과 일치해 7일 프리셋이 그대로 활�
   const { container } = mount("/cost?days=7", cfg());
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   expect(activePreset(container)).toBe("7일");
+});
+
+test("달력으로 고른 구간은 UTC 경계로 URL에 쓰이고, 알약은 선택한 종료일을 그대로 보여준다", async () => {
+  const fetchMock = stubFetch();
+  const { container } = mount("/cost", cfg());
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(container.querySelector('[aria-label="기간 직접 선택"]'));
+  fireEvent.change(screen.getByLabelText("시작일"), { target: { value: "2026-09-01" } });
+  fireEvent.change(screen.getByLabelText("종료일"), { target: { value: "2026-09-04" } });
+  fireEvent.click([...container.querySelectorAll("button")].find((b) => b.textContent === "적용"));
+  await waitFor(() => {
+    const p = new URLSearchParams(loc.search);
+    expect(p.get("from")).toBe("2026-09-01T00:00:00.000Z");
+    expect(p.get("to")).toBe("2026-09-05T00:00:00.000Z");
+    expect(p.has("days")).toBe(false);
+    expect(p.has("period")).toBe(false);
+  });
+  // TZ=Asia/Seoul에서 로컬 포맷터였다면 "9. 5."가 나온다 — UTC 포맷터와 -1ms가 맞을 때만 "9. 4."다.
+  const pill = [...container.querySelectorAll("button")].find((b) => b.title === "기간 선택 해제");
+  expect(pill.textContent).toBe("9. 1. – 9. 4.");
+});
+
+test("배타적 종료 경계는 재오픈 시 선택한 날짜 그대로 되돌아온다", async () => {
+  const fetchMock = stubFetch();
+  const { container } = mount("/cost", cfg());
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(container.querySelector('[aria-label="기간 직접 선택"]'));
+  fireEvent.change(screen.getByLabelText("시작일"), { target: { value: "2026-09-01" } });
+  fireEvent.change(screen.getByLabelText("종료일"), { target: { value: "2026-09-04" } });
+  fireEvent.click([...container.querySelectorAll("button")].find((b) => b.textContent === "적용"));
+  await waitFor(() => expect(new URLSearchParams(loc.search).get("from")).toBe("2026-09-01T00:00:00.000Z"));
+  fireEvent.click(container.querySelector('[aria-label="기간 직접 선택"]'));
+  // 내부 custom.to는 다음 UTC 날 자정(배타)이다 — 입력창은 -1해서 사용자가 고른 날을 그대로 보여줘야 한다.
+  expect(screen.getByLabelText("종료일").value).toBe("2026-09-04");
+});
+
+test("상한과 정확히 같은 길이는 통과하고, 하루 더 긴 길이는 서버와 같은 기준으로 거부된다", async () => {
+  const fetchMock = stubFetch();
+  const { container } = mount("/cost", cfg({ rangeCapDays: 7 }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(container.querySelector('[aria-label="기간 직접 선택"]'));
+  fireEvent.change(screen.getByLabelText("시작일"), { target: { value: "2026-09-01" } });
+  fireEvent.change(screen.getByLabelText("종료일"), { target: { value: "2026-09-08" } });
+  const searchBefore = loc.search;
+  fireEvent.click([...container.querySelectorAll("button")].find((b) => b.textContent === "적용"));
+  await screen.findByText("최대 7일까지 선택할 수 있습니다");
+  expect(document.querySelectorAll('input[type="date"]').length).toBe(2);
+  expect(loc.search).toBe(searchBefore);
+  // 거부 후에도 팝오버가 열려 있으니 같은 테스트에서 입력을 바꿔 다시 적용할 수 있다.
+  fireEvent.change(screen.getByLabelText("종료일"), { target: { value: "2026-09-07" } });
+  fireEvent.click([...container.querySelectorAll("button")].find((b) => b.textContent === "적용"));
+  await waitFor(() => {
+    const p = new URLSearchParams(loc.search);
+    expect(p.get("from")).toBe("2026-09-01T00:00:00.000Z");
+    expect(p.get("to")).toBe("2026-09-08T00:00:00.000Z");
+  });
+});
+
+test("시작일이 종료일보다 늦으면 거부되고 URL은 바뀌지 않는다", async () => {
+  const fetchMock = stubFetch();
+  const { container } = mount("/cost", cfg());
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(container.querySelector('[aria-label="기간 직접 선택"]'));
+  fireEvent.change(screen.getByLabelText("시작일"), { target: { value: "2026-09-05" } });
+  fireEvent.change(screen.getByLabelText("종료일"), { target: { value: "2026-09-01" } });
+  const searchBefore = loc.search;
+  fireEvent.click([...container.querySelectorAll("button")].find((b) => b.textContent === "적용"));
+  await screen.findByText("시작일이 종료일보다 늦습니다");
+  expect(loc.search).toBe(searchBefore);
 });
