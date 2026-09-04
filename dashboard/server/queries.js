@@ -1952,3 +1952,88 @@ export async function agentCost(from, to, filters = {}) {
   );
   return rollupComputedCost(rows, ["group", "agent"]).sort((a, b) => b.cost - a.cost).slice(0, 30);
 }
+
+// =============================================================================
+// 2026-09-04 추가 패널. otel_logs api_request(보고 비용 vs 계산 비용, AppVersion 그레인)와
+// otel_traces 인터랙션 드릴다운(유저 1명의 턴별 워터폴).
+// =============================================================================
+
+// 버전별 보고 비용 vs 계산 비용 — cost_usd는 클라이언트 자체 단가표로 클라이언트 사이드에서
+// 매겨지므로 AppVersion에 종속된다(실측 2026-09-03: v2.1.251이 claude-fable-5-1을 opus-5
+// 단가로 보고, ≈0.5×). model:은 modelViaSession:이 아니라 l.LogAttributes['model'] 그 자체를
+// 쓴다 — api_request는 다른 otel_logs 이벤트(apiErrors/mcpHealth/hookOverhead)와 달리 model
+// 속성을 행의 100%에 갖고 있다(실측 2026-09-04). cache_creation_tokens는 로그 속성명이고
+// withComputedCost는 cache_write_tokens를 읽으므로 별칭이 곧 가격 계산의 전제조건이다. 단가표
+// 밖 모델도 행을 버리지 않는다 — cost/ratio가 null일 뿐이다.
+export async function reportedVsComputedByVersion(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.AppVersion AS app_version,
+        ${normModel("l.LogAttributes['model']")} AS model,
+        count() AS requests,
+        sum(toFloat64OrZero(l.LogAttributes['cost_usd']))             AS reported_cost,
+        sum(toUInt64OrZero(l.LogAttributes['input_tokens']))          AS input_tokens,
+        sum(toUInt64OrZero(l.LogAttributes['output_tokens']))         AS output_tokens,
+        sum(toUInt64OrZero(l.LogAttributes['cache_read_tokens']))     AS cache_read_tokens,
+        sum(toUInt64OrZero(l.LogAttributes['cache_creation_tokens'])) AS cache_write_tokens
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'api_request'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", app_version, model ORDER BY requests DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return withComputedCost(rows).map((r) => ({
+    ...r,
+    ratio: r.cost > 0 ? Number(r.reported_cost) / r.cost : null,
+  }));
+}
+
+// 유저 1명의 턴별 워터폴 — "왜 이 세션이 느렸나"에 답한다. interactionBreakdown과 동일한
+// TraceId 자식 접기를 쓰지만, 자식 서브쿼리에는 일부러 SpanType 필터가 없다 — AgentId는
+// 스팬 타입을 가리지 않고 실린다(실측 2026-09-04). SpanType 필터를 걸면 agents가 과소집계된다.
+// SpanType 값은 접두사 없이 'interaction'/'llm_request'/'tool'/'tool.execution'/
+// 'tool.blocked_on_user'로 온다 — claude_code. 접두사는 SpanName에만 붙는다. ParentAgentId는
+// 라이브 데이터에서 한 번도 채워진 적이 없다(실측 2026-09-04: 0행) — 그래서 에이전트 깊이/트리는
+// 도출할 수 없고, 인터랙션당 distinct 에이전트 수만 도출 가능하다. llm/tool/blocked 세 구간은
+// 서로 겹칠 수 있어(tool 스팬의 duration_ms가 대기+실행을 함께 담음) 합이 interaction_ms를
+// 넘을 수 있다 — interactionBreakdown과 동일한 주의사항.
+export async function userInteractions(from, to, email) {
+  const rows = await query(
+    `SELECT
+        i.SessionId    AS session_id,
+        i.TraceId      AS trace_id,
+        i.started_at   AS started_at,
+        i.DurationMs   AS interaction_ms,
+        c.llm_ms       AS llm_ms,
+        c.tool_exec_ms AS tool_exec_ms,
+        c.blocked_ms   AS blocked_ms,
+        c.agents       AS agents,
+        c.llm_calls    AS llm_calls
+    FROM (
+        SELECT TraceId, SessionId, Timestamp,
+            formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S', 'UTC') AS started_at,
+            intDiv(Duration, 1000000) AS DurationMs
+        FROM claude_code.otel_traces
+        WHERE SpanType = 'interaction' AND UserEmail = {email:String}
+          AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+    ) i
+    LEFT JOIN (
+        SELECT TraceId,
+            sumIf(DurationMs, SpanType = 'llm_request')          AS llm_ms,
+            sumIf(DurationMs, SpanType = 'tool.execution')       AS tool_exec_ms,
+            sumIf(DurationMs, SpanType = 'tool.blocked_on_user') AS blocked_ms,
+            uniqExactIf(AgentId, AgentId != '')                  AS agents,
+            countIf(SpanType = 'llm_request')                    AS llm_calls
+        FROM claude_code.otel_traces
+        WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+        GROUP BY TraceId
+    ) c ON i.TraceId = c.TraceId
+    ORDER BY i.Timestamp DESC LIMIT 200`,
+    { ...range(from, to, true), email }
+  );
+  return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: "2.1.214", rows: [] };
+}

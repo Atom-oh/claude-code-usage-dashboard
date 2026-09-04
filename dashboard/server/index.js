@@ -391,6 +391,7 @@ const groupParam = (query) => (query.group === undefined ? undefined : String(qu
 route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || ""), groupParam(query)), { warm: false });
 route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || ""), groupParam(query)), { warm: false });
 route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || ""), 91, groupParam(query)), { warm: false });
+route("/api/users/interactions", (from, to, query) => q.userInteractions(from, to, String(query.email || "")), { warm: false });
 
 // 2026-08-11 스펙 동기화 — STEP 2/3/4 신규 패널. traces beta(권한 대기/TTFT)는 아직 라이브
 // 데이터가 없을 수 있어 warm: false(빈 결과를 매 사이클 워밍하는 낭비를 피함) — 데이터가
@@ -404,6 +405,7 @@ route("/api/usage/compaction", (from, to, _q, filters) => q.compactionPressure(f
 route("/api/reliability/refusals", (from, to, _q, filters) => q.refusalRate(from, to, filters));
 route("/api/reliability/retries-exhausted", (from, to, _q, filters) => q.retriesExhausted(from, to, filters));
 route("/api/reliability/api-errors", (from, to, _q, filters) => q.apiErrors(from, to, filters));
+route("/api/reliability/reported-vs-computed", (from, to, _q, filters) => q.reportedVsComputedByVersion(from, to, filters));
 route("/api/usage/plugins", (from, to) => q.pluginInventory(from, to));
 route("/api/integrity/version-cohort-sessions", (from, to, _q, filters) => q.versionCohortSessions(from, to, filters));
 route("/api/integrity/version-cohort-cost", (from, to, _q, filters) => q.versionCohortCost(from, to, filters));
