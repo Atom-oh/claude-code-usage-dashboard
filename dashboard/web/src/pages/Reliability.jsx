@@ -1,4 +1,5 @@
 import { DataTable } from "../components/DataTable.jsx";
+import { Badge } from "../components/Badge.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { Loading, ErrorBox } from "../components/Card.jsx";
@@ -14,6 +15,16 @@ const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractio
 const statusLabel = (v) => (v === "no-http-status" ? "HTTP 상태 없음" : v);
 const cohortLabel = (v) => (v === "pre-2.1.214" ? "2.1.214 이전" : v === ">=2.1.214" ? "2.1.214 이상" : v);
 const pct2 = (v) => `${(Number(v || 0) * 100).toFixed(2)}%`;
+// 계산 비용/비율 셀 — 단가표 밖 모델(unpriced)은 "$0"이 아니라 "미산정"이다(Cost.jsx와 같은 규칙).
+const computedCostText = (_v, r) => (r.unpriced ? "미산정" : usd(r.cost));
+// 비율은 null 검사를 반드시 먼저 한다: ratio 0(그 버전이 cost_usd를 아예 0으로 보고)은 이 패널이
+// 가장 잡고 싶은 극단값인데, falsy 검사(`!v`)로 걸러내면 "—"로 사라진다.
+const ratioText = (v) => (v == null ? "" : `${Number(v).toFixed(2)}×`);
+const ratioBadge = (v) => {
+  if (v == null) return <span className="text-ink-400">—</span>;
+  const text = `${Number(v).toFixed(2)}×`;
+  return Math.abs(Number(v) - 1) > 0.15 ? <Badge tone="negative">{text}</Badge> : text;
+};
 
 // 2026-08-11 STEP 3/4 — 신뢰성(refusal/재시도) + A/B 무결성(버전 코호트) 신규 패널 전용 페이지.
 // 기존 페이지(Productivity/Usage)와 성격이 달라(생산성/사용량이 아니라 "이 A/B 비교를 믿어도
@@ -70,6 +81,16 @@ const API_ERROR_STATUS_COLUMNS = [
   { key: "errors", label: "오류 수", render: fmt },
 ];
 
+const REPORTED_VS_COMPUTED_COLUMNS = [
+  { key: "group", label: "채널" },
+  { key: "app_version", label: "Claude Code 버전" },
+  { key: "model", label: "모델" },
+  { key: "requests", label: "요청 수", render: fmt, bar: true },
+  { key: "reported_cost", label: "Claude Code 보고 비용", render: usd },
+  { key: "cost", label: "계산 비용", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)), toText: computedCostText },
+  { key: "ratio", label: "비율", render: ratioBadge, toText: ratioText },
+];
+
 const VERSION_SESSION_COLUMNS = [
   { key: "group", label: "채널" },
   { key: "app_version", label: "Claude Code 버전" },
@@ -89,6 +110,7 @@ export default function Reliability() {
   const refusals = useApi("/api/reliability/refusals");
   const retries = useApi("/api/reliability/retries-exhausted");
   const apiErrors = useApi("/api/reliability/api-errors");
+  const reportedVsComputed = useApi("/api/reliability/reported-vs-computed");
   const versionSessions = useApi("/api/integrity/version-cohort-sessions");
   const versionCost = useApi("/api/integrity/version-cohort-cost");
 
@@ -178,6 +200,20 @@ export default function Reliability() {
               exportName="reliability_api_errors_by_status"
             />
           </div>
+        )}
+
+        {reportedVsComputed.loading ? (
+          <Loading />
+        ) : reportedVsComputed.error ? (
+          <ErrorBox error={reportedVsComputed.error} />
+        ) : (
+          <DataTable
+            title="버전별 보고 비용 왜곡"
+            subtitle="보고 비용은 클라이언트 자체 단가표 기준이라 버전에 따라 달라진다 — 비율이 1.00×에서 벗어난 버전이 왜곡 원인이다(실측 2026-09-03: v2.1.251이 claude-fable-5-1을 opus-5 단가로 보고, ≈0.5×). 계산 비용은 서버 단가표 기준이라 버전과 무관하다."
+            columns={REPORTED_VS_COMPUTED_COLUMNS}
+            rows={reportedVsComputed.data || []}
+            exportName="reliability_reported_vs_computed"
+          />
         )}
 
         {versionSessions.loading ? (
