@@ -26,8 +26,8 @@ export default function Trends() {
         title="Trends"
         subtitle={
           model
-            ? "일간/주간/월간 활성 유저 추이 — WAU/MAU는 각 시점 기준 롤링 7일/30일. ⚠ model 필터는 이 페이지에 적용되지 않습니다(전체 모델 기준)."
-            : "일간/주간/월간 활성 유저 추이 — WAU/MAU는 각 시점 기준 롤링 7일/30일"
+            ? "일간·주간·월간 활성 사용자 추이 · 모델 필터 미적용"
+            : "일간·주간·월간 활성 사용자 추이"
         }
         live
         right={<RangePicker />}
@@ -47,9 +47,9 @@ export default function Trends() {
               hint="전일 대비"
               spark={(ts.data || []).map((r) => r.dau)}
             />
-            <StatTile label="WAU" value={last?.wau ?? levels.data.wau} hint="롤링 7일" spark={(ts.data || []).map((r) => r.wau)} />
-            <StatTile label="MAU" value={last?.mau ?? levels.data.mau} hint="롤링 30일" spark={(ts.data || []).map((r) => r.mau)} />
-            <StatTile label="DAU/MAU 고착도" value={last ? `${last.stickiness}%` : "—"} hint="일간 ÷ 월간 활성" spark={(ts.data || []).map((r) => r.stickiness)} />
+            <StatTile label="WAU" value={last?.wau ?? levels.data.wau} hint="최근 7일" spark={(ts.data || []).map((r) => r.wau)} />
+            <StatTile label="MAU" value={last?.mau ?? levels.data.mau} hint="최근 30일" spark={(ts.data || []).map((r) => r.mau)} />
+            <StatTile label="DAU/MAU 고착도" value={last ? `${last.stickiness}%` : "—"} hint="일간 활성 ÷ 월간 활성" spark={(ts.data || []).map((r) => r.stickiness)} />
           </div>
         )}
 
@@ -63,7 +63,12 @@ export default function Trends() {
                 무관하므로 드래그 줌 우측 보정에 실제 버킷 크기를 명시해야 한다(리뷰에서 MAJOR로
                 확인: 안 넘기면 전역이 시간 단위일 때 우측 끝 날짜의 대부분이 잘려나간다). */}
             <DualLineChart
-              title="활성 유저 (DAU · WAU · MAU)"
+              title="활성 사용자 (DAU · WAU · MAU)"
+              help={
+                model
+                  ? "주간·월간 활성 사용자는 각 날짜 기준 최근 7일과 30일 안에 세션이 있었던 사용자입니다. 이 페이지의 지표는 모델 필터와 무관하게 전체 모델 기준입니다."
+                  : "주간·월간 활성 사용자는 각 날짜 기준 최근 7일과 30일 안에 세션이 있었던 사용자입니다."
+              }
               rows={ts.data}
               xKey="t"
               height={300}
@@ -77,7 +82,8 @@ export default function Trends() {
             />
             <DualLineChart
               title="DAU/MAU 고착도"
-              subtitle="% — 높을수록 매일 돌아오는 유저 비중이 큼"
+              subtitle="월간 활성 사용자 중 일간 활성 사용자 비율"
+              help="월간 활성 사용자 중 일간 활성 사용자의 비율입니다. 높을수록 매일 사용하는 사용자가 많다는 뜻입니다."
               rows={ts.data}
               xKey="t"
               tickFormatter={fmtDate}
