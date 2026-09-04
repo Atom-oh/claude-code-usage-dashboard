@@ -3,6 +3,7 @@ import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { GroupAreaChart, GroupBarChart, DualLineChart, SeriesBarChart, HBarList } from "../components/GroupCharts.jsx";
 import { DataTable } from "../components/DataTable.jsx";
+import { BarTip } from "../components/BarTip.jsx";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
@@ -10,6 +11,42 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
 import { groupsShown } from "../pivot.js";
+import { colorFor, GROUP_SEGMENT_ORDER } from "../colors.js";
+import { foldLeaderboardByUser } from "../score.js";
+
+const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+// 비용 셀의 그룹 스택 바 — 한 줄짜리, 색 분할 = 그룹(bedrock/enterprise[/unknown]), 길이 =
+// 컬럼 최대 사용자 비용 대비. 단가표 밖 모델은 서버 응답에서 cost null → 0으로 접힌다
+// (Cost 페이지의 사용자 표와 같은 규칙). hover에 그룹별 금액.
+function CostGroupBar({ split, max }) {
+  const segs = GROUP_SEGMENT_ORDER.map((g) => ({ group: g, value: Number(split?.[g] || 0) })).filter((x) => x.value > 0);
+  const total = segs.reduce((sum, x) => sum + x.value, 0);
+  if (!total || !(max > 0)) return null;
+  return (
+    <BarTip
+      className="inline-block h-1.5 w-24 shrink-0 rounded-full bg-ink-100 align-middle"
+      label={segs.map((x) => `${x.group} ${usd(x.value)}`).join(" · ")}
+      tip={
+        <span className="flex flex-col gap-0.5">
+          {segs.map((x) => (
+            <span key={x.group} className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorFor(x.group) }} />
+              {x.group}
+              <span className="tabular ml-auto pl-4">{usd(x.value)}</span>
+            </span>
+          ))}
+        </span>
+      }
+    >
+      <span className="flex h-full overflow-hidden rounded-full" style={{ width: `${Math.max(1, (total / max) * 100)}%` }}>
+        {segs.map((x) => (
+          <span key={x.group} style={{ width: `${(x.value / total) * 100}%`, minWidth: "1px", background: colorFor(x.group) }} />
+        ))}
+      </span>
+    </BarTip>
+  );
+}
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
@@ -72,7 +109,7 @@ function TracesBetaPanel({ resp, title, subtitle, columns, exportName }) {
 
 export default function Productivity() {
   const { groupMode } = useConfig();
-  const { intervalHours } = useRange();
+  const { intervalHours, from, to } = useRange();
   const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
   const norm = useApi("/api/productivity/normalized");
@@ -83,6 +120,25 @@ export default function Productivity() {
   const engagement = useApi("/api/productivity/engagement");
   const locTrend = useApi("/api/productivity/loc-timeseries");
   const leaderboard = useApi("/api/users/leaderboard");
+  const byUserCost = useApi("/api/cost/by-user-model");
+
+  // 사용자별 생산성 표: 유저×그룹 행을 유저 단위로 접고 점수를 재계산(score.js — Executive의
+  // 조직 점수와 같은 폴드). 비용은 by-user-model을 유저×그룹으로 접는다 — cost null(단가표 밖
+  // 모델)은 0으로(사용자 지시, Cost 페이지의 사용자 표와 동일 규칙).
+  const scoreDays = Math.max(1, (to - from) / 86400000);
+  const costByUser = new Map();
+  for (const r of byUserCost.data || []) {
+    const m = costByUser.get(r.user) || {};
+    m[r.group] = (m[r.group] || 0) + Number(r.cost || 0);
+    costByUser.set(r.user, m);
+  }
+  const userProductivityRows = foldLeaderboardByUser(leaderboard.data, scoreDays)
+    .map((u) => {
+      const split = costByUser.get(u.user) || {};
+      return { ...u, costByGroup: split, cost: Object.values(split).reduce((a, b) => a + b, 0) };
+    })
+    .sort((a, b) => b.productivity_score - a.productivity_score);
+  const userCostMax = userProductivityRows.reduce((m, r) => Math.max(m, r.cost || 0), 0);
   const permissionWait = useApi("/api/productivity/permission-wait");
   const ttft = useApi("/api/productivity/ttft");
   const interactionBreakdown = useApi("/api/productivity/interaction-breakdown");
@@ -177,19 +233,34 @@ export default function Productivity() {
         {leaderboard.loading ? null : leaderboard.error ? null : (
           <DataTable
             title="사용자별 생산성"
-            subtitle="Users 페이지 리더보드와 동일 지표 — 상세 히트맵/일별 추이는 Users 페이지에서"
+            subtitle="유저당 1행(두 그룹을 오간 유저는 raw 지표 합산 후 점수 재계산 — score.js) · 비용 막대: 색 분할 = 그룹, 길이 = 최대 사용자 대비"
             columns={[
-              { key: "group", label: "그룹" },
               { key: "user", label: "유저", render: maskEmail },
-              { key: "productivity_score", label: "생산성 점수", render: (v) => Number(v).toFixed(1) },
-              { key: "loc", label: "추가 라인", render: fmt },
+              { key: "productivity_score", label: "생산성 점수", render: (v) => Number(v).toFixed(1), bar: true },
+              {
+                key: "cost",
+                label: "비용 (계산)",
+                render: (v, r) => (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="min-w-[4rem]">{usd(v)}</span>
+                    <CostGroupBar split={r.costByGroup} max={userCostMax} />
+                  </span>
+                ),
+                toText: (v, r) => {
+                  const split = GROUP_SEGMENT_ORDER.map((g) => (r.costByGroup?.[g] ? `${g} ${usd(r.costByGroup[g])}` : null))
+                    .filter(Boolean)
+                    .join(" · ");
+                  return split ? `${usd(v)} — ${split}` : usd(v);
+                },
+              },
+              { key: "loc", label: "추가 라인", render: fmt, bar: true },
               { key: "commits", label: "커밋", render: fmt },
               { key: "prs", label: "PR", render: fmt },
               { key: "accept_rate", label: "수락률", render: pct, toText: pct },
               { key: "sessions", label: "세션", render: fmt },
               { key: "active_days", label: "활성일", render: fmt },
             ]}
-            rows={leaderboard.data || []}
+            rows={userProductivityRows}
             exportName="productivity_by_user"
           />
         )}

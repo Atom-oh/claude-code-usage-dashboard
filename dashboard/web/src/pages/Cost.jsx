@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
+import { BarTip } from "../components/BarTip.jsx";
 import { DonutBody, DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
@@ -52,8 +53,8 @@ function foldModelRows(rows) {
 // 병합 키에 model이 들어가므로 unpriced는 병합 조각끼리 항상 동일하다(같은 정규화 모델 = 같은 단가표 상태).
 // 랭킹(기본 뷰)과 표시용 테이블(unknown 포함 전환 가능)이 서로 다른 응답을 같은 규칙으로
 // 접어야 해서 함수로 분리했다.
-// groups는 병합으로 버려지던 그룹 축을 행 안에 보존한 것 — 합계 컬럼들은 그대로 두고 "그룹 비중"
-// 막대만 이걸 읽는다(순수 추가). Cost.test.js가 import하므로 export다.
+// groups는 병합으로 버려지던 그룹 축을 행 안에 보존한 것 — 합계 컬럼들은 그대로 두고 "그룹별 지출"
+// 스택 막대만 이걸 읽는다(순수 추가). Cost.test.js가 import하므로 export다.
 export function mergeUserModelRows(rows) {
   return [...rows
     .reduce((m, r) => {
@@ -62,50 +63,106 @@ export function mergeUserModelRows(rows) {
       if (acc.cost !== null) acc.cost += Number(r.cost);
       acc.reported_cost += Number(r.reported_cost || 0);
       acc.tokens += Number(r.tokens || 0);
-      // 미산정 행은 r.cost가 null이라 그룹 cost도 0으로만 누적된다 — 그래서 비중 기준이
-      // 토큰으로 내려간다(groupShareBasis). 응답에 없는 그룹 키는 만들지 않는다.
-      const g = acc.groups[r.group] || (acc.groups[r.group] = { cost: 0, tokens: 0 });
+      // 미산정 행은 r.cost가 null이라 그룹 cost도 0으로만 누적된다. 응답에 없는 그룹 키는
+      // 만들지 않는다.
+      const g = acc.groups[r.group] || (acc.groups[r.group] = { cost: 0, tokens: 0, reported: 0 });
       g.cost += Number(r.cost || 0);
       g.tokens += Number(r.tokens || 0);
+      // 미산정 행의 막대 길이 폴백용 — 보고 비용도 달러라 계산 비용과 같은 축에 놓을 수 있다.
+      g.reported += Number(r.reported_cost || 0);
       return m.set(k, acc);
     }, new Map())
     .values()];
 }
 
-// 비중 막대의 기준 축 선택 — 계산 비용이 있으면 cost, 미산정 모델(cost null이라 그룹 cost가
-// 전부 0)이면 tokens로 내려간다. 세그먼트 순서는 등장 순서가 아니라 GROUP_SEGMENT_ORDER 고정:
-// enterprise를 먼저 쓴 행과 bedrock을 먼저 쓴 행의 막대가 좌우로 뒤집히면 비교가 안 된다.
-function groupShareBasis(groups) {
-  const present = GROUP_SEGMENT_ORDER.filter((g) => groups?.[g]);
-  const costTotal = present.reduce((s, g) => s + Number(groups[g].cost || 0), 0);
-  const key = costTotal > 0 ? "cost" : "tokens";
-  const segments = present.map((g) => ({ group: g, value: Number(groups[g][key] || 0) })).filter((s) => s.value > 0);
-  return { key, total: segments.reduce((s, x) => s + x.value, 0), segments };
+// 사용자 단위 폴드 — user×model 행(100유저 × 모델 5개꼴)은 표가 너무 길어 못 읽는다는
+// 피드백으로 행 그레인을 사용자로 올리고, 모델 축은 셀 안의 그룹별(두 줄) 모델 스택 바가
+// 나른다. groups[g].models[model] = {cost, tokens} 중첩으로 접는다. 미산정 모델(cost null)은
+// 사용자 지시로 이 표에서는 그냥 0으로 계산한다 — 배지/표기 없이 합계에 0으로 접히고, 지출
+// 줄에서는 값 0이라 자연히 빠지며 토큰 줄에는 그대로 남는다.
+export function mergeUserRows(rows) {
+  return [...rows
+    .reduce((m, r) => {
+      const acc = m.get(r.user) || { user: r.user, cost: 0, reported_cost: 0, tokens: 0, groups: {} };
+      acc.cost += Number(r.cost || 0);
+      acc.reported_cost += Number(r.reported_cost || 0);
+      acc.tokens += Number(r.tokens || 0);
+      const g = acc.groups[r.group] || (acc.groups[r.group] = { models: {} });
+      const mm = g.models[r.model] || (g.models[r.model] = { cost: 0, tokens: 0 });
+      mm.cost += Number(r.cost || 0);
+      mm.tokens += Number(r.tokens || 0);
+      return m.set(r.user, acc);
+    }, new Map())
+    .values()];
 }
 
-// 막대의 title 툴팁과 CSV 셀이 같은 문자열을 쓴다 — toCsv는 render를 절대 호출하지 않으므로
-// (csv.js) toText가 없으면 이 컬럼은 CSV에서 빈 칸이 된다. 기준이 토큰일 때는 $가 없어 무슨
-// 수인지 알 수 없으니 단위를 붙인다.
-export function groupShareText(groups) {
-  const { key, total, segments } = groupShareBasis(groups);
-  if (!total) return "";
-  return segments
-    .map((s) => `${s.group} ${key === "cost" ? usd(s.value) : `${fmt(s.value)}토큰`} (${Math.round((s.value / total) * 100)}%)`)
+// 한 그룹 줄의 모델 세그먼트 목록 — 값 0 모델 제외, 순서는 범례 규칙(byModelLegendOrder) 고정.
+export function groupModelSegments(groups, group, metric) {
+  const models = groups?.[group]?.models;
+  if (!models) return null;
+  const segs = Object.entries(models)
+    .map(([model, v]) => ({ model, value: Number(v[metric] || 0) }))
+    .filter((x) => x.value > 0)
+    .sort((a, b) => byModelLegendOrder(a.model, b.model));
+  const total = segs.reduce((sum, x) => sum + x.value, 0);
+  return total > 0 ? { segs, total } : null;
+}
+
+// 셀 툴팁/CSV용 그룹 합계 문자열 — 모델 내역은 각 줄의 hover가, 여기는 그룹 총액만.
+export function groupTotalsText(groups, metric) {
+  const fmtVal = (v) => (metric === "tokens" ? `${fmt(v)}토큰` : usd(v));
+  return GROUP_SEGMENT_ORDER.map((g) => {
+    const line = groupModelSegments(groups, g, metric);
+    return line ? `${g} ${fmtVal(line.total)}` : null;
+  })
+    .filter(Boolean)
     .join(" · ");
 }
 
-function GroupShareBar({ groups }) {
-  const { total, segments } = groupShareBasis(groups);
-  // 기준값이 아예 없는 행은 이 표의 다른 파생 컬럼과 같은 —(값 없음) 표기 — CSV는 빈 칸이다.
-  if (!total) return <span className="text-ink-400">—</span>;
+// 숫자 옆 "그룹별 모델 스택 바 두 줄" — 위 bedrock, 아래 enterprise(+unknown 행이 있으면 세
+// 번째 줄). 줄 머리의 점이 그룹 색, 막대의 색 분할은 모델(MODEL_COLOR 공통 팔레트 — 두 그룹이
+// 같은 셀에 있으므로 "같은 모델 = 같은 색" 규칙). 줄 길이는 컬럼 공통 분모(max = 전체 행의
+// 최대 그룹 줄 합계) 대비라 행 간·줄 간 크기 비교가 성립한다. 값이 없는 그룹 줄은 아예 없다.
+function UserGroupModelBars({ groups, metric, max }) {
+  const fmtVal = (v) => (metric === "tokens" ? `${fmt(v)}토큰` : usd(v));
+  const lines = GROUP_SEGMENT_ORDER.map((g) => ({ group: g, line: groupModelSegments(groups, g, metric) })).filter((x) => x.line);
+  if (!lines.length || !(max > 0)) return null;
   return (
-    <div className="flex h-2 w-full min-w-[96px] overflow-hidden rounded-full bg-ink-100" title={groupShareText(groups)}>
-      {segments.map((s) => (
-        // 0.x%짜리 조각도 최소 1px은 보이게 — 안 그러면 소액 그룹이 막대에서 사라지고 툴팁만
-        // 진실을 말한다.
-        <span key={s.group} style={{ width: `${(s.value / total) * 100}%`, minWidth: "1px", background: colorFor(s.group) }} />
+    <span className="inline-flex w-36 shrink-0 flex-col gap-[3px] align-middle">
+      {lines.map(({ group, line }) => (
+        <BarTip
+          key={group}
+          className="flex items-center gap-1.5"
+          label={`${group} ${fmtVal(line.total)} — ${line.segs.map((x) => `${x.model} ${fmtVal(x.value)}`).join(" · ")}`}
+          tip={
+            <span className="flex flex-col gap-0.5">
+              <span className="flex items-center gap-1.5 font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorFor(group) }} />
+                {group}
+                <span className="tabular ml-auto pl-4">{fmtVal(line.total)}</span>
+              </span>
+              {line.segs.map((x) => (
+                <span key={x.model} className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: modelColorFor(x.model) ?? "var(--ink-300)" }} />
+                  {x.model}
+                  <span className="tabular ml-auto pl-4">{fmtVal(x.value)}</span>
+                </span>
+              ))}
+            </span>
+          }
+        >
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: colorFor(group) }} />
+          <span className="h-1.5 min-w-0 flex-1">
+            <span className="flex h-full overflow-hidden rounded-full" style={{ width: `${Math.max(1, (line.total / max) * 100)}%` }}>
+              {line.segs.map((x) => (
+                // 미등록(비-Claude) 모델은 모델 팔레트 밖 — 잉크 회색으로 물러나고 hover가 이름을 말한다.
+                <span key={x.model} style={{ width: `${(x.value / line.total) * 100}%`, minWidth: "1px", background: modelColorFor(x.model) ?? "var(--ink-300)" }} />
+              ))}
+            </span>
+          </span>
+        </BarTip>
       ))}
-    </div>
+    </span>
   );
 }
 
@@ -182,10 +239,15 @@ export default function Cost() {
   const totalModelCost = modelRows.reduce((s, r) => s + (r.unpriced ? 0 : r.cost), 0);
 
   const mergedUserModel = mergeUserModelRows(byUserModel.data || []);
-  const userModelRows = mergeUserModelRows(byUserModelTable.data || []).sort((a, b) => (b.cost || 0) - (a.cost || 0));
+  const userRows = mergeUserRows(byUserModelTable.data || []).sort((a, b) => (b.cost || 0) - (a.cost || 0));
   // 범례는 실제로 등장한 그룹만 — 'unknown 그룹 포함'을 켰는데 unknown 행이 없으면 unknown 점을
   // 띄우지 않는다(막대에도 안 나오므로 범례에도 없어야 한다).
-  const shareGroups = GROUP_SEGMENT_ORDER.filter((g) => userModelRows.some((r) => r.groups?.[g]));
+  const shareGroups = GROUP_SEGMENT_ORDER.filter((g) => userRows.some((r) => r.groups?.[g]));
+  // 스택 바 줄 길이의 공통 분모(컬럼별) — 전체 행에서 한 그룹 줄이 가질 수 있는 최대 합계.
+  const lineMax = (metric) =>
+    userRows.reduce((m, r) => Math.max(m, ...GROUP_SEGMENT_ORDER.map((g) => groupModelSegments(r.groups, g, metric)?.total || 0)), 0);
+  const costLineMax = lineMax("cost");
+  const tokenLineMax = lineMax("tokens");
 
   const userTotals = new Map();
   for (const r of mergedUserModel) {
@@ -567,13 +629,13 @@ export default function Cost() {
         ) : (
           <DataTable
             title="사용자 · 모델별 지출"
-            // single 모드에선 '그룹 비중' 컬럼 자체가 없으므로 부제도 막대/범례를 말하지 않는다.
+            // single 모드에선 그룹 줄 구분이 무의미해 막대를 빼므로 부제도 막대/범례를 말하지 않는다.
             subtitle={
               groupMode === "single" ? (
-                "계산 비용 기준 정렬 · 그룹 무관 user×model 병합"
+                "계산 비용 기준 정렬 · 사용자 단위 병합"
               ) : (
                 <span className="inline-flex flex-wrap items-center gap-x-1.5">
-                  계산 비용 기준 정렬 · user×model 병합 · 그룹 비중 막대는 계산 비용 비율(미산정 행은 토큰 비율)
+                  계산 비용 기준 정렬 · 사용자 단위 병합(단가표 밖 모델은 $0 처리) · 숫자 옆 두 줄 = 그룹(줄 머리 점), 색 분할 = 모델 — hover로 모델별 값
                   <GroupShareLegend groups={shareGroups} />
                 </span>
               )
@@ -591,18 +653,40 @@ export default function Cost() {
             }
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
-              { key: "model", label: "모델" },
-              { key: "cost", label: "지출 (계산)", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)), toText: modelCostText },
-              // single 모드에선 그룹이 하나라 막대가 늘 100% 한 색이 되어 정보량이 0이다 — 컬럼째로 뺀다.
-              // 헤더 클릭 정렬은 이 컬럼에서 무해한 no-op이다(셀이 두 값의 비율이라 단일 순서가 없다).
-              ...(groupMode === "single"
-                ? []
-                : [{ key: "groups", label: "그룹 비중", render: (v) => <GroupShareBar groups={v} />, toText: groupShareText }]),
+              // 스택 바 두 줄은 숫자 옆에 산다(사용자 지정) — 행 그레인이 사용자라 모델 축은
+              // 이 막대(색 분할)와 hover가 나른다. single 모드에선 그룹 줄이 하나뿐이라 숫자만.
+              {
+                key: "cost",
+                label: "지출 (계산)",
+                render: (_v, r) => (
+                  <span className="inline-flex items-center gap-3">
+                    <span className="min-w-[4.5rem]">{usd(r.cost)}</span>
+                    {groupMode !== "single" && <UserGroupModelBars groups={r.groups} metric="cost" max={costLineMax} />}
+                  </span>
+                ),
+                toText: (_v, r) => {
+                  const split = groupTotalsText(r.groups, "cost");
+                  return split ? `${usd(r.cost)} — ${split}` : usd(r.cost);
+                },
+              },
               { key: "reported_cost", label: "보고 비용", render: usd },
-              { key: "tokens", label: "토큰", render: fmt },
+              {
+                key: "tokens",
+                label: "토큰",
+                render: (v, r) => (
+                  <span className="inline-flex items-center gap-3">
+                    <span className="min-w-[5.5rem]">{fmt(v)}</span>
+                    {groupMode !== "single" && <UserGroupModelBars groups={r.groups} metric="tokens" max={tokenLineMax} />}
+                  </span>
+                ),
+                toText: (v, r) => {
+                  const split = groupTotalsText(r.groups, "tokens");
+                  return split ? `${fmt(v)} — ${split}` : fmt(v);
+                },
+              },
             ]}
-            rows={userModelRows}
-            exportName="cost_by_user_model"
+            rows={userRows}
+            exportName="cost_by_user"
           />
         )}
 

@@ -24,8 +24,8 @@ class ResizeObserverStub {
 const ROWS = [
   { user: "a@x.com", group: "bedrock", model: "claude-sonnet-5", cost: 12.34, reported_cost: 10, tokens: 1000, unpriced: false },
   { user: "a@x.com", group: "enterprise", model: "claude-sonnet-5", cost: 7.21, reported_cost: 6, tokens: 500, unpriced: false },
-  { user: "b@x.com", group: "bedrock", model: "titan-text-lite", cost: null, reported_cost: 0, tokens: 700, unpriced: true },
-  { user: "b@x.com", group: "unknown", model: "titan-text-lite", cost: null, reported_cost: 0, tokens: 300, unpriced: true },
+  { user: "b@x.com", group: "bedrock", model: "titan-text-lite", cost: null, reported_cost: 7, tokens: 700, unpriced: true },
+  { user: "b@x.com", group: "unknown", model: "titan-text-lite", cost: null, reported_cost: 3, tokens: 300, unpriced: true },
 ];
 
 function mount(groupMode) {
@@ -61,45 +61,50 @@ afterEach(() => {
 });
 
 const headers = (container) => [...container.querySelectorAll("th")].map((th) => th.textContent);
-// 막대는 title을 가진 유일한 div다 — 텍스트가 없어 role/text 조회로는 잡히지 않는다.
-const shareBars = (container) => [...container.querySelectorAll("div[title]")].filter((d) => d.getAttribute("title").includes("bedrock"));
+// 스택 바 줄은 aria-label을 가진 유일한 요소다(BarTip) — 텍스트가 없어 role/text 조회로는 잡히지 않는다.
+// 상세 툴팁은 hover 시 fixed로 뜨는 커스텀(BarTip)이고, 같은 문자열이 aria-label로 상시 노출된다.
+const mirrorBars = (container) => [...container.querySelectorAll("[aria-label]")].filter((d) => (d.getAttribute("aria-label") || "").includes("bedrock"));
 
-test("그룹 비중 막대: 계산 비용 비율과 토큰 폴백이 세그먼트 폭·색으로 나온다", async () => {
+test("그룹별 모델 스택 바 두 줄: 줄=그룹, 색 분할=모델, 길이는 컬럼 최대 그룹 줄 대비", async () => {
   const { container } = mount("ab");
-  await waitFor(() => expect(headers(container).some((h) => h.includes("그룹 비중"))).toBe(true));
+  await waitFor(() => expect(mirrorBars(container).length).toBeGreaterThan(0));
 
-  const bars = shareBars(container);
-  const titles = bars.map((d) => d.getAttribute("title"));
-  expect(titles).toContain("bedrock $12.34 (63%) · enterprise $7.21 (37%)");
-  expect(titles).toContain("bedrock 700토큰 (70%) · unknown 300토큰 (30%)");
+  const lines = [...container.querySelectorAll("[aria-label]")].filter((d) => /^(bedrock|enterprise|unknown) /.test(d.getAttribute("aria-label") || ""));
+  const titles = lines.map((d) => d.getAttribute("aria-label"));
+  // 지출 셀 — 그룹 합계 + 모델 내역이 hover에 담긴다
+  expect(titles).toContain("bedrock $12.34 — claude-sonnet-5 $12.34");
+  expect(titles).toContain("enterprise $7.21 — claude-sonnet-5 $7.21");
+  // 토큰 셀 — 미산정 모델도 토큰 줄에는 있다
+  expect(titles).toContain("bedrock 700토큰 — titan-text-lite 700토큰");
+  expect(titles).toContain("unknown 300토큰 — titan-text-lite 300토큰");
 
-  // 폭은 반올림한 툴팁 %가 아니라 실수 비율이다(12.34/19.55) — 툴팁의 63%와 혼동하면 안 된다.
-  const straddler = bars.find((d) => d.getAttribute("title").startsWith("bedrock $12.34"));
-  const segs = [...straddler.querySelectorAll("span")].map((s) => s.getAttribute("style"));
-  expect(segs.length).toBe(2);
-  expect(segs[0]).toMatch(/width:\s*63\.12/);
-  expect(segs[0]).toContain("background: var(--series-bedrock)");
-  expect(segs[1]).toMatch(/width:\s*36\.87/);
-  expect(segs[1]).toContain("background: var(--series-enterprise)");
+  // 지출 축 max = 12.34 → bedrock 줄 100%, enterprise 줄 58.43%. 폭은 줄의 안쪽 스택 컨테이너에.
+  const bLine = lines.find((d) => d.getAttribute("aria-label") === "bedrock $12.34 — claude-sonnet-5 $12.34");
+  expect([...bLine.querySelectorAll("span")].some((x) => /width:\s*100%/.test(x.getAttribute("style") || ""))).toBe(true);
+  const eLine = lines.find((d) => d.getAttribute("aria-label") === "enterprise $7.21 — claude-sonnet-5 $7.21");
+  expect([...eLine.querySelectorAll("span")].some((x) => /width:\s*58\.4/.test(x.getAttribute("style") || ""))).toBe(true);
+  // 모델 세그먼트 색 = MODEL_COLOR(sonnet-5) — 그룹 색이 아니라 모델 색.
+  // jsdom은 hex를 rgb()로 정규화한다 — #6C7CE0 = rgb(108, 124, 224)
+  expect([...bLine.querySelectorAll("span")].some((x) => /rgb\(108,\s*124,\s*224\)|#6C7CE0/i.test(x.getAttribute("style") || ""))).toBe(true);
 
-  const fallback = bars.find((d) => d.getAttribute("title").includes("unknown"));
-  const fbSegs = [...fallback.querySelectorAll("span")].map((s) => s.getAttribute("style"));
-  expect(fbSegs[0]).toMatch(/width:\s*70%/);
-  expect(fbSegs[1]).toMatch(/width:\s*30%/);
-  expect(fbSegs[1]).toContain("background: var(--series-unknown)");
+  // b@x.com 지출 셀: 전 모델이 단가표 밖(계산 비용 0 처리)이라 지출 줄 자체가 없다 — $0 숫자만.
+  expect(titles.some((t) => t.startsWith("bedrock $") && t.includes("titan"))).toBe(false);
+  // 토큰 축 max = 1,000 → b@x의 bedrock 줄 70%, unknown 줄 30%. 미등록 모델은 잉크 회색.
+  const tLine = lines.find((d) => d.getAttribute("aria-label") === "bedrock 700토큰 — titan-text-lite 700토큰");
+  expect([...tLine.querySelectorAll("span")].some((x) => /width:\s*70%/.test(x.getAttribute("style") || ""))).toBe(true);
+  expect([...tLine.querySelectorAll("span")].some((x) => (x.getAttribute("style") || "").includes("var(--ink-300)"))).toBe(true);
 });
 
-test("single 모드에선 그룹 비중 컬럼이 렌더되지 않는다", async () => {
+test("single 모드에선 그룹 줄 스택 바가 렌더되지 않는다", async () => {
   const { container } = mount("single");
   await waitFor(() => expect(headers(container).some((h) => h.includes("사용자"))).toBe(true));
-  expect(headers(container).some((h) => h.includes("그룹 비중"))).toBe(false);
-  // 컬럼만 숨기는 게 아니라 막대 자체가 없어야 한다 — 컬럼을 지우고 셀만 남기는 실수를 잡는다.
-  expect(shareBars(container).length).toBe(0);
+  // 그룹이 하나면 줄 구분이 정보량 0 — 숫자만 남는다.
+  expect(mirrorBars(container).length).toBe(0);
 });
 
-test("CSV 내보내기가 화면의 그룹 비중 문자열을 그대로 담는다", async () => {
+test("CSV 내보내기가 화면의 그룹 분해 문자열을 그대로 담는다", async () => {
   const { container } = mount("ab");
-  await waitFor(() => expect(headers(container).some((h) => h.includes("그룹 비중"))).toBe(true));
+  await waitFor(() => expect(mirrorBars(container).length).toBeGreaterThan(0));
 
   // toCsv는 render를 절대 호출하지 않으므로(csv.js) toText가 빠지면 이 열이 빈 칸으로 나간다 —
   // 그걸 잡으려면 실제 다운로드 경로를 타야 한다. jsdom엔 createObjectURL이 없어 그냥 대입한다.
@@ -120,9 +125,10 @@ test("CSV 내보내기가 화면의 그룹 비중 문자열을 그대로 담는�
     btn.click();
     expect(captured).not.toBeNull();
     const text = await captured.text();
-    expect(text).toContain("그룹 비중");
-    expect(text).toContain("bedrock $12.34 (63%) · enterprise $7.21 (37%)");
-    expect(text).toContain("bedrock 700토큰 (70%) · unknown 300토큰 (30%)");
+    expect(text).toContain("$19.55 — bedrock $12.34 · enterprise $7.21");
+    expect(text).toContain("$0");
+    expect(text).toContain("bedrock 1,000토큰 · enterprise 500토큰");
+    expect(text).toContain("bedrock 700토큰 · unknown 300토큰");
   } finally {
     clickSpy.mockRestore();
     URL.createObjectURL = origCreate;
