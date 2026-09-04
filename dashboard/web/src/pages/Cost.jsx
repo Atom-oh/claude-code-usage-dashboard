@@ -462,9 +462,6 @@ export default function Cost() {
                     <li key={r.effort}>{`${r.effort} · 계산 ${usd(r.cost)} · 보고 ${usd(r.reported_cost)}`}</li>
                   ))}
                 </ul>
-                <p className="mt-2 text-[12px] text-ink-400">
-                  보고 비용은 Claude Code 클라이언트의 자체 단가표로 계산되어 버전에 따라 달라진다 (실측 2026-09-03: v2.1.251은 fable-5-1을 opus-5 단가로 보고 → 약 0.5×). thinking 토큰은 output 토큰에 포함된다.
-                </p>
               </Card>
             ))}
           </div>
