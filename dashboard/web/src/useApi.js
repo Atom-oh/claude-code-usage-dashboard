@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiGet } from "./api.js";
 import { useRange } from "./RangeContext.jsx";
 import { useFilters } from "./FilterContext.jsx";
+import { useRefresh } from "./RefreshContext.jsx";
 
 // 서버(index.js)의 QUANT_MS/WARM_GRACE_MS와 반드시 같아야 한다 — 요청 시점의 to를 GRACE만큼
 // 지난 QUANT_MS 경계로 내림해서, 같은 창 안의 모든 세션·유저가 문자 그대로 동일한 from/to를
@@ -20,20 +21,50 @@ const QUANT_MS = 120_000;
 const WARM_GRACE_MS = 150_000;
 
 export function useApi(path, extraParams = {}) {
-  const { days, intervalHours, custom } = useRange();
+  const { days, intervalHours, custom, month } = useRange();
   const { group, user, model } = useFilters();
+  const { tick, reportFailure } = useRefresh();
   const [state, setState] = useState({ data: null, loading: true, error: null });
+  const inflightRef = useRef(null);
+  const paramsKeyRef = useRef(null);
+  const payloadRef = useRef(null);
+  const extraJson = JSON.stringify(extraParams);
 
   useEffect(() => {
-    // deps가 바뀌면 이전 요청의 HTTP 자체를 abort — state 반영만 막으면 서버/ClickHouse 쿼리는
-    // 계속 돌아서, 필터 타이핑 중 stale 쿼리가 쌓인다.
+    // 프리셋/이번 달의 to는 양자화된 경계다(위 주석) — 커스텀 구간의 to는 그 경계에서 잘라
+    // "오늘까지"로 고른 구간이 새로고침마다 함께 전진하게 한다.
+    const nowQ = Math.floor((Date.now() - WARM_GRACE_MS) / QUANT_MS) * QUANT_MS;
+    let from, to;
+    if (custom) {
+      from = custom.from;
+      to = custom.to.getTime() > nowQ ? new Date(nowQ) : custom.to;
+    } else if (month) {
+      const n = new Date(nowQ);
+      from = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1));
+      to = new Date(nowQ);
+    } else {
+      to = new Date(nowQ);
+      from = new Date(nowQ - days * 86400000);
+    }
+    // 양자화된 to는 실제 now보다 150~270초 뒤다 — 월초·오늘 시작 직후에는 to <= from이 되어
+    // 서버가 400(from >= to)을 낸다. 미래 to는 서버가 받아주므로(http.js parseRange) 한
+    // quantum만 앞으로 밀어 빈 창을 요청한다.
+    if (to.getTime() <= from.getTime()) to = new Date(from.getTime() + QUANT_MS);
+
+    const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, intervalHours, extraJson]);
+    const paramsChanged = paramsKey !== paramsKeyRef.current;
+    // 같은 파라미터에 대한 요청이 아직 떠 있는데 틱이 오면 그 틱은 버린다(큐잉하지 않는다).
+    if (!paramsChanged && inflightRef.current) return;
+    if (paramsChanged) {
+      // deps가 바뀌면 이전 요청의 HTTP 자체를 abort — state 반영만 막으면 서버/ClickHouse
+      // 쿼리는 계속 돌아서, 필터 타이핑 중 stale 쿼리가 쌓인다.
+      inflightRef.current?.abort();
+      paramsKeyRef.current = paramsKey;
+      payloadRef.current = null;
+      setState((s) => ({ ...s, loading: true }));
+    }
     const abort = new AbortController();
-    setState((s) => ({ ...s, loading: true }));
-    // 드래그 줌으로 고른 커스텀 구간은 양자화하지 않고 그대로 보낸다 — 버킷 경계 라벨에서
-    // 온 고정값이라 페이지의 모든 차트가 문자 그대로 같은 from/to를 공유한다(서버 TTL 캐시의
-    // in-flight dedup은 그대로 유효). warmer는 기본 뷰만 데우므로 커스텀 구간 첫 조회는 콜드다.
-    const to = custom ? custom.to : new Date(Math.floor((Date.now() - WARM_GRACE_MS) / QUANT_MS) * QUANT_MS);
-    const from = custom ? custom.from : new Date(to.getTime() - days * 86400000);
+    inflightRef.current = abort;
     apiGet(
       path,
       {
@@ -47,13 +78,33 @@ export function useApi(path, extraParams = {}) {
       },
       abort.signal
     )
-      .then((data) => setState({ data, loading: false, error: null }))
+      .then((json) => {
+        if (inflightRef.current === abort) inflightRef.current = null;
+        const text = JSON.stringify(json);
+        const same = text === payloadRef.current;
+        payloadRef.current = text;
+        // 같은 payload면 data 참조를 유지한다(Recharts 재애니메이션·DataTable 정렬 리셋 방지) —
+        // 하지만 loading→false / error→null 전이는 항상 적용한다.
+        setState((s) => ({ data: same ? s.data : json, loading: false, error: null }));
+      })
       .catch((error) => {
-        if (error.name !== "AbortError") setState({ data: null, loading: false, error });
+        if (error.name === "AbortError") return;
+        if (inflightRef.current === abort) inflightRef.current = null;
+        if (paramsChanged) {
+          setState({ data: null, loading: false, error });
+        } else {
+          // 백그라운드 틱 실패는 화면에 있는 데이터를 지우지 않는다 — 아직 데이터가 없으면
+          // 파라미터 로드와 같게 에러를 드러낸다.
+          setState((s) => (s.data === null ? { data: null, loading: false, error } : { ...s, loading: false }));
+          reportFailure();
+        }
       });
-    return () => abort.abort();
+    // 이 cleanup에는 abort가 없다 — 틱만 바뀐 리런이 파라미터 로드를 취소하면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, days, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, JSON.stringify(extraParams)]);
+  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, extraJson, tick]);
+
+  // 언마운트 시에만 abort한다.
+  useEffect(() => () => inflightRef.current?.abort(), []);
 
   return state;
 }
