@@ -81,8 +81,9 @@ test("DATA_STALE_MINUTES overrides the default", async () => {
 });
 
 // 부팅 실패여야 하는 값들 — 조용히 360으로 접으면 운영자가 바꿨다고 믿는 임계가 안 돌아간다.
-test("a non-positive or non-numeric DATA_STALE_MINUTES fails module load", async () => {
-  for (const [i, bad] of ["0", "-5", "abc"].entries()) {
+// 7일(10080분) 이상은 프로브 창(7 DAY) 밖이라 ok 판정이 불가능해 역시 거부한다.
+test("a non-positive, non-numeric or >= 7-day DATA_STALE_MINUTES fails module load", async () => {
+  for (const [i, bad] of ["0", "-5", "abc", "10080", "20000"].entries()) {
     process.env.DATA_STALE_MINUTES = bad;
     await assert.rejects(() => load(`bad${i}`), /DATA_STALE_MINUTES/, `expected load to reject for "${bad}"`);
   }

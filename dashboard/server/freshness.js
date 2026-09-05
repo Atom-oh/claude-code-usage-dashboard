@@ -21,14 +21,20 @@ WHERE TimeUnix > now() - INTERVAL 7 DAY`;
 const MINUTE_MS = 60_000;
 const DEFAULT_STALE_AFTER_MINUTES = 360;
 
+// PROBE_SQL 의 7 DAY 창보다 큰 임계는 판정 불가다: 최신 행이 7일보다 오래되면 창이 비어 unknown 이 되므로
+// "8일 전 행, 임계 14일 → ok" 같은 설정은 영구 503 + 오알림이 된다(리뷰 지적 2026-09-05). 그래서 상한도 거부한다.
+const PROBE_WINDOW_MINUTES = 7 * 24 * 60;
+
 // 잘못된 DATA_STALE_MINUTES는 조용히 기본값으로 접지 않고 부팅을 실패시킨다 — pricing.js의
 // PRICING_CACHE_WRITE_TTL과 같은 정책. 접어버리면 운영자가 임계를 바꿨다고 믿는 채로 옛
 // 임계가 계속 돌고, 그걸 알아챌 방법이 없다.
 function parseStaleAfterMinutes(raw) {
   if (raw === undefined || raw === "") return DEFAULT_STALE_AFTER_MINUTES;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new Error(`DATA_STALE_MINUTES must be a positive number of minutes, got "${raw}"`);
+  if (!Number.isFinite(n) || n <= 0 || n >= PROBE_WINDOW_MINUTES) {
+    throw new Error(
+      `DATA_STALE_MINUTES must be a positive number of minutes below ${PROBE_WINDOW_MINUTES} (the 7-day probe window), got "${raw}"`
+    );
   }
   return n;
 }

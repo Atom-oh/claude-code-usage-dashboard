@@ -71,7 +71,7 @@ cd server
 AUTH_ALLOW_INSECURE=1 npm run dev
 
 # Web only, dev mode
-cd dashboard/web
+cd ../web
 npm run dev
 ```
 The "Ask Claude" chat answers 503 on the local stack — chat needs Basic Auth configured *and* a
@@ -96,12 +96,12 @@ Environment variables consumed by `dashboard/server`:
 | `BASIC_AUTH_USER` | Basic Auth username for the whole dashboard | required unless `AUTH_ALLOW_INSECURE=1` |
 | `BASIC_AUTH_PASSWORD` | Basic Auth password | required unless `AUTH_ALLOW_INSECURE=1` |
 | `AUTH_ALLOW_INSECURE` | Run without Basic Auth; the server otherwise exits 1 at boot — local dev only (`/healthz`/`/readyz` are auth-exempt regardless, so probes never need this) | unset (auth required) |
-| `CHAT_ALLOW_INSECURE` | Allow `POST /api/chat` without auth; independent of `AUTH_ALLOW_INSECURE` | unset (chat requires auth) |
+| `CHAT_ALLOW_INSECURE` | Allow `POST /api/chat` without auth; independent of `AUTH_ALLOW_INSECURE` — never set on an internet-facing deployment (unauthenticated LLM→SQL path: readonly, but PII and Bedrock spend) | unset (chat requires auth) |
 | `GROUP_MODE` | `ab` compares the bedrock/enterprise pair; `single` tells the SPA this org has one channel and suppresses the empty second card. Any other value fails the boot | `ab` |
 | `DEFAULT_RANGE_DAYS` | Default range when a request omits `from`; also the window the server's cache warmer pre-computes | `2` |
 | `RANGE_CAP_DAYS` | Longest range a request may ask for; a longer span is a 400. Must be `>=` `DEFAULT_RANGE_DAYS` | `90` |
 | `PII_MASK_ENABLED` | Mask user emails in `GET /api/config`'s `piiMask` and the chat sandbox's result rows; on only for `"1"`/`"true"`, case-insensitive | unset (masking off) — `.env.example` ships `true`; display-only, not an exfiltration control (ADR-006) |
-| `DATA_STALE_MINUTES` | Age threshold for `GET /api/health/data`'s `stale` classification; a non-positive or non-numeric value refuses to boot | `360` |
+| `DATA_STALE_MINUTES` | Age threshold for `GET /api/health/data`'s `stale` classification; must be a positive number below 10080 (the probe only looks back 7 days), otherwise the server refuses to boot | `360` |
 | `ALERT_WEBHOOK_URL` | Slack-compatible webhook that receives a message when `GET /api/health/data` has been `stale`/`unknown` for two consecutive 60 s ticks, again every `ALERT_REPEAT_MINUTES` while it stays that way, and once on recovery. Each replica alerts independently (the pod name is in the message). Treat as a secret | unset (alerting off) |
 | `ALERT_REPEAT_MINUTES` | Repeat interval while the data stays non-ok; a non-positive or non-numeric value refuses to boot | `60` |
 | `CHAT_MODEL_ID` | Bedrock model ID for the "Ask Claude" chat assistant | `global.anthropic.claude-sonnet-5` |
@@ -181,7 +181,7 @@ newest `otel_metrics_sum` row into `ok` / `stale` / `unknown` and answers HTTP *
 latter two, and the SPA renders a warning banner on every page while that holds — so the
 "silently shrinking data window with no error anywhere" failure above is now visible without
 anyone running the query by hand. The staleness threshold is the server env
-`DATA_STALE_MINUTES` (default `360`, i.e. 6 hours; a non-positive or non-numeric value refuses
+`DATA_STALE_MINUTES` (default `360`, i.e. 6 hours; a non-positive, non-numeric or ≥ 10080-minute value refuses
 to boot). It reads the raw table rather than the hourly rollup precisely so a dead collector
 shows up in minutes rather than after the next rollup. It is a *detector*, not a fix: the
 systemd unit above is still what keeps ingestion alive.
@@ -218,7 +218,7 @@ npm run build
 # Claude Code harness tests (hooks, settings.json, structure)
 bash tests/run-all.sh
 ```
-All three of the above, plus `terraform fmt`/`validate` on `infra/`, run in CI
+All four of the above, plus `terraform fmt`/`validate` on `infra/`, run in CI
 (`.github/workflows/ci.yml`) on every push to `main`/`feat/**` and on every pull request. On a
 CI checkout the harness suite reports the `.claude/`-dependent assertion groups as **skipped**
 rather than failed, since `.claude/` is gitignored and absent there.
@@ -312,7 +312,7 @@ cd server
 AUTH_ALLOW_INSECURE=1 npm run dev
 
 # 웹만, 개발 모드
-cd dashboard/web
+cd ../web
 npm run dev
 ```
 로컬 스택에서 "Ask Claude" 챗은 503이다 — 챗은 Basic Auth 설정과 세션이 `readonly`인
@@ -337,12 +337,12 @@ SPA 서빙)을 엽니다.
 | `BASIC_AUTH_USER` | 대시보드 전체 Basic Auth 유저명 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
 | `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
 | `AUTH_ALLOW_INSECURE` | Basic Auth 없이 실행; 미설정 시 서버가 기동 시 exit 1 — 로컬 dev 전용(`/healthz`/`/readyz`는 원래 무인증이라 프로브에는 필요 없다) | 미설정(인증 필수) |
-| `CHAT_ALLOW_INSECURE` | `POST /api/chat`을 인증 없이 허용; `AUTH_ALLOW_INSECURE`와 독립 | 미설정(챗도 인증 필요) |
+| `CHAT_ALLOW_INSECURE` | `POST /api/chat`을 인증 없이 허용; `AUTH_ALLOW_INSECURE`와 독립 — 인터넷에 노출된 배포에서는 절대 켜지 말 것(무인증 LLM→SQL 경로: readonly지만 PII·Bedrock 과금) | 미설정(챗도 인증 필요) |
 | `GROUP_MODE` | `ab`는 bedrock/enterprise 쌍을 비교, `single`은 채널이 하나인 조직 — SPA가 빈 두 번째 카드를 그리지 않는다. 그 외 값은 기동 실패 | `ab` |
 | `DEFAULT_RANGE_DAYS` | `from` 없이 온 요청의 기본 구간. 서버 캐시 warmer가 미리 데우는 창도 이 값이다 | `2` |
 | `RANGE_CAP_DAYS` | 요청 가능한 최대 구간 — 넘으면 400. `DEFAULT_RANGE_DAYS` 이상이어야 한다 | `90` |
 | `PII_MASK_ENABLED` | `GET /api/config`의 `piiMask`와 챗 샌드박스 결과 행의 유저 이메일 마스킹; `"1"`/`"true"`(대소문자 무관)일 때만 켜짐 | 미설정(마스킹 꺼짐) — `.env.example`은 `true`로 배포; 화면 노출 축소일 뿐 유출 방어가 아님(ADR-006) |
-| `DATA_STALE_MINUTES` | `GET /api/health/data`의 `stale` 판정 임계(분); 0 이하이거나 숫자가 아니면 기동 거부 | `360` |
+| `DATA_STALE_MINUTES` | `GET /api/health/data`의 `stale` 판정 임계(분); 0 이하·숫자 아님·10080 이상(프로브가 7일만 조회)이면 기동 거부 | `360` |
 | `ALERT_WEBHOOK_URL` | `GET /api/health/data`가 60초 틱 2회 연속 `stale`/`unknown`이면 메시지를 받는 Slack 호환 웹훅. 이후 `ALERT_REPEAT_MINUTES`마다 반복하고 복구 시 1회 더 보낸다. 레플리카마다 독립 판정이라 메시지에 pod 이름이 실린다. 비밀값으로 취급 | 미설정(알림 꺼짐) |
 | `ALERT_REPEAT_MINUTES` | non-ok가 지속될 때 재발송 간격(분); 0 이하이거나 숫자가 아니면 기동 거부 | `60` |
 | `CHAT_MODEL_ID` | "Ask Claude" 채팅 어시스턴트용 Bedrock 모델 ID | `global.anthropic.claude-sonnet-5` |
@@ -419,7 +419,7 @@ kubectl -n claude-code exec chi-cc-ab-replicated-0-0-0 -- \
 **503**을 응답합니다. 그 상태가 유지되는 동안 SPA는 모든 페이지에 경고 배너를 렌더링합니다 —
 그 결과 위에서 설명한 "아무 에러 없이 조용히 데이터 창이 줄어드는" 장애가 누군가 쿼리를
 수동으로 돌리지 않아도 보이게 됩니다. 이 staleness 판정 기준은 서버 env
-`DATA_STALE_MINUTES`(기본값 `360`, 즉 6시간; 0 이하이거나 숫자가 아닌 값은 부팅을 거부)입니다.
+`DATA_STALE_MINUTES`(기본값 `360`, 즉 6시간; 0 이하·숫자 아님·10080분 이상은 부팅을 거부 — 프로브가 7일만 조회한다)입니다.
 시간별 롤업이 아니라 원본 테이블을 읽는 이유는 정확히, 죽은 컬렉터가 다음 롤업까지 기다리지
 않고 몇 분 안에 드러나게 하기 위해서입니다. 이건 *탐지기*일 뿐 고치는 수단은 아닙니다 — 위의
 systemd 유닛이 여전히 인제스트를 살려두는 실제 수단입니다.
@@ -456,7 +456,7 @@ npm run build
 # Claude Code 하니스 테스트 (훅, settings.json, 구조)
 bash tests/run-all.sh
 ```
-위 세 가지에 더해 `infra/`에 대한 `terraform fmt`/`validate`까지 전부 CI
+위 네 가지에 더해 `infra/`에 대한 `terraform fmt`/`validate`까지 전부 CI
 (`.github/workflows/ci.yml`)에서 `main`/`feat/**`로의 모든 push와 모든 pull request에 대해
 실행됩니다. CI 체크아웃에서는 `.claude/`가 gitignore 대상이라 존재하지 않으므로, 하니스
 스위트는 `.claude/`에 의존하는 단정문 그룹을 실패가 아니라 **skipped**로 보고합니다.

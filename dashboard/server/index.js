@@ -426,6 +426,9 @@ route("/api/cost/by-agent", (from, to, _q, filters) => q.agentCost(from, to, fil
 // 것(AUTH_ALLOW_INSECURE)과 그 상태에서 임의 SELECT를 실행하는 챗까지 켜는 것
 // (CHAT_ALLOW_INSECURE)은 위험이 다르고, 후자는 언제나 별도 opt-in이어야 한다.
 const chatAllowed = authEnabled || process.env.CHAT_ALLOW_INSECURE === "1";
+if (!authEnabled && chatAllowed) {
+  console.warn("WARNING: CHAT_ALLOW_INSECURE=1 — POST /api/chat (LLM-generated SELECTs) is served WITHOUT authentication.");
+}
 app.post("/api/chat", express.json(), (req, res) => {
   if (!chatAllowed) {
     return res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" });

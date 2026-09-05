@@ -51,8 +51,8 @@ table exists and no migration has been recorded in it yet.
 
 ### 2. Apply the next migration file
 ```bash
-kubectl -n claude-code exec <clickhouse-pod> -c clickhouse -- \
-  clickhouse-client --queries-file /path/to/clickhouse-migration-NNN.sql
+kubectl -n claude-code exec -i <clickhouse-pod> -c clickhouse -- \
+  clickhouse-client --multiquery < clickhouse-migration-NNN.sql
 ```
 This is the same invocation `clickhouse-migration-004.sql`'s own header documents for
 itself — do not invent a variant (no extra flags, no different `-n`/context). Copy the
@@ -175,8 +175,8 @@ API에서 `null`이 오면 **판정 불가**를 의미합니다 — 프로브가
 
 ### 2. 다음 마이그레이션 파일 적용
 ```bash
-kubectl -n claude-code exec <clickhouse-pod> -c clickhouse -- \
-  clickhouse-client --queries-file /path/to/clickhouse-migration-NNN.sql
+kubectl -n claude-code exec -i <clickhouse-pod> -c clickhouse -- \
+  clickhouse-client --multiquery < clickhouse-migration-NNN.sql
 ```
 이 명령은 `clickhouse-migration-004.sql` 자신의 헤더가 스스로 기록해 둔 것과 동일합니다 —
 변형을 만들지 마세요(추가 플래그 없음, 다른 `-n`/context 없음). 실행 전에 마이그레이션

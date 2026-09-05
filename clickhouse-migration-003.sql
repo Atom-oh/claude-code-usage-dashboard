@@ -1,6 +1,7 @@
 -- =============================================================================
 -- Claude Code A/B Telemetry — 마이그레이션 003 (segment-aware SeriesKey 컷오버)
 -- =============================================================================
+-- migration: 003 | requires: 002 | records itself: INSERT INTO claude_code.schema_migrations (§10, 검증 후 수동)
 -- 대상: 라이브 클러스터(ON CLUSTER 'replicated', infra/files/clickhouse-schema-replicated.sql와
 --       동일 토폴로지). 로컬/참조 사본(clickhouse-schema.sql)은 동등한 블록("003" 블록)을
 --       CREATE TABLE 본문과 별도로 자체적으로 갖는다 — 신규 설치는 그쪽이 담당, 기존 배포에는
@@ -114,6 +115,8 @@ SETTINGS storage_policy = 'hot_cold';
 --    …/otel_metrics_sum_hourly_v2가 되고, 옛 데이터는 …/otel_metrics_sum_hourly에 남는다 —
 --    이 이름/경로 역전이 이 절차에서 가장 헷갈리는 결과이니 반드시 인지할 것.
 -- -----------------------------------------------------------------------------
+--    사전 검사(EXCHANGE 직전): count() > 0, min(hour) ≈ raw 의 최소 시각, max(hour) = H0 - 1h 이어야 한다.
+-- SELECT min(hour), max(hour), count() FROM claude_code.otel_metrics_sum_hourly_v2;
 --    ※ §4 백필 완료 + §7(b)(c) 통과 후에만 주석을 풀어 실행한다(그 전에 실행하면 빈 rollup 이 라이브가 된다).
 -- EXCHANGE TABLES claude_code.otel_metrics_sum_hourly AND claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 
@@ -186,13 +189,16 @@ SETTINGS storage_policy = 'hot_cold';
 -- SELECT toStartOfDay(hour) AS d, count() AS rows FROM claude_code.otel_metrics_sum_hourly_v2
 -- GROUP BY d ORDER BY d;
 
--- (f) delta 행 중복 확인 — §6 이 MV 구간과 겹쳤다면 여기서 sum_value 가 raw 의 2배로 나온다.
--- SELECT h.MetricName, h.hour, sum(h.sum_value) AS rolled,
---        (SELECT sum(Value) FROM claude_code.otel_metrics_sum
---          WHERE AggregationTemporality = 1 AND MetricName = h.MetricName
---            AND toStartOfHour(TimeUnix) = h.hour) AS raw
--- FROM claude_code.otel_metrics_sum_hourly AS h WHERE h.AggregationTemporality = 1
--- GROUP BY h.MetricName, h.hour ORDER BY h.hour DESC LIMIT 20;
+-- (f) delta 행 중복 확인 — §6 이 MV 구간과 겹쳤다면 rolled 가 raw 의 2배로 나온다.
+--     상관 서브쿼리는 24.8 에서 실행되지 않으므로 두 집계의 JOIN 으로 쓴다.
+-- SELECT r.MetricName, r.hour, r.rolled, w.raw
+-- FROM (SELECT MetricName, hour, sum(sum_value) AS rolled
+--       FROM claude_code.otel_metrics_sum_hourly WHERE AggregationTemporality = 1
+--       GROUP BY MetricName, hour) AS r
+-- LEFT JOIN (SELECT MetricName, toStartOfHour(TimeUnix) AS hour, sum(Value) AS raw
+--            FROM claude_code.otel_metrics_sum WHERE AggregationTemporality = 1
+--            GROUP BY MetricName, hour) AS w USING (MetricName, hour)
+-- ORDER BY r.hour DESC LIMIT 20;
 
 -- -----------------------------------------------------------------------------
 -- 8. 롤백 창 및 정리
@@ -213,18 +219,23 @@ SETTINGS storage_policy = 'hot_cold';
 -- -----------------------------------------------------------------------------
 
 -- -----------------------------------------------------------------------------
--- 10. 자기 기록 — §7 검증을 모두 통과한 뒤 마지막으로 실행한다.
+-- 10. 자기 기록 — §7 검증을 모두 통과한 뒤 주석을 풀어 마지막으로 실행한다(§5와 같은 이유로 실행문으로 두지 않는다).
 --    clickhouse-migration-004.sql이 만든 원장(claude_code.schema_migrations)에 이 마이그레이션을
 --    기록한다. 004의 소급 INSERT와 텍스트가 같으며(가드도 같다), 004 §2가 설명하듯 004의 소급
 --    기록은 메타데이터 증거만 볼 수 있으므로 rollup 재구축까지 끝냈다는 사실은 이 문장이
 --    오퍼레이터의 손으로 남긴다. 원장 테이블이 아직 없으면(004 미적용) 004를 먼저 실행한다.
 --    INSERT에는 ON CLUSTER를 붙이지 않는다 — 한 파드에서 한 번만.
---    MATERIALIZE mutation 기록이 finished_mutations_to_keep(기본 100)에서 밀려난 뒤라면 아래 WHERE 의
---    system.mutations 조건 두 줄을 빼고 실행한다 — 그때는 §7 검증 통과가 유일한 증거다.
+--    가드 넷: SeriesKey 식(§1), MATERIALIZE 완료(§2, 또는 빈 테이블), 미완료 mutation 없음, 라이브 롤업의
+--    ZK 경로가 …_hourly_v2 로 끝남(§5 EXCHANGE 의 이름/경로 역전 — 재구축이 실제로 라이브가 됐다는 증거).
+--    MATERIALIZE mutation 기록이 finished_mutations_to_keep(기본 100)에서 밀려난 뒤라면 system.mutations
+--    조건 두 줄을 빼고 실행한다 — 그때는 §7 검증 통과가 그 자리의 증거다.
 -- -----------------------------------------------------------------------------
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'b31f0ebf1b0adcc6c57db2d7e96ce767f17a3e440a6072b7badbf331f07a273e'
-FROM system.one
-WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
-  AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
-  AND (SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND is_done = 0) = 0
-  AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;
+-- INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '2c22a451ed888c93a3613ccaf1698ccf4dda636fa6ad02e8cdcbfbe64be2824d'
+-- FROM system.one
+-- WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
+--   AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
+--   AND (SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND is_done = 0) = 0
+--   AND ((SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_metrics_sum_hourly' AND engine_full LIKE '%otel_metrics_sum_hourly_v2%') > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
+--   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;
+
+-- SELECT version, applied_at FROM claude_code.schema_migrations WHERE version = 3;  -- 정확히 1행이어야 한다
