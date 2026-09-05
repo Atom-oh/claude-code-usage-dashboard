@@ -91,7 +91,7 @@ session is `readonly`.
   `null`, which classifies as `unknown`). Reads the **raw** `otel_metrics_sum`, not the hourly
   rollup -- the rollup lags up to an hour, which is longer than the outage this exists to
   catch. `staleAfterMinutes` comes from `DATA_STALE_MINUTES` (default `360`) and a
-  non-positive/non-numeric value throws at module load, same policy as
+  non-positive/non-numeric value, or one >= 10080 (the probe's 7-day window), throws at module load, same policy as
   `PRICING_CACHE_WRITE_TTL`
 - `alerting.js` -- outbound telemetry-staleness alerting: `planAlert` (pure planner: debounce
   two consecutive non-ok ticks, repeat while non-ok, one recovery message), `formatAlert` (the

@@ -110,10 +110,10 @@ LICENSE              - Proprietary, all rights reserved (ADR-004…007 era decis
 - SQL changes to promoted/materialized columns (`otel_metrics_sum`, `otel_logs`) must be
   mirrored in `grafana-ab-queries.sql` if that query file references the same metric — a past
   review caught these drifting out of sync.
-- Every hand-applied `clickhouse-migration-NNN.sql` records itself in
+- Every hand-applied `clickhouse-migration-NNN.sql` from 003 onward records itself in
   `claude_code.schema_migrations` with a guarded, self-recording `INSERT`, and the same block
   is mirrored into both schema copies (`clickhouse-schema.sql`,
-  `infra/files/clickhouse-schema-replicated.sql`) so a new install is at `N` by definition —
+  `infra/files/clickhouse-schema-replicated.sql`) so a fresh install is at `N` by definition (an existing local MergeTree stack that rebuilt its rollup by TRUNCATE has no rebuild evidence and does not get `3` — see 004 §2) —
   see `docs/runbooks/schema-migrations.md`.
 - **The OTel Collector must run as a supervised systemd service (`Restart=always`), never
   foreground/`nohup`.** If it dies (DNS blip, node reboot, crash), the dashboard shows a
@@ -129,7 +129,7 @@ LICENSE              - Proprietary, all rights reserved (ADR-004…007 era decis
 ## Key Commands
 ```bash
 # Server (dashboard/server)
-npm install
+npm ci
 npm start                 # node index.js
 npm run dev               # node --watch index.js
 node --test *.test.js     # all unit tests (node:test, no framework, no separate runner)
@@ -137,7 +137,7 @@ node --test queries.test.js          # a single test file
 node --test --test-name-pattern="incFlat" *.test.js   # tests matching a name
 
 # Web (dashboard/web)
-npm install
+npm ci
 npm run dev               # vite dev server
 npm test                  # vitest run (jsdom) — *.test.js / *.test.jsx under src/
 npm run build             # vite build -> dist/
@@ -181,7 +181,9 @@ After exiting Plan mode (`/plan`), before starting implementation:
   nearest `CLAUDE.md`
 - New API route in `dashboard/server/index.js` -> update `dashboard/server/CLAUDE.md`
 - ClickHouse schema/materialized column changed -> update `clickhouse-schema.sql`,
-  `grafana-ab-queries.sql`, and `docs/architecture.md` Infrastructure section
+  `infra/files/clickhouse-schema-replicated.sql`, `grafana-ab-queries.sql`, and `docs/architecture.md` Infrastructure
+  section; a `SeriesKey` expression change must also hit `scripts/backfill-hourly-rollup.sh` and
+  `clickhouse-migration-003.sql` (the four copies are declared identical)
 - Terraform changed under `infra/` (`infra/alerting.tf` included) -> update
   `docs/architecture.md` Infrastructure section and `infra/CLAUDE.md`
 
