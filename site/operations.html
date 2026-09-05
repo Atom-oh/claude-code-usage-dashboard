@@ -119,6 +119,9 @@ aws ecs wait services-stable --cluster &lt;cluster&gt; --services dashboard</cod
               <tr><td><code>CHAT_MODEL_ID</code></td><td>Ask Claude 챗이 호출하는 Bedrock inference profile</td><td><code>global.anthropic.claude-sonnet-5</code></td></tr>
               <tr><td><code>BEDROCK_REGION</code></td><td>Bedrock 호출 리전. 인프라 리전과 독립</td><td><code>AWS_REGION</code> → <code>us-east-1</code></td></tr>
               <tr><td><code>PII_MASK_ENABLED</code></td><td>이메일 마스킹(<code>"1"</code> / <code>"true"</code> = ON)</td><td>앱 기본 OFF · Terraform 기본 ON</td></tr>
+              <tr><td><code>GROUP_MODE</code></td><td><code>ab</code>는 bedrock/enterprise 비교, <code>single</code>은 채널이 하나인 조직(빈 두 번째 카드 숨김)</td><td><code>ab</code></td></tr>
+              <tr><td><code>DEFAULT_RANGE_DAYS</code> / <code>RANGE_CAP_DAYS</code></td><td>기본 조회 구간 / 요청 가능한 최대 구간(넘으면 400)</td><td><code>2</code> / <code>90</code></td></tr>
+              <tr><td><code>DATA_STALE_MINUTES</code></td><td><code>GET /api/health/data</code>의 <code>stale</code> 판정 임계(분)</td><td><code>360</code></td></tr>
             </tbody>
           </table>
         </div>

@@ -77,6 +77,13 @@ resource "aws_cloudfront_distribution" "dashboard" {
     cached_methods           = ["GET", "HEAD"]
     cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled
     origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eafa07d3" # AllViewer
+    # Managed-SecurityHeadersPolicy (HSTS/X-Content-Type-Options/X-Frame-Options/
+    # Referrer-Policy/CSP frame-ancestors). 앱은 이 헤더들을 직접 내보내지 않으므로 여기가
+    # 유일한 출처다. 실측 확인(2026-09-02, aws cloudfront get-response-headers-policy):
+    # 이 id의 이름이 Managed-SecurityHeadersPolicy로 확인됨.
+    # ch_ingest 배포에는 붙이지 않는다 — 거긴 브라우저가 아니라 OTel Collector가 POST하는
+    # 쓰기 경로라 브라우저용 헤더가 아무 방어도 되지 않고, viewer 응답만 늘린다.
+    response_headers_policy_id = "67f7725c-6f97-4210-82d7-5512b31e9d03"
   }
   viewer_certificate {
     acm_certificate_arn      = data.aws_acm_certificate.wildcard_cloudfront.arn

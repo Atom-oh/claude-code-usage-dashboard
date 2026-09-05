@@ -1,3 +1,9 @@
+# 로컬 풀스택 — ClickHouse + 스키마 + 시드 데이터 + 대시보드(서버가 web/dist를 서빙).
+# 첫 기동에만 /docker-entrypoint-initdb.d/*.sql이 알파벳 순으로 실행된다: 01이 스키마,
+# 02가 시드다(실측: 이 순서라 시드 INSERT 시점에 이미 hourly 롤업 MV가 존재해 롤업이 채워진다 —
+# incFlat/incBucketed가 그 롤업을 읽으므로, 순서가 뒤집히면 모든 KPI가 0으로 나온다).
+# 다시 처음부터 로드하려면 `docker compose down -v`로 볼륨을 지운다 — 볼륨이 남아 있으면
+# initdb 스크립트는 두 번 돌지 않는다.
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
@@ -8,5 +14,38 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      # 루트의 clickhouse-schema.sql은 단일 노드용 사본이다(파일 상단 주석 참고) — 라이브 EKS의
+      # ReplicatedMergeTree/hot_cold 정의는 infra/files/ 쪽이고 여기서는 쓸 수 없다.
+      - ../clickhouse-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./seed/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      # 이 이미지에는 curl이 없고 wget이 있다(실측: /usr/bin/wget, GNU Wget 1.20.3).
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
+
+  dashboard:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      CH_URL: http://clickhouse:8123
+      CH_DB: claude_code
+      CH_USER: default
+      CH_PASSWORD: ""
+      # 로컬은 인증 없이 띄운다 — 이게 없으면 서버가 BASIC_AUTH_* 부재로 기동을 거부한다.
+      AUTH_ALLOW_INSECURE: "1"
+      # 시드 이메일은 {accountid}@ws 형태의 가짜 주소라 마스킹할 이유가 없다.
+      PII_MASK_ENABLED: "false"
+
+volumes:
+  clickhouse-data:

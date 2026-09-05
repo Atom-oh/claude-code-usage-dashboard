@@ -2,11 +2,16 @@
   "name": "cc-ab-dashboard-server",
   "version": "1.0.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test": "node --test *.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1080.0",

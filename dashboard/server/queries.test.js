@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed } from "./queries.js";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
+import { GROUP_CTE } from "./grouping.js";
 
 // bucket()이 intervalHours를 세 가지 버킷(분/시/일)으로 올바르게 매핑하는지 — 차트 드래그 줌이
 // 넘기는 fractional intervalHours(예: 15분=0.25)가 UInt32 MINUTE로 환산되는 게 핵심.
@@ -15,6 +16,18 @@ test("bucket maps intervalHours to minute/hour/day intervals", () => {
   assert.deepEqual(bucket(168).params, { intervalDays: 7 }); // 주간(반올림)
   // 0에 수렴하는 값도 최소 1분으로 클램프 — INTERVAL 0 MINUTE 방지.
   assert.deepEqual(bucket(0.001).params, { intervalMinutes: 1 });
+});
+
+// normModel()의 5단계 regex는 pricing.js normalizeModelId() / grafana-ab-queries.sql 패널 12와
+// 반드시 동기 유지해야 하는 사본이다(각 파일 주석에 명시) — 값 비교는 SQL 문자열이라 못 하지만,
+// SQL이 만드는 4번째 단계(bedrock 버전 접미사) 패턴이 -v1:0뿐 아니라 :0 없는 맨 -v1까지
+// 벗기는 형태인지는 문자열로 확인할 수 있다. 세 사본 중 하나만 고치는 드리프트를 잡는 게 목적.
+test("normModel SQL mirrors normalizeModelId's -v<n> (with optional :n) suffix rule", () => {
+  const sql = normModel("Model");
+  assert.ok(sql.includes("-v\\\\d+(:\\\\d+)?$"), `expected the bare -vN suffix pattern in: ${sql}`);
+  // us-gov/jp/au 리전 프로파일까지 벗기는지 — 다섯 사본(pricing.js / 이 SQL /
+  // grafana-ab-queries.sql 두 곳 / chat.test.js 핀) 중 하나만 고치는 드리프트를 잡는다.
+  assert.ok(sql.includes("us-gov|eu|apac|jp|au|global"), `expected the widened geo-prefix alternation in: ${sql}`);
 });
 
 // activeUsers/adoptionLevels(총계 지표)는 excludeUnknown:false로 unknown 세션도 포함해야
@@ -155,4 +168,46 @@ test("incBucketed keeps the raw-stitched first bucket alive — outer WHERE must
 test("incBucketed caps the first-bucket raw delta scan at least(bucket-end, {to}), not bucket-end alone", () => {
   const sql = incBucketed(1, "toStartOfInterval(hour, INTERVAL {intervalHours:UInt32} HOUR)", "");
   assert.match(sql, /TimeUnix < least\(.*\{to:DateTime\}\)/);
+});
+
+// bedrock 판별은 "Model이 빈 값이 아니고 bare claude-*가 아니면"이다 — Bedrock은 비-Anthropic
+// 모델(openai./xai./moonshotai. 등)도 서빙하는데 예전 조건('anthropic.' 또는 ':' 포함)은 이들을
+// 놓쳐 32세션이 unknown, 2세션이 enterprise로 새고 있었다(실측 2026-09-04, grouping.js 주석).
+// SQL 문자열이라 실행 검증은 못 하지만, (1) 조건식 자체와 (2) bedrock 분기가 has_org(enterprise)
+// 분기보다 먼저 평가되는 것(비-Claude 모델을 쓴 has_org 세션은 bedrock이 이겨야 함)을 고정한다.
+test("GROUP_CTE classifies any non-bare-claude model as bedrock, and bedrock wins over has_org", () => {
+  assert.match(GROUP_CTE, /countIf\(Model != '' AND NOT startsWith\(Model, 'claude-'\)\) > 0, 'bedrock'/);
+  assert.ok(
+    GROUP_CTE.indexOf("'bedrock'") < GROUP_CTE.indexOf("max(has_org) = 1, 'enterprise'"),
+    "bedrock branch must precede the enterprise branch in multiIf"
+  );
+});
+
+// 위 SQL 조건의 의미론을 라이브 census(2026-09-04, otel_metrics_sum_hourly의 distinct Model
+// 전수) 기준으로 고정하는 진리표 — SQL의 startsWith와 동일한 JS 판별식으로 각 형태가 어느
+// 그룹 증거인지 문서화한다. 새 모델 형태가 라이브에 나타나면 여기에 추가할 것.
+test("bedrock-evidence rule truth table over the live model roster", () => {
+  const isBedrockEvidence = (m) => m !== "" && !m.startsWith("claude-");
+  // Bedrock: [global.|us.]anthropic.* (글로벌/리전 추론 프로파일), anthropic.* (인리전),
+  // -vN:M 버전 접미사, 비-Anthropic 프로바이더
+  for (const m of [
+    "global.anthropic.claude-sonnet-5",
+    "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "us.anthropic.claude-fable-5",
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "anthropic.claude-sonnet-5",
+    "anthropic.claude-opus-5",
+    "global.openai.gpt-5.6-sol",
+    "global.xai.grok-4.6",
+    "moonshotai.kimi-k2.5",
+    "zai.glm-5",
+    "deepseek.v3.2",
+    "devstral-small-2",
+    "minimax.minimax-m2.5",
+    "gemma-4-31b-vllm",
+    "qwen.qwen3-coder-next",
+  ]) assert.ok(isBedrockEvidence(m), `${m} must count as bedrock evidence`);
+  // Enterprise 스타일(bare claude-*, [1m] 컨텍스트 접미사 포함)과 빈 값은 bedrock 증거가 아니다
+  for (const m of ["claude-sonnet-5", "claude-fable-5[1m]", "claude-haiku-4-5-20251001", "claude-fable-5-1", "claude-opus-4-8", ""])
+    assert.ok(!isBedrockEvidence(m), `${m || "(empty)"} must NOT count as bedrock evidence`);
 });

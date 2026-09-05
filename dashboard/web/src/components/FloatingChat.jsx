@@ -11,8 +11,8 @@ import { ChatTrace } from "./ChatTrace.jsx";
 
 const SUGGESTIONS = [
   "지난 7일간 모델별 토큰 사용량을 보여줘",
-  "생산성 점수가 가장 높은 유저 5명은?",
-  "bedrock과 enterprise 그룹의 비용을 비교해줘",
+  "세션 수가 가장 많은 사용자 5명은?",
+  "bedrock과 enterprise 채널의 비용을 비교해줘",
 ];
 
 export function FloatingChat() {
@@ -40,7 +40,7 @@ export function FloatingChat() {
           <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
             <div>
               <div className="text-[14px] font-semibold text-ink-800">Ask Claude</div>
-              <div className="text-[11px] text-ink-400">sonnet-5 · ClickHouse 직접 조회</div>
+              <div className="text-[11px] text-ink-400">사용량 데이터를 직접 조회해 답합니다</div>
             </div>
             <button onClick={stop} className="rounded-md p-1 text-ink-400 hover:bg-ink-100">
               <X size={16} />
@@ -94,7 +94,7 @@ export function FloatingChat() {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="사용량에 대해 무엇이든..."
+              placeholder="사용량에 대해 질문하세요"
               className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] focus:border-brand-500 focus:outline-none"
             />
             <button

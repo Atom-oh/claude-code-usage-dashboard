@@ -229,7 +229,7 @@ test("SCHEMA_CONTEXT quotes queries.js's normModel() SQL, not a prose descriptio
 test("normModel and normalizeModelId apply the same 5 normalization steps in the same order", () => {
   const patterns = [...normModel("Model").matchAll(/'([^']*)'/g)].map((m) => m[1]).filter((p) => p !== "");
   // SQL 문자열 리터럴에 들어가는 형태라 백슬래시가 한 번 더 이스케이프돼 있다(`\\[` 등).
-  assert.deepEqual(patterns, ["\\\\[.*\\\\]$", "^(us|global|eu|apac)\\\\.", "^anthropic\\\\.", "-v\\\\d+:\\\\d+$", "-\\\\d{8}$"]);
+  assert.deepEqual(patterns, ["\\\\[.*\\\\]$", "^(us|us-gov|eu|apac|jp|au|global)\\\\.", "^anthropic\\\\.", "-v\\\\d+(:\\\\d+)?$", "-\\\\d{8}$"]);
   assert.equal(normalizeModelId("us.anthropic.claude-haiku-4-5-20251001-v1:0"), "claude-haiku-4-5");
   assert.equal(normalizeModelId("claude-fable-5[1m]"), "claude-fable-5");
 });

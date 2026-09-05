@@ -55,6 +55,36 @@ export async function queryReadonly(sql, externalSignal) {
   }
 }
 
+// 챗 샌드박스의 전제("이 서버가 붙은 ClickHouse 계정은 readonly")를 가정하지 않고 부팅 시
+// 실측한다. 정상 배포에서는 otel_reader 프로필이 readonly=1을 강제하지만, compose·오설정·
+// otel_writer로 뜨면 run_sql 툴이 쓰기 능력을 갖고 sanitizeSql(chat.js) 하나만 남는다.
+// 클라이언트 쪽에서 clickhouse_settings로 readonly=1을 걸 수는 없다(위 주석 — otel_reader
+// 프로필이 세션 설정 변경 자체를 거부한다). 그래서 강제하지 못하는 대신 확인만 한다.
+const READONLY_PROBE_SQL = "SELECT toUInt8(getSetting('readonly')) AS ro";
+
+// Number() 강제 변환이 이 함수의 핵심이다: @clickhouse/client는 JSONEachRow에서 정수를
+// 문자열로 줄 수 있다(실측 2026-09-02, schema.js classifySeriesKeyProbe와 같은 실패 모드).
+// `row.ro >= 1` 같은 비교를 문자열에 그대로 걸면 조용히 틀린 결과가 나오므로 숫자로 바꾼 뒤
+// 판정한다. 판정 불가(행 없음/필드 없음/숫자 아님)는 null — 호출자가 fail-closed로 다룬다.
+export function classifyReadonly(row) {
+  if (!row || row.ro === undefined || row.ro === null) return null;
+  const ro = Number(row.ro);
+  if (!Number.isFinite(ro)) return null;
+  return ro >= 1;
+}
+
+// 부팅/주기 실행 모두 비치명적 — 어떤 에러(접속 불가, 권한, 문법)든 null로 접는다. null은
+// "readonly가 아니다"가 아니라 "확인하지 못했다"이고, 호출자는 둘을 같게(챗 비활성) 다룬다.
+export async function assertReadonlySession() {
+  try {
+    const rows = await query(READONLY_PROBE_SQL);
+    if (!rows || rows.length === 0) return null;
+    return classifyReadonly(rows[0]);
+  } catch {
+    return null;
+  }
+}
+
 export async function ping() {
   const r = await client.ping();
   return r.success;

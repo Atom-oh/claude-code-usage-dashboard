@@ -66,7 +66,14 @@ grafana-ab-queries.sql   - Legacy Grafana panel queries (kept in sync with dashb
 clickhouse-schema.sql   - Reference schema for otel_metrics_sum / otel_logs / otel_traces (beta)
 clickhouse-migration-002.sql - Additive migration (2026-08-11 telemetry spec sync); run this
                        directly against the live cluster, it's not applied by Terraform
+clickhouse-migration-003.sql - Segment-aware SeriesKey cutover + hourly-rollup rebuild; run
+                       this directly against the live cluster, it's not applied by Terraform
+clickhouse-migration-004.sql - Creates claude_code.schema_migrations (the schema-migration
+                       ledger) and backfills 002/003 from column evidence; run this directly
+                       against the live cluster, it's not applied by Terraform -- see
+                       docs/runbooks/schema-migrations.md
 collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHouse)
+LICENSE              - Proprietary, all rights reserved (ADR-004…007 era decision; see README §License)
 .claude/             - Claude Code settings, hooks, skills (gitignored — local tooling only)
 ```
 
@@ -77,7 +84,9 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
 - **Cumulative OTel temporality**: `otel_metrics_sum` values are cumulative per-session
   counters, not deltas. Never `sum(Value)` directly — always diff via the `incFlat`/`incBucketed`
   helpers in `dashboard/server/queries.js` (session-boundary diff, matching Prometheus
-  `increase()`). Direct summing has caused 100x+ overcounting in the past.
+  `increase()`). Direct summing has caused 100x+ overcounting in the past. `SeriesKey` is
+  segment-scoped since migration-003 (`StartTimeUnix` folded in), `claude_code.session.count`
+  excepted.
 - **Don't trust Claude Code's own telemetry docs without checking live data first.** The
   2026-08-11 spec sync found `code.claude.com/docs/en/monitoring-usage.md` missing several
   events actually being emitted — schema/query changes there are keyed to a measured attribute
@@ -85,7 +94,11 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
   `docs/decisions/ADR-001-*.md` / `ADR-002-*.md` for the two non-obvious trade-offs from that
   sync (why `incFlat`/`incBucketed` weren't extended for the new `AppVersion`/`EndUserId`
   dimensions, and why the Bedrock-identity fallback only covers new queries, not all ~90
-  pre-existing `UserEmail` references).
+  pre-existing `UserEmail` references). A separate, later (2026-09-02) investigation into
+  per-process counter resets is recorded in `docs/decisions/ADR-003-*.md`. The 2026-09-03
+  production-readiness decision set is ADR-004 (Basic Auth baseline + SSO path, self sign-up
+  stays off), ADR-005 (outbound alerting), ADR-006 (PII masking baseline) and ADR-007
+  (Korean-first UI).
 - **bedrock/enterprise grouping is session-scoped**, not user-scoped — one user can straddle
   both in different sessions. See `dashboard/server/grouping.js` for the heuristic and its
   measured edge cases.
@@ -97,17 +110,26 @@ collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHo
 - SQL changes to promoted/materialized columns (`otel_metrics_sum`, `otel_logs`) must be
   mirrored in `grafana-ab-queries.sql` if that query file references the same metric — a past
   review caught these drifting out of sync.
+- Every hand-applied `clickhouse-migration-NNN.sql` from 003 onward records itself in
+  `claude_code.schema_migrations` with a guarded, self-recording `INSERT`, and the same block
+  is mirrored into both schema copies (`clickhouse-schema.sql`,
+  `infra/files/clickhouse-schema-replicated.sql`) so a fresh install is at `N` by definition (an existing local MergeTree stack that rebuilt its rollup by TRUNCATE has no rebuild evidence and does not get `3` — see 004 §2) —
+  see `docs/runbooks/schema-migrations.md`.
 - **The OTel Collector must run as a supervised systemd service (`Restart=always`), never
   foreground/`nohup`.** If it dies (DNS blip, node reboot, crash), the dashboard shows a
   silently shrinking data window with no error anywhere — this has already caused an
   unnoticed ~43h telemetry gap in production. See the "Telemetry Ingestion" section of
   `README.md` for the exact unit file and how to verify it's actually writing
-  (`SELECT max(TimeUnix) FROM claude_code.otel_metrics_sum`).
+  (`SELECT max(TimeUnix) FROM claude_code.otel_metrics_sum`). The exporter queue is on disk too
+  (`file_storage` extension, directory from `OTELCOL_QUEUE_DIR`), so `Restart=always` covers
+  the process dying and the queue covers the batches that were in flight when it did — a
+  ClickHouse outage now fills a bounded disk queue instead of dropping everything past the
+  retry window.
 
 ## Key Commands
 ```bash
 # Server (dashboard/server)
-npm install
+npm ci
 npm start                 # node index.js
 npm run dev               # node --watch index.js
 node --test *.test.js     # all unit tests (node:test, no framework, no separate runner)
@@ -115,17 +137,19 @@ node --test queries.test.js          # a single test file
 node --test --test-name-pattern="incFlat" *.test.js   # tests matching a name
 
 # Web (dashboard/web)
-npm install
+npm ci
 npm run dev               # vite dev server
-npm run build             # vite build -> dist/ (no dedicated web test suite yet)
+npm test                  # vitest run (jsdom) — *.test.js / *.test.jsx under src/
+npm run build             # vite build -> dist/
 npm run preview
 
 # Claude Code harness tests (hooks, settings.json, repo structure — not app logic)
 bash tests/run-all.sh              # all
 bash tests/run-all.sh hooks        # only hooks/*.sh tests (pattern matches subdir/filename)
 
-# Local full stack
-docker compose -f dashboard/docker-compose.yml up
+# Local full stack — ClickHouse (schema + seed auto-loaded on first init) + the dashboard on :8080
+docker compose -f dashboard/docker-compose.yml up -d --build
+# reset the data: docker compose -f dashboard/docker-compose.yml down -v
 
 # Deploy (see docs/runbooks/deploy-production.md)
 docker buildx build --platform linux/arm64 -t <ecr-repo>:<tag> --push dashboard/
@@ -157,9 +181,11 @@ After exiting Plan mode (`/plan`), before starting implementation:
   nearest `CLAUDE.md`
 - New API route in `dashboard/server/index.js` -> update `dashboard/server/CLAUDE.md`
 - ClickHouse schema/materialized column changed -> update `clickhouse-schema.sql`,
-  `grafana-ab-queries.sql`, and `docs/architecture.md` Infrastructure section
-- Terraform changed under `infra/` -> update `docs/architecture.md` Infrastructure section and
-  `infra/CLAUDE.md`
+  `infra/files/clickhouse-schema-replicated.sql`, `grafana-ab-queries.sql`, and `docs/architecture.md` Infrastructure
+  section; a `SeriesKey` expression change must also hit `scripts/backfill-hourly-rollup.sh` and
+  `clickhouse-migration-003.sql` (the four copies are declared identical)
+- Terraform changed under `infra/` (`infra/alerting.tf` included) -> update
+  `docs/architecture.md` Infrastructure section and `infra/CLAUDE.md`
 
 ### ADR Numbering
 Find the highest number in `docs/decisions/ADR-*.md` and increment by 1.

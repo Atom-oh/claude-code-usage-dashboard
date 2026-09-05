@@ -150,7 +150,7 @@ export function useChatStream() {
       if (ac.signal.aborted) return; // 사용자가 닫거나 다시 보낸 경우 — 오류로 표시하지 않는다
       setMsgs((m) => {
         const next = [...m];
-        next[next.length - 1] = { role: "assistant", content: `오류: ${err.message}`, error: true };
+        next[next.length - 1] = { role: "assistant", content: `응답을 받지 못했습니다: ${err.message}`, error: true };
         return next;
       });
     } finally {

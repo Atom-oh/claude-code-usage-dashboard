@@ -1,0 +1,27 @@
+# cp terraform.tfvars.example terraform.tfvars 후 값을 채운다.
+# *.tfvars는 gitignore되지만 이 .example 파일은 그 패턴에 걸리지 않는다(파일명이 .example로 끝난다).
+# 비밀값(dashboard_basic_auth_password, clickhouse_*_password)은 여기 적지 않는다 —
+# -var 주입이나 별도 gitignore된 secrets.auto.tfvars로 넘긴다.
+
+# 이 스택을 올릴 EKS 클러스터
+eks_cluster_name = "fsi-demo-cluster"
+
+# Route53 호스팅 존과 그 안의 호스트명
+domain             = "atomai.click"
+dashboard_hostname = "ccdash.atomai.click"
+ch_ingest_hostname = "ch.atomai.click"
+
+# ECR에 실제로 push된 태그. ECR이 IMMUTABLE이라 `latest`는 존재하지 않는다 —
+# 이미지를 먼저 push하고 그 타임스탬프 태그를 여기 넣는다(docs/runbooks/deploy-production.md).
+dashboard_image_tag = "REPLACE-WITH-A-PUSHED-TIMESTAMP-TAG"
+
+# 조직 단위 대시보드 동작(선택) — 기본값은 서버 기본값과 같다. docs/deploying-for-your-org.md §9.
+# group_mode         = "ab"   # "ab" | "single"
+# default_range_days = 2
+# range_cap_days     = 90     # default_range_days 이상
+# pii_mask_enabled   = true   # 워크샵 계정은 false
+
+# 알림(선택). docs/runbooks/alerting.md
+# alert_email          = "ops@example.com"   # CloudFront 5xx → SNS 이메일(구독 확인 메일 필요)
+# alert_repeat_minutes = 60
+# alert_webhook_url은 토큰이 든 secret — 이 파일이 아니라 secrets.auto.tfvars(비추적) 또는 -var로 넘긴다.

@@ -6,7 +6,7 @@
 <a id="english"></a>
 ## English
 
-**Status:** Accepted (partially applied — see Consequences)
+**Status:** Superseded in part — see "Update 2026-08-11 (same day, follow-up)" below
 **Date:** 2026-08-11
 
 ### Context
@@ -55,10 +55,29 @@ there today.
   (b) rewrite `userLeaderboard`'s identity join as its own dedicated change with test coverage,
   not as a side effect of an unrelated telemetry-attribute sync.
 
+### Update 2026-08-11 (same day, follow-up)
+Explicit operator decision: "email always exists — we're going to forcibly inject a user
+identifier, via the install script/workshop provisioning, so there's no gap." `user-data.sh`
+now injects the same `Email` instance-tag value as **`user.email`** (not just `enduser.id`),
+gated to `EXPERIMENT_GROUP=bedrock` only — Enterprise sessions already get a real authenticated
+`user.email` from Claude Code itself, and this repo hasn't verified how the OTel SDK's resource
+attribute merge prioritizes an env-injected value against an SDK-populated one, so forcing it
+there too would risk silently overwriting real identity with an unverified one. Bedrock has
+nothing to overwrite, so the same injection there is pure upside.
+
+This **resolves** the leaderboard-invisibility gap above for any Bedrock instance whose Launch
+Template actually sets the `Email` tag with `InstanceMetadataTags=enabled` — that tagging is an
+operational prerequisite this ADR does not enforce or verify at boot beyond a `WARN` log line.
+`userLeaderboard` itself was still not touched (no `incFlat` extension, no coalesce needed there
+now) — with `UserEmail` populated at the source, the existing `UserEmail`-only code path just
+works. The `enduser.id`/`coalesce` mechanism above is kept as defense-in-depth (if the forced
+injection ever fails validation — e.g. the tag value contains a space/comma/`=` — Bedrock
+sessions fall back to being merely `coalesce`-visible rather than fully invisible).
+
 <a id="korean"></a>
 ## 한국어
 
-**상태:** 채택(부분 적용 — "결과" 참고)
+**상태:** 일부 대체됨 — 아래 "갱신 2026-08-11(같은 날 후속)" 참고
 **날짜:** 2026-08-11
 
 ### 배경
@@ -103,3 +122,21 @@ Bedrock 그룹 세션은 Claude 계정이 없다: `organization.id`, `user.accou
   기준 참고) `incFlat`/`incBucketed`를 `EndUserId`까지 관통하도록 확장하거나, (b)
   `userLeaderboard`의 identity join을 관련 없는 텔레메트리 속성 동기화의 부수 효과가 아니라
   테스트 커버리지를 갖춘 별도의 전용 변경으로 다시 쓰는 것 중 하나여야 한다.
+
+### 갱신 2026-08-11 (같은 날 후속)
+운영자의 명시적 결정: "이메일은 항상 있음 — 설치 스크립트/워크숍에서 유저 식별자를
+강제로 주입하게 될 것." `user-data.sh`가 이제 같은 `Email` 인스턴스 태그 값을
+`enduser.id`뿐 아니라 **`user.email`로도** 주입한다 — `EXPERIMENT_GROUP=bedrock`에만
+게이팅. Enterprise 세션은 Claude Code 자신이 이미 인증된 실제 `user.email`을 채우고,
+env로 주입한 값과 SDK가 채운 값 중 어느 쪽이 리소스 속성 병합에서 우선하는지 이 리포에서
+검증한 적이 없어, 거기까지 강제 주입하면 실제 identity를 검증 안 된 값으로 조용히 덮어쓸
+위험이 있다. Bedrock은 덮어쓸 실제 값이 없으므로 같은 주입이 순이득뿐이다.
+
+이 변경은 Launch Template이 실제로 `InstanceMetadataTags=enabled`와 함께 `Email` 태그를
+설정한 모든 Bedrock 인스턴스에 대해 위 리더보드 미노출 공백을 **해소한다** — 그 태깅 자체는
+이 ADR이 부팅 시 `WARN` 로그 한 줄 이상으로 강제하거나 검증하지 않는 운영 전제조건이다.
+`userLeaderboard`는 여전히 손대지 않았다(`incFlat` 확장도, 거기서 coalesce도 필요 없어짐)
+— `UserEmail`이 소스에서부터 채워지니 기존 `UserEmail`-only 코드 경로가 그대로 동작한다.
+위 `enduser.id`/`coalesce` 메커니즘은 방어적 대비로 그대로 남긴다(강제 주입이 검증에서
+실패하면 — 예: 태그 값에 공백/쉼표/`=` 포함 — Bedrock 세션은 완전히 안 보이는 대신
+coalesce로만 보이는 상태로 후퇴한다).

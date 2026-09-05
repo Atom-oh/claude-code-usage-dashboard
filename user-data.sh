@@ -20,9 +20,12 @@ AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-northeast-2}"
 CH_HOST="admin-clickhouse.internal"
 CH_PORT="9440"                                       # native TLS
 CH_DB="claude_code"
-CH_USER="otel_writer"
+# 컬렉터는 INSERT 범위 계정으로 붙는다 — otel_writer는 DDL/DROP·테이블 함수·system DB까지
+# 가능한 계정이라 워크숍 참가자 인스턴스에 둘 자격증명이 아니다. 이 파라미터는 terraform이
+# 만들지 않으므로, 새 인스턴스를 띄우기 전에 운영자가 먼저 만들어야 한다.
+CH_USER="otel_ingest"
 # 비밀번호는 하드코딩 금지 → SSM Parameter Store(SecureString)에서 로드
-CH_PASSWORD_SSM_PARAM="/claude-code/ab/clickhouse-writer-password"
+CH_PASSWORD_SSM_PARAM="/claude-code/ab/clickhouse-ingest-password"
 
 OTELCOL_VERSION="0.119.0"
 
@@ -90,13 +93,34 @@ if [ "$EXPERIMENT_GROUP" = "bedrock" ] && [ -z "$END_USER_ID" ]; then
   echo "WARN: bedrock 그룹인데 enduser.id를 못 구함 — 이 인스턴스는 유저별 패널에서 빈 값으로 잡힘. IMDS 인스턴스 태그(Email) 또는 END_USER_ID_SSM_PARAM을 확인할 것"
 fi
 
+# 2026-08-11 결정: Bedrock 그룹은 user.email 자체를 강제 주입해 "빈 곳이 없게" 한다(워크숍
+# 운영 요구사항 — 설치 스크립트가 항상 값을 채워야 함). enduser.id/coalesce 폴백(위)은 이
+# 주입이 실패했을 때의 방어용으로 그대로 남긴다 — 이게 주 경로다.
+# Bedrock 그룹에만 적용하는 이유: Enterprise 세션은 Claude Code 자신이 OAuth 인증된 실제
+# user.email을 이미 표준 속성으로 채운다(문서 확인) — 여기서 OTEL_RESOURCE_ATTRIBUTES로
+# user.email을 한 번 더 주입하면 그 실제 값과 충돌/덮어쓰기 위험이 있다(SDK가 리소스
+# 속성을 병합하는 정확한 우선순위를 확인하지 않았다 — 검증 안 된 값으로 실제 이메일을
+# 덮어쓰는 리스크를 감수할 이유가 없다). Bedrock은 애초에 채워질 값이 없으므로 주입만
+# 이득이고 충돌 리스크가 없다.
+FORCED_USER_EMAIL=""
+if [ "$EXPERIMENT_GROUP" = "bedrock" ] && [ -n "$END_USER_ID" ]; then
+  FORCED_USER_EMAIL="$END_USER_ID"
+fi
+
 # ---- 2. SSM에서 ClickHouse 비밀번호 로드 -----------------------------------
 # 인스턴스 프로파일에 ssm:GetParameter + kms:Decrypt 권한 필요
+#
+# 이 스크립트는 set -euxo pipefail로 돌기 때문에 이 대입문이 그대로 트레이스돼
+# /var/log/cloud-init-output.log에 비밀번호가 평문으로 남는다 — 실측 확인(bash 5.2.15): 명령
+# 치환 대입은 값을 두 번 찍는다(내부 명령 `++ …`와 대입 `+ CH_PASSWORD=…`). 읽는 구간만
+# xtrace를 끈다. `{ set +x; } 2>/dev/null` 형태여야 set +x 자신의 트레이스 한 줄도 안 남는다.
+{ set +x; } 2>/dev/null
 CH_PASSWORD="$(aws ssm get-parameter \
   --name "$CH_PASSWORD_SSM_PARAM" \
   --with-decryption \
   --region "$AWS_DEFAULT_REGION" \
   --query 'Parameter.Value' --output text)"
+set -x
 
 # ---- 3. OTel Collector (contrib) 설치 --------------------------------------
 ARCH="$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
@@ -108,8 +132,15 @@ install -m 0755 /opt/otelcol/otelcol-contrib /usr/local/bin/otelcol-contrib
 
 # ---- 4. Collector 설정/시크릿 파일 -----------------------------------------
 mkdir -p /etc/otelcol
+# exporter 디스크 큐 디렉터리. file_storage의 create_directory=true가 만들긴 하지만, 부모가
+# 없으면 실패하므로 여기서 미리 만든다. 이 유닛은 root로 돌아 쓰기 권한이 있다.
+mkdir -p /var/lib/otelcol/queue
 # collector config 본문은 별도 파일(collector-config.yaml)을 여기에 복사해두는 방식.
 # user-data 안에 인라인으로 넣고 싶으면 heredoc으로 바꿔도 됨.
+# heredoc 본문은 xtrace에 안 찍힌다(실측: 트레이스는 `+ cat` 한 줄뿐) — 그래도 이 구간을 끄는
+# 건 나중에 이 쓰기가 echo/printf로 바뀌어도 평문이 안 새게 하려는 것이다. 이 창을 지우려면
+# 위 대입문 가드부터 지워야 하는 게 아니라, 이 파일이 더 이상 비밀번호를 안 다뤄야 한다.
+{ set +x; } 2>/dev/null
 cat > /etc/otelcol/env <<EOF
 EXPERIMENT_GROUP=${EXPERIMENT_GROUP}
 CH_HOST=${CH_HOST}
@@ -117,7 +148,9 @@ CH_PORT=${CH_PORT}
 CH_DB=${CH_DB}
 CH_USER=${CH_USER}
 CH_PASSWORD=${CH_PASSWORD}
+OTELCOL_QUEUE_DIR=/var/lib/otelcol/queue
 EOF
+set -x
 chmod 600 /etc/otelcol/env
 
 # collector-config.yaml 배포 (S3 등에서 받아오거나, AMI에 미리 포함).
@@ -183,6 +216,11 @@ fi
 RESOURCE_ATTRS="experiment.group=${EXPERIMENT_GROUP},team=fsi"
 if [ -n "$END_USER_ID" ]; then
   RESOURCE_ATTRS="${RESOURCE_ATTRS},enduser.id=${END_USER_ID}"
+fi
+# FORCED_USER_EMAIL은 위에서 이미 bedrock 그룹 + 값 존재로 게이팅됐다 — Enterprise는 항상
+# 빈 문자열이라 이 줄이 실행되지 않는다(실제 인증된 user.email을 덮어쓰지 않음).
+if [ -n "$FORCED_USER_EMAIL" ]; then
+  RESOURCE_ATTRS="${RESOURCE_ATTRS},user.email=${FORCED_USER_EMAIL}"
 fi
 
 cat > /etc/claude-code/managed-settings.json <<EOF

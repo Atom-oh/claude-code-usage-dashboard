@@ -25,6 +25,13 @@ export function useChartColors() {
     axis: v("--chart-axis", FALLBACK.axis),
     tooltipBg: v("--chart-tooltip-bg", FALLBACK.tooltipBg),
     tooltipFg: v("--chart-tooltip-fg", FALLBACK.tooltipFg),
+    // 스택 세그먼트/겹침 마크 사이 "서피스 갭"용(dataviz 마크 스펙) — 차트가 얹히는 카드 배경색.
+    surface: v("--surface-card", "#ffffff"),
+    // 범례 텍스트용 잉크 — recharts 기본 Legend는 텍스트를 시리즈 색으로 칠하는데(dataviz:
+    // 텍스트는 잉크 토큰, 색은 옆의 마크가 나른다), formatter로 이 색을 강제한다.
+    ink: v("--text-secondary", "#5b6b79"),
+    // 엠퍼시스(하나 강조, 나머지 회색)의 그 회색 — 서피스 위에서 존재는 보이되 물러나는 톤.
+    mute: v("--ink-200", "#d7dde3"),
   };
 }
 

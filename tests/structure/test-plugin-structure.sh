@@ -1,6 +1,14 @@
 #!/bin/bash
 # --- Manifest validation ---
-assert_json_valid "settings.json is valid JSON" ".claude/settings.json"
+# .claude/ 는 gitignore 대상(로컬 도구 전용)이라 fresh clone / CI 체크아웃에는 아예 없다 —
+# 없으면 실패가 아니라 skip이다. run-all.sh가 set -euo pipefail 아래에서 이 파일을 source하므로,
+# 없는 파일을 읽는 명령 치환(CMD_CONTENT=$(cat …), AGENT_CONTENT=$(cat …))은 한 건의 실패가 아니라
+# 스위트 전체를 중단시킨다 — 그래서 개별 단정문을 고치는 게 아니라 해당 블록을 가드로 감싼다.
+if [ -d .claude ]; then
+    assert_json_valid "settings.json is valid JSON" ".claude/settings.json"
+else
+    skip "settings.json is valid JSON" ".claude/ is local-only (gitignored)"
+fi
 assert_json_valid "dashboard/server/package.json is valid JSON" "dashboard/server/package.json"
 assert_json_valid "dashboard/web/package.json is valid JSON" "dashboard/web/package.json"
 assert_json_valid ".mcp.json is valid JSON" ".mcp.json"
@@ -29,24 +37,30 @@ assert_file_executable "install-hooks.sh is executable" "scripts/install-hooks.s
 assert_bash_syntax "install-hooks.sh valid bash" "scripts/install-hooks.sh"
 
 # --- Command frontmatter ---
-for cmd in review test-all deploy; do
-    CMD_CONTENT=$(cat ".claude/commands/$cmd.md")
-    assert_contains "Command $cmd: has frontmatter" "$CMD_CONTENT" "description:"
-    assert_contains "Command $cmd: has allowed-tools" "$CMD_CONTENT" "allowed-tools:"
-done
+if [ -d .claude ]; then
+    for cmd in review test-all deploy; do
+        CMD_CONTENT=$(cat ".claude/commands/$cmd.md")
+        assert_contains "Command $cmd: has frontmatter" "$CMD_CONTENT" "description:"
+        assert_contains "Command $cmd: has allowed-tools" "$CMD_CONTENT" "allowed-tools:"
+    done
 
-# --- Skill files ---
-for skill in code-review refactor release sync-docs; do
-    assert_file_exists "Skill $skill: SKILL.md exists" ".claude/skills/$skill/SKILL.md"
-done
+    # --- Skill files ---
+    for skill in code-review refactor release sync-docs; do
+        assert_file_exists "Skill $skill: SKILL.md exists" ".claude/skills/$skill/SKILL.md"
+    done
 
-# --- Agent files ---
-for agent in code-reviewer security-auditor; do
-    assert_file_exists "Agent $agent: yml exists" ".claude/agents/$agent.yml"
-    AGENT_CONTENT=$(cat ".claude/agents/$agent.yml")
-    assert_contains "Agent $agent: has name" "$AGENT_CONTENT" "name:"
-    assert_contains "Agent $agent: has tools" "$AGENT_CONTENT" "tools:"
-done
+    # --- Agent files ---
+    for agent in code-reviewer security-auditor; do
+        assert_file_exists "Agent $agent: yml exists" ".claude/agents/$agent.yml"
+        AGENT_CONTENT=$(cat ".claude/agents/$agent.yml")
+        assert_contains "Agent $agent: has name" "$AGENT_CONTENT" "name:"
+        assert_contains "Agent $agent: has tools" "$AGENT_CONTENT" "tools:"
+    done
+else
+    skip ".claude/commands/*.md frontmatter" ".claude/ is local-only (gitignored)"
+    skip ".claude/skills/*/SKILL.md exist" ".claude/ is local-only (gitignored)"
+    skip ".claude/agents/*.yml exist and declare name/tools" ".claude/ is local-only (gitignored)"
+fi
 
 # --- CLAUDE.md content (use grep -F for fixed string matching) ---
 SECTIONS=("Overview" "Tech Stack" "Project Structure" "Conventions" "Key Commands" "Auto-Sync Rules")

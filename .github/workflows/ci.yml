@@ -1,0 +1,82 @@
+name: CI
+
+# 테스트/빌드/하니스/HCL 검증을 GitHub-hosted 러너에서 돌린다. pr-review.yml의 self-hosted
+# 러너(claude-code-usage-dashboard-claude-arm)는 AI 리뷰 패널 전용이라 여기서 쓰지 않는다 —
+# 러너 한 대에 CI까지 얹으면 리뷰가 CI 큐를 기다린다.
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+# 같은 ref의 이전 실행은 취소한다 — CI는 배포가 아니라 검증이라 중간 결과가 남아도 무해하다
+# (pages.yml이 cancel-in-progress: false인 것과 반대 이유).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            dashboard/server/package-lock.json
+            dashboard/web/package-lock.json
+      - run: npm ci
+        working-directory: dashboard/server
+      - run: npm test
+        working-directory: dashboard/server
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            dashboard/server/package-lock.json
+            dashboard/web/package-lock.json
+      - run: npm ci
+        working-directory: dashboard/web
+      - run: npm run build
+        working-directory: dashboard/web
+      - run: npm test
+        working-directory: dashboard/web
+
+  harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # .claude/ 는 gitignore 대상이라 이 체크아웃에는 없다 — tests/ 쪽 가드가 그 그룹을
+      # skip으로 처리한다(tests/hooks/test-hooks.sh, tests/structure/test-plugin-structure.sh).
+      - run: bash tests/run-all.sh
+
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          # infra/providers.tf가 선언한 하한(>= 1.9)에서 검증한다 — 최신 버전만 통과하는
+          # HCL이 들어오면 선언이 거짓이 된다.
+          terraform_version: 1.9.x
+      - run: terraform fmt -check -recursive infra/
+      - run: terraform init -backend=false
+        working-directory: infra
+      - run: terraform validate
+        working-directory: infra

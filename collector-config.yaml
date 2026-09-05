@@ -2,8 +2,18 @@
 # OTel Collector config — EC2 로컬 sidecar (Claude Code A/B)
 # 배포 경로: /etc/otelcol/config.yaml
 # env(/etc/otelcol/env)에서 주입되는 값: EXPERIMENT_GROUP, CH_HOST, CH_PORT,
-#   CH_DB, CH_USER, CH_PASSWORD
+#   CH_DB, CH_USER, CH_PASSWORD, OTELCOL_QUEUE_DIR (OTELCOL_QUEUE_DIR falls back to /var/lib/otelcol/queue, the path user-data.sh writes to /etc/otelcol/env)
 # =============================================================================
+
+extensions:
+  # 디스크 기반 exporter 큐. 배포 경로가 두 개고 쓰기 권한이 다르므로(fleet은 root로 돌아
+  # /var/lib/otelcol, 셀프서비스는 User=%i로 /home/%i/.otelcol) 디렉터리를 하드코딩하지 않고
+  # env로 받는다 — 한쪽에서는 반드시 쓰기 실패한다.
+  # 옵션 이름은 contrib v0.119.0의 extension/storage/filestorage/README.md 기준
+  # (directory 기본값 /var/lib/otelcol/file_storage, create_directory 기본 false).
+  file_storage:
+    directory: ${env:OTELCOL_QUEUE_DIR:-/var/lib/otelcol/queue}
+    create_directory: true
 
 receivers:
   otlp:
@@ -94,13 +104,24 @@ exporters:
       enabled: true
       initial_interval: 5s
       max_interval: 30s
-      max_elapsed_time: 300s
+      # 0 = 재시도를 영원히 멈추지 않는다(collector v0.119.0 exporter/exporterhelper/README.md).
+      # 300s였을 때는 ClickHouse/NLB 장애가 5분을 넘기면 그 시점의 배치가 조용히 버려졌다.
+      # 이제 큐가 디스크에 있으므로 무한 재시도의 상한은 시간이 아니라 queue_size다.
+      max_elapsed_time: 0
     sending_queue:
       enabled: true
       num_consumers: 4
       queue_size: 1000
+      # storage를 지정하면 in-memory 큐가 아예 없어지고, 프로세스가 죽어도 큐에 남은 항목이
+      # 재시작 후 이어서 전송된다(collector v0.119.0 exporter/exporterhelper/README.md).
+      # 이것과 systemd의 Restart=always가 함께 있어야 root CLAUDE.md가 기록한 실패 모드
+      # ("조용히 줄어드는 데이터 창", 실제로 ~43시간 공백이 발생) 가 닫힌다 — Restart=always는
+      # 프로세스가 죽는 것을, 이 큐는 죽는 순간 실려 있던 데이터를 막는다. ClickHouse가 계속
+      # 죽어 있으면 이제 5분 뒤 유실이 아니라 queue_size(1000) 배치만큼 디스크 큐가 찬다.
+      storage: file_storage
 
 service:
+  extensions: [file_storage]
   pipelines:
     metrics:
       receivers: [otlp]

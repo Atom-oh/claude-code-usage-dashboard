@@ -73,7 +73,12 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     SessionId       String                 MATERIALIZED Attributes['session.id'],
     -- 진짜 OTel 시리즈 식별자 — clickhouse-schema.sql(참조 사본)과 동기화 유지.
     -- 매 쿼리 인라인 cityHash64(toString(Attributes))는 1.2초, 이 컬럼은 0.11초(실측 2026-07-10).
-    SeriesKey       UInt64                 MATERIALIZED cityHash64(toString(Attributes))
+    -- 전체 근거·2026-09-02 세그먼트 인식 전환 배경은 clickhouse-schema.sql의 동일 컬럼 주석과
+    -- docs/decisions/ADR-003-fold-start-time-into-series-key.md를 참고.
+    SeriesKey       UInt64                 MATERIALIZED
+        if(MetricName = 'claude_code.session.count',
+           cityHash64(toString(Attributes)),
+           cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum', '{replica}')
 PARTITION BY toYYYYMM(TimeUnix)
@@ -85,8 +90,19 @@ SETTINGS storage_policy = 'hot_cold';
 -- CREATE TABLE IF NOT EXISTS는 기존 클러스터에 no-op이라 SeriesKey가 생기지 않는다 —
 -- ../../clickhouse-schema.sql(참조 사본)과 동일한 근거·순서로 ALTER + MATERIALIZE.
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
-    ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes));
+    ADD COLUMN IF NOT EXISTS SeriesKey UInt64 MATERIALIZED
+        if(MetricName = 'claude_code.session.count',
+           cityHash64(toString(Attributes)),
+           cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)));
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN SeriesKey;
+
+-- 2026-09-02 세그먼트 인식 SeriesKey 전환(ADR-003) — 이 파일에는 의도적으로 MODIFY COLUMN을
+-- 추가하지 않는다. 이 파일은 infra/clickhouse.tf의 schema_init Job이 파일이 바뀔 때마다(Job
+-- 이름이 파일 md5) 재실행한다 — raw 키를 여기서 조율 없이 바꾸면 그 순간 살아있던 세션들의
+-- 롤업이 누군가 재구축하기 전까지 이중집계된다. 전환은 롤업 재구축과 함께 조율되어야 하므로
+-- clickhouse-migration-003.sql + docs/runbooks/rollup-rebuild-segment-key.md로 사람이 직접
+-- 수행한다. 신규 설치는 위 CREATE에서 바로 새 키를 받고, 기존 클러스터는 migration-003으로만
+-- 전환된다.
 
 -- 2026-08-11 스펙 동기화 — clickhouse-migration-002.sql(실행용)과 동일 정의.
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
@@ -155,27 +171,44 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly ON CLUSTER 'repli
     -- 2026-08-11: StartType/AppVersion 승격 — ../../clickhouse-schema.sql(참조 사본)과
     -- 동기화 유지. 라이브 기존 클러스터는 clickhouse-migration-002.sql의 ADD COLUMN(정렬 키
     -- 변경 불가로 컬럼만 추가)이 담당 — 이 CREATE TABLE 블록은 신규 설치에서만 실행된다.
+    -- 실측 드리프트: 그래서 라이브 ORDER BY에는 StartType/AppVersion이 빠져 있다(정렬 키는
+    -- MergeTree에서 in-place로 못 바꾸므로 컬럼만 추가됐다). clickhouse-migration-003.sql의
+    -- shadow 테이블 재구축(EXCHANGE TABLES)이 이 드리프트를 닫는다 — 그 절차가 끝나면 라이브
+    -- 테이블도 아래 CREATE와 동일한 13컬럼 ORDER BY를 갖게 된다.
     StartType              LowCardinality(String),
     AppVersion             LowCardinality(String),
     max_value SimpleAggregateFunction(max, Float64),
     sum_value SimpleAggregateFunction(sum, Float64),
     has_org   SimpleAggregateFunction(max, UInt8)
 )
-ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
+-- ZK 경로(2026-09-05): clickhouse-migration-003.sql §5 EXCHANGE 이후 라이브 롤업의 실제 경로는
+-- …/otel_metrics_sum_hourly_v2 다(이름/경로 역전). 이 CREATE 도 같은 경로를 선언해 IaC 가 라이브를 재현하고,
+-- 신규 설치도 처음부터 그 경로에 만들어져 004 원장 가드 (4)가 성립한다. 003 이전 클러스터에서는 IF NOT EXISTS 라
+-- no-op 이고, 003 §3 의 shadow 테이블(_v2 이름, 같은 경로)은 그런 클러스터에서만 만들어진다. 정합 확인 쿼리는 003 §8.
+ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly_v2', '{replica}')
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
           Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion, hour)
-TTL toDateTime(hour) + INTERVAL 90 DAY TO VOLUME 'cold',
-    toDateTime(hour) + INTERVAL 180 DAY DELETE
+-- 롤업만 DELETE-only TTL(cold 이동 없음). 실측(2026-09-02, prod query_log): 라이브 롤업은
+-- SETTINGS 없이 만들어져 storage_policy=default(볼륨 'default' 하나)라 아래 ALTER의 예전 형태
+-- `... TO VOLUME 'cold'`가 Code 450 BAD_TTL_EXPRESSION(No such volume 'cold')으로 실패했고,
+-- --multiquery인 schema_init Job이 여기서 abort해 이 파일의 이후 statement(MV/gauge/logs/
+-- traces)가 IaC 경로로는 한 번도 적용되지 않았다(2026-08-12 7회 전부 실패). ClickHouse는
+-- MODIFY SETTING storage_policy로 정책을 바꿀 때 새 정책이 옛 정책의 볼륨 이름을 전부
+-- 포함해야 해서(StoragePolicy::checkCompatibleWith) default→hot_cold 전환도 거부된다.
+-- 롤업은 ~4.5MiB라 cold 티어의 실익이 없고, retention 목적(UserEmail 삭제)은 DELETE만으로
+-- 충분하다. CREATE와 ALTER의 TTL은 반드시 같아야 한다 — MODIFY TTL은 TTL 절 전체를 교체하므로
+-- 둘이 다르면 신규 설치와 기존 클러스터의 끝 상태가 조용히 갈라진다.
+TTL toDateTime(hour) + INTERVAL 180 DAY DELETE
 SETTINGS storage_policy = 'hot_cold';
 
 -- 위 CREATE TABLE IF NOT EXISTS는 롤업 테이블이 이미 있는 기존 클러스터에 no-op이라 TTL 절이
 -- 적용되지 않는다 — 실측(2026-07-27) 라이브 롤업에는 TTL이 없었다(SeriesKey/McpServerName과
 -- 완전히 같은 함정). TTL 없이 두면 UserEmail을 담은 롤업이 원본 삭제(180일) 뒤에도 무기한
 -- 남아 retention을 우회하고, 그 구간에서 원본/롤업 집계가 발산한다. 이미 TTL이 같으면 no-op.
+-- 볼륨을 참조하지 않으므로 storage_policy가 default든 hot_cold든 통과한다(위 주석 참고).
 ALTER TABLE claude_code.otel_metrics_sum_hourly ON CLUSTER 'replicated'
-    MODIFY TTL toDateTime(hour) + INTERVAL 90 DAY TO VOLUME 'cold',
-               toDateTime(hour) + INTERVAL 180 DAY DELETE;
+    MODIFY TTL toDateTime(hour) + INTERVAL 180 DAY DELETE;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.otel_metrics_sum_hourly_mv ON CLUSTER 'replicated'
 TO claude_code.otel_metrics_sum_hourly AS
@@ -414,3 +447,43 @@ ORDER BY (ExperimentGroup, SpanType, toUnixTimestamp(Timestamp))
 TTL toDateTime(Timestamp) + INTERVAL 45 DAY TO VOLUME 'cold',
     toDateTime(Timestamp) + INTERVAL 90 DAY DELETE
 SETTINGS storage_policy = 'hot_cold';
+
+-- -----------------------------------------------------------------------------
+-- 004 블록 — 스키마 마이그레이션 원장 (clickhouse-migration-004.sql의 라이브 클러스터 사본)
+--    신규 설치는 정의상 "004까지 적용된" 상태다 — 이 파일이 전부 실행되면 002/003의 컬럼
+--    증거가 이미 성립하므로 아래 가드가 세 행을 모두 남긴다. 기존 배포에 이 파일을 다시
+--    돌려도 두 번째 가드((b) 아직 기록되지 않았다)가 걸려 멱등이다(실측 2026-09-03,
+--    24.8.14.39 컨테이너: 재실행 후에도 정확히 3행).
+--    이 파일을 수정하면 schema-init Job 이름에 박힌 filemd5(...)가 바뀐다
+--    (infra/clickhouse.tf) — 그래서 다음 terraform apply가 Job을 재생성하고 다시
+--    실행하는데, 이 파일의 모든 문장이 IF NOT EXISTS / 가드된 INSERT라서 안전하다.
+--    로컬/참조 사본은 clickhouse-schema.sql, 오퍼레이터가 직접 실행하는 파일은
+--    clickhouse-migration-004.sql이며 세 파일의 INSERT는 동일 텍스트다.
+--    절차는 docs/runbooks/schema-migrations.md.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS claude_code.schema_migrations ON CLUSTER 'replicated'
+(
+    version     UInt16,
+    name        String,
+    applied_at  DateTime DEFAULT now(),
+    checksum    String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/schema_migrations', '{replica}')
+ORDER BY version;
+
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 2, '002-telemetry-spec-sync', 'd57685094b64edd241f79d48902cf9fd90bdc74bd391fe2eb4b608514609f8d8'
+FROM system.one
+WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'AppVersion') > 0
+  AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 2) = 0;
+
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '10d718df836ed300e2e30a602a92a785375eb8ed955da5bb441324349d0b4758'
+FROM system.one
+WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
+  AND (SELECT countIf(SeriesKey != if(MetricName = 'claude_code.session.count', cityHash64(toString(Attributes)), cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))) FROM claude_code.otel_metrics_sum WHERE toYYYYMM(TimeUnix) = (SELECT min(toYYYYMM(TimeUnix)) FROM claude_code.otel_metrics_sum)) = 0
+  AND (SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND is_done = 0) = 0
+  AND ((SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_metrics_sum_hourly' AND engine_full LIKE '%otel_metrics_sum_hourly_v2%') > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
+  AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;
+
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 4, '004-schema-migration-ledger', '29b114b2e242852ee208b4ef7fa6dc49d0e8b4b2daf988e18caa2543d62179a5'
+FROM system.one
+WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version = 4) = 0;

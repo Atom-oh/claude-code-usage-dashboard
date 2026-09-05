@@ -17,3 +17,10 @@ follows the same structure: Overview, Components, Key Decisions, Code Pointers, 
 
 Regenerate this table with `/sync-docs` or `/add-reference-doc <layer>` after adding a new layer.
 <!-- /AUTO-MANAGED:index -->
+
+See also [docs/metrics.md](../metrics.md) -- per-KPI definitions, source metric/event, and the
+function that computes each one.
+
+See also [docs/deploying-for-your-org.md](../deploying-for-your-org.md) -- a walkthrough for
+standing up this dashboard for a new organization/cluster, assembled from commands already
+cited in the runbooks and README.

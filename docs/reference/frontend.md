@@ -15,7 +15,7 @@ global date-range/filter context across every page.
 | Component | Path | Purpose |
 |---|---|---|
 | Entry/router | `dashboard/web/src/main.jsx`, `App.jsx` | Route table, layout shell |
-| Global range state | `dashboard/web/src/RangeContext.jsx` | `from`/`to`/`intervalHours` shared across all pages |
+| Global range state | `dashboard/web/src/RangeContext.jsx` | `from`/`to`/`intervalHours` shared across all pages, in one of three modes: preset, month (이번 달), or custom (drag-zoom or calendar) |
 | Global filter state | `dashboard/web/src/FilterContext.jsx` | group/user/model filters shared across all pages |
 | Data fetching | `dashboard/web/src/useApi.js` | Auto-forwards range+filters to every endpoint call |
 | Pages | `dashboard/web/src/pages/*.jsx` | One file per dashboard page |
@@ -32,13 +32,21 @@ global date-range/filter context across every page.
   page).
 - No CSS modules, no component library -- Tailwind utility classes directly, matching the
   "workshop tool, not a product" scope in the root `CLAUDE.md`.
+- **The refresh tick never flips a page's `loading` state or blanks data already on screen** --
+  `useApi.js` treats a background tick's failure differently from a params-load failure, and
+  `RangeContext.jsx`'s `to` recomputes at most once per UTC day (via `RefreshContext.jsx`'s
+  `dayKey`), not on every tick.
+- **URL range state is one of three shapes**: `days` for a preset, `period=month` for 이번 달,
+  or `from`/`to` for a custom (drag-zoom or calendar) range -- see `urlState.js`.
 
 ### 4. Code Pointers
 - `dashboard/web/src/useApi.js` -- shared fetch hook, auto-forwarded params
 - `dashboard/web/src/RangeContext.jsx` -- `intervalHours = days <= 2 ? 1 : 24` derivation
+- `dashboard/web/src/RefreshContext.jsx` -- auto-refresh interval, `tick`, and `dayKey` state
 - `dashboard/web/src/pages/Cost.jsx` -- largest page; donut group filters, efficiency table
 - `dashboard/web/src/pivot.js` -- `pivotByGroup`/`pivotByKey` (row-per-x-tick reshaping for Recharts)
 - `dashboard/web/src/components/GroupCharts.jsx` -- shared chart primitives (Donut/Bar/Line)
+- `dashboard/web/src/components/DateRangePopover.jsx` -- calendar range picker behind `RangePicker`
 
 ### 5. Cross-references
 - Related modules: [dashboard/web/CLAUDE.md](../../dashboard/web/CLAUDE.md)
@@ -57,7 +65,7 @@ React 18 + Vite SPA 하나(`dashboard/web/`)가 `dashboard/server` API를 호출
 | 구성요소 | 경로 | 목적 |
 |---|---|---|
 | 엔트리/라우터 | `dashboard/web/src/main.jsx`, `App.jsx` | 라우트 테이블, 레이아웃 셸 |
-| 전역 범위 상태 | `dashboard/web/src/RangeContext.jsx` | 모든 페이지가 공유하는 `from`/`to`/`intervalHours` |
+| 전역 범위 상태 | `dashboard/web/src/RangeContext.jsx` | 모든 페이지가 공유하는 `from`/`to`/`intervalHours`, 프리셋·이번 달·커스텀(드래그 줌 또는 달력) 세 모드 중 하나 |
 | 전역 필터 상태 | `dashboard/web/src/FilterContext.jsx` | 모든 페이지가 공유하는 group/user/model 필터 |
 | 데이터 페칭 | `dashboard/web/src/useApi.js` | 모든 엔드포인트 호출에 범위+필터 자동 전달 |
 | 페이지 | `dashboard/web/src/pages/*.jsx` | 대시보드 페이지당 파일 하나 |
@@ -73,13 +81,21 @@ React 18 + Vite SPA 하나(`dashboard/web/`)가 `dashboard/server` API를 호출
   차트가 일간 버킷에 머무릅니다(Cost 페이지에서 실제로 고친 버그).
 - CSS 모듈·컴포넌트 라이브러리 없음 -- Tailwind 유틸리티 클래스를 직접 사용, 루트
   `CLAUDE.md`의 "제품이 아니라 워크샵 도구" 범위에 맞춤.
+- **새로고침 tick은 페이지의 `loading` 상태를 켜지도 않고 화면에 있는 데이터를 지우지도
+  않습니다** -- `useApi.js`는 백그라운드 tick의 실패를 파라미터 로드 실패와 다르게 처리하고,
+  `RangeContext.jsx`의 `to`는 tick마다가 아니라 UTC 날짜가 바뀔 때만(`RefreshContext.jsx`의
+  `dayKey`를 통해) 재계산됩니다.
+- **URL의 범위 상태는 세 가지 모양 중 하나입니다**: 프리셋이면 `days`, 이번 달이면
+  `period=month`, 커스텀(드래그 줌 또는 달력) 구간이면 `from`/`to` -- `urlState.js` 참고.
 
 ### 4. 코드 포인터
 - `dashboard/web/src/useApi.js` -- 공유 fetch 훅, 자동 전달 파라미터
 - `dashboard/web/src/RangeContext.jsx` -- `intervalHours = days <= 2 ? 1 : 24` 도출
+- `dashboard/web/src/RefreshContext.jsx` -- 자동 새로고침 간격, `tick`, `dayKey` 상태
 - `dashboard/web/src/pages/Cost.jsx` -- 가장 큰 페이지; 도넛 그룹 필터, 효율 테이블
 - `dashboard/web/src/pivot.js` -- `pivotByGroup`/`pivotByKey`(Recharts용 row-per-x-tick 재구성)
 - `dashboard/web/src/components/GroupCharts.jsx` -- 공유 차트 프리미티브(Donut/Bar/Line)
+- `dashboard/web/src/components/DateRangePopover.jsx` -- `RangePicker` 뒤의 달력 구간 선택기
 
 ### 5. 상호 참조
 - 관련 모듈: [dashboard/web/CLAUDE.md](../../dashboard/web/CLAUDE.md)

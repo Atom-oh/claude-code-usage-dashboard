@@ -25,7 +25,10 @@ method at runtime rather than a static experiment flag.
 - **Claude Code clients (workshop participants)** -- export OTel metrics/logs natively; no
   custom instrumentation needed on the client side.
 - **OpenTelemetry Collector** (`collector-config.yaml`) -- receives OTLP, writes into
-  ClickHouse via the `clickhouse` exporter.
+  ClickHouse via the `clickhouse` exporter. The exporter's `sending_queue` is backed by a
+  `file_storage` extension on disk (`OTELCOL_QUEUE_DIR`), so a ClickHouse outage longer than
+  the retry window queues to disk instead of dropping batches once `Restart=always` brings the
+  process back.
 
 ### Storage Layer
 - **ClickHouse (`otel_metrics_sum`, `otel_logs`)** -- `ReplicatedMergeTree`, 3 replicas, hot/cold
@@ -40,21 +43,35 @@ method at runtime rather than a static experiment flag.
   the live cluster before any trace data could land.
 - **ClickHouse (`otel_metrics_sum_hourly`)** -- `ReplicatedAggregatingMergeTree` hourly rollup
   fed by a materialized view on `otel_metrics_sum`. Dashboard queries read this table instead
-  of the raw one (~86x fewer rows; raw grows ~3M rows/day from 10s cumulative re-exports).
-  Cumulative counters keep `max(Value)` per (SeriesKey, SessionId, hour). The schema gives it the same
-  90-day cold / 180-day delete TTL as the raw table (in effect once the schema-init Job re-runs): it holds `UserEmail`, so an untilled rollup
-  would keep user emails after the raw rows were deleted, bypassing retention. That supersedes
-  the original "no TTL so diff baselines outlive the raw TTL" rationale -- baselines are unaffected
-  because `LOOKBACK_DAYS` is 3, far inside 180. Measured 2026-07-27: the live rollup had no TTL at
-  all, because `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table and the schema-init Job
-  never re-ran; both are fixed in `infra/`. See `clickhouse-schema.sql` for cutover notes.
+  of the raw one (~86x fewer rows; raw grows ~3M rows/day from 10s cumulative re-exports). Its
+  ZooKeeper path is `/clickhouse/tables/{shard}/otel_metrics_sum_hourly_v2` — the name/path
+  inversion left by `clickhouse-migration-003.sql` §5, declared as such in
+  `infra/files/clickhouse-schema-replicated.sql` since 2026-09-05 (see
+  `docs/runbooks/rollup-rebuild-segment-key.md` → Cleanup).
+  Cumulative counters keep `max(Value)` per (SeriesKey, SessionId, hour); `SeriesKey` has been
+  per-process-segment since migration-003 (`StartTimeUnix` folded in), `session.count`
+  excepted. The schema gives it a
+  DELETE-only 180-day TTL (no cold-tier move, unlike the raw table): it holds `UserEmail`, so an
+  untilled rollup would keep user emails after the raw rows were deleted, bypassing retention. That
+  supersedes the original "no TTL so diff baselines outlive the raw TTL" rationale -- baselines are
+  unaffected because `LOOKBACK_DAYS` is 3, far inside 180. Measured 2026-07-27: the live rollup had
+  no TTL at all, because `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table and the
+  schema-init Job never re-ran. Measured 2026-09-02: the first fix (`TTL ... TO VOLUME 'cold'`)
+  failed 7/7 Job retries with `BAD_TTL_EXPRESSION` because the live rollup sits on
+  `storage_policy=default` (no `cold` volume) and ClickHouse refuses `MODIFY SETTING
+  storage_policy` unless the new policy contains every old volume name -- hence DELETE-only, which
+  is policy-independent. The Job now runs with `wait_for_completion = true` so a failing statement
+  fails `terraform apply` instead of being discovered weeks later. See `clickhouse-schema.sql` for
+  cutover notes.
 - **ClickHouse Keeper** -- coordination for the replicated cluster (separate StatefulSet).
 
 ### Processing / Query Layer
 - **`dashboard/server`** (Express, Node.js ESM) -- one function per API endpoint in
   `queries.js`; diffs cumulative OTel counters at session boundaries (`incFlat`/`incBucketed`)
   instead of summing raw values; infers bedrock/enterprise group per session
-  (`grouping.js`).
+  (`grouping.js`). Boot-validated env (`GROUP_MODE`, `DEFAULT_RANGE_DAYS`, `RANGE_CAP_DAYS`)
+  is surfaced read-only to the SPA via `GET /api/config`; `groupMode` only changes what the
+  SPA renders, never what a query returns.
 
 ### Presentation Layer
 - **`dashboard/web`** (React 18 + Vite + Tailwind + Recharts) -- 6+ pages sharing one global
@@ -141,15 +158,29 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
 | Module | Resources | Description |
 |--------|-----------|-------------|
 | `infra/nodepool.tf` | EKS managed node group | Graviton (m8g.xlarge, arm64) nodes |
-| `infra/clickhouse.tf` | ClickHouse Operator, Cluster, storage policy | `hot_cold` policy: local EBS + `cold_s3` disk |
-| `infra/dashboard.tf` | Deployment, Service | Dashboard app, env from k8s Secret; `var.pii_mask_enabled` -> `PII_MASK_ENABLED` |
-| `infra/ecr.tf` | ECR repository | `cc-ab-dashboard` image registry |
+| `infra/clickhouse.tf` | ClickHouse Operator, Cluster, storage policy | `hot_cold` policy: local EBS + `cold_s3` disk; accounts `otel_writer` / `otel_reader` / `otel_ingest` (the last is the INSERT-scoped collector account) |
+| `infra/dashboard.tf` | Deployment, Service, PodDisruptionBudget | Dashboard app, env from k8s Secret; `var.pii_mask_enabled` -> `PII_MASK_ENABLED`; `var.group_mode` / `var.default_range_days` / `var.range_cap_days` -> `GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS`; `/readyz` readiness probe + drain window; `var.alert_webhook_url` -> Secret `dashboard-alert` -> `ALERT_WEBHOOK_URL`; `var.alert_repeat_minutes` -> `ALERT_REPEAT_MINUTES` |
+| `infra/ecr.tf` | ECR repository | `cc-ab-dashboard` image registry, immutable-tagged |
 | `infra/s3.tf` | S3 buckets | ClickHouse cold tier, backups |
-| `infra/dns_cdn.tf` | Route53, CloudFront | Public dashboard endpoint |
+| `infra/dns_cdn.tf` | Route53, CloudFront | Public dashboard endpoint; dashboard distribution carries the managed security-headers policy |
+| `infra/alerting.tf` | CloudWatch alarm, SNS topic + subscription | Optional edge-side 5xx alarm, gated on `var.alert_email` (null = nothing created); all in us-east-1 because CloudFront metrics live only there; `alert_topic_arn` output lets an org attach a second subscriber |
 
 ### Deployed Resources
-- Dashboard: internal NLB behind CloudFront, Basic Auth-gated
+- Dashboard: internal NLB behind CloudFront, Basic Auth-gated; `replicas 2` with
+  `max_unavailable=0` rolling updates, a `min_available=1` PodDisruptionBudget, and preferred
+  anti-affinity spreading replicas across hosts
 - ClickHouse: `clickhouse-cc-ab` Service (ClusterIP), 3 replicas + 3-node Keeper
+
+The ClickHouse schema is versioned in `claude_code.schema_migrations` (created by
+`clickhouse-migration-004.sql`) and surfaced at `GET /api/config`'s `schema.migrations`;
+editing `infra/files/clickhouse-schema-replicated.sql` recreates the schema-init Job on the
+next `terraform apply` because the Job's name embeds that file's `filemd5`.
+
+Alerting has two independent legs: an in-app data-freshness webhook posted by the server
+itself (`dashboard/server/alerting.js`, `var.alert_webhook_url`) and an edge-side CloudFront
+5xx alarm in CloudWatch (`infra/alerting.tf`, `var.alert_email`). Neither exists unless its
+variable is set, and neither covers the other's failure mode — the in-app leg cannot report
+that the dashboard itself is down, and the edge alarm cannot see that ingestion stopped.
 
 ## Key Design Decisions
 
@@ -161,6 +192,10 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
   group can't be baked into the deployment.
 - Serve the SPA and API from one Express process/one Docker image -- this is a workshop tool,
   not a product; a separate static-hosting tier would add operational surface for no benefit.
+- `dashboard/docker-compose.yml` brings up ClickHouse (schema + seed data auto-loaded on first
+  init) alongside the dashboard app, so a local full stack needs nothing beyond Docker --
+  init order matters here, since the seed relies on the hourly rollup's materialized view
+  already existing.
 - ClickHouse hot/cold TTL policy instead of manual retention scripts -- disk growth is capped
   automatically (45-90d hot depending on table, dropped at 90-180d).
 - Read-only API by construction, with the one write-adjacent surface (`/api/chat`'s SQL tool)
@@ -170,11 +205,15 @@ Claude Code client -> OTel Collector -> ClickHouse (hot -> cold) -> dashboard/se
   events; the schema and query changes in this sync are keyed to a measured attribute census,
   not the docs alone. See [ADR-001](decisions/ADR-001-local-diff-over-shared-incflat-extension.md)
   and [ADR-002](decisions/ADR-002-bedrock-identity-fallback.md) for the two non-obvious
-  trade-offs made in that sync.
+  trade-offs made in that sync. See also
+  [ADR-003](decisions/ADR-003-fold-start-time-into-series-key.md) for the segment-aware
+  `SeriesKey` cutover, from a separate 2026-09-02 investigation.
 
 ## Operations
 - Deployment: see [docs/runbooks/deploy-production.md](runbooks/deploy-production.md)
 - Incident Response: see [docs/runbooks/incident-response.md](runbooks/incident-response.md)
+- Backup & Restore: see [docs/runbooks/backup-and-restore.md](runbooks/backup-and-restore.md)
+- Alerting: see [docs/runbooks/alerting.md](runbooks/alerting.md)
 
 ---
 
@@ -197,7 +236,9 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
 - **Claude Code 클라이언트(워크샵 참가자)** -- OTel 메트릭/로그를 네이티브로 export, 클라이언트
   측 커스텀 계측 불필요.
 - **OpenTelemetry Collector**(`collector-config.yaml`) -- OTLP를 수신해 `clickhouse` exporter로
-  적재.
+  적재. exporter의 `sending_queue`는 디스크 기반 `file_storage` extension(`OTELCOL_QUEUE_DIR`)이
+  받쳐, 재시도 창을 넘는 ClickHouse 장애에서도 `Restart=always`로 프로세스가 돌아왔을 때 배치가
+  버려지지 않고 디스크 큐에 쌓인다.
 
 ### Storage Layer
 - **ClickHouse(`otel_metrics_sum`, `otel_logs`)** -- `ReplicatedMergeTree`, 레플리카 3개,
@@ -213,19 +254,31 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
 - **ClickHouse(`otel_metrics_sum_hourly`)** -- `otel_metrics_sum` 위의 materialized view가
   채우는 시간별 rollup(`ReplicatedAggregatingMergeTree`). 대시보드 쿼리는 원본 대신 이
   테이블을 읽는다(행 수 ~86x 감소; 원본은 10초 누적 재-export로 하루 ~300만 행씩 증가).
-  누적 카운터는 (SeriesKey, SessionId, hour)당 `max(Value)`만 보존한다. 스키마상 TTL은 원본과 동일하게
-  90일 cold 이동 / 180일 삭제이며(schema-init Job이 재실행되면 반영된다) — `UserEmail`을 담는 저장소라 TTL이 없으면 원본이 삭제된 뒤에도
-  사용자 이메일이 남아 보존 정책을 우회한다. 이는 원래의 "TTL을 두지 않아 원본 TTL 이후에도 diff
-  baseline이 남는다"는 근거를 대체한다 — `LOOKBACK_DAYS`가 3일이라 180일 안쪽이고 baseline에는
-  영향이 없다. 실측 2026-07-27: 라이브 롤업에는 TTL이 아예 없었다(`CREATE TABLE IF NOT EXISTS`가
-  기존 테이블에 no-op이고 schema-init Job이 재실행되지 않았기 때문 — 둘 다 `infra/`에서 수정).
-  컷오버 절차는 `clickhouse-schema.sql` 주석 참고.
+  ZooKeeper 경로는 `/clickhouse/tables/{shard}/otel_metrics_sum_hourly_v2` —
+  `clickhouse-migration-003.sql` §5 가 남기는 이름/경로 역전이며 2026-09-05 부터
+  `infra/files/clickhouse-schema-replicated.sql` 도 그 경로를 선언한다
+  (`docs/runbooks/rollup-rebuild-segment-key.md` → 정리 참고).
+  누적 카운터는 (SeriesKey, SessionId, hour)당 `max(Value)`만 보존한다. `SeriesKey`는
+  migration-003 이후 프로세스별 세그먼트 단위다(`StartTimeUnix`를 접어 넣음), `session.count`는
+  예외. 스키마상 TTL은 DELETE-only 180일이다(원본과 달리 cold 이동 없음) — `UserEmail`을 담는
+  저장소라 TTL이 없으면 원본이 삭제된 뒤에도 사용자 이메일이 남아 보존 정책을 우회한다. 이는
+  원래의 "TTL을 두지 않아 원본 TTL 이후에도 diff baseline이 남는다"는 근거를 대체한다 —
+  `LOOKBACK_DAYS`가 3일이라 180일 안쪽이고 baseline에는 영향이 없다. 실측 2026-07-27: 라이브
+  롤업에는 TTL이 아예 없었다(`CREATE TABLE IF NOT EXISTS`가 기존 테이블에 no-op이고 schema-init
+  Job이 재실행되지 않았기 때문). 실측 2026-09-02: 첫 수정안(`TTL ... TO VOLUME 'cold'`)은 라이브
+  롤업이 `storage_policy=default`(`cold` 볼륨 없음)라 Job 7회 전부 `BAD_TTL_EXPRESSION`으로
+  실패했고, ClickHouse는 새 정책이 옛 볼륨 이름을 전부 포함하지 않으면 `MODIFY SETTING
+  storage_policy`를 거부하므로 정책과 무관한 DELETE-only로 확정했다. Job은 이제
+  `wait_for_completion = true`라 실패한 statement가 `terraform apply`를 실패시킨다. 컷오버
+  절차는 `clickhouse-schema.sql` 주석 참고.
 - **ClickHouse Keeper** -- 레플리카 클러스터 코디네이션(별도 StatefulSet).
 
 ### Processing / Query Layer
 - **`dashboard/server`**(Express, Node.js ESM) -- `queries.js`에 엔드포인트당 함수 하나씩;
   원본 값을 합산하는 대신 세션 경계에서 누적 OTel 카운터를 diff(`incFlat`/`incBucketed`);
-  세션 단위 bedrock/enterprise 그룹 추론(`grouping.js`).
+  세션 단위 bedrock/enterprise 그룹 추론(`grouping.js`). 부팅 시 검증되는 env(`GROUP_MODE`,
+  `DEFAULT_RANGE_DAYS`, `RANGE_CAP_DAYS`)는 `GET /api/config`로 SPA에 읽기 전용으로 노출된다;
+  `groupMode`는 SPA의 표시 방식만 바꾸고 쿼리 결과는 바꾸지 않는다.
 
 ### Presentation Layer
 - **`dashboard/web`**(React 18 + Vite + Tailwind + Recharts) -- 전역 날짜범위/필터 컨텍스트를
@@ -311,15 +364,29 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
 | 모듈 | 리소스 | 설명 |
 |--------|-----------|-------------|
 | `infra/nodepool.tf` | EKS 관리형 노드 그룹 | Graviton(m8g.xlarge, arm64) 노드 |
-| `infra/clickhouse.tf` | ClickHouse Operator, Cluster, 스토리지 정책 | `hot_cold` 정책: 로컬 EBS + `cold_s3` disk |
-| `infra/dashboard.tf` | Deployment, Service | 대시보드 앱, k8s Secret에서 env 주입 |
-| `infra/ecr.tf` | ECR 리포지토리 | `cc-ab-dashboard` 이미지 레지스트리 |
+| `infra/clickhouse.tf` | ClickHouse Operator, Cluster, 스토리지 정책 | `hot_cold` 정책: 로컬 EBS + `cold_s3` disk; 계정 `otel_writer` / `otel_reader` / `otel_ingest`(마지막이 INSERT 범위 컬렉터 계정) |
+| `infra/dashboard.tf` | Deployment, Service, PodDisruptionBudget | 대시보드 앱, k8s Secret에서 env 주입; `var.pii_mask_enabled` -> `PII_MASK_ENABLED`; `var.group_mode` / `var.default_range_days` / `var.range_cap_days` -> `GROUP_MODE` / `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS`; `/readyz` readiness probe + drain 창; `var.alert_webhook_url` -> Secret `dashboard-alert` -> `ALERT_WEBHOOK_URL`; `var.alert_repeat_minutes` -> `ALERT_REPEAT_MINUTES` |
+| `infra/ecr.tf` | ECR 리포지토리 | `cc-ab-dashboard` 이미지 레지스트리, 태그 불변(immutable) |
 | `infra/s3.tf` | S3 버킷 | ClickHouse cold tier, 백업 |
-| `infra/dns_cdn.tf` | Route53, CloudFront | 공개 대시보드 엔드포인트 |
+| `infra/dns_cdn.tf` | Route53, CloudFront | 공개 대시보드 엔드포인트; 대시보드 배포에 managed 보안 헤더 정책 적용 |
+| `infra/alerting.tf` | CloudWatch 알람, SNS 토픽 + 구독 | 선택적 엣지 5xx 알람, `var.alert_email`로 게이트(null이면 아무것도 만들지 않음); CloudFront 지표가 us-east-1에만 있어 전부 us-east-1; `alert_topic_arn` 출력으로 조직이 두 번째 구독자를 모듈 수정 없이 붙일 수 있다 |
 
 ### 배포된 리소스
-- 대시보드: CloudFront 뒤의 내부 NLB, Basic Auth 게이트
+- 대시보드: CloudFront 뒤의 내부 NLB, Basic Auth 게이트; `replicas 2`에 `max_unavailable=0`
+  롤링 업데이트, `min_available=1` PodDisruptionBudget, 호스트 간 preferred 안티어피니티로
+  분산
 - ClickHouse: `clickhouse-cc-ab` Service(ClusterIP), 레플리카 3개 + 3노드 Keeper
+
+ClickHouse 스키마는 `claude_code.schema_migrations`(`clickhouse-migration-004.sql`이 생성)로
+버전 관리되며 `GET /api/config`의 `schema.migrations`로 노출됩니다. 또한
+`infra/files/clickhouse-schema-replicated.sql`을 수정하면 schema-init Job 이름이 그 파일의
+`filemd5`를 담고 있어 다음 `terraform apply`에서 Job이 재생성·재실행됩니다.
+
+알림은 서로 독립된 두 축으로 구성됩니다: 서버가 직접 발송하는 앱 내부 데이터 신선도 웹훅
+(`dashboard/server/alerting.js`, `var.alert_webhook_url`)과 CloudWatch의 엣지 CloudFront 5xx
+알람(`infra/alerting.tf`, `var.alert_email`)입니다. 둘 다 해당 변수가 설정되지 않으면
+존재하지 않으며, 어느 쪽도 상대의 실패 모드를 대신 감지하지 못합니다 — 앱 내부 축은
+대시보드 자체가 죽었다는 사실을 알릴 수 없고, 엣지 알람은 수집이 중단된 것을 볼 수 없습니다.
 
 ## 주요 설계 결정
 
@@ -331,6 +398,9 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
   수 없습니다.
 - SPA와 API를 하나의 Express 프로세스/이미지로 서빙 -- 제품이 아니라 워크샵 도구라 별도
   정적 호스팅 계층은 이득 없이 운영 표면만 늘립니다.
+- `dashboard/docker-compose.yml`이 ClickHouse(스키마 + 시드 데이터가 첫 기동 시 자동 로드)를
+  대시보드 앱과 함께 띄워, 로컬 풀스택이 Docker 외에 아무것도 필요하지 않습니다 -- 시드가
+  시간별 rollup의 materialized view가 이미 있다고 전제하므로 init 순서가 중요합니다.
 - 수동 보존 스크립트 대신 ClickHouse hot/cold TTL 정책 -- 디스크 증가가 자동으로 캡됨(테이블에
   따라 hot 45~90일, 90~180일에 삭제).
 - 구조적으로 읽기 전용인 API, 쓰기에 가까운 유일한 표면(`/api/chat`의 SQL 도구)은 독립된
@@ -340,8 +410,11 @@ Claude Code 클라이언트 -> OTel Collector -> ClickHouse (hot -> cold) -> das
   스키마·쿼리 변경은 문서가 아니라 실측 attribute census를 기준으로 했다.
   [ADR-001](decisions/ADR-001-local-diff-over-shared-incflat-extension.md),
   [ADR-002](decisions/ADR-002-bedrock-identity-fallback.md)에 이번 동기화의 비직관적인
-  트레이드오프 2건을 기록.
+  트레이드오프 2건을 기록. 별도의 2026-09-02 조사인 세그먼트 인식 `SeriesKey` 컷오버는
+  [ADR-003](decisions/ADR-003-fold-start-time-into-series-key.md) 참고.
 
 ## 운영
 - 배포: [docs/runbooks/deploy-production.md](runbooks/deploy-production.md) 참고
 - 장애 대응: [docs/runbooks/incident-response.md](runbooks/incident-response.md) 참고
+- 백업·복구: [docs/runbooks/backup-and-restore.md](runbooks/backup-and-restore.md) 참고
+- 알림: [docs/runbooks/alerting.md](runbooks/alerting.md) 참고

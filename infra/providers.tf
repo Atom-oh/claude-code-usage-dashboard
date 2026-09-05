@@ -27,14 +27,19 @@ terraform {
 provider "aws" {
   region = var.region
   default_tags {
-    tags = { Project = "claude-code-ab-dashboard", ManagedBy = "terraform" }
+    tags = { Project = "claude-code-dashboard", ManagedBy = "terraform" }
   }
 }
 
-# CloudFront ACM 인증서는 us-east-1에서만 조회 가능.
+# CloudFront ACM 인증서는 us-east-1에서만 조회 가능. default_tags를 위 provider와 동일하게
+# 맞춘다 — 이 alias로 만드는 리소스(ACM 인증서 등)는 이 블록이 없으면 Project 태그가 안 붙어
+# Cost Explorer에서 이 프로젝트로 안 잡힌다.
 provider "aws" {
   alias  = "us_east_1"
   region = "us-east-1"
+  default_tags {
+    tags = { Project = "claude-code-dashboard", ManagedBy = "terraform" }
+  }
 }
 
 provider "kubernetes" {

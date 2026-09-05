@@ -1,6 +1,7 @@
 # Claude Code Usage Dashboard
 
 [![version](https://img.shields.io/badge/Version-1.0.0-green.svg)]()
+[![CI](https://github.com/Atom-oh/claude-code-usage-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Atom-oh/claude-code-usage-dashboard/actions/workflows/ci.yml)
 <a href="#english"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
 <a href="#korean"><img src="https://img.shields.io/badge/lang-한국어-red.svg" alt="Korean"></a>
 
@@ -53,21 +54,29 @@ cd claude-code-usage-dashboard
 # Install dependencies for both server and web
 bash scripts/setup.sh
 ```
+Deploying this stack for another organization (its own EKS cluster, ClickHouse, and secrets)
+is walked through in [docs/deploying-for-your-org.md](docs/deploying-for-your-org.md).
 
 ## Usage
 ```bash
-# Local full stack (server + web), no live cluster needed if you point CH_* at a local ClickHouse
+# Local full stack: ClickHouse (schema + seed data auto-loaded on first init) and the dashboard
+# on http://localhost:8080. `down -v` removes the volume, which is what makes the init scripts
+# run again on the next `up`.
 cd dashboard
-docker compose up
+docker compose up -d --build
 
-# Server only, dev mode with reload
-cd dashboard/server
-npm run dev
+# Or run the app from source against that ClickHouse. AUTH_ALLOW_INSECURE=1 is required here:
+# the server refuses to start without BASIC_AUTH_USER/BASIC_AUTH_PASSWORD.
+cd server
+AUTH_ALLOW_INSECURE=1 npm run dev
 
 # Web only, dev mode
-cd dashboard/web
+cd ../web
 npm run dev
 ```
+The "Ask Claude" chat answers 503 on the local stack — chat needs Basic Auth configured *and* a
+ClickHouse account whose session is `readonly`, and the compose stack has neither.
+
 Then open the printed Vite dev URL (web) or `http://localhost:8080` (server, serving the
 built SPA) in a browser.
 
@@ -81,8 +90,20 @@ Environment variables consumed by `dashboard/server`:
 | `CH_DB` | ClickHouse database name | `claude_code` |
 | `CH_USER` | ClickHouse user | none (required) |
 | `CH_PASSWORD` | ClickHouse password | none (required) |
-| `BASIC_AUTH_USER` | Basic Auth username for the whole dashboard | unset (auth disabled) |
-| `BASIC_AUTH_PASSWORD` | Basic Auth password | unset (auth disabled) |
+| `CH_HOST` / `CH_PORT` | Alternative to `CH_URL` (host + HTTP port); ignored when `CH_URL` is set | unset |
+| `PRICING_JSON` | Path to a JSON file overriding the built-in model price table | unset (built-in table) |
+| `PRICING_CACHE_WRITE_TTL` | cacheWrite price tier assumed for cache-creation tokens: `1h` or `5m`; anything else exits at startup | `1h` |
+| `BASIC_AUTH_USER` | Basic Auth username for the whole dashboard | required unless `AUTH_ALLOW_INSECURE=1` |
+| `BASIC_AUTH_PASSWORD` | Basic Auth password | required unless `AUTH_ALLOW_INSECURE=1` |
+| `AUTH_ALLOW_INSECURE` | Run without Basic Auth; the server otherwise exits 1 at boot — local dev only (`/healthz`/`/readyz` are auth-exempt regardless, so probes never need this) | unset (auth required) |
+| `CHAT_ALLOW_INSECURE` | Allow `POST /api/chat` without auth; independent of `AUTH_ALLOW_INSECURE` — never set on an internet-facing deployment (unauthenticated LLM→SQL path: readonly, but PII and Bedrock spend) | unset (chat requires auth) |
+| `GROUP_MODE` | `ab` compares the bedrock/enterprise pair; `single` tells the SPA this org has one channel and suppresses the empty second card. Any other value fails the boot | `ab` |
+| `DEFAULT_RANGE_DAYS` | Default range when a request omits `from`; also the window the server's cache warmer pre-computes | `2` |
+| `RANGE_CAP_DAYS` | Longest range a request may ask for; a longer span is a 400. Must be `>=` `DEFAULT_RANGE_DAYS` | `90` |
+| `PII_MASK_ENABLED` | Mask user emails in `GET /api/config`'s `piiMask` and the chat sandbox's result rows; on only for `"1"`/`"true"`, case-insensitive | unset (masking off) — `.env.example` ships `true`; display-only, not an exfiltration control (ADR-006) |
+| `DATA_STALE_MINUTES` | Age threshold for `GET /api/health/data`'s `stale` classification; must be a positive number below 10080 (the probe only looks back 7 days), otherwise the server refuses to boot | `360` |
+| `ALERT_WEBHOOK_URL` | Slack-compatible webhook that receives a message when `GET /api/health/data` has been `stale`/`unknown` for two consecutive 60 s ticks, again every `ALERT_REPEAT_MINUTES` while it stays that way, and once on recovery. Each replica alerts independently (the pod name is in the message). Treat as a secret | unset (alerting off) |
+| `ALERT_REPEAT_MINUTES` | Repeat interval while the data stays non-ok; a non-positive or non-numeric value refuses to boot | `60` |
 | `CHAT_MODEL_ID` | Bedrock model ID for the "Ask Claude" chat assistant | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | AWS region for the Bedrock client | `us-east-1` |
 | `BEDROCK_REGION` | Overrides `AWS_REGION` for the Bedrock call only (e.g. accounts limited to one region) | unset (falls back to `AWS_REGION`) |
@@ -112,6 +133,7 @@ Wants=network-online.target
 Type=simple
 User=%i
 ExecStart=/home/%i/.local/bin/otelcol-contrib --config=/home/%i/.otelcol/config.yaml
+Environment=OTELCOL_QUEUE_DIR=/home/%i/.otelcol/queue
 Restart=always
 RestartSec=5
 StandardOutput=append:/home/%i/.otelcol/collector.log
@@ -124,7 +146,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now otelcol.service
 ```
 `Restart=always` means a DNS blip or ClickHouse restart no longer kills ingestion permanently —
-the collector retries and resumes on its own. Verify it's alive and actually writing:
+the collector retries and resumes on its own. `OTELCOL_QUEUE_DIR` puts the exporter's queue on
+disk, so batches already accepted from Claude Code survive a collector restart and a ClickHouse
+outage longer than the retry window instead of being dropped. Verify it's alive and actually
+writing:
 ```bash
 systemctl status otelcol.service
 journalctl -u otelcol -n 50   # or: tail -f ~/.otelcol/collector.log
@@ -139,6 +164,27 @@ filter bug (the range picker and server queries have been verified correct for t
 Workshop/CFN provisioning must install this exact systemd unit (see
 `docs/workshop-studio-notes.md` §3) — a bare `otelcol-contrib &` in `UserData` will not survive
 a crash or reboot.
+
+The collector authenticates as `otel_ingest`, whose privileges are `INSERT ON claude_code.*`
+plus `SELECT ON claude_code.otel_metrics_sum`, with the password coming from the SSM
+SecureString parameter `/claude-code/ab/clickhouse-ingest-password` (created by an operator,
+not by Terraform). `user-data.sh` is a cloud-init template, so this applies to newly launched
+instances only — see `docs/runbooks/clickhouse-ingest-user-cutover.md` for the cutover
+procedure. The `SELECT` grant on the source table is required, not extra: the materialized
+view onto `otel_metrics_sum` is checked with the inserting user's privileges, so without it
+every insert fails with `ACCESS_DENIED`. The ClickHouse data this collector writes has its own
+backup/restore posture — RPO, retention and the quarterly restore drill — documented in
+`docs/runbooks/backup-and-restore.md`.
+
+**Since 2026-09-02 the dashboard notices this itself.** `GET /api/health/data` classifies the
+newest `otel_metrics_sum` row into `ok` / `stale` / `unknown` and answers HTTP **503** for the
+latter two, and the SPA renders a warning banner on every page while that holds — so the
+"silently shrinking data window with no error anywhere" failure above is now visible without
+anyone running the query by hand. The staleness threshold is the server env
+`DATA_STALE_MINUTES` (default `360`, i.e. 6 hours; a non-positive, non-numeric or ≥ 10080-minute value refuses
+to boot). It reads the raw table rather than the hourly rollup precisely so a dead collector
+shows up in minutes rather than after the next rollup. It is a *detector*, not a fix: the
+systemd unit above is still what keeps ingestion alive.
 
 ## Project Structure
 ```
@@ -159,19 +205,31 @@ claude-code-usage-dashboard/
 ```bash
 # Server unit tests (node:test, no framework)
 cd dashboard/server
-node --test *.test.js
+npm test   # same as: node --test *.test.js
 
-# Web build check (no dedicated test suite yet)
+# Web unit tests (vitest, jsdom)
+cd dashboard/web
+npm test   # same as: vitest run
+
+# Web build check
 cd dashboard/web
 npm run build
 
 # Claude Code harness tests (hooks, settings.json, structure)
 bash tests/run-all.sh
 ```
+All four of the above, plus `terraform fmt`/`validate` on `infra/`, run in CI
+(`.github/workflows/ci.yml`) on every push to `main`/`feat/**` and on every pull request. On a
+CI checkout the harness suite reports the `.claude/`-dependent assertion groups as **skipped**
+rather than failed, since `.claude/` is gitignored and absent there.
 
 ## API Documentation
-See [docs/api-reference.md](docs/api-reference.md) for the full endpoint list (~25 read-only
-`GET /api/*` routes plus the `/api/chat` SSE endpoint).
+See [docs/api-reference.md](docs/api-reference.md) for the full endpoint list (54 read-only
+`GET /api/*` routes — `grep -c '^route("' dashboard/server/index.js` gives 52, plus
+`GET /api/config` and `GET /api/health/data`, which skip the `route()` wrapper — plus the
+`/api/chat` SSE endpoint). See [docs/metrics.md](docs/metrics.md)
+for KPI definitions — what each tile/chart measures, its source metric, and the function that
+computes it.
 
 ## Contributing
 ```
@@ -185,8 +243,10 @@ Pull requests against `main` run an automated multi-AI review
 (`.github/workflows/pr-review.yml`) and are blocked from merging on CRITICAL/MAJOR findings.
 
 ## License
-No license file is present in this repository (private/internal workshop project). Do not
-assume an open-source license applies until one is added.
+Proprietary — all rights reserved; see `LICENSE`. This is not open-source software: an
+organisation adopting it needs written permission from the maintainer (Contact below).
+Third-party dependencies keep their own licenses. Choosing an OSS license later is a one-file
+change plus the two `package.json` `license` fields.
 
 ## Contact
 - Maintainer: [Atom-oh](https://github.com/Atom-oh)
@@ -211,8 +271,8 @@ React 대시보드로 비용·도입률·생산성 KPI를 보여줍니다. AWS W
 - **세션 단위로 추론하는 Bedrock vs Enterprise 그룹** — 배포 시점 플래그 없음; 텔레메트리
   (Bedrock 스타일 모델명, `organization.id` 존재 여부)로 세션 단위로 그룹을 판별합니다.
   한 유저가 세션마다 다른 방식을 쓸 수 있기 때문입니다
-- **도입률·생산성 KPI** — DAU/WAU/MAU, 추가 라인, 커밋, PR, 코드 편집 수락률, 에이전틱함
-  (프롬프트당 툴 호출 수) — 전부 그룹/유저/모델로 필터링, 시간/일/주 단위로 버킷 가능
+- **도입률·생산성 KPI** — DAU/WAU/MAU, 추가 코드 라인, 커밋, PR, 코드 편집 수락률,
+  프롬프트당 도구 호출 수 — 전부 그룹/유저/모델로 필터링, 시간/일/주 단위로 버킷 가능
 - **누적 OTel 카운터 처리** — Claude Code가 ~30초마다 세션 누적 합계를 다시 export하므로,
   쿼리 레이어가 원본 값을 합산하는 대신 세션 경계에서 diff해 자릿수 단위 과대집계를 피합니다
 - **"Ask Claude" 채팅 어시스턴트** — Bedrock 기반 채팅 위젯이 직접 읽기 전용 ClickHouse
@@ -235,21 +295,29 @@ cd claude-code-usage-dashboard
 # server, web 양쪽 의존성 설치
 bash scripts/setup.sh
 ```
+다른 조직(자체 EKS 클러스터, ClickHouse, 시크릿)에 이 스택을 배포하는 절차는
+[docs/deploying-for-your-org.md](docs/deploying-for-your-org.md)에 정리되어 있습니다.
 
 ## 사용법
 ```bash
-# 로컬 풀스택(server + web) — CH_*를 로컬 ClickHouse로 향하게 하면 라이브 클러스터 불필요
+# 로컬 풀스택: ClickHouse(스키마 + 시드 데이터가 첫 기동 시 자동 로드)와 대시보드가
+# http://localhost:8080 에서 뜬다. `down -v`로 볼륨을 지워야 init 스크립트가 다음 `up`에서
+# 다시 돌아간다.
 cd dashboard
-docker compose up
+docker compose up -d --build
 
-# 서버만, 리로드 개발 모드
-cd dashboard/server
-npm run dev
+# 또는 그 ClickHouse에 붙여서 소스로 앱을 실행한다. AUTH_ALLOW_INSECURE=1이 필수다: 서버가
+# BASIC_AUTH_USER/BASIC_AUTH_PASSWORD 없이는 기동을 거부한다.
+cd server
+AUTH_ALLOW_INSECURE=1 npm run dev
 
 # 웹만, 개발 모드
-cd dashboard/web
+cd ../web
 npm run dev
 ```
+로컬 스택에서 "Ask Claude" 챗은 503이다 — 챗은 Basic Auth 설정과 세션이 `readonly`인
+ClickHouse 계정을 둘 다 요구하고, compose 스택은 둘 다 아니다.
+
 그다음 브라우저에서 출력된 Vite 개발 URL(web) 또는 `http://localhost:8080`(server, 빌드된
 SPA 서빙)을 엽니다.
 
@@ -263,8 +331,20 @@ SPA 서빙)을 엽니다.
 | `CH_DB` | ClickHouse 데이터베이스 이름 | `claude_code` |
 | `CH_USER` | ClickHouse 유저 | 없음(필수) |
 | `CH_PASSWORD` | ClickHouse 비밀번호 | 없음(필수) |
-| `BASIC_AUTH_USER` | 대시보드 전체 Basic Auth 유저명 | 미설정(인증 비활성) |
-| `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 미설정(인증 비활성) |
+| `CH_HOST` / `CH_PORT` | `CH_URL` 대신 호스트 + HTTP 포트로 지정; `CH_URL`이 있으면 무시 | 미설정 |
+| `PRICING_JSON` | 내장 모델 단가표를 덮어쓰는 JSON 파일 경로 | 미설정(내장 단가표) |
+| `PRICING_CACHE_WRITE_TTL` | 캐시 생성 토큰에 가정하는 cacheWrite 단가 티어: `1h` 또는 `5m`; 그 외 값은 기동 시 종료 | `1h` |
+| `BASIC_AUTH_USER` | 대시보드 전체 Basic Auth 유저명 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
+| `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
+| `AUTH_ALLOW_INSECURE` | Basic Auth 없이 실행; 미설정 시 서버가 기동 시 exit 1 — 로컬 dev 전용(`/healthz`/`/readyz`는 원래 무인증이라 프로브에는 필요 없다) | 미설정(인증 필수) |
+| `CHAT_ALLOW_INSECURE` | `POST /api/chat`을 인증 없이 허용; `AUTH_ALLOW_INSECURE`와 독립 — 인터넷에 노출된 배포에서는 절대 켜지 말 것(무인증 LLM→SQL 경로: readonly지만 PII·Bedrock 과금) | 미설정(챗도 인증 필요) |
+| `GROUP_MODE` | `ab`는 bedrock/enterprise 쌍을 비교, `single`은 채널이 하나인 조직 — SPA가 빈 두 번째 카드를 그리지 않는다. 그 외 값은 기동 실패 | `ab` |
+| `DEFAULT_RANGE_DAYS` | `from` 없이 온 요청의 기본 구간. 서버 캐시 warmer가 미리 데우는 창도 이 값이다 | `2` |
+| `RANGE_CAP_DAYS` | 요청 가능한 최대 구간 — 넘으면 400. `DEFAULT_RANGE_DAYS` 이상이어야 한다 | `90` |
+| `PII_MASK_ENABLED` | `GET /api/config`의 `piiMask`와 챗 샌드박스 결과 행의 유저 이메일 마스킹; `"1"`/`"true"`(대소문자 무관)일 때만 켜짐 | 미설정(마스킹 꺼짐) — `.env.example`은 `true`로 배포; 화면 노출 축소일 뿐 유출 방어가 아님(ADR-006) |
+| `DATA_STALE_MINUTES` | `GET /api/health/data`의 `stale` 판정 임계(분); 0 이하·숫자 아님·10080 이상(프로브가 7일만 조회)이면 기동 거부 | `360` |
+| `ALERT_WEBHOOK_URL` | `GET /api/health/data`가 60초 틱 2회 연속 `stale`/`unknown`이면 메시지를 받는 Slack 호환 웹훅. 이후 `ALERT_REPEAT_MINUTES`마다 반복하고 복구 시 1회 더 보낸다. 레플리카마다 독립 판정이라 메시지에 pod 이름이 실린다. 비밀값으로 취급 | 미설정(알림 꺼짐) |
+| `ALERT_REPEAT_MINUTES` | non-ok가 지속될 때 재발송 간격(분); 0 이하이거나 숫자가 아니면 기동 거부 | `60` |
 | `CHAT_MODEL_ID` | "Ask Claude" 채팅 어시스턴트용 Bedrock 모델 ID | `global.anthropic.claude-sonnet-5` |
 | `AWS_REGION` | Bedrock 클라이언트용 AWS 리전 | `us-east-1` |
 | `BEDROCK_REGION` | Bedrock 호출에서만 `AWS_REGION`을 덮어씀(예: 특정 리전만 허용하는 계정) | 미설정(`AWS_REGION`을 따름) |
@@ -293,6 +373,7 @@ Wants=network-online.target
 Type=simple
 User=%i
 ExecStart=/home/%i/.local/bin/otelcol-contrib --config=/home/%i/.otelcol/config.yaml
+Environment=OTELCOL_QUEUE_DIR=/home/%i/.otelcol/queue
 Restart=always
 RestartSec=5
 StandardOutput=append:/home/%i/.otelcol/collector.log
@@ -305,7 +386,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now otelcol.service
 ```
 `Restart=always`면 DNS 일시 장애나 ClickHouse 재시작이 인제스트를 영구히 끊지 않습니다 —
-컬렉터가 알아서 재시도하고 복구합니다. 살아있고 실제로 쓰고 있는지 확인:
+컬렉터가 알아서 재시도하고 복구합니다. `OTELCOL_QUEUE_DIR`은 exporter 큐를 디스크에 둔다 —
+이미 Claude Code에서 받아 둔 배치가 collector 재시작이나 재시도 창을 넘는 ClickHouse 장애에도
+유실되지 않고 이어서 전송된다. 살아있고 실제로 쓰고 있는지 확인:
 ```bash
 systemctl status otelcol.service
 journalctl -u otelcol -n 50   # 또는: tail -f ~/.otelcol/collector.log
@@ -319,6 +402,27 @@ kubectl -n claude-code exec chi-cc-ab-replicated-0-0-0 -- \
 서버 쿼리 로직은 이미 검증되어 정상입니다). 워크샵/CFN 프로비저닝은 반드시 이 systemd
 유닛 그대로 설치해야 합니다(`docs/workshop-studio-notes.md` §3 참고) — `UserData`에 맨
 `otelcol-contrib &`만 넣으면 크래시나 재부팅에서 살아남지 못합니다.
+
+컬렉터는 `otel_ingest` 계정으로 인증하며, 이 계정의 권한은 `INSERT ON claude_code.*`와
+`SELECT ON claude_code.otel_metrics_sum`이고 비밀번호는 SSM SecureString 파라미터
+`/claude-code/ab/clickhouse-ingest-password`에서 가져옵니다(terraform이 아니라 운영자가
+생성). `user-data.sh`는 cloud-init 템플릿이므로 이 변경은 새로 launch되는 인스턴스에만
+적용됩니다 — 컷오버 절차는 `docs/runbooks/clickhouse-ingest-user-cutover.md`를 참고하세요.
+소스 테이블에 대한 `SELECT` grant는 있으면 좋은 정도가 아니라 필수입니다: `otel_metrics_sum`
+위의 materialized view가 insert하는 유저의 권한으로 검사되기 때문에, 이 grant가 없으면
+모든 insert가 `ACCESS_DENIED`로 실패합니다. 이 컬렉터가 쓰는 ClickHouse 데이터의 백업/복구
+현황 — RPO, 보존 기간, 분기별 복구 드릴 — 은 `docs/runbooks/backup-and-restore.md`에
+문서화되어 있습니다.
+
+**2026-09-02부터 대시보드가 이 문제를 스스로 감지합니다.** `GET /api/health/data`가 가장
+최신 `otel_metrics_sum` 행을 `ok` / `stale` / `unknown`으로 분류하고, 후자 둘에 대해 HTTP
+**503**을 응답합니다. 그 상태가 유지되는 동안 SPA는 모든 페이지에 경고 배너를 렌더링합니다 —
+그 결과 위에서 설명한 "아무 에러 없이 조용히 데이터 창이 줄어드는" 장애가 누군가 쿼리를
+수동으로 돌리지 않아도 보이게 됩니다. 이 staleness 판정 기준은 서버 env
+`DATA_STALE_MINUTES`(기본값 `360`, 즉 6시간; 0 이하·숫자 아님·10080분 이상은 부팅을 거부 — 프로브가 7일만 조회한다)입니다.
+시간별 롤업이 아니라 원본 테이블을 읽는 이유는 정확히, 죽은 컬렉터가 다음 롤업까지 기다리지
+않고 몇 분 안에 드러나게 하기 위해서입니다. 이건 *탐지기*일 뿐 고치는 수단은 아닙니다 — 위의
+systemd 유닛이 여전히 인제스트를 살려두는 실제 수단입니다.
 
 ## 프로젝트 구조
 ```
@@ -339,19 +443,31 @@ claude-code-usage-dashboard/
 ```bash
 # 서버 유닛 테스트 (node:test, 프레임워크 없음)
 cd dashboard/server
-node --test *.test.js
+npm test   # node --test *.test.js와 동일
 
-# 웹 빌드 확인 (아직 전용 테스트 스위트 없음)
+# 웹 유닛 테스트 (vitest, jsdom)
+cd dashboard/web
+npm test   # vitest run과 동일
+
+# 웹 빌드 확인
 cd dashboard/web
 npm run build
 
 # Claude Code 하니스 테스트 (훅, settings.json, 구조)
 bash tests/run-all.sh
 ```
+위 네 가지에 더해 `infra/`에 대한 `terraform fmt`/`validate`까지 전부 CI
+(`.github/workflows/ci.yml`)에서 `main`/`feat/**`로의 모든 push와 모든 pull request에 대해
+실행됩니다. CI 체크아웃에서는 `.claude/`가 gitignore 대상이라 존재하지 않으므로, 하니스
+스위트는 `.claude/`에 의존하는 단정문 그룹을 실패가 아니라 **skipped**로 보고합니다.
 
 ## API 문서
-전체 엔드포인트 목록(읽기 전용 `GET /api/*` 라우트 약 25개 + `/api/chat` SSE 엔드포인트)은
-[docs/api-reference.md](docs/api-reference.md)를 참고하세요.
+전체 엔드포인트 목록(읽기 전용 `GET /api/*` 라우트 54개 — `grep -c '^route("'
+dashboard/server/index.js`가 52개, 여기에 `route()` 래퍼를 건너뛰는 `GET /api/config`와
+`GET /api/health/data`를 더해서 54개 — 더하기 `/api/chat` SSE 엔드포인트)은
+[docs/api-reference.md](docs/api-reference.md)를 참고하세요. 각 타일/차트가 무엇을 측정하는지,
+원천 지표가 무엇인지, 어떤 함수가 계산하는지는 [docs/metrics.md](docs/metrics.md)(KPI 정의)를
+참고하세요.
 
 ## 기여 방법
 ```
@@ -365,8 +481,10 @@ bash tests/run-all.sh
 CRITICAL/MAJOR 발견 시 머지가 막힙니다.
 
 ## 라이선스
-이 저장소에는 라이선스 파일이 없습니다(비공개/내부 워크샵 프로젝트). 라이선스 파일이
-추가되기 전까지 오픈소스 라이선스가 적용된다고 가정하지 마세요.
+독점(proprietary) — 모든 권리를 보유합니다; `LICENSE`를 참고하세요. 오픈소스 소프트웨어가
+아니므로, 이를 도입하려는 조직은 담당자(아래 연락처)의 서면 허가가 필요합니다. 서드파티
+의존성은 각자의 라이선스를 그대로 유지합니다. 이후 오픈소스 라이선스로 전환하는 것은
+파일 하나와 두 `package.json`의 `license` 필드만 바꾸면 되는 작업입니다.
 
 ## 연락처
 - 담당자: [Atom-oh](https://github.com/Atom-oh)

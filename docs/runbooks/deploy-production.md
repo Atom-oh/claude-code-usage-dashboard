@@ -19,6 +19,9 @@ tree at build time, so the checked-out branch/commit matters.
 - After a Terraform change to `infra/dashboard.tf` that needs a new rollout to take effect
 
 ## Prerequisites
+- `infra/terraform.tfvars` exists — copy `infra/terraform.tfvars.example` to
+  `infra/terraform.tfvars` and fill it in. Five variables have no default, so `terraform
+  plan`/`apply` fails without it
 - `kubectl` context `fsi-demo-cluster` configured, access to namespace `claude-code`
 - `aws` CLI authenticated with ECR push access to `180294183052.dkr.ecr.ap-northeast-2.amazonaws.com`
 - `docker buildx` with `linux/arm64` support (the nodepool is Graviton)
@@ -46,9 +49,12 @@ aws ecr get-login-password --region ap-northeast-2 \
   | docker login --username AWS --password-stdin 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com
 docker buildx build --platform linux/arm64 \
   -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG \
-  -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:latest \
   --push dashboard/
 ```
+The ECR repository is `IMMUTABLE`, so re-pushing an existing tag is rejected outright. A
+`latest` tag would have to move on every deploy to stay useful, and a moving tag means a
+rollout record no longer identifies a digest. The timestamp tag is the only tag pushed, and
+it's what `rollout undo` or an explicit redeploy resolves against.
 
 ### 3. Roll out
 ```bash
@@ -57,11 +63,27 @@ kubectl --context fsi-demo-cluster -n claude-code set image deployment/dashboard
 kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard --timeout=120s
 ```
 
+### 4. Invalidate the CloudFront cache
+```bash
+DIST_ID=$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[?contains(to_string(Aliases.Items), 'ccdash')].Id" --output text)
+INV_ID=$(aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" \
+  --query 'Invalidation.Id' --output text)
+aws cloudfront wait invalidation-completed --distribution-id "$DIST_ID" --id "$INV_ID"
+```
+CloudFront caches `index.html`, so without this step `ccdash.atomai.click` keeps serving the
+previous build's asset hashes even after a successful rollout — the pods are new but nobody
+sees them (실측 2026-09-01: 롤아웃 성공 후에도 라이브 HTML이 직전 배포의 `assets/index-*.js`를
+참조하고 있었고, invalidation 완료 즉시 새 해시로 전환됨).
+
 ## Verification
 - [ ] `kubectl get pods -l app=dashboard` shows 2/2 `Running` on the new ReplicaSet
 - [ ] `kubectl get deployment dashboard -o jsonpath='{.spec.template.spec.containers[0].image}'` matches `$TAG`
 - [ ] Pod logs show `dashboard listening on :8080` with no stack traces
 - [ ] `/healthz` returns `{"ok": true}` (via port-forward if not publicly reachable)
+- [ ] `/readyz` returns 200 on a running pod — this is the endpoint the readiness probe uses,
+      so a pod that never becomes `Ready` should be diagnosed with it rather than with `/healthz`
+- [ ] `https://ccdash.atomai.click/`의 `assets/index-*.js` 해시가 로컬 `dashboard/web/dist/index.html`과 일치 (Basic Auth 필요)
 
 ## Rollback
 ```bash
@@ -71,7 +93,11 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 Or explicitly redeploy the previous known-good tag with Step 3 above.
 
 ## Notes
-- Last verified: 2026-07-08
+- Last verified: 2026-07-08 (full procedure run). 2026-09-02: text re-synced against
+  `infra/ecr.tf` / `server/index.js`, no deploy run. The `IMMUTABLE` tag policy and the
+  `/readyz` probe take effect on the live cluster only after the next `terraform apply`
+  and image rollout — until then the repository is still `MUTABLE` and a stale `latest`
+  tag remains.
 - If the pending `terraform apply` includes `infra/clickhouse.tf`'s ClickHouse backup
   destination change (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`), there's no ordering
   requirement against `scripts/archive-clickhouse.sh` — its own final-snapshot step doesn't
@@ -87,12 +113,14 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
   this has caught query bugs that unit tests (which don't touch live ClickHouse) missed.
 - **ClickHouse schema changes are a separate path from the image deploy.** Editing
   `infra/files/clickhouse-schema-replicated.sql` changes the `filemd5` in the schema-init Job's
-  name, so `terraform apply` replaces and re-runs it. Terraform does **not** wait for it
-  (`wait_for_completion = false`), so verify by hand:
+  name, so `terraform apply` replaces and re-runs it. Terraform waits for the Job
+  (`wait_for_completion = true`, 30m timeout) and **fails the apply if the Job fails** — the
+  `--multiquery` client aborts at the first failing statement, so read the Job pod's logs for the
+  exact statement (`kubectl -n claude-code logs job/clickhouse-schema-init-<hash>`); everything
+  after it in the file was not applied. Before 2026-09-02 the apply reported success while the
+  Job failed 7/7 retries for three weeks. Still verify the end state by hand:
   ```bash
   kubectl --context fsi-demo-cluster -n claude-code get jobs | grep clickhouse-schema-init
-  kubectl --context fsi-demo-cluster -n claude-code wait --for=condition=complete \
-    job/clickhouse-schema-init-<hash> --timeout=300s
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
     -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
@@ -101,6 +129,13 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
   The `SHOW CREATE TABLE` is the actual check — a Job that completed doesn't prove every
   statement applied (e.g. the rollup `TTL` clause was missing for weeks while the Job showed
   `Complete`, because the Job never re-ran after the file changed).
+- A pod that crash-loops immediately after a rollout with
+  `FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required` in its log is the
+  **intended** fail-closed behaviour, not a regression — the `dashboard-basic-auth` Secret (fed
+  by `env_from` in `infra/dashboard.tf`) is missing or has a renamed key. Diagnose with
+  `kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=50`; the
+  message names both variables. Do not add `AUTH_ALLOW_INSECURE=1` to the cluster as a
+  workaround.
 
 ---
 
@@ -118,6 +153,9 @@ Or explicitly redeploy the previous known-good tag with Step 3 above.
 - `infra/dashboard.tf`의 Terraform 변경을 반영하려면 새 롤아웃이 필요할 때
 
 ## 사전 요구 사항
+- `infra/terraform.tfvars` 준비 — `infra/terraform.tfvars.example`을
+  `infra/terraform.tfvars`로 복사해 값을 채운다. 기본값이 없는 변수가 5개라 없으면 `terraform
+  plan`/`apply`가 실패한다
 - `kubectl` context `fsi-demo-cluster` 설정, `claude-code` 네임스페이스 접근 권한
 - `180294183052.dkr.ecr.ap-northeast-2.amazonaws.com`에 push 가능한 `aws` CLI 인증
 - `linux/arm64`를 지원하는 `docker buildx`(노드풀이 Graviton)
@@ -144,9 +182,12 @@ aws ecr get-login-password --region ap-northeast-2 \
   | docker login --username AWS --password-stdin 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com
 docker buildx build --platform linux/arm64 \
   -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG \
-  -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:latest \
   --push dashboard/
 ```
+ECR 리포지토리가 `IMMUTABLE`이라 이미 존재하는 태그를 다시 푸시하면 그대로 거부됩니다.
+`latest` 태그는 계속 유용하려면 배포마다 옮겨 다녀야 하는데, 태그가 움직인다는 건 롤아웃
+기록이 더 이상 다이제스트를 가리키지 않는다는 뜻입니다. 타임스탬프 태그만 유일하게 푸시되고,
+`rollout undo`나 명시적 재배포도 이 태그를 기준으로 이미지를 찾습니다.
 
 ### 3. 롤아웃
 ```bash
@@ -160,6 +201,8 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 - [ ] `kubectl get deployment dashboard -o jsonpath='{.spec.template.spec.containers[0].image}'`가 `$TAG`와 일치
 - [ ] 파드 로그에 스택 트레이스 없이 `dashboard listening on :8080` 출력
 - [ ] `/healthz`가 `{"ok": true}` 응답(외부 노출 안 됐으면 port-forward로 확인)
+- [ ] `/readyz`가 실행 중인 파드에서 200 응답 — readiness probe가 실제로 보는 엔드포인트이므로,
+      파드가 `Ready`가 되지 않을 때는 `/healthz`가 아니라 이걸로 진단합니다
 
 ## 롤백
 ```bash
@@ -169,7 +212,10 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
 또는 위 3단계로 이전에 확인된 정상 태그를 명시적으로 재배포합니다.
 
 ## 참고
-- 최종 검증일: 2026-07-08
+- 최종 검증일: 2026-07-08 (전체 절차 실행). 2026-09-02에는 `infra/ecr.tf` / `server/index.js`
+  기준으로 문서만 재동기화했고 배포는 실행하지 않았습니다. `IMMUTABLE` 태그 정책과 `/readyz`
+  probe는 다음 `terraform apply`와 이미지 롤아웃 이후에야 라이브 클러스터에 반영됩니다 — 그
+  전까지 리포지토리는 여전히 `MUTABLE`이고 오래된 `latest` 태그가 남아 있습니다.
 - 적용 대기 중인 `terraform apply`에 `infra/clickhouse.tf`의 ClickHouse 백업 목적지 변경
   (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`)이 포함되어 있어도
   `scripts/archive-clickhouse.sh`와의 순서 제약은 없습니다 — 그 스크립트의 최종 스냅샷
@@ -185,12 +231,14 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
   여러 번 잡았습니다.
 - **ClickHouse 스키마 변경은 이미지 배포와 별개 경로입니다.**
   `infra/files/clickhouse-schema-replicated.sql`를 수정하면 schema-init Job 이름의 `filemd5`가
-  바뀌어 `terraform apply`가 Job을 교체·재실행합니다. terraform은 완료를 기다리지 않으므로
-  (`wait_for_completion = false`) 직접 확인하세요:
+  바뀌어 `terraform apply`가 Job을 교체·재실행합니다. terraform은 Job 완료를 기다리며
+  (`wait_for_completion = true`, 타임아웃 30분) **Job이 실패하면 apply도 실패합니다** —
+  `--multiquery` 클라이언트는 첫 실패 statement에서 abort하므로 Job 파드 로그
+  (`kubectl -n claude-code logs job/clickhouse-schema-init-<hash>`)에서 실패한 statement를
+  확인하세요. 그 뒤의 statement는 적용되지 않은 상태입니다. 2026-09-02 이전에는 Job이 7회 전부
+  실패해도 apply가 성공으로 끝나 3주간 발견되지 않았습니다. 끝 상태는 여전히 직접 확인하세요:
   ```bash
   kubectl --context fsi-demo-cluster -n claude-code get jobs | grep clickhouse-schema-init
-  kubectl --context fsi-demo-cluster -n claude-code wait --for=condition=complete \
-    job/clickhouse-schema-init-<hash> --timeout=300s
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
     -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
   kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
@@ -199,3 +247,9 @@ kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dash
   실제 확인은 `SHOW CREATE TABLE`입니다 — Job이 Complete여도 모든 문장이 적용됐다는 보장은
   아닙니다(롤업 `TTL`이 수 주간 빠져 있었는데 Job은 계속 `Complete`였습니다. 파일이 바뀐 뒤에도
   Job이 재실행되지 않았기 때문입니다).
+- 롤아웃 직후 파드가 로그에 `FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required`를
+  남기고 즉시 crash-loop에 빠지는 것은 **의도된** fail-closed 동작이며 회귀가 아닙니다 —
+  `infra/dashboard.tf`의 `env_from`이 참조하는 `dashboard-basic-auth` Secret이 없거나 키
+  이름이 바뀐 것입니다. `kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=50`
+  로 진단하세요; 메시지가 두 변수 이름을 모두 명시합니다. 우회책으로 클러스터에
+  `AUTH_ALLOW_INSECURE=1`을 추가하지 마세요.

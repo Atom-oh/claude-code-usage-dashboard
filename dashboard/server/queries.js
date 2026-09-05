@@ -1,7 +1,7 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { withComputedCost, normalizeModelId } from "./pricing.js";
-import { rollupActiveUsers, MAU_WINDOW_DAYS } from "./activity.js";
+import { withComputedCost, normalizeModelId, rollupComputedCost } from "./pricing.js";
+import { rollupAdoption } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -50,9 +50,9 @@ export function normModel(col) {
   const strip = (expr, pattern) => `replaceRegexpOne(${expr}, '${pattern}', '')`;
   let expr = col;
   expr = strip(expr, "\\\\[.*\\\\]$"); // [1m] 컨텍스트 윈도우 접미사
-  expr = strip(expr, "^(us|global|eu|apac)\\\\."); // cross-region 추론 프로파일 접두사
+  expr = strip(expr, "^(us|us-gov|eu|apac|jp|au|global)\\\\."); // cross-region 추론 프로파일 접두사
   expr = strip(expr, "^anthropic\\\\."); // bedrock provider 접두사
-  expr = strip(expr, "-v\\\\d+:\\\\d+$"); // bedrock 버전 접미사 -v1:0
+  expr = strip(expr, "-v\\\\d+(:\\\\d+)?$"); // bedrock 버전 접미사 -v1:0 / -v1
   expr = strip(expr, "-\\\\d{8}$"); // 날짜 스냅샷 접미사 -20250929
   return expr;
 }
@@ -77,7 +77,7 @@ export function filterCond(filters = {}, cols = {}) {
   // ~11%가 조용히 빠져 "전체 유저 수"가 실제보다 작게 나온다(리뷰에서 MAJOR로 확인).
   //
   // 정책 정리(리뷰 제안 #6 — A/B 지표 vs 총계 지표를 excludeUnknown 기준으로 표로 명시):
-  //   - excludeUnknown: false(unknown 포함) — activeUsers, activeUsersTimeseries, adoptionLevels,
+  //   - excludeUnknown: false(unknown 포함) — activeUsers, adoptionLevels,
   //     adoptionTimeseries, userLeaderboard의 active_days CTE, kpiSummary, costSummary(및 동일
   //     패턴의 cost 계열). kpiSummary/costSummary는 GROUP BY grp로 그룹별 비교도 같이 보여주지만,
   //     응답 전체를 합산하는 소비자(Executive.jsx의 총 지출/토큰, costPerDev)가 있어 activeUsers와
@@ -142,8 +142,11 @@ export function filterCond(filters = {}, cols = {}) {
 // 단위로 "지금까지 합계"를 30초마다 export한다(운영 설정: cumulative). cumulative 행을 그대로
 // sum(Value)하면 세션이 길수록 같은 총합이 배수로 다시 더해져 토큰/비용/세션 수가 천문학적으로
 // 과대집계된다(실측: 토큰 총합이 1600억까지 나온 사례). 정답은 세션별로 "구간 끝 누적값 - 구간
-// 시작 직전 누적값"만 diff하는 것 — Prometheus increase()가 하는 일과 같다. 세션 재시작 = 새
-// session.id라 카운터 리셋 감지가 따로 필요 없다(방어적으로 greatest(diff, 0)만 둔다). delta
+// 시작 직전 누적값"만 diff하는 것 — Prometheus increase()가 하는 일과 같다. resume/헬퍼
+// 프로세스는 같은 session.id를 유지한 채 카운터를 재시작한다(실측 2026-09-02) — 리셋 경계는
+// session.id가 아니라 SeriesKey가 나른다(StartTimeUnix를 접어 넣음, clickhouse-migration-003.sql
+// / ADR-003). 그래서 diff 쪽에 별도 드롭 감지가 여전히 필요 없고(방어적으로 greatest(diff, 0)만
+// 둔다). delta
 // 데이터(레거시 배포/구 seed)는 그냥 구간 sumIf면 되므로, 아래 두 헬퍼가 temporality별로 알맞은
 // 계산을 세션 단위로 미리 접어(inc subquery) 기존 쿼리들이 원본과 똑같은
 // sumIf(m.Value, m.MetricName = ...) 모양을 그대로 쓰게 한다.
@@ -162,6 +165,8 @@ const LOOKBACK_DAYS = 3; // from 이전에 시작한 세션의 diff baseline을 
 // otel_metrics_sum에 SeriesKey UInt64 MATERIALIZED cityHash64(toString(Attributes)) 컬럼을
 // 추가(clickhouse-schema.sql 참조)해 INSERT 시점에 한 번만 계산하도록 옮기니 같은 쿼리가
 // 0.11초로 줄었다(11배) — 인라인 계산과 값이 100% 일치함을 확인(mismatch=0).
+// SeriesKey는 이제 프로세스 세그먼트 단위(StartTimeUnix까지 해시에 포함, clickhouse-migration-003.sql
+// / ADR-003) — session.count만 예외로 세그먼트 구분 없이 세션당 하나의 키를 유지한다.
 const seriesKey = "SeriesKey";
 
 // 세션(SessionId) × temporality × 속성 단위로 구간 증가량을 미리 계산하는 서브쿼리. 결과 컬럼명을
@@ -893,22 +898,6 @@ export async function activeUsers(from, to, filters = {}) {
   return rows[0] || { users: 0, bedrock_users: 0, enterprise_users: 0 };
 }
 
-// adoptionLevels(스냅샷)의 시계열 버전 — 일자×유저 존재만 뽑아오고 DAU/WAU/MAU 롤링 윈도우는
-// activity.js(순수 함수, 단위 테스트 있음)에서 계산한다. wau/mau가 정확하려면 from보다 29일 전
-// 데이터까지 봐야 하므로 조회 구간을 넓힌다. 현재 라우트에서는 안 쓰지만(어댑션 timeseries는
-// adoptionTimeseries가 담당, 아래) activity.js와 짝인 순수 계산 경로라 보존한다.
-export async function activeUsersTimeseries(from, to) {
-  const rows = await query(
-    `SELECT toDate(hour, 'UTC') AS day, UserEmail
-     FROM claude_code.otel_metrics_sum_hourly
-     WHERE MetricName = 'claude_code.session.count' AND UserEmail != ''
-       AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${MAU_WINDOW_DAYS} DAY AND hour < {to:DateTime}
-     GROUP BY day, UserEmail`,
-    range(from, to)
-  );
-  return rollupActiveUsers(rows, from, to);
-}
-
 // 사용자·세션·PR 시계열 — Productivity 페이지의 "도입률"/"사용자당 PR" 이중축 시계열 하나로 둘 다 커버.
 // session/PR 행에는 Model이 없지만, kpiSummary/normalizedProductivity/userLeaderboard와 동일하게
 // modelMixed 세션 세미조인으로 model 필터를 통과시킨다 — 안 그러면 이 시계열만 전체-모델 기준이라
@@ -1139,7 +1128,7 @@ export async function userSkillUsage(from, to, filters = {}) {
 // 집합만 뽑고 JS에서 접는다 — 유저 수가 수백 명 수준이라 집합 union이 싸고, SQL 셀프조인보다
 // 단순하다. uniq류는 존재 여부만 보므로 시간별 rollup으로 접혀도 값이 같다(키 보존).
 // 날짜 키는 toDate(..., 'UTC')로 고정 — JS는 toISOString()(UTC)로 롤링 union하므로 서버 TZ가
-// UTC가 아니어도 하루 어긋나지 않는다(activeUsersTimeseries와 동일 규칙).
+// UTC가 아니어도 하루 어긋나지 않는다(activity.js의 rollupAdoption이 그 규칙으로 접는다).
 // excludeUnknown: false — activeUsers/adoptionLevels와 같은 "총계/DAU·WAU·MAU" 계열이라
 // 그룹 무관 모수여야 한다. 빠뜨리면 이 시계열만 unknown ~11%가 빠져 Trends의 DAU/WAU/MAU가
 // Overview 스냅샷(adoptionLevels)보다 낮게 나오는 모순이 생긴다(리뷰에서 MAJOR로 확인).
@@ -1157,20 +1146,7 @@ export async function adoptionTimeseries(from, to, filters = {}) {
     GROUP BY d ORDER BY d`,
     { ...range(from, to), ...f.params }
   );
-  const byDay = new Map(rows.map((r) => [r.d, r.users]));
-  const DAY = 86400000;
-  const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
-  const out = [];
-  for (let t = Math.ceil(from.getTime() / DAY) * DAY; t < to.getTime(); t += DAY) {
-    const union = (days) => {
-      const s = new Set();
-      for (let i = 0; i < days; i++) for (const u of byDay.get(dayKey(t - i * DAY)) || []) s.add(u);
-      return s.size;
-    };
-    const dau = union(1), mau = union(30);
-    out.push({ t: dayKey(t), dau, wau: union(7), mau, stickiness: mau > 0 ? Number(((dau / mau) * 100).toFixed(1)) : 0 });
-  }
-  return out;
+  return rollupAdoption(rows, from, to);
 }
 
 // 유저 드릴다운: 특정 유저의 일별 세션/LOC/토큰/커밋 시계열. group을 넘기면 그 그룹 세션만 —
@@ -1504,7 +1480,7 @@ export async function permissionWaitOverhead(from, to, filters = {}) {
         count() AS n
     FROM claude_code.otel_traces t
     LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
-    WHERE t.SpanType = 'claude_code.tool.blocked_on_user'
+    WHERE t.SpanType = 'tool.blocked_on_user'
       AND t.Timestamp >= {from:DateTime} AND t.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", app_version ORDER BY "group", app_version`,
     { ...range(from, to, true), ...f.params }
@@ -1527,10 +1503,537 @@ export async function ttftComparison(from, to, filters = {}) {
         count() AS n
     FROM claude_code.otel_traces t
     LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
-    WHERE t.SpanType = 'claude_code.llm_request'
+    WHERE t.SpanType = 'llm_request'
       AND t.Timestamp >= {from:DateTime} AND t.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", model ORDER BY "group", n DESC`,
     { ...range(from, to, true), ...f.params }
   );
   return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: null, rows: [] };
+}
+
+// STEP 3 패널 21: API 에러율 — 그룹 × 모델. Bedrock 스로틀링·검증 오류의 조기 신호로,
+// 에러가 한쪽 그룹에만 몰리면 그 그룹의 생산성 하락이 "플랫폼 특성"이 아니라 "장애"다.
+// api_request/api_error는 로그 이벤트라 누적 카운터가 아니다 — refusalRate/retriesExhausted와
+// 동일하게 incFlat/incBucketed 없이 그대로 센다.
+//
+// 분모 선택(errors / (requests + errors)): api_request가 실패 요청까지 포함하는지(= api_error가
+// 부분집합인지)는 문서에도 실측에도 없다. 실측 2026-08-31: api_request 176,597행 / api_error
+// 580행이라 두 해석의 상대 차이는 0.33%로 이 패널의 해석 정밀도보다 훨씬 작다. 합집합을 분모로
+// 쓰는 이유는 정확도가 아니라 안전성이다 — 두 해석 중 어느 쪽이든 값이 [0,1]을 벗어나지 않는다
+// (disjoint일 때 errors/requests는 에러가 폭증하면 1을 넘어 "에러율 137%"가 나온다).
+// requests/errors 원본 카운트를 같이 내려 소비자가 다른 분모로 재계산할 수 있게 남긴다.
+//
+// 실측 2026-08-31(mapKeys(LogAttributes)): api_error는 model·error·duration_ms·attempt 키가
+// 100%, status_code는 545/580(94%). api_request는 model 키 100%. otel_logs엔 Model 승격 컬럼이
+// 없어 LogAttributes['model']을 normModel()로 정규화한다(ttftComparison이 otel_traces의 Model에
+// 하는 것과 같은 5단계 규칙).
+export async function apiErrors(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  const params = { ...range(from, to, true), ...f.params };
+  const [byModel, byStatus] = await Promise.all([
+    query(
+      `${GROUP_CTE}
+      SELECT
+          ${GROUP_EXPR} AS "group",
+          ${normModel("l.LogAttributes['model']")} AS model,
+          countIf(l.EventName = 'api_request') AS requests,
+          countIf(l.EventName = 'api_error')   AS errors,
+          count()                              AS total,
+          round(errors / nullIf(total, 0), 4)  AS error_rate
+      FROM claude_code.otel_logs l
+      LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+      WHERE l.EventName IN ('api_request', 'api_error')
+        AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+      GROUP BY "group", model ORDER BY "group", total DESC`,
+      params
+    ),
+    // status_code가 빈 문자열인 에러(실측 2026-08-31: 580건 중 35건)는 HTTP 상태가 아예 없는
+    // 전송 계층 실패(예: Stream idle timeout)다 — 버리면 가장 중요한 케이스가 사라지므로
+    // 'no-http-status' 센티널로 따로 남긴다(프론트가 이 리터럴을 그대로 분기한다).
+    query(
+      `${GROUP_CTE}
+      SELECT
+          ${GROUP_EXPR} AS "group",
+          if(l.LogAttributes['status_code'] = '', 'no-http-status', l.LogAttributes['status_code']) AS status_code,
+          count() AS errors
+      FROM claude_code.otel_logs l
+      LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+      WHERE l.EventName = 'api_error'
+        AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+      GROUP BY "group", status_code ORDER BY "group", errors DESC`,
+      params
+    ),
+  ]);
+  return { byModel, byStatus };
+}
+
+// STEP 3 패널 22: 툴 권한 결정 퍼널 — tool_decision 이벤트를 툴 × 허용 출처(source) × 수락/거부로
+// 분해한다. source가 핵심 지표다: config는 사전 허용(개발자를 안 멈춤), user_temporary는 매번
+// 물어봤다는 뜻(권한 대기로 생산성이 깎임), user_permanent는 사용자가 직접 허용목록에 넣은 것.
+// 실측 2026-08-31: tool_decision 169,862행, tool_name/decision/source 키 전부 100%.
+//
+// decision(accept/reject)을 행 차원이 아니라 countIf 컬럼으로 펴는 이유: refusalRate와 동일한
+// 스타일이고, 그래야 accept_rate가 행마다 바로 나온다(decision이 행이면 비율이 얹힐 행이 없다).
+// n = count()를 같이 두는 건 n != accepts + rejects인 행이 보이면 accept/reject 외의 decision
+// 값이 새로 생겼다는 신호이기 때문 — 실측 시점엔 두 값뿐이다.
+// tool_name은 승격 컬럼 ToolName(= LogAttributes['tool_name'])을 쓴다(toolMcpUsage와 동일).
+// 상위 20개 툴 서브쿼리는 그룹을 안 나눈다 — 그룹별 상위 20개를 뽑으면 두 그룹의 툴 집합이
+// 달라져 A/B 비교 자체가 성립하지 않는다.
+export async function toolDecisionFunnel(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.ToolName AS tool,
+        l.LogAttributes['source'] AS source,
+        countIf(l.LogAttributes['decision'] = 'accept') AS accepts,
+        countIf(l.LogAttributes['decision'] = 'reject') AS rejects,
+        count() AS n,
+        round(accepts / nullIf(accepts + rejects, 0), 3) AS accept_rate
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'tool_decision' AND l.ToolName != ''
+      AND l.ToolName IN (
+          SELECT ToolName FROM claude_code.otel_logs
+          WHERE EventName = 'tool_decision' AND ToolName != ''
+            AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+          GROUP BY ToolName ORDER BY count() DESC LIMIT 20
+      )
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", tool, source ORDER BY "group", n DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// STEP 2 패널 23: 인터랙션 시간 분해 (traces beta) — claude_code.interaction 스팬의 DurationMs
+// p50/p95와, 그 시간 중 자식 스팬(llm_request / tool.execution / tool.blocked_on_user)이 차지한
+// 시간의 비중. "느린 게 모델 때문인가, 툴 실행 때문인가, 권한 대기 때문인가"를 한 표로 가른다.
+//
+// 자식은 TraceId로 붙인다(한 인터랙션의 스팬들은 TraceId를 공유하고 interaction 스팬이 루트).
+// 자식을 TraceId 단위로 먼저 접은 뒤 1:1로 조인하는 게 필수다 — SpanType별 자식 행을 그대로
+// 조인하면 interaction 행이 자식 종류 수만큼 복제돼 quantile과 분모 sum(i.DurationMs)가 그 배수로
+// 뻥튀기된다. join_use_nulls=0이라 자식이 없는 인터랙션은 NULL이 아니라 0으로 들어와 그대로 합산된다.
+//
+// 비중 합계는 1을 넘을 수 있다 — 자식 스팬은 동시에 진행될 수 있고, tool 스팬의 duration_ms는
+// 권한 대기 + 실행을 함께 담는다(clickhouse-schema.sql 2c 주석). "구성비"가 아니라 "인터랙션 총
+// 시간 대비 각 종류가 쓴 시간의 배수"로 읽어야 한다.
+// 실측 2026-09-04(첫 트레이스 유입, v2.1.260): SpanType(span.type 속성)은 접두어 없는
+// 'interaction'/'llm_request'/'tool.execution'/'tool.blocked_on_user'이고, 'claude_code.' 접두어는
+// SpanName 쪽에만 붙는다 — 문서를 따라 접두어 값으로 필터하던 초기 구현은 데이터가 있어도 0행이라
+// 세 패널이 "미수집"으로 남았다. interaction 스팬은 duration_ms 속성이 없어(DurationMs=0) 스팬
+// 자체의 Duration(ns) 컬럼을 ms로 환산해 쓴다 — 자식 스팬은 두 값이 같다(실측 avg 동일).
+// interaction 5건 모두 ParentSpanId=''(루트)였지만 조건은 SpanType만으로 둔다 — 조건을 더 걸어
+// 패널이 조용히 비는 쪽이 더 위험하다.
+// 트레이스는 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA가 켜진 클라이언트에서만 온다 — ttftComparison/
+// permissionWaitOverhead와 동일하게 {unsupported:true}를 반환해 프론트가 "0"과 "미수집"을
+// 구분할 수 있게 한다. minVersion "2.1.214"는 tool.blocked_on_user / tool.execution 스팬이
+// 그 버전부터 나오기 때문(문서 확인).
+export async function interactionBreakdown(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "i.UserEmail" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        count() AS interactions,
+        quantile(0.5)(i.DurationMs)  AS p50_interaction_ms,
+        quantile(0.95)(i.DurationMs) AS p95_interaction_ms,
+        round(sum(c.llm_ms)       / nullIf(sum(i.DurationMs), 0), 3) AS llm_share,
+        round(sum(c.tool_exec_ms) / nullIf(sum(i.DurationMs), 0), 3) AS tool_exec_share,
+        round(sum(c.blocked_ms)   / nullIf(sum(i.DurationMs), 0), 3) AS blocked_share
+    FROM (
+        SELECT TraceId, SessionId, UserEmail, intDiv(Duration, 1000000) AS DurationMs
+        FROM claude_code.otel_traces
+        WHERE SpanType = 'interaction'
+          AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+    ) i
+    LEFT JOIN (
+        SELECT TraceId,
+            sumIf(DurationMs, SpanType = 'llm_request')          AS llm_ms,
+            sumIf(DurationMs, SpanType = 'tool.execution')       AS tool_exec_ms,
+            sumIf(DurationMs, SpanType = 'tool.blocked_on_user') AS blocked_ms
+        FROM claude_code.otel_traces
+        WHERE SpanType IN ('llm_request', 'tool.execution', 'tool.blocked_on_user')
+          AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+        GROUP BY TraceId
+    ) c ON i.TraceId = c.TraceId
+    LEFT JOIN session_group ug ON i.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
+    GROUP BY "group" ORDER BY "group"`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: "2.1.214", rows: [] };
+}
+
+// =============================================================================
+// 2026-09-01 추가 패널. Effort/Language/AgentName은 incFlat/incBucketed가 안 나르는
+// 차원이다 — ADR-001에 따라 GROUP BY를 넓히지 않고 versionCohortCost와 동일한 자기완결
+// 로컬 diff 서브쿼리(세션-경계 diff, LOOKBACK_DAYS 재사용)로 짠다.
+// =============================================================================
+
+// 활성 사용시간 스냅샷 — active_time.total의 type attribute('user'|'cli')는 token.usage와
+// 같은 승격 컬럼(TokenType)에 실린다(실측 7d: cli 123h, user 2.8h). TokenType은 incFlat이
+// 이미 나르는 차원이라 로컬 diff 불필요.
+export async function activeTimeSummary(from, to, filters = {}) {
+  // active_time.total 행엔 Model attribute가 없다 — activeTimeSeries와 동일하게 modelMixed.
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        sumIf(m.Value, m.TokenType = 'user') AS user_seconds,
+        sumIf(m.Value, m.TokenType = 'cli')  AS cli_seconds,
+        uniqExactIf(m.SessionId, m.SessionId != '') AS sessions
+    FROM ${incFlat(`AND MetricName = 'claude_code.active_time.total'`, to - from)} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
+    GROUP BY "group" ORDER BY "group"`,
+    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
+  );
+}
+
+// effort별 비용/토큰 — cost는 계산 비용(토큰 × pricing.js 단가, 이 페이지의 다른 Cost 카드와
+// 동일 기준)이고 reported_cost는 Claude Code 자체 보고값(대조용)이다. 실측 2026-09-03:
+// v2.1.251은 fable-5-1을 opus-5 단가로 보고해 보고 비용이 정가의 약 0.5×, v2.1.258은 정가 —
+// 보고 비용은 클라이언트 버전에 종속이라 패널 기준으로 쓸 수 없다. Speed 컬럼은 실측 0행(이
+// 플릿은 fast 모드 미사용)이라 안 본다. effort ''(실측 7d cost 578)는 effort attribute가 없는
+// 행 — 'unknown'으로 묶는다. 단가를 고르려면 model 그레인이 필요해서 바깥 SELECT에
+// normModel(m.Model)과 TokenType별 토큰 컬럼을 두고, group × effort까지는 JS에서
+// rollupComputedCost로 접는다(TokenType은 이미 SeriesKey에 포함돼 있어 GROUP BY에 추가해도
+// 행이 늘지 않는다 — incFlat 내부 서브쿼리와 동일한 패턴). m.Model != '' 필터는 일부러 걸지
+// 않는다 — 걸면 보고 비용까지 조용히 빠진다. model이 빈 행은 unpriced_tokens로 드러난다.
+export async function effortMix(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        if(m.Effort = '', 'unknown', m.Effort) AS effort,
+        ${normModel("m.Model")} AS model,
+        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')                                     AS reported_cost,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')         AS input_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')        AS output_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens
+    FROM (
+        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, Effort, TokenType, any(UserEmail) AS UserEmail,
+            if(temp = 2,
+                greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+                sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
+        FROM claude_code.otel_metrics_sum
+        WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+          AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
+        GROUP BY sk, SessionId, temp, MetricName, Model, Effort, TokenType
+    ) m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
+    GROUP BY "group", effort, model ORDER BY "group", effort`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return rollupComputedCost(rows, ["group", "effort"]).sort((a, b) => a.group.localeCompare(b.group) || b.cost - a.cost);
+}
+
+// 언어별 편집 수락 — Language는 incFlat 미탑재 차원이라 effortMix와 동일한 로컬 diff
+// (Decision은 incFlat에 있지만 Language와 함께 나와야 해 같이 로컬로 뽑는다).
+// 실측 top에 리터럴 'unknown'이 이미 존재 — ''도 같은 의미라 한 행으로 합친다.
+export async function languageBreakdown(from, to, filters = {}) {
+  // code_edit_tool.decision 행엔 Model attribute가 없다 — codeEditDecisions와 동일하게 modelMixed.
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        if(m.Language = '', 'unknown', m.Language) AS language,
+        sum(m.inc) AS edits,
+        sumIf(m.inc, m.Decision = 'accept') AS accepted
+    FROM (
+        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, Model, Language, Decision, any(UserEmail) AS UserEmail,
+            if(temp = 2,
+                greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+                sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
+        FROM claude_code.otel_metrics_sum
+        WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+          AND MetricName = 'claude_code.code_edit_tool.decision'
+        GROUP BY sk, SessionId, temp, Model, Language, Decision
+    ) m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
+    GROUP BY "group", language ORDER BY "group", edits DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// API 지연 p50/p95 — api_request는 로그 이벤트라 누적 카운터가 아니다(apiErrors와 동일).
+// duration_ms/model/effort 전부 비승격 LogAttributes(실측 7d: p50 5968ms / p95 36262ms) —
+// model은 apiErrors와 같은 normModel() 정규화가 필요하다. 한 스캔의 두 그레인(모델/effort)이라
+// apiErrors의 키드 객체 패턴을 따른다 — 소비자는 data?.byModel || [].
+export async function apiLatency(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  const params = { ...range(from, to, true), ...f.params };
+  const dur = "toFloat64OrZero(l.LogAttributes['duration_ms'])";
+  const [byModel, byEffort] = await Promise.all([
+    query(
+      `${GROUP_CTE}
+      SELECT
+          ${GROUP_EXPR} AS "group",
+          ${normModel("l.LogAttributes['model']")} AS model,
+          count() AS requests,
+          round(quantile(0.5)(${dur}))  AS p50_ms,
+          round(quantile(0.95)(${dur})) AS p95_ms
+      FROM claude_code.otel_logs l
+      LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+      WHERE l.EventName = 'api_request'
+        AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+      GROUP BY "group", model ORDER BY "group", requests DESC`,
+      params
+    ),
+    query(
+      `${GROUP_CTE}
+      SELECT
+          ${GROUP_EXPR} AS "group",
+          if(l.LogAttributes['effort'] = '', 'unknown', l.LogAttributes['effort']) AS effort,
+          count() AS requests,
+          round(quantile(0.5)(${dur}))  AS p50_ms,
+          round(quantile(0.95)(${dur})) AS p95_ms
+      FROM claude_code.otel_logs l
+      LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+      WHERE l.EventName = 'api_request'
+        AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+      GROUP BY "group", effort ORDER BY "group", requests DESC`,
+      params
+    ),
+  ]);
+  return { byModel, byEffort };
+}
+
+// 툴 실행 지연/에러 — errors는 Success='false'와 error attribute 존재를 합집합으로 센다:
+// 승격 Success만 보면 에러 메시지만 있고 Success가 안 찍힌 행을 놓친다(실측: Bash p50 281 /
+// p95 5008ms). LIMIT 50은 toolMcpUsage와 동일한 상한.
+export async function toolLatency(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.ToolName AS tool,
+        count() AS uses,
+        countIf(l.Success = 'false' OR l.LogAttributes['error'] != '') AS errors,
+        round(quantile(0.5)(l.DurationMs))  AS p50_ms,
+        round(quantile(0.95)(l.DurationMs)) AS p95_ms
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'tool_result'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", tool ORDER BY "group", uses DESC LIMIT 50`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// 슬래시 커맨드 도입 + 프롬프트 길이 — user_prompt 한 스캔의 두 그레인(커맨드별/그룹 요약)이라
+// apiErrors의 키드 객체 패턴. command_name = ''(일반 자연어 프롬프트)는 commands에선 제외하고
+// prompts 요약에는 포함한다.
+export async function commandAdoption(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  const params = { ...range(from, to, true), ...f.params };
+  const len = "toFloat64OrZero(l.LogAttributes['prompt_length'])";
+  const [commands, prompts] = await Promise.all([
+    query(
+      `${GROUP_CTE}
+      SELECT
+          ${GROUP_EXPR} AS "group",
+          l.LogAttributes['command_name'] AS command,
+          count() AS uses,
+          uniqExactIf(l.UserEmail, l.UserEmail != '') AS users
+      FROM claude_code.otel_logs l
+      LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+      WHERE l.EventName = 'user_prompt' AND l.LogAttributes['command_name'] != ''
+        AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+      GROUP BY "group", command ORDER BY "group", uses DESC`,
+      params
+    ),
+    query(
+      `${GROUP_CTE}
+      SELECT
+          ${GROUP_EXPR} AS "group",
+          count() AS prompts,
+          round(quantile(0.5)(${len}))  AS p50_len,
+          round(quantile(0.95)(${len})) AS p95_len
+      FROM claude_code.otel_logs l
+      LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+      WHERE l.EventName = 'user_prompt'
+        AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+      GROUP BY "group" ORDER BY "group"`,
+      params
+    ),
+  ]);
+  return { commands, prompts };
+}
+
+// 훅 오버헤드 — total_duration_ms/num_blocking은 비승격 LogAttributes(실측 7d: 총 13888s,
+// p95 213ms). blocked는 "블로킹 훅이 1개 이상 걸린 실행 수"(num_blocking>0인 행 카운트) —
+// num_blocking 합산이 아니라 실행 단위로 세야 executions와 같은 분모로 비율이 된다.
+export async function hookOverhead(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  const dur = "toFloat64OrZero(l.LogAttributes['total_duration_ms'])";
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        count() AS executions,
+        round(sum(${dur}) / 1000, 1) AS total_seconds,
+        round(quantile(0.95)(${dur})) AS p95_ms,
+        countIf(toFloat64OrZero(l.LogAttributes['num_blocking']) > 0) AS blocked
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'hook_execution_complete'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group" ORDER BY "group"`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// MCP 연결 헬스 — mcp_server_connection은 서버명이 승격 McpServerName(tool_result의
+// mcp_server.name)이 아니라 LogAttributes['server_name']에 실린다. status는 connected/failed/
+// disconnected 세 값(실측 7d: connected 1229, failed 56) — disconnected는 attempts에만 잡혀
+// attempts != connected + failed일 수 있다(의도된 동작).
+export async function mcpHealth(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.LogAttributes['server_name'] AS server,
+        count() AS attempts,
+        countIf(l.LogAttributes['status'] = 'connected') AS connected,
+        countIf(l.LogAttributes['status'] = 'failed')    AS failed,
+        round(quantile(0.95)(toFloat64OrZero(l.LogAttributes['duration_ms']))) AS p95_ms
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'mcp_server_connection'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", server ORDER BY "group", attempts DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// 에이전트(서브에이전트)별 비용/토큰 — AgentName은 incFlat 미탑재 차원이라 effortMix와 동일한
+// 로컬 diff(실측 7d: AgentName 비어있지 않은 행 4.56M). ''는 메인 스레드 귀속 — 'main'으로
+// 표기한다. cost/reported_cost의 의미와 model 그레인 · rollupComputedCost 접기는 effortMix와
+// 동일하다(실측 2026-09-03: 보고 비용은 클라이언트 버전에 종속 — v2.1.251이 fable-5-1을
+// opus-5 단가로 보고). 상위 30개 절단은 접은 뒤 JS에서 한다 — SQL LIMIT은 model로 쪼개진
+// 행에 걸려서 에이전트 하나의 비용이 잘린다.
+export async function agentCost(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        if(m.AgentName = '', 'main', m.AgentName) AS agent,
+        ${normModel("m.Model")} AS model,
+        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')                                     AS reported_cost,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')         AS input_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')        AS output_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens
+    FROM (
+        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, AgentName, TokenType, any(UserEmail) AS UserEmail,
+            if(temp = 2,
+                greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+                sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
+        FROM claude_code.otel_metrics_sum
+        WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+          AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
+        GROUP BY sk, SessionId, temp, MetricName, Model, AgentName, TokenType
+    ) m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
+    GROUP BY "group", agent, model ORDER BY "group", agent`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return rollupComputedCost(rows, ["group", "agent"]).sort((a, b) => b.cost - a.cost).slice(0, 30);
+}
+
+// =============================================================================
+// 2026-09-04 추가 패널. otel_logs api_request(보고 비용 vs 계산 비용, AppVersion 그레인)와
+// otel_traces 인터랙션 드릴다운(유저 1명의 턴별 워터폴).
+// =============================================================================
+
+// 버전별 보고 비용 vs 계산 비용 — cost_usd는 클라이언트 자체 단가표로 클라이언트 사이드에서
+// 매겨지므로 AppVersion에 종속된다(실측 2026-09-03: v2.1.251이 claude-fable-5-1을 opus-5
+// 단가로 보고, ≈0.5×). model:은 modelViaSession:이 아니라 l.LogAttributes['model'] 그 자체를
+// 쓴다 — api_request는 다른 otel_logs 이벤트(apiErrors/mcpHealth/hookOverhead)와 달리 model
+// 속성을 행의 100%에 갖고 있다(실측 2026-09-04). cache_creation_tokens는 로그 속성명이고
+// withComputedCost는 cache_write_tokens를 읽으므로 별칭이 곧 가격 계산의 전제조건이다. 단가표
+// 밖 모델도 행을 버리지 않는다 — cost/ratio가 null일 뿐이다.
+export async function reportedVsComputedByVersion(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.AppVersion AS app_version,
+        ${normModel("l.LogAttributes['model']")} AS model,
+        count() AS requests,
+        sum(toFloat64OrZero(l.LogAttributes['cost_usd']))             AS reported_cost,
+        sum(toUInt64OrZero(l.LogAttributes['input_tokens']))          AS input_tokens,
+        sum(toUInt64OrZero(l.LogAttributes['output_tokens']))         AS output_tokens,
+        sum(toUInt64OrZero(l.LogAttributes['cache_read_tokens']))     AS cache_read_tokens,
+        sum(toUInt64OrZero(l.LogAttributes['cache_creation_tokens'])) AS cache_write_tokens
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'api_request'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", app_version, model ORDER BY requests DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return withComputedCost(rows).map((r) => ({
+    ...r,
+    ratio: r.cost > 0 ? Number(r.reported_cost) / r.cost : null,
+  }));
+}
+
+// 유저 1명의 턴별 워터폴 — "왜 이 세션이 느렸나"에 답한다. interactionBreakdown과 동일한
+// TraceId 자식 접기를 쓰지만, 자식 서브쿼리에는 일부러 SpanType 필터가 없다 — AgentId는
+// 스팬 타입을 가리지 않고 실린다(실측 2026-09-04). SpanType 필터를 걸면 agents가 과소집계된다.
+// SpanType 값은 접두사 없이 'interaction'/'llm_request'/'tool'/'tool.execution'/
+// 'tool.blocked_on_user'로 온다 — claude_code. 접두사는 SpanName에만 붙는다. ParentAgentId는
+// 라이브 데이터에서 한 번도 채워진 적이 없다(실측 2026-09-04: 0행) — 그래서 에이전트 깊이/트리는
+// 도출할 수 없고, 인터랙션당 distinct 에이전트 수만 도출 가능하다. llm/tool/blocked 세 구간은
+// 서로 겹칠 수 있어(tool 스팬의 duration_ms가 대기+실행을 함께 담음) 합이 interaction_ms를
+// 넘을 수 있다 — interactionBreakdown과 동일한 주의사항.
+export async function userInteractions(from, to, email) {
+  const rows = await query(
+    `SELECT
+        i.SessionId    AS session_id,
+        i.TraceId      AS trace_id,
+        i.started_at   AS started_at,
+        i.DurationMs   AS interaction_ms,
+        c.llm_ms       AS llm_ms,
+        c.tool_exec_ms AS tool_exec_ms,
+        c.blocked_ms   AS blocked_ms,
+        c.agents       AS agents,
+        c.llm_calls    AS llm_calls
+    FROM (
+        SELECT TraceId, SessionId, Timestamp,
+            formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S', 'UTC') AS started_at,
+            intDiv(Duration, 1000000) AS DurationMs
+        FROM claude_code.otel_traces
+        WHERE SpanType = 'interaction' AND UserEmail = {email:String}
+          AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+    ) i
+    LEFT JOIN (
+        SELECT TraceId,
+            sumIf(DurationMs, SpanType = 'llm_request')          AS llm_ms,
+            sumIf(DurationMs, SpanType = 'tool.execution')       AS tool_exec_ms,
+            sumIf(DurationMs, SpanType = 'tool.blocked_on_user') AS blocked_ms,
+            uniqExactIf(AgentId, AgentId != '')                  AS agents,
+            countIf(SpanType = 'llm_request')                    AS llm_calls
+        FROM claude_code.otel_traces
+        WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+        GROUP BY TraceId
+    ) c ON i.TraceId = c.TraceId
+    ORDER BY i.Timestamp DESC LIMIT 200`,
+    { ...range(from, to, true), email }
+  );
+  return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: "2.1.214", rows: [] };
 }
