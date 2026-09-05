@@ -43,7 +43,11 @@ method at runtime rather than a static experiment flag.
   the live cluster before any trace data could land.
 - **ClickHouse (`otel_metrics_sum_hourly`)** -- `ReplicatedAggregatingMergeTree` hourly rollup
   fed by a materialized view on `otel_metrics_sum`. Dashboard queries read this table instead
-  of the raw one (~86x fewer rows; raw grows ~3M rows/day from 10s cumulative re-exports).
+  of the raw one (~86x fewer rows; raw grows ~3M rows/day from 10s cumulative re-exports). Its
+  ZooKeeper path is `/clickhouse/tables/{shard}/otel_metrics_sum_hourly_v2` — the name/path
+  inversion left by `clickhouse-migration-003.sql` §5, declared as such in
+  `infra/files/clickhouse-schema-replicated.sql` since 2026-09-05 (see
+  `docs/runbooks/rollup-rebuild-segment-key.md` → Cleanup).
   Cumulative counters keep `max(Value)` per (SeriesKey, SessionId, hour); `SeriesKey` has been
   per-process-segment since migration-003 (`StartTimeUnix` folded in), `session.count`
   excepted. The schema gives it a
@@ -250,6 +254,10 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
 - **ClickHouse(`otel_metrics_sum_hourly`)** -- `otel_metrics_sum` 위의 materialized view가
   채우는 시간별 rollup(`ReplicatedAggregatingMergeTree`). 대시보드 쿼리는 원본 대신 이
   테이블을 읽는다(행 수 ~86x 감소; 원본은 10초 누적 재-export로 하루 ~300만 행씩 증가).
+  ZooKeeper 경로는 `/clickhouse/tables/{shard}/otel_metrics_sum_hourly_v2` —
+  `clickhouse-migration-003.sql` §5 가 남기는 이름/경로 역전이며 2026-09-05 부터
+  `infra/files/clickhouse-schema-replicated.sql` 도 그 경로를 선언한다
+  (`docs/runbooks/rollup-rebuild-segment-key.md` → 정리 참고).
   누적 카운터는 (SeriesKey, SessionId, hour)당 `max(Value)`만 보존한다. `SeriesKey`는
   migration-003 이후 프로세스별 세그먼트 단위다(`StartTimeUnix`를 접어 넣음), `session.count`는
   예외. 스키마상 TTL은 DELETE-only 180일이다(원본과 달리 cold 이동 없음) — `UserEmail`을 담는

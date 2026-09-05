@@ -56,14 +56,15 @@ ORDER BY version;
 --
 --    002의 증거: otel_metrics_sum.AppVersion 컬럼의 존재.
 --    003의 증거: (1) otel_metrics_sum.SeriesKey의 default_expression이 StartTimeUnix를 포함하고,
---      (2) 그 컬럼의 MATERIALIZE COLUMN mutation이 system.mutations에 완료(is_done=1)로 남아 있고,
---          (또는 테이블이 비어 있을 것 — 신규 설치는 CREATE 부터 새 키라 MATERIALIZE 가 없다),
---      (3) 그 테이블에 미완료 mutation이 없고, (4) 라이브 otel_metrics_sum_hourly 의 engine_full(ZK 경로)이 _hourly_v2 로 끝날 것 — 003 §5 EXCHANGE 의 이름/경로 역전이 남기는 흔적이라 shadow 재구축이 실제로 라이브가 됐음을 증명한다(신규 설치는 빈 테이블 조건으로 통과; 로컬 MergeTree 스택은 재구축을 TRUNCATE 로 하므로 이 증거가 없어 원장에 3이 남지 않는다 — 거짓 양성보다 낫다). (1)만 보면 003 §1(메타데이터 전용 MODIFY COLUMN)
+--      (2) 가장 오래된 파티션(toYYYYMM(TimeUnix) 최소값)에서 SeriesKey 가 §1 식과 전수 일치할 것 — 003 §7(b)와 같은
+--          증거다. mutation 이름 매치(MATERIALIZE COLUMN SeriesKey)는 002 시절 legacy 키 materialization 도 잡아
+--          §2 를 건너뛴 클러스터를 "적용됨"으로 기록했다(리뷰 지적 2026-09-05). 최근 행은 삽입 시 새 식으로 계산되므로
+--          미materialize 된 legacy 파트는 가장 오래된 파티션에만 남는다; 빈 테이블(신규 설치)은 mismatch 0 으로 통과한다.
+--          이 서브셀렉트는 파티션 하나를 전수 스캔하므로 수 분 걸릴 수 있다(180일 TTL 기준 최대 1개월 분량).
+--      (3) 그 테이블에 미완료 mutation이 없고, (4) 라이브 otel_metrics_sum_hourly 의 engine_full(ZK 경로)이 _hourly_v2 로 끝날 것 — 003 §5 EXCHANGE 의 이름/경로 역전이 남기는 흔적이라 shadow 재구축이 실제로 라이브가 됐음을 증명한다(replicated 스키마 사본이 2026-09-05 부터 _v2 경로를 선언하므로 신규 설치도 그대로 통과; 빈 테이블 조건은 ZK 경로가 없는 로컬 참조 사본용이고, 재구축을 TRUNCATE 로 한 기존 로컬 스택은 이 증거가 없어 원장에 3이 남지 않는다 — 거짓 양성보다 낫다). (1)만 보면 003 §1(메타데이터 전용 MODIFY COLUMN)
 --      직후 중단된 클러스터도 "적용됨"으로 기록된다(리뷰 지적 2026-09-04). rollup 재구축(003 §3~§6)의 성공은 (4)로 판별한다(리뷰 지적 2026-09-05). 003 §10 은 같은 문장을 주석으로 품고 있어 검증 후 손으로 기록하고, 이 소급 INSERT는
 --      원장이 생기기 전에 003을 끝낸 클러스터를 위한 것이다. StartTimeUnix 자체는 원래 있는 기본
---      컬럼이라 존재만으로는 아무것도 증명하지 않는다. system.mutations는 완료 mutation을 기본
---      finished_mutations_to_keep=100건까지만 보존한다 — 그 뒤에 003을 소급 기록해야 하면 003 §10의
---      INSERT에서 system.mutations 조건 두 줄을 뺀 변형을 손으로 실행한다(§10 주석 참고). §10도 같은 가드를 쓰므로 그대로는 안 된다.
+--      컬럼이라 존재만으로는 아무것도 증명하지 않는다. system.mutations 는 실행 레플리카의 로컬 뷰라 (3) 은 먼저 clusterAllReplicas('replicated', system.mutations) 로 다른 레플리카도 확인하고 실행한다.
 --    004의 증거: 이 원장 테이블 자체 — 그래서 (b) 가드만 둔다.
 --
 --    INSERT에는 ON CLUSTER를 붙이지 않는다(INSERT는 DDL이 아니다) — ReplicatedMergeTree의
@@ -74,10 +75,10 @@ FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'AppVersion') > 0
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 2) = 0;
 
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'ec23f93cd0d2883a97d2875aba0d87451ff0abfa504f95d9437f0040e5f0bf47'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '2984741a21d0afda4893fc01e60b787e2f5b6416ead35abbac635cdb13689329'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
-  AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
+  AND (SELECT countIf(SeriesKey != if(MetricName = 'claude_code.session.count', cityHash64(toString(Attributes)), cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))) FROM claude_code.otel_metrics_sum WHERE toYYYYMM(TimeUnix) = (SELECT min(toYYYYMM(TimeUnix)) FROM claude_code.otel_metrics_sum)) = 0
   AND (SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND is_done = 0) = 0
   AND ((SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_metrics_sum_hourly' AND engine_full LIKE '%otel_metrics_sum_hourly_v2%') > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;

@@ -181,11 +181,11 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly ON CLUSTER 'repli
     sum_value SimpleAggregateFunction(sum, Float64),
     has_org   SimpleAggregateFunction(max, UInt8)
 )
--- ZK 경로 주의(2026-09-05): clickhouse-migration-003.sql §5 EXCHANGE 를 거친 클러스터에서는 라이브 이름의 실제
--- 경로가 …/otel_metrics_sum_hourly_v2 다(이름/경로 역전, 004 원장 가드의 증거). 이 CREATE 는 IF NOT EXISTS 라 기존
--- 레플리카에서는 no-op 이고, 새 레플리카는 이 파일이 아니라 기존 레플리카의 SHOW CREATE TABLE 로 만들어야 한다 —
--- 이 파일의 경로로 만들면 빈 옛 경로에 붙는다. 정합 확인 쿼리는 003 §8.
-ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
+-- ZK 경로(2026-09-05): clickhouse-migration-003.sql §5 EXCHANGE 이후 라이브 롤업의 실제 경로는
+-- …/otel_metrics_sum_hourly_v2 다(이름/경로 역전). 이 CREATE 도 같은 경로를 선언해 IaC 가 라이브를 재현하고,
+-- 신규 설치도 처음부터 그 경로에 만들어져 004 원장 가드 (4)가 성립한다. 003 이전 클러스터에서는 IF NOT EXISTS 라
+-- no-op 이고, 003 §3 의 shadow 테이블(_v2 이름, 같은 경로)은 그런 클러스터에서만 만들어진다. 정합 확인 쿼리는 003 §8.
+ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly_v2', '{replica}')
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
           Model, TokenType, Decision, SkillName, ToolName, StartType, AppVersion, hour)
@@ -476,10 +476,10 @@ FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'AppVersion') > 0
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 2) = 0;
 
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'ec23f93cd0d2883a97d2875aba0d87451ff0abfa504f95d9437f0040e5f0bf47'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '2984741a21d0afda4893fc01e60b787e2f5b6416ead35abbac635cdb13689329'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
-  AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
+  AND (SELECT countIf(SeriesKey != if(MetricName = 'claude_code.session.count', cityHash64(toString(Attributes)), cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))) FROM claude_code.otel_metrics_sum WHERE toYYYYMM(TimeUnix) = (SELECT min(toYYYYMM(TimeUnix)) FROM claude_code.otel_metrics_sum)) = 0
   AND (SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND is_done = 0) = 0
   AND ((SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_metrics_sum_hourly' AND engine_full LIKE '%otel_metrics_sum_hourly_v2%') > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;

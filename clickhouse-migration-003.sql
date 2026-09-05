@@ -166,6 +166,8 @@ SETTINGS storage_policy = 'hot_cold';
 -- SELECT countIf(SeriesKey != if(MetricName = 'claude_code.session.count', cityHash64(toString(Attributes)), cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))) AS mismatch
 -- FROM claude_code.otel_metrics_sum
 -- WHERE TimeUnix >= now() - INTERVAL 1 DAY;
+--     1일 창은 §2 진행 중의 빠른 확인용이다 — §2 완료 판정은 WHERE 를 지우고 전 구간(또는 가장 오래된 파티션:
+--     toYYYYMM(TimeUnix) = (SELECT min(toYYYYMM(TimeUnix)) FROM claude_code.otel_metrics_sum))으로 돌린다. 원장 가드가 그 형태다.
 
 -- (c) mutation 진행 상황(권한 있는 계정으로 실행 — otel_reader는 system.mutations를 못 읽음).
 -- SELECT count() FROM system.mutations
@@ -219,10 +221,10 @@ SETTINGS storage_policy = 'hot_cold';
 --    롤백 EXCHANGE 뒤에는 컷오버~롤백 사이에 라이브 이름에 쌓인 시간대가 옛 테이블에 없다 — §6과 같은 range 모드로 그 구간을 다시 채운다.
 --    창이 끝나면:
 --    정합 확인(창 종료 전·후, 레플리카 증설이나 schema-init Job 재실행 뒤에도 매번): 모든 레플리카의 라이브
---    롤업이 같은 ZK 경로(…_hourly_v2)여야 한다. infra/files/clickhouse-schema-replicated.sql 의 CREATE 는
---    여전히 …_hourly 경로를 선언하므로(IF NOT EXISTS 라 기존 레플리카엔 no-op) 새 레플리카는 반드시 기존
---    레플리카의 SHOW CREATE TABLE 로 만들어야 한다(clickhouse-operator 의 스키마 복제가 그 경로다) — 파일로
---    만들면 빈 옛 경로에 붙어 레플리카 간 롤업이 조용히 갈라진다(리뷰 지적 2026-09-05).
+--    롤업이 같은 ZK 경로(…_hourly_v2)여야 한다. infra/files/clickhouse-schema-replicated.sql 의 CREATE 도 2026-09-05
+--    부터 같은 _v2 경로를 선언하므로(IF NOT EXISTS 라 기존 레플리카엔 no-op) schema-init Job 재실행이나 그 파일로 만든
+--    새 레플리카도 같은 경로에 붙는다 — 이 확인은 옛 사본(…_hourly 경로)으로 만들어진 레플리카를 잡기 위한 것이다
+--    (그런 레플리카는 빈 옛 경로에 붙어 롤업이 조용히 갈라진다; 리뷰 지적 2026-09-05).
 -- SELECT hostName(), zookeeper_path FROM clusterAllReplicas('replicated', system.replicas)
 -- WHERE database = 'claude_code' AND table = 'otel_metrics_sum_hourly';  -- 모든 행이 …_hourly_v2 로 끝나야 한다
 -- DROP TABLE claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
@@ -243,17 +245,15 @@ SETTINGS storage_policy = 'hot_cold';
 --    기록은 메타데이터 증거만 볼 수 있으므로 rollup 재구축까지 끝냈다는 사실은 이 문장이
 --    오퍼레이터의 손으로 남긴다. 원장 테이블이 아직 없으면(004 미적용) 004를 먼저 실행한다.
 --    INSERT에는 ON CLUSTER를 붙이지 않는다 — 한 파드에서 한 번만.
---    가드 넷: SeriesKey 식(§1), MATERIALIZE 완료(§2, 또는 빈 테이블), 미완료 mutation 없음, 라이브 롤업의
+--    가드 넷: SeriesKey 식(§1), 가장 오래된 파티션의 키 전수 일치(§2 의 실제 완료 증거 = §7(b)), 미완료 mutation 없음, 라이브 롤업의
 --    ZK 경로가 …_hourly_v2 로 끝남(§5 EXCHANGE 의 이름/경로 역전 — 재구축이 실제로 라이브가 됐다는 증거).
 --    system.mutations/system.columns 는 실행 레플리카의 로컬 뷰다 — 기록 전에 다른 레플리카의 mutation 도 끝났는지
 --    clusterAllReplicas('replicated', system.mutations) 에서 is_done = 0 인 행이 없음을 확인한다.
---    MATERIALIZE mutation 기록이 finished_mutations_to_keep(기본 100)에서 밀려난 뒤라면 system.mutations
---    조건 두 줄을 빼고 실행한다 — 그때는 §7 검증 통과가 그 자리의 증거다.
 -- -----------------------------------------------------------------------------
--- INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'ec23f93cd0d2883a97d2875aba0d87451ff0abfa504f95d9437f0040e5f0bf47'
+-- INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '2984741a21d0afda4893fc01e60b787e2f5b6416ead35abbac635cdb13689329'
 -- FROM system.one
 -- WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
---   AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
+--   AND (SELECT countIf(SeriesKey != if(MetricName = 'claude_code.session.count', cityHash64(toString(Attributes)), cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))) FROM claude_code.otel_metrics_sum WHERE toYYYYMM(TimeUnix) = (SELECT min(toYYYYMM(TimeUnix)) FROM claude_code.otel_metrics_sum)) = 0
 --   AND (SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND is_done = 0) = 0
 --   AND ((SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_metrics_sum_hourly' AND engine_full LIKE '%otel_metrics_sum_hourly_v2%') > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
 --   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;

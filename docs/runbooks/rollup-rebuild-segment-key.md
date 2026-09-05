@@ -279,11 +279,11 @@ Once that window closes:
 DROP TABLE claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 ```
 **Path consistency check — before and after the drop, and again after any replica scale-out or
-schema-init re-run.** `infra/files/clickhouse-schema-replicated.sql` still declares the rollup on the
-`…_hourly` ZooKeeper path; on existing replicas its `CREATE TABLE IF NOT EXISTS` is a no-op, but a replica
-created from that file instead of from an existing replica's `SHOW CREATE TABLE` (the clickhouse-operator's
-schema-propagation path) would attach to the empty old path and diverge silently. Every replica must report
-the same `…_hourly_v2` path:
+schema-init re-run.** Since 2026-09-05 `infra/files/clickhouse-schema-replicated.sql` declares the rollup
+on the same `…_hourly_v2` ZooKeeper path, so a schema-init re-run or a replica created from the current
+file lands on the live path (on existing replicas its `CREATE TABLE IF NOT EXISTS` is a no-op). This check
+catches a replica created from an older copy of the file, which would attach to the empty `…_hourly` path
+and diverge silently. Every replica must report the same `…_hourly_v2` path:
 ```sql
 SELECT hostName(), zookeeper_path FROM clusterAllReplicas('replicated', system.replicas)
 WHERE database = 'claude_code' AND table = 'otel_metrics_sum_hourly';
@@ -583,10 +583,11 @@ ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COL
 DROP TABLE claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 ```
 **경로 정합 확인 — drop 전후, 그리고 레플리카 증설이나 schema-init 재실행 뒤에도 매번.**
-`infra/files/clickhouse-schema-replicated.sql`은 여전히 롤업을 `…_hourly` ZooKeeper 경로로 선언합니다.
-기존 레플리카에서는 `CREATE TABLE IF NOT EXISTS`가 no-op이지만, 기존 레플리카의 `SHOW CREATE TABLE`
-(clickhouse-operator의 스키마 전파 경로)이 아니라 그 파일로 만든 레플리카는 빈 옛 경로에 붙어 조용히
-갈라집니다. 모든 레플리카가 같은 `…_hourly_v2` 경로를 보고해야 합니다:
+2026-09-05부터 `infra/files/clickhouse-schema-replicated.sql`도 롤업을 같은 `…_hourly_v2` ZooKeeper
+경로로 선언하므로, schema-init 재실행이나 현재 파일로 만든 레플리카는 라이브 경로에 붙습니다(기존
+레플리카에서는 `CREATE TABLE IF NOT EXISTS`가 no-op입니다). 이 확인은 옛 사본으로 만들어져 빈
+`…_hourly` 경로에 붙어 조용히 갈라진 레플리카를 잡는 용도입니다. 모든 레플리카가 같은
+`…_hourly_v2` 경로를 보고해야 합니다:
 ```sql
 SELECT hostName(), zookeeper_path FROM clusterAllReplicas('replicated', system.replicas)
 WHERE database = 'claude_code' AND table = 'otel_metrics_sum_hourly';
