@@ -52,7 +52,13 @@ ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
 --    과도기 효과: 이 mutation이 끝나기 전까지 RAW 경로(≤4시간 구간·분 단위 버킷의
 --    incFlatRaw/incBucketedRaw, Grafana 패널, chat SQL이 원본 테이블을 직접 읽는 경우)는
 --    statement 1 시점에 살아있던 세션에 대해 레거시 키 행과 세그먼트 키 행이 섞여 보여
---    일시적으로 과대집계된다. rollup 경로는 아래에서 별도로 재구축되므로 영향받지 않는다.
+--    일시적으로 과대집계된다. 라이브 rollup 경로도 같다(리뷰 지적 2026-09-05, 이전 주석은
+--    "영향 없음"이라 잘못 단언했다): §1 직후부터 MV 가 새 키로 쓰므로 그 세션은 라이브 롤업
+--    안에서 pre-§1(legacy 키) 행과 post-§1(세그먼트 키) 행으로 갈라지고, incFlat 의 lag
+--    0-default 아래에서 새 세그먼트의 첫 버킷이 누적 전체를 증가분으로 실어 과거 이력이 두 키에서
+--    이중 계상된다. §5 EXCHANGE 로 재구축 롤업이 라이브가 되면 자가 치유되지만 그 창은 §2 mutation
+--    + §4 백필이 걸리는 수 시간이다 — 컷오버 중 대시보드 수치(특히 §1 시점에 열려 있던 세션)는
+--    신뢰하지 말고, 절차는 트래픽이 적은 시간에 시작한다.
 -- -----------------------------------------------------------------------------
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN SeriesKey;
 
@@ -250,7 +256,7 @@ SETTINGS storage_policy = 'hot_cold';
 --    system.mutations/system.columns 는 실행 레플리카의 로컬 뷰다 — 기록 전에 다른 레플리카의 mutation 도 끝났는지
 --    clusterAllReplicas('replicated', system.mutations) 에서 is_done = 0 인 행이 없음을 확인한다.
 -- -----------------------------------------------------------------------------
--- INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '2984741a21d0afda4893fc01e60b787e2f5b6416ead35abbac635cdb13689329'
+-- INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '10d718df836ed300e2e30a602a92a785375eb8ed955da5bb441324349d0b4758'
 -- FROM system.one
 -- WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
 --   AND (SELECT countIf(SeriesKey != if(MetricName = 'claude_code.session.count', cityHash64(toString(Attributes)), cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)))) FROM claude_code.otel_metrics_sum WHERE toYYYYMM(TimeUnix) = (SELECT min(toYYYYMM(TimeUnix)) FROM claude_code.otel_metrics_sum)) = 0
