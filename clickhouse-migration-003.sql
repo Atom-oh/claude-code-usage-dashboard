@@ -105,6 +105,17 @@ SETTINGS storage_policy = 'hot_cold';
 --
 -- TARGET_TABLE=claude_code.otel_metrics_sum_hourly_v2 \
 --   RANGE_TO='<H0>' CH_HOST=<host> CH_PASSWORD=<pw> ./scripts/backfill-hourly-rollup.sh
+--
+--    4b. EXCHANGE 직전 꼬리 재백필 — §4 가 스캔한 뒤에 도착한 TimeUnix < H0 행(콜렉터 디스크 큐의 지연
+--    flush: max_elapsed_time=0 이라 수 시간 지연이 정상 경로다)은 MV 가 옛 라이브 테이블에 쓰고, 그 테이블은
+--    §5 에서 _v2 가 되어 새 롤업에서 영구 누락된다(리뷰 지적 2026-09-05). max 계열은 멱등하므로 §5 직전에
+--    같은 스크립트를 꼬리 구간만 다시 돌린다. D 는 콜렉터가 멈춰 있었을 수 있는 최대 시간(기본 24h — 알림
+--    이력에 더 긴 공백이 있으면 그만큼). §4 가 시작된 시각이 H0 - D 보다 이르면 그 시각을 RANGE_FROM 으로.
+--    이 재백필과 EXCHANGE 사이의 몇 초 동안 도착한 pre-H0 행만 남는 잔여 창이며, EXCHANGE 이후 도착분은
+--    MV 가 새 라이브 테이블에 쓰므로 문제없다. delta 행 중복은 §7(f) 로 확인.
+--
+-- TARGET_TABLE=claude_code.otel_metrics_sum_hourly_v2 RANGE_FROM='<H0 - D>' RANGE_TO='<H0>' \
+--   CH_HOST=<host> CH_PASSWORD=<pw> ./scripts/backfill-hourly-rollup.sh
 -- -----------------------------------------------------------------------------
 
 -- -----------------------------------------------------------------------------
@@ -117,7 +128,7 @@ SETTINGS storage_policy = 'hot_cold';
 -- -----------------------------------------------------------------------------
 --    사전 검사(EXCHANGE 직전): count() > 0, min(hour) ≈ raw 의 최소 시각, max(hour) = H0 - 1h 이어야 한다.
 -- SELECT min(hour), max(hour), count() FROM claude_code.otel_metrics_sum_hourly_v2;
---    ※ §4 백필 완료 + §7(b)(c) 통과 후에만 주석을 풀어 실행한다(그 전에 실행하면 빈 rollup 이 라이브가 된다).
+--    ※ §4 백필 + §4b 꼬리 재백필 완료 + §7(b)(c) 통과 후에만 주석을 풀어 실행한다(그 전에 실행하면 빈 rollup 이 라이브가 된다).
 -- EXCHANGE TABLES claude_code.otel_metrics_sum_hourly AND claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 
 -- -----------------------------------------------------------------------------
@@ -207,6 +218,13 @@ SETTINGS storage_policy = 'hot_cold';
 --    MATERIALIZE COLUMN(실측: 왕복 후 mismatch=0).
 --    롤백 EXCHANGE 뒤에는 컷오버~롤백 사이에 라이브 이름에 쌓인 시간대가 옛 테이블에 없다 — §6과 같은 range 모드로 그 구간을 다시 채운다.
 --    창이 끝나면:
+--    정합 확인(창 종료 전·후, 레플리카 증설이나 schema-init Job 재실행 뒤에도 매번): 모든 레플리카의 라이브
+--    롤업이 같은 ZK 경로(…_hourly_v2)여야 한다. infra/files/clickhouse-schema-replicated.sql 의 CREATE 는
+--    여전히 …_hourly 경로를 선언하므로(IF NOT EXISTS 라 기존 레플리카엔 no-op) 새 레플리카는 반드시 기존
+--    레플리카의 SHOW CREATE TABLE 로 만들어야 한다(clickhouse-operator 의 스키마 복제가 그 경로다) — 파일로
+--    만들면 빈 옛 경로에 붙어 레플리카 간 롤업이 조용히 갈라진다(리뷰 지적 2026-09-05).
+-- SELECT hostName(), zookeeper_path FROM clusterAllReplicas('replicated', system.replicas)
+-- WHERE database = 'claude_code' AND table = 'otel_metrics_sum_hourly';  -- 모든 행이 …_hourly_v2 로 끝나야 한다
 -- DROP TABLE claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 -- -----------------------------------------------------------------------------
 
@@ -227,10 +245,12 @@ SETTINGS storage_policy = 'hot_cold';
 --    INSERT에는 ON CLUSTER를 붙이지 않는다 — 한 파드에서 한 번만.
 --    가드 넷: SeriesKey 식(§1), MATERIALIZE 완료(§2, 또는 빈 테이블), 미완료 mutation 없음, 라이브 롤업의
 --    ZK 경로가 …_hourly_v2 로 끝남(§5 EXCHANGE 의 이름/경로 역전 — 재구축이 실제로 라이브가 됐다는 증거).
+--    system.mutations/system.columns 는 실행 레플리카의 로컬 뷰다 — 기록 전에 다른 레플리카의 mutation 도 끝났는지
+--    clusterAllReplicas('replicated', system.mutations) 에서 is_done = 0 인 행이 없음을 확인한다.
 --    MATERIALIZE mutation 기록이 finished_mutations_to_keep(기본 100)에서 밀려난 뒤라면 system.mutations
 --    조건 두 줄을 빼고 실행한다 — 그때는 §7 검증 통과가 그 자리의 증거다.
 -- -----------------------------------------------------------------------------
--- INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '2c22a451ed888c93a3613ccaf1698ccf4dda636fa6ad02e8cdcbfbe64be2824d'
+-- INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'ec23f93cd0d2883a97d2875aba0d87451ff0abfa504f95d9437f0040e5f0bf47'
 -- FROM system.one
 -- WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
 --   AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)

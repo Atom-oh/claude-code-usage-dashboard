@@ -56,9 +56,12 @@ export function classifyFreshness({ latestMs, nowMs, staleAfterMinutes }) {
   if (!Number.isFinite(ms) || ms <= 0 || !Number.isFinite(now)) {
     return { status: "unknown", latest: null, ageMinutes: null, staleAfterMinutes };
   }
-  const ageMinutes = Math.max(0, Math.floor((now - ms) / MINUTE_MS));
+  const ageMs = Math.max(0, now - ms);
+  const ageMinutes = Math.floor(ageMs / MINUTE_MS);
   return {
-    status: ageMinutes > staleAfterMinutes ? "stale" : "ok",
+    // ms 단위로 비교한다 — 분으로 내림한 뒤 비교하면 임계를 넘긴 뒤 최대 1분 가까이 ok 로 남는다(리뷰 지적 2026-09-05).
+    // ageMinutes 는 표시용이다.
+    status: ageMs > staleAfterMinutes * MINUTE_MS ? "stale" : "ok",
     latest: new Date(ms).toISOString(),
     ageMinutes,
     staleAfterMinutes,

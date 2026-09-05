@@ -156,11 +156,24 @@ agree), so it is correct regardless of mutation progress. Env vars used:
 `CH_HOST`/`CH_PORT`/`CH_PASSWORD` (connection), `TARGET_TABLE` (`_v2` here),
 `RANGE_FROM`/`RANGE_TO` (window; `RANGE_FROM` left unset defaults to raw `min(TimeUnix)`).
 
+**4b. Tail re-backfill, immediately before the exchange.** Rows with `TimeUnix < H0` that arrive after the
+backfill scanned them — the collector's disk queue (`max_elapsed_time: 0`) makes hours-late delivery a normal
+path — are written by the materialized view into the *old* live table, which step 5 turns into `_v2`; step 6
+only refills `[H0, Hx)`, so they would be lost from the new rollup for good. `max` rows are idempotent, so
+re-run the script over the tail window right before step 5 (`D` = the longest the collector could have been
+down, 24h by default — longer if the alert history shows a longer gap; if step 4 started earlier than
+`H0 - D`, use that start time instead). Only rows landing in the few seconds between this run and the
+EXCHANGE remain exposed; anything arriving after the EXCHANGE goes to the new live table via the MV.
+```bash
+TARGET_TABLE=claude_code.otel_metrics_sum_hourly_v2 RANGE_FROM='<H0 - D>' RANGE_TO='<H0>' \
+  CH_HOST=<host> CH_PASSWORD=<pw> ./scripts/backfill-hourly-rollup.sh
+```
+
 ### 5. Statement 5 — exchange the tables (§5, atomic)
 ```sql
 EXCHANGE TABLES claude_code.otel_metrics_sum_hourly AND claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 ```
-**Duration: atomic, no visible gap.** The materialized view's `TO` target resolves by name, so
+**Duration: atomic, no visible gap.** Run it only after step 4b and verification (b)/(c). The materialized view's `TO` target resolves by name, so
 it starts writing into the rebuilt table immediately after the exchange.
 
 **Expected, not a bug:** after this statement, the live-named table
@@ -265,6 +278,17 @@ Once that window closes:
 ```sql
 DROP TABLE claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 ```
+**Path consistency check — before and after the drop, and again after any replica scale-out or
+schema-init re-run.** `infra/files/clickhouse-schema-replicated.sql` still declares the rollup on the
+`…_hourly` ZooKeeper path; on existing replicas its `CREATE TABLE IF NOT EXISTS` is a no-op, but a replica
+created from that file instead of from an existing replica's `SHOW CREATE TABLE` (the clickhouse-operator's
+schema-propagation path) would attach to the empty old path and diverge silently. Every replica must report
+the same `…_hourly_v2` path:
+```sql
+SELECT hostName(), zookeeper_path FROM clusterAllReplicas('replicated', system.replicas)
+WHERE database = 'claude_code' AND table = 'otel_metrics_sum_hourly';
+```
+
 Reminder, stated once already in step 5 above but worth repeating here because it is the thing
 a later operator trips over: **the live-named table (`otel_metrics_sum_hourly`) lives on the
 `…_hourly_v2` ZooKeeper path**, and the frozen old data sits on `…_hourly`'s path. If someone
@@ -439,11 +463,23 @@ TARGET_TABLE=claude_code.otel_metrics_sum_hourly_v2 \
 사용하는 환경 변수: `CH_HOST`/`CH_PORT`/`CH_PASSWORD`(접속), `TARGET_TABLE`(여기서는 `_v2`),
 `RANGE_FROM`/`RANGE_TO`(구간; `RANGE_FROM`을 비워두면 원본의 `min(TimeUnix)`로 기본 설정됨).
 
+**4b. 교체 직전 꼬리 재백필.** 백필이 스캔을 마친 뒤에 도착하는 `TimeUnix < H0` 행 — 콜렉터의 디스크
+큐(`max_elapsed_time: 0`) 때문에 수 시간 지연 전달이 정상 경로입니다 — 은 materialized view가 *옛* 라이브
+테이블에 쓰고, 그 테이블은 5단계에서 `_v2`가 됩니다. 6단계는 `[H0, Hx)` 구간만 다시 채우므로 이 행들은 새
+롤업에서 영구히 누락됩니다. `max` 계열은 멱등하므로 5단계 직전에 꼬리 구간만 스크립트를 다시 돌립니다
+(`D` = 콜렉터가 멈춰 있었을 수 있는 최대 시간, 기본 24h — 알림 이력에 더 긴 공백이 있으면 그만큼 늘립니다.
+4단계 시작 시각이 `H0 - D`보다 이르면 그 시각을 쓰세요). 이 실행과 EXCHANGE 사이 몇 초 동안 도착한 행만
+노출된 채 남고, EXCHANGE 이후 도착분은 MV가 새 라이브 테이블에 씁니다.
+```bash
+TARGET_TABLE=claude_code.otel_metrics_sum_hourly_v2 RANGE_FROM='<H0 - D>' RANGE_TO='<H0>' \
+  CH_HOST=<host> CH_PASSWORD=<pw> ./scripts/backfill-hourly-rollup.sh
+```
+
 ### 5. statement 5 — 테이블 교체(§5, 원자적)
 ```sql
 EXCHANGE TABLES claude_code.otel_metrics_sum_hourly AND claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 ```
-**소요 시간: 원자적, 가시적 공백 없음.** materialized view의 `TO` 대상은 이름으로 resolve되므로
+**소요 시간: 원자적, 가시적 공백 없음.** 4b 단계와 검증 (b)/(c)를 마친 뒤에만 실행합니다. materialized view의 `TO` 대상은 이름으로 resolve되므로
 교체 직후 재구축된 테이블에 바로 쓰기 시작합니다.
 
 **정상 동작이며 버그가 아닙니다:** 이 statement 이후 라이브 이름
@@ -546,6 +582,16 @@ ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COL
 ```sql
 DROP TABLE claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 ```
+**경로 정합 확인 — drop 전후, 그리고 레플리카 증설이나 schema-init 재실행 뒤에도 매번.**
+`infra/files/clickhouse-schema-replicated.sql`은 여전히 롤업을 `…_hourly` ZooKeeper 경로로 선언합니다.
+기존 레플리카에서는 `CREATE TABLE IF NOT EXISTS`가 no-op이지만, 기존 레플리카의 `SHOW CREATE TABLE`
+(clickhouse-operator의 스키마 전파 경로)이 아니라 그 파일로 만든 레플리카는 빈 옛 경로에 붙어 조용히
+갈라집니다. 모든 레플리카가 같은 `…_hourly_v2` 경로를 보고해야 합니다:
+```sql
+SELECT hostName(), zookeeper_path FROM clusterAllReplicas('replicated', system.replicas)
+WHERE database = 'claude_code' AND table = 'otel_metrics_sum_hourly';
+```
+
 5단계에서 이미 한 번 언급했지만, 나중에 이 절차를 보는 오퍼레이터가 걸려 넘어지는 지점이라
 다시 한번 강조합니다: **라이브 이름(`otel_metrics_sum_hourly`)은 `…_hourly_v2` ZooKeeper
 경로 위에 있고**, 멈춰 있는 옛 데이터가 `…_hourly` 경로에 있습니다. 이후 누군가

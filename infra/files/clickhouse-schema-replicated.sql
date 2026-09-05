@@ -181,6 +181,10 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum_hourly ON CLUSTER 'repli
     sum_value SimpleAggregateFunction(sum, Float64),
     has_org   SimpleAggregateFunction(max, UInt8)
 )
+-- ZK 경로 주의(2026-09-05): clickhouse-migration-003.sql §5 EXCHANGE 를 거친 클러스터에서는 라이브 이름의 실제
+-- 경로가 …/otel_metrics_sum_hourly_v2 다(이름/경로 역전, 004 원장 가드의 증거). 이 CREATE 는 IF NOT EXISTS 라 기존
+-- 레플리카에서는 no-op 이고, 새 레플리카는 이 파일이 아니라 기존 레플리카의 SHOW CREATE TABLE 로 만들어야 한다 —
+-- 이 파일의 경로로 만들면 빈 옛 경로에 붙는다. 정합 확인 쿼리는 003 §8.
 ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/otel_metrics_sum_hourly', '{replica}')
 PARTITION BY toYYYYMM(hour)
 ORDER BY (MetricName, SessionId, SeriesKey, UserEmail, AggregationTemporality,
@@ -472,7 +476,7 @@ FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'AppVersion') > 0
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 2) = 0;
 
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '2c22a451ed888c93a3613ccaf1698ccf4dda636fa6ad02e8cdcbfbe64be2824d'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'ec23f93cd0d2883a97d2875aba0d87451ff0abfa504f95d9437f0040e5f0bf47'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
   AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
