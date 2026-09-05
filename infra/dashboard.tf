@@ -284,10 +284,13 @@ resource "kubernetes_deployment_v1" "dashboard" {
             name  = "RANGE_CAP_DAYS"
             value = tostring(var.range_cap_days)
           }
+          # sensitive 변수(alert_webhook_url)에서 파생한 값은 Terraform 1.9의 dynamic for_each가
+          # "Cannot use a … value in for_each"로 거부한다(CI 실측 2026-09-05; 1.15는 통과).
+          # Secret 리소스 개수는 sensitive 마크가 없으므로 그것으로 분기한다.
           dynamic "env" {
-            for_each = var.alert_webhook_url == null ? toset([]) : toset([tostring(var.alert_repeat_minutes)])
+            for_each = length(kubernetes_secret.dashboard_alert) == 0 ? {} : { ALERT_REPEAT_MINUTES = tostring(var.alert_repeat_minutes) }
             content {
-              name  = "ALERT_REPEAT_MINUTES"
+              name  = env.key
               value = env.value
             }
           }

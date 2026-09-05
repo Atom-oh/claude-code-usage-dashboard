@@ -8,7 +8,7 @@ Internal only, behind Basic Auth. No public base URL — access via the deployed
 HTTP Basic Auth, applied globally by Express middleware in `dashboard/server/index.js`
 (`BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` env vars). Both env vars are **required** — the
 server refuses to start (`process.exit(1)`) without them, unless `AUTH_ALLOW_INSECURE=1` is
-set explicitly for local dev / cluster-internal probes, in which case one loud warning is
+set explicitly for local dev, in which case one loud warning is
 logged at boot and every `/api/*` route is served unauthenticated. `GET /healthz` and
 `GET /readyz` are always exempt from auth (kubelet probes send no `Authorization` header).
 `GET /api/health/data` is **not** exempt — it is a data route the SPA calls.

@@ -472,7 +472,7 @@ FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'AppVersion') > 0
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 2) = 0;
 
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '7cbf3ee384022ae22aeda7ec374f1433e44f7392d3760ce84255a1d7d165598b'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'b31f0ebf1b0adcc6c57db2d7e96ce767f17a3e440a6072b7badbf331f07a273e'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
   AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)

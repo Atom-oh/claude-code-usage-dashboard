@@ -119,14 +119,16 @@ SETTINGS storage_policy = 'hot_cold';
 
 -- -----------------------------------------------------------------------------
 -- 6. 갭 채우기(range 모드) — 라이브 이름에 [H0, Hx) 구간을 채운다.
---    Hx = §5 EXCHANGE 를 실행한 시각의 toStartOfHour. watermark 모드가 아니라 range 모드를
---    쓰고 TARGET_TABLE 은 기본값(라이브 이름) 그대로 둔다.
---    멱등한 것은 max 계열(max_value/has_org)만이다. sum_value(AggregationTemporality=1 행)는
---    SimpleAggregateFunction(sum) 이라 MV 가 이미 쓴 시간대와 겹치면 겹친 버킷마다 영구히
---    중복 합산된다 — 그래서 RANGE_TO 를 now 가 아니라 Hx 로 잡아 MV 구간 [Hx, now) 와 겹치지
---    않게 한다. [Hx, EXCHANGE 시각) 사이에 raw 에 도착한 delta 행은 MV 가 새 테이블에 쓰지
---    못했으므로 그 한 버킷만 sum_value 가 낮게 나온다(실측 2026-09-02 prod: delta 행은 롤업
---    전체에서 2건 — 현재는 무시 가능하나 향후 delta telemetry 가 생기면 §7(f) 로 확인).
+--    Hx = §5 EXCHANGE 를 실행한 시각의 toStartOfHour + 1시간(= EXCHANGE 가 속한 버킷의 끝).
+--    watermark 모드가 아니라 range 모드를 쓰고 TARGET_TABLE 은 기본값(라이브 이름) 그대로 둔다.
+--    EXCHANGE 이전에 MV 가 쓴 행은 옛 테이블(_v2)에 남으므로 새 라이브 롤업의 EXCHANGE 버킷에는
+--    EXCHANGE 이후 도착분만 있다 — 그 버킷 안에서 마지막 샘플을 내고 끝난 세션의 최종 증가분은
+--    다시 채우지 않으면 롤업에서 영구 누락된다(리뷰 지적 2026-09-05). max 계열(max_value/has_org)
+--    은 겹쳐 백필해도 멱등하므로 EXCHANGE 버킷을 통째로 다시 채워 이를 살린다.
+--    대가: sum_value(AggregationTemporality=1 행)는 SimpleAggregateFunction(sum) 이라 MV 가 이미
+--    쓴 EXCHANGE 버킷의 delta 행이 한 번 더 더해진다(실측 2026-09-02 prod: delta 행은 롤업 전체에서
+--    2건). Hx 이후 버킷은 MV 만 쓰므로 RANGE_TO 를 Hx 보다 뒤로 잡지 않는다. §7(f) 로 중복을 확인하고,
+--    필요하면 그 버킷의 delta 행만 ALTER TABLE ... DELETE 후 같은 range 로 다시 채운다.
 --
 -- TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<Hx>' \
 --   CH_HOST=<host> CH_PASSWORD=<pw> ./scripts/backfill-hourly-rollup.sh
@@ -185,11 +187,12 @@ SETTINGS storage_policy = 'hot_cold';
 -- GROUP BY d ORDER BY d;
 
 -- (f) delta 행 중복 확인 — §6 이 MV 구간과 겹쳤다면 여기서 sum_value 가 raw 의 2배로 나온다.
--- SELECT MetricName, hour, sum(sum_value) AS rolled,
+-- SELECT h.MetricName, h.hour, sum(h.sum_value) AS rolled,
 --        (SELECT sum(Value) FROM claude_code.otel_metrics_sum
---          WHERE AggregationTemporality = 1 AND toStartOfHour(TimeUnix) = hour) AS raw
--- FROM claude_code.otel_metrics_sum_hourly WHERE AggregationTemporality = 1
--- GROUP BY MetricName, hour ORDER BY hour DESC LIMIT 20;
+--          WHERE AggregationTemporality = 1 AND MetricName = h.MetricName
+--            AND toStartOfHour(TimeUnix) = h.hour) AS raw
+-- FROM claude_code.otel_metrics_sum_hourly AS h WHERE h.AggregationTemporality = 1
+-- GROUP BY h.MetricName, h.hour ORDER BY h.hour DESC LIMIT 20;
 
 -- -----------------------------------------------------------------------------
 -- 8. 롤백 창 및 정리
@@ -216,8 +219,10 @@ SETTINGS storage_policy = 'hot_cold';
 --    기록은 메타데이터 증거만 볼 수 있으므로 rollup 재구축까지 끝냈다는 사실은 이 문장이
 --    오퍼레이터의 손으로 남긴다. 원장 테이블이 아직 없으면(004 미적용) 004를 먼저 실행한다.
 --    INSERT에는 ON CLUSTER를 붙이지 않는다 — 한 파드에서 한 번만.
+--    MATERIALIZE mutation 기록이 finished_mutations_to_keep(기본 100)에서 밀려난 뒤라면 아래 WHERE 의
+--    system.mutations 조건 두 줄을 빼고 실행한다 — 그때는 §7 검증 통과가 유일한 증거다.
 -- -----------------------------------------------------------------------------
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '7cbf3ee384022ae22aeda7ec374f1433e44f7392d3760ce84255a1d7d165598b'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'b31f0ebf1b0adcc6c57db2d7e96ce767f17a3e440a6072b7badbf331f07a273e'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
   AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)

@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Claude Code A/B Telemetry — 마이그레이션 004 (스키마 마이그레이션 원장)
 -- =============================================================================
--- migration: 004 | requires: 003 | records itself: INSERT INTO claude_code.schema_migrations
+-- migration: 004 | requires: 002 | records itself: INSERT INTO claude_code.schema_migrations
 --
 -- 대상: 라이브 클러스터(ON CLUSTER 'replicated', infra/files/clickhouse-schema-replicated.sql와
 --       동일 토폴로지). 로컬/참조 사본(clickhouse-schema.sql)은 동등한 블록("004" 블록)을
@@ -63,8 +63,8 @@ ORDER BY version;
 --      의 성공은 여기서 판별할 수 없다 — 그래서 003은 이제 §10에서 스스로 기록하고, 이 소급 INSERT는
 --      원장이 생기기 전에 003을 끝낸 클러스터를 위한 것이다. StartTimeUnix 자체는 원래 있는 기본
 --      컬럼이라 존재만으로는 아무것도 증명하지 않는다. system.mutations는 완료 mutation을 기본
---      finished_mutations_to_keep=100건까지만 보존하므로, 그 뒤에 003을 소급 기록해야 하면
---      003 §10의 INSERT를 직접 실행한다.
+--      finished_mutations_to_keep=100건까지만 보존한다 — 그 뒤에 003을 소급 기록해야 하면 003 §10의
+--      INSERT에서 system.mutations 조건 두 줄을 뺀 변형을 손으로 실행한다(§10 주석 참고). §10도 같은 가드를 쓰므로 그대로는 안 된다.
 --    004의 증거: 이 원장 테이블 자체 — 그래서 (b) 가드만 둔다.
 --
 --    INSERT에는 ON CLUSTER를 붙이지 않는다(INSERT는 DDL이 아니다) — ReplicatedMergeTree의
@@ -75,7 +75,7 @@ FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'AppVersion') > 0
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 2) = 0;
 
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '7cbf3ee384022ae22aeda7ec374f1433e44f7392d3760ce84255a1d7d165598b'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'b31f0ebf1b0adcc6c57db2d7e96ce767f17a3e440a6072b7badbf331f07a273e'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
   AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)

@@ -178,12 +178,15 @@ TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<Hx
 ```
 **Duration: minutes** — this window is just `[H0, Hx)`, not the full history. Use range mode
 (not watermark mode) with `TARGET_TABLE` left at its default (the live name). `Hx` is
-`toStartOfHour()` of the moment you ran the EXCHANGE.
-Only `max_value`/`has_org` merge idempotently (`max`); `sum_value` is `SimpleAggregateFunction(sum)`,
-so any hour the MV already wrote gets its delta rows (`AggregationTemporality = 1`) added again —
-permanently. Stopping at `Hx` keeps the backfill disjoint from the MV's `[Hx, now)`; the delta rows
-of the single hour `[Hx, EXCHANGE)` come out low instead (2 such rows in the whole rollup, measured
-2026-09-02 prod — check with §7(f) in the migration file).
+`toStartOfHour()` of the moment you ran the EXCHANGE **plus one hour** — the end of the bucket the
+EXCHANGE fell in. Rows the MV wrote before the EXCHANGE stayed in the old table (`_v2`), so the new
+live rollup's EXCHANGE bucket only holds post-EXCHANGE arrivals; a session whose last sample landed in
+that bucket would lose its final increment for good unless the bucket is refilled. `max_value`/`has_org`
+merge idempotently (`max`), so refilling the whole bucket is free for them. The price: `sum_value` is
+`SimpleAggregateFunction(sum)`, so the delta rows (`AggregationTemporality = 1`) the MV already wrote
+into that one bucket get added once more (2 such rows in the whole rollup, measured 2026-09-02 prod).
+Never set `RANGE_TO` past `Hx` — later buckets are MV-only. Check with §7(f) in the migration file; if
+it shows doubling, `ALTER TABLE … DELETE` that bucket's delta rows and refill the same range.
 
 ## Verification
 
@@ -457,12 +460,15 @@ TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<Hx
 ```
 **소요 시간: 수 분** — 전체 기간이 아니라 `[H0, Hx)` 구간만입니다. watermark 모드가 아니라
 range 모드를 쓰고, `TARGET_TABLE`은 기본값(라이브 이름)으로 둡니다. `Hx`는 EXCHANGE를 실행한
-시각의 `toStartOfHour()`입니다. 멱등하게 병합되는 건 `max_value`/`has_org`(`max`)뿐이고,
-`sum_value`는 `SimpleAggregateFunction(sum)`이라 MV가 이미 쓴 시간대와 겹치면 그 delta
-행(`AggregationTemporality = 1`)이 겹친 버킷마다 영구히 다시 더해집니다. `Hx`에서 끊으면 백필
-구간이 MV의 `[Hx, now)`와 분리되고, 대신 `[Hx, EXCHANGE)` 한 버킷의 delta 행만 낮게
-나옵니다(그런 행은 rollup 전체에서 2건, 2026-09-02 prod 실측 — 마이그레이션 파일의 §7(f)로
-확인하세요).
+시각의 `toStartOfHour()` **+ 1시간**, 즉 EXCHANGE가 속한 버킷의 끝입니다. EXCHANGE 이전에 MV가
+쓴 행은 옛 테이블(`_v2`)에 남으므로 새 라이브 롤업의 EXCHANGE 버킷에는 EXCHANGE 이후 도착분만
+있습니다 — 그 버킷 안에서 마지막 샘플을 내고 끝난 세션의 최종 증가분은 버킷을 다시 채우지 않으면
+영구히 누락됩니다. `max_value`/`has_org`는 `max`로 멱등하게 병합되니 버킷을 통째로 다시 채워도
+손해가 없습니다. 대가는 `sum_value`입니다: `SimpleAggregateFunction(sum)`이라 MV가 이미 그 한
+버킷에 쓴 delta 행(`AggregationTemporality = 1`)이 한 번 더 더해집니다(그런 행은 rollup 전체에서
+2건, 2026-09-02 prod 실측). `RANGE_TO`를 `Hx` 뒤로 잡지 마세요 — 그 이후 버킷은 MV만 씁니다.
+마이그레이션 파일의 §7(f)로 확인하고, 중복이 보이면 그 버킷의 delta 행만 `ALTER TABLE … DELETE`한
+뒤 같은 range로 다시 채우세요.
 
 ## 검증
 

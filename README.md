@@ -67,7 +67,7 @@ docker compose up -d --build
 
 # Or run the app from source against that ClickHouse. AUTH_ALLOW_INSECURE=1 is required here:
 # the server refuses to start without BASIC_AUTH_USER/BASIC_AUTH_PASSWORD.
-cd dashboard/server
+cd server
 AUTH_ALLOW_INSECURE=1 npm run dev
 
 # Web only, dev mode
@@ -95,7 +95,7 @@ Environment variables consumed by `dashboard/server`:
 | `PRICING_CACHE_WRITE_TTL` | cacheWrite price tier assumed for cache-creation tokens: `1h` or `5m`; anything else exits at startup | `1h` |
 | `BASIC_AUTH_USER` | Basic Auth username for the whole dashboard | required unless `AUTH_ALLOW_INSECURE=1` |
 | `BASIC_AUTH_PASSWORD` | Basic Auth password | required unless `AUTH_ALLOW_INSECURE=1` |
-| `AUTH_ALLOW_INSECURE` | Run without Basic Auth; the server otherwise exits 1 at boot — local dev / cluster-internal probes only | unset (auth required) |
+| `AUTH_ALLOW_INSECURE` | Run without Basic Auth; the server otherwise exits 1 at boot — local dev only (`/healthz`/`/readyz` are auth-exempt regardless, so probes never need this) | unset (auth required) |
 | `CHAT_ALLOW_INSECURE` | Allow `POST /api/chat` without auth; independent of `AUTH_ALLOW_INSECURE` | unset (chat requires auth) |
 | `GROUP_MODE` | `ab` compares the bedrock/enterprise pair; `single` tells the SPA this org has one channel and suppresses the empty second card. Any other value fails the boot | `ab` |
 | `DEFAULT_RANGE_DAYS` | Default range when a request omits `from`; also the window the server's cache warmer pre-computes | `2` |
@@ -308,7 +308,7 @@ docker compose up -d --build
 
 # 또는 그 ClickHouse에 붙여서 소스로 앱을 실행한다. AUTH_ALLOW_INSECURE=1이 필수다: 서버가
 # BASIC_AUTH_USER/BASIC_AUTH_PASSWORD 없이는 기동을 거부한다.
-cd dashboard/server
+cd server
 AUTH_ALLOW_INSECURE=1 npm run dev
 
 # 웹만, 개발 모드
@@ -336,7 +336,7 @@ SPA 서빙)을 엽니다.
 | `PRICING_CACHE_WRITE_TTL` | 캐시 생성 토큰에 가정하는 cacheWrite 단가 티어: `1h` 또는 `5m`; 그 외 값은 기동 시 종료 | `1h` |
 | `BASIC_AUTH_USER` | 대시보드 전체 Basic Auth 유저명 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
 | `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
-| `AUTH_ALLOW_INSECURE` | Basic Auth 없이 실행; 미설정 시 서버가 기동 시 exit 1 — 로컬 dev / 클러스터 내부 프로브 전용 | 미설정(인증 필수) |
+| `AUTH_ALLOW_INSECURE` | Basic Auth 없이 실행; 미설정 시 서버가 기동 시 exit 1 — 로컬 dev 전용(`/healthz`/`/readyz`는 원래 무인증이라 프로브에는 필요 없다) | 미설정(인증 필수) |
 | `CHAT_ALLOW_INSECURE` | `POST /api/chat`을 인증 없이 허용; `AUTH_ALLOW_INSECURE`와 독립 | 미설정(챗도 인증 필요) |
 | `GROUP_MODE` | `ab`는 bedrock/enterprise 쌍을 비교, `single`은 채널이 하나인 조직 — SPA가 빈 두 번째 카드를 그리지 않는다. 그 외 값은 기동 실패 | `ab` |
 | `DEFAULT_RANGE_DAYS` | `from` 없이 온 요청의 기본 구간. 서버 캐시 warmer가 미리 데우는 창도 이 값이다 | `2` |

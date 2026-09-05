@@ -27,8 +27,8 @@ app.set("trust proxy", 1);
 
 // ponytail: 인증 env가 없으면 fail-open이 아니라 기동 거부다. 예전에는 BASIC_AUTH_* 중 하나가
 // 누락/오타 나면 파드가 모든 /api/*를 무인증으로 서빙하면서 경고 한 줄도 남기지 않았다 —
-// 배포가 성공한 것처럼 보이는 게 이 실패 모드의 핵심이다. 무인증 실행(로컬 dev, 클러스터
-// 내부 프로브)은 AUTH_ALLOW_INSECURE=1로 명시적으로만 허용한다. 챗의 CHAT_ALLOW_INSECURE와
+// 배포가 성공한 것처럼 보이는 게 이 실패 모드의 핵심이다. 무인증 실행(로컬 dev)은
+// AUTH_ALLOW_INSECURE=1로 명시적으로만 허용한다. 챗의 CHAT_ALLOW_INSECURE와
 // 같은 규약이고, 둘은 독립이다: 인증 없이 서버를 띄우는 것과 인증 없이 임의 SELECT를 실행
 // 가능한 챗을 켜는 것은 위험이 다르다.
 // /healthz(liveness)와 /readyz(readiness)만 무인증 — kubelet은 Authorization 헤더를 붙이지
@@ -40,7 +40,7 @@ const authAllowInsecure = process.env.AUTH_ALLOW_INSECURE === "1";
 if (!authEnabled && !authAllowInsecure) {
   console.error(
     "FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required — refusing to start with authentication disabled. " +
-      "Set both, or set AUTH_ALLOW_INSECURE=1 to run unauthenticated (local dev / probes only)."
+      "Set both, or set AUTH_ALLOW_INSECURE=1 to run unauthenticated (local dev only — /healthz and /readyz bypass auth regardless)."
   );
   process.exit(1);
 }
