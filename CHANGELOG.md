@@ -159,8 +159,8 @@ This project has not been tagged yet — everything below is unreleased.
 ### Changed (2026-08-31 build and CI reproducibility)
 - Require a committed lockfile and switch server/web installs to `npm ci`
 - Pin the server's base image by digest and add a `HEALTHCHECK` plus `engines` floors
-- Add the CI workflow (server tests, web build, harness tests, `terraform fmt`/`validate` on
-  every push/PR), with the harness's `.claude/`-dependent assertions reporting skipped rather
+- Add the CI workflow (server tests, web build, harness tests, `terraform fmt`/`validate` on pushes to
+  `main`/`feat/**` and on every PR), with the harness's `.claude/`-dependent assertions reporting skipped rather
   than failed on a CI checkout where `.claude/` is absent
 - Add a web build smoke test
 
@@ -379,7 +379,7 @@ This project has not been tagged yet — everything below is unreleased.
 ### Changed (2026-08-31 빌드와 CI 재현성)
 - 커밋된 lockfile을 요구하고 server/web 설치를 `npm ci`로 전환
 - 서버 베이스 이미지를 digest로 고정, `HEALTHCHECK`와 `engines` 하한 추가
-- CI 워크플로 추가(서버 테스트, 웹 빌드, 하니스 테스트, 모든 push/PR에 대한
+- CI 워크플로 추가(서버 테스트, 웹 빌드, 하니스 테스트, `main`/`feat/**` push와 모든 PR에 대한
   `terraform fmt`/`validate`) — CI 체크아웃에는 `.claude/`가 없으므로 하니스의
   `.claude/`-의존 단정문은 실패가 아니라 skipped로 보고
 - 웹 빌드 스모크 테스트 추가

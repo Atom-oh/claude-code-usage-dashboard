@@ -55,10 +55,16 @@ ORDER BY version;
 --    세 INSERT 모두 실행되어 2·3·4가 기록되고, 같은 파일을 두 번 더 돌려도 정확히 3행).
 --
 --    002의 증거: otel_metrics_sum.AppVersion 컬럼의 존재.
---    003의 증거: otel_metrics_sum.SeriesKey의 default_expression이 StartTimeUnix를 포함하는지.
---      StartTimeUnix 자체는 원래 있는 기본 컬럼이라 존재만으로는 아무것도 증명하지 않는다.
---      dashboard/server/schema.js의 프로브는 메타데이터가 아니라 최근 행의 키(데이터)를 보므로
---      여기서 재사용할 수 없다.
+--    003의 증거: (1) otel_metrics_sum.SeriesKey의 default_expression이 StartTimeUnix를 포함하고,
+--      (2) 그 컬럼의 MATERIALIZE COLUMN mutation이 system.mutations에 완료(is_done=1)로 남아 있고,
+--          (또는 테이블이 비어 있을 것 — 신규 설치는 CREATE 부터 새 키라 MATERIALIZE 가 없다),
+--      (3) 그 테이블에 미완료 mutation이 없을 것. (1)만 보면 003 §1(메타데이터 전용 MODIFY COLUMN)
+--      직후 중단된 클러스터도 "적용됨"으로 기록된다(리뷰 지적 2026-09-04). rollup 재구축(003 §3~§6)
+--      의 성공은 여기서 판별할 수 없다 — 그래서 003은 이제 §10에서 스스로 기록하고, 이 소급 INSERT는
+--      원장이 생기기 전에 003을 끝낸 클러스터를 위한 것이다. StartTimeUnix 자체는 원래 있는 기본
+--      컬럼이라 존재만으로는 아무것도 증명하지 않는다. system.mutations는 완료 mutation을 기본
+--      finished_mutations_to_keep=100건까지만 보존하므로, 그 뒤에 003을 소급 기록해야 하면
+--      003 §10의 INSERT를 직접 실행한다.
 --    004의 증거: 이 원장 테이블 자체 — 그래서 (b) 가드만 둔다.
 --
 --    INSERT에는 ON CLUSTER를 붙이지 않는다(INSERT는 DDL이 아니다) — ReplicatedMergeTree의
@@ -69,9 +75,11 @@ FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'AppVersion') > 0
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 2) = 0;
 
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', 'cc6dd94eaa6b0238f66834623a0a3c4d963022cf0d2ebf06080ae508554d0741'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '7cbf3ee384022ae22aeda7ec374f1433e44f7392d3760ce84255a1d7d165598b'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
+  AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
+  AND (SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND is_done = 0) = 0
   AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;
 
 INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 4, '004-schema-migration-ledger', '29b114b2e242852ee208b4ef7fa6dc49d0e8b4b2daf988e18caa2543d62179a5'

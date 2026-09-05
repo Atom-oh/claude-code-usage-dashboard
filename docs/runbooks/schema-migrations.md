@@ -76,7 +76,11 @@ line as the `INSERT INTO claude_code.schema_migrations` keyword** — the `grep 
 what strips that exact line before hashing, so moving any of the three literals onto a
 continuation line would fold them into the hashed content and make the checksum
 self-referential (and therefore unverifiable: the file's own recorded checksum would never
-match a hash computed from the file as written).
+match a hash computed from the file as written). The checksum is always taken from the
+operator-run `clickhouse-migration-00N.sql` — the mirrored blocks in `clickhouse-schema.sql` /
+`infra/files/clickhouse-schema-replicated.sql` record that same literal even though their
+surrounding text differs (a fresh install therefore records the migration file's hash, not its
+own).
 
 ### 4. The rule for every future migration
 Every future `clickhouse-migration-NNN.sql` ends with its own guarded, self-recording
@@ -196,7 +200,10 @@ claude_code.schema_migrations` 키워드와 같은 물리적 줄에** 있어야 
 해싱 전에 지우는 줄이 정확히 그 줄이기 때문입니다. 셋 중 하나라도 다음 줄로 내리면 해시
 대상 내용에 그 리터럴이 포함되어 checksum이 자기 자신을 참조하게 되고, 그러면 검증이
 불가능해집니다(파일이 기록해 둔 checksum이 파일을 있는 그대로 해싱한 값과 결코 일치하지
-않게 됩니다).
+않게 됩니다). checksum은 항상 오퍼레이터가 실행하는 `clickhouse-migration-00N.sql`
+기준입니다 — `clickhouse-schema.sql` / `infra/files/clickhouse-schema-replicated.sql`의 미러
+블록은 주변 텍스트가 달라도 같은 리터럴을 기록합니다(신규 설치가 남기는 값은 자기 파일이
+아니라 마이그레이션 파일의 해시).
 
 ### 4. 앞으로의 마이그레이션 규칙
 앞으로의 모든 `clickhouse-migration-NNN.sql`은 자기 자신을 기록하는 가드된 `INSERT INTO

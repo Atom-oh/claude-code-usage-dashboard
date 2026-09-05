@@ -90,6 +90,9 @@ Environment variables consumed by `dashboard/server`:
 | `CH_DB` | ClickHouse database name | `claude_code` |
 | `CH_USER` | ClickHouse user | none (required) |
 | `CH_PASSWORD` | ClickHouse password | none (required) |
+| `CH_HOST` / `CH_PORT` | Alternative to `CH_URL` (host + HTTP port); ignored when `CH_URL` is set | unset |
+| `PRICING_JSON` | Path to a JSON file overriding the built-in model price table | unset (built-in table) |
+| `PRICING_CACHE_WRITE_TTL` | cacheWrite price tier assumed for cache-creation tokens: `1h` or `5m`; anything else exits at startup | `1h` |
 | `BASIC_AUTH_USER` | Basic Auth username for the whole dashboard | required unless `AUTH_ALLOW_INSECURE=1` |
 | `BASIC_AUTH_PASSWORD` | Basic Auth password | required unless `AUTH_ALLOW_INSECURE=1` |
 | `AUTH_ALLOW_INSECURE` | Run without Basic Auth; the server otherwise exits 1 at boot — local dev / cluster-internal probes only | unset (auth required) |
@@ -97,7 +100,7 @@ Environment variables consumed by `dashboard/server`:
 | `GROUP_MODE` | `ab` compares the bedrock/enterprise pair; `single` tells the SPA this org has one channel and suppresses the empty second card. Any other value fails the boot | `ab` |
 | `DEFAULT_RANGE_DAYS` | Default range when a request omits `from`; also the window the server's cache warmer pre-computes | `2` |
 | `RANGE_CAP_DAYS` | Longest range a request may ask for; a longer span is a 400. Must be `>=` `DEFAULT_RANGE_DAYS` | `90` |
-| `PII_MASK_ENABLED` | Mask user emails in `GET /api/config`'s `piiMask` and the chat sandbox's result rows; on only for `"1"`/`"true"`, case-insensitive | unset (masking off) |
+| `PII_MASK_ENABLED` | Mask user emails in `GET /api/config`'s `piiMask` and the chat sandbox's result rows; on only for `"1"`/`"true"`, case-insensitive | unset (masking off) — `.env.example` ships `true`; display-only, not an exfiltration control (ADR-006) |
 | `DATA_STALE_MINUTES` | Age threshold for `GET /api/health/data`'s `stale` classification; a non-positive or non-numeric value refuses to boot | `360` |
 | `ALERT_WEBHOOK_URL` | Slack-compatible webhook that receives a message when `GET /api/health/data` has been `stale`/`unknown` for two consecutive 60 s ticks, again every `ALERT_REPEAT_MINUTES` while it stays that way, and once on recovery. Each replica alerts independently (the pod name is in the message). Treat as a secret | unset (alerting off) |
 | `ALERT_REPEAT_MINUTES` | Repeat interval while the data stays non-ok; a non-positive or non-numeric value refuses to boot | `60` |
@@ -328,6 +331,9 @@ SPA 서빙)을 엽니다.
 | `CH_DB` | ClickHouse 데이터베이스 이름 | `claude_code` |
 | `CH_USER` | ClickHouse 유저 | 없음(필수) |
 | `CH_PASSWORD` | ClickHouse 비밀번호 | 없음(필수) |
+| `CH_HOST` / `CH_PORT` | `CH_URL` 대신 호스트 + HTTP 포트로 지정; `CH_URL`이 있으면 무시 | 미설정 |
+| `PRICING_JSON` | 내장 모델 단가표를 덮어쓰는 JSON 파일 경로 | 미설정(내장 단가표) |
+| `PRICING_CACHE_WRITE_TTL` | 캐시 생성 토큰에 가정하는 cacheWrite 단가 티어: `1h` 또는 `5m`; 그 외 값은 기동 시 종료 | `1h` |
 | `BASIC_AUTH_USER` | 대시보드 전체 Basic Auth 유저명 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
 | `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
 | `AUTH_ALLOW_INSECURE` | Basic Auth 없이 실행; 미설정 시 서버가 기동 시 exit 1 — 로컬 dev / 클러스터 내부 프로브 전용 | 미설정(인증 필수) |
@@ -335,7 +341,7 @@ SPA 서빙)을 엽니다.
 | `GROUP_MODE` | `ab`는 bedrock/enterprise 쌍을 비교, `single`은 채널이 하나인 조직 — SPA가 빈 두 번째 카드를 그리지 않는다. 그 외 값은 기동 실패 | `ab` |
 | `DEFAULT_RANGE_DAYS` | `from` 없이 온 요청의 기본 구간. 서버 캐시 warmer가 미리 데우는 창도 이 값이다 | `2` |
 | `RANGE_CAP_DAYS` | 요청 가능한 최대 구간 — 넘으면 400. `DEFAULT_RANGE_DAYS` 이상이어야 한다 | `90` |
-| `PII_MASK_ENABLED` | `GET /api/config`의 `piiMask`와 챗 샌드박스 결과 행의 유저 이메일 마스킹; `"1"`/`"true"`(대소문자 무관)일 때만 켜짐 | 미설정(마스킹 꺼짐) |
+| `PII_MASK_ENABLED` | `GET /api/config`의 `piiMask`와 챗 샌드박스 결과 행의 유저 이메일 마스킹; `"1"`/`"true"`(대소문자 무관)일 때만 켜짐 | 미설정(마스킹 꺼짐) — `.env.example`은 `true`로 배포; 화면 노출 축소일 뿐 유출 방어가 아님(ADR-006) |
 | `DATA_STALE_MINUTES` | `GET /api/health/data`의 `stale` 판정 임계(분); 0 이하이거나 숫자가 아니면 기동 거부 | `360` |
 | `ALERT_WEBHOOK_URL` | `GET /api/health/data`가 60초 틱 2회 연속 `stale`/`unknown`이면 메시지를 받는 Slack 호환 웹훅. 이후 `ALERT_REPEAT_MINUTES`마다 반복하고 복구 시 1회 더 보낸다. 레플리카마다 독립 판정이라 메시지에 pod 이름이 실린다. 비밀값으로 취급 | 미설정(알림 꺼짐) |
 | `ALERT_REPEAT_MINUTES` | non-ok가 지속될 때 재발송 간격(분); 0 이하이거나 숫자가 아니면 기동 거부 | `60` |

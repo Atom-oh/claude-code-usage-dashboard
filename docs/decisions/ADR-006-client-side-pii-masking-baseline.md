@@ -56,6 +56,12 @@ above behind the existing `piiMask` flag — the flag itself, its `/api/config` 
 every SPA call site that reads it already exist, so the reversal is additive rather than a
 rewrite.
 
+- Default is OFF when `PII_MASK_ENABLED` is unset; `.env.example` ships it ON. Masking is a
+  display-time reduction — a holder of the shared Basic Auth credential can still read raw emails
+  from `GET /api/*` with curl — so it is not an exfiltration control, and default-off is chosen
+  because the workshop seed emails are synthetic `{accountid}@ws` addresses (docker-compose sets it
+  `false` for that reason).
+
 ### Alternatives considered
 (a) A response-boundary masking middleware that rewrites `UserEmail` on the way out of the
 server — rejected: it would break the `user` filter's substring match and the per-user
@@ -114,6 +120,12 @@ ADR-004의 전제 — 인증된 모든 뷰어가 이미 전체를 볼 권한이 
 기록한 `sipHash64Keyed` 설계를 기존 `piiMask` 플래그 뒤에 구현한다 — 플래그 자체, 그
 `/api/config` 배선, 이를 읽는 모든 SPA 호출부가 이미 존재하므로 되돌리기는 재작성이
 아니라 추가 작업이 된다.
+
+- `PII_MASK_ENABLED`가 미설정이면 기본값은 꺼짐이고, `.env.example`은 켜진 상태로 배포된다.
+  마스킹은 화면 표시 시점의 노출 축소일 뿐이다 — 공유 Basic Auth 크리덴셜을 가진 사람은
+  여전히 curl로 `GET /api/*`에서 원본 이메일을 읽을 수 있다 — 따라서 유출 방어 수단이 아니며,
+  워크샵 seed 이메일이 합성 주소(`{accountid}@ws`)라서 기본값을 꺼짐으로 택했다(docker-compose가
+  같은 이유로 `false`를 넣는다).
 
 ### 검토한 대안
 (a) 서버를 나가는 길에 `UserEmail`을 다시 쓰는 응답 경계 마스킹 미들웨어 — 기각: `user`

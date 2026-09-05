@@ -285,7 +285,7 @@ resource "kubernetes_deployment_v1" "dashboard" {
             value = tostring(var.range_cap_days)
           }
           dynamic "env" {
-            for_each = var.alert_webhook_url == null ? [] : [tostring(var.alert_repeat_minutes)]
+            for_each = var.alert_webhook_url == null ? toset([]) : toset([tostring(var.alert_repeat_minutes)])
             content {
               name  = "ALERT_REPEAT_MINUTES"
               value = env.value

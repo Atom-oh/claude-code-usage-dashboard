@@ -15,11 +15,14 @@
 -- 겪음). 이 마이그레이션은 아래 §1의 세그먼트 인식 키로 원본 컬럼을 교체하고, 시간별 rollup을
 -- shadow 테이블 + EXCHANGE TABLES로 재구축해 같은 세그먼트 경계를 반영시킨다.
 --
--- 실행:
---   kubectl -n claude-code exec <clickhouse-pod> -c clickhouse -- \
---     clickhouse-client --queries-file /path/to/clickhouse-migration-003.sql
+-- 실행: 이 파일은 --queries-file 로 한 번에 돌리지 않는다. §1→§2→§3 은 statement 단위로
+--   실행하고, §4 백필(스크립트) 완료 + §7(b)(c) 검증 후에 §5 EXCHANGE 의 주석을 풀어 수동으로
+--   실행한다. 실행문 상태로 두면 --queries-file 한 방 실행이 §3의 빈 _v2 를 §5에서 그대로
+--   라이브로 교체해 과거 KPI 가 전부 사라진다(리뷰 지적 2026-09-04) — 그래서 §5는 주석이다.
+--   kubectl -n claude-code exec <clickhouse-pod> -c clickhouse -- clickhouse-client
+--   로 접속해 각 statement 를 붙여 넣는다.
 --
--- 검증: §7(아래, 전부 주석 처리됨)의 5개 쿼리를 절차 진행 중/후 단계별로 실행.
+-- 검증: §7(아래, 전부 주석 처리됨)의 6개 쿼리를 절차 진행 중/후 단계별로 실행.
 --       docs/runbooks/rollup-rebuild-segment-key.md의 "검증" 절 참고.
 -- =============================================================================
 
@@ -111,17 +114,21 @@ SETTINGS storage_policy = 'hot_cold';
 --    …/otel_metrics_sum_hourly_v2가 되고, 옛 데이터는 …/otel_metrics_sum_hourly에 남는다 —
 --    이 이름/경로 역전이 이 절차에서 가장 헷갈리는 결과이니 반드시 인지할 것.
 -- -----------------------------------------------------------------------------
-EXCHANGE TABLES claude_code.otel_metrics_sum_hourly AND claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
+--    ※ §4 백필 완료 + §7(b)(c) 통과 후에만 주석을 풀어 실행한다(그 전에 실행하면 빈 rollup 이 라이브가 된다).
+-- EXCHANGE TABLES claude_code.otel_metrics_sum_hourly AND claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 
 -- -----------------------------------------------------------------------------
--- 6. 갭 채우기(range 모드) — 라이브 이름에 [H0, now) 구간을 채운다.
---    watermark 모드가 아니라 range 모드를 쓴다: RANGE_FROM='<H0>', RANGE_TO=현재 시각,
---    TARGET_TABLE은 기본값(라이브 이름) 그대로 둔다.
---    MV가 이미 쓴 시간대와 겹쳐도 idempotent하다 — max_value/has_org는 max 병합이라 안전하고,
---    sum_value는 실측(2026-09-02 prod: AggregationTemporality=1인 행이 롤업 전체에서 2건)상
---    그 2개 delta행에서만 두 배가 된다.
+-- 6. 갭 채우기(range 모드) — 라이브 이름에 [H0, Hx) 구간을 채운다.
+--    Hx = §5 EXCHANGE 를 실행한 시각의 toStartOfHour. watermark 모드가 아니라 range 모드를
+--    쓰고 TARGET_TABLE 은 기본값(라이브 이름) 그대로 둔다.
+--    멱등한 것은 max 계열(max_value/has_org)만이다. sum_value(AggregationTemporality=1 행)는
+--    SimpleAggregateFunction(sum) 이라 MV 가 이미 쓴 시간대와 겹치면 겹친 버킷마다 영구히
+--    중복 합산된다 — 그래서 RANGE_TO 를 now 가 아니라 Hx 로 잡아 MV 구간 [Hx, now) 와 겹치지
+--    않게 한다. [Hx, EXCHANGE 시각) 사이에 raw 에 도착한 delta 행은 MV 가 새 테이블에 쓰지
+--    못했으므로 그 한 버킷만 sum_value 가 낮게 나온다(실측 2026-09-02 prod: delta 행은 롤업
+--    전체에서 2건 — 현재는 무시 가능하나 향후 delta telemetry 가 생기면 §7(f) 로 확인).
 --
--- TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<now>' \
+-- TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<Hx>' \
 --   CH_HOST=<host> CH_PASSWORD=<pw> ./scripts/backfill-hourly-rollup.sh
 -- -----------------------------------------------------------------------------
 
@@ -177,11 +184,20 @@ EXCHANGE TABLES claude_code.otel_metrics_sum_hourly AND claude_code.otel_metrics
 -- SELECT toStartOfDay(hour) AS d, count() AS rows FROM claude_code.otel_metrics_sum_hourly_v2
 -- GROUP BY d ORDER BY d;
 
+-- (f) delta 행 중복 확인 — §6 이 MV 구간과 겹쳤다면 여기서 sum_value 가 raw 의 2배로 나온다.
+-- SELECT MetricName, hour, sum(sum_value) AS rolled,
+--        (SELECT sum(Value) FROM claude_code.otel_metrics_sum
+--          WHERE AggregationTemporality = 1 AND toStartOfHour(TimeUnix) = hour) AS raw
+-- FROM claude_code.otel_metrics_sum_hourly WHERE AggregationTemporality = 1
+-- GROUP BY MetricName, hour ORDER BY hour DESC LIMIT 20;
+
 -- -----------------------------------------------------------------------------
 -- 8. 롤백 창 및 정리
 --    _v2(옛 데이터)는 롤백 창 동안 보존한다. 롤백 = EXCHANGE TABLES 재실행 +
 --    MODIFY COLUMN을 레거시 표현식(cityHash64(toString(Attributes)))으로 되돌리기 +
---    MATERIALIZE COLUMN(실측: 왕복 후 mismatch=0). 창이 끝나면:
+--    MATERIALIZE COLUMN(실측: 왕복 후 mismatch=0).
+--    롤백 EXCHANGE 뒤에는 컷오버~롤백 사이에 라이브 이름에 쌓인 시간대가 옛 테이블에 없다 — §6과 같은 range 모드로 그 구간을 다시 채운다.
+--    창이 끝나면:
 -- DROP TABLE claude_code.otel_metrics_sum_hourly_v2 ON CLUSTER 'replicated';
 -- -----------------------------------------------------------------------------
 
@@ -192,3 +208,18 @@ EXCHANGE TABLES claude_code.otel_metrics_sum_hourly AND claude_code.otel_metrics
 --    scripts/backfill-hourly-rollup.sh로 다시 채우면 된다(로컬은 트래픽 걱정이 없다).
 --    자세한 내용은 clickhouse-schema.sql의 자체 "003" 블록을 참고.
 -- -----------------------------------------------------------------------------
+
+-- -----------------------------------------------------------------------------
+-- 10. 자기 기록 — §7 검증을 모두 통과한 뒤 마지막으로 실행한다.
+--    clickhouse-migration-004.sql이 만든 원장(claude_code.schema_migrations)에 이 마이그레이션을
+--    기록한다. 004의 소급 INSERT와 텍스트가 같으며(가드도 같다), 004 §2가 설명하듯 004의 소급
+--    기록은 메타데이터 증거만 볼 수 있으므로 rollup 재구축까지 끝냈다는 사실은 이 문장이
+--    오퍼레이터의 손으로 남긴다. 원장 테이블이 아직 없으면(004 미적용) 004를 먼저 실행한다.
+--    INSERT에는 ON CLUSTER를 붙이지 않는다 — 한 파드에서 한 번만.
+-- -----------------------------------------------------------------------------
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 3, '003-segment-aware-series-key', '7cbf3ee384022ae22aeda7ec374f1433e44f7392d3760ce84255a1d7d165598b'
+FROM system.one
+WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'SeriesKey' AND default_expression LIKE '%StartTimeUnix%') > 0
+  AND ((SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND command LIKE '%MATERIALIZE COLUMN SeriesKey%' AND is_done = 1) > 0 OR (SELECT count() FROM claude_code.otel_metrics_sum) = 0)
+  AND (SELECT count() FROM system.mutations WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND is_done = 0) = 0
+  AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 3) = 0;

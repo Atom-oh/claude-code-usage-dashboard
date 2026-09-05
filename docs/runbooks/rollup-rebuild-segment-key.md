@@ -30,11 +30,9 @@ file ever disagree, the SQL file wins** — it is the file that actually gets ex
   read `system.mutations`** to watch statement 2's progress. Get a privileged user
   (`otel_writer` or cluster admin) before starting.
 - Two access paths to the cluster:
-  - Direct exec into a ClickHouse pod, feeding the migration file as `--queries-file` (the
-    invocation style used by `clickhouse-migration-002.sql`'s header):
+  - Direct exec into a ClickHouse pod, pasting each statement into an interactive client:
     ```bash
-    kubectl -n claude-code exec <clickhouse-pod> -c clickhouse -- \
-      clickhouse-client --queries-file /path/to/clickhouse-migration-003.sql
+    kubectl -n claude-code exec <clickhouse-pod> -c clickhouse -- clickhouse-client
     ```
   - Or port-forward the native protocol port and drive `scripts/backfill-hourly-rollup.sh`
     from your workstation for the backfill steps (§B4/§B6):
@@ -44,9 +42,11 @@ file ever disagree, the SQL file wins** — it is the file that actually gets ex
     then set `CH_PORT=9000` (the script's `CH_PORT` default is already `9000`, ClickHouse's
     native-protocol default — this only matters when going through the port-forward, which is
     exactly why the script exposes it).
-- `clickhouse-migration-003.sql` open in front of you; run it statement by statement rather than
-  as one `--queries-file` pass if you want to pause between steps 2, 4 and 6 (each is commented
-  with its own section banner, `§1`–`§9`).
+- `clickhouse-migration-003.sql` open in front of you; it **must** be run statement by statement,
+  never as one `--queries-file` pass (each statement is commented with its own section banner,
+  `§1`–`§10`). The file's §5 `EXCHANGE TABLES` is commented out on purpose — you uncomment and run
+  it by hand after §4's backfill and verification (b)/(c) — and §10 (the self-recording ledger
+  `INSERT`) is the final step.
 
 ## Read this before you start: the transient effects
 
@@ -173,14 +173,17 @@ second time it comes up.
 
 ### 6. Fill the gap (§6, minutes)
 ```bash
-TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<now>' \
+TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<Hx>' \
   CH_HOST=<host> CH_PASSWORD=<pw> ./scripts/backfill-hourly-rollup.sh
 ```
-**Duration: minutes** — this window is just `[H0, now)`, not the full history. Use range mode
-(not watermark mode) with `TARGET_TABLE` left at its default (the live name). Overlapping the
-MV-written hours in this window is safe: `max_value`/`has_org` merge with `max` (idempotent),
-and `sum_value` only doubles on the 2 rows in the whole rollup where
-`AggregationTemporality = 1` (measured 2026-09-02 prod) — practically unused.
+**Duration: minutes** — this window is just `[H0, Hx)`, not the full history. Use range mode
+(not watermark mode) with `TARGET_TABLE` left at its default (the live name). `Hx` is
+`toStartOfHour()` of the moment you ran the EXCHANGE.
+Only `max_value`/`has_org` merge idempotently (`max`); `sum_value` is `SimpleAggregateFunction(sum)`,
+so any hour the MV already wrote gets its delta rows (`AggregationTemporality = 1`) added again —
+permanently. Stopping at `Hx` keeps the backfill disjoint from the MV's `[Hx, now)`; the delta rows
+of the single hour `[Hx, EXCHANGE)` come out low instead (2 such rows in the whole rollup, measured
+2026-09-02 prod — check with §7(f) in the migration file).
 
 ## Verification
 
@@ -311,11 +314,9 @@ future rebuild exchanges it again) — not a sign that something is broken.
   statement 2의 진행 상황을 볼 **`system.mutations`조차 읽을 수 없습니다**. 시작 전에 권한
   있는 계정(`otel_writer` 또는 클러스터 admin)을 확보하세요.
 - 클러스터 접근 경로 두 가지:
-  - ClickHouse 파드에 직접 exec해서 마이그레이션 파일을 `--queries-file`로 넘기는 방식
-    (`clickhouse-migration-002.sql` 헤더가 쓰는 것과 같은 호출 스타일):
+  - ClickHouse 파드에 직접 exec해서 대화형 클라이언트에 각 statement를 붙여 넣는 방식:
     ```bash
-    kubectl -n claude-code exec <clickhouse-pod> -c clickhouse -- \
-      clickhouse-client --queries-file /path/to/clickhouse-migration-003.sql
+    kubectl -n claude-code exec <clickhouse-pod> -c clickhouse -- clickhouse-client
     ```
   - 또는 네이티브 프로토콜 포트를 port-forward하고 워크스테이션에서 백필 단계(§B4/§B6)를
     `scripts/backfill-hourly-rollup.sh`로 직접 구동:
@@ -325,9 +326,11 @@ future rebuild exchanges it again) — not a sign that something is broken.
     이후 `CH_PORT=9000`을 설정합니다(스크립트의 `CH_PORT` 기본값이 이미 ClickHouse 네이티브
     프로토콜 기본값인 `9000`입니다 — 이 값이 실제로 의미를 가지는 건 이 port-forward를 거칠
     때뿐이고, 그래서 스크립트가 이 옵션을 노출합니다).
-- `clickhouse-migration-003.sql`을 옆에 펴 두고, 2·4·6단계 사이에서 멈추고 싶다면 한 번의
-  `--queries-file` 실행이 아니라 statement 단위로 실행하세요(각 statement는 자체 섹션 배너
-  `§1`–`§9`로 주석되어 있습니다).
+- `clickhouse-migration-003.sql`을 옆에 펴 두고, **반드시** statement 단위로 실행하세요 — 한 번의
+  `--queries-file` 실행은 절대 금지입니다(각 statement는 자체 섹션 배너 `§1`–`§10`으로 주석되어
+  있습니다). 이 파일의 §5 `EXCHANGE TABLES`는 의도적으로 주석 처리되어 있으며, §4 백필과
+  검증 (b)/(c)를 마친 뒤 직접 주석을 풀어 실행합니다. §10(자기 기록 원장 `INSERT`)이 마지막
+  단계입니다.
 
 ## 시작 전에 읽을 것: 과도기 효과
 
@@ -449,14 +452,17 @@ claude_code.otel_metrics_sum_hourly`를 실행하면 `_v2` ZK 경로가 보입�
 
 ### 6. 갭 채우기(§6, 수 분)
 ```bash
-TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<now>' \
+TARGET_TABLE=claude_code.otel_metrics_sum_hourly RANGE_FROM='<H0>' RANGE_TO='<Hx>' \
   CH_HOST=<host> CH_PASSWORD=<pw> ./scripts/backfill-hourly-rollup.sh
 ```
-**소요 시간: 수 분** — 전체 기간이 아니라 `[H0, now)` 구간만입니다. watermark 모드가 아니라
-range 모드를 쓰고, `TARGET_TABLE`은 기본값(라이브 이름)으로 둡니다. 이 구간에서 MV가 이미 쓴
-시간대와 겹쳐도 안전합니다: `max_value`/`has_org`는 max 병합이라 멱등하고, `sum_value`는 전체
-rollup에서 `AggregationTemporality = 1`인 딱 2행에서만(2026-09-02 prod 실측) 두 배가
-됩니다 — 실질적으로 미사용.
+**소요 시간: 수 분** — 전체 기간이 아니라 `[H0, Hx)` 구간만입니다. watermark 모드가 아니라
+range 모드를 쓰고, `TARGET_TABLE`은 기본값(라이브 이름)으로 둡니다. `Hx`는 EXCHANGE를 실행한
+시각의 `toStartOfHour()`입니다. 멱등하게 병합되는 건 `max_value`/`has_org`(`max`)뿐이고,
+`sum_value`는 `SimpleAggregateFunction(sum)`이라 MV가 이미 쓴 시간대와 겹치면 그 delta
+행(`AggregationTemporality = 1`)이 겹친 버킷마다 영구히 다시 더해집니다. `Hx`에서 끊으면 백필
+구간이 MV의 `[Hx, now)`와 분리되고, 대신 `[Hx, EXCHANGE)` 한 버킷의 delta 행만 낮게
+나옵니다(그런 행은 rollup 전체에서 2건, 2026-09-02 prod 실측 — 마이그레이션 파일의 §7(f)로
+확인하세요).
 
 ## 검증
 
