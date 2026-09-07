@@ -146,7 +146,7 @@ export default function Usage() {
         ) : toolMcp.error ? (
           <ErrorBox error={toolMcp.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(toolMcp.data).map((g) => (
               <DataTable
                 key={g}
@@ -166,7 +166,7 @@ export default function Usage() {
         ) : toolDecisions.error ? (
           <ErrorBox error={toolDecisions.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(toolDecisions.data).map((g) => (
               <DataTable
                 key={g}
@@ -186,7 +186,7 @@ export default function Usage() {
         ) : toolLatency.error ? (
           <ErrorBox error={toolLatency.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(toolLatency.data).map((g) => (
               <DataTable
                 key={g}
@@ -209,7 +209,7 @@ export default function Usage() {
         ) : connectors.error ? (
           <ErrorBox error={connectors.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(connectors.data).map((g) => (
               <DataTable
                 key={g}
@@ -244,7 +244,7 @@ export default function Usage() {
         ) : skills.error ? (
           <ErrorBox error={skills.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(skills.data).map((g) => (
               <DataTable
                 key={g}
@@ -264,7 +264,7 @@ export default function Usage() {
         ) : skillActivations.error ? (
           <ErrorBox error={skillActivations.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(skillActivations.data).map((g) => (
               <DataTable
                 key={g}
@@ -329,7 +329,7 @@ export default function Usage() {
         ) : commands.error ? (
           <ErrorBox error={commands.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(commands.data?.commands).map((g) => (
               <DataTable
                 key={g}
@@ -348,7 +348,7 @@ export default function Usage() {
         ) : commands.error ? (
           <ErrorBox error={commands.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(commands.data?.prompts).map((g) => {
               const r = (commands.data?.prompts || []).find((row) => row.group === g);
               return (
@@ -369,7 +369,7 @@ export default function Usage() {
         ) : hookOverhead.error ? (
           <ErrorBox error={hookOverhead.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(hookOverhead.data).map((g) => {
               const r = (hookOverhead.data || []).find((row) => row.group === g);
               return (

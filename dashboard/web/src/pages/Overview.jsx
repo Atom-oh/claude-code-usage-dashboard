@@ -213,7 +213,7 @@ export default function Overview() {
         ) : cache.error ? (
           <ErrorBox error={cache.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(cache.data).map((g) => {
               const r = (cache.data || []).find((row) => row.group === g);
               // 진짜 캐시 적중률 = cache_read / input_side(비캐시입력+캐시읽기+캐시쓰기). 캐시 쓰기를
@@ -241,7 +241,7 @@ export default function Overview() {
         ) : models.error ? (
           <ErrorBox error={models.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(models.data).map((g) => (
               <DataTable
                 key={g}

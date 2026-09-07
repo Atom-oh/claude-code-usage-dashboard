@@ -411,7 +411,7 @@ export default function Productivity() {
         ) : languages.error ? (
           <ErrorBox error={languages.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(languages.data).map((g) => (
               <DataTable
                 key={g}

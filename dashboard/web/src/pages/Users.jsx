@@ -167,7 +167,7 @@ export default function Users() {
         ) : (
           <>
             <GroupFaceOff rows={leaderboard.data} />
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="group-grid">
               {shownGroups(leaderboard.data).map((g) => {
                 const data = top10For(g);
                 return data.length ? (
@@ -255,7 +255,7 @@ export default function Users() {
         ) : tools.error ? (
           <ErrorBox error={tools.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(tools.data).map((g) => (
               <DataTable
                 key={g}
@@ -277,7 +277,7 @@ export default function Users() {
         ) : skills.error ? (
           <ErrorBox error={skills.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(skills.data).map((g) => (
               <DataTable
                 key={g}

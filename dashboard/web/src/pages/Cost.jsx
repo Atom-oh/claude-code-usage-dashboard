@@ -429,7 +429,7 @@ export default function Cost() {
         ) : tiers.error || cacheEff.error ? (
           <ErrorBox error={tiers.error || cacheEff.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(tiers.data).map((g) => (
               <DonutBreakdown
                 key={g}
@@ -452,7 +452,7 @@ export default function Cost() {
         ) : effortMix.error ? (
           <ErrorBox error={effortMix.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="group-grid">
             {shownGroups(effortMix.data).map((g) => (
               <Card
                 key={g}
