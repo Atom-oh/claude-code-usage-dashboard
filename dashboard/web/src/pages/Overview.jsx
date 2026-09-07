@@ -7,7 +7,8 @@ import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { GroupAreaChart, RingGauge, DualLineChart } from "../components/GroupCharts.jsx";
 import { colorFor } from "../colors.js";
-import { groupsShown, groupLabel } from "../pivot.js";
+import { groupLabel } from "../pivot.js";
+import { useGroupsShown } from "../useGroupsShown.js";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
@@ -35,6 +36,7 @@ export default function Overview() {
   const { intervalHours } = useRange();
   const { model } = useFilters();
   const { groupMode } = useConfig();
+  const shownGroups = useGroupsShown();
   const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
   const activeUsers = useApi("/api/overview/active-users");
@@ -212,7 +214,7 @@ export default function Overview() {
           <ErrorBox error={cache.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {groupsShown(groupMode, cache.data).map((g) => {
+            {shownGroups(cache.data).map((g) => {
               const r = (cache.data || []).find((row) => row.group === g);
               // 진짜 캐시 적중률 = cache_read / input_side(비캐시입력+캐시읽기+캐시쓰기). 캐시 쓰기를
               // 분모에서 빼면 안 된다 — 캐시 미스는 실제로 uncached_input이 아니라 cache_write로
@@ -240,7 +242,7 @@ export default function Overview() {
           <ErrorBox error={models.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {groupsShown(groupMode, models.data).map((g) => (
+            {shownGroups(models.data).map((g) => (
               <DataTable
                 key={g}
                 title={`모델별 토큰 분포 — ${g}`}

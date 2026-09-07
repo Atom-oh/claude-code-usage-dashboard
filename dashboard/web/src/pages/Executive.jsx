@@ -10,9 +10,9 @@ import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { useConfig } from "../ConfigContext.jsx";
-import { groupsShown } from "../pivot.js";
+import { useGroupsShown } from "../useGroupsShown.js";
 import { makeTickFmt, formatDuration } from "../fmt.js";
-import { modelColorFor, byModelLegendOrder } from "../colors.js";
+import { GROUP_ORDER, modelColorFor, byModelLegendOrder } from "../colors.js";
 import { foldLeaderboardByUser } from "../score.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -36,8 +36,11 @@ function ScoreGauge({ score }) {
 
 export default function Executive() {
   const { from, to, intervalHours } = useRange();
-  const { model } = useFilters();
+  const { group, model } = useFilters();
   const { groupMode } = useConfig();
+  const shownGroups = useGroupsShown();
+  // 채널 필터가 걸렸으면 맞세울 상대가 없다 — single 모드와 같은 단일 지표 레이아웃을 쓴다.
+  const focusGroup = GROUP_ORDER.includes(group) ? group : null;
   const fmtTick = makeTickFmt(intervalHours);
   const fmtDaily = makeTickFmt(24); // adoptionTs는 항상 일별 버킷 — range 해상도를 따르지 않는다
   const kpi = useApi("/api/overview/kpi");
@@ -145,7 +148,7 @@ export default function Executive() {
   // single 모드에선 맞세울 상대가 없다 — 데이터가 있는 그룹의 값을 그대로 하나만 보여준다.
   // 포맷은 ABScoreboard의 fmtValue를 그대로 쓴다(pct는 0~1 분율 계약, $10 미만은 센트 유지).
   const singleValue = (row) => {
-    const g = groupsShown(groupMode, (kpi.data || []))[0];
+    const g = shownGroups(kpi.data || [])[0];
     return fmtValue(row[g] ?? row.bedrock ?? row.enterprise, row.format);
   };
 
@@ -197,8 +200,11 @@ export default function Executive() {
           <ErrorBox error={error} />
         ) : (
           <>
-            {groupMode === "single" ? (
-              <Card title="핵심 지표" subtitle="채널이 판별된 세션 기준, 미분류 세션 제외">
+            {groupMode === "single" || focusGroup ? (
+              <Card
+                title={focusGroup ? `핵심 지표 — ${focusGroup}` : "핵심 지표"}
+                subtitle={focusGroup ? "상단 채널 필터 적용 · 채널이 판별된 세션 기준" : "채널이 판별된 세션 기준, 미분류 세션 제외"}
+              >
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {scoreboardRows.map((row) => (
                     <StatTile key={row.label} label={row.label} value={singleValue(row)} help={SCOREBOARD_HELP[row.label]} />

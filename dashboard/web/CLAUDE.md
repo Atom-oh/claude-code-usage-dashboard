@@ -124,16 +124,22 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   problems). The stale pill is a hand-rolled `span` rather than a `Badge`, because `Badge` has
   no `warning` tone and `cn()` is a plain string join, not `tailwind-merge`, so a tone class
   cannot be overridden through `className`. Two pages pass `live`: `Overview` and `Trends`.
-- **`groupsShown(groupMode, rows)` (`pivot.js`) is the single rule for which groups get a card.**
-  `ab` always renders both, deliberately -- an empty card distinguishes "no data yet" from "this
-  org has no such channel". `single` renders only the groups present in the response, falling back
-  to the first group so the card (and its empty state) still exists. Never iterate `GROUP_ORDER`
-  or a literal `["bedrock", "enterprise"]` directly in a page; the chart layer already derives its
-  own series from the response via `groupsPresent`. The one legitimate neighbour of this rule is a
-  **within-row** group split (the Cost page's 채널 비중 stacked bar) -- that is not a
-  card-visibility question, so it orders its segments by `colors.js`'s `GROUP_SEGMENT_ORDER`,
-  still a shared constant and never a literal in the page, and in `single` mode the bars are
-  hidden while the columns themselves stay.
+- **`groupsShown(groupMode, rows, groupFilter)` (`pivot.js`) is the single rule for which groups
+  get a card.** `ab` always renders both, deliberately -- an empty card distinguishes "no data
+  yet" from "this org has no such channel". `single` renders only the groups present in the
+  response, falling back to the first group so the card (and its empty state) still exists.
+  **A `groupFilter` in `GROUP_ORDER` overrides both modes and yields that one channel** --
+  `useApi.js` already sends `?group=` on every request, so the other channel's card would be
+  empty by construction, and an empty card there is noise rather than information. Pages never
+  combine the two inputs themselves: `useGroupsShown()` (`src/useGroupsShown.js`) reads
+  `groupMode` from `ConfigContext` and `group` from `FilterContext` and returns a
+  `shownGroups(rows)` closure -- that closure, never `groupsShown` directly, is what a page
+  calls. Never iterate `GROUP_ORDER` or a literal `["bedrock", "enterprise"]` directly in a
+  page; the chart layer already derives its own series from the response via `groupsPresent`.
+  The one legitimate neighbour of this rule is a **within-row** group split (the Cost page's
+  채널 비중 stacked bar) -- that is not a card-visibility question, so it orders its segments by
+  `colors.js`'s `GROUP_SEGMENT_ORDER`, still a shared constant and never a literal in the page,
+  and in `single` mode the bars are hidden while the columns themselves stay.
 - **`FilterBar` hides the channel `SegmentedControl` in `single` mode** for the same reason a
   single-channel org gets one card: offering two channel names to an org that has one is a
   false affordance. The `group` param itself is untouched -- `FilterContext`, `useApi.js` and

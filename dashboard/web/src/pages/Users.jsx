@@ -8,7 +8,8 @@ import { HBarList } from "../components/GroupCharts.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { colorFor, FAMILY_LEGEND_ORDER, familyColorFor, modelFamily } from "../colors.js";
-import { topPerUser, groupsShown, groupLabel } from "../pivot.js";
+import { topPerUser, groupLabel } from "../pivot.js";
+import { useGroupsShown } from "../useGroupsShown.js";
 import { useApi } from "../useApi.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { maskEmail } from "../fmt.js";
@@ -23,7 +24,8 @@ const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 // 유저×그룹으로 행이 갈라져 있기 때문(GROUP_ORDER 합계 ≥ distinct 유저 수).
 function GroupFaceOff({ rows }) {
   const { groupMode } = useConfig();
-  const stats = groupsShown(groupMode, rows).map((g) => {
+  const shownGroups = useGroupsShown();
+  const stats = shownGroups(rows).map((g) => {
     const grows = (rows || []).filter((r) => r.group === g);
     const decisions = grows.reduce((s, r) => s + Number(r.decisions || 0), 0);
     const accepted = grows.reduce((s, r) => s + Number(r.accepted || 0), 0);
@@ -84,7 +86,7 @@ function GroupFaceOff({ rows }) {
 
 export default function Users() {
   const [q, setQ] = useState("");
-  const { groupMode } = useConfig();
+  const shownGroups = useGroupsShown();
   // 클릭한 유저 email+group만 저장하고 헤더/StatTile용 row는 현재 leaderboard에서 파생한다 — row
   // 객체를 통째로 스냅샷하면 드로어를 연 채 기간을 바꿀 때 상단 타일(리더보드 값)과 하단 차트(재조회)의
   // 모수가 어긋난다. 기간 변경 시 leaderboard가 재조회되면 타일도 자동 갱신되고, 새 기간에 해당
@@ -166,7 +168,7 @@ export default function Users() {
           <>
             <GroupFaceOff rows={leaderboard.data} />
             <div className="grid gap-4 md:grid-cols-2">
-              {groupsShown(groupMode, leaderboard.data).map((g) => {
+              {shownGroups(leaderboard.data).map((g) => {
                 const data = top10For(g);
                 return data.length ? (
                   <HBarList
@@ -221,7 +223,7 @@ export default function Users() {
           ? null
           : leaderboard.error
             ? null
-            : groupsShown(groupMode, leaderboard.data).map((g) => (
+            : shownGroups(leaderboard.data).map((g) => (
                 <DataTable
                   key={g}
                   title={`사용자별 생산성 리더보드 — ${g}`}
@@ -254,7 +256,7 @@ export default function Users() {
           <ErrorBox error={tools.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {groupsShown(groupMode, tools.data).map((g) => (
+            {shownGroups(tools.data).map((g) => (
               <DataTable
                 key={g}
                 title={`사용자별 도구 사용 내역 — ${g}`}
@@ -276,7 +278,7 @@ export default function Users() {
           <ErrorBox error={skills.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {groupsShown(groupMode, skills.data).map((g) => (
+            {shownGroups(skills.data).map((g) => (
               <DataTable
                 key={g}
                 title={`사용자별 Skill 사용 내역 — ${g}`}

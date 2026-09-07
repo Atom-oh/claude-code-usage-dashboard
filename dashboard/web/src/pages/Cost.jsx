@@ -14,7 +14,7 @@ import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
-import { groupsShown } from "../pivot.js";
+import { useGroupsShown } from "../useGroupsShown.js";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -185,6 +185,7 @@ function GroupShareLegend({ groups }) {
 
 export default function Cost() {
   const { groupMode } = useConfig();
+  const shownGroups = useGroupsShown();
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
   const { model } = useFilters();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
@@ -396,7 +397,7 @@ export default function Cost() {
             {/* A/B 비교용 — 총지출이 아니라 사용자당 평균이라야 그룹 간 사용자 수 차이가 상쇄된다.
                 전체(개발자당 지출)는 그룹 합이 아니다: 한 유저가 두 그룹에 걸칠 수 있어(세션 단위
                 판별, grouping.js) 전역 uniq 분모가 그룹 분모의 합보다 작을 수 있다. */}
-            {groupsShown(groupMode, summary.data).map((g) => (
+            {shownGroups(summary.data).map((g) => (
               <StatTile
                 key={g}
                 // 그룹 색 틴트 — 두 타일이 나란히 있어 라벨만으로는 구분이 약하다. Users.jsx의
@@ -429,7 +430,7 @@ export default function Cost() {
           <ErrorBox error={tiers.error || cacheEff.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {groupsShown(groupMode, tiers.data).map((g) => (
+            {shownGroups(tiers.data).map((g) => (
               <DonutBreakdown
                 key={g}
                 title={`토큰 유형별 비용 — ${g}`}
@@ -452,7 +453,7 @@ export default function Cost() {
           <ErrorBox error={effortMix.error} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {groupsShown(groupMode, effortMix.data).map((g) => (
+            {shownGroups(effortMix.data).map((g) => (
               <Card
                 key={g}
                 title={`Effort 수준별 비용 — ${g}`}
@@ -481,7 +482,7 @@ export default function Cost() {
           ) : byModel.error ? (
             <ErrorBox error={byModel.error} />
           ) : (
-            groupsShown(groupMode, byModel.data).map((g) => (
+            shownGroups(byModel.data).map((g) => (
               <Card key={g} title={`모델별 비용 비중 — ${g}`}>
                 <DonutBody data={modelRowsFor(g)} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => groupModelColorFor(g, name)} />
               </Card>
@@ -495,7 +496,7 @@ export default function Cost() {
           ) : summary.error ? (
             <ErrorBox error={summary.error} />
           ) : (
-            groupsShown(groupMode, summary.data).map((g) => (
+            shownGroups(summary.data).map((g) => (
               <DonutBreakdown
                 key={g}
                 title={`토큰 유형별 사용량 — ${g}`}
