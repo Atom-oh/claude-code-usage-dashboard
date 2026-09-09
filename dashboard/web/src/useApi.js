@@ -22,7 +22,7 @@ const WARM_GRACE_MS = 150_000;
 
 export function useApi(path, extraParams = {}) {
   const { days, intervalHours, custom, month } = useRange();
-  const { group, user, model } = useFilters();
+  const { group, user, model, project } = useFilters();
   const { tick, reportFailure } = useRefresh();
   const [state, setState] = useState({ data: null, loading: true, error: null });
   const inflightRef = useRef(null);
@@ -51,7 +51,7 @@ export function useApi(path, extraParams = {}) {
     // quantum만 앞으로 밀어 빈 창을 요청한다.
     if (to.getTime() <= from.getTime()) to = new Date(from.getTime() + QUANT_MS);
 
-    const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, intervalHours, extraJson]);
+    const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, project, intervalHours, extraJson]);
     const paramsChanged = paramsKey !== paramsKeyRef.current;
     // 같은 파라미터에 대한 요청이 아직 떠 있는데 틱이 오면 그 틱은 버린다(큐잉하지 않는다).
     if (!paramsChanged && inflightRef.current) return;
@@ -73,6 +73,7 @@ export function useApi(path, extraParams = {}) {
         group: group || undefined,
         user: user || undefined,
         model: model || undefined,
+        project: project || undefined,
         intervalHours, // 시계열이 아닌 엔드포인트는 그냥 무시됨. extraParams가 뒤에 와서 override 가능.
         ...extraParams,
       },
@@ -101,7 +102,7 @@ export function useApi(path, extraParams = {}) {
       });
     // 이 cleanup에는 abort가 없다 — 틱만 바뀐 리런이 파라미터 로드를 취소하면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, extraJson, tick]);
+  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, extraJson, tick]);
 
   // 언마운트 시에만 abort한다.
   useEffect(() => () => inflightRef.current?.abort(), []);

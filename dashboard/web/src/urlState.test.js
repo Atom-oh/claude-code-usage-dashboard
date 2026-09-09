@@ -131,4 +131,25 @@ describe("urlState", () => {
     );
     expect(parsed.range.custom.source).toBe("zoom");
   });
+
+  // project는 URL 왕복에 포함된다(이메일이 아니라 저장소 이름이라 piiMask와 무관). 비어 있으면
+  // 다른 필터들과 같이 키 자체를 쓰지 않는다 — ?project= 가 링크에 남으면 필터가 걸린 것처럼
+  // 읽힌다.
+  test("project round-trips through the URL and is omitted when empty", () => {
+    const p = serializeUrlState({
+      range: { days: 7, custom: null },
+      filters: { group: "", user: "", model: "", project: "repo-a" },
+      piiMask: true,
+    });
+    expect(p.get("project")).toBe("repo-a");
+    expect(parseUrlState(p).filters.project).toBe("repo-a");
+
+    const empty = serializeUrlState({
+      range: { days: 7, custom: null },
+      filters: { group: "", user: "", model: "", project: "" },
+      piiMask: true,
+    });
+    expect(empty.has("project")).toBe(false);
+    expect(parseUrlState(empty).filters.project).toBe("");
+  });
 });

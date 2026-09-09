@@ -51,3 +51,18 @@ test("ConfigProvider가 없어도 기본값(ab)이라 채널 컨트롤이 보인
   );
   expect(screen.getByText("bedrock")).toBeTruthy();
 });
+
+test("projectColumns가 true면 프로젝트 입력창이 렌더된다", () => {
+  mount(cfg({ schema: { projectColumns: true } }));
+  expect(screen.getByPlaceholderText("프로젝트")).toBeTruthy();
+});
+
+// false/null/누락은 전부 "적용 안 됨"이다 — null(프로브 실패)이 통과하면 아무 일도 하지 않는
+// 입력창이 보이고, 서버는 그 파라미터를 버린다.
+test("projectColumns가 true가 아니면 프로젝트 입력창이 없다", () => {
+  for (const schema of [{ projectColumns: false }, { projectColumns: null }, {}, undefined]) {
+    mount(cfg({ schema }));
+    expect(screen.queryByPlaceholderText("프로젝트")).toBeNull();
+    cleanup();
+  }
+});
