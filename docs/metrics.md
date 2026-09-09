@@ -191,7 +191,11 @@
 
 ### 총 비용 (Total Cost)
 - Executive의 "기간 비용"과 동일한 원천 — `queries.js:costSummary`, `pricing.js:withComputedCost`.
-- **주의**: 2번, 3번, 4번.
+- **주의**: 2번, 3번, 4번. 캐시 쓰기(`cacheCreation`) 토큰의 단가 티어(5m ×1.25 / 1h ×2.0)는
+  텔레메트리에 없어 **그룹별 정책**으로 가정한다(ADR-008, 기본 bedrock 5m / enterprise 1h,
+  `PRICING_CACHE_WRITE_TTL_*`로 전환 시각까지 지정). 응답의 `cache_write_ttl`/`cache_write_cost`가
+  각 행에 실제 적용된 티어와 그 항의 금액이다. 구독 채널의 서브에이전트 호출(5m)은 메인 대화(1h)와
+  분리되지 않아 enterprise 쪽이 그만큼 약간 과대계상된다.
 
 ### Claude Code 보고 비용 (Reported Cost)
 - **정의**: Claude Code 자체가 텔레메트리로 보고하는 근사 비용 — 계산 비용과 비교용으로만 쓴다.

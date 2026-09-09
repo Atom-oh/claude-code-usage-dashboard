@@ -23,10 +23,16 @@ returns
 `{piiMask, pricing, schema}`. `piiMask` comes from `PII_MASK_ENABLED` (`"1"`/`"true"` = on, unset =
 off) so the SPA can decide whether to mask emails at render time — the image is built once and
 reused across deployments, so this can't be a build-time `VITE_` flag. `pricing` is
-`pricing.js`'s `pricingConfig` (`{cacheWriteTtl, overriddenModels}`), passed straight through
-so the endpoint can't drift from the pricing module. `cacheWriteTtl` comes from
-`PRICING_CACHE_WRITE_TTL` -- `"1h"` (default, since the main conversation's cache writes are
-measured at the 1h rate) or `"5m"`; any other value throws at startup. `overriddenModels`
+`pricing.js`'s `pricingConfig` (`{cacheWriteTtl, cacheWriteTtlByGroup, overriddenModels}`),
+passed straight through so the endpoint can't drift from the pricing module. `cacheWriteTtl`
+comes from `PRICING_CACHE_WRITE_TTL` -- `"1h"` (default) or `"5m"`; any other value throws at
+startup -- and is the tier for the `unknown` group and for rows without a group.
+`cacheWriteTtlByGroup` is the per-group policy (ADR-008): `{bedrock: [{since, ttl}], enterprise:
+[...]}`, from `PRICING_CACHE_WRITE_TTL_BEDROCK` / `_ENTERPRISE` (a tier or a schedule
+`"5m,2026-09-09T00:00:00Z=1h"`; instants must carry a timezone and sit on a UTC hour boundary,
+else the module throws), defaulting to bedrock `5m` / enterprise `1h` -- Claude Code's own
+`promptCacheTtl` defaults per auth channel -- unless the global var is set explicitly, in which
+case it applies to every group without its own var. `overriddenModels`
 lists the normalized model keys supplied via `PRICING_JSON` -- a JSON object of normalized
 model key -> `{input, output, cacheWrite?, cacheRead?, cacheWrite1h?}` merged over the
 built-in table, with omitted cache fields derived from `input` (`×1.25`/`×0.1`/`×2`); invalid
@@ -67,11 +73,15 @@ session is `readonly`.
 - `grouping.js` -- `GROUP_CTE`/`GROUP_EXPR`, session-scoped bedrock/enterprise inference (reads
   the hourly rollup's `has_org` column)
 - `pricing.js` -- per-model token pricing (`buildPricing(env)`, env-overridable via
-  `PRICING_JSON`/`PRICING_CACHE_WRITE_TTL`, exports `pricingConfig`), `withComputedCost`,
-  `tierCosts`, `tierCostsByGroup`, `rollupComputedCost` (applies `withComputedCost` at a
-  `model` grain and then folds rows onto coarser key columns — the pricing has to be computed
-  before the model column is summed away, so a query that wants computed cost per
-  effort/agent cannot do it in SQL)
+  `PRICING_JSON`/`PRICING_CACHE_WRITE_TTL*`, exports `pricingConfig`), the per-group
+  cache-write TTL policy (`parseCacheWriteTtlSchedule`, `cacheWriteTtlFor(group, at)`,
+  `cacheWriteTtlBoundaries`), `withComputedCost(rows, {at})` (adds `cost`, `unpriced`, plus the
+  `cache_write_ttl` it applied and that term's `cache_write_cost`), `tierCosts` (consumes
+  `cache_write_cost` from already-priced rows), `tierCostsByGroup`, `rollupComputedCost`
+  (applies `withComputedCost` at a `model` grain and then folds rows onto coarser key columns —
+  the pricing has to be computed before the model column is summed away, so a query that wants
+  computed cost per effort/agent cannot do it in SQL), and the pure range-splitting helpers
+  `ttlSegments` / `mergeSegments` that `queries.js`'s `acrossTtlSegments` uses
 - `productivity.js` -- productivity score derivation (pure function, used by leaderboard)
 - `costEfficiency.js` -- `$/LOC`, `$/commit` derivation (pure function)
 - `activity.js` -- `rollupAdoption(rows, from, to)`: the DAU/WAU/MAU + stickiness fold behind
@@ -197,6 +207,21 @@ session is `readonly`.
   for a Service endpoint removal to propagate comes from a `preStop` hook /
   `terminationGracePeriod`, not from this flag. The existing periodic timers (cache sweep,
   schema probe, warmer chain) are all `.unref()`'d, so no timer registry is needed.
+- **Cache-write pricing is a per-group, per-instant policy, never one global tier.** OTel's
+  `cacheCreation` TokenType does not say whether a write was 5m or 1h, and the right tier
+  depends on the session's auth channel (Bedrock default 5m, subscription main thread 1h) and
+  can change when an operator pins `promptCacheTtl` -- measured 2026-09-07: a global 1h
+  assumption overstated the Bedrock group's cost by +17.72% (ADR-008). So every query that
+  prices tokens passes the row's `group` and a resolution instant to `withComputedCost` /
+  `rollupComputedCost` (`{at: segmentStart}` for snapshots, `{at: (r) => toInstant(r.day)}` for
+  buckets), and every snapshot cost query goes through `acrossTtlSegments(from, to,
+  fetchPriced, keys)`, which splits the range at the policy's switch instants and merges the
+  priced pieces per key with `mergeSegments` (never re-price merged tokens -- the pieces carry
+  different rates, which is also why `tierCosts` reads `cache_write_cost` off priced rows).
+  `costByModelCompare` carries a `group` grain for the same reason and folds to `model` in
+  `compareRows`; when a switch instant falls inside either window it falls back to two
+  `costByModel` calls. Known residual: a subscription session's subagent/helper writes are 5m
+  but the rollup has no `QuerySource`, so the enterprise 1h tier slightly overstates them.
 - **The pricing table's cache multipliers are not universal.** `cacheWrite = input × 1.25`,
   `cacheWrite1h = input × 2` and `cacheRead = input × 0.1` hold for most rows, but
   `claude-fable-5-1` and `claude-mythos-5-1` carry an explicit `cacheRead` of `$0.25` — a

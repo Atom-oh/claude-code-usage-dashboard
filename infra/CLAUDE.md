@@ -36,8 +36,11 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   only seeds the first rollout, with no default (the now-IMMUTABLE ECR repository has no
   `latest` to fall back to — a value must come from `terraform.tfvars`). Also wires
   `DATA_STALE_MINUTES` (from `var.data_stale_minutes`, default `360`) and the optional
-  `PRICING_JSON` / `PRICING_CACHE_WRITE_TTL` (nullable vars; no env is injected when they're
-  `null`). Additionally wires the three org-level boot knobs `GROUP_MODE` /
+  `PRICING_JSON` / `PRICING_CACHE_WRITE_TTL` / `PRICING_CACHE_WRITE_TTL_BEDROCK` /
+  `PRICING_CACHE_WRITE_TTL_ENTERPRISE` (nullable vars; no env is injected when they're
+  `null`). The two per-group vars (ADR-008) accept `1h`, `5m` or a schedule such as
+  `5m,2026-09-09T00:00:00Z=1h`; the Terraform validation regex mirrors the server parser's
+  shape (hour-aligned, timezone-explicit instants) so a bad value fails `plan`, not the pod boot. Additionally wires the three org-level boot knobs `GROUP_MODE` /
   `DEFAULT_RANGE_DAYS` / `RANGE_CAP_DAYS` from `var.group_mode` / `var.default_range_days` /
   `var.range_cap_days` (defaults `ab` / `2` / `90`, identical to the server defaults,
   validated in Terraform with the same rules the server enforces at boot — `ab|single`,

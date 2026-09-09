@@ -276,11 +276,14 @@ GROUP BY Model, TokenType
 ${PRICING_PROMPT_TABLE}
   **단가표의 필드명과 TokenType 값이 다릅니다** — 매핑은 다음과 같고, TokenType='cacheWrite'는
   데이터에 존재하지 않으니 그런 조건으로 조회하지 마세요:
-    input → input, output → output, cacheRead → cacheRead, **cacheCreation → cacheWrite**
+    input → input, output → output, cacheRead → cacheRead,
+    **cacheCreation → cacheWrite5m 또는 cacheWrite1h(세션 그룹의 TTL 정책이 정함, 위 정책 줄)**
   즉 계산 비용 = (input 토큰×input) + (output 토큰×output) + (cacheRead 토큰×cacheRead)
-                + (cacheCreation 토큰×cacheWrite), 전부 1e6으로 나눕니다. TokenType별 합계는
-  sumIf(inc, TokenType='input') 처럼 위 boundary-diff 결과에 조건 집계로 뽑되, **Model별 GROUP BY를
-  유지하세요** — 여러 모델의 토큰을 먼저 합치고 단가 하나를 곱하면 대시보드 값과 발산합니다.
+                + (cacheCreation 토큰×그룹 TTL의 cacheWrite), 전부 1e6으로 나눕니다. TokenType별
+  합계는 sumIf(inc, TokenType='input') 처럼 위 boundary-diff 결과에 조건 집계로 뽑되, **Model별,
+  그리고 세션 그룹(grp)별 GROUP BY를 유지하세요** — 여러 모델의 토큰을 먼저 합치고 단가 하나를
+  곱하거나, 두 그룹의 cacheCreation 토큰을 합쳐 한 티어를 곱하면 대시보드 값과 발산합니다. 정책에
+  전환 시각이 있으면 그 시각 전후를 따로 집계해 각각의 티어를 곱하세요.
   원본 Model 값(us.anthropic.claude-sonnet-5-20250929-v1:0 등)은 위 표에 없습니다 — 반드시 아래
   SQL 식으로 정규화한 값을 표의 key와 매칭하고, GROUP BY도 이 식으로 하세요(대시보드가 쓰는 것과
   같은 식이라 이걸 그대로 쓰면 값이 일치합니다. 직접 다르게 정규화하면 단가 매칭이 빗나가 계산

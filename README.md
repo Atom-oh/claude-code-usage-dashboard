@@ -92,7 +92,8 @@ Environment variables consumed by `dashboard/server`:
 | `CH_PASSWORD` | ClickHouse password | none (required) |
 | `CH_HOST` / `CH_PORT` | Alternative to `CH_URL` (host + HTTP port); ignored when `CH_URL` is set | unset |
 | `PRICING_JSON` | Path to a JSON file overriding the built-in model price table | unset (built-in table) |
-| `PRICING_CACHE_WRITE_TTL` | cacheWrite price tier assumed for cache-creation tokens: `1h` or `5m`; anything else exits at startup | `1h` |
+| `PRICING_CACHE_WRITE_TTL` | Global cacheWrite price tier for cache-creation tokens: `1h` or `5m`; anything else exits at startup. Applies to the `unknown` group and to any group without its own variable below; when set explicitly it also overrides the built-in per-group defaults | `1h` |
+| `PRICING_CACHE_WRITE_TTL_BEDROCK` / `PRICING_CACHE_WRITE_TTL_ENTERPRISE` | Per-group cache-write TTL policy (ADR-008): `1h`, `5m`, or a schedule `5m,2026-09-09T00:00:00Z=1h` (comma-separated, first entry the initial tier, later entries `<UTC hour-aligned ISO instant>=<tier>` in ascending order). A range that spans an instant is split there and each segment priced with its own tier | bedrock `5m`, enterprise `1h` (Claude Code's own `promptCacheTtl` defaults: Bedrock/API key 5m, subscription 1h) |
 | `BASIC_AUTH_USER` | Basic Auth username for the whole dashboard | required unless `AUTH_ALLOW_INSECURE=1` |
 | `BASIC_AUTH_PASSWORD` | Basic Auth password | required unless `AUTH_ALLOW_INSECURE=1` |
 | `AUTH_ALLOW_INSECURE` | Run without Basic Auth; the server otherwise exits 1 at boot — local dev only (`/healthz`/`/readyz` are auth-exempt regardless, so probes never need this) | unset (auth required) |
@@ -333,7 +334,8 @@ SPA 서빙)을 엽니다.
 | `CH_PASSWORD` | ClickHouse 비밀번호 | 없음(필수) |
 | `CH_HOST` / `CH_PORT` | `CH_URL` 대신 호스트 + HTTP 포트로 지정; `CH_URL`이 있으면 무시 | 미설정 |
 | `PRICING_JSON` | 내장 모델 단가표를 덮어쓰는 JSON 파일 경로 | 미설정(내장 단가표) |
-| `PRICING_CACHE_WRITE_TTL` | 캐시 생성 토큰에 가정하는 cacheWrite 단가 티어: `1h` 또는 `5m`; 그 외 값은 기동 시 종료 | `1h` |
+| `PRICING_CACHE_WRITE_TTL` | 캐시 생성 토큰의 전역 cacheWrite 단가 티어: `1h` 또는 `5m`; 그 외 값은 기동 시 종료. `unknown` 그룹과 아래 그룹별 변수가 없는 그룹에 적용되고, 명시하면 내장 그룹 기본값보다 우선 | `1h` |
+| `PRICING_CACHE_WRITE_TTL_BEDROCK` / `PRICING_CACHE_WRITE_TTL_ENTERPRISE` | 그룹별 캐시 쓰기 TTL 정책(ADR-008): `1h`, `5m`, 또는 스케줄 `5m,2026-09-09T00:00:00Z=1h`(쉼표 구분, 첫 항목은 초기 티어, 이후 항목은 `<UTC 정각 ISO 시각>=<티어>` 오름차순). 전환 시각을 걸치는 조회 구간은 그 시각에서 쪼개 조각마다 자기 티어로 계산 | bedrock `5m`, enterprise `1h`(Claude Code `promptCacheTtl` 기본값: Bedrock/API 키 5m, 구독 1h) |
 | `BASIC_AUTH_USER` | 대시보드 전체 Basic Auth 유저명 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
 | `BASIC_AUTH_PASSWORD` | Basic Auth 비밀번호 | 필수 — `AUTH_ALLOW_INSECURE=1`일 때만 생략 가능 |
 | `AUTH_ALLOW_INSECURE` | Basic Auth 없이 실행; 미설정 시 서버가 기동 시 exit 1 — 로컬 dev 전용(`/healthz`/`/readyz`는 원래 무인증이라 프로브에는 필요 없다) | 미설정(인증 필수) |

@@ -10,6 +10,12 @@ import {
   buildPricing,
   pricingConfig,
   PRICING_PROMPT_TABLE,
+  parseCacheWriteTtlSchedule,
+  cacheWriteTtlFor,
+  cacheWriteTtlBoundaries,
+  ttlSegments,
+  mergeSegments,
+  toInstant,
 } from "./pricing.js";
 
 // 이 파일의 모듈 레벨 단언(withComputedCost/tierCosts/pricingConfig/PRICING_PROMPT_TABLE)은
@@ -18,6 +24,8 @@ import {
 // pricing.ttl5m.test.js(별도 프로세스)의 몫이다.
 test("the ambient env does not preset PRICING_* (these tests assume the built-in defaults)", () => {
   assert.equal(process.env.PRICING_CACHE_WRITE_TTL, undefined, "셸에서 PRICING_CACHE_WRITE_TTL을 unset하고 다시 실행하세요");
+  assert.equal(process.env.PRICING_CACHE_WRITE_TTL_BEDROCK, undefined, "셸에서 PRICING_CACHE_WRITE_TTL_BEDROCK을 unset하고 다시 실행하세요");
+  assert.equal(process.env.PRICING_CACHE_WRITE_TTL_ENTERPRISE, undefined, "셸에서 PRICING_CACHE_WRITE_TTL_ENTERPRISE를 unset하고 다시 실행하세요");
   assert.equal(process.env.PRICING_JSON, undefined, "셸에서 PRICING_JSON을 unset하고 다시 실행하세요");
 });
 
@@ -271,18 +279,151 @@ test("an invalid PRICING_CACHE_WRITE_TTL throws naming the env var and both acce
   );
 });
 
-// 이 환경엔 PRICING_JSON도 PRICING_CACHE_WRITE_TTL도 설정되어 있지 않음(host-verified) —
-// pricingConfig는 단가 자체를 절대 노출하지 않는다는 R5 보장을 이 두 필드만으로 확인한다.
-test("pricingConfig exposes only cacheWriteTtl and overriddenModels, no rates", () => {
-  assert.deepEqual(pricingConfig, { cacheWriteTtl: "1h", overriddenModels: [] });
-  assert.equal(Object.keys(pricingConfig).length, 2);
+// 이 환경엔 PRICING_JSON도 PRICING_CACHE_WRITE_TTL*도 설정되어 있지 않음(host-verified) —
+// pricingConfig는 단가 자체를 절대 노출하지 않는다는 R5 보장을 이 세 필드만으로 확인한다.
+// cacheWriteTtlByGroup의 내장 기본값(bedrock 5m / enterprise 1h)이 곧 ADR-008의 정책이다.
+test("pricingConfig exposes the TTL policy and overriddenModels, no rates", () => {
+  assert.deepEqual(pricingConfig, {
+    cacheWriteTtl: "1h",
+    cacheWriteTtlByGroup: { bedrock: [{ since: null, ttl: "5m" }], enterprise: [{ since: null, ttl: "1h" }] },
+    overriddenModels: [],
+  });
+  assert.equal(Object.keys(pricingConfig).length, 3);
 });
 
-test("PRICING_PROMPT_TABLE renders the in-effect rate and the TTL assumption, without cacheCreation", () => {
-  assert.match(PRICING_PROMPT_TABLE, /claude-sonnet-5: input \$2, output \$10/);
-  assert.match(PRICING_PROMPT_TABLE, /cacheWrite \$4/); // sonnet-5 1h = 2 × 2
-  assert.match(PRICING_PROMPT_TABLE, /PRICING_CACHE_WRITE_TTL/);
+test("PRICING_PROMPT_TABLE renders both cache-write tiers and the per-group policy, without cacheCreation", () => {
+  assert.match(PRICING_PROMPT_TABLE, /claude-sonnet-5: input \$2, output \$10, cacheWrite5m \$2\.5, cacheWrite1h \$4/);
+  assert.match(PRICING_PROMPT_TABLE, /bedrock → 5m/);
+  assert.match(PRICING_PROMPT_TABLE, /enterprise → 1h/);
+  assert.match(PRICING_PROMPT_TABLE, /PRICING_CACHE_WRITE_TTL_BEDROCK/);
   assert.doesNotMatch(PRICING_PROMPT_TABLE, /cacheCreation/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// 그룹별 캐시 쓰기 TTL 정책(ADR-008). 2026-09-07 한화 이벤트 실측: Bedrock 세션의 캐시 쓰기는
+// 전량 5m 티어였는데 대시보드는 1h(×2.0)로 계산해 +17.72% 과대계상 — 그룹을 무시한 전역 TTL이
+// 원인이었다. 아래 테스트는 (1) 그룹별 기본값, (2) env 우선순위, (3) 전환 시각 스케줄,
+// (4) 행 단위 판정, (5) 구간 분할/합치기를 고정한다.
+// ---------------------------------------------------------------------------------------------
+
+test("buildPricing defaults bedrock to 5m and enterprise to 1h when no TTL env is set", () => {
+  const { cacheWriteTtlByGroup } = buildPricing({});
+  assert.deepEqual(cacheWriteTtlByGroup, { bedrock: [{ since: null, ttl: "5m" }], enterprise: [{ since: null, ttl: "1h" }] });
+});
+
+// 전역 env를 명시하면 "전부 한 티어"라는 예전 의미를 보존한다 — 내장 그룹 기본값보다 우선.
+test("an explicit global PRICING_CACHE_WRITE_TTL overrides the built-in per-group defaults", () => {
+  const { cacheWriteTtlByGroup } = buildPricing({ PRICING_CACHE_WRITE_TTL: "1h" });
+  assert.equal(cacheWriteTtlByGroup.bedrock[0].ttl, "1h");
+  assert.equal(cacheWriteTtlByGroup.enterprise[0].ttl, "1h");
+  const five = buildPricing({ PRICING_CACHE_WRITE_TTL: "5m" });
+  assert.equal(five.cacheWriteTtlByGroup.enterprise[0].ttl, "5m");
+});
+
+test("a per-group env beats the global env for that group only", () => {
+  const { cacheWriteTtlByGroup } = buildPricing({ PRICING_CACHE_WRITE_TTL: "5m", PRICING_CACHE_WRITE_TTL_ENTERPRISE: "1h" });
+  assert.equal(cacheWriteTtlByGroup.bedrock[0].ttl, "5m");
+  assert.equal(cacheWriteTtlByGroup.enterprise[0].ttl, "1h");
+});
+
+test("parseCacheWriteTtlSchedule accepts a bare tier and an ascending instant schedule", () => {
+  assert.deepEqual(parseCacheWriteTtlSchedule("1h", "X"), [{ since: null, ttl: "1h" }]);
+  const sched = parseCacheWriteTtlSchedule(" 5m , 2026-09-09T00:00:00Z=1h ,2026-10-01T00:00:00+00:00=5m", "X");
+  assert.equal(sched.length, 3);
+  assert.equal(sched[0].ttl, "5m");
+  assert.equal(sched[1].since.toISOString(), "2026-09-09T00:00:00.000Z");
+  assert.equal(sched[1].ttl, "1h");
+  assert.equal(sched[2].since.toISOString(), "2026-10-01T00:00:00.000Z");
+});
+
+test("parseCacheWriteTtlSchedule rejects malformed schedules, naming the env var", () => {
+  const rejects = (raw, re) => assert.throws(() => parseCacheWriteTtlSchedule(raw, "PRICING_CACHE_WRITE_TTL_BEDROCK"), (e) => /PRICING_CACHE_WRITE_TTL_BEDROCK/.test(e.message) && re.test(e.message));
+  rejects("10m", /1h.*5m|5m.*1h/);
+  rejects("", /schedule/);
+  rejects("5m,1h", /omit/); // 두 번째 항목에 시각이 없다
+  rejects("2026-09-09T00:00:00Z=1h", /first schedule entry/); // 초기 티어가 없다
+  rejects("5m,2026-09-09T00:00:00=1h", /timezone/); // 로컬 시간 해석 금지
+  rejects("5m,2026-09-09T00:30:00Z=1h", /hour boundary/); // 롤업 hour 경계
+  rejects("5m,2026-09-09T00:00:00Z=1h,2026-09-09T00:00:00Z=5m", /strictly increasing/);
+  rejects("5m,not-a-date=1h", /timezone|ISO-8601/);
+});
+
+// cacheWriteTtlFor는 모듈 로드 시 읽은 정책(이 환경: 내장 기본값)으로 판정한다 — 스케줄 판정은
+// buildPricing 결과를 직접 검사하는 위 테스트와, 새 모듈 인스턴스로 env를 바꿔 로드하는
+// pricing.ttl5m.test.js가 나눠 맡는다.
+test("cacheWriteTtlFor resolves by group and falls back to the global tier for unknown/missing groups", () => {
+  assert.equal(cacheWriteTtlFor("bedrock"), "5m");
+  assert.equal(cacheWriteTtlFor("enterprise"), "1h");
+  assert.equal(cacheWriteTtlFor("unknown"), "1h");
+  assert.equal(cacheWriteTtlFor(undefined), "1h");
+  assert.deepEqual(cacheWriteTtlBoundaries(), []); // 기본 정책엔 전환 시각이 없다
+});
+
+// 같은 토큰, 다른 그룹 → 캐시 쓰기 항만 다르다(opus-5 1M: 5m $6.25 vs 1h $10). 이 차이가 곧
+// 2026-09-07 이벤트의 +17.72%였다. 적용한 티어와 그 항의 금액이 응답에 드러나야 한다.
+test("withComputedCost prices cache writes by the row's group and exposes the tier it used", () => {
+  const tokens = { model: "claude-opus-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000 };
+  const [b, e, u, none] = withComputedCost([
+    { ...tokens, group: "bedrock" },
+    { ...tokens, group: "enterprise" },
+    { ...tokens, group: "unknown" },
+    { ...tokens },
+  ]);
+  assert.deepEqual([b.cost, b.cache_write_ttl, b.cache_write_cost], [6.25, "5m", 6.25]);
+  assert.deepEqual([e.cost, e.cache_write_ttl, e.cache_write_cost], [10, "1h", 10]);
+  assert.equal(u.cost, 10); // 정책 없는 그룹은 전역(1h)
+  assert.equal(none.cost, 10); // group 컬럼이 없는 행도 전역
+  const [unpriced] = withComputedCost([{ ...tokens, model: "titan-text-lite", group: "bedrock" }]);
+  assert.deepEqual([unpriced.cost, unpriced.unpriced, unpriced.cache_write_ttl, unpriced.cache_write_cost], [null, true, null, null]);
+});
+
+// tierCosts는 이미 단가가 매겨진 행의 cache_write_cost를 그대로 쓴다 — 전환 시각을 걸쳐 합쳐진
+// 행은 토큰 합계 × 단가 하나로 복원할 수 없기 때문. 값이 없는 원시 행은 그룹 정책으로 계산한다.
+test("tierCosts takes cache_write_cost from priced rows and prices raw rows by group", () => {
+  const raw = { model: "claude-opus-5", group: "bedrock", input_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000 };
+  assert.deepEqual(tierCosts([raw]), { uncachedInput: 5, cacheRead: 0, cacheWrite: 6.25, output: 0 });
+  // 합쳐진 행: 5m 구간 1M($6.25) + 1h 구간 1M($10) = $16.25, 토큰은 2M
+  const merged = { ...raw, cache_write_tokens: 2_000_000, cache_write_cost: 16.25, cache_write_ttl: "mixed" };
+  assert.equal(tierCosts([merged]).cacheWrite, 16.25);
+  assert.equal(tierCostsByGroup([raw, { ...raw, group: "enterprise" }]).enterprise.cacheWrite, 10);
+});
+
+test("ttlSegments splits [from, to) only at boundaries strictly inside it", () => {
+  const from = new Date("2026-09-04T00:00:00Z");
+  const to = new Date("2026-09-10T00:00:00Z");
+  const cut = new Date("2026-09-09T00:00:00Z");
+  assert.deepEqual(ttlSegments(from, to, []), [{ from, to }]);
+  assert.deepEqual(ttlSegments(from, to, [cut]), [{ from, to: cut }, { from: cut, to }]);
+  // 경계와 같은 시각, 구간 밖 시각은 쪼개지 않는다
+  assert.deepEqual(ttlSegments(from, to, [from, to, new Date("2026-08-01T00:00:00Z")]), [{ from, to }]);
+});
+
+test("mergeSegments adds numeric fields per key, keeps null cost, ORs unpriced and marks mixed tiers", () => {
+  const rows = mergeSegments(
+    [
+      [
+        { group: "bedrock", model: "claude-opus-5", cost: 6.25, cache_write_tokens: "1000000", cache_write_ttl: "5m", cache_write_cost: 6.25, unpriced: false, sessions: 2 },
+        { group: "bedrock", model: "titan-text-lite", cost: null, cache_write_tokens: 5, cache_write_ttl: null, cache_write_cost: null, unpriced: true, sessions: 1 },
+      ],
+      [
+        { group: "bedrock", model: "claude-opus-5", cost: 10, cache_write_tokens: "1000000", cache_write_ttl: "1h", cache_write_cost: 10, unpriced: false, sessions: 3 },
+        { group: "enterprise", model: "claude-opus-5", cost: 10, cache_write_tokens: 1_000_000, cache_write_ttl: "1h", cache_write_cost: 10, unpriced: false, sessions: 1 },
+      ],
+    ],
+    ["group", "model"]
+  );
+  assert.equal(rows.length, 3);
+  const [opusB, titan, opusE] = rows;
+  // 드라이버가 준 숫자형 문자열도 더해져 숫자가 된다
+  assert.deepEqual([opusB.cost, opusB.cache_write_tokens, opusB.cache_write_ttl, opusB.cache_write_cost, opusB.sessions], [16.25, 2_000_000, "mixed", 16.25, 5]);
+  assert.deepEqual([titan.cost, titan.unpriced], [null, true]);
+  assert.deepEqual([opusE.cost, opusE.cache_write_ttl], [10, "1h"]); // 한 조각만 있는 키는 그대로
+});
+
+test("toInstant reads ClickHouse's timezone-less DateTime string as UTC", () => {
+  assert.equal(toInstant("2026-09-09 00:00:00").toISOString(), "2026-09-09T00:00:00.000Z");
+  assert.equal(toInstant("2026-09-09T03:00:00Z").toISOString(), "2026-09-09T03:00:00.000Z");
+  assert.equal(toInstant(new Date(0)).getTime(), 0);
 });
 
 // 2026-09-02 단가표 보강: 이 6개 계열이 표에 없어 토큰이 unpriced로 새고 있었다(계산 비용에서
@@ -355,17 +496,24 @@ test("rollupComputedCost folds two models under one key into one computed-cost r
     ["group", "effort"]
   );
   assert.equal(rest.length, 0);
-  // opus-5: 5 + 25 + 0.5 + 10 = 40.5 (1M씩) · fable-5: 2M × $10/M = 20 → 60.5.
-  // 두 모델을 접기 전에 각자 단가로 계산해야만 나오는 값이다 — 접은 뒤에 아무 단가나 곱하면
-  // 6M 토큰 × 어떤 단가로도 60.5가 되지 않는다.
+  // opus-5: 5 + 25 + 0.5 + 6.25(bedrock은 5m 티어) = 36.75 (1M씩) · fable-5: 2M × $10/M = 20
+  // → 56.75. 두 모델을 접기 전에 각자 단가로 계산해야만 나오는 값이다 — 접은 뒤에 아무 단가나
+  // 곱하면 6M 토큰 × 어떤 단가로도 56.75가 되지 않는다.
   assert.deepEqual(row, {
     group: "bedrock",
     effort: "high",
-    cost: 60.5,
+    cost: 56.75,
     reported_cost: 42,
     tokens: 6 * M,
     unpriced_tokens: 0,
   });
+  // 대조군: 같은 픽스처가 enterprise면 캐시 쓰기가 1h($10)라 60.5 — 접기 경로가 그룹 정책을
+  // 통과시키는지 확인한다(이게 없으면 그룹을 무시하는 구현도 위 단정문 하나는 통과할 수 있다).
+  const [ent] = rollupComputedCost(
+    [rollupRow({ group: "enterprise", effort: "high", model: "claude-opus-5", input_tokens: M, output_tokens: M, cache_read_tokens: M, cache_write_tokens: M }), rollupRow({ group: "enterprise", effort: "high", model: "claude-fable-5", input_tokens: 2 * M })],
+    ["group", "effort"]
+  );
+  assert.equal(ent.cost, 60.5);
 });
 
 test("rollupComputedCost keeps unpriced-model tokens out of cost but inside tokens", () => {

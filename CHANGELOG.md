@@ -17,6 +17,25 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Fixed (2026-09-09 per-group cache-write TTL)
+- Cache-write tokens are now priced by a **per-group, per-instant TTL policy** instead of one
+  global tier (ADR-008). The 2026-09-07 workshop event measured the dashboard's `cost` at
+  **+17.72%** over the AWS rate recomputation because every cache write was billed at the 1h
+  tier (input × 2.0) while the Bedrock group's writes were all 5m (input × 1.25) — Bedrock's
+  default when Claude Code's `promptCacheTtl` is unset; a subscription's main conversation is
+  1h. Defaults are now bedrock `5m` / enterprise `1h`, overridable with
+  `PRICING_CACHE_WRITE_TTL_BEDROCK` / `PRICING_CACHE_WRITE_TTL_ENTERPRISE`, each a tier or a
+  schedule such as `5m,2026-09-09T00:00:00Z=1h` for a fleet whose settings later pin the TTL.
+  A range that spans a switch instant is split there (`acrossTtlSegments` in `queries.js`) and
+  each segment priced with its own tier, then merged per key; `costByModelCompare` gained a
+  `group` grain for the same reason (folded back to `model` in `compareRows`). An explicit
+  global `PRICING_CACHE_WRITE_TTL` still means "one tier for every group"
+- Every priced row now carries `cache_write_ttl` (`"5m"`/`"1h"`/`"mixed"`/`null`) and
+  `cache_write_cost`, and `/api/config`'s `pricing` gained `cacheWriteTtlByGroup`, so the TTL
+  assumption behind a cost figure is visible in the API rather than something to reverse-engineer
+- Terraform: `var.pricing_cache_write_ttl_bedrock` / `var.pricing_cache_write_ttl_enterprise`
+  (nullable, validated against the server's schedule grammar) -> the two new env vars
+
 ### Added (2026-09-04 auto-refresh + range presets)
 - Add auto-refresh with a selectable interval (끔 / 15초 / 30초 / 1분 / 5분, default **1분**),
   persisted in `localStorage` under `ccdash.refreshMs`, paused while the tab is hidden, one
@@ -243,6 +262,24 @@ This project has not been tagged yet — everything below is unreleased.
 이 프로젝트는 아직 태그된 릴리스가 없습니다 — 아래 항목 전부 미출시(Unreleased)입니다.
 
 ## [Unreleased]
+
+### Fixed (2026-09-09 그룹별 캐시 쓰기 TTL)
+- 캐시 쓰기 토큰 단가를 전역 티어 하나가 아니라 **그룹별·시각별 TTL 정책**으로 매긴다(ADR-008).
+  2026-09-07 워크샵 이벤트 실측에서 대시보드 `cost`가 AWS 실단가 재계산 대비 **+17.72%**
+  과대계상됐는데, 모든 캐시 쓰기를 1h 티어(입력×2.0)로 계산한 반면 Bedrock 그룹의 캐시 쓰기는
+  전량 5m(입력×1.25)이었기 때문이다 — Claude Code `promptCacheTtl` 미설정 시 Bedrock 기본값이
+  5m이고 구독의 메인 대화는 1h. 기본값은 bedrock `5m` / enterprise `1h`이며
+  `PRICING_CACHE_WRITE_TTL_BEDROCK` / `PRICING_CACHE_WRITE_TTL_ENTERPRISE`로 덮어쓴다 — 값은
+  단일 티어 또는 설정이 나중에 TTL을 고정한 플릿을 위한 스케줄(`5m,2026-09-09T00:00:00Z=1h`).
+  전환 시각을 걸치는 조회 구간은 그 시각에서 쪼개(`queries.js`의 `acrossTtlSegments`) 조각마다
+  자기 티어로 계산한 뒤 키 단위로 합치고, `costByModelCompare`도 같은 이유로 `group` 그레인을
+  갖게 됐다(`compareRows`가 `model`로 다시 접음). 전역 `PRICING_CACHE_WRITE_TTL`을 명시하면
+  예전처럼 "모든 그룹 한 티어"다
+- 단가가 매겨진 모든 행에 `cache_write_ttl`(`"5m"`/`"1h"`/`"mixed"`/`null`)과
+  `cache_write_cost`가 실리고 `/api/config`의 `pricing`에 `cacheWriteTtlByGroup`이 추가돼, 비용
+  숫자 뒤의 TTL 가정을 역산하지 않고 API에서 바로 볼 수 있다
+- Terraform: `var.pricing_cache_write_ttl_bedrock` / `var.pricing_cache_write_ttl_enterprise`
+  (nullable, 서버 스케줄 문법으로 검증) -> 새 env 2개
 
 ### Added (2026-09-04 자동 새로고침 + 범위 프리셋)
 - 선택 가능한 간격(끔 / 15초 / 30초 / 1분 / 5분, 기본값 **1분**)의 자동 새로고침 추가 —

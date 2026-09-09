@@ -1,6 +1,6 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { withComputedCost, normalizeModelId, rollupComputedCost } from "./pricing.js";
+import { withComputedCost, normalizeModelId, rollupComputedCost, cacheWriteTtlBoundaries, ttlSegments, mergeSegments, toInstant } from "./pricing.js";
 import { rollupAdoption } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
@@ -423,6 +423,22 @@ export function bucket(intervalHours, col = "TimeUnix") {
   return { expr: `toStartOfInterval(${col}, INTERVAL {intervalHours:UInt32} HOUR)`, params: { intervalHours } };
 }
 
+// 캐시 쓰기 TTL 정책(pricing.js, ADR-008)에 전환 시각이 있고 그 시각이 [from, to) 안에 있으면
+// 구간을 그 시각에서 쪼개 각각 조회·단가 계산한 뒤 키 컬럼 단위로 다시 합친다. 스냅샷 쿼리의
+// 행에는 시각이 없어 "이 행의 cacheCreation 토큰이 어느 TTL로 쓰였나"를 행 단위로는 알 수
+// 없고, 구간이 한 정책 안에 들어와야만 구간 시작 시각 하나로 판정할 수 있기 때문이다. 누적
+// 카운터의 구간 diff는 인접 구간에 가산적이라(incFlat 위 주석) 조각을 더해도 값이 보존된다 —
+// 전환 시각은 UTC 정각으로 강제되어(parseCacheWriteTtlSchedule) 롤업 hour 경계와 정확히 맞는다.
+// 전환 시각이 없는 배포(기본)는 조각이 하나라 조회 횟수도 그대로다. fetchPriced(segFrom, segTo)는
+// 그 조각의 SQL을 실행하고 withComputedCost/rollupComputedCost를 at: segFrom으로 적용해 돌려준다.
+// boundaries 인자는 테스트 전용 주입점 — 운영 코드는 항상 기본값(모듈 정책)을 쓴다.
+export async function acrossTtlSegments(from, to, fetchPriced, keys, boundaries = cacheWriteTtlBoundaries()) {
+  const segments = ttlSegments(from, to, boundaries);
+  if (segments.length === 1) return fetchPriced(from, to);
+  const parts = await Promise.all(segments.map((s) => fetchPriced(s.from, s.to)));
+  return mergeSegments(parts, keys);
+}
+
 // 비용 계산에 필요한 토큰 타입별 합계 + Claude Code 자체 보고 비용(비교용). withComputedCost()
 // (pricing.js)가 이 4개 토큰 컬럼 + reported_cost를 받아 단가표 기반 cost를 계산한다.
 const TOKEN_SUMS = `
@@ -655,7 +671,10 @@ export async function costByModelDaily(from, to, intervalHours = 24, filters = {
     { ...range(from, to, b.raw), ...b.params, ...f.params }
   );
   // cost 키 이름을 유지해 SeriesBarChart(valueKey="cost")가 그대로 동작하게 한다.
-  return withComputedCost(rows);
+  // TTL 판정 시각은 행의 버킷 시작(day) — 버킷마다 정책이 다를 수 있어 구간 시작 하나로는 안 된다.
+  // 전환 시각이 버킷 "안"에 떨어지면(예: 일 버킷에 정오 전환) 그 버킷 하나는 시작 시점 정책으로
+  // 계산된다 — 전환 시각을 UTC 자정에 두면 시간/일 버킷 모두에서 정확하다(README 환경변수 표).
+  return withComputedCost(rows, { at: (r) => toInstant(r.day) });
 }
 
 // 모델별 지출 vs 이전 동일 길이 기간. cumulative의 진짜 이점이 여기서 나온다 — 두 구간(현재/이전)
@@ -688,10 +707,20 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
   // costSummary/costByModel(incFlat 경로)이 같은 구간에서 이미 이 정밀도를 쓰므로, 형제 Cost
   // 카드와 동일한 모수를 비교하게 된다(리뷰에서 MAJOR로 확인: rollup 경로만 쓰면 드래그 줌
   // sub-4h 구간에서 "이전 기간 대비" 카드가 나머지 카드와 다른 창을 봤다).
+  // 캐시 쓰기 TTL 정책의 전환 시각이 [prevFrom, to) 안에 있으면 아래 단일 SQL(경계 3점 diff)로는
+  // 전환 전후를 나눌 수 없다 — 그 경우만 costByModel(전환 시각에서 조각내는 acrossTtlSegments
+  // 경로)을 두 창에 각각 호출해 짝지운다. 정렬 규칙이 아래 SQL(hour 정렬 + 최소 1h 창)과 최대
+  // 59분 다르지만, 전환 시각을 걸치는 조회에서만 타는 경로라 그 차이를 감수한다(ADR-008).
+  if (ttlSegments(prevFrom, to, cacheWriteTtlBoundaries()).length > 1) {
+    const [cur, prev] = await Promise.all([costByModel(from, to, filters), costByModel(prevFrom, from, filters)]);
+    return compareRows(cur, prev);
+  }
+  // group 그레인을 SELECT/GROUP BY에 넣는 이유: 캐시 쓰기 TTL이 그룹별이라 단가를 매기려면 행에
+  // 그룹이 있어야 한다. 응답은 예전처럼 model 단위 — compareRows가 단가 계산 뒤에 접는다.
   const rows = incFlatRaw(to - from)
     ? await query(
         `${GROUP_CTE}
-        SELECT model,
+        SELECT ${GROUP_EXPR} AS "group", model,
             sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
             sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
             sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
@@ -717,12 +746,12 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
         ) m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
         WHERE 1 = 1 ${f.where}
-        GROUP BY model`,
+        GROUP BY "group", model`,
         { from: toChDateTime(from), to: toChDateTime(to), prevFrom: toChDateTime(prevFrom), ...f.params }
       )
     : await query(
         `${GROUP_CTE}
-        SELECT model,
+        SELECT ${GROUP_EXPR} AS "group", model,
             sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
             sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
             sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
@@ -806,21 +835,64 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
         ) m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
         WHERE 1 = 1 ${f.where}
-        GROUP BY model`,
+        GROUP BY "group", model`,
         { ...range(from, to), prevFrom: toChDateTime(prevFrom), alignedPrevFrom: toChDateTime(alignedPrevFrom), ...f.params }
       );
-  return withComputedCost(rows).map((r) => {
-    const [prev] = withComputedCost([
-      {
-        model: r.model,
-        input_tokens: r.prev_input_tokens,
-        output_tokens: r.prev_output_tokens,
-        cache_read_tokens: r.prev_cache_read_tokens,
-        cache_write_tokens: r.prev_cache_write_tokens,
-      },
-    ]);
-    return { ...r, prev_cost: prev.cost };
-  });
+  // 현재 창은 from, 이전 창은 prevFrom 시점의 정책으로 — 위에서 두 창 안에 전환 시각이 없음을
+  // 확인했으므로 창 시작 하나로 그 창 전체의 TTL이 정해진다.
+  const cur = withComputedCost(rows, { at: from });
+  const prev = withComputedCost(
+    rows.map((r) => ({
+      group: r.group,
+      model: r.model,
+      reported_cost: r.prev_reported_cost,
+      input_tokens: r.prev_input_tokens,
+      output_tokens: r.prev_output_tokens,
+      cache_read_tokens: r.prev_cache_read_tokens,
+      cache_write_tokens: r.prev_cache_write_tokens,
+    })),
+    { at: prevFrom }
+  );
+  return compareRows(cur, prev);
+}
+
+// costByModelCompare의 응답 모양(model 단위, cur 컬럼 + prev_* 컬럼 + cost/prev_cost)을 만든다.
+// 입력은 둘 다 withComputedCost를 거친 (group, model) 그레인 행 — 같은 (group, model)을 짝지어
+// 한 행에 놓은 뒤 mergeSegments로 model 단위로 접는다(cost/prev_cost는 그룹별 TTL 단가로 이미
+// 계산돼 있으니 더하기만 한다). 한쪽 창에만 있는 (group, model)은 다른 쪽을 0으로 채운다.
+export function compareRows(curRows, prevRows) {
+  const key = (r) => `${r.group} ${r.model}`;
+  const prevBy = new Map(prevRows.map((r) => [key(r), r]));
+  const pair = (cur, prev) => {
+    const any = cur || prev;
+    return {
+      model: any.model,
+      reported_cost: Number(cur?.reported_cost ?? 0),
+      prev_reported_cost: Number(prev?.reported_cost ?? 0),
+      input_tokens: Number(cur?.input_tokens ?? 0),
+      prev_input_tokens: Number(prev?.input_tokens ?? 0),
+      output_tokens: Number(cur?.output_tokens ?? 0),
+      prev_output_tokens: Number(prev?.output_tokens ?? 0),
+      cache_read_tokens: Number(cur?.cache_read_tokens ?? 0),
+      prev_cache_read_tokens: Number(prev?.cache_read_tokens ?? 0),
+      cache_write_tokens: Number(cur?.cache_write_tokens ?? 0),
+      prev_cache_write_tokens: Number(prev?.cache_write_tokens ?? 0),
+      cost: cur ? cur.cost : any.unpriced ? null : 0,
+      prev_cost: prev ? prev.cost : any.unpriced ? null : 0,
+      unpriced: Boolean(any.unpriced),
+      cache_write_ttl: cur ? cur.cache_write_ttl : prev.cache_write_ttl,
+      cache_write_cost: cur ? cur.cache_write_cost : any.unpriced ? null : 0,
+    };
+  };
+  const combined = [];
+  const seen = new Set();
+  for (const cur of curRows) {
+    const k = key(cur);
+    seen.add(k);
+    combined.push(pair(cur, prevBy.get(k) || null));
+  }
+  for (const prev of prevRows) if (!seen.has(key(prev))) combined.push(pair(null, prev));
+  return mergeSegments([combined], ["model"]);
 }
 
 // 도입 수준 — 전체/월간/주간/일간 활성 유저 + DAU/MAU 고착도(고착도는 클라에서 dau/mau).
@@ -999,8 +1071,10 @@ export async function costSummary(from, to, filters = {}) {
   // model 필터는 SELECT에 model 정규화 컬럼이 있지만, sessions는 Model attribute가 없는
   // session.count 행을 합산하는 혼합 지표라 kpiSummary와 같은 modelMixed가 필요.
   const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
-  const rows = await query(
-    `${GROUP_CTE}
+  const fetchPriced = async (sf, st) =>
+    withComputedCost(
+      await query(
+        `${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
         ${normModel("m.Model")} AS model,
@@ -1008,14 +1082,17 @@ export async function costSummary(from, to, filters = {}) {
         sumIf(m.Value, m.MetricName = 'claude_code.session.count') AS sessions
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.cost.usage', 'claude_code.token.usage', 'claude_code.session.count'
-      )`, to - from)} m
+      )`, st - sf)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
-    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
-  );
+        { ...range(sf, st, incFlatRaw(st - sf)), ...f.params }
+      ),
+      { at: sf }
+    );
+  const rows = await acrossTtlSegments(from, to, fetchPriced, ["group", "model"]);
   const byGroup = new Map();
-  for (const r of withComputedCost(rows)) {
+  for (const r of rows) {
     if (!byGroup.has(r.group)) {
       byGroup.set(r.group, {
         group: r.group,
@@ -1049,16 +1126,21 @@ export async function costSummary(from, to, filters = {}) {
 // Claude Code 자체 보고값(비교용). 단가표에 없는 모델은 cost: null + unpriced: true로 노출.
 export async function costByModel(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  const rows = await query(
-    `${GROUP_CTE}
+  const fetchPriced = async (sf, st) =>
+    withComputedCost(
+      await query(
+        `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
-    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
+    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, st - sf)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
-    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
-  );
-  return withComputedCost(rows).map((r) => ({
+        { ...range(sf, st, incFlatRaw(st - sf)), ...f.params }
+      ),
+      { at: sf }
+    );
+  const rows = await acrossTtlSegments(from, to, fetchPriced, ["group", "model"]);
+  return rows.map((r) => ({
     ...r,
     tokens: Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens),
   }));
@@ -1070,16 +1152,21 @@ export async function costByModel(from, to, filters = {}) {
 // 그룹으로 쪼갠다.
 export async function costByUserModel(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  const rows = await query(
-    `${GROUP_CTE}
+  const fetchPriced = async (sf, st) =>
+    withComputedCost(
+      await query(
+        `${GROUP_CTE}
     SELECT m.UserEmail AS user, ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
-    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
+    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, st - sf)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.Model != '' AND m.UserEmail != '' ${f.where}
     GROUP BY user, "group", model ORDER BY user`,
-    { ...range(from, to, incFlatRaw(to - from)), ...f.params }
-  );
-  return withComputedCost(rows).map((r) => ({
+        { ...range(sf, st, incFlatRaw(st - sf)), ...f.params }
+      ),
+      { at: sf }
+    );
+  const rows = await acrossTtlSegments(from, to, fetchPriced, ["user", "group", "model"]);
+  return rows.map((r) => ({
     ...r,
     tokens: Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens),
   }));
@@ -1704,8 +1791,10 @@ export async function activeTimeSummary(from, to, filters = {}) {
 // 않는다 — 걸면 보고 비용까지 조용히 빠진다. model이 빈 행은 unpriced_tokens로 드러난다.
 export async function effortMix(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  const rows = await query(
-    `${GROUP_CTE}
+  const fetchPriced = async (sf, st) =>
+    rollupComputedCost(
+      await query(
+        `${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
         if(m.Effort = '', 'unknown', m.Effort) AS effort,
@@ -1728,9 +1817,13 @@ export async function effortMix(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", effort, model ORDER BY "group", effort`,
-    { ...range(from, to, true), ...f.params }
-  );
-  return rollupComputedCost(rows, ["group", "effort"]).sort((a, b) => a.group.localeCompare(b.group) || b.cost - a.cost);
+        { ...range(sf, st, true), ...f.params }
+      ),
+      ["group", "effort"],
+      { at: sf }
+    );
+  const rows = await acrossTtlSegments(from, to, fetchPriced, ["group", "effort"]);
+  return rows.sort((a, b) => a.group.localeCompare(b.group) || b.cost - a.cost);
 }
 
 // 언어별 편집 수락 — Language는 incFlat 미탑재 차원이라 effortMix와 동일한 로컬 diff
@@ -1924,8 +2017,10 @@ export async function mcpHealth(from, to, filters = {}) {
 // 행에 걸려서 에이전트 하나의 비용이 잘린다.
 export async function agentCost(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  const rows = await query(
-    `${GROUP_CTE}
+  const fetchPriced = async (sf, st) =>
+    rollupComputedCost(
+      await query(
+        `${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
         if(m.AgentName = '', 'main', m.AgentName) AS agent,
@@ -1948,9 +2043,13 @@ export async function agentCost(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", agent, model ORDER BY "group", agent`,
-    { ...range(from, to, true), ...f.params }
-  );
-  return rollupComputedCost(rows, ["group", "agent"]).sort((a, b) => b.cost - a.cost).slice(0, 30);
+        { ...range(sf, st, true), ...f.params }
+      ),
+      ["group", "agent"],
+      { at: sf }
+    );
+  const rows = await acrossTtlSegments(from, to, fetchPriced, ["group", "agent"]);
+  return rows.sort((a, b) => b.cost - a.cost).slice(0, 30);
 }
 
 // =============================================================================
@@ -1967,8 +2066,10 @@ export async function agentCost(from, to, filters = {}) {
 // 밖 모델도 행을 버리지 않는다 — cost/ratio가 null일 뿐이다.
 export async function reportedVsComputedByVersion(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']" });
-  const rows = await query(
-    `${GROUP_CTE}
+  const fetchPriced = async (sf, st) =>
+    withComputedCost(
+      await query(
+        `${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
         l.AppVersion AS app_version,
@@ -1984,12 +2085,16 @@ export async function reportedVsComputedByVersion(from, to, filters = {}) {
     WHERE l.EventName = 'api_request'
       AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
     GROUP BY "group", app_version, model ORDER BY requests DESC`,
-    { ...range(from, to, true), ...f.params }
-  );
-  return withComputedCost(rows).map((r) => ({
-    ...r,
-    ratio: r.cost > 0 ? Number(r.reported_cost) / r.cost : null,
-  }));
+        { ...range(sf, st, true), ...f.params }
+      ),
+      { at: sf }
+    );
+  // ratio는 조각을 합친 뒤 계산한다 — 조각별 ratio의 합은 의미가 없다. 합친 뒤에는 요청 수
+  // 내림차순 정렬도 다시 한다(조각별 ORDER BY는 합치면서 깨진다).
+  const rows = await acrossTtlSegments(from, to, fetchPriced, ["group", "app_version", "model"]);
+  return rows
+    .map((r) => ({ ...r, ratio: r.cost > 0 ? Number(r.reported_cost) / r.cost : null }))
+    .sort((a, b) => Number(b.requests) - Number(a.requests));
 }
 
 // 유저 1명의 턴별 워터폴 — "왜 이 세션이 느렸나"에 답한다. interactionBreakdown과 동일한

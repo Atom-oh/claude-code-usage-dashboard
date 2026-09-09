@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel } from "./queries.js";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel, acrossTtlSegments, compareRows } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 import { GROUP_CTE } from "./grouping.js";
 
@@ -210,4 +210,55 @@ test("bedrock-evidence rule truth table over the live model roster", () => {
   // Enterprise 스타일(bare claude-*, [1m] 컨텍스트 접미사 포함)과 빈 값은 bedrock 증거가 아니다
   for (const m of ["claude-sonnet-5", "claude-fable-5[1m]", "claude-haiku-4-5-20251001", "claude-fable-5-1", "claude-opus-4-8", ""])
     assert.ok(!isBedrockEvidence(m), `${m || "(empty)"} must NOT count as bedrock evidence`);
+});
+
+// 캐시 쓰기 TTL 정책의 전환 시각(ADR-008)이 조회 구간 안에 있을 때만 구간을 쪼갠다 — 기본 정책
+// (전환 없음)에서는 조회 횟수가 그대로여야 하고, 쪼갤 때는 각 조각이 자기 구간으로 호출되고
+// 키 단위로 합쳐져야 한다. ClickHouse 없이 fetchPriced를 가짜로 넣어 검증한다.
+test("acrossTtlSegments issues one fetch without a boundary and merges per-key across a split", async () => {
+  const from = new Date("2026-09-04T00:00:00Z");
+  const to = new Date("2026-09-10T00:00:00Z");
+  const cut = new Date("2026-09-09T00:00:00Z");
+  const calls = [];
+  const fetchPriced = async (sf, st) => {
+    calls.push([sf.toISOString(), st.toISOString()]);
+    // 조각마다 같은 (group, model) 키 — 5m 구간과 1h 구간이 합쳐져야 한다
+    return [{ group: "bedrock", model: "claude-opus-5", cost: sf < cut ? 6.25 : 10, cache_write_tokens: 1_000_000, cache_write_ttl: sf < cut ? "5m" : "1h", cache_write_cost: sf < cut ? 6.25 : 10, unpriced: false }];
+  };
+  const single = await acrossTtlSegments(from, to, fetchPriced, ["group", "model"], []);
+  assert.deepEqual(calls, [[from.toISOString(), to.toISOString()]]);
+  assert.equal(single[0].cost, 6.25);
+
+  calls.length = 0;
+  const [merged] = await acrossTtlSegments(from, to, fetchPriced, ["group", "model"], [cut]);
+  assert.deepEqual(calls, [
+    [from.toISOString(), cut.toISOString()],
+    [cut.toISOString(), to.toISOString()],
+  ]);
+  assert.deepEqual([merged.cost, merged.cache_write_tokens, merged.cache_write_ttl, merged.cache_write_cost], [16.25, 2_000_000, "mixed", 16.25]);
+});
+
+// costByModelCompare는 그룹별 TTL 단가를 매기기 위해 (group, model) 그레인으로 조회하고 응답은
+// 예전처럼 model 단위다 — compareRows가 같은 (group, model)의 cur/prev를 짝지어 접는다.
+test("compareRows pairs current/previous rows per (group, model) and folds them onto model", () => {
+  const cur = [
+    { group: "bedrock", model: "claude-opus-5", reported_cost: 1, input_tokens: 10, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000, cost: 6.25, unpriced: false, cache_write_ttl: "5m", cache_write_cost: 6.25 },
+    { group: "enterprise", model: "claude-opus-5", reported_cost: 2, input_tokens: 20, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000, cost: 10, unpriced: false, cache_write_ttl: "1h", cache_write_cost: 10 },
+  ];
+  const prev = [
+    { group: "bedrock", model: "claude-opus-5", reported_cost: 3, input_tokens: 5, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cost: 0.000025, unpriced: false, cache_write_ttl: "5m", cache_write_cost: 0 },
+    // 이전 창에만 있는 미산정 모델 — cost/prev_cost 모두 null, unpriced true
+    { group: "bedrock", model: "titan-text-lite", reported_cost: 0, input_tokens: 7, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cost: null, unpriced: true, cache_write_ttl: null, cache_write_cost: null },
+  ];
+  const rows = compareRows(cur, prev);
+  assert.equal(rows.length, 2);
+  const opus = rows.find((r) => r.model === "claude-opus-5");
+  assert.equal(opus.cost, 16.25); // 6.25(bedrock 5m) + 10(enterprise 1h)
+  assert.equal(opus.prev_cost, 0.000025);
+  assert.deepEqual([opus.input_tokens, opus.prev_input_tokens, opus.reported_cost, opus.prev_reported_cost], [30, 5, 3, 3]);
+  assert.equal(opus.cache_write_ttl, "mixed");
+  assert.equal(opus.unpriced, false);
+  assert.equal("group" in opus, false); // model 단위 응답에 그룹이 새면 오해를 부른다
+  const titan = rows.find((r) => r.model === "titan-text-lite");
+  assert.deepEqual([titan.cost, titan.prev_cost, titan.unpriced, titan.prev_input_tokens], [null, null, true, 7]);
 });

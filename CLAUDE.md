@@ -98,7 +98,9 @@ LICENSE              - Proprietary, all rights reserved (ADR-004…007 era decis
   per-process counter resets is recorded in `docs/decisions/ADR-003-*.md`. The 2026-09-03
   production-readiness decision set is ADR-004 (Basic Auth baseline + SSO path, self sign-up
   stays off), ADR-005 (outbound alerting), ADR-006 (PII masking baseline) and ADR-007
-  (Korean-first UI).
+  (Korean-first UI). ADR-008 (2026-09-09) is the per-group, per-instant cache-write TTL
+  pricing policy — the measured +17.72% Bedrock overstatement and why the fix is a policy in
+  `pricing.js` rather than promoting Claude Code's self-reported `cost.usage`.
 - **bedrock/enterprise grouping is session-scoped**, not user-scoped — one user can straddle
   both in different sessions. See `dashboard/server/grouping.js` for the heuristic and its
   measured edge cases.

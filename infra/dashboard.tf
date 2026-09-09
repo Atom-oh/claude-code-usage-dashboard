@@ -73,6 +73,29 @@ variable "pricing_cache_write_ttl" {
   }
 }
 
+# 그룹별 캐시 쓰기 TTL 정책(ADR-008). null이면 서버 내장 정책(bedrock 5m / enterprise 1h, 전역
+# 변수가 있으면 그 값). 값은 단일 티어("1h"/"5m") 또는 전환 스케줄 "5m,2026-09-09T00:00:00Z=1h" —
+# 전환 시각은 타임존 명시 + UTC 정각이어야 서버가 기동한다(pricing.js parseCacheWriteTtlSchedule).
+# 두 validation의 정규식은 서버 파서와 같은 형태만 통과시킨다(정각은 :00:00으로 강제, 순서/중복은
+# 서버가 검사). variable validation은 자기 변수만 참조할 수 있어 locals로 빼지 못하고 두 번 적는다.
+variable "pricing_cache_write_ttl_bedrock" {
+  type    = string
+  default = null
+  validation {
+    condition     = var.pricing_cache_write_ttl_bedrock == null || can(regex("^(1h|5m)(,[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:00:00(Z|[+-][0-9]{2}:[0-9]{2})=(1h|5m))*$", var.pricing_cache_write_ttl_bedrock))
+    error_message = "pricing_cache_write_ttl_bedrock must be \"1h\", \"5m\" or a schedule like \"5m,2026-09-09T00:00:00Z=1h\" (hour-aligned, timezone-explicit instants)."
+  }
+}
+
+variable "pricing_cache_write_ttl_enterprise" {
+  type    = string
+  default = null
+  validation {
+    condition     = var.pricing_cache_write_ttl_enterprise == null || can(regex("^(1h|5m)(,[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:00:00(Z|[+-][0-9]{2}:[0-9]{2})=(1h|5m))*$", var.pricing_cache_write_ttl_enterprise))
+    error_message = "pricing_cache_write_ttl_enterprise must be \"1h\", \"5m\" or a schedule like \"1h,2026-10-01T00:00:00Z=5m\" (hour-aligned, timezone-explicit instants)."
+  }
+}
+
 resource "kubernetes_secret" "dashboard_basic_auth" {
   metadata {
     name      = "dashboard-basic-auth"
@@ -269,6 +292,20 @@ resource "kubernetes_deployment_v1" "dashboard" {
             for_each = var.pricing_cache_write_ttl == null ? [] : [var.pricing_cache_write_ttl]
             content {
               name  = "PRICING_CACHE_WRITE_TTL"
+              value = env.value
+            }
+          }
+          dynamic "env" {
+            for_each = var.pricing_cache_write_ttl_bedrock == null ? [] : [var.pricing_cache_write_ttl_bedrock]
+            content {
+              name  = "PRICING_CACHE_WRITE_TTL_BEDROCK"
+              value = env.value
+            }
+          }
+          dynamic "env" {
+            for_each = var.pricing_cache_write_ttl_enterprise == null ? [] : [var.pricing_cache_write_ttl_enterprise]
+            content {
+              name  = "PRICING_CACHE_WRITE_TTL_ENTERPRISE"
               value = env.value
             }
           }
