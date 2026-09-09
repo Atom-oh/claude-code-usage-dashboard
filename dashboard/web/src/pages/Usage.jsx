@@ -5,6 +5,8 @@ import { Card, Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { useGroupsShown } from "../useGroupsShown.js";
+import { useConfig } from "../ConfigContext.jsx";
+import { decisionLabel } from "../labels.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const pct = (ok, total) => (total > 0 ? `${((ok / total) * 100).toFixed(0)}%` : "—");
@@ -25,6 +27,19 @@ const SOURCE_LABEL = { config: "설정 사전 허용", user_temporary: "매번 �
 const sourceLabel = (v) => SOURCE_LABEL[v] ?? v;
 const SKILL_TRIGGER_LABEL = { "user-slash": "슬래시 커맨드 호출", "claude-proactive": "자동 발동", "nested-skill": "다른 Skill에서 호출" };
 const skillTriggerLabel = (v) => SKILL_TRIGGER_LABEL[v] ?? v;
+// 2026-09-09 — tool_result의 decision_source는 위 SOURCE_LABEL(tool_decision의 source)과
+// 이벤트가 다르고 값 집합도 다르다(hook이 추가로 있다) — 한 맵으로 합치면 어느 이벤트의
+// 라벨인지 알 수 없어져 따로 둔다. 매핑되지 않은 값은 그대로 통과시킨다.
+const DECISION_SOURCE_LABEL = {
+  config: "설정 자동 승인",
+  user_temporary: "사용자(1회)",
+  user_permanent: "사용자(항상)",
+  hook: "훅",
+};
+const decisionSourceLabel = (v) => DECISION_SOURCE_LABEL[v] ?? v;
+// app.entrypoint의 빈 값은 서버가 'terminal'로 바꿔 내려준다(queries.js entrypointBreakdown).
+const ENTRYPOINT_LABEL = { vscode: "VS Code 확장", terminal: "터미널" };
+const entrypointLabel = (v) => ENTRYPOINT_LABEL[v] ?? v;
 
 // group을 카드 제목으로 좌우 분리해 보여주므로 테이블 안에서는 그룹 컬럼을 뺀다.
 const TOOL_MCP_COLUMNS = [
@@ -122,8 +137,47 @@ const COMPACTION_COLUMNS = [
   { key: "avg_compression_ratio", label: "평균 압축률", render: ratioPct0, toText: ratioPct0 },
 ];
 
+// 2026-09-09 — 프로젝트/권한모드/승인출처/진입점. 넷 다 그룹당 행이 적어 group 컬럼 하나로
+// 합친다(MCP_HEALTH_COLUMNS와 같은 판단). 비용 컬럼의 라벨이 "Claude Code 보고 비용"인 이유는
+// SKILL_COLUMNS와 같다 — 토큰×단가 계산 비용이 아니라 클라이언트가 보고한 값이고, Claude Code
+// 버전에 따라 달라진다(실측 2026-09-03).
+const PROJECT_COLUMNS = [
+  { key: "group", label: "채널" },
+  { key: "project", label: "프로젝트" },
+  { key: "cost_usd", label: "Claude Code 보고 비용 ($)", render: (v) => Number(v).toFixed(2) },
+  { key: "tokens", label: "토큰", render: fmt },
+  { key: "sessions", label: "세션", render: fmt },
+  { key: "users", label: "사용자", render: fmt },
+];
+
+const PERMISSION_MODE_COLUMNS = [
+  { key: "group", label: "채널" },
+  { key: "from_mode", label: "이전 모드" },
+  { key: "to_mode", label: "변경 모드" },
+  { key: "changes", label: "횟수", render: fmt },
+  { key: "sessions", label: "세션", render: fmt },
+];
+
+const DECISION_SOURCE_COLUMNS = [
+  { key: "group", label: "채널" },
+  { key: "decision_source", label: "승인 출처", render: decisionSourceLabel, toText: decisionSourceLabel },
+  { key: "decision_type", label: "결정", render: decisionLabel, toText: decisionLabel },
+  { key: "tool_results", label: "건수", render: fmt },
+  { key: "share", label: "비율", render: pct0, toText: pct0 },
+];
+
+const ENTRYPOINT_COLUMNS = [
+  { key: "group", label: "채널" },
+  { key: "entrypoint", label: "진입점", render: entrypointLabel, toText: entrypointLabel },
+  { key: "requests", label: "요청", render: fmt },
+  { key: "sessions", label: "세션", render: fmt },
+  { key: "users", label: "사용자", render: fmt },
+  { key: "cost_usd", label: "Claude Code 보고 비용 ($)", render: (v) => Number(v).toFixed(2) },
+];
+
 export default function Usage() {
   const shownGroups = useGroupsShown();
+  const { schema } = useConfig();
   const toolMcp = useApi("/api/usage/tool-mcp");
   const toolDecisions = useApi("/api/usage/tool-decisions");
   const skills = useApi("/api/usage/skills");
@@ -136,11 +190,49 @@ export default function Usage() {
   const commands = useApi("/api/usage/commands");
   const hookOverhead = useApi("/api/usage/hook-overhead");
   const mcpHealth = useApi("/api/usage/mcp-health");
+  const entrypoints = useApi("/api/usage/entrypoints");
+  const permissionModes = useApi("/api/usage/permission-modes");
+  const decisionSources = useApi("/api/usage/decision-sources");
+  // 훅은 조건부로 호출할 수 없으므로 항상 부르고 렌더만 가린다 — 005 미적용 클러스터에서는
+  // 서버가 즉시 빈 배열을 돌려준다(index.js의 projectColumns 게이트).
+  const projects = useApi("/api/usage/projects");
 
   return (
     <div>
       <PageHeader title="Usage" subtitle="Tool, MCP 커넥터, Skill 사용 현황" right={<RangePicker />} />
       <div className="p-8 flex flex-col gap-4">
+        {entrypoints.loading ? (
+          <Loading />
+        ) : entrypoints.error ? (
+          <ErrorBox error={entrypoints.error} />
+        ) : (
+          <DataTable
+            title="진입점"
+            subtitle="Claude Code를 어디서 실행했는지"
+            help="api_request 이벤트의 app.entrypoint 속성 기준입니다. 이 속성이 비어 있는 세션은 터미널로 표시합니다. 비용은 Claude Code가 이벤트에 실어 보낸 보고값이라 Claude Code 버전에 따라 차이가 날 수 있습니다."
+            columns={ENTRYPOINT_COLUMNS}
+            rows={entrypoints.data || []}
+            exportName="usage_entrypoints"
+          />
+        )}
+
+        {schema?.projectColumns === true ? (
+          projects.loading ? (
+            <Loading />
+          ) : projects.error ? (
+            <ErrorBox error={projects.error} />
+          ) : (
+            <DataTable
+              title="프로젝트별 사용"
+              subtitle="project.name 리소스 속성 기준"
+              help="저장소별 설정이 OTEL_RESOURCE_ATTRIBUTES에 project.name을 심은 세션만 이름이 붙습니다. 태그가 없는 세션은 (untagged) 행으로 묶입니다. 프로젝트 필터는 이름이 정확히 일치할 때만 적용됩니다. 비용은 Claude Code가 보고한 값으로, Claude Code 버전에 따라 차이가 날 수 있습니다."
+              columns={PROJECT_COLUMNS}
+              rows={projects.data || []}
+              exportName="usage_projects"
+            />
+          )
+        ) : null}
+
         {toolMcp.loading ? (
           <Loading />
         ) : toolMcp.error ? (
@@ -179,6 +271,36 @@ export default function Usage() {
               />
             ))}
           </div>
+        )}
+
+        {permissionModes.loading ? (
+          <Loading />
+        ) : permissionModes.error ? (
+          <ErrorBox error={permissionModes.error} />
+        ) : (
+          <DataTable
+            title="권한 모드 전환"
+            subtitle="세션 도중 권한 모드를 바꾼 횟수"
+            help="permission_mode_changed 이벤트 기준입니다. 이전 모드와 변경 모드는 Claude Code가 보고한 값을 그대로 보여줍니다(plan, auto, bypassPermissions 등)."
+            columns={PERMISSION_MODE_COLUMNS}
+            rows={permissionModes.data || []}
+            exportName="usage_permission_modes"
+          />
+        )}
+
+        {decisionSources.loading ? (
+          <Loading />
+        ) : decisionSources.error ? (
+          <ErrorBox error={decisionSources.error} />
+        ) : (
+          <DataTable
+            title="도구 승인 출처"
+            subtitle="도구 실행이 어떤 승인 경로로 진행됐는지"
+            help="tool_result 이벤트의 decision_source 속성 기준이며, 그 속성이 없는 실행은 제외합니다. 비율은 같은 채널 안에서의 비중입니다. 설정 자동 승인은 사용자를 멈추지 않고 실행된 경우, 사용자(1회)는 그때마다 확인을 받은 경우, 사용자(항상)는 사용자가 항상 허용으로 등록한 경우, 훅은 훅이 결정한 경우입니다."
+            columns={DECISION_SOURCE_COLUMNS}
+            rows={decisionSources.data || []}
+            exportName="usage_decision_sources"
+          />
         )}
 
         {toolLatency.loading ? (
