@@ -83,8 +83,8 @@ PROMPT_EOF
 # step/용도에도 쓰일 수 있고, repo 마다 다르게 고정돼 있을 수 있어(예: 아직
 # opus-4-8 로 고정된 repo) 그대로 재사용하면 PRIMARY==FALLBACK 으로 붕괴해
 # fallback 자체가 무력화된다. chair 전용 CHAIR_PRIMARY_MODEL 로 완전히 분리.
-PRIMARY_MODEL="${CHAIR_PRIMARY_MODEL:-us.anthropic.claude-fable-5}"
-FALLBACK_MODEL="${CHAIR_FALLBACK_MODEL:-us.anthropic.claude-opus-5}"
+PRIMARY_MODEL="${CHAIR_PRIMARY_MODEL:-global.anthropic.claude-fable-5-1}"
+FALLBACK_MODEL="${CHAIR_FALLBACK_MODEL:-global.anthropic.claude-opus-5}"
 # 300s(패널 PANEL_TIMEOUT) 보다 짧으면 정상 응답도 강제 종료된다 — 실측 근거:
 # oh-my-cloud-skills #105, 이 repo 의 러너에서 무타임아웃 chair가 357줄 diff
 # 종합에 286s를 정상 소요. 매트릭스(4→16 패널 출력)는 체어 입력이 더 커 286s
@@ -92,9 +92,10 @@ FALLBACK_MODEL="${CHAIR_FALLBACK_MODEL:-us.anthropic.claude-opus-5}"
 CHAIR_TIMEOUT="${CHAIR_TIMEOUT:-600}"
 
 chair_label() { case "$1" in
-  *fable-5*)  echo "Claude Fable 5" ;;
-  *opus-5*)   echo "Claude Opus 5" ;;
-  *)          echo "$1" ;;
+  *fable-5-1*) echo "Claude Fable 5.1" ;;
+  *fable-5*)   echo "Claude Fable 5" ;;
+  *opus-5*)    echo "Claude Opus 5" ;;
+  *)           echo "$1" ;;
 esac ; }
 
 run_chair() {  # $1=model → "$OUT" 에 기록(scrub 통과). claude 실패해도 || true 로 계속.
