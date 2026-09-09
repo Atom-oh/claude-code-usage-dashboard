@@ -223,6 +223,11 @@ if [ -n "$FORCED_USER_EMAIL" ]; then
   RESOURCE_ATTRS="${RESOURCE_ATTRS},user.email=${FORCED_USER_EMAIL}"
 fi
 
+# project.name은 여기서 넣지 않는다 — 인스턴스 단위가 아니라 저장소 단위 값이라 한 인스턴스가
+# 여러 저장소를 오가면 틀린 태그가 붙는다. 다만 이 파일이 managed-settings.json으로
+# OTEL_RESOURCE_ATTRIBUTES를 소유하므로 저장소별 .claude/settings.json은 이 플릿에서 무효다
+# (프로젝트 값이 문자열 전체를 교체하지만 managed가 프로젝트를 이긴다) — 주입 방법과 운영자가
+# 골라야 하는 두 선택지는 README §Telemetry Ingestion의 'Project tag (project.name)' 참고.
 cat > /etc/claude-code/managed-settings.json <<EOF
 {
   "env": {
