@@ -15,7 +15,9 @@
 `clickhouse-migration-004.sql`, which also backfills rows for `002` and `003` — migrations
 that predate the ledger and were previously verifiable only by inspecting column metadata by
 hand. `dashboard/server/schema.js`'s `probeMigrations()` reads the table and surfaces the
-result at `GET /api/config`'s `schema.migrations`.
+result at `GET /api/config`'s `schema.migrations`. As of 2026-09-09 the newest migration is
+`005` (`clickhouse-migration-005.sql`, the `project.name`/`app.entrypoint` promoted
+columns), so a fully migrated cluster reports `[2, 3, 4, 5]`.
 
 ## When to Use
 - Before and after applying any `clickhouse-migration-NNN.sql`, to confirm what a cluster
@@ -126,6 +128,21 @@ that the migration's actual DDL was reverted by some other means first.
   `claude_code.cost.usage` rows, not the ledger) and remains the source of truth for the
   `--resume` lower-bound cost note — the ledger tells you which files ran, that probe tells
   you which behavior is actually in effect on live data.
+- **`005` deliberately runs no `MATERIALIZE COLUMN`.** Its two columns are a single
+  map lookup, and a part that predates the `ADD COLUMN` still evaluates the default
+  expression at read time (measured 2026-09-09 on
+  `clickhouse/clickhouse-server:24.8.14.39`: zero mismatches against the map lookup on
+  pre-`ALTER` parts) — unlike `002`/`003`, whose columns were either expensive to compute
+  inline or read by the rollup backfill. Consequence for this runbook: `005` leaves **no
+  pending mutation**, so the `system.mutations ... is_done = 0` guard a future migration
+  may carry is unaffected by it.
+- **`005` touches `otel_traces`, which may not exist on an older cluster.** An
+  `ALTER` against a missing table fails with `Code: 60 UNKNOWN_TABLE` and
+  `--multiquery` aborts there, so the ledger `INSERT` at the end of the file would never
+  run. Check
+  `SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_traces';`
+  first; if it is `0`, run the file's §1, §2 and §4 only — §4's guard accepts a cluster
+  with no traces table.
 
 ---
 
@@ -139,7 +156,9 @@ that the migration's actual DDL was reverted by some other means first.
 만들면서 `002`와 `003`의 적용 여부도 함께 소급 기록합니다 — 이 두 마이그레이션은 원장이
 생기기 전이라, 그전까지는 컬럼 메타데이터를 직접 뒤져야만 확인할 수 있었습니다.
 `dashboard/server/schema.js`의 `probeMigrations()`가 이 테이블을 읽어 `GET /api/config`의
-`schema.migrations`로 결과를 내보냅니다.
+`schema.migrations`로 결과를 내보냅니다. 2026-09-09 기준 최신 마이그레이션은
+`005`(`clickhouse-migration-005.sql`, `project.name`/`app.entrypoint` 승격 컬럼)이므로,
+전부 적용된 클러스터는 `[2, 3, 4, 5]`를 보고합니다.
 
 ## 사용 시점
 - `clickhouse-migration-NNN.sql`을 적용하기 전/후 — 클러스터가 이미 뭘 갖고 있는지, 새 파일이
@@ -247,3 +266,16 @@ ALTER TABLE claude_code.schema_migrations DELETE WHERE version = N;
   **별개의, 데이터 기반 프로브**입니다(원장이 아니라 최근 `claude_code.cost.usage` 행을
   읽습니다). 원장은 어느 파일이 실행됐는지를 알려주고, 이 프로브는 실제 데이터에서 어느
   동작이 지금 적용 중인지를 알려줍니다.
+- **`005`는 의도적으로 `MATERIALIZE COLUMN`을 실행하지 않습니다.** 두 컬럼은 맵 키 한 번
+  조회이고, `ADD COLUMN` 이전에 만들어진 파트에서도 default 표현식이 읽기 시점에 평가되어
+  정확한 값이 나옵니다(실측 2026-09-09, `clickhouse/clickhouse-server:24.8.14.39`:
+  pre-`ALTER` 파트 전수 비교에서 맵 조회 값과 mismatch 0) — 컬럼 식이 비쌌거나 롤업 백필이
+  그 값을 읽어야 해서 MATERIALIZE를 돌린 `002`/`003`과 다른 점입니다. 이 런북에 중요한
+  귀결: `005`는 **미완료 mutation을 남기지 않으므로**, 앞으로의 마이그레이션이 들고 있을 수
+  있는 `system.mutations ... is_done = 0` 가드에 영향을 주지 않습니다.
+- **`005`는 `otel_traces`를 건드리는데, 오래된 클러스터에는 그 테이블이 없을 수 있습니다.**
+  없는 테이블에 `ALTER`를 걸면 `Code: 60 UNKNOWN_TABLE`로 실패하고 `--multiquery`가 거기서
+  abort해 파일 끝의 원장 `INSERT`가 결코 실행되지 않습니다. 먼저
+  `SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_traces';`
+  를 확인하고, `0`이면 파일의 §1·§2·§4만 실행하세요 — §4의 가드가 트레이스 테이블이 없는
+  클러스터를 허용합니다.

@@ -12,6 +12,14 @@
 -- =============================================================================
 
 
+-- 2026-09-09 (migration-005): otel_metrics_sum / otel_logs / otel_traces에 promoted 컬럼
+-- ProjectName(ResourceAttributes['project.name'])과 Entrypoint(각각 Attributes /
+-- LogAttributes / SpanAttributes의 'app.entrypoint')가 추가됐다. 이 파일의 패널은 아직 두
+-- 컬럼을 쓰지 않는다 — 프로젝트별/진입점별 분해는 대시보드 API 쪽(queries.js의
+-- projectBreakdown / entrypointBreakdown)에만 있다. 여기 적어두는 이유는 CLAUDE.md의
+-- "promoted 컬럼이 바뀌면 이 파일도 갱신" 규칙이 컬럼 목록의 동기화를 요구하기 때문이다.
+
+
 -- 【패널 1】그룹별 KPI 요약 (Stat 패널, 표 형태)
 -- 세션/유저/커밋/PR/토큰/추가라인
 -- agents_view는 `claude agents` 대시보드 프로세스 실행이라 대화 세션이 아니다 — 세션 카운트에
