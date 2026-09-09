@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel } from "./queries.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel, UNTAGGED_PROJECT } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 import { GROUP_CTE } from "./grouping.js";
 
@@ -210,4 +212,61 @@ test("bedrock-evidence rule truth table over the live model roster", () => {
   // Enterprise 스타일(bare claude-*, [1m] 컨텍스트 접미사 포함)과 빈 값은 bedrock 증거가 아니다
   for (const m of ["claude-sonnet-5", "claude-fable-5[1m]", "claude-haiku-4-5-20251001", "claude-fable-5-1", "claude-opus-4-8", ""])
     assert.ok(!isBedrockEvidence(m), `${m || "(empty)"} must NOT count as bedrock evidence`);
+});
+
+// project 필터는 정확 일치다 — 부분일치면 'api'가 'api-gateway'까지 잡아 프로젝트별 비교가
+// 무의미해진다. cols.project를 안 넘긴 쿼리에는 아예 적용되지 않아야 한다(그 테이블에 컬럼이
+// 없을 수 있다).
+test("filterCond applies project as an exact match only when cols.project is given", () => {
+  const f = filterCond({ project: "repo-a" }, { project: "m.ProjectName" });
+  assert.match(f.where, /m\.ProjectName = \{fProject:String\}/);
+  assert.strictEqual(f.params.fProject, "repo-a");
+  assert.doesNotMatch(f.where, /positionCaseInsensitive\(m\.ProjectName/);
+
+  const noCol = filterCond({ project: "repo-a" }, { group: "grp" });
+  assert.doesNotMatch(noCol.where, /fProject/);
+  assert.strictEqual(noCol.params.fProject, undefined);
+});
+
+// '(untagged)'는 projectBreakdown이 ProjectName='' 행에 붙이는 표시용 라벨이다. 사용자가 표에서
+// 그 값을 그대로 복사해 필터에 넣는 경로가 실제로 있으므로, 저장된 값('')으로 되돌려야 0행이
+// 되지 않는다.
+test("filterCond maps the (untagged) display label back to the stored empty string", () => {
+  assert.strictEqual(UNTAGGED_PROJECT, "(untagged)");
+  const f = filterCond({ project: UNTAGGED_PROJECT }, { project: "m.ProjectName" });
+  assert.strictEqual(f.params.fProject, "");
+  assert.match(f.where, /m\.ProjectName = \{fProject:String\}/);
+});
+
+// 2026-09-09 신규 쿼리 4개는 실행하려면 라이브 ClickHouse가 필요해 단위 테스트로 값을 볼 수
+// 없다. 대신 이 저장소가 실제로 겪은 두 가지 회귀를 소스 텍스트로 고정한다: (1) 누적 카운터를
+// 직접 합산하는 것(CLAUDE.md의 100x+ 과대집계), (2) 프로젝트 그레인을 시간별 롤업에서 읽으려
+// 하는 것(005는 롤업을 건드리지 않으므로 ProjectName이 거기 없다).
+test("the 2026-09-09 query block diffs cumulative counters and never reads the hourly rollup", () => {
+  const src = readFileSync(fileURLToPath(new URL("./queries.js", import.meta.url)), "utf8");
+  const marker = "// 2026-09-09 추가 패널";
+  const at = src.indexOf(marker);
+  assert.ok(at > 0, "expected the 2026-09-09 section banner in queries.js");
+  const section = src.slice(at);
+
+  // 세션-경계 diff 공식(incFlat/versionCohortCost와 같은 형태)이 그대로 있어야 한다.
+  assert.ok(
+    section.includes("greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0)"),
+    "projectBreakdown must keep the session-boundary diff formula"
+  );
+  // 누적 값(Value)을 그대로 합산하는 형태가 없어야 한다 — 합산 대상은 diff 결과(inc)뿐이다.
+  assert.doesNotMatch(section, /sumIf\(\s*m\.Value/, "never sum cumulative Value directly");
+  assert.doesNotMatch(section, /\bsum\(\s*m\.Value/, "never sum cumulative Value directly");
+  // 프로젝트 그레인은 원본 테이블에서만 나온다.
+  assert.ok(section.includes("FROM claude_code.otel_metrics_sum\n"), "projectBreakdown must read the raw table");
+  assert.doesNotMatch(section, /otel_metrics_sum_hourly/, "the rollup carries no ProjectName (005 leaves it alone)");
+});
+
+// 라우트 4개가 import하는 이름이라 export가 빠지면 서버가 부팅 시 죽는다(index.js의 `q.*`는
+// 런타임 참조라 조용히 undefined가 되고 첫 요청에서 500이 된다).
+test("the four 2026-09-09 query functions are exported", async () => {
+  const q = await import("./queries.js");
+  for (const name of ["projectBreakdown", "permissionModeChanges", "toolDecisionSources", "entrypointBreakdown"]) {
+    assert.strictEqual(typeof q[name], "function", `${name} must be exported as a function`);
+  }
 });
