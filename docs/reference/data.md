@@ -58,6 +58,26 @@ not the doc's.
   sync, but **not** retrofitted into the ~90 pre-existing `UserEmail` references (`userLeaderboard`
   and friends) — see the `incFlat`/`incBucketed` note below for why.
 
+### 1c. 2026-09-09 project tag + entrypoint
+- `clickhouse-migration-005.sql` adds two promoted columns to all three tables: `ProjectName`
+  (`ResourceAttributes['project.name']`) and `Entrypoint` (`app.entrypoint`, read from
+  `Attributes` on `otel_metrics_sum`, `LogAttributes` on `otel_logs`, `SpanAttributes` on
+  `otel_traces`). The hourly rollup is untouched — project is not an `incFlat` dimension.
+- 005 deliberately runs no `MATERIALIZE COLUMN`, unlike 002/003: both columns are a single
+  map-key lookup, and a part that predates the `ADD COLUMN` still evaluates the default
+  expression at read time (measured 2026-09-09 on `clickhouse/clickhouse-server:24.8.14.39`:
+  zero mismatches against the map lookup across all pre-`ALTER` parts).
+- Four new endpoints: `/api/usage/projects` (`projectBreakdown` — returns `[]` unless
+  `GET /api/config` reports `schema.projectColumns === true`), `/api/usage/permission-modes`
+  (`permissionModeChanges`), `/api/usage/decision-sources` (`toolDecisionSources`), and
+  `/api/usage/entrypoints` (`entrypointBreakdown`). The project grain comes from the raw
+  table via a self-contained session-boundary local diff subquery, not the rollup (ADR-001 —
+  the rollup carries no `ProjectName`).
+- `project.name` is never emitted by Claude Code itself — an operator has to inject it via
+  `OTEL_RESOURCE_ATTRIBUTES`, and on this fleet `managed-settings.json` owns that variable,
+  so per-repo `.claude/settings.json` is inert until the operator picks an ownership model —
+  see README → Telemetry Ingestion → "Project tag (project.name)".
+
 ### 3. Key Decisions
 - **Cumulative counters, diffed at query time** -- Claude Code exports session-cumulative
   values every ~30s; summing raw `Value` overcounts by orders of magnitude. `incFlat`/
@@ -158,6 +178,26 @@ beta로 추가된 `otel_traces`)에 쌓이며, hot/cold 스토리지 정책(로�
   `grafana-ab-queries.sql`과 이번 동기화에서 추가한 `dashboard/server/queries.js` 신규
   함수에는 적용했지만, 기존 `UserEmail` 참조 ~90곳(`userLeaderboard` 등)에는 **적용하지
   않았다** — 이유는 아래 `incFlat`/`incBucketed` 항목 참고.
+
+### 1c. 2026-09-09 프로젝트 태그 + 진입점
+- `clickhouse-migration-005.sql`이 세 테이블 전부에 승격 컬럼 두 개를 추가한다: `ProjectName`
+  (`ResourceAttributes['project.name']`)과 `Entrypoint`(`app.entrypoint` — `otel_metrics_sum`
+  은 `Attributes`, `otel_logs`는 `LogAttributes`, `otel_traces`는 `SpanAttributes`에서 읽음).
+  시간별 롤업은 건드리지 않는다 — project는 `incFlat` 차원이 아니다.
+- 005는 002/003과 달리 `MATERIALIZE COLUMN`을 일부러 돌리지 않는다: 두 컬럼 모두 맵 키 한 번
+  조회라, `ADD COLUMN` 이전에 만들어진 파트에서도 읽기 시점에 default 표현식이 평가되어
+  정확한 값이 나온다(실측 2026-09-09, `clickhouse/clickhouse-server:24.8.14.39`: pre-`ALTER`
+  파트 전수 비교에서 맵 조회 값과 mismatch 0).
+- 신규 엔드포인트 4개: `/api/usage/projects`(`projectBreakdown` — `GET /api/config`의
+  `schema.projectColumns === true`가 아니면 `[]` 반환), `/api/usage/permission-modes`
+  (`permissionModeChanges`), `/api/usage/decision-sources`(`toolDecisionSources`),
+  `/api/usage/entrypoints`(`entrypointBreakdown`). 프로젝트 그레인은 롤업이 아니라 원본
+  테이블 + 자기완결 세션-경계 로컬 diff 서브쿼리에서 나온다(ADR-001 — 롤업에는
+  `ProjectName`이 없다).
+- `project.name`은 Claude Code가 스스로 내보내지 않는다 — 운영자가 `OTEL_RESOURCE_ATTRIBUTES`
+  로 심어야 하고, 이 플릿에서는 `managed-settings.json`이 그 변수를 소유하므로 저장소별
+  `.claude/settings.json`은 운영자가 소유권 방식을 정하기 전까지 무효다 — README →
+  Telemetry Ingestion → "Project tag (project.name)" 참고.
 
 ### 3. 주요 결정
 - **누적 카운터를 쿼리 시점에 diff** -- Claude Code는 ~30초마다 세션 누적값을 export합니다.
