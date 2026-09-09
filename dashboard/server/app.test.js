@@ -90,3 +90,27 @@ test("healthz는 200, ClickHouse가 죽어 있으면 readyz는 503", async () =>
   assert.equal((await fetch(`${base}/healthz`)).status, 200);
   assert.equal((await fetch(`${base}/readyz`)).status, 503);
 });
+
+// 2026-09-09 — /api/usage/projects의 005 게이트(호스트 추가). 이 파일의 CH_URL은 닫힌 포트라
+// projectColumns 프로브가 null로 접히고, 그 상태에서 이 라우트는 ClickHouse를 아예 만지지 않고
+// 빈 배열을 돌려줘야 한다. 게이트가 없으면 005 미적용 클러스터에서 이 라우트가 500이 되고
+// (실측 2026-09-09: code 47 UNKNOWN_IDENTIFIER), 500 하나가 Usage 페이지의 다른 카드까지
+// 못 그리게 만든다. 형제 라우트가 같은 환경에서 500인 것이 대조군이다 — 위 200이 "라우트가
+// 등록만 되고 아무 일도 안 한다"가 아니라 게이트가 동작한 결과임을 그것만이 보여준다.
+test("/api/usage/projects는 005 프로브가 true가 아니면 ClickHouse를 만지지 않고 빈 배열을 준다", async () => {
+  const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
+  const r = await fetch(`${base}/api/usage/projects?${range}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await r.json(), []);
+  const sibling = await fetch(`${base}/api/usage/entrypoints?${range}`);
+  assert.equal(sibling.status, 500, "게이트 없는 형제 라우트는 접속 불가라 500이어야 한다(대조군)");
+});
+
+// 프론트(FilterBar 입력창, Usage의 프로젝트 카드)가 이 키에 렌더를 걸고 있으므로, 키가 사라지면
+// 두 소비자가 조용히 "적용 안 됨"으로 굳는다. 값 자체는 이 환경에서 null(프로브 미확정)이다.
+test("/api/config가 schema.projectColumns를 노출한다 (프로브 미확정이면 null)", async () => {
+  const b = await (await fetch(`${base}/api/config`)).json();
+  assert.ok("projectColumns" in b.schema, "schema.projectColumns 키가 있어야 프론트가 게이팅할 수 있다");
+  assert.equal(b.schema.projectColumns, null);
+});

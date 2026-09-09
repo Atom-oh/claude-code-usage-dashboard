@@ -4,13 +4,13 @@ import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import basicAuth from "express-basic-auth";
-import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt } from "./http.js";
+import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping, assertReadonlySession } from "./clickhouse.js";
-import { probeSegmentAwareSeriesKey, probeMigrations } from "./schema.js";
+import { probeSegmentAwareSeriesKey, probeMigrations, probeProjectColumns } from "./schema.js";
 import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./freshness.js";
 import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
@@ -131,12 +131,6 @@ function bucketHours(query, from, to) {
   return clampIntervalHours(parseIntervalHours(query.intervalHours), from, to);
 }
 
-// 전역 필터(group/user/model) — 쿼리 파라미터로 안 오면 undefined라 filterCond()가 그냥 건너뛴다.
-function parseFilters(query) {
-  const { group, user, model } = query;
-  return { group, user, model };
-}
-
 // 짧은 TTL 캐시 — otelcol이 10초(OTEL_METRIC_EXPORT_INTERVAL)마다만 export하므로 그보다 촘촘한
 // 재요청은 어차피 같은 결과다. 실측(2026-07-10): 페이지 하나가 useApi로 7~9개 API를 동시에 쏘면
 // ClickHouse 레플리카가 CPU 경쟁으로 스로틀링돼 응답이 10초 이상으로 늘어짐 — 캐시 히트는 이
@@ -172,14 +166,20 @@ setInterval(() => {
 // 동기 응답을 유지해야 하므로(요청 경로에서 ClickHouse를 만지지 않는다) 부팅 시 한 번 +
 // 10분마다 갱신해 최신값만 들고 있는다. 실패는 null로 접혀 경고 문구가 유지된다(fail-safe).
 // 같은 10분 주기에 스키마 마이그레이션 원장(claude_code.schema_migrations) 조회도 얹는다.
+// 005 컬럼(ProjectName/Entrypoint) 존재 여부도 같은 주기에 얹는다 — 이 값이 project 필터의
+// 게이트이고(http.js parseFilters), /api/usage/projects가 빈 배열로 접히는 조건이다.
 let segmentAwareSeriesKey = null;
 let schemaMigrations = null;
+let projectColumns = null;
 const refreshSchemaProbe = () => {
   probeSegmentAwareSeriesKey().then((v) => {
     segmentAwareSeriesKey = v;
   });
   probeMigrations().then((v) => {
     schemaMigrations = v;
+  });
+  probeProjectColumns().then((v) => {
+    projectColumns = v;
   });
 };
 refreshSchemaProbe();
@@ -235,7 +235,7 @@ if (process.env.ALERT_WEBHOOK_URL) startAlertLoop({ url: process.env.ALERT_WEBHO
 // (Cost 유저 랭킹=기본, Users 계열별 평균=1)가 같은 키를 공유해, 먼저 도착한 쪽의 응답이 다른
 // 쪽에 그대로 나간다(실측: 두 요청이 동일 결과를 반환해 확인). warmer는 기본 뷰만 데우므로
 // includeUnknown=1 뷰는 첫 조회가 콜드다 — 정확성 우선.
-const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "intervalHours", "email", "includeUnknown"];
+const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "project", "intervalHours", "email", "includeUnknown"];
 function cacheKey(path, query) {
   const entries = CACHE_KEY_PARAMS.filter((k) => query[k] !== undefined)
     .sort()
@@ -248,7 +248,7 @@ function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
   let entry = cache.get(key);
   if (!entry || entry.expires < Date.now()) {
     const { from, to } = parseRange(query, RANGE_OPTS);
-    entry = { expires: Date.now() + ttlMs, promise: Promise.resolve(handler(from, to, query, parseFilters(query))) };
+    entry = { expires: Date.now() + ttlMs, promise: Promise.resolve(handler(from, to, query, parseFilters(query, projectColumns))) };
     // 상한 초과 시 가장 오래 전에 삽입된 엔트리부터 제거(Map은 삽입 순서 보존 — 첫 키가 가장 오래됨).
     if (cache.size >= CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value);
     cache.set(key, entry);
@@ -421,6 +421,17 @@ route("/api/usage/hook-overhead", (from, to, _q, filters) => q.hookOverhead(from
 route("/api/usage/mcp-health", (from, to, _q, filters) => q.mcpHealth(from, to, filters));
 route("/api/cost/by-agent", (from, to, _q, filters) => q.agentCost(from, to, filters));
 
+// 2026-09-09 추가 패널 — project.name / app.entrypoint (clickhouse-migration-005.sql).
+// /api/usage/projects는 005 미적용 클러스터에서 빈 배열로 접는다: ProjectName 컬럼이 없으면
+// 쿼리가 UNKNOWN_IDENTIFIER로 죽고, 500 한 번이 페이지의 다른 카드까지 못 그리게 만든다.
+// 나머지 셋은 otel_logs만 읽어 컬럼 유무와 무관하게 동작하므로 게이트가 없다.
+// 넷 다 기본 warm 대상 — 라이브에 데이터가 있는 소스이고, 원본 테이블/로그를 직접 읽는 형제
+// 라우트들(version-cohort-*, cost/effort-mix 등)과 같은 규약이다.
+route("/api/usage/projects", (from, to, _q, filters) => (projectColumns === true ? q.projectBreakdown(from, to, filters) : []));
+route("/api/usage/permission-modes", (from, to, _q, filters) => q.permissionModeChanges(from, to, filters));
+route("/api/usage/decision-sources", (from, to, _q, filters) => q.toolDecisionSources(from, to, filters));
+route("/api/usage/entrypoints", (from, to, _q, filters) => q.entrypointBreakdown(from, to, filters));
+
 // 챗은 Bedrock 호출 + 임의 read-only SELECT라 다른 데이터 API보다 리스크가 높다. 위의
 // AUTH_ALLOW_INSECURE와 같은 규약이지만 플래그는 따로 둔다 — 무인증으로 대시보드를 띄우는
 // 것(AUTH_ALLOW_INSECURE)과 그 상태에서 임의 SELECT를 실행하는 챗까지 켜는 것
@@ -447,7 +458,7 @@ app.get("/api/config", (_req, res) =>
   res.json({
     piiMask: piiMaskEnabled,
     pricing: pricingConfig,
-    schema: { segmentAwareSeriesKey, migrations: schemaMigrations },
+    schema: { segmentAwareSeriesKey, migrations: schemaMigrations, projectColumns },
     groupMode: GROUP_MODE,
     defaultRangeDays: DEFAULT_RANGE_DAYS,
     rangeCapDays: RANGE_CAP_DAYS,

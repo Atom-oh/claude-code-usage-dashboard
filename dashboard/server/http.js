@@ -82,3 +82,16 @@ export function parsePositiveInt(raw, fallback, { min = 1 } = {}) {
   }
   return n;
 }
+
+// 대시보드 전역 필터(group/user/model/project) — 쿼리 파라미터로 안 오면 undefined라
+// queries.js의 filterCond()가 그냥 건너뛴다. index.js에 있던 함수를 여기로 옮겼다: project
+// 분기가 테스트 가능한 순수 판정이라서다.
+// project는 005의 ProjectName 컬럼에 의존한다 — 컬럼이 없는 클러스터에서 그 조건이 SQL에
+// 들어가면 쿼리 전체가 UNKNOWN_IDENTIFIER로 죽으므로, 프로브가 true가 아니면 조용히 버린다.
+// 400이 아닌 이유는 기존 필터 무시 정책과 같다: 링크에 남아 있는 파라미터 하나가 페이지를
+// 통째로 에러로 만들면 안 된다. `=== true`로 비교하는 것이 핵심이다 — 프로브는 true/false/null
+// 삼상태이고 null(확인 못 함)은 적용된 것으로 오인되면 안 된다.
+export function parseFilters(query, projectColumns) {
+  const { group, user, model, project } = query;
+  return { group, user, model, project: projectColumns === true ? project : undefined };
+}
