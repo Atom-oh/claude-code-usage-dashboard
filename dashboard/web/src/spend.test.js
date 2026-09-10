@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { asSpendRow, asSpendRows, sumSpend } from "./spend.js";
 
 test("reported spend replaces view cost without mutating computed diagnostics", () => {
-  const raw = { cost: 7817.28, reported_cost: 6647.79, display_cost: 6647.79, tokens: 1200 };
+  const raw = { cost: 7817.28, reported_cost: 6647.79, tokens: 1200 };
   const view = asSpendRow(raw);
   expect(view.cost).toBe(6647.79);
   expect(view.computed_cost).toBe(7817.28);
@@ -19,10 +19,16 @@ test.each([undefined, null, "", " ", "not a number", NaN, Infinity, -1, "-1", fa
   }
 );
 
-test("explicit unavailable display spend survives a positive reported aggregate", () => {
-  const row = { cost: 99, reported_cost: 7, display_cost: null, reported_cost_status: "partial" };
-  expect(asSpendRow(row)).toMatchObject({ cost: null, computed_cost: 99, reported_cost_status: "partial" });
-  expect(asSpendRow({ ...row, display_cost: 4 }).cost).toBe(4);
+test("a consumer unpriced flag survives a positive reported subtotal", () => {
+  const row = { cost: 99, reported_cost: 7, reported_unpriced: true };
+  expect(asSpendRow(row)).toMatchObject({ cost: null, computed_cost: 99, reported_unpriced: true });
+  expect(asSpendRow({ ...row, reported_unpriced: false }).cost).toBe(7);
+});
+
+test("the frontend selects reported_cost directly and ignores obsolete server display fields", () => {
+  const view = asSpendRow({ cost: 99, reported_cost: 7, display_cost: 4, reported_cost_status: "partial" });
+  expect(view.cost).toBe(7);
+  expect(asSpendRow({ cost: 99, reported_cost: 7 }).display_cost).toBeUndefined();
 });
 
 test.each(["tokens", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"])(
@@ -34,8 +40,8 @@ test.each(["tokens", "input_tokens", "output_tokens", "cache_read_tokens", "cach
 );
 
 test("previous spend uses its own token evidence and never computed previous cost", () => {
-  expect(asSpendRow({ cost: 99, reported_cost: 8, prev_cost: 50, prev_display_cost: 4 }).prev_cost).toBe(4);
-  expect(asSpendRow({ reported_cost: 8, prev_cost: 50, prev_display_cost: null, prev_reported_cost: 4 }).prev_cost).toBeNull();
+  expect(asSpendRow({ cost: 99, reported_cost: 8, prev_cost: 50, prev_reported_cost: 4 }).prev_cost).toBe(4);
+  expect(asSpendRow({ reported_cost: 8, prev_cost: 50, prev_reported_unpriced: true, prev_reported_cost: 4 }).prev_cost).toBeNull();
   expect(asSpendRow({ reported_cost: 8, prev_cost: 50 }).prev_cost).toBeNull();
   expect(asSpendRow({ reported_cost: 8, prev_reported_cost: "4" }).prev_cost).toBe(4);
   expect(asSpendRow({ tokens: 12, reported_cost: 8, prev_reported_cost: 0, prev_tokens: 0 }).prev_cost).toBe(0);
@@ -46,7 +52,7 @@ test("adapted and folded rows can be adapted repeatedly without losing diagnosti
   const rows = [
     { cost: 7817.28, reported_cost: 6647.79, prev_cost: 99, prev_reported_cost: 4 },
     { cost: null, reported_cost: 7 },
-    { cost: 8, reported_cost: 7, display_cost: null, reported_cost_status: "partial" },
+    { cost: 8, reported_cost: 7, reported_unpriced: true },
   ];
   const once = asSpendRows(rows);
   expect(asSpendRows(once)).toEqual(once);

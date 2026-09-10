@@ -2,10 +2,10 @@
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
 // 0.025x인 예외라 값을 명시한다(아래 주석). Bedrock cross-region(us./us-gov./eu./apac./jp./au./
 // global.) 추론 프로파일은 기본 모델과 동일 단가.
-// 캐시 쓰기 TTL 기본값 "1h"는 과거 운영 조사(2026-09-01/02: opus-5 메인 스레드 $10/M)를
-// 바탕으로 유지하는 계산 비용의 진단 가정이다. 모든 요청이나 메인 스레드의 실제 청구 TTL을
-// 보장하지 않으며, 5m·혼합 TTL 요청에는 과대계상할 수 있다. PRICING_CACHE_WRITE_TTL=5m은
-// 대체 계산 가정이고 공급자 TTL 설정을 변경하지 않는다.
+// 캐시 쓰기 TTL 기본값이 "1h"인 이유: Claude Code 메인 대화가 캐시 쓰기 볼륨의 대부분을 차지하고
+// 메인 스레드는 1h TTL로 청구된다(실측 2026-09-01/02: opus-5 메인 스레드 $10/M = 5×2, 5×1.25=$6.25
+// 가 아니었음). haiku/sonnet 보조 호출은 5m TTL을 쓰므로 "1h" 기본값은 보조 호출 비용을 다소
+// 과대계상한다 — 의도된 선택이며 PRICING_CACHE_WRITE_TTL=5m 이 탈출구다.
 // OTel의 token.usage cacheCreation TokenType은 5m/1h 티어를 구분하지 않으므로, 토큰 단위로 어느
 // 티어인지 알 수 없다 — 그래서 위와 같은 명시적 가정이 필요하다.
 // sonnet-5 단가 보정(실측: Claude Enterprise 청구서 대조): 기존 $3/$15 → $2/$10. 구 단가로는
@@ -138,49 +138,6 @@ export function priceFor(model) {
   return PRICING[normalizeModelId(model)] || null;
 }
 
-const hasTokens = (row) =>
-  ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "tokens"].some((key) => Number(row[key]) > 0);
-
-function parseReportedAmount(value) {
-  if (typeof value === "string") {
-    value = value.trim();
-    if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value)) return null;
-    value = Number(value);
-  }
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-export function reportedCost(row, field = "reported_cost") {
-  const amount = parseReportedAmount(row[field]);
-  if (amount === null) return { display_cost: null, reported_cost_status: "unavailable" };
-  // sumIf returns zero when the reported series is absent, so tokens make a zero ambiguous.
-  if (amount === 0 && hasTokens(row)) return { display_cost: null, reported_cost_status: "unverified_zero" };
-  return { display_cost: amount, reported_cost_status: "reported" };
-}
-
-export function sumReportedCost(rows) {
-  let reported = 0;
-  let display = 0;
-  let available = false;
-  let partial = false;
-  for (const row of rows) {
-    reported += parseReportedAmount(row.reported_cost) ?? 0;
-    const selected = Object.hasOwn(row, "display_cost") ? row : reportedCost(row);
-    if (selected.display_cost == null) {
-      if (hasTokens(row) || selected.reported_cost_status === "partial") partial = true;
-    } else {
-      available = true;
-      display += selected.display_cost;
-    }
-  }
-  if (!Number.isFinite(display)) partial = true;
-  return {
-    reported_cost: Number.isFinite(reported) ? reported : null,
-    display_cost: !partial && available ? display : null,
-    reported_cost_status: partial ? "partial" : available ? "reported" : "unavailable",
-  };
-}
-
 // Cost 페이지 "캐시 티어별 지출" 카드용 — costByModel() 같은 행 배열(모델별 4토큰 합계)을 받아
 // 토큰 티어(비캐시 입력/캐시 읽기/캐시 쓰기/출력) 단위로 $ 총합을 묶는다. 단가표에 없는 모델은
 // 조용히 건너뛴다(withComputedCost의 unpriced 플래그와 동일 정책 — 전체가 깨지지 않게).
@@ -207,7 +164,7 @@ export function tierCostsByGroup(rows) {
 }
 
 // rows는 input_tokens/output_tokens/cache_read_tokens/cache_write_tokens를 갖고 있어야 한다.
-// cost(계산 비용, 미산정 모델이면 null) + unpriced와 보고 비용 표시 필드를 추가한다. reported_cost는 그대로 통과.
+// cost(계산 비용, 미산정 모델이면 null) + unpriced 플래그를 추가한다. reported_cost는 그대로 통과.
 export function withComputedCost(rows) {
   return rows.map((r) => {
     const p = priceFor(r.model);
@@ -218,7 +175,7 @@ export function withComputedCost(rows) {
           Number(r.cache_write_tokens) * effectiveCacheWrite(p)) /
         1e6
       : null;
-    return { ...r, cost, unpriced: !p, ...reportedCost(r) };
+    return { ...r, cost, unpriced: !p };
   });
 }
 
@@ -237,7 +194,7 @@ export function rollupComputedCost(rows, keys) {
     if (!acc) {
       acc = {};
       for (const key of keys) acc[key] = r[key];
-      Object.assign(acc, { cost: 0, reportedRows: [], tokens: 0, unpriced_tokens: 0 });
+      Object.assign(acc, { cost: 0, reported_cost: 0, tokens: 0, unpriced_tokens: 0 });
       out.set(k, acc);
     }
     // 드라이버가 집계값을 문자열로 돌려주는 경우가 있어 전부 Number()로 강제한다 — 빠뜨리면
@@ -245,9 +202,9 @@ export function rollupComputedCost(rows, keys) {
     const tokens =
       Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens);
     if (!r.unpriced) acc.cost += Number(r.cost);
-    acc.reportedRows.push(r);
+    acc.reported_cost += Number(r.reported_cost);
     acc.tokens += tokens;
     if (r.unpriced) acc.unpriced_tokens += tokens;
   }
-  return [...out.values()].map(({ reportedRows, ...row }) => ({ ...row, ...sumReportedCost(reportedRows) }));
+  return [...out.values()];
 }

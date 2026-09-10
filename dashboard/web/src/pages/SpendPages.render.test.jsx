@@ -16,8 +16,8 @@ const user = {
 };
 const spend = {
   user: user.user, group: "bedrock", model: "claude-sonnet-5",
-  cost: 7817.28, reported_cost: 6647.79, display_cost: 6647.79,
-  reported_cost_status: "reported", tokens: 1000, unpriced: false,
+  cost: 7817.28, reported_cost: 6647.79,
+  tokens: 1000, unpriced: false,
 };
 
 function mount(path, rows = [spend], costError = false) {
@@ -52,14 +52,14 @@ test("Executive uses reported spend for its totals and narrative", async () => {
 });
 
 test("Executive does not turn an unavailable report into a zero forecast", async () => {
-  const { container } = mount("/exec", [{ ...spend, display_cost: null, reported_cost_status: "partial" }]);
+  const { container } = mount("/exec", [{ ...spend, reported_cost: 0 }]);
   await waitFor(() => expect(container.textContent).toContain("기간 비용은"));
   expect(container.textContent).toContain("기간 비용은 확인 필요");
   expect(container.textContent).not.toContain("30일 기준 $0");
 });
 
 test("Productivity costs include a reported model with no computed price", async () => {
-  mount("/productivity", [{ ...spend, cost: null, unpriced: true, display_cost: 23, reported_cost: 23 }]);
+  mount("/productivity", [{ ...spend, cost: null, unpriced: true, reported_cost: 23 }]);
   const row = await screen.findByRole("row", { name: /example\.com/ });
   expect(within(row).getByText("$23")).toBeTruthy();
   expect(row.textContent).not.toContain("$0");
@@ -80,12 +80,12 @@ test("Productivity cost fetch failure does not render a zero-cost leaderboard", 
 });
 
 test("Users family averages include reported spend independently of pricing coverage", async () => {
-  const { container } = mount("/users", [{ ...spend, cost: null, unpriced: true, display_cost: 23, reported_cost: 23 }]);
+  const { container } = mount("/users", [{ ...spend, cost: null, unpriced: true, reported_cost: 23 }]);
   await waitFor(() => expect(container.textContent).toContain("사용자 1명 · 총 비용 $23"));
 });
 
 test("Users family average is unavailable when one member has missing reported spend", async () => {
-  const { container } = mount("/users", [spend, { ...spend, user: "missing@example.com", display_cost: null }]);
+  const { container } = mount("/users", [spend, { ...spend, user: "missing@example.com", reported_cost: 0 }]);
   await waitFor(() => expect(container.textContent).toContain("보고 비용 확인 필요"));
   expect(container.textContent).not.toContain("총 비용 $7,817");
 });

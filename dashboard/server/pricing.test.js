@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as pricing from "./pricing.js";
 import {
   normalizeModelId,
   priceFor,
@@ -117,66 +116,6 @@ test("withComputedCost flags unpriced models without dropping reported_cost", ()
   assert.equal(row.cost, null);
   assert.equal(row.unpriced, true);
   assert.equal(row.reported_cost, 1.23);
-  assert.equal(row.display_cost, 1.23);
-  assert.equal(row.reported_cost_status, "reported");
-});
-
-test("withComputedCost selects reported spend without replacing computed or raw diagnostics", () => {
-  const input = {
-    model: "claude-opus-5", input_tokens: 0, output_tokens: 0,
-    cache_read_tokens: 0, cache_write_tokens: 1_000_000,
-    reported_cost: "6.25", computed_cost: 10,
-  };
-  const [row] = withComputedCost([input]);
-  assert.equal(row.cost, 10);
-  assert.equal(row.computed_cost, 10);
-  assert.equal(row.reported_cost, "6.25");
-  assert.equal(row.display_cost, 6.25);
-  assert.equal(row.reported_cost_status, "reported");
-  assert.equal(Object.hasOwn(input, "display_cost"), false);
-});
-
-test("reportedCost strictly validates reported values and supports a named field", () => {
-  assert.equal(typeof pricing.reportedCost, "function");
-  for (const value of [undefined, null, "", " \t", NaN, Infinity, -Infinity, -1, "-0.01", "NaN", "Infinity", "1e309", "1usd", "0x10", true, false, [], {}]) {
-    assert.deepEqual(pricing.reportedCost({ reported_cost: value }), {
-      display_cost: null, reported_cost_status: "unavailable",
-    }, `invalid reported value: ${String(value)}`);
-  }
-  assert.deepEqual(pricing.reportedCost({}), { display_cost: null, reported_cost_status: "unavailable" });
-  for (const value of [1.25, "1.25", " 1.25 ", "1.25e0"]) {
-    assert.deepEqual(pricing.reportedCost({ reported_cost: value }), {
-      display_cost: 1.25, reported_cost_status: "reported",
-    });
-  }
-  assert.deepEqual(pricing.reportedCost({ reported_cost: 99, prev_reported_cost: "2.5" }, "prev_reported_cost"), {
-    display_cost: 2.5, reported_cost_status: "reported",
-  });
-});
-
-test("reportedCost accepts zero only when no token column reports positive usage", () => {
-  assert.equal(typeof pricing.reportedCost, "function");
-  for (const field of ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "tokens"]) {
-    assert.deepEqual(pricing.reportedCost({ reported_cost: "0", [field]: "1" }), {
-      display_cost: null, reported_cost_status: "unverified_zero",
-    }, field);
-  }
-  assert.deepEqual(pricing.reportedCost({ reported_cost: "0", input_tokens: 0, tokens: 0 }), {
-    display_cost: 0, reported_cost_status: "reported",
-  });
-});
-
-test("withComputedCost leaves invalid raw reported values intact while making display unavailable", () => {
-  for (const reported_cost of [undefined, null, "", "broken", "-1", "Infinity"]) {
-    const [row] = withComputedCost([{
-      model: "claude-opus-5", reported_cost,
-      input_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
-    }]);
-    assert.equal(row.cost, 5);
-    assert.equal(row.reported_cost, reported_cost);
-    assert.equal(row.display_cost, null);
-    assert.equal(row.reported_cost_status, "unavailable");
-  }
 });
 
 // 실측(Enterprise 청구서 대조): claude-sonnet-5는 $3/$15가 아니라 $2/$10 — 옛 단가는 계산
@@ -424,8 +363,6 @@ test("rollupComputedCost folds two models under one key into one computed-cost r
     effort: "high",
     cost: 60.5,
     reported_cost: 42,
-    display_cost: 42,
-    reported_cost_status: "reported",
     tokens: 6 * M,
     unpriced_tokens: 0,
   });
@@ -445,8 +382,6 @@ test("rollupComputedCost keeps unpriced-model tokens out of cost but inside toke
   assert.equal(row.cost, 5); // opus-5 1M 입력만 — 미산정 모델은 0을 더한다(null이 아니다)
   assert.equal(typeof row.cost, "number");
   assert.equal(row.reported_cost, 10);
-  assert.equal(row.display_cost, 10);
-  assert.equal(row.reported_cost_status, "reported");
   assert.equal(row.tokens, 2.5 * M);
   assert.equal(row.unpriced_tokens, 1.5 * M);
 });
@@ -475,47 +410,6 @@ test("rollupComputedCost splits on every key column and preserves first-seen ord
 
 test("rollupComputedCost returns an empty array for empty input", () => {
   assert.deepEqual(rollupComputedCost([], ["group", "effort"]), []);
-});
-
-test("rollupComputedCost makes incomplete token-bearing folds partial without hiding the known subtotal", () => {
-  for (const reported_cost of [undefined, null, "", "bad", -2, Infinity, 0]) {
-    const rows = [
-      rollupRow({ group: "bedrock", model: "claude-opus-5", input_tokens: M, reported_cost: "3" }),
-      rollupRow({ group: "bedrock", model: "unknown-model", input_tokens: M, reported_cost }),
-    ];
-    for (const pieces of [rows, [...rows].reverse()]) {
-      const [row] = rollupComputedCost(pieces, ["group"]);
-      assert.equal(row.cost, 5);
-      assert.equal(row.reported_cost, 3);
-      assert.equal(row.display_cost, null);
-      assert.equal(row.reported_cost_status, "partial");
-      assert.equal(row.unpriced_tokens, M);
-    }
-  }
-});
-
-test("rollupComputedCost ignores unavailable tokenless pieces but never invents an all-missing zero", () => {
-  const [row] = rollupComputedCost([
-    rollupRow({ group: "bedrock", model: "claude-opus-5", reported_cost: 3 }),
-    rollupRow({ group: "bedrock", model: "", reported_cost: undefined }),
-  ], ["group"]);
-  assert.equal(row.display_cost, 3);
-  assert.equal(row.reported_cost_status, "reported");
-  const [missing] = rollupComputedCost([rollupRow({ group: "bedrock", reported_cost: undefined })], ["group"]);
-  assert.equal(missing.display_cost, null);
-  assert.equal(missing.reported_cost_status, "unavailable");
-  const [zero] = rollupComputedCost([rollupRow({ group: "bedrock", reported_cost: "0" })], ["group"]);
-  assert.equal(zero.display_cost, 0);
-  assert.equal(zero.reported_cost_status, "reported");
-});
-
-test("reported totals that overflow remain unavailable instead of exposing a nonfinite display number", () => {
-  const [row] = rollupComputedCost([
-    rollupRow({ group: "bedrock", input_tokens: 1, reported_cost: Number.MAX_VALUE }),
-    rollupRow({ group: "bedrock", input_tokens: 1, reported_cost: Number.MAX_VALUE }),
-  ], ["group"]);
-  assert.equal(row.display_cost, null);
-  assert.equal(row.reported_cost_status, "partial");
 });
 
 // fable-5-1의 cacheRead는 파생 규칙(입력×0.1 = 1.0)이 아니라 명시값 0.25다. priceFor 단위로는

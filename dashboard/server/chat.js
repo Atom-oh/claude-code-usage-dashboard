@@ -269,11 +269,10 @@ GROUP BY Model, TokenType
 
 중요 — 비용 용어를 섞지 마세요(reported cost ≠ computed cost):
 - claude_code.cost.usage("reported_cost")는 Claude Code 클라이언트가 자체 계산해 보고하는
-  값입니다. 대시보드의 기본 비용은 이 reported_cost입니다. 실제 청구액은 아니며
-  클라이언트 버전의 단가표와 수집 누락에 따라 달라질 수 있습니다.
-- 교차검증용 계산 비용("computed cost")은 token.usage의 4개
-  TokenType(input/output/cacheRead/cacheCreation) 토큰 수 × 아래 모델별 단가(1M 토큰당
-  USD)를 곱한 값입니다. cacheWrite는 서버의 TTL 가정이며 실제 혼합 TTL을 관측한 값이 아닙니다:
+  값입니다. 참고용이며, 대시보드가 보여주는 값과 다를 수 있습니다.
+- 대시보드 Cost 페이지 카드가 보여주는 비용("computed cost")은 이 값이 아니라, token.usage의
+  4개 TokenType(input/output/cacheRead/cacheCreation) 토큰 수 × 아래 모델별 단가(1M 토큰당
+  USD)를 곱해 서버(pricing.js)에서 계산한 값입니다:
 ${PRICING_PROMPT_TABLE}
   **단가표의 필드명과 TokenType 값이 다릅니다** — 매핑은 다음과 같고, TokenType='cacheWrite'는
   데이터에 존재하지 않으니 그런 조건으로 조회하지 마세요:
@@ -287,11 +286,10 @@ ${PRICING_PROMPT_TABLE}
   같은 식이라 이걸 그대로 쓰면 값이 일치합니다. 직접 다르게 정규화하면 단가 매칭이 빗나가 계산
   비용이 대시보드보다 작게 나옵니다):
     ${normModel("Model")}
-- 사용자가 "비용"이나 대시보드 기본 카드 값을 물으면 cost.usage(reported_cost)를 조회하고
-  "Claude Code 자체 보고 비용"이라고 명시하세요. 계산 비용이나 TTL 차이의 분석을 요청하면
-  위 단가로 별도 계산하고 TTL 가정을 밝히세요. 토큰 사용이 있는데 보고값이 0이거나
-  보고 데이터가 없으면 비용 확인이 필요하다고 답하고 무료라고 단정하지 마세요.
-  양수 보고값만으로 수집 완전성이 입증되지는 않으며 실제 정산은 공급자 청구 자료와 대조해야 합니다.
+- 사용자가 그냥 "비용"을 물으면 기본으로 cost.usage(reported_cost)를 조회해 답하되, 반드시
+  "Claude Code 자체 보고 비용"임을 명시하세요. 대시보드 카드 값과 비교/일치를 요구하면 위 단가로
+  직접 계산한 뒤 "계산 비용(단가표 기준)"이라고 구분해서 답하세요. 두 값을 같은 것처럼 뭉뚱그려
+  답하지 마세요 — 실제로 서로 다른 숫자입니다.
 
 중요 — 그룹 간 직접 비교가 위험한 값(2026-08-11, 문서로 확인된 동작):
 - claude_code.internal_error는 Bedrock에서는 emit되지 않습니다. 에러율을 bedrock/enterprise로

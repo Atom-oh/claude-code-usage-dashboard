@@ -150,17 +150,16 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   `adoptionTimeseries`, `kpiSummary`, `costSummary`) include it -- see `queries.js`'s `filterCond`
   policy comment. A single-channel org therefore still sees an `unknown` share in the totals, and
   that is correct, not a bug in single mode.
-- **Spend displays use client-reported cost.** `spend.js` adapts the additive API
-  `display_cost`/`prev_display_cost` into view rows, preserving `computed_cost` for diagnostics.
-  Missing and ambiguous-zero reports detected at each API's aggregate grain remain null
-  through folds, forecasts, pivots and CSVs; underlying missing reports can be hidden by a
-  positive aggregate. `reported` is not a completeness claim and summary/detail statuses may differ.
-  a valid report remains eligible when the server has no token price for that model.
-  Cost, Executive, Productivity and Users use this same policy. Cache-tier breakdowns and
-  Reliability retain computed prices and expose the TTL assumption. Client version and
-  telemetry completeness can still affect reported costs; neither estimate is an invoice.
-  The per-user table's `미분류 포함` checkbox remains display-only and re-fetches
-  `/api/cost/by-user-model` with `includeUnknown=1` for that table alone.
+- **Spend displays read the existing `reported_cost` directly.** `spend.js` maps reports
+  into view rows and keeps the original `cost`/`computed_cost` for diagnostics. It does not
+  depend on server display/status fields. Zero report with positive tokens is treated like
+  an unpriced amount (`reported_unpriced`); preserve that flag across view folds, forecasts,
+  charts and CSVs. A positive report remains usable when only the server price is missing.
+  Cost, Executive, Productivity and Users follow this policy. Cache-tier and Reliability
+  diagnostics keep computed prices and the TTL assumption. SQL/rollups are unchanged, so
+  positive aggregates can still conceal missing underlying reports. Agent ranking is only
+  within the returned API subset (the existing computed-cost top-30 cutoff is unchanged).
+  The per-user `미분류 포함` checkbox remains display-only for that table's request.
 - **There is exactly one `<nav>` in the DOM unless the mobile drawer is open.**
   `App.test.jsx`'s `container.querySelector("nav")` picks the **first** `<nav>` to assert the
   route↔nav-link set, and `MobileNav` renders before `Sidebar` — so `MobileNav` renders its own

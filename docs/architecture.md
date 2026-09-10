@@ -426,8 +426,9 @@ ClickHouse 스키마는 `claude_code.schema_migrations`(`clickhouse-migration-00
 
 ## Cost display policy (2026-09-10)
 
-Spend views select client reports through additive `display_cost` fields; computed token
-prices remain diagnostics with an explicit cache TTL assumption. Missing/ambiguous reports
-detected at existing query grains propagate through JS folds and derived spend; a positive
-aggregate can conceal missing underlying reports. Productivity scoring is unchanged.
-See [ADR-009](decisions/ADR-009-reported-spend-with-computed-diagnostics.md).
+SQL, pricing and rollup aggregation are unchanged. The web frontend reads existing
+`reported_cost`; `costEfficiency.js` uses it for `cost_per_loc` and `cost_per_commit`.
+A zero report with token usage is treated as unpriced at those consumers. Original computed
+cost remains available for TTL/price cross-checking. No full-capture guarantee is inferred
+from positive sums, and productivity scoring is unchanged. See
+[ADR-009](decisions/ADR-009-reported-spend-with-computed-diagnostics.md).

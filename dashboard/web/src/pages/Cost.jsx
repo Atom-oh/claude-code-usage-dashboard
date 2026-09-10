@@ -47,19 +47,17 @@ function foldModelRows(rows) {
   return [...totals.values()].sort(spendOrder);
 }
 
-// API 행과 이미 변환된 행 모두 받는다. 각 폴드의 display_cost도 갱신해야 재변환 시
-// 부분 합계가 원래 reported_cost로 되살아나지 않는다.
+// 미산정 조각이 섞였다는 표시를 유지해야 양수 부분합을 완전한 보고 비용으로 다시 쓰지 않는다.
 function addSpend(acc, row) {
   acc.cost = sumPair(acc.cost, row.cost);
-  acc.display_cost = acc.cost;
   acc.computed_cost = sumPair(acc.computed_cost, row.computed_cost);
   acc.reported_cost = sumPair(acc.reported_cost, row.reported_cost);
-  acc.reported_cost_status = acc.cost === null ? "partial" : "reported";
+  acc.reported_unpriced = acc.cost === null;
   acc.unpriced ||= row.unpriced === true || row.computed_cost === null;
   acc.tokens += Number(row.tokens || 0);
 }
 
-const spendTotal = () => ({ cost: 0, computed_cost: 0, reported_cost: 0, tokens: 0, unpriced: false });
+const spendTotal = () => ({ cost: 0, computed_cost: 0, reported_cost: 0, tokens: 0, unpriced: false, reported_unpriced: false });
 
 export function mergeUserModelRows(rows) {
   const totals = new Map();
@@ -349,10 +347,12 @@ export default function Cost() {
     .filter((r) => r.loc > 0 || r.commits > 0)
     .map((r) => ({
       ...r,
-      display_cost_per_loc: r.cost === null || !(r.loc > 0) ? null : Object.hasOwn(r, "display_cost_per_loc") ? r.display_cost_per_loc : r.cost / r.loc,
-      display_cost_per_commit: r.cost === null || !(r.commits > 0) ? null : Object.hasOwn(r, "display_cost_per_commit") ? r.display_cost_per_commit : r.cost / r.commits,
+      cost_per_loc: r.reported_unpriced ? null : r.cost_per_loc,
+      cost_per_commit: r.reported_unpriced ? null : r.cost_per_commit,
+      computed_cost_per_loc: !r.unpriced && r.computed_cost !== null && r.loc > 0 ? r.computed_cost / r.loc : null,
+      computed_cost_per_commit: !r.unpriced && r.computed_cost !== null && r.commits > 0 ? r.computed_cost / r.commits : null,
     }))
-    .sort((a, b) => (a.display_cost_per_loc == null) - (b.display_cost_per_loc == null) || a.display_cost_per_loc - b.display_cost_per_loc);
+    .sort((a, b) => (a.cost_per_loc == null) - (b.cost_per_loc == null) || a.cost_per_loc - b.cost_per_loc);
 
   return (
     <div>
@@ -575,7 +575,7 @@ export default function Cost() {
         ) : (
           <DataTable
             title="에이전트별 비용"
-            subtitle="비용 상위 15개"
+            subtitle="API가 제공한 에이전트 중 보고 비용 상위 15개"
             help={`에이전트가 지정되지 않은 사용량은 메인 세션으로 표시합니다. ${SPEND_HELP} ${computedHelp}`}
             columns={[
               { key: "agent", label: "에이전트", render: agentLabel, toText: agentLabel },
@@ -707,11 +707,11 @@ export default function Cost() {
               { key: "cost", label: "비용", render: usd },
               { key: "loc", label: "추가 코드 라인", render: fmt },
               { key: "commits", label: "커밋", render: fmt },
-              { key: "display_cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) },
-              { key: "display_cost_per_commit", label: "$/커밋", render: usd },
+              { key: "cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) },
+              { key: "cost_per_commit", label: "$/커밋", render: usd },
               { key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv },
-              { key: "cost_per_loc", label: "계산 $/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) },
-              { key: "cost_per_commit", label: "계산 $/커밋", render: usd },
+              { key: "computed_cost_per_loc", label: "계산 $/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) },
+              { key: "computed_cost_per_commit", label: "계산 $/커밋", render: usd },
             ]}
             rows={efficiencyRows}
             exportName="cost_efficiency_by_user"

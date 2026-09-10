@@ -96,7 +96,7 @@ with HTTP 500.
 | `GET /api/reliability/retries-exhausted` | *(2026-08-11)* `api_retries_exhausted` counts per group + average attempts/retry duration — a direct signal for Bedrock quota throttling. |
 | `GET /api/reliability/api-errors` | *(2026-08-31)* Returns `{byModel, byStatus}` — **an object, not a bare array**. `byModel`: per group x model `requests` (`api_request`), `errors` (`api_error`), `total`, `error_rate`. `byStatus`: per group x HTTP `status_code`, with the sentinel `no-http-status` for errors that carry no status code at all (transport-level failures such as a stream idle timeout — measured 35 of 580, deliberately not dropped). `error_rate`'s denominator is `requests + errors` because whether `api_request` also fires for failed requests is not documented or measurable; at measured volumes the two readings differ by 0.33% relative, and the union denominator keeps the value inside [0,1] under either reading. |
 | `GET /api/reliability/api-latency` | *(2026-09-01)* (`apiLatency`) Returns `{byModel, byEffort}` — **an object, not a bare array** (two groupings of one `api_request` scan, `apiErrors` pattern). Duration is `LogAttributes['duration_ms']` (measured 7d: p50 5,968ms / p95 36,262ms). `byModel`: per group x model (`normModel()`-normalized `LogAttributes['model']`) with `requests`/`p50_ms`/`p95_ms`. `byEffort`: same fields per group x effort, `effort = ''` mapped to `'unknown'` for parity with `cost/effort-mix`. Reliability page. |
-| `GET /api/reliability/reported-vs-computed` | *(2026-09-04)* (`reportedVsComputedByVersion`) Returns a **bare array** — unlike its two neighbours above (`api-errors`, `api-latency`), which return keyed objects. Grain is group x `AppVersion` x `normModel()`-normalized `LogAttributes['model']`, over `api_request`. Fields: `requests`, `reported_cost`, the four token sums (`input_tokens`/`output_tokens`/`cache_read_tokens`/`cache_write_tokens`), `cost`, `unpriced`, `ratio`. `cost` comes from `pricing.js`'s `withComputedCost()`; it is `null` for a model outside the rate table, in which case `ratio` is also `null` and the row is still returned, not dropped. `ratio = reported_cost / cost` — a value away from `1.00` can reflect client-version pricing, the server TTL assumption or collection differences; it does not isolate the cause. `cost_usd_micros` is preferred when valid, otherwise `cost_usd` is read (measured 2026-09-03: v2.1.251 priced `claude-fable-5-1` off the `opus-5` row, ≈0.5×). Unlike its two neighbours, the model filter applies **per row** rather than through a session semi-join — `api_request` carries a `model` attribute on 100% of rows (measured 2026-09-04). |
+| `GET /api/reliability/reported-vs-computed` | *(2026-09-04)* (`reportedVsComputedByVersion`) Returns a **bare array** — unlike its two neighbours above (`api-errors`, `api-latency`), which return keyed objects. Grain is group x `AppVersion` x `normModel()`-normalized `LogAttributes['model']`, over `api_request`. Fields: `requests`, `reported_cost`, the four token sums (`input_tokens`/`output_tokens`/`cache_read_tokens`/`cache_write_tokens`), `cost`, `unpriced`, `ratio`. `cost` comes from `pricing.js`'s `withComputedCost()`; it is `null` for a model outside the rate table, in which case `ratio` is also `null` and the row is still returned, not dropped. `ratio = reported_cost / cost` — a value away from `1.00` can reflect client-version pricing, the server TTL assumption or collection differences; it does not isolate the cause. `cost_usd` remains the unchanged log source (measured 2026-09-03: v2.1.251 priced `claude-fable-5-1` off the `opus-5` row, ≈0.5×). Unlike its two neighbours, the model filter applies **per row** rather than through a session semi-join — `api_request` carries a `model` attribute on 100% of rows (measured 2026-09-04). |
 
 ### Integrity (A/B validity checks)
 | Path | Returns |
@@ -118,19 +118,15 @@ with HTTP 500.
 
 ### Cost
 
-Cost display contract (2026-09-10): existing `cost` and summary `computed_cost` retain
-computed token-price semantics. Rows also carry `display_cost` and `reported_cost_status`
-(`reported`, `unavailable`, `unverified_zero`, `partial`). These statuses assess the
-**already-aggregated query rows**, not underlying request/session coverage. Missing/invalid
-aggregate reports and zero reports with token usage have null display spend; JS folds with
-detected unusable usage remain null. `reported` means a usable amount exists at that grain.
-For example, one user's $3 and another user's missing report can be combined into a $3
-group/model sum marked `reported`, while the second user's detail is unavailable. Summary
-and detail statuses can therefore differ; positive sums can conceal incomplete capture.
-`prev_display_cost`/`prev_reported_cost_status` cover period comparisons. The efficiency
-endpoint adds `display_cost_per_loc` and `display_cost_per_commit`, retaining its computed
-ratios. Positive reports do not establish complete ingestion or actual billing. Spend views
-use display fields; cache-tier and Reliability diagnostics retain computed fields.
+Cost consumption policy (2026-09-10): SQL and pricing/rollup functions are unchanged.
+The frontend reads existing `reported_cost` and `prev_reported_cost` for its primary spend
+and keeps `cost`/summary `computed_cost` for cross-checks. No server display/status fields
+are added. A zero report with positive token usage is treated as unpriced by consumers.
+
+`GET /api/users/cost-efficiency` retains computed `cost` and `unpriced`, adds `reported_cost`
+and `reported_unpriced`, and changes **`cost_per_loc`/`cost_per_commit` to reported cost**.
+Those ratios are null for unpriced reports or zero denominators. The report flag is separate
+from server price-table coverage. Positive aggregates do not prove complete telemetry capture.
 
 | Path | Returns |
 |---|---|
@@ -141,7 +137,7 @@ use display fields; cache-tier and Reliability diagnostics retain computed field
 | `GET /api/cost/by-model-compare` | Current vs. previous equal-length period, per model |
 | `GET /api/cost/tiers` | Cost broken down by token tier (uncachedInput/cacheRead/cacheWrite/output), split by group: `{"bedrock": {...}, "enterprise": {...}}` |
 | `GET /api/cost/effort-mix` | *(2026-09-01, computed cost since 2026-09-04)* (`effortMix`) Per group x effort level: `cost` (computed — tokens × `pricing.js` rates, retained for diagnostics) + `reported_cost` (Claude Code's `cost.usage`, kept for contrast) + `tokens` + `unpriced_tokens`. Reported cost is client-version dependent (the September 3 investigation recorded about 0.5× reporting for fable-5-1 on v2.1.251), so keep computed diagnostics even though display spend now uses reports. Effort isn't an `incFlat` dimension, so this is a self-contained session-boundary local diff (ADR-001 pattern) — now at a `model` grain, folded to group x effort in JS by `pricing.js`'s `rollupComputedCost()`. `effort = ''` (rows with no effort attribute; measured 7d cost 578 vs medium 4,743 / high 1,576 / xhigh 307) → `'unknown'`; the `Speed` column is ignored (measured 0 rows fleet-wide). Cost page. |
-| `GET /api/cost/by-agent` | *(2026-09-01, computed cost since 2026-09-04)* (`agentCost`) Per group x subagent (`AgentName`, measured 7d: 4.56M non-empty rows; `'' → 'main'` = main-thread work): `cost` + `reported_cost` + `tokens` + `unpriced_tokens` on the same basis and the same `rollupComputedCost()` fold as `effort-mix`. Ordered by display cost (unavailable last), top 30 (applied in JS after the fold, not as a SQL `LIMIT`). Cost page. |
+| `GET /api/cost/by-agent` | *(2026-09-01, computed cost since 2026-09-04)* (`agentCost`) Per group x subagent (`AgentName`, measured 7d: 4.56M non-empty rows; `'' → 'main'` = main-thread work): `cost` + `reported_cost` + `tokens` + `unpriced_tokens` on the same basis and the same `rollupComputedCost()` fold as `effort-mix`. Ordered by computed cost, top 30; the frontend sorts this returned subset by reported cost (applied in JS after the fold, not as a SQL `LIMIT`). Cost page. |
 
 ### Adoption
 | Path | Returns |

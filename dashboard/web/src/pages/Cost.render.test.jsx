@@ -161,7 +161,7 @@ async function exportTable(title) {
   }
 }
 
-const summary = { group: "bedrock", computed_cost: 7817.28, reported_cost: 6647.79, display_cost: 6647.79, reported_cost_status: "reported", input_tokens: 1000, output_tokens: 100, cache_read_tokens: 20, cache_write_tokens: 30, unpriced_tokens: 0, sessions: 2 };
+const summary = { group: "bedrock", computed_cost: 7817.28, reported_cost: 6647.79, input_tokens: 1000, output_tokens: 100, cache_read_tokens: 20, cache_write_tokens: 30, unpriced_tokens: 0, sessions: 2 };
 
 test("reported total 6647.79 drives forecasts and per-user spend; 7817.28 stays diagnostic with TTL", async () => {
   mount("single", {
@@ -179,7 +179,7 @@ test("reported total 6647.79 drives forecasts and per-user spend; 7817.28 stays 
 
 test("missing summary spend renders unavailable totals and forecasts without computed fallback", async () => {
   mount("single", {
-    "/api/cost/summary": [{ ...summary, display_cost: null, reported_cost_status: "partial" }],
+    "/api/cost/summary": [{ ...summary, reported_cost: 0 }],
     "/api/overview/active-users": { users: 2, bedrock_users: 2 },
   });
   await waitFor(() => expect(card("총 비용").textContent).toContain("확인 필요"));
@@ -196,8 +196,8 @@ test("model sorting, shares, period changes and CSV use reported spend including
       { model: "reported-leader", group: "bedrock", cost: null, unpriced: true, reported_cost: 30, tokens: 100 },
     ],
     "/api/cost/by-model-compare": [
-      { model: "computed-leader", cost: 900, reported_cost: 10, prev_cost: 100, prev_display_cost: 20 },
-      { model: "reported-leader", cost: null, reported_cost: 30, prev_cost: null, prev_display_cost: 10 },
+      { model: "computed-leader", cost: 900, reported_cost: 10, prev_cost: 100, prev_reported_cost: 20 },
+      { model: "reported-leader", cost: null, reported_cost: 30, prev_cost: null, prev_reported_cost: 10 },
     ],
   });
   await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(2));
@@ -239,9 +239,9 @@ test("effort, agents and efficiency use reported spend with computed secondary d
       { group: "bedrock", agent: "main", cost: 1, reported_cost: 20, tokens: 10 },
     ],
     "/api/users/cost-efficiency": [
-      { user: "computed-best", group: "bedrock", cost: 1, display_cost: 20, loc: 10, commits: 2, cost_per_loc: 0.1, cost_per_commit: 0.5, display_cost_per_loc: 2, display_cost_per_commit: 10 },
-      { user: "reported-best", group: "bedrock", cost: 99, display_cost: 10, loc: 10, commits: 2, unpriced: true, cost_per_loc: null, cost_per_commit: null, display_cost_per_loc: 1, display_cost_per_commit: 5 },
-      { user: "missing", group: "bedrock", cost: 10, display_cost: null, loc: 10, commits: 2, cost_per_loc: 1, cost_per_commit: 5, display_cost_per_loc: null, display_cost_per_commit: null },
+      { user: "computed-best", group: "bedrock", cost: 1, reported_cost: 20, reported_unpriced: false, loc: 10, commits: 2, cost_per_loc: 2, cost_per_commit: 10 },
+      { user: "reported-best", group: "bedrock", cost: 99, reported_cost: 10, reported_unpriced: false, loc: 10, commits: 2, unpriced: true, cost_per_loc: 1, cost_per_commit: 5 },
+      { user: "missing", group: "bedrock", cost: 10, reported_cost: 0, reported_unpriced: true, loc: 10, commits: 2, cost_per_loc: null, cost_per_commit: null },
     ],
   });
   await waitFor(() => expect(cells("에이전트별 비용")).toHaveLength(2));

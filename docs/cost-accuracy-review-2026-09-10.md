@@ -5,7 +5,9 @@
 입력 자료: 사용자가 제공한 2026-09-09 분석, 워크샵의 사용자 82명·231행 집계
 
 이 문서는 수정 전 소스에 대한 검토 기록이다. 후속 구현 결정은
-[ADR-009](decisions/ADR-009-reported-spend-with-computed-diagnostics.md)에 기록한다.
+[ADR-009](decisions/ADR-009-reported-spend-with-computed-diagnostics.md)에 기록한다. 사용자의 최종 지시에 따라
+실제 수정은 `costEfficiency.js`와 웹 소비 측으로 한정하고 SQL·가격 계산·롤업을 유지한다.
+아래의 서버 표시 필드·로그 정밀도 등 확장 제안은 적용 범위에 포함하지 않는다.
 
 ## 판단
 

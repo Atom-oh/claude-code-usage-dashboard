@@ -75,7 +75,7 @@ session is `readonly`.
   the hourly rollup's `has_org` column)
 - `pricing.js` -- per-model token pricing (`buildPricing(env)`, env-overridable via
   `PRICING_JSON`/`PRICING_CACHE_WRITE_TTL`, exports `pricingConfig`), `withComputedCost`,
-  `reportedCost`, `sumReportedCost`, `tierCosts`, `tierCostsByGroup`, `rollupComputedCost` (applies `withComputedCost` at a
+  `tierCosts`, `tierCostsByGroup`, `rollupComputedCost` (applies `withComputedCost` at a
   `model` grain and then folds rows onto coarser key columns — the pricing has to be computed
   before the model column is summed away, so a query that wants computed cost per
   effort/agent cannot do it in SQL)
@@ -114,16 +114,12 @@ session is `readonly`.
 - `*.test.js` -- `node:test` unit tests for the pure functions above
 
 ## Rules
-- **Spend fields are additive.** `cost` and summary `computed_cost` retain token-price
-  semantics. `display_cost` selects the client report; `reported_cost_status` is `reported`,
-  `unavailable`, `unverified_zero`, or `partial`. Zero with positive tokens is ambiguous,
-  and missing pieces detected in already-aggregated query rows invalidate display folds;
-  never silently substitute a computed amount. This is not per-user/session/request coverage:
-  a positive group/model sum can conceal missing underlying reports, so `reported` means only
-  that a usable amount exists at that query grain. Summary and user-detail statuses can differ.
-  Unknown-price models can still have valid reported costs. Agent ranking uses
-  display cost before the 30-row limit. Efficiency preserves computed ratios and adds
-  `display_cost_per_loc`/`display_cost_per_commit`. See ADR-009.
+- **Cost selection is a consumer policy.** Keep `queries.js`, `TOKEN_SUMS`, `pricing.js` and
+  `rollupComputedCost()` unchanged. `costEfficiency.js` preserves computed `cost`/`unpriced`,
+  adds the existing reports as `reported_cost`, and computes `cost_per_loc`/`cost_per_commit`
+  from that report. `reported_unpriced` identifies a missing/invalid report or a zero report
+  with token usage; those unit costs are null. The flag concerns only this consumer's rows,
+  not completeness of the underlying telemetry. Productivity scoring stays unchanged.
 - **`index.js` binds the port only when it is the entry module** (`isMain` via
   `pathToFileURL(path.resolve(process.argv[1]))`) and exports `app`, so `app.test.js` can import
   it. Everything else at module scope -- the fail-closed auth check, the schema and readonly
@@ -194,7 +190,7 @@ session is `readonly`.
   the `apiErrors` precedent. Since 2026-09-04 `effortMix`/`agentCost` carry a `model` grain and
   per-`TokenType` token columns in their outer `SELECT` and return `pricing.js`'s
   `rollupComputedCost()` output — computed `cost` + `reported_cost` + `unpriced_tokens` instead
-  of the old reported-only `cost_usd` — as historical diagnostics because `cost.usage` is priced by the client and
+  of the old reported-only `cost_usd` — because `cost.usage` is priced by the client and
   therefore version-dependent (measured 2026-09-03: v2.1.251 prices `claude-fable-5-1` off the
   opus-5 row, ≈0.5× of list). Adding `TokenType` to those local-diff `GROUP BY`s adds no rows:
   it is already folded into `SeriesKey`, exactly like `Model`.

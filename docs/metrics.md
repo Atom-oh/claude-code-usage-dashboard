@@ -18,7 +18,7 @@
 2. **비용은 클라이언트 보고 추정값 (client-reported estimate)** — 지출 화면은
    `reported_cost`를 기본으로 사용한다. 클라이언트 버전의 단가표, 수집 누락과 계약 할인 때문에
    실제 청구액과 다를 수 있다. 계산 비용은 TTL 가정에 따라 과대·과소 산정될 수 있으므로
-   실청구의 하한으로 보장하지 않는다. 각 API의 집계행에서 확인되는 보고값 누락이나 토큰
+   실청구의 하한으로 보장하지 않는다. 소비 측에 전달된 집계행에서 확인되는 보고값 누락이나 토큰
    사용이 있는 0 보고값은 확인 필요로 표시한다. 그 행을 JS에서 합치는 합계·평균도 표시하지
    않는다. 집계 전에 다른 사용자의 양수 비용과 합쳐진 누락은 탐지하지 못할 수 있으므로,
    총계와 사용자 상세의 상태가 다를 수 있다. 양수 보고값은 완전 수집을 입증하지 않는다.
@@ -51,7 +51,7 @@
 ### 기간 비용 (Period Cost)
 - **정의**: 선택 기간의 Claude Code 보고 비용 합계. 토큰 × 단가표 계산값은 비교용으로 보존한다.
 - **원천**: `claude_code.cost.usage`, `claude_code.token.usage`.
-- **계산**: `queries.js:costSummary`, `pricing.js:reportedCost`, `display_cost`.
+- **계산**: `queries.js:costSummary`의 기존 `reported_cost`, `spend.js:asSpendRow`.
 - **주의**: 2번, 3번, 4번.
 
 ### 개발자당 비용 (Cost per Developer)

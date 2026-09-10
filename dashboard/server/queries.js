@@ -1,6 +1,6 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { withComputedCost, normalizeModelId, rollupComputedCost, sumReportedCost } from "./pricing.js";
+import { withComputedCost, normalizeModelId, rollupComputedCost } from "./pricing.js";
 import { rollupAdoption } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
@@ -828,19 +828,13 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
     const [prev] = withComputedCost([
       {
         model: r.model,
-        reported_cost: r.prev_reported_cost,
         input_tokens: r.prev_input_tokens,
         output_tokens: r.prev_output_tokens,
         cache_read_tokens: r.prev_cache_read_tokens,
         cache_write_tokens: r.prev_cache_write_tokens,
       },
     ]);
-    return {
-      ...r,
-      prev_cost: prev.cost,
-      prev_display_cost: prev.display_cost,
-      prev_reported_cost_status: prev.reported_cost_status,
-    };
+    return { ...r, prev_cost: prev.cost };
   });
 }
 
@@ -1010,8 +1004,8 @@ export async function toolMcpUsage(from, to, filters = {}) {
   );
 }
 
-// Cost 페이지: 그룹별 비용/토큰 요약. computed_cost는 토큰 실측 × 단가표(pricing.js),
-// display_cost는 사용 가능한 Claude Code 보고 비용 합계다.
+// Cost 페이지: 그룹별 비용/토큰 요약. 비용은 토큰 실측 × 단가표(pricing.js)로 계산 —
+// Claude Code 자체 보고 비용(reported_cost)은 비교용으로만 같이 내려준다.
 // 단가는 모델별로 다르므로 SQL은 그룹+모델 단위로 집계하고, 그룹 합계는 JS에서 fold한다.
 // excludeUnknown: false — kpiSummary와 동일한 이유(응답 전체 합계가 "총 지출/개발자당 지출"
 // 총계로 쓰인다, Cost.jsx/Executive.jsx). unknown을 빼면 activeUsers(unknown 포함) 대비
@@ -1041,7 +1035,7 @@ export async function costSummary(from, to, filters = {}) {
       byGroup.set(r.group, {
         group: r.group,
         computed_cost: 0,
-        reportedRows: [],
+        reported_cost: 0,
         input_tokens: 0,
         output_tokens: 0,
         cache_read_tokens: 0,
@@ -1052,7 +1046,7 @@ export async function costSummary(from, to, filters = {}) {
     }
     const g = byGroup.get(r.group);
     g.computed_cost += r.cost || 0;
-    g.reportedRows.push(r);
+    g.reported_cost += Number(r.reported_cost);
     g.input_tokens += Number(r.input_tokens);
     g.output_tokens += Number(r.output_tokens);
     g.cache_read_tokens += Number(r.cache_read_tokens);
@@ -1063,13 +1057,11 @@ export async function costSummary(from, to, filters = {}) {
     }
     g.sessions += Number(r.sessions);
   }
-  return [...byGroup.values()]
-    .map(({ reportedRows, ...row }) => ({ ...row, ...sumReportedCost(reportedRows) }))
-    .sort((a, b) => a.group.localeCompare(b.group));
+  return [...byGroup.values()].sort((a, b) => a.group.localeCompare(b.group));
 }
 
 // Cost 페이지: 모델별 비용/토큰. cost는 토큰 실측 × 단가표로 계산한 값, reported_cost는
-// Claude Code 자체 보고값. 단가표에 없는 모델도 유효한 보고 비용은 display_cost로 노출한다.
+// Claude Code 자체 보고값(비교용). 단가표에 없는 모델은 cost: null + unpriced: true로 노출.
 export async function costByModel(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
@@ -1715,10 +1707,10 @@ export async function activeTimeSummary(from, to, filters = {}) {
   );
 }
 
-// effort별 비용/토큰 — cost는 계산 비용(토큰 × pricing.js 단가), display_cost는 사용 가능한
-// 보고 비용 합계다. reported_cost는 Claude Code 자체 보고값이다. 실측 2026-09-03:
+// effort별 비용/토큰 — cost는 계산 비용(토큰 × pricing.js 단가, 이 페이지의 다른 Cost 카드와
+// 동일 기준)이고 reported_cost는 Claude Code 자체 보고값(대조용)이다. 실측 2026-09-03:
 // v2.1.251은 fable-5-1을 opus-5 단가로 보고해 보고 비용이 정가의 약 0.5×, v2.1.258은 정가 —
-// 보고 비용은 클라이언트 버전에 종속이라 계산 비용도 대조용으로 유지한다. Speed 컬럼은 실측 0행(이
+// 보고 비용은 클라이언트 버전에 종속이라 패널 기준으로 쓸 수 없다. Speed 컬럼은 실측 0행(이
 // 플릿은 fast 모드 미사용)이라 안 본다. effort ''(실측 7d cost 578)는 effort attribute가 없는
 // 행 — 'unknown'으로 묶는다. 단가를 고르려면 model 그레인이 필요해서 바깥 SELECT에
 // normModel(m.Model)과 TokenType별 토큰 컬럼을 두고, group × effort까지는 JS에서
@@ -1753,8 +1745,7 @@ export async function effortMix(from, to, filters = {}) {
     GROUP BY "group", effort, model ORDER BY "group", effort`,
     { ...range(from, to, true), ...f.params }
   );
-  return rollupComputedCost(rows, ["group", "effort"])
-    .sort((a, b) => a.group.localeCompare(b.group) || (b.display_cost ?? -1) - (a.display_cost ?? -1));
+  return rollupComputedCost(rows, ["group", "effort"]).sort((a, b) => a.group.localeCompare(b.group) || b.cost - a.cost);
 }
 
 // 언어별 편집 수락 — Language는 incFlat 미탑재 차원이라 effortMix와 동일한 로컬 diff
@@ -1974,8 +1965,7 @@ export async function agentCost(from, to, filters = {}) {
     GROUP BY "group", agent, model ORDER BY "group", agent`,
     { ...range(from, to, true), ...f.params }
   );
-  return rollupComputedCost(rows, ["group", "agent"])
-    .sort((a, b) => (b.display_cost ?? -1) - (a.display_cost ?? -1)).slice(0, 30);
+  return rollupComputedCost(rows, ["group", "agent"]).sort((a, b) => b.cost - a.cost).slice(0, 30);
 }
 
 // =============================================================================
@@ -1990,12 +1980,6 @@ export async function agentCost(from, to, filters = {}) {
 // 속성을 행의 100%에 갖고 있다(실측 2026-09-04). cache_creation_tokens는 로그 속성명이고
 // withComputedCost는 cache_write_tokens를 읽으므로 별칭이 곧 가격 계산의 전제조건이다. 단가표
 // 밖 모델도 행을 버리지 않는다 — cost/ratio가 null일 뿐이다.
-const logCostMicros = "toFloat64OrNull(l.LogAttributes['cost_usd_micros'])";
-const logReportedCost = `if(
-          isFinite(${logCostMicros}) AND ${logCostMicros} >= 0 AND ${logCostMicros} <= 9007199254740991,
-          ${logCostMicros} / 1000000,
-          toFloat64OrZero(l.LogAttributes['cost_usd']))`;
-
 export async function reportedVsComputedByVersion(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']" });
   const rows = await query(
@@ -2005,7 +1989,7 @@ export async function reportedVsComputedByVersion(from, to, filters = {}) {
         l.AppVersion AS app_version,
         ${normModel("l.LogAttributes['model']")} AS model,
         count() AS requests,
-        sum(${logReportedCost})                                     AS reported_cost,
+        sum(toFloat64OrZero(l.LogAttributes['cost_usd']))             AS reported_cost,
         sum(toUInt64OrZero(l.LogAttributes['input_tokens']))          AS input_tokens,
         sum(toUInt64OrZero(l.LogAttributes['output_tokens']))         AS output_tokens,
         sum(toUInt64OrZero(l.LogAttributes['cache_read_tokens']))     AS cache_read_tokens,
@@ -2180,7 +2164,7 @@ export async function entrypointBreakdown(from, to, filters = {}) {
         if(l.LogAttributes['app.entrypoint'] = '', 'terminal', l.LogAttributes['app.entrypoint']) AS entrypoint,
         count() AS requests,
         uniqExact(l.SessionId) AS sessions,
-        sum(${logReportedCost}) AS cost_usd,
+        sum(toFloat64OrZero(l.LogAttributes['cost_usd'])) AS cost_usd,
         uniqExactIf(coalesce(nullIf(l.UserEmail, ''), nullIf(l.EndUserId, '')),
                     coalesce(nullIf(l.UserEmail, ''), nullIf(l.EndUserId, '')) IS NOT NULL) AS users
     FROM claude_code.otel_logs l

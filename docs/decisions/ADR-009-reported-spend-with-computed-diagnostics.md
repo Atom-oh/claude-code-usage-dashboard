@@ -20,18 +20,22 @@ reported amount is not a billing source of truth either.
 
 ## Decision
 
-Use client-reported spend for expenditure views, sorting, exports and unit-cost metrics.
-Keep the existing API `cost` and summary `computed_cost` as token-priced diagnostics.
-An additive `display_cost` carries the selected reported amount and `reported_cost_status`
-explains unavailable, ambiguous-zero or partial results **at the existing query grain**.
+Apply the user's final scope: change only `costEfficiency.js` and frontend consumption.
+`TOKEN_SUMS` already selects `reported_cost` and `rollupComputedCost()` already sums it.
+Keep `queries.js`, SQL, `pricing.js` and its rollups unchanged, with no server display/status
+protocol. Preserve existing `cost` and summary `computed_cost` as token-priced diagnostics.
 
-Absent, invalid or negative reports are unavailable. A zero report with positive token usage
-is ambiguous and is not displayed as a confirmed free request. Zero with no usage is valid.
-A JS fold with an unavailable already-aggregated cost component has a null display total;
-no computed fallback is substituted silently. SQL aggregation may already have hidden
-missing user/session/request reports inside a positive group/model sum. `reported` means
-a usable reported amount exists at that grain, not complete ingestion. Summary and
-user-detail statuses can differ for this reason.
+`costEfficiency.js` keeps computed `cost`/`unpriced` and uses `reported_cost` for the existing
+`cost_per_loc` and `cost_per_commit` fields. Its `reported_unpriced` flag is separate from
+server price-table coverage. The frontend selects the existing report directly, preserving
+the computed amount in view rows for comparison.
+
+A zero report with positive token usage is treated like an unpriced report, because the
+client might not know a new model's rate. Missing/invalid reports are also unavailable;
+zero without token usage is valid. Consumer folds preserve detected unpriced pieces instead
+of presenting a partial subtotal as a complete amount. Existing SQL aggregation can conceal
+missing user/session/request reports inside a positive aggregate; this change does not add
+per-request coverage detection.
 
 Unknown-price models with valid reported amounts remain in spend views. Cache-tier
 decomposition and version diagnostics retain their computed basis and show the TTL assumption.
@@ -39,9 +43,10 @@ Productivity scores remain unchanged.
 
 ## Consequences
 
-No provider TTL, Collector, ClickHouse schema or deployment infrastructure change is needed.
-Existing API consumers retain their computed fields. Display consumers adopt the additive
-contract together so totals, rankings, previous-period comparisons and CSVs agree.
+No provider TTL, Collector, SQL, pricing/rollup, ClickHouse schema or infrastructure change
+is needed. The only changed efficiency-field meanings are the two reported unit-cost ratios.
+Agent sorting in SQL/aggregation is also unchanged: the frontend ranks only the subset
+returned by the existing computed-cost top-30 cutoff, and labels it accordingly.
 
 Legitimate free usage with positive tokens may require operator verification because the
 existing aggregate cannot distinguish it from missing cost telemetry. Full per-request

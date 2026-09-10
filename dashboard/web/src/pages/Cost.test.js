@@ -36,7 +36,7 @@ test("user folds and model bars include positive reports for models without a pr
 });
 
 test("a missing piece poisons user, model and group spend while retaining tokens", () => {
-  const rows = [...ROWS, { ...ROWS[0], reported_cost: 9, display_cost: null, reported_cost_status: "partial" }];
+  const rows = [...ROWS, { ...ROWS[0], reported_cost: 0 }];
   const a = mergeUserRows(rows)[0];
   expect(a.cost).toBeNull();
   expect(a.groups.bedrock.models["claude-sonnet-5"].cost).toBeNull();

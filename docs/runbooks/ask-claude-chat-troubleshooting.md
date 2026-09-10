@@ -56,7 +56,9 @@ free usage. A report can be positive while still missing some requests.
 Token-price **computed cost** remains a separate diagnostic. Its cache-write TTL is an
 assumption exposed in `/api/config`; mixed TTLs and client-version prices can explain a
 reported/computed difference. `SCHEMA_CONTEXT` retains the generated `PRICING_PROMPT_TABLE`
-for explicit diagnostic questions. Neither estimate replaces billing reconciliation.
+for explicit diagnostic questions. Its legacy instruction for matching a dashboard card still
+refers to computed cost; the chat prompt is unchanged by this consumer-only correction.
+Compare the explicitly named cost basis. Neither estimate replaces billing reconciliation.
 
 ### 4. Scenario — generic error after a long conversation
 The client resends the *entire* message history every turn (`useChatStream.js`), and the server
@@ -167,7 +169,9 @@ Cost 페이지와 일반적인 챗 비용 답변은 이제 `cost.usage`의 클�
 
 토큰 × 단가표의 계산 비용은 별도 진단값입니다. `/api/config`의 TTL 가정, 혼합 TTL과
 클라이언트 버전별 단가 차이가 두 값의 차이를 만들 수 있습니다. `SCHEMA_CONTEXT`는
-진단 질문을 위해 `PRICING_PROMPT_TABLE`을 계속 인용합니다. 실제 정산은 청구 자료와 대조하세요.
+진단 질문을 위해 `PRICING_PROMPT_TABLE`을 계속 인용합니다. 챗 프롬프트는 이번 소비 측
+수정에 포함하지 않아 대시보드 카드와의 일치를 요청하는 기존 지시는 계산 비용을 가리킬 수
+있습니다. 어떤 비용을 답했는지 구분하고 실제 정산은 청구 자료와 대조하세요.
 
 ### 4. 시나리오 — 긴 대화 뒤 일반 에러
 클라이언트는 매 턴 **전체 메시지 히스토리를 재전송**하고(`useChatStream.js`), 서버는 한 턴 안에서
