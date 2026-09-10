@@ -6,8 +6,10 @@ name: AI Code Review
 #   - pull_request_target base-ref 체크아웃(M1): PR head 코드 미실행, diff 는 데이터로만
 #   - 매트릭스 fan-out: scripts/pr-review/run-panel.sh(3모델×4lens=12셀) → synthesize.sh
 #   - 인증: EKS Pod Identity(ci-runner) SigV4 + ai-panel-keys(KIRO)
-#   - 리전: 고정 없음 (Claude Fable 5.1 도 codex 자체 모델(global.openai.gpt-6-astra,
-#     amazon-bedrock-runtime)처럼 global inference profile — AWS_REGION 고정이 더는 불필요)
+#   - 리전: Claude Fable 5.1 은 global inference profile 이지만, "global." 프리픽스는
+#     Bedrock 착지 이후의 라우팅에만 영향을 주고 SigV4 서명 리전과는 무관하다. 따라서
+#     AWS_REGION 은 ANTHROPIC_BEDROCK_BASE_URL 엔드포인트와 여전히 일치해야 한다
+#     (codex 자체 모델 global.openai.gpt-6-astra/amazon-bedrock-runtime 은 이 제약이 없음).
 
 on:
   pull_request_target:
@@ -30,13 +32,17 @@ jobs:
       pull-requests: write
       contents: read
     env:
-      # claude-fable-5-1 은 global inference profile(codex 자체 모델
-      # global.openai.gpt-6-astra, amazon-bedrock-runtime 과 동일) — AWS_REGION 고정이
-      # 더는 필요 없다. ANTHROPIC_BEDROCK_BASE_URL 은 여전히 실제 bedrock-runtime 리전
-      # 엔드포인트를 가리켜야 하므로, 가장 가까운 리전(ap-northeast-2/Seoul)으로 옮긴다.
+      # claude-fable-5-1 은 global inference profile 이다. 다만 "global." 프리픽스는
+      # Bedrock 착지 이후의 내부 라우팅에만 영향을 주며, SigV4 서명 리전에는 영향을 주지
+      # 않는다 — AWS_REGION 은 ANTHROPIC_BEDROCK_BASE_URL 이 가리키는 엔드포인트와 반드시
+      # 일치해야 서명이 통과한다(이 제약이 없는 codex 의 amazon-bedrock-runtime 프로바이더와는
+      # 다르다). 이전 커밋이 이 전제를 잘못 이해해 AWS_REGION 을 완전히 제거했고,
+      # cc-on-bedrock #114 리뷰 패널(L4 MAJOR)이 병합 전에 이를 잡아냈다. 가장 가까운
+      # 리전(ap-northeast-2/Seoul)으로 두 값을 짝지어 옮긴다.
       ANTHROPIC_MODEL: global.anthropic.claude-fable-5-1
       CLAUDE_CODE_USE_BEDROCK: 1
       ANTHROPIC_BEDROCK_BASE_URL: https://bedrock-runtime.ap-northeast-2.amazonaws.com
+      AWS_REGION: ap-northeast-2
     steps:
       # 보안(M1): pull_request_target 는 시크릿/쓰기권한 컨텍스트 → base(신뢰됨) 체크아웃.
       - uses: actions/checkout@v4
