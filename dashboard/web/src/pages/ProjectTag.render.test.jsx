@@ -168,3 +168,18 @@ test("프로젝트 입력값을 바꾸면 debounce 뒤 그 값으로 다시 요�
   await waitFor(() => expect(calls.filter((u) => u.includes("project=repo-b")).length).toBeGreaterThan(0), { timeout: 3000 });
   expect(calls.length).toBeGreaterThan(before);
 });
+
+// 호스트 추가(2026-09-10, PR #31 리뷰 L4 MINOR-1) — 입력창이 숨겨진 상태에서 URL의 ?project=가
+// 조용히 모든 요청에 실려 나가는 것을 죽인다. 실측(변경 전, 같은 마운트 헬퍼로): projectColumns가
+// false / null / 키 없음 세 경우 모두 17개 요청 중 16개가 project=repo-a를 실었다(싣지 않은 둘은
+// /api/config와 /api/health/data). 게이트가 parseUrlState 단계에 있어 FilterContext의 상태 자체가
+// 비고, useApi의 게이트는 이중 안전이다 — 그래서 이 테스트는 두 게이트 중 어느 쪽을 지워도
+// 빨개지지 않고 둘 다 지워야 빨개진다는 점을 기억할 것(호스트가 뮤테이션으로 확인).
+test("projectColumns가 true가 아니면 URL의 ?project=가 어떤 요청에도 실리지 않는다", async () => {
+  for (const schema of [{ projectColumns: false }, { projectColumns: null }, {}]) {
+    const { calls } = mount("/usage?project=repo-a", schema);
+    await waitFor(() => expect(screen.queryAllByText("Claude Code를 어디서 실행했는지").length).toBe(1), { timeout: 5000 });
+    expect(calls.filter((u) => u.includes("project="))).toEqual([]);
+    cleanup();
+  }
+});

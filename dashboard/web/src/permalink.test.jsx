@@ -200,3 +200,38 @@ test("시작일이 종료일보다 늦으면 거부되고 URL은 바뀌지 않�
   await screen.findByText("시작일이 종료일보다 늦습니다");
   expect(loc.search).toBe(searchBefore);
 });
+
+// 호스트 추가(2026-09-10, PR #31 리뷰 L4 MINOR-1의 URL 쪽). 두 가지를 핀한다. 하나는 게이트가
+// 켜졌을 때 링크의 project가 실제로 요청에 실린다는 것 — /cost는 그 파라미터를 무시하는
+// 라우트인데도 실려 나가고, 그것이 MAJOR-3에서 고른 "적용 범위를 표시만 한다" 쪽의 귀결이다.
+// 다른 하나는 실측으로 드러난, 이 변경과 무관한 기존 동작이다(호스트가 변경 전/후 같은 프로브로
+// 확인): RangeContext의 URL 라이터는 group/model(마스킹 OFF면 user)만 보존하고 project는 애초에
+// 옮기지 않는다. 그 라이터가 바깥 provider라 마운트 시 나중에 돌기 때문에, 게이트가 켜져 있어도
+// 공유된 ?project= 링크는 주소창에서 키를 잃는다 — 필터 자체는 계속 걸린 상태다. URL 왕복
+// 충실성 문제이고 필터 정확성 문제가 아니라 이 PR에서는 고치지 않았다(고치려면 RangeContext에도
+// 같은 스키마 게이트를 넣어야 하고, 게이트 없이 보존만 추가하면 마스킹 ON의 user가 되살아났던
+// 것과 같은 함정을 project에 다시 만든다). 여기서 단정해 두면 다음 사람이 놀라지 않는다.
+test("projectColumns: true면 링크의 project가 모든 요청에 실린다 (URL 키는 기존 동작대로 사라진다)", async () => {
+  const fetchMock = stubFetch();
+  mount("/cost?days=7&project=repo-a", cfg({ schema: { projectColumns: true } }));
+  await waitFor(() => expect(dataCalls(fetchMock, "/api/cost").length).toBeGreaterThan(0));
+  expect(dataCalls(fetchMock, "/api/cost").every((u) => /project=repo-a/.test(u))).toBe(true);
+  // 기존 동작(이 변경 전에도 같았다): RangeContext의 라이터가 project를 보존하지 않아 키가 빠진다.
+  expect(new URLSearchParams(loc.search).has("project")).toBe(false);
+  expect(new URLSearchParams(loc.search).get("days")).toBe("7");
+});
+
+test("projectColumns가 true가 아니면 링크의 project는 어떤 요청에도 실리지 않는다", async () => {
+  for (const schema of [{ projectColumns: false }, { projectColumns: null }, {}]) {
+    const fetchMock = stubFetch();
+    mount("/cost?days=7&group=bedrock&project=repo-a", cfg({ schema }));
+    await waitFor(() => expect(dataCalls(fetchMock, "/api/cost").length).toBeGreaterThan(0));
+    expect(dataCalls(fetchMock, "/api/cost").every((u) => !/project=/.test(u))).toBe(true);
+    expect(new URLSearchParams(loc.search).has("project")).toBe(false);
+    // 대조 — 게이트가 URL을 통째로 비우는 게 아니다. 같은 링크의 다른 필터는 그대로 살아 있다.
+    expect(new URLSearchParams(loc.search).get("group")).toBe("bedrock");
+    expect(new URLSearchParams(loc.search).get("days")).toBe("7");
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});

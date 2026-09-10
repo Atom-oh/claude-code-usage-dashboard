@@ -12,11 +12,15 @@ const FilterContext = createContext(null);
 // project는 저장소 이름 정확 일치라 서버가 부분일치로 넓히지 않는다(queries.js filterCond) —
 // 입력창은 FilterBar가 schema.projectColumns === true일 때만 렌더한다.
 export function FilterProvider({ children }) {
-  const { piiMask } = useConfig();
+  const { piiMask, schema } = useConfig();
+  // schema는 /api/config가 실패하면 undefined다 — === true만 "적용됨"으로 본다(ConfigContext 규약).
+  // main.jsx가 렌더 전에 config를 받아 prop으로 넘기므로 이 값은 트리 수명 내내 고정이다(실측
+  // 2026-09-10) — undefined → true로 바뀌는 전이가 없어 나중에 URL을 다시 읽는 effect도 필요 없다.
+  const projectColumns = schema?.projectColumns;
   const [searchParams, setSearchParams] = useSearchParams();
   // 마운트 시 한 번만 URL을 읽는다 — debounce된 값과 입력창 표시용 값을 둘 다 여기서
   // 시딩해야 한다. 입력창만 시딩하면 첫 fetch가 무필터로 나가고 300ms 뒤 다시 나간다.
-  const initial = useState(() => parseUrlState(searchParams, { piiMask }).filters)[0];
+  const initial = useState(() => parseUrlState(searchParams, { piiMask, projectColumns }).filters)[0];
   const [group, setGroup] = useState(initial.group);
   const [userInput, setUser] = useState(initial.user);
   const [modelInput, setModel] = useState(initial.model);
@@ -45,7 +49,7 @@ export function FilterProvider({ children }) {
   useEffect(() => {
     setSearchParams(
       (prev) => {
-        const next = serializeUrlState({ range: null, filters: { group, user, model, project }, piiMask });
+        const next = serializeUrlState({ range: null, filters: { group, user, model, project }, piiMask, projectColumns });
         for (const k of ["days", "from", "to", "period"]) {
           const v = prev.get(k);
           if (v) next.set(k, v);
@@ -54,7 +58,7 @@ export function FilterProvider({ children }) {
       },
       { replace: true }
     );
-  }, [group, user, model, project, piiMask, setSearchParams]);
+  }, [group, user, model, project, piiMask, projectColumns, setSearchParams]);
 
   return (
     <FilterContext.Provider value={{ group, setGroup, user, userInput, setUser, model, modelInput, setModel, project, projectInput, setProject }}>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiGet } from "./api.js";
 import { useRange } from "./RangeContext.jsx";
 import { useFilters } from "./FilterContext.jsx";
+import { useConfig } from "./ConfigContext.jsx";
 import { useRefresh } from "./RefreshContext.jsx";
 
 // 서버(index.js)의 QUANT_MS/WARM_GRACE_MS와 반드시 같아야 한다 — 요청 시점의 to를 GRACE만큼
@@ -23,6 +24,14 @@ const WARM_GRACE_MS = 150_000;
 export function useApi(path, extraParams = {}) {
   const { days, intervalHours, custom, month } = useRange();
   const { group, user, model, project } = useFilters();
+  // 이중 안전 — 파싱 단계(urlState.js parseUrlState)에서 이미 걸러지므로 여기서 걸리는 값은
+  // 정상 경로에는 없다. 그래도 요청 문자열을 실제로 만드는 지점에 같은 게이트를 둔다: 보이지
+  // 않는 필터가 요청에 실리는 것 자체가 PR #31 리뷰의 지적이었고, 게이트가 한 곳뿐이면 그 한
+  // 곳을 지우는 수정이 조용히 되돌린다. paramsKey/deps는 그대로 project(원본 상태)를 본다 —
+  // 입력창은 게이트가 켜졌을 때만 렌더되므로 그때 두 값은 같고, deps를 건드리면 "값이 바뀌면
+  // 다시 요청한다"를 핀하는 기존 렌더 테스트가 무의미해진다.
+  const { schema } = useConfig();
+  const projectParam = schema?.projectColumns === true ? project : "";
   const { tick, reportFailure } = useRefresh();
   const [state, setState] = useState({ data: null, loading: true, error: null });
   const inflightRef = useRef(null);
@@ -73,7 +82,7 @@ export function useApi(path, extraParams = {}) {
         group: group || undefined,
         user: user || undefined,
         model: model || undefined,
-        project: project || undefined,
+        project: projectParam || undefined,
         intervalHours, // 시계열이 아닌 엔드포인트는 그냥 무시됨. extraParams가 뒤에 와서 override 가능.
         ...extraParams,
       },

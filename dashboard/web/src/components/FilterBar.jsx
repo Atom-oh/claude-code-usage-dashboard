@@ -33,9 +33,20 @@ export function FilterBar() {
           value={projectInput}
           onChange={(e) => setProject(e.target.value)}
           placeholder="프로젝트"
-          title="프로젝트 이름이 정확히 일치하는 세션만 — 표의 프로젝트 열 값을 그대로 넣으세요"
+          title="프로젝트 이름이 정확히 일치하는 세션만 — 표의 프로젝트 열 값을 그대로 넣으세요. 이 필터는 Usage의 프로젝트·진입점·권한 모드·승인 출처 카드에만 적용됩니다."
           className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
         />
+      )}
+      {/* 프로젝트 필터는 전역 필터 줄에 있지만 실제로 적용되는 라우트는 4개뿐이다 — queries.js에서
+          cols.project를 filterCond에 넘기는 쿼리(projectBreakdown/permissionModeChanges/
+          toolDecisionSources/entrypointBreakdown)뿐이고, 나머지 라우트는 전 프로젝트 기준으로
+          답한다. 값이 들어 있을 때만 알린다: Executive/Trends의 "모델 필터 미적용" 배지와 같은
+          규약이고, 빈 칸에서도 늘 띄우면 필터 줄이 경고문으로 덮인다. 전역 배선은 시간별 롤업에
+          ProjectName이 없어 세션 세미조인 설계가 필요하다(별도 변경). */}
+      {schema?.projectColumns === true && projectInput && (
+        <span className="text-[11px] text-warning-text">
+          프로젝트 필터는 Usage의 프로젝트·진입점·권한 모드·승인 출처 카드에만 적용됩니다.
+        </span>
       )}
       <input
         value={userInput}

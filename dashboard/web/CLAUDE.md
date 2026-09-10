@@ -57,8 +57,9 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   Recharts (`pivotByGroup`, `pivotByKey`)
 - `src/urlState.js` -- pure URL-search-param <-> `{range, filters}` mapping
   (`parseUrlState`/`serializeUrlState`), unit-tested in `urlState.test.js`. `RangeContext` owns
-  the `days`/`from`/`to` params and `FilterContext` owns `group`/`user`/`model`; each preserves
-  the other's keys when it writes (except `user` while `piiMask` is on -- see the rule below),
+  the `days`/`from`/`to` params and `FilterContext` owns `group`/`user`/`model`/`project`; each
+  preserves the other's keys when it writes (except `user` while `piiMask` is on, and `project`,
+  which `RangeContext`'s writer never carries over at all -- see the two rules below),
   and both write with `replace: true` so the history stack is not filled by preset clicks.
   `permalink.test.jsx` mounts the real providers inside a `MemoryRouter` to pin this
   round-trip; `urlState.test.js` only covers the pure mapping. `PRESET_DAYS` (`[1, 2, 7, 30]`)
@@ -101,6 +102,23 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   the outer one's `navigate` wins, so a blind "preserve the other side's keys" there resurrected
   the address (measured 2026-09-03 in jsdom). Masking off (a workshop account, where emails
   are synthetic `{accountid}@ws` addresses) is the only case where it is written.
+- **The `project` filter never enters the URL or a request unless `GET /api/config` reports
+  `schema.projectColumns === true`.** `parseUrlState` and `serializeUrlState` both take a
+  `projectColumns` option and default it to "not applied" -- the same fail-closed rule
+  `parseFilters` uses server-side (`dashboard/server/http.js`), so a caller that forgets the
+  option gets the safe branch. Without the gate the input is hidden while a shared or
+  hand-crafted `?project=` link still rides on every request (measured 2026-09-10 in jsdom:
+  16 of 17 requests carried the parameter with the probe reporting `false`, `null` or absent).
+  `useApi` repeats the gate where it builds the query string, as defence in depth.
+  `RangeContext`'s writer never carries `project` over at all, and it is the outer provider so it
+  writes last at mount: the key therefore leaves the URL **whether or not the gate is open**, while
+  a link that arrived with it still seeds the filter and every request carries it (measured
+  2026-09-10 in jsdom, identical before and after this change, and pinned in `permalink.test.jsx`).
+  That is a permalink-fidelity gap rather than a filter bug and is deliberately left alone --
+  adding `project` to that writer's preserve list without the same schema gate would recreate for
+  `project` exactly the trap the `user` rule above records. No re-hydration effect is needed for
+  a late config: `main.jsx` resolves `/api/config` before the first render and passes it in as a
+  prop, so `projectColumns` is fixed for the life of the tree (measured 2026-09-10).
 - URL state is hydrated **once, in a `useState` initializer**, not in an effect. Re-parsing on
   every render would let the URL's stale value overwrite a selection the user just made.
 - Dragging on any time-series chart (`GroupAreaChart`/`DualLineChart`/`SeriesBarChart` in
