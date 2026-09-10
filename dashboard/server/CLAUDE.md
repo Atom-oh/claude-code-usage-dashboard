@@ -250,11 +250,18 @@ session is `readonly`.
   `api_request` carries `cost_usd` plus all four token counts as log attributes (measured
   2026-09-04, 100% of rows), and the `cache_creation_tokens` attribute must be aliased to
   `cache_write_tokens` for `withComputedCost` to price it. `AppVersion` is the grain because
-  the reported cost is priced client-side and is therefore version-dependent. It is also the
-  one query whose model filter uses `filterCond`'s per-row `model:` column rather than
-  `modelViaSession:`, because this `otel_logs` event — unlike `tool_result`/`user_prompt`/
-  `hook_execution_complete` — does carry a `model` attribute. `userInteractions` needs no new
-  rule here; it is another `{unsupported}`-shape `otel_traces` query per the existing pattern.
+  the reported cost is priced client-side and is therefore version-dependent. Its model filter
+  uses `filterCond`'s per-row `model:` column rather than `modelViaSession:`, because this
+  `otel_logs` event — unlike `tool_result`/`user_prompt`/`hook_execution_complete` — does carry
+  a `model` attribute. **`entrypointBreakdown` reads the same `api_request` event and therefore
+  follows the same rule**, fixed in the PR #31 review round: under the session semi-join a
+  session that used two models folded the second model's requests and reported cost into the
+  filtered figure (measured 2026-09-10 on `clickhouse/clickhouse-server:24.8.14.39` — a
+  two-model session answered 2 requests / $1.00 under a single-model filter where the per-row
+  column answers 1 / $0.10). `permissionModeChanges` and `toolDecisionSources` keep
+  `modelViaSession:`, because `permission_mode_changed` and `tool_result` carry no `model`
+  attribute. `userInteractions` needs no new rule here; it is another `{unsupported}`-shape
+  `otel_traces` query per the existing pattern.
 - **The `project` filter is gated on a schema probe, not assumed.** `filterCond`'s project
   branch is an exact match — a repo name is copied verbatim out of the table, and a partial
   match would fold `api` and `api-gateway` into one row — and maps the `(untagged)` display
@@ -264,3 +271,9 @@ session is `readonly`.
   aggregation reads the raw table through a self-contained local diff subquery, never the
   hourly rollup — the rollup carries no `ProjectName` (migration-005 leaves it alone; ADR-001,
   same precedent as `versionCohortCost`).
+  Only four queries pass `cols.project` to `filterCond` at all — `projectBreakdown`,
+  `permissionModeChanges`, `toolDecisionSources` and `entrypointBreakdown` — so `project` is a
+  local filter for those four routes rather than a global one, and every other route ignores it
+  and answers on all projects. That scope is stated in `docs/api-reference.md`'s
+  common-parameter table and next to the input in `FilterBar.jsx`; wiring it globally needs a
+  session semi-join, because the hourly rollup carries no `ProjectName`.

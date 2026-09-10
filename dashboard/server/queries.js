@@ -2070,6 +2070,12 @@ export async function userInteractions(from, to, email) {
 // 은 프론트 라벨과 help에 적는다 — 같은 페이지의 "Skill 사용 분포"와 동일한 규약이다.
 // 사용자 식별자는 ADR-002의 Bedrock 폴백(UserEmail이 비면 EndUserId)을 쓴다 — 이 파일에서
 // 처음이며, ADR-002 결정대로 기존 ~90개 UserEmail 참조에는 소급 적용하지 않는다.
+// 세션·사용자 수는 in_range로 게이트한다: 내부 서브쿼리가 LOOKBACK_DAYS만큼 앞의 baseline 행까지
+// 읽으므로 구간 전에 끝난 세션도 inc=0인 행으로 남아, 비용·토큰은 0인데 세션 수만 부풀었다
+// (PR #31 리뷰에서 MAJOR로 확인). 게이트를 inc > 0으로 걸지 않는 이유: 구간 안에 활동은 있었지만
+// 카운터가 안 움직인 세션(유휴 하트비트)이 빠진다. 실측(2026-09-10, 24.8.14.39): baseline만 있는
+// 세션을 섞은 픽스처에서 같은 프로젝트의 sessions/users가 2/2 → 1/1로 줄고 cost/tokens(4/400)는
+// 그대로였다. 부작용으로, 구간 안 활동이 전혀 없는 프로젝트는 사라지지 않고 전부 0인 행이 된다.
 export async function projectBreakdown(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.user_id", model: "m.Model", project: "m.ProjectName" });
   return query(
@@ -2079,11 +2085,12 @@ export async function projectBreakdown(from, to, filters = {}) {
         if(m.ProjectName = '', '${UNTAGGED_PROJECT}', m.ProjectName) AS project,
         sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')  AS cost_usd,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage') AS tokens,
-        uniqExact(m.SessionId) AS sessions,
-        uniqExactIf(m.user_id, m.user_id IS NOT NULL) AS users
+        uniqExactIf(m.SessionId, m.in_range) AS sessions,
+        uniqExactIf(m.user_id, m.user_id IS NOT NULL AND m.in_range) AS users
     FROM (
         SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, ProjectName,
             any(coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''))) AS user_id,
+            countIf(TimeUnix >= {from:DateTime}) > 0 AS in_range,
             if(temp = 2,
                 greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
                 sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
@@ -2155,8 +2162,14 @@ export async function toolDecisionSources(from, to, filters = {}) {
 // 승격 컬럼은 애드혹/Grafana 쿼리와 향후 필터를 위한 것이다.
 // cost_usd는 Claude Code가 이벤트에 실은 보고값이다(reportedVsComputedByVersion과 같은 소스) —
 // 계산 비용이 아니므로 프론트 라벨에 그 사실을 적는다.
+// model 필터는 세션 세미조인(modelViaSession)이 아니라 행 단위 l.LogAttributes['model']이다 —
+// api_request는 전 행에 model 속성이 있어(실측 2026-09-04, 100%) reportedVsComputedByVersion과
+// 같은 규칙을 쓸 수 있다. 세미조인이면 한 세션이 A·B 두 모델을 쓴 경우 B의 requests/cost가 A
+// 필터에도 합산된다(실측 2026-09-10, 24.8.14.39 픽스처: sonnet 필터에서 vscode requests 2·
+// cost $1.00, 행 단위로는 1·$0.10). permissionModeChanges/toolDecisionSources는 그 이벤트에
+// model 속성이 없어 세미조인을 유지한다(PR #31 리뷰에서 MAJOR로 확인).
 export async function entrypointBreakdown(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId", project: "l.ProjectName" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']", project: "l.ProjectName" });
   return query(
     `${GROUP_CTE}
     SELECT
