@@ -72,6 +72,10 @@ clickhouse-migration-004.sql - Creates claude_code.schema_migrations (the schema
                        ledger) and backfills 002/003 from column evidence; run this directly
                        against the live cluster, it's not applied by Terraform -- see
                        docs/runbooks/schema-migrations.md
+clickhouse-migration-005.sql - Promotes project.name / app.entrypoint to MATERIALIZED columns on
+                       otel_metrics_sum / otel_logs / otel_traces; run this directly against the
+                       live cluster, it's not applied by Terraform -- requires 004 (the ledger)
+                       and deliberately runs no MATERIALIZE COLUMN (see the file's header)
 collector-config.yaml   - OpenTelemetry Collector config (Claude Code -> ClickHouse)
 LICENSE              - Proprietary, all rights reserved (ADR-004…007 era decision; see README §License)
 .claude/             - Claude Code settings, hooks, skills (gitignored — local tooling only)

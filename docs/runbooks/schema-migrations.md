@@ -92,7 +92,14 @@ reference/local copy) and `infra/files/clickhouse-schema-replicated.sql` (the fi
 schema-init Job applies to new clusters). That is what makes a brand-new install "at N" by
 definition: running the full schema file once satisfies every migration's column-evidence
 guard and leaves the ledger fully populated without anyone applying the numbered files by
-hand.
+hand. An **existing** cluster gets the same block by either of two routes: an operator running
+the numbered file by hand (step 2), or the next `terraform apply`, which recreates the
+`schema_init` Job because the Job's name embeds `filemd5(...)` of
+`infra/files/clickhouse-schema-replicated.sql` (`infra/clickhouse.tf`). Both routes are
+idempotent — the `IF NOT EXISTS` DDL and the guarded `INSERT` are no-ops on a cluster that
+already has them — but the Terraform route is not free: the schema file's unguarded
+`ALTER TABLE ... MATERIALIZE COLUMN` statements re-run and schedule full-table mutations, so
+read `infra/CLAUDE.md` before choosing it.
 
 ## Verification
 Re-run step 1 and confirm the new version appears with a recent `applied_at`. Running the
@@ -231,7 +238,15 @@ claude_code.schema_migrations`로 끝나고, 동일한 블록(같은 가드, 같
 `infra/files/clickhouse-schema-replicated.sql`(schema-init Job이 신규 클러스터에 적용하는
 파일) — 에 그대로 미러링됩니다. 이것이 신규 설치가 정의상 "N까지 적용된" 상태가 되는
 이유입니다: 스키마 파일 전체를 한 번 실행하면 모든 마이그레이션의 컬럼-증거 가드가 충족되어
-누구도 번호 붙은 파일을 손으로 하나씩 실행하지 않아도 원장이 완전히 채워집니다.
+누구도 번호 붙은 파일을 손으로 하나씩 실행하지 않아도 원장이 완전히 채워집니다. **기존**
+클러스터에는 같은 블록이 두 경로로 들어갑니다: 오퍼레이터가 번호 붙은 파일을 직접 실행하거나
+(2단계), 다음 `terraform apply`가 `schema_init` Job을 재생성하면서 적용됩니다 —
+`infra/clickhouse.tf`의 Job 이름이 `infra/files/clickhouse-schema-replicated.sql`의
+`filemd5(...)`를 담고 있어 그 파일을 고치면 다음 apply에서 다시 실행됩니다. 두 경로 모두
+idempotent입니다(`IF NOT EXISTS` DDL과 가드된 `INSERT`는 이미 적용된 클러스터에서 no-op).
+다만 Terraform 경로는 공짜가 아닙니다: 스키마 파일의 가드 없는
+`ALTER TABLE ... MATERIALIZE COLUMN` 문들이 다시 실행되어 전체 테이블 mutation을 예약하므로,
+고르기 전에 `infra/CLAUDE.md`를 확인하세요.
 
 ## 검증
 1단계를 다시 실행해 새 버전이 최근 `applied_at`과 함께 나타나는지 확인합니다. 같은
