@@ -3,6 +3,9 @@
 Date: 2026-09-10
 Status: Accepted for the requested cost correction
 
+Numbering: ADR-008 is already used by the parallel cache-policy work at `61a903e`
+(`claude/bedrock-cache-cost-error-vpjgfc`); this decision uses 009 to avoid reusing that number.
+
 ## Context
 
 The dashboard applies one cache-write TTL assumption to all token usage. The September 7
@@ -20,12 +23,15 @@ reported amount is not a billing source of truth either.
 Use client-reported spend for expenditure views, sorting, exports and unit-cost metrics.
 Keep the existing API `cost` and summary `computed_cost` as token-priced diagnostics.
 An additive `display_cost` carries the selected reported amount and `reported_cost_status`
-explains unavailable, ambiguous-zero or partial results.
+explains unavailable, ambiguous-zero or partial results **at the existing query grain**.
 
 Absent, invalid or negative reports are unavailable. A zero report with positive token usage
 is ambiguous and is not displayed as a confirmed free request. Zero with no usage is valid.
-A fold with an unavailable cost component has a null display total; no computed fallback is
-substituted silently. Positive reported amounts are still not proof of complete ingestion.
+A JS fold with an unavailable already-aggregated cost component has a null display total;
+no computed fallback is substituted silently. SQL aggregation may already have hidden
+missing user/session/request reports inside a positive group/model sum. `reported` means
+a usable reported amount exists at that grain, not complete ingestion. Summary and
+user-detail statuses can differ for this reason.
 
 Unknown-price models with valid reported amounts remain in spend views. Cache-tier
 decomposition and version diagnostics retain their computed basis and show the TTL assumption.

@@ -428,5 +428,6 @@ ClickHouse 스키마는 `claude_code.schema_migrations`(`clickhouse-migration-00
 
 Spend views select client reports through additive `display_cost` fields; computed token
 prices remain diagnostics with an explicit cache TTL assumption. Missing/ambiguous reports
-propagate through totals and derived spend, while productivity scoring is unchanged.
+detected at existing query grains propagate through JS folds and derived spend; a positive
+aggregate can conceal missing underlying reports. Productivity scoring is unchanged.
 See [ADR-009](decisions/ADR-009-reported-spend-with-computed-diagnostics.md).

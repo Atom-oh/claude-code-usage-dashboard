@@ -152,7 +152,9 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   that is correct, not a bug in single mode.
 - **Spend displays use client-reported cost.** `spend.js` adapts the additive API
   `display_cost`/`prev_display_cost` into view rows, preserving `computed_cost` for diagnostics.
-  Missing and ambiguous-zero reports remain null through folds, forecasts, pivots and CSVs;
+  Missing and ambiguous-zero reports detected at each API's aggregate grain remain null
+  through folds, forecasts, pivots and CSVs; underlying missing reports can be hidden by a
+  positive aggregate. `reported` is not a completeness claim and summary/detail statuses may differ.
   a valid report remains eligible when the server has no token price for that model.
   Cost, Executive, Productivity and Users use this same policy. Cache-tier breakdowns and
   Reliability retain computed prices and expose the TTL assumption. Client version and

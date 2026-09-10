@@ -117,8 +117,11 @@ session is `readonly`.
 - **Spend fields are additive.** `cost` and summary `computed_cost` retain token-price
   semantics. `display_cost` selects the client report; `reported_cost_status` is `reported`,
   `unavailable`, `unverified_zero`, or `partial`. Zero with positive tokens is ambiguous,
-  and missing pieces with usage invalidate display folds; never silently substitute a computed
-  amount. Unknown-price models can still have valid reported costs. Agent ranking uses
+  and missing pieces detected in already-aggregated query rows invalidate display folds;
+  never silently substitute a computed amount. This is not per-user/session/request coverage:
+  a positive group/model sum can conceal missing underlying reports, so `reported` means only
+  that a usable amount exists at that query grain. Summary and user-detail statuses can differ.
+  Unknown-price models can still have valid reported costs. Agent ranking uses
   display cost before the 30-row limit. Efficiency preserves computed ratios and adds
   `display_cost_per_loc`/`display_cost_per_commit`. See ADR-009.
 - **`index.js` binds the port only when it is the entry module** (`isMain` via

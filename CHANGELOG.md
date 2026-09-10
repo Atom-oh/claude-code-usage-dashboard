@@ -23,6 +23,10 @@ This project has not been tagged yet — everything below is unreleased.
 - Preserve unknown-price models with valid reports. Mark missing/ambiguous reports and
   partial totals unavailable; keep unit-cost ratios and agent rankings on the same spend basis.
 - Preserve computed API fields, add display fields/status, and align chat cost answers.
+- Clarify that report status applies at the existing query grain; positive aggregates may
+  conceal underlying missing reports. Mirror micros precision into the Grafana query.
+- Keep long token and currency values readable on mobile by reducing StatTile value text
+  below the small-screen breakpoint.
 
 
 ### Added (2026-09-04 auto-refresh + range presets)

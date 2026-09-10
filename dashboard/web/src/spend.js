@@ -1,4 +1,4 @@
-export const SPEND_HELP = "Claude Code 보고 비용을 기준으로 한 추정치입니다. 수집 누락과 클라이언트 버전별 단가 차이가 있을 수 있으며 실제 청구액과 다를 수 있습니다. 보고값이 불완전하면 확인 필요로 표시합니다.";
+export const SPEND_HELP = "Claude Code 보고 비용을 기준으로 한 추정치입니다. 수집 누락과 클라이언트 버전별 단가 차이로 실제 청구액과 다를 수 있습니다. 확인 필요 표시는 현재 집계 단위에서 판별된 누락·비정상값에 한합니다. 양수 합계 안에 가려진 사용자·세션·요청의 누락까지 탐지하거나 수집 완전성을 보장하지 않습니다.";
 
 const TOKEN_FIELDS = ["tokens", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"];
 

@@ -588,7 +588,13 @@ SELECT
             '-v\\d+(:\\d+)?$', ''),
         '-\\d{8}$', '') AS model,
     count() AS requests,
-    sum(toFloat64OrZero(LogAttributes['cost_usd']))             AS reported_cost,
+    sum(if(
+        isFinite(toFloat64OrNull(LogAttributes['cost_usd_micros']))
+          AND toFloat64OrNull(LogAttributes['cost_usd_micros']) >= 0
+          AND toFloat64OrNull(LogAttributes['cost_usd_micros']) <= 9007199254740991,
+        toFloat64OrNull(LogAttributes['cost_usd_micros']) / 1000000,
+        toFloat64OrZero(LogAttributes['cost_usd'])
+    ))                                                       AS reported_cost,
     sum(toUInt64OrZero(LogAttributes['input_tokens']))          AS input_tokens,
     sum(toUInt64OrZero(LogAttributes['output_tokens']))         AS output_tokens,
     sum(toUInt64OrZero(LogAttributes['cache_read_tokens']))     AS cache_read_tokens,

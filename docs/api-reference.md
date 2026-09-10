@@ -120,8 +120,13 @@ with HTTP 500.
 
 Cost display contract (2026-09-10): existing `cost` and summary `computed_cost` retain
 computed token-price semantics. Rows also carry `display_cost` and `reported_cost_status`
-(`reported`, `unavailable`, `unverified_zero`, `partial`). Missing/invalid reports and zero
-reports with token usage have null display spend; folds with unusable usage remain null.
+(`reported`, `unavailable`, `unverified_zero`, `partial`). These statuses assess the
+**already-aggregated query rows**, not underlying request/session coverage. Missing/invalid
+aggregate reports and zero reports with token usage have null display spend; JS folds with
+detected unusable usage remain null. `reported` means a usable amount exists at that grain.
+For example, one user's $3 and another user's missing report can be combined into a $3
+group/model sum marked `reported`, while the second user's detail is unavailable. Summary
+and detail statuses can therefore differ; positive sums can conceal incomplete capture.
 `prev_display_cost`/`prev_reported_cost_status` cover period comparisons. The efficiency
 endpoint adds `display_cost_per_loc` and `display_cost_per_commit`, retaining its computed
 ratios. Positive reports do not establish complete ingestion or actual billing. Spend views

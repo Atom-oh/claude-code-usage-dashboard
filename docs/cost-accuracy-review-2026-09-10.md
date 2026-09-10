@@ -2,7 +2,7 @@
 
 검토일: 2026-09-10
 대상 소스: `de0eb9f7bfdaa67ba570e0489bc9722c2bb6445b`
-입력 자료: 전치훈 작성 2026-09-09 분석, 한화 워크샵의 사용자 82명·231행 집계
+입력 자료: 사용자가 제공한 2026-09-09 분석, 워크샵의 사용자 82명·231행 집계
 
 이 문서는 수정 전 소스에 대한 검토 기록이다. 후속 구현 결정은
 [ADR-009](decisions/ADR-009-reported-spend-with-computed-diagnostics.md)에 기록한다.
@@ -186,7 +186,7 @@ Usage의 프로젝트·진입점·스킬 비용과 Reliability의 버전별 비�
 Sonnet 5의 $3/$15 → $2/$10 변경은 `0654c6d29579866aeb60929888481de687081cc4`
 (2026-09-02)에 들어갔다.
 
-로컬 인계 자료 `/home/atomoh/ws-handoff/LOCAL-PROMPT-workshop-deploy-3.md`는
+별도 워크샵 저장소의 로컬 배포 인계 자료는
 main 커밋 `ed7919950caf6c73d5bdfa8d8aac99e520613156`과
 `cc-ab-dashboard:20260905-131041`을 연결하며 다음 값을 기록한다.
 
