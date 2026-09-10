@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Claude Code A/B Telemetry — 마이그레이션 005 (project.name / app.entrypoint 승격)
 -- =============================================================================
--- migration: 005 | requires: 002 | records itself: INSERT INTO claude_code.schema_migrations
+-- migration: 005 | requires: 004 | records itself: INSERT INTO claude_code.schema_migrations
 --
 -- 대상: 라이브 클러스터(ON CLUSTER 'replicated', infra/files/clickhouse-schema-replicated.sql와
 --       동일 토폴로지). 로컬/참조 사본(clickhouse-schema.sql)은 동등한 블록("005" 블록)을
@@ -49,6 +49,12 @@
 --   SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_traces';
 --   → 0이면 §3을 건너뛰고 §1·§2·§4만 실행한다(§4 가드가 그 경우를 허용한다).
 --
+-- 사전 확인(필수, 2): 이 파일은 004(claude_code.schema_migrations 원장)를 전제한다 — 헤더의
+-- requires: 004. 원장 테이블이 없으면 §4의 자기-기록 INSERT가 Code 60 UNKNOWN_TABLE로 실패해
+-- (실측 2026-09-10, 24.8.14.39) 이 마이그레이션이 영원히 미기록으로 남는다. 먼저:
+--   SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'schema_migrations';
+--   → 0이면 clickhouse-migration-004.sql을 먼저 실행한다.
+--
 -- 검증: SELECT version, name, applied_at FROM claude_code.schema_migrations ORDER BY version;
 --       → 2, 3, 4, 5. 대시보드에서는 GET /api/config의 schema.migrations로 같은 목록이 보이고,
 --       schema.projectColumns가 true로 바뀐다(부팅 + 10분 주기 프로브).
@@ -83,7 +89,7 @@ ALTER TABLE claude_code.otel_traces ON CLUSTER 'replicated'
 --    INSERT에는 ON CLUSTER를 붙이지 않는다(INSERT는 DDL이 아니다) — ReplicatedMergeTree의
 --    복제 로그로 다른 레플리카에 전파된다. 한 파드에서 한 번만 실행할 것.
 -- -----------------------------------------------------------------------------
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 5, '005-project-tag-and-entrypoint', '0247c8dff9f144fc23b4940b45e03045a0719815d0be4dcf3a28e5f8db672a6f'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 5, '005-project-tag-and-entrypoint', 'abdde352853f487d7b119ef2d15523629011ec988d308e1cbfad7a78d77b44f5'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'ProjectName') > 0
   AND (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_logs' AND name = 'ProjectName') > 0

@@ -514,7 +514,7 @@ ALTER TABLE claude_code.otel_traces ON CLUSTER 'replicated'
     ADD COLUMN IF NOT EXISTS ProjectName LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
     ADD COLUMN IF NOT EXISTS Entrypoint  LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint'];
 
-INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 5, '005-project-tag-and-entrypoint', '0247c8dff9f144fc23b4940b45e03045a0719815d0be4dcf3a28e5f8db672a6f'
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 5, '005-project-tag-and-entrypoint', 'abdde352853f487d7b119ef2d15523629011ec988d308e1cbfad7a78d77b44f5'
 FROM system.one
 WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'ProjectName') > 0
   AND (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_logs' AND name = 'ProjectName') > 0
