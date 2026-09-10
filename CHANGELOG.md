@@ -17,6 +17,14 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Fixed (2026-09-10 reported spend and cache TTL)
+- Use client-reported spend across Cost, Executive, Productivity, Users and CSV exports.
+  Keep computed token costs and TTL assumptions for comparison; neither value is an invoice.
+- Preserve unknown-price models with valid reports. Mark missing/ambiguous reports and
+  partial totals unavailable; keep unit-cost ratios and agent rankings on the same spend basis.
+- Preserve computed API fields, add display fields/status, and align chat cost answers.
+
+
 ### Added (2026-09-04 auto-refresh + range presets)
 - Add auto-refresh with a selectable interval (끔 / 15초 / 30초 / 1분 / 5분, default **1분**),
   persisted in `localStorage` under `ccdash.refreshMs`, paused while the tab is hidden, one

@@ -48,19 +48,15 @@ If the direct query works but chat still says otherwise, the `SYSTEM` prompt has
 the real schema/grouping rule — fix the prompt, not the data.
 
 ### 3. Scenario — chat's cost answer doesn't match the Cost page card
-Not a bug by itself. `claude_code.cost.usage` ("reported cost") is what the Claude Code client
-self-reports; the Cost page's cards show a *different* number ("computed cost") derived by
-multiplying token counts by the price table in `pricing.js` (`withComputedCost`) — a built-in
-list-price table that an operator can override or extend per-deployment with the
-`PRICING_JSON` env var, so two deployments can legitimately compute different costs from the
-same tokens (`/api/config`'s `pricing.overriddenModels` says which keys were overridden). The
-chat's `SCHEMA_CONTEXT` (`dashboard/server/chat.js`) explicitly teaches this distinction and
-quotes `pricing.js`'s `PRICING_PROMPT_TABLE` so the model can compute either one and label which
-it used. If a user reports "the chat's cost number is wrong," first check *which* number they're
-comparing against — a mismatch between reported and computed cost is expected, not a defect.
-Only investigate further if the chat's *computed* cost doesn't match the dashboard's for the
-same model/period (that would mean `PRICING_PROMPT_TABLE` and the dashboard's `PRICING` table
-have drifted, which shouldn't happen since the former is generated from the latter).
+The Cost page and ordinary chat cost answers now use client-reported `cost.usage`.
+Check the time window, group/model filters, unknown-session inclusion and collection status
+before comparing values. Missing reports or zero reports with token usage are not confirmed
+free usage. A report can be positive while still missing some requests.
+
+Token-price **computed cost** remains a separate diagnostic. Its cache-write TTL is an
+assumption exposed in `/api/config`; mixed TTLs and client-version prices can explain a
+reported/computed difference. `SCHEMA_CONTEXT` retains the generated `PRICING_PROMPT_TABLE`
+for explicit diagnostic questions. Neither estimate replaces billing reconciliation.
 
 ### 4. Scenario — generic error after a long conversation
 The client resends the *entire* message history every turn (`useChatStream.js`), and the server
@@ -164,16 +160,14 @@ LEFT JOIN)를 ClickHouse에 직접 돌려 확인하세요. 직접 쿼리는 되�
 프롬프트를 고치세요.
 
 ### 3. 시나리오 — 챗의 비용 답변이 Cost 페이지 카드와 다름
-그 자체로는 버그가 아닙니다. `claude_code.cost.usage`("reported cost")는 Claude Code
-클라이언트가 자체 보고하는 값이고, Cost 페이지 카드는 토큰 수 × `pricing.js`의 고정 단가표를
-곱해 계산한 **다른** 값("computed cost", `withComputedCost`)을 보여줍니다. 챗의
-`SCHEMA_CONTEXT`(`dashboard/server/chat.js`)가 이 구분을 명시적으로 가르치고
-`pricing.js`의 `PRICING_PROMPT_TABLE`을 그대로 인용해, 모델이 둘 중 하나를 계산하고 어느 쪽을
-썼는지 라벨링할 수 있게 합니다. 사용자가 "챗의 비용 숫자가 틀렸다"고 하면 먼저 *어느 값과*
-비교하고 있는지 확인하세요 — reported와 computed 비용의 불일치는 예상된 동작이며 결함이
-아닙니다. 챗의 *computed* 비용이 같은 모델/기간에 대해 대시보드와 다를 때만 추가로
-조사하세요(그 경우엔 `PRICING_PROMPT_TABLE`과 대시보드의 `PRICING` 테이블이 드리프트된
-것인데, 전자가 후자에서 생성되므로 원래는 일어나선 안 되는 일입니다).
+Cost 페이지와 일반적인 챗 비용 답변은 이제 `cost.usage`의 클라이언트 보고값을 사용합니다.
+기간·채널·모델 필터, 미분류 세션 포함 여부와 수집 상태를 먼저 맞추세요. 보고값이 없거나
+토큰 사용이 있는데 보고값이 0인 경우는 무료로 확정하지 않습니다. 양수 보고값도 모든 요청의
+수집을 보장하지 않습니다.
+
+토큰 × 단가표의 계산 비용은 별도 진단값입니다. `/api/config`의 TTL 가정, 혼합 TTL과
+클라이언트 버전별 단가 차이가 두 값의 차이를 만들 수 있습니다. `SCHEMA_CONTEXT`는
+진단 질문을 위해 `PRICING_PROMPT_TABLE`을 계속 인용합니다. 실제 정산은 청구 자료와 대조하세요.
 
 ### 4. 시나리오 — 긴 대화 뒤 일반 에러
 클라이언트는 매 턴 **전체 메시지 히스토리를 재전송**하고(`useChatStream.js`), 서버는 한 턴 안에서

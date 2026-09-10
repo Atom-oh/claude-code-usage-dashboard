@@ -423,3 +423,10 @@ ClickHouse 스키마는 `claude_code.schema_migrations`(`clickhouse-migration-00
 - 장애 대응: [docs/runbooks/incident-response.md](runbooks/incident-response.md) 참고
 - 백업·복구: [docs/runbooks/backup-and-restore.md](runbooks/backup-and-restore.md) 참고
 - 알림: [docs/runbooks/alerting.md](runbooks/alerting.md) 참고
+
+## Cost display policy (2026-09-10)
+
+Spend views select client reports through additive `display_cost` fields; computed token
+prices remain diagnostics with an explicit cache TTL assumption. Missing/ambiguous reports
+propagate through totals and derived spend, while productivity scoring is unchanged.
+See [ADR-009](decisions/ADR-009-reported-spend-with-computed-diagnostics.md).

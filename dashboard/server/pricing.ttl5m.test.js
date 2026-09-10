@@ -14,12 +14,14 @@ test("5m billing end to end: cache writes bill at the 5m rate, not 1h", async ()
   assert.equal(m.pricingConfig.cacheWriteTtl, "5m");
 
   const rows = [
-    { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000 },
+    { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000, reported_cost: "3.5" },
   ];
   assert.equal(m.tierCosts(rows).cacheWrite, 3.75); // 5m 단가, 1h($6)가 아님
 
   const [row] = m.withComputedCost(rows);
   assert.equal(row.cost, 3.75);
+  assert.equal(row.display_cost, 3.5);
+  assert.equal(row.reported_cost_status, "reported");
 
   assert.match(m.PRICING_PROMPT_TABLE, /5m/);
 });
@@ -33,12 +35,14 @@ test("1h billing end to end (control): same fixture bills at the 1h rate", async
   assert.equal(m.pricingConfig.cacheWriteTtl, "1h");
 
   const rows = [
-    { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000 },
+    { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 1_000_000, reported_cost: "3.5" },
   ];
   assert.equal(m.tierCosts(rows).cacheWrite, 6); // 1h 단가
 
   const [row] = m.withComputedCost(rows);
   assert.equal(row.cost, 6);
+  assert.equal(row.display_cost, 3.5);
+  assert.equal(row.reported_cost_status, "reported");
 });
 
 test("an invalid PRICING_CACHE_WRITE_TTL fails module load at import time", async () => {

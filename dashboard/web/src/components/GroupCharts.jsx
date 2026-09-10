@@ -172,6 +172,34 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
       </Card>
     );
   }
+  // Recharts 스택은 null을 0으로 바꾸고 툴팁에서 숨긴다. 일부 값만 있는 스택이
+  // 완전한 합계처럼 보이지 않도록 원본 행에서 검사한다.
+  const incompleteRows = rows.filter((row) => {
+    const value = row[valueKey];
+    return (typeof value !== "number" && typeof value !== "string")
+      || (typeof value === "string" && value.trim() === "")
+      || !Number.isFinite(Number(value));
+  });
+  if (incompleteRows.length > 0) {
+    const affected = [...new Map(incompleteRows.map((row) => [JSON.stringify([row[xKey], row[seriesKey]]), row])).values()];
+    const visible = affected.slice(0, 5);
+    return (
+      <Card title={title} subtitle={subtitle} help={help} right={right}>
+        <div role="status" className="text-sm text-ink-500">
+          <p>데이터 확인 필요: 일부 값이 누락되거나 유효하지 않아 전체 차트를 표시하지 않습니다.</p>
+          <p className="mt-2">확인 필요 항목 {affected.length}개</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {visible.map((row) => (
+              <li key={JSON.stringify([row[xKey], row[seriesKey]])} className="break-words">
+                {tickFormatter ? tickFormatter(row[xKey]) : String(row[xKey] ?? "미지정")} — {String(row[seriesKey] ?? "미지정")}
+              </li>
+            ))}
+          </ul>
+          {affected.length > visible.length && <p className="mt-1">외 {affected.length - visible.length}개</p>}
+        </div>
+      </Card>
+    );
+  }
   const { data, series: rawSeries } = pivotByKey(rows, xKey, seriesKey, valueKey);
   // seriesSort는 모델 차트처럼 값(지출 순위)과 무관한 고정 범례 순서가 필요할 때만 쓴다 —
   // 기본은 데이터 등장 순(pivotByKey)을 그대로 둔다(예: tool/skill 시리즈는 이 순서 그대로가 맞음).

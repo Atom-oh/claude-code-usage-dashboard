@@ -14,6 +14,7 @@ const DEFAULTS = {
   rangeCapDays: 90,
   schema: undefined,
   piiMask: true,
+  pricing: undefined,
 };
 
 const ConfigContext = createContext(DEFAULTS);
@@ -26,6 +27,7 @@ export function ConfigProvider({ config, children }) {
         rangeCapDays: Number.isInteger(config.rangeCapDays) ? config.rangeCapDays : DEFAULTS.rangeCapDays,
         schema: config.schema,
         piiMask: config.piiMask === false ? false : DEFAULTS.piiMask,
+        pricing: config.pricing,
       }
     : DEFAULTS;
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;

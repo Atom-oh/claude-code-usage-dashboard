@@ -281,6 +281,12 @@ test("SCHEMA_CONTEXT distinguishes reported cost (cost.usage) from the dashboard
   assert.match(SCHEMA_CONTEXT, /computed cost/);
 });
 
+test("dashboard spend questions use reported cost while keeping TTL diagnostics", () => {
+  assert.match(SCHEMA_CONTEXT, /대시보드의 기본 비용은.*reported_cost/);
+  assert.match(SCHEMA_CONTEXT, /TTL 가정/);
+  assert.doesNotMatch(SCHEMA_CONTEXT, /카드 값과 비교\/일치를 요구하면 위 단가로/);
+});
+
 // TokenType 값은 cacheCreation인데 PRICING 단가 필드명은 cacheWrite다 — 매핑을 명시하지 않으면
 // 모델이 캐시 생성 비용을 누락하거나 존재하지 않는 TokenType='cacheWrite'로 조회해 Cost 카드와
 // 다른 값을 낸다(리뷰에서 MAJOR로 확인). 두 이름이 실제로 어긋나 있음을 여기서 함께 고정한다.

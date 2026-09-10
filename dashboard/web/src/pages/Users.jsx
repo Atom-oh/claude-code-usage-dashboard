@@ -13,9 +13,10 @@ import { useGroupsShown } from "../useGroupsShown.js";
 import { useApi } from "../useApi.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { maskEmail } from "../fmt.js";
+import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
-const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
 
 // bedrock/enterprise 대결 밴드 — 이 대시보드의 정체성(A/B 실험)을 Users 페이지 상단에도 드러낸다.
@@ -122,16 +123,13 @@ export default function Users() {
   // 분자·분모를 같은 by-user-model 행에서 뽑아 모수를 일치시킨다. 한 유저가 여러 계열을 쓰면 각
   // 계열의 분모에 모두 들어간다 — "그 계열을 쓴 사용자당 평균"이라는 정의 그대로라 합계는 전체
   // 유저 수와 다를 수 있다. 계열 순서는 데이터 값이 아니라 FAMILY_LEGEND_ORDER 고정(colors.js와
-  // 같은 규칙). 단가표에 없는 모델은 cost=null이라 합계에서 빠지므로 힌트로 알린다.
-  // 분모는 priced 행(cost !== null)의 유저만 센다 — 단가표에 없는 모델은 withComputedCost가
-  // cost: null을 주는데, 분자에서만 0으로 빼고 분모에는 남기면 그 모델만 쓴 유저가 평균을
-  // 끌어내린다(리뷰에서 MAJOR로 확인). 분자·분모를 같은 priced 집합에서 뽑아 모수를 맞춘다.
+  // 같은 규칙). 보고값이 불완전한 계열은 부분합을 전체 사용자 수로 나누지 않는다.
+  const spendRows = asSpendRows(byUserModel.data || []);
   const familyStats = FAMILY_LEGEND_ORDER.map((fam) => {
-    const frows = (byUserModel.data || []).filter((r) => modelFamily(r.model) === fam);
-    const priced = frows.filter((r) => r.cost !== null);
-    const users = new Set(priced.map((r) => r.user)).size;
-    const cost = priced.reduce((s, r) => s + Number(r.cost), 0);
-    return { fam, users, cost, avg: users ? cost / users : 0, unpriced: priced.length < frows.length };
+    const frows = spendRows.filter((r) => modelFamily(r.model) === fam);
+    const users = new Set(frows.map((r) => r.user)).size;
+    const cost = sumSpend(frows);
+    return { fam, users, cost, avg: users && cost != null ? cost / users : null };
   }).filter((s) => s.users > 0);
 
   const rows = (leaderboard.data || [])
@@ -199,7 +197,7 @@ export default function Users() {
           <Card
             title="모델 계열별 사용자당 평균 비용"
             subtitle="해당 계열을 사용한 사용자 1인당 평균 비용"
-            help="각 모델 계열의 비용을 그 계열을 실제로 사용한 사용자 수로 나눈 값입니다. 여러 계열을 사용한 사용자는 각 계열에 모두 포함되며, 단가가 등록되지 않은 모델은 제외됩니다. 채널을 나누지 않은 값으로, 채널 미분류 세션도 포함됩니다."
+            help={`각 모델 계열의 보고 비용을 해당 계열의 사용자 수로 나눕니다. 보고값이 불완전한 계열은 평균을 표시하지 않습니다. 채널 미분류 세션도 포함합니다. ${SPEND_HELP}`}
           >
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {familyStats.map((s) => (
@@ -212,7 +210,7 @@ export default function Users() {
                     </span>
                   }
                   value={usd(s.avg)}
-                  hint={`사용자 ${fmt(s.users)}명 · 총 비용 ${usd(s.cost)}${s.unpriced ? " (단가 미등록 모델 제외)" : ""}`}
+                  hint={s.cost == null ? `사용자 ${fmt(s.users)}명 · 보고 비용 확인 필요` : `사용자 ${fmt(s.users)}명 · 총 비용 ${usd(s.cost)}`}
                 />
               ))}
             </div>
