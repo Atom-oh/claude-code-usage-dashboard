@@ -39,7 +39,7 @@ export function StatTile({ label, value, eyebrow, help, trend, hint, spark, vari
         <span className="truncate">{eyebrow ?? label}</span>
         {help && <Info size={12} className="shrink-0 text-ink-400" title={help} aria-label={help} />}
       </div>
-      <div className={cn("tabular text-[26px] font-semibold leading-tight mt-1", valueColor)}>{value}</div>
+      <div className={cn("tabular text-base sm:text-[26px] font-semibold leading-tight mt-1", valueColor)}>{value}</div>
       {Array.isArray(spark) && spark.length > 1 && <Sparkline points={spark.map(Number)} />}
       {(trend || hint != null) && (
         <div className="flex items-center gap-2 mt-1.5">

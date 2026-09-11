@@ -13,12 +13,12 @@ import { useGroupsShown } from "../useGroupsShown.js";
 import { colorFor, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { foldLeaderboardByUser } from "../score.js";
 import { decisionLabel, unclassifiedLabel } from "../labels.js";
+import { asSpendRows, sumSpend } from "../spend.js";
 
-const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 // 비용 셀의 그룹 스택 바 — 한 줄짜리, 색 분할 = 그룹(bedrock/enterprise[/unknown]), 길이 =
-// 컬럼 최대 사용자 비용 대비. 단가표 밖 모델은 서버 응답에서 cost null → 0으로 접힌다
-// (Cost 페이지의 사용자 표와 같은 규칙). hover에 그룹별 금액.
+// 컬럼 최대 사용자 보고 비용 대비. 확인되지 않은 합계에는 막대를 그리지 않는다.
 function CostGroupBar({ split, max }) {
   const segs = GROUP_SEGMENT_ORDER.map((g) => ({ group: g, value: Number(split?.[g] || 0) })).filter((x) => x.value > 0);
   const total = segs.reduce((sum, x) => sum + x.value, 0);
@@ -124,19 +124,18 @@ export default function Productivity() {
   const byUserCost = useApi("/api/cost/by-user-model");
 
   // 사용자별 생산성 표: 유저×그룹 행을 유저 단위로 접고 점수를 재계산(score.js — Executive의
-  // 조직 점수와 같은 폴드). 비용은 by-user-model을 유저×그룹으로 접는다 — cost null(단가표 밖
-  // 모델)은 0으로(사용자 지시, Cost 페이지의 사용자 표와 동일 규칙).
+  // 조직 점수와 같은 폴드). 비용은 by-user-model의 보고값을 유저×그룹으로 접는다.
   const scoreDays = Math.max(1, (to - from) / 86400000);
   const costByUser = new Map();
-  for (const r of byUserCost.data || []) {
+  for (const r of asSpendRows(byUserCost.data || [])) {
     const m = costByUser.get(r.user) || {};
-    m[r.group] = (m[r.group] || 0) + Number(r.cost || 0);
+    m[r.group] = sumSpend([{ cost: Object.hasOwn(m, r.group) ? m[r.group] : 0 }, r]);
     costByUser.set(r.user, m);
   }
   const userProductivityRows = foldLeaderboardByUser(leaderboard.data, scoreDays)
     .map((u) => {
       const split = costByUser.get(u.user) || {};
-      return { ...u, costByGroup: split, cost: Object.values(split).reduce((a, b) => a + b, 0) };
+      return { ...u, costByGroup: split, cost: Object.keys(split).length ? sumSpend(Object.values(split).map((cost) => ({ cost }))) : null };
     })
     .sort((a, b) => b.productivity_score - a.productivity_score);
   const userCostMax = userProductivityRows.reduce((m, r) => Math.max(m, r.cost || 0), 0);
@@ -232,24 +231,29 @@ export default function Productivity() {
           />
         )}
 
-        {leaderboard.loading ? null : leaderboard.error ? null : (
+        {leaderboard.loading || leaderboard.error ? null : byUserCost.loading ? (
+          <Loading />
+        ) : byUserCost.error ? (
+          <ErrorBox error={byUserCost.error} />
+        ) : (
           <DataTable
             title="사용자별 생산성"
-            subtitle="사용자 단위로 합산 · 막대 색은 채널"
+            subtitle="사용자 단위로 합산 · 비용은 Claude Code 보고값 · 막대 색은 채널"
             help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다. 두 채널을 모두 사용한 사용자는 원시 지표를 합산한 뒤 점수를 다시 계산합니다. 비용 막대의 색은 채널, 길이는 가장 큰 사용자 대비 비율입니다."
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
               { key: "productivity_score", label: "생산성 점수", render: (v) => Number(v).toFixed(1), bar: true },
               {
                 key: "cost",
-                label: "비용",
+                label: "보고 비용",
                 render: (v, r) => (
                   <span className="inline-flex items-center gap-2">
                     <span className="min-w-[4rem]">{usd(v)}</span>
-                    <CostGroupBar split={r.costByGroup} max={userCostMax} />
+                    {v != null && <CostGroupBar split={r.costByGroup} max={userCostMax} />}
                   </span>
                 ),
                 toText: (v, r) => {
+                  if (v == null) return "";
                   const split = GROUP_SEGMENT_ORDER.map((g) => (r.costByGroup?.[g] ? `${g} ${usd(r.costByGroup[g])}` : null))
                     .filter(Boolean)
                     .join(" · ");

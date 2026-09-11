@@ -208,8 +208,8 @@ export default function Reliability() {
           <ErrorBox error={reportedVsComputed.error} />
         ) : (
           <DataTable
-            title="버전별 보고 비용 왜곡"
-            subtitle="보고 비용은 클라이언트 자체 단가표 기준이라 버전에 따라 달라진다 — 비율이 1.00×에서 벗어난 버전이 왜곡 원인이다(실측 2026-09-03: v2.1.251이 claude-fable-5-1을 opus-5 단가로 보고, ≈0.5×). 계산 비용은 서버 단가표 기준이라 버전과 무관하다."
+            title="버전별 보고 비용과 계산 비용"
+            subtitle="보고값은 클라이언트 단가표, 계산값은 서버 단가표와 캐시 TTL 가정을 사용합니다. 차이는 TTL 혼합·클라이언트 버전·수집 누락 등에서 생길 수 있으며 비율만으로 원인을 확정할 수 없습니다."
             columns={REPORTED_VS_COMPUTED_COLUMNS}
             rows={reportedVsComputed.data || []}
             exportName="reliability_reported_vs_computed"

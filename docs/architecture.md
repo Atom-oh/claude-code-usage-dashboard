@@ -423,3 +423,12 @@ ClickHouse 스키마는 `claude_code.schema_migrations`(`clickhouse-migration-00
 - 장애 대응: [docs/runbooks/incident-response.md](runbooks/incident-response.md) 참고
 - 백업·복구: [docs/runbooks/backup-and-restore.md](runbooks/backup-and-restore.md) 참고
 - 알림: [docs/runbooks/alerting.md](runbooks/alerting.md) 참고
+
+## Cost display policy (2026-09-10)
+
+SQL, pricing and rollup aggregation are unchanged. The web frontend reads existing
+`reported_cost`; `costEfficiency.js` uses it for `cost_per_loc` and `cost_per_commit`.
+A zero report with token usage is treated as unpriced at those consumers. Original computed
+cost remains available for TTL/price cross-checking. No full-capture guarantee is inferred
+from positive sums, and productivity scoring is unchanged. See
+[ADR-009](decisions/ADR-009-reported-spend-with-computed-diagnostics.md).

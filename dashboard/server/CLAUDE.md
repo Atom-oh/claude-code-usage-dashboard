@@ -114,6 +114,12 @@ session is `readonly`.
 - `*.test.js` -- `node:test` unit tests for the pure functions above
 
 ## Rules
+- **Cost selection is a consumer policy.** Keep `queries.js`, `TOKEN_SUMS`, `pricing.js` and
+  `rollupComputedCost()` unchanged. `costEfficiency.js` preserves computed `cost`/`unpriced`,
+  adds the existing reports as `reported_cost`, and computes `cost_per_loc`/`cost_per_commit`
+  from that report. `reported_unpriced` identifies a missing/invalid report or a zero report
+  with token usage; those unit costs are null. The flag concerns only this consumer's rows,
+  not completeness of the underlying telemetry. Productivity scoring stays unchanged.
 - **`index.js` binds the port only when it is the entry module** (`isMain` via
   `pathToFileURL(path.resolve(process.argv[1]))`) and exports `app`, so `app.test.js` can import
   it. Everything else at module scope -- the fail-closed auth check, the schema and readonly

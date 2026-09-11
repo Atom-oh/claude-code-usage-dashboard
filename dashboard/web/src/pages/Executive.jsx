@@ -14,9 +14,10 @@ import { useGroupsShown } from "../useGroupsShown.js";
 import { makeTickFmt, formatDuration } from "../fmt.js";
 import { GROUP_ORDER, modelColorFor, byModelLegendOrder } from "../colors.js";
 import { foldLeaderboardByUser } from "../score.js";
+import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
-const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 // 생산성 점수 링 게이지 — SVG 원 2개, 점수에 따라 색상 램프.
 function ScoreGauge({ score }) {
@@ -76,10 +77,8 @@ export default function Executive() {
     { accept: 0, total: 0 }
   );
   const acceptRate = d.total > 0 ? d.accept / d.total : 0;
-  const cost = (costSummary.data || []).reduce((a, r) => a + Number(r.computed_cost), 0);
-  // 단가표에 없는 모델의 토큰은 계산 비용에서 통째로 빠진다 — 지출 타일이 하한선임을 이
-  // 화면에서도 알 수 있어야 한다(Cost 페이지는 이미 그룹별로 같은 값을 노출한다).
-  const unpricedTokens = (costSummary.data || []).reduce((a, r) => a + Number(r.unpriced_tokens || 0), 0);
+  const spendSummary = asSpendRows(costSummary.data || []);
+  const cost = sumSpend(spendSummary);
 
   // 파생 지표 — 전부 이 화면 안에서만 쓰는 클라이언트 계산.
   // days(마지막 프리셋 값)가 아니라 실제 (to-from) 일수를 써야 한다 — 커스텀 드래그 줌 모드에서는
@@ -95,10 +94,10 @@ export default function Executive() {
       : d.toLocaleDateString("ko-KR");
   // cost(costSummary)와 users(activeUsers)는 둘 다 excludeUnknown:false라 같은 모수(unknown
   // 세션 포함)를 쓴다(queries.js filterCond 주석 참조) — 분자·분모가 어긋나지 않는다.
-  const costPerDev = users > 0 ? cost / users : 0;
-  const dailyAvg = cost / daysInRange;
-  const projection30d = dailyAvg * 30;
-  const costPerKloc = t.loc > 0 ? cost / (t.loc / 1000) : 0;
+  const costPerDev = cost != null && users > 0 ? cost / users : null;
+  const dailyAvg = cost == null ? null : cost / daysInRange;
+  const projection30d = dailyAvg == null ? null : dailyAvg * 30;
+  const costPerKloc = cost != null && t.loc > 0 ? cost / (t.loc / 1000) : null;
   const sessionsPerDevDay = users > 0 ? t.sessions / users / daysInRange : 0;
   // 조직 종합 점수 — 유저 단위 폴드+재계산은 score.js가 소유한다(왜 그룹별 점수 평균이 아닌지,
   // 왜 scoreDays 하한이 1일인지는 그 파일의 주석 참고). Productivity의 사용자별 테이블과 같은
@@ -117,12 +116,12 @@ export default function Executive() {
   const pickAB = (rows, key) => {
     const v = (grp) => {
       const r = (rows || []).find((x) => x.group === grp);
-      return r ? Number(r[key]) : null;
+      return r?.[key] == null ? null : Number(r[key]);
     };
     return { bedrock: v("bedrock"), enterprise: v("enterprise") };
   };
   const abDevs = { bedrock: Number(activeUsers.data?.bedrock_users ?? 0), enterprise: Number(activeUsers.data?.enterprise_users ?? 0) };
-  const abCost = pickAB(costSummary.data, "computed_cost");
+  const abCost = pickAB(spendSummary, "cost");
   const abLoc = pickAB(kpi.data, "lines_of_code");
   // active_time.total의 TokenType은 'user'(사람 상호작용 시간)/'cli'(Claude 구동 시간) 분리
   // (실측 7d: cli 123h vs user 2.8h) — "개발자 활성 시간"은 user 쪽, 자동화 배율은 cli÷user.
@@ -149,14 +148,14 @@ export default function Executive() {
   // 포맷은 ABScoreboard의 fmtValue를 그대로 쓴다(pct는 0~1 분율 계약, $10 미만은 센트 유지).
   const singleValue = (row) => {
     const g = shownGroups(kpi.data || [])[0];
-    return fmtValue(row[g] ?? row.bedrock ?? row.enterprise, row.format);
+    return fmtValue(row[g], row.format);
   };
 
   // single 모드 StatTile의 help 문구 — scoreboardRows(ABScoreboard와 공유)에 필드를 얹는 대신
   // label로 조회하는 별도 맵으로 둔다. docs/metrics.md의 정의 문장과 동일한 어휘를 쓴다.
   const SCOREBOARD_HELP = {
     "활성 개발자": "선택한 기간에 세션이 1건 이상 있었던 개발자 수입니다. 채널이 판별된 세션만 집계합니다.",
-    "기간 비용": "토큰 사용량에 모델 단가를 적용해 계산한 기간 비용입니다. 채널이 판별된 세션만 집계합니다.",
+    "기간 비용": SPEND_HELP,
     "개발자당 비용": "채널별 비용을 해당 채널의 활성 개발자 수로 나눈 값입니다.",
     "추가 코드 라인": "선택한 기간에 추가된 코드 라인 수의 합계입니다.",
     "제안 수락률": "Claude Code가 제안한 코드 편집 중 수락된 비율입니다.",
@@ -314,8 +313,8 @@ export default function Executive() {
                       label="기간 비용"
                       value={usd(cost)}
                       variant="accent"
-                      hint={unpricedTokens > 0 ? `개발자당 ${usd(costPerDev)} · 단가 미등록 토큰 ${fmt(unpricedTokens)}개 제외` : `개발자당 ${usd(costPerDev)}`}
-                      help="토큰 사용량에 모델 단가를 적용해 계산한 기간 비용으로, 채널이 판별되지 않은 세션도 포함합니다. 수집된 사용량으로 계산한 비용이며 실제 청구액과 다를 수 있습니다."
+                      hint={cost == null ? "보고 비용 확인 필요" : `개발자당 ${usd(costPerDev)} · Claude Code 보고값`}
+                      help={SPEND_HELP}
                     />
                     <StatTile
                       label="30일 예상 비용"
@@ -334,8 +333,7 @@ export default function Executive() {
                       help="기간 비용을 기간의 일수로 나눈 값입니다."
                     />
                   </div>
-                  {/* 전기간 대비는 항목별 before→after — 덤벨이 그 일의 기본형(dataviz). 미산정
-                      모델(cost null)은 DumbbellChart가 걸러낸다. */}
+                  {/* 두 기간의 보고값이 모두 확인된 모델만 비교한다. */}
                   {!costCompare.loading && !costCompare.error && (
                     <div className="mt-4">
                       <DumbbellChart
@@ -343,8 +341,8 @@ export default function Executive() {
                         subtitle="회색 점은 직전 같은 길이의 기간, 색 점은 이번 기간"
                         valuePrefix="$"
                         colorOf={modelColorFor}
-                        data={(costCompare.data || [])
-                          .filter((r) => r.cost !== null)
+                        data={asSpendRows(costCompare.data || [])
+                          .filter((r) => r.cost != null && r.prev_cost != null)
                           .map((r) => ({ label: r.model, prev: r.prev_cost, cur: r.cost }))
                           .sort((a, b) => Number(b.cur) - Number(a.cur))
                           .slice(0, 10)}
@@ -387,7 +385,7 @@ export default function Executive() {
               ) : (
                 <SeriesBarChart
                   title="모델별 비용 추이"
-                  rows={costDaily.data}
+                  rows={asSpendRows(costDaily.data || [])}
                   xKey="day"
                   seriesKey="model"
                   valueKey="cost"

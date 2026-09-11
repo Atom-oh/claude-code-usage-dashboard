@@ -5,7 +5,7 @@ export function pivotByGroup(rows, xKey, valueKey) {
   const byX = new Map();
   for (const r of rows || []) {
     if (!byX.has(r[xKey])) byX.set(r[xKey], { [xKey]: r[xKey] });
-    byX.get(r[xKey])[r.group] = Number(r[valueKey]);
+    byX.get(r[xKey])[r.group] = r[valueKey] == null ? null : Number(r[valueKey]);
   }
   return [...byX.values()].sort((a, b) => new Date(a[xKey]) - new Date(b[xKey]));
 }
@@ -45,7 +45,8 @@ export function pivotByKey(rows, xKey, seriesKey, valueKey) {
     if (!byX.has(r[xKey])) byX.set(r[xKey], { [xKey]: r[xKey] });
     const s = r[seriesKey];
     if (!series.includes(s)) series.push(s);
-    byX.get(r[xKey])[s] = (byX.get(r[xKey])[s] || 0) + Number(r[valueKey]);
+    const point = byX.get(r[xKey]);
+    point[s] = point[s] === null || r[valueKey] == null ? null : (point[s] || 0) + Number(r[valueKey]);
   }
   const data = [...byX.values()].sort((a, b) => {
     const da = new Date(a[xKey]).getTime(), db = new Date(b[xKey]).getTime();
@@ -68,4 +69,3 @@ export function topPerUser(rows, keyField, countField) {
   }
   return top;
 }
-

@@ -15,11 +15,16 @@
 1. **누적 카운터 차분 (cumulative-counter diff)** — `otel_metrics_sum`의 값은 세션(`session.id`)
    단위로 "지금까지의 누적 합계"를 ~30초마다 다시 export한 것이다. 그래서 모든 수치는
    `sum(Value)`가 아니라 세션 경계에서의 차분(`incFlat`/`incBucketed`, `queries.js`)으로 구한다.
-2. **비용은 하한선 (cost is a lower bound)** — 계산 비용(computed cost)은 계측되지 않은 실행
-   경로, 단가표에 없는 모델(아래 3번), 텔레메트리가 없는 채널을 반영하지 못한다. Executive의
-   `기간 비용` 타일과 Cost의 `총 비용` 타일의 도움말이 이를 알린다.
+2. **비용은 클라이언트 보고 추정값 (client-reported estimate)** — 지출 화면은
+   `reported_cost`를 기본으로 사용한다. 클라이언트 버전의 단가표, 수집 누락과 계약 할인 때문에
+   실제 청구액과 다를 수 있다. 계산 비용은 TTL 가정에 따라 과대·과소 산정될 수 있으므로
+   실청구의 하한으로 보장하지 않는다. 소비 측에 전달된 집계행에서 확인되는 보고값 누락이나 토큰
+   사용이 있는 0 보고값은 확인 필요로 표시한다. 그 행을 JS에서 합치는 합계·평균도 표시하지
+   않는다. 집계 전에 다른 사용자의 양수 비용과 합쳐진 누락은 탐지하지 못할 수 있으므로,
+   총계와 사용자 상세의 상태가 다를 수 있다. 양수 보고값은 완전 수집을 입증하지 않는다.
 3. **단가표에 없는 모델 (unpriced models)** — 단가표(`pricing.js`)에 없는 모델의 토큰은 추정치를
    넣지 않고 계산 비용에서 통째로 빠지며, `unpriced_tokens`로 별도 노출된다.
+   유효한 보고 비용이 있으면 지출과 보고 비용 기반 효율 지표에는 포함한다.
 4. **`unknown` 그룹** — 세션의 그룹(Bedrock/Enterprise)을 텔레메트리로 판별하지 못하면
    `unknown`이 된다. 대부분의 A/B 비교 엔드포인트는 이를 제외하지만, 총계용 엔드포인트
    (`activeUsers`, `adoptionLevels`, `adoptionTimeseries`, `kpiSummary`, `costSummary`)는
@@ -44,9 +49,9 @@
   `enterprise_users`로 나뉘어 나오며, 이쪽은 그룹 판별된 세션만 센다.
 
 ### 기간 비용 (Period Cost)
-- **정의**: 선택 기간에 실측 토큰 수 × 모델별 단가표로 계산한 총비용.
+- **정의**: 선택 기간의 Claude Code 보고 비용 합계. 토큰 × 단가표 계산값은 비교용으로 보존한다.
 - **원천**: `claude_code.cost.usage`, `claude_code.token.usage`.
-- **계산**: `queries.js:costSummary`, `pricing.js:withComputedCost`.
+- **계산**: `queries.js:costSummary`의 기존 `reported_cost`, `spend.js:asSpendRow`.
 - **주의**: 2번, 3번, 4번.
 
 ### 개발자당 비용 (Cost per Developer)
@@ -194,10 +199,10 @@
 - **주의**: 2번, 3번, 4번.
 
 ### Claude Code 보고 비용 (Reported Cost)
-- **정의**: Claude Code 자체가 텔레메트리로 보고하는 근사 비용 — 계산 비용과 비교용으로만 쓴다.
+- **정의**: Claude Code 자체가 텔레메트리로 보고하는 근사 비용 — 지출 화면의 기본값이다.
 - **원천**: `claude_code.cost.usage`.
 - **계산**: `queries.js:costSummary`(`reported_cost`).
-- **주의**: 실측 토큰 기반 계산 비용과 다르게 자체 근사치라 A/B 비교에는 쓰지 않는다.
+- **주의**: 2번. 같은 기간·채널·모델·클라이언트 버전과 수집 범위를 확인하고 비교한다.
 
 ### 입력/출력/캐시 읽기/캐시 쓰기 토큰 (Token Breakdown by Type)
 - Overview의 "전체 토큰" 계열과 동일한 `claude_code.token.usage` 원천, `TokenType` 속성으로 분리.
@@ -212,17 +217,19 @@
 - **주의**: 2번, 3번.
 
 ### 개발자당 비용 (Cost per Developer)
-- Executive의 "개발자당 비용"과 동일 — 계산 비용 총계 ÷ `activeUsers`(전체 개발자 수).
+- Executive의 "개발자당 비용"과 동일 — 보고 비용 총계 ÷ `activeUsers`(전체 개발자 수).
 - **계산**: `Cost.jsx`의 `spendPerDeveloper`.
 - **주의**: 2번, 3번, 4번.
 
 ### 사용자당 비용 — 채널별 (Cost per User, by Channel)
-- **정의**: 채널별 계산 비용 ÷ 그 채널의 사용자 수 — 채널 간 사용자 수 차이를 상쇄한 비교용 지표.
+- **정의**: 채널별 보고 비용 ÷ 그 채널의 사용자 수 — 채널 간 사용자 수 차이를 상쇄한 비교용 지표.
 - **계산**: `Cost.jsx`의 `spendPerUserFor`.
 - **주의**: 2번, 3번, 5번(그룹별 인원 합은 전역 uniq보다 클 수 있음).
 
 ### 토큰 유형별 비용 / 캐시율 (Cost by Token Type / Cache Reuse Ratio)
 - Overview의 "캐시 효율"과 같은 `cache_read_ratio`를 재사용 — `queries.js:cacheEfficiency`.
+- 티어별 달러 금액은 토큰 × 단가표의 **계산 추정값**이다. `PRICING_CACHE_WRITE_TTL` 가정을
+  표시하며, 보고 비용을 TTL별로 정확히 배분한 값이 아니다.
 - **주의**: 캐시 쓰기를 분모에서 빼면 안 된다(위 Overview 항목과 동일한 주의).
 
 ### Effort 수준별 비용 (Cost by Effort)
@@ -230,7 +237,7 @@
   묶여 나온다.
 - **원천**: `claude_code.cost.usage`.
 - **계산**: `queries.js:effortMix`.
-- **주의**: 없음.
+- **주의**: 보고값의 수집·클라이언트 버전 한계는 2번과 같다.
 
 ---
 

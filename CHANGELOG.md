@@ -17,6 +17,16 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Fixed (2026-09-10 reported spend and cache TTL)
+- Use existing client-reported spend in Cost, Executive, Productivity, Users and CSVs;
+  use reports for `costEfficiency.js`'s `cost_per_loc` and `cost_per_commit`.
+- Treat zero reports with token usage as unpriced at those consumers. Preserve computed
+  cost as a TTL/price cross-check, including for models with valid reports but no server price.
+- Keep SQL, `TOKEN_SUMS`, pricing, rollup aggregation and productivity scoring unchanged.
+  Positive aggregates do not guarantee complete underlying reports.
+- Keep long token/currency values readable on mobile and avoid rendering unavailable
+  amounts as zero in A/B comparisons and stacked charts.
+
 ### Added (2026-09-04 auto-refresh + range presets)
 - Add auto-refresh with a selectable interval (끔 / 15초 / 30초 / 1분 / 5분, default **1분**),
   persisted in `localStorage` under `ccdash.refreshMs`, paused while the tab is hidden, one

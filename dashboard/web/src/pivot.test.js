@@ -1,5 +1,18 @@
 import { expect, test } from "vitest";
-import { groupsShown } from "./pivot.js";
+import { groupsShown, pivotByGroup, pivotByKey } from "./pivot.js";
+
+test("a chart preserves missing spend rather than drawing a zero", () => {
+  expect(pivotByGroup([{ day: "2026-09-07", group: "bedrock", cost: null }], "day", "cost"))
+    .toEqual([{ day: "2026-09-07", bedrock: null }]);
+  const rows = [
+    { day: "2026-09-07", model: "sonnet", cost: 5 },
+    { day: "2026-09-07", model: "sonnet", cost: null },
+    { day: "2026-09-07", model: "sonnet", cost: 7 },
+    { day: "2026-09-08", model: "sonnet", cost: 0 },
+  ];
+  expect(pivotByKey(rows, "day", "model", "cost").data)
+    .toEqual([{ day: "2026-09-07", sonnet: null }, { day: "2026-09-08", sonnet: 0 }]);
+});
 
 test("ab 모드 + 필터 없음/무효 필터: 항상 두 그룹 — 빈 카드도 정보라는 기존 의도 유지", () => {
   expect(groupsShown("ab", [])).toEqual(["bedrock", "enterprise"]);

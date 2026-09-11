@@ -166,19 +166,16 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   `adoptionTimeseries`, `kpiSummary`, `costSummary`) include it -- see `queries.js`'s `filterCond`
   policy comment. A single-channel org therefore still sees an `unknown` share in the totals, and
   that is correct, not a bug in single mode.
-- **The Cost page's Effort and Agent panels show the token×price COMPUTED cost**, like every
-  other card on that page, with Claude Code's reported `cost.usage` beside it as a secondary
-  contrast column — `effortMix`/`agentCost` return `rollupComputedCost()` output (`cost` +
-  `reported_cost` + `tokens` + `unpriced_tokens`) server-side. This reverses the earlier rule
-  that these two panels were the reported-cost pair: reported cost is priced client-side from
-  the client's own table, so it moves with the Claude Code version (measured 2026-09-03:
-  v2.1.251 prices `claude-fable-5-1` off the opus-5 row → ≈0.5× of list, v2.1.258 at list,
-  while `claude-fable-5` is ≈1.00 on every version), whereas tokens × `pricing.js` is
-  client-independent. Do not flip these two panels back to reported-only.
-  The per-user table's `미분류 포함` checkbox is display-only: it re-fetches
-  `/api/cost/by-user-model` with `includeUnknown=1` for that table alone, while the spend
-  ranking above it keeps the default (unknown-excluded) view because it is an A/B-join
-  consumer (see the policy comment on that route in `server/index.js`).
+- **Spend displays read the existing `reported_cost` directly.** `spend.js` maps reports
+  into view rows and keeps the original `cost`/`computed_cost` for diagnostics. It does not
+  depend on server display/status fields. Zero report with positive tokens is treated like
+  an unpriced amount (`reported_unpriced`); preserve that flag across view folds, forecasts,
+  charts and CSVs. A positive report remains usable when only the server price is missing.
+  Cost, Executive, Productivity and Users follow this policy. Cache-tier and Reliability
+  diagnostics keep computed prices and the TTL assumption. SQL/rollups are unchanged, so
+  positive aggregates can still conceal missing underlying reports. Agent ranking is only
+  within the returned API subset (the existing computed-cost top-30 cutoff is unchanged).
+  The per-user `미분류 포함` checkbox remains display-only for that table's request.
 - **There is exactly one `<nav>` in the DOM unless the mobile drawer is open.**
   `App.test.jsx`'s `container.querySelector("nav")` picks the **first** `<nav>` to assert the
   route↔nav-link set, and `MobileNav` renders before `Sidebar` — so `MobileNav` renders its own

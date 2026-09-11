@@ -30,8 +30,9 @@ function winnerOf({ bedrock, enterprise, betterIs }) {
 
 // HBarList와 같은 최소 가시폭(2%) — 양쪽 다 0보다 클 때만. 진짜 0은 0으로 보여준다.
 function splitShare({ bedrock, enterprise }) {
-  const b = Math.max(0, Number(bedrock) || 0);
-  const e = Math.max(0, Number(enterprise) || 0);
+  if (bedrock == null || enterprise == null || !Number.isFinite(Number(bedrock)) || !Number.isFinite(Number(enterprise))) return null;
+  const b = Math.max(0, Number(bedrock));
+  const e = Math.max(0, Number(enterprise));
   if (b + e <= 0) return null;
   if (b === 0) return 0;
   if (e === 0) return 100;
