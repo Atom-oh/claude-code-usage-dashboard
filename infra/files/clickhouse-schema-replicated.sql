@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum ON CLUSTER 'replicated'
     Source          LowCardinality(String) MATERIALIZED Attributes['source'],
     EndUserId       LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
     AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
+    ProjectName     LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    Entrypoint      LowCardinality(String) MATERIALIZED Attributes['app.entrypoint'],
 
     -- ResourceSchemaUrl부터 Exemplars.*까지는 OTel ClickHouse exporter가 자체 기본 스키마로
     -- 테이블을 만들 때 넣는 부기(bookkeeping) 컬럼이다 — 라이브 클러스터는 exporter가 먼저
@@ -325,6 +327,8 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_logs ON CLUSTER 'replicated'
     PromptId             String MATERIALIZED LogAttributes['prompt.id'],
     EndUserId            LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
     AppVersion           LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
+    ProjectName          LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    Entrypoint           LowCardinality(String) MATERIALIZED LogAttributes['app.entrypoint'],
 
     -- TimestampTime부터 ScopeAttributes까지는 exporter 기본 부기 컬럼(실측 2026-07-27) —
     -- otel_metrics_sum과 같은 사유로 명시. clickhouse-schema.sql(참조 사본)과 동기화 유지.
@@ -439,7 +443,9 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_traces ON CLUSTER 'replicated'
     AgentId         String MATERIALIZED SpanAttributes['agent_id'],
     ParentAgentId   String MATERIALIZED SpanAttributes['parent_agent_id'],
     Model           LowCardinality(String) MATERIALIZED SpanAttributes['model'],
-    Decision        LowCardinality(String) MATERIALIZED SpanAttributes['decision']
+    Decision        LowCardinality(String) MATERIALIZED SpanAttributes['decision'],
+    ProjectName     LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    Entrypoint      LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint']
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_traces', '{replica}')
 PARTITION BY toYYYYMM(Timestamp)
@@ -487,3 +493,31 @@ WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND tab
 INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 4, '004-schema-migration-ledger', '29b114b2e242852ee208b4ef7fa6dc49d0e8b4b2daf988e18caa2543d62179a5'
 FROM system.one
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version = 4) = 0;
+
+-- -----------------------------------------------------------------------------
+-- 005 블록 — project.name / app.entrypoint 승격 (clickhouse-migration-005.sql의
+--    라이브 클러스터 사본). 신규 설치는 정의상 "005까지 적용된" 상태다.
+--    이 파일을 수정하면 schema-init Job 이름에 박힌 filemd5(...)가 바뀌어
+--    (infra/clickhouse.tf) 다음 terraform apply가 Job을 재생성·재실행하는데, 모든 문장이
+--    ADD COLUMN IF NOT EXISTS / 가드된 INSERT라서 안전하다.
+--    MATERIALIZE COLUMN을 부르지 않는 근거는 clickhouse-migration-005.sql 헤더 참고.
+-- -----------------------------------------------------------------------------
+ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
+    ADD COLUMN IF NOT EXISTS ProjectName LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    ADD COLUMN IF NOT EXISTS Entrypoint  LowCardinality(String) MATERIALIZED Attributes['app.entrypoint'];
+
+ALTER TABLE claude_code.otel_logs ON CLUSTER 'replicated'
+    ADD COLUMN IF NOT EXISTS ProjectName LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    ADD COLUMN IF NOT EXISTS Entrypoint  LowCardinality(String) MATERIALIZED LogAttributes['app.entrypoint'];
+
+ALTER TABLE claude_code.otel_traces ON CLUSTER 'replicated'
+    ADD COLUMN IF NOT EXISTS ProjectName LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    ADD COLUMN IF NOT EXISTS Entrypoint  LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint'];
+
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 5, '005-project-tag-and-entrypoint', 'abdde352853f487d7b119ef2d15523629011ec988d308e1cbfad7a78d77b44f5'
+FROM system.one
+WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'ProjectName') > 0
+  AND (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_logs' AND name = 'ProjectName') > 0
+  AND ((SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_traces' AND name = 'ProjectName') > 0
+       OR (SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_traces') = 0)
+  AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 5) = 0;

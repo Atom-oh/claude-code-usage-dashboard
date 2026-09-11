@@ -7,10 +7,9 @@ import { BarTip } from "../components/BarTip.jsx";
 import { Loading, ErrorBox } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
-import { useConfig } from "../ConfigContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
-import { groupsShown } from "../pivot.js";
+import { useGroupsShown } from "../useGroupsShown.js";
 import { colorFor, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { foldLeaderboardByUser } from "../score.js";
 import { decisionLabel, unclassifiedLabel } from "../labels.js";
@@ -110,7 +109,7 @@ function TracesBetaPanel({ resp, title, subtitle, help, columns, exportName }) {
 }
 
 export default function Productivity() {
-  const { groupMode } = useConfig();
+  const shownGroups = useGroupsShown();
   const { intervalHours, from, to } = useRange();
   const fmtTick = makeTickFmt(intervalHours);
   const kpi = useApi("/api/overview/kpi");
@@ -412,8 +411,8 @@ export default function Productivity() {
         ) : languages.error ? (
           <ErrorBox error={languages.error} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {groupsShown(groupMode, languages.data).map((g) => (
+          <div className="group-grid">
+            {shownGroups(languages.data).map((g) => (
               <DataTable
                 key={g}
                 title={`언어별 코드 편집 — ${g}`}

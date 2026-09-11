@@ -186,6 +186,35 @@ to boot). It reads the raw table rather than the hourly rollup precisely so a de
 shows up in minutes rather than after the next rollup. It is a *detector*, not a fix: the
 systemd unit above is still what keeps ingestion alive.
 
+### Project tag (project.name)
+
+Claude Code does not export the working directory or any git information — confirmed against
+both the docs and a live capture, and `workspace.host_paths` is desktop-only (zero rows on
+this fleet) — so the only path to a per-repository breakdown is a `project.name` resource
+attribute an operator plants. The generic mechanism is a per-repo `.claude/settings.json`
+setting `env.OTEL_RESOURCE_ATTRIBUTES="project.name=<repo>,<every existing key repeated>"`.
+**A project-level value replaces the shell/user value as a whole string — it is not merged**
+(measured 2026-09-09 against a local OTLP receiver). Every key the fleet already sets
+(`experiment.group`, `team`, `enduser.id`, `user.email`, …) must therefore be repeated
+verbatim; drop one and that session silently vanishes from A/B group inference or user
+attribution, with no error anywhere. The value is read once at startup — an edit takes effect
+from the next session.
+
+**On this fleet the per-repo mechanism does nothing.** `user-data.sh` writes
+`OTEL_RESOURCE_ATTRIBUTES` straight into `/etc/claude-code/managed-settings.json`, so managed
+settings own that variable, and managed settings win over project settings. There are two
+ways to make the tag land — put `project.name` into the managed value, or hand ownership of
+the variable to project settings by dropping the key from managed settings — and choosing
+between them is the operator's decision; this README deliberately does not make it. Note the
+consequence of the second option: once managed settings stop carrying the variable, every
+repository becomes responsible for `experiment.group` (and the other keys) itself.
+
+If repository names are sensitive, tag with a hash instead (e.g. the first 8 characters of
+`sha256(repo)`) — the value appears verbatim in dashboard tables and CSV exports, and is
+shared in URL parameters. Sessions without a tag are folded into a single `(untagged)` row.
+The columns themselves are added by `clickhouse-migration-005.sql`, and
+`GET /api/config`'s `schema.projectColumns` reports whether that migration has been applied.
+
 ## Project Structure
 ```
 claude-code-usage-dashboard/

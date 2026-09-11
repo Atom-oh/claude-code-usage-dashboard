@@ -9,12 +9,20 @@
 // user는 마스킹이 켜져 있으면 URL에 절대 담지 않는다 — 값이 원본 이메일(FilterContext의 user는
 // 입력창 텍스트 그대로이고 서버가 UserEmail과 매칭한다)이라, 공유 링크·브라우저 히스토리·붙여넣은
 // 채팅으로 주소가 새어 나가는 경로가 된다. 해시도 절단도 아니라 생략이다.
+//
+// project는 스키마 프로브(GET /api/config의 schema.projectColumns)가 정확히 true일 때만 읽고
+// 쓴다. 컬럼이 없는 클러스터에서는 서버가 그 파라미터를 버리고(http.js parseFilters) 입력창도
+// 렌더되지 않는데, 파싱만 무조건 하면 보이지 않는 필터가 모든 요청에 실려 나간다(실측 2026-09-10,
+// jsdom: ?project=repo-a 링크에서 projectColumns가 false/null/누락인 경우 모두 17개 요청 중
+// 16개가 그 파라미터를 실었다 — PR #31 리뷰에서 확인). 옵션 기본값을 "적용 안 함"으로 둔 것은
+// 서버 http.js parseFilters와 같은 fail-closed 규약이다: 옵션을 넘기지 않는 호출자(RangeContext는
+// filters를 다루지 않는다)가 자동으로 안전한 쪽이 된다.
 
 export const PRESET_DAYS = [1, 2, 7, 30];
 
 const isIso = (s) => !!s && !Number.isNaN(new Date(s).getTime());
 
-export function parseUrlState(searchParams, { defaultDays = 2, piiMask = true } = {}) {
+export function parseUrlState(searchParams, { defaultDays = 2, piiMask = true, projectColumns } = {}) {
   const get = (k) => searchParams.get(k) || "";
 
   const fromRaw = get("from");
@@ -43,11 +51,12 @@ export function parseUrlState(searchParams, { defaultDays = 2, piiMask = true } 
       group: get("group"),
       user: piiMask ? "" : get("user"),
       model: get("model"),
+      project: projectColumns === true ? get("project") : "",
     },
   };
 }
 
-export function serializeUrlState({ range, filters, piiMask = true }) {
+export function serializeUrlState({ range, filters, piiMask = true, projectColumns }) {
   const p = new URLSearchParams();
   if (range?.custom) {
     p.set("from", range.custom.from.toISOString());
@@ -59,6 +68,7 @@ export function serializeUrlState({ range, filters, piiMask = true }) {
   }
   if (filters?.group) p.set("group", filters.group);
   if (filters?.model) p.set("model", filters.model);
+  if (projectColumns === true && filters?.project) p.set("project", filters.project);
   // 마스킹이 켜져 있으면 user는 담지 않는다(위 주석 참고).
   if (!piiMask && filters?.user) p.set("user", filters.user);
   return p;

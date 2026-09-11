@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel } from "./queries.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel, UNTAGGED_PROJECT } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 import { GROUP_CTE } from "./grouping.js";
 
@@ -210,4 +212,105 @@ test("bedrock-evidence rule truth table over the live model roster", () => {
   // Enterprise 스타일(bare claude-*, [1m] 컨텍스트 접미사 포함)과 빈 값은 bedrock 증거가 아니다
   for (const m of ["claude-sonnet-5", "claude-fable-5[1m]", "claude-haiku-4-5-20251001", "claude-fable-5-1", "claude-opus-4-8", ""])
     assert.ok(!isBedrockEvidence(m), `${m || "(empty)"} must NOT count as bedrock evidence`);
+});
+
+// project 필터는 정확 일치다 — 부분일치면 'api'가 'api-gateway'까지 잡아 프로젝트별 비교가
+// 무의미해진다. cols.project를 안 넘긴 쿼리에는 아예 적용되지 않아야 한다(그 테이블에 컬럼이
+// 없을 수 있다).
+test("filterCond applies project as an exact match only when cols.project is given", () => {
+  const f = filterCond({ project: "repo-a" }, { project: "m.ProjectName" });
+  assert.match(f.where, /m\.ProjectName = \{fProject:String\}/);
+  assert.strictEqual(f.params.fProject, "repo-a");
+  assert.doesNotMatch(f.where, /positionCaseInsensitive\(m\.ProjectName/);
+
+  const noCol = filterCond({ project: "repo-a" }, { group: "grp" });
+  assert.doesNotMatch(noCol.where, /fProject/);
+  assert.strictEqual(noCol.params.fProject, undefined);
+});
+
+// '(untagged)'는 projectBreakdown이 ProjectName='' 행에 붙이는 표시용 라벨이다. 사용자가 표에서
+// 그 값을 그대로 복사해 필터에 넣는 경로가 실제로 있으므로, 저장된 값('')으로 되돌려야 0행이
+// 되지 않는다.
+test("filterCond maps the (untagged) display label back to the stored empty string", () => {
+  assert.strictEqual(UNTAGGED_PROJECT, "(untagged)");
+  const f = filterCond({ project: UNTAGGED_PROJECT }, { project: "m.ProjectName" });
+  assert.strictEqual(f.params.fProject, "");
+  assert.match(f.where, /m\.ProjectName = \{fProject:String\}/);
+});
+
+// 2026-09-09 신규 쿼리 4개는 실행하려면 라이브 ClickHouse가 필요해 단위 테스트로 값을 볼 수
+// 없다. 대신 이 저장소가 실제로 겪은 두 가지 회귀를 소스 텍스트로 고정한다: (1) 누적 카운터를
+// 직접 합산하는 것(CLAUDE.md의 100x+ 과대집계), (2) 프로젝트 그레인을 시간별 롤업에서 읽으려
+// 하는 것(005는 롤업을 건드리지 않으므로 ProjectName이 거기 없다).
+test("the 2026-09-09 query block diffs cumulative counters and never reads the hourly rollup", () => {
+  const src = readFileSync(fileURLToPath(new URL("./queries.js", import.meta.url)), "utf8");
+  const marker = "// 2026-09-09 추가 패널";
+  const at = src.indexOf(marker);
+  assert.ok(at > 0, "expected the 2026-09-09 section banner in queries.js");
+  const section = src.slice(at);
+
+  // 세션-경계 diff 공식(incFlat/versionCohortCost와 같은 형태)이 그대로 있어야 한다.
+  assert.ok(
+    section.includes("greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0)"),
+    "projectBreakdown must keep the session-boundary diff formula"
+  );
+  // 누적 값(Value)을 그대로 합산하는 형태가 없어야 한다 — 합산 대상은 diff 결과(inc)뿐이다.
+  assert.doesNotMatch(section, /sumIf\(\s*m\.Value/, "never sum cumulative Value directly");
+  assert.doesNotMatch(section, /\bsum\(\s*m\.Value/, "never sum cumulative Value directly");
+  // 프로젝트 그레인은 원본 테이블에서만 나온다.
+  assert.ok(section.includes("FROM claude_code.otel_metrics_sum\n"), "projectBreakdown must read the raw table");
+  assert.doesNotMatch(section, /otel_metrics_sum_hourly/, "the rollup carries no ProjectName (005 leaves it alone)");
+});
+
+// 라우트 4개가 import하는 이름이라 export가 빠지면 서버가 부팅 시 죽는다(index.js의 `q.*`는
+// 런타임 참조라 조용히 undefined가 되고 첫 요청에서 500이 된다).
+test("the four 2026-09-09 query functions are exported", async () => {
+  const q = await import("./queries.js");
+  for (const name of ["projectBreakdown", "permissionModeChanges", "toolDecisionSources", "entrypointBreakdown"]) {
+    assert.strictEqual(typeof q[name], "function", `${name} must be exported as a function`);
+  }
+});
+
+// projectBreakdown의 세션·사용자 수는 in_range 게이트를 거쳐야 한다 — 내부 서브쿼리가
+// LOOKBACK_DAYS만큼 앞의 baseline 행까지 읽으므로, 구간 전에 끝난 세션이 inc=0인 채로
+// uniq 집계에 잡히면 비용은 0인데 세션 수만 부풀어 오른다(PR #31 리뷰에서 MAJOR로 확인).
+// 실측(2026-09-10, clickhouse/clickhouse-server:24.8.14.39): 게이트를 켜면 baseline만 있는
+// 세션을 섞은 픽스처에서 sessions/users가 2/2 → 1/1로 줄고 cost/tokens는 그대로였다.
+test("projectBreakdown gates sessions/users on in_range, not on the raw lookback rows", () => {
+  const src = readFileSync(fileURLToPath(new URL("./queries.js", import.meta.url)), "utf8");
+  const at = src.indexOf("export async function projectBreakdown(");
+  const end = src.indexOf("export async function permissionModeChanges(");
+  assert.ok(at > 0 && end > at, "expected projectBreakdown before permissionModeChanges in queries.js");
+  const body = src.slice(at, end);
+  assert.ok(body.includes("countIf(TimeUnix >= {from:DateTime}) > 0 AS in_range"), "the inner SELECT must flag in-window series");
+  assert.ok(body.includes("uniqExactIf(m.SessionId, m.in_range)"), "the session count must be gated on in_range");
+  assert.ok(body.includes("uniqExactIf(m.user_id, m.user_id IS NOT NULL AND m.in_range)"), "the user count must be gated on in_range");
+  // 게이트 전 형태가 남아 있으면 안 된다.
+  assert.doesNotMatch(body, /uniqExact\(m\.SessionId\) AS sessions/, "the ungated session count must be gone");
+  // inc > 0 게이트는 일부러 쓰지 않는다 — 구간 안에 활동은 있었지만 카운터가 안 움직인 세션이 빠진다.
+  assert.doesNotMatch(body, /m\.inc > 0/, "must not gate on inc > 0");
+});
+
+// entrypointBreakdown의 model 필터는 행 단위여야 한다 — api_request는 전 행에 model 속성이
+// 있으므로(dashboard/server/CLAUDE.md, reportedVsComputedByVersion과 같은 규칙) 세션 세미조인은
+// 한 세션이 두 모델을 쓴 경우 다른 모델의 requests/cost를 필터 결과에 합산한다(실측 2026-09-10,
+// 24.8.14.39: sonnet 필터에서 vscode requests 2·cost $1.00 → 행 단위로는 1·$0.10).
+// 형제 두 쿼리(permission_mode_changed / tool_result)는 그 이벤트에 model 속성이 없어 세미조인을
+// 유지해야 하므로, 셋을 같이 단정해 한쪽만 바꾸는 드리프트를 잡는다.
+test("entrypointBreakdown filters model per row while its two siblings keep the session semi-join", () => {
+  const src = readFileSync(fileURLToPath(new URL("./queries.js", import.meta.url)), "utf8");
+  const filterLineOf = (fn) => {
+    const at = src.indexOf(`export async function ${fn}(`);
+    assert.ok(at > 0, `expected ${fn} in queries.js`);
+    const line = src.slice(at).split("\n").find((l) => l.includes("filterCond("));
+    assert.ok(line, `expected a filterCond() call inside ${fn}`);
+    return line;
+  };
+  const entry = filterLineOf("entrypointBreakdown");
+  assert.ok(entry.includes(`model: "l.LogAttributes['model']"`), `entrypointBreakdown must use the per-row model column: ${entry}`);
+  assert.ok(!entry.includes("modelViaSession"), `entrypointBreakdown must not semi-join the model on SessionId: ${entry}`);
+  for (const fn of ["permissionModeChanges", "toolDecisionSources"]) {
+    const line = filterLineOf(fn);
+    assert.ok(line.includes(`modelViaSession: "l.SessionId"`), `${fn} carries no model attribute and must keep the semi-join: ${line}`);
+  }
 });

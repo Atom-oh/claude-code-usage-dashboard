@@ -131,4 +131,50 @@ describe("urlState", () => {
     );
     expect(parsed.range.custom.source).toBe("zoom");
   });
+
+  // project는 URL 왕복에 포함된다(이메일이 아니라 저장소 이름이라 piiMask와 무관) — 단 005 컬럼이
+  // 있는 클러스터에서만. 비어 있으면 다른 필터들과 같이 키 자체를 쓰지 않는다 — ?project= 가
+  // 링크에 남으면 필터가 걸린 것처럼 읽힌다.
+  test("project round-trips through the URL when projectColumns is exactly true", () => {
+    const p = serializeUrlState({
+      range: { days: 7, custom: null },
+      filters: { group: "", user: "", model: "", project: "repo-a" },
+      piiMask: true,
+      projectColumns: true,
+    });
+    expect(p.get("project")).toBe("repo-a");
+    expect(parseUrlState(p, { projectColumns: true }).filters.project).toBe("repo-a");
+
+    const empty = serializeUrlState({
+      range: { days: 7, custom: null },
+      filters: { group: "", user: "", model: "", project: "" },
+      piiMask: true,
+      projectColumns: true,
+    });
+    expect(empty.has("project")).toBe(false);
+    expect(parseUrlState(empty, { projectColumns: true }).filters.project).toBe("");
+  });
+
+  // 스키마 프로브가 정확히 true가 아니면(false / null / 키 없음 / 옵션 미전달) project는 보이지
+  // 않는 필터다 — FilterBar가 입력창을 렌더하지 않고 서버도 그 파라미터를 버린다(http.js
+  // parseFilters). 그런데 URL의 값만 살아 있으면 모든 요청에 실려 나간다(실측 2026-09-10, jsdom:
+  // 17개 요청 중 16개). 그래서 파싱도 직렬화도 하지 않는다. 기본값이 fail-closed인 것이 요점이라
+  // 옵션을 아예 넘기지 않는 호출도 같이 단정한다.
+  test("project is dropped unless projectColumns is exactly true", () => {
+    for (const projectColumns of [false, null, undefined]) {
+      expect(parseUrlState(new URLSearchParams("project=repo-a"), { projectColumns }).filters.project).toBe("");
+      const p = serializeUrlState({
+        range: { days: 7, custom: null },
+        filters: { group: "", user: "", model: "", project: "repo-a" },
+        piiMask: true,
+        projectColumns,
+      });
+      expect(p.has("project")).toBe(false);
+    }
+    expect(parseUrlState(new URLSearchParams("project=repo-a")).filters.project).toBe("");
+    // 대조 — 이 게이트는 다른 필터를 건드리지 않는다.
+    const other = parseUrlState(new URLSearchParams("project=repo-a&group=bedrock&model=opus"));
+    expect(other.filters.group).toBe("bedrock");
+    expect(other.filters.model).toBe("opus");
+  });
 });

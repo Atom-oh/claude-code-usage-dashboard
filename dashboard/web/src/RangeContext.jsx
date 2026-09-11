@@ -29,7 +29,8 @@ export function RangeProvider({ children }) {
   // 기본 창은 서버가 정한다(GET /api/config의 defaultRangeDays) — 서버 warmer가 데우는 창과
   // 같은 값이어서 첫 진입이 캐시 히트다. 예전에는 여기 하드코딩된 2와 서버 index.js의
   // WARM_DAYS가 서로 따라다녀야 했다.
-  const { defaultRangeDays, piiMask } = useConfig();
+  const { defaultRangeDays, piiMask, schema } = useConfig();
+  const projectColumns = schema?.projectColumns === true;
   const [searchParams, setSearchParams] = useSearchParams();
   // 마운트 시 한 번만 URL을 읽는다 — 이후에는 이쪽이 URL의 소유자다. useState 초기화 함수로
   // 읽어야 리렌더마다 다시 파싱해 사용자가 고른 값을 URL의 옛 값으로 되돌리는 일이 없다.
@@ -87,7 +88,9 @@ export function RangeProvider({ children }) {
     setSearchParams(
       (prev) => {
         const next = serializeUrlState({ range: { days, custom, month }, filters: {}, piiMask });
-        for (const k of piiMask ? ["group", "model"] : ["group", "user", "model"]) {
+        const filterKeys = piiMask ? ["group", "model"] : ["group", "user", "model"];
+        if (projectColumns) filterKeys.push("project");
+        for (const k of filterKeys) {
           const v = prev.get(k);
           if (v) next.set(k, v);
         }
@@ -95,7 +98,7 @@ export function RangeProvider({ children }) {
       },
       { replace: true }
     );
-  }, [days, custom, month, piiMask, setSearchParams]);
+  }, [days, custom, month, piiMask, projectColumns, setSearchParams]);
   return <RangeContext.Provider value={value}>{children}</RangeContext.Provider>;
 }
 

@@ -79,3 +79,35 @@ export async function probeMigrations() {
     return null;
   }
 }
+
+// 005 컬럼(ProjectName/Entrypoint, clickhouse-migration-005.sql)이 적용된 클러스터인지
+// 감지한다. 위 두 프로브와 같은 이유로 system.columns를 읽지 않는다 — otel_reader에 그 권한이
+// 없다. LIMIT 0이라 데이터는 읽지 않고 컬럼 해석만 시킨다: 쿼리가 성공하면 컬럼이 있다는
+// 뜻이고, 행이 0개인 것은 판정과 무관하다(segmentAwareSeriesKey 프로브와 달리 "행이 없으면
+// 보류"가 아니다 — 여기서는 성공 자체가 증거다).
+const PROJECT_COLUMNS_SQL = `SELECT ProjectName, Entrypoint FROM claude_code.otel_logs LIMIT 0`;
+
+// 에러를 세 상태로 가른다. 실측(2026-09-09, @clickhouse/client + clickhouse-server 24.8.14.39):
+//   - 컬럼 없음: ClickHouseError, code = '47'(문자열), type = 'UNKNOWN_IDENTIFIER'
+//   - 접속 불가: 평범한 Error, code = 'ECONNREFUSED', type = undefined
+// 즉 code가 전부 숫자면 "서버가 SQL을 이해하고 거절했다"(= 컬럼이 없다 → false)이고, 숫자가
+// 아니면 전송 계층 실패(= 확인하지 못했다 → null)다. type이 아니라 code로 판정하는 이유는
+// 드라이버가 type을 채우지 않게 바뀌어도 규칙이 남아 있어야 해서다.
+// 권한 에러(ACCESS_DENIED)도 숫자 코드라 false로 접히는데, 소비자(라우트 게이팅, 필터 무시,
+// 입력창 숨김)는 false와 null을 똑같이 "true 아님"으로 다루므로 동작 차이가 없다 — 운영자에게
+// 보이는 값만 달라진다.
+export function classifyProjectColumnsProbe(err) {
+  if (!err) return true;
+  const code = err.code === undefined || err.code === null ? "" : String(err.code);
+  return /^\d+$/.test(code) ? false : null;
+}
+
+// 부팅/주기 실행 모두 비치명적 — 같은 파일의 다른 프로브들과 동일 규약.
+export async function probeProjectColumns() {
+  try {
+    await query(PROJECT_COLUMNS_SQL);
+    return classifyProjectColumnsProbe(null);
+  } catch (err) {
+    return classifyProjectColumnsProbe(err);
+  }
+}

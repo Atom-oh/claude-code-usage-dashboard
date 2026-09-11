@@ -173,3 +173,10 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 그룹(bedrock/enterprise) 카드 쌍의 컨테이너 — 카드가 둘이면 좌우 2열, 상단 채널 필터로 하나만
+   남으면 그 카드가 전체 폭을 쓴다(auto-fit). md:grid-cols-2 고정이면 필터 상태에서 반 폭 카드 옆이 빈다. */
+@layer components {
+  .group-grid { display: grid; gap: 1rem; }
+  @media (min-width: 768px) { .group-grid { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); } }
+}

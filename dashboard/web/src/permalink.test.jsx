@@ -200,3 +200,53 @@ test("시작일이 종료일보다 늦으면 거부되고 URL은 바뀌지 않�
   await screen.findByText("시작일이 종료일보다 늦습니다");
   expect(loc.search).toBe(searchBefore);
 });
+
+test.each([false, true])("project link survives range changes and sharing (piiMask=%s)", async (piiMask) => {
+  const fetchMock = stubFetch();
+  const config = cfg({ piiMask, schema: { projectColumns: true } });
+  const { container } = mount("/usage?days=7&group=bedrock&project=repo-a&user=alice%40example.com", config);
+  await waitFor(() => expect(dataCalls(fetchMock, "/api/usage").length).toBeGreaterThan(0));
+  expect(new URLSearchParams(loc.search).get("project")).toBe("repo-a");
+  expect(dataCalls(fetchMock, "/api/usage").every((u) => /project=repo-a/.test(u))).toBe(true);
+
+  fireEvent.click(presetButtons(container).find((b) => b.textContent === "30일"));
+  await waitFor(() => expect(new URLSearchParams(loc.search).get("days")).toBe("30"));
+  expect(new URLSearchParams(loc.search).get("project")).toBe("repo-a");
+
+  fireEvent.click(screen.getByRole("button", { name: "이번 달", exact: true }));
+  await waitFor(() => expect(new URLSearchParams(loc.search).get("period")).toBe("month"));
+  expect(new URLSearchParams(loc.search).get("project")).toBe("repo-a");
+
+  fireEvent.click(container.querySelector('[aria-label="기간 직접 선택"]'));
+  fireEvent.change(screen.getByLabelText("시작일"), { target: { value: "2026-09-01" } });
+  fireEvent.change(screen.getByLabelText("종료일"), { target: { value: "2026-09-04" } });
+  fireEvent.click(screen.getByRole("button", { name: "적용", exact: true }));
+  await waitFor(() => expect(new URLSearchParams(loc.search).get("from")).toBe("2026-09-01T00:00:00.000Z"));
+  expect(new URLSearchParams(loc.search).get("project")).toBe("repo-a");
+  expect(new URLSearchParams(loc.search).get("group")).toBe("bedrock");
+  expect(new URLSearchParams(loc.search).get("user")).toBe(piiMask ? null : "alice@example.com");
+  if (piiMask) expect(dataCalls(fetchMock, "/api/usage").every((u) => !/user=/.test(u))).toBe(true);
+
+  const sharedLink = loc.pathname + loc.search;
+  cleanup();
+  const reopenedFetch = stubFetch();
+  mount(sharedLink, config);
+  await waitFor(() => expect(dataCalls(reopenedFetch, "/api/usage").length).toBeGreaterThan(0));
+  expect(new URLSearchParams(loc.search).get("project")).toBe("repo-a");
+  expect(dataCalls(reopenedFetch, "/api/usage").every((u) => /project=repo-a/.test(u))).toBe(true);
+});
+
+test("projectColumns가 true가 아니면 링크의 project는 어떤 요청에도 실리지 않는다", async () => {
+  for (const schema of [{ projectColumns: false }, { projectColumns: null }, {}]) {
+    const fetchMock = stubFetch();
+    mount("/cost?days=7&group=bedrock&project=repo-a", cfg({ schema }));
+    await waitFor(() => expect(dataCalls(fetchMock, "/api/cost").length).toBeGreaterThan(0));
+    expect(dataCalls(fetchMock, "/api/cost").every((u) => !/project=/.test(u))).toBe(true);
+    expect(new URLSearchParams(loc.search).has("project")).toBe(false);
+    // 대조 — 게이트가 URL을 통째로 비우는 게 아니다. 같은 링크의 다른 필터는 그대로 살아 있다.
+    expect(new URLSearchParams(loc.search).get("group")).toBe("bedrock");
+    expect(new URLSearchParams(loc.search).get("days")).toBe("7");
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});

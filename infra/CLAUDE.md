@@ -73,13 +73,21 @@ Operator), ECR, S3, and DNS/CDN for the dashboard.
   and cannot be moved to `hot_cold` in place — see the comment block in the SQL file)
 - The `schema_init` Job's name embeds `filemd5(...)` of `files/clickhouse-schema-replicated.sql`
   (`clickhouse.tf`), so editing that file recreates and re-runs the Job on the next `apply` —
-  most recently the `schema_migrations` ledger block added by `clickhouse-migration-004.sql`.
+  most recently the `005` block (`project.name`/`app.entrypoint` promoted columns plus its ledger
+  row) added by `clickhouse-migration-005.sql`. That is also how an **existing** cluster can pick
+  a migration up without an operator running the numbered file by hand
+  (`docs/runbooks/schema-migrations.md` §4).
   A re-run on an already-provisioned cluster is idempotent in outcome but not free: the
   `CREATE … IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` / guarded-`INSERT` statements are no-ops,
-  but the 29 unguarded `ALTER TABLE … MATERIALIZE COLUMN` statements (`grep -c 'MATERIALIZE
-  COLUMN' files/clickhouse-schema-replicated.sql`, all executable, none in comments) each schedule a full-table mutation on
+  but the 29 unguarded `ALTER TABLE … MATERIALIZE COLUMN` statements
+  (`grep -c '^ALTER TABLE .* MATERIALIZE COLUMN ' files/clickhouse-schema-replicated.sql` — anchor
+  the pattern: the bare keyword now answers 30, because the `005` block added an explanatory
+  comment that also contains it) each schedule a full-table mutation on
   `otel_metrics_sum` / `otel_logs` again, so expect background mutation load after the apply
-  (`SELECT * FROM system.mutations WHERE NOT is_done`).
+  (`SELECT * FROM system.mutations WHERE NOT is_done`). `005` itself adds no
+  `MATERIALIZE COLUMN` — its two columns are a single map lookup, and a pre-`ALTER` part still
+  evaluates the default expression at read time (see the migration file's header) — so it does
+  not change that count.
 - `secrets.auto.tfvars`, `image.auto.tfvars` -- gitignored; injected at `terraform apply` time,
   never committed
 - `terraform.tfstate*` -- local state (gitignored); acceptable for a single-operator workshop

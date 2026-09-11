@@ -20,7 +20,9 @@ export function groupsPresent(rows) {
 // (그 자리에 카드가 없으면 "아직 데이터가 없다"와 "그 채널이 없다"가 구별되지 않는다).
 // single 모드는 응답에 실제로 등장한 그룹만. 응답이 통째로 비었으면 첫 그룹 하나로 접어
 // 카드 자체는 남긴다 — 카드가 사라지면 왜 비었는지 말할 자리도 사라진다.
-export function groupsShown(groupMode, rows) {
+// 상단 채널 필터가 걸리면 그 채널 카드만 — 서버가 이미 그 채널만 주므로 빈 상대 카드는 정보가 아니라 소음이다.
+export function groupsShown(groupMode, rows, groupFilter = "") {
+  if (GROUP_ORDER.includes(groupFilter)) return [groupFilter];
   if (groupMode !== "single") return GROUP_ORDER;
   const present = groupsPresent(rows);
   return present.length ? present : [GROUP_ORDER[0]];

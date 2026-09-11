@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt } from "./http.js";
+import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
 
 test("parseRange returns the requested window when both dates are valid", () => {
   const { from, to } = parseRange({ from: "2026-08-01T00:00:00Z", to: "2026-08-03T00:00:00Z" });
@@ -164,4 +164,32 @@ test("a range-too-long error carries status 400 and does not echo either timesta
     assert.strictEqual(err.detail.includes(from), false);
     assert.strictEqual(err.detail.includes(to), false);
   }
+});
+
+// project 필터는 005 컬럼이 있는 클러스터에서만 SQL에 들어갈 수 있다 — 프로브가 true가
+// 아니면(false = 미적용, null = 확인 못 함) 조용히 버려야 한다. `=== true`가 아니라 truthy
+// 검사로 짜면 null이 통과해 쿼리 전체가 UNKNOWN_IDENTIFIER로 죽는다.
+test("parseFilters passes project through only when projectColumns is exactly true", () => {
+  const q = { group: "bedrock", user: "u@x", model: "claude-sonnet-5", project: "repo-a" };
+  assert.deepStrictEqual(parseFilters(q, true), {
+    group: "bedrock",
+    user: "u@x",
+    model: "claude-sonnet-5",
+    project: "repo-a",
+  });
+  for (const probe of [false, null, undefined, "true", 1]) {
+    assert.strictEqual(parseFilters(q, probe).project, undefined, `projectColumns=${String(probe)} must drop project`);
+  }
+});
+
+test("parseFilters leaves the other three filters untouched and undefined when absent", () => {
+  assert.deepStrictEqual(parseFilters({}, true), {
+    group: undefined,
+    user: undefined,
+    model: undefined,
+    project: undefined,
+  });
+  const only = parseFilters({ user: "u@x" }, false);
+  assert.strictEqual(only.user, "u@x");
+  assert.strictEqual(only.project, undefined);
 });

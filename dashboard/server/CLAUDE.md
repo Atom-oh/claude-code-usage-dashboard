@@ -35,7 +35,13 @@ JSON, a missing/negative `input`/`output`, or a non-normalized key throws at sta
 `claude_code.cost.usage` rows at boot and refreshed every 10 minutes -- `true` means the
 migration-003 segment-aware `SeriesKey` expression is in force on the cluster, `false` means
 the legacy expression still is, and `null` means undetermined (mixed keys mid-
-`MATERIALIZE COLUMN`, no recent rows, or any probe error). It intentionally skips the
+`MATERIALIZE COLUMN`, no recent rows, or any probe error). `schema.projectColumns` is likewise
+`true`/`false`/`null`, probed on the same 10-minute timer by attempting
+`SELECT ProjectName, Entrypoint FROM claude_code.otel_logs LIMIT 0` -- success means the
+migration-005 columns exist (`true`), a server-side SQL rejection (numeric error code, e.g.
+`47` `UNKNOWN_IDENTIFIER`) means they don't (`false`), and a transport failure (non-numeric
+code such as `ECONNREFUSED`) means undetermined (`null`); this value gates the `project`
+filter -- `parseFilters` drops the parameter unless it is exactly `true`. It intentionally skips the
 `route()` wrapper (no ClickHouse, no range params) but still inherits the global Basic Auth --
 the probe itself runs on its own timer rather than in the request path, so the route stays
 synchronous and still touches no ClickHouse at request time.
@@ -51,7 +57,8 @@ session is `readonly`.
   client quantizes `to` to the same boundary in `useApi.js` so keys match across sessions),
   global Basic Auth middleware, static file serving
 - `http.js` -- `ValidationError`, `parseRange` (now takes `{defaultDays, capDays}`),
-  `parseIntervalHours`, `parseGroupMode`, `parsePositiveInt` (pure, unit-tested)
+  `parseIntervalHours`, `parseGroupMode`, `parsePositiveInt`, `parseFilters` (pure,
+  unit-tested; `parseFilters` moved here from `index.js` so its `project` gating is testable)
 - `app.test.js` -- drives the real Express app over an ephemeral socket (`app.listen(0)`) to pin
   the `route()` envelope itself: 400 mapping with a non-echoing `detail`, a 500 body of exactly
   `{error, id}` with no SQL or driver text, and `Cache-Control: no-store` on every `/api/*`
@@ -84,7 +91,11 @@ session is `readonly`.
 - `schema.js` -- `classifySeriesKeyProbe` (pure, unit-tested) classifies a `{seg, legacy}` row
   count pair into `true`/`false`/`null`; `probeSegmentAwareSeriesKey` runs the ClickHouse probe
   and never throws -- it folds every error to `null`, since the value feeds a fail-safe warning
-  rather than a request path
+  rather than a request path; `classifyProjectColumnsProbe` (pure, unit-tested) folds the
+  migration-005 column probe into the same fail-safe tri-state -- a numeric error code means
+  the server understood and rejected the SQL (columns absent, `false`), a non-numeric code
+  means a transport failure (`null`) -- and `probeProjectColumns` runs it, non-fatal at boot
+  and on the periodic refresh like the other probes
 - `freshness.js` -- `classifyFreshness` (pure, unit-tested) turns a `{latestMs, nowMs,
   staleAfterMinutes}` triple into `{status, latest, ageMinutes, staleAfterMinutes}`;
   `probeLatestTelemetryMs` runs the ClickHouse probe and never throws (every error folds to
@@ -239,8 +250,30 @@ session is `readonly`.
   `api_request` carries `cost_usd` plus all four token counts as log attributes (measured
   2026-09-04, 100% of rows), and the `cache_creation_tokens` attribute must be aliased to
   `cache_write_tokens` for `withComputedCost` to price it. `AppVersion` is the grain because
-  the reported cost is priced client-side and is therefore version-dependent. It is also the
-  one query whose model filter uses `filterCond`'s per-row `model:` column rather than
-  `modelViaSession:`, because this `otel_logs` event — unlike `tool_result`/`user_prompt`/
-  `hook_execution_complete` — does carry a `model` attribute. `userInteractions` needs no new
-  rule here; it is another `{unsupported}`-shape `otel_traces` query per the existing pattern.
+  the reported cost is priced client-side and is therefore version-dependent. Its model filter
+  uses `filterCond`'s per-row `model:` column rather than `modelViaSession:`, because this
+  `otel_logs` event — unlike `tool_result`/`user_prompt`/`hook_execution_complete` — does carry
+  a `model` attribute. **`entrypointBreakdown` reads the same `api_request` event and therefore
+  follows the same rule**, fixed in the PR #31 review round: under the session semi-join a
+  session that used two models folded the second model's requests and reported cost into the
+  filtered figure (measured 2026-09-10 on `clickhouse/clickhouse-server:24.8.14.39` — a
+  two-model session answered 2 requests / $1.00 under a single-model filter where the per-row
+  column answers 1 / $0.10). `permissionModeChanges` and `toolDecisionSources` keep
+  `modelViaSession:`, because `permission_mode_changed` and `tool_result` carry no `model`
+  attribute. `userInteractions` needs no new rule here; it is another `{unsupported}`-shape
+  `otel_traces` query per the existing pattern.
+- **The `project` filter is gated on a schema probe, not assumed.** `filterCond`'s project
+  branch is an exact match — a repo name is copied verbatim out of the table, and a partial
+  match would fold `api` and `api-gateway` into one row — and maps the `(untagged)` display
+  label back to the stored empty string. `parseFilters` (`http.js`) drops the parameter
+  whenever `projectColumns !== true`, and `/api/usage/projects` returns `[]` in that case
+  instead of letting an `UNKNOWN_IDENTIFIER` 500 take the rest of the page down. Project-grain
+  aggregation reads the raw table through a self-contained local diff subquery, never the
+  hourly rollup — the rollup carries no `ProjectName` (migration-005 leaves it alone; ADR-001,
+  same precedent as `versionCohortCost`).
+  Only four queries pass `cols.project` to `filterCond` at all — `projectBreakdown`,
+  `permissionModeChanges`, `toolDecisionSources` and `entrypointBreakdown` — so `project` is a
+  local filter for those four routes rather than a global one, and every other route ignores it
+  and answers on all projects. That scope is stated in `docs/api-reference.md`'s
+  common-parameter table and next to the input in `FilterBar.jsx`; wiring it globally needs a
+  session semi-join, because the hourly rollup carries no `ProjectName`.

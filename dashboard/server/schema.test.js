@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifySeriesKeyProbe, classifyMigrations } from "./schema.js";
+import { classifySeriesKeyProbe, classifyMigrations, classifyProjectColumnsProbe } from "./schema.js";
 
 test("classifySeriesKeyProbe returns true when only segment keys matched", () => {
   assert.strictEqual(classifySeriesKeyProbe({ seg: 2000, legacy: 0 }), true);
@@ -67,4 +67,29 @@ test("classifyMigrations returns null for a non-array", () => {
 // (a, b) => a - b가 없으면 이 케이스가 깨진다.
 test("classifyMigrations sorts numerically, not lexicographically", () => {
   assert.deepStrictEqual(classifyMigrations([{ version: 10 }, { version: 2 }]), [2, 10]);
+});
+
+// 실측(2026-09-09): 컬럼이 없으면 @clickhouse/client가 code '47'/type 'UNKNOWN_IDENTIFIER'인
+// ClickHouseError를, 접속 불가면 code 'ECONNREFUSED'인 평범한 Error를 던진다. 이 두 케이스를
+// 같은 false로 접으면 "005 미적용"과 "클러스터에 못 붙었다"를 구분할 수 없어진다.
+test("classifyProjectColumnsProbe returns true when the probe query succeeded", () => {
+  assert.strictEqual(classifyProjectColumnsProbe(null), true);
+  assert.strictEqual(classifyProjectColumnsProbe(undefined), true);
+});
+
+test("classifyProjectColumnsProbe returns false for a server-side SQL rejection (numeric code)", () => {
+  assert.strictEqual(classifyProjectColumnsProbe({ code: "47", type: "UNKNOWN_IDENTIFIER" }), false);
+  // 드라이버가 code를 숫자로 주더라도 같은 판정이어야 한다(String() 강제 변환).
+  assert.strictEqual(classifyProjectColumnsProbe({ code: 47 }), false);
+});
+
+test("classifyProjectColumnsProbe returns null for a transport failure (non-numeric code)", () => {
+  assert.strictEqual(classifyProjectColumnsProbe({ code: "ECONNREFUSED" }), null);
+  assert.strictEqual(classifyProjectColumnsProbe({ code: "ETIMEDOUT" }), null);
+  // 호스트가 뮤테이션으로 확인(2026-09-09): 정규식의 앵커(^...$)를 떼면 이 케이스만 판정이
+  // 뒤집힌다 — 자리수를 품은 전송 계층 코드가 실재하므로(Node의 ERR_HTTP2_*) "숫자가 섞여
+  // 있음"이 아니라 "전부 숫자"여야 서버 거절로 볼 수 있다.
+  assert.strictEqual(classifyProjectColumnsProbe({ code: "ERR_HTTP2_STREAM_ERROR" }), null);
+  assert.strictEqual(classifyProjectColumnsProbe(new Error("boom")), null);
+  assert.strictEqual(classifyProjectColumnsProbe({ code: "" }), null);
 });

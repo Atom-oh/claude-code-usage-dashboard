@@ -57,6 +57,11 @@ export function normModel(col) {
   return expr;
 }
 
+// projectBreakdown이 ProjectName='' 행에 붙이는 표시용 라벨. filterCond의 project 분기가 같은
+// 문자열을 ''로 되돌린다 — 표에서 값을 그대로 복사해 필터에 넣어도 0행이 되지 않게 하는 왕복
+// 보정이라 두 곳이 같은 상수를 봐야 한다.
+export const UNTAGGED_PROJECT = "(untagged)";
+
 // 대시보드 전역 필터(group/user/model) — 미지정이면 전부 통과. group은 정확매치(bedrock/enterprise/
 // unknown), user/model은 부분일치(대소문자 무시)로 좁힌다. cols는 쿼리마다 실제 참조 가능한 컬럼/식을
 // 넘긴다(alias가 함수마다 다르고, 로그 테이블엔 Model이 없어 model 필터가 적용 안 되는 경우도 있음).
@@ -134,6 +139,16 @@ export function filterCond(filters = {}, cols = {}) {
       WHERE SessionId != '' AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
         AND positionCaseInsensitive(${normModel("Model")}, {fModel:String}) > 0)`);
     params.fModel = fModel;
+  }
+  // 프로젝트 필터(005의 ProjectName 컬럼) — LowCardinality(String)이라 정확 일치다. user/model과
+  // 달리 부분일치를 쓰지 않는 이유: 저장소 이름은 사용자가 표의 프로젝트 열에서 그대로 복사해
+  // 넣는 값이고, 부분일치면 'api'가 'api'와 'api-gateway'를 함께 잡아 프로젝트별 비교 자체가
+  // 무의미해진다. cols.project를 안 넘기는 쿼리에는 그냥 적용되지 않는다. 컬럼이 아예 없는
+  // 클러스터에서 이 조건이 SQL 오류를 내는 것은 http.js의 parseFilters가 projectColumns !== true
+  // 일 때 project를 버려서 막는다(400이 아니라 무시 — 기존 필터 무시 정책과 동일).
+  if (filters.project && cols.project) {
+    conds.push(`${cols.project} = {fProject:String}`);
+    params.fProject = filters.project === UNTAGGED_PROJECT ? "" : filters.project;
   }
   return { where: conds.map((c) => `AND ${c}`).join(" "), params };
 }
@@ -2036,4 +2051,140 @@ export async function userInteractions(from, to, email) {
     { ...range(from, to, true), email }
   );
   return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: "2.1.214", rows: [] };
+}
+
+// =============================================================================
+// 2026-09-09 추가 패널 — project.name / app.entrypoint (clickhouse-migration-005.sql).
+// ProjectName은 incFlat/incBucketed가 나르지 않는 차원이고 시간별 롤업에도 없다(005는 롤업을
+// 건드리지 않는다) — ADR-001에 따라 그 GROUP BY를 넓히지 않고 versionCohortCost/effortMix와
+// 동일한 자기완결 로컬 diff 서브쿼리(세션-경계 diff, LOOKBACK_DAYS 재사용)로 짠다.
+// 나머지 세 개는 otel_logs 직접 스캔이라 005 컬럼 유무와 무관하게 동작한다 — project 필터만
+// ProjectName을 참조하고, 그 필터는 컬럼이 없는 클러스터에서는 parseFilters가 버린다.
+// =============================================================================
+
+// 프로젝트(저장소)별 사용 — group × ProjectName. 비용은 Claude Code 보고값(cost.usage)이다.
+// 계산 비용(토큰 × pricing.js 단가)을 쓰지 않는 이유: 단가를 고르려면 바깥 SELECT에 model
+// 그레인이 필요하고(effortMix가 그렇게 한다), 그러면 같은 SELECT에서 uniqExact(SessionId)/
+// users를 프로젝트 그레인으로 접을 수 없다(유니크는 합산이 안 된다). 세션·사용자 수가 이
+// 패널의 핵심이라 그쪽을 지키고, 보고 비용이 클라이언트 버전에 종속이라는 사실(실측 2026-09-03)
+// 은 프론트 라벨과 help에 적는다 — 같은 페이지의 "Skill 사용 분포"와 동일한 규약이다.
+// 사용자 식별자는 ADR-002의 Bedrock 폴백(UserEmail이 비면 EndUserId)을 쓴다 — 이 파일에서
+// 처음이며, ADR-002 결정대로 기존 ~90개 UserEmail 참조에는 소급 적용하지 않는다.
+// 세션·사용자 수는 in_range로 게이트한다: 내부 서브쿼리가 LOOKBACK_DAYS만큼 앞의 baseline 행까지
+// 읽으므로 구간 전에 끝난 세션도 inc=0인 행으로 남아, 비용·토큰은 0인데 세션 수만 부풀었다
+// (PR #31 리뷰에서 MAJOR로 확인). 게이트를 inc > 0으로 걸지 않는 이유: 구간 안에 활동은 있었지만
+// 카운터가 안 움직인 세션(유휴 하트비트)이 빠진다. 실측(2026-09-10, 24.8.14.39): baseline만 있는
+// 세션을 섞은 픽스처에서 같은 프로젝트의 sessions/users가 2/2 → 1/1로 줄고 cost/tokens(4/400)는
+// 그대로였다. 부작용으로, 구간 안 활동이 전혀 없는 프로젝트는 사라지지 않고 전부 0인 행이 된다.
+export async function projectBreakdown(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.user_id", model: "m.Model", project: "m.ProjectName" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        if(m.ProjectName = '', '${UNTAGGED_PROJECT}', m.ProjectName) AS project,
+        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')  AS cost_usd,
+        sumIf(m.inc, m.MetricName = 'claude_code.token.usage') AS tokens,
+        uniqExactIf(m.SessionId, m.in_range) AS sessions,
+        uniqExactIf(m.user_id, m.user_id IS NOT NULL AND m.in_range) AS users
+    FROM (
+        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, ProjectName,
+            any(coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''))) AS user_id,
+            countIf(TimeUnix >= {from:DateTime}) > 0 AS in_range,
+            if(temp = 2,
+                greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
+                sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
+        FROM claude_code.otel_metrics_sum
+        WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+          AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
+        GROUP BY sk, SessionId, temp, MetricName, Model, ProjectName
+    ) m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE 1 = 1 ${f.where}
+    GROUP BY "group", project ORDER BY "group", cost_usd DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// 권한 모드 전환 — permission_mode_changed 이벤트(실측 2026-09-09: 30일 25행, bypassPermissions
+// →auto 38 / plan→auto 34 등). from_mode/to_mode는 승격 컬럼이 아니라 LogAttributes다.
+// 값을 정규화하거나 매핑하지 않고 그대로 내려보낸다 — Claude Code가 새 모드 이름을 추가하면
+// 빈 셀이 아니라 그 이름이 보이는 쪽이 낫다(프론트의 라벨 매퍼도 같은 규약).
+export async function permissionModeChanges(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId", project: "l.ProjectName" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.LogAttributes['from_mode'] AS from_mode,
+        l.LogAttributes['to_mode']   AS to_mode,
+        count() AS changes,
+        uniqExact(l.SessionId) AS sessions
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'permission_mode_changed'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", from_mode, to_mode ORDER BY "group", changes DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// 도구 승인 출처 — tool_result의 decision_source/decision_type(실측 2026-09-09: 30일 8,195행,
+// config 75,334 vs 사용자 승인 386). toolDecisionFunnel(tool_decision 이벤트의 source)과 다른
+// 이벤트다: 이쪽은 "실제로 실행된 도구가 어떤 승인 경로로 통과했는지"이고 hook 값이 추가로
+// 있다. decision_source가 빈 행(속성이 없는 실행)은 제외한다 — 분모에 넣으면 '승인 경로'
+// 비중이 아니라 '속성을 실은 비율'이 된다.
+// share의 분모는 같은 채널의 전체 건수다 — GROUP BY 결과 위에서 윈도우 함수로 계산한다
+// (24.8에서 실행 확인). 채널별로 정규화해야 두 채널의 승인 습관을 비교할 수 있다.
+export async function toolDecisionSources(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId", project: "l.ProjectName" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        l.LogAttributes['decision_source'] AS decision_source,
+        l.LogAttributes['decision_type']   AS decision_type,
+        count() AS tool_results,
+        round(count() / sum(count()) OVER (PARTITION BY "group"), 3) AS share
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'tool_result' AND l.LogAttributes['decision_source'] != ''
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", decision_source, decision_type ORDER BY "group", tool_results DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
+}
+
+// 진입점 — api_request의 app.entrypoint(실측 2026-09-09, 프로드 14일: 'vscode' 29,938행,
+// 터미널 세션은 빈 값). 005의 승격 컬럼 Entrypoint를 쓰지 않고 LogAttributes를 직접 읽는다:
+// 승격 컬럼의 정의가 곧 이 맵 조회라 값이 정의상 동일하고(실측 2026-09-09: 전 행 mismatch=0,
+// ADD COLUMN 이전 파트 포함), 그래야 이 패널이 005 미적용 클러스터에서도 그대로 동작한다.
+// 승격 컬럼은 애드혹/Grafana 쿼리와 향후 필터를 위한 것이다.
+// cost_usd는 Claude Code가 이벤트에 실은 보고값이다(reportedVsComputedByVersion과 같은 소스) —
+// 계산 비용이 아니므로 프론트 라벨에 그 사실을 적는다.
+// model 필터는 세션 세미조인(modelViaSession)이 아니라 행 단위 l.LogAttributes['model']이다 —
+// api_request는 전 행에 model 속성이 있어(실측 2026-09-04, 100%) reportedVsComputedByVersion과
+// 같은 규칙을 쓸 수 있다. 세미조인이면 한 세션이 A·B 두 모델을 쓴 경우 B의 requests/cost가 A
+// 필터에도 합산된다(실측 2026-09-10, 24.8.14.39 픽스처: sonnet 필터에서 vscode requests 2·
+// cost $1.00, 행 단위로는 1·$0.10). permissionModeChanges/toolDecisionSources는 그 이벤트에
+// model 속성이 없어 세미조인을 유지한다(PR #31 리뷰에서 MAJOR로 확인).
+export async function entrypointBreakdown(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']", project: "l.ProjectName" });
+  return query(
+    `${GROUP_CTE}
+    SELECT
+        ${GROUP_EXPR} AS "group",
+        if(l.LogAttributes['app.entrypoint'] = '', 'terminal', l.LogAttributes['app.entrypoint']) AS entrypoint,
+        count() AS requests,
+        uniqExact(l.SessionId) AS sessions,
+        sum(toFloat64OrZero(l.LogAttributes['cost_usd'])) AS cost_usd,
+        uniqExactIf(coalesce(nullIf(l.UserEmail, ''), nullIf(l.EndUserId, '')),
+                    coalesce(nullIf(l.UserEmail, ''), nullIf(l.EndUserId, '')) IS NOT NULL) AS users
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName = 'api_request'
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group", entrypoint ORDER BY "group", requests DESC`,
+    { ...range(from, to, true), ...f.params }
+  );
 }

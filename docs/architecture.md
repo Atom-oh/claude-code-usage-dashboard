@@ -33,8 +33,11 @@ method at runtime rather than a static experiment flag.
 ### Storage Layer
 - **ClickHouse (`otel_metrics_sum`, `otel_logs`)** -- `ReplicatedMergeTree`, 3 replicas, hot/cold
   storage policy (local EBS gp3 -> S3 after 45-90 days, dropped after 90-180 days). Promoted
-  materialized columns (Model, TokenType, Decision, SkillName, UserEmail, SessionId, ...)
-  avoid `Attributes` map lookups in every query.
+  materialized columns (Model, TokenType, Decision, SkillName, UserEmail, SessionId,
+  ProjectName, Entrypoint, ...) avoid `Attributes` map lookups in every query.
+  `clickhouse-migration-005.sql` (2026-09-09) adds `ProjectName`/`Entrypoint` to all three
+  tables (`otel_traces` included), leaves the hourly rollup untouched, and deliberately runs
+  no `MATERIALIZE COLUMN` (rationale in that file's header).
 - **ClickHouse (`otel_traces`, beta, added 2026-08-11)** -- same replication/TTL pattern as
   `otel_logs` (45d cold / 90d delete). Holds `claude_code.interaction`/`llm_request`/`tool`/
   `tool.blocked_on_user`/`tool.execution`/`hook` spans, gated behind
@@ -243,8 +246,10 @@ EKS에서 실행 중인 ClickHouse로 전달하고, Node.js/React 대시보드�
 ### Storage Layer
 - **ClickHouse(`otel_metrics_sum`, `otel_logs`)** -- `ReplicatedMergeTree`, 레플리카 3개,
   hot/cold 스토리지 정책(로컬 EBS gp3 -> 45~90일 후 S3, 90~180일에 삭제). 승격된 materialized
-  컬럼(Model, TokenType, Decision, SkillName, UserEmail, SessionId 등)으로 매 쿼리마다
-  `Attributes` 맵 조회를 피함.
+  컬럼(Model, TokenType, Decision, SkillName, UserEmail, SessionId, ProjectName, Entrypoint
+  등)으로 매 쿼리마다 `Attributes` 맵 조회를 피함. `clickhouse-migration-005.sql`(2026-09-09)이
+  `ProjectName`/`Entrypoint`를 세 테이블(`otel_traces` 포함)에 추가하며, 시간별 롤업은
+  건드리지 않고 `MATERIALIZE COLUMN`도 돌리지 않는다(근거는 그 파일 헤더).
 - **ClickHouse(`otel_traces`, beta, 2026-08-11 추가)** -- `otel_logs`와 동일한 복제/TTL
   정책(45일 cold / 90일 삭제). `claude_code.interaction`/`llm_request`/`tool`/
   `tool.blocked_on_user`/`tool.execution`/`hook` 스팬을 담으며, 클라이언트의

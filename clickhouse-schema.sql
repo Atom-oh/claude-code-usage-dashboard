@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_metrics_sum
     -- service.version 자체가 OTel SDK 표준 리소스 속성). 이중계상(v2.1.214 하한)·MCP 의미
     -- 변경(v2.1.222) 검증에 쓴다 — grafana-ab-queries.sql 패널 19/20.
     AppVersion      LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
+    ProjectName     LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    Entrypoint      LowCardinality(String) MATERIALIZED Attributes['app.entrypoint'],
 
     -- ResourceSchemaUrl부터 Exemplars.*까지는 OTel ClickHouse exporter가 기본으로 만드는
     -- 부기(bookkeeping) 컬럼이다 — 이 DDL이 원래 가독성을 위해 생략했었는데, exporter가 라이브
@@ -369,6 +371,8 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_logs
     -- OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES 전환에 영향받지 않게).
     EndUserId          LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
     AppVersion         LowCardinality(String) MATERIALIZED ResourceAttributes['service.version'],
+    ProjectName        LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    Entrypoint         LowCardinality(String) MATERIALIZED LogAttributes['app.entrypoint'],
 
     -- TimestampTime부터 ScopeAttributes까지는 OTel ClickHouse exporter 기본 부기 컬럼(실측
     -- 2026-07-27, DESCRIBE TABLE) — otel_metrics_sum과 같은 사유로 명시한다.
@@ -489,7 +493,9 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_traces
     AgentId         String MATERIALIZED SpanAttributes['agent_id'],
     ParentAgentId   String MATERIALIZED SpanAttributes['parent_agent_id'],
     Model           LowCardinality(String) MATERIALIZED SpanAttributes['model'],
-    Decision        LowCardinality(String) MATERIALIZED SpanAttributes['decision']
+    Decision        LowCardinality(String) MATERIALIZED SpanAttributes['decision'],
+    ProjectName     LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    Entrypoint      LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint']
 )
 -- 로컬 참조 사본이라 삭제 TTL만(cold tier 없음) — otel_logs와 동일 정책(90일), 라이브는
 -- infra/files/clickhouse-schema-replicated.sql에서 45일 cold 이동 + 90일 삭제.
@@ -534,6 +540,34 @@ WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND tab
 INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 4, '004-schema-migration-ledger', '29b114b2e242852ee208b4ef7fa6dc49d0e8b4b2daf988e18caa2543d62179a5'
 FROM system.one
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version = 4) = 0;
+
+-- -----------------------------------------------------------------------------
+-- 005 블록 — project.name / app.entrypoint 승격 (clickhouse-migration-005.sql의
+--    로컬/단일 노드 사본). 신규 설치는 정의상 "005까지 적용된" 상태다.
+--    `ON CLUSTER 'replicated'`가 없는 것만 다르고 나머지 텍스트는 마이그레이션 파일과 같다 —
+--    이 파일이 가리키는 로컬 스택(dashboard/docker-compose.yml)에는 그 클러스터가 없다.
+--    MATERIALIZE COLUMN을 부르지 않는 근거는 clickhouse-migration-005.sql 헤더 참고
+--    (기존 파트에서도 읽기 시점 평가로 정확한 값이 나온다 — 실측 2026-09-09).
+-- -----------------------------------------------------------------------------
+ALTER TABLE claude_code.otel_metrics_sum
+    ADD COLUMN IF NOT EXISTS ProjectName LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    ADD COLUMN IF NOT EXISTS Entrypoint  LowCardinality(String) MATERIALIZED Attributes['app.entrypoint'];
+
+ALTER TABLE claude_code.otel_logs
+    ADD COLUMN IF NOT EXISTS ProjectName LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    ADD COLUMN IF NOT EXISTS Entrypoint  LowCardinality(String) MATERIALIZED LogAttributes['app.entrypoint'];
+
+ALTER TABLE claude_code.otel_traces
+    ADD COLUMN IF NOT EXISTS ProjectName LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
+    ADD COLUMN IF NOT EXISTS Entrypoint  LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint'];
+
+INSERT INTO claude_code.schema_migrations (version, name, checksum) SELECT 5, '005-project-tag-and-entrypoint', 'abdde352853f487d7b119ef2d15523629011ec988d308e1cbfad7a78d77b44f5'
+FROM system.one
+WHERE (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_metrics_sum' AND name = 'ProjectName') > 0
+  AND (SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_logs' AND name = 'ProjectName') > 0
+  AND ((SELECT count() FROM system.columns WHERE database = 'claude_code' AND table = 'otel_traces' AND name = 'ProjectName') > 0
+       OR (SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_traces') = 0)
+  AND (SELECT count() FROM claude_code.schema_migrations WHERE version = 5) = 0;
 
 -- -----------------------------------------------------------------------------
 -- 참고: attribute 실제 키 이름(event.name / tool_name / mcp_server_name 등)은
