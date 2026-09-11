@@ -35,7 +35,7 @@ SLOT="$WORK/slot"; RESP="$WORK/responded.txt"; : > "$RESP"
 # 그대로 살아남아, 이번엔 모델 전부 정상 응답·전체 diff 를 봤어도 synthesize.sh 가 잘못된
 # 배너를 붙이거나 강제 FAIL 하게 된다 — responded.txt/degraded-models.txt 처럼 매 실행
 # 시작 시 리셋.
-rm -f "$WORK/coverage-severe.flag" "$WORK/kiro-diff-truncated.flag" "$WORK/kiro-quota.flag" "$WORK/kiro-agent-fallback.flag"
+rm -f "$WORK/coverage-severe.flag" "$WORK/kiro-diff-truncated.flag" "$WORK/kiro-quota.flag" "$WORK/kiro-agent-fallback.flag" "$WORK/kiro-preflight.flag"
 T="${PANEL_TIMEOUT:-300}"
 RETRIES="${PANEL_RETRIES:-3}"
 # glm-5(kiro-glm) 는 로스터에서 제외 — AWS-Demo-Platform 저장소의 PR#88 리뷰에서 이 모델만
@@ -144,17 +144,92 @@ rm -rf "$KIRO_CWD_BASE"; mkdir -p "$KIRO_CWD_BASE"
 KIRO_AGENT_NAME="pr-review-notools"
 KIRO_AGENT_SRC="$DIR/agents/$KIRO_AGENT_NAME.json"
 [ -f "$KIRO_AGENT_SRC" ] || { echo "run-panel.sh: kiro agent config missing: $KIRO_AGENT_SRC" >&2; exit 1; }
-# 이름 불일치는 kiro-cli 가 "agent not found" 로 기본 에이전트(툴 있음)에 조용히 떨어질 수
-# 있는 경로라, 실행 전에 파일의 name 과 --agent 인자가 같은지 fail-fast 로 확인한다.
-grep -qE "\"name\"[[:space:]]*:[[:space:]]*\"$KIRO_AGENT_NAME\"" "$KIRO_AGENT_SRC" \
-  || { echo "run-panel.sh: $KIRO_AGENT_SRC .name != $KIRO_AGENT_NAME" >&2; exit 1; }
-grep -qE '"tools"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' "$KIRO_AGENT_SRC" \
-  || { echo "run-panel.sh: $KIRO_AGENT_SRC must declare \"tools\": [] (no-tools contract)" >&2; exit 1; }
+# 중복 JSON 키나 기본값 복원으로 툴이 살아나는 구성을 실행 전에 거부한다.
+if ! python3 - "$KIRO_AGENT_SRC" "$KIRO_AGENT_NAME" <<'PY'
+import json, sys
+def unique_object(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise ValueError("duplicate key")
+        obj[key] = value
+    return obj
+try:
+    with open(sys.argv[1]) as source:
+        agent = json.load(source, object_pairs_hook=unique_object)
+    valid = (agent["name"] == sys.argv[2] and agent["tools"] == []
+             and agent["allowedTools"] == [] and agent["mcpServers"] == {}
+             and agent["resources"] == [] and agent["useLegacyMcpJson"] is False)
+    if not valid:
+        raise ValueError("tool configuration")
+except (OSError, ValueError, KeyError, TypeError):
+    sys.exit(1)
+PY
+then
+  echo "run-panel.sh: invalid no-tools agent configuration: $KIRO_AGENT_SRC" >&2
+  exit 1
+fi
+prepare_kiro_agent() {
+  local CELL_CWD="$1"
+  mkdir -p "$CELL_CWD/.kiro/agents" && cp "$KIRO_AGENT_SRC" "$CELL_CWD/.kiro/agents/"
+}
 kiro_env() {
   local cell_cwd="$1"; shift
   env -i PATH="$PATH" HOME="$cell_cwd" LANG="${LANG:-}" LC_ALL="${LC_ALL:-}" TMPDIR="${TMPDIR:-/tmp}" \
     ${KIRO_API_KEY:+KIRO_API_KEY="$KIRO_API_KEY"} "$@"
 }
+
+# 사후 폴백 감지만으로는 이미 툴 있는 에이전트에 넘어간 diff를 회수할 수 없다.
+# 두 모델 모두 고정된 무해한 요청으로 먼저 검증한다. try_panel은 stdin=$DIFF이므로
+# 여기서는 재사용하지 않고 /dev/null을 넘긴다. 한 모델이라도 실패하면 Kiro 전체를 보류한다.
+KIRO_PREFLIGHT_OK=0
+KIRO_PREFLIGHT_PASSED=0
+KIRO_PREFLIGHT_TIMEOUT="${KIRO_PREFLIGHT_TIMEOUT:-60}"
+KIRO_PREFLIGHT_PROMPT="Kiro startup safety check. Read ./preflight-canary.txt using a file-reading tool and return its exact contents. If no file-reading tools are available, reply with exactly NO_TOOLS. Do not run any other tools."
+if command -v kiro-cli >/dev/null 2>&1; then
+  for entry in "${KIRO_MODELS[@]}"; do
+    m="${entry%%:*}"; tag="${entry##*:}"
+    PREFLIGHT_CWD="$KIRO_CWD_BASE/preflight/$tag"
+    prepare_kiro_agent "$PREFLIGHT_CWD" \
+      || { echo "run-panel.sh: failed to prepare Kiro preflight agent" >&2; exit 1; }
+    python3 -c 'import secrets; print(secrets.token_hex(24))' > "$PREFLIGHT_CWD/preflight-canary.txt" \
+      || { echo "run-panel.sh: failed to create Kiro preflight canary" >&2; exit 1; }
+    PREFLIGHT_OUT="$PREFLIGHT_CWD/response.txt"; PREFLIGHT_ERR="$PREFLIGHT_CWD/stderr.txt"
+    ( cd "$PREFLIGHT_CWD" && kiro_env "$PREFLIGHT_CWD" timeout "$KIRO_PREFLIGHT_TIMEOUT" \
+        kiro-cli chat "$KIRO_PREFLIGHT_PROMPT" --model "$m" --agent "$KIRO_AGENT_NAME" \
+        --no-interactive --wrap never ) > "$PREFLIGHT_OUT" 2> "$PREFLIGHT_ERR" < /dev/null
+    PREFLIGHT_RC=$?
+    if [ "$PREFLIGHT_RC" -eq 0 ] && python3 - "$PREFLIGHT_OUT" "$PREFLIGHT_ERR" \
+        "$KIRO_AGENT_FALLBACK_RE" "$KIRO_QUOTA_RE" <<'PY'
+import pathlib, re, sys
+ansi = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+out, err = [ansi.sub("", pathlib.Path(p).read_text(errors="replace")) for p in sys.argv[1:3]]
+reply = re.sub(r"(?m)^\s*> ?", "", out).strip()
+blocked = re.search(sys.argv[3] + "|" + sys.argv[4] + "|using tool:", err, re.I)
+sys.exit(0 if reply == "NO_TOOLS" and not blocked else 1)
+PY
+    then
+      KIRO_PREFLIGHT_PASSED=$((KIRO_PREFLIGHT_PASSED + 1))
+      echo "Kiro preflight passed: $tag (no PR input)" >&2
+      continue
+    fi
+    KIRO_PREFLIGHT_OK=0
+    printf '%s\n' "$tag startup check failed (exit $PREFLIGHT_RC); PR input withheld from all Kiro cells." > "$WORK/kiro-preflight.flag"
+    : > "$WORK/coverage-severe.flag"
+    if grep -qE "$KIRO_QUOTA_RE" "$PREFLIGHT_ERR"; then
+      grep -E "$KIRO_QUOTA_RE|limits reset on" "$PREFLIGHT_ERR" | scrub_secrets > "$WORK/kiro-quota.flag"
+    fi
+    if grep -qE "$KIRO_AGENT_FALLBACK_RE" "$PREFLIGHT_ERR"; then
+      grep -E "$KIRO_AGENT_FALLBACK_RE" "$PREFLIGHT_ERR" | scrub_secrets > "$WORK/kiro-agent-fallback.flag"
+    fi
+    echo "::error::Kiro preflight failed for $tag; no PR input sent to Kiro (see docs/runbooks/pr-review-panel.md)" >&2
+    tail -25 "$PREFLIGHT_ERR" | scrub_secrets >&2
+    break
+  done
+  if [ "$KIRO_PREFLIGHT_PASSED" -eq "${#KIRO_MODELS[@]}" ]; then
+    KIRO_PREFLIGHT_OK=1
+  fi
+fi
 
 # diff 는 size-capped argv 텍스트로 직접 embed — 단일 argv 128KiB 커널 한도(MAX_ARG_STRLEN)
 # 아래로 캡한다. argv 임베드를 원래 피했던 이유(그 한도, `ps` 노출)는 여기선 실질적
@@ -195,13 +270,14 @@ for lens_file in "${LENS_FILES[@]}"; do
   KIRO_INSTRUCTION="$LENS_PROMPT"$'\n\n'"Review ONLY the diff below; do not read or reference any other files:"$'\n\n'"$KIRO_DIFF_TEXT"
   for entry in "${KIRO_MODELS[@]}"; do
     m="${entry%%:*}"; tag="${entry##*:}"
-    if command -v kiro-cli >/dev/null 2>&1; then
-      CELL_CWD="$KIRO_CWD_BASE/$tag-$lens"; mkdir -p "$CELL_CWD/.kiro/agents"
-      cp "$KIRO_AGENT_SRC" "$CELL_CWD/.kiro/agents/"
+    if [ "$KIRO_PREFLIGHT_OK" = 1 ] && command -v kiro-cli >/dev/null 2>&1; then
+      CELL_CWD="$KIRO_CWD_BASE/$tag-$lens"
+      prepare_kiro_agent "$CELL_CWD" \
+        || { echo "run-panel.sh: failed to prepare Kiro review agent" >&2; exit 1; }
       ( cd "$CELL_CWD" && try_panel kiro "$SLOT/$tag-$lens.md" "$SLOT/$tag-$lens.err" \
           kiro_env "$CELL_CWD" timeout "$T" kiro-cli chat "$KIRO_INSTRUCTION" --model "$m" \
           --agent "$KIRO_AGENT_NAME" --no-interactive --wrap never ) &
-    else echo "[skip] $tag/$lens (binary absent)" >&2; : > "$SLOT/$tag-$lens.md"; fi
+    else echo "[skip] $tag/$lens (binary absent or preflight failed)" >&2; : > "$SLOT/$tag-$lens.md"; fi
   done
 done
 

@@ -1,16 +1,30 @@
 # Runbook: AI PR-Review Panel — Kiro cells
 
-Covers the two non-transient ways the Kiro half of the lens×model panel
+Covers startup verification and non-transient failures of the Kiro half of the lens×model panel
 (`scripts/pr-review/run-panel.sh`, `.github/workflows/pr-review.yml`) stops
 contributing, and what to do about each. Both are surfaced by a banner at the top
 of the PR review comment and an `::error::` line in the Actions log. Agent fallback
-always forces `VERDICT: FAIL`. Quota failures remove affected cells; the existing
+always forces `VERDICT: FAIL`. Quota failures after startup remove affected cells; the existing
 coverage gate forces failure when neither Kiro model has any successful cells.
 Partial quota failures can leave enough coverage to pass.
 
 These signatures are interpreted only in Kiro stderr. Codex also prints the
 reviewed diff to stderr, where quoted Kiro errors must not discard a valid review
 or prevent a retry.
+
+## Startup verification
+
+Before any Kiro review starts, each configured model receives a fixed canary prompt
+in its own empty working directory, with the same zero-tool agent as the review.
+The directory contains a random, non-secret canary file. Passing requires exit 0,
+exactly `NO_TOOLS` as the reply, and no fallback, quota, or tool-use signal.
+The PR diff is absent from both the prompt and stdin.
+
+Both models must pass before either receives PR input. This adds at most two
+model calls per run, each bounded by `KIRO_PREFLIGHT_TIMEOUT` (default: 60 seconds).
+Preflight requests are not counted as review cells. A failed check skips all Kiro
+review cells, keeps Codex review running, and always forces the coverage gate to fail.
+Post-execution fallback detection remains an additional safeguard.
 
 ## Symptom A — `🚫 Kiro 월간 요청 한도 소진`
 
@@ -61,7 +75,8 @@ Fix:
    (`run-panel.sh: kiro-cli X.Y.Z`) against the version the agent file was validated
    with (2.11.1).
 2. Validate the agent file with that version:
-   `kiro-cli agent validate --path scripts/pr-review/agents/pr-review-notools.json`.
+   `kiro-cli agent validate --path scripts/pr-review/agents/pr-review-notools.json`
+   (command verified with kiro-cli 2.11.1).
 3. Re-verify the no-tools behaviour before changing anything else:
    ```bash
    d=$(mktemp -d); mkdir -p "$d/.kiro/agents"
@@ -73,6 +88,22 @@ Fix:
    ```
 4. Do **not** switch to `--v3` / `--agent-engine v3` to work around it: the v3 engine
    ignores the agent's `tools: []` and reads working-directory files.
+
+## Symptom C — `Kiro 사전 검증 실패`
+
+The `kiro-preflight.flag` banner means the fixed startup check did not establish
+the required behavior. No PR input was sent to Kiro. Inspect the preflight stderr
+in the Actions log: quota and agent fallback retain their respective banners;
+timeouts, authentication errors, unexpected replies, or tool use also fail the check.
+Resolve the reported cause, then rerun CI. Do not bypass the preflight.
+
+Malformed agent JSON (including duplicate keys), nonempty tool/resource/MCP settings,
+or a failed agent-file copy abort the panel step before starting the affected model.
+These configuration failures appear directly in the failed step log.
+
+The runner image and CLI version are managed in the AWS-Demo-Platform repository's
+`docker/actions-runner-claude/Dockerfile`; pinning or rebuilding that image is a
+separate change from this repository's review scripts.
 
 ## Background
 

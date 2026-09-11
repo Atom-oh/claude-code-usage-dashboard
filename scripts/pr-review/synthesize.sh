@@ -155,6 +155,15 @@ if [ -s "$WORK/degraded-models.txt" ]; then
   } > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 fi
 
+# 고정 프롬프트 사전 검증이 실패하면 PR diff를 Kiro에 보내지 않은 상태로 중단한다.
+if [ -s "$WORK/kiro-preflight.flag" ]; then
+  PREFLIGHT_DETAIL="$(tr '\n' ' ' < "$WORK/kiro-preflight.flag" | sed 's/ *$//')"
+  { echo "🛑 **Kiro 사전 검증 실패**: $PREFLIGHT_DETAIL 도구 차단을 확인하지 못해 Kiro 리뷰를 시작하지 않았습니다. 절차: docs/runbooks/pr-review-panel.md"
+    echo ""
+    cat "$OUT"
+  } > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
+fi
+
 # Kiro 월간 요청 한도 소진(run-panel.sh 의 kiro-quota.flag) — 위 degraded 배너의 원인 후보
 # 나열 대신 실제 원인을 못박는다. 코드/플래그 문제가 아니라 KIRO_API_KEY 계정 한도이므로
 # 사람이 취할 행동(overage 활성화 또는 키 교체)과 리셋 시점을 코멘트에서 바로 읽을 수 있게.
