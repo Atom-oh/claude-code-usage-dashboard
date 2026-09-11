@@ -108,6 +108,39 @@ EOF2
     # run-all.sh 는 set -euo pipefail 로 source 하므로 매치 없는 ls 가 스위트를 죽인다 — find 로 센다.
     HEALTHY_FLAGS=$(find "$T_STUB/work" -maxdepth 1 -name '*.flag' | wc -l | tr -d ' ')
     assert_eq "healthy run leaves no flags" "0" "$HEALTHY_FLAGS"
+
+    # Codex는 입력 diff를 stderr에도 출력한다. Kiro 오류 문자열을 인용하는 정상 리뷰가
+    # Kiro 에이전트 폴백으로 폐기되면 안 된다(PR #33의 실제 Codex 4셀 로그에서 재현).
+    cat > "$T_STUB/codex" <<'EOF2'
+#!/bin/bash
+cat >&2
+echo "no findings"
+EOF2
+    printf 'diff --git a/x b/x\n+Monthly request limit reached\n+no agent with name pr-review-notools found\n' > "$T_STUB/diff.txt"
+    PANEL_OUT=$(PATH="$T_STUB:$PATH" PANEL_TIMEOUT=30 PANEL_RETRIES=3 \
+        bash "$PANEL" "$T_STUB/diff.txt" "$T_STUB/lenses" "$T_STUB/work" 2>&1 || true)
+    assert_grep_match "Codex quoting Kiro errors remains a successful response" \
+        'Panel responded \(3 / 3 cells\)' "$PANEL_OUT"
+    QUOTED_FLAGS=$(find "$T_STUB/work" -maxdepth 1 -name '*.flag' | wc -l | tr -d ' ')
+    assert_eq "quoted Kiro errors in Codex stderr leave no flags" "0" "$QUOTED_FLAGS"
+
+    cat > "$T_STUB/codex" <<'EOF2'
+#!/bin/bash
+cat >/dev/null
+printf 'attempt\n' >> "$0.attempts"
+if [ "$(wc -l < "$0.attempts")" -eq 1 ]; then
+    echo "Reviewed code quotes: Monthly request limit reached" >&2
+    exit 1
+fi
+echo "no findings"
+EOF2
+    PANEL_OUT=$(PATH="$T_STUB:$PATH" PANEL_TIMEOUT=30 PANEL_RETRIES=3 \
+        bash "$PANEL" "$T_STUB/diff.txt" "$T_STUB/lenses" "$T_STUB/work" 2>&1 || true)
+    CODEX_ATTEMPTS=$(wc -l < "$T_STUB/codex.attempts" | tr -d ' ')
+    assert_eq "Codex retries its own transient failure despite a quoted Kiro quota" "2" "$CODEX_ATTEMPTS"
+    assert_grep_match "Codex retry can restore full coverage" 'Panel responded \(3 / 3 cells\)' "$PANEL_OUT"
+    RETRY_FLAGS=$(find "$T_STUB/work" -maxdepth 1 -name '*.flag' | wc -l | tr -d ' ')
+    assert_eq "a recovered Codex retry leaves no Kiro failure flags" "0" "$RETRY_FLAGS"
     rm -rf "$T_STUB"
 else
     skip "run-panel.sh quota stub behaviour" "timeout(1) not available"

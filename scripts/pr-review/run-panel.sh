@@ -75,22 +75,23 @@ KIRO_QUOTA_RE='Monthly request limit reached|MONTHLY_REQUEST_COUNT|UsageLimitRea
 KIRO_AGENT_FALLBACK_RE='no agent with name|Falling back to user specified default|Json supplied at .* is invalid'
 
 # 한 셀을 최대 $RETRIES 회 실행 — 슬롯이 비면 재시도(transient). 백그라운드로 호출.
-#   try_panel <slot> <err> <cmd...>   (stdin=$DIFF, stdout=slot, stderr=err)
+#   try_panel <provider> <slot> <err> <cmd...>   (stdin=$DIFF, stdout=slot, stderr=err)
 # 한도 소진·에이전트 폴백은 non-transient 라 재시도하지 않고 즉시 중단 — `$slot.quota` /
 # `$slot.agentfail` 마커를 남기고 슬롯을 비운다(응답이 있어도 집계에서 제외).
+# Codex stderr에는 입력 diff도 들어가므로 Kiro 전용 시그니처는 Kiro 프로세스에만 적용한다.
 try_panel() {
-  local slot="$1" err="$2"; shift 2
+  local provider="$1" slot="$2" err="$3"; shift 3
   local a rc=1
   for a in $(seq 1 "$RETRIES"); do
     "$@" > "$slot" 2>"$err" < "$DIFF"; rc=$?
-    if grep -qE "$KIRO_AGENT_FALLBACK_RE" "$err" 2>/dev/null; then
+    if [ "$provider" = kiro ] && grep -qE "$KIRO_AGENT_FALLBACK_RE" "$err" 2>/dev/null; then
       grep -E "$KIRO_AGENT_FALLBACK_RE" "$err" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | head -2 > "$slot.agentfail"
       : > "$slot"; rc=1
       echo "[agent-fallback] $(basename "$slot" .md) — kiro-cli ignored --agent, no-tools contract broken; discarding response" >&2
       break
     fi
     [ -s "$slot" ] && [ "$rc" -eq 0 ] && break
-    if grep -qE "$KIRO_QUOTA_RE" "$err" 2>/dev/null; then
+    if [ "$provider" = kiro ] && grep -qE "$KIRO_QUOTA_RE" "$err" 2>/dev/null; then
       grep -E "$KIRO_QUOTA_RE|limits reset on" "$err" \
         | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | head -3 > "$slot.quota"
       : > "$slot"; rc=1
@@ -184,7 +185,7 @@ for lens_file in "${LENS_FILES[@]}"; do
   # (이전 gpt-5.6-sol/bedrock-mantle 는 In-Region(us-east-1) 전용이라 강제했었음).
   # diff 는 stdin.
   if command -v codex >/dev/null 2>&1; then
-    ( try_panel "$SLOT/codex-$lens.md" "$SLOT/codex-$lens.err" \
+    ( try_panel codex "$SLOT/codex-$lens.md" "$SLOT/codex-$lens.err" \
         timeout "$T" codex exec -s read-only --skip-git-repo-check "$LENS_PROMPT" ) &
   else echo "[skip] codex/$lens (binary absent)" >&2; : > "$SLOT/codex-$lens.md"; fi
 
@@ -197,7 +198,7 @@ for lens_file in "${LENS_FILES[@]}"; do
     if command -v kiro-cli >/dev/null 2>&1; then
       CELL_CWD="$KIRO_CWD_BASE/$tag-$lens"; mkdir -p "$CELL_CWD/.kiro/agents"
       cp "$KIRO_AGENT_SRC" "$CELL_CWD/.kiro/agents/"
-      ( cd "$CELL_CWD" && try_panel "$SLOT/$tag-$lens.md" "$SLOT/$tag-$lens.err" \
+      ( cd "$CELL_CWD" && try_panel kiro "$SLOT/$tag-$lens.md" "$SLOT/$tag-$lens.err" \
           kiro_env "$CELL_CWD" timeout "$T" kiro-cli chat "$KIRO_INSTRUCTION" --model "$m" \
           --agent "$KIRO_AGENT_NAME" --no-interactive --wrap never ) &
     else echo "[skip] $tag/$lens (binary absent)" >&2; : > "$SLOT/$tag-$lens.md"; fi

@@ -3,9 +3,14 @@
 Covers the two non-transient ways the Kiro half of the lens×model panel
 (`scripts/pr-review/run-panel.sh`, `.github/workflows/pr-review.yml`) stops
 contributing, and what to do about each. Both are surfaced by a banner at the top
-of the PR review comment and an `::error::` line in the Actions log; both force
-`VERDICT: FAIL` (fail-closed: with Kiro gone only one vendor — Codex — is left, so
-no lens has cross-vendor confirmation).
+of the PR review comment and an `::error::` line in the Actions log. Agent fallback
+always forces `VERDICT: FAIL`. Quota failures remove affected cells; the existing
+coverage gate forces failure when neither Kiro model has any successful cells.
+Partial quota failures can leave enough coverage to pass.
+
+These signatures are interpreted only in Kiro stderr. Codex also prints the
+reviewed diff to stderr, where quoted Kiro errors must not discard a valid review
+or prevent a retry.
 
 ## Symptom A — `🚫 Kiro 월간 요청 한도 소진`
 
