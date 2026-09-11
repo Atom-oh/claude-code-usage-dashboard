@@ -17,6 +17,13 @@ This project has not been tagged yet — everything below is unreleased.
 
 ## [Unreleased]
 
+### Changed (2026-09-11 cost display basis)
+- Cost now shows reported amounts by default. Computed totals, token-tier diagrams,
+  comparison columns and Effort annotations require the `계산 비용 비교` opt-in.
+- Monetary Cost donuts retain cents, matching the summary formatter. Comparison mode
+  preserves the original computed values; it does not allocate reported totals using
+  estimated token-tier shares.
+
 ### Fixed (2026-09-10 reported spend and cache TTL)
 - Use existing client-reported spend in Cost, Executive, Productivity, Users and CSVs;
   use reports for `costEfficiency.js`'s `cost_per_loc` and `cost_per_commit`.

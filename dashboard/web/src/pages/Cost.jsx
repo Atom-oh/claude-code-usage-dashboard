@@ -183,6 +183,8 @@ export default function Cost() {
   const { model } = useFilters();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
   const [topN, setTopN] = useState(20);
+  const [showComputed, setShowComputed] = useState(false);
+  const comparisonHelp = showComputed ? computedHelp : "";
   // 전역 기간 프리셋(RangePicker)이 바뀌면 이 페이지의 로컬 granularity도 기본값으로 재동기화 —
   // 안 그러면 7일 보다가 1일로 바꿔도 "일간" 버킷에 머문다. days도 dependency에 넣는다: 주간(168)을
   // 수동 선택한 뒤 30일→7일로 바꾸면 defaultIntervalHours(24)는 불변이라 effect가 안 돌아 주간 버킷이
@@ -362,6 +364,18 @@ export default function Cost() {
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {showComputed && <a href="#computed-cost-comparison" className="text-sm text-brand-700 underline underline-offset-2">교차검증 보기</a>}
+          <label className="flex items-center gap-2 text-sm text-ink-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showComputed}
+              onChange={(e) => setShowComputed(e.target.checked)}
+              className="h-4 w-4 accent-brand-500"
+            />
+            계산 비용 비교
+          </label>
+        </div>
         {/* byUserModel은 이 카드 블록에서 안 쓴다(developerCount는 이제 activeUsers 기반) —
             여기 게이트에 넣으면 이 카드와 무관한 API 로딩/에러가 렌더를 불필요하게 묶는다
             (리뷰에서 확인). byUserModel을 실제로 쓰는 아래 랭킹 섹션이 자체 게이트를 갖는다. */}
@@ -377,12 +391,6 @@ export default function Cost() {
               variant="accent"
               help={SPEND_HELP}
               hint={totals.cost === null ? "보고값 누락 또는 부분 수집" : "선택 기간 보고 비용 · 미분류 채널 포함"}
-            />
-            <StatTile
-              label="토큰 단가 계산 비용"
-              value={usd(totals.computed)}
-              help={computedHelp}
-              hint={`${ttlHint}${totals.unpricedTokens > 0 ? ` · 단가 미등록 토큰 ${fmt(totals.unpricedTokens)}개 제외` : ""}`}
             />
             <StatTile label="입력 토큰" value={fmt(totals.input)} />
             <StatTile label="출력 토큰" value={fmt(totals.output)} help="Thinking 토큰이 포함됩니다." />
@@ -428,29 +436,6 @@ export default function Cost() {
           </div>
         )}
 
-        {tiers.loading || cacheEff.loading ? (
-          <Loading />
-        ) : tiers.error || cacheEff.error ? (
-          <ErrorBox error={tiers.error || cacheEff.error} />
-        ) : (
-          <div className="group-grid">
-            {shownGroups(Object.keys(tiers.data || {}).map((group) => ({ group }))).map((g) => (
-              <DonutBreakdown
-                key={g}
-                title={`토큰 유형별 계산 비용 — ${g}`}
-                subtitle={`${ttlHint}${unpricedTokensFor(g) > 0 ? ` · 단가 미등록 토큰 ${fmt(unpricedTokensFor(g))}개 제외` : ""}`}
-                help={computedHelp}
-                right={<Badge tone="brand">캐시율 {(cacheRatioFor(g) * 100).toFixed(1)}%</Badge>}
-                data={tierRowsFor(g)}
-                nameKey="tier"
-                valueKey="cost"
-                valuePrefix="$"
-                colorOf={makeGroupBreakdownColorer(g, TIER_LABEL_ORDER)}
-              />
-            ))}
-          </div>
-        )}
-
         {effortMix.loading ? (
           <Loading />
         ) : effortMix.error ? (
@@ -460,19 +445,20 @@ export default function Cost() {
             {shownGroups(effortMix.data).map((g) => (
               <Card
                 key={g}
-                title={`Effort 수준별 비용 — ${g}`}
-                help={`${SPEND_HELP} Effort 정보가 없으면 미지정으로 묶습니다. Thinking 토큰은 출력 토큰에 포함됩니다. ${computedHelp}`}
+                title={`Effort 수준별 보고 비용 — ${g}`}
+                help={`${SPEND_HELP} Effort 정보가 없으면 미지정으로 묶습니다. Thinking 토큰은 출력 토큰에 포함됩니다. ${comparisonHelp}`}
               >
                 {sumSpend(effortRowsFor(g)) === null ? <p className="text-sm text-ink-400">{unavailable}</p> : <DonutBody
                   data={effortRowsFor(g)}
                   nameKey="effort"
                   valueKey="cost"
                   valuePrefix="$"
+                  valueFormatter={usd}
                   colorOf={makeGroupBreakdownColorer(g, EFFORT_LABEL_ORDER)}
                 />}
                 <ul className="mt-3 text-[12px] text-ink-400">
                   {effortRowsFor(g).map((r) => (
-                    <li key={r.effort}>{`${effortLabel(r.effort)}: ${usd(r.cost)} (계산값 ${usd(r.computed_cost)}${r.unpriced_tokens > 0 ? "; 단가 미등록 토큰 제외" : ""})`}</li>
+                    <li key={r.effort}>{`${effortLabel(r.effort)}: ${usd(r.cost)}${showComputed ? ` (계산값 ${usd(r.computed_cost)}${r.unpriced_tokens > 0 ? "; 단가 미등록 토큰 제외" : ""})` : ""}`}</li>
                   ))}
                 </ul>
               </Card>
@@ -488,7 +474,14 @@ export default function Cost() {
           ) : (
             shownGroups(byModel.data).map((g) => (
               <Card key={g} title={`모델별 비용 비중 — ${g}`} help={SPEND_HELP}>
-                {sumSpend(modelRowsFor(g)) === null ? <p className="text-sm text-ink-400">{unavailable}</p> : <DonutBody data={modelRowsFor(g)} nameKey="model" valueKey="cost" valuePrefix="$" colorOf={(name) => groupModelColorFor(g, name)} />}
+                {sumSpend(modelRowsFor(g)) === null ? <p className="text-sm text-ink-400">{unavailable}</p> : <DonutBody
+                  data={modelRowsFor(g)}
+                  nameKey="model"
+                  valueKey="cost"
+                  valuePrefix="$"
+                  valueFormatter={usd}
+                  colorOf={(name) => groupModelColorFor(g, name)}
+                />}
               </Card>
             ))
           )}
@@ -546,13 +539,14 @@ export default function Cost() {
         )}
 
         <DataTable
+          key={`models-${showComputed}`}
           title="모델별 비용과 토큰"
           subtitle="비용 기준 정렬"
-          help={`${SPEND_HELP} 이전 기간 대비는 같은 길이의 직전 기간 보고 비용과 비교합니다. ${computedHelp}`}
+          help={`${SPEND_HELP} 이전 기간 대비는 같은 길이의 직전 기간 보고 비용과 비교합니다. ${comparisonHelp}`}
           columns={[
             { key: "model", label: "모델" },
             { key: "cost", label: "비용", render: usd },
-            { key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv },
+            ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
             { key: "share", label: "전체 대비", render: (v) => v === null ? "확인 필요" : `${v.toFixed(1)}%`, toText: (v) => v === null ? "" : `${v.toFixed(1)}%` },
             {
               key: "change",
@@ -574,14 +568,15 @@ export default function Cost() {
           <ErrorBox error={agentCost.error} />
         ) : (
           <DataTable
+            key={`agents-${showComputed}`}
             title="에이전트별 비용"
             subtitle="API가 제공한 에이전트 중 보고 비용 상위 15개"
-            help={`에이전트가 지정되지 않은 사용량은 메인 세션으로 표시합니다. ${SPEND_HELP} ${computedHelp}`}
+            help={`에이전트가 지정되지 않은 사용량은 메인 세션으로 표시합니다. ${SPEND_HELP} ${comparisonHelp}`}
             columns={[
               { key: "agent", label: "에이전트", render: agentLabel, toText: agentLabel },
               { key: "group", label: "채널" },
               { key: "cost", label: "비용", render: usd },
-              { key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv },
+              ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
               { key: "tokens", label: "토큰", render: fmt },
             ]}
             rows={agentRows}
@@ -623,6 +618,7 @@ export default function Cost() {
           <ErrorBox error={byUserModelTable.error} />
         ) : (
           <DataTable
+            key={`users-${showComputed}`}
             title="사용자 · 모델별 비용"
             // single 모드에선 그룹 줄 구분이 무의미해 막대를 빼므로 부제도 막대/범례를 말하지 않는다.
             subtitle={
@@ -637,8 +633,8 @@ export default function Cost() {
             }
             help={
               groupMode === "single"
-                ? `미분류 채널은 체크박스로 포함할 수 있습니다. ${SPEND_HELP} ${computedHelp}`
-                : `같은 사용자가 두 채널을 모두 사용하면 한 행으로 합칩니다. 비용 옆 막대의 줄은 채널, 색은 모델입니다. 단가 미등록 모델도 유효한 보고 비용은 포함합니다. 미분류 채널은 체크박스로 포함할 수 있습니다. ${SPEND_HELP} ${computedHelp}`
+                ? `미분류 채널은 체크박스로 포함할 수 있습니다. ${SPEND_HELP} ${comparisonHelp}`
+                : `같은 사용자가 두 채널을 모두 사용하면 한 행으로 합칩니다. 비용 옆 막대의 줄은 채널, 색은 모델입니다. 단가 미등록 모델도 유효한 보고 비용은 포함합니다. 미분류 채널은 체크박스로 포함할 수 있습니다. ${SPEND_HELP} ${comparisonHelp}`
             }
             right={
               <label className="flex items-center gap-1.5 text-[12px] text-ink-600 select-none cursor-pointer">
@@ -671,7 +667,7 @@ export default function Cost() {
                   return split ? `${usd(r.cost)} — ${split}` : usd(r.cost);
                 },
               },
-              { key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv },
+              ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
               {
                 key: "tokens",
                 label: "토큰",
@@ -698,9 +694,10 @@ export default function Cost() {
           <ErrorBox error={efficiency.error} />
         ) : (
           <DataTable
+            key={`efficiency-${showComputed}`}
             title="비용 효율 ($/LOC · $/커밋)"
             subtitle="코드 라인당 비용이 낮은 순"
-            help={`추가된 코드 라인과 커밋 수로 보고 비용을 나눕니다. 개인 성과 평가용이 아닌 참고 지표이며 보고값 미확인 사용자는 맨 아래에 표시합니다. ${SPEND_HELP} ${computedHelp}`}
+            help={`추가된 코드 라인과 커밋 수로 보고 비용을 나눕니다. 개인 성과 평가용이 아닌 참고 지표이며 보고값 미확인 사용자는 맨 아래에 표시합니다. ${SPEND_HELP} ${comparisonHelp}`}
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
               { key: "group", label: "채널" },
@@ -709,13 +706,56 @@ export default function Cost() {
               { key: "commits", label: "커밋", render: fmt },
               { key: "cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) },
               { key: "cost_per_commit", label: "$/커밋", render: usd },
-              { key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv },
-              { key: "computed_cost_per_loc", label: "계산 $/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) },
-              { key: "computed_cost_per_commit", label: "계산 $/커밋", render: usd },
+              ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
+              ...(showComputed ? [{ key: "computed_cost_per_loc", label: "계산 $/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) }] : []),
+              ...(showComputed ? [{ key: "computed_cost_per_commit", label: "계산 $/커밋", render: usd }] : []),
             ]}
             rows={efficiencyRows}
             exportName="cost_efficiency_by_user"
           />
+        )}
+
+        {showComputed && (
+          <section id="computed-cost-comparison" aria-label="계산 비용 교차검증" className="mt-4 flex flex-col gap-4 border-t border-dashed border-ink-200 pt-5">
+            <div>
+              <h2 className="text-base font-semibold text-ink-800">계산 비용 교차검증</h2>
+              <p className="mt-1 text-sm text-ink-500">토큰 수와 단가표로 계산한 비교값입니다. 보고 비용과 합계가 다를 수 있습니다.</p>
+            </div>
+            {summary.loading ? <Loading /> : summary.error ? <ErrorBox error={summary.error} /> : (
+              <div className="grid grid-cols-2 gap-4">
+                <StatTile label="비교 기준 보고 비용" value={usd(totals.cost)} help={SPEND_HELP} />
+                <StatTile
+                  label="토큰 단가 계산 비용"
+                  value={usd(totals.computed)}
+                  help={computedHelp}
+                  hint={`${ttlHint}${totals.unpricedTokens > 0 ? ` · 단가 미등록 토큰 ${fmt(totals.unpricedTokens)}개 제외` : ""}`}
+                />
+              </div>
+            )}
+            {tiers.loading || cacheEff.loading ? (
+              <Loading />
+            ) : tiers.error || cacheEff.error ? (
+              <ErrorBox error={tiers.error || cacheEff.error} />
+            ) : (
+              <div className="group-grid">
+                {shownGroups(Object.keys(tiers.data || {}).map((group) => ({ group }))).map((g) => (
+                  <DonutBreakdown
+                    key={g}
+                    title={`토큰 유형별 계산 비용 — ${g}`}
+                    subtitle={`${ttlHint}${unpricedTokensFor(g) > 0 ? ` · 단가 미등록 토큰 ${fmt(unpricedTokensFor(g))}개 제외` : ""}`}
+                    help={computedHelp}
+                    right={<Badge tone="brand">캐시율 {(cacheRatioFor(g) * 100).toFixed(1)}%</Badge>}
+                    data={tierRowsFor(g)}
+                    nameKey="tier"
+                    valueKey="cost"
+                    valuePrefix="$"
+                    valueFormatter={usd}
+                    colorOf={makeGroupBreakdownColorer(g, TIER_LABEL_ORDER)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         )}
       </div>
     </div>
