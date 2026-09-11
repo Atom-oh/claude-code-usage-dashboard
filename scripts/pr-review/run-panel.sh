@@ -35,12 +35,15 @@ SLOT="$WORK/slot"; RESP="$WORK/responded.txt"; : > "$RESP"
 # 그대로 살아남아, 이번엔 모델 전부 정상 응답·전체 diff 를 봤어도 synthesize.sh 가 잘못된
 # 배너를 붙이거나 강제 FAIL 하게 된다 — responded.txt/degraded-models.txt 처럼 매 실행
 # 시작 시 리셋.
-rm -f "$WORK/coverage-severe.flag" "$WORK/kiro-diff-truncated.flag" "$WORK/kiro-quota.flag"
+rm -f "$WORK/coverage-severe.flag" "$WORK/kiro-diff-truncated.flag" "$WORK/kiro-quota.flag" "$WORK/kiro-agent-fallback.flag"
 T="${PANEL_TIMEOUT:-300}"
 RETRIES="${PANEL_RETRIES:-3}"
 # glm-5(kiro-glm) 는 로스터에서 제외 — AWS-Demo-Platform 저장소의 PR#88 리뷰에서 이 모델만
 # 4건의 오탐을 냈다(AWS-Demo-Platform 저장소의 ADR-015). 되살릴 때는 오탐률을 먼저 재측정할 것.
 KIRO_MODELS=("claude-opus-5:kiro-opus" "gpt-5.6-terra:kiro-gpt")
+# 러너 이미지의 kiro-cli 는 unpinned vendor-latest 라(Dockerfile 참조) 아래 무툴/한도 시그니처
+# 가정(2.11.1 기준)이 어느 버전에서 깨졌는지 로그에서 추적할 수 있게 버전을 첫 줄에 찍는다.
+command -v kiro-cli >/dev/null 2>&1 && echo "run-panel.sh: $(kiro-cli --version 2>/dev/null | head -1)" >&2
 
 shopt -s nullglob
 LENS_FILES=("$LENSES_DIR"/*.txt)
@@ -59,20 +62,36 @@ fi
 # 전멸의 실제 원인이 이것이었고(로컬 재현: 동일 KIRO_API_KEY 로 v2/v3 모두 같은 에러 —
 # headless 플래그 문제가 아님), 옛 로직은 셀마다 3회씩 재시도만 태우고 배너엔 "플래그
 # 무효·바이너리 부재·인증 실패 등"이라는 오답 후보만 남겼다.
-KIRO_QUOTA_RE='Monthly request limit reached|MONTHLY_REQUEST_COUNT|UsageLimitReachedError|reached your monthly usage limit'
+# stderr 만 스캔한다 — 두 엔진 모두 stderr 에 시그니처를 남기고(v3 는 JSON body 의
+# MONTHLY_REQUEST_COUNT), stdout(=슬롯)까지 보면 리뷰 대상 diff 가 이 문구를 인용하는 경우
+# (이 스크립트 자신을 고치는 PR 이 그 예) 부분 응답이 한도 소진으로 오분류될 수 있다.
+KIRO_QUOTA_RE='Monthly request limit reached|MONTHLY_REQUEST_COUNT|UsageLimitReachedError'
+
+# `--agent` 로드 실패 시그니처. kiro-cli 2.11.1 은 이름 불일치·JSON 파싱 실패 모두에서
+# stderr 에 "Error: no agent with name X found. Falling back to user specified default" 를
+# 찍고 **rc=0 으로 기본 에이전트(툴 있음)를 그대로 실행**한다(로컬 재현). 그대로 두면 무툴
+# 계약이 조용히 깨진 채 정상 응답으로 집계되므로(`--trust-tools=` 가 무시되던 것과 같은
+# 실패 양식) 시그니처를 잡아 슬롯을 비우고 severe 로 승격한다.
+KIRO_AGENT_FALLBACK_RE='no agent with name|Falling back to user specified default|Json supplied at .* is invalid'
 
 # 한 셀을 최대 $RETRIES 회 실행 — 슬롯이 비면 재시도(transient). 백그라운드로 호출.
 #   try_panel <slot> <err> <cmd...>   (stdin=$DIFF, stdout=slot, stderr=err)
-# 한도 소진은 non-transient 라 재시도하지 않고 즉시 중단 — `$slot.quota` 마커를 남기고
-# 슬롯을 비운다(v3 는 에러 문장을 stdout 에 쓰므로 비우지 않으면 "응답"으로 집계됨).
+# 한도 소진·에이전트 폴백은 non-transient 라 재시도하지 않고 즉시 중단 — `$slot.quota` /
+# `$slot.agentfail` 마커를 남기고 슬롯을 비운다(응답이 있어도 집계에서 제외).
 try_panel() {
   local slot="$1" err="$2"; shift 2
   local a rc=1
   for a in $(seq 1 "$RETRIES"); do
     "$@" > "$slot" 2>"$err" < "$DIFF"; rc=$?
+    if grep -qE "$KIRO_AGENT_FALLBACK_RE" "$err" 2>/dev/null; then
+      grep -E "$KIRO_AGENT_FALLBACK_RE" "$err" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | head -2 > "$slot.agentfail"
+      : > "$slot"; rc=1
+      echo "[agent-fallback] $(basename "$slot" .md) — kiro-cli ignored --agent, no-tools contract broken; discarding response" >&2
+      break
+    fi
     [ -s "$slot" ] && [ "$rc" -eq 0 ] && break
-    if grep -qE "$KIRO_QUOTA_RE" "$err" "$slot" 2>/dev/null; then
-      grep -hE "$KIRO_QUOTA_RE|limits reset on" "$err" "$slot" 2>/dev/null \
+    if grep -qE "$KIRO_QUOTA_RE" "$err" 2>/dev/null; then
+      grep -E "$KIRO_QUOTA_RE|limits reset on" "$err" \
         | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | head -3 > "$slot.quota"
       : > "$slot"; rc=1
       echo "[quota] $(basename "$slot" .md) — monthly request limit reached, not retrying" >&2
@@ -106,7 +125,8 @@ try_panel() {
 # `tools: []` 에이전트를 `--agent` 로 지정하면 v2 엔진은 read/shell 요구에 NO_TOOLS 로
 # 답한다(cwd 안 파일 포함). `--v3` 엔진은 같은 에이전트의 `tools: []` 를 **무시**하고 cwd
 # 안 파일을 읽었으므로 v3 는 이 용도에 쓸 수 없다 — run-panel.sh 는 v2 엔진(기본)을
-# 유지한다(ADR-011 의 `--v3` 드롭 결정과도 일치; 모델 카탈로그는 현재 v2/v3 동일).
+# 유지한다(AWS-Demo-Platform 저장소의 ADR-011 `--v3` 드롭 결정과도 일치 — 이 repo 자신의
+# ADR 번호와는 무관; 모델 카탈로그는 현재 v2/v3 동일).
 # 에이전트 파일은 셀마다 `$CELL_CWD/.kiro/agents/` 로 복사한다 — HOME=$CELL_CWD 이므로
 # 전역(~/.kiro/agents)·워크스페이스(.kiro/agents) 탐색 경로가 같은 디렉터리로 모인다.
 # 향후 kiro-cli 가 이 시맨틱을 또 바꾸면 이 fail-closed 가정도 재검증 필요.
@@ -242,6 +262,22 @@ KIRO_ALL_DEAD=0
 if [ "$CODEX_DEAD" = 1 ] || [ "$KIRO_ALL_DEAD" = 1 ]; then
   echo "::error::coverage collapsed to ≤1 vendor (codex dead=$CODEX_DEAD, kiro fully dead=$KIRO_ALL_DEAD) — forcing VERDICT: FAIL, no cross-vendor check remains for any lens" >&2
   : > "$WORK/coverage-severe.flag"
+fi
+
+# 에이전트 폴백 가시화 + severe 승격 — try_panel 이 남긴 `$slot.agentfail` 마커가 하나라도
+# 있으면 그 러너의 kiro-cli 가 `--agent` 를 무시한 것이라 남은 Kiro 응답도 무툴 보장이 없다.
+# 슬롯은 이미 비워져 있으므로(집계 제외) coverage 축으로도 잡히지만, 원인을 "빈 응답"이 아닌
+# "계약 위반"으로 명시하고 체어 판정과 무관하게 FAIL 을 강제한다.
+shopt -s nullglob
+AGENTFAIL_MARKERS=("$SLOT"/*.agentfail)
+shopt -u nullglob
+if [ "${#AGENTFAIL_MARKERS[@]}" -gt 0 ]; then
+  AGENTFAIL_DETAIL="$(cat "${AGENTFAIL_MARKERS[@]}" | scrub_secrets | grep -v '^\s*$' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+  AGENTFAIL_CELLS="$(for q in "${AGENTFAIL_MARKERS[@]}"; do basename "$q" .md.agentfail; done | tr '\n' ' ' | sed 's/ *$//')"
+  echo "::error::kiro-cli ignored --agent $KIRO_AGENT_NAME (fell back to the default agent WITH tools) in ${#AGENTFAIL_MARKERS[@]} cell(s) [$AGENTFAIL_CELLS]: $AGENTFAIL_DETAIL — responses discarded, forcing VERDICT: FAIL (no-tools contract)" >&2
+  printf '%s\n' "$AGENTFAIL_DETAIL" > "$WORK/kiro-agent-fallback.flag"
+  : > "$WORK/coverage-severe.flag"
+  rm -f "${AGENTFAIL_MARKERS[@]}"
 fi
 
 # Kiro 월간 요청 한도 소진 가시화 — try_panel 이 남긴 `$slot.quota` 마커가 하나라도 있으면

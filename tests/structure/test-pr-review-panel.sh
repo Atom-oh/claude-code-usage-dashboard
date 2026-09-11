@@ -38,6 +38,11 @@ assert_grep_match "run-panel.sh writes kiro-quota.flag for synthesize.sh" \
     'kiro-quota\.flag' "$PANEL_SRC"
 assert_grep_match "synthesize.sh renders the Kiro quota banner" \
     'kiro-quota\.flag' "$(grep -v '^\s*#' "$SYNTH")"
+assert_grep_match "run-panel.sh detects the --agent fallback signature" \
+    'no agent with name' "$PANEL_SRC"
+assert_grep_match "synthesize.sh renders the agent-fallback banner" \
+    'kiro-agent-fallback\.flag' "$(grep -v '^\s*#' "$SYNTH")"
+assert_file_exists "runbook for the panel failure modes exists" "docs/runbooks/pr-review-panel.md"
 
 # 동작 테스트: kiro-cli 스텁이 2.11.1 v2 엔진의 한도 소진 시그니처(rc=0, 빈 stdout, stderr
 # 메시지)를 재현하면 재시도 없이 즉시 중단하고 quota 플래그를 남겨야 한다.
@@ -62,6 +67,47 @@ EOF
         '::error::Kiro monthly request quota exhausted.*reset on 10/01' "$PANEL_OUT"
     assert_file_exists "quota exhaustion leaves kiro-quota.flag" "$T_STUB/work/kiro-quota.flag"
     assert_file_exists "quota exhaustion still forces coverage-severe (fail-closed kept)" "$T_STUB/work/coverage-severe.flag"
+
+    # `--v3` 엔진 형태(rc=1, 메시지는 stdout, JSON 은 stderr) 도 stderr 만으로 잡혀야 한다.
+    cat > "$T_STUB/kiro-cli" <<'EOF2'
+#!/bin/bash
+echo "You've reached your monthly usage limit."
+echo '[ERROR] [KRS] HTTP 400 body={"__type":"...ServiceQuotaExceededException","reason":"MONTHLY_REQUEST_COUNT"}' >&2
+exit 1
+EOF2
+    PANEL_OUT=$(PATH="$T_STUB:$PATH" PANEL_TIMEOUT=30 PANEL_RETRIES=3 \
+        bash "$PANEL" "$T_STUB/diff.txt" "$T_STUB/lenses" "$T_STUB/work" 2>&1 || true)
+    assert_grep_no_match "v3-style quota error is not retried" '\[retry ' "$PANEL_OUT"
+    assert_grep_match "v3-style quota error is reported" '::error::Kiro monthly request quota exhausted' "$PANEL_OUT"
+    KIRO_SLOT_BYTES=$(cat "$T_STUB"/work/slot/kiro-*.md 2>/dev/null | wc -c | tr -d ' ')
+    assert_eq "v3-style quota stdout message is not counted as a response" "0" "$KIRO_SLOT_BYTES"
+
+    # 에이전트 폴백: kiro-cli 2.11.1 은 --agent 를 못 찾으면 stderr 한 줄 + rc=0 으로 툴 있는
+    # 기본 에이전트를 계속 실행한다. 응답이 있어도 폐기되고 severe 로 승격돼야 한다.
+    cat > "$T_STUB/kiro-cli" <<'EOF2'
+#!/bin/bash
+echo "Error: no agent with name pr-review-notools found. Falling back to user specified default" >&2
+echo "> no findings"
+exit 0
+EOF2
+    PANEL_OUT=$(PATH="$T_STUB:$PATH" PANEL_TIMEOUT=30 PANEL_RETRIES=3 \
+        bash "$PANEL" "$T_STUB/diff.txt" "$T_STUB/lenses" "$T_STUB/work" 2>&1 || true)
+    assert_grep_match "agent fallback is reported as ::error::" '::error::kiro-cli ignored --agent pr-review-notools' "$PANEL_OUT"
+    assert_grep_no_match "agent-fallback responses are not counted" 'Panel responded.*kiro-' "$PANEL_OUT"
+    assert_file_exists "agent fallback leaves kiro-agent-fallback.flag" "$T_STUB/work/kiro-agent-fallback.flag"
+    assert_file_exists "agent fallback forces coverage-severe" "$T_STUB/work/coverage-severe.flag"
+
+    # 정상 응답 경로: 아무 플래그도 남지 않아야 한다(감지 로직의 오탐 가드).
+    cat > "$T_STUB/kiro-cli" <<'EOF2'
+#!/bin/bash
+echo "> no findings"
+EOF2
+    PANEL_OUT=$(PATH="$T_STUB:$PATH" PANEL_TIMEOUT=30 PANEL_RETRIES=3 \
+        bash "$PANEL" "$T_STUB/diff.txt" "$T_STUB/lenses" "$T_STUB/work" 2>&1 || true)
+    assert_grep_match "healthy kiro cells are counted" 'Panel responded \(3 / 3 cells\)' "$PANEL_OUT"
+    # run-all.sh 는 set -euo pipefail 로 source 하므로 매치 없는 ls 가 스위트를 죽인다 — find 로 센다.
+    HEALTHY_FLAGS=$(find "$T_STUB/work" -maxdepth 1 -name '*.flag' | wc -l | tr -d ' ')
+    assert_eq "healthy run leaves no flags" "0" "$HEALTHY_FLAGS"
     rm -rf "$T_STUB"
 else
     skip "run-panel.sh quota stub behaviour" "timeout(1) not available"
