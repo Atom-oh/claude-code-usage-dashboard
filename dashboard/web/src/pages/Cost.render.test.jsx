@@ -163,12 +163,81 @@ async function exportTable(title) {
 
 const summary = { group: "bedrock", computed_cost: 7817.28, reported_cost: 6647.79, input_tokens: 1000, output_tokens: 100, cache_read_tokens: 20, cache_write_tokens: 30, unpriced_tokens: 0, sessions: 2 };
 
+test("default spend view hides computed amounts and exports only reported cost columns", async () => {
+  mount("single", {
+    "/api/cost/summary": [summary],
+    "/api/cost/by-model": [{ group: "bedrock", model: "model", cost: 7817.28, reported_cost: 6647.79, tokens: 100 }],
+    "/api/cost/effort-mix": [{ group: "bedrock", effort: "high", cost: 7817.28, reported_cost: 6647.79, tokens: 100 }],
+    "/api/cost/tiers": { bedrock: { cacheRead: 100, cacheWrite: 400, output: 6500, uncachedInput: 817.28 } },
+  });
+  await waitFor(() => expect(card("총 비용").textContent).toContain("$6,647.79"));
+  expect(screen.queryByText("토큰 단가 계산 비용", { exact: true })).toBeNull();
+  expect(screen.queryByText("토큰 유형별 계산 비용 — bedrock", { exact: true })).toBeNull();
+  expect(screen.queryByRole("region", { name: "계산 비용 교차검증" })).toBeNull();
+  expect(screen.queryByText("$7,817.28", { exact: true })).toBeNull();
+  expect(within(card("모델별 비용과 토큰")).queryByText("토큰 단가 계산값")).toBeNull();
+  expect((await exportTable("모델별 비용과 토큰"))).not.toContain("7817.28");
+  expect((await exportTable("모델별 비용과 토큰"))).not.toContain("토큰 단가 계산값");
+});
+
+test("computed comparison is opt-in and preserves the original values and TTL assumption", async () => {
+  mount("single", {
+    "/api/cost/summary": [summary],
+    "/api/cost/tiers": { bedrock: { cacheRead: 100, cacheWrite: 400, output: 6500, uncachedInput: 817.28 } },
+  });
+  await waitFor(() => expect(card("총 비용").textContent).toContain("$6,647.79"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
+  const comparison = screen.getByRole("region", { name: "계산 비용 교차검증" });
+  expect(comparison.textContent).toContain("$7,817.28");
+  expect(comparison.textContent).toContain("토큰 유형별 계산 비용 — bedrock");
+  expect(comparison.textContent).toContain("TTL 가정: 5분");
+  expect(card("총 비용").textContent).toContain("$6,647.79");
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
+  expect(screen.queryByRole("region", { name: "계산 비용 교차검증" })).toBeNull();
+});
+
+test("Effort donut total and legend use the same cent precision as reported totals", async () => {
+  mount("single", {
+    "/api/cost/summary": [{ ...summary, reported_cost: 77.64 }],
+    "/api/cost/effort-mix": [
+      { group: "bedrock", effort: "high", cost: 90, reported_cost: 52.19, tokens: 100 },
+      { group: "bedrock", effort: "medium", cost: 40, reported_cost: 25.45, tokens: 100 },
+    ],
+  });
+  await waitFor(() => expect(card("총 비용").textContent).toContain("$77.64"));
+  const effort = screen.getByText(/^Effort 수준별 (보고 )?비용 — bedrock$/).closest(".rounded-lg");
+  expect(effort.querySelector(".pointer-events-none .tabular").textContent).toBe("$77.64");
+  const legend = effort.querySelector("ul");
+  expect(legend.textContent).toContain("$52.19");
+  expect(legend.textContent).toContain("$25.45");
+});
+
+test("leaving comparison mode clears sorting by hidden computed columns", async () => {
+  mount("single", {
+    "/api/cost/by-model": [
+      { group: "bedrock", model: "reported-first", cost: 1, reported_cost: 30, tokens: 100 },
+      { group: "bedrock", model: "computed-first", cost: 900, reported_cost: 10, tokens: 100 },
+    ],
+  });
+  await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(2));
+  expect(cells("모델별 비용과 토큰")[0][0]).toBe("reported-first");
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
+  const computed = within(card("모델별 비용과 토큰")).getByText("토큰 단가 계산값");
+  fireEvent.click(computed);
+  fireEvent.click(computed);
+  expect(cells("모델별 비용과 토큰")[0][0]).toBe("computed-first");
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
+  expect(cells("모델별 비용과 토큰")[0][0]).toBe("reported-first");
+  expect(within(card("모델별 비용과 토큰")).queryByText("토큰 단가 계산값")).toBeNull();
+});
+
 test("reported total 6647.79 drives forecasts and per-user spend; 7817.28 stays diagnostic with TTL", async () => {
   mount("single", {
     "/api/cost/summary": [summary],
     "/api/overview/active-users": { users: 2, bedrock_users: 2 },
     "/api/cost/tiers": { bedrock: { cacheRead: 1, cacheWrite: 2, output: 3, uncachedInput: 4 } },
   });
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
   await waitFor(() => expect(card("총 비용").textContent).toContain("$6,647.79"));
   expect(card("토큰 단가 계산 비용").textContent).toContain("$7,817.28");
   expect(card("개발자당 비용").textContent).toContain("$3,323.9");
@@ -182,6 +251,7 @@ test("missing summary spend renders unavailable totals and forecasts without com
     "/api/cost/summary": [{ ...summary, reported_cost: 0 }],
     "/api/overview/active-users": { users: 2, bedrock_users: 2 },
   });
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
   await waitFor(() => expect(card("총 비용").textContent).toContain("확인 필요"));
   for (const title of ["30일 예상 비용", "개발자당 비용", "사용자당 비용 — bedrock"]) {
     expect(card(title).textContent).toContain("확인 필요");
@@ -200,6 +270,7 @@ test("model sorting, shares, period changes and CSV use reported spend including
       { model: "reported-leader", cost: null, reported_cost: 30, prev_cost: null, prev_reported_cost: 10 },
     ],
   });
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
   await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(2));
   await waitFor(() => expect(cells("모델별 비용과 토큰")[0]).toEqual(["reported-leader", "$30", "단가 미등록", "75.0%", "+200.0%", "0", "0"]));
   expect(cells("모델별 비용과 토큰")[1]).toEqual(["computed-leader", "$10", "$900", "25.0%", "-50.0%", "0", "0"]);
@@ -219,6 +290,7 @@ test("partial model and user folds render unavailable and export blank spend cel
     { user: "known", model: "known-model", group: "bedrock", cost: 77, reported_cost: 5, tokens: 100 },
   ];
   mount("ab", { "/api/cost/by-model": rows, "/api/cost/by-user-model": rows });
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
   await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(2));
   expect(cells("모델별 비용과 토큰")[1].slice(0, 5)).toEqual(["partial-model", "확인 필요", "$154", "확인 필요", "확인 필요"]);
   expect(cells("모델별 비용과 토큰")[0][3]).toBe("확인 필요");
@@ -244,11 +316,12 @@ test("effort, agents and efficiency use reported spend with computed secondary d
       { user: "missing", group: "bedrock", cost: 10, reported_cost: 0, reported_unpriced: true, loc: 10, commits: 2, cost_per_loc: null, cost_per_commit: null },
     ],
   });
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
   await waitFor(() => expect(cells("에이전트별 비용")).toHaveLength(2));
   expect(cells("에이전트별 비용")[0]).toEqual(["메인 세션", "bedrock", "$20", "$1", "10"]);
-  expect(card("Effort 수준별 비용 — bedrock").textContent).toContain("high: $7 (계산값 $100)");
-  expect(card("Effort 수준별 비용 — bedrock").textContent).toContain("medium: $9");
-  expect(card("Effort 수준별 비용 — bedrock").textContent).toContain("미지정: 확인 필요");
+  expect(card("Effort 수준별 보고 비용 — bedrock").textContent).toContain("high: $7 (계산값 $100)");
+  expect(card("Effort 수준별 보고 비용 — bedrock").textContent).toContain("medium: $9");
+  expect(card("Effort 수준별 보고 비용 — bedrock").textContent).toContain("미지정: 확인 필요");
   await waitFor(() => expect(cells("비용 효율 ($/LOC · $/커밋)")).toHaveLength(3));
   expect(cells("비용 효율 ($/LOC · $/커밋)")[0].slice(0, 7)).toEqual(["reported-best", "bedrock", "$10", "10", "2", "$1.0000", "$5"]);
   expect((await exportTable("에이전트별 비용"))).toContain("메인 세션,bedrock,20,1,10");

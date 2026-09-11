@@ -176,6 +176,12 @@ with `npm run build` into `dist/`, served as static files by the server (no sepa
   positive aggregates can still conceal missing underlying reports. Agent ranking is only
   within the returned API subset (the existing computed-cost top-30 cutoff is unchanged).
   The per-user `미분류 포함` checkbox remains display-only for that table's request.
+- **Cost defaults to reported values only.** `계산 비용 비교` is an explicit opt-in:
+  computed columns and Effort annotations appear only while enabled, and the computed
+  total/token-tier diagrams live in a separate comparison section. Switching it off resets
+  the affected tables so a hidden computed column cannot keep sorting reported rows.
+  Cost's monetary donuts pass the same USD formatter as its summary tiles; this changes
+  display precision, never the reported amounts or their allocation among token types.
 - **There is exactly one `<nav>` in the DOM unless the mobile drawer is open.**
   `App.test.jsx`'s `container.querySelector("nav")` picks the **first** `<nav>` to assert the
   route↔nav-link set, and `MobileNav` renders before `Sidebar` — so `MobileNav` renders its own
