@@ -155,6 +155,17 @@ if [ -s "$WORK/degraded-models.txt" ]; then
   } > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 fi
 
+# Kiro 월간 요청 한도 소진(run-panel.sh 의 kiro-quota.flag) — 위 degraded 배너의 원인 후보
+# 나열 대신 실제 원인을 못박는다. 코드/플래그 문제가 아니라 KIRO_API_KEY 계정 한도이므로
+# 사람이 취할 행동(overage 활성화 또는 키 교체)과 리셋 시점을 코멘트에서 바로 읽을 수 있게.
+if [ -s "$WORK/kiro-quota.flag" ]; then
+  QUOTA_DETAIL="$(tr '\n' ' ' < "$WORK/kiro-quota.flag" | sed 's/ *$//')"
+  { echo "🚫 **Kiro 월간 요청 한도 소진**: KIRO_API_KEY 계정이 MONTHLY_REQUEST_COUNT 한도에 도달해 Kiro 셀이 응답 없음 (\`$QUOTA_DETAIL\`) — kiro-cli headless 플래그 문제가 아님. overage 활성화 또는 \`/demo-platform/actions/AI-key\` 의 KIRO_API_KEY 교체 전까지 매 실행 반복됨."
+    echo ""
+    cat "$OUT"
+  } > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
+fi
+
 # Kiro diff truncation 가시화 — 대형 diff 는 run-panel.sh 의 KIRO_DIFF_CAP 을 넘으면 Kiro
 # 셀에 prefix 만 전달된다(argv 커널 한도 회피, 의도된 트레이드오프). truncation 은 VERDICT
 # 를 강제하진 않되(codex 는 여전히 전체 diff 를 봄) 신호 없이 넘기면 "Kiro 셀이 diff 뒷부분은
