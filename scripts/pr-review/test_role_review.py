@@ -109,6 +109,24 @@ class RoleReviewTests(unittest.TestCase):
         self.assertEqual((self.work / "chair-mode.txt").read_text(), "blocked\n")
         self.assertTrue((self.work / "deterministic-review.md").read_text().endswith("VERDICT: FAIL\n"))
 
+    def test_named_credential_labels_are_classified_before_redaction(self):
+        for index, (name, value, label) in enumerate((
+            ("name", "value", "password:admin"),
+            ("headerName", "headerValue", "token=abc"),
+            ("name", "value", "tok\u200ben"),
+            ("na\u200bme", "value", "DATABASE_PASSWORD"),
+        )):
+            with self.subTest(label=label):
+                self.work = self.root / f"label-{index}"
+                self.prepare()
+                secret = "NAMED_SYNTHETIC_PRIVATE"
+                evidence = json.dumps({name: label, value: secret, "public": "PUBLIC_KEEP"})
+                result = self.record("codex", self.response("codex", checks=[{
+                    "path": FRONTEND, "evidence": evidence}]))
+                self.assertNotIn(secret, json.dumps(result))
+                self.assertIn("PUBLIC_KEEP", json.dumps(result))
+
+
     def test_frontend_routing_has_two_independent_full_scope_requests(self):
         raw = patch() + patch("dashboard/frontend/app/styles.css", "blue", "green")
         plan = self.prepare(raw)
