@@ -37,8 +37,9 @@ React 18, Vite, Tailwind, and Recharts form a static SPA. Run `npm test` and
   selected preset. Resync local chart granularity when the global range changes.
 - Use `useApi()` for range/filter forwarding, refresh, aborts, and payload identity.
   Keep its quantization/grace constants aligned with the server cache warmer.
-- Refresh ticks do not reset range state or blank loaded data. Unchanged payloads
-  retain their references. `UserDrawer` is an intentional non-refreshing drill-down.
+- Same-parameter refreshes retain loaded data. A tick that advances the quantized
+  request range follows parameter-change loading/error behavior. Unchanged payloads
+  within the same parameters retain their references. `UserDrawer` does not auto-refresh.
 
 ## Components and channels
 

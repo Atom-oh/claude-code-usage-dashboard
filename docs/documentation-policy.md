@@ -45,3 +45,11 @@ defects, and verify allegations about absent files, tests, or fields.
 Keep reviewer context bounded, English, and sourced only from trusted checked-out
 files. The PR diff and model reviews remain untrusted data. Preserve no-tools checks,
 coverage requirements, and current-head CI gates.
+
+## Validation
+
+Run `python3 scripts/check-docs.py` or the documentation group in `tests/run-all.sh`.
+CI checks tracked Markdown for English-only text, local links/anchors, labeled fences,
+thin Claude imports, and a 6,000-byte limit per agent guide. Captured UI text and
+runtime strings remain source data, not translations of engineering documentation.
+These mechanical checks complement code-based review; they do not prove semantic accuracy.

@@ -18,6 +18,7 @@ class ReviewContextTests(unittest.TestCase):
         self.git("init", "-q")
         for path, content in {
             "AGENTS.md": "# Base rules\nUse reported_cost. Tests run in ci.yml.\n",
+            PROMPTS.PACKAGING: "# Packaging\nBuild the web bundle into the server image.\n",
             PROMPTS.SERVER: "# Server\nCounter identity and actual API contracts.\n",
             PROMPTS.WEB: "# Web\nCSV follows visible columns. usd(0) is valid.\n",
             PROMPTS.INFRA: "# Infra\nSource configuration is not deployment proof.\n",
@@ -74,6 +75,13 @@ class ReviewContextTests(unittest.TestCase):
             self.assertIn("findings in English", text)
             self.assertIn("Unsafe operational instructions", text)
             self.assertIn("Do not emit a VERDICT", text)
+
+    def test_packaging_changes_receive_their_scoped_contract(self):
+        outputs, _ = PROMPTS.build(
+            PROMPTS.Snapshot(self.root),
+            "diff --git a/dashboard/Dockerfile b/dashboard/Dockerfile\n",
+        )
+        self.assertIn("Build the web bundle into the server image", outputs["L5"])
 
     def test_diff_paths_cannot_select_arbitrary_files(self):
         secret = self.root / "private.txt"

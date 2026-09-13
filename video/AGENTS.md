@@ -1,95 +1,64 @@
-# HyperFrames Composition Project
+# Video project instructions
 
-## Skills — USE THESE FIRST
+This directory owns the historical silent documentation-site demo. Follow
+[root guidance](../AGENTS.md); this file owns video-specific rules. `CLAUDE.md` imports it.
+Documentation changes do not authorize recapturing the dashboard, changing captions,
+calling models, rendering, publishing, or upgrading dependencies.
 
-**Always invoke the relevant skill before writing or modifying compositions.** Skills encode framework-specific patterns (e.g., `window.__timelines` registration, `data-*` attribute semantics, shader-compatible CSS rules) that are NOT in generic web docs. Skipping them produces broken compositions.
+## Sources and runtime
 
-**Doing anything with HyperFrames?** Start at `/hyperframes` — it tells you what HyperFrames can do and which skill or workflow handles your intent (make a video, TTS / BGM, prep footage, author / animate, render, install blocks), confirms your brief up front (the intent layer), and routes every "make me a…" request (a video, a deck, a composition port) to the right workflow. Read it first, especially when there's no project context to orient you. The workflows it routes to:
+- `index.html` composes six files in `compositions/frames/` on a 1920x1080, 28-second
+  timeline. `meta.json` records project ID `video` and creation time 2026-07-28T03:51:04.072Z;
+  the root composition ID is `main`, a separate identifier.
+- `package.json` pins every script to **HyperFrames 0.7.77**. Use those scripts for an
+  authorized video operation; do not substitute an unpinned/latest CLI or auto-upgrade.
+- `npm run dev` starts a persistent preview server; `npm run check` validates compositions;
+  `npm run render` and `npm run publish` produce or publish output. Do not run them for a
+  Markdown-only reconciliation. After an authorized HTML change, check with the pinned
+  script before rendering and report any unverified runtime/layout behavior.
+- The existing setup notes require Node.js >=22 and usable Chromium, ffmpeg, and ffprobe.
+  On Linux arm64, explicit `HYPERFRAMES_BROWSER_PATH`, `HYPERFRAMES_FFMPEG_PATH`, and
+  `HYPERFRAMES_FFPROBE_PATH` were previously needed. The package declares scripts, not an
+  engines constraint or bundled tool binaries; verify the actual environment.
 
-- `/product-launch-video` — any **website** URL or brief / script → a product launch / SaaS / promo video, or a site tour / showcase featuring the site's own captured visuals.
-- `/faceless-explainer` — arbitrary text (topic / article / notes), **no URL, no website capture** → 60-90s faceless explainer.
-- `/embedded-captions` — an existing talking-head video (MP4) → the same footage with captions / subtitles added (rail + embed, or pure-cinematic embed); the footage itself is untouched.
-- `/talking-head-recut` — an existing talking-head / interview / podcast video (MP4) → the same footage **packaged with designed graphic overlays** (kinetic titles, lower-thirds, data callouts, pull-quotes, side panels, pip) synced to the transcript; the clip plays unchanged underneath. (Plain captions/subtitles → `/embedded-captions`.)
-- `/pr-to-video` — a GitHub PR (URL / `owner/repo#N` / "this PR") → 30-90s code-change explainer (changelog / feature reveal / fix / refactor).
-- `/motion-graphics` — a short (typically under 10s) design-led **motion graphic**, motion-is-the-message, no narration: kinetic type, a stat / number count-up, a chart, a logo sting, a lower-third / overlay, or an animated tweet / headline / captured-page highlight; rendered to MP4 or a transparent overlay. Longer / narrated / custom → `/general-video`.
-- `/music-to-video` — a **music track** (audio file, or video to pull audio from) → beat-synced video (lyric / slideshow / kinetic promo). Music drives pacing; user-supplied images / videos are cut onto the same beat grid.
-- `/slideshow` — a **presentation / pitch deck / interactive deck** — discrete slides, fragment reveals, branching, hotspot navigation, presenter mode. Output is a navigable deck, not a rendered video.
-- `/general-video` — fallback for any other video (title card, longer brand / sizzle reel, multi-scene montage, static loop, custom composition) and the home of **companion mode** — co-create with the full HyperFrames toolbox; the original hyperframes authoring flow, any length.
+## Composition rules
 
-**Porting an existing composition?** `/remotion-to-hyperframes` translates a Remotion (React) composition into HyperFrames HTML — a source migration, separate from the creation workflows above.
+Keep scene IDs, timing, and `window.__timelines` registrations aligned. Timelines are paused;
+local scene times differ from their starts in the root. Preserve the 0.5-second crossfade
+overlap at 4, 14, and 24.5 seconds. Root scene mounts use `class="scene"`; timed child layers
+use `class="clip"`. Do not mechanically apply a generic scaffold rule to change this layout.
 
-The domain skills (`/hyperframes-core`, `/hyperframes-animation`, `/hyperframes-keyframes`, `/hyperframes-creative`, `/hyperframes-cli`, `/media-use`, `/hyperframes-registry`, `/figma`) and the full capability map live inside `/hyperframes` — it is the single source of truth for which skill handles which intent.
+Animations use explicit GSAP time and deterministic numeric formatting. Do not add random,
+wall-clock, or live-data dependencies. The root already loads GSAP 3.14.2 from a CDN with
+integrity metadata; offline rendering still needs that dependency resolved. CSS requests
+Inter with a sans-serif fallback; no font files are bundled here. Do not claim typography
+is reproducible merely because the family name is present.
 
-**Changing how real footage or images look or reveal?** Load `/media-use` and its media-treatment policy before editing, even when the request only says dark, flat, boring, retro, private, or “make the reveal cooler.” Use canonical media treatments and seek-safe motion; do not improvise equivalent CSS/SVG filters or overlays.
+## Assets and meaning
 
-> **Tailwind v4 projects** (`hyperframes init --tailwind`): see `/hyperframes-core` → `references/tailwind.md`.
-
-> **Skill missing or stale?** Run `npx hyperframes skills update <name>` to install/refresh
-> the specific skill you need (the `/hyperframes` router does this automatically before
-> entering a workflow), or bare `npx hyperframes skills update` to refresh the core set plus
-> everything already installed — neither pulls the full set. Restart the agent session so
-> newly installed skills load.
-
-## Commands
-
-```bash
-npm run dev          # start the preview server (long-running — keep it alive in background)
-npm run check        # lint + runtime + layout + motion + contrast (one command)
-npm run render       # render to MP4
-npm run publish      # publish and get a shareable link
-npx hyperframes lint --verbose  # include info-level findings
-npx hyperframes lint --json     # machine-readable output for CI
-npx hyperframes docs <topic> # reference docs in terminal
-```
-
-> **`npm run dev` is a long-running server, not a one-shot command.** It blocks until stopped.
-> In Claude Code, always run it with `run_in_background: true`. Never run it as a foreground
-> command — it will time out and the server will die, breaking the browser preview.
-
-> **Pinned CLI version.** These scripts pin an exact `hyperframes@X.Y.Z` so this project re-renders identically over time. Weeks later that pin lags fixes shipped since. To move up: `npx hyperframes@latest upgrade --project . --check` (shows the delta), then `npx hyperframes@latest upgrade --project .` to rewrite the pins. Always unpinned — the pinned script re-runs the old version against itself.
-
-## Documentation
-
-**For quick reference**, use the local CLI docs command (no network required):
+Runtime images are `assets/overview.png`, `assets/cost.png`, and `assets/analytics.png`.
+They are ignored local copies of tracked images in `../site/assets/img/`. All seven source
+screenshots and their roles are listed in [the inventory](capture/extracted/asset-descriptions.md).
+For a separately authorized render, restore the copies from `video/`:
 
 ```bash
-npx hyperframes docs <topic>
+mkdir -p assets capture/assets
+cp ../site/assets/img/*.png capture/assets/
+cp ../site/assets/img/{overview,cost,analytics}.png assets/
 ```
 
-Topics: `data-attributes`, `gsap`, `compositions`, `rendering`, `examples`, `troubleshooting`
+Do not commit these duplicate copies, `.hyperframes/`, `renders/`, or `snapshots/`.
+The committed delivery is `../site/assets/video/dashboard-demo.mp4`, embedded by
+`../site/index.html` with `../site/assets/img/demo-poster.jpg`. Rendering does not by itself
+replace that delivery file.
 
-**For full documentation**, discover pages via the machine-readable index — do NOT guess URLs:
+Keep this demo's dated figures/captions separate from current application behavior. It shows
+historical computed spend; today's spend contract is reported-primary with opt-in computed
+diagnostics. Channel counts may overlap by user, scores are activity heuristics, and approval
+rates do not prove code quality. Do not turn a media caption into an invoice or causal claim.
 
-```
-https://hyperframes.heygen.com/llms.txt
-```
-
-## Project Structure
-
-- `index.html` — main composition (root timeline)
-- `compositions/` — sub-compositions referenced via `data-composition-src`
-- `meta.json` — project metadata (id, name)
-- `transcript.json` — whisper word-level transcript (if generated)
-
-## Linting — ALWAYS RUN AFTER CHANGES
-
-After creating or editing any `.html` composition, **always** run the full check before considering the task complete:
-
-```bash
-npm run check
-```
-
-Fix all errors before presenting the result. Warnings should be reviewed before rendering.
-
-## Key Rules
-
-1. Every timed element needs `data-start`, `data-duration`, and `data-track-index`
-2. Elements with timing **MUST** have `class="clip"` — the framework uses this for visibility control
-3. Timelines must be paused and registered on `window.__timelines`:
-   ```js
-   window.__timelines = window.__timelines || {};
-   window.__timelines["composition-id"] = gsap.timeline({ paused: true });
-   ```
-4. Videos use `muted` with a separate `<audio>` element for the audio track
-5. Sub-compositions use `data-composition-src="compositions/file.html"` to reference other HTML files
-6. Only deterministic logic — no `Date.now()`, no `Math.random()`, no network fetches
+Maintain English Markdown. Describe existing Korean screenshot labels in English without
+changing their pixels; existing composition overlays use Latin text. Use the curated site
+screenshots, not raw customer/account captures. [BRIEF.md](BRIEF.md),
+[STORYBOARD.md](STORYBOARD.md), and [frame.md](frame.md) describe the current artifact;
+HTML and actual media metadata establish timing and content.
