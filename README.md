@@ -30,7 +30,7 @@ docker compose -f dashboard/docker-compose.yml up -d --build
 
 Open the dashboard at `http://localhost:8080`. Compose binds the app to loopback,
 uses synthetic seed data, and explicitly disables app authentication for local use.
-The database publishes ports 8123 and 9000; run this development stack on a trusted
+The database publishes ports 8123 and 9000 on all interfaces; run this development stack on a trusted
 machine, not an exposed server. Seeds initialize only a new volume. `down -v` deletes it.
 
 The SQL chat returns 503 on this default stack: it also needs authenticated access and
@@ -86,6 +86,7 @@ Key contracts:
 | `PRICING_JSON` | Inline JSON overrides for diagnostic token prices, not a filename. |
 | `PRICING_CACHE_WRITE_TTL` | Diagnostic cache-write assumption: `1h` or `5m`, default `1h`. |
 | `CHAT_MODEL_ID`, `BEDROCK_REGION`, `AWS_REGION` | Configure the chat's Bedrock model and region; check deployment overrides. |
+| `CHAT_ALLOW_INSECURE` | Independent chat-auth bypass for local development only; never enable on an internet-facing deployment. |
 | `DATA_STALE_MINUTES` | Raw-metric timestamp freshness threshold, default 360 minutes. |
 | `ALERT_WEBHOOK_URL`, `ALERT_REPEAT_MINUTES` | Optional stale-data alerts; the webhook is a secret. |
 
@@ -93,7 +94,7 @@ JSON API responses use `no-store`; successful chat SSE currently uses `no-cache`
 The server has its own bounded cache/warmer. Unavailable telemetry is distinct from
 measured zero.
 
-## Telemetry and operations
+## Telemetry Ingestion and operations
 
 The collector must remain running for data to arrive. Use supervised startup and its
 disk-backed queue; follow the [operator procedures](docs/runbooks/incident-response.md)
@@ -107,7 +108,14 @@ verify the image, readiness, CDN asset hashes, schema probes, and migration ledg
 - [Deploy for another organization](docs/deploying-for-your-org.md)
 - [Schema migrations](docs/runbooks/schema-migrations.md)
 - [Backup and restore](docs/runbooks/backup-and-restore.md)
+- [Ingest-user cutover](docs/runbooks/clickhouse-ingest-user-cutover.md)
+- [Alerting](docs/runbooks/alerting.md)
 - [Workshop deployment notes](docs/workshop-studio-notes.md)
+
+### Project tag (project.name)
+
+Follow the [data reference](docs/reference/data.md) for attribute-string replacement,
+managed-setting ownership, retained attribution keys and project-label privacy.
 
 ## Development and review
 

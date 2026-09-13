@@ -1,72 +1,91 @@
 # Developer Onboarding
 
-## Quick Start
+Read [AGENTS.md](../AGENTS.md) for canonical developer instructions, then the scoped
+[server](../dashboard/server/AGENTS.md), [web](../dashboard/web/AGENTS.md) or
+[infra](../infra/AGENTS.md) instructions for your change. CLAUDE.md files are bridges to
+those instructions. The [documentation policy](documentation-policy.md) owns language and scope.
 
-### 1. Prerequisites
-- [ ] Node.js 24+ installed (matches `dashboard/Dockerfile`'s `node:24-alpine`)
-- [ ] `kubectl` and `aws` CLI, if you'll deploy or debug against the live cluster
-- [ ] `terraform` 1.x, if you'll touch `infra/`
-- [ ] Repository access granted (github.com/Atom-oh/claude-code-usage-dashboard)
-- [ ] Access to the `fsi-demo-cluster` EKS context and the `clickhouse-reader` k8s Secret, if
-      you need to query live telemetry data
+## Local setup
 
-### 2. Setup
+Both application manifests require Node >=22, CI uses Node 22, and the container uses Node 24.
+Docker Compose is needed only for the local full stack. AWS CLI, kubectl and Terraform
+>=1.9 are needed only for infrastructure work against an authorized environment.
+
+From the repository root, install locked dependencies:
+
 ```bash
-git clone git@github.com:Atom-oh/claude-code-usage-dashboard.git
-cd claude-code-usage-dashboard
-bash scripts/setup.sh
-```
-This installs dependencies for both `dashboard/server` and `dashboard/web`. See
-`scripts/setup.sh` for what it does step by step.
-
-For local full-stack testing without a live cluster:
-```bash
-cd dashboard
-docker compose up
+npm --prefix dashboard/server ci
+npm --prefix dashboard/web ci
 ```
 
-### 3. Verify
+The legacy [scripts/setup.sh](../scripts/setup.sh) uses `npm install` and checks only that
+Node is present. Use the locked installs above for new work. Neither `node index.js` nor
+the npm start/dev scripts auto-load `.env`; provide environment variables explicitly.
+
+Start a local database and built dashboard with synthetic seed data:
+
 ```bash
-cd dashboard/server && node --test *.test.js
-cd ../web && npm run build
+docker compose -f dashboard/docker-compose.yml up -d --build
 ```
-Both should succeed with no errors before you start making changes.
 
-## Project Overview
-- Read [`CLAUDE.md`](../CLAUDE.md) for project context and conventions
-- Read [`docs/architecture.md`](architecture.md) for system design
-- Read [`docs/reference/INDEX.md`](reference/INDEX.md) for layer-by-layer implementation notes
-- Review [`docs/decisions/`](decisions/) for architectural decisions (empty until the first ADR is recorded)
+Open the dashboard on localhost port 8080. Schema and seed SQL run only when the ClickHouse
+volume is first initialized. This Compose configuration explicitly permits unauthenticated
+local use; chat remains disabled without its separate gates. See [runtime details](reference/infrastructure.md).
 
-The single most important thing to internalize before touching `dashboard/server/queries.js`:
-**`otel_metrics_sum` values are cumulative, not deltas.** Read the `incFlat`/`incBucketed`
-comments in that file before writing any new aggregation query.
+For hot reload, start only ClickHouse, then run the API and Vite in separate terminals:
 
-## Development Workflow
-- Branch naming: `feat/`, `fix/`, `docs/`, `refactor/`
-- Commit convention: Conventional Commits (`feat:`, `fix:`, `docs:`, ...)
-- PR process: opened against `main`; `.github/workflows/pr-review.yml` runs a multi-AI review
-  panel and blocks merge on CRITICAL/MAJOR findings
+```bash
+docker compose -f dashboard/docker-compose.yml up -d clickhouse
+AUTH_ALLOW_INSECURE=1 CH_URL=http://localhost:8123 npm --prefix dashboard/server run dev
+```
 
-## Key Concepts
-- **Cumulative OTel counters**: see `docs/reference/data.md`
-- **Session-scoped bedrock/enterprise grouping**: see `docs/reference/data.md` and
-  `dashboard/server/grouping.js`
-- **Global range/filter context**: every page shares one `from`/`to`/`group`/`user`/`model`
-  state; see `docs/reference/frontend.md`
+```bash
+npm --prefix dashboard/web run dev
+```
 
-## Troubleshooting
-- **Query returns 0 rows unexpectedly**: check whether a global filter (especially `model`)
-  is silently excluding rows on a table without that promoted column — see the `ponytail:`
-  comment above `filterCond()` in `queries.js`.
-- **New chart shows one bar/point on short date ranges**: check that the page re-syncs its
-  local `intervalHours` state from the global range context via `useEffect`, not just a
-  `useState` initializer.
-- **Local server can't reach ClickHouse**: you likely need to port-forward
-  `svc/clickhouse-cc-ab` and fetch the `clickhouse-reader` secret — see
-  `docs/runbooks/deploy-production.md`'s verification note.
+Vite proxies `/api` to port 8080. Use the local URL printed by Vite.
+The root [.env.example](../.env.example) uses ClickHouse port 18123 for a port-forward;
+Compose exposes host port 8123. Do not interchange those defaults. To load a prepared
+root `.env` explicitly from the repository root, run:
 
-## Resources
-- Repository: https://github.com/Atom-oh/claude-code-usage-dashboard
-- Workshop notes: [`docs/workshop-studio-notes.md`](workshop-studio-notes.md)
-- Deploying for another organization: [`docs/deploying-for-your-org.md`](deploying-for-your-org.md)
+```bash
+node --env-file=.env dashboard/server/index.js
+```
+
+`PRICING_JSON`, if set, is an inline JSON object of model rates, not a JSON file path.
+
+## Verification
+
+Run the relevant application checks from the repository root:
+
+```bash
+npm --prefix dashboard/server test
+npm --prefix dashboard/web test
+npm --prefix dashboard/web run build
+```
+
+[tests/run-all.sh](../tests/run-all.sh) covers repository/hooks structure separately from
+application tests. Inspect each test's prerequisites before treating missing local tooling
+as an application failure. For documentation changes, verify source symbols, endpoint
+coverage, English-only text and relative links; do not call live services merely to edit prose.
+
+## Concepts to understand before changing code
+
+- [Data aggregation](reference/data.md): cumulative counter differences, the four-hour raw
+  threshold, segment-aware source keys, channel inference and migration evidence.
+- [Metrics](metrics.md): reported spend, computed diagnostics, missing-report handling and
+  the limits of activity scores and permission-decision rates.
+- [API contract](api-reference.md): actual routes, response shapes, filter exceptions and caps.
+- [Frontend](reference/frontend.md): shared range/filter state, quantized requests and runtime config.
+- [Architecture](architecture.md) and [decisions](decisions/): responsibilities and non-obvious tradeoffs.
+
+A zero result can reflect missing telemetry or an unsupported filter combination. Trace
+`unsupported` is not a measured zero. Model filters do not scope active-user/adoption
+headcounts, and project filtering covers only four Usage queries. Check the contract before
+interpreting a mismatch as a regression.
+
+For development PRs, follow the latest-HEAD AI review, required checks and merge policy in
+[AGENTS.md](../AGENTS.md) and the [review runbook](runbooks/pr-review-panel.md);
+a documentation-only task does not authorize deployment. For authorized operations, use
+[deployment](runbooks/deploy-production.md), [schema migrations](runbooks/schema-migrations.md),
+or [deployment for another organization](deploying-for-your-org.md).
