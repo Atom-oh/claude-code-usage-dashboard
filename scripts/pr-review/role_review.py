@@ -471,7 +471,20 @@ def prepare(args):
         remove(anchor)
     if re.search(r"^(?:Binary files .* differ|GIT binary patch)$", diff, re.M):
         failures.append("binary_content_not_reviewable")
-    provenance = scrub(provenance)
+    preserved = set(paths)
+    try:
+        for key in ("scope_paths", "excluded_paths", "path_only"):
+            declared_paths = provenance.get(key, [])
+            if not isinstance(declared_paths, list):
+                raise Invalid("invalid_input_provenance")
+            validated = [repo_path(path) for path in declared_paths]
+            if len(set(validated)) != len(validated):
+                raise Invalid("invalid_input_provenance")
+            preserved.update(validated)
+    except Invalid:
+        failures.append("invalid_input_provenance")
+        provenance = {}
+    provenance = scrub(provenance, frozenset(preserved))
     plan = {
         "schema_version": 1, "head_sha": args.head, "base_sha": args.base,
         "diff_sha256": digest(raw), "context_sha256": digest(context.encode()),
@@ -729,18 +742,29 @@ SENSITIVE_KEY = re.compile(
 )
 
 
-def scrub(value):
+def scrub(value, preserved=frozenset()):
     """Scrub decoded strings too: raw-JSON sanitizers miss escaped credentials."""
     if isinstance(value, list):
-        return [scrub(x) for x in value]
+        return [scrub(x, preserved) for x in value]
     if isinstance(value, dict):
-        fields = {str(k).lower(): v for k, v in value.items()}
-        sensitive_values = {v for k, v in (("name", "value"), ("headername", "headervalue"))
-                            if isinstance(fields.get(k), str) and SENSITIVE_KEY.fullmatch(fields[k])}
-        return {k: "[REDACTED]" if isinstance(k, str) and (
-            SENSITIVE_KEY.fullmatch(k) or k.lower() in sensitive_values
-        ) else scrub(v) for k, v in value.items()}
+        items = [(k, scrub(k, preserved), v) for k, v in value.items()]
+        sensitive_values = {field for name, field in (("name", "value"), ("headername", "headervalue"))
+            if any(isinstance(key, str) and key.lower() == name and isinstance(item, str)
+                   and SENSITIVE_KEY.fullmatch(scrub(item, preserved)) for _, key, item in items)}
+        result, suffix = {}, 1
+        for original, key, item in items:
+            hidden = any(isinstance(k, str) and (SENSITIVE_KEY.fullmatch(k)
+                         or k.lower() in sensitive_values) for k in (original, key))
+            if key != original and (key in value or key in result):
+                while f"[REDACTED-KEY-{suffix}]" in value or f"[REDACTED-KEY-{suffix}]" in result:
+                    suffix += 1
+                key = f"[REDACTED-KEY-{suffix}]"
+                suffix += 1
+            result[key] = "[REDACTED]" if hidden else scrub(item, preserved)
+        return result
     if not isinstance(value, str):
+        return value
+    if value in preserved:
         return value
     value = re.sub(r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]", "", value)
     value = re.sub(r"(?:\x1b[\]PX^_]|\x9d|\x90|\x98|\x9e|\x9f).*?(?:\x07|\x9c|\x1b\\|$)", "", value, flags=re.S)
@@ -749,12 +773,12 @@ def scrub(value):
     try:
         decoded = strict_json(value)
         if isinstance(decoded, (dict, list)):
-            return canonical(scrub(decoded))
+            return canonical(scrub(decoded, preserved))
     except Invalid:
         pass
     def quoted(match):
         try:
-            return canonical(scrub(strict_json(match.group())))
+            return canonical(scrub(strict_json(match.group()), preserved))
         except Invalid:
             return match.group()
     # Decode nested JSON strings/escaped keys before applying key/value patterns.
@@ -763,6 +787,12 @@ def scrub(value):
     quote = r"""\\*["']"""
     key = identifier + rf"(?:{quote})?\s*[:=]\s*"
     patterns = (
+        key + r"<<-?(?P<heredoc>[^\s\"'<>]+)[ \t]*(?:\r\n?|\n).*?"
+        + r"(?:(?<![^\r\n])[+-]?[ \t]*(?P=heredoc)[ \t]*(?=\r|\n|\Z)|\Z)",
+        rf"(?i:\b(?:header)?value)(?:{quote})?\s*[:=]\s*"
+        + rf"(?:(?P<reverse>{quote}).*?(?P=reverse)|[^\s,;}}\]]+)"
+        + rf"[\s,;]*[+-]?[ \t]*(?:{quote})?(?i:(?:header)?name)(?:{quote})?\s*[:=]\s*"
+        + rf"(?:{quote})?" + identifier + rf"(?:{quote})?",
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
         r"\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b",
         r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b",
@@ -844,7 +874,7 @@ def _record(args):
             raise Invalid(result["failure_codes"][0])
         response = parse_response(text_file(args.output))
         validate_response(response, plan, args.tag)
-        response = scrub(response)
+        response = scrub(response, frozenset(plan["paths"]))
         validate_response(response, plan, args.tag)
         result.update(valid=True, response=response, response_digest=digest(response))
     except Invalid as exc:
@@ -912,8 +942,8 @@ def aggregate(args):
                 if result.get("response_digest") != digest(response):
                     raise Invalid("invalid_response_digest")
                 responded.append(tag)
-                findings.extend({"tag": tag, **scrub(item)} for item in response["findings"])
-                uncertainties.extend({"tag": tag, "text": scrub(text)} for text in response["uncertainties"])
+                findings.extend({"tag": tag, **scrub(item, frozenset(plan["paths"]))} for item in response["findings"])
+                uncertainties.extend({"tag": tag, "text": scrub(text, frozenset(plan["paths"]))} for text in response["uncertainties"])
             except Invalid as exc:
                 failures.append(f"{exc}:{tag}")
         failures.extend(f"missing_result:{tag}" for tag in sorted(required - seen))
@@ -927,7 +957,7 @@ def aggregate(args):
                 attempts = strict_json(text_file(path))
                 if not isinstance(attempts, list) or len(attempts) > 32:
                     raise Invalid("invalid_attempt_history")
-                history[tag] = scrub(attempts)
+                history[tag] = scrub(attempts, frozenset(plan["paths"]) if plan else frozenset())
             except Invalid:
                 failures.append(f"invalid_attempt_history:{tag}")
     mode = "blocked" if failures else "review" if uncertainties or any(
