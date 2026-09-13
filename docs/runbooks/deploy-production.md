@@ -1,255 +1,153 @@
-# Runbook: Deploy the Dashboard to Production (EKS)
-
-<a href="#english"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
-<a href="#korean"><img src="https://img.shields.io/badge/lang-한국어-red.svg" alt="Korean"></a>
-
----
-
-<a id="english"></a>
-
-# English
-
-## Overview
-Build the dashboard's Docker image and roll it out to the `fsi-demo-cluster` EKS cluster.
-Deploys are image-based, not commit-based: the image reflects whatever is in the working
-tree at build time, so the checked-out branch/commit matters.
-
-## When to Use
-- After merging a PR that changes `dashboard/server` or `dashboard/web`
-- After a Terraform change to `infra/dashboard.tf` that needs a new rollout to take effect
+# Runbook: Deploy the Dashboard to EKS
 
 ## Prerequisites
-- `infra/terraform.tfvars` exists — copy `infra/terraform.tfvars.example` to
-  `infra/terraform.tfvars` and fill it in. Five variables have no default, so `terraform
-  plan`/`apply` fails without it
-- `kubectl` context `fsi-demo-cluster` configured, access to namespace `claude-code`
-- `aws` CLI authenticated with ECR push access to `180294183052.dkr.ecr.ap-northeast-2.amazonaws.com`
-- `docker buildx` with `linux/arm64` support (the nodepool is Graviton)
-- Server tests pass and the web build succeeds locally first (see `/test-all`)
-- Bedrock model access for `var.chat_model_id` enabled in `var.bedrock_region` (independent of
-  `var.region`; default `ap-northeast-2` in this admin environment — set to `us-west-2` when
-  porting the built image to the workshop account) — see `docs/workshop-studio-notes.md` §5, "Ask
-  Claude 챗(Bedrock) 배포 전제"
+
+Run from the repository root with the intended application revision and a clean build
+context. Images contain the working tree at build time. Use an isolated checkout if other
+work is present. Complete the server tests and web tests/build from `.github/workflows/ci.yml`.
+Stop on any failed command before continuing to a push or rollout.
+
+The target needs an existing EKS installation and the prerequisites in
+[Deploying for your organization](../deploying-for-your-org.md). Have authenticated AWS
+ECR/CloudFront access, `kubectl`, Terraform state for this stack, and Docker buildx with
+`linux/arm64` support. For chat, verify the deployed model/region and IRSA configuration
+using [Workshop Studio notes](../workshop-studio-notes.md).
+
+Set these non-secret parameters for the target; the namespace default matches Terraform:
+
+```bash
+: "${KUBE_CONTEXT:?Set the target kubectl context}"
+: "${REGION:?Set the ECR region}"
+NAMESPACE=${NAMESPACE:-claude-code}
+kube() { kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" "$@"; }
+REPO=$(terraform -chdir=infra output -raw ecr_repository_url)
+REGISTRY=${REPO%%/*}
+REPO_NAME=${REPO#*/}
+DASHBOARD_URL=$(terraform -chdir=infra output -raw dashboard_url)
+```
+
+Terraform declares ECR `IMMUTABLE`, two dashboard replicas, readiness on `/readyz`, liveness
+on `/healthz`, `preStop sleep 5`, a 30-second termination grace period, rolling update
+`maxUnavailable=0`/`maxSurge=1`, preferred pod anti-affinity, and a PDB with one available
+pod. **Verify these on the target; source declarations do not establish deployed state.**
+
+```bash
+aws ecr describe-repositories --region "$REGION" --repository-names "$REPO_NAME" \
+  --query 'repositories[0].{uri:repositoryUri,mutability:imageTagMutability}'
+kube get deployment dashboard -o yaml
+kube get pdb dashboard
+```
+
+Reconcile drift through the reviewed Terraform plan before relying on those protections.
+The ECR lifecycle declaration retains only ten images; confirm a rollback digest still exists.
 
 ## Procedure
 
-### 1. Confirm what you're deploying
+### 1. Record the revision and rollback image
+
 ```bash
-git status
+git status --short
 git branch --show-current
 git log -1 --oneline
-```
-Deploys build from the working tree — confirm you're on the intended branch/commit before
-building. If you have unrelated uncommitted work, `git stash` it first.
-
-### 2. Build and push the image
-```bash
+PREVIOUS_IMAGE=$(kube get deployment dashboard -o jsonpath='{.spec.template.spec.containers[?(@.name=="dashboard")].image}')
 TAG=$(date -u +%Y%m%d-%H%M%S)
-aws ecr get-login-password --region ap-northeast-2 \
-  | docker login --username AWS --password-stdin 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com
-docker buildx build --platform linux/arm64 \
-  -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG \
-  --push dashboard/
-```
-The ECR repository is `IMMUTABLE`, so re-pushing an existing tag is rejected outright. A
-`latest` tag would have to move on every deploy to stay useful, and a moving tag means a
-rollout record no longer identifies a digest. The timestamp tag is the only tag pushed, and
-it's what `rollout undo` or an explicit redeploy resolves against.
-
-### 3. Roll out
-```bash
-kubectl --context fsi-demo-cluster -n claude-code set image deployment/dashboard \
-  dashboard=180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG
-kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard --timeout=120s
 ```
 
-### 4. Invalidate the CloudFront cache
+Keep the previous image/digest with the deployment record. `dashboard_image_tag` seeds the
+first rollout only: Terraform ignores subsequent image changes, which this procedure owns.
+Terraform does not rebuild application images. A changed pod template rolls pods; a changed
+Secret value alone requires a controlled restart to refresh environment variables.
+
+### 2. Build and push
+
 ```bash
+aws ecr get-login-password --region "$REGION" \
+  | docker login --username AWS --password-stdin "$REGISTRY"
+docker buildx build --platform linux/arm64 -t "$REPO:$TAG" --push dashboard/
+DIGEST=$(aws ecr describe-images --region "$REGION" --repository-name "$REPO_NAME" \
+  --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)
+```
+
+Use a new timestamp tag for each build. Do not overwrite tags or rely on `latest`.
+Record `$DIGEST` as well as `$TAG` even when immutability is verified.
+
+### 3. Roll out and verify
+
+```bash
+kube set image deployment/dashboard "dashboard=$REPO:$TAG"
+kube rollout status deployment/dashboard --timeout=120s
+kube get pods -l app=dashboard -o wide
+kube get deployment dashboard -o jsonpath='{.spec.template.spec.containers[?(@.name=="dashboard")].image}'
+kube logs -l app=dashboard --tail=50 --prefix
+```
+
+Expect all desired replicas Ready on the intended image. Investigate a timeout before
+retrying. Use a separate terminal for the foreground port-forward:
+
+```bash
+kube port-forward deployment/dashboard 8080:8080
+```
+
+Then check the pod directly:
+
+```bash
+curl --fail --silent --show-error http://127.0.0.1:8080/healthz
+curl --fail --silent --show-error http://127.0.0.1:8080/readyz
+```
+
+Both should return 200. `/readyz` also depends on ClickHouse connectivity and shutdown state;
+`/healthz` alone does not establish readiness or telemetry freshness. Check authenticated
+`/api/config` and `/api/health/data`, then load the public UI and confirm its asset hashes
+match the built image. The Docker build's frontend assets are authoritative; a stale local
+`dashboard/web/dist` is not.
+
+### 4. Check the edge and invalidate only when needed
+
+`infra/dns_cdn.tf` declares `CachingDisabled`. Do not assume the live distribution caches
+`index.html` or that it already has this policy. Select the distribution by exact alias:
+
+```bash
+DASHBOARD_HOST=${DASHBOARD_URL#https://}
 DIST_ID=$(aws cloudfront list-distributions \
-  --query "DistributionList.Items[?contains(to_string(Aliases.Items), 'ccdash')].Id" --output text)
-INV_ID=$(aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" \
+  --query "DistributionList.Items[?Aliases.Items && contains(Aliases.Items, '$DASHBOARD_HOST')].Id" \
+  --output text)
+: "${DIST_ID:?No matching dashboard distribution}"
+aws cloudfront get-distribution-config --id "$DIST_ID" \
+  --query 'DistributionConfig.DefaultCacheBehavior.{cachePolicy:CachePolicyId,headersPolicy:ResponseHeadersPolicyId}'
+```
+
+Stop if the alias lookup returns multiple IDs. If a previously cached build remains after
+rollout, invalidate the selected distribution and wait:
+
+```bash
+INV_ID=$(aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths '/*' \
   --query 'Invalidation.Id' --output text)
 aws cloudfront wait invalidation-completed --distribution-id "$DIST_ID" --id "$INV_ID"
 ```
-CloudFront caches `index.html`, so without this step `ccdash.atomai.click` keeps serving the
-previous build's asset hashes even after a successful rollout — the pods are new but nobody
-sees them (실측 2026-09-01: 롤아웃 성공 후에도 라이브 HTML이 직전 배포의 `assets/index-*.js`를
-참조하고 있었고, invalidation 완료 즉시 새 해시로 전환됨).
-
-## Verification
-- [ ] `kubectl get pods -l app=dashboard` shows 2/2 `Running` on the new ReplicaSet
-- [ ] `kubectl get deployment dashboard -o jsonpath='{.spec.template.spec.containers[0].image}'` matches `$TAG`
-- [ ] Pod logs show `dashboard listening on :8080` with no stack traces
-- [ ] `/healthz` returns `{"ok": true}` (via port-forward if not publicly reachable)
-- [ ] `/readyz` returns 200 on a running pod — this is the endpoint the readiness probe uses,
-      so a pod that never becomes `Ready` should be diagnosed with it rather than with `/healthz`
-- [ ] `https://ccdash.atomai.click/`의 `assets/index-*.js` 해시가 로컬 `dashboard/web/dist/index.html`과 일치 (Basic Auth 필요)
 
 ## Rollback
+
+Redeploy the recorded known-good image, or use deployment history after confirming the prior
+revision and its image still exist:
+
 ```bash
-kubectl --context fsi-demo-cluster -n claude-code rollout undo deployment/dashboard
-kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard
-```
-Or explicitly redeploy the previous known-good tag with Step 3 above.
-
-## Notes
-- Last verified: 2026-07-08 (full procedure run). 2026-09-02: text re-synced against
-  `infra/ecr.tf` / `server/index.js`, no deploy run. The `IMMUTABLE` tag policy and the
-  `/readyz` probe take effect on the live cluster only after the next `terraform apply`
-  and image rollout — until then the repository is still `MUTABLE` and a stale `latest`
-  tag remains.
-- If the pending `terraform apply` includes `infra/clickhouse.tf`'s ClickHouse backup
-  destination change (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`), there's no ordering
-  requirement against `scripts/archive-clickhouse.sh` — its own final-snapshot step doesn't
-  depend on this Terraform change being applied. What the change does is make
-  `infra/s3.tf`'s pre-existing 30-day lifecycle filter start actually matching daily backups
-  going forward (previously it had nothing to match). Once applied, don't go more than 30 days
-  without running `scripts/archive-clickhouse.sh` again, and always run it once more right
-  before the workshop account is torn down — see
-  [`archive-clickhouse.md`](archive-clickhouse.md#when-to-use).
-- Local verification against the live ClickHouse cluster: port-forward
-  `svc/clickhouse-cc-ab` (port 8123) and the reader credentials from k8s Secret
-  `clickhouse-reader`, then run `dashboard/server` locally against it before deploying —
-  this has caught query bugs that unit tests (which don't touch live ClickHouse) missed.
-- **ClickHouse schema changes are a separate path from the image deploy.** Editing
-  `infra/files/clickhouse-schema-replicated.sql` changes the `filemd5` in the schema-init Job's
-  name, so `terraform apply` replaces and re-runs it. Terraform waits for the Job
-  (`wait_for_completion = true`, 30m timeout) and **fails the apply if the Job fails** — the
-  `--multiquery` client aborts at the first failing statement, so read the Job pod's logs for the
-  exact statement (`kubectl -n claude-code logs job/clickhouse-schema-init-<hash>`); everything
-  after it in the file was not applied. Before 2026-09-02 the apply reported success while the
-  Job failed 7/7 retries for three weeks. Still verify the end state by hand:
-  ```bash
-  kubectl --context fsi-demo-cluster -n claude-code get jobs | grep clickhouse-schema-init
-  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
-    -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
-  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
-    -- clickhouse-client -q "SELECT table, command, is_done FROM system.mutations WHERE is_done = 0"
-  ```
-  The `SHOW CREATE TABLE` is the actual check — a Job that completed doesn't prove every
-  statement applied (e.g. the rollup `TTL` clause was missing for weeks while the Job showed
-  `Complete`, because the Job never re-ran after the file changed).
-- A pod that crash-loops immediately after a rollout with
-  `FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required` in its log is the
-  **intended** fail-closed behaviour, not a regression — the `dashboard-basic-auth` Secret (fed
-  by `env_from` in `infra/dashboard.tf`) is missing or has a renamed key. Diagnose with
-  `kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=50`; the
-  message names both variables. Do not add `AUTH_ALLOW_INSECURE=1` to the cluster as a
-  workaround.
-
----
-
-<a id="korean"></a>
-
-# 한국어
-
-## 개요
-대시보드 Docker 이미지를 빌드해 `fsi-demo-cluster` EKS 클러스터에 롤아웃합니다. 배포는
-커밋 기반이 아니라 이미지 기반입니다 — 빌드 시점의 워킹트리 상태가 그대로 이미지에 담기므로
-체크아웃된 브랜치/커밋이 중요합니다.
-
-## 사용 시점
-- `dashboard/server` 또는 `dashboard/web`을 바꾸는 PR을 머지한 뒤
-- `infra/dashboard.tf`의 Terraform 변경을 반영하려면 새 롤아웃이 필요할 때
-
-## 사전 요구 사항
-- `infra/terraform.tfvars` 준비 — `infra/terraform.tfvars.example`을
-  `infra/terraform.tfvars`로 복사해 값을 채운다. 기본값이 없는 변수가 5개라 없으면 `terraform
-  plan`/`apply`가 실패한다
-- `kubectl` context `fsi-demo-cluster` 설정, `claude-code` 네임스페이스 접근 권한
-- `180294183052.dkr.ecr.ap-northeast-2.amazonaws.com`에 push 가능한 `aws` CLI 인증
-- `linux/arm64`를 지원하는 `docker buildx`(노드풀이 Graviton)
-- 로컬에서 서버 테스트 통과 및 웹 빌드 성공 확인(`/test-all` 참고)
-- `var.bedrock_region`(`var.region`과 별개; 이 admin 환경 기본값은 `ap-northeast-2` — 빌드한
-  이미지를 워크샵 계정으로 이식할 때 `us-west-2`로 바꿔서 apply) 계정에서 `var.chat_model_id`
-  모델 access 활성화 — `docs/workshop-studio-notes.md` §5 "Ask Claude 챗(Bedrock) 배포 전제" 참고
-
-## 절차
-
-### 1. 배포 대상 확인
-```bash
-git status
-git branch --show-current
-git log -1 --oneline
-```
-배포는 워킹트리에서 빌드합니다 — 빌드 전에 의도한 브랜치/커밋인지 확인하세요. 관련 없는
-커밋되지 않은 작업이 있으면 먼저 `git stash`.
-
-### 2. 이미지 빌드·푸시
-```bash
-TAG=$(date -u +%Y%m%d-%H%M%S)
-aws ecr get-login-password --region ap-northeast-2 \
-  | docker login --username AWS --password-stdin 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com
-docker buildx build --platform linux/arm64 \
-  -t 180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG \
-  --push dashboard/
-```
-ECR 리포지토리가 `IMMUTABLE`이라 이미 존재하는 태그를 다시 푸시하면 그대로 거부됩니다.
-`latest` 태그는 계속 유용하려면 배포마다 옮겨 다녀야 하는데, 태그가 움직인다는 건 롤아웃
-기록이 더 이상 다이제스트를 가리키지 않는다는 뜻입니다. 타임스탬프 태그만 유일하게 푸시되고,
-`rollout undo`나 명시적 재배포도 이 태그를 기준으로 이미지를 찾습니다.
-
-### 3. 롤아웃
-```bash
-kubectl --context fsi-demo-cluster -n claude-code set image deployment/dashboard \
-  dashboard=180294183052.dkr.ecr.ap-northeast-2.amazonaws.com/cc-ab-dashboard:$TAG
-kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard --timeout=120s
+: "${PREVIOUS_IMAGE:?Recover the recorded known-good image first}"
+kube set image deployment/dashboard "dashboard=$PREVIOUS_IMAGE"
+kube rollout status deployment/dashboard --timeout=120s
 ```
 
-## 검증
-- [ ] `kubectl get pods -l app=dashboard`가 새 ReplicaSet에서 2/2 `Running` 표시
-- [ ] `kubectl get deployment dashboard -o jsonpath='{.spec.template.spec.containers[0].image}'`가 `$TAG`와 일치
-- [ ] 파드 로그에 스택 트레이스 없이 `dashboard listening on :8080` 출력
-- [ ] `/healthz`가 `{"ok": true}` 응답(외부 노출 안 됐으면 port-forward로 확인)
-- [ ] `/readyz`가 실행 중인 파드에서 200 응답 — readiness probe가 실제로 보는 엔드포인트이므로,
-      파드가 `Ready`가 되지 않을 때는 `/healthz`가 아니라 이걸로 진단합니다
+`kube rollout undo deployment/dashboard` is the history-based alternative. Recheck the edge
+and health endpoints. Image rollback does not undo Terraform, Secret, or schema changes.
 
-## 롤백
-```bash
-kubectl --context fsi-demo-cluster -n claude-code rollout undo deployment/dashboard
-kubectl --context fsi-demo-cluster -n claude-code rollout status deployment/dashboard
-```
-또는 위 3단계로 이전에 확인된 정상 태그를 명시적으로 재배포합니다.
+## Schema and boot failures
 
-## 참고
-- 최종 검증일: 2026-07-08 (전체 절차 실행). 2026-09-02에는 `infra/ecr.tf` / `server/index.js`
-  기준으로 문서만 재동기화했고 배포는 실행하지 않았습니다. `IMMUTABLE` 태그 정책과 `/readyz`
-  probe는 다음 `terraform apply`와 이미지 롤아웃 이후에야 라이브 클러스터에 반영됩니다 — 그
-  전까지 리포지토리는 여전히 `MUTABLE`이고 오래된 `latest` 태그가 남아 있습니다.
-- 적용 대기 중인 `terraform apply`에 `infra/clickhouse.tf`의 ClickHouse 백업 목적지 변경
-  (`Disk('cold_s3', ...)` → `BACKUP TO S3(...)`)이 포함되어 있어도
-  `scripts/archive-clickhouse.sh`와의 순서 제약은 없습니다 — 그 스크립트의 최종 스냅샷
-  단계는 이 Terraform 변경 적용 여부와 무관하게 동작합니다. 이 변경이 실제로 하는 일은
-  `infra/s3.tf`에 이미 있던 30일 라이프사이클 필터가 이후의 일별 백업을 실제로 매칭하기
-  시작하게 만드는 것입니다(이전엔 매칭 대상이 없었습니다). 적용한 뒤로는
-  `scripts/archive-clickhouse.sh`를 30일 넘게 재실행하지 않고 방치하지 마세요, 그리고
-  워크샵 계정을 삭제하기 직전에는 항상 한 번 더 실행하세요 —
-  [`archive-clickhouse.md`](archive-clickhouse.md#사용-시점) 참조.
-- 실 ClickHouse 클러스터 대상 로컬 검증: `svc/clickhouse-cc-ab`(8123 포트)를 port-forward하고
-  k8s Secret `clickhouse-reader`의 리더 자격증명을 받아 `dashboard/server`를 로컬에서 그
-  클러스터에 붙여 실행 — 실 ClickHouse에 안 붙는 유닛 테스트가 놓친 쿼리 버그를 이 방식으로
-  여러 번 잡았습니다.
-- **ClickHouse 스키마 변경은 이미지 배포와 별개 경로입니다.**
-  `infra/files/clickhouse-schema-replicated.sql`를 수정하면 schema-init Job 이름의 `filemd5`가
-  바뀌어 `terraform apply`가 Job을 교체·재실행합니다. terraform은 Job 완료를 기다리며
-  (`wait_for_completion = true`, 타임아웃 30분) **Job이 실패하면 apply도 실패합니다** —
-  `--multiquery` 클라이언트는 첫 실패 statement에서 abort하므로 Job 파드 로그
-  (`kubectl -n claude-code logs job/clickhouse-schema-init-<hash>`)에서 실패한 statement를
-  확인하세요. 그 뒤의 statement는 적용되지 않은 상태입니다. 2026-09-02 이전에는 Job이 7회 전부
-  실패해도 apply가 성공으로 끝나 3주간 발견되지 않았습니다. 끝 상태는 여전히 직접 확인하세요:
-  ```bash
-  kubectl --context fsi-demo-cluster -n claude-code get jobs | grep clickhouse-schema-init
-  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
-    -- clickhouse-client -q "SHOW CREATE TABLE claude_code.otel_metrics_sum_hourly"
-  kubectl --context fsi-demo-cluster -n claude-code exec chi-cc-ab-replicated-0-0-0 -c clickhouse \
-    -- clickhouse-client -q "SELECT table, command, is_done FROM system.mutations WHERE is_done = 0"
-  ```
-  실제 확인은 `SHOW CREATE TABLE`입니다 — Job이 Complete여도 모든 문장이 적용됐다는 보장은
-  아닙니다(롤업 `TTL`이 수 주간 빠져 있었는데 Job은 계속 `Complete`였습니다. 파일이 바뀐 뒤에도
-  Job이 재실행되지 않았기 때문입니다).
-- 롤아웃 직후 파드가 로그에 `FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required`를
-  남기고 즉시 crash-loop에 빠지는 것은 **의도된** fail-closed 동작이며 회귀가 아닙니다 —
-  `infra/dashboard.tf`의 `env_from`이 참조하는 `dashboard-basic-auth` Secret이 없거나 키
-  이름이 바뀐 것입니다. `kubectl --context fsi-demo-cluster -n claude-code logs -l app=dashboard --tail=50`
-  로 진단하세요; 메시지가 두 변수 이름을 모두 명시합니다. 우회책으로 클러스터에
-  `AUTH_ALLOW_INSECURE=1`을 추가하지 마세요.
+Follow [schema migrations](schema-migrations.md) separately. The schema-init Job name embeds
+the replicated SQL file's hash; a changed file causes a new Job on apply. Terraform waits
+for completion, but background mutations and actual DDL still require independent checks.
+A failed `--multiquery` run stops at its first failing statement; earlier statements may
+already have executed. Inspect Job logs before retrying costly materializations.
+
+A boot failure requiring `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` is intentional. Verify
+Secret `dashboard-basic-auth` keys without printing values and restart after correction.
+Do not use `AUTH_ALLOW_INSECURE=1` to recover a deployed environment. For backup retention
+and pre-teardown archival, use [backup and restore](backup-and-restore.md).
