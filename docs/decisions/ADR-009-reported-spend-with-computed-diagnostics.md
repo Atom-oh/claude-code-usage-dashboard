@@ -57,6 +57,7 @@ promises invoice equality or a billing lower bound.
 The existing `agentCost()` aggregation sorts by computed cost and returns only 30 agents.
 The UI ranks reports within that returned subset; it is not a global reported-cost top 30.
 Cache-tier breakdowns remain computed estimates with a visible TTL assumption, not a
-reconstruction of reported spend by tier. Raw API body logging remains disabled by the
-checked-in bootstrap. Collector, provider TTL, schema, and infrastructure changes are
-separate work, and deployed state must be verified independently.
+reconstruction of reported spend by tier. The checked-in bootstrap does not enable raw
+API body logging; verify the actual client configuration independently. Collector,
+provider TTL, schema, and infrastructure changes are separate work, and deployed state
+must be verified independently.
