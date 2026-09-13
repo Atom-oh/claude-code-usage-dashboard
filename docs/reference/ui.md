@@ -1,86 +1,58 @@
-# UI / UI 구현 상세
+# UI Components and Display Contracts
 
-[![English](https://img.shields.io/badge/Language-English-blue)](#english)
-[![한국어](https://img.shields.io/badge/Language-한국어-red)](#korean)
+The UI uses Tailwind utilities and shared React components. Product labels remain primarily
+Korean; this documentation describes their meaning in English and identifies the responsible
+symbols. See [frontend state](frontend.md) and [web/AGENTS.md](../../dashboard/web/AGENTS.md).
 
-<a id="english"></a>
-## English
+| Source | Contract |
+|---|---|
+| [Card.jsx](../../dashboard/web/src/components/Card.jsx) | Card shell, help, header actions, loading/error states |
+| [StatTile.jsx](../../dashboard/web/src/components/StatTile.jsx) | KPI label, value, hint and variant |
+| [Badge.jsx](../../dashboard/web/src/components/Badge.jsx) | Positive, negative or neutral status |
+| [SegmentedControl.jsx](../../dashboard/web/src/components/SegmentedControl.jsx) | Local group/interval selection |
+| [DataTable.jsx](../../dashboard/web/src/components/DataTable.jsx) | Column rendering, sorting, row actions and optional CSV |
+| [GroupCharts.jsx](../../dashboard/web/src/components/GroupCharts.jsx) | Group lines/areas/bars, series bars, donuts, paired panels and ranked lists |
+| [PageHeader.jsx](../../dashboard/web/src/components/PageHeader.jsx), [RangePicker.jsx](../../dashboard/web/src/components/RangePicker.jsx) | Page context, freshness and date selection |
+| [colors.js](../../dashboard/web/src/colors.js), [useChartColors.js](../../dashboard/web/src/useChartColors.js), [index.css](../../dashboard/web/src/index.css) | Channel/model colors and CSS-variable theme values |
+| [labels.js](../../dashboard/web/src/labels.js) | `effortLabel`, `unclassifiedLabel`, `decisionLabel` display mappings |
 
-### 1. Overview
-Visual design is Tailwind utility classes plus a small set of shared presentational
-components (Card, StatTile, Badge, SegmentedControl, DataTable, GroupCharts) reused across
-every page, giving the dashboard a consistent look without a component library.
+## Spend formatting
 
-### 2. Components
-| Component | Path | Purpose |
-|---|---|---|
-| Card / layout primitives | `dashboard/web/src/components/Card.jsx` | Card shell, `Loading`, `ErrorBox` states |
-| StatTile | `dashboard/web/src/components/StatTile.jsx` | KPI number tile (label/value/hint/variant) |
-| Badge | `dashboard/web/src/components/Badge.jsx` | Tone-based inline badge (positive/negative/neutral) |
-| SegmentedControl | `dashboard/web/src/components/SegmentedControl.jsx` | Tab-style toggle (used for group filters, interval switches) |
-| DataTable | `dashboard/web/src/components/DataTable.jsx` | Sortable table with per-column render functions |
-| GroupCharts | `dashboard/web/src/components/GroupCharts.jsx` | `DonutBreakdown`, `SeriesBarChart`, `GroupBarChart`, `DualLineChart`, `HBarList` |
-| Global chrome | `dashboard/web/src/components/PageHeader.jsx`, `RangePicker.jsx` | Page title/subtitle, date-range picker |
-| Color system | `dashboard/web/src/colors.js`, `useChartColors.js` | Group color palette, CSS-variable-based chart colors |
+Use [spend.js](../../dashboard/web/src/spend.js) before aggregating display spend.
+`asSpendRow` selects `reported_cost` and `prev_reported_cost`, preserves server values as
+`computed_cost` and `prev_computed_cost`, and marks unusable reports with
+`reported_unpriced`. Missing, blank, negative or nonfinite reports are unusable; zero with
+positive tokens is also unpriced at this consumer. Zero without token evidence remains
+valid. `sumSpend` returns null if any supplied amount is invalid; an empty input sums to zero.
 
-### 3. Key Decisions
-- **Chart color palette is CSS-variable-based (`useChartColors`)**, not hardcoded hex --
-  lets the whole dashboard support light/dark or per-workshop theming from one place.
-- **DonutBreakdown's `$` formatter special-cases values under $10** (2 decimal places) instead
-  of always rounding -- rounding hid small cache-tier costs as "$0" on short date ranges.
-- Every chart/table component accepts a `right` prop slot for a `SegmentedControl` -- lets
-  pages add per-card filters (e.g., Cost page's bedrock/enterprise donut tabs) without changing
-  the shared component's API.
+The page-local `usd` formatters must receive a valid zero as `$0`, not a missing-data state.
+An unpriced row is handled before formatting. Positive API aggregates cannot reveal all
+missing underlying reports, so a displayed amount is not evidence of complete collection.
 
-### 4. Code Pointers
-- `dashboard/web/src/components/GroupCharts.jsx` -- `DonutBreakdown` (`fmt` formatter, `right` slot)
-- `dashboard/web/src/components/DataTable.jsx` -- `compareValues()` (null-safe, numeric-aware sort)
-- `dashboard/web/src/components/SegmentedControl.jsx` -- shared tab control
-- `dashboard/web/src/useChartColors.js` -- CSS-variable chart color hook
-- `dashboard/web/src/index.css` -- Tailwind base + CSS variables
+`DonutBody` and `DonutBreakdown` accept `valueFormatter`, which **replaces** default
+formatting, including `valuePrefix`. Cost supplies its own USD formatter so large totals
+and legend values retain cents. Without an override, the default dollar formatter keeps
+two decimals below $10 and rounds larger values. `DonutBody` shows an empty state when
+the total is nonpositive; this is distinct from `usd(0)`'s valid formatting.
 
-### 5. Cross-references
-- Related modules: [dashboard/web/CLAUDE.md](../../dashboard/web/CLAUDE.md)
-- Related ADRs: (none yet)
-- Related runbooks: (none yet)
+`SeriesBarChart` suppresses the entire chart if any supplied value is missing or nonfinite,
+showing affected entries instead of silently drawing a partial total. This guard is
+component-specific; it is not a guarantee shared by every chart.
 
-<a id="korean"></a>
-## 한국어
+## Tables and CSV
 
-### 1. 개요
-시각 디자인은 Tailwind 유틸리티 클래스와, 모든 페이지가 재사용하는 공유 프레젠테이션
-컴포넌트 소수(Card, StatTile, Badge, SegmentedControl, DataTable, GroupCharts)로 구성돼
-컴포넌트 라이브러리 없이도 일관된 룩을 유지합니다.
+`DataTable` sorts using raw column values with numeric-aware string comparison; null and
+empty values sort last. An `exportName` adds a CSV button. It exports the current `columns`
+and `sortedRows`, so hidden computed columns stay out until the comparison option enables
+them. This is a table export, not a separate all-data endpoint.
 
-### 2. 구성요소
-| 구성요소 | 경로 | 목적 |
-|---|---|---|
-| Card/레이아웃 프리미티브 | `dashboard/web/src/components/Card.jsx` | Card 셸, `Loading`, `ErrorBox` 상태 |
-| StatTile | `dashboard/web/src/components/StatTile.jsx` | KPI 숫자 타일(label/value/hint/variant) |
-| Badge | `dashboard/web/src/components/Badge.jsx` | tone 기반 인라인 배지(positive/negative/neutral) |
-| SegmentedControl | `dashboard/web/src/components/SegmentedControl.jsx` | 탭 스타일 토글(그룹 필터, interval 전환에 사용) |
-| DataTable | `dashboard/web/src/components/DataTable.jsx` | 컬럼별 render 함수를 가진 정렬 가능 테이블 |
-| GroupCharts | `dashboard/web/src/components/GroupCharts.jsx` | `DonutBreakdown`, `SeriesBarChart`, `GroupBarChart`, `DualLineChart`, `HBarList` |
-| 전역 크롬 | `dashboard/web/src/components/PageHeader.jsx`, `RangePicker.jsx` | 페이지 제목/부제, 날짜 범위 선택기 |
-| 색상 시스템 | `dashboard/web/src/colors.js`, `useChartColors.js` | 그룹 색상 팔레트, CSS 변수 기반 차트 색상 |
+[csv.js](../../dashboard/web/src/csv.js) uses column labels for headers and `toText(value,row)`
+when supplied; otherwise it exports the raw field. It does **not** scrape rendered JSX.
+Provide `toText` when badges or derived cells need a textual equivalent. CSV uses a UTF-8 BOM,
+CRLF rows and standard quote escaping.
 
-### 3. 주요 결정
-- **차트 색상 팔레트는 하드코딩 hex가 아니라 CSS 변수 기반(`useChartColors`)** -- 대시보드
-  전체가 한 곳에서 라이트/다크 또는 워크샵별 테마를 지원할 수 있게 함.
-- **DonutBreakdown의 `$` 포맷터는 $10 미만 값을 특별 처리**(소수 2자리) -- 무조건 반올림하면
-  짧은 기간의 소액 캐시 티어 비용이 전부 "$0"으로 숨겨졌습니다.
-- 모든 차트/테이블 컴포넌트가 `SegmentedControl`을 위한 `right` prop 슬롯을 받음 -- 공유
-  컴포넌트 API를 바꾸지 않고도 페이지별 카드 필터(예: Cost 페이지의 bedrock/enterprise
-  도넛 탭)를 추가할 수 있게 함.
-
-### 4. 코드 포인터
-- `dashboard/web/src/components/GroupCharts.jsx` -- `DonutBreakdown`(`fmt` 포맷터, `right` 슬롯)
-- `dashboard/web/src/components/DataTable.jsx` -- `compareValues()`(null-safe, 숫자 인식 정렬)
-- `dashboard/web/src/components/SegmentedControl.jsx` -- 공유 탭 컨트롤
-- `dashboard/web/src/useChartColors.js` -- CSS 변수 차트 색상 훅
-- `dashboard/web/src/index.css` -- Tailwind 베이스 + CSS 변수
-
-### 5. 상호 참조
-- 관련 모듈: [dashboard/web/CLAUDE.md](../../dashboard/web/CLAUDE.md)
-- 관련 ADR: (아직 없음)
-- 관련 런북: (아직 없음)
+When masking is enabled, `toCsv` centrally applies `maskEmail` to the `user` column after
+`toText`, preventing custom formatters from bypassing that display policy. It is not a
+general PII scanner for every column. [fmt.js](../../dashboard/web/src/fmt.js) holds the
+shared masking state and UTC timestamp parsing. See [security](security.md) for the raw
+API-data boundary.

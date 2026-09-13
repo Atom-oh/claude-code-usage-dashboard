@@ -1,26 +1,24 @@
-# Implementation Reference Index
+# Implementation References
+
+Read the root [AGENTS.md](../../AGENTS.md) for canonical developer instructions.
+These English references describe source behavior, not proof of a live deployment.
+Use scoped module instructions for changes and probes or migration evidence for runtime claims.
+Follow the shared [documentation policy](../documentation-policy.md) for language and ownership.
 
 <!-- AUTO-MANAGED:index -->
-Layer-by-layer implementation notes. Each doc is bilingual (English first, Korean second) and
-follows the same structure: Overview, Components, Key Decisions, Code Pointers, Cross-references.
-
-| Layer | Doc | Covers |
-|---|---|---|
-| Infrastructure | [infrastructure.md](infrastructure.md) | Docker image, EKS deployment, ECR, DNS/CDN |
-| Data | [data.md](data.md) | ClickHouse schema (metrics/logs/traces-beta), cumulative-counter diffing, bedrock/enterprise grouping |
-| API | [api.md](api.md) | Express routes, query layer, chat SQL sandbox |
-| IaC | [iac.md](iac.md) | Terraform: EKS, ClickHouse Operator, networking |
-| Frontend | [frontend.md](frontend.md) | React SPA structure, shared state, data fetching |
-| UI | [ui.md](ui.md) | Shared presentational components, chart primitives, theming |
-| Security | [security.md](security.md) | Basic Auth, SQL sanitization, secrets handling |
-| Agent · LLM | [agent-llm.md](agent-llm.md) | Bedrock chat assistant, tool-use loop |
-
-Regenerate this table with `/sync-docs` or `/add-reference-doc <layer>` after adding a new layer.
+| Reference | Scope |
+|---|---|
+| [Infrastructure](infrastructure.md) | Application image, local stack, runtime and health checks |
+| [Data](data.md) | Schema, counter differences, time boundaries, identity and channel inference |
+| [API implementation](api.md) | Validation, filters, caching and query ownership |
+| [Infrastructure as code](iac.md) | Terraform resources, prerequisites and deployment ownership |
+| [Frontend](frontend.md) | Routes, runtime configuration, range/filter state and fetching |
+| [UI](ui.md) | Shared components, spend formatting, tables and CSV |
+| [Security](security.md) | Authentication, SQL restrictions, masking and retention limits |
+| [Chat assistant](agent-llm.md) | Bedrock tool loop, SSE protocol and implementation limits |
 <!-- /AUTO-MANAGED:index -->
 
-See also [docs/metrics.md](../metrics.md) -- per-KPI definitions, source metric/event, and the
-function that computes each one.
-
-See also [docs/deploying-for-your-org.md](../deploying-for-your-org.md) -- a walkthrough for
-standing up this dashboard for a new organization/cluster, assembled from commands already
-cited in the runbooks and README.
+For specific tasks, use the [API contract](../api-reference.md),
+[metric definitions](../metrics.md), [onboarding guide](../onboarding.md),
+[architecture](../architecture.md), or [organization deployment guide](../deploying-for-your-org.md).
+Keep this index aligned with the files in this directory.

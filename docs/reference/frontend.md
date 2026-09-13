@@ -1,103 +1,76 @@
-# Frontend / Frontend 구현 상세
+# Frontend Implementation
 
-[![English](https://img.shields.io/badge/Language-English-blue)](#english)
-[![한국어](https://img.shields.io/badge/Language-한국어-red)](#korean)
+The React 18/Vite SPA is built into the same image as the Express server.
+See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions and
+[UI](ui.md) for component and export contracts.
 
-<a id="english"></a>
-## English
+## Routes and state
 
-### 1. Overview
-A single React 18 + Vite SPA (`dashboard/web/`) renders 8 pages (Overview, Cost, Productivity,
-Users, Trends, Executive, Usage, Analytics) against the `dashboard/server` API, sharing one
-global date-range/filter context across every page.
+[App.jsx](../../dashboard/web/src/App.jsx) registers nine pages:
 
-### 2. Components
-| Component | Path | Purpose |
-|---|---|---|
-| Entry/router | `dashboard/web/src/main.jsx`, `App.jsx` | Route table, layout shell |
-| Global range state | `dashboard/web/src/RangeContext.jsx` | `from`/`to`/`intervalHours` shared across all pages, in one of three modes: preset, month (이번 달), or custom (drag-zoom or calendar) |
-| Global filter state | `dashboard/web/src/FilterContext.jsx` | group/user/model filters shared across all pages |
-| Data fetching | `dashboard/web/src/useApi.js` | Auto-forwards range+filters to every endpoint call |
-| Pages | `dashboard/web/src/pages/*.jsx` | One file per dashboard page |
-| Chart/table components | `dashboard/web/src/components/*.jsx` | `GroupCharts.jsx` (donut/bar/line), `DataTable.jsx`, etc. |
-| Formatting helpers | `dashboard/web/src/fmt.js`, `pivot.js`, `colors.js` | Tick formatting, pivot-for-Recharts, group color palette |
+| Path | Page |
+|---|---|
+| `/` | Overview |
+| `/exec` | Executive |
+| `/trends` | Trends |
+| `/productivity` | Productivity |
+| `/usage` | Usage |
+| `/users` | Users |
+| `/cost` | Cost |
+| `/reliability` | Reliability |
+| `/analytics` | Analytics chat |
 
-### 3. Key Decisions
-- **One shared `useApi` hook auto-forwards `from/to/group/user/model/intervalHours`** to every
-  endpoint call -- pages only pass endpoint-specific extras, avoiding per-page boilerplate for
-  the global filter bar.
-- **`intervalHours` resync via `useEffect`, not `useState` initializer** -- a page-local
-  granularity control must re-sync when the global range preset changes, or switching from a
-  7-day to a 1-day preset leaves charts stuck on daily buckets (a real bug fixed on the Cost
-  page).
-- No CSS modules, no component library -- Tailwind utility classes directly, matching the
-  "workshop tool, not a product" scope in the root `CLAUDE.md`.
-- **The refresh tick never flips a page's `loading` state or blanks data already on screen** --
-  `useApi.js` treats a background tick's failure differently from a params-load failure, and
-  `RangeContext.jsx`'s `to` recomputes at most once per UTC day (via `RefreshContext.jsx`'s
-  `dayKey`), not on every tick.
-- **URL range state is one of three shapes**: `days` for a preset, `period=month` for 이번 달,
-  or `from`/`to` for a custom (drag-zoom or calendar) range -- see `urlState.js`.
+The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
+chat. [main.jsx](../../dashboard/web/src/main.jsx) fetches `/api/config` before first render,
+with a three-second timeout. Masking stays on unless `piiMask` is explicitly false.
+[ConfigContext.jsx](../../dashboard/web/src/ConfigContext.jsx) supplies group mode, default
+range, cap, pricing assumptions and schema status. `GROUP_MODE=single` changes presentation;
+it does not change SQL filtering.
 
-### 4. Code Pointers
-- `dashboard/web/src/useApi.js` -- shared fetch hook, auto-forwarded params
-- `dashboard/web/src/RangeContext.jsx` -- `intervalHours = days <= 2 ? 1 : 24` derivation
-- `dashboard/web/src/RefreshContext.jsx` -- auto-refresh interval, `tick`, and `dayKey` state
-- `dashboard/web/src/pages/Cost.jsx` -- largest page; donut group filters, efficiency table
-- `dashboard/web/src/pivot.js` -- `pivotByGroup`/`pivotByKey` (row-per-x-tick reshaping for Recharts)
-- `dashboard/web/src/components/GroupCharts.jsx` -- shared chart primitives (Donut/Bar/Line)
-- `dashboard/web/src/components/DateRangePopover.jsx` -- calendar range picker behind `RangePicker`
+[RangeContext.jsx](../../dashboard/web/src/RangeContext.jsx) supports presets, current UTC
+month, and custom ranges from the calendar or drag zoom. Presets use hourly buckets for
+at most two days, daily otherwise; calendar ranges use the same rule. Drag zoom chooses
+from a resolution ladder targeting at most 96 buckets, with minute buckets limited to
+four-hour windows. Month mode uses daily buckets.
 
-### 5. Cross-references
-- Related modules: [dashboard/web/CLAUDE.md](../../dashboard/web/CLAUDE.md)
-- Related ADRs: (none yet)
-- Related runbooks: (none yet)
+[FilterContext.jsx](../../dashboard/web/src/FilterContext.jsx) debounces user, model and
+project inputs by 300 ms. [urlState.js](../../dashboard/web/src/urlState.js) serializes one
+range shape: `days`, `period=month`, or `from`/`to`. Masked-mode URLs omit user identity;
+project URL state requires `schema.projectColumns === true`.
 
-<a id="korean"></a>
-## 한국어
+## Fetch and refresh behavior
 
-### 1. 개요
-React 18 + Vite SPA 하나(`dashboard/web/`)가 `dashboard/server` API를 호출해 8개 페이지
-(Overview, Cost, Productivity, Users, Trends, Executive, Usage, Analytics)를 렌더링하며, 전역
-날짜범위/필터 컨텍스트를 모든 페이지가 공유합니다.
+[useApi.js](../../dashboard/web/src/useApi.js) forwards range, interval and filters, followed
+by endpoint-specific overrides. Project forwarding has a second schema gate. Forwarding
+does not imply that every endpoint honors every filter; consult the
+[API filter scope](../api-reference.md).
 
-### 2. 구성요소
-| 구성요소 | 경로 | 목적 |
-|---|---|---|
-| 엔트리/라우터 | `dashboard/web/src/main.jsx`, `App.jsx` | 라우트 테이블, 레이아웃 셸 |
-| 전역 범위 상태 | `dashboard/web/src/RangeContext.jsx` | 모든 페이지가 공유하는 `from`/`to`/`intervalHours`, 프리셋·이번 달·커스텀(드래그 줌 또는 달력) 세 모드 중 하나 |
-| 전역 필터 상태 | `dashboard/web/src/FilterContext.jsx` | 모든 페이지가 공유하는 group/user/model 필터 |
-| 데이터 페칭 | `dashboard/web/src/useApi.js` | 모든 엔드포인트 호출에 범위+필터 자동 전달 |
-| 페이지 | `dashboard/web/src/pages/*.jsx` | 대시보드 페이지당 파일 하나 |
-| 차트/테이블 컴포넌트 | `dashboard/web/src/components/*.jsx` | `GroupCharts.jsx`(도넛/바/라인), `DataTable.jsx` 등 |
-| 포맷 헬퍼 | `dashboard/web/src/fmt.js`, `pivot.js`, `colors.js` | 틱 포맷, Recharts용 피벗, 그룹 색상 팔레트 |
+Requests quantize the current time to 120-second boundaries after a 150-second grace
+period for server warming. Custom ends later than that boundary are clipped, and a
+nonpositive resulting window is extended by 120 seconds. Consequently the displayed
+range and actual API window can differ near now.
 
-### 3. 주요 결정
-- **공유 `useApi` 훅이 모든 엔드포인트 호출에 `from/to/group/user/model/intervalHours`를
-  자동 전달** -- 페이지는 엔드포인트별 추가 파라미터만 넘기면 돼서 전역 필터바용 보일러플레이트가
-  페이지마다 반복되지 않습니다.
-- **`intervalHours` 재동기화는 `useEffect`, `useState` 초기값이 아님** -- 페이지 로컬
-  granularity 컨트롤이 전역 범위 프리셋 변경 시 재동기화 안 되면, 7일→1일 프리셋 전환 후에도
-  차트가 일간 버킷에 머무릅니다(Cost 페이지에서 실제로 고친 버그).
-- CSS 모듈·컴포넌트 라이브러리 없음 -- Tailwind 유틸리티 클래스를 직접 사용, 루트
-  `CLAUDE.md`의 "제품이 아니라 워크샵 도구" 범위에 맞춤.
-- **새로고침 tick은 페이지의 `loading` 상태를 켜지도 않고 화면에 있는 데이터를 지우지도
-  않습니다** -- `useApi.js`는 백그라운드 tick의 실패를 파라미터 로드 실패와 다르게 처리하고,
-  `RangeContext.jsx`의 `to`는 tick마다가 아니라 UTC 날짜가 바뀔 때만(`RefreshContext.jsx`의
-  `dayKey`를 통해) 재계산됩니다.
-- **URL의 범위 상태는 세 가지 모양 중 하나입니다**: 프리셋이면 `days`, 이번 달이면
-  `period=month`, 커스텀(드래그 줌 또는 달력) 구간이면 `from`/`to` -- `urlState.js` 참고.
+The hook aborts obsolete parameter requests and reuses data identity for unchanged payloads.
+A same-parameter refresh preserves visible data on failure and reports a refresh error;
+a changed-parameter failure clears it. A tick that changes the quantized range is a new
+parameter load. Do not promise that every refresh avoids the loading state.
 
-### 4. 코드 포인터
-- `dashboard/web/src/useApi.js` -- 공유 fetch 훅, 자동 전달 파라미터
-- `dashboard/web/src/RangeContext.jsx` -- `intervalHours = days <= 2 ? 1 : 24` 도출
-- `dashboard/web/src/RefreshContext.jsx` -- 자동 새로고침 간격, `tick`, `dayKey` 상태
-- `dashboard/web/src/pages/Cost.jsx` -- 가장 큰 페이지; 도넛 그룹 필터, 효율 테이블
-- `dashboard/web/src/pivot.js` -- `pivotByGroup`/`pivotByKey`(Recharts용 row-per-x-tick 재구성)
-- `dashboard/web/src/components/GroupCharts.jsx` -- 공유 차트 프리미티브(Donut/Bar/Line)
-- `dashboard/web/src/components/DateRangePopover.jsx` -- `RangePicker` 뒤의 달력 구간 선택기
+[RefreshContext.jsx](../../dashboard/web/src/RefreshContext.jsx) defaults to 60 seconds,
+persists the selected interval, pauses hidden tabs, refreshes when visible, and skips one
+scheduled tick after a reported failure. Its UTC `dayKey` updates range-derived dates.
+Page-local interval controls must resync from global range changes, as
+[Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does.
 
-### 5. 상호 참조
-- 관련 모듈: [dashboard/web/CLAUDE.md](../../dashboard/web/CLAUDE.md)
-- 관련 ADR: (아직 없음)
-- 관련 런북: (아직 없음)
+## Spend and interpretation
+
+[spend.js](../../dashboard/web/src/spend.js) adapts API `reported_cost` to display `cost`
+and preserves original computed values. Cost, Executive, Productivity and Users use it
+for spend views. Legacy Usage fields (`est_cost_usd`, `cost_usd`) and Reliability diagnostic
+tables remain separate consumers; do not describe the adapter as a server response change.
+
+Cost's `showComputed` starts false. It controls diagnostic columns and the comparison
+section; those API requests are still made while the section is hidden.
+User/model family averages use reported spend, including valid reports for models absent
+from the server price table. [score.js](../../dashboard/web/src/score.js) folds a user's
+channel rows before recomputing the activity heuristic, using `user_active_days` to avoid
+double-counting days. See [metrics](../metrics.md) for the limits of these measures.
