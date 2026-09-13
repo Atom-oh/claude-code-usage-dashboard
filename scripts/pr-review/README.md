@@ -1,7 +1,8 @@
 # Specialist review protocol
 
-Offline protocol; legacy review remains active. Executors/adapters need separate
-activation review. No Git fetch or model calls.
+CI selects `ROLE_REVIEW=1`. Trusted inputs feed specialist executors; validated
+results feed aggregation and, when needed, the chair. See
+[the project contract](../../docs/pr-review-specialists.md).
 
 | Tag | Requested model | Scope |
 | --- | --- | --- |
@@ -80,13 +81,21 @@ Limits: 95,000 diff bytes (UTF-8), 3,000 lines, 24,000 context bytes, <128 KiB
 request; projects may lower them. Oversize blocks. No chunk coordinator or
 combining partial PASS results; preserve custody/budgets.
 
-Run `python3 -m unittest discover -s scripts/pr-review -p test_role_review.py`.
-Offline CI: `.github/workflows/pr-review-roles-tests.yml`. Activation also needs
+Run `python3 -m unittest discover -s scripts/pr-review -p 'test_*role*.py'`.
+Offline CI: `.github/workflows/pr-review-roles-tests.yml`. Also verify
 executor/adapter, limit and exact-HEAD publication tests; offline success proves
 no live provider execution.
 
-Sol replaces this repository's legacy Terra slot at activation; application
+Sol replaces this repository's legacy Terra slot in this workflow; application
 inference models remain unchanged.
 
 Valid results cannot be reissued. Failed retries retain diagnostics; prepare
 again for a new review.
+
+Codex uses structured transport events plus its CLI-designated final-output file.
+Tool output and progress text are not review results. Recovered transport notices
+remain visible; terminal provider errors still block.
+
+`prepare_context_roles.py` reuses the committed BASE context builder and selected
+module guides, retaining its 20,000-byte context and 22,000-byte prompt limits.
+Candidate guide size is validated without using candidate instructions.

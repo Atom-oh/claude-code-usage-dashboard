@@ -2,6 +2,10 @@
 # Trusted base context informs the chair; diff/panel text remains untrusted data.
 # The shared final-verdict parser and existing coverage overrides control CI.
 set -euo pipefail
+
+if [ "${ROLE_REVIEW:-0}" = 1 ]; then
+  exec python3 "$(dirname "$0")/synthesize_roles.py" --work "$2" --output "$5"
+fi
 DIR="$(cd "$(dirname "$0")" && pwd)"; . "$DIR/lib.sh"
 DIFF="$1"; WORK="$2"; PR_NUMBER="$3"; PR_TITLE="$4"; OUT="$5"
 SLOT="$WORK/slot"
