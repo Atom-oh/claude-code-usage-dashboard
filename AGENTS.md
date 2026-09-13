@@ -69,5 +69,6 @@ Follow the user's current-head review, fix, push, and merge policy.
 - [Server and ClickHouse](dashboard/server/AGENTS.md)
 - [Web UI](dashboard/web/AGENTS.md)
 - [Infrastructure](infra/AGENTS.md)
+- [PR review tooling](scripts/pr-review/AGENTS.md)
 - [Video](video/AGENTS.md)
 - [Documentation policy](docs/documentation-policy.md)

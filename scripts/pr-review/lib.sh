@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
-# 공용 헬퍼: 슬롯 디렉터리, 스킵 로깅, 크리덴셜 스크럽.
 set -uo pipefail
 
-# slot 디렉터리 보장 — 비-ephemeral 러너에서 $WORK 가 재사용될 수 있으므로, 이전 실행의
-# 셀 파일이 남아 새 실행의 체어 입력에 섞이지 않도록 매번 비우고 새로 만든다. 유일한
-# 호출자(run-panel.sh)가 이미 $WORK 빈 문자열을 가드하지만, `rm -rf "$1/slot"`처럼
-# 파괴적 경로를 만드는 함수는 자기 안에서도 가드한다.
+review_verdict() {
+  [ -s "$1" ] || return 1
+  local last
+  last="$(awk 'NF{last=$0} END{print last}' "$1")" || return 1
+  case "$last" in
+    "VERDICT: PASS") printf 'pass\n' ;;
+    "VERDICT: FAIL") printf 'fail\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+# Clear stale responses; reject empty paths and pre-existing symlinks.
 ensure_slots() {
   [ -n "$1" ] || { echo "ensure_slots: \$1(workdir) must not be empty" >&2; return 1; }
-  # TOCTOU 가드 — 비-ephemeral 러너의 고정 $WORK 경로를 다른 잡/프로세스가 심링크로
-  # 선점하면 rm -rf 가 realpath 를 따라가 타깃 하위를 삭제할 수 있다.
   [ -L "$1" ] && { echo "ensure_slots: \$1(workdir) is a symlink, refusing" >&2; return 1; }
   [ -L "$1/slot" ] && { echo "ensure_slots: \$1/slot is a symlink, refusing" >&2; return 1; }
   rm -rf "$1/slot"; mkdir -p "$1/slot"
 }
 
-# 한 패널 실행 결과를 평가해 responded 에 기록.
-#   $1 slot 파일 경로, $2 패널 라벨, $3 responded 파일
+# Record only nonempty successful responses; consume the temporary exit-code file.
 record_result() {
   local slot="$1" label="$2" responded="$3"
   local rc; rc="$(cat "$slot.rc" 2>/dev/null || echo 1)"
@@ -24,23 +28,14 @@ record_result() {
     echo "$label" >> "$responded"
   else
     echo "[skip] $label (exit=$rc)" >&2
-    : > "$slot"  # 빈 슬롯 보장
+    : > "$slot"  # discard failed output
   fi
   rm -f "$slot.rc"
 }
 
-# 자격증명 패턴 스크럽 — 마지막 방어선(last line of defense), 예방이 아님. Kiro fs_read
-# 잔여 위험은 그 tool grant 자체를 제거해 구조적으로 닫혔다(이 수정을 다룬 원본 ADR은
-# oh-my-cloud-skills 저장소의 ADR-013 — 이 repo 자신의 ADR 번호와는 무관) — 이 스크럽은
-# 이제 일반적인 defense-in-depth(다른 경로로 우연히 크리덴셜성 값이 셀 출력에 섞여 나오는
-# 경우)이며, 셀 출력을 체어에 넘기기 전에 흔한 크리덴셜 포맷을 정규식으로 치환한다. 패턴은 co-agent 의
-# `consensus_hooks.py::_SECRET_RE`(AWS/GitHub/Slack/OpenAI·Anthropic/Google + generic
-# key=value)를 재사용하고, EKS Pod Identity 토큰(고정 경로 파일의 값 자체가 JWT 포맷)
-# 탐지를 추가했다. 절대경로 read 자체를 막지는 못하므로(스크럽은 값이 셀 출력에 실제로
-# 나타난 *뒤*에만 작동) 잔여 위험은 그대로 남는다.
+# Mask known credential formats before sharing output; this is defense in depth,
+# not a complete secret detector or a tool-access boundary.
 scrub_secrets() {
-  # PEM 은 여러 줄에 걸치므로 line-oriented sed 로는 본문을 못 지운다(헤더 줄만 매칭)
-  # — awk 상태기계로 BEGIN..END 블록 전체를 마커 한 줄로 치환(첫 스테이지, 구조적 스크럽).
   awk '
     BEGIN { skip = 0 }
     /^-----BEGIN [A-Z ]*PRIVATE KEY-----/ { print "[REDACTED-PRIVATE-KEY]"; skip = 1; next }
