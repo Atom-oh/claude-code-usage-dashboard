@@ -27,3 +27,10 @@ Do not switch to a credential-bearing PR-head checkout.
 Run `bash tests/run-all.sh review` for the local stubbed tests. They do not spend
 model credits or establish a successful live matrix. See the
 [runbook](../../docs/runbooks/pr-review-panel.md) for real-run verification.
+
+## Staged protocol library
+
+[README.md](README.md) documents `role_review.py`, its offline checks and the
+approved specialist design. The current workflow still uses the legacy entrypoints;
+provider execution and activation are a separate change. This library does not
+change the current live coverage, context or startup rules.
