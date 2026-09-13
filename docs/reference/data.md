@@ -119,6 +119,22 @@ metrics, logs and traces, leaving the rollup unchanged. It intentionally does no
 documented in the migration. Project tags require operator configuration. Check the active
 ownership of `OTEL_RESOURCE_ATTRIBUTES` before assuming per-repository settings take effect.
 
+The 2026-09-09 local-receiver test recorded whole-string replacement: a project-level
+`env.OTEL_RESOURCE_ATTRIBUTES` replaced the shell/user value rather than merging keys.
+Repeat existing attribution keys (`experiment.group`, `team`, `enduser.id`, `user.email`)
+when configuring a project value, then verify the emitted attributes in a new session.
+Dropping those keys can remove channel or user attribution without an ingestion error.
+
+The checked-in `user-data.sh` gives managed settings ownership of this variable; those
+settings take precedence over project settings. Operators must either include the project
+tag in the managed value or deliberately transfer ownership to project settings. The
+second option makes each repository responsible for retaining all required attribution
+keys. A fixed instance tag is unsuitable when one instance serves multiple repositories.
+
+Project labels can appear in tables, CSV and shared filter URLs. Use an approved opaque
+identifier for sensitive repository names; user-email display masking does not protect
+project labels. Untagged sessions fold into `(untagged)`.
+
 `probeProjectColumns` in [schema.js](../../dashboard/server/schema.js) checks **only**
 `ProjectName` and `Entrypoint` on `otel_logs`. A true result is not proof that metric or
 trace columns, backfills or all migration steps exist. It gates project filtering and
