@@ -23,7 +23,7 @@ The bounded disk queue uses `file_storage`; supervision and rollout are separate
 
 `ResourceAttributes` supplies `UserEmail`, `EndUserId`, `AppVersion` and `ProjectName`
 from `user.email`, `enduser.id`, `service.version` and `project.name`.
-Metric `Attributes` supplies model, type, effort, agent, skill, plugin, marketplace,
+Metric `Attributes` supplies dimensions such as model, type, decision, effort, agent, skill, plugin, marketplace,
 MCP, speed, start type and source dimensions. Logs and traces have their own maps.
 `Entrypoint` reads `app.entrypoint` from the signal's map.
 
@@ -130,6 +130,8 @@ settings take precedence over project settings. Operators must either include th
 tag in the managed value or deliberately transfer ownership to project settings. The
 second option makes each repository responsible for retaining all required attribution
 keys. A fixed instance tag is unsuitable when one instance serves multiple repositories.
+When project configuration contains user identity, generate it per user in untracked local
+settings. Never commit shared project settings containing a fixed user identity.
 
 Project labels can appear in tables, CSV and shared filter URLs. Use an approved opaque
 identifier for sensitive repository names; user-email display masking does not protect
@@ -147,6 +149,8 @@ the Terraform schema-init Job; the root schema is for local single-node ClickHou
 Migration 002 adds telemetry dimensions and traces; 003 changes keys and rebuilds rollups;
 004 records migrations; 005 adds project/entrypoint fields. Existing tables and materialized
 views are not automatically replaced by `CREATE ... IF NOT EXISTS`.
+Operators run the numbered migration scripts through the schema runbook; the Terraform
+Job executes the replicated schema file, not those numbered scripts.
 
 The configured retention is:
 

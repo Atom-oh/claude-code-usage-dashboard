@@ -19,7 +19,7 @@ one-hour cache-write prices to traffic recalculated at five-minute prices. The o
 231 rows and AWS billing data were not available to independently repeat the event-wide
 recalculation, establish collection coverage, or compare an invoice.
 
-The API/price inversion discussed in the supplied analysis is a consistency check for the
+Recalculating costs from API token counts and candidate prices is a consistency check for the
 **one-hour price assumption**, not proof that all other query, grouping, collection, or
 pricing errors are absent. Specifically:
 
@@ -165,7 +165,7 @@ are not files in this repository. They are not broken local prerequisites to inv
 A release manifest linking source commit, image digest, archive SHA-256, and running image
 ID was recommended. It was not created by this investigation. Actual account configuration
 and any `PRICING_JSON` override require separate operator evidence; private negotiated
-prices need not be exposed through the public runtime-config response.
+prices need not be exposed through the authenticated runtime-config response.
 
 ## 6. Verification record and unresolved questions
 

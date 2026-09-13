@@ -33,7 +33,8 @@ and [Analytics.jsx](../../dashboard/web/src/pages/Analytics.jsx); trace display 
 [ChatTrace.jsx](../../dashboard/web/src/components/ChatTrace.jsx). Status events carry query
 progress and masked SQL; thinking events carry summarized reasoning, text events carry
 answer deltas, and done/error events terminate the turn. The server keeps Bedrock reasoning
-blocks and signatures in subsequent conversation turns, but does not expose signatures.
+blocks and signatures across tool rounds within one request, without exposing signatures.
+Follow-up requests send text-only conversation history.
 
 ## Prompt maintenance and data meaning
 

@@ -24,8 +24,8 @@ then passes parsed filters to the handler. Validation failures return 400; other
 return 500 with an opaque error ID. Config, health and chat handlers bypass this wrapper.
 
 The process-local cache stores promises for 320 seconds, deduplicating concurrent misses.
-Keys contain only `from`, `to`, `group`, `user`, `model`, `project`, `intervalHours`, `email`
-and `includeUnknown`, sorted by parameter name. Failed promises are removed. The 2,000-entry
+Keys contain the route path plus `from`, `to`, `group`, `user`, `model`, `project`,
+`intervalHours`, `email` and `includeUnknown`, sorted by parameter name. Failed promises are removed. The 2,000-entry
 cap evicts by insertion order, not by last read.
 
 The warmer runs at startup and on 120-second boundaries, in batches of three with two-second
