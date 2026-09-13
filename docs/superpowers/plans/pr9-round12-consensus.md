@@ -1,94 +1,47 @@
-# PR #9 Round 12 대응 — 4-Lens 심층 수정 (TDD plan)
+# Historical PR #9 review-response plan
 
-## Context
-PR #9 Round 12 AI 리뷰(commit `6d1bf0f`)가 BLOCKED. 4개 MAJOR: incBucketed 첫
-부분 버킷 누락(KPI vs 시계열 ~1.58% 불일치), uniq/존재 쿼리 좌경계 확대,
-costByModelCompare 창이 형제 cost 카드와 불일치, backfill 스크립트 "부재" 오탐.
-각 태스크는 파일 스코프를 명시하고, 결정이 필요한 지점은 co-agent 패널(P2 게이트)
-교차검토로 확정한다.
+- Historical reference: review round 12, commit `6d1bf0f`
+- Original plan date: not recorded in this file
+- Reconciled against current source: 2026-09-13
+- Status: Archived, non-normative planning record
 
-### Task 1: costByModelCompare 창을 형제 cost 카드와 대칭화 (Lens 3)
-**Files:**
-- Modify: `dashboard/server/queries.js`
-- Test: `dashboard/server/queries.test.js`
+This was a proposed response to review findings, not a list of work still authorized or
+required today. The reference commit identifies the historical review; unchecked tasks in
+the earlier draft did not establish current defects or incomplete implementation. Root and
+scoped AGENTS guidance, current code/tests, and operational runbooks govern new work.
 
-`costByModelCompare`가 내부에서 `[toStartOfHour(from), max(toStartOfHour(to),
-curFrom+1h))`로 창을 재정렬해 `costSummary`/`costByModel`(incFlat 경로, 정확한
-`[from,to)` + from-hour baseline 보정)과 다른 모수를 비교한다.
+## Original concerns and current evidence
 
-- [ ] span이 `incFlatRaw` 임계(4h) 이하면 raw 테이블로 정확한 `[from,to)` +
-  동일 길이 prev 창을 계산하는 경로로 분기한다
-- [ ] span>4h인 rollup 경로에는 incFlat과 동일한 from-hour baseline 보정
-  (`greatest(rollup, raw로 구한 from 시점 값)`)을 cur/prev 양쪽에 적용한다
-- [ ] 실패 테스트 추가: costByModelCompare(sub-4h span)의 SQL이 raw 테이블을
-  참조하는지, rollup 분기가 incFlat과 동일한 stitch 패턴을 쓰는지 문자열 매칭
-- [ ] 라이브 ClickHouse로 costByModelCompare(cur) 값이 costSummary와 동일 창에서
-  일치하는지 실측 확인
+| Historical concern and intended response | Current source evidence |
+|---|---|
+| `costByModelCompare()` used a different comparison window from sibling cost cards. Add a raw short-range path and raw baseline stitching for longer ranges. | [queries.js](../../../dashboard/server/queries.js) branches on `incFlatRaw(to - from)` (up to four hours), and longer-range SQL carries current/previous raw baseline stitches plus aligned previous bounds. This does not guarantee equality for all grains/windows. |
+| `incBucketed()` dropped the first partial bucket, with a reported roughly 1.58% snapshot/timeseries difference. Add raw first-bucket correction while preserving aggregation/window/filter ordering. | The helper now unions first-bucket raw baseline/delta values and filters from the bucket start. [queries.test.js](../../../dashboard/server/queries.test.js) checks the first-bucket filter contract. The historical percentage is not a current expected error. |
+| Distinct-user/presence queries could include activity before a non-hour-aligned start. Choose precision fixes or documented approximation per metric. | `activeUsers()` now uses raw session-count rows for ranges up to four hours. Longer-range and rolling adoption/heatmap/active-day measures retain their own hourly/day semantics; see the [API reference](../../api-reference.md). The plan's single shared-window description is not universal. |
+| A review claimed the backfill script was absent. Verify the tracked file rather than inventing a replacement. | [scripts/backfill-hourly-rollup.sh](../../../scripts/backfill-hourly-rollup.sh) exists. A missing diff excerpt is not proof of a missing file. The draft's proposal for a scaffold-only existence test is not a standing requirement. |
+| Executive custom zoom could describe a short interval as a whole day. Use actual duration labels. | [Executive.jsx](../../../dashboard/web/src/pages/Executive.jsx) derives duration from `to - from`, formats sub-day boundaries, and uses `formatDuration`. Existing Korean UI text is not translated by this record. |
+| Cost chart interval did not always reset when a custom range changed without changing the default resolution. Include range identity in effect dependencies. | [Cost.jsx](../../../dashboard/web/src/pages/Cost.jsx) includes `from.getTime()` and `to.getTime()` along with the default interval and days. |
 
-### Task 2: incBucketed 첫 부분 버킷 raw stitch (Lens 1)
-**Files:**
-- Modify: `dashboard/server/queries.js`
-- Test: `dashboard/server/queries.test.js`
+The original plan proposed a multi-agent decision gate and a rebuttal comment for the false
+missing-file finding. Those were workflow intentions, not evidence that a panel ran, a
+comment was posted, or a PR was merged. They do not require new model calls or comments.
 
-`incBucketed`가 `WHERE t >= {from}`으로 from이 속한 첫 부분 버킷을 통째로 버려
-incFlat(스냅샷) 합계와 어긋난다(기본 2일 뷰에서 실측 ~1.58% 차이).
+## Historical validation plan
 
-- [ ] incFlat과 동일한 from-hour raw stitch를 UNION ALL로 추가해 첫 버킷
-  (`t = 버킷 시작`)의 baseline을 raw `maxIf(Value, TimeUnix < from)`/`sumIf(...)`로
-  보정한 합성 행을 만든다
-- [ ] 3단 중첩(집계→lagInFrame window→바깥 WHERE)의 lag 체인이 합성 행 삽입으로
-  깨지지 않도록 window PARTITION의 ORDER BY t 순서를 보존한다
-- [ ] 실패 테스트 추가: 라이브 데이터로 KPI 스냅샷 합 == 시계열 버킷 합 재현
-  (비정각 from)
+The draft called for server tests, a web build, and direct ClickHouse comparisons on
+non-hour-aligned windows. The portable local commands are:
 
-### Task 3: uniq/존재 쿼리 좌경계 처리 (Lens 2, 패널 판정에 따름)
-**Files:**
-- Modify: `dashboard/server/queries.js`
-- Test: `dashboard/server/queries.test.js`
-- Modify: `docs/api-reference.md`
+```bash
+(cd dashboard/server && node --test *.test.js)
+(cd dashboard/web && npm run build)
+```
 
-`activeUsers`/`adoptionLevels`/`adoptionTimeseries`/`userHeatmap`이
-`hour >= toStartOfHour(from)`로 from 직전 부분 hour 활동까지 포함한다.
+These commands were not executed as part of translating this record. Current code and test
+presence show the implementation shape, not results of a fresh live comparison. Any renewed
+investigation must match filters, unknown-channel inclusion, cost basis, baseline lookback,
+and effective range/rollup alignment before comparing totals. Passing static/unit tests
+cannot prove exact live equality across all consumers.
 
-- [ ] P2 게이트 패널 판정(fix vs document, 지표별로 다를 수 있음)에 따라 구현
-- [ ] Fix 판정 지표: from-hour만 raw `uniqExact`로 대체해 정확한 `[from,to)`
-  존재 판정
-- [ ] Document 판정 지표: 코드 주석 + `docs/api-reference.md`에 ±1h 그레인
-  한계를 명시
-
-### Task 4: backfill 스크립트 오탐 반박 (Lens 4)
-**Files:**
-- Test: `dashboard/server/queries.test.js`
-
-`scripts/backfill-hourly-rollup.sh`는 실존·트래킹됨. 코드 변경 없음, PR 코멘트로만
-대응(파일 스코프 없음이지만 파이프라인 스캐폴딩상 최소 한 개 파일이 필요해
-회귀 방지용 존재 확인 테스트를 추가한다).
-
-- [ ] `git log`/`git diff main...HEAD --stat`으로 파일 존재·PR diff 포함 여부
-  재확인
-- [ ] PR 코멘트에 반박 근거 게시(구현 태스크 완료 후 P5에서)
-
-### Task 5: Executive.jsx 커스텀 줌 라벨 (MINOR)
-**Files:**
-- Modify: `dashboard/web/src/pages/Executive.jsx`
-
-커스텀 sub-day 줌에서 `Math.ceil(daysInRange)` 기반 헤드라인/서브타이틀이
-"지난 1일간"으로 표시돼 10분/2시간 줌에서도 오해를 유발한다.
-
-- [ ] duration 기반 라벨(1일 미만이면 시/분 단위 표시)로 교체
-
-### Task 6: Cost.jsx interval 재동기화 deps (MINOR)
-**Files:**
-- Modify: `dashboard/web/src/pages/Cost.jsx`
-
-로컬 `intervalHours` 재동기화 `useEffect` deps가 `[defaultIntervalHours, days]`뿐
-이라 커스텀 줌 구간 전환 시 이전 default와 같은 값이면 재동기화가 안 될 수 있다.
-
-- [ ] deps에 custom range identity(`from`/`to`의 `getTime()`)를 추가
-
-## Verification
-- `cd dashboard/server && node --test *.test.js` 전부 통과
-- `cd dashboard/web && npm run build` 성공
-- 라이브 ClickHouse(`chi-cc-ab-replicated-0-0-0`)로 비정각 from 기준 KPI 스냅샷
-  합계 == 시계열 버킷 합계 실측 확인(Task 2), costByModelCompare cur 값이
-  costSummary와 동일 창에서 일치하는지 실측 확인(Task 1)
+For operational migration/backfill work, use the
+[rollup runbook](../../runbooks/rollup-rebuild-segment-key.md), including its actual range,
+late-arrival, and delta-overlap limitations. Do not execute destructive data work from this
+archived plan or treat source SQL as evidence of a completed deployment.
