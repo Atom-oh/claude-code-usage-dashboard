@@ -9,7 +9,8 @@ Field-level responses and filters are in the [API contract](api-reference.md).
 
 - Metric `Value` can be cumulative. [queries.js](../dashboard/server/queries.js) computes
   per-series increases with `incFlat` or bucketed differences; raw `sum(Value)` over repeated
-  cumulative exports is wrong. The source schema is segment-aware except for `session.count`.
+  cumulative exports is wrong. The declared schema is segment-aware except for `session.count`;
+  file presence does not establish that a deployment applied it.
   Four-hour raw selection, lookback limits and historical/latest-hour approximations are
   documented in [data](reference/data.md). Different panels need not agree for every window.
 - `bedrock` and `enterprise` are inferred access channels for Claude Code sessions, not
@@ -189,7 +190,7 @@ before interpreting missing spans. Parent/child depth cannot be inferred from th
 | Commands/prompt length | `commandAdoption`: nonempty slash-command counts/users; p50/p95 length across all user prompts. | Separate populations within the returned object; prompt text is not required. |
 | Hook overhead | `hookOverhead`: execution count, summed duration in seconds, p95 milliseconds and count with blocking hooks. | `blocked/executions` is a rate; `blocked` is not total blocking-hook count. |
 | MCP health | `mcpHealth`: connection-event attempts, connected/failed counts and p95 duration. | Other statuses, including disconnects, remain in attempts. |
-| Projects | `projectBreakdown`: reported cost/token increases and in-range session/user existence per project/channel. | Requires project gate; EndUserId fallback is limited to this identity expression. |
+| Projects | `projectBreakdown`: reported cost/token increases and in-range session/user existence per project/channel. | Requires project gate; identity falls back to EndUserId. `entrypointBreakdown` also uses that fallback for user counts, while its user filter matches UserEmail. |
 | Permission modes | `permissionModeChanges`: transition event count and distinct sessions by from/to mode. | Values pass through; absence is not proof a mode was unused. |
 | Decision sources | `toolDecisionSources`: executed tool results with nonempty decision source, divided by that channel's matching total. | Different from the permission-funnel event and denominator. |
 | Entrypoints | `entrypointBreakdown`: API request count, sessions, reported log cost and users by entrypoint. | Empty entrypoint is labeled `terminal`; this fallback does not identify a separate coding client. |

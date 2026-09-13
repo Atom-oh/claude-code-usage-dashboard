@@ -260,13 +260,15 @@ There is no general data-route rate limit or pagination contract. Named row caps
 part of the returned subset. See [API implementation](reference/api.md) for cache and warmer
 behavior, and [security](reference/security.md) for SQL and identity boundaries.
 
-For a local Compose query, with no live service access:
+For an authenticated local port-forward, set `BASIC_AUTH_USER` to your authorized username.
+`curl` prompts for the password instead of placing it in the command arguments:
 
 ```bash
 curl --fail-with-body --get http://localhost:8080/api/cost/by-model \
+  --user "$BASIC_AUTH_USER" \
   --data-urlencode 'from=2026-09-01T00:00:00Z' \
   --data-urlencode 'to=2026-09-03T00:00:00Z' \
   --data-urlencode 'group=bedrock'
 ```
 
-For an authenticated deployment, use its authorized origin and Basic Auth credentials.
+Outside a local port-forward, use the deployment's authorized HTTPS origin.
