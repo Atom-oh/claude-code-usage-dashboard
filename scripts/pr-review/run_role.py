@@ -16,7 +16,7 @@ import sys
 import tempfile
 import time
 
-from role_review import diagnostic_failure, issue_request, MAX_REQUEST_BYTES
+from role_review import diagnostic_failure, issue_request, MAX_REQUEST_BYTES, write_json
 
 
 DIRECTORY = Path(__file__).resolve().parent
@@ -160,7 +160,42 @@ def preflight(binary, model, cwd, environment, timeout):
         cwd, kiro_environment(cwd, environment), "", timeout,
     )
     reply = re.sub(r"(?m)^\s*> ?", "", ANSI.sub("", output)).strip()
-    return code == 0 and reply == "NO_TOOLS" and not FAILURE.search(error), code, error
+    diagnostic = ANSI.sub("", error)
+    return (code == 0 and reply == "NO_TOOLS" and not FAILURE.search(diagnostic)
+            and not diagnostic_failure(diagnostic)), code, error
+
+
+def preflight_barrier(work, plan, tag, ok, deadline):
+    """The wrapper requires all Kiro checks before either private cell gets PR data."""
+    cohort = os.environ.get("KIRO_PREFLIGHT_COHORT")
+    if cohort is None:  # Standalone single-role invocation has no peer process.
+        return ok
+    if not re.fullmatch(r"[0-9a-f]{32}", cohort):
+        return False
+    def receipt(peer, passed):
+        return {"cohort": cohort, "plan_digest": plan["plan_digest"], "tag": peer,
+                "model": plan["roles"][peer]["model"], "ok": passed}
+    write_json(work / "slot" / f"{tag}-preflight.json", receipt(tag, ok))
+    if not ok:
+        return False
+    peers = [peer for peer, role in plan["roles"].items()
+             if peer.startswith("kiro-") and role["required"]]
+    while time.monotonic() < deadline:
+        ready = True
+        for peer in peers:
+            path = work / "slot" / f"{peer}-preflight.json"
+            if not path.exists():
+                ready = False
+                continue
+            try:
+                if path.is_symlink() or json.loads(path.read_text()) != receipt(peer, True):
+                    return False
+            except (OSError, ValueError):
+                return False
+        if ready:
+            return True
+        time.sleep(0.02)
+    return False
 
 
 def bounded_setting(name, default, maximum):
@@ -213,9 +248,12 @@ def run(work, tag):
         cwd = Path(temporary)
         if tag.startswith("kiro-"):
             binary = shutil.which("kiro-cli") or "kiro-cli"
+            deadline = time.monotonic() + preflight_timeout
             ok, code, error = preflight(
                 binary, role["model"], cwd, environment, preflight_timeout
             )
+            # Waiting shares the original preflight time budget; no extra calls.
+            ok = preflight_barrier(work, plan, tag, ok, deadline)
             if not ok:
                 (slot / f"kiro-preflight-{tag}.flag").write_text(
                     "Kiro startup safety check failed; PR input withheld.\n"

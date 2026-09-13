@@ -6,6 +6,9 @@ WORK="${3:?Expected diff, lenses directory and work directory}"
 . "$DIR/lib.sh"
 ensure_slots "$WORK"
 python3 "$DIR/prepare_roles.py" --work "$WORK" --prepared-diff "$1"
+# Fresh host nonce prevents stale preflight receipts from releasing PR input.
+KIRO_PREFLIGHT_COHORT="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+export KIRO_PREFLIGHT_COHORT
 pids=()
 for tag in codex kiro-fable kiro-sol claude-self; do
   python3 "$DIR/run_role.py" --work "$WORK" --tag "$tag" &
