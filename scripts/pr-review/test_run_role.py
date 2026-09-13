@@ -70,6 +70,9 @@ class RoleExecutionTests(unittest.TestCase):
             "Falling back to user specified default",
             "using \x1b[1mtool:\x1b[0m fs_read",
             "quota exceeded",
+            "using \x1b]title\x07tool: fs_read",
+            "using \x9b1mtool:\x9b0m fs_read",
+            "Falling \x1b]title\x07back to user specified default",
         ):
             with self.subTest(message=message):
                 cli = self.executable(
