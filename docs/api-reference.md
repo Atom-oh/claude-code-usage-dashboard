@@ -1,183 +1,272 @@
 # API Reference
 
-## Base URL
-Internal only, behind Basic Auth. No public base URL — access via the deployed dashboard
-(`https://<cloudfront-domain>/api/...`) or locally at `http://localhost:8080/api/...`.
+The source of truth is the explicit route table in
+[dashboard/server/index.js](../dashboard/server/index.js), with SQL and result shaping in
+[queries.js](../dashboard/server/queries.js). Paths below are relative to the dashboard
+origin; the local Compose origin is `http://localhost:8080`.
 
-## Authentication
-HTTP Basic Auth, applied globally by Express middleware in `dashboard/server/index.js`
-(`BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` env vars). Both env vars are **required** — the
-server refuses to start (`process.exit(1)`) without them, unless `AUTH_ALLOW_INSECURE=1` is
-set explicitly for local dev, in which case one loud warning is
-logged at boot and every `/api/*` route is served unauthenticated. `GET /healthz` and
-`GET /readyz` are always exempt from auth (kubelet probes send no `Authorization` header).
-`GET /api/health/data` is **not** exempt — it is a data route the SPA calls.
+## Authentication and request parameters
 
-## Common Query Parameters
-Every data route below accepts these (parsed by `parseRange()` in `http.js` / `route()` in
-`index.js`).
-`POST /api/chat` (see the Chat section) is the one exception — it takes a JSON body instead.
+HTTP Basic Auth applies globally using `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD`.
+Without both, startup fails unless `AUTH_ALLOW_INSECURE=1` explicitly enables local
+unauthenticated use. Only `/healthz` and `/readyz` bypass auth. Chat has additional gates.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `from` | ISO 8601 datetime | No | Range start. Default: `to - 2 days` (workshop default). For uniq/existence endpoints (`overview/active-users`, `adoption/levels`, `adoption/timeseries`, and the leaderboard's active-days count), `from` is rounded down to the containing hour server-side, so up to 59 minutes of activity just before `from` can be included — a deliberate rollup-grain trade-off, negligible on multi-day ranges but noticeable on narrow (sub-hour) custom ranges |
-| `to` | ISO 8601 datetime | No | Range end. Default: now |
-| `group` | string (`bedrock`\|`enterprise`) | No | Filter by inferred experiment group. `unknown` sessions are excluded from group-scoped queries by default (~11% of sessions have no bedrock/enterprise signal) — a few "totals" endpoints (`active-users`, `adoption/levels`, `adoption/timeseries`, `cost/summary`, `overview/kpi`) include them instead since they report org-wide totals, not an A/B split |
-| `user` | string | No | Filter by user email (partial match) |
-| `model` | string | No | Filter by model name (partial match, normalized) |
-| `project` | string | No | Exact match on the `project.name` resource attribute (`ProjectName`, added by `clickhouse-migration-005.sql`). **Applies to the four 2026-09-09 routes only** — `GET /api/usage/projects`, `/api/usage/permission-modes`, `/api/usage/decision-sources` and `/api/usage/entrypoints`, the only queries that pass `cols.project` to `filterCond`. **Every other route ignores it** and answers on all projects, so with this filter set a project-scoped Usage page sits beside all-project figures everywhere else; `FilterBar.jsx` states that scope next to the input. Wiring it globally is a separate change rather than an oversight: the hourly rollup carries no `ProjectName` (migration-005 leaves it alone), so every rollup-backed query would need a session semi-join. On those four routes it is additionally **silently ignored** unless `GET /api/config` reports `schema.projectColumns === true` — the column does not exist on an unmigrated cluster and the condition would fail the whole query — and the SPA withholds the parameter in that case too (`parseUrlState`, plus a second gate in `useApi`), so it is dropped on both sides. Exact, not partial, unlike `user`/`model`: a repo name is copied verbatim out of the table, and a partial match would fold `api` and `api-gateway` into one row. The `(untagged)` display label is mapped back to the stored empty string. |
-| `intervalHours` | number | No | Bucket size for timeseries endpoints (fractional hours like `0.25` = 15 min for chart drag-zoom, 1 = hourly, 24 = daily, 168 = weekly). Only honored by endpoints marked *timeseries* below. Requests with `intervalHours < 1` are clamped to `1` server-side if the `from`/`to` span exceeds 4 hours (minute-bucket queries fall back to scanning the raw table, which is only cheap for narrow ranges). A value that is not a finite number in `(0, 744]` (744 = 24×31) is now rejected with **400** before any query runs, instead of being silently coerced to 24. |
-| `email` | string | Only for `GET /api/users/{daily,decisions-by-tool,heatmap,interactions}` | Exact-match user email for the per-user drilldown endpoints. Not a general filter — ignored by every other route. |
+Wrapped GET data routes validate these parameters before querying or caching:
 
-For the three drilldown endpoints (`daily`/`decisions-by-tool`/`heatmap`), `group` is honored
-and optional: omitted, they return the user's full activity across all sessions (including
-`unknown`); passed, they scope to that session group — used by the Users page drawer, which
-now opens from a per-user-x-group leaderboard row and passes that row's `group` so the
-drilldown matches the row's own numbers.
+| Parameter | Contract |
+|---|---|
+| `from`, `to` | Date strings; use ISO 8601 with timezone. Defaults: `to=now`, `from=to-DEFAULT_RANGE_DAYS`. Require `from < to`; default range is two days and default cap is 90 days. |
+| `intervalHours` | Default 24. Must be finite and in `(0,744]`, even on routes that ignore buckets. Values below one are clamped to one when the range exceeds four hours. Only rows marked **B** below honor this parameter. |
+| `group` | Exact inferred channel match, normally `bedrock`, `enterprise` or `unknown`; it is not a coding-client selector. |
+| `user` | Case-insensitive substring of the query's identity expression, usually `UserEmail`. |
+| `model` | Case-insensitive substring after the query's model normalization; scope varies by endpoint. |
+| `project` | Exact project tag, only for the four Usage routes listed below and only while `schema.projectColumns === true`. `(untagged)` maps to the stored empty string. |
+| `email` | Supply an exact identity for the four user drilldown routes. Omission is coerced to an empty string, not rejected as a missing required parameter; callers must not rely on uniform behavior without it. |
+| `includeUnknown` | Only `/api/cost/by-user-model` recognizes the literal `1`, including unknown-channel rows in that result. |
 
-## Endpoints
+Minute/day widths are rounded by `bucket()` where needed. Dates are bound to ClickHouse at
+second precision. Historical rollup ends, latest-hour data and existence queries have
+specific approximations; see [time boundaries](reference/data.md).
+Config, health and chat routes do not use this range wrapper.
 
-All data endpoints below are `GET`, take no request body, and return JSON (array of rows, or
-a single object for snapshot endpoints). `POST /api/chat` is the sole exception (JSON body,
-SSE response) — see the Chat section. See the Error Codes table below for the full set; in
-short, a rejected query parameter returns `{"error": …, "detail": …}` with HTTP 400 before any
-ClickHouse query runs, and any other failure returns `{"error": "internal error", "id": …}`
-with HTTP 500.
+## Filter scope
+
+Forwarded parameters are not universally implemented. [filterCond](../dashboard/server/queries.js)
+applies a filter only when the query supplies its column expression.
+
+| Queries | Actual scope |
+|---|---|
+| Most A/B queries | Exclude `unknown` by default; an explicit `group=unknown` bypasses that default exclusion. |
+| `kpiSummary`, `costSummary`, `activeUsers`, `adoptionLevels`, `adoptionTimeseries` | Include unknown-channel rows when no channel is selected. |
+| `activeUsers`, adoption routes | Honor group/user; ignore model and project. Adoption snapshots ignore `from` and use windows ending at `to`. |
+| Integrity version cohorts | Honor group only; ignore user/model/project. |
+| Plugin inventory | Range only; no group/user/model/project filtering. |
+| Subagent fanout, skill activations, compaction, refusals, exhausted retries, permission wait, interaction breakdown | Honor group/user; ignore model/project. TTFT separately supports row-level model filtering. |
+| Mixed metric queries | Model-bearing rows match directly; model-less session/commit/PR/LOC/decision/activity rows use a matching-session semi-join when `modelMixed` is configured. |
+| Many log queries | `modelViaSession` accepts every matching session's events if that session has a matching model in the rollup lookback. This is not event-level model attribution. |
+| Reported-vs-computed and entrypoints | Match the model on each `api_request` log row. |
+| User daily/decisions/heatmap | Exact `email` and optional `group`; ignore global user/model/project. With no group, include all channels. Heatmap uses 91 days ending at `to`, ignoring `from`. |
+| User interactions | Exact `email` and range only; ignores group/user/model/project. |
+| Projects, permission modes, decision sources, entrypoints | The only queries applying project filters. Projects filter identity using the email/EndUserId fallback; the other three filter `UserEmail`. |
+
+`GROUP_MODE=single` affects frontend presentation only. The project filter is silently dropped
+on both server and frontend unless the project probe is true. `/api/usage/projects` also
+returns `[]` while gated off; the other three routes can run without the new columns when
+no project predicate is applied. The probe checks logs only, not every table or migration.
+
+## Response conventions
+
+All endpoint tables below describe GET JSON responses. Unless explicitly marked **object**,
+a response is an array. Numeric ClickHouse fields may arrive as strings; derived JavaScript
+fields are numbers or null. **B** means a configurable time bucket, not necessarily a day.
+
+**Token fields** means `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`.
+**Priced row** means those fields plus `reported_cost`, computed `cost`, and `unpriced`.
+An unknown server rate yields `cost: null, unpriced: true`; it does not invalidate a valid
+client-reported spend value. Summary/effort/agent aggregates retain `unpriced_tokens`.
+
+**Trace result** means `{unsupported:false, rows:[...]}` when matching spans exist, otherwise
+`{unsupported:true, minVersion, rows:[]}`. `minVersion` is present on the unsupported result,
+not guaranteed on success. An empty trace result is not measured zero; missing tables or
+query failures still use the normal error path.
 
 ### Overview
-| Path | Returns |
+
+| Path | Fields and grain |
 |---|---|
-| `GET /api/overview/kpi` | Group-level session/user/commit/PR/token/LOC summary |
-| `GET /api/overview/active-users` | Ungrouped unique active user count (includes `unknown` sessions — a "totals" endpoint, see `group` param above) |
-| `GET /api/overview/tokens-timeseries` | *timeseries* — token usage per group over time |
-| `GET /api/overview/cache-efficiency` | Cache read ratio (`cache_read_ratio`) + token-type breakdown per group: `cache_read`, `input_side` (input + cacheRead + cacheCreation, the ratio's denominator), `uncached_input`, `cache_write`, `output_tokens` |
-| `GET /api/overview/model-distribution` | Token distribution by group x model |
+| `/api/overview/kpi` | Per `group`: `sessions`, `users`, `commits`, `prs`, `total_tokens`, `input_tokens`, `output_tokens`, `lines_of_code`. Its row-existence user count is not a substitute for `active-users`. |
+| `/api/overview/active-users` | **Object**: `users`, `bedrock_users`, `enterprise_users`; distinct nonempty emails with session-counter rows in range. |
+| `/api/overview/tokens-timeseries` | **B**, per `t, group`: `tokens`, `input_tokens`, `output_tokens`. |
+| `/api/overview/cache-efficiency` | Per `group`: `cache_read`, `input_side`, `cache_read_ratio`, `uncached_input`, `cache_write`, `output_tokens`. Input side includes uncached input, cache read and cache creation. |
+| `/api/overview/model-distribution` | Per `group, model`: `tokens`, `input_tokens`, `output_tokens`. |
 
 ### Productivity
-| Path | Returns |
+
+| Path | Fields and grain |
 |---|---|
-| `GET /api/productivity/normalized` | LOC / commits per million tokens, per group |
-| `GET /api/productivity/decisions` | Accept/reject counts per group |
-| `GET /api/productivity/decisions-by-tool` | Accept/reject counts per group x tool |
-| `GET /api/productivity/active-time` | *timeseries* — active-time seconds per group |
-| `GET /api/productivity/agenticness` | *timeseries* — tool calls per prompt per group |
-| `GET /api/productivity/engagement` | *timeseries* — daily users/sessions/PRs |
-| `GET /api/productivity/loc-timeseries` | *timeseries* — lines added/removed per group |
-| `GET /api/productivity/permission-wait` | *(2026-08-11, traces beta)* p50/p95 `claude_code.tool.blocked_on_user` wait time per group x `app_version`. Returns `{unsupported: true, minVersion: "2.1.214", rows: []}` instead of a zero row when no matching spans exist in range — that span type only exists on Claude Code ≥2.1.214 and requires `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` on the client. Not covered by the cache warmer (empty until the beta env rolls out). |
-| `GET /api/productivity/ttft` | *(2026-08-11, traces beta)* p50/p95 time-to-first-token per group x model, from `claude_code.llm_request` spans. Same `{unsupported, rows}` shape as `permission-wait` (here `minVersion` is `null` — TTFT isn't version-gated, an empty result just means tracing isn't enabled yet). Not covered by the cache warmer. |
-| `GET /api/productivity/interaction-breakdown` | *(2026-08-31, traces beta)* p50/p95 `claude_code.interaction` span duration per group, plus the share of that time spent in child spans (`llm_request` / `tool.execution` / `tool.blocked_on_user`), joined to the root interaction by `TraceId`. Same `{unsupported, rows}` shape as `permission-wait`, with `minVersion: "2.1.214"`. The three shares can sum to **more than 1** — child spans can overlap and a `tool` span's `duration_ms` covers permission wait + execution together, so read them as "time spent in this span type per unit of interaction time", not as a composition. Not covered by the cache warmer. |
-| `GET /api/productivity/active-time-summary` | *(2026-09-01)* (`activeTimeSummary`) Snapshot per group: `user_seconds` / `cli_seconds` (from `active_time.total`, whose `type` attribute `'user'`\|`'cli'` rides the promoted `TokenType` column — measured 7d: cli 123h vs user 2.8h, the cli/user ratio is the "automation multiplier") + `sessions`. Feeds the Productivity KPI row and the Executive scoreboard. |
-| `GET /api/productivity/languages` | *(2026-09-01)* (`languageBreakdown`) Per group x language: `edits` + `accepted` (`Decision='accept'`) from `code_edit_tool.decision`. `Language = ''` is folded into the literal `'unknown'` value that already exists in live data — one row, not two indistinguishable ones. Feeds the Productivity page's per-group language tables (accept rate is computed client-side). |
+| `/api/productivity/normalized` | Per `group`: `loc`, `tokens`, `loc_per_million_tokens`, `commits`, `commits_per_million_tokens`. |
+| `/api/productivity/decisions` | Per `group, decision`: `n`, from the code-edit permission-decision counter. |
+| `/api/productivity/decisions-by-tool` | Per `group, tool, decision`: `n`; excludes empty tool names. |
+| `/api/productivity/active-time` | **B**, per `t, group`: `active_seconds`, summing active-time types. |
+| `/api/productivity/active-time-summary` | Per `group`: `user_seconds`, `cli_seconds`, distinct `sessions` in the active-time aggregation. |
+| `/api/productivity/agenticness` | **B**, per `t, group`: `prompts`, `tool_calls`, `tool_calls_per_prompt`, from log events. |
+| `/api/productivity/engagement` | **B**, per `t` after filters, with no group column: `users`, `sessions`, `prs`, `prs_per_user`. |
+| `/api/productivity/loc-timeseries` | **B**, per `t, group`: `loc_added`, `loc_removed`. |
+| `/api/productivity/languages` | Per `group, language`: `edits`, `accepted`; empty language becomes `unknown`. These are decision counts, not quality measurements. |
+| `/api/productivity/permission-wait` | **Trace result**, `minVersion: "2.1.214"`; per `group, app_version`: `p50_wait_ms`, `p95_wait_ms`, `n`, from `tool.blocked_on_user`. |
+| `/api/productivity/ttft` | **Trace result**, `minVersion: null`; per `group, model`: `p50_ttft_ms`, `p95_ttft_ms`, `n`, from `llm_request`. |
+| `/api/productivity/interaction-breakdown` | **Trace result**, `minVersion: "2.1.214"`; per `group`: `interactions`, `p50_interaction_ms`, `p95_interaction_ms`, `llm_share`, `tool_exec_share`, `blocked_share`. |
+
+Trace shares join child spans to interactions by `TraceId`. Overlap means shares can sum
+above one; they are not a partition of elapsed time. These three trace routes are excluded
+from cache warming. The beta setting and matching span/version coverage must be checked
+before interpreting absence.
 
 ### Usage
-| Path | Returns |
-|---|---|
-| `GET /api/usage/tool-mcp` | Tool/MCP invocation counts |
-| `GET /api/usage/tool-decisions` | *(2026-08-31)* `tool_decision` event counts per group x tool x permission `source` (`config` = pre-allowed, `user_temporary` = prompted every time, `user_permanent` = user-allowlisted), with `accepts`/`rejects`/`n`/`accept_rate`. Limited to the top ~20 tools by fleet-wide volume (deliberately not per-group, so both groups are compared over the same tool set). `n != accepts + rejects` would mean a third `decision` value appeared. |
-| `GET /api/usage/skills` | Skill invocation counts (subject to OTel redaction of third-party skill names) |
-| `GET /api/usage/connectors` | MCP connector usage |
-| `GET /api/usage/subagent-fanout` | *(2026-08-11)* Subagent completions per group, from `otel_logs`' `subagent_completed` event (not traces — this event needs no beta flag and has data today). Includes `avg_subagents_per_interaction` (keyed by `prompt.id`). |
-| `GET /api/usage/skill-activations` | *(2026-08-11)* `skill_activated` event counts per group x skill x `invocation_trigger` (`user-slash`/`claude-proactive`/`nested-skill`) — the `claude-proactive` share is the signal for whether a skill fires on its own. |
-| `GET /api/usage/compaction` | *(2026-08-11)* Compaction frequency + average compression ratio (`1 - post_tokens/pre_tokens`) per group x trigger, from `otel_logs`' `compaction` event. |
-| `GET /api/usage/plugins` | *(2026-08-11)* Fleet-wide plugin inventory (no group split) from `plugin_loaded` events — plugin x marketplace, session-load and distinct-session counts. |
-| `GET /api/usage/tool-latency` | *(2026-09-01)* (`toolLatency`) Per group x tool from `tool_result`: `uses`, `errors` (`Success='false'` **or** a non-empty `error` attribute — promoted `Success` alone misses rows that carry only an error message), p50/p95 of the promoted `DurationMs` (measured: Bash p50 281ms / p95 5008ms). Top 50 by uses, same cap as `tool-mcp`. Usage page. |
-| `GET /api/usage/commands` | *(2026-09-01)* (`commandAdoption`) Returns `{commands, prompts}` — **an object, not a bare array** (two groupings of one `user_prompt` scan, `apiErrors` pattern). `commands`: per group x slash command (`command_name != ''` only) with `uses` and `users` (`uniqExactIf` over non-empty `UserEmail`, so `''` is never counted as a user). `prompts`: per group prompt count + p50/p95 `prompt_length` over **all** `user_prompt` events, plain natural-language prompts included. Usage page. |
-| `GET /api/usage/hook-overhead` | *(2026-09-01)* (`hookOverhead`) Per group from `hook_execution_complete`: `executions`, `total_seconds`, `p95_ms` (per-execution `total_duration_ms`; measured 7d: 13,888s total, p95 213ms), and `blocked` = executions with `num_blocking > 0` — a count of executions, **not** a sum of `num_blocking`, so it shares the `executions` denominator and `blocked/executions` is a valid rate. Usage page. |
-| `GET /api/usage/mcp-health` | *(2026-09-01)* (`mcpHealth`) Per group x MCP server from `mcp_server_connection` — server name is `LogAttributes['server_name']`, **not** the promoted `McpServerName` (that column is `tool_result`'s `mcp_server.name`): `attempts`, `connected`, `failed` (measured 7d: 1,229 / 56), `p95_ms`. `attempts` also counts `disconnected` rows, so it can exceed `connected + failed` — intentional. Usage page. |
-| `GET /api/usage/projects` | *(2026-09-09)* (`projectBreakdown`) Per group x project (the `project.name` resource attribute; `ProjectName = ''` is folded to the `(untagged)` display label): `cost_usd` (Claude Code's **reported** `cost.usage`, priced client-side and therefore version-dependent — measured 2026-09-03), `tokens`, `sessions`, `users` (ADR-002 `EndUserId` fallback). **Returns `[]` when `GET /api/config` reports `schema.projectColumns !== true`** — the column does not exist on an unmigrated cluster, and one 500 would keep the page's other cards from rendering. Project is not a rollup dimension (migration-005 leaves the hourly rollup alone), so this is a self-contained session-boundary local diff on the raw table (ADR-001 pattern). Usage page. |
-| `GET /api/usage/permission-modes` | *(2026-09-09)* (`permissionModeChanges`) Per group x `from_mode` x `to_mode` from the `permission_mode_changed` event (measured 2026-09-09: 25 rows in 30d, e.g. bypassPermissions→auto 38, plan→auto 34): `changes`, `sessions`. Mode names pass through unmapped (plan, auto, bypassPermissions, ...) — a new client mode shows up as itself, not an empty cell. Reads `LogAttributes` only, so it works without migration-005. Usage page. |
-| `GET /api/usage/decision-sources` | *(2026-09-09)* (`toolDecisionSources`) Per group x `decision_source` x `decision_type` from **`tool_result`**'s `decision_source` attribute — a **different event** from `/api/usage/tool-decisions`, which reads `tool_decision`'s `source`: this one answers "which approval path did an *executed* tool pass through" and carries an extra `hook` value. Fields: `tool_results`, `share` — a 0-1 decimal (3 places), normalized **within the channel** (window `sum(count()) OVER (PARTITION BY "group")`), not fleet-wide. Rows with an empty `decision_source` are excluded from numerator *and* denominator (measured 2026-09-09, 30d: config 75,334 vs 386 user approvals). Works without migration-005. Usage page. |
-| `GET /api/usage/entrypoints` | *(2026-09-09)* (`entrypointBreakdown`) Per group x entrypoint from `api_request`'s `app.entrypoint` (measured 2026-09-09, prod 14d: `vscode` 29,938 rows; terminal sessions carry an empty value, folded to `terminal`): `requests`, `sessions`, `cost_usd` (reported, not computed), `users` (`coalesce(nullIf(UserEmail,''), nullIf(EndUserId,''))`). Reads the `LogAttributes` map directly rather than the promoted `Entrypoint` column — identical by definition (measured 2026-09-09: 0 mismatches, pre-`ALTER` parts included), and it keeps the panel working without migration-005. Usage page. |
 
-### Reliability
-| Path | Returns |
+| Path | Fields and grain |
 |---|---|
-| `GET /api/reliability/refusals` | *(2026-08-11)* `api_refusal` counts per group, split into `user_visible_refusals` and `server_hidden_refusals` (`server_fallback_hop='true'` — the server already retried on a different model, so the user never saw it; keep this out of any refusal-rate total). |
-| `GET /api/reliability/retries-exhausted` | *(2026-08-11)* `api_retries_exhausted` counts per group + average attempts/retry duration — a direct signal for Bedrock quota throttling. |
-| `GET /api/reliability/api-errors` | *(2026-08-31)* Returns `{byModel, byStatus}` — **an object, not a bare array**. `byModel`: per group x model `requests` (`api_request`), `errors` (`api_error`), `total`, `error_rate`. `byStatus`: per group x HTTP `status_code`, with the sentinel `no-http-status` for errors that carry no status code at all (transport-level failures such as a stream idle timeout — measured 35 of 580, deliberately not dropped). `error_rate`'s denominator is `requests + errors` because whether `api_request` also fires for failed requests is not documented or measurable; at measured volumes the two readings differ by 0.33% relative, and the union denominator keeps the value inside [0,1] under either reading. |
-| `GET /api/reliability/api-latency` | *(2026-09-01)* (`apiLatency`) Returns `{byModel, byEffort}` — **an object, not a bare array** (two groupings of one `api_request` scan, `apiErrors` pattern). Duration is `LogAttributes['duration_ms']` (measured 7d: p50 5,968ms / p95 36,262ms). `byModel`: per group x model (`normModel()`-normalized `LogAttributes['model']`) with `requests`/`p50_ms`/`p95_ms`. `byEffort`: same fields per group x effort, `effort = ''` mapped to `'unknown'` for parity with `cost/effort-mix`. Reliability page. |
-| `GET /api/reliability/reported-vs-computed` | *(2026-09-04)* (`reportedVsComputedByVersion`) Returns a **bare array** — unlike its two neighbours above (`api-errors`, `api-latency`), which return keyed objects. Grain is group x `AppVersion` x `normModel()`-normalized `LogAttributes['model']`, over `api_request`. Fields: `requests`, `reported_cost`, the four token sums (`input_tokens`/`output_tokens`/`cache_read_tokens`/`cache_write_tokens`), `cost`, `unpriced`, `ratio`. `cost` comes from `pricing.js`'s `withComputedCost()`; it is `null` for a model outside the rate table, in which case `ratio` is also `null` and the row is still returned, not dropped. `ratio = reported_cost / cost` — a value away from `1.00` can reflect client-version pricing, the server TTL assumption or collection differences; it does not isolate the cause. `cost_usd` remains the unchanged log source (measured 2026-09-03: v2.1.251 priced `claude-fable-5-1` off the `opus-5` row, ≈0.5×). Unlike its two neighbours, the model filter applies **per row** rather than through a session semi-join — `api_request` carries a `model` attribute on 100% of rows (measured 2026-09-04). |
+| `/api/usage/tool-mcp` | Per `group, tool, mcp_server`: `ok`, `fail`, `total` from `tool_result`; ordered by group then volume, **50 returned rows total**. Only explicit success/false flags enter `ok`/`fail`. |
+| `/api/usage/tool-decisions` | Per `group, tool, source`: `accepts`, `rejects`, `n`, `accept_rate`, from `tool_decision`. Selects the top 20 tool names by unfiltered fleet volume in range, then applies outer filters. Rate is accepts/(accepts+rejects), not accepts/n. |
+| `/api/usage/skills` | Per `group, skill`: `invocations`, `est_cost_usd`. Counts `incFlat` cost-series rows and sums reported cost; not a direct activation count. |
+| `/api/usage/connectors` | Per `group, connector`: `users`, `calls`, `ok`, from `tool_result` with a nonempty MCP server. |
+| `/api/usage/subagent-fanout` | Per `group`: `subagent_completions`, `interactions`, `avg_subagents_per_interaction`; denominator is distinct nonempty `PromptId` among completion events. |
+| `/api/usage/skill-activations` | Per `group, skill, trigger`: `invocations`, counting `skill_activated` events. |
+| `/api/usage/compaction` | Per `group, trigger`: `compactions`, `sessions`, `compactions_per_session`, `avg_compression_ratio`; counts only compactions with positive pre-token count. |
+| `/api/usage/plugins` | Fleet `plugin, marketplace`: `session_loads`, `sessions`, from nonempty `plugin_loaded` names. |
+| `/api/usage/tool-latency` | Per `group, tool`: `uses`, `errors`, `p50_ms`, `p95_ms`; errors include explicit false success or a nonempty error attribute. Ordered by group then uses, **50 returned rows total**. |
+| `/api/usage/commands` | **Object** `{commands, prompts}`. Commands: `group, command, uses, users`, excluding empty command names. Prompts: `group, prompts, p50_len, p95_len`, over all user-prompt events. |
+| `/api/usage/hook-overhead` | Per `group`: `executions`, `total_seconds`, `p95_ms`, `blocked`; blocked counts executions with `num_blocking > 0`, not the sum of that attribute. |
+| `/api/usage/mcp-health` | Per `group, server`: `attempts`, `connected`, `failed`, `p95_ms` from `mcp_server_connection`. Other statuses also enter attempts. |
+| `/api/usage/projects` | Per `group, project`: reported `cost_usd`, `tokens`, `sessions`, `users`; empty project becomes `(untagged)`. Counts sessions/users only with cost/token rows in range. Returns `[]` unless the project gate is true. |
+| `/api/usage/permission-modes` | Per `group, from_mode, to_mode`: `changes`, `sessions` from `permission_mode_changed`; mode values pass through. |
+| `/api/usage/decision-sources` | Per `group, decision_source, decision_type`: `tool_results`, `share` from `tool_result`, excluding empty decision sources. Share is within channel, rounded to three decimals. |
+| `/api/usage/entrypoints` | Per `group, entrypoint`: `requests`, `sessions`, reported `cost_usd`, `users` from `api_request`; empty entrypoint becomes `terminal`. Reads the entrypoint map directly. |
 
-### Integrity (A/B validity checks)
-| Path | Returns |
+`tool_decision.source` and `tool_result.decision_source` describe different event populations.
+MCP health reads `server_name`, while connector/tool-result queries use promoted fields
+parsed from `tool_parameters`. Counts, quantiles and rates therefore need their own denominators.
+
+### Reliability and integrity
+
+| Path | Fields and grain |
 |---|---|
-| `GET /api/integrity/version-cohort-sessions` | *(2026-08-11)* Distinct session count per group x `app_version` (via `uniqExact(SessionId)`, not a `sum(Value)` of the cumulative counter) — surfaces whether the two groups are actually running the same Claude Code version. As of the 2026-08-11 spec sync, this fleet had 20 versions in play (2.1.202–2.1.226). |
-| `GET /api/integrity/version-cohort-cost` | *(2026-08-11)* `cost.usage`/`token.usage`, session-boundary-diffed (same math as `incFlat`, computed locally rather than through it — see `dashboard/server/CLAUDE.md`), grouped by group x version cohort (`pre-2.1.214` / `>=2.1.214`). Exists to check, not assume, whether the pre-2.1.214 double-counting bug (usage streamed across multiple frames, each counted as a separate request) is present in this fleet's data. |
+| `/api/reliability/refusals` | Per `group`: `user_visible_refusals`, `server_hidden_refusals`; the latter have `server_fallback_hop='true'`. Keep them separate when describing visible failures. |
+| `/api/reliability/retries-exhausted` | Per `group`: `exhausted_retries`, `avg_total_attempts`, `avg_retry_duration_ms`. It does not isolate throttling as the cause. |
+| `/api/reliability/api-errors` | **Object** `{byModel, byStatus}`. By model: `group, model, requests, errors, total, error_rate`. By status: `group, status_code, errors`; missing status becomes `no-http-status`. |
+| `/api/reliability/api-latency` | **Object** `{byModel, byEffort}`; each row has `group`, model/effort, `requests`, `p50_ms`, `p95_ms`. Empty effort becomes `unknown`; duration comes from `api_request.duration_ms`. |
+| `/api/reliability/reported-vs-computed` | Bare array per `group, app_version, model`: `requests`, priced-row fields and `ratio = reported_cost / cost` when computed cost is positive, otherwise null. Source is `api_request` logs. |
+| `/api/integrity/version-cohort-sessions` | Per `group, app_version`: distinct `sessions` with nonempty version and session-counter rows in range. |
+| `/api/integrity/version-cohort-cost` | Per `group, version_cohort`: reported `cost_usd`, `tokens`, `usd_per_million_tokens`. Cohorts are `pre-2.1.214` and `>=2.1.214`; raw series are differenced locally. |
+
+API error rate is `api_error / (api_request + api_error)` event counts. The code does not
+establish whether failed requests also emit `api_request`, so this is not a deduplicated
+request failure probability. Reported/computed ratios diagnose differences in pricing,
+TTL assumptions or collection; they do not prove a specific bug or invoice accuracy.
 
 ### Users
-| Path | Returns |
+
+| Path | Fields and grain |
 |---|---|
-| `GET /api/users/leaderboard` | Per-user x group metrics + productivity score (real session group, not majority-vote — a user active in both groups gets one row per group). Also includes `user_active_days`: group-agnostic distinct active days, identical across a straddling user's group rows — used to recompute an org-wide (ungrouped) productivity score without double-counting days a user was active in both groups |
-| `GET /api/users/tools` | Per-user x group tool usage |
-| `GET /api/users/skills` | Per-user x group skill usage |
-| `GET /api/users/cost-efficiency` | Per-user x group `$/LOC`, `$/commit` |
-| `GET /api/users/daily` | *timeseries* — daily sessions/LOC/tokens/commits for one user. **Requires `email` param** (exact match; not filtered by `user`/`model`). Optional `group` scopes to that session group. Not covered by the cache warmer. |
-| `GET /api/users/decisions-by-tool` | Accept/reject counts per tool for one user. **Requires `email` param.** Optional `group` scopes to that session group. Not covered by the cache warmer. |
-| `GET /api/users/heatmap` | GitHub-style daily session-count heatmap, last 91 days from `to`. **Requires `email` param**; ignores `from`. Optional `group` scopes to that session group. Not covered by the cache warmer. |
-| `GET /api/users/interactions` | *(2026-09-04, traces beta)* (`userInteractions`) **Requires `email` param** (exact match). One row per `claude_code.interaction` span for that user: `session_id`/`trace_id`/`started_at` (UTC `YYYY-MM-DD HH:MM:SS`)/`interaction_ms`/`llm_ms`/`tool_exec_ms`/`blocked_ms`/`agents`/`llm_calls`, newest first, `LIMIT 200`. Same `{unsupported, rows}` shape as `productivity/interaction-breakdown`, with `minVersion: "2.1.214"`. The three segments (`llm_ms`/`tool_exec_ms`/`blocked_ms`) can sum to **more than** `interaction_ms` — spans overlap, and a `tool` span's `duration_ms` covers permission wait + execution together. `agents` is a distinct-agent **count** only — `ParentAgentId` is never populated in live data (measured 2026-09-04), so agent depth is not derivable. Takes no `group` parameter, unlike its three `users/` neighbours above. Not covered by the cache warmer. |
+| `/api/users/leaderboard` | Per `user, group`: `sessions`, `tokens`, `input_tokens`, `output_tokens`, `loc`, `commits`, `prs`, `accepted`, `decisions`, `active_days`, `user_active_days`, `accept_rate`, `productivity_score`. |
+| `/api/users/tools` | Per `user, group, tool`: `uses` from tool-result logs. |
+| `/api/users/skills` | Per `user, group, skill`: `invocations`, counting raw cost datapoints rather than activation events. |
+| `/api/users/cost-efficiency` | Per `user, group`: computed `cost`, `unpriced`, `reported_cost`, `reported_unpriced`, `loc`, `commits`, `cost_per_loc`, `cost_per_commit`. Ratios use reported cost. |
+| `/api/users/daily` | Exact-email daily `t, sessions, loc, tokens, commits`; fixed daily buckets. |
+| `/api/users/decisions-by-tool` | Exact-email `group, tool, decision, n`. |
+| `/api/users/heatmap` | Exact-email `d, sessions`, fixed 91-day lookback ending at `to`. |
+| `/api/users/interactions` | **Trace result**, `minVersion: "2.1.214"`; `session_id`, `trace_id`, UTC `started_at`, `interaction_ms`, `llm_ms`, `tool_exec_ms`, `blocked_ms`, `agents`, `llm_calls`; newest **200** interactions. |
+
+`user_active_days` is the distinct-day union within the query's filtered population, shared
+across a user's channel rows; summing per-channel active days can double-count dates.
+`agents` is a distinct-agent count, not agent depth. Child duration totals can exceed the
+interaction duration. All four drilldowns are excluded from cache warming.
 
 ### Cost
 
-Cost consumption policy (2026-09-10): SQL and pricing/rollup functions are unchanged.
-The frontend reads existing `reported_cost` and `prev_reported_cost` for its primary spend
-and keeps `cost`/summary `computed_cost` for cross-checks. No server display/status fields
-are added. A zero report with positive token usage is treated as unpriced by consumers.
+Primary spend consumers use `reported_cost` through frontend
+[spend.js](../dashboard/web/src/spend.js). Original `cost` or summary `computed_cost` remains
+a token-price diagnostic. The API does not add display-status fields globally. Missing
+reports and zero reports with positive tokens are unpriced at spend consumers; positive
+aggregates are not proof of complete capture. See [metrics](metrics.md).
 
-`GET /api/users/cost-efficiency` retains computed `cost` and `unpriced`, adds `reported_cost`
-and `reported_unpriced`, and changes **`cost_per_loc`/`cost_per_commit` to reported cost**.
-Those ratios are null for unpriced reports or zero denominators. The report flag is separate
-from server price-table coverage. Positive aggregates do not prove complete telemetry capture.
-
-| Path | Returns |
+| Path | Fields and grain |
 |---|---|
-| `GET /api/cost/summary` | Group-level computed + reported cost, token breakdown |
-| `GET /api/cost/by-model` | Cost/tokens per group x model |
-| `GET /api/cost/by-user-model` | Cost/tokens per user x group x model (real session group, not majority-vote) |
-| `GET /api/cost/by-model-daily` | *timeseries* — cost per group x model over time |
-| `GET /api/cost/by-model-compare` | Current vs. previous equal-length period, per model |
-| `GET /api/cost/tiers` | Cost broken down by token tier (uncachedInput/cacheRead/cacheWrite/output), split by group: `{"bedrock": {...}, "enterprise": {...}}` |
-| `GET /api/cost/effort-mix` | *(2026-09-01, computed cost since 2026-09-04)* (`effortMix`) Per group x effort level: `cost` (computed — tokens × `pricing.js` rates, retained for diagnostics) + `reported_cost` (Claude Code's `cost.usage`, kept for contrast) + `tokens` + `unpriced_tokens`. Reported cost is client-version dependent (the September 3 investigation recorded about 0.5× reporting for fable-5-1 on v2.1.251), so keep computed diagnostics even though display spend now uses reports. Effort isn't an `incFlat` dimension, so this is a self-contained session-boundary local diff (ADR-001 pattern) — now at a `model` grain, folded to group x effort in JS by `pricing.js`'s `rollupComputedCost()`. `effort = ''` (rows with no effort attribute; measured 7d cost 578 vs medium 4,743 / high 1,576 / xhigh 307) → `'unknown'`; the `Speed` column is ignored (measured 0 rows fleet-wide). Cost page. |
-| `GET /api/cost/by-agent` | *(2026-09-01, computed cost since 2026-09-04)* (`agentCost`) Per group x subagent (`AgentName`, measured 7d: 4.56M non-empty rows; `'' → 'main'` = main-thread work): `cost` + `reported_cost` + `tokens` + `unpriced_tokens` on the same basis and the same `rollupComputedCost()` fold as `effort-mix`. Ordered by computed cost, top 30; the frontend sorts this returned subset by reported cost (applied in JS after the fold, not as a SQL `LIMIT`). Cost page. |
+| `/api/cost/summary` | Per `group`: `computed_cost`, `reported_cost`, token fields, `unpriced_tokens`, `sessions`; includes unknown-channel rows by default. |
+| `/api/cost/by-model` | Per `group, model`: priced row plus `tokens`. |
+| `/api/cost/by-user-model` | Per `user, group, model`: priced row plus `tokens`; nonempty email/model required. `includeUnknown=1` broadens channel coverage. |
+| `/api/cost/by-model-daily` | **B**, per `day, group, model`: priced row. The field is named `day` even for sub-day buckets. |
+| `/api/cost/by-model-compare` | Per `model` across selected channels: current priced-row fields, `prev_reported_cost`, previous token fields prefixed `prev_`, and computed `prev_cost`; previous period derived server-side. |
+| `/api/cost/tiers` | **Object** `{bedrock, enterprise}`, each with computed `uncachedInput`, `cacheRead`, `cacheWrite`, `output`; unknown rates are skipped. |
+| `/api/cost/effort-mix` | Per `group, effort`: computed `cost`, `reported_cost`, `tokens`, `unpriced_tokens`; empty effort becomes `unknown`. |
+| `/api/cost/by-agent` | Per `group, agent`: computed `cost`, `reported_cost`, `tokens`, `unpriced_tokens`; empty agent becomes `main`. Returns the top **30 by computed cost** after aggregation. |
+
+The Cost UI reorders the returned agent subset by reported spend and shows at most 15;
+this is not a fleet-wide top-15 query by reported spend. Its computed comparison is opt-in.
+Efficiency ratios are null when reports are unpriced or denominators are zero, independently
+of server rate coverage. Token-tier dollars are estimates under the configured cache-write
+TTL, not an exact allocation of reported spend.
 
 ### Adoption
-| Path | Returns |
+
+| Path | Fields and grain |
 |---|---|
-| `GET /api/adoption/levels` | DAU/WAU/MAU snapshot + total members |
-| `GET /api/adoption/timeseries` | *timeseries* — DAU/WAU/MAU rolling window per day |
+| `/api/adoption/levels` | **Object** `total_members`, `mau`, `wau`, `dau`; nonempty emails on session-counter rows before `to`. Members covers retained history; active windows are 30, 7 and 1 days. |
+| `/api/adoption/timeseries` | Daily `t, dau, wau, mau, stickiness`; UTC day unions over trailing 1/7/30 days. `stickiness` is a **percentage (0-100)**, not a fraction. |
 
-### Chat (AI Assistant)
-| Path | Returns |
+### Chat
+
+`POST /api/chat` takes JSON history and returns SSE, not a JSON row array:
+
+```json
+{"messages":[{"role":"user","content":"Summarize reported spend for the last day."}]}
+```
+
+It returns 503 unless auth is configured (or `CHAT_ALLOW_INSECURE=1`) and
+`assertReadonlySession()` has confirmed a readonly ClickHouse session. The probe runs at
+startup and every ten minutes; unknown status is fail-closed. Per-process IP limits return
+429 before streaming. SSE events are `status` (`message`, optional `sql`), `thinking`
+(`text`), `text` (`text`), `done` (`{}`), or `error` (`message`). Once streaming starts,
+failures are SSE events on HTTP 200. Successful streams use `Cache-Control: no-cache`.
+See [chat limits and prompt gaps](reference/agent-llm.md).
+
+### Health and config
+
+| Path | Response |
 |---|---|
-| `POST /api/chat` | Server-Sent Events stream. Body: `{"messages": [{"role": "user"\|"assistant", "content": "..."}]}`. Backed by Bedrock; internally allowed to run read-only ClickHouse SQL via a sandboxed tool — see `sanitizeSql()` in `dashboard/server/chat.js`. The route answers **503** unless auth is configured (or `CHAT_ALLOW_INSECURE=1`) **and** the server's boot probe (`assertReadonlySession()` in `clickhouse.js`, `SELECT toUInt8(getSetting('readonly'))`, re-run every 10 minutes) has confirmed the ClickHouse session is `readonly`. An undetermined probe (unreachable cluster, permission error) is treated the same as "not readonly" — fail-closed. |
+| `/healthz` | HTTP 200 `{ok:boolean}` from ClickHouse ping, even when false. |
+| `/readyz` | `{ready:boolean}`, HTTP 200 when ready, 503 when draining or ping fails. |
+| `/api/health/data` | `{status, latest, ageMinutes, staleAfterMinutes}`; status is `ok`, `stale` or `unknown`. HTTP 200 only for `ok`, 503 otherwise. |
+| `/api/config` | `{piiMask, pricing, schema, groupMode, defaultRangeDays, rangeCapDays}`; reads in-memory configuration/probe snapshots, with no query in this handler. |
 
-### Health
-| Path | Returns |
+Freshness probes raw `otel_metrics_sum` over the last seven days, memoized for 30 seconds.
+`latest` is ISO 8601 or null; `ageMinutes` is an integer or null. `DATA_STALE_MINUTES`
+defaults to 360 and must be positive and below 10,080. Missing or failed measurement is
+unknown, not healthy. Process shutdown and manifest probes are described in
+[runtime](reference/infrastructure.md).
+
+Config fields:
+
+- `piiMask`: true for case-insensitive `PII_MASK_ENABLED=1` or `true`; otherwise false.
+  Terraform defaults masking on. The frontend masks unless this response explicitly says
+  false. Ordinary API payloads still contain raw identities.
+- `pricing`: `{cacheWriteTtl, overriddenModels}`. TTL is `1h` by default or `5m` when
+  configured; invalid values fail startup. Override names come from `PRICING_JSON`.
+  Rates are not exposed. Cost displays this TTL as an assumption in computed diagnostics.
+- `schema.segmentAwareSeriesKey`: true, false or null from up to 2,000 newest cost datapoints
+  within 24 hours. Mixed, absent or failed evidence is null; this does not certify old data
+  or rollup rebuild completion.
+- `schema.migrations`: sorted distinct ledger versions; null means undetermined/missing
+  ledger, while `[]` means a readable empty ledger.
+- `schema.projectColumns`: true after `SELECT ProjectName, Entrypoint FROM
+  claude_code.otel_logs LIMIT 0` succeeds; numeric server errors yield false, transport or
+  other undetermined failures yield null. This checks **logs only**, not metric/trace
+  columns or all migration-005 steps. All schema probes refresh every ten minutes.
+- `groupMode`: `ab` or `single`; `defaultRangeDays` defaults 2 and `rangeCapDays` defaults 90.
+  Invalid startup settings are rejected, including a cap below the default range.
+
+## Errors and operational limits
+
+| Status | Contract |
 |---|---|
-| `GET /healthz` | *(unauthenticated)* **Liveness.** `{"ok": bool}` — `ok` is a ClickHouse `ping()` result, but the status is **always 200**, so a cluster incident never restarts a healthy pod. This is the probe `infra/dashboard.tf` currently configures. |
-| `GET /readyz` | *(2026-09-02, unauthenticated)* **Readiness.** `{"ready": bool}` with HTTP 200 when `ping()` succeeds and the process is not shutting down, 503 otherwise. Unlike `/healthz` it *does* fail on an unreachable ClickHouse (no reason to route traffic to a pod that cannot read) and it answers 503 for the rest of the process's life once `SIGTERM`/`SIGINT` arrives, so requests already in flight (or on an already-open connection) get a truthful "not ready" instead of a success. Measured 2026-09-02 on the running server: after `SIGTERM`, a **new** connection is refused outright, because Node's `server.close()` stops the listener in the same tick the flag is set — so the flip makes draining *honest*, but the time for a Service endpoint removal to propagate still has to come from a `preStop` hook / `terminationGracePeriod`, not from this route. Force-exits after `SHUTDOWN_TIMEOUT_MS` (10s) if sockets linger. |
-| `GET /api/health/data` | *(2026-09-02, authenticated)* **Data freshness.** Body is `{"status": "ok"\|"stale"\|"unknown", "latest": ISO-8601\|null, "ageMinutes": int\|null, "staleAfterMinutes": int}`. HTTP **200** only for `ok`; **503** for both `stale` and `unknown` — a probe that goes quiet when it cannot measure would reproduce the silent-gap incident it exists to catch. `latest` comes from `max(TimeUnix)` on the raw `otel_metrics_sum` (not the hourly rollup, which lags up to an hour), bounded to the last 7 days for partition pruning; no rows in that window arrives as epoch `0` and is reported as `unknown`. Threshold is `DATA_STALE_MINUTES` (default `360`; a non-positive or non-numeric value throws at startup). Memoized server-side for 30s and served with `Cache-Control: no-store`. Skips the `route()` wrapper (no range params, and `route()` can only return 200/500) — the third such exception alongside `/healthz` and `/api/config`. Consumed by the SPA's `FreshnessBanner` and by `PageHeader`'s live pill. |
+| 400 | Wrapped route validation: `{error, detail}` for invalid range/interval or excessive span. The detail does not echo submitted values. |
+| 401 | Missing or invalid Basic Auth when auth is enabled. |
+| 429 | Chat's per-process IP limit. |
+| 500 | Wrapped query failure: `{error:"internal error", id:"<uuid>"}`. The full exception is logged under the ID, not returned. |
+| 503 | Not-ready/freshness states or unmet chat gates. Ordinary wrapped data-query failures are 500. |
 
-### Config
-| Path | Returns |
-|---|---|
-| `GET /api/config` | `` `{"piiMask", "pricing", "schema", "groupMode", "defaultRangeDays", "rangeCapDays"}` `` — runtime config for the SPA; touches no ClickHouse and takes no range parameters. |
+After authentication, JSON API middleware sets `no-store`; the server's bounded promise cache is separate.
+There is no general data-route rate limit or pagination contract. Named row caps above are
+part of the returned subset. See [API implementation](reference/api.md) for cache and warmer
+behavior, and [security](reference/security.md) for SQL and identity boundaries.
 
-- **`piiMask`** — whether the frontend should mask user emails (`oj******@gmail.com`). Reflects the server's `PII_MASK_ENABLED` env var (`"1"` or `"true"`, case-insensitive = on; anything else = off). Fetched once by `web/src/main.jsx` before the first render (3s timeout), since the image is built once and reused across deployments. **Two-layer default:** the app defaults to off when the env var is unset, but `var.pii_mask_enabled` **defaults to `true`**, so the standard Terraform deployment (public demo URL) ships masking **on** — the workshop account is the one that flips it to `false`. The frontend is fail-closed: if this endpoint errors, times out, or returns a non-`false` `piiMask`, it masks. Masking is **display-level only**: the data endpoints above always return raw emails, so anyone past Basic Auth can read them from the network tab — it protects a shared screen or a public URL, not the data itself. The one env-independent exception is the chat path's ClickHouse error echo, which is always masked.
-- **`pricing`** — `{"cacheWriteTtl": "1h"|"5m", "overriddenModels": [str]}`. `pricing.cacheWriteTtl` is the server's cache-write TTL assumption from `PRICING_CACHE_WRITE_TTL` ("1h" default, "5m" otherwise), surfaced because OTel's cache-creation TokenType can't distinguish 5m from 1h writes, so this figure on the Cost page is an assumption, not a measurement. `pricing.overriddenModels` lists the model keys whose rates came from `PRICING_JSON` (empty on a default deploy), so a viewer can tell built-in list prices from an operator's negotiated ones. As of 2026-09-02 the built-in table also covers `claude-fable-5-1` / `claude-mythos-5` / `claude-mythos-5-1` / `claude-opus-4-1` / `claude-opus-4` / `claude-sonnet-4` (the `-5-1` pair carries an explicit `cacheRead` of `$0.25`, a 0.025x exception to the usual 0.1x derivation), and the geo-prefix normalization now strips `us-gov.` / `jp.` / `au.` in addition to `us.` / `eu.` / `apac.` / `global.`. The rates themselves are deliberately not exposed by this endpoint. `pricing` is informational — the SPA does not currently read it.
-- **`schema`** — `{"segmentAwareSeriesKey": bool|null, "migrations": int[]|null, "projectColumns": bool|null}`. `true`/`false`/`null`: `true` means the cluster has migration-003's segment-aware `SeriesKey` expression in force, `false` means it still has the legacy expression, and `null` means undetermined — it is probed from the newest `claude_code.cost.usage` rows (at boot and every 10 minutes) rather than assumed, and mixed keys mid-`MATERIALIZE COLUMN`, no recent rows, or any probe error all collapse to `null`. No SPA copy consumes this field any more: the callout that used to read it was removed, so `segmentAwareSeriesKey` is exposed for operators and other `/api/config` consumers. `migrations` is the sorted, deduplicated list of migration versions read from `claude_code.schema_migrations` (`clickhouse-migration-004.sql`), probed on the same boot-plus-10-minute timer as `segmentAwareSeriesKey`. `null` means undetermined — including a cluster that predates `clickhouse-migration-004.sql`, where the ledger table does not exist yet — and `[]` means the ledger exists but is empty. `projectColumns` reports whether migration-005's `ProjectName`/`Entrypoint` columns exist, probed on the same boot-plus-10-minute timer with `SELECT ProjectName, Entrypoint FROM claude_code.otel_logs LIMIT 0` (`probeProjectColumns` in `schema.js`): a successful probe = `true`; the server understanding and rejecting the SQL — a **numeric** error code such as `47 UNKNOWN_IDENTIFIER` = `false` (the columns are absent); a transport failure (non-numeric code such as `ECONNREFUSED`) = `null` (undetermined). This value gates the `project` filter (`parseFilters` in `http.js` drops the parameter unless it is exactly `true`) and `/api/usage/projects` (which returns `[]` otherwise). Unlike the two older keys, `projectColumns` **is** consumed by the SPA — the first `schema` key that is: `FilterBar.jsx` renders the project filter input, and `Usage.jsx` renders the per-project card, only when it is `=== true`.
-- **`groupMode`** — `"ab"` (default) or `"single"`. `"single"` collapses the A/B pairs in the SPA — presentation only, the queries are unchanged.
-- **`defaultRangeDays`** — default `2`; the same value the server's cache warmer pre-computes.
-- **`rangeCapDays`** — default `90`; a longer requested span is a 400.
+For a local Compose query, with no live service access:
 
-## Error Codes
+```bash
+curl --fail-with-body --get http://localhost:8080/api/cost/by-model \
+  --data-urlencode 'from=2026-09-01T00:00:00Z' \
+  --data-urlencode 'to=2026-09-03T00:00:00Z' \
+  --data-urlencode 'group=bedrock'
+```
 
-| Code | Description |
-|------|-------------|
-| 400 | Bad Request — a rejected query parameter, returned by every `route()`-wrapped `/api/*` endpoint **before** any ClickHouse query runs (so an invalid request never creates a cache entry). Body is `{"error": "invalid range"|"invalid intervalHours"|"range too long", "detail": "<which parameter and why>"}`. Causes: an unparseable `from`/`to`, `from >= to`, an `intervalHours` outside `(0, 744]`, or a span longer than `rangeCapDays`. `detail` never echoes the submitted value. |
-| 401 | Unauthorized — missing/invalid Basic Auth credentials. `BASIC_AUTH_USER`/`BASIC_AUTH_PASSWORD` are required: without both the server refuses to start (exit 1) unless `AUTH_ALLOW_INSECURE=1` is set, in which case no request is authenticated and nothing returns 401. |
-| 500 | Internal Server Error — usually a ClickHouse query error. Body is `{"error": "internal error", "id": "<uuid>"}` and **never** carries the underlying exception message: a `ClickHouseError` text embeds the whole failing SQL. Grep the pod log for `[<id>]` to get the real error. |
-| 503 | Service Unavailable — `/readyz` while draining or with ClickHouse unreachable; `/api/health/data` when data is `stale` or `unknown`; `POST /api/chat` when auth is not configured, or when the server has not confirmed its ClickHouse session is `readonly`. Data routes never return 503. |
-
-## Rate Limits
-None enforced at the application layer. The dashboard is used by a small workshop cohort;
-if this changes, add rate limiting before removing this note.
+For an authenticated deployment, use its authorized origin and Basic Auth credentials.
