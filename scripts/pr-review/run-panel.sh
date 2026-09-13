@@ -2,6 +2,11 @@
 # Review matrix: one independent cell per model and lens. PR input is untrusted data.
 # Keep absolute work paths, isolated Kiro environments, preflight, and visible failures.
 set -uo pipefail
+
+# CI selects the specialist protocol; legacy matrix fixtures remain isolated.
+if [ "${ROLE_REVIEW:-0}" = 1 ]; then
+  exec bash "$(dirname "$0")/run-specialists.sh" "$@"
+fi
 DIFF="$(realpath "$1" 2>/dev/null)" \
   || { echo "run-panel.sh: realpath failed to resolve diff path: $1" >&2; exit 1; }
 LENSES_DIR="$2"; WORK="$3"
@@ -16,7 +21,7 @@ SLOT="$WORK/slot"; RESP="$WORK/responded.txt"; : > "$RESP"
 rm -f "$WORK/coverage-severe.flag" "$WORK/kiro-diff-truncated.flag" "$WORK/kiro-quota.flag" "$WORK/kiro-agent-fallback.flag" "$WORK/kiro-preflight.flag"
 T="${PANEL_TIMEOUT:-300}"
 RETRIES="${PANEL_RETRIES:-3}"
-KIRO_MODELS=("claude-opus-5:kiro-opus" "gpt-5.6-terra:kiro-gpt")
+KIRO_MODELS=("claude-opus-5:kiro-opus" "gpt-5.6-sol:kiro-gpt")
 command -v kiro-cli >/dev/null 2>&1 && echo "run-panel.sh: $(kiro-cli --version 2>/dev/null | head -1)" >&2
 
 shopt -s nullglob
@@ -163,7 +168,7 @@ for lens_file in "${LENS_FILES[@]}"; do
 
   if command -v codex >/dev/null 2>&1; then
     ( try_panel codex "$SLOT/codex-$lens.md" "$SLOT/codex-$lens.err" \
-        timeout "$T" codex exec -s read-only --skip-git-repo-check "$LENS_PROMPT" ) &
+        timeout "$T" codex exec --model global.openai.gpt-6-astra -s read-only --skip-git-repo-check "$LENS_PROMPT" ) &
   else echo "[skip] codex/$lens (binary absent)" >&2; : > "$SLOT/codex-$lens.md"; fi
 
   KIRO_INSTRUCTION="$LENS_PROMPT"$'\n\n'"Review the changes below using the trusted base context above. Do not attempt file access:"$'\n\n'"$KIRO_DIFF_TEXT"

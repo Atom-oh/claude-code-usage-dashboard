@@ -45,9 +45,10 @@ assert_eq() {
     [ "$expected" = "$actual" ] && pass "$desc" || fail "$desc" "expected '$expected', got '$actual'"
 }
 
+# Here-strings avoid SIGPIPE false failures when grep stops at an early match.
 assert_contains() {
     local desc="$1" haystack="$2" needle="$3"
-    echo "$haystack" | grep -q "$needle" && pass "$desc" || fail "$desc" "output does not contain '$needle'"
+    grep -q "$needle" <<< "$haystack" && pass "$desc" || fail "$desc" "output does not contain '$needle'"
 }
 
 assert_file_exists() {
@@ -72,12 +73,12 @@ assert_bash_syntax() {
 
 assert_grep_match() {
     local desc="$1" pattern="$2" input="$3"
-    echo "$input" | grep -qP "$pattern" 2>/dev/null && pass "$desc" || fail "$desc" "pattern '$pattern' did not match"
+    grep -qP "$pattern" <<< "$input" 2>/dev/null && pass "$desc" || fail "$desc" "pattern '$pattern' did not match"
 }
 
 assert_grep_no_match() {
     local desc="$1" pattern="$2" input="$3"
-    echo "$input" | grep -qP "$pattern" 2>/dev/null && fail "$desc" "pattern '$pattern' matched (expected no match)" || pass "$desc"
+    grep -qP "$pattern" <<< "$input" 2>/dev/null && fail "$desc" "pattern '$pattern' matched (expected no match)" || pass "$desc"
 }
 
 export -f pass fail skip assert_eq assert_contains assert_file_exists

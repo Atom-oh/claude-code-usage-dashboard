@@ -1,5 +1,11 @@
 # Runbook: AI PR Review Panel
 
+> Current protocol (2026-09-13): CI uses `ROLE_REVIEW=1`; see
+> [specialist review](../pr-review-specialists.md). Earlier matrix counts, dropout floors and
+> unconditional-chair descriptions below are legacy behavior. CLI incident
+> evidence and safety constraints remain applicable within their recorded scope.
+
+
 ## Scope and trust boundary
 
 The `AI Code Review` workflow in `.github/workflows/pr-review.yml` runs for same-repository
