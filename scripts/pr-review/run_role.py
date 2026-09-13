@@ -343,7 +343,7 @@ def run(work, tag):
     with tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", prefix=f"{tag}-response-", dir=work.parent,
     ) as response:
-        response.write(output)
+        response.write(controls(output))
         response.flush()
         result = subprocess.run([
             sys.executable, str(DIRECTORY / "role_review.py"), "record",
