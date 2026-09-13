@@ -62,7 +62,7 @@ else
 fi
 
 # --- One instruction owner per scope; Claude imports the same file ---
-for scope in . dashboard dashboard/server dashboard/web infra; do
+for scope in . dashboard dashboard/server dashboard/web infra scripts/pr-review; do
     assert_file_exists "$scope has canonical agent guidance" "$scope/AGENTS.md"
     BRIDGE=$(cat "$scope/CLAUDE.md")
     assert_contains "$scope Claude bridge imports canonical guidance" "$BRIDGE" "@AGENTS.md"
