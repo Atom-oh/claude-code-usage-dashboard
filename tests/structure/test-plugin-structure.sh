@@ -1,9 +1,7 @@
 #!/bin/bash
 # --- Manifest validation ---
-# .claude/ 는 gitignore 대상(로컬 도구 전용)이라 fresh clone / CI 체크아웃에는 아예 없다 —
-# 없으면 실패가 아니라 skip이다. run-all.sh가 set -euo pipefail 아래에서 이 파일을 source하므로,
-# 없는 파일을 읽는 명령 치환(CMD_CONTENT=$(cat …), AGENT_CONTENT=$(cat …))은 한 건의 실패가 아니라
-# 스위트 전체를 중단시킨다 — 그래서 개별 단정문을 고치는 게 아니라 해당 블록을 가드로 감싼다.
+# Local .claude tooling is gitignored and absent in fresh CI checkouts. Guard its
+# reads because this file is sourced under set -euo pipefail.
 if [ -d .claude ]; then
     assert_json_valid "settings.json is valid JSON" ".claude/settings.json"
 else
@@ -15,6 +13,7 @@ assert_json_valid ".mcp.json is valid JSON" ".mcp.json"
 
 # --- File existence ---
 assert_file_exists "Root CLAUDE.md" "CLAUDE.md"
+assert_file_exists "Root AGENTS.md" "AGENTS.md"
 assert_file_exists "docs/architecture.md" "docs/architecture.md"
 assert_file_exists "docs/onboarding.md" "docs/onboarding.md"
 assert_file_exists "docs/api-reference.md" "docs/api-reference.md"
@@ -62,10 +61,11 @@ else
     skip ".claude/agents/*.yml exist and declare name/tools" ".claude/ is local-only (gitignored)"
 fi
 
-# --- CLAUDE.md content (use grep -F for fixed string matching) ---
-SECTIONS=("Overview" "Tech Stack" "Project Structure" "Conventions" "Key Commands" "Auto-Sync Rules")
-for section in "${SECTIONS[@]}"; do
-    grep -qF "## $section" CLAUDE.md && pass "CLAUDE.md: has $section" || fail "CLAUDE.md: has $section" "not found"
+# --- One instruction owner per scope; Claude imports the same file ---
+for scope in . dashboard dashboard/server dashboard/web infra; do
+    assert_file_exists "$scope has canonical agent guidance" "$scope/AGENTS.md"
+    BRIDGE=$(cat "$scope/CLAUDE.md")
+    assert_contains "$scope Claude bridge imports canonical guidance" "$BRIDGE" "@AGENTS.md"
 done
 
 # --- Implementation reference docs ---
