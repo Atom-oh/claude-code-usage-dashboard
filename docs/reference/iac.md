@@ -1,94 +1,55 @@
-# Infrastructure as Code / IaC 구현 상세
+# Infrastructure as Code
 
-[![English](https://img.shields.io/badge/Language-English-blue)](#english)
-[![한국어](https://img.shields.io/badge/Language-한국어-red)](#korean)
+`infra/` is one Terraform root module for workloads and supporting resources on an
+**existing** EKS cluster. It looks up the VPC, subnets, OIDC provider, node role, public
+hosted zone and wildcard certificate. It does not create a new EKS cluster or VPC.
+See [infra/AGENTS.md](../../infra/AGENTS.md) before changing it.
 
-<a id="english"></a>
-## English
+## Resource ownership
 
-### 1. Overview
-`infra/` is a single Terraform root module provisioning an EKS cluster, ClickHouse via its
-Kubernetes Operator, ECR, S3, and DNS/CDN for the dashboard's public endpoint.
+| Source | Responsibility |
+|---|---|
+| [providers.tf](../../infra/providers.tf) | Terraform >=1.9; AWS, Kubernetes, kubectl and time providers; local state |
+| [data.tf](../../infra/data.tf) | Existing cluster/network/IAM/DNS/certificate lookups |
+| [nodepool.tf](../../infra/nodepool.tf) | Dedicated Karpenter `NodePool` and `EC2NodeClass`, arm64/on-demand, tainted for this workload |
+| [clickhouse.tf](../../infra/clickhouse.tf) | Namespace, credentials, Keeper and ClickHouse custom resources, schema-init and backup jobs |
+| [dashboard.tf](../../infra/dashboard.tf) | Dashboard deployment, service account, Secrets, NLB services, security groups and runtime settings |
+| [ecr.tf](../../infra/ecr.tf) | Dashboard image repository |
+| [s3.tf](../../infra/s3.tf) | Cold/backup bucket, public-access block, IRSA and backup-prefix expiration |
+| [dns_cdn.tf](../../infra/dns_cdn.tf) | Two CloudFront VPC origins/distributions and Route53 aliases |
+| [alerting.tf](../../infra/alerting.tf) | Optional CloudFront 5xx alarm and SNS email subscription |
+| [variables.tf](../../infra/variables.tf), [outputs.tf](../../infra/outputs.tf) | Deployment inputs and resource outputs |
 
-### 2. Components
-| Component | Path | Purpose |
-|---|---|---|
-| Providers | `infra/providers.tf` | AWS/Kubernetes/Helm provider config |
-| Networking/data sources | `infra/data.tf` | Existing VPC/subnet lookups |
-| Nodepool | `infra/nodepool.tf` | Graviton (arm64) EKS managed node group |
-| ClickHouse | `infra/clickhouse.tf` | ClickHouse Operator install + `Cluster`/storage policy resources |
-| Dashboard | `infra/dashboard.tf` | Dashboard Deployment/Service, env from k8s Secret |
-| ECR | `infra/ecr.tf` | Image repository |
-| S3 | `infra/s3.tf` | Cold-tier storage bucket for ClickHouse, backups |
-| DNS/CDN | `infra/dns_cdn.tf` | Route53 record + CloudFront distribution |
-| Variables/outputs | `infra/variables.tf`, `infra/outputs.tf` | Module inputs/outputs |
+Karpenter and the ClickHouse/Keeper operators must already be available to reconcile the
+custom resources. The module defines a one-shard, three-replica ClickHouse installation and
+three Keeper replicas. The NodePool is not an EKS managed node group.
+Participant EC2 machines and their collectors are configured separately by
+[user-data.sh](../../user-data.sh); they are not Terraform resources in this module.
 
-### 3. Key Decisions
-- **ClickHouse via Kubernetes Operator, not a managed service** -- gives control over the
-  hot/cold storage policy and replica topology needed for the OTel ingestion pattern.
-- **`secrets.auto.tfvars` / `image.auto.tfvars`** are gitignored `*.tfvars` -- secrets and the
-  currently-deployed image tag are injected at apply time, not committed.
-- State is local (`terraform.tfstate*`, gitignored) -- acceptable for a single-operator
-  workshop environment; would need a remote backend (S3+DynamoDB) before multi-operator use.
+## State, schema and rollout
 
-### 4. Code Pointers
-- `infra/nodepool.tf` -- Graviton node group definition
-- `infra/clickhouse.tf` -- ClickHouse Operator + storage policy (`hot_cold`, `cold_s3` disk)
-- `infra/dashboard.tf` -- dashboard k8s Deployment/Service
-- `infra/dns_cdn.tf` -- CloudFront + Route53
-- `infra/.terraform.lock.hcl` -- provider version lock
+State is local in the current provider configuration. Protect state and untracked tfvars
+because sensitive values can still be stored there. Use
+[terraform.tfvars.example](../../infra/terraform.tfvars.example) and
+[backend.hcl.example](../../infra/backend.hcl.example) as inputs, not evidence that a remote
+backend or deployment exists. A shared operator workflow needs explicit state coordination.
 
-### 5. Cross-references
-- Related modules: [infra/CLAUDE.md](../../infra/CLAUDE.md)
-- Related ADRs: (none yet)
-- Related runbooks: [docs/runbooks/deploy-production.md](../runbooks/deploy-production.md),
-  [docs/runbooks/archive-clickhouse.md](../runbooks/archive-clickhouse.md) — its
-  `scripts/archive-clickhouse.sh` is the first script in the repo (not part of `infra/` itself)
-  to use a named AWS CLI profile: required on the workshop (source) side, and supported but
-  optional on the archive (destination) side via `ARCHIVE_PROFILE` — the destination defaults
-  to the ambient credential chain or IRSA, same as everywhere else
+The schema-init Job name includes a hash of
+[clickhouse-schema-replicated.sql](../../infra/files/clickhouse-schema-replicated.sql), so a
+schema edit changes the Job identity on apply. This gives executable ALTER statements a
+rerun path; it does not make every existing table/view match a CREATE definition.
+The segment-key cutover and rollup rebuild require the
+[migration procedure](../runbooks/schema-migrations.md).
 
-<a id="korean"></a>
-## 한국어
+The dashboard image is separately deployed: Terraform ignores later changes to its image
+field. See [runtime](infrastructure.md) for probes and draining, and
+[deployment](../runbooks/deploy-production.md) for operational verification.
 
-### 1. 개요
-`infra/`는 EKS 클러스터, Kubernetes Operator를 통한 ClickHouse, ECR, S3, 대시보드 공개
-엔드포인트용 DNS/CDN을 프로비저닝하는 단일 Terraform 루트 모듈입니다.
+The S3 lifecycle expires `backup/` objects after 30 days; table TTL owns cold-data deletion.
+The optional `alert_email` creates a CloudFront alarm/SNS path. The application webhook
+setting is a separate freshness-alert path, described in [alerting](../runbooks/alerting.md).
 
-### 2. 구성요소
-| 구성요소 | 경로 | 목적 |
-|---|---|---|
-| Provider | `infra/providers.tf` | AWS/Kubernetes/Helm provider 설정 |
-| 네트워킹/데이터소스 | `infra/data.tf` | 기존 VPC/서브넷 조회 |
-| 노드풀 | `infra/nodepool.tf` | Graviton(arm64) EKS 관리형 노드 그룹 |
-| ClickHouse | `infra/clickhouse.tf` | ClickHouse Operator 설치 + `Cluster`/스토리지 정책 리소스 |
-| 대시보드 | `infra/dashboard.tf` | 대시보드 Deployment/Service, k8s Secret에서 env 주입 |
-| ECR | `infra/ecr.tf` | 이미지 리포지토리 |
-| S3 | `infra/s3.tf` | ClickHouse cold tier 스토리지 버킷, 백업 |
-| DNS/CDN | `infra/dns_cdn.tf` | Route53 레코드 + CloudFront 배포 |
-| 변수/출력 | `infra/variables.tf`, `infra/outputs.tf` | 모듈 입력/출력 |
-
-### 3. 주요 결정
-- **관리형 서비스가 아니라 Kubernetes Operator로 ClickHouse 운영** -- OTel 적재 패턴에 필요한
-  hot/cold 스토리지 정책과 레플리카 토폴로지를 직접 제어하기 위함.
-- **`secrets.auto.tfvars` / `image.auto.tfvars`**는 gitignore된 `*.tfvars` -- 시크릿과 현재
-  배포된 이미지 태그는 apply 시점에 주입되고 커밋되지 않습니다.
-- state는 로컬(`terraform.tfstate*`, gitignore됨) -- 단일 운영자 워크샵 환경엔 충분하나, 여러
-  운영자가 다루려면 원격 backend(S3+DynamoDB)가 필요합니다.
-
-### 4. 코드 포인터
-- `infra/nodepool.tf` -- Graviton 노드 그룹 정의
-- `infra/clickhouse.tf` -- ClickHouse Operator + 스토리지 정책(`hot_cold`, `cold_s3` disk)
-- `infra/dashboard.tf` -- 대시보드 k8s Deployment/Service
-- `infra/dns_cdn.tf` -- CloudFront + Route53
-- `infra/.terraform.lock.hcl` -- provider 버전 락
-
-### 5. 상호 참조
-- 관련 모듈: [infra/CLAUDE.md](../../infra/CLAUDE.md)
-- 관련 ADR: (아직 없음)
-- 관련 런북: [docs/runbooks/deploy-production.md](../runbooks/deploy-production.md),
-  [docs/runbooks/archive-clickhouse.md](../runbooks/archive-clickhouse.md) — 그 안의
-  `scripts/archive-clickhouse.sh`가 이 레포에서 (`infra/` 자체가 아니라) 처음으로 named AWS
-  CLI 프로필을 쓰는 스크립트입니다: 워크샵(소스) 쪽은 필수이고, 아카이브(대상) 쪽도
-  `ARCHIVE_PROFILE`로 선택적으로 지원합니다 — 대상 쪽 기본값은 다른 곳과 동일하게 앰비언트
-  자격증명 체인이나 IRSA입니다
+For exports outside this stack, [archive-clickhouse.sh](../../scripts/archive-clickhouse.sh)
+requires a workshop source profile and accepts optional `ARCHIVE_PROFILE` for the destination;
+otherwise the destination uses ambient credentials. See the [archive runbook](../runbooks/archive-clickhouse.md).
+Do not infer live resource or migration state from these declarations.

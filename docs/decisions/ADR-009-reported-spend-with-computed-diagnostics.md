@@ -1,53 +1,63 @@
-# ADR-009: Client-reported spend with computed diagnostics
+# ADR-009: Client-reported spend with opt-in computed diagnostics
 
-Date: 2026-09-10
-Status: Accepted for the requested cost correction
-
-Numbering: ADR-008 is already used by the parallel cache-policy work at `61a903e`
-(`claude/bedrock-cache-cost-error-vpjgfc`); this decision uses 009 to avoid reusing that number.
+- Status: Accepted
+- Date: 2026-09-10
+- Reconciled: 2026-09-13
 
 ## Context
 
-The dashboard applies one cache-write TTL assumption to all token usage. The September 7
-workshop analysis found that pricing five-minute writes at the one-hour rate increased its
-estimate from $6,640.33 to $7,817.28; the client reported $6,647.79. These are estimates,
-not independently verified invoice amounts.
+The September 7 workshop analysis compared a $7,817.28 estimate under one-hour cache-write
+pricing with a $6,640.33 recalculation under five-minute pricing; the client reported
+$6,647.79. These were telemetry-based comparisons, not independently verified invoice
+amounts. The [September 10 review](../cost-accuracy-review-2026-09-10.md) records their
+provenance and limits.
 
-The stored token types do not split five-minute and one-hour writes. Replacing one global
-TTL with another, or a channel default, cannot price mixed TTL traffic exactly. Conversely,
-the September 3 investigation documented client-version-dependent under-reporting, so a
-reported amount is not a billing source of truth either.
+Stored token types do not separate five-minute and one-hour writes. Replacing one global
+TTL assumption with another cannot price mixed traffic exactly. Earlier client-version
+under-reporting also means reported cost is not a billing source of truth or a guaranteed
+lower bound. The number 009 was reserved to avoid a parallel cache-policy decision's number;
+that historical reservation does not imply ADR-008 is present in this checkout.
 
-## Decision
+## Decision and current contract
 
-Apply the user's final scope: change only `costEfficiency.js` and frontend consumption.
-`TOKEN_SUMS` already selects `reported_cost` and `rollupComputedCost()` already sums it.
-Keep `queries.js`, SQL, `pricing.js` and its rollups unchanged, with no server display/status
-protocol. Preserve existing `cost` and summary `computed_cost` as token-priced diagnostics.
+Make reported spend primary in consumers while retaining token-priced diagnostics. The
+original correction scope was `costEfficiency.js` and frontend consumption, leaving SQL,
+`pricing.js`, and rollups unchanged. `TOKEN_SUMS` already provides `reported_cost`, and
+`rollupComputedCost()` preserves its sum. No new server display/status protocol is required.
 
-`costEfficiency.js` keeps computed `cost`/`unpriced` and uses `reported_cost` for the existing
-`cost_per_loc` and `cost_per_commit` fields. Its `reported_unpriced` flag is separate from
-server price-table coverage. The frontend selects the existing report directly, preserving
-the computed amount in view rows for comparison.
+[spend.js](../../dashboard/web/src/spend.js) selects `reported_cost` into frontend view rows
+and preserves original `cost`/`computed_cost` and previous-period values for comparison.
+API `cost` and summary `computed_cost` keep their token-price meaning. Do not overwrite
+those API fields with reports or make the reported/computed ratio trivially equal to one.
 
-A zero report with positive token usage is treated like an unpriced report, because the
-client might not know a new model's rate. Missing/invalid reports are also unavailable;
-zero without token usage is valid. Consumer folds preserve detected unpriced pieces instead
-of presenting a partial subtotal as a complete amount. Existing SQL aggregation can conceal
-missing user/session/request reports inside a positive aggregate; this change does not add
-per-request coverage detection.
+[Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) starts with `showComputed=false`.
+Computed columns and their CSV columns, effort annotations, computed totals, and token-tier
+charts are opt-in diagnostics. Toggling the mode remounts affected tables and resets their
+sort state, including hidden computed-column sorting. CSV follows the visible table's
+columns/order. Reliability diagnostics retain both cost bases independently.
 
-Unknown-price models with valid reported amounts remain in spend views. Cache-tier
-decomposition and version diagnostics retain their computed basis and show the TTL assumption.
-Productivity scores remain unchanged.
+[costEfficiency.js](../../dashboard/server/costEfficiency.js) joins by user plus channel,
+keeps computed `cost`/`unpriced`, and calculates `cost_per_loc`/`cost_per_commit` from the
+report. `reported_unpriced` is distinct from missing model prices. Productivity scoring is
+unchanged; neither score nor cost ratios establish causal productivity or ROI.
 
-## Consequences
+## Missingness and limits
 
-No provider TTL, Collector, SQL, pricing/rollup, ClickHouse schema or infrastructure change
-is needed. The only changed efficiency-field meanings are the two reported unit-cost ratios.
-Agent sorting in SQL/aggregation is also unchanged: the frontend ranks only the subset
-returned by the existing computed-cost top-30 cutoff, and labels it accordingly.
+Missing, invalid, or negative reports are unavailable. A zero report with positive token
+usage is also treated as unavailable because it can mean the client lacks a model price;
+zero without token usage is valid. Consumer folds preserve detected missing components
+instead of presenting a partial subtotal as complete. Legitimate free usage with tokens
+may therefore require operator verification.
 
-Legitimate free usage with positive tokens may require operator verification because the
-existing aggregate cannot distinguish it from missing cost telemetry. Full per-request
-coverage and invoice reconciliation remain separate work; raw API body logging stays disabled.
+A valid report remains usable when the local diagnostic price table lacks that model.
+Conversely, a positive aggregate can conceal missing requests, sessions, or users: this
+change does not add per-request coverage detection. Neither report nor computed value
+promises invoice equality or a billing lower bound.
+
+The existing `agentCost()` aggregation sorts by computed cost and returns only 30 agents.
+The UI ranks reports within that returned subset; it is not a global reported-cost top 30.
+Cache-tier breakdowns remain computed estimates with a visible TTL assumption, not a
+reconstruction of reported spend by tier. The checked-in bootstrap does not enable raw
+API body logging; verify the actual client configuration independently. Collector,
+provider TTL, schema, and infrastructure changes are separate work, and deployed state
+must be verified independently.
