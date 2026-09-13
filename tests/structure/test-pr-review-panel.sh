@@ -83,7 +83,7 @@ EOF
         bash "$PANEL" "$T_STUB/diff.txt" "$T_STUB/lenses" "$T_STUB/work" 2>&1 || true)
     assert_grep_no_match "quota exhaustion is not retried" '\[retry ' "$PANEL_OUT"
     assert_grep_match "quota exhaustion is reported as ::error:: with the reset date" \
-        '::error::Kiro monthly request quota exhausted.*reset on 10/01' "$PANEL_OUT"
+        '::error::Kiro monthly-limit response.*reset on 10/01' "$PANEL_OUT"
     assert_file_exists "quota exhaustion leaves kiro-quota.flag" "$T_STUB/work/kiro-quota.flag"
     assert_file_exists "quota exhaustion still forces coverage-severe (fail-closed kept)" "$T_STUB/work/coverage-severe.flag"
 
@@ -98,7 +98,7 @@ EOF2
     PANEL_OUT=$(PATH="$T_STUB:$PATH" PANEL_TIMEOUT=30 PANEL_RETRIES=3 \
         bash "$PANEL" "$T_STUB/diff.txt" "$T_STUB/lenses" "$T_STUB/work" 2>&1 || true)
     assert_grep_no_match "v3-style quota error is not retried" '\[retry ' "$PANEL_OUT"
-    assert_grep_match "v3-style quota error is reported" '::error::Kiro monthly request quota exhausted' "$PANEL_OUT"
+    assert_grep_match "v3-style quota error is reported" '::error::Kiro monthly-limit response' "$PANEL_OUT"
     KIRO_SLOT_BYTES=$(cat "$T_STUB"/work/slot/kiro-*.md 2>/dev/null | wc -c | tr -d ' ')
     assert_eq "v3-style quota stdout message is not counted as a response" "0" "$KIRO_SLOT_BYTES"
 

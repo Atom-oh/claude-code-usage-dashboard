@@ -5,13 +5,21 @@ dist/
 terraform.tfstate
 terraform.tfstate.*
 *.tfvars
-# .terraform.lock.hcl은 의도적으로 커밋한다 — 프로바이더 버전/해시가 재현 가능해야 한다
+# Keep .terraform.lock.hcl tracked for reproducible provider versions and hashes.
 backend.hcl
 .claude/
 
-# HyperFrames 영상 프로젝트의 재생성 가능한 산출물 — 배포되는 mp4는 site/assets/video/에 커밋한다
+# Regenerable HyperFrames outputs; published MP4s are tracked in site/assets/video/.
 video/renders/
 video/snapshots/
 video/.hyperframes/
 video/assets/
 video/capture/assets/
+
+# Local Python validation caches
+__pycache__/
+
+# Local credentials; retain the safe configuration template.
+.env
+.env.*
+!.env.example

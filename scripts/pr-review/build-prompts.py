@@ -11,12 +11,13 @@ import subprocess
 import sys
 
 ROOT_GUIDE = "AGENTS.md"
+PACKAGING = "dashboard/AGENTS.md"
 SERVER = "dashboard/server/AGENTS.md"
 WEB = "dashboard/web/AGENTS.md"
 INFRA = "infra/AGENTS.md"
 REVIEW = "scripts/pr-review/AGENTS.md"
 VIDEO = "video/AGENTS.md"
-ALLOWED_GUIDES = (ROOT_GUIDE, SERVER, WEB, INFRA, REVIEW, VIDEO)
+ALLOWED_GUIDES = (ROOT_GUIDE, PACKAGING, SERVER, WEB, INFRA, REVIEW, VIDEO)
 MAX_CONTEXT_BYTES = 20_000
 MAX_PROMPT_BYTES = 22_000
 LENSES = {
@@ -107,6 +108,8 @@ def changed_paths(diff):
 def relevant_guides(paths):
     selected = set()
     for path in paths:
+        if path.startswith("dashboard/") and not path.startswith(("dashboard/server/", "dashboard/web/")):
+            selected.add(PACKAGING)
         if path.startswith("dashboard/server/") or path.startswith("clickhouse-") or path == "grafana-ab-queries.sql":
             selected.add(SERVER)
         if path.startswith("dashboard/web/"):

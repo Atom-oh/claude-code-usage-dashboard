@@ -10,8 +10,8 @@ Keep input truncation, skipped cells, startup failures, and invalid chair output
 
 `scripts/pr-review/run-panel.sh` runs Codex and two Kiro models across L2 data/query
 correctness, L3 security, L4 frontend correctness, and L5 docs/infrastructure consistency.
-The Kiro roster is `claude-opus-5` (`kiro-opus`) and `gpt-5.6-terra` (`kiro-gpt`);
-Codex's model is runner-configured. `synthesize.sh` combines successful cells through a
+`run-panel.sh` owns the Kiro roster (`kiro-opus`, `kiro-gpt`); Codex's model is
+runner-configured. `synthesize.sh` combines successful cells through a
 primary/fallback Claude chair and requires a final `VERDICT: PASS` or `VERDICT: FAIL`.
 Missing/invalid chair output fails. Model agreement alone is not evidence of a defect.
 
@@ -43,7 +43,7 @@ The runner needs Bash, `python3`, `timeout`, `realpath`, standard GNU text utili
 and the configured `codex`, `kiro-cli`, and `claude` binaries. Check the actual runner's CLI
 version in the panel log; do not infer it from an old validation date.
 
-1. Python validates `agents/pr-review-notools.json` before Kiro calls: no duplicate JSON
+1. Python validates `scripts/pr-review/agents/pr-review-notools.json` before Kiro calls: no duplicate JSON
    keys; matching agent name; empty `tools`, `allowedTools`, `resources`, and `mcpServers`;
    `useLegacyMcpJson: false`. Invalid JSON or a failed agent-file copy aborts the step.
 2. Each configured Kiro model receives the same fixed canary prompt in a separate fresh
@@ -74,6 +74,7 @@ Within the runner work directory, these files identify the failure without copyi
 | `kiro-preflight.flag` | Startup behavior was not established. Inspect the model's preflight stderr for timeout, authentication, unexpected output, tool use, quota, or fallback. Resolve the cause and rerun; never bypass this check. |
 | `kiro-agent-fallback.flag` | Agent lookup/schema failed and the CLI continued with a default agent. The affected response is discarded and the gate fails regardless of remaining coverage. |
 | `kiro-quota.flag` | Kiro stderr matched `Monthly request limit reached`, `MONTHLY_REQUEST_COUNT`, or `UsageLimitReachedError`. Diagnose authentication and usage as below. |
+| `kiro-diff-truncated.flag` | Kiro received only the byte-capped portion of the workflow input. Inspect the truncation banner; omitted content has not been reviewed by those cells. |
 | `degraded-models.txt` | A model returned zero successful cells across all lenses. |
 | `coverage-severe.flag` | Zero successful Codex cells, all Kiro models with zero successful cells, or a preflight/fallback safety failure forces `VERDICT: FAIL`. |
 | `responded.txt` and `slot/` | Actual successful review cells and their output; canaries are excluded. |
