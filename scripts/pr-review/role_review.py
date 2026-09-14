@@ -741,6 +741,13 @@ SENSITIVE_KEY = re.compile(
     r"connection[_-]?string|origin[_-]?verify|AccessKeyId|access[_-]?key[_-]?id)[A-Za-z0-9_.:-]*)"
 )
 
+def sensitive_key(value):
+    return isinstance(value, str) and (
+        SENSITIVE_KEY.fullmatch(re.sub(r"[^A-Za-z0-9]+", "_", value))
+        or SENSITIVE_KEY.fullmatch(value)
+    )
+
+
 
 def strip_controls(value):
     value = re.sub(r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]", "", value)
@@ -749,7 +756,460 @@ def strip_controls(value):
     return "".join(c for c in value if c in "\n\r\t" or unicodedata.category(c) not in ("Cc", "Cf", "Zl", "Zp"))
 
 
-def scrub(value, preserved=frozenset()):
+def _normalize_container_keys(value):
+    """Normalize keys and retain validated source JSON boundaries across edits."""
+    closers = _json_enclosing_closers(value)
+    shifts = []
+    literal = re.compile(r'"(?:\\.|[^"\\])*"')
+    separator = re.compile(r"\s*:\s*(?=\{|\[)")
+    pieces, cursor = [], 0
+    for match in literal.finditer(value):
+        # Do not turn a prefixed/f-string token into a valid plain literal.
+        if match.start() and (value[match.start() - 1].isalnum() or value[match.start() - 1] == "_"):
+            continue
+        if not separator.match(value, match.end()):
+            continue
+        try:
+            label = strict_json(match.group())
+        except Invalid:
+            continue
+        if not sensitive_key(label) or SENSITIVE_KEY.fullmatch(label):
+            continue
+        pieces.extend((value[cursor:match.start()], '"password"'))
+        shifts.append((match.end(), len('"password"') - len(match.group())))
+        cursor = match.end()
+    pieces.append(value[cursor:])
+    mapped, edit_index, offset = set(), 0, 0
+    for closer in sorted(closers):
+        while edit_index < len(shifts) and shifts[edit_index][0] <= closer:
+            offset += shifts[edit_index][1]
+            edit_index += 1
+        mapped.add(closer + offset)
+    return "".join(pieces), mapped
+
+
+def _quoted_key_spans(value):
+    """Scan bounded JSON literals without broadening the prose identifier."""
+    literal = re.compile(r'"(?:\\.|[^"\\])*(?:"|\\?\Z)')
+    separator = re.compile(r"\s*:\s*")
+    spans, cursor = [], 0
+    for match in literal.finditer(value):
+        if match.start() < cursor:
+            continue
+        try:
+            key = strict_json(match.group())
+        except Invalid:
+            continue
+        if not sensitive_key(key):
+            continue
+        colon = separator.match(value, match.end())
+        item = literal.match(value, colon.end()) if colon else None
+        if item:
+            following = item.end()
+            while following < len(value) and value[following].isspace():
+                following += 1
+            if following < len(value) and value[following] == ":":
+                continue  # A quoted key after an empty YAML entry is not its value.
+            end = item.end() - 1 if item.group().endswith('"') else item.end()
+            spans.append((item.start() + 1, end))
+            cursor = item.end()
+    return spans
+
+
+def _inline_code_spans(value):
+    """Find code delimiters within prose paragraphs and list continuations."""
+    spans, pending, list_indents = [], [], []
+    offset, fence, paragraph, quote_depth = 0, None, False, 0
+
+    def flush():
+        nonlocal paragraph, quote_depth
+        following, last = {}, {}
+        for index in range(len(pending) - 1, -1, -1):
+            start, end = pending[index]
+            width = end - start
+            following[index] = last.get(width)
+            last[width] = index
+        index = 0
+        while index < len(pending):
+            start, end = pending[index]
+            slash_start = start
+            while slash_start and value[slash_start - 1] == "\\":
+                slash_start -= 1
+            close = following[index]
+            if close is None or (start - slash_start) % 2:
+                index += 1
+            else:
+                spans.append((end, pending[close][0]))
+                index = close + 1
+        pending.clear()
+        paragraph, quote_depth = False, 0
+
+    for line in value.splitlines(keepends=True):
+        quote = re.match(r" {0,3}(?:>[\t ]?)+", line)
+        depth = quote.group().count(">") if quote else 0
+        content_line = line[quote.end():] if quote else line
+        leading = re.match(r"[\t ]*", content_line).group()
+        indent = len(leading.expandtabs(4))
+        if fence:
+            marker = re.match(r"[\t ]*(`{3,}|~{3,})(.*)", content_line)
+            if (marker and indent <= fence[2] + 3 and marker[1][0] == fence[0]
+                    and len(marker[1]) >= fence[1] and not marker[2].strip()):
+                fence = None
+            offset += len(line)
+            continue
+        if not content_line.strip():
+            flush()
+            offset += len(line)
+            continue
+        if depth and depth != quote_depth:
+            flush()
+        if depth:
+            quote_depth = depth
+        item = re.match(r"([\t ]*)(?:[-+*]|[0-9]{1,9}[.)])([\t ]+)", content_line)
+        if item or not paragraph:
+            while list_indents and indent < list_indents[-1]:
+                list_indents.pop()
+        in_list = bool(list_indents) and indent < list_indents[-1] + 4
+        content = content_line
+        if item and (indent < 4 or in_list):
+            flush()
+            quote_depth = depth
+            list_indents.append(len(item.group().expandtabs(4)))
+            in_list = True
+            content = content_line[item.end():]
+        elif in_list:
+            content = content_line[len(leading):]
+        marker = re.match(r" {0,3}(`{3,}|~{3,})(.*)", content)
+        heading = re.match(r" {0,3}(?:#{1,6}(?:[\t ]|$)|(?:-+|=+|(?:_[\t ]*){3,}|(?:\*[\t ]*){3,})[\t ]*$)", content.rstrip())
+        if marker and (marker[1][0] == "~" or "`" not in marker[2]):
+            flush()
+            fence = (marker[1][0], len(marker[1]), list_indents[-1] if in_list else 0)
+        elif indent < 4 or in_list or paragraph:
+            if heading:
+                flush()
+            pending.extend((offset + match.start(), offset + match.end())
+                           for match in re.finditer(r"`+", line))
+            paragraph = True
+            if heading:
+                flush()
+        else:
+            flush()
+        offset += len(line)
+    flush()
+    return spans
+
+
+def _json_enclosing_closers(value):
+    """Locate enclosing boundaries only in complete, valid JSON objects."""
+    closers, cursor = set(), 0
+    for match in re.finditer(r"\{(?=\s*[\"'])", value):
+        if match.start() < cursor:
+            continue
+        index, stack, quote, escaped = match.start() + 1, ["}"], False, False
+        found = set()
+        while index < len(value) and stack:
+            char = value[index]
+            if escaped:
+                escaped = False
+            elif quote:
+                if char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quote = False
+            elif char == '"':
+                quote = True
+            elif char in "{[":
+                stack.append("}" if char == "{" else "]")
+            elif char in "}]":
+                if char != stack[-1]:
+                    break
+                stack.pop()
+                found.add(index)
+            index += 1
+        cursor = max(index, match.end())
+        if not stack:
+            try:
+                strict_json(value[match.start():index])
+            except Invalid:
+                continue
+            closers.update(found)
+    return closers
+
+
+def _assignment_spans(value, key, json_closers=None, fragment=False):
+    """Find assignments without changing another detector's input."""
+    if json_closers is None:
+        json_closers = _json_enclosing_closers(value)
+    operator = re.compile(r"\|\||\?\?|\bor\b")
+    tail_operator = re.compile(r"(?:\|\||\?\?|\bor|\\|(?:^|\s)[+*/%&|^?:<>=!-])$")
+    code_spans, code_index = _inline_code_spans(value), 0
+    line_break = re.compile(r"\r\n?|\n")
+    opening = {"(": ")", "[": "]", "{": "}"}
+    bracket_ends = {}
+    fence_end = re.compile(r"[ \t]*(?:`{3,}|~{3,})[ \t]*(?:\r?\n|\Z)")
+
+    def paired_bracket(start, boundary, enclosing_quote):
+        # Cache matching pairs from the same forward scan. An unrelated later
+        # Markdown link cannot close a bracket inside this bare token.
+        cache_key = (start, boundary, enclosing_quote)
+        if cache_key in bracket_ends:
+            return bracket_ends[cache_key] is not None
+        pending = [(opening[value[start]], start)]
+        index, quote, escaped = start + 1, None, False
+        while index < (len(value) if boundary is None else boundary):
+            char = value[index]
+            if escaped:
+                escaped = False
+            elif quote:
+                if char == "\\":
+                    escaped = True
+                elif value.startswith(quote, index):
+                    index += len(quote)
+                    quote = None
+                    continue
+            elif char == "\\" and index + 1 < len(value) and value[index + 1] not in "\r\n":
+                escaped = True
+            elif char == enclosing_quote:
+                break
+            elif value.startswith("/*", index):
+                closing = value.find("*/", index + 2)
+                if closing < 0:
+                    return True
+                index = closing + 2
+                continue
+            elif (value[index - 1].isspace()
+                  and (char == "#" or value.startswith("//", index))):
+                newline = line_break.search(value, index)
+                index = len(value) if newline is None else newline.end()
+                continue
+            elif (index == 0 or value[index - 1] in "\r\n") and fence_end.match(value, index):
+                break
+            elif char in "\"'`":
+                quote = char * 3 if char != "`" and value.startswith(char * 3, index) else char
+                index += len(quote)
+                continue
+            elif char in opening:
+                pending.append((opening[char], index))
+            elif char in ")]}":
+                closing, position = pending.pop()
+                if char != closing:
+                    return True  # Keep the main scanner's fail-closed behavior.
+                bracket_ends[(position, boundary, enclosing_quote)] = index
+                if not pending:
+                    return True
+            index += 1
+        if quote or escaped:
+            return True  # An unfinished string is not a bare literal boundary.
+        for _, position in pending:
+            bracket_ends[(position, boundary, enclosing_quote)] = None
+        return False
+    last_apostrophe, quote_escape = -1, False
+    code_apostrophes, quote_span_index = {}, 0
+    for position, char in enumerate(value):
+        if quote_escape:
+            quote_escape = False
+        elif char == "\\":
+            quote_escape = True
+        elif char == "'":
+            last_apostrophe = position
+            while quote_span_index < len(code_spans) and code_spans[quote_span_index][1] < position:
+                quote_span_index += 1
+            if quote_span_index < len(code_spans) and code_spans[quote_span_index][0] <= position:
+                code_apostrophes[code_spans[quote_span_index][1]] = position
+    def next_content(index):
+        while index < len(value) and value[index].isspace():
+            index += 1
+        return index
+    spans, cursor = [], 0
+    for match in re.finditer(key, value):
+        if match.start() < cursor:
+            continue
+        while code_index < len(code_spans) and code_spans[code_index][1] < match.start():
+            code_index += 1
+        code_end = (code_spans[code_index][1]
+                    if code_index < len(code_spans) and code_spans[code_index][0] <= match.start()
+                    else None)
+        value_apostrophe = code_apostrophes.get(code_end, -1) if code_end is not None else last_apostrophe
+        index, quote, escaped, stack = match.end(), None, False, []
+        key_name = match.group().rstrip()[:-1].rstrip()
+        prefix = value[match.start() - 1] if match.start() else ""
+        if key_name.endswith(("\"", "'")):
+            prefix = ""
+        # A quoted shell fragment can contain only the assignment prefix.
+        if prefix in ("\"", "'") and index < len(value) and value[index] == prefix:
+            index += 1
+        value_start = index
+        plain_scalar = False
+        colon_label = match.group().rstrip().endswith(":")
+        line_start = value_start
+        continuation_pending = False
+        while index < len(value):
+            char = value[index]
+            if (index == code_end and index > value_start and not quote and not stack
+                    and not tail_operator.search(value[line_start:index].rstrip())):
+                break
+            if plain_scalar:
+                if char in "\r\n":
+                    break
+                index += 1
+                continue
+            if escaped:
+                escaped = False
+            elif quote:
+                if char == "\\":
+                    escaped = True
+                elif value.startswith(quote, index):
+                    index += len(quote)
+                    quote = None
+                    continue
+            elif char == "\\" and index + 1 < len(value) and value[index + 1] not in "\r\n":
+                escaped = True
+            elif (prefix in ("\"", "'", "`") and char == prefix and not stack
+                  and (prefix != "`" or code_end is None)):
+                break
+            elif (char == "'" and colon_label and not stack and index > value_start
+                  and re.fullmatch(r"[\w.@/-]+", value[value_start:index])
+                  and value[value_start:index].lower() not in {"r", "u", "b", "f", "br", "rb", "fr", "rf"}):
+                plain_scalar = True
+            elif (char == "'" and index == value_apostrophe and index > value_start
+                  and not stack and (value[index - 1].isalnum() or value[index - 1] in "_])")):
+                pass  # An unpaired embedded apostrophe is prose, not a new string.
+            elif char in "\"'`":
+                continuation_pending = False
+                quote = char * 3 if char != "`" and value.startswith(char * 3, index) else char
+                index += len(quote)
+                continue
+            elif value.startswith("/*", index):
+                previous = value[line_start:index].rstrip()
+                if stack or continuation_pending or re.search(r"(?:\|\||\?\?|\bor|\\)$", previous):
+                    closing = value.find("*/", index + 2)
+                    if closing < 0:
+                        index = len(value)
+                        break
+                    index = line_start = next_content(closing + 2)
+                    continuation_pending = True
+                    continue
+                break
+            elif ((char == "#" or value.startswith("//", index))
+                  and (index == match.end() or value[index - 1].isspace()
+                       or re.search(r"(?:\|\||\?\?|\bor|\\)$", value[max(line_start, index - 3):index]))):
+                previous = value[line_start:index].rstrip()
+                if stack or continuation_pending or re.search(r"(?:\|\||\?\?|\bor|\\)$", previous):
+                    newline = line_break.search(value, index)
+                    index = len(value) if newline is None else next_content(newline.end())
+                    line_start = index
+                    continuation_pending = True
+                    continue
+                break
+            elif char in ";," and not stack:
+                break
+            elif char in opening:
+                # An unmatched bracket inside a bare dotenv/shell token is
+                # literal punctuation. Initial containers and calls keep their
+                # existing fail-closed boundary handling.
+                if stack or index == value_start or char == "(" or paired_bracket(index, code_end, prefix):
+                    stack.append(opening[char])
+            elif char in ")]}" and stack:
+                if char != stack.pop():
+                    index = len(value)
+                    break
+            elif char in "}]" and not stack and index in json_closers:
+                break
+            elif char.isspace() and not stack:
+                previous = value[line_start:index].rstrip()
+                following = next_content(index)
+                if not (re.search(r"(?:\|\||\?\?|\bor|\\)$", previous) or operator.match(value, following)):
+                    break
+                continuation_pending = True
+                index = line_start = following
+                continue
+            if char in "\r\n":
+                line_start = index + 1
+            elif not char.isspace():
+                continuation_pending = False
+            index += 1
+        # A recursively decoded fragment may end inside a quoted value. Its
+        # assignment key must remain available to the enclosing complete scan.
+        if index == value_start or (quote and (fragment or index == value_start + len(quote))):
+            continue
+        spans.append((match.start(), index))
+        cursor = index
+    return spans
+
+
+def _redact_spans(value, spans):
+    merged = []
+    for start, end in sorted(spans):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    pieces, cursor = [], 0
+    for start, end in merged:
+        pieces.extend((value[cursor:start], "[REDACTED]"))
+        cursor = end
+    pieces.append(value[cursor:])
+    return "".join(pieces)
+
+
+def _opaque_scan_view(value, bodies):
+    """Hide already-owned value bodies while retaining their boundary syntax."""
+    pieces, cursor = [], 0
+    for start, end in sorted(bodies):
+        if end <= cursor:
+            continue
+        start = max(start, cursor)
+        pieces.extend((value[cursor:start], re.sub(r"[^\r\n]", "X", value[start:end])))
+        cursor = end
+    pieces.append(value[cursor:])
+    return "".join(pieces)
+
+
+def _owned_body(value, match, kind, key):
+    end = match.end()
+    if kind == "heredoc":
+        newline = value.find("\n", match.end("heredoc"), end)
+        if newline < 0:
+            return None
+        start = newline + 1
+        footer = value.rfind("\n", start, end) + 1
+        if value[footer:end].strip(" \t\r").lstrip("+-").strip() == match["heredoc"]:
+            end = footer
+        return (start, end) if start < end else None
+    if kind == "named":
+        start, end = match.span("owned_value")
+        while start < end and value[start] in " \t":
+            start += 1
+    else:
+        prefix = re.compile(key).match(match.string, match.start())
+        start = prefix.end()
+    if start >= end:
+        return None
+    if kind == "block" or value[start] in "|>":
+        newline = value.find("\n", start, end)
+        return (newline + 1, end) if newline >= 0 and newline + 1 < end else None
+    marker_end = start
+    while marker_end < end and value[marker_end] == "\\":
+        marker_end += 1
+    if marker_end < end and value[marker_end] in "\"'":
+        quote = value[marker_end]
+        width = 3 if marker_end + 3 <= end and value.startswith(quote * 3, marker_end) else 1
+        marker_end += width
+        marker = value[start:marker_end]
+        body_end = end - len(marker) if end >= marker_end + len(marker) and value.endswith(marker, start, end) else end
+        if kind == "scalar" and len(marker) == 1 and body_end < end:
+            slash_start = body_end
+            while slash_start > marker_end and value[slash_start - 1] == "\\":
+                slash_start -= 1
+            if (body_end - slash_start) % 2:
+                return None  # Let the assignment scanner retain the escaped delimiter.
+        return (marker_end, body_end) if marker_end < body_end else None
+    return (start, end)
+
+
+def scrub(value, preserved=frozenset(), _fragment=False):
     """Scrub decoded strings too: raw-JSON sanitizers miss escaped credentials."""
     if isinstance(value, list):
         return [scrub(x, preserved) for x in value]
@@ -760,7 +1220,7 @@ def scrub(value, preserved=frozenset()):
                    and SENSITIVE_KEY.search(strip_controls(item)) for key, _, item in items)}
         result, suffix = {}, 1
         for original, key, item in items:
-            hidden = any(isinstance(k, str) and (SENSITIVE_KEY.fullmatch(k)
+            hidden = any(isinstance(k, str) and (sensitive_key(k)
                          or k.lower() in sensitive_values) for k in (original, key))
             if key != original and (key in value or key in result):
                 while f"[REDACTED-KEY-{suffix}]" in value or f"[REDACTED-KEY-{suffix}]" in result:
@@ -782,21 +1242,22 @@ def scrub(value, preserved=frozenset()):
         pass
     def quoted(match):
         try:
-            return canonical(scrub(strict_json(match.group()), preserved))
+            return canonical(scrub(strict_json(match.group()), preserved, _fragment=True))
         except Invalid:
             return match.group()
     # Decode nested JSON strings/escaped keys before applying key/value patterns.
     value = re.sub(r'"(?:\\.|[^"\\])*"', quoted, value)
+    value, json_closers = _normalize_container_keys(value)
     identifier = SENSITIVE_KEY.pattern
     quote = r"""\\*["']"""
     key = identifier + rf"(?:{quote})?\s*[:=]\s*"
     patterns = (
-        key + r"<<-?(?P<heredoc>[^\s\"'<>]+)[ \t]*(?:\r\n?|\n).*?"
-        + r"(?:(?<![^\r\n])[+-]?[ \t]*(?P=heredoc)[ \t]*(?=\r|\n|\Z)|\Z)",
-        rf"(?i:\b(?:header)?value)(?:{quote})?\s*[:=]\s*"
-        + rf"(?:(?P<reverse>{quote}).*?(?P=reverse)|[^\s,;}}\]]+)"
+        (key + r"<<-?(?P<heredoc>[^\s\"'<>]+)[ \t]*(?:\r\n?|\n).*?"
+        + r"(?:(?<![^\r\n])[+-]?[ \t]*(?P=heredoc)[ \t]*(?=\r|\n|\Z)|\Z)", 'heredoc'),
+        (rf"(?i:\b(?:header)?value)(?:{quote})?\s*[:=]\s*"
+        + rf"(?P<owned_value>(?P<reverse>{quote}).*?(?P=reverse)|[^\s,;}}\]]+)"
         + rf"[\s,;]*[+-]?[ \t]*(?:{quote})?(?i:(?:header)?name)(?:{quote})?\s*[:=]\s*"
-        + rf"(?:{quote})?" + identifier + rf"(?:{quote})?",
+        + rf"(?:{quote})?" + identifier + rf"(?:{quote})?", 'named'),
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
         r"\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b",
         r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b",
@@ -810,16 +1271,37 @@ def scrub(value, preserved=frozenset()):
         r"""https://hooks\.slack\.com/services/[^\s"'<>]+""",
         r"""(?im)^[ \t]*[+-]?[ \t]*(?:set-)?cookie["']?[ \t]*:[^\r\n]*""",
         r"""(?i:\bx-origin-verify)["']?\s*:\s*["']?[^\s"',;}\]]+""",
-        key + r"[|>][-+]?[ \t]*\r?\n(?:[+-]?[ \t]+[^\r\n]*(?:\r?\n|\Z))+",
-        rf"(?i:\b(?:header)?name)(?:{quote})?\s*[:=]\s*(?:{quote})?" + identifier
+        (key + r"[|>][-+]?[ \t]*\r?\n(?:[+-]?[ \t]+[^\r\n]*(?:\r?\n|\Z))+", 'block'),
+        (rf"(?i:\b(?:header)?name)(?:{quote})?\s*[:=]\s*(?:{quote})?" + identifier
         + rf"(?:{quote})?[\s,]*[+-]?[ \t]*(?:{quote})?(?i:(?:header)?value)(?:{quote})?\s*[:=]\s*"
-        + rf"(?:(?P<named>{quote}).*?(?P=named)|[^\s,}}\]]+)",
-        key + rf"(?P<quote>{quote}).*?(?P=quote)",
+        + rf"(?P<owned_value>(?P<named>{quote}).*?(?P=named)|[^\s,}}\]]+)", 'named'),
+        _quoted_key_spans,
+        (key + rf"(?P<quote>{quote}).*?(?P=quote)", 'scalar'),
+        _assignment_spans,
         key + r"""[^\s"',;}\]]+""",
     )
-    for pattern in patterns:
-        value = re.sub(pattern, "[REDACTED]", value, flags=re.S)
-    return value
+    spans, bodies = [], []
+    scan_value = _opaque_scan_view(value, bodies)
+    for entry in patterns:
+        if entry is _quoted_key_spans:
+            owned = _quoted_key_spans(scan_value)
+            spans.extend(owned)
+            bodies.extend(owned)
+            scan_value = _opaque_scan_view(value, bodies)
+            continue
+        if entry is _assignment_spans:
+            spans.extend(_assignment_spans(scan_value, key, json_closers, _fragment))
+            continue
+        pattern, kind = entry if isinstance(entry, tuple) else (entry, None)
+        for match in re.finditer(pattern, scan_value, flags=re.S):
+            spans.append(match.span())
+            if kind:
+                body = _owned_body(value, match, kind, key)
+                if body:
+                    bodies.append(body)
+        if kind:
+            scan_value = _opaque_scan_view(value, bodies)
+    return _redact_spans(value, spans)
 
 
 def record(args):

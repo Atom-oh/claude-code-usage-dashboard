@@ -12,6 +12,14 @@ MODULE = Path(__file__).with_name("synthesize_roles.py")
 
 
 class SynthesisTests(unittest.TestCase):
+    def test_scrubbing_cannot_accept_conflicting_original_verdicts(self):
+        for failure in ("VERDICT: FAIL", "\x1b[31mVERDICT: FAIL\x1b[0m", "VERD\u200bICT: FAIL"):
+            with self.subTest(failure=failure):
+                reply = (0, f"Finding:\npassword = prior ||\n{failure}\nVERDICT: PASS\n", "")
+                calls, output = self.run_chair([reply, reply])
+                self.assertEqual(calls, 2)
+                self.assertTrue(output.rstrip().endswith("VERDICT: FAIL"))
+
     def setUp(self):
         self.assertTrue(MODULE.exists(), "Conditional synthesis is not implemented")
         spec = importlib.util.spec_from_file_location("synthesize_roles", MODULE)
@@ -65,6 +73,99 @@ class SynthesisTests(unittest.TestCase):
                          "")
                 calls, text = self.run_chair([reply, reply])
                 self.assertEqual(calls, 1)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertNotIn("private-value", text)
+
+    def test_multiline_and_list_code_spans_preserve_review(self):
+        for example in (
+            "1. Summary\n\n    Run `export password=private-value` now.",
+            "Run `export\npassword=private-value` now.",
+            "1. Summary\n\n    Run `export\n    password=private-value` now.",
+            "10. Summary\n\n     Run `export password=private-value` now.",
+            "- Summary\n\n    Run `export password=private-value` now.",
+        ):
+            with self.subTest(example=example):
+                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertNotIn("private-value", text)
+
+    def test_inline_boundaries_exclude_separate_blocks(self):
+        import role_review
+        for example in (
+            "    `password=value`\n",
+            "```text\n`password=value`\n```\n",
+            "1. Summary\n\n   ```text\n   `password=value`\n   ```\n",
+            "Example `open\n\nnew paragraph`\n",
+            "Example `open\n```text\nclose`\n```\n",
+            "Example `open\nclose``\n",
+            "Example `open\n--\nclose`\n",
+            "Example `open\n=\nclose`\n",
+            "Example `open\n_ _ _\nclose`\n",
+        ):
+            with self.subTest(example=example):
+                self.assertEqual(role_review._inline_code_spans(example), [])
+
+    def test_shell_quoted_json_preserves_enclosing_boundary(self):
+        for payload in (
+            '{"password":"private-value"}',
+            '{"public":"ok","password":"private-value"}',
+            '[{"password":"private-value"}]',
+            '{"password":"private-value","public":"ok"}',
+        ):
+            with self.subTest(payload=payload):
+                reply = (0, f"Example: curl -d '{payload}' https://example.invalid\n"
+                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertIn("Reviewed behavior", text)
+                self.assertNotIn("private-value", text)
+
+    def test_source_json_boundaries_survive_value_and_key_normalization(self):
+        for payload in (
+            '{"name":"TOKEN","value":null,"password":"private-value"}',
+            '{"name":"TOKEN","value":123,"password":"private-value"}',
+            '{"api key (one)":{"note":"private-value"},"api key (two)":{"note":"private-value"}}',
+        ):
+            with self.subTest(payload=payload):
+                reply = (0, f"curl -d '{payload}' https://example.invalid\n"
+                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertNotIn("private-value", text)
+
+    def test_invalid_source_json_cannot_gain_enclosing_boundaries(self):
+        reply = (0, "curl -d '{\"name\":\"TOKEN\",\"value\":null \"password\":\"private-value\"}'\n"
+                    "Reviewed behavior.\nVERDICT: PASS\n", "")
+        calls, text = self.run_chair([reply, reply])
+        self.assertEqual(calls, 2)
+        self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+        self.assertNotIn("private-value", text)
+
+    def test_shell_literal_brackets_preserve_review_after_closing_quote(self):
+        for bracket in ("[", "{"):
+            with self.subTest(bracket=bracket):
+                reply = (0, f"curl -d 'password=prefix{bracket}private-value' https://example.invalid\n"
+                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertNotIn("private-value", text)
+
+    def test_escaped_value_quotes_preserve_review_and_hide_complete_value(self):
+        for quote in ('"', "'"):
+            with self.subTest(quote=quote):
+                reply = (0, f"password={quote}prefix\\{quote}private-value{quote}\n"
+                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("Reviewed behavior.", text)
                 self.assertTrue(text.endswith("VERDICT: PASS\n"))
                 self.assertNotIn("private-value", text)
 
