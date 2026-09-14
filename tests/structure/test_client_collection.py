@@ -233,8 +233,17 @@ elif name == "claude":
     print("2.1.226" if (root / "installed-claude").exists() else "2.1.225")
 elif name == "codex":
     print("codex-cli 0.154.0" if (root / "installed-codex").exists() else "codex-cli 0.153.0")
+elif name == "systemctl":
+    if args[0] == "restart":
+        (root / "restarted").touch()
+        if os.environ.get("FIXTURE_UPGRADE") == "restart-failed": sys.exit(17)
+    elif args[0] == "is-active":
+        if os.environ.get("FIXTURE_UPGRADE") == "startup-failed" and (root / "restarted").exists():
+            sys.exit(3)
+    elif args[0] == "start":
+        assert (root / "etc/otelcol/config.yaml").read_text() == "previous configuration"
 else:
-    assert name in ("dnf", "systemctl"), name
+    assert name in ("dnf", "sleep"), name
 '''
         for raw_claude, raw_codex, claude, codex, upgrade in [
             ("true", "false", "true", "false", ""),
@@ -245,6 +254,8 @@ else:
             ("true", "true", "true", "true", "valid"),
             ("true", "true", "true", "true", "invalid"),
             ("true", "true", "true", "true", "missing"),
+            ("true", "true", "true", "true", "restart-failed"),
+            ("true", "true", "true", "true", "startup-failed"),
         ]:
             with self.subTest(claude=claude, codex=codex, upgrade=upgrade), tempfile.TemporaryDirectory(prefix="bootstrap-clients-") as directory:
                 root = Path(directory)
@@ -253,7 +264,7 @@ else:
                 executable = binaries / "fixture"
                 executable.write_text(stub)
                 executable.chmod(0o755)
-                for name in ["aws", "curl", "tar", "npm", "claude", "codex", "dnf", "systemctl"]:
+                for name in ["aws", "curl", "tar", "npm", "claude", "codex", "dnf", "systemctl", "sleep"]:
                     (binaries / name).symlink_to(executable)
                 source = (ROOT / "user-data.sh").read_text()
                 # Rewrite only machine filesystem roots; real shell/config writes
@@ -272,7 +283,9 @@ else:
                     for name, content in [("etc/otelcol/config.yaml", "previous configuration"),
                                           ("etc/otelcol/env", "previous collector env"),
                                           ("etc/ccdash/clients.env", "previous client defaults"),
-                                          ("etc/systemd/system/otelcol.service", "previous unit")]:
+                                          ("etc/systemd/system/otelcol.service", "previous unit"),
+                                          ("usr/local/bin/otelcol-contrib", "previous collector binary"),
+                                          ("usr/local/bin/ccdash-codex", "previous launcher")]:
                         path = root / name
                         path.parent.mkdir(parents=True, exist_ok=True)
                         path.write_text(content)
@@ -287,11 +300,14 @@ else:
                 self.assertNotIn("fixture-collector-secret", result.stdout + result.stderr)
                 commands_file = root / "commands.jsonl"
                 commands = [json.loads(line) for line in commands_file.read_text().splitlines()] if commands_file.exists() else []
-                if upgrade in ("invalid", "missing"):
+                if upgrade in ("invalid", "missing", "restart-failed", "startup-failed"):
                     self.assertNotEqual(result.returncode, 0, result.stderr)
                     for path, expected in previous.items():
                         self.assertEqual(path.read_text(), expected, str(path))
-                    self.assertFalse(any(entry[0] == "systemctl" for entry in commands))
+                    if upgrade in ("restart-failed", "startup-failed"):
+                        self.assertIn(["systemctl", "start", "otelcol.service"], commands)
+                    else:
+                        self.assertFalse(any(entry[0] == "systemctl" and entry[1] not in ("is-active", "is-enabled") for entry in commands))
                     continue
                 self.assertEqual(result.returncode, 0, result.stderr)
                 validated = next((i for i, entry in enumerate(commands) if entry[:2] == ["otelcol-contrib", "validate"]), None)

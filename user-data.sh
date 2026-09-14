@@ -74,11 +74,61 @@ CLAUDE_CODE_VERSION="${CLAUDE_CODE_VERSION:-2.1.226}"
 if command -v dnf >/dev/null 2>&1; then PKG=dnf; else PKG=yum; fi
 $PKG install -y tar gzip curl unzip python3
 
+BOOTSTRAP_TMP="$(mktemp -d "${TMPDIR:-/var/tmp}/ccdash-bootstrap.XXXXXX")"
+COLLECTOR_MUTATED=0
+COLLECTOR_SERVICE_CHANGED=0
+COLLECTOR_WAS_ACTIVE=0
+COLLECTOR_FILES=(
+  /usr/local/bin/ccdash-codex /usr/local/bin/otelcol-contrib /opt/otelcol/otelcol-contrib
+  /etc/ccdash/clients.env /etc/otelcol/env /etc/otelcol/config.yaml
+  /etc/systemd/system/otelcol.service
+  /etc/systemd/system/multi-user.target.wants/otelcol.service
+)
+cleanup_bootstrap() {
+  local status=$? restore_failed=0 path saved
+  trap - EXIT
+  { set +x; } 2>/dev/null
+  set +e
+  if [ "$status" -ne 0 ] && [ "$COLLECTOR_MUTATED" = 1 ]; then
+    if [ "$COLLECTOR_SERVICE_CHANGED" = 1 ]; then
+      systemctl stop otelcol.service || restore_failed=1
+    fi
+    for path in "${COLLECTOR_FILES[@]}"; do
+      saved="$BOOTSTRAP_TMP/snapshot$path"
+      if [ -e "$saved" ] || [ -L "$saved" ]; then
+        mkdir -p "$(dirname "$path")"
+        cp -a "$saved" "$path.restore" && mv -f "$path.restore" "$path" || restore_failed=1
+      else
+        rm -f "$path" || restore_failed=1
+      fi
+    done
+    if [ "$COLLECTOR_SERVICE_CHANGED" = 1 ]; then
+      systemctl daemon-reload || restore_failed=1
+      if [ "$COLLECTOR_WAS_ACTIVE" = 1 ]; then
+        systemctl start otelcol.service || restore_failed=1
+      fi
+    fi
+    if [ "$restore_failed" = 1 ]; then
+      echo "ERROR: Collector rollback needs operator recovery; private snapshot retained at $BOOTSTRAP_TMP" >&2
+    else
+      echo "Collector files and previous running state restored" >&2
+    fi
+  fi
+  if [ "$restore_failed" = 0 ]; then rm -rf "$BOOTSTRAP_TMP"; fi
+  exit "$status"
+}
+trap cleanup_bootstrap EXIT
+for collector_path in "${COLLECTOR_FILES[@]}"; do
+  if [ -e "$collector_path" ] || [ -L "$collector_path" ]; then
+    mkdir -p "$BOOTSTRAP_TMP/snapshot$(dirname "$collector_path")"
+    cp -a "$collector_path" "$BOOTSTRAP_TMP/snapshot$collector_path"
+  fi
+done
+if systemctl is-active --quiet otelcol.service; then COLLECTOR_WAS_ACTIVE=1; fi
+COLLECTOR_MUTATED=1
 install -m 0755 "$BOOTSTRAP_ASSET_DIR/scripts/codex-launch.py" /usr/local/bin/ccdash-codex
 # Validate model/region and flags before contacting AWS or installing clients.
 CCDASH_CLIENT_ENV=/dev/null /usr/local/bin/ccdash-codex --check >/dev/null
-BOOTSTRAP_TMP="$(mktemp -d "${TMPDIR:-/var/tmp}/ccdash-bootstrap.XXXXXX")"
-trap 'rm -rf "$BOOTSTRAP_TMP"' EXIT
 
 # AWS CLI v2 (SSM 파라미터 로드에 사용) — Amazon Linux는 보통 기본 포함
 if ! command -v aws >/dev/null 2>&1; then
@@ -278,9 +328,17 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 EOF
 
+COLLECTOR_SERVICE_CHANGED=1
 systemctl daemon-reload
 systemctl enable otelcol.service
 systemctl restart otelcol.service
+for startup_check in 1 2 3 4 5; do
+  sleep 1
+  if ! systemctl is-active --quiet otelcol.service; then
+    echo "ERROR: Collector did not remain active during startup" >&2
+    exit 1
+  fi
+done
 
 # ---- 6. Claude Code managed settings 배포 ----------------------------------
 # managed settings의 env는 우선순위가 높아 사용자가 덮어쓸 수 없음 → A/B 무결성 확보
