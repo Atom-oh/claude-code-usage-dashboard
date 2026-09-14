@@ -109,6 +109,18 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_command_citations_preserve_following_findings(self):
+        for prefix in ("env ", "curl -d ", "USER=demo ", "export\n"):
+            with self.subTest(prefix=prefix):
+                reply = (0, "Checked `" + prefix + "password='private-value'`; "
+                         "MAJOR rollback evidence. See `service` and `validate()`.\nVERDICT: FAIL\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", text)
+                self.assertIn("MAJOR rollback evidence.", text)
+                self.assertIn("`service`", text)
+                self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+
     def test_backtick_assignment_keeps_concatenated_suffix_private(self):
         for suffix in ("private-value", "'private-value'", "`printf private-value`"):
             for prefix in ("echo '`'\n", "- > echo '`'\n  > "):

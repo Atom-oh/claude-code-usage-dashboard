@@ -1140,6 +1140,12 @@ def _backtick_value_spans(value, key, markdown=True):
         if markdown:
             if code_spans is None:
                 code_spans = _inline_code_spans(value)
+                code_openings = set()
+                for start, _ in code_spans:
+                    opening = start
+                    while opening > 0 and value[opening - 1] == "`":
+                        opening -= 1
+                    code_openings.add(opening)
             while code_index < len(code_spans) and code_spans[code_index][1] < match.start():
                 code_index += 1
             code_span = (code_spans[code_index]
@@ -1147,8 +1153,8 @@ def _backtick_value_spans(value, key, markdown=True):
                          and code_spans[code_index][0] <= match.start() else None)
             if (code_span is not None and position == code_span[1]
                     and position > match.end()
-                    and value[code_span[0]:match.start()].strip() in ("", "export")):
-                # This tick closes a nonempty assignment citation, not its value.
+                    and quoted.end() - 1 in code_openings):
+                # The next paired citation owns the later tick; retain the prose.
                 continue
             if _empty_inline_assignment(value, match.start(), match.end(), code_span):
                 continue
