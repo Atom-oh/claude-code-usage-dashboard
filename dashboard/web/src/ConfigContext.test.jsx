@@ -19,3 +19,18 @@ test("runtime pricing assumptions reach consumers without inventing a TTL on old
   rerender(<ConfigProvider config={{}}><PricingConsumer /></ConfigProvider>);
   expect(screen.getByText("미확인")).toBeTruthy();
 });
+
+function ClientConsumer() {
+  const { enabledClients, codexEndpoint } = useConfig();
+  return <output>{JSON.stringify({ enabledClients, codexEndpoint })}</output>;
+}
+
+test.each([
+  [{}, ["claude"], "mantle"],
+  [{ enabledClients: ["claude"] }, ["claude"], "mantle"],
+  [{ enabledClients: ["codex"], codexEndpoint: "runtime" }, ["codex"], "runtime"],
+  [{ enabledClients: ["claude", "codex"] }, ["claude", "codex"], "mantle"],
+])("exposes client activation with backward-compatible defaults: %j", (config, enabledClients, codexEndpoint) => {
+  render(<ConfigProvider config={config}><ClientConsumer /></ConfigProvider>);
+  expect(JSON.parse(screen.getByRole("status").textContent)).toEqual({ enabledClients, codexEndpoint });
+});

@@ -1,9 +1,9 @@
 # Data and Aggregation
 
-The queries consume Claude Code telemetry in the `claude_code` database. They are not a
-generic coding-client analytics layer: native Codex telemetry is not supported by the
-current metric allowlist and queries. A model name, including an OpenAI model name, does
-not identify the coding client that produced an event.
+The `claude_code` database stores Claude Code metrics and structured Codex logs.
+`CLAUDE_ENABLED` defaults to true, `CODEX_ENABLED` to false; both false is invalid.
+Codex uses the existing log schema and a separate query path, with no new migration.
+Client, backend and model remain distinct: model names do not identify the producer.
 
 ## Storage and source fields
 
@@ -12,13 +12,18 @@ not identify the coding client that produced an event.
 | `otel_metrics_sum` | Counter datapoints, promoted dimensions and `SeriesKey` | [local schema](../../clickhouse-schema.sql) |
 | `otel_metrics_sum_hourly` | Per-series hourly max/sum states, fed by a materialized view | Same schema |
 | `otel_metrics_gauge` | Exporter-compatible gauge storage; not the main KPI source | Same schema |
-| `otel_logs` | Event records; `EventName` reads the bare `event.name`, such as `tool_result` | Same schema |
+| `otel_logs` | Event records; `EventName` reads `event.name`: Claude normally uses `api_request`, `tool_result`, etc.; Codex uses `codex.*` | Same schema |
 | `otel_traces` | Optional beta spans, including interaction, LLM and tool timing | Same schema |
 | `schema_migrations` | Recorded migration versions and evidence metadata | [migration 004](../../clickhouse-migration-004.sql) |
 
-[collector-config.yaml](../../collector-config.yaml) receives local OTLP, allows eight
-`claude_code.*` metrics, scrubs `prompt` and `prompt_text` from logs, and exports all three
-signal pipelines. `create_schema: false` requires schema installation before ingestion.
+[collector-config.yaml](../../collector-config.yaml) receives local OTLP on gRPC 4317
+and HTTP 4318. Enabled Claude retains eight allowed metrics, its existing log scrub
+and optional traces. Codex exports structured logs only; its metric/trace exporters
+are disabled, and no native histogram tables are required. Separate log pipelines
+identify established Claude event names/service provenance and the Codex namespace,
+remove Codex bodies/content fields and inherited
+`experiment.group`, and preserve explicit identity/backend/project attributes.
+`create_schema: false` requires schema installation before ingestion.
 The bounded disk queue uses `file_storage`; supervision and rollout are separate concerns.
 
 `ResourceAttributes` supplies `UserEmail`, `EndUserId`, `AppVersion` and `ProjectName`
@@ -27,7 +32,7 @@ Metric `Attributes` supplies dimensions such as model, type, decision, effort, a
 MCP, speed, start type and source dimensions. Logs and traces have their own maps.
 `Entrypoint` reads `app.entrypoint` from the signal's map.
 
-For logs, `McpServerName` and `McpToolName` decode JSON in `tool_parameters`;
+For Claude logs, `McpServerName` and `McpToolName` decode JSON in `tool_parameters`;
 MCP connection events instead use `LogAttributes['server_name']`.
 For traces, `SpanType` is `SpanAttributes['span.type']`, such as `llm_request`,
 `tool.execution` or `tool.blocked_on_user`. Interaction duration comes from `Duration`
@@ -46,7 +51,46 @@ does not establish that clients emit it or that a query uses it. In particular, 
 carry `StartType` for distinguishing `agents_view`, but current session queries do not
 universally exclude it. `Speed` is not used by `effortMix`.
 
-## Counter calculations
+## Codex logs and common client aggregates
+
+[clientMetrics.js](../../dashboard/server/clientMetrics.js) reads `otel_logs.Timestamp`
+in `[from,to)`. Codex 0.154's zero source timestamp is promoted from observed time by
+the Collector. SQL deduplicates timestamp plus sorted resource/log maps before grouping.
+Only usage-bearing SSE/WebSocket `response.completed` events supply usage; generic
+completions do not establish zero. Partial/invalid components remain null.
+
+| Attribute | Meaning |
+|---|---|
+| Log `conversation.id`, `model` | Session and emitted model; preserve model inference scope |
+| `input_token_count` | Input total including cache subsets |
+| `cached_token_count`, `cache_write_token_count` | Subtract both from input to obtain uncached input |
+| `output_token_count`, `reasoning_token_count` | Output and its reasoning subset; never add twice |
+| Resource `backend` | Explicit `bedrock-mantle`/`bedrock-runtime`, otherwise unknown |
+| Resource `user.email`, `enduser.id` | First nonempty identity; no change to Claude metric `UserEmail` |
+| Resource `project.name` | Codex project grouping, not AWS billing attribution |
+
+Counts are nonnegative integers; subsets must fit their totals. Preserve each request's
+context tier before [pricing](../../dashboard/server/codexPricing.js). Unknown rates or
+invalid usage make affected costs null. Claude reports use `client_reported`; Codex uses
+`aws_list_estimate`. Both retain billing/coverage limitations.
+
+Active Codex session/user/model/backend/project combinations without usage anywhere in
+the selected range null affected token/cost folds and increment `quality.missing_usage`
+and `unpriced`. Crossing a time bucket does not create a false gap. Presence cannot
+detect every dropped response within a populated combination. Explicit zero is valid.
+`observed_records` combines deduplicated log-event counts with Claude usage aggregate-row
+counts only to identify an empty result; it is not comparable request volume.
+
+All breakdowns share selected rows. User counts union nonempty emitted IDs, not employees;
+sessions are namespaced by client. Up to four hours uses minute buckets, otherwise hourly.
+The first partial bucket is labelled at `from`; Claude's local raw query preserves its
+pre-range baseline. When Claude is selected, its resolved end applies to both sources;
+Codex-only retains the requested end. `effective_range`/`bucket_hours` expose this choice.
+Claude's approximations below remain. Recorded `response.failed` is an error even after
+HTTP 200; a fatal CLI exit may omit unflushed logs. Timing is not necessarily generation
+latency. See [API contracts](../api-reference.md) and [setup](../runbooks/codex-telemetry.md).
+
+## Claude counter calculations
 
 [queries.js](../../dashboard/server/queries.js) treats `AggregationTemporality=2` as
 cumulative and other temporalities as interval sums. Never sum repeated cumulative
@@ -87,7 +131,7 @@ newer than the requested end. Existence/day queries also retain hourly approxima
 Do not claim exact equality between all snapshots, charts, previous periods or arbitrary
 windows. Inspect the specific helper and consumer.
 
-## Channels, users and projects
+## Claude channels, users and projects
 
 [grouping.js](../../dashboard/server/grouping.js) infers a channel per session over retained
 rollup rows, without a request-time restriction on that classification:
@@ -97,12 +141,13 @@ rollup rows, without a request-time restriction on that classification:
 3. Otherwise the channel is `unknown`.
 
 These are access-channel heuristics, not coding-client identities or randomized experiment
-assignments. The broad model rule must not be reused as proof that non-Claude clients are
-supported. One user can have sessions in both channels; channel headcounts overlap.
+assignments. The broad model rule is not a client detector; Codex uses its log namespace
+and explicit backend instead. One user can have sessions in both channels; channel
+headcounts overlap.
 The stored `ExperimentGroup` resource attribute is not the dashboard classifier.
 
-For model breakdowns and pricing, SQL `normModel` and JavaScript `normalizeModelId`
-strip the context-window suffix, routing prefix (`us`, `us-gov`, `eu`, `apac`, `jp`, `au`,
+For Claude model breakdowns and diagnostic pricing, SQL `normModel` and JavaScript
+`normalizeModelId` strip the context-window suffix, routing prefix (`us`, `us-gov`, `eu`, `apac`, `jp`, `au`,
 `global`), `anthropic.` prefix, Bedrock version suffix, then date suffix, in that order.
 Keep the two implementations aligned so display rows and price keys describe the same model.
 

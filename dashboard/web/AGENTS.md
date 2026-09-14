@@ -5,6 +5,12 @@ React 18, Vite, Tailwind, and Recharts form a static SPA. Run `npm test` and
 
 ## Display contracts
 
+- `ClientContext` selects enabled clients. All/Codex views use `Clients.jsx` and the
+  client overview API; Claude selection retains its existing detail routes.
+  Common views label `cost_usd` by `cost_basis`, preserve nulls/tiny positive amounts,
+  and never display unsupported Claude measures as Codex zeros.
+- Common views do not forward Claude-only group/project filters. Client/backend selection
+  survives range changes without leaking masked user IDs.
 - Spend views use `spend.js` to select `reported_cost`, retaining original computed
   values for diagnostics. Preserve null/unpriced states through totals, forecasts,
   charts, and CSV exports. A missing local price does not invalidate a valid report.

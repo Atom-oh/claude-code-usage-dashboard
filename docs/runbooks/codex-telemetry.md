@@ -1,8 +1,8 @@
 # Selectable Claude Code and Codex telemetry
 
-Collection/bootstrap, the launcher and the authenticated client API are available.
-The client-aware SPA follows separately; keep dashboard activation defaults until
-that UI release is installed. Repository changes do not deploy EKS, update existing EC2
+Collection/bootstrap, the launcher, authenticated client API and SPA support client
+selection. Install the same approved release and propagate matching activation
+settings before enabling a client. Repository changes do not deploy EKS, update existing EC2
 instances, change IAM/billing, or create credentials. These lifecycles are separate.
 
 ## Select clients consistently
@@ -191,7 +191,7 @@ reconciliation, production deployment, credential creation or billing change is 
 
 ## Dashboard cost and query contract
 
-The authenticated `/api/clients/overview` endpoint returns cost with basis
+The common UI consumes authenticated `/api/clients/overview` results with cost basis
 `client_reported` for Claude and `aws_list_estimate` for Codex. Unknown prices or
 invalid/missing token buckets make cost unavailable rather than zero. All returned
 folds use the same selected rows; reasoning is already part of output tokens.

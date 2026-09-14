@@ -1,6 +1,21 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert } from "lucide-react";
 import { cn } from "../cn.js";
+import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
+
+export const COMMON_NAV = [
+  { to: "/", label: "사용량·비용", hint: "클라이언트·모델·사용자·도구", icon: DollarSign, exact: true },
+];
+
+export function useNavigation() {
+  const { common, client } = useClient();
+  return {
+    items: common ? COMMON_NAV : NAV,
+    brand: client === "all" ? "Claude + Codex" : CLIENT_LABELS[client],
+    subtitle: common ? "사용량·비용 대시보드" : "A/B Dashboard",
+    common,
+  };
+}
 
 // ../awsops web/components/shell/Sidebar.tsx 포팅 (256px, 고정 nav — 계정/리전 셀렉터 등은 해당 없음).
 export const NAV = [
@@ -16,9 +31,11 @@ export const NAV = [
 ];
 
 export function NavItem({ to, label, hint, icon: Icon, exact }) {
+  const { search } = useLocation();
+  const { enabledClients } = useClient();
   return (
     <NavLink
-      to={to}
+      to={enabledClients.includes("codex") ? { pathname: to, search } : to}
       end={exact}
       className={({ isActive }) =>
         cn(
@@ -41,18 +58,19 @@ export function NavItem({ to, label, hint, icon: Icon, exact }) {
 }
 
 export function Sidebar() {
+  const { items, brand, subtitle, common } = useNavigation();
   return (
     <aside className="hidden lg:flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-chrome-border bg-chrome-muted px-4 pb-4 pt-[22px]">
       <div className="mb-5 flex items-center gap-2.5">
         <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-brand-500 text-white font-bold text-[15px]">CC</div>
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-semibold leading-tight text-chrome-fg">Claude Code</div>
-          <div className="text-[10px] text-chrome-fg-muted">A/B Dashboard</div>
+          <div className="text-[15px] font-semibold leading-tight text-chrome-fg">{brand}</div>
+          <div className="text-[10px] text-chrome-fg-muted">{subtitle}</div>
         </div>
       </div>
 
       <nav className="flex-1 space-y-0.5">
-        {NAV.map((item) => (
+        {items.map((item) => (
           <NavItem key={item.to} {...item} />
         ))}
       </nav>
@@ -60,7 +78,7 @@ export function Sidebar() {
       <div className="mt-4 border-t border-chrome-border pt-3">
         <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-chrome-fg-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-positive" />
-          <span>채널(bedrock / enterprise)은 세션별로 자동 판별</span>
+          <span>{common ? "클라이언트별 수집 데이터 기준" : "채널(bedrock / enterprise)은 세션별로 자동 판별"}</span>
         </div>
       </div>
     </aside>

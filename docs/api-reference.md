@@ -73,7 +73,7 @@ All common-view folds use the same bounded session/model/time rows. More than
 partial total. Claude retains its existing counter/time-boundary semantics; Codex
 uses complete structured log events. `effective_range` returns `from`, `to` and
 `requested_to`; when Claude is included, its historical end alignment applies to
-both clients. Consumers must disclose any trimmed end. `bucket_hours` is 1/60 for ranges
+both clients. The UI discloses any trimmed end. `bucket_hours` is 1/60 for ranges
 up to four hours, otherwise 1. A local Claude query preserves the first partial
 minute's pre-range counter baseline without changing shared helper semantics.
 See [client telemetry](runbooks/codex-telemetry.md).

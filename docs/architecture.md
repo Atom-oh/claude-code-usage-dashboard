@@ -1,12 +1,12 @@
 # Architecture
 
-Claude Code Usage Dashboard collects Claude Code telemetry and presents spend, adoption,
-activity and reliability measures for a workshop cohort. It infers `bedrock` and `enterprise`
-access channels per session; these are neither coding-client identities nor randomized
-experiment assignments. Native Codex telemetry is not supported by the current queries.
-The activity scores do not establish employee performance or causal ROI.
+Claude Code Usage Dashboard collects selectable Claude Code metrics and Codex structured
+OTel logs for a workshop cohort. Shared views present usage, spend and operational
+measurements; Claude retains its adoption/activity details and inferred `bedrock` and
+`enterprise` session channels. Channels are neither client identities nor randomized
+experiment assignments. Activity scores do not establish employee performance or causal ROI.
 
-This document describes source configuration at `7d44df6`, not verified live deployment.
+This document describes current source contracts, not verified live deployment.
 Canonical engineering instructions are in [AGENTS.md](../AGENTS.md), with scoped guidance
 for [packaging](../dashboard/AGENTS.md), [server](../dashboard/server/AGENTS.md),
 [web](../dashboard/web/AGENTS.md) and [infrastructure](../infra/AGENTS.md). Adjacent CLAUDE.md
@@ -21,7 +21,8 @@ connected in a running environment.
 ```mermaid
 flowchart TB
     subgraph HOST["Participant host - outside EKS"]
-        CLIENT["Claude Code"] -->|"OTLP on loopback"| COLLECTOR["Collector and disk queue"]
+        CLIENT["Claude Code, when enabled"] -->|"OTLP/gRPC on loopback 4317"| COLLECTOR["Collector and disk queue"]
+        CODEX["Codex, when enabled"] -->|"OTLP/HTTP logs on loopback 4318"| COLLECTOR
     end
     BROWSER["Browser running React SPA"] -->|"HTTPS"| EDGE["Dashboard CloudFront distribution"]
     NLB["Internal NLB in the VPC"]
@@ -48,17 +49,29 @@ The static [site](../site/) and [video project](../video/) are separate from thi
 
 ## Ingestion and storage
 
-[user-data.sh](../user-data.sh) configures participant EC2 hosts, managed Claude Code
-telemetry settings, resource identity and the supervised collector service. It installs
-`otelcol-contrib`, creates the queue directory and uses `Restart=always`. The collector
-configuration must be supplied to the host; the script's fallback configuration-bucket
-location is a placeholder. These machines and services are outside Terraform's EKS workload
-scope.
+[user-data.sh](../user-data.sh) configures participant EC2 hosts, enabled client installs,
+managed Claude Code settings, process-scoped Codex settings, resource identity and the
+supervised collector service. `CLAUDE_ENABLED=true` and `CODEX_ENABLED=false` are the
+defaults; both false is invalid. `CODEX_BEDROCK_ENDPOINT` selects `mantle` (default) or
+`runtime`. Dashboard, bootstrap and collection must use consistent settings.
 
-[collector-config.yaml](../collector-config.yaml) receives OTLP gRPC on loopback port 4317,
-allows eight Claude Code metrics, removes `prompt`/`prompt_text` from logs, and exports
-metrics, logs and optional beta traces. `create_schema=false` requires schema setup first.
-Its 1,000-batch disk queue uses `file_storage` and retries without an elapsed-time limit;
+Bootstrap requires staged configuration/launcher artifacts, validates the candidate,
+and supervises Collector startup with bounded rollback. The queue persists across
+restarts. These machines/services are outside Terraform's EKS workload scope; the
+[runbook](runbooks/codex-telemetry.md) owns setup and recovery details.
+
+[collector-config.yaml](../collector-config.yaml) receives OTLP gRPC on loopback port 4317
+and OTLP HTTP on 4318. It allows eight Claude Code metrics, filters client log namespaces
+in separate pipelines, and accepts optional traces only from enabled Claude Code.
+Claude keeps its existing log scrub. Codex logs get `client=codex`, retain explicit
+backend/user/project metadata, and lose inherited `experiment.group`, content fields
+and bodies. Zero source time is replaced with observed time before insertion into
+`otel_logs.Timestamp`; nonzero time and event identity are preserved.
+
+The [Codex launcher](../scripts/codex-launch.py) exports logs with native metrics/traces
+disabled. This path uses the existing schema; no histogram tables or migration are added.
+`create_schema=false` requires schema setup first.
+The collector's 1,000-batch disk queue uses `file_storage` and retries without an elapsed-time limit;
 queue capacity is still finite. Supervision protects process continuity, not complete capture.
 
 The checked-in collector uses a native ClickHouse TLS endpoint from `CH_HOST`/`CH_PORT`;
@@ -76,7 +89,7 @@ ClickHouse, applying the root schema before synthetic seed inserts on first volu
 | `otel_metrics_sum` | Raw counter datapoints and promoted dimensions | Cold at 90 days, delete at 180 |
 | `otel_metrics_gauge` | Exporter-compatible gauge storage | Cold at 90 days, delete at 180 |
 | `otel_metrics_sum_hourly` | Per-series hourly max/sum aggregates | Delete at 180 days; no cold move |
-| `otel_logs` | Bare-name events such as `tool_result` and `api_request` | Cold at 45 days, delete at 90 |
+| `otel_logs` | Claude bare-name events such as `api_request`/`tool_result`, and `codex.*` events | Cold at 45 days, delete at 90 |
 | `otel_traces` | Optional interaction, LLM and tool spans | Cold at 45 days, delete at 90 |
 | `schema_migrations` | Migration evidence ledger | Separate metadata table |
 
@@ -105,14 +118,14 @@ effort, agent, language and project queries have local raw aggregations. Histori
 alignment, latest-hour approximation, bounded baselines and some existence/bucket boundaries
 remain. No universal equality between all windows, snapshots and charts is claimed.
 
-[grouping.js](../dashboard/server/grouping.js) classifies sessions from retained rollup
+[grouping.js](../dashboard/server/grouping.js) classifies Claude sessions from retained rollup
 model/organization signals. One user's sessions can span channels. Most identity queries
 still use `UserEmail`; EndUserId fallback is query-specific. Model and project filters are
 also query-specific: project filtering covers only four Usage queries, and its capability
 probe checks logs only. `GROUP_MODE=single` changes presentation, not those SQL policies.
 See the [API contract](api-reference.md) for endpoints, shapes, filters and caps.
 
-Primary spend views adapt existing `reported_cost` through
+Claude spend views adapt existing `reported_cost` through
 [spend.js](../dashboard/web/src/spend.js), preserving server `cost`/`computed_cost` diagnostics.
 Cost's computed comparison is opt-in. [costEfficiency.js](../dashboard/server/costEfficiency.js)
 uses reported spend for LOC/commit ratios while retaining computed fields. Zero reports
@@ -120,8 +133,18 @@ with positive tokens are unpriced at these consumers; a valid zero remains zero.
 aggregates cannot establish complete reports. Neither reported nor computed estimates are
 invoices or guaranteed billing bounds.
 
-The nine-page SPA shares range/filter/refresh state and runtime configuration. Its CSVs
-follow visible table columns and sorted rows; central `csv.js` masks exported `user` cells
+[clientMetrics.js](../dashboard/server/clientMetrics.js) supplies the common client API.
+Claude retains counter differencing; Codex uses deduplicated structured completion logs.
+The [data reference](reference/data.md) owns token subsets, null/presence semantics,
+context/inference pricing tiers, identity and shared time boundaries. Costs distinguish
+Claude reports from Codex AWS estimates; neither guarantees billing completeness.
+
+The SPA shares range/filter/refresh state and runtime configuration. With both clients
+enabled, it defaults to the common client view in
+[Clients.jsx](../dashboard/web/src/pages/Clients.jsx); Claude selection restores its
+detail pages. Common views omit Claude-only channel/project filters, which the common
+API rejects, and keep unsupported measurements unavailable. CSVs follow visible table
+columns and sorted rows; central `csv.js` masks exported `user` cells
 when enabled. [Metrics](metrics.md) defines the arbitrary activity score, permission-decision
 acceptance (including automatic decisions), timing proxies and unsupported beta results.
 UI wording does not turn these into code-quality or labor-savings measurements.
@@ -135,6 +158,8 @@ The default-view warmer and browser quantization reduce repeat scans but do not 
 hits. JSON API responses use `Cache-Control: no-store` after authentication; the successful
 chat SSE handler overrides that with `no-cache`.
 
+`/api/config` reports enabled clients and the configured Codex endpoint. Disabled Claude
+data routes return 404, its warmer is omitted, and its SQL chat returns 503.
 Basic Auth is global except for `/healthz` and `/readyz`. Missing credentials fail startup
 unless the explicit local-development bypass is set. Chat has a separate insecure opt-in
 and requires a confirmed readonly database session. The reader profile enforces readonly
@@ -184,8 +209,9 @@ Health and alerts have distinct responsibilities:
 
 - `/healthz` always returns HTTP 200, exposing ping status without restarting a healthy
   process during a database outage; `/readyz` fails on database failure or shutdown.
-- `/api/health/data` reports stale/unknown telemetry with HTTP 503. App-level freshness
-  webhooks are optional and run independently per replica.
+- `/api/health/data` reports stale/unknown telemetry with HTTP 503, using the latest
+  enabled Claude metric or Codex log timestamp. One fresh client can hide another's gap;
+  this is not a per-client completeness check. Optional webhooks run per replica.
 - The optional CloudFront 5xx alarm/SNS path detects edge failures, not silent ingestion
   gaps. Neither alert path covers every failure, including backup-job failures.
 - Native database backups target the S3 `backup/` prefix, whose lifecycle expires objects
@@ -194,7 +220,9 @@ Health and alerts have distinct responsibilities:
 
 Use the [deployment](runbooks/deploy-production.md), [schema migration](runbooks/schema-migrations.md),
 [rollup rebuild](runbooks/rollup-rebuild-segment-key.md), [incident](runbooks/incident-response.md),
-[backup](runbooks/backup-and-restore.md) and [alerting](runbooks/alerting.md) runbooks for operations.
+[backup](runbooks/backup-and-restore.md), [alerting](runbooks/alerting.md) and
+[Codex telemetry](runbooks/codex-telemetry.md) runbooks for operations. The Codex runbook
+records bounded raw API compatibility evidence and the unverified live CLI boundary.
 CI in [.github/workflows/ci.yml](../.github/workflows/ci.yml) and PR review in
 [pr-review.yml](../.github/workflows/pr-review.yml) are separate from deployment. Their
 checks and current-HEAD review requirements are owned by the canonical instructions and

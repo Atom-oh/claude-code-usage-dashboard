@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useConfig } from "./ConfigContext.jsx";
 import { parseUrlState, serializeUrlState } from "./urlState.js";
 import { useRefresh } from "./RefreshContext.jsx";
+import { useClient } from "./ClientContext.jsx";
 
 const RangeContext = createContext(null);
 
@@ -30,6 +31,7 @@ export function RangeProvider({ children }) {
   // 같은 값이어서 첫 진입이 캐시 히트다. 예전에는 여기 하드코딩된 2와 서버 index.js의
   // WARM_DAYS가 서로 따라다녀야 했다.
   const { defaultRangeDays, piiMask, schema } = useConfig();
+  const { common } = useClient();
   const projectColumns = schema?.projectColumns === true;
   const [searchParams, setSearchParams] = useSearchParams();
   // 마운트 시 한 번만 URL을 읽는다 — 이후에는 이쪽이 URL의 소유자다. useState 초기화 함수로
@@ -88,8 +90,13 @@ export function RangeProvider({ children }) {
     setSearchParams(
       (prev) => {
         const next = serializeUrlState({ range: { days, custom, month }, filters: {}, piiMask });
-        const filterKeys = piiMask ? ["group", "model"] : ["group", "user", "model"];
-        if (projectColumns) filterKeys.push("project");
+        const filterKeys = ["client", "model"];
+        if (!piiMask) filterKeys.push("user");
+        if (common) filterKeys.push("backend");
+        else {
+          filterKeys.push("group");
+          if (projectColumns) filterKeys.push("project");
+        }
         for (const k of filterKeys) {
           const v = prev.get(k);
           if (v) next.set(k, v);
@@ -98,7 +105,7 @@ export function RangeProvider({ children }) {
       },
       { replace: true }
     );
-  }, [days, custom, month, piiMask, projectColumns, setSearchParams]);
+  }, [days, custom, month, piiMask, projectColumns, common, setSearchParams]);
   return <RangeContext.Provider value={value}>{children}</RangeContext.Provider>;
 }
 

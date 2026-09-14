@@ -50,8 +50,7 @@ Use the deployment runbook for production changes; a successful build is not a d
   not establish complete telemetry.
 - Keep secrets and personal or customer data out of commits, public review comments,
   and site assets. Client-side display masking is not an API access-control boundary.
-- `CLAUDE_ENABLED`/`CODEX_ENABLED` select collection and API sources; both false is invalid.
-  Client-aware SPA activation is a separate release step; keep dashboard defaults until it ships.
+- `CLAUDE_ENABLED`/`CODEX_ENABLED` select collection and views; both false is invalid.
   Preserve client/backend/model separation. Codex never becomes an enterprise A/B row.
 
 ## Documentation and review
