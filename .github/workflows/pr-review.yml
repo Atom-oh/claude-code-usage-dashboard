@@ -95,7 +95,7 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
-          PANEL_TIMEOUT: "300"
+          PANEL_TIMEOUT: "600"
         run: |
           set -euo pipefail
           mkdir -p /tmp/pr-review
