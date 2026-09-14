@@ -5,44 +5,35 @@ Tests use `node:test`; run `npm test` in this directory.
 
 ## API and security
 
-- Register data endpoints through `route()` in `index.js`. It owns range parsing,
-  validation, caching, in-flight deduplication, and the shared error envelope.
-- Only `/healthz` and `/readyz` bypass Basic Auth. `/api/config`, freshness, and all
-  data routes remain authenticated. JSON API responses use `Cache-Control: no-store`;
-  successful chat SSE currently overrides it with `no-cache`.
-- Missing Basic Auth credentials fail startup unless the explicit local-development
-  bypass is set. Do not introduce a production authentication fallback.
-- Chat requires configured authentication and a successful read-only session probe.
-  `sanitizeSql()` is the SQL sandbox; changes require focused security review.
-- `/healthz` is liveness. `/readyz` fails while draining or unable to reach ClickHouse.
-  Do not turn a database outage into an application restart loop.
-- Preserve import-safe tests: `index.js` exports `app` and binds a port only as the entry
-  module. Existing boot validation and probes also run on import.
+- Register data through `route()` in `index.js` for ranges, validation, caching,
+  in-flight deduplication and shared errors.
+- Only `/healthz` and `/readyz` bypass Basic Auth. Config, freshness and data stay authenticated.
+  JSON uses `no-store`; successful chat SSE overrides with `no-cache`.
+- Missing credentials fail startup except explicit local-development bypass; no production fallback.
+- Chat requires authentication plus a readonly-session probe. `sanitizeSql()` changes need security review.
+- Liveness is `/healthz`; readiness fails during drain/ClickHouse outage. Database failure must not restart the app.
+- Keep `app` import-safe and bind only as entry module; boot checks/probes still run on import.
 
 ## Query contracts
 
-- Cumulative samples (`AggregationTemporality = 2`) are not increments. Use
-  `incFlat`/`incBucketed` or a justified local diff query; their derived `Value` can be
-  summed. The helpers also handle delta/legacy temporality.
-- Use stored `SeriesKey`, never an inline replacement hash. The declared schema folds
-  process start time into it except for `claude_code.session.count`. Actual deployment
-  must be established by the schema probe and migration ledger.
-- Helpers use a three-day baseline lookback. Snapshots up to four hours use raw rows;
-  longer ranges use hourly rollups. Historical end alignment and partial-hour
-  approximations remain: do not claim exact equality for every window or consumer.
-- Do not widen shared helper dimensions casually. Follow ADR-001's local-diff pattern
-  for fields such as effort, version, language, agent, or project.
-- Use `filterCond()` with columns appropriate to the source. Direct model filtering,
-  model-mixed counters, and session-based log filtering have different semantics.
-  Unknown-channel inclusion is an endpoint policy, not a `GROUP_MODE` option.
-- Session channels come from `grouping.js`; user identity is not the channel key.
-  Many existing queries use `UserEmail` only. Do not claim a universal identity fallback.
-- `otel_logs` has no promoted Model/Decision/Source/status-code column. Read the
-  appropriate log attributes and normalize model identifiers where needed.
-- Project filters are accepted only when the project-column probe is exactly true.
-  That probe checks log columns; it is not proof that every table or migration is complete.
-- New references to promoted schema fields must remain consistent with schema copies
-  and any affected `grafana-ab-queries.sql` query. SQL file presence is not rollout evidence.
+- Cumulative temporality 2 is not incremental usage. Sum only values derived through
+  `incFlat`/`incBucketed` or justified local differencing; preserve delta/legacy handling.
+- Use stored `SeriesKey`, never replacement hashes. It includes process start except
+  `claude_code.session.count`; probes/ledger establish actual deployment.
+- Three-day baselines; raw rows up to four hours, hourly rollups beyond. Preserve
+  historical-end/partial-hour approximations; no universal cross-window equality.
+- Preserve shared helper dimensions. Use ADR-001 local differencing for effort,
+  version, language, agent or project.
+- Supply source-appropriate columns to `filterCond()`. Direct models, mixed counters
+  and session-based log filtering differ. Unknown-channel inclusion is endpoint policy,
+  not a `GROUP_MODE` option.
+- `grouping.js` infers session channels, not users. Many queries only use `UserEmail`;
+  there is no universal identity fallback.
+- Logs lack promoted Model/Decision/Source/status-code columns; read attributes and normalize models.
+- Project filters require the project-column probe to be exactly true. It checks logs,
+  not every table or migration.
+- Promoted-field references must match schema copies and affected `grafana-ab-queries.sql`;
+  SQL file existence is not rollout evidence.
 
 ## Cost and measurement
 
@@ -68,15 +59,12 @@ Tests use `node:test`; run `npm test` in this directory.
 
 ## Owners and operations
 
-`queries.js` owns SQL and model normalization; `pricing.js` owns diagnostic prices;
-`schema.js` owns capability probes; `http.js` owns pure request validation.
-`queryReadonly()` is chat-specific and imposes its own result and timeout handling.
-Reader profiles may reject even settings changes; do not assume a SQL `SETTINGS`
-override is permitted.
+`queries.js`: SQL/model normalization; `pricing.js`: diagnostics; `schema.js`: probes;
+`http.js`: validation. Chat's `queryReadonly()` has separate result/time limits.
+Reader profiles may reject even `SETTINGS` changes; never assume an override is allowed.
 
-The chat prompt retains some legacy descriptions of computed costs and rollup use.
-Its result-size helper is not wired into the live loop, and the handler does not pass
-the supported disconnect signal to SQL. Do not document those as active guarantees.
+Chat retains legacy cost/rollup wording. Its size helper and supported SQL disconnect
+signal are not wired into the live loop; do not claim those guarantees.
 
-Read [API contracts](../../docs/api-reference.md), [metric definitions](../../docs/metrics.md),
-and [schema operations](../../docs/runbooks/schema-migrations.md) as needed.
+See [API](../../docs/api-reference.md), [metrics](../../docs/metrics.md) and
+[schema operations](../../docs/runbooks/schema-migrations.md).
