@@ -176,3 +176,12 @@ test("unsupported mixed-client filters fail before queries and prices remain ser
   assert.ok(!sql.includes("x' OR 1=1"));
   assert.equal(params.clientUser, "x' OR 1=1");
 });
+
+test("client model terms are normalized and bound", () => {
+  const term = "global.anthropic.claude-sonnet-5' OR 1=1";
+  for (const client of ["claude", "codex"]) {
+    const { sql, params } = buildCodexQuery(new Date("2026-09-14"), new Date("2026-09-15"), { model: term }, {}, client);
+    assert.equal(params.clientModel, client === "claude" ? "claude-sonnet-5' OR 1=1" : term);
+    assert.ok(!sql.includes("OR 1=1"));
+  }
+});

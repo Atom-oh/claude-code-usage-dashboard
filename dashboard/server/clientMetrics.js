@@ -3,6 +3,7 @@ import { ValidationError } from "./http.js";
 import { selectClients } from "./clients.js";
 import { priceCodexUsage, parseCodexPricing } from "./codexPricing.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
+import { normalizeModelId } from "./pricing.js";
 import * as queries from "./queries.js";
 
 const ROW_LIMIT = 50000;
@@ -178,7 +179,8 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex") {
   const isCodex = client === "codex";
   const params = { from: toChDateTime(from), to: toChDateTime(to),
-    clientUser: filters.user || "", clientModel: filters.model || "", clientBackend: filters.backend || "",
+    clientUser: filters.user || "", clientModel: (isCodex ? filters.model : normalizeModelId(filters.model || "")) || "",
+    clientBackend: filters.backend || "",
     clientBucketSeconds: to - from <= 4 * 3600000 ? 60 : 3600 };
   const cases = Object.entries(prices).map(([model, rate], i) => {
     params[`priceModel${i}`] = model;
@@ -211,11 +213,24 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   const session = isCodex ? "a['conversation.id']" : "SessionId";
   const backend = isCodex ? "if(r['backend'] IN ('bedrock-runtime','bedrock-mantle'), r['backend'], 'unknown')"
     : `multiIf(${GROUP_EXPR} = 'bedrock', 'bedrock-runtime', ${GROUP_EXPR} = 'enterprise', 'anthropic', 'unknown')`;
+  const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
+  const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
+  // Coarse attribution only for model-less rows: evidence must share the selected
+  // client's session/user/backend/project and range. Never replace an emitted model.
+  const modelSessions = filters.model ? `model_sessions AS (
+    SELECT session, user, backend, project FROM unique_events WHERE session != '' AND ${modelMatch}
+    ${isCodex ? "" : `UNION ALL
+    SELECT SessionId, ${user}, ${backend}, ResourceAttributes['project.name']
+    FROM claude_code.otel_metrics_sum LEFT JOIN session_group ug USING (SessionId)
+    WHERE TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} AND SessionId != ''
+      AND MetricName IN ('claude_code.token.usage', 'claude_code.cost.usage')
+      AND positionCaseInsensitive(${queries.normModel("Model")}, {clientModel:String}) > 0`}
+  ),` : "";
   const sql = `${isCodex ? "WITH" : `${GROUP_CTE},`}
   unique_events AS (
     SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
       ${session} AS session,
-      coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') AS user,
+      ${user} AS user,
       ${isCodex ? "a['model']" : queries.normModel("a['model']")} AS model,
       ${backend} AS backend, r['project.name'] AS project,
       ${isCodex ? "EventName" : "replaceRegexpOne(EventName, '^claude_code\\\\.', '')"} AS event_name
@@ -223,7 +238,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     ${isCodex ? "" : "LEFT JOIN session_group ug USING (SessionId)"}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
       AND EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})
-  ), typed AS (
+  ), ${modelSessions} typed AS (
     SELECT *,
       replaceRegexpOne(model, '^(us|global)\\\\.', '') AS base_model,
       multiIf(event_name IN ('codex.sse_event','codex.websocket_event')
@@ -243,7 +258,8 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       (out_n_valid AND reason_n_valid AND reason_n > out_n) AS reasoning_invalid
     FROM unique_events
     WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
-      AND ({clientModel:String} = '' OR positionCaseInsensitive(model, {clientModel:String}) > 0)
+      ${filters.model ? `AND (${modelMatch} OR (model = '' AND
+        (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
   )
   SELECT formatDateTime(greatest(toStartOfInterval(Timestamp, INTERVAL {clientBucketSeconds:UInt32} SECOND), {from:DateTime}),

@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+function assertFields(actual, expected) {
+  for (const [key, value] of Object.entries(expected)) assert.equal(actual[key], value, key);
+}
+
 test("real ClickHouse client aggregation preserves transport identity and counter boundaries", {
   skip: !process.env.CLIENT_SQL_TEST_URL,
 }, async (t) => {
@@ -9,18 +13,30 @@ test("real ClickHouse client aggregation preserves transport identity and counte
   process.env.CH_PASSWORD = "";
   const { createClient } = await import("@clickhouse/client");
   const db = createClient({ url: process.env.CH_URL, database: "claude_code" });
-  const { clientOverview } = await import("./clientMetrics.js");
+  const { clientOverview, buildCodexQuery } = await import("./clientMetrics.js");
   const day = new Date().toISOString().slice(0, 10);
   const from = new Date(`${day}T10:00:00Z`), to = new Date(`${day}T11:00:00Z`);
-  const log = (n, name, attributes = {}) => ({
+  const insertLogs = (values) => db.insert({ table: "otel_logs", values, format: "JSONEachRow" });
+  const insertMetrics = (values) => db.insert({ table: "otel_metrics_sum", values, format: "JSONEachRow" });
+  const overview = (filters = {}, clients = ["codex"], start = from, end = to) =>
+    clientOverview(start, end, filters, clients);
+  const log = (n, name, attributes = {}, resource = {}) => ({
     Timestamp: `${day} 10:01:00.${String(n).padStart(9, "0")}`,
-    ResourceAttributes: { "user.email": "codex@example.invalid", backend: "bedrock-mantle" },
+    ResourceAttributes: { "user.email": "codex@example.invalid", backend: "bedrock-mantle", ...resource },
     LogAttributes: { "event.name": name, "conversation.id": "codex-session",
       model: "openai.gpt-6-astra", ...attributes },
   });
   const usage1 = log(1, "codex.sse_event", { "event.kind": "response.completed",
     input_token_count: "100", cached_token_count: "40", cache_write_token_count: "11",
     output_token_count: "30", reasoning_token_count: "10" });
+  const zeroUsage = { ...usage1.LogAttributes, input_token_count: "0", cached_token_count: "0",
+    cache_write_token_count: "0", output_token_count: "0", reasoning_token_count: "0" };
+  const counter = (MetricName, type, clock, Value) => ({
+    ResourceAttributes: { "user.email": "claude@example.invalid" },
+    Attributes: { "session.id": "claude-session", "organization.id": "fixture", model: "claude-sonnet-5", type },
+    MetricName, StartTimeUnix: `${day} 09:00:00`, TimeUnix: `${day} ${clock}`,
+    Value, AggregationTemporality: 2, IsMonotonic: true,
+  });
   const logs = [
     log(0, "codex.sse_event", { "event.kind": "response.completed" }),
     usage1, usage1, // The exact same exported record delivered twice.
@@ -42,78 +58,56 @@ test("real ClickHouse client aggregation preserves transport identity and counte
     ["claude_code.cost.usage", "", 2, 2.2],
   ]) {
     for (const [clock, value] of [["09:59:00", before], ["10:01:00", after]]) {
-      metrics.push({ ResourceAttributes: { "user.email": "claude@example.invalid" },
-        Attributes: { "session.id": "claude-session", "organization.id": "fixture",
-          model: "claude-sonnet-5", type },
-        MetricName: metric, StartTimeUnix: `${day} 09:00:00`,
-        TimeUnix: `${day} ${clock}`, Value: value, AggregationTemporality: 2, IsMonotonic: true });
+      metrics.push(counter(metric, type, clock, value));
     }
   }
   try {
-    await db.insert({ table: "otel_logs", values: logs, format: "JSONEachRow" });
-    await db.insert({ table: "otel_metrics_sum", values: metrics, format: "JSONEachRow" });
-    const codex = await clientOverview(from, to, { client: "codex" }, ["claude", "codex"]);
-    assert.equal(codex.totals.tokens, 270);
-    assert.equal(codex.totals.cost_usd, 0.0042405);
-    assert.equal(codex.totals.requests, 2);
-    assert.equal(codex.totals.tool_calls, 1);
-    assert.equal(codex.by_client[0].request_duration_ms, 20);
-    assert.equal(codex.by_client[0].ttft_ms, 25);
+    await insertLogs(logs);
+    await insertMetrics(metrics);
+    const codex = await overview({ client: "codex" }, ["claude", "codex"]);
+    assertFields(codex.totals, { tokens: 270, cost_usd: 0.0042405, requests: 2, tool_calls: 1 });
+    assertFields(codex.by_client[0], { request_duration_ms: 20, ttft_ms: 25 });
     assert.equal(codex.totals.sessions, 1);
-    const both = await clientOverview(from, to, {}, ["claude", "codex"]);
-    assert.equal(both.totals.tokens, 340);
-    assert.equal(both.totals.sessions, 2);
-    assert.equal(both.totals.cost_usd, 0.2042405);
+    const both = await overview({}, ["claude", "codex"]);
+    assertFields(both.totals, { tokens: 340, sessions: 2, cost_usd: 0.2042405 });
     assert.equal(both.by_client.find((r) => r.client === "claude").cost_usd, 0.2);
     const edges = [];
     for (const [metric, type, before, after] of [
       ["claude_code.token.usage", "input", 100, 110],
       ["claude_code.cost.usage", "", 2, 2.1],
     ]) {
-      for (const [clock, value] of [["10:00:10", before], ["10:00:35", after]]) edges.push({
-        ResourceAttributes: { "user.email": "claude@example.invalid" },
-        Attributes: { "session.id": "claude-session", "organization.id": "fixture", model: "claude-sonnet-5", type },
-        MetricName: metric, StartTimeUnix: `${day} 09:00:00`, TimeUnix: `${day} ${clock}`,
-        Value: value, AggregationTemporality: 2, IsMonotonic: true,
-      });
+      for (const [clock, value] of [["10:00:10", before], ["10:00:35", after]]) {
+        edges.push(counter(metric, type, clock, value));
+      }
     }
-    await db.insert({ table: "otel_metrics_sum", values: edges, format: "JSONEachRow" });
-    const edge = await clientOverview(new Date(`${day}T10:00:30Z`), new Date(`${day}T10:00:40Z`),
-      { client: "claude" }, ["claude", "codex"]);
-    assert.equal(edge.totals.tokens, 10);
-    assert.equal(edge.totals.cost_usd, 0.1);
-    const filtered = await clientOverview(from, to, { client: "codex", user: "' OR 1=1" }, ["claude", "codex"]);
+    await insertMetrics(edges);
+    const edge = await overview({ client: "claude" }, ["claude", "codex"],
+      new Date(`${day}T10:00:30Z`), new Date(`${day}T10:00:40Z`));
+    assertFields(edge.totals, { tokens: 10, cost_usd: 0.1 });
+    const filtered = await overview({ client: "codex", user: "' OR 1=1" }, ["claude", "codex"]);
     assert.equal(filtered.totals.tokens, 0);
-    const tierRows = [8, 9, 10].map((n) => {
-      const r = log(n, "codex.sse_event", { ...usage1.LogAttributes,
-        input_token_count: "100000", cached_token_count: "0", cache_write_token_count: "0",
-        output_token_count: "0", reasoning_token_count: "0" });
-      r.ResourceAttributes["user.email"] = "tiers@example.invalid";
-      return r;
-    });
-    const long = log(11, "codex.sse_event", { ...usage1.LogAttributes,
-      input_token_count: "272001", cached_token_count: "0", cache_write_token_count: "0",
-      output_token_count: "100", reasoning_token_count: "0" });
-    long.ResourceAttributes["user.email"] = "tiers@example.invalid";
-    const global = log(12, "codex.sse_event", { ...usage1.LogAttributes, model: "global.openai.gpt-6-astra" });
-    global.ResourceAttributes.backend = "bedrock-runtime";
-    await db.insert({ table: "otel_logs", values: [...tierRows, long, global], format: "JSONEachRow" });
-    assert.equal((await clientOverview(from, to, { client: "codex", user: "tiers" }, ["codex"])).totals.cost_usd, 9.292272);
-    assert.equal((await clientOverview(from, to, { client: "codex", backend: "bedrock-runtime" }, ["codex"])).totals.cost_usd, 0.0021675);
-    await db.insert({ table: "otel_logs", values: [log(7, "codex.sse_event", {
+    const tierRows = [8, 9, 10].map((n) => log(n, "codex.sse_event",
+      { ...zeroUsage, input_token_count: "100000" }, { "user.email": "tiers@example.invalid" }));
+    const long = log(11, "codex.sse_event", { ...zeroUsage, input_token_count: "272001", output_token_count: "100" },
+      { "user.email": "tiers@example.invalid" });
+    const global = log(12, "codex.sse_event", { ...usage1.LogAttributes, model: "global.openai.gpt-6-astra" },
+      { backend: "bedrock-runtime" });
+    await insertLogs([...tierRows, long, global]);
+    assert.equal((await overview({ client: "codex", user: "tiers" })).totals.cost_usd, 9.292272);
+    assert.equal((await overview({ client: "codex", backend: "bedrock-runtime" })).totals.cost_usd, 0.0021675);
+    await insertLogs([log(7, "codex.sse_event", {
       ...usage1.LogAttributes, model: "openai.unpriced",
-    })], format: "JSONEachRow" });
-    const unpriced = await clientOverview(from, to, { client: "codex" }, ["codex"]);
+    })]);
+    const unpriced = await overview({ client: "codex" });
     assert.equal(unpriced.totals.cost_usd, null);
     assert.equal(unpriced.quality.unpriced, 1);
     const partial = log(13, "codex.sse_event", { "event.kind": "response.completed",
-      output_token_count: "10", cached_token_count: "0", cache_write_token_count: "0", reasoning_token_count: "1" });
-    partial.ResourceAttributes["user.email"] = "partial@example.invalid";
-    await db.insert({ table: "otel_logs", values: [partial], format: "JSONEachRow" });
-    const broken = await clientOverview(from, to, { client: "codex", user: "partial" }, ["codex"]);
+      output_token_count: "10", cached_token_count: "0", cache_write_token_count: "0", reasoning_token_count: "1" },
+      { "user.email": "partial@example.invalid" });
+    await insertLogs([partial]);
+    const broken = await overview({ client: "codex", user: "partial" });
     assert.equal(broken.quality.invalid, 1);
-    assert.equal(broken.totals.cost_usd, null);
-    assert.equal(broken.totals.tokens, null);
+    assertFields(broken.totals, { cost_usd: null, tokens: null });
 
     await t.test("Claude actual event names and prefixed aliases supply operational measurements", async () => {
       const claudeLogs = [];
@@ -128,67 +122,62 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           const row = log(100 + claudeLogs.length, prefix + name, {
             ...attributes, model: "claude-sonnet-5", "session.id": "claude-session",
           });
+          if (name.startsWith("tool_")) delete row.LogAttributes.model;
           row.ResourceAttributes = { "user.email": "claude@example.invalid" };
           claudeLogs.push(row);
         }
       }
-      await db.insert({ table: "otel_logs", values: [...claudeLogs, claudeLogs[0]], format: "JSONEachRow" });
-      const actual = await clientOverview(from, to, { client: "claude" }, ["claude", "codex"]);
-      assert.equal(actual.totals.requests, 4);
-      assert.equal(actual.totals.api_errors, 2);
-      assert.equal(actual.totals.tool_calls, 2);
-      assert.equal(actual.totals.request_duration_ms, 70);
-      assert.equal(actual.totals.ttft_ms, 50);
-      assert.equal(actual.tools[0].calls, 2);
-      assert.equal(actual.tools[0].duration_ms, 24);
+      await insertLogs([...claudeLogs, claudeLogs[0]]);
+      const actual = await overview({ client: "claude" }, ["claude", "codex"]);
+      assertFields(actual.totals, {
+        requests: 4,
+        api_errors: 2,
+        tool_calls: 2,
+        request_duration_ms: 70,
+        ttft_ms: 50,
+      });
+      assertFields(actual.tools[0], { calls: 2, duration_ms: 24 });
+      const filtered = await overview({ client: "claude", model: "global.anthropic.claude-sonnet-5" }, ["claude", "codex"]);
+      assert.deepEqual(filtered, actual);
     });
 
     await t.test("missing usage in one Codex session invalidates mixed-session and mixed-client totals", async () => {
-      const scoped = (n, name, session, attributes = {}) => {
-        const row = log(n, name, { ...attributes, "conversation.id": session });
-        row.ResourceAttributes["user.email"] = "coverage@example.invalid";
-        return row;
-      };
+      const scoped = (n, name, session, attributes = {}) => log(n, name,
+        { ...attributes, "conversation.id": session }, { "user.email": "coverage@example.invalid" });
       const generic = scoped(202, "codex.sse_event", "missing", { "event.kind": "response.completed" });
-      await db.insert({ table: "otel_logs", values: [
+      await insertLogs([
         scoped(200, "codex.sse_event", "priced", usage1.LogAttributes),
         scoped(201, "codex.api_request", "missing", { "http.response.status_code": "200" }),
         generic, generic,
-      ], format: "JSONEachRow" });
-      const mixed = await clientOverview(from, to, { client: "codex", user: "coverage" }, ["codex"]);
+      ]);
+      const mixed = await overview({ client: "codex", user: "coverage" });
       assert.equal(mixed.observed_records, 3);
       assert.equal(mixed.totals.requests, 1);
-      assert.equal(mixed.quality.missing_usage, 1);
-      assert.equal(mixed.quality.unpriced, 1);
+      assertFields(mixed.quality, { missing_usage: 1, unpriced: 1 });
       for (const row of [mixed.totals, ...mixed.by_client, ...mixed.by_user, ...mixed.by_model,
         ...mixed.by_project, ...mixed.timeseries]) {
-        assert.equal(row.cost_usd, null);
-        assert.equal(row.tokens, null);
+        assertFields(row, { cost_usd: null, tokens: null });
       }
-      const combined = await clientOverview(from, to, {}, ["claude", "codex"]);
+      const combined = await overview({}, ["claude", "codex"]);
       assert.equal(combined.totals.cost_usd, null);
       assert.equal(combined.quality.missing_usage, 1);
       assert.equal(combined.by_client.find((r) => r.client === "claude").cost_usd, 0.2);
     });
 
     await t.test("generic completions without usage are observed while explicit zero and no records differ", async () => {
-      const generic = log(300, "codex.sse_event", { "event.kind": "response.completed" });
-      generic.ResourceAttributes["user.email"] = "generic@example.invalid";
-      const zero = log(301, "codex.sse_event", { ...usage1.LogAttributes,
-        input_token_count: "0", cached_token_count: "0", cache_write_token_count: "0",
-        output_token_count: "0", reasoning_token_count: "0" });
-      zero.ResourceAttributes["user.email"] = "zero@example.invalid";
-      await db.insert({ table: "otel_logs", values: [generic, generic, zero], format: "JSONEachRow" });
-      const missing = await clientOverview(from, to, { client: "codex", user: "generic" }, ["codex"]);
+      const generic = log(300, "codex.sse_event", { "event.kind": "response.completed" },
+        { "user.email": "generic@example.invalid" });
+      const zero = log(301, "codex.sse_event", zeroUsage, { "user.email": "zero@example.invalid" });
+      await insertLogs([generic, generic, zero]);
+      const missing = await overview({ client: "codex", user: "generic" });
       assert.equal(missing.observed_records, 1);
       assert.equal(missing.totals.cost_usd, null);
       assert.equal(missing.quality.missing_usage, 1);
-      const measured = await clientOverview(from, to, { client: "codex", user: "zero" }, ["codex"]);
+      const measured = await overview({ client: "codex", user: "zero" });
       assert.equal(measured.observed_records, 1);
-      assert.equal(measured.totals.tokens, 0);
-      assert.equal(measured.totals.cost_usd, 0);
+      assertFields(measured.totals, { tokens: 0, cost_usd: 0 });
       assert.equal(measured.quality.missing_usage, 0);
-      const empty = await clientOverview(from, to, { client: "codex", user: "no-matching-user" }, ["codex"]);
+      const empty = await overview({ client: "codex", user: "no-matching-user" });
       assert.equal(empty.observed_records, 0);
       assert.equal(empty.by_client[0].observed_records, 0);
     });
@@ -209,8 +198,8 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           else bad.LogAttributes[key] = value;
           const good = log(401 + i * 2, "codex.sse_event", { ...usage1.LogAttributes });
           for (const row of [bad, good]) row.ResourceAttributes["user.email"] = `components-${i}@example.invalid`;
-          await db.insert({ table: "otel_logs", values: [bad, good], format: "JSONEachRow" });
-          const actual = await clientOverview(from, to, { client: "codex", user: `components-${i}@` }, ["codex"]);
+          await insertLogs([bad, good]);
+          const actual = await overview({ client: "codex", user: `components-${i}@` });
           assert.equal(actual.totals[field], null, key);
           assert.equal(actual.totals.tokens, null, key);
           assert.equal(actual.totals.cost_usd, null, key);
@@ -237,42 +226,85 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         const rangeFrom = new Date(`${day}T${start}Z`);
         const rangeTo = new Date(`${day}T${end}Z`);
         const filters = { client: "codex", user: `boundary-${resolution}@` };
-        await db.insert({ table: "otel_logs", values: [
+        await insertLogs([
           make(before, "codex.api_request", "covered", { "http.response.status_code": "200" }),
           make(before, "codex.sse_event", "covered", { "event.kind": "response.completed" }),
           make(after, "codex.sse_event", "covered", usage1.LogAttributes),
-        ], format: "JSONEachRow" });
-        const covered = await clientOverview(rangeFrom, rangeTo, filters, ["codex"]);
-        assert.equal(covered.bucket_hours, bucketHours);
-        assert.equal(covered.observed_records, 3);
-        assert.equal(covered.quality.missing_usage, 0);
-        assert.equal(covered.quality.unpriced, 0);
-        assert.equal(covered.totals.requests, 1);
-        assert.equal(covered.totals.tokens, 130);
-        assert.equal(covered.totals.cost_usd, 0.00238425);
+        ]);
+        const covered = await overview(filters, ["codex"], rangeFrom, rangeTo);
+        assertFields(covered, { bucket_hours: bucketHours, observed_records: 3 });
+        assertFields(covered.quality, { missing_usage: 0, unpriced: 0 });
+        assertFields(covered.totals, { requests: 1, tokens: 130, cost_usd: 0.00238425 });
         assert.deepEqual(covered.timeseries.map((r) => r.t), bucketTimes.map((clock) => `${day}T${clock}Z`));
         assert.deepEqual(covered.timeseries.map((r) => r.cost_usd), [0, 0.00238425]);
 
         // Coverage does not look outside the selected range.
-        const cropped = await clientOverview(rangeFrom, new Date(`${day}T${bucketTimes[1]}Z`), filters, ["codex"]);
+        const cropped = await overview(filters, ["codex"], rangeFrom, new Date(`${day}T${bucketTimes[1]}Z`));
         assert.equal(cropped.observed_records, 2);
         assert.equal(cropped.quality.missing_usage, 1);
         assert.equal(cropped.totals.cost_usd, null);
 
         // A generic completion remains evidence even with no API-request record.
-        await db.insert({ table: "otel_logs", values: [
+        await insertLogs([
           make(after, "codex.sse_event", "unreported", { "event.kind": "response.completed" }),
-        ], format: "JSONEachRow" });
-        const mixed = await clientOverview(rangeFrom, rangeTo, filters, ["codex"]);
+        ]);
+        const mixed = await overview(filters, ["codex"], rangeFrom, rangeTo);
         assert.equal(mixed.observed_records, 4);
         assert.equal(mixed.totals.requests, 1);
-        assert.equal(mixed.quality.missing_usage, 1);
-        assert.equal(mixed.quality.unpriced, 1);
+        assertFields(mixed.quality, { missing_usage: 1, unpriced: 1 });
         for (const row of [mixed.totals, ...mixed.by_client, ...mixed.by_model, ...mixed.by_user, ...mixed.by_project]) {
-          assert.equal(row.cost_usd, null);
-          assert.equal(row.tokens, null);
+          assertFields(row, { cost_usd: null, tokens: null });
         }
         assert.deepEqual(mixed.timeseries.map((r) => r.cost_usd), [0, null]);
+      });
+    }
+    for (const client of ["claude", "codex"]) {
+      await t.test(`${client}: model-less tools require scoped evidence`, async () => {
+        const model = client === "claude" ? "global.anthropic.claude-sonnet-5" : "openai.gpt-6-astra";
+        const user = `model-${client}@example.invalid`;
+        const make = (session, name, modelValue, resource = {}, clock = "10:01:00") => {
+          const id = session ? `${client}-${session}` : "";
+          const row = log(600, (client === "codex" ? "codex." : "") + name, {
+            "session.id": id, "conversation.id": id, tool_name: session,
+          });
+          if (modelValue === undefined) delete row.LogAttributes.model;
+          else row.LogAttributes.model = modelValue;
+          row.Timestamp = `${day} ${clock}`;
+          row.ResourceAttributes = { "user.email": user, backend: "bedrock-mantle", "project.name": "fixture", ...resource };
+          return row;
+        };
+        const rows = [
+          make("matched", "api_request", model), make("matched", "tool_result", "nonmatching"),
+          make("direct", "tool_result", model), make("miss", "api_request", "nonmatching"),
+          make("early", "api_request", model, {}, "09:59:59"),
+          make("late", "api_request", model, {}, "11:00:00"),
+          make("", "api_request", model),
+          ...["matched", "miss", "counter", "foreign", "early", "late", ""].flatMap((session) =>
+            ["tool_result", "tool_decision"].map((name) => make(session, name))),
+          ...[{ "user.email": "model-other@example.invalid" }, { "project.name": "other" },
+            ...(client === "codex" ? [{ backend: "bedrock-runtime" }] : [])]
+            .map((resource) => make("matched", "tool_result", undefined, resource)),
+        ];
+        // Both client ID keys collide deliberately.
+        const foreign = make("foreign", "api_request", model);
+        foreign.LogAttributes["event.name"] = client === "claude" ? "codex.api_request" : "api_request";
+        await insertLogs([...rows, foreign]);
+        await insertMetrics([{
+          ...metrics[0], ResourceAttributes: make("counter", "tool_result").ResourceAttributes,
+          Attributes: { "session.id": `${client}-counter`, model, type: "input" },
+          TimeUnix: `${day} 10:01:00`, Value: 0,
+        }]);
+        const select = async (filters) => {
+          const { sql, params } = buildCodexQuery(from, to, filters, {}, client);
+          return (await db.query({ query: sql, query_params: params, format: "JSONEachRow" })).json();
+        };
+        const selected = await select({ model, user: "model-" });
+        assert.deepEqual(selected.filter((r) => r.kind === "tool").map((r) => r.tool).sort(),
+          client === "claude" ? ["counter", "direct", "matched"] : ["direct", "matched"]);
+        assert.equal(selected.filter((r) => r.kind === "approval").length, client === "claude" ? 2 : 1);
+        assert.ok(selected.every((r) => !r.model || !r.model.includes("nonmatching")));
+        assert.deepEqual(await select({ model: "absent-model", user }), []);
+        assert.deepEqual(await select({ model, user, backend: "anthropic" }), []);
       });
     }
   } finally {

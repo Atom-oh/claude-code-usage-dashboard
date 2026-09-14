@@ -193,48 +193,12 @@ reconciliation, production deployment, credential creation or billing change is 
 
 ## Dashboard cost and query contract
 
-The authenticated `/api/clients/overview` endpoint returns cost with basis
-`client_reported` for Claude and `aws_list_estimate` for Codex. Unknown prices or
-invalid/missing token buckets make cost unavailable rather than zero. All returned
-folds use the same selected rows; reasoning is already part of output tokens.
-Codex project breakdowns use the emitted `project.name`, not an AWS billing project.
+See [API semantics](../api-reference.md#coding-client-views). Model-card estimates
+retain scope/context tiers; they are not invoices.
+`CODEX_PRICING_JSON` (`codex_pricing_json`) keys must omit `us.`/`global.` (lookup strips
+them). Entries require positive integer `short_context_limit`, `regional` and optional
+`global`, each with `short`/`long` rates: finite nonnegative USD/million `input`,
+`cacheWrite`, `cacheRead`, `output`. Invalid entries fail startup; config hides rates.
 
-`totals.users` unions distinct emitted user ID strings across clients; it is not
-a verified employee directory or a sum of per-client counts. Ranges through four
-hours use minute buckets; longer ranges use hourly buckets. When Claude is selected,
-both sources use its resolved end, returned in `effective_range` alongside
-`requested_to`. Long historical mixed ranges therefore align Codex to Claude;
-Codex-only queries retain the requested end. `bucket_hours` reports `1/60` or `1`.
-Shared boundaries retain Claude's historical and live-hour approximations.
-
-The built-in GPT-6 Astra prices are taken from the model card linked above. Price
-selection retains regional/Global inference scope and the request's short/long
-context tier before summing. `CODEX_PRICING_JSON` (Terraform `codex_pricing_json`)
-can override or add model entries. Every entry requires a positive integer
-`short_context_limit` and a `regional` object with `short` and `long` rate objects.
-An optional `global` object has the same shape. Each rate object contains finite,
-nonnegative USD-per-million `input`, `cacheWrite`, `cacheRead` and `output` values.
-No configured price is exposed by `/api/config`. Invalid configuration fails startup.
-
-The rate calculation is an estimate from emitted usage, not a guarantee of complete
-telemetry, contractual discounts or invoice equality. This feature does not fetch
-Cost Explorer/CUR or change AWS billing settings. Codex follows the existing 90-day
-log retention. Claude retains its counter lookback and historical-boundary rules.
-
-Run the real SQL check from a machine with Docker and installed server dependencies:
-
-```bash
-bash scripts/test-client-sql.sh
-```
-
-The script owns a new loopback-only ClickHouse container, applies the checked-in
-local schema, verifies deduplication, counter boundaries, price tiers and filters,
-and removes that container on exit. It does not accept a production database URL.
-
-`observed_records` is an empty-result signal: deduplicated log-event counts plus
-Claude usage aggregate-row counts. `quality.missing_usage` counts active Codex
-session/user/model/backend/project combinations with no usage-bearing records.
-Affected token/cost folds are null and contribute to `unpriced`; explicitly
-reported zero remains zero. Availability spans the selected range, so a normal
-request/completion bucket crossing does not become a false gap. This cannot detect
-every dropped response in a combination that already has usage.
+With Docker/server dependencies, `bash scripts/test-client-sql.sh` owns a disposable
+loopback ClickHouse using the local schema; external DB URLs are ignored.
