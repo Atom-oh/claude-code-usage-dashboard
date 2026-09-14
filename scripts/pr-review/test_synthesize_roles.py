@@ -109,6 +109,38 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_citation_prefix_does_not_release_a_literal_suffix(self):
+        for suffix in ("private-value", "'private-value'", "`printf private-value`"):
+            with self.subTest(suffix=suffix):
+                reply = (0, "Checked `password=`printf public`" + suffix
+                         + "` now.\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                calls, published = self.run_chair([reply, reply])
+                self.assertNotIn("private-value", published)
+                self.assertEqual(calls, 2)
+                self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+        reply = (0, "Checked ``password=`printf public`private-value`` now.\n"
+                 "PUBLIC_AFTER\nVERDICT: PASS\n", "")
+        calls, published = self.run_chair([reply, reply])
+        self.assertNotIn("private-value", published)
+        self.assertEqual(calls, 1)
+        self.assertIn("PUBLIC_AFTER", published)
+        self.assertTrue(published.endswith("VERDICT: PASS\n"))
+
+    def test_same_line_prose_quotes_keep_inline_review_evidence(self):
+        for quote in ('"', "'"):
+            for prefix in ("", "env "):
+                with self.subTest(quote=quote, prefix=prefix):
+                    example = (quote + "Checked `" + prefix + "password=" + quote
+                               + "private-value" + quote + "`; MAJOR rollback evidence. "
+                               + "See `service`." + quote)
+                    reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n", "")
+                    calls, published = self.run_chair([reply, reply])
+                    self.assertNotIn("private-value", published)
+                    self.assertEqual(calls, 1)
+                    self.assertIn("MAJOR rollback evidence.", published)
+                    self.assertIn("PUBLIC_AFTER", published)
+                    self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+
     def test_quote_owned_tick_does_not_escape_empty_list_literal(self):
         example = "-\n\n    echo 'longer ` quoted text'\n    password=prefix`printf 'private-value'`"
         reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
@@ -188,7 +220,8 @@ class SynthesisTests(unittest.TestCase):
         examples = (
             ("echo '`'\npassword=${PREFIX}`printf 'private-value'`", True),
             ("echo '`'\npassword=tags[0]`private-value`", True),
-            ("Use `password=`! printf 'private-value'`` now.", True),
+            # Competing single-tick citation/value boundaries fail closed, as on BASE.
+            ("Use `password=`! printf 'private-value'`` now.", False),
         )
         for example, accepted in examples:
             with self.subTest(example=example):

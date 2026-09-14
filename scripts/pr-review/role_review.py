@@ -821,8 +821,8 @@ def _inline_code_spans(value, closing_fences=None):
     if "`" not in value and (closing_fences is None or "~~~" not in value):
         return []
     spans, pending = [], []
-    quote_ends = {}
-    # Complete line-local string tokens own their ticks; word apostrophes do not.
+    quoted_line_ends = {}
+    # Quoted ticks stay line-local; preserve existing same-line Markdown pairs.
     quoted_fragment = re.compile(
         r"(?<![\w\\])'(?:\\[^\r\n]|[^'\\\r\n])*'"
         r'|(?<!\\)"(?:\\[^\r\n]|[^"\\\r\n])*"'
@@ -852,7 +852,7 @@ def _inline_code_spans(value, closing_fences=None):
             while slash_start and value[slash_start - 1] == "\\":
                 slash_start -= 1
             close = following[index]
-            owner_end = quote_ends.get(start)
+            owner_end = quoted_line_ends.get(start)
             if (close is None or (start - slash_start) % 2
                     or (owner_end is not None and pending[close][1] > owner_end)):
                 index += 1
@@ -860,7 +860,7 @@ def _inline_code_spans(value, closing_fences=None):
                 spans.append((end, pending[close][0]))
                 index = close + 1
         pending.clear()
-        quote_ends.clear()
+        quoted_line_ends.clear()
         paragraph = False
 
     def blank(line):
@@ -1067,7 +1067,7 @@ def _inline_code_spans(value, closing_fences=None):
                     fragment = next(fragments, None)
                 start = offset + match.start()
                 if fragment is not None and fragment.start() < match.start():
-                    quote_ends[start] = offset + fragment.end()
+                    quoted_line_ends[start] = offset + len(raw_line)
                 pending.append((start, offset + match.end()))
             paragraph = True
             if heading:
@@ -1275,6 +1275,9 @@ def _assignment_spans(value, key, json_closers=None, fragment=False, backtick_sp
         while (backtick_index < len(backtick_spans)
                and backtick_spans[backtick_index][1] <= match.start()):
             backtick_index += 1
+        literal_value = (backtick_index < len(backtick_spans)
+                         and backtick_spans[backtick_index][0] <= match.start()
+                         < backtick_spans[backtick_index][1])
         if (code_end is not None and backtick_index < len(backtick_spans)
                 and backtick_spans[backtick_index][0] <= match.start() < code_end
                 < backtick_spans[backtick_index][1]):
@@ -1286,6 +1289,8 @@ def _assignment_spans(value, key, json_closers=None, fragment=False, backtick_sp
         index, quote, escaped, stack = match.end(), None, False, []
         key_name = match.group().rstrip()[:-1].rstrip()
         prefix = value[match.start() - 1] if match.start() else ""
+        if prefix == "`" and literal_value:
+            prefix = ""  # The citation opener cannot terminate a confirmed literal value.
         if key_name.endswith(("\"", "'")):
             prefix = ""
         # A quoted shell fragment can contain only the assignment prefix.
