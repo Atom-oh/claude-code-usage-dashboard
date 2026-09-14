@@ -92,6 +92,28 @@ class SynthesisTests(unittest.TestCase):
                 self.assertIn("Reviewed behavior", text)
                 self.assertNotIn("private-value", text)
 
+    def test_shell_literal_brackets_preserve_review_after_closing_quote(self):
+        for bracket in ("[", "{"):
+            with self.subTest(bracket=bracket):
+                reply = (0, f"curl -d 'password=prefix{bracket}private-value' https://example.invalid\n"
+                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertNotIn("private-value", text)
+
+    def test_escaped_value_quotes_preserve_review_and_hide_complete_value(self):
+        for quote in ('"', "'"):
+            with self.subTest(quote=quote):
+                reply = (0, f"password={quote}prefix\\{quote}private-value{quote}\n"
+                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertNotIn("private-value", text)
+
     def test_stdout_account_errors_prevent_fallback_and_pass(self):
         for code in (0, 1):
             for message in (

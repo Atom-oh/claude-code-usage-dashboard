@@ -874,8 +874,8 @@ def _json_enclosing_closers(value):
 
 
 def _assignment_spans(value, key):
-    json_closers = _json_enclosing_closers(value)
     """Find assignments without changing another detector's input."""
+    json_closers = _json_enclosing_closers(value)
     operator = re.compile(r"\|\||\?\?|\bor\b")
     tail_operator = re.compile(r"(?:\|\||\?\?|\bor|\\|(?:^|\s)[+*/%&|^?:<>=!-])$")
     code_spans, code_index = _inline_code_spans(value), 0
@@ -884,10 +884,10 @@ def _assignment_spans(value, key):
     bracket_ends = {}
     fence_end = re.compile(r"[ \t]*(?:`{3,}|~{3,})[ \t]*(?:\r?\n|\Z)")
 
-    def paired_bracket(start, boundary):
+    def paired_bracket(start, boundary, enclosing_quote):
         # Cache matching pairs from the same forward scan. An unrelated later
         # Markdown link cannot close a bracket inside this bare token.
-        cache_key = (start, boundary)
+        cache_key = (start, boundary, enclosing_quote)
         if cache_key in bracket_ends:
             return bracket_ends[cache_key] is not None
         pending = [(opening[value[start]], start)]
@@ -905,6 +905,8 @@ def _assignment_spans(value, key):
                     continue
             elif char == "\\" and index + 1 < len(value) and value[index + 1] not in "\r\n":
                 escaped = True
+            elif char == enclosing_quote:
+                break
             elif value.startswith("/*", index):
                 closing = value.find("*/", index + 2)
                 if closing < 0:
@@ -928,14 +930,14 @@ def _assignment_spans(value, key):
                 closing, position = pending.pop()
                 if char != closing:
                     return True  # Keep the main scanner's fail-closed behavior.
-                bracket_ends[(position, boundary)] = index
+                bracket_ends[(position, boundary, enclosing_quote)] = index
                 if not pending:
                     return True
             index += 1
         if quote or escaped:
             return True  # An unfinished string is not a bare literal boundary.
         for _, position in pending:
-            bracket_ends[(position, boundary)] = None
+            bracket_ends[(position, boundary, enclosing_quote)] = None
         return False
     last_apostrophe, quote_escape = -1, False
     code_apostrophes, quote_span_index = {}, 0
@@ -1041,7 +1043,7 @@ def _assignment_spans(value, key):
                 # An unmatched bracket inside a bare dotenv/shell token is
                 # literal punctuation. Initial containers and calls keep their
                 # existing fail-closed boundary handling.
-                if stack or index == value_start or char == "(" or paired_bracket(index, code_end):
+                if stack or index == value_start or char == "(" or paired_bracket(index, code_end, prefix):
                     stack.append(opening[char])
             elif char in ")]}" and stack:
                 if char != stack.pop():
@@ -1133,6 +1135,12 @@ def _owned_body(value, match, kind, key):
         marker_end += width
         marker = value[start:marker_end]
         body_end = end - len(marker) if end >= marker_end + len(marker) and value.endswith(marker, start, end) else end
+        if kind == "scalar" and len(marker) == 1 and body_end < end:
+            slash_start = body_end
+            while slash_start > marker_end and value[slash_start - 1] == "\\":
+                slash_start -= 1
+            if (body_end - slash_start) % 2:
+                return None  # Let the assignment scanner retain the escaped delimiter.
         return (marker_end, body_end) if marker_end < body_end else None
     return (start, end)
 
