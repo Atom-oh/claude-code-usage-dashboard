@@ -76,6 +76,10 @@ class RoleReviewTests(unittest.TestCase):
         cases += ["Evidence: " + json.dumps({key: item})
                   for key in ("/prod/db/password", "password[0]", "api key (prod)")
                   for item in ({"note": canary}, [canary])]
+        cases += [json.dumps({key: canary}, ensure_ascii=False)
+                  for key in ("paſſword", "apiKey")]
+        cases += [f'password = previous {operator}// local fallback\n"{canary}"\nPUBLIC_AFTER'
+                  for operator in ("||", "??")]
         for index, evidence in enumerate(cases):
             with self.subTest(case=index):
                 self.work = self.root / f"publication-{index}"

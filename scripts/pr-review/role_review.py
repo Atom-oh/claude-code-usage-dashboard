@@ -742,7 +742,10 @@ SENSITIVE_KEY = re.compile(
 )
 
 def sensitive_key(value):
-    return isinstance(value, str) and SENSITIVE_KEY.fullmatch(re.sub(r"[^A-Za-z0-9]+", "_", value))
+    return isinstance(value, str) and (
+        SENSITIVE_KEY.fullmatch(re.sub(r"[^A-Za-z0-9]+", "_", value))
+        or SENSITIVE_KEY.fullmatch(value)
+    )
 
 
 
@@ -983,8 +986,9 @@ def _assignment_spans(value, key):
                     continuation_pending = True
                     continue
                 break
-            elif ((index == match.end() or value[index - 1].isspace())
-                  and (char == "#" or value.startswith("//", index))):
+            elif ((char == "#" or value.startswith("//", index))
+                  and (index == match.end() or value[index - 1].isspace()
+                       or re.search(r"(?:\|\||\?\?|\bor|\\)$", value[max(line_start, index - 3):index]))):
                 previous = value[line_start:index].rstrip()
                 if stack or continuation_pending or re.search(r"(?:\|\||\?\?|\bor|\\)$", previous):
                     newline = line_break.search(value, index)
