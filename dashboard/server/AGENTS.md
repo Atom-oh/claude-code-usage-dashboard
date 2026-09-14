@@ -46,6 +46,12 @@ Tests use `node:test`; run `npm test` in this directory.
 
 ## Cost and measurement
 
+- The counter/`reported_cost` contracts below apply to Claude. Client views use
+  `clientMetrics.js`: Codex usage-bearing completion logs are deduplicated before grouping
+  and priced by `codexPricing.js`. A generic completion event is not usage.
+  Input contains cache subsets and output contains reasoning; never add subsets twice.
+- Client flags gate Claude routes/warming and select freshness sources. Client/backend
+  selectors are validated before cache lookup; unknown costs propagate through folds.
 - `TOKEN_SUMS` already returns `reported_cost`; `rollupComputedCost()` preserves its sum.
   A display-source change belongs in consumers, not in repricing or SQL rewrites.
 - `cost` and summary `computed_cost` remain token-priced diagnostics. The configured

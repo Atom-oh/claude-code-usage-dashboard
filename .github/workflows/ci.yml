@@ -36,6 +36,8 @@ jobs:
         working-directory: dashboard/server
       - run: npm test
         working-directory: dashboard/server
+      - name: Verify client aggregation against ClickHouse
+        run: bash scripts/test-client-sql.sh
 
   web:
     runs-on: ubuntu-latest

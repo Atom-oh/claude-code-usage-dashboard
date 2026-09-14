@@ -29,6 +29,55 @@ second precision. Historical rollup ends, latest-hour data and existence queries
 specific approximations; see [time boundaries](reference/data.md).
 Config, health and chat routes do not use this range wrapper.
 
+## Coding-client views
+
+`CLAUDE_ENABLED` (default true) and `CODEX_ENABLED` (default false) select enabled
+sources. Both false fails startup. `/api/config` additionally returns `enabledClients`
+and `codexEndpoint`. Disabled Claude data routes return 404 before querying, its cache
+warming stops, and its schema-specific chat is disabled. Configuration, health and
+authentication retain their existing contracts.
+
+`GET /api/clients/overview` returns `clients`, `totals`, `by_client`, `by_model`,
+`by_user`, `by_project`, `timeseries`, `tools`, `quality` and `observed_records`. `client` is `all`,
+`claude` or `codex`; `all` includes only enabled clients. `user` and `model` are
+case-insensitive substrings; `backend` is `bedrock-mantle`, `bedrock-runtime`,
+`anthropic`, `unknown` or `all`.
+Disabled/unknown clients, array selectors and Claude-only group/project filters
+are rejected before cache lookup. Client/backend are part of this route's cache key.
+
+Codex projects come from the emitted `project.name` resource attribute; the
+`by_project` result covers Codex only and is not an AWS billing-project report.
+This endpoint rejects nonempty project filters. Claude's existing Usage routes
+retain their own project-column gate.
+
+Rows use `cost_usd` with `cost_basis=client_reported` (Claude) or
+`aws_list_estimate` (Codex). Missing prices or invalid usage propagate null cost
+through each fold. Tiny positive amounts remain positive. Users count distinct
+nonempty emitted identity strings, not an employee directory; sessions are
+namespaced by client. Do not sum per-model session/user counts to reconstruct totals.
+Operational durations are means of observed duration samples. Missing timings
+remain null. Counts reflect the client's exported events and are not complete
+end-to-end billing coverage.
+
+`observed_records` sums deduplicated supported log-event counts and Claude usage
+aggregate-row counts. It is an empty-result signal, not a comparable request count.
+`quality.missing_usage` counts active Codex session/user/model/backend/project
+combinations with no usage-bearing record anywhere in the selected range. Those
+combinations make affected token/cost folds null, including combined totals, and
+contribute to `unpriced`. Explicit zero-valued usage remains zero. Matching across
+buckets prevents a request/response boundary crossing from becoming a false gap.
+Presence within a combination cannot detect every individual dropped response.
+
+All common-view folds use the same bounded session/model/time rows. More than
+50,000 aggregation rows causes a 400 requesting a narrower range rather than a
+partial total. Claude retains its existing counter/time-boundary semantics; Codex
+uses complete structured log events. `effective_range` returns `from`, `to` and
+`requested_to`; when Claude is included, its historical end alignment applies to
+both clients. Consumers must disclose any trimmed end. `bucket_hours` is 1/60 for ranges
+up to four hours, otherwise 1. A local Claude query preserves the first partial
+minute's pre-range counter baseline without changing shared helper semantics.
+See [client telemetry](runbooks/codex-telemetry.md).
+
 ## Filter scope
 
 Forwarded parameters are not universally implemented. [filterCond](../dashboard/server/queries.js)

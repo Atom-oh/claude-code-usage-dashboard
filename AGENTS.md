@@ -2,8 +2,8 @@
 
 ## Scope
 
-This repository is a workshop telemetry dashboard: Claude Code sends OTel data to
-ClickHouse; an Express API serves a React SPA. It also contains Terraform, a static
+This repository is a workshop telemetry dashboard: Claude Code metrics and Codex
+structured OTel logs feed ClickHouse; an Express API serves a React SPA. It also contains Terraform, a static
 documentation site, and a separate video project. It is not a validated employee
 productivity or causal ROI measurement system.
 
@@ -38,8 +38,9 @@ Use the deployment runbook for production changes; a successful build is not a d
 
 ## Core contracts
 
-- Display spend from `reported_cost`; retain token-priced `cost`/`computed_cost` for
-  diagnostics. Reports are estimates, neither invoices nor guaranteed billing bounds.
+- Claude spend uses `reported_cost`, retaining `cost`/`computed_cost` diagnostics.
+  Codex uses labelled AWS list-price estimates, with cache subsets and context/inference
+  tiers handled before aggregation. Neither source is an invoice.
 - Never sum cumulative OTel samples as usage. Preserve counter identity, query
   boundaries, and the existing temporality handling.
 - `bedrock` and `enterprise` are inferred session channels, not coding clients.
@@ -49,6 +50,9 @@ Use the deployment runbook for production changes; a successful build is not a d
   not establish complete telemetry.
 - Keep secrets and personal or customer data out of commits, public review comments,
   and site assets. Client-side display masking is not an API access-control boundary.
+- `CLAUDE_ENABLED`/`CODEX_ENABLED` select collection and API sources; both false is invalid.
+  Client-aware SPA activation is a separate release step; keep dashboard defaults until it ships.
+  Preserve client/backend/model separation. Codex never becomes an enterprise A/B row.
 
 ## Documentation and review
 

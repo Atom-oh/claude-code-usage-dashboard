@@ -447,6 +447,35 @@ const TOKEN_SUMS = `
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens`;
 
+// Client summaries reuse the existing counter and boundary semantics without adding
+// dimensions to shared helpers. Operational Codex events never enter these counters.
+export async function clientClaudeRows(from, to, filters = {}) {
+  const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
+  // Split the first raw minute at `from` so its pre-window baseline stays outside
+  // the returned bucket. This is local to client views; shared helpers are unchanged.
+  const b = to - from <= MAX_SNAPSHOT_RAW_RANGE_MS
+    ? { raw: true, params: {}, sub: incBucketedRaw(
+      "if(TimeUnix >= {from:DateTime}, greatest(toStartOfMinute(TimeUnix), {from:DateTime}), toStartOfMinute(TimeUnix))",
+      metricFilter) }
+    : incBucket(1, metricFilter);
+  const f = filterCond({ ...filters, excludeUnknown: false },
+    { user: "m.UserEmail", model: "m.Model" });
+  return query(`${GROUP_CTE}
+    -- coding-client:claude-usage
+    SELECT formatDateTime(greatest(m.t, {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
+      m.SessionId AS session, m.UserEmail AS user, ${normModel("m.Model")} AS model,
+      multiIf(${GROUP_EXPR} = 'bedrock', 'bedrock-runtime',
+        ${GROUP_EXPR} = 'enterprise', 'anthropic', 'unknown') AS backend,
+      1 AS count, ${TOKEN_SUMS}
+    FROM ${b.sub} m LEFT JOIN session_group ug USING (SessionId)
+    WHERE 1=1 ${f.where}
+      AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
+    GROUP BY t, session, user, model, backend
+    HAVING input_tokens + output_tokens + cache_read_tokens + cache_write_tokens > 0 OR reported_cost != 0
+    ORDER BY t LIMIT 50001`,
+  { ...range(from, to, b.raw), ...b.params, ...f.params, clientBackend: filters.backend || "" });
+}
+
 // 패널1: 그룹별 KPI 요약. excludeUnknown: false — 이 응답의 합계(클라이언트에서 groupBy 없이
 // reduce)가 Overview/Executive의 "전체 세션/토큰/라인" 총계로 쓰인다. activeUsers(unknown
 // 포함)와 짝을 이루는 분자이므로 같은 모수 정책을 따라야 한다(리뷰에서 MAJOR로 확인 —

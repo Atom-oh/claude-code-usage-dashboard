@@ -14,10 +14,14 @@ import { probeSegmentAwareSeriesKey, probeMigrations, probeProjectColumns } from
 import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./freshness.js";
 import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
+import { parseClients } from "./clients.js";
+import { clientOverview, validateClientFilters } from "./clientMetrics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 8080;
+const clientConfig = parseClients(process.env);
+const claudeEnabled = clientConfig.enabledClients.includes("claude");
 
 // CloudFront(VPC Origin) → 내부 NLB(TCP passthrough) → 파드 구조라 신뢰할 프록시 홉은 딱 1개다.
 // CloudFront가 실클라이언트 IP를 X-Forwarded-For에 append하므로 hop=1이면 req.ip가 그 값이 되고,
@@ -210,7 +214,7 @@ function freshnessSnapshot() {
   if (freshnessMemo.expires < Date.now()) {
     freshnessMemo = {
       expires: Date.now() + FRESHNESS_MEMO_MS,
-      promise: probeLatestTelemetryMs().then((latestMs) =>
+      promise: probeLatestTelemetryMs(clientConfig.enabledClients).then((latestMs) =>
         classifyFreshness({ latestMs, nowMs: Date.now(), staleAfterMinutes })
       ),
     };
@@ -237,6 +241,13 @@ if (process.env.ALERT_WEBHOOK_URL) startAlertLoop({ url: process.env.ALERT_WEBHO
 // includeUnknown=1 뷰는 첫 조회가 콜드다 — 정확성 우선.
 const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "project", "intervalHours", "email", "includeUnknown"];
 function cacheKey(path, query) {
+  if (path === "/api/clients/overview") {
+    const filters = validateClientFilters(query, clientConfig.enabledClients);
+    const normalized = { from: query.from, to: query.to,
+      client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend };
+    return `${path}?${new URLSearchParams(Object.entries(normalized)
+      .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString()}`;
+  }
   const entries = CACHE_KEY_PARAMS.filter((k) => query[k] !== undefined)
     .sort()
     .map((k) => [k, query[k]]);
@@ -262,15 +273,18 @@ function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
 // 성립하지 않는 엔드포인트.
 const warmRoutes = [];
 
-function route(path, handler, { warm = true } = {}) {
-  if (warm) warmRoutes.push({ path, handler });
+function route(path, handler, { warm = true, client = "claude", validate } = {}) {
+  const active = client === null || clientConfig.enabledClients.includes(client);
+  if (warm && active) warmRoutes.push({ path, handler });
   app.get(path, async (req, res) => {
+    if (!active) return res.status(404).json({ error: "client disabled" });
     try {
       // 검증은 fetchCached보다 먼저 — 잘못된 요청이 캐시 엔트리를 만들면 안 된다. 무효한
       // from/to도 예전에는 고유한 캐시 키를 하나씩 차지했다(엔트리 상한을 무의미한 키로
       // 밀어내는 형태).
       parseRange(req.query, RANGE_OPTS);
       parseIntervalHours(req.query.intervalHours);
+      validate?.(req.query);
       res.json(await fetchCached(path, handler, req.query));
     } catch (err) {
       if (err instanceof ValidationError) {
@@ -286,6 +300,11 @@ function route(path, handler, { warm = true } = {}) {
     }
   });
 }
+
+route("/api/clients/overview",
+  (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),
+  { client: null, warm: clientConfig.enabledClients.includes("codex"),
+    validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
 
 // ── 캐시 warmer ──────────────────────────────────────────────────────────
 // 기본 뷰(2일·필터 없음·시간 버킷)를 QUANT_MS(현재 120초) 경계마다 서버가 스스로 조회해
@@ -441,6 +460,7 @@ if (!authEnabled && chatAllowed) {
   console.warn("WARNING: CHAT_ALLOW_INSECURE=1 — POST /api/chat (LLM-generated SELECTs) is served WITHOUT authentication.");
 }
 app.post("/api/chat", express.json(), (req, res) => {
+  if (!claudeEnabled) return res.status(503).json({ error: "Claude 데이터 채팅이 비활성화되어 있습니다" });
   if (!chatAllowed) {
     return res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" });
   }
@@ -462,6 +482,8 @@ app.get("/api/config", (_req, res) =>
     groupMode: GROUP_MODE,
     defaultRangeDays: DEFAULT_RANGE_DAYS,
     rangeCapDays: RANGE_CAP_DAYS,
+    enabledClients: clientConfig.enabledClients,
+    codexEndpoint: clientConfig.codexEndpoint,
   })
 );
 
