@@ -1009,6 +1009,8 @@ def _assignment_spans(value, key):
                 if char != stack.pop():
                     index = len(value)
                     break
+            elif char in "}]" and not stack:
+                break
             elif char.isspace() and not stack:
                 previous = value[line_start:index].rstrip()
                 following = next_content(index)

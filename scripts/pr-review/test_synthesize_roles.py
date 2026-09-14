@@ -76,6 +76,22 @@ class SynthesisTests(unittest.TestCase):
                 self.assertTrue(text.endswith("VERDICT: PASS\n"))
                 self.assertNotIn("private-value", text)
 
+    def test_shell_quoted_json_preserves_enclosing_boundary(self):
+        for payload in (
+            '{"password":"private-value"}',
+            '{"public":"ok","password":"private-value"}',
+            '[{"password":"private-value"}]',
+            '{"password":"private-value","public":"ok"}',
+        ):
+            with self.subTest(payload=payload):
+                reply = (0, f"Example: curl -d '{payload}' https://example.invalid\n"
+                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertIn("Reviewed behavior", text)
+                self.assertNotIn("private-value", text)
+
     def test_stdout_account_errors_prevent_fallback_and_pass(self):
         for code in (0, 1):
             for message in (
