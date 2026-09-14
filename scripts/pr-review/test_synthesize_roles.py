@@ -109,6 +109,18 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_inline_assignment_preserves_evidence_before_raw_blocks(self):
+        for block in ("```text\npublic()\n```", "<pre>\necho '`'\n</pre>"):
+            with self.subTest(block=block):
+                reply = (0, "Checked `env password='private-value'`; "
+                         "MAJOR rollback evidence.\n\n" + block + "\nVERDICT: FAIL\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", text)
+                self.assertIn("MAJOR rollback evidence.", text)
+                self.assertIn("public()" if block.startswith("```") else "<pre>", text)
+                self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+
     def test_command_citations_preserve_following_findings(self):
         for prefix in ("env ", "curl -d ", "USER=demo ", "export\n"):
             with self.subTest(prefix=prefix):

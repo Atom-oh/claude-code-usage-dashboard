@@ -1140,22 +1140,18 @@ def _backtick_value_spans(value, key, markdown=True):
         if markdown:
             if code_spans is None:
                 code_spans = _inline_code_spans(value)
-                code_openings = set()
-                for start, _ in code_spans:
-                    opening = start
-                    while opening > 0 and value[opening - 1] == "`":
-                        opening -= 1
-                    code_openings.add(opening)
             while code_index < len(code_spans) and code_spans[code_index][1] < match.start():
                 code_index += 1
             code_span = (code_spans[code_index]
                          if code_index < len(code_spans)
                          and code_spans[code_index][0] <= match.start() else None)
+            literal_opener = (code_span is not None and code_span[0] >= 2
+                              and value[code_span[0] - 2] in "\"'"
+                              and value[code_span[0]:code_span[0] + 1]
+                              == value[code_span[0] - 2])
             if (code_span is not None and position == code_span[1]
-                    and position > match.end()
-                    and quoted.end() - 1 in code_openings):
-                # The next paired citation owns the later tick; retain the prose.
-                continue
+                    and position > match.end() and not literal_opener):
+                continue  # This tick belongs to the current nonempty citation.
             if _empty_inline_assignment(value, match.start(), match.end(), code_span):
                 continue
         spans.append((match.start(), quoted.end()))
