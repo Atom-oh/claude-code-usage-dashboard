@@ -83,6 +83,7 @@ class SynthesisTests(unittest.TestCase):
             "1. Summary\n\n    Run `export\n    password=private-value` now.",
             "10. Summary\n\n     Run `export password=private-value` now.",
             "- Summary\n\n    Run `export password=private-value` now.",
+            "-\n\n    Run `export password=private-value` now.",
         ):
             with self.subTest(example=example):
                 reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
@@ -107,6 +108,60 @@ class SynthesisTests(unittest.TestCase):
         ):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
+
+    def test_literal_backticks_in_raw_blocks_keep_sensitive_values_hidden(self):
+        examples = (
+            "```bash\ncat <<'EOF'\n> ```\nEOF\necho '`'\npassword=`printf 'private-value'`\n```",
+            "> ```bash\n> cat <<'EOF'\n> > ```\n> EOF\n> echo '`'\n> password=`printf 'private-value'`\n> ```",
+            "- Example\n\n  ```bash\n  cat <<'EOF'\n  > ```\n  EOF\n  echo '`'\n  password=`printf 'private-value'`\n  ```",
+            "<pre>\necho '`'\npassword=`printf 'private-value'`\n</pre>",
+            '<SCRIPT type="text/plain">\necho \'`\'\npassword=`printf \'private-value\'`\n</SCRIPT>',
+            "<style>\necho '`'\npassword=`printf 'private-value'`\n</style>",
+            "<textarea>\necho '`'\npassword=`printf 'private-value'`\n</textarea>",
+            "<!--\necho '`'\npassword=`printf 'private-value'`\n-->",
+            "<?example\necho '`'\npassword=`printf 'private-value'`\n?>",
+            "<!DOCTYPE\necho '`'\npassword=`printf 'private-value'`\n>",
+            "<![CDATA[\necho '`'\npassword=`printf 'private-value'`\n]]>",
+            "<div>\necho '`'\npassword=`printf 'private-value'`\n</div>",
+            '<x-data attr="ok">\necho \'`\'\npassword=`printf \'private-value\'`\n</x-data>',
+            "> <pre>\n> echo '`'\n> password=`printf 'private-value'`\n> </pre>",
+        )
+        examples += ("<div>\n\xa0\necho '`'\npassword=`printf 'private-value'`\n</div>",)
+        examples += tuple(
+            "<script>\n" + closer + "\necho '`'\npassword=`printf 'private-value'`\n</script>"
+            for closer in ("</ſcript>", "</scrİpt>", "</scrıpt>")
+        )
+        for example in examples:
+            with self.subTest(example=example):
+                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", text)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
+    def test_raw_container_exit_restores_inline_lookup(self):
+        examples = (
+            "> ```text\n> echo '`'\nOutside `export\npassword=private-value` now.",
+            "- Example\n\n  ```text\n  echo '`'\nOutside `export\npassword=private-value` now.",
+            "> <pre>\n> echo '`'\nOutside `export\npassword=private-value` now.",
+        )
+        for example in examples:
+            with self.subTest(example=example):
+                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", text)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
+    def test_complete_custom_html_tag_does_not_interrupt_inline_prose(self):
+        reply = (0, "Use `export\n<x-data attr='ok'>\npassword=private-value` now.\n"
+                    "Reviewed behavior.\nVERDICT: PASS\n", "")
+        calls, text = self.run_chair([reply, reply])
+        self.assertEqual(calls, 1)
+        self.assertNotIn("private-value", text)
+        self.assertTrue(text.endswith("VERDICT: PASS\n"))
 
     def test_empty_sensitive_examples_preserve_the_review(self):
         for example in (
