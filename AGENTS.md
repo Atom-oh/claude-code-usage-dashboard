@@ -1,28 +1,22 @@
 # Project instructions
 
-## Scope
+## Scope and authority
 
-This repository is a workshop telemetry dashboard: Claude Code sends OTel data to
-ClickHouse; an Express API serves a React SPA. It also contains Terraform, a static
-documentation site, and a separate video project. It is not a validated employee
-productivity or causal ROI measurement system.
+Workshop telemetry: Claude Code OTel → ClickHouse → Express → React, with Terraform,
+a documentation site and a separate video project. These observations are not
+validated employee productivity or causal ROI measures.
 
-## Sources of truth
+Code/tests establish behavior. Follow this file and the nearest scoped `AGENTS.md`;
+`CLAUDE.md` imports its adjacent guide. References own implementation details,
+runbooks own operations, and ADRs record scoped decisions. Superseded ADRs and dated
+investigations are historical evidence. Configuration/build success does not prove
+an image, migration, Terraform change or runtime option is deployed. Explicit user
+instructions take precedence. Surface actual conflicts; missing excerpts do not prove
+missing implementation.
 
-- Read executable code and tests to establish current behavior.
-- Follow this file and the nearest scoped `AGENTS.md` for engineering conventions.
-  `CLAUDE.md` files import their adjacent `AGENTS.md`; do not duplicate their rules.
-- Use `docs/reference/` for implementation details and `docs/runbooks/` for operations.
-- ADRs record decisions and their scope. Superseded decisions and dated investigations
-  are historical evidence, not instructions to restore old behavior.
-- Repository configuration describes intended state. It does not prove a migration,
-  Terraform change, image, or runtime option is deployed.
-- Explicit user instructions take precedence. Surface real code/document conflicts;
-  do not silently treat a missing excerpt as a missing implementation.
+## Validation
 
-## Commands
-
-Node.js 22 or newer is required. Server and web packages are installed separately.
+Node 22+; install server/web separately:
 
 ```bash
 (cd dashboard/server && npm ci && npm test)
@@ -32,57 +26,42 @@ terraform fmt -check -recursive infra/
 (cd infra && terraform init -backend=false && terraform validate)
 ```
 
-`tests/run-all.sh` discovers `test-*.sh`; `.github/workflows/ci.yml` runs it.
-Missing gitignored `.claude/` tooling is an expected skip, not a repository defect.
-Use the deployment runbook for production changes; a successful build is not a deployment.
+CI runs the harness, which discovers `test-*.sh`. Missing gitignored `.claude/` tooling
+is an expected skip. Use the deployment runbook for production changes.
 
-## Core contracts
+## Contracts
 
-- Display spend from `reported_cost`; retain token-priced `cost`/`computed_cost` for
-  diagnostics. Reports are estimates, neither invoices nor guaranteed billing bounds.
-- Never sum cumulative OTel samples as usage. Preserve counter identity, query
-  boundaries, and the existing temporality handling.
-- `bedrock` and `enterprise` are inferred session channels, not coding clients.
-  A model name does not identify Claude Code, Codex, or another emitting client.
-- Use the shared API route wrapper, parameterized queries, and existing filter rules.
-- Distinguish unavailable measurements from measured zero. A positive aggregate does
-  not establish complete telemetry.
-- Keep secrets and personal or customer data out of commits, public review comments,
-  and site assets. Client-side display masking is not an API access-control boundary.
+- Spend uses `reported_cost`; retain `cost`/`computed_cost` diagnostics. Estimates are
+  neither invoices nor guaranteed billing bounds.
+- Never sum cumulative OTel samples as usage; preserve identity, boundaries and
+  temporality handling.
+- Bedrock/enterprise are inferred session channels, not client identities. Model
+  names do not identify the emitting client.
+- Use shared API wrapping, bound SQL parameters and existing filter semantics.
+- Unavailable is distinct from zero; positive totals do not prove complete telemetry.
+- Exclude secrets, personal/customer data from commits, public reviews and site assets.
+  UI masking is not API access control.
 
 ## Documentation and review
 
-Maintain project documentation and PR review prose in concise English. Product UI
-localization is a separate decision; this policy does not translate the application.
-Prefer one owner for each rule and link to it. Document current contracts, reasons,
-and limitations; avoid duplicated translations, review transcripts, and stale line numbers.
+Engineering docs, guides, ADRs and PR prose are concise English; this supersedes
+bilingual review templates. UI localization is separate. Link each rule's owner;
+retain current contracts/reasons/limits without duplicated translations, transcripts
+or stale line references.
 
-Review introduced behavior against code, tests, and the trusted base-revision context.
-An intentional convention is not a defect merely because a reviewer prefers another
-design. Report uncertainty as such. Real correctness or security regressions still block.
-Never weaken authentication, no-tools checks, review coverage, or CI to obtain a pass.
-Follow the user's current-head review, fix, push, and merge policy.
+Review introduced behavior against code, tests and trusted base context. Preferences
+and intentional conventions are not defects; report uncertainty explicitly. Real
+correctness/security regressions block. Never weaken auth, no-tools checks, coverage
+or CI for a pass. Follow the user's latest-HEAD review/fix/push/merge policy.
 
-## Scoped guidance
+`ROLE_REVIEW=1` assigns specialists: Codex/Claude independently check the full change;
+Kiro covers applicable AWS/operations. Only trusted routing marks NOT_APPLICABLE.
+Failed/incomplete required output blocks; the chair cannot waive coverage. This
+supersedes older matrix/dropout rules. See [review contracts](docs/pr-review-specialists.md).
 
-- [Application packaging](dashboard/AGENTS.md)
-- [Server and ClickHouse](dashboard/server/AGENTS.md)
-- [Web UI](dashboard/web/AGENTS.md)
-- [Infrastructure](infra/AGENTS.md)
-- [PR review tooling](scripts/pr-review/AGENTS.md)
-- [Video](video/AGENTS.md)
-- [Documentation policy](docs/documentation-policy.md)
+## Owners
 
-## Specialist PR review
-
-CI enables `ROLE_REVIEW=1`: one applicable responsibility per model instead of
-repeating every lens. See [the current review contract](docs/pr-review-specialists.md).
-Codex and Claude retain full change-boundary checks from independent model families;
-Kiro covers AWS and operational responsibilities when applicable. Trusted routing
-owns NOT_APPLICABLE. Failed or incomplete required output is never a clean review.
-The chair adjudicates substantive candidates; it cannot waive coverage failures.
-This section supersedes earlier matrix-count and permissive dropout descriptions.
-
-PR review instructions, guides, related ADRs and review output are English-only.
-This scoped policy supersedes older bilingual review-document templates; product
-localization is a separate contract.
+[Packaging](dashboard/AGENTS.md) · [Server](dashboard/server/AGENTS.md) ·
+[Web](dashboard/web/AGENTS.md) · [Infrastructure](infra/AGENTS.md) ·
+[PR tooling](scripts/pr-review/AGENTS.md) · [Video](video/AGENTS.md) ·
+[Documentation policy](docs/documentation-policy.md)
