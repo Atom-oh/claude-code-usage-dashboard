@@ -109,6 +109,44 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_backtick_values_are_protected_before_markdown_boundaries(self):
+        examples = (
+            "echo '`'\npassword=`printf 'private-value'`",
+            "echo '`'\npassword=prefix`printf 'private-value'`",
+            'echo \'`\'\npassword="prefix"`printf \'private-value\'`',
+            "echo '`'\npassword=`printf\n'private-value'`",
+            "| command |\n| --- |\n| echo '`' |\n| password=`printf 'private-value'` |",
+            "| first | second |\n| --- | --- |\n| echo '`' | password=`printf 'private-value'` |",
+            "<script>\n</style>\necho '`'\npassword=`printf 'private-value'`\n</script>",
+        )
+        for example in examples:
+            with self.subTest(example=example):
+                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
+    def test_ambiguous_nonempty_values_are_not_accepted_as_empty(self):
+        for example in (
+            "echo '`'\npassword=`printf 'private-value'",
+            'Use `password=`"private-value"',
+        ):
+            with self.subTest(example=example):
+                reply = (0, example + "\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 2)
+                self.assertNotIn("private-value", text)
+                self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+
+    def test_any_standard_type1_end_tag_ends_the_html_block(self):
+        reply = (0, "<script>\n</style>\nUse `export\npassword=private-value` now.\n"
+                    "Reviewed behavior.\nVERDICT: PASS\n", "")
+        calls, text = self.run_chair([reply, reply])
+        self.assertEqual(calls, 1)
+        self.assertNotIn("private-value", text)
+        self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
     def test_ordered_nested_containers_keep_literal_values_hidden(self):
         examples = (
             "- > ```bash\n  > echo '`'\n  > password=`printf 'private-value'`\n  > ```",
