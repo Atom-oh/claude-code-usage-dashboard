@@ -109,6 +109,52 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_multiline_quote_owners_keep_source_values_private(self):
+        quoted = (
+            "'longer ` quoted\n    text'",
+            "'longer\n    ` quoted text'",
+            "'longer\n\n    ` quoted text'",
+        )
+        for value in quoted:
+            with self.subTest(value=value):
+                example = "-\n\n    echo " + value + "\n    password=prefix`printf 'private-value'`"
+                reply = (0, example + "\n\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                calls, published = self.run_chair([reply, reply])
+                self.assertNotIn("private-value", published)
+                self.assertEqual(calls, 1)
+                self.assertIn("PUBLIC_AFTER", published)
+                self.assertTrue(published.endswith("VERDICT: PASS\n"))
+
+    def test_semicolon_literal_is_not_an_empty_citation(self):
+        reply = (0, "Use `password=`; printf 'private-value'`` now.\n"
+                 "PUBLIC_AFTER\nVERDICT: PASS\n", "")
+        calls, published = self.run_chair([reply, reply])
+        self.assertNotIn("private-value", published)
+        self.assertEqual(calls, 2)
+        self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+        for example in ("Checked `password=`; empty values are rejected.",
+                        "Checked `password=`; see `service`.",
+                        "Checked `password=`;\n\n```text\npublic()\n```"):
+            with self.subTest(example=example):
+                reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                calls, published = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("PUBLIC_AFTER", published)
+                self.assertTrue(published.endswith("VERDICT: PASS\n"))
+
+    def test_raw_block_quotes_do_not_own_later_citations(self):
+        for block in ("```text\nunterminated '\n```", "<pre>\nunterminated '\n</pre>"):
+            with self.subTest(block=block):
+                example = (block + "\n\nChecked `echo user's password='private-value'`; "
+                           "MAJOR evidence. See `service`.")
+                reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n", "")
+                calls, published = self.run_chair([reply, reply])
+                self.assertNotIn("private-value", published)
+                self.assertEqual(calls, 1)
+                self.assertIn("MAJOR evidence.", published)
+                self.assertIn("PUBLIC_AFTER", published)
+                self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+
     def test_citation_prefix_does_not_release_a_literal_suffix(self):
         for suffix in ("private-value", "'private-value'", "`printf private-value`"):
             with self.subTest(suffix=suffix):

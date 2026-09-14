@@ -20,6 +20,7 @@ not proof of model honesty or of the provider's actual executed weights.
 """
 
 import argparse
+from bisect import bisect_right
 import ast
 from contextlib import contextmanager
 import hashlib
@@ -816,17 +817,25 @@ def _quoted_key_spans(value):
     return spans
 
 
-def _inline_code_spans(value, closing_fences=None, quote_owners=None):
+def _inline_code_spans(value, closing_fences=None, quote_owners=None, unmatched_runs=None):
     """Track ordered Markdown containers before interpreting inline delimiters."""
     if "`" not in value and (closing_fences is None or "~~~" not in value):
         return []
     spans, pending = [], []
-    quoted_ends = {}
-    # Record quote provenance without changing Markdown delimiter pairing.
+    quote_regions = []
+    # Quote ownership may span lines, but never excluded raw blocks or containers.
     quoted_fragment = re.compile(
-        r"(?<![\w\\])'(?:\\[^\r\n]|[^'\\\r\n])*'"
-        r'|(?<!\\)"(?:\\[^\r\n]|[^"\\\r\n])*"'
+        r"(?<![\w\\])'(?:\\.|[^'\\])*'"
+        r'|(?<!\\)"(?:\\.|[^"\\])*"', re.S
     )
+
+    def note_quote_region(start, end, scope):
+        if quote_owners is None:
+            return
+        if quote_regions and quote_regions[-1][1] == start and quote_regions[-1][2] == scope:
+            quote_regions[-1] = (quote_regions[-1][0], end, scope)
+        else:
+            quote_regions.append((start, end, scope))
     containers, next_quotes = (), (0,)
     offset, block, paragraph = 0, None, False
     quote_marker = re.compile(r" {0,3}> ?")
@@ -852,16 +861,15 @@ def _inline_code_spans(value, closing_fences=None, quote_owners=None):
             while slash_start and value[slash_start - 1] == "\\":
                 slash_start -= 1
             close = following[index]
-            owner_end = quoted_ends.get(start)
-            if close is None or (start - slash_start) % 2:
+            escaped = (start - slash_start) % 2
+            if close is None or escaped:
+                if unmatched_runs is not None and not escaped:
+                    unmatched_runs.append((start, end))
                 index += 1
             else:
                 spans.append((end, pending[close][0]))
-                if quote_owners is not None and owner_end is not None:
-                    quote_owners[end] = owner_end
                 index = close + 1
         pending.clear()
-        quoted_ends.clear()
         paragraph = False
 
     def blank(line):
@@ -1042,6 +1050,7 @@ def _inline_code_spans(value, closing_fences=None, quote_owners=None):
             containers = tuple(added)
             next_quotes = container_metadata(containers)
         if position >= tail:
+            note_quote_region(offset, offset + len(raw_line), (containers, None))
             flush()
             offset += len(raw_line)
             continue
@@ -1061,15 +1070,10 @@ def _inline_code_spans(value, closing_fences=None, quote_owners=None):
         elif len(content) - len(content.lstrip(" ")) < 4 or paragraph:
             if heading:
                 flush()
-            fragments = iter(quoted_fragment.finditer(raw_line))
-            fragment = next(fragments, None)
-            for match in re.finditer(r"`+", raw_line):
-                while fragment is not None and fragment.end() <= match.start():
-                    fragment = next(fragments, None)
-                start = offset + match.start()
-                if fragment is not None and fragment.start() < match.start():
-                    quoted_ends[start] = offset + fragment.end()
-                pending.append((start, offset + match.end()))
+            note_quote_region(offset, offset + len(raw_line),
+                              (containers, offset if heading else None))
+            pending.extend((offset + match.start(), offset + match.end())
+                           for match in re.finditer(r"`+", raw_line))
             paragraph = True
             if heading:
                 flush()
@@ -1077,6 +1081,15 @@ def _inline_code_spans(value, closing_fences=None, quote_owners=None):
             flush()
         offset += len(raw_line)
     flush()
+    if quote_owners is not None:
+        span_index = 0
+        for start, end, _ in quote_regions:
+            for fragment in quoted_fragment.finditer(value, start, end):
+                while span_index < len(spans) and spans[span_index][0] - 1 <= fragment.start():
+                    span_index += 1
+                while span_index < len(spans) and spans[span_index][0] - 1 < fragment.end() - 1:
+                    quote_owners[spans[span_index][0]] = fragment.end()
+                    span_index += 1
     return spans
 
 
@@ -1142,7 +1155,7 @@ def _backtick_value_spans(value, key, markdown=True):
     literal = re.compile(r"`(?:\\.|[^`\\])*`", re.S)
     spans, cursor, code_index = [], 0, 0
     code_spans = None
-    quote_owners = {}
+    quote_owners, unmatched_runs = {}, []
     for match in re.finditer(key, value):
         if match.start() < cursor:
             continue
@@ -1157,7 +1170,7 @@ def _backtick_value_spans(value, key, markdown=True):
             break
         if markdown:
             if code_spans is None:
-                code_spans = _inline_code_spans(value, quote_owners=quote_owners)
+                code_spans = _inline_code_spans(value, quote_owners=quote_owners, unmatched_runs=unmatched_runs)
             while code_index < len(code_spans) and code_spans[code_index][1] < match.start():
                 code_index += 1
             code_span = (code_spans[code_index]
@@ -1173,7 +1186,11 @@ def _backtick_value_spans(value, key, markdown=True):
                     and position > match.end() and not literal_opener):
                 continue  # This tick belongs to the current nonempty citation.
             if _empty_inline_assignment(value, match.start(), match.end(), code_span):
-                continue
+                closing = quoted.end() - 1
+                run_index = bisect_right(unmatched_runs, (closing, len(value) + 1)) - 1
+                if run_index < 0 or closing >= unmatched_runs[run_index][1]:
+                    continue
+                # An unmatched eligible closer proves this is not an empty citation.
         spans.append((match.start(), quoted.end()))
         cursor = quoted.end()
     return spans
