@@ -76,6 +76,38 @@ class SynthesisTests(unittest.TestCase):
                 self.assertTrue(text.endswith("VERDICT: PASS\n"))
                 self.assertNotIn("private-value", text)
 
+    def test_multiline_and_list_code_spans_preserve_review(self):
+        for example in (
+            "1. Summary\n\n    Run `export password=private-value` now.",
+            "Run `export\npassword=private-value` now.",
+            "1. Summary\n\n    Run `export\n    password=private-value` now.",
+            "10. Summary\n\n     Run `export password=private-value` now.",
+            "- Summary\n\n    Run `export password=private-value` now.",
+        ):
+            with self.subTest(example=example):
+                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertNotIn("private-value", text)
+
+    def test_inline_boundaries_exclude_separate_blocks(self):
+        import role_review
+        for example in (
+            "    `password=value`\n",
+            "```text\n`password=value`\n```\n",
+            "1. Summary\n\n   ```text\n   `password=value`\n   ```\n",
+            "Example `open\n\nnew paragraph`\n",
+            "Example `open\n```text\nclose`\n```\n",
+            "Example `open\nclose``\n",
+            "Example `open\n--\nclose`\n",
+            "Example `open\n=\nclose`\n",
+            "Example `open\n_ _ _\nclose`\n",
+        ):
+            with self.subTest(example=example):
+                self.assertEqual(role_review._inline_code_spans(example), [])
+
     def test_shell_quoted_json_preserves_enclosing_boundary(self):
         for payload in (
             '{"password":"private-value"}',
