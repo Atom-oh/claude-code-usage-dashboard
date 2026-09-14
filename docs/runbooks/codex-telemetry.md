@@ -56,8 +56,10 @@ it was running. Snapshot and candidate files live in a private temporary directo
 under `TMPDIR` (default `/var/tmp`). SSM secret reads and validation suppress xtrace;
 credentials are not written into the release artifacts or nonsecret defaults.
 
-The candidate is validated with the loaded environment before same-directory atomic
-file replacement. After restart, five one-second active-state checks detect startup
+The Collector and launcher executables remain in private staging paths through
+candidate validation. Only then is an existing service explicitly stopped, suppressing
+automatic restarts during same-directory atomic file promotion. After restart, five
+one-second active-state checks detect startup
 failure. A failed bootstrap restores the snapshot and starts the prior Collector if
 it was running; an unsuccessful rollback retains its private snapshot and reports
 the recovery directory for the operator.

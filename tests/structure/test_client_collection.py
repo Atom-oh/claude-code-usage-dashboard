@@ -225,6 +225,8 @@ elif name == "otelcol-contrib":
     config = pathlib.Path(args[args.index("--config") + 1])
     if os.environ.get("FIXTURE_UPGRADE"):
         assert (root / "etc/otelcol/config.yaml").read_text() == "previous configuration"
+        assert (root / "usr/local/bin/otelcol-contrib").read_text() == "previous collector binary"
+        assert (root / "usr/local/bin/ccdash-codex").read_text() == "previous launcher"
     assert os.environ.get("CH_PASSWORD") == "fixture-collector-secret"
     sys.exit(23 if config.read_text().startswith("INVALID") else 0)
 elif name == "npm":
@@ -234,6 +236,9 @@ elif name == "claude":
 elif name == "codex":
     print("codex-cli 0.154.0" if (root / "installed-codex").exists() else "codex-cli 0.153.0")
 elif name == "systemctl":
+    if args[0] == "stop" and not (root / "restarted").exists() and os.environ.get("FIXTURE_UPGRADE"):
+        assert (root / "usr/local/bin/otelcol-contrib").read_text() == "previous collector binary"
+        assert (root / "usr/local/bin/ccdash-codex").read_text() == "previous launcher"
     if args[0] == "restart":
         (root / "restarted").touch()
         if os.environ.get("FIXTURE_UPGRADE") == "restart-failed": sys.exit(17)
@@ -291,7 +296,7 @@ else:
                         path.write_text(content)
                         previous[path] = content
                 env = {
-                    "PATH": str(binaries) + ":" + os.environ["PATH"], "TMPDIR": TEST_TMPDIR,
+                    "PATH": str(binaries) + ":" + os.environ["PATH"], "TMPDIR": str(root),
                     "FIXTURE_ROOT": str(root), "BOOTSTRAP_ASSET_DIR": str(assets), "FIXTURE_UPGRADE": upgrade,
                     "CLAUDE_ENABLED": raw_claude, "CODEX_ENABLED": raw_codex,
                     "CODEX_BEDROCK_ENDPOINT": "runtime",

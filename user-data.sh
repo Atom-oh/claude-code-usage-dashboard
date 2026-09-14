@@ -125,10 +125,9 @@ for collector_path in "${COLLECTOR_FILES[@]}"; do
   fi
 done
 if systemctl is-active --quiet otelcol.service; then COLLECTOR_WAS_ACTIVE=1; fi
-COLLECTOR_MUTATED=1
-install -m 0755 "$BOOTSTRAP_ASSET_DIR/scripts/codex-launch.py" /usr/local/bin/ccdash-codex
+install -m 0755 "$BOOTSTRAP_ASSET_DIR/scripts/codex-launch.py" "$BOOTSTRAP_TMP/ccdash-codex"
 # Validate model/region and flags before contacting AWS or installing clients.
-CCDASH_CLIENT_ENV=/dev/null /usr/local/bin/ccdash-codex --check >/dev/null
+CCDASH_CLIENT_ENV=/dev/null "$BOOTSTRAP_TMP/ccdash-codex" --check >/dev/null
 
 # AWS CLI v2 (SSM 파라미터 로드에 사용) — Amazon Linux는 보통 기본 포함
 if ! command -v aws >/dev/null 2>&1; then
@@ -222,7 +221,7 @@ if [ -n "$END_USER_ID" ]; then
     *) CODEX_OTEL_RESOURCE_ATTRIBUTES="${CODEX_OTEL_RESOURCE_ATTRIBUTES:+${CODEX_OTEL_RESOURCE_ATTRIBUTES},}user.email=${END_USER_ID}" ;;
   esac
 fi
-CCDASH_CLIENT_ENV=/dev/null /usr/local/bin/ccdash-codex --check >/dev/null
+CCDASH_CLIENT_ENV=/dev/null "$BOOTSTRAP_TMP/ccdash-codex" --check >/dev/null
 cat > "$BOOTSTRAP_TMP/clients.env" <<EOF
 CLAUDE_ENABLED=${CLAUDE_ENABLED}
 CODEX_ENABLED=${CODEX_ENABLED}
@@ -253,9 +252,9 @@ set -x
 ARCH="$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
 curl -sL -o "$BOOTSTRAP_TMP/otelcol.tar.gz" \
   "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_${ARCH}.tar.gz"
-mkdir -p /opt/otelcol
-tar -xzf "$BOOTSTRAP_TMP/otelcol.tar.gz" -C /opt/otelcol otelcol-contrib
-install -m 0755 /opt/otelcol/otelcol-contrib /usr/local/bin/otelcol-contrib
+mkdir -p "$BOOTSTRAP_TMP/collector"
+tar -xzf "$BOOTSTRAP_TMP/otelcol.tar.gz" -C "$BOOTSTRAP_TMP/collector" otelcol-contrib
+chmod 0755 "$BOOTSTRAP_TMP/collector/otelcol-contrib"
 
 # ---- 4. Collector 설정/시크릿 파일 -----------------------------------------
 mkdir -p /etc/otelcol
@@ -290,14 +289,28 @@ install -m 0644 "$BOOTSTRAP_ASSET_DIR/collector-config.yaml" "$BOOTSTRAP_TMP/con
 if ! (
   export EXPERIMENT_GROUP CH_HOST CH_PORT CH_DB CH_USER CH_PASSWORD
   export OTELCOL_QUEUE_DIR=/var/lib/otelcol/queue
-  /usr/local/bin/otelcol-contrib validate --config "$BOOTSTRAP_TMP/config.yaml"
+  "$BOOTSTRAP_TMP/collector/otelcol-contrib" validate --config "$BOOTSTRAP_TMP/config.yaml"
 ) > "$BOOTSTRAP_TMP/validate.log" 2>&1; then
   echo "ERROR: Collector candidate validation failed; existing configuration and service were not replaced" >&2
   exit 1
 fi
 set -x
 
+# Stop only after the complete candidate validates. An explicit stop suppresses
+# Restart=always while executables and configuration are promoted together.
+COLLECTOR_MUTATED=1
+COLLECTOR_SERVICE_CHANGED=1
+if [ "$COLLECTOR_WAS_ACTIVE" = 1 ] || [ -f /etc/systemd/system/otelcol.service ]; then
+  systemctl stop otelcol.service
+fi
 # Prepare replacements beside their destinations, then rename each atomically.
+mkdir -p /opt/otelcol
+install -m 0755 "$BOOTSTRAP_TMP/collector/otelcol-contrib" /opt/otelcol/.otelcol-contrib.next
+install -m 0755 "$BOOTSTRAP_TMP/collector/otelcol-contrib" /usr/local/bin/.otelcol-contrib.next
+install -m 0755 "$BOOTSTRAP_TMP/ccdash-codex" /usr/local/bin/.ccdash-codex.next
+mv -f /opt/otelcol/.otelcol-contrib.next /opt/otelcol/otelcol-contrib
+mv -f /usr/local/bin/.otelcol-contrib.next /usr/local/bin/otelcol-contrib
+mv -f /usr/local/bin/.ccdash-codex.next /usr/local/bin/ccdash-codex
 mkdir -p /etc/ccdash
 install -m 0644 "$BOOTSTRAP_TMP/clients.env" /etc/ccdash/.clients.env.next
 install -m 0600 "$BOOTSTRAP_TMP/collector.env" /etc/otelcol/.env.next
@@ -328,7 +341,6 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 EOF
 
-COLLECTOR_SERVICE_CHANGED=1
 systemctl daemon-reload
 systemctl enable otelcol.service
 systemctl restart otelcol.service
