@@ -109,6 +109,28 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_ordered_nested_containers_keep_literal_values_hidden(self):
+        examples = (
+            "- > ```bash\n  > echo '`'\n  > password=`printf 'private-value'`\n  > ```",
+            "- > <pre>\n  > echo '`'\n  > password=`printf 'private-value'`\n  > </pre>",
+            "- - ```bash\n    echo '`'\n    password=`printf 'private-value'`\n    ```",
+            "- - <pre>\n    echo '`'\n    password=`printf 'private-value'`\n    </pre>",
+            "> - > ```bash\n>   > echo '`'\n>   > password=`printf 'private-value'`\n>   > ```",
+            "> - > <pre>\n>   > echo '`'\n>   > password=`printf 'private-value'`\n>   > </pre>",
+            "- > - ```bash\n  >   echo '`'\n  >   password=`printf 'private-value'`\n  >   ```",
+            "- > - <pre>\n  >   echo '`'\n  >   password=`printf 'private-value'`\n  >   </pre>",
+            "1. > - ```bash\n   >   echo '`'\n   >   password=`printf 'private-value'`\n   >   ```",
+            "1. > - <pre>\n   >   echo '`'\n   >   password=`printf 'private-value'`\n   >   </pre>",
+        )
+        for example in examples:
+            with self.subTest(example=example):
+                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", text)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
     def test_literal_backticks_in_raw_blocks_keep_sensitive_values_hidden(self):
         examples = (
             "```bash\ncat <<'EOF'\n> ```\nEOF\necho '`'\npassword=`printf 'private-value'`\n```",
@@ -171,6 +193,8 @@ class SynthesisTests(unittest.TestCase):
             "```dotenv\npassword=\n```",
             "```dotenv\npassword=   \n```",
             "````dotenv\npassword=\n````",
+            "> ```dotenv\n> password=\n> ```",
+            "- Example\n\n  > ```dotenv\n  > password=\n  > ```",
         ):
             with self.subTest(example=example):
                 reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
