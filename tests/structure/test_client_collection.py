@@ -28,6 +28,27 @@ class ClientConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(self.module, "process-scoped Codex launcher is missing")
         return self.module.settings(env)
 
+    def test_collector_check_ignores_launcher_file_and_provider_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for codex in ("false", "true"):
+                env = {"PATH": os.environ["PATH"], "CLAUDE_ENABLED": "true", "CODEX_ENABLED": codex,
+                       "CCDASH_CLIENT_ENV": directory, "CODEX_BEDROCK_ENDPOINT": "invalid",
+                       "CODEX_BEDROCK_REGION": "invalid", "CODEX_MODEL": "invalid", "CODEX_VERSION": "invalid"}
+                result = subprocess.run(
+                    [str(LAUNCHER), "--check-collector"], env=env, capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["enabledClients"],
+                                 ["claude", "codex"] if codex == "true" else ["claude"])
+            for flags in [("false", "false"), ("bad", "true")]:
+                result = subprocess.run(
+                    [str(LAUNCHER), "--check-collector"],
+                    env={**env, "CLAUDE_ENABLED": flags[0], "CODEX_ENABLED": flags[1]},
+                    capture_output=True, text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("Is a directory", result.stderr)
+
     def test_defaults_preserve_claude_only(self):
         settings = self.settings()
         self.assertEqual(settings["enabledClients"], ["claude"])
@@ -301,6 +322,9 @@ else:
                     "CLAUDE_ENABLED": raw_claude, "CODEX_ENABLED": raw_codex,
                     "CODEX_BEDROCK_ENDPOINT": "runtime",
                 }
+                explicit_identity = raw_claude == raw_codex == "true" and not upgrade
+                if explicit_identity:
+                    env["CODEX_OTEL_RESOURCE_ATTRIBUTES"] = "team=fsi, user.email=chosen@example.invalid"
                 result = subprocess.run(["bash"], input=source, text=True, capture_output=True, env=env, timeout=20)
                 self.assertNotIn("fixture-collector-secret", result.stdout + result.stderr)
                 commands_file = root / "commands.jsonl"
@@ -327,6 +351,9 @@ else:
                     self.assertEqual(launcher[key], expected)
                 self.assertEqual(launcher["CODEX_MODEL"], "us.openai.gpt-6-astra")
                 self.assertNotIn("fixture-collector-secret", launcher_file.read_text())
+                if explicit_identity:
+                    self.assertIn("chosen@example.invalid", launcher_file.read_text())
+                    self.assertNotIn("fixture@example.invalid", launcher_file.read_text())
                 self.assertEqual(collector_file.stat().st_mode & 0o777, 0o600)
                 commands = [json.loads(line) for line in (root / "commands.jsonl").read_text().splitlines()]
                 packages = [entry[-1] for entry in commands if entry[0] == "npm"]
@@ -346,6 +373,16 @@ else:
                     text=True, capture_output=True,
                 )
                 self.assertEqual(checked.returncode, 0, checked.stderr)
+                unit = (root / "etc/systemd/system/otelcol.service").read_text()
+                self.assertIn("ccdash-codex --check-collector", unit)
+                launcher_file.write_text("UNKNOWN=broken\nUNKNOWN=duplicate\n")
+                collector_check = subprocess.run(
+                    [str(root / "usr/local/bin/ccdash-codex"), "--check-collector"],
+                    env={"PATH": os.environ["PATH"], "CLAUDE_ENABLED": claude, "CODEX_ENABLED": codex,
+                         "CCDASH_CLIENT_ENV": str(launcher_file), "CODEX_MODEL": "invalid"},
+                    text=True, capture_output=True,
+                )
+                self.assertEqual(collector_check.returncode, 0, collector_check.stderr)
 
 
 @unittest.skipUnless(shutil.which("terraform"), "Terraform is not installed")

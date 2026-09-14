@@ -22,6 +22,8 @@ export function parseCodexPricing(raw) {
   if (!object(additions) || Object.keys(additions).length > 32)
     throw new Error("CODEX_PRICING_JSON must contain at most 32 model entries");
   for (const [model, value] of Object.entries(additions)) {
+    if (/^(us|global)\./.test(model))
+      throw new Error("Codex pricing keys must omit us. and global. routing prefixes");
     if (!/^[a-z0-9][a-z0-9._-]*$/.test(model) || !object(value)
         || !Number.isSafeInteger(value.short_context_limit) || value.short_context_limit <= 0
         || !object(value.regional))

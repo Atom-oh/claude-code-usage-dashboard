@@ -68,6 +68,12 @@ test("pricing overrides are validated rather than silently making costs zero", (
   } })));
 });
 
+test("pricing keys reject routing prefixes stripped by lookup", () => {
+  const value = parseCodexPricing()["openai.gpt-6-astra"];
+  for (const prefix of ["us.", "global."])
+    assert.throws(() => parseCodexPricing(JSON.stringify({ [prefix + "openai.gpt-6-astra"]: value })));
+});
+
 test("an overflowing configured estimate is unavailable, not a JSON infinity", () => {
   const rate = { input: 1e308, cacheWrite: 1e308, cacheRead: 1e308, output: 1e308 };
   const prices = { "openai.gpt-6-astra": { regional: { short: rate } } };

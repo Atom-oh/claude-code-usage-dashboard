@@ -36,7 +36,7 @@ def load_environment(environ):
     return {**defaults, **environ}
 
 
-def settings(env):
+def enabled_clients(env):
     enabled = []
     for name, default, client in [
         ("CLAUDE_ENABLED", "true", "claude"),
@@ -49,6 +49,11 @@ def settings(env):
             enabled.append(client)
     if not enabled:
         raise ValueError("at least one of CLAUDE_ENABLED and CODEX_ENABLED must be true")
+    return enabled
+
+
+def settings(env):
+    enabled = enabled_clients(env)
     endpoint = env.get("CODEX_BEDROCK_ENDPOINT") or "mantle"
     if endpoint not in ("mantle", "runtime"):
         raise ValueError("CODEX_BEDROCK_ENDPOINT must be mantle or runtime")
@@ -171,6 +176,11 @@ def launch_command(env, arguments):
 
 def main():
     try:
+        if sys.argv[1:] == ["--check-collector"]:
+            # Ingestion needs activation only. Never read Codex launch defaults or
+            # couple Collector uptime to model, region, version or credentials.
+            print(json.dumps({"enabledClients": enabled_clients(os.environ)}))
+            return 0
         env = load_environment(os.environ)
         if sys.argv[1:] == ["--check"]:
             config = settings(env)
