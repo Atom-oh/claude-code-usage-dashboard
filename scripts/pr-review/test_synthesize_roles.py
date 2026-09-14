@@ -142,13 +142,27 @@ class SynthesisTests(unittest.TestCase):
                     self.assertTrue(published.endswith("VERDICT: FAIL\n"))
 
     def test_quote_owned_tick_does_not_escape_empty_list_literal(self):
-        example = "-\n\n    echo 'longer ` quoted text'\n    password=prefix`printf 'private-value'`"
-        reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
-        calls, published = self.run_chair([reply, reply])
-        self.assertEqual(calls, 1)
-        self.assertNotIn("private-value", published)
-        self.assertIn("Reviewed behavior.", published)
-        self.assertTrue(published.endswith("VERDICT: PASS\n"))
+        for separator in ("\n    ", "; "):
+            with self.subTest(separator=separator):
+                example = ("-\n\n    echo 'longer ` quoted text'" + separator
+                           + "password=prefix`printf 'private-value'`")
+                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, published = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", published)
+                self.assertIn("Reviewed behavior.", published)
+                self.assertTrue(published.endswith("VERDICT: PASS\n"))
+
+    def test_foreign_quote_cannot_close_an_unterminated_value(self):
+        for separator in ("\n    ", "; "):
+            with self.subTest(separator=separator):
+                example = ("-\n\n    echo 'longer ` quoted text'" + separator
+                           + "password=prefix`printf 'private-value'")
+                reply = (0, example + "\n\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                calls, published = self.run_chair([reply, reply])
+                self.assertNotIn("private-value", published)
+                self.assertEqual(calls, 2)
+                self.assertTrue(published.endswith("VERDICT: FAIL\n"))
 
     def test_owned_bodies_do_not_capture_following_review(self):
         examples = (

@@ -816,13 +816,13 @@ def _quoted_key_spans(value):
     return spans
 
 
-def _inline_code_spans(value, closing_fences=None):
+def _inline_code_spans(value, closing_fences=None, quote_owners=None):
     """Track ordered Markdown containers before interpreting inline delimiters."""
     if "`" not in value and (closing_fences is None or "~~~" not in value):
         return []
     spans, pending = [], []
-    quoted_line_ends = {}
-    # Quoted ticks stay line-local; preserve existing same-line Markdown pairs.
+    quoted_ends = {}
+    # Record quote provenance without changing Markdown delimiter pairing.
     quoted_fragment = re.compile(
         r"(?<![\w\\])'(?:\\[^\r\n]|[^'\\\r\n])*'"
         r'|(?<!\\)"(?:\\[^\r\n]|[^"\\\r\n])*"'
@@ -852,15 +852,16 @@ def _inline_code_spans(value, closing_fences=None):
             while slash_start and value[slash_start - 1] == "\\":
                 slash_start -= 1
             close = following[index]
-            owner_end = quoted_line_ends.get(start)
-            if (close is None or (start - slash_start) % 2
-                    or (owner_end is not None and pending[close][1] > owner_end)):
+            owner_end = quoted_ends.get(start)
+            if close is None or (start - slash_start) % 2:
                 index += 1
             else:
                 spans.append((end, pending[close][0]))
+                if quote_owners is not None and owner_end is not None:
+                    quote_owners[end] = owner_end
                 index = close + 1
         pending.clear()
-        quoted_line_ends.clear()
+        quoted_ends.clear()
         paragraph = False
 
     def blank(line):
@@ -1067,7 +1068,7 @@ def _inline_code_spans(value, closing_fences=None):
                     fragment = next(fragments, None)
                 start = offset + match.start()
                 if fragment is not None and fragment.start() < match.start():
-                    quoted_line_ends[start] = offset + len(raw_line)
+                    quoted_ends[start] = offset + fragment.end()
                 pending.append((start, offset + match.end()))
             paragraph = True
             if heading:
@@ -1141,6 +1142,7 @@ def _backtick_value_spans(value, key, markdown=True):
     literal = re.compile(r"`(?:\\.|[^`\\])*`", re.S)
     spans, cursor, code_index = [], 0, 0
     code_spans = None
+    quote_owners = {}
     for match in re.finditer(key, value):
         if match.start() < cursor:
             continue
@@ -1155,7 +1157,7 @@ def _backtick_value_spans(value, key, markdown=True):
             break
         if markdown:
             if code_spans is None:
-                code_spans = _inline_code_spans(value)
+                code_spans = _inline_code_spans(value, quote_owners=quote_owners)
             while code_index < len(code_spans) and code_spans[code_index][1] < match.start():
                 code_index += 1
             code_span = (code_spans[code_index]
@@ -1165,6 +1167,8 @@ def _backtick_value_spans(value, key, markdown=True):
                               and value[code_span[0] - 2] in "\"'"
                               and value[code_span[0]:code_span[0] + 1]
                               == value[code_span[0] - 2])
+            owner_end = quote_owners.get(code_span[0]) if code_span is not None else None
+            literal_opener = literal_opener or (owner_end is not None and match.start() >= owner_end)
             if (code_span is not None and position == code_span[1]
                     and position > match.end() and not literal_opener):
                 continue  # This tick belongs to the current nonempty citation.
@@ -1182,7 +1186,8 @@ def _assignment_spans(value, key, json_closers=None, fragment=False, backtick_sp
     operator = re.compile(r"\|\||\?\?|\bor\b")
     tail_operator = re.compile(r"(?:\|\||\?\?|\bor|\\|(?:^|\s)[+*/%&|^?:<>=!-])$")
     closing_fences = set()
-    code_spans, code_index = _inline_code_spans(value, closing_fences), 0
+    quote_owners = {}
+    code_spans, code_index = _inline_code_spans(value, closing_fences, quote_owners), 0
     backtick_index = 0
     line_break = re.compile(r"\r\n?|\n")
     opening = {"(": ")", "[": "]", "{": "}"}
@@ -1272,6 +1277,10 @@ def _assignment_spans(value, key, json_closers=None, fragment=False, backtick_sp
         code_end = (code_spans[code_index][1]
                     if code_index < len(code_spans) and code_spans[code_index][0] <= match.start()
                     else None)
+        owner_end = (quote_owners.get(code_spans[code_index][0])
+                     if code_end is not None else None)
+        if owner_end is not None and match.start() >= owner_end:
+            code_end = None  # A key outside a source quote cannot inherit its citation boundary.
         while (backtick_index < len(backtick_spans)
                and backtick_spans[backtick_index][1] <= match.start()):
             backtick_index += 1
