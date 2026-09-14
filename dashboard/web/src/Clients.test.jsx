@@ -223,9 +223,12 @@ test("common user/model/backend filters debounce, preserve client/range, and nev
   const backend = screen.getByRole("combobox", { name: "백엔드" });
   expect([...backend.options].map((option) => option.value)).toEqual(["", "bedrock-mantle", "bedrock-runtime", "anthropic", "unknown"]);
   fireEvent.change(backend, { target: { value: "bedrock-mantle" } });
-  await waitFor(() => expect(commonRequests(fetchMock).at(-1).searchParams.get("user")).toBe("alice@example.test"));
-  expect(commonRequests(fetchMock).at(-1).searchParams.get("model")).toBe("fixture");
-  expect(commonRequests(fetchMock).at(-1).searchParams.get("backend")).toBe("bedrock-mantle");
+  await waitFor(() => {
+    const params = commonRequests(fetchMock).at(-1).searchParams;
+    expect(params.get("user")).toBe("alice@example.test");
+    expect(params.get("model")).toBe("fixture");
+    expect(params.get("backend")).toBe("bedrock-mantle");
+  });
   expect(new URLSearchParams(location.search).get("client")).toBe("codex");
   expect(new URLSearchParams(location.search).get("days")).toBe("7");
   expect(new URLSearchParams(location.search).has("user")).toBe(false);
