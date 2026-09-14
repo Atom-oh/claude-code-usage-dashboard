@@ -836,7 +836,45 @@ def _inline_code_spans(value):
     return spans
 
 
+def _json_enclosing_closers(value):
+    """Locate enclosing boundaries only in complete, valid JSON objects."""
+    closers, cursor = set(), 0
+    for match in re.finditer(r"\{(?=\s*[\"'])", value):
+        if match.start() < cursor:
+            continue
+        index, stack, quote, escaped = match.start() + 1, ["}"], False, False
+        found = set()
+        while index < len(value) and stack:
+            char = value[index]
+            if escaped:
+                escaped = False
+            elif quote:
+                if char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quote = False
+            elif char == '"':
+                quote = True
+            elif char in "{[":
+                stack.append("}" if char == "{" else "]")
+            elif char in "}]":
+                if char != stack[-1]:
+                    break
+                stack.pop()
+                found.add(index)
+            index += 1
+        cursor = max(index, match.end())
+        if not stack:
+            try:
+                strict_json(value[match.start():index])
+            except Invalid:
+                continue
+            closers.update(found)
+    return closers
+
+
 def _assignment_spans(value, key):
+    json_closers = _json_enclosing_closers(value)
     """Find assignments without changing another detector's input."""
     operator = re.compile(r"\|\||\?\?|\bor\b")
     tail_operator = re.compile(r"(?:\|\||\?\?|\bor|\\|(?:^|\s)[+*/%&|^?:<>=!-])$")
@@ -1009,7 +1047,7 @@ def _assignment_spans(value, key):
                 if char != stack.pop():
                     index = len(value)
                     break
-            elif char in "}]" and not stack:
+            elif char in "}]" and not stack and index in json_closers:
                 break
             elif char.isspace() and not stack:
                 previous = value[line_start:index].rstrip()

@@ -80,6 +80,7 @@ class RoleReviewTests(unittest.TestCase):
                   for key in ("paſſword", "apiKey")]
         cases += [f'password = previous {operator}// local fallback\n"{canary}"\nPUBLIC_AFTER'
                   for operator in ("||", "??")]
+        cases += [f"password=prefix{closer}{canary}" for closer in ("}", "]")]
         for index, evidence in enumerate(cases):
             with self.subTest(case=index):
                 self.work = self.root / f"publication-{index}"
