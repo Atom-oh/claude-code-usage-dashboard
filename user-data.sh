@@ -1,6 +1,39 @@
 #!/bin/bash
 set -euxo pipefail
 
+# Client activation is independent of Claude's experiment group. These settings
+# must match the dashboard deployment; Terraform does not manage this user-data.
+export CLAUDE_ENABLED="${CLAUDE_ENABLED:-true}"
+export CODEX_ENABLED="${CODEX_ENABLED:-false}"
+export CODEX_BEDROCK_ENDPOINT="${CODEX_BEDROCK_ENDPOINT:-mantle}"
+export CODEX_BEDROCK_REGION="${CODEX_BEDROCK_REGION-us-west-2}"
+export CODEX_VERSION="${CODEX_VERSION-0.154.0}"
+for client_flag in CLAUDE_ENABLED CODEX_ENABLED; do
+  flag_value="${!client_flag}"
+  case "${flag_value,,}" in
+    true|1) printf -v "$client_flag" '%s' true ;;
+    false|0) printf -v "$client_flag" '%s' false ;;
+    *) echo "ERROR: $client_flag must be true or false" >&2; exit 1 ;;
+  esac
+done
+case "${CLAUDE_ENABLED}:${CODEX_ENABLED}" in
+  true:true|true:false|false:true) ;;
+  *) echo "ERROR: client flags must be true/false with at least one enabled" >&2; exit 1 ;;
+esac
+case "$CODEX_BEDROCK_ENDPOINT" in
+  mantle) export CODEX_MODEL="${CODEX_MODEL-openai.gpt-6-astra}" ;;
+  runtime) export CODEX_MODEL="${CODEX_MODEL-us.openai.gpt-6-astra}" ;;
+  *) echo "ERROR: CODEX_BEDROCK_ENDPOINT must be mantle or runtime" >&2; exit 1 ;;
+esac
+# Stage scripts/codex-launch.py and collector-config.yaml from the same release.
+BOOTSTRAP_ASSET_DIR="${BOOTSTRAP_ASSET_DIR:-/opt/ccdash-bootstrap}"
+for bootstrap_asset in scripts/codex-launch.py collector-config.yaml; do
+  if [ ! -r "$BOOTSTRAP_ASSET_DIR/$bootstrap_asset" ]; then
+    echo "ERROR: stage $bootstrap_asset under BOOTSTRAP_ASSET_DIR first" >&2
+    exit 1
+  fi
+done
+
 # =============================================================================
 # Claude Code A/B Telemetry — EC2 user-data
 # 두 그룹 공통 스크립트. 그룹 구분은 EXPERIMENT_GROUP 값 하나로만.
@@ -39,12 +72,67 @@ CLAUDE_CODE_VERSION="${CLAUDE_CODE_VERSION:-2.1.226}"
 
 # ---- 1. 기본 패키지 ---------------------------------------------------------
 if command -v dnf >/dev/null 2>&1; then PKG=dnf; else PKG=yum; fi
-$PKG install -y tar gzip curl unzip
+$PKG install -y tar gzip curl unzip python3
+
+BOOTSTRAP_TMP="$(mktemp -d "${TMPDIR:-/var/tmp}/ccdash-bootstrap.XXXXXX")"
+COLLECTOR_MUTATED=0
+COLLECTOR_SERVICE_CHANGED=0
+COLLECTOR_WAS_ACTIVE=0
+COLLECTOR_FILES=(
+  /usr/local/bin/ccdash-codex /usr/local/bin/otelcol-contrib /opt/otelcol/otelcol-contrib
+  /etc/ccdash/clients.env /etc/otelcol/env /etc/otelcol/config.yaml
+  /etc/systemd/system/otelcol.service
+  /etc/systemd/system/multi-user.target.wants/otelcol.service
+)
+cleanup_bootstrap() {
+  local status=$? restore_failed=0 path saved
+  trap - EXIT
+  { set +x; } 2>/dev/null
+  set +e
+  if [ "$status" -ne 0 ] && [ "$COLLECTOR_MUTATED" = 1 ]; then
+    if [ "$COLLECTOR_SERVICE_CHANGED" = 1 ]; then
+      systemctl stop otelcol.service || restore_failed=1
+    fi
+    for path in "${COLLECTOR_FILES[@]}"; do
+      saved="$BOOTSTRAP_TMP/snapshot$path"
+      if [ -e "$saved" ] || [ -L "$saved" ]; then
+        mkdir -p "$(dirname "$path")"
+        cp -a "$saved" "$path.restore" && mv -f "$path.restore" "$path" || restore_failed=1
+      else
+        rm -f "$path" || restore_failed=1
+      fi
+    done
+    if [ "$COLLECTOR_SERVICE_CHANGED" = 1 ]; then
+      systemctl daemon-reload || restore_failed=1
+      if [ "$COLLECTOR_WAS_ACTIVE" = 1 ]; then
+        systemctl start otelcol.service || restore_failed=1
+      fi
+    fi
+    if [ "$restore_failed" = 1 ]; then
+      echo "ERROR: Collector rollback needs operator recovery; private snapshot retained at $BOOTSTRAP_TMP" >&2
+    else
+      echo "Collector files and previous running state restored" >&2
+    fi
+  fi
+  if [ "$restore_failed" = 0 ]; then rm -rf "$BOOTSTRAP_TMP"; fi
+  exit "$status"
+}
+trap cleanup_bootstrap EXIT
+for collector_path in "${COLLECTOR_FILES[@]}"; do
+  if [ -e "$collector_path" ] || [ -L "$collector_path" ]; then
+    mkdir -p "$BOOTSTRAP_TMP/snapshot$(dirname "$collector_path")"
+    cp -a "$collector_path" "$BOOTSTRAP_TMP/snapshot$collector_path"
+  fi
+done
+if systemctl is-active --quiet otelcol.service; then COLLECTOR_WAS_ACTIVE=1; fi
+install -m 0755 "$BOOTSTRAP_ASSET_DIR/scripts/codex-launch.py" "$BOOTSTRAP_TMP/ccdash-codex"
+# Validate model/region and flags before contacting AWS or installing clients.
+CCDASH_CLIENT_ENV=/dev/null "$BOOTSTRAP_TMP/ccdash-codex" --check >/dev/null
 
 # AWS CLI v2 (SSM 파라미터 로드에 사용) — Amazon Linux는 보통 기본 포함
 if ! command -v aws >/dev/null 2>&1; then
-  curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
-  unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install
+  curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "$BOOTSTRAP_TMP/awscliv2.zip"
+  unzip -q "$BOOTSTRAP_TMP/awscliv2.zip" -d "$BOOTSTRAP_TMP" && "$BOOTSTRAP_TMP/aws/install"
 fi
 
 # ---- 1b. Claude Code CLI 설치 (버전 핀, 4-2) -------------------------------
@@ -54,6 +142,8 @@ fi
 if ! command -v npm >/dev/null 2>&1; then
   $PKG install -y nodejs npm
 fi
+FINAL_CC_VERSION="disabled"
+if [ "$CLAUDE_ENABLED" = "true" ]; then
 INSTALLED_CC_VERSION="$(command -v claude >/dev/null 2>&1 && claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo '')"
 if [ "$INSTALLED_CC_VERSION" != "$CLAUDE_CODE_VERSION" ]; then
   npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" || \
@@ -62,6 +152,21 @@ fi
 FINAL_CC_VERSION="$(command -v claude >/dev/null 2>&1 && claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo 'unknown')"
 if [ "$FINAL_CC_VERSION" != "$CLAUDE_CODE_VERSION" ]; then
   echo "WARN: 이 인스턴스의 Claude Code 버전(${FINAL_CC_VERSION})이 기대값(${CLAUDE_CODE_VERSION})과 다름 — A/B 이중계상/MCP 의미 변경 경계를 넘을 수 있음"
+fi
+
+fi
+
+# Codex is independently pinned; installation failure must not look successful.
+if [ "$CODEX_ENABLED" = "true" ]; then
+  INSTALLED_CODEX_VERSION="$(command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  if [ "$INSTALLED_CODEX_VERSION" != "$CODEX_VERSION" ]; then
+    npm install -g "@openai/codex@${CODEX_VERSION}"
+  fi
+  FINAL_CODEX_VERSION="$(codex --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [ "$FINAL_CODEX_VERSION" != "$CODEX_VERSION" ]; then
+    echo "ERROR: Codex version does not match CODEX_VERSION" >&2
+    exit 1
+  fi
 fi
 
 # ---- 1c. Bedrock identity 확보 (4-1) ----------------------------------------
@@ -107,6 +212,33 @@ if [ "$EXPERIMENT_GROUP" = "bedrock" ] && [ -n "$END_USER_ID" ]; then
   FORCED_USER_EMAIL="$END_USER_ID"
 fi
 
+# Nonsecret launcher defaults. Do not export a Codex backend through a global
+# shell profile or through Claude's managed OTEL_RESOURCE_ATTRIBUTES.
+export CODEX_OTEL_RESOURCE_ATTRIBUTES="${CODEX_OTEL_RESOURCE_ATTRIBUTES-team=fsi}"
+if [ -n "$END_USER_ID" ]; then
+  # Match the launcher's key normalization; whitespace must not let an instance
+  # default replace an explicitly configured identity.
+  if ! python3 - <<'PY'
+import os, sys
+items = os.environ["CODEX_OTEL_RESOURCE_ATTRIBUTES"].split(",")
+sys.exit(0 if any(item.partition("=")[0].strip() == "user.email" for item in items) else 1)
+PY
+  then
+    CODEX_OTEL_RESOURCE_ATTRIBUTES="${CODEX_OTEL_RESOURCE_ATTRIBUTES:+${CODEX_OTEL_RESOURCE_ATTRIBUTES},}user.email=${END_USER_ID}"
+  fi
+fi
+CCDASH_CLIENT_ENV=/dev/null "$BOOTSTRAP_TMP/ccdash-codex" --check >/dev/null
+cat > "$BOOTSTRAP_TMP/clients.env" <<EOF
+CLAUDE_ENABLED=${CLAUDE_ENABLED}
+CODEX_ENABLED=${CODEX_ENABLED}
+CODEX_BEDROCK_ENDPOINT=${CODEX_BEDROCK_ENDPOINT}
+CODEX_BEDROCK_REGION=${CODEX_BEDROCK_REGION}
+CODEX_MODEL=${CODEX_MODEL}
+CODEX_VERSION=${CODEX_VERSION}
+CODEX_OTEL_RESOURCE_ATTRIBUTES=${CODEX_OTEL_RESOURCE_ATTRIBUTES}
+EOF
+chmod 644 "$BOOTSTRAP_TMP/clients.env"
+
 # ---- 2. SSM에서 ClickHouse 비밀번호 로드 -----------------------------------
 # 인스턴스 프로파일에 ssm:GetParameter + kms:Decrypt 권한 필요
 #
@@ -124,11 +256,11 @@ set -x
 
 # ---- 3. OTel Collector (contrib) 설치 --------------------------------------
 ARCH="$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
-curl -sL -o /tmp/otelcol.tar.gz \
+curl -sL -o "$BOOTSTRAP_TMP/otelcol.tar.gz" \
   "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_${ARCH}.tar.gz"
-mkdir -p /opt/otelcol
-tar -xzf /tmp/otelcol.tar.gz -C /opt/otelcol otelcol-contrib
-install -m 0755 /opt/otelcol/otelcol-contrib /usr/local/bin/otelcol-contrib
+mkdir -p "$BOOTSTRAP_TMP/collector"
+tar -xzf "$BOOTSTRAP_TMP/otelcol.tar.gz" -C "$BOOTSTRAP_TMP/collector" otelcol-contrib
+chmod 0755 "$BOOTSTRAP_TMP/collector/otelcol-contrib"
 
 # ---- 4. Collector 설정/시크릿 파일 -----------------------------------------
 mkdir -p /etc/otelcol
@@ -141,8 +273,11 @@ mkdir -p /var/lib/otelcol/queue
 # 건 나중에 이 쓰기가 echo/printf로 바뀌어도 평문이 안 새게 하려는 것이다. 이 창을 지우려면
 # 위 대입문 가드부터 지워야 하는 게 아니라, 이 파일이 더 이상 비밀번호를 안 다뤄야 한다.
 { set +x; } 2>/dev/null
-cat > /etc/otelcol/env <<EOF
+cat > "$BOOTSTRAP_TMP/collector.env" <<EOF
 EXPERIMENT_GROUP=${EXPERIMENT_GROUP}
+CLAUDE_ENABLED=${CLAUDE_ENABLED}
+CODEX_ENABLED=${CODEX_ENABLED}
+CODEX_BEDROCK_ENDPOINT=${CODEX_BEDROCK_ENDPOINT}
 CH_HOST=${CH_HOST}
 CH_PORT=${CH_PORT}
 CH_DB=${CH_DB}
@@ -151,27 +286,57 @@ CH_PASSWORD=${CH_PASSWORD}
 OTELCOL_QUEUE_DIR=/var/lib/otelcol/queue
 EOF
 set -x
-chmod 600 /etc/otelcol/env
+chmod 600 "$BOOTSTRAP_TMP/collector.env"
 
-# collector-config.yaml 배포 (S3 등에서 받아오거나, AMI에 미리 포함).
-# 예: aws s3 cp s3://my-bucket/collector-config.yaml /etc/otelcol/config.yaml
-# 아래는 임시로 최소 config를 직접 생성하는 fallback. (2단계 산출물로 교체 권장)
-if [ ! -f /etc/otelcol/config.yaml ]; then
-  aws s3 cp "s3://YOUR-CONFIG-BUCKET/collector-config.yaml" /etc/otelcol/config.yaml \
-    --region "$AWS_DEFAULT_REGION" || {
-      echo "WARN: collector-config.yaml 미배포 — 2단계 산출물을 /etc/otelcol/config.yaml 로 넣으세요"; }
+# Validate the staged release before changing persistent configuration or stopping
+# an existing collector. Never reuse an old config that lacks the Codex pipeline.
+install -m 0644 "$BOOTSTRAP_ASSET_DIR/collector-config.yaml" "$BOOTSTRAP_TMP/config.yaml"
+{ set +x; } 2>/dev/null
+if ! (
+  export EXPERIMENT_GROUP CH_HOST CH_PORT CH_DB CH_USER CH_PASSWORD
+  export OTELCOL_QUEUE_DIR=/var/lib/otelcol/queue
+  "$BOOTSTRAP_TMP/collector/otelcol-contrib" validate --config "$BOOTSTRAP_TMP/config.yaml"
+) > "$BOOTSTRAP_TMP/validate.log" 2>&1; then
+  echo "ERROR: Collector candidate validation failed; existing configuration and service were not replaced" >&2
+  exit 1
 fi
+set -x
+
+# Stop only after the complete candidate validates. An explicit stop suppresses
+# Restart=always while executables and configuration are promoted together.
+COLLECTOR_MUTATED=1
+COLLECTOR_SERVICE_CHANGED=1
+if [ "$COLLECTOR_WAS_ACTIVE" = 1 ] || [ -f /etc/systemd/system/otelcol.service ]; then
+  systemctl stop otelcol.service
+fi
+# Prepare replacements beside their destinations, then rename each atomically.
+mkdir -p /opt/otelcol
+install -m 0755 "$BOOTSTRAP_TMP/collector/otelcol-contrib" /opt/otelcol/.otelcol-contrib.next
+install -m 0755 "$BOOTSTRAP_TMP/collector/otelcol-contrib" /usr/local/bin/.otelcol-contrib.next
+install -m 0755 "$BOOTSTRAP_TMP/ccdash-codex" /usr/local/bin/.ccdash-codex.next
+mv -f /opt/otelcol/.otelcol-contrib.next /opt/otelcol/otelcol-contrib
+mv -f /usr/local/bin/.otelcol-contrib.next /usr/local/bin/otelcol-contrib
+mv -f /usr/local/bin/.ccdash-codex.next /usr/local/bin/ccdash-codex
+mkdir -p /etc/ccdash
+install -m 0644 "$BOOTSTRAP_TMP/clients.env" /etc/ccdash/.clients.env.next
+install -m 0600 "$BOOTSTRAP_TMP/collector.env" /etc/otelcol/.env.next
+install -m 0644 "$BOOTSTRAP_TMP/config.yaml" /etc/otelcol/.config.yaml.next
+mv -f /etc/ccdash/.clients.env.next /etc/ccdash/clients.env
+mv -f /etc/otelcol/.env.next /etc/otelcol/env
+mv -f /etc/otelcol/.config.yaml.next /etc/otelcol/config.yaml
 
 # ---- 5. Collector systemd 서비스 -------------------------------------------
 cat > /etc/systemd/system/otelcol.service <<'EOF'
 [Unit]
-Description=OpenTelemetry Collector (Claude Code A/B)
+Description=OpenTelemetry Collector (Claude Code and Codex)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 EnvironmentFile=/etc/otelcol/env
+ExecStartPre=/usr/local/bin/ccdash-codex --check-collector
+ExecStartPre=/usr/local/bin/otelcol-contrib validate --config /etc/otelcol/config.yaml
 ExecStart=/usr/local/bin/otelcol-contrib --config /etc/otelcol/config.yaml
 Restart=always
 RestartSec=5
@@ -183,7 +348,15 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now otelcol.service
+systemctl enable otelcol.service
+systemctl restart otelcol.service
+for startup_check in 1 2 3 4 5; do
+  sleep 1
+  if ! systemctl is-active --quiet otelcol.service; then
+    echo "ERROR: Collector did not remain active during startup" >&2
+    exit 1
+  fi
+done
 
 # ---- 6. Claude Code managed settings 배포 ----------------------------------
 # managed settings의 env는 우선순위가 높아 사용자가 덮어쓸 수 없음 → A/B 무결성 확보
@@ -199,6 +372,7 @@ systemctl enable --now otelcol.service
 #     이건 예외.)
 #   - claude_code.internal_error 이벤트는 Bedrock에서 emit되지 않는다(문서 확인) — 에러율
 #     비교 패널에서 그룹 간 직접 비교 금지(grafana-ab-queries.sql에도 동일 경고).
+if [ "$CLAUDE_ENABLED" = "true" ]; then
 mkdir -p /etc/claude-code
 
 # 그룹별 분기 env
@@ -250,5 +424,6 @@ cat > /etc/claude-code/managed-settings.json <<EOF
 }
 EOF
 chmod 644 /etc/claude-code/managed-settings.json
+fi
 
-echo "=== Claude Code A/B telemetry provisioning complete (group=${EXPERIMENT_GROUP}, cc_version=${FINAL_CC_VERSION}) ==="
+echo "=== Telemetry bootstrap configured (claude=${CLAUDE_ENABLED}, codex=${CODEX_ENABLED}, codex_endpoint=${CODEX_BEDROCK_ENDPOINT}, cc_version=${FINAL_CC_VERSION}) ==="
