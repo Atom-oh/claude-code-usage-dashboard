@@ -2,21 +2,25 @@
 
 [![CI](https://github.com/Atom-oh/claude-code-usage-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Atom-oh/claude-code-usage-dashboard/actions/workflows/ci.yml)
 
-A workshop dashboard for Claude Code usage over Amazon Bedrock and Claude Enterprise.
-OpenTelemetry data flows through a collector into ClickHouse; an Express API serves
-both the data and a React SPA.
+A workshop dashboard for selectable Claude Code and Codex usage. Claude Code supports
+Amazon Bedrock and Claude Enterprise channels; Codex uses Bedrock Mantle or Runtime.
+Claude metrics and Codex structured OpenTelemetry logs flow through a collector into
+ClickHouse; an Express API serves both the data and a React SPA.
 
 ## What it shows
 
-- Client-reported spend by model, user, and session channel. Token-priced costs remain
-  diagnostic comparisons and are opt-in on the Cost page.
-- Token/cache usage, adoption, observed commits and code changes, and activity measures.
-- Request/tool reliability and optional trace-based latency or waiting measures.
-- A Bedrock-backed SQL chat assistant with authentication and read-only query controls.
+- Usage, token/cache types, spend, models, users and tools by enabled coding client.
+  Claude spend is client-reported; Codex costs are labelled AWS list-price estimates.
+- Claude detail pages retain channel comparisons, adoption, commits, code changes,
+  activity measures and opt-in computed-cost diagnostics.
+- Request/tool reliability and observed timing; Claude also has optional trace measures.
+- A SQL chat assistant for Claude telemetry, backed by Bedrock with authentication
+  and read-only query controls.
 
 These are observations and estimates, not invoices, causal adoption effects, or validated
-employee productivity scores. Channels are inferred per session; an OpenAI model name
-does not establish that the emitting client is Codex.
+employee productivity scores. Combined user counts union distinct emitted IDs across
+clients; they are neither a verified employee directory nor a sum of client headcounts.
+Claude channels are inferred per session; model names do not establish client identity.
 
 ## Local setup
 
@@ -80,31 +84,44 @@ Key contracts:
 | `AUTH_ALLOW_INSECURE` | Local-development bypass only. Health probes never require it. |
 | `CH_URL` | Takes priority over `CH_HOST`/`CH_PORT`; fallback is `http://localhost:8123`. |
 | `CH_DB`, `CH_USER`, `CH_PASSWORD` | Defaults: `claude_code`, `default`, and empty password. Supply deployment credentials securely. |
-| `GROUP_MODE` | `ab` or `single`; affects presentation, not channel inference. |
+| `CLAUDE_ENABLED`, `CODEX_ENABLED` | Defaults: `true`, `false`. Enable either client or both; both false is invalid. Keep dashboard, bootstrap and collector settings consistent. |
+| `CODEX_BEDROCK_ENDPOINT` | `mantle` (default) or `runtime`; selects Codex launcher defaults independently of Claude channels. |
+| `CODEX_PRICING_JSON` | Validated inline JSON overrides for Codex AWS list-price estimates; see the [Codex runbook](docs/runbooks/codex-telemetry.md#dashboard-cost-and-query-contract). |
+| `GROUP_MODE` | `ab` or `single`; affects Claude presentation, not channel inference or client selection. |
 | `DEFAULT_RANGE_DAYS`, `RANGE_CAP_DAYS` | Default window 2 days, maximum 90 days; invalid configuration fails startup. |
 | `PII_MASK_ENABLED` | Presentation/CSV/chat masking; not an authorization boundary for raw API access. |
 | `PRICING_JSON` | Inline JSON overrides for diagnostic token prices, not a filename. |
 | `PRICING_CACHE_WRITE_TTL` | Diagnostic cache-write assumption: `1h` or `5m`, default `1h`. |
 | `CHAT_MODEL_ID`, `BEDROCK_REGION`, `AWS_REGION` | Configure the chat's Bedrock model and region; check deployment overrides. |
 | `CHAT_ALLOW_INSECURE` | Independent chat-auth bypass for local development only; never enable on an internet-facing deployment. |
-| `DATA_STALE_MINUTES` | Raw-metric timestamp freshness threshold, default 360 minutes. |
+| `DATA_STALE_MINUTES` | Freshness threshold for enabled sources, default 360 minutes: Claude metric `TimeUnix` or Codex log `Timestamp`. |
 | `ALERT_WEBHOOK_URL`, `ALERT_REPEAT_MINUTES` | Optional stale-data alerts; the webhook is a secret. |
 
 JSON API responses use `no-store`; successful chat SSE currently uses `no-cache`.
 The server has its own bounded cache/warmer. Unavailable telemetry is distinct from
 measured zero.
 
+Deployments with both clients enabled open the all-client overview; a single-client deployment
+selects that client. Claude selection exposes its existing detail pages. Common views
+use `/api/clients/overview`, with minute buckets through four hours and hourly buckets
+for longer ranges. Mixed ranges share Claude's aligned `effective_range`; historical
+rollup approximations remain. See the [data contract](docs/reference/data.md).
+
 ## Telemetry Ingestion and operations
 
 The collector must remain running for data to arrive. Use supervised startup and its
 disk-backed queue; follow the [operator procedures](docs/runbooks/incident-response.md)
-and the actual `user-data.sh`/collector configuration. A recent cumulative export does
-not prove recent activity or complete logs/traces.
+and the actual `user-data.sh`/collector configuration. Claude uses the loopback OTLP/gRPC
+receiver; `ccdash-codex` sends structured logs to `http://127.0.0.1:4318/v1/logs`.
+The collector promotes Codex's observed time into `otel_logs.Timestamp` when source
+time is zero. Usage-bearing completions are deduplicated before pricing; no new schema
+is required. A recent export from either client does not prove complete capture.
 
 Production uses an EKS-hosted image. Source definitions do not establish deployed state:
 verify the image, readiness, CDN asset hashes, schema probes, and migration ledger.
 
 - [Deploy production](docs/runbooks/deploy-production.md)
+- [Select clients and qualify Codex telemetry](docs/runbooks/codex-telemetry.md)
 - [Deploy for another organization](docs/deploying-for-your-org.md)
 - [Schema migrations](docs/runbooks/schema-migrations.md)
 - [Backup and restore](docs/runbooks/backup-and-restore.md)

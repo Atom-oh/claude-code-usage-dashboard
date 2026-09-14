@@ -15,6 +15,8 @@ const DEFAULTS = {
   schema: undefined,
   piiMask: true,
   pricing: undefined,
+  enabledClients: ["claude"],
+  codexEndpoint: "mantle",
 };
 
 const ConfigContext = createContext(DEFAULTS);
@@ -28,6 +30,8 @@ export function ConfigProvider({ config, children }) {
         schema: config.schema,
         piiMask: config.piiMask === false ? false : DEFAULTS.piiMask,
         pricing: config.pricing,
+        enabledClients: Array.isArray(config.enabledClients) ? config.enabledClients : DEFAULTS.enabledClients,
+        codexEndpoint: config.codexEndpoint === "runtime" ? "runtime" : DEFAULTS.codexEndpoint,
       }
     : DEFAULTS;
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;

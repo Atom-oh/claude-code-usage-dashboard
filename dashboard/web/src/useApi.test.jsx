@@ -6,6 +6,7 @@ import { RefreshProvider, useRefresh } from "./RefreshContext.jsx";
 import { RangeProvider, useRange } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
 import { useApi } from "./useApi.js";
+import { Fragment, StrictMode } from "react";
 
 function stubFetch(handler) {
   const fetchMock = vi.fn((url, opts) => {
@@ -35,8 +36,10 @@ function Probe() {
   return null;
 }
 
-function mount() {
+function mount({ strict = false } = {}) {
+  const Wrapper = strict ? StrictMode : Fragment;
   return render(
+    <Wrapper>
     <MemoryRouter initialEntries={["/cost"]}>
       <ConfigProvider>
         <RefreshProvider>
@@ -48,6 +51,7 @@ function mount() {
         </RefreshProvider>
       </ConfigProvider>
     </MemoryRouter>
+    </Wrapper>
   );
 }
 
@@ -57,6 +61,19 @@ beforeEach(() => {
   // useApi가 Date.now()를 QUANT_MS 경계로 내려 paramsKey를 만든다 — 실시간 시계로 돌리면
   // 테스트 중에 경계를 넘는 순간 파라미터가 바뀌어 "틱은 파라미터를 바꾸지 않는다"는 전제가 깨진다.
   vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-04T12:00:00.000Z").getTime());
+});
+
+test("StrictMode remount retries an aborted initial request instead of retaining a loading state", async () => {
+  stubFetch((_url, { signal }) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve({ ok: true, status: 200, json: async () => ({ total: 7 }) }), 10);
+    signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    });
+  }));
+  mount({ strict: true });
+  await waitFor(() => expect(hook.state.data).toEqual({ total: 7 }));
+  expect(hook.state.loading).toBe(false);
 });
 
 afterEach(() => {

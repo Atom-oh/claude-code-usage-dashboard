@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Menu, X } from "lucide-react";
-import { NAV, NavItem } from "./Sidebar.jsx";
+import { NavItem, useNavigation } from "./Sidebar.jsx";
 
 // lg(1024px) 미만에서는 SPA에 내비게이션이 아예 없었다 — Sidebar가 `hidden lg:flex`라
 // 모바일/태블릿에서 페이지를 옮길 방법이 주소창 말고 없다. 데스크톱과 같은 NAV·NavItem을
@@ -17,9 +17,10 @@ import { NAV, NavItem } from "./Sidebar.jsx";
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
+  const { items, brand, subtitle } = useNavigation();
 
   // 경로가 바뀌면 닫는다 — 링크로 이동한 뒤 드로어가 화면을 덮은 채 남지 않게.
-  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => setOpen(false), [pathname, brand]);
 
   // Escape 리스너는 열려 있을 때만 붙인다 — 닫힌 상태에서 전역 keydown을 잡고 있을 이유가 없다.
   useEffect(() => {
@@ -36,8 +37,8 @@ export function MobileNav() {
       <div className="flex items-center gap-2.5 border-b border-chrome-border bg-chrome-muted px-4 py-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-brand-500 text-white font-bold text-[15px]">CC</div>
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-semibold leading-tight text-chrome-fg">Claude Code</div>
-          <div className="text-[10px] text-chrome-fg-muted">A/B Dashboard</div>
+          <div className="text-[15px] font-semibold leading-tight text-chrome-fg">{brand}</div>
+          <div className="text-[10px] text-chrome-fg-muted">{subtitle}</div>
         </div>
         <button
           type="button"
@@ -61,7 +62,7 @@ export function MobileNav() {
             className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col overflow-y-auto border-r border-chrome-border bg-chrome-muted px-4 pb-4 pt-[22px] shadow-xl animate-fade-in"
           >
             <div className="mb-5 flex items-center justify-between gap-2">
-              <div className="text-[15px] font-semibold leading-tight text-chrome-fg">Claude Code</div>
+              <div className="text-[15px] font-semibold leading-tight text-chrome-fg">{brand}</div>
               <button
                 type="button"
                 aria-label="메뉴 닫기"
@@ -72,7 +73,7 @@ export function MobileNav() {
               </button>
             </div>
             <nav className="flex-1 space-y-0.5">
-              {NAV.map((item) => (
+              {items.map((item) => (
                 <NavItem key={item.to} {...item} />
               ))}
             </nav>

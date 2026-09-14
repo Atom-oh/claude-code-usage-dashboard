@@ -17,8 +17,15 @@ import Users from "./pages/Users.jsx";
 import Cost from "./pages/Cost.jsx";
 import Analytics from "./pages/Analytics.jsx";
 import Reliability from "./pages/Reliability.jsx";
+import Clients from "./pages/Clients.jsx";
+import { ClientProvider, useClient } from "./ClientContext.jsx";
 
 export default function App() {
+  return <ClientProvider><Dashboard /></ClientProvider>;
+}
+
+function Dashboard() {
+  const { common } = useClient();
   return (
     <RefreshProvider>
       <RangeProvider>
@@ -27,12 +34,12 @@ export default function App() {
             <div className="flex h-screen flex-col lg:flex-row">
               <MobileNav />
               <Sidebar />
-              <main className="flex-1 overflow-y-auto animate-fade-in">
+              <main className="min-w-0 flex-1 overflow-y-auto animate-fade-in">
                 <FreshnessBanner className="mx-8 mt-3" />
                 <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
                   <FilterBar />
                 </div>
-                <Routes>
+                {common ? <Clients /> : <Routes>
                   <Route path="/" element={<Overview />} />
                   <Route path="/exec" element={<Executive />} />
                   <Route path="/trends" element={<Trends />} />
@@ -42,10 +49,10 @@ export default function App() {
                   <Route path="/cost" element={<Cost />} />
                   <Route path="/reliability" element={<Reliability />} />
                   <Route path="/analytics" element={<Analytics />} />
-                </Routes>
+                </Routes>}
               </main>
             </div>
-            <FloatingChat />
+            {!common && <FloatingChat />}
           </FreshnessProvider>
         </FilterProvider>
       </RangeProvider>

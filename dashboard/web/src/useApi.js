@@ -23,7 +23,8 @@ const WARM_GRACE_MS = 150_000;
 
 export function useApi(path, extraParams = {}) {
   const { days, intervalHours, custom, month } = useRange();
-  const { group, user, model, project } = useFilters();
+  const { group, user, model, project, backend } = useFilters();
+  const clientOverview = path === "/api/clients/overview";
   // 이중 안전 — 파싱 단계(urlState.js parseUrlState)에서 이미 걸러지므로 여기서 걸리는 값은
   // 정상 경로에는 없다. 그래도 요청 문자열을 실제로 만드는 지점에 같은 게이트를 둔다: 보이지
   // 않는 필터가 요청에 실리는 것 자체가 PR #31 리뷰의 지적이었고, 게이트가 한 곳뿐이면 그 한
@@ -60,7 +61,7 @@ export function useApi(path, extraParams = {}) {
     // quantum만 앞으로 밀어 빈 창을 요청한다.
     if (to.getTime() <= from.getTime()) to = new Date(from.getTime() + QUANT_MS);
 
-    const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, project, intervalHours, extraJson]);
+    const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, project, backend, intervalHours, extraJson]);
     const paramsChanged = paramsKey !== paramsKeyRef.current;
     // 같은 파라미터에 대한 요청이 아직 떠 있는데 틱이 오면 그 틱은 버린다(큐잉하지 않는다).
     if (!paramsChanged && inflightRef.current) return;
@@ -85,6 +86,7 @@ export function useApi(path, extraParams = {}) {
         project: projectParam || undefined,
         intervalHours, // 시계열이 아닌 엔드포인트는 그냥 무시됨. extraParams가 뒤에 와서 override 가능.
         ...extraParams,
+        ...(clientOverview ? { group: undefined, project: undefined, intervalHours: undefined, backend: backend || undefined } : {}),
       },
       abort.signal
     )
@@ -111,10 +113,15 @@ export function useApi(path, extraParams = {}) {
       });
     // 이 cleanup에는 abort가 없다 — 틱만 바뀐 리런이 파라미터 로드를 취소하면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, extraJson, tick]);
+  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, extraJson, tick]);
 
   // 언마운트 시에만 abort한다.
-  useEffect(() => () => inflightRef.current?.abort(), []);
+  useEffect(() => () => {
+    inflightRef.current?.abort();
+    // StrictMode replays mount effects; an aborted request cannot block its replacement.
+    inflightRef.current = null;
+    paramsKeyRef.current = null;
+  }, []);
 
   return state;
 }

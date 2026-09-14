@@ -188,6 +188,7 @@ test("a successful legacy object without enabledClients retains safe provider de
   expect(JSON.parse(screen.getByLabelText("received config").textContent)).toEqual({});
   expect(JSON.parse(screen.getByLabelText("settings").textContent)).toEqual({
     groupMode: "ab", defaultRangeDays: 2, rangeCapDays: 90, piiMask: true,
+    enabledClients: ["claude"], codexEndpoint: "mantle",
   });
   expect(screen.getByLabelText("first paint email").textContent).toBe("fi******@example.test");
 });

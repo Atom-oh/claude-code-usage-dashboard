@@ -60,7 +60,7 @@ This cannot detect every dropped response.
 
 Folds share rows; over 50,000 returns 400. Claude counter/baseline rules remain.
 `effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
-when selected; disclose trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.
+when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.
 `intervalHours` is validated but ignored.
 
 ## Filter scope

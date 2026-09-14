@@ -39,8 +39,7 @@ is an expected skip. Use the deployment runbook for production changes.
   temporality handling.
 - Bedrock/enterprise are inferred session channels, not client identities. Model
   names do not identify the emitting client.
-- `CLAUDE_ENABLED`/`CODEX_ENABLED` select collection and API sources; both false is invalid.
-  Client-aware SPA activation follows separately; retain dashboard defaults until it ships.
+- `CLAUDE_ENABLED`/`CODEX_ENABLED` select collection and views; both false is invalid.
   Preserve client/backend/model separation; Codex has no enterprise A/B row.
 - Use shared API wrapping, bound SQL parameters and existing filter semantics.
 - Unavailable is distinct from zero; positive totals do not prove complete telemetry.

@@ -6,7 +6,7 @@ See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions an
 
 ## Routes and state
 
-[App.jsx](../../dashboard/web/src/App.jsx) registers nine pages:
+[App.jsx](../../dashboard/web/src/App.jsx) retains these nine Claude detail routes:
 
 | Path | Page |
 |---|---|
@@ -20,6 +20,11 @@ See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions an
 | `/reliability` | Reliability |
 | `/analytics` | Analytics chat |
 
+All-client and Codex modes use the common usage/cost page at `/`; other detail URLs
+redirect there with supported filters preserved. `ClientContext` owns activation
+selection. Common views expose backend filtering, omit Claude channel/project filters,
+and hide Claude-specific chat. No Codex enterprise comparison is created.
+
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
 chat. [main.jsx](../../dashboard/web/src/main.jsx) renders
 [ConfigBootstrap.jsx](../../dashboard/web/src/ConfigBootstrap.jsx) before mounting the router
@@ -31,7 +36,7 @@ late results cannot change config or masking. StrictMode setup does not send dup
 config requests.
 
 Successful config must be a non-null, non-array object. Legacy objects without
-`enabledClients` are accepted; when present, it must be a nonempty array of nonblank strings.
+`enabledClients` are accepted; when present, it must be a nonempty, duplicate-free array containing only `claude` or `codex`.
 The gate passes the object unchanged and does not select a client or add routes.
 Masking stays on until a validated config explicitly sets `piiMask` to false, before any
 app content renders.
