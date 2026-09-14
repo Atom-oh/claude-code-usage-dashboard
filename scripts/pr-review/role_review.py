@@ -1114,14 +1114,14 @@ def _empty_inline_assignment(value, start, value_start, code_span):
         following += 1
     while following < len(value) and value[following] in " \t":
         following += 1
-    return following == len(value) or value[following] in "\r\n;,.!?)]}"
+    return following == len(value) or value[following] == ";"
 
 
 def _backtick_value_spans(value, key, markdown=True):
     """Protect closed literal values independently of Markdown presentation."""
     if "`" not in value:
         return []
-    prefix = re.compile(r'''(?:\\.|[^\s"'`,;}\]\\]|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')*''', re.S)
+    prefix = re.compile(r'''(?:\\.|[^\s"'`,;\\]|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')*''', re.S)
     literal = re.compile(r"`(?:\\.|[^`\\])*`", re.S)
     spans, cursor, code_index = [], 0, 0
     code_spans = None
@@ -1137,7 +1137,7 @@ def _backtick_value_spans(value, key, markdown=True):
         if quoted is None:
             # No later unescaped closing tick can start another complete value.
             break
-        if markdown and position == match.end():
+        if markdown:
             if code_spans is None:
                 code_spans = _inline_code_spans(value)
             while code_index < len(code_spans) and code_spans[code_index][1] < match.start():
@@ -1145,6 +1145,11 @@ def _backtick_value_spans(value, key, markdown=True):
             code_span = (code_spans[code_index]
                          if code_index < len(code_spans)
                          and code_spans[code_index][0] <= match.start() else None)
+            if (code_span is not None and position == code_span[1]
+                    and position > match.end()
+                    and value[code_span[0]:match.start()].strip() in ("", "export")):
+                # This tick closes a nonempty assignment citation, not its value.
+                continue
             if _empty_inline_assignment(value, match.start(), match.end(), code_span):
                 continue
         spans.append((match.start(), quoted.end()))
@@ -1152,7 +1157,7 @@ def _backtick_value_spans(value, key, markdown=True):
     return spans
 
 
-def _assignment_spans(value, key, json_closers=None, fragment=False):
+def _assignment_spans(value, key, json_closers=None, fragment=False, backtick_spans=()):
     """Find assignments without changing another detector's input."""
     if json_closers is None:
         json_closers = _json_enclosing_closers(value)
@@ -1160,6 +1165,7 @@ def _assignment_spans(value, key, json_closers=None, fragment=False):
     tail_operator = re.compile(r"(?:\|\||\?\?|\bor|\\|(?:^|\s)[+*/%&|^?:<>=!-])$")
     closing_fences = set()
     code_spans, code_index = _inline_code_spans(value, closing_fences), 0
+    backtick_index = 0
     line_break = re.compile(r"\r\n?|\n")
     opening = {"(": ")", "[": "]", "{": "}"}
     bracket_ends = {}
@@ -1248,6 +1254,14 @@ def _assignment_spans(value, key, json_closers=None, fragment=False):
         code_end = (code_spans[code_index][1]
                     if code_index < len(code_spans) and code_spans[code_index][0] <= match.start()
                     else None)
+        while (backtick_index < len(backtick_spans)
+               and backtick_spans[backtick_index][1] <= match.start()):
+            backtick_index += 1
+        if (code_end is not None and backtick_index < len(backtick_spans)
+                and backtick_spans[backtick_index][0] <= match.start() < code_end
+                < backtick_spans[backtick_index][1]):
+            # The apparent Markdown end opens a literal; scan its complete value.
+            code_end = None
         value_apostrophe = code_apostrophes.get(code_end, -1) if code_end is not None else last_apostrophe
         code_span = (code_spans[code_index] if code_end is not None else None)
         empty_inline = _empty_inline_assignment(value, match.start(), match.end(), code_span)
@@ -1501,7 +1515,8 @@ def scrub(value, preserved=frozenset(), _fragment=False):
         _assignment_spans,
         key + r"""[^\s"',;}\]]+""",
     )
-    spans, bodies = _backtick_value_spans(value, key), []
+    backtick_spans = _backtick_value_spans(value, key)
+    spans, bodies = list(backtick_spans), []
     scan_value = _opaque_scan_view(value, bodies)
     for entry in patterns:
         if entry is _quoted_key_spans:
@@ -1511,7 +1526,7 @@ def scrub(value, preserved=frozenset(), _fragment=False):
             scan_value = _opaque_scan_view(value, bodies)
             continue
         if entry is _assignment_spans:
-            spans.extend(_assignment_spans(scan_value, key, json_closers, _fragment))
+            spans.extend(_assignment_spans(scan_value, key, json_closers, _fragment, backtick_spans))
             continue
         pattern, kind = entry if isinstance(entry, tuple) else (entry, None)
         for match in re.finditer(pattern, scan_value, flags=re.S):

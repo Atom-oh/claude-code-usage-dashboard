@@ -109,6 +109,44 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_backtick_assignment_keeps_concatenated_suffix_private(self):
+        for suffix in ("private-value", "'private-value'", "`printf private-value`"):
+            for prefix in ("echo '`'\n", "- > echo '`'\n  > "):
+                with self.subTest(suffix=suffix, prefix=prefix):
+                    reply = (0, prefix + "password=prefix`printf public`" + suffix
+                             + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                    calls, text = self.run_chair([reply, reply])
+                    self.assertNotIn("private-value", text)
+                    self.assertEqual(calls, 1)
+                    self.assertIn("Reviewed behavior.", text)
+                    self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
+    def test_complex_backtick_values_remain_private(self):
+        examples = (
+            ("echo '`'\npassword=${PREFIX}`printf 'private-value'`", True),
+            ("echo '`'\npassword=tags[0]`private-value`", True),
+            ("Use `password=`! printf 'private-value'`` now.", True),
+        )
+        for example, accepted in examples:
+            with self.subTest(example=example):
+                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertNotIn("private-value", text)
+                self.assertEqual(calls, 1 if accepted else 2)
+                self.assertTrue(text.endswith("VERDICT: PASS\n" if accepted else "VERDICT: FAIL\n"))
+
+    def test_inline_assignment_citations_preserve_following_findings(self):
+        for value in ("private-value", "'private-value'", '"private-value"'):
+            with self.subTest(value=value):
+                reply = (0, "Checked `password=" + value + "`; MAJOR rollback evidence. "
+                         "See `service` and `validate()`.\nVERDICT: FAIL\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", text)
+                self.assertIn("MAJOR rollback evidence.", text)
+                self.assertIn("`service`", text)
+                self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+
     def test_backtick_values_are_protected_before_markdown_boundaries(self):
         examples = (
             "echo '`'\npassword=`printf 'private-value'`",
