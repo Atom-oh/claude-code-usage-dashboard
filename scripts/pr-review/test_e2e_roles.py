@@ -11,7 +11,7 @@ import unittest
 
 SOURCE = Path(__file__).resolve().parent
 FAKE = r'''#!/usr/bin/env python3
-import json,pathlib,sys
+import json,os,pathlib,sys
 root = pathlib.Path(ROOT)
 argv = sys.argv[1:]
 name = pathlib.Path(sys.argv[0]).name
@@ -20,7 +20,23 @@ if name == "gh":
     raise SystemExit(0)
 stdin = sys.stdin.read()
 with (root / "calls.jsonl").open("a") as stream:
-    stream.write(json.dumps({"name": name, "args": argv, "stdin": stdin}) + "\n")
+    stream.write(json.dumps({"name": name, "args": argv, "stdin": stdin,
+                             "home": os.environ.get("HOME"), "cwd": str(pathlib.Path.cwd())}) + "\n")
+if name == "kiro-cli" and argv[0] == "settings":
+    assert stdin == ""
+    assert os.environ["HOME"] == str(pathlib.Path.cwd())
+    assert not any(key.startswith("AWS_") or key in ("GH_TOKEN", "GITHUB_TOKEN")
+                   for key in os.environ)
+    setting = pathlib.Path.home() / ".kiro/fake-settings.json"
+    if (root / "kiro-setting-failure").exists():
+        print("Settings unavailable", file=sys.stderr)
+        raise SystemExit(9)
+    if argv == ["settings", "chat.disableMarkdownRendering", "true"]:
+        setting.write_text("true")
+    else:
+        assert argv == ["settings", "chat.disableMarkdownRendering", "--format", "json"]
+        print(setting.read_text() if setting.exists() else "false")
+    raise SystemExit(0)
 if name == "kiro-cli" and argv[1].startswith("Kiro startup safety check."):
     assert stdin == ""
     print("NO_TOOLS")
@@ -37,10 +53,20 @@ paths = role["paths"]
 response = {"head_sha":plan["head_sha"],"role":role["role"],"scope_complete":True,
             "reviewed_paths":paths,"checks":[{"path":paths[0],"evidence":"Checked changed behavior."}],
             "findings":[],"uncertainties":[]}
+if name == "kiro-cli" and (root / "literal-evidence").exists():
+    response["checks"][0]["evidence"] = (root / "literal-evidence").read_text()
 if (root / "major").exists() and tag == "codex":
     response["findings"] = [{"severity":"MAJOR","path":paths[0],"condition":"When the branch runs",
                             "evidence":"The changed return value loses state."}]
 body = json.dumps(response)
+if name == "kiro-cli":
+    setting = pathlib.Path.home() / ".kiro/fake-settings.json"
+    literal = setting.exists() and setting.read_text() == "true"
+    if (root / "fenced-kiro").exists():
+        body = "```json\n" + body + "\n```" if literal else "json\n" + body
+    elif not literal:
+        # Recorded native behavior: inline-code delimiters disappear in Markdown.
+        body = body.replace("`", "")
 if (root / "invalid-inner").exists() and tag == "codex":
     body = "Unrequested prose\n" + body
 if (root / "duplicate-final").exists() and tag == "codex":
@@ -148,9 +174,55 @@ class EndToEndRoleTests(unittest.TestCase):
 
     def test_aws_change_uses_four_reviews_and_two_safety_checks(self):
         calls = self.run_pipeline("infra/network.tf")
-        self.assertEqual(len(calls), 6)
-        self.assertEqual(sum(call["name"] == "kiro-cli" for call in calls), 4)
+        model_calls = [call for call in calls if call["args"][0] != "settings"]
+        self.assertEqual(len(model_calls), 6)
+        self.assertEqual(sum(call["name"] == "kiro-cli" for call in model_calls), 4)
+        kiro = [call for call in calls if call["name"] == "kiro-cli"]
+        homes = {call["home"] for call in kiro}
+        self.assertEqual(len(homes), 2)
+        for home in homes:
+            cell = [call for call in kiro if call["home"] == home]
+            self.assertEqual([call["args"][0] for call in cell],
+                             ["settings", "settings", "chat", "chat"])
+            self.assertEqual(cell[0]["args"],
+                             ["settings", "chat.disableMarkdownRendering", "true"])
+            self.assertEqual(cell[1]["args"],
+                             ["settings", "chat.disableMarkdownRendering", "--format", "json"])
+            self.assertTrue(all(call["cwd"] == home and call["stdin"] == "" for call in cell))
+            self.assertIn("preflight-canary.txt", cell[2]["args"][1])
+            self.assertIn("BEGIN DIFF ", cell[3]["args"][1])
+            self.assertFalse(Path(home).exists())
         self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+
+    def assert_kiro_literals_preserved(self, fenced):
+        literal = 'Checked `tag` with "quotes", C:\\tmp\\probe, &quot; &amp; &lt; &#34;.'
+        (self.root / "literal-evidence").write_text(literal)
+        if fenced:
+            (self.root / "fenced-kiro").touch()
+        self.run_pipeline("infra/network.tf")
+        for tag in ("kiro-fable", "kiro-sol"):
+            result = json.loads((self.work / "slot" / f"{tag}-result.json").read_text())
+            self.assertTrue(result["valid"], result["failure_codes"])
+            self.assertEqual(result["response"]["checks"][0]["evidence"], literal)
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+
+    def test_raw_kiro_json_preserves_literal_review_evidence(self):
+        self.assert_kiro_literals_preserved(False)
+
+    def test_fenced_kiro_json_preserves_literal_review_evidence(self):
+        self.assert_kiro_literals_preserved(True)
+
+    def test_settings_failure_blocks_coverage_without_a_kiro_model_request(self):
+        (self.root / "kiro-setting-failure").touch()
+        calls = self.run_pipeline("infra/network.tf")
+        kiro = [call for call in calls if call["name"] == "kiro-cli"]
+        self.assertEqual(len(kiro), 2)
+        self.assertTrue(all(call["args"][0] == "settings" for call in kiro))
+        for tag in ("kiro-fable", "kiro-sol"):
+            self.assertTrue((self.work / "slot" / f"kiro-preflight-{tag}.flag").exists())
+            result = json.loads((self.work / "slot" / f"{tag}-result.json").read_text())
+            self.assertFalse(result["valid"])
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: FAIL\n"))
 
     def test_nonzero_output_blocks_without_chair_override(self):
         (self.root / "failure").touch()

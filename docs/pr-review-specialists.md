@@ -25,8 +25,10 @@ may record NOT_APPLICABLE; provider failures never do.
 
 `prepare_roles.py` verifies the pinned base checkout, resolves the immutable merge
 base, fetches Git objects and generates a complete diff without executing head
-code. It reads reviewer instructions from the base Git object. Candidate context
-is checked for availability, size and generated-source freshness, then discarded.
+code. Workflow context rendering uses the same event `BASE_SHA` as the trusted
+checkout, including advanced or stacked PR bases. Reviewer instructions come from
+the base Git object. Candidate context is checked for availability, size and
+generated-source freshness, then discarded.
 The shared context ceiling is 24,000 bytes; repositories may enforce a smaller one.
 
 Every result confirms its role, HEAD and reviewed paths. Host metadata binds it
@@ -44,9 +46,13 @@ do not remove chunk attestations or raise limits to obtain a pass.
 
 Each applicable model receives one specialist request. Both Kiro roles use fresh
 HOME/cwd directories and an explicit empty tool catalog with no MCP resources or
-hooks. Each active Kiro job first receives a fixed canary check without PR data;
-only an exact successful no-tools response permits the actual review. Its child
-environment excludes AWS and GitHub credentials. Errors remain visible; no
+hooks. In each isolated HOME, native settings disable Markdown rendering and
+JSON readback must confirm `chat.disableMarkdownRendering=true`. `--wrap never`
+alone still transforms JSON fences and string literals. Settings setup, readback,
+the fixed no-tools canary and any peer wait share the existing preflight deadline.
+Failed or unconfirmed setup invokes no Kiro model; only an exact successful
+no-tools response permits PR input. Settings and chat use the same filtered
+environment, excluding AWS and GitHub credentials. Errors remain visible; no
 automatic quota or billing changes are made.
 
 Codex retains its read-only sandbox and configured Bedrock provider. Claude's
