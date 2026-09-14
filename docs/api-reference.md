@@ -29,6 +29,40 @@ second precision. Historical rollup ends, latest-hour data and existence queries
 specific approximations; see [time boundaries](reference/data.md).
 Config, health and chat routes do not use this range wrapper.
 
+## Coding-client views
+
+[Activation](runbooks/codex-telemetry.md) controls `/api/config`'s
+`enabledClients`/`codexEndpoint`; disabled Claude routes return 404, stop warming/chat.
+
+`GET /api/clients/overview` returns `clients`, `totals`, `by_client`, `by_model`,
+`by_user`, `by_project`, `timeseries`, `tools` and metadata below.
+`client=all|claude|codex` selects enabled sources;
+`backend=all|bedrock-mantle|bedrock-runtime|anthropic|unknown`. Invalid/disabled clients,
+arrays and nonempty group/project filters fail before caching.
+Claude backend is inferred: bedrock channel → `bedrock-runtime`, enterprise →
+`anthropic`, otherwise `unknown`.
+
+Claude model terms normalize. Modeled rows match directly.
+Model-less rows use same-client model evidence (logs; Claude also uses token/cost
+counters) within the range and identical session (nonempty), user, backend and project.
+Coarse session attribution can match several models; rows retain `model=""`.
+
+`cost_usd` uses `cost_basis=client_reported` (Claude) or `aws_list_estimate` (Codex).
+Missing prices/invalid usage yield null; explicit zero stays zero. Users union IDs;
+sessions include client; model identity counts overlap.
+`by_project` uses Codex `project.name`, not billing projects. Request/TTFT durations
+are observed means or null. `requests` includes `api_error` attempts.
+
+`observed_records`: deduplicated logs plus Claude usage rows; zero means empty.
+`quality.missing_usage` counts Codex session/user/model/backend/project scopes without
+usage across the range, making affected token/cost folds null and adding to `unpriced`.
+This cannot detect every dropped response.
+
+Folds share rows; over 50,000 returns 400. Claude counter/baseline rules remain.
+`effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
+when selected; disclose trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.
+`intervalHours` is validated but ignored.
+
 ## Filter scope
 
 Forwarded parameters are not universally implemented. [filterCond](../dashboard/server/queries.js)
@@ -219,7 +253,8 @@ See [chat limits and prompt gaps](reference/agent-llm.md).
 | `/api/health/data` | `{status, latest, ageMinutes, staleAfterMinutes}`; status is `ok`, `stale` or `unknown`. HTTP 200 only for `ok`, 503 otherwise. |
 | `/api/config` | `{piiMask, pricing, schema, groupMode, defaultRangeDays, rangeCapDays}`; reads in-memory configuration/probe snapshots, with no query in this handler. |
 
-Freshness probes raw `otel_metrics_sum` over the last seven days, memoized for 30 seconds.
+Freshness uses the maximum enabled-source timestamp (Claude raw metrics, Codex logs)
+over seven days, memoized for 30 seconds; one fresh source can mask another's outage.
 `latest` is ISO 8601 or null; `ageMinutes` is an integer or null. `DATA_STALE_MINUTES`
 defaults to 360 and must be positive and below 10,080. Missing or failed measurement is
 unknown, not healthy. Process shutdown and manifest probes are described in

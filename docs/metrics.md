@@ -5,6 +5,38 @@ Users, Trends, Reliability, Usage and Analytics. Names below describe the UI in 
 code identifiers locate labels and calculations without reproducing translated strings.
 Field-level responses and filters are in the [API contract](api-reference.md).
 
+## Codex and combined-client measurements
+
+The common client API is independent of Claude's bedrock/enterprise comparison.
+It uses `codex.sse_event` or `codex.websocket_event` usage-bearing
+`response.completed` logs. A generic completion event without token fields is not
+usage. Identical export records are deduplicated before aggregation, ignoring map
+entry order. Partial/malformed token records are flagged, not interpreted as free usage.
+Invalid token components remain null. Active Codex session/user/model/backend/project
+combinations without usage-bearing records return null tokens and cost; zero-valued
+usage records remain zero. Availability spans the selected range across time buckets.
+It cannot detect every dropped response in a combination that has some usage.
+
+Codex input totals include cache reads and writes. Uncached input is input total
+minus those two subsets. Output already includes reasoning; total tokens are input
+total plus output. Cache buckets and per-request context tier are preserved before
+applying the AWS model rates. `codexPricing.js` owns list-price estimates; Claude
+retains its client-reported counter. Estimates are not invoices or billing bounds.
+
+`codex.api_request`, `codex.api_error`, `codex.tool_result` and `codex.turn_ttft`
+supply observed operations. Request duration does not necessarily measure full
+generation, and timing instrumentation differs by client. Missing timing coverage
+is not a zero-latency measurement. Session counts are distinct observed conversation
+identities within a client; user counts are distinct emitted identity strings.
+Codex does not inherit Claude's LOC, commit or activity-score formulas.
+Claude operations accept established unprefixed event names and `claude_code.*`
+aliases. `observed_records` combines log-event counts with Claude usage aggregate-row
+counts only to distinguish an empty result; it is not a comparable request measure.
+
+The Codex feed uses OTel logs intentionally, not a second token-histogram total.
+It therefore follows log retention (90 days), not the Claude metric retention period.
+See [setup and pricing assumptions](runbooks/codex-telemetry.md).
+
 ## Shared interpretation
 
 - Metric `Value` can be cumulative. [queries.js](../dashboard/server/queries.js) computes
@@ -14,8 +46,8 @@ Field-level responses and filters are in the [API contract](api-reference.md).
   Four-hour raw selection, lookback limits and historical/latest-hour approximations are
   documented in [data](reference/data.md). Different panels need not agree for every window.
 - `bedrock` and `enterprise` are inferred access channels for Claude Code sessions, not
-  coding clients. A user can appear in both. Native Codex telemetry is not supported by the
-  current queries, and an OpenAI model name is not proof of Codex use.
+  coding clients. A user can appear in both. Codex has a separate structured-log usage
+  path; an OpenAI model name alone is not proof of Codex use.
 - Total-oriented endpoints include `unknown` channels; many A/B endpoints exclude them.
   Headcounts can overlap across channels, and model filtering does not apply to active-user
   or adoption counts. Project filtering affects only four Usage queries. Always check

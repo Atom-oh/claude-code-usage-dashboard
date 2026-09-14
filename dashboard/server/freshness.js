@@ -71,9 +71,19 @@ export function classifyFreshness({ latestMs, nowMs, staleAfterMinutes }) {
 // 부팅/주기 실행 모두 비치명적 — 어떤 에러(권한, 네트워크, 스키마)든 null로 접는다.
 // null은 classifyFreshness에서 unknown이 되고, unknown은 stale과 같은 503으로 나간다
 // (index.js): 측정할 수 없을 때 조용해지면 이 기능이 막으려는 장애를 그대로 재현한다.
-export async function probeLatestTelemetryMs() {
+export async function probeLatestTelemetryMs(enabledClients = ["claude"]) {
   try {
-    const rows = await query(PROBE_SQL);
+    // Freshness means recent receipt from an enabled source, not complete coverage
+    // of every client. The client overview exposes each source's observations.
+    const parts = [];
+    if (enabledClients.includes("claude")) parts.push(PROBE_SQL);
+    if (enabledClients.includes("codex")) parts.push(`
+      SELECT toUnixTimestamp64Milli(max(Timestamp)) AS latest_ms
+      FROM claude_code.otel_logs
+      WHERE Timestamp > now() - INTERVAL 7 DAY AND startsWith(EventName, 'codex.')`);
+    if (!parts.length) return null;
+    const sql = parts.length === 1 ? parts[0] : `SELECT max(latest_ms) AS latest_ms FROM (${parts.join(" UNION ALL ")})`;
+    const rows = await query(sql);
     if (!rows || rows.length === 0) return null;
     const raw = rows[0].latest_ms;
     return raw === undefined || raw === null ? null : Number(raw);

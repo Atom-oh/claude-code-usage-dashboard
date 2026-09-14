@@ -1,8 +1,8 @@
 # Selectable Claude Code and Codex telemetry
 
-Collection/bootstrap and the launcher are available here; client-aware API and SPA
-changes follow separately. Keep dashboard activation defaults until that application
-release is installed. Repository changes do not deploy EKS, update existing EC2
+Collection/bootstrap, the launcher and the authenticated client API are available.
+The client-aware SPA follows separately; keep dashboard activation defaults until
+that UI release is installed. Repository changes do not deploy EKS, update existing EC2
 instances, change IAM/billing, or create credentials. These lifecycles are separate.
 
 ## Select clients consistently
@@ -197,6 +197,12 @@ reconciliation, production deployment, credential creation or billing change is 
 
 ## Dashboard cost and query contract
 
-Client-aware API/UI changes follow separately. This collection release stores usage;
-it does not supply Codex cost panels or invoice reconciliation. Retain application
-activation defaults until those changes ship.
+See [API semantics](../api-reference.md#coding-client-views). Model-card estimates
+retain scope/context tiers; they are not invoices.
+`CODEX_PRICING_JSON` (`codex_pricing_json`) keys must omit `us.`/`global.` (lookup strips
+them). Entries require positive integer `short_context_limit`, `regional` and optional
+`global`, each with `short`/`long` rates: finite nonnegative USD/million `input`,
+`cacheWrite`, `cacheRead`, `output`. Invalid entries fail startup; config hides rates.
+
+With Docker/server dependencies, `bash scripts/test-client-sql.sh` owns a disposable
+loopback ClickHouse using the local schema; external DB URLs are ignored.

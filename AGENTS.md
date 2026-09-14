@@ -2,7 +2,8 @@
 
 ## Scope and authority
 
-Workshop telemetry: Claude Code OTel → ClickHouse → Express → React, with Terraform,
+Workshop telemetry: Claude Code metrics and Codex structured OTel logs → ClickHouse
+→ Express → React, with Terraform,
 a documentation site and a separate video project. These observations are not
 validated employee productivity or causal ROI measures.
 
@@ -31,12 +32,16 @@ is an expected skip. Use the deployment runbook for production changes.
 
 ## Contracts
 
-- Spend uses `reported_cost`; retain `cost`/`computed_cost` diagnostics. Estimates are
-  neither invoices nor guaranteed billing bounds.
+- Claude spend uses `reported_cost`; retain `cost`/`computed_cost` diagnostics.
+  Codex uses labelled AWS list-price estimates with token subsets and request tiers
+  preserved. Neither basis is an invoice or guaranteed billing bound.
 - Never sum cumulative OTel samples as usage; preserve identity, boundaries and
   temporality handling.
 - Bedrock/enterprise are inferred session channels, not client identities. Model
   names do not identify the emitting client.
+- `CLAUDE_ENABLED`/`CODEX_ENABLED` select collection and API sources; both false is invalid.
+  Client-aware SPA activation follows separately; retain dashboard defaults until it ships.
+  Preserve client/backend/model separation; Codex has no enterprise A/B row.
 - Use shared API wrapping, bound SQL parameters and existing filter semantics.
 - Unavailable is distinct from zero; positive totals do not prove complete telemetry.
 - Exclude secrets, personal/customer data from commits, public reviews and site assets.
