@@ -29,7 +29,7 @@ Bootstrap writes both. Restart `otelcol.service` after configuration changes and
 restart Codex through the launcher. Existing processes keep their prior settings.
 Disabled feeds are rejected on ingestion; stored rows and already queued exporter
 batches remain. Raw Collector execution with both flags false drops both feeds;
-the service's launcher preflight rejects that combination before startup.
+the service's activation preflight rejects that combination before startup.
 
 ## Bootstrap artifacts and recovery
 
@@ -66,8 +66,12 @@ the recovery directory for the operator.
 This is bounded startup recovery, not ongoing availability monitoring or rollback of
 package-manager/client-install side effects. The durable exporter queue is preserved.
 
-The service also runs `ccdash-codex --check` and the Collector validator before each
-start. The launcher check is offline. Failed validation leaves a diagnostic only in
+The service runs `ccdash-codex --check-collector` and the Collector validator before each
+start. This offline check reads only activation flags from the service environment;
+it never opens Codex launcher defaults or validates its model, region, version or
+credentials. Stale Codex-only settings therefore cannot stop Claude collection.
+`ccdash-codex --check` remains the full launcher configuration check used by bootstrap
+and operators. Failed candidate validation leaves a diagnostic only in
 the private temporary directory, which cleanup removes; reproduce syntax failures
 with the Collector validator and nonsecret placeholder connection values.
 

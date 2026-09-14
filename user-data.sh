@@ -216,10 +216,16 @@ fi
 # shell profile or through Claude's managed OTEL_RESOURCE_ATTRIBUTES.
 export CODEX_OTEL_RESOURCE_ATTRIBUTES="${CODEX_OTEL_RESOURCE_ATTRIBUTES-team=fsi}"
 if [ -n "$END_USER_ID" ]; then
-  case ",${CODEX_OTEL_RESOURCE_ATTRIBUTES}," in
-    *,user.email=*) ;;
-    *) CODEX_OTEL_RESOURCE_ATTRIBUTES="${CODEX_OTEL_RESOURCE_ATTRIBUTES:+${CODEX_OTEL_RESOURCE_ATTRIBUTES},}user.email=${END_USER_ID}" ;;
-  esac
+  # Match the launcher's key normalization; whitespace must not let an instance
+  # default replace an explicitly configured identity.
+  if ! python3 - <<'PY'
+import os, sys
+items = os.environ["CODEX_OTEL_RESOURCE_ATTRIBUTES"].split(",")
+sys.exit(0 if any(item.partition("=")[0].strip() == "user.email" for item in items) else 1)
+PY
+  then
+    CODEX_OTEL_RESOURCE_ATTRIBUTES="${CODEX_OTEL_RESOURCE_ATTRIBUTES:+${CODEX_OTEL_RESOURCE_ATTRIBUTES},}user.email=${END_USER_ID}"
+  fi
 fi
 CCDASH_CLIENT_ENV=/dev/null "$BOOTSTRAP_TMP/ccdash-codex" --check >/dev/null
 cat > "$BOOTSTRAP_TMP/clients.env" <<EOF
@@ -329,7 +335,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/otelcol/env
-ExecStartPre=/usr/local/bin/ccdash-codex --check
+ExecStartPre=/usr/local/bin/ccdash-codex --check-collector
 ExecStartPre=/usr/local/bin/otelcol-contrib validate --config /etc/otelcol/config.yaml
 ExecStart=/usr/local/bin/otelcol-contrib --config /etc/otelcol/config.yaml
 Restart=always
