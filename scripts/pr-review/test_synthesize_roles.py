@@ -92,6 +92,29 @@ class SynthesisTests(unittest.TestCase):
                 self.assertIn("Reviewed behavior", text)
                 self.assertNotIn("private-value", text)
 
+    def test_source_json_boundaries_survive_value_and_key_normalization(self):
+        for payload in (
+            '{"name":"TOKEN","value":null,"password":"private-value"}',
+            '{"name":"TOKEN","value":123,"password":"private-value"}',
+            '{"api key (one)":{"note":"private-value"},"api key (two)":{"note":"private-value"}}',
+        ):
+            with self.subTest(payload=payload):
+                reply = (0, f"curl -d '{payload}' https://example.invalid\n"
+                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("Reviewed behavior.", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assertNotIn("private-value", text)
+
+    def test_invalid_source_json_cannot_gain_enclosing_boundaries(self):
+        reply = (0, "curl -d '{\"name\":\"TOKEN\",\"value\":null \"password\":\"private-value\"}'\n"
+                    "Reviewed behavior.\nVERDICT: PASS\n", "")
+        calls, text = self.run_chair([reply, reply])
+        self.assertEqual(calls, 2)
+        self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+        self.assertNotIn("private-value", text)
+
     def test_shell_literal_brackets_preserve_review_after_closing_quote(self):
         for bracket in ("[", "{"):
             with self.subTest(bracket=bracket):

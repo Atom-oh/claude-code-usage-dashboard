@@ -757,7 +757,9 @@ def strip_controls(value):
 
 
 def _normalize_container_keys(value):
-    """Expose valid punctuated JSON keys to the existing container safeguards."""
+    """Normalize keys and retain validated source JSON boundaries across edits."""
+    closers = _json_enclosing_closers(value)
+    shifts = []
     literal = re.compile(r'"(?:\\.|[^"\\])*"')
     separator = re.compile(r"\s*:\s*(?=\{|\[)")
     pieces, cursor = [], 0
@@ -774,9 +776,16 @@ def _normalize_container_keys(value):
         if not sensitive_key(label) or SENSITIVE_KEY.fullmatch(label):
             continue
         pieces.extend((value[cursor:match.start()], '"password"'))
+        shifts.append((match.end(), len('"password"') - len(match.group())))
         cursor = match.end()
     pieces.append(value[cursor:])
-    return "".join(pieces)
+    mapped, edit_index, offset = set(), 0, 0
+    for closer in sorted(closers):
+        while edit_index < len(shifts) and shifts[edit_index][0] <= closer:
+            offset += shifts[edit_index][1]
+            edit_index += 1
+        mapped.add(closer + offset)
+    return "".join(pieces), mapped
 
 
 def _quoted_key_spans(value):
@@ -873,9 +882,10 @@ def _json_enclosing_closers(value):
     return closers
 
 
-def _assignment_spans(value, key):
+def _assignment_spans(value, key, json_closers=None):
     """Find assignments without changing another detector's input."""
-    json_closers = _json_enclosing_closers(value)
+    if json_closers is None:
+        json_closers = _json_enclosing_closers(value)
     operator = re.compile(r"\|\||\?\?|\bor\b")
     tail_operator = re.compile(r"(?:\|\||\?\?|\bor|\\|(?:^|\s)[+*/%&|^?:<>=!-])$")
     code_spans, code_index = _inline_code_spans(value), 0
@@ -1183,7 +1193,7 @@ def scrub(value, preserved=frozenset()):
             return match.group()
     # Decode nested JSON strings/escaped keys before applying key/value patterns.
     value = re.sub(r'"(?:\\.|[^"\\])*"', quoted, value)
-    value = _normalize_container_keys(value)
+    value, json_closers = _normalize_container_keys(value)
     identifier = SENSITIVE_KEY.pattern
     quote = r"""\\*["']"""
     key = identifier + rf"(?:{quote})?\s*[:=]\s*"
@@ -1226,7 +1236,7 @@ def scrub(value, preserved=frozenset()):
             scan_value = _opaque_scan_view(value, bodies)
             continue
         if entry is _assignment_spans:
-            spans.extend(_assignment_spans(scan_value, key))
+            spans.extend(_assignment_spans(scan_value, key, json_closers))
             continue
         pattern, kind = entry if isinstance(entry, tuple) else (entry, None)
         for match in re.finditer(pattern, scan_value, flags=re.S):
