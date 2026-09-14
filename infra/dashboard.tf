@@ -2,6 +2,35 @@ variable "dashboard_image_tag" {
   description = "ECR에 push된 이미지 태그. 첫 apply 시점엔 아직 이미지가 없을 수 있음 — push 후 재배포. 기본값 없음 — ECR 리포지터리가 IMMUTABLE이라 움직이는 `latest`가 존재하지 않는다(ecr.tf). 첫 apply 전에 이미지를 push하고 그 타임스탬프 태그를 지정한다."
 }
 
+variable "claude_enabled" {
+  description = "Enable Claude Code API access and views. Propagate the same flag to the separately managed EC2 collector/bootstrap."
+  type        = bool
+  default     = true
+  nullable    = false
+  validation {
+    condition     = var.claude_enabled || var.codex_enabled
+    error_message = "At least one of claude_enabled and codex_enabled must be true."
+  }
+}
+
+variable "codex_enabled" {
+  description = "Enable Codex observability. This does not install a client or change Bedrock permissions or billing."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "codex_bedrock_endpoint" {
+  description = "Codex Bedrock endpoint selection, mirrored by the separately managed launcher and collector/bootstrap environment."
+  type        = string
+  default     = "mantle"
+  nullable    = false
+  validation {
+    condition     = contains(["mantle", "runtime"], var.codex_bedrock_endpoint)
+    error_message = "codex_bedrock_endpoint must be mantle or runtime."
+  }
+}
+
 variable "data_stale_minutes" {
   description = "GET /api/health/data가 stale로 판정하는 기준(분). 서버 기본값과 같은 360."
   type        = number
@@ -60,6 +89,16 @@ variable "alert_repeat_minutes" {
 variable "pricing_json" {
   type    = string
   default = null
+}
+
+variable "codex_pricing_json" {
+  description = "Optional JSON rate overrides for Codex AWS list-price estimates."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.codex_pricing_json == null ? true : can(jsondecode(var.codex_pricing_json))
+    error_message = "codex_pricing_json must be valid JSON when provided."
+  }
 }
 
 variable "pricing_cache_write_ttl" {
@@ -266,6 +305,13 @@ resource "kubernetes_deployment_v1" "dashboard" {
             }
           }
           dynamic "env" {
+            for_each = var.codex_pricing_json == null ? [] : [var.codex_pricing_json]
+            content {
+              name  = "CODEX_PRICING_JSON"
+              value = env.value
+            }
+          }
+          dynamic "env" {
             for_each = var.pricing_cache_write_ttl == null ? [] : [var.pricing_cache_write_ttl]
             content {
               name  = "PRICING_CACHE_WRITE_TTL"
@@ -293,6 +339,18 @@ resource "kubernetes_deployment_v1" "dashboard" {
               name  = env.key
               value = env.value
             }
+          }
+          env {
+            name  = "CLAUDE_ENABLED"
+            value = tostring(var.claude_enabled)
+          }
+          env {
+            name  = "CODEX_ENABLED"
+            value = tostring(var.codex_enabled)
+          }
+          env {
+            name  = "CODEX_BEDROCK_ENDPOINT"
+            value = var.codex_bedrock_endpoint
           }
           env_from {
             secret_ref { name = kubernetes_secret.dashboard_basic_auth.metadata[0].name }
