@@ -753,11 +753,11 @@ def strip_controls(value):
     return "".join(c for c in value if c in "\n\r\t" or unicodedata.category(c) not in ("Cc", "Cf", "Zl", "Zp"))
 
 
-def _scrub_quoted_keys(value):
+def _quoted_key_spans(value):
     """Scan bounded JSON literals without broadening the prose identifier."""
     literal = re.compile(r'"(?:\\.|[^"\\])*(?:"|\\?\Z)')
     separator = re.compile(r"\s*:\s*")
-    pieces, cursor = [], 0
+    spans, cursor = [], 0
     for match in literal.finditer(value):
         if match.start() < cursor:
             continue
@@ -770,21 +770,24 @@ def _scrub_quoted_keys(value):
         colon = separator.match(value, match.end())
         item = literal.match(value, colon.end()) if colon else None
         if item:
-            pieces.extend((value[cursor:item.start()], '"[REDACTED]"'))
+            end = item.end() - 1 if item.group().endswith('"') else item.end()
+            spans.append((item.start() + 1, end))
             cursor = item.end()
-    return "".join(pieces) + value[cursor:]
+    return spans
 
 
-def _scrub_assignment_values(value, key):
-    """Consume complete assignments before another matcher can remove delimiters."""
+def _assignment_spans(value, key):
+    """Find assignments without changing another detector's input."""
     operator = re.compile(r"\|\||\?\?|\bor\b")
     line_break = re.compile(r"\r\n?|\n")
     opening = {"(": ")", "[": "]", "{": "}"}
+    last_closing = {char: value.rfind(char) for char in opening.values()}
+    contraction = re.compile(r"(?i:(?:[a-z]+n't|it'[sd]))(?=\s|\Z)")
     def next_content(index):
         while index < len(value) and value[index].isspace():
             index += 1
         return index
-    pieces, cursor = [], 0
+    spans, cursor = [], 0
     for match in re.finditer(key, value):
         if match.start() < cursor:
             continue
@@ -797,7 +800,10 @@ def _scrub_assignment_values(value, key):
         if prefix in ("\"", "'") and index < len(value) and value[index] == prefix:
             index += 1
         value_start = index
-        line_start = index
+        # A leading prose contraction is a bare word, not an opening quote.
+        if word := contraction.match(value, index):
+            index = word.end()
+        line_start = value_start
         continuation_pending = False
         while index < len(value):
             char = value[index]
@@ -830,7 +836,11 @@ def _scrub_assignment_values(value, key):
             elif char in ";," and not stack:
                 break
             elif char in opening:
-                stack.append(opening[char])
+                # An unmatched bracket inside a bare dotenv/shell token is
+                # literal punctuation. Initial containers and calls keep their
+                # existing fail-closed boundary handling.
+                if stack or index == value_start or char == "(" or last_closing[opening[char]] > index:
+                    stack.append(opening[char])
             elif char in ")]}" and stack:
                 if char != stack.pop():
                     index = len(value)
@@ -850,8 +860,24 @@ def _scrub_assignment_values(value, key):
             index += 1
         if index == value_start:
             continue
-        pieces.extend((value[cursor:match.start()], "[REDACTED]"))
+        spans.append((match.start(), index))
         cursor = index
+    return spans
+
+
+def _redact_spans(value, spans):
+    merged = []
+    for start, end in sorted(spans):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    pieces, cursor = [], 0
+    for start, end in merged:
+        pieces.extend((value[cursor:start], "[REDACTED]"))
+        cursor = end
     pieces.append(value[cursor:])
     return "".join(pieces)
 
@@ -894,7 +920,6 @@ def scrub(value, preserved=frozenset()):
             return match.group()
     # Decode nested JSON strings/escaped keys before applying key/value patterns.
     value = re.sub(r'"(?:\\.|[^"\\])*"', quoted, value)
-    value = _scrub_quoted_keys(value)
     identifier = SENSITIVE_KEY.pattern
     quote = r"""\\*["']"""
     key = identifier + rf"(?:{quote})?\s*[:=]\s*"
@@ -922,16 +947,17 @@ def scrub(value, preserved=frozenset()):
         rf"(?i:\b(?:header)?name)(?:{quote})?\s*[:=]\s*(?:{quote})?" + identifier
         + rf"(?:{quote})?[\s,]*[+-]?[ \t]*(?:{quote})?(?i:(?:header)?value)(?:{quote})?\s*[:=]\s*"
         + rf"(?:(?P<named>{quote}).*?(?P=named)|[^\s,}}\]]+)",
-        _scrub_assignment_values,
+        _assignment_spans,
         key + rf"(?P<quote>{quote}).*?(?P=quote)",
         key + r"""[^\s"',;}\]]+""",
     )
+    spans = _quoted_key_spans(value)
     for pattern in patterns:
-        if pattern is _scrub_assignment_values:
-            value = _scrub_assignment_values(value, key)
+        if pattern is _assignment_spans:
+            spans.extend(_assignment_spans(value, key))
         else:
-            value = re.sub(pattern, "[REDACTED]", value, flags=re.S)
-    return value
+            spans.extend(match.span() for match in re.finditer(pattern, value, flags=re.S))
+    return _redact_spans(value, spans)
 
 
 def record(args):
