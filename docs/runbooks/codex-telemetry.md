@@ -70,6 +70,8 @@ Stage these files from the same approved release under
 
 `BOOTSTRAP_ASSET_DIR` can select another artifact directory. Stage the new helper
 even for Claude-only installs: the Collector service uses its offline validation.
+Both artifacts are required before bootstrap proceeds; an existing Collector
+configuration is never accepted as a substitute for the staged release.
 The bootstrap installs it as `/usr/local/bin/ccdash-codex`, installs Python 3, and
 retains the existing Claude version/install behavior when Claude is enabled.
 It independently installs `@openai/codex@0.154.0` when Codex is enabled and fails on
@@ -81,6 +83,14 @@ download directory. It retains ClickHouse SSM retrieval with xtrace disabled and
 the root-only collector environment file. No credentials belong in the artifact
 directory or launcher defaults. Review the configured ClickHouse destination,
 SSM parameter and AWS region through the existing deployment process.
+
+Bootstrap stages the Collector config and environment files, validates the candidate
+with the loaded environment, and only then replaces each persistent file by a
+same-directory atomic rename. Missing or invalid configuration exits before changing
+existing config/defaults or restarting the service. Validation diagnostics remain
+inside the private temporary directory and are removed on exit; reproduce a syntax
+failure with the Collector validator and nonsecret placeholder connection values.
+This protects the validation failure path, not every possible runtime startup failure.
 
 ## Choose the Bedrock endpoint
 

@@ -15,7 +15,7 @@ else
         "expected '{ set +x; } 2>/dev/null' above the CH_PASSWORD assignment (assignment line: ${UD_SSM_LINE:-none}, guard line: ${UD_XTRACE_OFF:-none})"
 fi
 
-UD_ENV_HEREDOC=$(grep -n 'cat > /etc/otelcol/env <<EOF' user-data.sh | head -1 | cut -d: -f1 || true)
+UD_ENV_HEREDOC=$(grep -nF 'cat > "$BOOTSTRAP_TMP/collector.env" <<EOF' user-data.sh | head -1 | cut -d: -f1 || true)
 UD_ENV_EOF=$(awk -v s="${UD_ENV_HEREDOC:-0}" 'NR>s && $0=="EOF" {print NR; exit}' user-data.sh || true)
 UD_AFTER_EOF=$(awk -v s="${UD_ENV_EOF:-0}" 'NR==s+1 {print; exit}' user-data.sh || true)
 if [ -n "$UD_ENV_HEREDOC" ] && [ "$UD_AFTER_EOF" = "set -x" ]; then

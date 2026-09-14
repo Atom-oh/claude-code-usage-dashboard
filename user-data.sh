@@ -27,10 +27,12 @@ case "$CODEX_BEDROCK_ENDPOINT" in
 esac
 # Stage scripts/codex-launch.py and collector-config.yaml from the same release.
 BOOTSTRAP_ASSET_DIR="${BOOTSTRAP_ASSET_DIR:-/opt/ccdash-bootstrap}"
-if [ ! -r "$BOOTSTRAP_ASSET_DIR/scripts/codex-launch.py" ]; then
-  echo "ERROR: stage scripts/codex-launch.py under BOOTSTRAP_ASSET_DIR first" >&2
-  exit 1
-fi
+for bootstrap_asset in scripts/codex-launch.py collector-config.yaml; do
+  if [ ! -r "$BOOTSTRAP_ASSET_DIR/$bootstrap_asset" ]; then
+    echo "ERROR: stage $bootstrap_asset under BOOTSTRAP_ASSET_DIR first" >&2
+    exit 1
+  fi
+done
 
 # =============================================================================
 # Claude Code A/B Telemetry — EC2 user-data
@@ -171,8 +173,7 @@ if [ -n "$END_USER_ID" ]; then
   esac
 fi
 CCDASH_CLIENT_ENV=/dev/null /usr/local/bin/ccdash-codex --check >/dev/null
-mkdir -p /etc/ccdash
-cat > /etc/ccdash/clients.env <<EOF
+cat > "$BOOTSTRAP_TMP/clients.env" <<EOF
 CLAUDE_ENABLED=${CLAUDE_ENABLED}
 CODEX_ENABLED=${CODEX_ENABLED}
 CODEX_BEDROCK_ENDPOINT=${CODEX_BEDROCK_ENDPOINT}
@@ -181,7 +182,7 @@ CODEX_MODEL=${CODEX_MODEL}
 CODEX_VERSION=${CODEX_VERSION}
 CODEX_OTEL_RESOURCE_ATTRIBUTES=${CODEX_OTEL_RESOURCE_ATTRIBUTES}
 EOF
-chmod 644 /etc/ccdash/clients.env
+chmod 644 "$BOOTSTRAP_TMP/clients.env"
 
 # ---- 2. SSM에서 ClickHouse 비밀번호 로드 -----------------------------------
 # 인스턴스 프로파일에 ssm:GetParameter + kms:Decrypt 권한 필요
@@ -217,7 +218,7 @@ mkdir -p /var/lib/otelcol/queue
 # 건 나중에 이 쓰기가 echo/printf로 바뀌어도 평문이 안 새게 하려는 것이다. 이 창을 지우려면
 # 위 대입문 가드부터 지워야 하는 게 아니라, 이 파일이 더 이상 비밀번호를 안 다뤄야 한다.
 { set +x; } 2>/dev/null
-cat > /etc/otelcol/env <<EOF
+cat > "$BOOTSTRAP_TMP/collector.env" <<EOF
 EXPERIMENT_GROUP=${EXPERIMENT_GROUP}
 CLAUDE_ENABLED=${CLAUDE_ENABLED}
 CODEX_ENABLED=${CODEX_ENABLED}
@@ -230,20 +231,30 @@ CH_PASSWORD=${CH_PASSWORD}
 OTELCOL_QUEUE_DIR=/var/lib/otelcol/queue
 EOF
 set -x
-chmod 600 /etc/otelcol/env
+chmod 600 "$BOOTSTRAP_TMP/collector.env"
 
-# collector-config.yaml 배포 (S3 등에서 받아오거나, AMI에 미리 포함).
-# 예: aws s3 cp s3://my-bucket/collector-config.yaml /etc/otelcol/config.yaml
-# 아래는 임시로 최소 config를 직접 생성하는 fallback. (2단계 산출물로 교체 권장)
-if [ -f "$BOOTSTRAP_ASSET_DIR/collector-config.yaml" ]; then
-  install -m 0644 "$BOOTSTRAP_ASSET_DIR/collector-config.yaml" /etc/otelcol/config.yaml
-elif [ ! -f /etc/otelcol/config.yaml ]; then
-  aws s3 cp "s3://YOUR-CONFIG-BUCKET/collector-config.yaml" /etc/otelcol/config.yaml \
-    --region "$AWS_DEFAULT_REGION" || {
-      echo "ERROR: stage collector-config.yaml or configure its S3 source" >&2
-      exit 1
-    }
+# Validate the staged release before changing persistent configuration or stopping
+# an existing collector. Never reuse an old config that lacks the Codex pipeline.
+install -m 0644 "$BOOTSTRAP_ASSET_DIR/collector-config.yaml" "$BOOTSTRAP_TMP/config.yaml"
+{ set +x; } 2>/dev/null
+if ! (
+  export EXPERIMENT_GROUP CH_HOST CH_PORT CH_DB CH_USER CH_PASSWORD
+  export OTELCOL_QUEUE_DIR=/var/lib/otelcol/queue
+  /usr/local/bin/otelcol-contrib validate --config "$BOOTSTRAP_TMP/config.yaml"
+) > "$BOOTSTRAP_TMP/validate.log" 2>&1; then
+  echo "ERROR: Collector candidate validation failed; existing configuration and service were not replaced" >&2
+  exit 1
 fi
+set -x
+
+# Prepare replacements beside their destinations, then rename each atomically.
+mkdir -p /etc/ccdash
+install -m 0644 "$BOOTSTRAP_TMP/clients.env" /etc/ccdash/.clients.env.next
+install -m 0600 "$BOOTSTRAP_TMP/collector.env" /etc/otelcol/.env.next
+install -m 0644 "$BOOTSTRAP_TMP/config.yaml" /etc/otelcol/.config.yaml.next
+mv -f /etc/ccdash/.clients.env.next /etc/ccdash/clients.env
+mv -f /etc/otelcol/.env.next /etc/otelcol/env
+mv -f /etc/otelcol/.config.yaml.next /etc/otelcol/config.yaml
 
 # ---- 5. Collector systemd 서비스 -------------------------------------------
 cat > /etc/systemd/system/otelcol.service <<'EOF'

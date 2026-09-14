@@ -219,7 +219,14 @@ elif name == "curl":
 elif name == "tar":
     target = pathlib.Path(args[args.index("-C") + 1])
     assert target.is_relative_to(root), target
-    (target / "otelcol-contrib").write_text("#!/bin/bash\\nexit 0\\n")
+    (target / "otelcol-contrib").write_text(pathlib.Path(sys.argv[0]).resolve().read_text())
+elif name == "otelcol-contrib":
+    assert args[0] == "validate", args
+    config = pathlib.Path(args[args.index("--config") + 1])
+    if os.environ.get("FIXTURE_UPGRADE"):
+        assert (root / "etc/otelcol/config.yaml").read_text() == "previous configuration"
+    assert os.environ.get("CH_PASSWORD") == "fixture-collector-secret"
+    sys.exit(23 if config.read_text().startswith("INVALID") else 0)
 elif name == "npm":
     (root / ("installed-codex" if "@openai/codex@" in args[-1] else "installed-claude")).touch()
 elif name == "claude":
@@ -229,14 +236,17 @@ elif name == "codex":
 else:
     assert name in ("dnf", "systemctl"), name
 '''
-        for raw_claude, raw_codex, claude, codex in [
-            ("true", "false", "true", "false"),
-            ("false", "true", "false", "true"),
-            ("true", "true", "true", "true"),
-            ("FALSE", "1", "false", "true"),
-            ("", "", "true", "false"),
+        for raw_claude, raw_codex, claude, codex, upgrade in [
+            ("true", "false", "true", "false", ""),
+            ("false", "true", "false", "true", ""),
+            ("true", "true", "true", "true", ""),
+            ("FALSE", "1", "false", "true", ""),
+            ("", "", "true", "false", ""),
+            ("true", "true", "true", "true", "valid"),
+            ("true", "true", "true", "true", "invalid"),
+            ("true", "true", "true", "true", "missing"),
         ]:
-            with self.subTest(claude=claude, codex=codex), tempfile.TemporaryDirectory(prefix="bootstrap-clients-") as directory:
+            with self.subTest(claude=claude, codex=codex, upgrade=upgrade), tempfile.TemporaryDirectory(prefix="bootstrap-clients-") as directory:
                 root = Path(directory)
                 binaries = root / "bin"
                 binaries.mkdir()
@@ -252,15 +262,41 @@ else:
                     source = source.replace(path, str(root) + path)
                 for path in ["etc/systemd/system", "usr/local/bin"]:
                     (root / path).mkdir(parents=True)
+                assets = root / "assets"
+                (assets / "scripts").mkdir(parents=True)
+                shutil.copyfile(LAUNCHER, assets / "scripts/codex-launch.py")
+                if upgrade != "missing":
+                    (assets / "collector-config.yaml").write_text("INVALID config" if upgrade == "invalid" else (ROOT / "collector-config.yaml").read_text())
+                previous = {}
+                if upgrade:
+                    for name, content in [("etc/otelcol/config.yaml", "previous configuration"),
+                                          ("etc/otelcol/env", "previous collector env"),
+                                          ("etc/ccdash/clients.env", "previous client defaults"),
+                                          ("etc/systemd/system/otelcol.service", "previous unit")]:
+                        path = root / name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text(content)
+                        previous[path] = content
                 env = {
                     "PATH": str(binaries) + ":" + os.environ["PATH"], "TMPDIR": TEST_TMPDIR,
-                    "FIXTURE_ROOT": str(root), "BOOTSTRAP_ASSET_DIR": str(ROOT),
+                    "FIXTURE_ROOT": str(root), "BOOTSTRAP_ASSET_DIR": str(assets), "FIXTURE_UPGRADE": upgrade,
                     "CLAUDE_ENABLED": raw_claude, "CODEX_ENABLED": raw_codex,
                     "CODEX_BEDROCK_ENDPOINT": "runtime",
                 }
                 result = subprocess.run(["bash"], input=source, text=True, capture_output=True, env=env, timeout=20)
-                self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("fixture-collector-secret", result.stdout + result.stderr)
+                commands_file = root / "commands.jsonl"
+                commands = [json.loads(line) for line in commands_file.read_text().splitlines()] if commands_file.exists() else []
+                if upgrade in ("invalid", "missing"):
+                    self.assertNotEqual(result.returncode, 0, result.stderr)
+                    for path, expected in previous.items():
+                        self.assertEqual(path.read_text(), expected, str(path))
+                    self.assertFalse(any(entry[0] == "systemctl" for entry in commands))
+                    continue
+                self.assertEqual(result.returncode, 0, result.stderr)
+                validated = next((i for i, entry in enumerate(commands) if entry[:2] == ["otelcol-contrib", "validate"]), None)
+                self.assertIsNotNone(validated, "candidate must be validated before promotion/restart")
+                self.assertLess(validated, commands.index(["systemctl", "restart", "otelcol.service"]))
                 collector_file = root / "etc/otelcol/env"
                 collector = dict(line.split("=", 1) for line in collector_file.read_text().splitlines())
                 launcher_file = root / "etc/ccdash/clients.env"
