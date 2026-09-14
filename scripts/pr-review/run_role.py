@@ -157,22 +157,49 @@ def controls(text):
     return process.stdout
 
 
-def preflight(binary, model, cwd, environment, timeout):
+def preflight(binary, model, cwd, environment, timeout, *, deadline=None):
+    if deadline is None:
+        deadline = time.monotonic() + timeout
+    environment = kiro_environment(cwd, environment)
+
+    def startup(command):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return 124, "", "Kiro startup timed out."
+        code, output, error = execute(command, cwd, environment, "", remaining)
+        if code == 0 and time.monotonic() >= deadline:
+            return 124, output, error + "\nKiro startup timed out."
+        return code, output, error
+
     # Keep model selection and the empty-agent guard on the validated Kiro v1 path.
     install_agent(cwd)
+    # --wrap never only disables line wrapping; Markdown rendering corrupts JSON
+    # fences and literals. The native setting must be confirmed in this HOME.
+    for arguments in (
+        ["settings", "chat.disableMarkdownRendering", "true"],
+        ["settings", "chat.disableMarkdownRendering", "--format", "json"],
+    ):
+        code, output, error = startup([binary, *arguments])
+        diagnostic = controls(error)
+        if code or FAILURE.search(diagnostic) or diagnostic_failure(diagnostic):
+            return False, code or 1, error
+        if arguments[-1] == "json" and output.strip(" \t\r\n") != "true":
+            return False, 1, error + "\nKiro Markdown rendering setting was not confirmed."
+
     (cwd / "preflight-canary.txt").write_text(secrets.token_hex(24) + "\n")
     prompt = (
         "Kiro startup safety check. Read ./preflight-canary.txt using a file-reading "
         "tool and return its exact contents. If no file-reading tools are available, "
         "reply with exactly NO_TOOLS. Do not run any other tools."
     )
-    code, output, error = execute(
+    code, output, error = startup(
         [binary, "chat", prompt, "--model", model, "--agent", "inline-review",
          "--no-interactive", "--wrap", "never", "--legacy-ui", "--agent-engine", "v1"],
-        cwd, kiro_environment(cwd, environment), "", timeout,
     )
     reply = re.sub(r"(?m)^\s*> ?", "", controls(output)).strip()
     diagnostic = controls(error)
+    if code == 0 and time.monotonic() >= deadline:
+        return False, 124, error + "\nKiro startup timed out."
     return (code == 0 and reply == "NO_TOOLS" and not FAILURE.search(diagnostic)
             and not diagnostic_failure(diagnostic)), code, error
 
@@ -273,7 +300,8 @@ def run(work, tag):
             binary = shutil.which("kiro-cli") or "kiro-cli"
             deadline = time.monotonic() + preflight_timeout
             ok, code, error = preflight(
-                binary, role["model"], cwd, environment, preflight_timeout
+                binary, role["model"], cwd, environment, preflight_timeout,
+                deadline=deadline,
             )
             # Waiting shares the original preflight time budget; no extra calls.
             ok = preflight_barrier(work, plan, tag, ok, deadline)

@@ -18,6 +18,32 @@ import test_role_review as fixture
 
 MODULE = Path(__file__).with_name("run_role.py")
 
+KIRO_SETTINGS = r'''
+import json,os,pathlib,sys
+if sys.argv[1] == "settings":
+    assert sys.stdin.read() == ""
+    setting = pathlib.Path.home() / ".kiro/fake-settings.json"
+    if sys.argv[2:] == ["chat.disableMarkdownRendering", "true"]:
+        setting.parent.mkdir(parents=True, exist_ok=True)
+        setting.write_text("true")
+    else:
+        assert sys.argv[2:] == ["chat.disableMarkdownRendering", "--format", "json"]
+        print(setting.read_text() if setting.exists() else "false")
+    raise SystemExit(0)
+'''
+
+
+def fake_kiro_settings(command, cwd):
+    """Model the native setting's HOME-local persistence for execute doubles."""
+    if command[1] != "settings":
+        return None
+    setting = Path(cwd) / ".kiro/fake-settings.json"
+    if command[2:] == ["chat.disableMarkdownRendering", "true"]:
+        setting.write_text("true")
+        return 0, "", ""
+    assert command[2:] == ["chat.disableMarkdownRendering", "--format", "json"]
+    return 0, setting.read_text() if setting.exists() else "false", ""
+
 
 class RoleExecutionTests(unittest.TestCase):
     @classmethod
@@ -69,6 +95,102 @@ class RoleExecutionTests(unittest.TestCase):
         self.assertEqual(result["HOME"], str(self.root))
         self.assertFalse(any(k.startswith("AWS_") or k == "GH_TOKEN" for k in result))
 
+    def test_preflight_sets_and_confirms_rendering_in_its_filtered_home_before_chat(self):
+        events = self.root / "commands.jsonl"
+        cli = self.executable(
+            "import json,os,pathlib,sys\n"
+            "assert os.environ['HOME'] == str(pathlib.Path.cwd())\n"
+            "assert os.environ['KIRO_API_KEY'] == 'synthetic-key'\n"
+            "assert not any(k in os.environ for k in "
+            "('GH_TOKEN','AWS_SECRET_ACCESS_KEY','XDG_CONFIG_HOME'))\n"
+            f"with pathlib.Path({str(events)!r}).open('a') as log:\n"
+            " log.write(json.dumps(sys.argv[1:])+'\\n')\n"
+            + KIRO_SETTINGS +
+            "assert pathlib.Path('.kiro/fake-settings.json').read_text() == 'true'\n"
+            "print('NO_TOOLS')\n"
+        )
+        environment = {**os.environ, "KIRO_API_KEY": "synthetic-key",
+                       "GH_TOKEN": "private", "AWS_SECRET_ACCESS_KEY": "private",
+                       "XDG_CONFIG_HOME": str(self.root / "unrelated-config")}
+        ok, code, error = self.runner.preflight(
+            cli, "claude-opus-5", self.root, environment, 2
+        )
+        self.assertTrue(ok, error)
+        commands = [json.loads(line) for line in events.read_text().splitlines()]
+        self.assertEqual(commands[:2], [
+            ["settings", "chat.disableMarkdownRendering", "true"],
+            ["settings", "chat.disableMarkdownRendering", "--format", "json"],
+        ])
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(commands[2][0], "chat")
+        self.assertIn("preflight-canary.txt", commands[2][1])
+        self.assertFalse((self.root / "unrelated-config").exists())
+
+    def test_settings_failure_or_unconfirmed_readback_never_invokes_a_model(self):
+        cases = [
+            ((9, "", "Settings write failed"), (0, "true", ""), 1),
+            ((0, "", ""), (7, "true", "Settings read failed"), 2),
+        ]
+        cases += [((0, "", ""), (0, value, ""), 2) for value in (
+            "false", "", '"true"', "1", '{"value":true}', "true\nfalse",
+            "true\nUnexpected output", "\x1b[32mtrue\x1b[0m", "\u00a0true",
+        )]
+        cases += [
+            ((0, "", "Falling back to user specified default"), (0, "true", ""), 1),
+            ((0, "", ""), (0, "true", "[warn] failed to set model"), 2),
+        ]
+        for setting, readback, expected_calls in cases:
+            with self.subTest(setting=setting, readback=readback):
+                commands = []
+                def execute(command, *arguments):
+                    commands.append(command)
+                    if command[1] == "chat":
+                        return 0, "NO_TOOLS", ""
+                    return setting if command[-1] == "true" else readback
+                with patch.object(self.runner, "execute", side_effect=execute):
+                    ok, code, error = self.runner.preflight(
+                        "kiro-cli", "claude-opus-5", self.root, os.environ.copy(), 2
+                    )
+                self.assertFalse(ok)
+                self.assertNotEqual(code, 0)
+                self.assertEqual(len(commands), expected_calls)
+                self.assertTrue(all(command[1] == "settings" for command in commands))
+
+    def test_settings_and_canary_share_one_preflight_budget(self):
+        now = [100.0]
+        budgets = []
+        def execute(command, cwd, environment, input_text, timeout):
+            budgets.append(timeout)
+            now[0] += 0.5
+            settings = fake_kiro_settings(command, cwd)
+            return settings if settings is not None else (0, "NO_TOOLS", "")
+        with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(self.runner, "execute", side_effect=execute):
+            ok, code, error = self.runner.preflight(
+                "kiro-cli", "claude-opus-5", self.root, os.environ.copy(), 2
+            )
+        self.assertTrue(ok, error)
+        self.assertEqual(budgets, [2.0, 1.5, 1.0])
+
+    def test_expired_setup_or_canary_cannot_release_preflight(self):
+        for expired_stage in (0, 1, 2):
+            with self.subTest(expired_stage=expired_stage):
+                now = [100.0]
+                commands = []
+                def execute(command, cwd, environment, input_text, timeout):
+                    commands.append(command)
+                    now[0] += 2 if len(commands) == expired_stage + 1 else 0.1
+                    settings = fake_kiro_settings(command, cwd)
+                    return settings if settings is not None else (0, "NO_TOOLS", "")
+                with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
+                        patch.object(self.runner, "execute", side_effect=execute):
+                    ok, code, error = self.runner.preflight(
+                        "kiro-cli", "claude-opus-5", self.root, os.environ.copy(), 2
+                    )
+                self.assertFalse(ok)
+                self.assertEqual(code, 124)
+                self.assertEqual(len(commands), expired_stage + 1)
+
     def test_preflight_rejects_quota_or_model_fallback_despite_no_tools_reply(self):
         for message in (
             "Monthly request limit reached",
@@ -82,6 +204,7 @@ class RoleExecutionTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 cli = self.executable(
+                    KIRO_SETTINGS +
                     "import sys\nprint('NO_TOOLS')\n"
                     f"print({message!r}, file=sys.stderr)\n"
                 )
@@ -118,7 +241,8 @@ class RoleExecutionTests(unittest.TestCase):
         binary.mkdir()
         for name in ("kiro-cli", "codex", "claude"):
             file = binary / name
-            file.write_text("#!/usr/bin/env python3\nimport pathlib,sys,time\n"
+            file.write_text("#!/usr/bin/env python3\n" + KIRO_SETTINGS +
+                "import pathlib,sys,time\n"
                 f"root=pathlib.Path({str(self.root)!r})\n"
                 "if sys.argv[1]!='chat': raise SystemExit(1)\n"
                 "model=sys.argv[sys.argv.index('--model')+1]\n"
@@ -143,6 +267,7 @@ class RoleExecutionTests(unittest.TestCase):
 
     def test_preflight_uses_empty_catalog_and_never_receives_pr_input(self):
         cli = self.executable(
+            KIRO_SETTINGS +
             "import json,pathlib,sys\n"
             "agent=json.loads(pathlib.Path('.kiro/agents/inline-review.json').read_text())\n"
             "assert agent['tools']==[] and agent['allowedTools']==[]\n"
@@ -304,6 +429,9 @@ class RoleRecordingTests(unittest.TestCase):
         calls = []
 
         def kiro(command, cwd, environment, input_text, timeout):
+            settings = fake_kiro_settings(command, cwd)
+            if settings is not None:
+                return settings
             self.assertEqual(command[1], "chat")
             self.assertIn("--legacy-ui", command)
             self.assertEqual(command[command.index("--agent-engine") + 1], "v1")
@@ -337,7 +465,10 @@ class RoleRecordingTests(unittest.TestCase):
 
     def test_kiro_stdout_quota_is_retained(self):
         calls = []
-        def execute(command, *arguments):
+        def execute(command, cwd, *arguments):
+            settings = fake_kiro_settings(command, cwd)
+            if settings is not None:
+                return settings
             calls.append(command)
             if "preflight-canary.txt" in command[2]:
                 return 0, "NO_TOOLS\n", ""
