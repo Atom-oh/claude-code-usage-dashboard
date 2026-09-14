@@ -21,8 +21,20 @@ See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions an
 | `/analytics` | Analytics chat |
 
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
-chat. [main.jsx](../../dashboard/web/src/main.jsx) fetches `/api/config` before first render,
-with a three-second timeout. Masking stays on unless `piiMask` is explicitly false.
+chat. [main.jsx](../../dashboard/web/src/main.jsx) renders
+[ConfigBootstrap.jsx](../../dashboard/web/src/ConfigBootstrap.jsx) before mounting the router
+or App. The gate fetches `/api/config` with a three-second deadline covering both the request
+and JSON body. Loading, timeout, HTTP/network failure, invalid JSON and malformed config
+remain unknown: Korean loading/error UI preserves the URL and prevents route data requests.
+Retry starts a new request without reloading; cleanup aborts obsolete requests, and their
+late results cannot change config or masking. StrictMode setup does not send duplicate
+config requests.
+
+Successful config must be a non-null, non-array object. Legacy objects without
+`enabledClients` are accepted; when present, it must be a nonempty array of nonblank strings.
+The gate passes the object unchanged and does not select a client or add routes.
+Masking stays on until a validated config explicitly sets `piiMask` to false, before any
+app content renders.
 [ConfigContext.jsx](../../dashboard/web/src/ConfigContext.jsx) supplies group mode, default
 range, cap, pricing assumptions and schema status. `GROUP_MODE=single` changes presentation;
 it does not change SQL filtering.
