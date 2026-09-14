@@ -821,6 +821,12 @@ def _inline_code_spans(value, closing_fences=None):
     if "`" not in value and (closing_fences is None or "~~~" not in value):
         return []
     spans, pending = [], []
+    quote_ends = {}
+    # Complete line-local string tokens own their ticks; word apostrophes do not.
+    quoted_fragment = re.compile(
+        r"(?<![\w\\])'(?:\\[^\r\n]|[^'\\\r\n])*'"
+        r'|(?<!\\)"(?:\\[^\r\n]|[^"\\\r\n])*"'
+    )
     containers, next_quotes = (), (0,)
     offset, block, paragraph = 0, None, False
     quote_marker = re.compile(r" {0,3}> ?")
@@ -846,12 +852,15 @@ def _inline_code_spans(value, closing_fences=None):
             while slash_start and value[slash_start - 1] == "\\":
                 slash_start -= 1
             close = following[index]
-            if close is None or (start - slash_start) % 2:
+            owner_end = quote_ends.get(start)
+            if (close is None or (start - slash_start) % 2
+                    or (owner_end is not None and pending[close][1] > owner_end)):
                 index += 1
             else:
                 spans.append((end, pending[close][0]))
                 index = close + 1
         pending.clear()
+        quote_ends.clear()
         paragraph = False
 
     def blank(line):
@@ -1051,8 +1060,15 @@ def _inline_code_spans(value, closing_fences=None):
         elif len(content) - len(content.lstrip(" ")) < 4 or paragraph:
             if heading:
                 flush()
-            pending.extend((offset + match.start(), offset + match.end())
-                           for match in re.finditer(r"`+", raw_line))
+            fragments = iter(quoted_fragment.finditer(raw_line))
+            fragment = next(fragments, None)
+            for match in re.finditer(r"`+", raw_line):
+                while fragment is not None and fragment.end() <= match.start():
+                    fragment = next(fragments, None)
+                start = offset + match.start()
+                if fragment is not None and fragment.start() < match.start():
+                    quote_ends[start] = offset + fragment.end()
+                pending.append((start, offset + match.end()))
             paragraph = True
             if heading:
                 flush()
@@ -1517,8 +1533,7 @@ def scrub(value, preserved=frozenset(), _fragment=False):
         _assignment_spans,
         key + r"""[^\s"',;}\]]+""",
     )
-    backtick_spans = _backtick_value_spans(value, key)
-    spans, bodies = list(backtick_spans), []
+    spans, bodies = [], []
     scan_value = _opaque_scan_view(value, bodies)
     for entry in patterns:
         if entry is _quoted_key_spans:
@@ -1528,6 +1543,8 @@ def scrub(value, preserved=frozenset(), _fragment=False):
             scan_value = _opaque_scan_view(value, bodies)
             continue
         if entry is _assignment_spans:
+            backtick_spans = _backtick_value_spans(scan_value, key)
+            spans.extend(backtick_spans)
             spans.extend(_assignment_spans(scan_value, key, json_closers, _fragment, backtick_spans))
             continue
         pattern, kind = entry if isinstance(entry, tuple) else (entry, None)

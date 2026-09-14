@@ -109,6 +109,45 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_quote_owned_tick_does_not_escape_empty_list_literal(self):
+        example = "-\n\n    echo 'longer ` quoted text'\n    password=prefix`printf 'private-value'`"
+        reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+        calls, published = self.run_chair([reply, reply])
+        self.assertEqual(calls, 1)
+        self.assertNotIn("private-value", published)
+        self.assertIn("Reviewed behavior.", published)
+        self.assertTrue(published.endswith("VERDICT: PASS\n"))
+
+    def test_owned_bodies_do_not_capture_following_review(self):
+        examples = (
+            "secret=<<EOF\npassword=prefix` private-value\nEOF",
+            "secret: |\n  password=prefix` private-value",
+            "secret: >\n  password=prefix` private-value",
+            'name="PASSWORD", value="password=prefix` private-value"',
+            "secret='password=prefix` private-value'",
+        )
+        for example in examples:
+            with self.subTest(example=example):
+                reply = (0, example + "\n\nMAJOR rollback evidence. See `service`.\nVERDICT: FAIL\n", "")
+                calls, published = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", published)
+                self.assertIn("MAJOR rollback evidence.", published)
+                self.assertIn("`service`", published)
+                self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+
+    def test_quote_pairing_keeps_existing_citations_and_offsets(self):
+        import role_review
+        cases = (
+            ("Say '`public()`'.", ["public()"]),
+            ("Run `first\nsecond` now.", ["first\nsecond"]),
+            ("It's `echo user's name` output.", ["echo user's name"]),
+        )
+        for value, expected in cases:
+            with self.subTest(value=value):
+                spans = role_review._inline_code_spans(value)
+                self.assertEqual([value[start:end] for start, end in spans], expected)
+
     def test_inline_assignment_preserves_evidence_before_raw_blocks(self):
         for block in ("```text\npublic()\n```", "<pre>\necho '`'\n</pre>"):
             with self.subTest(block=block):
