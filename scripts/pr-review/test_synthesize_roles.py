@@ -108,6 +108,30 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(example=example):
                 self.assertEqual(role_review._inline_code_spans(example), [])
 
+    def test_empty_sensitive_examples_preserve_the_review(self):
+        for example in (
+            "Checked `password=`; empty values are rejected.",
+            "Checked `export password=   `; empty values are rejected.",
+            "Checked ``password=``; empty values are rejected.",
+            "```dotenv\npassword=\n```",
+            "```dotenv\npassword=   \n```",
+            "````dotenv\npassword=\n````",
+        ):
+            with self.subTest(example=example):
+                reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("PUBLIC_AFTER", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
+    def test_opening_fence_after_sensitive_label_still_hides_its_value(self):
+        reply = (0, "password=\n```text\nprivate-value\n```\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+        calls, text = self.run_chair([reply, reply])
+        self.assertEqual(calls, 1)
+        self.assertNotIn("private-value", text)
+        self.assertIn("PUBLIC_AFTER", text)
+        self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
     def test_shell_quoted_json_preserves_enclosing_boundary(self):
         for payload in (
             '{"password":"private-value"}',

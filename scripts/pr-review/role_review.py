@@ -816,7 +816,7 @@ def _quoted_key_spans(value):
     return spans
 
 
-def _inline_code_spans(value):
+def _inline_code_spans(value, closing_fences=None):
     """Find code delimiters within prose paragraphs and list continuations."""
     spans, pending, list_indents = [], [], []
     offset, fence, paragraph, quote_depth = 0, None, False, 0
@@ -854,6 +854,8 @@ def _inline_code_spans(value):
             marker = re.match(r"[\t ]*(`{3,}|~{3,})(.*)", content_line)
             if (marker and indent <= fence[2] + 3 and marker[1][0] == fence[0]
                     and len(marker[1]) >= fence[1] and not marker[2].strip()):
+                if closing_fences is not None:
+                    closing_fences.add(offset + (quote.end() if quote else 0) + marker.start(1))
                 fence = None
             offset += len(line)
             continue
@@ -942,7 +944,8 @@ def _assignment_spans(value, key, json_closers=None, fragment=False):
         json_closers = _json_enclosing_closers(value)
     operator = re.compile(r"\|\||\?\?|\bor\b")
     tail_operator = re.compile(r"(?:\|\||\?\?|\bor|\\|(?:^|\s)[+*/%&|^?:<>=!-])$")
-    code_spans, code_index = _inline_code_spans(value), 0
+    closing_fences = set()
+    code_spans, code_index = _inline_code_spans(value, closing_fences), 0
     line_break = re.compile(r"\r\n?|\n")
     opening = {"(": ")", "[": "]", "{": "}"}
     bracket_ends = {}
@@ -1024,6 +1027,8 @@ def _assignment_spans(value, key, json_closers=None, fragment=False):
     for match in re.finditer(key, value):
         if match.start() < cursor:
             continue
+        if match.end() in closing_fences:
+            continue  # Whitespace after an empty assignment reached its closing fence.
         while code_index < len(code_spans) and code_spans[code_index][1] < match.start():
             code_index += 1
         code_end = (code_spans[code_index][1]
@@ -1045,7 +1050,7 @@ def _assignment_spans(value, key, json_closers=None, fragment=False):
         continuation_pending = False
         while index < len(value):
             char = value[index]
-            if (index == code_end and index > value_start and not quote and not stack
+            if (index == code_end and not quote and not stack
                     and not tail_operator.search(value[line_start:index].rstrip())):
                 break
             if plain_scalar:
