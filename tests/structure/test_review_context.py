@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -139,7 +140,7 @@ class ReviewContextTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/pr-review.yml").read_text()
         chair = (ROOT / "scripts/pr-review/synthesize.sh").read_text()
         self.assertTrue("build-prompts.py panel" in workflow, "workflow must use the snapshot builder")
-        self.assertTrue('--revision "$GITHUB_SHA"' in workflow, "workflow must pin base context")
+        self.assertTrue('--revision "$BASE_SHA"' in workflow, "workflow must use its checked-out base snapshot")
         self.assertTrue("build-prompts.py" in chair, "chair must receive the same snapshot contracts")
         self.assertTrue("English" in chair, "chair output must be English")
         self.assertFalse("한국어+영문" in workflow + chair, "remove the mixed-language output instruction")
@@ -159,6 +160,50 @@ class ReviewContextTests(unittest.TestCase):
         self.assertEqual(len(list(output.glob("*.txt"))), 4)
         manifest = json.loads((output / "context-manifest.json").read_text())
         self.assertIn(PROMPTS.VIDEO, [f["path"] for f in manifest["lenses"]["L5"]["files"]])
+
+    def test_workflow_builds_from_checkout_when_event_sha_is_unavailable(self):
+        workflow = (ROOT / ".github/workflows/pr-review.yml").read_text()
+        self.assertIn("BASE_SHA: ${{ github.event.pull_request.base.sha }}", workflow)
+        self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", workflow)
+        match = re.search(r'--revision "\$(\w+)"', workflow)
+        self.assertIsNotNone(match)
+        base = self.git("rev-parse", "HEAD")
+        # A depth-one pinned checkout need not contain the workflow event's SHA.
+        revisions = {"BASE_SHA": base, "GITHUB_SHA": "f" * 40}
+        diff = self.root / "input.diff"
+        diff.write_text("diff --git a/AGENTS.md b/AGENTS.md\n")
+        output = self.root / "prompts"
+        (self.root / "AGENTS.md").write_text("UNTRUSTED_WORKTREE_OVERRIDE")
+        result = subprocess.run(
+            ["python3", str(ROOT / "scripts/pr-review/build-prompts.py"), "panel",
+             str(diff), str(output), "--root", str(self.root),
+             "--revision", revisions[match.group(1)]], capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((output / "context-manifest.json").read_text())
+        self.assertEqual(manifest["base_revision"], base)
+        for file in output.glob("*.txt"):
+            self.assertIn("Use reported_cost", file.read_text())
+            self.assertNotIn("UNTRUSTED_WORKTREE_OVERRIDE", file.read_text())
+
+    def test_project_guides_fit_combined_api_review_without_raising_caps(self):
+        paths = subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-files", "*.md"], text=True,
+        ).splitlines()
+        for path in paths:
+            file = self.root / path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text((ROOT / path).read_text() if path in PROMPTS.ALLOWED_GUIDES else "# Reference\n")
+        self.commit()
+        diff = "\n".join(f"diff --git a/{path} b/{path}" for path in (
+            "dashboard/server/index.js", "docs/metrics.md",
+            "docs/runbooks/codex-telemetry.md", ".github/workflows/ci.yml",
+        ))
+        outputs, record = PROMPTS.build(PROMPTS.Snapshot(self.root), diff)
+        self.assertEqual(set(outputs), {"L2", "L3", "L4", "L5"})
+        self.assertEqual(PROMPTS.MAX_CONTEXT_BYTES, 20_000)
+        self.assertEqual(PROMPTS.MAX_PROMPT_BYTES, 22_000)
+        self.assertTrue(all(lens["prompt_bytes"] <= 22_000 for lens in record["lenses"].values()))
 
 
 if __name__ == "__main__":
