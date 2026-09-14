@@ -882,7 +882,7 @@ def _json_enclosing_closers(value):
     return closers
 
 
-def _assignment_spans(value, key, json_closers=None):
+def _assignment_spans(value, key, json_closers=None, fragment=False):
     """Find assignments without changing another detector's input."""
     if json_closers is None:
         json_closers = _json_enclosing_closers(value)
@@ -1074,9 +1074,9 @@ def _assignment_spans(value, key, json_closers=None):
             elif not char.isspace():
                 continuation_pending = False
             index += 1
-        # A fragment ending immediately after its opening quote has no value;
-        # keep its key available to the surrounding shell/quoted-string pass.
-        if index == value_start or (quote and index == value_start + len(quote)):
+        # A recursively decoded fragment may end inside a quoted value. Its
+        # assignment key must remain available to the enclosing complete scan.
+        if index == value_start or (quote and (fragment or index == value_start + len(quote))):
             continue
         spans.append((match.start(), index))
         cursor = index
@@ -1155,7 +1155,7 @@ def _owned_body(value, match, kind, key):
     return (start, end)
 
 
-def scrub(value, preserved=frozenset()):
+def scrub(value, preserved=frozenset(), _fragment=False):
     """Scrub decoded strings too: raw-JSON sanitizers miss escaped credentials."""
     if isinstance(value, list):
         return [scrub(x, preserved) for x in value]
@@ -1188,7 +1188,7 @@ def scrub(value, preserved=frozenset()):
         pass
     def quoted(match):
         try:
-            return canonical(scrub(strict_json(match.group()), preserved))
+            return canonical(scrub(strict_json(match.group()), preserved, _fragment=True))
         except Invalid:
             return match.group()
     # Decode nested JSON strings/escaped keys before applying key/value patterns.
@@ -1236,7 +1236,7 @@ def scrub(value, preserved=frozenset()):
             scan_value = _opaque_scan_view(value, bodies)
             continue
         if entry is _assignment_spans:
-            spans.extend(_assignment_spans(scan_value, key, json_closers))
+            spans.extend(_assignment_spans(scan_value, key, json_closers, _fragment))
             continue
         pattern, kind = entry if isinstance(entry, tuple) else (entry, None)
         for match in re.finditer(pattern, scan_value, flags=re.S):

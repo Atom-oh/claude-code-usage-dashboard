@@ -70,7 +70,8 @@ class RoleReviewTests(unittest.TestCase):
         cases += [prefix + json.dumps({key: canary}) + suffix
                   for key in ("/prod/db/password", "password[0]", "api key (prod)")
                   for prefix, suffix in (("", ""), ("Evidence: ", "\nPUBLIC_AFTER"))]
-        cases.append(f"""curl -d "password='"{canary}"'" https://example.invalid""")
+        cases += [f"""curl -d "password='{prefix}"{canary}"'" https://example.invalid"""
+                  for prefix in ("", "prefix", "prefix with space")]
         cases += [f'password = previous {operator} /* local fallback */ "{canary}"\nPUBLIC_AFTER'
                   for operator in ("||", "??")]
         cases += ["Evidence: " + json.dumps({key: item})
