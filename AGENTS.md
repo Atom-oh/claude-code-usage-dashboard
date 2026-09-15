@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-Workshop telemetry: Claude Code metrics and Codex structured OTel logs → ClickHouse
+Workshop telemetry: Claude Code and Codex OTel signals → ClickHouse
 → Express → React, with Terraform,
 a documentation site and a separate video project. These observations are not
 validated employee productivity or causal ROI measures.

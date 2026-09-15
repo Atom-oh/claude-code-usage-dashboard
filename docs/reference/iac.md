@@ -40,6 +40,10 @@ schema edit changes the Job identity on apply. This gives executable ALTER state
 rerun path; it does not make every existing table/view match a CREATE definition.
 The segment-key cutover and rollup rebuild require the
 [migration procedure](../runbooks/schema-migrations.md).
+Codex's four metric tables are mirrored in schema-init; existing installations can apply
+additive migration 006 alone after ledger 004, without migration 005 or rollup rebuilds.
+The [collection contract](../runbooks/codex-telemetry.md#storage-interface) owns their
+exporter columns and retention. A schema-init rerun still executes older statements.
 
 The dashboard image is separately deployed: Terraform ignores later changes to its image
 field. See [runtime](infrastructure.md) for probes and draining, and
