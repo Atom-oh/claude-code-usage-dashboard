@@ -7,6 +7,10 @@ import unittest
 import test_collector_clients as clients
 from test_collector_clients import NOW, attributes, values
 
+SANDBOX_POLICY = json.dumps({"type": "workspace-write", "filesystem": {
+    "writable_roots": ["/private/sandbox-root"], "read_only_roots": ["/private/repository"],
+}})
+
 
 def resource():
     return {"attributes": attributes({
@@ -15,6 +19,7 @@ def resource():
         "service.instance.id": "fixture-process", "project.name": "fixture",
         "backend": "bedrock-mantle", "experiment.group": "enterprise",
         "code.file.path": "/private/source", "authorization": "private header",
+        "sandbox_policy": SANDBOX_POLICY,
     })}
 
 
@@ -23,6 +28,7 @@ def metrics():
              "attributes": attributes({"model": "openai.gpt-6-astra", "tool": "exec_command",
                                        "session.id": "fixture-session", "reasoning_effort": "high",
                                        "arguments": "private args", "url.full": "https://private.invalid",
+                                       "sandbox_policy": SANDBOX_POLICY,
                                        "unknown_future_field": "private content"})}
     items = []
     for name, kind, extra in [
@@ -59,6 +65,7 @@ def traces():
                   "tool_name": "exec_command", "call_id": "fixture-call", "busy_ns": 75,
                   "thread.id": 123, "code.file.path": "/private/source", "cwd": "/private/cwd",
                   "http.request.header.authorization": "private header", "tool.output": "private output",
+                  "sandbox_policy": SANDBOX_POLICY,
               }),
               "events": [{"timeUnixNano": str(NOW), "name": "private event",
                           "attributes": attributes({"exception.message": "private exception"})}]}
@@ -66,6 +73,28 @@ def traces():
              "name": "run_turn", "attributes": attributes({"busy_ns": 10})}
     return {"resourceSpans": [{"resource": resource(),
                               "scopeSpans": [{"scope": {"name": "codex_core"}, "spans": [parent, child]}]}]}
+
+
+def histogram_presence_metrics():
+    body = metrics()
+    items = body["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    items[:] = [m for m in items if "histogram" in m or "exponentialHistogram" in m]
+    for metric in items:
+        kind = "histogram" if "histogram" in metric else "exponentialHistogram"
+        point = metric[kind]["dataPoints"][0]
+        # Only optional-field presence differs; keep buckets/count consistent
+        # with two zero-valued observations in both fixtures.
+        point.update(count="2", sum=0, min=0, max=0, timeUnixNano=str(NOW + 1000), flags=0)
+        if kind == "histogram":
+            point.update(bucketCounts=["2"], explicitBounds=[])
+        else:
+            point.update(zeroCount="2", positive={})
+        absent = copy.deepcopy(point)
+        absent["timeUnixNano"] = str(NOW + 1001)
+        for field in ("sum", "min", "max"):
+            del absent[field]
+        metric[kind]["dataPoints"].append(absent)
+    return body
 
 
 class CodexSignalTests(unittest.TestCase):
@@ -177,6 +206,39 @@ class CodexSignalTests(unittest.TestCase):
         self.assertEqual(len(metric_names), 3)
         self.assertNotIn("codex.tool.call", metric_names)
         self.assertEqual(span_names, ["run_turn"])
+
+    def test_pinned_histogram_sum_getter_cannot_distinguish_missing_from_zero(self):
+        def probe(config):
+            config["processors"]["transform/codex_metrics"]["metric_statements"][-1]["statements"] += [
+                'set(attributes["test.sum"], sum)',
+                'set(attributes["test.sum_is_nil"], "true") where sum == nil',
+                'set(attributes["test.sum_is_nil"], "false") where sum != nil',
+            ]
+        output = self.run_collector("false", "true", [
+            ("/v1/metrics", histogram_presence_metrics(), {}),
+        ], configure=probe)
+        points = [p for b in output for r in b["resourceMetrics"] for s in r["scopeMetrics"]
+                  for m in s["metrics"] for kind in ("histogram", "exponentialHistogram")
+                  for p in m.get(kind, {}).get("dataPoints", [])]
+        self.assertEqual(len(points), 4)
+        for point in points:
+            self.assertEqual(values(point["attributes"])["test.sum"], 0)
+            self.assertEqual(values(point["attributes"])["test.sum_is_nil"], "false")
+            for field in ("sum", "min", "max"):
+                if int(point["timeUnixNano"]) == NOW + 1000:
+                    self.assertEqual(point[field], 0)
+                else:
+                    self.assertNotIn(field, point)
+
+    def test_pinned_histogram_min_max_getters_are_unavailable(self):
+        for field in ("min", "max"):
+            def probe(config):
+                config["processors"]["transform/codex_metrics"]["metric_statements"][-1]["statements"].append(
+                    'set(attributes["test.value"], ' + field + ')')
+            with self.subTest(field=field), self.assertRaisesRegex(AssertionError, "not a valid path"):
+                self.run_collector("false", "true", [
+                    ("/v1/metrics", histogram_presence_metrics(), {}),
+                ], configure=probe)
 
 
 if __name__ == "__main__":

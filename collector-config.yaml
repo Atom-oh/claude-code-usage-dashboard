@@ -140,6 +140,8 @@ processors:
 
   transform/codex_metrics:
     error_mode: propagate
+    # sandbox_policy can serialize filesystem roots; never retain it in these
+    # metric/resource allowlists or the trace allowlist below. Logs own policy UI.
     metric_statements:
       - context: resource
         statements: &codex_safe_resource
@@ -149,7 +151,7 @@ processors:
             "host.name", "host.id", "process.pid", "project.name", "team", "env", "os", "os_version",
             "os.type", "os.version", "host.arch", "telemetry.sdk.name", "telemetry.sdk.language",
             "telemetry.sdk.version", "model", "provider", "provider_name", "model_provider",
-            "reasoning_effort", "model_reasoning_effort", "sandbox_policy", "approval_policy"])
+            "reasoning_effort", "model_reasoning_effort", "approval_policy"])
           - set(schema_url, "")
       - context: scope
         statements: &codex_safe_scope
@@ -166,7 +168,7 @@ processors:
             "tool_namespace", "call_id", "session.id", "conversation.id", "turn.id",
             "app.version", "service_name", "auth_mode", "originator", "session_source",
             "status", "status_code", "http.response.status_code", "success", "kind", "decision",
-            "source", "outcome", "phase", "transport", "token_type", "sandbox", "sandbox_policy",
+            "source", "outcome", "phase", "transport", "token_type", "sandbox",
             "approval_policy", "tty", "active", "version", "db", "catalog_surface",
             "candidate_set_truncated", "query_truncated", "query_script", "method", "command_category",
             "config_use_memories", "feature_enabled", "has_citations", "is_git", "read_allowed",
@@ -194,7 +196,7 @@ processors:
             "gen_ai.usage.cache_write.input_tokens", "gen_ai.request.model", "gen_ai.response.model",
             "gen_ai.operation.name", "busy_ns", "idle_ns", "attempt", "aborted", "status", "status_code",
             "http.response.status_code", "http.method", "success", "decision", "source", "transport",
-            "wire_api", "sandbox_policy", "approval_policy", "session_init.ephemeral",
+            "wire_api", "approval_policy", "session_init.ephemeral",
             "session_init.required_mcp_server_count", "thread_start.dynamic_tool_count", "input_count",
             "item_count", "tool_spec_count", "selected_skill_count", "catalog_entry_count", "user_input_count"])
           - set(status.message, "")

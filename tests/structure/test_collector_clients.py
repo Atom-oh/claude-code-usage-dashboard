@@ -71,8 +71,10 @@ def payload():
 
 
 class CollectorTests(unittest.TestCase):
-    def run_collector(self, claude=None, codex=None, requests=None):
+    def run_collector(self, claude=None, codex=None, requests=None, configure=None):
         config = yaml.safe_load((ROOT / "collector-config.yaml").read_text())
+        if configure:
+            configure(config)
         identifier = "ccdash-collector-" + uuid.uuid4().hex[:12]
         env = {"EXPERIMENT_GROUP": "bedrock", "CH_HOST": "127.0.0.1", "CH_PORT": "9440",
                "CH_DB": "fixture", "CH_USER": "fixture", "CH_PASSWORD": "fixture",

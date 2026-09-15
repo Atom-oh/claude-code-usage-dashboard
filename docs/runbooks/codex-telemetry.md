@@ -175,6 +175,9 @@ usage dimensions. Unknown fields, code paths, cwd, URLs, headers, prompts, argum
 outputs are excluded. Scope attributes/schema URLs, metric descriptions, span events,
 status messages and trace state are removed. `thread.id` is an OS thread identifier and
 is excluded; it is never promoted to conversation identity.
+`sandbox_policy` is excluded from metric, trace and their resource attributes because
+its serialized policy can contain filesystem paths. Runtime policy views use normalized
+log fields instead.
 
 Collector 0.119 cannot scrub individual exemplar or span-link attributes with OTTL.
 The pipelines therefore reject exemplar-bearing metric points and linked spans.
@@ -224,8 +227,20 @@ samples; use a prior baseline and report gaps/resets. The new tables have no rol
 Their local delete TTL is 180 days; replicated tables move to cold at 90 and delete at 180.
 
 Pinned exporter limits: absent histogram `Sum`, `Min` and `Max` become zero because its
-columns are non-nullable, and exponential `ZeroThreshold` is not stored. Do not infer
-presence or exact percentiles from these columns. Native capture histograms supplied
+columns are non-nullable, and exponential `ZeroThreshold` is not stored. The pinned
+[OTTL datapoint getter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.119.0/pkg/ottl/contexts/ottldatapoint/datapoint.go)
+returns zero (not nil) for absent `sum`; `min`/`max` paths are unavailable. It cannot
+annotate actual presence or selectively reject missing-field points. Synthetic replay
+confirms that explicit-zero and absent-field histogram points become identical
+`Count=2, Sum=0, Min=0, Max=0` rows for both histogram types.
+
+**API requirement:** a zero `Sum`, `Min` or `Max` in a raw histogram row has unknown
+presence. Without independent trusted presence evidence, return null and partial
+coverage for results depending on that field, including means derived from an ambiguous
+sum. Do not label those zeros as measured values or include unknown sums as zero in an
+aggregate. Counts/buckets remain available. This rule applies before aggregation; a
+zero derived difference of two known nonzero cumulative sums is a different case.
+Do not infer exact percentiles from stored means. Native capture histograms supplied
 sum/min/max and used delta temporality (`1`); other producers or versions need verification.
 Metric costs/tokens and trace usage are diagnostics, never additional billed usage.
 `otel_traces` retains normal trace/span/parent IDs and nanosecond duration with

@@ -15,7 +15,7 @@ import yaml
 
 import test_collector_clients as clients
 from test_collector_clients import IMAGE, ROOT, NOW, docker
-from test_codex_signals import metrics, traces
+from test_codex_signals import histogram_presence_metrics, metrics, traces
 
 
 class CodexStorageTests(unittest.TestCase):
@@ -156,6 +156,25 @@ class CodexStorageTests(unittest.TestCase):
                 stored = sql("SELECT * FROM claude_code.otel_traces FORMAT JSONEachRow").stdout
                 self.assertNotIn("private", stored)
                 self.assertIn('"ParentSpanId":"0102030405060708"', stored)
+
+                # Document the pinned exporter's irreversible presence loss.
+                # A consumer must not present these identical rows as measured
+                # zero Sum/Min/Max or use an unknown sum to compute a zero mean.
+                self.post(url + "/v1/metrics", histogram_presence_metrics())
+                for kind in ("histogram", "exponential_histogram"):
+                    query = ("SELECT Count, Sum, Min, Max FROM claude_code.codex_metrics_" + kind
+                             + " WHERE toUnixTimestamp64Nano(TimeUnix) >= " + str(NOW + 1000)
+                             + " ORDER BY TimeUnix FORMAT JSONEachRow")
+                    for attempt in range(60):
+                        rows = [json.loads(line) for line in sql(query).stdout.splitlines()]
+                        if len(rows) == 2:
+                            break
+                        time.sleep(0.1)
+                    self.assertEqual(len(rows), 2)
+                    self.assertEqual(rows[0], rows[1])
+                    self.assertEqual({key: rows[0][key] for key in ("Sum", "Min", "Max")},
+                                     {"Sum": 0, "Min": 0, "Max": 0})
+                    self.assertEqual(int(rows[0]["Count"]), 2)
 
                 # A pre-existing incompatible table must not get a success ledger.
                 sql("CREATE DATABASE incomplete; CREATE TABLE incomplete.schema_migrations AS claude_code.schema_migrations;"
