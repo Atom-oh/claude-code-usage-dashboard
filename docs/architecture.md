@@ -1,7 +1,7 @@
 # Architecture
 
-Claude Code Usage Dashboard collects selectable Claude Code metrics and Codex structured
-OTel logs for a workshop cohort. Shared views present usage, spend and operational
+Claude Code Usage Dashboard collects selectable Claude Code telemetry and Codex native
+OTel logs, metrics and traces for a workshop cohort. Shared views present usage, spend and operational
 measurements; Claude retains its adoption/activity details and inferred `bedrock` and
 `enterprise` session channels. Channels are neither client identities nor randomized
 experiment assignments. Activity scores do not establish employee performance or causal ROI.
@@ -22,7 +22,7 @@ connected in a running environment.
 flowchart TB
     subgraph HOST["Participant host - outside EKS"]
         CLIENT["Claude Code, when enabled"] -->|"OTLP/gRPC on loopback 4317"| COLLECTOR["Collector and disk queue"]
-        CODEX["Codex, when enabled"] -->|"OTLP/HTTP logs on loopback 4318"| COLLECTOR
+        CODEX["Codex, when enabled"] -->|"OTLP/HTTP logs, metrics, traces on loopback 4318"| COLLECTOR
     end
     BROWSER["Browser running React SPA"] -->|"HTTPS"| EDGE["Dashboard CloudFront distribution"]
     NLB["Internal NLB in the VPC"]
@@ -62,15 +62,20 @@ restarts. These machines/services are outside Terraform's EKS workload scope; th
 
 [collector-config.yaml](../collector-config.yaml) receives OTLP gRPC on loopback port 4317
 and OTLP HTTP on 4318. It allows eight Claude Code metrics, filters client log namespaces
-in separate pipelines, and accepts optional traces only from enabled Claude Code.
+in separate pipelines, and routes enabled client traces by service provenance.
 Claude keeps its existing log scrub. Codex logs get `client=codex`, retain explicit
 backend/user/project metadata, and lose inherited `experiment.group`, content fields
 and bodies. Zero source time is replaced with observed time before insertion into
 `otel_logs.Timestamp`; nonzero time and event identity are preserved.
 
-The [Codex launcher](../scripts/codex-launch.py) exports logs with native metrics/traces
-disabled. This path uses the existing schema; no histogram tables or migration are added.
-`create_schema=false` requires schema setup first.
+The [Codex launcher](../scripts/codex-launch.py) enables native logs, metrics and traces
+with process-scoped overrides and a trusted loopback backend header. Added Codex metric
+and trace pipelines enforce strict attribute allowlists while preserving user and series
+identity. [Migration 006](../clickhouse-migration-006.sql) adds four exporter-compatible
+metric tables; Codex spans use existing `otel_traces`. Logs remain the Codex usage/cost
+authority. `create_schema=false` requires schema setup first. The
+[collection contract](runbooks/codex-telemetry.md#collection-contract) owns privacy and
+pinned-exporter compatibility limits.
 The collector's 1,000-batch disk queue uses `file_storage` and retries without an elapsed-time limit;
 queue capacity is still finite. Supervision protects process continuity, not complete capture.
 
@@ -88,9 +93,10 @@ ClickHouse, applying the root schema before synthetic seed inserts on first volu
 |---|---|---|
 | `otel_metrics_sum` | Raw counter datapoints and promoted dimensions | Cold at 90 days, delete at 180 |
 | `otel_metrics_gauge` | Exporter-compatible gauge storage | Cold at 90 days, delete at 180 |
+| `codex_metrics_{sum,gauge,histogram,exponential_histogram}` | Separate native Codex diagnostics, without usage rollups | Cold at 90 days, delete at 180 |
 | `otel_metrics_sum_hourly` | Per-series hourly max/sum aggregates | Delete at 180 days; no cold move |
 | `otel_logs` | Claude bare-name events such as `api_request`/`tool_result`, and `codex.*` events | Cold at 45 days, delete at 90 |
-| `otel_traces` | Optional interaction, LLM and tool spans | Cold at 45 days, delete at 90 |
+| `otel_traces` | Claude spans and Codex spans tagged by resource client | Cold at 45 days, delete at 90 |
 | `schema_migrations` | Migration evidence ledger | Separate metadata table |
 
 The [replicated schema](../infra/files/clickhouse-schema-replicated.sql) and

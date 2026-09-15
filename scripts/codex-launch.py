@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launch Codex with process-scoped Bedrock and structured-log telemetry settings."""
+"""Launch Codex with process-scoped Bedrock and native OTLP telemetry settings."""
 
 import json
 import os
@@ -143,16 +143,22 @@ def launch_command(env, arguments):
     attributes.update(resource_attributes(env.get("OTEL_RESOURCE_ATTRIBUTES", "")))
     attributes.pop("experiment.group", None)
     attributes["backend"] = "bedrock-" + config["endpoint"]
+    attributes["client"] = "codex"
     child["OTEL_RESOURCE_ATTRIBUTES"] = ",".join(key + "=" + value for key, value in attributes.items())
     child["AWS_REGION"] = config["region"]
     child["AWS_DEFAULT_REGION"] = config["region"]
     overrides = [
         "model=" + json.dumps(config["model"]),
-        'otel.metrics_exporter="none"',
-        'otel.trace_exporter="none"',
         'otel.log_user_prompt=false',
-        'otel.exporter={otlp-http={endpoint="http://127.0.0.1:4318/v1/logs",protocol="json"}}',
     ]
+    # The native providers can build their own resources. Carry deployment
+    # provenance on every loopback request as well as in the resource.
+    for key, signal in [("exporter", "logs"), ("metrics_exporter", "metrics"), ("trace_exporter", "traces")]:
+        overrides.append(
+            'otel.' + key + '={otlp-http={endpoint="http://127.0.0.1:4318/v1/'
+            + signal + '",protocol="json",headers={"x-ccdash-backend"='
+            + json.dumps(attributes["backend"]) + '}}}'
+        )
     if config["endpoint"] == "mantle":
         overrides += [
             'model_provider="amazon-bedrock"',

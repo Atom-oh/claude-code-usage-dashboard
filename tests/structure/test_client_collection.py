@@ -114,7 +114,7 @@ class ClientConfigurationTests(unittest.TestCase):
                 self.module.launch_command({"CODEX_ENABLED": "true", "OTEL_RESOURCE_ATTRIBUTES": value}, [])
             self.assertNotIn(value, str(error.exception))
 
-    def test_mantle_and_runtime_export_only_logs_without_embedded_credentials(self):
+    def test_mantle_and_runtime_export_all_signals_without_embedded_credentials(self):
         self.settings()
         for endpoint, provider in [("mantle", "amazon-bedrock"), ("runtime", "ccdash-bedrock-runtime")]:
             with self.subTest(endpoint=endpoint):
@@ -124,10 +124,12 @@ class ClientConfigurationTests(unittest.TestCase):
                 }, ["--version"])
                 overrides = [command[i + 1] for i, value in enumerate(command[:-1]) if value == "-c"]
                 self.assertIn('model_provider="' + provider + '"', overrides)
-                self.assertIn('otel.metrics_exporter="none"', overrides)
-                self.assertIn('otel.trace_exporter="none"', overrides)
                 self.assertIn('otel.log_user_prompt=false', overrides)
-                self.assertTrue(any("127.0.0.1:4318/v1/logs" in value for value in overrides))
+                for key, signal in [("exporter", "logs"), ("metrics_exporter", "metrics"), ("trace_exporter", "traces")]:
+                    setting = next(value for value in overrides if value.startswith("otel." + key + "="))
+                    self.assertIn("127.0.0.1:4318/v1/" + signal, setting)
+                    self.assertIn('protocol="json"', setting)
+                    self.assertIn('"x-ccdash-backend"="bedrock-' + endpoint + '"', setting)
                 self.assertNotIn("fixture-secret-do-not-print", " ".join(command))
                 self.assertEqual(child["AWS_BEARER_TOKEN_BEDROCK"], "fixture-secret-do-not-print")
                 self.assertIn("backend=bedrock-" + endpoint, child["OTEL_RESOURCE_ATTRIBUTES"])

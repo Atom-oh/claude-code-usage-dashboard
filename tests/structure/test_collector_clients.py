@@ -71,8 +71,10 @@ def payload():
 
 
 class CollectorTests(unittest.TestCase):
-    def run_collector(self, claude=None, codex=None):
+    def run_collector(self, claude=None, codex=None, requests=None, configure=None):
         config = yaml.safe_load((ROOT / "collector-config.yaml").read_text())
+        if configure:
+            configure(config)
         identifier = "ccdash-collector-" + uuid.uuid4().hex[:12]
         env = {"EXPERIMENT_GROUP": "bedrock", "CH_HOST": "127.0.0.1", "CH_PORT": "9440",
                "CH_DB": "fixture", "CH_USER": "fixture", "CH_PASSWORD": "fixture",
@@ -93,7 +95,7 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(validated.returncode, 0, validated.stderr)
             # Production listeners stay on loopback. Only this internal test network
             # receives container traffic. No port is published on the host.
-            config["receivers"]["otlp"]["protocols"]["http"] = {"endpoint": "0.0.0.0:4318"}
+            config["receivers"]["otlp"]["protocols"]["http"]["endpoint"] = "0.0.0.0:4318"
             config["exporters"] = {"file": {"path": "/data/events.json", "flush_interval": "100ms"}}
             config["processors"]["batch"]["timeout"] = "100ms"
             for pipeline in config["service"]["pipelines"].values():
@@ -111,7 +113,7 @@ class CollectorTests(unittest.TestCase):
                 url = "http://" + address + ":4318"
                 for attempt in range(50):
                     try:
-                        self.post(url + "/v1/logs", payload())
+                        self.post(url + "/v1/logs", {"resourceLogs": []})
                         break
                     except OSError:
                         state = json.loads(docker("inspect", identifier).stdout)[0]["State"]
@@ -119,8 +121,12 @@ class CollectorTests(unittest.TestCase):
                         if attempt == 49:
                             self.fail(docker("logs", identifier).stderr)
                         time.sleep(0.1)
-                self.post(url + "/v1/metrics", self.metrics())
-                self.post(url + "/v1/traces", self.traces())
+                for path, body, headers in requests or [
+                    ("/v1/logs", payload(), {}),
+                    ("/v1/metrics", self.metrics(), {}),
+                    ("/v1/traces", self.traces(), {}),
+                ]:
+                    self.post(url + path, body, headers)
                 time.sleep(0.5)
                 docker("stop", "--time", "3", identifier)
                 output = base / "events.json"
@@ -130,8 +136,9 @@ class CollectorTests(unittest.TestCase):
                 docker("rm", "-f", identifier, check=False)
                 docker("network", "rm", identifier, check=False)
 
-    def post(self, url, payload):
-        request = urllib.request.Request(url, json.dumps(payload).encode(), {"Content-Type": "application/json"})
+    def post(self, url, payload, headers=None):
+        request = urllib.request.Request(url, json.dumps(payload).encode(),
+                                         {"Content-Type": "application/json", **(headers or {})})
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=3) as response:
             self.assertEqual(response.status, 200)
 
@@ -152,7 +159,7 @@ class CollectorTests(unittest.TestCase):
                     "name": service + ".request", "startTimeUnixNano": str(NOW - 100),
                     "endTimeUnixNano": str(NOW), "kind": 1,
                 }],
-            }]} for service in ["claude-code", "codex"]
+            }]} for service in ["claude-code", "unrelated"]
         ]}
 
     def test_three_activation_modes_defaults_and_fail_closed_ingestion(self):

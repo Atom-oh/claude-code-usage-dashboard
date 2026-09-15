@@ -15,6 +15,7 @@ installations use `clickhouse-schema.sql` instead.
 | `clickhouse-migration-003.sql` | Requires 002. Change `SeriesKey` and rebuild the hourly rollup. **Run statement by statement** using the [rollup cutover](rollup-rebuild-segment-key.md); never stream the whole file. |
 | `clickhouse-migration-004.sql` | Requires 002, not completion of 003. Create the ledger and backfill 002/003 records only when their evidence guards pass. |
 | `clickhouse-migration-005.sql` | Requires 004. Add `ProjectName`/`Entrypoint` to raw metrics, logs, and traces where present; deliberately no materialization or rollup change. |
+| `clickhouse-migration-006.sql` | Requires ledger 004, not 005. Create four dedicated Codex metric tables and record exporter-compatible column evidence; no rebuild or materialization. |
 
 Run a numbered migration through one selected pod. `ON CLUSTER` DDL propagates through the
 cluster; the guarded ledger `INSERT` is **not** `ON CLUSTER` and replicates normally. Do not
@@ -96,6 +97,24 @@ verify their promoted columns independently. Both promoted fields use a simple m
 005 intentionally schedules no `MATERIALIZE COLUMN`. Older parts evaluate the expression
 when read, and the migration cannot reconstruct a `project.name` tag never collected.
 
+For 006, confirm ledger version 4 exists and that `otel_traces` from 002 is available
+before enabling Codex trace collection. The migration itself creates only
+`codex_metrics_sum`, `codex_metrics_gauge`, `codex_metrics_histogram` and
+`codex_metrics_exponential_histogram`; it does not change `otel_traces` or usage tables.
+Run through one selected replica:
+
+```bash
+CH_USER=otel_writer CH_SECRET=clickhouse-writer ch < clickhouse-migration-006.sql
+```
+
+The initial guard rejects an absent version-4 ledger before creating tables. The final
+guard verifies all 102 exporter column/type pairs locally before recording version 6.
+Inspect `system.columns`, engines and TTLs on every replica and read back the ledger;
+an existing incompatible table is not repaired by `CREATE IF NOT EXISTS`. See the
+[collection interface](codex-telemetry.md#storage-interface) and run the optional
+Collector/ClickHouse tests before enabling the new exporter. The standalone 006 file
+creates no mutations and avoids schema-init's older materialization statements.
+
 ## 3. Schema-init is a separate application path
 
 A fresh install uses `infra/files/clickhouse-schema-replicated.sql` through the Terraform
@@ -129,6 +148,7 @@ The replicated schema declares these TTLs; compare each actual table with its de
 | Tables | Move to cold volume | Delete |
 |---|---|---|
 | `otel_metrics_sum`, `otel_metrics_gauge` | 90 days | 180 days |
+| `codex_metrics_sum`, `codex_metrics_gauge`, `codex_metrics_histogram`, `codex_metrics_exponential_histogram` | 90 days | 180 days |
 | `otel_logs`, `otel_traces` | 45 days | 90 days |
 | `otel_metrics_sum_hourly` | No move TTL | 180 days |
 

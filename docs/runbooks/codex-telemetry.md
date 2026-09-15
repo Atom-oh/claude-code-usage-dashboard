@@ -121,7 +121,8 @@ ccdash-codex
 `user.email=participant@example.invalid,team=workshop,project.name=demo`.
 Bootstrap uses the existing instance identity lookup to fill missing `user.email`.
 Process `OTEL_RESOURCE_ATTRIBUTES` values override those defaults. The launcher then
-removes `experiment.group` and fixes `backend=bedrock-mantle|bedrock-runtime` only for
+removes `experiment.group` and fixes `client=codex` and
+`backend=bedrock-mantle|bedrock-runtime` only for
 the child process. Claude's global/managed resource attributes are not rewritten.
 Do not put credentials or prompt content in metadata.
 
@@ -133,28 +134,61 @@ their existing behavior. Defaults are read from `/etc/ccdash/clients.env` unless
 ## Collection contract
 
 Receivers bind only to loopback: Claude OTLP/gRPC on `127.0.0.1:4317`, Codex OTLP/HTTP
-JSON on `127.0.0.1:4318/v1/logs`. Existing ClickHouse TLS, ingest credentials, durable
-queue and retry settings remain. No schema/migration or histogram tables are added.
+JSON on `127.0.0.1:4318/v1/{logs,metrics,traces}`. Existing ClickHouse TLS, ingest
+credentials, durable queues and retry settings remain. Apply additive
+[migration 006](../../clickhouse-migration-006.sql) before enabling the new pipelines.
+It requires ledger 004, not migration 005; Codex traces reuse existing `otel_traces`.
 
 ```toml
 [otel]
-exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/logs", protocol = "json" } }
-metrics_exporter = "none"
-trace_exporter = "none"
+exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/logs", protocol = "json", headers = { x-ccdash-backend = "bedrock-mantle" } } }
+metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/metrics", protocol = "json", headers = { x-ccdash-backend = "bedrock-mantle" } } }
+trace_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/traces", protocol = "json", headers = { x-ccdash-backend = "bedrock-mantle" } } }
 log_user_prompt = false
 ```
 
-Structured logs are the single Codex usage feed. Claude retains its eight allowed
+The launcher supplies these process overrides; do not copy them into global Codex config.
+Runtime substitutes `bedrock-runtime` in all three headers. Receivers expose request
+metadata only to the Codex pipelines. A valid `x-ccdash-backend` overrides resource
+backend; an absent/invalid header preserves a valid resource backend. Otherwise backend
+stays absent. The temporary header attribute is deleted before export. Model names,
+metric/span attributes and inherited client labels never establish backend or producer.
+
+Structured logs remain the single Codex usage/cost feed. Claude retains its eight allowed
 metrics, counter temporality, log scrub and experiment grouping. Claude logs accept
 established unprefixed names (`api_request`, `tool_result`, etc.), `claude_code.*`
 aliases, or Claude service provenance. `codex.*` is always excluded from that pipeline,
 even with an inherited Claude service. Unknown events without Claude provenance are
-dropped. Traces require enabled Claude and `service.name=claude-code`.
+dropped. Claude traces require enabled Claude and `service.name=claude-code`.
+
+Separate `metrics/codex` and `traces/codex` pipelines require enabled Codex and an
+explicit Codex service name, including native `codex_exec` and `codex_cli_rs`.
+Metric names must be bounded `codex.*` identifiers. Sums, gauges, histograms and
+exponential histograms go to dedicated tables; summary metrics are unsupported.
+Span names need no `codex.*` prefix: `session_task.turn`, `run_turn` and model-less
+parents/children remain usable. Invalid/free-text names become `codex.operation`.
+
+Metrics and traces use strict attribute-key allowlists in
+[collector-config.yaml](../../collector-config.yaml). They retain resource user/process
+identity, model/provider, effort, tools, status, approval, runtime categories and numeric
+usage dimensions. Unknown fields, code paths, cwd, URLs, headers, prompts, arguments and
+outputs are excluded. Scope attributes/schema URLs, metric descriptions, span events,
+status messages and trace state are removed. `thread.id` is an OS thread identifier and
+is excluded; it is never promoted to conversation identity.
+`sandbox_policy` is excluded from metric, trace and their resource attributes because
+its serialized policy can contain filesystem paths. Runtime policy views use normalized
+log fields instead.
+
+Collector 0.119 cannot scrub individual exemplar or span-link attributes with OTTL.
+The pipelines therefore reject exemplar-bearing metric points and linked spans.
+Codex 0.154's local native capture contained neither; replay retained all 48 metric
+objects (39 names) and 463 spans. This is a bounded fixture result, not a completeness
+guarantee. Retest before upgrading either binary.
 
 The separate Codex pipeline tags `client=codex`, strips inherited experiment groups,
 clears bodies and removes known prompt/argument/output fields while retaining usage,
 call IDs, tool names, status, timing and explicit identity/backend/project metadata.
-Model names and inherited client labels do not establish producer identity.
+This established log scrub remains separate from the stricter added metric/trace allowlists.
 
 Codex 0.154.0 emits zero `timeUnixNano`; the Collector promotes `observedTimeUnixNano`
 into `otel_logs.Timestamp` while preserving nonzero source timestamps and
@@ -163,7 +197,54 @@ into `otel_logs.Timestamp` while preserving nonzero source timestamps and
 deduplicate timestamps plus sorted resource/log maps and price only usage-bearing
 SSE/WebSocket completions. Input contains cache reads/writes; output contains
 reasoning. Missing/partial usage is not measured zero. HTTP 200 with `response.failed`
-is an error, and a fatal CLI exit may omit unflushed logs entirely.
+is an error, and a fatal CLI exit may omit unflushed telemetry entirely.
+
+### Storage interface
+
+Columns follow the actual pinned exporter's
+[metric models](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.119.0/exporter/clickhouseexporter/internal).
+Migration 006 checks all 102 required column/type pairs before recording its ledger row.
+The [local](../../clickhouse-schema.sql) and
+[replicated](../../infra/files/clickhouse-schema-replicated.sql) copies use the same
+columns and checksum. No existing tables, rollups or billing data are rewritten.
+
+All four tables contain `ResourceAttributes`, `Attributes`, `ScopeAttributes`
+(`Map(LowCardinality(String), String)`), `ResourceSchemaUrl`, `ScopeSchemaUrl`,
+`ScopeName`, `ScopeVersion`, `ScopeDroppedAttrCount`, `ServiceName`, `MetricName`,
+`MetricDescription`, `MetricUnit`, `StartTimeUnix`/`TimeUnix` (`DateTime64(9)`),
+`Flags` (`UInt32`) and the exporter's five `Exemplars.*` array columns.
+
+| Table | Additional columns |
+|---|---|
+| `codex_metrics_sum` | `Value Float64`, `AggregationTemporality Int32`, `IsMonotonic Bool` |
+| `codex_metrics_gauge` | `Value Float64` |
+| `codex_metrics_histogram` | `Count UInt64`, `Sum/Min/Max Float64`, `BucketCounts Array(UInt64)`, `ExplicitBounds Array(Float64)`, `AggregationTemporality Int32` |
+| `codex_metrics_exponential_histogram` | `Count/ZeroCount UInt64`, `Sum/Min/Max Float64`, `Scale/PositiveOffset/NegativeOffset Int32`, `PositiveBucketCounts/NegativeBucketCounts Array(UInt64)`, `AggregationTemporality Int32` |
+
+Series identity includes the retained resource/dimension maps, scope, unit, metric type,
+temporality and start time. Keep `Flags` and nanosecond boundaries. Never sum cumulative
+samples; use a prior baseline and report gaps/resets. The new tables have no rollups.
+Their local delete TTL is 180 days; replicated tables move to cold at 90 and delete at 180.
+
+Pinned exporter limits: absent histogram `Sum`, `Min` and `Max` become zero because its
+columns are non-nullable, and exponential `ZeroThreshold` is not stored. The pinned
+[OTTL datapoint getter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.119.0/pkg/ottl/contexts/ottldatapoint/datapoint.go)
+returns zero (not nil) for absent `sum`; `min`/`max` paths are unavailable. It cannot
+annotate actual presence or selectively reject missing-field points. Synthetic replay
+confirms that explicit-zero and absent-field histogram points become identical
+`Count=2, Sum=0, Min=0, Max=0` rows for both histogram types.
+
+**API requirement:** a zero `Sum`, `Min` or `Max` in a raw histogram row has unknown
+presence. Without independent trusted presence evidence, return null and partial
+coverage for results depending on that field, including means derived from an ambiguous
+sum. Do not label those zeros as measured values or include unknown sums as zero in an
+aggregate. Counts/buckets remain available. This rule applies before aggregation; a
+zero derived difference of two known nonzero cumulative sums is a different case.
+Do not infer exact percentiles from stored means. Native capture histograms supplied
+sum/min/max and used delta temporality (`1`); other producers or versions need verification.
+Metric costs/tokens and trace usage are diagnostics, never additional billed usage.
+`otel_traces` retains normal trace/span/parent IDs and nanosecond duration with
+`ResourceAttributes['client']='codex'`; its existing columns and TTL remain unchanged.
 
 ## Validation and compatibility limits
 
@@ -178,8 +259,11 @@ Bootstrap tests stub AWS/package/service boundaries and verify filesystem writes
 secret suppression and failed-upgrade recovery. Optional Collector replay needs
 Docker, PyYAML and `otel/opentelemetry-collector-contrib:0.119.0`; it validates the real
 config, uses a local file exporter on an internal network, publishes no host port,
-and removes only its own containers/network. Fixtures cover activation, privacy,
-timestamp promotion, metadata and Claude counter compatibility.
+and removes only its own containers/network. The storage test also uses
+`clickhouse/clickhouse-server:24.8` on an internal network. Fixtures cover activation,
+privacy, timestamp promotion, header provenance, Claude counter compatibility, all four
+metric insert shapes, trace ancestry, migration 004/005 independence, idempotence and
+incompatible-schema ledger guards.
 
 On 2026-09-14, seven bounded raw API requests used existing SigV4 credentials in
 `us-west-2`, `max_output_tokens=256`, low reasoning, streaming and `store=false`.
