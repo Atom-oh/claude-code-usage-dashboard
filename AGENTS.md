@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-Workshop telemetry: Claude Code metrics and Codex structured OTel logs → ClickHouse
+Workshop telemetry: Claude Code and Codex OTel signals → ClickHouse
 → Express → React, with Terraform,
 a documentation site and a separate video project. These observations are not
 validated employee productivity or causal ROI measures.
@@ -42,6 +42,8 @@ is an expected skip. Use the deployment runbook for production changes.
 - `CLAUDE_ENABLED`/`CODEX_ENABLED` select collection and views; both false is invalid.
   Preserve client/backend/model separation; Codex has no enterprise A/B row.
 - Use shared API wrapping, bound SQL parameters and existing filter semantics.
+- Codex metrics/traces are diagnostic feeds; never add them to completion-log usage
+  or cost. See [support and interpretation](docs/reference/codex-observability.md).
 - Unavailable is distinct from zero; positive totals do not prove complete telemetry.
 - Exclude secrets, personal/customer data from commits, public reviews and site assets.
   UI masking is not API access control.

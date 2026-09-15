@@ -11,6 +11,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
+import CodexInsights from "./CodexInsights.jsx";
 
 const BASIS_LABELS = { client_reported: "클라이언트 보고", aws_list_estimate: "AWS 정가 추정" };
 const labelClient = (value) => CLIENT_LABELS[value] || value || "—";
@@ -107,6 +108,7 @@ export default function Clients() {
                 {TOKEN_TILES.map(([key, label]) => <StatTile key={key} label={label} value={formatObserved(totals[key])} />)}
               </div>
             </Card>
+            {clients.includes("codex") && <CodexInsights />}
             <DualLineChart
               title="사용량·비용 추이" subtitle={`${data?.bucket_hours < 1 ? "분별" : "시간별"} · UTC · 비용 누락 구간은 연결하지 않습니다.`}
               rows={timeline} xKey="t" lines={lines} tickFormatter={formatTime} bucketHours={data?.bucket_hours || 1} height={320}
@@ -119,6 +121,7 @@ export default function Clients() {
             <DataTable title="도구 사용" columns={TOOL_COLUMNS} rows={data?.tools || []} exportName="clients_tools" />
           </>
         )}
+        {clients.includes("codex") && (empty || error) && <CodexInsights />}
       </div>
     </div>
   );

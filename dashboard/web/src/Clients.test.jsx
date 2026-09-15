@@ -77,7 +77,7 @@ test.each([
   expect(container.textContent).not.toContain("A/B Dashboard");
   expect(document.title).toContain("사용량·비용");
   expect(document.title).not.toContain("A/B");
-  expect(requests(fetchMock).every((url) => ["/api/clients/overview", "/api/health/data"].includes(url.pathname))).toBe(true);
+  expect(requests(fetchMock).every((url) => ["/api/clients/overview", "/api/codex/insights", "/api/health/data"].includes(url.pathname))).toBe(true);
 });
 
 test.each(["/productivity", "/analytics", "/users", "/cost", "/missing"])("Codex deep URL %s redirects with supported filters before any legacy fetch", async (path) => {
@@ -95,7 +95,7 @@ test.each(["/productivity", "/analytics", "/users", "/cost", "/missing"])("Codex
   expect(params.has("group")).toBe(false);
   expect(params.has("project")).toBe(false);
   for (const url of requests(fetchMock)) {
-    expect(["/api/clients/overview", "/api/health/data"]).toContain(url.pathname);
+    expect(["/api/clients/overview", "/api/codex/insights", "/api/health/data"]).toContain(url.pathname);
     expect(url.searchParams.has("group")).toBe(false);
     expect(url.searchParams.has("project")).toBe(false);
   }
@@ -248,6 +248,6 @@ test.each(["loading", "error", "empty"])("common %s state does not claim measure
     enabledClients: ["codex"], pending: state === "loading", failed: state === "error",
     response: clientOverview({ observed_records: 0, totals: {}, by_client: [{ ...codexUsage, tokens: 0, cost_usd: 0 }], by_user: [], by_model: [], timeseries: [], tools: [] }),
   });
-  await screen.findByText(state === "loading" ? "불러오는 중..." : state === "error" ? "데이터를 불러오지 못했습니다." : "선택한 기간에 데이터가 없습니다.");
+  await screen.findAllByText(state === "loading" ? "불러오는 중..." : state === "error" ? "데이터를 불러오지 못했습니다." : "선택한 기간에 데이터가 없습니다.");
   expect(screen.queryByText("$0")).toBeNull();
 });
