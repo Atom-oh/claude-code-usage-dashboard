@@ -59,6 +59,13 @@ Codex retains its read-only sandbox and configured Bedrock provider. Claude's
 specialist has no tools. The chair has bounded local read tools and no GitHub
 token. Review output is scrubbed before becoming a public artifact.
 
+Review examples use closed top-level code fences with markers at column one;
+inline code is limited to symbol/path references. Specialist prose and chair
+output must satisfy this contract before and after confidentiality filtering.
+Unsupported examples or damaged fences remain incomplete review evidence, with
+a static failure explanation. Metadata paths keep their existing scope validation.
+See the [module presentation contract](../scripts/pr-review/README.md#review-presentation).
+
 Complete, valid results with no Critical/Major candidate or uncertainty receive
 a deterministic summary. Other valid results require chair adjudication. A
 coverage failure receives a deterministic failure; a chair cannot waive it.
