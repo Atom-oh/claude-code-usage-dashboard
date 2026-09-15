@@ -16,6 +16,119 @@ from review_format import FORMAT_INSTRUCTIONS
 
 
 class ReviewFormatTests(unittest.TestCase):
+    def qualified_assignment_examples(self):
+        return (
+            "`db.password`: 'SYNTHETIC_REVIEW_VALUE'",
+            "`aws.secret_access_key`: SYNTHETIC_REVIEW_VALUE",
+            "`db.password`: 13579",
+            '`infra/aws_secret_access_key`="SYNTHETIC_REVIEW_VALUE"',
+            "password: !!str SYNTHETIC_REVIEW_VALUE",
+            "password: &credential SYNTHETIC_REVIEW_VALUE",
+            "env/password='SYNTHETIC_REVIEW_VALUE'",
+            "db.password: 'SYNTHETIC_REVIEW_VALUE'",
+        )
+
+    def test_qualified_and_tagged_assignments_cannot_supply_specialist_coverage(self):
+        for evidence in self.qualified_assignment_examples():
+            with self.subTest(evidence=evidence):
+                helper = test_role_review.RoleReviewTests()
+                helper.setUp()
+                self.addCleanup(helper.tearDown)
+                helper.prepare()
+                result = helper.record("codex", helper.response("codex", checks=[{
+                    "path": test_role_review.FRONTEND, "evidence": evidence,
+                }]), expected=2)
+                self.assertFalse(result["valid"])
+                self.assertEqual(result["failure_codes"], ["unsupported_review_format"])
+                self.assertIsNone(result["response"])
+                self.assertNotIn("SYNTHETIC_REVIEW_VALUE", json.dumps(result))
+                helper.record("claude-self")
+                helper.cli("aggregate", "--work", helper.work, expected=2)
+                self.assertTrue((helper.work / "deterministic-review.md").read_text()
+                                .endswith("VERDICT: FAIL\n"))
+
+    def test_qualified_and_tagged_assignments_cannot_publish_chair_pass(self):
+        for evidence in self.qualified_assignment_examples():
+            with self.subTest(evidence=evidence):
+                reply = (0, evidence + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                calls, published = self.chair([reply, reply])
+                self.assertEqual(calls, 2)
+                self.assertIn("format", published.lower())
+                self.assertNotIn("SYNTHETIC_REVIEW_VALUE", published)
+                self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+
+    def citation_and_prose_examples(self):
+        return (
+            "Authorization: The caller is checked.",
+            "**Secrets/credentials:** none introduced.",
+            "Token handling: preserved.",
+            "See [auth.ts](web/lib/auth.ts:42) for the caller check.",
+            "The guard at auth.ts:42 was checked.",
+            "The guard at token.ts:42 was checked.",
+            "The guard at web/lib/token.ts:42 was checked.",
+            "token.ts:42",
+            "web/lib/token.ts:42",
+            "Checked `web/lib/token.ts`: the guard is preserved.",
+            "Per `docs/decisions/002-auth-and-login.md`: signup is closed.",
+            "Authorization: [implementation](web/lib/auth.ts)",
+        )
+
+    def test_citations_and_prose_labels_can_complete_specialist_review(self):
+        for evidence in self.citation_and_prose_examples():
+            with self.subTest(evidence=evidence):
+                helper = test_role_review.RoleReviewTests()
+                helper.setUp()
+                self.addCleanup(helper.tearDown)
+                helper.prepare()
+                response = helper.response("codex", checks=[{
+                    "path": test_role_review.FRONTEND,
+                    "evidence": evidence + "\nPUBLIC_AFTER",
+                }])
+                result = helper.record("codex", response)
+                self.assertTrue(result["valid"], result["failure_codes"])
+                self.assertIn("PUBLIC_AFTER", result["response"]["checks"][0]["evidence"])
+                helper.record("claude-self")
+                helper.cli("aggregate", "--work", helper.work)
+                self.assertTrue((helper.work / "deterministic-review.md").read_text()
+                                .endswith("VERDICT: PASS\n"))
+
+    def test_citations_and_prose_labels_can_complete_chair_review(self):
+        for evidence in self.citation_and_prose_examples():
+            with self.subTest(evidence=evidence):
+                reply = (0, evidence + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                calls, published = self.chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("PUBLIC_AFTER", published)
+                self.assertTrue(published.endswith("VERDICT: PASS\n"))
+
+    def test_later_assignments_still_block_after_citations_and_prose(self):
+        for evidence in (
+            "See auth.ts:42; password='synthetic-private'",
+            "Authorization: caller checked; password='synthetic-private'",
+            "Checked `src/token.ts`: note; token='synthetic-private'",
+        ):
+            with self.subTest(evidence=evidence):
+                helper = test_role_review.RoleReviewTests()
+                helper.setUp()
+                self.addCleanup(helper.tearDown)
+                helper.prepare()
+                result = helper.record("codex", helper.response("codex", checks=[{
+                    "path": test_role_review.FRONTEND, "evidence": evidence,
+                }]), expected=2)
+                self.assertFalse(result["valid"])
+                self.assertEqual(result["failure_codes"], ["unsupported_review_format"])
+                self.assertIsNone(result["response"])
+                helper.record("claude-self")
+                helper.cli("aggregate", "--work", helper.work, expected=2)
+                self.assertTrue((helper.work / "deterministic-review.md").read_text()
+                                .endswith("VERDICT: FAIL\n"))
+                reply = (0, evidence + "\nVERDICT: PASS\n", "")
+                calls, published = self.chair([reply, reply])
+                self.assertEqual(calls, 2)
+                self.assertIn("format", published.lower())
+                self.assertNotIn("synthetic-private", published)
+                self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+
     def heading_examples(self):
         return (
             "Authorization:\nThe handler checks the caller.",
