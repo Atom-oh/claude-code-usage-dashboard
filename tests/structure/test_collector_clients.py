@@ -15,7 +15,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "otel/opentelemetry-collector-contrib:0.119.0"
-NOW = 1789380000123456789
+NOW = time.time_ns()
 CLAUDE_EVENTS = {"api_request", "tool_result", "user_prompt", "skill_activated", "claude_code.api_request"}
 
 
