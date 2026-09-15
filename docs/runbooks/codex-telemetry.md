@@ -168,22 +168,15 @@ exponential histograms go to dedicated tables; summary metrics are unsupported.
 Span names need no `codex.*` prefix: `session_task.turn`, `run_turn` and model-less
 parents/children remain usable. Invalid/free-text names become `codex.operation`.
 
-Metrics and traces use strict attribute-key allowlists in
-[collector-config.yaml](../../collector-config.yaml). They retain resource user/process
-identity, model/provider, effort, tools, status, approval, runtime categories and numeric
-usage dimensions. Unknown fields, code paths, cwd, URLs, headers, prompts, arguments and
-outputs are excluded. Scope attributes/schema URLs, metric descriptions, span events,
-status messages and trace state are removed. `thread.id` is an OS thread identifier and
-is excluded; it is never promoted to conversation identity.
-`sandbox_policy` is excluded from metric, trace and their resource attributes because
-its serialized policy can contain filesystem paths. Runtime policy views use normalized
-log fields instead.
+Metric/trace allowlists in [collector-config.yaml](../../collector-config.yaml) retain
+identity and structured operational dimensions. They remove unknown/content/path/URL/
+header fields, scope attributes/schema URLs, descriptions, events, status messages and
+trace state. `thread.id` is an OS thread ID, not conversation identity.
+`sandbox_policy` can contain paths and is excluded; policy UI uses normalized log fields.
 
-Collector 0.119 cannot scrub individual exemplar or span-link attributes with OTTL.
-The pipelines therefore reject exemplar-bearing metric points and linked spans.
-Codex 0.154's local native capture contained neither; replay retained all 48 metric
-objects (39 names) and 463 spans. This is a bounded fixture result, not a completeness
-guarantee. Retest before upgrading either binary.
+Collector 0.119 cannot scrub exemplar/link attributes: affected points/spans are rejected.
+Native 0.154 replay retained all 48 metric objects (39 names) and 463 spans without
+exemplars/links. This fixture is not a completeness guarantee; retest binary upgrades.
 
 The separate Codex pipeline tags `client=codex`, strips inherited experiment groups,
 clears bodies and removes known prompt/argument/output fields while retaining usage,
@@ -208,40 +201,28 @@ The [local](../../clickhouse-schema.sql) and
 [replicated](../../infra/files/clickhouse-schema-replicated.sql) copies use the same
 columns and checksum. No existing tables, rollups or billing data are rewritten.
 
-All four tables contain `ResourceAttributes`, `Attributes`, `ScopeAttributes`
-(`Map(LowCardinality(String), String)`), `ResourceSchemaUrl`, `ScopeSchemaUrl`,
-`ScopeName`, `ScopeVersion`, `ScopeDroppedAttrCount`, `ServiceName`, `MetricName`,
-`MetricDescription`, `MetricUnit`, `StartTimeUnix`/`TimeUnix` (`DateTime64(9)`),
-`Flags` (`UInt32`) and the exporter's five `Exemplars.*` array columns.
-
-| Table | Additional columns |
-|---|---|
-| `codex_metrics_sum` | `Value Float64`, `AggregationTemporality Int32`, `IsMonotonic Bool` |
-| `codex_metrics_gauge` | `Value Float64` |
-| `codex_metrics_histogram` | `Count UInt64`, `Sum/Min/Max Float64`, `BucketCounts Array(UInt64)`, `ExplicitBounds Array(Float64)`, `AggregationTemporality Int32` |
-| `codex_metrics_exponential_histogram` | `Count/ZeroCount UInt64`, `Sum/Min/Max Float64`, `Scale/PositiveOffset/NegativeOffset Int32`, `PositiveBucketCounts/NegativeBucketCounts Array(UInt64)`, `AggregationTemporality Int32` |
+Migration 006 owns the exact columns: resource/dimension maps, scope metadata,
+nanosecond start/end times, flags and exemplars. Sum/gauge tables store `Value`;
+histogram tables store counts, sum, extrema and bucket arrays. Sum/histogram tables
+retain aggregation temporality; sums retain monotonicity.
 
 Series identity includes the retained resource/dimension maps, scope, unit, metric type,
 temporality and start time. Keep `Flags` and nanosecond boundaries. Never sum cumulative
 samples; use a prior baseline and report gaps/resets. The new tables have no rollups.
 Their local delete TTL is 180 days; replicated tables move to cold at 90 and delete at 180.
 
-Pinned exporter limits: absent histogram `Sum`, `Min` and `Max` become zero because its
-columns are non-nullable, and exponential `ZeroThreshold` is not stored. The pinned
+Absent histogram `Sum/Min/Max` become zero; exponential `ZeroThreshold` is not stored.
+The pinned
 [OTTL datapoint getter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.119.0/pkg/ottl/contexts/ottldatapoint/datapoint.go)
-returns zero (not nil) for absent `sum`; `min`/`max` paths are unavailable. It cannot
-annotate actual presence or selectively reject missing-field points. Synthetic replay
-confirms that explicit-zero and absent-field histogram points become identical
-`Count=2, Sum=0, Min=0, Max=0` rows for both histogram types.
+returns zero for absent `sum` and has no `min/max` paths, preventing presence annotation
+or selective rejection. Replay proves missing and explicit-zero fields become identical.
 
-**API requirement:** a zero `Sum`, `Min` or `Max` in a raw histogram row has unknown
-presence. Without independent trusted presence evidence, return null and partial
-coverage for results depending on that field, including means derived from an ambiguous
-sum. Do not label those zeros as measured values or include unknown sums as zero in an
-aggregate. Counts/buckets remain available. This rule applies before aggregation; a
-zero derived difference of two known nonzero cumulative sums is a different case.
-Do not infer exact percentiles from stored means. Native capture histograms supplied
-sum/min/max and used delta temporality (`1`); other producers or versions need verification.
+**API requirement:** without trusted presence evidence, raw-zero `Sum/Min/Max` are
+ambiguous. Preserve counts/buckets but return null and partial coverage for affected
+statistics, including means. Apply this before aggregation. A derived zero difference
+between known positive cumulative sums remains valid. Never infer exact percentiles
+from means. Native histograms supplied all fields with delta temporality `1`; other
+versions/producers need verification.
 Metric costs/tokens and trace usage are diagnostics, never additional billed usage.
 `otel_traces` retains normal trace/span/parent IDs and nanosecond duration with
 `ResourceAttributes['client']='codex'`; its existing columns and TTL remain unchanged.
