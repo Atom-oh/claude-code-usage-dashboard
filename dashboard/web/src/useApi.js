@@ -21,10 +21,10 @@ import { useRefresh } from "./RefreshContext.jsx";
 const QUANT_MS = 120_000;
 const WARM_GRACE_MS = 150_000;
 
-export function useApi(path, extraParams = {}) {
+export function useApi(path, extraParams = {}, enabled = true) {
   const { days, intervalHours, custom, month } = useRange();
   const { group, user, model, project, backend } = useFilters();
-  const clientOverview = path === "/api/clients/overview";
+  const clientOverview = path === "/api/clients/overview" || path === "/api/codex/insights";
   // 이중 안전 — 파싱 단계(urlState.js parseUrlState)에서 이미 걸러지므로 여기서 걸리는 값은
   // 정상 경로에는 없다. 그래도 요청 문자열을 실제로 만드는 지점에 같은 게이트를 둔다: 보이지
   // 않는 필터가 요청에 실리는 것 자체가 PR #31 리뷰의 지적이었고, 게이트가 한 곳뿐이면 그 한
@@ -41,6 +41,13 @@ export function useApi(path, extraParams = {}) {
   const extraJson = JSON.stringify(extraParams);
 
   useEffect(() => {
+    if (!enabled) {
+      inflightRef.current?.abort();
+      inflightRef.current = null;
+      paramsKeyRef.current = null;
+      setState((s) => s.loading && !s.error ? s : { ...s, loading: true, error: null });
+      return;
+    }
     // 프리셋/이번 달의 to는 양자화된 경계다(위 주석) — 커스텀 구간의 to는 그 경계에서 잘라
     // "오늘까지"로 고른 구간이 새로고침마다 함께 전진하게 한다.
     const nowQ = Math.floor((Date.now() - WARM_GRACE_MS) / QUANT_MS) * QUANT_MS;
@@ -113,7 +120,7 @@ export function useApi(path, extraParams = {}) {
       });
     // 이 cleanup에는 abort가 없다 — 틱만 바뀐 리런이 파라미터 로드를 취소하면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, extraJson, tick]);
+  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, extraJson, tick, enabled]);
 
   // 언마운트 시에만 abort한다.
   useEffect(() => () => {

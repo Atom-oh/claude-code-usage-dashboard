@@ -11,6 +11,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
+import CodexInsights from "./CodexInsights.jsx";
 
 const BASIS_LABELS = { client_reported: "클라이언트 보고", aws_list_estimate: "AWS 정가 추정" };
 const labelClient = (value) => CLIENT_LABELS[value] || value || "—";
@@ -70,7 +71,14 @@ export default function Clients() {
       <PageHeader
         title="사용량·비용"
         subtitle={`${client === "all" ? "Claude Code + Codex" : "Codex"} · 사용량, 모델, 사용자와 도구 현황`}
-        right={<RangePicker />}
+        right={<div className="flex flex-wrap items-center gap-3">
+          {clients.includes("codex") && <button type="button"
+            className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-700"
+            onClick={() => document.getElementById("codex-insights-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            Codex 상세
+          </button>}
+          <RangePicker />
+        </div>}
       />
       <div className="p-4 sm:p-8 flex flex-col gap-6">
         {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState /> : (
@@ -119,6 +127,9 @@ export default function Clients() {
             <DataTable title="도구 사용" columns={TOOL_COLUMNS} rows={data?.tools || []} exportName="clients_tools" />
           </>
         )}
+        {clients.includes("codex") && <CodexInsights
+          range={!loading && !error ? data?.effective_range : null}
+          enabled={!loading} />}
       </div>
     </div>
   );

@@ -77,7 +77,7 @@ test.each([
   expect(container.textContent).not.toContain("A/B Dashboard");
   expect(document.title).toContain("사용량·비용");
   expect(document.title).not.toContain("A/B");
-  expect(requests(fetchMock).every((url) => ["/api/clients/overview", "/api/health/data"].includes(url.pathname))).toBe(true);
+  expect(requests(fetchMock).every((url) => ["/api/clients/overview", "/api/codex/insights", "/api/health/data"].includes(url.pathname))).toBe(true);
 });
 
 test.each(["/productivity", "/analytics", "/users", "/cost", "/missing"])("Codex deep URL %s redirects with supported filters before any legacy fetch", async (path) => {
@@ -95,7 +95,7 @@ test.each(["/productivity", "/analytics", "/users", "/cost", "/missing"])("Codex
   expect(params.has("group")).toBe(false);
   expect(params.has("project")).toBe(false);
   for (const url of requests(fetchMock)) {
-    expect(["/api/clients/overview", "/api/health/data"]).toContain(url.pathname);
+    expect(["/api/clients/overview", "/api/codex/insights", "/api/health/data"]).toContain(url.pathname);
     expect(url.searchParams.has("group")).toBe(false);
     expect(url.searchParams.has("project")).toBe(false);
   }
@@ -243,11 +243,34 @@ test("common dashboard discloses the shared effective range when historical alig
   expect(notice.textContent).toContain("모든 클라이언트");
 });
 
+test("All-client historical insights use the overview's trimmed effective interval", async () => {
+  const from = "2026-09-01T00:00:00.000Z", requested = "2026-09-02T10:45:00.000Z";
+  const to = "2026-09-02T10:00:00.000Z";
+  const { fetchMock } = mount({ enabledClients: ["claude", "codex"],
+    entry: `/?from=${from}&to=${requested}`,
+    response: clientOverview({ effective_range: { from, to, requested_to: requested } }) });
+  await waitFor(() => {
+    const insights = requests(fetchMock).filter((r) => r.pathname === "/api/codex/insights");
+    expect(insights.length).toBeGreaterThan(0);
+    expect(insights.at(-1).searchParams.get("from")).toBe(from);
+    expect(insights.at(-1).searchParams.get("to")).toBe(to);
+  });
+});
+
+test("changing the overview range preserves the selected Codex tab and metric search", async () => {
+  mount({ enabledClients: ["codex"] });
+  await screen.findByRole("button", { name: "런타임·메트릭" });
+  fireEvent.click(screen.getByRole("button", { name: "런타임·메트릭" }));
+  fireEvent.change(screen.getByPlaceholderText("메트릭 이름 검색"), { target: { value: "turn" } });
+  fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
+  await waitFor(() => expect(screen.getByPlaceholderText("메트릭 이름 검색").value).toBe("turn"));
+});
+
 test.each(["loading", "error", "empty"])("common %s state does not claim measured zero", async (state) => {
   mount({
     enabledClients: ["codex"], pending: state === "loading", failed: state === "error",
     response: clientOverview({ observed_records: 0, totals: {}, by_client: [{ ...codexUsage, tokens: 0, cost_usd: 0 }], by_user: [], by_model: [], timeseries: [], tools: [] }),
   });
-  await screen.findByText(state === "loading" ? "불러오는 중..." : state === "error" ? "데이터를 불러오지 못했습니다." : "선택한 기간에 데이터가 없습니다.");
+  await screen.findAllByText(state === "loading" ? "불러오는 중..." : state === "error" ? "데이터를 불러오지 못했습니다." : "선택한 기간에 데이터가 없습니다.");
   expect(screen.queryByText("$0")).toBeNull();
 });
