@@ -154,11 +154,13 @@ VERDICT: PASS
         supported.add(reports[-1])
         reports.append(f"```bash\npassword={canary}\\(suffix\n```\nPUBLIC_AFTER\nVERDICT: PASS\n")
         supported.add(reports[-1])
-        reports += [
+        prose_labels = [
             "The secret: user's identity is validated.\nPUBLIC_AFTER\nVERDICT: PASS\n",
             "password: customer's default is documented.\nPUBLIC_AFTER\nVERDICT: PASS\n",
             "secret: we're using the documented identity.\nPUBLIC_AFTER\nVERDICT: PASS\n",
         ]
+        reports += prose_labels
+        supported.update(prose_labels)
         reports += [
             f"password = (previous or\n  # don't replace this fallback\n  \"{canary}\")\nPUBLIC_AFTER\nVERDICT: PASS\n",
             f"password = (previous ||\n  /* don't replace this fallback */\n  \"{canary}\")\nPUBLIC_AFTER\nVERDICT: PASS\n",
@@ -173,6 +175,7 @@ VERDICT: PASS
             f'secret: |\n  password="{canary}\nPUBLIC_AFTER\nVERDICT: PASS\n',
             f"name: PASSWORD\nvalue: 'password=\"{canary}'\nPUBLIC_AFTER\nVERDICT: PASS\n",
         ]
+        supported.add(reports[-3])
         reports.append(f'secret=<<EOF\npassword="{canary}\nEOF\nPUBLIC_AFTER\nVERDICT: PASS\n')
         for report in reports:
             with self.subTest(report=report):
