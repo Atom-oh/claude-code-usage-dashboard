@@ -114,3 +114,21 @@ test("client defaults and the warmer's interval share the common-view cache key"
     assert.equal(rows[2].dataQueries, 0);
   }
 });
+
+test("Codex insights enforce auth, client flags and backend-isolated cache entries", async () => {
+  const path = `/api/codex/insights?${range}`;
+  const disabled = await scenario(true, false, [path]);
+  assert.equal(disabled[0].status, 404);
+  assert.equal(disabled[0].dataQueries, 0);
+  const rows = await scenario(true, true, [
+    `${path}&unauth=1`, `${path}&client=claude`, `${path}&group=enterprise`,
+    `${path}&backend=bedrock-mantle`, `${path}&backend=bedrock-runtime`,
+    `${path}&backend=bedrock-mantle`,
+  ]);
+  assert.deepEqual(rows.map((r) => r.status), [401, 400, 400, 200, 200, 200]);
+  assert.equal(rows[3].cache, "no-store");
+  assert(rows[3].body.coverage.logs);
+  assert.equal(rows[3].dataQueries, 1);
+  assert.equal(rows[4].dataQueries, 1);
+  assert.equal(rows[5].dataQueries, 0);
+});
