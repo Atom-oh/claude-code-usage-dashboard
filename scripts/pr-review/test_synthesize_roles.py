@@ -2,6 +2,7 @@
 
 import importlib.util
 import os
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -69,14 +70,14 @@ class SynthesisTests(unittest.TestCase):
                         "-----BEGIN PRIVATE KEY-----\nprivate-value\n-----END PRIVATE KEY-----",
                         '{"name":"DATABASE_PASSWORD","value":"private-value"}'):
             with self.subTest(example=example):
-                reply = (0, example + "\nReviewed behavior.\nVERDICT: PASS\n",
+                reply = (0, self.fenced_code(example) + "\nReviewed behavior.\nVERDICT: PASS\n",
                          "")
                 calls, text = self.run_chair([reply, reply])
                 self.assertEqual(calls, 1)
                 self.assertTrue(text.endswith("VERDICT: PASS\n"))
                 self.assertNotIn("private-value", text)
 
-    def test_multiline_and_list_code_spans_preserve_review(self):
+    def test_multiline_and_list_inline_commands_are_format_rejected(self):
         for example in (
             "1. Summary\n\n    Run `export password=private-value` now.",
             "Run `export\npassword=private-value` now.",
@@ -86,12 +87,7 @@ class SynthesisTests(unittest.TestCase):
             "-\n\n    Run `export password=private-value` now.",
         ):
             with self.subTest(example=example):
-                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
-                calls, text = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertIn("Reviewed behavior.", text)
-                self.assertTrue(text.endswith("VERDICT: PASS\n"))
-                self.assertNotIn("private-value", text)
+                self.assert_format_rejected(example + "\n\nReviewed behavior.\nVERDICT: PASS\n")
 
     def test_inline_boundaries_exclude_separate_blocks(self):
         import role_review
@@ -118,7 +114,7 @@ class SynthesisTests(unittest.TestCase):
         for value in quoted:
             with self.subTest(value=value):
                 example = "-\n\n    echo " + value + "\n    password=prefix`printf 'private-value'`"
-                reply = (0, example + "\n\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                reply = (0, self.fenced_code(example) + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
                 calls, published = self.run_chair([reply, reply])
                 self.assertNotIn("private-value", published)
                 self.assertEqual(calls, 1)
@@ -133,27 +129,17 @@ class SynthesisTests(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertTrue(published.endswith("VERDICT: FAIL\n"))
         for example in ("Checked `password=`; empty values are rejected.",
-                        "Checked `password=`; see `service`.",
-                        "Checked `password=`;\n\n```text\npublic()\n```"):
+                         "Checked `password=`; see `service`.",
+                         "Checked `password=`;\n\n```text\npublic()\n```"):
             with self.subTest(example=example):
-                reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
-                calls, published = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertIn("PUBLIC_AFTER", published)
-                self.assertTrue(published.endswith("VERDICT: PASS\n"))
+                self.assert_format_rejected(example + "\nPUBLIC_AFTER\nVERDICT: PASS\n")
 
-    def test_raw_block_quotes_do_not_own_later_citations(self):
+    def test_raw_block_quotes_do_not_allow_later_inline_commands(self):
         for block in ("```text\nunterminated '\n```", "<pre>\nunterminated '\n</pre>"):
             with self.subTest(block=block):
                 example = (block + "\n\nChecked `echo user's password='private-value'`; "
                            "MAJOR evidence. See `service`.")
-                reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n", "")
-                calls, published = self.run_chair([reply, reply])
-                self.assertNotIn("private-value", published)
-                self.assertEqual(calls, 1)
-                self.assertIn("MAJOR evidence.", published)
-                self.assertIn("PUBLIC_AFTER", published)
-                self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+                self.assert_format_rejected(example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n")
 
     def test_citation_prefix_does_not_release_a_literal_suffix(self):
         for suffix in ("private-value", "'private-value'", "`printf private-value`"):
@@ -164,35 +150,25 @@ class SynthesisTests(unittest.TestCase):
                 self.assertNotIn("private-value", published)
                 self.assertEqual(calls, 2)
                 self.assertTrue(published.endswith("VERDICT: FAIL\n"))
-        reply = (0, "Checked ``password=`printf public`private-value`` now.\n"
-                 "PUBLIC_AFTER\nVERDICT: PASS\n", "")
-        calls, published = self.run_chair([reply, reply])
-        self.assertNotIn("private-value", published)
-        self.assertEqual(calls, 1)
-        self.assertIn("PUBLIC_AFTER", published)
-        self.assertTrue(published.endswith("VERDICT: PASS\n"))
+        self.assert_format_rejected(
+            "Checked ``password=`printf public`private-value`` now.\n"
+            "PUBLIC_AFTER\nVERDICT: PASS\n")
 
-    def test_same_line_prose_quotes_keep_inline_review_evidence(self):
+    def test_same_line_prose_quotes_do_not_allow_inline_assignments(self):
         for quote in ('"', "'"):
             for prefix in ("", "env "):
                 with self.subTest(quote=quote, prefix=prefix):
                     example = (quote + "Checked `" + prefix + "password=" + quote
                                + "private-value" + quote + "`; MAJOR rollback evidence. "
                                + "See `service`." + quote)
-                    reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n", "")
-                    calls, published = self.run_chair([reply, reply])
-                    self.assertNotIn("private-value", published)
-                    self.assertEqual(calls, 1)
-                    self.assertIn("MAJOR rollback evidence.", published)
-                    self.assertIn("PUBLIC_AFTER", published)
-                    self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+                    self.assert_format_rejected(example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n")
 
     def test_quote_owned_tick_does_not_escape_empty_list_literal(self):
         for separator in ("\n    ", "; "):
             with self.subTest(separator=separator):
                 example = ("-\n\n    echo 'longer ` quoted text'" + separator
                            + "password=prefix`printf 'private-value'`")
-                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                reply = (0, self.fenced_code(example) + "\nReviewed behavior.\nVERDICT: PASS\n", "")
                 calls, published = self.run_chair([reply, reply])
                 self.assertEqual(calls, 1)
                 self.assertNotIn("private-value", published)
@@ -220,12 +196,18 @@ class SynthesisTests(unittest.TestCase):
         )
         for example in examples:
             with self.subTest(example=example):
-                reply = (0, example + "\n\nMAJOR rollback evidence. See `service`.\nVERDICT: FAIL\n", "")
+                # These YAML owners conservatively consume the closing fence.
+                invalid = example.startswith(("secret: |", "secret: >"))
+                reply = (0, self.fenced_code(example)
+                         + "\nMAJOR rollback evidence. See `service`.\nVERDICT: FAIL\n", "")
                 calls, published = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
+                self.assertEqual(calls, 2 if invalid else 1)
                 self.assertNotIn("private-value", published)
-                self.assertIn("MAJOR rollback evidence.", published)
-                self.assertIn("`service`", published)
+                if invalid:
+                    self.assertIn("failed the review format contract", published)
+                else:
+                    self.assertIn("MAJOR rollback evidence.", published)
+                    self.assertIn("`service`", published)
                 self.assertTrue(published.endswith("VERDICT: FAIL\n"))
 
     def test_quote_pairing_keeps_existing_citations_and_offsets(self):
@@ -240,36 +222,27 @@ class SynthesisTests(unittest.TestCase):
                 spans = role_review._inline_code_spans(value)
                 self.assertEqual([value[start:end] for start, end in spans], expected)
 
-    def test_inline_assignment_preserves_evidence_before_raw_blocks(self):
+    def test_inline_assignment_before_raw_blocks_is_format_rejected(self):
         for block in ("```text\npublic()\n```", "<pre>\necho '`'\n</pre>"):
             with self.subTest(block=block):
-                reply = (0, "Checked `env password='private-value'`; "
-                         "MAJOR rollback evidence.\n\n" + block + "\nVERDICT: FAIL\n", "")
-                calls, text = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertNotIn("private-value", text)
-                self.assertIn("MAJOR rollback evidence.", text)
-                self.assertIn("public()" if block.startswith("```") else "<pre>", text)
-                self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+                self.assert_format_rejected(
+                    "Checked `env password='private-value'`; "
+                    "MAJOR rollback evidence.\n\n" + block + "\nVERDICT: FAIL\n")
 
-    def test_command_citations_preserve_following_findings(self):
+    def test_inline_command_citations_are_format_rejected(self):
         for prefix in ("env ", "curl -d ", "USER=demo ", "export\n"):
             with self.subTest(prefix=prefix):
-                reply = (0, "Checked `" + prefix + "password='private-value'`; "
-                         "MAJOR rollback evidence. See `service` and `validate()`.\nVERDICT: FAIL\n", "")
-                calls, text = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertNotIn("private-value", text)
-                self.assertIn("MAJOR rollback evidence.", text)
-                self.assertIn("`service`", text)
-                self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+                self.assert_format_rejected(
+                    "Checked `" + prefix + "password='private-value'`; "
+                    "MAJOR rollback evidence. See `service` and `validate()`.\nVERDICT: FAIL\n")
 
     def test_backtick_assignment_keeps_concatenated_suffix_private(self):
         for suffix in ("private-value", "'private-value'", "`printf private-value`"):
             for prefix in ("echo '`'\n", "- > echo '`'\n  > "):
                 with self.subTest(suffix=suffix, prefix=prefix):
-                    reply = (0, prefix + "password=prefix`printf public`" + suffix
-                             + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                    example = prefix + "password=prefix`printf public`" + suffix
+                    reply = (0, self.fenced_code(example)
+                             + "\nReviewed behavior.\nVERDICT: PASS\n", "")
                     calls, text = self.run_chair([reply, reply])
                     self.assertNotIn("private-value", text)
                     self.assertEqual(calls, 1)
@@ -280,28 +253,25 @@ class SynthesisTests(unittest.TestCase):
         examples = (
             ("echo '`'\npassword=${PREFIX}`printf 'private-value'`", True),
             ("echo '`'\npassword=tags[0]`private-value`", True),
-            # Competing single-tick citation/value boundaries fail closed, as on BASE.
             ("Use `password=`! printf 'private-value'`` now.", False),
         )
         for example, accepted in examples:
             with self.subTest(example=example):
-                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                rendered = self.fenced_code(example) if accepted else example
+                reply = (0, rendered + "\nReviewed behavior.\nVERDICT: PASS\n", "")
                 calls, text = self.run_chair([reply, reply])
                 self.assertNotIn("private-value", text)
                 self.assertEqual(calls, 1 if accepted else 2)
                 self.assertTrue(text.endswith("VERDICT: PASS\n" if accepted else "VERDICT: FAIL\n"))
+                if not accepted:
+                    self.assertIn("failed the review format contract", text)
 
-    def test_inline_assignment_citations_preserve_following_findings(self):
+    def test_inline_assignment_citations_are_format_rejected(self):
         for value in ("private-value", "'private-value'", '"private-value"'):
             with self.subTest(value=value):
-                reply = (0, "Checked `password=" + value + "`; MAJOR rollback evidence. "
-                         "See `service` and `validate()`.\nVERDICT: FAIL\n", "")
-                calls, text = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertNotIn("private-value", text)
-                self.assertIn("MAJOR rollback evidence.", text)
-                self.assertIn("`service`", text)
-                self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+                self.assert_format_rejected(
+                    "Checked `password=" + value + "`; MAJOR rollback evidence. "
+                    "See `service` and `validate()`.\nVERDICT: FAIL\n")
 
     def test_backtick_values_are_protected_before_markdown_boundaries(self):
         examples = (
@@ -315,7 +285,8 @@ class SynthesisTests(unittest.TestCase):
         )
         for example in examples:
             with self.subTest(example=example):
-                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
+                reply = (0, self.fenced_code(example)
+                         + "\nReviewed behavior.\nVERDICT: PASS\n", "")
                 calls, text = self.run_chair([reply, reply])
                 self.assertEqual(calls, 1)
                 self.assertNotIn("private-value", text)
@@ -333,15 +304,12 @@ class SynthesisTests(unittest.TestCase):
                 self.assertNotIn("private-value", text)
                 self.assertTrue(text.endswith("VERDICT: FAIL\n"))
 
-    def test_any_standard_type1_end_tag_ends_the_html_block(self):
-        reply = (0, "<script>\n</style>\nUse `export\npassword=private-value` now.\n"
-                    "Reviewed behavior.\nVERDICT: PASS\n", "")
-        calls, text = self.run_chair([reply, reply])
-        self.assertEqual(calls, 1)
-        self.assertNotIn("private-value", text)
-        self.assertTrue(text.endswith("VERDICT: PASS\n"))
+    def test_raw_html_with_multiline_command_is_format_rejected(self):
+        self.assert_format_rejected(
+            "<script>\n</style>\nUse `export\npassword=private-value` now.\n"
+            "Reviewed behavior.\nVERDICT: PASS\n")
 
-    def test_ordered_nested_containers_keep_literal_values_hidden(self):
+    def test_ordered_nested_code_containers_are_format_rejected(self):
         examples = (
             "- > ```bash\n  > echo '`'\n  > password=`printf 'private-value'`\n  > ```",
             "- > <pre>\n  > echo '`'\n  > password=`printf 'private-value'`\n  > </pre>",
@@ -356,16 +324,10 @@ class SynthesisTests(unittest.TestCase):
         )
         for example in examples:
             with self.subTest(example=example):
-                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
-                calls, text = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertNotIn("private-value", text)
-                self.assertIn("Reviewed behavior.", text)
-                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assert_format_rejected(example + "\n\nReviewed behavior.\nVERDICT: PASS\n")
 
-    def test_literal_backticks_in_raw_blocks_keep_sensitive_values_hidden(self):
+    def test_unfenced_html_and_nested_code_examples_are_format_rejected(self):
         examples = (
-            "```bash\ncat <<'EOF'\n> ```\nEOF\necho '`'\npassword=`printf 'private-value'`\n```",
             "> ```bash\n> cat <<'EOF'\n> > ```\n> EOF\n> echo '`'\n> password=`printf 'private-value'`\n> ```",
             "- Example\n\n  ```bash\n  cat <<'EOF'\n  > ```\n  EOF\n  echo '`'\n  password=`printf 'private-value'`\n  ```",
             "<pre>\necho '`'\npassword=`printf 'private-value'`\n</pre>",
@@ -387,14 +349,9 @@ class SynthesisTests(unittest.TestCase):
         )
         for example in examples:
             with self.subTest(example=example):
-                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
-                calls, text = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertNotIn("private-value", text)
-                self.assertIn("Reviewed behavior.", text)
-                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assert_format_rejected(example + "\n\nReviewed behavior.\nVERDICT: PASS\n")
 
-    def test_raw_container_exit_restores_inline_lookup(self):
+    def test_raw_container_exit_does_not_allow_inline_commands(self):
         examples = (
             "> ```text\n> echo '`'\nOutside `export\npassword=private-value` now.",
             "- Example\n\n  ```text\n  echo '`'\nOutside `export\npassword=private-value` now.",
@@ -402,22 +359,14 @@ class SynthesisTests(unittest.TestCase):
         )
         for example in examples:
             with self.subTest(example=example):
-                reply = (0, example + "\n\nReviewed behavior.\nVERDICT: PASS\n", "")
-                calls, text = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertNotIn("private-value", text)
-                self.assertIn("Reviewed behavior.", text)
-                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assert_format_rejected(example + "\n\nReviewed behavior.\nVERDICT: PASS\n")
 
-    def test_complete_custom_html_tag_does_not_interrupt_inline_prose(self):
-        reply = (0, "Use `export\n<x-data attr='ok'>\npassword=private-value` now.\n"
-                    "Reviewed behavior.\nVERDICT: PASS\n", "")
-        calls, text = self.run_chair([reply, reply])
-        self.assertEqual(calls, 1)
-        self.assertNotIn("private-value", text)
-        self.assertTrue(text.endswith("VERDICT: PASS\n"))
+    def test_custom_html_inside_inline_command_is_format_rejected(self):
+        self.assert_format_rejected(
+            "Use `export\n<x-data attr='ok'>\npassword=private-value` now.\n"
+            "Reviewed behavior.\nVERDICT: PASS\n")
 
-    def test_empty_sensitive_examples_preserve_the_review(self):
+    def test_unsupported_empty_sensitive_examples_are_format_rejected(self):
         for example in (
             "Checked `password=`; empty values are rejected.",
             "Checked `export password=   `; empty values are rejected.",
@@ -429,19 +378,11 @@ class SynthesisTests(unittest.TestCase):
             "- Example\n\n  > ```dotenv\n  > password=\n  > ```",
         ):
             with self.subTest(example=example):
-                reply = (0, example + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
-                calls, text = self.run_chair([reply, reply])
-                self.assertEqual(calls, 1)
-                self.assertIn("PUBLIC_AFTER", text)
-                self.assertTrue(text.endswith("VERDICT: PASS\n"))
+                self.assert_format_rejected(example + "\nPUBLIC_AFTER\nVERDICT: PASS\n")
 
-    def test_opening_fence_after_sensitive_label_still_hides_its_value(self):
-        reply = (0, "password=\n```text\nprivate-value\n```\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
-        calls, text = self.run_chair([reply, reply])
-        self.assertEqual(calls, 1)
-        self.assertNotIn("private-value", text)
-        self.assertIn("PUBLIC_AFTER", text)
-        self.assertTrue(text.endswith("VERDICT: PASS\n"))
+    def test_sensitive_label_outside_code_fence_is_format_rejected(self):
+        self.assert_format_rejected(
+            "password=\n```text\nprivate-value\n```\nPUBLIC_AFTER\nVERDICT: PASS\n")
 
     def test_shell_quoted_json_preserves_enclosing_boundary(self):
         for payload in (
@@ -451,8 +392,8 @@ class SynthesisTests(unittest.TestCase):
             '{"password":"private-value","public":"ok"}',
         ):
             with self.subTest(payload=payload):
-                reply = (0, f"Example: curl -d '{payload}' https://example.invalid\n"
-                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                reply = (0, self.fenced_code(f"curl -d '{payload}' https://example.invalid")
+                         + "\nReviewed behavior.\nVERDICT: PASS\n", "")
                 calls, text = self.run_chair([reply, reply])
                 self.assertEqual(calls, 1)
                 self.assertTrue(text.endswith("VERDICT: PASS\n"))
@@ -466,8 +407,8 @@ class SynthesisTests(unittest.TestCase):
             '{"api key (one)":{"note":"private-value"},"api key (two)":{"note":"private-value"}}',
         ):
             with self.subTest(payload=payload):
-                reply = (0, f"curl -d '{payload}' https://example.invalid\n"
-                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                reply = (0, self.fenced_code(f"curl -d '{payload}' https://example.invalid")
+                         + "\nReviewed behavior.\nVERDICT: PASS\n", "")
                 calls, text = self.run_chair([reply, reply])
                 self.assertEqual(calls, 1)
                 self.assertIn("Reviewed behavior.", text)
@@ -485,8 +426,9 @@ class SynthesisTests(unittest.TestCase):
     def test_shell_literal_brackets_preserve_review_after_closing_quote(self):
         for bracket in ("[", "{"):
             with self.subTest(bracket=bracket):
-                reply = (0, f"curl -d 'password=prefix{bracket}private-value' https://example.invalid\n"
-                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                reply = (0, self.fenced_code(
+                    f"curl -d 'password=prefix{bracket}private-value' https://example.invalid")
+                    + "\nReviewed behavior.\nVERDICT: PASS\n", "")
                 calls, text = self.run_chair([reply, reply])
                 self.assertEqual(calls, 1)
                 self.assertIn("Reviewed behavior.", text)
@@ -496,8 +438,8 @@ class SynthesisTests(unittest.TestCase):
     def test_escaped_value_quotes_preserve_review_and_hide_complete_value(self):
         for quote in ('"', "'"):
             with self.subTest(quote=quote):
-                reply = (0, f"password={quote}prefix\\{quote}private-value{quote}\n"
-                            "Reviewed behavior.\nVERDICT: PASS\n", "")
+                reply = (0, self.fenced_code(f"password={quote}prefix\\{quote}private-value{quote}")
+                         + "\nReviewed behavior.\nVERDICT: PASS\n", "")
                 calls, text = self.run_chair([reply, reply])
                 self.assertEqual(calls, 1)
                 self.assertIn("Reviewed behavior.", text)
@@ -573,6 +515,65 @@ class SynthesisTests(unittest.TestCase):
                         self.assertRaises(ValueError):
                     self.module.legacy_limit(name)
 
+
+    def fenced_code(self, example):
+        """Fence selected code fixtures; leave surrounding review prose outside."""
+        longest = max((len(run) for run in re.findall(r"`+", example)), default=0)
+        fence = "`" * max(3, longest + 1)
+        return f"{fence}text\n{example}\n{fence}\n"
+
+    def assert_format_rejected(self, report, secret="private-value"):
+        reply = (0, report, "")
+        calls, text = self.run_chair([reply, reply])
+        self.assertEqual(calls, 2)
+        self.assertIn("failed the review format contract", text)
+        self.assertNotIn(secret, text)
+        self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+
+    def test_fenced_commands_preserve_following_findings_and_references(self):
+        for prefix in ("env ", "curl -d ", "USER=demo ", "export\n"):
+            with self.subTest(prefix=prefix):
+                reply = (0, self.fenced_code(prefix + "password='private-value'")
+                         + "\nMAJOR rollback evidence. See `service` and `validate()`.\n"
+                         "VERDICT: FAIL\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertNotIn("private-value", text)
+                self.assertIn("MAJOR rollback evidence.", text)
+                self.assertIn("`service`", text)
+                self.assertTrue(text.endswith("VERDICT: FAIL\n"))
+
+    def test_literal_backticks_in_top_level_fenced_code_remain_private(self):
+        example = "cat <<'EOF'\n> ```\nEOF\necho '`'\npassword=`printf 'private-value'`"
+        reply = (0, self.fenced_code(example)
+                 + "\nReviewed behavior.\nVERDICT: PASS\n", "")
+        calls, text = self.run_chair([reply, reply])
+        self.assertEqual(calls, 1)
+        self.assertNotIn("private-value", text)
+        self.assertIn("Reviewed behavior.", text)
+        self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
+    def test_scrubbing_that_removes_closing_fence_is_format_rejected(self):
+        for report in (
+            "```dotenv\npassword=\n```\nPUBLIC_AFTER\nVERDICT: PASS\n",
+        ):
+                with self.subTest(report=report):
+                    self.assertIsNone(self.module.format_violation(report, self.module.SENSITIVE_KEY))
+                    filtered = self.module.scrub_decoded(self.module.scrub(report))
+                    self.assertEqual(
+                        self.module.format_violation(filtered, self.module.SENSITIVE_KEY),
+                        "unsupported_review_format")
+                    self.assert_format_rejected(report)
+
+    def test_fenced_quoted_empty_values_preserve_review(self):
+        for value in ("''", '""'):
+            with self.subTest(value=value):
+                reply = (0, self.fenced_code("password=" + value)
+                         + "\nPUBLIC_AFTER\nVERDICT: PASS\n", "")
+                calls, text = self.run_chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn("PUBLIC_AFTER", text)
+                self.assertTrue(text.endswith("VERDICT: PASS\n"))
 
 if __name__ == "__main__":
     unittest.main()

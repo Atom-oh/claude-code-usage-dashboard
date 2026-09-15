@@ -88,7 +88,8 @@ class RoleReviewTests(unittest.TestCase):
                 plan = self.prepare()
                 response = self.response("claude-self", findings=[{
                     "severity": "MINOR", "path": FRONTEND,
-                    "condition": "When quoting a configuration example", "evidence": evidence,
+                    "condition": "When quoting a configuration example",
+                    "evidence": "Example:\n```text\n" + evidence + "\n```",
                 }])
                 with mock_patch.object(run_role, "execute", return_value=(0, json.dumps(response), "")):
                     run_role.run(self.work, "claude-self")
@@ -131,6 +132,7 @@ class RoleReviewTests(unittest.TestCase):
         reports = [(f'Resolved synthetic candidate.\n\n```text\npassword = (previous {operator}\n'
                     f'  "{canary}")\n```\n- PUBLIC_AFTER\n\nVERDICT: PASS\n')
                    for operator in ("or", "||", "??")]
+        supported = set(reports)
         reports += [
             f"password=\"{canary}\" isn't rotated\nPUBLIC_AFTER\nVERDICT: PASS\n",
             f"Checked `password={canary}`; PUBLIC_AFTER\nVERDICT: PASS\n",
@@ -139,14 +141,19 @@ PUBLIC_AFTER
 VERDICT: PASS
 """,
         ]
-        reports += [f"```dotenv\npassword=prefix{opening}{canary}\n```\nPUBLIC_AFTER\nVERDICT: PASS\n"
-                    for opening in ("[", "{")]
+        fenced = [f"```dotenv\npassword=prefix{opening}{canary}\n```\nPUBLIC_AFTER\nVERDICT: PASS\n"
+                  for opening in ("[", "{")]
+        reports += fenced
+        supported.update(fenced)
         reports += [
             f"curl -d 'password={canary}' https://example.invalid\nPUBLIC_AFTER\nVERDICT: PASS\n",
             f"```dotenv\npassword=prefix[{canary}\n```\n[PUBLIC_AFTER](https://example.invalid)\nVERDICT: PASS\n",
         ]
+        supported.add(reports[-1])
         reports.append(f"```bash\npassword={canary}\\'suffix\n```\nPUBLIC_AFTER\nVERDICT: PASS\n")
+        supported.add(reports[-1])
         reports.append(f"```bash\npassword={canary}\\(suffix\n```\nPUBLIC_AFTER\nVERDICT: PASS\n")
+        supported.add(reports[-1])
         reports += [
             "The secret: user's identity is validated.\nPUBLIC_AFTER\nVERDICT: PASS\n",
             "password: customer's default is documented.\nPUBLIC_AFTER\nVERDICT: PASS\n",
@@ -169,15 +176,20 @@ VERDICT: PASS
         reports.append(f'secret=<<EOF\npassword="{canary}\nEOF\nPUBLIC_AFTER\nVERDICT: PASS\n')
         for report in reports:
             with self.subTest(report=report):
+                accepted = report in supported
                 output = self.work / "chair.md"
                 with mock_patch.dict(synthesize_roles.os.environ, {"GITHUB_ENV": str(self.root / "test-env")}), \
                         mock_patch.object(synthesize_roles, "execute", return_value=(0, report, "")) as execute:
                     synthesize_roles.synthesize(self.work, output)
-                self.assertEqual(execute.call_count, 1)
+                self.assertEqual(execute.call_count, 1 if accepted else 2)
                 published = output.read_text()
                 self.assertNotIn(canary, published)
-                self.assertIn("PUBLIC_AFTER", published)
-                self.assertTrue(published.rstrip().endswith("VERDICT: PASS"))
+                if accepted:
+                    self.assertIn("PUBLIC_AFTER", published)
+                else:
+                    self.assertIn("failed the review format contract", published)
+                self.assertTrue(published.rstrip().endswith(
+                    "VERDICT: PASS" if accepted else "VERDICT: FAIL"))
 
     def test_apostrophe_handling_keeps_quoted_credentials_opaque(self):
         import role_review
@@ -297,7 +309,7 @@ VERDICT: PASS
                 secret = "NAMED_SYNTHETIC_PRIVATE"
                 evidence = json.dumps({name: label, value: secret, "public": "PUBLIC_KEEP"})
                 result = self.record("codex", self.response("codex", checks=[{
-                    "path": FRONTEND, "evidence": evidence}]))
+                    "path": FRONTEND, "evidence": "Example:\n```json\n" + evidence + "\n```"}]))
                 self.assertNotIn(secret, json.dumps(result))
                 self.assertIn("PUBLIC_KEEP", json.dumps(result))
 
@@ -436,12 +448,16 @@ VERDICT: PASS
                 self.work = self.root / f"decoded-pattern-{index}"
                 self.prepare()
                 response = self.response("codex")
-                response["checks"][0]["evidence"] = text
+                response["checks"][0]["evidence"] = "Example:\n```text\n" + text + "\n```"
                 escaped = json.dumps(response).replace(secret, "".join("\\u" + format(ord(char), "04x") for char in secret))
-                result = self.record("codex", raw=escaped)
+                # The existing removed-YAML filter consumes this closing fence.
+                invalid = text == "-password: |\n-  removed-block-private\n next: safe"
+                result = self.record("codex", raw=escaped, expected=2 if invalid else 0)
+                if invalid:
+                    self.assertEqual(result["failure_codes"], ["unsupported_review_format"])
                 self.assertNotIn(secret, json.dumps(result))
                 self.record("claude-self")
-                self.cli("aggregate", "--work", self.work)
+                self.cli("aggregate", "--work", self.work, expected=2 if invalid else 0)
                 self.assertNotIn(secret, (self.work / "deterministic-review.md").read_text())
 
     def test_decoded_multiline_and_control_split_credentials_are_scrubbed(self):
@@ -458,8 +474,13 @@ VERDICT: PASS
             with self.subTest(index=index):
                 self.work = self.root / f"secret-{index}"
                 self.prepare()
-                response = self.response("codex", checks=[{"path": FRONTEND, "evidence": credential}])
-                result = self.record("codex", raw=json.dumps(response, ensure_ascii=True))
+                response = self.response("codex", checks=[{
+                    "path": FRONTEND, "evidence": "Example:\n```text\n" + credential + "\n```"}])
+                invalid = secret == "UNTERMINATED_PRIVATE_MATERIAL"
+                result = self.record("codex", raw=json.dumps(response, ensure_ascii=True),
+                                     expected=2 if invalid else 0)
+                if invalid:
+                    self.assertEqual(result["failure_codes"], ["unsupported_review_format"])
                 self.assertNotIn(secret, json.dumps(result))
 
     def test_provenance_is_scrubbed_and_failure_codes_are_static(self):
@@ -547,10 +568,16 @@ VERDICT: PASS
                 self.work = self.root / f"shapes-{index}"
                 self.prepare()
                 text = evidence if isinstance(evidence, str) else json.dumps(evidence)
-                response = self.response("codex", checks=[{"path": FRONTEND, "evidence": text}])
-                self.record("codex", response)
+                # This nested prose JSON loses its closing fence in Usage's
+                # existing filter; the escaped standalone JSON remains valid.
+                invalid = text.startswith("Evidence: ")
+                response = self.response("codex", checks=[{
+                    "path": FRONTEND, "evidence": "Example:\n```text\n" + text + "\n```"}])
+                result = self.record("codex", response, expected=2 if invalid else 0)
+                if invalid:
+                    self.assertEqual(result["failure_codes"], ["unsupported_review_format"])
                 self.record("claude-self")
-                self.cli("aggregate", "--work", self.work)
+                self.cli("aggregate", "--work", self.work, expected=2 if invalid else 0)
                 for name in ("slot/codex-result.json", "role-summary.json", "deterministic-review.md"):
                     self.assertNotIn(secret, (self.work / name).read_text())
 
@@ -693,7 +720,7 @@ VERDICT: PASS
                 self.work = self.root / f"sdk-key-{index}"
                 self.prepare()
                 secret = "SYNTHETIC_PRIVATE_SDK_VALUE"
-                evidence = json.dumps({key: secret})
+                evidence = "Example:\n```json\n" + json.dumps({key: secret}) + "\n```"
                 response = self.response("codex", checks=[{"path": FRONTEND, "evidence": evidence}])
                 self.assertNotIn(secret, json.dumps(self.record("codex", response=response)))
                 self.record("claude-self")

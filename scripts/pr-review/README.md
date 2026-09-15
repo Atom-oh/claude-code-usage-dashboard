@@ -75,6 +75,27 @@ Blocked input yields deterministic FAIL; the chair cannot waive coverage failure
 Publish scrubbed reports/receipts/metadata only; never raw `roles/*.diff` or
 `requests/*.input/.prompt`.
 
+## Review presentation
+
+Code and configuration examples require closed top-level fences with both markers
+on their own lines at column one. Use a longer fence around examples containing
+fences. Inline backticks permit only single-line symbol/path references, such as
+`validate()` or `src/service.py`; commands, assignments and nested fences fail.
+Bare section labels and Setext heading underlines are prose. Actual values and
+same-line empty equals assignments still require fences.
+
+`review_format.py` supplies the shared instructions and validator. Specialist
+checks, finding conditions/evidence and uncertainties are checked before and after
+scrubbing; protocol paths retain their existing validation. Unsupported prose
+records `unsupported_review_format` and blocks required coverage. Deterministic
+findings use fenced canonical JSON. Chair output must satisfy the same contract
+before and after filtering; a filter-damaged fence stays a visible failure.
+Existing credential filtering remains necessary, and format validation is not a
+general code parser. Use synthetic examples and describe credential locations.
+Complete JSON objects/arrays inside closed fences use the existing structured
+masker before prose filtering, without protocol-path exemptions. Other code
+blocks retain the existing filter; their format is still checked afterwards.
+
 ## Limits and checks
 
 Limits: 95,000 diff bytes (UTF-8), 3,000 lines, 24,000 context bytes, <128 KiB

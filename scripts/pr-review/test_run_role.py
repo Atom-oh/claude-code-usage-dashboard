@@ -99,7 +99,7 @@ class RoleExecutionTests(unittest.TestCase):
     def wrapper_case(self, preflight_error):
         scripts = self.root / "scripts"
         scripts.mkdir()
-        for name in ("run-specialists.sh", "run_role.py", "role_review.py",
+        for name in ("run-specialists.sh", "run_role.py", "role_review.py", "review_format.py",
                      "lib.sh", "role-controls.sh"):
             shutil.copyfile(MODULE.parent / name, scripts / name)
         (scripts / "prepare_roles.py").write_text(
@@ -221,7 +221,7 @@ class RoleRecordingTests(unittest.TestCase):
         self.private_value = "synthetic_private_response_value"
         response = self.harness.response("codex", findings=[{
             "severity": "MINOR", "path": self.path, "condition": "On change",
-            "evidence": f"password={self.private_value}",
+            "evidence": f"Example:\n```text\npassword={self.private_value}\n```",
         }])
         self.original = json.dumps(response) + "\n"
         self.raw_paths = []
@@ -298,7 +298,7 @@ class RoleRecordingTests(unittest.TestCase):
         self.harness.prepare(fixture.patch(self.path))
         report = self.harness.response("kiro-sol", findings=[{
             "severity": "MINOR", "path": self.path, "condition": "On change",
-            "evidence": f"password={self.private_value}",
+            "evidence": f"Example:\n```text\npassword={self.private_value}\n```",
         }], checks=[{"path": self.path, "evidence": "이한 escaped control \x1b"}])
         payload = json.dumps(report, ensure_ascii=False) + "\n"
         calls = []
