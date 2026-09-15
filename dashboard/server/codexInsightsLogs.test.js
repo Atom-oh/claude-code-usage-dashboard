@@ -207,6 +207,20 @@ test("API outcomes use status and error.message without treating absent status a
   assert.equal(out.summary.api_error_rate, 0.75);
   assert.equal(foldCodexInsightsLogs([request(1), request(2, { "http.response.status_code": "" })])
     .summary.api_error_rate, null);
+  for (const status of ["302", "399"])
+    assert.equal(foldCodexInsightsLogs([request(1, { "http.response.status_code": status })]).summary.api_error_rate, 0);
+});
+
+test("failed SSE/WebSocket records count after HTTP success and can exceed requests", () => {
+  for (const event of ["sse_event", "websocket_event"]) {
+    const failed = log(2, event, { "event.kind": "response.failed" });
+    for (const [status, rate] of [["200", 1], ["302", 1], ["400", 2]])
+      assert.equal(foldCodexInsightsLogs([request(1, { "http.response.status_code": status }), failed, failed])
+        .summary.api_error_rate, rate);
+    assert.equal(foldCodexInsightsLogs([failed]).summary.api_error_rate, null);
+    assert.equal(foldCodexInsightsLogs([request(1, { "http.response.status_code": "" }), failed])
+      .summary.api_error_rate, null);
+  }
 });
 
 test("latency uses valid raw samples, exact nearest-rank quantiles and startup phases", () => {
@@ -286,7 +300,7 @@ test("real ClickHouse preserves raw identity, limits and clientMetrics model att
   skip: !process.env.CODEX_LOG_SQL_TEST_URL,
 }, async () => {
   const { createClient } = await import("@clickhouse/client");
-  const { buildCodexQuery } = await import("./clientMetrics.js");
+  const { buildCodexQuery, foldClientMetrics } = await import("./clientMetrics.js");
   const db = createClient({ url: process.env.CODEX_LOG_SQL_TEST_URL, database: "claude_code" });
   const from = new Date("2026-09-15T10:00:00Z"), to = new Date("2026-09-15T11:00:00Z");
   const select = async (filters, builder = buildCodexInsightsLogQuery) => {
@@ -308,6 +322,18 @@ test("real ClickHouse preserves raw identity, limits and clientMetrics model att
     assert.equal(foldCodexInsightsLogs(raw).summary.tokens_per_request, 260);
     assert.deepEqual(await select({ user: "' OR 1=1" }), []);
     assert.deepEqual(await select({ model: "absent" }), []);
+    const errorsUser = { "user.email": "errors@example.invalid" };
+    const failed = log(10, "sse_event", { "event.kind": "response.failed" }, errorsUser);
+    await insert([request(10, {}, errorsUser), failed, failed,
+      request(11, { "http.response.status_code": "302" }, errorsUser),
+      log(11, "websocket_event", { "event.kind": "response.failed" }, errorsUser),
+      request(12, { "http.response.status_code": "400" }, errorsUser),
+      log(12, "sse_event", { "event.kind": "response.failed" }, errorsUser)]);
+    const errors = { user: "errors@" };
+    const totals = foldClientMetrics((await select(errors, buildCodexQuery))
+      .map((row) => ({ ...row, client: "codex" })), ["codex"]).totals;
+    fields(totals, { requests: 3, api_errors: 4 });
+    assert.equal(foldCodexInsightsLogs(await select(errors)).summary.api_error_rate, 4 / 3);
     const model = "openai.gpt-6-astra";
     const make = (session, event, modelValue = "", resource = {}) => log(100, event,
       { "conversation.id": session, tool_name: session, model: modelValue },

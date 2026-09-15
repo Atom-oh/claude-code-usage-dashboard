@@ -164,13 +164,8 @@ test("Codex signal SQL against isolated ClickHouse", {
       const result = metric(type);
       const h = result.metrics.find((r) => r.name === row.MetricName);
       assert.equal(result.rows.filter((r) => r.name === row.MetricName).length, 1);
-      assert.equal(h.count, 3);
-      assert.equal(h.sum, 120);
-      assert.equal(h.points, 2);
-      assert.equal(h.mean, 40);
-      assert.equal(h.min, 10);
-      assert.equal(h.max, 90);
-      assert.equal(h.p95_ms, undefined);
+      for (const [key, value] of Object.entries({ count: 3, sum: 120, points: 2, mean: 40, min: 10, max: 90, p95_ms: undefined }))
+        assert.equal(h[key], value, key);
       const cumulative = result.metrics.find((r) => r.name.endsWith(".cumulative"));
       assert.equal(cumulative.count, 1);
       assert.equal(cumulative.mean, 20);
@@ -193,7 +188,7 @@ test("Codex signal SQL against isolated ClickHouse", {
     assert.equal(result.coverage.records, 2);
   });
 
-  await t.test("real trace SELECT deduplicates retries and preserves conflicts for rejection", () => {
+  await t.test("real trace SELECT deduplicates retries and isolates conflicting traces", () => {
     const row = { Timestamp: "2026-09-15 00:01:00", TraceId: "trace", SpanId: "one", SpanName: "turn",
       Duration: 100000000, StatusCode: "Unset", ResourceAttributes: resource,
       SpanAttributes: { model: "fixture", "gen_ai.request.model": "other", tool_name: "exec_command",
@@ -223,6 +218,11 @@ test("Codex signal SQL against isolated ClickHouse", {
     assert.equal(first.attributes, undefined);
     assert.equal(first.input_tokens, undefined);
     execute(`INSERT INTO claude_code.otel_traces FORMAT JSONEachRow\n${JSON.stringify({ ...row, Duration: 300000000 })}`);
-    assert.throws(() => foldCodexTraces(read()), /conflicting span/i);
+    const partial = foldCodexTraces(read());
+    assert.deepEqual(partial.traces, [
+      { trace_id: "trace", span_count: null, wall_ms: null, errors: null, spans: [], partial: true }]);
+    assert.deepEqual(partial.spans, []);
+    assert.deepEqual(partial.coverage, { status: "observed", records: 2,
+      last_seen: "2026-09-15T00:01:00.000Z", partial: true, partial_traces: 1, conflicting_spans: 1 });
   });
 });
