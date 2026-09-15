@@ -1,4 +1,5 @@
 import express from "express";
+import { codexInsights } from "./codexInsights.js";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -241,8 +242,8 @@ if (process.env.ALERT_WEBHOOK_URL) startAlertLoop({ url: process.env.ALERT_WEBHO
 // includeUnknown=1 뷰는 첫 조회가 콜드다 — 정확성 우선.
 const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "project", "intervalHours", "email", "includeUnknown"];
 function cacheKey(path, query) {
-  if (path === "/api/clients/overview") {
-    const filters = validateClientFilters(query, clientConfig.enabledClients);
+  if (path === "/api/clients/overview" || path === "/api/codex/insights") {
+    const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
       client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend };
     return `${path}?${new URLSearchParams(Object.entries(normalized)
@@ -305,6 +306,9 @@ route("/api/clients/overview",
   (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: clientConfig.enabledClients.includes("codex"),
     validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
+
+route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
+  { client: "codex", warm: false, validate: (raw) => validateClientFilters(raw, ["codex"]) });
 
 // ── 캐시 warmer ──────────────────────────────────────────────────────────
 // 기본 뷰(2일·필터 없음·시간 버킷)를 QUANT_MS(현재 120초) 경계마다 서버가 스스로 조회해

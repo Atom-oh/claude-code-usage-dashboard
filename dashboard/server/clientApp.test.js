@@ -19,9 +19,15 @@ const db = http.createServer(async(req,res)=>{
   if(sql.includes('unique_events')) {
     dataQueries++;
     if(sql.includes("EventName IN ('codex.sse_event'")) rows=[base];
+    else rows=['user_prompt','api_request','sse_event'].map(event=>({timestamp:base.t,
+      attributes:{'event.name':'codex.'+event,prompt_length:'10','http.response.status_code':'200','event.kind':'response.failed'}}));
   } else if(sql.includes('coding-client:claude-usage')) {
     dataQueries++;
     rows=[{...base,model:'claude-sonnet-5',backend:'anthropic',input_tokens:49,reported_cost:2}];
+  } else if(sql.includes('FROM claude_code.otel_traces')) {
+    rows=[1,2].map(duration_ns=>({timestamp:base.t,trace_id:'conflict',span_id:'one',duration_ns}));
+  } else if(sql.includes('FROM claude_code.codex_metrics_sum')) {
+    rows=[{timestamp:base.t,name:'codex.tool.call',type:'sum',value:3,temporality:1}];
   }
   res.end(rows.length?rows.map(x=>JSON.stringify(x)).join('\\n')+'\\n':'');
 });
@@ -113,4 +119,27 @@ test("client defaults and the warmer's interval share the common-view cache key"
     assert.equal(rows[1].dataQueries, 0);
     assert.equal(rows[2].dataQueries, 0);
   }
+});
+
+test("Codex insights enforce auth, client flags and backend-isolated cache entries", async () => {
+  const path = `/api/codex/insights?${range}`;
+  const disabled = await scenario(true, false, [path]);
+  assert.equal(disabled[0].status, 404);
+  assert.equal(disabled[0].dataQueries, 0);
+  const rows = await scenario(true, true, [
+    `${path}&unauth=1`, `${path}&client=claude`, `${path}&group=enterprise`,
+    `${path}&backend=bedrock-mantle`, `${path}&backend=bedrock-runtime`,
+    `${path}&backend=bedrock-mantle`,
+  ]);
+  assert.deepEqual(rows.map((r) => r.status), [401, 400, 400, 200, 200, 200]);
+  assert.equal(rows[3].cache, "no-store");
+  assert(rows[3].body.coverage.logs);
+  assert.equal(rows[3].body.summary.prompts, 1);
+  assert.equal(rows[3].body.summary.api_error_rate, 1);
+  assert.equal(rows[3].body.metrics[0].value, 3);
+  assert.equal(rows[3].body.coverage.traces.partial_traces, 1);
+  assert.equal(rows[3].body.traces[0].wall_ms, null);
+  assert.equal(rows[3].dataQueries, 1);
+  assert.equal(rows[4].dataQueries, 1);
+  assert.equal(rows[5].dataQueries, 0);
 });

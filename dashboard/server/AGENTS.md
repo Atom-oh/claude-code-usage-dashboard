@@ -56,6 +56,9 @@ Tests use `node:test`; run `npm test` in this directory.
   decisions, including automatic decisions, not proof of retained or correct code.
 - Trace-backed queries use `{unsupported, rows, ...}` where absence is legitimate.
   Preserve unavailable states rather than manufacturing measured zeros.
+- `/api/codex/insights` separates log-derived units from metric/trace diagnostics.
+  Respect temporality, deduplication, optional-table coverage and bounded ranges;
+  absent tables are not the same as transport/permission failures.
 
 ## Owners and operations
 
