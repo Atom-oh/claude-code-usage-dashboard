@@ -114,7 +114,7 @@ function fractions(total) {
 function requestFailed(event, a) {
   if (event === "codex.api_error" || a["error.message"] || a.error || flag(a.success) === false) return true;
   const status = count(a["http.response.status_code"]);
-  if (status >= 100 && status <= 599) return status < 200 || status >= 300;
+  if (status >= 100 && status <= 599) return status >= 400;
   return flag(a.success) === true ? false : null;
 }
 
@@ -176,6 +176,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault) {
       if (failed === null) missingOutcomes = true;
       else errors += Number(failed);
     }
+    if (stream(event) && a["event.kind"] === "response.failed") errors++;
     const duration = number(a.duration_ms);
     const latencyName = event === "codex.startup_phase" ? `startup_phase:${text(a["startup.phase"])}`
       : ["codex.api_request", "codex.api_error", "codex.sse_event", "codex.websocket_request",
@@ -235,7 +236,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault) {
       cost_per_request: completeUsage ? ratio(rounded(total.cost_usd), requests) : null,
       cost_per_session: completeUsage && !missingSession ? ratio(rounded(total.cost_usd), sessions.size) : null,
       retry_rate: missingAttempts ? null : ratio(retries, requests),
-      api_error_rate: missingOutcomes ? null : ratio(errors, requests),
+      api_error_rate: missingOutcomes ? null : ratio(errors, requests), // Error records per HTTP attempt; may exceed 1.
       tool_success_rate: toolRows.some((tool) => tool.unknown) ? null
         : ratio(toolRows.reduce((n, tool) => n + tool.successes, 0), toolCalls),
       approval_rate: unknownDecisions ? null : ratio(approved, approved + denied),

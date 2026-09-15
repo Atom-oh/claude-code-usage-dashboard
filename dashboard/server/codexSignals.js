@@ -227,18 +227,29 @@ const operation = (value) => typeof value === "string"
 export function foldCodexTraces(rows) {
   bounded(rows);
   const seen = new Map(), groups = new Map(), traces = new Map(), valid = [];
+  const conflicts = new Set(), partial = new Set();
+  let lastSeen = -Infinity;
   for (const row of rows) {
     if (!row.trace_id || !row.span_id || !Number.isFinite(time(row.timestamp))) continue;
+    const stamp = time(row.timestamp);
+    lastSeen = Math.max(lastSeen, stamp);
+    if (!traces.has(row.trace_id)) traces.set(row.trace_id,
+      { trace_id: row.trace_id, spans: [], errors: 0, start_time: iso(stamp) });
+    const trace = traces.get(row.trace_id);
+    trace.start_time = iso(Math.min(time(trace.start_time), stamp));
     const key = `${row.trace_id}:${row.span_id}`;
     const fingerprint = JSON.stringify([row.timestamp, row.parent_span_id || "", row.name,
       number(row.duration_ns), row.status || "Unset", row.model || "", row.tool_name || "",
       row.effort || "", row.turn_id || ""]);
     if (seen.has(key)) {
-      if (seen.get(key) !== fingerprint)
-        throw new ValidationError("conflicting span data", "duplicate span identities disagree");
+      if (seen.get(key) !== fingerprint) { conflicts.add(key); partial.add(row.trace_id); }
       continue;
     }
     seen.set(key, fingerprint); valid.push(row);
+  }
+  // Detect all conflicts before folding: no span of an affected trace is trustworthy.
+  for (const row of valid) {
+    if (partial.has(row.trace_id)) continue;
     const duration = positive(row.duration_ns) ? Number(row.duration_ns) / 1e6 : null;
     const name = operation(row.name);
     const span = { span_id: row.span_id, parent_span_id: row.parent_span_id || "", name,
@@ -249,17 +260,19 @@ export function foldCodexTraces(rows) {
     if (!groups.has(name)) groups.set(name, { name, count: 0, errors: 0, durations: [] });
     const group = groups.get(name); group.count++; group.errors += error ? 1 : 0;
     if (duration !== null) group.durations.push(duration);
-    if (!traces.has(row.trace_id)) traces.set(row.trace_id, { trace_id: row.trace_id, spans: [], errors: 0 });
     const trace = traces.get(row.trace_id); trace.spans.push(span); trace.errors += error ? 1 : 0;
   }
-  return { coverage: coverage(valid),
+  return { coverage: { ...coverage(valid), last_seen: iso(lastSeen), partial: partial.size > 0,
+    partial_traces: partial.size, conflicting_spans: conflicts.size },
     spans: [...groups.values()].map(({ durations, ...row }) => ({ ...row, average_ms: average(durations),
       p95_ms: quantile(durations, 0.95) })).sort((a, b) => b.count - a.count),
-    traces: [...traces.values()].map((trace) => {
+    traces: [...traces.values()].sort((a, b) => time(b.start_time) - time(a.start_time)).slice(0, 50).map((trace) => {
+      if (partial.has(trace.trace_id)) return { trace_id: trace.trace_id,
+        span_count: null, wall_ms: null, errors: null, spans: [], partial: true };
       trace.spans.sort((a, b) => time(a.start_time) - time(b.start_time));
       const start = time(trace.spans[0].start_time);
       return { ...trace, start_time: iso(start), span_count: trace.spans.length,
         wall_ms: trace.spans.some((s) => s.duration_ms === null) ? null
           : Math.max(...trace.spans.map((s) => time(s.start_time) + s.duration_ms)) - start };
-    }).sort((a, b) => time(b.start_time) - time(a.start_time)).slice(0, 50) };
+    }) };
 }
