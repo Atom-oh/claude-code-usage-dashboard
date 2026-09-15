@@ -1,8 +1,8 @@
 # Data and Aggregation
 
-The `claude_code` database stores Claude Code metrics and structured Codex logs.
+The `claude_code` database stores Claude Code and Codex telemetry.
 `CLAUDE_ENABLED` defaults to true, `CODEX_ENABLED` to false; both false is invalid.
-Codex uses the existing log schema and a separate query path, with no new migration.
+Codex usage uses the existing log schema; migration 006 adds separate diagnostic metrics.
 Client, backend and model remain distinct: model names do not identify the producer.
 
 ## Storage and source fields
@@ -12,19 +12,22 @@ Client, backend and model remain distinct: model names do not identify the produ
 | `otel_metrics_sum` | Counter datapoints, promoted dimensions and `SeriesKey` | [local schema](../../clickhouse-schema.sql) |
 | `otel_metrics_sum_hourly` | Per-series hourly max/sum states, fed by a materialized view | Same schema |
 | `otel_metrics_gauge` | Exporter-compatible gauge storage; not the main KPI source | Same schema |
+| `codex_metrics_{sum,gauge,histogram,exponential_histogram}` | Native Codex diagnostic observations, separate from billed usage | [migration 006](../../clickhouse-migration-006.sql) |
 | `otel_logs` | Event records; `EventName` reads `event.name`: Claude normally uses `api_request`, `tool_result`, etc.; Codex uses `codex.*` | Same schema |
-| `otel_traces` | Optional beta spans, including interaction, LLM and tool timing | Same schema |
+| `otel_traces` | Claude spans and resource-tagged Codex spans | Same schema |
 | `schema_migrations` | Recorded migration versions and evidence metadata | [migration 004](../../clickhouse-migration-004.sql) |
 
 [collector-config.yaml](../../collector-config.yaml) receives local OTLP on gRPC 4317
 and HTTP 4318. Enabled Claude retains eight allowed metrics, its existing log scrub
-and optional traces. Codex exports structured logs only; its metric/trace exporters
-are disabled, and no native histogram tables are required. Separate log pipelines
+and optional traces. Codex exports logs, metrics and traces through separate pipelines.
+Logs remain the only Codex usage/cost source. Separate log pipelines
 identify established Claude event names/service provenance and the Codex namespace,
 remove Codex bodies/content fields and inherited
 `experiment.group`, and preserve explicit identity/backend/project attributes.
 `create_schema: false` requires schema installation before ingestion.
 The bounded disk queue uses `file_storage`; supervision and rollout are separate concerns.
+Metric/trace allowlists and pinned-exporter limitations are defined in the
+[collection contract](../runbooks/codex-telemetry.md#collection-contract).
 
 `ResourceAttributes` supplies `UserEmail`, `EndUserId`, `AppVersion` and `ProjectName`
 from `user.email`, `enduser.id`, `service.version` and `project.name`.
@@ -192,7 +195,8 @@ trace columns, backfills or all migration steps exist. It gates project filterin
 The [replicated schema](../../infra/files/clickhouse-schema-replicated.sql) is applied by
 the Terraform schema-init Job; the root schema is for local single-node ClickHouse.
 Migration 002 adds telemetry dimensions and traces; 003 changes keys and rebuilds rollups;
-004 records migrations; 005 adds project/entrypoint fields. Existing tables and materialized
+004 records migrations; 005 adds project/entrypoint fields; 006 adds four Codex metric
+tables after 004, independently of 005. Existing tables and materialized
 views are not automatically replaced by `CREATE ... IF NOT EXISTS`.
 Operators run the numbered migration scripts through the schema runbook; the Terraform
 Job executes the replicated schema file, not those numbered scripts.
@@ -202,6 +206,7 @@ The configured retention is:
 | Store | Replicated cold move | Delete age in both schema copies |
 |---|---|---|
 | Raw sum/gauge metrics | 90 days | 180 days |
+| Codex native metrics | 90 days | 180 days |
 | Hourly rollup | None; delete-only TTL | 180 days |
 | Logs/traces | 45 days | 90 days |
 

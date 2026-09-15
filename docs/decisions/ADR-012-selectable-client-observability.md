@@ -1,6 +1,7 @@
 # ADR-012: Selectable coding-client observability
 
-Status: accepted source design. Date: 2026-09-14. Deployment is separate.
+Status: accepted source design, amended 2026-09-15. Initial date: 2026-09-14.
+Deployment is separate.
 
 Claude and Codex have different telemetry and cost surfaces. Treating model names or
 Claude's inferred enterprise/bedrock channels as client identity would mix populations
@@ -9,8 +10,13 @@ and invent a Codex enterprise comparison.
 Select clients independently through activation flags and use a common client API/UI.
 Retain Claude's cumulative-counter queries and [reported-spend decision](ADR-009-reported-spend-with-computed-diagnostics.md).
 Use Codex structured usage-bearing completion logs in the existing schema, promoting
-observed timestamps when needed and deduplicating transport delivery. Disable its
-metric/trace exporters to avoid a second usage feed or new histogram schema.
+observed timestamps when needed and deduplicating transport delivery.
+
+The 2026-09-15 amendment replaces the initial logs-only collection scope: enable
+native metrics and traces as separate diagnostics, with four dedicated metric tables
+and existing trace storage. They never become a second usage/cost feed. Native
+runtime verification supports the expansion; pinned-exporter privacy and field-presence
+limits remain explicit in the collection runbook.
 
 Codex cost is an AWS list-price estimate with cache subsets and request context/inference
 tiers preserved. Missing prices, invalid components or activity without usage make
