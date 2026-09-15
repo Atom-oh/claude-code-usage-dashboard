@@ -20,7 +20,7 @@ alone does not establish its availability in this deployment.
 | Token composition and AWS list estimate | Usage-bearing SSE/WebSocket completion logs | Input includes cache subsets; output includes reasoning. Existing overview remains the billing-estimate authority. |
 | Effort usage/cost and cache/reasoning fractions | Completion `model_reasoning_effort` and token fields | Missing effort stays unknown; conversation-start settings do not replace per-response evidence. |
 | Per-request/per-session units | Completion logs plus observed HTTP attempts and sessions | Retries count as attempts. Missing usage/cost withholds affected units. |
-| API errors and retry fraction | Request status, success and zero-based attempt | Unobserved outcome/attempt is not zero. Stream processing failures have different denominators. |
+| API error records per request and retry fraction | Request status, stream failures and zero-based attempt | HTTP and failed-stream records use the overview's error definition. Multiple error records per request are possible; this is not a failure probability. |
 | Tool outcomes and approvals | `tool_result`, `tool_decision` | Permission decisions include automatic approvals; they are not retained-code acceptance. |
 | Latency distributions | Valid per-event durations | Empirical percentiles of observations; request, SSE processing, TTFT, tools and startup stages remain distinct. |
 | Runtime settings and prompt length | Conversation-start and prompt metadata | Start settings are snapshots. No prompt body is exposed. |
@@ -44,6 +44,9 @@ approvals, runtime and event tables, plus separate metric and trace results.
 Coverage is `observed`, `empty` or `unavailable` for each signal. An absent optional
 table is unavailable; transport, permissions and unexpected query failures are
 errors. Existing logs remain usable before the additive metric migration.
+In All-client views, insights use the overview's effective bounds, including historical
+hour alignment. Their actual interval is also displayed. Refreshing the overview
+preserves the active detail tab and search.
 
 Metrics respect full series identity and delta/cumulative temporality. Cumulative
 series require a prior baseline or an observed start inside the range; unresolved
@@ -59,6 +62,8 @@ cumulative sums remains a measured zero.
 Logs are deduplicated by timestamp and sorted resource/attribute maps. Bounded raw
 queries reject an oversized range rather than return an unlabelled truncated total.
 Trace summaries cover selected spans and expose the most recent 50 trace groups.
+Conflicting span identities withhold the affected trace and mark coverage partial;
+they do not suppress log or metric results.
 Model filters require model evidence on metrics/spans; model-less spans can therefore
 be absent from a filtered trace. Span status is not a business-success determination.
 

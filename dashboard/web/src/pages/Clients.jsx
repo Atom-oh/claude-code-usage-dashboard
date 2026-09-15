@@ -71,7 +71,14 @@ export default function Clients() {
       <PageHeader
         title="사용량·비용"
         subtitle={`${client === "all" ? "Claude Code + Codex" : "Codex"} · 사용량, 모델, 사용자와 도구 현황`}
-        right={<RangePicker />}
+        right={<div className="flex flex-wrap items-center gap-3">
+          {clients.includes("codex") && <button type="button"
+            className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-700"
+            onClick={() => document.getElementById("codex-insights-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            Codex 상세
+          </button>}
+          <RangePicker />
+        </div>}
       />
       <div className="p-4 sm:p-8 flex flex-col gap-6">
         {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState /> : (
@@ -108,7 +115,6 @@ export default function Clients() {
                 {TOKEN_TILES.map(([key, label]) => <StatTile key={key} label={label} value={formatObserved(totals[key])} />)}
               </div>
             </Card>
-            {clients.includes("codex") && <CodexInsights />}
             <DualLineChart
               title="사용량·비용 추이" subtitle={`${data?.bucket_hours < 1 ? "분별" : "시간별"} · UTC · 비용 누락 구간은 연결하지 않습니다.`}
               rows={timeline} xKey="t" lines={lines} tickFormatter={formatTime} bucketHours={data?.bucket_hours || 1} height={320}
@@ -121,7 +127,9 @@ export default function Clients() {
             <DataTable title="도구 사용" columns={TOOL_COLUMNS} rows={data?.tools || []} exportName="clients_tools" />
           </>
         )}
-        {clients.includes("codex") && (empty || error) && <CodexInsights />}
+        {clients.includes("codex") && <CodexInsights
+          range={!loading && !error ? data?.effective_range : null}
+          enabled={!loading} />}
       </div>
     </div>
   );

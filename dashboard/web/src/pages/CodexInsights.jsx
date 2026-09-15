@@ -42,6 +42,8 @@ function metricMean(rows, name, tokenType) {
   return count > 0 ? selected.reduce((n, r) => n + r.sum, 0) / count : null;
 }
 const milliseconds = (value) => value == null ? "—" : `${formatObserved(value)} ms`;
+const partialHint = (rows, name) => rows?.some((r) => r.name === name && r.partial)
+  ? "일부 원본 통계 미확인" : undefined;
 const EFFICIENCY_TILES = [
   ["cache_hit_rate", "입력 캐시 읽기 비율", percent, "캐시 읽기 / 캐시를 포함한 전체 입력 토큰입니다."],
   ["cache_write_share", "입력 캐시 쓰기 비중", percent],
@@ -51,8 +53,9 @@ const EFFICIENCY_TILES = [
   ["cost_per_session", "세션당 추정 비용", formatClientCost],
 ];
 
-export default function CodexInsights() {
-  const { data, loading, error } = useApi("/api/codex/insights", { client: "codex" });
+export default function CodexInsights({ range, enabled = true }) {
+  const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
+  const { data, loading, error } = useApi("/api/codex/insights", { client: "codex", ...bounds }, enabled);
   const [tab, setTab] = useState(TABS[0]);
   const [search, setSearch] = useState("");
   const metrics = useMemo(() => (data?.metrics || []).filter((r) => r.name.toLowerCase().includes(search.toLowerCase())), [data?.metrics, search]);
@@ -63,8 +66,11 @@ export default function CodexInsights() {
         <h2 id="codex-insights-heading" className="text-xl font-semibold text-ink-800">Codex 상세 관측</h2>
         <p className="mt-1 text-sm text-ink-600">효율, 실행 품질과 지연을 살펴봅니다. 실청구·코드 품질·절감 시간 지표는 아닙니다.</p>
       </div>
-      {loading ? <Loading /> : error ? <ErrorBox error={error} /> : (
+      {!enabled || loading ? <Loading /> : error ? <ErrorBox error={error} /> : (
         <>
+          {data?.range && <p className="text-sm text-ink-600">
+            상세 조회 구간: {data.range.from.replace("T", " ")} ~ {data.range.to.replace("T", " ")} (UTC)
+          </p>}
           <div className="flex flex-wrap gap-2" aria-label="신호 수집 상태">
             {["logs", "metrics", "traces"].map((signal) => {
               const c = data?.coverage?.[signal];
@@ -99,12 +105,17 @@ export default function CodexInsights() {
           {tab === TABS[2] && <>
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
               <StatTile label="재시도 요청 비율" value={percent(summary.retry_rate)} help="attempt가 0보다 큰 요청 / attempt가 확인된 요청입니다." />
-              <StatTile label="API 오류 비율" value={percent(summary.api_error_rate)} />
+              <StatTile label="요청당 API 오류 기록" value={formatObserved(summary.api_error_rate)}
+                help="HTTP 및 스트림 오류 기록 / 관측된 HTTP 요청입니다. 한 요청에 여러 오류가 기록될 수 있습니다." />
               <StatTile label="평균 턴 처리 시간" value={milliseconds(metricMean(data?.metrics, "codex.turn.e2e_duration_ms"))}
+                hint={partialHint(data?.metrics, "codex.turn.e2e_duration_ms")}
                 help="Codex가 보고한 턴 Histogram의 평균입니다. 사람의 작업시간이나 절감 시간이 아닙니다." />
-              <StatTile label="평균 턴 첫 토큰 시간" value={milliseconds(metricMean(data?.metrics, "codex.turn.ttft.duration_ms"))} />
-              <StatTile label="턴당 평균 도구 호출" value={formatObserved(metricMean(data?.metrics, "codex.turn.tool.call"))} />
+              <StatTile label="평균 턴 첫 토큰 시간" value={milliseconds(metricMean(data?.metrics, "codex.turn.ttft.duration_ms"))}
+                hint={partialHint(data?.metrics, "codex.turn.ttft.duration_ms")} />
+              <StatTile label="턴당 평균 도구 호출" value={formatObserved(metricMean(data?.metrics, "codex.turn.tool.call"))}
+                hint={partialHint(data?.metrics, "codex.turn.tool.call")} />
               <StatTile label="턴당 평균 토큰" value={formatObserved(metricMean(data?.metrics, "codex.turn.token_usage", "total"))}
+                hint={partialHint(data?.metrics, "codex.turn.token_usage")}
                 help="턴 메트릭의 별도 관측입니다. 위 사용량·비용 합계에 더하지 않습니다." />
             </div>
             <DataTable title="요청·도구·시작 단계 지연" subtitle="관측된 로그 시간의 분포입니다. SSE 이벤트 처리 시간과 전체 생성 시간은 다릅니다."
@@ -126,13 +137,19 @@ export default function CodexInsights() {
           </>}
           {tab === TABS[4] && <>
             <p className="text-sm text-ink-600">Trace 시간은 관측된 span 구간입니다. 겹친 span 시간을 합산하지 않으며, 전체 턴이 수집되었다는 의미는 아닙니다. 최근 50개 trace를 표시합니다. 모델 필터는 모델 속성이 있는 span에만 적용됩니다.</p>
+            {data?.coverage?.traces?.partial && <p role="status" className="text-sm text-warning-text">
+              일부 Trace 데이터가 충돌해 해당 Trace의 통계를 제공하지 않습니다. 다른 신호의 집계는 유지됩니다.
+            </p>}
             <DataTable title="작업별 Span 지연" columns={SPANS} rows={data?.spans || []} exportName="codex_spans" />
             {(data?.traces || []).length === 0 ? <EmptyState /> : data.traces.map((trace) => (
               <details key={trace.trace_id} className="rounded-lg border border-ink-200 bg-card p-4">
                 <summary className="cursor-pointer break-all text-sm font-medium text-ink-700">
                   {trace.trace_id} · {formatObserved(trace.span_count)} spans · {formatObserved(trace.wall_ms)} ms · 오류 {formatObserved(trace.errors)}
+                  {trace.partial && " · 불완전"}
                 </summary>
-                <div className="mt-4"><DataTable title={`Trace ${trace.trace_id}`} columns={TRACE_DETAIL} rows={trace.spans || []} exportName="codex_trace_spans" /></div>
+                <div className="mt-4">{trace.partial
+                  ? <p className="text-sm text-ink-600">같은 Span ID의 값이 충돌해 세부 내역을 보류했습니다.</p>
+                  : <DataTable title={`Trace ${trace.trace_id}`} columns={TRACE_DETAIL} rows={trace.spans || []} exportName="codex_trace_spans" />}</div>
               </details>
             ))}
           </>}

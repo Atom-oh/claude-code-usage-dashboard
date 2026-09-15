@@ -2,9 +2,9 @@ import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import CodexInsights from "./CodexInsights.jsx";
 
-const state = vi.hoisted(() => ({ result: {} }));
-vi.mock("../useApi.js", () => ({ useApi: () => state.result }));
-afterEach(cleanup);
+const state = vi.hoisted(() => ({ result: {}, calls: [] }));
+vi.mock("../useApi.js", () => ({ useApi: (...args) => { state.calls.push(args); return state.result; } }));
+afterEach(() => { cleanup(); state.calls = []; });
 const fixture = () => ({
   coverage: { logs: { status: "observed", records: 8 }, metrics: { status: "empty", records: 0 },
     traces: { status: "unavailable", records: 0 } },
@@ -75,4 +75,32 @@ test("turn summaries weight histogram observations and withhold partial measurem
   fireEvent.click(screen.getByRole("button", { name: "성능" }));
   expect(screen.getByText("평균 턴 처리 시간").closest(".shadow-card").textContent).toContain("40 ms");
   expect(screen.getByText("턴당 평균 도구 호출").closest(".shadow-card").textContent).toContain("—");
+});
+
+test("shared effective bounds reach the API and a paused overview preserves detail controls", () => {
+  state.result = { data: fixture(), loading: false };
+  const range = { from: "2026-09-01T00:00:00Z", to: "2026-09-02T10:00:00Z" };
+  const { rerender } = render(<CodexInsights range={range} enabled />);
+  expect(state.calls.at(-1)).toEqual(["/api/codex/insights", { client: "codex", ...range }, true]);
+  fireEvent.click(screen.getByRole("button", { name: "런타임·메트릭" }));
+  fireEvent.change(screen.getByPlaceholderText("메트릭 이름 검색"), { target: { value: "turn" } });
+  rerender(<CodexInsights range={range} enabled={false} />);
+  expect(screen.getByText("불러오는 중...")).toBeTruthy();
+  rerender(<CodexInsights range={range} enabled />);
+  expect(screen.getByPlaceholderText("메트릭 이름 검색").value).toBe("turn");
+});
+
+test("partial extrema annotate a valid mean and conflicting traces withhold their detail", () => {
+  const data = fixture();
+  data.metrics = [{ name: "codex.turn.e2e_duration_ms", count: 2, sum: 100, partial: true, min: null, max: null }];
+  data.coverage.traces = { status: "observed", records: 1, partial: true };
+  data.traces = [{ trace_id: "conflict", span_count: null, wall_ms: null, errors: null, spans: [], partial: true }];
+  show(data);
+  fireEvent.click(screen.getByRole("button", { name: "성능" }));
+  const tile = screen.getByText("평균 턴 처리 시간").closest(".shadow-card");
+  expect(tile.textContent).toContain("50 ms");
+  expect(tile.textContent).toContain("일부 원본 통계 미확인");
+  fireEvent.click(screen.getByRole("button", { name: "Trace" }));
+  expect(screen.getByRole("status").textContent).toContain("충돌");
+  expect(screen.getByText(/같은 Span ID/)).toBeTruthy();
 });
