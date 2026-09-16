@@ -80,6 +80,9 @@ Publish scrubbed reports/receipts/metadata only; never raw `roles/*.diff` or
 Specialist prompts request one JSON object without an outer Markdown wrapper.
 Prefer plain-English evidence; encode any fenced example inside a JSON string.
 Fence rules apply after JSON decoding; embedded quotes and newlines must be escaped.
+Chair prompts repeat plain-prose guidance after the untrusted evidence. A format
+failure adds static guidance to the existing configured fallback, without replaying
+the rejected output. Models, call bounds, scope, validation and blocking verdicts stay unchanged.
 
 Code and configuration examples require closed top-level fences with both markers
 on their own lines at column one. Use a longer fence around examples containing
