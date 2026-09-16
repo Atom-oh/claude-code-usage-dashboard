@@ -92,6 +92,10 @@ and cache keys are unchanged.
 [RefreshContext.jsx](../../dashboard/web/src/RefreshContext.jsx) defaults to 60 seconds,
 persists the selected interval, pauses hidden tabs, refreshes when visible, and skips one
 scheduled tick after a reported failure. Its UTC `dayKey` updates range-derived dates.
+Retained-data requests report idempotent start/end status, including aborts. Status-only
+updates use a separate context from data-cycle triggers. The refresh control reserves
+a status row at every viewport for pending/failure disclosures; its timestamp labels
+an attempt, never successful completion.
 Page-local interval controls must resync from global range changes, as
 [Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does.
 

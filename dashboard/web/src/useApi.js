@@ -3,7 +3,7 @@ import { apiGet } from "./api.js";
 import { useRange } from "./RangeContext.jsx";
 import { useFilters } from "./FilterContext.jsx";
 import { useConfig } from "./ConfigContext.jsx";
-import { useRefresh } from "./RefreshContext.jsx";
+import { useRefreshCycle } from "./RefreshContext.jsx";
 
 // 서버(index.js)의 QUANT_MS/WARM_GRACE_MS와 반드시 같아야 한다 — 요청 시점의 to를 GRACE만큼
 // 지난 QUANT_MS 경계로 내림해서, 같은 창 안의 모든 세션·유저가 문자 그대로 동일한 from/to를
@@ -33,7 +33,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
   // 다시 요청한다"를 핀하는 기존 렌더 테스트가 무의미해진다.
   const { schema } = useConfig();
   const projectParam = schema?.projectColumns === true ? project : "";
-  const { tick, reportFailure } = useRefresh();
+  const { tick, reportFailure, beginRequest } = useRefreshCycle();
   const [state, setState] = useState({ data: null, loading: true, error: null });
   const inflightRef = useRef(null);
   const paramsKeyRef = useRef(null);
@@ -97,6 +97,8 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
       setState({ data: null, loading: true, error: null });
     }
     const abort = new AbortController();
+    const finish = !selectionChanged && state.data !== null ? beginRequest() : () => {};
+    abort.signal.addEventListener("abort", finish, { once: true });
     inflightRef.current = abort;
     apiGet(
       path,
@@ -135,10 +137,14 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
           setState((s) => (s.data === null ? { data: null, loading: false, error } : { ...s, loading: false }));
           reportFailure();
         }
+      })
+      .finally(() => {
+        abort.signal.removeEventListener("abort", finish);
+        finish();
       });
     // 이 cleanup에는 abort가 없다 — 틱만 바뀐 리런이 파라미터 로드를 취소하면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, extraJson, selectionExtraJson, linkedRange, tick, enabled]);
+  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, extraJson, selectionExtraJson, linkedRange, tick, enabled, beginRequest, reportFailure]);
 
   // 언마운트 시에만 abort한다.
   useEffect(() => () => {

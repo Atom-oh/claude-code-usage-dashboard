@@ -221,10 +221,12 @@ test("a refresh crossing a quantized boundary retains the data DOM and unchanged
   const urls = fetchMock.mock.calls.map(([url]) => url);
   expect(urls[1]).not.toBe(urls[0]);
   expect(hook.state.loading).toBe(false);
+  expect(hook.refresh.isRefreshing).toBe(true);
   expect(panel.isConnected).toBe(true);
   expect(screen.getByRole("region", { name: "Loaded data" })).toBe(panel);
   await act(async () => resolveRefresh(await okFresh({ total: 42 })));
   expect(hook.state.data).toBe(first);
+  expect(hook.refresh.isRefreshing).toBe(false);
   expect(loadings.slice(before)).not.toContain(true);
 });
 
@@ -269,6 +271,7 @@ test("linked server bounds update in place while a changed client still clears t
   const next = { ...probeProps, params: { ...probeProps.params, to: "2026-09-04T11:58:00Z" } };
   view.rerender(<Fixture probeProps={next} />);
   expect(hook.state.loading).toBe(false);
+  expect(hook.refresh.isRefreshing).toBe(true);
   expect(panel.isConnected).toBe(true);
   await act(async () => resolveRequest(await okFresh({ total: 43 })));
   expect(hook.state.data?.total).toBe(43);
@@ -302,6 +305,7 @@ test("a late rejected background request cannot mark the new selection as failed
   expect(hook.state.data).toBe(current);
   expect(hook.state.error).toBeNull();
   expect(hook.refresh.lastError).toBe(false);
+  expect(hook.refresh.isRefreshing).toBe(false);
 });
 
 test("disable and re-enable resets selection identity and rejects the abandoned response", async () => {

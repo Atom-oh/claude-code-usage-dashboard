@@ -186,8 +186,9 @@ test("incomplete costs remain unavailable and disclose quality instead of summin
   }) });
   await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());
   expect(tile("비용 (USD)").textContent).toContain("—");
-  expect(screen.getByRole("status").textContent).toContain("미산정 1");
-  expect(screen.getByRole("status").textContent).toContain("유효하지 않은 데이터 1");
+  const warning = screen.getAllByRole("status").find((node) => node.textContent.includes("미산정 1"));
+  expect(warning.textContent).toContain("미산정 1");
+  expect(warning.textContent).toContain("유효하지 않은 데이터 1");
 });
 
 test("user CSV is masked, follows visible columns and sorted order, and omits hidden row fields", async () => {
