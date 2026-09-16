@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import { codexInsights } from "./codexInsights.js";
 
 const from = new Date("2026-09-15T00:00:00Z"), to = new Date("2026-09-15T01:00:00Z");
+const promptSummary = [
+  { is_total: 1, event: "", records: 1, sessions: 0, last_seen: "2026-09-15T00:01:00Z" },
+  { is_total: 0, event: "codex.user_prompt", records: 1, duration_count: 0 },
+];
 test("missing optional signal tables do not hide existing logs or manufacture observations", async () => {
   const result = await codexInsights(from, to, {}, async (sql) => {
     if (sql.includes("codex_metrics_") || sql.includes("FROM claude_code.otel_traces")) throw { code: "60" };
+    if (sql.includes("GROUPING SETS")) return promptSummary;
     return [{ timestamp: "2026-09-15T00:01:00Z", resource: {},
       attributes: { "event.name": "codex.user_prompt", prompt_length: "10" } }];
   });
@@ -48,6 +53,7 @@ test("an oversized log window withholds its totals while preserving metric and t
 test("oversized metric results do not suppress available log observations", async () => {
   const result = await codexInsights(from, to, {}, async (sql) => {
     if (sql.includes("codex_metrics_sum")) return Array.from({ length: 50001 }, () => ({}));
+    if (sql.includes("GROUPING SETS")) return promptSummary;
     if (sql.includes("codex_metrics_") || sql.includes("FROM claude_code.otel_traces")) return [];
     return [{ timestamp: "2026-09-15T00:01:00Z", resource: {},
       attributes: { "event.name": "codex.user_prompt", prompt_length: "10" } }];
@@ -56,4 +62,12 @@ test("oversized metric results do not suppress available log observations", asyn
   assert.equal(result.coverage.metrics.records, null);
   assert.deepEqual(result.metrics, []);
   assert.equal(result.summary.prompts, 1);
+});
+
+
+test("summary query failures remain visible instead of manufacturing complete log coverage", async () => {
+  await assert.rejects(codexInsights(from,to,{},async (sql) => {
+    if (sql.includes("GROUPING SETS")) throw new Error("summary transport failure");
+    return [];
+  }), /summary transport failure/);
 });

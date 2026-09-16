@@ -23,3 +23,5 @@ cd "$ROOT/dashboard/server"
 CLIENT_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test clientSql.test.js
 CODEX_LOG_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test codexInsightsLogs.test.js
 CODEX_SIGNALS_SQL_TEST=1 node --test codexSignalsSql.test.js
+
+CODEX_LOG_COMPACTION_SQL_TEST=1 node --test codexLogCompaction.test.js
