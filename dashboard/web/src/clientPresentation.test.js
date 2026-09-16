@@ -1,4 +1,7 @@
 import { expect, test } from "vitest";
+import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 import { presentationRow, formatPercent, formatClientTime } from "./clientPresentation.js";
 import { codexUsage } from "./test/clientOverview.js";
 
@@ -52,8 +55,40 @@ test("an enabled client without observations cannot appear as measured zero", ()
   expect(row.cost_basis).toBe("aws_list_estimate");
 });
 
-test("UTC formatting handles both the API timestamp forms without adding a second Z", () => {
+test("timestamp parsing preserves the instant for both API forms", () => {
   expect(formatClientTime("2026-09-01 03:04:00")).toBe(formatClientTime("2026-09-01T03:04:00.000Z"));
-  expect(formatClientTime("2026-09-01T03:04:00.000Z")).toContain("03:04");
   expect(formatClientTime(null)).toBe("—");
+});
+
+
+test.each([
+  ["Asia/Seoul", "05:04", /9\.\s*2\./],
+  ["America/New_York", "16:04", /9\.\s*1\./],
+])("timestamp labels follow the browser zone %s, including date rollover", (zone, clock, date) => {
+  const moduleUrl = pathToFileURL(resolve("src/clientPresentation.js")).href;
+  const script = `import { formatClientTime, formatClientTimestamp, BROWSER_TIME_ZONE } from ${JSON.stringify(moduleUrl)};
+    console.log(JSON.stringify({
+      iso: formatClientTime("2026-09-01T20:04:23.789Z"),
+      full: formatClientTimestamp("2026-09-01T20:04:23.789Z"),
+      winter: formatClientTimestamp("2026-01-01T03:04:23.789Z"),
+      zone: BROWSER_TIME_ZONE,
+      invalid: formatClientTimestamp("invalid"),
+      naive: formatClientTime("2026-09-01 20:04:23.789"),
+      offset: formatClientTime("2026-09-02T05:04:23.789+09:00"),
+    }));`;
+  const actual = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script],
+    { encoding: "utf8", env: { ...process.env, TZ: zone } }));
+  expect(actual.iso).toContain(clock);
+  expect(actual.full).toContain(clock);
+  expect(actual.full).toContain("23.789");
+  expect(actual.full).toContain("2026");
+  expect(actual.zone).toBe(zone);
+  expect(actual.invalid).toBe("—");
+  if (zone === "America/New_York") {
+    expect(actual.winter).toContain("2025");
+    expect(actual.winter).toContain("22:04");
+  }
+  expect(actual.iso).toMatch(date);
+  expect(actual.naive).toBe(actual.iso);
+  expect(actual.offset).toBe(actual.iso);
 });

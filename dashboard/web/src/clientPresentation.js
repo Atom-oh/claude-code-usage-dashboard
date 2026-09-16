@@ -47,11 +47,29 @@ export function formatPercent(value) {
   const n = observedNumber(value);
   return n === null ? "—" : n > 0 && n < 0.01 ? "<0.01%" : `${formatObserved(n)}%`;
 }
+const shortTime = new Intl.DateTimeFormat("ko-KR", {
+  month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+const fullTime = new Intl.DateTimeFormat("en-GB", {
+  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  second: "2-digit", fractionalSecondDigits: 3, hourCycle: "h23", timeZoneName: "short",
+});
+export const BROWSER_TIME_ZONE = shortTime.resolvedOptions().timeZone;
+function clientDate(value) {
+  if (!value) return null;
+  const raw = String(value).trim().replace(" ", "T");
+  const qualified = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00Z`
+    : /(?:Z|[+-]\d\d:\d\d)$/.test(raw) ? raw : `${raw}Z`;
+  const date = new Date(qualified);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 export function formatClientTime(value) {
-  if (!value) return "—";
-  const raw = String(value).replace(" ", "T");
-  const date = new Date(/(?:Z|[+-]\d\d:\d\d)$/.test(raw) ? raw : `${raw}Z`);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("ko-KR", {
-    timeZone: "UTC", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
-  });
+  const date = clientDate(value);
+  return date ? shortTime.format(date) : "—";
+}
+export function formatClientTimestamp(value) {
+  const date = clientDate(value);
+  if (!date) return "—";
+  const parts = Object.fromEntries(fullTime.formatToParts(date).map(({ type, value }) => [type, value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}.${parts.fractionalSecond} ${parts.timeZoneName}`;
 }

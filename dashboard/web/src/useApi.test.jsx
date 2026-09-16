@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ConfigProvider } from "./ConfigContext.jsx";
 import { RefreshProvider, useRefresh } from "./RefreshContext.jsx";
@@ -27,25 +27,26 @@ const okFresh = (body) => Promise.resolve({ ok: true, status: 200, json: () => P
 
 let hook = null;
 const loadings = [];
-function Probe() {
-  const state = useApi("/api/cost/summary");
+function Probe({ path = "/api/cost/summary", params = {}, enabled = true, options } = {}) {
+  const state = useApi(path, params, enabled, options);
   const refresh = useRefresh();
   const range = useRange();
   loadings.push(state.loading);
   hook = { state, refresh, range };
-  return null;
+  return state.loading ? <p>Loading</p> : state.error ? <p>Request failed</p>
+    : <section aria-label="Loaded data">{state.data?.total}</section>;
 }
 
-function mount({ strict = false } = {}) {
+function Fixture({ strict = false, probeProps } = {}) {
   const Wrapper = strict ? StrictMode : Fragment;
-  return render(
+  return (
     <Wrapper>
     <MemoryRouter initialEntries={["/cost"]}>
       <ConfigProvider>
         <RefreshProvider>
           <RangeProvider>
             <FilterProvider>
-              <Probe />
+              <Probe {...probeProps} />
             </FilterProvider>
           </RangeProvider>
         </RefreshProvider>
@@ -53,6 +54,9 @@ function mount({ strict = false } = {}) {
     </MemoryRouter>
     </Wrapper>
   );
+}
+function mount(options = {}) {
+  return render(<Fixture {...options} />);
 }
 
 beforeEach(() => {
@@ -200,4 +204,124 @@ test("실제 파라미터 변경(setDays)은 loading을 true로 뒤집고 from�
   const from = new Date(params.get("from"));
   const to = new Date(params.get("to"));
   expect(Math.round((to - from) / 86400000)).toBe(7);
+});
+
+test("a refresh crossing a quantized boundary retains the data DOM and unchanged payload identity", async () => {
+  let resolveRefresh;
+  let calls = 0;
+  const fetchMock = stubFetch(() => ++calls === 1 ? okFresh({ total: 42 })
+    : new Promise((resolve) => { resolveRefresh = resolve; }));
+  mount();
+  await waitFor(() => expect(hook.state.data?.total).toBe(42));
+  const first = hook.state.data;
+  const panel = screen.getByRole("region", { name: "Loaded data" });
+  const before = loadings.length;
+  Date.now.mockReturnValue(Date.now() + 120_000);
+  await act(async () => hook.refresh.refreshNow());
+  const urls = fetchMock.mock.calls.map(([url]) => url);
+  expect(urls[1]).not.toBe(urls[0]);
+  expect(hook.state.loading).toBe(false);
+  expect(hook.refresh.isRefreshing).toBe(true);
+  expect(panel.isConnected).toBe(true);
+  expect(screen.getByRole("region", { name: "Loaded data" })).toBe(panel);
+  await act(async () => resolveRefresh(await okFresh({ total: 42 })));
+  expect(hook.state.data).toBe(first);
+  expect(hook.refresh.isRefreshing).toBe(false);
+  expect(loadings.slice(before)).not.toContain(true);
+});
+
+test("a failed refresh in the next time window preserves the displayed data and reports the failure", async () => {
+  let calls = 0;
+  stubFetch(() => ++calls === 1 ? okFresh({ total: 42 })
+    : Promise.resolve({ ok: false, status: 503 }));
+  mount();
+  await waitFor(() => expect(hook.state.data?.total).toBe(42));
+  const panel = screen.getByRole("region", { name: "Loaded data" });
+  Date.now.mockReturnValue(Date.now() + 120_000);
+  await act(async () => hook.refresh.refreshNow());
+  await waitFor(() => expect(hook.refresh.lastError).toBe(true));
+  expect(hook.state.data).toEqual({ total: 42 });
+  expect(hook.state.error).toBeNull();
+  expect(panel.isConnected).toBe(true);
+});
+
+test("late responses from an aborted selection cannot replace the current selection", async () => {
+  const pending = [];
+  stubFetch((_url, { signal }) => new Promise((resolve) => pending.push({ resolve, signal })));
+  mount();
+  await waitFor(() => expect(pending).toHaveLength(1));
+  await act(async () => hook.range.setDays(7));
+  expect(pending).toHaveLength(2);
+  expect(pending[0].signal.aborted).toBe(true);
+  await act(async () => pending[1].resolve(await okFresh({ total: 7 })));
+  await act(async () => pending[0].resolve(await okFresh({ total: 2 })));
+  expect(hook.state.data).toEqual({ total: 7 });
+});
+
+test("linked server bounds update in place while a changed client still clears the previous selection", async () => {
+  let resolveRequest;
+  let calls = 0;
+  stubFetch(() => ++calls === 1 ? okFresh({ total: 42 })
+    : new Promise((resolve) => { resolveRequest = resolve; }));
+  const probeProps = { path: "/api/clients/overview", options: { linkedRange: true },
+    params: { client: "codex", from: "2026-09-03T11:56:00Z", to: "2026-09-04T11:56:00Z" } };
+  const view = mount({ probeProps });
+  await waitFor(() => expect(hook.state.data?.total).toBe(42));
+  const panel = screen.getByRole("region", { name: "Loaded data" });
+  const next = { ...probeProps, params: { ...probeProps.params, to: "2026-09-04T11:58:00Z" } };
+  view.rerender(<Fixture probeProps={next} />);
+  expect(hook.state.loading).toBe(false);
+  expect(hook.refresh.isRefreshing).toBe(true);
+  expect(panel.isConnected).toBe(true);
+  await act(async () => resolveRequest(await okFresh({ total: 43 })));
+  expect(hook.state.data?.total).toBe(43);
+  view.rerender(<Fixture probeProps={{ ...next, params: { ...next.params, client: "claude" } }} />);
+  expect(hook.state.loading).toBe(true);
+  expect(panel.isConnected).toBe(false);
+});
+
+test("explicit extra bounds remain a new selection unless linked to the parent response", async () => {
+  let calls = 0;
+  stubFetch(() => ++calls === 1 ? okFresh({ total: 1 }) : new Promise(() => {}));
+  const probeProps = { params: { from: "2026-09-01T00:00:00Z", to: "2026-09-02T00:00:00Z" } };
+  const view = mount({ probeProps });
+  await waitFor(() => expect(hook.state.data?.total).toBe(1));
+  view.rerender(<Fixture probeProps={{ params: { ...probeProps.params, to: "2026-09-03T00:00:00Z" } }} />);
+  expect(hook.state.loading).toBe(true);
+  expect(hook.state.data).toBeNull();
+});
+
+
+test("a late rejected background request cannot mark the new selection as failed", async () => {
+  const pending = [];
+  stubFetch(() => new Promise((resolve, reject) => pending.push({ resolve, reject })));
+  mount();
+  await act(async () => pending[0].resolve(await okFresh({ total: 2 })));
+  await act(async () => hook.refresh.refreshNow());
+  await act(async () => hook.range.setDays(7));
+  await act(async () => pending[2].resolve(await okFresh({ total: 7 })));
+  const current = hook.state.data;
+  await act(async () => pending[1].reject(new Error("Late failure")));
+  expect(hook.state.data).toBe(current);
+  expect(hook.state.error).toBeNull();
+  expect(hook.refresh.lastError).toBe(false);
+  expect(hook.refresh.isRefreshing).toBe(false);
+});
+
+test("disable and re-enable resets selection identity and rejects the abandoned response", async () => {
+  const pending = [];
+  stubFetch(() => new Promise((resolve) => pending.push(resolve)));
+  const view = mount();
+  await act(async () => pending[0](await okFresh({ total: 42 })));
+  const first = hook.state.data;
+  await act(async () => hook.refresh.refreshNow());
+  view.rerender(<Fixture probeProps={{ enabled: false }} />);
+  expect(hook.state.loading).toBe(true);
+  view.rerender(<Fixture probeProps={{ enabled: true }} />);
+  await act(async () => pending[2](await okFresh({ total: 42 })));
+  const current = hook.state.data;
+  expect(current).not.toBe(first);
+  await act(async () => pending[1](await okFresh({ total: 99 })));
+  expect(hook.state.data).toBe(current);
+  expect(hook.state.data.total).toBe(42);
 });

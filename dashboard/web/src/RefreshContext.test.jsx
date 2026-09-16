@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
-import { RefreshProvider, useRefresh } from "./RefreshContext.jsx";
+import { RefreshProvider, useRefresh, useRefreshCycle } from "./RefreshContext.jsx";
 
 afterEach(() => {
   cleanup();
@@ -145,4 +145,19 @@ test("hidden tab skips ticks; returning to visible bumps once", () => {
     document.dispatchEvent(new Event("visibilitychange"));
   });
   expect(api.tick).toBe(1);
+});
+
+
+test("status-only changes do not render data-cycle subscribers again", () => {
+  let renders = 0;
+  function CycleProbe() { useRefreshCycle(); renders++; return null; }
+  render(<RefreshProvider><Probe /><CycleProbe /></RefreshProvider>);
+  const initial = renders;
+  let finish;
+  act(() => { finish = api.beginRequest(); });
+  expect(renders).toBe(initial);
+  act(() => finish());
+  expect(renders).toBe(initial);
+  act(() => api.refreshNow());
+  expect(renders).toBe(initial + 1);
 });

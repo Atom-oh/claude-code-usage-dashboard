@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { formatClientTimestamp } from "../clientPresentation.js";
 import { Card, ErrorBox, Loading } from "../components/Card.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
@@ -17,7 +19,7 @@ const INSIGHT_SECTIONS = {
 export default function Clients({ page = "overview" }) {
   const { client, enabledClients, setDetail } = useClient();
   const { data, loading, error } = useApi("/api/clients/overview", { client });
-  const clients = client === "all" ? enabledClients : [client];
+  const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};
   const empty = data?.observed_records === 0;
@@ -34,7 +36,7 @@ export default function Clients({ page = "overview" }) {
       </p>
       {data?.effective_range?.to !== data?.effective_range?.requested_to && data?.effective_range?.to &&
         <p role="status" className="text-sm text-ink-600">
-          집계 종료 시각: {data.effective_range.to.replace("T", " ").replace(/(?:\.\d+)?Z$/, "")} UTC.
+          집계 종료 시각: {formatClientTimestamp(data.effective_range.to)} (브라우저 시간).
           선택한 클라이언트 모두 같은 구간을 사용합니다.
         </p>}
       {(quality.unpriced > 0 || quality.invalid > 0 || data?.totals?.unpriced > 0) &&

@@ -5,6 +5,7 @@ import { StatTile } from "../components/StatTile.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useApi } from "../useApi.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
+import { formatClientTimestamp } from "../clientPresentation.js";
 
 const percent = (v) => v == null ? "—" : `${(v * 100).toLocaleString("ko-KR", { maximumFractionDigits: 2 })}%`;
 const text = (key, label) => ({ key, label, render: (v) => v || "—" });
@@ -33,7 +34,7 @@ const SPANS = [text("name", "Span"), numeric("count", "건수"), numeric("errors
   numeric("average_ms", "평균 (ms)"), numeric("p95_ms", "P95 (ms)")];
 const TRACE_DETAIL = [text("name", "작업"), text("span_id", "Span ID"), text("parent_span_id", "부모 Span ID"),
   text("model", "모델"), text("tool_name", "도구"), text("effort", "Effort"),
-  text("start_time", "시작 (UTC)"), numeric("duration_ms", "시간 (ms)"), text("status", "상태")];
+  { key: "start_time", label: "시작 (브라우저 시간)", render: formatClientTimestamp, toText: formatClientTimestamp }, numeric("duration_ms", "시간 (ms)"), text("status", "상태")];
 function metricMean(rows, name, tokenType) {
   const selected = (rows || []).filter((r) => r.name === name
     && (!tokenType || r.dimensions?.token_type === tokenType));
@@ -55,7 +56,7 @@ const EFFICIENCY_TILES = [
 
 export default function CodexInsights({ range, enabled = true, sections }) {
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
-  const { data, loading, error } = useApi("/api/codex/insights", { client: "codex", ...bounds }, enabled);
+  const { data, loading, error } = useApi("/api/codex/insights", { client: "codex", ...bounds }, enabled, { linkedRange: true });
   const [preferredTab, setTab] = useState(TABS[0]);
   const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
   const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
@@ -71,13 +72,13 @@ export default function CodexInsights({ range, enabled = true, sections }) {
       {!enabled || loading ? <Loading /> : error ? <ErrorBox error={error} /> : (
         <>
           {data?.range && <p className="text-sm text-ink-600">
-            상세 조회 구간: {data.range.from.replace("T", " ")} ~ {data.range.to.replace("T", " ")} (UTC)
+            상세 조회 구간: {formatClientTimestamp(data.range.from)} ~ {formatClientTimestamp(data.range.to)} (브라우저 시간)
           </p>}
           <div className="flex flex-wrap gap-2" aria-label="신호 수집 상태">
             {["logs", "metrics", "traces"].map((signal) => {
               const c = data?.coverage?.[signal];
               return <span key={signal} className="rounded-lg border border-ink-200 bg-card px-3 py-2 text-sm text-ink-700"
-                title={c?.last_seen ? `최근 관측: ${c.last_seen}` : "선택한 구간의 수집 상태"}>
+                title={c?.last_seen ? `최근 관측: ${formatClientTimestamp(c.last_seen)}` : "선택한 구간의 수집 상태"}>
                 {signal[0].toUpperCase() + signal.slice(1)} · {STATUS[c?.status] || "수집 미확인"}
                 {c?.status === "observed" && ` · ${formatObserved(c.records)}개`}
                 {c?.partial && " · 일부 미확인"}

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 // 자동 새로고침 주기. 0 = 끔. 값은 그대로 localStorage에 저장되므로 늘리거나 줄일 때
 // 예전 값이 목록에 없으면 DEFAULT로 접힌다(아래 readStored 참고).
@@ -16,11 +16,14 @@ const dayKeyNow = () => Math.floor(Date.now() / 86400000);
 
 // provider 없이 부르는 소비자(FilterBar.test.jsx 등)도 크래시하지 않게 완전한 모양을
 // 기본값으로 준다 — FreshnessContext.jsx와 같은 관례.
+const RefreshCycleContext = createContext({ tick: 0, reportFailure() {}, beginRequest() { return () => {}; } });
 const RefreshContext = createContext({
   intervalMs: 0,
   tick: 0,
   lastRefreshedAt: null,
   lastError: false,
+  isRefreshing: false,
+  beginRequest() { return () => {}; },
   dayKey: dayKeyNow(),
   setIntervalMs() {},
   refreshNow() {},
@@ -47,6 +50,7 @@ export function RefreshProvider({ children }) {
   const [tick, setTick] = useState(0);
   const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
   const [lastError, setLastError] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState(0);
   const [dayKey, setDayKey] = useState(dayKeyNow);
   const skipNextRef = useRef(false);
 
@@ -73,6 +77,18 @@ export function RefreshProvider({ children }) {
     // 같은 요청을 계속 때리지 않기 위한 최소 백오프다.
     skipNextRef.current = true;
   }, []);
+
+  const beginRequest = useCallback(() => {
+    let pending = true;
+    setPendingRequests((count) => count + 1);
+    return () => {
+      if (!pending) return;
+      pending = false;
+      setPendingRequests((count) => count - 1);
+    };
+  }, []);
+  // Status updates must not notify every data consumer again.
+  const cycle = useMemo(() => ({ tick, reportFailure, beginRequest }), [tick, reportFailure, beginRequest]);
 
   useEffect(() => {
     if (intervalMs === 0) return;
@@ -101,13 +117,17 @@ export function RefreshProvider({ children }) {
 
   return (
     <RefreshContext.Provider
-      value={{ intervalMs, tick, lastRefreshedAt, lastError, dayKey, setIntervalMs, refreshNow: bump, reportFailure }}
+      value={{ intervalMs, tick, lastRefreshedAt, lastError, dayKey, setIntervalMs, refreshNow: bump, reportFailure, beginRequest, isRefreshing: pendingRequests > 0 }}
     >
-      {children}
+      <RefreshCycleContext.Provider value={cycle}>{children}</RefreshCycleContext.Provider>
     </RefreshContext.Provider>
   );
 }
 
 export function useRefresh() {
   return useContext(RefreshContext);
+}
+
+export function useRefreshCycle() {
+  return useContext(RefreshCycleContext);
 }

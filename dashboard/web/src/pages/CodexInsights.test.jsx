@@ -101,7 +101,7 @@ test("shared effective bounds reach the API and a paused overview preserves deta
   state.result = { data: fixture(), loading: false };
   const range = { from: "2026-09-01T00:00:00Z", to: "2026-09-02T10:00:00Z" };
   const { rerender } = render(<CodexInsights range={range} enabled />);
-  expect(state.calls.at(-1)).toEqual(["/api/codex/insights", { client: "codex", ...range }, true]);
+  expect(state.calls.at(-1)).toEqual(["/api/codex/insights", { client: "codex", ...range }, true, { linkedRange: true }]);
   fireEvent.click(screen.getByRole("button", { name: "런타임·메트릭" }));
   fireEvent.change(screen.getByPlaceholderText("메트릭 이름 검색"), { target: { value: "turn" } });
   rerender(<CodexInsights range={range} enabled={false} />);
