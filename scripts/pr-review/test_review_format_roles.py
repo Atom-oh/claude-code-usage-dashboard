@@ -12,7 +12,7 @@ import role_review
 import synthesize_roles
 import test_role_review
 import test_synthesize_roles
-from review_format import FORMAT_INSTRUCTIONS
+from review_format import FORMAT_INSTRUCTIONS, format_violation
 
 
 class ReviewFormatTests(unittest.TestCase):
@@ -38,7 +38,29 @@ class ReviewFormatTests(unittest.TestCase):
             "password: [label](docs.md) # SYNTHETIC_VALUE",
             "password: [label](SYNTHETIC_VALUE invalid-title)",
             "password:123:456 SYNTHETIC_VALUE",
+            "password:prefix.value:123 SYNTHETIC_SECOND",
+            "db.password:123 SYNTHETIC_SECOND",
+            "db.password:prefix:123 SYNTHETIC_SECOND",
         )
+
+    def test_bare_sensitive_numeric_citations_require_explicit_reference_syntax(self):
+        for text in (
+            "auth.ts:42",
+            "The guard at auth.ts:42 was checked.",
+            "token.ts:42",
+            "See [auth](web/lib/auth.ts:42) for details.",
+            "See [token](web/lib/token.ts:42) for details.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(format_violation(text), "unsupported_review_format")
+        for text in (
+            "Checked `web/lib/auth.ts:42`.",
+            "Checked `web/lib/token.ts:42`.",
+            "See [auth](web/lib/auth.ts#L42) for details.",
+            "See [token](web/lib/token.ts#L42-L45) for details.",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(format_violation(text))
 
     def test_ambiguous_colon_values_cannot_supply_role_coverage(self):
         for text in self.ambiguous_value_examples():
@@ -140,12 +162,14 @@ class ReviewFormatTests(unittest.TestCase):
             "## Authorization\nThe caller is checked.",
             "**Secrets/credentials:**\nNone introduced.",
             "Token handling: preserved.",
-            "See [auth.ts](web/lib/auth.ts:42) for the caller check.",
-            "The guard at auth.ts:42 was checked.",
-            "The guard at token.ts:42 was checked.",
-            "The guard at web/lib/token.ts:42 was checked.",
-            "token.ts:42",
-            "web/lib/token.ts:42",
+            # Option 1 uses explicit references instead of bare numeric labels.
+            "See [auth.ts](web/lib/auth.ts#L42) for the caller check.",
+            "The guard at `auth.ts:42` was checked.",
+            "The guard at [token.ts](token.ts#L42) was checked.",
+            "The guard at [web/lib/token.ts](web/lib/token.ts#L42) was checked.",
+            "[token.ts](token.ts#L42)",
+            "[web/lib/token.ts](web/lib/token.ts#L42)",
+            "See [token.ts](web/lib/token.ts#L42-L45) for the caller check.",
             "Checked `web/lib/token.ts`; the guard is preserved.",
             "Per `docs/decisions/002-auth-and-login.md`: signup is closed.",
             "Authorization: [implementation](web/lib/auth.ts)",
@@ -181,6 +205,24 @@ class ReviewFormatTests(unittest.TestCase):
                 self.assertEqual(calls, 1)
                 self.assertIn("PUBLIC_AFTER", published)
                 self.assertTrue(published.endswith("VERDICT: PASS\n"))
+
+    def test_existing_inline_redaction_damage_still_blocks_publication(self):
+        # BASE already loses this closing tick; numeric-policy changes must not
+        # waive the post-filter gate. A #L link is the supported publishing form.
+        text = "The guard at `token.ts:42` was checked."
+        self.assertIsNone(format_violation(text))
+        helper = test_role_review.RoleReviewTests()
+        helper.setUp()
+        self.addCleanup(helper.tearDown)
+        helper.prepare()
+        result = helper.record("codex", helper.response("codex", checks=[{
+            "path": test_role_review.FRONTEND, "evidence": text,
+        }]), expected=2)
+        self.assertEqual(result["failure_codes"], ["unsupported_review_format"])
+        self.assertIsNone(result["response"])
+        reply = (0, text + "\nVERDICT: PASS\n", "")
+        _, published = self.chair([reply, reply])
+        self.assertTrue(published.endswith("VERDICT: FAIL\n"))
 
     def test_later_assignments_still_block_after_citations_and_prose(self):
         for evidence in (

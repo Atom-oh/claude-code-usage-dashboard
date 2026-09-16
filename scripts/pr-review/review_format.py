@@ -15,8 +15,9 @@ FORMAT_INSTRUCTIONS = (
     "values only; never copy credentials. Unsupported examples fail review coverage."
     " Sensitive-key colon values and explanations require fences, including "
     "multiword text and trailing comments. Put explanatory prose under a separate "
-    "heading, or use a sentence without the sensitive-key colon form. Numeric "
-    "path:line citations and explicit Markdown links remain references."
+    "heading, or use a sentence without the sensitive-key colon form. Put compact "
+    "file:line references entirely inside inline backticks. Use #L line anchors "
+    "in Markdown link targets; bare sensitive numeric citations are ambiguous values."
 )
 
 ERROR_CODE = "unsupported_review_format"
@@ -27,7 +28,6 @@ ASSIGNMENT_TAIL = re.compile(r"(?P<spacing>\s*)(?P<operator>[:=])")
 COLON_RHS = re.compile(r"[^\r\n]*")
 LINK_VALUE = re.compile(r"\[[^\"'\]\r\n]+\]\(")
 SETEXT_TAIL = re.compile(r"=*[ \t]*(?:\r?\n|\Z)")
-LINE_NUMBER = re.compile(r"[0-9]+(?::[0-9]+)?(?=\Z|[\s)\],.;])")
 # Legacy shell adapters have no shared Python credential policy. Structured
 # adapters pass their existing sensitive-key pattern explicitly instead.
 DEFAULT_SENSITIVE_KEY = (
@@ -211,11 +211,6 @@ def format_violation(text, sensitive_pattern=DEFAULT_SENSITIVE_KEY, *, key_token
     for start, match in assignment_matches(prose_text, sensitive_pattern, key_token_pattern):
         key = prose_text[start:match.start("spacing")]
         quoted_key = key.endswith(("'", '"'))
-        path_key = ("." in key
-                    or (start and prose_text[start - 1] in "/\\."))
-        if (not quoted_key and path_key and match["operator"] == ":"
-                and not match["spacing"] and LINE_NUMBER.match(prose_text, match.end())):
-            continue  # Only an adjacent numeric path:line suffix is a citation.
         if is_assignment(prose_text, match, quoted_key):
             return ERROR_CODE
     return None

@@ -86,10 +86,15 @@ explanations and trailing comments. Formatting only the key with backticks does
 not exempt its value. Put explanatory prose under a standalone heading or use a
 sentence without that colon form. After an inline path reference, use a separate
 sentence or a semicolon rather than an ambiguous colon explanation.
-Bare section labels, Setext headings, numeric path:line citations and Markdown
-links remain supported. A link exemption requires a complete inline link and no
-trailing value or comment; path citations need a file/path indicator, not merely
-a colon within a numeric value. Same-line empty equals assignments require fences.
+Bare section labels and Setext headings remain supported. Put compact sensitive
+file:line references entirely inside inline code, such as `src/token.ts:42`.
+Markdown links use actual line anchors, such as `src/token.ts#L42`, rather than
+colon-number targets. Bare sensitive numeric citations are ambiguous values and
+require fences; dots, slashes and numeric prefixes do not exempt them.
+A link exemption still requires a complete inline link and no trailing value or
+comment. Same-line empty equals assignments require fences.
+The existing scrubber can damage an otherwise valid sensitive inline citation;
+use a `#L` link when that occurs. Post-filter format rejection remains required.
 
 `review_format.py` supplies the shared instructions and validator. Specialist
 checks, finding conditions/evidence and uncertainties are checked before and after

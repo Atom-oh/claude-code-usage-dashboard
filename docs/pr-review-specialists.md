@@ -64,7 +64,9 @@ inline code is limited to symbol/path references. Specialist prose and chair
 output must satisfy this contract before and after confidentiality filtering.
 Ambiguous sensitive-key colon values must be fenced, even when they read as
 multiword prose. Use a standalone heading and separate explanation; explicit
-references remain supported.
+references remain supported. Keep a compact sensitive file:line reference wholly
+inside inline code, and use actual `#L` line anchors in Markdown links. Bare
+sensitive numeric labels receive no citation exemption.
 Unsupported examples or damaged fences remain incomplete review evidence, with
 a static failure explanation. Metadata paths keep their existing scope validation.
 See the [module presentation contract](../scripts/pr-review/README.md#review-presentation).
