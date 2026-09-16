@@ -251,6 +251,8 @@ export default function ClientPanels({ page = "overview", data = {}, clients = d
         <ClientBars title="클라이언트별 첫 토큰 시간 (ms)" rows={clientRows} metric={TTFT} />
         {table("모델·백엔드 진단", [CLIENT, BACKEND, MODEL, TOKENS, REQUESTS, ERRORS, TOOL_CALLS, REQUEST_TIME, TTFT],
           models, "diagnostics", "백엔드는 전송 경로이며 클라이언트 정체성이나 기업 사용 채널을 뜻하지 않습니다.")}
+        {table("프로젝트 태그별 사용량", [CLIENT, { key: "project", label: "프로젝트", render: (v) => v || "(미지정)" }, BACKEND, ...USAGE],
+          rows("by_project"), "projects", "클라이언트의 project.name 태그 기준이며 AWS 청구 프로젝트와 별도입니다. 태그 수집을 지원하는 클라이언트의 관측값만 표시합니다.")}
         <Card title="관측 신호 범위">
           <div className={`grid gap-4 ${clientRows.length > 1 ? "lg:grid-cols-2" : ""}`}>
             {clientRows.map((row) => <div key={row.client}>

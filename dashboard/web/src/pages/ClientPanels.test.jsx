@@ -104,6 +104,17 @@ test("token composition does not add reasoning a second time", () => {
   expect(screen.getAllByText("입력 (캐시 제외)").length).toBeGreaterThan(0);
   expect(screen.getAllByText("추론 (출력의 일부)").length).toBeGreaterThan(0);
 });
+test("analytics retains project-tag usage with the selected client and reported cost basis", () => {
+  const data = fixture(["codex"]);
+  data.by_project = [{ ...data.by_client[0], project: "workshop-app" },
+    { ...data.by_client[0], client: "claude", project: "excluded" }];
+  mount("analytics", data);
+  const projects = card("프로젝트 태그별 사용량");
+  expect(projects.textContent).toContain("workshop-app");
+  expect(projects.textContent).not.toContain("excluded");
+  expect(projects.textContent).toContain("$0.0042405");
+  expect(projects.textContent).toContain("AWS 정가 추정");
+});
 
 test("productivity exposes correct cache/input and reasoning/output percentages", () => {
   mount("productivity", fixture(["codex"]));
