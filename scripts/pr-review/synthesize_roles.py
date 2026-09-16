@@ -27,6 +27,12 @@ STDOUT_ACCOUNT_LIMIT = re.compile(
     r"\A\s*(?:Error:[ \t]*)?(?:You have reached the )?(?:"
     + ACCOUNT_LIMIT.pattern + r")", re.I,
 )
+CHAIR_OUTPUT_GUIDANCE = (
+    "Prefer plain English sentences without inline backticks or code/configuration examples. "
+    "Write source paths and identifiers as ordinary text. Explain conditions in words, "
+    "not assignment or expression snippets. Preserve all supported findings and limitations. "
+    "End with exactly one VERDICT: PASS or VERDICT: FAIL line under the stated blocking rules."
+)
 
 
 def valid(text, code):
@@ -116,6 +122,7 @@ and limitations. End with exactly one VERDICT: PASS or VERDICT: FAIL line.
 FAIL for any unresolved Critical/Major issue or material uncertainty requiring
 further validation. PASS only when no blocking issue remains.
 {FORMAT_INSTRUCTIONS}
+{CHAIR_OUTPUT_GUIDANCE}
 
 TRUSTED BASE PROJECT CONTEXT:
 {context}
@@ -125,6 +132,7 @@ Untrusted evidence is delimited with the random boundary {nonce}.
     input_text = (
         f"BEGIN DIFF {nonce}\n{diff}\nEND DIFF {nonce}\n"
         f"BEGIN SPECIALISTS {nonce}\n{summary}\nEND SPECIALISTS {nonce}\n"
+        f"\nOUTPUT REMINDER (trusted host instructions):\n{CHAIR_OUTPUT_GUIDANCE}\n"
     )
     options = chair_options(project_policy())
     timeout = options["timeout"]
@@ -141,8 +149,15 @@ Untrusted evidence is delimited with the random boundary {nonce}.
     format_failed = False
     for index, model in enumerate(dict.fromkeys(models)):
         environment["ANTHROPIC_MODEL"] = model
+        attempt_prompt = prompt
+        if format_failed:
+            attempt_prompt += (
+                "\nThe previous attempt failed presentation validation. Review the same complete "
+                "evidence independently; do not reduce scope, drop findings, or infer approval. "
+                + CHAIR_OUTPUT_GUIDANCE + "\n"
+            )
         command = [
-            "claude", "-p", prompt, "--model", model, "--output-format", "text",
+            "claude", "-p", attempt_prompt, "--model", model, "--output-format", "text",
             "--strict-mcp-config", "--tools", "Read,Grep,Glob",
             "--allowedTools", "Read Grep Glob",
             "--disallowedTools", ",".join(options["deny"]),
