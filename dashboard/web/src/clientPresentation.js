@@ -1,0 +1,57 @@
+import { formatObserved } from "./clientUsage.js";
+
+export const CLIENT_NAMES = { claude: "Claude Code", codex: "Codex" };
+export const clientName = (value) => CLIENT_NAMES[value] || value || "—";
+export const basisLabel = (value) => ({
+  client_reported: "클라이언트 보고", aws_list_estimate: "AWS 정가 추정",
+})[value] || value || "기준 미제공";
+
+const MEASURES = [
+  "tokens", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens",
+  "reasoning_tokens", "cost_usd", "sessions", "users", "requests", "api_errors",
+  "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms",
+];
+export function observedNumber(value) {
+  if (!["number", "string"].includes(typeof value) || String(value).trim() === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+function ratio(numerator, denominator, scale = 1) {
+  const n = observedNumber(numerator), d = observedNumber(denominator);
+  return n === null || d === null || d === 0 ? null : observedNumber(n / d * scale);
+}
+function subsetPercent(part, whole) {
+  return part !== null && whole !== null && part <= whole ? ratio(part, whole, 100) : null;
+}
+
+export function presentationRow(source = {}) {
+  const row = { ...source };
+  const unobserved = observedNumber(source.observed_records) === 0;
+  for (const key of MEASURES) row[key] = unobserved ? null : observedNumber(source[key]);
+  const input = [row.input_tokens, row.cache_read_tokens, row.cache_write_tokens];
+  row.input_total = input.includes(null) ? null : input.reduce((sum, n) => sum + n, 0);
+  return {
+    ...row,
+    cache_read_pct: subsetPercent(row.cache_read_tokens, row.input_total),
+    reasoning_pct: subsetPercent(row.reasoning_tokens, row.output_tokens),
+    tokens_per_session: ratio(row.tokens, row.sessions),
+    sessions_per_user: ratio(row.sessions, row.users),
+    cost_per_session: ratio(row.cost_usd, row.sessions),
+    cost_per_user: ratio(row.cost_usd, row.users),
+    usd_per_million_tokens: ratio(row.cost_usd, row.tokens, 1e6),
+    error_records_per_request: ratio(row.api_errors, row.requests),
+    tool_error_pct: subsetPercent(row.tool_errors, row.tool_calls),
+  };
+}
+export function formatPercent(value) {
+  const n = observedNumber(value);
+  return n === null ? "—" : n > 0 && n < 0.01 ? "<0.01%" : `${formatObserved(n)}%`;
+}
+export function formatClientTime(value) {
+  if (!value) return "—";
+  const raw = String(value).replace(" ", "T");
+  const date = new Date(/(?:Z|[+-]\d\d:\d\d)$/.test(raw) ? raw : `${raw}Z`);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("ko-KR", {
+    timeZone: "UTC", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
