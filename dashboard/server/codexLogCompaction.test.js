@@ -53,7 +53,8 @@ test("Codex log compaction against isolated ClickHouse", {
     insert([completion(1), request(2), make(3,"sse_event",{"event.kind":"response.output_text.delta","conversation.id":"session",duration_ms:"40"})]);
     const filters = { user: "load@example.test" };
     const details = select(logs.buildCodexInsightsLogQuery(from,to,filters,{detailsOnly:true}));
-    assert.equal(details.length,2);
+    assert.equal(details.length,3);
+    assert.equal(details.filter(row=>Number(row.is_scope)===1).length,1);
     const summary = logs.foldCodexLogSummary(select(logs.buildCodexLogSummaryQuery(from,to,filters)));
     const result = logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
     assert.equal(result.coverage.status,"observed"); assert.equal(result.coverage.records,100003);
@@ -154,6 +155,22 @@ test("Codex log compaction against isolated ClickHouse", {
     assert.equal(actual.summary.cost_per_session,expected.summary.cost_per_session);
     assert.equal(actual.summary.cost_per_request,expected.summary.cost_per_request);
     assert.equal(actual.summary.tokens_per_request,expected.summary.tokens_per_request);
+  });
+
+  await t.test("a detail-ahead batch cannot hide a new stream-only session from completeness", () => {
+    const r={"user.email":"new-session-race@example.test"},filters={user:"new-session-race@"};
+    insert([completion(701,{},r),request(702,{},r),
+      make(703,"sse_event",{"event.kind":"response.output_text.delta","conversation.id":"second",duration_ms:"1"},r)]);
+    const before=logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from,to,filters)));
+    const summary=logs.foldCodexLogSummary(select(logs.buildCodexLogSummaryQuery(from,to,filters)));
+    insert([completion(704,{"conversation.id":"second"},r),request(705,{"conversation.id":"second"},r),
+      make(706,"sse_event",{"event.kind":"response.output_text.delta","conversation.id":"third",duration_ms:"1"},r)]);
+    const details=select(logs.buildCodexInsightsLogQuery(from,to,filters,{detailsOnly:true}));
+    const after=logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from,to,filters)));
+    const actual=logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
+    for(const field of ["tokens_per_request","cost_per_request","cost_per_session"]){
+      assert.equal(before.summary[field],null);assert.equal(after.summary[field],null);assert.equal(actual.summary[field],null);
+    }
   });
 
 });

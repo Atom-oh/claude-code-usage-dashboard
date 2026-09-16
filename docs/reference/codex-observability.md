@@ -60,26 +60,27 @@ sum/mean/extrema are null. A derived zero increment between known positive
 cumulative sums remains a measured zero.
 
 Logs are deduplicated by timestamp and complete sorted resource/attribute maps.
-ClickHouse summarizes full-window event counts, stream-session scopes, and SSE/WebSocket
-latency distributions before returning data. Weighted exact quantiles preserve the
-existing empirical nearest-rank P50/P95 definition. Stream-session scopes from the
-summary are checked against usage sessions in the priced detail snapshot. A later
-summary completion cannot falsely mark an absent detail completion as usable; scopes
-stay internal and are not exposed by the API. Counts and timing summaries can reflect
-a nearby ingestion snapshot, but prices and their unit denominators use detail rows.
+ClickHouse summarizes full-window event counts and SSE/WebSocket latency distributions
+before returning data. Weighted exact quantiles preserve the existing empirical
+nearest-rank P50/P95 definition. The detail query groups intermediate stream records
+into session-scope markers alongside individual priced events in the same table read.
+Those markers are checked against usage sessions in that result, so ingestion between
+the detail and summary queries cannot manufacture complete usage. Markers stay internal
+and are not exposed by the API. Counts and timing summaries can reflect a nearby
+ingestion snapshot; prices, completeness and unit denominators use the detail result.
 
 Token-bearing completions, failures, requests, tools, approvals and runtime metadata
 retain per-event processing and the existing pricing function. Per-session cost uses
 the same detail snapshot as pricing; sessions with no usage keep units unavailable.
-Intermediate stream
-records are omitted from that detail transfer; their counts and latency remain in
-the database summary. Projection strips unused fields only after full-identity
+Intermediate stream records contribute only session-scope markers to that detail
+transfer; their counts and latency remain in the database summary. Projection strips
+unused fields only after full-identity
 deduplication, and the detail fold does not deduplicate projected rows again.
 The same user/model/backend scope, including model-less session attribution, applies
 to summaries and details.
 
-The 50,000-row safeguard now bounds detailed events and summary dimensions, rather
-than raw stream traffic. Oversized detailed-event or metric results still return
+The 50,000-row safeguard now bounds detailed events plus stream-scope markers and
+summary dimensions, rather than raw stream traffic. Oversized detail or metric results still return
 `coverage.status = limited`, withholding affected derived values. Transport and
 permission failures remain errors. This needs no schema or collector migration.
 The isolated compaction regression is included in `scripts/test-client-sql.sh`.
