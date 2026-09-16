@@ -259,4 +259,22 @@ test("Codex signal SQL against isolated ClickHouse", {
     assert(trace.spans.every((s) => Number(s.span_id) >= 59800));
     assert.equal(result.coverage.truncated_traces, 1);
   });
+  await t.test("a conflicting variant outside the preview cap still withholds the entire trace", () => {
+    execute(`INSERT INTO claude_code.otel_traces
+      (Timestamp, TraceId, SpanId, SpanName, Duration, ResourceAttributes, SpanAttributes)
+      SELECT toDateTime64('2026-09-15 00:30:00',9)+toIntervalMicrosecond(number),
+        'capped-conflict',if(number=0,'199',toString(number)),'operation',1000000,
+        map('client','codex','backend','bedrock-mantle'),map('model','conflict-fixture')
+      FROM numbers(201)`);
+    const q = buildTraceQuery(from, to, { model: "conflict-fixture" });
+    const rows = execute(`${q.sql} FORMAT JSONEachRow`, q.params).split("\n").map(JSON.parse);
+    assert.equal(rows.length, 200);
+    assert.equal(rows.filter((r) => r.span_id === "199").length, 1);
+    const result = foldCodexTraces(rows);
+    assert.deepEqual(result.spans, []);
+    assert.equal(result.coverage.conflicting_spans, 1);
+    assert.equal(result.coverage.partial_traces, 1);
+    assert.deepEqual(result.traces, [
+      { trace_id: "capped-conflict", span_count: null, wall_ms: null, errors: null, spans: [], partial: true }]);
+  });
 });

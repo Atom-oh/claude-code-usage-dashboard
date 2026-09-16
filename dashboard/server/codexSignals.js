@@ -221,8 +221,12 @@ export function buildTraceQuery(from, to, filters = {}) {
     coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn_id
     FROM claude_code.otel_traces
     WHERE ${where} AND TraceId IN (SELECT TraceId FROM recent_traces)
+    ), span_variants AS (
+      SELECT *, count() OVER (PARTITION BY trace_id, span_id) AS variants FROM selected_spans
     )
-    SELECT *, count() OVER (PARTITION BY trace_id) AS trace_records FROM selected_spans
+    SELECT *, count() OVER (PARTITION BY trace_id) AS trace_records,
+      uniqExactIf(span_id, variants > 1) OVER (PARTITION BY trace_id) AS trace_conflicting_spans
+    FROM span_variants
     ORDER BY timestamp DESC, trace_id, span_id, duration_ns, status
     LIMIT 200 BY trace_id
     LIMIT 10000`, params: params(from, to, filters) };
@@ -236,12 +240,16 @@ const operation = (value) => typeof value === "string"
 export function foldCodexTraces(rows) {
   bounded(rows);
   const seen = new Map(), groups = new Map(), traces = new Map(), valid = [];
-  const conflicts = new Set(), partial = new Set(), truncated = new Set();
+  const conflicts = new Map(), sourceConflicts = new Map(), partial = new Set(), truncated = new Set();
   let lastSeen = -Infinity;
   for (const row of rows) {
     if (!row.trace_id || !row.span_id || !Number.isFinite(time(row.timestamp))) continue;
     const stamp = time(row.timestamp);
     if (Number(row.trace_records) > 200) truncated.add(row.trace_id);
+    if (Number(row.trace_conflicting_spans) > 0) {
+      sourceConflicts.set(row.trace_id, Number(row.trace_conflicting_spans));
+      partial.add(row.trace_id);
+    }
     lastSeen = Math.max(lastSeen, stamp);
     if (!traces.has(row.trace_id)) traces.set(row.trace_id,
       { trace_id: row.trace_id, spans: [], errors: 0, start_time: iso(stamp) });
@@ -252,7 +260,11 @@ export function foldCodexTraces(rows) {
       number(row.duration_ns), row.status || "Unset", row.model || "", row.tool_name || "",
       row.effort || "", row.turn_id || ""]);
     if (seen.has(key)) {
-      if (seen.get(key) !== fingerprint) { conflicts.add(key); partial.add(row.trace_id); }
+      if (seen.get(key) !== fingerprint) {
+        if (!conflicts.has(row.trace_id)) conflicts.set(row.trace_id, new Set());
+        conflicts.get(row.trace_id).add(row.span_id);
+        partial.add(row.trace_id);
+      }
       continue;
     }
     seen.set(key, fingerprint); valid.push(row);
@@ -273,7 +285,8 @@ export function foldCodexTraces(rows) {
     const trace = traces.get(row.trace_id); trace.spans.push(span); trace.errors += error ? 1 : 0;
   }
   return { coverage: { ...coverage(valid), last_seen: iso(lastSeen), partial: partial.size > 0,
-    partial_traces: partial.size, conflicting_spans: conflicts.size,
+    partial_traces: partial.size, conflicting_spans: [...partial].reduce((total, id) =>
+      total + Math.max(sourceConflicts.get(id) || 0, conflicts.get(id)?.size || 0), 0),
     ...(truncated.size ? { truncated_traces: truncated.size } : {}) },
     spans: [...groups.values()].map(({ durations, ...row }) => ({ ...row, average_ms: average(durations),
       p95_ms: quantile(durations, 0.95) })).sort((a, b) => b.count - a.count),

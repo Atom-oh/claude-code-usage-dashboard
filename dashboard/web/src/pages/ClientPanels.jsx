@@ -10,6 +10,7 @@ import {
 } from "../clientPresentation.js";
 
 const text = (v) => v || "—";
+const compactAxis = new Intl.NumberFormat("en-US", { notation: "compact", maximumSignificantDigits: 3 });
 const color = (client) => client === "claude" ? "var(--chart-1)" : "var(--chart-2)";
 const number = (key, label) => ({ key, label, render: formatObserved });
 const percent = (key, label) => ({ key, label, render: formatPercent });
@@ -107,7 +108,7 @@ function Trend({ rows, clients, clientRows, bucketHours, metric = "both", title 
   return <DualLineChart title={title}
     subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · UTC · 누락 구간은 연결하지 않습니다.`}
     rows={timeline} xKey="t" lines={lines} bucketHours={bucketHours}
-    tickFormatter={formatClientTime} height={metric === "both" ? 320 : 240} />;
+    tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
 }
 
 function ClientBars({ title, rows, metric, subtitle }) {
