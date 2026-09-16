@@ -66,7 +66,9 @@ existing empirical nearest-rank P50/P95 definition. Session evidence also preser
 missing-usage detection for streams without a completion in the selected window.
 
 Token-bearing completions, failures, requests, tools, approvals and runtime metadata
-retain per-event processing and the existing pricing function. Intermediate stream
+retain per-event processing and the existing pricing function. Per-session cost uses
+the same detail snapshot as pricing; sessions with no usage keep units unavailable.
+Intermediate stream
 records are omitted from that detail transfer; their counts and latency remain in
 the database summary. Projection strips unused fields only after full-identity
 deduplication, and the detail fold does not deduplicate projected rows again.

@@ -308,7 +308,9 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
       // Per-request units use observed HTTP attempts, matching the client overview.
       tokens_per_request: completeUsage ? ratio(total.tokens, requests) : null,
       cost_per_request: completeUsage ? ratio(rounded(total.cost_usd), requests) : null,
-      cost_per_session: completeUsage && !missingSession ? ratio(rounded(total.cost_usd), summary?.sessions ?? sessions.size) : null,
+      // Every complete session has a retained usage row. Keep the denominator
+      // on the same detail snapshot as pricing if summary ingestion races it.
+      cost_per_session: completeUsage && !missingSession ? ratio(rounded(total.cost_usd), sessions.size) : null,
       retry_rate: missingAttempts ? null : ratio(retries, requests),
       api_error_rate: missingOutcomes ? null : ratio(errors, requests), // Error records per HTTP attempt; may exceed 1.
       tool_success_rate: toolRows.some((tool) => tool.unknown) ? null

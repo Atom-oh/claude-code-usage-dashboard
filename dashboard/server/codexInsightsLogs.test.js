@@ -375,3 +375,13 @@ test("real ClickHouse preserves raw identity, limits and clientMetrics model att
     await db.close();
   }
 });
+
+test("session unit cost stays on the priced detail snapshot when summary ingestion lags", () => {
+  const rows = [completion(1), request(2), completion(3, { "conversation.id": "second" }),
+    request(4, { "conversation.id": "second" })];
+  const expected = foldCodexInsightsLogs(rows);
+  const summary = { coverage: expected.coverage, sessions: 1, events: expected.events,
+    latency: [], missing_usage: false };
+  const actual = foldCodexInsightsLogs(rows, undefined, { summary, deduplicated: true });
+  assert.equal(actual.summary.cost_per_session, expected.summary.cost_per_session);
+});
