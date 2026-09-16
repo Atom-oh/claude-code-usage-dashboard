@@ -62,6 +62,9 @@ token. Review output is scrubbed before becoming a public artifact.
 Review examples use closed top-level code fences with markers at column one;
 inline code is limited to symbol/path references. Specialist prose and chair
 output must satisfy this contract before and after confidentiality filtering.
+Ambiguous sensitive-key colon values must be fenced, even when they read as
+multiword prose. Use a standalone heading and separate explanation; explicit
+references remain supported.
 Unsupported examples or damaged fences remain incomplete review evidence, with
 a static failure explanation. Metadata paths keep their existing scope validation.
 See the [module presentation contract](../scripts/pr-review/README.md#review-presentation).

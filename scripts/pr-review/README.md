@@ -81,8 +81,13 @@ Code and configuration examples require closed top-level fences with both marker
 on their own lines at column one. Use a longer fence around examples containing
 fences. Inline backticks permit only single-line symbol/path references, such as
 `validate()` or `src/service.py`; commands, assignments and nested fences fail.
-Bare section labels and Setext heading underlines are prose. Actual values and
-same-line empty equals assignments still require fences.
+Ambiguous sensitive-key colon values require fences, including multiword
+explanations and trailing comments. Formatting only the key with backticks does
+not exempt its value. Put explanatory prose under a standalone heading or use a
+sentence without that colon form. After an inline path reference, use a separate
+sentence or a semicolon rather than an ambiguous colon explanation.
+Bare section labels, Setext headings, numeric path:line citations and Markdown
+links remain supported. Same-line empty equals assignments still require fences.
 
 `review_format.py` supplies the shared instructions and validator. Specialist
 checks, finding conditions/evidence and uncertainties are checked before and after

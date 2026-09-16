@@ -13,8 +13,10 @@ FORMAT_INSTRUCTIONS = (
     "and ending on their own lines at column one. Use a longer outer fence if the example contains "
     "a fence. Do not nest example fences in lists or blockquotes. Use synthetic "
     "values only; never copy credentials. Unsupported examples fail review coverage."
-    " Sensitive-key assignments outside fences are rejected; ordinary sentences "
-    "and path citations remain prose."
+    " Sensitive-key colon values and explanations require fences, including "
+    "multiword text and trailing comments. Put explanatory prose under a separate "
+    "heading, or use a sentence without the sensitive-key colon form. Numeric "
+    "path:line citations and explicit Markdown links remain references."
 )
 
 ERROR_CODE = "unsupported_review_format"
@@ -22,11 +24,7 @@ FENCE = re.compile(r"(`{3,}|~{3,})([^\r\n]*)$")
 REFERENCE = re.compile(r"(?:[\w./:$@#*+\[\]\\-]+(?:\(\))?)\Z", re.UNICODE)
 TICKS = re.compile(r"`+")
 ASSIGNMENT_TAIL = re.compile(r"(?P<spacing>\s*)(?P<operator>[:=])")
-RHS_WORDS = re.compile(
-    r"[ \t]*(?P<first>[^ \t\r\n]+)?"
-    r"(?:[ \t]+(?P<second>[^ \t\r\n]+))?"
-    r"(?:[ \t]+(?P<third>[^ \t\r\n]+))?"
-)
+COLON_RHS = re.compile(r"[^\r\n]*")
 LINK_VALUE = re.compile(r"\[[^\"'\]\r\n]+\]\(")
 SETEXT_TAIL = re.compile(r"=*[ \t]*(?:\r?\n|\Z)")
 LINE_NUMBER = re.compile(r"[0-9]+(?::[0-9]+)?(?=\Z|[\s)\],.;])")
@@ -40,23 +38,14 @@ DEFAULT_SENSITIVE_KEY = (
 
 
 def is_assignment(text, match, quoted_key=False):
-    """A bare section label or Setext underline contains no assignment value."""
+    """Require fences for ambiguous values without guessing whether they are prose."""
     if match["operator"] == ":":
         if quoted_key:
             return True
-        words = RHS_WORDS.match(text, match.end())
-        first = words["first"] or ""
-        if not words["second"] and re.fullmatch(r"[*_~]*", first):
+        rhs = COLON_RHS.match(text, match.end())[0]
+        if re.fullmatch(r"[ \t*_~]*", rhs):
             return False
-        if first and LINK_VALUE.match(text, words.start("first")):
-            return False  # A prose label may introduce a Markdown reference.
-        if first.startswith(("'", '"', "{", "[", "!", "&")):
-            return True
-        if first.lower() in ("basic", "bearer") and words["second"] and not words["third"]:
-            return True
-        # Natural-language clauses are not configuration values. Bare atomic
-        # values remain a supported assignment spelling; this is not a parser.
-        return words["second"] is None
+        return LINK_VALUE.match(rhs.lstrip(" \t")) is None
     if (match["operator"] == "=" and any(c in match["spacing"] for c in "\r\n")
             and SETEXT_TAIL.match(text, match.end())):
         return False

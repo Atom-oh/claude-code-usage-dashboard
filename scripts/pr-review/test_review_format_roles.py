@@ -16,6 +16,59 @@ from review_format import FORMAT_INSTRUCTIONS
 
 
 class ReviewFormatTests(unittest.TestCase):
+    def ambiguous_value_examples(self):
+        return (
+            "password: SYNTHETIC_FIRST SYNTHETIC_SECOND",
+            "`password`: SYNTHETIC_FIRST SYNTHETIC_SECOND",
+            "`password`: SYNTHETIC_VALUE # comment",
+        )
+
+    def test_ambiguous_colon_values_cannot_supply_role_coverage(self):
+        for text in self.ambiguous_value_examples():
+            for field in ("check", "condition", "evidence", "uncertainty"):
+                with self.subTest(text=text, field=field):
+                    helper = test_role_review.RoleReviewTests()
+                    helper.setUp()
+                    self.addCleanup(helper.tearDown)
+                    helper.prepare()
+                    response = helper.response("codex")
+                    if field == "check":
+                        response["checks"][0]["evidence"] = text
+                    elif field == "uncertainty":
+                        response["uncertainties"] = [text]
+                    else:
+                        finding = {
+                            "severity": "MAJOR", "path": test_role_review.FRONTEND,
+                            "condition": "The changed branch fails.",
+                            "evidence": "Checked the caller.",
+                        }
+                        finding[field] = text
+                        response["findings"] = [finding]
+                    result = helper.record("codex", response, expected=2)
+                    self.assertFalse(result["valid"])
+                    self.assertEqual(result["failure_codes"], ["unsupported_review_format"])
+                    self.assertIsNone(result["response"])
+                    helper.record("claude-self")
+                    helper.cli("aggregate", "--work", helper.work, expected=2)
+                    published = (helper.work / "deterministic-review.md").read_text()
+                    self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+                    for canary in ("SYNTHETIC_FIRST", "SYNTHETIC_SECOND", "SYNTHETIC_VALUE"):
+                        self.assertNotIn(canary, json.dumps(result) + published)
+
+    def test_ambiguous_colon_values_block_chair_pass_and_preserve_primary_fail(self):
+        for text in self.ambiguous_value_examples():
+            for verdict in ("PASS", "FAIL"):
+                with self.subTest(text=text, verdict=verdict):
+                    primary = (0, text + "\nPUBLIC_AFTER\nVERDICT: " + verdict + "\n", "")
+                    fallback = (primary if verdict == "PASS" else
+                                (0, "Fallback must not clear the failure.\nVERDICT: PASS\n", ""))
+                    calls, published = self.chair([primary, fallback])
+                    self.assertEqual(calls, 2 if verdict == "PASS" else 1)
+                    self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+                    self.assertIn("format", published.lower())
+                    for canary in ("SYNTHETIC_FIRST", "SYNTHETIC_SECOND", "SYNTHETIC_VALUE"):
+                        self.assertNotIn(canary, published)
+
     def qualified_assignment_examples(self):
         return (
             "`db.password`: 'SYNTHETIC_REVIEW_VALUE'",
@@ -26,6 +79,14 @@ class ReviewFormatTests(unittest.TestCase):
             "password: &credential SYNTHETIC_REVIEW_VALUE",
             "env/password='SYNTHETIC_REVIEW_VALUE'",
             "db.password: 'SYNTHETIC_REVIEW_VALUE'",
+            # Option 1 intentionally restricts these former prose-positive forms.
+            "Authorization: The caller is checked.",
+            "**Secrets/credentials:** none introduced.",
+            "Checked `web/lib/token.ts`: the guard is preserved.",
+            "The secret: user's identity is validated.",
+            "password: customer's default is documented.",
+            "secret: we're using the documented identity.",
+            "secret: customer's default",
         )
 
     def test_qualified_and_tagged_assignments_cannot_supply_specialist_coverage(self):
@@ -59,8 +120,8 @@ class ReviewFormatTests(unittest.TestCase):
 
     def citation_and_prose_examples(self):
         return (
-            "Authorization: The caller is checked.",
-            "**Secrets/credentials:** none introduced.",
+            "## Authorization\nThe caller is checked.",
+            "**Secrets/credentials:**\nNone introduced.",
             "Token handling: preserved.",
             "See [auth.ts](web/lib/auth.ts:42) for the caller check.",
             "The guard at auth.ts:42 was checked.",
@@ -68,7 +129,7 @@ class ReviewFormatTests(unittest.TestCase):
             "The guard at web/lib/token.ts:42 was checked.",
             "token.ts:42",
             "web/lib/token.ts:42",
-            "Checked `web/lib/token.ts`: the guard is preserved.",
+            "Checked `web/lib/token.ts`; the guard is preserved.",
             "Per `docs/decisions/002-auth-and-login.md`: signup is closed.",
             "Authorization: [implementation](web/lib/auth.ts)",
         )
