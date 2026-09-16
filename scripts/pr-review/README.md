@@ -77,6 +77,10 @@ Publish scrubbed reports/receipts/metadata only; never raw `roles/*.diff` or
 
 ## Review presentation
 
+Specialist prompts request one JSON object without an outer Markdown wrapper.
+Prefer plain-English evidence; encode any fenced example inside a JSON string.
+Fence rules apply after JSON decoding; embedded quotes and newlines must be escaped.
+
 Code and configuration examples require closed top-level fences with both markers
 on their own lines at column one. Use a longer fence around examples containing
 fences. Inline backticks permit only single-line symbol/path references, such as
@@ -110,8 +114,16 @@ no live provider execution.
 Sol replaces this repository's legacy Terra slot in this workflow; application
 inference models remain unchanged.
 
-Valid results cannot be reissued. Failed retries retain diagnostics; prepare
-again for a new review.
+[run_role.py](run_role.py) records and validates each CLI attempt before deciding to
+retry, including exit-0 responses. `PANEL_RETRIES` bounds total attempts (default 2,
+maximum 3). Nonterminal failures retry the same complete prepared input and model
+settings with a fresh nonce; reissue archives the failed result. Exhaustion leaves
+required coverage blocked. Terminal diagnostics stop retries. Valid results,
+including Critical/Major findings or uncertainty, stop retries and cannot be reissued.
+Prepare again for a new review; retries do not repair JSON or discard findings.
+
+The [workflow](../../.github/workflows/pr-review.yml) checks out the pinned BASE.
+Runner or prompt changes in PR HEAD take effect only in a review whose BASE contains them.
 
 Codex uses structured transport events plus its CLI-designated final-output file.
 Tool output and progress text are not review results. Recovered transport notices

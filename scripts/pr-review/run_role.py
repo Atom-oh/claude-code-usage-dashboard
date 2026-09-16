@@ -267,6 +267,28 @@ def preserve_stdout_error(output, error):
     return error + "\n" + first if diagnostic_failure(first) else error
 
 
+def record_attempt(work, tag, nonce, code, output, error):
+    """Validate before retrying; the next issued nonce archives failed results."""
+    error_path = work / "runtime" / f"{tag}.err"
+    error_path.write_text(scrub(error))
+    # Record the original JSON so validation precedes decoded-evidence scrubbing.
+    # The mode-0600 response stays outside publishable artifacts and is deleted.
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", prefix=f"{tag}-response-", dir=work.parent,
+    ) as response:
+        response.write(controls(output))
+        response.flush()
+        result = subprocess.run([
+            sys.executable, str(DIRECTORY / "role_review.py"), "record",
+            "--work", str(work), "--tag", tag, "--output", response.name,
+            "--stderr", str(error_path), "--exit-code", str(code),
+            "--nonce", nonce,
+        ])
+    if result.returncode not in (0, 2):
+        raise RuntimeError("Specialist result recording failed")
+    return result.returncode == 0
+
+
 def run(work, tag):
     plan = json.loads((work / "role-plan.json").read_text())
     role = plan["roles"][tag]
@@ -293,6 +315,7 @@ def run(work, tag):
     output = ""
     error = ""
     code = 1
+    recorded = False
     nonce, framed_prompt, payload = issue_request(work, tag)
     with tempfile.TemporaryDirectory(prefix=f"{tag}-", dir=runtime) as temporary:
         cwd = Path(temporary)
@@ -328,10 +351,12 @@ def run(work, tag):
                         )
                         error = controls(error)
                         error = preserve_stdout_error(output, error)
-                        if FAILURE.search(error) or diagnostic_failure(error):
+                        terminal = bool(FAILURE.search(error) or diagnostic_failure(error))
+                        if terminal:
                             code = code or 1
-                            break
-                        if code == 0 and output.strip():
+                        valid = record_attempt(work, tag, nonce, code, output, error)
+                        recorded = True
+                        if terminal or valid:
                             break
         else:
             environment.pop("KIRO_API_KEY", None)
@@ -372,30 +397,15 @@ def run(work, tag):
                         code = code or 1
                 error = controls(error)
                 error = preserve_stdout_error(output, error)
-                if diagnostic_failure(error):
+                terminal = bool(diagnostic_failure(error))
+                if terminal:
                     code = code or 1
+                valid = record_attempt(work, tag, nonce, code, output, error)
+                recorded = True
+                if terminal or valid:
                     break
-                if code == 0 and output.strip():
-                    break
-    # Diagnostics remain scrubbed. Record must see the original JSON so it can
-    # validate and preserve source paths before scrubbing decoded evidence.
-    error_path = runtime / f"{tag}.err"
-    error_path.write_text(scrub(error))
-    # NamedTemporaryFile is mode 0600 and is removed even if recording raises.
-    # Keep it outside the review workspace and its publishable artifact paths.
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", prefix=f"{tag}-response-", dir=work.parent,
-    ) as response:
-        response.write(controls(output))
-        response.flush()
-        result = subprocess.run([
-            sys.executable, str(DIRECTORY / "role_review.py"), "record",
-            "--work", str(work), "--tag", tag, "--output", response.name,
-            "--stderr", str(error_path), "--exit-code", str(code),
-            "--nonce", nonce,
-        ])
-    if result.returncode not in (0, 2):
-        raise RuntimeError("Specialist result recording failed")
+    if not recorded:  # Preflight/input failure still needs a blocked role result.
+        record_attempt(work, tag, nonce, code, output, error)
     (slot / f"{tag}-timing.json").write_text(json.dumps({
         "tag": tag, "elapsed_seconds": round(time.monotonic() - start, 3),
         "exit_code": code, "configured_model": role["model"],
