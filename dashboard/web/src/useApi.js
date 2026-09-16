@@ -21,7 +21,7 @@ import { useRefresh } from "./RefreshContext.jsx";
 const QUANT_MS = 120_000;
 const WARM_GRACE_MS = 150_000;
 
-export function useApi(path, extraParams = {}, enabled = true) {
+export function useApi(path, extraParams = {}, enabled = true, { linkedRange = false } = {}) {
   const { days, intervalHours, custom, month } = useRange();
   const { group, user, model, project, backend } = useFilters();
   const clientOverview = path === "/api/clients/overview" || path === "/api/codex/insights";
@@ -37,14 +37,21 @@ export function useApi(path, extraParams = {}, enabled = true) {
   const [state, setState] = useState({ data: null, loading: true, error: null });
   const inflightRef = useRef(null);
   const paramsKeyRef = useRef(null);
+  const selectionKeyRef = useRef(null);
   const payloadRef = useRef(null);
   const extraJson = JSON.stringify(extraParams);
+  // A dependent panel may follow its parent's effective server bounds. Those
+  // bounds move during polling; its other parameters and global selection do not.
+  const selectionExtraJson = linkedRange
+    ? JSON.stringify({ ...extraParams, from: undefined, to: undefined }) : extraJson;
 
   useEffect(() => {
     if (!enabled) {
       inflightRef.current?.abort();
       inflightRef.current = null;
       paramsKeyRef.current = null;
+      selectionKeyRef.current = null;
+      payloadRef.current = null;
       setState((s) => s.loading && !s.error ? s : { ...s, loading: true, error: null });
       return;
     }
@@ -70,6 +77,12 @@ export function useApi(path, extraParams = {}, enabled = true) {
 
     const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, project, backend, intervalHours, extraJson]);
     const paramsChanged = paramsKey !== paramsKeyRef.current;
+    // Moving the live time window is a refresh of the same view. Only an actual
+    // selection change replaces its content with an initial loading state.
+    const selectionKey = JSON.stringify([path, days, month, intervalHours,
+      custom?.from.getTime(), custom?.to.getTime(), month ? from.toISOString() : null,
+      group, user, model, project, backend, selectionExtraJson, linkedRange]);
+    const selectionChanged = selectionKey !== selectionKeyRef.current;
     // 같은 파라미터에 대한 요청이 아직 떠 있는데 틱이 오면 그 틱은 버린다(큐잉하지 않는다).
     if (!paramsChanged && inflightRef.current) return;
     if (paramsChanged) {
@@ -77,8 +90,11 @@ export function useApi(path, extraParams = {}, enabled = true) {
       // 쿼리는 계속 돌아서, 필터 타이핑 중 stale 쿼리가 쌓인다.
       inflightRef.current?.abort();
       paramsKeyRef.current = paramsKey;
+    }
+    if (selectionChanged) {
+      selectionKeyRef.current = selectionKey;
       payloadRef.current = null;
-      setState((s) => ({ ...s, loading: true }));
+      setState({ data: null, loading: true, error: null });
     }
     const abort = new AbortController();
     inflightRef.current = abort;
@@ -98,18 +114,20 @@ export function useApi(path, extraParams = {}, enabled = true) {
       abort.signal
     )
       .then((json) => {
-        if (inflightRef.current === abort) inflightRef.current = null;
+        if (inflightRef.current !== abort || abort.signal.aborted) return;
+        inflightRef.current = null;
         const text = JSON.stringify(json);
         const same = text === payloadRef.current;
         payloadRef.current = text;
         // 같은 payload면 data 참조를 유지한다(Recharts 재애니메이션·DataTable 정렬 리셋 방지) —
         // 하지만 loading→false / error→null 전이는 항상 적용한다.
-        setState((s) => ({ data: same ? s.data : json, loading: false, error: null }));
+        setState((s) => same && !s.loading && !s.error ? s
+          : { data: same ? s.data : json, loading: false, error: null });
       })
       .catch((error) => {
-        if (error.name === "AbortError") return;
-        if (inflightRef.current === abort) inflightRef.current = null;
-        if (paramsChanged) {
+        if (error.name === "AbortError" || inflightRef.current !== abort || abort.signal.aborted) return;
+        inflightRef.current = null;
+        if (selectionChanged) {
           setState({ data: null, loading: false, error });
         } else {
           // 백그라운드 틱 실패는 화면에 있는 데이터를 지우지 않는다 — 아직 데이터가 없으면
@@ -120,7 +138,7 @@ export function useApi(path, extraParams = {}, enabled = true) {
       });
     // 이 cleanup에는 abort가 없다 — 틱만 바뀐 리런이 파라미터 로드를 취소하면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, extraJson, tick, enabled]);
+  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, extraJson, selectionExtraJson, linkedRange, tick, enabled]);
 
   // 언마운트 시에만 abort한다.
   useEffect(() => () => {
@@ -128,6 +146,7 @@ export function useApi(path, extraParams = {}, enabled = true) {
     // StrictMode replays mount effects; an aborted request cannot block its replacement.
     inflightRef.current = null;
     paramsKeyRef.current = null;
+    selectionKeyRef.current = null;
   }, []);
 
   return state;

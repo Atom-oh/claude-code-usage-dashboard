@@ -39,13 +39,17 @@ React 18, Vite, Tailwind, and Recharts form a static SPA. Run `npm test` and
   nor requests unless `/api/config` reports `schema.projectColumns === true`.
 - Model filtering of session-scoped measures is not precise model attribution.
   Follow the documented server contract rather than assuming all measures share a grain.
-- A dashboard day is UTC. Use actual range duration for derived rates, not the last
+- Query buckets and calendar presets remain UTC; chart labels, timestamps and their CSV
+  display values use the browser time zone. Parse timezone-less API timestamps as UTC.
+  Use actual range duration for derived rates, not the last
   selected preset. Resync local chart granularity when the global range changes.
 - Use `useApi()` for range/filter forwarding, refresh, aborts, and payload identity.
   Keep its quantization/grace constants aligned with the server cache warmer.
-- Same-parameter refreshes retain loaded data. A tick that advances the quantized
-  request range follows parameter-change loading/error behavior. Unchanged payloads
-  within the same parameters retain their references. `UserDrawer` does not auto-refresh.
+- Automatic refreshes retain loaded content even when the quantized window moves.
+  Actual range/filter/client changes clear the previous selection; background failures
+  retain it and signal the refresh error. Unchanged payloads retain their references.
+  Dependent panels may opt into `linkedRange` for response-derived bounds only.
+  `UserDrawer` does not auto-refresh.
 
 ## Components and channels
 

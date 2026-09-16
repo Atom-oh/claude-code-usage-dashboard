@@ -1,3 +1,4 @@
+import { formatClientTimestamp } from "./clientPresentation.js";
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
@@ -235,7 +236,8 @@ test("common dashboard discloses the shared effective range when historical alig
     effective_range: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-02T10:00:00.000Z", requested_to: "2026-09-02T10:45:00.000Z" },
   }) });
   const notice = await screen.findByText(/집계 종료 시각/);
-  expect(notice.textContent).toContain("2026-09-02 10:00:00 UTC");
+  expect(notice.textContent).toContain(formatClientTimestamp("2026-09-02T10:00:00Z"));
+  expect(notice.textContent).toContain("브라우저 시간");
   expect(notice.textContent).toContain("선택한 클라이언트");
 });
 

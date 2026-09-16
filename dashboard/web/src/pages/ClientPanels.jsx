@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Card } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { DataTable } from "../components/DataTable.jsx";
@@ -6,7 +6,7 @@ import { DualLineChart, RingGauge, SeriesBarChart } from "../components/GroupCha
 import { maskEmail } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
 import {
-  basisLabel, clientName, formatClientTime, formatPercent, observedNumber, presentationRow,
+  basisLabel, BROWSER_TIME_ZONE, clientName, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, presentationRow,
 } from "../clientPresentation.js";
 
 const text = (v) => v || "—";
@@ -106,7 +106,7 @@ function Trend({ rows, clients, clientRows, bucketHours, metric = "both", title 
     return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
   }
   return <DualLineChart title={title}
-    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · UTC · 누락 구간은 연결하지 않습니다.`}
+    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 누락 구간은 연결하지 않습니다.`}
     rows={timeline} xKey="t" lines={lines} bucketHours={bucketHours}
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
 }
@@ -151,7 +151,7 @@ function Fractions({ rows }) {
   </Card>;
 }
 
-export default function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [] }) {
+function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [] }) {
   const selected = clients;
   const rows = (key) => (data?.[key] || []).filter((row) => selected.includes(row.client)).map(presentationRow);
   const clientRows = selected.map((client) => presentationRow(
@@ -188,7 +188,7 @@ export default function ClientPanels({ page = "overview", data = {}, clients = d
           <Trend {...trendProps} metric="cost" title="비용 추이" />
         </div>
         {table("기간별 관측값", [
-          { key: "t", label: "기간 시작 (UTC)", render: formatClientTime }, CLIENT, TOKENS, COST, BASIS, SESSIONS, REQUESTS,
+          { key: "t", label: "기간 시작 (브라우저 시간)", render: formatClientTime, toText: formatClientTimestamp }, CLIENT, TOKENS, COST, BASIS, SESSIONS, REQUESTS,
         ], periods, "periods", "관측된 버킷만 표시합니다. 버킷별 고유 세션 수는 합산할 수 없으며 이전 기간 대비 증감은 제공하지 않습니다.")}
       </>;
       break;
@@ -283,3 +283,5 @@ export default function ClientPanels({ page = "overview", data = {}, clients = d
     <p className="text-[12px] text-ink-500">{EMPTY_VALUE}</p>
   </div>;
 }
+
+export default memo(ClientPanels);
