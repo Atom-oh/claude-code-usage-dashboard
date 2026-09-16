@@ -1,3 +1,4 @@
+import { claudeDetail } from "../test/claudeDetail.js";
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -72,7 +73,7 @@ function mount(entry, schema) {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   const utils = render(
     <ConfigProvider config={{ piiMask: false, groupMode: "ab", schema }}>
-      <MemoryRouter initialEntries={[entry]}>
+      <MemoryRouter initialEntries={[claudeDetail(entry)]}>
         <App />
       </MemoryRouter>
     </ConfigProvider>

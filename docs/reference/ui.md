@@ -18,7 +18,7 @@ symbols. See [frontend state](frontend.md) and [web/AGENTS.md](../../dashboard/w
 
 ## Spend formatting
 
-Use [spend.js](../../dashboard/web/src/spend.js) before aggregating display spend.
+Claude detail uses [spend.js](../../dashboard/web/src/spend.js) before aggregating display spend.
 `asSpendRow` selects `reported_cost` and `prev_reported_cost`, preserves server values as
 `computed_cost` and `prev_computed_cost`, and marks unusable reports with
 `reported_unpriced`. Missing, blank, negative or nonfinite reports are unusable; zero with

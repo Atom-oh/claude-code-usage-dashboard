@@ -251,7 +251,7 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
 // 소형 멀티플(위/아래 패널, 축 하나씩)로 렌더한다. props API는 이전 이중축 버전과 동일해서
 // 호출부(Executive/Overview/Productivity/Trends)는 그대로다. axis:"left"/"right"는 이제
 // "위 패널"/"아래 패널" 배정으로 읽는다.
-function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, showXAxis, zoom, c }) {
+function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c }) {
   return (
     <ResponsiveContainer width="100%" height={height} className={zoom.className}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} syncId="dual" {...zoom.handlers}>
@@ -265,7 +265,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, showXAxis,
           minTickGap={24}
           height={showXAxis ? 30 : 4}
         />
-        <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={48} />
+        <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={48} tickFormatter={valueTickFormatter} />
         <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} />
         {panelLines.map((l, i) => (
           <Line
@@ -285,7 +285,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, showXAxis,
   );
 }
 
-export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, bucketHours }) {
+export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours }) {
   const c = useChartColors();
   const zoomTop = useDragZoom(undefined, bucketHours);
   const zoomBottom = useDragZoom(undefined, bucketHours);
@@ -323,6 +323,7 @@ export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines,
               xKey={xKey}
               height={panelH}
               tickFormatter={tickFormatter}
+              valueTickFormatter={valueTickFormatter}
               showXAxis={pi === panels.length - 1}
               zoom={pi === 0 ? zoomTop : zoomBottom}
               c={c}

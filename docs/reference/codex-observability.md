@@ -59,9 +59,15 @@ positive observation counts are ambiguous. Counts remain available, while affect
 sum/mean/extrema are null. A derived zero increment between known positive
 cumulative sums remains a measured zero.
 
-Logs are deduplicated by timestamp and sorted resource/attribute maps. Bounded raw
-queries reject an oversized range rather than return an unlabelled truncated total.
-Trace summaries cover selected spans and expose the most recent 50 trace groups.
+Logs are deduplicated by timestamp and sorted resource/attribute maps. Oversized log
+or metric windows return `coverage.status = limited` for that signal, with no
+derived values. Narrowing the range restores detailed inspection; other signals
+and the independent client-overview aggregates remain available. Transport and
+permission failures still fail the request rather than pretending data is absent.
+Trace queries select the latest 50 trace groups and retain at most the latest 200
+distinct span records per group. Coverage counts and operation summaries describe
+only the selected records. Truncated traces are labelled and withhold complete
+wall time and error totals; their selected span timings remain diagnostic.
 Conflicting span identities withhold the affected trace and mark coverage partial;
 they do not suppress log or metric results.
 Model filters require model evidence on metrics/spans; model-less spans can therefore

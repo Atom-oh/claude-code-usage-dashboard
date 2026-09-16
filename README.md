@@ -102,7 +102,9 @@ The server has its own bounded cache/warmer. Unavailable telemetry is distinct f
 measured zero.
 
 Deployments with both clients enabled open the all-client overview; a single-client deployment
-selects that client. Claude selection exposes its existing detail pages. Common views
+selects that client. All selections share the same nine menus and default layout.
+Claude-specific analysis remains available through `view=detail`; switching clients
+keeps the current route and compatible filters. Common views
 use `/api/clients/overview`, with minute buckets through four hours and hourly buckets
 for longer ranges. Mixed ranges share Claude's aligned `effective_range`; historical
 rollup approximations remain. See the [data contract](docs/reference/data.md).

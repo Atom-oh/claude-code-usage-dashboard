@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { NavItem, useNavigation } from "./Sidebar.jsx";
+import { useClient } from "../ClientContext.jsx";
 
 // lg(1024px) 미만에서는 SPA에 내비게이션이 아예 없었다 — Sidebar가 `hidden lg:flex`라
 // 모바일/태블릿에서 페이지를 옮길 방법이 주소창 말고 없다. 데스크톱과 같은 NAV·NavItem을
@@ -18,9 +19,10 @@ export function MobileNav() {
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
   const { items, brand, subtitle } = useNavigation();
+  const { client, detail } = useClient();
 
   // 경로가 바뀌면 닫는다 — 링크로 이동한 뒤 드로어가 화면을 덮은 채 남지 않게.
-  useEffect(() => setOpen(false), [pathname, brand]);
+  useEffect(() => setOpen(false), [pathname, client, detail]);
 
   // Escape 리스너는 열려 있을 때만 붙인다 — 닫힌 상태에서 전역 keydown을 잡고 있을 이유가 없다.
   useEffect(() => {
