@@ -30,3 +30,30 @@ test("invalid and Claude-only selectors are rejected before any query", async ()
     assert.equal(calls, 0);
   }
 });
+test("an oversized log window withholds its totals while preserving metric and trace diagnostics", async () => {
+  const result = await codexInsights(from, to, {}, async (sql) => {
+    if (sql.includes("codex_metrics_")) return [];
+    if (sql.includes("FROM claude_code.otel_traces")) return [{
+      timestamp: "2026-09-15 00:01:00", trace_id: "one", span_id: "two", name: "turn", duration_ns: 1000000,
+    }];
+    return Array.from({ length: 50001 }, () => ({}));
+  });
+  assert.equal(result.coverage.logs.status, "limited");
+  assert.equal(result.coverage.logs.records, null);
+  assert(Object.values(result.summary).every((value) => value === null));
+  assert.deepEqual(result.effort, []);
+  assert.equal(result.traces[0].wall_ms, 1);
+  assert.equal(result.coverage.traces.status, "observed");
+});
+test("oversized metric results do not suppress available log observations", async () => {
+  const result = await codexInsights(from, to, {}, async (sql) => {
+    if (sql.includes("codex_metrics_sum")) return Array.from({ length: 50001 }, () => ({}));
+    if (sql.includes("codex_metrics_") || sql.includes("FROM claude_code.otel_traces")) return [];
+    return [{ timestamp: "2026-09-15T00:01:00Z", resource: {},
+      attributes: { "event.name": "codex.user_prompt", prompt_length: "10" } }];
+  });
+  assert.equal(result.coverage.metrics.status, "limited");
+  assert.equal(result.coverage.metrics.records, null);
+  assert.deepEqual(result.metrics, []);
+  assert.equal(result.summary.prompts, 1);
+});

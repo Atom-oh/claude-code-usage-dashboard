@@ -12,7 +12,7 @@ const numeric = (key, label) => ({ key, label, render: formatObserved });
 const ratio = (key, label) => ({ key, label, render: percent });
 const cost = (key, label) => ({ key, label, render: formatClientCost });
 const TABS = ["효율·Effort", "도구·승인", "성능", "런타임·메트릭", "Trace"];
-const STATUS = { observed: "수집 확인", empty: "관측 없음", unavailable: "수집 미확인" };
+const STATUS = { observed: "수집 확인", empty: "관측 없음", unavailable: "수집 미확인", limited: "조회 한도 초과" };
 const EFFORT = [text("effort", "Effort"), numeric("requests", "완료 응답"), numeric("tokens", "토큰"),
   cost("cost_usd", "추정 비용 (USD)"), numeric("unpriced", "미산정"),
   ratio("cache_hit_rate", "캐시 읽기 비율"), ratio("reasoning_share", "추론 비중")];
@@ -81,9 +81,14 @@ export default function CodexInsights({ range, enabled = true, sections }) {
                 {signal[0].toUpperCase() + signal.slice(1)} · {STATUS[c?.status] || "수집 미확인"}
                 {c?.status === "observed" && ` · ${formatObserved(c.records)}개`}
                 {c?.partial && " · 일부 미확인"}
+                {signal === "traces" && c?.selection === "latest_50_traces" && " · 최근 50 Trace"}
               </span>;
             })}
           </div>
+          {["logs", "metrics"].some((signal) => data?.coverage?.[signal]?.status === "limited") &&
+            <p role="status" className="text-sm text-warning-text">
+              일부 상세 신호가 조회 한도를 넘었습니다. 해당 신호의 수치는 표시하지 않으며, 기간을 줄이면 확인할 수 있습니다. 공통 지표와 다른 신호는 유지됩니다.
+            </p>}
           {allowedTabs.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Codex 상세 보기">
             {allowedTabs.map((name) => <button key={name} type="button" aria-pressed={tab === name} onClick={() => setTab(name)}
               className={`rounded-lg border px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${tab === name
@@ -138,7 +143,10 @@ export default function CodexInsights({ range, enabled = true, sections }) {
             <DataTable title="이벤트 수집 현황" columns={[text("event", "이벤트"), numeric("count", "건수")]} rows={data?.events || []} exportName="codex_events" />
           </>}
           {tab === TABS[4] && <>
-            <p className="text-sm text-ink-600">Trace 시간은 관측된 span 구간입니다. 겹친 span 시간을 합산하지 않으며, 전체 턴이 수집되었다는 의미는 아닙니다. 최근 50개 trace를 표시합니다. 모델 필터는 모델 속성이 있는 span에만 적용됩니다.</p>
+            <p className="text-sm text-ink-600">최근 50개 Trace의 각 최근 200개 span까지 표시합니다. 통계도 표시된 span 기준이며, 전체 조회 구간이나 완전한 턴의 통계는 아닙니다. 모델 필터는 모델 속성이 있는 span에만 적용됩니다.</p>
+            {data?.coverage?.traces?.truncated_traces > 0 && <p role="status" className="text-sm text-warning-text">
+              긴 Trace는 일부 span만 표시하므로 전체 소요 시간과 오류 합계를 제공하지 않습니다.
+            </p>}
             {data?.coverage?.traces?.partial && <p role="status" className="text-sm text-warning-text">
               일부 Trace 데이터가 충돌해 해당 Trace의 통계를 제공하지 않습니다. 다른 신호의 집계는 유지됩니다.
             </p>}
@@ -148,6 +156,7 @@ export default function CodexInsights({ range, enabled = true, sections }) {
                 <summary className="cursor-pointer break-all text-sm font-medium text-ink-700">
                   {trace.trace_id} · {formatObserved(trace.span_count)} spans · {formatObserved(trace.wall_ms)} ms · 오류 {formatObserved(trace.errors)}
                   {trace.partial && " · 불완전"}
+                  {trace.truncated && " · 최근 span만 표시"}
                 </summary>
                 <div className="mt-4">{trace.partial
                   ? <p className="text-sm text-ink-600">같은 Span ID의 값이 충돌해 세부 내역을 보류했습니다.</p>
