@@ -69,17 +69,15 @@ export function buildCodexLogSummaryQuery(from, to, filters = {}) {
         (session, coalesce(nullIf(resource['user.email'], ''), resource['enduser.id']),
           if(resource['backend'] IN ('bedrock-runtime','bedrock-mantle'), resource['backend'], 'unknown'),
           resource['project.name']) AS session_scope,
-        (event IN ('codex.sse_event','codex.websocket_event') AND attributes['event.kind'] = 'response.completed'
-          AND arrayExists(k -> mapContains(attributes,k), ${sqlStrings(Object.keys(TOKEN_FIELDS))})) AS has_usage,
         (session != '' AND event IN ('codex.sse_event','codex.websocket_event')
           AND attributes['event.kind'] NOT IN ('response.completed','response.failed')) AS bulk_stream,
         toFloat64OrNull(trimBoth(attributes['duration_ms'])) AS latency_value
       FROM selected WHERE startsWith(attributes['event.name'], 'codex.')
     )
     SELECT (grouping(event) = 1 AND grouping(session_scope) = 1) AS is_total,
-      (grouping(session_scope) = 0) AS is_scope, event, count() AS records, max(timestamp) AS last_seen,
-      uniqExactIf(session, session != '') AS sessions, countIf(has_usage) AS usage_records,
-      countIf(bulk_stream) AS bulk_records,
+      (grouping(session_scope) = 0) AS is_scope,
+      [tupleElement(session_scope,1),tupleElement(session_scope,2),tupleElement(session_scope,3),tupleElement(session_scope,4)] AS scope,
+      event, count() AS records, max(timestamp) AS last_seen, countIf(bulk_stream) AS bulk_records,
       countIf(${measured}) AS duration_count,
       avgOrNullIf(latency_value, ${measured}) AS average_ms,
       quantilesExactWeightedIf(0.5, 0.95)(ifNull(latency_value, 0), toUInt64(1), ${measured}) AS percentiles,
@@ -90,16 +88,27 @@ export function buildCodexLogSummaryQuery(from, to, filters = {}) {
 
 export function foldCodexLogSummary(rows) {
   if (rows.length > ROW_LIMIT) throw new ValidationError("too much Codex log data", "too many event categories");
-  if (!rows.length) return { coverage: { status: "empty", records: 0, last_seen: null }, sessions: 0, events: [], latency: [], missing_usage: false };
+  if (!rows.length) return { coverage: { status: "empty", records: 0, last_seen: null }, events: [], latency: [], bulk_scopes: [] };
   const total = rows.find((row) => Number(row.is_total) === 1);
-  const records = count(total?.records), sessions = count(total?.sessions);
-  if (records === null || sessions === null) throw new Error("Invalid Codex log summary");
-  const events = [], latency = [];
+  const records = count(total?.records);
+  if (records === null) throw new Error("Invalid Codex log summary");
+  const events = [], latency = [], bulkScopes = [];
+  for (const row of rows.filter((r) => Number(r.is_scope) === 1)) {
+    const bulk = count(row.bulk_records);
+    if (bulk === null) throw new Error("Invalid Codex stream-scope count");
+    if (!bulk) continue;
+    if (!Array.isArray(row.scope) || row.scope.length !== 4 || row.scope.some((value) => typeof value !== "string"))
+      throw new Error("Invalid Codex stream scope");
+    // Match scope(row, false), using the same detail snapshot that supplies prices.
+    // A later summary completion cannot make an absent detail completion usable.
+    bulkScopes.push(JSON.stringify([...row.scope, null]));
+  }
   for (const row of rows.filter((r) => Number(r.is_total) === 0 && !Number(r.is_scope || 0))) {
     const n = count(row.records);
     if (n === null) throw new Error("Invalid Codex event count");
     events.push({ event: row.event, count: n });
     const samples = count(row.duration_count);
+    if (samples === null) throw new Error("Invalid Codex stream duration count");
     if (["codex.sse_event", "codex.websocket_event"].includes(row.event) && samples > 0) {
       latency.push({ name: row.event.slice(6), count: samples, average_ms: number(row.average_ms),
         p50_ms: number(row.percentiles?.[0]), p95_ms: number(row.percentiles?.[1]), max_ms: number(row.max_ms) });
@@ -107,9 +116,8 @@ export function foldCodexLogSummary(rows) {
   }
   const stamp = records ? new Date(String(total.last_seen).replace(" ", "T").replace(/(?<!Z)$/, "Z")) : null;
   return { coverage: { status: records ? "observed" : "empty", records,
-    last_seen: stamp && Number.isFinite(+stamp) ? stamp.toISOString() : null }, sessions,
-    events: events.sort(byName("event")), latency: latency.sort(byName("name")),
-    missing_usage: rows.some((row) => Number(row.is_scope) === 1 && Number(row.bulk_records) > 0 && Number(row.usage_records) === 0) };
+    last_seen: stamp && Number.isFinite(+stamp) ? stamp.toISOString() : null },
+    events: events.sort(byName("event")), latency: latency.sort(byName("name")), bulk_scopes: bulkScopes };
 }
 
 function number(value) {
@@ -298,7 +306,8 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     return { ...tool, success_rate: tool.unknown ? null : ratio(tool.successes, tool.calls),
       average_ms: stats.average_ms, p95_ms: stats.p95_ms };
   });
-  const completeUsage = total.requests > 0 && missingUsage.size === 0 && !summary?.missing_usage;
+  const completeUsage = total.requests > 0 && missingUsage.size === 0
+    && !(summary?.bulk_scopes || []).some((key) => !usageSessions.has(key));
   const toolCalls = toolRows.reduce((n, tool) => n + tool.calls, 0);
   return {
     coverage: summary?.coverage ?? { status: records.length ? "observed" : "empty", records: records.length,

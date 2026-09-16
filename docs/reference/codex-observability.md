@@ -60,10 +60,13 @@ sum/mean/extrema are null. A derived zero increment between known positive
 cumulative sums remains a measured zero.
 
 Logs are deduplicated by timestamp and complete sorted resource/attribute maps.
-ClickHouse summarizes full-window event counts, distinct sessions, and SSE/WebSocket
+ClickHouse summarizes full-window event counts, stream-session scopes, and SSE/WebSocket
 latency distributions before returning data. Weighted exact quantiles preserve the
-existing empirical nearest-rank P50/P95 definition. Session evidence also preserves
-missing-usage detection for streams without a completion in the selected window.
+existing empirical nearest-rank P50/P95 definition. Stream-session scopes from the
+summary are checked against usage sessions in the priced detail snapshot. A later
+summary completion cannot falsely mark an absent detail completion as usable; scopes
+stay internal and are not exposed by the API. Counts and timing summaries can reflect
+a nearby ingestion snapshot, but prices and their unit denominators use detail rows.
 
 Token-bearing completions, failures, requests, tools, approvals and runtime metadata
 retain per-event processing and the existing pricing function. Per-session cost uses
