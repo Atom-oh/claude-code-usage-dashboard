@@ -18,7 +18,9 @@ const db = http.createServer(async(req,res)=>{
   let rows=[];
   if(sql.includes('unique_events')) {
     dataQueries++;
-    if(sql.includes("EventName IN ('codex.sse_event'")) rows=[base];
+    if(sql.includes('GROUPING SETS')) rows=[{is_total:1,records:3,sessions:0,last_seen:base.t},
+      ...['user_prompt','api_request','sse_event'].map(event=>({is_total:0,event:'codex.'+event,records:1,duration_count:0}))];
+    else if(sql.includes("EventName IN ('codex.sse_event'")) rows=[base];
     else rows=['user_prompt','api_request','sse_event'].map(event=>({timestamp:base.t,
       attributes:{'event.name':'codex.'+event,prompt_length:'10','http.response.status_code':'200','event.kind':'response.failed'}}));
   } else if(sql.includes('coding-client:claude-usage')) {
@@ -139,7 +141,7 @@ test("Codex insights enforce auth, client flags and backend-isolated cache entri
   assert.equal(rows[3].body.metrics[0].value, 3);
   assert.equal(rows[3].body.coverage.traces.partial_traces, 1);
   assert.equal(rows[3].body.traces[0].wall_ms, null);
-  assert.equal(rows[3].dataQueries, 1);
-  assert.equal(rows[4].dataQueries, 1);
+  assert.equal(rows[3].dataQueries, 2);
+  assert.equal(rows[4].dataQueries, 2);
   assert.equal(rows[5].dataQueries, 0);
 });

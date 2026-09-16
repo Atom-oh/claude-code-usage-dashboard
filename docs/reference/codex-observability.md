@@ -41,7 +41,7 @@ refresh/cache behavior and user/model/backend selectors. Claude-only group/proje
 filters are rejected. It returns log-derived efficiency, effort, latency, tools,
 approvals, runtime and event tables, plus separate metric and trace results.
 
-Coverage is `observed`, `empty` or `unavailable` for each signal. An absent optional
+Coverage is `observed`, `empty`, `unavailable` or `limited` for each signal. An absent optional
 table is unavailable; transport, permissions and unexpected query failures are
 errors. Existing logs remain usable before the additive metric migration.
 In All-client views, insights use the overview's effective bounds, including historical
@@ -59,11 +59,31 @@ positive observation counts are ambiguous. Counts remain available, while affect
 sum/mean/extrema are null. A derived zero increment between known positive
 cumulative sums remains a measured zero.
 
-Logs are deduplicated by timestamp and sorted resource/attribute maps. Oversized log
-or metric windows return `coverage.status = limited` for that signal, with no
-derived values. Narrowing the range restores detailed inspection; other signals
-and the independent client-overview aggregates remain available. Transport and
-permission failures still fail the request rather than pretending data is absent.
+Logs are deduplicated by timestamp and complete sorted resource/attribute maps.
+ClickHouse summarizes full-window event counts and SSE/WebSocket latency distributions
+before returning data. Weighted exact quantiles preserve the existing empirical
+nearest-rank P50/P95 definition. The detail query groups intermediate stream records
+into session-scope markers alongside individual priced events in the same table read.
+Those markers are checked against usage sessions in that result, so ingestion between
+the detail and summary queries cannot manufacture complete usage. Markers stay internal
+and are not exposed by the API. Counts and timing summaries can reflect a nearby
+ingestion snapshot; prices, completeness and unit denominators use the detail result.
+
+Token-bearing completions, failures, requests, tools, approvals and runtime metadata
+retain per-event processing and the existing pricing function. Per-session cost uses
+the same detail snapshot as pricing; sessions with no usage keep units unavailable.
+Intermediate stream records contribute only session-scope markers to that detail
+transfer; their counts and latency remain in the database summary. Projection strips
+unused fields only after full-identity
+deduplication, and the detail fold does not deduplicate projected rows again.
+The same user/model/backend scope, including model-less session attribution, applies
+to summaries and details.
+
+The 50,000-row safeguard now bounds detailed events plus stream-scope markers and
+summary dimensions, rather than raw stream traffic. Oversized detail or metric results still return
+`coverage.status = limited`, withholding affected derived values. Transport and
+permission failures remain errors. This needs no schema or collector migration.
+The isolated compaction regression is included in `scripts/test-client-sql.sh`.
 Trace queries select the latest 50 trace groups and retain at most the latest 200
 distinct span records per group. Coverage counts and operation summaries describe
 only the selected records. Truncated traces are labelled and withhold complete
