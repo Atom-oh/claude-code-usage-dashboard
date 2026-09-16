@@ -16,11 +16,28 @@ from review_format import FORMAT_INSTRUCTIONS
 
 
 class ReviewFormatTests(unittest.TestCase):
+    def test_actual_role_validation_bounds_operator_free_sensitive_words(self):
+        program = (
+            'import role_review\n'
+            'from test_review_format_roles import ReviewFormatTests\n'
+            'response, plan = ReviewFormatTests().response("token-" * 6000)\n'
+            'role_review.validate_response(response, plan, "codex")\n'
+        )
+        result = subprocess.run([sys.executable, "-B", "-c", program],
+                                cwd=Path(role_review.__file__).parent,
+                                capture_output=True, text=True, timeout=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def ambiguous_value_examples(self):
         return (
             "password: SYNTHETIC_FIRST SYNTHETIC_SECOND",
             "`password`: SYNTHETIC_FIRST SYNTHETIC_SECOND",
             "`password`: SYNTHETIC_VALUE # comment",
+            "`password`: [label](SYNTHETIC_VALUE",
+            "password: [label](docs.md) SYNTHETIC_VALUE",
+            "password: [label](docs.md) # SYNTHETIC_VALUE",
+            "password: [label](SYNTHETIC_VALUE invalid-title)",
+            "password:123:456 SYNTHETIC_VALUE",
         )
 
     def test_ambiguous_colon_values_cannot_supply_role_coverage(self):
@@ -132,6 +149,9 @@ class ReviewFormatTests(unittest.TestCase):
             "Checked `web/lib/token.ts`; the guard is preserved.",
             "Per `docs/decisions/002-auth-and-login.md`: signup is closed.",
             "Authorization: [implementation](web/lib/auth.ts)",
+            "Authorization: [guide](docs/guide(v2).md).",
+            'Authorization: [guide](docs/guide.md "Guide (v2)").',
+            "Authorization: [guide](<docs/guide v2.md>).",
         )
 
     def test_citations_and_prose_labels_can_complete_specialist_review(self):

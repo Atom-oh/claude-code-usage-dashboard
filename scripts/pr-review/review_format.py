@@ -37,6 +37,107 @@ DEFAULT_SENSITIVE_KEY = (
 )
 
 
+DEFAULT_PATTERN = re.compile(DEFAULT_SENSITIVE_KEY)
+
+KEY_TOKEN = re.compile(r"[A-Za-z0-9_.:-]+", re.I)
+
+QUOTED_ASSIGNMENT_TAIL = re.compile(r"""(?:\\?["'])?""" + ASSIGNMENT_TAIL.pattern)
+
+def uses_default_pattern(pattern):
+    return pattern.pattern == DEFAULT_PATTERN.pattern and pattern.flags == DEFAULT_PATTERN.flags
+
+def token_matcher(pattern, explicit=None):
+    if explicit is not None:
+        return re.compile(explicit)
+    return KEY_TOKEN if uses_default_pattern(pattern) else None
+
+def sensitive_reference(reference, pattern, key_token_pattern=None):
+    tokens = token_matcher(pattern, key_token_pattern)
+    if tokens is not None:
+        return any(pattern.fullmatch(reference, token.start(), token.end())
+                   for token in tokens.finditer(reference))
+    return pattern.search(reference)
+
+def assignment_matches(text, pattern, key_token_pattern=None):
+    """Locate an operator before classifying a key under a declared alphabet."""
+    tokens = token_matcher(pattern, key_token_pattern)
+    if tokens is None:
+        combined = re.compile(pattern.pattern + r"""(?:\\?["'])?""" + ASSIGNMENT_TAIL.pattern,
+                              pattern.flags)
+        for match in combined.finditer(text):
+            yield match.start(), match
+        return
+    consumed = 0
+    for token in tokens.finditer(text):
+        start, end = max(token.start(), consumed), token.end()
+        if start >= end:
+            continue
+        tail = QUOTED_ASSIGNMENT_TAIL.match(text, end)
+        key_end = end
+        if tail is None:
+            # When colons belong to the alphabet, the old greedy matcher picks
+            # the last one if no operator follows the complete token.
+            key_end = text.rfind(":", start, end)
+            if key_end < 0:
+                continue
+            tail = ASSIGNMENT_TAIL.match(text, key_end)
+        if pattern.fullmatch(text, start, key_end):
+            yield start, tail
+            consumed = tail.end()
+
+
+def complete_reference(value):
+    """Accept a complete inline link, not a link prefix followed by a value."""
+    prefix = LINK_VALUE.match(value)
+    if prefix is None:
+        return False
+    index, size = prefix.end(), len(value)
+    if index < size and value[index] == "<":
+        index += 1
+        while index < size and value[index] != ">":
+            if value[index] in "<\r\n":
+                return False
+            index += 2 if value[index] == "\\" else 1
+        if index >= size:
+            return False
+        index += 1
+    else:
+        depth = 0
+        while index < size:
+            char = value[index]
+            if char in " \t" or (char == ")" and depth == 0):
+                break
+            if char == "\\":
+                index += 2
+                continue
+            if char in "<>\r\n":
+                return False
+            depth += (char == "(") - (char == ")")
+            index += 1
+        if depth:
+            return False
+    separator = index
+    while index < size and value[index] in " \t":
+        index += 1
+    if index < size and value[index] != ")":
+        if index == separator or value[index] not in "\"'(":
+            return False
+        opening = value[index]
+        closing = ")" if opening == "(" else opening
+        index += 1
+        while index < size and value[index] != closing:
+            if value[index] in "\r\n" or (opening == "(" and value[index] == "("):
+                return False
+            index += 2 if value[index] == "\\" else 1
+        if index >= size:
+            return False
+        index += 1
+        while index < size and value[index] in " \t":
+            index += 1
+    return (index < size and value[index] == ")"
+            and re.fullmatch(r"[ \t.,;:!?]*", value[index + 1:]) is not None)
+
+
 def is_assignment(text, match, quoted_key=False):
     """Require fences for ambiguous values without guessing whether they are prose."""
     if match["operator"] == ":":
@@ -45,14 +146,14 @@ def is_assignment(text, match, quoted_key=False):
         rhs = COLON_RHS.match(text, match.end())[0]
         if re.fullmatch(r"[ \t*_~]*", rhs):
             return False
-        return LINK_VALUE.match(rhs.lstrip(" \t")) is None
+        return not complete_reference(rhs.lstrip(" \t"))
     if (match["operator"] == "=" and any(c in match["spacing"] for c in "\r\n")
             and SETEXT_TAIL.match(text, match.end())):
         return False
     return True
 
 
-def format_violation(text, sensitive_pattern=DEFAULT_SENSITIVE_KEY):
+def format_violation(text, sensitive_pattern=DEFAULT_SENSITIVE_KEY, *, key_token_pattern=None):
     """Return a static failure code; never include external text in diagnostics.
 
     Only explicit markup and sensitive assignments are classified. Ordinary
@@ -97,7 +198,7 @@ def format_violation(text, sensitive_pattern=DEFAULT_SENSITIVE_KEY):
                 return ERROR_CODE
             # Formatting only the key does not make an unfenced assignment safe.
             following = ASSIGNMENT_TAIL.match(text, line_start + closing.end())
-            if (sensitive_pattern.search(reference) and following
+            if (following and sensitive_reference(reference, sensitive_pattern, key_token_pattern)
                     and is_assignment(text, following)):
                 return ERROR_CODE
             prose.append(body[cursor:opening.start()])
@@ -106,15 +207,12 @@ def format_violation(text, sensitive_pattern=DEFAULT_SENSITIVE_KEY):
         prose.append(body[cursor:] + "\n")
     if fence is not None:
         return ERROR_CODE
-    assignment = re.compile(
-        sensitive_pattern.pattern + r"""(?:\\?["'])?""" + ASSIGNMENT_TAIL.pattern,
-        sensitive_pattern.flags)
     prose_text = "".join(prose)
-    for match in assignment.finditer(prose_text):
-        key = prose_text[match.start():match.start("spacing")]
+    for start, match in assignment_matches(prose_text, sensitive_pattern, key_token_pattern):
+        key = prose_text[start:match.start("spacing")]
         quoted_key = key.endswith(("'", '"'))
-        path_key = (any(char in key for char in ".:")
-                    or (match.start() and prose_text[match.start() - 1] in "/\\."))
+        path_key = ("." in key
+                    or (start and prose_text[start - 1] in "/\\."))
         if (not quoted_key and path_key and match["operator"] == ":"
                 and not match["spacing"] and LINE_NUMBER.match(prose_text, match.end())):
             continue  # Only an adjacent numeric path:line suffix is a citation.

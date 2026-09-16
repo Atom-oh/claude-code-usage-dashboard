@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from run_role import controls, execute, scrub  # noqa: E402
 from role_review import diagnostic_failure, strip_controls, scrub as scrub_decoded, SENSITIVE_KEY, mask_fenced_json  # noqa: E402
 from prepare_roles import project_policy  # noqa: E402
+from role_review import SENSITIVE_KEY_TOKENS
 from review_format import FORMAT_INSTRUCTIONS, format_violation  # noqa: E402
 
 DENY = {"Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task"}
@@ -39,7 +40,7 @@ def valid_verdict(text, code):
 
 
 def valid(text, code):
-    return valid_verdict(text, code) and format_violation(text, SENSITIVE_KEY) is None
+    return valid_verdict(text, code) and format_violation(text, SENSITIVE_KEY, key_token_pattern=SENSITIVE_KEY_TOKENS) is None
 
 
 def record_status(label, failed=False):
@@ -158,7 +159,7 @@ Untrusted evidence is delimited with the random boundary {nonce}.
         original_text = strip_controls(controls(text))
         original_valid = valid_verdict(original_text, code)
         original_fail = original_valid and original_text.rstrip().splitlines()[-1] == "VERDICT: FAIL"
-        original_format = format_violation(original_text, SENSITIVE_KEY)
+        original_format = format_violation(original_text, SENSITIVE_KEY, key_token_pattern=SENSITIVE_KEY_TOKENS)
         quota_error, quota_stdout = controls(error), controls(text)
         diagnostic = diagnostic_failure(quota_error)
         hard_limit = (ACCOUNT_LIMIT.search(quota_error)
@@ -167,7 +168,7 @@ Untrusted evidence is delimited with the random boundary {nonce}.
         if hard_limit:
             diagnostic = "quota_diagnostic"
         text = scrub_decoded(scrub(mask_fenced_json(text)))
-        format_failed = bool(original_format or format_violation(text, SENSITIVE_KEY))
+        format_failed = bool(original_format or format_violation(text, SENSITIVE_KEY, key_token_pattern=SENSITIVE_KEY_TOKENS))
         if original_fail and format_failed and diagnostic is None:
             output.write_text(
                 "Chair returned a complete failing verdict, but its details failed "

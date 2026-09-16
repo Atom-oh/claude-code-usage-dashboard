@@ -87,7 +87,9 @@ not exempt its value. Put explanatory prose under a standalone heading or use a
 sentence without that colon form. After an inline path reference, use a separate
 sentence or a semicolon rather than an ambiguous colon explanation.
 Bare section labels, Setext headings, numeric path:line citations and Markdown
-links remain supported. Same-line empty equals assignments still require fences.
+links remain supported. A link exemption requires a complete inline link and no
+trailing value or comment; path citations need a file/path indicator, not merely
+a colon within a numeric value. Same-line empty equals assignments require fences.
 
 `review_format.py` supplies the shared instructions and validator. Specialist
 checks, finding conditions/evidence and uncertainties are checked before and after
