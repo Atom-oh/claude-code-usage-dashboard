@@ -6,7 +6,7 @@ See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions an
 
 ## Routes and state
 
-[App.jsx](../../dashboard/web/src/App.jsx) retains these nine Claude detail routes:
+[App.jsx](../../dashboard/web/src/App.jsx) shares these nine routes across all clients:
 
 | Path | Page |
 |---|---|
@@ -18,12 +18,16 @@ See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions an
 | `/users` | Users |
 | `/cost` | Cost |
 | `/reliability` | Reliability |
-| `/analytics` | Analytics chat |
+| `/analytics` | Analytics |
 
-All-client and Codex modes use the common usage/cost page at `/`; other detail URLs
-redirect there with supported filters preserved. `ClientContext` owns activation
-selection. Common views expose backend filtering, omit Claude channel/project filters,
-and hide Claude-specific chat. No Codex enterprise comparison is created.
+All, Claude and Codex default to shared metrics from `/api/clients/overview`, with
+the same navigation, headers, filters, cards and table columns. Client switching
+preserves valid routes and date/model/unmasked-user state; unknown paths normalize to `/`.
+`ClientContext` owns selection and Claude `view=detail`, which opens existing advanced/A/B
+pages and chat. Claude group/project links without `view` retain detail compatibility.
+Shared views use backend filters; detail uses group/project and drops backend. Leaving
+Claude detail clears `view` and its filters. Both URL-state providers preserve `view`.
+No Codex enterprise comparison or unsupported productivity metrics are added.
 
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
 chat. [main.jsx](../../dashboard/web/src/main.jsx) renders

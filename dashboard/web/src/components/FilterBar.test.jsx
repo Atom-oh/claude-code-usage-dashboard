@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { ConfigProvider } from "../ConfigContext.jsx";
 import { FilterProvider } from "../FilterContext.jsx";
 import { FilterBar } from "./FilterBar.jsx";
+import { ClientProvider } from "../ClientContext.jsx";
 
 afterEach(() => cleanup());
 
@@ -11,11 +12,13 @@ const cfg = (extra = {}) => ({ piiMask: false, groupMode: "ab", defaultRangeDays
 
 function mount(config) {
   return render(
-    <MemoryRouter initialEntries={["/cost"]}>
+    <MemoryRouter initialEntries={["/cost?client=claude&view=detail"]}>
       <ConfigProvider config={config}>
-        <FilterProvider>
-          <FilterBar />
-        </FilterProvider>
+        <ClientProvider>
+          <FilterProvider>
+            <FilterBar />
+          </FilterProvider>
+        </ClientProvider>
       </ConfigProvider>
     </MemoryRouter>
   );
@@ -41,15 +44,14 @@ test("single 모드에서도 사용자/모델 검색 입력창은 그대로 렌�
   expect(screen.getByPlaceholderText("모델 검색")).toBeTruthy();
 });
 
-test("ConfigProvider가 없어도 기본값(ab)이라 채널 컨트롤이 보인다", () => {
+test("the default shared view uses backend filters without Claude channel controls", () => {
   render(
     <MemoryRouter initialEntries={["/cost"]}>
-      <FilterProvider>
-        <FilterBar />
-      </FilterProvider>
+      <ClientProvider><FilterProvider><FilterBar /></FilterProvider></ClientProvider>
     </MemoryRouter>
   );
-  expect(screen.getByText("bedrock")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "bedrock", exact: true })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "백엔드" })).toBeTruthy();
 });
 
 test("projectColumns가 true면 프로젝트 입력창이 렌더된다", () => {

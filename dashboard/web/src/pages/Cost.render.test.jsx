@@ -1,3 +1,4 @@
+import { claudeDetail } from "../test/claudeDetail.js";
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -51,7 +52,7 @@ function mount(groupMode, responses = {}, pricing = { cacheWriteTtl: "5m", overr
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   return render(
     <ConfigProvider config={{ piiMask: false, groupMode, schema: {}, pricing }}>
-      <MemoryRouter initialEntries={["/cost"]}>
+      <MemoryRouter initialEntries={[claudeDetail("/cost")]}>
         <App />
       </MemoryRouter>
     </ConfigProvider>

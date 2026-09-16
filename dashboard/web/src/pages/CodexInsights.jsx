@@ -53,10 +53,12 @@ const EFFICIENCY_TILES = [
   ["cost_per_session", "세션당 추정 비용", formatClientCost],
 ];
 
-export default function CodexInsights({ range, enabled = true }) {
+export default function CodexInsights({ range, enabled = true, sections }) {
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
   const { data, loading, error } = useApi("/api/codex/insights", { client: "codex", ...bounds }, enabled);
-  const [tab, setTab] = useState(TABS[0]);
+  const [preferredTab, setTab] = useState(TABS[0]);
+  const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
+  const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
   const [search, setSearch] = useState("");
   const metrics = useMemo(() => (data?.metrics || []).filter((r) => r.name.toLowerCase().includes(search.toLowerCase())), [data?.metrics, search]);
   const summary = data?.summary || {};
@@ -64,7 +66,7 @@ export default function CodexInsights({ range, enabled = true }) {
     <section aria-labelledby="codex-insights-heading" className="flex flex-col gap-5">
       <div>
         <h2 id="codex-insights-heading" className="text-xl font-semibold text-ink-800">Codex 상세 관측</h2>
-        <p className="mt-1 text-sm text-ink-600">효율, 실행 품질과 지연을 살펴봅니다. 실청구·코드 품질·절감 시간 지표는 아닙니다.</p>
+        <p className="mt-1 text-sm text-ink-600">Codex 비용은 AWS 정가 추정입니다. 실행 관측값은 실청구·코드 품질·절감 시간을 뜻하지 않습니다.</p>
       </div>
       {!enabled || loading ? <Loading /> : error ? <ErrorBox error={error} /> : (
         <>
@@ -82,11 +84,11 @@ export default function CodexInsights({ range, enabled = true }) {
               </span>;
             })}
           </div>
-          <div className="flex flex-wrap gap-2" aria-label="Codex 상세 보기">
-            {TABS.map((name) => <button key={name} type="button" aria-pressed={tab === name} onClick={() => setTab(name)}
+          {allowedTabs.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Codex 상세 보기">
+            {allowedTabs.map((name) => <button key={name} type="button" aria-pressed={tab === name} onClick={() => setTab(name)}
               className={`rounded-lg border px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${tab === name
                 ? "border-brand-500 bg-brand-600 text-white" : "border-ink-200 bg-card text-ink-700"}`}>{name}</button>)}
-          </div>
+          </div>}
           {tab === TABS[0] && <>
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
               {EFFICIENCY_TILES.map(([key, label, format, help]) => <StatTile key={key} label={label} value={format(summary[key])} help={help} />)}

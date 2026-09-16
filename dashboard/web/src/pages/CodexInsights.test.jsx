@@ -104,3 +104,15 @@ test("partial extrema annotate a valid mean and conflicting traces withhold thei
   expect(screen.getByRole("status").textContent).toContain("충돌");
   expect(screen.getByText(/같은 Span ID/)).toBeTruthy();
 });
+
+test("route sections expose only relevant details and choose a valid tab after navigation", () => {
+  state.result = { data: fixture(), loading: false };
+  const { rerender } = render(<CodexInsights sections={["성능"]} />);
+  expect(screen.getByText("요청·도구·시작 단계 지연")).toBeTruthy();
+  expect(screen.queryByText("Effort별 사용량·비용")).toBeNull();
+  expect(screen.queryByRole("button", { name: "런타임·메트릭" })).toBeNull();
+  rerender(<CodexInsights sections={["런타임·메트릭", "Trace"]} />);
+  expect(screen.getByPlaceholderText("메트릭 이름 검색")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Trace", exact: true }));
+  expect(screen.getByText("작업별 Span 지연")).toBeTruthy();
+});

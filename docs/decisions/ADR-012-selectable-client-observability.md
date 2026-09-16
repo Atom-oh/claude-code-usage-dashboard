@@ -1,7 +1,12 @@
 # ADR-012: Selectable coding-client observability
 
-Status: accepted source design, amended 2026-09-15. Initial date: 2026-09-14.
+Status: accepted source design, amended 2026-09-15 and 2026-09-16. Initial date: 2026-09-14.
 Deployment is separate.
+
+The 2026-09-16 layout amendment replaces Claude-default detail and All/Codex single-page
+navigation: all clients share nine routes and metrics. Claude `view=detail` retains
+advanced/A/B pages. [Frontend](../reference/frontend.md) owns route/filter compatibility.
+This changes no cost semantics, collection, user-selected models or effort.
 
 Claude and Codex have different telemetry and cost surfaces. Treating model names or
 Claude's inferred enterprise/bedrock channels as client identity would mix populations
