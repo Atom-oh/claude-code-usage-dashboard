@@ -47,6 +47,11 @@ The SPA and API are served by one Express process in one image; the browser does
 ClickHouse directly. The collector writes telemetry independently of the dashboard API.
 The static [site](../site/) and [video project](../video/) are separate from this runtime.
 
+Shared client and Codex detail costs use
+[known subtotals with partial-cost disclosure](decisions/ADR-013-known-cost-subtotals.md).
+Missing costs do not erase usable reports/estimates; token completeness and collection
+semantics remain separate.
+
 ## Ingestion and storage
 
 [user-data.sh](../user-data.sh) configures participant EC2 hosts, enabled client installs,

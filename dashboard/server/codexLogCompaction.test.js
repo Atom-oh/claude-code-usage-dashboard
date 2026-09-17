@@ -61,6 +61,7 @@ test("Codex log compaction against isolated ClickHouse", {
     assert.equal(result.summary.tokens_per_request,130);
     assert.equal(result.summary.cost_per_request,0.00238425);
     assert.equal(result.summary.cost_per_session,0.00238425);
+    assert.equal(result.summary.cost_partial,false);
     assert.equal(result.events.find(x=>x.event==='codex.sse_event').count,100002);
     const latency = result.latency.find(x=>x.name==='sse_event');
     assert.equal(latency.count,100002); assert.equal(latency.p50_ms,5); assert.equal(latency.p95_ms,9); assert.equal(latency.max_ms,40);
@@ -102,7 +103,13 @@ test("Codex log compaction against isolated ClickHouse", {
     assert.equal(actual.effort[0].requests,2);
     assert(!JSON.stringify(compact(filters).details).includes("PRIVATE"));
     insert([completion(214,{cache_write_token_count:""},r)]);
-    assert.equal(equivalent(filters).summary.cost_per_request,null);
+    const partial=equivalent(filters);
+    assert.equal(partial.summary.cost_per_request,0.0047685);
+    assert.equal(partial.summary.cost_per_session,0.00238425);
+    assert.equal(partial.summary.cost_partial,true);
+    assert.equal(partial.summary.tokens_per_request,null);
+    assert.equal(partial.effort[0].unpriced,1);
+    assert.equal(partial.effort[0].cost_partial,true);
   });
   await t.test("model-less evidence keeps the original user/project/backend session boundary", () => {
     const r={"user.email":"scope-compact@example.test","project.name":"one"};
@@ -123,9 +130,14 @@ test("Codex log compaction against isolated ClickHouse", {
       make(402,"sse_event",{"event.kind":"response.output_text.delta",duration_ms:"2"},r)]);
     const result=equivalent({user:"stream-only@"});
     assert.equal(result.coverage.records,2); assert.equal(result.summary.tokens_per_request,null);
+    assert.equal(result.summary.cost_partial,true);
+    assert.equal(result.summary.cost_per_request,null); assert.equal(result.summary.cost_per_session,null);
     assert.equal(result.latency[0].p50_ms,0); assert.equal(result.latency[0].p95_ms,2);
-    assert.equal(compact({user:"no-such-user"}).result.coverage.status,"empty");
-    assert.deepEqual(compact({user:"no-such-user"}).result.events,[]);
+    const empty=compact({user:"no-such-user"}).result;
+    assert.equal(empty.coverage.status,"empty");
+    assert.equal(empty.summary.cost_partial,false);
+    assert.equal(empty.summary.cost_per_request,null); assert.equal(empty.summary.cost_per_session,null);
+    assert.deepEqual(empty.events,[]);
   });
 
   await t.test("a summary-ahead completion cannot price a session absent from the detail snapshot", () => {
@@ -138,23 +150,48 @@ test("Codex log compaction against isolated ClickHouse", {
     const summary=logs.foldCodexLogSummary(select(logs.buildCodexLogSummaryQuery(from,to,filters)));
     const after=logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from,to,filters)));
     const mixed=logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
-    for(const field of ["tokens_per_request","cost_per_request","cost_per_session"]){
-      assert.equal(before.summary[field],null);assert.equal(after.summary[field],null);assert.equal(mixed.summary[field],null);
+    for(const result of [before,after,mixed]){
+      assert.equal(result.summary.tokens_per_request,null);
+      assert.equal(result.summary.cost_partial,true);
+      assert.equal(result.summary.cost_per_request,0.00238425);
+      assert.equal(result.summary.cost_per_session,0.001192125);
     }
+    for(const field of ["cost_per_request","cost_per_session"]){
+      assert.equal(mixed.summary[field],before.summary[field]);
+    }
+    assert.equal(before.coverage.records,3); assert.equal(mixed.coverage.records,4);
+    assert.equal(mixed.effort[0].requests,1); assert.equal(mixed.effort[0].unpriced,0);
+    assert.equal(after.effort[0].requests,2); assert.equal(after.effort[0].unpriced,1);
     assert(!JSON.stringify(mixed).includes("ahead@example.test"));
   });
-  await t.test("detail-ahead usage satisfies the stream scopes without trusting stale summary counts", () => {
+  await t.test("detail-ahead subtotals stay partial until every stream scope has usage", () => {
     const r={"user.email":"behind@example.test"},filters={user:"behind@"};
     insert([completion(601,{},r),request(602,{},r),
-      make(603,"sse_event",{"event.kind":"response.output_text.delta","conversation.id":"late",duration_ms:"1"},r)]);
+      make(603,"sse_event",{"event.kind":"response.output_text.delta","conversation.id":"late",duration_ms:"1"},r),
+      make(604,"sse_event",{"event.kind":"response.output_text.delta","conversation.id":"last",duration_ms:"1"},r)]);
     const summary=logs.foldCodexLogSummary(select(logs.buildCodexLogSummaryQuery(from,to,filters)));
-    insert([completion(604,{"conversation.id":"late"},r),request(605,{"conversation.id":"late"},r)]);
+    insert([completion(605,{"conversation.id":"late"},r),request(606,{"conversation.id":"late"},r)]);
     const details=select(logs.buildCodexInsightsLogQuery(from,to,filters,{detailsOnly:true}));
     const expected=logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from,to,filters)));
     const actual=logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
+    assert.equal(actual.summary.cost_partial,true);
+    assert.equal(actual.summary.tokens_per_request,null);
+    assert.equal(actual.summary.cost_per_session,0.0015895);
+    assert.equal(actual.summary.cost_per_request,0.00238425);
     assert.equal(actual.summary.cost_per_session,expected.summary.cost_per_session);
     assert.equal(actual.summary.cost_per_request,expected.summary.cost_per_request);
     assert.equal(actual.summary.tokens_per_request,expected.summary.tokens_per_request);
+    assert.equal(actual.coverage.records,4); assert.equal(expected.coverage.records,6);
+    // Retain the completeness proof: detail usage can close every scope even
+    // when the separate summary still predates those completions and attempts.
+    insert([completion(607,{"conversation.id":"last"},r),request(608,{"conversation.id":"last"},r)]);
+    const complete=logs.foldCodexInsightsLogs(
+      select(logs.buildCodexInsightsLogQuery(from,to,filters,{detailsOnly:true})),undefined,{summary,deduplicated:true});
+    assert.equal(complete.summary.cost_partial,false);
+    assert.equal(complete.summary.tokens_per_request,130);
+    assert.equal(complete.summary.cost_per_session,0.00238425);
+    assert.equal(complete.summary.cost_per_request,0.00238425);
+    assert.equal(complete.coverage.records,4);
   });
 
   await t.test("a detail-ahead batch cannot hide a new stream-only session from completeness", () => {
@@ -168,9 +205,17 @@ test("Codex log compaction against isolated ClickHouse", {
     const details=select(logs.buildCodexInsightsLogQuery(from,to,filters,{detailsOnly:true}));
     const after=logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from,to,filters)));
     const actual=logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
-    for(const field of ["tokens_per_request","cost_per_request","cost_per_session"]){
-      assert.equal(before.summary[field],null);assert.equal(after.summary[field],null);assert.equal(actual.summary[field],null);
+    for(const result of [before,after,actual]){
+      assert.equal(result.summary.tokens_per_request,null);
+      assert.equal(result.summary.cost_partial,true);
     }
+    assert.equal(before.summary.cost_per_session,0.001192125);
+    assert.equal(actual.summary.cost_per_session,0.0015895);
+    assert.equal(actual.summary.cost_per_request,0.00238425);
+    for(const field of ["cost_per_request","cost_per_session"]){
+      assert.equal(actual.summary[field],after.summary[field]);
+    }
+    assert.equal(actual.coverage.records,3); assert.equal(after.coverage.records,6);
   });
 
 });

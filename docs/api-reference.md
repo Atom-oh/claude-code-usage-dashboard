@@ -48,17 +48,27 @@ counters) within the range and identical session (nonempty), user, backend and p
 Coarse session attribution can match several models; rows retain `model=""`.
 
 `cost_usd` uses `cost_basis=client_reported` (Claude) or `aws_list_estimate` (Codex).
-Missing prices/invalid usage yield null; explicit zero stays zero. Users union IDs;
-sessions include client; model identity counts overlap.
+It sums usable reports/estimates even when other records are unpriced.
+`cost_partial` discloses exclusions or an unsafe aggregate; `unpriced` counts remain.
+Groups with only unpriced evidence remain null; explicit zero stays zero.
+Positive Claude reports remain usable with missing token fields; zero reports still
+require known zero usage. Codex estimates still require valid usage and a known rate.
+Cost unit values use the known subtotal and observed denominators, with partial
+labels in the UI/CSV. See [ADR-013](decisions/ADR-013-known-cost-subtotals.md).
+User counts union IDs; sessions include client; model identity counts overlap.
 `by_project` uses Codex `project.name`, not billing projects. Request/TTFT durations
 are observed means or null. `requests` includes `api_error` attempts.
 
 `observed_records`: deduplicated logs plus Claude usage rows; zero means empty.
 `quality.missing_usage` counts Codex session/user/model/backend/project scopes without
-usage across the range, making affected token/cost folds null and adding to `unpriced`.
-This cannot detect every dropped response.
+usage across the range, making affected token folds null and adding to `unpriced`.
+Known costs remain a partial subtotal rather than being discarded.
+Unpriced counts can combine usage-record counts and unmatched usage-scope counts;
+they are not a request-coverage percentage. This cannot detect every dropped response.
 
-Folds share rows; over 50,000 returns 400. Claude counter/baseline rules remain.
+Folds share rows; valid and invalid Codex usage are grouped separately before pricing
+so incomplete peers do not erase usable costs. Over 50,000 rows returns 400.
+Claude counter/baseline rules remain.
 `effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
 when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.
 `intervalHours` is validated but ignored.

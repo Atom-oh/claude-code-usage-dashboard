@@ -10,8 +10,9 @@ const ROW_LIMIT = 50000;
 export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 const TOKEN_KEYS = ["tokens", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "reasoning_tokens"];
 const OP_KEYS = ["requests", "api_errors", "tool_calls", "tool_errors"];
-const finite = (n) => n !== null && n !== undefined && n !== "" && Number.isFinite(Number(n)) && Number(n) >= 0;
-const round = (n) => Math.round(n * 1e12) / 1e12;
+const finite = (n) => ["number", "string"].includes(typeof n) && String(n).trim() !== ""
+  && Number.isFinite(Number(n)) && Number(n) >= 0;
+const round = (n) => Number.isFinite(n * 1e12) ? Math.round(n * 1e12) / 1e12 : null;
 
 export function validateClientFilters(raw, enabledClients) {
   const clients = selectClients(raw.client, enabledClients);
@@ -36,7 +37,7 @@ function accumulator(meta) {
   return { ...meta, ...Object.fromEntries([...TOKEN_KEYS, ...OP_KEYS].map((k) => [k, 0])),
     cost_usd: 0, unpriced: 0, observed_records: 0,
     _sessions: new Set(), _users: new Set(), _backends: new Set(), _missingUsage: new Set(),
-    _missing: new Set(), _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
+    _missing: new Set(), _hasCost: false, _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
 }
 
 function usageScope(row, model = row.model || "") {
@@ -49,7 +50,9 @@ function claudeUsage(row) {
   const valid = counts.every((k) => finite(row[k]));
   const tokens = valid ? counts.reduce((n, k) => n + Number(row[k]), 0) : null;
   const report = finite(row.reported_cost) ? Number(row.reported_cost) : null;
-  const cost = valid && report !== null && !(report === 0 && tokens > 0) ? report : null;
+  // A positive client report remains usable even if token telemetry is partial.
+  // Zero is usable only alongside known zero token usage.
+  const cost = report !== null && (report > 0 || valid && tokens === 0) ? report : null;
   return { ...row, tokens, reasoning_tokens: null, cost_usd: cost,
     cost_basis: "client_reported", unpriced: cost === null, invalid: !valid };
 }
@@ -68,8 +71,11 @@ function accumulate(target, row, usage, missingScope) {
       if (!finite(usage[k])) target._missing.add(k);
       else target[k] += Number(usage[k]);
     }
-    if (usage.cost_usd === null) target.unpriced += n || 1;
-    else target.cost_usd += usage.cost_usd;
+    if (!finite(usage.cost_usd)) target.unpriced += n || 1;
+    else {
+      target._hasCost = true;
+      target.cost_usd += Number(usage.cost_usd);
+    }
   } else if (row.kind === "request") {
     target._ops = true;
     target.requests += n;
@@ -90,7 +96,7 @@ function accumulate(target, row, usage, missingScope) {
 }
 
 function finish(target) {
-  const { _sessions, _users, _backends, _missing, _missingUsage,
+  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost,
     _ops, _requestMs, _requestN, _ttftMs, _ttftN, ...out } = target;
   for (const k of _missing) out[k] = null;
   if (_missingUsage.size) {
@@ -98,9 +104,14 @@ function finish(target) {
     out.unpriced += _missingUsage.size;
   }
   if (out.client === "claude" && !_ops) for (const k of OP_KEYS) out[k] = null;
+  // Preserve known zero, but never turn a group containing only unknown costs
+  // into free usage. Missing records remain visible through the partial flag.
+  const costAvailable = _hasCost || out.unpriced === 0;
+  const cost = costAvailable ? round(out.cost_usd) : null;
   return { ...out, sessions: _sessions.size, users: _users.size,
     backend: out.backend || (_backends.size === 1 ? [..._backends][0] : _backends.size ? "mixed" : "unknown"),
-    cost_usd: out.unpriced ? null : round(out.cost_usd),
+    cost_usd: cost,
+    cost_partial: out.unpriced > 0 || costAvailable && cost === null,
     request_duration_ms: _requestN ? _requestMs / _requestN : null,
     ttft_ms: _ttftN ? _ttftMs / _ttftN : null };
 }
@@ -210,6 +221,10 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     return `if(countIf(kind = 'usage' AND NOT (${n}_valid${subsetValid})) > 0,
       NULL, sum(${n})) AS ${field}`;
   }).join(",\n    ");
+  // Separate malformed usage before token sums; otherwise one bad response
+  // erases the valid responses' priceable components in the same SQL group.
+  const validUsage = `${tokenFields.map(([, n]) => `${n}_valid`).join(" AND ")}
+    AND NOT cache_invalid AND NOT reasoning_invalid`;
   const session = isCodex ? "a['conversation.id']" : "SessionId";
   const backend = isCodex ? "if(r['backend'] IN ('bedrock-runtime','bedrock-mantle'), r['backend'], 'unknown')"
     : `multiIf(${GROUP_EXPR} = 'bedrock', 'bedrock-runtime', ${GROUP_EXPR} = 'enterprise', 'anthropic', 'unknown')`;
@@ -266,18 +281,17 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
     session, user, model, backend, project, kind, a['tool_name'] AS tool,
     if(in_n > ${threshold}, 'long', 'short') AS context_tier,
+    (kind != 'usage' OR (${validUsage})) AS usage_valid,
     count() AS count,
     ${tokenSums},
-    countIf(kind = 'usage' AND (
-      NOT (${tokenFields.map(([, n]) => `${n}_valid`).join(" AND ")})
-      OR cache_invalid OR reasoning_invalid)) AS invalid,
+    countIf(kind = 'usage' AND NOT (${validUsage})) AS invalid,
     countIf(event_name = '${prefix}api_error' OR toInt32OrZero(a['http.response.status_code']) >= 400
       OR a['success'] = 'false' OR a['error'] != '') AS errors,
     sumIf(toFloat64OrZero(a['duration_ms']), isFinite(toFloat64OrZero(a['duration_ms'])) AND toFloat64OrZero(a['duration_ms']) >= 0) AS duration_ms,
     countIf(isNotNull(toFloat64OrNull(a['duration_ms'])) AND isFinite(toFloat64OrZero(a['duration_ms']))
       AND toFloat64OrZero(a['duration_ms']) >= 0) AS duration_count
   FROM typed WHERE kind != ''
-  GROUP BY t, session, user, model, backend, project, kind, tool, context_tier
+  GROUP BY t, session, user, model, backend, project, kind, tool, context_tier, usage_valid
   ORDER BY t LIMIT ${ROW_LIMIT + 1}`;
   return { sql, params };
 }

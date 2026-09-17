@@ -19,7 +19,7 @@ alone does not establish its availability in this deployment.
 |---|---|---|
 | Token composition and AWS list estimate | Usage-bearing SSE/WebSocket completion logs | Input includes cache subsets; output includes reasoning. Existing overview remains the billing-estimate authority. |
 | Effort usage/cost and cache/reasoning fractions | Completion `model_reasoning_effort` and token fields | Missing effort stays unknown; conversation-start settings do not replace per-response evidence. |
-| Per-request/per-session units | Completion logs plus observed HTTP attempts and sessions | Retries count as attempts. Missing usage/cost withholds affected units. |
+| Per-request/per-session units | Completion logs plus observed HTTP attempts and sessions | Retries count as attempts. Costs use known subtotals with partial disclosure; unknown token usage or denominators remain unavailable. |
 | API error records per request and retry fraction | Request status, stream failures and zero-based attempt | HTTP and failed-stream records use the overview's error definition. Multiple error records per request are possible; this is not a failure probability. |
 | Tool outcomes and approvals | `tool_result`, `tool_decision` | Permission decisions include automatic approvals; they are not retained-code acceptance. |
 | Latency distributions | Valid per-event durations | Empirical percentiles of observations; request, SSE processing, TTFT, tools and startup stages remain distinct. |
@@ -71,7 +71,12 @@ ingestion snapshot; prices, completeness and unit denominators use the detail re
 
 Token-bearing completions, failures, requests, tools, approvals and runtime metadata
 retain per-event processing and the existing pricing function. Per-session cost uses
-the same detail snapshot as pricing; sessions with no usage keep units unavailable.
+the same detail snapshot as pricing, including session IDs retained by stream-scope
+markers. Costs and Effort rows sum usable amounts with `cost_partial` disclosure;
+all-unknown costs remain null and known zero costs remain zero. Cost units divide
+that subtotal by observed HTTP attempts/sessions and retain partial labels. Missing
+session identity still withholds session units. Token completeness is unchanged.
+See [ADR-013](../decisions/ADR-013-known-cost-subtotals.md).
 Intermediate stream records contribute only session-scope markers to that detail
 transfer; their counts and latency remain in the database summary. Projection strips
 unused fields only after full-identity

@@ -2,9 +2,6 @@
 
 Status: accepted, 2026-09-17, following the user's explicit request.
 
-Rollout: this PR prepares the display layer. API subtotal aggregation follows in
-PR #72; deploy only after both changes are merged. Current deployed behavior is unchanged.
-
 ## Context
 
 The shared client dashboard hid an entire cost total or time bucket when one record

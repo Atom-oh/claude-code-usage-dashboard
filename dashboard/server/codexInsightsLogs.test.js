@@ -25,7 +25,7 @@ test("empty logs expose coverage and no invented ratios or latency", () => {
   assert.deepEqual(out.coverage, { status: "empty", records: 0, last_seen: null });
   fields(out.summary, { prompts: 0, cache_hit_rate: null, cache_write_share: null,
     reasoning_share: null, tokens_per_request: null, cost_per_request: null,
-    cost_per_session: null, retry_rate: null, api_error_rate: null,
+    cost_per_session: null, cost_partial: false, retry_rate: null, api_error_rate: null,
     tool_success_rate: null, approval_rate: null, prompt_length_mean: null });
   for (const key of ["effort", "latency", "tools", "approvals", "runtime", "events"])
     assert.deepEqual(out[key], []);
@@ -68,8 +68,9 @@ test("price only usage-bearing completions, preserving token subsets and request
     log(6, "turn_cost", { estimated_usd: "900" })]);
   fields(out.summary, { cache_hit_rate: 0.4, cache_write_share: 0.11, reasoning_share: 1 / 3,
     tokens_per_request: 65, cost_per_request: 0.001192125, cost_per_session: 0.00238425,
-    retry_rate: 0.5, api_error_rate: 0 });
-  fields(out.effort[0], { effort: "high", requests: 1, tokens: 130, cost_usd: 0.00238425, unpriced: 0 });
+    cost_partial: false, retry_rate: 0.5, api_error_rate: 0 });
+  fields(out.effort[0], { effort: "high", requests: 1, tokens: 130, cost_usd: 0.00238425,
+    cost_partial: false, unpriced: 0 });
 });
 
 test("per-completion tiers and routing use the supplied priceCodexUsage rates", () => {
@@ -122,14 +123,38 @@ test("runtime policies expose recognized names, never structured configuration o
   }
 });
 
-test("generic completions alone and usage-missing sessions make unit costs unavailable", () => {
-  for (const rows of [
-    [request(1), log(2, "sse_event", { "event.kind": "response.completed" })],
-    [completion(1), request(2, { "conversation.id": "missing" })],
+test("generic completions alone cannot manufacture a cost subtotal", () => {
+  fields(foldCodexInsightsLogs([request(1),
+    log(2, "sse_event", { "event.kind": "response.completed" })]).summary, {
+    tokens_per_request: null, cost_per_request: null, cost_per_session: null,
+    cost_partial: true, cache_hit_rate: null,
+  });
+});
+
+test("usage-missing sessions retain partial cost units over observed attempts and sessions", () => {
+  const out = foldCodexInsightsLogs([completion(1), request(2),
+    request(3, { "conversation.id": "missing", attempt: "1" }),
+    request(4, { "conversation.id": "missing", attempt: "2" })]);
+  fields(out.summary, { tokens_per_request: null, cost_per_request: 0.00238425 / 3,
+    cost_per_session: 0.001192125, cost_partial: true, cache_hit_rate: null, retry_rate: 2 / 3 });
+  fields(out.effort[0], { cost_usd: 0.00238425, cost_partial: false, unpriced: 0 });
+});
+
+test("anonymous operational evidence keeps the session denominator unavailable", () => {
+  for (const row of [
+    request(3, { "conversation.id": "" }),
+    log(3, "api_error", { "conversation.id": "", attempt: "0" }),
+    log(3, "sse_event", { "conversation.id": "", "event.kind": "response.completed" }),
+    log(3, "websocket_event", { "conversation.id": "", "event.kind": "response.failed" }),
+    log(3, "tool_result", { "conversation.id": "", success: "true" }),
   ]) {
-    fields(foldCodexInsightsLogs(rows).summary, {
-      tokens_per_request: null, cost_per_request: null, cost_per_session: null, cache_hit_rate: null,
-    });
+    for (const deduplicated of [false, true]) {
+      const out = foldCodexInsightsLogs([completion(1), request(2), row], undefined, { deduplicated });
+      const attempts = ["codex.api_request", "codex.api_error"].includes(row.attributes["event.name"]) ? 2 : 1;
+      fields(out.summary, { cost_per_session: null, cost_per_request: 0.00238425 / attempts,
+        cost_partial: true, tokens_per_request: null });
+      fields(out.effort[0], { cost_usd: 0.00238425, cost_partial: false, unpriced: 0 });
+    }
   }
 });
 
@@ -138,8 +163,9 @@ test("usage availability isolates model, backend, user and project", () => {
     [{ model: "other" }, {}], [{}, { backend: "bedrock-runtime" }],
     [{}, { "user.email": "other@example.invalid" }], [{}, { "project.name": "other" }],
   ]) {
-    assert.equal(foldCodexInsightsLogs([completion(1), request(2, attributes, resource)])
-      .summary.cost_per_session, null);
+    fields(foldCodexInsightsLogs([completion(1), request(2, attributes, resource)]).summary,
+      { cost_per_session: 0.00238425, cost_per_request: 0.00238425, cost_partial: true,
+        tokens_per_request: null, cache_hit_rate: null });
   }
   assert.equal(foldCodexInsightsLogs([completion(1),
     log(2, "tool_result", { model: "", success: "true" }), request(3)]).summary.cost_per_request, 0.00238425);
@@ -147,25 +173,53 @@ test("usage availability isolates model, backend, user and project", () => {
     request(2, { "conversation.id": "" })]).summary.cost_per_session, null);
 });
 
-test("unknown model or backend preserves measured tokens but nulls combined costs", () => {
+test("unknown model or backend preserves known costs and measured tokens", () => {
   for (const [attributes, resource] of [[{ model: "unpriced" }, {}], [{}, { backend: "" }],
     [{}, { backend: "unknown", provider_name: "amazon-bedrock" }]]) {
     const out = foldCodexInsightsLogs([completion(1), completion(2, attributes, resource), request(3)]);
-    fields(out.summary, { cost_per_session: null, tokens_per_request: 260 });
-    fields(out.effort[0], { cost_usd: null, unpriced: 1 });
+    fields(out.summary, { cost_per_session: 0.00238425, cost_per_request: 0.00238425,
+      cost_partial: true, tokens_per_request: 260 });
+    fields(out.effort[0], { cost_usd: 0.00238425, cost_partial: true, unpriced: 1 });
   }
+});
+
+test("cost presence distinguishes all-unpriced from explicit zero in either row order", () => {
+  const unknown = completion(1, { model: "unpriced" });
+  const zero = completion(2, { input_token_count: "0", cached_token_count: "0",
+    cache_write_token_count: "0", output_token_count: "0", reasoning_token_count: "0" });
+  for (const rows of [[unknown], [unknown, zero], [zero, unknown]]) {
+    const out = foldCodexInsightsLogs([...rows, request(3, { model: "" })]);
+    const cost = rows.length === 1 ? null : 0;
+    fields(out.summary, { cost_per_request: cost, cost_per_session: cost,
+      cost_partial: true, tokens_per_request: 130 });
+    fields(out.effort[0], { cost_usd: cost, cost_partial: true, unpriced: 1 });
+  }
+});
+
+test("each effort subtotal tracks its own known costs and unpriced count", () => {
+  const out = foldCodexInsightsLogs([completion(1, { model: "unpriced" }), completion(2),
+    completion(3, { model_reasoning_effort: "low", model: "unpriced" }),
+    completion(4, { model_reasoning_effort: "medium" }), request(5)]);
+  fields(out.summary, { cost_per_request: 0.0047685, cost_per_session: 0.0047685,
+    cost_partial: true, tokens_per_request: 520 });
+  assert.deepEqual(out.effort.map(({ effort, cost_usd, cost_partial, unpriced }) =>
+    ({ effort, cost_usd, cost_partial, unpriced })), [
+    { effort: "high", cost_usd: 0.00238425, cost_partial: true, unpriced: 1 },
+    { effort: "low", cost_usd: null, cost_partial: true, unpriced: 1 },
+    { effort: "medium", cost_usd: 0.00238425, cost_partial: false, unpriced: 0 },
+  ]);
 });
 
 test("invalid and absent token components propagate without hiding independently valid subsets", () => {
   const cache = foldCodexInsightsLogs([completion(1), completion(2, { cached_token_count: "101" }), request(3)]);
-  fields(cache.summary, { cost_per_request: null, tokens_per_request: null,
+  fields(cache.summary, { cost_per_request: 0.00238425, cost_partial: true, tokens_per_request: null,
     cache_hit_rate: null, cache_write_share: null, reasoning_share: 1 / 3 });
   const reasoning = foldCodexInsightsLogs([completion(1), completion(2, { reasoning_token_count: "31" }), request(3)]);
-  fields(reasoning.summary, { cost_per_request: null, tokens_per_request: null,
+  fields(reasoning.summary, { cost_per_request: 0.00238425, cost_partial: true, tokens_per_request: null,
     reasoning_share: null, cache_hit_rate: 0.4 });
   for (const value of [undefined, null, "", " ", "NaN", "Infinity", "-1", "1.5", true, "9007199254740992"]) {
     const out = foldCodexInsightsLogs([completion(1, { input_token_count: value }), request(2)]);
-    fields(out.summary, { tokens_per_request: null, cost_per_request: null, cache_hit_rate: null });
+    fields(out.summary, { tokens_per_request: null, cost_per_request: null, cost_partial: true, cache_hit_rate: null });
   }
 });
 
@@ -173,7 +227,7 @@ test("explicit zero usage remains zero with undefined zero-denominator fractions
   const out = foldCodexInsightsLogs([request(1), completion(2, { input_token_count: "0",
     cached_token_count: "0", cache_write_token_count: "0", output_token_count: "0", reasoning_token_count: "0" })]);
   fields(out.summary, { tokens_per_request: 0, cost_per_request: 0, cost_per_session: 0,
-    cache_hit_rate: null, cache_write_share: null, reasoning_share: null });
+    cost_partial: false, cache_hit_rate: null, cache_write_share: null, reasoning_share: null });
 });
 
 test("WebSocket completion usage is priced; anonymous usage cannot inflate per-session cost", () => {
@@ -182,15 +236,34 @@ test("WebSocket completion usage is priced; anonymous usage cannot inflate per-s
   fields(out.summary, { tokens_per_request: 260, cost_per_request: 0.0047685, cost_per_session: null });
 });
 
-test("overflowing aggregate estimates stay null rather than serializing Infinity", () => {
+test("partial costs preserve missing-session and missing-attempt/outcome guards", () => {
+  const out = foldCodexInsightsLogs([completion(1),
+    completion(2, { model: "unpriced", "conversation.id": "" }),
+    request(3, { attempt: "", "http.response.status_code": "" })]);
+  fields(out.summary, { cost_per_request: 0.00238425, cost_per_session: null, cost_partial: true,
+    tokens_per_request: 260, retry_rate: null, api_error_rate: null });
+});
+
+test("finite individual prices flag summary and effort partial when aggregate rounding overflows", () => {
   const rate = { input: 1e302, cacheWrite: 0, cacheRead: 0, output: 0 };
   const prices = { "openai.gpt-6-astra": { short_context_limit: 100,
     regional: { short: rate, long: rate } } };
   const small = { input_token_count: "1", cached_token_count: "0", cache_write_token_count: "0",
     output_token_count: "0", reasoning_token_count: "0" };
-  const out = foldCodexInsightsLogs([completion(1, small), completion(2, small), request(3)], prices);
-  assert.equal(out.summary.cost_per_request, null);
-  assert.equal(out.effort[0].cost_usd, null);
+  const responses = [completion(1, small), completion(2, small)];
+  for (const response of responses) {
+    const single = foldCodexInsightsLogs([response, request(3)], prices);
+    assert.ok(Number.isFinite(single.effort[0].cost_usd));
+    assert.ok(single.effort[0].cost_usd > 0);
+    fields(single.effort[0], { unpriced: 0, cost_partial: false });
+    fields(single.summary, { cost_per_request: single.effort[0].cost_usd, cost_partial: false });
+  }
+  const out = foldCodexInsightsLogs([...responses, request(3)], prices);
+  fields(out.summary, { cost_per_request: null, cost_per_session: null, tokens_per_request: 2,
+    cache_hit_rate: 0, cache_write_share: 0, reasoning_share: null });
+  fields(out.effort[0], { cost_usd: null, unpriced: 0, requests: 2, tokens: 2 });
+  assert.deepEqual({ summary: out.summary.cost_partial, effort: out.effort[0].cost_partial },
+    { summary: true, effort: true });
 });
 
 test("retry attempts are zero-based and missingness never becomes a first attempt", () => {
@@ -385,4 +458,29 @@ test("session unit cost uses all priced detail sessions, not the subset with pro
     attributes: { "conversation.id": "session" } });
   const actual = foldCodexInsightsLogs(rows, undefined, { summary, deduplicated: true });
   assert.equal(actual.summary.cost_per_session, expected.summary.cost_per_session);
+});
+
+test("compact stream scopes retain unpriced session IDs without leaking scope identities", () => {
+  const priced = [completion(1), request(2), completion(3, { "conversation.id": "second" }),
+    request(4, { "conversation.id": "second" })];
+  const progress = [
+    log(5, "sse_event", { "event.kind": "response.output_text.delta", "conversation.id": "stream-only" }),
+    log(6, "websocket_event", { "event.kind": "response.output_text.delta", "conversation.id": "stream-only" }),
+    log(7, "sse_event", { "event.kind": "response.output_text.delta" }),
+    log(8, "sse_event", { "event.kind": "response.output_text.delta", "conversation.id": "second" },
+      { "project.name": "different" }),
+  ];
+  const expected = foldCodexInsightsLogs([...priced, ...progress]);
+  const markers = progress.map(({ timestamp, resource, attributes }) => ({
+    is_scope: 1, timestamp, resource, attributes: { "conversation.id": attributes["conversation.id"] },
+  }));
+  const actual = foldCodexInsightsLogs([...markers, ...priced], undefined, {
+    summary: { coverage: expected.coverage, events: expected.events, latency: expected.latency },
+    deduplicated: true,
+  });
+  fields(actual.summary, { cost_per_request: 0.00238425, cost_per_session: 0.0015895,
+    cost_partial: true, tokens_per_request: null, cache_hit_rate: null });
+  assert.deepEqual(actual, expected);
+  assert.ok(!JSON.stringify(actual).includes("stream-only"));
+  assert.ok(!JSON.stringify(actual).includes("test@example.invalid"));
 });
