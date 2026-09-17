@@ -26,7 +26,7 @@ REFERENCE = re.compile(r"(?:[\w./:$@#*+\[\]\\-]+(?:\(\))?)\Z", re.UNICODE)
 TICKS = re.compile(r"`+")
 ASSIGNMENT_TAIL = re.compile(r"(?P<spacing>\s*)(?P<operator>[:=])")
 COLON_RHS = re.compile(r"[^\r\n]*")
-LINK_VALUE = re.compile(r"\[[^\"'\]\r\n]+\]\(")
+LINK_VALUE = re.compile(r"\[(?P<label>[^\"'\]\r\n]+)\]\(")
 SETEXT_TAIL = re.compile(r"=*[ \t]*(?:\r?\n|\Z)")
 # Legacy shell adapters have no shared Python credential policy. Structured
 # adapters pass their existing sensitive-key pattern explicitly instead.
@@ -90,6 +90,18 @@ def complete_reference(value):
     """Accept a complete inline link, not a link prefix followed by a value."""
     prefix = LINK_VALUE.match(value)
     if prefix is None:
+        return False
+    # This matcher supports flat labels: a raw opening bracket cannot be
+    # balanced, and an escaped closing bracket cannot end the label.
+    escaped = False
+    for char in prefix["label"]:
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "[":
+            return False
+    if escaped:
         return False
     index, size = prefix.end(), len(value)
     if index < size and value[index] == "<":

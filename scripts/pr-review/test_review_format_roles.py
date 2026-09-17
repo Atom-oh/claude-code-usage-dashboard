@@ -41,7 +41,31 @@ class ReviewFormatTests(unittest.TestCase):
             "password:prefix.value:123 SYNTHETIC_SECOND",
             "db.password:123 SYNTHETIC_SECOND",
             "db.password:prefix:123 SYNTHETIC_SECOND",
+        ) + self.malformed_link_label_examples()
+
+    def malformed_link_label_examples(self):
+        return (
+            r"`password`: [label\](SYNTHETIC_VALUE)",
+            "`password`: [[label](SYNTHETIC_VALUE)",
+            r"`password`: [SYNTHETIC_VALUE\](docs.md)",
+            r"`password`: [SYNTHETIC_VALUE\\\](docs.md)",
+            "`password`: [[SYNTHETIC_VALUE](docs.md)",
+            "`password`: [label [SYNTHETIC_VALUE](docs.md)",
+            r"`password`: [label\\[SYNTHETIC_VALUE](docs.md)",
+            "Authorization: [[SYNTHETIC_VALUE](docs.md)",
         )
+
+    def test_malformed_link_labels_cannot_pass_legacy_publication_filter(self):
+        script = Path(role_review.__file__).with_name("review_format.py")
+        for text in self.malformed_link_label_examples():
+            with self.subTest(text=text):
+                result = subprocess.run(
+                    [sys.executable, str(script), "filter"], input=text,
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr, "unsupported_review_format\n")
 
     def test_bare_sensitive_numeric_citations_require_explicit_reference_syntax(self):
         for text in (
@@ -176,6 +200,9 @@ class ReviewFormatTests(unittest.TestCase):
             "Authorization: [guide](docs/guide(v2).md).",
             'Authorization: [guide](docs/guide.md "Guide (v2)").',
             "Authorization: [guide](<docs/guide v2.md>).",
+            r"`password`: [guide \[v2](docs/guide.md)",
+            r"`password`: [guide\\](docs/guide.md)",
+            r"`password`: [guide\\\[v2](docs/guide.md)",
         )
 
     def test_citations_and_prose_labels_can_complete_specialist_review(self):
