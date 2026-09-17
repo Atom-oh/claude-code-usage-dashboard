@@ -109,6 +109,28 @@ test("real ClickHouse client aggregation preserves transport identity and counte
     assert.equal(broken.quality.invalid, 1);
     assertFields(broken.totals, { cost_usd: null, tokens: null });
 
+    await t.test("Luna pricing restores mixed-model costs with per-response context boundaries", async () => {
+      const resource = { "user.email": "luna-pricing@example.invalid" };
+      await insertLogs([
+        log(90, "codex.sse_event", {
+          ...zeroUsage, model: "openai.gpt-5.6-luna",
+          input_token_count: "272000", output_token_count: "100",
+        }, resource),
+        log(91, "codex.sse_event", {
+          ...zeroUsage, model: "openai.gpt-5.6-luna",
+          input_token_count: "272001", output_token_count: "100",
+        }, resource),
+        log(92, "codex.sse_event", usage1.LogAttributes, resource),
+      ]);
+      const actual = await overview({ client: "codex", user: "luna-pricing@" });
+      assertFields(actual.totals, { tokens: 544331, cost_usd: 0.18223469, unpriced: 0 });
+      assertFields(actual.quality, { unpriced: 0, invalid: 0, missing_usage: 0 });
+      assert.equal(actual.by_client[0].cost_usd, 0.18223469);
+      assert.equal(actual.timeseries[0].cost_usd, 0.18223469);
+      assert.equal(actual.by_model.find(row => row.model === "openai.gpt-5.6-luna").cost_usd, 0.17985044);
+      assert.equal(actual.by_model.find(row => row.model === "openai.gpt-6-astra").cost_usd, 0.00238425);
+    });
+
     await t.test("Claude actual event names and prefixed aliases supply operational measurements", async () => {
       const claudeLogs = [];
       for (const prefix of ["", "claude_code."]) {

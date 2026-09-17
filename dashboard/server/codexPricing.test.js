@@ -23,6 +23,22 @@ test("global inference and long context use their own rates", () => {
   assert.equal(priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "us.openai.gpt-6-astra" }).cost_usd, 0.00238425);
 });
 
+test("Luna defaults price regional and global cache-aware usage in each context tier", () => {
+  for (const [backend, model, context_tier, expected] of [
+    ["bedrock-mantle", "openai.gpt-5.6-luna", "short", 0.000054285],
+    ["bedrock-mantle", "openai.gpt-5.6-luna", "long", 0.00008877],
+    ["bedrock-runtime", "global.openai.gpt-5.6-luna", "short", 0.00004935],
+    ["bedrock-runtime", "global.openai.gpt-5.6-luna", "long", 0.0000807],
+    ["bedrock-runtime", "us.openai.gpt-5.6-luna", "short", 0.000054285],
+  ]) {
+    const row = priceCodexUsage({ ...usage, backend, model, context_tier });
+    assert.equal(row.cost_usd, expected, `${model}/${context_tier}`);
+    assert.equal(row.tokens, 130);
+    assert.equal(row.input_tokens, 49);
+    assert.equal(row.unpriced, false);
+  }
+});
+
 test("unknown rates or backend, missing cache data, and invalid subsets are unavailable", () => {
   for (const patch of [
     { model: "openai.unknown" }, { backend: "unknown" }, { cache_write_tokens: undefined },

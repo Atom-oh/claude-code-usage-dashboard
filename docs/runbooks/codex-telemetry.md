@@ -264,6 +264,13 @@ reconciliation, production deployment, credential creation or billing change is 
 
 See [API semantics](../api-reference.md#coding-client-views). Model-card estimates
 retain scope/context tiers; they are not invoices.
+Default rates cover GPT-6 Astra and
+[GPT-5.6 Luna](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-luna.html).
+Luna rates were verified on 2026-09-17, including the 272,000-input-token context
+boundary, cache reads/writes, and separate commercial regional/global prices.
+An unpriced model makes affected cost totals and chart buckets unavailable even
+when its tokens were collected correctly. Check model pricing before treating
+those gaps as a Collector outage.
 `CODEX_PRICING_JSON` (`codex_pricing_json`) keys must omit `us.`/`global.` (lookup strips
 them). Entries require positive integer `short_context_limit`, `regional` and optional
 `global`, each with `short`/`long` rates: finite nonnegative USD/million `input`,
