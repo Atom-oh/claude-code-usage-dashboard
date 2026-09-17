@@ -22,6 +22,7 @@ export default function Clients({ page = "overview" }) {
   const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};
+  const hasUnpricedCost = data?.totals?.cost_partial === true || quality.unpriced > 0 || data?.totals?.unpriced > 0;
   const empty = data?.observed_records === 0;
   const sections = INSIGHT_SECTIONS[page];
 
@@ -32,17 +33,20 @@ export default function Clients({ page = "overview" }) {
     <div className="p-4 sm:p-8 flex flex-col gap-6">
       <p className="text-sm text-ink-600">
         Claude Code는 클라이언트 보고 비용, Codex는 AWS 정가 추정 비용입니다.
-        실청구와 다를 수 있으며, 미수집·미산정 값은 —로 표시합니다.
+        확인된 보고·추정 비용만 합산하고 미산정 비용은 제외합니다.
+        일부가 제외되면 부분합, 비용이 모두 미산정이면 —로 표시합니다. 실청구와 다를 수 있습니다.
       </p>
       {data?.effective_range?.to !== data?.effective_range?.requested_to && data?.effective_range?.to &&
         <p role="status" className="text-sm text-ink-600">
           집계 종료 시각: {formatClientTimestamp(data.effective_range.to)} (브라우저 시간).
           선택한 클라이언트 모두 같은 구간을 사용합니다.
         </p>}
-      {(quality.unpriced > 0 || quality.invalid > 0 || data?.totals?.unpriced > 0) &&
+      {(hasUnpricedCost || quality.invalid > 0) &&
         <div role="status" className="rounded-lg border border-warning-border bg-warning-surface px-4 py-3 text-sm text-warning-text">
-          미산정 {formatObserved(quality.unpriced ?? data?.totals?.unpriced)} · 유효하지 않은 데이터 {formatObserved(quality.invalid)}.
-          일부 비용이 확인되지 않아 합계를 제공하지 않을 수 있습니다.
+          {hasUnpricedCost && <>미산정 {formatObserved(quality.unpriced ?? data?.totals?.unpriced)}건 제외 · </>}
+          유효하지 않은 데이터 {formatObserved(quality.invalid)}.
+          {hasUnpricedCost && <> 알려진 비용만 부분합으로 표시하며, 비용이 모두 미산정이면 —로 표시합니다.</>}
+          {" "}토큰 누락 여부는 별도로 유지합니다.
         </div>}
       {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
         : <section data-shared-client-panels><ClientPanels page={page} data={data} clients={clients} /></section>}

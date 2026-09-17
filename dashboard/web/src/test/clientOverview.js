@@ -3,7 +3,7 @@ export const codexUsage = {
   client: "codex", backend: "bedrock-mantle", model: "fixture-model",
   tokens: 270, input_tokens: 98, cache_read_tokens: 100, cache_write_tokens: 22,
   output_tokens: 50, reasoning_tokens: 15, cost_usd: 0.0042405,
-  cost_basis: "aws_list_estimate", unpriced: 0, sessions: 1, users: 1,
+  cost_basis: "aws_list_estimate", cost_partial: false, unpriced: 0, sessions: 1, users: 1,
   requests: 2, api_errors: 0, tool_calls: 1, tool_errors: 0,
   request_duration_ms: 120, ttft_ms: 45,
 };

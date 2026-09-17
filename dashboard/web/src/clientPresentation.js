@@ -24,6 +24,15 @@ function subsetPercent(part, whole) {
   return part !== null && whole !== null && part <= whole ? ratio(part, whole, 100) : null;
 }
 
+export function costBasisLabel(source, label = basisLabel(source.cost_basis)) {
+  const unpriced = observedNumber(source.unpriced);
+  const unknown = observedNumber(source.cost_usd) === null;
+  const partial = source.cost_partial === true || unpriced > 0;
+  return [label, unknown ? "미산정" : partial ? "부분합" : null,
+    unpriced > 0 ? `${unknown ? "" : "미산정 "}${formatObserved(unpriced)}건 제외` : null]
+    .filter(Boolean).join(" · ");
+}
+
 export function presentationRow(source = {}) {
   const row = { ...source };
   const unobserved = observedNumber(source.observed_records) === 0;
@@ -32,6 +41,7 @@ export function presentationRow(source = {}) {
   row.input_total = input.includes(null) ? null : input.reduce((sum, n) => sum + n, 0);
   return {
     ...row,
+    cost_basis_label: costBasisLabel(row),
     cache_read_pct: subsetPercent(row.cache_read_tokens, row.input_total),
     reasoning_pct: subsetPercent(row.reasoning_tokens, row.output_tokens),
     tokens_per_session: ratio(row.tokens, row.sessions),
