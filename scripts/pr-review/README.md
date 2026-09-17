@@ -84,26 +84,26 @@ Chair prompts repeat plain-prose guidance after the untrusted evidence. A retrya
 format failure adds static guidance to the existing configured fallback, without
 replaying the rejected output. A complete exit-0 FAIL with invalid details keeps a
 static FAIL with details withheld and stops before fallback. Provider diagnostics
-retain precedence. Models, call bounds, scope and validation stay unchanged.
+retain precedence. Models, call bounds, scope and verdict validation stay unchanged.
 
 Code and configuration examples require closed top-level fences with both markers
 on their own lines at column one. Use a longer fence around examples containing
 fences. Inline backticks permit only single-line symbol/path references, such as
 `validate()` or `src/service.py`; commands, assignments and nested fences fail.
-Ambiguous sensitive-key colon values require fences, including multiword
-explanations and trailing comments. Formatting only the key with backticks does
+Nonempty sensitive-key colon values require fences, including Markdown links,
+multiword explanations and trailing comments. Formatting only the key with backticks does
 not exempt its value. Put explanatory prose under a standalone heading or use a
 sentence without that colon form. After an inline path reference, use a separate
 sentence or a semicolon rather than an ambiguous colon explanation.
-Bare section labels and Setext headings remain supported. Put compact sensitive
-file:line references entirely inside inline code, such as `src/token.ts:42`.
-Markdown links use actual line anchors, such as `src/token.ts#L42`, rather than
-colon-number targets. Bare sensitive numeric citations are ambiguous values and
+Bare section labels and Setext headings remain supported. Use Markdown links with
+actual line anchors, such as `src/token.ts#L42`, for all file-and-line citations.
+Inline file:line citations can lose their closing backtick during confidentiality
+filtering and remain blocked by the post-filter format check.
+Bare sensitive numeric citations are ambiguous values and
 require fences; dots, slashes and numeric prefixes do not exempt them.
-A link exemption still requires a complete inline link and no trailing value or
-comment. Same-line empty equals assignments require fences.
-The existing scrubber can damage an otherwise valid sensitive inline citation;
-use a `#L` link when that occurs. Post-filter format rejection remains required.
+There is no sensitive-key colon-link exemption or Markdown link-value parser.
+Ordinary citations in sentences remain supported. Same-line empty equals
+assignments require fences.
 
 `review_format.py` supplies the shared instructions and validator. Specialist
 checks, finding conditions/evidence and uncertainties are checked before and after

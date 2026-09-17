@@ -14,10 +14,11 @@ FORMAT_INSTRUCTIONS = (
     "a fence. Do not nest example fences in lists or blockquotes. Use synthetic "
     "values only; never copy credentials. Unsupported examples fail review coverage."
     " Sensitive-key colon values and explanations require fences, including "
-    "multiword text and trailing comments. Put explanatory prose under a separate "
-    "heading, or use a sentence without the sensitive-key colon form. Put compact "
-    "file:line references entirely inside inline backticks. Use #L line anchors "
-    "in Markdown link targets; bare sensitive numeric citations are ambiguous values."
+    "Markdown links, multiword text and trailing comments. Put explanatory prose under a separate "
+    "heading, or use a sentence without the sensitive-key colon form. For all "
+    "file-and-line citations, use Markdown links with #L anchors, for example "
+    "[token.ts](src/token.ts#L42). Inline file:line citations can be damaged by "
+    "confidentiality filtering; bare sensitive numeric citations are ambiguous values."
 )
 
 ERROR_CODE = "unsupported_review_format"
@@ -26,7 +27,6 @@ REFERENCE = re.compile(r"(?:[\w./:$@#*+\[\]\\-]+(?:\(\))?)\Z", re.UNICODE)
 TICKS = re.compile(r"`+")
 ASSIGNMENT_TAIL = re.compile(r"(?P<spacing>\s*)(?P<operator>[:=])")
 COLON_RHS = re.compile(r"[^\r\n]*")
-LINK_VALUE = re.compile(r"\[(?P<label>[^\"'\]\r\n]+)\]\(")
 SETEXT_TAIL = re.compile(r"=*[ \t]*(?:\r?\n|\Z)")
 # Legacy shell adapters have no shared Python credential policy. Structured
 # adapters pass their existing sensitive-key pattern explicitly instead.
@@ -86,70 +86,6 @@ def assignment_matches(text, pattern, key_token_pattern=None):
             consumed = tail.end()
 
 
-def complete_reference(value):
-    """Accept a complete inline link, not a link prefix followed by a value."""
-    prefix = LINK_VALUE.match(value)
-    if prefix is None:
-        return False
-    # This matcher supports flat labels: a raw opening bracket cannot be
-    # balanced, and an escaped closing bracket cannot end the label.
-    escaped = False
-    for char in prefix["label"]:
-        if escaped:
-            escaped = False
-        elif char == "\\":
-            escaped = True
-        elif char == "[":
-            return False
-    if escaped:
-        return False
-    index, size = prefix.end(), len(value)
-    if index < size and value[index] == "<":
-        index += 1
-        while index < size and value[index] != ">":
-            if value[index] in "<\r\n":
-                return False
-            index += 2 if value[index] == "\\" else 1
-        if index >= size:
-            return False
-        index += 1
-    else:
-        depth = 0
-        while index < size:
-            char = value[index]
-            if char in " \t" or (char == ")" and depth == 0):
-                break
-            if char == "\\":
-                index += 2
-                continue
-            if char in "<>\r\n":
-                return False
-            depth += (char == "(") - (char == ")")
-            index += 1
-        if depth:
-            return False
-    separator = index
-    while index < size and value[index] in " \t":
-        index += 1
-    if index < size and value[index] != ")":
-        if index == separator or value[index] not in "\"'(":
-            return False
-        opening = value[index]
-        closing = ")" if opening == "(" else opening
-        index += 1
-        while index < size and value[index] != closing:
-            if value[index] in "\r\n" or (opening == "(" and value[index] == "("):
-                return False
-            index += 2 if value[index] == "\\" else 1
-        if index >= size:
-            return False
-        index += 1
-        while index < size and value[index] in " \t":
-            index += 1
-    return (index < size and value[index] == ")"
-            and re.fullmatch(r"[ \t.,;:!?]*", value[index + 1:]) is not None)
-
-
 def is_assignment(text, match, quoted_key=False):
     """Require fences for ambiguous values without guessing whether they are prose."""
     if match["operator"] == ":":
@@ -158,7 +94,7 @@ def is_assignment(text, match, quoted_key=False):
         rhs = COLON_RHS.match(text, match.end())[0]
         if re.fullmatch(r"[ \t*_~]*", rhs):
             return False
-        return not complete_reference(rhs.lstrip(" \t"))
+        return True
     if (match["operator"] == "=" and any(c in match["spacing"] for c in "\r\n")
             and SETEXT_TAIL.match(text, match.end())):
         return False

@@ -1,6 +1,7 @@
 """The approved presentation contract gates publication, not metadata."""
 
 import json
+import re
 import unittest
 from pathlib import Path
 import subprocess
@@ -41,7 +42,13 @@ class ReviewFormatTests(unittest.TestCase):
             "password:prefix.value:123 SYNTHETIC_SECOND",
             "db.password:123 SYNTHETIC_SECOND",
             "db.password:prefix:123 SYNTHETIC_SECOND",
-        ) + self.malformed_link_label_examples()
+            r"`password`: [guide](docs.md\ SYNTHETIC_VALUE)",
+            "`password`: [SYNTHETIC_VALUE](docs.md\\\textra)",
+            '`password`: [guide](docs.md\\\x00extra "SYNTHETIC_VALUE")',
+            "password: [SYNTHETIC_VALUE](docs.md\\\x1fextra)",
+            "password: [guide](SYNTHETIC_VALUE\\\x7fextra)",
+            'password: [guide](docs.md\\ extra "SYNTHETIC_VALUE")',
+        ) + self.malformed_link_label_examples() + self.colon_link_examples()
 
     def malformed_link_label_examples(self):
         return (
@@ -58,6 +65,55 @@ class ReviewFormatTests(unittest.TestCase):
     def test_malformed_link_labels_cannot_pass_legacy_publication_filter(self):
         script = Path(role_review.__file__).with_name("review_format.py")
         for text in self.malformed_link_label_examples():
+            with self.subTest(text=text):
+                result = subprocess.run(
+                    [sys.executable, str(script), "filter"], input=text,
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr, "unsupported_review_format\n")
+
+    def invalid_link_escape_examples(self):
+        examples = []
+        for key in ("password", "`password`"):
+            for location in ("label", "destination", "title"):
+                label = "SYNTHETIC_VALUE" if location == "label" else "guide"
+                destination = "SYNTHETIC_VALUE" if location == "destination" else "docs.md"
+                title = ' "SYNTHETIC_VALUE"' if location == "title" else ""
+                for separator in (" ", "\t", "\x00", "\x1f", "\x7f"):
+                    examples.append(f"{key}: [{label}]({destination}\\{separator}extra{title})")
+        return tuple(examples)
+
+    def colon_link_examples(self):
+        return (
+            "password: [SYNTHETIC_VALUE](docs.md)",
+            "`password`: [guide](SYNTHETIC_VALUE)",
+            '`password`: [guide](docs.md "SYNTHETIC_VALUE")',
+            "Authorization: [implementation](web/lib/auth.ts)",
+            "Authorization: [guide](docs/guide(v2).md).",
+            'Authorization: [guide](docs/guide.md "Guide (v2)").',
+            "Authorization: [guide](<docs/guide v2.md>).",
+            r"`password`: [guide \[v2](docs/guide.md)",
+            r"`password`: [guide\\](docs/guide.md)",
+            r"`password`: [guide\\\[v2](docs/guide.md)",
+            r'password: [guide](docs.md\ "Title")',
+            r'`password`: [guide](docs.md\ "Title")',
+            r'`password`: [guide](docs.md\ (Title))',
+            r'`password`: [guide](<docs\ guide.md> "Title")',
+            r'`password`: [guide](docs.md "Guide\ title")',
+            r'`password`: [guide](docs.md "Guide \"v2\"")',
+            r"`password`: [guide](docs.md 'Guide \'v2\'')",
+            r"`password`: [guide](docs.md (Guide \(v2\)))",
+            r"`password`: [guide](docs\guide.md)",
+            r"`password`: [guide](docs/guide\(v2\).md)",
+            r"`password`: [guide](<docs/guide\>v2.md>)",
+            "`password`: [guide](docs/guide\u00a0v2.md)",
+        )
+
+    def test_sensitive_colon_links_cannot_pass_legacy_publication_filter(self):
+        script = Path(role_review.__file__).with_name("review_format.py")
+        for text in self.colon_link_examples() + self.invalid_link_escape_examples():
             with self.subTest(text=text):
                 result = subprocess.run(
                     [sys.executable, str(script), "filter"], input=text,
@@ -196,13 +252,16 @@ class ReviewFormatTests(unittest.TestCase):
             "See [token.ts](web/lib/token.ts#L42-L45) for the caller check.",
             "Checked `web/lib/token.ts`; the guard is preserved.",
             "Per `docs/decisions/002-auth-and-login.md`: signup is closed.",
-            "Authorization: [implementation](web/lib/auth.ts)",
-            "Authorization: [guide](docs/guide(v2).md).",
-            'Authorization: [guide](docs/guide.md "Guide (v2)").',
-            "Authorization: [guide](<docs/guide v2.md>).",
-            r"`password`: [guide \[v2](docs/guide.md)",
-            r"`password`: [guide\\](docs/guide.md)",
-            r"`password`: [guide\\\[v2](docs/guide.md)",
+            "See [implementation](web/lib/auth.ts) for the caller check.",
+            "See [guide](docs/guide(v2).md).",
+            'See [guide](docs/guide.md "Guide (v2)").',
+            "See [guide](<docs/guide v2.md>).",
+            r"See [guide \[v2](docs/guide.md).",
+            r"See [guide\\](docs/guide.md).",
+            r"See [guide\\\[v2](docs/guide.md).",
+            r'See [guide](docs.md\ "Title").',
+            r'See [guide](<docs\ guide.md> "Title").',
+            r'See [guide](docs.md "Guide \"v2\"").',
         )
 
     def test_citations_and_prose_labels_can_complete_specialist_review(self):
@@ -414,6 +473,25 @@ class ReviewFormatTests(unittest.TestCase):
         calls, text = self.chair(inspect_chair)
         self.assertEqual(calls, 1)
         self.assertTrue(text.endswith("VERDICT: PASS\n"))
+
+    def test_prompt_file_line_citation_survives_publication(self):
+        examples = re.findall(r"\[[^\]\n]+\]\([^)\n]+#L[0-9]+\)", FORMAT_INSTRUCTIONS)
+        self.assertTrue(examples, "The prompt needs a publishable file/line citation example")
+        for example in examples:
+            with self.subTest(example=example):
+                helper = test_role_review.RoleReviewTests()
+                helper.setUp()
+                self.addCleanup(helper.tearDown)
+                helper.prepare()
+                response = helper.response("codex")
+                response["checks"][0]["evidence"] = f"Checked {example}."
+                result = helper.record("codex", response)
+                self.assertIn(example, result["response"]["checks"][0]["evidence"])
+                reply = (0, f"Checked {example}.\nVERDICT: PASS\n", "")
+                calls, published = self.chair([reply, reply])
+                self.assertEqual(calls, 1)
+                self.assertIn(example, published)
+                self.assertTrue(published.endswith("VERDICT: PASS\n"))
 
     def test_shell_adapter_gets_instructions_and_fixed_failure(self):
         script = Path(__file__).with_name("review_format.py")
