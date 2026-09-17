@@ -74,12 +74,16 @@ completions do not establish zero. Partial/invalid components remain null.
 
 Counts are nonnegative integers; subsets must fit their totals. Preserve each request's
 context tier before [pricing](../../dashboard/server/codexPricing.js). Unknown rates or
-invalid usage make affected costs null. Claude reports use `client_reported`; Codex uses
-`aws_list_estimate`. Both retain billing/coverage limitations.
+invalid usage make those records unpriced. Keep valid and invalid usage in separate
+SQL groups so malformed peers cannot erase usable costs. Shared aggregates sum known
+costs with `cost_partial`/unpriced disclosure; an all-unpriced group remains null.
+Claude reports use `client_reported`; Codex uses `aws_list_estimate`. Both retain
+billing/coverage limitations under [ADR-013](../decisions/ADR-013-known-cost-subtotals.md).
 
 Active Codex session/user/model/backend/project combinations without usage anywhere in
-the selected range null affected token/cost folds and increment `quality.missing_usage`
-and `unpriced`. Crossing a time bucket does not create a false gap. Presence cannot
+the selected range null affected token folds and increment `quality.missing_usage`
+and `unpriced`; known cost subtotals remain visible with partial disclosure.
+Crossing a time bucket does not create a false gap. Presence cannot
 detect every dropped response within a populated combination. Explicit zero is valid.
 `observed_records` combines deduplicated log-event counts with Claude usage aggregate-row
 counts only to identify an empty result; it is not comparable request volume.

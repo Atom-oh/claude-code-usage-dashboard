@@ -1,12 +1,12 @@
 # ADR-012: Selectable coding-client observability
 
-Status: accepted source design, amended 2026-09-15 and 2026-09-16. Initial date: 2026-09-14.
+Status: accepted source design, amended 2026-09-15, 2026-09-16 and 2026-09-17. Initial date: 2026-09-14.
 Deployment is separate.
 
 The 2026-09-16 layout amendment replaces Claude-default detail and All/Codex single-page
 navigation: all clients share nine routes and metrics. Claude `view=detail` retains
 advanced/A/B pages. [Frontend](../reference/frontend.md) owns route/filter compatibility.
-This changes no cost semantics, collection, user-selected models or effort.
+That layout amendment changed no cost semantics, collection, user-selected models or effort.
 
 Claude and Codex have different telemetry and cost surfaces. Treating model names or
 Claude's inferred enterprise/bedrock channels as client identity would mix populations
@@ -24,9 +24,12 @@ runtime verification supports the expansion; pinned-exporter privacy and field-p
 limits remain explicit in the collection runbook.
 
 Codex cost is an AWS list-price estimate with cache subsets and request context/inference
-tiers preserved. Missing prices, invalid components or activity without usage make
-affected folds unavailable. Explicit zero remains zero; presence cannot prove complete
-billing. Neither cost basis is an invoice or a validated productivity/ROI measure.
+tiers preserved. The initial design withheld affected folds for missing prices, invalid
+components or activity without usage. The 2026-09-17
+[known-cost subtotal decision](ADR-013-known-cost-subtotals.md) supersedes that aggregate
+cost rule: sum usable amounts and disclose partial costs, while preserving token
+missingness and all-unknown costs. Explicit zero remains zero; presence cannot prove
+complete billing. Neither cost basis is an invoice or a validated productivity/ROI measure.
 
 Bootstrap, collection, API and navigation must agree on enabled clients. Backend
 metadata stays process-scoped; existing rows remain. Runtime hosted search is disabled

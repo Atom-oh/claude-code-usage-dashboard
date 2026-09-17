@@ -166,18 +166,23 @@ const hasUsage = (row) => completed(row)
   && Object.keys(TOKEN_FIELDS).some((key) => Object.hasOwn(row.attributes, key));
 
 function usageTotals() {
-  return { requests: 0, tokens: 0, cost_usd: 0, unpriced: 0,
+  return { requests: 0, tokens: 0, cost_usd: 0, hasCost: false, unpriced: 0,
     input: 0, read: 0, write: 0, output: 0, reasoning: 0 };
 }
 
 function addUsage(target, usage) {
   target.requests++;
   target.unpriced += Number(usage.unpriced);
-  for (const [key, value] of Object.entries({ tokens: usage.tokens, cost_usd: usage.cost_usd,
+  if (Number.isFinite(usage.cost_usd)) {
+    target.hasCost = true;
+    const sum = target.cost_usd === null ? null : target.cost_usd + usage.cost_usd;
+    target.cost_usd = Number.isFinite(sum) ? sum : null;
+  }
+  for (const [key, value] of Object.entries({ tokens: usage.tokens,
     input: usage.input_tokens_total, read: usage.cache_read_tokens, write: usage.cache_write_tokens,
     output: usage.output_tokens, reasoning: usage.reasoning_tokens })) {
     const sum = target[key] === null || value === null ? null : target[key] + value;
-    target[key] = sum !== null && (key === "cost_usd" ? Number.isFinite(sum) : Number.isSafeInteger(sum)) ? sum : null;
+    target[key] = Number.isSafeInteger(sum) ? sum : null;
   }
 }
 function fractions(total) {
@@ -200,12 +205,13 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
   if (rows.length > ROW_LIMIT)
     throw new ValidationError("too much Codex log data", "narrow the requested date range");
   const unique = new Map();
-  const selected = [], streamScopes = [];
+  const selected = [], streamScopes = [], sessions = new Set();
   for (const row of rows) {
     if (deduplicated && Number(row.is_scope) === 1) {
       if (typeof row.attributes?.["conversation.id"] !== "string" || !row.attributes["conversation.id"])
         throw new Error("Invalid Codex detail stream scope");
       streamScopes.push(scope(row, false));
+      sessions.add(row.attributes["conversation.id"]);
       continue;
     }
     if (!row.attributes?.["event.name"]?.startsWith("codex.")) continue;
@@ -214,7 +220,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     if (!unique.has(key)) unique.set(key, { ...row, resource: row.resource || {} });
   }
   const records = deduplicated ? selected : [...unique.values()];
-  const usageScopes = new Set(), usageSessions = new Set(), sessions = new Set();
+  const usageScopes = new Set(), usageSessions = new Set();
   let missingSession = false;
   for (const row of records) {
     if (row.attributes["conversation.id"]) sessions.add(row.attributes["conversation.id"]);
@@ -236,6 +242,9 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
 
     const operational = OVERVIEW_EVENTS.includes(event)
       && (!stream(event) || completed(row) || a["event.kind"] === "response.failed");
+    // Partial cost coverage does not establish how many sessions anonymous
+    // operational records represent, even alongside identified priced usage.
+    if (operational && !a["conversation.id"]) missingSession = true;
     if (operational ? !usageScopes.has(scope(row))
       && !(a["conversation.id"] && !a.model && usageSessions.has(scope(row, false)))
       : a["conversation.id"] && !usageSessions.has(scope(row, false))) missingUsage.add(scope(row));
@@ -306,8 +315,9 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     return { ...tool, success_rate: tool.unknown ? null : ratio(tool.successes, tool.calls),
       average_ms: stats.average_ms, p95_ms: stats.p95_ms };
   });
-  const completeUsage = total.requests > 0 && missingUsage.size === 0
-    && !streamScopes.some((key) => !usageSessions.has(key));
+  const missingUsageScopes = missingUsage.size > 0 || streamScopes.some((key) => !usageSessions.has(key));
+  const completeUsage = total.requests > 0 && !missingUsageScopes;
+  const cost = total.hasCost ? rounded(total.cost_usd) : null;
   const toolCalls = toolRows.reduce((n, tool) => n + tool.calls, 0);
   return {
     coverage: summary?.coverage ?? { status: records.length ? "observed" : "empty", records: records.length,
@@ -316,10 +326,11 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
       ...(completeUsage ? fractions(total) : { cache_hit_rate: null, cache_write_share: null, reasoning_share: null }),
       // Per-request units use observed HTTP attempts, matching the client overview.
       tokens_per_request: completeUsage ? ratio(total.tokens, requests) : null,
-      cost_per_request: completeUsage ? ratio(rounded(total.cost_usd), requests) : null,
-      // Every complete session has a retained usage row. Keep the denominator
-      // on the same detail snapshot as pricing if summary ingestion races it.
-      cost_per_session: completeUsage && !missingSession ? ratio(rounded(total.cost_usd), sessions.size) : null,
+      cost_per_request: ratio(cost, requests),
+      // Include stream-only sessions from the same detail snapshot as pricing;
+      // nearby summary ingestion must not change the subtotal's denominator.
+      cost_per_session: !missingSession ? ratio(cost, sessions.size) : null,
+      cost_partial: total.unpriced > 0 || missingUsageScopes || (total.hasCost && cost === null),
       retry_rate: missingAttempts ? null : ratio(retries, requests),
       api_error_rate: missingOutcomes ? null : ratio(errors, requests), // Error records per HTTP attempt; may exceed 1.
       tool_success_rate: toolRows.some((tool) => tool.unknown) ? null
@@ -328,7 +339,9 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
       prompts, prompt_length_mean: ratio(promptLength, prompts),
     },
     effort: [...efforts].map(([effort, value]) => ({ effort, requests: value.requests, tokens: value.tokens,
-      cost_usd: rounded(value.cost_usd), unpriced: value.unpriced, ...fractions(value) })).sort(byName("effort")),
+      cost_usd: value.hasCost ? rounded(value.cost_usd) : null,
+      cost_partial: value.unpriced > 0 || (value.hasCost && rounded(value.cost_usd) === null),
+      unpriced: value.unpriced, ...fractions(value) })).sort(byName("effort")),
     latency: [...[...latencies].filter(([name]) => !summary || !["sse_event", "websocket_event"].includes(name))
       .map(([name, values]) => ({ name, ...statistics(values) })), ...(summary?.latency || [])].sort(byName("name")),
     tools: toolRows.sort((a, b) => b.calls - a.calls || byName("tool")(a, b)),

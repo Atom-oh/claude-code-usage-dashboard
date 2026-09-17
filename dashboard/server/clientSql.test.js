@@ -99,7 +99,8 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       ...usage1.LogAttributes, model: "openai.unpriced",
     })]);
     const unpriced = await overview({ client: "codex" });
-    assert.equal(unpriced.totals.cost_usd, null);
+    assert.equal(unpriced.totals.cost_usd, 9.29868);
+    assert.equal(unpriced.totals.cost_partial, true);
     assert.equal(unpriced.quality.unpriced, 1);
     const partial = log(13, "codex.sse_event", { "event.kind": "response.completed",
       output_token_count: "10", cached_token_count: "0", cache_write_token_count: "0", reasoning_token_count: "1" },
@@ -163,7 +164,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       assert.deepEqual(filtered, actual);
     });
 
-    await t.test("missing usage in one Codex session invalidates mixed-session and mixed-client totals", async () => {
+    await t.test("missing usage preserves known mixed-session and mixed-client cost subtotals", async () => {
       const scoped = (n, name, session, attributes = {}) => log(n, name,
         { ...attributes, "conversation.id": session }, { "user.email": "coverage@example.invalid" });
       const generic = scoped(202, "codex.sse_event", "missing", { "event.kind": "response.completed" });
@@ -178,10 +179,13 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       assertFields(mixed.quality, { missing_usage: 1, unpriced: 1 });
       for (const row of [mixed.totals, ...mixed.by_client, ...mixed.by_user, ...mixed.by_model,
         ...mixed.by_project, ...mixed.timeseries]) {
-        assertFields(row, { cost_usd: null, tokens: null });
+        assertFields(row, { cost_usd: 0.00238425, cost_partial: true, tokens: null });
       }
       const combined = await overview({}, ["claude", "codex"]);
-      assert.equal(combined.totals.cost_usd, null);
+      assert(Number.isFinite(combined.totals.cost_usd));
+      assert.equal(combined.totals.cost_partial, true);
+      assert(Math.abs(combined.totals.cost_usd
+        - combined.by_client.reduce((sum, row) => sum + row.cost_usd, 0)) < 1e-9);
       assert.equal(combined.quality.missing_usage, 1);
       assert.equal(combined.by_client.find((r) => r.client === "claude").cost_usd, 0.2);
     });
@@ -224,7 +228,9 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           const actual = await overview({ client: "codex", user: `components-${i}@` });
           assert.equal(actual.totals[field], null, key);
           assert.equal(actual.totals.tokens, null, key);
-          assert.equal(actual.totals.cost_usd, null, key);
+          assert.equal(actual.totals.cost_usd, 0.00238425, key);
+          assert.equal(actual.totals.cost_partial, true, key);
+          assert.equal(actual.quality.unpriced, 1, key);
           assert.equal(actual.quality.invalid, 1, key);
           assert.equal(actual.quality.missing_usage, 0, key);
         });
@@ -275,9 +281,10 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal(mixed.totals.requests, 1);
         assertFields(mixed.quality, { missing_usage: 1, unpriced: 1 });
         for (const row of [mixed.totals, ...mixed.by_client, ...mixed.by_model, ...mixed.by_user, ...mixed.by_project]) {
-          assertFields(row, { cost_usd: null, tokens: null });
+          assertFields(row, { cost_usd: 0.00238425, cost_partial: true, tokens: null });
         }
-        assert.deepEqual(mixed.timeseries.map((r) => r.cost_usd), [0, null]);
+        assert.deepEqual(mixed.timeseries.map((r) => r.cost_usd), [0, 0.00238425]);
+        assert.deepEqual(mixed.timeseries.map((r) => r.cost_partial), [false, true]);
       });
     }
     for (const client of ["claude", "codex"]) {

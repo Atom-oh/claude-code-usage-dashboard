@@ -5,7 +5,7 @@ import { StatTile } from "../components/StatTile.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useApi } from "../useApi.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
-import { formatClientTimestamp } from "../clientPresentation.js";
+import { costBasisLabel, formatClientTimestamp } from "../clientPresentation.js";
 
 const percent = (v) => v == null ? "—" : `${(v * 100).toLocaleString("ko-KR", { maximumFractionDigits: 2 })}%`;
 const text = (key, label) => ({ key, label, render: (v) => v || "—" });
@@ -14,8 +14,12 @@ const ratio = (key, label) => ({ key, label, render: percent });
 const cost = (key, label) => ({ key, label, render: formatClientCost });
 const TABS = ["효율·Effort", "도구·승인", "성능", "런타임·메트릭", "Trace"];
 const STATUS = { observed: "수집 확인", empty: "관측 없음", unavailable: "수집 미확인", limited: "조회 한도 초과" };
+const codexCostLabel = (row) => costBasisLabel({ ...row, cost_basis: "aws_list_estimate" });
+const COST_HELP = "미산정 기록을 제외한 알려진 비용 / 관측된 요청·세션 수의 근삿값입니다. 비용이 모두 미산정이거나 식별 정보·분모가 없거나 분모가 0이면 —로 표시합니다.";
 const EFFORT = [text("effort", "Effort"), numeric("requests", "완료 응답"), numeric("tokens", "토큰"),
   cost("cost_usd", "추정 비용 (USD)"), numeric("unpriced", "미산정"),
+  { key: "cost_basis_label", label: "비용 기준·미산정",
+    render: (value) => <span className="block min-w-[10rem]">{value}</span>, toText: (value) => value },
   ratio("cache_hit_rate", "캐시 읽기 비율"), ratio("reasoning_share", "추론 비중")];
 const TOOLS = [text("tool", "도구"), numeric("calls", "호출"), numeric("successes", "성공"),
   numeric("failures", "실패"), numeric("unknown", "결과 미확인"), ratio("success_rate", "성공률"),
@@ -97,10 +101,14 @@ export default function CodexInsights({ range, enabled = true, sections }) {
           </div>}
           {tab === TABS[0] && <>
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
-              {EFFICIENCY_TILES.map(([key, label, format, help]) => <StatTile key={key} label={label} value={format(summary[key])} help={help} />)}
+              {EFFICIENCY_TILES.map(([key, label, format, help]) => <StatTile key={key} label={label} value={format(summary[key])}
+                help={format === formatClientCost ? COST_HELP : help}
+                hint={format === formatClientCost ? codexCostLabel({ ...summary, cost_usd: summary[key] }) : undefined}
+                className={format === formatClientCost ? "[&_.truncate]:whitespace-normal" : undefined} />)}
             </div>
-            <DataTable title="Effort별 사용량·비용" subtitle="토큰이 포함된 완료 응답 기준 · Effort 누락은 미확인으로 유지합니다."
-              rows={data?.effort || []} columns={EFFORT} exportName="codex_effort" />
+            <DataTable title="Effort별 사용량·비용" subtitle="토큰이 포함된 완료 응답 기준 · 알려진 비용만 합산하고 미산정 기록은 제외합니다. Effort·토큰 누락은 미확인으로 유지합니다."
+              rows={(data?.effort || []).map((row) => ({ ...row, cost_basis_label: codexCostLabel(row) }))}
+              columns={EFFORT} exportName="codex_effort" />
           </>}
           {tab === TABS[1] && <>
             <div className="grid grid-cols-2 gap-4">

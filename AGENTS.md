@@ -45,6 +45,9 @@ is an expected skip. Use the deployment runbook for production changes.
 - Codex metrics/traces are diagnostic feeds; never add them to completion-log usage
   or cost. See [support and interpretation](docs/reference/codex-observability.md).
 - Unavailable is distinct from zero; positive totals do not prove complete telemetry.
+- Shared client and Codex detail costs sum usable amounts with `cost_partial` and
+  unpriced counts; all-unknown costs stay unavailable. Keep token missingness separate.
+  See [ADR-013](docs/decisions/ADR-013-known-cost-subtotals.md).
 - Exclude secrets, personal/customer data from commits, public reviews and site assets.
   UI masking is not API access control.
 

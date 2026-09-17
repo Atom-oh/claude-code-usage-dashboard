@@ -19,6 +19,7 @@ test("one fold supplies matching totals, model/user rows and time series", () =>
   assert.equal(out.totals.requests, 2);
   assert.equal(out.totals.tool_calls, 1);
   assert.equal(out.totals.cost_usd, 0.00424050);
+  assert.equal(out.totals.cost_partial, false);
   assert.equal(out.by_client[0].input_tokens, 98);
   assert.equal(out.by_client[0].reasoning_tokens, 15);
   assert.equal(out.by_client[0].request_duration_ms, 30);
@@ -44,19 +45,67 @@ test("clients namespace sessions and preserve their cost sources", () => {
   assert.equal(out.totals.ttft_ms, null);
 });
 
-test("an unpriced component remains visible and makes subtotal cost unavailable", () => {
+test("an unpriced component is excluded from known cost subtotals and remains disclosed", () => {
   const out = foldClientMetrics([event, { ...event, model: "openai.new" }], ["codex"]);
-  assert.equal(out.totals.cost_usd, null);
-  assert.equal(out.by_client[0].cost_usd, null);
-  assert.equal(out.by_user[0].cost_usd, null);
-  assert.equal(out.timeseries[0].cost_usd, null);
+  for (const row of [out.totals, ...out.by_client, ...out.by_user, ...out.by_project, ...out.timeseries]) {
+    assert.equal(row.cost_usd, 0.00238425);
+    assert.equal(row.cost_partial, true);
+    assert.equal(row.unpriced, 1);
+  }
   assert.equal(out.quality.unpriced, 1);
   assert.equal(out.by_model.find((x) => x.model === "openai.new").cost_usd, null);
+  assert.equal(out.by_model.find((x) => x.model === "openai.new").cost_partial, true);
+  assert.equal(out.by_model.find((x) => x.model === event.model).cost_partial, false);
+});
+
+test("a known zero cost can be summed without turning an all-unknown cost into zero", () => {
+  const zero = { ...event, input_tokens_total: 0, cache_read_tokens: 0,
+    cache_write_tokens: 0, output_tokens: 0, reasoning_tokens: 0 };
+  const unknown = { ...event, model: "openai.unpriced" };
+  const partial = foldClientMetrics([zero, unknown], ["codex"]);
+  assert.equal(partial.totals.cost_usd, 0);
+  assert.equal(partial.totals.cost_partial, true);
+  assert.equal(partial.quality.unpriced, 1);
+  const absent = foldClientMetrics([unknown], ["codex"]);
+  for (const row of [absent.totals, ...absent.by_client, ...absent.by_model, ...absent.by_user,
+    ...absent.by_project, ...absent.timeseries]) {
+    assert.equal(row.cost_usd, null);
+    assert.equal(row.cost_partial, true);
+  }
+});
+
+test("valid Claude reported costs survive missing token components without repricing", () => {
+  const out = foldClientMetrics([
+    { ...event, client: "claude", input_tokens: undefined, reported_cost: "2.5" },
+  ], ["claude"]);
+  assert.equal(out.totals.cost_usd, 2.5);
+  assert.equal(out.totals.cost_partial, false);
+  assert.equal(out.totals.tokens, null);
+  assert.equal(out.quality.invalid, 1);
+  assert.equal(out.quality.unpriced, 0);
+});
+
+test("invalid Claude reports are excluded rather than poisoning a valid report subtotal", () => {
+  for (const report of [null, undefined, "", " ", true, false, [2], {}, NaN, Infinity, -1, 0]) {
+    const valid = { ...event, client: "claude", input_tokens: 49, reported_cost: 2 };
+    const out = foldClientMetrics([valid, { ...valid, reported_cost: report }], ["claude"]);
+    assert.equal(out.totals.cost_usd, 2, String(report));
+    assert.equal(out.totals.cost_partial, true, String(report));
+    assert.equal(out.quality.unpriced, 1, String(report));
+  }
+});
+
+test("a non-finite aggregate is unavailable rather than an infinite known subtotal", () => {
+  const huge = { ...event, client: "claude", input_tokens: 49, reported_cost: Number.MAX_VALUE };
+  const out = foldClientMetrics([huge, huge], ["claude"]);
+  assert.equal(out.totals.cost_usd, null);
+  assert.equal(out.totals.cost_partial, true);
 });
 
 test("missing Claude reports with positive usage do not become free usage", () => {
   const out = foldClientMetrics([{ ...event, client: "claude", input_tokens: 49, reported_cost: 0 }], ["claude"]);
   assert.equal(out.totals.cost_usd, null);
+  assert.equal(out.totals.cost_partial, true);
 });
 
 test("empty enabled clients are represented without invented operational measurements", () => {
@@ -67,6 +116,7 @@ test("empty enabled clients are represented without invented operational measure
   assert.equal(out.by_client.length, 2);
   assert.equal(out.totals.tokens, 0);
   assert.equal(out.totals.cost_usd, 0);
+  assert.equal(out.totals.cost_partial, false);
   assert.equal(out.by_client[0].tool_calls, null);
   assert.equal(out.by_client[1].tool_calls, 0);
   assert.equal(out.by_client[1].ttft_ms, null);
@@ -86,7 +136,7 @@ test("request and generic completion activity without usage is unavailable, not 
   assert.equal(out.quality.invalid, 0);
 });
 
-test("a priced session cannot hide another session's missing usage in any subtotal", () => {
+test("a priced session supplies a subtotal while another session's missing usage stays disclosed", () => {
   const out = foldClientMetrics([
     event,
     { ...event, session: "missing-session", kind: "request", count: 2 },
@@ -98,19 +148,24 @@ test("a priced session cannot hide another session's missing usage in any subtot
   for (const row of [out.totals, ...out.by_client, ...out.by_user, ...out.by_model,
     ...out.by_project, ...out.timeseries]) {
     assert.equal(row.tokens, null);
-    assert.equal(row.cost_usd, null);
+    assert.equal(row.cost_usd, 0.00238425);
+    assert.equal(row.cost_partial, true);
     assert.equal(row.unpriced, 1);
   }
 });
 
-test("missing Codex usage propagates through a combined Claude reported-cost total", () => {
+test("missing Codex usage does not discard a combined Claude reported-cost subtotal", () => {
   const out = foldClientMetrics([
     { ...event, client: "claude", backend: "anthropic", input_tokens: 49, reported_cost: 2 },
     { ...event, kind: "request", count: 1 },
   ], ["claude", "codex"]);
-  assert.equal(out.totals.cost_usd, null);
+  assert.equal(out.totals.cost_usd, 2);
+  assert.equal(out.totals.cost_partial, true);
+  assert.equal(out.totals.tokens, null);
   assert.equal(out.by_client.find((r) => r.client === "claude").cost_usd, 2);
+  assert.equal(out.by_client.find((r) => r.client === "claude").cost_partial, false);
   assert.equal(out.by_client.find((r) => r.client === "codex").cost_usd, null);
+  assert.equal(out.by_client.find((r) => r.client === "codex").cost_partial, true);
   assert.equal(out.quality.missing_usage, 1);
 });
 
@@ -135,7 +190,9 @@ test("usage availability is isolated by model, backend, user, and project", () =
     { user: "other@example.invalid" }, { project: "another-project" },
   ]) {
     const out = foldClientMetrics([event, { ...event, ...patch, kind: "completion" }], ["codex"]);
-    assert.equal(out.totals.cost_usd, null, JSON.stringify(patch));
+    assert.equal(out.totals.cost_usd, 0.00238425, JSON.stringify(patch));
+    assert.equal(out.totals.cost_partial, true, JSON.stringify(patch));
+    assert.equal(out.totals.tokens, null, JSON.stringify(patch));
     assert.equal(out.quality.missing_usage, 1);
   }
 });

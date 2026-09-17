@@ -177,18 +177,43 @@ test("common dashboard preserves token subsets, tiny costs, unavailable operatio
   expect(screen.getAllByText("AWS 정가 추정").length).toBeGreaterThan(0);
   expect(screen.getByRole("region", { name: "클라이언트 비교" }).textContent).toContain("클라이언트 보고");
   expect(screen.getByText("사용량·비용 추이", { selector: "div" })).toBeTruthy();
+  const intro = screen.getByText(/^Claude Code는/).textContent;
+  expect(intro).toContain("확인된 보고·추정 비용만 합산");
+  expect(intro).toContain("미산정 비용은 제외");
+  expect(intro).toContain("비용이 모두 미산정이면 —");
 });
 
-test("incomplete costs remain unavailable and disclose quality instead of summing priced rows", async () => {
+test.each([0.0042405, 0, null])("known cost %s retains partial/unknown status and quality counts", async (cost_usd) => {
   mount({ enabledClients: ["codex"], response: clientOverview({
-    totals: { ...codexUsage, cost_usd: null, unpriced: 1 },
-    quality: { unpriced: 1, invalid: 1 },
+    totals: { ...codexUsage, cost_usd, cost_partial: true, unpriced: 1 },
+    by_client: [{ ...codexUsage, cost_usd, cost_partial: true, unpriced: 1 }],
+    quality: { unpriced: 1, invalid: 1, missing_usage: 1, missing_identity: 2 },
   }) });
   await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());
-  expect(tile("비용 (USD)").textContent).toContain("—");
+  expect(tile("비용 (USD)").textContent).toContain(cost_usd === null ? "—" : `$${cost_usd}`);
+  expect(tile("비용 (USD)").textContent).toContain(cost_usd === null ? "미산정" : "부분합");
   const warning = screen.getAllByRole("status").find((node) => node.textContent.includes("미산정 1"));
-  expect(warning.textContent).toContain("미산정 1");
+  expect(warning.textContent).toContain("미산정 1건 제외");
   expect(warning.textContent).toContain("유효하지 않은 데이터 1");
+  expect(warning.textContent).toContain("알려진 비용");
+  expect(warning.textContent).toContain("부분합");
+  expect(document.body.textContent).not.toContain("합계를 제공하지 않을 수");
+});
+
+test("invalid token quality does not label fully reported Claude costs as partial or excluded", async () => {
+  const reported = { ...codexUsage, client: "claude", cost_basis: "client_reported",
+    cost_usd: 12.5, cost_partial: false, unpriced: 0, tokens: null, input_tokens: null };
+  mount({ enabledClients: ["claude"], response: clientOverview({
+    clients: ["claude"], totals: reported, by_client: [reported], by_model: [reported],
+    quality: { unpriced: 0, invalid: 1 },
+  }) });
+  await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());
+  expect(tile("비용 (USD)").textContent).toContain("$12.5");
+  expect(tile("비용 (USD)").textContent).not.toContain("부분합");
+  expect(tile("전체 토큰").textContent).toContain("—");
+  const warning = screen.getAllByRole("status").find((node) => node.textContent.includes("유효하지 않은 데이터 1"));
+  expect(warning.textContent).not.toMatch(/부분합|미산정|제외/);
+  expect(warning.textContent).toContain("토큰 누락 여부는 별도로 유지합니다.");
 });
 
 test("user CSV is masked, follows visible columns and sorted order, and omits hidden row fields", async () => {

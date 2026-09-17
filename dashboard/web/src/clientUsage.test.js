@@ -12,7 +12,11 @@ test("observed formatting distinguishes unknown and zero, retaining tiny positiv
   expect(formatClientCost("bad")).toBe("—");
 });
 
-test("chart folds only additive time measures, preserving incomplete costs and disjoint clients", () => {
+test("signed diagnostic measurements remain visible outside nonnegative usage rollups", () => {
+  expect(formatObserved(-1.5)).toBe("-1.5");
+});
+
+test("chart sums known costs, retaining all-unknown costs and disjoint clients", () => {
   const result = clientTimeline([
     { t: "2026-09-01T01:00:00.000Z", client: "codex", tokens: 270, cost_usd: 0.0042395, reasoning_tokens: 15 },
     { t: "2026-09-01T00:00:00.000Z", client: "claude", tokens: 20, cost_usd: 0 },
@@ -21,6 +25,24 @@ test("chart folds only additive time measures, preserving incomplete costs and d
   ]);
   expect(result).toEqual([
     { t: "2026-09-01 00:00:00", claude_tokens: 20, claude_cost: 0, codex_tokens: null, codex_cost: null },
-    { t: "2026-09-01 01:00:00", codex_tokens: 280, codex_cost: null },
+    { t: "2026-09-01 01:00:00", codex_tokens: 280, codex_cost: 0.0042395 },
   ]);
+});
+
+test.each([false, true])("known-cost folding is order independent and tokens still propagate null: reverse=%s", (reverse) => {
+  const rows = [
+    { t: "2026-09-01T00:00:00Z", client: "codex", tokens: 10, cost_usd: 0.01 },
+    { t: "2026-09-01 00:00:00", client: "codex", tokens: null, cost_usd: null },
+    { t: "2026-09-01 00:00:00", client: "codex", tokens: 20, cost_usd: 0.02 },
+    { t: "2026-09-01 01:00:00", client: "codex", tokens: null, cost_usd: null },
+    { t: "2026-09-01 01:00:00", client: "codex", tokens: 0, cost_usd: 0 },
+  ];
+  expect(clientTimeline(reverse ? rows.reverse() : rows)).toEqual([
+    { t: "2026-09-01 00:00:00", codex_tokens: null, codex_cost: 0.03 },
+    { t: "2026-09-01 01:00:00", codex_tokens: null, codex_cost: 0 },
+  ]);
+});
+
+test.each([undefined, "", " ", false, NaN, Infinity, -1])("invalid cost %j is not a measured zero", (cost_usd) => {
+  expect(clientTimeline([{ t: "2026-09-01T00:00:00Z", client: "codex", tokens: null, cost_usd }])[0].codex_cost).toBeNull();
 });

@@ -6,7 +6,7 @@ import { DualLineChart, RingGauge, SeriesBarChart } from "../components/GroupCha
 import { maskEmail } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
 import {
-  basisLabel, BROWSER_TIME_ZONE, clientName, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, presentationRow,
+  basisLabel, BROWSER_TIME_ZONE, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, presentationRow,
 } from "../clientPresentation.js";
 
 const text = (v) => v || "—";
@@ -19,7 +19,8 @@ const CLIENT = { key: "client", label: "클라이언트", render: clientName, to
 const BACKEND = { key: "backend", label: "백엔드", render: text };
 const MODEL = { key: "model", label: "모델", render: text };
 const USER = { key: "user", label: "사용자", render: (v) => maskEmail(v) || "(미식별)" };
-const BASIS = { key: "cost_basis", label: "비용 기준", render: basisLabel, toText: basisLabel };
+const BASIS = { key: "cost_basis_label", label: "비용 기준",
+  render: (value) => <span className="block min-w-[10rem]">{text(value)}</span>, toText: text };
 const COST = money("cost_usd", "비용 (USD)");
 const TOKENS = number("tokens", "전체 토큰");
 const SESSIONS = number("sessions", "세션");
@@ -49,12 +50,13 @@ const OPERATIONS = [REQUESTS, ERRORS, ERROR_RATIO, TOOL_CALLS, TOOL_ERRORS, REQU
 const GRID = "grid grid-cols-2 xl:grid-cols-4 gap-4";
 const EMPTY_VALUE = "—는 미수집·미지원·미산정 값입니다. 관측된 0과 구분합니다.";
 const TOKEN_HELP = "입력(캐시 제외) + 캐시 읽기 + 캐시 쓰기 + 출력 = 전체 토큰. 추론은 출력에 포함됩니다.";
-const COST_HELP = "표시된 비용 기준을 그대로 사용합니다. 미산정 행이 있으면 합계와 단위 비용은 제공되지 않습니다.";
+const COST_HELP = "미산정 기록은 제외하고 알려진 비용만 부분합으로 표시합니다. 단위 비용은 알려진 비용 / 관측된 분모의 근삿값이며, 비용이 모두 미산정이거나 분모가 없거나 0이면 —로 표시합니다.";
 
 function Tiles({ row, columns, basis }) {
   return <div className={GRID}>
     {columns.map((c) => <StatTile key={c.key} label={c.label} value={c.render(row[c.key])}
       variant={c.key === "cost_usd" ? "accent" : "default"}
+      className={c.render === formatClientCost ? "[&_.truncate]:whitespace-normal" : undefined}
       hint={c.render === formatClientCost ? basis : undefined}
       help={c.key === "tokens" ? TOKEN_HELP : c.render === formatClientCost ? COST_HELP : undefined} />)}
   </div>;
@@ -79,7 +81,7 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
   return <section aria-label="클라이언트 비교">
     {cards ? <div className={`grid gap-4 ${rows.length > 1 ? "lg:grid-cols-2" : ""}`}>
       {rows.map((row) => <Card key={row.client} title={clientName(row.client)}
-        subtitle={`${basisLabel(row.cost_basis)} · ${text(row.backend)}${row.observed_records === 0 ? " · 관측 없음" : ""}`}
+        subtitle={`${row.cost_basis_label} · ${text(row.backend)}${row.observed_records === 0 ? " · 관측 없음" : ""}`}
         className="border-t-2" right={<span className="block h-2 w-2 rounded-full mt-1" style={{ background: color(row.client) }} />}>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
           {columns.map((c) => <div key={c.key}>
@@ -96,7 +98,10 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
 function Trend({ rows, clients, clientRows, bucketHours, metric = "both", title = "사용량·비용 추이" }) {
   const timeline = useMemo(() => clientTimeline(rows), [rows]);
   const lines = clients.flatMap((client) => {
-    const basis = basisLabel(clientRows.find((row) => row.client === client)?.cost_basis);
+    const row = clientRows.find((row) => row.client === client);
+    const partial = row?.cost_partial === true || observedNumber(row?.unpriced) > 0;
+    const status = row?.cost_usd == null ? " · 미산정" : partial ? " · 부분합 포함" : "";
+    const basis = `${basisLabel(row?.cost_basis)}${status}`;
     return [
       ...(metric !== "cost" ? [{ key: `${client}_tokens`, label: `${clientName(client)} 토큰`, color: color(client) }] : []),
       ...(metric !== "tokens" ? [{ key: `${client}_cost`, label: `${clientName(client)} 비용 (USD · ${basis})`, color: color(client), axis: metric === "both" ? "right" : "left" }] : []),
@@ -106,7 +111,7 @@ function Trend({ rows, clients, clientRows, bucketHours, metric = "both", title 
     return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
   }
   return <DualLineChart title={title}
-    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 누락 구간은 연결하지 않습니다.`}
+    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 누락 구간은 연결하지 않습니다.${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
     rows={timeline} xKey="t" lines={lines} bucketHours={bucketHours}
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
 }
@@ -158,7 +163,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
     (data?.by_client || []).find((row) => row.client === client) || { client, observed_records: 0 },
   ));
   const total = presentationRow(data?.totals);
-  const basis = [...new Set(clientRows.map((row) => basisLabel(row.cost_basis)))].join(" + ");
+  const basis = costBasisLabel(total, [...new Set(clientRows.map((row) => basisLabel(row.cost_basis)))].join(" + "));
   const models = rows("by_model"), users = rows("by_user"), periods = rows("timeseries");
   const tools = (data?.tools || []).filter((row) => selected.includes(row.client));
   const trendProps = { rows: periods, clients: selected, clientRows, bucketHours: data?.bucket_hours || 1 };

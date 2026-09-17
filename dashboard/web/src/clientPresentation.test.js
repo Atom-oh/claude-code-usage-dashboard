@@ -55,6 +55,40 @@ test("an enabled client without observations cannot appear as measured zero", ()
   expect(row.cost_basis).toBe("aws_list_estimate");
 });
 
+test.each([
+  ["client_reported", "클라이언트 보고"],
+  ["aws_list_estimate", "AWS 정가 추정"],
+])("known-cost units retain observed denominators and label partial %s subtotals", (cost_basis, label) => {
+  const row = presentationRow({ ...codexUsage, cost_basis, cost_partial: true, unpriced: 2,
+    cost_usd: 0.012, sessions: 3, users: 2, tokens: 600 });
+  expect(row.cost_basis_label).toBe(`${label} · 부분합 · 미산정 2건 제외`);
+  expect(row.cost_per_session).toBe(0.004);
+  expect(row.cost_per_user).toBe(0.006);
+  expect(row.usd_per_million_tokens).toBe(20);
+  expect(row.cost_partial).toBe(true);
+  expect(row.unpriced).toBe(2);
+});
+
+test("cost status distinguishes complete, partial zero and entirely unknown costs", () => {
+  expect(presentationRow(codexUsage).cost_basis_label).toBe("AWS 정가 추정");
+  expect(presentationRow({ ...codexUsage, cost_usd: 0, cost_partial: true, unpriced: 1 }))
+    .toMatchObject({ cost_usd: 0, cost_per_session: 0,
+      cost_basis_label: "AWS 정가 추정 · 부분합 · 미산정 1건 제외" });
+  expect(presentationRow({ ...codexUsage, cost_usd: null, cost_partial: true, unpriced: 2 }))
+    .toMatchObject({ cost_usd: null, cost_per_session: null, cost_basis_label: "AWS 정가 추정 · 미산정 · 2건 제외" });
+  expect(presentationRow({ ...codexUsage, cost_partial: true, unpriced: undefined }).cost_basis_label)
+    .toBe("AWS 정가 추정 · 부분합");
+});
+
+test("partial cost does not fill missing token components, identities or zero denominators", () => {
+  const row = presentationRow({ ...codexUsage, cost_partial: true, unpriced: 1,
+    tokens: null, cache_write_tokens: null, sessions: 0, users: null });
+  expect(row.cost_usd).toBe(codexUsage.cost_usd);
+  for (const key of ["tokens", "input_total", "cache_read_pct", "tokens_per_session",
+    "cost_per_session", "cost_per_user", "usd_per_million_tokens"]) expect(row[key]).toBeNull();
+  expect(row.cost_basis_label).toContain("부분합");
+});
+
 test("timestamp parsing preserves the instant for both API forms", () => {
   expect(formatClientTime("2026-09-01 03:04:00")).toBe(formatClientTime("2026-09-01T03:04:00.000Z"));
   expect(formatClientTime(null)).toBe("—");
