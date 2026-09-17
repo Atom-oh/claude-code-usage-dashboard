@@ -1,10 +1,11 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import * as csv from "../csv.js";
 import CodexInsights from "./CodexInsights.jsx";
 
 const state = vi.hoisted(() => ({ result: {}, calls: [] }));
 vi.mock("../useApi.js", () => ({ useApi: (...args) => { state.calls.push(args); return state.result; } }));
-afterEach(() => { cleanup(); state.calls = []; });
+afterEach(() => { cleanup(); state.calls = []; vi.restoreAllMocks(); });
 const fixture = () => ({
   coverage: { logs: { status: "observed", records: 8 }, metrics: { status: "empty", records: 0 },
     traces: { status: "unavailable", records: 0 } },
@@ -27,6 +28,52 @@ test("efficiency distinguishes unpriced cost from measured ratios and tiny price
   expect(screen.getByText("high")).toBeTruthy();
   expect(screen.getByText("Metrics · 관측 없음")).toBeTruthy();
   expect(screen.getByText("Traces · 수집 미확인")).toBeTruthy();
+});
+test.each([0.012, 0])("partial Codex unit costs and effort CSV preserve known cost %s", (cost_usd) => {
+  const data = fixture();
+  data.summary = { ...data.summary, cost_partial: true, unpriced: 2,
+    cost_per_request: cost_usd / 3, cost_per_session: null, tokens_per_request: null };
+  data.effort = [
+    { effort: "high", requests: 3, tokens: null, cost_usd, cost_partial: true, unpriced: 2 },
+    { effort: "unknown", requests: 1, tokens: null, cost_usd: null, cost_partial: true, unpriced: 1 },
+  ];
+  const download = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+  show(data);
+  const request = screen.getByText("요청당 추정 비용").closest(".shadow-card");
+  expect(request.textContent).toContain(`$${cost_usd / 3}`);
+  expect(request.textContent).toContain("AWS 정가 추정 · 부분합 · 미산정 2건 제외");
+  expect(screen.getByText("세션당 추정 비용").closest(".shadow-card").textContent).toContain("—");
+  expect(screen.getByText("요청당 토큰").closest(".shadow-card").textContent).toContain("—");
+  const table = screen.getByText("Effort별 사용량·비용").closest(".shadow-card");
+  expect(table.textContent).toContain("부분합");
+  expect(table.textContent).toContain("알려진 비용");
+  fireEvent.click(within(table).getByRole("button", { name: "CSV" }));
+  const exported = download.mock.calls[0][1];
+  expect(exported).toContain("AWS 정가 추정 · 부분합 · 미산정 2건 제외");
+  expect(exported).toContain("AWS 정가 추정 · 미산정");
+  expect(exported.split("\r\n")[1]).toContain(`high,3,,${cost_usd},`);
+  expect(exported.split("\r\n")[2]).toContain("unknown,1,,,");
+});
+test("effort retains a separate numeric unpriced column in the table and CSV", () => {
+  const data = fixture();
+  data.effort = [
+    { effort: "high", cost_usd: 0.012, cost_partial: true, unpriced: 2 },
+    { effort: "free", cost_usd: 0, cost_partial: false, unpriced: 0 },
+    { effort: "unknown", cost_usd: null, cost_partial: true, unpriced: null },
+  ];
+  const download = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+  show(data);
+  const table = screen.getByText("Effort별 사용량·비용").closest(".shadow-card");
+  const headers = within(table).getAllByRole("columnheader").map((node) => node.textContent.replace("↕", ""));
+  const unpricedIndex = headers.indexOf("미산정");
+  expect(unpricedIndex).toBeGreaterThanOrEqual(0);
+  expect(headers).toContain("비용 기준·미산정");
+  expect(within(table).getAllByRole("row").slice(1).map((row) =>
+    within(row).getAllByRole("cell")[unpricedIndex].textContent)).toEqual(["2", "0", "—"]);
+  fireEvent.click(within(table).getByRole("button", { name: "CSV" }));
+  const exported = download.mock.calls[0][1];
+  expect(exported.split("\r\n").slice(1).map((row) => row.split(",")[unpricedIndex])).toEqual(["2", "0", ""]);
+  expect(exported).toContain("AWS 정가 추정 · 부분합 · 미산정 2건 제외");
 });
 test("metric catalog supports search and marks incomplete intervals without invented totals", () => {
   const data = fixture();

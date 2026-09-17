@@ -1,5 +1,7 @@
 function observed(value) {
-  return value == null || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
+  if (!["number", "string"].includes(typeof value) || String(value).trim() === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 export function formatObserved(value) {
@@ -15,7 +17,7 @@ export function formatClientCost(value) {
     : { maximumFractionDigits: 2 })}`;
 }
 
-// Only additive measures are folded; unknown costs remain unknown within a bucket.
+// Costs sum known values; token completeness still propagates within each bucket.
 export function clientTimeline(rows) {
   const buckets = new Map();
   for (const row of rows) {
@@ -23,8 +25,11 @@ export function clientTimeline(rows) {
     const bucket = buckets.get(t) || { t };
     for (const [field, suffix] of [["tokens", "tokens"], ["cost_usd", "cost"]]) {
       const key = `${row.client}_${suffix}`;
-      const value = observed(row[field]);
-      bucket[key] = value === null || bucket[key] === null ? null : (bucket[key] ?? 0) + value;
+      const n = observed(row[field]);
+      const value = n !== null && n >= 0 ? n : null;
+      bucket[key] = field === "cost_usd"
+        ? value === null ? bucket[key] ?? null : (bucket[key] ?? 0) + value
+        : value === null || bucket[key] === null ? null : (bucket[key] ?? 0) + value;
     }
     buckets.set(t, bucket);
   }

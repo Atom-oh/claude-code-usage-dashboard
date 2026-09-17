@@ -9,6 +9,10 @@ use the existing component stack.
   Claude `view=detail` retains advanced/A/B pages; see [routing](../../docs/reference/frontend.md#routes-and-state).
   Common views label `cost_usd` by `cost_basis`, retain nulls/tiny positives, and never
   show unsupported Claude measures as Codex zeros.
+- Shared costs display usable subtotals despite excluded records, marked as partial
+  in cards, chart context, tables and CSV. Cost units use that subtotal over observed
+  denominators; missing denominators remain unavailable. All-unknown costs stay `—`.
+  This follows [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
 - Common views do not forward Claude-only group/project filters. Client/backend selection
   survives range changes without leaking masked user IDs.
 - Claude detail's `spend.js` selects `reported_cost`, retaining computed diagnostics.

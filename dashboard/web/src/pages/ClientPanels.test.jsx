@@ -96,6 +96,67 @@ test("overview uses server totals, visible per-client basis and tiny positive do
   expect(comparison.textContent).toContain("$0.0042405");
 });
 
+test("mixed-client totals, cards and chart legends label only known-cost subtotals", () => {
+  const data = fixture(["claude", "codex"]);
+  data.by_client[1] = { ...data.by_client[1], cost_usd: null, cost_partial: true, unpriced: 2 };
+  data.totals = { ...data.totals, cost_usd: codexUsage.cost_usd, cost_partial: true, unpriced: 2 };
+  mount("overview", data);
+  expect(tile("비용 (USD)").textContent).toContain("$0.0042405");
+  expect(tile("비용 (USD)").textContent).toContain("클라이언트 보고 + AWS 정가 추정 · 부분합 · 미산정 2건 제외");
+  const comparison = screen.getByRole("region", { name: "클라이언트 비교" });
+  expect(within(comparison).getByText("Codex").closest(".shadow-card").textContent).toContain("AWS 정가 추정 · 미산정");
+  expect(card("사용량·비용 추이").textContent).toContain("AWS 정가 추정 · 미산정");
+});
+
+test("cost legends and point tooltips describe partial series without range-wide excluded counts", async () => {
+  // Recharts also needs a layout width to convert pointer coordinates in jsdom.
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const data = fixture(["claude", "codex"]);
+  data.by_client[1] = { ...data.by_client[1], cost_partial: true, unpriced: 2 };
+  mount("cost", data);
+  const chart = card("비용 추이");
+  const label = "Codex 비용 (USD · AWS 정가 추정 · 부분합 포함)";
+  expect(chart.textContent).toContain(label);
+  expect(chart.textContent).toContain("Claude Code 비용 (USD · 클라이언트 보고)");
+  expect(chart.textContent).not.toContain("2건 제외");
+  fireEvent.mouseMove(chart.querySelector(".recharts-wrapper"), { clientX: 200, clientY: 80 });
+  await waitFor(() => expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).toContain(label));
+  expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).not.toContain("2건 제외");
+  expect(card("클라이언트별 비용 기준").textContent).toContain("미산정 2건 제외");
+});
+
+test.each([
+  ["cost", "모델별 비용", "by_model"],
+  ["cost", "사용자별 비용", "by_user"],
+  ["productivity", "모델별 관측 효율", "by_model"],
+  ["trends", "기간별 관측값", "timeseries"],
+  ["analytics", "프로젝트 태그별 사용량", "by_project"],
+])("%s %s displays and exports cost status without extra shared columns", (page, title, group) => {
+  const data = fixture(["codex"]);
+  const partial = { ...codexUsage, cost_partial: true, unpriced: 2, sessions: 2, users: null,
+    user: "alice@example.test", project: "fixture-project", t: "2026-09-01T00:00:00Z" };
+  data[group] = [partial, { ...partial, model: "unknown", user: "unknown", project: "unknown", cost_usd: null }];
+  data.by_client = [partial];
+  data.totals = partial;
+  const download = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+  mount(page, data);
+  const table = card(title);
+  expect(table.textContent).toContain("AWS 정가 추정 · 부분합 · 미산정 2건 제외");
+  expect(table.textContent).toContain("AWS 정가 추정 · 미산정");
+  expect(within(table).getAllByRole("columnheader").filter((c) => c.textContent.includes("비용 기준"))).toHaveLength(1);
+  fireEvent.click(within(table).getByRole("button", { name: "CSV" }));
+  const exported = download.mock.calls[0][1];
+  expect(exported).toContain("AWS 정가 추정 · 부분합 · 미산정 2건 제외");
+  expect(exported).toContain("AWS 정가 추정 · 미산정");
+  expect(exported).toContain(page === "productivity" ? "0.00212025" : "0.0042405");
+  if (page === "cost") {
+    expect(tile("세션당 비용 (USD)").textContent).toContain("$0.00212025");
+    expect(tile("세션당 비용 (USD)").textContent).toContain("부분합");
+    expect(tile("사용자당 비용 (USD)").textContent).toContain("—");
+    expect(card("비용 추이").textContent).toContain("부분합");
+  }
+});
+
 test("token composition does not add reasoning a second time", () => {
   mount("usage", fixture(["codex"]));
   const composition = card("토큰 구성");
