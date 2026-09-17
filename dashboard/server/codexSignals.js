@@ -207,16 +207,29 @@ export function foldCodexMetrics(rows, from, to) {
 
 export function buildTraceQuery(from, to, filters = {}) {
   const model = "coalesce(nullIf(SpanAttributes['model'], ''), SpanAttributes['gen_ai.request.model'])";
-  return { sql: `SELECT DISTINCT toString(toTimeZone(Timestamp, 'UTC')) AS timestamp, TraceId AS trace_id, SpanId AS span_id,
+  const where = `Timestamp >= {signalFrom:DateTime} AND Timestamp < {signalTo:DateTime}
+      AND ResourceAttributes['client'] = 'codex' ${filter("SpanAttributes", model)}`;
+  return { sql: `WITH recent_traces AS (
+      SELECT TraceId FROM claude_code.otel_traces WHERE ${where}
+      GROUP BY TraceId ORDER BY max(Timestamp) DESC, TraceId DESC LIMIT 50
+    ), selected_spans AS (
+    SELECT DISTINCT toString(toTimeZone(Timestamp, 'UTC')) AS timestamp, TraceId AS trace_id, SpanId AS span_id,
     ParentSpanId AS parent_span_id, SpanName AS name, Duration AS duration_ns, StatusCode AS status,
     ${model} AS model, SpanAttributes['tool_name'] AS tool_name,
     coalesce(nullIf(SpanAttributes['codex.turn.reasoning_effort'], ''),
       SpanAttributes['codex.request.reasoning_effort']) AS effort,
     coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn_id
     FROM claude_code.otel_traces
-    WHERE Timestamp >= {signalFrom:DateTime} AND Timestamp < {signalTo:DateTime}
-      AND ResourceAttributes['client'] = 'codex' ${filter("SpanAttributes", model)}
-    ORDER BY Timestamp LIMIT 50001`, params: params(from, to, filters) };
+    WHERE ${where} AND TraceId IN (SELECT TraceId FROM recent_traces)
+    ), span_variants AS (
+      SELECT *, count() OVER (PARTITION BY trace_id, span_id) AS variants FROM selected_spans
+    )
+    SELECT *, count() OVER (PARTITION BY trace_id) AS trace_records,
+      uniqExactIf(span_id, variants > 1) OVER (PARTITION BY trace_id) AS trace_conflicting_spans
+    FROM span_variants
+    ORDER BY timestamp DESC, trace_id, span_id, duration_ns, status
+    LIMIT 200 BY trace_id
+    LIMIT 10000`, params: params(from, to, filters) };
 }
 
 const identifier = (value) => typeof value === "string" && /^[a-z0-9_][a-z0-9_.+-]{0,127}$/i.test(value)
@@ -227,11 +240,16 @@ const operation = (value) => typeof value === "string"
 export function foldCodexTraces(rows) {
   bounded(rows);
   const seen = new Map(), groups = new Map(), traces = new Map(), valid = [];
-  const conflicts = new Set(), partial = new Set();
+  const conflicts = new Map(), sourceConflicts = new Map(), partial = new Set(), truncated = new Set();
   let lastSeen = -Infinity;
   for (const row of rows) {
     if (!row.trace_id || !row.span_id || !Number.isFinite(time(row.timestamp))) continue;
     const stamp = time(row.timestamp);
+    if (Number(row.trace_records) > 200) truncated.add(row.trace_id);
+    if (Number(row.trace_conflicting_spans) > 0) {
+      sourceConflicts.set(row.trace_id, Number(row.trace_conflicting_spans));
+      partial.add(row.trace_id);
+    }
     lastSeen = Math.max(lastSeen, stamp);
     if (!traces.has(row.trace_id)) traces.set(row.trace_id,
       { trace_id: row.trace_id, spans: [], errors: 0, start_time: iso(stamp) });
@@ -242,7 +260,11 @@ export function foldCodexTraces(rows) {
       number(row.duration_ns), row.status || "Unset", row.model || "", row.tool_name || "",
       row.effort || "", row.turn_id || ""]);
     if (seen.has(key)) {
-      if (seen.get(key) !== fingerprint) { conflicts.add(key); partial.add(row.trace_id); }
+      if (seen.get(key) !== fingerprint) {
+        if (!conflicts.has(row.trace_id)) conflicts.set(row.trace_id, new Set());
+        conflicts.get(row.trace_id).add(row.span_id);
+        partial.add(row.trace_id);
+      }
       continue;
     }
     seen.set(key, fingerprint); valid.push(row);
@@ -263,7 +285,9 @@ export function foldCodexTraces(rows) {
     const trace = traces.get(row.trace_id); trace.spans.push(span); trace.errors += error ? 1 : 0;
   }
   return { coverage: { ...coverage(valid), last_seen: iso(lastSeen), partial: partial.size > 0,
-    partial_traces: partial.size, conflicting_spans: conflicts.size },
+    partial_traces: partial.size, conflicting_spans: [...partial].reduce((total, id) =>
+      total + Math.max(sourceConflicts.get(id) || 0, conflicts.get(id)?.size || 0), 0),
+    ...(truncated.size ? { truncated_traces: truncated.size } : {}) },
     spans: [...groups.values()].map(({ durations, ...row }) => ({ ...row, average_ms: average(durations),
       p95_ms: quantile(durations, 0.95) })).sort((a, b) => b.count - a.count),
     traces: [...traces.values()].sort((a, b) => time(b.start_time) - time(a.start_time)).slice(0, 50).map((trace) => {
@@ -272,7 +296,8 @@ export function foldCodexTraces(rows) {
       trace.spans.sort((a, b) => time(a.start_time) - time(b.start_time));
       const start = time(trace.spans[0].start_time);
       return { ...trace, start_time: iso(start), span_count: trace.spans.length,
-        wall_ms: trace.spans.some((s) => s.duration_ms === null) ? null
+        ...(truncated.has(trace.trace_id) ? { truncated: true, errors: null } : {}),
+        wall_ms: truncated.has(trace.trace_id) || trace.spans.some((s) => s.duration_ms === null) ? null
           : Math.max(...trace.spans.map((s) => time(s.start_time) + s.duration_ms)) - start };
     }) };
 }

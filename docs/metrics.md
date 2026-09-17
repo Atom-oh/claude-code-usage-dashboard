@@ -61,7 +61,10 @@ See [setup and pricing assumptions](runbooks/codex-telemetry.md).
 
 ## Spend and cost diagnostics
 
-Primary spend displays use client-reported `claude_code.cost.usage`, exposed as
+Shared pages use the client overview's `cost_usd` and label its basis: Claude reports
+or Codex AWS list-price estimates. The following adapter rules apply to Claude detail.
+
+Claude detail spend displays use client-reported `claude_code.cost.usage`, exposed as
 `reported_cost`. [spend.js](../dashboard/web/src/spend.js) maps that field to display `cost`
 and preserves original server `cost`/`computed_cost` as diagnostic `computed_cost`.
 Previous-period fields follow the same rule. SQL and server rate calculations retain their

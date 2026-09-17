@@ -19,6 +19,7 @@ import Analytics from "./pages/Analytics.jsx";
 import Reliability from "./pages/Reliability.jsx";
 import Clients from "./pages/Clients.jsx";
 import { ClientProvider, useClient } from "./ClientContext.jsx";
+import { CLIENT_PAGES } from "./clientNavigation.js";
 
 export default function App() {
   return <ClientProvider><Dashboard /></ClientProvider>;
@@ -39,7 +40,10 @@ function Dashboard() {
                 <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
                   <FilterBar />
                 </div>
-                {common ? <Clients /> : <Routes>
+                {common ? <Routes>
+                  {CLIENT_PAGES.map((page) => <Route key={page.key} path={page.to} element={<Clients page={page.key} />} />)}
+                  <Route path="*" element={<Clients page="overview" />} />
+                </Routes> : <Routes>
                   <Route path="/" element={<Overview />} />
                   <Route path="/exec" element={<Executive />} />
                   <Route path="/trends" element={<Trends />} />

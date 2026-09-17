@@ -2,40 +2,29 @@ import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert } from "lucide-react";
 import { cn } from "../cn.js";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
+import { CLIENT_PAGES } from "../clientNavigation.js";
 
-export const COMMON_NAV = [
-  { to: "/", label: "사용량·비용", hint: "클라이언트·모델·사용자·도구", icon: DollarSign, exact: true },
-];
+const ICONS = [LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, UsersIcon, DollarSign, ShieldAlert, Sparkles];
+export const NAV = CLIENT_PAGES.map((page, i) => ({ ...page, icon: ICONS[i] }));
+export const COMMON_NAV = NAV;
 
 export function useNavigation() {
-  const { common, client } = useClient();
+  const { common, enabledClients } = useClient();
   return {
-    items: common ? COMMON_NAV : NAV,
-    brand: client === "all" ? "Claude + Codex" : CLIENT_LABELS[client],
-    subtitle: common ? "사용량·비용 대시보드" : "A/B Dashboard",
+    items: NAV,
+    brand: enabledClients.length > 1 ? "Claude + Codex" : CLIENT_LABELS[enabledClients[0]],
+    subtitle: common ? "통합 사용량 대시보드" : "Claude 상세 분석",
     common,
   };
 }
 
 // ../awsops web/components/shell/Sidebar.tsx 포팅 (256px, 고정 nav — 계정/리전 셀렉터 등은 해당 없음).
-export const NAV = [
-  { to: "/", label: "Overview", hint: "핵심 지표 요약", icon: LayoutDashboard, exact: true },
-  { to: "/exec", label: "Executive", hint: "경영진 보고 요약", icon: Briefcase },
-  { to: "/trends", label: "Trends", hint: "활성 사용자 추이", icon: LineChart },
-  { to: "/productivity", label: "Productivity", hint: "생산성 지표", icon: TrendingUp },
-  { to: "/usage", label: "Usage", hint: "Tool / MCP / Skill", icon: Wrench },
-  { to: "/users", label: "Users", hint: "사용자별 생산성", icon: UsersIcon },
-  { to: "/cost", label: "Cost", hint: "토큰 사용량과 모델별 비용", icon: DollarSign },
-  { to: "/reliability", label: "Reliability", hint: "오류·재시도와 버전 현황", icon: ShieldAlert },
-  { to: "/analytics", label: "Analytics", hint: "AI 분석 에이전트", icon: Sparkles },
-];
 
 export function NavItem({ to, label, hint, icon: Icon, exact }) {
   const { search } = useLocation();
-  const { enabledClients } = useClient();
   return (
     <NavLink
-      to={enabledClients.includes("codex") ? { pathname: to, search } : to}
+      to={{ pathname: to, search }}
       end={exact}
       className={({ isActive }) =>
         cn(

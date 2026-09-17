@@ -92,6 +92,30 @@ class SynthesisTests(unittest.TestCase):
                 self.assertEqual(calls, 2)
                 self.assertTrue(text.endswith("VERDICT: PASS\n"))
 
+    def test_format_fallback_gets_static_guidance_and_retains_a_blocking_verdict(self):
+        # A complete code-0 FAIL stops immediately; only retryable attempts
+        # exercise the configured fallback and its static presentation guidance.
+        for code, verdict in ((0, "PASS"), (1, "FAIL")):
+            with self.subTest(code=code, verdict=verdict):
+                prompts, evidence, models = [], [], []
+                def execute(command, cwd, environment, input_text, timeout):
+                    prompts.append(command[2])
+                    evidence.append(input_text)
+                    models.append(command[command.index("--model") + 1])
+                    self.assertTrue(input_text.endswith(self.module.CHAIR_OUTPUT_GUIDANCE + "\n"))
+                    self.assertIn("END SPECIALISTS", input_text)
+                    if len(prompts) == 1:
+                        return code, f"Checked the condition `value > 0`.\nVERDICT: {verdict}\n", ""
+                    self.assertIn("previous attempt failed presentation validation", command[2])
+                    self.assertIn("do not reduce scope, drop findings, or infer approval", command[2])
+                    self.assertNotIn("value > 0", command[2])
+                    return 0, "The MAJOR defect remains unresolved.\nVERDICT: FAIL\n", ""
+                calls, text = self.run_chair(execute)
+                self.assertEqual(calls, 2)
+                self.assertEqual(evidence[0], evidence[1])
+                self.assertEqual(models, ["global.anthropic.claude-fable-5-1", "global.anthropic.claude-opus-5"])
+                self.assertEqual(text, "The MAJOR defect remains unresolved.\nVERDICT: FAIL\n")
+
     def test_hard_account_limits_still_make_only_one_call(self):
         for error in ("ThrottlingException: MONTHLY_REQUEST_COUNT exhausted",
                       "Error: insufficient credits", "Error: You have reached the limit for overages"):

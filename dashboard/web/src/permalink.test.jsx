@@ -1,3 +1,4 @@
+import { claudeDetail } from "./test/claudeDetail.js";
 // 이 파일의 달력 단정문은 로컬/UTC 포맷터 차이를 봐야 한다 — 이 머신과 CI가 모두 UTC라
 // TZ를 고정하지 않으면 하루 밀리는 버그가 보이지 않는다(한국 사용자에게만 보인다).
 process.env.TZ = "Asia/Seoul";
@@ -48,7 +49,7 @@ afterEach(() => {
 
 function mount(entry, config) {
   return render(
-    <MemoryRouter initialEntries={[entry]}>
+    <MemoryRouter initialEntries={[claudeDetail(entry)]}>
       <ConfigProvider config={config}>
         <LocationSpy />
         <App />

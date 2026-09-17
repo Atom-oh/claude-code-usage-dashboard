@@ -147,7 +147,7 @@ Claude reports from Codex AWS estimates; neither guarantees billing completeness
 
 The SPA shares range/filter/refresh state and runtime configuration. With both clients
 enabled, it defaults to the common client view in
-[Clients.jsx](../dashboard/web/src/pages/Clients.jsx); Claude selection restores its
+[Clients.jsx](../dashboard/web/src/pages/Clients.jsx); Claude `view=detail` restores its
 detail pages. Common views omit Claude-only channel/project filters, which the common
 API rejects, and keep unsupported measurements unavailable. CSVs follow visible table
 columns and sorted rows; central `csv.js` masks exported `user` cells

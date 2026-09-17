@@ -50,7 +50,7 @@ test("trace detail exposes parent relationships and labels an observed window", 
       start_time: "2026-09-15T00:00:00Z", duration_ms: 4, status: "Unset" }] }];
   show(data);
   fireEvent.click(screen.getByRole("button", { name: "Trace" }));
-  expect(screen.getByText(/관측된 span 구간/)).toBeTruthy();
+  expect(screen.getByText(/최근 50개 Trace의 각 최근 200개 span/)).toBeTruthy();
   fireEvent.click(screen.getByText(/trace-one/, { selector: "summary" }));
   expect(screen.getByText("parent")).toBeTruthy();
   expect(screen.getByText("exec_command")).toBeTruthy();
@@ -62,6 +62,26 @@ test("insight errors and loading are visible independently of overview data", ()
   state.result = { error: new Error("Unavailable") };
   rerender(<CodexInsights />);
   expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeTruthy();
+});
+test("bounded trace previews disclose omitted spans and unavailable whole-trace totals", () => {
+  const data = fixture();
+  data.coverage.traces = { status: "observed", records: 200, truncated_traces: 1 };
+  data.traces = [{ trace_id: "long-trace", span_count: 200, wall_ms: null, errors: null,
+    truncated: true, spans: [] }];
+  show(data);
+  fireEvent.click(screen.getByRole("button", { name: "Trace" }));
+  expect(screen.getByText(/긴 Trace는 일부 span만 표시/)).toBeTruthy();
+  expect(screen.getByText(/long-trace/, { selector: "summary" }).textContent)
+    .toContain("200 spans · — ms · 오류 — · 최근 span만 표시");
+});
+test("query-limited signals are distinguished from absent telemetry", () => {
+  const data = fixture();
+  data.coverage.logs = { status: "limited", records: null };
+  data.summary = {};
+  show(data);
+  expect(screen.getByText("Logs · 조회 한도 초과")).toBeTruthy();
+  expect(screen.getByText(/일부 상세 신호가 조회 한도를 넘었습니다/)).toBeTruthy();
+  expect(screen.getByText("요청당 추정 비용").closest(".shadow-card").textContent).toContain("—");
 });
 
 test("turn summaries weight histogram observations and withhold partial measurements", () => {
@@ -81,7 +101,7 @@ test("shared effective bounds reach the API and a paused overview preserves deta
   state.result = { data: fixture(), loading: false };
   const range = { from: "2026-09-01T00:00:00Z", to: "2026-09-02T10:00:00Z" };
   const { rerender } = render(<CodexInsights range={range} enabled />);
-  expect(state.calls.at(-1)).toEqual(["/api/codex/insights", { client: "codex", ...range }, true]);
+  expect(state.calls.at(-1)).toEqual(["/api/codex/insights", { client: "codex", ...range }, true, { linkedRange: true }]);
   fireEvent.click(screen.getByRole("button", { name: "런타임·메트릭" }));
   fireEvent.change(screen.getByPlaceholderText("메트릭 이름 검색"), { target: { value: "turn" } });
   rerender(<CodexInsights range={range} enabled={false} />);
@@ -103,4 +123,16 @@ test("partial extrema annotate a valid mean and conflicting traces withhold thei
   fireEvent.click(screen.getByRole("button", { name: "Trace" }));
   expect(screen.getByRole("status").textContent).toContain("충돌");
   expect(screen.getByText(/같은 Span ID/)).toBeTruthy();
+});
+
+test("route sections expose only relevant details and choose a valid tab after navigation", () => {
+  state.result = { data: fixture(), loading: false };
+  const { rerender } = render(<CodexInsights sections={["성능"]} />);
+  expect(screen.getByText("요청·도구·시작 단계 지연")).toBeTruthy();
+  expect(screen.queryByText("Effort별 사용량·비용")).toBeNull();
+  expect(screen.queryByRole("button", { name: "런타임·메트릭" })).toBeNull();
+  rerender(<CodexInsights sections={["런타임·메트릭", "Trace"]} />);
+  expect(screen.getByPlaceholderText("메트릭 이름 검색")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Trace", exact: true }));
+  expect(screen.getByText("작업별 Span 지연")).toBeTruthy();
 });

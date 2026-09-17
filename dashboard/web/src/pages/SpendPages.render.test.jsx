@@ -1,3 +1,4 @@
+import { claudeDetail } from "../test/claudeDetail.js";
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -38,7 +39,7 @@ function mount(path, rows = [spend], costError = false) {
   }));
   return render(
     <ConfigProvider config={{ piiMask: false, groupMode: "single", schema: {} }}>
-      <MemoryRouter initialEntries={[path]}><App /></MemoryRouter>
+      <MemoryRouter initialEntries={[claudeDetail(path)]}><App /></MemoryRouter>
     </ConfigProvider>
   );
 }

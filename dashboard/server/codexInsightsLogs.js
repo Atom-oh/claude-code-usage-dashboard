@@ -11,12 +11,19 @@ const TOKEN_FIELDS = { input_token_count: "input_tokens_total", cached_token_cou
 const OVERVIEW_EVENTS = ["sse_event", "websocket_event", "api_request", "api_error",
   "tool_result", "tool_decision", "turn_ttft"].map((name) => `codex.${name}`);
 
-export function buildCodexInsightsLogQuery(from, to, filters = {}) {
+const DETAIL_ATTRIBUTES = [...Object.keys(TOKEN_FIELDS), "event.name", "event.kind", "conversation.id", "model",
+  "model_reasoning_effort", "attempt", "duration_ms", "error.message", "error", "success",
+  "http.response.status_code", "prompt_length", "tool_name", "decision", "source", "app.version",
+  "provider_name", "reasoning_effort", "sandbox_policy", "approval_policy", "startup.phase"];
+const DETAIL_RESOURCES = ["user.email", "enduser.id", "backend", "project.name", "service.version"];
+const sqlStrings = (values) => `[${values.map((v) => `'${v}'`).join(",")}]`;
+
+function logSelection(from, to, filters = {}, distinct = true) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
   const sql = `WITH unique_events AS (
-    SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
+    SELECT ${distinct ? "DISTINCT " : ""}Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
       a['conversation.id'] AS session,
       coalesce(nullIf(r['user.email'], ''), nullIf(r['enduser.id'], ''), '') AS user,
       a['model'] AS model,
@@ -35,9 +42,76 @@ export function buildCodexInsightsLogQuery(from, to, filters = {}) {
   WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
     AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
     ${filters.model ? `AND (${modelMatch} OR (model = '' AND
-      (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}
-  ORDER BY Timestamp LIMIT ${ROW_LIMIT + 1}`;
+      (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}`;
   return { sql, params };
+}
+
+export function buildCodexInsightsLogQuery(from, to, filters = {}, { detailsOnly = false } = {}) {
+  // The detail statement itself groups full event identities and stream scopes.
+  // Its scope evidence and priced rows therefore share one table read/snapshot.
+  const selection = logSelection(from, to, filters, !detailsOnly);
+  if (!detailsOnly) return { ...selection, sql: `${selection.sql} ORDER BY timestamp LIMIT ${ROW_LIMIT + 1}` };
+  return { params: selection.params, sql: `WITH selected AS (${selection.sql}),
+    detail_source AS (
+      SELECT *, attributes['conversation.id'] AS session,
+        (attributes['event.name'] IN ('codex.sse_event','codex.websocket_event')
+          AND attributes['event.kind'] NOT IN ('response.completed','response.failed')) AS is_bulk,
+        if(is_bulk, '', timestamp) AS identity_time,
+        if(is_bulk, map('user.email',coalesce(nullIf(resource['user.email'],''),resource['enduser.id']),
+          'backend',if(resource['backend'] IN ('bedrock-runtime','bedrock-mantle'),resource['backend'],'unknown'),
+          'project.name',resource['project.name']),resource) AS identity_resource,
+        if(is_bulk, map('conversation.id',session),attributes) AS identity_attributes
+      FROM selected WHERE startsWith(attributes['event.name'],'codex.')
+    )
+    SELECT is_bulk AS is_scope, max(timestamp) AS timestamp,
+      mapFilter((k,v) -> has(${sqlStrings(DETAIL_RESOURCES)},k),identity_resource) AS resource,
+      mapApply((k,v) -> (k,if(k IN ('error','error.message'),if(v='','','present'),v)),
+        mapFilter((k,v) -> has(${sqlStrings(DETAIL_ATTRIBUTES)},k),identity_attributes)) AS attributes
+    FROM detail_source WHERE NOT is_bulk OR session != ''
+    GROUP BY is_bulk, identity_time, identity_resource, identity_attributes
+    ORDER BY timestamp LIMIT ${ROW_LIMIT + 1}` };
+}
+
+export function buildCodexLogSummaryQuery(from, to, filters = {}) {
+  const selection = logSelection(from, to, filters);
+  const measured = "event IN ('codex.sse_event','codex.websocket_event') AND isNotNull(latency_value) AND isFinite(latency_value) AND latency_value >= 0";
+  return { params: selection.params, sql: `WITH selected AS (${selection.sql}),
+    summary_events AS (
+      SELECT timestamp, attributes['event.name'] AS event,
+        toFloat64OrNull(trimBoth(attributes['duration_ms'])) AS latency_value
+      FROM selected WHERE startsWith(attributes['event.name'], 'codex.')
+    )
+    SELECT grouping(event) AS is_total, event, count() AS records, max(timestamp) AS last_seen,
+      countIf(${measured}) AS duration_count,
+      avgOrNullIf(latency_value, ${measured}) AS average_ms,
+      quantilesExactWeightedIf(0.5, 0.95)(ifNull(latency_value, 0), toUInt64(1), ${measured}) AS percentiles,
+      maxOrNullIf(latency_value, ${measured}) AS max_ms
+    FROM summary_events GROUP BY GROUPING SETS ((), (event))
+    ORDER BY is_total DESC, event LIMIT ${ROW_LIMIT + 1}` };
+}
+
+export function foldCodexLogSummary(rows) {
+  if (rows.length > ROW_LIMIT) throw new ValidationError("too much Codex log data", "too many event categories");
+  if (!rows.length) return { coverage: { status: "empty", records: 0, last_seen: null }, events: [], latency: [] };
+  const total = rows.find((row) => Number(row.is_total) === 1);
+  const records = count(total?.records);
+  if (records === null) throw new Error("Invalid Codex log summary");
+  const events = [], latency = [];
+  for (const row of rows.filter((r) => Number(r.is_total) === 0)) {
+    const n = count(row.records);
+    if (n === null) throw new Error("Invalid Codex event count");
+    events.push({ event: row.event, count: n });
+    const samples = count(row.duration_count);
+    if (samples === null) throw new Error("Invalid Codex stream duration count");
+    if (["codex.sse_event", "codex.websocket_event"].includes(row.event) && samples > 0) {
+      latency.push({ name: row.event.slice(6), count: samples, average_ms: number(row.average_ms),
+        p50_ms: number(row.percentiles?.[0]), p95_ms: number(row.percentiles?.[1]), max_ms: number(row.max_ms) });
+    }
+  }
+  const stamp = records ? new Date(String(total.last_seen).replace(" ", "T").replace(/(?<!Z)$/, "Z")) : null;
+  return { coverage: { status: records ? "observed" : "empty", records,
+    last_seen: stamp && Number.isFinite(+stamp) ? stamp.toISOString() : null },
+    events: events.sort(byName("event")), latency: latency.sort(byName("name")) };
 }
 
 function number(value) {
@@ -122,16 +196,24 @@ const APPROVED = new Set(["approved", "approved_for_session", "approved_with_ame
   "approved_mcp_policy_amendment", "approved_with_network_policy_allow"]);
 const DENIED = new Set(["denied", "denied_with_network_policy_deny"]);
 
-export function foldCodexInsightsLogs(rows, prices = pricesDefault) {
+export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, deduplicated = false } = {}) {
   if (rows.length > ROW_LIMIT)
     throw new ValidationError("too much Codex log data", "narrow the requested date range");
   const unique = new Map();
+  const selected = [], streamScopes = [];
   for (const row of rows) {
+    if (deduplicated && Number(row.is_scope) === 1) {
+      if (typeof row.attributes?.["conversation.id"] !== "string" || !row.attributes["conversation.id"])
+        throw new Error("Invalid Codex detail stream scope");
+      streamScopes.push(scope(row, false));
+      continue;
+    }
     if (!row.attributes?.["event.name"]?.startsWith("codex.")) continue;
+    if (deduplicated) { selected.push({ ...row, resource: row.resource || {} }); continue; }
     const key = JSON.stringify([row.timestamp, sortedMap(row.resource), sortedMap(row.attributes)]);
     if (!unique.has(key)) unique.set(key, { ...row, resource: row.resource || {} });
   }
-  const records = [...unique.values()];
+  const records = deduplicated ? selected : [...unique.values()];
   const usageScopes = new Set(), usageSessions = new Set(), sessions = new Set();
   let missingSession = false;
   for (const row of records) {
@@ -224,16 +306,19 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault) {
     return { ...tool, success_rate: tool.unknown ? null : ratio(tool.successes, tool.calls),
       average_ms: stats.average_ms, p95_ms: stats.p95_ms };
   });
-  const completeUsage = total.requests > 0 && missingUsage.size === 0;
+  const completeUsage = total.requests > 0 && missingUsage.size === 0
+    && !streamScopes.some((key) => !usageSessions.has(key));
   const toolCalls = toolRows.reduce((n, tool) => n + tool.calls, 0);
   return {
-    coverage: { status: records.length ? "observed" : "empty", records: records.length,
+    coverage: summary?.coverage ?? { status: records.length ? "observed" : "empty", records: records.length,
       last_seen: lastSeen === null ? null : new Date(lastSeen).toISOString() },
     summary: {
       ...(completeUsage ? fractions(total) : { cache_hit_rate: null, cache_write_share: null, reasoning_share: null }),
       // Per-request units use observed HTTP attempts, matching the client overview.
       tokens_per_request: completeUsage ? ratio(total.tokens, requests) : null,
       cost_per_request: completeUsage ? ratio(rounded(total.cost_usd), requests) : null,
+      // Every complete session has a retained usage row. Keep the denominator
+      // on the same detail snapshot as pricing if summary ingestion races it.
       cost_per_session: completeUsage && !missingSession ? ratio(rounded(total.cost_usd), sessions.size) : null,
       retry_rate: missingAttempts ? null : ratio(retries, requests),
       api_error_rate: missingOutcomes ? null : ratio(errors, requests), // Error records per HTTP attempt; may exceed 1.
@@ -244,12 +329,13 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault) {
     },
     effort: [...efforts].map(([effort, value]) => ({ effort, requests: value.requests, tokens: value.tokens,
       cost_usd: rounded(value.cost_usd), unpriced: value.unpriced, ...fractions(value) })).sort(byName("effort")),
-    latency: [...latencies].map(([name, values]) => ({ name, ...statistics(values) })).sort(byName("name")),
+    latency: [...[...latencies].filter(([name]) => !summary || !["sse_event", "websocket_event"].includes(name))
+      .map(([name, values]) => ({ name, ...statistics(values) })), ...(summary?.latency || [])].sort(byName("name")),
     tools: toolRows.sort((a, b) => b.calls - a.calls || byName("tool")(a, b)),
     approvals: [...approvals.values()].sort((a, b) => byName("tool")(a, b)
       || byName("decision")(a, b) || byName("source")(a, b)),
     runtime: [...runtime.values()].map(({ sessions: ids, missingSession, ...meta }) =>
       ({ ...meta, sessions: missingSession ? null : ids.size })).sort(byName("model")),
-    events: [...events].map(([event, count]) => ({ event, count })).sort(byName("event")),
+    events: summary?.events ?? [...events].map(([event, count]) => ({ event, count })).sort(byName("event")),
   };
 }

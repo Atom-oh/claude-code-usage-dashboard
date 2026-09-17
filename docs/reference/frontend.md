@@ -6,7 +6,7 @@ See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions an
 
 ## Routes and state
 
-[App.jsx](../../dashboard/web/src/App.jsx) retains these nine Claude detail routes:
+[App.jsx](../../dashboard/web/src/App.jsx) shares these nine routes across all clients:
 
 | Path | Page |
 |---|---|
@@ -18,12 +18,16 @@ See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions an
 | `/users` | Users |
 | `/cost` | Cost |
 | `/reliability` | Reliability |
-| `/analytics` | Analytics chat |
+| `/analytics` | Analytics |
 
-All-client and Codex modes use the common usage/cost page at `/`; other detail URLs
-redirect there with supported filters preserved. `ClientContext` owns activation
-selection. Common views expose backend filtering, omit Claude channel/project filters,
-and hide Claude-specific chat. No Codex enterprise comparison is created.
+All, Claude and Codex default to shared metrics from `/api/clients/overview`, with
+the same navigation, headers, filters, cards and table columns. Client switching
+preserves valid routes and date/model/unmasked-user state; unknown paths normalize to `/`.
+`ClientContext` owns selection and Claude `view=detail`, which opens existing advanced/A/B
+pages and chat. Claude group/project links without `view` retain detail compatibility.
+Shared views use backend filters; detail uses group/project and drops backend. Leaving
+Claude detail clears `view` and its filters. Both URL-state providers preserve `view`.
+No Codex enterprise comparison or unsupported productivity metrics are added.
 
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
 chat. [main.jsx](../../dashboard/web/src/main.jsx) renders
@@ -65,16 +69,33 @@ does not imply that every endpoint honors every filter; consult the
 Requests quantize the current time to 120-second boundaries after a 150-second grace
 period for server warming. Custom ends later than that boundary are clipped, and a
 nonpositive resulting window is extended by 120 seconds. Consequently the displayed
-range and actual API window can differ near now.
+range and actual API window can differ near now. Storage, query bounds and bucket
+identities remain UTC. Shared chart axes/tooltips, range captions and Codex trace
+timestamps display the browser time zone. Time columns export matching local values
+with an offset/zone marker. Parse timezone-less ClickHouse timestamps as UTC before
+formatting; display conversion must not shift request or drag-zoom bounds.
 
-The hook aborts obsolete parameter requests and reuses data identity for unchanged payloads.
-A same-parameter refresh preserves visible data on failure and reports a refresh error;
-a changed-parameter failure clears it. A tick that changes the quantized range is a new
-parameter load. Do not promise that every refresh avoids the loading state.
+The hook separates the selected view from its quantized request window. Polling advances
+the window without replacing loaded charts or tables with a loading state. Unchanged
+payloads keep their references; shared panels also keep stable client props and memoize
+rendering. A background failure retains visible data and reports the refresh error.
+Actual path, range, filter, client or interval changes clear the previous selection.
+The current-month selection resets when its month changes. Aborted or superseded
+requests cannot update either data or error state.
+
+Codex details opt into `linkedRange` because their explicit `from`/`to` follow the
+parent response's effective bounds. Other parameters and global selection changes
+still reset loading. Ordinary explicit bounds retain their foreground-load behavior;
+do not use `linkedRange` for independent user-selected bounds. Request quantization
+and cache keys are unchanged.
 
 [RefreshContext.jsx](../../dashboard/web/src/RefreshContext.jsx) defaults to 60 seconds,
 persists the selected interval, pauses hidden tabs, refreshes when visible, and skips one
 scheduled tick after a reported failure. Its UTC `dayKey` updates range-derived dates.
+Retained-data requests report idempotent start/end status, including aborts. Status-only
+updates use a separate context from data-cycle triggers. The refresh control reserves
+a status row at every viewport for pending/failure disclosures; its timestamp labels
+an attempt, never successful completion.
 Page-local interval controls must resync from global range changes, as
 [Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does.
 

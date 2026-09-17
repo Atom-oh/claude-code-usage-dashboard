@@ -225,4 +225,56 @@ test("Codex signal SQL against isolated ClickHouse", {
     assert.deepEqual(partial.coverage, { status: "observed", records: 2,
       last_seen: "2026-09-15T00:01:00.000Z", partial: true, partial_traces: 1, conflicting_spans: 1 });
   });
+  await t.test("recent trace selection precedes the span guard on large daily windows", () => {
+    execute(`INSERT INTO claude_code.otel_traces
+      (Timestamp, TraceId, SpanId, SpanName, Duration, ResourceAttributes, SpanAttributes)
+      SELECT toDateTime64('2026-09-15 00:10:00',9)+toIntervalMicrosecond(number),
+        concat('bulk-',toString(intDiv(number,100))),toString(number),'operation',1000000,
+        map('client','codex','backend','bedrock-mantle'),map('model','fixture')
+      FROM numbers(60000)`);
+    const q = buildTraceQuery(from, to, { model: "fixture" });
+    const rows = execute(`${q.sql} FORMAT JSONEachRow`, q.params).split("\n").map(JSON.parse);
+    assert.equal(rows.length, 5000);
+    const result = foldCodexTraces(rows);
+    assert.equal(result.traces.length, 50);
+    assert.equal(result.coverage.records, 5000);
+    assert(result.traces.every((r) => Number(r.trace_id.slice(5)) >= 550));
+  });
+  await t.test("a long-running trace is bounded and cannot claim a complete duration or error total", () => {
+    execute(`INSERT INTO claude_code.otel_traces
+      (Timestamp, TraceId, SpanId, SpanName, Duration, ResourceAttributes, SpanAttributes)
+      SELECT toDateTime64('2026-09-15 00:20:00',9)+toIntervalMicrosecond(number),
+        'long-running',toString(number),'operation',1000000,
+        map('client','codex','backend','bedrock-mantle'),map('model','fixture')
+      FROM numbers(60000)`);
+    const q = buildTraceQuery(from, to, { model: "fixture" });
+    const rows = execute(`${q.sql} FORMAT JSONEachRow`, q.params).split("\n").map(JSON.parse);
+    assert.equal(rows.length, 5100);
+    const result = foldCodexTraces(rows);
+    const trace = result.traces.find((r) => r.trace_id === "long-running");
+    assert.equal(trace.span_count, 200);
+    assert.equal(trace.truncated, true);
+    assert.equal(trace.wall_ms, null);
+    assert.equal(trace.errors, null);
+    assert(trace.spans.every((s) => Number(s.span_id) >= 59800));
+    assert.equal(result.coverage.truncated_traces, 1);
+  });
+  await t.test("a conflicting variant outside the preview cap still withholds the entire trace", () => {
+    execute(`INSERT INTO claude_code.otel_traces
+      (Timestamp, TraceId, SpanId, SpanName, Duration, ResourceAttributes, SpanAttributes)
+      SELECT toDateTime64('2026-09-15 00:30:00',9)+toIntervalMicrosecond(number),
+        'capped-conflict',if(number=0,'199',toString(number)),'operation',1000000,
+        map('client','codex','backend','bedrock-mantle'),map('model','conflict-fixture')
+      FROM numbers(201)`);
+    const q = buildTraceQuery(from, to, { model: "conflict-fixture" });
+    const rows = execute(`${q.sql} FORMAT JSONEachRow`, q.params).split("\n").map(JSON.parse);
+    assert.equal(rows.length, 200);
+    assert.equal(rows.filter((r) => r.span_id === "199").length, 1);
+    const result = foldCodexTraces(rows);
+    assert.deepEqual(result.spans, []);
+    assert.equal(result.coverage.conflicting_spans, 1);
+    assert.equal(result.coverage.partial_traces, 1);
+    assert.deepEqual(result.traces, [
+      { trace_id: "capped-conflict", span_count: null, wall_ms: null, errors: null, spans: [], partial: true }]);
+  });
 });

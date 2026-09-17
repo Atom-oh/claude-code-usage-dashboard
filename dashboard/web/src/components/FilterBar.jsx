@@ -18,7 +18,7 @@ const GROUP_OPTIONS = [
 export function FilterBar() {
   const { group, setGroup, userInput, setUser, modelInput, setModel, projectInput, setProject, backendInput, setBackend } = useFilters();
   const { groupMode, schema } = useConfig();
-  const { client, setClient, common, enabledClients } = useClient();
+  const { client, setClient, common, setDetail, enabledClients } = useClient();
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {enabledClients.length > 1 && (
@@ -28,6 +28,13 @@ export function FilterBar() {
             {["all", ...enabledClients].map((value) => <option key={value} value={value}>{CLIENT_LABELS[value]}</option>)}
           </select>
         </label>
+      )}
+      {client === "claude" && setDetail && (
+        <button type="button" aria-pressed={!common} onClick={() => setDetail(common)}
+          className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700"
+          title="공통 비교 화면과 Claude 전용 채널·생산성·AI 분석을 전환합니다. 전용 필터는 별도입니다.">
+          {common ? "Claude 상세 보기" : "공통 보기"}
+        </button>
       )}
       {/* single 모드에서는 이 컨트롤이 채널이 하나인 조직에 두 개의 채널 이름을 권하게 된다.
           숨기는 건 어포던스만이고 API 계약은 그대로다 — group URL/필터 파라미터는 손대지 않으므로
