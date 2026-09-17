@@ -62,6 +62,11 @@ token. Review output is scrubbed before becoming a public artifact.
 Review examples use closed top-level code fences with markers at column one;
 inline code is limited to symbol/path references. Specialist prose and chair
 output must satisfy this contract before and after confidentiality filtering.
+Nonempty sensitive-key colon values must be fenced, including Markdown links and
+multiword prose. Use a standalone heading and separate explanation; ordinary
+sentence citations remain supported. Use Markdown links with actual `#L` line anchors for
+all file-and-line citations; sensitive inline numeric references can be damaged by
+confidentiality filtering. Bare sensitive numeric labels receive no citation exemption.
 Unsupported examples or damaged fences remain incomplete review evidence, with
 a static failure explanation. Metadata paths keep their existing scope validation.
 See the [module presentation contract](../scripts/pr-review/README.md#review-presentation).

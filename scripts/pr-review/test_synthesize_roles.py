@@ -13,6 +13,44 @@ MODULE = Path(__file__).with_name("synthesize_roles.py")
 
 
 class SynthesisTests(unittest.TestCase):
+    def test_complete_primary_fail_with_format_error_cannot_be_replaced_by_fallback_pass(self):
+        primary = (0, "Confirmed failure: `echo synthetic-private`.\nVERDICT: FAIL\n", "")
+        fallback = (0, "Fallback found no issue.\nVERDICT: PASS\n", "")
+        calls, published = self.run_chair([primary, fallback])
+        self.assertEqual(calls, 1)
+        self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+        self.assertIn("details withheld", published.lower())
+        self.assertNotIn("synthetic-private", published)
+        self.assertNotIn("Fallback found no issue", published)
+
+    def test_complete_primary_fail_survives_filter_damaged_fence_without_fallback(self):
+        primary = (0, "```dotenv\npassword=\n```\nPUBLIC_AFTER\nVERDICT: FAIL\n", "")
+        fallback = (0, "Fallback found no issue.\nVERDICT: PASS\n", "")
+        calls, published = self.run_chair([primary, fallback])
+        self.assertEqual(calls, 1)
+        self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+        self.assertIn("details withheld", published.lower())
+        self.assertNotIn("password=", published)
+        self.assertNotIn("Fallback found no issue", published)
+
+    def test_account_limit_takes_precedence_over_primary_fail_format_retention(self):
+        primary = (0, "Confirmed failure: `echo synthetic-private`.\nVERDICT: FAIL\n",
+                   "Monthly request limit reached")
+        fallback = (0, "Fallback must not run.\nVERDICT: PASS\n", "")
+        calls, published = self.run_chair([primary, fallback])
+        self.assertEqual(calls, 1)
+        self.assertTrue(published.endswith("VERDICT: FAIL\n"))
+        self.assertNotIn("details withheld", published.lower())
+        self.assertNotIn("synthetic-private", published)
+
+    def test_nonzero_primary_fail_keeps_existing_fallback_behavior(self):
+        primary = (1, "Incomplete attempt: `echo synthetic-private`.\nVERDICT: FAIL\n", "")
+        fallback = (0, "Fallback completed the review.\nVERDICT: PASS\n", "")
+        calls, published = self.run_chair([primary, fallback])
+        self.assertEqual(calls, 2)
+        self.assertTrue(published.endswith("VERDICT: PASS\n"))
+        self.assertNotIn("synthetic-private", published)
+
     def test_scrubbing_cannot_accept_conflicting_original_verdicts(self):
         for failure in ("VERDICT: FAIL", "\x1b[31mVERDICT: FAIL\x1b[0m", "VERD\u200bICT: FAIL"):
             with self.subTest(failure=failure):
@@ -55,24 +93,28 @@ class SynthesisTests(unittest.TestCase):
                 self.assertTrue(text.endswith("VERDICT: PASS\n"))
 
     def test_format_fallback_gets_static_guidance_and_retains_a_blocking_verdict(self):
-        prompts, evidence, models = [], [], []
-        def execute(command, cwd, environment, input_text, timeout):
-            prompts.append(command[2])
-            evidence.append(input_text)
-            models.append(command[command.index("--model") + 1])
-            self.assertTrue(input_text.endswith(self.module.CHAIR_OUTPUT_GUIDANCE + "\n"))
-            self.assertIn("END SPECIALISTS", input_text)
-            if len(prompts) == 1:
-                return 0, "The condition `value > 0` has a MAJOR defect.\nVERDICT: FAIL\n", ""
-            self.assertIn("previous attempt failed presentation validation", command[2])
-            self.assertIn("do not reduce scope, drop findings, or infer approval", command[2])
-            self.assertNotIn("value > 0", command[2])
-            return 0, "The MAJOR defect remains unresolved.\nVERDICT: FAIL\n", ""
-        calls, text = self.run_chair(execute)
-        self.assertEqual(calls, 2)
-        self.assertEqual(evidence[0], evidence[1])
-        self.assertEqual(models, ["global.anthropic.claude-fable-5-1", "global.anthropic.claude-opus-5"])
-        self.assertEqual(text, "The MAJOR defect remains unresolved.\nVERDICT: FAIL\n")
+        # A complete code-0 FAIL stops immediately; only retryable attempts
+        # exercise the configured fallback and its static presentation guidance.
+        for code, verdict in ((0, "PASS"), (1, "FAIL")):
+            with self.subTest(code=code, verdict=verdict):
+                prompts, evidence, models = [], [], []
+                def execute(command, cwd, environment, input_text, timeout):
+                    prompts.append(command[2])
+                    evidence.append(input_text)
+                    models.append(command[command.index("--model") + 1])
+                    self.assertTrue(input_text.endswith(self.module.CHAIR_OUTPUT_GUIDANCE + "\n"))
+                    self.assertIn("END SPECIALISTS", input_text)
+                    if len(prompts) == 1:
+                        return code, f"Checked the condition `value > 0`.\nVERDICT: {verdict}\n", ""
+                    self.assertIn("previous attempt failed presentation validation", command[2])
+                    self.assertIn("do not reduce scope, drop findings, or infer approval", command[2])
+                    self.assertNotIn("value > 0", command[2])
+                    return 0, "The MAJOR defect remains unresolved.\nVERDICT: FAIL\n", ""
+                calls, text = self.run_chair(execute)
+                self.assertEqual(calls, 2)
+                self.assertEqual(evidence[0], evidence[1])
+                self.assertEqual(models, ["global.anthropic.claude-fable-5-1", "global.anthropic.claude-opus-5"])
+                self.assertEqual(text, "The MAJOR defect remains unresolved.\nVERDICT: FAIL\n")
 
     def test_hard_account_limits_still_make_only_one_call(self):
         for error in ("ThrottlingException: MONTHLY_REQUEST_COUNT exhausted",
@@ -159,7 +201,8 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(block=block):
                 example = (block + "\n\nChecked `echo user's password='private-value'`; "
                            "MAJOR evidence. See `service`.")
-                self.assert_format_rejected(example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n")
+                self.assert_format_rejected(
+                    example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n", primary_fail=True)
 
     def test_citation_prefix_does_not_release_a_literal_suffix(self):
         for suffix in ("private-value", "'private-value'", "`printf private-value`"):
@@ -181,7 +224,8 @@ class SynthesisTests(unittest.TestCase):
                     example = (quote + "Checked `" + prefix + "password=" + quote
                                + "private-value" + quote + "`; MAJOR rollback evidence. "
                                + "See `service`." + quote)
-                    self.assert_format_rejected(example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n")
+                    self.assert_format_rejected(
+                        example + "\nPUBLIC_AFTER\nVERDICT: FAIL\n", primary_fail=True)
 
     def test_quote_owned_tick_does_not_escape_empty_list_literal(self):
         for separator in ("\n    ", "; "):
@@ -221,10 +265,11 @@ class SynthesisTests(unittest.TestCase):
                 reply = (0, self.fenced_code(example)
                          + "\nMAJOR rollback evidence. See `service`.\nVERDICT: FAIL\n", "")
                 calls, published = self.run_chair([reply, reply])
-                self.assertEqual(calls, 2 if invalid else 1)
+                self.assertEqual(calls, 1)
                 self.assertNotIn("private-value", published)
                 if invalid:
                     self.assertIn("failed the review format contract", published)
+                    self.assertIn("details withheld", published.lower())
                 else:
                     self.assertIn("MAJOR rollback evidence.", published)
                     self.assertIn("`service`", published)
@@ -247,14 +292,16 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(block=block):
                 self.assert_format_rejected(
                     "Checked `env password='private-value'`; "
-                    "MAJOR rollback evidence.\n\n" + block + "\nVERDICT: FAIL\n")
+                    "MAJOR rollback evidence.\n\n" + block + "\nVERDICT: FAIL\n",
+                    primary_fail=True)
 
     def test_inline_command_citations_are_format_rejected(self):
         for prefix in ("env ", "curl -d ", "USER=demo ", "export\n"):
             with self.subTest(prefix=prefix):
                 self.assert_format_rejected(
                     "Checked `" + prefix + "password='private-value'`; "
-                    "MAJOR rollback evidence. See `service` and `validate()`.\nVERDICT: FAIL\n")
+                    "MAJOR rollback evidence. See `service` and `validate()`.\nVERDICT: FAIL\n",
+                    primary_fail=True)
 
     def test_backtick_assignment_keeps_concatenated_suffix_private(self):
         for suffix in ("private-value", "'private-value'", "`printf private-value`"):
@@ -291,7 +338,7 @@ class SynthesisTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assert_format_rejected(
                     "Checked `password=" + value + "`; MAJOR rollback evidence. "
-                    "See `service` and `validate()`.\nVERDICT: FAIL\n")
+                    "See `service` and `validate()`.\nVERDICT: FAIL\n", primary_fail=True)
 
     def test_backtick_values_are_protected_before_markdown_boundaries(self):
         examples = (
@@ -542,11 +589,13 @@ class SynthesisTests(unittest.TestCase):
         fence = "`" * max(3, longest + 1)
         return f"{fence}text\n{example}\n{fence}\n"
 
-    def assert_format_rejected(self, report, secret="private-value"):
+    def assert_format_rejected(self, report, secret="private-value", *, primary_fail=False):
         reply = (0, report, "")
         calls, text = self.run_chair([reply, reply])
-        self.assertEqual(calls, 2)
+        self.assertEqual(calls, 1 if primary_fail else 2)
         self.assertIn("failed the review format contract", text)
+        if primary_fail:
+            self.assertIn("details withheld", text.lower())
         self.assertNotIn(secret, text)
         self.assertTrue(text.endswith("VERDICT: FAIL\n"))
 

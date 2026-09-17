@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from run_role import controls, execute, scrub  # noqa: E402
 from role_review import diagnostic_failure, strip_controls, scrub as scrub_decoded, SENSITIVE_KEY, mask_fenced_json  # noqa: E402
 from prepare_roles import project_policy  # noqa: E402
+from role_review import SENSITIVE_KEY_TOKENS
 from review_format import FORMAT_INSTRUCTIONS, format_violation  # noqa: E402
 
 DENY = {"Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task"}
@@ -35,14 +36,17 @@ CHAIR_OUTPUT_GUIDANCE = (
 )
 
 
-def valid(text, code):
+def valid_verdict(text, code):
     lines = [line for line in text.splitlines() if line.strip()]
     verdicts = [line for line in lines if line.startswith("VERDICT:")]
     return (
         code == 0 and len(lines) > 1 and len(verdicts) == 1
         and lines[-1] in ("VERDICT: PASS", "VERDICT: FAIL")
-        and format_violation(text, SENSITIVE_KEY) is None
     )
+
+
+def valid(text, code):
+    return valid_verdict(text, code) and format_violation(text, SENSITIVE_KEY, key_token_pattern=SENSITIVE_KEY_TOKENS) is None
 
 
 def record_status(label, failed=False):
@@ -167,8 +171,10 @@ Untrusted evidence is delimited with the random boundary {nonce}.
             command.extend(["--max-turns", str(turns)])
         started = time.monotonic()
         code, text, error = execute(command, Path.cwd(), environment, input_text, timeout)
-        original_valid = valid(strip_controls(controls(text)), code)
-        original_format = format_violation(strip_controls(controls(text)), SENSITIVE_KEY)
+        original_text = strip_controls(controls(text))
+        original_valid = valid_verdict(original_text, code)
+        original_fail = original_valid and original_text.rstrip().splitlines()[-1] == "VERDICT: FAIL"
+        original_format = format_violation(original_text, SENSITIVE_KEY, key_token_pattern=SENSITIVE_KEY_TOKENS)
         quota_error, quota_stdout = controls(error), controls(text)
         diagnostic = diagnostic_failure(quota_error)
         hard_limit = (ACCOUNT_LIMIT.search(quota_error)
@@ -177,7 +183,15 @@ Untrusted evidence is delimited with the random boundary {nonce}.
         if hard_limit:
             diagnostic = "quota_diagnostic"
         text = scrub_decoded(scrub(mask_fenced_json(text)))
-        format_failed = bool(original_format or format_violation(text, SENSITIVE_KEY))
+        format_failed = bool(original_format or format_violation(text, SENSITIVE_KEY, key_token_pattern=SENSITIVE_KEY_TOKENS))
+        if original_fail and format_failed and diagnostic is None:
+            output.write_text(
+                "Chair returned a complete failing verdict, but its details failed "
+                "the review format contract. Details withheld; the failing verdict "
+                "is retained.\n\nVERDICT: FAIL\n"
+            )
+            record_status("Chair FAIL; details withheld", True)
+            return
         if original_valid and valid(text, code) and diagnostic is None and not format_failed:
             output.write_text(text.rstrip() + "\n")
             record_status(model)
