@@ -1,6 +1,7 @@
-// USD per million tokens; AWS GPT-6 Astra model card, verified 2026-09-14.
+// USD per million tokens; AWS model-card list prices.
 // Rates already include the commercial regional fee. Never add it again.
 export const DEFAULT_CODEX_PRICING = {
+  // GPT-6 Astra model card, verified 2026-09-14.
   "openai.gpt-6-astra": {
     short_context_limit: 272000,
     regional: {
@@ -10,6 +11,19 @@ export const DEFAULT_CODEX_PRICING = {
     global: {
       short: { input: 10, cacheWrite: 12.5, cacheRead: 1, output: 50 },
       long: { input: 20, cacheWrite: 25, cacheRead: 2, output: 75 },
+    },
+  },
+  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-luna.html
+  // Verified 2026-09-17. The tier applies to each response's input context.
+  "openai.gpt-5.6-luna": {
+    short_context_limit: 272000,
+    regional: {
+      short: { input: 0.22, cacheWrite: 0.275, cacheRead: 0.022, output: 1.32 },
+      long: { input: 0.44, cacheWrite: 0.55, cacheRead: 0.044, output: 1.98 },
+    },
+    global: {
+      short: { input: 0.20, cacheWrite: 0.25, cacheRead: 0.02, output: 1.20 },
+      long: { input: 0.40, cacheWrite: 0.50, cacheRead: 0.04, output: 1.80 },
     },
   },
 };
