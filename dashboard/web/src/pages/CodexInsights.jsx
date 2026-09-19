@@ -4,8 +4,8 @@ import { DataTable } from "../components/DataTable.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useApi } from "../useApi.js";
-import { formatClientCost, formatObserved } from "../clientUsage.js";
-import { costBasisLabel, formatClientTimestamp } from "../clientPresentation.js";
+import { formatClientCost, formatObserved, observedTokens } from "../clientUsage.js";
+import { costBasisLabel, formatClientTimestamp, observedNumber, OBSERVED_TOKEN_HELP, tokenStatusLabel } from "../clientPresentation.js";
 
 const percent = (v) => v == null ? "—" : `${(v * 100).toLocaleString("ko-KR", { maximumFractionDigits: 2 })}%`;
 const text = (key, label) => ({ key, label, render: (v) => v || "—" });
@@ -16,7 +16,8 @@ const TABS = ["효율·Effort", "도구·승인", "성능", "런타임·메트�
 const STATUS = { observed: "수집 확인", empty: "관측 없음", unavailable: "수집 미확인", limited: "조회 한도 초과" };
 const codexCostLabel = (row) => costBasisLabel({ ...row, cost_basis: "aws_list_estimate" });
 const COST_HELP = "미산정 기록을 제외한 알려진 비용 / 관측된 요청·세션 수의 근삿값입니다. 비용이 모두 미산정이거나 식별 정보·분모가 없거나 분모가 0이면 —로 표시합니다.";
-const EFFORT = [text("effort", "Effort"), numeric("requests", "완료 응답"), numeric("tokens", "토큰"),
+const EFFORT = [text("effort", "Effort"), numeric("requests", "완료 응답"), numeric("observed_tokens", "관측 토큰"),
+  text("token_status", "토큰 상태"),
   cost("cost_usd", "추정 비용 (USD)"), numeric("unpriced", "미산정"),
   { key: "cost_basis_label", label: "비용 기준·미산정",
     render: (value) => <span className="block min-w-[10rem]">{value}</span>, toText: (value) => value },
@@ -53,7 +54,7 @@ const EFFICIENCY_TILES = [
   ["cache_hit_rate", "입력 캐시 읽기 비율", percent, "캐시 읽기 / 캐시를 포함한 전체 입력 토큰입니다."],
   ["cache_write_share", "입력 캐시 쓰기 비중", percent],
   ["reasoning_share", "출력 중 추론 비중", percent, "추론 토큰은 출력 토큰의 일부입니다."],
-  ["tokens_per_request", "요청당 토큰", formatObserved],
+  ["tokens_per_request", "요청당 토큰", formatObserved, "기존 전체 토큰 / 요청 수입니다. 토큰이 불완전하면 관측 부분합으로 대체하지 않고 —로 표시합니다."],
   ["cost_per_request", "요청당 추정 비용", formatClientCost],
   ["cost_per_session", "세션당 추정 비용", formatClientCost],
 ];
@@ -67,6 +68,9 @@ export default function CodexInsights({ range, enabled = true, sections }) {
   const [search, setSearch] = useState("");
   const metrics = useMemo(() => (data?.metrics || []).filter((r) => r.name.toLowerCase().includes(search.toLowerCase())), [data?.metrics, search]);
   const summary = data?.summary || {};
+  const tokensPerRequest = summary.tokens_partial === true
+    || (Object.hasOwn(summary, "tokens") && observedNumber(summary.tokens) === null)
+    ? null : summary.tokens_per_request;
   return (
     <section aria-labelledby="codex-insights-heading" className="flex flex-col gap-5">
       <div>
@@ -101,13 +105,18 @@ export default function CodexInsights({ range, enabled = true, sections }) {
           </div>}
           {tab === TABS[0] && <>
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
-              {EFFICIENCY_TILES.map(([key, label, format, help]) => <StatTile key={key} label={label} value={format(summary[key])}
+              {(Object.hasOwn(summary, "observed_tokens") || Object.hasOwn(summary, "tokens")) &&
+                <StatTile label="관측 토큰" value={formatObserved(observedTokens(summary))}
+                  hint={tokenStatusLabel(summary)} help={OBSERVED_TOKEN_HELP} />}
+              {EFFICIENCY_TILES.map(([key, label, format, help]) => <StatTile key={key} label={label}
+                value={format(key === "tokens_per_request" ? tokensPerRequest : summary[key])}
                 help={format === formatClientCost ? COST_HELP : help}
                 hint={format === formatClientCost ? codexCostLabel({ ...summary, cost_usd: summary[key] }) : undefined}
                 className={format === formatClientCost ? "[&_.truncate]:whitespace-normal" : undefined} />)}
             </div>
-            <DataTable title="Effort별 사용량·비용" subtitle="토큰이 포함된 완료 응답 기준 · 알려진 비용만 합산하고 미산정 기록은 제외합니다. Effort·토큰 누락은 미확인으로 유지합니다."
-              rows={(data?.effort || []).map((row) => ({ ...row, cost_basis_label: codexCostLabel(row) }))}
+            <DataTable title="Effort별 사용량·비용" subtitle="유효한 입력·출력 쌍을 합산하고 미확인 쌍은 제외합니다. 사용량·메타데이터가 불완전해도 유효한 쌍은 포함하며 부분합으로 표시합니다. 비율은 기존 전체 토큰·구성값 기준입니다. 알려진 비용만 합산하고 미산정 기록은 제외합니다."
+              rows={(data?.effort || []).map((row) => ({ ...row, observed_tokens: observedTokens(row),
+                token_status: tokenStatusLabel(row), cost_basis_label: codexCostLabel(row) }))}
               columns={EFFORT} exportName="codex_effort" />
           </>}
           {tab === TABS[1] && <>

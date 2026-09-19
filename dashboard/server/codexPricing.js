@@ -1,3 +1,5 @@
+import { observedTokenPair } from "./observedTokens.js";
+
 // USD per million tokens; AWS model-card list prices.
 // Rates already include the commercial regional fee. Never add it again.
 export const DEFAULT_CODEX_PRICING = {
@@ -93,6 +95,7 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
     input_tokens: valid ? input - read - write : null,
     cache_read_tokens: read, cache_write_tokens: write, output_tokens: output,
     reasoning_tokens: reasoning, tokens: valid ? input + output : null,
+    observed_tokens: observedTokenPair(row.input_tokens_total, row.output_tokens),
     cost_usd: cost,
     cost_basis: "aws_list_estimate", unpriced: cost === null, invalid: !valid,
   };

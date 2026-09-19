@@ -7,7 +7,7 @@ Express/Node.js ESM serves read-only telemetry and the SPA. Run `npm test` here 
 - Use `route()` in `index.js` for range validation, caching, in-flight deduplication and errors.
 - Only `/healthz` and `/readyz` bypass Basic Auth; config, freshness and data require it.
   JSON is `no-store`; successful chat SSE is `no-cache`.
-- Missing credentials fail startup except explicit local-development bypass. Chat also
+- Missing credentials fail startup except explicit local-development bypass; no production fallback. Chat also
   needs a readonly-session probe. Security-review `sanitizeSql()` changes.
 - Imports must not bind the server; boot checks/probes still run. Liveness is `/healthz`;
   `/readyz` fails during drain/ClickHouse outage. DB failure must not restart the app.
@@ -39,9 +39,10 @@ Express/Node.js ESM serves read-only telemetry and the SPA. Run `npm test` here 
   not repricing/counter SQL. Keep `cost`/summary `computed_cost` diagnostics; TTL is an assumption.
 - `costEfficiency.js` joins user plus channel. Report-based units stay null for missing/invalid
   reports or zero reports with positive tokens. A missing local rate does not invalidate reports.
-- Preserve token missingness and separate valid/invalid Codex usage before SQL sums.
-  Positive shared Claude reports remain usable with missing tokens; zero requires known zero.
-  Disclose partial costs per [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
+- Keep canonical tokens strict; separate full-usage/pair validity before SQL sums.
+  Positive shared Claude reports survive missing tokens; zero requires known zero.
+  `observed_tokens` retains known pairs with `tokens_partial`; see
+  [coverage policies](../../docs/decisions/ADR-014-observed-token-subtotals.md).
   Positive totals prove neither complete collection nor invoice accuracy.
 - Productivity is heuristic. Edit decisions are permissions (including automatic approval),
   not retained/correct code.

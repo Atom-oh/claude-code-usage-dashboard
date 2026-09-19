@@ -47,6 +47,14 @@ Model-less rows use same-client model evidence (logs; Claude also uses token/cos
 counters) within the range and identical session (nonempty), user, backend and project.
 Coarse session attribution can match several models; rows retain `model=""`.
 
+`observed_tokens` sums known input/output pairs; `tokens_partial` discloses incomplete
+usage/validation or unsafe sums. Cache and reasoning subsets are not added again.
+Unpriced models can still have complete observed tokens. All-unknown is null and
+known zero is retained. Primary token displays/CSV use observed counts with coverage
+status; canonical `tokens` and components retain strict nulls for ratios and existing
+consumers. These fields also appear in Codex detail summary/Effort rows. See
+[ADR-014](decisions/ADR-014-observed-token-subtotals.md).
+
 `cost_usd` uses `cost_basis=client_reported` (Claude) or `aws_list_estimate` (Codex).
 It sums usable reports/estimates even when other records are unpriced.
 `cost_partial` discloses exclusions or an unsafe aggregate; `unpriced` counts remain.
@@ -61,13 +69,14 @@ are observed means or null. `requests` includes `api_error` attempts.
 
 `observed_records`: deduplicated logs plus Claude usage rows; zero means empty.
 `quality.missing_usage` counts Codex session/user/model/backend/project scopes without
-usage across the range, making affected token folds null and adding to `unpriced`.
-Known costs remain a partial subtotal rather than being discarded.
+usage across the range, making affected canonical token folds null and adding to
+`unpriced`. Known cost and observed-token subtotals remain visible with coverage status.
 Unpriced counts can combine usage-record counts and unmatched usage-scope counts;
 they are not a request-coverage percentage. This cannot detect every dropped response.
 
-Folds share rows; valid and invalid Codex usage are grouped separately before pricing
-so incomplete peers do not erase usable costs. Over 50,000 rows returns 400.
+Folds share rows; full-usage validity and input/output-pair validity are separate SQL
+grouping dimensions, preserving usable costs and observed token pairs. Breakdowns
+sort by observed tokens. Over 50,000 rows returns 400.
 Claude counter/baseline rules remain.
 `effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
 when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.

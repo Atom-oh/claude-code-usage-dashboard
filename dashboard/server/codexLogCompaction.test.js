@@ -7,6 +7,11 @@ import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import * as logs from "./codexInsightsLogs.js";
 
+function observed(value, tokens, partial) {
+  assert.equal(value.observed_tokens, tokens);
+  assert.equal(value.tokens_partial, partial);
+}
+
 test("Codex log compaction against isolated ClickHouse", {
   skip: process.env.CODEX_LOG_COMPACTION_SQL_TEST !== "1", timeout: 120000,
 }, async (t) => {
@@ -59,6 +64,7 @@ test("Codex log compaction against isolated ClickHouse", {
     const result = logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
     assert.equal(result.coverage.status,"observed"); assert.equal(result.coverage.records,100003);
     assert.equal(result.summary.tokens_per_request,130);
+    observed(result.summary,130,false);
     assert.equal(result.summary.cost_per_request,0.00238425);
     assert.equal(result.summary.cost_per_session,0.00238425);
     assert.equal(result.summary.cost_partial,false);
@@ -101,6 +107,8 @@ test("Codex log compaction against isolated ClickHouse", {
     const filters={user:"oracle@example.test"};
     const actual=equivalent(filters);
     assert.equal(actual.effort[0].requests,2);
+    observed(actual.summary,260,true);
+    observed(actual.effort[0],260,false);
     assert(!JSON.stringify(compact(filters).details).includes("PRIVATE"));
     insert([completion(214,{cache_write_token_count:""},r)]);
     const partial=equivalent(filters);
@@ -108,8 +116,30 @@ test("Codex log compaction against isolated ClickHouse", {
     assert.equal(partial.summary.cost_per_session,0.00238425);
     assert.equal(partial.summary.cost_partial,true);
     assert.equal(partial.summary.tokens_per_request,null);
+    observed(partial.summary,390,true);
+    assert.equal(partial.effort[0].tokens,null);
+    observed(partial.effort[0],390,true);
     assert.equal(partial.effort[0].unpriced,1);
     assert.equal(partial.effort[0].cost_partial,true);
+  });
+  await t.test("compaction retains known observed tokens beside malformed input and output", () => {
+    const r={"user.email":"observed-mixed@example.test"},filters={user:"observed-mixed@"};
+    const first=completion(801,{},r);
+    insert([first,first,completion(802,{input_token_count:""},r),
+      completion(803,{output_token_count:"bad"},r),request(804,{},r),
+      make(805,"sse_event",{"event.kind":"response.output_text.delta",input_token_count:"999999"},r)]);
+    const result=equivalent(filters);
+    observed(result.summary,130,true);
+    assert.equal(result.summary.tokens_per_request,null);
+    assert.equal(result.summary.cache_hit_rate,null);
+    assert.equal(result.summary.cache_write_share,null);
+    assert.equal(result.summary.reasoning_share,null);
+    assert.equal(result.summary.cost_per_request,0.00238425);
+    assert.equal(result.summary.cost_per_session,0.00238425);
+    assert.equal(result.effort[0].requests,3);
+    assert.equal(result.effort[0].tokens,null);
+    observed(result.effort[0],130,true);
+    assert.equal(result.effort[0].unpriced,2);
   });
   await t.test("model-less evidence keeps the original user/project/backend session boundary", () => {
     const r={"user.email":"scope-compact@example.test","project.name":"one"};
@@ -131,11 +161,13 @@ test("Codex log compaction against isolated ClickHouse", {
     const result=equivalent({user:"stream-only@"});
     assert.equal(result.coverage.records,2); assert.equal(result.summary.tokens_per_request,null);
     assert.equal(result.summary.cost_partial,true);
+    observed(result.summary,null,true);
     assert.equal(result.summary.cost_per_request,null); assert.equal(result.summary.cost_per_session,null);
     assert.equal(result.latency[0].p50_ms,0); assert.equal(result.latency[0].p95_ms,2);
     const empty=compact({user:"no-such-user"}).result;
     assert.equal(empty.coverage.status,"empty");
     assert.equal(empty.summary.cost_partial,false);
+    observed(empty.summary,null,false);
     assert.equal(empty.summary.cost_per_request,null); assert.equal(empty.summary.cost_per_session,null);
     assert.deepEqual(empty.events,[]);
   });
@@ -152,10 +184,16 @@ test("Codex log compaction against isolated ClickHouse", {
     const mixed=logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
     for(const result of [before,after,mixed]){
       assert.equal(result.summary.tokens_per_request,null);
+      assert.equal(result.summary.tokens_partial,true);
       assert.equal(result.summary.cost_partial,true);
       assert.equal(result.summary.cost_per_request,0.00238425);
       assert.equal(result.summary.cost_per_session,0.001192125);
     }
+    assert.equal(before.summary.observed_tokens,130);
+    assert.equal(mixed.summary.observed_tokens,130);
+    assert.equal(after.summary.observed_tokens,260);
+    observed(mixed.effort[0],130,false);
+    observed(after.effort[0],260,true);
     for(const field of ["cost_per_request","cost_per_session"]){
       assert.equal(mixed.summary[field],before.summary[field]);
     }
@@ -176,6 +214,8 @@ test("Codex log compaction against isolated ClickHouse", {
     const actual=logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
     assert.equal(actual.summary.cost_partial,true);
     assert.equal(actual.summary.tokens_per_request,null);
+    observed(actual.summary,260,true);
+    observed(actual.effort[0],260,false);
     assert.equal(actual.summary.cost_per_session,0.0015895);
     assert.equal(actual.summary.cost_per_request,0.00238425);
     assert.equal(actual.summary.cost_per_session,expected.summary.cost_per_session);
@@ -189,6 +229,7 @@ test("Codex log compaction against isolated ClickHouse", {
       select(logs.buildCodexInsightsLogQuery(from,to,filters,{detailsOnly:true})),undefined,{summary,deduplicated:true});
     assert.equal(complete.summary.cost_partial,false);
     assert.equal(complete.summary.tokens_per_request,130);
+    observed(complete.summary,390,false);
     assert.equal(complete.summary.cost_per_session,0.00238425);
     assert.equal(complete.summary.cost_per_request,0.00238425);
     assert.equal(complete.coverage.records,4);
@@ -207,8 +248,12 @@ test("Codex log compaction against isolated ClickHouse", {
     const actual=logs.foldCodexInsightsLogs(details,undefined,{summary,deduplicated:true});
     for(const result of [before,after,actual]){
       assert.equal(result.summary.tokens_per_request,null);
+      assert.equal(result.summary.tokens_partial,true);
       assert.equal(result.summary.cost_partial,true);
     }
+    assert.equal(before.summary.observed_tokens,130);
+    assert.equal(actual.summary.observed_tokens,260);
+    assert.equal(after.summary.observed_tokens,260);
     assert.equal(before.summary.cost_per_session,0.001192125);
     assert.equal(actual.summary.cost_per_session,0.0015895);
     assert.equal(actual.summary.cost_per_request,0.00238425);

@@ -13,6 +13,9 @@ use the existing component stack.
   in cards, chart context, tables and CSV. Cost units use that subtotal over observed
   denominators; missing denominators remain unavailable. All-unknown costs stay `—`.
   This follows [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
+- Token displays/charts use labelled `observed_tokens` subtotals and `tokens_partial`;
+  CSV keeps counts numeric with coverage status. Ratios use canonical fields.
+  See [ADR-014](../../docs/decisions/ADR-014-observed-token-subtotals.md).
 - Common views do not forward Claude-only group/project filters. Client/backend selection
   survives range changes without leaking masked user IDs.
 - Claude detail's `spend.js` selects `reported_cost`, retaining computed diagnostics.

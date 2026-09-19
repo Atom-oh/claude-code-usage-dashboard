@@ -41,7 +41,8 @@ test("dedupe uses nanosecond timestamp and sorted maps, without mutating input",
   const out = foldCodexInsightsLogs(rows);
   assert.equal(out.coverage.records, 3);
   assert.equal(out.coverage.last_seen, "2026-09-15T10:00:00.000Z");
-  fields(out.summary, { tokens_per_request: 260, cost_per_request: 0.0047685 });
+  fields(out.summary, { tokens_per_request: 260, cost_per_request: 0.0047685,
+    observed_tokens: 260, tokens_partial: false });
   assert.equal(out.events.find((r) => r.event === "codex.sse_event").count, 2);
   assert.deepEqual(rows, before);
 });
@@ -178,7 +179,7 @@ test("unknown model or backend preserves known costs and measured tokens", () =>
     [{}, { backend: "unknown", provider_name: "amazon-bedrock" }]]) {
     const out = foldCodexInsightsLogs([completion(1), completion(2, attributes, resource), request(3)]);
     fields(out.summary, { cost_per_session: 0.00238425, cost_per_request: 0.00238425,
-      cost_partial: true, tokens_per_request: 260 });
+      cost_partial: true, tokens_per_request: 260, observed_tokens: 260, tokens_partial: false });
     fields(out.effort[0], { cost_usd: 0.00238425, cost_partial: true, unpriced: 1 });
   }
 });
@@ -223,11 +224,98 @@ test("invalid and absent token components propagate without hiding independently
   }
 });
 
+test("observed tokens retain known completions beside unknown input or output in either order", () => {
+  for (const field of ["input_token_count", "output_token_count"]) {
+    for (const value of [undefined, null, "", " ", "NaN", "Infinity", "-1", "1.5", true, "9007199254740992"]) {
+      const known = completion(1), unknown = completion(2, { [field]: value });
+      for (const rows of [[known, unknown], [unknown, known]]) {
+        const out = foldCodexInsightsLogs([...rows, request(3)]);
+        fields(out.summary, { observed_tokens: 130, tokens_partial: true, tokens_per_request: null,
+          cache_hit_rate: field === "input_token_count" ? null : 0.4,
+          cache_write_share: field === "input_token_count" ? null : 0.11,
+          reasoning_share: field === "output_token_count" ? null : 1 / 3 });
+        fields(out.effort[0], { requests: 2, tokens: null, observed_tokens: 130,
+          tokens_partial: true });
+      }
+    }
+  }
+});
+
+test("observed tokens remain measurable when cache or reasoning validation is incomplete", () => {
+  for (const [field, value] of [["cached_token_count", ""], ["cache_write_token_count", ""],
+    ["reasoning_token_count", ""], ["cached_token_count", "101"], ["reasoning_token_count", "31"]]) {
+    const out = foldCodexInsightsLogs([completion(1), completion(2, { [field]: value }), request(3)]);
+    fields(out.summary, { observed_tokens: 260, tokens_partial: true, tokens_per_request: null,
+      cost_per_request: 0.00238425, cost_partial: true });
+    fields(out.effort[0], { tokens: null, observed_tokens: 260, tokens_partial: true,
+      cost_usd: 0.00238425, cost_partial: true, unpriced: 1 });
+  }
+});
+
+test("observed tokens distinguish all unknown usage from known zero beside unknown usage", () => {
+  const unknown = completion(1, { input_token_count: "" });
+  const zero = completion(2, { input_token_count: 0, cached_token_count: 0,
+    cache_write_token_count: 0, output_token_count: 0, reasoning_token_count: 0 });
+  for (const rows of [[unknown], [unknown, completion(3, { output_token_count: "" })],
+    [unknown, zero], [zero, unknown]]) {
+    const observed = rows.includes(zero) ? 0 : null;
+    const out = foldCodexInsightsLogs([...rows, request(4)]);
+    fields(out.summary, { observed_tokens: observed, tokens_partial: true, tokens_per_request: null });
+    fields(out.effort[0], { tokens: null, observed_tokens: observed, tokens_partial: true });
+  }
+});
+
+test("each effort keeps its own observed token subtotal and missingness", () => {
+  const out = foldCodexInsightsLogs([completion(1), completion(2, { output_token_count: "" }),
+    completion(3, { model_reasoning_effort: "low", input_token_count: "" }),
+    completion(4, { model_reasoning_effort: "medium", model: "unpriced" }), request(5)]);
+  fields(out.summary, { observed_tokens: 260, tokens_partial: true, tokens_per_request: null });
+  assert.deepEqual(out.effort.map(({ effort, tokens, observed_tokens, tokens_partial }) =>
+    ({ effort, tokens, observed_tokens, tokens_partial })), [
+    { effort: "high", tokens: null, observed_tokens: 130, tokens_partial: true },
+    { effort: "low", tokens: null, observed_tokens: null, tokens_partial: true },
+    { effort: "medium", tokens: 130, observed_tokens: 130, tokens_partial: false },
+  ]);
+});
+
+test("unsafe observed token sums stay unavailable for the summary and affected effort", () => {
+  const base = { input_token_count: "9007199254740991", cached_token_count: "0",
+    cache_write_token_count: "0", output_token_count: "0", reasoning_token_count: "0" };
+  const largest = completion(1, base);
+  const single = foldCodexInsightsLogs([largest, request(3)]);
+  fields(single.summary, { observed_tokens: Number.MAX_SAFE_INTEGER, tokens_partial: false });
+  fields(single.effort[0], { tokens: Number.MAX_SAFE_INTEGER,
+    observed_tokens: Number.MAX_SAFE_INTEGER, tokens_partial: false });
+  for (const effort of ["high", "low"]) {
+    const extra = completion(2, { ...base, input_token_count: "1", model_reasoning_effort: effort });
+    for (const rows of [[largest, extra], [extra, largest]]) {
+      const out = foldCodexInsightsLogs([...rows, request(3)]);
+      fields(out.summary, { observed_tokens: null, tokens_partial: true, tokens_per_request: null });
+      if (effort === "high") {
+        fields(out.effort[0], { tokens: null, observed_tokens: null, tokens_partial: true });
+      } else {
+        fields(out.effort[0], { tokens: Number.MAX_SAFE_INTEGER,
+          observed_tokens: Number.MAX_SAFE_INTEGER, tokens_partial: false });
+        fields(out.effort[1], { tokens: 1, observed_tokens: 1, tokens_partial: false });
+      }
+    }
+  }
+  const unsafe = completion(4, { ...base, output_token_count: "1" });
+  for (const rows of [[unsafe], [unsafe, completion(5)], [completion(5), unsafe]]) {
+    const out = foldCodexInsightsLogs([...rows, request(6)]);
+    fields(out.summary, { observed_tokens: rows.length === 1 ? null : 130,
+      tokens_partial: true, tokens_per_request: null });
+    fields(out.effort[0], { tokens: null, observed_tokens: rows.length === 1 ? null : 130,
+      tokens_partial: true });
+  }
+});
+
 test("explicit zero usage remains zero with undefined zero-denominator fractions", () => {
   const out = foldCodexInsightsLogs([request(1), completion(2, { input_token_count: "0",
     cached_token_count: "0", cache_write_token_count: "0", output_token_count: "0", reasoning_token_count: "0" })]);
   fields(out.summary, { tokens_per_request: 0, cost_per_request: 0, cost_per_session: 0,
-    cost_partial: false, cache_hit_rate: null, cache_write_share: null, reasoning_share: null });
+    cost_partial: false, cache_hit_rate: null, cache_write_share: null, reasoning_share: null,
+    observed_tokens: 0, tokens_partial: false });
 });
 
 test("WebSocket completion usage is priced; anonymous usage cannot inflate per-session cost", () => {

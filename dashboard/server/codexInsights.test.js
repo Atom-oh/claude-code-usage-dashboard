@@ -20,6 +20,8 @@ test("missing optional signal tables do not hide existing logs or manufacture ob
   assert.equal(result.summary.prompts, 1);
   assert.equal(result.summary.cost_per_request, null);
   assert.equal(result.summary.cost_partial, false);
+  assert.equal(result.summary.observed_tokens, null);
+  assert.equal(result.summary.tokens_partial, false);
   assert.deepEqual(result.metrics, []);
 });
 
@@ -29,6 +31,8 @@ test("empty insights expose no costs and a non-partial empty log summary", async
   assert.equal(result.summary.cost_per_request, null);
   assert.equal(result.summary.cost_per_session, null);
   assert.equal(result.summary.cost_partial, false);
+  assert.equal(result.summary.observed_tokens, null);
+  assert.equal(result.summary.tokens_partial, false);
 });
 
 test("insights expose partial detail costs independently of summary counts and diagnostic feeds", async () => {
@@ -52,7 +56,12 @@ test("insights expose partial detail costs independently of summary counts and d
   assert.equal(result.summary.cost_per_session, 0.001192125);
   assert.equal(result.summary.cost_partial, true);
   assert.equal(result.summary.tokens_per_request, null);
+  assert.equal(result.summary.observed_tokens, 130);
+  assert.equal(result.summary.tokens_partial, true);
   assert.equal(result.effort[0].cost_partial, false);
+  assert.equal(result.effort[0].tokens, 130);
+  assert.equal(result.effort[0].observed_tokens, 130);
+  assert.equal(result.effort[0].tokens_partial, false);
 });
 test("network/permissions/query failures surface rather than pretending telemetry is unsupported", async () => {
   await assert.rejects(codexInsights(from, to, {}, async () => { throw new Error("transport"); }), /transport/);
@@ -80,6 +89,8 @@ test("an oversized log window withholds its totals while preserving metric and t
   assert.equal(result.coverage.logs.records, null);
   assert(Object.values(result.summary).every((value) => value === null));
   assert.equal(result.summary.cost_partial, null);
+  assert.equal(result.summary.observed_tokens, null);
+  assert.equal(result.summary.tokens_partial, null);
   assert.deepEqual(result.effort, []);
   assert.equal(result.traces[0].wall_ms, 1);
   assert.equal(result.coverage.traces.status, "observed");

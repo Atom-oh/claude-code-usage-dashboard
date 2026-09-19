@@ -17,7 +17,13 @@ export function formatClientCost(value) {
     : { maximumFractionDigits: 2 })}`;
 }
 
-// Costs sum known values; token completeness still propagates within each bucket.
+// An explicit unknown observation must never fall back to canonical usage.
+export function observedTokens(row = {}) {
+  const n = observed(Object.hasOwn(row, "observed_tokens") ? row.observed_tokens : row.tokens);
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
+
+// Display known subtotals; canonical usage stays separate for ratio derivation.
 export function clientTimeline(rows, { bucketHours } = {}) {
   const buckets = new Map();
   for (const row of rows) {
@@ -25,11 +31,9 @@ export function clientTimeline(rows, { bucketHours } = {}) {
     const bucket = buckets.get(t) || { t };
     for (const [field, suffix] of [["tokens", "tokens"], ["cost_usd", "cost"]]) {
       const key = `${row.client}_${suffix}`;
-      const n = observed(row[field]);
+      const n = field === "tokens" ? observedTokens(row) : observed(row[field]);
       const value = n !== null && n >= 0 ? n : null;
-      bucket[key] = field === "cost_usd"
-        ? value === null ? bucket[key] ?? null : (bucket[key] ?? 0) + value
-        : value === null || bucket[key] === null ? null : (bucket[key] ?? 0) + value;
+      bucket[key] = value === null ? bucket[key] ?? null : (bucket[key] ?? 0) + value;
     }
     buckets.set(t, bucket);
   }

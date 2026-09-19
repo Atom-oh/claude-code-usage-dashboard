@@ -77,6 +77,11 @@ all-unknown costs remain null and known zero costs remain zero. Cost units divid
 that subtotal by observed HTTP attempts/sessions and retain partial labels. Missing
 session identity still withholds session units. Token completeness is unchanged.
 See [ADR-013](../decisions/ADR-013-known-cost-subtotals.md).
+Summary/Effort `observed_tokens` retains known input/output pairs with `tokens_partial`,
+including when unrelated usage or cache metadata is missing. Canonical token counts,
+fractions and rates keep their completeness guards; observations are not a replacement
+denominator. Empty/all-unknown observations stay null and measured zero stays zero.
+See [ADR-014](../decisions/ADR-014-observed-token-subtotals.md).
 Intermediate stream records contribute only session-scope markers to that detail
 transfer; their counts and latency remain in the database summary. Projection strips
 unused fields only after full-identity

@@ -78,8 +78,11 @@ formatting; display conversion must not shift request or drag-zoom bounds.
 Shared client trends use a continuous time axis over the API's effective range.
 Missing buckets break lines, while isolated known values (including zero) remain
 visible as points. Refreshes update these charts without replaying line animations.
-Missing usage still withholds affected token totals; the UI explains this separately
-from unpriced models. Chart changes do not alter API totals or infer missing activity.
+Primary token counts/charts use `observed_tokens` with `tokens_partial` disclosure.
+Canonical token totals and incomplete ratios stay unavailable; observed counts never
+silently replace analytical denominators. CSV retains numeric counts and coverage
+status. Fallback to canonical tokens is only for an absent observed field, not explicit
+null. See [ADR-014](../decisions/ADR-014-observed-token-subtotals.md).
 
 The hook separates the selected view from its quantized request window. Polling advances
 the window without replacing loaded charts or tables with a loading state. Unchanged

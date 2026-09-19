@@ -17,6 +17,59 @@ test("cache fractions use all input while reasoning remains a subset of output",
   expect(codexUsage).not.toHaveProperty("input_total");
 });
 
+test("observed token counts never replace canonical denominators or token subsets", () => {
+  const row = presentationRow({ ...codexUsage, observed_tokens: 148, tokens_partial: false });
+  expect(row.observed_tokens).toBe(148);
+  expect(row.tokens).toBe(270);
+  expect(row.tokens_per_session).toBe(270);
+  expect(row.usd_per_million_tokens).toBeCloseTo(15.7055556);
+  expect(row.cache_read_pct).toBeCloseTo(45.454545);
+  expect(row.reasoning_pct).toBe(30);
+  expect(row.token_status).toBe("관측됨");
+});
+
+test("usable observed token subtotals keep unavailable canonical ratios unavailable", () => {
+  const row = presentationRow({ ...codexUsage, observed_tokens: 148, tokens_partial: true,
+    tokens: null, input_tokens: null, cache_read_tokens: null, cache_write_tokens: null,
+    output_tokens: null, reasoning_tokens: null });
+  expect(row.observed_tokens).toBe(148);
+  expect(row.token_status).toBe("부분합");
+  for (const key of ["tokens", "input_total", "cache_read_pct", "reasoning_pct",
+    "tokens_per_session", "usd_per_million_tokens"]) expect(row[key]).toBeNull();
+  expect(row.cost_usd).toBe(0.0042405);
+  expect(row.cost_per_session).toBe(0.0042405);
+});
+
+test("partial aggregate overflow suppresses canonical token rates without changing component fractions", () => {
+  const row = presentationRow({ ...codexUsage, tokens: 1e20, observed_tokens: null, tokens_partial: true });
+  expect(row.tokens).toBe(1e20);
+  expect(row.observed_tokens).toBeNull();
+  expect(row.tokens_per_session).toBeNull();
+  expect(row.usd_per_million_tokens).toBeNull();
+  expect(row.cache_read_pct).toBeCloseTo(45.454545);
+  expect(row.reasoning_pct).toBe(30);
+  expect(row.cost_per_session).toBe(0.0042405);
+});
+
+test.each([
+  [{}, 270, "관측됨"],
+  [{ observed_tokens: null }, null, "미확인"],
+  [{ observed_tokens: undefined }, null, "미확인"],
+  [{ observed_tokens: -1 }, null, "미확인"],
+  [{ observed_tokens: 1.5 }, null, "미확인"],
+  [{ observed_tokens: Number.MAX_SAFE_INTEGER + 1 }, null, "미확인"],
+  [{ observed_tokens: false }, null, "미확인"],
+  [{ observed_tokens: 0, tokens_partial: true }, 0, "부분합"],
+  [{ observed_tokens: null, tokens_partial: true }, null, "미확인"],
+  [{ observed_tokens: 148, unpriced: 2, cost_partial: true }, 148, "관측됨"],
+  [{ observed_tokens: 0, observed_records: 0 }, null, "미확인"],
+])("observed token display preserves absence, null, zero and independent cost status: %j",
+  (fields, value, status) => {
+    const row = presentationRow({ ...codexUsage, ...fields });
+    expect(row.observed_tokens).toBe(value);
+    expect(row.token_status).toBe(status);
+  });
+
 test.each([null, undefined, "", " ", false, NaN, Infinity, -1])(
   "unknown/invalid numeric value %j cannot become zero or a derived percentage",
   (value) => {

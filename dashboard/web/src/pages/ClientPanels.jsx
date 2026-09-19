@@ -6,7 +6,7 @@ import { DualLineChart, RingGauge, SeriesBarChart } from "../components/GroupCha
 import { maskEmail, parseUtc } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
 import {
-  basisLabel, BROWSER_TIME_ZONE, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, presentationRow,
+  basisLabel, BROWSER_TIME_ZONE, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, OBSERVED_TOKEN_HELP, presentationRow,
 } from "../clientPresentation.js";
 
 const text = (v) => v || "—";
@@ -22,7 +22,9 @@ const USER = { key: "user", label: "사용자", render: (v) => maskEmail(v) || "
 const BASIS = { key: "cost_basis_label", label: "비용 기준",
   render: (value) => <span className="block min-w-[10rem]">{text(value)}</span>, toText: text };
 const COST = money("cost_usd", "비용 (USD)");
-const TOKENS = number("tokens", "전체 토큰");
+const TOKENS = number("observed_tokens", "관측 토큰");
+const TOKEN_STATUS = { key: "token_status", label: "토큰 상태", render: text };
+const withTokenStatus = (columns) => columns.flatMap((column) => column === TOKENS ? [column, TOKEN_STATUS] : [column]);
 const SESSIONS = number("sessions", "세션");
 const USERS = number("users", "관측 사용자 ID");
 const COST_SESSION = money("cost_per_session", "세션당 비용 (USD)");
@@ -49,7 +51,7 @@ const UNIT_COSTS = [COST, COST_SESSION, COST_USER, MILLION, BASIS];
 const OPERATIONS = [REQUESTS, ERRORS, ERROR_RATIO, TOOL_CALLS, TOOL_ERRORS, REQUEST_TIME, TTFT];
 const GRID = "grid grid-cols-2 xl:grid-cols-4 gap-4";
 const EMPTY_VALUE = "—는 미수집·미지원·미산정 값입니다. 관측된 0과 구분합니다.";
-const TOKEN_HELP = "입력(캐시 제외) + 캐시 읽기 + 캐시 쓰기 + 출력 = 전체 토큰. 추론은 출력에 포함됩니다.";
+const TOKEN_HELP = "구성값은 기존 전체 토큰 기준입니다: 입력(캐시 제외) + 캐시 읽기 + 캐시 쓰기 + 출력. 추론은 출력에 포함됩니다. 관측 토큰과 집계 범위가 다를 수 있으며, 누락된 구성값은 —로 유지합니다.";
 const COST_HELP = "미산정 기록은 제외하고 알려진 비용만 부분합으로 표시합니다. 단위 비용은 알려진 비용 / 관측된 분모의 근삿값이며, 비용이 모두 미산정이거나 분모가 없거나 0이면 —로 표시합니다.";
 
 function Tiles({ row, columns, basis }) {
@@ -57,18 +59,18 @@ function Tiles({ row, columns, basis }) {
     {columns.map((c) => <StatTile key={c.key} label={c.label} value={c.render(row[c.key])}
       variant={c.key === "cost_usd" ? "accent" : "default"}
       className={c.render === formatClientCost ? "[&_.truncate]:whitespace-normal" : undefined}
-      hint={c.render === formatClientCost ? basis : undefined}
-      help={c.key === "tokens" ? TOKEN_HELP : c.render === formatClientCost ? COST_HELP : undefined} />)}
+      hint={c === TOKENS ? row.token_status : c.render === formatClientCost ? basis : undefined}
+      help={c === TOKENS ? OBSERVED_TOKEN_HELP : c.render === formatClientCost ? COST_HELP : undefined} />)}
   </div>;
 }
 
-function ResultTable({ rows, subtitle, ...props }) {
+function ResultTable({ rows, columns, subtitle, ...props }) {
   const [expanded, setExpanded] = useState(false);
   const truncated = rows.length > 20 && !expanded;
   const detail = rows.length > 20
     ? `${truncated ? 20 : rows.length} / ${rows.length}행 표시 · CSV는 표시된 행만 내보냅니다.`
     : undefined;
-  return <DataTable {...props} rows={truncated ? rows.slice(0, 20) : rows}
+  return <DataTable {...props} columns={withTokenStatus(columns)} rows={truncated ? rows.slice(0, 20) : rows}
     subtitle={[subtitle, detail].filter(Boolean).join(" ") || undefined}
     right={rows.length > 20 ? <button type="button"
       className="text-[11px] font-medium text-brand-700 whitespace-nowrap"
@@ -86,11 +88,14 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
           {columns.map((c) => <div key={c.key}>
             <dt className="text-[12px] text-ink-500">{c.label}</dt>
-            <dd className="mt-0.5 text-lg font-semibold tabular text-ink-800">{c.render(row[c.key])}</dd>
+            <dd className="mt-0.5 text-lg font-semibold tabular text-ink-800">
+              {c.render(row[c.key])}
+              {c === TOKENS && <span className="ml-2 text-[11px] font-normal text-ink-500">{row.token_status}</span>}
+            </dd>
           </div>)}
         </dl>
       </Card>)}
-    </div> : <DataTable title={title} subtitle={subtitle} columns={[CLIENT, BACKEND, ...columns]}
+    </div> : <DataTable title={title} subtitle={subtitle} columns={[CLIENT, BACKEND, ...withTokenStatus(columns)]}
       rows={rows} exportName="clients_comparison" />}
   </section>;
 }
@@ -111,8 +116,10 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
     const partial = row?.cost_partial === true || observedNumber(row?.unpriced) > 0;
     const status = row?.cost_usd == null ? " · 미산정" : partial ? " · 부분합 포함" : "";
     const basis = `${basisLabel(row?.cost_basis)}${status}`;
+    const tokenPartial = row?.tokens_partial === true
+      || rows.some((period) => period.client === client && (period.tokens_partial === true || period.observed_tokens === null));
     return [
-      ...(metric !== "cost" ? [{ key: `${client}_tokens`, label: `${clientName(client)} 토큰`, color: color(client) }] : []),
+      ...(metric !== "cost" ? [{ key: `${client}_tokens`, label: `${clientName(client)} 관측 토큰${tokenPartial ? " · 부분합 포함" : ""}`, color: color(client) }] : []),
       ...(metric !== "tokens" ? [{ key: `${client}_cost`, label: `${clientName(client)} 비용 (USD · ${basis})`, color: color(client), axis: metric === "both" ? "right" : "left" }] : []),
     ];
   });
@@ -120,7 +127,7 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
     return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
   }
   return <DualLineChart title={title}
-    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 누락 구간은 빈칸, 단독 관측값은 점으로 표시합니다.${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
+    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 누락 구간은 빈칸, 단독 관측값은 점으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
     rows={timeline} xKey="t" lines={lines} bucketHours={bucketHours}
     timeDomain={timeDomain}
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
@@ -213,7 +220,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {compare([TOKEN_SESSION, COST_SESSION, MILLION, BASIS], { title: "클라이언트별 관측 효율" })}
         <Fractions rows={clientRows} />
         {table("모델별 관측 효율", [CLIENT, BACKEND, MODEL, TOKEN_SESSION, COST_SESSION, MILLION, CACHE, REASONING, BASIS],
-          models, "efficiency", "관측 토큰·비용의 비율입니다. 모델별 작업 구성과 비용 기준이 달라 업무 생산성이나 코드 품질 순위로 해석할 수 없습니다.")}
+          models, "efficiency", "비율은 기존 전체 토큰·구성값 기준이며 관측 토큰 부분합으로 대체하지 않습니다. 모델별 작업 구성과 비용 기준이 달라 업무 생산성이나 코드 품질 순위로 해석할 수 없습니다.")}
       </>;
       break;
     case "usage":
@@ -277,7 +284,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
                 {[[TOKENS, "사용량"], [REQUESTS, "API 요청"], [TOOL_CALLS, "도구 결과"],
                   [TTFT, "첫 토큰 시간"], [REASONING_TOKENS, "추론 토큰"]].map(([metric, label]) => <div key={label} className="flex justify-between gap-4">
                   <dt className="text-ink-500">{label}</dt>
-                  <dd className="text-ink-800">{row[metric.key] === null ? "미지원·미수집" : "관측됨"}</dd>
+                  <dd className="text-ink-800">{metric === TOKENS ? row.token_status : row[metric.key] === null ? "미지원·미수집" : "관측됨"}</dd>
                 </div>)}
               </dl>
             </div>)}

@@ -29,6 +29,49 @@ test("efficiency distinguishes unpriced cost from measured ratios and tiny price
   expect(screen.getByText("Metrics · 관측 없음")).toBeTruthy();
   expect(screen.getByText("Traces · 수집 미확인")).toBeTruthy();
 });
+test.each([148, 0, null])("Codex observed token summary and effort export preserve %s independently of ratios", (observed_tokens) => {
+  const data = fixture();
+  data.summary = { ...data.summary, observed_tokens, tokens_partial: true, tokens: 999,
+    cache_hit_rate: null, reasoning_share: null, tokens_per_request: null };
+  data.effort = [{ ...data.effort[0], observed_tokens, tokens_partial: true, tokens: 999,
+    cache_hit_rate: null, reasoning_share: null }];
+  const download = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+  show(data);
+  const tile = screen.getByText("관측 토큰", { selector: "span.truncate" }).closest(".shadow-card");
+  expect(tile.textContent).toContain(observed_tokens === null ? "—" : String(observed_tokens));
+  expect(tile.textContent).toContain(observed_tokens === null ? "미확인" : "부분합");
+  expect(tile.textContent).not.toContain("999");
+  for (const label of ["요청당 토큰", "입력 캐시 읽기 비율", "출력 중 추론 비중"]) {
+    expect(screen.getByText(label).closest(".shadow-card").textContent).toContain("—");
+  }
+  const table = screen.getByText("Effort별 사용량·비용").closest(".shadow-card");
+  const headers = within(table).getAllByRole("columnheader").map((node) => node.textContent.replace("↕", ""));
+  const index = headers.indexOf("관측 토큰"), statusIndex = headers.indexOf("토큰 상태");
+  expect(index).toBeGreaterThanOrEqual(0);
+  expect(statusIndex).toBeGreaterThanOrEqual(0);
+  fireEvent.click(within(table).getByRole("button", { name: "CSV" }));
+  const exported = download.mock.calls[0][1].split("\r\n")[1].split(",");
+  expect(exported[index]).toBe(observed_tokens === null ? "" : String(observed_tokens));
+  expect(exported[statusIndex]).toBe(observed_tokens === null ? "미확인" : "부분합");
+});
+test("partial token overflow withholds a finite request rate while preserving component fractions", () => {
+  const data = fixture();
+  data.summary = { ...data.summary, tokens: 1e20, observed_tokens: null, tokens_partial: true,
+    tokens_per_request: 5e19 };
+  show(data);
+  expect(screen.getByText("요청당 토큰").closest(".shadow-card").textContent).toContain("—");
+  expect(screen.getByText("입력 캐시 읽기 비율").closest(".shadow-card").textContent).toContain("25%");
+  expect(screen.getByText("출력 중 추론 비중").closest(".shadow-card").textContent).toContain("50%");
+});
+test("an explicit unknown canonical total withholds the request rate but legacy payloads retain it", () => {
+  const data = fixture();
+  data.summary = { ...data.summary, tokens: null, observed_tokens: 148, tokens_partial: false };
+  const { rerender } = show(data);
+  expect(screen.getByText("요청당 토큰").closest(".shadow-card").textContent).toContain("—");
+  state.result = { data: fixture(), loading: false, error: null };
+  rerender(<CodexInsights />);
+  expect(screen.getByText("요청당 토큰").closest(".shadow-card").textContent).toContain("200");
+});
 test.each([0.012, 0])("partial Codex unit costs and effort CSV preserve known cost %s", (cost_usd) => {
   const data = fixture();
   data.summary = { ...data.summary, cost_partial: true, unpriced: 2,
@@ -51,8 +94,9 @@ test.each([0.012, 0])("partial Codex unit costs and effort CSV preserve known co
   const exported = download.mock.calls[0][1];
   expect(exported).toContain("AWS 정가 추정 · 부분합 · 미산정 2건 제외");
   expect(exported).toContain("AWS 정가 추정 · 미산정");
-  expect(exported.split("\r\n")[1]).toContain(`high,3,,${cost_usd},`);
-  expect(exported.split("\r\n")[2]).toContain("unknown,1,,,");
+  const [headers, ...rows] = exported.replace(/^\uFEFF/, "").split("\r\n").map((line) => line.split(","));
+  expect(rows.map((row) => row[headers.indexOf("관측 토큰")])).toEqual(["", ""]);
+  expect(rows.map((row) => row[headers.indexOf("추정 비용 (USD)")])).toEqual([String(cost_usd), ""]);
 });
 test("effort retains a separate numeric unpriced column in the table and CSV", () => {
   const data = fixture();

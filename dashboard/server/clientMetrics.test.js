@@ -31,6 +31,77 @@ test("one fold supplies matching totals, model/user rows and time series", () =>
   assert.equal(out.by_project[0].cost_usd, out.totals.cost_usd);
 });
 
+test("known observed tokens survive an unmatched usage scope without changing canonical coverage or cost", () => {
+  const out = foldClientMetrics([
+    event,
+    { ...event, t: "2026-09-14 11:00:00", input_tokens_total: 40, cache_read_tokens: 10,
+      cache_write_tokens: 5, output_tokens: 10, reasoning_tokens: 1 },
+    { ...event, kind: "request", session: "missing-usage" },
+  ], ["codex"]);
+  for (const row of [out.totals, ...out.by_client, ...out.by_model, ...out.by_user, ...out.by_project]) {
+    assert.equal(row.tokens, null);
+    assert.equal(row.observed_tokens, 180);
+    assert.equal(row.tokens_partial, true);
+  }
+  assert.equal(out.totals.cost_usd, 0.003289);
+  assert.equal(out.quality.missing_usage, 1);
+  assert.deepEqual(out.timeseries.map(({ tokens, observed_tokens, tokens_partial }) =>
+    ({ tokens, observed_tokens, tokens_partial })), [
+    { tokens: null, observed_tokens: 130, tokens_partial: true },
+    { tokens: 50, observed_tokens: 50, tokens_partial: false },
+  ]);
+});
+
+test("missing cache metadata preserves observed input/output while full token totals stay unavailable", () => {
+  const out = foldClientMetrics([{ ...event, cache_write_tokens: null }], ["codex"]);
+  assert.equal(out.totals.tokens, null);
+  assert.equal(out.totals.observed_tokens, 130);
+  assert.equal(out.totals.tokens_partial, true);
+  assert.equal(out.totals.cost_usd, null);
+  assert.equal(out.quality.invalid, 1);
+});
+
+test("observed token totals distinguish zero, unknown, empty and overflow", () => {
+  const zero = { ...event, input_tokens_total: 0, output_tokens: 0,
+    cache_read_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0 };
+  const unknown = { ...event, output_tokens: null };
+  const mixed = foldClientMetrics([zero, unknown], ["codex"]);
+  assert.equal(mixed.totals.observed_tokens, 0);
+  assert.equal(mixed.totals.tokens_partial, true);
+  assert.equal(foldClientMetrics([unknown], ["codex"]).totals.observed_tokens, null);
+  assert.equal(foldClientMetrics([{ ...event, kind: "request" }], ["codex"]).totals.observed_tokens, null);
+  const empty = foldClientMetrics([], ["codex"]);
+  assert.equal(empty.totals.observed_tokens, 0);
+  assert.equal(empty.totals.tokens_partial, false);
+  const huge = { ...zero, input_tokens_total: Number.MAX_SAFE_INTEGER };
+  const overflow = foldClientMetrics([huge, huge], ["codex"]);
+  assert.equal(overflow.totals.observed_tokens, null);
+  assert.equal(overflow.totals.tokens_partial, true);
+});
+
+test("missing model prices do not invalidate measured tokens or mark them partial", () => {
+  const out = foldClientMetrics([{ ...event, model: "openai.unpriced" }], ["codex"]);
+  assert.equal(out.totals.observed_tokens, 130);
+  assert.equal(out.totals.tokens_partial, false);
+  assert.equal(out.totals.tokens, 130);
+  assert.equal(out.totals.cost_usd, null);
+});
+
+test("mixed clients retain their own observed amounts and combine known counts", () => {
+  const out = foldClientMetrics([event,
+    { ...event, kind: "request", session: "missing" },
+    { ...event, client: "claude", input_tokens: 49, reported_cost: 2 },
+  ], ["claude", "codex"]);
+  assert.equal(out.totals.tokens, null);
+  assert.equal(out.totals.observed_tokens, 260);
+  assert.equal(out.totals.tokens_partial, true);
+  const claude = out.by_client.find(row => row.client === "claude");
+  assert.equal(claude.tokens, 130);
+  assert.equal(claude.observed_tokens, 130);
+  assert.equal(claude.tokens_partial, false);
+  assert.equal(claude.cost_usd, 2);
+});
+
 test("clients namespace sessions and preserve their cost sources", () => {
   const out = foldClientMetrics([event, { ...event, client: "claude", backend: "anthropic",
     input_tokens: 49, reported_cost: 2, model: "claude-sonnet-5" }], ["claude", "codex"]);

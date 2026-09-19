@@ -5,6 +5,7 @@ import { priceCodexUsage, parseCodexPricing } from "./codexPricing.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { normalizeModelId } from "./pricing.js";
 import * as queries from "./queries.js";
+import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 
 const ROW_LIMIT = 50000;
 export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -37,7 +38,8 @@ function accumulator(meta) {
   return { ...meta, ...Object.fromEntries([...TOKEN_KEYS, ...OP_KEYS].map((k) => [k, 0])),
     cost_usd: 0, unpriced: 0, observed_records: 0,
     _sessions: new Set(), _users: new Set(), _backends: new Set(), _missingUsage: new Set(),
-    _missing: new Set(), _hasCost: false, _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
+    _missing: new Set(), _hasCost: false, _observedTokens: createObservedTokens(),
+    _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
 }
 
 function usageScope(row, model = row.model || "") {
@@ -53,7 +55,7 @@ function claudeUsage(row) {
   // A positive client report remains usable even if token telemetry is partial.
   // Zero is usable only alongside known zero token usage.
   const cost = report !== null && (report > 0 || valid && tokens === 0) ? report : null;
-  return { ...row, tokens, reasoning_tokens: null, cost_usd: cost,
+  return { ...row, tokens, observed_tokens: tokens, reasoning_tokens: null, cost_usd: cost,
     cost_basis: "client_reported", unpriced: cost === null, invalid: !valid };
 }
 
@@ -67,6 +69,8 @@ function accumulate(target, row, usage, missingScope) {
   target.observed_records += n;
   if (missingScope) target._missingUsage.add(missingScope);
   if (usage) {
+    addObservedTokens(target._observedTokens, usage.observed_tokens,
+      Number(usage.observed_tokens_overflow) === 1);
     for (const k of TOKEN_KEYS) {
       if (!finite(usage[k])) target._missing.add(k);
       else target[k] += Number(usage[k]);
@@ -96,7 +100,7 @@ function accumulate(target, row, usage, missingScope) {
 }
 
 function finish(target) {
-  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost,
+  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _observedTokens,
     _ops, _requestMs, _requestN, _ttftMs, _ttftN, ...out } = target;
   for (const k of _missing) out[k] = null;
   if (_missingUsage.size) {
@@ -108,7 +112,9 @@ function finish(target) {
   // into free usage. Missing records remain visible through the partial flag.
   const costAvailable = _hasCost || out.unpriced === 0;
   const cost = costAvailable ? round(out.cost_usd) : null;
-  return { ...out, sessions: _sessions.size, users: _users.size,
+  return { ...out, ...finishObservedTokens(_observedTokens, {
+    partial: out.tokens === null, emptyValue: out.tokens === 0 ? 0 : null,
+  }), sessions: _sessions.size, users: _users.size,
     backend: out.backend || (_backends.size === 1 ? [..._backends][0] : _backends.size ? "mixed" : "unknown"),
     cost_usd: cost,
     cost_partial: out.unpriced > 0 || costAvailable && cost === null,
@@ -180,9 +186,9 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
   for (const k of OP_KEYS) if (by_client.some((r) => r[k] === null)) total[k] = null;
   for (const k of ["request_duration_ms", "ttft_ms"]) if (by_client.some((r) => r[k] === null)) total[k] = null;
   return { clients, observed_records: total.observed_records, totals: total, by_client,
-    by_model: [...groups.by_model.values()].map(finish).sort((a, b) => (b.tokens || 0) - (a.tokens || 0)),
-    by_user: [...groups.by_user.values()].map(finish).sort((a, b) => (b.tokens || 0) - (a.tokens || 0)),
-    by_project: [...groups.by_project.values()].map(finish).sort((a, b) => (b.tokens || 0) - (a.tokens || 0)),
+    by_model: [...groups.by_model.values()].map(finish).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
+    by_user: [...groups.by_user.values()].map(finish).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
+    by_project: [...groups.by_project.values()].map(finish).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
     timeseries: [...groups.timeseries.values()].map(finish).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client)),
     tools: [...tools.values()].sort((a, b) => b.calls - a.calls), quality };
 }
@@ -225,6 +231,9 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   // erases the valid responses' priceable components in the same SQL group.
   const validUsage = `${tokenFields.map(([, n]) => `${n}_valid`).join(" AND ")}
     AND NOT cache_invalid AND NOT reasoning_invalid`;
+  // Pair validity is independent of cache/reasoning metadata and model rates.
+  // Keep known pairs apart from unknown pairs even inside malformed usage.
+  const validPair = "in_n_valid AND out_n_valid AND in_n + out_n <= 9007199254740991";
   const session = isCodex ? "a['conversation.id']" : "SessionId";
   const backend = isCodex ? "if(r['backend'] IN ('bedrock-runtime','bedrock-mantle'), r['backend'], 'unknown')"
     : `multiIf(${GROUP_EXPR} = 'bedrock', 'bedrock-runtime', ${GROUP_EXPR} = 'enterprise', 'anthropic', 'unknown')`;
@@ -282,6 +291,9 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     session, user, model, backend, project, kind, a['tool_name'] AS tool,
     if(in_n > ${threshold}, 'long', 'short') AS context_tier,
     (kind != 'usage' OR (${validUsage})) AS usage_valid,
+    (kind != 'usage' OR (${validPair})) AS token_pair_valid,
+    (kind = 'usage' AND token_pair_valid
+      AND sum(in_n) + sum(out_n) > 9007199254740991) AS observed_tokens_overflow,
     count() AS count,
     ${tokenSums},
     countIf(kind = 'usage' AND NOT (${validUsage})) AS invalid,
@@ -291,7 +303,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     countIf(isNotNull(toFloat64OrNull(a['duration_ms'])) AND isFinite(toFloat64OrZero(a['duration_ms']))
       AND toFloat64OrZero(a['duration_ms']) >= 0) AS duration_count
   FROM typed WHERE kind != ''
-  GROUP BY t, session, user, model, backend, project, kind, tool, context_tier, usage_valid
+  GROUP BY t, session, user, model, backend, project, kind, tool, context_tier, usage_valid, token_pair_valid
   ORDER BY t LIMIT ${ROW_LIMIT + 1}`;
   return { sql, params };
 }

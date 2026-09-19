@@ -273,6 +273,10 @@ unpriced counts disclosed. An all-unpriced group remains unavailable even when
 its tokens were collected correctly. Check model pricing before treating those
 gaps as a Collector outage. [ADR-013](../decisions/ADR-013-known-cost-subtotals.md)
 defines the shared-client and Codex detail policy.
+For token gaps, compare `observed_tokens`/`tokens_partial` with canonical `tokens` and
+`quality.missing_usage`. Known pairs remain visible even when canonical coverage is
+incomplete; this does not recover missing logs or treat absent usage as zero
+([ADR-014](../decisions/ADR-014-observed-token-subtotals.md)).
 `CODEX_PRICING_JSON` (`codex_pricing_json`) keys must omit `us.`/`global.` (lookup strips
 them). Entries require positive integer `short_context_limit`, `regional` and optional
 `global`, each with `short`/`long` rates: finite nonnegative USD/million `input`,
