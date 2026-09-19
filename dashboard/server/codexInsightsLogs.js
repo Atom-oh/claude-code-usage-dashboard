@@ -1,6 +1,7 @@
 import { toChDateTime } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
 import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.js";
+import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 
 const ROW_LIMIT = 50000;
 const pricesDefault = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -167,11 +168,12 @@ const hasUsage = (row) => completed(row)
 
 function usageTotals() {
   return { requests: 0, tokens: 0, cost_usd: 0, hasCost: false, unpriced: 0,
-    input: 0, read: 0, write: 0, output: 0, reasoning: 0 };
+    input: 0, read: 0, write: 0, output: 0, reasoning: 0, observedTokens: createObservedTokens() };
 }
 
 function addUsage(target, usage) {
   target.requests++;
+  addObservedTokens(target.observedTokens, usage.observed_tokens);
   target.unpriced += Number(usage.unpriced);
   if (Number.isFinite(usage.cost_usd)) {
     target.hasCost = true;
@@ -323,6 +325,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     coverage: summary?.coverage ?? { status: records.length ? "observed" : "empty", records: records.length,
       last_seen: lastSeen === null ? null : new Date(lastSeen).toISOString() },
     summary: {
+      ...finishObservedTokens(total.observedTokens, { partial: missingUsageScopes || total.tokens === null }),
       ...(completeUsage ? fractions(total) : { cache_hit_rate: null, cache_write_share: null, reasoning_share: null }),
       // Per-request units use observed HTTP attempts, matching the client overview.
       tokens_per_request: completeUsage ? ratio(total.tokens, requests) : null,
@@ -339,6 +342,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
       prompts, prompt_length_mean: ratio(promptLength, prompts),
     },
     effort: [...efforts].map(([effort, value]) => ({ effort, requests: value.requests, tokens: value.tokens,
+      ...finishObservedTokens(value.observedTokens, { partial: value.tokens === null }),
       cost_usd: value.hasCost ? rounded(value.cost_usd) : null,
       cost_partial: value.unpriced > 0 || (value.hasCost && rounded(value.cost_usd) === null),
       unpriced: value.unpriced, ...fractions(value) })).sort(byName("effort")),

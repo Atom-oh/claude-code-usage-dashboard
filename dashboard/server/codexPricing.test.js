@@ -15,6 +15,32 @@ test("Codex prices cache subsets once and includes reasoning only through output
   assert.equal(row.unpriced, false);
 });
 
+test("observed tokens use the input/output pair independently of pricing and subset validation", () => {
+  for (const patch of [
+    {}, { model: "openai.unknown" }, { cache_write_tokens: undefined },
+    { cache_read_tokens: 101 }, { reasoning_tokens: 31 },
+  ]) {
+    const row = priceCodexUsage({ ...usage, ...patch });
+    assert.equal(row.observed_tokens, 130);
+    if ("cache_write_tokens" in patch || "cache_read_tokens" in patch || "reasoning_tokens" in patch) {
+      assert.equal(row.tokens, null);
+      assert.equal(row.cost_usd, null);
+    }
+  }
+});
+
+test("unavailable or unsafe input/output pairs never become observed zero", () => {
+  for (const value of [undefined, null, "", " ", false, [], {}, -1, 1.5, Infinity]) {
+    for (const key of ["input_tokens_total", "output_tokens"]) {
+      assert.equal(priceCodexUsage({ ...usage, [key]: value }).observed_tokens, null, key);
+    }
+  }
+  assert.equal(priceCodexUsage({ ...usage, input_tokens_total: Number.MAX_SAFE_INTEGER,
+    output_tokens: 1 }).observed_tokens, null);
+  assert.equal(priceCodexUsage({ ...usage, input_tokens_total: "0", output_tokens: "0",
+    cache_read_tokens: undefined, cache_write_tokens: undefined }).observed_tokens, 0);
+});
+
 test("global inference and long context use their own rates", () => {
   const global = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "global.openai.gpt-6-astra" });
   assert.equal(global.cost_usd, 0.0021675);

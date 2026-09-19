@@ -80,9 +80,16 @@ costs with `cost_partial`/unpriced disclosure; an all-unpriced group remains nul
 Claude reports use `client_reported`; Codex uses `aws_list_estimate`. Both retain
 billing/coverage limitations under [ADR-013](../decisions/ADR-013-known-cost-subtotals.md).
 
+`observed_tokens` sums safe input/output pairs independently of pricing or incomplete
+cache/reasoning metadata. Pair validity is a separate SQL grouping dimension so an
+unknown pair cannot erase a usable pair in the same malformed-usage group. Canonical
+`tokens` stays strict; `tokens_partial` discloses incomplete validation/coverage or
+overflow. All-unknown stays null and known zero stays zero.
+[ADR-014](../decisions/ADR-014-observed-token-subtotals.md) owns the display policy.
+
 Active Codex session/user/model/backend/project combinations without usage anywhere in
-the selected range null affected token folds and increment `quality.missing_usage`
-and `unpriced`; known cost subtotals remain visible with partial disclosure.
+the selected range null affected canonical token folds and increment `quality.missing_usage`
+and `unpriced`; known cost and observed-token subtotals retain partial disclosure.
 Crossing a time bucket does not create a false gap. Presence cannot
 detect every dropped response within a populated combination. Explicit zero is valid.
 `observed_records` combines deduplicated log-event counts with Claude usage aggregate-row

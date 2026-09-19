@@ -170,7 +170,7 @@ test("common dashboard preserves token subsets, tiny costs, unavailable operatio
     by_client: [codexUsage, { ...codexUsage, client: "claude", cost_basis: "client_reported" }],
   }) });
   await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());
-  expect(tile("전체 토큰").textContent).toContain("270");
+  expect(tile("관측 토큰").textContent).toContain("270");
   expect(tile("비용 (USD)").textContent).toContain("$0.0042405");
   expect(tile("관측 사용자 ID").textContent).toContain("—");
 
@@ -210,7 +210,7 @@ test("invalid token quality does not label fully reported Claude costs as partia
   await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());
   expect(tile("비용 (USD)").textContent).toContain("$12.5");
   expect(tile("비용 (USD)").textContent).not.toContain("부분합");
-  expect(tile("전체 토큰").textContent).toContain("—");
+  expect(tile("관측 토큰").textContent).toContain("—");
   const warning = screen.getAllByRole("status").find((node) => node.textContent.includes("유효하지 않은 데이터 1"));
   expect(warning.textContent).not.toMatch(/부분합|미산정|제외/);
   expect(warning.textContent).toContain("토큰 누락 여부는 별도로 유지합니다.");
@@ -239,17 +239,23 @@ test("user CSV is masked, follows visible columns and sorted order, and omits hi
 
 test.each([0, 2])("usage coverage %s controls the token warning independently of unpriced models", async (missing_usage) => {
   mount({ enabledClients: ["codex"], response: clientOverview({
-    totals: { ...codexUsage, tokens: missing_usage ? null : 270, cost_partial: true, unpriced: 3 },
+    totals: { ...codexUsage, tokens: missing_usage ? null : 270, observed_tokens: 148,
+      tokens_partial: missing_usage > 0, cost_partial: true, unpriced: 3 },
     quality: { unpriced: 3, invalid: 0, missing_usage },
   }) });
   await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());
   const note = screen.queryByRole("status", { name: /토큰/ });
   if (missing_usage) {
     expect(note).not.toBeNull();
-    expect(tile("전체 토큰").textContent).toContain("—");
+    expect(note.textContent).toContain("관측 토큰");
+    expect(note.textContent).toContain("부분합");
+    expect(note.textContent).not.toContain("토큰 합계는 —");
+    expect(tile("관측 토큰").textContent).toContain("148");
+    expect(tile("관측 토큰").textContent).toContain("부분합");
   } else {
     expect(note).toBeNull();
-    expect(tile("전체 토큰").textContent).toContain("270");
+    expect(tile("관측 토큰").textContent).toContain("148");
+    expect(tile("관측 토큰").textContent).not.toContain("부분합");
   }
 });
 

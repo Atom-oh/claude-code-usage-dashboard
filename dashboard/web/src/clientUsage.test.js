@@ -29,7 +29,7 @@ test("chart sums known costs, retaining all-unknown costs and disjoint clients",
   ]);
 });
 
-test.each([false, true])("known-cost folding is order independent and tokens still propagate null: reverse=%s", (reverse) => {
+test.each([false, true])("known token and cost folding excludes unknown rows in either order: reverse=%s", (reverse) => {
   const rows = [
     { t: "2026-09-01T00:00:00Z", client: "codex", tokens: 10, cost_usd: 0.01 },
     { t: "2026-09-01 00:00:00", client: "codex", tokens: null, cost_usd: null },
@@ -38,14 +38,39 @@ test.each([false, true])("known-cost folding is order independent and tokens sti
     { t: "2026-09-01 01:00:00", client: "codex", tokens: 0, cost_usd: 0 },
   ];
   expect(clientTimeline(reverse ? rows.reverse() : rows)).toEqual([
-    { t: "2026-09-01 00:00:00", codex_tokens: null, codex_cost: 0.03 },
-    { t: "2026-09-01 01:00:00", codex_tokens: null, codex_cost: 0 },
+    { t: "2026-09-01 00:00:00", codex_tokens: 30, codex_cost: 0.03 },
+    { t: "2026-09-01 01:00:00", codex_tokens: 0, codex_cost: 0 },
+  ]);
+});
+
+test.each([false, true])("observed chart subtotals keep explicit unknown gaps and partial zero: reverse=%s", (reverse) => {
+  const rows = [
+    { t: "2026-09-01T00:00:00Z", client: "codex", tokens: null, observed_tokens: 148, tokens_partial: true, cost_usd: 0.01 },
+    { t: "2026-09-01T00:00:00Z", client: "codex", tokens: 999, observed_tokens: null, tokens_partial: true, cost_usd: null },
+    { t: "2026-09-01T01:00:00Z", client: "codex", tokens: 999, observed_tokens: null, tokens_partial: true, cost_usd: null },
+    { t: "2026-09-01T03:00:00Z", client: "codex", tokens: null, observed_tokens: 0, tokens_partial: true, cost_usd: 0 },
+    { t: "2026-09-01T03:00:00Z", client: "codex", tokens: null, observed_tokens: null, tokens_partial: true, cost_usd: null },
+  ];
+  expect(clientTimeline(reverse ? rows.reverse() : rows, { bucketHours: 1 })).toEqual([
+    { t: "2026-09-01 00:00:00", codex_tokens: 148, codex_cost: 0.01 },
+    { t: "2026-09-01 01:00:00", codex_tokens: null, codex_cost: null },
+    { t: "2026-09-01 02:00:00" },
+    { t: "2026-09-01 03:00:00", codex_tokens: 0, codex_cost: 0 },
   ]);
 });
 
 test.each([undefined, "", " ", false, NaN, Infinity, -1])("invalid cost %j is not a measured zero", (cost_usd) => {
   expect(clientTimeline([{ t: "2026-09-01T00:00:00Z", client: "codex", tokens: null, cost_usd }])[0].codex_cost).toBeNull();
 });
+
+test.each([1.5, Number.MAX_SAFE_INTEGER + 1, "1.5", "9007199254740993"])(
+  "fractional or unsafe observed token count %j is unavailable without canonical fallback",
+  (observed_tokens) => {
+    expect(clientTimeline([{ t: "2026-09-01T00:00:00Z", client: "codex",
+      tokens: 270, observed_tokens, cost_usd: 0.01 }])[0])
+      .toMatchObject({ codex_tokens: null, codex_cost: 0.01 });
+  },
+);
 
 test("missing whole buckets break a series without inventing zero usage", () => {
   expect(clientTimeline([

@@ -89,11 +89,118 @@ test.each(routes)("route %s has relevant, bounded content for each client select
 test("overview uses server totals, visible per-client basis and tiny positive dollars", () => {
   mount("overview", fixture(["codex"]));
   expect(tile("비용 (USD)").textContent).toContain("$0.0042405");
-  expect(tile("전체 토큰").textContent).toContain("270");
+  expect(tile("관측 토큰").textContent).toContain("270");
   expect(tile("관측 사용자 ID").textContent).toContain("—");
   const comparison = screen.getByRole("region", { name: "클라이언트 비교" });
   expect(comparison.textContent).toContain("AWS 정가 추정");
   expect(comparison.textContent).toContain("$0.0042405");
+});
+
+function partialTokensFixture() {
+  const data = fixture(["codex"]);
+  const partial = { ...codexUsage, tokens: null, observed_tokens: 148, tokens_partial: true,
+    input_tokens: null, output_tokens: null, cache_read_tokens: null, cache_write_tokens: null,
+    reasoning_tokens: null, user: "fixture@example.test", project: "fixture-project", t: "2026-09-01T00:00:00Z" };
+  data.totals = { ...partial };
+  data.by_client = [{ ...partial }];
+  const rows = [
+    partial,
+    { ...partial, observed_tokens: null, tokens: 999, t: "2026-09-01T01:00:00Z", model: "unknown" },
+    { ...partial, observed_tokens: 0, t: "2026-09-01T03:00:00Z", model: "zero" },
+  ];
+  for (const key of ["by_model", "by_user", "by_project", "timeseries"]) data[key] = rows;
+  data.effective_range = { from: "2026-09-01T00:00:00Z", to: "2026-09-01T05:00:00Z" };
+  return data;
+}
+
+test("mixed known/missing usage retains the observed total and chart points with partial context", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  mount("overview", partialTokensFixture());
+  expect(tile("관측 토큰").textContent).toContain("148");
+  expect(tile("관측 토큰").textContent).toContain("부분합");
+  const comparison = screen.getByRole("region", { name: "클라이언트 비교" });
+  expect(comparison.textContent).toContain("148");
+  expect(comparison.textContent).toContain("부분합");
+  const chart = card("사용량·비용 추이");
+  expect(chart.textContent).toContain("관측 토큰");
+  expect(chart.textContent).toContain("부분합");
+  const tokens = chart.querySelector(".recharts-wrapper");
+  await waitFor(() => expect(tokens.querySelectorAll(".recharts-line-dot")).toHaveLength(2));
+  const dots = [...tokens.querySelectorAll(".recharts-line-dot")];
+  expect(Number(dots[0].getAttribute("cy"))).toBeLessThan(Number(dots[1].getAttribute("cy")));
+  fireEvent.mouseMove(tokens, { clientX: Number(dots[0].getAttribute("cx")), clientY: 80 });
+  await waitFor(() => expect(tokens.querySelector(".recharts-tooltip-wrapper").textContent).toContain("148"));
+  expect(tokens.querySelector(".recharts-tooltip-wrapper").textContent).toContain("부분합");
+});
+
+test.each([
+  [null, "—", "미확인"], [0, "0", "부분합"],
+])("primary observed tokens %s never fall back to canonical totals", (observed_tokens, value, status) => {
+  const data = partialTokensFixture();
+  data.totals = { ...data.totals, tokens: 999, observed_tokens };
+  mount("overview", data);
+  expect(tile("관측 토큰").textContent).toContain(value);
+  expect(tile("관측 토큰").textContent).toContain(status);
+  expect(tile("관측 토큰").textContent).not.toContain("999");
+});
+
+test.each([
+  ["overview", "모델별 사용량"],
+  ["exec", "모델별 비용·활동"],
+  ["trends", "클라이언트별 비교"],
+  ["trends", "기간별 관측값"],
+  ["usage", "클라이언트별 사용량"],
+  ["users", "사용자별 사용량"],
+  ["cost", "모델별 비용"],
+  ["cost", "사용자별 비용"],
+  ["analytics", "클라이언트별 신호 비교"],
+  ["analytics", "모델·백엔드 진단"],
+  ["analytics", "프로젝트 태그별 사용량"],
+])("%s %s exports numeric observed tokens and a separate per-row status", (page, title) => {
+  const download = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+  mount(page, partialTokensFixture());
+  const table = card(title);
+  const headers = within(table).getAllByRole("columnheader").map((node) => node.textContent.replace("↕", ""));
+  const index = headers.indexOf("관측 토큰"), statusIndex = headers.indexOf("토큰 상태");
+  expect(index).toBeGreaterThanOrEqual(0);
+  expect(statusIndex).toBeGreaterThanOrEqual(0);
+  const rows = within(table).getAllByRole("row").slice(1);
+  const isComparison = rows.length === 1;
+  expect(rows.map((row) => within(row).getAllByRole("cell")[index].textContent))
+    .toEqual(isComparison ? ["148"] : ["148", "—", "0"]);
+  expect(rows.map((row) => within(row).getAllByRole("cell")[statusIndex].textContent))
+    .toEqual(isComparison ? ["부분합"] : ["부분합", "미확인", "부분합"]);
+  fireEvent.click(within(table).getByRole("button", { name: "CSV" }));
+  const exported = download.mock.calls[0][1].split("\r\n").slice(1).map((row) => row.split(","));
+  expect(exported.map((row) => row[index])).toEqual(isComparison ? ["148"] : ["148", "", "0"]);
+  expect(exported.map((row) => row[statusIndex])).toEqual(isComparison ? ["부분합"] : ["부분합", "미확인", "부분합"]);
+});
+
+test("partial observed tokens leave efficiency ratios and canonical component gauges unavailable", () => {
+  const data = partialTokensFixture();
+  data.by_model = [data.by_model[0]];
+  mount("productivity", data);
+  const table = card("모델별 관측 효율");
+  const headers = within(table).getAllByRole("columnheader").map((node) => node.textContent.replace("↕", ""));
+  const cells = within(table).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell"))[0];
+  for (const label of ["세션당 토큰", "100만 토큰당 비용 (USD)", "캐시 읽기 / 전체 입력 (%)", "추론 / 출력 (%)"]) {
+    expect(cells[headers.indexOf(label)].textContent).toBe("—");
+  }
+  expect(card("캐시·추론 비중").textContent).not.toMatch(/45.45%|30%|148/);
+});
+
+test("unpriced costs alone do not label observed tokens partial in cards or charts", () => {
+  const data = fixture(["codex"]);
+  const row = { ...codexUsage, observed_tokens: 148, tokens_partial: false, unpriced: 1, cost_partial: true };
+  data.totals = row;
+  data.by_client = [row];
+  data.timeseries = [{ ...row, t: "2026-09-01T00:00:00Z" }];
+  mount("overview", data);
+  expect(tile("관측 토큰").textContent).toContain("148");
+  expect(tile("관측 토큰").textContent).not.toContain("부분합");
+  const legend = within(card("사용량·비용 추이")).getByText(/^Codex 관측 토큰/);
+  expect(legend.textContent).toContain("Codex 관측 토큰");
+  expect(legend.textContent).not.toContain("부분합");
 });
 
 test("isolated observed values remain visible and long gaps keep their elapsed-time width", async () => {

@@ -237,6 +237,45 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       }
     });
 
+    await t.test("pair-valid malformed rows retain observed tokens beside pair-unknown rows", async () => {
+      const resource = { "user.email": "observed-pairs@example.invalid" };
+      const good = log(450, "codex.sse_event", { ...usage1.LogAttributes }, resource);
+      const noCache = log(451, "codex.sse_event", { ...usage1.LogAttributes }, resource);
+      delete noCache.LogAttributes.cache_write_token_count;
+      const noInput = log(452, "codex.sse_event", { ...usage1.LogAttributes }, resource);
+      delete noInput.LogAttributes.input_token_count;
+      await insertLogs([good, noCache, noInput]);
+      const result = await overview({ client: "codex", user: "observed-pairs@" });
+      assertFields(result.totals, {
+        tokens: null, observed_tokens: 260, tokens_partial: true,
+        cost_usd: 0.00238425, unpriced: 2,
+      });
+      assertFields(result.quality, { invalid: 2, missing_usage: 0 });
+      for (const rows of [result.by_client, result.by_model, result.by_user,
+        result.by_project, result.timeseries]) {
+        assert.equal(rows.reduce((sum, row) => sum + (row.observed_tokens ?? 0), 0), 260);
+        assert.equal(rows[0].tokens, null);
+        assert.equal(rows[0].tokens_partial, true);
+      }
+    });
+
+    await t.test("overflow inside a SQL group invalidates the aggregate rather than exposing a small remainder", async () => {
+      const resource = { "user.email": "observed-overflow@example.invalid" };
+      const large = { ...zeroUsage, input_token_count: "4503599627370496" };
+      await insertLogs([
+        log(460, "codex.sse_event", large, resource),
+        log(461, "codex.sse_event", large, resource),
+        log(462, "codex.sse_event", { ...zeroUsage, input_token_count: "5",
+          "conversation.id": "small-group" }, resource),
+      ]);
+      const result = await overview({ client: "codex", user: "observed-overflow@" });
+      for (const row of [result.totals, ...result.by_client, ...result.by_model,
+        ...result.by_user, ...result.by_project, ...result.timeseries]) {
+        assertFields(row, { observed_tokens: null, tokens_partial: true });
+      }
+      assert.equal(result.totals.cost_usd, 0.000055);
+    });
+
     for (const [resolution, start, end, before, after, bucketHours, bucketTimes] of [
       ["minute", "10:00:00", "11:00:00", "10:00:59.900000000", "10:01:00.100000000",
         1 / 60, ["10:00:00", "10:01:00"]],

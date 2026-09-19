@@ -1,4 +1,4 @@
-import { formatObserved } from "./clientUsage.js";
+import { formatObserved, observedTokens } from "./clientUsage.js";
 
 export const CLIENT_NAMES = { claude: "Claude Code", codex: "Codex" };
 export const clientName = (value) => CLIENT_NAMES[value] || value || "—";
@@ -33,22 +33,30 @@ export function costBasisLabel(source, label = basisLabel(source.cost_basis)) {
     .filter(Boolean).join(" · ");
 }
 
+export const OBSERVED_TOKEN_HELP = "확인된 토큰의 합계입니다. Claude Code는 토큰 메트릭, Codex는 완료 응답의 입력·출력 쌍을 사용하며 캐시·추론을 중복 합산하지 않습니다. 일부 사용량 정보가 불완전하면 부분합, 확인된 합계가 없으면 —로 표시합니다. 비율은 기존 전체 토큰·구성값 기준입니다.";
+export function tokenStatusLabel(row) {
+  return observedTokens(row) === null ? "미확인" : row.tokens_partial === true ? "부분합" : "관측됨";
+}
+
 export function presentationRow(source = {}) {
   const row = { ...source };
   const unobserved = observedNumber(source.observed_records) === 0;
   for (const key of MEASURES) row[key] = unobserved ? null : observedNumber(source[key]);
+  row.observed_tokens = unobserved ? null : observedTokens(source);
+  row.tokens_partial = source.tokens_partial === true;
   const input = [row.input_tokens, row.cache_read_tokens, row.cache_write_tokens];
   row.input_total = input.includes(null) ? null : input.reduce((sum, n) => sum + n, 0);
   return {
     ...row,
+    token_status: tokenStatusLabel(row),
     cost_basis_label: costBasisLabel(row),
     cache_read_pct: subsetPercent(row.cache_read_tokens, row.input_total),
     reasoning_pct: subsetPercent(row.reasoning_tokens, row.output_tokens),
-    tokens_per_session: ratio(row.tokens, row.sessions),
+    tokens_per_session: row.tokens_partial ? null : ratio(row.tokens, row.sessions),
     sessions_per_user: ratio(row.sessions, row.users),
     cost_per_session: ratio(row.cost_usd, row.sessions),
     cost_per_user: ratio(row.cost_usd, row.users),
-    usd_per_million_tokens: ratio(row.cost_usd, row.tokens, 1e6),
+    usd_per_million_tokens: row.tokens_partial ? null : ratio(row.cost_usd, row.tokens, 1e6),
     error_records_per_request: ratio(row.api_errors, row.requests),
     tool_error_pct: subsetPercent(row.tool_errors, row.tool_calls),
   };
