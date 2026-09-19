@@ -2,8 +2,8 @@ import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { RangeProvider } from "../RangeContext.jsx";
-import { SeriesBarChart } from "./GroupCharts.jsx";
+import { RangeProvider, useRange } from "../RangeContext.jsx";
+import { DualLineChart, SeriesBarChart } from "./GroupCharts.jsx";
 
 // jsdom has no layout or ResizeObserver. Keep the real Recharts render path and
 // supply only the browser dimensions its ResponsiveContainer needs.
@@ -122,4 +122,35 @@ test("header controls recover from incomplete data without changing hook order",
   fireEvent.click(screen.getByRole("button", { name: "기간 변경" }));
   expect(screen.getByRole("status")).toBeTruthy();
   expect(container.querySelector(".recharts-wrapper")).toBeNull();
+});
+
+test("time-axis drag zoom preserves UTC instants, caps the last bucket and ignores clicks", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  function Selection() {
+    const { custom } = useRange();
+    return <output aria-label="선택 구간">{custom
+      ? `${custom.from.toISOString()} / ${custom.to.toISOString()}` : "none"}</output>;
+  }
+  const start = Date.UTC(2026, 8, 1);
+  const { container } = render(<>
+    <DualLineChart title="시간 축" xKey="t" bucketHours={1}
+      timeDomain={[start, Date.UTC(2026, 8, 1, 11, 30)]}
+      rows={[{ t: start, value: 1 }, { t: Date.UTC(2026, 8, 1, 2), value: 2 },
+        { t: Date.UTC(2026, 8, 1, 11), value: 3 }]}
+      lines={[{ key: "value" }]} />
+    <Selection />
+  </>, { wrapper: Providers });
+  await waitFor(() => expect(container.querySelector(".recharts-wrapper")).not.toBeNull());
+  const chart = container.querySelector(".recharts-wrapper");
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  const x = (hour) => left + (right - left) * hour / 11.5;
+  fireEvent.mouseDown(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
+  expect(screen.getByLabelText("선택 구간").textContent).toBe("none");
+  fireEvent.mouseDown(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(11), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(11), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent)
+    .toBe("2026-09-01T02:00:00.000Z / 2026-09-01T11:30:00.000Z"));
 });

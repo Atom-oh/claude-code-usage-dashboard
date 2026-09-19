@@ -237,6 +237,22 @@ test("user CSV is masked, follows visible columns and sorted order, and omits hi
   expect(text.replace(/^\uFEFF/, "").split("\r\n")[0].split(",")).toHaveLength(within(card).getAllByRole("columnheader").length);
 });
 
+test.each([0, 2])("usage coverage %s controls the token warning independently of unpriced models", async (missing_usage) => {
+  mount({ enabledClients: ["codex"], response: clientOverview({
+    totals: { ...codexUsage, tokens: missing_usage ? null : 270, cost_partial: true, unpriced: 3 },
+    quality: { unpriced: 3, invalid: 0, missing_usage },
+  }) });
+  await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());
+  const note = screen.queryByRole("status", { name: /토큰/ });
+  if (missing_usage) {
+    expect(note).not.toBeNull();
+    expect(tile("전체 토큰").textContent).toContain("—");
+  } else {
+    expect(note).toBeNull();
+    expect(tile("전체 토큰").textContent).toContain("270");
+  }
+});
+
 test("common user/model/backend filters debounce, preserve client/range, and never put masked identity in the URL", async () => {
   const { fetchMock } = mount({ enabledClients: ["codex"], entry: "/?client=codex&days=7&user=secret%40example.test" });
   await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());

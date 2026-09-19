@@ -29,7 +29,7 @@ import EmptyState from "./EmptyState.jsx";
 // 조회·표시할 때(예: Cost.jsx의 SegmentedControl) 실제 렌더링 중인 버킷 크기를 넘긴다 — 안
 // 그러면 우측 끝 보정(아래)이 전역 intervalHours를 쓰다 화면에 보이는 버킷과 어긋난 custom
 // range를 만든다(리뷰에서 MAJOR로 확인).
-function useDragZoom(yAxisId, bucketHoursOverride) {
+function useDragZoom(yAxisId, bucketHoursOverride, timeDomain) {
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
   const startRef = useRef(null);
@@ -50,7 +50,10 @@ function useDragZoom(yAxisId, bucketHoursOverride) {
       const a = area;
       cancel();
       if (!a) return;
-      const d1 = parseUtc(a.left), d2 = parseUtc(a.right);
+      const parse = timeDomain
+        ? (value) => new Date(typeof value === "number" || value instanceof Date ? value : NaN)
+        : parseUtc;
+      const d1 = parse(a.left), d2 = parse(a.right);
       if (isNaN(d1) || isNaN(d2)) return; // 카테고리 축 → no-op
       // 클릭/미세드래그 가드는 우측 버킷 확장(아래) "전의" raw delta로 판정해야 한다 — 순수 클릭은
       // d1===d2라 delta가 0인데, 확장 후 to-from을 기준으로 삼으면 항상 버킷 하나 크기(예: 1시간)가
@@ -66,7 +69,9 @@ function useDragZoom(yAxisId, bucketHoursOverride) {
       // MAJOR로 확인 — 지금은 Trends/Executive/Overview가 명시적으로 넘겨서 우회하고 있을 뿐).
       const rightLabel = String(d1 <= d2 ? a.right : a.left);
       const intervalHours = bucketHoursOverride ?? (/^\d{4}-\d{2}-\d{2}$/.test(rightLabel) ? 24 : globalIntervalHours);
-      const to = new Date((d1 <= d2 ? d2 : d1).getTime() + intervalHours * 3600000);
+      const end = (d1 <= d2 ? d2 : d1).getTime() + intervalHours * 3600000;
+      const to = new Date(timeDomain ? Math.min(end, timeDomain[1]) : end);
+      if (to <= from) return;
       setRange(from, to);
     },
     onMouseLeave: cancel,
@@ -251,13 +256,14 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
 // 소형 멀티플(위/아래 패널, 축 하나씩)로 렌더한다. props API는 이전 이중축 버전과 동일해서
 // 호출부(Executive/Overview/Productivity/Trends)는 그대로다. axis:"left"/"right"는 이제
 // "위 패널"/"아래 패널" 배정으로 읽는다.
-function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c }) {
+function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c, timeDomain }) {
   return (
     <ResponsiveContainer width="100%" height={height} className={zoom.className}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} syncId="dual" {...zoom.handlers}>
         <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
         <XAxis
           dataKey={xKey}
+          {...(timeDomain ? { type: "number", scale: "time", domain: timeDomain, allowDataOverflow: true } : {})}
           tick={showXAxis ? axisTick(c) : false}
           tickLine={false}
           axisLine={{ stroke: c.grid }}
@@ -275,7 +281,16 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
             name={l.label || l.key}
             stroke={l.color || c.palette[i % c.palette.length]}
             strokeWidth={2}
-            dot={false}
+            dot={timeDomain ? ({ cx, cy, index }) => {
+              const observed = (i) => Number.isFinite(rows[i]?.[l.key]);
+              return observed(index) && !observed(index - 1) && !observed(index + 1)
+                && Number.isFinite(cx) && Number.isFinite(cy)
+                ? <circle key={index} className="recharts-dot recharts-line-dot"
+                    cx={cx} cy={cy} r={3.5} fill={l.color || c.palette[i % c.palette.length]}
+                    stroke={c.surface} strokeWidth={1.5} />
+                : null;
+            } : false}
+            {...(timeDomain ? { isAnimationActive: false } : {})}
             activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }}
           />
         ))}
@@ -285,10 +300,12 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
   );
 }
 
-export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours }) {
+export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain }) {
   const c = useChartColors();
-  const zoomTop = useDragZoom(undefined, bucketHours);
-  const zoomBottom = useDragZoom(undefined, bucketHours);
+  const domain = Array.isArray(timeDomain) && timeDomain.length === 2
+    && timeDomain.every(Number.isFinite) && timeDomain[0] < timeDomain[1] ? timeDomain : undefined;
+  const zoomTop = useDragZoom(undefined, bucketHours, domain);
+  const zoomBottom = useDragZoom(undefined, bucketHours, domain);
   if ((rows || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} help={help} right={right}>
@@ -327,6 +344,7 @@ export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines,
               showXAxis={pi === panels.length - 1}
               zoom={pi === 0 ? zoomTop : zoomBottom}
               c={c}
+              timeDomain={domain}
             />
           </div>
         ))}

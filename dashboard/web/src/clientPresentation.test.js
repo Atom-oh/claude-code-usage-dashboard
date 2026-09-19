@@ -91,6 +91,7 @@ test("partial cost does not fill missing token components, identities or zero de
 
 test("timestamp parsing preserves the instant for both API forms", () => {
   expect(formatClientTime("2026-09-01 03:04:00")).toBe(formatClientTime("2026-09-01T03:04:00.000Z"));
+  expect(formatClientTime(Date.UTC(2026, 8, 1, 3, 4))).toBe(formatClientTime("2026-09-01T03:04:00.000Z"));
   expect(formatClientTime(null)).toBe("—");
 });
 
@@ -103,6 +104,7 @@ test.each([
   const script = `import { formatClientTime, formatClientTimestamp, BROWSER_TIME_ZONE } from ${JSON.stringify(moduleUrl)};
     console.log(JSON.stringify({
       iso: formatClientTime("2026-09-01T20:04:23.789Z"),
+      epoch: formatClientTime(1788293063789),
       full: formatClientTimestamp("2026-09-01T20:04:23.789Z"),
       winter: formatClientTimestamp("2026-01-01T03:04:23.789Z"),
       zone: BROWSER_TIME_ZONE,
@@ -125,4 +127,5 @@ test.each([
   expect(actual.iso).toMatch(date);
   expect(actual.naive).toBe(actual.iso);
   expect(actual.offset).toBe(actual.iso);
+  expect(actual.epoch).toBe(actual.iso);
 });

@@ -18,7 +18,7 @@ export function formatClientCost(value) {
 }
 
 // Costs sum known values; token completeness still propagates within each bucket.
-export function clientTimeline(rows) {
+export function clientTimeline(rows, { bucketHours } = {}) {
   const buckets = new Map();
   for (const row of rows) {
     const t = row.t.replace("T", " ").replace(/(?:\.\d+)?Z$/, "");
@@ -33,5 +33,17 @@ export function clientTimeline(rows) {
     }
     buckets.set(t, bucket);
   }
-  return [...buckets.values()].sort((a, b) => a.t.localeCompare(b.t));
+  const ordered = [...buckets.values()].sort((a, b) => a.t.localeCompare(b.t));
+  const bucketMs = bucketHours * 3600000;
+  if (!Number.isInteger(bucketMs) || bucketMs < 1000) return ordered;
+  // One empty marker breaks a missing run. A continuous time axis gives that
+  // run its actual width; no synthetic zero values or dense expansion is needed.
+  return ordered.flatMap((row, index) => {
+    const next = ordered[index + 1];
+    const boundary = (Math.floor(parseUtc(row.t).getTime() / bucketMs) + 1) * bucketMs;
+    return next && Number.isFinite(boundary) && parseUtc(next.t).getTime() > boundary
+      ? [row, { t: new Date(boundary).toISOString().slice(0, 19).replace("T", " ") }]
+      : [row];
+  });
 }
+import { parseUtc } from "./fmt.js";

@@ -3,7 +3,7 @@ import { Card } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { DualLineChart, RingGauge, SeriesBarChart } from "../components/GroupCharts.jsx";
-import { maskEmail } from "../fmt.js";
+import { maskEmail, parseUtc } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
 import {
   basisLabel, BROWSER_TIME_ZONE, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, presentationRow,
@@ -95,8 +95,17 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
   </section>;
 }
 
-function Trend({ rows, clients, clientRows, bucketHours, metric = "both", title = "사용량·비용 추이" }) {
-  const timeline = useMemo(() => clientTimeline(rows), [rows]);
+function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric = "both", title = "사용량·비용 추이" }) {
+  const { timeline, timeDomain } = useMemo(() => {
+    const timeline = clientTimeline(rows, { bucketHours })
+      .map((row) => ({ ...row, t: parseUtc(row.t).getTime() }))
+      .filter((row) => Number.isFinite(row.t));
+    const from = Date.parse(effectiveRange?.from), to = Date.parse(effectiveRange?.to);
+    const step = Number.isFinite(bucketHours * 3600000) && bucketHours > 0 ? bucketHours * 3600000 : 3600000;
+    const timeDomain = Number.isFinite(from) && Number.isFinite(to) && from < to
+      ? [from, to] : timeline.length ? [timeline[0].t, timeline.at(-1).t + step] : undefined;
+    return { timeline, timeDomain };
+  }, [rows, bucketHours, effectiveRange?.from, effectiveRange?.to]);
   const lines = clients.flatMap((client) => {
     const row = clientRows.find((row) => row.client === client);
     const partial = row?.cost_partial === true || observedNumber(row?.unpriced) > 0;
@@ -111,8 +120,9 @@ function Trend({ rows, clients, clientRows, bucketHours, metric = "both", title 
     return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
   }
   return <DualLineChart title={title}
-    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 누락 구간은 연결하지 않습니다.${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
+    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 누락 구간은 빈칸, 단독 관측값은 점으로 표시합니다.${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
     rows={timeline} xKey="t" lines={lines} bucketHours={bucketHours}
+    timeDomain={timeDomain}
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
 }
 
@@ -166,7 +176,8 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
   const basis = costBasisLabel(total, [...new Set(clientRows.map((row) => basisLabel(row.cost_basis)))].join(" + "));
   const models = rows("by_model"), users = rows("by_user"), periods = rows("timeseries");
   const tools = (data?.tools || []).filter((row) => selected.includes(row.client));
-  const trendProps = { rows: periods, clients: selected, clientRows, bucketHours: data?.bucket_hours || 1 };
+  const trendProps = { rows: periods, clients: selected, clientRows, bucketHours: data?.bucket_hours || 1,
+    effectiveRange: data?.effective_range };
   const table = (title, columns, items, name, subtitle) => <ResultTable key={`${page}-${name}`}
     title={title} subtitle={subtitle} columns={columns} rows={items} exportName={`clients_${name}`} />;
   const tiles = (columns) => <Tiles row={total} columns={columns} basis={basis} />;
