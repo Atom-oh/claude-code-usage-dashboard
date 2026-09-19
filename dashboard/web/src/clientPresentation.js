@@ -66,6 +66,10 @@ const fullTime = new Intl.DateTimeFormat("en-GB", {
 });
 export const BROWSER_TIME_ZONE = shortTime.resolvedOptions().timeZone;
 function clientDate(value) {
+  if (typeof value === "number" || value instanceof Date) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
   if (!value) return null;
   const raw = String(value).trim().replace(" ", "T");
   const qualified = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00Z`

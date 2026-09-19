@@ -96,6 +96,46 @@ test("overview uses server totals, visible per-client basis and tiny positive do
   expect(comparison.textContent).toContain("$0.0042405");
 });
 
+test("isolated observed values remain visible and long gaps keep their elapsed-time width", async () => {
+  const data = fixture(["claude", "codex"]);
+  data.effective_range = { from: "2026-09-01T00:00:00Z", to: "2026-09-01T12:00:00Z" };
+  data.bucket_hours = 1;
+  data.timeseries = [
+    { client: "codex", t: "2026-09-01T00:00:00Z", tokens: 10, cost_usd: 1 },
+    { client: "claude", t: "2026-09-01T01:00:00Z", tokens: 20, cost_usd: 2 },
+    { client: "codex", t: "2026-09-01T02:00:00Z", tokens: 30, cost_usd: 3 },
+    { client: "claude", t: "2026-09-01T03:00:00Z", tokens: 40, cost_usd: 4 },
+    { client: "codex", t: "2026-09-01T10:00:00Z", tokens: 50, cost_usd: 5 },
+  ];
+  mount("overview", data);
+  const charts = card("사용량·비용 추이").querySelectorAll(".recharts-wrapper");
+  expect(charts).toHaveLength(2);
+  for (const chart of charts) {
+    const codex = chart.querySelectorAll(".recharts-line")[1];
+    await waitFor(() => expect(codex.querySelectorAll(".recharts-line-dot")).toHaveLength(3));
+    const x = [...codex.querySelectorAll(".recharts-line-dot")].map(dot => Number(dot.getAttribute("cx")));
+    // Two hours followed by eight hours: category spacing would compress this.
+    expect((x[2] - x[1]) / (x[1] - x[0])).toBeCloseTo(4, 5);
+  }
+});
+
+test("a lone measured zero is visible while unknown values have no marker", async () => {
+  const data = fixture(["claude", "codex"]);
+  data.effective_range = { from: "2026-09-01T00:00:00Z", to: "2026-09-01T04:00:00Z" };
+  data.timeseries = [
+    { client: "codex", t: "2026-09-01T01:00:00Z", tokens: 0, cost_usd: 0 },
+    { client: "claude", t: "2026-09-01T01:00:00Z", tokens: null, cost_usd: null },
+  ];
+  mount("overview", data);
+  const charts = card("사용량·비용 추이").querySelectorAll(".recharts-wrapper");
+  for (const chart of charts) {
+    await waitFor(() => expect(chart.querySelectorAll(".recharts-line-dot")).toHaveLength(1));
+    const dot = chart.querySelector(".recharts-line-dot");
+    expect(Number.isFinite(Number(dot.getAttribute("cx")))).toBe(true);
+    expect(Number.isFinite(Number(dot.getAttribute("cy")))).toBe(true);
+  }
+});
+
 test("mixed-client totals, cards and chart legends label only known-cost subtotals", () => {
   const data = fixture(["claude", "codex"]);
   data.by_client[1] = { ...data.by_client[1], cost_usd: null, cost_partial: true, unpriced: 2 };

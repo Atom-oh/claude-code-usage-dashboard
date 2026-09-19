@@ -48,6 +48,11 @@ export default function Clients({ page = "overview" }) {
           {hasUnpricedCost && <> 알려진 비용만 부분합으로 표시하며, 비용이 모두 미산정이면 —로 표시합니다.</>}
           {" "}토큰 누락 여부는 별도로 유지합니다.
         </div>}
+      {quality.missing_usage > 0 &&
+        <p role="status" aria-label="토큰 사용량 미확인" className="text-sm text-ink-600">
+          일부 활동의 사용량 로그가 없어 전체 토큰과 해당 시간대의 토큰 합계는 —로 표시됩니다.
+          확인된 시간별 관측값은 차트에 표시합니다.
+        </p>}
       {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
         : <section data-shared-client-panels><ClientPanels page={page} data={data} clients={clients} /></section>}
       {sections && clients.includes("codex") && <CodexInsights

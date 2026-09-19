@@ -75,6 +75,12 @@ timestamps display the browser time zone. Time columns export matching local val
 with an offset/zone marker. Parse timezone-less ClickHouse timestamps as UTC before
 formatting; display conversion must not shift request or drag-zoom bounds.
 
+Shared client trends use a continuous time axis over the API's effective range.
+Missing buckets break lines, while isolated known values (including zero) remain
+visible as points. Refreshes update these charts without replaying line animations.
+Missing usage still withholds affected token totals; the UI explains this separately
+from unpriced models. Chart changes do not alter API totals or infer missing activity.
+
 The hook separates the selected view from its quantized request window. Polling advances
 the window without replacing loaded charts or tables with a loading state. Unchanged
 payloads keep their references; shared panels also keep stable client props and memoize
