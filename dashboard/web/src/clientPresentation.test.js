@@ -63,6 +63,8 @@ test.each([
   [{ observed_tokens: null, tokens_partial: true }, null, "미확인"],
   [{ observed_tokens: 148, unpriced: 2, cost_partial: true }, 148, "관측됨"],
   [{ observed_tokens: 0, observed_records: 0 }, null, "미확인"],
+  [{ observed_tokens: 0, observed_records: 0, timeline_observed: true }, 0, "관측됨"],
+  [{ observed_tokens: null, observed_records: 0, timeline_observed: true }, null, "미확인"],
 ])("observed token display preserves absence, null, zero and independent cost status: %j",
   (fields, value, status) => {
     const row = presentationRow({ ...codexUsage, ...fields });

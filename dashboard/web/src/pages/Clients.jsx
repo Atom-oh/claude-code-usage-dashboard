@@ -23,7 +23,7 @@ export default function Clients({ page = "overview" }) {
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};
   const hasUnpricedCost = data?.totals?.cost_partial === true || quality.unpriced > 0 || data?.totals?.unpriced > 0;
-  const empty = data?.observed_records === 0;
+  const empty = data?.observed_records === 0 && !data?.timeseries?.length;
   const sections = INSIGHT_SECTIONS[page];
 
   return <div data-client-page={page}>

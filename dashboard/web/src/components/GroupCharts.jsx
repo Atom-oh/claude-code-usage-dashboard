@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, DefaultTooltipContent, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn } from "../cn.js";
 import { colorFor } from "../colors.js";
 import { parseUtc } from "../fmt.js";
@@ -256,7 +256,13 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
 // 소형 멀티플(위/아래 패널, 축 하나씩)로 렌더한다. props API는 이전 이중축 버전과 동일해서
 // 호출부(Executive/Overview/Productivity/Trends)는 그대로다. axis:"left"/"right"는 이제
 // "위 패널"/"아래 패널" 배정으로 읽는다.
-function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c, timeDomain }) {
+function AvailableTooltipContent(props) {
+  // Recharts skips its formatter for null values; replace only their display text.
+  return <DefaultTooltipContent {...props}
+    payload={props.payload?.map(entry => entry.value == null ? { ...entry, value: "미확인" } : entry)} />;
+}
+
+function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c, timeDomain, tooltipFormatter }) {
   return (
     <ResponsiveContainer width="100%" height={height} className={zoom.className}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} syncId="dual" {...zoom.handlers}>
@@ -272,7 +278,8 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
           height={showXAxis ? 30 : 4}
         />
         <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={48} tickFormatter={valueTickFormatter} />
-        <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} />
+        <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} formatter={tooltipFormatter}
+          filterNull={!tooltipFormatter} content={tooltipFormatter ? <AvailableTooltipContent /> : undefined} />
         {panelLines.map((l, i) => (
           <Line
             key={l.key}
@@ -300,7 +307,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
   );
 }
 
-export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain }) {
+export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter }) {
   const c = useChartColors();
   const domain = Array.isArray(timeDomain) && timeDomain.length === 2
     && timeDomain.every(Number.isFinite) && timeDomain[0] < timeDomain[1] ? timeDomain : undefined;
@@ -345,6 +352,7 @@ export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines,
               zoom={pi === 0 ? zoomTop : zoomBottom}
               c={c}
               timeDomain={domain}
+              tooltipFormatter={tooltipFormatter}
             />
           </div>
         ))}

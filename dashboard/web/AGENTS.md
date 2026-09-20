@@ -1,7 +1,6 @@
 # Web instructions
 
-React 18/Vite/Tailwind/Recharts static SPA. Run `npm test` and `npm run build` here;
-use the existing component stack.
+React 18/Vite/Tailwind/Recharts SPA. Run `npm test` and `npm run build`.
 
 ## Display contracts
 
@@ -9,10 +8,9 @@ use the existing component stack.
   Claude `view=detail` retains advanced/A/B pages; see [routing](../../docs/reference/frontend.md#routes-and-state).
   Common views label `cost_usd` by `cost_basis`, retain nulls/tiny positives, and never
   show unsupported Claude measures as Codex zeros.
-- Shared costs display usable subtotals despite excluded records, marked as partial
-  in cards, chart context, tables and CSV. Cost units use that subtotal over observed
-  denominators; missing denominators remain unavailable. All-unknown costs stay `—`.
-  This follows [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
+- Shared cards/charts/tables/CSV label known cost subtotals as partial. Units divide
+  by observed denominators; missing denominators and all-unknown costs stay `—`.
+  See [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
 - Token displays/charts use labelled `observed_tokens` subtotals and `tokens_partial`;
   CSV keeps counts numeric with coverage status. Ratios use canonical fields.
   See [ADR-014](../../docs/decisions/ADR-014-observed-token-subtotals.md).
@@ -25,15 +23,15 @@ use the existing component stack.
   annotations, computed total and token-tier charts.
 - Cost remounts affected `DataTable`s on comparison changes, resetting all internal
   sorting, including hidden computed columns.
-- CSV schema follows displayed columns; export their current row order. `toCsv` uses
-  `toText` or raw values, never JSX renderers.
+- CSV follows displayed columns/order; `toCsv` uses `toText` or raw values, never JSX.
 - `csv.js` centrally masks `user` columns under PII masking; missing per-column
   `toText: maskEmail` alone is not a leak. Other identity columns need explicit masking.
 - Cost USD accepts zero and at most two decimals. `DonutBody.valueFormatter` ignores
   `valuePrefix`; other charts keep their default formatting.
 - Keep trace absence, loading, errors, unpriced values and measured zero distinct.
-- Activity scores and permission-approval rates do not validate causal productivity
-  or code quality. Do not invent saved hours or ROI.
+  Shared chart empty-bucket zeros mean recorded usage only; preserve explicit nulls
+  and the coverage qualifier in [ADR-015](../../docs/decisions/ADR-015-idle-chart-buckets.md).
+- Activity/approval rates prove neither productivity nor quality. Do not invent saved hours or ROI.
 
 ## Filters, ranges, and refresh
 

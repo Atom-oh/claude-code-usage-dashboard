@@ -375,6 +375,86 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.deepEqual(await select({ model, user, backend: "anthropic" }), []);
       });
     }
+    for (const grain of ["minute", "hour"]) {
+      await t.test(`Claude ${grain} timeline retains measured zero without inventing missing buckets or active users`, async () => {
+        const user = `idle-${grain}@example.invalid`;
+        const clocks = grain === "minute"
+          ? ["09:59:00", "10:01:00", "10:02:00", "10:04:00"]
+          : ["09:59:00", "10:01:00", "11:01:00", "13:01:00"];
+        const values = [];
+        for (const [metric, type, samples] of [
+          ["claude_code.token.usage", "input", [100, 110, 110, 120]],
+          ["claude_code.cost.usage", "", [2, 2.1, 2.1, 2.2]],
+        ]) {
+          for (const [i, clock] of clocks.entries()) {
+            const row = counter(metric, type, clock, samples[i]);
+            row.ResourceAttributes = { "user.email": user };
+            row.Attributes["session.id"] = `active-${grain}`;
+            values.push(row);
+            // Idle sessions must not increase the active population or breakdowns.
+            values.push({ ...row, Value: samples[0],
+              Attributes: { ...row.Attributes, "session.id": `idle-${grain}` } });
+          }
+        }
+        await insertMetrics(values);
+        const result = await overview({ client: "claude", user }, ["claude", "codex"],
+          from, new Date(`${day}T${grain === "minute" ? "10:06" : "16:00"}:00Z`));
+        assertFields(result.totals, { tokens: 20, cost_usd: 0.2, users: 1, sessions: 1 });
+        assert.equal(result.by_user.length, 1);
+        assert.equal(result.by_model.length, 1);
+        assert.equal(result.observed_records, 2);
+        assert.deepEqual(result.timeseries.map(row => row.t), grain === "minute"
+          ? [`${day}T10:01:00Z`, `${day}T10:02:00Z`, `${day}T10:04:00Z`]
+          : [`${day}T10:00:00Z`, `${day}T11:00:00Z`, `${day}T13:00:00Z`]);
+        assert.deepEqual(result.timeseries.map(row => row.observed_tokens), [10, 0, 10]);
+        assert.deepEqual(result.timeseries.map(row => row.cost_usd), [0.1, 0, 0.1]);
+      });
+    }
+    await t.test("idle counters preserve independent token/cost availability within each scope", async () => {
+      for (const mode of ["tokens", "cost", "split"]) {
+        const user = `availability-${mode}@example.invalid`;
+        const values = [];
+        for (const metric of mode === "tokens" ? ["claude_code.token.usage"]
+          : mode === "cost" ? ["claude_code.cost.usage"]
+            : ["claude_code.token.usage", "claude_code.cost.usage"]) {
+          for (const clock of ["09:59:00", "10:01:00"]) {
+            const row = counter(metric, metric.includes("token") ? "input" : "", clock, 10);
+            row.ResourceAttributes = { "user.email": user };
+            row.Attributes["session.id"] = mode === "split" ? metric : mode;
+            values.push(row);
+          }
+        }
+        await insertMetrics(values);
+        const result = await overview({ client: "claude", user }, ["claude"], from, to);
+        assert.equal(result.observed_records, 0);
+        assert.equal(result.timeseries.length, 1);
+        const zero = result.timeseries[0];
+        assert.equal(zero.observed_tokens, mode === "cost" ? null : 0);
+        assert.equal(zero.cost_usd, mode === "tokens" ? null : 0);
+        assert.equal(zero.tokens_partial, mode !== "tokens");
+        assert.equal(zero.cost_partial, mode !== "cost");
+      }
+    });
+    await t.test("first partial hour requires actual in-window counter observations", async () => {
+      for (const observed of [false, true]) {
+        const user = `partial-idle-${observed}@example.invalid`;
+        const values = [];
+        for (const metric of ["claude_code.token.usage", "claude_code.cost.usage"]) {
+          for (const clock of observed ? ["10:01:00", "10:30:00", "11:01:00"] : ["10:01:00", "11:01:00"]) {
+            const row = counter(metric, metric.includes("token") ? "input" : "", clock, 10);
+            row.ResourceAttributes = { "user.email": user };
+            row.Attributes["session.id"] = user;
+            values.push(row);
+          }
+        }
+        await insertMetrics(values);
+        const result = await overview({ client: "claude", user }, ["claude"],
+          new Date(`${day}T10:15:00Z`), new Date(`${day}T16:00:00Z`));
+        assert.deepEqual(result.timeseries.map(row => row.t),
+          observed ? [`${day}T10:15:00Z`, `${day}T11:00:00Z`] : [`${day}T11:00:00Z`]);
+        assert(result.timeseries.every(row => row.observed_tokens === 0 && row.cost_usd === 0));
+      }
+    });
   } finally {
     await db.close();
   }

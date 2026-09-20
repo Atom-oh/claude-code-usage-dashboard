@@ -42,7 +42,8 @@ endpoints are outside this change.
 
 Tables/CSV retain numeric counts and separate coverage status. Legacy fallback to
 `tokens` applies only when `observed_tokens` is absent, never when explicitly null.
-Missing telemetry is not recovered; empty periods remain gaps.
+Missing telemetry is not recovered. [ADR-015](ADR-015-idle-chart-buckets.md)
+subsequently changes empty-period chart display while retaining explicit unknowns.
 
 See [API](../api-reference.md#coding-client-views),
 [data](../reference/data.md) and [Codex detail](../reference/codex-observability.md).

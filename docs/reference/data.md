@@ -92,8 +92,12 @@ the selected range null affected canonical token folds and increment `quality.mi
 and `unpriced`; known cost and observed-token subtotals retain partial disclosure.
 Crossing a time bucket does not create a false gap. Presence cannot
 detect every dropped response within a populated combination. Explicit zero is valid.
-`observed_records` combines deduplicated log-event counts with Claude usage aggregate-row
-counts only to identify an empty result; it is not comparable request volume.
+`observed_records` combines deduplicated log-event counts with active Claude usage
+aggregate-row counts; it is not comparable request volume. Idle counter observations
+can populate `timeseries` while that count is zero. They retain per-signal availability
+and do not add active population or non-timeline rows.
+[ADR-015](../decisions/ADR-015-idle-chart-buckets.md) distinguishes measured zero,
+empty-bucket recorded usage and unavailable usage in charts.
 
 All breakdowns share selected rows. User counts union nonempty emitted IDs, not employees;
 sessions are namespaced by client. Up to four hours uses minute buckets, otherwise hourly.

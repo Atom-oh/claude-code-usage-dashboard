@@ -320,3 +320,16 @@ test.each(["loading", "error", "empty"])("common %s state does not claim measure
   await screen.findAllByText(state === "loading" ? "불러오는 중..." : state === "error" ? "데이터를 불러오지 못했습니다." : "선택한 기간에 데이터가 없습니다.");
   expect(screen.queryByText("$0")).toBeNull();
 });
+
+test("idle-only observed counter buckets render a zero chart without active sessions", async () => {
+  const zero = { ...codexUsage, client: "claude", cost_basis: "client_reported",
+    tokens: 0, observed_tokens: 0, cost_usd: 0, sessions: 0, users: 0, observed_records: 0 };
+  mount({ enabledClients: ["claude", "codex"], entry: "/?client=claude",
+    response: clientOverview({ clients: ["claude"], observed_records: 0, totals: zero,
+      by_client: [zero], by_model: [], by_user: [], tools: [],
+      timeseries: [{ ...zero, t: "2026-09-01T00:00:00Z", timeline_observed: true }],
+      effective_range: { from: "2026-09-01T00:00:00Z", to: "2026-09-01T02:00:00Z" }, bucket_hours: 1 }) });
+  const chartTitle = await screen.findByText("사용량·비용 추이", { exact: true, selector: "div" });
+  expect(await screen.findByText(/관측 사용량 없음은 0/)).toBeTruthy();
+  expect(chartTitle.closest("[data-shared-client-panels]")).not.toBeNull();
+});
