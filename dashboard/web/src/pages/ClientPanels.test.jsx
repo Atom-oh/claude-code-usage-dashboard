@@ -54,6 +54,11 @@ function mount(page, data = fixture(["claude", "codex"]), clients = data.clients
 }
 const card = (title) => screen.getByText(title, { exact: true }).closest(".shadow-card");
 const tile = (label) => screen.getByText(label, { selector: "span.truncate" }).parentElement.parentElement;
+function hoverAt(chart, fraction) {
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  fireEvent.mouseMove(chart, { clientX: left + (right - left) * fraction, clientY: 80 });
+}
 const routes = [
   ["overview", "사용량·비용 추이", "모델별 사용량"],
   ["exec", "활동 단위별 비용", "모델별 비용·활동"],
@@ -125,12 +130,15 @@ test("mixed known/missing usage retains the observed total and chart points with
   expect(chart.textContent).toContain("관측 토큰");
   expect(chart.textContent).toContain("부분합");
   const tokens = chart.querySelector(".recharts-wrapper");
-  await waitFor(() => expect(tokens.querySelectorAll(".recharts-line-dot")).toHaveLength(2));
+  await waitFor(() => expect(tokens.querySelectorAll(".recharts-line-dot")).toHaveLength(1));
   const dots = [...tokens.querySelectorAll(".recharts-line-dot")];
-  expect(Number(dots[0].getAttribute("cy"))).toBeLessThan(Number(dots[1].getAttribute("cy")));
   fireEvent.mouseMove(tokens, { clientX: Number(dots[0].getAttribute("cx")), clientY: 80 });
   await waitFor(() => expect(tokens.querySelector(".recharts-tooltip-wrapper").textContent).toContain("148"));
   expect(tokens.querySelector(".recharts-tooltip-wrapper").textContent).toContain("부분합");
+  hoverAt(tokens, 1 / 5);
+  await waitFor(() => expect(tokens.querySelector(".recharts-tooltip-wrapper").textContent).toContain("미확인"));
+  hoverAt(tokens, 2 / 5);
+  await waitFor(() => expect(tokens.querySelector(".recharts-tooltip-wrapper").textContent).toContain("0 (관측 사용량 없음)"));
 });
 
 test.each([
@@ -203,7 +211,8 @@ test("unpriced costs alone do not label observed tokens partial in cards or char
   expect(legend.textContent).not.toContain("부분합");
 });
 
-test("isolated observed values remain visible and long gaps keep their elapsed-time width", async () => {
+test("empty recorded-usage buckets connect through zero on the elapsed-time axis", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   const data = fixture(["claude", "codex"]);
   data.effective_range = { from: "2026-09-01T00:00:00Z", to: "2026-09-01T12:00:00Z" };
   data.bucket_hours = 1;
@@ -219,14 +228,18 @@ test("isolated observed values remain visible and long gaps keep their elapsed-t
   expect(charts).toHaveLength(2);
   for (const chart of charts) {
     const codex = chart.querySelectorAll(".recharts-line")[1];
-    await waitFor(() => expect(codex.querySelectorAll(".recharts-line-dot")).toHaveLength(3));
-    const x = [...codex.querySelectorAll(".recharts-line-dot")].map(dot => Number(dot.getAttribute("cx")));
-    // Two hours followed by eight hours: category spacing would compress this.
-    expect((x[2] - x[1]) / (x[1] - x[0])).toBeCloseTo(4, 5);
+    await waitFor(() => expect(codex.querySelector(".recharts-line-curve")).not.toBeNull());
+    expect(codex.querySelector(".recharts-line-curve").getAttribute("d").match(/M/g)).toHaveLength(1);
+    hoverAt(chart, 6 / 12);
+    await waitFor(() => expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).toContain("0 (관측 사용량 없음)"));
+    hoverAt(chart, 10 / 12);
+    await waitFor(() => expect(chart.querySelector(".recharts-tooltip-wrapper").textContent)
+      .toContain(chart === charts[0] ? "50" : "5"));
   }
 });
 
-test("a lone measured zero is visible while unknown values have no marker", async () => {
+test("a measured zero and unknown value in the same bucket have distinct tooltips", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   const data = fixture(["claude", "codex"]);
   data.effective_range = { from: "2026-09-01T00:00:00Z", to: "2026-09-01T04:00:00Z" };
   data.timeseries = [
@@ -236,10 +249,10 @@ test("a lone measured zero is visible while unknown values have no marker", asyn
   mount("overview", data);
   const charts = card("사용량·비용 추이").querySelectorAll(".recharts-wrapper");
   for (const chart of charts) {
-    await waitFor(() => expect(chart.querySelectorAll(".recharts-line-dot")).toHaveLength(1));
-    const dot = chart.querySelector(".recharts-line-dot");
-    expect(Number.isFinite(Number(dot.getAttribute("cx")))).toBe(true);
-    expect(Number.isFinite(Number(dot.getAttribute("cy")))).toBe(true);
+    hoverAt(chart, 1 / 4);
+    await waitFor(() => expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).toContain("미확인"));
+    expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).toContain("0");
+    expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).not.toContain("관측 사용량 없음");
   }
 });
 

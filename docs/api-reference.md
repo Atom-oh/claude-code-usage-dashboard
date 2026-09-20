@@ -67,7 +67,11 @@ User counts union IDs; sessions include client; model identity counts overlap.
 `by_project` uses Codex `project.name`, not billing projects. Request/TTFT durations
 are observed means or null. `requests` includes `api_error` attempts.
 
-`observed_records`: deduplicated logs plus Claude usage rows; zero means empty.
+`observed_records`: deduplicated logs plus active Claude usage rows. Zero can coexist
+with idle counter observations in `timeseries`; check both for an empty response.
+Idle timeline rows carry `timeline_observed=true`, independent token/cost availability and partial flags
+without adding active users/sessions or changing other aggregates. See
+[ADR-015](decisions/ADR-015-idle-chart-buckets.md) for chart zero semantics.
 `quality.missing_usage` counts Codex session/user/model/backend/project scopes without
 usage across the range, making affected canonical token folds null and adding to
 `unpriced`. Known cost and observed-token subtotals remain visible with coverage status.
@@ -76,7 +80,8 @@ they are not a request-coverage percentage. This cannot detect every dropped res
 
 Folds share rows; full-usage validity and input/output-pair validity are separate SQL
 grouping dimensions, preserving usable costs and observed token pairs. Breakdowns
-sort by observed tokens. Over 50,000 rows returns 400.
+sort by observed tokens. Active rows and compact idle observations each have a
+50,000-row guard (overflow returns 400); idle rows do not consume active-row capacity.
 Claude counter/baseline rules remain.
 `effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
 when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.

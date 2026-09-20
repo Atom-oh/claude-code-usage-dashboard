@@ -40,7 +40,7 @@ export function tokenStatusLabel(row) {
 
 export function presentationRow(source = {}) {
   const row = { ...source };
-  const unobserved = observedNumber(source.observed_records) === 0;
+  const unobserved = observedNumber(source.observed_records) === 0 && source.timeline_observed !== true;
   for (const key of MEASURES) row[key] = unobserved ? null : observedNumber(source[key]);
   row.observed_tokens = unobserved ? null : observedTokens(source);
   row.tokens_partial = source.tokens_partial === true;

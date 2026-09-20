@@ -24,7 +24,7 @@ export function observedTokens(row = {}) {
 }
 
 // Display known subtotals; canonical usage stays separate for ratio derivation.
-export function clientTimeline(rows, { bucketHours } = {}) {
+export function clientTimeline(rows, { bucketHours, effectiveRange } = {}) {
   const buckets = new Map();
   for (const row of rows) {
     const t = row.t.replace("T", " ").replace(/(?:\.\d+)?Z$/, "");
@@ -40,6 +40,23 @@ export function clientTimeline(rows, { bucketHours } = {}) {
   const ordered = [...buckets.values()].sort((a, b) => a.t.localeCompare(b.t));
   const bucketMs = bucketHours * 3600000;
   if (!Number.isInteger(bucketMs) || bucketMs < 1000) return ordered;
+  const from = Date.parse(effectiveRange?.from), to = Date.parse(effectiveRange?.to);
+  if (Number.isFinite(from) && Number.isFinite(to) && from < to
+      && Math.ceil((to - from) / bucketMs) <= 5000 && ordered.length) {
+    const clients = [...new Set(rows.map(row => row.client))].sort();
+    const grid = new Map(buckets);
+    // Zero here is the sum of recorded usage in an empty bucket, not a claim
+    // that collection was complete. Explicit unavailable values remain null.
+    for (let time = from; time < to; time = (Math.floor(time / bucketMs) + 1) * bucketMs) {
+      const t = new Date(time).toISOString().slice(0, 19).replace("T", " ");
+      if (!grid.has(t)) grid.set(t, { t });
+    }
+    return [...grid.values()].sort((a, b) => a.t.localeCompare(b.t)).map(row => {
+      const empty_clients = clients.filter(client => !Object.hasOwn(row, `${client}_tokens`));
+      return { ...Object.fromEntries(clients.flatMap(client =>
+        [[`${client}_tokens`, 0], [`${client}_cost`, 0]])), ...row, empty_clients };
+    });
+  }
   // One empty marker breaks a missing run. A continuous time axis gives that
   // run its actual width; no synthetic zero values or dense expansion is needed.
   return ordered.flatMap((row, index) => {

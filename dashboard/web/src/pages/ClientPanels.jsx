@@ -102,7 +102,7 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
 
 function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric = "both", title = "사용량·비용 추이" }) {
   const { timeline, timeDomain } = useMemo(() => {
-    const timeline = clientTimeline(rows, { bucketHours })
+    const timeline = clientTimeline(rows, { bucketHours, effectiveRange })
       .map((row) => ({ ...row, t: parseUtc(row.t).getTime() }))
       .filter((row) => Number.isFinite(row.t));
     const from = Date.parse(effectiveRange?.from), to = Date.parse(effectiveRange?.to);
@@ -113,7 +113,8 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
   }, [rows, bucketHours, effectiveRange?.from, effectiveRange?.to]);
   const lines = clients.flatMap((client) => {
     const row = clientRows.find((row) => row.client === client);
-    const partial = row?.cost_partial === true || observedNumber(row?.unpriced) > 0;
+    const partial = row?.cost_partial === true || observedNumber(row?.unpriced) > 0
+      || rows.some(period => period.client === client && period.cost_partial === true);
     const status = row?.cost_usd == null ? " · 미산정" : partial ? " · 부분합 포함" : "";
     const basis = `${basisLabel(row?.cost_basis)}${status}`;
     const tokenPartial = row?.tokens_partial === true
@@ -127,7 +128,13 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
     return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
   }
   return <DualLineChart title={title}
-    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 누락 구간은 빈칸, 단독 관측값은 점으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
+    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
+    help="0은 해당 시간에 집계된 사용량이 없다는 뜻입니다. 이벤트 자체의 전송 누락은 미사용과 구분할 수 없으며, 차트가 누락된 사용량을 복원하지는 않습니다."
+    tooltipFormatter={(value, name, item) => [
+      value == null ? "미확인" : item.payload?.empty_clients?.includes(String(item.dataKey).split("_")[0])
+        ? `${value} (관측 사용량 없음)` : value,
+      name,
+    ]}
     rows={timeline} xKey="t" lines={lines} bucketHours={bucketHours}
     timeDomain={timeDomain}
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;

@@ -7,6 +7,39 @@ const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", sessio
   project: "fixture", context_tier: "short", count: 1, input_tokens_total: 100, cache_read_tokens: 40,
   cache_write_tokens: 11, output_tokens: 30, reasoning_tokens: 10, invalid: 0 };
 
+test("idle Claude counter observations fill only the timeline, not active population or totals", () => {
+  const active = { ...event, client: "claude", input_tokens: 49, reported_cost: 2 };
+  const baseline = foldClientMetrics([active], ["claude", "codex"]);
+  const actual = foldClientMetrics([active, {
+    ...active, t: "2026-09-14 11:00:00", timeline_only: 1,
+    token_observed: 1, cost_observed: 1, token_missing: 0, cost_missing: 0,
+    session: "", user: "", model: "", backend: "",
+    input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reported_cost: 0,
+  }], ["claude", "codex"]);
+  assert.deepEqual({ ...actual, timeseries: [] }, { ...baseline, timeseries: [] });
+  assert.deepEqual(actual.timeseries[0], baseline.timeseries[0]);
+  const zero = actual.timeseries[1];
+  assert.equal(zero.timeline_observed, true);
+  assert.equal(zero.client, "claude");
+  assert.equal(zero.observed_tokens, 0);
+  assert.equal(zero.cost_usd, 0);
+  assert.equal(zero.sessions, 0);
+  assert.equal(zero.users, 0);
+  assert.equal(zero.observed_records, 0);
+  assert.equal(zero.reasoning_tokens, null);
+  assert.equal(actual.timeseries.some(row => row.client === "codex"), false);
+  assert.equal(actual.timeseries.some(row => row.t === "2026-09-14 12:00:00"), false);
+});
+
+test("idle markers do not consume the active-row budget and both classes remain bounded", () => {
+  const marker = { client: "claude", timeline_only: 1, t: "2026-09-14 09:00:00",
+    token_observed: 1, cost_observed: 1, token_missing: 0, cost_missing: 0 };
+  const active = Array(50000).fill(event);
+  assert.equal(foldClientMetrics([...active, marker], ["claude", "codex"]).totals.observed_tokens, 6500000);
+  assert.throws(() => foldClientMetrics([...active, event, marker], ["claude", "codex"]), /too much client data/);
+  assert.throws(() => foldClientMetrics(Array(50001).fill(marker), ["claude"]), /too much client data/);
+});
+
 test("one fold supplies matching totals, model/user rows and time series", () => {
   const out = foldClientMetrics([
     event,

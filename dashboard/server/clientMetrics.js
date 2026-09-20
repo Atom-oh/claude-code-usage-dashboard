@@ -123,7 +123,10 @@ function finish(target) {
 }
 
 export function foldClientMetrics(records, clients, prices = codexPrices) {
-  if (records.length > ROW_LIMIT)
+  // Idle observations have their own bound; they cannot evict usage records
+  // from the existing active-row budget.
+  const idleRows = records.filter(row => row.client === "claude" && Number(row.timeline_only) === 1).length;
+  if (records.length - idleRows > ROW_LIMIT || idleRows > ROW_LIMIT)
     throw new ValidationError("too much client data", "narrow the requested date range");
   const totals = accumulator({});
   const byClient = new Map(clients.map((client) => [client, accumulator({ client,
@@ -143,6 +146,23 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
   const missingUsage = new Set();
   for (const row of records) {
     if (!byClient.has(row.client)) continue;
+    // Repeated, unchanged Claude counters prove an observed zero for this bucket.
+    // They do not make idle sessions/users active or add model/quality records.
+    if (row.client === "claude" && Number(row.timeline_only) === 1) {
+      const meta = { client: row.client, t: row.t };
+      const key = JSON.stringify(meta);
+      const zero = groups.timeseries.get(key) || accumulator({ ...meta, cost_basis: "client_reported" });
+      zero.timeline_observed = true;
+      zero._missing.add("reasoning_tokens");
+      if (Number(row.token_observed) === 1) addObservedTokens(zero._observedTokens, 0);
+      if (Number(row.token_observed) !== 1 || Number(row.token_missing) > 0) {
+        for (const field of TOKEN_KEYS) zero._missing.add(field);
+      }
+      zero._hasCost ||= Number(row.cost_observed) === 1;
+      zero.unpriced += Number(row.cost_missing) || (Number(row.cost_observed) === 1 ? 0 : 1);
+      groups.timeseries.set(key, zero);
+      continue;
+    }
     const scope = usageScope(row);
     const missingScope = row.client === "codex" && !usageScopes.has(scope)
       && !(row.session && !row.model && usageSessions.has(usageScope(row, null))) ? scope : null;

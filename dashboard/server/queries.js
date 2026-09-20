@@ -460,19 +460,47 @@ export async function clientClaudeRows(from, to, filters = {}) {
     : incBucket(1, metricFilter);
   const f = filterCond({ ...filters, excludeUnknown: false },
     { user: "m.UserEmail", model: "m.Model" });
-  return query(`${GROUP_CTE}
+  // Hourly helpers can emit a baseline-only first bucket. Check actual samples
+  // after `from` before describing that bucket as an observed zero.
+  const firstObservations = b.raw ? "" : `, client_first_observations AS (
+    SELECT DISTINCT SessionId, UserEmail, MetricName, Model, TokenType, Decision
+    FROM claude_code.otel_metrics_sum
+    WHERE TimeUnix >= {from:DateTime}
+      AND TimeUnix < least(toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR, {to:DateTime})
+      ${metricFilter}
+  )`;
+  const observed = b.raw ? "1" : `(m.t >= {from:DateTime} OR
+    (m.SessionId, m.UserEmail, m.MetricName, m.Model, m.TokenType, m.Decision)
+      IN (SELECT * FROM client_first_observations))`;
+  return query(`${GROUP_CTE}${firstObservations}, client_usage AS (
     -- coding-client:claude-usage
     SELECT formatDateTime(greatest(m.t, {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
       m.SessionId AS session, m.UserEmail AS user, ${normModel("m.Model")} AS model,
       multiIf(${GROUP_EXPR} = 'bedrock', 'bedrock-runtime',
         ${GROUP_EXPR} = 'enterprise', 'anthropic', 'unknown') AS backend,
-      1 AS count, ${TOKEN_SUMS}
+      countIf(m.MetricName = 'claude_code.token.usage' AND ${observed}) > 0 AS token_seen,
+      countIf(m.MetricName = 'claude_code.cost.usage' AND ${observed}) > 0 AS cost_seen,
+      countIf(m.Value != 0) > 0 AS changed, ${TOKEN_SUMS}
     FROM ${b.sub} m LEFT JOIN session_group ug USING (SessionId)
     WHERE 1=1 ${f.where}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
     GROUP BY t, session, user, model, backend
-    HAVING input_tokens + output_tokens + cache_read_tokens + cache_write_tokens > 0 OR reported_cost != 0
-    ORDER BY t LIMIT 50001`,
+    )
+    SELECT t, session, user, model, backend, 1 AS count,
+      -- Bits mark omitted keys: detailed scopes = 0, bucket-only scopes = 15.
+      GROUPING(session, user, model, backend) != 0 AS timeline_only,
+      sum(reported_cost) AS reported_cost, sum(input_tokens) AS input_tokens,
+      sum(output_tokens) AS output_tokens, sum(cache_read_tokens) AS cache_read_tokens,
+      sum(cache_write_tokens) AS cache_write_tokens,
+      max(token_seen) AS token_observed, max(cost_seen) AS cost_observed,
+      countIf(NOT token_seen AND cost_seen) AS token_missing,
+      countIf(NOT cost_seen AND token_seen) AS cost_missing
+    FROM client_usage
+    GROUP BY GROUPING SETS ((t, session, user, model, backend), (t))
+    HAVING (NOT timeline_only AND
+      (input_tokens + output_tokens + cache_read_tokens + cache_write_tokens > 0 OR reported_cost != 0))
+      OR (timeline_only AND max(changed) = 0 AND (token_observed OR cost_observed))
+    ORDER BY t LIMIT 50001 BY timeline_only`,
   { ...range(from, to, b.raw), ...b.params, ...f.params, clientBackend: filters.backend || "" });
 }
 

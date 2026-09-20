@@ -97,3 +97,35 @@ test("minute gaps use the actual bucket size and preserve a partial first minute
     { t: "2026-09-01 00:05:00", codex_tokens: 7, codex_cost: 0.3 },
   ]);
 });
+
+test("bounded hourly observations show no recorded activity as zero but preserve explicit unknown usage", () => {
+  const result = clientTimeline([
+    { client: "claude", t: "2026-09-01T00:22:00Z", observed_tokens: 10, cost_usd: 1 },
+    { client: "codex", t: "2026-09-01T01:00:00Z", observed_tokens: 20, cost_usd: 2 },
+    { client: "codex", t: "2026-09-01T03:00:00Z", observed_tokens: null, cost_usd: null },
+  ], { bucketHours: 1, effectiveRange: {
+    from: "2026-09-01T00:22:00Z", to: "2026-09-01T05:22:00Z",
+  } });
+  expect(result.map(row => row.t)).toEqual([
+    "2026-09-01 00:22:00", "2026-09-01 01:00:00", "2026-09-01 02:00:00",
+    "2026-09-01 03:00:00", "2026-09-01 04:00:00", "2026-09-01 05:00:00",
+  ]);
+  expect(result.map(row => row.claude_tokens)).toEqual([10, 0, 0, 0, 0, 0]);
+  expect(result.map(row => row.codex_tokens)).toEqual([0, 20, 0, null, 0, 0]);
+  expect(result.map(row => row.codex_cost)).toEqual([0, 2, 0, null, 0, 0]);
+  expect(result[2].empty_clients).toEqual(["claude", "codex"]);
+  expect(result[3].empty_clients).toEqual(["claude"]);
+});
+
+test("minute observation grids retain partial boundaries, and no source rows remain unavailable", () => {
+  const effectiveRange = { from: "2026-09-01T00:00:30Z", to: "2026-09-01T00:03:20Z" };
+  const result = clientTimeline([
+    { client: "codex", t: "2026-09-01T00:01:00Z", observed_tokens: 5, cost_usd: 1 },
+  ], { bucketHours: 1 / 60, effectiveRange });
+  expect(result.map(row => row.t)).toEqual([
+    "2026-09-01 00:00:30", "2026-09-01 00:01:00", "2026-09-01 00:02:00", "2026-09-01 00:03:00",
+  ]);
+  expect(result.map(row => row.codex_tokens)).toEqual([0, 5, 0, 0]);
+  expect(result.some(row => Object.hasOwn(row, "claude_tokens"))).toBe(false);
+  expect(clientTimeline([], { bucketHours: 1 / 60, effectiveRange })).toEqual([]);
+});
