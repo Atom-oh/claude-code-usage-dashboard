@@ -25,6 +25,9 @@ accepted requests whose completion telemetry is missing.
   Detail markers retain model identities in one per-session marker, preserving
   the result-row budget; model-less evidence remains conservative
   session evidence. Anonymous requests do not qualify for the zero exemption.
+- If either the request or its evidence lacks a model, compare the full session,
+  user, backend and project scope; modelled evidence cannot be missed by a
+  model-less rejection. Known usage retains the existing session-level fallback.
 - Keep model-less attribution restricted to the original supported request/usage
   events. Startup model settings do not establish attribution for tool records.
 - Shared and detail views use this rule. Detail metadata and stream-scope safeguards

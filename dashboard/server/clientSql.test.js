@@ -589,6 +589,25 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       await insertLogs([log(712, "codex.conversation_starts", {}, { "user.email": startupUser }), modelLessTool]);
       const selected = await overview({ client: "codex", user: startupUser, model: "openai.gpt-6-astra" }, ["codex"]);
       assert.equal(selected.observed_records, 0, "startup settings cannot establish model-less tool attribution");
+      for (const [name, attributes] of [
+        ["codex.sse_event", { "event.kind": "response.output_text.delta" }],
+        ["codex.websocket_event", { "event.kind": "response.output_text.delta" }],
+        ["codex.tool_result", { tool_name: "fixture" }],
+      ]) {
+        const user = `modelless-rejection-${name}@example.invalid`;
+        const rejection = log(714, "codex.api_request", { "http.response.status_code": "400" }, { "user.email": user });
+        delete rejection.LogAttributes.model;
+        await insertLogs([rejection, log(715, name, attributes, { "user.email": user })]);
+        const result = await overview({ client: "codex", user }, ["codex"]);
+        assertFields(result.totals, { observed_tokens: null, cost_usd: null, rejected_requests: 1 });
+        assert.equal(result.timeseries[0].request_rejections_only, false);
+        for (const detailsOnly of [false, true]) {
+          const q = buildCodexInsightsLogQuery(from, to, { user }, { detailsOnly });
+          const rows = await (await db.query({ query: q.sql, query_params: q.params, format: "JSONEachRow" })).json();
+          assertFields(foldCodexInsightsLogs(rows, undefined, { deduplicated: detailsOnly }).summary,
+            { observed_tokens: null, cost_partial: true });
+        }
+      }
     });
   } finally {
     await db.close();

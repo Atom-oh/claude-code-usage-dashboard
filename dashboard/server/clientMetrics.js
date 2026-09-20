@@ -142,10 +142,13 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
   // buckets. A different session/model/backend/user/project cannot fill the gap.
   const usageScopes = new Set();
   const usageSessions = new Set();
-  const requiringUsage = new Set();
+  const requiringUsage = new Set(), requiringSessions = new Set();
   for (const row of records) {
     if (row.client !== "codex") continue;
-    if (!isRejectedRequestGroup(row)) requiringUsage.add(usageScope(row));
+    if (!isRejectedRequestGroup(row)) {
+      requiringUsage.add(usageScope(row));
+      if (row.session) requiringSessions.add(usageScope(row, null));
+    }
     if (row.kind !== "usage") continue;
     usageScopes.add(usageScope(row));
     if (row.session) usageSessions.add(usageScope(row, null));
@@ -172,7 +175,9 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
     }
     const scope = usageScope(row);
     const missingScope = row.client === "codex"
-      && (!isRejectedRequestGroup(row) || requiringUsage.has(scope)) && !usageScopes.has(scope)
+      && (!isRejectedRequestGroup(row) || requiringUsage.has(scope)
+        || (row.session && !row.model && requiringSessions.has(usageScope(row, null))))
+      && !usageScopes.has(scope)
       && !(row.session && !row.model && usageSessions.has(usageScope(row, null))) ? scope : null;
     if (missingScope) missingUsage.add(missingScope);
     const usage = row.kind === "usage" ? (row.client === "codex" ? priceCodexUsage(row, prices) : claudeUsage(row)) : null;
@@ -349,7 +354,9 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       (max(NOT (kind = 'request' AND rejected_count = count)) OVER
         (PARTITION BY session, user, backend, project, model)
        OR max(model = '' AND NOT (kind = 'request' AND rejected_count = count)) OVER
-        (PARTITION BY session, user, backend, project)) AS requires_usage
+        (PARTITION BY session, user, backend, project)
+       OR (model = '' AND max(NOT (kind = 'request' AND rejected_count = count)) OVER
+        (PARTITION BY session, user, backend, project))) AS requires_usage
     FROM grouped
   )
   SELECT * FROM covered WHERE kind != 'scope_evidence'

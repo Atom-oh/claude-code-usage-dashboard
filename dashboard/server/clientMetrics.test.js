@@ -106,6 +106,14 @@ test("accepted, uncertain and mixed requests still require completion usage", ()
   assert.equal(known.totals.observed_tokens, 130);
   assert.equal(known.totals.cost_usd, 0.00238425);
   assert.equal(known.quality.missing_usage, 0);
+  for (const evidence of [{ ...event, kind: "tool" }, { ...event, kind: "stream_error" }]) {
+    const unknownModel = foldClientMetrics([{ ...rejected, model: "" },
+      { ...evidence, t: "2026-09-14 11:00:00" }], ["codex"]);
+    assert.equal(unknownModel.totals.observed_tokens, null);
+    assert.equal(unknownModel.totals.cost_usd, null);
+    assert.equal(unknownModel.timeseries[0].observed_tokens, null);
+  }
+  assert.equal(foldClientMetrics([{ ...rejected, model: "" }, event], ["codex"]).quality.missing_usage, 0);
 });
 test("known observed tokens survive an unmatched usage scope without changing canonical coverage or cost", () => {
   const out = foldClientMetrics([
