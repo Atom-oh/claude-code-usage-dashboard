@@ -562,6 +562,33 @@ test("real ClickHouse client aggregation preserves transport identity and counte
             ["openai.gpt-5.6-luna", "openai.gpt-6-astra"]);
         }
       }
+      for (const [eventName, attributes] of [
+        ["codex.websocket_request", {}],
+        ["codex.user_prompt", { input_token_count: "1" }],
+        ["codex.future_usage_event", {}],
+      ]) {
+        for (const modelled of [true, false]) {
+          const user = `nonstream-${eventName}-${modelled}@example.invalid`;
+          const evidence = log(711, eventName, attributes, { "user.email": user });
+          if (!modelled) delete evidence.LogAttributes.model;
+          await insertLogs([log(710, "codex.api_request", { "http.response.status_code": "400" },
+            { "user.email": user }), evidence]);
+          const result = await overview({ client: "codex", user }, ["codex"]);
+          assertFields(result.totals, { observed_tokens: null, cost_usd: null, rejected_requests: 1 });
+          for (const detailsOnly of [false, true]) {
+            const q = buildCodexInsightsLogQuery(from, to, { user }, { detailsOnly });
+            const rows = await (await db.query({ query: q.sql, query_params: q.params, format: "JSONEachRow" })).json();
+            assertFields(foldCodexInsightsLogs(rows, undefined, { deduplicated: detailsOnly }).summary,
+              { observed_tokens: null, cost_partial: true });
+          }
+        }
+      }
+      const startupUser = "startup-model-filter@example.invalid";
+      const modelLessTool = log(713, "codex.tool_result", { tool_name: "fixture" }, { "user.email": startupUser });
+      delete modelLessTool.LogAttributes.model;
+      await insertLogs([log(712, "codex.conversation_starts", {}, { "user.email": startupUser }), modelLessTool]);
+      const selected = await overview({ client: "codex", user: startupUser, model: "openai.gpt-6-astra" }, ["codex"]);
+      assert.equal(selected.observed_records, 0, "startup settings cannot establish model-less tool attribution");
     });
   } finally {
     await db.close();

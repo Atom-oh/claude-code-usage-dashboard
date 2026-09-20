@@ -6,7 +6,7 @@ import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { normalizeModelId } from "./pricing.js";
 import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
-import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, isRejectedRequestGroup } from "./codexRequests.js";
+import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS, isRejectedRequestGroup } from "./codexRequests.js";
 
 const ROW_LIMIT = 50000;
 export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -271,6 +271,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   // client's session/user/backend/project and range. Never replace an emitted model.
   const modelSessions = filters.model ? `model_sessions AS (
     SELECT session, user, backend, project FROM unique_events WHERE session != '' AND ${modelMatch}
+    ${isCodex ? `AND event_name IN (${eventNames.map(name => `'${name}'`).join(",")})` : ""}
     ${isCodex ? "" : `UNION ALL
     SELECT SessionId, ${user}, ${backend}, ResourceAttributes['project.name']
     FROM claude_code.otel_metrics_sum LEFT JOIN session_group ug USING (SessionId)
@@ -289,7 +290,8 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     FROM claude_code.otel_logs
     ${isCodex ? "" : "LEFT JOIN session_group ug USING (SessionId)"}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
-      AND EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})
+      AND ${isCodex ? "startsWith(EventName, 'codex.')"
+        : `EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})`}
   ), ${modelSessions} typed AS (
     SELECT *,
       replaceRegexpOne(model, '^(us|global)\\\\.', '') AS base_model,
@@ -301,11 +303,14 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
           AND a['event.kind'] = 'response.completed', 'completion',
         event_name IN ('codex.sse_event','codex.websocket_event')
           AND a['event.kind'] = 'response.failed', 'stream_error',
-        event_name IN ('codex.sse_event','codex.websocket_event'), 'stream_scope',
+        event_name IN ('codex.sse_event','codex.websocket_event'), 'scope_evidence',
         event_name IN ('${prefix}api_request','${prefix}api_error'), 'request',
         event_name = '${prefix}tool_result', 'tool',
         event_name = '${prefix}tool_decision', 'approval',
-        event_name = '${prefix}turn_ttft', 'ttft', '') AS kind,
+        event_name = '${prefix}turn_ttft', 'ttft',
+        ${isCodex ? `(event_name NOT IN (${SETUP_METADATA_EVENTS.map(name => `'${name}'`).join(",")})
+          OR arrayExists(k -> mapContains(a,k), [${CODEX_USAGE_KEYS.map(key => `'${key}'`).join(",")}])),
+          'scope_evidence',` : ""} '') AS kind,
       ${tokenValues},
       (in_n_valid AND read_n_valid AND write_n_valid AND read_n + write_n > in_n) AS cache_invalid,
       (out_n_valid AND reason_n_valid AND reason_n > out_n) AS reasoning_invalid
@@ -315,11 +320,11 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
         (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
   ), grouped AS (
-  SELECT if(kind = 'stream_scope', '',
+  SELECT if(kind = 'scope_evidence', '',
     formatDateTime(greatest(toStartOfInterval(Timestamp, INTERVAL {clientBucketSeconds:UInt32} SECOND), {from:DateTime}),
       '%Y-%m-%dT%H:%i:%SZ', 'UTC')) AS t,
-    session, user, model, backend, project, kind, if(kind = 'stream_scope', '', a['tool_name']) AS tool,
-    if(kind != 'stream_scope' AND in_n > ${threshold}, 'long', 'short') AS context_tier,
+    session, user, model, backend, project, kind, if(kind = 'scope_evidence', '', a['tool_name']) AS tool,
+    if(kind != 'scope_evidence' AND in_n > ${threshold}, 'long', 'short') AS context_tier,
     (kind != 'usage' OR (${validUsage})) AS usage_valid,
     (kind != 'usage' OR (${validPair})) AS token_pair_valid,
     (kind = 'usage' AND token_pair_valid
@@ -338,16 +343,16 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   FROM typed WHERE kind != ''
   GROUP BY t, session, user, model, backend, project, kind, tool, context_tier, usage_valid, token_pair_valid
   ), covered AS (
-    -- Window only compacted scopes/groups, never the raw stream volume. Keep
+    -- Window only compacted scopes/groups, never raw diagnostic volume. Keep
     -- evidence in this table read and remove markers after evaluating coverage.
     SELECT *,
-      (max(kind IN ('stream_scope','usage','completion','stream_error')) OVER
+      (max(NOT (kind = 'request' AND rejected_count = count)) OVER
         (PARTITION BY session, user, backend, project, model)
-       OR max(model = '' AND kind IN ('stream_scope','usage','completion','stream_error')) OVER
+       OR max(model = '' AND NOT (kind = 'request' AND rejected_count = count)) OVER
         (PARTITION BY session, user, backend, project)) AS requires_usage
     FROM grouped
   )
-  SELECT * FROM covered WHERE kind != 'stream_scope'
+  SELECT * FROM covered WHERE kind != 'scope_evidence'
   ORDER BY t LIMIT ${ROW_LIMIT + 1}`;
   return { sql, params };
 }

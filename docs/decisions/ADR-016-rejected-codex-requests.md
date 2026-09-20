@@ -19,11 +19,14 @@ accepted requests whose completion telemetry is missing.
 - Preserve session/user/backend/project/model scope boundaries. Accepted or uncertain
   requests, timeouts, server errors, token-bearing error records and other evidence
   without completion usage retain the existing unknown/partial behavior.
-- Compact intermediate SSE/WebSocket evidence by scope in the same table read.
+- Compact non-exempt Codex evidence (including intermediate streams, WebSocket
+  requests, token hints and unknown events) by scope in the same table read.
   Evaluate rejection eligibility before removing those markers from shared results.
   Detail markers retain model identities in one per-session marker, preserving
-  the result-row budget; model-less streams remain conservative
+  the result-row budget; model-less evidence remains conservative
   session evidence. Anonymous requests do not qualify for the zero exemption.
+- Keep model-less attribution restricted to the original supported request/usage
+  events. Startup model settings do not establish attribution for tool records.
 - Shared and detail views use this rule. Detail metadata and stream-scope safeguards
   remain; ratios requiring completed usage do not acquire fabricated denominators.
 - Conversation-start, startup-phase and prompt-intent metadata without token fields

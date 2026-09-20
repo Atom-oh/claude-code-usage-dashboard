@@ -20,7 +20,7 @@ const db = http.createServer(async(req,res)=>{
     dataQueries++;
     if(sql.includes('GROUPING SETS')) rows=[{is_total:1,records:3,sessions:0,last_seen:base.t},
       ...['user_prompt','api_request','sse_event'].map(event=>({is_total:0,event:'codex.'+event,records:1,duration_count:0}))];
-    else if(sql.includes("EventName IN ('codex.sse_event'")) rows=[base];
+    else if(sql.includes("startsWith(EventName, 'codex.')") && sql.includes('AS input_tokens_total')) rows=[base];
     else rows=['user_prompt','api_request','sse_event'].map(event=>({timestamp:base.t,
       attributes:{'event.name':'codex.'+event,prompt_length:'10','http.response.status_code':'200','event.kind':'response.failed'}}));
   } else if(sql.includes('coding-client:claude-usage')) {

@@ -2,7 +2,7 @@ import { toChDateTime } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
 import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
-import { CODEX_USAGE_KEYS, isRejectedRequestEvent } from "./codexRequests.js";
+import { CODEX_USAGE_KEYS, isRejectedRequestEvent, isSetupMetadataEvent as setupMetadata } from "./codexRequests.js";
 
 const ROW_LIMIT = 50000;
 const pricesDefault = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -168,9 +168,6 @@ const completed = (row) => stream(row.attributes["event.name"])
   && row.attributes["event.kind"] === "response.completed";
 const hasUsage = (row) => completed(row)
   && Object.keys(TOKEN_FIELDS).some((key) => Object.hasOwn(row.attributes, key));
-const SETUP_EVENTS = new Set(["codex.conversation_starts", "codex.startup_phase", "codex.user_prompt"]);
-const setupMetadata = (a) => SETUP_EVENTS.has(a["event.name"])
-  && !CODEX_USAGE_KEYS.some(key => Object.hasOwn(a, key));
 
 function usageTotals() {
   return { requests: 0, tokens: 0, cost_usd: 0, hasCost: false, unpriced: 0,
@@ -214,7 +211,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     throw new ValidationError("too much Codex log data", "narrow the requested date range");
   const unique = new Map();
   const selected = [], streamScopes = [], sessions = new Set();
-  const requiringUsage = new Set(), unmodelledStreams = new Set();
+  const requiringUsage = new Set(), unmodelledEvidence = new Set();
   const rejectedSessions = new Set(), requiringSessions = new Set();
   for (const row of rows) {
     if (deduplicated && Number(row.is_scope) === 1) {
@@ -228,7 +225,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
         throw new Error("Invalid Codex detail stream models");
       for (const model of models) {
         if (model) requiringUsage.add(scope(row, true, model));
-        else unmodelledStreams.add(scope(row, false));
+        else unmodelledEvidence.add(scope(row, false));
       }
       sessions.add(row.attributes["conversation.id"]);
       continue;
@@ -248,9 +245,8 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     } else if (!setupMetadata(row.attributes)) {
       requiringUsage.add(scope(row));
       requiringSessions.add(scope(row, false));
+      if (!row.attributes.model) unmodelledEvidence.add(scope(row, false));
     }
-    if (stream(row.attributes["event.name"]) && !row.attributes.model)
-      unmodelledStreams.add(scope(row, false));
     if (!hasUsage(row)) continue;
     usageScopes.add(scope(row));
     if (row.attributes["conversation.id"]) usageSessions.add(scope(row, false));
@@ -276,7 +272,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     const rejectedSetup = setupMetadata(a) && a["conversation.id"]
       && rejectedSessions.has(scope(row, false)) && !requiringSessions.has(scope(row, false));
     if (!rejectedSetup && (!rejected || !a["conversation.id"] || requiringUsage.has(scope(row))
-      || unmodelledStreams.has(scope(row, false))) && (operational ? !usageScopes.has(scope(row))
+      || unmodelledEvidence.has(scope(row, false))) && (operational ? !usageScopes.has(scope(row))
       && !(a["conversation.id"] && !a.model && usageSessions.has(scope(row, false)))
       : a["conversation.id"] && !usageSessions.has(scope(row, false)))) missingUsage.add(scope(row));
 
