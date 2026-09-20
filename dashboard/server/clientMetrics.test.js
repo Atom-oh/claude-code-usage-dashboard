@@ -64,6 +64,57 @@ test("one fold supplies matching totals, model/user rows and time series", () =>
   assert.equal(out.by_project[0].cost_usd, out.totals.cost_usd);
 });
 
+test("request-only rejected scopes have zero recorded usage while retaining request errors", () => {
+  const rejected = { ...event, kind: "request", count: 3, rejected_count: 3, errors: 3,
+    model: "global.openai.gpt-6-astra", duration_ms: 90, duration_count: 3 };
+  const out = foldClientMetrics([rejected], ["codex"]);
+  for (const row of [out.totals, ...out.by_client, ...out.by_model, ...out.by_user, ...out.by_project, ...out.timeseries]) {
+    assert.equal(row.observed_tokens, 0);
+    assert.equal(row.cost_usd, 0);
+    assert.equal(row.cost_partial, false);
+    assert.equal(row.tokens_partial, false);
+    assert.equal(row.rejected_requests, 3);
+  }
+  assert.equal(out.timeseries[0].request_rejections_only, true);
+  assert.equal(out.totals.requests, 3);
+  assert.equal(out.totals.api_errors, 3);
+  assert.equal(out.quality.missing_usage, 0);
+  assert.equal(out.quality.unpriced, 0);
+});
+
+test("accepted, uncertain and mixed requests still require completion usage", () => {
+  const rejected = { ...event, kind: "request", count: 3, rejected_count: 3, errors: 3 };
+  for (const extra of [
+    { ...rejected, count: 1, rejected_count: 0 },
+    { ...event, kind: "completion" },
+    { ...event, kind: "stream_error" },
+    { ...event, kind: "tool" },
+  ]) {
+    const out = foldClientMetrics([rejected, extra], ["codex"]);
+    assert.equal(out.totals.observed_tokens, null);
+    assert.equal(out.totals.cost_usd, null);
+    assert.equal(out.quality.missing_usage, 1);
+  }
+  const mixed = foldClientMetrics([{ ...rejected, count: 4 }], ["codex"]);
+  assert.equal(mixed.totals.observed_tokens, null);
+  for (const fields of [{ session: "" }, { requires_usage: 1 }, { requires_usage: "invalid" }]) {
+    const uncertain = foldClientMetrics([{ ...rejected, ...fields }], ["codex"]);
+    assert.equal(uncertain.totals.observed_tokens, null);
+    assert.equal(uncertain.timeseries[0].request_rejections_only, false);
+  }
+  const known = foldClientMetrics([event, { ...rejected, session: "rejected" }], ["codex"]);
+  assert.equal(known.totals.observed_tokens, 130);
+  assert.equal(known.totals.cost_usd, 0.00238425);
+  assert.equal(known.quality.missing_usage, 0);
+  for (const evidence of [{ ...event, kind: "tool" }, { ...event, kind: "stream_error" }]) {
+    const unknownModel = foldClientMetrics([{ ...rejected, model: "" },
+      { ...evidence, t: "2026-09-14 11:00:00" }], ["codex"]);
+    assert.equal(unknownModel.totals.observed_tokens, null);
+    assert.equal(unknownModel.totals.cost_usd, null);
+    assert.equal(unknownModel.timeseries[0].observed_tokens, null);
+  }
+  assert.equal(foldClientMetrics([{ ...rejected, model: "" }, event], ["codex"]).quality.missing_usage, 0);
+});
 test("known observed tokens survive an unmatched usage scope without changing canonical coverage or cost", () => {
   const out = foldClientMetrics([
     event,

@@ -72,6 +72,12 @@ with idle counter observations in `timeseries`; check both for an empty response
 Idle timeline rows carry `timeline_observed=true`, independent token/cost availability and partial flags
 without adding active users/sessions or changing other aggregates. See
 [ADR-015](decisions/ADR-015-idle-chart-buckets.md) for chart zero semantics.
+
+`rejected_requests` counts explicit HTTP rejections. Identified Codex scopes containing only
+rejections have zero recorded completion usage and retain request/error counts.
+`request_rejections_only` labels those shared groups; chart tooltips disclose the
+rejected count. Accepted/uncertain requests without usage and unpriced completions
+remain unavailable. See [ADR-016](decisions/ADR-016-rejected-codex-requests.md).
 `quality.missing_usage` counts Codex session/user/model/backend/project scopes without
 usage across the range, making affected canonical token folds null and adding to
 `unpriced`. Known cost and observed-token subtotals remain visible with coverage status.

@@ -101,7 +101,7 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
 }
 
 function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric = "both", title = "사용량·비용 추이" }) {
-  const { timeline, timeDomain } = useMemo(() => {
+  const { timeline, timeDomain, rejections } = useMemo(() => {
     const timeline = clientTimeline(rows, { bucketHours, effectiveRange })
       .map((row) => ({ ...row, t: parseUtc(row.t).getTime() }))
       .filter((row) => Number.isFinite(row.t));
@@ -109,7 +109,10 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
     const step = Number.isFinite(bucketHours * 3600000) && bucketHours > 0 ? bucketHours * 3600000 : 3600000;
     const timeDomain = Number.isFinite(from) && Number.isFinite(to) && from < to
       ? [from, to] : timeline.length ? [timeline[0].t, timeline.at(-1).t + step] : undefined;
-    return { timeline, timeDomain };
+    const rejections = new Map(rows.filter(row => row.request_rejections_only === true)
+      .map(row => [`${row.client}:${parseUtc(row.t.replace(/(?:\.\d+)?Z$/, "")).getTime()}`,
+        observedNumber(row.rejected_requests)]));
+    return { timeline, timeDomain, rejections };
   }, [rows, bucketHours, effectiveRange?.from, effectiveRange?.to]);
   const lines = clients.flatMap((client) => {
     const row = clientRows.find((row) => row.client === client);
@@ -130,11 +133,14 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
   return <DualLineChart title={title}
     subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
     help="0은 해당 시간에 집계된 사용량이 없다는 뜻입니다. 이벤트 자체의 전송 누락은 미사용과 구분할 수 없으며, 차트가 누락된 사용량을 복원하지는 않습니다."
-    tooltipFormatter={(value, name, item) => [
-      value == null ? "미확인" : item.payload?.empty_clients?.includes(String(item.dataKey).split("_")[0])
-        ? `${value} (관측 사용량 없음)` : value,
-      name,
-    ]}
+    tooltipFormatter={(value, name, item) => {
+      const client = String(item.dataKey).split("_")[0];
+      const rejected = rejections.get(`${client}:${item.payload?.t}`);
+      const unpriced = String(item.dataKey).endsWith("_cost") && item.payload?.[item.dataKey] == null;
+      return [unpriced ? "미산정" : value == null ? "미확인" : value === 0 && rejected > 0
+        ? `0 (요청 거절 ${formatObserved(rejected)}건)`
+        : item.payload?.empty_clients?.includes(client) ? `${value} (관측 사용량 없음)` : value, name];
+    }}
     rows={timeline} xKey="t" lines={lines} bucketHours={bucketHours}
     timeDomain={timeDomain}
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;

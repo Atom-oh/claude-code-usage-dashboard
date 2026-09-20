@@ -250,10 +250,31 @@ test("a measured zero and unknown value in the same bucket have distinct tooltip
   const charts = card("사용량·비용 추이").querySelectorAll(".recharts-wrapper");
   for (const chart of charts) {
     hoverAt(chart, 1 / 4);
-    await waitFor(() => expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).toContain("미확인"));
+    await waitFor(() => expect(chart.querySelector(".recharts-tooltip-wrapper").textContent)
+      .toContain(chart === charts[0] ? "미확인" : "미산정"));
     expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).toContain("0");
     expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).not.toContain("관측 사용량 없음");
   }
+});
+
+test("rejected-request zeros explain the failure while unpriced completion costs stay unknown", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const data = fixture(["codex"]);
+  data.effective_range = { from: "2026-09-01T00:00:00Z", to: "2026-09-01T03:00:00Z" };
+  data.timeseries = [
+    { ...codexUsage, t: "2026-09-01T00:00:00Z", observed_tokens: 10, cost_usd: 1 },
+    { ...codexUsage, t: "2026-09-01T01:00:00Z", tokens: 0, observed_tokens: 0, cost_usd: 0,
+      observed_records: 3, rejected_requests: 3, request_rejections_only: true },
+    { ...codexUsage, t: "2026-09-01T02:00:00Z", observed_tokens: 20, cost_usd: null, cost_partial: true },
+  ];
+  mount("overview", data);
+  const charts = card("사용량·비용 추이").querySelectorAll(".recharts-wrapper");
+  for (const chart of charts) {
+    hoverAt(chart, 1 / 3);
+    await waitFor(() => expect(chart.querySelector(".recharts-tooltip-wrapper").textContent).toContain("0 (요청 거절 3건)"));
+  }
+  hoverAt(charts[1], 2 / 3);
+  await waitFor(() => expect(charts[1].querySelector(".recharts-tooltip-wrapper").textContent).toContain("미산정"));
 });
 
 test("mixed-client totals, cards and chart legends label only known-cost subtotals", () => {

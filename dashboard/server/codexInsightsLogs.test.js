@@ -16,6 +16,47 @@ const completion = (n, attributes = {}, resource = {}) => log(n, "sse_event", {
 }, resource);
 const request = (n, attributes = {}, resource = {}) =>
   log(n, "api_request", { attempt: "0", "http.response.status_code": "200", ...attributes }, resource);
+
+test("rejected requests retain errors without manufacturing missing completion usage", () => {
+  const out = foldCodexInsightsLogs([request(1, { "http.response.status_code": "400" }),
+    request(2, { "http.response.status_code": "429", attempt: "1" })]);
+  fields(out.summary, { observed_tokens: 0, tokens_partial: false, cost_partial: false,
+    cost_per_request: 0, cost_per_session: 0, api_error_rate: 1, rejected_requests: 2 });
+  assert.equal(out.summary.tokens_per_request, null);
+  assert.deepEqual(out.effort, []);
+});
+
+test("setup metadata does not turn a rejection-only session into missing usage", () => {
+  const setup = [log(2, "conversation_starts"), log(3, "startup_phase"), log(4, "user_prompt")];
+  const rejected = request(1, { "http.response.status_code": "400" });
+  fields(foldCodexInsightsLogs([rejected, ...setup]).summary,
+    { observed_tokens: 0, cost_per_request: 0, cost_partial: false, rejected_requests: 1 });
+  for (const evidence of [
+    request(5), log(5, "tool_result"), log(5, "new_event"),
+    log(5, "user_prompt", { input_token_count: "0" }),
+    log(5, "user_prompt", { "conversation.id": "unrelated" }),
+  ]) {
+    fields(foldCodexInsightsLogs([rejected, ...setup, evidence]).summary,
+      { observed_tokens: null, cost_per_request: null, cost_partial: true });
+  }
+});
+
+test("rejections cannot fill accepted, timed-out or otherwise missing usage", () => {
+  for (const status of ["200", "408", "499", "500", "", "4e2"]) {
+    const out = foldCodexInsightsLogs([request(1, { "http.response.status_code": "400" }),
+      request(2, { "http.response.status_code": status })]);
+    fields(out.summary, { observed_tokens: null, cost_per_request: null, cost_partial: true });
+  }
+  const out = foldCodexInsightsLogs([request(1, { "http.response.status_code": "400" }),
+    log(2, "sse_event", { "event.kind": "response.completed" })]);
+  fields(out.summary, { observed_tokens: null, cost_partial: true });
+  for (const key of ["input_token_count", "tool_token_count"]) {
+    fields(foldCodexInsightsLogs([request(1, { "http.response.status_code": "400", [key]: "0" })]).summary,
+      { observed_tokens: null, cost_per_request: null, rejected_requests: 0 });
+  }
+  fields(foldCodexInsightsLogs([request(1, { "http.response.status_code": "400", "conversation.id": "" })]).summary,
+    { observed_tokens: null, cost_per_request: null, rejected_requests: 1 });
+});
 const fields = (actual, expected) => {
   for (const [key, value] of Object.entries(expected)) assert.equal(actual[key], value, key);
 };

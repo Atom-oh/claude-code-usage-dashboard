@@ -6,11 +6,12 @@ import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { normalizeModelId } from "./pricing.js";
 import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
+import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS, isRejectedRequestGroup } from "./codexRequests.js";
 
 const ROW_LIMIT = 50000;
 export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 const TOKEN_KEYS = ["tokens", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "reasoning_tokens"];
-const OP_KEYS = ["requests", "api_errors", "tool_calls", "tool_errors"];
+const OP_KEYS = ["requests", "rejected_requests", "api_errors", "tool_calls", "tool_errors"];
 const finite = (n) => ["number", "string"].includes(typeof n) && String(n).trim() !== ""
   && Number.isFinite(Number(n)) && Number(n) >= 0;
 const round = (n) => Number.isFinite(n * 1e12) ? Math.round(n * 1e12) / 1e12 : null;
@@ -83,6 +84,7 @@ function accumulate(target, row, usage, missingScope) {
   } else if (row.kind === "request") {
     target._ops = true;
     target.requests += n;
+    target.rejected_requests += Number(row.rejected_count || 0);
     target.api_errors += Number(row.errors || 0);
     target._requestMs += Number(row.duration_ms || 0);
     target._requestN += Number(row.duration_count || 0);
@@ -118,6 +120,8 @@ function finish(target) {
     backend: out.backend || (_backends.size === 1 ? [..._backends][0] : _backends.size ? "mixed" : "unknown"),
     cost_usd: cost,
     cost_partial: out.unpriced > 0 || costAvailable && cost === null,
+    request_rejections_only: out.client === "codex" && out.rejected_requests > 0
+      && out.rejected_requests === out.observed_records && _missingUsage.size === 0,
     request_duration_ms: _requestN ? _requestMs / _requestN : null,
     ttft_ms: _ttftN ? _ttftMs / _ttftN : null };
 }
@@ -138,8 +142,14 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
   // buckets. A different session/model/backend/user/project cannot fill the gap.
   const usageScopes = new Set();
   const usageSessions = new Set();
+  const requiringUsage = new Set(), requiringSessions = new Set();
   for (const row of records) {
-    if (row.client !== "codex" || row.kind !== "usage") continue;
+    if (row.client !== "codex") continue;
+    if (!isRejectedRequestGroup(row)) {
+      requiringUsage.add(usageScope(row));
+      if (row.session) requiringSessions.add(usageScope(row, null));
+    }
+    if (row.kind !== "usage") continue;
     usageScopes.add(usageScope(row));
     if (row.session) usageSessions.add(usageScope(row, null));
   }
@@ -164,7 +174,10 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
       continue;
     }
     const scope = usageScope(row);
-    const missingScope = row.client === "codex" && !usageScopes.has(scope)
+    const missingScope = row.client === "codex"
+      && (!isRejectedRequestGroup(row) || requiringUsage.has(scope)
+        || (row.session && !row.model && requiringSessions.has(usageScope(row, null))))
+      && !usageScopes.has(scope)
       && !(row.session && !row.model && usageSessions.has(usageScope(row, null))) ? scope : null;
     if (missingScope) missingUsage.add(missingScope);
     const usage = row.kind === "usage" ? (row.client === "codex" ? priceCodexUsage(row, prices) : claudeUsage(row)) : null;
@@ -263,6 +276,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   // client's session/user/backend/project and range. Never replace an emitted model.
   const modelSessions = filters.model ? `model_sessions AS (
     SELECT session, user, backend, project FROM unique_events WHERE session != '' AND ${modelMatch}
+    ${isCodex ? `AND event_name IN (${eventNames.map(name => `'${name}'`).join(",")})` : ""}
     ${isCodex ? "" : `UNION ALL
     SELECT SessionId, ${user}, ${backend}, ResourceAttributes['project.name']
     FROM claude_code.otel_metrics_sum LEFT JOIN session_group ug USING (SessionId)
@@ -281,7 +295,8 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     FROM claude_code.otel_logs
     ${isCodex ? "" : "LEFT JOIN session_group ug USING (SessionId)"}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
-      AND EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})
+      AND ${isCodex ? "startsWith(EventName, 'codex.')"
+        : `EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})`}
   ), ${modelSessions} typed AS (
     SELECT *,
       replaceRegexpOne(model, '^(us|global)\\\\.', '') AS base_model,
@@ -293,10 +308,14 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
           AND a['event.kind'] = 'response.completed', 'completion',
         event_name IN ('codex.sse_event','codex.websocket_event')
           AND a['event.kind'] = 'response.failed', 'stream_error',
+        event_name IN ('codex.sse_event','codex.websocket_event'), 'scope_evidence',
         event_name IN ('${prefix}api_request','${prefix}api_error'), 'request',
         event_name = '${prefix}tool_result', 'tool',
         event_name = '${prefix}tool_decision', 'approval',
-        event_name = '${prefix}turn_ttft', 'ttft', '') AS kind,
+        event_name = '${prefix}turn_ttft', 'ttft',
+        ${isCodex ? `(event_name NOT IN (${SETUP_METADATA_EVENTS.map(name => `'${name}'`).join(",")})
+          OR arrayExists(k -> mapContains(a,k), [${CODEX_USAGE_KEYS.map(key => `'${key}'`).join(",")}])),
+          'scope_evidence',` : ""} '') AS kind,
       ${tokenValues},
       (in_n_valid AND read_n_valid AND write_n_valid AND read_n + write_n > in_n) AS cache_invalid,
       (out_n_valid AND reason_n_valid AND reason_n > out_n) AS reasoning_invalid
@@ -305,25 +324,42 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       ${filters.model ? `AND (${modelMatch} OR (model = '' AND
         (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
-  )
-  SELECT formatDateTime(greatest(toStartOfInterval(Timestamp, INTERVAL {clientBucketSeconds:UInt32} SECOND), {from:DateTime}),
-      '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
-    session, user, model, backend, project, kind, a['tool_name'] AS tool,
-    if(in_n > ${threshold}, 'long', 'short') AS context_tier,
+  ), grouped AS (
+  SELECT if(kind = 'scope_evidence', '',
+    formatDateTime(greatest(toStartOfInterval(Timestamp, INTERVAL {clientBucketSeconds:UInt32} SECOND), {from:DateTime}),
+      '%Y-%m-%dT%H:%i:%SZ', 'UTC')) AS t,
+    session, user, model, backend, project, kind, if(kind = 'scope_evidence', '', a['tool_name']) AS tool,
+    if(kind != 'scope_evidence' AND in_n > ${threshold}, 'long', 'short') AS context_tier,
     (kind != 'usage' OR (${validUsage})) AS usage_valid,
     (kind != 'usage' OR (${validPair})) AS token_pair_valid,
     (kind = 'usage' AND token_pair_valid
       AND sum(in_n) + sum(out_n) > 9007199254740991) AS observed_tokens_overflow,
     count() AS count,
+    countIf(kind = 'request'
+      AND trimBoth(a['http.response.status_code']) IN (${REJECTED_REQUEST_STATUSES.map(s => `'${s}'`).join(",")})
+      AND NOT arrayExists(k -> mapContains(a,k), [${CODEX_USAGE_KEYS.map(k => `'${k}'`).join(",")}])) AS rejected_count,
     ${tokenSums},
     countIf(kind = 'usage' AND NOT (${validUsage})) AS invalid,
-    countIf(event_name = '${prefix}api_error' OR toInt32OrZero(a['http.response.status_code']) >= 400
+    countIf(event_name = '${prefix}api_error' OR toInt32OrZero(trimBoth(a['http.response.status_code'])) >= 400
       OR a['success'] = 'false' OR a['error'] != '') AS errors,
     sumIf(toFloat64OrZero(a['duration_ms']), isFinite(toFloat64OrZero(a['duration_ms'])) AND toFloat64OrZero(a['duration_ms']) >= 0) AS duration_ms,
     countIf(isNotNull(toFloat64OrNull(a['duration_ms'])) AND isFinite(toFloat64OrZero(a['duration_ms']))
       AND toFloat64OrZero(a['duration_ms']) >= 0) AS duration_count
   FROM typed WHERE kind != ''
   GROUP BY t, session, user, model, backend, project, kind, tool, context_tier, usage_valid, token_pair_valid
+  ), covered AS (
+    -- Window only compacted scopes/groups, never raw diagnostic volume. Keep
+    -- evidence in this table read and remove markers after evaluating coverage.
+    SELECT *,
+      (max(NOT (kind = 'request' AND rejected_count = count)) OVER
+        (PARTITION BY session, user, backend, project, model)
+       OR max(model = '' AND NOT (kind = 'request' AND rejected_count = count)) OVER
+        (PARTITION BY session, user, backend, project)
+       OR (model = '' AND max(NOT (kind = 'request' AND rejected_count = count)) OVER
+        (PARTITION BY session, user, backend, project))) AS requires_usage
+    FROM grouped
+  )
+  SELECT * FROM covered WHERE kind != 'scope_evidence'
   ORDER BY t LIMIT ${ROW_LIMIT + 1}`;
   return { sql, params };
 }
