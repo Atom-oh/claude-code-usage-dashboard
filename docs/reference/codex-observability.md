@@ -82,10 +82,15 @@ including when unrelated usage or cache metadata is missing. Canonical token cou
 fractions and rates keep their completeness guards; observations are not a replacement
 denominator. Empty/all-unknown observations stay null and measured zero stays zero.
 See [ADR-014](../decisions/ADR-014-observed-token-subtotals.md).
+Rejected-only request scopes retain errors and zero recorded completion usage.
+Accepted/uncertain requests and other missing evidence stay partial; see
+[ADR-016](../decisions/ADR-016-rejected-codex-requests.md).
 Intermediate stream records contribute only session-scope markers to that detail
 transfer; their counts and latency remain in the database summary. Projection strips
 unused fields only after full-identity
 deduplication, and the detail fold does not deduplicate projected rows again.
+Those markers retain emitted model identities without adding result rows, so
+unrelated models cannot establish or invalidate rejection-only scope evidence.
 The same user/model/backend scope, including model-less session attribution, applies
 to summaries and details.
 

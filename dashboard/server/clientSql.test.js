@@ -485,6 +485,84 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         AggregationTemporality: 1 }]);
       await assert.rejects(overview({ client: "claude", user }, ["claude"], from, end), /too much client data/);
     });
+    await t.test("rejected HTTP attempts do not create Codex token gaps or hide uncertain responses", async () => {
+      for (const status of ["400", " 400 ", "401", "403", "404", "413", "415", "422", "429", "200", "408", "499", "500", "4e2"]) {
+        const user = `rejection-${status}@example.invalid`;
+        await insertLogs([log(700, "codex.api_request", { "http.response.status_code": status },
+          { "user.email": user })]);
+        const result = await overview({ client: "codex", user }, ["codex"]);
+        const rejected = ["400", "401", "403", "404", "413", "415", "422", "429"].includes(status.trim());
+        assertFields(result.totals, { observed_tokens: rejected ? 0 : null,
+          cost_usd: rejected ? 0 : null, rejected_requests: rejected ? 1 : 0 });
+        assert.equal(result.quality.missing_usage, rejected ? 0 : 1);
+        if (rejected) assert.equal(result.totals.api_errors, 1);
+      }
+      const resource = { "user.email": "rejection-mixed@example.invalid" };
+      await insertLogs([log(701, "codex.api_request", { "http.response.status_code": "400" }, resource),
+        log(702, "codex.api_request", { "http.response.status_code": "200" }, resource)]);
+      const mixed = await overview({ client: "codex", user: resource["user.email"] }, ["codex"]);
+      assertFields(mixed.totals, { observed_tokens: null, cost_usd: null, requests: 2, rejected_requests: 1 });
+      for (const key of ["input_token_count", "tool_token_count"]) {
+        const user = `rejection-${key}@example.invalid`;
+        await insertLogs([log(703, "codex.api_request",
+          { "http.response.status_code": "400", [key]: "0" }, { "user.email": user })]);
+        assertFields((await overview({ client: "codex", user }, ["codex"])).totals,
+          { observed_tokens: null, cost_usd: null, rejected_requests: 0 });
+        const { buildCodexInsightsLogQuery, foldCodexInsightsLogs } = await import("./codexInsightsLogs.js");
+        const query = buildCodexInsightsLogQuery(from, to, { user }, { detailsOnly: true });
+        const rows = await (await db.query({ query: query.sql, query_params: query.params, format: "JSONEachRow" })).json();
+        assert.equal(rows[0].attributes[key], "0");
+        assertFields(foldCodexInsightsLogs(rows, undefined, { deduplicated: true }).summary,
+          { observed_tokens: null, cost_per_request: null, rejected_requests: 0 });
+      }
+      const { buildCodexInsightsLogQuery, foldCodexInsightsLogs } = await import("./codexInsightsLogs.js");
+      for (const transport of ["sse_event", "websocket_event"]) {
+        for (const modelled of [true, false]) {
+          const user = `rejection-stream-${transport}-${modelled}@example.invalid`;
+          const stream = log(705, `codex.${transport}`, { "event.kind": "response.output_text.delta" }, { "user.email": user });
+          if (!modelled) delete stream.LogAttributes.model;
+          await insertLogs([log(704, "codex.api_request", { "http.response.status_code": "400" },
+            { "user.email": user }), stream]);
+          const result = await overview({ client: "codex", user }, ["codex"]);
+          assertFields(result.totals, { observed_tokens: null, cost_usd: null, rejected_requests: 1, requests: 1 });
+          assert.equal(result.timeseries[0].request_rejections_only, false);
+          for (const detailsOnly of [false, true]) {
+            const q = buildCodexInsightsLogQuery(from, to, { user }, { detailsOnly });
+            const rows = await (await db.query({ query: q.sql, query_params: q.params, format: "JSONEachRow" })).json();
+            assertFields(foldCodexInsightsLogs(rows, undefined, { deduplicated: detailsOnly }).summary,
+              { observed_tokens: null, cost_per_request: null, cost_partial: true });
+          }
+        }
+      }
+      const user = "rejection-model-isolation@example.invalid";
+      await insertLogs([
+        log(706, "codex.api_request", { "http.response.status_code": "400" }, { "user.email": user }),
+        log(707, "codex.sse_event", { ...usage1.LogAttributes, model: "openai.gpt-5.6-luna" }, { "user.email": user }),
+        log(708, "codex.sse_event", { "event.kind": "response.output_text.delta",
+          model: "openai.gpt-5.6-luna" }, { "user.email": user }),
+      ]);
+      const isolated = await overview({ client: "codex", user }, ["codex"]);
+      assert.equal(isolated.quality.missing_usage, 0);
+      for (const detailsOnly of [false, true]) {
+        const q = buildCodexInsightsLogQuery(from, to, { user }, { detailsOnly });
+        const rows = await (await db.query({ query: q.sql, query_params: q.params, format: "JSONEachRow" })).json();
+        assert.equal(foldCodexInsightsLogs(rows, undefined, { deduplicated: detailsOnly }).summary.cost_partial, false);
+      }
+      await insertLogs([log(709, "codex.sse_event",
+        { "event.kind": "response.output_text.delta" }, { "user.email": user })]);
+      assert.equal((await overview({ client: "codex", user }, ["codex"])).quality.missing_usage, 1);
+      for (const detailsOnly of [false, true]) {
+        const q = buildCodexInsightsLogQuery(from, to, { user }, { detailsOnly });
+        const rows = await (await db.query({ query: q.sql, query_params: q.params, format: "JSONEachRow" })).json();
+        assert.equal(foldCodexInsightsLogs(rows, undefined, { deduplicated: detailsOnly }).summary.cost_partial, true);
+        if (detailsOnly) {
+          const markers = rows.filter(row => Number(row.is_scope) === 1);
+          assert.equal(markers.length, 1);
+          assert.deepEqual(JSON.parse(markers[0].attributes["stream.models"]).sort(),
+            ["openai.gpt-5.6-luna", "openai.gpt-6-astra"]);
+        }
+      }
+    });
   } finally {
     await db.close();
   }

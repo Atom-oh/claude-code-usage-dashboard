@@ -2,6 +2,7 @@ import { toChDateTime } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
 import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
+import { CODEX_USAGE_KEYS, isRejectedRequestEvent } from "./codexRequests.js";
 
 const ROW_LIMIT = 50000;
 const pricesDefault = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -12,10 +13,10 @@ const TOKEN_FIELDS = { input_token_count: "input_tokens_total", cached_token_cou
 const OVERVIEW_EVENTS = ["sse_event", "websocket_event", "api_request", "api_error",
   "tool_result", "tool_decision", "turn_ttft"].map((name) => `codex.${name}`);
 
-const DETAIL_ATTRIBUTES = [...Object.keys(TOKEN_FIELDS), "event.name", "event.kind", "conversation.id", "model",
+const DETAIL_ATTRIBUTES = [...CODEX_USAGE_KEYS, "event.name", "event.kind", "conversation.id", "model",
   "model_reasoning_effort", "attempt", "duration_ms", "error.message", "error", "success",
   "http.response.status_code", "prompt_length", "tool_name", "decision", "source", "app.version",
-  "provider_name", "reasoning_effort", "sandbox_policy", "approval_policy", "startup.phase"];
+  "provider_name", "reasoning_effort", "sandbox_policy", "approval_policy", "startup.phase", "stream.models"];
 const DETAIL_RESOURCES = ["user.email", "enduser.id", "backend", "project.name", "service.version"];
 const sqlStrings = (values) => `[${values.map((v) => `'${v}'`).join(",")}]`;
 
@@ -67,7 +68,9 @@ export function buildCodexInsightsLogQuery(from, to, filters = {}, { detailsOnly
     SELECT is_bulk AS is_scope, max(timestamp) AS timestamp,
       mapFilter((k,v) -> has(${sqlStrings(DETAIL_RESOURCES)},k),identity_resource) AS resource,
       mapApply((k,v) -> (k,if(k IN ('error','error.message'),if(v='','','present'),v)),
-        mapFilter((k,v) -> has(${sqlStrings(DETAIL_ATTRIBUTES)},k),identity_attributes)) AS attributes
+        mapFilter((k,v) -> has(${sqlStrings(DETAIL_ATTRIBUTES)},k),
+          if(is_bulk, map('conversation.id',identity_attributes['conversation.id'],
+            'stream.models',toJSONString(groupUniqArray(detail_source.attributes['model']))),identity_attributes))) AS attributes
     FROM detail_source WHERE NOT is_bulk OR session != ''
     GROUP BY is_bulk, identity_time, identity_resource, identity_attributes
     ORDER BY timestamp LIMIT ${ROW_LIMIT + 1}` };
@@ -152,11 +155,11 @@ function statistics(values) {
     p50_ms: quantile(0.5), p95_ms: quantile(0.95), max_ms: sorted.at(-1) ?? null };
 }
 
-function scope(row, includeModel = true) {
+function scope(row, includeModel = true, model = row.attributes.model) {
   const a = row.attributes, r = row.resource;
   return JSON.stringify([a["conversation.id"] || ["unidentified", row.timestamp],
     r["user.email"] || r["enduser.id"] || "", backend(r), r["project.name"] || "",
-    includeModel ? a.model || "" : null]);
+    includeModel ? model || "" : null]);
 }
 const backend = (resource) => ["bedrock-mantle", "bedrock-runtime"].includes(resource.backend)
   ? resource.backend : "unknown";
@@ -165,6 +168,9 @@ const completed = (row) => stream(row.attributes["event.name"])
   && row.attributes["event.kind"] === "response.completed";
 const hasUsage = (row) => completed(row)
   && Object.keys(TOKEN_FIELDS).some((key) => Object.hasOwn(row.attributes, key));
+const SETUP_EVENTS = new Set(["codex.conversation_starts", "codex.startup_phase", "codex.user_prompt"]);
+const setupMetadata = (a) => SETUP_EVENTS.has(a["event.name"])
+  && !CODEX_USAGE_KEYS.some(key => Object.hasOwn(a, key));
 
 function usageTotals() {
   return { requests: 0, tokens: 0, cost_usd: 0, hasCost: false, unpriced: 0,
@@ -208,11 +214,22 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     throw new ValidationError("too much Codex log data", "narrow the requested date range");
   const unique = new Map();
   const selected = [], streamScopes = [], sessions = new Set();
+  const requiringUsage = new Set(), unmodelledStreams = new Set();
+  const rejectedSessions = new Set(), requiringSessions = new Set();
   for (const row of rows) {
     if (deduplicated && Number(row.is_scope) === 1) {
       if (typeof row.attributes?.["conversation.id"] !== "string" || !row.attributes["conversation.id"])
         throw new Error("Invalid Codex detail stream scope");
       streamScopes.push(scope(row, false));
+      requiringSessions.add(scope(row, false));
+      const models = row.attributes["stream.models"] === undefined
+        ? [row.attributes.model || ""] : JSON.parse(row.attributes["stream.models"]);
+      if (!Array.isArray(models) || !models.length || models.some(model => typeof model !== "string"))
+        throw new Error("Invalid Codex detail stream models");
+      for (const model of models) {
+        if (model) requiringUsage.add(scope(row, true, model));
+        else unmodelledStreams.add(scope(row, false));
+      }
       sessions.add(row.attributes["conversation.id"]);
       continue;
     }
@@ -226,6 +243,14 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
   let missingSession = false;
   for (const row of records) {
     if (row.attributes["conversation.id"]) sessions.add(row.attributes["conversation.id"]);
+    if (isRejectedRequestEvent(row.attributes)) {
+      if (row.attributes["conversation.id"]) rejectedSessions.add(scope(row, false));
+    } else if (!setupMetadata(row.attributes)) {
+      requiringUsage.add(scope(row));
+      requiringSessions.add(scope(row, false));
+    }
+    if (stream(row.attributes["event.name"]) && !row.attributes.model)
+      unmodelledStreams.add(scope(row, false));
     if (!hasUsage(row)) continue;
     usageScopes.add(scope(row));
     if (row.attributes["conversation.id"]) usageSessions.add(scope(row, false));
@@ -233,7 +258,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
   }
   const total = usageTotals(), efforts = new Map(), latencies = new Map(), tools = new Map();
   const approvals = new Map(), runtime = new Map(), events = new Map(), missingUsage = new Set();
-  let requests = 0, retries = 0, errors = 0, missingAttempts = false, missingOutcomes = false;
+  let requests = 0, rejectedRequests = 0, retries = 0, errors = 0, missingAttempts = false, missingOutcomes = false;
   let prompts = 0, promptLength = 0, approved = 0, denied = 0, unknownDecisions = 0, lastSeen = null;
   for (const row of records) {
     const a = row.attributes, r = row.resource, event = a["event.name"];
@@ -247,9 +272,13 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     // Partial cost coverage does not establish how many sessions anonymous
     // operational records represent, even alongside identified priced usage.
     if (operational && !a["conversation.id"]) missingSession = true;
-    if (operational ? !usageScopes.has(scope(row))
+    const rejected = isRejectedRequestEvent(a);
+    const rejectedSetup = setupMetadata(a) && a["conversation.id"]
+      && rejectedSessions.has(scope(row, false)) && !requiringSessions.has(scope(row, false));
+    if (!rejectedSetup && (!rejected || !a["conversation.id"] || requiringUsage.has(scope(row))
+      || unmodelledStreams.has(scope(row, false))) && (operational ? !usageScopes.has(scope(row))
       && !(a["conversation.id"] && !a.model && usageSessions.has(scope(row, false)))
-      : a["conversation.id"] && !usageSessions.has(scope(row, false))) missingUsage.add(scope(row));
+      : a["conversation.id"] && !usageSessions.has(scope(row, false)))) missingUsage.add(scope(row));
 
     if (hasUsage(row)) {
       const input = Object.fromEntries(Object.entries(TOKEN_FIELDS).map(([raw, name]) => [name, count(a[raw])]));
@@ -262,6 +291,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     }
     if (event === "codex.api_request" || event === "codex.api_error") {
       requests++;
+      rejectedRequests += Number(rejected);
       const attempt = count(a.attempt), failed = requestFailed(event, a);
       // Native 0.154.0 emits attempt=0 for the first HTTP attempt.
       if (attempt === null) missingAttempts = true;
@@ -319,13 +349,16 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
   });
   const missingUsageScopes = missingUsage.size > 0 || streamScopes.some((key) => !usageSessions.has(key));
   const completeUsage = total.requests > 0 && !missingUsageScopes;
-  const cost = total.hasCost ? rounded(total.cost_usd) : null;
+  const rejectedOnly = requests > 0 && rejectedRequests === requests && total.requests === 0 && !missingUsageScopes;
+  const cost = total.hasCost ? rounded(total.cost_usd) : rejectedOnly ? 0 : null;
   const toolCalls = toolRows.reduce((n, tool) => n + tool.calls, 0);
   return {
     coverage: summary?.coverage ?? { status: records.length ? "observed" : "empty", records: records.length,
       last_seen: lastSeen === null ? null : new Date(lastSeen).toISOString() },
     summary: {
-      ...finishObservedTokens(total.observedTokens, { partial: missingUsageScopes || total.tokens === null }),
+      ...finishObservedTokens(total.observedTokens, { partial: missingUsageScopes || total.tokens === null,
+        emptyValue: rejectedOnly ? 0 : null }),
+      rejected_requests: rejectedRequests,
       ...(completeUsage ? fractions(total) : { cache_hit_rate: null, cache_write_share: null, reasoning_share: null }),
       // Per-request units use observed HTTP attempts, matching the client overview.
       tokens_per_request: completeUsage ? ratio(total.tokens, requests) : null,

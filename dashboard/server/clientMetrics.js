@@ -6,11 +6,12 @@ import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { normalizeModelId } from "./pricing.js";
 import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
+import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, isRejectedRequestGroup } from "./codexRequests.js";
 
 const ROW_LIMIT = 50000;
 export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 const TOKEN_KEYS = ["tokens", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "reasoning_tokens"];
-const OP_KEYS = ["requests", "api_errors", "tool_calls", "tool_errors"];
+const OP_KEYS = ["requests", "rejected_requests", "api_errors", "tool_calls", "tool_errors"];
 const finite = (n) => ["number", "string"].includes(typeof n) && String(n).trim() !== ""
   && Number.isFinite(Number(n)) && Number(n) >= 0;
 const round = (n) => Number.isFinite(n * 1e12) ? Math.round(n * 1e12) / 1e12 : null;
@@ -83,6 +84,7 @@ function accumulate(target, row, usage, missingScope) {
   } else if (row.kind === "request") {
     target._ops = true;
     target.requests += n;
+    target.rejected_requests += Number(row.rejected_count || 0);
     target.api_errors += Number(row.errors || 0);
     target._requestMs += Number(row.duration_ms || 0);
     target._requestN += Number(row.duration_count || 0);
@@ -118,6 +120,8 @@ function finish(target) {
     backend: out.backend || (_backends.size === 1 ? [..._backends][0] : _backends.size ? "mixed" : "unknown"),
     cost_usd: cost,
     cost_partial: out.unpriced > 0 || costAvailable && cost === null,
+    request_rejections_only: out.client === "codex" && out.rejected_requests > 0
+      && out.rejected_requests === out.observed_records && _missingUsage.size === 0,
     request_duration_ms: _requestN ? _requestMs / _requestN : null,
     ttft_ms: _ttftN ? _ttftMs / _ttftN : null };
 }
@@ -138,8 +142,11 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
   // buckets. A different session/model/backend/user/project cannot fill the gap.
   const usageScopes = new Set();
   const usageSessions = new Set();
+  const requiringUsage = new Set();
   for (const row of records) {
-    if (row.client !== "codex" || row.kind !== "usage") continue;
+    if (row.client !== "codex") continue;
+    if (!isRejectedRequestGroup(row)) requiringUsage.add(usageScope(row));
+    if (row.kind !== "usage") continue;
     usageScopes.add(usageScope(row));
     if (row.session) usageSessions.add(usageScope(row, null));
   }
@@ -164,7 +171,8 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
       continue;
     }
     const scope = usageScope(row);
-    const missingScope = row.client === "codex" && !usageScopes.has(scope)
+    const missingScope = row.client === "codex"
+      && (!isRejectedRequestGroup(row) || requiringUsage.has(scope)) && !usageScopes.has(scope)
       && !(row.session && !row.model && usageSessions.has(usageScope(row, null))) ? scope : null;
     if (missingScope) missingUsage.add(missingScope);
     const usage = row.kind === "usage" ? (row.client === "codex" ? priceCodexUsage(row, prices) : claudeUsage(row)) : null;
@@ -293,6 +301,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
           AND a['event.kind'] = 'response.completed', 'completion',
         event_name IN ('codex.sse_event','codex.websocket_event')
           AND a['event.kind'] = 'response.failed', 'stream_error',
+        event_name IN ('codex.sse_event','codex.websocket_event'), 'stream_scope',
         event_name IN ('${prefix}api_request','${prefix}api_error'), 'request',
         event_name = '${prefix}tool_result', 'tool',
         event_name = '${prefix}tool_decision', 'approval',
@@ -305,25 +314,40 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       ${filters.model ? `AND (${modelMatch} OR (model = '' AND
         (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
-  )
-  SELECT formatDateTime(greatest(toStartOfInterval(Timestamp, INTERVAL {clientBucketSeconds:UInt32} SECOND), {from:DateTime}),
-      '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
-    session, user, model, backend, project, kind, a['tool_name'] AS tool,
-    if(in_n > ${threshold}, 'long', 'short') AS context_tier,
+  ), grouped AS (
+  SELECT if(kind = 'stream_scope', '',
+    formatDateTime(greatest(toStartOfInterval(Timestamp, INTERVAL {clientBucketSeconds:UInt32} SECOND), {from:DateTime}),
+      '%Y-%m-%dT%H:%i:%SZ', 'UTC')) AS t,
+    session, user, model, backend, project, kind, if(kind = 'stream_scope', '', a['tool_name']) AS tool,
+    if(kind != 'stream_scope' AND in_n > ${threshold}, 'long', 'short') AS context_tier,
     (kind != 'usage' OR (${validUsage})) AS usage_valid,
     (kind != 'usage' OR (${validPair})) AS token_pair_valid,
     (kind = 'usage' AND token_pair_valid
       AND sum(in_n) + sum(out_n) > 9007199254740991) AS observed_tokens_overflow,
     count() AS count,
+    countIf(kind = 'request'
+      AND trimBoth(a['http.response.status_code']) IN (${REJECTED_REQUEST_STATUSES.map(s => `'${s}'`).join(",")})
+      AND NOT arrayExists(k -> mapContains(a,k), [${CODEX_USAGE_KEYS.map(k => `'${k}'`).join(",")}])) AS rejected_count,
     ${tokenSums},
     countIf(kind = 'usage' AND NOT (${validUsage})) AS invalid,
-    countIf(event_name = '${prefix}api_error' OR toInt32OrZero(a['http.response.status_code']) >= 400
+    countIf(event_name = '${prefix}api_error' OR toInt32OrZero(trimBoth(a['http.response.status_code'])) >= 400
       OR a['success'] = 'false' OR a['error'] != '') AS errors,
     sumIf(toFloat64OrZero(a['duration_ms']), isFinite(toFloat64OrZero(a['duration_ms'])) AND toFloat64OrZero(a['duration_ms']) >= 0) AS duration_ms,
     countIf(isNotNull(toFloat64OrNull(a['duration_ms'])) AND isFinite(toFloat64OrZero(a['duration_ms']))
       AND toFloat64OrZero(a['duration_ms']) >= 0) AS duration_count
   FROM typed WHERE kind != ''
   GROUP BY t, session, user, model, backend, project, kind, tool, context_tier, usage_valid, token_pair_valid
+  ), covered AS (
+    -- Window only compacted scopes/groups, never the raw stream volume. Keep
+    -- evidence in this table read and remove markers after evaluating coverage.
+    SELECT *,
+      (max(kind IN ('stream_scope','usage','completion','stream_error')) OVER
+        (PARTITION BY session, user, backend, project, model)
+       OR max(model = '' AND kind IN ('stream_scope','usage','completion','stream_error')) OVER
+        (PARTITION BY session, user, backend, project)) AS requires_usage
+    FROM grouped
+  )
+  SELECT * FROM covered WHERE kind != 'stream_scope'
   ORDER BY t LIMIT ${ROW_LIMIT + 1}`;
   return { sql, params };
 }

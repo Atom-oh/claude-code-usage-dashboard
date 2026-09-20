@@ -92,6 +92,9 @@ the selected range null affected canonical token folds and increment `quality.mi
 and `unpriced`; known cost and observed-token subtotals retain partial disclosure.
 Crossing a time bucket does not create a false gap. Presence cannot
 detect every dropped response within a populated combination. Explicit zero is valid.
+Identified scopes containing only explicit request rejections are exempt: they record no
+completion usage while retaining request/error counts. Other evidence still requires
+usage; see [ADR-016](../decisions/ADR-016-rejected-codex-requests.md).
 `observed_records` combines deduplicated log-event counts with active Claude usage
 aggregate-row counts; it is not comparable request volume. Idle counter observations
 can populate `timeseries` while that count is zero. They retain per-signal availability
