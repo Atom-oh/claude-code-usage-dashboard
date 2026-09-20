@@ -408,6 +408,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           : [`${day}T10:00:00Z`, `${day}T11:00:00Z`, `${day}T13:00:00Z`]);
         assert.deepEqual(result.timeseries.map(row => row.observed_tokens), [10, 0, 10]);
         assert.deepEqual(result.timeseries.map(row => row.cost_usd), [0.1, 0, 0.1]);
+        assert.equal(result.timeseries[1].timeline_observed, true);
       });
     }
     await t.test("idle counters preserve independent token/cost availability within each scope", async () => {
@@ -454,6 +455,35 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           observed ? [`${day}T10:15:00Z`, `${day}T11:00:00Z`] : [`${day}T11:00:00Z`]);
         assert(result.timeseries.every(row => row.observed_tokens === 0 && row.cost_usd === 0));
       }
+    });
+    await t.test("idle buckets before the active-row boundary cannot truncate later usage", async () => {
+      const user = "capacity@example.invalid";
+      await db.command({ query: `INSERT INTO otel_metrics_sum
+        (ResourceAttributes, Attributes, MetricName, TimeUnix, Value, AggregationTemporality, IsMonotonic)
+        SELECT map('user.email', {user:String}),
+          map('session.id', concat('capacity-', toString(number)), 'model', 'claude-sonnet-5', 'type', 'input'),
+          'claude_code.token.usage', {time:DateTime}, 1, 1, true FROM numbers(50000)`,
+        query_params: { user, time: `${day} 12:01:00` } });
+      const idle = [];
+      for (const metric of ["claude_code.token.usage", "claude_code.cost.usage"]) {
+        for (const clock of ["09:59:00", "10:01:00", "11:01:00"]) {
+          const row = counter(metric, metric.includes("token") ? "input" : "", clock, 10);
+          row.ResourceAttributes = { "user.email": user };
+          row.Attributes["session.id"] = "idle-capacity";
+          idle.push(row);
+        }
+      }
+      await insertMetrics(idle);
+      const end = new Date(`${day}T16:00:00Z`);
+      const result = await overview({ client: "claude", user }, ["claude"], from, end);
+      assertFields(result.totals, { observed_tokens: 50000, sessions: 50000, users: 1 });
+      assert.equal(result.observed_records, 50000);
+      assert.deepEqual(result.timeseries.map(row => row.observed_tokens), [0, 0, 50000]);
+      await insertMetrics([{ ...counter("claude_code.token.usage", "input", "12:01:00", 1),
+        ResourceAttributes: { "user.email": user },
+        Attributes: { "session.id": "capacity-overflow", model: "claude-sonnet-5", type: "input" },
+        AggregationTemporality: 1 }]);
+      await assert.rejects(overview({ client: "claude", user }, ["claude"], from, end), /too much client data/);
     });
   } finally {
     await db.close();

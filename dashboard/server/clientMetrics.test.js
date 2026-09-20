@@ -19,6 +19,7 @@ test("idle Claude counter observations fill only the timeline, not active popula
   assert.deepEqual({ ...actual, timeseries: [] }, { ...baseline, timeseries: [] });
   assert.deepEqual(actual.timeseries[0], baseline.timeseries[0]);
   const zero = actual.timeseries[1];
+  assert.equal(zero.timeline_observed, true);
   assert.equal(zero.client, "claude");
   assert.equal(zero.observed_tokens, 0);
   assert.equal(zero.cost_usd, 0);
@@ -28,6 +29,15 @@ test("idle Claude counter observations fill only the timeline, not active popula
   assert.equal(zero.reasoning_tokens, null);
   assert.equal(actual.timeseries.some(row => row.client === "codex"), false);
   assert.equal(actual.timeseries.some(row => row.t === "2026-09-14 12:00:00"), false);
+});
+
+test("idle markers do not consume the active-row budget and both classes remain bounded", () => {
+  const marker = { client: "claude", timeline_only: 1, t: "2026-09-14 09:00:00",
+    token_observed: 1, cost_observed: 1, token_missing: 0, cost_missing: 0 };
+  const active = Array(50000).fill(event);
+  assert.equal(foldClientMetrics([...active, marker], ["claude", "codex"]).totals.observed_tokens, 6500000);
+  assert.throws(() => foldClientMetrics([...active, event, marker], ["claude", "codex"]), /too much client data/);
+  assert.throws(() => foldClientMetrics(Array(50001).fill(marker), ["claude"]), /too much client data/);
 });
 
 test("one fold supplies matching totals, model/user rows and time series", () => {

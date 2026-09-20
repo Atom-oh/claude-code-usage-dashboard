@@ -487,6 +487,7 @@ export async function clientClaudeRows(from, to, filters = {}) {
     GROUP BY t, session, user, model, backend
     )
     SELECT t, session, user, model, backend, 1 AS count,
+      -- Bits mark omitted keys: detailed scopes = 0, bucket-only scopes = 15.
       GROUPING(session, user, model, backend) != 0 AS timeline_only,
       sum(reported_cost) AS reported_cost, sum(input_tokens) AS input_tokens,
       sum(output_tokens) AS output_tokens, sum(cache_read_tokens) AS cache_read_tokens,
@@ -499,7 +500,7 @@ export async function clientClaudeRows(from, to, filters = {}) {
     HAVING (NOT timeline_only AND
       (input_tokens + output_tokens + cache_read_tokens + cache_write_tokens > 0 OR reported_cost != 0))
       OR (timeline_only AND max(changed) = 0 AND (token_observed OR cost_observed))
-    ORDER BY t LIMIT 50001`,
+    ORDER BY t LIMIT 50001 BY timeline_only`,
   { ...range(from, to, b.raw), ...b.params, ...f.params, clientBackend: filters.backend || "" });
 }
 

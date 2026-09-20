@@ -18,7 +18,9 @@ The user wants hourly usage with zero during inactivity, not a cumulative chart.
   active populations, totals and non-timeline breakdowns retain their semantics.
 - Compact idle observations into one row per bucket. They do not increment
   `observed_records` or active users/sessions. A timeline containing only observed
-  zeros still renders.
+  zeros still renders. Active rows and idle observations each retain a 50,000-row
+  guard; SQL returns an independent overflow sentinel for each class. Idle rows
+  cannot consume active-row capacity or truncate later usage.
 - Within bounded shared charts, an absent bucket for a client observed elsewhere
   in the range displays zero **recorded usage**, with that qualifier in its tooltip.
   This includes Codex's event-derived usage. Existing null token/cost values remain

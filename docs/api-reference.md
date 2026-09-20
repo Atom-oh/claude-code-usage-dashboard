@@ -80,7 +80,8 @@ they are not a request-coverage percentage. This cannot detect every dropped res
 
 Folds share rows; full-usage validity and input/output-pair validity are separate SQL
 grouping dimensions, preserving usable costs and observed token pairs. Breakdowns
-sort by observed tokens. Over 50,000 rows returns 400.
+sort by observed tokens. Active rows and compact idle observations each have a
+50,000-row guard (overflow returns 400); idle rows do not consume active-row capacity.
 Claude counter/baseline rules remain.
 `effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
 when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.

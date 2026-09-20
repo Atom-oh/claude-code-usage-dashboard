@@ -123,7 +123,10 @@ function finish(target) {
 }
 
 export function foldClientMetrics(records, clients, prices = codexPrices) {
-  if (records.length > ROW_LIMIT)
+  // Idle observations have their own bound; they cannot evict usage records
+  // from the existing active-row budget.
+  const idleRows = records.filter(row => row.client === "claude" && Number(row.timeline_only) === 1).length;
+  if (records.length - idleRows > ROW_LIMIT || idleRows > ROW_LIMIT)
     throw new ValidationError("too much client data", "narrow the requested date range");
   const totals = accumulator({});
   const byClient = new Map(clients.map((client) => [client, accumulator({ client,
