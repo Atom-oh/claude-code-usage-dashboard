@@ -105,6 +105,17 @@ Mantle retains the user's search selection. No dashboard IAM policy is changed.
 
 ## Launch and metadata
 
+For developer shell hooks, source [the Collector guard](../../scripts/ensure-otelcol.sh)
+before setting exporter variables. It starts only a loaded unit confirmed inactive
+or failed. An inaccessible systemd bus (including a Codex sandbox), missing unit
+or transitional state does not trigger `sudo` or prevent exporter configuration.
+Its successful return is not a Collector-health assertion; inspect the host service
+and received telemetry separately. Keep noninteractive shell startup quiet.
+
+Host-specific wrappers can select a gateway instead of the workshop provider below.
+A gateway is not proof of a particular AWS upstream. Validate routing metadata
+before treating inherited `bedrock-mantle` tags as a cost basis.
+
 Inspect nonsecret effective configuration without invoking a model:
 
 ```bash
