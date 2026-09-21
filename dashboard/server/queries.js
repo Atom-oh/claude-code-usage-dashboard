@@ -1,6 +1,6 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { withComputedCost, normalizeModelId, rollupComputedCost } from "./pricing.js";
+import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl } from "./pricing.js";
 import { rollupAdoption } from "./activity.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
@@ -2058,10 +2058,24 @@ export async function reportedVsComputedByVersion(from, to, filters = {}) {
     GROUP BY "group", app_version, model ORDER BY requests DESC`,
     { ...range(from, to, true), ...f.params }
   );
-  return withComputedCost(rows).map((r) => ({
-    ...r,
-    ratio: r.cost > 0 ? Number(r.reported_cost) / r.cost : null,
-  }));
+  // cost_5m/cost_1h: 서버 env PRICING_CACHE_WRITE_TTL(단일 가정)이 아니라 두 TTL 시나리오를
+  // 나란히 계산한다 — reported_cost가 어느 티어에 더 가까운지(ttl_share)를 이 진단 엔드포인트
+  // 자체에서 보여주기 위함(실측: 캐시 쓰기 단가 차이가 reported/computed 전체 차이를 설명하는
+  // 유일한 축이었음, docs/cost-accuracy-review-2026-09-10.md). ttl_share = (reported - cost_5m)
+  // / (cost_1h - cost_5m) — 0에 가까우면 5m 티어, 1에 가까우면 1h 티어. 분모(cost_1h - cost_5m)가
+  // 0(캐시 쓰기 토큰이 0)이면 null — 어느 쪽으로도 나눌 수 없다.
+  return withComputedCost(rows).map((r) => {
+    const cost5m = costAtTtl(r, "5m");
+    const cost1h = costAtTtl(r, "1h");
+    const denom = cost5m !== null && cost1h !== null ? cost1h - cost5m : null;
+    return {
+      ...r,
+      cost_5m: cost5m,
+      cost_1h: cost1h,
+      ttl_share: denom !== null && denom !== 0 ? (Number(r.reported_cost) - cost5m) / denom : null,
+      ratio: r.cost > 0 ? Number(r.reported_cost) / r.cost : null,
+    };
+  });
 }
 
 // 유저 1명의 턴별 워터폴 — "왜 이 세션이 느렸나"에 답한다. interactionBreakdown과 동일한

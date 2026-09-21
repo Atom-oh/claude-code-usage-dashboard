@@ -10,6 +10,7 @@ import {
   buildPricing,
   pricingConfig,
   PRICING_PROMPT_TABLE,
+  costAtTtl,
 } from "./pricing.js";
 
 // 이 파일의 모듈 레벨 단언(withComputedCost/tierCosts/pricingConfig/PRICING_PROMPT_TABLE)은
@@ -410,6 +411,35 @@ test("rollupComputedCost splits on every key column and preserves first-seen ord
 
 test("rollupComputedCost returns an empty array for empty input", () => {
   assert.deepEqual(rollupComputedCost([], ["group", "effort"]), []);
+});
+
+// costAtTtl: reportedVsComputedByVersion(리포트 비용의 TTL 근거 진단)이 서버 env
+// PRICING_CACHE_WRITE_TTL(단일 가정)과 무관하게 5m/1h 두 시나리오를 나란히 계산해야 하므로,
+// 이 호출은 env 기본값이 무엇이든 항상 두 값을 정확히 낸다.
+test("costAtTtl computes cache-write cost at an explicit TTL, ignoring the env default", () => {
+  const row = {
+    model: "claude-sonnet-4-5",
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: M,
+  };
+  assert.equal(costAtTtl(row, "5m"), 3.75); // sonnet-4-5 cacheWrite(5m)
+  assert.equal(costAtTtl(row, "1h"), 6); // sonnet-4-5 cacheWrite1h = input(3) × 2
+});
+
+test("costAtTtl returns null for unpriced models", () => {
+  const row = { model: "some-unknown-model", input_tokens: M, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 };
+  assert.equal(costAtTtl(row, "5m"), null);
+  assert.equal(costAtTtl(row, "1h"), null);
+});
+
+// fable-5-1의 cacheRead 0.25x 예외가 costAtTtl 경로에서도 살아있는지 — 별도 단가표를 만들지
+// 않고 priceFor를 그대로 재사용하므로 원칙적으로 자동 보장되지만, 회귀를 직접 고정한다.
+test("costAtTtl keeps the fable-5-1 0.025x cacheRead exception at both TTLs", () => {
+  const row = { model: "claude-fable-5-1", input_tokens: 0, output_tokens: 0, cache_read_tokens: M, cache_write_tokens: 0 };
+  assert.equal(costAtTtl(row, "5m"), 0.25);
+  assert.equal(costAtTtl(row, "1h"), 0.25); // cacheRead는 TTL과 무관
 });
 
 // fable-5-1의 cacheRead는 파생 규칙(입력×0.1 = 1.0)이 아니라 명시값 0.25다. priceFor 단위로는

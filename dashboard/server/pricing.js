@@ -138,6 +138,24 @@ export function priceFor(model) {
   return PRICING[normalizeModelId(model)] || null;
 }
 
+// withComputedCost/tierCosts는 서버 env PRICING_CACHE_WRITE_TTL(단일 가정)로만 캐시 쓰기 단가를
+// 고른다 — reportedVsComputedByVersion(리포트 비용의 TTL 근거를 진단)은 5m/1h 두 시나리오를
+// "동시에" 봐야 하므로, env 기본값과 무관하게 TTL을 명시적으로 골라 계산하는 버전이 따로 필요하다.
+// cacheWrite/cacheWrite1h 둘 다 PRICING 테이블에 이미 있으니 effectiveCacheWrite처럼 조회만
+// 바꾼다 — 별도 단가표를 만들지 않는다(fable-5-1의 cacheRead 0.25x 예외도 그대로 적용됨).
+export function costAtTtl(row, ttl) {
+  const p = priceFor(row.model);
+  if (!p) return null;
+  const cacheWrite = ttl === "1h" ? p.cacheWrite1h : p.cacheWrite;
+  return (
+    (Number(row.input_tokens) * p.input +
+      Number(row.output_tokens) * p.output +
+      Number(row.cache_read_tokens) * p.cacheRead +
+      Number(row.cache_write_tokens) * cacheWrite) /
+    1e6
+  );
+}
+
 // Cost 페이지 "캐시 티어별 지출" 카드용 — costByModel() 같은 행 배열(모델별 4토큰 합계)을 받아
 // 토큰 티어(비캐시 입력/캐시 읽기/캐시 쓰기/출력) 단위로 $ 총합을 묶는다. 단가표에 없는 모델은
 // 조용히 건너뛴다(withComputedCost의 unpriced 플래그와 동일 정책 — 전체가 깨지지 않게).

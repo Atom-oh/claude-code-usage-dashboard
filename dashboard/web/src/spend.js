@@ -1,4 +1,4 @@
-export const SPEND_HELP = "Claude Code가 보고한 비용을 사용합니다. 보고 비용이 0인데 토큰 사용이 있으면 Claude Code 단가표에 없는 모델일 수 있어 미산정으로 처리합니다. 계산 비용과의 차이는 캐시 TTL·단가·수집 상태를 확인하는 비교 지표이며, 보고값도 실제 청구액이나 수집 완전성을 보장하지 않습니다.";
+export const SPEND_HELP = "Claude Code가 보고한 비용을 사용합니다. 보고 비용이 0인데 토큰 사용이 있으면 Claude Code 단가표에 없는 모델일 수 있어 미산정으로 처리합니다. 계산 비용과의 차이는 캐시 TTL·단가·수집 상태를 확인하는 비교 지표이며, 보고값도 실제 청구액이나 수집 완전성을 보장하지 않습니다. 이 총액은 Claude Code 텔레메트리로 수집된 값만 포함하며, Anthropic Console 조직 사용량 리포트와 모수가 다릅니다(Console은 Claude Code 외 API 사용을 포함하고, 이 페이지의 전체 합계는 Anthropic이 과금하지 않는 Bedrock 채널도 포함) — 두 수치를 직접 대조하지 마세요.";
 
 const TOKEN_FIELDS = ["tokens", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"];
 
