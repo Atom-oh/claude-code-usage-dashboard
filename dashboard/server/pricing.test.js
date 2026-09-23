@@ -309,6 +309,14 @@ test("the -5-1 models keep their explicit 0.025x cacheRead instead of the derive
   assert.equal(priceFor("claude-mythos-5").cacheRead, 1);
 });
 
+// opus-5-5는 opus-5($5/$25)보다 싸고 cacheRead가 0.1x(0.4)가 아닌 0.05x(0.2)다 — 행이 없으면
+// unpriced로 계산 비용에서 빠지고, opus-5로 접히면 25% 과대계상된다(2026-09-23 prod 실측: v2.1.280).
+test("opus-5-5 is priced at its own row with the 0.05x cacheRead exception", () => {
+  assert.equal(normalizeModelId("us.anthropic.claude-opus-5-5[1m]"), "claude-opus-5-5");
+  const p = priceFor("claude-opus-5-5");
+  assert.deepEqual(p, { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2, cacheWrite1h: 8 });
+});
+
 // -\d{8}$(날짜 스냅샷) 단계가 -4 / -1 같은 마이너 버전까지 먹으면 다른 모델 행으로 매칭돼
 // 조용한 오가격이 된다. 두 방향 모두 고정한다.
 test("normalizeModelId strips the date snapshot without eating a minor version", () => {
