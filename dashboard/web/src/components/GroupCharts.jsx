@@ -35,7 +35,7 @@ import EmptyState from "./EmptyState.jsx";
 // 크기라 우측 끝 보정이 틀린 전역 구간을 만든다. 라벨 기반 대체(bucketHoursOverride를 비우는 방법)로는
 // 부족하다: 날짜 라벨은 주간 버킷도 24h로, 그 밖의 라벨은 전역 intervalHours로 보정해 7일 프리셋에서
 // 1h 행을 24h만큼 민다. 시계열 차트를 그리는 호출부는 모두 데이터 훅의 stale을 넘긴다(zoomGuard.test.js).
-function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false) {
+export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false) {
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
   const startRef = useRef(null);

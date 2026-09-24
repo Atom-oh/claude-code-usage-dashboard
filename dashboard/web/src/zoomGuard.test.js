@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 // stale을 zoomDisabled로 넘겨야 한다 — stale인 동안 화면의 행은 이전 기간의 버킷 크기인데 우측 끝
 // 보정은 새 선택의 버킷 크기를 쓴다(GroupCharts.jsx useDragZoom 주석). 카테고리 축 차트(horizontal이거나
 // xKey가 시간 키가 아닌 차트)는 라벨이 날짜로 파싱되지 않아 줌 자체가 no-op이라 제외한다.
-const ZOOMABLE = ["GroupAreaChart", "DualLineChart", "SeriesBarChart"];
+const ZOOMABLE = ["GroupAreaChart", "DualLineChart", "SeriesBarChart", "ModelCostTrend"];
 const TIME_KEYS = new Set(["t", "day"]);
 // UserDrawer는 useApi가 아닌 자체 fetch로, 기간이 바뀌면 곧바로 "불러오는 중..."으로 비운다 — 이전
 // 기간의 행을 보여주는 구간이 없다.

@@ -161,3 +161,42 @@ export function makeGroupBreakdownColorer(group, labelOrder) {
     return ramp[pick];
   };
 }
+
+// Model cost trend palette (ModelCostTrend). These are new keys only: modelColorFor and
+// MODEL_COLOR keep their existing values. The ten model colors pass the dataviz
+// validate_palette adjacent checks in this order (light on #ffffff, dark on #171c27; the dark
+// set carries contrast WARNs for fable-5-1 and opus-5-5, relieved by the legend and table).
+// Vendor ramps are muted three-step ordinal ramps used with a hatch for unregistered models.
+// 기타 uses an exclusive neutral that no model or ramp uses.
+export const MODEL_TREND_COLORS = {
+  light: {
+    "claude-fable-5": "#C95A8E",
+    "claude-fable-5-1": "#7E2D5C",
+    "claude-sonnet-5": "#5B6BDB",
+    "claude-opus-5": "#D9703F",
+    "claude-opus-5-5": "#A62A36",
+    "claude-opus-4-8": "#B37A12",
+    "claude-haiku-4-5": "#8A5CD6",
+    "openai.gpt-5.6-sol": "#00A386",
+    "openai.gpt-6-astra": "#5325B9",
+    "openai.gpt-5.6-luna": "#025A8D",
+  },
+  dark: {
+    "claude-fable-5": "#CB6593",
+    "claude-fable-5-1": "#8F3D71",
+    "claude-sonnet-5": "#6E7DE6",
+    "claude-opus-5": "#CD7143",
+    "claude-opus-5-5": "#A8364A",
+    "claude-opus-4-8": "#B4811F",
+    "claude-haiku-4-5": "#9A70E0",
+    "openai.gpt-5.6-sol": "#16A085",
+    "openai.gpt-6-astra": "#7044EB",
+    "openai.gpt-5.6-luna": "#056AB3",
+  },
+};
+export const MODEL_TREND_OTHERS = { light: "#A3A9B6", dark: "#5E6678" };
+export const MODEL_TREND_VENDOR_RAMPS = {
+  anthropic: { light: ["#855450", "#A4716D", "#C48F8A"], dark: ["#825652", "#9B6D68", "#B48480"] },
+  openai: { light: ["#306F6B", "#4F8D89", "#6DACA7"], dark: ["#366E6B", "#4E8682", "#669E9A"] },
+  other: { light: ["#6F6336", "#8C8053", "#AB9E70"], dark: ["#6E633A", "#857A51", "#9E9268"] },
+};
