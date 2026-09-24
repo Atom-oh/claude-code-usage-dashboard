@@ -397,3 +397,177 @@ test("client model terms are normalized and bound", () => {
     assert.ok(!sql.includes("OR 1=1"));
   }
 });
+
+const modelTimeRecords = [
+  event,
+  { ...event, backend: "bedrock-runtime", model: "global.openai.gpt-6-astra" },
+  { ...event, session: "gateway", model: "global.openai.gpt-6-astra" },
+  { ...event, session: "new-model", model: "openai.new" },
+  { ...event, session: "broken", cache_write_tokens: null },
+  { ...event, session: "no-backend", backend: "unknown" },
+  { ...event, kind: "request", session: "missing-usage", model: "" },
+  { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5", session: "c1", input_tokens: 49, reported_cost: 2 },
+  { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5", session: "c2", input_tokens: 49, reported_cost: 0 },
+  { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5", session: "c3", input_tokens: 49, reported_cost: 0, cost_observed: 0 },
+  { client: "claude", timeline_only: 1, t: "2026-09-14 11:00:00", token_observed: 1, cost_observed: 1,
+    token_missing: 0, cost_missing: 0, session: "", user: "", model: "", backend: "", kind: "usage",
+    input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reported_cost: 0 },
+];
+const modelTimeClients = ["claude", "codex"];
+
+test("modelTime adds by_model_time without changing any other output", () => {
+  const without = foldClientMetrics(modelTimeRecords, modelTimeClients);
+  const off = foldClientMetrics(modelTimeRecords, modelTimeClients, undefined, { modelTime: false });
+  const on = foldClientMetrics(modelTimeRecords, modelTimeClients, undefined, { modelTime: true });
+  assert.ok(!("by_model_time" in without));
+  assert.deepEqual(off, without);
+  const { by_model_time, ...rest } = on;
+  assert.deepEqual(rest, without);
+  assert.ok(Array.isArray(by_model_time));
+  assert.equal(by_model_time.length, 7);
+  for (const row of [without.totals, ...without.by_client, ...without.by_model, ...without.by_user,
+    ...without.by_project, ...without.timeseries]) {
+    assert.ok(!("unpriced_reasons" in row));
+  }
+  // Accumulator internals such as _reasons must not leak into any row. A leak changes today's
+  // output identically with and without the option, so the deep-equal above cannot see it.
+  for (const row of [without.totals, ...without.by_client, ...without.by_model, ...without.by_user,
+    ...without.by_project, ...without.timeseries, ...by_model_time]) {
+    assert.ok(Object.keys(row).every((k) => !k.startsWith("_")), Object.keys(row).join(","));
+  }
+});
+
+test("by_model_time reason counts weigh grouped responses like unpriced", () => {
+  // One Codex SQL group can hold several responses; each counts once in unpriced and its reason.
+  const out = foldClientMetrics([{ ...event, model: "openai.new", count: 3 }], ["codex"], undefined, { modelTime: true });
+  assert.equal(out.by_model_time[0].unpriced, 3);
+  assert.equal(out.by_model_time[0].unpriced_reasons.unknown_model, 3);
+});
+
+test("by_model_time rows carry raw models and per-reason unpriced counts", () => {
+  const on = foldClientMetrics(modelTimeRecords, modelTimeClients, undefined, { modelTime: true });
+  const noCodexReason = { unknown_backend: 0, scope: 0, unknown_model: 0, invalid_usage: 0, missing_usage: 0 };
+  const expected = [
+    ["claude", "claude-sonnet-5", "anthropic", 2, true, { report_missing: 1, report_zero_with_tokens: 1, missing_usage: 0 }],
+    ["codex", "", "bedrock-mantle", null, true, { ...noCodexReason, missing_usage: 1 }],
+    ["codex", "global.openai.gpt-6-astra", "bedrock-mantle", null, true, { ...noCodexReason, scope: 1 }],
+    ["codex", "global.openai.gpt-6-astra", "bedrock-runtime", 0.0021675, false, { ...noCodexReason }],
+    ["codex", "openai.gpt-6-astra", "bedrock-mantle", 0.00238425, true, { ...noCodexReason, invalid_usage: 1 }],
+    ["codex", "openai.gpt-6-astra", "unknown", null, true, { ...noCodexReason, unknown_backend: 1 }],
+    ["codex", "openai.new", "bedrock-mantle", null, true, { ...noCodexReason, unknown_model: 1 }],
+  ];
+  assert.deepEqual(on.by_model_time.map((r) => [r.client, r.model, r.backend]),
+    expected.map(([client, model, backend]) => [client, model, backend]));
+  expected.forEach(([client, model, backend, cost_usd, cost_partial, unpriced_reasons], i) => {
+    const row = on.by_model_time[i];
+    const message = `${client}/${model}/${backend}`;
+    assert.equal(row.t, "2026-09-14 10:00:00", message);
+    if (cost_usd === null) assert.equal(row.cost_usd, null, message);
+    else assert.ok(Math.abs(row.cost_usd - cost_usd) < 1e-9, message);
+    assert.equal(row.cost_partial, cost_partial, message);
+    assert.deepEqual(row.unpriced_reasons, unpriced_reasons, message);
+    assert.equal(Object.values(row.unpriced_reasons).reduce((s, n) => s + n, 0), row.unpriced, message);
+  });
+  const emptyModel = on.by_model_time.find((r) => r.client === "codex" && r.model === "");
+  assert.equal(emptyModel.requests, 1);
+  const recordModels = new Set(modelTimeRecords.map((r) => r.model || ""));
+  for (const row of on.by_model_time) assert.ok(recordModels.has(row.model), row.model);
+  assert.ok(!on.by_model_time.some((r) => r.t === "2026-09-14 11:00:00"));
+  const idle = on.timeseries.find((r) => r.client === "claude" && r.t === "2026-09-14 11:00:00");
+  assert.equal(idle.timeline_observed, true);
+});
+
+test("by_model_time known costs sum to the timeseries per client and bucket", () => {
+  const on = foldClientMetrics(modelTimeRecords, modelTimeClients, undefined, { modelTime: true });
+  for (const ts of on.timeseries) {
+    const rows = on.by_model_time.filter((r) => r.client === ts.client && r.t === ts.t);
+    const message = `${ts.client}/${ts.t}`;
+    if (ts.cost_usd === null) {
+      for (const row of rows) assert.equal(row.cost_usd, null, message);
+    } else {
+      const known = rows.reduce((s, r) => s + (r.cost_usd ?? 0), 0);
+      assert.ok(Math.abs(known - ts.cost_usd) < 1e-9, message);
+    }
+  }
+  const codex = on.timeseries.find((r) => r.client === "codex" && r.t === "2026-09-14 10:00:00");
+  assert.ok(Math.abs(codex.cost_usd - 0.00455175) < 1e-9);
+  assert.ok(on.by_model_time.filter((r) => r.client === "codex" && r.t === codex.t).length >= 2);
+});
+
+test("Claude by_model_time rows use the claudeUsage rule", () => {
+  const valid = foldClientMetrics([
+    { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5", input_tokens: undefined, reported_cost: "2.5" },
+  ], ["claude"], undefined, { modelTime: true });
+  assert.equal(valid.by_model_time.length, 1);
+  assert.equal(valid.by_model_time[0].cost_usd, 2.5);
+  assert.equal(valid.by_model_time[0].cost_partial, false);
+  assert.deepEqual(valid.by_model_time[0].unpriced_reasons,
+    { report_missing: 0, report_zero_with_tokens: 0, missing_usage: 0 });
+  const invalid = foldClientMetrics([
+    { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5", input_tokens: 49, reported_cost: -1 },
+  ], ["claude"], undefined, { modelTime: true });
+  assert.equal(invalid.by_model_time.length, 1);
+  assert.equal(invalid.by_model_time[0].cost_usd, null);
+  assert.equal(invalid.by_model_time[0].unpriced_reasons.report_missing, 1);
+});
+
+// by_model_time rows exist only for counter-backed usage or Codex missing-usage scopes.
+// Operational rows (request, tool, ttft, stream_error, approval) attach to such a row but never create one.
+const opT = "2026-09-14 10:00:00";
+const idleNoCost = { client: "claude", timeline_only: 1, t: opT, token_observed: 1, cost_observed: 0,
+  token_missing: 0, cost_missing: 0, session: "", user: "", model: "", backend: "", kind: "usage",
+  input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reported_cost: 0 };
+const claudeOp = { client: "claude", t: opT, session: "idle", user: "person@example.invalid",
+  model: "claude-sonnet-5", backend: "anthropic", project: "", count: 1, errors: 0 };
+
+test("Claude operational rows never create a known $0 by_model_time row", () => {
+  const out = foldClientMetrics([
+    idleNoCost,
+    { ...claudeOp, kind: "request", duration_ms: 10, duration_count: 1 },
+    { ...claudeOp, kind: "tool", tool: "Bash" },
+    { ...claudeOp, kind: "ttft", duration_ms: 5, duration_count: 1 },
+  ], ["claude"], undefined, { modelTime: true });
+  assert.deepEqual(out.by_model_time, [], "operational rows create no by_model_time row");
+  const buckets = out.timeseries.filter((r) => r.t === opT);
+  assert.equal(buckets.length, 1, "one timeseries bucket at opT");
+  assert.equal(buckets[0].cost_usd, null, "idle bucket cost stays unknown");
+  assert.equal(buckets[0].cost_partial, true, "idle bucket cost is partial");
+  assert.equal(buckets[0].requests, 1, "request row counted in the timeseries");
+  assert.equal(buckets[0].tool_calls, 1, "tool row counted in the timeseries");
+});
+
+test("operational rows attach to a counter-backed by_model_time row in either record order", () => {
+  const usage = { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5", session: "idle",
+    input_tokens: 49, reported_cost: 2 };
+  const request2 = { ...claudeOp, kind: "request", count: 2, duration_ms: 20, duration_count: 2 };
+  const first = foldClientMetrics([request2, usage], ["claude"], undefined, { modelTime: true });
+  const second = foldClientMetrics([usage, request2], ["claude"], undefined, { modelTime: true });
+  for (const [label, out] of [["request first", first], ["usage first", second]]) {
+    assert.equal(out.by_model_time.length, 1, `${label}: one by_model_time row`);
+    assert.equal(out.by_model_time[0].cost_usd, 2, `${label}: reported cost`);
+    assert.equal(out.by_model_time[0].cost_partial, false, `${label}: cost not partial`);
+    assert.equal(out.by_model_time[0].requests, 2, `${label}: requests attached`);
+  }
+  assert.deepEqual(first.by_model_time, second.by_model_time, "record order does not change by_model_time");
+});
+
+test("Codex operational-only buckets and rejected-only models create no by_model_time row", () => {
+  const later = "2026-09-14 11:00:00";
+  const out = foldClientMetrics([
+    event,
+    { ...event, kind: "request", t: later },
+    { ...event, kind: "tool", t: later, tool: "exec_command" },
+    { ...event, kind: "stream_error", t: later },
+    { ...event, kind: "request", session: "rejected", model: "openai.gpt-5.6-luna", count: 2, rejected_count: 2, errors: 2 },
+  ], ["codex"], undefined, { modelTime: true });
+  assert.deepEqual(out.by_model_time.map((r) => [r.t, r.model, r.backend, r.cost_usd]),
+    [["2026-09-14 10:00:00", "openai.gpt-6-astra", "bedrock-mantle", 0.00238425]],
+    "only the usage-bearing astra bucket has a by_model_time row");
+  const ts = out.timeseries.find((r) => r.t === later);
+  assert.ok(ts, "operational 11:00 timeseries bucket exists");
+  assert.equal(ts.cost_usd, 0, "11:00 timeseries cost");
+  assert.equal(ts.requests, 1, "11:00 timeseries requests");
+  assert.equal(ts.tool_calls, 1, "11:00 timeseries tool calls");
+  assert.equal(ts.api_errors, 1, "11:00 timeseries api errors");
+  assert.equal(out.quality.missing_usage, 0, "no missing-usage scope");
+});

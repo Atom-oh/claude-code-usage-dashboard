@@ -436,6 +436,26 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal(zero.cost_partial, mode !== "cost");
       }
     });
+    // An operational log next to idle counters must not become a known $0 model row.
+    await t.test("Claude operational logs never turn idle counters into a known $0 by_model_time row", async () => {
+      const user = "modeltime-idle@example.invalid";
+      const values = [];
+      for (const clock of ["09:59:00", "10:01:00"]) {
+        const row = counter("claude_code.token.usage", "input", clock, 10);
+        row.ResourceAttributes = { "user.email": user };
+        row.Attributes["session.id"] = "mt-idle";
+        values.push(row);
+      }
+      const request = log(800, "api_request", { "session.id": "mt-idle", model: "claude-sonnet-5", duration_ms: "100" });
+      request.ResourceAttributes = { "user.email": user };
+      await insertMetrics(values);
+      await insertLogs([request]);
+      const result = await overview({ client: "claude", user: "modeltime-idle@", modelTime: "1" }, ["claude"], from, to);
+      assert.deepEqual(result.by_model_time, []);
+      assert.deepEqual(result.timeseries.map((r) => [r.t, r.cost_usd, r.cost_partial, r.timeline_observed, r.requests]),
+        [[`${day}T10:01:00Z`, null, true, true, 1]]);
+      assert.equal(result.totals.requests, 1);
+    });
     await t.test("first partial hour requires actual in-window counter observations", async () => {
       for (const observed of [false, true]) {
         const user = `partial-idle-${observed}@example.invalid`;
@@ -455,6 +475,113 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           observed ? [`${day}T10:15:00Z`, `${day}T11:00:00Z`] : [`${day}T11:00:00Z`]);
         assert(result.timeseries.every(row => row.observed_tokens === 0 && row.cost_usd === 0));
       }
+    });
+    // Baseline-only first-bucket sessions are no data; the pre-fold query returned them as $0 rows.
+    await t.test("model cost cells classify sessions in ClickHouse and omit baseline-only first buckets at 1h, 24h and 168h", async () => {
+      const { costByModelDaily } = await import("./queries.js");
+      const user = "model-cost-partial@example.invalid";
+      const values = [];
+      for (const [session, model, metric, type, samples] of [
+        ["mc-observed", "claude-sonnet-5", "claude_code.cost.usage", "", [["10:05:00", 1], ["10:30:00", 1.5], ["11:30:00", 2.5]]],
+        ["mc-observed", "claude-sonnet-5", "claude_code.token.usage", "input", [["10:05:00", 100], ["10:30:00", 150], ["11:30:00", 250]]],
+        ["mc-baseline", "claude-haiku-4-5", "claude_code.cost.usage", "", [["10:05:00", 1], ["10:10:00", 1.25]]],
+        ["mc-baseline", "claude-haiku-4-5", "claude_code.token.usage", "input", [["10:05:00", 10], ["10:10:00", 12]]],
+        ["mc-late", "claude-opus-5", "claude_code.cost.usage", "", [["10:05:00", 1], ["11:30:00", 1.25]]],
+        ["mc-late", "claude-opus-5", "claude_code.token.usage", "input", [["10:05:00", 10], ["11:30:00", 14]]],
+        ["mc-token-only", "claude-fable-5", "claude_code.token.usage", "input", [["10:30:00", 10], ["11:30:00", 30]]],
+        ["mc-observed-missing", "claude-sonnet-5", "claude_code.token.usage", "input", [["10:30:00", 5], ["11:30:00", 8]]],
+        ["mc-zero-known", "claude-opus-4-8", "claude_code.cost.usage", "", [["10:30:00", 0], ["11:30:00", 0]]],
+        ["mc-zero-known", "claude-opus-4-8", "claude_code.token.usage", "input", [["10:30:00", 0], ["11:30:00", 0]]],
+        ["mc-zero-tokens", "claude-opus-4-8", "claude_code.cost.usage", "", [["10:30:00", 0], ["11:30:00", 0]]],
+        ["mc-zero-tokens", "claude-opus-4-8", "claude_code.token.usage", "input", [["10:30:00", 20], ["11:30:00", 40]]],
+        ["mc-report-only", "claude-sonnet-4-5", "claude_code.cost.usage", "", [["10:30:00", 0.75], ["11:30:00", 1]]],
+      ]) {
+        for (const [clock, value] of samples) {
+          const row = counter(metric, type, clock, value);
+          row.ResourceAttributes = { "user.email": user };
+          row.Attributes["session.id"] = session;
+          row.Attributes.model = model;
+          values.push(row);
+        }
+      }
+      await insertMetrics(values);
+      const start = new Date(`${day}T10:15:00Z`), end = new Date(`${day}T16:00:00Z`);
+      const filter = { user: "model-cost-partial@" };
+      const shape = (rows) => rows.map((r) => [r.day, r.model, r.reported_cost, r.reported_partial, r.reported_all_unavailable, r.reported_unavailable, r.reported_reasons.report_missing, r.reported_reasons.report_zero_with_tokens, r.input_tokens, r.observed_tokens, r.tokens_partial]);
+      const week = new Date(Math.floor(Date.parse(`${day}T00:00:00Z`) / (7 * 86400000)) * 7 * 86400000).toISOString().slice(0, 19).replace("T", " ");
+      const hourly = await costByModelDaily(start, end, 1, filter);
+      assert.deepEqual(shape(hourly), [
+        [`${day} 10:00:00`, "claude-fable-5", null, true, true, 1, 1, 0, 10, 10, false],
+        [`${day} 10:00:00`, "claude-opus-4-8", 0, true, false, 1, 0, 1, 20, 20, false],
+        [`${day} 10:00:00`, "claude-sonnet-4-5", 0.75, false, false, 0, 0, 0, 0, null, true],
+        [`${day} 10:00:00`, "claude-sonnet-5", 0.5, true, false, 1, 1, 0, 55, 55, false],
+        [`${day} 11:00:00`, "claude-fable-5", null, true, true, 1, 1, 0, 20, 20, false],
+        [`${day} 11:00:00`, "claude-opus-4-8", 0, true, false, 1, 0, 1, 20, 20, false],
+        [`${day} 11:00:00`, "claude-opus-5", 0.25, false, false, 0, 0, 0, 4, 4, false],
+        [`${day} 11:00:00`, "claude-sonnet-4-5", 0.25, false, false, 0, 0, 0, 0, null, true],
+        [`${day} 11:00:00`, "claude-sonnet-5", 1, true, false, 1, 1, 0, 103, 103, false],
+      ], "1h");
+      const grains = [hourly];
+      for (const [hours, label] of [[24, `${day} 00:00:00`], [168, week]]) {
+        const rows = await costByModelDaily(start, end, hours, filter);
+        assert.deepEqual(shape(rows), [
+          [label, "claude-fable-5", null, true, true, 1, 1, 0, 30, 30, false],
+          [label, "claude-opus-4-8", 0, true, false, 1, 0, 1, 40, 40, false],
+          [label, "claude-opus-5", 0.25, false, false, 0, 0, 0, 4, 4, false],
+          [label, "claude-sonnet-4-5", 1, false, false, 0, 0, 0, 0, null, true],
+          [label, "claude-sonnet-5", 1.5, true, false, 1, 1, 0, 158, 158, false],
+        ], `${hours}h`);
+        grains.push(rows);
+      }
+      for (const row of grains.flat()) {
+        assert.equal(row.group, "enterprise");
+        assert.notEqual(row.model, "claude-haiku-4-5");
+      }
+      // Sessions never fan out: claude-sonnet-5 (mc-observed, mc-observed-missing) and
+      // claude-opus-4-8 (mc-zero-known, mc-zero-tokens) each have two sessions in every bucket,
+      // yet each grain returns exactly one row per (day, group, model).
+      for (const rows of grains) {
+        assert.equal(new Set(rows.map((r) => JSON.stringify([r.day, r.group, r.model]))).size, rows.length);
+      }
+      // The raw ClickHouse result is already one row per (day, group, model), so the row guard
+      // counts cells: per-session rows (53,896 for 30 days at 1h on prod) never leave the database.
+      const { costByModelDailySql, range } = await import("./queries.js");
+      const { query } = await import("./clickhouse.js");
+      for (const [hours, cells] of [[1, 9], [24, 5], [168, 5]]) {
+        const { sql, params, raw } = costByModelDailySql(hours, filter);
+        const rows = await query(sql, { ...range(start, end, raw), ...params });
+        assert.equal(rows.length, cells, `${hours}h raw ClickHouse rows`);
+      }
+    });
+    // Pins current detail behavior: an increment inside the partial first minute is dropped.
+    await t.test("minute buckets drop an unaligned first minute on the detail endpoint (pre-existing boundary)", async () => {
+      const { costByModelDaily } = await import("./queries.js");
+      const user = "partial-minute@example.invalid";
+      const values = [];
+      for (const [metric, type, samples] of [
+        ["claude_code.cost.usage", "", [["10:00:10", 1], ["10:00:35", 1.5], ["10:01:30", 2]]],
+        ["claude_code.token.usage", "input", [["10:00:10", 10], ["10:00:35", 15], ["10:01:30", 20]]],
+      ]) {
+        for (const [clock, value] of samples) {
+          const row = counter(metric, type, clock, value);
+          row.ResourceAttributes = { "user.email": user };
+          row.Attributes["session.id"] = "pm-session";
+          row.Attributes.model = "claude-sonnet-5";
+          values.push(row);
+        }
+      }
+      await insertMetrics(values);
+      const filter = { user: "partial-minute@" };
+      const shape = (rows) => rows.map((r) => [r.day, r.model, r.reported_cost, r.reported_partial, r.input_tokens]);
+      const end = new Date(`${day}T10:03:00Z`);
+      const unaligned = await costByModelDaily(new Date(`${day}T10:00:30Z`), end, 1 / 60, filter);
+      // The 0.5 reported at 10:00:35 is in neither bucket.
+      assert.deepEqual(shape(unaligned), [[`${day} 10:01:00`, "claude-sonnet-5", 0.5, false, 5]]);
+      const aligned = await costByModelDaily(new Date(`${day}T10:00:00Z`), end, 1 / 60, filter);
+      assert.deepEqual(shape(aligned), [
+        [`${day} 10:00:00`, "claude-sonnet-5", 1.5, false, 15],
+        [`${day} 10:01:00`, "claude-sonnet-5", 0.5, false, 5],
+      ]);
     });
     await t.test("idle buckets before the active-row boundary cannot truncate later usage", async () => {
       const user = "capacity@example.invalid";

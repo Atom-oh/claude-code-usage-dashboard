@@ -314,3 +314,119 @@ test("entrypointBreakdown filters model per row while its two siblings keep the 
     assert.ok(line.includes(`modelViaSession: "l.SessionId"`), `${fn} carries no model attribute and must keep the semi-join: ${line}`);
   }
 });
+
+// costByModelDailySql groups per session inside a subquery so report availability is judged
+// before model aggregation. The builder and modelCostTrend.js are loaded inside each test so
+// that the rest of this file keeps running while those exports are still missing.
+test("costByModelDailySql groups per session and counts observed cost/token samples", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  for (const hours of [1, 24, 168]) {
+    const { sql, raw } = costByModelDailySql(hours);
+    assert.equal(raw, false, `${hours}h must not take the raw minute path`);
+    for (const text of [
+      "m.SessionId AS session",
+      'GROUP BY day, "group", model, session',
+      "model_cost_first_observations AS (",
+      "SELECT DISTINCT SessionId, UserEmail, MetricName, Model, TokenType, Decision",
+      "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')",
+    ]) assert.ok(sql.includes(text), `${hours}h SQL must include ${text}`);
+    assert.match(sql, /countIf\(\(m\.t >= \{from:DateTime\} OR[\s\S]*?IN \(SELECT \* FROM model_cost_first_observations\)\) AND m\.MetricName = 'claude_code\.cost\.usage'\) AS report_obs/);
+    assert.match(sql, /countIf\(\(m\.t >= \{from:DateTime\} OR[\s\S]*?IN \(SELECT \* FROM model_cost_first_observations\)\) AND m\.MetricName = 'claude_code\.token\.usage'\) AS token_obs/);
+  }
+});
+
+// The first-observation CTE scans only the first bucket, capped at {to}; its end expression must
+// use the same interval unit and parameter as the bucketing itself.
+test("the first-bucket observation window follows the bucket width", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  const hourly = costByModelDailySql(1);
+  assert.ok(
+    hourly.sql.includes("TimeUnix < least(toStartOfInterval({from:DateTime}, INTERVAL {intervalHours:UInt32} HOUR) + INTERVAL {intervalHours:UInt32} HOUR, {to:DateTime})"),
+    "1h CTE must end at the first hour bucket boundary"
+  );
+  assert.deepEqual(hourly.params, { intervalHours: 1 });
+  for (const [hours, expected] of [[24, { intervalDays: 1 }], [168, { intervalDays: 7 }]]) {
+    const { sql, params } = costByModelDailySql(hours);
+    assert.ok(
+      sql.includes("TimeUnix < least(toStartOfInterval({from:DateTime}, INTERVAL {intervalDays:UInt32} DAY) + INTERVAL {intervalDays:UInt32} DAY, {to:DateTime})"),
+      `${hours}h CTE must end at the first day bucket boundary`
+    );
+    assert.deepEqual(params, expected);
+    assert.ok(!sql.includes("INTERVAL {intervalHours:UInt32} HOUR"), `${hours}h must not reference an hour interval`);
+  }
+});
+
+// Minute buckets are clock-aligned and only buckets with t >= {from} are returned, so every retained sample is an in-window observation.
+test("minute buckets skip the first-observation CTE", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  const { sql, params, raw } = costByModelDailySql(0.25);
+  assert.equal(raw, true);
+  assert.deepEqual(params, { intervalMinutes: 15 });
+  assert.ok(!sql.includes("model_cost_first_observations"), "raw path must not build the CTE");
+  assert.ok(sql.includes("countIf(1 AND m.MetricName = 'claude_code.cost.usage') AS report_obs"), "raw path counts every cost sample as observed");
+});
+
+// The fold rejects more than MODEL_COST_ROW_LIMIT rows, so the query fetches one extra row to
+// detect overflow instead of silently truncating.
+test("costByModelDailySql asks for one row beyond the fold limit", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  const { MODEL_COST_ROW_LIMIT } = await import("./modelCostTrend.js");
+  assert.equal(MODEL_COST_ROW_LIMIT, 50000);
+  for (const hours of [0.25, 1, 24, 168]) {
+    const { sql } = costByModelDailySql(hours);
+    assert.ok(sql.trim().endsWith(`LIMIT ${MODEL_COST_ROW_LIMIT + 1}`), `${hours}h SQL must end with LIMIT 50001`);
+  }
+});
+
+// Filters stay bound parameters; the model filter is normalized and, as in the other A/B
+// channel queries, the unknown channel is excluded by default.
+test("costByModelDailySql binds user and model filters and keeps the channel default", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  const { sql, params } = costByModelDailySql(24, { user: "x' OR 1=1", model: "global.anthropic.claude-sonnet-5" });
+  assert.equal(params.fUser, "x' OR 1=1");
+  assert.equal(params.fModel, "claude-sonnet-5");
+  assert.ok(!sql.includes("OR 1=1"), "filter values must never be inlined into the SQL text");
+  assert.ok(sql.includes("m.Model != ''"), "rows without a model are excluded");
+  assert.ok(sql.includes("!= 'unknown'"), "the unknown channel is excluded by default");
+});
+
+// The middle level renames and classifies each per-session scope once; every observed scope is
+// exactly one of usable, report_missing or report_zero_with_tokens.
+test("costByModelDailySql classifies each session scope with one usability predicate", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  for (const hours of [0.25, 1, 24, 168]) {
+    const { sql } = costByModelDailySql(hours);
+    for (const text of [
+      "report_obs > 0 AND isFinite(scope_report) AND scope_report >= 0 AS report_valid",
+      "isFinite(scope_input) AND scope_input >= 0 AND isFinite(scope_output) AND scope_output >= 0 AND isFinite(scope_cache_read) AND scope_cache_read >= 0 AND isFinite(scope_cache_write) AND scope_cache_write >= 0 AS tokens_valid",
+      "scope_input + scope_output + scope_cache_read + scope_cache_write AS scope_tokens",
+      "report_valid AND (scope_report > 0 OR token_obs = 0 OR (tokens_valid AND scope_tokens = 0)) AS usable",
+      "sumIf(scope_report, usable) AS known_report",
+      "countIf(usable) AS usable_scopes",
+      "countIf(NOT report_valid) AS report_missing",
+      "countIf(report_valid AND NOT usable) AS report_zero_with_tokens",
+      "WHERE report_obs > 0 OR token_obs > 0",
+    ]) assert.ok(sql.includes(text), `${hours}h SQL must include ${text}`);
+    assert.equal((sql.match(/ AS usable$/gm) || []).length, 1, `${hours}h SQL must define the usable predicate once`);
+  }
+});
+
+// Per-session rows stay inside a subquery; the outer level returns one row per (day, group, model)
+// with strict token sums and the observed-token coverage counts.
+test("costByModelDailySql responds at the (day, group, model) grain", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  for (const hours of [0.25, 1, 24, 168]) {
+    const { sql } = costByModelDailySql(hours);
+    assert.match(sql, /GROUP BY day, "group", model ORDER BY day\s+LIMIT 50001\s*$/, `${hours}h SQL must end at the model grain`);
+    assert.match(sql, /GROUP BY day, "group", model, session\s*\)/, `${hours}h per-session GROUP BY must close a subquery`);
+    for (const text of [
+      "if(countIf(NOT (isFinite(scope_input) AND scope_input >= 0)) > 0, NULL, sum(scope_input)) AS input_tokens",
+      "if(countIf(NOT (isFinite(scope_output) AND scope_output >= 0)) > 0, NULL, sum(scope_output)) AS output_tokens",
+      "if(countIf(NOT (isFinite(scope_cache_read) AND scope_cache_read >= 0)) > 0, NULL, sum(scope_cache_read)) AS cache_read_tokens",
+      "if(countIf(NOT (isFinite(scope_cache_write) AND scope_cache_write >= 0)) > 0, NULL, sum(scope_cache_write)) AS cache_write_tokens",
+      "sumIf(scope_tokens, token_obs > 0 AND tokens_valid) AS observed_token_sum",
+      "countIf(token_obs > 0 AND tokens_valid) AS observed_token_scopes",
+      "countIf(token_obs = 0 OR NOT tokens_valid) AS unobserved_token_scopes",
+    ]) assert.ok(sql.includes(text), `${hours}h SQL must include ${text}`);
+  }
+});

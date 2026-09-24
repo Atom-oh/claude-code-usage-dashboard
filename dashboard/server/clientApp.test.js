@@ -145,3 +145,62 @@ test("Codex insights enforce auth, client flags and backend-isolated cache entri
   assert.equal(rows[4].dataQueries, 2);
   assert.equal(rows[5].dataQueries, 0);
 });
+
+test("modelTime=1 is an overview dimension with its own cache identity", async () => {
+  const plain = `/api/clients/overview?${range}`;
+  const modelled = `${plain}&modelTime=1`;
+  const rows = await scenario(true, true, [plain, modelled, plain, modelled]);
+  for (const row of rows) assert.equal(row.status, 200);
+  assert.ok(rows[0].dataQueries > 0, "plain overview queries the database");
+  assert.ok(rows[1].dataQueries > 0, "modelTime=1 is a separate cache entry");
+  assert.equal(rows[2].dataQueries, 0);
+  assert.equal(rows[3].dataQueries, 0);
+  assert.ok(!("by_model_time" in rows[0].body));
+  assert.ok(!("by_model_time" in rows[2].body));
+  const { by_model_time, ...rest } = rows[1].body;
+  assert.deepEqual(rest, rows[0].body);
+  const codex = by_model_time.find((r) => r.client === "codex" && r.model === "openai.gpt-6-astra");
+  assert.equal(codex.backend, "bedrock-mantle");
+  assert.equal(codex.cost_usd, 0.00238425);
+  assert.deepEqual(codex.unpriced_reasons,
+    { unknown_backend: 0, scope: 0, unknown_model: 0, invalid_usage: 0, missing_usage: 0 });
+  const claude = by_model_time.find((r) => r.client === "claude" && r.model === "claude-sonnet-5");
+  assert.equal(claude.backend, "anthropic");
+  assert.equal(claude.cost_usd, 2);
+});
+
+test("modelTime misses the cache when it is requested first", async () => {
+  const plain = `/api/clients/overview?${range}`;
+  const modelled = `${plain}&modelTime=1`;
+  const rows = await scenario(true, true, [modelled, plain]);
+  assert.equal(rows[0].status, 200);
+  assert.equal(rows[1].status, 200);
+  assert.ok(rows[1].dataQueries > 0, "the plain view does not reuse the modelTime entry");
+  assert.ok("by_model_time" in rows[0].body);
+  assert.ok(!("by_model_time" in rows[1].body));
+});
+
+test("invalid modelTime values fail before any cache lookup", async () => {
+  const plain = `/api/clients/overview?${range}`;
+  const rows = await scenario(true, true, [
+    plain, `${plain}&modelTime=0`, `${plain}&modelTime=true`, `${plain}&modelTime=`,
+    `${plain}&modelTime=1&modelTime=1`, `${plain}&modelTime=2`,
+  ]);
+  assert.equal(rows[0].status, 200);
+  // The first request fills the cache for this view, so a 400 shows validation runs first.
+  rows.slice(1).forEach((row, i) => {
+    assert.equal(row.status, 400, `request ${i + 1}`);
+    assert.equal(row.dataQueries, 0, `request ${i + 1}`);
+    assert.equal(row.body.error, "invalid modelTime", `request ${i + 1}`);
+  });
+});
+
+test("Codex insights ignore modelTime", async () => {
+  const path = `/api/codex/insights?${range}`;
+  const rows = await scenario(true, true, [`${path}&modelTime=1`, path, `${path}&modelTime=2`]);
+  for (const row of rows) assert.equal(row.status, 200);
+  assert.ok(rows[0].dataQueries > 0, "insights query the database");
+  assert.equal(rows[1].dataQueries, 0);
+  assert.equal(rows[2].dataQueries, 0);
+  assert.ok(!("by_model_time" in rows[0].body));
+});

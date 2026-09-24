@@ -123,3 +123,72 @@ test("an overflowing configured estimate is unavailable, not a JSON infinity", (
   assert.equal(row.cost_usd, null);
   assert.equal(row.unpriced, true);
 });
+
+test("unpriced_reason is null when priced", () => {
+  assert.equal(priceCodexUsage(usage).unpriced_reason, null, "regional short");
+  const global = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "global.openai.gpt-6-astra" });
+  assert.equal(global.unpriced_reason, null, "global runtime");
+  const zero = priceCodexUsage({ ...usage, input_tokens_total: 0, cache_read_tokens: 0,
+    cache_write_tokens: 0, output_tokens: 0, reasoning_tokens: 0 });
+  assert.equal(zero.unpriced_reason, null, "known zero usage");
+});
+
+test("unpriced_reason names why a Codex response has no estimate", () => {
+  for (const [patch, reason] of [
+    [{ backend: "unknown" }, "unknown_backend"],
+    [{ backend: "" }, "unknown_backend"],
+    [{ backend: "bedrock-mantle", model: "global.openai.gpt-6-astra" }, "scope"],
+    [{ backend: "bedrock-mantle", model: "us.openai.gpt-6-astra" }, "scope"],
+    [{ backend: "bedrock-runtime", model: "us-gov.openai.gpt-6-astra" }, "scope"],
+    [{ model: "openai.unknown" }, "unknown_model"],
+    [{ backend: "bedrock-runtime", model: "global.anthropic.claude-fable-5-1" }, "unknown_model"],
+    [{ cache_write_tokens: undefined }, "invalid_usage"],
+    [{ cache_read_tokens: 101 }, "invalid_usage"],
+    [{ output_tokens: -1 }, "invalid_usage"],
+    [{ reasoning_tokens: 31 }, "invalid_usage"],
+    [{ invalid: 1 }, "invalid_usage"],
+  ]) {
+    // An undefined patch value stringifies to {}, so the key names are added to the message.
+    const label = `${JSON.stringify(patch)} (${Object.keys(patch).join(", ")})`;
+    const row = priceCodexUsage({ ...usage, ...patch });
+    assert.equal(row.cost_usd, null, label);
+    assert.equal(row.unpriced, true, label);
+    assert.equal(row.unpriced_reason, reason, label);
+  }
+});
+
+test("unpriced_reason precedence is backend, scope, model rate, then usage", () => {
+  for (const [patch, reason] of [
+    [{ backend: "unknown", model: "openai.unknown", output_tokens: -1 }, "unknown_backend"],
+    [{ backend: "bedrock-mantle", model: "global.openai.unknown", output_tokens: -1 }, "scope"],
+    [{ model: "openai.unknown", output_tokens: -1 }, "unknown_model"],
+    [{ backend: "bedrock-mantle", model: "global.anthropic.claude-fable-5-1" }, "scope"],
+  ]) {
+    const label = JSON.stringify(patch);
+    const row = priceCodexUsage({ ...usage, ...patch });
+    assert.equal(row.cost_usd, null, label);
+    assert.equal(row.unpriced, true, label);
+    assert.equal(row.unpriced_reason, reason, label);
+  }
+});
+
+test("a configured model without a rate for the response scope is a scope mismatch", () => {
+  const rate = { input: 2, cacheWrite: 3, cacheRead: 1, output: 4 };
+  const prices = parseCodexPricing(JSON.stringify({ "openai.other": {
+    short_context_limit: 1000, regional: { short: rate, long: rate },
+  } }));
+  const global = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "global.openai.other" }, prices);
+  assert.equal(global.cost_usd, null);
+  assert.equal(global.unpriced_reason, "scope");
+  const regional = priceCodexUsage({ ...usage, model: "openai.other" }, prices);
+  assert.equal(regional.cost_usd, 0.000291);
+  assert.equal(regional.unpriced_reason, null);
+});
+
+test("a non-finite configured estimate reports no usable rate", () => {
+  const rate = { input: 1e308, cacheWrite: 1e308, cacheRead: 1e308, output: 1e308 };
+  const prices = { "openai.gpt-6-astra": { regional: { short: rate } } };
+  const row = priceCodexUsage(usage, prices);
+  assert.equal(row.cost_usd, null);
+  assert.equal(row.unpriced_reason, "unknown_model");
+});
