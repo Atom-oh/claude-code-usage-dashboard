@@ -25,13 +25,23 @@ function stubFetch(handler) {
 // 통과해서, "같은 payload면 참조 유지" 단정문이 아무것도 검증하지 못한다.
 const okFresh = (body) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ...body }) });
 
+// 요청마다 대기 중인 핸들을 쌓는다 — 테스트가 응답 시점과 순서를 직접 정한다. signal은 존중하지
+// 않는다(abort돼도 reject하지 않음): 그래야 abort된 요청의 "늦은 응답"을 흉내 낼 수 있다.
+function stubPending() {
+  const pending = [];
+  stubFetch((url, { signal }) => new Promise((resolve, reject) => pending.push({ url, resolve, reject, signal })));
+  return pending;
+}
+
 let hook = null;
 const loadings = [];
+const renders = [];
 function Probe({ path = "/api/cost/summary", params = {}, enabled = true, options } = {}) {
   const state = useApi(path, params, enabled, options);
   const refresh = useRefresh();
   const range = useRange();
   loadings.push(state.loading);
+  renders.push({ days: range.days, stale: state.stale, loading: state.loading });
   hook = { state, refresh, range };
   return state.loading ? <p>Loading</p> : state.error ? <p>Request failed</p>
     : <section aria-label="Loaded data">{state.data?.total}</section>;
@@ -62,6 +72,7 @@ function mount(options = {}) {
 beforeEach(() => {
   hook = null;
   loadings.length = 0;
+  renders.length = 0;
   // useApi가 Date.now()를 QUANT_MS 경계로 내려 paramsKey를 만든다 — 실시간 시계로 돌리면
   // 테스트 중에 경계를 넘는 순간 파라미터가 바뀌어 "틱은 파라미터를 바꾸지 않는다"는 전제가 깨진다.
   vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-04T12:00:00.000Z").getTime());
@@ -324,4 +335,70 @@ test("disable and re-enable resets selection identity and rejects the abandoned 
   await act(async () => pending[1](await okFresh({ total: 99 })));
   expect(hook.state.data).toBe(current);
   expect(hook.state.data.total).toBe(42);
+});
+
+test("hold sends no request and keeps its state, but an in-flight request still completes", async () => {
+  const pending = stubPending();
+  const view = mount({ probeProps: { options: { hold: false } } });
+  await waitFor(() => expect(pending).toHaveLength(1));
+  await act(async () => pending[0].resolve(await okFresh({ total: 1 })));
+  const first = hook.state.data;
+
+  view.rerender(<Fixture probeProps={{ options: { hold: true } }} />);
+  expect(hook.state.stale).toBe(false);
+  expect(hook.state.loading).toBe(false);
+  expect(hook.state.data).toBe(first);
+  expect(pending).toHaveLength(1);
+
+  // hold 동안에는 틱이 요청을 만들지 않는다.
+  await act(async () => hook.refresh.refreshNow());
+  expect(pending).toHaveLength(1);
+  expect(hook.refresh.isRefreshing).toBe(false);
+  expect(hook.state.data).toBe(first);
+
+  // hold 동안의 기간 변경도 요청을 만들지 않는다 — 이후 매 렌더에서 stale이 true다.
+  const idx = renders.length;
+  await act(async () => hook.range.setDays(7));
+  expect(pending).toHaveLength(1);
+  expect(hook.state.data).toBe(first);
+  expect(hook.state.loading).toBe(false);
+  expect(hook.refresh.isRefreshing).toBe(false);
+  expect(renders.length).toBeGreaterThan(idx);
+  renders.slice(idx).forEach((r) => expect(r).toEqual({ days: 7, stale: true, loading: false }));
+
+  // 이미 떠 있던 요청은 hold와 무관하게 정상적으로 끝난다.
+  view.unmount();
+  const second = mount({ probeProps: { options: { hold: false } } });
+  await waitFor(() => expect(pending).toHaveLength(2));
+  await act(async () => pending[1].resolve(await okFresh({ total: 1 })));
+  await act(async () => hook.refresh.refreshNow());
+  expect(hook.refresh.isRefreshing).toBe(true);
+  expect(pending).toHaveLength(3);
+  second.rerender(<Fixture probeProps={{ options: { hold: true } }} />);
+  await act(async () => pending[2].resolve(await okFresh({ total: 2 })));
+  expect(hook.state.data).toEqual({ total: 2 });
+  expect(hook.refresh.isRefreshing).toBe(false);
+  const held = hook.state.data;
+  await act(async () => hook.range.setDays(7));
+  await act(async () => hook.refresh.refreshNow());
+  expect(hook.state.stale).toBe(true);
+  expect(hook.state.data).toBe(held);
+  expect(pending).toHaveLength(3);
+});
+
+// 정체성과 기간이 한 렌더에서 함께 바뀌면 다른 뷰다 — 화면의 데이터가 곧 비워지므로 stale이 아니다.
+test("an identity change in the same render as a period change is never stale", async () => {
+  const pending = stubPending();
+  const view = mount();
+  await waitFor(() => expect(pending).toHaveLength(1));
+  await act(async () => pending[0].resolve(await okFresh({ total: 1 })));
+  const idx = renders.length;
+  await act(async () => {
+    hook.range.setDays(7);
+    view.rerender(<Fixture probeProps={{ path: "/api/cost/by-model" }} />);
+  });
+  expect(renders.length).toBeGreaterThan(idx);
+  expect(renders.slice(idx).map((r) => r.stale)).not.toContain(true);
+  expect(hook.state.loading).toBe(true);
+  expect(hook.state.data).toBeNull();
 });
