@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { makeTickFmt } from "../fmt.js";
 import { buildModelCostFrame, chartTheme, formatAxisUsd, formatUsd, formatUsdPrecise, OTHERS_COLOR_KEY,
   OTHERS_KEY, REASON_GROUPS, reasonLabel, STATE_LABELS, trendColor } from "../modelCostTrend.js";
+import { useConfig } from "../ConfigContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
 import EmptyState from "./EmptyState.jsx";
@@ -121,8 +122,11 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   // One bucket-size fallback (the global interval, as useDragZoom uses) for zoom, ticks and grid.
   const { intervalHours } = useRange();
   const hours = bucketHours > 0 ? bucketHours : intervalHours;
-  // The zoom never leaves the selected range: explicit clampRange, else the response bounds.
-  const clamp = clampRange ?? (bounds?.from && bounds?.to ? [bounds.from, bounds.to] : undefined);
+  // The zoom stays within the range cap and never starts before the range: an explicit clampRange
+  // ([from, to|null]; a null end is not clamped), else the response bounds (a live window).
+  const { rangeCapDays } = useConfig();
+  const [clampFrom, clampTo] = clampRange ?? (bounds?.from && bounds?.to ? [bounds.from, bounds.to] : []);
+  const clamp = { from: clampFrom, to: clampTo, maxSpanMs: rangeCapDays * 86400000 };
   const zoom = useDragZoom(undefined, hours, undefined, zoomDisabled, clamp);
   const [showTable, setShowTable] = useState(false);
   const pid = useId().replace(/[^A-Za-z0-9_-]/g, "");

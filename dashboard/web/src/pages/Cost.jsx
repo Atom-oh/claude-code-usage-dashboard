@@ -533,7 +533,7 @@ export default function Cost() {
             pinned={model ? [model] : undefined}
             bucketHours={intervalHours}
             zoomDisabled={byModelDaily.stale}
-            clampRange={[from, to]}
+            clampRange={[from, null]}
           />
         )}
 

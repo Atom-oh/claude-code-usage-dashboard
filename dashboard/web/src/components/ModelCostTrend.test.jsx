@@ -264,6 +264,35 @@ test("drag zoom is clamped to the selected range (weekly buckets on a cap-length
     .toBe("2026-09-12T00:00:00.000Z / 2026-09-27T00:00:00.000Z"));
 });
 
+// A memoized page range must not cap the end: detail pages pass a start-only clamp, so a drag over
+// buckets newer than the page-open "to" still zooms to the bucket end (CI review MAJOR).
+test("a start-only clamp keeps the zoom end at the dragged bucket end", async () => {
+  const { container } = mount({ cells: DAILY, bucketHours: 24, clampRange: [new Date("2026-08-30T00:00:00Z"), null] });
+  await chartReady(container);
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 3);
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent)
+    .toBe("2026-09-01T00:00:00.000Z / 2026-09-04T00:00:00.000Z"));
+});
+
+test("the zoom span never exceeds the range cap", async () => {
+  const weeks = Array.from({ length: 14 }, (_, i) => c(new Date(Date.UTC(2026, 5, 4) + i * 7 * 86400000).toISOString().replace("T", " ").slice(0, 19), "a", "e", 1));
+  const { container } = mount({ cells: weeks, bucketHours: 168 });
+  await chartReady(container);
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 14);
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(13), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(13), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).not.toBe("none"));
+  const [from, to] = screen.getByLabelText("선택 구간").textContent.split(" / ").map(Date.parse);
+  expect(from).toBe(Date.UTC(2026, 5, 4));
+  expect(to - from).toBe(90 * 86400000);
+});
+
 // Host-added: in the fixture above series rank matches bucket values, hiding a missing sort.
 test("tooltip order follows the bucket's values, not the series rank", async () => {
   const { container } = mount({ cells: [c(D1, "a", "e", 1), c(D1, "b", "e", 10), c(D2, "a", "e", 30)] });
