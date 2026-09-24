@@ -243,6 +243,8 @@ test.each([
   const x = bucketX(chart, 3);
   fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
   fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  // A left margin of 0 made Recharts discard the drag highlight (host-measured).
+  expect(chart.querySelectorAll(".recharts-reference-area").length).toBe(zoomDisabled ? 0 : 1);
   fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
   await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe(expected));
 });

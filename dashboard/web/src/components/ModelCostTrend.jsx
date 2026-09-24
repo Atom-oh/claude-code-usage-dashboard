@@ -241,7 +241,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   return (
     <Card title={title} subtitle={subtitle} help={help} right={header}>
       <ResponsiveContainer width="100%" height={height} className={zoom.className}>
-        <BarChart data={rows} margin={{ top: 24, right: 8, left: 0, bottom: 0 }} {...zoom.handlers}>
+        <BarChart data={rows} margin={{ top: 24, right: 8, left: 8, bottom: 0 }} {...zoom.handlers}>
           <defs>
             {hatched.map((s) => (
               <pattern key={s.key} id={`${pid}-${s.key}`} width={5} height={5} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
