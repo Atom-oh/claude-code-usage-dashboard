@@ -79,7 +79,7 @@ function ResultTable({ rows, columns, subtitle, ...props }) {
     </button> : undefined} />;
 }
 
-function Comparison({ rows, columns, cards = false, title = "클라이언트별 비교", subtitle }) {
+function Comparison({ rows, columns, cards = false, title = "클라이언트별 비교", subtitle, stale = false }) {
   return <section aria-label="클라이언트 비교">
     {cards ? <div className={`grid gap-4 ${rows.length > 1 ? "lg:grid-cols-2" : ""}`}>
       {rows.map((row) => <Card key={row.client} title={clientName(row.client)}
@@ -96,7 +96,7 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
         </dl>
       </Card>)}
     </div> : <DataTable title={title} subtitle={subtitle} columns={[CLIENT, BACKEND, ...withTokenStatus(columns)]}
-      rows={rows} exportName="clients_comparison" />}
+      rows={rows} exportName="clients_comparison" stale={stale} />}
   </section>;
 }
 
@@ -153,7 +153,7 @@ function ClientBars({ title, rows, metric, subtitle }) {
     colorOf={color} seriesSort={(a, b) => a.localeCompare(b)} />;
 }
 
-function ToolTable({ rows, reliability = false }) {
+function ToolTable({ rows, reliability = false, stale = false }) {
   const tools = rows.map((row) => {
     const calls = observedNumber(row.calls), duration = observedNumber(row.duration_ms);
     const derived = presentationRow({ tool_calls: calls, tool_errors: row.errors });
@@ -165,7 +165,7 @@ function ToolTable({ rows, reliability = false }) {
     columns={[CLIENT, { key: "tool", label: "도구", render: text }, number("calls", "호출"),
       number("errors", "오류"), percent("tool_error_pct", "도구 오류 비율 (%)"),
       number("mean_ms", "평균 시간 (ms)"), number("duration_ms", "누적 시간 (ms)")]}
-    rows={tools} exportName="clients_tools" />;
+    rows={tools} exportName="clients_tools" stale={stale} />;
 }
 
 function Fractions({ rows }) {
@@ -186,7 +186,7 @@ function Fractions({ rows }) {
   </Card>;
 }
 
-function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [] }) {
+function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false }) {
   const selected = clients;
   const rows = (key) => (data?.[key] || []).filter((row) => selected.includes(row.client)).map(presentationRow);
   const clientRows = selected.map((client) => presentationRow(
@@ -199,9 +199,9 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
   const trendProps = { rows: periods, clients: selected, clientRows, bucketHours: data?.bucket_hours || 1,
     effectiveRange: data?.effective_range };
   const table = (title, columns, items, name, subtitle) => <ResultTable key={`${page}-${name}`}
-    title={title} subtitle={subtitle} columns={columns} rows={items} exportName={`clients_${name}`} />;
+    title={title} subtitle={subtitle} columns={columns} rows={items} exportName={`clients_${name}`} stale={stale} />;
   const tiles = (columns) => <Tiles row={total} columns={columns} basis={basis} />;
-  const compare = (columns, extra = {}) => <Comparison key={page} rows={clientRows} columns={columns} {...extra} />;
+  const compare = (columns, extra = {}) => <Comparison key={page} rows={clientRows} columns={columns} stale={stale} {...extra} />;
   let content;
 
   switch (page) {
@@ -246,7 +246,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
           rows={clientRows.flatMap((row) => TOKEN_PARTS.map((part) => ({
             client: clientName(row.client), part: part.label, value: row[part.key],
           })))} xKey="client" seriesKey="part" valueKey="value" horizontal />
-        <ToolTable rows={tools} />
+        <ToolTable rows={tools} stale={stale} />
       </>;
       break;
     case "users":
@@ -276,7 +276,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {compare(OPERATIONS, { title: "요청·오류·응답 시간",
           subtitle: "API 오류 기록 / 요청은 실패 확률이 아니며 1을 초과할 수 있습니다. API 요청 시간은 전체 생성 시간이 아닙니다." })}
         <ClientBars title="클라이언트별 API 요청 시간 (ms)" rows={clientRows} metric={REQUEST_TIME} />
-        <ToolTable rows={tools} reliability />
+        <ToolTable rows={tools} reliability stale={stale} />
         {table("모델별 요청 진단", [CLIENT, BACKEND, MODEL, REQUESTS, ERRORS, ERROR_RATIO, REQUEST_TIME, TTFT],
           models, "model_reliability", "시간은 서버가 집계한 관측 평균입니다. 모델 미지정 요청은 별도 행으로 남습니다.")}
       </>;

@@ -59,9 +59,9 @@ const EFFICIENCY_TILES = [
   ["cost_per_session", "세션당 추정 비용", formatClientCost],
 ];
 
-export default function CodexInsights({ range, enabled = true, sections }) {
+export default function CodexInsights({ range, enabled = true, hold = false, sections }) {
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
-  const { data, loading, error } = useApi("/api/codex/insights", { client: "codex", ...bounds }, enabled, { linkedRange: true });
+  const { data, loading, error, stale } = useApi("/api/codex/insights", { client: "codex", ...bounds }, enabled, { linkedRange: true, hold });
   const [preferredTab, setTab] = useState(TABS[0]);
   const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
   const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
@@ -117,15 +117,15 @@ export default function CodexInsights({ range, enabled = true, sections }) {
             <DataTable title="Effort별 사용량·비용" subtitle="유효한 입력·출력 쌍을 합산하고 미확인 쌍은 제외합니다. 사용량·메타데이터가 불완전해도 유효한 쌍은 포함하며 부분합으로 표시합니다. 비율은 기존 전체 토큰·구성값 기준입니다. 알려진 비용만 합산하고 미산정 기록은 제외합니다."
               rows={(data?.effort || []).map((row) => ({ ...row, observed_tokens: observedTokens(row),
                 token_status: tokenStatusLabel(row), cost_basis_label: codexCostLabel(row) }))}
-              columns={EFFORT} exportName="codex_effort" />
+              columns={EFFORT} exportName="codex_effort" stale={stale} />
           </>}
           {tab === TABS[1] && <>
             <div className="grid grid-cols-2 gap-4">
               <StatTile label="도구 성공률" value={percent(summary.tool_success_rate)} help="명시적인 성공·실패 결과 기준이며, 미확인 결과가 있으면 전체 성공률을 제공하지 않을 수 있습니다." />
               <StatTile label="도구 승인 비율" value={percent(summary.approval_rate)} help="자동 승인을 포함한 권한 결정입니다. 코드 수락률이 아닙니다." />
             </div>
-            <DataTable title="도구 실행 결과" columns={TOOLS} rows={data?.tools || []} exportName="codex_tools_detail" />
-            <DataTable title="승인·거절과 결정 출처" columns={APPROVALS} rows={data?.approvals || []} exportName="codex_approvals" />
+            <DataTable title="도구 실행 결과" columns={TOOLS} rows={data?.tools || []} exportName="codex_tools_detail" stale={stale} />
+            <DataTable title="승인·거절과 결정 출처" columns={APPROVALS} rows={data?.approvals || []} exportName="codex_approvals" stale={stale} />
           </>}
           {tab === TABS[2] && <>
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
@@ -144,21 +144,21 @@ export default function CodexInsights({ range, enabled = true, sections }) {
                 help="턴 메트릭의 별도 관측입니다. 위 사용량·비용 합계에 더하지 않습니다." />
             </div>
             <DataTable title="요청·도구·시작 단계 지연" subtitle="관측된 로그 시간의 분포입니다. SSE 이벤트 처리 시간과 전체 생성 시간은 다릅니다."
-              columns={LATENCY} rows={data?.latency || []} exportName="codex_latency" />
+              columns={LATENCY} rows={data?.latency || []} exportName="codex_latency" stale={stale} />
           </>}
           {tab === TABS[3] && <>
             <div className="grid grid-cols-2 gap-4">
               <StatTile label="프롬프트 이벤트" value={formatObserved(summary.prompts)} />
               <StatTile label="평균 프롬프트 길이" value={formatObserved(summary.prompt_length_mean)} help="Codex가 보고한 길이입니다. 프롬프트 본문은 수집하지 않습니다." />
             </div>
-            <DataTable title="세션 시작 설정" subtitle="시작 시점 관측입니다. 세션 중 설정 변경까지 보장하지 않습니다." rows={data?.runtime || []} columns={RUNTIME} exportName="codex_runtime" />
+            <DataTable title="세션 시작 설정" subtitle="시작 시점 관측입니다. 세션 중 설정 변경까지 보장하지 않습니다." rows={data?.runtime || []} columns={RUNTIME} exportName="codex_runtime" stale={stale} />
             <Card title="관측 메트릭 검색">
               <input aria-label="메트릭 이름 검색" placeholder="메트릭 이름 검색" value={search} onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm" />
               <p className="mt-2 text-sm text-ink-600">카운터는 증분, Histogram은 관측 수와 평균입니다. 누적 기준값이나 원본 필드의 존재를 확인하지 못한 값은 —로 표시합니다. 비용 합계에는 더하지 않습니다.</p>
             </Card>
-            <DataTable title="수집된 메트릭" columns={METRICS} rows={metrics} exportName="codex_metrics" />
-            <DataTable title="이벤트 수집 현황" columns={[text("event", "이벤트"), numeric("count", "건수")]} rows={data?.events || []} exportName="codex_events" />
+            <DataTable title="수집된 메트릭" columns={METRICS} rows={metrics} exportName="codex_metrics" stale={stale} />
+            <DataTable title="이벤트 수집 현황" columns={[text("event", "이벤트"), numeric("count", "건수")]} rows={data?.events || []} exportName="codex_events" stale={stale} />
           </>}
           {tab === TABS[4] && <>
             <p className="text-sm text-ink-600">최근 50개 Trace의 각 최근 200개 span까지 표시합니다. 통계도 표시된 span 기준이며, 전체 조회 구간이나 완전한 턴의 통계는 아닙니다. 모델 필터는 모델 속성이 있는 span에만 적용됩니다.</p>
@@ -168,7 +168,7 @@ export default function CodexInsights({ range, enabled = true, sections }) {
             {data?.coverage?.traces?.partial && <p role="status" className="text-sm text-warning-text">
               일부 Trace 데이터가 충돌해 해당 Trace의 통계를 제공하지 않습니다. 다른 신호의 집계는 유지됩니다.
             </p>}
-            <DataTable title="작업별 Span 지연" columns={SPANS} rows={data?.spans || []} exportName="codex_spans" />
+            <DataTable title="작업별 Span 지연" columns={SPANS} rows={data?.spans || []} exportName="codex_spans" stale={stale} />
             {(data?.traces || []).length === 0 ? <EmptyState /> : data.traces.map((trace) => (
               <details key={trace.trace_id} className="rounded-lg border border-ink-200 bg-card p-4">
                 <summary className="cursor-pointer break-all text-sm font-medium text-ink-700">
@@ -178,7 +178,7 @@ export default function CodexInsights({ range, enabled = true, sections }) {
                 </summary>
                 <div className="mt-4">{trace.partial
                   ? <p className="text-sm text-ink-600">같은 Span ID의 값이 충돌해 세부 내역을 보류했습니다.</p>
-                  : <DataTable title={`Trace ${trace.trace_id}`} columns={TRACE_DETAIL} rows={trace.spans || []} exportName="codex_trace_spans" />}</div>
+                  : <DataTable title={`Trace ${trace.trace_id}`} columns={TRACE_DETAIL} rows={trace.spans || []} exportName="codex_trace_spans" stale={stale} />}</div>
               </details>
             ))}
           </>}

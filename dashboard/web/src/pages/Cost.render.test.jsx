@@ -1,7 +1,7 @@
 import { claudeDetail } from "../test/claudeDetail.js";
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "../App.jsx";
 import { ConfigProvider } from "../ConfigContext.jsx";
 import { setPiiMask } from "../fmt.js";
@@ -60,6 +60,7 @@ function mount(groupMode, responses = {}, pricing = { cacheWriteTtl: "5m", overr
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   cleanup();
   vi.unstubAllGlobals();
   setPiiMask(true);
@@ -329,4 +330,58 @@ test("effort, agents and efficiency use reported spend with computed secondary d
   const efficiencyCsv = await exportTable("비용 효율 ($/LOC · $/커밋)");
   expect(efficiencyCsv).toContain("reported-best,bedrock,10,10,2,1,5");
   expect(efficiencyCsv).toContain("missing,bedrock,,10,2,,");
+});
+
+// 막대 차트 드래그는 레이아웃이 필요하다(GroupCharts.test.jsx와 같은 치수 스텁).
+let location;
+function LocationSpy() { location = useLocation(); return null; }
+const DAILY = ["2026-09-01", "2026-09-02", "2026-09-03"].map((day) => ({ day, group: "bedrock", model: "m1", cost: 1, reported_cost: 1 }));
+const MODELS = [{ group: "bedrock", model: "m1", cost: 3, reported_cost: 3, tokens: 10 }];
+function mountHeld() {
+  setPiiMask(false);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 300, top: 0, left: 0, right: 800, bottom: 300, x: 0, y: 0 });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const held = [];
+  const gate = { models: false };
+  vi.stubGlobal("fetch", vi.fn((url) => {
+    const u = new URL(String(url), "http://localhost");
+    const body = u.pathname === "/api/health/data" ? { status: "ok", latest: null, ageMinutes: 0, staleAfterMinutes: 360 }
+      : u.pathname === "/api/cost/by-model-daily" ? DAILY : u.pathname === "/api/cost/by-model" ? MODELS : [];
+    if (u.pathname === "/api/cost/by-model-daily" && u.searchParams.get("intervalHours") === "1")
+      return new Promise((resolve) => held.push({ u, resolve }));
+    if (gate.models && u.pathname === "/api/cost/by-model") return new Promise((resolve) => held.push({ u, resolve }));
+    return Promise.resolve({ ok: true, status: 200, json: async () => body });
+  }));
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  render(
+    <ConfigProvider config={{ piiMask: false, groupMode: "single", schema: {}, pricing: { cacheWriteTtl: "5m", overriddenModels: [] } }}>
+      <MemoryRouter initialEntries={[claudeDetail("/cost?days=7")]}><LocationSpy /><App /></MemoryRouter>
+    </ConfigProvider>
+  );
+  return { held, gate };
+}
+async function dailyChart() {
+  const card = (await screen.findByText("모델별 비용 추이", { exact: true })).closest(".rounded-lg");
+  await waitFor(() => expect(card.querySelectorAll(".recharts-bar-rectangle").length).toBe(3));
+  return card;
+}
+function dragAcross(card) {
+  const chart = card.querySelector(".recharts-wrapper");
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  const x = (i) => left + (right - left) * (i + 0.5) / 3;
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
+}
+
+test("dragging the daily cost bars zooms the whole page to their full days", async () => {
+  mountHeld();
+  const chartCard = await dailyChart();
+  dragAcross(chartCard);
+  await act(async () => {});
+  const params = new URLSearchParams(location.search);
+  expect(params.get("from")).toBe("2026-09-01T00:00:00.000Z");
+  expect(params.get("to")).toBe("2026-09-04T00:00:00.000Z");
+  expect(screen.queryByTitle("확대 해제")).not.toBeNull();
 });

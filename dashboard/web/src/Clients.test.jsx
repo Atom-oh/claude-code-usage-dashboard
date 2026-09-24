@@ -1,6 +1,6 @@
 import { formatClientTimestamp } from "./clientPresentation.js";
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "./App.jsx";
 import { ConfigProvider } from "./ConfigContext.jsx";
@@ -41,6 +41,32 @@ function mount({ enabledClients, entry = "/", piiMask = true, response = clientO
   );
   return { ...rendered, fetchMock };
 }
+
+// Holds /api/clients/overview and /api/codex/insights so a test decides when each responds.
+function mountHeld({ entry = "/analytics?client=codex" } = {}) {
+  setPiiMask(true);
+  const overview = [], detail = [];
+  vi.stubGlobal("fetch", vi.fn((url) => {
+    const u = new URL(String(url), "http://localhost");
+    if (u.pathname === "/api/clients/overview") return new Promise((resolve, reject) => overview.push({ u, resolve, reject }));
+    if (u.pathname === "/api/codex/insights") return new Promise((resolve, reject) => detail.push({ u, resolve, reject }));
+    return Promise.resolve({ ok: true, status: 200, json: async () => (u.pathname === "/api/health/data" ? { status: "ok" } : []) });
+  }));
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  render(
+    <MemoryRouter initialEntries={[entry]}>
+      <ConfigProvider config={{ enabledClients: ["codex"], piiMask: true, schema: { projectColumns: true } }}>
+        <App />
+      </ConfigProvider>
+    </MemoryRouter>,
+  );
+  return { overview, detail };
+}
+const ok = (body) => ({ ok: true, status: 200, json: async () => body });
+const insightsWithEvent = (event) => ({ coverage: {}, summary: {}, effort: [], latency: [], tools: [], approvals: [],
+  runtime: [], metrics: [], spans: [], traces: [], events: [{ event, count: 5 }] });
+const BOUNDS_A = { from: "2026-09-02T12:00:00.000Z", to: "2026-09-04T12:00:00.000Z" };
+const BOUNDS_B = { from: "2026-08-28T12:00:00.000Z", to: "2026-09-04T12:00:00.000Z" };
 
 const requests = (mock) => mock.mock.calls.map(([url]) => new URL(url, "http://localhost"));
 const commonRequests = (mock) => requests(mock).filter((url) => url.pathname === "/api/clients/overview");
@@ -332,4 +358,52 @@ test("idle-only observed counter buckets render a zero chart without active sess
   const chartTitle = await screen.findByText("사용량·비용 추이", { exact: true, selector: "div" });
   expect(await screen.findByText(/관측 사용량 없음은 0/)).toBeTruthy();
   expect(chartTitle.closest("[data-shared-client-panels]")).not.toBeNull();
+});
+
+test("a global period change holds Codex details until the overview responds, and a failed new-bounds load clears them", async () => {
+  const { overview, detail } = mountHeld();
+  await waitFor(() => expect(overview.length).toBe(1));
+  await act(async () => overview[0].resolve(ok(clientOverview({ effective_range: { ...BOUNDS_A, requested_to: BOUNDS_A.to } }))));
+  await waitFor(() => expect(detail.length).toBe(1));
+  expect(detail[0].u.searchParams.get("from")).toBe(BOUNDS_A.from);
+  expect(detail[0].u.searchParams.get("to")).toBe(BOUNDS_A.to);
+  await act(async () => detail[0].resolve(ok(insightsWithEvent("old-period-event"))));
+  await screen.findByText("old-period-event");
+  fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
+  await act(async () => {});
+  await waitFor(() => expect(overview.length).toBe(2));
+  // 개요 응답 전에는 이전 기간 경계로 상세를 다시 요청하지 않아야 한다.
+  expect(detail.length).toBe(1);
+  await act(async () => overview[1].resolve(ok(clientOverview({ effective_range: { ...BOUNDS_B, requested_to: BOUNDS_B.to } }))));
+  await waitFor(() => expect(detail.length).toBe(2));
+  expect(detail[1].u.searchParams.get("from")).toBe(BOUNDS_B.from);
+  expect(detail[1].u.searchParams.get("to")).toBe(BOUNDS_B.to);
+  await act(async () => detail[1].resolve({ ok: false, status: 500, json: async () => ({}) }));
+  await act(async () => {});
+  expect(screen.queryByText("old-period-event")).toBeNull();
+  expect(screen.getAllByText("데이터를 불러오지 못했습니다.")).toHaveLength(1);
+});
+
+test("held Codex details show the new period when the new-bounds load succeeds", async () => {
+  const { overview, detail } = mountHeld();
+  await waitFor(() => expect(overview.length).toBe(1));
+  await act(async () => overview[0].resolve(ok(clientOverview({ effective_range: { ...BOUNDS_A, requested_to: BOUNDS_A.to } }))));
+  await waitFor(() => expect(detail.length).toBe(1));
+  expect(detail[0].u.searchParams.get("from")).toBe(BOUNDS_A.from);
+  expect(detail[0].u.searchParams.get("to")).toBe(BOUNDS_A.to);
+  await act(async () => detail[0].resolve(ok(insightsWithEvent("old-period-event"))));
+  await screen.findByText("old-period-event");
+  fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
+  await act(async () => {});
+  await waitFor(() => expect(overview.length).toBe(2));
+  // 개요 응답 전에는 이전 기간 경계로 상세를 다시 요청하지 않아야 한다.
+  expect(detail.length).toBe(1);
+  await act(async () => overview[1].resolve(ok(clientOverview({ effective_range: { ...BOUNDS_B, requested_to: BOUNDS_B.to } }))));
+  await waitFor(() => expect(detail.length).toBe(2));
+  expect(detail[1].u.searchParams.get("from")).toBe(BOUNDS_B.from);
+  expect(detail[1].u.searchParams.get("to")).toBe(BOUNDS_B.to);
+  await act(async () => detail[1].resolve(ok(insightsWithEvent("new-period-event"))));
+  await screen.findByText("new-period-event");
+  expect(screen.queryByText("old-period-event")).toBeNull();
+  expect(screen.queryAllByText("데이터를 불러오지 못했습니다.")).toHaveLength(0);
 });
