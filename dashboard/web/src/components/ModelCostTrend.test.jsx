@@ -249,6 +249,21 @@ test.each([
   await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe(expected));
 });
 
+// CI review MAJOR: epoch-aligned weekly buckets extend past a cap-length range, so a full-width
+// drag produced a 91-day zoom the server rejects. The zoom is clamped to the selected range.
+test("drag zoom is clamped to the selected range (weekly buckets on a cap-length range)", async () => {
+  const clampRange = [new Date("2026-09-12T00:00:00Z"), new Date("2026-09-27T00:00:00Z")];
+  const { container } = mount({ cells: WEEKLY, bucketHours: 168, clampRange });
+  await chartReady(container);
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 3);
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent)
+    .toBe("2026-09-12T00:00:00.000Z / 2026-09-27T00:00:00.000Z"));
+});
+
 // Host-added: in the fixture above series rank matches bucket values, hiding a missing sort.
 test("tooltip order follows the bucket's values, not the series rank", async () => {
   const { container } = mount({ cells: [c(D1, "a", "e", 1), c(D1, "b", "e", 10), c(D2, "a", "e", 30)] });

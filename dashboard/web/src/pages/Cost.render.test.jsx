@@ -377,6 +377,9 @@ function dragAcross(card) {
 const csvButton = (title) => within(screen.getByText(title, { exact: true }).closest(".rounded-lg")).getByRole("button", { name: "CSV" });
 
 test("dragging the daily cost bars zooms the whole page to their full days", async () => {
+  // The zoom is clamped to the selected range, so the clock must put the fixture days inside it.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-05T12:00:00Z"));
   mountHeld();
   const chartCard = await dailyChart();
   dragAcross(chartCard);
@@ -385,6 +388,7 @@ test("dragging the daily cost bars zooms the whole page to their full days", asy
   expect(params.get("from")).toBe("2026-09-01T00:00:00.000Z");
   expect(params.get("to")).toBe("2026-09-04T00:00:00.000Z");
   expect(screen.queryByTitle("확대 해제")).not.toBeNull();
+  vi.useRealTimers();
 });
 
 test("a pending granularity change blocks drag zoom on the retained daily bars", async () => {

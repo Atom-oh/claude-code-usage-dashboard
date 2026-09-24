@@ -116,12 +116,14 @@ function TrendTooltip({ active, payload, frame, fmtTick, c }) {
 }
 
 export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t", bucketHours, bounds,
-  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260 }) {
+  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange }) {
   const c = useChartColors();
   // One bucket-size fallback (the global interval, as useDragZoom uses) for zoom, ticks and grid.
   const { intervalHours } = useRange();
   const hours = bucketHours > 0 ? bucketHours : intervalHours;
-  const zoom = useDragZoom(undefined, hours, undefined, zoomDisabled);
+  // The zoom never leaves the selected range: explicit clampRange, else the response bounds.
+  const clamp = clampRange ?? (bounds?.from && bounds?.to ? [bounds.from, bounds.to] : undefined);
+  const zoom = useDragZoom(undefined, hours, undefined, zoomDisabled, clamp);
   const [showTable, setShowTable] = useState(false);
   const pid = useId().replace(/[^A-Za-z0-9_-]/g, "");
   const theme = chartTheme(c.surface);

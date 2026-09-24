@@ -407,6 +407,7 @@ export default function Executive() {
                   pinned={model ? [model] : undefined}
                   bucketHours={costHours}
                   zoomDisabled={costDaily.stale}
+                  clampRange={[from, to]}
                 />
               )}
             </div>

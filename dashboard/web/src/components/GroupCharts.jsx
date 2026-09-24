@@ -35,7 +35,9 @@ import EmptyState from "./EmptyState.jsx";
 // 크기라 우측 끝 보정이 틀린 전역 구간을 만든다. 라벨 기반 대체(bucketHoursOverride를 비우는 방법)로는
 // 부족하다: 날짜 라벨은 주간 버킷도 24h로, 그 밖의 라벨은 전역 intervalHours로 보정해 7일 프리셋에서
 // 1h 행을 24h만큼 민다. 시계열 차트를 그리는 호출부는 모두 데이터 훅의 stale을 넘긴다(zoomGuard.test.js).
-export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false) {
+// clampRange ([from, to], optional): keep the zoom inside the selected range. Epoch-aligned weekly
+// buckets can start before and end after it, so an unclamped full-width drag can exceed the range cap.
+export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false, clampRange) {
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
   const startRef = useRef(null);
@@ -66,7 +68,10 @@ export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled =
       // 되어 가드를 통과해버린다(리뷰에서 CRITICAL로 확인: 툴팁을 보려는 클릭마다 전역이 그 버킷
       // 하나로 줌인되는 오동작). 그래서 순수 클릭 판정은 raw delta 기준으로 먼저 걸러낸다.
       if (Math.abs(d2 - d1) < 10 * 60000) return; // 클릭·미세 드래그 무시(최소 10분)
-      const from = d1 <= d2 ? d1 : d2;
+      const lo = clampRange ? new Date(clampRange[0]).getTime() : NaN;
+      const hi = clampRange ? new Date(clampRange[1]).getTime() : NaN;
+      const rawFrom = d1 <= d2 ? d1 : d2;
+      const from = Number.isFinite(lo) && rawFrom.getTime() < lo ? new Date(lo) : rawFrom;
       // 라벨은 버킷 "시작" 값인데 서버는 [from,to) exclusive라, 우측 끝 라벨을 그대로 to로 넘기면
       // 그 버킷 자체가 통째로 잘려나간다(리뷰에서 MINOR로 확인) — 현재 버킷 크기(intervalHours)만큼
       // 밀어 그 버킷의 끝까지 포함시킨다. bucketHoursOverride가 없을 때 date-only 라벨(YYYY-MM-DD,
@@ -76,7 +81,8 @@ export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled =
       const rightLabel = String(d1 <= d2 ? a.right : a.left);
       const intervalHours = bucketHoursOverride ?? (/^\d{4}-\d{2}-\d{2}$/.test(rightLabel) ? 24 : globalIntervalHours);
       const end = (d1 <= d2 ? d2 : d1).getTime() + intervalHours * 3600000;
-      const to = new Date(timeDomain ? Math.min(end, timeDomain[1]) : end);
+      const capped = timeDomain ? Math.min(end, timeDomain[1]) : end;
+      const to = new Date(Number.isFinite(hi) ? Math.min(capped, hi) : capped);
       if (to <= from) return;
       setRange(from, to);
     },
