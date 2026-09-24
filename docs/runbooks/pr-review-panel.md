@@ -56,11 +56,29 @@ version in the panel log; do not infer it from an old validation date.
    working directory/HOME containing the no-tools agent and a random, non-secret file.
    **Preflight stdin is `/dev/null`; neither its prompt nor stdin contains PR input.**
 3. Passing requires exit 0, exactly `NO_TOOLS` after CLI-format normalization, and no
-   fallback, quota, or `using tool:` signal. Each call has a
-   `KIRO_PREFLIGHT_TIMEOUT` limit (default 60 seconds); the loop stops at the first failure.
-4. **Both models must pass before either receives PR input.** A failed preflight skips
-   every Kiro review cell, permits Codex work to continue, and always forces the gate to fail.
+   fallback, quota, or `using tool:` signal. Under `ROLE_REVIEW=1` (CI) each preflight
+   attempt has its own `KIRO_PREFLIGHT_TIMEOUT` budget (default 60 seconds, maximum 180;
+   CI sets 90) covering both settings calls and the canary, and a role makes up to
+   `KIRO_PREFLIGHT_ATTEMPTS` attempts (default 2, maximum 3; CI sets 2). Only a timeout
+   (exit 124) or a nonzero exit whose normalized stderr carries no safety diagnostic is
+   retried. Tool use, quota, fallback, agent-file or model-selection diagnostics, an
+   exit-0 reply other than `NO_TOOLS`, a reply exposing the canary, and an unconfirmed
+   Markdown-rendering setting are never retried. Each retry re-runs both settings steps
+   with a fresh canary and sends no PR input; the workflow log has one line per attempt,
+   e.g. `kiro-sol: preflight attempt 1/2 timed out after 90.0s; retrying`. The legacy
+   `run-panel.sh` matrix keeps one `KIRO_PREFLIGHT_TIMEOUT` limit per call (default 60
+   seconds) and stops at the first failure.
+4. **Both models must pass before either receives PR input.** Under `ROLE_REVIEW=1` each
+   Kiro role waits for its peers' receipts until attempts × timeout after its own preflight
+   start, so a peer that passes on a retry can still release both cells; a failed peer
+   receipt blocks immediately. A failed preflight skips every Kiro review cell, permits
+   Codex work to continue, and always forces the gate to fail.
    Canary calls do not count as review coverage.
+
+Worst-case CI budget with the current settings: 2 × 90 s of Kiro preflight
+(`KIRO_PREFLIGHT_ATTEMPTS` × `KIRO_PREFLIGHT_TIMEOUT`), 2 × 600 s of review calls
+(`PANEL_RETRIES` × `PANEL_TIMEOUT`) and 2 × 600 s of chair calls (primary then fallback,
+`CHAIR_TIMEOUT`) sum to 2580 s, about 43 minutes, inside the job's `timeout-minutes: 45`.
 
 This is a behavioral startup check, not formal proof or an OS tool sandbox. Review cells
 still use `--agent pr-review-notools` and isolated directories with a minimal environment.
@@ -78,6 +96,9 @@ Within the runner work directory, these files identify the failure without copyi
 | Signal | Meaning and action |
 |---|---|
 | `kiro-preflight.flag` | Startup behavior was not established. Inspect the model's preflight stderr for timeout, authentication, unexpected output, tool use, quota, or fallback. Resolve the cause and rerun; never bypass this check. |
+| `kiro_preflight_timeout:<tag>` | The role's own startup timed out in every permitted attempt; no PR input was sent. The workflow log has one line per attempt. Usually a transient startup delay: rerun. Repeated timeouts point at runner load or provider latency, not at the PR. |
+| `kiro_preflight_peer:<tag>` | The role passed its own preflight, but a required Kiro peer (named in `slot/kiro-preflight-<tag>.flag` and the role's stderr) failed or timed out. Diagnose the peer's own code; this role's failure is a consequence. |
+| `slot/kiro-preflight-<tag>.flag` / `slot/<tag>-preflight.json` | Per-role specialist flag (its text names the cause) and receipt (cohort, plan digest, tag, model, ok), both uploaded as artifacts. A flag with `cli_nonzero_exit:<tag>` and no preflight code is either a startup safety failure (tool use, quota, fallback, model selection, unexpected canary reply or unconfirmed rendering setting; never retried) or a nonzero startup exit without a safety diagnostic, such as an authentication error, that persisted through every attempt. The per-attempt log lines tell them apart; never bypass it. |
 | `kiro-agent-fallback.flag` | Agent lookup/schema failed and the CLI continued with a default agent. The affected response is discarded and the gate fails regardless of remaining coverage. |
 | `kiro-quota.flag` | Kiro stderr matched `Monthly request limit reached`, `MONTHLY_REQUEST_COUNT`, or `UsageLimitReachedError`. Diagnose authentication and usage as below. |
 | `kiro-diff-truncated.flag` | Kiro received only the byte-capped portion of the workflow input. Inspect the truncation banner; omitted content has not been reviewed by those cells. |
@@ -88,8 +109,10 @@ Within the runner work directory, these files identify the failure without copyi
 Quota failures **after successful startup** remove affected cells without retry. Partial
 quota failures can retain enough coverage to pass: the coverage floor is vendor-wide,
 not a requirement that all 12 cells or every model/lens pair succeed. Preflight failures
-and agent fallback are independent blocking conditions. Kiro stderr signatures are not
-applied to Codex stderr, which may contain quoted diff text matching those signatures.
+and agent fallback are independent blocking conditions. `kiro_preflight_timeout` and
+`kiro_preflight_peer` block coverage like every other failure code; they name the cause
+and never award coverage. Kiro stderr signatures are not applied to Codex stderr, which
+may contain quoted diff text matching those signatures.
 
 The workflow caps its diff at 3,000 lines. Kiro has a further `KIRO_DIFF_CAP` byte limit
 (default 100,000). Truncation banners describe partial review; Codex sees the workflow's

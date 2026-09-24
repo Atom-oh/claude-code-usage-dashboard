@@ -48,12 +48,16 @@ Each applicable model receives one specialist request. Both Kiro roles use fresh
 HOME/cwd directories and an explicit empty tool catalog with no MCP resources or
 hooks. In each isolated HOME, native settings disable Markdown rendering and
 JSON readback must confirm `chat.disableMarkdownRendering=true`. `--wrap never`
-alone still transforms JSON fences and string literals. Settings setup, readback,
-the fixed no-tools canary and any peer wait share the existing preflight deadline.
-Failed or unconfirmed setup invokes no Kiro model; only an exact successful
-no-tools response permits PR input. Settings and chat use the same filtered
-environment, excluding AWS and GitHub credentials. Errors remain visible; no
-automatic quota or billing changes are made.
+alone still transforms JSON fences and string literals. Each preflight attempt
+runs settings setup, readback and the fixed no-tools canary within its own
+`KIRO_PREFLIGHT_TIMEOUT` budget; a role makes up to `KIRO_PREFLIGHT_ATTEMPTS`
+attempts, and only timeouts and nonzero exits without a safety diagnostic are
+retried. The peer wait lasts until all permitted attempts could finish;
+`kiro_preflight_timeout` and `kiro_preflight_peer` record the cause and block
+coverage. Failed or unconfirmed setup invokes no Kiro model; only an exact
+successful no-tools response permits PR input. Settings and chat use the same
+filtered environment, excluding AWS and GitHub credentials. Errors remain
+visible; no automatic quota or billing changes are made.
 
 Codex retains its read-only sandbox and configured Bedrock provider. Claude's
 specialist has no tools. The chair has bounded local read tools and no GitHub
