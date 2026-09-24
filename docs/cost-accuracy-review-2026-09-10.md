@@ -198,3 +198,61 @@ preserve provenance; their current contents were not fetched in this documentati
 - Additional pages: `https://code.claude.com/docs/en/settings` and
   `https://aws.amazon.com/bedrock/pricing/`. The earlier HTML review did not establish the
   two settings keys or the account/region's effective AWS SKU price from those pages.
+
+## 2026-09-21 follow-up: Anthropic Console gap, live production window
+
+A separate report described the production `/cost` page as 10–30% below an Anthropic API/Console
+figure for a 2-day window. Measured live against production
+(`https://d3f78db62e9702.cloudfront.net`) for `2026-09-19T13:56Z`–`2026-09-21T13:56Z`, all
+clients on `AppVersion 2.1.278`:
+
+| channel | `reported_cost` | `computed_cost` (1h cache-write) |
+|---|---:|---:|
+| enterprise | 5,323.49 | 5,604.20 |
+| bedrock | 4,680.04 | 5,417.08 |
+| unknown | 0.00 | 0.00 |
+
+Ruled out for this window, with numbers:
+
+- **Endpoint filters are not dropping money.** `/api/cost/by-model` enterprise rows summed to
+  5,323.48 against the summary's 5,323.49 — the `WHERE m.Model != ''` and default
+  `grp != 'unknown'` filters removed approximately $0 (the `unknown` channel carried 236
+  sessions at $0 cost; the `Model=''` share was nil).
+- **No missing unit prices.** `unpriced_tokens: 0` on every row.
+- **The entire reported-vs-computed difference is the cache-write TTL price delta.**
+  `cache_write_tokens × (cacheWrite1h − cacheWrite)` matched the per-model, per-channel
+  difference to the cent (bedrock `opus-5` $694.13, enterprise `sonnet-5` $37.49, bedrock
+  `haiku-4-5` $15.51, enterprise `opus-4-8` $0.1887). Enterprise `opus-5` and `haiku-4-5`
+  matched only partially (≈44% and ≈60% of the full 5m→1h delta), indicating the client is
+  pricing some cache writes at 5m and some at 1h, not blanket-pricing at either tier.
+- **Not the 2.1.251 `claude-fable-5-1` pricing bug** (§3 above) — this window has a single
+  `app_version`.
+- **Not a rollup/lookback boundary bias** — those biases push cumulative diffs *high*
+  (§2 above), which cannot produce a lower dashboard number.
+
+Full 1h repricing raises the enterprise total by +5.3% ($5,323.49 → $5,604.20) — real, but it
+cannot alone account for a reported 10–30% gap.
+
+**Not measured in this pass, and still required to close the residual:**
+
+- The Console-side per-seat cost export for the same exact UTC window was not obtained, so the
+  decisive per-user reconciliation (present in Console but absent on the dashboard, versus
+  present on both but lower) has not been run.
+- Direct ClickHouse queries (log-vs-metric total, `cost_usd` vs `cost_usd_micros`, session-set
+  difference between `otel_logs` and `otel_metrics_sum_hourly`, `SeriesKey` monotonicity) were
+  planned but not run in this pass: retrieving the ClickHouse reader credential via `kubectl get
+  secret` was blocked by this environment's tool-use policy (credential materialization). These
+  queries need an operator with that permission, using the `ch()` helper in
+  [incident-response.md](runbooks/incident-response.md).
+- Confirming that the Console total and the dashboard total describe comparable populations:
+  Console org usage includes any non-Claude-Code API traffic on the org's keys and excludes
+  Bedrock; the dashboard's enterprise channel is Claude-Code-telemetry-only and Bedrock is a
+  separate, AWS-billed channel. Enterprise reported cost remains the only valid comparand, per
+  the "do not combine" rule above — comparing the *combined* dashboard total to a Console total
+  would overstate the true gap.
+
+**Implemented as a result:** `/api/reliability/reported-vs-computed` now reports `cost_5m`,
+`cost_1h`, and `ttl_share` per group/version/model, making the TTL decomposition above a
+first-class, repeatable measurement instead of an ad-hoc calculation (see
+[api-reference.md](api-reference.md)). No filter, grouping, or truncation behavior was changed,
+since none of it was shown to drop measurable cost in this window.

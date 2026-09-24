@@ -1,6 +1,6 @@
 // Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 cacheWrite(5m) = 입력×1.25,
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
-// 0.025x인 예외라 값을 명시한다(아래 주석). Bedrock cross-region(us./us-gov./eu./apac./jp./au./
+// 0.025x, opus-5-5는 0.05x인 예외라 값을 명시한다(아래 주석). Bedrock cross-region(us./us-gov./eu./apac./jp./au./
 // global.) 추론 프로파일은 기본 모델과 동일 단가.
 // 캐시 쓰기 TTL 기본값이 "1h"인 이유: Claude Code 메인 대화가 캐시 쓰기 볼륨의 대부분을 차지하고
 // 메인 스레드는 1h TTL로 청구된다(실측 2026-09-01/02: opus-5 메인 스레드 $10/M = 5×2, 5×1.25=$6.25
@@ -21,6 +21,8 @@ const BASE_PRICING = {
   "claude-opus-4-7": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-4-8": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-5": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+  // opus-5-5: $4/$20, cache read $0.20 (0.05x 예외, 2026-09-23 pricing 페이지 확인)
+  "claude-opus-5-5": { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
   "claude-haiku-4-5": { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
   "claude-haiku-3-5": { input: 0.8, output: 4, cacheWrite: 1, cacheRead: 0.08 },
   "claude-3-5-haiku": { input: 0.8, output: 4, cacheWrite: 1, cacheRead: 0.08 },
@@ -136,6 +138,24 @@ export const PRICING_PROMPT_TABLE =
 
 export function priceFor(model) {
   return PRICING[normalizeModelId(model)] || null;
+}
+
+// withComputedCost/tierCosts는 서버 env PRICING_CACHE_WRITE_TTL(단일 가정)로만 캐시 쓰기 단가를
+// 고른다 — reportedVsComputedByVersion(리포트 비용의 TTL 근거를 진단)은 5m/1h 두 시나리오를
+// "동시에" 봐야 하므로, env 기본값과 무관하게 TTL을 명시적으로 골라 계산하는 버전이 따로 필요하다.
+// cacheWrite/cacheWrite1h 둘 다 PRICING 테이블에 이미 있으니 effectiveCacheWrite처럼 조회만
+// 바꾼다 — 별도 단가표를 만들지 않는다(fable-5-1의 cacheRead 0.25x 예외도 그대로 적용됨).
+export function costAtTtl(row, ttl) {
+  const p = priceFor(row.model);
+  if (!p) return null;
+  const cacheWrite = ttl === "1h" ? p.cacheWrite1h : p.cacheWrite;
+  return (
+    (Number(row.input_tokens) * p.input +
+      Number(row.output_tokens) * p.output +
+      Number(row.cache_read_tokens) * p.cacheRead +
+      Number(row.cache_write_tokens) * cacheWrite) /
+    1e6
+  );
 }
 
 // Cost 페이지 "캐시 티어별 지출" 카드용 — costByModel() 같은 행 배열(모델별 4토큰 합계)을 받아

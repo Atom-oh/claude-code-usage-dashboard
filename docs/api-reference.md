@@ -199,7 +199,7 @@ parsed from `tool_parameters`. Counts, quantiles and rates therefore need their 
 | `/api/reliability/retries-exhausted` | Per `group`: `exhausted_retries`, `avg_total_attempts`, `avg_retry_duration_ms`. It does not isolate throttling as the cause. |
 | `/api/reliability/api-errors` | **Object** `{byModel, byStatus}`. By model: `group, model, requests, errors, total, error_rate`. By status: `group, status_code, errors`; missing status becomes `no-http-status`. |
 | `/api/reliability/api-latency` | **Object** `{byModel, byEffort}`; each row has `group`, model/effort, `requests`, `p50_ms`, `p95_ms`. Empty effort becomes `unknown`; duration comes from `api_request.duration_ms`. |
-| `/api/reliability/reported-vs-computed` | Bare array per `group, app_version, model`: `requests`, priced-row fields and `ratio = reported_cost / cost` when computed cost is positive, otherwise null. Source is `api_request` logs. |
+| `/api/reliability/reported-vs-computed` | Bare array per `group, app_version, model`: `requests`, priced-row fields, `ratio = reported_cost / cost` when computed cost is positive (otherwise null), plus `cost_5m`/`cost_1h` (computed cost at each cache-write TTL, independent of the server's `PRICING_CACHE_WRITE_TTL` default) and `ttl_share = (reported_cost - cost_5m) / (cost_1h - cost_5m)` — near 0 means the reported cost prices cache writes at the 5-minute tier, near 1 means the 1-hour tier; null when the denominator is 0 (no cache-write tokens). Source is `api_request` logs. |
 | `/api/integrity/version-cohort-sessions` | Per `group, app_version`: distinct `sessions` with nonempty version and session-counter rows in range. |
 | `/api/integrity/version-cohort-cost` | Per `group, version_cohort`: reported `cost_usd`, `tokens`, `usd_per_million_tokens`. Cohorts are `pre-2.1.214` and `>=2.1.214`; raw series are differenced locally. |
 
@@ -207,6 +207,11 @@ API error rate is `api_error / (api_request + api_error)` event counts. The code
 establish whether failed requests also emit `api_request`, so this is not a deduplicated
 request failure probability. Reported/computed ratios diagnose differences in pricing,
 TTL assumptions or collection; they do not prove a specific bug or invoice accuracy.
+
+`ttl_share` isolates the cache-write TTL axis specifically, since the four token types stored
+by OTel (`input`, `output`, `cacheRead`, `cacheCreation`) carry no TTL dimension. It does not
+attribute any remaining reported/computed gap to collection completeness or a client pricing
+bug — see [cost accuracy review](cost-accuracy-review-2026-09-10.md).
 
 ### Users
 

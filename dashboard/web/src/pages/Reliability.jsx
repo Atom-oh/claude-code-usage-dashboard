@@ -25,6 +25,19 @@ const ratioBadge = (v) => {
   const text = `${Number(v).toFixed(2)}×`;
   return Math.abs(Number(v) - 1) > 0.15 ? <Badge tone="negative">{text}</Badge> : text;
 };
+// cost_5m/cost_1h는 unpriced(단가표 밖 모델)면 null — computedCostText와 같은 규칙으로 "미산정"을
+// 보여준다. r.unpriced 하나로 세 계산 비용 컬럼(cost/cost_5m/cost_1h)이 함께 미산정 처리된다.
+const scenarioCostText = (v, r) => (r.unpriced ? "미산정" : usd(v));
+const scenarioCostCell = (v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(v));
+// ttl_share: (reported - cost_5m) / (cost_1h - cost_5m). 0에 가까우면 보고 비용이 5m 캐시 쓰기
+// 단가에 가깝고, 1에 가까우면 1h 단가에 가깝다 — reported/computed 차이의 원인이 TTL 가정인지를
+// 이 컬럼 하나로 판별한다. null(분모 0, 캐시 쓰기 토큰 없음)은 ratio와 같은 이유로 falsy 검사를
+// 피해 명시적으로 처리한다.
+const ttlShareText = (v) => (v == null ? "" : Number(v).toFixed(2));
+const ttlShareBadge = (v) => {
+  if (v == null) return <span className="text-ink-400">—</span>;
+  return Number(v).toFixed(2);
+};
 
 // 2026-08-11 STEP 3/4 — 신뢰성(refusal/재시도) + A/B 무결성(버전 코호트) 신규 패널 전용 페이지.
 // 기존 페이지(Productivity/Usage)와 성격이 달라(생산성/사용량이 아니라 "이 A/B 비교를 믿어도
@@ -89,6 +102,9 @@ const REPORTED_VS_COMPUTED_COLUMNS = [
   { key: "reported_cost", label: "Claude Code 보고 비용", render: usd },
   { key: "cost", label: "계산 비용", render: (_v, r) => (r.unpriced ? <Badge tone="neutral">미산정</Badge> : usd(r.cost)), toText: computedCostText },
   { key: "ratio", label: "비율", render: ratioBadge, toText: ratioText },
+  { key: "cost_5m", label: "계산 비용 (5m 캐시)", render: scenarioCostCell, toText: scenarioCostText },
+  { key: "cost_1h", label: "계산 비용 (1h 캐시)", render: scenarioCostCell, toText: scenarioCostText },
+  { key: "ttl_share", label: "TTL 비중 (0=5m, 1=1h)", render: ttlShareBadge, toText: ttlShareText },
 ];
 
 const VERSION_SESSION_COLUMNS = [
