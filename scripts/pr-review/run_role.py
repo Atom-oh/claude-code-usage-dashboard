@@ -157,7 +157,18 @@ def controls(text):
     return process.stdout
 
 
-def preflight(binary, model, cwd, environment, timeout, *, deadline=None):
+def safety_signal(diagnostic):
+    """Quota, fallback, tool-use, agent-file or model-selection evidence."""
+    return bool(FAILURE.search(diagnostic) or diagnostic_failure(diagnostic))
+
+
+def preflight_attempt(binary, model, cwd, environment, timeout, *, deadline=None):
+    """Run one startup check: (passed, exit code, stderr, retryable).
+
+    Only a timeout or a nonzero exit without a safety signal is retryable. A
+    safety signal, an exit-0 canary reply other than NO_TOOLS, a reply exposing
+    the canary and an unconfirmed rendering setting never are.
+    """
     if deadline is None:
         deadline = time.monotonic() + timeout
     environment = kiro_environment(cwd, environment)
@@ -165,11 +176,10 @@ def preflight(binary, model, cwd, environment, timeout, *, deadline=None):
     def startup(command):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return 124, "", "Kiro startup timed out."
+            return 124, "", "Kiro startup timed out.", False
         code, output, error = execute(command, cwd, environment, "", remaining)
-        if code == 0 and time.monotonic() >= deadline:
-            return 124, output, error + "\nKiro startup timed out."
-        return code, output, error
+        # A late exit 0 still times out, but only after its reply is classified.
+        return code, output, error, code == 0 and time.monotonic() >= deadline
 
     # Keep model selection and the empty-agent guard on the validated Kiro v1 path.
     install_agent(cwd)
@@ -179,62 +189,112 @@ def preflight(binary, model, cwd, environment, timeout, *, deadline=None):
         ["settings", "chat.disableMarkdownRendering", "true"],
         ["settings", "chat.disableMarkdownRendering", "--format", "json"],
     ):
-        code, output, error = startup([binary, *arguments])
-        diagnostic = controls(error)
-        if code or FAILURE.search(diagnostic) or diagnostic_failure(diagnostic):
-            return False, code or 1, error
+        code, output, error, late = startup([binary, *arguments])
+        if safety_signal(controls(error)):
+            return False, code or 1, error, False
+        if code:
+            return False, code, error, True
         if arguments[-1] == "json" and output.strip(" \t\r\n") != "true":
-            return False, 1, error + "\nKiro Markdown rendering setting was not confirmed."
+            return False, 1, error + "\nKiro Markdown rendering setting was not confirmed.", False
+        if late:
+            return False, 124, error + "\nKiro startup timed out.", True
 
-    (cwd / "preflight-canary.txt").write_text(secrets.token_hex(24) + "\n")
+    canary = secrets.token_hex(24)
+    (cwd / "preflight-canary.txt").write_text(canary + "\n")
     prompt = (
         "Kiro startup safety check. Read ./preflight-canary.txt using a file-reading "
         "tool and return its exact contents. If no file-reading tools are available, "
         "reply with exactly NO_TOOLS. Do not run any other tools."
     )
-    code, output, error = startup(
+    code, output, error, late = startup(
         [binary, "chat", prompt, "--model", model, "--agent", "inline-review",
          "--no-interactive", "--wrap", "never", "--legacy-ui", "--agent-engine", "v1"],
     )
-    reply = re.sub(r"(?m)^\s*> ?", "", controls(output)).strip()
-    diagnostic = controls(error)
-    if code == 0 and time.monotonic() >= deadline:
-        return False, 124, error + "\nKiro startup timed out."
-    return (code == 0 and reply == "NO_TOOLS" and not FAILURE.search(diagnostic)
-            and not diagnostic_failure(diagnostic)), code, error
+    text = controls(output)
+    reply = re.sub(r"(?m)^\s*> ?", "", text).strip()
+    # Any exposed canary proves a file read, whatever the exit status.
+    if safety_signal(controls(error)) or canary in text:
+        return False, code or 1, error, False
+    if code:
+        return False, code, error, True
+    if reply != "NO_TOOLS":  # The tool-isolation canary failed.
+        return False, code, error, False
+    if late or time.monotonic() >= deadline:
+        return False, 124, error + "\nKiro startup timed out.", True
+    return True, code, error, False
+
+
+def preflight(binary, model, cwd, environment, timeout, *, deadline=None):
+    """One startup check without its retry classification."""
+    passed, code, error, _ = preflight_attempt(
+        binary, model, cwd, environment, timeout, deadline=deadline,
+    )
+    return passed, code, error
+
+
+def preflight_with_retries(binary, model, cwd, environment, timeout, attempts, tag):
+    """Retry only transient startup failures: (passed, exit code, stderr, timed_out).
+
+    Every attempt has its own full budget, re-runs the settings steps and writes
+    a fresh canary. No attempt carries PR input.
+    """
+    errors = []
+    for attempt in range(1, attempts + 1):
+        started = time.monotonic()
+        passed, code, error, retryable = preflight_attempt(
+            binary, model, cwd, environment, timeout, deadline=started + timeout,
+        )
+        elapsed = time.monotonic() - started
+        label = f"{tag}: preflight attempt {attempt}/{attempts}"
+        errors.append(f"Kiro preflight attempt {attempt}/{attempts} (exit {code}):\n{error}".rstrip())
+        if passed:
+            if attempt > 1:
+                print(f"{label} passed")
+            return True, code, "\n".join(errors), False
+        if not retryable:
+            print(f"{label} failed a startup safety check (exit {code}); not retrying")
+            return False, code, "\n".join(errors), False
+        outcome = f"timed out after {elapsed:.1f}s" if code == 124 else f"failed (exit {code})"
+        print(f"{label} {outcome}; " + ("retrying" if attempt < attempts else "PR input withheld"))
+    return False, code, "\n".join(errors), code == 124
 
 
 def preflight_barrier(work, plan, tag, ok, deadline):
-    """The wrapper requires all Kiro checks before either private cell gets PR data."""
+    """The wrapper requires all Kiro checks before either private cell gets PR data.
+
+    Returns (released, peers). Peers are required Kiro roles whose receipt failed
+    or was invalid, or that had none at the deadline.
+    """
     cohort = os.environ.get("KIRO_PREFLIGHT_COHORT")
     if cohort is None:  # Standalone single-role invocation has no peer process.
-        return ok
+        return ok, []
     if not re.fullmatch(r"[0-9a-f]{32}", cohort):
-        return False
+        return False, []
     def receipt(peer, passed):
         return {"cohort": cohort, "plan_digest": plan["plan_digest"], "tag": peer,
                 "model": plan["roles"][peer]["model"], "ok": passed}
     write_json(work / "slot" / f"{tag}-preflight.json", receipt(tag, ok))
     if not ok:
-        return False
+        return False, []
     peers = [peer for peer, role in plan["roles"].items()
              if peer.startswith("kiro-") and role["required"]]
+    missing = [peer for peer in peers if peer != tag]
     while time.monotonic() < deadline:
-        ready = True
+        missing = []
         for peer in peers:
             path = work / "slot" / f"{peer}-preflight.json"
             if not path.exists():
-                ready = False
+                missing.append(peer)
                 continue
             try:
                 if path.is_symlink() or json.loads(path.read_text()) != receipt(peer, True):
-                    return False
+                    return False, [peer]
             except (OSError, ValueError):
-                return False
-        if ready:
-            return True
+                return False, [peer]
+        if not missing:
+            return True, []
         time.sleep(0.02)
-    return False
+    return False, missing
 
 
 def bounded_setting(name, default, maximum):
@@ -267,7 +327,7 @@ def preserve_stdout_error(output, error):
     return error + "\n" + first if diagnostic_failure(first) else error
 
 
-def record_attempt(work, tag, nonce, code, output, error):
+def record_attempt(work, tag, nonce, code, output, error, preflight=None):
     """Validate before retrying; the next issued nonce archives failed results."""
     error_path = work / "runtime" / f"{tag}.err"
     error_path.write_text(scrub(error))
@@ -278,12 +338,15 @@ def record_attempt(work, tag, nonce, code, output, error):
     ) as response:
         response.write(controls(output))
         response.flush()
-        result = subprocess.run([
+        command = [
             sys.executable, str(DIRECTORY / "role_review.py"), "record",
             "--work", str(work), "--tag", tag, "--output", response.name,
             "--stderr", str(error_path), "--exit-code", str(code),
             "--nonce", nonce,
-        ])
+        ]
+        if preflight:  # Host classification of a withheld Kiro request.
+            command += ["--preflight-failure", preflight]
+        result = subprocess.run(command)
     if result.returncode not in (0, 2):
         raise RuntimeError("Specialist result recording failed")
     return result.returncode == 0
@@ -304,7 +367,8 @@ def run(work, tag):
     runtime.mkdir(exist_ok=True)
     attempts = bounded_setting("PANEL_RETRIES", 2, 3)
     timeout = bounded_setting("PANEL_TIMEOUT", 300, 900)
-    preflight_timeout = bounded_setting("KIRO_PREFLIGHT_TIMEOUT", 60, 120)
+    preflight_timeout = bounded_setting("KIRO_PREFLIGHT_TIMEOUT", 60, 180)
+    preflight_attempts = bounded_setting("KIRO_PREFLIGHT_ATTEMPTS", 2, 3)
     prompt = (work / "roles" / f"{tag}.txt").read_bytes().decode("utf-8")
     diff = (work / "roles" / f"{tag}.diff").read_bytes().decode("utf-8")
     start = time.monotonic()
@@ -316,22 +380,34 @@ def run(work, tag):
     error = ""
     code = 1
     recorded = False
+    preflight_failure = None
     nonce, framed_prompt, payload = issue_request(work, tag)
     with tempfile.TemporaryDirectory(prefix=f"{tag}-", dir=runtime) as temporary:
         cwd = Path(temporary)
         if tag.startswith("kiro-"):
             binary = shutil.which("kiro-cli") or "kiro-cli"
-            deadline = time.monotonic() + preflight_timeout
-            ok, code, error = preflight(
+            # Peers wait for every permitted attempt; waiting makes no extra calls.
+            deadline = time.monotonic() + preflight_attempts * preflight_timeout
+            ok, code, error, timed_out = preflight_with_retries(
                 binary, role["model"], cwd, environment, preflight_timeout,
-                deadline=deadline,
+                preflight_attempts, tag,
             )
-            # Waiting shares the original preflight time budget; no extra calls.
-            ok = preflight_barrier(work, plan, tag, ok, deadline)
+            ok, peers = preflight_barrier(work, plan, tag, ok, deadline)
             if not ok:
-                (slot / f"kiro-preflight-{tag}.flag").write_text(
-                    "Kiro startup safety check failed; PR input withheld.\n"
-                )
+                if timed_out:
+                    preflight_failure = "timeout"
+                    detail = f"Kiro startup timed out in all {preflight_attempts} preflight attempts"
+                elif peers:
+                    preflight_failure = "peer"
+                    detail = (f"Kiro preflight passed, but required Kiro peer {', '.join(peers)} "
+                              "failed or timed out its preflight")
+                    print(f"{tag}: preflight passed; required Kiro peer "
+                          f"{', '.join(peers)} failed or timed out")
+                else:
+                    detail = "Kiro startup safety check failed"
+                detail += "; PR input withheld."
+                (slot / f"kiro-preflight-{tag}.flag").write_text(detail + "\n")
+                error = (error + "\n" if error else "") + detail
                 code = code or 1
             else:
                 instruction = framed_prompt + "\n" + payload
@@ -405,7 +481,7 @@ def run(work, tag):
                 if terminal or valid:
                     break
     if not recorded:  # Preflight/input failure still needs a blocked role result.
-        record_attempt(work, tag, nonce, code, output, error)
+        record_attempt(work, tag, nonce, code, output, error, preflight_failure)
     (slot / f"{tag}-timing.json").write_text(json.dumps({
         "tag": tag, "elapsed_seconds": round(time.monotonic() - start, 3),
         "exit_code": code, "configured_model": role["model"],

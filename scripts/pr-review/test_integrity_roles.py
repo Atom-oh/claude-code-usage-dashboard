@@ -132,7 +132,7 @@ class IntegrityTests(unittest.TestCase):
     def test_stored_and_delivered_specialist_diff_bytes_match(self):
         for tag in ("codex", "kiro-fable"):
             with self.subTest(tag=tag):
-                with patch.object(run_role, "preflight", return_value=(True, 0, "")):
+                with patch.object(run_role, "preflight_attempt", return_value=(True, 0, "", False)):
                     response = self.response(tag)
                     invoke = (self.codex_execute([(0, self.codex_events(response), "", response)])
                               if tag == "codex" else lambda *args: (0, response, ""))
@@ -265,7 +265,7 @@ class IntegrityTests(unittest.TestCase):
 
     def assert_kiro_terminal_stops_retry(self, error, failure_code):
         tag = "kiro-fable"
-        with patch.object(run_role, "preflight", return_value=(True, 0, "")):
+        with patch.object(run_role, "preflight_attempt", return_value=(True, 0, "", False)):
             with patch.object(run_role, "execute", side_effect=[
                 (1, "", error), (0, self.response(tag), ""),
             ]) as execute:

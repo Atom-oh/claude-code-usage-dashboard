@@ -216,7 +216,8 @@ class EndToEndRoleTests(unittest.TestCase):
         (self.root / "kiro-setting-failure").touch()
         calls = self.run_pipeline("infra/network.tf")
         kiro = [call for call in calls if call["name"] == "kiro-cli"]
-        self.assertEqual(len(kiro), 2)
+        # A nonzero settings exit without a safety signal is retried once per role.
+        self.assertEqual(len(kiro), 4)
         self.assertTrue(all(call["args"][0] == "settings" for call in kiro))
         for tag in ("kiro-fable", "kiro-sol"):
             self.assertTrue((self.work / "slot" / f"kiro-preflight-{tag}.flag").exists())
