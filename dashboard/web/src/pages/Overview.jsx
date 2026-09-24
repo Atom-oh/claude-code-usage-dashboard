@@ -251,6 +251,7 @@ export default function Overview() {
                 columns={MODEL_DIST_COLUMNS}
                 rows={(models.data || []).filter((r) => r.group === g)}
                 exportName={`overview_model_tokens_${g}`}
+                stale={models.stale}
               />
             ))}
           </div>

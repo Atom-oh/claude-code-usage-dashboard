@@ -245,6 +245,7 @@ export default function Users() {
                   ]}
                   rows={rows.filter((r) => r.group === g)}
                   exportName={`users_leaderboard_${g}`}
+                  stale={leaderboard.stale || tools.stale || skills.stale}
                 />
               ))}
 
@@ -265,6 +266,7 @@ export default function Users() {
                 ]}
                 rows={(tools.data || []).filter((r) => r.group === g)}
                 exportName={`users_tools_${g}`}
+                stale={tools.stale}
               />
             ))}
           </div>
@@ -288,6 +290,7 @@ export default function Users() {
                 ]}
                 rows={(skills.data || []).filter((r) => r.group === g)}
                 exportName={`users_skills_${g}`}
+                stale={skills.stale}
               />
             ))}
           </div>

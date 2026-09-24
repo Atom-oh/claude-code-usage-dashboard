@@ -151,6 +151,7 @@ export default function Reliability() {
               columns={API_LATENCY_MODEL_COLUMNS}
               rows={apiLatency.data?.byModel || []}
               exportName="reliability_api_latency_by_model"
+              stale={apiLatency.stale}
             />
             <DataTable
               title="API 응답 시간 (Effort별)"
@@ -159,6 +160,7 @@ export default function Reliability() {
               columns={API_LATENCY_EFFORT_COLUMNS}
               rows={apiLatency.data?.byEffort || []}
               exportName="reliability_api_latency_by_effort"
+              stale={apiLatency.stale}
             />
           </div>
         )}
@@ -175,6 +177,7 @@ export default function Reliability() {
             columns={REFUSAL_COLUMNS}
             rows={refusals.data || []}
             exportName="reliability_refusals"
+            stale={refusals.stale}
           />
         )}
 
@@ -190,6 +193,7 @@ export default function Reliability() {
             columns={RETRY_COLUMNS}
             rows={retries.data || []}
             exportName="reliability_retries_exhausted"
+            stale={retries.stale}
           />
         )}
 
@@ -206,6 +210,7 @@ export default function Reliability() {
               columns={API_ERROR_MODEL_COLUMNS}
               rows={apiErrors.data?.byModel || []}
               exportName="reliability_api_errors_by_model"
+              stale={apiErrors.stale}
             />
             <DataTable
               title="API 오류 상태 코드 분포"
@@ -214,6 +219,7 @@ export default function Reliability() {
               columns={API_ERROR_STATUS_COLUMNS}
               rows={apiErrors.data?.byStatus || []}
               exportName="reliability_api_errors_by_status"
+              stale={apiErrors.stale}
             />
           </div>
         )}
@@ -229,6 +235,7 @@ export default function Reliability() {
             columns={REPORTED_VS_COMPUTED_COLUMNS}
             rows={reportedVsComputed.data || []}
             exportName="reliability_reported_vs_computed"
+            stale={reportedVsComputed.stale}
           />
         )}
 
@@ -244,6 +251,7 @@ export default function Reliability() {
             columns={VERSION_SESSION_COLUMNS}
             rows={versionSessions.data || []}
             exportName="integrity_version_sessions"
+            stale={versionSessions.stale}
           />
         )}
 
@@ -259,6 +267,7 @@ export default function Reliability() {
             columns={VERSION_COST_COLUMNS}
             rows={versionCost.data || []}
             exportName="integrity_version_cost"
+            stale={versionCost.stale}
           />
         )}
       </div>

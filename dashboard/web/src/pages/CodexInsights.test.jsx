@@ -192,7 +192,9 @@ test("shared effective bounds reach the API and a paused overview preserves deta
   state.result = { data: fixture(), loading: false };
   const range = { from: "2026-09-01T00:00:00Z", to: "2026-09-02T10:00:00Z" };
   const { rerender } = render(<CodexInsights range={range} enabled />);
-  expect(state.calls.at(-1)).toEqual(["/api/codex/insights", { client: "codex", ...range }, true, { linkedRange: true }]);
+  expect(state.calls.at(-1)).toEqual(["/api/codex/insights", { client: "codex", ...range }, true, { linkedRange: true, hold: false }]);
+  rerender(<CodexInsights range={range} enabled hold />);
+  expect(state.calls.at(-1)[3]).toEqual({ linkedRange: true, hold: true });
   fireEvent.click(screen.getByRole("button", { name: "런타임·메트릭" }));
   fireEvent.change(screen.getByPlaceholderText("메트릭 이름 검색"), { target: { value: "turn" } });
   rerender(<CodexInsights range={range} enabled={false} />);
@@ -226,4 +228,14 @@ test("route sections expose only relevant details and choose a valid tab after n
   expect(screen.getByPlaceholderText("메트릭 이름 검색")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Trace", exact: true }));
   expect(screen.getByText("작업별 Span 지연")).toBeTruthy();
+});
+
+test("stale detail rows cannot be exported", () => {
+  state.result = { data: fixture(), loading: false, error: null, stale: true };
+  const { rerender } = render(<CodexInsights />);
+  const table = screen.getByText("Effort별 사용량·비용").closest(".shadow-card");
+  expect(within(table).getByRole("button", { name: "CSV" }).disabled).toBe(true);
+  state.result = { data: fixture(), loading: false, error: null, stale: false };
+  rerender(<CodexInsights />);
+  expect(within(table).getByRole("button", { name: "CSV" }).disabled).toBe(false);
 });

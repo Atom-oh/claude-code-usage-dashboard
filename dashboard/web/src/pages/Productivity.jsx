@@ -102,10 +102,11 @@ function TracesBetaPanel({ resp, title, subtitle, help, columns, exportName }) {
         columns={columns}
         rows={[]}
         exportName={exportName}
+        stale={resp.stale}
       />
     );
   }
-  return <DataTable title={title} subtitle={subtitle} help={help} columns={columns} rows={resp.data?.rows || []} exportName={exportName} />;
+  return <DataTable title={title} subtitle={subtitle} help={help} columns={columns} rows={resp.data?.rows || []} exportName={exportName} stale={resp.stale} />;
 }
 
 export default function Productivity() {
@@ -269,6 +270,7 @@ export default function Productivity() {
             ]}
             rows={userProductivityRows}
             exportName="productivity_by_user"
+            stale={leaderboard.stale || byUserCost.stale}
           />
         )}
 
@@ -425,6 +427,7 @@ export default function Productivity() {
                 columns={LANGUAGE_COLUMNS}
                 rows={langRowsFor(g)}
                 exportName={`productivity_languages_${g}`}
+                stale={languages.stale}
               />
             ))}
           </div>

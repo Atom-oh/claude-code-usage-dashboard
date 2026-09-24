@@ -213,6 +213,7 @@ export default function Usage() {
             columns={ENTRYPOINT_COLUMNS}
             rows={entrypoints.data || []}
             exportName="usage_entrypoints"
+            stale={entrypoints.stale}
           />
         )}
 
@@ -229,6 +230,7 @@ export default function Usage() {
               columns={PROJECT_COLUMNS}
               rows={projects.data || []}
               exportName="usage_projects"
+              stale={projects.stale}
             />
           )
         ) : null}
@@ -248,6 +250,7 @@ export default function Usage() {
                 columns={TOOL_MCP_COLUMNS}
                 rows={(toolMcp.data || []).filter((r) => r.group === g)}
                 exportName={`usage_tool_mcp_${g}`}
+                stale={toolMcp.stale}
               />
             ))}
           </div>
@@ -268,6 +271,7 @@ export default function Usage() {
                 columns={TOOL_DECISION_COLUMNS}
                 rows={(toolDecisions.data || []).filter((r) => r.group === g)}
                 exportName={`usage_tool_decisions_${g}`}
+                stale={toolDecisions.stale}
               />
             ))}
           </div>
@@ -285,6 +289,7 @@ export default function Usage() {
             columns={PERMISSION_MODE_COLUMNS}
             rows={permissionModes.data || []}
             exportName="usage_permission_modes"
+            stale={permissionModes.stale}
           />
         )}
 
@@ -300,6 +305,7 @@ export default function Usage() {
             columns={DECISION_SOURCE_COLUMNS}
             rows={decisionSources.data || []}
             exportName="usage_decision_sources"
+            stale={decisionSources.stale}
           />
         )}
 
@@ -321,6 +327,7 @@ export default function Usage() {
                   .sort((a, b) => Number(b.uses) - Number(a.uses))
                   .slice(0, 10)}
                 exportName={`usage_tool_latency_${g}`}
+                stale={toolLatency.stale}
               />
             ))}
           </div>
@@ -341,6 +348,7 @@ export default function Usage() {
                 columns={CONNECTOR_COLUMNS}
                 rows={(connectors.data || []).filter((r) => r.group === g)}
                 exportName={`usage_connectors_${g}`}
+                stale={connectors.stale}
               />
             ))}
           </div>
@@ -358,6 +366,7 @@ export default function Usage() {
             columns={MCP_HEALTH_COLUMNS}
             rows={mcpHealth.data || []}
             exportName="usage_mcp_health"
+            stale={mcpHealth.stale}
           />
         )}
 
@@ -376,6 +385,7 @@ export default function Usage() {
                 columns={SKILL_COLUMNS}
                 rows={(skills.data || []).filter((r) => r.group === g)}
                 exportName={`usage_skills_${g}`}
+                stale={skills.stale}
               />
             ))}
           </div>
@@ -396,6 +406,7 @@ export default function Usage() {
                 columns={SKILL_ACTIVATION_COLUMNS}
                 rows={(skillActivations.data || []).filter((r) => r.group === g)}
                 exportName={`usage_skill_activations_${g}`}
+                stale={skillActivations.stale}
               />
             ))}
           </div>
@@ -413,6 +424,7 @@ export default function Usage() {
             columns={PLUGIN_COLUMNS}
             rows={plugins.data || []}
             exportName="usage_plugins"
+            stale={plugins.stale}
           />
         )}
 
@@ -428,6 +440,7 @@ export default function Usage() {
             columns={SUBAGENT_FANOUT_COLUMNS}
             rows={subagentFanout.data || []}
             exportName="usage_subagent_fanout"
+            stale={subagentFanout.stale}
           />
         )}
 
@@ -443,6 +456,7 @@ export default function Usage() {
             columns={COMPACTION_COLUMNS}
             rows={compaction.data || []}
             exportName="usage_compaction"
+            stale={compaction.stale}
           />
         )}
 
@@ -460,6 +474,7 @@ export default function Usage() {
                 columns={COMMAND_COLUMNS}
                 rows={(commands.data?.commands || []).filter((r) => r.group === g)}
                 exportName={`usage_commands_${g}`}
+                stale={commands.stale}
               />
             ))}
           </div>

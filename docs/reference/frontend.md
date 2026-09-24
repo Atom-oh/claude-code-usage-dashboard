@@ -92,11 +92,22 @@ Actual path, range, filter, client or interval changes clear the previous select
 The current-month selection resets when its month changes. Aborted or superseded
 requests cannot update either data or error state.
 
+`useApi` also returns `stale`, true while the displayed data belongs to the same view as
+the current selection but to another period. It is computed during render, so it is
+already true in the render that changes the period. Because a period change still clears
+the selection in the effect that follows, `stale` stays true only for that render, or for
+as long as the hook is held.
+
 Codex details opt into `linkedRange` because their explicit `from`/`to` follow the
 parent response's effective bounds. Other parameters and global selection changes
 still reset loading. Ordinary explicit bounds retain their foreground-load behavior;
 do not use `linkedRange` for independent user-selected bounds. Request quantization
-and cache keys are unchanged.
+and cache keys are unchanged. Codex details also pass `hold: stale` of the overview hook.
+While held, the hook sends no request and keeps its selection and state; an in-flight
+request still completes. On release the normal selection logic runs with the current
+bounds. The hold stops the details from requesting the overview's old bounds in the render
+that changes the period, before the overview clears. A parent `stale` set from an effect
+would be one commit late: child effects run before parent effects.
 
 [RefreshContext.jsx](../../dashboard/web/src/RefreshContext.jsx) defaults to 60 seconds,
 persists the selected interval, pauses hidden tabs, refreshes when visible, and skips one
@@ -106,7 +117,14 @@ updates use a separate context from data-cycle triggers. The refresh control res
 a status row at every viewport for pending/failure disclosures; its timestamp labels
 an attempt, never successful completion.
 Page-local interval controls must resync from global range changes, as
-[Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does.
+[Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does. Tables fed by a stale hook
+pass `stale` to `DataTable`, which disables CSV export so previous-period rows are not
+saved under the new range's filename. Cost's model cost trend passes `zoomDisabled`
+while its rows are stale (a pending global period or granularity change), because the
+page-local `bucketHours` already describes the new buckets. The label fallback is not a
+substitute: date-only labels get 24 hours, including weekly buckets, and other labels use
+the global interval. Shared client trends take `bucket_hours` from the same response as
+their rows, so they stay zoomable.
 
 ## Spend and interpretation
 

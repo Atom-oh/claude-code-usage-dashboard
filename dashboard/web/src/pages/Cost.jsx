@@ -535,6 +535,7 @@ export default function Cost() {
             tickFormatter={fmtTick}
             valuePrefix="$"
             bucketHours={intervalHours}
+            zoomDisabled={byModelDaily.stale}
           />
         )}
 
@@ -560,6 +561,7 @@ export default function Cost() {
           rows={modelRows}
           groupKey="__none__"
           exportName="cost_by_model"
+          stale={byModel.stale || compare.stale}
         />
 
         {agentCost.loading ? (
@@ -581,6 +583,7 @@ export default function Cost() {
             ]}
             rows={agentRows}
             exportName="cost_by_agent"
+            stale={agentCost.stale}
           />
         )}
 
@@ -685,6 +688,7 @@ export default function Cost() {
             ]}
             rows={userRows}
             exportName="cost_by_user"
+            stale={byUserModelTable.stale}
           />
         )}
 
@@ -712,6 +716,7 @@ export default function Cost() {
             ]}
             rows={efficiencyRows}
             exportName="cost_efficiency_by_user"
+            stale={efficiency.stale}
           />
         )}
 

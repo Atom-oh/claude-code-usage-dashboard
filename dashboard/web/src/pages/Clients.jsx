@@ -18,7 +18,7 @@ const INSIGHT_SECTIONS = {
 
 export default function Clients({ page = "overview" }) {
   const { client, enabledClients, setDetail } = useClient();
-  const { data, loading, error } = useApi("/api/clients/overview", { client });
+  const { data, loading, error, stale } = useApi("/api/clients/overview", { client });
   const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};
@@ -54,9 +54,10 @@ export default function Clients({ page = "overview" }) {
           확인된 합계가 없으면 —로 표시하며, 토큰 비율은 불완전한 합계로 계산하지 않습니다.
         </p>}
       {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
-        : <section data-shared-client-panels><ClientPanels page={page} data={data} clients={clients} /></section>}
-      {sections && clients.includes("codex") && <CodexInsights
-        sections={sections} range={!loading && !error ? data?.effective_range : null} enabled={!loading} />}
+        : <section data-shared-client-panels><ClientPanels page={page} data={data} clients={clients} stale={stale} /></section>}
+      {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
+      {sections && clients.includes("codex") && <CodexInsights sections={sections}
+        range={!loading && !error ? data?.effective_range : null} enabled={!loading} hold={stale} />}
       {(page === "productivity" || page === "analytics") &&
         <Card title="지표 지원 범위">
           <p className="text-sm text-ink-600">
