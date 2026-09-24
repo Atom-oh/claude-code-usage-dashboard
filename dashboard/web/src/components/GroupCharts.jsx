@@ -29,7 +29,12 @@ import EmptyState from "./EmptyState.jsx";
 // 조회·표시할 때(예: Cost.jsx의 SegmentedControl) 실제 렌더링 중인 버킷 크기를 넘긴다 — 안
 // 그러면 우측 끝 보정(아래)이 전역 intervalHours를 쓰다 화면에 보이는 버킷과 어긋난 custom
 // range를 만든다(리뷰에서 MAJOR로 확인).
-function useDragZoom(yAxisId, bucketHoursOverride, timeDomain) {
+// disabled(SeriesBarChart의 zoomDisabled)는 화면의 막대가 지금 선택과 다른 버킷 크기일 수
+// 있을 때 드래그 줌을 끈다 — useApi stale(기간 변경 응답을 기다리며 이전 기간의 행을 보여주는
+// 중)인 동안 페이지가 넘기는 bucketHoursOverride는 이미 새 버킷 크기라 우측 끝 보정이 틀린 전역
+// 구간을 만든다. 라벨 기반 대체(bucketHoursOverride를 비우는 방법)로는 부족하다: 날짜 라벨은 주간
+// 버킷도 24h로, 그 밖의 라벨은 전역 intervalHours로 보정해 7일 프리셋에서 1h 막대를 24h만큼 민다.
+function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false) {
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
   const startRef = useRef(null);
@@ -37,7 +42,7 @@ function useDragZoom(yAxisId, bucketHoursOverride, timeDomain) {
   const cancel = () => { startRef.current = null; setArea(null); };
   const handlers = {
     onMouseDown: (e) => {
-      if (!e || e.activeLabel == null) return;
+      if (disabled || !e || e.activeLabel == null) return;
       startRef.current = e.activeLabel;
       setArea({ left: e.activeLabel, right: e.activeLabel });
     },
@@ -49,7 +54,7 @@ function useDragZoom(yAxisId, bucketHoursOverride, timeDomain) {
     onMouseUp: () => {
       const a = area;
       cancel();
-      if (!a) return;
+      if (!a || disabled) return;
       const parse = timeDomain
         ? (value) => new Date(typeof value === "number" || value instanceof Date ? value : NaN)
         : parseUtc;
@@ -163,9 +168,9 @@ export function GroupBarChart({ title, subtitle, help, right, rows, xKey = "grou
 // horizontal: 카테고리가 많거나(예: 유저 20명) 라벨이 길 때(이메일) 세로 막대는 라벨이 겹치거나
 // 다 안 보인다 — Recharts의 layout="vertical"(막대는 가로)로 뒤집고 카테고리 축을 Y로 옮긴다.
 // 드래그 줌은 카테고리 축이 날짜가 아니면 어차피 no-op이라 orientation과 무관하게 그대로 둔다.
-export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort }) {
+export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort, zoomDisabled = false }) {
   const c = useChartColors();
-  const zoom = useDragZoom(undefined, bucketHours);
+  const zoom = useDragZoom(undefined, bucketHours, undefined, zoomDisabled);
   // 엠퍼시스(dataviz: "한 시리즈가 주인공이면 나머지는 회색") — 범례 클릭으로 강조 대상을
   // 고르고, 같은 항목을 다시 클릭하면 해제. 색을 재배정하는 게 아니라 나머지를 물리는
   // 것이라 "색은 엔티티를 따라간다" 규칙과 충돌하지 않는다.

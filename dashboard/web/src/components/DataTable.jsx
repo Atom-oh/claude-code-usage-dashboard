@@ -48,7 +48,7 @@ function CellBar({ value, max, color }) {
   );
 }
 
-export function DataTable({ columns, rows, groupKey = "group", title, subtitle, help, right, onRowClick, exportName }) {
+export function DataTable({ columns, rows, groupKey = "group", title, subtitle, help, right, onRowClick, exportName, stale = false }) {
   const [sort, setSort] = useState(null);
 
   const sortedRows = useMemo(() => {
@@ -72,15 +72,16 @@ export function DataTable({ columns, rows, groupKey = "group", title, subtitle, 
   // 기존 right 슬롯을 덮지 않고 감싼다: 이 슬롯을 이미 쓰는 호출자가 있다(Cost.jsx의
   // "unknown 그룹 포함" 체크박스). 클래스는 RangePicker의 확대 해제 버튼과 같은 규격.
   // 내보내는 건 sortedRows다 — 헤더 클릭으로 정렬한 순서가 곧 화면이다.
+  // stale: 기간 변경 응답을 기다리며 이전 기간의 행을 보여주는 중(useApi stale) — 그 행이 새 구간의 파일 이름으로 내보내지지 않게 CSV를 막는다.
   const rightWithExport = exportName ? (
     <div className="flex items-center gap-2">
       {right}
       <button
         type="button"
-        disabled={!rows || rows.length === 0}
+        disabled={stale || !rows || rows.length === 0}
         onClick={() => downloadCsv(csvFilename(exportName, range?.from, range?.to), toCsv(columns, sortedRows, { piiMask }))}
         className="flex items-center gap-1 rounded-md bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 whitespace-nowrap hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
-        title="현재 표를 CSV로 내려받기"
+        title={stale ? "새 기간의 데이터를 불러오는 중에는 내보낼 수 없습니다" : "현재 표를 CSV로 내려받기"}
       >
         <Download size={12} />
         CSV

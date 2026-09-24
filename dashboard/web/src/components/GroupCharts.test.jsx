@@ -154,3 +154,60 @@ test("time-axis drag zoom preserves UTC instants, caps the last bucket and ignor
   await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent)
     .toBe("2026-09-01T02:00:00.000Z / 2026-09-01T11:30:00.000Z"));
 });
+
+test.each([
+  [false, "2026-09-01T00:00:00.000Z / 2026-09-03T01:00:00.000Z", 1],
+  [true, "none", 0],
+])("SeriesBarChart zoomDisabled=%s: a drag across daily bars with bucketHours=1 sets %s", async (disabled, expected, refAreas) => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  function Selection() {
+    const { custom } = useRange();
+    return <output aria-label="선택 구간">{custom
+      ? `${custom.from.toISOString()} / ${custom.to.toISOString()}` : "none"}</output>;
+  }
+  const rows = ["2026-09-01", "2026-09-02", "2026-09-03"].map((day) => ({ day, model: "m1", cost: 1 }));
+  const { container } = render(<>
+    <SeriesBarChart title="모델별 비용 추이" xKey="day" seriesKey="model" valueKey="cost"
+      rows={rows} bucketHours={1} zoomDisabled={disabled} />
+    <Selection />
+  </>, { wrapper: Providers });
+  await waitFor(() => expect(container.querySelector(".recharts-wrapper")).not.toBeNull());
+  const chart = container.querySelector(".recharts-wrapper");
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  const x = (i) => left + (right - left) * (i + 0.5) / 3;
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  expect(container.querySelectorAll(".recharts-reference-area").length).toBe(refAreas);
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe(expected));
+});
+
+// mouseDown 가드만으로는 부족한 경우: 드래그를 시작한 뒤 놓기 전에 zoomDisabled가 켜지면 mouseUp
+// 가드가 줌을 막는다.
+test("a drag that becomes zoom-disabled before mouseup does not zoom", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  function Selection() {
+    const { custom } = useRange();
+    return <output aria-label="선택 구간">{custom
+      ? `${custom.from.toISOString()} / ${custom.to.toISOString()}` : "none"}</output>;
+  }
+  const rows = ["2026-09-01", "2026-09-02", "2026-09-03"].map((day) => ({ day, model: "m1", cost: 1 }));
+  const chartWith = (zoomDisabled) => <>
+    <SeriesBarChart title="모델별 비용 추이" xKey="day" seriesKey="model" valueKey="cost"
+      rows={rows} bucketHours={24} zoomDisabled={zoomDisabled} />
+    <Selection />
+  </>;
+  const { container, rerender } = render(chartWith(false), { wrapper: Providers });
+  await waitFor(() => expect(container.querySelector(".recharts-wrapper")).not.toBeNull());
+  const chart = container.querySelector(".recharts-wrapper");
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  const x = (i) => left + (right - left) * (i + 0.5) / 3;
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  expect(container.querySelectorAll(".recharts-reference-area").length).toBe(1);
+  rerender(chartWith(true));
+  fireEvent.mouseUp(container.querySelector(".recharts-wrapper"), { clientX: x(2), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe("none"));
+});

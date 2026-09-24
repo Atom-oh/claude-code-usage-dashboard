@@ -44,7 +44,8 @@ component-specific; it is not a guarantee shared by every chart.
 `DataTable` sorts using raw column values with numeric-aware string comparison; null and
 empty values sort last. An `exportName` adds a CSV button. It exports the current `columns`
 and `sortedRows`, so hidden computed columns stay out until the comparison option enables
-them. This is a table export, not a separate all-data endpoint.
+them. This is a table export, not a separate all-data endpoint. A `stale` prop disables the
+button while the table shows retained rows from another period.
 
 [csv.js](../../dashboard/web/src/csv.js) uses column labels for headers and `toText(value,row)`
 when supplied; otherwise it exports the raw field. It does **not** scrape rendered JSX.
