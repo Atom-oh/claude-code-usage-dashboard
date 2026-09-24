@@ -84,7 +84,7 @@ test("stacked series plus 기타 with stable fills", async () => {
   const pattern = container.querySelector(`pattern[id="${id}"]`);
   expect(pattern).not.toBeNull();
   const rectFills = [...pattern.querySelectorAll("rect")].map((r) => r.getAttribute("fill"));
-  expect(rectFills).toContain("#AB9E70");
+  expect(rectFills).toContain("#7B9195");
   const legend = screen.getByRole("list", { name: "범례" });
   expect(texts(legend, "li")).toEqual(["claude-sonnet-5", "zai.glm-5", "기타 2개 모델"]);
   expect([...legend.querySelectorAll("[data-swatch]")].map((el) => el.getAttribute("data-swatch")))
@@ -307,4 +307,12 @@ test("without bucketHours, ticks and grid use the global interval (1h here) like
   fireEvent.click(screen.getByRole("button", { name: "표 보기" }));
   const ticks = texts(container, "tr[data-bucket] td:first-child");
   expect([ticks.length, new Set(ticks).size]).toEqual([4, 4]);
+});
+
+test("an older Claude model draws its solid modelColorFor fill, never the unknown-model hatch", async () => {
+  const { container } = mount({ cells: [c(D1, "claude-sonnet-4-5", "bedrock", 1)] });
+  await chartReady(container);
+  expect([...container.querySelectorAll(".recharts-bar-rectangle path")].map((p) => p.getAttribute("fill"))).toEqual(["#B7C0F5"]);
+  expect(container.querySelector("pattern")).toBeNull();
+  expect(screen.getByRole("list", { name: "범례" }).querySelector("[data-swatch]").getAttribute("data-swatch")).toBe("solid");
 });

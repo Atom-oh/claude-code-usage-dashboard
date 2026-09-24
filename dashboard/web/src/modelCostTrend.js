@@ -1,6 +1,6 @@
 // Partial-preserving model cost cells for ModelCostTrend: known amounts are summed as they are,
 // unavailable is never zero, a measured $0 stays distinct, and idle cells follow ADR-015.
-import { MODEL_TREND_COLORS, MODEL_TREND_OTHERS, MODEL_TREND_VENDOR_RAMPS } from "./colors.js";
+import { MODEL_TREND_COLORS, MODEL_TREND_OTHERS, MODEL_TREND_VENDOR_RAMPS, modelColorFor } from "./colors.js";
 
 export const MAX_INTERVALS = 5000;
 export const OTHERS_KEY = "__others";
@@ -485,6 +485,9 @@ export function modelColorKey(model) {
   const registered = MODEL_TREND_COLORS.light;
   if (Object.hasOwn(registered, name)) return { key: name, hatch: false };
   if (Object.hasOwn(registered, "openai." + name)) return { key: "openai." + name, hatch: false };
+  // Other known Claude models and families keep their modelColorFor color, solid: the hatch marks
+  // only models outside both sets, so an older Claude model never reads as unknown.
+  if (modelColorFor(name)) return { key: `family:${name}`, hatch: false };
   const vendor = /^claude/.test(name) ? "anthropic" : /^(?:openai\.|gpt-)/.test(name) ? "openai" : "other";
   return { key: `${vendor}-${nameHash(name) % 3}`, hatch: true };
 }
@@ -494,6 +497,8 @@ export function trendColor(key, theme = "light") {
   const k = String(key ?? "");
   if (Object.hasOwn(MODEL_TREND_COLORS[mode], k)) return MODEL_TREND_COLORS[mode][k];
   if (k === OTHERS_COLOR_KEY) return MODEL_TREND_OTHERS[mode];
+  // modelColorFor has one set for both themes.
+  if (k.startsWith("family:")) return modelColorFor(k.slice(7)) ?? MODEL_TREND_OTHERS[mode];
   const ramp = /^(anthropic|openai|other)-(\d+)$/.exec(k);
   if (ramp) {
     const color = MODEL_TREND_VENDOR_RAMPS[ramp[1]][mode][Number(ramp[2])];
