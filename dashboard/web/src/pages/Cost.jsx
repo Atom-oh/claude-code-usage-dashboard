@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { BarTip } from "../components/BarTip.jsx";
 import { DonutBody, DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { ModelCostTrend } from "../components/ModelCostTrend.jsx";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
@@ -12,11 +13,12 @@ import { useApi } from "../useApi.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
-import { makeTickFmt, maskEmail } from "../fmt.js";
+import { maskEmail } from "../fmt.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
+import { fromByModelDaily } from "../modelCostTrend.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null || !Number.isFinite(Number(n)) ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -193,7 +195,6 @@ export default function Cost() {
   // 안 바뀌고 defaultIntervalHours도 같은 해상도로 우연히 같은 값이면) effect가 재실행되지 않아
   // 이 페이지의 차트만 옛 구간의 intervalHours에 머문다(리뷰에서 MINOR로 확인).
   useEffect(() => setIntervalHours(defaultIntervalHours), [defaultIntervalHours, days, from.getTime(), to.getTime()]);
-  const fmtTick = makeTickFmt(intervalHours);
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");
   const byUserModel = useApi("/api/cost/by-user-model");
@@ -217,7 +218,8 @@ export default function Cost() {
   const effortMix = useApi("/api/cost/effort-mix");
   const agentCost = useApi("/api/cost/by-agent");
   const summaryRows = asSpendRows(summary.data);
-  const dailyRows = asSpendRows(byModelDaily.data);
+  // Raw rows, not asSpendRows: the trend keeps known subtotals beside per-session exclusions.
+  const dailyCells = useMemo(() => fromByModelDaily(byModelDaily.data), [byModelDaily.data]);
   const effortRows = asSpendRows(effortMix.data);
   const agentRows = asSpendRows(agentCost.data).sort(spendOrder).slice(0, 15);
   const prevCostByModel = new Map(asSpendRows(compare.data).map((r) => [r.model, r.prev_cost]));
@@ -511,7 +513,7 @@ export default function Cost() {
         ) : byModelDaily.error ? (
           <ErrorBox error={byModelDaily.error} />
         ) : (
-          <SeriesBarChart
+          <ModelCostTrend
             title="모델별 비용 추이"
             right={
               <SegmentedControl
@@ -524,16 +526,11 @@ export default function Cost() {
                 onChange={(v) => setIntervalHours(Number(v))}
               />
             }
-            rows={dailyRows}
-            subtitle={dailyRows.some((r) => r.cost === null) ? "보고 비용 확인 필요 구간 포함" : undefined}
+            cells={dailyCells}
             help={SPEND_HELP}
-            xKey="day"
-            seriesKey="model"
-            valueKey="cost"
-            colorOf={modelColorFor}
-            seriesSort={byModelLegendOrder}
-            tickFormatter={fmtTick}
-            valuePrefix="$"
+            basis="Claude 보고 비용"
+            xKey="t"
+            pinned={model ? [model] : undefined}
             bucketHours={intervalHours}
             zoomDisabled={byModelDaily.stale}
           />

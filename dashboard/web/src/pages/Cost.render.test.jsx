@@ -362,7 +362,7 @@ function mountHeld() {
 }
 async function dailyChart() {
   const card = (await screen.findByText("모델별 비용 추이", { exact: true })).closest(".rounded-lg");
-  await waitFor(() => expect(card.querySelectorAll(".recharts-bar-rectangle").length).toBe(3));
+  await waitFor(() => expect(card.querySelectorAll(".recharts-bar-rectangle path").length).toBe(3));
   return card;
 }
 function dragAcross(card) {
@@ -393,7 +393,7 @@ test("a pending granularity change blocks drag zoom on the retained daily bars",
   fireEvent.click(within(chartCard).getByRole("button", { name: "시간별" }));
   await act(async () => {});
   expect(held.length).toBe(1);
-  expect(chartCard.querySelectorAll(".recharts-bar-rectangle").length).toBe(3);
+  expect(chartCard.querySelectorAll(".recharts-bar-rectangle path").length).toBe(3);
   dragAcross(chartCard);
   await act(async () => {});
   expect(new URLSearchParams(location.search).get("from")).toBe(null);

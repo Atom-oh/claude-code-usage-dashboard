@@ -37,7 +37,8 @@ const CHARTS = [
   ["/productivity", "활성 사용 시간", "/api/productivity/active-time", HOURS.map((t, i) => ({ t, group: "bedrock", active_seconds: 3600 * (1 + i) })), false, "2026-09-01T03:00:00.000Z"],
   ["/productivity", "프롬프트당 도구 호출 수", "/api/productivity/agenticness", HOURS.map((t, i) => ({ t, group: "bedrock", tool_calls_per_prompt: 1 + i })), false, "2026-09-01T03:00:00.000Z"],
   ["/exec", "일간 활성 사용자", "/api/adoption/timeseries", adoption, false, "2026-09-04T00:00:00.000Z"],
-  ["/exec", "모델별 비용 추이", "/api/cost/by-model-daily", HOURS.map((day) => ({ day, group: "bedrock", model: "m1", cost: 1, reported_cost: 1 })), true, "2026-09-01T03:00:00.000Z"],
+  // Executive's model cost trend defaults to 24h buckets, so its fixture rows are days.
+  ["/exec", "모델별 비용 추이", "/api/cost/by-model-daily", DAYS.map((day) => ({ day, group: "bedrock", model: "m1", cost: 1, reported_cost: 1 })), true, "2026-09-04T00:00:00.000Z"],
   ["/trends", "활성 사용자 (DAU · WAU · MAU)", "/api/adoption/timeseries", adoption, false, "2026-09-04T00:00:00.000Z"],
   ["/trends", "DAU/MAU 고착도", "/api/adoption/timeseries", adoption, false, "2026-09-04T00:00:00.000Z"],
 ];

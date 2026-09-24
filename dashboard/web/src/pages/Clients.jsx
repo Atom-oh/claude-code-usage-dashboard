@@ -18,7 +18,11 @@ const INSIGHT_SECTIONS = {
 
 export default function Clients({ page = "overview" }) {
   const { client, enabledClients, setDetail } = useClient();
-  const { data, loading, error, stale } = useApi("/api/clients/overview", { client });
+  // Only cost and exec chart model cost trends. modelTime=1 is its own cache key, which the
+  // default-view warmer does not fill (a cold request), and moving between these two pages and the
+  // others changes useApi's identity, so that switch reloads instead of retaining the data.
+  const modelTime = page === "cost" || page === "exec";
+  const { data, loading, error, stale } = useApi("/api/clients/overview", modelTime ? { client, modelTime: "1" } : { client });
   const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};

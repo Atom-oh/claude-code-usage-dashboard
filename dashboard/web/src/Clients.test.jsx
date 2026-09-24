@@ -20,14 +20,14 @@ function LocationSpy() {
   return null;
 }
 
-function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false } = {}) {
+function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500 } = {}) {
   setPiiMask(piiMask);
   const fetchMock = vi.fn((url) => {
     const path = String(url).split("?")[0];
     if (path === "/api/clients/overview" && pending) return new Promise(() => {});
     const body = path === "/api/health/data" ? { status: "ok" }
       : path === "/api/clients/overview" ? response : [];
-    return Promise.resolve({ ok: !(failed && path === "/api/clients/overview"), status: failed ? 500 : 200, json: async () => body });
+    return Promise.resolve({ ok: !(failed && path === "/api/clients/overview"), status: failed ? failStatus : 200, json: async () => body });
   });
   vi.stubGlobal("fetch", fetchMock);
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
@@ -427,4 +427,35 @@ test.each([
   expect(within(card).getByRole("button", { name: "CSV" }).disabled).toBe(true);
   await act(async () => overview[1].resolve(ok(clientOverview())));
   await waitFor(() => expect(within(card).getByRole("button", { name: "CSV" }).disabled).toBe(false));
+});
+
+const modelTimeResponse = () => clientOverview({ clients: ["claude", "codex"], bucket_hours: 1,
+  effective_range: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-01T02:00:00.000Z", requested_to: "2026-09-01T02:00:00.000Z" },
+  by_model_time: [
+    { client: "codex", t: "2026-09-01T00:00:00Z", model: "openai.gpt-6-astra", backend: "bedrock-mantle", cost_usd: 1, cost_partial: false, unpriced: 0, observed_tokens: 10 },
+    { client: "claude", t: "2026-09-01T00:00:00Z", model: "claude-sonnet-5", backend: "anthropic", cost_usd: 2, cost_partial: false, unpriced: 0, observed_tokens: 10 },
+  ] });
+const trendTitles = (container) => [...container.querySelectorAll('section[aria-label="클라이언트별 모델 비용 추이"] .shadow-card')]
+  .map((c) => c.querySelector(".truncate").textContent);
+
+// Only cost and exec request the model-time dimension (a separate, unwarmed cache key).
+test.each([["/exec", "1"], ["/cost", "1"], ["/usage", null], ["/", null]])("%s requests modelTime=%s on the shared overview", async (entry, expected) => {
+  const { fetchMock } = mount({ enabledClients: ["claude", "codex"], entry, response: modelTimeResponse() });
+  await waitFor(() => expect(commonRequests(fetchMock).length).toBeGreaterThan(0));
+  for (const url of commonRequests(fetchMock)) expect(url.searchParams.get("modelTime")).toBe(expected);
+});
+
+test.each([
+  [["claude", "codex"], "/exec", ["Claude Code 모델별 비용 추이", "Codex 모델별 비용 추이"]],
+  [["claude", "codex"], "/cost?client=codex", ["Codex 모델별 비용 추이"]],
+  [["claude"], "/exec", ["Claude Code 모델별 비용 추이"]],
+])("model cost trend cards follow selection and enablement: %j %s", async (enabledClients, entry, titles) => {
+  const { container } = mount({ enabledClients, entry, response: modelTimeResponse() });
+  await waitFor(() => expect(trendTitles(container)).toEqual(titles));
+});
+
+test("a row-limit 400 on the shared overview shows the error and no model cost trend section", async () => {
+  const { container } = mount({ enabledClients: ["claude", "codex"], entry: "/cost", failed: true, failStatus: 400 });
+  await screen.findByText("데이터를 불러오지 못했습니다.");
+  expect(container.querySelector('section[aria-label="클라이언트별 모델 비용 추이"]')).toBeNull();
 });

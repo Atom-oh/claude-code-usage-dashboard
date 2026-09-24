@@ -3,6 +3,11 @@ import { Card } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { DualLineChart, RingGauge, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { ModelCostTrend } from "../components/ModelCostTrend.jsx";
+import { SectionLabel } from "../components/SectionLabel.jsx";
+import { SegmentedControl } from "../components/SegmentedControl.jsx";
+import { fromByModelTime, rollupBuckets } from "../modelCostTrend.js";
+import { useRange } from "../RangeContext.jsx";
 import { maskEmail, parseUtc } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
 import {
@@ -146,6 +151,43 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
 }
 
+const TREND_BASIS = { claude: "Claude 보고 비용", codex: "Codex AWS 정가 추정" };
+const bucketLabel = (h) => h === 1 ? "시간별" : h === 24 ? "일간" : h === 168 ? "주간" : `${Math.round(h * 60)}분`;
+
+// Cells are always rolled up, even to the source size, so the shared first bucket (keyed at
+// `from`) is floored like every other bucket.
+function ClientModelTrend({ data, client, hours, source, stale }) {
+  const cells = useMemo(() => rollupBuckets(fromByModelTime(data, client), hours, { sourceHours: source }),
+    [data, client, hours, source]);
+  return <ModelCostTrend title={`${clientName(client)} 모델별 비용 추이`} basis={TREND_BASIS[client]} cells={cells}
+    xKey="t" bucketHours={hours} bounds={data?.effective_range} zoomDisabled={stale} />;
+}
+
+// One card per selected, enabled client from the same response, so both share the effective range
+// and bucket origins. Bases differ, so the cards are never summed and keep separate y-scales. The
+// page-local bucket defaults to the global interval (exec: 24h up to 30 days, else 168h), cannot go
+// below the response's bucket_hours, and a pick lasts until the range changes.
+function ModelTrends({ data, clients, exec, stale }) {
+  const { from, to, intervalHours } = useRange();
+  const source = Number(data?.bucket_hours) > 0 ? Number(data.bucket_hours) : 1;
+  const rangeKey = `${from.getTime()}|${to.getTime()}`;
+  const [pick, setPick] = useState(null);
+  const fallback = exec ? ((to - from) / 86400000 > 30 ? 168 : 24) : intervalHours;
+  const hours = Math.max(source, pick?.key === rangeKey ? pick.hours : fallback);
+  const options = [...new Set([source, hours, 1, 24, 168])].filter((h) => h >= source).sort((a, b) => a - b);
+  return <section aria-label="클라이언트별 모델 비용 추이" className="flex flex-col gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <SectionLabel>모델별 비용 추이 · 클라이언트별 비용 기준 · 합산하지 않음</SectionLabel>
+      <SegmentedControl options={options.map((h) => ({ value: String(h), label: bucketLabel(h) }))}
+        value={String(hours)} onChange={(v) => setPick({ key: rangeKey, hours: Number(v) })} />
+    </div>
+    <div className={`grid gap-4 ${clients.length > 1 ? "xl:grid-cols-2" : ""}`}>
+      {clients.map((client) => <ClientModelTrend key={client} data={data} client={client}
+        hours={hours} source={source} stale={stale} />)}
+    </div>
+  </section>;
+}
+
 function ClientBars({ title, rows, metric, subtitle }) {
   return <SeriesBarChart title={title} subtitle={subtitle}
     rows={rows.map((row) => ({ ...row, label: clientName(row.client) }))}
@@ -209,6 +251,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
       content = <>
         {tiles([COST, TOKENS, SESSIONS, USERS])}
         {compare([COST_SESSION, COST_USER, TOKEN_SESSION, SESSION_USER], { cards: true })}
+        <ModelTrends data={data} clients={selected} exec stale={stale} />
         <Card title="활동 단위별 비용" subtitle="관측 사용자 ID·세션 기준이며 직원 수나 업무 성과의 측정값이 아닙니다.">
           <Tiles row={total} columns={[COST_SESSION, COST_USER, TOKEN_SESSION, SESSION_USER]} basis={basis} />
         </Card>
@@ -264,6 +307,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {tiles([COST, COST_SESSION, COST_USER, MILLION])}
         {compare([...UNIT_COSTS, number("unpriced", "미산정 기록")], { title: "클라이언트별 비용 기준" })}
         <Trend {...trendProps} metric="cost" title="비용 추이" />
+        <ModelTrends data={data} clients={selected} stale={stale} />
         {table("모델별 비용", [CLIENT, BACKEND, MODEL, ...UNIT_COSTS, TOKENS, number("unpriced", "미산정 기록")],
           models, "model_costs", COST_HELP)}
         {table("사용자별 비용", [CLIENT, USER, BACKEND, COST, BASIS, SESSIONS, COST_SESSION, TOKENS],
