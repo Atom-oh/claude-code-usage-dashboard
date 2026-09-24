@@ -254,7 +254,9 @@ test("Codex log compaction against isolated ClickHouse", {
       completion(1104, { reasoning_token_count: "31" }, r),
       completion(1105, { model: "global.openai.gpt-6-astra" }, r),
       completion(1106, { "conversation.id": "" }, r),
-      request(1107, { "conversation.id": "" }, r)]);
+      request(1107, { "conversation.id": "" }, r),
+      make(1108, "user_prompt", { prompt_length: "10.5" }, r),
+      make(1109, "user_prompt", { prompt_length: "9007199254740992" }, r)]);
     equivalent({ user: "numeric-aggregate@" });
   });
 

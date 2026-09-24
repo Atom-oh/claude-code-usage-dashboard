@@ -35,7 +35,7 @@ test("large JSON negotiates gzip without changing nulls, escaping, status, or pr
   assert.equal(zipped.headers["cache-control"], "no-store");
   assert.equal(zipped.headers["content-encoding"], "gzip");
   assert.equal(zipped.headers.vary, "Origin, Accept-Encoding");
-  assert.match(zipped.headers["content-type"], /application\/json/);
+  assert.equal(zipped.headers["content-type"], identity.headers["content-type"]);
   assert.equal(Number(zipped.headers["content-length"]), zipped.body.length);
   assert(zipped.body.length < identity.body.length / 4);
   assert.deepEqual(gunzipSync(zipped.body), identity.body);

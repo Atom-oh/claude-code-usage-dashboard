@@ -148,7 +148,7 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
           OR stream AND NOT bulk) AS operational,
         ${tokens},
         ${nonnegative("operation_number0")} AS duration,
-        ${nonnegative("operation_number1")} AS prompt_length,
+        ${integer("operation_number1")} AS prompt_length,
         ${integer("operation_number2")} AS attempt,
         ${integer("operation_number3")} AS http_status,
         multiIf(event = 'codex.api_error' OR attributes['error.message'] != '' OR attributes['error'] != ''

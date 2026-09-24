@@ -14,5 +14,5 @@ export async function sendJson(req, res, value) {
   if (req.app.get("json escape")) body = body.replace(/[<>&]/g, character => escapes[character]);
   const compressed = await compress(body, { level: 4 });
   if (res.destroyed) return;
-  return res.type("json").set("Content-Encoding", "gzip").send(compressed);
+  return res.set({ "Content-Type": "application/json; charset=utf-8", "Content-Encoding": "gzip" }).send(compressed);
 }
