@@ -166,7 +166,8 @@ export function makeGroupBreakdownColorer(group, labelOrder) {
 // MODEL_COLOR keep their existing values. The ten model colors pass the dataviz
 // validate_palette adjacent checks in this order (light on #ffffff, dark on #171c27; the dark
 // set carries contrast WARNs for fable-5-1 and opus-5-5, relieved by the legend and table).
-// Vendor ramps are muted three-step ordinal ramps used with a hatch for unregistered models.
+// Other known Claude models and families keep modelColorFor (solid). Only models outside both get
+// a muted vendor ramp plus a hatch: stone (Anthropic without a family), teal (OpenAI), slate (other).
 // 기타 uses an exclusive neutral that no model or ramp uses.
 export const MODEL_TREND_COLORS = {
   light: {
@@ -196,7 +197,7 @@ export const MODEL_TREND_COLORS = {
 };
 export const MODEL_TREND_OTHERS = { light: "#A3A9B6", dark: "#5E6678" };
 export const MODEL_TREND_VENDOR_RAMPS = {
-  anthropic: { light: ["#855450", "#A4716D", "#C48F8A"], dark: ["#825652", "#9B6D68", "#B48480"] },
+  anthropic: { light: ["#5E4F46", "#72625A", "#87766D"], dark: ["#8D7C73", "#A39188", "#B9A79D"] },
   openai: { light: ["#306F6B", "#4F8D89", "#6DACA7"], dark: ["#366E6B", "#4E8682", "#669E9A"] },
-  other: { light: ["#6F6336", "#8C8053", "#AB9E70"], dark: ["#6E633A", "#857A51", "#9E9268"] },
+  other: { light: ["#53676B", "#677C80", "#7B9195"], dark: ["#78879F", "#8D9CB5", "#A3B2CB"] },
 };

@@ -130,10 +130,12 @@ updates use a separate context from data-cycle triggers. The refresh control res
 a status row at every viewport for pending/failure disclosures; its timestamp labels
 an attempt, never successful completion.
 Page-local interval controls must resync from global range changes, as
-[Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does. Tables fed by a stale hook
+[Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does. Executive and the shared model trend
+instead key a manual pick to the range it was made in, so a range change restores the default
+in the same render. Tables fed by a stale hook
 pass `stale` to `DataTable`, which disables CSV export so previous-period rows are not
 saved under the new range's filename. Every time-series `GroupAreaChart`,
-`DualLineChart` and `SeriesBarChart` passes `zoomDisabled` from the hook that feeds it, so
+`DualLineChart`, `SeriesBarChart` and `ModelCostTrend` passes `zoomDisabled` from the hook that feeds it, so
 drag zoom is suspended while its rows are stale (a pending global period change, or Cost's
 granularity change). The retained rows keep the previous bucket size, while the drag pads
 its right edge with the new one: the global interval, or Cost's page-local `bucketHours`.
@@ -144,11 +146,38 @@ response) are suspended too, so no drag selects a range from the previous period
 Categorical axes do not zoom, and `UserDrawer` clears to loading on range changes.
 [zoomGuard.test.js](../../dashboard/web/src/zoomGuard.test.js) checks every call site.
 
+## Model cost trend
+
+`ModelCostTrend` ([component](../../dashboard/web/src/components/ModelCostTrend.jsx)) draws
+partial-preserving stacked bars over the pure helpers in
+[modelCostTrend.js](../../dashboard/web/src/modelCostTrend.js): `fromByModelDaily` adapts the
+detail `/api/cost/by-model-daily` rows and `fromByModelTime` the shared `by_model_time` rows.
+The frame keeps the top six series by known cost plus an Others segment with fixed membership.
+Model colors are stable per name: ten registered models use the trend palette, other known
+Claude models and families keep their `modelColorFor` color (solid), only the remaining models
+get a muted vendor shade plus a hatch, and Others uses an exclusive neutral. Bucket states are known, zero, partial, unavailable, idle and no data: unavailable is
+never drawn as zero, and idle is the
+[ADR-015](../decisions/ADR-015-idle-chart-buckets.md) recorded-usage zero. The disclosure is a
+persistent status naming each reason with model and channel/backend identities (including
+Others members), a table view, a basis chip and a value-sorted tooltip. Detail pages pass no
+`bounds`, so absent buckets collapse as before; the no-data state appears only with bounds.
+
+Sibling rule: the shared Claude and Codex cards come from one response, share its effective
+range and bucket origins, are never summed and keep separate y-scales. Bucket defaults: Cost
+uses the global interval; Executive uses 24h up to 30 days, else 168h; the shared pages use the
+global interval (exec 24h/168h), never below `bucket_hours`, and always roll up so the first
+bucket is floored. `modelTime=1` is sent only on the shared cost and exec pages. It is a cold
+cache key that the default-view warmer does not fill, and moving between those pages and the
+others is a `useApi` identity change that reloads instead of retaining data. Executive's
+default 24h request is also not the warmed default-view key.
+
 ## Spend and interpretation
 
 [spend.js](../../dashboard/web/src/spend.js) adapts API `reported_cost` to display `cost`
 and preserves original computed values. Cost, Executive, Productivity and Users use it
-for spend views. Legacy Usage fields (`est_cost_usd`, `cost_usd`) and Reliability diagnostic
+for spend views. The model cost trends instead read raw `/api/cost/by-model-daily` rows
+through `fromByModelDaily` rather than `asSpendRows`.
+Legacy Usage fields (`est_cost_usd`, `cost_usd`) and Reliability diagnostic
 tables remain separate consumers; do not describe the adapter as a server response change.
 
 Cost's `showComputed` starts false. It controls diagnostic columns and the comparison

@@ -1,9 +1,12 @@
+import { useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { Loading, ErrorBox, Card } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { SectionLabel } from "../components/SectionLabel.jsx";
-import { DualLineChart, SeriesBarChart, DumbbellChart } from "../components/GroupCharts.jsx";
+import { DualLineChart, DumbbellChart } from "../components/GroupCharts.jsx";
+import { ModelCostTrend } from "../components/ModelCostTrend.jsx";
+import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import ABScoreboard, { fmtValue, DeltaBars } from "../components/ABScoreboard.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import { useApi } from "../useApi.js";
@@ -12,9 +15,12 @@ import { useFilters } from "../FilterContext.jsx";
 import { useConfig } from "../ConfigContext.jsx";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { makeTickFmt, formatDuration } from "../fmt.js";
-import { GROUP_ORDER, modelColorFor, byModelLegendOrder } from "../colors.js";
+import { GROUP_ORDER, modelColorFor } from "../colors.js";
 import { foldLeaderboardByUser } from "../score.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
+import { fromByModelDaily } from "../modelCostTrend.js";
+
+const COST_BUCKETS = [{ value: "1", label: "시간별" }, { value: "24", label: "일간" }, { value: "168", label: "주간" }];
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -36,20 +42,26 @@ function ScoreGauge({ score }) {
 }
 
 export default function Executive() {
-  const { from, to, intervalHours } = useRange();
+  const { from, to } = useRange();
   const { group, model } = useFilters();
   const { groupMode } = useConfig();
   const shownGroups = useGroupsShown();
   // 채널 필터가 걸렸으면 맞세울 상대가 없다 — single 모드와 같은 단일 지표 레이아웃을 쓴다.
   const focusGroup = GROUP_ORDER.includes(group) ? group : null;
-  const fmtTick = makeTickFmt(intervalHours);
   const fmtDaily = makeTickFmt(24); // adoptionTs는 항상 일별 버킷 — range 해상도를 따르지 않는다
   const kpi = useApi("/api/overview/kpi");
   const activeUsers = useApi("/api/overview/active-users");
   const adoption = useApi("/api/adoption/levels");
   const adoptionTs = useApi("/api/adoption/timeseries");
   const costSummary = useApi("/api/cost/summary");
-  const costDaily = useApi("/api/cost/by-model-daily");
+  // Model cost trend bucket: 24h up to 30 days, 168h above (ranges are capped at 90 days). A manual
+  // pick belongs to the range it was made in, so a range change restores the default in the same
+  // render instead of requesting the old bucket first.
+  const rangeKey = `${from.getTime()}|${to.getTime()}`;
+  const [costPick, setCostPick] = useState(null);
+  const costHours = costPick?.key === rangeKey ? costPick.hours : (to - from) / 86400000 > 30 ? 168 : 24;
+  const costDaily = useApi("/api/cost/by-model-daily", { intervalHours: costHours });
+  const costCells = useMemo(() => fromByModelDaily(costDaily.data), [costDaily.data]);
   const costCompare = useApi("/api/cost/by-model-compare");
   const decisions = useApi("/api/productivity/decisions");
   const leaderboard = useApi("/api/users/leaderboard");
@@ -384,17 +396,18 @@ export default function Executive() {
               ) : costDaily.error ? (
                 <ErrorBox error={costDaily.error} />
               ) : (
-                <SeriesBarChart
+                <ModelCostTrend
                   title="모델별 비용 추이"
-                  rows={asSpendRows(costDaily.data || [])}
-                  xKey="day"
+                  right={<SegmentedControl options={COST_BUCKETS} value={String(costHours)}
+                    onChange={(v) => setCostPick({ key: rangeKey, hours: Number(v) })} />}
+                  cells={costCells}
+                  help={SPEND_HELP}
+                  basis="Claude 보고 비용"
+                  xKey="t"
+                  pinned={model ? [model] : undefined}
+                  bucketHours={costHours}
                   zoomDisabled={costDaily.stale}
-                  seriesKey="model"
-                  valueKey="cost"
-                  colorOf={modelColorFor}
-                  seriesSort={byModelLegendOrder}
-                  tickFormatter={fmtTick}
-                  valuePrefix="$"
+                  clampRange={[from, null]}
                 />
               )}
             </div>

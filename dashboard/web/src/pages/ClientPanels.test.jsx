@@ -490,3 +490,138 @@ test.each([[false, "2026-09-01T00:00:00.000Z / 2026-09-01T03:00:00.000Z"], [true
     fireEvent.mouseUp(chart, { clientX: x(2), clientY: 60 });
     await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe(expected));
   });
+
+// Shared model cost fixture: timeseries costs equal the by_model_time known sums per bucket.
+const bmt = (client, t, model, backend, cost_usd, extra = {}) => ({ client, t, model, backend, cost_usd,
+  cost_partial: false, unpriced: 0, observed_tokens: 10, ...extra });
+function modelTimeData(clients = ["claude", "codex"]) {
+  const rows = [
+    bmt("claude", "2026-09-01T00:00:00Z", "claude-sonnet-5", "anthropic", 2),
+    bmt("claude", "2026-09-01T01:00:00Z", "claude-sonnet-5", "anthropic", 3),
+    bmt("codex", "2026-09-01T00:00:00Z", "openai.gpt-6-astra", "bedrock-mantle", 1),
+    bmt("codex", "2026-09-01T01:00:00Z", "global.openai.gpt-6-astra", "bedrock-mantle", null,
+      { cost_partial: true, unpriced: 2, unpriced_reasons: { scope: 2 } }),
+  ].filter((r) => clients.includes(r.client));
+  return { ...fixture(clients), by_model_time: rows, bucket_hours: 1,
+    effective_range: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-01T02:00:00.000Z" },
+    timeseries: rows.map((r) => ({ client: r.client, t: r.t, cost_usd: r.cost_usd, cost_partial: r.cost_partial, unpriced: r.unpriced, tokens: 10 })) };
+}
+const trends = () => document.querySelector('section[aria-label="클라이언트별 모델 비용 추이"]');
+const trendCards = () => [...trends().querySelectorAll(".shadow-card")];
+const toggle = () => [...trends().children[0].querySelectorAll("button")]
+  .map((b) => `${b.textContent}${b.className.includes("bg-brand-500") ? "*" : ""}`);
+const trendTitles = () => trendCards().map((c) => c.querySelector(".truncate").textContent);
+
+// Cost defaults to the global interval (2 days → 1h); exec defaults to 24h up to 30 days.
+test.each([["cost", "시간별*"], ["exec", "일간*"]])(
+  "%s renders one model cost trend card per client with its own basis and the default bucket %s", async (page, active) => {
+    mount(page, modelTimeData());
+    expect(trendTitles()).toEqual(["Claude Code 모델별 비용 추이", "Codex 모델별 비용 추이"]);
+    expect(toggle()).toEqual(["시간별", "일간", "주간"].map((label) => (`${label}*` === active ? active : label)));
+    const [claude, codex] = trendCards();
+    expect(claude.textContent).toContain("Claude 보고 비용");
+    expect(claude.textContent).not.toContain("Codex AWS 정가 추정");
+    expect(codex.textContent).toContain("Codex AWS 정가 추정");
+    expect(codex.textContent).not.toContain("Claude 보고 비용");
+    await waitFor(() => expect(codex.querySelector('[data-reason="scope"]')).not.toBeNull());
+    expect(codex.querySelector('[data-reason="scope"]').textContent)
+      .toBe("범위·백엔드 불일치 2건 — global.openai.gpt-6-astra · bedrock-mantle 2건");
+    expect(claude.querySelector("[data-status-headline]").textContent).toBe("확인이 필요한 버킷이 없습니다.");
+    expect([...claude.querySelectorAll('ul[aria-label="범례"] li')].map((li) => li.textContent)).toEqual(["claude-sonnet-5"]);
+  });
+
+test("a response without by_model_time leaves each model cost trend card unavailable, never $0", () => {
+  mount("cost", { ...modelTimeData(), by_model_time: undefined });
+  const cards = trendCards();
+  expect(cards).toHaveLength(2);
+  for (const node of cards) {
+    expect(node.querySelector('[role="status"]').textContent).toBe("모델별 비용 정보가 없어 추이를 확인할 수 없습니다.");
+    expect(node.querySelector(".recharts-wrapper")).toBeNull();
+    expect(node.textContent).not.toContain("$0");
+  }
+});
+
+// The toggle never offers a bucket smaller than the response's bucket_hours.
+test.each([
+  [1, ["시간별*", "일간", "주간"]],
+  [1 / 60, ["1분", "시간별*", "일간", "주간"]],
+  // Host-added: a coarser source (not returned today) drops the finer options.
+  [24, ["일간*", "주간"]],
+])(
+  "bucket_hours=%s limits the model cost trend toggle", (bucket_hours, expected) => {
+    mount("cost", { ...modelTimeData(["claude"]), bucket_hours });
+    expect(toggle()).toEqual(expected);
+  });
+
+test("picking 일간 rolls hourly model cells up into one day bucket", async () => {
+  mount("cost", modelTimeData());
+  fireEvent.click(within(trends().children[0]).getByRole("button", { name: "일간" }));
+  await waitFor(() => expect(toggle()).toEqual(["시간별", "일간*", "주간"]));
+  const claude = trendCards()[0];
+  fireEvent.click(within(claude).getByRole("button", { name: "표 보기" }));
+  await waitFor(() => expect(claude.querySelectorAll("tr[data-bucket]")).toHaveLength(1));
+  const row = claude.querySelector("tr[data-bucket]");
+  expect(row.getAttribute("data-bucket")).toBe("2026-09-01 00:00:00");
+  // 2 + 3 rolled into one day; there is no 기타 column.
+  expect([...row.querySelectorAll("td")].slice(1).map((td) => td.textContent)).toEqual(["$5", "$5", "확인됨"]);
+});
+
+test("an unselected client renders no model cost trend card", () => {
+  mount("cost", modelTimeData(["codex"]), ["codex"]);
+  expect(trendTitles()).toEqual(["Codex 모델별 비용 추이"]);
+  expect(trends().textContent).not.toContain("Claude 보고 비용");
+});
+
+// The drag zoom uses the displayed (rolled-up) interval, not the response's bucket_hours, and stops while stale.
+test.each([[false, "2026-09-01T00:00:00.000Z / 2026-09-04T00:00:00.000Z"], [true, "none"]])(
+  "the model cost trend drag-zooms by the displayed interval only while not stale (stale=%s)", async (stale, expected) => {
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+    function Selection() {
+      const { custom } = useRange();
+      return <output aria-label="선택 구간">{custom
+        ? `${custom.from.toISOString()} / ${custom.to.toISOString()}` : "none"}</output>;
+    }
+    const days = [1, 2, 3].map((d) => bmt("claude", `2026-09-0${d}T00:00:00Z`, "claude-sonnet-5", "anthropic", d));
+    const data = { ...fixture(["claude"]), bucket_hours: 1,
+      effective_range: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-04T00:00:00.000Z" },
+      by_model_time: days,
+      timeseries: days.map((r) => ({ client: "claude", t: r.t, cost_usd: r.cost_usd, cost_partial: false, unpriced: 0, tokens: 10 })) };
+    setPiiMask(true);
+    render(
+      <MemoryRouter><ConfigProvider config={{ piiMask: true }}>
+        <RangeProvider><ClientPanels page="cost" data={data} clients={data.clients} stale={stale} /><Selection /></RangeProvider>
+      </ConfigProvider></MemoryRouter>,
+    );
+    fireEvent.click(within(trends().children[0]).getByRole("button", { name: "일간" }));
+    await waitFor(() => expect(toggle()).toEqual(["시간별", "일간*", "주간"]));
+    const chart = trendCards()[0].querySelector(".recharts-wrapper");
+    await waitFor(() => expect(chart.querySelector(".recharts-cartesian-grid-horizontal line")).not.toBeNull());
+    const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+    const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+    const x = (i) => left + (right - left) * (i + 0.5) / 3;
+    fireEvent.mouseDown(chart, { clientX: x(0), clientY: 60 });
+    fireEvent.mouseMove(chart, { clientX: x(2), clientY: 60 });
+    fireEvent.mouseUp(chart, { clientX: x(2), clientY: 60 });
+    await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe(expected));
+  });
+
+// Host-added with the wiring: a minute-level global interval over hourly data must not ask
+// rollupBuckets for a smaller target, and a bucket pick lasts only until the range changes.
+test("the shared bucket is clamped to bucket_hours", () => {
+  render(<MemoryRouter initialEntries={["/?from=2026-09-01T00:00:00.000Z&to=2026-09-01T02:00:00.000Z"]}>
+    <ConfigProvider config={{ piiMask: true }}><RangeProvider>
+      <ClientPanels page="cost" data={modelTimeData(["claude"])} clients={["claude"]} />
+    </RangeProvider></ConfigProvider></MemoryRouter>);
+  expect(toggle()).toEqual(["시간별*", "일간", "주간"]);
+});
+
+test("a shared bucket pick lasts until the range changes", () => {
+  function Seven() { const { setDays } = useRange(); return <button type="button" onClick={() => setDays(7)}>range-7</button>; }
+  render(<MemoryRouter><ConfigProvider config={{ piiMask: true }}><RangeProvider>
+    <ClientPanels page="cost" data={modelTimeData(["claude"])} clients={["claude"]} /><Seven />
+  </RangeProvider></ConfigProvider></MemoryRouter>);
+  fireEvent.click(within(trends().children[0]).getByRole("button", { name: "주간" }));
+  expect(toggle()).toEqual(["시간별", "일간", "주간*"]);
+  fireEvent.click(screen.getByRole("button", { name: "range-7" }));
+  expect(toggle()).toEqual(["시간별", "일간*", "주간"]);
+});

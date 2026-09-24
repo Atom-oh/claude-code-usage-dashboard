@@ -1,15 +1,36 @@
 // Partial-preserving model cost stacked bar: known amounts are drawn, unavailable is never drawn
 // as zero, and each bucket carries a state mark. SeriesBarChart keeps its all-or-nothing policy.
 import { useId, useMemo, useState } from "react";
+import { Info } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { makeTickFmt } from "../fmt.js";
 import { buildModelCostFrame, chartTheme, formatAxisUsd, formatUsd, formatUsdPrecise, OTHERS_COLOR_KEY,
   OTHERS_KEY, REASON_GROUPS, reasonLabel, STATE_LABELS, trendColor } from "../modelCostTrend.js";
+import { useConfig } from "../ConfigContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
-import { Card } from "./Card.jsx";
 import EmptyState from "./EmptyState.jsx";
 import { useDragZoom } from "./GroupCharts.jsx";
+
+// Same look as Card, but the header wraps: on narrow screens the controls drop below the title
+// instead of squeezing it (Card keeps its right slot shrink-0 for its other callers).
+function TrendCard({ title, subtitle, help, right, children }) {
+  return (
+    <div className="bg-card border border-ink-100 rounded-lg shadow-card overflow-hidden">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-4 pb-3 border-b border-ink-100">
+        <div className="min-w-0 flex-1 basis-40">
+          <div className="flex items-center gap-1 min-w-0">
+            <div className="text-[14px] font-semibold text-ink-800 truncate">{title}</div>
+            {help && <Info size={12} className="shrink-0 text-ink-400" title={help} aria-label={help} />}
+          </div>
+          {subtitle != null && <div className="text-[12px] text-ink-500 mt-0.5">{subtitle}</div>}
+        </div>
+        {right != null && <div className="max-w-full">{right}</div>}
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
 
 const MARK_TEXT = { textAnchor: "middle", fontSize: 9.5, fontWeight: 700 };
 const TABLE_CLASS = "mt-3 w-full text-[12px] tabular-nums [&_th]:py-1 [&_th]:pr-2 [&_th]:text-left [&_th]:font-medium [&_th]:text-ink-600 [&_td]:py-1 [&_td]:pr-2 [&_tbody_tr]:border-t [&_tbody_tr]:border-ink-100";
@@ -96,12 +117,17 @@ function TrendTooltip({ active, payload, frame, fmtTick, c }) {
 }
 
 export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t", bucketHours, bounds,
-  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260 }) {
+  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange }) {
   const c = useChartColors();
   // One bucket-size fallback (the global interval, as useDragZoom uses) for zoom, ticks and grid.
   const { intervalHours } = useRange();
   const hours = bucketHours > 0 ? bucketHours : intervalHours;
-  const zoom = useDragZoom(undefined, hours, undefined, zoomDisabled);
+  // The zoom stays within the range cap and never starts before the range: an explicit clampRange
+  // ([from, to|null]; a null end is not clamped), else the response bounds (a live window).
+  const { rangeCapDays } = useConfig();
+  const [clampFrom, clampTo] = clampRange ?? (bounds?.from && bounds?.to ? [bounds.from, bounds.to] : []);
+  const clamp = { from: clampFrom, to: clampTo, maxSpanMs: rangeCapDays * 86400000 };
+  const zoom = useDragZoom(undefined, hours, undefined, zoomDisabled, clamp);
   const [showTable, setShowTable] = useState(false);
   const pid = useId().replace(/[^A-Za-z0-9_-]/g, "");
   const theme = chartTheme(c.surface);
@@ -126,21 +152,21 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
     </button>
   ) : null;
   const header = chip || toggle || right != null
-    ? <div className="flex items-center gap-2">{chip}{toggle}{right}</div>
+    ? <div className="flex flex-wrap items-center justify-end gap-2">{chip}{toggle}{right}</div>
     : undefined;
 
   if (!hasCells) {
     return (
-      <Card title={title} subtitle={subtitle} help={help} right={header}>
+      <TrendCard title={title} subtitle={subtitle} help={help} right={header}>
         <div role="status" className="text-sm text-ink-500">모델별 비용 정보가 없어 추이를 확인할 수 없습니다.</div>
-      </Card>
+      </TrendCard>
     );
   }
   if (cells.length === 0) {
     return (
-      <Card title={title} subtitle={subtitle} help={help} right={header}>
+      <TrendCard title={title} subtitle={subtitle} help={help} right={header}>
         <EmptyState />
-      </Card>
+      </TrendCard>
     );
   }
 
@@ -230,18 +256,18 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
 
   if (frame.allUnavailable) {
     return (
-      <Card title={title} subtitle={subtitle} help={help} right={header}>
+      <TrendCard title={title} subtitle={subtitle} help={help} right={header}>
         {status}
         {tables}
-      </Card>
+      </TrendCard>
     );
   }
 
   const hatched = series.filter((s) => s.hatch);
   return (
-    <Card title={title} subtitle={subtitle} help={help} right={header}>
+    <TrendCard title={title} subtitle={subtitle} help={help} right={header}>
       <ResponsiveContainer width="100%" height={height} className={zoom.className}>
-        <BarChart data={rows} margin={{ top: 24, right: 8, left: 0, bottom: 0 }} {...zoom.handlers}>
+        <BarChart data={rows} margin={{ top: 24, right: 8, left: 8, bottom: 0 }} {...zoom.handlers}>
           <defs>
             {hatched.map((s) => (
               <pattern key={s.key} id={`${pid}-${s.key}`} width={5} height={5} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -295,6 +321,6 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
       </ul>
       {status}
       {tables}
-    </Card>
+    </TrendCard>
   );
 }

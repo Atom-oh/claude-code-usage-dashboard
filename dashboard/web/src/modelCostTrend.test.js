@@ -489,23 +489,36 @@ test("modelColorKey resolves aliases to registered keys and does not depend on c
   expect(modelColorKey("global.openai.gpt-6-astra").key).toBe("openai.gpt-6-astra");
   expect(modelColorKey("gpt-5.6-sol").key).toBe("openai.gpt-5.6-sol");
   expect(modelColorKey("us.anthropic.claude-opus-5-v1:0").key).toBe("claude-opus-5");
-  const forwards = REGISTERED.map((name) => modelColorKey(name));
-  const reversed = [...REGISTERED].reverse().map((name) => modelColorKey(name)).reverse();
+  const names = [...REGISTERED, "claude-sonnet-4-5", "claude-opus-4-7", "xai.grok-4.6", "kimi-k3"];
+  const forwards = names.map((name) => modelColorKey(name));
+  const reversed = [...names].reverse().map((name) => modelColorKey(name)).reverse();
   expect(reversed).toEqual(forwards);
 });
 
 test.each([
   ["zai.glm-5", "other-2"], ["xai.grok-4.6", "other-0"], ["moonshotai.kimi-k2.5", "other-1"],
-  ["kimi-k3", "other-1"], ["claude-opus-4-7", "anthropic-0"], ["claude-sonnet-4-5", "anthropic-2"],
+  ["kimi-k3", "other-1"], ["claude-instant-1", "anthropic-2"],
   ["openai.gpt-5.6-terra", "openai-1"], ["", "other-0"],
 ])("unregistered model %s gets the hatched vendor key %s", (name, key) => {
   expect(modelColorKey(name)).toEqual({ key, hatch: true });
 });
 
 test("vendor ramp keys resolve to the muted ramp shades", () => {
-  expect(trendColor("other-2")).toBe("#AB9E70");
-  expect(trendColor("anthropic-0", "dark")).toBe("#825652");
+  expect(trendColor("other-2")).toBe("#7B9195");
+  expect(trendColor("anthropic-0", "dark")).toBe("#8D7C73");
   expect(trendColor("openai-1")).toBe("#4F8D89");
+  // A non-family vendor model is hatched with the slate ramp, never a warning-like red.
+  expect([modelColorKey("xai.grok-4.6"), trendColor(modelColorKey("xai.grok-4.6").key)]).toEqual([{ key: "other-0", hatch: true }, "#53676B"]);
+});
+
+// Other known Claude models and families keep the existing modelColorFor color, solid, in both themes.
+test.each([
+  ["claude-sonnet-4-5", "#B7C0F5"], ["us.anthropic.claude-sonnet-4-6-v1:0", "#93A0EC"], ["claude-opus-4-7", "#F5C09B"],
+  ["claude-haiku-3-5", "#A8DCC0"], ["claude-opus-9", "#EDB48E"],
+])("known Claude model %s stays solid with its modelColorFor color %s", (model, color) => {
+  const { key, hatch } = modelColorKey(model);
+  expect(hatch).toBe(false);
+  expect([trendColor(key), trendColor(key, "dark")]).toEqual([color, color]);
 });
 
 test("trendColor resolves model, 기타 and fallback colors per theme; chartTheme reads the surface", () => {

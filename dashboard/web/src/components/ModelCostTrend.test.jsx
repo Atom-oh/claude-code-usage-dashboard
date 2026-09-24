@@ -84,7 +84,7 @@ test("stacked series plus 기타 with stable fills", async () => {
   const pattern = container.querySelector(`pattern[id="${id}"]`);
   expect(pattern).not.toBeNull();
   const rectFills = [...pattern.querySelectorAll("rect")].map((r) => r.getAttribute("fill"));
-  expect(rectFills).toContain("#AB9E70");
+  expect(rectFills).toContain("#7B9195");
   const legend = screen.getByRole("list", { name: "범례" });
   expect(texts(legend, "li")).toEqual(["claude-sonnet-5", "zai.glm-5", "기타 2개 모델"]);
   expect([...legend.querySelectorAll("[data-swatch]")].map((el) => el.getAttribute("data-swatch")))
@@ -243,8 +243,54 @@ test.each([
   const x = bucketX(chart, 3);
   fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
   fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  // A left margin of 0 made Recharts discard the drag highlight (host-measured).
+  expect(chart.querySelectorAll(".recharts-reference-area").length).toBe(zoomDisabled ? 0 : 1);
   fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
   await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe(expected));
+});
+
+// CI review MAJOR: epoch-aligned weekly buckets extend past a cap-length range, so a full-width
+// drag produced a 91-day zoom the server rejects. The zoom is clamped to the selected range.
+test("drag zoom is clamped to the selected range (weekly buckets on a cap-length range)", async () => {
+  const clampRange = [new Date("2026-09-12T00:00:00Z"), new Date("2026-09-27T00:00:00Z")];
+  const { container } = mount({ cells: WEEKLY, bucketHours: 168, clampRange });
+  await chartReady(container);
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 3);
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent)
+    .toBe("2026-09-12T00:00:00.000Z / 2026-09-27T00:00:00.000Z"));
+});
+
+// A memoized page range must not cap the end: detail pages pass a start-only clamp, so a drag over
+// buckets newer than the page-open "to" still zooms to the bucket end (CI review MAJOR).
+test("a start-only clamp keeps the zoom end at the dragged bucket end", async () => {
+  const { container } = mount({ cells: DAILY, bucketHours: 24, clampRange: [new Date("2026-08-30T00:00:00Z"), null] });
+  await chartReady(container);
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 3);
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent)
+    .toBe("2026-09-01T00:00:00.000Z / 2026-09-04T00:00:00.000Z"));
+});
+
+test("the zoom span never exceeds the range cap", async () => {
+  const weeks = Array.from({ length: 14 }, (_, i) => c(new Date(Date.UTC(2026, 5, 4) + i * 7 * 86400000).toISOString().replace("T", " ").slice(0, 19), "a", "e", 1));
+  const { container } = mount({ cells: weeks, bucketHours: 168 });
+  await chartReady(container);
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 14);
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(13), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(13), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).not.toBe("none"));
+  const [from, to] = screen.getByLabelText("선택 구간").textContent.split(" / ").map(Date.parse);
+  expect(from).toBe(Date.UTC(2026, 5, 4));
+  expect(to - from).toBe(90 * 86400000);
 });
 
 // Host-added: in the fixture above series rank matches bucket values, hiding a missing sort.
@@ -305,4 +351,12 @@ test("without bucketHours, ticks and grid use the global interval (1h here) like
   fireEvent.click(screen.getByRole("button", { name: "표 보기" }));
   const ticks = texts(container, "tr[data-bucket] td:first-child");
   expect([ticks.length, new Set(ticks).size]).toEqual([4, 4]);
+});
+
+test("an older Claude model draws its solid modelColorFor fill, never the unknown-model hatch", async () => {
+  const { container } = mount({ cells: [c(D1, "claude-sonnet-4-5", "bedrock", 1)] });
+  await chartReady(container);
+  expect([...container.querySelectorAll(".recharts-bar-rectangle path")].map((p) => p.getAttribute("fill"))).toEqual(["#B7C0F5"]);
+  expect(container.querySelector("pattern")).toBeNull();
+  expect(screen.getByRole("list", { name: "범례" }).querySelector("[data-swatch]").getAttribute("data-swatch")).toBe("solid");
 });

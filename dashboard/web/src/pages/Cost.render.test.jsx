@@ -362,7 +362,7 @@ function mountHeld() {
 }
 async function dailyChart() {
   const card = (await screen.findByText("모델별 비용 추이", { exact: true })).closest(".rounded-lg");
-  await waitFor(() => expect(card.querySelectorAll(".recharts-bar-rectangle").length).toBe(3));
+  await waitFor(() => expect(card.querySelectorAll(".recharts-bar-rectangle path").length).toBe(3));
   return card;
 }
 function dragAcross(card) {
@@ -377,6 +377,9 @@ function dragAcross(card) {
 const csvButton = (title) => within(screen.getByText(title, { exact: true }).closest(".rounded-lg")).getByRole("button", { name: "CSV" });
 
 test("dragging the daily cost bars zooms the whole page to their full days", async () => {
+  // The zoom is clamped to the selected range, so the clock must put the fixture days inside it.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-05T12:00:00Z"));
   mountHeld();
   const chartCard = await dailyChart();
   dragAcross(chartCard);
@@ -385,6 +388,7 @@ test("dragging the daily cost bars zooms the whole page to their full days", asy
   expect(params.get("from")).toBe("2026-09-01T00:00:00.000Z");
   expect(params.get("to")).toBe("2026-09-04T00:00:00.000Z");
   expect(screen.queryByTitle("확대 해제")).not.toBeNull();
+  vi.useRealTimers();
 });
 
 test("a pending granularity change blocks drag zoom on the retained daily bars", async () => {
@@ -393,7 +397,7 @@ test("a pending granularity change blocks drag zoom on the retained daily bars",
   fireEvent.click(within(chartCard).getByRole("button", { name: "시간별" }));
   await act(async () => {});
   expect(held.length).toBe(1);
-  expect(chartCard.querySelectorAll(".recharts-bar-rectangle").length).toBe(3);
+  expect(chartCard.querySelectorAll(".recharts-bar-rectangle path").length).toBe(3);
   dragAcross(chartCard);
   await act(async () => {});
   expect(new URLSearchParams(location.search).get("from")).toBe(null);
