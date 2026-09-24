@@ -77,7 +77,8 @@ formatting; display conversion must not shift request or drag-zoom bounds.
 
 Shared client trends use a continuous time axis over the API's effective range.
 Missing buckets break lines, while isolated known values (including zero) remain
-visible as points. Refreshes update these charts without replaying line animations.
+visible as points. Every shared chart series (area, bar, line, pie) disables its draw
+animation, so refreshes and period changes update charts in place.
 Primary token counts/charts use `observed_tokens` with `tokens_partial` disclosure.
 Canonical token totals and incomplete ratios stay unavailable; observed counts never
 silently replace analytical denominators. CSV retains numeric counts and coverage

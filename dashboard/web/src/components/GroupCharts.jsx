@@ -92,6 +92,9 @@ function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false)
   return { handlers, overlay, className: dragging ? "select-none" : "" };
 }
 
+// 모든 시리즈(Area/Bar/Line/Pie)는 isAnimationActive={false}다. useApi는 기간 변경·새로고침 중에
+// 이전 데이터를 그대로 두었다가 새 응답이 오면 그 자리에서 교체하는데, 애니메이션이 켜져 있으면
+// 교체될 때마다 차트가 처음부터 다시 그려져 "화면을 유지한 채 바꿔 끼운다"는 동작이 무의미해진다.
 // 시계열, 그룹별 area 하나씩 — ../awsops AreaTrend와 같은 그라디언트 기법, 그룹 색상만 다중.
 export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours }) {
   const c = useChartColors();
@@ -123,7 +126,7 @@ export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, value
           <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} />
           {groups.length > 1 && <Legend {...legendProps(c)} />}
           {groups.map((g) => (
-            <Area key={g} type="monotone" dataKey={g} name={g} stroke={colorFor(g)} strokeWidth={2} fill={`url(#area-${g})`} dot={false} activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }} />
+            <Area key={g} type="monotone" dataKey={g} name={g} stroke={colorFor(g)} strokeWidth={2} fill={`url(#area-${g})`} dot={false} activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }} isAnimationActive={false} />
           ))}
           {zoom.overlay}
         </AreaChart>
@@ -153,7 +156,7 @@ export function GroupBarChart({ title, subtitle, help, right, rows, xKey = "grou
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} />
           <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} />
           <Tooltip {...tooltipStyles(c)} />
-          <Bar dataKey={valueKey} radius={[4, 4, 0, 0]} maxBarSize={64}>
+          <Bar dataKey={valueKey} radius={[4, 4, 0, 0]} maxBarSize={64} isAnimationActive={false}>
             {data.map((r, i) => (
               <Cell key={i} fill={fill(r)} />
             ))}
@@ -246,7 +249,7 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
             const base = colorOf?.(s) ?? c.palette[i % c.palette.length];
             // stroke=서피스색 1px — 스택 세그먼트/인접 막대 사이 2px 서피스 갭(dataviz 마크 스펙,
             // 양쪽 1px씩 만나 2px). 카드 배경과 같은 색이라 막대 바깥 윤곽으로는 보이지 않는다.
-            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={focus && focus !== s ? c.mute : base} radius={radius} stroke={c.surface} strokeWidth={1} />;
+            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={focus && focus !== s ? c.mute : base} radius={radius} stroke={c.surface} strokeWidth={1} isAnimationActive={false} />;
           })}
           {zoom.overlay}
         </BarChart>
@@ -302,7 +305,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
                     stroke={c.surface} strokeWidth={1.5} />
                 : null;
             } : false}
-            {...(timeDomain ? { isAnimationActive: false } : {})}
+            isAnimationActive={false}
             activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }}
           />
         ))}
@@ -415,7 +418,7 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", va
         <div className="flex items-center gap-4">
           <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
             <PieChart width={170} height={170}>
-              <Pie data={data} dataKey={valueKey} nameKey={nameKey} innerRadius={55} outerRadius={80} paddingAngle={2} stroke="none">
+              <Pie data={data} dataKey={valueKey} nameKey={nameKey} innerRadius={55} outerRadius={80} paddingAngle={2} stroke="none" isAnimationActive={false}>
                 {data.map((d, i) => (
                   <Cell key={i} fill={color(String(d[nameKey]), i)} />
                 ))}
