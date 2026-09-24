@@ -407,3 +407,24 @@ test("held Codex details show the new period when the new-bounds load succeeds",
   expect(screen.queryByText("old-period-event")).toBeNull();
   expect(screen.queryAllByText("데이터를 불러오지 못했습니다.")).toHaveLength(0);
 });
+
+// ClientPanels passes `stale` along three paths: the `table` helper (모델별 사용량), `Comparison`
+// (클라이언트별 사용량) and `ToolTable`, which has two call sites (도구 사용, 도구 신뢰성). Each row
+// covers a different path.
+test.each([
+  ["/?client=codex", "모델별 사용량"],
+  ["/usage?client=codex", "클라이언트별 사용량"],
+  ["/usage?client=codex", "도구 사용"],
+  ["/reliability?client=codex", "도구 신뢰성"],
+])("shared tables cannot export the previous period while the overview reloads: %s %s", async (entry, title) => {
+  const { overview } = mountHeld({ entry });
+  await waitFor(() => expect(overview.length).toBe(1));
+  await act(async () => overview[0].resolve(ok(clientOverview())));
+  const card = (await screen.findByText(title, { exact: true })).closest(".shadow-card");
+  expect(within(card).getByRole("button", { name: "CSV" }).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
+  await waitFor(() => expect(overview.length).toBe(2));
+  expect(within(card).getByRole("button", { name: "CSV" }).disabled).toBe(true);
+  await act(async () => overview[1].resolve(ok(clientOverview())));
+  await waitFor(() => expect(within(card).getByRole("button", { name: "CSV" }).disabled).toBe(false));
+});
