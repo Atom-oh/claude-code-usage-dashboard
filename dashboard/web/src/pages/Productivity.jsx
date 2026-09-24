@@ -285,6 +285,7 @@ export default function Productivity() {
               subtitle="사용자 수와 세션 수"
               rows={engagement.data}
               xKey="t"
+              zoomDisabled={engagement.stale}
               tickFormatter={fmtTick}
               lines={[
                 { key: "users", label: "사용자", axis: "left" },
@@ -296,6 +297,7 @@ export default function Productivity() {
               subtitle="사용자 수와 사용자당 PR 수"
               rows={engagement.data}
               xKey="t"
+              zoomDisabled={engagement.stale}
               tickFormatter={fmtTick}
               lines={[
                 { key: "users", label: "사용자", axis: "left" },
@@ -321,10 +323,10 @@ export default function Productivity() {
 
         <div className="grid gap-4 md:grid-cols-2">
           {locTrend.loading ? <Loading /> : locTrend.error ? <ErrorBox error={locTrend.error} /> : (
-            <GroupAreaChart title="추가된 코드 라인 추이" rows={locTrend.data} xKey="t" valueKey="loc_added" tickFormatter={fmtTick} />
+            <GroupAreaChart title="추가된 코드 라인 추이" rows={locTrend.data} xKey="t" zoomDisabled={locTrend.stale} valueKey="loc_added" tickFormatter={fmtTick} />
           )}
           {locTrend.loading ? <Loading /> : locTrend.error ? <ErrorBox error={locTrend.error} /> : (
-            <GroupAreaChart title="제거된 코드 라인 추이" rows={locTrend.data} xKey="t" valueKey="loc_removed" tickFormatter={fmtTick} />
+            <GroupAreaChart title="제거된 코드 라인 추이" rows={locTrend.data} xKey="t" zoomDisabled={locTrend.stale} valueKey="loc_removed" tickFormatter={fmtTick} />
           )}
         </div>
 
@@ -387,7 +389,7 @@ export default function Productivity() {
         </div>
 
         {active.loading ? <Loading /> : active.error ? <ErrorBox error={active.error} /> : (
-          <GroupAreaChart title="활성 사용 시간" subtitle="채널별 추이 (단위: 시간)" rows={activeHours} xKey="t" valueKey="active_seconds" tickFormatter={fmtTick} />
+          <GroupAreaChart title="활성 사용 시간" subtitle="채널별 추이 (단위: 시간)" rows={activeHours} xKey="t" zoomDisabled={active.stale} valueKey="active_seconds" tickFormatter={fmtTick} />
         )}
 
         {activeSummary.loading || kpi.loading ? (
@@ -443,6 +445,7 @@ export default function Productivity() {
             subtitle="높을수록 한 번의 요청에 더 많은 작업을 위임"
             rows={agentic.data}
             xKey="t"
+            zoomDisabled={agentic.stale}
             valueKey="tool_calls_per_prompt"
             tickFormatter={fmtTick}
           />

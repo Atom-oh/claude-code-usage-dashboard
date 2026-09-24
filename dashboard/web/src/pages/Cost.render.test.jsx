@@ -374,6 +374,7 @@ function dragAcross(card) {
   fireEvent.mouseMove(chart, { clientX: x(2), clientY: 80 });
   fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
 }
+const csvButton = (title) => within(screen.getByText(title, { exact: true }).closest(".rounded-lg")).getByRole("button", { name: "CSV" });
 
 test("dragging the daily cost bars zooms the whole page to their full days", async () => {
   mountHeld();
@@ -384,4 +385,30 @@ test("dragging the daily cost bars zooms the whole page to their full days", asy
   expect(params.get("from")).toBe("2026-09-01T00:00:00.000Z");
   expect(params.get("to")).toBe("2026-09-04T00:00:00.000Z");
   expect(screen.queryByTitle("확대 해제")).not.toBeNull();
+});
+
+test("a pending granularity change blocks drag zoom on the retained daily bars", async () => {
+  const { held } = mountHeld();
+  const chartCard = await dailyChart();
+  fireEvent.click(within(chartCard).getByRole("button", { name: "시간별" }));
+  await act(async () => {});
+  expect(held.length).toBe(1);
+  expect(chartCard.querySelectorAll(".recharts-bar-rectangle").length).toBe(3);
+  dragAcross(chartCard);
+  await act(async () => {});
+  expect(new URLSearchParams(location.search).get("from")).toBe(null);
+  expect(screen.queryByTitle("확대 해제")).toBeNull();
+});
+
+test("a period change disables CSV export until the new rows arrive", async () => {
+  const { held, gate } = mountHeld();
+  await dailyChart();
+  expect(csvButton("모델별 비용과 토큰").disabled).toBe(false);
+  gate.models = true;
+  fireEvent.click(screen.getByRole("button", { name: "30일", exact: true }));
+  await act(async () => {});
+  expect(csvButton("모델별 비용과 토큰").disabled).toBe(true);
+  const req = held.find((h) => h.u.pathname === "/api/cost/by-model");
+  await act(async () => req.resolve({ ok: true, status: 200, json: async () => MODELS }));
+  await waitFor(() => expect(csvButton("모델별 비용과 토큰").disabled).toBe(false));
 });

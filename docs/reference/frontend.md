@@ -77,7 +77,8 @@ formatting; display conversion must not shift request or drag-zoom bounds.
 
 Shared client trends use a continuous time axis over the API's effective range.
 Missing buckets break lines, while isolated known values (including zero) remain
-visible as points. Refreshes update these charts without replaying line animations.
+visible as points. Every shared chart series (area, bar, line, pie) disables its draw
+animation, so refreshes and period changes update charts in place.
 Primary token counts/charts use `observed_tokens` with `tokens_partial` disclosure.
 Canonical token totals and incomplete ratios stay unavailable; observed counts never
 silently replace analytical denominators. CSV retains numeric counts and coverage
@@ -88,26 +89,38 @@ The hook separates the selected view from its quantized request window. Polling 
 the window without replacing loaded charts or tables with a loading state. Unchanged
 payloads keep their references; shared panels also keep stable client props and memoize
 rendering. A background failure retains visible data and reports the refresh error.
-Actual path, range, filter, client or interval changes clear the previous selection.
-The current-month selection resets when its month changes. Aborted or superseded
-requests cannot update either data or error state.
 
-`useApi` also returns `stale`, true while the displayed data belongs to the same view as
-the current selection but to another period. It is computed during render, so it is
-already true in the render that changes the period. Because a period change still clears
-the selection in the effect that follows, `stale` stays true only for that render, or for
-as long as the hook is held.
+A selection is an identity (path, filters, `linkedRange` and extra parameters other than
+`from`, `to` and `intervalHours`) plus a period (days, current month and its month start,
+interval, custom range, explicit extra `from`/`to`, and a page-local extra
+`intervalHours` such as Cost's granularity, which it resyncs from the global range).
+An identity change clears the previous selection to a loading state. A period-only
+change with data on screen keeps that data, marks the request as refreshing, and
+replaces the data when the new response arrives. If that load fails, including after
+a window move replaced its request, the data clears to the error without a
+refresh-failure report. Returning to the period the displayed data was fetched for
+(for example 2 → 7 → 2 days before the 7-day response) is a refresh: no pending
+period state remains, and a failure keeps the data and reports a refresh failure.
+Until the response arrives, page values derived from the new range's duration are
+computed over the retained data. Aborted or superseded requests cannot update either
+data or error state.
+
+`useApi` also returns `stale`, true while retained data from another period of the
+same view waits for the new period's response. It is false after that response or a
+failed period load, on identity changes, background refreshes, while disabled, and
+after returning to the displayed period. It is computed during render, so it is
+already true in the render that changes the period.
 
 Codex details opt into `linkedRange` because their explicit `from`/`to` follow the
-parent response's effective bounds. Other parameters and global selection changes
-still reset loading. Ordinary explicit bounds retain their foreground-load behavior;
-do not use `linkedRange` for independent user-selected bounds. Request quantization
-and cache keys are unchanged. Codex details also pass `hold: stale` of the overview hook.
-While held, the hook sends no request and keeps its selection and state; an in-flight
-request still completes. On release the normal selection logic runs with the current
-bounds. The hold stops the details from requesting the overview's old bounds in the render
-that changes the period, before the overview clears. A parent `stale` set from an effect
-would be one commit late: child effects run before parent effects.
+parent response's effective bounds; moving them is a refresh of the same view, not a
+period change. Do not use `linkedRange` for independent user-selected bounds, which
+are period changes. Request quantization and cache keys are unchanged. Codex details
+also pass `hold: stale` of the overview hook. While held, the hook sends no request
+and keeps its selection and state; an in-flight request still completes. After
+release, a period change made during the hold is a period change requested with the
+new bounds, so its failure clears. A parent `stale` set from an effect would be one
+commit late: child effects run before parent effects, so the child would already have
+requested the parent's old bounds.
 
 [RefreshContext.jsx](../../dashboard/web/src/RefreshContext.jsx) defaults to 60 seconds,
 persists the selected interval, pauses hidden tabs, refreshes when visible, and skips one
@@ -119,12 +132,17 @@ an attempt, never successful completion.
 Page-local interval controls must resync from global range changes, as
 [Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does. Tables fed by a stale hook
 pass `stale` to `DataTable`, which disables CSV export so previous-period rows are not
-saved under the new range's filename. Cost's model cost trend passes `zoomDisabled`
-while its rows are stale (a pending global period or granularity change), because the
-page-local `bucketHours` already describes the new buckets. The label fallback is not a
-substitute: date-only labels get 24 hours, including weekly buckets, and other labels use
-the global interval. Shared client trends take `bucket_hours` from the same response as
-their rows, so they stay zoomable.
+saved under the new range's filename. Every time-series `GroupAreaChart`,
+`DualLineChart` and `SeriesBarChart` passes `zoomDisabled` from the hook that feeds it, so
+drag zoom is suspended while its rows are stale (a pending global period change, or Cost's
+granularity change). The retained rows keep the previous bucket size, while the drag pads
+its right edge with the new one: the global interval, or Cost's page-local `bucketHours`.
+The label fallback is not a substitute: date-only labels get 24 hours, including weekly
+buckets, and other labels use the global interval. Charts whose bucket size cannot change
+(daily adoption series, shared client trends that take `bucket_hours` from their own
+response) are suspended too, so no drag selects a range from the previous period's rows.
+Categorical axes do not zoom, and `UserDrawer` clears to loading on range changes.
+[zoomGuard.test.js](../../dashboard/web/src/zoomGuard.test.js) checks every call site.
 
 ## Spend and interpretation
 

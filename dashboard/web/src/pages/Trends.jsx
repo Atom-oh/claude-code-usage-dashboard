@@ -71,6 +71,7 @@ export default function Trends() {
               }
               rows={ts.data}
               xKey="t"
+              zoomDisabled={ts.stale}
               height={300}
               tickFormatter={fmtDate}
               bucketHours={24}
@@ -86,6 +87,7 @@ export default function Trends() {
               help="월간 활성 사용자 중 일간 활성 사용자의 비율입니다. 높을수록 매일 사용하는 사용자가 많다는 뜻입니다."
               rows={ts.data}
               xKey="t"
+              zoomDisabled={ts.stale}
               tickFormatter={fmtDate}
               bucketHours={24}
               lines={[{ key: "stickiness", label: "고착도 %", axis: "left" }]}

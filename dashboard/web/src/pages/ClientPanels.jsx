@@ -100,7 +100,7 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
   </section>;
 }
 
-function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric = "both", title = "사용량·비용 추이" }) {
+function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric = "both", title = "사용량·비용 추이", stale = false }) {
   const { timeline, timeDomain, rejections } = useMemo(() => {
     const timeline = clientTimeline(rows, { bucketHours, effectiveRange })
       .map((row) => ({ ...row, t: parseUtc(row.t).getTime() }))
@@ -141,7 +141,7 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
         ? `0 (요청 거절 ${formatObserved(rejected)}건)`
         : item.payload?.empty_clients?.includes(client) ? `${value} (관측 사용량 없음)` : value, name];
     }}
-    rows={timeline} xKey="t" lines={lines} bucketHours={bucketHours}
+    rows={timeline} xKey="t" zoomDisabled={stale} lines={lines} bucketHours={bucketHours}
     timeDomain={timeDomain}
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
 }
@@ -197,7 +197,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
   const models = rows("by_model"), users = rows("by_user"), periods = rows("timeseries");
   const tools = (data?.tools || []).filter((row) => selected.includes(row.client));
   const trendProps = { rows: periods, clients: selected, clientRows, bucketHours: data?.bucket_hours || 1,
-    effectiveRange: data?.effective_range };
+    effectiveRange: data?.effective_range, stale };
   const table = (title, columns, items, name, subtitle) => <ResultTable key={`${page}-${name}`}
     title={title} subtitle={subtitle} columns={columns} rows={items} exportName={`clients_${name}`} stale={stale} />;
   const tiles = (columns) => <Tiles row={total} columns={columns} basis={basis} />;

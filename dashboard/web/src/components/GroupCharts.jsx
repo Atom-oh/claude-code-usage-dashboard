@@ -29,11 +29,12 @@ import EmptyState from "./EmptyState.jsx";
 // 조회·표시할 때(예: Cost.jsx의 SegmentedControl) 실제 렌더링 중인 버킷 크기를 넘긴다 — 안
 // 그러면 우측 끝 보정(아래)이 전역 intervalHours를 쓰다 화면에 보이는 버킷과 어긋난 custom
 // range를 만든다(리뷰에서 MAJOR로 확인).
-// disabled(SeriesBarChart의 zoomDisabled)는 화면의 막대가 지금 선택과 다른 버킷 크기일 수
-// 있을 때 드래그 줌을 끈다 — useApi stale(기간 변경 응답을 기다리며 이전 기간의 행을 보여주는
-// 중)인 동안 페이지가 넘기는 bucketHoursOverride는 이미 새 버킷 크기라 우측 끝 보정이 틀린 전역
-// 구간을 만든다. 라벨 기반 대체(bucketHoursOverride를 비우는 방법)로는 부족하다: 날짜 라벨은 주간
-// 버킷도 24h로, 그 밖의 라벨은 전역 intervalHours로 보정해 7일 프리셋에서 1h 막대를 24h만큼 민다.
+// disabled(GroupAreaChart·SeriesBarChart·DualLineChart의 zoomDisabled)는 화면의 행이 지금 선택과
+// 다른 버킷 크기일 수 있을 때 드래그 줌을 끈다 — useApi stale(기간 변경 응답을 기다리며 이전 기간의
+// 행을 보여주는 중)인 동안 페이지가 넘기는 bucketHoursOverride나 전역 intervalHours는 이미 새 버킷
+// 크기라 우측 끝 보정이 틀린 전역 구간을 만든다. 라벨 기반 대체(bucketHoursOverride를 비우는 방법)로는
+// 부족하다: 날짜 라벨은 주간 버킷도 24h로, 그 밖의 라벨은 전역 intervalHours로 보정해 7일 프리셋에서
+// 1h 행을 24h만큼 민다. 시계열 차트를 그리는 호출부는 모두 데이터 훅의 stale을 넘긴다(zoomGuard.test.js).
 function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false) {
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
@@ -92,10 +93,13 @@ function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false)
   return { handlers, overlay, className: dragging ? "select-none" : "" };
 }
 
+// 모든 시리즈(Area/Bar/Line/Pie)는 isAnimationActive={false}다. useApi는 기간 변경·새로고침 중에
+// 이전 데이터를 그대로 두었다가 새 응답이 오면 그 자리에서 교체하는데, 애니메이션이 켜져 있으면
+// 교체될 때마다 차트가 처음부터 다시 그려져 "화면을 유지한 채 바꿔 끼운다"는 동작이 무의미해진다.
 // 시계열, 그룹별 area 하나씩 — ../awsops AreaTrend와 같은 그라디언트 기법, 그룹 색상만 다중.
-export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours }) {
+export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours, zoomDisabled = false }) {
   const c = useChartColors();
-  const zoom = useDragZoom(undefined, bucketHours);
+  const zoom = useDragZoom(undefined, bucketHours, undefined, zoomDisabled);
   if ((rows || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} help={help} right={right}>
@@ -123,7 +127,7 @@ export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, value
           <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} />
           {groups.length > 1 && <Legend {...legendProps(c)} />}
           {groups.map((g) => (
-            <Area key={g} type="monotone" dataKey={g} name={g} stroke={colorFor(g)} strokeWidth={2} fill={`url(#area-${g})`} dot={false} activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }} />
+            <Area key={g} type="monotone" dataKey={g} name={g} stroke={colorFor(g)} strokeWidth={2} fill={`url(#area-${g})`} dot={false} activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }} isAnimationActive={false} />
           ))}
           {zoom.overlay}
         </AreaChart>
@@ -153,7 +157,7 @@ export function GroupBarChart({ title, subtitle, help, right, rows, xKey = "grou
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} />
           <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} />
           <Tooltip {...tooltipStyles(c)} />
-          <Bar dataKey={valueKey} radius={[4, 4, 0, 0]} maxBarSize={64}>
+          <Bar dataKey={valueKey} radius={[4, 4, 0, 0]} maxBarSize={64} isAnimationActive={false}>
             {data.map((r, i) => (
               <Cell key={i} fill={fill(r)} />
             ))}
@@ -246,7 +250,7 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
             const base = colorOf?.(s) ?? c.palette[i % c.palette.length];
             // stroke=서피스색 1px — 스택 세그먼트/인접 막대 사이 2px 서피스 갭(dataviz 마크 스펙,
             // 양쪽 1px씩 만나 2px). 카드 배경과 같은 색이라 막대 바깥 윤곽으로는 보이지 않는다.
-            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={focus && focus !== s ? c.mute : base} radius={radius} stroke={c.surface} strokeWidth={1} />;
+            return <Bar key={s} dataKey={s} name={s} stackId="a" fill={focus && focus !== s ? c.mute : base} radius={radius} stroke={c.surface} strokeWidth={1} isAnimationActive={false} />;
           })}
           {zoom.overlay}
         </BarChart>
@@ -302,7 +306,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
                     stroke={c.surface} strokeWidth={1.5} />
                 : null;
             } : false}
-            {...(timeDomain ? { isAnimationActive: false } : {})}
+            isAnimationActive={false}
             activeDot={{ r: 4, stroke: c.surface, strokeWidth: 2 }}
           />
         ))}
@@ -312,12 +316,12 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
   );
 }
 
-export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter }) {
+export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter, zoomDisabled = false }) {
   const c = useChartColors();
   const domain = Array.isArray(timeDomain) && timeDomain.length === 2
     && timeDomain.every(Number.isFinite) && timeDomain[0] < timeDomain[1] ? timeDomain : undefined;
-  const zoomTop = useDragZoom(undefined, bucketHours, domain);
-  const zoomBottom = useDragZoom(undefined, bucketHours, domain);
+  const zoomTop = useDragZoom(undefined, bucketHours, domain, zoomDisabled);
+  const zoomBottom = useDragZoom(undefined, bucketHours, domain, zoomDisabled);
   if ((rows || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} help={help} right={right}>
@@ -415,7 +419,7 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", va
         <div className="flex items-center gap-4">
           <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
             <PieChart width={170} height={170}>
-              <Pie data={data} dataKey={valueKey} nameKey={nameKey} innerRadius={55} outerRadius={80} paddingAngle={2} stroke="none">
+              <Pie data={data} dataKey={valueKey} nameKey={nameKey} innerRadius={55} outerRadius={80} paddingAngle={2} stroke="none" isAnimationActive={false}>
                 {data.map((d, i) => (
                   <Cell key={i} fill={color(String(d[nameKey]), i)} />
                 ))}

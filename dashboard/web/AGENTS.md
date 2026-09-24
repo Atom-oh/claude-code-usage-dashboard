@@ -47,10 +47,10 @@ React 18/Vite/Tailwind/Recharts SPA. Run `npm test` and `npm run build`.
   granularity on global range changes.
 - Use `useApi()` for range/filter forwarding, refresh, aborts, and payload identity.
   Keep its quantization/grace constants aligned with the server cache warmer.
-- Refresh retains loaded content as quantized windows move; unchanged payloads keep
-  their references. Range/filter/client changes clear the selection. Background
-  failures retain data and signal refresh errors. `linkedRange` is only for
-  parent-response bounds. `UserDrawer` does not auto-refresh.
+- Refreshes and period changes keep loaded data until replaced; a failed period
+  load clears it. Unchanged payloads keep references. Path/filter/client changes
+  clear the selection; background failures retain data and signal refresh errors.
+  `linkedRange` is only for parent-response bounds. `UserDrawer` does not auto-refresh.
 
 ## Components and channels
 

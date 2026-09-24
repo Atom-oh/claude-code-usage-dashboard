@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider, useRange } from "../RangeContext.jsx";
-import { DualLineChart, SeriesBarChart } from "./GroupCharts.jsx";
+import { DonutBody, DualLineChart, GroupAreaChart, GroupBarChart, SeriesBarChart } from "./GroupCharts.jsx";
 
 // jsdom has no layout or ResizeObserver. Keep the real Recharts render path and
 // supply only the browser dimensions its ResponsiveContainer needs.
@@ -210,4 +210,86 @@ test("a drag that becomes zoom-disabled before mouseup does not zoom", async () 
   rerender(chartWith(true));
   fireEvent.mouseUp(container.querySelector(".recharts-wrapper"), { clientX: x(2), clientY: 80 });
   await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe("none"));
+});
+
+// GroupAreaChart와 DualLineChart도 zoomDisabled를 각 줌 훅에 전달해야 한다. DualLineChart는
+// 상단·하단 패널이 서로 다른 훅을 쓰므로 두 패널을 각각 드래그해 확인한다.
+test.each([
+  ["GroupAreaChart", false, 0],
+  ["GroupAreaChart", true, 0],
+  ["DualLineChart top panel", false, 0],
+  ["DualLineChart top panel", true, 0],
+  ["DualLineChart bottom panel", false, 1],
+  ["DualLineChart bottom panel", true, 1],
+])("%s zoomDisabled=%s: a drag across hourly points respects the guard", async (name, disabled, panel) => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  function Selection() {
+    const { custom } = useRange();
+    return <output aria-label="선택 구간">{custom
+      ? `${custom.from.toISOString()} / ${custom.to.toISOString()}` : "none"}</output>;
+  }
+  const hours = ["2026-09-01 00:00:00", "2026-09-01 01:00:00", "2026-09-01 02:00:00"];
+  const areaRows = hours.map((t, i) => ({ t, group: "bedrock", v: 1 + i }));
+  const dualRows = hours.map((t, i) => ({ t, a: 1 + i, b: 2 + i }));
+  const el = name === "GroupAreaChart"
+    ? <GroupAreaChart title="t" xKey="t" valueKey="v" rows={areaRows} zoomDisabled={disabled} />
+    : <DualLineChart title="t" xKey="t" rows={dualRows}
+      lines={[{ key: "a" }, { key: "b", axis: "right" }]} zoomDisabled={disabled} />;
+  const { container } = render(<>{el}<Selection /></>, { wrapper: Providers });
+  await waitFor(() => expect(container.querySelectorAll(".recharts-wrapper").length).toBeGreaterThan(panel));
+  const chart = container.querySelectorAll(".recharts-wrapper")[panel];
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  // 선·영역 차트의 x축은 point 축이므로 점 위치로 계산한다.
+  const x = (i) => left + (right - left) * i / 2;
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 40 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 40 });
+  expect(chart.querySelectorAll(".recharts-reference-area").length).toBe(disabled ? 0 : 1);
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 40 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent)
+    .toBe(disabled ? "none" : "2026-09-01T00:00:00.000Z / 2026-09-01T03:00:00.000Z"));
+});
+
+const animationCases = [
+  ["GroupAreaChart", () => <GroupAreaChart title="t" xKey="day" valueKey="v"
+    rows={[{ day: "2026-09-01", group: "bedrock", v: 1 }, { day: "2026-09-02", group: "bedrock", v: 2 }]} />],
+  ["GroupBarChart", () => <GroupBarChart title="t" valueKey="v"
+    rows={[{ group: "bedrock", v: 1 }, { group: "enterprise", v: 2 }]} />],
+  ["SeriesBarChart", () => <SeriesBarChart title="t" xKey="day" seriesKey="model" valueKey="cost"
+    rows={[{ day: "2026-09-01", model: "m1", cost: 1 }, { day: "2026-09-02", model: "m1", cost: 2 }]} />],
+  ["DualLineChart", () => <DualLineChart title="t" xKey="t" lines={[{ key: "a" }]}
+    rows={[{ t: "2026-09-01", a: 1 }, { t: "2026-09-02", a: 2 }]} />],
+  ["DonutBody", () => <DonutBody nameKey="n" valueKey="v" data={[{ n: "x", v: 1 }, { n: "y", v: 2 }]} />],
+];
+
+// With series animation on, recharts draws the start frame first (Area: an
+// "animationClipPath" clipPath; Line: stroke-dasharray="0px 0px"; Bar/Pie: no shape
+// path yet). With isAnimationActive={false} the final geometry renders immediately.
+test.each(animationCases)("%s renders its final geometry immediately (series animation disabled)", async (name, el) => {
+  const { container } = render(el(), { wrapper: Providers });
+  await waitFor(() => expect(container.querySelector(".recharts-wrapper svg")).not.toBeNull());
+  switch (name) {
+    case "GroupAreaChart": {
+      expect(container.querySelectorAll('clipPath[id^="animationClipPath"]').length).toBe(0);
+      expect(container.querySelectorAll(".recharts-area-area").length).toBe(1);
+      break;
+    }
+    case "GroupBarChart":
+    case "SeriesBarChart": {
+      const rectangles = container.querySelectorAll(".recharts-bar-rectangle").length;
+      expect(rectangles).toBe(2);
+      expect(container.querySelectorAll(".recharts-bar-rectangle path").length).toBe(rectangles);
+      break;
+    }
+    case "DualLineChart": {
+      const curve = container.querySelector(".recharts-line-curve");
+      expect(curve).not.toBeNull();
+      expect(curve.getAttribute("stroke-dasharray")).toBe(null);
+      break;
+    }
+    case "DonutBody": {
+      expect(container.querySelectorAll(".recharts-pie-sector path").length).toBe(2);
+      break;
+    }
+  }
 });
