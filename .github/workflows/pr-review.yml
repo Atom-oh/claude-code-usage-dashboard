@@ -97,7 +97,7 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PANEL_TIMEOUT: "600"
           # Each Kiro startup attempt gets its own 90 s budget; only transient
-          # failures retry. Worst case stays inside the 45-minute job limit.
+          # failures retry. Worst case stays inside the 50-minute job limit.
           KIRO_PREFLIGHT_TIMEOUT: "90"
           KIRO_PREFLIGHT_ATTEMPTS: "2"
         run: |

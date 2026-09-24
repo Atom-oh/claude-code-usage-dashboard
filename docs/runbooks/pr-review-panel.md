@@ -78,7 +78,7 @@ version in the panel log; do not infer it from an old validation date.
 Worst-case CI budget with the current settings: 2 × 90 s of Kiro preflight
 (`KIRO_PREFLIGHT_ATTEMPTS` × `KIRO_PREFLIGHT_TIMEOUT`), 2 × 600 s of review calls
 (`PANEL_RETRIES` × `PANEL_TIMEOUT`) and 2 × 600 s of chair calls (primary then fallback,
-`CHAIR_TIMEOUT`) sum to 2580 s, about 43 minutes, inside the job's `timeout-minutes: 45`.
+`CHAIR_TIMEOUT`) sum to 2580 s, about 43 minutes, inside the job's `timeout-minutes: 50`.
 
 This is a behavioral startup check, not formal proof or an OS tool sandbox. Review cells
 still use `--agent pr-review-notools` and isolated directories with a minimal environment.
