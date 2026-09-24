@@ -436,6 +436,26 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal(zero.cost_partial, mode !== "cost");
       }
     });
+    // An operational log next to idle counters must not become a known $0 model row.
+    await t.test("Claude operational logs never turn idle counters into a known $0 by_model_time row", async () => {
+      const user = "modeltime-idle@example.invalid";
+      const values = [];
+      for (const clock of ["09:59:00", "10:01:00"]) {
+        const row = counter("claude_code.token.usage", "input", clock, 10);
+        row.ResourceAttributes = { "user.email": user };
+        row.Attributes["session.id"] = "mt-idle";
+        values.push(row);
+      }
+      const request = log(800, "api_request", { "session.id": "mt-idle", model: "claude-sonnet-5", duration_ms: "100" });
+      request.ResourceAttributes = { "user.email": user };
+      await insertMetrics(values);
+      await insertLogs([request]);
+      const result = await overview({ client: "claude", user: "modeltime-idle@", modelTime: "1" }, ["claude"], from, to);
+      assert.deepEqual(result.by_model_time, []);
+      assert.deepEqual(result.timeseries.map((r) => [r.t, r.cost_usd, r.cost_partial, r.timeline_observed, r.requests]),
+        [[`${day}T10:01:00Z`, null, true, true, 1]]);
+      assert.equal(result.totals.requests, 1);
+    });
     await t.test("first partial hour requires actual in-window counter observations", async () => {
       for (const observed of [false, true]) {
         const user = `partial-idle-${observed}@example.invalid`;

@@ -241,11 +241,17 @@ if (process.env.ALERT_WEBHOOK_URL) startAlertLoop({ url: process.env.ALERT_WEBHO
 // 쪽에 그대로 나간다(실측: 두 요청이 동일 결과를 반환해 확인). warmer는 기본 뷰만 데우므로
 // includeUnknown=1 뷰는 첫 조회가 콜드다 — 정확성 우선.
 const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "project", "intervalHours", "email", "includeUnknown"];
+// Only /api/clients/overview accepts modelTime, and only the literal 1; Codex insights ignore it.
+function validateModelTime(raw) {
+  if (raw.modelTime !== undefined && raw.modelTime !== "1")
+    throw new ValidationError("invalid modelTime", "modelTime accepts only 1");
+}
 function cacheKey(path, query) {
   if (path === "/api/clients/overview" || path === "/api/codex/insights") {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
-      client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend };
+      client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend,
+      modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined };
     return `${path}?${new URLSearchParams(Object.entries(normalized)
       .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString()}`;
   }
@@ -305,7 +311,7 @@ function route(path, handler, { warm = true, client = "claude", validate } = {})
 route("/api/clients/overview",
   (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: clientConfig.enabledClients.includes("codex"),
-    validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
+    validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); } });
 
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
   { client: "codex", warm: false, validate: (raw) => validateClientFilters(raw, ["codex"]) });

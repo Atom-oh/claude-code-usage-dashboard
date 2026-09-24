@@ -93,6 +93,26 @@ Claude counter/baseline rules remain.
 when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.
 `intervalHours` is validated but ignored.
 
+`modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
+before caching. It is part of the cache key and is not warmed; `/api/codex/insights`
+ignores it. It adds `by_model_time`: one row per `client`, `t`, `model`, `backend` from the
+same fold and buckets as `timeseries`, with raw model IDs (Codex `us.`/`global.` prefixes
+kept) and the usual cost/token/coverage fields. A row exists only where Claude counter
+usage, a Codex usage-bearing completion or a Codex missing-usage scope backs it;
+operational-only records (requests, tools, TTFT, stream errors, rejected-only requests)
+attach to such a row but never create one, so their buckets appear only in `timeseries`.
+Each row's `unpriced_reasons` counts Codex `unknown_backend`, `scope`, `unknown_model`,
+`invalid_usage`, or Claude `report_missing`, `report_zero_with_tokens`, plus
+`missing_usage` (usage scopes without usage; model-less scopes stay under `model=""`); the
+counts sum to `unpriced`. Claude `report_missing` also covers an invalid (negative or
+non-numeric) report and a zero report on a counter row whose `cost_observed` is 0;
+`report_zero_with_tokens` also covers a zero report beside unknown tokens. Per `client`,
+`t`, known `cost_usd` sums to the `timeseries` row; idle Claude observations stay in
+`timeseries` only. Codex estimates are never recomputed from aggregated tokens. Each
+unpriced Codex response has one `unpriced_reason`, checked in order: backend, scope
+(`us-gov.`, a `us.`/`global.` model on mantle, or no rate for the scope/tier), model rate,
+then usage validity; a configured rate with a non-finite estimate reports `unknown_model`.
+
 ## Filter scope
 
 Forwarded parameters are not universally implemented. [filterCond](../dashboard/server/queries.js)

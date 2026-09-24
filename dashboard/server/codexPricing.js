@@ -84,12 +84,22 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
   const scope = rawModel.startsWith("global.") ? "global" : "regional";
   const validScope = !rawModel.startsWith("us-gov.")
     && !(row.backend === "bedrock-mantle" && /^(us|global)\./.test(rawModel));
-  const rates = prices[codexModel(rawModel)]?.[scope]?.[row.context_tier];
+  const entry = prices[codexModel(rawModel)];
+  const rates = entry?.[scope]?.[row.context_tier];
   const available = valid && knownBackend && validScope && rates;
   const amount = available ? ((input - read - write) * rates.input + read * rates.cacheRead
     + write * rates.cacheWrite + output * rates.output) / 1e6 : null;
   const rounded = amount === null ? null : Math.round(amount * 1e12) / 1e12;
   const cost = Number.isFinite(rounded) ? rounded : null;
+  // One reason per unpriced response, checked in this order. A known model without a rate
+  // for the response's scope/tier is a scope mismatch; a configured rate that still yields a
+  // non-finite estimate has no usable rate.
+  const unpriced_reason = cost !== null ? null
+    : !knownBackend ? "unknown_backend"
+    : !validScope || (entry && !rates) ? "scope"
+    : !entry ? "unknown_model"
+    : !valid ? "invalid_usage"
+    : "unknown_model";
   return {
     ...row,
     input_tokens: valid ? input - read - write : null,
@@ -97,6 +107,6 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
     reasoning_tokens: reasoning, tokens: valid ? input + output : null,
     observed_tokens: observedTokenPair(row.input_tokens_total, row.output_tokens),
     cost_usd: cost,
-    cost_basis: "aws_list_estimate", unpriced: cost === null, invalid: !valid,
+    cost_basis: "aws_list_estimate", unpriced: cost === null, unpriced_reason, invalid: !valid,
   };
 }

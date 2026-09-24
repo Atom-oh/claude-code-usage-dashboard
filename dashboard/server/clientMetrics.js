@@ -15,6 +15,11 @@ const OP_KEYS = ["requests", "rejected_requests", "api_errors", "tool_calls", "t
 const finite = (n) => ["number", "string"].includes(typeof n) && String(n).trim() !== ""
   && Number.isFinite(Number(n)) && Number(n) >= 0;
 const round = (n) => Number.isFinite(n * 1e12) ? Math.round(n * 1e12) / 1e12 : null;
+// by_model_time reason keys per client; missing_usage is always counted separately.
+const UNPRICED_REASONS = {
+  claude: ["report_missing", "report_zero_with_tokens"],
+  codex: ["unknown_backend", "scope", "unknown_model", "invalid_usage"],
+};
 
 export function validateClientFilters(raw, enabledClients) {
   const clients = selectClients(raw.client, enabledClients);
@@ -35,11 +40,12 @@ export function validateClientFilters(raw, enabledClients) {
   return result;
 }
 
-function accumulator(meta) {
+function accumulator(meta, reasons = false) {
   return { ...meta, ...Object.fromEntries([...TOKEN_KEYS, ...OP_KEYS].map((k) => [k, 0])),
     cost_usd: 0, unpriced: 0, observed_records: 0,
     _sessions: new Set(), _users: new Set(), _backends: new Set(), _missingUsage: new Set(),
     _missing: new Set(), _hasCost: false, _observedTokens: createObservedTokens(),
+    _reasons: reasons ? {} : null,
     _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
 }
 
@@ -56,8 +62,11 @@ function claudeUsage(row) {
   // A positive client report remains usable even if token telemetry is partial.
   // Zero is usable only alongside known zero token usage.
   const cost = report !== null && (report > 0 || valid && tokens === 0) ? report : null;
+  // A usable report has no reason. Counter rows carry cost_observed; rows without it count as observed.
+  const unpriced_reason = cost !== null ? null
+    : report === null || Number(row.cost_observed ?? 1) === 0 ? "report_missing" : "report_zero_with_tokens";
   return { ...row, tokens, observed_tokens: tokens, reasoning_tokens: null, cost_usd: cost,
-    cost_basis: "client_reported", unpriced: cost === null, invalid: !valid };
+    cost_basis: "client_reported", unpriced: cost === null, unpriced_reason, invalid: !valid };
 }
 
 function accumulate(target, row, usage, missingScope) {
@@ -76,8 +85,12 @@ function accumulate(target, row, usage, missingScope) {
       if (!finite(usage[k])) target._missing.add(k);
       else target[k] += Number(usage[k]);
     }
-    if (!finite(usage.cost_usd)) target.unpriced += n || 1;
-    else {
+    if (!finite(usage.cost_usd)) {
+      target.unpriced += n || 1;
+      if (target._reasons) {
+        target._reasons[usage.unpriced_reason] = (target._reasons[usage.unpriced_reason] || 0) + (n || 1);
+      }
+    } else {
       target._hasCost = true;
       target.cost_usd += Number(usage.cost_usd);
     }
@@ -102,7 +115,7 @@ function accumulate(target, row, usage, missingScope) {
 }
 
 function finish(target) {
-  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _observedTokens,
+  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _observedTokens, _reasons,
     _ops, _requestMs, _requestN, _ttftMs, _ttftN, ...out } = target;
   for (const k of _missing) out[k] = null;
   if (_missingUsage.size) {
@@ -123,10 +136,13 @@ function finish(target) {
     request_rejections_only: out.client === "codex" && out.rejected_requests > 0
       && out.rejected_requests === out.observed_records && _missingUsage.size === 0,
     request_duration_ms: _requestN ? _requestMs / _requestN : null,
-    ttft_ms: _ttftN ? _ttftMs / _ttftN : null };
+    ttft_ms: _ttftN ? _ttftMs / _ttftN : null,
+    ...(_reasons ? { unpriced_reasons: {
+      ...Object.fromEntries((UNPRICED_REASONS[out.client] || []).map((k) => [k, 0])),
+      ..._reasons, missing_usage: _missingUsage.size } } : {}) };
 }
 
-export function foldClientMetrics(records, clients, prices = codexPrices) {
+export function foldClientMetrics(records, clients, prices = codexPrices, { modelTime = false } = {}) {
   // Idle observations have their own bound; they cannot evict usage records
   // from the existing active-row budget.
   const idleRows = records.filter(row => row.client === "claude" && Number(row.timeline_only) === 1).length;
@@ -135,7 +151,8 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
   const totals = accumulator({});
   const byClient = new Map(clients.map((client) => [client, accumulator({ client,
     cost_basis: client === "claude" ? "client_reported" : "aws_list_estimate" })]));
-  const groups = { by_model: new Map(), by_user: new Map(), by_project: new Map(), timeseries: new Map() };
+  const groups = { by_model: new Map(), by_user: new Map(), by_project: new Map(), timeseries: new Map(),
+    ...(modelTime ? { by_model_time: new Map() } : {}) };
   const tools = new Map();
   const quality = { unpriced: 0, invalid: 0, missing_identity: 0, missing_usage: 0 };
   // Availability spans the requested range: request/completion exports can straddle
@@ -154,6 +171,10 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
     if (row.session) usageSessions.add(usageScope(row, null));
   }
   const missingUsage = new Set();
+  // by_model_time keeps a row only when usage (Claude counters, Codex usage-bearing completions)
+  // or a Codex missing-usage scope backs it. Operational rows attach but never create a known $0;
+  // idle uncertainty stays in timeseries.
+  const backedModelTime = new Set();
   for (const row of records) {
     if (!byClient.has(row.client)) continue;
     // Repeated, unchanged Claude counters prove an observed zero for this bucket.
@@ -194,10 +215,12 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
       timeseries: { client: row.client, t: row.t },
     };
     if (row.client === "codex") dimensions.by_project = { client: row.client, project: row.project || "" };
+    if (modelTime) dimensions.by_model_time = { client: row.client, t: row.t, model: row.model || "", backend: row.backend || "unknown" };
     for (const [key, meta] of Object.entries(dimensions)) {
       const id = JSON.stringify(meta);
+      if (key === "by_model_time" && (row.kind === "usage" || missingScope)) backedModelTime.add(id);
       if (!groups[key].has(id)) groups[key].set(id, accumulator({ ...meta,
-        cost_basis: row.client === "claude" ? "client_reported" : "aws_list_estimate" }));
+        cost_basis: row.client === "claude" ? "client_reported" : "aws_list_estimate" }, key === "by_model_time"));
       accumulate(groups[key].get(id), row, usage, missingScope);
     }
     if (row.kind === "tool") {
@@ -223,7 +246,9 @@ export function foldClientMetrics(records, clients, prices = codexPrices) {
     by_user: [...groups.by_user.values()].map(finish).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
     by_project: [...groups.by_project.values()].map(finish).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
     timeseries: [...groups.timeseries.values()].map(finish).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client)),
-    tools: [...tools.values()].sort((a, b) => b.calls - a.calls), quality };
+    tools: [...tools.values()].sort((a, b) => b.calls - a.calls), quality,
+    ...(modelTime ? { by_model_time: [...groups.by_model_time].filter(([id]) => backedModelTime.has(id))
+      .map(([, group]) => finish(group)).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.model.localeCompare(b.model) || a.backend.localeCompare(b.backend)) } : {}) };
 }
 
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex") {
@@ -384,7 +409,9 @@ export async function clientOverview(from, to, raw, enabledClients) {
     }));
   }
   const lists = await Promise.all(jobs);
-  return { ...foldClientMetrics(lists.flat(), filters.clients),
+  // The route validates modelTime; only the literal "1" enables the dimension.
+  const modelTime = raw.modelTime === "1";
+  return { ...foldClientMetrics(lists.flat(), filters.clients, codexPrices, { modelTime }),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
     bucket_hours: to - from <= 4 * 3600000 ? 1 / 60 : 1 };
 }
