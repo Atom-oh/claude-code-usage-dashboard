@@ -49,11 +49,14 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
   const paramsKeyRef = useRef(null);
   const identityKeyRef = useRef(null);
   const periodKeyRef = useRef(null);
+  // 기간 변경 뒤 이전 기간의 데이터를 그대로 보여주면서 새 기간의 첫 응답을 기다리는 중인가.
+  const periodPendingRef = useRef(false);
   const payloadRef = useRef(null);
   const extraJson = JSON.stringify(extraParams);
   // extraParams 중 from/to/intervalHours는 "언제를 보나"(기간)이고 나머지는 "무엇을 보나"(정체성)다.
   // intervalHours는 Cost.jsx의 로컬 granularity처럼 전역 intervalHours를 페이지에서 덮어쓰는
-  // 값이라 기간에 둔다.
+  // 값이다 — 전역 기간이 바뀌면 그 페이지가 이 값을 재동기화하므로 정체성에 두면 기간 변경마다
+  // 해당 차트만 다시 비워진다.
   // linkedRange 패널의 from/to는 부모 응답의 실제 경계를 따라간다. 폴링 중에도 움직이는 값이라
   // 기간 변경이 아니라 같은 뷰의 새로고침이다 — 그래서 기간 키에서도 뺀다.
   const { from: extraFrom, to: extraTo, intervalHours: extraIntervalHours, ...identityExtra } = extraParams;
@@ -67,10 +70,11 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
   const identityKey = JSON.stringify([path, group, user, model, project, backend, identityExtraJson, linkedRange]);
   const periodKey = JSON.stringify([days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(),
     month ? utcMonthStart(quantizedNow()).toISOString() : null, periodExtraJson]);
-  // stale: 화면의 데이터가 같은 뷰의 다른 기간 것이다. 선택 변경은 뒤따르는 effect가 곧바로 비우므로
-  // (hold 중이 아니면) 그 사이 한 렌더에만 true다. state로 미루지 않고 렌더에서 계산한다 — effect는
-  // 자식부터 돈다. 부모의 stale을 effect에서 세팅하면 기간이 바뀐 커밋에서 자식(hold: parent.stale)의
-  // effect가 아직 false인 hold를 보고 부모의 옛 경계로 먼저 요청해 버린다.
+  // stale: 같은 뷰의 다른 기간 데이터가 새 기간의 응답을 기다리며 화면에 남아 있다. state로 미루지
+  // 않고 렌더에서 계산한다 — effect는 자식부터 돈다. 부모의 stale을 effect에서 세팅하면 기간이 바뀐
+  // 커밋에서 자식(hold: parent.stale)의 effect가 아직 false인 hold를 보고 부모의 옛 경계로 먼저
+  // 요청해 버린다(PR #80 리뷰 MAJOR, 렌더 프로브로 실측). 데이터가 가져온 기간으로 되돌아오면
+  // shownPeriod와 다시 같아져 false다 — 그 요청은 새로고침이다.
   const stale = state.data !== null && !state.loading && state.shownIdentity === identityKey
     && state.shownPeriod !== periodKey;
 
@@ -81,6 +85,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
       paramsKeyRef.current = null;
       identityKeyRef.current = null;
       periodKeyRef.current = null;
+      periodPendingRef.current = false;
       payloadRef.current = null;
       setState((s) => s.loading && !s.error ? s : { ...s, loading: true, error: null });
       return;
@@ -108,9 +113,13 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
     const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, project, backend, intervalHours, extraJson]);
     const paramsChanged = paramsKey !== paramsKeyRef.current;
     const identityChanged = identityKey !== identityKeyRef.current;
-    // Moving the live time window is a refresh of the same view. Only an actual
-    // selection change replaces its content with an initial loading state.
     const selectionChanged = identityChanged || periodKey !== periodKeyRef.current;
+    // 정체성이 그대로이고 화면에 데이터가 있으면 그 데이터를 둔 채 요청한다 — 백그라운드 틱과
+    // 기간 변경이 여기에 해당한다. 기간 변경도 "불러오는 중..." 자리표시자로 비우지 않으므로 차트가
+    // 다시 마운트·재애니메이션되지 않고, 새 응답이 도착하는 순간 교체된다. 진행 중임은
+    // RefreshControl의 "갱신 중 · 이전 데이터 표시"(beginRequest)로 드러난다. 경로·필터·그 밖의
+    // extraParams가 바뀌면 다른 뷰라서 예전처럼 비우고 loading으로 시작한다.
+    const retainData = !identityChanged && state.data !== null;
     // 같은 파라미터에 대한 요청이 아직 떠 있는데 틱이 오면 그 틱은 버린다(큐잉하지 않는다).
     if (!paramsChanged && inflightRef.current) return;
     if (paramsChanged) {
@@ -124,10 +133,13 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
       periodKeyRef.current = periodKey;
       // 새 선택의 첫 응답은 이전 payload와 내용이 같아도 새 참조로 받는다.
       payloadRef.current = null;
-      setState({ data: null, loading: true, error: null, ...CLEARED });
+      // 화면의 데이터가 이미 이 기간의 것이면(다른 기간으로 갔다가 되돌아온 경우) 기다릴 새 기간이 없다
+      // — 새로고침처럼 실패해도 그 데이터를 두고 reportFailure한다.
+      periodPendingRef.current = retainData && state.shownPeriod !== periodKey;
+      if (!retainData) setState({ data: null, loading: true, error: null, ...CLEARED });
     }
     const abort = new AbortController();
-    const finish = !selectionChanged && state.data !== null ? beginRequest() : () => {};
+    const finish = retainData ? beginRequest() : () => {};
     abort.signal.addEventListener("abort", finish, { once: true });
     inflightRef.current = abort;
     apiGet(
@@ -148,6 +160,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
       .then((json) => {
         if (inflightRef.current !== abort || abort.signal.aborted) return;
         inflightRef.current = null;
+        periodPendingRef.current = false;
         const text = JSON.stringify(json);
         const same = text === payloadRef.current;
         payloadRef.current = text;
@@ -159,7 +172,13 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
       .catch((error) => {
         if (error.name === "AbortError" || inflightRef.current !== abort || abort.signal.aborted) return;
         inflightRef.current = null;
-        if (selectionChanged) {
+        // 새 기간의 첫 응답이 실패하면 이전 기간의 데이터를 남기지 않는다 — 남기면 옛 기간의 숫자가
+        // 새 기간의 것처럼 보인다. 선택 변경 실패와 똑같이 에러로 비우고 reportFailure도 하지
+        // 않는다. 그 요청이 떠 있는 동안 양자화된 창이 넘어가 틱 요청(selectionChanged=false)으로
+        // 대체됐어도 periodPendingRef가 이 실패를 기간 변경 실패로 분류한다. 화면의 데이터와 같은
+        // 기간으로 되돌아온 선택 변경은 새로고침이다(periodPendingRef가 false) — 아래로 간다.
+        if ((selectionChanged && !retainData) || periodPendingRef.current) {
+          periodPendingRef.current = false;
           setState({ data: null, loading: false, error, ...CLEARED });
         } else {
           // 백그라운드 틱 실패는 화면에 있는 데이터를 지우지 않는다 — 아직 데이터가 없으면
@@ -184,6 +203,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
     paramsKeyRef.current = null;
     identityKeyRef.current = null;
     periodKeyRef.current = null;
+    periodPendingRef.current = false;
   }, []);
 
   const { data, loading, error } = state;

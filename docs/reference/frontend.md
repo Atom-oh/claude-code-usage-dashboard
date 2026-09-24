@@ -88,26 +88,38 @@ The hook separates the selected view from its quantized request window. Polling 
 the window without replacing loaded charts or tables with a loading state. Unchanged
 payloads keep their references; shared panels also keep stable client props and memoize
 rendering. A background failure retains visible data and reports the refresh error.
-Actual path, range, filter, client or interval changes clear the previous selection.
-The current-month selection resets when its month changes. Aborted or superseded
-requests cannot update either data or error state.
 
-`useApi` also returns `stale`, true while the displayed data belongs to the same view as
-the current selection but to another period. It is computed during render, so it is
-already true in the render that changes the period. Because a period change still clears
-the selection in the effect that follows, `stale` stays true only for that render, or for
-as long as the hook is held.
+A selection is an identity (path, filters, `linkedRange` and extra parameters other than
+`from`, `to` and `intervalHours`) plus a period (days, current month and its month start,
+interval, custom range, explicit extra `from`/`to`, and a page-local extra
+`intervalHours` such as Cost's granularity, which it resyncs from the global range).
+An identity change clears the previous selection to a loading state. A period-only
+change with data on screen keeps that data, marks the request as refreshing, and
+replaces the data when the new response arrives. If that load fails, including after
+a window move replaced its request, the data clears to the error without a
+refresh-failure report. Returning to the period the displayed data was fetched for
+(for example 2 → 7 → 2 days before the 7-day response) is a refresh: no pending
+period state remains, and a failure keeps the data and reports a refresh failure.
+Until the response arrives, page values derived from the new range's duration are
+computed over the retained data. Aborted or superseded requests cannot update either
+data or error state.
+
+`useApi` also returns `stale`, true while retained data from another period of the
+same view waits for the new period's response. It is false after that response or a
+failed period load, on identity changes, background refreshes, while disabled, and
+after returning to the displayed period. It is computed during render, so it is
+already true in the render that changes the period.
 
 Codex details opt into `linkedRange` because their explicit `from`/`to` follow the
-parent response's effective bounds. Other parameters and global selection changes
-still reset loading. Ordinary explicit bounds retain their foreground-load behavior;
-do not use `linkedRange` for independent user-selected bounds. Request quantization
-and cache keys are unchanged. Codex details also pass `hold: stale` of the overview hook.
-While held, the hook sends no request and keeps its selection and state; an in-flight
-request still completes. On release the normal selection logic runs with the current
-bounds. The hold stops the details from requesting the overview's old bounds in the render
-that changes the period, before the overview clears. A parent `stale` set from an effect
-would be one commit late: child effects run before parent effects.
+parent response's effective bounds; moving them is a refresh of the same view, not a
+period change. Do not use `linkedRange` for independent user-selected bounds, which
+are period changes. Request quantization and cache keys are unchanged. Codex details
+also pass `hold: stale` of the overview hook. While held, the hook sends no request
+and keeps its selection and state; an in-flight request still completes. After
+release, a period change made during the hold is a period change requested with the
+new bounds, so its failure clears. A parent `stale` set from an effect would be one
+commit late: child effects run before parent effects, so the child would already have
+requested the parent's old bounds.
 
 [RefreshContext.jsx](../../dashboard/web/src/RefreshContext.jsx) defaults to 60 seconds,
 persists the selected interval, pauses hidden tabs, refreshes when visible, and skips one
