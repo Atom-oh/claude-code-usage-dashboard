@@ -356,7 +356,7 @@ test("the first-bucket observation window follows the bucket width", async () =>
   }
 });
 
-// Minute buckets start at {from}, so every sample in range is an in-window observation.
+// Minute buckets are clock-aligned and only buckets with t >= {from} are returned, so every retained sample is an in-window observation.
 test("minute buckets skip the first-observation CTE", async () => {
   const { costByModelDailySql } = await import("./queries.js");
   const { sql, params, raw } = costByModelDailySql(0.25);

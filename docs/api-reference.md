@@ -96,8 +96,8 @@ when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four ho
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key and is not warmed; `/api/codex/insights`
 ignores it. It adds `by_model_time`: one row per `client`, `t`, `model`, `backend` from the
-same fold and buckets as `timeseries`, with raw model IDs (Codex `us.`/`global.` prefixes
-kept) and the usual cost/token/coverage fields. A row exists only where Claude counter
+same fold and buckets as `timeseries`, with Codex raw model IDs (`us.`/`global.` prefixes
+kept; Claude models are normalized as in `by_model`) and the usual cost/token/coverage fields. A row exists only where Claude counter
 usage, a Codex usage-bearing completion or a Codex missing-usage scope backs it;
 operational-only records (requests, tools, TTFT, stream errors, rejected-only requests)
 attach to such a row but never create one, so their buckets appear only in `timeseries`.

@@ -717,7 +717,7 @@ export async function skillUsage(from, to, filters = {}) {
 // endpoint's (day, group, model) grain: per-session rows reached 53,896 for 30 days at 1h on
 // prod (2026-09-24), versus about 5,143 cells. A first-bucket row counts as observed only when
 // a real sample exists in [from, least(first bucket end, to)); the hourly stitch can otherwise
-// emit a baseline-only row that is no data, not a known $0. Minute buckets start at `from`.
+// emit a baseline-only row that is no data, not a known $0. Minute buckets are clock-aligned and only buckets with t >= `from` are returned.
 // The usability rule mirrors clientMetrics.js claudeUsage(): a positive report is usable even
 // with partial tokens; a zero report only beside known zero tokens or no token sample. Every
 // observed scope is exactly one of usable, report_missing or report_zero_with_tokens.
