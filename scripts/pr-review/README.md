@@ -138,6 +138,9 @@ settings with a fresh nonce; reissue archives the failed result. Exhaustion leav
 required coverage blocked. Terminal diagnostics stop retries. Valid results,
 including Critical/Major findings or uncertainty, stop retries and cannot be reissued.
 Prepare again for a new review; retries do not repair JSON or discard findings.
+Kiro preflight retries are separate: `KIRO_PREFLIGHT_ATTEMPTS` (default 2, maximum 3)
+repeats only transient startup failures, each within its own `KIRO_PREFLIGHT_TIMEOUT`
+budget (default 60, maximum 180 seconds); safety failures are never retried.
 
 The [workflow](../../.github/workflows/pr-review.yml) checks out the pinned BASE.
 Runner or prompt changes in PR HEAD take effect only in a review whose BASE contains them.

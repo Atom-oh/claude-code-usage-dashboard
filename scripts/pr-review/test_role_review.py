@@ -266,7 +266,7 @@ VERDICT: PASS
         result.update(changes)
         return result
 
-    def record(self, tag, response=None, raw=None, stderr="", rc=0, expected=0):
+    def record(self, tag, response=None, raw=None, stderr="", rc=0, expected=0, extra=()):
         output = self.root / f"{tag}-output.txt"
         diagnostic = self.root / f"{tag}-stderr.txt"
         output.write_text(raw if raw is not None else json.dumps(
@@ -279,7 +279,8 @@ VERDICT: PASS
         nonce = json.loads(receipt.read_text())["invocation_nonce"]
         self.cli(
             "record", "--work", self.work, "--tag", tag, "--output", output,
-            "--stderr", diagnostic, "--exit-code", rc, "--nonce", nonce, expected=expected,
+            "--stderr", diagnostic, "--exit-code", rc, "--nonce", nonce, *extra,
+            expected=expected,
         )
         return self.read(f"slot/{tag}-result.json")
 
@@ -1025,6 +1026,65 @@ VERDICT: PASS
         result["response"]["scope_complete"] = False
         file.write_text(json.dumps(result))
         self.assert_blocked()
+
+    def test_host_preflight_classification_replaces_cli_nonzero_exit(self):
+        # infra/main.tf makes both Kiro roles required; the default frontend path does not.
+        self.prepare(patch("infra/main.tf"))
+        sol = self.record("kiro-sol", rc=124, extra=("--preflight-failure", "timeout"), expected=2)
+        self.assertEqual(sol["failure_codes"], ["kiro_preflight_timeout"])
+        self.assertFalse(sol["valid"])
+        self.assertIsNone(sol["response"])
+        fable = self.record("kiro-fable", rc=1, extra=("--preflight-failure", "peer"), expected=2)
+        self.assertEqual(fable["failure_codes"], ["kiro_preflight_peer"])
+        self.record("codex")
+        self.record("claude-self")
+        self.assert_blocked()
+        summary = self.read("role-summary.json")
+        self.assertEqual(summary["failure_codes"],
+                         ["kiro_preflight_peer:kiro-fable", "kiro_preflight_timeout:kiro-sol"])
+        self.assertEqual(summary["responded"], ["claude-self", "codex"])
+        self.assertEqual(summary["roles"]["kiro-sol"]["status"], "blocked")
+        report = (self.work / "deterministic-review.md").read_text()
+        self.assertIn("- `kiro_preflight_timeout:kiro-sol`", report)
+
+    def test_preflight_classification_keeps_stderr_diagnostics(self):
+        self.prepare(patch("infra/main.tf"))
+        result = self.record("kiro-sol", rc=124, stderr="Error: insufficient credits",
+                             extra=("--preflight-failure", "timeout"), expected=2)
+        self.assertEqual(result["failure_codes"], ["kiro_preflight_timeout", "quota_diagnostic"])
+
+    def test_preflight_classification_never_validates_a_complete_response(self):
+        # A host-classified preflight failure never awards coverage, even with a
+        # complete response and exit 0.
+        self.prepare(patch("infra/main.tf"))
+        result = self.record("kiro-fable", rc=0, extra=("--preflight-failure", "peer"), expected=2)
+        self.assertEqual(result["failure_codes"], ["kiro_preflight_peer"])
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["response"])
+
+    def test_unknown_preflight_classification_is_rejected(self):
+        self.prepare(patch("infra/main.tf"))
+        self.cli("issue", "--work", self.work, "--tag", "kiro-sol")
+        output = self.root / "kiro-sol-output.txt"
+        diagnostic = self.root / "kiro-sol-stderr.txt"
+        output.write_text(json.dumps(self.response("kiro-sol")))
+        diagnostic.write_text("")
+        nonce = self.read("slot/kiro-sol-request.json")["invocation_nonce"]
+        # argparse rejects the unknown choice with exit 2 before anything is recorded.
+        self.cli(
+            "record", "--work", self.work, "--tag", "kiro-sol", "--output", output,
+            "--stderr", diagnostic, "--exit-code", 1, "--nonce", nonce,
+            "--preflight-failure", "quota", expected=2,
+        )
+        self.assertFalse((self.work / "slot/kiro-sol-result.json").exists())
+        result = self.record("kiro-sol", rc=1, expected=2)
+        self.assertEqual(result["failure_codes"], ["cli_nonzero_exit"])
+
+    def test_preflight_codes_are_static_blocking_codes(self):
+        import role_review
+        for code in ("kiro_preflight_timeout", "kiro_preflight_peer"):
+            self.assertIn(code, role_review.FAILURE_CODES)
+            self.assertNotIn(code, role_review.TERMINAL_CODES)
 
 
 if __name__ == "__main__":

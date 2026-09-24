@@ -82,6 +82,7 @@ FAILURE_CODES = {
     "invalid_json_wrapper", "empty_response", "model_selection_diagnostic",
     "model_fallback_diagnostic", "quota_diagnostic", "agent_preflight_diagnostic",
     "duplicate_record", "invalid_invocation_nonce", "invalid_issued_request",
+    "kiro_preflight_timeout", "kiro_preflight_peer",
 }
 TERMINAL_CODES = {"model_selection_diagnostic", "model_fallback_diagnostic",
                   "quota_diagnostic", "agent_preflight_diagnostic"}
@@ -1682,7 +1683,12 @@ def _record(args):
             raise Invalid("plan_input_incomplete")
         if not role["required"]:
             raise Invalid("inactive_role")
-        if args.exit_code != 0:
+        preflight = getattr(args, "preflight_failure", None)
+        if preflight:
+            # Host-classified withheld Kiro request: clearer than an exit code,
+            # still blocking, and never coverage.
+            result["failure_codes"].append(f"kiro_preflight_{preflight}")
+        elif args.exit_code != 0:
             result["failure_codes"].append("cli_nonzero_exit")
         stderr = text_file(args.stderr)
         failure = diagnostic_failure(stderr)
@@ -1862,6 +1868,8 @@ def main(argv=None):
     rec.add_argument("--stderr", required=True)
     rec.add_argument("--exit-code", type=int, required=True)
     rec.add_argument("--nonce", required=True)
+    rec.add_argument("--preflight-failure", choices=("timeout", "peer"),
+                     help="Host-classified Kiro preflight failure; PR input was withheld")
     issue = commands.add_parser("issue")
     issue.add_argument("--work", required=True)
     issue.add_argument("--tag", required=True, choices=tuple(ROLES))

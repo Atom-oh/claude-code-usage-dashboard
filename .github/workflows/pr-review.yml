@@ -19,7 +19,7 @@ jobs:
     name: AI Code Review
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: claude-code-usage-dashboard-claude-arm
-    timeout-minutes: 45
+    timeout-minutes: 50
     concurrency:
       group: pr-review-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -96,6 +96,10 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PANEL_TIMEOUT: "600"
+          # Each Kiro startup attempt gets its own 90 s budget; only transient
+          # failures retry. Worst case stays inside the 50-minute job limit.
+          KIRO_PREFLIGHT_TIMEOUT: "90"
+          KIRO_PREFLIGHT_ATTEMPTS: "2"
         run: |
           set -euo pipefail
           mkdir -p /tmp/pr-review
@@ -113,6 +117,7 @@ jobs:
             /tmp/pr-review/slot/*-result.json
             /tmp/pr-review/slot/*-request.json
             /tmp/pr-review/slot/*-timing.json
+            /tmp/pr-review/slot/*-preflight.json
             /tmp/pr-review/slot/*.flag
             /tmp/pr-review/role-plan.json
             /tmp/pr-review/role-summary.json

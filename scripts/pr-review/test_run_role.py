@@ -1,6 +1,8 @@
 """Behavioral tests for the subprocess boundary; no provider calls."""
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import stat
@@ -212,6 +214,247 @@ class RoleExecutionTests(unittest.TestCase):
                     cli, "claude-opus-5", self.root, os.environ.copy(), 2
                 )
                 self.assertFalse(ok)
+
+    def test_preflight_attempt_classifies_only_transient_failures_as_retryable(self):
+        write = (0, "", "")
+        readback = (0, "true", "")
+        timeout = (124, "", "\nReview CLI timed out.")
+        token = "token"  # The chat reply echoes the canary file written into cwd.
+        # (write, readback, canary, passed, code, retryable, execute calls)
+        rows = [
+            ("canary timeout", write, readback, timeout, False, 124, True, 3),
+            ("canary nonzero", write, readback, (1, "", "connection reset by peer"),
+             False, 1, True, 3),
+            ("tool use", write, readback, (0, "NO_TOOLS", "using tool: fs_read"),
+             False, 1, False, 3),
+            ("timeout + quota", write, readback, (124, "", "Monthly request limit reached"),
+             False, 124, False, 3),
+            ("wrong reply", write, readback, (0, "TOOLS_AVAILABLE", ""), False, 0, False, 3),
+            ("token exposed", write, readback, token, False, 1, False, 3),
+            ("model diagnostic", write, readback, (0, "NO_TOOLS", "[warn] failed to set model"),
+             False, 1, False, 3),
+            ("settings write nonzero", (9, "", "Settings unavailable"), readback,
+             (0, "NO_TOOLS", ""), False, 9, True, 1),
+            ("settings write fallback", (0, "", "Falling back to user specified default"),
+             readback, (0, "NO_TOOLS", ""), False, 1, False, 1),
+            ("readback unconfirmed", write, (0, "false", ""), (0, "NO_TOOLS", ""),
+             False, 1, False, 2),
+            ("readback timeout", write, timeout, (0, "NO_TOOLS", ""), False, 124, True, 2),
+            ("pass", write, readback, (0, "NO_TOOLS", ""), True, 0, False, 3),
+        ]
+        for index, row in enumerate(rows):
+            name, setting, reading, canary, passed, code, retryable, expected_calls = row
+            with self.subTest(row=name):
+                cwd = self.root / f"case-{index}"
+                cwd.mkdir()
+                calls = []
+                def execute(command, cwd, environment, input_text, timeout):
+                    calls.append(command)
+                    if command[1] == "settings":
+                        return setting if command[-1] == "true" else reading
+                    if isinstance(canary, str):  # The token row echoes the canary file.
+                        return 1, (Path(cwd) / "preflight-canary.txt").read_text(), ""
+                    return canary
+                with patch.object(self.runner, "execute", side_effect=execute):
+                    result = self.runner.preflight_attempt(
+                        "kiro-cli", "gpt-5.6-sol", cwd, os.environ.copy(), 2
+                    )
+                self.assertEqual(
+                    (result[0], result[1], result[3], len(calls)),
+                    (passed, code, retryable, expected_calls),
+                )
+
+    def test_late_exit_zero_is_classified_before_it_becomes_a_timeout(self):
+        # The call at index `stage` overruns the 2 s budget; the others are quick.
+        # (stage, reply, passed, code, retryable, execute calls)
+        rows = [
+            ("late canary NO_TOOLS", 2, (0, "NO_TOOLS", ""), False, 124, True, 3),
+            ("late canary wrong reply", 2, (0, "TOOLS_AVAILABLE", ""), False, 0, False, 3),
+            ("late readback false", 1, (0, "false", ""), False, 1, False, 2),
+            ("late readback true", 1, (0, "true", ""), False, 124, True, 2),
+        ]
+        for index, row in enumerate(rows):
+            name, stage, reply, passed, code, retryable, expected_calls = row
+            with self.subTest(row=name):
+                cwd = self.root / f"late-{index}"
+                cwd.mkdir()
+                now = [100.0]
+                calls = []
+                def execute(command, cwd, environment, input_text, timeout):
+                    calls.append(command)
+                    now[0] += 3 if len(calls) == stage + 1 else 0.1
+                    if command[1] != "settings":
+                        return reply
+                    if command[-1] == "true":
+                        return 0, "", ""
+                    return reply if stage == 1 else (0, "true", "")
+                with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
+                        patch.object(self.runner, "execute", side_effect=execute):
+                    result = self.runner.preflight_attempt(
+                        "kiro-cli", "gpt-5.6-sol", cwd, os.environ.copy(), 2
+                    )
+                # A late exit-0 wrong canary reply is a canary failure, never a timeout.
+                self.assertEqual(
+                    (result[0], result[1], result[3], len(calls)),
+                    (passed, code, retryable, expected_calls),
+                )
+
+    def retry_stub(self, now, calls, tokens, replies):
+        """Fake-clock execute double for preflight_with_retries.
+
+        Settings calls take 0.5 s; a 124 chat reply consumes the passed budget.
+        """
+        def execute(command, cwd, environment, input_text, timeout):
+            calls.append((command[1], round(timeout, 3)))
+            if command[1] == "settings":
+                now[0] += 0.5
+                return (0, "", "") if command[-1] == "true" else (0, "true", "")
+            tokens.append((Path(cwd) / "preflight-canary.txt").read_text())
+            reply = replies[len(tokens) - 1]
+            now[0] += timeout if reply[0] == 124 else 0.5
+            return reply
+        return execute
+
+    def test_retries_give_each_attempt_a_full_budget_and_fresh_canary(self):
+        cwd = self.root / "retry"
+        cwd.mkdir()
+        now = [100.0]
+        calls, tokens = [], []
+        replies = [(124, "", "\nReview CLI timed out."), (0, "NO_TOOLS", "")]
+        output = io.StringIO()
+        with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(self.runner, "execute",
+                             side_effect=self.retry_stub(now, calls, tokens, replies)), \
+                contextlib.redirect_stdout(output):
+            passed, code, error, timed_out = self.runner.preflight_with_retries(
+                "kiro-cli", "gpt-5.6-sol", cwd, os.environ.copy(), 2, 2, "kiro-sol"
+            )
+        self.assertTrue(passed, error)
+        self.assertEqual(code, 0)
+        self.assertFalse(timed_out)
+        # Attempt 2 starts again at the full 2.0 s budget and re-runs both settings steps.
+        self.assertEqual(calls, [
+            ("settings", 2.0), ("settings", 1.5), ("chat", 1.0),
+            ("settings", 2.0), ("settings", 1.5), ("chat", 1.0),
+        ])
+        self.assertEqual(len(tokens), 2)
+        self.assertNotEqual(tokens[0], tokens[1])
+        self.assertEqual(output.getvalue().splitlines(), [
+            "kiro-sol: preflight attempt 1/2 timed out after 2.0s; retrying",
+            "kiro-sol: preflight attempt 2/2 passed",
+        ])
+
+    def test_retries_stop_at_the_attempt_limit_or_a_safety_failure(self):
+        timeout = (124, "", "\nReview CLI timed out.")
+        cases = [
+            ("every attempt times out", [timeout] * 3, 3, (False, 124, True), 3, [
+                "kiro-sol: preflight attempt 1/3 timed out after 2.0s; retrying",
+                "kiro-sol: preflight attempt 2/3 timed out after 2.0s; retrying",
+                "kiro-sol: preflight attempt 3/3 timed out after 2.0s; PR input withheld",
+            ]),
+            ("safety failure", [(0, "NO_TOOLS", "using tool: fs_read"), (0, "NO_TOOLS", "")],
+             2, (False, 1, False), 1, [
+                "kiro-sol: preflight attempt 1/2 failed a startup safety check (exit 1); "
+                "not retrying",
+            ]),
+        ]
+        for index, (name, replies, attempts, expected, chats, lines) in enumerate(cases):
+            with self.subTest(case=name):
+                cwd = self.root / f"limit-{index}"
+                cwd.mkdir()
+                now = [100.0]
+                calls, tokens = [], []
+                output = io.StringIO()
+                with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
+                        patch.object(self.runner, "execute",
+                                     side_effect=self.retry_stub(now, calls, tokens, replies)), \
+                        contextlib.redirect_stdout(output):
+                    passed, code, error, timed_out = self.runner.preflight_with_retries(
+                        "kiro-cli", "gpt-5.6-sol", cwd, os.environ.copy(), 2, attempts,
+                        "kiro-sol"
+                    )
+                self.assertEqual((passed, code, timed_out), expected)
+                self.assertEqual(len(tokens), chats)
+                self.assertEqual(sum(1 for kind, _ in calls if kind == "chat"), chats)
+                self.assertEqual(output.getvalue().splitlines(), lines)
+
+    BARRIER_PLAN = {"plan_digest": "d" * 64, "roles": {
+        "codex": {"model": "m-codex", "required": True},
+        "kiro-fable": {"model": "claude-opus-5", "required": True},
+        "kiro-sol": {"model": "gpt-5.6-sol", "required": True}}}
+    COHORT = "0123456789abcdef" * 2
+
+    def peer_receipt(self, work, peer, ok):
+        role_review.write_json(work / "slot" / f"{peer}-preflight.json", {
+            "cohort": self.COHORT, "plan_digest": self.BARRIER_PLAN["plan_digest"],
+            "tag": peer, "model": self.BARRIER_PLAN["roles"][peer]["model"], "ok": ok,
+        })
+
+    def test_barrier_waits_for_peer_retries_until_the_overall_deadline(self):
+        # (peer ok, arrival offset or None, pre-written, deadline, result, sleeps expected)
+        rows = [
+            ("peer passes on its retry", True, 3.0, False, 104.0, (True, []), True),
+            ("same arrival, single-attempt deadline", True, 3.0, False, 102.0,
+             (False, ["kiro-sol"]), True),
+            ("peer never answers", None, None, False, 104.0, (False, ["kiro-sol"]), True),
+            ("failed peer receipt", False, None, True, 104.0, (False, ["kiro-sol"]), False),
+        ]
+        for index, row in enumerate(rows):
+            name, peer_ok, arrive, prewritten, deadline, expected, slept = row
+            with self.subTest(row=name):
+                work = self.root / f"barrier-{index}"
+                receipt = work / "slot" / "kiro-sol-preflight.json"
+                if prewritten:
+                    self.peer_receipt(work, "kiro-sol", peer_ok)
+                now = [100.0]
+                sleeps = []
+                def sleep(seconds):
+                    sleeps.append(seconds)
+                    now[0] += seconds
+                    # The peer's receipt lands after one attempt budget, on its retry.
+                    if arrive is not None and now[0] >= 100.0 + arrive and not receipt.exists():
+                        self.peer_receipt(work, "kiro-sol", peer_ok)
+                with patch.dict(os.environ, {"KIRO_PREFLIGHT_COHORT": self.COHORT}), \
+                        patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
+                        patch.object(self.runner.time, "sleep", side_effect=sleep):
+                    result = self.runner.preflight_barrier(
+                        work, self.BARRIER_PLAN, "kiro-fable", True, deadline
+                    )
+                self.assertEqual(result, expected)
+                self.assertEqual(bool(sleeps), slept)
+                own = json.loads((work / "slot" / "kiro-fable-preflight.json").read_text())
+                self.assertIs(own["ok"], True)
+
+    def test_barrier_without_cohort_or_after_own_failure_releases_nothing_extra(self):
+        work = self.root / "barrier-standalone"
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("KIRO_PREFLIGHT_COHORT", None)
+            self.assertEqual(
+                self.runner.preflight_barrier(work, self.BARRIER_PLAN, "kiro-fable", True, 0),
+                (True, []),
+            )
+            self.assertEqual(
+                self.runner.preflight_barrier(work, self.BARRIER_PLAN, "kiro-fable", False, 0),
+                (False, []),
+            )
+        self.assertFalse((work / "slot" / "kiro-fable-preflight.json").exists())
+        work = self.root / "barrier-own-failure"
+        with patch.dict(os.environ, {"KIRO_PREFLIGHT_COHORT": self.COHORT}), \
+                patch.object(self.runner.time, "sleep") as sleep:
+            self.assertEqual(
+                self.runner.preflight_barrier(work, self.BARRIER_PLAN, "kiro-fable", False, 0),
+                (False, []),
+            )
+        sleep.assert_not_called()
+        own = json.loads((work / "slot" / "kiro-fable-preflight.json").read_text())
+        self.assertIs(own["ok"], False)
+        work = self.root / "barrier-bad-cohort"
+        with patch.dict(os.environ, {"KIRO_PREFLIGHT_COHORT": "not-hex"}):
+            self.assertEqual(
+                self.runner.preflight_barrier(work, self.BARRIER_PLAN, "kiro-fable", True, 0),
+                (False, []),
+            )
+        self.assertFalse((work / "slot" / "kiro-fable-preflight.json").exists())
 
     def test_wrapper_withholds_all_kiro_input_when_one_preflight_fails(self):
         self.wrapper_case(True)
