@@ -29,11 +29,12 @@ import EmptyState from "./EmptyState.jsx";
 // 조회·표시할 때(예: Cost.jsx의 SegmentedControl) 실제 렌더링 중인 버킷 크기를 넘긴다 — 안
 // 그러면 우측 끝 보정(아래)이 전역 intervalHours를 쓰다 화면에 보이는 버킷과 어긋난 custom
 // range를 만든다(리뷰에서 MAJOR로 확인).
-// disabled(SeriesBarChart의 zoomDisabled)는 화면의 막대가 지금 선택과 다른 버킷 크기일 수
-// 있을 때 드래그 줌을 끈다 — useApi stale(기간 변경 응답을 기다리며 이전 기간의 행을 보여주는
-// 중)인 동안 페이지가 넘기는 bucketHoursOverride는 이미 새 버킷 크기라 우측 끝 보정이 틀린 전역
-// 구간을 만든다. 라벨 기반 대체(bucketHoursOverride를 비우는 방법)로는 부족하다: 날짜 라벨은 주간
-// 버킷도 24h로, 그 밖의 라벨은 전역 intervalHours로 보정해 7일 프리셋에서 1h 막대를 24h만큼 민다.
+// disabled(GroupAreaChart·SeriesBarChart·DualLineChart의 zoomDisabled)는 화면의 행이 지금 선택과
+// 다른 버킷 크기일 수 있을 때 드래그 줌을 끈다 — useApi stale(기간 변경 응답을 기다리며 이전 기간의
+// 행을 보여주는 중)인 동안 페이지가 넘기는 bucketHoursOverride나 전역 intervalHours는 이미 새 버킷
+// 크기라 우측 끝 보정이 틀린 전역 구간을 만든다. 라벨 기반 대체(bucketHoursOverride를 비우는 방법)로는
+// 부족하다: 날짜 라벨은 주간 버킷도 24h로, 그 밖의 라벨은 전역 intervalHours로 보정해 7일 프리셋에서
+// 1h 행을 24h만큼 민다. 시계열 차트를 그리는 호출부는 모두 데이터 훅의 stale을 넘긴다(zoomGuard.test.js).
 function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false) {
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
@@ -96,9 +97,9 @@ function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false)
 // 이전 데이터를 그대로 두었다가 새 응답이 오면 그 자리에서 교체하는데, 애니메이션이 켜져 있으면
 // 교체될 때마다 차트가 처음부터 다시 그려져 "화면을 유지한 채 바꿔 끼운다"는 동작이 무의미해진다.
 // 시계열, 그룹별 area 하나씩 — ../awsops AreaTrend와 같은 그라디언트 기법, 그룹 색상만 다중.
-export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours }) {
+export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours, zoomDisabled = false }) {
   const c = useChartColors();
-  const zoom = useDragZoom(undefined, bucketHours);
+  const zoom = useDragZoom(undefined, bucketHours, undefined, zoomDisabled);
   if ((rows || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} help={help} right={right}>
@@ -315,12 +316,12 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
   );
 }
 
-export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter }) {
+export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter, zoomDisabled = false }) {
   const c = useChartColors();
   const domain = Array.isArray(timeDomain) && timeDomain.length === 2
     && timeDomain.every(Number.isFinite) && timeDomain[0] < timeDomain[1] ? timeDomain : undefined;
-  const zoomTop = useDragZoom(undefined, bucketHours, domain);
-  const zoomBottom = useDragZoom(undefined, bucketHours, domain);
+  const zoomTop = useDragZoom(undefined, bucketHours, domain, zoomDisabled);
+  const zoomBottom = useDragZoom(undefined, bucketHours, domain, zoomDisabled);
   if ((rows || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} help={help} right={right}>

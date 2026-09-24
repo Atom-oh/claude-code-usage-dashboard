@@ -212,6 +212,44 @@ test("a drag that becomes zoom-disabled before mouseup does not zoom", async () 
   await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe("none"));
 });
 
+// GroupAreaChart와 DualLineChart도 zoomDisabled를 각 줌 훅에 전달해야 한다. DualLineChart는
+// 상단·하단 패널이 서로 다른 훅을 쓰므로 두 패널을 각각 드래그해 확인한다.
+test.each([
+  ["GroupAreaChart", false, 0],
+  ["GroupAreaChart", true, 0],
+  ["DualLineChart top panel", false, 0],
+  ["DualLineChart top panel", true, 0],
+  ["DualLineChart bottom panel", false, 1],
+  ["DualLineChart bottom panel", true, 1],
+])("%s zoomDisabled=%s: a drag across hourly points respects the guard", async (name, disabled, panel) => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  function Selection() {
+    const { custom } = useRange();
+    return <output aria-label="선택 구간">{custom
+      ? `${custom.from.toISOString()} / ${custom.to.toISOString()}` : "none"}</output>;
+  }
+  const hours = ["2026-09-01 00:00:00", "2026-09-01 01:00:00", "2026-09-01 02:00:00"];
+  const areaRows = hours.map((t, i) => ({ t, group: "bedrock", v: 1 + i }));
+  const dualRows = hours.map((t, i) => ({ t, a: 1 + i, b: 2 + i }));
+  const el = name === "GroupAreaChart"
+    ? <GroupAreaChart title="t" xKey="t" valueKey="v" rows={areaRows} zoomDisabled={disabled} />
+    : <DualLineChart title="t" xKey="t" rows={dualRows}
+      lines={[{ key: "a" }, { key: "b", axis: "right" }]} zoomDisabled={disabled} />;
+  const { container } = render(<>{el}<Selection /></>, { wrapper: Providers });
+  await waitFor(() => expect(container.querySelectorAll(".recharts-wrapper").length).toBeGreaterThan(panel));
+  const chart = container.querySelectorAll(".recharts-wrapper")[panel];
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  // 선·영역 차트의 x축은 point 축이므로 점 위치로 계산한다.
+  const x = (i) => left + (right - left) * i / 2;
+  fireEvent.mouseDown(chart, { clientX: x(0), clientY: 40 });
+  fireEvent.mouseMove(chart, { clientX: x(2), clientY: 40 });
+  expect(chart.querySelectorAll(".recharts-reference-area").length).toBe(disabled ? 0 : 1);
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 40 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent)
+    .toBe(disabled ? "none" : "2026-09-01T00:00:00.000Z / 2026-09-01T03:00:00.000Z"));
+});
+
 const animationCases = [
   ["GroupAreaChart", () => <GroupAreaChart title="t" xKey="day" valueKey="v"
     rows={[{ day: "2026-09-01", group: "bedrock", v: 1 }, { day: "2026-09-02", group: "bedrock", v: 2 }]} />],
