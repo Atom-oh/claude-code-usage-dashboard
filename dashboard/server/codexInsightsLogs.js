@@ -20,7 +20,7 @@ const DETAIL_ATTRIBUTES = [...CODEX_USAGE_KEYS, "event.name", "event.kind", "con
 const DETAIL_RESOURCES = ["user.email", "enduser.id", "backend", "project.name", "service.version"];
 const sqlStrings = (values) => `[${values.map((v) => `'${v}'`).join(",")}]`;
 
-function logSelection(from, to, filters = {}, distinct = true) {
+export function logSelection(from, to, filters = {}, distinct = true) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";

@@ -1,7 +1,7 @@
 import { query } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
 import { codexPrices, validateClientFilters } from "./clientMetrics.js";
-import { buildCodexInsightsLogQuery, buildCodexLogSummaryQuery, foldCodexLogSummary, foldCodexInsightsLogs } from "./codexInsightsLogs.js";
+import { buildCodexLogAggregateQuery, foldCodexLogAggregates } from "./codexLogAggregates.js";
 import { buildMetricQuery, buildTraceQuery, foldCodexMetrics, foldCodexTraces } from "./codexSignals.js";
 
 const TYPES = ["sum", "gauge", "histogram", "exponential_histogram"];
@@ -25,17 +25,13 @@ async function optionalQuery(request, run) {
 
 export async function codexInsights(from, to, raw = {}, run = query) {
   const filters = validateClientFilters(raw, ["codex"]);
-  const logQuery = buildCodexInsightsLogQuery(from, to, filters, { detailsOnly: true });
-  const summaryQuery = buildCodexLogSummaryQuery(from, to, filters);
-  const [logRows, summaryRows, metricResults, traceResult] = await Promise.all([
+  const logQuery = buildCodexLogAggregateQuery(from, to, filters, codexPrices);
+  const [logRows, metricResults, traceResult] = await Promise.all([
     run(logQuery.sql, logQuery.params),
-    run(summaryQuery.sql, summaryQuery.params),
     Promise.all(TYPES.map((type) => optionalQuery(buildMetricQuery(type, from, to, filters), run))),
     optionalQuery(buildTraceQuery(from, to, filters), run),
   ]);
-  const { coverage: logCoverage, ...logs } = foldSignal(logRows,
-    (rows) => foldCodexInsightsLogs(rows, codexPrices, { summary: foldCodexLogSummary(summaryRows), deduplicated: true }),
-    "too much Codex log data", () => foldCodexInsightsLogs([], codexPrices));
+  const { coverage: logCoverage, ...logs } = foldCodexLogAggregates(logRows);
   const { coverage: metricCoverage, metrics } = foldSignal(metricResults.flatMap((r) => r.rows),
     (rows) => foldCodexMetrics(rows, from, to), "too much signal data");
   const { coverage: traceCoverage, spans, traces } = foldCodexTraces(traceResult.rows);
@@ -53,8 +49,8 @@ export async function codexInsights(from, to, raw = {}, run = query) {
     limitations: [
       "Logs supply token and AWS list-price estimates; metrics and traces are independent diagnostic signals.",
       "Metrics use export timestamps; boundary exports may span the requested start.",
-      "Stream event counts, sessions and latency distributions are aggregated in ClickHouse across the full filtered window; token and operational details retain per-event semantics.",
-      "Oversized detailed-event or metric results remain labelled limited; raw stream volume alone does not trigger the log limit.",
+      "Logs are deduplicated and aggregated in one ClickHouse query across the filtered window; usage retains per-request pricing tiers and scope completeness.",
+      "Log limits apply independently to aggregate dimensions, not event volume. Limited sections do not hide unrelated summaries.",
       "Model filters on metrics/spans require a model attribute; model-less records are excluded.",
       "Trace statistics cover at most the latest 200 span records per trace from the latest 50 traces, not the entire range or guaranteed complete turns. Truncated traces withhold wall time and total errors.",
       "Git output, retained code quality and saved work time are not collected by this integration.",

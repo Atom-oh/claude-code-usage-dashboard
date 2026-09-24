@@ -60,23 +60,21 @@ sum/mean/extrema are null. A derived zero increment between known positive
 cumulative sums remains a measured zero.
 
 Logs are deduplicated by timestamp and complete sorted resource/attribute maps.
-ClickHouse summarizes full-window event counts and SSE/WebSocket latency distributions
-before returning data. Weighted exact quantiles preserve the existing empirical
-nearest-rank P50/P95 definition. The detail query groups intermediate stream records
-into session-scope markers alongside individual priced events in the same table read.
-Those markers are checked against usage sessions in that result, so ingestion between
-the detail and summary queries cannot manufacture complete usage. Markers stay internal
-and are not exposed by the API. Counts and timing summaries can reflect a nearby
-ingestion snapshot; prices, completeness and unit denominators use the detail result.
+One ClickHouse query first compacts intermediate stream events with full-identity
+distinct counts and duration weights, then aggregates event counts, usage/Effort, operational summaries,
+latency distributions, runtime settings and session-scope evidence. The server
+receives aggregate dimensions instead of individual events. Exact weighted quantiles
+retain empirical nearest-rank P50/P95. Pricing evaluates each completion's context
+tier and routing before aggregation, using the configured `codexPricing.js` rates;
+compensated summation reduces rounding error across large groups. The raw fold remains
+a regression oracle, not a second production query.
 
-Token-bearing completions, failures, requests, tools, approvals and runtime metadata
-retain per-event processing and the existing pricing function. Per-session cost uses
-the same detail snapshot as pricing, including session IDs retained by stream-scope
-markers. Costs and Effort rows sum usable amounts with `cost_partial` disclosure;
-all-unknown costs remain null and known zero costs remain zero. Cost units divide
-that subtotal by observed HTTP attempts/sessions and retain partial labels. Missing
-session identity still withholds session units. Token completeness is unchanged.
-See [ADR-013](../decisions/ADR-013-known-cost-subtotals.md).
+Scope evidence, priced usage and request/session denominators share that query's
+snapshot. Scope identities remain internal and never appear in API output. Costs
+and Effort rows sum usable amounts with `cost_partial` disclosure; all-unknown costs
+remain null and known zero remains zero. Cost units divide that subtotal by observed
+HTTP attempts/sessions. Missing session identity withholds session units. See
+[ADR-013](../decisions/ADR-013-known-cost-subtotals.md).
 Summary/Effort `observed_tokens` retains known input/output pairs with `tokens_partial`,
 including when unrelated usage or cache metadata is missing. Canonical token counts,
 fractions and rates keep their completeness guards; observations are not a replacement
@@ -85,20 +83,26 @@ See [ADR-014](../decisions/ADR-014-observed-token-subtotals.md).
 Rejected-only request scopes retain errors and zero recorded completion usage.
 Accepted/uncertain requests and other missing evidence stay partial; see
 [ADR-016](../decisions/ADR-016-rejected-codex-requests.md).
-Intermediate stream records contribute only session-scope markers to that detail
-transfer; their counts and latency remain in the database summary. Projection strips
-unused fields only after full-identity
-deduplication, and the detail fold does not deduplicate projected rows again.
-Those markers retain emitted model identities without adding result rows, so
-unrelated models cannot establish or invalidate rejection-only scope evidence.
-The same user/model/backend scope, including model-less session attribution, applies
-to summaries and details.
+Intermediate stream records contribute scope evidence, counts and latency, never
+additional usage or cost. Projection and aggregation follow full-identity deduplication.
+Evidence preserves emitted model identities and user/backend/project/session boundaries,
+including model-less session attribution. Unrelated models cannot establish or
+invalidate rejection-only scope evidence.
 
-The 50,000-row safeguard now bounds detailed events plus stream-scope markers and
-summary dimensions, rather than raw stream traffic. Oversized detail or metric results still return
-`coverage.status = limited`, withholding affected derived values. Transport and
-permission failures remain errors. This needs no schema or collector migration.
-The isolated compaction regression is included in `scripts/test-client-sql.sh`.
+Log aggregates share a 50,000-row transfer budget, independent of event volume.
+The query counts each family before transfer. If their combined size exceeds the
+budget, each family receives an equal bounded allowance; oversized families return
+only a limit marker. Total usage is independent of Effort rows. A capped family is
+discarded and named in
+`coverage.logs.limited_sections`, with `partial=true`; unaffected summaries remain usable.
+Missing scope coverage marks known usage/cost partial and withholds strict ratios and
+session units. Missing usage coverage withholds token/cost summaries. Event-count
+coverage becomes `limited` only when that family itself is capped. Oversized metric
+results retain their existing independent `limited` status. Transport and permission
+failures remain errors. No schema or Collector migration is required. The real
+ClickHouse regression in `scripts/test-client-sql.sh` compares the aggregate result
+with the raw fold and exercises large stream and request/completion windows.
+
 Trace queries select the latest 50 trace groups and retain at most the latest 200
 distinct span records per group. Coverage counts and operation summaries describe
 only the selected records. Truncated traces are labelled and withhold complete

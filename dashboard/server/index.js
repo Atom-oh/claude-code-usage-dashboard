@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import basicAuth from "express-basic-auth";
 import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
+import { sendJson } from "./jsonResponse.js";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
@@ -292,7 +293,7 @@ function route(path, handler, { warm = true, client = "claude", validate } = {})
       parseRange(req.query, RANGE_OPTS);
       parseIntervalHours(req.query.intervalHours);
       validate?.(req.query);
-      res.json(await fetchCached(path, handler, req.query));
+      await sendJson(req, res, await fetchCached(path, handler, req.query));
     } catch (err) {
       if (err instanceof ValidationError) {
         res.status(400).json({ error: err.message, detail: err.detail });

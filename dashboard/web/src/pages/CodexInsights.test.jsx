@@ -175,6 +175,18 @@ test("query-limited signals are distinguished from absent telemetry", () => {
   expect(screen.getByText("요청당 추정 비용").closest(".shadow-card").textContent).toContain("—");
 });
 
+test("limited log tables disclose their bound while available summary and effort remain visible", () => {
+  const data = fixture();
+  data.coverage.logs = { status: "observed", records: 120000, partial: true, limited_sections: ["tool"] };
+  data.summary = { ...data.summary, observed_tokens: 6120000, tokens_partial: false, cost_per_request: 0.125 };
+  show(data);
+  expect(screen.getByText(/일부 로그 항목의 집계 결과가 조회 한도를 넘었습니다/)).toBeTruthy();
+  expect(screen.getByText("관측 토큰", { selector: "span.truncate" }).closest(".shadow-card").textContent)
+    .toContain("6,120,000");
+  expect(screen.getByText("high")).toBeTruthy();
+  expect(screen.getByText("요청당 추정 비용").closest(".shadow-card").textContent).toContain("$0.125");
+});
+
 test("turn summaries weight histogram observations and withhold partial measurements", () => {
   const data = fixture();
   data.metrics = [

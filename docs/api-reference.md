@@ -29,6 +29,11 @@ second precision. Historical rollup ends, latest-hour data and existence queries
 specific approximations; see [time boundaries](reference/data.md).
 Config, health and chat routes do not use this range wrapper.
 
+Wrapped data responses negotiate gzip for JSON bodies of at least 4 KiB. They retain
+`Cache-Control: no-store` and add `Vary: Accept-Encoding`; compression does not change
+authentication, range/filter cache keys, null values, or JSON escaping. Health
+responses and streaming chat keep their separate response handling.
+
 ## Coding-client views
 
 [Activation](runbooks/codex-telemetry.md) controls `/api/config`'s
@@ -92,6 +97,16 @@ Claude counter/baseline rules remain.
 `effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
 when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.
 `intervalHours` is validated but ignored.
+
+Codex detail log summaries use one query for full-identity deduplication, per-response
+pricing and scope evidence. The 50,000-row transfer budget applies to aggregate
+dimensions, not raw events. Families are counted before transfer; if their combined
+size exceeds the budget, oversized families return only a limit marker under an
+equal allowance. Whole-window usage totals are independent of Effort rows. `coverage.logs.limited_sections` names capped families
+(`event`, `usage`, `effort`, `scope`, `operations`, `latency`, `tool`, `approval`, `runtime`) and
+sets `partial=true`. Only affected results are withheld: limited scope evidence keeps
+known subtotals partial while withholding strict ratios and session units. See
+[Codex bounds](reference/codex-observability.md#api-and-bounds).
 
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key and is not warmed; `/api/codex/insights`

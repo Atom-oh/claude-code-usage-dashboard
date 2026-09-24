@@ -98,6 +98,9 @@ export default function CodexInsights({ range, enabled = true, hold = false, sec
             <p role="status" className="text-sm text-warning-text">
               일부 상세 신호가 조회 한도를 넘었습니다. 해당 신호의 수치는 표시하지 않으며, 기간을 줄이면 확인할 수 있습니다. 공통 지표와 다른 신호는 유지됩니다.
             </p>}
+          {data?.coverage?.logs?.limited_sections?.length > 0 && <p role="status" className="text-sm text-warning-text">
+            일부 로그 항목의 집계 결과가 조회 한도를 넘었습니다. 해당 항목은 보류하고, 확인 가능한 사용량·비용과 다른 집계는 유지합니다.
+          </p>}
           {allowedTabs.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Codex 상세 보기">
             {allowedTabs.map((name) => <button key={name} type="button" aria-pressed={tab === name} onClick={() => setTab(name)}
               className={`rounded-lg border px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${tab === name
