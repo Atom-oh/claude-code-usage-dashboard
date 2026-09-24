@@ -2,6 +2,7 @@ import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl } from "./pricing.js";
 import { rollupAdoption } from "./activity.js";
+import { foldModelCostCells, MODEL_COST_ROW_LIMIT } from "./modelCostTrend.js";
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -712,22 +713,77 @@ export async function skillUsage(from, to, filters = {}) {
 }
 
 // 모델별 지출 트렌드 (Cost 페이지 스택 바). intervalHours로 시간별/일간/주간 토글.
-export async function costByModelDaily(from, to, intervalHours = 24, filters = {}) {
+// Report availability is decided per session inside ClickHouse, then aggregated to the
+// endpoint's (day, group, model) grain: per-session rows reached 53,896 for 30 days at 1h on
+// prod (2026-09-24), versus about 5,143 cells. A first-bucket row counts as observed only when
+// a real sample exists in [from, least(first bucket end, to)); the hourly stitch can otherwise
+// emit a baseline-only row that is no data, not a known $0. Minute buckets start at `from`.
+// The usability rule mirrors clientMetrics.js claudeUsage(): a positive report is usable even
+// with partial tokens; a zero report only beside known zero tokens or no token sample. Every
+// observed scope is exactly one of usable, report_missing or report_zero_with_tokens.
+export function costByModelDailySql(intervalHours, filters = {}) {
+  const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  const b = incBucket(intervalHours, `AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`);
-  const rows = await query(
-    `${GROUP_CTE}
-    SELECT t AS day,
-        ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model,
-        ${TOKEN_SUMS}
-    FROM ${b.sub} m
-    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.Model != '' ${f.where}
-    GROUP BY day, "group", model ORDER BY day`,
-    { ...range(from, to, b.raw), ...b.params, ...f.params }
-  );
-  // cost 키 이름을 유지해 SeriesBarChart(valueKey="cost")가 그대로 동작하게 한다.
-  return withComputedCost(rows);
+  const b = incBucket(intervalHours, metricFilter);
+  const firstObservations = b.raw ? "" : `, model_cost_first_observations AS (
+    SELECT DISTINCT SessionId, UserEmail, MetricName, Model, TokenType, Decision
+    FROM claude_code.otel_metrics_sum
+    WHERE TimeUnix >= {from:DateTime}
+      AND TimeUnix < least(${fromBucketBounds(intervalHours).endExpr}, {to:DateTime})
+      ${metricFilter}
+  )`;
+  const observed = b.raw ? "1" : `(m.t >= {from:DateTime} OR
+    (m.SessionId, m.UserEmail, m.MetricName, m.Model, m.TokenType, m.Decision)
+      IN (SELECT * FROM model_cost_first_observations))`;
+  const tokenColumns = ["scope_input", "scope_output", "scope_cache_read", "scope_cache_write"];
+  const strictSum = (col, name) =>
+    `if(countIf(NOT (isFinite(${col}) AND ${col} >= 0)) > 0, NULL, sum(${col})) AS ${name}`;
+  const sql = `${GROUP_CTE}${firstObservations}
+    SELECT day, "group", model,
+        sumIf(scope_report, usable) AS known_report,
+        countIf(usable) AS usable_scopes,
+        countIf(NOT report_valid) AS report_missing,
+        countIf(report_valid AND NOT usable) AS report_zero_with_tokens,
+        ${strictSum("scope_input", "input_tokens")},
+        ${strictSum("scope_output", "output_tokens")},
+        ${strictSum("scope_cache_read", "cache_read_tokens")},
+        ${strictSum("scope_cache_write", "cache_write_tokens")},
+        sumIf(scope_tokens, token_obs > 0 AND tokens_valid) AS observed_token_sum,
+        countIf(token_obs > 0 AND tokens_valid) AS observed_token_scopes,
+        countIf(token_obs = 0 OR NOT tokens_valid) AS unobserved_token_scopes
+    FROM (
+      SELECT day, "group", model, report_obs, token_obs,
+          reported_cost AS scope_report, input_tokens AS scope_input, output_tokens AS scope_output,
+          cache_read_tokens AS scope_cache_read, cache_write_tokens AS scope_cache_write,
+          report_obs > 0 AND isFinite(scope_report) AND scope_report >= 0 AS report_valid,
+          ${tokenColumns.map((c) => `isFinite(${c}) AND ${c} >= 0`).join(" AND ")} AS tokens_valid,
+          ${tokenColumns.join(" + ")} AS scope_tokens,
+          report_valid AND (scope_report > 0 OR token_obs = 0 OR (tokens_valid AND scope_tokens = 0)) AS usable
+      FROM (
+        SELECT t AS day,
+            ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, m.SessionId AS session,
+            ${TOKEN_SUMS},
+            countIf(${observed} AND m.MetricName = 'claude_code.cost.usage') AS report_obs,
+            countIf(${observed} AND m.MetricName = 'claude_code.token.usage') AS token_obs
+        FROM ${b.sub} m
+        LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        WHERE m.Model != '' ${f.where}
+        GROUP BY day, "group", model, session
+      )
+      -- A scope with no observed cost or token sample is a baseline-only row: no data.
+      WHERE report_obs > 0 OR token_obs > 0
+    )
+    GROUP BY day, "group", model ORDER BY day
+    LIMIT ${MODEL_COST_ROW_LIMIT + 1}`;
+  return { sql, params: { ...b.params, ...f.params }, raw: b.raw };
+}
+
+export async function costByModelDaily(from, to, intervalHours = 24, filters = {}) {
+  const { sql, params, raw } = costByModelDailySql(intervalHours, filters);
+  // The fold rejects more than MODEL_COST_ROW_LIMIT (day, group, model) rows with a 400 (the
+  // SQL asks for one more); per-session rows never leave ClickHouse.
+  // Existing keys stay: `cost` remains the computed diagnostic, `reported_cost` the spend.
+  return foldModelCostCells(await query(sql, { ...range(from, to, raw), ...params }));
 }
 
 // 모델별 지출 vs 이전 동일 길이 기간. cumulative의 진짜 이점이 여기서 나온다 — 두 구간(현재/이전)

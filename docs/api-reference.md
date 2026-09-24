@@ -244,11 +244,31 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 | `/api/cost/summary` | Per `group`: `computed_cost`, `reported_cost`, token fields, `unpriced_tokens`, `sessions`; includes unknown-channel rows by default. |
 | `/api/cost/by-model` | Per `group, model`: priced row plus `tokens`. |
 | `/api/cost/by-user-model` | Per `user, group, model`: priced row plus `tokens`; nonempty email/model required. `includeUnknown=1` broadens channel coverage. |
-| `/api/cost/by-model-daily` | **B**, per `day, group, model`: priced row. The field is named `day` even for sub-day buckets. |
+| `/api/cost/by-model-daily` | **B**, per `day, group, model`: priced row plus the report coverage fields below. The field is named `day` even for sub-day buckets. |
 | `/api/cost/by-model-compare` | Per `model` across selected channels: current priced-row fields, `prev_reported_cost`, previous token fields prefixed `prev_`, and computed `prev_cost`; previous period derived server-side. |
 | `/api/cost/tiers` | **Object** `{bedrock, enterprise}`, each with computed `uncachedInput`, `cacheRead`, `cacheWrite`, `output`; unknown rates are skipped. |
 | `/api/cost/effort-mix` | Per `group, effort`: computed `cost`, `reported_cost`, `tokens`, `unpriced_tokens`; empty effort becomes `unknown`. |
 | `/api/cost/by-agent` | Per `group, agent`: computed `cost`, `reported_cost`, `tokens`, `unpriced_tokens`; empty agent becomes `main`. Returns the top **30 by computed cost** after aggregation. |
+
+`/api/cost/by-model-daily` judges report availability per session inside ClickHouse
+(`costByModelDailySql` in [queries.js](../dashboard/server/queries.js)) and returns one row per
+`day, group, model`; [modelCostTrend.js](../dashboard/server/modelCostTrend.js) maps the counts.
+A session report is usable when it is positive, or zero with known zero tokens or no token
+samples. `reported_cost` is the sum of usable reports and null when no session is usable;
+`reported_partial`, `reported_unavailable` (unusable sessions), `reported_reasons` and
+`reported_all_unavailable` disclose the exclusions. `report_missing` counts sessions with no
+report sample or an invalid (negative or non-finite) report; `report_zero_with_tokens` counts
+zero reports beside positive or unknown tokens; together they equal `reported_unavailable`.
+A session with no in-window cost or token sample, such as a baseline-only first bucket, is
+omitted as no data rather than reported as a known $0. Minute buckets are clock-aligned and
+only buckets starting at or after `from` are returned, so an unaligned `from` drops the
+partial first minute and any increment reported in it (a pre-existing detail boundary; the
+coding-client views split that minute instead). A report-only session adds 0 to the
+canonical token sums; `observed_tokens` excludes it and `tokens_partial` is the coverage
+signal (all report-only yields null). `observed_tokens` and `tokens_partial` follow
+[ADR-014](decisions/ADR-014-observed-token-subtotals.md); computed `cost` prices the summed
+tokens of each model, which equals the sum of per-session estimates, and is null for unpriced
+models. More than 50,000 `day, group, model` rows return 400.
 
 The Cost UI reorders the returned agent subset by reported spend and shows at most 15;
 this is not a fleet-wide top-15 query by reported spend. Its computed comparison is opt-in.
