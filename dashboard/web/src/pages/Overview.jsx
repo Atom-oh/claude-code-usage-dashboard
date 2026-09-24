@@ -187,6 +187,7 @@ export default function Overview() {
             help="주간·월간 활성 사용자는 각 날짜 기준 최근 7일과 30일 안에 세션이 있었던 사용자입니다."
             rows={activeTrend.data}
             xKey="t"
+            zoomDisabled={activeTrend.stale}
             tickFormatter={fmtTick}
             bucketHours={24}
             lines={[
@@ -203,6 +204,7 @@ export default function Overview() {
             right={<SegmentedControl options={TOKEN_VIEWS} value={tokenView} onChange={setTokenView} />}
             rows={tokens.data}
             xKey="t"
+            zoomDisabled={tokens.stale}
             valueKey={tokenView}
             tickFormatter={fmtTick}
           />

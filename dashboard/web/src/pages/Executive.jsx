@@ -373,6 +373,7 @@ export default function Executive() {
                   title="일간 활성 사용자"
                   rows={adoptionTs.data}
                   xKey="t"
+                  zoomDisabled={adoptionTs.stale}
                   tickFormatter={fmtDaily}
                   bucketHours={24}
                   lines={[{ key: "dau", label: "DAU", axis: "left" }]}
@@ -387,6 +388,7 @@ export default function Executive() {
                   title="모델별 비용 추이"
                   rows={asSpendRows(costDaily.data || [])}
                   xKey="day"
+                  zoomDisabled={costDaily.stale}
                   seriesKey="model"
                   valueKey="cost"
                   colorOf={modelColorFor}

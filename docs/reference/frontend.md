@@ -132,12 +132,17 @@ an attempt, never successful completion.
 Page-local interval controls must resync from global range changes, as
 [Cost.jsx](../../dashboard/web/src/pages/Cost.jsx) does. Tables fed by a stale hook
 pass `stale` to `DataTable`, which disables CSV export so previous-period rows are not
-saved under the new range's filename. Cost's model cost trend passes `zoomDisabled`
-while its rows are stale (a pending global period or granularity change), because the
-page-local `bucketHours` already describes the new buckets. The label fallback is not a
-substitute: date-only labels get 24 hours, including weekly buckets, and other labels use
-the global interval. Shared client trends take `bucket_hours` from the same response as
-their rows, so they stay zoomable.
+saved under the new range's filename. Every time-series `GroupAreaChart`,
+`DualLineChart` and `SeriesBarChart` passes `zoomDisabled` from the hook that feeds it, so
+drag zoom is suspended while its rows are stale (a pending global period change, or Cost's
+granularity change). The retained rows keep the previous bucket size, while the drag pads
+its right edge with the new one: the global interval, or Cost's page-local `bucketHours`.
+The label fallback is not a substitute: date-only labels get 24 hours, including weekly
+buckets, and other labels use the global interval. Charts whose bucket size cannot change
+(daily adoption series, shared client trends that take `bucket_hours` from their own
+response) are suspended too, so no drag selects a range from the previous period's rows.
+Categorical axes do not zoom, and `UserDrawer` clears to loading on range changes.
+[zoomGuard.test.js](../../dashboard/web/src/zoomGuard.test.js) checks every call site.
 
 ## Spend and interpretation
 

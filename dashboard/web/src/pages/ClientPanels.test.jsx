@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { RangeProvider } from "../RangeContext.jsx";
+import { RangeProvider, useRange } from "../RangeContext.jsx";
 import { ConfigProvider } from "../ConfigContext.jsx";
 import { setPiiMask } from "../fmt.js";
 import { clientOverview, codexUsage } from "../test/clientOverview.js";
@@ -459,3 +459,34 @@ test.each([true, false])("user CSV preserves displayed order, masking=%s, raw co
   expect(headers).toHaveLength(within(users).getAllByRole("columnheader").length);
   expect(lines[2].split(",")[headers.indexOf("비용 (USD)")]).toBe("");
 });
+
+// 공통 추이의 버킷 크기는 같은 응답(bucket_hours)에서 오므로 보정 폭은 늘 맞지만, stale인 동안에는
+// 이전 기간의 행 위에서 구간을 고르게 되므로 줌을 멈춘다. stale은 trendProps를 거쳐 Trend로 간다.
+test.each([[false, "2026-09-01T00:00:00.000Z / 2026-09-01T03:00:00.000Z"], [true, "none"]])(
+  "the shared trend drag-zooms only while its data is not stale (stale=%s)", async (stale, expected) => {
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+    function Selection() {
+      const { custom } = useRange();
+      return <output aria-label="선택 구간">{custom
+        ? `${custom.from.toISOString()} / ${custom.to.toISOString()}` : "none"}</output>;
+    }
+    const data = fixture(["codex"]);
+    data.effective_range = { from: "2026-09-01T00:00:00Z", to: "2026-09-01T03:00:00Z" };
+    data.bucket_hours = 1;
+    data.timeseries = ["00", "01", "02"].map((h, i) => ({ client: "codex", t: `2026-09-01T${h}:00:00Z`, tokens: 10 + i, cost_usd: 1 }));
+    setPiiMask(true);
+    render(
+      <MemoryRouter><ConfigProvider config={{ piiMask: true }}>
+        <RangeProvider><ClientPanels page="overview" data={data} clients={data.clients} stale={stale} /><Selection /></RangeProvider>
+      </ConfigProvider></MemoryRouter>,
+    );
+    const chart = card("사용량·비용 추이").querySelector(".recharts-wrapper");
+    await waitFor(() => expect(chart.querySelector(".recharts-cartesian-grid-horizontal line")).not.toBeNull());
+    const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+    const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+    const x = (hour) => left + (right - left) * hour / 3;
+    fireEvent.mouseDown(chart, { clientX: x(0), clientY: 60 });
+    fireEvent.mouseMove(chart, { clientX: x(2), clientY: 60 });
+    fireEvent.mouseUp(chart, { clientX: x(2), clientY: 60 });
+    await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe(expected));
+  });
