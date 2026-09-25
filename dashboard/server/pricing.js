@@ -1,3 +1,5 @@
+import { VALID_BACKENDS } from "./backend.js";
+
 // Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 cacheWrite(5m) = 입력×1.25,
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
 // 0.025x, opus-5-5는 0.05x인 예외라 값을 명시한다(아래 주석). Bedrock cross-region(us./us-gov./eu./apac./jp./au./
@@ -107,6 +109,31 @@ export function buildPricing(env) {
         cacheRead: row.cacheRead ?? row.input * 0.1,
         cacheWrite1h: row.cacheWrite1h ?? row.input * 2,
       };
+      // mantle과 runtime의 요율이 다를 수 있는 모델을 위한 선택적 backend별 오버라이드
+      // (ADR-017). 지정하지 않은 필드는 이 모델의 기본(위에서 채운) 요율을 그대로 쓴다.
+      if (row.backends !== undefined) {
+        if (row.backends === null || Array.isArray(row.backends) || typeof row.backends !== "object")
+          throw new Error(`PRICING_JSON["${key}"].backends must be an object`);
+        const backends = {};
+        for (const [backendKey, rates] of Object.entries(row.backends)) {
+          if (!VALID_BACKENDS.includes(backendKey))
+            throw new Error(`PRICING_JSON["${key}"].backends key "${backendKey}" must be bedrock-mantle or bedrock-runtime`);
+          if (rates === null || Array.isArray(rates) || typeof rates !== "object")
+            throw new Error(`PRICING_JSON["${key}"].backends["${backendKey}"] must be an object of rates`);
+          for (const field of ["input", "output", "cacheWrite", "cacheRead", "cacheWrite1h"]) {
+            if (rates[field] === undefined) continue;
+            if (typeof rates[field] !== "number" || !Number.isFinite(rates[field]) || rates[field] < 0)
+              throw new Error(`PRICING_JSON["${key}"].backends["${backendKey}"].${field} must be a non-negative number`);
+          }
+          // cacheWrite1h를 명시하지 않았고 유도할 input도 없으면 키 자체를 만들지 않는다 —
+          // 값을 undefined로 채우면 priceFor()의 {...base, ...override} 병합에서 그 키가
+          // "존재"해 base.cacheWrite1h를 undefined로 덮어써 버린다.
+          backends[backendKey] = { ...rates,
+            ...(rates.cacheWrite1h === undefined && rates.input !== undefined
+              ? { cacheWrite1h: rates.input * 2 } : {}) };
+        }
+        table[key].backends = backends;
+      }
       overriddenModels.push(key);
     }
   }
@@ -136,8 +163,39 @@ export const PRICING_PROMPT_TABLE =
     .join("\n") +
   `\n(위 cacheWrite는 캐시 쓰기 TTL 가정 "${CACHE_WRITE_TTL}" 기준 단가다 — 서버 env PRICING_CACHE_WRITE_TTL로 1h/5m 전환)`;
 
-export function priceFor(model) {
-  return PRICING[normalizeModelId(model)] || null;
+// backend(선택)는 PRICING_JSON의 모델별 backends 오버라이드를 고른다(ADR-017) — 지정하지
+// 않거나 그 모델에 오버라이드가 없으면 기본 요율 그대로.
+export function priceFor(model, backend) {
+  const base = PRICING[normalizeModelId(model)];
+  if (!base) return null;
+  const override = backend && base.backends?.[backend];
+  return override ? { ...base, ...override } : base;
+}
+
+// codexLogAggregates.js의 SQL 폴백(ADR-017)이 이 Claude 단가표를 그대로 재현하는 데 쓴다 —
+// backend 오버라이드 병합과 effectiveCacheWrite(TTL 가정) 적용까지 끝낸, model → backend →
+// 4개 요율(cacheWrite는 이미 실효 단가) 형태. codexPricing.js는 JS 쪽에서 priceFor/computeCost를
+// 직접 쓰므로 이 함수를 쓰지 않는다.
+export function resolvedRatesTable() {
+  const rates = (p) => ({ input: p.input, output: p.output, cacheRead: p.cacheRead, cacheWrite: effectiveCacheWrite(p) });
+  const out = {};
+  for (const model of Object.keys(PRICING)) {
+    out[model] = { base: rates(priceFor(model)),
+      backends: Object.fromEntries(VALID_BACKENDS.map((backend) => [backend, rates(priceFor(model, backend))])) };
+  }
+  return out;
+}
+
+// Codex 응답이 자체 단가표에 없는 Anthropic 모델(예: global.anthropic.claude-fable-5-1)일
+// 때 Claude 단가표로 계산 추정치를 내는 데 재사용한다(codexPricing.js) — Claude 오버뷰의
+// computed_estimate 폴백(clientMetrics.js)도 같은 공식을 쓴다. tokens는 이미 서브셋을
+// 분리한 입력(캐시 읽기/쓰기 제외)과 출력(reasoning 포함) 4개 필드.
+export function computeCost(model, backend, tokens) {
+  const p = priceFor(model, backend);
+  if (!p) return null;
+  const amount = (Number(tokens.input) * p.input + Number(tokens.output) * p.output
+    + Number(tokens.cacheRead) * p.cacheRead + Number(tokens.cacheWrite) * effectiveCacheWrite(p)) / 1e6;
+  return Number.isFinite(amount) ? amount : null;
 }
 
 // withComputedCost/tierCosts는 서버 env PRICING_CACHE_WRITE_TTL(단일 가정)로만 캐시 쓰기 단가를

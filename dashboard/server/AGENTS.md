@@ -49,10 +49,25 @@ Express/Node.js ESM serves read-only telemetry and the SPA. Run `npm test` here 
 - Preserve unavailable trace results (`{unsupported, rows, ...}`), never invented zeros.
   `/api/codex/insights` separates log units from metric/trace diagnostics; retain temporality,
   deduplication, range bounds and optional-table coverage. Transport/permission failures are errors.
+- `backend.js` (`resolveBackend`/`backendSql`) is the one place backend is resolved, for both
+  clients: model id prefix first (region/global routing → runtime, bare vendor namespace →
+  mantle), the resource tag only as a fallback for a prefix-less model. Never re-derive it
+  inline; every SQL/JS site that needs it imports from here. Claude's enterprise-channel
+  short-circuit to `anthropic` is separate and unchanged. See
+  [ADR-017](../../docs/decisions/ADR-017-model-prefix-backend-and-computed-fallback.md).
+- Codex pricing (`codexPricing.js`) falls back to the Claude table for an Anthropic model
+  absent from its own table (`price_source: "claude_table"`), never overriding an existing
+  Codex-table entry or the scope/backend/usage-validity guards. The overview's Claude usage
+  (`clientMetrics.js`'s `claudeUsage`) falls back to a token-computed estimate
+  (`cost_basis: "computed_estimate"`/`"mixed"`, counted in `cost_estimated`) only where the
+  report itself is unusable — never in place of one, and only in `/api/clients/overview`;
+  the legacy Cost/Executive/`spend.js` cost-basis contract (ADR-009) is unchanged elsewhere.
+  Both tables accept an optional per-model `backends` override for mantle/runtime rate splits.
 
 ## Owners and operations
 
-`queries.js`: SQL/models; `pricing.js`: diagnostics; `schema.js`: probes; `http.js`: validation.
+`queries.js`: SQL/models; `pricing.js`: diagnostics; `backend.js`: backend resolution;
+`schema.js`: probes; `http.js`: validation.
 Chat `queryReadonly()` has separate result/time limits. Reader profiles may reject
 `SETTINGS`; never assume overrides are allowed.
 

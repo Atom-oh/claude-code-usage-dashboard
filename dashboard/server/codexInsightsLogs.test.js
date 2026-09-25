@@ -202,13 +202,20 @@ test("anonymous operational evidence keeps the session denominator unavailable",
 
 test("usage availability isolates model, backend, user and project", () => {
   for (const [attributes, resource] of [
-    [{ model: "other" }, {}], [{}, { backend: "bedrock-runtime" }],
+    [{ model: "other" }, {}],
     [{}, { "user.email": "other@example.invalid" }], [{}, { "project.name": "other" }],
   ]) {
     fields(foldCodexInsightsLogs([completion(1), request(2, attributes, resource)]).summary,
       { cost_per_session: 0.00238425, cost_per_request: 0.00238425, cost_partial: true,
         tokens_per_request: null, cache_hit_rate: null });
   }
+  // Backend isolation needs a model with no vendor/region prefix (ADR-017): the fixture's
+  // default model ("openai.gpt-6-astra") resolves its backend from the model id, so an
+  // overridden resource tag alone no longer creates a different scope for it.
+  fields(foldCodexInsightsLogs([completion(1),
+    request(2, { model: "bare-model" }, { backend: "bedrock-runtime" })]).summary,
+    { cost_per_session: 0.00238425, cost_per_request: 0.00238425, cost_partial: true,
+      tokens_per_request: null, cache_hit_rate: null });
   assert.equal(foldCodexInsightsLogs([completion(1),
     log(2, "tool_result", { model: "", success: "true" }), request(3)]).summary.cost_per_request, 0.00238425);
   assert.equal(foldCodexInsightsLogs([completion(1, { "conversation.id": "" }),
@@ -216,8 +223,12 @@ test("usage availability isolates model, backend, user and project", () => {
 });
 
 test("unknown model or backend preserves known costs and measured tokens", () => {
-  for (const [attributes, resource] of [[{ model: "unpriced" }, {}], [{}, { backend: "" }],
-    [{}, { backend: "unknown", provider_name: "amazon-bedrock" }]]) {
+  for (const [attributes, resource] of [[{ model: "unpriced" }, {}],
+    // A bare model (no vendor/region prefix) keeps the resource tag decisive (ADR-017) —
+    // the fixture's default prefixed model would otherwise resolve mantle from the model
+    // id regardless of an empty/invalid tag.
+    [{ model: "bare-model" }, { backend: "" }],
+    [{ model: "bare-model" }, { backend: "unknown", provider_name: "amazon-bedrock" }]]) {
     const out = foldCodexInsightsLogs([completion(1), completion(2, attributes, resource), request(3)]);
     fields(out.summary, { cost_per_session: 0.00238425, cost_per_request: 0.00238425,
       cost_partial: true, tokens_per_request: 260, observed_tokens: 260, tokens_partial: false });

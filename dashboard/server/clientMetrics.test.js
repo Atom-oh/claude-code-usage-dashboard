@@ -462,7 +462,11 @@ test("by_model_time rows carry raw models and per-reason unpriced counts", () =>
   const on = foldClientMetrics(modelTimeRecords, modelTimeClients, undefined, { modelTime: true });
   const noCodexReason = { unknown_backend: 0, scope: 0, unknown_model: 0, invalid_usage: 0, missing_usage: 0 };
   const expected = [
-    ["claude", "claude-sonnet-5", "anthropic", 2, true, { report_missing: 1, report_zero_with_tokens: 1, missing_usage: 0 }],
+    // ADR-017: c2 (report_zero_with_tokens) and c3 (report_missing) both fall back to a
+    // token-computed estimate for this priced model (claude-sonnet-5), so the group's known
+    // cost includes their estimates too and is no longer partial.
+    ["claude", "claude-sonnet-5", "anthropic", 2 + 2 * 0.00045, false,
+      { report_missing: 0, report_zero_with_tokens: 0, missing_usage: 0 }],
     ["codex", "", "bedrock-mantle", null, true, { ...noCodexReason, missing_usage: 1 }],
     ["codex", "global.openai.gpt-6-astra", "bedrock-mantle", null, true, { ...noCodexReason, scope: 1 }],
     ["codex", "global.openai.gpt-6-astra", "bedrock-runtime", 0.0021675, false, { ...noCodexReason }],
@@ -514,15 +518,29 @@ test("Claude by_model_time rows use the claudeUsage rule", () => {
   ], ["claude"], undefined, { modelTime: true });
   assert.equal(valid.by_model_time.length, 1);
   assert.equal(valid.by_model_time[0].cost_usd, 2.5);
+  assert.equal(valid.by_model_time[0].cost_basis, "client_reported");
   assert.equal(valid.by_model_time[0].cost_partial, false);
   assert.deepEqual(valid.by_model_time[0].unpriced_reasons,
     { report_missing: 0, report_zero_with_tokens: 0, missing_usage: 0 });
-  const invalid = foldClientMetrics([
+  // ADR-017: an invalid report (report_missing) with fully known usage for a priced model
+  // now falls back to a token-computed estimate instead of staying unpriced.
+  const estimated = foldClientMetrics([
     { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5", input_tokens: 49, reported_cost: -1 },
   ], ["claude"], undefined, { modelTime: true });
-  assert.equal(invalid.by_model_time.length, 1);
-  assert.equal(invalid.by_model_time[0].cost_usd, null);
-  assert.equal(invalid.by_model_time[0].unpriced_reasons.report_missing, 1);
+  assert.equal(estimated.by_model_time.length, 1);
+  assert.ok(Math.abs(estimated.by_model_time[0].cost_usd - 0.00045) < 1e-9);
+  assert.equal(estimated.by_model_time[0].cost_basis, "computed_estimate");
+  assert.equal(estimated.by_model_time[0].cost_partial, false);
+  assert.deepEqual(estimated.by_model_time[0].unpriced_reasons,
+    { report_missing: 0, report_zero_with_tokens: 0, missing_usage: 0 });
+  // A model with no rate anywhere (Codex table or Claude table) still has no fallback.
+  const noRate = foldClientMetrics([
+    { ...event, client: "claude", backend: "anthropic", model: "claude-unreleased-model", input_tokens: 49, reported_cost: -1 },
+  ], ["claude"], undefined, { modelTime: true });
+  assert.equal(noRate.by_model_time.length, 1);
+  assert.equal(noRate.by_model_time[0].cost_usd, null);
+  assert.equal(noRate.by_model_time[0].cost_basis, "client_reported");
+  assert.equal(noRate.by_model_time[0].unpriced_reasons.report_missing, 1);
 });
 
 // by_model_time rows exist only for counter-backed usage or Codex missing-usage scopes.

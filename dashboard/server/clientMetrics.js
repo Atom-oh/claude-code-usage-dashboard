@@ -3,7 +3,8 @@ import { ValidationError } from "./http.js";
 import { selectClients } from "./clients.js";
 import { priceCodexUsage, parseCodexPricing } from "./codexPricing.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { normalizeModelId } from "./pricing.js";
+import { normalizeModelId, computeCost } from "./pricing.js";
+import { backendSql } from "./backend.js";
 import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS, isRejectedRequestGroup } from "./codexRequests.js";
@@ -42,9 +43,10 @@ export function validateClientFilters(raw, enabledClients) {
 
 function accumulator(meta, reasons = false) {
   return { ...meta, ...Object.fromEntries([...TOKEN_KEYS, ...OP_KEYS].map((k) => [k, 0])),
-    cost_usd: 0, unpriced: 0, observed_records: 0,
+    cost_usd: 0, unpriced: 0, cost_estimated: 0, observed_records: 0,
     _sessions: new Set(), _users: new Set(), _backends: new Set(), _missingUsage: new Set(),
-    _missing: new Set(), _hasCost: false, _observedTokens: createObservedTokens(),
+    _missing: new Set(), _hasCost: false, _hasReportedCost: false, _hasEstimatedCost: false,
+    _observedTokens: createObservedTokens(),
     _reasons: reasons ? {} : null,
     _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
 }
@@ -61,12 +63,23 @@ function claudeUsage(row) {
   const report = finite(row.reported_cost) ? Number(row.reported_cost) : null;
   // A positive client report remains usable even if token telemetry is partial.
   // Zero is usable only alongside known zero token usage.
-  const cost = report !== null && (report > 0 || valid && tokens === 0) ? report : null;
+  const reportCost = report !== null && (report > 0 || valid && tokens === 0) ? report : null;
   // A usable report has no reason. Counter rows carry cost_observed; rows without it count as observed.
-  const unpriced_reason = cost !== null ? null
+  const unpriced_reason = reportCost !== null ? null
     : report === null || Number(row.cost_observed ?? 1) === 0 ? "report_missing" : "report_zero_with_tokens";
+  // ADR-017: fill with a token-priced estimate only where no client report is usable at
+  // all (never displacing an existing report, even a zero-with-tokens one) and only when
+  // this model/backend has a rate. Multi-model Bedrock testing can call models whose
+  // reported cost is missing; a model with no rate anywhere stays unpriced.
+  const estimated = reportCost === null && valid
+    ? computeCost(row.model, row.backend,
+        { input: row.input_tokens, output: row.output_tokens,
+          cacheRead: row.cache_read_tokens, cacheWrite: row.cache_write_tokens })
+    : null;
+  const cost = reportCost !== null ? reportCost : estimated;
   return { ...row, tokens, observed_tokens: tokens, reasoning_tokens: null, cost_usd: cost,
-    cost_basis: "client_reported", unpriced: cost === null, unpriced_reason, invalid: !valid };
+    cost_basis: reportCost !== null ? "client_reported" : estimated !== null ? "computed_estimate" : "client_reported",
+    unpriced: cost === null, unpriced_reason: cost === null ? unpriced_reason : null, invalid: !valid };
 }
 
 function accumulate(target, row, usage, missingScope) {
@@ -93,6 +106,10 @@ function accumulate(target, row, usage, missingScope) {
     } else {
       target._hasCost = true;
       target.cost_usd += Number(usage.cost_usd);
+      if (usage.cost_basis === "computed_estimate") {
+        target._hasEstimatedCost = true;
+        target.cost_estimated += n || 1;
+      } else target._hasReportedCost = true;
     }
   } else if (row.kind === "request") {
     target._ops = true;
@@ -115,7 +132,8 @@ function accumulate(target, row, usage, missingScope) {
 }
 
 function finish(target) {
-  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _observedTokens, _reasons,
+  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _hasReportedCost, _hasEstimatedCost,
+    _observedTokens, _reasons,
     _ops, _requestMs, _requestN, _ttftMs, _ttftN, ...out } = target;
   for (const k of _missing) out[k] = null;
   if (_missingUsage.size) {
@@ -132,6 +150,11 @@ function finish(target) {
   }), sessions: _sessions.size, users: _users.size,
     backend: out.backend || (_backends.size === 1 ? [..._backends][0] : _backends.size ? "mixed" : "unknown"),
     cost_usd: cost,
+    // ADR-017: a Claude group mixing client-reported and token-estimated rows discloses
+    // both bases rather than silently relabeling the estimate as a report. Codex's basis
+    // is uniform (aws_list_estimate) and never mixes, so it keeps the accumulator default.
+    cost_basis: out.client === "claude" && _hasEstimatedCost
+      ? (_hasReportedCost ? "mixed" : "computed_estimate") : out.cost_basis,
     cost_partial: out.unpriced > 0 || costAvailable && cost === null,
     request_rejections_only: out.client === "codex" && out.rejected_requests > 0
       && out.rejected_requests === out.observed_records && _missingUsage.size === 0,
@@ -296,8 +319,13 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   // Keep known pairs apart from unknown pairs even inside malformed usage.
   const validPair = "in_n_valid AND out_n_valid AND in_n + out_n <= 9007199254740991";
   const session = isCodex ? "a['conversation.id']" : "SessionId";
-  const backend = isCodex ? "if(r['backend'] IN ('bedrock-runtime','bedrock-mantle'), r['backend'], 'unknown')"
-    : `multiIf(${GROUP_EXPR} = 'bedrock', 'bedrock-runtime', ${GROUP_EXPR} = 'enterprise', 'anthropic', 'unknown')`;
+  // Backend is resolved from the model id prefix first (region/global. routing prefix →
+  // runtime, bare vendor namespace → mantle); the resource-attribute tag (Codex only,
+  // '' for Claude) is only consulted for prefix-less models. See backend.js. Claude's
+  // enterprise channel still short-circuits to 'anthropic' — Enterprise sessions can only
+  // ever emit bare claude-* models, so there is no prefix to resolve there anyway.
+  const backendExpr = (modelExpr, tagExpr) => isCodex ? backendSql(modelExpr, tagExpr)
+    : `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql(modelExpr, tagExpr)})`;
   const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
   // Coarse attribution only for model-less rows: evidence must share the selected
@@ -306,7 +334,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     SELECT session, user, backend, project FROM unique_events WHERE session != '' AND ${modelMatch}
     ${isCodex ? `AND event_name IN (${eventNames.map(name => `'${name}'`).join(",")})` : ""}
     ${isCodex ? "" : `UNION ALL
-    SELECT SessionId, ${user}, ${backend}, ResourceAttributes['project.name']
+    SELECT SessionId, ${user}, ${backendExpr("Model", "''")}, ResourceAttributes['project.name']
     FROM claude_code.otel_metrics_sum LEFT JOIN session_group ug USING (SessionId)
     WHERE TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} AND SessionId != ''
       AND MetricName IN ('claude_code.token.usage', 'claude_code.cost.usage')
@@ -318,7 +346,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       ${session} AS session,
       ${user} AS user,
       ${isCodex ? "a['model']" : queries.normModel("a['model']")} AS model,
-      ${backend} AS backend, r['project.name'] AS project,
+      ${backendExpr("a['model']", isCodex ? "r['backend']" : "''")} AS backend, r['project.name'] AS project,
       ${isCodex ? "EventName" : "replaceRegexpOne(EventName, '^claude_code\\\\.', '')"} AS event_name
     FROM claude_code.otel_logs
     ${isCodex ? "" : "LEFT JOIN session_group ug USING (SessionId)"}
@@ -331,7 +359,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     UNION ALL
     SELECT min(Timestamp), any(mapSort(ResourceAttributes)), any(mapSort(LogAttributes)),
       LogAttributes['conversation.id'] AS session, ${user} AS user, LogAttributes['model'] AS model,
-      ${backend.replaceAll("r['", "ResourceAttributes['")} AS backend,
+      ${backendExpr("LogAttributes['model']", "ResourceAttributes['backend']")} AS backend,
       ResourceAttributes['project.name'] AS project, EventName AS event_name
     FROM claude_code.otel_logs
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND ${CODEX_DELTA_EVENT}

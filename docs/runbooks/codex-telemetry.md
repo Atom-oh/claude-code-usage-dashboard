@@ -113,8 +113,16 @@ Its successful return is not a Collector-health assertion; inspect the host serv
 and received telemetry separately. Keep noninteractive shell startup quiet.
 
 Host-specific wrappers can select a gateway instead of the workshop provider below.
-A gateway is not proof of a particular AWS upstream. Validate routing metadata
-before treating inherited `bedrock-mantle` tags as a cost basis.
+A gateway is not proof of a particular AWS upstream, and a gateway process in front of
+Codex can leave every request carrying the same inherited `backend` tag regardless of
+which model or endpoint actually served it — live telemetry from exactly this workshop
+setup showed every Codex row tagged `bedrock-mantle`, including `global.`-prefixed models
+that only exist on Bedrock Runtime. Because of this, the dashboard no longer treats this
+tag as authoritative on its own: it resolves `backend` from the model id prefix first and
+only falls back to this tag for a model with no cross-region or vendor-namespace prefix
+([ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md),
+[backend.js](../../dashboard/server/backend.js)). Validate routing metadata independently
+before treating either the tag or the resolved backend as a cost basis.
 
 Inspect nonsecret effective configuration without invoking a model:
 
@@ -163,7 +171,11 @@ Runtime substitutes `bedrock-runtime` in all three headers. Receivers expose req
 metadata only to the Codex pipelines. A valid `x-ccdash-backend` overrides resource
 backend; an absent/invalid header preserves a valid resource backend. Otherwise backend
 stays absent. The temporary header attribute is deleted before export. Model names,
-metric/span attributes and inherited client labels never establish backend or producer.
+metric/span attributes and inherited client labels never establish backend or producer
+at the Collector. This is unchanged: the Collector still exports whatever resource
+`backend` tag it received, as-is. It is the dashboard's queries, downstream of storage,
+that now also resolve backend from the model id — see the gateway note above and
+[ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md).
 
 Structured logs remain the single Codex usage/cost feed. Claude retains its eight allowed
 metrics, counter temporality, log scrub and experiment grouping. Claude logs accept
@@ -292,6 +304,23 @@ incomplete; this does not recover missing logs or treat absent usage as zero
 them). Entries require positive integer `short_context_limit`, `regional` and optional
 `global`, each with `short`/`long` rates: finite nonnegative USD/million `input`,
 `cacheWrite`, `cacheRead`, `output`. Invalid entries fail startup; config hides rates.
+An entry may add an optional `backends` map keying `bedrock-mantle`/`bedrock-runtime` to
+their own `regional`/`global` rates, for a model whose mantle and runtime prices genuinely
+differ; unset fields fall back to the entry's base rate
+([ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md)). `PRICING_JSON`
+(Claude) accepts the same `backends` shape, keyed to `input`/`output`/`cacheWrite`/
+`cacheRead`/`cacheWrite1h` instead of the regional/global/short/long tiers.
+
+An Anthropic model called through Codex with no entry in `DEFAULT_CODEX_PRICING`/
+`CODEX_PRICING_JSON` (its own backend/scope/usage otherwise valid) falls back to the Claude
+price table (`price_source: "claude_table"` on the row; `cost_basis` stays
+`aws_list_estimate`). A Claude row in `/api/clients/overview` whose client-reported cost is
+unusable (`report_missing`/`report_zero_with_tokens`) but whose tokens are fully known falls
+back to a token-computed estimate when a rate exists (`cost_basis: "computed_estimate"`, or
+`"mixed"` for a group holding both bases; `cost_estimated` counts the fallback rows). Neither
+fallback overrides an existing report or Codex-table entry, and a model with no rate in
+either table stays unpriced with its original reason
+([ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md)).
 
 With Docker/server dependencies, `bash scripts/test-client-sql.sh` owns a disposable
 loopback ClickHouse using the local schema; external DB URLs are ignored.

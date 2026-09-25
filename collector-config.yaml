@@ -88,6 +88,12 @@ processors:
 
   # Read only the launcher's nonsecret provenance header before batch loses
   # transport context. Never infer backend from model, span or metric attributes.
+  # This is still true here at export time. Downstream, the dashboard's queries do
+  # resolve an effective backend from the model id prefix first and only fall back to
+  # this stored resource attribute for a prefix-less model (ADR-017 in the dashboard
+  # repo) — a gateway in front of Codex can leave every row with the same inherited
+  # tag regardless of which model actually served it, so the raw tag alone is not
+  # reliable. That happens in dashboard/server/backend.js, not here.
   resource/codex_transport:
     attributes:
       - key: ccdash.transport.backend

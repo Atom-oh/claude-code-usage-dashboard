@@ -3,6 +3,7 @@ import { ValidationError } from "./http.js";
 import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { CODEX_USAGE_KEYS, isRejectedRequestEvent, isSetupMetadataEvent as setupMetadata } from "./codexRequests.js";
+import { resolveBackend, backendSql } from "./backend.js";
 
 const ROW_LIMIT = 50000;
 const pricesDefault = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -29,7 +30,7 @@ export function logSelection(from, to, filters = {}, distinct = true) {
       a['conversation.id'] AS session,
       coalesce(nullIf(r['user.email'], ''), nullIf(r['enduser.id'], ''), '') AS user,
       a['model'] AS model,
-      if(r['backend'] IN ('bedrock-runtime','bedrock-mantle'), r['backend'], 'unknown') AS backend,
+      ${backendSql("a['model']", "r['backend']")} AS backend,
       r['project.name'] AS project
     FROM claude_code.otel_logs
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
@@ -60,7 +61,7 @@ export function buildCodexInsightsLogQuery(from, to, filters = {}, { detailsOnly
           AND attributes['event.kind'] NOT IN ('response.completed','response.failed')) AS is_bulk,
         if(is_bulk, '', timestamp) AS identity_time,
         if(is_bulk, map('user.email',coalesce(nullIf(resource['user.email'],''),resource['enduser.id']),
-          'backend',if(resource['backend'] IN ('bedrock-runtime','bedrock-mantle'),resource['backend'],'unknown'),
+          'backend',${backendSql("''", "resource['backend']")},
           'project.name',resource['project.name']),resource) AS identity_resource,
         if(is_bulk, map('conversation.id',session),attributes) AS identity_attributes
       FROM selected WHERE startsWith(attributes['event.name'],'codex.')
@@ -158,11 +159,9 @@ function statistics(values) {
 function scope(row, includeModel = true, model = row.attributes.model) {
   const a = row.attributes, r = row.resource;
   return JSON.stringify([a["conversation.id"] || ["unidentified", row.timestamp],
-    r["user.email"] || r["enduser.id"] || "", backend(r), r["project.name"] || "",
+    r["user.email"] || r["enduser.id"] || "", resolveBackend(a.model, r.backend), r["project.name"] || "",
     includeModel ? model || "" : null]);
 }
-const backend = (resource) => ["bedrock-mantle", "bedrock-runtime"].includes(resource.backend)
-  ? resource.backend : "unknown";
 const stream = (event) => ["codex.sse_event", "codex.websocket_event"].includes(event);
 const completed = (row) => stream(row.attributes["event.name"])
   && row.attributes["event.kind"] === "response.completed";
@@ -278,7 +277,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
 
     if (hasUsage(row)) {
       const input = Object.fromEntries(Object.entries(TOKEN_FIELDS).map(([raw, name]) => [name, count(a[raw])]));
-      const usage = priceCodexUsage({ ...input, model: a.model || "", backend: backend(r),
+      const usage = priceCodexUsage({ ...input, model: a.model || "", backend: resolveBackend(a.model, r.backend),
         context_tier: input.input_tokens_total > (prices[codexModel(a.model)]?.short_context_limit ?? 0) ? "long" : "short" }, prices);
       const effort = text(a.model_reasoning_effort);
       if (!efforts.has(effort)) efforts.set(effort, usageTotals());

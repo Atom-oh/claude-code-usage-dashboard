@@ -1,5 +1,6 @@
 import { ValidationError } from "./http.js";
 import { toChDateTime } from "./clickhouse.js";
+import { resolveBackend, backendSql } from "./backend.js";
 
 const LIMIT = 50000;
 const TYPES = ["sum", "gauge", "histogram", "exponential_histogram"];
@@ -29,8 +30,7 @@ const filter = (attributes, model = `${attributes}['model']`) => `
   AND ({signalUser:String} = '' OR positionCaseInsensitive(coalesce(
     nullIf(ResourceAttributes['user.email'], ''), ResourceAttributes['enduser.id']), {signalUser:String}) > 0)
   AND ({signalModel:String} = '' OR positionCaseInsensitive(${model}, {signalModel:String}) > 0)
-  AND ({signalBackend:String} = '' OR if(ResourceAttributes['backend'] IN ('bedrock-mantle','bedrock-runtime'),
-    ResourceAttributes['backend'], 'unknown') = {signalBackend:String})`;
+  AND ({signalBackend:String} = '' OR ${backendSql(model, "ResourceAttributes['backend']")} = {signalBackend:String})`;
 
 export function buildMetricQuery(type, from, to, filters = {}) {
   if (!TYPES.includes(type)) throw new Error("unsupported metric table");
@@ -142,7 +142,7 @@ export function foldCodexMetrics(rows, from, to) {
     series.set(seriesId, row);
     if (stamp < +from) continue;
     inRange.push(row);
-    const dimensions = { ...attributes, backend: resource.backend || "unknown" };
+    const dimensions = { ...attributes, backend: resolveBackend(attributes.model, resource.backend) };
     const groupId = JSON.stringify([row.name, row.type, row.unit, dimensions]);
     if (!groups.has(groupId)) groups.set(groupId, { name: row.name, type: row.type, unit: row.unit || "",
       dimensions, points: 0, value: 0, count: 0, sum: 0, mean: null, min: null, max: null, partial: false,

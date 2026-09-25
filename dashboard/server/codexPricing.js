@@ -1,4 +1,5 @@
 import { observedTokenPair } from "./observedTokens.js";
+import { computeCost as claudeComputedCost } from "./pricing.js";
 
 // USD per million tokens; AWS model-card list prices.
 // Rates already include the commercial regional fee. Never add it again.
@@ -31,6 +32,11 @@ export const DEFAULT_CODEX_PRICING = {
 };
 
 const object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+const RATE_FIELDS = ["input", "cacheWrite", "cacheRead", "output"];
+function validRates(prices) {
+  return object(prices) && RATE_FIELDS.every(
+    (key) => typeof prices[key] === "number" && Number.isFinite(prices[key]) && prices[key] >= 0);
+}
 export function parseCodexPricing(raw) {
   if (!raw) return DEFAULT_CODEX_PRICING;
   let additions;
@@ -47,10 +53,28 @@ export function parseCodexPricing(raw) {
     for (const scope of ["regional", "global"]) {
       if (scope === "global" && value[scope] === undefined) continue;
       for (const tier of ["short", "long"]) {
-        const prices = value[scope]?.[tier];
-        if (!object(prices) || !["input", "cacheWrite", "cacheRead", "output"].every(
-          (key) => typeof prices[key] === "number" && Number.isFinite(prices[key]) && prices[key] >= 0))
+        if (!validRates(value[scope]?.[tier]))
           throw new Error("Codex pricing requires finite nonnegative rates for every token bucket");
+      }
+    }
+    // backend별(mantle/runtime) 요율 오버라이드(선택, ADR-017) — mantle/runtime 사이에 실제
+    // 가격 차이가 있는 모델만 지정한다. 각 backend는 regional/global 중 하나 이상을 채워야
+    // 하고, 채운 scope는 short/long 둘 다 있어야 한다(기본 entry와 같은 완전성 요구).
+    if (value.backends !== undefined) {
+      if (!object(value.backends))
+        throw new Error(`CODEX_PRICING_JSON["${model}"].backends must be an object`);
+      for (const [backend, rates] of Object.entries(value.backends)) {
+        if (!["bedrock-mantle", "bedrock-runtime"].includes(backend))
+          throw new Error(`CODEX_PRICING_JSON["${model}"].backends key "${backend}" must be bedrock-mantle or bedrock-runtime`);
+        if (!object(rates) || (rates.regional === undefined && rates.global === undefined))
+          throw new Error(`CODEX_PRICING_JSON["${model}"].backends["${backend}"] must set regional and/or global rates`);
+        for (const scope of ["regional", "global"]) {
+          if (rates[scope] === undefined) continue;
+          for (const tier of ["short", "long"]) {
+            if (!validRates(rates[scope]?.[tier]))
+              throw new Error(`CODEX_PRICING_JSON["${model}"].backends["${backend}"] requires finite nonnegative rates for every token bucket`);
+          }
+        }
       }
     }
   }
@@ -85,10 +109,22 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
   const validScope = !rawModel.startsWith("us-gov.")
     && !(row.backend === "bedrock-mantle" && /^(us|global)\./.test(rawModel));
   const entry = prices[codexModel(rawModel)];
-  const rates = entry?.[scope]?.[row.context_tier];
-  const available = valid && knownBackend && validScope && rates;
-  const amount = available ? ((input - read - write) * rates.input + read * rates.cacheRead
-    + write * rates.cacheWrite + output * rates.output) / 1e6 : null;
+  // backend별 오버라이드(entry.backends, ADR-017)가 있으면 그 요율을 먼저 쓰고, 없으면 이
+  // 모델의 기본 regional/global 요율로 떨어진다.
+  const rates = entry?.backends?.[row.backend]?.[scope]?.[row.context_tier] ?? entry?.[scope]?.[row.context_tier];
+  // 자체 단가표에 없는 모델이 Anthropic 계열(정규화하면 Claude 단가표 key와 일치)이면
+  // Claude 단가표로 계산 추정치를 낸다(ADR-017) — 멀티모델 Bedrock 테스트에서 Codex를 통해
+  // 호출된 Claude 모델(예: global.anthropic.claude-fable-5-1)이 미산정으로 남는 문제를 고친다.
+  // Codex 자체 단가표가 있으면 그쪽이 우선이라 이 폴백은 시도하지 않는다.
+  const claudeCost = !entry && knownBackend && validScope
+    ? claudeComputedCost(rawModel, row.backend, { input: input - read - write, output, cacheRead: read, cacheWrite: write })
+    : null;
+  const available = valid && knownBackend && validScope && (rates || claudeCost !== null);
+  const amount = available
+    ? rates ? ((input - read - write) * rates.input + read * rates.cacheRead
+      + write * rates.cacheWrite + output * rates.output) / 1e6
+      : claudeCost
+    : null;
   const rounded = amount === null ? null : Math.round(amount * 1e12) / 1e12;
   const cost = Number.isFinite(rounded) ? rounded : null;
   // One reason per unpriced response, checked in this order. A known model without a rate
@@ -97,7 +133,7 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
   const unpriced_reason = cost !== null ? null
     : !knownBackend ? "unknown_backend"
     : !validScope || (entry && !rates) ? "scope"
-    : !entry ? "unknown_model"
+    : !entry && claudeCost === null ? "unknown_model"
     : !valid ? "invalid_usage"
     : "unknown_model";
   return {
@@ -107,6 +143,8 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
     reasoning_tokens: reasoning, tokens: valid ? input + output : null,
     observed_tokens: observedTokenPair(row.input_tokens_total, row.output_tokens),
     cost_usd: cost,
-    cost_basis: "aws_list_estimate", unpriced: cost === null, unpriced_reason, invalid: !valid,
+    cost_basis: "aws_list_estimate",
+    ...(cost !== null && !rates ? { price_source: "claude_table" } : {}),
+    unpriced: cost === null, unpriced_reason, invalid: !valid,
   };
 }
