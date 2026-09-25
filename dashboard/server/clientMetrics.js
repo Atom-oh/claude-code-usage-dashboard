@@ -251,6 +251,9 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
       .map(([, group]) => finish(group)).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.model.localeCompare(b.model) || a.backend.localeCompare(b.backend)) } : {}) };
 }
 
+// Streaming delta events: bulk scope evidence only (no usage keys, never priced).
+const CODEX_DELTA_EVENT = "EventName IN ('codex.sse_event', 'codex.websocket_event') AND endsWith(LogAttributes['event.kind'], '.delta')";
+
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex") {
   const isCodex = client === "codex";
   const params = { from: toChDateTime(from), to: toChDateTime(to),
@@ -320,8 +323,19 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     FROM claude_code.otel_logs
     ${isCodex ? "" : "LEFT JOIN session_group ug USING (SessionId)"}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
-      AND ${isCodex ? "startsWith(EventName, 'codex.')"
-        : `EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})`}
+      AND ${isCodex ? `startsWith(EventName, 'codex.') AND NOT (${CODEX_DELTA_EVENT})`
+        : `EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})`}${isCodex ? `
+    -- Stream deltas are ~99% of Codex log rows and only ever act as scope evidence, whose
+    -- presence (not count) feeds requires_usage; the final SELECT drops those rows. One row per
+    -- scope keeps that evidence without a full-row DISTINCT over millions of maps.
+    UNION ALL
+    SELECT min(Timestamp), any(mapSort(ResourceAttributes)), any(mapSort(LogAttributes)),
+      LogAttributes['conversation.id'] AS session, ${user} AS user, LogAttributes['model'] AS model,
+      ${backend.replaceAll("r['", "ResourceAttributes['")} AS backend,
+      ResourceAttributes['project.name'] AS project, EventName AS event_name
+    FROM claude_code.otel_logs
+    WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND ${CODEX_DELTA_EVENT}
+    GROUP BY session, user, model, backend, project, event_name` : ""}
   ), ${modelSessions} typed AS (
     SELECT *,
       replaceRegexpOne(model, '^(us|global)\\\\.', '') AS base_model,
