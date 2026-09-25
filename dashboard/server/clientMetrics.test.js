@@ -389,6 +389,20 @@ test("unsupported mixed-client filters fail before queries and prices remain ser
   assert.equal(params.clientUser, "x' OR 1=1");
 });
 
+// Stream deltas are ~99% of Codex log rows; a full-row DISTINCT over them took ~8 s for 7 days.
+// They are scope evidence only, so they are reduced to one row per scope instead.
+test("Codex stream deltas skip the full-row DISTINCT and keep one evidence row per scope", () => {
+  const { sql } = buildCodexQuery(new Date("2026-09-14"), new Date("2026-09-15"));
+  const [distinctBranch, deltaBranch] = sql.split("UNION ALL");
+  assert.ok(deltaBranch, "delta branch present");
+  assert.match(distinctBranch, /SELECT DISTINCT Timestamp/);
+  assert.match(distinctBranch, /NOT \(EventName IN \('codex.sse_event', 'codex.websocket_event'\) AND endsWith\(LogAttributes\['event.kind'\], '.delta'\)\)/);
+  assert.match(deltaBranch, /GROUP BY session, user, model, backend, project, event_name/);
+  assert.doesNotMatch(deltaBranch.split("), typed AS")[0], /DISTINCT/);
+  const claude = buildCodexQuery(new Date("2026-09-14"), new Date("2026-09-15"), {}, {}, "claude").sql;
+  assert.doesNotMatch(claude, /endsWith\(LogAttributes\['event.kind'\], '.delta'\)/);
+});
+
 test("client model terms are normalized and bound", () => {
   const term = "global.anthropic.claude-sonnet-5' OR 1=1";
   for (const client of ["claude", "codex"]) {
