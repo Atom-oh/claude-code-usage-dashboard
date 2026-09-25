@@ -209,9 +209,6 @@ test("usage availability isolates model, backend, user and project", () => {
       { cost_per_session: 0.00238425, cost_per_request: 0.00238425, cost_partial: true,
         tokens_per_request: null, cache_hit_rate: null });
   }
-  // Backend isolation needs a model with no vendor/region prefix (ADR-017): the fixture's
-  // default model ("openai.gpt-6-astra") resolves its backend from the model id, so an
-  // overridden resource tag alone no longer creates a different scope for it.
   fields(foldCodexInsightsLogs([completion(1),
     request(2, { model: "bare-model" }, { backend: "bedrock-runtime" })]).summary,
     { cost_per_session: 0.00238425, cost_per_request: 0.00238425, cost_partial: true,
@@ -224,9 +221,6 @@ test("usage availability isolates model, backend, user and project", () => {
 
 test("unknown model or backend preserves known costs and measured tokens", () => {
   for (const [attributes, resource] of [[{ model: "unpriced" }, {}],
-    // A bare model (no vendor/region prefix) keeps the resource tag decisive (ADR-017) —
-    // the fixture's default prefixed model would otherwise resolve mantle from the model
-    // id regardless of an empty/invalid tag.
     [{ model: "bare-model" }, { backend: "" }],
     [{ model: "bare-model" }, { backend: "unknown", provider_name: "amazon-bedrock" }]]) {
     const out = foldCodexInsightsLogs([completion(1), completion(2, attributes, resource), request(3)]);
@@ -564,9 +558,6 @@ test("real ClickHouse preserves raw identity, limits and clientMetrics model att
       make("", "api_request", model), make("", "tool_result"),
       ...["api_request", "tool_result"].map((event) => make("fallback", event,
         event === "api_request" ? model : "", { "user.email": "", "enduser.id": "scope-fallback" })),
-      // Named for the old contract: an empty/invalid tag alone no longer makes a
-      // model-bearing row "unknown" (ADR-017) — this model has a vendor prefix
-      // (openai.), so it resolves to bedrock-mantle regardless of the empty tag.
       make("unknown-backend", "tool_result", model, { backend: "" }),
       { ...make("foreign", "api_request", model),
         attributes: { ...make("foreign", "api_request", model).attributes, "event.name": "api_request" } },
@@ -578,8 +569,6 @@ test("real ClickHouse preserves raw identity, limits and clientMetrics model att
       .map((row) => row.attributes.tool_name).sort(), ["direct", "fallback", "matched", "unknown-backend"]);
     assert.deepEqual(overview.filter((row) => row.kind === "tool").map((row) => row.tool).sort(),
       ["direct", "fallback", "matched", "unknown-backend"]);
-    // Nothing in this fixture is genuinely unknown backend any more: every model-bearing
-    // row uses the vendor-prefixed target model, which always resolves to bedrock-mantle.
     const unknown = await select({ user: "scope", model, backend: "unknown" });
     assert.deepEqual(unknown.map((row) => row.attributes.tool_name), []);
     await db.command({ query: `INSERT INTO otel_logs (Timestamp, ResourceAttributes, LogAttributes)

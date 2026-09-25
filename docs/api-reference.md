@@ -44,12 +44,9 @@ responses and streaming chat keep their separate response handling.
 `client=all|claude|codex` selects enabled sources;
 `backend=all|bedrock-mantle|bedrock-runtime|anthropic|unknown`. Invalid/disabled clients,
 arrays and nonempty group/project filters fail before caching.
-Backend is resolved from the model id prefix first, for both clients: a cross-region
-routing prefix (`us.`/`us-gov.`/`eu.`/`apac.`/`jp.`/`au.`/`global.`) is `bedrock-runtime`;
-a bare vendor namespace (`anthropic.`/`openai.`/...) is `bedrock-mantle`; otherwise it falls
-back to the resource-attribute tag (Codex only) or, for Claude, the enterprise channel maps
-to `anthropic`. Anything else is `unknown` — a bedrock-channel Claude row with a bare,
-unrecognized model is `unknown`, not an assumed `bedrock-runtime`. See
+Backend is resolved from the model id prefix first (region prefix → runtime, bare vendor
+namespace → mantle), falling back to the resource tag (Codex) or the enterprise channel
+(Claude → `anthropic`); otherwise `unknown`. See
 [ADR-017](decisions/ADR-017-backend-cost-fallback.md).
 
 Claude model terms normalize. Modeled rows match directly.
@@ -66,15 +63,14 @@ consumers. These fields also appear in Codex detail summary/Effort rows. See
 [ADR-014](decisions/ADR-014-observed-token-subtotals.md).
 
 `cost_usd` uses `cost_basis=client_reported` (Claude) or `aws_list_estimate` (Codex), or
-(Claude only, this endpoint only) `computed_estimate`/`mixed` when a row/group has no usable
-report but a token-priced estimate ([ADR-017](decisions/ADR-017-backend-cost-fallback.md));
-`cost_estimated` counts those rows. It sums usable reports/estimates even when other records
-are unpriced. `cost_partial` discloses exclusions or an unsafe aggregate; `unpriced` counts
-remain. Groups with only unpriced evidence remain null; explicit zero stays zero.
+(Claude, this endpoint only) `computed_estimate`/`mixed` for a token-priced fallback when
+no report is usable ([ADR-017](decisions/ADR-017-backend-cost-fallback.md)); `cost_estimated`
+counts those rows. It sums usable reports/estimates even when other records are unpriced.
+`cost_partial` discloses exclusions or an unsafe aggregate; `unpriced` counts remain.
+Groups with only unpriced evidence remain null; explicit zero stays zero.
 Positive Claude reports remain usable with missing token fields; zero reports still
 require known zero usage. Codex estimates still require valid usage and a known rate
-(its own table, or a fallback to the Claude table for an Anthropic model Codex has no
-price for; `price_source: "claude_table"` on that row).
+(its own table, or the Claude table for an Anthropic model; `price_source: "claude_table"`).
 Cost unit values use the known subtotal and observed denominators, with partial
 labels in the UI/CSV. See [ADR-013](decisions/ADR-013-known-cost-subtotals.md).
 User counts union IDs; sessions include client; model identity counts overlap.

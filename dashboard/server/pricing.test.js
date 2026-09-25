@@ -468,9 +468,7 @@ test("rollupComputedCost carries the fable-5-1 0.025x cacheRead through the fold
   assert.equal(rows[0].unpriced_tokens, 0);
 });
 
-// ADR-017: mantle과 runtime의 요율이 다른 모델을 위한 선택적 backend별 오버라이드.
-// end-to-end(priceFor/computeCost) 검증은 pricing.backends.test.js — 이 파일은 이미 상단에서
-// 셸 env에 PRICING_JSON이 없다고 단언하므로, 그 두 함수는 여기서 항상 기본 테이블을 본다.
+// ADR-017 backend별 오버라이드 (end-to-end는 pricing.backends.test.js).
 test("PRICING_JSON backends must be an object keyed by a known backend", () => {
   const base = { "claude-bad-3": { input: 1, output: 1 } };
   assert.throws(
@@ -494,9 +492,7 @@ test("PRICING_JSON backends must be an object keyed by a known backend", () => {
   );
 });
 
-// Genuinely field-by-field: overriding input alone must not silently re-derive
-// cacheWrite/cacheRead/cacheWrite1h from that input — every unset field falls back to
-// the model's base rate exactly as documented, never a value the base rate doesn't have.
+// Field-by-field: overriding input alone must not re-derive cacheWrite/cacheRead/cacheWrite1h.
 test("a PRICING_JSON backends override only fills the fields it sets; unset fields fall back to the base rate, never a derived value", () => {
   const { table } = buildPricing({ PRICING_JSON: JSON.stringify({
     "claude-bad-4": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25,

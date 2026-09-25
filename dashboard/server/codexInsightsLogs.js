@@ -44,10 +44,6 @@ export function logSelection(from, to, filters = {}, distinct = true) {
   FROM unique_events
   WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
     AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
-    -- Coarse attribution (model-less rows) matches session/user/project only, not backend
-    -- (ADR-017): backend is now resolved per row from that row's own model, so a
-    -- model-less row's session-mate with a different, prefix-resolved model can carry a
-    -- different backend than the model-less row itself would guess on its own.
     ${filters.model ? `AND (${modelMatch} OR (model = '' AND
       (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}`;
   return { sql, params };
@@ -160,12 +156,6 @@ function statistics(values) {
     p50_ms: quantile(0.5), p95_ms: quantile(0.95), max_ms: sorted.at(-1) ?? null };
 }
 
-// The session-only key (includeModel=false, used for model-less coarse attribution)
-// deliberately excludes backend (ADR-017): backend is now resolved per row from that
-// row's own model, so a model-less row's session-mate with a different, prefix-resolved
-// model can carry a different backend than the model-less row itself would guess on its
-// own (it has no model to resolve from). The model-inclusive key keeps backend — harmless,
-// since a fixed model already pins backend deterministically.
 function scope(row, includeModel = true, model = row.attributes.model) {
   const a = row.attributes, r = row.resource;
   const identity = [a["conversation.id"] || ["unidentified", row.timestamp],

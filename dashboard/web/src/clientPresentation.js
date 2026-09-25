@@ -2,10 +2,7 @@ import { formatObserved, observedTokens } from "./clientUsage.js";
 
 export const CLIENT_NAMES = { claude: "Claude Code", codex: "Codex" };
 export const clientName = (value) => CLIENT_NAMES[value] || value || "—";
-// computed_estimate/mixed: ADR-017 — reported_cost가 없는(report_missing/report_zero_with_tokens)
-// Claude 행을 토큰 단가로 채운 계산 추정치. mixed는 같은 그룹에 보고값과 추정치가 섞여 있다는
-// 뜻으로, 어느 쪽 원본도 다른 쪽으로 재표시(relabel)하지 않는다(ADR-013의 "no source is
-// relabelled" 원칙은 그대로 유지 — 이 두 라벨은 그 원칙의 예외가 아니라 새 기준의 이름이다).
+// computed_estimate/mixed: ADR-017 — 보고 비용 없는 Claude 행을 토큰 단가로 채운 추정치.
 export const basisLabel = (value) => ({
   client_reported: "클라이언트 보고", aws_list_estimate: "AWS 정가 추정",
   computed_estimate: "계산 추정", mixed: "보고+추정",
@@ -36,9 +33,7 @@ export function costBasisLabel(source, label = basisLabel(source.cost_basis)) {
   const partial = source.cost_partial === true || unpriced > 0;
   return [label, unknown ? "미산정" : partial ? "부분합" : null,
     unpriced > 0 ? `${unknown ? "" : "미산정 "}${formatObserved(unpriced)}건 제외` : null,
-    // ADR-017: reported_cost가 없어 계산 추정치로 채운 건수 — client_reported로 보이는 값
-    // 안에 조용히 섞이지 않도록 항상 별도로 드러낸다(cost_basis가 이미 mixed/computed_estimate
-    // 여도, "몇 건"인지는 이 카운트만 답한다).
+    // ADR-017: 계산 추정으로 채운 건수를 별도로 드러낸다.
     estimated > 0 ? `추정 ${formatObserved(estimated)}건` : null]
     .filter(Boolean).join(" · ");
 }

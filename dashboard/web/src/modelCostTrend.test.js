@@ -149,10 +149,6 @@ test("fromByModelTime builds model cells, timeline metadata and the idle fill pe
   expect("idle" in codex[0]).toBe(false);
 });
 
-// ADR-017: a Claude row/bucket with no usable client report can carry a token-computed
-// estimate instead. fromByModelTime must mark it `estimated: true` — never draw it as an
-// ordinary report — and only for that basis, never for client_reported or Codex's
-// aws_list_estimate.
 test("fromByModelTime marks a computed_estimate or mixed cost_basis as estimated, and nothing else", () => {
   const data = { ...OV, by_model_time: [
     { ...OV.by_model_time[0], cost_basis: "computed_estimate" },
@@ -163,12 +159,8 @@ test("fromByModelTime marks a computed_estimate or mixed cost_basis as estimated
   ] };
   const [claudeModelCell] = fromByModelTime(data, "claude");
   expect(claudeModelCell.estimated).toBe(true);
-  // The base fixture (client_reported / aws_list_estimate, no cost_basis field at all) is
-  // never estimated.
   expect(fromByModelTime(OV, "claude")[0].estimated).toBe(false);
   expect(fromByModelTime(OV, "codex").every((cell) => cell.estimated === false)).toBe(true);
-  // A metadata-only ("model === null") residual cell built from a mixed timeseries bucket
-  // is estimated too — the flag isn't limited to modeled rows.
   const metaData = { bucket_hours: 1, effective_range: { from: "2026-09-14T10:00:00.000Z", to: "2026-09-14T11:00:00.000Z" },
     timeseries: [{ client: "claude", t: "2026-09-14T10:00:00Z", cost_usd: 3, cost_partial: false, unpriced: 0, cost_basis: "mixed" }],
     by_model_time: [] };
@@ -264,8 +256,6 @@ test("rollupBuckets merges minute cells into hours, keeping a partial first hour
   ]);
 });
 
-// ADR-017: a rolled-up bucket is estimated if ANY of its merged source cells was — the
-// flag must survive folding, same as partial/unavailable do.
 test("rollupBuckets marks a merged bucket estimated when any member was, even mixed with a report", () => {
   const input = [
     m("2026-09-24 10:00:00", "a", 1, { estimated: false }),
@@ -310,8 +300,6 @@ test("a rolled-up bucket of idle plus a measured $0 is zero", () => {
   expect(buildModelCostFrame(rolled, { bucketHours: 24 }).buckets[0].state).toBe("zero");
 });
 
-// ADR-017: a bucket with any estimated contributing cell is hasEstimate — the tooltip
-// disclosure key — and totals.estimateBuckets counts those buckets across the frame.
 test("buildModelCostFrame flags a bucket hasEstimate when any contributing cell is, and counts it in totals", () => {
   const cells = [
     c(D1, "claude-sonnet-5", "enterprise", 5, { estimated: true }),

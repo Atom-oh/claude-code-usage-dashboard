@@ -1,29 +1,7 @@
-// Shared Claude/Codex backend (mantle vs runtime) resolution.
-//
-// 2026-09-25 decision (supersedes the earlier "model names never establish backend"
-// rule in docs/runbooks/codex-telemetry.md and collector-config.yaml, and Claude's old
-// "bedrock channel is always bedrock-runtime" assumption): multi-model Bedrock testing
-// showed the launcher's inherited `x-ccdash-backend` tag is unreliable once a gateway or
-// wrapper process is in front of Codex — every row observed live carried "bedrock-mantle"
-// even for `global.`-prefixed models that only exist on Bedrock Runtime. The model ID
-// prefix is the more reliable signal and is checked first:
-//   1. A cross-region routing prefix (us./us-gov./eu./apac./jp./au./global.) means the
-//      request went through Bedrock Runtime's inference profile routing → bedrock-runtime.
-//   2. Otherwise, if the model id itself starts with a bare vendor namespace
-//      (anthropic./openai./xai./...) → bedrock-mantle (Bedrock Marketplace/mantle serves
-//      models under their raw vendor id, never through a region-routed profile). A vendor
-//      namespace is company-name-shaped: it must end in a letter right before the dot,
-//      never a digit. This deliberately excludes a bare model id whose OWN version number
-//      happens to contain a dot (grok-4.6, gpt-5.4) — those have no vendor segment at all
-//      and must fall through to step 3, not be mistaken for "grok-4." + "6". Every real
-//      vendor prefix observed live (openai, anthropic, xai, zai, moonshotai, deepseek,
-//      minimax, qwen) already ends in a letter, so this excludes no genuine case.
-//   3. Otherwise (no dot-prefixed vendor namespace, e.g. a bare "claude-*", a bare
-//      versioned id like "grok-4.6", or a third-party short id) fall back to the
-//      resource-attribute tag, when it is one of the two known values. Codex is the only
-//      client that carries this tag; Claude has none, so its bare-model rows land in step 4.
-//   4. Otherwise: unknown.
-// See docs/decisions/ADR-017-backend-cost-fallback.md.
+// Shared Claude/Codex backend (mantle vs runtime) resolution (ADR-017): cross-region
+// routing prefix → runtime; else a vendor namespace ending in a letter before the dot
+// (excludes a model's own versioned dot, e.g. grok-4.6) → mantle; else the resource tag
+// if valid (Codex only); else unknown.
 const REGION_PREFIX = /^(us|us-gov|eu|apac|jp|au|global)\./;
 const VENDOR_PREFIX = /^[a-z][a-z0-9-]*[a-z]\./;
 export const VALID_BACKENDS = ["bedrock-mantle", "bedrock-runtime"];
@@ -35,9 +13,7 @@ export function resolveBackend(model, tag) {
   return VALID_BACKENDS.includes(tag) ? tag : "unknown";
 }
 
-// SQL mirror of resolveBackend(). modelExpr/tagExpr are SQL expressions (a map access,
-// a column, or a string literal such as `''` when the row's client has no resource tag).
-// Keep the two regexes textually identical to the ones above (same alternation order).
+// SQL mirror of resolveBackend(). Keep the two regexes identical to the ones above.
 export function backendSql(modelExpr, tagExpr) {
   return `multiIf(match(${modelExpr}, '^(us|us-gov|eu|apac|jp|au|global)\\\\.'), 'bedrock-runtime',
     match(${modelExpr}, '^[a-z][a-z0-9-]*[a-z]\\\\.'), 'bedrock-mantle',

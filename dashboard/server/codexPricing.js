@@ -57,9 +57,6 @@ export function parseCodexPricing(raw) {
           throw new Error("Codex pricing requires finite nonnegative rates for every token bucket");
       }
     }
-    // backend별(mantle/runtime) 요율 오버라이드(선택, ADR-017) — mantle/runtime 사이에 실제
-    // 가격 차이가 있는 모델만 지정한다. 각 backend는 regional/global 중 하나 이상을 채워야
-    // 하고, 채운 scope는 short/long 둘 다 있어야 한다(기본 entry와 같은 완전성 요구).
     if (value.backends !== undefined) {
       if (!object(value.backends))
         throw new Error(`CODEX_PRICING_JSON["${model}"].backends must be an object`);
@@ -108,14 +105,9 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
   const scope = rawModel.startsWith("global.") ? "global" : "regional";
   const validScope = !rawModel.startsWith("us-gov.")
     && !(row.backend === "bedrock-mantle" && /^(us|global)\./.test(rawModel));
-  const entry = prices[codexModel(rawModel)];
-  // backend별 오버라이드(entry.backends, ADR-017)가 있으면 그 요율을 먼저 쓰고, 없으면 이
-  // 모델의 기본 regional/global 요율로 떨어진다.
+  const entry = prices[codexModel(rawModel)]; // ADR-017 backend override, then base rate.
   const rates = entry?.backends?.[row.backend]?.[scope]?.[row.context_tier] ?? entry?.[scope]?.[row.context_tier];
-  // 자체 단가표에 없는 모델이 Anthropic 계열(정규화하면 Claude 단가표 key와 일치)이면
-  // Claude 단가표로 계산 추정치를 낸다(ADR-017) — 멀티모델 Bedrock 테스트에서 Codex를 통해
-  // 호출된 Claude 모델(예: global.anthropic.claude-fable-5-1)이 미산정으로 남는 문제를 고친다.
-  // Codex 자체 단가표가 있으면 그쪽이 우선이라 이 폴백은 시도하지 않는다.
+  // ADR-017 Claude-table fallback; existing entry always wins.
   const claudeCost = !entry && knownBackend && validScope
     ? claudeComputedCost(rawModel, row.backend, { input: input - read - write, output, cacheRead: read, cacheWrite: write })
     : null;

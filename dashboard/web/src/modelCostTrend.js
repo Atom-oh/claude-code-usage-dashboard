@@ -100,10 +100,7 @@ function idleCell(t) {
   return { t, model: null, channel: null, known: null, partial: false, unavailable: 0, reasons: {}, observed_tokens: null, idle: true, estimated: false };
 }
 
-// Shared fix-up for every non-idle cell an adapter builds (design §B4). `estimated` marks a
-// known amount that came from ADR-017's token-computed fallback (Claude cost_basis
-// computed_estimate/mixed) rather than a client report — callers must disclose this, never
-// draw it as an ordinary report (the shared trend basis chip and tooltip both read it).
+// Shared fix-up for every non-idle cell an adapter builds (design §B4). `estimated`: ADR-017.
 function finishCell(t, model, channel, known, unavailableInput, reasonsInput, partialFlag, observedTokens, estimated = false) {
   const reasons = {};
   let sumR = 0;
@@ -153,9 +150,6 @@ export function fromByModelDaily(rows) {
   return cells.sort(compareCells);
 }
 
-// A group's cost_basis (ADR-017) discloses whether ITS known amount is a client report,
-// a token-computed fallback, or a mix of both across the responses it folds. Only the
-// latter two ever need disclosure as "estimated" here.
 const isEstimatedBasis = (basis) => basis === "computed_estimate" || basis === "mixed";
 
 export function fromByModelTime(data, client) {
@@ -407,8 +401,6 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
     }
     const partialSeries = series.map((s) => s.key).filter((key) => issues.some((issue) => issue.series === key));
     const othersPartial = issues.some((issue) => issue.series === OTHERS_KEY);
-    // ADR-017: at least one contributing cell's known amount is a token-computed fallback,
-    // not a client report — the tooltip must disclose this, never draw it as an ordinary report.
     return { t, state, total, segments, others: othersSum, unavailable, reasons, issues, partialSeries, othersPartial,
       hasEstimate: total !== null && hasEstimate };
   });

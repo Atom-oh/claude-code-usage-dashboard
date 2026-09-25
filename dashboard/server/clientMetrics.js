@@ -51,12 +51,7 @@ function accumulator(meta, reasons = false) {
     _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
 }
 
-// The session-only key (model === null, used for model-less coarse attribution)
-// deliberately excludes backend (ADR-017): backend is now resolved per row from that
-// row's own model, so a model-less row's session-mate with a different, prefix-resolved
-// model can carry a different backend than the model-less row itself would guess on its
-// own. The model-inclusive key keeps backend — harmless, since a fixed model already
-// pins backend deterministically.
+// model === null (session-only) drops backend (ADR-017).
 function usageScope(row, model = row.model || "") {
   const identity = [row.client, row.session || ["unidentified", row.t], row.user || "", row.project || ""];
   return JSON.stringify(model === null ? identity : [...identity, row.backend || "unknown", model]);
@@ -73,12 +68,6 @@ function claudeUsage(row) {
   // A usable report has no reason. Counter rows carry cost_observed; rows without it count as observed.
   const unpriced_reason = reportCost !== null ? null
     : report === null || Number(row.cost_observed ?? 1) === 0 ? "report_missing" : "report_zero_with_tokens";
-  // ADR-017: fill with a token-priced estimate only where the report itself is unusable
-  // (reportCost === null — report_missing, or report_zero_with_tokens's untrusted zero)
-  // and only when this model/backend has a rate. This never overwrites a USABLE report —
-  // a positive report, or a valid zero alongside known zero tokens — but a zero-with-tokens
-  // report is exactly one of the two reasons this fallback exists to fill. A model with no
-  // rate anywhere stays unpriced with its original reason.
   const estimated = reportCost === null && valid
     ? computeCost(row.model, row.backend,
         { input: row.input_tokens, output: row.output_tokens,
@@ -158,9 +147,6 @@ function finish(target) {
   }), sessions: _sessions.size, users: _users.size,
     backend: out.backend || (_backends.size === 1 ? [..._backends][0] : _backends.size ? "mixed" : "unknown"),
     cost_usd: cost,
-    // ADR-017: a Claude group mixing client-reported and token-estimated rows discloses
-    // both bases rather than silently relabeling the estimate as a report. Codex's basis
-    // is uniform (aws_list_estimate) and never mixes, so it keeps the accumulator default.
     cost_basis: out.client === "claude" && _hasEstimatedCost
       ? (_hasReportedCost ? "mixed" : "computed_estimate") : out.cost_basis,
     cost_partial: out.unpriced > 0 || costAvailable && cost === null,
@@ -327,22 +313,10 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   // Keep known pairs apart from unknown pairs even inside malformed usage.
   const validPair = "in_n_valid AND out_n_valid AND in_n + out_n <= 9007199254740991";
   const session = isCodex ? "a['conversation.id']" : "SessionId";
-  // Backend is resolved from the model id prefix first (region/global. routing prefix →
-  // runtime, bare vendor namespace → mantle); the resource-attribute tag (Codex only,
-  // '' for Claude) is only consulted for prefix-less models. See backend.js. Claude's
-  // enterprise channel still short-circuits to 'anthropic' — Enterprise sessions can only
-  // ever emit bare claude-* models, so there is no prefix to resolve there anyway.
   const backendExpr = (modelExpr, tagExpr) => isCodex ? backendSql(modelExpr, tagExpr)
     : `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql(modelExpr, tagExpr)})`;
   const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
-  // Coarse attribution only for model-less rows: evidence must share the selected
-  // client's session/user/project and range. Never replace an emitted model. backend is
-  // deliberately not part of this match (ADR-017): it is now resolved per row from that
-  // row's own model, so a model-less row's session-mate with a different, prefix-resolved
-  // model can legitimately carry a different backend than the model-less row itself would
-  // guess on its own (it has no model to resolve from) — matching on backend as well would
-  // wrongly treat that as a different session.
   const modelSessions = filters.model ? `model_sessions AS (
     SELECT session, user, project FROM unique_events WHERE session != '' AND ${modelMatch}
     ${isCodex ? `AND event_name IN (${eventNames.map(name => `'${name}'`).join(",")})` : ""}
@@ -430,12 +404,6 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   ), covered AS (
     -- Window only compacted scopes/groups, never raw diagnostic volume. Keep
     -- evidence in this table read and remove markers after evaluating coverage.
-    -- The two model-less windows partition by (session, user, project) only, not
-    -- backend (ADR-017): a model-less row cannot resolve its own backend from a model,
-    -- so it must not be required to match the backend its model-bearing session-mates
-    -- resolved from their own (possibly different) models. The first window keeps
-    -- backend because it also partitions by model, which already pins backend to a
-    -- single deterministic value across that partition.
     SELECT *,
       (max(NOT (kind = 'request' AND rejected_count = count)) OVER
         (PARTITION BY session, user, backend, project, model)

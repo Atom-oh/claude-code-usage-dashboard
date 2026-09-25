@@ -29,11 +29,6 @@ test("a model with no dot-prefixed namespace falls back to the resource tag", ()
   }
 });
 
-// A bare model's own version number can contain a dot (grok-4.6, gpt-5.4, claude-3.5) —
-// the segment right before that dot ends in a digit, never a letter, so it must not be
-// mistaken for a vendor namespace like "openai." or "xai." (every real vendor prefix ends
-// in a letter). Getting this wrong would silently override an explicit, correct runtime
-// tag with a wrong mantle guess purely because the bare model id happens to have a dot.
 test("a bare model's own version-number dot is never mistaken for a vendor namespace", () => {
   for (const model of ["grok-4.6", "gpt-5.4", "claude-3.5", "gpt-5.6-luna.2"]) {
     assert.equal(resolveBackend(model, "bedrock-runtime"), "bedrock-runtime", model);
@@ -53,13 +48,6 @@ test("VALID_BACKENDS lists exactly the two known backend strings", () => {
   assert.deepEqual(VALID_BACKENDS, ["bedrock-mantle", "bedrock-runtime"]);
 });
 
-// backendSql is the SQL mirror every call site (clientMetrics.js, queries.js,
-// codexInsightsLogs.js, codexLogAggregates.js, codexSignals.js) relies on to match
-// resolveBackend()'s decision exactly. The two regexes must stay textually identical to
-// the ones resolveBackend() itself uses (same alternation order, same anchoring) — assert
-// that literally, rather than re-parsing generated SQL, since that's the actual parity
-// requirement (the query already runs against real ClickHouse; see the live verification
-// in the ADR-017 PR description, not re-derivable in a unit test without a live cluster).
 test("backendSql embeds the exact same region/vendor regexes as resolveBackend", () => {
   const sql = backendSql("MODEL_EXPR", "TAG_EXPR");
   assert.match(sql, /multiIf\(match\(MODEL_EXPR, '\^\(us\|us-gov\|eu\|apac\|jp\|au\|global\)\\\\\.'\), 'bedrock-runtime',/);

@@ -135,7 +135,6 @@ test("cost status distinguishes complete, partial zero and entirely unknown cost
     .toBe("AWS 정가 추정 · 부분합");
 });
 
-// ADR-017: reported_cost가 없는 Claude 행을 계산 추정치로 채운 경우의 라벨.
 test("computed_estimate and mixed cost bases disclose the estimated count separately", () => {
   expect(presentationRow({ ...codexUsage, cost_basis: "computed_estimate" }).cost_basis_label)
     .toBe("계산 추정");
@@ -143,8 +142,6 @@ test("computed_estimate and mixed cost bases disclose the estimated count separa
     .cost_basis_label).toBe("계산 추정 · 추정 3건");
   expect(presentationRow({ ...codexUsage, cost_basis: "mixed", cost_estimated: 2 }).cost_basis_label)
     .toBe("보고+추정 · 추정 2건");
-  // The estimated count shows up even alongside an existing unpriced/partial disclosure —
-  // it never gets folded into or hidden by the unpriced count.
   expect(presentationRow({ ...codexUsage, cost_basis: "mixed", cost_partial: true, unpriced: 1,
     cost_estimated: 2 }).cost_basis_label).toBe("보고+추정 · 부분합 · 미산정 1건 제외 · 추정 2건");
 });

@@ -478,9 +478,6 @@ export async function clientClaudeRows(from, to, filters = {}) {
     -- coding-client:claude-usage
     SELECT formatDateTime(greatest(m.t, {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
       m.SessionId AS session, m.UserEmail AS user, ${normModel("m.Model")} AS model,
-      -- Model id prefix resolves backend first (backend.js); Claude has no resource tag,
-      -- so a bedrock-channel row with a bare/unrecognized model lands in 'unknown' rather
-      -- than the old blanket 'bedrock-runtime' assumption.
       multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("m.Model", "''")}) AS backend,
       countIf(m.MetricName = 'claude_code.token.usage' AND ${observed}) > 0 AS token_seen,
       countIf(m.MetricName = 'claude_code.cost.usage' AND ${observed}) > 0 AS cost_seen,

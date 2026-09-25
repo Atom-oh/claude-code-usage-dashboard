@@ -184,8 +184,6 @@ test("table toggle", async () => {
   ]);
 });
 
-// ADR-017: a bucket built from an estimated cell must disclose it in the status line, the
-// tooltip and the table — never draw the fallback as an ordinary report.
 test("a bucket with an estimated cell discloses it in the status, tooltip and table", async () => {
   const cells = [c(D1, "claude-sonnet-5", "enterprise", 5, { estimated: true })];
   const { container } = mount({ cells, bounds: BOUNDS, basis: "Claude 보고 비용" });
@@ -206,8 +204,6 @@ test("a bucket with an estimated cell discloses it in the status, tooltip and ta
   expect(within(firstRow).getAllByRole("cell").at(-1).textContent).toBe("확인됨 · 추정");
 });
 
-// The estimate disclosure is independent of the partial/issue one — a bucket with both
-// shows both, in its own dedicated tooltip element rather than colliding on one.
 test("an estimated and partial bucket discloses both the estimate and the issue note", async () => {
   const cells = [c(D1, "claude-sonnet-5", "enterprise", 5, { estimated: true, partial: true,
     unavailable: 1, reasons: { report_missing: 1 } })];

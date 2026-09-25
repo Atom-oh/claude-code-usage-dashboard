@@ -109,8 +109,7 @@ export function buildPricing(env) {
         cacheRead: row.cacheRead ?? row.input * 0.1,
         cacheWrite1h: row.cacheWrite1h ?? row.input * 2,
       };
-      // mantle과 runtime의 요율이 다를 수 있는 모델을 위한 선택적 backend별 오버라이드
-      // (ADR-017). 지정하지 않은 필드는 이 모델의 기본(위에서 채운) 요율을 그대로 쓴다.
+      // backend별 요율 오버라이드(ADR-017).
       if (row.backends !== undefined) {
         if (row.backends === null || Array.isArray(row.backends) || typeof row.backends !== "object")
           throw new Error(`PRICING_JSON["${key}"].backends must be an object`);
@@ -125,13 +124,7 @@ export function buildPricing(env) {
             if (typeof rates[field] !== "number" || !Number.isFinite(rates[field]) || rates[field] < 0)
               throw new Error(`PRICING_JSON["${key}"].backends["${backendKey}"].${field} must be a non-negative number`);
           }
-          // 진짜 필드별 폴백(문서화된 계약): 오버라이드가 명시한 필드만 쓰고, 나머지는 전부
-          // 이 모델의 기본 요율 그대로다. input을 오버라이드해도 cacheWrite/cacheRead/
-          // cacheWrite1h를 그 input에서 다시 유도하지 않는다 — 유도하면 예를 들어
-          // cacheWrite1h만 (input에서) 바뀌고 cacheWrite(5m)는 기본값에 머물러 TTL 설정에
-          // 따라 서로 다른 기준으로 계산되는 값이 나온다. undefined 필드는 객체에서 아예
-          // 빼야 한다 — 값을 undefined로 채우면 priceFor()의 {...base, ...override} 병합에서
-          // 그 키가 "존재"해 base의 값을 undefined로 덮어써 버린다.
+          // 필드별 폴백: 재유도 없음. undefined 필드는 키 자체를 빼야 함(존재하면 base를 지움).
           backends[backendKey] = Object.fromEntries(
             Object.entries(rates).filter(([, value]) => value !== undefined));
         }
@@ -166,8 +159,6 @@ export const PRICING_PROMPT_TABLE =
     .join("\n") +
   `\n(위 cacheWrite는 캐시 쓰기 TTL 가정 "${CACHE_WRITE_TTL}" 기준 단가다 — 서버 env PRICING_CACHE_WRITE_TTL로 1h/5m 전환)`;
 
-// backend(선택)는 PRICING_JSON의 모델별 backends 오버라이드를 고른다(ADR-017) — 지정하지
-// 않거나 그 모델에 오버라이드가 없으면 기본 요율 그대로.
 export function priceFor(model, backend) {
   const base = PRICING[normalizeModelId(model)];
   if (!base) return null;
@@ -175,10 +166,6 @@ export function priceFor(model, backend) {
   return override ? { ...base, ...override } : base;
 }
 
-// codexLogAggregates.js의 SQL 폴백(ADR-017)이 이 Claude 단가표를 그대로 재현하는 데 쓴다 —
-// backend 오버라이드 병합과 effectiveCacheWrite(TTL 가정) 적용까지 끝낸, model → backend →
-// 4개 요율(cacheWrite는 이미 실효 단가) 형태. codexPricing.js는 JS 쪽에서 priceFor/computeCost를
-// 직접 쓰므로 이 함수를 쓰지 않는다.
 export function resolvedRatesTable() {
   const rates = (p) => ({ input: p.input, output: p.output, cacheRead: p.cacheRead, cacheWrite: effectiveCacheWrite(p) });
   const out = {};
@@ -189,10 +176,6 @@ export function resolvedRatesTable() {
   return out;
 }
 
-// Codex 응답이 자체 단가표에 없는 Anthropic 모델(예: global.anthropic.claude-fable-5-1)일
-// 때 Claude 단가표로 계산 추정치를 내는 데 재사용한다(codexPricing.js) — Claude 오버뷰의
-// computed_estimate 폴백(clientMetrics.js)도 같은 공식을 쓴다. tokens는 이미 서브셋을
-// 분리한 입력(캐시 읽기/쓰기 제외)과 출력(reasoning 포함) 4개 필드.
 export function computeCost(model, backend, tokens) {
   const p = priceFor(model, backend);
   if (!p) return null;

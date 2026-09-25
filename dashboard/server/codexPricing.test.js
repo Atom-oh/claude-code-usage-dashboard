@@ -192,15 +192,9 @@ test("a non-finite configured estimate reports no usable rate", () => {
   assert.equal(row.unpriced_reason, "unknown_model");
 });
 
-// ADR-017: an Anthropic model routed through Codex (multi-model Bedrock testing) has no
-// entry in DEFAULT_CODEX_PRICING, so it falls back to the Claude table instead of staying
-// unpriced. The caller (buildCodexQuery/backend.js) is responsible for resolving `backend`
-// from the model id before this function ever sees the row — priceCodexUsage trusts it as
-// given, the same as it always has for the openai models above.
+// ADR-017 Claude-table fallback.
 test("an Anthropic model absent from the Codex table falls back to the Claude table", () => {
   const row = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "global.anthropic.claude-fable-5-1" });
-  // fable-5-1: input $10, output $50, cacheRead $0.25, cacheWrite(1h) $20 per 1M tokens.
-  // input=100-40-11=49, output=30, cacheRead=40, cacheWrite=11.
   assert.equal(row.cost_usd, 0.00222);
   assert.equal(row.cost_basis, "aws_list_estimate");
   assert.equal(row.price_source, "claude_table");
@@ -209,20 +203,15 @@ test("an Anthropic model absent from the Codex table falls back to the Claude ta
 });
 
 test("the Claude-table fallback never overrides an existing Codex-table entry or an invalid scope/usage", () => {
-  // Same model as the fixture's own regional rate: the Codex table wins, no price_source tag.
   const codexPriced = priceCodexUsage(usage);
   assert.equal(codexPriced.price_source, undefined);
-  // Explicit mantle tag + a global-prefixed model is still an invalid combination (unchanged
-  // guard) even though the model would otherwise resolve to a priced Claude model.
   const badScope = priceCodexUsage({ ...usage, backend: "bedrock-mantle", model: "global.anthropic.claude-fable-5-1" });
   assert.equal(badScope.cost_usd, null);
   assert.equal(badScope.unpriced_reason, "scope");
-  // Invalid usage still reports invalid_usage, not a fallback price.
   const badUsage = priceCodexUsage({ ...usage, backend: "bedrock-runtime",
     model: "global.anthropic.claude-fable-5-1", output_tokens: -1 });
   assert.equal(badUsage.cost_usd, null);
   assert.equal(badUsage.unpriced_reason, "invalid_usage");
-  // An Anthropic-looking id with no match in either table stays unknown_model.
   const noMatch = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "global.anthropic.claude-unreleased" });
   assert.equal(noMatch.cost_usd, null);
   assert.equal(noMatch.unpriced_reason, "unknown_model");

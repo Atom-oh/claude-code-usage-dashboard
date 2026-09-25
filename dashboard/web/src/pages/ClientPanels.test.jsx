@@ -530,9 +530,7 @@ test.each([["cost", "시간별*"], ["exec", "일간*"]])(
     expect([...claude.querySelectorAll('ul[aria-label="범례"] li')].map((li) => li.textContent)).toEqual(["claude-sonnet-5"]);
   });
 
-// ADR-017: the overview can fill a Claude cell with a token-computed estimate when no
-// report is usable. The static basis chip must disclose that, not draw it as an ordinary
-// report — Codex's chip is unaffected since it never carries a Claude cost_basis.
+// ADR-017: the basis chip discloses a computed-estimate cell; Codex's chip is unaffected.
 test("the Claude trend basis chip discloses an estimated cell; Codex's stays unaffected", () => {
   const data = modelTimeData();
   data.by_model_time[0].cost_basis = "computed_estimate";

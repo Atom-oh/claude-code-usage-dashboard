@@ -8,9 +8,7 @@ import { normModel } from "./queries.js";
 
 const LIMIT = 50000;
 const DEFAULT_PRICES = parseCodexPricing(process.env.CODEX_PRICING_JSON);
-// Anthropic models routed through Codex but absent from DEFAULT_PRICES (ADR-017) —
-// same table codexPricing.js's claudeComputedCost() reads, kept in sync automatically.
-const CLAUDE_RATES = resolvedRatesTable();
+const CLAUDE_RATES = resolvedRatesTable(); // ADR-017 fallback rates.
 const FAMILIES = ["event", "usage", "effort", "scope", "operations", "latency", "tool", "approval", "runtime"];
 const FAMILY_BUDGET = Math.floor((LIMIT - FAMILIES.length) / FAMILIES.length);
 const TOKEN_KEYS = ["input", "read", "write", "output", "reasoning"];
@@ -53,10 +51,6 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
   Object.entries(prices).forEach(([model, entry], i) => {
     params[`aggregateModel${i}`] = model;
     params[`aggregateThreshold${i}`] = entry.short_context_limit;
-    // backend별 오버라이드(entry.backends, ADR-017)를 이 모델의 기본 regional/global 요율보다
-    // 먼저 시도한다 — multiIf는 첫 매치를 쓰므로 배열 순서가 곧 우선순위다. 오버라이드가 없는
-    // 모델(기본값)은 backendKey별 source가 매번 undefined라 이 루프가 아무 case도 만들지
-    // 않고 그대로 null(기존 동작)로 떨어진다.
     for (const backendKey of [...VALID_BACKENDS, null]) {
       const source = backendKey ? entry.backends?.[backendKey] : entry;
       if (!source) continue;
@@ -76,14 +70,6 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
       }
     }
   });
-  // Anthropic 모델이 Codex를 통해 호출됐지만 위 자체 단가표에 없을 때(예:
-  // global.anthropic.claude-fable-5-1) Claude 단가표로 계산 추정치를 낸다(ADR-017). multiIf는
-  // 첫 매치를 쓰므로 이 case들이 위 Codex case 뒤에 이어붙는 순서만으로도 완전한 Codex 항목은
-  // 항상 우선하지만, 그 항목의 특정 scope/tier에 요율이 없는 "부분적" 항목(entry는 있지만
-  // rates가 없는 경우)은 그 case를 건너뛰고 이 자리까지 내려온다 — priceCodexUsage()가 그런
-  // 행을 반드시 "scope"로 보고하는 것과 어긋나므로, base_model이 Codex 단가표에 있는 모델이면
-  // (완전하든 부분적이든) 애초에 Claude 폴백을 시도하지 않는다(codexPricing.js의 `!entry` 게이트와
-  // 동일). claude_model은 normModel()로 완전히 정규화한 값이라 regional/global 구분이 없다.
   const codexModelKeys = Object.keys(prices);
   const notCodexEntry = codexModelKeys.length ? `NOT has(${strings(codexModelKeys)}, base_model)` : "1";
   Object.entries(claudeRates).forEach(([model, entry], i) => {
@@ -303,11 +289,6 @@ function scopeCoverage(rows) {
   let missingSession = false, missingUsage = false;
   const scopes = rows.map((row) => {
     const [session, user, backend, project, model, timestamp] = JSON.parse(row.dimensions);
-    // sessionKey (model-less coarse attribution) deliberately excludes backend (ADR-017):
-    // backend is now resolved per row from that row's own model, so a model-less row's
-    // session-mate with a different, prefix-resolved model can carry a different backend
-    // than the model-less row itself would guess on its own. key (same-model matching)
-    // keeps backend — harmless, since a fixed model already pins backend deterministically.
     const identity = [session || ["unidentified", timestamp], user, project];
     const sessionKey = JSON.stringify(identity), key = JSON.stringify([...identity, backend, model]);
     if (session) sessions.add(session);
