@@ -11,15 +11,21 @@
 //      request went through Bedrock Runtime's inference profile routing → bedrock-runtime.
 //   2. Otherwise, if the model id itself starts with a bare vendor namespace
 //      (anthropic./openai./xai./...) → bedrock-mantle (Bedrock Marketplace/mantle serves
-//      models under their raw vendor id, never through a region-routed profile).
-//   3. Otherwise (no dot-prefixed namespace at all, e.g. a bare "claude-*" or a
-//      third-party short id) fall back to the resource-attribute tag, when it is one of
-//      the two known values. Codex is the only client that carries this tag; Claude has
-//      none, so its bare-model rows land in step 4.
+//      models under their raw vendor id, never through a region-routed profile). A vendor
+//      namespace is company-name-shaped: it must end in a letter right before the dot,
+//      never a digit. This deliberately excludes a bare model id whose OWN version number
+//      happens to contain a dot (grok-4.6, gpt-5.4) — those have no vendor segment at all
+//      and must fall through to step 3, not be mistaken for "grok-4." + "6". Every real
+//      vendor prefix observed live (openai, anthropic, xai, zai, moonshotai, deepseek,
+//      minimax, qwen) already ends in a letter, so this excludes no genuine case.
+//   3. Otherwise (no dot-prefixed vendor namespace, e.g. a bare "claude-*", a bare
+//      versioned id like "grok-4.6", or a third-party short id) fall back to the
+//      resource-attribute tag, when it is one of the two known values. Codex is the only
+//      client that carries this tag; Claude has none, so its bare-model rows land in step 4.
 //   4. Otherwise: unknown.
-// See docs/decisions/ADR-017-model-prefix-backend-and-computed-fallback.md.
+// See docs/decisions/ADR-017-backend-cost-fallback.md.
 const REGION_PREFIX = /^(us|us-gov|eu|apac|jp|au|global)\./;
-const VENDOR_PREFIX = /^[a-z][a-z0-9-]*\./;
+const VENDOR_PREFIX = /^[a-z][a-z0-9-]*[a-z]\./;
 export const VALID_BACKENDS = ["bedrock-mantle", "bedrock-runtime"];
 
 export function resolveBackend(model, tag) {
@@ -34,6 +40,6 @@ export function resolveBackend(model, tag) {
 // Keep the two regexes textually identical to the ones above (same alternation order).
 export function backendSql(modelExpr, tagExpr) {
   return `multiIf(match(${modelExpr}, '^(us|us-gov|eu|apac|jp|au|global)\\\\.'), 'bedrock-runtime',
-    match(${modelExpr}, '^[a-z][a-z0-9-]*\\\\.'), 'bedrock-mantle',
+    match(${modelExpr}, '^[a-z][a-z0-9-]*[a-z]\\\\.'), 'bedrock-mantle',
     ${tagExpr} IN ('bedrock-mantle','bedrock-runtime'), ${tagExpr}, 'unknown')`;
 }

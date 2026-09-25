@@ -125,12 +125,15 @@ export function buildPricing(env) {
             if (typeof rates[field] !== "number" || !Number.isFinite(rates[field]) || rates[field] < 0)
               throw new Error(`PRICING_JSON["${key}"].backends["${backendKey}"].${field} must be a non-negative number`);
           }
-          // cacheWrite1h를 명시하지 않았고 유도할 input도 없으면 키 자체를 만들지 않는다 —
-          // 값을 undefined로 채우면 priceFor()의 {...base, ...override} 병합에서 그 키가
-          // "존재"해 base.cacheWrite1h를 undefined로 덮어써 버린다.
-          backends[backendKey] = { ...rates,
-            ...(rates.cacheWrite1h === undefined && rates.input !== undefined
-              ? { cacheWrite1h: rates.input * 2 } : {}) };
+          // 진짜 필드별 폴백(문서화된 계약): 오버라이드가 명시한 필드만 쓰고, 나머지는 전부
+          // 이 모델의 기본 요율 그대로다. input을 오버라이드해도 cacheWrite/cacheRead/
+          // cacheWrite1h를 그 input에서 다시 유도하지 않는다 — 유도하면 예를 들어
+          // cacheWrite1h만 (input에서) 바뀌고 cacheWrite(5m)는 기본값에 머물러 TTL 설정에
+          // 따라 서로 다른 기준으로 계산되는 값이 나온다. undefined 필드는 객체에서 아예
+          // 빼야 한다 — 값을 undefined로 채우면 priceFor()의 {...base, ...override} 병합에서
+          // 그 키가 "존재"해 base의 값을 undefined로 덮어써 버린다.
+          backends[backendKey] = Object.fromEntries(
+            Object.entries(rates).filter(([, value]) => value !== undefined));
         }
         table[key].backends = backends;
       }

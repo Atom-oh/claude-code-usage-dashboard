@@ -148,16 +148,18 @@ test("Codex log compaction against isolated ClickHouse", {
     observed(result.effort[0],130,true);
     assert.equal(result.effort[0].unpriced,2);
   });
-  await t.test("model-less evidence keeps the original user/project/backend session boundary", () => {
+  await t.test("model-less evidence keeps the original user/project session boundary", () => {
     const r={"user.email":"scope-compact@example.test","project.name":"one"};
     insert([make(301,"sse_event",{"event.kind":"response.output_text.delta","conversation.id":"shared",duration_ms:"1"},r),
       make(302,"tool_result",{model:"","conversation.id":"shared",tool_name:"included",success:"true"},r),
       make(303,"tool_result",{model:"","conversation.id":"shared",tool_name:"wrong-project"},{...r,"project.name":"two"}),
-      make(304,"tool_result",{model:"","conversation.id":"shared",tool_name:"wrong-backend"},{...r,backend:"bedrock-runtime"}),
+      // A differing backend tag alone no longer isolates a model-less row (ADR-017): the tag
+      // is not assumed authoritative any more, so this now coarsely attributes like "included".
+      make(304,"tool_result",{model:"","conversation.id":"shared",tool_name:"still-included"},{...r,backend:"bedrock-runtime"}),
       make(305,"tool_result",{model:"","conversation.id":"shared",tool_name:"wrong-user"},{...r,"user.email":"other@example.test"})]);
     const actual=equivalent({user:"scope-compact@",model:"gpt-6"});
-    assert.deepEqual(actual.tools.map(x=>x.tool),["included"]);
-    assert.equal(actual.coverage.records,2);
+    assert.deepEqual(actual.tools.map(x=>x.tool).sort(),["included","still-included"]);
+    assert.equal(actual.coverage.records,3);
     assert.equal(actual.summary.tokens_per_request,null);
     assert.equal(compact({user:"' OR 1=1"}).result.coverage.records,0);
   });
@@ -177,6 +179,31 @@ test("Codex log compaction against isolated ClickHouse", {
     observed(empty.summary,null,false);
     assert.equal(empty.summary.cost_per_request,null); assert.equal(empty.summary.cost_per_session,null);
     assert.deepEqual(empty.events,[]);
+  });
+
+  // ADR-017's Claude-table fallback must not fire for a model that has ANY Codex-table
+  // entry, even one missing rates for this specific scope/tier — that is a scope mismatch
+  // (priceCodexUsage's own rule), not a missing model. Codex-table presence, not per-tier
+  // completeness, is what gates the fallback. Verify JS and the SQL mirror agree.
+  await t.test("a partial Codex-table entry for an Anthropic-looking key blocks its Claude-table fallback", () => {
+    const r = { "user.email": "partial-entry@example.test", backend: "bedrock-runtime" };
+    // global.anthropic.claude-fable-5-1 normalizes to base_model "anthropic.claude-fable-5-1"
+    // (us./global. stripped) and to claude_model "claude-fable-5-1" (full normalizeModelId).
+    // The Codex-table entry below matches the first but only has a "regional" scope, while
+    // this row's model carries the "global." prefix (scope "global") — a genuine scope gap.
+    insert([completion(601, { model: "global.anthropic.claude-fable-5-1" }, r)]);
+    const rate = { input: 999, cacheWrite: 999, cacheRead: 999, output: 999 };
+    const prices = { "anthropic.claude-fable-5-1": { short_context_limit: 272000,
+      regional: { short: rate, long: rate } } };
+    const filters = { user: "partial-entry@" };
+    const raw = logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from, to, filters)), prices);
+    const aggregated = foldCodexLogAggregates(select(buildCodexLogAggregateQuery(from, to, filters, prices)));
+    for (const result of [raw, aggregated]) {
+      assert.equal(result.summary.cost_partial, true);
+      observed(result.summary, 130, false);
+    }
+    assert.equal(raw.effort[0].unpriced, 1);
+    assert.equal(raw.effort[0].cost_usd, null);
   });
 
   await t.test("120000 request/completion events retain per-request tiers in bounded aggregates", () => {

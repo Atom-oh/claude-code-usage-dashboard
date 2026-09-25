@@ -29,6 +29,19 @@ test("a model with no dot-prefixed namespace falls back to the resource tag", ()
   }
 });
 
+// A bare model's own version number can contain a dot (grok-4.6, gpt-5.4, claude-3.5) —
+// the segment right before that dot ends in a digit, never a letter, so it must not be
+// mistaken for a vendor namespace like "openai." or "xai." (every real vendor prefix ends
+// in a letter). Getting this wrong would silently override an explicit, correct runtime
+// tag with a wrong mantle guess purely because the bare model id happens to have a dot.
+test("a bare model's own version-number dot is never mistaken for a vendor namespace", () => {
+  for (const model of ["grok-4.6", "gpt-5.4", "claude-3.5", "gpt-5.6-luna.2"]) {
+    assert.equal(resolveBackend(model, "bedrock-runtime"), "bedrock-runtime", model);
+    assert.equal(resolveBackend(model, "bedrock-mantle"), "bedrock-mantle", model);
+    assert.equal(resolveBackend(model, ""), "unknown", model);
+  }
+});
+
 test("an invalid or missing tag on a prefix-less model is unknown", () => {
   for (const tag of [undefined, null, "", "unknown", "amazon-bedrock", "bedrock-mantle "]) {
     assert.equal(resolveBackend("claude-sonnet-5", tag), "unknown", JSON.stringify(tag));
@@ -50,7 +63,7 @@ test("VALID_BACKENDS lists exactly the two known backend strings", () => {
 test("backendSql embeds the exact same region/vendor regexes as resolveBackend", () => {
   const sql = backendSql("MODEL_EXPR", "TAG_EXPR");
   assert.match(sql, /multiIf\(match\(MODEL_EXPR, '\^\(us\|us-gov\|eu\|apac\|jp\|au\|global\)\\\\\.'\), 'bedrock-runtime',/);
-  assert.match(sql, /match\(MODEL_EXPR, '\^\[a-z\]\[a-z0-9-\]\*\\\\\.'\), 'bedrock-mantle',/);
+  assert.match(sql, /match\(MODEL_EXPR, '\^\[a-z\]\[a-z0-9-\]\*\[a-z\]\\\\\.'\), 'bedrock-mantle',/);
   assert.match(sql, /TAG_EXPR IN \('bedrock-mantle','bedrock-runtime'\), TAG_EXPR, 'unknown'\)/);
 });
 

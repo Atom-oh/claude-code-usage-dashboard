@@ -530,6 +530,19 @@ test.each([["cost", "시간별*"], ["exec", "일간*"]])(
     expect([...claude.querySelectorAll('ul[aria-label="범례"] li')].map((li) => li.textContent)).toEqual(["claude-sonnet-5"]);
   });
 
+// ADR-017: the overview can fill a Claude cell with a token-computed estimate when no
+// report is usable. The static basis chip must disclose that, not draw it as an ordinary
+// report — Codex's chip is unaffected since it never carries a Claude cost_basis.
+test("the Claude trend basis chip discloses an estimated cell; Codex's stays unaffected", () => {
+  const data = modelTimeData();
+  data.by_model_time[0].cost_basis = "computed_estimate";
+  mount("cost", data);
+  const [claude, codex] = trendCards();
+  expect(claude.textContent).toContain("Claude 보고 비용 · 일부 계산 추정");
+  expect(codex.textContent).toContain("Codex AWS 정가 추정");
+  expect(codex.textContent).not.toContain("일부 계산 추정");
+});
+
 test("a response without by_model_time leaves each model cost trend card unavailable, never $0", () => {
   mount("cost", { ...modelTimeData(), by_model_time: undefined });
   const cards = trendCards();

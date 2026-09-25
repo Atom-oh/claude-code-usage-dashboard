@@ -120,7 +120,7 @@ setup showed every Codex row tagged `bedrock-mantle`, including `global.`-prefix
 that only exist on Bedrock Runtime. Because of this, the dashboard no longer treats this
 tag as authoritative on its own: it resolves `backend` from the model id prefix first and
 only falls back to this tag for a model with no cross-region or vendor-namespace prefix
-([ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md),
+([ADR-017](../decisions/ADR-017-backend-cost-fallback.md),
 [backend.js](../../dashboard/server/backend.js)). Validate routing metadata independently
 before treating either the tag or the resolved backend as a cost basis.
 
@@ -175,7 +175,7 @@ metric/span attributes and inherited client labels never establish backend or pr
 at the Collector. This is unchanged: the Collector still exports whatever resource
 `backend` tag it received, as-is. It is the dashboard's queries, downstream of storage,
 that now also resolve backend from the model id — see the gateway note above and
-[ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md).
+[ADR-017](../decisions/ADR-017-backend-cost-fallback.md).
 
 Structured logs remain the single Codex usage/cost feed. Claude retains its eight allowed
 metrics, counter temporality, log scrub and experiment grouping. Claude logs accept
@@ -307,7 +307,7 @@ them). Entries require positive integer `short_context_limit`, `regional` and op
 An entry may add an optional `backends` map keying `bedrock-mantle`/`bedrock-runtime` to
 their own `regional`/`global` rates, for a model whose mantle and runtime prices genuinely
 differ; unset fields fall back to the entry's base rate
-([ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md)). `PRICING_JSON`
+([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)). `PRICING_JSON`
 (Claude) accepts the same `backends` shape, keyed to `input`/`output`/`cacheWrite`/
 `cacheRead`/`cacheWrite1h` instead of the regional/global/short/long tiers.
 
@@ -320,7 +320,7 @@ back to a token-computed estimate when a rate exists (`cost_basis: "computed_est
 `"mixed"` for a group holding both bases; `cost_estimated` counts the fallback rows). Neither
 fallback overrides an existing report or Codex-table entry, and a model with no rate in
 either table stays unpriced with its original reason
-([ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md)).
+([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)).
 
 With Docker/server dependencies, `bash scripts/test-client-sql.sh` owns a disposable
 loopback ClickHouse using the local schema; external DB URLs are ignored.

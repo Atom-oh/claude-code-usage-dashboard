@@ -350,6 +350,10 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           ...["matched", "miss", "counter", "foreign", "early", "late", ""].flatMap((session) =>
             ["tool_result", "tool_decision"].map((name) => make(session, name))),
           ...[{ "user.email": "model-other@example.invalid" }, { "project.name": "other" },
+            // A differing backend TAG alone no longer isolates a model-less row (ADR-017):
+            // the tag is not assumed authoritative any more (a gateway can mangle it), so a
+            // model-less row can no longer independently prove it belongs to a different
+            // scope by tag alone — it coarsely attributes into session/user/project below.
             ...(client === "codex" ? [{ backend: "bedrock-runtime" }] : [])]
             .map((resource) => make("matched", "tool_result", undefined, resource)),
         ];
@@ -367,8 +371,11 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           return (await db.query({ query: sql, query_params: params, format: "JSONEachRow" })).json();
         };
         const selected = await select({ model, user: "model-" });
+        // Codex's extra "matched" is the differing-backend-tag probe above: it now also
+        // coarsely attributes (no backend requirement), so "matched" appears twice — once
+        // from the ordinary model-less tool_result, once from that probe.
         assert.deepEqual(selected.filter((r) => r.kind === "tool").map((r) => r.tool).sort(),
-          client === "claude" ? ["counter", "direct", "matched"] : ["direct", "matched"]);
+          client === "claude" ? ["counter", "direct", "matched"] : ["direct", "matched", "matched"]);
         assert.equal(selected.filter((r) => r.kind === "approval").length, client === "claude" ? 2 : 1);
         assert.ok(selected.every((r) => !r.model || !r.model.includes("nonmatching")));
         assert.deepEqual(await select({ model: "absent-model", user }), []);

@@ -51,9 +51,15 @@ function accumulator(meta, reasons = false) {
     _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
 }
 
+// The session-only key (model === null, used for model-less coarse attribution)
+// deliberately excludes backend (ADR-017): backend is now resolved per row from that
+// row's own model, so a model-less row's session-mate with a different, prefix-resolved
+// model can carry a different backend than the model-less row itself would guess on its
+// own. The model-inclusive key keeps backend — harmless, since a fixed model already
+// pins backend deterministically.
 function usageScope(row, model = row.model || "") {
-  return JSON.stringify([row.client, row.session || ["unidentified", row.t], row.user || "",
-    row.backend || "unknown", row.project || "", model]);
+  const identity = [row.client, row.session || ["unidentified", row.t], row.user || "", row.project || ""];
+  return JSON.stringify(model === null ? identity : [...identity, row.backend || "unknown", model]);
 }
 
 function claudeUsage(row) {
@@ -67,10 +73,12 @@ function claudeUsage(row) {
   // A usable report has no reason. Counter rows carry cost_observed; rows without it count as observed.
   const unpriced_reason = reportCost !== null ? null
     : report === null || Number(row.cost_observed ?? 1) === 0 ? "report_missing" : "report_zero_with_tokens";
-  // ADR-017: fill with a token-priced estimate only where no client report is usable at
-  // all (never displacing an existing report, even a zero-with-tokens one) and only when
-  // this model/backend has a rate. Multi-model Bedrock testing can call models whose
-  // reported cost is missing; a model with no rate anywhere stays unpriced.
+  // ADR-017: fill with a token-priced estimate only where the report itself is unusable
+  // (reportCost === null — report_missing, or report_zero_with_tokens's untrusted zero)
+  // and only when this model/backend has a rate. This never overwrites a USABLE report —
+  // a positive report, or a valid zero alongside known zero tokens — but a zero-with-tokens
+  // report is exactly one of the two reasons this fallback exists to fill. A model with no
+  // rate anywhere stays unpriced with its original reason.
   const estimated = reportCost === null && valid
     ? computeCost(row.model, row.backend,
         { input: row.input_tokens, output: row.output_tokens,
@@ -329,12 +337,17 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
   // Coarse attribution only for model-less rows: evidence must share the selected
-  // client's session/user/backend/project and range. Never replace an emitted model.
+  // client's session/user/project and range. Never replace an emitted model. backend is
+  // deliberately not part of this match (ADR-017): it is now resolved per row from that
+  // row's own model, so a model-less row's session-mate with a different, prefix-resolved
+  // model can legitimately carry a different backend than the model-less row itself would
+  // guess on its own (it has no model to resolve from) — matching on backend as well would
+  // wrongly treat that as a different session.
   const modelSessions = filters.model ? `model_sessions AS (
-    SELECT session, user, backend, project FROM unique_events WHERE session != '' AND ${modelMatch}
+    SELECT session, user, project FROM unique_events WHERE session != '' AND ${modelMatch}
     ${isCodex ? `AND event_name IN (${eventNames.map(name => `'${name}'`).join(",")})` : ""}
     ${isCodex ? "" : `UNION ALL
-    SELECT SessionId, ${user}, ${backendExpr("Model", "''")}, ResourceAttributes['project.name']
+    SELECT SessionId, ${user}, ResourceAttributes['project.name']
     FROM claude_code.otel_metrics_sum LEFT JOIN session_group ug USING (SessionId)
     WHERE TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} AND SessionId != ''
       AND MetricName IN ('claude_code.token.usage', 'claude_code.cost.usage')
@@ -389,7 +402,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     FROM unique_events
     WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
       ${filters.model ? `AND (${modelMatch} OR (model = '' AND
-        (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}
+        (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
   ), grouped AS (
   SELECT if(kind = 'scope_evidence', '',
@@ -417,13 +430,19 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   ), covered AS (
     -- Window only compacted scopes/groups, never raw diagnostic volume. Keep
     -- evidence in this table read and remove markers after evaluating coverage.
+    -- The two model-less windows partition by (session, user, project) only, not
+    -- backend (ADR-017): a model-less row cannot resolve its own backend from a model,
+    -- so it must not be required to match the backend its model-bearing session-mates
+    -- resolved from their own (possibly different) models. The first window keeps
+    -- backend because it also partitions by model, which already pins backend to a
+    -- single deterministic value across that partition.
     SELECT *,
       (max(NOT (kind = 'request' AND rejected_count = count)) OVER
         (PARTITION BY session, user, backend, project, model)
        OR max(model = '' AND NOT (kind = 'request' AND rejected_count = count)) OVER
-        (PARTITION BY session, user, backend, project)
+        (PARTITION BY session, user, project)
        OR (model = '' AND max(NOT (kind = 'request' AND rejected_count = count)) OVER
-        (PARTITION BY session, user, backend, project))) AS requires_usage
+        (PARTITION BY session, user, project))) AS requires_usage
     FROM grouped
   )
   SELECT * FROM covered WHERE kind != 'scope_evidence'

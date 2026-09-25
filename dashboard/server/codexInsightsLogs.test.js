@@ -564,6 +564,9 @@ test("real ClickHouse preserves raw identity, limits and clientMetrics model att
       make("", "api_request", model), make("", "tool_result"),
       ...["api_request", "tool_result"].map((event) => make("fallback", event,
         event === "api_request" ? model : "", { "user.email": "", "enduser.id": "scope-fallback" })),
+      // Named for the old contract: an empty/invalid tag alone no longer makes a
+      // model-bearing row "unknown" (ADR-017) — this model has a vendor prefix
+      // (openai.), so it resolves to bedrock-mantle regardless of the empty tag.
       make("unknown-backend", "tool_result", model, { backend: "" }),
       { ...make("foreign", "api_request", model),
         attributes: { ...make("foreign", "api_request", model).attributes, "event.name": "api_request" } },
@@ -572,11 +575,13 @@ test("real ClickHouse preserves raw identity, limits and clientMetrics model att
     const filters = { user: "scope", model: "ASTRA", backend: "bedrock-mantle" };
     const selected = await select(filters), overview = await select(filters, buildCodexQuery);
     assert.deepEqual(selected.filter((row) => row.attributes["event.name"] === "codex.tool_result")
-      .map((row) => row.attributes.tool_name).sort(), ["direct", "fallback", "matched"]);
+      .map((row) => row.attributes.tool_name).sort(), ["direct", "fallback", "matched", "unknown-backend"]);
     assert.deepEqual(overview.filter((row) => row.kind === "tool").map((row) => row.tool).sort(),
-      ["direct", "fallback", "matched"]);
+      ["direct", "fallback", "matched", "unknown-backend"]);
+    // Nothing in this fixture is genuinely unknown backend any more: every model-bearing
+    // row uses the vendor-prefixed target model, which always resolves to bedrock-mantle.
     const unknown = await select({ user: "scope", model, backend: "unknown" });
-    assert.deepEqual(unknown.map((row) => row.attributes.tool_name), ["unknown-backend"]);
+    assert.deepEqual(unknown.map((row) => row.attributes.tool_name), []);
     await db.command({ query: `INSERT INTO otel_logs (Timestamp, ResourceAttributes, LogAttributes)
       SELECT toDateTime64('2026-09-15 10:00:00', 9) + toIntervalMicrosecond(number),
         map('user.email','limit@example.invalid'), map('event.name','codex.api_request')

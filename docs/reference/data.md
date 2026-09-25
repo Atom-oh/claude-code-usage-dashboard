@@ -68,7 +68,7 @@ completions do not establish zero. Partial/invalid components remain null.
 | `input_token_count` | Input total including cache subsets |
 | `cached_token_count`, `cache_write_token_count` | Subtract both from input to obtain uncached input |
 | `output_token_count`, `reasoning_token_count` | Output and its reasoning subset; never add twice |
-| Resource `backend` | Raw resource tag; queries resolve the effective backend from the model id prefix first and fall back to this tag only for a prefix-less model ([ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md), [backend.js](../../dashboard/server/backend.js)) |
+| Resource `backend` | Raw resource tag; queries resolve the effective backend from the model id prefix first and fall back to this tag only for a prefix-less model ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md), [backend.js](../../dashboard/server/backend.js)) |
 | Resource `user.email`, `enduser.id` | First nonempty identity; no change to Claude metric `UserEmail` |
 | Resource `project.name` | Codex project grouping, not AWS billing attribution |
 
@@ -83,7 +83,7 @@ An Anthropic model with no entry in Codex's own price table falls back to the Cl
 table (`price_source: "claude_table"`); a Claude row whose report is missing or an
 unusable zero falls back to a token-computed estimate (`cost_basis: "computed_estimate"`,
 or `"mixed"` when a group has both) only in `/api/clients/overview` — see
-[ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md).
+[ADR-017](../decisions/ADR-017-backend-cost-fallback.md).
 
 `observed_tokens` sums safe input/output pairs independently of pricing or incomplete
 cache/reasoning metadata. Pair validity is a separate SQL grouping dimension so an
@@ -175,7 +175,7 @@ The stored `ExperimentGroup` resource attribute is not the dashboard classifier.
 Channel and `backend` are separate values. The `enterprise` channel still maps directly to
 the `anthropic` backend (an enterprise session can only emit bare `claude-*` models, so
 there is no prefix to resolve). Everywhere else, `backend` is resolved per row from the
-model id prefix, the same rule Codex uses ([ADR-017](../decisions/ADR-017-model-prefix-backend-and-computed-fallback.md)):
+model id prefix, the same rule Codex uses ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)):
 a `bedrock` channel row no longer defaults to `bedrock-runtime` — a bare, unrecognized model
 in that channel reports `unknown`.
 

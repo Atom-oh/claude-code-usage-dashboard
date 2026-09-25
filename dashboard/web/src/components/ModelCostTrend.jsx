@@ -108,6 +108,7 @@ function TrendTooltip({ active, payload, frame, fmtTick, c }) {
         ))}
       </ul>
       <div data-tooltip-total>{`알려진 합계${b.state === "partial" ? " (부분합)" : ""} ${total}`}</div>
+      {b.hasEstimate && <div data-tooltip-estimate>계산 추정 포함 — 보고 비용이 없어 토큰 단가로 채운 값입니다</div>}
       {b.issues.length > 0 && (
         <div data-tooltip-note>{`확인 필요: ${b.issues.map((i) => `${i.label} (${reasonLabels(i.reasons)})`).join(", ")}`}</div>
       )}
@@ -205,6 +206,9 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
       {totals.idleBuckets > 0 && (
         <p data-status-idle>{`기록된 사용 없음 ${totals.idleBuckets}개 버킷 — 수집이 완전하다는 뜻은 아닙니다.`}</p>
       )}
+      {totals.estimateBuckets > 0 && (
+        <p data-status-estimate>{`계산 추정 포함 ${totals.estimateBuckets}개 버킷 — 보고 비용이 없어 토큰 단가로 채운 값입니다.`}</p>
+      )}
     </div>
   );
 
@@ -229,7 +233,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
               ))}
               {showOthers && <td>{formatUsdPrecise(b.others) + (b.othersPartial ? " ⚠" : "")}</td>}
               <td>{formatUsdPrecise(b.state === "idle" ? 0 : b.total)}</td>
-              <td>{STATE_LABELS[b.state]}</td>
+              <td>{STATE_LABELS[b.state] + (b.hasEstimate ? " · 추정" : "")}</td>
             </tr>
           ))}
         </tbody>

@@ -494,11 +494,14 @@ test("PRICING_JSON backends must be an object keyed by a known backend", () => {
   );
 });
 
-test("a PRICING_JSON backends override only fills the fields it sets, deriving cacheWrite1h from its own input", () => {
+// Genuinely field-by-field: overriding input alone must not silently re-derive
+// cacheWrite/cacheRead/cacheWrite1h from that input — every unset field falls back to
+// the model's base rate exactly as documented, never a value the base rate doesn't have.
+test("a PRICING_JSON backends override only fills the fields it sets; unset fields fall back to the base rate, never a derived value", () => {
   const { table } = buildPricing({ PRICING_JSON: JSON.stringify({
     "claude-bad-4": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25,
       backends: { "bedrock-mantle": { output: 60 }, "bedrock-runtime": { input: 5 } } },
   }) });
   assert.deepEqual(table["claude-bad-4"].backends["bedrock-mantle"], { output: 60 });
-  assert.deepEqual(table["claude-bad-4"].backends["bedrock-runtime"], { input: 5, cacheWrite1h: 10 });
+  assert.deepEqual(table["claude-bad-4"].backends["bedrock-runtime"], { input: 5 });
 });

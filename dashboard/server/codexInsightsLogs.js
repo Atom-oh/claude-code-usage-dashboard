@@ -36,7 +36,7 @@ export function logSelection(from, to, filters = {}, distinct = true) {
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
       AND startsWith(EventName, 'codex.')
   )${filters.model ? `, model_sessions AS (
-    SELECT session, user, backend, project FROM unique_events
+    SELECT session, user, project FROM unique_events
     WHERE session != '' AND ${modelMatch}
       AND a['event.name'] IN (${OVERVIEW_EVENTS.map((name) => `'${name}'`).join(", ")})
   )` : ""}
@@ -44,8 +44,12 @@ export function logSelection(from, to, filters = {}, distinct = true) {
   FROM unique_events
   WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
     AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
+    -- Coarse attribution (model-less rows) matches session/user/project only, not backend
+    -- (ADR-017): backend is now resolved per row from that row's own model, so a
+    -- model-less row's session-mate with a different, prefix-resolved model can carry a
+    -- different backend than the model-less row itself would guess on its own.
     ${filters.model ? `AND (${modelMatch} OR (model = '' AND
-      (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}`;
+      (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}`;
   return { sql, params };
 }
 
@@ -156,11 +160,18 @@ function statistics(values) {
     p50_ms: quantile(0.5), p95_ms: quantile(0.95), max_ms: sorted.at(-1) ?? null };
 }
 
+// The session-only key (includeModel=false, used for model-less coarse attribution)
+// deliberately excludes backend (ADR-017): backend is now resolved per row from that
+// row's own model, so a model-less row's session-mate with a different, prefix-resolved
+// model can carry a different backend than the model-less row itself would guess on its
+// own (it has no model to resolve from). The model-inclusive key keeps backend — harmless,
+// since a fixed model already pins backend deterministically.
 function scope(row, includeModel = true, model = row.attributes.model) {
   const a = row.attributes, r = row.resource;
-  return JSON.stringify([a["conversation.id"] || ["unidentified", row.timestamp],
-    r["user.email"] || r["enduser.id"] || "", resolveBackend(a.model, r.backend), r["project.name"] || "",
-    includeModel ? model || "" : null]);
+  const identity = [a["conversation.id"] || ["unidentified", row.timestamp],
+    r["user.email"] || r["enduser.id"] || "", r["project.name"] || ""];
+  return JSON.stringify(includeModel
+    ? [...identity, resolveBackend(a.model, r.backend), model || ""] : identity);
 }
 const stream = (event) => ["codex.sse_event", "codex.websocket_event"].includes(event);
 const completed = (row) => stream(row.attributes["event.name"])

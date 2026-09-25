@@ -50,7 +50,7 @@ a bare vendor namespace (`anthropic.`/`openai.`/...) is `bedrock-mantle`; otherw
 back to the resource-attribute tag (Codex only) or, for Claude, the enterprise channel maps
 to `anthropic`. Anything else is `unknown` — a bedrock-channel Claude row with a bare,
 unrecognized model is `unknown`, not an assumed `bedrock-runtime`. See
-[ADR-017](decisions/ADR-017-model-prefix-backend-and-computed-fallback.md).
+[ADR-017](decisions/ADR-017-backend-cost-fallback.md).
 
 Claude model terms normalize. Modeled rows match directly.
 Model-less rows use same-client model evidence (logs; Claude also uses token/cost
@@ -67,7 +67,7 @@ consumers. These fields also appear in Codex detail summary/Effort rows. See
 
 `cost_usd` uses `cost_basis=client_reported` (Claude) or `aws_list_estimate` (Codex), or
 (Claude only, this endpoint only) `computed_estimate`/`mixed` when a row/group has no usable
-report but a token-priced estimate ([ADR-017](decisions/ADR-017-model-prefix-backend-and-computed-fallback.md));
+report but a token-priced estimate ([ADR-017](decisions/ADR-017-backend-cost-fallback.md));
 `cost_estimated` counts those rows. It sums usable reports/estimates even when other records
 are unpriced. `cost_partial` discloses exclusions or an unsafe aggregate; `unpriced` counts
 remain. Groups with only unpriced evidence remain null; explicit zero stays zero.

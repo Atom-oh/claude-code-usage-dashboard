@@ -77,16 +77,22 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
     }
   });
   // Anthropic 모델이 Codex를 통해 호출됐지만 위 자체 단가표에 없을 때(예:
-  // global.anthropic.claude-fable-5-1) Claude 단가표로 계산 추정치를 낸다(ADR-017). 이 case들은
-  // 위 Codex case 뒤에 이어붙기 때문에(multiIf 첫 매치 우선) Codex 자체 단가가 항상 우선한다.
-  // claude_model은 normModel()로 완전히 정규화한 값이라 regional/global 구분이 없다.
+  // global.anthropic.claude-fable-5-1) Claude 단가표로 계산 추정치를 낸다(ADR-017). multiIf는
+  // 첫 매치를 쓰므로 이 case들이 위 Codex case 뒤에 이어붙는 순서만으로도 완전한 Codex 항목은
+  // 항상 우선하지만, 그 항목의 특정 scope/tier에 요율이 없는 "부분적" 항목(entry는 있지만
+  // rates가 없는 경우)은 그 case를 건너뛰고 이 자리까지 내려온다 — priceCodexUsage()가 그런
+  // 행을 반드시 "scope"로 보고하는 것과 어긋나므로, base_model이 Codex 단가표에 있는 모델이면
+  // (완전하든 부분적이든) 애초에 Claude 폴백을 시도하지 않는다(codexPricing.js의 `!entry` 게이트와
+  // 동일). claude_model은 normModel()로 완전히 정규화한 값이라 regional/global 구분이 없다.
+  const codexModelKeys = Object.keys(prices);
+  const notCodexEntry = codexModelKeys.length ? `NOT has(${strings(codexModelKeys)}, base_model)` : "1";
   Object.entries(claudeRates).forEach(([model, entry], i) => {
     params[`claudeModel${i}`] = model;
     for (const backendKey of VALID_BACKENDS) {
       const rates = entry.backends[backendKey];
       const key = `claudeRate${i}${backendKey.replace(/-/g, "_")}`;
       for (const field of ["input", "cacheRead", "cacheWrite", "output"]) params[key + field] = rates[field];
-      const condition = `claude_model = {claudeModel${i}:String} AND backend = '${backendKey}'`;
+      const condition = `claude_model = {claudeModel${i}:String} AND backend = '${backendKey}' AND ${notCodexEntry}`;
       const amount = `((input_value - read_value - write_value) * {${key}input:Float64}
         + read_value * {${key}cacheRead:Float64} + write_value * {${key}cacheWrite:Float64}
         + output_value * {${key}output:Float64}) / 1000000`;
@@ -297,8 +303,13 @@ function scopeCoverage(rows) {
   let missingSession = false, missingUsage = false;
   const scopes = rows.map((row) => {
     const [session, user, backend, project, model, timestamp] = JSON.parse(row.dimensions);
-    const identity = [session || ["unidentified", timestamp], user, backend, project];
-    const sessionKey = JSON.stringify(identity), key = JSON.stringify([...identity, model]);
+    // sessionKey (model-less coarse attribution) deliberately excludes backend (ADR-017):
+    // backend is now resolved per row from that row's own model, so a model-less row's
+    // session-mate with a different, prefix-resolved model can carry a different backend
+    // than the model-less row itself would guess on its own. key (same-model matching)
+    // keeps backend — harmless, since a fixed model already pins backend deterministically.
+    const identity = [session || ["unidentified", timestamp], user, project];
+    const sessionKey = JSON.stringify(identity), key = JSON.stringify([...identity, backend, model]);
     if (session) sessions.add(session);
     if (Number(row.missing_session)) missingSession = true;
     if (Number(row.has_usage)) {
