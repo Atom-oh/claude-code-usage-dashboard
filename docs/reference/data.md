@@ -68,7 +68,7 @@ completions do not establish zero. Partial/invalid components remain null.
 | `input_token_count` | Input total including cache subsets |
 | `cached_token_count`, `cache_write_token_count` | Subtract both from input to obtain uncached input |
 | `output_token_count`, `reasoning_token_count` | Output and its reasoning subset; never add twice |
-| Resource `backend` | Explicit `bedrock-mantle`/`bedrock-runtime`, otherwise unknown |
+| Resource `backend` | Raw tag; queries resolve backend from the model id prefix first, tag as fallback ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)) |
 | Resource `user.email`, `enduser.id` | First nonempty identity; no change to Claude metric `UserEmail` |
 | Resource `project.name` | Codex project grouping, not AWS billing attribution |
 
@@ -79,6 +79,9 @@ SQL groups so malformed peers cannot erase usable costs. Shared aggregates sum k
 costs with `cost_partial`/unpriced disclosure; an all-unpriced group remains null.
 Claude reports use `client_reported`; Codex uses `aws_list_estimate`. Both retain
 billing/coverage limitations under [ADR-013](../decisions/ADR-013-known-cost-subtotals.md).
+Two ADR-017 fallbacks: an Anthropic model absent from Codex's table prices from the Claude
+table (`price_source: "claude_table"`); a Claude row with no usable report prices from
+tokens (`cost_basis: "computed_estimate"`/`"mixed"`), `/api/clients/overview` only.
 
 `observed_tokens` sums safe input/output pairs independently of pricing or incomplete
 cache/reasoning metadata. Pair validity is a separate SQL grouping dimension so an
@@ -166,6 +169,10 @@ assignments. The broad model rule is not a client detector; Codex uses its log n
 and explicit backend instead. One user can have sessions in both channels; channel
 headcounts overlap.
 The stored `ExperimentGroup` resource attribute is not the dashboard classifier.
+
+Channel and `backend` are separate: `enterprise` still maps to `anthropic`, but elsewhere
+`backend` is resolved per row from the model id prefix, same as Codex ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)) —
+a `bedrock` channel row with a bare, unrecognized model is now `unknown`, not `bedrock-runtime`.
 
 For Claude model breakdowns and diagnostic pricing, SQL `normModel` and JavaScript
 `normalizeModelId` strip the context-window suffix, routing prefix (`us`, `us-gov`, `eu`, `apac`, `jp`, `au`,

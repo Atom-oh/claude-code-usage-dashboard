@@ -2,8 +2,10 @@ import { formatObserved, observedTokens } from "./clientUsage.js";
 
 export const CLIENT_NAMES = { claude: "Claude Code", codex: "Codex" };
 export const clientName = (value) => CLIENT_NAMES[value] || value || "—";
+// computed_estimate/mixed: ADR-017 — 보고 비용 없는 Claude 행을 토큰 단가로 채운 추정치.
 export const basisLabel = (value) => ({
   client_reported: "클라이언트 보고", aws_list_estimate: "AWS 정가 추정",
+  computed_estimate: "계산 추정", mixed: "보고+추정",
 })[value] || value || "기준 미제공";
 
 const MEASURES = [
@@ -26,10 +28,13 @@ function subsetPercent(part, whole) {
 
 export function costBasisLabel(source, label = basisLabel(source.cost_basis)) {
   const unpriced = observedNumber(source.unpriced);
+  const estimated = observedNumber(source.cost_estimated);
   const unknown = observedNumber(source.cost_usd) === null;
   const partial = source.cost_partial === true || unpriced > 0;
   return [label, unknown ? "미산정" : partial ? "부분합" : null,
-    unpriced > 0 ? `${unknown ? "" : "미산정 "}${formatObserved(unpriced)}건 제외` : null]
+    unpriced > 0 ? `${unknown ? "" : "미산정 "}${formatObserved(unpriced)}건 제외` : null,
+    // ADR-017: 계산 추정으로 채운 건수를 별도로 드러낸다.
+    estimated > 0 ? `추정 ${formatObserved(estimated)}건` : null]
     .filter(Boolean).join(" · ");
 }
 

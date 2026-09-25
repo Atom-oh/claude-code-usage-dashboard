@@ -1,6 +1,7 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl } from "./pricing.js";
+import { backendSql } from "./backend.js";
 import { rollupAdoption } from "./activity.js";
 import { foldModelCostCells, MODEL_COST_ROW_LIMIT } from "./modelCostTrend.js";
 
@@ -477,8 +478,7 @@ export async function clientClaudeRows(from, to, filters = {}) {
     -- coding-client:claude-usage
     SELECT formatDateTime(greatest(m.t, {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
       m.SessionId AS session, m.UserEmail AS user, ${normModel("m.Model")} AS model,
-      multiIf(${GROUP_EXPR} = 'bedrock', 'bedrock-runtime',
-        ${GROUP_EXPR} = 'enterprise', 'anthropic', 'unknown') AS backend,
+      multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("m.Model", "''")}) AS backend,
       countIf(m.MetricName = 'claude_code.token.usage' AND ${observed}) > 0 AS token_seen,
       countIf(m.MetricName = 'claude_code.cost.usage' AND ${observed}) > 0 AS cost_seen,
       countIf(m.Value != 0) > 0 AS changed, ${TOKEN_SUMS}

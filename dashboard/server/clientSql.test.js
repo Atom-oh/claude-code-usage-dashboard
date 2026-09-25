@@ -368,7 +368,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         };
         const selected = await select({ model, user: "model-" });
         assert.deepEqual(selected.filter((r) => r.kind === "tool").map((r) => r.tool).sort(),
-          client === "claude" ? ["counter", "direct", "matched"] : ["direct", "matched"]);
+          client === "claude" ? ["counter", "direct", "matched"] : ["direct", "matched", "matched"]);
         assert.equal(selected.filter((r) => r.kind === "approval").length, client === "claude" ? 2 : 1);
         assert.ok(selected.every((r) => !r.model || !r.model.includes("nonmatching")));
         assert.deepEqual(await select({ model: "absent-model", user }), []);

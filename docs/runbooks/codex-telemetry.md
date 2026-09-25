@@ -113,8 +113,9 @@ Its successful return is not a Collector-health assertion; inspect the host serv
 and received telemetry separately. Keep noninteractive shell startup quiet.
 
 Host-specific wrappers can select a gateway instead of the workshop provider below.
-A gateway is not proof of a particular AWS upstream. Validate routing metadata
-before treating inherited `bedrock-mantle` tags as a cost basis.
+A gateway is not proof of a particular AWS upstream, and can tag every request the same
+regardless of actual model/endpoint. The dashboard no longer trusts the tag alone; see
+[ADR-017](../decisions/ADR-017-backend-cost-fallback.md). Validate routing independently.
 
 Inspect nonsecret effective configuration without invoking a model:
 
@@ -163,7 +164,8 @@ Runtime substitutes `bedrock-runtime` in all three headers. Receivers expose req
 metadata only to the Codex pipelines. A valid `x-ccdash-backend` overrides resource
 backend; an absent/invalid header preserves a valid resource backend. Otherwise backend
 stays absent. The temporary header attribute is deleted before export. Model names,
-metric/span attributes and inherited client labels never establish backend or producer.
+metric/span attributes and inherited client labels never establish backend or producer at
+the Collector — unchanged; downstream queries do now ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)).
 
 Structured logs remain the single Codex usage/cost feed. Claude retains its eight allowed
 metrics, counter temporality, log scrub and experiment grouping. Claude logs accept
@@ -292,6 +294,11 @@ incomplete; this does not recover missing logs or treat absent usage as zero
 them). Entries require positive integer `short_context_limit`, `regional` and optional
 `global`, each with `short`/`long` rates: finite nonnegative USD/million `input`,
 `cacheWrite`, `cacheRead`, `output`. Invalid entries fail startup; config hides rates.
+An entry may add an optional per-backend `backends` rate override (`PRICING_JSON` too), and
+an Anthropic model with no Codex-table entry falls back to the Claude price table
+(`price_source: "claude_table"`); an unusable Claude report (`/api/clients/overview` only)
+falls back to a token-computed estimate (`cost_basis: "computed_estimate"`/`"mixed"`). See
+[ADR-017](../decisions/ADR-017-backend-cost-fallback.md) for the full contract.
 
 With Docker/server dependencies, `bash scripts/test-client-sql.sh` owns a disposable
 loopback ClickHouse using the local schema; external DB URLs are ignored.

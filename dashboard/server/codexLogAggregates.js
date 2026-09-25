@@ -2,9 +2,13 @@ import { logSelection } from "./codexInsightsLogs.js";
 import { parseCodexPricing } from "./codexPricing.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS } from "./codexRequests.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
+import { backendSql, VALID_BACKENDS } from "./backend.js";
+import { resolvedRatesTable } from "./pricing.js";
+import { normModel } from "./queries.js";
 
 const LIMIT = 50000;
 const DEFAULT_PRICES = parseCodexPricing(process.env.CODEX_PRICING_JSON);
+const CLAUDE_RATES = resolvedRatesTable(); // ADR-017 fallback rates.
 const FAMILIES = ["event", "usage", "effort", "scope", "operations", "latency", "tool", "approval", "runtime"];
 const FAMILY_BUDGET = Math.floor((LIMIT - FAMILIES.length) / FAMILIES.length);
 const TOKEN_KEYS = ["input", "read", "write", "output", "reasoning"];
@@ -42,19 +46,39 @@ function policy(value, allowed) {
     has(${strings(allowed)}, ${candidate}), ${candidate}, 'unknown')`;
 }
 
-function priceExpression(prices, params) {
+function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
   const cases = [];
   Object.entries(prices).forEach(([model, entry], i) => {
     params[`aggregateModel${i}`] = model;
     params[`aggregateThreshold${i}`] = entry.short_context_limit;
-    for (const scope of ["regional", "global"]) for (const tier of ["short", "long"]) {
-      const rates = entry[scope]?.[tier];
-      if (!rates) continue;
-      const key = `aggregatePrice${i}${scope}${tier}`;
+    for (const backendKey of [...VALID_BACKENDS, null]) {
+      const source = backendKey ? entry.backends?.[backendKey] : entry;
+      if (!source) continue;
+      for (const scope of ["regional", "global"]) for (const tier of ["short", "long"]) {
+        const rates = source[scope]?.[tier];
+        if (!rates) continue;
+        const key = `aggregatePrice${i}${backendKey ? backendKey.replace(/-/g, "_") : "base"}${scope}${tier}`;
+        for (const field of ["input", "cacheRead", "cacheWrite", "output"]) params[key + field] = rates[field];
+        const condition = `base_model = {aggregateModel${i}:String}
+          ${backendKey ? `AND backend = '${backendKey}'` : ""}
+          AND ${scope === "global" ? "" : "NOT "}startsWith(model, 'global.')
+          AND input_value ${tier === "short" ? "<=" : ">"} {aggregateThreshold${i}:UInt64}`;
+        const amount = `((input_value - read_value - write_value) * {${key}input:Float64}
+          + read_value * {${key}cacheRead:Float64} + write_value * {${key}cacheWrite:Float64}
+          + output_value * {${key}output:Float64}) / 1000000`;
+        cases.push(condition, amount);
+      }
+    }
+  });
+  const codexModelKeys = Object.keys(prices);
+  const notCodexEntry = codexModelKeys.length ? `NOT has(${strings(codexModelKeys)}, base_model)` : "1";
+  Object.entries(claudeRates).forEach(([model, entry], i) => {
+    params[`claudeModel${i}`] = model;
+    for (const backendKey of VALID_BACKENDS) {
+      const rates = entry.backends[backendKey];
+      const key = `claudeRate${i}${backendKey.replace(/-/g, "_")}`;
       for (const field of ["input", "cacheRead", "cacheWrite", "output"]) params[key + field] = rates[field];
-      const condition = `base_model = {aggregateModel${i}:String}
-        AND ${scope === "global" ? "" : "NOT "}startsWith(model, 'global.')
-        AND input_value ${tier === "short" ? "<=" : ">"} {aggregateThreshold${i}:UInt64}`;
+      const condition = `claude_model = {claudeModel${i}:String} AND backend = '${backendKey}' AND ${notCodexEntry}`;
       const amount = `((input_value - read_value - write_value) * {${key}input:Float64}
         + read_value * {${key}cacheRead:Float64} + write_value * {${key}cacheWrite:Float64}
         + output_value * {${key}output:Float64}) / 1000000`;
@@ -115,7 +139,7 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
           AND attributes['event.kind'] NOT IN ('response.completed','response.failed') AS intermediate,
         if(intermediate, '', timestamp) AS identity_time,
         if(intermediate, map('user.email',coalesce(nullIf(resource['user.email'],''),resource['enduser.id']),
-          'backend',if(resource['backend'] IN ('bedrock-mantle','bedrock-runtime'),resource['backend'],'unknown'),
+          'backend',${backendSql("attributes['model']", "resource['backend']")},
           'project.name',resource['project.name']),resource) AS compact_resource,
         if(intermediate, map('event.name',attributes['event.name'],'event.kind','progress',
           'conversation.id',attributes['conversation.id'],'model',attributes['model'],
@@ -133,7 +157,7 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
       SELECT *, attributes['event.name'] AS event, attributes['event.kind'] AS event_kind,
         attributes['conversation.id'] AS session, attributes['model'] AS model,
         coalesce(nullIf(resource['user.email'], ''), resource['enduser.id']) AS user,
-        if(resource['backend'] IN ('bedrock-mantle','bedrock-runtime'), resource['backend'], 'unknown') AS backend,
+        ${backendSql("model", "resource['backend']")} AS backend,
         resource['project.name'] AS project,
         event IN ('codex.sse_event','codex.websocket_event') AS stream,
         stream AND event_kind NOT IN ('response.completed','response.failed') AS bulk,
@@ -168,7 +192,8 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
         isNotNull(input_raw) AND isNotNull(output_raw)
           AND ifNull(input_raw + output_raw <= 9007199254740991, 0) AS pair_valid,
         ${TOKEN_KEYS.map(k => `isNotNull(${k}_value)`).join(" AND ")} AS usage_valid,
-        replaceRegexpOne(model, '^(us|global)\\\\.', '') AS base_model
+        replaceRegexpOne(model, '^(us|global)\\\\.', '') AS base_model,
+        ${normModel("model")} AS claude_model
       FROM typed
     ), priced AS (
       SELECT *, ${priced} AS amount,
@@ -264,8 +289,8 @@ function scopeCoverage(rows) {
   let missingSession = false, missingUsage = false;
   const scopes = rows.map((row) => {
     const [session, user, backend, project, model, timestamp] = JSON.parse(row.dimensions);
-    const identity = [session || ["unidentified", timestamp], user, backend, project];
-    const sessionKey = JSON.stringify(identity), key = JSON.stringify([...identity, model]);
+    const identity = [session || ["unidentified", timestamp], user, project];
+    const sessionKey = JSON.stringify(identity), key = JSON.stringify([...identity, backend, model]);
     if (session) sessions.add(session);
     if (Number(row.missing_session)) missingSession = true;
     if (Number(row.has_usage)) {

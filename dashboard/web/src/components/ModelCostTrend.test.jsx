@@ -184,6 +184,40 @@ test("table toggle", async () => {
   ]);
 });
 
+test("a bucket with an estimated cell discloses it in the status, tooltip and table", async () => {
+  const cells = [c(D1, "claude-sonnet-5", "enterprise", 5, { estimated: true })];
+  const { container } = mount({ cells, bounds: BOUNDS, basis: "Claude 보고 비용" });
+  await chartReady(container);
+  const status = statusOf(container);
+  expect(status.querySelector("[data-status-estimate]").textContent)
+    .toBe("계산 추정 포함 1개 버킷 — 보고 비용이 없어 토큰 단가로 채운 값입니다.");
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 6);
+  fireEvent.mouseMove(chart, { clientX: x(0), clientY: 80 });
+  await waitFor(() => expect(container.querySelector("[data-mct-tooltip]")).not.toBeNull());
+  const tip = container.querySelector("[data-mct-tooltip]");
+  expect(tip.querySelector("[data-tooltip-estimate]").textContent)
+    .toBe("계산 추정 포함 — 보고 비용이 없어 토큰 단가로 채운 값입니다");
+  fireEvent.click(screen.getByRole("button", { name: "표 보기" }));
+  const table = screen.getByRole("table", { name: "버킷별 비용 표" });
+  const firstRow = table.querySelector("tr[data-bucket]");
+  expect(within(firstRow).getAllByRole("cell").at(-1).textContent).toBe("확인됨 · 추정");
+});
+
+test("an estimated and partial bucket discloses both the estimate and the issue note", async () => {
+  const cells = [c(D1, "claude-sonnet-5", "enterprise", 5, { estimated: true, partial: true,
+    unavailable: 1, reasons: { report_missing: 1 } })];
+  const { container } = mount({ cells, bounds: BOUNDS, basis: "Claude 보고 비용" });
+  await chartReady(container);
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 6);
+  fireEvent.mouseMove(chart, { clientX: x(0), clientY: 80 });
+  await waitFor(() => expect(container.querySelector("[data-mct-tooltip]")).not.toBeNull());
+  const tip = container.querySelector("[data-mct-tooltip]");
+  expect(tip.querySelector("[data-tooltip-estimate]")).not.toBeNull();
+  expect(tip.querySelector("[data-tooltip-note]")).not.toBeNull();
+});
+
 test("tooltip sorted by value with known total and partial note", async () => {
   const { container } = mount(MAIN);
   await chartReady(container);

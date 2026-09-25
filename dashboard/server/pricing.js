@@ -1,3 +1,5 @@
+import { VALID_BACKENDS } from "./backend.js";
+
 // Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 cacheWrite(5m) = 입력×1.25,
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
 // 0.025x, opus-5-5는 0.05x인 예외라 값을 명시한다(아래 주석). Bedrock cross-region(us./us-gov./eu./apac./jp./au./
@@ -107,6 +109,27 @@ export function buildPricing(env) {
         cacheRead: row.cacheRead ?? row.input * 0.1,
         cacheWrite1h: row.cacheWrite1h ?? row.input * 2,
       };
+      // backend별 요율 오버라이드(ADR-017).
+      if (row.backends !== undefined) {
+        if (row.backends === null || Array.isArray(row.backends) || typeof row.backends !== "object")
+          throw new Error(`PRICING_JSON["${key}"].backends must be an object`);
+        const backends = {};
+        for (const [backendKey, rates] of Object.entries(row.backends)) {
+          if (!VALID_BACKENDS.includes(backendKey))
+            throw new Error(`PRICING_JSON["${key}"].backends key "${backendKey}" must be bedrock-mantle or bedrock-runtime`);
+          if (rates === null || Array.isArray(rates) || typeof rates !== "object")
+            throw new Error(`PRICING_JSON["${key}"].backends["${backendKey}"] must be an object of rates`);
+          for (const field of ["input", "output", "cacheWrite", "cacheRead", "cacheWrite1h"]) {
+            if (rates[field] === undefined) continue;
+            if (typeof rates[field] !== "number" || !Number.isFinite(rates[field]) || rates[field] < 0)
+              throw new Error(`PRICING_JSON["${key}"].backends["${backendKey}"].${field} must be a non-negative number`);
+          }
+          // 필드별 폴백: 재유도 없음. undefined 필드는 키 자체를 빼야 함(존재하면 base를 지움).
+          backends[backendKey] = Object.fromEntries(
+            Object.entries(rates).filter(([, value]) => value !== undefined));
+        }
+        table[key].backends = backends;
+      }
       overriddenModels.push(key);
     }
   }
@@ -136,8 +159,29 @@ export const PRICING_PROMPT_TABLE =
     .join("\n") +
   `\n(위 cacheWrite는 캐시 쓰기 TTL 가정 "${CACHE_WRITE_TTL}" 기준 단가다 — 서버 env PRICING_CACHE_WRITE_TTL로 1h/5m 전환)`;
 
-export function priceFor(model) {
-  return PRICING[normalizeModelId(model)] || null;
+export function priceFor(model, backend) {
+  const base = PRICING[normalizeModelId(model)];
+  if (!base) return null;
+  const override = backend && base.backends?.[backend];
+  return override ? { ...base, ...override } : base;
+}
+
+export function resolvedRatesTable() {
+  const rates = (p) => ({ input: p.input, output: p.output, cacheRead: p.cacheRead, cacheWrite: effectiveCacheWrite(p) });
+  const out = {};
+  for (const model of Object.keys(PRICING)) {
+    out[model] = { base: rates(priceFor(model)),
+      backends: Object.fromEntries(VALID_BACKENDS.map((backend) => [backend, rates(priceFor(model, backend))])) };
+  }
+  return out;
+}
+
+export function computeCost(model, backend, tokens) {
+  const p = priceFor(model, backend);
+  if (!p) return null;
+  const amount = (Number(tokens.input) * p.input + Number(tokens.output) * p.output
+    + Number(tokens.cacheRead) * p.cacheRead + Number(tokens.cacheWrite) * effectiveCacheWrite(p)) / 1e6;
+  return Number.isFinite(amount) ? amount : null;
 }
 
 // withComputedCost/tierCosts는 서버 env PRICING_CACHE_WRITE_TTL(단일 가정)로만 캐시 쓰기 단가를

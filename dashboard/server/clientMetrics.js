@@ -3,7 +3,8 @@ import { ValidationError } from "./http.js";
 import { selectClients } from "./clients.js";
 import { priceCodexUsage, parseCodexPricing } from "./codexPricing.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { normalizeModelId } from "./pricing.js";
+import { normalizeModelId, computeCost } from "./pricing.js";
+import { backendSql } from "./backend.js";
 import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS, isRejectedRequestGroup } from "./codexRequests.js";
@@ -42,16 +43,18 @@ export function validateClientFilters(raw, enabledClients) {
 
 function accumulator(meta, reasons = false) {
   return { ...meta, ...Object.fromEntries([...TOKEN_KEYS, ...OP_KEYS].map((k) => [k, 0])),
-    cost_usd: 0, unpriced: 0, observed_records: 0,
+    cost_usd: 0, unpriced: 0, cost_estimated: 0, observed_records: 0,
     _sessions: new Set(), _users: new Set(), _backends: new Set(), _missingUsage: new Set(),
-    _missing: new Set(), _hasCost: false, _observedTokens: createObservedTokens(),
+    _missing: new Set(), _hasCost: false, _hasReportedCost: false, _hasEstimatedCost: false,
+    _observedTokens: createObservedTokens(),
     _reasons: reasons ? {} : null,
     _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
 }
 
+// model === null (session-only) drops backend (ADR-017).
 function usageScope(row, model = row.model || "") {
-  return JSON.stringify([row.client, row.session || ["unidentified", row.t], row.user || "",
-    row.backend || "unknown", row.project || "", model]);
+  const identity = [row.client, row.session || ["unidentified", row.t], row.user || "", row.project || ""];
+  return JSON.stringify(model === null ? identity : [...identity, row.backend || "unknown", model]);
 }
 
 function claudeUsage(row) {
@@ -61,12 +64,19 @@ function claudeUsage(row) {
   const report = finite(row.reported_cost) ? Number(row.reported_cost) : null;
   // A positive client report remains usable even if token telemetry is partial.
   // Zero is usable only alongside known zero token usage.
-  const cost = report !== null && (report > 0 || valid && tokens === 0) ? report : null;
+  const reportCost = report !== null && (report > 0 || valid && tokens === 0) ? report : null;
   // A usable report has no reason. Counter rows carry cost_observed; rows without it count as observed.
-  const unpriced_reason = cost !== null ? null
+  const unpriced_reason = reportCost !== null ? null
     : report === null || Number(row.cost_observed ?? 1) === 0 ? "report_missing" : "report_zero_with_tokens";
+  const estimated = reportCost === null && valid
+    ? computeCost(row.model, row.backend,
+        { input: row.input_tokens, output: row.output_tokens,
+          cacheRead: row.cache_read_tokens, cacheWrite: row.cache_write_tokens })
+    : null;
+  const cost = reportCost !== null ? reportCost : estimated;
   return { ...row, tokens, observed_tokens: tokens, reasoning_tokens: null, cost_usd: cost,
-    cost_basis: "client_reported", unpriced: cost === null, unpriced_reason, invalid: !valid };
+    cost_basis: reportCost !== null ? "client_reported" : estimated !== null ? "computed_estimate" : "client_reported",
+    unpriced: cost === null, unpriced_reason: cost === null ? unpriced_reason : null, invalid: !valid };
 }
 
 function accumulate(target, row, usage, missingScope) {
@@ -93,6 +103,10 @@ function accumulate(target, row, usage, missingScope) {
     } else {
       target._hasCost = true;
       target.cost_usd += Number(usage.cost_usd);
+      if (usage.cost_basis === "computed_estimate") {
+        target._hasEstimatedCost = true;
+        target.cost_estimated += n || 1;
+      } else target._hasReportedCost = true;
     }
   } else if (row.kind === "request") {
     target._ops = true;
@@ -115,7 +129,8 @@ function accumulate(target, row, usage, missingScope) {
 }
 
 function finish(target) {
-  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _observedTokens, _reasons,
+  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _hasReportedCost, _hasEstimatedCost,
+    _observedTokens, _reasons,
     _ops, _requestMs, _requestN, _ttftMs, _ttftN, ...out } = target;
   for (const k of _missing) out[k] = null;
   if (_missingUsage.size) {
@@ -132,6 +147,8 @@ function finish(target) {
   }), sessions: _sessions.size, users: _users.size,
     backend: out.backend || (_backends.size === 1 ? [..._backends][0] : _backends.size ? "mixed" : "unknown"),
     cost_usd: cost,
+    cost_basis: out.client === "claude" && _hasEstimatedCost
+      ? (_hasReportedCost ? "mixed" : "computed_estimate") : out.cost_basis,
     cost_partial: out.unpriced > 0 || costAvailable && cost === null,
     request_rejections_only: out.client === "codex" && out.rejected_requests > 0
       && out.rejected_requests === out.observed_records && _missingUsage.size === 0,
@@ -296,17 +313,15 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   // Keep known pairs apart from unknown pairs even inside malformed usage.
   const validPair = "in_n_valid AND out_n_valid AND in_n + out_n <= 9007199254740991";
   const session = isCodex ? "a['conversation.id']" : "SessionId";
-  const backend = isCodex ? "if(r['backend'] IN ('bedrock-runtime','bedrock-mantle'), r['backend'], 'unknown')"
-    : `multiIf(${GROUP_EXPR} = 'bedrock', 'bedrock-runtime', ${GROUP_EXPR} = 'enterprise', 'anthropic', 'unknown')`;
+  const backendExpr = (modelExpr, tagExpr) => isCodex ? backendSql(modelExpr, tagExpr)
+    : `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql(modelExpr, tagExpr)})`;
   const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
-  // Coarse attribution only for model-less rows: evidence must share the selected
-  // client's session/user/backend/project and range. Never replace an emitted model.
   const modelSessions = filters.model ? `model_sessions AS (
-    SELECT session, user, backend, project FROM unique_events WHERE session != '' AND ${modelMatch}
+    SELECT session, user, project FROM unique_events WHERE session != '' AND ${modelMatch}
     ${isCodex ? `AND event_name IN (${eventNames.map(name => `'${name}'`).join(",")})` : ""}
     ${isCodex ? "" : `UNION ALL
-    SELECT SessionId, ${user}, ${backend}, ResourceAttributes['project.name']
+    SELECT SessionId, ${user}, ResourceAttributes['project.name']
     FROM claude_code.otel_metrics_sum LEFT JOIN session_group ug USING (SessionId)
     WHERE TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} AND SessionId != ''
       AND MetricName IN ('claude_code.token.usage', 'claude_code.cost.usage')
@@ -318,7 +333,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       ${session} AS session,
       ${user} AS user,
       ${isCodex ? "a['model']" : queries.normModel("a['model']")} AS model,
-      ${backend} AS backend, r['project.name'] AS project,
+      ${backendExpr("a['model']", isCodex ? "r['backend']" : "''")} AS backend, r['project.name'] AS project,
       ${isCodex ? "EventName" : "replaceRegexpOne(EventName, '^claude_code\\\\.', '')"} AS event_name
     FROM claude_code.otel_logs
     ${isCodex ? "" : "LEFT JOIN session_group ug USING (SessionId)"}
@@ -331,7 +346,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     UNION ALL
     SELECT min(Timestamp), any(mapSort(ResourceAttributes)), any(mapSort(LogAttributes)),
       LogAttributes['conversation.id'] AS session, ${user} AS user, LogAttributes['model'] AS model,
-      ${backend.replaceAll("r['", "ResourceAttributes['")} AS backend,
+      ${backendExpr("LogAttributes['model']", "ResourceAttributes['backend']")} AS backend,
       ResourceAttributes['project.name'] AS project, EventName AS event_name
     FROM claude_code.otel_logs
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND ${CODEX_DELTA_EVENT}
@@ -361,7 +376,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     FROM unique_events
     WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
       ${filters.model ? `AND (${modelMatch} OR (model = '' AND
-        (session, user, backend, project) IN (SELECT * FROM model_sessions)))` : ""}
+        (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
   ), grouped AS (
   SELECT if(kind = 'scope_evidence', '',
@@ -393,9 +408,9 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       (max(NOT (kind = 'request' AND rejected_count = count)) OVER
         (PARTITION BY session, user, backend, project, model)
        OR max(model = '' AND NOT (kind = 'request' AND rejected_count = count)) OVER
-        (PARTITION BY session, user, backend, project)
+        (PARTITION BY session, user, project)
        OR (model = '' AND max(NOT (kind = 'request' AND rejected_count = count)) OVER
-        (PARTITION BY session, user, backend, project))) AS requires_usage
+        (PARTITION BY session, user, project))) AS requires_usage
     FROM grouped
   )
   SELECT * FROM covered WHERE kind != 'scope_evidence'

@@ -467,3 +467,37 @@ test("rollupComputedCost carries the fable-5-1 0.025x cacheRead through the fold
   assert.equal(rows[0].tokens, 4 * M);
   assert.equal(rows[0].unpriced_tokens, 0);
 });
+
+// ADR-017 backend별 오버라이드 (end-to-end는 pricing.backends.test.js).
+test("PRICING_JSON backends must be an object keyed by a known backend", () => {
+  const base = { "claude-bad-3": { input: 1, output: 1 } };
+  assert.throws(
+    () => buildPricing({ PRICING_JSON: JSON.stringify({ "claude-bad-3": { ...base["claude-bad-3"], backends: [] } }) }),
+    (err) => /claude-bad-3/.test(err.message) && /backends/.test(err.message)
+  );
+  assert.throws(
+    () => buildPricing({ PRICING_JSON: JSON.stringify({
+      "claude-bad-3": { ...base["claude-bad-3"], backends: { "amazon-bedrock": { input: 1, output: 1 } } } }) }),
+    (err) => /claude-bad-3/.test(err.message) && /amazon-bedrock/.test(err.message)
+  );
+  assert.throws(
+    () => buildPricing({ PRICING_JSON: JSON.stringify({
+      "claude-bad-3": { ...base["claude-bad-3"], backends: { "bedrock-mantle": [1, 2] } } }) }),
+    (err) => /claude-bad-3/.test(err.message) && /bedrock-mantle/.test(err.message)
+  );
+  assert.throws(
+    () => buildPricing({ PRICING_JSON: JSON.stringify({
+      "claude-bad-3": { ...base["claude-bad-3"], backends: { "bedrock-mantle": { input: -1 } } } }) }),
+    (err) => /claude-bad-3/.test(err.message) && /bedrock-mantle/.test(err.message) && /input/.test(err.message)
+  );
+});
+
+// Field-by-field: overriding input alone must not re-derive cacheWrite/cacheRead/cacheWrite1h.
+test("a PRICING_JSON backends override only fills the fields it sets; unset fields fall back to the base rate, never a derived value", () => {
+  const { table } = buildPricing({ PRICING_JSON: JSON.stringify({
+    "claude-bad-4": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25,
+      backends: { "bedrock-mantle": { output: 60 }, "bedrock-runtime": { input: 5 } } },
+  }) });
+  assert.deepEqual(table["claude-bad-4"].backends["bedrock-mantle"], { output: 60 });
+  assert.deepEqual(table["claude-bad-4"].backends["bedrock-runtime"], { input: 5 });
+});

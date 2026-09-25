@@ -97,11 +97,11 @@ export function reasonLabel(reason) {
 }
 
 function idleCell(t) {
-  return { t, model: null, channel: null, known: null, partial: false, unavailable: 0, reasons: {}, observed_tokens: null, idle: true };
+  return { t, model: null, channel: null, known: null, partial: false, unavailable: 0, reasons: {}, observed_tokens: null, idle: true, estimated: false };
 }
 
-// Shared fix-up for every non-idle cell an adapter builds (design §B4).
-function finishCell(t, model, channel, known, unavailableInput, reasonsInput, partialFlag, observedTokens) {
+// Shared fix-up for every non-idle cell an adapter builds (design §B4). `estimated`: ADR-017.
+function finishCell(t, model, channel, known, unavailableInput, reasonsInput, partialFlag, observedTokens, estimated = false) {
   const reasons = {};
   let sumR = 0;
   for (const [key, value] of Object.entries(reasonsInput || {})) {
@@ -118,7 +118,8 @@ function finishCell(t, model, channel, known, unavailableInput, reasonsInput, pa
     unavailable = 1;
     reasons.unspecified = 1;
   }
-  return { t, model, channel, known, partial, unavailable, reasons, observed_tokens: observedTokens };
+  return { t, model, channel, known, partial, unavailable, reasons, observed_tokens: observedTokens,
+    estimated: known !== null && estimated === true };
 }
 
 // Cell order: t, model === null first, model, channel (null first), then idle before metadata.
@@ -149,6 +150,8 @@ export function fromByModelDaily(rows) {
   return cells.sort(compareCells);
 }
 
+const isEstimatedBasis = (basis) => basis === "computed_estimate" || basis === "mixed";
+
 export function fromByModelTime(data, client) {
   if (!Array.isArray(data?.by_model_time)) return null;
   const cells = [];
@@ -158,15 +161,16 @@ export function fromByModelTime(data, client) {
     const t = bucketKey(row.t);
     if (t === null) continue;
     const cell = finishCell(t, typeof row.model === "string" ? row.model : "", row.backend || "unknown",
-      amount(row.cost_usd), row.unpriced, row.unpriced_reasons || {}, row.cost_partial, amount(row.observed_tokens));
+      amount(row.cost_usd), row.unpriced, row.unpriced_reasons || {}, row.cost_partial, amount(row.observed_tokens),
+      isEstimatedBasis(row.cost_basis));
     cells.push(cell);
     if (!modelByT.has(t)) modelByT.set(t, []);
     modelByT.get(t).push(cell);
   }
 
   const rr = client === "claude" ? "report_missing" : "missing_usage";
-  const meta = (t, known, unavailable, reasons, partialFlag) =>
-    finishCell(t, null, null, known, unavailable, reasons, partialFlag, null);
+  const meta = (t, known, unavailable, reasons, partialFlag, estimated) =>
+    finishCell(t, null, null, known, unavailable, reasons, partialFlag, null, estimated);
   const tsKeys = new Set();
   for (const ts of Array.isArray(data.timeseries) ? data.timeseries : []) {
     if (!ts || ts.client !== client) continue;
@@ -177,12 +181,13 @@ export function fromByModelTime(data, client) {
     const covered = M.reduce((s, cell) => s + cell.unavailable, 0);
     const residual = Math.max(0, (count(ts.unpriced) ?? 0) - covered);
     const cost = amount(ts.cost_usd);
+    const tsEstimated = isEstimatedBasis(ts.cost_basis);
     if (M.length === 0) {
       if (cost === null) {
         const n = Math.max(residual, 1);
         cells.push(meta(t, null, n, { [rr]: n }, false));
       } else if (cost > 0) {
-        cells.push(meta(t, cost, residual, residual > 0 ? { [rr]: residual } : {}, ts.cost_partial));
+        cells.push(meta(t, cost, residual, residual > 0 ? { [rr]: residual } : {}, ts.cost_partial, tsEstimated));
       } else if (ts.cost_partial === true || residual > 0) {
         const n = Math.max(residual, 1);
         cells.push(meta(t, 0, n, { [rr]: n }, false));
@@ -192,7 +197,7 @@ export function fromByModelTime(data, client) {
     } else {
       // Keep known evidence (an observed $0 timeline) no model row carries; add only residual counts.
       const extra = cost !== null && M.every((cell) => cell.known === null) ? cost : null;
-      if (extra !== null || residual > 0) cells.push(meta(t, extra, residual, residual > 0 ? { [rr]: residual } : {}, false));
+      if (extra !== null || residual > 0) cells.push(meta(t, extra, residual, residual > 0 ? { [rr]: residual } : {}, false, tsEstimated));
     }
   }
 
@@ -244,16 +249,18 @@ export function rollupBuckets(cells, targetHours, { sourceHours } = {}) {
       out.push(idleCell(group.t));
       continue;
     }
-    let known = null, observedTokens = null, unavailable = 0;
+    let known = null, observedTokens = null, unavailable = 0, estimated = false;
     const reasons = {};
     for (const member of group.members) {
       known = addKnown(known, member.known);
       observedTokens = addKnown(observedTokens, member.observed_tokens);
       unavailable += member.unavailable;
       mergeReasons(reasons, member.reasons);
+      if (member.estimated) estimated = true;
     }
     const partial = known !== null && (group.members.some((m) => m.partial) || unavailable > 0);
-    out.push({ t: group.t, model: group.model, channel: group.channel, known, partial, unavailable, reasons, observed_tokens: observedTokens });
+    out.push({ t: group.t, model: group.model, channel: group.channel, known, partial, unavailable, reasons,
+      observed_tokens: observedTokens, estimated: known !== null && estimated });
   }
   return out.sort(compareCells);
 }
@@ -375,7 +382,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
     const state = bucketState(members);
     const segments = {};
     for (const s of series) segments[s.key] = null;
-    let othersSum = null, total = null, unavailable = 0;
+    let othersSum = null, total = null, unavailable = 0, hasEstimate = false;
     const reasons = {};
     const issues = [];
     for (const cell of members) {
@@ -386,6 +393,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
       if (sk !== null) segments[sk] = addKnown(segments[sk], cell.known);
       else othersSum = addKnown(othersSum, cell.known);
       total = addKnown(total, cell.known);
+      if (cell.estimated) hasEstimate = true;
       if (cell.known === null || cell.partial) {
         issues.push({ model: cell.model, channel: cell.channel, label: identityLabel(cell.model, cell.channel),
           unavailable: cell.unavailable, reasons: cell.reasons, series: sk ?? OTHERS_KEY });
@@ -393,15 +401,17 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
     }
     const partialSeries = series.map((s) => s.key).filter((key) => issues.some((issue) => issue.series === key));
     const othersPartial = issues.some((issue) => issue.series === OTHERS_KEY);
-    return { t, state, total, segments, others: othersSum, unavailable, reasons, issues, partialSeries, othersPartial };
+    return { t, state, total, segments, others: othersSum, unavailable, reasons, issues, partialSeries, othersPartial,
+      hasEstimate: total !== null && hasEstimate };
   });
 
   let totalsKnown = null;
-  let reviewBuckets = 0, idleBuckets = 0;
+  let reviewBuckets = 0, idleBuckets = 0, estimateBuckets = 0;
   for (const b of buckets) {
     totalsKnown = addKnown(totalsKnown, b.total);
     if (b.state === "partial" || b.state === "unavailable") reviewBuckets += 1;
     if (b.state === "idle") idleBuckets += 1;
+    if (b.hasEstimate) estimateBuckets += 1;
   }
   const allReasons = {};
   for (const cell of list) mergeReasons(allReasons, cell.reasons);
@@ -428,7 +438,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
     const identities = [...perIdentity.values()].sort((a, b) => (b.count - a.count) || compareText(a.label, b.label));
     issues.push({ key: group.key, label: group.label, count: groupCount, identities });
   }
-  const totals = { known: totalsKnown, reviewBuckets, idleBuckets, reasons: allReasons, issues, identityCount };
+  const totals = { known: totalsKnown, reviewBuckets, idleBuckets, estimateBuckets, reasons: allReasons, issues, identityCount };
 
   // 9. 기타 breakdown by (model, channel).
   const breakdown = new Map();

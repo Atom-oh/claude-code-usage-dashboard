@@ -159,7 +159,9 @@ const bucketLabel = (h) => h === 1 ? "시간별" : h === 24 ? "일간" : h === 1
 function ClientModelTrend({ data, client, hours, source, stale }) {
   const cells = useMemo(() => rollupBuckets(fromByModelTime(data, client), hours, { sourceHours: source }),
     [data, client, hours, source]);
-  return <ModelCostTrend title={`${clientName(client)} 모델별 비용 추이`} basis={TREND_BASIS[client]} cells={cells}
+  // ADR-017: don't draw a computed-estimate cell as an ordinary report.
+  const basis = TREND_BASIS[client] + (cells?.some((c) => c.estimated) ? " · 일부 계산 추정" : "");
+  return <ModelCostTrend title={`${clientName(client)} 모델별 비용 추이`} basis={basis} cells={cells}
     xKey="t" bucketHours={hours} bounds={data?.effective_range} zoomDisabled={stale} />;
 }
 

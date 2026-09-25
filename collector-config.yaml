@@ -87,7 +87,8 @@ processors:
         - 'resource.attributes["service.name"] != "claude-code"'
 
   # Read only the launcher's nonsecret provenance header before batch loses
-  # transport context. Never infer backend from model, span or metric attributes.
+  # transport context. Never infer backend from model, span or metric attributes
+  # here. Downstream dashboard queries do (dashboard/server/backend.js, ADR-017).
   resource/codex_transport:
     attributes:
       - key: ccdash.transport.backend

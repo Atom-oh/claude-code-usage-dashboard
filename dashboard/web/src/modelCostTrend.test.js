@@ -23,15 +23,15 @@ import {
 import { modelColorFor, MODEL_TREND_COLORS, MODEL_TREND_OTHERS, MODEL_TREND_VENDOR_RAMPS } from "./colors.js";
 
 const idle = (t) => ({ t, model: null, channel: null, known: null, partial: false, unavailable: 0,
-  reasons: {}, observed_tokens: null, idle: true });
+  reasons: {}, observed_tokens: null, idle: true, estimated: false });
 const c = (t, model, channel, known, extra = {}) => ({ t, model, channel, known, partial: false,
-  unavailable: 0, reasons: {}, observed_tokens: 10, ...extra });
+  unavailable: 0, reasons: {}, observed_tokens: 10, estimated: false, ...extra });
 // n unavailable scopes with one reason.
 const u = (reason, n = 1, extra = {}) => ({ unavailable: n, reasons: { [reason]: n }, ...extra });
-const m = (t, model, known, extra = {}) => ({ t, model, channel: "anthropic", known, partial: false, unavailable: 0, reasons: {}, observed_tokens: 10, ...extra });
+const m = (t, model, known, extra = {}) => ({ t, model, channel: "anthropic", known, partial: false, unavailable: 0, reasons: {}, observed_tokens: 10, estimated: false, ...extra });
 // An unattributed (model === null) Claude metadata cell with one report_missing exclusion.
 const meta = (t, known, extra = {}) => ({ t, model: null, channel: null, known, partial: false, unavailable: 1,
-  reasons: { report_missing: 1 }, observed_tokens: null, ...extra });
+  reasons: { report_missing: 1 }, observed_tokens: null, estimated: false, ...extra });
 const H10 = "2026-09-14 10:00:00";
 const D1 = "2026-09-01 00:00:00", D2 = "2026-09-02 00:00:00", D3 = "2026-09-03 00:00:00",
   D4 = "2026-09-04 00:00:00", D5 = "2026-09-05 00:00:00", D6 = "2026-09-06 00:00:00";
@@ -149,6 +149,24 @@ test("fromByModelTime builds model cells, timeline metadata and the idle fill pe
   expect("idle" in codex[0]).toBe(false);
 });
 
+test("fromByModelTime marks a computed_estimate or mixed cost_basis as estimated, and nothing else", () => {
+  const data = { ...OV, by_model_time: [
+    { ...OV.by_model_time[0], cost_basis: "computed_estimate" },
+    ...OV.by_model_time.slice(1),
+  ], timeseries: [
+    { ...OV.timeseries[0], cost_basis: "mixed" },
+    ...OV.timeseries.slice(1),
+  ] };
+  const [claudeModelCell] = fromByModelTime(data, "claude");
+  expect(claudeModelCell.estimated).toBe(true);
+  expect(fromByModelTime(OV, "claude")[0].estimated).toBe(false);
+  expect(fromByModelTime(OV, "codex").every((cell) => cell.estimated === false)).toBe(true);
+  const metaData = { bucket_hours: 1, effective_range: { from: "2026-09-14T10:00:00.000Z", to: "2026-09-14T11:00:00.000Z" },
+    timeseries: [{ client: "claude", t: "2026-09-14T10:00:00Z", cost_usd: 3, cost_partial: false, unpriced: 0, cost_basis: "mixed" }],
+    by_model_time: [] };
+  expect(fromByModelTime(metaData, "claude")[0].estimated).toBe(true);
+});
+
 test("fromByModelTime returns null when the by_model_time dimension is missing", () => {
   expect(fromByModelTime({ ...OV, by_model_time: undefined }, "claude")).toBeNull();
 });
@@ -238,6 +256,16 @@ test("rollupBuckets merges minute cells into hours, keeping a partial first hour
   ]);
 });
 
+test("rollupBuckets marks a merged bucket estimated when any member was, even mixed with a report", () => {
+  const input = [
+    m("2026-09-24 10:00:00", "a", 1, { estimated: false }),
+    m("2026-09-24 10:30:00", "a", 2, { estimated: true }),
+  ];
+  const [rolled] = rollupBuckets(input, 1, { sourceHours: 1 / 60 });
+  expect(rolled.estimated).toBe(true);
+  expect(rolled.known).toBe(3);
+});
+
 test("rollupBuckets aligns days and weeks to the epoch like ClickHouse toStartOfInterval", () => {
   expect(rollupBuckets(hourly, 24, { sourceHours: 1 }).map((x) => [x.t, x.known]))
     .toEqual([["2026-09-23 00:00:00", 1], ["2026-09-24 00:00:00", 6]]);
@@ -270,6 +298,18 @@ test.each([
 test("a rolled-up bucket of idle plus a measured $0 is zero", () => {
   const rolled = rollupBuckets([idle("2026-09-24 00:00:00"), m("2026-09-24 01:00:00", "a", 0)], 24, { sourceHours: 1 });
   expect(buildModelCostFrame(rolled, { bucketHours: 24 }).buckets[0].state).toBe("zero");
+});
+
+test("buildModelCostFrame flags a bucket hasEstimate when any contributing cell is, and counts it in totals", () => {
+  const cells = [
+    c(D1, "claude-sonnet-5", "enterprise", 5, { estimated: true }),
+    c(D2, "claude-sonnet-5", "enterprise", 3, { estimated: false }),
+  ];
+  const f = buildModelCostFrame(cells, { bounds: BOUNDS, bucketHours: 24 });
+  expect(f.buckets.map((b) => [b.t, b.hasEstimate])).toEqual([
+    [D1, true], [D2, false], [D3, false], [D4, false], [D5, false], [D6, false],
+  ]);
+  expect(f.totals.estimateBuckets).toBe(1);
 });
 
 test("buildModelCostFrame picks top-N series, folds the rest into 기타 and states every bucket", () => {
@@ -306,6 +346,7 @@ test("buildModelCostFrame picks top-N series, folds the rest into 기타 and sta
     known: 9.5,
     reviewBuckets: 2,
     idleBuckets: 1,
+    estimateBuckets: 0,
     reasons: { report_zero_with_tokens: 2, report_missing: 1 },
     identityCount: 1,
     issues: [

@@ -202,13 +202,17 @@ test("anonymous operational evidence keeps the session denominator unavailable",
 
 test("usage availability isolates model, backend, user and project", () => {
   for (const [attributes, resource] of [
-    [{ model: "other" }, {}], [{}, { backend: "bedrock-runtime" }],
+    [{ model: "other" }, {}],
     [{}, { "user.email": "other@example.invalid" }], [{}, { "project.name": "other" }],
   ]) {
     fields(foldCodexInsightsLogs([completion(1), request(2, attributes, resource)]).summary,
       { cost_per_session: 0.00238425, cost_per_request: 0.00238425, cost_partial: true,
         tokens_per_request: null, cache_hit_rate: null });
   }
+  fields(foldCodexInsightsLogs([completion(1),
+    request(2, { model: "bare-model" }, { backend: "bedrock-runtime" })]).summary,
+    { cost_per_session: 0.00238425, cost_per_request: 0.00238425, cost_partial: true,
+      tokens_per_request: null, cache_hit_rate: null });
   assert.equal(foldCodexInsightsLogs([completion(1),
     log(2, "tool_result", { model: "", success: "true" }), request(3)]).summary.cost_per_request, 0.00238425);
   assert.equal(foldCodexInsightsLogs([completion(1, { "conversation.id": "" }),
@@ -216,8 +220,9 @@ test("usage availability isolates model, backend, user and project", () => {
 });
 
 test("unknown model or backend preserves known costs and measured tokens", () => {
-  for (const [attributes, resource] of [[{ model: "unpriced" }, {}], [{}, { backend: "" }],
-    [{}, { backend: "unknown", provider_name: "amazon-bedrock" }]]) {
+  for (const [attributes, resource] of [[{ model: "unpriced" }, {}],
+    [{ model: "bare-model" }, { backend: "" }],
+    [{ model: "bare-model" }, { backend: "unknown", provider_name: "amazon-bedrock" }]]) {
     const out = foldCodexInsightsLogs([completion(1), completion(2, attributes, resource), request(3)]);
     fields(out.summary, { cost_per_session: 0.00238425, cost_per_request: 0.00238425,
       cost_partial: true, tokens_per_request: 260, observed_tokens: 260, tokens_partial: false });
@@ -561,11 +566,11 @@ test("real ClickHouse preserves raw identity, limits and clientMetrics model att
     const filters = { user: "scope", model: "ASTRA", backend: "bedrock-mantle" };
     const selected = await select(filters), overview = await select(filters, buildCodexQuery);
     assert.deepEqual(selected.filter((row) => row.attributes["event.name"] === "codex.tool_result")
-      .map((row) => row.attributes.tool_name).sort(), ["direct", "fallback", "matched"]);
+      .map((row) => row.attributes.tool_name).sort(), ["direct", "fallback", "matched", "unknown-backend"]);
     assert.deepEqual(overview.filter((row) => row.kind === "tool").map((row) => row.tool).sort(),
-      ["direct", "fallback", "matched"]);
+      ["direct", "fallback", "matched", "unknown-backend"]);
     const unknown = await select({ user: "scope", model, backend: "unknown" });
-    assert.deepEqual(unknown.map((row) => row.attributes.tool_name), ["unknown-backend"]);
+    assert.deepEqual(unknown.map((row) => row.attributes.tool_name), []);
     await db.command({ query: `INSERT INTO otel_logs (Timestamp, ResourceAttributes, LogAttributes)
       SELECT toDateTime64('2026-09-15 10:00:00', 9) + toIntervalMicrosecond(number),
         map('user.email','limit@example.invalid'), map('event.name','codex.api_request')
