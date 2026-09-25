@@ -106,6 +106,9 @@ processors:
           - delete_key(attributes, "ccdash.transport.backend")
           - delete_key(attributes, "backend") where attributes["backend"] != "bedrock-mantle" and attributes["backend"] != "bedrock-runtime"
           - set(attributes["client"], "codex")
+          # Codex started outside ccdash-codex (codex exec, app-server hosts) has no
+          # resource identity. Fill only an absent one with the bootstrap's host default.
+          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
           - delete_key(attributes, "experiment.group")
     metric_statements:
       - context: resource

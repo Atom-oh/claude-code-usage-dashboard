@@ -227,6 +227,19 @@ PY
     CODEX_OTEL_RESOURCE_ATTRIBUTES="${CODEX_OTEL_RESOURCE_ATTRIBUTES:+${CODEX_OTEL_RESOURCE_ATTRIBUTES},}user.email=${END_USER_ID}"
   fi
 fi
+# The Collector fills this identity only into Codex resources that arrive without
+# one (processes that bypass the launcher). Same value the launcher would send;
+# restricted to characters that are safe in systemd env files and OTTL strings.
+CODEX_DEFAULT_USER_EMAIL="$(python3 - <<'PY'
+import os, re
+value = ""
+for item in os.environ["CODEX_OTEL_RESOURCE_ATTRIBUTES"].split(","):
+    key, _, val = item.partition("=")
+    if key.strip() == "user.email":
+        value = val.strip()
+print(value if re.fullmatch(r"[A-Za-z0-9._+@-]{1,254}", value) else "")
+PY
+)"
 CCDASH_CLIENT_ENV=/dev/null "$BOOTSTRAP_TMP/ccdash-codex" --check >/dev/null
 cat > "$BOOTSTRAP_TMP/clients.env" <<EOF
 CLAUDE_ENABLED=${CLAUDE_ENABLED}
@@ -278,6 +291,7 @@ EXPERIMENT_GROUP=${EXPERIMENT_GROUP}
 CLAUDE_ENABLED=${CLAUDE_ENABLED}
 CODEX_ENABLED=${CODEX_ENABLED}
 CODEX_BEDROCK_ENDPOINT=${CODEX_BEDROCK_ENDPOINT}
+CODEX_DEFAULT_USER_EMAIL=${CODEX_DEFAULT_USER_EMAIL}
 CH_HOST=${CH_HOST}
 CH_PORT=${CH_PORT}
 CH_DB=${CH_DB}

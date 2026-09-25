@@ -353,6 +353,9 @@ else:
                     self.assertEqual(launcher[key], expected)
                 self.assertEqual(launcher["CODEX_MODEL"], "us.openai.gpt-6-astra")
                 self.assertNotIn("fixture-collector-secret", launcher_file.read_text())
+                # The Collector default matches the identity the launcher sends.
+                self.assertEqual(collector["CODEX_DEFAULT_USER_EMAIL"],
+                                 "chosen@example.invalid" if explicit_identity else "fixture@example.invalid")
                 if explicit_identity:
                     self.assertIn("chosen@example.invalid", launcher_file.read_text())
                     self.assertNotIn("fixture@example.invalid", launcher_file.read_text())
