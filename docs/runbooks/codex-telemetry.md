@@ -138,6 +138,14 @@ removes `experiment.group` and fixes `client=codex` and
 the child process. Claude's global/managed resource attributes are not rewritten.
 Do not put credentials or prompt content in metadata.
 
+Codex started outside the launcher (for example `codex exec` or an app-server host
+such as an editor plugin) still exports through `~/.codex/config.toml` but carries no
+resource identity. Bootstrap writes the launcher's effective `user.email` to
+`CODEX_DEFAULT_USER_EMAIL` in `/etc/otelcol/env`, and the Codex pipelines insert it only
+when a resource has neither `user.email` nor `enduser.id`. Values outside
+`[A-Za-z0-9._+@-]` are dropped. Existing rows are not backfilled; hosts pick this up on
+their next bootstrap.
+
 Provider/model/profile/OTel overrides are managed by the launcher; use deployment
 variables instead. User permissions, approvals and ordinary Codex arguments retain
 their existing behavior. Defaults are read from `/etc/ccdash/clients.env` unless

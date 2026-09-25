@@ -71,7 +71,7 @@ def payload():
 
 
 class CollectorTests(unittest.TestCase):
-    def run_collector(self, claude=None, codex=None, requests=None, configure=None):
+    def run_collector(self, claude=None, codex=None, requests=None, configure=None, extra_env=None):
         config = yaml.safe_load((ROOT / "collector-config.yaml").read_text())
         if configure:
             configure(config)
@@ -83,6 +83,7 @@ class CollectorTests(unittest.TestCase):
             env["CLAUDE_ENABLED"] = claude
         if codex is not None:
             env["CODEX_ENABLED"] = codex
+        env.update(extra_env or {})
         env_args = [value for key, val in env.items() for value in ["-e", key + "=" + val]]
         with tempfile.TemporaryDirectory(prefix="collector-clients-") as directory:
             base = Path(directory)
@@ -211,6 +212,26 @@ class CollectorTests(unittest.TestCase):
                     if values(record["attributes"])["event.name"] in CLAUDE_EVENTS:
                         self.assertEqual(values(resource["resource"]["attributes"])["experiment.group"], "bedrock")
                         self.assertNotIn("prompt", values(record["attributes"]))
+
+    def test_codex_default_identity_fills_only_absent_resource_identity(self):
+        def codex_logs(identity):
+            record = log("codex.sse_event", NOW, **{"event.kind": "response.completed", "conversation.id": "c"})
+            return {"resourceLogs": [{"resource": {"attributes": attributes({"service.name": "codex_exec", **identity})},
+                    "scopeLogs": [{"scope": {"name": "fixture"}, "logRecords": [record]}]}]}
+        cases = [
+            ({}, {"CODEX_DEFAULT_USER_EMAIL": "host@example.invalid"}, "host@example.invalid"),
+            ({"user.email": ""}, {"CODEX_DEFAULT_USER_EMAIL": "host@example.invalid"}, "host@example.invalid"),
+            ({"user.email": "own@example.invalid"}, {"CODEX_DEFAULT_USER_EMAIL": "host@example.invalid"}, "own@example.invalid"),
+            ({"enduser.id": "own-id"}, {"CODEX_DEFAULT_USER_EMAIL": "host@example.invalid"}, None),
+            ({}, {}, None),
+        ]
+        for identity, extra, expected in cases:
+            with self.subTest(identity=identity, extra=extra):
+                events = self.run_collector("true", "true", requests=[("/v1/logs", codex_logs(identity), {})], extra_env=extra)
+                resources = [values(resource["resource"]["attributes"]) for batch in events
+                             for resource in batch.get("resourceLogs", [])]
+                self.assertEqual(len(resources), 1)
+                self.assertEqual(resources[0].get("user.email") or None, expected)
 
 
 if __name__ == "__main__":
