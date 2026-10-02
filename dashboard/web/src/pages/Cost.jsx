@@ -14,6 +14,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { maskEmail } from "../fmt.js";
+import { withoutZeroTokenModels } from "../modelRows.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
@@ -239,7 +240,8 @@ export default function Cost() {
 
   const modelTotals = foldModelRows(byModel.data || []);
   const totalModelCost = sumSpend(modelTotals);
-  const modelRows = modelTotals.map((r) => {
+  // Totals keep every row (missingness included); only the listed rows drop zero-token models.
+  const modelRows = withoutZeroTokenModels(modelTotals).map((r) => {
     const prev = prevCostByModel.get(r.model);
     return {
       ...r,

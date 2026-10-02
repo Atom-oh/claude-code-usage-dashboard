@@ -10,6 +10,7 @@ import { colorFor } from "../colors.js";
 import { groupLabel } from "../pivot.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { useApi } from "../useApi.js";
+import { withoutZeroTokenModels } from "../modelRows.js";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { useConfig } from "../ConfigContext.jsx";
@@ -251,7 +252,7 @@ export default function Overview() {
                 subtitle="채널별 모델 구성"
                 help="두 채널의 모델 구성이 다르면 비용과 생산성 비교에 영향을 줄 수 있습니다."
                 columns={MODEL_DIST_COLUMNS}
-                rows={(models.data || []).filter((r) => r.group === g)}
+                rows={withoutZeroTokenModels((models.data || []).filter((r) => r.group === g))}
                 exportName={`overview_model_tokens_${g}`}
                 stale={models.stale}
               />
