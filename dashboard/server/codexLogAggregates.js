@@ -3,7 +3,7 @@ import { parseCodexPricing } from "./codexPricing.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS } from "./codexRequests.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { backendSql, VALID_BACKENDS } from "./backend.js";
-import { resolvedRatesTable } from "./pricing.js";
+import { resolvedRatesTable, NO_REGIONAL_PREMIUM, REGIONAL_MODEL_PATTERN } from "./pricing.js";
 import { normModel } from "./queries.js";
 
 const LIMIT = 50000;
@@ -85,10 +85,14 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
       cases.push(condition, amount);
     }
   });
+  // Mirrors pricing.js regionalMultiplier(): Claude-table rates are global; regional Bedrock
+  // routes of 4.5+ models carry a 10% premium.
+  const regional = `if(match(model, '${REGIONAL_MODEL_PATTERN.replace(/\\/g, "\\\\")}')
+    AND NOT has(${strings(NO_REGIONAL_PREMIUM)}, claude_model), 1.1, 1)`;
   return cases.length ? `if(has_usage AND usage_valid AND backend IN ('bedrock-mantle','bedrock-runtime')
     AND NOT startsWith(model, 'us-gov.')
     AND NOT (backend = 'bedrock-mantle' AND match(model, '^(us|global)\\\\.')),
-    multiIf(${cases.join(",")}, NULL), NULL)` : "CAST(NULL, 'Nullable(Float64)')";
+    ${regional} * multiIf(${cases.join(",")}, NULL), NULL)` : "CAST(NULL, 'Nullable(Float64)')";
 }
 
 /**

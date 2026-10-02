@@ -195,6 +195,22 @@ test("Codex log compaction against isolated ClickHouse", {
     assert.equal(raw.effort[0].cost_usd, null);
   });
 
+  await t.test("the Claude-table fallback applies the regional premium identically in SQL", () => {
+    const costs = {};
+    for (const [user, model] of [["regional-fallback@", "us.anthropic.claude-fable-5-1"],
+      ["global-fallback@", "global.anthropic.claude-fable-5-1"]]) {
+      const r = { "user.email": `${user}example.test`, backend: "bedrock-runtime" };
+      insert([completion(611, { model }, r)]);
+      const filters = { user };
+      const raw = logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from, to, filters)));
+      const aggregated = foldCodexLogAggregates(select(buildCodexLogAggregateQuery(from, to, filters)));
+      assert.equal(aggregated.summary.cost_per_session, raw.summary.cost_per_session, model);
+      costs[model] = aggregated.summary.cost_per_session;
+    }
+    assert(costs["global.anthropic.claude-fable-5-1"] > 0);
+    assert.equal(Math.round(costs["us.anthropic.claude-fable-5-1"] / costs["global.anthropic.claude-fable-5-1"] * 1000), 1100);
+  });
+
   await t.test("120000 request/completion events retain per-request tiers in bounded aggregates", () => {
     const rates = input => ({ input, cacheRead: 0, cacheWrite: 0, output: 0 });
     const prices = { "test.model": { short_context_limit: 100,
