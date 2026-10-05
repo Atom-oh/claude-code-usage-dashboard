@@ -65,6 +65,20 @@ test("Luna defaults price regional and global cache-aware usage in each context 
   }
 });
 
+test("GPT-6.1 Sol defaults price regional and global usage in each context tier", () => {
+  for (const [backend, model, context_tier, expected] of [
+    ["bedrock-mantle", "openai.gpt-6.1-sol", "short", 0.00047245],
+    ["bedrock-mantle", "openai.gpt-6.1-sol", "long", 0.0007799],
+    ["bedrock-runtime", "global.openai.gpt-6.1-sol", "short", 0.0004295],
+    ["bedrock-runtime", "global.openai.gpt-6.1-sol", "long", 0.000709],
+    ["bedrock-runtime", "us.openai.gpt-6.1-sol", "short", 0.00047245],
+  ]) {
+    const row = priceCodexUsage({ ...usage, backend, model, context_tier });
+    assert.equal(row.cost_usd, expected, `${model}/${context_tier}`);
+    assert.equal(row.unpriced, false);
+  }
+});
+
 test("unknown rates or backend, missing cache data, and invalid subsets are unavailable", () => {
   for (const patch of [
     { model: "openai.unknown" }, { backend: "unknown" }, { cache_write_tokens: undefined },
@@ -200,6 +214,29 @@ test("an Anthropic model absent from the Codex table falls back to the Claude ta
   assert.equal(row.price_source, "claude_table");
   assert.equal(row.unpriced, false);
   assert.equal(row.unpriced_reason, null);
+});
+
+test("the Claude-table fallback adds the 10% regional premium only to regional 4.5+ routes", () => {
+  const regional = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "us.anthropic.claude-fable-5-1" });
+  assert.equal(regional.cost_usd, 0.002442);
+  assert.equal(regional.price_source, "claude_table");
+  const legacy = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "us.anthropic.claude-opus-4-1" });
+  assert.equal(legacy.cost_usd, priceCodexUsage({ ...usage, backend: "bedrock-runtime",
+    model: "global.anthropic.claude-opus-4-1" }).cost_usd);
+});
+
+test("added OpenAI and xAI defaults price each route at its model-card rate", () => {
+  for (const [backend, model, context_tier, expected] of [
+    ["bedrock-mantle", "openai.gpt-6-sol", "short", 0.00047685],
+    ["bedrock-runtime", "global.openai.gpt-6-sol", "long", 0.000717],
+    ["bedrock-mantle", "openai.gpt-6-luna", "short", 0.0000238425],
+    ["bedrock-runtime", "global.openai.gpt-5.6-sol", "short", 0.000867],
+    ["bedrock-mantle", "openai.gpt-5.6-terra", "long", 0.0008877],
+    ["bedrock-runtime", "global.xai.grok-4.6", "short", 0.00032],
+  ]) {
+    const row = priceCodexUsage({ ...usage, backend, model, context_tier });
+    assert.equal(row.cost_usd, expected, `${model}/${context_tier}`);
+  }
 });
 
 test("the Claude-table fallback never overrides an existing Codex-table entry or an invalid scope/usage", () => {

@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   normalizeModelId,
+  regionalMultiplier,
+  computeCost,
   priceFor,
   withComputedCost,
   rollupComputedCost,
@@ -317,6 +319,13 @@ test("opus-5-5 is priced at its own row with the 0.05x cacheRead exception", () 
   assert.deepEqual(p, { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2, cacheWrite1h: 8 });
 });
 
+// sonnet-5-5 행이 없으면 unpriced로 계산 비용에서 빠진다.
+test("sonnet-5-5 is priced at its own row", () => {
+  assert.equal(normalizeModelId("global.anthropic.claude-sonnet-5-5"), "claude-sonnet-5-5");
+  const p = priceFor("claude-sonnet-5-5");
+  assert.deepEqual(p, { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2, cacheWrite1h: 4 });
+});
+
 // -\d{8}$(날짜 스냅샷) 단계가 -4 / -1 같은 마이너 버전까지 먹으면 다른 모델 행으로 매칭돼
 // 조용한 오가격이 된다. 두 방향 모두 고정한다.
 test("normalizeModelId strips the date snapshot without eating a minor version", () => {
@@ -500,4 +509,17 @@ test("a PRICING_JSON backends override only fills the fields it sets; unset fiel
   }) });
   assert.deepEqual(table["claude-bad-4"].backends["bedrock-mantle"], { output: 60 });
   assert.deepEqual(table["claude-bad-4"].backends["bedrock-runtime"], { input: 5 });
+});
+
+// Bedrock 리전/지역 엔드포인트는 4.5+ 모델에 10% 할증(pricing 페이지 2026-10-02). 정규화된 ID와
+// global./us-gov.는 할증 없음, 4.5 이전 모델도 기존 단가 유지.
+test("regional Bedrock routes of 4.5+ models carry a 10% premium", () => {
+  assert.equal(regionalMultiplier("us.anthropic.claude-opus-5"), 1.1);
+  assert.equal(regionalMultiplier("eu.anthropic.claude-sonnet-5-5"), 1.1);
+  assert.equal(regionalMultiplier("anthropic.claude-sonnet-5-5"), 1.1);
+  for (const model of ["global.anthropic.claude-opus-5", "claude-opus-5", "us-gov.anthropic.claude-opus-5",
+    "us.anthropic.claude-opus-4-1-20250805-v1:0", ""]) assert.equal(regionalMultiplier(model), 1, model);
+  const tokens = { input: 1e6, output: 0, cacheRead: 0, cacheWrite: 0 };
+  assert.equal(computeCost("global.anthropic.claude-opus-5", "bedrock-runtime", tokens), 5);
+  assert.equal(computeCost("us.anthropic.claude-opus-5", "bedrock-runtime", tokens), 5.5);
 });

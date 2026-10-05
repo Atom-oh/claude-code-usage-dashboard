@@ -16,6 +16,85 @@ export const DEFAULT_CODEX_PRICING = {
       long: { input: 20, cacheWrite: 25, cacheRead: 2, output: 75 },
     },
   },
+  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-1-sol.html
+  // Verified 2026-10-02. Long-context rates apply to the full request above 272K input.
+  "openai.gpt-6.1-sol": {
+    short_context_limit: 272000,
+    regional: {
+      short: { input: 2.2, cacheWrite: 2.75, cacheRead: 0.11, output: 11 },
+      long: { input: 4.4, cacheWrite: 5.5, cacheRead: 0.22, output: 16.5 },
+    },
+    global: {
+      short: { input: 2, cacheWrite: 2.5, cacheRead: 0.1, output: 10 },
+      long: { input: 4, cacheWrite: 5, cacheRead: 0.2, output: 15 },
+    },
+  },
+  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-sol.html
+  // Verified 2026-10-02.
+  "openai.gpt-6-sol": {
+    short_context_limit: 272000,
+    regional: {
+      short: { input: 2.2, cacheWrite: 2.75, cacheRead: 0.22, output: 11 },
+      long: { input: 4.4, cacheWrite: 5.5, cacheRead: 0.44, output: 16.5 },
+    },
+    global: {
+      short: { input: 2, cacheWrite: 2.5, cacheRead: 0.2, output: 10 },
+      long: { input: 4, cacheWrite: 5, cacheRead: 0.4, output: 15 },
+    },
+  },
+  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-luna.html
+  // Verified 2026-10-02.
+  "openai.gpt-6-luna": {
+    short_context_limit: 272000,
+    regional: {
+      short: { input: 0.11, cacheWrite: 0.1375, cacheRead: 0.011, output: 0.55 },
+      long: { input: 0.22, cacheWrite: 0.275, cacheRead: 0.022, output: 0.825 },
+    },
+    global: {
+      short: { input: 0.10, cacheWrite: 0.125, cacheRead: 0.01, output: 0.50 },
+      long: { input: 0.20, cacheWrite: 0.25, cacheRead: 0.02, output: 0.75 },
+    },
+  },
+  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-sol.html
+  // Verified 2026-10-02.
+  "openai.gpt-5.6-sol": {
+    short_context_limit: 272000,
+    regional: {
+      short: { input: 4.4, cacheWrite: 5.5, cacheRead: 0.44, output: 22 },
+      long: { input: 8.8, cacheWrite: 11, cacheRead: 0.88, output: 33 },
+    },
+    global: {
+      short: { input: 4, cacheWrite: 5, cacheRead: 0.4, output: 20 },
+      long: { input: 8, cacheWrite: 10, cacheRead: 0.8, output: 30 },
+    },
+  },
+  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-terra.html
+  // Verified 2026-10-02.
+  "openai.gpt-5.6-terra": {
+    short_context_limit: 272000,
+    regional: {
+      short: { input: 2.2, cacheWrite: 2.75, cacheRead: 0.22, output: 13.2 },
+      long: { input: 4.4, cacheWrite: 5.5, cacheRead: 0.44, output: 19.8 },
+    },
+    global: {
+      short: { input: 2, cacheWrite: 2.5, cacheRead: 0.2, output: 12 },
+      long: { input: 4, cacheWrite: 5, cacheRead: 0.4, output: 18 },
+    },
+  },
+  // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-xai-grok-4-6.html
+  // Verified 2026-10-02. One flat tier across the 500K window. The card publishes no
+  // cache-write rate, so writes are priced as ordinary input.
+  "xai.grok-4.6": {
+    short_context_limit: 500000,
+    regional: {
+      short: { input: 2.2, cacheWrite: 2.2, cacheRead: 0.55, output: 6.6 },
+      long: { input: 2.2, cacheWrite: 2.2, cacheRead: 0.55, output: 6.6 },
+    },
+    global: {
+      short: { input: 2, cacheWrite: 2, cacheRead: 0.5, output: 6 },
+      long: { input: 2, cacheWrite: 2, cacheRead: 0.5, output: 6 },
+    },
+  },
   // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-luna.html
   // Verified 2026-09-17. The tier applies to each response's input context.
   "openai.gpt-5.6-luna": {

@@ -10,6 +10,7 @@ import { fromByModelTime, rollupBuckets } from "../modelCostTrend.js";
 import { useRange } from "../RangeContext.jsx";
 import { maskEmail, parseUtc } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
+import { withoutZeroTokenModels } from "../modelRows.js";
 import {
   basisLabel, BROWSER_TIME_ZONE, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, OBSERVED_TOKEN_HELP, presentationRow,
 } from "../clientPresentation.js";
@@ -239,6 +240,8 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
   const total = presentationRow(data?.totals);
   const basis = costBasisLabel(total, [...new Set(clientRows.map((row) => basisLabel(row.cost_basis)))].join(" + "));
   const models = rows("by_model"), users = rows("by_user"), periods = rows("timeseries");
+  // Usage/cost tables drop zero-token models; reliability/diagnostics keep them (failed requests).
+  const usageModels = withoutZeroTokenModels(models);
   const tools = (data?.tools || []).filter((row) => selected.includes(row.client));
   const trendProps = { rows: periods, clients: selected, clientRows, bucketHours: data?.bucket_hours || 1,
     effectiveRange: data?.effective_range, stale };
@@ -258,7 +261,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
           <Tiles row={total} columns={[COST_SESSION, COST_USER, TOKEN_SESSION, SESSION_USER]} basis={basis} />
         </Card>
         <ClientBars title="클라이언트별 세션" rows={clientRows} metric={SESSIONS} />
-        {table("모델별 비용·활동", [CLIENT, BACKEND, MODEL, COST, BASIS, TOKENS, SESSIONS, COST_SESSION], models, "executive_models")}
+        {table("모델별 비용·활동", [CLIENT, BACKEND, MODEL, COST, BASIS, TOKENS, SESSIONS, COST_SESSION], usageModels, "executive_models")}
       </>;
       break;
     case "trends":
@@ -278,7 +281,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {compare([TOKEN_SESSION, COST_SESSION, MILLION, BASIS], { title: "클라이언트별 관측 효율" })}
         <Fractions rows={clientRows} />
         {table("모델별 관측 효율", [CLIENT, BACKEND, MODEL, TOKEN_SESSION, COST_SESSION, MILLION, CACHE, REASONING, BASIS],
-          models, "efficiency", "비율은 기존 전체 토큰·구성값 기준이며 관측 토큰 부분합으로 대체하지 않습니다. 모델별 작업 구성과 비용 기준이 달라 업무 생산성이나 코드 품질 순위로 해석할 수 없습니다.")}
+          usageModels, "efficiency", "비율은 기존 전체 토큰·구성값 기준이며 관측 토큰 부분합으로 대체하지 않습니다. 모델별 작업 구성과 비용 기준이 달라 업무 생산성이나 코드 품질 순위로 해석할 수 없습니다.")}
       </>;
       break;
     case "usage":
@@ -311,7 +314,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         <Trend {...trendProps} metric="cost" title="비용 추이" />
         <ModelTrends data={data} clients={selected} stale={stale} />
         {table("모델별 비용", [CLIENT, BACKEND, MODEL, ...UNIT_COSTS, TOKENS, number("unpriced", "미산정 기록")],
-          models, "model_costs", COST_HELP)}
+          usageModels, "model_costs", COST_HELP)}
         {table("사용자별 비용", [CLIENT, USER, BACKEND, COST, BASIS, SESSIONS, COST_SESSION, TOKENS],
           users, "user_costs")}
       </>;
@@ -357,7 +360,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {tiles([COST, TOKENS, SESSIONS, USERS])}
         {compare([COST, TOKENS, SESSIONS, USERS], { cards: true })}
         <Trend {...trendProps} />
-        {table("모델별 사용량", [CLIENT, BACKEND, MODEL, TOKENS, COST, BASIS, SESSIONS], models, "models")}
+        {table("모델별 사용량", [CLIENT, BACKEND, MODEL, TOKENS, COST, BASIS, SESSIONS], usageModels, "models")}
       </>;
   }
   return <div className="flex flex-col gap-6">

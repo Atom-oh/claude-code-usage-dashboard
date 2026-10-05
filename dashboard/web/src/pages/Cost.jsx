@@ -14,6 +14,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { maskEmail } from "../fmt.js";
+import { isZeroTokenModel } from "../modelRows.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
@@ -44,6 +45,8 @@ function foldModelRows(rows) {
     acc.tokens += Number(r.tokens || 0);
     acc.inputTokens += Number(r.input_tokens || 0);
     acc.outputTokens += Number(r.output_tokens || 0);
+    // Judged on the raw rows: the fold above coerces unknown token counts to 0.
+    acc.zeroTokens = (acc.zeroTokens ?? true) && isZeroTokenModel(r);
     totals.set(r.model, acc);
   }
   return [...totals.values()].sort(spendOrder);
@@ -239,7 +242,8 @@ export default function Cost() {
 
   const modelTotals = foldModelRows(byModel.data || []);
   const totalModelCost = sumSpend(modelTotals);
-  const modelRows = modelTotals.map((r) => {
+  // Totals keep every row (missingness included); only the listed rows drop zero-token models.
+  const modelRows = modelTotals.filter((r) => !r.zeroTokens).map((r) => {
     const prev = prevCostByModel.get(r.model);
     return {
       ...r,

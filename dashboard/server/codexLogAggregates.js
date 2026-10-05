@@ -3,7 +3,7 @@ import { parseCodexPricing } from "./codexPricing.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS } from "./codexRequests.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { backendSql, VALID_BACKENDS } from "./backend.js";
-import { resolvedRatesTable } from "./pricing.js";
+import { resolvedRatesTable, NO_REGIONAL_PREMIUM, REGIONAL_MODEL_PATTERN } from "./pricing.js";
 import { normModel } from "./queries.js";
 
 const LIMIT = 50000;
@@ -72,6 +72,10 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
   });
   const codexModelKeys = Object.keys(prices);
   const notCodexEntry = codexModelKeys.length ? `NOT has(${strings(codexModelKeys)}, base_model)` : "1";
+  // Mirrors pricing.js regionalMultiplier() for the Claude-table fallback only: Claude rates are
+  // global, while Codex-table regional rates already include the regional fee.
+  const regional = `if(match(model, '${REGIONAL_MODEL_PATTERN.replace(/\\/g, "\\\\")}')
+    AND NOT has(${strings(NO_REGIONAL_PREMIUM)}, claude_model), 1.1, 1)`;
   Object.entries(claudeRates).forEach(([model, entry], i) => {
     params[`claudeModel${i}`] = model;
     for (const backendKey of VALID_BACKENDS) {
@@ -79,7 +83,7 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
       const key = `claudeRate${i}${backendKey.replace(/-/g, "_")}`;
       for (const field of ["input", "cacheRead", "cacheWrite", "output"]) params[key + field] = rates[field];
       const condition = `claude_model = {claudeModel${i}:String} AND backend = '${backendKey}' AND ${notCodexEntry}`;
-      const amount = `((input_value - read_value - write_value) * {${key}input:Float64}
+      const amount = `${regional} * ((input_value - read_value - write_value) * {${key}input:Float64}
         + read_value * {${key}cacheRead:Float64} + write_value * {${key}cacheWrite:Float64}
         + output_value * {${key}output:Float64}) / 1000000`;
       cases.push(condition, amount);

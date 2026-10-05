@@ -2,8 +2,13 @@ import { VALID_BACKENDS } from "./backend.js";
 
 // Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 cacheWrite(5m) = 입력×1.25,
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
-// 0.025x, opus-5-5는 0.05x인 예외라 값을 명시한다(아래 주석). Bedrock cross-region(us./us-gov./eu./apac./jp./au./
-// global.) 추론 프로파일은 기본 모델과 동일 단가.
+// 0.025x, opus-5-5는 0.05x인 예외라 값을 명시한다(아래 주석). 아래 단가는 global(=1st-party) 기준이다.
+// Bedrock 리전/지역 엔드포인트(us./eu./apac./jp./au. 프로파일, 접두사 없는 anthropic.* in-region)는
+// Claude 4.5+ 모델에 10% 할증이 붙는다(pricing 페이지, 2026-10-02 확인). computeCost는 원본 모델 ID를
+// 받을 때만 regionalMultiplier()를 적용한다 — 현재는 Codex의 Claude 단가표 fallback뿐이다. Claude
+// 클라이언트 행과 withComputedCost/tierCosts/costAtTtl 진단은 정규화된 ID로 오므로 global 단가로 남는다.
+// PRICING_JSON 요율도 global 기준으로 해석되어 리전 경로에는 할증이 더해진다. us-gov.는 GovCloud 별도
+// 요율이라 할증을 추정하지 않는다.
 // 캐시 쓰기 TTL 기본값이 "1h"인 이유: Claude Code 메인 대화가 캐시 쓰기 볼륨의 대부분을 차지하고
 // 메인 스레드는 1h TTL로 청구된다(실측 2026-09-01/02: opus-5 메인 스레드 $10/M = 5×2, 5×1.25=$6.25
 // 가 아니었음). haiku/sonnet 보조 호출은 5m TTL을 쓰므로 "1h" 기본값은 보조 호출 비용을 다소
@@ -18,6 +23,8 @@ const BASE_PRICING = {
   "claude-sonnet-4-5": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   "claude-sonnet-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+  // sonnet-5-5: sonnet-5와 동일 단가(2026-10-02 pricing 페이지 확인)
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
   "claude-opus-4-5": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-4-6": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-4-7": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
@@ -176,10 +183,23 @@ export function resolvedRatesTable() {
   return out;
 }
 
+// 4.5 이전 모델은 리전 할증 없이 기존 단가를 유지한다(pricing 페이지 "Earlier models ... retain").
+export const NO_REGIONAL_PREMIUM = ["claude-opus-4-1", "claude-opus-4", "claude-sonnet-4",
+  "claude-haiku-3-5", "claude-3-5-haiku"];
+export const REGIONAL_MODEL_PATTERN = "^((us|eu|apac|jp|au)\\.|anthropic\\.)";
+const REGIONAL_MODEL_RE = new RegExp(REGIONAL_MODEL_PATTERN);
+
+// 원본 모델 ID 기준 리전 할증 배율. 정규화된 ID(claude-*)·global.·us-gov.는 1.
+export function regionalMultiplier(rawModel) {
+  const raw = String(rawModel || "");
+  if (!REGIONAL_MODEL_RE.test(raw)) return 1;
+  return NO_REGIONAL_PREMIUM.includes(normalizeModelId(raw)) ? 1 : 1.1;
+}
+
 export function computeCost(model, backend, tokens) {
   const p = priceFor(model, backend);
   if (!p) return null;
-  const amount = (Number(tokens.input) * p.input + Number(tokens.output) * p.output
+  const amount = regionalMultiplier(model) * (Number(tokens.input) * p.input + Number(tokens.output) * p.output
     + Number(tokens.cacheRead) * p.cacheRead + Number(tokens.cacheWrite) * effectiveCacheWrite(p)) / 1e6;
   return Number.isFinite(amount) ? amount : null;
 }
