@@ -21,7 +21,7 @@ const spend = {
   tokens: 1000, unpriced: false,
 };
 
-function mount(path, rows = [spend], costError = false, daily = []) {
+function mount(path, rows = [spend], costError = false, daily = [], leaderboard = [user]) {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   vi.stubGlobal("fetch", vi.fn((url) => {
     const key = String(url).split("?")[0];
@@ -30,7 +30,7 @@ function mount(path, rows = [spend], costError = false, daily = []) {
       "/api/health/data": { status: "ok" },
       "/api/overview/active-users": { users: 1, bedrock_users: 1, enterprise_users: 0 },
       "/api/overview/kpi": [{ ...user, lines_of_code: 100 }],
-      "/api/users/leaderboard": [user],
+      "/api/users/leaderboard": leaderboard,
       "/api/cost/by-user-model": rows,
       "/api/cost/summary": rows.map((r) => ({ ...r, computed_cost: r.cost })),
       "/api/cost/by-model-daily": daily,
@@ -149,4 +149,16 @@ test("a manual Executive bucket pick resets to the default when the range change
   fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
   await waitFor(() => expect(dailyRequests().at(-1)).toBe("24"));
   expect(activeBucket(await trendCard())).toBe("일간");
+});
+
+test("Productivity Top 10 lists a user active in both channels once", async () => {
+  const both = [
+    { ...user, group: "bedrock", user_active_days: 2 },
+    { ...user, group: "enterprise", user_active_days: 2 },
+  ];
+  const { container } = mount("/productivity", [spend], false, [], both);
+  await waitFor(() => expect(screen.getByText("생산성 점수 상위 10위")).toBeTruthy());
+  const card = screen.getByText("생산성 점수 상위 10위").closest("div.bg-card") || container;
+  expect(within(card).getAllByText("re******@example.com (bedrock+enterprise)")).toHaveLength(1);
+  expect(within(card).queryByText("re******@example.com (bedrock)")).toBeNull();
 });

@@ -12,7 +12,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
-### Changed (2026-10-05 pricing coverage and model lists)
+### Changed (2026-10-05 pricing coverage, model lists and Productivity ranking)
 
 - Add AWS model-card rates for `openai.gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,
   `gpt-5.6-sol`, `gpt-5.6-terra` and `xai.grok-4.6` (Codex table, 272K tiers where
@@ -22,6 +22,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Claude-table fallback (`us.`/`eu.`/`apac.`/`jp.`/`au.` and bare `anthropic.*`). Codex-table
   regional rates already include the fee. Claude client rows and legacy diagnostics reach
   pricing with normalized model ids and stay at global rates.
+- Productivity's Top 10 ranks users once, using the same per-user fold as the user table;
+  users active in both channels show the channels after their name instead of appearing
+  once per channel.
 - Hide models with a complete known-zero token total, nothing partial or unpriced, and no
   positive cost from model usage/cost lists. Totals still include them; reliability and
   diagnostics tables keep them.
