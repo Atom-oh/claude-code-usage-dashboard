@@ -195,7 +195,7 @@ test("Codex log compaction against isolated ClickHouse", {
     assert.equal(raw.effort[0].cost_usd, null);
   });
 
-  await t.test("the Claude-table fallback applies the regional premium identically in SQL", () => {
+  await t.test("the regional premium applies to the Claude-table fallback only, identically in SQL", () => {
     const costs = {};
     for (const [user, model] of [["regional-fallback@", "us.anthropic.claude-fable-5-1"],
       ["global-fallback@", "global.anthropic.claude-fable-5-1"]]) {
@@ -207,6 +207,13 @@ test("Codex log compaction against isolated ClickHouse", {
       assert.equal(aggregated.summary.cost_per_session, raw.summary.cost_per_session, model);
       costs[model] = aggregated.summary.cost_per_session;
     }
+    // Codex-table regional rates already include the regional fee: no extra premium in SQL.
+    const r = { "user.email": "regional-codex@example.test", backend: "bedrock-runtime" };
+    insert([completion(612, { model: "us.openai.gpt-6-astra" }, r)]);
+    const codexRaw = logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from, to, { user: "regional-codex@" })));
+    const codexAggregated = foldCodexLogAggregates(select(buildCodexLogAggregateQuery(from, to, { user: "regional-codex@" })));
+    assert.equal(codexRaw.summary.cost_per_session, 0.00238425);
+    assert.equal(codexAggregated.summary.cost_per_session, 0.00238425);
     assert(costs["global.anthropic.claude-fable-5-1"] > 0);
     assert.equal(Math.round(costs["us.anthropic.claude-fable-5-1"] / costs["global.anthropic.claude-fable-5-1"] * 1000), 1100);
   });

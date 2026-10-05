@@ -72,6 +72,10 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
   });
   const codexModelKeys = Object.keys(prices);
   const notCodexEntry = codexModelKeys.length ? `NOT has(${strings(codexModelKeys)}, base_model)` : "1";
+  // Mirrors pricing.js regionalMultiplier() for the Claude-table fallback only: Claude rates are
+  // global, while Codex-table regional rates already include the regional fee.
+  const regional = `if(match(model, '${REGIONAL_MODEL_PATTERN.replace(/\\/g, "\\\\")}')
+    AND NOT has(${strings(NO_REGIONAL_PREMIUM)}, claude_model), 1.1, 1)`;
   Object.entries(claudeRates).forEach(([model, entry], i) => {
     params[`claudeModel${i}`] = model;
     for (const backendKey of VALID_BACKENDS) {
@@ -79,20 +83,16 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
       const key = `claudeRate${i}${backendKey.replace(/-/g, "_")}`;
       for (const field of ["input", "cacheRead", "cacheWrite", "output"]) params[key + field] = rates[field];
       const condition = `claude_model = {claudeModel${i}:String} AND backend = '${backendKey}' AND ${notCodexEntry}`;
-      const amount = `((input_value - read_value - write_value) * {${key}input:Float64}
+      const amount = `${regional} * ((input_value - read_value - write_value) * {${key}input:Float64}
         + read_value * {${key}cacheRead:Float64} + write_value * {${key}cacheWrite:Float64}
         + output_value * {${key}output:Float64}) / 1000000`;
       cases.push(condition, amount);
     }
   });
-  // Mirrors pricing.js regionalMultiplier(): Claude-table rates are global; regional Bedrock
-  // routes of 4.5+ models carry a 10% premium.
-  const regional = `if(match(model, '${REGIONAL_MODEL_PATTERN.replace(/\\/g, "\\\\")}')
-    AND NOT has(${strings(NO_REGIONAL_PREMIUM)}, claude_model), 1.1, 1)`;
   return cases.length ? `if(has_usage AND usage_valid AND backend IN ('bedrock-mantle','bedrock-runtime')
     AND NOT startsWith(model, 'us-gov.')
     AND NOT (backend = 'bedrock-mantle' AND match(model, '^(us|global)\\\\.')),
-    ${regional} * multiIf(${cases.join(",")}, NULL), NULL)` : "CAST(NULL, 'Nullable(Float64)')";
+    multiIf(${cases.join(",")}, NULL), NULL)` : "CAST(NULL, 'Nullable(Float64)')";
 }
 
 /**

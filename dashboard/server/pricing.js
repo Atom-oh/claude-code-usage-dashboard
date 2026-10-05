@@ -4,8 +4,11 @@ import { VALID_BACKENDS } from "./backend.js";
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
 // 0.025x, opus-5-5는 0.05x인 예외라 값을 명시한다(아래 주석). 아래 단가는 global(=1st-party) 기준이다.
 // Bedrock 리전/지역 엔드포인트(us./eu./apac./jp./au. 프로파일, 접두사 없는 anthropic.* in-region)는
-// Claude 4.5+ 모델에 10% 할증이 붙는다(pricing 페이지, 2026-10-02 확인) — computeCost가 원본 모델 ID로
-// regionalMultiplier()를 적용한다. us-gov.는 GovCloud 별도 요율이라 할증을 추정하지 않는다.
+// Claude 4.5+ 모델에 10% 할증이 붙는다(pricing 페이지, 2026-10-02 확인). computeCost는 원본 모델 ID를
+// 받을 때만 regionalMultiplier()를 적용한다 — 현재는 Codex의 Claude 단가표 fallback뿐이다. Claude
+// 클라이언트 행과 withComputedCost/tierCosts/costAtTtl 진단은 정규화된 ID로 오므로 global 단가로 남는다.
+// PRICING_JSON 요율도 global 기준으로 해석되어 리전 경로에는 할증이 더해진다. us-gov.는 GovCloud 별도
+// 요율이라 할증을 추정하지 않는다.
 // 캐시 쓰기 TTL 기본값이 "1h"인 이유: Claude Code 메인 대화가 캐시 쓰기 볼륨의 대부분을 차지하고
 // 메인 스레드는 1h TTL로 청구된다(실측 2026-09-01/02: opus-5 메인 스레드 $10/M = 5×2, 5×1.25=$6.25
 // 가 아니었음). haiku/sonnet 보조 호출은 5m TTL을 쓰므로 "1h" 기본값은 보조 호출 비용을 다소

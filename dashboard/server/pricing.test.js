@@ -319,7 +319,7 @@ test("opus-5-5 is priced at its own row with the 0.05x cacheRead exception", () 
   assert.deepEqual(p, { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2, cacheWrite1h: 8 });
 });
 
-// sonnet-5-5 행이 없으면 unpriced로 계산 비용에서 빠진다(Bedrock ID는 global. 프로파일만 존재).
+// sonnet-5-5 행이 없으면 unpriced로 계산 비용에서 빠진다.
 test("sonnet-5-5 is priced at its own row", () => {
   assert.equal(normalizeModelId("global.anthropic.claude-sonnet-5-5"), "claude-sonnet-5-5");
   const p = priceFor("claude-sonnet-5-5");

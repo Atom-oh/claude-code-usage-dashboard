@@ -12,6 +12,20 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-05 pricing coverage and model lists)
+
+- Add AWS model-card rates for `openai.gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,
+  `gpt-5.6-sol`, `gpt-5.6-terra` and `xai.grok-4.6` (Codex table, 272K tiers where
+  published) and `claude-sonnet-5-5` (Claude table). Grok cache writes use the input rate
+  because no cache-write rate is published.
+- Price the documented 10% Bedrock regional premium for Claude 4.5+ models on the Codex
+  Claude-table fallback (`us.`/`eu.`/`apac.`/`jp.`/`au.` and bare `anthropic.*`). Codex-table
+  regional rates already include the fee. Claude client rows and legacy diagnostics reach
+  pricing with normalized model ids and stay at global rates.
+- Hide models with a complete known-zero token total, nothing partial or unpriced, and no
+  positive cost from model usage/cost lists. Totals still include them; reliability and
+  diagnostics tables keep them.
+
 ### Changed (2026-09-13 documentation and review context)
 
 - Establish concise English documentation, canonical root/scoped AGENTS instructions and
