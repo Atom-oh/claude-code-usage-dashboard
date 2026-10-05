@@ -183,14 +183,19 @@ export default function Productivity() {
       .sort((a, b) => Number(b.edits) - Number(a.edits))
       .slice(0, 10);
 
-  // leaderboard는 유저×그룹 행(userLeaderboard)이라 그대로 슬라이스하면 두 그룹을 오간
-  // 유저(straddler)가 같은 이름으로 중복 노출되고 어느 그룹 점수인지 안 보인다 — 라벨에
-  // 그룹을 붙여 구분한다(Users 페이지처럼 그룹별로 아예 나누는 대신, 여기는 조직 전체
-  // Top 10 하나로 유지 — 아래 표에 이미 그룹 컬럼이 있는 상세 뷰가 따로 있다).
-  const top10ByScore = [...(leaderboard.data || [])]
-    .sort((a, b) => Number(b.productivity_score) - Number(a.productivity_score))
-    .slice(0, 10)
-    .map((r) => ({ ...r, label: `${maskEmail(r.user)} (${r.group})` }));
+  // Top 10은 아래 사용자별 표와 같은 유저 단위 폴드(score.js)를 쓴다 — 유저×그룹 행을 그대로
+  // 정렬하면 두 채널을 오간 유저가 같은 이름으로 두 번 오른다. 여러 채널을 쓴 유저만 라벨에
+  // 채널 목록을 붙인다.
+  const groupsByUser = new Map();
+  for (const r of leaderboard.data || []) {
+    const set = groupsByUser.get(r.user) || new Set();
+    set.add(r.group);
+    groupsByUser.set(r.user, set);
+  }
+  const top10ByScore = userProductivityRows.slice(0, 10).map((r) => {
+    const groups = [...(groupsByUser.get(r.user) || [])].sort();
+    return { ...r, label: groups.length > 1 ? `${maskEmail(r.user)} (${groups.join("+")})` : maskEmail(r.user) };
+  });
 
   return (
     <div>
@@ -225,7 +230,7 @@ export default function Productivity() {
           <HBarList
             title="생산성 점수 상위 10위"
             subtitle="사용자별 생산성 점수, 100점 만점"
-            help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다. 두 채널을 모두 사용한 사용자는 채널별로 따로 집계되어 이름 뒤에 채널이 표시됩니다."
+            help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다. 두 채널을 모두 사용한 사용자는 두 채널의 활동을 합산해 한 번만 표시하고, 이름 뒤에 사용한 채널을 붙입니다."
             data={top10ByScore.map((r) => ({ ...r, score: Number(r.productivity_score) }))}
             labelKey="label"
             valueKey="score"
