@@ -191,6 +191,61 @@ function ModelTrends({ data, clients, exec, stale }) {
   </section>;
 }
 
+// Change against the preceding window of the same length. Unknown on either side stays "—";
+// a zero baseline has no percentage. Partial sums are labelled, never compared as complete.
+const PERIOD_METRICS = [COST, TOKENS, SESSIONS, USERS];
+function periodChange(current, previous) {
+  if (current === null || previous === null) return null;
+  if (previous === 0) return current === 0 ? "0%" : "신규";
+  const pct = (current - previous) / previous * 100;
+  return `${pct >= 0 ? "+" : ""}${Math.abs(pct) < 10 ? pct.toFixed(1) : pct.toFixed(0)}%`;
+}
+const previousRow = (previous, client) => {
+  const row = (previous?.data?.by_client || []).find((r) => r.client === client);
+  return row ? presentationRow(row) : null;
+};
+const changeText = (previous, value) => previous?.loading ? "불러오는 중" : previous?.error ? "조회 실패" : value ?? "—";
+// Comparison rows carry the change as text columns so the table and its CSV show the same values.
+function withPeriodChange(clientRows, previous) {
+  return clientRows.map((row) => {
+    const prev = previousRow(previous, row.client);
+    const change = (key) => changeText(previous, prev ? periodChange(observedNumber(row[key]), observedNumber(prev[key])) : null);
+    return { ...row, cost_change: change("cost_usd"), tokens_change: change("observed_tokens"),
+      sessions_change: change("sessions"), users_change: change("users") };
+  });
+}
+const CHANGE = (key, label) => ({ key, label, render: text });
+const PERIOD_COMPARE = [COST, CHANGE("cost_change", "비용 증감"), TOKENS, CHANGE("tokens_change", "토큰 증감"),
+  SESSIONS, CHANGE("sessions_change", "세션 증감"), USERS, CHANGE("users_change", "사용자 증감"), BASIS];
+function PeriodChange({ clientRows, previous }) {
+  const before = (client) => previousRow(previous, client);
+  return <section aria-label="이전 기간 대비" className="flex flex-col gap-3">
+    {clientRows.map((row) => {
+      const prev = before(row.client);
+      return <div key={row.client} className="flex flex-col gap-2">
+        {clientRows.length > 1 ? <SectionLabel>{clientName(row.client)} · {row.cost_basis_label}</SectionLabel> : null}
+        <div className={GRID}>
+          {PERIOD_METRICS.map((metric) => {
+            const current = observedNumber(row[metric.key]);
+            const baseline = prev ? observedNumber(prev[metric.key]) : null;
+            const partial = metric === COST ? row.cost_partial === true || prev?.cost_partial === true || observedNumber(row.unpriced) > 0
+              : metric === TOKENS ? row.tokens_partial === true || prev?.tokens_partial === true : false;
+            const hint = previous?.loading ? "이전 기간 불러오는 중"
+              : previous?.error ? "이전 기간 조회 실패"
+              : `이전 기간 ${metric.render(prev ? prev[metric.key] : null)}${partial ? " · 부분합 포함" : ""}`;
+            return <StatTile key={metric.key} label={metric.label} value={metric.render(row[metric.key])}
+              variant={metric === COST ? "accent" : "default"}
+              trend={previous?.loading || previous?.error ? undefined : periodChange(current, baseline) ?? undefined}
+              hint={hint}
+              help={metric === TOKENS ? OBSERVED_TOKEN_HELP : metric === COST ? COST_HELP
+                : "세션·사용자 ID는 기간 전체의 고유 수입니다. 버킷별 값을 더한 값과 다릅니다."} />;
+          })}
+        </div>
+      </div>;
+    })}
+  </section>;
+}
+
 function ClientBars({ title, rows, metric, subtitle }) {
   return <SeriesBarChart title={title} subtitle={subtitle}
     rows={rows.map((row) => ({ ...row, label: clientName(row.client) }))}
@@ -231,7 +286,7 @@ function Fractions({ rows }) {
   </Card>;
 }
 
-function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false }) {
+function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false, previous }) {
   const selected = clients;
   const rows = (key) => (data?.[key] || []).filter((row) => selected.includes(row.client)).map(presentationRow);
   const clientRows = selected.map((client) => presentationRow(
@@ -266,14 +321,20 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
       break;
     case "trends":
       content = <>
-        {compare([COST, TOKENS, SESSIONS, BASIS])}
+        <PeriodChange clientRows={clientRows} previous={previous} />
+        {compare(PERIOD_COMPARE, { rows: withPeriodChange(clientRows, previous),
+          subtitle: "증감은 바로 앞의 같은 길이 기간 대비입니다. 어느 한쪽이 미산정이면 —로 둡니다." })}
         <div className="grid xl:grid-cols-2 gap-4">
           <Trend {...trendProps} metric="tokens" title="토큰 추이" />
           <Trend {...trendProps} metric="cost" title="비용 추이" />
         </div>
-        {table("기간별 관측값", [
-          { key: "t", label: "기간 시작 (브라우저 시간)", render: formatClientTime, toText: formatClientTimestamp }, CLIENT, TOKENS, COST, BASIS, SESSIONS, REQUESTS,
-        ], periods, "periods", "관측된 버킷만 표시합니다. 버킷별 고유 세션 수는 합산할 수 없으며 이전 기간 대비 증감은 제공하지 않습니다.")}
+        <ModelTrends data={data} clients={selected} stale={stale} />
+        <ResultTable key={`${page}-periods`} title="기간별 관측값"
+          subtitle={`${bucketLabel(Number(data?.bucket_hours) || 1)} 집계`}
+          help="데이터가 관측된 구간만 행으로 표시합니다. 세션 수는 구간마다 따로 센 고유 수라 행끼리 더하면 기간 전체 세션 수와 다릅니다. —는 미수집·미산정 값이며 관측된 0과 구분합니다."
+          columns={[{ key: "t", label: "기간 시작 (브라우저 시간)", render: formatClientTime, toText: formatClientTimestamp },
+            CLIENT, TOKENS, COST, BASIS, SESSIONS, REQUESTS]}
+          rows={periods} exportName="clients_periods" stale={stale} />
       </>;
       break;
     case "productivity":

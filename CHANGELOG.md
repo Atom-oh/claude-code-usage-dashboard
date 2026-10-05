@@ -14,6 +14,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed (2026-10-05 pricing coverage, model lists and Productivity ranking)
 
+- Client Trends follow the selected range's bucket size (hourly up to two days, daily beyond,
+  finer on zoom) instead of always hourly, compare cost, tokens, sessions and users with the
+  preceding window of the same length, add the per-model cost trend, and move the periods
+  table caveats into its help text.
+
 - Add AWS model-card rates for `openai.gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,
   `gpt-5.6-sol`, `gpt-5.6-terra` and `xai.grok-4.6` (Codex table, 272K tiers where
   published) and `claude-sonnet-5-5` (Claude table). Grok cache writes use the input rate

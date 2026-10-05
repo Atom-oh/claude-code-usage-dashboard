@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldClientMetrics, validateClientFilters, buildCodexQuery } from "./clientMetrics.js";
+import { foldClientMetrics, validateClientFilters, buildCodexQuery, clientBucketSeconds, rebucketClaudeRows } from "./clientMetrics.js";
 
 const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", session: "conversation-1",
   user: "person@example.invalid", backend: "bedrock-mantle", model: "openai.gpt-6-astra",
@@ -596,4 +596,44 @@ test("Codex operational-only buckets and rejected-only models create no by_model
   assert.equal(ts.tool_calls, 1, "11:00 timeseries tool calls");
   assert.equal(ts.api_errors, 1, "11:00 timeseries api errors");
   assert.equal(out.quality.missing_usage, 0, "no missing-usage scope");
+});
+
+test("client timeline buckets follow the requested interval but never go below native", () => {
+  const from = new Date("2026-10-01T00:00:00Z");
+  const at = (hours) => new Date(from.getTime() + hours * 3600000);
+  assert.equal(clientBucketSeconds(from, at(2)), 60);
+  assert.equal(clientBucketSeconds(from, at(48)), 3600);
+  assert.equal(clientBucketSeconds(from, at(720), 24), 86400);
+  assert.equal(clientBucketSeconds(from, at(720), "24"), 86400);
+  assert.equal(clientBucketSeconds(from, at(48), 1), 3600);
+  // Finer than the counter path can serve falls back to native; odd sizes nest in native buckets.
+  assert.equal(clientBucketSeconds(from, at(48), 0.25), 3600);
+  assert.equal(clientBucketSeconds(from, at(2), 0.25), 900);
+  assert.equal(clientBucketSeconds(from, at(48), 1.5), 7200);
+  const { params } = buildCodexQuery(from, at(720), { bucketSeconds: 86400 });
+  assert.equal(params.clientBucketSeconds, 86400);
+  assert.equal(buildCodexQuery(from, at(720)).params.clientBucketSeconds, 3600);
+});
+
+test("Claude rows regroup into daily buckets with exact distinct sessions and merged zero evidence", () => {
+  const from = new Date("2026-10-01T05:00:00Z");
+  const usage = (t, session) => ({ client: "claude", kind: "usage", t, session, user: "u@example.invalid",
+    model: "claude-sonnet-5", backend: "anthropic", count: 1, reported_cost: 1, input_tokens: 10,
+    output_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, timeline_only: 0 });
+  const zero = (t, cost_observed) => ({ client: "claude", kind: "usage", t, timeline_only: 1,
+    token_observed: 1, token_missing: 0, cost_observed, cost_missing: 0 });
+  const rows = rebucketClaudeRows([
+    usage("2026-10-01T06:00:00Z", "a"), usage("2026-10-01T20:00:00Z", "a"),
+    usage("2026-10-02T01:00:00Z", "b"),
+    zero("2026-10-02T03:00:00Z", 1), zero("2026-10-02T04:00:00Z", 0),
+  ], from, 86400);
+  // The first bucket starts at the range start, like the SQL greatest(bucket, from).
+  assert.deepEqual([...new Set(rows.map((r) => r.t))].sort(), ["2026-10-01T05:00:00Z", "2026-10-02T00:00:00Z"]);
+  assert.equal(rows.filter((r) => r.timeline_only === 1).length, 1);
+  assert.equal(rows.find((r) => r.timeline_only === 1).cost_observed, 0);
+  const folded = foldClientMetrics(rows, ["claude"]);
+  const day1 = folded.timeseries.find((r) => r.t === "2026-10-01T05:00:00Z");
+  assert.equal(day1.sessions, 1);
+  assert.equal(day1.cost_usd, 2);
+  assert.equal(folded.timeseries.find((r) => r.t === "2026-10-02T00:00:00Z").sessions, 1);
 });

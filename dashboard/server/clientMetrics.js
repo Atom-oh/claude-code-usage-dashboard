@@ -271,12 +271,45 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
 // Streaming delta events: bulk scope evidence only (no usage keys, never priced).
 const CODEX_DELTA_EVENT = "EventName IN ('codex.sse_event', 'codex.websocket_event') AND endsWith(LogAttributes['event.kind'], '.delta')";
 
+// Timeline bucket for client views. Native resolution is minute up to 4 hours and hour beyond
+// (the Claude counter path cannot go finer). A requested intervalHours coarser than that is
+// honored, rounded up to a whole multiple of the native bucket so finer rows nest exactly.
+export function clientBucketSeconds(from, to, intervalHours) {
+  const native = to - from <= 4 * 3600000 ? 60 : 3600;
+  if (intervalHours === undefined || intervalHours === null || intervalHours === "") return native;
+  const requested = Number(intervalHours) * 3600;
+  if (!Number.isFinite(requested) || requested <= native) return native;
+  return Math.ceil(requested / native) * native;
+}
+
+// Regroups native-resolution Claude rows into a coarser bucket. Usage rows keep their
+// session identity, so distinct sessions/users stay exact. Bucket-only zero-evidence rows are
+// merged per bucket conservatively: observed only if every merged row was observed.
+export function rebucketClaudeRows(rows, from, bucketSeconds) {
+  const size = bucketSeconds * 1000, start = from.getTime();
+  const at = (t) => {
+    const ms = Date.parse(String(t).replace(/(?:\.\d+)?Z?$/, "Z"));
+    if (!Number.isFinite(ms)) return t;
+    return new Date(Math.max(start, Math.floor(ms / size) * size)).toISOString().replace(/\.\d{3}Z$/, "Z");
+  };
+  const out = [], zeros = new Map();
+  for (const row of rows) {
+    const t = at(row.t);
+    if (Number(row.timeline_only) !== 1) { out.push({ ...row, t }); continue; }
+    const prev = zeros.get(t);
+    if (!prev) { zeros.set(t, { ...row, t }); continue; }
+    for (const key of ["token_observed", "cost_observed"]) prev[key] = Math.min(Number(prev[key]) || 0, Number(row[key]) || 0);
+    for (const key of ["token_missing", "cost_missing"]) prev[key] = Math.max(Number(prev[key]) || 0, Number(row[key]) || 0);
+  }
+  return [...out, ...zeros.values()];
+}
+
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex") {
   const isCodex = client === "codex";
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: (isCodex ? filters.model : normalizeModelId(filters.model || "")) || "",
     clientBackend: filters.backend || "",
-    clientBucketSeconds: to - from <= 4 * 3600000 ? 60 : 3600 };
+    clientBucketSeconds: filters.bucketSeconds ?? clientBucketSeconds(from, to) };
   const cases = Object.entries(prices).map(([model, rate], i) => {
     params[`priceModel${i}`] = model;
     params[`priceLimit${i}`] = rate.short_context_limit;
@@ -419,7 +452,9 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
 }
 
 export async function clientOverview(from, to, raw, enabledClients) {
-  const filters = validateClientFilters(raw, enabledClients);
+  const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours);
+  const filters = { ...validateClientFilters(raw, enabledClients), bucketSeconds };
+  const nativeSeconds = clientBucketSeconds(from, to);
   const requestedTo = to;
   if (filters.clients.includes("claude")) {
     const resolved = queries.range(from, to, to - from <= 4 * 3600000);
@@ -429,7 +464,8 @@ export async function clientOverview(from, to, raw, enabledClients) {
   for (const client of filters.clients) {
     if (client === "claude") {
       jobs.push(queries.clientClaudeRows(from, to, filters)
-        .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" }))));
+        .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" })))
+        .then((rows) => bucketSeconds > nativeSeconds ? rebucketClaudeRows(rows, from, bucketSeconds) : rows));
     }
     const { sql, params } = buildCodexQuery(from, to, filters, codexPrices, client);
     jobs.push(query(sql, params).then((rows) => {
@@ -442,5 +478,5 @@ export async function clientOverview(from, to, raw, enabledClients) {
   const modelTime = raw.modelTime === "1";
   return { ...foldClientMetrics(lists.flat(), filters.clients, codexPrices, { modelTime }),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
-    bucket_hours: to - from <= 4 * 3600000 ? 1 / 60 : 1 };
+    bucket_hours: bucketSeconds / 3600 };
 }

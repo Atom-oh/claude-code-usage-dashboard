@@ -612,6 +612,26 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         AggregationTemporality: 1 }]);
       await assert.rejects(overview({ client: "claude", user }, ["claude"], from, end), /too much client data/);
     });
+    await t.test("a daily intervalHours buckets Codex by UTC day with exact per-day sessions", async () => {
+      const prev = new Date(from.getTime() - 86400000).toISOString().slice(0, 10);
+      const make = (date, clock, session) => {
+        const row = log(700, "codex.sse_event", { ...usage1.LogAttributes, "conversation.id": session });
+        row.Timestamp = `${date} ${clock}`;
+        row.ResourceAttributes["user.email"] = "daily-bucket@example.invalid";
+        return row;
+      };
+      await insertLogs([make(prev, "03:00:00", "d1"), make(prev, "20:00:00", "d1"), make(day, "01:00:00", "d2")]);
+      const rangeFrom = new Date(`${prev}T00:00:00Z`), rangeTo = new Date(`${day}T12:00:00Z`);
+      const result = await overview({ client: "codex", user: "daily-bucket@", intervalHours: "24" }, ["codex"], rangeFrom, rangeTo);
+      assert.equal(result.bucket_hours, 24);
+      assert.deepEqual(result.timeseries.map((r) => [r.t, r.sessions, r.tokens]),
+        [[`${prev}T00:00:00Z`, 1, 260], [`${day}T00:00:00Z`, 1, 130]]);
+      const hourly = await overview({ client: "codex", user: "daily-bucket@" }, ["codex"], rangeFrom, rangeTo);
+      assert.equal(hourly.bucket_hours, 1);
+      assert.equal(hourly.timeseries.length, 3);
+      assert.equal(hourly.totals.tokens, result.totals.tokens);
+    });
+
     await t.test("rejected HTTP attempts do not create Codex token gaps or hide uncertain responses", async () => {
       for (const status of ["400", " 400 ", "401", "403", "404", "413", "415", "422", "429", "200", "408", "499", "500", "4e2"]) {
         const user = `rejection-${status}@example.invalid`;
