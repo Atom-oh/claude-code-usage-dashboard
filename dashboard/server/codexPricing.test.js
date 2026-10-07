@@ -79,6 +79,13 @@ test("GPT-6.1 Sol defaults price regional and global usage in each context tier"
   }
 });
 
+test("GLM 5.3 prices US and global CRIS at their published flat rates", () => {
+  for (const [model, expected] of [["global.zai.glm-5.3", 0.0002763], ["us.zai.glm-5.3", 0.00030393]]) {
+    const row = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model, context_tier: "short" });
+    assert.equal(row.cost_usd, expected, model);
+  }
+});
+
 test("unknown rates or backend, missing cache data, and invalid subsets are unavailable", () => {
   for (const patch of [
     { model: "openai.unknown" }, { backend: "unknown" }, { cache_write_tokens: undefined },
