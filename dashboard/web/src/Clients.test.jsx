@@ -465,7 +465,8 @@ test("Trends request range-sized buckets and compare against the preceding windo
   const current = clientOverview({ effective_range: { from: "2026-09-02T00:00:00.000Z",
     to: "2026-09-09T00:00:00.000Z", requested_to: "2026-09-09T00:00:00.000Z" }, bucket_hours: 24 });
   const before = clientOverview({ by_client: current.by_client.map((row) => ({ ...row,
-    cost_usd: row.cost_usd / 2, sessions: 1 })) });
+    cost_usd: row.cost_usd / 2, sessions: 1, tokens_partial: true })),
+    effective_range: { from: "2026-08-26T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" } });
   const fetchMock = vi.fn((url) => {
     const u = new URL(String(url), "http://localhost");
     const body = u.pathname === "/api/health/data" ? { status: "ok" }
@@ -489,6 +490,35 @@ test("Trends request range-sized buckets and compare against the preceding windo
   expect(previous.searchParams.get("from")).toBe("2026-08-26T00:00:00.000Z");
   const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
   await waitFor(() => expect(comparison.textContent).toContain("+100%"));
+  // A partial baseline is labelled in the table (and its CSV), never shown as complete.
+  expect(comparison.textContent).toContain("(부분합 포함)");
   expect(screen.getByText("일간 집계")).toBeTruthy();
   expect(document.body.textContent).not.toContain("이전 기간 대비 증감은 제공하지 않습니다");
+});
+
+test("Trends never compare against a baseline from another window", async () => {
+  setPiiMask(true);
+  const current = clientOverview({ effective_range: { from: "2026-09-02T00:00:00.000Z",
+    to: "2026-09-09T00:00:00.000Z", requested_to: "2026-09-09T00:00:00.000Z" }, bucket_hours: 24 });
+  // The baseline response belongs to a different window (e.g. still stale from a range change).
+  const mismatched = clientOverview({ by_client: current.by_client.map((row) => ({ ...row, cost_usd: 1 })),
+    effective_range: { from: "2026-08-01T00:00:00.000Z", to: "2026-08-08T00:00:00.000Z" } });
+  vi.stubGlobal("fetch", vi.fn((url) => {
+    const u = new URL(String(url), "http://localhost");
+    const body = u.pathname === "/api/health/data" ? { status: "ok" }
+      : u.pathname !== "/api/clients/overview" ? []
+      : u.searchParams.get("to") === "2026-09-02T00:00:00.000Z" ? mismatched : current;
+    return Promise.resolve(ok(body));
+  }));
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  render(
+    <MemoryRouter initialEntries={["/trends?client=codex&days=7"]}>
+      <ConfigProvider config={{ enabledClients: ["codex"], piiMask: true, schema: { projectColumns: true } }}>
+        <App />
+      </ConfigProvider>
+    </MemoryRouter>,
+  );
+  const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
+  await waitFor(() => expect(comparison.textContent).toContain("불러오는 중"));
+  expect(comparison.textContent).not.toMatch(/[+-]\d+(\.\d)?%/);
 });

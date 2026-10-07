@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldClientMetrics, validateClientFilters, buildCodexQuery, clientBucketSeconds, rebucketClaudeRows } from "./clientMetrics.js";
+import { foldClientMetrics, validateClientFilters, buildCodexQuery, clientBucketSeconds, rebucketClaudeRows, effectiveClientEnd } from "./clientMetrics.js";
 
 const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", session: "conversation-1",
   user: "person@example.invalid", backend: "bedrock-mantle", model: "openai.gpt-6-astra",
@@ -636,4 +636,15 @@ test("Claude rows regroup into daily buckets with exact distinct sessions and me
   assert.equal(day1.sessions, 1);
   assert.equal(day1.cost_usd, 2);
   assert.equal(folded.timeseries.find((r) => r.t === "2026-10-02T00:00:00Z").sessions, 1);
+});
+
+test("buckets are sized from Claude's trimmed end, so a range just over four hours stays per-minute", () => {
+  // A historical end off the hour floors to the hour: 06:00–10:05 resolves to 06:00–10:00 (4h).
+  const from = new Date("2026-09-01T06:00:00Z"), to = new Date("2026-09-01T10:05:00Z");
+  const end = effectiveClientEnd(from, to, ["claude", "codex"]);
+  assert.equal(end.toISOString(), "2026-09-01T10:00:00.000Z");
+  assert.equal(clientBucketSeconds(from, end), 60);
+  assert.equal(clientBucketSeconds(from, end, 1), 3600);
+  // Codex-only views keep the requested end.
+  assert.equal(effectiveClientEnd(from, to, ["codex"]).getTime(), to.getTime());
 });

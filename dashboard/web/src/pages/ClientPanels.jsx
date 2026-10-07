@@ -137,7 +137,7 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
     return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
   }
   return <DualLineChart title={title}
-    subtitle={`${bucketHours < 1 ? "분별" : "시간별"} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
+    subtitle={`${bucketHours < 1 ? "분별" : bucketLabel(bucketHours)} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
     help="0은 해당 시간에 집계된 사용량이 없다는 뜻입니다. 이벤트 자체의 전송 누락은 미사용과 구분할 수 없으며, 차트가 누락된 사용량을 복원하지는 않습니다."
     tooltipFormatter={(value, name, item) => {
       const client = String(item.dataKey).split("_")[0];
@@ -204,13 +204,22 @@ const previousRow = (previous, client) => {
   const row = (previous?.data?.by_client || []).find((r) => r.client === client);
   return row ? presentationRow(row) : null;
 };
-const changeText = (previous, value) => previous?.loading ? "불러오는 중" : previous?.error ? "조회 실패" : value ?? "—";
+const baselinePending = (previous) => previous?.loading || previous?.stale;
+const changeText = (previous, value) => baselinePending(previous) ? "불러오는 중" : previous?.error ? "조회 실패" : value ?? "—";
+// Either side partial: the change is labelled, never presented as a complete comparison.
+const costPartial = (row) => row?.cost_partial === true || observedNumber(row?.unpriced) > 0;
+const tokensPartial = (row) => row?.tokens_partial === true;
 // Comparison rows carry the change as text columns so the table and its CSV show the same values.
 function withPeriodChange(clientRows, previous) {
   return clientRows.map((row) => {
     const prev = previousRow(previous, row.client);
-    const change = (key) => changeText(previous, prev ? periodChange(observedNumber(row[key]), observedNumber(prev[key])) : null);
-    return { ...row, cost_change: change("cost_usd"), tokens_change: change("observed_tokens"),
+    const change = (key, partial) => {
+      const value = prev ? periodChange(observedNumber(row[key]), observedNumber(prev[key])) : null;
+      return changeText(previous, value !== null && partial ? `${value} (부분합 포함)` : value);
+    };
+    return { ...row,
+      cost_change: change("cost_usd", costPartial(row) || costPartial(prev)),
+      tokens_change: change("observed_tokens", tokensPartial(row) || tokensPartial(prev)),
       sessions_change: change("sessions"), users_change: change("users") };
   });
 }
@@ -228,14 +237,14 @@ function PeriodChange({ clientRows, previous }) {
           {PERIOD_METRICS.map((metric) => {
             const current = observedNumber(row[metric.key]);
             const baseline = prev ? observedNumber(prev[metric.key]) : null;
-            const partial = metric === COST ? row.cost_partial === true || prev?.cost_partial === true || observedNumber(row.unpriced) > 0
-              : metric === TOKENS ? row.tokens_partial === true || prev?.tokens_partial === true : false;
-            const hint = previous?.loading ? "이전 기간 불러오는 중"
+            const partial = metric === COST ? costPartial(row) || costPartial(prev)
+              : metric === TOKENS ? tokensPartial(row) || tokensPartial(prev) : false;
+            const hint = baselinePending(previous) ? "이전 기간 불러오는 중"
               : previous?.error ? "이전 기간 조회 실패"
               : `이전 기간 ${metric.render(prev ? prev[metric.key] : null)}${partial ? " · 부분합 포함" : ""}`;
             return <StatTile key={metric.key} label={metric.label} value={metric.render(row[metric.key])}
               variant={metric === COST ? "accent" : "default"}
-              trend={previous?.loading || previous?.error ? undefined : periodChange(current, baseline) ?? undefined}
+              trend={baselinePending(previous) || previous?.error ? undefined : periodChange(current, baseline) ?? undefined}
               hint={hint}
               help={metric === TOKENS ? OBSERVED_TOKEN_HELP : metric === COST ? COST_HELP
                 : "세션·사용자 ID는 기간 전체의 고유 수입니다. 버킷별 값을 더한 값과 다릅니다."} />;
@@ -323,6 +332,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
       content = <>
         <PeriodChange clientRows={clientRows} previous={previous} />
         {compare(PERIOD_COMPARE, { rows: withPeriodChange(clientRows, previous),
+          stale: stale || Boolean(previous && (baselinePending(previous) || previous.error)),
           subtitle: "증감은 바로 앞의 같은 길이 기간 대비입니다. 어느 한쪽이 미산정이면 —로 둡니다." })}
         <div className="grid xl:grid-cols-2 gap-4">
           <Trend {...trendProps} metric="tokens" title="토큰 추이" />

@@ -25,12 +25,17 @@ export default function Clients({ page = "overview" }) {
   const { data, loading, error, stale } = useApi("/api/clients/overview", modelTime ? { client, modelTime: "1" } : { client });
   // Trends compare against the immediately preceding window of the same length, derived from the
   // range the server actually used for the current response.
+  // The compared window is the effective (trimmed) range, so the baseline has the same length.
   const previousRange = useMemo(() => {
-    const from = Date.parse(data?.effective_range?.from), to = Date.parse(data?.effective_range?.requested_to ?? data?.effective_range?.to);
+    const from = Date.parse(data?.effective_range?.from), to = Date.parse(data?.effective_range?.to);
     return page === "trends" && Number.isFinite(from) && Number.isFinite(to) && to > from
       ? { from: new Date(from - (to - from)).toISOString(), to: new Date(from).toISOString() } : null;
-  }, [page, data?.effective_range?.from, data?.effective_range?.to, data?.effective_range?.requested_to]);
-  const previous = useApi("/api/clients/overview", { client, ...(previousRange || {}) }, previousRange !== null);
+  }, [page, data?.effective_range?.from, data?.effective_range?.to]);
+  const previousApi = useApi("/api/clients/overview", { client, ...(previousRange || {}) }, previousRange !== null);
+  // A baseline from another window (stale while refetching) is never compared as current.
+  const previousFrom = Date.parse(previousApi.data?.effective_range?.from);
+  const previous = { ...previousApi, stale: previousApi.stale || !previousRange
+    || previousFrom !== Date.parse(previousRange.from) };
   const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};

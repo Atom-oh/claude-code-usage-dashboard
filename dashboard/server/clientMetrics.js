@@ -451,15 +451,22 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   return { sql, params };
 }
 
+// Claude's resolved end (historical ends floor to the hour) applies to both clients.
+export function effectiveClientEnd(from, to, clients) {
+  if (!clients.includes("claude")) return to;
+  const resolved = queries.range(from, to, to - from <= 4 * 3600000);
+  return new Date(resolved.to.replace(" ", "T") + "Z");
+}
+
 export async function clientOverview(from, to, raw, enabledClients) {
-  const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours);
-  const filters = { ...validateClientFilters(raw, enabledClients), bucketSeconds };
-  const nativeSeconds = clientBucketSeconds(from, to);
+  const validated = validateClientFilters(raw, enabledClients);
   const requestedTo = to;
-  if (filters.clients.includes("claude")) {
-    const resolved = queries.range(from, to, to - from <= 4 * 3600000);
-    to = new Date(resolved.to.replace(" ", "T") + "Z");
-  }
+  to = effectiveClientEnd(from, to, validated.clients);
+  // Size buckets from the trimmed end: the Claude counter query picks minute vs hour rows
+  // from it, so both clients and bucket_hours share one resolution.
+  const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours);
+  const nativeSeconds = clientBucketSeconds(from, to);
+  const filters = { ...validated, bucketSeconds };
   const jobs = [];
   for (const client of filters.clients) {
     if (client === "claude") {

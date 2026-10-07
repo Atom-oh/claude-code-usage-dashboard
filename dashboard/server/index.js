@@ -17,7 +17,7 @@ import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./
 import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 import { parseClients } from "./clients.js";
-import { clientOverview, validateClientFilters, clientBucketSeconds } from "./clientMetrics.js";
+import { clientOverview, validateClientFilters, clientBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -257,7 +257,8 @@ function cacheKey(path, query) {
       // and a browser request for the same resolution share one entry.
       ...(path === "/api/clients/overview" ? (() => {
         const { from, to } = parseRange(query, RANGE_OPTS);
-        return { bucketSeconds: String(clientBucketSeconds(from, to, query.intervalHours)) };
+        const end = effectiveClientEnd(from, to, filters.clients);
+        return { bucketSeconds: String(clientBucketSeconds(from, end, query.intervalHours)) };
       })() : {}) };
     return `${path}?${new URLSearchParams(Object.entries(normalized)
       .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString()}`;
