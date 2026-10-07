@@ -523,3 +523,15 @@ test("regional Bedrock routes of 4.5+ models carry a 10% premium", () => {
   assert.equal(computeCost("global.anthropic.claude-opus-5", "bedrock-runtime", tokens), 5);
   assert.equal(computeCost("us.anthropic.claude-opus-5", "bedrock-runtime", tokens), 5.5);
 });
+
+// ADR-017 amendment: unknown non-Anthropic spend arrives as null and must not fold into $0.
+test("rollupComputedCost keeps a group with unknown reported spend unavailable", () => {
+  const rows = [
+    { group: "bedrock", effort: "high", model: "claude-sonnet-5", reported_cost: 1, input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0 },
+    { group: "bedrock", effort: "high", model: "openai.gpt-6-luna", reported_cost: null, input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0 },
+    { group: "bedrock", effort: "low", model: "claude-sonnet-5", reported_cost: 2, input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0 },
+  ];
+  const out = rollupComputedCost(rows, ["group", "effort"]);
+  assert.equal(out.find((r) => r.effort === "high").reported_cost, null);
+  assert.equal(out.find((r) => r.effort === "low").reported_cost, 2);
+});

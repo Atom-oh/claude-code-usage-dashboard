@@ -64,7 +64,9 @@ export function foldFactors(rows, normalize = normalizeModelId, priceTable = pri
       input_tokens_total: total, cache_read_tokens: read, cache_write_tokens: write,
       output_tokens: output, reasoning_tokens: 0,
     }, priceTable).cost_usd;
-    if (priced === null || priced === undefined || !Number.isFinite(reported) || reported < 0) g.unpriced = true;
+    // A zero report beside positive usage has nothing to rescale and would inflate the ratio.
+    if (priced === null || priced === undefined || !Number.isFinite(reported) || reported < 0
+      || (reported === 0 && priced > 0)) g.unpriced = true;
     else { g.estimate += priced; g.reported += reported; }
     groups.set(key, g);
   }

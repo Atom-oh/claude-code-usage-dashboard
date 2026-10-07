@@ -43,7 +43,7 @@ test("no usable estimate yields the unknown factor (-1), never the inflated repo
   // One unpriced request withholds the whole session-model ratio.
   assert.deepEqual(foldFactors([luna, { ...luna, output_tokens: "-1" }]).factors, [-1]);
   // A missing report beside a valid one cannot add its estimate without a denominator.
-  for (const cost_usd of [null, "", "abc"]) assert.deepEqual(foldFactors([luna, { ...luna, cost_usd }]).factors, [-1]);
+  for (const cost_usd of [null, "", "abc", 0]) assert.deepEqual(foldFactors([luna, { ...luna, cost_usd }]).factors, [-1]);
 });
 
 test("factor params are added only for queries that reference them, over [prevFrom ?? from, to)", async () => {

@@ -710,7 +710,8 @@ export async function skillUsage(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   return query(
     `${GROUP_CTE}
-    SELECT ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations, sum(m.Value) AS est_cost_usd
+    SELECT ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations,
+        sum(${nacCostSql("m.Value", "m.SessionId", normModel("m.Model"))}) AS est_cost_usd
     FROM ${incFlat(`AND MetricName = 'claude_code.cost.usage'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE m.SkillName != '' ${f.where}

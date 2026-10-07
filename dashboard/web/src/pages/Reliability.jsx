@@ -7,7 +7,8 @@ import { useApi } from "../useApi.js";
 import { effortLabel } from "../labels.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
-const usd = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+// null is unavailable spend (e.g. non-Anthropic models without a factor), never $0.
+const usd = (n) => n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 // render와 toText가 같아야 하는 컬럼용 — 한 번만 정의해 두 곳에 넘긴다. 원본 값을 그대로
 // 내보내면 오해를 준다: effort는 ""(미보고), status_code는 'no-http-status'(전송 계층 실패),
