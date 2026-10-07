@@ -95,6 +95,20 @@ export const DEFAULT_CODEX_PRICING = {
       long: { input: 2, cacheWrite: 2, cacheRead: 0.5, output: 6 },
     },
   },
+  // https://aws.amazon.com/bedrock/pricing/ (model card links there), verified 2026-10-07.
+  // Cross-Region only (us./global.). One flat tier across the 1M window; cache write is the
+  // published 30-minute rate.
+  "zai.glm-5.3": {
+    short_context_limit: 1000000,
+    regional: {
+      short: { input: 1.848, cacheWrite: 2.31, cacheRead: 0.3432, output: 5.808 },
+      long: { input: 1.848, cacheWrite: 2.31, cacheRead: 0.3432, output: 5.808 },
+    },
+    global: {
+      short: { input: 1.68, cacheWrite: 2.1, cacheRead: 0.312, output: 5.28 },
+      long: { input: 1.68, cacheWrite: 2.1, cacheRead: 0.312, output: 5.28 },
+    },
+  },
   // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-luna.html
   // Verified 2026-09-17. The tier applies to each response's input context.
   "openai.gpt-5.6-luna": {

@@ -22,6 +22,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed (2026-10-05 pricing coverage, model lists and Productivity ranking)
 
+- Add Bedrock pricing-page rates for `zai.glm-5.3` (2026-10-07): US and global CRIS, one
+  flat tier across the 1M window, 30-minute cache-write rate.
 - Add AWS model-card rates for `openai.gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,
   `gpt-5.6-sol`, `gpt-5.6-terra` and `xai.grok-4.6` (Codex table, 272K tiers where
   published) and `claude-sonnet-5-5` (Claude table). Grok cache writes use the input rate
