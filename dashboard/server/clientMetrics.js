@@ -54,7 +54,8 @@ function accumulator(meta, reasons = false) {
 
 // model === null (session-only) drops backend (ADR-017).
 function usageScope(row, model = row.model || "") {
-  const identity = [row.client, row.session || ["unidentified", row.t], row.user || "", row.project || ""];
+  // Unidentified records match only within their native bucket (scope_t), whatever the display bucket.
+  const identity = [row.client, row.session || ["unidentified", row.scope_t ?? row.t], row.user || "", row.project || ""];
   return JSON.stringify(model === null ? identity : [...identity, row.backend || "unknown", model]);
 }
 
@@ -282,12 +283,37 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
 // Streaming delta events: bulk scope evidence only (no usage keys, never priced).
 const CODEX_DELTA_EVENT = "EventName IN ('codex.sse_event', 'codex.websocket_event') AND endsWith(LogAttributes['event.kind'], '.delta')";
 
+// Timeline bucket for client views. Native resolution is minute up to 4 hours and hour beyond
+// (the Claude counter path cannot go finer). A requested intervalHours coarser than that is
+// honored, rounded up to a whole multiple of the native bucket so finer rows nest exactly.
+export function clientBucketSeconds(from, to, intervalHours) {
+  const native = to - from <= 4 * 3600000 ? 60 : 3600;
+  if (intervalHours === undefined || intervalHours === null || intervalHours === "") return native;
+  const requested = Number(intervalHours) * 3600;
+  if (!Number.isFinite(requested) || requested <= native) return native;
+  return Math.ceil(requested / native) * native;
+}
+
+// Regroups native-resolution rows (both clients) into a coarser display bucket. Only `t` moves:
+// usage rows keep their session identity, so distinct sessions/users stay exact; `scope_t`
+// keeps each row's native bucket for coverage identity; bucket-only evidence rows are merged
+// by the fold exactly as several rows in one native bucket are.
+export function rebucketRows(rows, from, bucketSeconds) {
+  const size = bucketSeconds * 1000, start = from.getTime();
+  return rows.map((row) => {
+    const ms = Date.parse(String(row.t).replace(/(?:\.\d+)?Z?$/, "Z"));
+    if (!Number.isFinite(ms)) return row;
+    const t = new Date(Math.max(start, Math.floor(ms / size) * size)).toISOString().replace(/\.\d{3}Z$/, "Z");
+    return { ...row, t, scope_t: row.scope_t ?? row.t };
+  });
+}
+
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex") {
   const isCodex = client === "codex";
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: (isCodex ? filters.model : normalizeModelId(filters.model || "")) || "",
     clientBackend: filters.backend || "",
-    clientBucketSeconds: to - from <= 4 * 3600000 ? 60 : 3600 };
+    clientBucketSeconds: clientBucketSeconds(from, to) };
   const cases = Object.entries(prices).map(([model, rate], i) => {
     params[`priceModel${i}`] = model;
     params[`priceLimit${i}`] = rate.short_context_limit;
@@ -429,13 +455,22 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   return { sql, params };
 }
 
+// Claude's resolved end (historical ends floor to the hour) applies to both clients.
+export function effectiveClientEnd(from, to, clients) {
+  if (!clients.includes("claude")) return to;
+  const resolved = queries.range(from, to, to - from <= 4 * 3600000);
+  return new Date(resolved.to.replace(" ", "T") + "Z");
+}
+
 export async function clientOverview(from, to, raw, enabledClients) {
-  const filters = validateClientFilters(raw, enabledClients);
+  const validated = validateClientFilters(raw, enabledClients);
   const requestedTo = to;
-  if (filters.clients.includes("claude")) {
-    const resolved = queries.range(from, to, to - from <= 4 * 3600000);
-    to = new Date(resolved.to.replace(" ", "T") + "Z");
-  }
+  to = effectiveClientEnd(from, to, validated.clients);
+  // Size buckets from the trimmed end: the Claude counter query picks minute vs hour rows
+  // from it, so both clients and bucket_hours share one resolution.
+  const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours);
+  const nativeSeconds = clientBucketSeconds(from, to);
+  const filters = validated;
   const jobs = [];
   for (const client of filters.clients) {
     if (client === "claude") {
@@ -449,9 +484,10 @@ export async function clientOverview(from, to, raw, enabledClients) {
     }));
   }
   const lists = await Promise.all(jobs);
+  const records = bucketSeconds > nativeSeconds ? rebucketRows(lists.flat(), from, bucketSeconds) : lists.flat();
   // The route validates modelTime; only the literal "1" enables the dimension.
   const modelTime = raw.modelTime === "1";
-  return { ...foldClientMetrics(lists.flat(), filters.clients, codexPrices, { modelTime }),
+  return { ...foldClientMetrics(records, filters.clients, codexPrices, { modelTime }),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
-    bucket_hours: to - from <= 4 * 3600000 ? 1 / 60 : 1 };
+    bucket_hours: bucketSeconds / 3600 };
 }

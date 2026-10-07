@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldClientMetrics, validateClientFilters, buildCodexQuery } from "./clientMetrics.js";
+import { foldClientMetrics, validateClientFilters, buildCodexQuery, clientBucketSeconds, rebucketRows, effectiveClientEnd } from "./clientMetrics.js";
 
 const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", session: "conversation-1",
   user: "person@example.invalid", backend: "bedrock-mantle", model: "openai.gpt-6-astra",
@@ -596,4 +596,57 @@ test("Codex operational-only buckets and rejected-only models create no by_model
   assert.equal(ts.tool_calls, 1, "11:00 timeseries tool calls");
   assert.equal(ts.api_errors, 1, "11:00 timeseries api errors");
   assert.equal(out.quality.missing_usage, 0, "no missing-usage scope");
+});
+
+test("client timeline buckets follow the requested interval but never go below native", () => {
+  const from = new Date("2026-10-01T00:00:00Z");
+  const at = (hours) => new Date(from.getTime() + hours * 3600000);
+  assert.equal(clientBucketSeconds(from, at(2)), 60);
+  assert.equal(clientBucketSeconds(from, at(48)), 3600);
+  assert.equal(clientBucketSeconds(from, at(720), 24), 86400);
+  assert.equal(clientBucketSeconds(from, at(720), "24"), 86400);
+  assert.equal(clientBucketSeconds(from, at(48), 1), 3600);
+  assert.equal(clientBucketSeconds(from, at(48), 0.25), 3600);
+  assert.equal(clientBucketSeconds(from, at(2), 0.25), 900);
+  assert.equal(clientBucketSeconds(from, at(48), 1.5), 7200);
+  // SQL always groups at the native bucket; display buckets are regrouped afterwards.
+  assert.equal(buildCodexQuery(from, at(720)).params.clientBucketSeconds, 3600);
+});
+
+test("regrouped rows keep exact per-day sessions and native-grain coverage identity", () => {
+  const from = new Date("2026-10-01T05:00:00Z");
+  const usage = (t, session) => ({ client: "claude", kind: "usage", t, session, user: "u@example.invalid",
+    model: "claude-sonnet-5", backend: "anthropic", count: 1, reported_cost: 1, input_tokens: 10,
+    output_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, timeline_only: 0 });
+  const rows = rebucketRows([usage("2026-10-01T06:00:00Z", "a"), usage("2026-10-01T20:00:00Z", "a"),
+    usage("2026-10-02T01:00:00Z", "b")], from, 86400);
+  // The first bucket starts at the range start, like the SQL greatest(bucket, from).
+  assert.deepEqual(rows.map((r) => r.t), ["2026-10-01T05:00:00Z", "2026-10-01T05:00:00Z", "2026-10-02T00:00:00Z"]);
+  assert.deepEqual(rows.map((r) => r.scope_t), ["2026-10-01T06:00:00Z", "2026-10-01T20:00:00Z", "2026-10-02T01:00:00Z"]);
+  const folded = foldClientMetrics(rows, ["claude"]);
+  const day1 = folded.timeseries.find((r) => r.t === "2026-10-01T05:00:00Z");
+  assert.equal(day1.sessions, 1);
+  assert.equal(day1.cost_usd, 2);
+});
+
+test("an unidentified Codex request is not covered by a completion elsewhere in the same display day", () => {
+  const base = { client: "codex", user: "u@example.invalid", model: "openai.gpt-6-astra", backend: "bedrock-mantle", project: "" };
+  const request = { ...base, kind: "request", t: "2026-10-01T03:00:00Z", count: 1, errors: 0, rejected_count: 0 };
+  const completion = { ...base, kind: "usage", t: "2026-10-01T15:00:00Z", count: 1, input_tokens_total: 100,
+    cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 10, reasoning_tokens: 0, context_tier: "short" };
+  const hourly = foldClientMetrics([request, completion], ["codex"]);
+  const daily = foldClientMetrics(rebucketRows([request, completion], new Date("2026-10-01T00:00:00Z"), 86400), ["codex"]);
+  assert.equal(daily.quality.missing_usage, hourly.quality.missing_usage);
+  assert.ok(hourly.quality.missing_usage > 0);
+});
+
+test("buckets are sized from Claude's trimmed end, so a range just over four hours stays per-minute", () => {
+  // A historical end off the hour floors to the hour: 06:00–10:05 resolves to 06:00–10:00 (4h).
+  const from = new Date("2026-09-01T06:00:00Z"), to = new Date("2026-09-01T10:05:00Z");
+  const end = effectiveClientEnd(from, to, ["claude", "codex"]);
+  assert.equal(end.toISOString(), "2026-09-01T10:00:00.000Z");
+  assert.equal(clientBucketSeconds(from, end), 60);
+  assert.equal(clientBucketSeconds(from, end, 1), 3600);
+  // Codex-only views keep the requested end.
+  assert.equal(effectiveClientEnd(from, to, ["codex"]).getTime(), to.getTime());
 });

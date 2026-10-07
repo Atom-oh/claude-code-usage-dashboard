@@ -21,9 +21,25 @@ export default function Clients({ page = "overview" }) {
   // Only cost and exec chart model cost trends. modelTime=1 is its own cache key, which the
   // default-view warmer does not fill (a cold request), and moving between these two pages and the
   // others changes useApi's identity, so that switch reloads instead of retaining the data.
-  const modelTime = page === "cost" || page === "exec";
+  const modelTime = page === "cost" || page === "exec" || page === "trends";
   const { data, loading, error, stale } = useApi("/api/clients/overview", modelTime ? { client, modelTime: "1" } : { client });
   const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
+  // Trends compare the effective (trimmed) window with a preceding window of exactly its length.
+  // With Claude over four hours the server floors historical ends to the hour, so the baseline
+  // ends at the hour at or before the current start and is never trimmed itself.
+  const previousRange = useMemo(() => {
+    const from = Date.parse(data?.effective_range?.from), to = Date.parse(data?.effective_range?.to);
+    if (page !== "trends" || !Number.isFinite(from) || !Number.isFinite(to) || to <= from) return null;
+    const end = clients.includes("claude") && to - from > 4 * 3600000 ? Math.floor(from / 3600000) * 3600000 : from;
+    return { from: new Date(end - (to - from)).toISOString(), to: new Date(end).toISOString() };
+  }, [page, clients, data?.effective_range?.from, data?.effective_range?.to]);
+  const previousApi = useApi("/api/clients/overview", { client, ...(previousRange || {}) }, previousRange !== null);
+  // A baseline whose effective window differs from the requested one (stale while refetching,
+  // or trimmed) is never compared as current.
+  const baselineWindow = previousApi.data?.effective_range;
+  const previous = { ...previousApi, stale: previousApi.stale || !previousRange
+    || Date.parse(baselineWindow?.from) !== Date.parse(previousRange.from)
+    || Date.parse(baselineWindow?.to) !== Date.parse(previousRange.to) };
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};
   const hasUnpricedCost = data?.totals?.cost_partial === true || quality.unpriced > 0 || data?.totals?.unpriced > 0;
@@ -58,7 +74,8 @@ export default function Clients({ page = "overview" }) {
           확인된 합계가 없으면 —로 표시하며, 토큰 비율은 불완전한 합계로 계산하지 않습니다.
         </p>}
       {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
-        : <section data-shared-client-panels><ClientPanels page={page} data={data} clients={clients} stale={stale} /></section>}
+        : <section data-shared-client-panels><ClientPanels page={page} data={data} clients={clients} stale={stale}
+          previous={page === "trends" ? previous : undefined} /></section>}
       {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
       {sections && clients.includes("codex") && <CodexInsights sections={sections}
         range={!loading && !error ? data?.effective_range : null} enabled={!loading} hold={stale} />}

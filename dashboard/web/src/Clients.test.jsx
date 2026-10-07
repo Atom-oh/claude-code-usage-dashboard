@@ -459,3 +459,110 @@ test("a row-limit 400 on the shared overview shows the error and no model cost t
   await screen.findByText("데이터를 불러오지 못했습니다.");
   expect(container.querySelector('section[aria-label="클라이언트별 모델 비용 추이"]')).toBeNull();
 });
+
+test("Trends request range-sized buckets and compare against the preceding window", async () => {
+  setPiiMask(true);
+  const current = clientOverview({ effective_range: { from: "2026-09-02T00:00:00.000Z",
+    to: "2026-09-09T00:00:00.000Z", requested_to: "2026-09-09T00:00:00.000Z" }, bucket_hours: 24 });
+  const before = clientOverview({ by_client: current.by_client.map((row) => ({ ...row,
+    cost_usd: row.cost_usd / 2, sessions: 1, tokens_partial: true })),
+    effective_range: { from: "2026-08-26T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" } });
+  const fetchMock = vi.fn((url) => {
+    const u = new URL(String(url), "http://localhost");
+    const body = u.pathname === "/api/health/data" ? { status: "ok" }
+      : u.pathname !== "/api/clients/overview" ? []
+      : u.searchParams.get("to") === "2026-09-02T00:00:00.000Z" ? before : current;
+    return Promise.resolve(ok(body));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  render(
+    <MemoryRouter initialEntries={["/trends?client=codex&days=7"]}>
+      <ConfigProvider config={{ enabledClients: ["codex"], piiMask: true, schema: { projectColumns: true } }}>
+        <App />
+      </ConfigProvider>
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(commonRequests(fetchMock).some((u) => u.searchParams.get("to") === "2026-09-02T00:00:00.000Z")).toBe(true));
+  const [first] = commonRequests(fetchMock);
+  expect(first.searchParams.get("intervalHours")).toBe("24");
+  const previous = commonRequests(fetchMock).find((u) => u.searchParams.get("to") === "2026-09-02T00:00:00.000Z");
+  expect(previous.searchParams.get("from")).toBe("2026-08-26T00:00:00.000Z");
+  const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
+  await waitFor(() => expect(comparison.textContent).toContain("+100%"));
+  // A partial baseline is labelled in the table (and its CSV), never shown as complete.
+  expect(comparison.textContent).toContain("(부분합 포함)");
+  expect(screen.getByText("일간 집계")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("이전 기간 대비 증감은 제공하지 않습니다");
+});
+
+test("Trends never compare against a baseline from another window", async () => {
+  setPiiMask(true);
+  const current = clientOverview({ effective_range: { from: "2026-09-02T00:00:00.000Z",
+    to: "2026-09-09T00:00:00.000Z", requested_to: "2026-09-09T00:00:00.000Z" }, bucket_hours: 24 });
+  // The baseline response belongs to a different window (e.g. still stale from a range change).
+  const mismatched = clientOverview({ by_client: current.by_client.map((row) => ({ ...row, cost_usd: 1 })),
+    effective_range: { from: "2026-08-01T00:00:00.000Z", to: "2026-08-08T00:00:00.000Z" } });
+  vi.stubGlobal("fetch", vi.fn((url) => {
+    const u = new URL(String(url), "http://localhost");
+    const body = u.pathname === "/api/health/data" ? { status: "ok" }
+      : u.pathname !== "/api/clients/overview" ? []
+      : u.searchParams.get("to") === "2026-09-02T00:00:00.000Z" ? mismatched : current;
+    return Promise.resolve(ok(body));
+  }));
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  render(
+    <MemoryRouter initialEntries={["/trends?client=codex&days=7"]}>
+      <ConfigProvider config={{ enabledClients: ["codex"], piiMask: true, schema: { projectColumns: true } }}>
+        <App />
+      </ConfigProvider>
+    </MemoryRouter>,
+  );
+  const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
+  await waitFor(() => expect(comparison.textContent).toContain("불러오는 중"));
+  expect(comparison.textContent).not.toMatch(/[+-]\d+(\.\d)?%/);
+});
+
+function mountTrends(enabledClients, current, baseline) {
+  setPiiMask(true);
+  const fetchMock = vi.fn((url) => {
+    const u = new URL(String(url), "http://localhost");
+    if (u.pathname === "/api/health/data") return Promise.resolve(ok({ status: "ok" }));
+    if (u.pathname !== "/api/clients/overview") return Promise.resolve(ok([]));
+    // The baseline request ends at or before the current window's start.
+    if (Date.parse(u.searchParams.get("to")) <= Date.parse(current.effective_range.from)) return baseline(u);
+    return Promise.resolve(ok(current));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  render(
+    <MemoryRouter initialEntries={[`/trends?client=${enabledClients[0]}&days=7`]}>
+      <ConfigProvider config={{ enabledClients, piiMask: true, schema: { projectColumns: true } }}>
+        <App />
+      </ConfigProvider>
+    </MemoryRouter>,
+  );
+  return fetchMock;
+}
+
+test("with Claude, the baseline ends at the hour before the current start and keeps its length", async () => {
+  const current = clientOverview({ clients: ["claude"], effective_range: { from: "2026-09-02T00:30:00.000Z",
+    to: "2026-09-09T00:30:00.000Z", requested_to: "2026-09-09T00:40:00.000Z" }, bucket_hours: 24 });
+  current.by_client = current.by_client.map((row) => ({ ...row, client: "claude" }));
+  const baseline = (u) => Promise.resolve(ok({ ...current, by_client: current.by_client.map((row) => ({ ...row, cost_usd: row.cost_usd / 2 })),
+    effective_range: { from: u.searchParams.get("from"), to: u.searchParams.get("to") } }));
+  const fetchMock = mountTrends(["claude"], current, baseline);
+  await waitFor(() => expect(commonRequests(fetchMock).some((u) => u.searchParams.get("to") === "2026-09-02T00:00:00.000Z")).toBe(true));
+  const previous = commonRequests(fetchMock).find((u) => u.searchParams.get("to") === "2026-09-02T00:00:00.000Z");
+  expect(previous.searchParams.get("from")).toBe("2026-08-26T00:00:00.000Z");
+  const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
+  await waitFor(() => expect(comparison.textContent).toContain("+100%"));
+});
+
+test("a failed baseline says so instead of loading", async () => {
+  const current = clientOverview({ effective_range: { from: "2026-09-02T00:00:00.000Z",
+    to: "2026-09-09T00:00:00.000Z", requested_to: "2026-09-09T00:00:00.000Z" }, bucket_hours: 24 });
+  mountTrends(["codex"], current, () => Promise.resolve({ ok: false, status: 500, json: async () => ({ error: "x" }) }));
+  const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
+  await waitFor(() => expect(comparison.textContent).toContain("조회 실패"));
+});
