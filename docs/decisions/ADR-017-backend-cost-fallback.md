@@ -100,9 +100,10 @@ list-price estimate from the Codex price table (`codexPricing.js`), not Claude C
   (`nacCostSql()`), wherever `queries.js` sums them: `TOKEN_SUMS`, the period comparison,
   effort, agent, version-cohort and project views. The `queries.js` query wrapper adds the
   factor parameters to any query that references them.
-- No logs, any unpriced or invalid request, or a zero report gives factor 0. The existing
-  zero-report-with-tokens rule then shows the cost as unavailable, never as $0 and never at
-  the inflated report.
+- No logs, any unpriced or invalid request, or a missing or zero report makes the factor
+  unknown. A nonzero increment with an unknown factor is NaN, which survives every enclosing
+  sum and renders as `null`: any total that includes unknown spend is unavailable, never $0
+  and never the inflated report.
 - `/api/clients/overview` labels these rows `aws_list_estimate`. A client total that combines
   them with Anthropic reports is `mixed`.
 
@@ -113,9 +114,16 @@ Anthropic models keep Claude Code's report unchanged.
 - Non-Anthropic Claude spend becomes a labelled AWS list estimate, like Codex. It is not an
   invoice: no Flex/Priority tier, discounts or gateway-side routing are visible.
 - The factor is exact per request because Claude Code's report is a fixed rate times tokens.
-  It assumes the counters' requests have the same mix as the logged ones. Missing logs make
-  the cost unavailable rather than wrong. A sub-split (user or day) of one session-model
-  inherits that session's ratio.
+  It assumes the counters' requests have the same mix as the logged ones; duplicate log
+  deliveries cancel only when every request is duplicated alike (otherwise the error is
+  bounded by the model's short/long rate ratio). A sub-split (user or day) of one
+  session-model inherits that session's ratio.
+- Logs are retained 90 days and counters 180 days, so non-Anthropic Claude spend older than
+  90 days is unavailable. A group mixing a priced and a factor-less session is unavailable.
+- The scan is widened two hours before the window start because rollup branches align their
+  starts down to the hour.
+- Non-Anthropic models reached under ARN or alias ids, or a configured Claude-table entry for
+  a non-Anthropic key, are outside this rule; the default table has only `claude-*` keys.
 - Models with no Codex-table rate (for example `zai.glm-5`) are unavailable until a rate is
   added. Self-hosted models stay unpriced.
 - Each view that prices Claude counters adds one `api_request` log scan for its window,

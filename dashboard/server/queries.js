@@ -1166,7 +1166,8 @@ export async function costSummary(from, to, filters = {}) {
     }
     const g = byGroup.get(r.group);
     g.computed_cost += r.cost || 0;
-    g.reported_cost += Number(r.reported_cost);
+    // Unknown non-Anthropic spend (ADR-017 amendment) arrives as null: keep the total unavailable.
+    g.reported_cost = g.reported_cost === null || r.reported_cost === null ? null : g.reported_cost + Number(r.reported_cost);
     g.input_tokens += Number(r.input_tokens);
     g.output_tokens += Number(r.output_tokens);
     g.cache_read_tokens += Number(r.cache_read_tokens);

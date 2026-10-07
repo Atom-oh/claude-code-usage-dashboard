@@ -33,15 +33,17 @@ test("duplicate deliveries cancel and Anthropic rows are ignored", () => {
   assert.equal(twice.factors[0], once);
 });
 
-test("no usable estimate yields 0, never the inflated report", () => {
+test("no usable estimate yields the unknown factor (-1), never the inflated report", () => {
   for (const row of [
     { ...luna, model: "gemma-4-31b-vllm" },            // no rate (self-hosted)
     { ...luna, cache_creation_tokens: "" },             // missing token component
     { ...luna, cost_usd: 0 },                           // nothing to rescale
     { ...luna, cost_usd: null },
-  ]) assert.deepEqual(foldFactors([row]).factors, [0], JSON.stringify(row));
+  ]) assert.deepEqual(foldFactors([row]).factors, [-1], JSON.stringify(row));
   // One unpriced request withholds the whole session-model ratio.
-  assert.deepEqual(foldFactors([luna, { ...luna, output_tokens: "-1" }]).factors, [0]);
+  assert.deepEqual(foldFactors([luna, { ...luna, output_tokens: "-1" }]).factors, [-1]);
+  // A missing report beside a valid one cannot add its estimate without a denominator.
+  for (const cost_usd of [null, "", "abc"]) assert.deepEqual(foldFactors([luna, { ...luna, cost_usd }]).factors, [-1]);
 });
 
 test("factor params are added only for queries that reference them, over [prevFrom ?? from, to)", async () => {
@@ -51,10 +53,11 @@ test("factor params are added only for queries that reference them, over [prevFr
   assert.equal(await withNacParams("SELECT 1", plain, run), plain);
   const sql = `SELECT ${nacCostSql("m.Value", "m.SessionId", "m.Model")}`;
   const params = await withNacParams(sql, { ...plain, prevFrom: "2026-10-06 11:00:00" }, run);
-  assert.deepEqual(calls.at(-1), { from: "2026-10-06 11:00:00", to: "2026-10-07 13:00:00" });
+  // Widened two hours back for rollup branches that align the previous start down to the hour.
+  assert.deepEqual(calls.at(-1), { from: "2026-10-06 09:00:00", to: "2026-10-07 13:00:00" });
   assert.deepEqual(params.nacKeys, ["s1|openai.gpt-6-luna"]);
   assert.equal(params.nacFactors.length, 1);
   // An empty factor set still binds both params (the client drops empty arrays).
   const empty = await withNacParams(sql, { from: "2026-10-01 00:00:00", to: "2026-10-01 01:00:00" }, async () => []);
-  assert.deepEqual([empty.nacKeys, empty.nacFactors], [["|"], [0]]);
+  assert.deepEqual([empty.nacKeys, empty.nacFactors], [["|"], [-1]]);
 });

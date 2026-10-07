@@ -661,6 +661,13 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       close(compare.find((r) => r.model === "openai.gpt-6-luna").reported_cost, 0.099921415);
       const sonnet = await queries.costByModel(from, to, { user: "nac-claude@" });
       close(sonnet.find((r) => r.model === "claude-sonnet-5").reported_cost, 0.5);
+      // A group mixing a priced and a factor-less session is unavailable, never understated.
+      const mixed = await queries.costByModel(from, to, { user: "nac-" });
+      assert.equal(mixed.find((r) => r.model === "openai.gpt-6-luna").reported_cost, null);
+      const summary = await queries.costSummary(from, to, { user: "nac-" });
+      assert.equal(summary.find((r) => r.reported_cost !== undefined).reported_cost, null);
+      const projects = await queries.projectBreakdown(from, to, { user: "nac-" });
+      assert.equal(projects[0].cost_usd, null);
     });
 
     await t.test("rejected HTTP attempts do not create Codex token gaps or hide uncertain responses", async () => {

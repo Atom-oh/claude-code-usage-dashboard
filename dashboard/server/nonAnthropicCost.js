@@ -10,8 +10,8 @@ import { resolveBackend } from "./backend.js";
 // sum(per-request reported cost_usd), both from api_request logs in the query window, and
 // counters' cost.usage increments are multiplied by it. Claude Code's report is a fixed rate
 // times tokens, so the ratio carries each request's 272K context tier exactly, and duplicate
-// log deliveries cancel. No usable factor (no logs, an unpriced request, zero report) yields 0,
-// which the existing report_zero_with_tokens rule surfaces as unavailable, never a guess.
+// log deliveries cancel when every request is duplicated alike. No usable factor (no logs, an
+// unpriced request, a missing or zero report) makes that spend unknown (see nacCostSql()).
 
 const prices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 
@@ -25,10 +25,14 @@ export const nonAnthropicSql = (normModelExpr) =>
 
 // Cost-counter value with the factor applied. Callers pass the session expression and an
 // already-normalized model expression (queries.js normModel()).
+// An unknown factor (-1: no logs, an unpriced request, a zero report) makes a nonzero increment
+// NaN. NaN survives every enclosing sum, and ClickHouse JSON renders it as null, so any total
+// that includes unknown spend is unavailable rather than understated.
 export function nacCostSql(valueExpr, sessionExpr, normModelExpr) {
+  const factor = `transform(concat(${sessionExpr}, '|', ${normModelExpr}),
+      {nacKeys:Array(String)}, {nacFactors:Array(Float64)}, toFloat64(-1))`;
   return `if(${nonAnthropicSql(normModelExpr)},
-    ${valueExpr} * transform(concat(${sessionExpr}, '|', ${normModelExpr}),
-      {nacKeys:Array(String)}, {nacFactors:Array(Float64)}, toFloat64(0)),
+    if(${valueExpr} = 0, toFloat64(0), if(${factor} < 0, nan, ${valueExpr} * ${factor})),
     ${valueExpr})`;
 }
 export const NAC_PLACEHOLDER = "{nacKeys:Array(String)}";
@@ -48,7 +52,9 @@ export function foldFactors(rows, normalize = normalizeModelId, priceTable = pri
     const g = groups.get(key) || { estimate: 0, reported: 0, unpriced: false };
     const input = count(row.input_tokens), read = count(row.cache_read_tokens);
     const write = count(row.cache_creation_tokens), output = count(row.output_tokens);
-    const reported = Number(row.cost_usd);
+    // A missing or unparsable report is unusable, not $0 (Number(null) would be 0).
+    const raw = row.cost_usd;
+    const reported = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
     // Claude input excludes cache; the Codex pricer takes the inclusive total and subsets.
     const total = input === null || read === null || write === null ? null : input + read + write;
     const limit = priceTable[codexModel(model)]?.short_context_limit;
@@ -65,7 +71,7 @@ export function foldFactors(rows, normalize = normalizeModelId, priceTable = pri
   const keys = [], factors = [];
   for (const [key, g] of groups) {
     keys.push(key);
-    factors.push(!g.unpriced && g.reported > 0 ? g.estimate / g.reported : 0);
+    factors.push(!g.unpriced && g.reported > 0 ? g.estimate / g.reported : -1);
   }
   return { keys, factors };
 }
@@ -100,17 +106,19 @@ export async function nonAnthropicFactors(from, to, run = rawQuery) {
 // ClickHouse DateTime param text ('YYYY-MM-DD HH:MM:SS', UTC) → Date.
 const parseCh = (text) => new Date(String(text).replace(" ", "T") + "Z");
 
-// Adds the factor params when a query references them. The window spans every period the query
-// prices: [prevFrom ?? from, to).
+// Adds the factor params when a query references them. The scan spans every period the query
+// prices, [prevFrom ?? from, to), widened two hours back: rollup branches align their starts down
+// to the hour (and the comparison re-derives the previous start from the aligned current one).
+const ALIGN_SLACK_MS = 2 * 3600000;
 export async function withNacParams(sql, params, run = rawQuery) {
   if (!sql.includes(NAC_PLACEHOLDER)) return params;
-  const from = parseCh(params.prevFrom ?? params.from), to = parseCh(params.to);
+  const from = new Date(parseCh(params.prevFrom ?? params.from).getTime() - ALIGN_SLACK_MS), to = parseCh(params.to);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()))
     throw new Error("non-Anthropic cost factors need from/to params");
   const { keys, factors } = await nonAnthropicFactors(from, to, run);
   // The client omits empty array params; a key no session|model can equal keeps them bound.
   return keys.length ? { ...params, nacKeys: keys, nacFactors: factors }
-    : { ...params, nacKeys: ["|"], nacFactors: [0] };
+    : { ...params, nacKeys: ["|"], nacFactors: [-1] };
 }
 
 // Tests insert logs between queries over the same window.

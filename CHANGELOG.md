@@ -16,8 +16,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 - Price non-Anthropic models used through Claude Code (OpenAI, xAI, Z.ai on Bedrock) at AWS
   list rates instead of Claude Code's report, which uses default Opus rates (measured 2-18x
-  over). A per-session factor from `api_request` logs rescales the cost counters; no usable
-  factor leaves the cost unavailable. Anthropic models keep their reports. See
+  over). A per-session factor from `api_request` logs rescales the cost counters; an unknown
+  factor (no logs, including past the 90-day log retention) makes the affected totals unavailable. Anthropic models keep their reports. See
   [ADR-017 amendment](docs/decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-07-non-anthropic-models-used-through-claude-code).
 
 ### Changed (2026-10-05 pricing coverage, model lists and Productivity ranking)
