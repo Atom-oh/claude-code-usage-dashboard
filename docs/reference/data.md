@@ -82,6 +82,9 @@ billing/coverage limitations under [ADR-013](../decisions/ADR-013-known-cost-sub
 Two ADR-017 fallbacks: an Anthropic model absent from Codex's table prices from the Claude
 table (`price_source: "claude_table"`); a Claude row with no usable report prices from
 tokens (`cost_basis: "computed_estimate"`/`"mixed"`), `/api/clients/overview` only.
+[ADR-017 amendment](../decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-07-non-anthropic-models-used-through-claude-code): Claude counters for non-Anthropic
+models are rescaled by a per-session factor (AWS list estimate / reported, from `api_request`
+logs); an unknown factor makes any total that includes it unavailable (`null`).
 
 `observed_tokens` sums safe input/output pairs independently of pricing or incomplete
 cache/reasoning metadata. Pair validity is a separate SQL grouping dimension so an

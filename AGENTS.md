@@ -33,8 +33,8 @@ is an expected skip. Use the deployment runbook for production changes.
 ## Contracts
 
 - Claude spend uses `reported_cost`; retain `cost`/`computed_cost` diagnostics.
-  Codex uses labelled AWS list-price estimates with token subsets and request tiers
-  preserved. Neither basis is an invoice or guaranteed billing bound.
+  Codex and non-Anthropic Claude (ADR-017) use AWS list estimates, keeping
+  token subsets/tiers. Neither basis is an invoice or guaranteed billing bound.
 - Never sum cumulative OTel samples as usage; preserve identity, boundaries and
   temporality handling.
 - Bedrock/enterprise are inferred session channels, not client identities. Model

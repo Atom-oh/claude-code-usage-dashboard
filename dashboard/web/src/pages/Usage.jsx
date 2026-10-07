@@ -20,7 +20,9 @@ const ratioPct0 = (v) => `${(Number(v) * 100).toFixed(0)}%`;
 const count = (v) => Number(v) || 0;
 // 성공률·사용당 비용은 컬럼 자신의 값이 아니라 row의 다른 필드에서 나온다.
 const okRate = (v, r) => pct(v, r.calls);
-const costPerUse = (_v, r) => (Number(r.est_cost_usd) / (Number(r.invocations) || 1)).toFixed(3);
+// null cost is unavailable (non-Anthropic spend without a factor), never $0.
+const cost2 = (v) => v == null ? "—" : Number(v).toFixed(2);
+const costPerUse = (_v, r) => r.est_cost_usd == null ? "—" : (Number(r.est_cost_usd) / (Number(r.invocations) || 1)).toFixed(3);
 // 화면과 CSV에 원시 enum 값이 그대로 나가지 않게 한다. 이 두 맵은 이 페이지에만 필요해
 // labels.js로 올리지 않는다. 매핑되지 않은 값은 그대로 통과시킨다.
 const SOURCE_LABEL = { config: "설정 사전 허용", user_temporary: "매번 확인", user_permanent: "사용자 허용 목록" };
@@ -99,7 +101,7 @@ const CONNECTOR_COLUMNS = [
 const SKILL_COLUMNS = [
   { key: "skill", label: "Skill" },
   { key: "invocations", label: "사용 세션 수", render: fmt },
-  { key: "est_cost_usd", label: "Claude Code 보고 비용 ($)", render: (v) => Number(v).toFixed(2) },
+  { key: "est_cost_usd", label: "Claude Code 보고 비용 ($)", render: cost2 },
   { key: "cost_per_use", label: "세션당 비용 ($)", render: costPerUse, toText: costPerUse },
 ];
 
@@ -144,7 +146,7 @@ const COMPACTION_COLUMNS = [
 const PROJECT_COLUMNS = [
   { key: "group", label: "채널" },
   { key: "project", label: "프로젝트" },
-  { key: "cost_usd", label: "Claude Code 보고 비용 ($)", render: (v) => Number(v).toFixed(2) },
+  { key: "cost_usd", label: "Claude Code 보고 비용 ($)", render: cost2 },
   { key: "tokens", label: "토큰", render: fmt },
   { key: "sessions", label: "세션", render: fmt },
   { key: "users", label: "사용자", render: fmt },

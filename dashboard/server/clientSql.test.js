@@ -547,9 +547,10 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       // counts cells: per-session rows (53,896 for 30 days at 1h on prod) never leave the database.
       const { costByModelDailySql, range } = await import("./queries.js");
       const { query } = await import("./clickhouse.js");
+      const { withNacParams } = await import("./nonAnthropicCost.js");
       for (const [hours, cells] of [[1, 9], [24, 5], [168, 5]]) {
         const { sql, params, raw } = costByModelDailySql(hours, filter);
-        const rows = await query(sql, { ...range(start, end, raw), ...params });
+        const rows = await query(sql, await withNacParams(sql, { ...range(start, end, raw), ...params }));
         assert.equal(rows.length, cells, `${hours}h raw ClickHouse rows`);
       }
     });
@@ -612,6 +613,63 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         AggregationTemporality: 1 }]);
       await assert.rejects(overview({ client: "claude", user }, ["claude"], from, end), /too much client data/);
     });
+    await t.test("non-Anthropic Claude counters are rescaled to the AWS list estimate (ADR-017)", async () => {
+      const queries = await import("./queries.js");
+      const { clearNonAnthropicFactorCache } = await import("./nonAnthropicCost.js");
+      const tokens = { input: 2, cacheRead: 0, cacheCreation: 361675, output: 558 };
+      const values = [];
+      for (const [session, user, model, cost] of [
+        ["nac-luna", "nac-luna@example.invalid", "us.openai.gpt-6-luna", 1.819543],
+        ["nac-nolog", "nac-nolog@example.invalid", "us.openai.gpt-6-luna", 1.819543],
+        ["nac-claude", "nac-claude@example.invalid", "claude-sonnet-5", 0.5],
+      ]) {
+        for (const [clock, scale] of [["09:59:00", 0], ["10:01:00", 1]]) {
+          const rows = [counter("claude_code.cost.usage", "", clock, cost * scale),
+            ...Object.entries(tokens).map(([type, n]) => counter("claude_code.token.usage", type, clock, n * scale))];
+          for (const row of rows) {
+            row.ResourceAttributes = { "user.email": user };
+            row.Attributes = { ...row.Attributes, "session.id": session, model };
+            values.push(row);
+          }
+        }
+      }
+      await insertMetrics(values);
+      const request = (session, user, model, cost) => ({
+        Timestamp: `${day} 10:01:00.000000000`,
+        ResourceAttributes: { "user.email": user, "service.name": "claude-code" },
+        LogAttributes: { "event.name": "api_request", "session.id": session, model,
+          input_tokens: "2", output_tokens: "558", cache_read_tokens: "0",
+          cache_creation_tokens: "361675", cost_usd: String(cost) },
+      });
+      await insertLogs([request("nac-luna", "nac-luna@example.invalid", "us.openai.gpt-6-luna", 1.819543),
+        request("nac-claude", "nac-claude@example.invalid", "claude-sonnet-5", 0.5)]);
+      const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} vs ${expected}`);
+      clearNonAnthropicFactorCache();
+
+      const luna = await overview({ client: "claude", user: "nac-luna@" }, ["claude"], from, to);
+      close(luna.totals.cost_usd, 0.099921415);
+      assert.equal(luna.by_client[0].cost_basis, "aws_list_estimate");
+      const nolog = await overview({ client: "claude", user: "nac-nolog@" }, ["claude"], from, to);
+      assert.equal(nolog.totals.cost_usd, null);   // no factor: unavailable, never $1.82
+      const claude = await overview({ client: "claude", user: "nac-claude@" }, ["claude"], from, to);
+      close(claude.totals.cost_usd, 0.5);
+      assert.equal(claude.by_client[0].cost_basis, "client_reported");
+
+      const byModel = await queries.costByModel(from, to, { user: "nac-luna@" });
+      close(byModel.find((r) => r.model === "openai.gpt-6-luna").reported_cost, 0.099921415);
+      const compare = await queries.costByModelCompare(from, to, new Date(from.getTime() - 3600000), { user: "nac-luna@" });
+      close(compare.find((r) => r.model === "openai.gpt-6-luna").reported_cost, 0.099921415);
+      const sonnet = await queries.costByModel(from, to, { user: "nac-claude@" });
+      close(sonnet.find((r) => r.model === "claude-sonnet-5").reported_cost, 0.5);
+      // A group mixing a priced and a factor-less session is unavailable, never understated.
+      const mixed = await queries.costByModel(from, to, { user: "nac-" });
+      assert.equal(mixed.find((r) => r.model === "openai.gpt-6-luna").reported_cost, null);
+      const summary = await queries.costSummary(from, to, { user: "nac-" });
+      assert.equal(summary.find((r) => r.reported_cost !== undefined).reported_cost, null);
+      const projects = await queries.projectBreakdown(from, to, { user: "nac-" });
+      assert.equal(projects[0].cost_usd, null);
+    });
+
     await t.test("a daily intervalHours buckets Codex by UTC day with exact per-day sessions", async () => {
       const prev = new Date(from.getTime() - 86400000).toISOString().slice(0, 10);
       const make = (date, clock, session) => {

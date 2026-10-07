@@ -286,7 +286,8 @@ export function rollupComputedCost(rows, keys) {
     const tokens =
       Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens);
     if (!r.unpriced) acc.cost += Number(r.cost);
-    acc.reported_cost += Number(r.reported_cost);
+    // Unknown non-Anthropic spend arrives as null (ADR-017 amendment): the group stays unavailable.
+    acc.reported_cost = acc.reported_cost === null || r.reported_cost === null ? null : acc.reported_cost + Number(r.reported_cost);
     acc.tokens += tokens;
     if (r.unpriced) acc.unpriced_tokens += tokens;
   }

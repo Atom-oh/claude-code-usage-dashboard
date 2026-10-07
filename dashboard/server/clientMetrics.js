@@ -4,6 +4,7 @@ import { selectClients } from "./clients.js";
 import { priceCodexUsage, parseCodexPricing } from "./codexPricing.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { normalizeModelId, computeCost } from "./pricing.js";
+import { isNonAnthropicModel } from "./nonAnthropicCost.js";
 import { backendSql } from "./backend.js";
 import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
@@ -45,7 +46,7 @@ function accumulator(meta, reasons = false) {
   return { ...meta, ...Object.fromEntries([...TOKEN_KEYS, ...OP_KEYS].map((k) => [k, 0])),
     cost_usd: 0, unpriced: 0, cost_estimated: 0, observed_records: 0,
     _sessions: new Set(), _users: new Set(), _backends: new Set(), _missingUsage: new Set(),
-    _missing: new Set(), _hasCost: false, _hasReportedCost: false, _hasEstimatedCost: false,
+    _missing: new Set(), _hasCost: false, _hasReportedCost: false, _hasEstimatedCost: false, _hasListEstimate: false,
     _observedTokens: createObservedTokens(),
     _reasons: reasons ? {} : null,
     _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
@@ -75,8 +76,10 @@ function claudeUsage(row) {
           cacheRead: row.cache_read_tokens, cacheWrite: row.cache_write_tokens })
     : null;
   const cost = reportCost !== null ? reportCost : estimated;
+  // ADR-017: a non-Anthropic model's counter is already rescaled to the AWS list estimate.
+  const reportBasis = isNonAnthropicModel(row.model) ? "aws_list_estimate" : "client_reported";
   return { ...row, tokens, observed_tokens: tokens, reasoning_tokens: null, cost_usd: cost,
-    cost_basis: reportCost !== null ? "client_reported" : estimated !== null ? "computed_estimate" : "client_reported",
+    cost_basis: reportCost !== null ? reportBasis : estimated !== null ? "computed_estimate" : reportBasis,
     unpriced: cost === null, unpriced_reason: cost === null ? unpriced_reason : null, invalid: !valid };
 }
 
@@ -107,7 +110,8 @@ function accumulate(target, row, usage, missingScope) {
       if (usage.cost_basis === "computed_estimate") {
         target._hasEstimatedCost = true;
         target.cost_estimated += n || 1;
-      } else target._hasReportedCost = true;
+      } else if (row.client === "claude" && usage.cost_basis === "aws_list_estimate") target._hasListEstimate = true;
+      else target._hasReportedCost = true;
     }
   } else if (row.kind === "request") {
     target._ops = true;
@@ -129,8 +133,14 @@ function accumulate(target, row, usage, missingScope) {
   }
 }
 
+// One known basis keeps its name; several are "mixed". No known cost keeps the default.
+function claudeBasis(fallback, present) {
+  const bases = Object.keys(present).filter((basis) => present[basis]);
+  return bases.length === 1 ? bases[0] : bases.length > 1 ? "mixed" : fallback;
+}
+
 function finish(target) {
-  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _hasReportedCost, _hasEstimatedCost,
+  const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _hasReportedCost, _hasEstimatedCost, _hasListEstimate,
     _observedTokens, _reasons,
     _ops, _requestMs, _requestN, _ttftMs, _ttftN, ...out } = target;
   for (const k of _missing) out[k] = null;
@@ -148,8 +158,9 @@ function finish(target) {
   }), sessions: _sessions.size, users: _users.size,
     backend: out.backend || (_backends.size === 1 ? [..._backends][0] : _backends.size ? "mixed" : "unknown"),
     cost_usd: cost,
-    cost_basis: out.client === "claude" && _hasEstimatedCost
-      ? (_hasReportedCost ? "mixed" : "computed_estimate") : out.cost_basis,
+    cost_basis: out.client === "claude" ? claudeBasis(out.cost_basis,
+      { client_reported: _hasReportedCost, computed_estimate: _hasEstimatedCost, aws_list_estimate: _hasListEstimate })
+      : out.cost_basis,
     cost_partial: out.unpriced > 0 || costAvailable && cost === null,
     request_rejections_only: out.client === "codex" && out.rejected_requests > 0
       && out.rejected_requests === out.observed_records && _missingUsage.size === 0,
