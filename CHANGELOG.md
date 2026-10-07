@@ -14,6 +14,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed (2026-10-05 pricing coverage, model lists and Productivity ranking)
 
+- Client views follow the selected range's bucket size (hourly up to two days, daily beyond,
+  finer on zoom; sized from Claude's trimmed end) instead of always hourly. Trends compare
+  cost, tokens, sessions and users with the preceding window of the same effective length
+  (stale or partial baselines are labelled, never compared as complete), add the per-model
+  cost trend, and move the periods table caveats into its help text.
+
 - Add Bedrock pricing-page rates for `zai.glm-5.3` (2026-10-07): US and global CRIS, one
   flat tier across the 1M window, 30-minute cache-write rate.
 - Add AWS model-card rates for `openai.gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,

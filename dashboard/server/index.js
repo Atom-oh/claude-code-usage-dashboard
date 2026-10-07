@@ -17,7 +17,7 @@ import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./
 import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 import { parseClients } from "./clients.js";
-import { clientOverview, validateClientFilters } from "./clientMetrics.js";
+import { clientOverview, validateClientFilters, clientBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -252,7 +252,14 @@ function cacheKey(path, query) {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
       client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend,
-      modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined };
+      modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined,
+      // Normalized to the effective bucket so the warmer's default view (no intervalHours)
+      // and a browser request for the same resolution share one entry.
+      ...(path === "/api/clients/overview" ? (() => {
+        const { from, to } = parseRange(query, RANGE_OPTS);
+        const end = effectiveClientEnd(from, to, filters.clients);
+        return { bucketSeconds: String(clientBucketSeconds(from, end, query.intervalHours)) };
+      })() : {}) };
     return `${path}?${new URLSearchParams(Object.entries(normalized)
       .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString()}`;
   }

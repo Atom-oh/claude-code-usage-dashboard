@@ -100,8 +100,12 @@ sort by observed tokens. Active rows and compact idle observations each have a
 50,000-row guard (overflow returns 400); idle rows do not consume active-row capacity.
 Claude counter/baseline rules remain.
 `effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
-when selected; the UI discloses trimming. `bucket_hours` is 1/60 through four hours, otherwise 1.
-`intervalHours` is validated but ignored.
+when selected; the UI discloses trimming. Native buckets are one minute through four hours,
+otherwise one hour. A coarser `intervalHours` is honored, rounded up to a whole multiple of the
+native bucket, and reported as `bucket_hours`; finer values fall back to native. Codex buckets in
+SQL at the native bucket; both clients' rows are then regrouped, so distinct sessions stay exact,
+coverage identity stays at the native bucket (`scope_t`), and bucket-only evidence merges as within
+one bucket. Sizes use Claude's trimmed end. The cache key uses the effective bucket size.
 
 Codex detail log summaries use one query for full-identity deduplication, per-response
 pricing and scope evidence. The 50,000-row transfer budget applies to aggregate

@@ -153,7 +153,10 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
         project: projectParam || undefined,
         intervalHours, // 시계열이 아닌 엔드포인트는 그냥 무시됨. extraParams가 뒤에 와서 override 가능.
         ...extraParams,
-        ...(clientOverview ? { group: undefined, project: undefined, intervalHours: undefined, backend: backend || undefined } : {}),
+        // Client overview buckets follow the selected range like the other trend pages; Codex
+        // insights have no timeline and ignore it.
+        ...(clientOverview ? { group: undefined, project: undefined, backend: backend || undefined,
+          intervalHours: path === "/api/clients/overview" ? extraParams.intervalHours ?? intervalHours : undefined } : {}),
       },
       abort.signal
     )
