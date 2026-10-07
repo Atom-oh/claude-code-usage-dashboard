@@ -12,6 +12,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-07 non-Anthropic Claude cost)
+
+- Price non-Anthropic models used through Claude Code (OpenAI, xAI, Z.ai on Bedrock) at AWS
+  list rates instead of Claude Code's report, which uses default Opus rates (measured 2-18x
+  over). A per-session factor from `api_request` logs rescales the cost counters; no usable
+  factor leaves the cost unavailable. Anthropic models keep their reports. See
+  [ADR-018](docs/decisions/ADR-018-non-anthropic-claude-cost.md).
+
 ### Changed (2026-10-05 pricing coverage, model lists and Productivity ranking)
 
 - Add AWS model-card rates for `openai.gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,

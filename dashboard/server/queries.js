@@ -1,9 +1,16 @@
-import { query, toChDateTime } from "./clickhouse.js";
+import { query as rawQuery, toChDateTime } from "./clickhouse.js";
+import { nacCostSql, withNacParams } from "./nonAnthropicCost.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl } from "./pricing.js";
 import { backendSql } from "./backend.js";
 import { rollupAdoption } from "./activity.js";
 import { foldModelCostCells, MODEL_COST_ROW_LIMIT } from "./modelCostTrend.js";
+
+// Every query here goes through this wrapper: a query that prices Claude cost counters
+// (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-018).
+async function query(sql, params = {}) {
+  return rawQuery(sql, await withNacParams(sql, params));
+}
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼
 // 대신 grouping.js의 텔레메트리 자동판별(GROUP_CTE)로 그룹을 계산한다는 점만 다르다.
@@ -443,7 +450,7 @@ export function bucket(intervalHours, col = "TimeUnix") {
 // 비용 계산에 필요한 토큰 타입별 합계 + Claude Code 자체 보고 비용(비교용). withComputedCost()
 // (pricing.js)가 이 4개 토큰 컬럼 + reported_cost를 받아 단가표 기반 cost를 계산한다.
 const TOKEN_SUMS = `
-        sumIf(m.Value, m.MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
+        sumIf(${nacCostSql("m.Value", "m.SessionId", normModel("m.Model"))}, m.MetricName = 'claude_code.cost.usage') AS reported_cost,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')         AS input_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')        AS output_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
@@ -820,8 +827,8 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
     ? await query(
         `${GROUP_CTE}
         SELECT model,
-            sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
-            sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
+            sumIf(${nacCostSql("cur_v", "m.SessionId", "model")}, MetricName = 'claude_code.cost.usage') AS reported_cost,
+            sumIf(${nacCostSql("prev_v", "m.SessionId", "model")}, MetricName = 'claude_code.cost.usage') AS prev_reported_cost,
             sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
             sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')               AS prev_input_tokens,
             sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')               AS output_tokens,
@@ -851,8 +858,8 @@ export async function costByModelCompare(from, to, prevFrom, filters = {}) {
     : await query(
         `${GROUP_CTE}
         SELECT model,
-            sumIf(cur_v, MetricName = 'claude_code.cost.usage')                                        AS reported_cost,
-            sumIf(prev_v, MetricName = 'claude_code.cost.usage')                                        AS prev_reported_cost,
+            sumIf(${nacCostSql("cur_v", "m.SessionId", "model")}, MetricName = 'claude_code.cost.usage') AS reported_cost,
+            sumIf(${nacCostSql("prev_v", "m.SessionId", "model")}, MetricName = 'claude_code.cost.usage') AS prev_reported_cost,
             sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')                AS input_tokens,
             sumIf(prev_v, MetricName = 'claude_code.token.usage' AND TokenType = 'input')               AS prev_input_tokens,
             sumIf(cur_v, MetricName = 'claude_code.token.usage' AND TokenType = 'output')               AS output_tokens,
@@ -1458,10 +1465,10 @@ export async function versionCohortCost(from, to, filters = {}) {
         round(sum(inc_cost) / nullIf(sum(inc_tokens), 0) * 1000000, 4) AS usd_per_million_tokens
     FROM (
         SELECT SessionId, AppVersion AS app_version,
-            sumIf(inc, MetricName = 'claude_code.cost.usage')  AS inc_cost,
+            sumIf(${nacCostSql("inc", "SessionId", normModel("Model"))}, MetricName = 'claude_code.cost.usage')  AS inc_cost,
             sumIf(inc, MetricName = 'claude_code.token.usage') AS inc_tokens
         FROM (
-            SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, AppVersion,
+            SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, AppVersion, Model,
                 if(temp = 2,
                     greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
                     sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
@@ -1469,7 +1476,7 @@ export async function versionCohortCost(from, to, filters = {}) {
             WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
               AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
               AND AppVersion != ''
-            GROUP BY sk, SessionId, temp, MetricName, AppVersion
+            GROUP BY sk, SessionId, temp, MetricName, AppVersion, Model
         )
         GROUP BY SessionId, app_version
     ) m
@@ -1838,7 +1845,7 @@ export async function effortMix(from, to, filters = {}) {
         ${GROUP_EXPR} AS "group",
         if(m.Effort = '', 'unknown', m.Effort) AS effort,
         ${normModel("m.Model")} AS model,
-        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')                                     AS reported_cost,
+        sumIf(${nacCostSql("m.inc", "m.SessionId", normModel("m.Model"))}, m.MetricName = 'claude_code.cost.usage') AS reported_cost,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')         AS input_tokens,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')        AS output_tokens,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
@@ -2058,7 +2065,7 @@ export async function agentCost(from, to, filters = {}) {
         ${GROUP_EXPR} AS "group",
         if(m.AgentName = '', 'main', m.AgentName) AS agent,
         ${normModel("m.Model")} AS model,
-        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')                                     AS reported_cost,
+        sumIf(${nacCostSql("m.inc", "m.SessionId", normModel("m.Model"))}, m.MetricName = 'claude_code.cost.usage') AS reported_cost,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')         AS input_tokens,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')        AS output_tokens,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
@@ -2210,7 +2217,7 @@ export async function projectBreakdown(from, to, filters = {}) {
     SELECT
         ${GROUP_EXPR} AS "group",
         if(m.ProjectName = '', '${UNTAGGED_PROJECT}', m.ProjectName) AS project,
-        sumIf(m.inc, m.MetricName = 'claude_code.cost.usage')  AS cost_usd,
+        sumIf(${nacCostSql("m.inc", "m.SessionId", normModel("m.Model"))}, m.MetricName = 'claude_code.cost.usage') AS cost_usd,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage') AS tokens,
         uniqExactIf(m.SessionId, m.in_range) AS sessions,
         uniqExactIf(m.user_id, m.user_id IS NOT NULL AND m.in_range) AS users

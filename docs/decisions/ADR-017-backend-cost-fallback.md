@@ -1,6 +1,7 @@
 # ADR-017: Model-prefix backend resolution and a computed-cost fallback for missing reports
 
-Status: accepted, 2026-09-25, following the user's explicit request.
+Status: accepted, 2026-09-25, following the user's explicit request. Amended 2026-10-07 by
+[ADR-018](ADR-018-non-anthropic-claude-cost.md) for non-Anthropic models.
 
 ## Context
 
