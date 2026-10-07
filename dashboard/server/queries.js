@@ -7,7 +7,7 @@ import { rollupAdoption } from "./activity.js";
 import { foldModelCostCells, MODEL_COST_ROW_LIMIT } from "./modelCostTrend.js";
 
 // Every query here goes through this wrapper: a query that prices Claude cost counters
-// (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-018).
+// (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-017).
 async function query(sql, params = {}) {
   return rawQuery(sql, await withNacParams(sql, params));
 }

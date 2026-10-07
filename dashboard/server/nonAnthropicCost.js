@@ -3,7 +3,7 @@ import { normalizeModelId } from "./pricing.js";
 import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.js";
 import { resolveBackend } from "./backend.js";
 
-// ADR-018: Claude Code prices models it does not know (OpenAI, xAI, Z.ai, ... on Bedrock) with
+// ADR-017: Claude Code prices models it does not know (OpenAI, xAI, Z.ai, ... on Bedrock) with
 // its default Opus rates, so its cost.usage counter is not a usable report for them (measured
 // 2-18x over AWS list price). For those models only, Claude spend is rescaled to the AWS
 // list-price estimate: per (session, model), factor = sum(per-request AWS estimate) /

@@ -75,7 +75,7 @@ function claudeUsage(row) {
           cacheRead: row.cache_read_tokens, cacheWrite: row.cache_write_tokens })
     : null;
   const cost = reportCost !== null ? reportCost : estimated;
-  // ADR-018: a non-Anthropic model's counter is already rescaled to the AWS list estimate.
+  // ADR-017: a non-Anthropic model's counter is already rescaled to the AWS list estimate.
   const reportBasis = isNonAnthropicModel(row.model) ? "aws_list_estimate" : "client_reported";
   return { ...row, tokens, observed_tokens: tokens, reasoning_tokens: null, cost_usd: cost,
     cost_basis: reportCost !== null ? reportBasis : estimated !== null ? "computed_estimate" : reportBasis,

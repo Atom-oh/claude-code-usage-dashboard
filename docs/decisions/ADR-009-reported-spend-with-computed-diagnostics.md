@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-10
 - Reconciled: 2026-09-13
-- Amended: 2026-10-07 by [ADR-018](ADR-018-non-anthropic-claude-cost.md) (non-Anthropic models)
+- Amended: 2026-10-07 by [ADR-017 amendment](ADR-017-backend-cost-fallback.md#amendment-2026-10-07-non-anthropic-models-used-through-claude-code) (non-Anthropic models)
 
 ## Context
 

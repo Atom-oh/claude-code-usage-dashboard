@@ -35,7 +35,7 @@ Express/Node.js ESM serves read-only telemetry and the SPA. Run `npm test` here 
   Input contains cache subsets; output contains reasoning. Never double-add subsets.
 - Client flags gate Claude routes/warming and freshness. Validate client/backend before cache.
   Shared costs sum usable amounts with `cost_partial`/unpriced disclosure; all-unknown stays null.
-- Claude `TOKEN_SUMS`/`rollupComputedCost()` retain reports (non-Anthropic: ADR-018
+- Claude `TOKEN_SUMS`/`rollupComputedCost()` retain reports (non-Anthropic: ADR-017
   `nacCostSql()`); change display consumers. Keep `cost`/summary `computed_cost` diagnostics; TTL is an assumption.
 - `costEfficiency.js` joins user plus channel. Report-based units stay null for missing/invalid
   reports or zero reports with positive tokens. A missing local rate does not invalidate reports.

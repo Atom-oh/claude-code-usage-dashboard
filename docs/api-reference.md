@@ -66,7 +66,7 @@ consumers. These fields also appear in Codex detail summary/Effort rows. See
 (Claude, this endpoint only) `computed_estimate`/`mixed` for a token-priced fallback when
 no report is usable ([ADR-017](decisions/ADR-017-backend-cost-fallback.md)); `cost_estimated`
 counts those rows. Claude rows for non-Anthropic models carry `aws_list_estimate`: their
-counter cost is rescaled to the AWS list price ([ADR-018](decisions/ADR-018-non-anthropic-claude-cost.md)),
+counter cost is rescaled to the AWS list price ([ADR-017 amendment](decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-07-non-anthropic-models-used-through-claude-code)),
 on this endpoint and in the legacy cost views' `reported_cost`.
 It sums usable reports/estimates even when other records are unpriced.
 `cost_partial` discloses exclusions or an unsafe aggregate; `unpriced` counts remain.

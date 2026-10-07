@@ -613,7 +613,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         AggregationTemporality: 1 }]);
       await assert.rejects(overview({ client: "claude", user }, ["claude"], from, end), /too much client data/);
     });
-    await t.test("non-Anthropic Claude counters are rescaled to the AWS list estimate (ADR-018)", async () => {
+    await t.test("non-Anthropic Claude counters are rescaled to the AWS list estimate (ADR-017)", async () => {
       const queries = await import("./queries.js");
       const { clearNonAnthropicFactorCache } = await import("./nonAnthropicCost.js");
       const tokens = { input: 2, cacheRead: 0, cacheCreation: 361675, output: 558 };
