@@ -23,20 +23,23 @@ export default function Clients({ page = "overview" }) {
   // others changes useApi's identity, so that switch reloads instead of retaining the data.
   const modelTime = page === "cost" || page === "exec" || page === "trends";
   const { data, loading, error, stale } = useApi("/api/clients/overview", modelTime ? { client, modelTime: "1" } : { client });
-  // Trends compare against the immediately preceding window of the same length, derived from the
-  // range the server actually used for the current response.
-  // The compared window is the effective (trimmed) range, so the baseline has the same length.
+  const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
+  // Trends compare the effective (trimmed) window with a preceding window of exactly its length.
+  // With Claude over four hours the server floors historical ends to the hour, so the baseline
+  // ends at the hour at or before the current start and is never trimmed itself.
   const previousRange = useMemo(() => {
     const from = Date.parse(data?.effective_range?.from), to = Date.parse(data?.effective_range?.to);
-    return page === "trends" && Number.isFinite(from) && Number.isFinite(to) && to > from
-      ? { from: new Date(from - (to - from)).toISOString(), to: new Date(from).toISOString() } : null;
-  }, [page, data?.effective_range?.from, data?.effective_range?.to]);
+    if (page !== "trends" || !Number.isFinite(from) || !Number.isFinite(to) || to <= from) return null;
+    const end = clients.includes("claude") && to - from > 4 * 3600000 ? Math.floor(from / 3600000) * 3600000 : from;
+    return { from: new Date(end - (to - from)).toISOString(), to: new Date(end).toISOString() };
+  }, [page, clients, data?.effective_range?.from, data?.effective_range?.to]);
   const previousApi = useApi("/api/clients/overview", { client, ...(previousRange || {}) }, previousRange !== null);
-  // A baseline from another window (stale while refetching) is never compared as current.
-  const previousFrom = Date.parse(previousApi.data?.effective_range?.from);
+  // A baseline whose effective window differs from the requested one (stale while refetching,
+  // or trimmed) is never compared as current.
+  const baselineWindow = previousApi.data?.effective_range;
   const previous = { ...previousApi, stale: previousApi.stale || !previousRange
-    || previousFrom !== Date.parse(previousRange.from) };
-  const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
+    || Date.parse(baselineWindow?.from) !== Date.parse(previousRange.from)
+    || Date.parse(baselineWindow?.to) !== Date.parse(previousRange.to) };
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};
   const hasUnpricedCost = data?.totals?.cost_partial === true || quality.unpriced > 0 || data?.totals?.unpriced > 0;

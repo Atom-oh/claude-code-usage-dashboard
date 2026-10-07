@@ -53,7 +53,8 @@ function accumulator(meta, reasons = false) {
 
 // model === null (session-only) drops backend (ADR-017).
 function usageScope(row, model = row.model || "") {
-  const identity = [row.client, row.session || ["unidentified", row.t], row.user || "", row.project || ""];
+  // Unidentified records match only within their native bucket (scope_t), whatever the display bucket.
+  const identity = [row.client, row.session || ["unidentified", row.scope_t ?? row.t], row.user || "", row.project || ""];
   return JSON.stringify(model === null ? identity : [...identity, row.backend || "unknown", model]);
 }
 
@@ -282,26 +283,18 @@ export function clientBucketSeconds(from, to, intervalHours) {
   return Math.ceil(requested / native) * native;
 }
 
-// Regroups native-resolution Claude rows into a coarser bucket. Usage rows keep their
-// session identity, so distinct sessions/users stay exact. Bucket-only zero-evidence rows are
-// merged per bucket conservatively: observed only if every merged row was observed.
-export function rebucketClaudeRows(rows, from, bucketSeconds) {
+// Regroups native-resolution rows (both clients) into a coarser display bucket. Only `t` moves:
+// usage rows keep their session identity, so distinct sessions/users stay exact; `scope_t`
+// keeps each row's native bucket for coverage identity; bucket-only evidence rows are merged
+// by the fold exactly as several rows in one native bucket are.
+export function rebucketRows(rows, from, bucketSeconds) {
   const size = bucketSeconds * 1000, start = from.getTime();
-  const at = (t) => {
-    const ms = Date.parse(String(t).replace(/(?:\.\d+)?Z?$/, "Z"));
-    if (!Number.isFinite(ms)) return t;
-    return new Date(Math.max(start, Math.floor(ms / size) * size)).toISOString().replace(/\.\d{3}Z$/, "Z");
-  };
-  const out = [], zeros = new Map();
-  for (const row of rows) {
-    const t = at(row.t);
-    if (Number(row.timeline_only) !== 1) { out.push({ ...row, t }); continue; }
-    const prev = zeros.get(t);
-    if (!prev) { zeros.set(t, { ...row, t }); continue; }
-    for (const key of ["token_observed", "cost_observed"]) prev[key] = Math.min(Number(prev[key]) || 0, Number(row[key]) || 0);
-    for (const key of ["token_missing", "cost_missing"]) prev[key] = Math.max(Number(prev[key]) || 0, Number(row[key]) || 0);
-  }
-  return [...out, ...zeros.values()];
+  return rows.map((row) => {
+    const ms = Date.parse(String(row.t).replace(/(?:\.\d+)?Z?$/, "Z"));
+    if (!Number.isFinite(ms)) return row;
+    const t = new Date(Math.max(start, Math.floor(ms / size) * size)).toISOString().replace(/\.\d{3}Z$/, "Z");
+    return { ...row, t, scope_t: row.scope_t ?? row.t };
+  });
 }
 
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex") {
@@ -309,7 +302,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: (isCodex ? filters.model : normalizeModelId(filters.model || "")) || "",
     clientBackend: filters.backend || "",
-    clientBucketSeconds: filters.bucketSeconds ?? clientBucketSeconds(from, to) };
+    clientBucketSeconds: clientBucketSeconds(from, to) };
   const cases = Object.entries(prices).map(([model, rate], i) => {
     params[`priceModel${i}`] = model;
     params[`priceLimit${i}`] = rate.short_context_limit;
@@ -466,13 +459,12 @@ export async function clientOverview(from, to, raw, enabledClients) {
   // from it, so both clients and bucket_hours share one resolution.
   const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours);
   const nativeSeconds = clientBucketSeconds(from, to);
-  const filters = { ...validated, bucketSeconds };
+  const filters = validated;
   const jobs = [];
   for (const client of filters.clients) {
     if (client === "claude") {
       jobs.push(queries.clientClaudeRows(from, to, filters)
-        .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" })))
-        .then((rows) => bucketSeconds > nativeSeconds ? rebucketClaudeRows(rows, from, bucketSeconds) : rows));
+        .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" }))));
     }
     const { sql, params } = buildCodexQuery(from, to, filters, codexPrices, client);
     jobs.push(query(sql, params).then((rows) => {
@@ -481,9 +473,10 @@ export async function clientOverview(from, to, raw, enabledClients) {
     }));
   }
   const lists = await Promise.all(jobs);
+  const records = bucketSeconds > nativeSeconds ? rebucketRows(lists.flat(), from, bucketSeconds) : lists.flat();
   // The route validates modelTime; only the literal "1" enables the dimension.
   const modelTime = raw.modelTime === "1";
-  return { ...foldClientMetrics(lists.flat(), filters.clients, codexPrices, { modelTime }),
+  return { ...foldClientMetrics(records, filters.clients, codexPrices, { modelTime }),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
     bucket_hours: bucketSeconds / 3600 };
 }

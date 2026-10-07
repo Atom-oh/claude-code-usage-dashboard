@@ -103,9 +103,9 @@ Claude counter/baseline rules remain.
 when selected; the UI discloses trimming. Native buckets are one minute through four hours,
 otherwise one hour. A coarser `intervalHours` is honored, rounded up to a whole multiple of the
 native bucket, and reported as `bucket_hours`; finer values fall back to native. Codex buckets in
-SQL; Claude counter rows are regrouped from native rows so distinct sessions stay exact, and
-bucket-only zero evidence counts as observed only when every merged bucket was observed. The
-cache key uses the effective bucket size.
+SQL at the native bucket; both clients' rows are then regrouped, so distinct sessions stay exact,
+coverage identity stays at the native bucket (`scope_t`), and bucket-only evidence merges as within
+one bucket. Sizes use Claude's trimmed end. The cache key uses the effective bucket size.
 
 Codex detail log summaries use one query for full-identity deduplication, per-response
 pricing and scope evidence. The 50,000-row transfer budget applies to aggregate

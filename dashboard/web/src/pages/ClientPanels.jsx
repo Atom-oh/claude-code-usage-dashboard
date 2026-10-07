@@ -205,7 +205,7 @@ const previousRow = (previous, client) => {
   return row ? presentationRow(row) : null;
 };
 const baselinePending = (previous) => previous?.loading || previous?.stale;
-const changeText = (previous, value) => baselinePending(previous) ? "불러오는 중" : previous?.error ? "조회 실패" : value ?? "—";
+const changeText = (previous, value) => previous?.error ? "조회 실패" : baselinePending(previous) ? "불러오는 중" : value ?? "—";
 // Either side partial: the change is labelled, never presented as a complete comparison.
 const costPartial = (row) => row?.cost_partial === true || observedNumber(row?.unpriced) > 0;
 const tokensPartial = (row) => row?.tokens_partial === true;
@@ -239,8 +239,8 @@ function PeriodChange({ clientRows, previous }) {
             const baseline = prev ? observedNumber(prev[metric.key]) : null;
             const partial = metric === COST ? costPartial(row) || costPartial(prev)
               : metric === TOKENS ? tokensPartial(row) || tokensPartial(prev) : false;
-            const hint = baselinePending(previous) ? "이전 기간 불러오는 중"
-              : previous?.error ? "이전 기간 조회 실패"
+            const hint = previous?.error ? "이전 기간 조회 실패"
+              : baselinePending(previous) ? "이전 기간 불러오는 중"
               : `이전 기간 ${metric.render(prev ? prev[metric.key] : null)}${partial ? " · 부분합 포함" : ""}`;
             return <StatTile key={metric.key} label={metric.label} value={metric.render(row[metric.key])}
               variant={metric === COST ? "accent" : "default"}
@@ -333,7 +333,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         <PeriodChange clientRows={clientRows} previous={previous} />
         {compare(PERIOD_COMPARE, { rows: withPeriodChange(clientRows, previous),
           stale: stale || Boolean(previous && (baselinePending(previous) || previous.error)),
-          subtitle: "증감은 바로 앞의 같은 길이 기간 대비입니다. 어느 한쪽이 미산정이면 —로 둡니다." })}
+          subtitle: "증감은 같은 길이의 직전 기간 대비입니다(Claude 포함 4시간 초과 구간은 시작 시각 직전 정각까지). 어느 한쪽이 미산정이면 —로 둡니다." })}
         <div className="grid xl:grid-cols-2 gap-4">
           <Trend {...trendProps} metric="tokens" title="토큰 추이" />
           <Trend {...trendProps} metric="cost" title="비용 추이" />
