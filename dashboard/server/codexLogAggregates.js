@@ -46,6 +46,18 @@ function policy(value, allowed) {
     has(${strings(allowed)}, ${candidate}), ${candidate}, 'unknown')`;
 }
 
+// Query parameters travel in the request URL, which proxies and servers cap near 16 KiB. Rates
+// repeat heavily across models, tiers and backends, so one parameter per distinct value keeps
+// the price table's URL cost from growing with every model added.
+function rateParams(params, rates) {
+  const placeholder = (value) => {
+    const name = `rate${String(value).replace(/\W/g, "_")}`;
+    params[name] = value;
+    return `{${name}:Float64}`;
+  };
+  return Object.fromEntries(["input", "cacheRead", "cacheWrite", "output"].map((f) => [f, placeholder(rates[f])]));
+}
+
 function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
   const cases = [];
   Object.entries(prices).forEach(([model, entry], i) => {
@@ -57,15 +69,14 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
       for (const scope of ["regional", "global"]) for (const tier of ["short", "long"]) {
         const rates = source[scope]?.[tier];
         if (!rates) continue;
-        const key = `aggregatePrice${i}${backendKey ? backendKey.replace(/-/g, "_") : "base"}${scope}${tier}`;
-        for (const field of ["input", "cacheRead", "cacheWrite", "output"]) params[key + field] = rates[field];
+        const rate = rateParams(params, rates);
         const condition = `base_model = {aggregateModel${i}:String}
           ${backendKey ? `AND backend = '${backendKey}'` : ""}
           AND ${scope === "global" ? "" : "NOT "}startsWith(model, 'global.')
           AND input_value ${tier === "short" ? "<=" : ">"} {aggregateThreshold${i}:UInt64}`;
-        const amount = `((input_value - read_value - write_value) * {${key}input:Float64}
-          + read_value * {${key}cacheRead:Float64} + write_value * {${key}cacheWrite:Float64}
-          + output_value * {${key}output:Float64}) / 1000000`;
+        const amount = `((input_value - read_value - write_value) * ${rate.input}
+          + read_value * ${rate.cacheRead} + write_value * ${rate.cacheWrite}
+          + output_value * ${rate.output}) / 1000000`;
         cases.push(condition, amount);
       }
     }
@@ -80,12 +91,11 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
     params[`claudeModel${i}`] = model;
     for (const backendKey of VALID_BACKENDS) {
       const rates = entry.backends[backendKey];
-      const key = `claudeRate${i}${backendKey.replace(/-/g, "_")}`;
-      for (const field of ["input", "cacheRead", "cacheWrite", "output"]) params[key + field] = rates[field];
+      const rate = rateParams(params, rates);
       const condition = `claude_model = {claudeModel${i}:String} AND backend = '${backendKey}' AND ${notCodexEntry}`;
-      const amount = `${regional} * ((input_value - read_value - write_value) * {${key}input:Float64}
-        + read_value * {${key}cacheRead:Float64} + write_value * {${key}cacheWrite:Float64}
-        + output_value * {${key}output:Float64}) / 1000000`;
+      const amount = `${regional} * ((input_value - read_value - write_value) * ${rate.input}
+        + read_value * ${rate.cacheRead} + write_value * ${rate.cacheWrite}
+        + output_value * ${rate.output}) / 1000000`;
       cases.push(condition, amount);
     }
   });

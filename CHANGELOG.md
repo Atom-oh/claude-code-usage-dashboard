@@ -12,6 +12,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-08 Codex price table for open-weight models)
+
+- Add AWS list rates to `codexPricing.js` for Kimi K3, Grok 4.7, Qwen3 Coder Next, Qwen3 Next 80B A3B,
+  GLM 5, GLM 4.7 and Gemma 4 31B / Gemma 3 27B, 12B, 4B, so Codex sessions routed to them through a
+  gateway are priced instead of reported as `unknown_model`. Kimi K3 and Grok 4.7 carry regional
+  and global rates; the others are regional only, so a `global.`-prefixed id stays unpriced
+  (`scope`). Models whose card publishes no cache rates price cache reads and writes as ordinary input.
+- Share one SQL query parameter per distinct rate in the log-aggregate price expression. Parameters
+  travel in the request URL and the price table already used about 15.5 KB of a 16 KiB header
+  budget; the same table now needs about 4.2 KB.
+
 ### Changed (2026-10-07 non-Anthropic Claude cost)
 
 - Price non-Anthropic models used through Claude Code (OpenAI, xAI, Z.ai on Bedrock) at AWS

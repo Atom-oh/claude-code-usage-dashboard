@@ -1,6 +1,9 @@
 import { observedTokenPair } from "./observedTokens.js";
 import { computeCost as claudeComputedCost } from "./pricing.js";
 
+// A model whose rates do not change with context length: the same rates for both tiers.
+const flat = (rates) => ({ short: rates, long: rates });
+
 // USD per million tokens; AWS model-card list prices.
 // Rates already include the commercial regional fee. Never add it again.
 export const DEFAULT_CODEX_PRICING = {
@@ -109,6 +112,30 @@ export const DEFAULT_CODEX_PRICING = {
       long: { input: 1.68, cacheWrite: 2.1, cacheRead: 0.312, output: 5.28 },
     },
   },
+  // Non-OpenAI models routed through Codex (e.g. via an inferplane gateway). Rates are Standard-tier
+  // list prices from the model-comparision price data, refreshed 2026-10-08; context limits are the
+  // Bedrock model-card windows. All are one flat tier. Models whose card publishes no cache rates
+  // price cache reads and writes as ordinary input, as for grok-4.6 above.
+  // Kimi K3 / Grok 4.7: cross-Region only, regional = US/Geo CRIS, global = Global CRIS.
+  "moonshotai.kimi-k3": {
+    short_context_limit: 1000000,
+    regional: flat({ input: 3.3, cacheWrite: 4.125, cacheRead: 0.33, output: 16.5 }),
+    global: flat({ input: 3, cacheWrite: 3.75, cacheRead: 0.3, output: 15 }),
+  },
+  "xai.grok-4.7": {
+    short_context_limit: 500000,
+    regional: flat({ input: 2.2, cacheWrite: 2.2, cacheRead: 0.55, output: 6.6 }),
+    global: flat({ input: 2, cacheWrite: 2, cacheRead: 0.5, output: 6 }),
+  },
+  // In-Region only (us-east-1/2, us-west-2); no global rate, so a global.-prefixed model is unpriced.
+  "qwen.qwen3-coder-next": { short_context_limit: 256000, regional: flat({ input: 0.5, cacheWrite: 0.5, cacheRead: 0.5, output: 1.2 }) },
+  "qwen.qwen3-next-80b-a3b": { short_context_limit: 256000, regional: flat({ input: 0.14, cacheWrite: 0.14, cacheRead: 0.14, output: 1.2 }) },
+  "zai.glm-5": { short_context_limit: 200000, regional: flat({ input: 1, cacheWrite: 1, cacheRead: 1, output: 3.2 }) },
+  "zai.glm-4.7": { short_context_limit: 203000, regional: flat({ input: 0.6, cacheWrite: 0.6, cacheRead: 0.6, output: 2.2 }) },
+  "google.gemma-4-31b": { short_context_limit: 256000, regional: flat({ input: 0.14, cacheWrite: 0.14, cacheRead: 0.14, output: 0.4 }) },
+  "google.gemma-3-27b-it": { short_context_limit: 128000, regional: flat({ input: 0.23, cacheWrite: 0.23, cacheRead: 0.23, output: 0.38 }) },
+  "google.gemma-3-12b-it": { short_context_limit: 128000, regional: flat({ input: 0.09, cacheWrite: 0.09, cacheRead: 0.09, output: 0.29 }) },
+  "google.gemma-3-4b-it": { short_context_limit: 128000, regional: flat({ input: 0.04, cacheWrite: 0.04, cacheRead: 0.04, output: 0.08 }) },
   // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-luna.html
   // Verified 2026-09-17. The tier applies to each response's input context.
   "openai.gpt-5.6-luna": {
