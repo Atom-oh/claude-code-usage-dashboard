@@ -49,6 +49,22 @@ test("global inference and long context use their own rates", () => {
   assert.equal(priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "us.openai.gpt-6-astra" }).cost_usd, 0.00238425);
 });
 
+test("commercial geography prefixes retain known rates and the Haiku context tier", () => {
+  for (const prefix of ["us.", "eu.", "apac.", "jp.", "au."]) {
+    const priced = priceCodexUsage({ ...usage, backend: "bedrock-runtime",
+      model: `${prefix}openai.gpt-6-astra` });
+    assert.equal(priced.cost_usd, 0.00238425, prefix);
+    assert.equal(priced.unpriced_reason, null, prefix);
+    const haiku = priceCodexUsage({ ...usage, backend: "bedrock-runtime",
+      model: `${prefix}anthropic.claude-haiku-5-5`, input_tokens_total: 100001,
+      cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 0,
+      reasoning_tokens: 0, context_tier: "long" });
+    assert.equal(haiku.cost_usd, 0.05500055, prefix);
+    assert.equal(haiku.price_source, undefined, "the tiered entry must beat the flat fallback");
+    assert.equal(priceCodexUsage({ ...usage, model: `${prefix}openai.gpt-6-astra` }).unpriced_reason, "scope");
+  }
+});
+
 test("Luna defaults price regional and global cache-aware usage in each context tier", () => {
   for (const [backend, model, context_tier, expected] of [
     ["bedrock-mantle", "openai.gpt-5.6-luna", "short", 0.000054285],
@@ -243,7 +259,7 @@ test("pricing overrides are validated rather than silently making costs zero", (
 
 test("pricing keys reject routing prefixes stripped by lookup", () => {
   const value = parseCodexPricing()["openai.gpt-6-astra"];
-  for (const prefix of ["us.", "global."])
+  for (const prefix of ["us.", "eu.", "apac.", "jp.", "au.", "global."])
     assert.throws(() => parseCodexPricing(JSON.stringify({ [prefix + "openai.gpt-6-astra"]: value })));
 });
 

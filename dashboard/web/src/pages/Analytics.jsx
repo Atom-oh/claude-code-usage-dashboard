@@ -31,7 +31,7 @@ const CATEGORIES = [
   {
     label: "생산성",
     prompts: [
-      (days) => `최근 ${days}일간 사용자별 코드 제안 수락률을 비교해줘`,
+      (days) => `최근 ${days}일간 사용자별 코드 편집 권한 허용률을 비교해줘`,
       (days) => `최근 ${days}일간 커밋과 PR 지표를 요약해줘`,
     ],
   },

@@ -12,6 +12,18 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed (2026-10-11 telemetry coverage)
+
+- Match commercial geography model prefixes consistently in Codex shared/detail pricing,
+  including Haiku 5.5's request context tiers. GovCloud remains unsupported.
+  Existing geography-prefixed pricing override keys must be renamed before rollout;
+  see the [upgrade notes](docs/runbooks/codex-telemetry.md#dashboard-cost-and-query-contract).
+- Retain model-less Claude cost reports in model, user/model, trend and comparison results.
+- Expose per-metric observation evidence for outcome counters and user/CLI active time;
+  detail cards preserve unavailable values and measured zero separately.
+- Withhold the activity index without a permission-decision denominator and withhold means
+  when any returned user lacks an index. Rankings omit unavailable indices.
+
 ### Changed (2026-10-11 price table sync)
 
 - Claude table: `claude-haiku-5-5` at its <=100K-prompt rates (computed diagnostics cannot apply
@@ -19,8 +31,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Codex table: `deepseek.v3.2`, `minimax.minimax-m2.5` and `moonshotai.kimi-k2.5` In-Region rates
   (inferplane model comparison data, AWS Price List, 2026-10-11), and a tiered
   `anthropic.claude-haiku-5-5` entry so Haiku 5.5 through Codex is priced per request at 100K.
-  An `eu.`/`apac.` Haiku 5.5 id still misses that entry (only `us.`/`global.` are stripped) and
-  falls back to the flat <=100K Claude row.
+  At that revision, `eu.`/`apac.` Haiku 5.5 ids missed the tiered entry; the telemetry
+  coverage fixes above correct that lookup.
 
 ### Changed (2026-10-11 more Codex models)
 

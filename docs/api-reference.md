@@ -123,7 +123,7 @@ known subtotals partial while withholding strict ratios and session units. See
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key and is not warmed; `/api/codex/insights`
 ignores it. It adds `by_model_time`: one row per `client`, `t`, `model`, `backend` from the
-same fold and buckets as `timeseries`, with Codex raw model IDs (`us.`/`global.` prefixes
+same fold and buckets as `timeseries`, with Codex raw model IDs (routing prefixes
 kept; Claude models are normalized as in `by_model`) and the usual cost/token/coverage fields. A row exists only where Claude counter
 usage, a Codex usage-bearing completion or a Codex missing-usage scope backs it;
 operational-only records (requests, tools, TTFT, stream errors, rejected-only requests)
@@ -137,7 +137,7 @@ non-numeric) report and a zero report on a counter row whose `cost_observed` is 
 `t`, known `cost_usd` sums to the `timeseries` row; idle Claude observations stay in
 `timeseries` only. Codex estimates are never recomputed from aggregated tokens. Each
 unpriced Codex response has one `unpriced_reason`, checked in order: backend, scope
-(`us-gov.`, a `us.`/`global.` model on mantle, or no rate for the scope/tier), model rate,
+(`us-gov.`, a commercial routing prefix on mantle, or no rate for the scope/tier), model rate,
 then usage validity; a configured rate with a non-finite estimate reports `unknown_model`.
 
 ## Filter scope
@@ -186,7 +186,7 @@ query failures still use the normal error path.
 
 | Path | Fields and grain |
 |---|---|
-| `/api/overview/kpi` | Per `group`: `sessions`, `users`, `commits`, `prs`, `total_tokens`, `input_tokens`, `output_tokens`, `lines_of_code`. Its row-existence user count is not a substitute for `active-users`. |
+| `/api/overview/kpi` | Per `group`: `sessions`, `users`, `commits`, `prs`, `total_tokens`, `input_tokens`, `output_tokens`, `lines_of_code`; observation flags `commits_observed`, `prs_observed`, `lines_of_code_observed`. Its row-existence user count is not a substitute for `active-users`. |
 | `/api/overview/active-users` | **Object**: `users`, `bedrock_users`, `enterprise_users`; distinct nonempty emails with session-counter rows in range. |
 | `/api/overview/tokens-timeseries` | **B**, per `t, group`: `tokens`, `input_tokens`, `output_tokens`. |
 | `/api/overview/cache-efficiency` | Per `group`: `cache_read`, `input_side`, `cache_read_ratio`, `uncached_input`, `cache_write`, `output_tokens`. Input side includes uncached input, cache read and cache creation. |
@@ -200,7 +200,7 @@ query failures still use the normal error path.
 | `/api/productivity/decisions` | Per `group, decision`: `n`, from the code-edit permission-decision counter. |
 | `/api/productivity/decisions-by-tool` | Per `group, tool, decision`: `n`; excludes empty tool names. |
 | `/api/productivity/active-time` | **B**, per `t, group`: `active_seconds`, summing active-time types. |
-| `/api/productivity/active-time-summary` | Per `group`: `user_seconds`, `cli_seconds`, distinct `sessions` in the active-time aggregation. |
+| `/api/productivity/active-time-summary` | Per `group`: `user_seconds`, `cli_seconds`, `user_seconds_observed`, `cli_seconds_observed`, and distinct `sessions` in the active-time aggregation. |
 | `/api/productivity/activity-density` | Per `group`: `observed_scopes`, `matched_scopes`, nullable `matched_commits`, `user_hours`, `commits_per_user_hour`, and fractional `coverage`. Scopes are user/session pairs with either relevant counter observed; ratios use only matched scopes. |
 | `/api/productivity/tool-outcomes` | Per `group`: `total`, `succeeded`, `failed`, `unknown`, nullable `success_rate`, `unknown_rate`. Fractions, no top-tool cap; both unprefixed and `claude_code.tool_result` events. |
 | `/api/productivity/permission-occupancy` | `{unsupported, limited, rows}`. Per `group`: `interactions`, `matched_interactions`, `ambiguous_interactions`, nullable `interaction_ms`, `blocked_ms`, `blocked_share`, and fractional `coverage`. |
@@ -276,7 +276,7 @@ bug — see [cost accuracy review](cost-accuracy-review-2026-09-10.md).
 
 | Path | Fields and grain |
 |---|---|
-| `/api/users/leaderboard` | Per `user, group`: `sessions`, `tokens`, `input_tokens`, `output_tokens`, `loc`, `commits`, `prs`, `accepted`, `decisions`, `active_days`, `user_active_days`, `accept_rate`, `productivity_score`. |
+| `/api/users/leaderboard` | Per `user, group`: `sessions`, `tokens`, `input_tokens`, `output_tokens`, `loc`, `commits`, `prs`, `accepted`, `decisions`, `active_days`, `user_active_days`, `accept_rate`, `productivity_score` (both null without a positive decision denominator). |
 | `/api/users/tools` | Per `user, group, tool`: `uses` from tool-result logs. |
 | `/api/users/skills` | Per `user, group, skill`: `invocations`, counting raw cost datapoints rather than activation events. |
 | `/api/users/cost-efficiency` | Per `user, group`: computed `cost`, `unpriced`, `reported_cost`, `reported_unpriced`, `loc`, `commits`, `cost_per_loc`, `cost_per_commit`. Ratios use reported cost. |
@@ -290,6 +290,16 @@ across a user's channel rows; summing per-channel active days can double-count d
 `agents` is a distinct-agent count, not agent depth. Child duration totals can exceed the
 interaction duration. All four drilldowns are excluded from cache warming.
 
+KPI rows also expose `commits_observed`, `prs_observed`, and `lines_of_code_observed`.
+Active-time rows expose separate user/CLI observation flags. These require in-window
+samples with matching metric/type identities; lookback-only counters do not establish zero.
+Above four hours, the first hour uses raw evidence and later hours use rollup presence.
+Live ends retain the trailing partial hour, whose samples can extend beyond the requested
+end; historical ends use the usual alignment. These flags inherit that approximation.
+The flags establish observation, not complete collection. Detail Productivity and Executive
+withhold aggregate outcome/time values if any returned channel lacks the relevant evidence.
+See [activity availability](decisions/ADR-018-activity-observation-availability.md).
+
 ### Cost
 
 Primary spend consumers use `reported_cost` through frontend
@@ -301,8 +311,8 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 | Path | Fields and grain |
 |---|---|
 | `/api/cost/summary` | Per `group`: `computed_cost`, `reported_cost`, token fields, `unpriced_tokens`, `sessions`; includes unknown-channel rows by default. |
-| `/api/cost/by-model` | Per `group, model`: priced row plus `tokens`. |
-| `/api/cost/by-user-model` | Per `user, group, model`: priced row plus `tokens`; nonempty email/model required. `includeUnknown=1` broadens channel coverage. |
+| `/api/cost/by-model` | Per `group, model`: priced row plus `tokens`; empty model stays `model=""`. |
+| `/api/cost/by-user-model` | Per `user, group, model`: priced row plus `tokens`; nonempty email required; empty model stays `model=""`. `includeUnknown=1` broadens channel coverage. |
 | `/api/cost/by-model-daily` | **B**, per `day, group, model`: priced row plus the report coverage fields below. The field is named `day` even for sub-day buckets. |
 | `/api/cost/by-model-compare` | Per `model` across selected channels: current priced-row fields, `prev_reported_cost`, previous token fields prefixed `prev_`, and computed `prev_cost`; previous period derived server-side. |
 | `/api/cost/tiers` | **Object** `{bedrock, enterprise}`, each with computed `uncachedInput`, `cacheRead`, `cacheWrite`, `output`; unknown rates are skipped. |
@@ -311,7 +321,7 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 
 `/api/cost/by-model-daily` judges report availability per session inside ClickHouse
 (`costByModelDailySql` in [queries.js](../dashboard/server/queries.js)) and returns one row per
-`day, group, model`; [modelCostTrend.js](../dashboard/server/modelCostTrend.js) maps the counts.
+`day, group, model` (including empty models); [modelCostTrend.js](../dashboard/server/modelCostTrend.js) maps the counts.
 A session report is usable when it is positive, or zero with known zero tokens or no token
 samples. `reported_cost` is the sum of usable reports and null when no session is usable;
 `reported_partial`, `reported_unavailable` (unusable sessions), `reported_reasons` and

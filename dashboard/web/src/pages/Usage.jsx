@@ -60,9 +60,9 @@ const TOOL_MCP_COLUMNS = [
 const TOOL_DECISION_COLUMNS = [
   { key: "tool", label: "도구" },
   { key: "source", label: "허용 출처", render: sourceLabel, toText: sourceLabel },
-  { key: "accepts", label: "수락", render: fmt },
+  { key: "accepts", label: "허용", render: fmt },
   { key: "rejects", label: "거부", render: fmt },
-  { key: "accept_rate", label: "수락률", render: pct0, toText: pct0 },
+  { key: "accept_rate", label: "권한 허용률", render: pct0, toText: pct0 },
   { key: "n", label: "합계", render: fmt },
 ];
 

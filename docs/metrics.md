@@ -162,8 +162,8 @@ not human reviews of generated code or measurements of accepted code quality.
 | Language activity | `languageBreakdown`: code-edit decision totals and accepted decisions per language. | Permission counts; empty language merges into `unknown`. |
 
 The existing API field **`productivity_score` is an arbitrary activity heuristic**, not a validated
-performance measure. The UI calls it an activity index; its formula is unchanged for
-historical compatibility. [productivity.js](../dashboard/server/productivity.js) uses
+performance measure. The UI calls it an activity index; its weights and caps remain unchanged for
+users with a positive permission-decision denominator. [productivity.js](../dashboard/server/productivity.js) uses
 `d = max(1, selected_days)` and the following weights/caps:
 
 ```text
@@ -176,12 +176,27 @@ historical compatibility. [productivity.js](../dashboard/server/productivity.js)
 )
 ```
 
-The server rounds the score to one decimal and acceptance to three. The Users leaderboard
+Without a positive decision denominator, both the score and acceptance are null.
+The server rounds available scores to one decimal and acceptance to three. The Users leaderboard
 is per user/channel; a user can have multiple rows. Executive and aggregate Productivity
 views use [foldLeaderboardByUser](../dashboard/web/src/score.js), sum activity across returned
 channel rows, use `user_active_days` for the distinct-day union, then recompute the formula.
-Executive averages those user scores. A top-ten list ranks this heuristic, not developers'
+Executive and channel summaries provide a mean only when every returned user has an
+available score; an empty population stays unavailable. Rankings omit unavailable scores. A top-ten list ranks this heuristic, not developers'
 quality or business impact. Users' channel acceptance summary is weighted by decision counts.
+
+KPI outcome counters and user/CLI time have separate observation flags. A numeric zero
+without its flag does not establish measured zero. Detail Productivity and Executive
+withhold aggregate outcomes and time units if any returned channel has no in-window
+evidence for that metric/type. Raw samples establish first-hour evidence; later hours
+use the rollup for windows above four hours. Observation does not prove complete capture.
+Live trailing hours inherit the existing partial-hour approximation and can include
+samples after the requested end. [ADR-018](decisions/ADR-018-activity-observation-availability.md)
+owns this availability policy and its population limits.
+
+Model-less cost counters retain `model=""` in model, user/model, comparison and trend
+results. Their usable reports remain spend; computed pricing stays unavailable. Cost
+labels them as an unknown model without inventing model attribution.
 
 ### Activity and flow coverage
 

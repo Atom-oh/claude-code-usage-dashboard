@@ -6,8 +6,8 @@ React 18/Vite/Tailwind/Recharts SPA. Run `npm test` and `npm run build`.
 
 - `ClientContext` defaults all clients to nine shared routes via `Clients.jsx`.
   Claude `view=detail` retains advanced/A/B pages; see [routing](../../docs/reference/frontend.md#routes-and-state).
-  Common views label `cost_usd` by `cost_basis`, retain nulls/tiny positives, and never
-  show unsupported Claude measures as Codex zeros.
+  Shared views label `cost_usd` by `cost_basis`, preserve nulls/tiny positives and
+  never render unsupported Claude measures as Codex zeros.
 - Shared cards/charts/tables/CSV label known cost subtotals as partial. Units divide
   by observed denominators; missing denominators and all-unknown costs stay `—`.
   See [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
@@ -21,11 +21,11 @@ React 18/Vite/Tailwind/Recharts SPA. Run `npm test` and `npm run build`.
   not invalidate valid reports.
 - `showComputed` gates Cost's opt-in computed comparison: table/CSV columns, effort
   annotations, computed total and token-tier charts.
-- Cost remounts affected `DataTable`s on comparison changes, resetting all internal
-  sorting, including hidden computed columns.
+- Cost remounts affected `DataTable`s on comparison changes to reset sorting,
+  including hidden computed columns.
 - CSV follows displayed columns/order; `toCsv` uses `toText` or raw values, never JSX.
-- `csv.js` centrally masks `user` columns under PII masking; missing per-column
-  `toText: maskEmail` alone is not a leak. Other identity columns need explicit masking.
+- `csv.js` masks `user` under PII masking even without `toText: maskEmail`.
+  Explicitly mask other identity columns.
 - Cost USD accepts zero and at most two decimals. `DonutBody.valueFormatter` ignores
   `valuePrefix`; other charts keep their default formatting.
 - Keep trace absence, loading, errors, unpriced values and measured zero distinct.
@@ -57,10 +57,10 @@ React 18/Vite/Tailwind/Recharts SPA. Run `npm test` and `npm run build`.
 - `useGroupsShown()` owns card visibility, including single mode/channel overrides.
   `GROUP_SEGMENT_ORDER` owns within-row splits; keep these roles distinct.
 - Channels are not emitting clients. Do not identify Codex from an OpenAI model name.
-- Use existing Card/StatTile help, loading, error, and empty-state conventions.
-  Omit absent subtitles/hints with `undefined`, not an empty string.
-- One navigation element, except with the mobile drawer open. Mobile navigation uses
-  `Sidebar`'s exported NAV; keep route/navigation tests aligned.
+- Use Card/StatTile help/loading/error/empty conventions; omit absent subtitles/hints
+  with `undefined`.
+- Use one navigation element except with the mobile drawer open. Mobile navigation
+  uses `Sidebar`'s NAV; keep route/navigation tests aligned.
 - Time-series drag zoom changes the whole page; categorical axes do not zoom.
 - UI is Korean-first with existing English names/identifiers; engineering docs are
   English-only. Do not translate runtime strings in documentation fixes.

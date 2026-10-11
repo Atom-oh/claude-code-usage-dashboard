@@ -22,8 +22,8 @@ test("unclassifiedLabel maps unknown/empty/nullish to 미분류, passes through 
 // decisionLabel deliberately does NOT fold ""/null/undefined to a label, unlike the other two
 // helpers above — a tool-decision row always carries a real decision value, and folding an
 // empty one would invent a verdict that was never made.
-test("decisionLabel maps accept/reject to 수락/거부, passes through everything else including empty/nullish", () => {
-  expect(decisionLabel("accept")).toBe("수락");
+test("decisionLabel maps accept/reject to 허용/거부, passes through everything else including empty/nullish", () => {
+  expect(decisionLabel("accept")).toBe("허용");
   expect(decisionLabel("reject")).toBe("거부");
   expect(decisionLabel("unknown")).toBe("unknown");
   expect(decisionLabel("")).toBe("");

@@ -11,10 +11,11 @@ import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { colorFor, GROUP_SEGMENT_ORDER } from "../colors.js";
-import { foldLeaderboardByUser, ACTIVITY_SCORE_HELP, APPROVAL_HELP } from "../score.js";
+import { foldLeaderboardByUser, formatActivityScore, ACTIVITY_SCORE_HELP, APPROVAL_HELP } from "../score.js";
 import ProductivitySignals from "./ProductivitySignals.jsx";
 import { decisionLabel, unclassifiedLabel } from "../labels.js";
 import { asSpendRows, sumSpend } from "../spend.js";
+import { sumObservedMetric } from "../metricCoverage.js";
 
 const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -49,7 +50,7 @@ function CostGroupBar({ split, max }) {
   );
 }
 
-const fmt = (n) => Number(n || 0).toLocaleString();
+const fmt = (n) => n == null ? "—" : Number(n).toLocaleString();
 const pct = (n) => n == null ? "—" : `${(Number(n) * 100).toFixed(0)}%`;
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
 
@@ -139,7 +140,7 @@ export default function Productivity() {
       const split = costByUser.get(u.user) || {};
       return { ...u, costByGroup: split, cost: Object.keys(split).length ? sumSpend(Object.values(split).map((cost) => ({ cost }))) : null };
     })
-    .sort((a, b) => b.productivity_score - a.productivity_score);
+    .sort((a, b) => (a.productivity_score == null) - (b.productivity_score == null) || b.productivity_score - a.productivity_score);
   const userCostMax = userProductivityRows.reduce((m, r) => Math.max(m, r.cost || 0), 0);
   const permissionWait = useApi("/api/productivity/permission-wait");
   const ttft = useApi("/api/productivity/ttft");
@@ -160,22 +161,17 @@ export default function Productivity() {
     }, {})
   );
 
-  const outcomeTotals = (kpi.data || []).reduce(
-    (acc, r) => ({ prs: acc.prs + Number(r.prs), loc: acc.loc + Number(r.lines_of_code) }),
-    { prs: 0, loc: 0 }
-  );
+  const outcomeTotals = { prs: sumObservedMetric(kpi.data, "prs"), loc: sumObservedMetric(kpi.data, "lines_of_code") };
   const decisionTotals = (decisions.data || []).reduce(
     (acc, r) => ({ accept: acc.accept + (r.decision === "accept" ? Number(r.n) : 0), total: acc.total + Number(r.n) }),
     { accept: 0, total: 0 }
   );
   const acceptRate = decisionTotals.total > 0 ? decisionTotals.accept / decisionTotals.total : null;
 
-  const activeTotals = (activeSummary.data || []).reduce(
-    (acc, r) => ({ user: acc.user + Number(r.user_seconds), cli: acc.cli + Number(r.cli_seconds) }),
-    { user: 0, cli: 0 }
-  );
-  const userHours = activeTotals.user / 3600;
-  const cliHours = activeTotals.cli / 3600;
+  const activeTotals = { user: sumObservedMetric(activeSummary.data, "user_seconds"),
+    cli: sumObservedMetric(activeSummary.data, "cli_seconds") };
+  const userHours = activeTotals.user == null ? null : activeTotals.user / 3600;
+  const cliHours = activeTotals.cli == null ? null : activeTotals.cli / 3600;
 
   const langRowsFor = (g) =>
     (languages.data || [])
@@ -193,7 +189,7 @@ export default function Productivity() {
     set.add(r.group);
     groupsByUser.set(r.user, set);
   }
-  const top10ByScore = userProductivityRows.slice(0, 10).map((r) => {
+  const top10ByScore = userProductivityRows.filter((r) => r.productivity_score != null).slice(0, 10).map((r) => {
     const groups = [...(groupsByUser.get(r.user) || [])].sort();
     return { ...r, label: groups.length > 1 ? `${maskEmail(r.user)} (${groups.join("+")})` : maskEmail(r.user) };
   });
@@ -231,7 +227,7 @@ export default function Productivity() {
         ) : (
           <HBarList
             title="활동 지수 상위 10위"
-            subtitle="임의 가중치 기반 참고 지수 · 개인 성과 순위가 아닙니다"
+            subtitle="계산 가능한 사용자만 표시 · 임의 가중치 기반 참고 지수"
             help={ACTIVITY_SCORE_HELP}
             data={top10ByScore.map((r) => ({ ...r, score: Number(r.productivity_score) }))}
             labelKey="label"
@@ -250,7 +246,7 @@ export default function Productivity() {
             help={`${ACTIVITY_SCORE_HELP} 여러 채널의 원시 활동을 합친 뒤 지수를 다시 계산합니다. 비용 막대의 색은 채널, 길이는 가장 큰 사용자 대비 비율입니다.`}
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
-              { key: "productivity_score", label: "활동 지수", render: (v) => Number(v).toFixed(1), bar: true },
+              { key: "productivity_score", label: "활동 지수", render: formatActivityScore, bar: true },
               {
                 key: "cost",
                 label: "보고 비용",
@@ -347,7 +343,7 @@ export default function Productivity() {
             subtitle="채널별"
             right={
               <div className="flex gap-2">
-                <Badge tone="positive" dot>수락</Badge>
+                <Badge tone="positive" dot>허용</Badge>
                 <Badge tone="negative" dot>거부</Badge>
               </div>
             }
@@ -365,11 +361,11 @@ export default function Productivity() {
             <ErrorBox error={decisionsByTool.error} />
           ) : (
             <GroupBarChart
-              title="도구별 수락/거부"
+              title="도구별 권한 허용/거부"
               subtitle="채널 합산"
               right={
                 <div className="flex gap-2">
-                  <Badge tone="positive" dot>수락</Badge>
+                  <Badge tone="positive" dot>허용</Badge>
                   <Badge tone="negative" dot>거부</Badge>
                 </div>
               }
@@ -386,7 +382,7 @@ export default function Productivity() {
           ) : (
             <SeriesBarChart
               title="도구별 결정 분포"
-              subtitle="수락·거부 누적 비교, 채널 합산"
+              subtitle="권한 허용·거부 누적 비교, 채널 합산"
               rows={(decisionsByTool.data || []).map((r) => ({ ...r, decision: decisionLabel(r.decision) }))}
               xKey="tool"
               seriesKey="decision"
@@ -405,17 +401,17 @@ export default function Productivity() {
           <ErrorBox error={activeSummary.error || kpi.error} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatTile label="개발자 활성 시간" value={`${userHours.toFixed(1)}시간`} hint="개발자가 직접 사용한 시간, 채널 합산" />
-            <StatTile label="Claude Code 작업 시간" value={`${cliHours.toFixed(1)}시간`} hint="Claude Code가 작업한 시간, 채널 합산" />
+            <StatTile label="개발자 활성 시간" value={userHours == null ? "—" : `${userHours.toFixed(1)}시간`} hint="해당 카운터가 관측된 채널 기준 · 미관측은 —" />
+            <StatTile label="Claude Code 작업 시간" value={cliHours == null ? "—" : `${cliHours.toFixed(1)}시간`} hint="해당 카운터가 관측된 채널 기준 · 미관측은 —" />
             <StatTile
               label="CLI / 사용자 활성 시간"
-              value={activeTotals.user > 0 ? `×${(activeTotals.cli / activeTotals.user).toFixed(1)}` : "—"}
+              value={activeTotals.user > 0 && activeTotals.cli != null ? `×${(activeTotals.cli / activeTotals.user).toFixed(1)}` : "—"}
               variant="accent"
               hint="실행 시간 비율 · 자율 작업 성공이나 절감 시간이 아닙니다"
             />
             <StatTile
               label="시간당 추가 코드 라인"
-              value={userHours > 0 ? fmt(Math.round(outcomeTotals.loc / userHours)) : "—"}
+              value={userHours > 0 && outcomeTotals.loc != null ? fmt(Math.round(outcomeTotals.loc / userHours)) : "—"}
               hint="추가된 코드 라인을 개발자 활성 시간으로 나눈 값"
             />
           </div>

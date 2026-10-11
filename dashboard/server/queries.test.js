@@ -386,7 +386,7 @@ test("costByModelDailySql binds user and model filters and keeps the channel def
   assert.equal(params.fUser, "x' OR 1=1");
   assert.equal(params.fModel, "claude-sonnet-5");
   assert.ok(!sql.includes("OR 1=1"), "filter values must never be inlined into the SQL text");
-  assert.ok(sql.includes("m.Model != ''"), "rows without a model are excluded");
+  assert.ok(!sql.includes("m.Model != ''"), "reports without a model remain visible");
   assert.ok(sql.includes("!= 'unknown'"), "the unknown channel is excluded by default");
 });
 

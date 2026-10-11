@@ -13,10 +13,10 @@ export function withProductivityScore(rows, from, to) {
     const locPerDay = Number(r.loc) / daysInRange;
     const commitsPerDay = Number(r.commits) / daysInRange;
     const sessionsPerDay = Number(r.sessions) / daysInRange;
-    const acceptRate = r.decisions > 0 ? Number(r.accepted) / Number(r.decisions) : 0;
+    const acceptRate = r.decisions > 0 ? Number(r.accepted) / Number(r.decisions) : null;
     const activeDayShare = Math.min(Number(r.active_days) / daysInRange, 1);
 
-    const score =
+    const score = acceptRate === null ? null :
       100 *
       (0.3 * Math.min(locPerDay / LOC_PER_DAY_CAP, 1) +
         0.25 * acceptRate +
@@ -24,6 +24,7 @@ export function withProductivityScore(rows, from, to) {
         0.15 * activeDayShare +
         0.1 * Math.min(sessionsPerDay / SESSIONS_PER_DAY_CAP, 1));
 
-    return { ...r, accept_rate: Number(acceptRate.toFixed(3)), productivity_score: Number(score.toFixed(1)) };
+    return { ...r, accept_rate: acceptRate === null ? null : Number(acceptRate.toFixed(3)),
+      productivity_score: score === null ? null : Number(score.toFixed(1)) };
   });
 }

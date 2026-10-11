@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { foldLeaderboardByUser } from "./score.js";
+import { foldLeaderboardByUser, averageActivityScore, formatActivityScore } from "./score.js";
 
 // userLeaderboard의 실제 행 모양 — a@x.com은 두 그룹을 오간 straddler.
 const ROWS = [
@@ -31,4 +31,15 @@ test("foldLeaderboardByUser: scoreDays가 분모 — 기간이 길수록 per-day
   const oneDay = foldLeaderboardByUser(ROWS, 1).find((u) => u.user === "a@x.com");
   const tenDays = foldLeaderboardByUser(ROWS, 10).find((u) => u.user === "a@x.com");
   expect(tenDays.productivity_score).toBeLessThan(oneDay.productivity_score);
+});
+
+test("absent permission decisions withhold scores and prevent a selected-user mean", () => {
+  const rows = foldLeaderboardByUser(ROWS, 1);
+  expect(rows.find((row) => row.user === "b@x.com").productivity_score).toBeNull();
+  expect(rows.find((row) => row.user === "b@x.com").accept_rate).toBeNull();
+  expect(formatActivityScore(null)).toBe("—");
+  expect(formatActivityScore(0)).toBe("0.0");
+  expect(averageActivityScore(rows)).toBeNull();
+  expect(averageActivityScore([])).toBeNull();
+  expect(averageActivityScore([{ productivity_score: 0 }, { productivity_score: 20 }])).toBe(10);
 });

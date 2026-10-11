@@ -230,8 +230,8 @@ export function parseCodexPricing(raw) {
   if (!object(additions) || Object.keys(additions).length > 32)
     throw new Error("CODEX_PRICING_JSON must contain at most 32 model entries");
   for (const [model, value] of Object.entries(additions)) {
-    if (/^(us|global)\./.test(model))
-      throw new Error("Codex pricing keys must omit us. and global. routing prefixes");
+    if (CODEX_ROUTING_RE.test(model))
+      throw new Error("Codex pricing keys must omit routing prefixes");
     if (!/^[a-z0-9][a-z0-9._-]*$/.test(model) || !object(value)
         || !Number.isSafeInteger(value.short_context_limit) || value.short_context_limit <= 0
         || !object(value.regional))
@@ -264,8 +264,14 @@ export function parseCodexPricing(raw) {
   return resolveRuntimeAliases({ ...DEFAULT_CODEX_PRICING, ...additions }, additions);
 }
 
+// Commercial geography profiles share the regional tier; GovCloud stays unsupported.
+export const CODEX_ROUTING_PATTERN = "^(us|eu|apac|jp|au|global)\\.";
+const CODEX_ROUTING_RE = new RegExp(CODEX_ROUTING_PATTERN);
 export function codexModel(model) {
-  return String(model || "").replace(/^(us|global)\./, "");
+  return String(model || "").replace(CODEX_ROUTING_RE, "");
+}
+export function codexModelSql(expression) {
+  return `replaceRegexpOne(${expression}, '${CODEX_ROUTING_PATTERN.replace(/\\/g, "\\\\")}', '')`;
 }
 
 function count(value) {
@@ -290,7 +296,7 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
   const knownBackend = ["bedrock-mantle", "bedrock-runtime"].includes(row.backend);
   const scope = rawModel.startsWith("global.") ? "global" : "regional";
   const validScope = !rawModel.startsWith("us-gov.")
-    && !(row.backend === "bedrock-mantle" && /^(us|global)\./.test(rawModel));
+    && !(row.backend === "bedrock-mantle" && CODEX_ROUTING_RE.test(rawModel));
   const entry = prices[codexModel(rawModel)]; // ADR-017 backend override, then base rate.
   const rates = entry?.backends?.[row.backend]?.[scope]?.[row.context_tier] ?? entry?.[scope]?.[row.context_tier];
   // ADR-017 Claude-table fallback; existing entry always wins.
