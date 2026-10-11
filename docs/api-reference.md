@@ -186,7 +186,7 @@ query failures still use the normal error path.
 
 | Path | Fields and grain |
 |---|---|
-| `/api/overview/kpi` | Per `group`: `sessions`, `users`, `commits`, `prs`, `total_tokens`, `input_tokens`, `output_tokens`, `lines_of_code`. Its row-existence user count is not a substitute for `active-users`. |
+| `/api/overview/kpi` | Per `group`: `sessions`, `users`, `commits`, `prs`, `total_tokens`, `input_tokens`, `output_tokens`, `lines_of_code`; observation flags `commits_observed`, `prs_observed`, `lines_of_code_observed`. Its row-existence user count is not a substitute for `active-users`. |
 | `/api/overview/active-users` | **Object**: `users`, `bedrock_users`, `enterprise_users`; distinct nonempty emails with session-counter rows in range. |
 | `/api/overview/tokens-timeseries` | **B**, per `t, group`: `tokens`, `input_tokens`, `output_tokens`. |
 | `/api/overview/cache-efficiency` | Per `group`: `cache_read`, `input_side`, `cache_read_ratio`, `uncached_input`, `cache_write`, `output_tokens`. Input side includes uncached input, cache read and cache creation. |
@@ -294,8 +294,11 @@ KPI rows also expose `commits_observed`, `prs_observed`, and `lines_of_code_obse
 Active-time rows expose separate user/CLI observation flags. These require in-window
 samples with matching metric/type identities; lookback-only counters do not establish zero.
 Above four hours, the first hour uses raw evidence and later hours use rollup presence.
+Live ends retain the trailing partial hour, whose samples can extend beyond the requested
+end; historical ends use the usual alignment. These flags inherit that approximation.
 The flags establish observation, not complete collection. Detail Productivity and Executive
 withhold aggregate outcome/time values if any returned channel lacks the relevant evidence.
+See [activity availability](decisions/ADR-018-activity-observation-availability.md).
 
 ### Cost
 

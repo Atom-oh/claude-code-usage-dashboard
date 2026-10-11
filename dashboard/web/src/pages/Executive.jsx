@@ -18,7 +18,7 @@ import { makeTickFmt, formatDuration } from "../fmt.js";
 import { GROUP_ORDER, modelColorFor } from "../colors.js";
 import { foldLeaderboardByUser, averageActivityScore, ACTIVITY_SCORE_HELP, APPROVAL_HELP } from "../score.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
-import { fromByModelDaily } from "../modelCostTrend.js";
+import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
 import { sumObservedMetric } from "../metricCoverage.js";
 
 const COST_BUCKETS = [{ value: "1", label: "시간별" }, { value: "24", label: "일간" }, { value: "168", label: "주간" }];
@@ -364,7 +364,7 @@ export default function Executive() {
                         colorOf={modelColorFor}
                         data={asSpendRows(costCompare.data || [])
                           .filter((r) => r.cost != null && r.prev_cost != null)
-                          .map((r) => ({ label: r.model, prev: r.prev_cost, cur: r.cost }))
+                          .map((r) => ({ label: modelLabel(r.model), prev: r.prev_cost, cur: r.cost }))
                           .sort((a, b) => Number(b.cur) - Number(a.cur))
                           .slice(0, 10)}
                       />

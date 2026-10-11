@@ -303,6 +303,14 @@ incomplete; this does not recover missing logs or treat absent usage as zero
 them; GovCloud remains unsupported). Entries require positive integer `short_context_limit`, `regional` and optional
 `global`, each with `short`/`long` rates: finite nonnegative USD/million `input`,
 `cacheWrite`, `cacheRead`, `output`. Invalid entries fail startup; config hides rates.
+Before upgrading from the earlier `us.`/`global.`-only normalization, rename any existing
+`eu.`/`apac.`/`jp.`/`au.` override keys to the base model id. Such keys previously worked
+as routing-specific entries and now fail startup. If base and prefixed keys coexist,
+choose the intended rate set explicitly; do not silently collapse different rates.
+Rollback restores the prior image and its matching configuration together.
+All commercial geography profiles use the one configured `regional` rate set. The
+estimate does not resolve a separate rate for each billing region; a regional override
+applies to every commercial geography.
 An entry may add an optional per-backend `backends` rate override (`PRICING_JSON` too), and
 an Anthropic model with no Codex-table entry falls back to the Claude price table
 (`price_source: "claude_table"`); an unusable Claude report (`/api/clients/overview` only)

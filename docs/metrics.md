@@ -190,6 +190,9 @@ without its flag does not establish measured zero. Detail Productivity and Execu
 withhold aggregate outcomes and time units if any returned channel has no in-window
 evidence for that metric/type. Raw samples establish first-hour evidence; later hours
 use the rollup for windows above four hours. Observation does not prove complete capture.
+Live trailing hours inherit the existing partial-hour approximation and can include
+samples after the requested end. [ADR-018](decisions/ADR-018-activity-observation-availability.md)
+owns this availability policy and its population limits.
 
 Model-less cost counters retain `model=""` in model, user/model, comparison and trend
 results. Their usable reports remain spend; computed pricing stays unavailable. Cost

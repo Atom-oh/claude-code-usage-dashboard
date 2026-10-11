@@ -131,6 +131,15 @@ test("Cost labels retained model-less reports in the model table", async () => {
   await screen.findByRole("row", { name: /모델 미상/ });
 });
 
+test("Executive identifies model-less current and previous spend in its comparison", async () => {
+  mount("/exec", [spend], false, [], [user], {
+    "/api/cost/by-model-compare": [{ model: "", reported_cost: 2, prev_reported_cost: 1,
+      input_tokens: 10, prev_input_tokens: 5 }],
+  });
+  const label = await screen.findByText("(모델 미상)", { exact: true });
+  expect(label.closest("li").getAttribute("title")).toContain("(모델 미상)");
+});
+
 test("Users family averages include reported spend independently of pricing coverage", async () => {
   const { container } = mount("/users", [{ ...spend, cost: null, unpriced: true, reported_cost: 23 }]);
   await waitFor(() => expect(container.textContent).toContain("사용자 1명 · 총 비용 $23"));

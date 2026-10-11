@@ -16,6 +16,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 - Match commercial geography model prefixes consistently in Codex shared/detail pricing,
   including Haiku 5.5's request context tiers. GovCloud remains unsupported.
+  Existing geography-prefixed pricing override keys must be renamed before rollout;
+  see the [upgrade notes](docs/runbooks/codex-telemetry.md#dashboard-cost-and-query-contract).
 - Retain model-less Claude cost reports in model, user/model, trend and comparison results.
 - Expose per-metric observation evidence for outcome counters and user/CLI active time;
   detail cards preserve unavailable values and measured zero separately.
