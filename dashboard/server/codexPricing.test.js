@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { priceCodexUsage, parseCodexPricing } from "./codexPricing.js";
+import { priceCodexUsage, parseCodexPricing, DEFAULT_CODEX_PRICING, RUNTIME_ID_ALIASES } from "./codexPricing.js";
 
 const usage = { backend: "bedrock-mantle", model: "openai.gpt-6-astra", context_tier: "short",
   input_tokens_total: 100, cache_read_tokens: 40, cache_write_tokens: 11,
@@ -120,6 +120,79 @@ test("open-weight models seen in live usage price at their In-Region list rate",
   for (const [model, expected] of [["deepseek.v3.2", 0.0001175], ["minimax.minimax-m2.5", 0.000066], ["moonshotai.kimi-k2.5", 0.00015]]) {
     const row = priceCodexUsage({ ...usage, backend: "bedrock-mantle", model, context_tier: "short" });
     assert.equal(row.cost_usd, expected, model);
+  }
+});
+
+test("GPT-5.4/5.5, Grok 4.3 and runtime-vs-mantle model ids price at their In-Region list rates", () => {
+  for (const [model, tier, expected] of [
+    ["openai.gpt-5.4", "short", 0.000671], ["openai.gpt-5.4", "long", 0.0010945],
+    ["xai.grok-4.3", "short", 0.000158],
+    ["moonshot.kimi-k2-thinking", "short", 0.000135], ["moonshotai.kimi-k2-thinking", "short", 0.000135],
+    ["qwen.qwen3-32b-v1:0", "short", 0.000033], ["qwen.qwen3-32b", "short", 0.000033],
+  ]) {
+    const row = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model, context_tier: tier });
+    assert.equal(row.cost_usd, expected, `${model}/${tier}`);
+    assert.equal(row.unpriced, false);
+  }
+});
+
+test("a CODEX_PRICING_JSON override of a canonical id is read through every alias id", () => {
+  const rate = { input: 2, cacheWrite: 3, cacheRead: 1, output: 4 };
+  const entry = { short_context_limit: 1000, regional: { short: rate, long: rate } };
+  for (const [alias, id] of Object.entries(RUNTIME_ID_ALIASES)) {
+    const prices = parseCodexPricing(JSON.stringify({ [id]: entry }));
+    assert.equal(prices[alias], prices[id], alias);
+    for (const backend of ["bedrock-runtime", "bedrock-mantle"]) {
+      assert.equal(priceCodexUsage({ ...usage, backend, model: alias, context_tier: "short" }, prices).cost_usd, 0.000291, `${backend}/${alias}`);
+      assert.equal(priceCodexUsage({ ...usage, backend, model: id, context_tier: "short" }, prices).cost_usd, 0.000291, `${backend}/${id}`);
+    }
+  }
+  // Runtime ids containing ':' fail the key pattern, so the canonical id is their only override path.
+  for (const alias of ["openai.gpt-oss-120b-1:0", "openai.gpt-oss-20b-1:0", "qwen.qwen3-32b-v1:0", "qwen.qwen3-coder-30b-a3b-v1:0"])
+    assert.throws(() => parseCodexPricing(JSON.stringify({ [alias]: entry })), /Invalid Codex model pricing/, alias);
+});
+
+test("a direct override of a pattern-legal alias id wins over the canonical entry", () => {
+  const base = { input: 2, cacheWrite: 3, cacheRead: 1, output: 4 };
+  const own = { input: 20, cacheWrite: 30, cacheRead: 10, output: 40 };
+  const entry = (r) => ({ short_context_limit: 1000, regional: { short: r, long: r } });
+  const prices = parseCodexPricing(JSON.stringify({
+    "moonshot.kimi-k2-thinking": entry(own),
+    "qwen.qwen3-vl-235b-a22b": entry(own), "qwen.qwen3-vl-235b-a22b-instruct": entry(base),
+  }));
+  const cost = (model) => priceCodexUsage({ ...usage, backend: "bedrock-runtime", model, context_tier: "short" }, prices).cost_usd;
+  assert.equal(cost("moonshot.kimi-k2-thinking"), 0.00291);         // direct alias override
+  assert.equal(cost("moonshotai.kimi-k2-thinking"), 0.000135);      // canonical default untouched
+  assert.equal(cost("qwen.qwen3-vl-235b-a22b"), 0.00291);           // direct alias override beats the canonical override
+  assert.equal(cost("qwen.qwen3-vl-235b-a22b-instruct"), 0.000291); // canonical override
+  assert.equal(parseCodexPricing(undefined), DEFAULT_CODEX_PRICING); // no override: defaults, aliases included
+  for (const [alias, id] of Object.entries(RUNTIME_ID_ALIASES))
+    assert.equal(DEFAULT_CODEX_PRICING[alias], DEFAULT_CODEX_PRICING[id], alias);
+});
+
+test("GPT-5.5 prices both In-Region context tiers", () => {
+  for (const [tier, expected] of [["short", 0.001342], ["long", 0.002189]]) {
+    const row = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "openai.gpt-5.5", context_tier: tier });
+    assert.equal(row.cost_usd, expected, tier);
+    assert.equal(row.unpriced, false, tier);
+  }
+});
+
+test("every runtime-vs-mantle alias id prices like its canonical id on both backends", () => {
+  for (const [model, expected] of [
+    ["moonshotai.kimi-k2-thinking", 0.000135], ["moonshot.kimi-k2-thinking", 0.000135],
+    ["openai.gpt-oss-120b", 0.000033], ["openai.gpt-oss-120b-1:0", 0.000033],
+    ["openai.gpt-oss-20b", 0.000016], ["openai.gpt-oss-20b-1:0", 0.000016],
+    ["qwen.qwen3-32b", 0.000033], ["qwen.qwen3-32b-v1:0", 0.000033],
+    ["qwen.qwen3-coder-30b-a3b-instruct", 0.000033], ["qwen.qwen3-coder-30b-a3b-v1:0", 0.000033],
+    ["qwen.qwen3-vl-235b-a22b-instruct", 0.0001328], ["qwen.qwen3-vl-235b-a22b", 0.0001328],
+  ]) {
+    for (const backend of ["bedrock-runtime", "bedrock-mantle"]) {
+      const row = priceCodexUsage({ ...usage, backend, model, context_tier: "short" });
+      assert.equal(row.cost_usd, expected, `${backend}/${model}`);
+      assert.equal(row.unpriced, false, `${backend}/${model}`);
+      assert.equal(row.price_source, undefined, `${backend}/${model}`);
+    }
   }
 });
 
