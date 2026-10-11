@@ -11,7 +11,8 @@ import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { colorFor, GROUP_SEGMENT_ORDER } from "../colors.js";
-import { foldLeaderboardByUser } from "../score.js";
+import { foldLeaderboardByUser, ACTIVITY_SCORE_HELP, APPROVAL_HELP } from "../score.js";
+import ProductivitySignals from "./ProductivitySignals.jsx";
 import { decisionLabel, unclassifiedLabel } from "../labels.js";
 import { asSpendRows, sumSpend } from "../spend.js";
 
@@ -49,7 +50,7 @@ function CostGroupBar({ split, max }) {
 }
 
 const fmt = (n) => Number(n || 0).toLocaleString();
-const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
+const pct = (n) => n == null ? "—" : `${(Number(n) * 100).toFixed(0)}%`;
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
 
 // 2026-08-11 traces beta 패널(권한대기/TTFT) — 서버가 {unsupported, rows} 모양을 내려준다.
@@ -87,7 +88,7 @@ const INTERACTION_BREAKDOWN_COLUMNS = [
 const LANGUAGE_COLUMNS = [
   { key: "language", label: "언어", render: unclassifiedLabel, toText: unclassifiedLabel },
   { key: "edits", label: "편집 수", render: fmt },
-  { key: "accept_rate", label: "수락률", render: pct, toText: pct },
+  { key: "accept_rate", label: "권한 허용률", render: pct, toText: pct },
 ];
 
 function TracesBetaPanel({ resp, title, subtitle, help, columns, exportName }) {
@@ -167,7 +168,7 @@ export default function Productivity() {
     (acc, r) => ({ accept: acc.accept + (r.decision === "accept" ? Number(r.n) : 0), total: acc.total + Number(r.n) }),
     { accept: 0, total: 0 }
   );
-  const acceptRate = decisionTotals.total > 0 ? decisionTotals.accept / decisionTotals.total : 0;
+  const acceptRate = decisionTotals.total > 0 ? decisionTotals.accept / decisionTotals.total : null;
 
   const activeTotals = (activeSummary.data || []).reduce(
     (acc, r) => ({ user: acc.user + Number(r.user_seconds), cli: acc.cli + Number(r.cli_seconds) }),
@@ -201,23 +202,24 @@ export default function Productivity() {
     <div>
       <PageHeader
         title="Productivity"
-        subtitle="코드 산출물과 작업 시간으로 보는 채널별 생산성"
+        subtitle="채널별 관측 활동·실행 흐름 · 생산성이나 코드 품질의 검증된 측정값은 아닙니다"
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
+        <ProductivitySignals />
         {kpi.loading || decisions.loading ? (
           <Loading />
         ) : kpi.error || decisions.error ? (
           <ErrorBox error={kpi.error || decisions.error} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatTile label="생성된 PR" value={fmt(outcomeTotals.prs)} variant="accent" />
-            <StatTile label="추가 코드 라인" value={fmt(outcomeTotals.loc)} />
-            <StatTile label="제안 수락률" value={`${(acceptRate * 100).toFixed(0)}%`} />
+            <StatTile label="관측 PR 생성" value={kpi.data?.length ? fmt(outcomeTotals.prs) : "—"} variant="accent" />
+            <StatTile label="추가 코드 라인" value={kpi.data?.length ? fmt(outcomeTotals.loc) : "—"} />
+            <StatTile label="권한 허용률" value={pct(acceptRate)} help={APPROVAL_HELP} />
             <StatTile
-              label="수락된 코드 라인"
-              value={fmt(Math.round(outcomeTotals.loc * acceptRate))}
-              hint="추가된 코드 라인에 제안 수락률을 적용한 추정치"
+              label="관측 권한 결정"
+              value={decisions.data?.length ? fmt(decisionTotals.total) : "—"}
+              hint="코드 라인별 수락 여부는 수집하지 않습니다"
             />
           </div>
         )}
@@ -228,9 +230,9 @@ export default function Productivity() {
           <ErrorBox error={leaderboard.error} />
         ) : (
           <HBarList
-            title="생산성 점수 상위 10위"
-            subtitle="사용자별 생산성 점수, 100점 만점"
-            help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다. 두 채널을 모두 사용한 사용자는 두 채널의 활동을 합산해 한 번만 표시하고, 이름 뒤에 사용한 채널을 붙입니다."
+            title="활동 지수 상위 10위"
+            subtitle="임의 가중치 기반 참고 지수 · 개인 성과 순위가 아닙니다"
+            help={ACTIVITY_SCORE_HELP}
             data={top10ByScore.map((r) => ({ ...r, score: Number(r.productivity_score) }))}
             labelKey="label"
             valueKey="score"
@@ -243,12 +245,12 @@ export default function Productivity() {
           <ErrorBox error={byUserCost.error} />
         ) : (
           <DataTable
-            title="사용자별 생산성"
+            title="사용자별 관측 활동"
             subtitle="사용자 단위로 합산 · 비용은 Claude Code 보고값 · 막대 색은 채널"
-            help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다. 두 채널을 모두 사용한 사용자는 원시 지표를 합산한 뒤 점수를 다시 계산합니다. 비용 막대의 색은 채널, 길이는 가장 큰 사용자 대비 비율입니다."
+            help={`${ACTIVITY_SCORE_HELP} 여러 채널의 원시 활동을 합친 뒤 지수를 다시 계산합니다. 비용 막대의 색은 채널, 길이는 가장 큰 사용자 대비 비율입니다.`}
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
-              { key: "productivity_score", label: "생산성 점수", render: (v) => Number(v).toFixed(1), bar: true },
+              { key: "productivity_score", label: "활동 지수", render: (v) => Number(v).toFixed(1), bar: true },
               {
                 key: "cost",
                 label: "보고 비용",
@@ -269,7 +271,7 @@ export default function Productivity() {
               { key: "loc", label: "추가 코드 라인", render: fmt, bar: true },
               { key: "commits", label: "커밋", render: fmt },
               { key: "prs", label: "PR", render: fmt },
-              { key: "accept_rate", label: "수락률", render: pct, toText: pct },
+              { key: "accept_rate", label: "권한 허용률", render: (value, row) => pct(row.decisions > 0 ? value : null), toText: (value, row) => pct(row.decisions > 0 ? value : null) },
               { key: "sessions", label: "세션", render: fmt },
               { key: "active_days", label: "활성일", render: fmt },
             ]}
@@ -341,7 +343,7 @@ export default function Productivity() {
           <ErrorBox error={decisions.error} />
         ) : (
           <GroupBarChart
-            title="코드 편집 수락/거부"
+            title="코드 편집 권한 허용/거부"
             subtitle="채널별"
             right={
               <div className="flex gap-2">
@@ -406,10 +408,10 @@ export default function Productivity() {
             <StatTile label="개발자 활성 시간" value={`${userHours.toFixed(1)}시간`} hint="개발자가 직접 사용한 시간, 채널 합산" />
             <StatTile label="Claude Code 작업 시간" value={`${cliHours.toFixed(1)}시간`} hint="Claude Code가 작업한 시간, 채널 합산" />
             <StatTile
-              label="자동화 배율"
+              label="CLI / 사용자 활성 시간"
               value={activeTotals.user > 0 ? `×${(activeTotals.cli / activeTotals.user).toFixed(1)}` : "—"}
               variant="accent"
-              hint="개발자 사용 1시간당 Claude Code 작업 시간"
+              hint="실행 시간 비율 · 자율 작업 성공이나 절감 시간이 아닙니다"
             />
             <StatTile
               label="시간당 추가 코드 라인"
@@ -430,7 +432,7 @@ export default function Productivity() {
                 key={g}
                 title={`언어별 코드 편집 — ${g}`}
                 subtitle="편집 수 상위 10개 언어"
-                help="수락률은 전체 편집 중 수락된 편집의 비율입니다."
+                help={APPROVAL_HELP}
                 columns={LANGUAGE_COLUMNS}
                 rows={langRowsFor(g)}
                 exportName={`productivity_languages_${g}`}

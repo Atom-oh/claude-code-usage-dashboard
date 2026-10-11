@@ -10,6 +10,7 @@ import { useApi } from "../useApi.js";
 import { formatObserved } from "../clientUsage.js";
 import ClientPanels from "./ClientPanels.jsx";
 import CodexInsights from "./CodexInsights.jsx";
+import { OutcomeMetricsNotice } from "./ProductivitySignals.jsx";
 
 const INSIGHT_SECTIONS = {
   productivity: ["효율·Effort"], cost: ["효율·Effort"], usage: ["도구·승인"],
@@ -91,6 +92,7 @@ export default function Clients({ page = "overview" }) {
             Claude 전용 분석 열기
           </button>}
         </Card>}
+      {page === "productivity" && <OutcomeMetricsNotice />}
     </div>
   </div>;
 }

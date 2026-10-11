@@ -14,10 +14,11 @@ import { useApi } from "../useApi.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { maskEmail } from "../fmt.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
+import { ACTIVITY_SCORE_HELP } from "../score.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-const pct = (n) => `${(Number(n) * 100).toFixed(0)}%`;
+const pct = (n) => n == null ? "—" : `${(Number(n) * 100).toFixed(0)}%`;
 
 // bedrock/enterprise 대결 밴드 — 이 대시보드의 정체성(A/B 실험)을 Users 페이지 상단에도 드러낸다.
 // 검색창(q) 필터는 적용하지 않는다 — 그룹 전체의 인원/수락률 등 요약 지표라 이름 검색과 무관해야 함.
@@ -36,7 +37,7 @@ function GroupFaceOff({ rows }) {
       avgScore: grows.length ? grows.reduce((s, r) => s + Number(r.productivity_score || 0), 0) / grows.length : 0,
       sessions: grows.reduce((s, r) => s + Number(r.sessions || 0), 0),
       // 행별 accept_rate 단순 평균이 아니라 accepted/decisions 가중 평균 — 결정 수가 다른 유저를 동일 비중으로 섞지 않는다.
-      acceptRate: decisions > 0 ? accepted / decisions : 0,
+      acceptRate: decisions > 0 ? accepted / decisions : null,
     };
   });
 
@@ -64,7 +65,7 @@ function GroupFaceOff({ rows }) {
                     <div className="tabular text-[16px] font-semibold text-ink-800">{fmt(s.count)}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-ink-500">평균 생산성 점수</div>
+                    <div className="text-[11px] text-ink-500">평균 활동 지수</div>
                     <div className="tabular text-[16px] font-semibold text-ink-800">{s.avgScore.toFixed(1)}</div>
                   </div>
                   <div>
@@ -72,7 +73,7 @@ function GroupFaceOff({ rows }) {
                     <div className="tabular text-[16px] font-semibold text-ink-800">{fmt(s.sessions)}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-ink-500">수락률</div>
+                    <div className="text-[11px] text-ink-500">권한 허용률</div>
                     <div className="tabular text-[16px] font-semibold text-ink-800">{pct(s.acceptRate)}</div>
                   </div>
                 </div>
@@ -144,7 +145,7 @@ export default function Users() {
     <div>
       <PageHeader
         title="Users"
-        subtitle="사용자별 생산성 점수와 도구·Skill 사용 현황"
+        subtitle="사용자별 관측 활동과 도구·Skill 사용 현황 · 개인 성과 평가가 아닙니다"
         right={
           <div className="flex items-center gap-2">
             <RangePicker />
@@ -171,7 +172,8 @@ export default function Users() {
                 return data.length ? (
                   <HBarList
                     key={g}
-                    title={`생산성 점수 상위 10명 — ${g}`}
+                    title={`활동 지수 상위 10명 — ${g}`}
+                    help={ACTIVITY_SCORE_HELP}
                     subtitle="아래 리더보드에서 사용자를 클릭하면 상세 활동이 열립니다"
                     data={data.map((d) => ({ ...d, user: maskEmail(d.user) }))}
                     labelKey="user"
@@ -179,7 +181,7 @@ export default function Users() {
                     color={colorFor(g)}
                   />
                 ) : (
-                  <Card key={g} title={`생산성 점수 상위 10명 — ${g}`}>
+                  <Card key={g} title={`활동 지수 상위 10명 — ${g}`}>
                     <EmptyState />
                   </Card>
                 );
@@ -224,13 +226,13 @@ export default function Users() {
             : shownGroups(leaderboard.data).map((g) => (
                 <DataTable
                   key={g}
-                  title={`사용자별 생산성 리더보드 — ${g}`}
+                  title={`사용자별 관측 활동 — ${g}`}
                   onRowClick={(r) => setSelected({ user: r.user, group: r.group })}
-                  subtitle="코드 라인, 수락률, 커밋, 활성일, 세션을 종합한 점수"
-                  help="선택한 기간의 하루 평균 추가 코드 라인, 수락률, 하루 평균 커밋 수, 활성일 비율, 하루 평균 세션 수를 각각 30%, 25%, 20%, 15%, 10% 비중으로 합산한 100점 만점 점수입니다. 하루 평균 항목은 코드 라인 300, 커밋 3회, 세션 4회를 기준치로 삼아 그 이상은 만점으로 계산합니다. 수락률은 코드 편집 제안 중 수락된 비율, 활성일 비율은 선택한 기간 중 활동한 날의 비율입니다."
+                  subtitle="임의 가중치 기반 참고 지수 · 생산성이나 코드 품질을 측정하지 않습니다"
+                  help={ACTIVITY_SCORE_HELP}
                   columns={[
                     { key: "user", label: "사용자", render: maskEmail },
-                    { key: "productivity_score", label: "생산성 점수", render: (v) => v.toFixed(1) },
+                    { key: "productivity_score", label: "활동 지수", render: (v) => v.toFixed(1) },
                     { key: "sessions", label: "세션", render: fmt },
                     { key: "input_tokens", label: "입력 토큰", render: fmt },
                     { key: "output_tokens", label: "출력 토큰", render: fmt },
@@ -238,7 +240,7 @@ export default function Users() {
                     { key: "loc", label: "추가 코드 라인", render: fmt },
                     { key: "prs", label: "PR", render: fmt },
                     { key: "commits", label: "커밋", render: fmt },
-                    { key: "accept_rate", label: "수락률", render: pct, toText: pct },
+                    { key: "accept_rate", label: "권한 허용률", render: (value, row) => row.decisions > 0 ? pct(value) : "—", toText: (value, row) => row.decisions > 0 ? pct(value) : "—" },
                     { key: "active_days", label: "활성일", render: fmt },
                     { key: "top_tool", label: "주요 도구" },
                     { key: "top_skill", label: "주요 Skill" },

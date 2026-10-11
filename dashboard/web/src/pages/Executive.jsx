@@ -16,7 +16,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { makeTickFmt, formatDuration } from "../fmt.js";
 import { GROUP_ORDER, modelColorFor } from "../colors.js";
-import { foldLeaderboardByUser } from "../score.js";
+import { foldLeaderboardByUser, ACTIVITY_SCORE_HELP, APPROVAL_HELP } from "../score.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily } from "../modelCostTrend.js";
 
@@ -151,9 +151,9 @@ export default function Executive() {
     { label: "기간 비용", bedrock: abCost.bedrock, enterprise: abCost.enterprise, format: "usd", betterIs: null },
     { label: "개발자당 비용", bedrock: abCostPerDev("bedrock"), enterprise: abCostPerDev("enterprise"), format: "usd", betterIs: "low" },
     { label: "추가 코드 라인", bedrock: abLoc.bedrock, enterprise: abLoc.enterprise, format: "number", betterIs: "high" },
-    { label: "제안 수락률", bedrock: abAcceptRate("bedrock"), enterprise: abAcceptRate("enterprise"), format: "pct", betterIs: "high" },
+    { label: "권한 허용률", bedrock: abAcceptRate("bedrock"), enterprise: abAcceptRate("enterprise"), format: "pct", betterIs: null },
     { label: "개발자 활성 시간", bedrock: abUserSec.bedrock != null ? abUserSec.bedrock / 3600 : null, enterprise: abUserSec.enterprise != null ? abUserSec.enterprise / 3600 : null, format: "hours", betterIs: null },
-    { label: "자동화 배율", bedrock: abAutoRatio("bedrock"), enterprise: abAutoRatio("enterprise"), format: "number", betterIs: "high" },
+    { label: "CLI / 사용자 활성 시간", bedrock: abAutoRatio("bedrock"), enterprise: abAutoRatio("enterprise"), format: "number", betterIs: null },
   ];
 
   // single 모드에선 맞세울 상대가 없다 — 데이터가 있는 그룹의 값을 그대로 하나만 보여준다.
@@ -170,15 +170,15 @@ export default function Executive() {
     "기간 비용": SPEND_HELP,
     "개발자당 비용": "채널별 비용을 해당 채널의 활성 개발자 수로 나눈 값입니다.",
     "추가 코드 라인": "선택한 기간에 추가된 코드 라인 수의 합계입니다.",
-    "제안 수락률": "Claude Code가 제안한 코드 편집 중 수락된 비율입니다.",
+    "권한 허용률": APPROVAL_HELP,
     "개발자 활성 시간": "개발자가 Claude Code와 직접 상호작용한 시간입니다. Claude Code가 작업을 수행한 시간은 포함하지 않습니다.",
-    "자동화 배율": "Claude Code가 작업을 수행한 시간을 개발자 활성 시간으로 나눈 값입니다.",
+    "CLI / 사용자 활성 시간": "CLI 활성 시간을 사용자 활성 시간으로 나눈 값입니다. 자율 작업 성공이나 절감 시간을 뜻하지 않습니다.",
   };
 
   const headline =
     `선택한 ${formatDuration(daysInRange)} 동안 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
-    `코드 ${fmt(t.loc)}라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)을 작성했으며 제안 수락률은 ${(acceptRate * 100).toFixed(0)}%입니다. ` +
-    `기간 비용은 ${usd(cost)}이며, 현재 추세가 이어지면 30일 기준 ${usd(projection30d)}로 예상됩니다. 조직 생산성 점수는 ${Math.round(orgScore)}/100입니다.`;
+    `코드 ${fmt(t.loc)}라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)이 관측되었으며 권한 허용률은 ${d.total > 0 ? `${(acceptRate * 100).toFixed(0)}%` : "미확인"}입니다. ` +
+    `기간 비용은 ${usd(cost)}이며, 현재 추세가 이어지면 30일 기준 ${usd(projection30d)}로 예상됩니다. 평균 활동 지수는 ${Math.round(orgScore)}/100이며 검증된 생산성 점수가 아닙니다.`;
 
   // 섹션별로 게이트한다 — 페이지 전체를 가리면 일부만 비어 있을 때도 아무것도 안 보이고,
   // 반대로 게이트가 없으면 신규 설치가 "$0", "0%", "활성 개발자 0"을 실제 측정값처럼 보여준다.
@@ -294,20 +294,20 @@ export default function Executive() {
                     help="선택한 기간에 추가된 코드 라인 수의 합계입니다."
                   />
                   <StatTile
-                    label="제안 수락률"
-                    value={`${(acceptRate * 100).toFixed(0)}%`}
-                    help="Claude Code가 제안한 코드 편집 중 수락된 비율입니다."
+                    label="권한 허용률"
+                    value={d.total > 0 ? `${(acceptRate * 100).toFixed(0)}%` : "—"}
+                    help={APPROVAL_HELP}
                   />
                   <StatTile
                     label="개발자당 일평균 세션"
                     value={sessionsPerDevDay.toFixed(1)}
                     help="세션 수를 활성 개발자 수와 기간의 일수로 나눈 값입니다."
                   />
-                  <div className="relative overflow-hidden bg-card border border-ink-100 rounded-lg shadow-card p-4 flex items-center gap-4">
+                  <div title={ACTIVITY_SCORE_HELP} className="relative overflow-hidden bg-card border border-ink-100 rounded-lg shadow-card p-4 flex items-center gap-4">
                     <ScoreGauge score={orgScore} />
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400">생산성 점수</div>
-                      <div className="text-[11px] text-ink-400 mt-1">사용자별 점수 평균 (0–100)</div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400">활동 지수</div>
+                      <div className="text-[11px] text-ink-400 mt-1">임의 가중치 · 사용자별 지수 평균 (0–100)</div>
                     </div>
                   </div>
                 </div>

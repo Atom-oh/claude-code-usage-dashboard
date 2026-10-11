@@ -29,6 +29,13 @@ Shared views use backend filters; detail uses group/project and drops backend. L
 Claude detail clears `view` and its filters. Both URL-state providers preserve `view`.
 No Codex enterprise comparison or unsupported productivity metrics are added.
 
+Claude detail's Productivity page adds independent activity-density, permission-occupancy
+and tool-outcome tables with coverage and unavailable states. The legacy score is labelled
+an activity index across Productivity, Users, Executive and the user drawer; its API field
+and formula stay unchanged. Permission approvals no longer imply accepted code, and the
+estimated accepted-lines card is removed. Shared Productivity explains the external data
+needed for task outcome measures. See [definitions and coverage](../metrics.md#activity-and-flow-coverage).
+
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
 chat. [main.jsx](../../dashboard/web/src/main.jsx) renders
 [ConfigBootstrap.jsx](../../dashboard/web/src/ConfigBootstrap.jsx) before mounting the router

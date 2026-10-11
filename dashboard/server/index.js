@@ -449,6 +449,9 @@ route("/api/integrity/version-cohort-cost", (from, to, _q, filters) => q.version
 
 // 2026-09-01 추가 패널 — 전부 오늘 실데이터가 있는 소스(metrics/logs)라 기본 warm 대상.
 route("/api/productivity/active-time-summary", (from, to, _q, filters) => q.activeTimeSummary(from, to, filters));
+route("/api/productivity/activity-density", (from, to, _q, filters) => q.activityDensity(from, to, filters), { warm: false });
+route("/api/productivity/tool-outcomes", (from, to, _q, filters) => q.toolOutcomes(from, to, filters), { warm: false });
+route("/api/productivity/permission-occupancy", (from, to, _q, filters) => q.permissionWaitOccupancy(from, to, filters), { warm: false });
 route("/api/cost/effort-mix", (from, to, _q, filters) => q.effortMix(from, to, filters));
 route("/api/productivity/languages", (from, to, _q, filters) => q.languageBreakdown(from, to, filters));
 route("/api/reliability/api-latency", (from, to, _q, filters) => q.apiLatency(from, to, filters));
