@@ -136,6 +136,10 @@ export const DEFAULT_CODEX_PRICING = {
   "google.gemma-3-27b-it": { short_context_limit: 128000, regional: flat({ input: 0.23, cacheWrite: 0.23, cacheRead: 0.23, output: 0.38 }) },
   "google.gemma-3-12b-it": { short_context_limit: 128000, regional: flat({ input: 0.09, cacheWrite: 0.09, cacheRead: 0.09, output: 0.29 }) },
   "google.gemma-3-4b-it": { short_context_limit: 128000, regional: flat({ input: 0.04, cacheWrite: 0.04, cacheRead: 0.04, output: 0.08 }) },
+  // Same source, refreshed 2026-10-11: models seen in live Claude Code/Codex usage. In-Region only.
+  "deepseek.v3.2": { short_context_limit: 164000, regional: flat({ input: 0.62, cacheWrite: 0.62, cacheRead: 0.62, output: 1.85 }) },
+  "minimax.minimax-m2.5": { short_context_limit: 196000, regional: flat({ input: 0.3, cacheWrite: 0.3, cacheRead: 0.3, output: 1.2 }) },
+  "moonshotai.kimi-k2.5": { short_context_limit: 256000, regional: flat({ input: 0.6, cacheWrite: 0.6, cacheRead: 0.6, output: 3 }) },
   // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-luna.html
   // Verified 2026-09-17. The tier applies to each response's input context.
   "openai.gpt-5.6-luna": {

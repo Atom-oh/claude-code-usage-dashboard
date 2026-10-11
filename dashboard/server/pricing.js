@@ -23,8 +23,8 @@ const BASE_PRICING = {
   "claude-sonnet-4-5": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   "claude-sonnet-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
-  // sonnet-5-5: sonnet-5와 동일 단가(2026-10-02 pricing 페이지 확인)
-  "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+  // sonnet-5-5: $2/$10, cache read $0.10 (0.05x 예외, 2026-10-11 pricing 페이지 확인 — 10-02의 $0.20에서 변경)
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.1 },
   "claude-opus-4-5": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-4-6": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-4-7": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
@@ -33,6 +33,10 @@ const BASE_PRICING = {
   // opus-5-5: $4/$20, cache read $0.20 (0.05x 예외, 2026-09-23 pricing 페이지 확인)
   "claude-opus-5-5": { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
   "claude-haiku-4-5": { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
+  // haiku-5-5: 프롬프트 100K 이하 단가(2026-10-11 pricing 페이지). 100K 초과 요청은 요청 단위로
+  // $0.50/$2.50(cache write $0.625, read $0.05)이지만 이 표는 토큰 합계에 적용돼 요청별 구간을 알 수
+  // 없다 — 계산 비용(진단·폴백)은 장문 요청을 과소추정한다. 주 지표인 보고 비용은 요청 단위다.
+  "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
   "claude-haiku-3-5": { input: 0.8, output: 4, cacheWrite: 1, cacheRead: 0.08 },
   "claude-3-5-haiku": { input: 0.8, output: 4, cacheWrite: 1, cacheRead: 0.08 },
   "claude-fable-5": { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 },

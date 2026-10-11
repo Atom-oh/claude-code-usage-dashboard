@@ -105,6 +105,13 @@ test("a regional-only model has no global rate and stays unpriced under a global
   assert.equal(row.unpriced_reason, "scope");
 });
 
+test("open-weight models seen in live usage price at their In-Region list rate", () => {
+  for (const [model, expected] of [["deepseek.v3.2", 0.0001175], ["minimax.minimax-m2.5", 0.000066], ["moonshotai.kimi-k2.5", 0.00015]]) {
+    const row = priceCodexUsage({ ...usage, backend: "bedrock-mantle", model, context_tier: "short" });
+    assert.equal(row.cost_usd, expected, model);
+  }
+});
+
 test("unknown rates or backend, missing cache data, and invalid subsets are unavailable", () => {
   for (const patch of [
     { model: "openai.unknown" }, { backend: "unknown" }, { cache_write_tokens: undefined },

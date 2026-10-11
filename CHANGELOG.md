@@ -12,6 +12,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-11 price table sync)
+
+- Claude table: `claude-haiku-5-5` at its <=100K-prompt rates (computed diagnostics cannot apply
+  the per-request >100K tier); `claude-sonnet-5-5` cache read $0.20 -> $0.10 (now 0.05x).
+- Codex table: `deepseek.v3.2`, `minimax.minimax-m2.5` and `moonshotai.kimi-k2.5` In-Region rates,
+  from the model-comparision price data (2026-10-11).
+
 ### Changed (2026-10-08 Codex price table for open-weight models)
 
 - Add AWS list rates to `codexPricing.js` for Kimi K3, Grok 4.7, Qwen3 Coder Next, Qwen3 Next 80B A3B,
