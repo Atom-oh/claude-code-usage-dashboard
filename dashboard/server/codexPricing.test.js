@@ -86,6 +86,25 @@ test("GLM 5.3 prices US and global CRIS at their published flat rates", () => {
   }
 });
 
+test("non-OpenAI models routed through Codex price at their regional and global list rates", () => {
+  for (const [model, expected] of [
+    ["us.moonshotai.kimi-k3", 0.000715275], ["global.moonshotai.kimi-k3", 0.00065025],
+    ["us.xai.grok-4.7", 0.000352], ["global.xai.grok-4.7", 0.00032],
+    ["qwen.qwen3-coder-next", 0.000086],
+  ]) {
+    const row = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model, context_tier: "short" });
+    assert.equal(row.cost_usd, expected, model);
+    assert.equal(row.unpriced, false);
+    assert.equal(row.price_source, undefined);
+  }
+});
+
+test("a regional-only model has no global rate and stays unpriced under a global. prefix", () => {
+  const row = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "global.qwen.qwen3-coder-next", context_tier: "short" });
+  assert.equal(row.cost_usd, null);
+  assert.equal(row.unpriced_reason, "scope");
+});
+
 test("unknown rates or backend, missing cache data, and invalid subsets are unavailable", () => {
   for (const patch of [
     { model: "openai.unknown" }, { backend: "unknown" }, { cache_write_tokens: undefined },
