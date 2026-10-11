@@ -19,7 +19,7 @@ import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGr
 import { useGroupsShown } from "../useGroupsShown.js";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
-import { fromByModelDaily } from "../modelCostTrend.js";
+import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null || !Number.isFinite(Number(n)) ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -129,7 +129,7 @@ function UserGroupModelBars({ groups, metric, max }) {
         <BarTip
           key={group}
           className="flex items-center gap-1.5"
-          label={`${unclassifiedLabel(group)} ${fmtVal(line.total)} — ${line.segs.map((x) => `${x.model} ${fmtVal(x.value)}`).join(" · ")}`}
+          label={`${unclassifiedLabel(group)} ${fmtVal(line.total)} — ${line.segs.map((x) => `${modelLabel(x.model)} ${fmtVal(x.value)}`).join(" · ")}`}
           tip={
             <span className="flex flex-col gap-0.5">
               <span className="flex items-center gap-1.5 font-semibold">
@@ -140,7 +140,7 @@ function UserGroupModelBars({ groups, metric, max }) {
               {line.segs.map((x) => (
                 <span key={x.model} className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: modelColorFor(x.model) ?? "var(--ink-300)" }} />
-                  {x.model}
+                  {modelLabel(x.model)}
                   <span className="tabular ml-auto pl-4">{fmtVal(x.value)}</span>
                 </span>
               ))}
@@ -271,12 +271,14 @@ export default function Cost() {
   // topUsers(지출 내림차순)를 순회하며 그 유저의 행만 그 순서로 모아야 스택 바도 지출 순으로 나온다.
   const topUserModelRows = topUsers.flatMap((u) =>
     mergedUserModel.filter((r) => r.user === u.user && r.cost !== null)
+      .map((row) => ({ ...row, model_label: modelLabel(row.model) }))
   );
 
   // bedrock/enterprise 도넛은 그룹=색상 계열 규칙을 따른다(사용자 지시) — 같은 모델이라도
   // bedrock 카드에선 블루, enterprise 카드에선 틸로 다르게 보인다(groupModelColorFor). 모델
   // 정체성은 그 계열 안의 명도로 표현되지, 색조(hue)로 표현되지 않는다 — 그룹이 우선.
-  const modelRowsFor = (group) => foldModelRows((byModel.data || []).filter((r) => r.group === group));
+  const modelRowsFor = (group) => foldModelRows((byModel.data || []).filter((r) => r.group === group))
+    .map((row) => ({ ...row, model_label: modelLabel(row.model) }));
 
   // 탭으로 그룹을 고르던 방식 대신 bedrock/enterprise 카드를 좌우로 분리 — 각 카드는 그 그룹만의 합계.
   function tokenTypeRowsFor(group) {
@@ -482,7 +484,7 @@ export default function Cost() {
               <Card key={g} title={`모델별 비용 비중 — ${g}`} help={SPEND_HELP}>
                 {sumSpend(modelRowsFor(g)) === null ? <p className="text-sm text-ink-400">{unavailable}</p> : <DonutBody
                   data={modelRowsFor(g)}
-                  nameKey="model"
+                  nameKey="model_label"
                   valueKey="cost"
                   valuePrefix="$"
                   valueFormatter={usd}
@@ -547,7 +549,7 @@ export default function Cost() {
           subtitle="비용 기준 정렬"
           help={`${SPEND_HELP} 이전 기간 대비는 같은 길이의 직전 기간 보고 비용과 비교합니다. ${comparisonHelp}`}
           columns={[
-            { key: "model", label: "모델" },
+            { key: "model", label: "모델", render: modelLabel, toText: modelLabel },
             { key: "cost", label: "비용", render: usd },
             ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
             { key: "share", label: "전체 대비", render: (v) => v === null ? "확인 필요" : `${v.toFixed(1)}%`, toText: (v) => v === null ? "" : `${v.toFixed(1)}%` },
@@ -607,7 +609,7 @@ export default function Cost() {
             }
             rows={topUserModelRows}
             xKey="user"
-            seriesKey="model"
+            seriesKey="model_label"
             valueKey="cost"
             colorOf={modelColorFor}
             seriesSort={byModelLegendOrder}

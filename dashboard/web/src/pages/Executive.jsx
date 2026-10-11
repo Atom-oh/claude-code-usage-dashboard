@@ -16,27 +16,28 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { makeTickFmt, formatDuration } from "../fmt.js";
 import { GROUP_ORDER, modelColorFor } from "../colors.js";
-import { foldLeaderboardByUser, ACTIVITY_SCORE_HELP, APPROVAL_HELP } from "../score.js";
+import { foldLeaderboardByUser, averageActivityScore, ACTIVITY_SCORE_HELP, APPROVAL_HELP } from "../score.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily } from "../modelCostTrend.js";
+import { sumObservedMetric } from "../metricCoverage.js";
 
 const COST_BUCKETS = [{ value: "1", label: "시간별" }, { value: "24", label: "일간" }, { value: "168", label: "주간" }];
 
-const fmt = (n) => Number(n || 0).toLocaleString();
+const fmt = (n) => n == null ? "—" : Number(n).toLocaleString();
 const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 // 생산성 점수 링 게이지 — SVG 원 2개, 점수에 따라 색상 램프.
 function ScoreGauge({ score }) {
   const r = 26;
   const c = 2 * Math.PI * r;
-  const color = score >= 70 ? "var(--positive)" : score >= 40 ? "var(--brand-500)" : "var(--negative)";
+  const color = score == null ? "var(--ink-300)" : score >= 70 ? "var(--positive)" : score >= 40 ? "var(--brand-500)" : "var(--negative)";
   return (
     <div className="relative h-16 w-16">
       <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
         <circle cx="32" cy="32" r={r} fill="none" stroke="var(--ink-100)" strokeWidth="6" />
-        <circle cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${(score / 100) * c} ${c}`} />
+        <circle cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${((score ?? 0) / 100) * c} ${c}`} />
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center tabular text-[18px] font-semibold text-ink-800">{Math.round(score)}</div>
+      <div className="absolute inset-0 flex items-center justify-center tabular text-[18px] font-semibold text-ink-800">{score == null ? "—" : Math.round(score)}</div>
     </div>
   );
 }
@@ -82,6 +83,9 @@ export default function Executive() {
     }),
     { sessions: 0, commits: 0, prs: 0, loc: 0 }
   );
+  t.commits = sumObservedMetric(kpi.data, "commits");
+  t.prs = sumObservedMetric(kpi.data, "prs");
+  t.loc = sumObservedMetric(kpi.data, "lines_of_code");
   // 활성 개발자 수는 ungrouped uniq — 세션 그레인 판별상 그룹별 users 합산은 중복 카운트된다.
   const users = activeUsers.data?.users ?? 0;
   const d = (decisions.data || []).reduce(
@@ -115,8 +119,7 @@ export default function Executive() {
   // 왜 scoreDays 하한이 1일인지는 그 파일의 주석 참고). Productivity의 사용자별 테이블과 같은
   // 폴드를 공유해야 두 화면의 점수가 어긋나지 않는다.
   const scoreDays = Math.max(1, (to - from) / 86400000);
-  const perUserScores = foldLeaderboardByUser(leaderboard.data, scoreDays).map((u) => u.productivity_score);
-  const orgScore = perUserScores.length ? perUserScores.reduce((a, s) => a + s, 0) / perUserScores.length : 0;
+  const orgScore = averageActivityScore(foldLeaderboardByUser(leaderboard.data, scoreDays));
 
   const avgDau = (adoptionTs.data || []).length
     ? adoptionTs.data.reduce((a, r) => a + r.dau, 0) / adoptionTs.data.length
@@ -134,18 +137,24 @@ export default function Executive() {
   };
   const abDevs = { bedrock: Number(activeUsers.data?.bedrock_users ?? 0), enterprise: Number(activeUsers.data?.enterprise_users ?? 0) };
   const abCost = pickAB(spendSummary, "cost");
-  const abLoc = pickAB(kpi.data, "lines_of_code");
+  const abLoc = pickAB(kpi.data?.map((row) => ({
+    ...row, lines_of_code: sumObservedMetric([row], "lines_of_code"),
+  })), "lines_of_code");
   // active_time.total의 TokenType은 'user'(사람 상호작용 시간)/'cli'(Claude 구동 시간) 분리
   // (실측 7d: cli 123h vs user 2.8h) — "개발자 활성 시간"은 user 쪽, 자동화 배율은 cli÷user.
-  const abUserSec = pickAB(activeTime.data, "user_seconds");
-  const abCliSec = pickAB(activeTime.data, "cli_seconds");
+  const abUserSec = pickAB(activeTime.data?.map((row) => ({
+    ...row, user_seconds: sumObservedMetric([row], "user_seconds"),
+  })), "user_seconds");
+  const abCliSec = pickAB(activeTime.data?.map((row) => ({
+    ...row, cli_seconds: sumObservedMetric([row], "cli_seconds"),
+  })), "cli_seconds");
   const abAcceptRate = (grp) => {
     const g = (decisions.data || []).filter((r) => r.group === grp);
     const total = g.reduce((a, r) => a + Number(r.n), 0);
     return total > 0 ? g.reduce((a, r) => a + (r.decision === "accept" ? Number(r.n) : 0), 0) / total : null;
   };
   const abCostPerDev = (grp) => (abDevs[grp] > 0 && abCost[grp] != null ? abCost[grp] / abDevs[grp] : null);
-  const abAutoRatio = (grp) => (abUserSec[grp] > 0 ? abCliSec[grp] / abUserSec[grp] : null);
+  const abAutoRatio = (grp) => (abUserSec[grp] > 0 && abCliSec[grp] != null ? abCliSec[grp] / abUserSec[grp] : null);
   const scoreboardRows = [
     { label: "활성 개발자", bedrock: abDevs.bedrock, enterprise: abDevs.enterprise, format: "number", betterIs: "high" },
     { label: "기간 비용", bedrock: abCost.bedrock, enterprise: abCost.enterprise, format: "usd", betterIs: null },
@@ -178,7 +187,7 @@ export default function Executive() {
   const headline =
     `선택한 ${formatDuration(daysInRange)} 동안 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
     `코드 ${fmt(t.loc)}라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)이 관측되었으며 권한 허용률은 ${d.total > 0 ? `${(acceptRate * 100).toFixed(0)}%` : "미확인"}입니다. ` +
-    `기간 비용은 ${usd(cost)}이며, 현재 추세가 이어지면 30일 기준 ${usd(projection30d)}로 예상됩니다. 평균 활동 지수는 ${Math.round(orgScore)}/100이며 검증된 생산성 점수가 아닙니다.`;
+    `기간 비용은 ${usd(cost)}이며, 현재 추세가 이어지면 30일 기준 ${usd(projection30d)}로 예상됩니다. 평균 활동 지수는 ${orgScore == null ? "미확인" : `${Math.round(orgScore)}/100`}이며 검증된 생산성 점수가 아닙니다.`;
 
   // 섹션별로 게이트한다 — 페이지 전체를 가리면 일부만 비어 있을 때도 아무것도 안 보이고,
   // 반대로 게이트가 없으면 신규 설치가 "$0", "0%", "활성 개발자 0"을 실제 측정값처럼 보여준다.

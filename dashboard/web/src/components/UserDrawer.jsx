@@ -7,7 +7,7 @@ import { StatTile } from "./StatTile.jsx";
 import { DualLineChart, GroupBarChart } from "./GroupCharts.jsx";
 import { BarTip } from "./BarTip.jsx";
 import { makeTickFmt, maskEmail, parseUtc } from "../fmt.js";
-import { APPROVAL_HELP } from "../score.js";
+import { APPROVAL_HELP, formatActivityScore } from "../score.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
@@ -201,7 +201,7 @@ export function UserDrawer({ row, onClose }) {
             {/* 아래 차트들은 row.group(이 유저×그룹 행)으로만 필터 — 전역 model 필터는 여전히
                 미적용이라 model 필터가 켜진 상태에서 리더보드 행과 정확히 일치하진 않는다. */}
             <p className="text-[12px] text-ink-400 mt-0.5 inline-flex items-center gap-1">
-              {row.group} · 활동 지수 {Number(row.productivity_score).toFixed(1)}
+              {row.group} · 활동 지수 {formatActivityScore(row.productivity_score)}
               <Info
                 size={12}
                 className="shrink-0 text-ink-400"
@@ -243,7 +243,7 @@ export function UserDrawer({ row, onClose }) {
               ]}
             />
             <GroupBarChart
-              title="도구별 수락/거부"
+              title="도구별 권한 허용/거부"
               rows={decisionsByToolAgg}
               xKey="tool"
               valueKey="n"

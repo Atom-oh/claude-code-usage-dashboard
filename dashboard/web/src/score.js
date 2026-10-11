@@ -9,7 +9,14 @@ const COMMITS_PER_DAY_CAP = 3;
 const SESSIONS_PER_DAY_CAP = 4;
 
 export const APPROVAL_HELP = "코드 편집 권한 결정 중 허용된 비율입니다. 자동 허용을 포함하며, 사람이 코드를 검토하거나 품질을 인정한 비율이 아닙니다.";
-export const ACTIVITY_SCORE_HELP = "추가 코드 라인 30%, 권한 허용률 25%, 커밋 20%, 활성일 비율 15%, 세션 10%를 합산한 활동 지수입니다. 하루 코드 300라인·커밋 3회·세션 4회에서 각 항목을 상한 처리하며, 1일 미만 구간도 1일 기준으로 계산합니다. 가중치와 상한은 임의 기준으로, 검증된 생산성·코드 품질·개인 역량 점수가 아닙니다. 권한 허용에는 자동 허용도 포함됩니다.";
+export const ACTIVITY_SCORE_HELP = "추가 코드 라인 30%, 권한 허용률 25%, 커밋 20%, 활성일 비율 15%, 세션 10%를 합산한 활동 지수입니다. 하루 코드 300라인·커밋 3회·세션 4회에서 각 항목을 상한 처리하며, 1일 미만 구간도 1일 기준으로 계산합니다. 권한 결정이 없으면 지수는 미확인이며, 평균은 모든 대상 사용자에게 지수가 있을 때만 제공합니다. 가중치와 상한은 임의 기준으로, 검증된 생산성·코드 품질·개인 역량 점수가 아닙니다. 권한 허용에는 자동 허용도 포함됩니다.";
+
+export const formatActivityScore = (value) => value == null || !Number.isFinite(Number(value)) ? "—" : Number(value).toFixed(1);
+export function averageActivityScore(rows) {
+  if (!rows?.length || rows.some((row) => row.productivity_score == null
+    || !Number.isFinite(Number(row.productivity_score)))) return null;
+  return rows.reduce((sum, row) => sum + Number(row.productivity_score), 0) / rows.length;
+}
 
 // scoreDays는 서버 공식과 같은 하한 1일(Math.max(1, ...))을 쓴 값이어야 한다 — sub-day 드래그
 // 줌 구간(예: 10분)의 1/1440일 하한을 그대로 넘기면 per-day 항들이 최대 1440배 부풀어 사실상
@@ -33,8 +40,8 @@ export function foldLeaderboardByUser(rows, scoreDays) {
     });
   }
   return [...byUser.values()].map((u) => {
-    const acceptRate = u.decisions > 0 ? u.accepted / u.decisions : 0;
-    const score =
+    const acceptRate = u.decisions > 0 ? u.accepted / u.decisions : null;
+    const score = acceptRate === null ? null :
       100 *
       (0.3 * Math.min(u.loc / scoreDays / LOC_PER_DAY_CAP, 1) +
         0.25 * acceptRate +

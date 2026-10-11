@@ -457,6 +457,23 @@ const TOKEN_SUMS = `
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens`;
 
+// Observation evidence excludes lookback-only counters. For hourly queries, raw
+// first-hour samples avoid treating a pre-from sample as an in-window zero.
+function counterObservations(metricFilter, spanMs) {
+  const raw = incFlatRaw(spanMs);
+  return `counter_observations AS (
+    SELECT DISTINCT SessionId, UserEmail, MetricName, TokenType
+    FROM claude_code.otel_metrics_sum
+    WHERE TimeUnix >= {from:DateTime} AND TimeUnix < ${raw ? "{to:DateTime}" : "least(toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR, {to:DateTime})"}
+      ${metricFilter}
+    ${raw ? "" : `UNION ALL
+    SELECT DISTINCT SessionId, UserEmail, MetricName, TokenType
+    FROM claude_code.otel_metrics_sum_hourly
+    WHERE hour > toStartOfHour({from:DateTime}) AND hour < {to:DateTime} ${metricFilter}`}
+  )`;
+}
+const counterObserved = "(m.SessionId, m.UserEmail, m.MetricName, m.TokenType) IN (SELECT * FROM counter_observations)";
+
 // Client summaries reuse the existing counter and boundary semantics without adding
 // dimensions to shared helpers. Operational Codex events never enter these counters.
 export async function clientClaudeRows(from, to, filters = {}) {
@@ -522,7 +539,7 @@ export async function clientClaudeRows(from, to, filters = {}) {
 export async function kpiSummary(from, to, filters = {}) {
   const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   return query(
-    `${GROUP_CTE}
+    `${GROUP_CTE}, ${counterObservations("AND MetricName IN ('claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.lines_of_code.count')", to - from)}
     SELECT
         ${GROUP_EXPR} AS "group",
         sumIf(m.Value, m.MetricName = 'claude_code.session.count')       AS sessions,
@@ -532,7 +549,10 @@ export async function kpiSummary(from, to, filters = {}) {
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage')                                AS total_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'input')       AS input_tokens,
         sumIf(m.Value, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'output')      AS output_tokens,
-        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS lines_of_code
+        sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS lines_of_code,
+        countIf(${counterObserved} AND m.MetricName = 'claude_code.commit.count') > 0 AS commits_observed,
+        countIf(${counterObserved} AND m.MetricName = 'claude_code.pull_request.count') > 0 AS prs_observed,
+        countIf(${counterObserved} AND m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') > 0 AS lines_of_code_observed
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.session.count', 'claude_code.commit.count', 'claude_code.pull_request.count',
         'claude_code.token.usage', 'claude_code.lines_of_code.count'
@@ -776,7 +796,7 @@ export function costByModelDailySql(intervalHours, filters = {}) {
             countIf(${observed} AND m.MetricName = 'claude_code.token.usage') AS token_obs
         FROM ${b.sub} m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-        WHERE m.Model != '' ${f.where}
+        WHERE 1 = 1 ${f.where}
         GROUP BY day, "group", model, session
       )
       -- A scope with no observed cost or token sample is a baseline-only row: no data.
@@ -802,7 +822,7 @@ export async function costByModelDaily(from, to, intervalHours = 24, filters = {
 export async function costByModelCompare(from, to, prevFrom, filters = {}) {
   // outer는 서브쿼리 m의 projection만 보인다 — 원본 Model 컬럼이 아니라 정규화된 alias(model)로 필터.
   const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelNorm: "model" });
-  const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage') AND Model != ''";
+  const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   // rollup 분기의 WITH절이 curFrom/curTo/prevFrom을 SQL 스칼라로 재계산하는데, 그 절은 같은
   // SELECT 레벨의 표현식에만 보이고 FROM의 nested 서브쿼리(raw stitch branch)에는 안 보인다 —
   // 그 서브쿼리들은 {prevFrom:DateTime} bind param(JS가 넘긴 "정렬 전" 값)만 참조할 수 있다.
@@ -1192,7 +1212,7 @@ export async function costByModel(from, to, filters = {}) {
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.Model != '' ${f.where}
+    WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
@@ -1213,7 +1233,7 @@ export async function costByUserModel(from, to, filters = {}) {
     SELECT m.UserEmail AS user, ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
     FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.Model != '' AND m.UserEmail != '' ${f.where}
+    WHERE m.UserEmail != '' ${f.where}
     GROUP BY user, "group", model ORDER BY user`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
@@ -1816,12 +1836,14 @@ export async function activeTimeSummary(from, to, filters = {}) {
   // active_time.total 행엔 Model attribute가 없다 — activeTimeSeries와 동일하게 modelMixed.
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelMixed: { model: "m.Model", session: "m.SessionId" } });
   return query(
-    `${GROUP_CTE}
+    `${GROUP_CTE}, ${counterObservations("AND MetricName = 'claude_code.active_time.total'", to - from)}
     SELECT
         ${GROUP_EXPR} AS "group",
         sumIf(m.Value, m.TokenType = 'user') AS user_seconds,
         sumIf(m.Value, m.TokenType = 'cli')  AS cli_seconds,
-        uniqExactIf(m.SessionId, m.SessionId != '') AS sessions
+        uniqExactIf(m.SessionId, m.SessionId != '') AS sessions,
+        countIf(${counterObserved} AND m.TokenType = 'user') > 0 AS user_seconds_observed,
+        countIf(${counterObserved} AND m.TokenType = 'cli') > 0 AS cli_seconds_observed
     FROM ${incFlat(`AND MetricName = 'claude_code.active_time.total'`, to - from)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}

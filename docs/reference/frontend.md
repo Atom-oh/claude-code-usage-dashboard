@@ -32,7 +32,8 @@ No Codex enterprise comparison or unsupported productivity metrics are added.
 Claude detail's Productivity page adds independent activity-density, permission-occupancy
 and tool-outcome tables with coverage and unavailable states. The legacy score is labelled
 an activity index across Productivity, Users, Executive and the user drawer; its API field
-and formula stay unchanged. Permission approvals no longer imply accepted code, and the
+stays unchanged, while an unavailable permission denominator withholds the score.
+Means require scores for every returned user, and rankings omit unavailable scores. Permission approvals no longer imply accepted code, and the
 estimated accepted-lines card is removed. Shared Productivity explains the external data
 needed for task outcome measures. See [definitions and coverage](../metrics.md#activity-and-flow-coverage).
 

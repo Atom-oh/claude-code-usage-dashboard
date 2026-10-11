@@ -13,7 +13,7 @@ class ResizeObserverStub {
 
 const user = {
   user: "reader@example.com", group: "bedrock", loc: 100, commits: 2, prs: 1,
-  sessions: 2, active_days: 1, decisions: 10, accepted: 8, productivity_score: 40,
+  sessions: 2, active_days: 1, user_active_days: 1, decisions: 10, accepted: 8, productivity_score: 40,
 };
 const spend = {
   user: user.user, group: "bedrock", model: "claude-sonnet-5",
@@ -21,7 +21,7 @@ const spend = {
   tokens: 1000, unpriced: false,
 };
 
-function mount(path, rows = [spend], costError = false, daily = [], leaderboard = [user]) {
+function mount(path, rows = [spend], costError = false, daily = [], leaderboard = [user], overrides = {}) {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   vi.stubGlobal("fetch", vi.fn((url) => {
     const key = String(url).split("?")[0];
@@ -29,12 +29,14 @@ function mount(path, rows = [spend], costError = false, daily = [], leaderboard 
     const data = {
       "/api/health/data": { status: "ok" },
       "/api/overview/active-users": { users: 1, bedrock_users: 1, enterprise_users: 0 },
-      "/api/overview/kpi": [{ ...user, lines_of_code: 100 }],
+      "/api/overview/kpi": [{ ...user, lines_of_code: 100,
+        prs_observed: 1, commits_observed: 1, lines_of_code_observed: 1 }],
       "/api/users/leaderboard": leaderboard,
       "/api/cost/by-user-model": rows,
       "/api/cost/summary": rows.map((r) => ({ ...r, computed_cost: r.cost })),
       "/api/cost/by-model-daily": daily,
       "/api/adoption/levels": { mau: 1 },
+      ...overrides,
     }[key] ?? [];
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
   }));
@@ -89,6 +91,44 @@ test("Productivity does not infer accepted lines or a zero approval rate from ab
   const approval = screen.getAllByText("권한 허용률")[0].closest(".bg-card");
   expect(within(approval).getByText("—")).toBeTruthy();
   expect(screen.getByText("관측 권한 결정")).toBeTruthy();
+});
+
+test("Productivity distinguishes absent counters and times from explicitly observed zero", async () => {
+  const kpi = { ...user, prs: 0, lines_of_code: 0, prs_observed: 0, lines_of_code_observed: 0 };
+  const tile = (label) => screen.getByText(label, { exact: true }).closest(".bg-card");
+  mount("/productivity", [spend], false, [], [user], { "/api/overview/kpi": [kpi] });
+  await screen.findByText("활동 지수 상위 10위");
+  for (const label of ["관측 PR 생성", "개발자 활성 시간", "Claude Code 작업 시간"])
+    expect(within(tile(label)).getByText("—")).toBeTruthy();
+  cleanup();
+  mount("/productivity", [spend], false, [], [user], {
+    "/api/overview/kpi": [{ ...kpi, prs_observed: 1, lines_of_code_observed: 1 }],
+    "/api/productivity/active-time-summary": [{ group: "bedrock", user_seconds: 0, cli_seconds: 0,
+      user_seconds_observed: 1, cli_seconds_observed: 1 }],
+  });
+  await screen.findByText("활동 지수 상위 10위");
+  expect(within(tile("관측 PR 생성")).getByText("0")).toBeTruthy();
+  expect(within(tile("개발자 활성 시간")).getByText("0.0시간")).toBeTruthy();
+});
+
+test.each([[[]], [[{ ...user, decisions: 0, accepted: 0, productivity_score: null }]]])(
+  "Executive withholds an empty or unavailable user-score mean", async (leaderboard) => {
+    const { container } = mount("/exec", [spend], false, [], leaderboard);
+    await waitFor(() => expect(container.textContent).toContain("평균 활동 지수는 미확인"));
+    expect(container.textContent).not.toContain("평균 활동 지수는 0/100");
+  });
+
+test("Users retains an unavailable score in the table without ranking it as zero", async () => {
+  mount("/users", [spend], false, [], [{ ...user, decisions: 0, accepted: 0, productivity_score: null }]);
+  const row = await screen.findByRole("row", { name: /example\.com/ });
+  expect(within(row).getAllByText("—").length).toBeGreaterThan(0);
+  expect(row.textContent).not.toContain("0.0");
+});
+
+test("Cost labels retained model-less reports in the model table", async () => {
+  const row = { ...spend, model: "", reported_cost: 2, cost: null, unpriced: true };
+  mount("/cost", [row], false, [], [user], { "/api/cost/by-model": [row] });
+  await screen.findByRole("row", { name: /모델 미상/ });
 });
 
 test("Users family averages include reported spend independently of pricing coverage", async () => {

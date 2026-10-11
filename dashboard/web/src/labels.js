@@ -2,4 +2,4 @@
 // 매핑되지 않은 값은 그대로 통과시킨다 — 새 enum 값이 생겨도 빈 셀이 되지 않는다.
 export const effortLabel = (v) => (v === "unknown" || v === "" || v == null ? "미지정" : v);
 export const unclassifiedLabel = (v) => (v === "unknown" || v === "" || v == null ? "미분류" : v);
-export const decisionLabel = (v) => (v === "accept" ? "수락" : v === "reject" ? "거부" : v);
+export const decisionLabel = (v) => (v === "accept" ? "허용" : v === "reject" ? "거부" : v);

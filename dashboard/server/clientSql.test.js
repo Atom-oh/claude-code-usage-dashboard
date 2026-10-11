@@ -814,6 +814,55 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         }
       }
     });
+    await t.test("model-less Claude reports reconcile across summary, model, user, trend and efficiency", async () => {
+      const q = await import("./queries.js");
+      const { userCostEfficiency } = await import("./costEfficiency.js");
+      const email = "missing-model-report@example.invalid";
+      const values = [];
+      for (const [metric, type, before, after] of [
+        ["claude_code.cost.usage", "", 1, 3],
+        ["claude_code.token.usage", "input", 100, 110],
+      ]) for (const [clock, value] of [["09:59:00", before], ["10:01:00", after]]) {
+        const row = counter(metric, type, clock, value);
+        row.ResourceAttributes = { "user.email": email };
+        row.Attributes = { ...row.Attributes, "session.id": "missing-model-report", model: "" };
+        values.push(row);
+      }
+      await insertMetrics(values);
+      const filters = { user: email };
+      assert.equal(Number((await q.costSummary(from, to, filters))[0].reported_cost), 2);
+      const model = (await q.costByModel(from, to, filters))[0];
+      assert.equal(model.model, "");
+      assert.equal(Number(model.reported_cost), 2);
+      assert.equal(model.cost, null);
+      const users = await q.costByUserModel(from, to, filters);
+      assert.equal(users[0].model, "");
+      assert.equal(Number(users[0].reported_cost), 2);
+      const efficiency = userCostEfficiency([{ user: email, group: "enterprise", loc: 10, commits: 1 }], users)[0];
+      assert.equal(efficiency.cost_per_commit, 2);
+      assert.equal(efficiency.reported_unpriced, false);
+      const trend = await q.costByModelDaily(from, to, 1, filters);
+      assert.equal(trend[0].model, "");
+      assert.equal(trend[0].reported_cost, 2);
+      const comparison = await q.costByModelCompare(from, to, new Date(+from - 3600000), filters);
+      assert.equal(comparison[0].model, "");
+      assert.equal(Number(comparison[0].reported_cost), 2);
+    });
+    await t.test("commercial geography Haiku models retain the request tier in both cost feeds", async () => {
+      const { buildCodexLogAggregateQuery, foldCodexLogAggregates } = await import("./codexLogAggregates.js");
+      for (const [index, prefix] of ["us.", "eu.", "apac.", "jp.", "au."].entries()) {
+        const email = `geo-pricing-${index}@example.invalid`;
+        await insertLogs([log(2000 + index, "codex.sse_event", { ...zeroUsage,
+          model: `${prefix}anthropic.claude-haiku-5-5`, input_token_count: "100001" },
+          { "user.email": email, backend: "bedrock-runtime" })]);
+        const shared = await overview({ client: "codex", user: email });
+        assert.equal(shared.totals.cost_usd, 0.05500055, prefix);
+        const query = buildCodexLogAggregateQuery(from, to, { user: email });
+        const rows = await (await db.query({ query: query.sql, query_params: query.params,
+          format: "JSONEachRow" })).json();
+        assert.equal(foldCodexLogAggregates(rows).effort[0].cost_usd, shared.totals.cost_usd, prefix);
+      }
+    });
   } finally {
     await db.close();
   }

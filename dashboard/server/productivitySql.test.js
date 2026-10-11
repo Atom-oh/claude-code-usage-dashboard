@@ -10,7 +10,7 @@ test("productivity queries preserve matched scopes, explicit outcomes and trace 
   process.env.CH_PASSWORD = "";
   const { createClient } = await import("@clickhouse/client");
   const db = createClient({ url: process.env.CH_URL, database: "claude_code" });
-  const { activityDensity, toolOutcomes, permissionWaitOccupancy } = await import("./queries.js");
+  const { activityDensity, toolOutcomes, permissionWaitOccupancy, kpiSummary, activeTimeSummary } = await import("./queries.js");
   const day = new Date().toISOString().slice(0, 10);
   const from = new Date(`${day}T10:00:00Z`);
   const to = new Date(`${day}T11:00:00Z`);
@@ -105,6 +105,28 @@ test("productivity queries preserve matched scopes, explicit outcomes and trace 
     const [missing] = await activityDensity(from, to, { user: `${identity}-other` });
     assert.equal(missing.commits_per_user_hour, null);
     assert.equal(missing.matched_commits, null);
+    for (const observed of [false, true]) {
+      const email = `${identity}-observation-${observed}@example.invalid`;
+      const values = [counter("observation", "claude_code.session.count", "", "10:30:00", 1, 2, email)];
+      for (const [metric, type] of [["claude_code.pull_request.count", ""],
+        ["claude_code.commit.count", ""], ["claude_code.lines_of_code.count", "added"],
+        ["claude_code.active_time.total", "user"]]) {
+        values.push(counter("observation", metric, type, "10:01:00", 0, 2, email));
+        if (observed) values.push(counter("observation", metric, type, "10:30:00", 0, 2, email));
+      }
+      await db.insert({ table: "otel_metrics_sum", values, format: "JSONEachRow" });
+      for (const end of [to, new Date(`${day}T16:00:00Z`)]) {
+        const start = new Date(`${day}T10:15:00Z`);
+        const [kpi] = await kpiSummary(start, end, { user: email });
+        assert.equal(Number(kpi.prs), 0);
+        for (const field of ["prs_observed", "lines_of_code_observed", "commits_observed"])
+          assert.equal(Number(kpi[field]), Number(observed), `${field}: ${end}`);
+        const [active] = await activeTimeSummary(start, end, { user: email });
+        assert.equal(Number(active.user_seconds), 0);
+        assert.equal(Number(active.user_seconds_observed), Number(observed));
+        assert.equal(Number(active.cli_seconds_observed), 0);
+      }
+    }
   } finally {
     await db.close();
   }

@@ -14,7 +14,7 @@ import { useApi } from "../useApi.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { maskEmail } from "../fmt.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
-import { ACTIVITY_SCORE_HELP } from "../score.js";
+import { ACTIVITY_SCORE_HELP, averageActivityScore, formatActivityScore } from "../score.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -34,7 +34,7 @@ function GroupFaceOff({ rows }) {
     return {
       group: g,
       count: grows.length,
-      avgScore: grows.length ? grows.reduce((s, r) => s + Number(r.productivity_score || 0), 0) / grows.length : 0,
+      avgScore: averageActivityScore(grows),
       sessions: grows.reduce((s, r) => s + Number(r.sessions || 0), 0),
       // 행별 accept_rate 단순 평균이 아니라 accepted/decisions 가중 평균 — 결정 수가 다른 유저를 동일 비중으로 섞지 않는다.
       acceptRate: decisions > 0 ? accepted / decisions : null,
@@ -42,7 +42,7 @@ function GroupFaceOff({ rows }) {
   });
 
   return (
-    <Card padded={false} title={groupLabel(groupMode, undefined, "채널 요약")}>
+    <Card padded={false} title={groupLabel(groupMode, undefined, "채널 요약")} help={ACTIVITY_SCORE_HELP}>
       <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-ink-100">
         {stats.map((s, i) => (
           <div key={s.group} className="relative flex-1">
@@ -66,7 +66,7 @@ function GroupFaceOff({ rows }) {
                   </div>
                   <div>
                     <div className="text-[11px] text-ink-500">평균 활동 지수</div>
-                    <div className="tabular text-[16px] font-semibold text-ink-800">{s.avgScore.toFixed(1)}</div>
+                    <div className="tabular text-[16px] font-semibold text-ink-800">{formatActivityScore(s.avgScore)}</div>
                   </div>
                   <div>
                     <div className="text-[11px] text-ink-500">세션</div>
@@ -112,7 +112,7 @@ export default function Users() {
 
   const top10For = (g) =>
     (leaderboard.data || [])
-      .filter((r) => r.group === g)
+      .filter((r) => r.group === g && r.productivity_score != null)
       .sort((a, b) => Number(b.productivity_score) - Number(a.productivity_score))
       .slice(0, 10)
       .map((r) => ({ ...r, score: Number(r.productivity_score) }));
@@ -174,7 +174,7 @@ export default function Users() {
                     key={g}
                     title={`활동 지수 상위 10명 — ${g}`}
                     help={ACTIVITY_SCORE_HELP}
-                    subtitle="아래 리더보드에서 사용자를 클릭하면 상세 활동이 열립니다"
+                    subtitle="계산 가능한 사용자만 표시 · 아래 표에서 사용자 상세 활동을 확인합니다"
                     data={data.map((d) => ({ ...d, user: maskEmail(d.user) }))}
                     labelKey="user"
                     valueKey="score"
@@ -232,7 +232,7 @@ export default function Users() {
                   help={ACTIVITY_SCORE_HELP}
                   columns={[
                     { key: "user", label: "사용자", render: maskEmail },
-                    { key: "productivity_score", label: "활동 지수", render: (v) => v.toFixed(1) },
+                    { key: "productivity_score", label: "활동 지수", render: formatActivityScore },
                     { key: "sessions", label: "세션", render: fmt },
                     { key: "input_tokens", label: "입력 토큰", render: fmt },
                     { key: "output_tokens", label: "출력 토큰", render: fmt },

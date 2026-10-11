@@ -1,5 +1,5 @@
 import { logSelection } from "./codexInsightsLogs.js";
-import { parseCodexPricing } from "./codexPricing.js";
+import { parseCodexPricing, codexModelSql, CODEX_ROUTING_PATTERN } from "./codexPricing.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS } from "./codexRequests.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { backendSql, VALID_BACKENDS } from "./backend.js";
@@ -101,7 +101,7 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
   });
   return cases.length ? `if(has_usage AND usage_valid AND backend IN ('bedrock-mantle','bedrock-runtime')
     AND NOT startsWith(model, 'us-gov.')
-    AND NOT (backend = 'bedrock-mantle' AND match(model, '^(us|global)\\\\.')),
+    AND NOT (backend = 'bedrock-mantle' AND match(model, '${CODEX_ROUTING_PATTERN.replace(/\\/g, "\\\\")}')),
     multiIf(${cases.join(",")}, NULL), NULL)` : "CAST(NULL, 'Nullable(Float64)')";
 }
 
@@ -206,7 +206,7 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
         isNotNull(input_raw) AND isNotNull(output_raw)
           AND ifNull(input_raw + output_raw <= 9007199254740991, 0) AS pair_valid,
         ${TOKEN_KEYS.map(k => `isNotNull(${k}_value)`).join(" AND ")} AS usage_valid,
-        replaceRegexpOne(model, '^(us|global)\\\\.', '') AS base_model,
+        ${codexModelSql("model")} AS base_model,
         ${normModel("model")} AS claude_model
       FROM typed
     ), priced AS (

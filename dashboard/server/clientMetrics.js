@@ -1,7 +1,7 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
 import { selectClients } from "./clients.js";
-import { priceCodexUsage, parseCodexPricing } from "./codexPricing.js";
+import { priceCodexUsage, parseCodexPricing, codexModelSql } from "./codexPricing.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { normalizeModelId, computeCost } from "./pricing.js";
 import { isNonAnthropicModel } from "./nonAnthropicCost.js";
@@ -390,7 +390,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     GROUP BY session, user, model, backend, project, event_name` : ""}
   ), ${modelSessions} typed AS (
     SELECT *,
-      replaceRegexpOne(model, '^(us|global)\\\\.', '') AS base_model,
+      ${codexModelSql("model")} AS base_model,
       multiIf(event_name IN ('codex.sse_event','codex.websocket_event')
           AND a['event.kind'] = 'response.completed'
           AND arrayExists(k -> mapContains(a, k),
