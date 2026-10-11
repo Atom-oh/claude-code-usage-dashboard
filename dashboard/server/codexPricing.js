@@ -200,7 +200,7 @@ export const DEFAULT_CODEX_PRICING = {
 
 // bedrock-runtime and bedrock-mantle publish different ids for these models. The openai.gpt-oss-20b
 // runtime id follows the verified gpt-oss-120b pattern.
-const RUNTIME_ID_ALIASES = {
+export const RUNTIME_ID_ALIASES = {
   "moonshot.kimi-k2-thinking": "moonshotai.kimi-k2-thinking",
   "openai.gpt-oss-120b-1:0": "openai.gpt-oss-120b",
   "openai.gpt-oss-20b-1:0": "openai.gpt-oss-20b",
@@ -208,7 +208,14 @@ const RUNTIME_ID_ALIASES = {
   "qwen.qwen3-coder-30b-a3b-v1:0": "qwen.qwen3-coder-30b-a3b-instruct",
   "qwen.qwen3-vl-235b-a22b": "qwen.qwen3-vl-235b-a22b-instruct",
 };
-for (const [runtimeId, id] of Object.entries(RUNTIME_ID_ALIASES)) DEFAULT_CODEX_PRICING[runtimeId] = DEFAULT_CODEX_PRICING[id];
+// Point each alias id at its canonical entry, except an alias the operator set directly in `own`
+// (CODEX_PRICING_JSON). Runs after the operator merge so a canonical override reaches every id.
+function resolveRuntimeAliases(prices, own = {}) {
+  for (const [runtimeId, id] of Object.entries(RUNTIME_ID_ALIASES))
+    if (!Object.hasOwn(own, runtimeId)) prices[runtimeId] = prices[id];
+  return prices;
+}
+resolveRuntimeAliases(DEFAULT_CODEX_PRICING);
 
 const object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 const RATE_FIELDS = ["input", "cacheWrite", "cacheRead", "output"];
@@ -254,7 +261,7 @@ export function parseCodexPricing(raw) {
       }
     }
   }
-  return { ...DEFAULT_CODEX_PRICING, ...additions };
+  return resolveRuntimeAliases({ ...DEFAULT_CODEX_PRICING, ...additions }, additions);
 }
 
 export function codexModel(model) {

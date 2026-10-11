@@ -27,7 +27,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Codex table: GPT-5.4 and GPT-5.5 (with the >272K tier), Grok 4.3, Kimi K2 Thinking, GLM 4.7 Flash,
   MiniMax M2 and M2.1, Devstral 2 123B, gpt-oss-120b and 20b, Qwen3 32B, Qwen3 Coder 30B A3B,
   Qwen3 VL 235B A22B, Gemma 4 26B A4B and Gemma 4 E2B at In-Region list rates. Models that
-  bedrock-runtime and bedrock-mantle publish under different ids are priced under both. Qwen3 Coder 480B
+  bedrock-runtime and bedrock-mantle publish under different ids are priced under both; the
+  `openai.gpt-oss-20b-1:0` runtime id is inferred from the verified gpt-oss-120b pattern, not a model
+  card. A `CODEX_PRICING_JSON` override of the canonical id applies under every alias id (runtime ids
+  containing `:` fail the key pattern and cannot be overridden directly). Qwen3 Coder 480B
   and Qwen3 235B 2507 are omitted: the price data lists them only outside the US Regions.
 
 ### Changed (2026-10-08 Codex price table for open-weight models)
