@@ -16,8 +16,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 - Claude table: `claude-haiku-5-5` at its <=100K-prompt rates (computed diagnostics cannot apply
   the per-request >100K tier); `claude-sonnet-5-5` cache read $0.20 -> $0.10 (now 0.05x).
-- Codex table: `deepseek.v3.2`, `minimax.minimax-m2.5` and `moonshotai.kimi-k2.5` In-Region rates,
-  from the model-comparision price data (2026-10-11).
+- Codex table: `deepseek.v3.2`, `minimax.minimax-m2.5` and `moonshotai.kimi-k2.5` In-Region rates
+  (inferplane model comparison data, AWS Price List, 2026-10-11), and a tiered
+  `anthropic.claude-haiku-5-5` entry so Haiku 5.5 through Codex is priced per request at 100K.
+  An `eu.`/`apac.` Haiku 5.5 id still misses that entry (only `us.`/`global.` are stripped) and
+  falls back to the flat <=100K Claude row.
 
 ### Changed (2026-10-08 Codex price table for open-weight models)
 
