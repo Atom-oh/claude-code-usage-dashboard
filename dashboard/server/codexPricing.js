@@ -154,6 +154,35 @@ export const DEFAULT_CODEX_PRICING = {
   "deepseek.v3.2": { short_context_limit: 164000, regional: flat({ input: 0.62, cacheWrite: 0.62, cacheRead: 0.62, output: 1.85 }) },
   "minimax.minimax-m2.5": { short_context_limit: 196000, regional: flat({ input: 0.3, cacheWrite: 0.3, cacheRead: 0.3, output: 1.2 }) },
   "moonshotai.kimi-k2.5": { short_context_limit: 256000, regional: flat({ input: 0.6, cacheWrite: 0.6, cacheRead: 0.6, output: 3 }) },
+  // More In-Region models from the same data (2026-10-11), ids from the Bedrock model cards. Ids of
+  // models published under different runtime and mantle names are aliased after the table.
+  "openai.gpt-5.4": {
+    short_context_limit: 272000,
+    regional: {
+      short: { input: 2.75, cacheWrite: 2.75, cacheRead: 0.275, output: 16.5 },
+      long: { input: 5.5, cacheWrite: 5.5, cacheRead: 0.55, output: 24.75 },
+    },
+  },
+  "openai.gpt-5.5": {
+    short_context_limit: 272000,
+    regional: {
+      short: { input: 5.5, cacheWrite: 5.5, cacheRead: 0.55, output: 33 },
+      long: { input: 11, cacheWrite: 11, cacheRead: 1.1, output: 49.5 },
+    },
+  },
+  "xai.grok-4.3": { short_context_limit: 1000000, regional: flat({ input: 1.25, cacheWrite: 1.25, cacheRead: 0.2, output: 2.5 }) },
+  "moonshotai.kimi-k2-thinking": { short_context_limit: 256000, regional: flat({ input: 0.6, cacheWrite: 0.6, cacheRead: 0.6, output: 2.5 }) },
+  "zai.glm-4.7-flash": { short_context_limit: 203000, regional: flat({ input: 0.07, cacheWrite: 0.07, cacheRead: 0.07, output: 0.4 }) },
+  "minimax.minimax-m2": { short_context_limit: 1000000, regional: flat({ input: 0.3, cacheWrite: 0.3, cacheRead: 0.3, output: 1.2 }) },
+  "minimax.minimax-m2.1": { short_context_limit: 196000, regional: flat({ input: 0.3, cacheWrite: 0.3, cacheRead: 0.3, output: 1.2 }) },
+  "mistral.devstral-2-123b": { short_context_limit: 256000, regional: flat({ input: 0.4, cacheWrite: 0.4, cacheRead: 0.4, output: 2 }) },
+  "openai.gpt-oss-120b": { short_context_limit: 128000, regional: flat({ input: 0.15, cacheWrite: 0.15, cacheRead: 0.15, output: 0.6 }) },
+  "openai.gpt-oss-20b": { short_context_limit: 128000, regional: flat({ input: 0.07, cacheWrite: 0.07, cacheRead: 0.07, output: 0.3 }) },
+  "qwen.qwen3-32b": { short_context_limit: 32000, regional: flat({ input: 0.15, cacheWrite: 0.15, cacheRead: 0.15, output: 0.6 }) },
+  "qwen.qwen3-coder-30b-a3b-instruct": { short_context_limit: 256000, regional: flat({ input: 0.15, cacheWrite: 0.15, cacheRead: 0.15, output: 0.6 }) },
+  "qwen.qwen3-vl-235b-a22b-instruct": { short_context_limit: 256000, regional: flat({ input: 0.53, cacheWrite: 0.53, cacheRead: 0.53, output: 2.66 }) },
+  "google.gemma-4-26b-a4b": { short_context_limit: 256000, regional: flat({ input: 0.13, cacheWrite: 0.13, cacheRead: 0.13, output: 0.4 }) },
+  "google.gemma-4-e2b": { short_context_limit: 128000, regional: flat({ input: 0.04, cacheWrite: 0.04, cacheRead: 0.04, output: 0.08 }) },
   // https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-luna.html
   // Verified 2026-09-17. The tier applies to each response's input context.
   "openai.gpt-5.6-luna": {
@@ -168,6 +197,18 @@ export const DEFAULT_CODEX_PRICING = {
     },
   },
 };
+
+// bedrock-runtime and bedrock-mantle publish different ids for these models. The openai.gpt-oss-20b
+// runtime id follows the verified gpt-oss-120b pattern.
+const RUNTIME_ID_ALIASES = {
+  "moonshot.kimi-k2-thinking": "moonshotai.kimi-k2-thinking",
+  "openai.gpt-oss-120b-1:0": "openai.gpt-oss-120b",
+  "openai.gpt-oss-20b-1:0": "openai.gpt-oss-20b",
+  "qwen.qwen3-32b-v1:0": "qwen.qwen3-32b",
+  "qwen.qwen3-coder-30b-a3b-v1:0": "qwen.qwen3-coder-30b-a3b-instruct",
+  "qwen.qwen3-vl-235b-a22b": "qwen.qwen3-vl-235b-a22b-instruct",
+};
+for (const [runtimeId, id] of Object.entries(RUNTIME_ID_ALIASES)) DEFAULT_CODEX_PRICING[runtimeId] = DEFAULT_CODEX_PRICING[id];
 
 const object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 const RATE_FIELDS = ["input", "cacheWrite", "cacheRead", "output"];

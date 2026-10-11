@@ -22,6 +22,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   An `eu.`/`apac.` Haiku 5.5 id still misses that entry (only `us.`/`global.` are stripped) and
   falls back to the flat <=100K Claude row.
 
+### Changed (2026-10-11 more Codex models)
+
+- Codex table: GPT-5.4 and GPT-5.5 (with the >272K tier), Grok 4.3, Kimi K2 Thinking, GLM 4.7 Flash,
+  MiniMax M2 and M2.1, Devstral 2 123B, gpt-oss-120b and 20b, Qwen3 32B, Qwen3 Coder 30B A3B,
+  Qwen3 VL 235B A22B, Gemma 4 26B A4B and Gemma 4 E2B at In-Region list rates. Models that
+  bedrock-runtime and bedrock-mantle publish under different ids are priced under both. Qwen3 Coder 480B
+  and Qwen3 235B 2507 are omitted: the price data lists them only outside the US Regions.
+
 ### Changed (2026-10-08 Codex price table for open-weight models)
 
 - Add AWS list rates to `codexPricing.js` for Kimi K3, Grok 4.7, Qwen3 Coder Next, Qwen3 Next 80B A3B,
