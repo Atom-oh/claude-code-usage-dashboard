@@ -141,7 +141,7 @@ Do not put credentials or prompt content in metadata.
 Codex started outside the launcher (for example `codex exec` or an app-server host
 such as an editor plugin) exports only when the operator configured exporters for it,
 for example an `[otel]` section in `~/.codex/config.toml`; bootstrap does not. Such
-telemetry carries no resource identity. Bootstrap writes the launcher's effective `user.email` to
+telemetry may lack user identity when `OTEL_RESOURCE_ATTRIBUTES` is absent. Bootstrap writes the launcher's effective `user.email` to
 `CODEX_DEFAULT_USER_EMAIL` in `/etc/otelcol/env`, and the Codex pipelines insert it only
 when a resource has neither `user.email` nor `enduser.id`. Values outside
 `[A-Za-z0-9._+@-]` are dropped. Existing rows are not backfilled; hosts pick this up on
@@ -153,6 +153,98 @@ their existing behavior. Defaults are read from `/etc/ccdash/clients.env` unless
 `CCDASH_CLIENT_ENV` selects another file; its contents are never shell-evaluated.
 
 ## Collection contract
+
+### Self-service setup for local wrappers
+
+For an already running local Collector, configure both clients directly. Keep the
+identity in the launching shell when Claude user settings do not already own the
+resource-attribute string:
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES="user.email=developer@example.invalid,project.name=workshop"
+python3 scripts/configure-client-telemetry.py \
+  --user-id developer@example.invalid \
+  --codex-config "${CODEX_HOME:-$HOME/.codex}/config.toml" \
+  --claude-config "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+```
+
+This helper configures clients only; it does not install or change the Collector.
+Both intended client pipelines must already be enabled. Set the attributes in each
+launching shell or its startup configuration; a new settings-owned string is not
+created, so later shell project/team tags remain effective.
+Run it as the client user. It writes private UTF-8 files and backups owned by that
+user. Backups may contain the original provider/auth settings; retain or remove them
+under the same private-file policy as the originals.
+
+Existing Claude exporter settings that differ from the local defaults, including
+signal-specific endpoints/protocols and exporter credentials, are conflicts. Setup
+stops before either client is written. To deliberately move collection to loopback,
+first inspect `--check --replace-claude-telemetry` with the same arguments: it lists
+changed environment key names, never their values. Then repeat without `--check`.
+The replacement option resets the exporter settings, removes other OTLP overrides
+and clears generic/per-signal headers; it preserves model, provider, approval and
+resource-attribute ownership. It is also required when re-enabling previously
+disabled Claude exporters. Explicit per-signal defaults pin all three Claude feeds
+to local gRPC even if the launching shell has different endpoint/protocol/header
+defaults. Later explicit client/organization overrides remain outside this check.
+Claude defaults enable session-id metrics and enhanced telemetry beta; Codex user
+prompt logging stays disabled.
+
+The optional installer and shell helper are distributed separately and are not
+included here. Their integration tests skip in a repository-only checkout; the
+checked-in helper command above is tested independently.
+
+The separately, locally distributed `scripts/setup-test-telemetry-all.sh` uses
+[configure-client-telemetry.py](../../scripts/configure-client-telemetry.py) to
+configure the shared client settings. Keep both files together. Python 3.11+
+provides TOML validation; older Python needs `tomli` (the pip-vendored copy is
+also supported). No provider/model/credential/approval setting is replaced.
+
+```bash
+# Install/update the collector and both client configurations.
+bash scripts/setup-test-telemetry-all.sh developer@example.invalid
+
+# Repair missing client settings on a host whose collector is already enabled.
+bash scripts/setup-test-telemetry-all.sh --clients-only developer@example.invalid
+```
+
+The clients-only mode does not install, restart, reconfigure or change credentials
+for the collector. Its Claude/Codex pipelines and matching activation flags must
+already be enabled. Both modes configure:
+
+- `${CODEX_HOME:-$HOME/.codex}/config.toml`: a managed `[otel]` table with all
+  three native OTLP/HTTP JSON exporters and `log_user_prompt=false`. Plain Codex,
+  `icodex` and other wrappers that retain user configuration use the same settings.
+- `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`: Claude telemetry environment
+  defaults, preserving other settings/env entries. It updates resource attributes only
+  when this file already owns them; otherwise identity and project/team attributes
+  remain owned by the launching shell. It does not invent a team tag. This covers `claude`, `itrust`,
+  `etrust` and equivalent wrappers. The wrappers keep their own routing and auth.
+- `~/.otelcol/enable-test-telemetry.sh`: shared identity and Claude shell exporters,
+  sourced by the selected shell and existing bash/zsh startup files. Existing
+  project/team resource attributes are retained in the launching shell. An existing
+  Claude settings-owned attribute string still overrides that shell string: include
+  the required tags in that owner or explicitly transfer ownership to the shell.
+  See [resource attribute precedence](../reference/data.md). No fixed backend/client label
+  is applied globally to mixed gateway traffic.
+
+Files to be modified are validated before either is written. Setup rechecks planned
+content and symlinks before writes and each replacement, rejecting noticed edits;
+this is not a transaction across both files or a lock shared with other editors.
+Changes use atomic
+replacement and private backups named `*.ccdash-backup-*`; repeat setup does not
+rewrite unchanged settings. Conflicting unmanaged Codex OTel settings or malformed
+configuration cause an error instead of a misleading success. Migrate an unmanaged
+Codex table explicitly, or use the exact untagged local exporter table generated by the helper. Disabling a client
+removes the managed Codex table or disables Claude exporters; manually owned Codex
+settings remain manually owned, while the collector activation flag gates ingestion.
+
+Open a new shell and restart existing clients after setup: an already running
+Codex process keeps its startup exporter configuration. Explicit command/profile
+overrides, ignored user settings, organization-managed settings and alternate
+configuration roots may take precedence. Configure each intended root separately.
+This is support for Claude Code/Codex entry points, not arbitrary application logs.
+Receiver readiness still does not prove end-to-end dashboard coverage.
 
 Receivers bind only to loopback: Claude OTLP/gRPC on `127.0.0.1:4317`, Codex OTLP/HTTP
 JSON on `127.0.0.1:4318/v1/{logs,metrics,traces}`. Existing ClickHouse TLS, ingest
@@ -168,8 +260,9 @@ trace_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/traces", p
 log_user_prompt = false
 ```
 
-The launcher supplies these process overrides; do not copy them into global Codex config.
-Runtime substitutes `bedrock-runtime` in all three headers. Receivers expose request
+The workshop launcher supplies these process overrides. Its backend headers describe
+the selected direct Bedrock deployment; self-service configuration uses the same local
+endpoints without fixing a backend globally. Runtime substitutes `bedrock-runtime` in all three headers. Receivers expose request
 metadata only to the Codex pipelines. A valid `x-ccdash-backend` overrides resource
 backend; an absent/invalid header preserves a valid resource backend. Otherwise backend
 stays absent. The temporary header attribute is deleted before export. Model names,
