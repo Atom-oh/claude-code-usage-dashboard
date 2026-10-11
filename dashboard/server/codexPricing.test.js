@@ -112,6 +112,19 @@ test("open-weight models seen in live usage price at their In-Region list rate",
   }
 });
 
+test("GPT-5.4/5.5, Grok 4.3 and runtime-vs-mantle model ids price at their In-Region list rates", () => {
+  for (const [model, tier, expected] of [
+    ["openai.gpt-5.4", "short", 0.000671], ["openai.gpt-5.4", "long", 0.0010945],
+    ["xai.grok-4.3", "short", 0.000158],
+    ["moonshot.kimi-k2-thinking", "short", 0.000135], ["moonshotai.kimi-k2-thinking", "short", 0.000135],
+    ["qwen.qwen3-32b-v1:0", "short", 0.000033], ["qwen.qwen3-32b", "short", 0.000033],
+  ]) {
+    const row = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model, context_tier: tier });
+    assert.equal(row.cost_usd, expected, `${model}/${tier}`);
+    assert.equal(row.unpriced, false);
+  }
+});
+
 test("unknown rates or backend, missing cache data, and invalid subsets are unavailable", () => {
   for (const patch of [
     { model: "openai.unknown" }, { backend: "unknown" }, { cache_write_tokens: undefined },
