@@ -24,7 +24,7 @@ React 18/Vite/Tailwind/Recharts SPA. Run `npm test` and `npm run build`.
 - Cost remounts affected `DataTable`s on comparison changes to reset sorting,
   including hidden computed columns.
 - CSV follows displayed columns/order; `toCsv` uses `toText` or raw values, never JSX.
-- `csv.js` centrally masks `user` even without `toText: maskEmail`.
+- `csv.js` masks `user` under PII masking even without `toText: maskEmail`.
   Explicitly mask other identity columns.
 - Cost USD accepts zero and at most two decimals. `DonutBody.valueFormatter` ignores
   `valuePrefix`; other charts keep their default formatting.
