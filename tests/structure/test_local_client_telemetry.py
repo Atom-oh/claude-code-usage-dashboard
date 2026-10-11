@@ -81,6 +81,79 @@ theme = "dark"
         self.assertEqual(after["env"]["OTEL_RESOURCE_ATTRIBUTES"],
                          "project.name=demo,user.email=fixture@example.invalid")
 
+    def test_conflicting_claude_exporters_fail_before_either_client_is_changed(self):
+        conflicts = {"OTEL_EXPORTER_OTLP_ENDPOINT": "https://fixture.invalid",
+                     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+                     "OTEL_METRIC_EXPORT_INTERVAL": "99999",
+                     "OTEL_LOGS_EXPORTER": "console",
+                     "OTEL_EXPORTER_OTLP_HEADERS": "x-fixture=do-not-print"}
+        for signal in ("METRICS", "LOGS", "TRACES"):
+            conflicts["OTEL_EXPORTER_OTLP_" + signal + "_ENDPOINT"] = "https://fixture.invalid"
+            conflicts["OTEL_EXPORTER_OTLP_" + signal + "_PROTOCOL"] = "http/json"
+            conflicts["OTEL_EXPORTER_OTLP_" + signal + "_HEADERS"] = "x-fixture=do-not-print"
+            conflicts["OTEL_EXPORTER_OTLP_" + signal + "_CLIENT_KEY"] = "/fixture/key.pem"
+        for key, value in conflicts.items():
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                codex, claude = Path(directory) / "config.toml", Path(directory) / "settings.json"
+                codex.write_text('model_provider="inferplane"\n', encoding="utf-8")
+                original = json.dumps({"env": {key: value}})
+                claude.write_text(original, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "unmanaged Claude telemetry"):
+                    setup.plan(codex, claude, True, True, "fixture@example.invalid")
+                self.assertEqual(codex.read_text(), 'model_provider="inferplane"\n')
+                self.assertEqual(claude.read_text(), original)
+
+    def test_explicit_claude_replacement_pins_signals_and_clears_exporter_credentials(self):
+        original = {"model": "opusplan", "permissions": {"defaultMode": "plan"}, "env": {
+            "ANTHROPIC_BEDROCK_BASE_URL": "https://routing.fixture.invalid", "CUSTOM_ENV": "keep",
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "https://collector.fixture.invalid",
+            "OTEL_EXPORTER_OTLP_HEADERS": "x-fixture=do-not-print",
+            "OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY": "/fixture/key.pem",
+            "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": "http/protobuf",
+        }}
+        after = json.loads(setup.claude_config(json.dumps(original), True, "fixture@example.invalid", True))
+        self.assertEqual(after["model"], original["model"])
+        self.assertEqual(after["permissions"], original["permissions"])
+        self.assertEqual(after["env"]["ANTHROPIC_BEDROCK_BASE_URL"], original["env"]["ANTHROPIC_BEDROCK_BASE_URL"])
+        self.assertEqual(after["env"]["CUSTOM_ENV"], "keep")
+        self.assertNotIn("OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY", after["env"])
+        self.assertNotIn("OTEL_RESOURCE_ATTRIBUTES", after["env"])
+        for signal in ("METRICS", "LOGS", "TRACES"):
+            self.assertEqual(after["env"]["OTEL_EXPORTER_OTLP_" + signal + "_ENDPOINT"], "http://127.0.0.1:4317")
+            self.assertEqual(after["env"]["OTEL_EXPORTER_OTLP_" + signal + "_PROTOCOL"], "grpc")
+            self.assertEqual(after["env"]["OTEL_EXPORTER_OTLP_" + signal + "_HEADERS"], "")
+        self.assertEqual(after["env"]["OTEL_EXPORTER_OTLP_HEADERS"], "")
+        self.assertEqual(json.loads(setup.claude_config(json.dumps(after), True, "fixture@example.invalid")), after)
+        disabled = setup.claude_config(json.dumps(after), False, "fixture@example.invalid")
+        self.assertEqual(json.loads(setup.claude_config(disabled, True, "fixture@example.invalid", True)), after)
+
+    def test_changed_plan_and_replaced_symlinks_do_not_overwrite_client_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            codex, claude = Path(directory) / "config.toml", Path(directory) / "settings.json"
+            codex.write_text('model="fixture"\n')
+            claude.write_text('{}')
+            changes = setup.plan(codex, claude, True, True, "fixture@example.invalid")
+            claude.write_text('{"model":"new-choice"}')
+            with self.assertRaisesRegex(ValueError, "changed after validation"):
+                setup.apply(changes)
+            self.assertEqual(codex.read_text(), 'model="fixture"\n')
+            self.assertEqual(claude.read_text(), '{"model":"new-choice"}')
+            changes = setup.plan(codex, claude, True, True, "fixture@example.invalid")
+            target = Path(directory) / "other.json"
+            target.write_text(claude.read_text())
+            claude.unlink()
+            claude.symlink_to(target)
+            with self.assertRaisesRegex(ValueError, "changed after validation"):
+                setup.apply(changes)
+            self.assertTrue(claude.is_symlink())
+            self.assertEqual(codex.read_text(), 'model="fixture"\n')
+
+    def test_identical_client_paths_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config"
+            with self.assertRaisesRegex(ValueError, "paths must differ"):
+                setup.plan(path, path, True, True, "fixture@example.invalid")
+
     def test_atomic_private_backups_and_no_rewrite_on_repeat(self):
         with tempfile.TemporaryDirectory() as directory:
             codex, claude = Path(directory) / "config.toml", Path(directory) / "settings.json"
@@ -114,6 +187,38 @@ theme = "dark"
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(json.loads(result.stdout)["valid"])
             self.assertEqual(list(temp.iterdir()), [])
+
+    def test_check_mode_previews_changed_keys_without_exporter_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            original = '{"env":{"OTEL_EXPORTER_OTLP_HEADERS":"x-fixture=private-value","OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY":"/fixture/private-key.pem"}}'
+            claude = temp / "settings.json"
+            claude.write_text(original)
+            result = subprocess.run(["python3", str(ROOT / "scripts/configure-client-telemetry.py"),
+                "--check", "--replace-claude-telemetry", "--user-id", "fixture@example.invalid",
+                "--codex-config", str(temp / "config.toml"), "--claude-config", str(claude)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            keys = json.loads(result.stdout)["claude_env_keys_to_update"]
+            self.assertIn("OTEL_EXPORTER_OTLP_HEADERS", keys)
+            self.assertIn("OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY", keys)
+            self.assertNotIn("private-value", result.stdout + result.stderr)
+            self.assertNotIn("/fixture/private-key.pem", result.stdout + result.stderr)
+            self.assertEqual(claude.read_text(), original)
+            self.assertFalse((temp / "config.toml").exists())
+
+    def test_non_utf8_configuration_fails_without_echoing_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            codex = temp / "config.toml"
+            codex.write_bytes(b"\xffprivate-fixture")
+            result = subprocess.run(["python3", str(ROOT / "scripts/configure-client-telemetry.py"),
+                "--check", "--user-id", "fixture@example.invalid", "--codex-config", str(codex),
+                "--claude-config", str(temp / "settings.json")], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("must be UTF-8", result.stderr)
+            self.assertNotIn("private-fixture", result.stderr)
+            self.assertFalse((temp / "settings.json").exists())
 
 
 @unittest.skipUnless((ROOT / "scripts/setup-test-telemetry-all.sh").exists(), "private self-service installer is not distributed in git")
