@@ -197,7 +197,7 @@ already be enabled. Both modes configure:
 - `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`: Claude telemetry environment
   defaults, preserving other settings/env entries. It updates resource attributes only
   when this file already owns them; otherwise identity and project/team attributes
-  remain owned by the launching shell. This covers `claude`, `itrust`,
+  remain owned by the launching shell. It does not invent a team tag. This covers `claude`, `itrust`,
   `etrust` and equivalent wrappers. The wrappers keep their own routing and auth.
 - `~/.otelcol/enable-test-telemetry.sh`: shared identity and Claude shell exporters,
   sourced by the selected shell and existing bash/zsh startup files. Existing

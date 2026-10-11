@@ -74,6 +74,13 @@ theme = "dark"
         self.assertEqual(after["env"]["CUSTOM_ENV"], "keep")
         self.assertEqual(after["env"]["CLAUDE_CODE_ENABLE_TELEMETRY"], "1")
 
+    def test_settings_owned_attributes_do_not_invent_a_team(self):
+        after = json.loads(setup.claude_config(
+            '{"env":{"OTEL_RESOURCE_ATTRIBUTES":"project.name=demo"}}',
+            True, "fixture@example.invalid"))
+        self.assertEqual(after["env"]["OTEL_RESOURCE_ATTRIBUTES"],
+                         "project.name=demo,user.email=fixture@example.invalid")
+
     def test_atomic_private_backups_and_no_rewrite_on_repeat(self):
         with tempfile.TemporaryDirectory() as directory:
             codex, claude = Path(directory) / "config.toml", Path(directory) / "settings.json"

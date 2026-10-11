@@ -87,7 +87,6 @@ def resource_attributes(value, user_id):
             raise ValueError("invalid existing resource attributes; no files changed")
         attributes[key.strip()] = val.strip()
     attributes["user.email"] = user_id
-    attributes.setdefault("team", "fsi-realtest")
     return ",".join(key + "=" + value for key, value in attributes.items())
 
 
