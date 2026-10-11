@@ -5,6 +5,7 @@ import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl } fro
 import { backendSql } from "./backend.js";
 import { rollupAdoption } from "./activity.js";
 import { foldModelCostCells, MODEL_COST_ROW_LIMIT } from "./modelCostTrend.js";
+import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetrics.js";
 
 // Every query here goes through this wrapper: a query that prices Claude cost counters
 // (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-017).
@@ -1827,6 +1828,88 @@ export async function activeTimeSummary(from, to, filters = {}) {
     GROUP BY "group" ORDER BY "group"`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
+}
+
+export function activityDensitySql(from, to, filters = {}) {
+  const raw = incFlatRaw(to - from);
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelViaSession: "m.SessionId" });
+  const metricFilter = `AND (MetricName = 'claude_code.commit.count'
+    OR (MetricName = 'claude_code.active_time.total' AND TokenType = 'user'))`;
+  return {
+    sql: `${GROUP_CTE}, observed_activity AS (
+      SELECT DISTINCT SessionId, UserEmail, MetricName, TokenType
+      FROM claude_code.${raw ? "otel_metrics_sum" : "otel_metrics_sum_hourly"}
+      WHERE ${raw ? "TimeUnix >= {from:DateTime} AND TimeUnix" : "hour >= toStartOfHour({from:DateTime}) AND hour"} < {to:DateTime}
+        ${metricFilter}
+    ), activity_scopes AS (
+      SELECT ${GROUP_EXPR} AS "group", m.SessionId, m.UserEmail,
+        sumIf(m.Value, m.MetricName = 'claude_code.commit.count') AS commits,
+        sumIf(m.Value, m.MetricName = 'claude_code.active_time.total') AS user_seconds,
+        countIf(m.MetricName = 'claude_code.commit.count') > 0 AS has_commits,
+        countIf(m.MetricName = 'claude_code.active_time.total') > 0 AS has_time,
+        countIf(NOT isFinite(m.Value) OR m.Value < 0) AS invalid_values,
+        m.SessionId != '' AND has_commits AND has_time AND user_seconds > 0
+          AND invalid_values = 0 AND isFinite(commits) AND isFinite(user_seconds) AS matched
+      FROM ${incFlat(metricFilter, to - from)} m
+      LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+      WHERE (m.SessionId, m.UserEmail, m.MetricName, m.TokenType) IN (SELECT * FROM observed_activity) ${f.where}
+      GROUP BY "group", m.SessionId, m.UserEmail
+    )
+    SELECT "group", count() AS observed_scopes, countIf(matched) AS matched_scopes,
+      if(matched_scopes > 0, sumIf(commits, matched), NULL) AS matched_commits,
+      if(matched_scopes > 0, sumIf(user_seconds, matched) / 3600, NULL) AS user_hours,
+      matched_commits / nullIf(user_hours, 0) AS commits_per_user_hour,
+      matched_scopes / observed_scopes AS coverage
+    FROM activity_scopes GROUP BY "group" ORDER BY "group"`,
+    params: { ...range(from, to, raw), ...f.params },
+  };
+}
+
+export async function activityDensity(from, to, filters = {}) {
+  const { sql, params } = activityDensitySql(from, to, filters);
+  return query(sql, params);
+}
+
+export function toolOutcomesSql(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  return {
+    sql: `${GROUP_CTE}
+    SELECT ${GROUP_EXPR} AS "group",
+      count() AS total,
+      countIf(l.Success = 'true' AND l.LogAttributes['error'] = '') AS succeeded,
+      countIf(l.Success = 'false' OR l.LogAttributes['error'] != '') AS failed,
+      total - succeeded - failed AS unknown,
+      succeeded / nullIf(succeeded + failed, 0) AS success_rate,
+      unknown / total AS unknown_rate
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName IN ('tool_result', 'claude_code.tool_result')
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${f.where}
+    GROUP BY "group" ORDER BY "group"`,
+    params: { ...range(from, to, true), ...f.params },
+  };
+}
+
+export async function toolOutcomes(from, to, filters = {}) {
+  const { sql, params } = toolOutcomesSql(from, to, filters);
+  return query(sql, params);
+}
+
+export async function permissionWaitOccupancy(from, to, filters = {}) {
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "t.UserEmail", modelViaSession: "t.SessionId" });
+  const rows = await query(
+    `${GROUP_CTE}
+    SELECT DISTINCT ${GROUP_EXPR} AS "group", t.TraceId AS trace_id, t.SpanId AS span_id,
+      t.SessionId AS session_id, t.SpanType AS span_type,
+      toUnixTimestamp64Milli(t.Timestamp) AS start_ms, t.Duration / 1000000 AS duration_ms
+    FROM claude_code.otel_traces t
+    LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
+    WHERE t.SpanType IN ('interaction', 'tool.blocked_on_user')
+      AND t.Timestamp >= {from:DateTime} AND t.Timestamp < {to:DateTime} ${f.where}
+    LIMIT ${PERMISSION_SPAN_LIMIT + 1}`,
+    { ...range(from, to, true), ...f.params }
+  );
+  return permissionOccupancy(rows, from, to);
 }
 
 // effort별 비용/토큰 — cost는 계산 비용(토큰 × pricing.js 단가, 이 페이지의 다른 Cost 카드와

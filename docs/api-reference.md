@@ -153,6 +153,7 @@ applies a filter only when the query supplies its column expression.
 | Integrity version cohorts | Honor group only; ignore user/model/project. |
 | Plugin inventory | Range only; no group/user/model/project filtering. |
 | Subagent fanout, skill activations, compaction, refusals, exhausted retries, permission wait, interaction breakdown | Honor group/user; ignore model/project. TTFT separately supports row-level model filtering. |
+| Activity density, tool outcomes, permission occupancy | Honor group/user and session-level model filtering; ignore project. Unknown channels are excluded by default. |
 | Mixed metric queries | Model-bearing rows match directly; model-less session/commit/PR/LOC/decision/activity rows use a matching-session semi-join when `modelMixed` is configured. |
 | Many log queries | `modelViaSession` accepts every matching session's events if that session has a matching model in the rollup lookback. This is not event-level model attribution. |
 | Reported-vs-computed and entrypoints | Match the model on each `api_request` log row. |
@@ -200,6 +201,9 @@ query failures still use the normal error path.
 | `/api/productivity/decisions-by-tool` | Per `group, tool, decision`: `n`; excludes empty tool names. |
 | `/api/productivity/active-time` | **B**, per `t, group`: `active_seconds`, summing active-time types. |
 | `/api/productivity/active-time-summary` | Per `group`: `user_seconds`, `cli_seconds`, distinct `sessions` in the active-time aggregation. |
+| `/api/productivity/activity-density` | Per `group`: `observed_scopes`, `matched_scopes`, nullable `matched_commits`, `user_hours`, `commits_per_user_hour`, and fractional `coverage`. Scopes are user/session pairs with either relevant counter observed; ratios use only matched scopes. |
+| `/api/productivity/tool-outcomes` | Per `group`: `total`, `succeeded`, `failed`, `unknown`, nullable `success_rate`, `unknown_rate`. Fractions, no top-tool cap; both unprefixed and `claude_code.tool_result` events. |
+| `/api/productivity/permission-occupancy` | `{unsupported, limited, rows}`. Per `group`: `interactions`, `matched_interactions`, `ambiguous_interactions`, nullable `interaction_ms`, `blocked_ms`, `blocked_share`, and fractional `coverage`. |
 | `/api/productivity/agenticness` | **B**, per `t, group`: `prompts`, `tool_calls`, `tool_calls_per_prompt`, from log events. |
 | `/api/productivity/engagement` | **B**, per `t` after filters, with no group column: `users`, `sessions`, `prs`, `prs_per_user`. |
 | `/api/productivity/loc-timeseries` | **B**, per `t, group`: `loc_added`, `loc_removed`. |
@@ -212,6 +216,14 @@ Trace shares join child spans to interactions by `TraceId`. Overlap means shares
 above one; they are not a partition of elapsed time. These three trace routes are excluded
 from cache warming. The beta setting and matching span/version coverage must be checked
 before interpreting absence.
+
+The three activity-density/tool-outcomes/permission-occupancy routes also skip cache
+warming and use the authenticated Claude route wrapper. Occupancy's `blocked_share`
+unions overlapping wait intervals within each matched interaction; it is distinct from
+the additive share in interaction breakdown. No matched wait produces null, not zero.
+`unsupported=true` means no valid eligible interactions; `limited=true` with empty rows
+means the 20,000-span bound or a conflicting span identity prevented calculation.
+Neither state swallows database errors. See [measurement and coverage rules](metrics.md#activity-and-flow-coverage).
 
 ### Usage
 

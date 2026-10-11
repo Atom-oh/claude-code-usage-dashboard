@@ -77,8 +77,18 @@ test("Productivity missing cost rows stay unavailable without changing scores", 
 test("Productivity cost fetch failure does not render a zero-cost leaderboard", async () => {
   mount("/productivity", [spend], true);
   await screen.findByText("데이터를 불러오지 못했습니다.");
-  expect(within(screen.getByRole("main")).queryByText("사용자별 생산성")).toBeNull();
-  expect(screen.getByText("생산성 점수 상위 10위")).toBeTruthy();
+  expect(within(screen.getByRole("main")).queryByText("사용자별 관측 활동")).toBeNull();
+  expect(screen.getByText("활동 지수 상위 10위")).toBeTruthy();
+});
+
+test("Productivity does not infer accepted lines or a zero approval rate from absent decisions", async () => {
+  mount("/productivity");
+  await screen.findByText("활동 지수 상위 10위");
+  expect(screen.queryByText("수락된 코드 라인")).toBeNull();
+  expect(screen.queryByText("제안 수락률")).toBeNull();
+  const approval = screen.getAllByText("권한 허용률")[0].closest(".bg-card");
+  expect(within(approval).getByText("—")).toBeTruthy();
+  expect(screen.getByText("관측 권한 결정")).toBeTruthy();
 });
 
 test("Users family averages include reported spend independently of pricing coverage", async () => {
@@ -157,8 +167,8 @@ test("Productivity Top 10 lists a user active in both channels once", async () =
     { ...user, group: "enterprise", user_active_days: 2 },
   ];
   const { container } = mount("/productivity", [spend], false, [], both);
-  await waitFor(() => expect(screen.getByText("생산성 점수 상위 10위")).toBeTruthy());
-  const card = screen.getByText("생산성 점수 상위 10위").closest("div.bg-card") || container;
+  await waitFor(() => expect(screen.getByText("활동 지수 상위 10위")).toBeTruthy());
+  const card = screen.getByText("활동 지수 상위 10위").closest("div.bg-card") || container;
   expect(within(card).getAllByText("re******@example.com (bedrock+enterprise)")).toHaveLength(1);
   expect(within(card).queryByText("re******@example.com (bedrock)")).toBeNull();
 });

@@ -143,13 +143,16 @@ Group-mode presentation does not change any backend population policy.
 ## Productivity and Users
 
 `claude_code.code_edit_tool.decision` counts permission decisions, including automatically
-allowed decisions. The UI's suggestion-acceptance wording does not make these human reviews
-of generated code or measurements of accepted code quality.
+allowed decisions. Productivity, Users and Executive label these as permission approvals,
+not human reviews of generated code or measurements of accepted code quality.
 
 | Measure | Calculation | Interpretation |
 |---|---|---|
 | Decision accept rate | `codeEditDecisions` totals `decision='accept'` / all decision counts; leaderboard uses `accepted/decisions`. | A permission-decision mix. Automatic/configured approvals can raise it without human evaluation. |
-| Estimated accepted lines | Productivity computes `round(added_lines * acceptRate)`. | Arithmetic proxy only: neither source measures line-level acceptance. |
+| Permission decision count | Productivity shows the sum of observed decision counts. | Replaces the former `added_lines * acceptRate` estimate: neither source measures line-level acceptance. |
+| Observed activity density | `activityDensity`: matched commit increases / matched user active hours. | Match by user/session with a nonempty session ID, in-range observations of both counters, finite nonnegative increases and positive user time. This is activity per observed time, not labor productivity. |
+| Observed tool success rate | `toolOutcomes`: successes / (successes + failures). | Success requires `success='true'` and no error; false or a nonempty error is failure. Other results are unknown and excluded from the denominator, with their fraction shown separately. Counts are observed log records, not deduplicated task outcomes. |
+| Observed permission wait occupancy | `permissionWaitOccupancy`: unioned wait milliseconds / milliseconds of the same matched interactions. | Conditional on an observed wait signal; not a fleet-wide waiting fraction. See the coverage rules below. |
 | Normalized activity | `normalizedProductivity`: added LOC or commits / tokens * 1,000,000. | Zero token denominators produce null SQL ratios. Volume efficiency is not code quality. |
 | User/CLI active time | `activeTimeSummary` separates `active_time.total` by `TokenType='user'` and `'cli'`; the older `activeTimeSeries` sums types into `active_seconds`. | CLI time is not automatically unattended work, and user time is not measured labor savings. |
 | Automation ratio | CLI seconds / user seconds, when the user denominator is positive. | Runtime ratio only; it does not establish autonomous success or time saved. |
@@ -158,8 +161,9 @@ of generated code or measurements of accepted code quality.
 | Engagement | `dailyEngagement`: users, session/PR increases and PRs per user per requested bucket. | No channel column in the response after filtering; not always daily despite the function name. |
 | Language activity | `languageBreakdown`: code-edit decision totals and accepted decisions per language. | Permission counts; empty language merges into `unknown`. |
 
-The existing **productivity score is an arbitrary activity heuristic**, not a validated
-performance measure. [productivity.js](../dashboard/server/productivity.js) uses
+The existing API field **`productivity_score` is an arbitrary activity heuristic**, not a validated
+performance measure. The UI calls it an activity index; its formula is unchanged for
+historical compatibility. [productivity.js](../dashboard/server/productivity.js) uses
 `d = max(1, selected_days)` and the following weights/caps:
 
 ```text
@@ -178,6 +182,43 @@ views use [foldLeaderboardByUser](../dashboard/web/src/score.js), sum activity a
 channel rows, use `user_active_days` for the distinct-day union, then recompute the formula.
 Executive averages those user scores. A top-ten list ranks this heuristic, not developers'
 quality or business impact. Users' channel acceptance summary is weighted by decision counts.
+
+### Activity and flow coverage
+
+[ProductivitySignals](../dashboard/web/src/pages/ProductivitySignals.jsx) shows the three
+independent signals in Claude detail. Activity density uses the existing temporality-aware
+`incFlat` increases and range alignment. A separate observation set prevents lookback-only
+counter rows from supplying an invented current zero. Above four hours, observation evidence
+has hourly resolution, including the partial first hour; it does not prove exact-boundary
+or complete collection. Coverage is matched user/session scopes divided by scopes with
+either relevant counter observed. Unmatched scopes are excluded from both units of the
+ratio; no matches or a zero time denominator yields null.
+
+[permissionOccupancy](../dashboard/server/productivityMetrics.js) uses native span durations
+and millisecond start timestamps, not sums of child durations or the existing
+`interactionBreakdown.blocked_share`. It deduplicates trace/span identities and matches
+waits by channel, trace, session and overlapping time. Ambiguous matches exclude the
+affected interactions. Only valid, identified interactions starting within the range
+are eligible; their ends are clipped to the query end. Wait intervals are clipped to each
+matched interaction, unioned, then summed across interactions. Concurrent interactions
+remain separate observations; this is not developer wall-clock time.
+
+An interaction without a matched wait is unavailable for this ratio, not a measured zero.
+An explicit zero-duration wait can establish zero. Coverage is matched interactions /
+eligible observed interactions; neither that fraction nor a positive value proves complete
+span collection. More than 20,000 distinct queried spans, or conflicting records for a
+trace/span identity, withholds all occupancy rows with `limited=true`. Missing valid
+interactions returns `unsupported=true`; query failures remain errors.
+
+All three signals honor channel/user filters and session-level model filtering, ignore
+project filters, and retain the usual default exclusion of unknown channels. They have
+different observation populations and must not be combined into a performance score.
+
+Task completion time, 14-day stable completion rate, cost per stable completion and a
+baseline improvement index remain unavailable. They require task identities, start/end
+events, Git/CI/reopen evidence, a completed observation window and task-level cost
+attribution. Session or PR counts do not substitute for completed tasks. The shared
+Productivity page explains this prerequisite without fabricating Codex output metrics.
 
 Users' `familyStats` divides each model family's reported spend by distinct users in that
 family's returned rows, with `includeUnknown=1`. It includes valid reported spend for models
