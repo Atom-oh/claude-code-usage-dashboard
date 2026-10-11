@@ -105,6 +105,24 @@ test("a regional-only model has no global rate and stays unpriced under a global
   assert.equal(row.unpriced_reason, "scope");
 });
 
+test("Haiku 5.5 through Codex uses its per-request 100K tier, not the flat Claude fallback", () => {
+  const at = (input, context_tier) => priceCodexUsage({ ...usage, backend: "bedrock-runtime",
+    model: "global.anthropic.claude-haiku-5-5", input_tokens_total: input, cache_read_tokens: 0,
+    cache_write_tokens: 0, output_tokens: 0, reasoning_tokens: 0, context_tier });
+  assert.equal(at(100000, "short").cost_usd, 0.01);
+  assert.equal(at(100001, "long").cost_usd, 0.0500005);
+  assert.equal(at(100000, "short").price_source, undefined);   // the Codex entry, not claude_table
+  const regional = priceCodexUsage({ ...usage, backend: "bedrock-runtime", model: "us.anthropic.claude-haiku-5-5", context_tier: "short" });
+  assert.equal(regional.cost_usd, Math.round(((49 * 0.11 + 40 * 0.011 + 11 * 0.1375 + 30 * 0.55) / 1e6) * 1e12) / 1e12);
+});
+
+test("open-weight models seen in live usage price at their In-Region list rate", () => {
+  for (const [model, expected] of [["deepseek.v3.2", 0.0001175], ["minimax.minimax-m2.5", 0.000066], ["moonshotai.kimi-k2.5", 0.00015]]) {
+    const row = priceCodexUsage({ ...usage, backend: "bedrock-mantle", model, context_tier: "short" });
+    assert.equal(row.cost_usd, expected, model);
+  }
+});
+
 test("unknown rates or backend, missing cache data, and invalid subsets are unavailable", () => {
   for (const patch of [
     { model: "openai.unknown" }, { backend: "unknown" }, { cache_write_tokens: undefined },

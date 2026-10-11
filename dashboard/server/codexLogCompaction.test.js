@@ -218,6 +218,18 @@ test("Codex log compaction against isolated ClickHouse", {
     assert.equal(Math.round(costs["us.anthropic.claude-fable-5-1"] / costs["global.anthropic.claude-fable-5-1"] * 1000), 1100);
   });
 
+  await t.test("Haiku 5.5 tier boundary prices identically in SQL and the raw fold", () => {
+    for (const [user, input] of [["haiku-short@", "100000"], ["haiku-long@", "100001"]]) {
+      const r = { "user.email": `${user}example.test`, backend: "bedrock-runtime" };
+      insert([completion(621, { model: "global.anthropic.claude-haiku-5-5", input_token_count: input,
+        cached_token_count: "0", cache_write_token_count: "0", output_token_count: "0", reasoning_token_count: "0" }, r)]);
+      const raw = logs.foldCodexInsightsLogs(select(logs.buildCodexInsightsLogQuery(from, to, { user })));
+      const aggregated = foldCodexLogAggregates(select(buildCodexLogAggregateQuery(from, to, { user })));
+      assert.equal(aggregated.summary.cost_per_session, raw.summary.cost_per_session, user);
+      assert.equal(raw.summary.cost_per_session, input === "100000" ? 0.01 : 0.0500005);
+    }
+  });
+
   await t.test("120000 request/completion events retain per-request tiers in bounded aggregates", () => {
     const rates = input => ({ input, cacheRead: 0, cacheWrite: 0, output: 0 });
     const prices = { "test.model": { short_context_limit: 100,

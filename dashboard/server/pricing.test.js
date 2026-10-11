@@ -323,7 +323,7 @@ test("opus-5-5 is priced at its own row with the 0.05x cacheRead exception", () 
 test("sonnet-5-5 is priced at its own row", () => {
   assert.equal(normalizeModelId("global.anthropic.claude-sonnet-5-5"), "claude-sonnet-5-5");
   const p = priceFor("claude-sonnet-5-5");
-  assert.deepEqual(p, { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2, cacheWrite1h: 4 });
+  assert.deepEqual(p, { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.1, cacheWrite1h: 4 });
 });
 
 // -\d{8}$(날짜 스냅샷) 단계가 -4 / -1 같은 마이너 버전까지 먹으면 다른 모델 행으로 매칭돼
@@ -534,4 +534,10 @@ test("rollupComputedCost keeps a group with unknown reported spend unavailable",
   const out = rollupComputedCost(rows, ["group", "effort"]);
   assert.equal(out.find((r) => r.effort === "high").reported_cost, null);
   assert.equal(out.find((r) => r.effort === "low").reported_cost, 2);
+});
+
+// haiku-5-5는 100K 이하 단가 행이다(초과 구간은 요청 단위라 토큰 합계 기반 계산 비용에 적용 불가).
+test("haiku-5-5 is priced at its <=100K row with the standard 0.1x cache read", () => {
+  assert.equal(normalizeModelId("global.anthropic.claude-haiku-5-5"), "claude-haiku-5-5");
+  assert.deepEqual(priceFor("claude-haiku-5-5"), { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01, cacheWrite1h: 0.2 });
 });
