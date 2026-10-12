@@ -211,10 +211,10 @@ export function GroupBarChart({ title, subtitle, help, right, rows, xKey = "grou
 // 임의 카테고리(예: model)별 일간 스택 바 — 그룹(bedrock/enterprise) 전용이 아닌 범용 버전.
 // horizontal: 카테고리가 많거나(예: 유저 20명) 라벨이 길 때(이메일) 세로 막대는 라벨이 겹치거나
 // 다 안 보인다 — Recharts의 layout="vertical"(막대는 가로)로 뒤집고 카테고리 축을 Y로 옮긴다.
-// 드래그 줌은 카테고리 축이 날짜가 아니면 어차피 no-op이라 orientation과 무관하게 그대로 둔다.
+// Horizontal bars have category Y and numeric X; they never select a time range.
 export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort, zoomDisabled = false }) {
   const c = useChartColors();
-  const zoom = useDragZoom(undefined, bucketHours, undefined, zoomDisabled);
+  const zoom = useDragZoom(undefined, bucketHours, undefined, zoomDisabled || horizontal);
   // 엠퍼시스(dataviz: "한 시리즈가 주인공이면 나머지는 회색") — 범례 클릭으로 강조 대상을
   // 고르고, 같은 항목을 다시 클릭하면 해제. 색을 재배정하는 게 아니라 나머지를 물리는
   // 것이라 "색은 엔티티를 따라간다" 규칙과 충돌하지 않는다.
