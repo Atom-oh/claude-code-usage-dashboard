@@ -10,7 +10,9 @@ separate, in `/app/APPLICATION_LICENSE`, and tested against the canonical
 ## Source and coverage
 
 Each record preserves package/version, component, declared license, complete discovered
-license/NOTICE texts and their SHA-256 hashes. Nested vendor notices are retained. Development
+license/NOTICE texts, their kind and SHA-256 hashes. Nested vendor notices are retained.
+NOTICE-only packages remain unresolved; attribution cannot replace license terms or suppress
+README/catalog fallback collection. Source files such as `license.js` do not qualify. Development
 dependencies and absent optional platform packages are omitted; missing required packages
 and installed-versus-lockfile version differences fail collection.
 

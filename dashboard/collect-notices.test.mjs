@@ -60,6 +60,32 @@ test("missing license text stays explicitly incomplete instead of fabricating pe
   } finally { f.close(); }
 });
 
+test("NOTICE is supplementary and cannot suppress an available README license", () => {
+  const f = fixture({ "node_modules/example": { version: "1.2.3" } });
+  try {
+    f.add("node_modules/example", { name: "example", version: "1.2.3", license: "MIT" },
+      { NOTICE: "Synthetic attribution only", "README.md": "## License\nPermission is hereby granted (synthetic test).\n" });
+    const result = collectNotices(f.root);
+    assert.equal(result.report.complete, true);
+    assert.deepEqual(result.report.packages[0].files.map(file => file.kind), ["notice", "license"]);
+    assert.match(result.text, /Synthetic attribution only/);
+    assert.match(result.text, /Permission is hereby granted/);
+  } finally { f.close(); }
+});
+
+test("NOTICE-only and ancillary source files cannot make the inventory complete", () => {
+  const f = fixture({ "node_modules/example": { version: "1.2.3" } });
+  try {
+    f.add("node_modules/example", { name: "example", version: "1.2.3", license: "MIT" },
+      { NOTICE: "Synthetic attribution only", "license.js": "export const license = 'MIT';",
+        "notice-helper.ts": "export const notice = true;" });
+    const result = collectNotices(f.root);
+    assert.equal(result.report.complete, false);
+    assert.deepEqual(result.report.packages[0].files.map(file => file.path), ["NOTICE"]);
+    assert.equal(result.report.unresolved[0].reason, "missing_license_text");
+  } finally { f.close(); }
+});
+
 test("a full README license section is retained without unrelated README content", () => {
   const f = fixture({ "node_modules/example": { version: "1.2.3" } });
   try {

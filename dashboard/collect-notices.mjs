@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const hash = text => createHash("sha256").update(text).digest("hex");
-const licenseName = /^(licen[sc]e|copying|notice)([._-].*)?$/i;
+const licenseName = /^(licen[sc]e|copying|notice)(?:[-_][^.]+)?(?:\.(?:txt|md|rst))?$/i;
+const hasLicenseText = files => files.some(file => file.kind === "license");
 const awsSharedLicensePackages = new Set([
   "@aws-sdk/credential-provider-http@3.972.56",
   "@aws-sdk/credential-provider-login@3.972.60",
@@ -19,7 +20,8 @@ function licenseFiles(directory, relative = "") {
     const name = path.join(relative, entry.name);
     if (entry.isFile() && licenseName.test(entry.name)) {
       const text = readFileSync(path.join(directory, name), "utf8");
-      if (text.trim()) found.push({ path: name.split(path.sep).join("/"), text, sha256: hash(text) });
+      if (text.trim()) found.push({ path: name.split(path.sep).join("/"), text, sha256: hash(text),
+        kind: /^notice/i.test(entry.name) ? "notice" : "license" });
     } else if (entry.isDirectory()) {
       found.push(...licenseFiles(directory, name));
     }
@@ -38,13 +40,14 @@ function readmeLicense(directory) {
   const section = tail.slice(0, next ? next.index : undefined).trim();
   // A link/badge/declaration alone is not a license text.
   if (!/permission is hereby granted|redistribution and use|terms and conditions/i.test(section)) return [];
-  return [{ path: name + "#license", text: section, sha256: hash(section) }];
+  return [{ path: name + "#license", text: section, sha256: hash(section), kind: "license" }];
 }
 
 function sharedRepositoryLicense(packageRoot, manifest, key) {
   if (!awsSharedLicensePackages.has(key) || manifest.license !== "Apache-2.0" ||
       manifest.repository?.url !== "https://github.com/aws/aws-sdk-js-v3.git") return [];
   const peerRoot = path.join(packageRoot, "node_modules/@aws-sdk/core");
+  if (!existsSync(path.join(peerRoot, "package.json"))) return [];
   const peer = JSON.parse(readFileSync(path.join(peerRoot, "package.json"), "utf8"));
   if (peer.license !== manifest.license || peer.repository?.url !== manifest.repository.url)
     throw new Error("shared repository license provenance differs");
@@ -69,7 +72,7 @@ function declaredStandardLicense(manifest, key) {
   if (hash(text) !== file.sha256 || file.licenseId !== declaration.declaredLicense)
     throw new Error("pinned standard license source differs");
   return [{ path: "standard-license/MIT-spdx.txt", text, sha256: file.sha256,
-    source: file.source, publisherDeclaration: declaration, standardLicenseText: true }];
+    source: file.source, publisherDeclaration: declaration, standardLicenseText: true, kind: "license" }];
 }
 
 export function collectNotices(dashboardRoot) {
@@ -96,9 +99,9 @@ export function collectNotices(dashboardRoot) {
       let entry = packages.get(key);
       if (!entry) {
         const files = licenseFiles(directory);
-        if (!files.length) files.push(...readmeLicense(directory));
-        if (!files.length) files.push(...sharedRepositoryLicense(root, manifest, key));
-        if (!files.length) files.push(...declaredStandardLicense(manifest, key));
+        if (!hasLicenseText(files)) files.push(...readmeLicense(directory));
+        if (!hasLicenseText(files)) files.push(...sharedRepositoryLicense(root, manifest, key));
+        if (!hasLicenseText(files)) files.push(...declaredStandardLicense(manifest, key));
         entry = { name: manifest.name, version: manifest.version,
           declaredLicense: typeof manifest.license === "string" ? manifest.license : null,
           repository: typeof manifest.repository === "string" ? manifest.repository : manifest.repository?.url,
@@ -111,7 +114,7 @@ export function collectNotices(dashboardRoot) {
   const entries = [...packages.values()].sort((a, b) =>
     `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`, "en"));
   for (const entry of entries) {
-    if (!entry.declaredLicense || entry.declaredLicense === "UNLICENSED" || !entry.files.length)
+    if (!entry.declaredLicense || entry.declaredLicense === "UNLICENSED" || !hasLicenseText(entry.files))
       unresolved.push({ package: `${entry.name}@${entry.version}`,
         reason: !entry.declaredLicense ? "missing_declaration"
           : entry.declaredLicense === "UNLICENSED" ? "unlicensed_dependency" : "missing_license_text" });
