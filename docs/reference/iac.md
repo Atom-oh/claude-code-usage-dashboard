@@ -5,6 +5,25 @@
 hosted zone and wildcard certificate. It does not create a new EKS cluster or VPC.
 See [infra/AGENTS.md](../../infra/AGENTS.md) before changing it.
 
+## Existing environment inputs
+
+[installation.tf](../../infra/installation.tf) accepts `node_role_name` and
+`private_subnet_ids`. An explicit role is read by name, bypassing the legacy `eksctl`
+pattern; its cluster admission and Karpenter permissions remain operator prerequisites.
+The planning identity needs IAM read access including `iam:GetRole` for explicit roles.
+The default lookup must return exactly one role instead of choosing an arbitrary match.
+
+Explicit subnets must all exist in the cluster VPC and are used by both EC2NodeClass and
+the internal NLB services. The NodeClass selector depends on the validated lookup, including
+targeted operations. Empty input retains discovery tags. Empty/mismatched results
+fail the data-source postcondition. Verify private routing, available addresses and
+required service reachability independently: names, tags and a successful lookup are not
+network validation. Security-group discovery still requires the existing Karpenter tag.
+After `terraform -chdir=infra init -backend=false`, run
+`bash scripts/test-installation-terraform.sh` to exercise the actual lookup/NodeClass files
+with mocked providers and the committed provider versions. These tests make no AWS calls
+and do not verify an installation.
+
 ## Resource ownership
 
 | Source | Responsibility |
