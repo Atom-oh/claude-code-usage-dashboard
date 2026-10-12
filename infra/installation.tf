@@ -22,6 +22,6 @@ variable "private_subnet_ids" {
 
 locals {
   node_subnet_selector_terms = jsondecode(length(var.private_subnet_ids) > 0 ? jsonencode([
-    for id in var.private_subnet_ids : { id = id }
+    for id in sort(data.aws_subnets.private.ids) : { id = id }
   ]) : jsonencode([{ tags = { "karpenter.sh/discovery" = var.eks_cluster_name } }]))
 }

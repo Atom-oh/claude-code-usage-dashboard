@@ -2,6 +2,10 @@
 # Exercise actual installation lookups using mocked providers; never contact AWS.
 set -euo pipefail
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ ! -d "$PROJECT_ROOT/infra/.terraform/providers" ]]; then
+  echo "Initialize the committed providers first: terraform -chdir=infra init -backend=false" >&2
+  exit 1
+fi
 TASK_DIR=$(mktemp -d /tmp/ccdash-installation-tf.XXXXXX)
 trap 'rm -rf "$TASK_DIR"' EXIT
 cp "$PROJECT_ROOT"/infra/{data,installation,variables,identity,nodepool}.tf "$TASK_DIR/"

@@ -14,7 +14,8 @@ The planning identity needs IAM read access including `iam:GetRole` for explicit
 The default lookup must return exactly one role instead of choosing an arbitrary match.
 
 Explicit subnets must all exist in the cluster VPC and are used by both EC2NodeClass and
-the internal NLB services. Empty input retains discovery tags. Empty/mismatched results
+the internal NLB services. The NodeClass selector depends on the validated lookup, including
+targeted operations. Empty input retains discovery tags. Empty/mismatched results
 fail the data-source postcondition. Verify private routing, available addresses and
 required service reachability independently: names, tags and a successful lookup are not
 network validation. Security-group discovery still requires the existing Karpenter tag.

@@ -5,11 +5,14 @@
 This Terraform root **reuses an existing EKS cluster and VPC** (`infra/data.tf`). It does
 not create the cluster, participant EC2 fleet, or collector sidecars. Before planning, verify:
 
-- Existing EKS API access, OIDC provider, and a matching node IAM role discoverable by the
-  `eksctl-<cluster>-nodegroup.*NodeInstanceRole.*` lookup.
+- Existing EKS API access, IRSA OIDC provider, and an admitted node IAM role with Karpenter
+  permissions. Set `node_role_name` explicitly, or require exactly one legacy
+  `eksctl-<cluster>-nodegroup.*NodeInstanceRole.*` match; explicit lookup needs IAM read
+  access including `iam:GetRole`. See [environment inputs](reference/iac.md#existing-environment-inputs).
 - Installed Karpenter controllers/CRDs, ClickHouse and Keeper operators/CRDs, AWS Load
   Balancer Controller, and EBS CSI support with the `gp3` StorageClass.
-- Private subnets/security groups tagged for Karpenter discovery; capacity for the declared
+- Verified private subnets selected by `private_subnet_ids` or Karpenter discovery tags,
+  and tagged security groups; capacity for the declared
   arm64 NodePool, ClickHouse replicas, Keeper, and dashboard. Scheduling is not guaranteed
   by `replicasCount` in a manifest.
 - A Route53 public zone for the domain and an issued wildcard ACM certificate in `us-east-1`.
@@ -98,7 +101,10 @@ Follow [alerting](runbooks/alerting.md), including SNS confirmation and Secret r
 
 ## 5. Validate and apply infrastructure
 
-With target inputs and secrets available:
+With target inputs and secrets available, follow
+[SSO bootstrap](runbooks/organization-sso.md#runtime-configuration) first if a new OIDC
+installation needs its namespace/ECR created before provisioning the external Secret.
+Then review the complete plan:
 
 ```bash
 terraform -chdir=infra init
@@ -134,7 +140,8 @@ REPO=$(terraform -chdir=infra output -raw ecr_repository_url)
 REGISTRY=${REPO%%/*}
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
-docker buildx build --platform linux/arm64 -t "$REPO:$TAG" --push dashboard/
+python3 scripts/build-release.py --image "$REPO:$TAG" --push \
+  --record "/tmp/dashboard-release-$TAG.json"
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" set image deployment/dashboard "dashboard=$REPO:$TAG"
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" rollout status deployment/dashboard --timeout=120s
 ```
@@ -212,6 +219,7 @@ For failure, use [incident response](runbooks/incident-response.md) and the depl
 rollback. Do not destroy shared infrastructure or data to retry installation. Archive before
 tearing down a temporary account.
 
-Basic Auth is the current baseline; edge SSO is a documented upgrade path, not an implemented
-feature ([ADR-004](decisions/ADR-004-basic-auth-baseline-and-sso-upgrade-path.md)). The product
-UI remains Korean. See `LICENSE` for repository usage terms.
+Basic remains legacy compatibility; dedicated commercial installations use explicit
+organization OIDC ([ADR-019](decisions/ADR-019-dedicated-installation-identity.md)).
+Verify actual IdP/roles, runtime and edge before acceptance. The product UI remains Korean.
+See `LICENSE` for repository usage terms.

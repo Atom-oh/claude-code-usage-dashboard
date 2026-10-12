@@ -107,6 +107,21 @@ run "role_arn_rejected" {
   expect_failures = [var.node_role_name]
 }
 
+run "targeted_nodeclass_cannot_skip_vpc_lookup" {
+  command = plan
+  plan_options {
+    target = [kubectl_manifest.claude_code_nodeclass]
+  }
+  variables {
+    private_subnet_ids = ["subnet-00000000000000001", "subnet-00000000000000002"]
+  }
+  override_data {
+    target = data.aws_subnets.private
+    values = { ids = ["subnet-00000000000000001"] }
+  }
+  expect_failures = [data.aws_subnets.private]
+}
+
 run "empty_explicit_role_rejected" {
   command = plan
   variables {
