@@ -25,7 +25,8 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
   including hidden computed columns.
 - CSV follows displayed columns/order; `toCsv` uses `toText` or raw values, never JSX.
 - `csv.js` masks `user` under PII masking even without `toText: maskEmail`.
-  Explicitly mask other identity columns.
+  Explicitly mask other identity columns. It protects formula-like fields with an
+  apostrophe after masking; [CSV representation](../../docs/reference/ui.md) owns limits.
 - Cost USD accepts zero and at most two decimals. `DonutBody.valueFormatter` ignores
   `valuePrefix`; other charts keep their default formatting.
 - Keep trace absence, loading, errors, unpriced values and measured zero distinct.
