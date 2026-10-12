@@ -17,17 +17,17 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
 - Common views do not forward Claude-only group/project filters. Client/backend selection
   survives range changes without leaking masked user IDs.
 - Claude detail's `spend.js` selects `reported_cost` and retains computed diagnostics.
-  Preserve null/unpriced totals/forecasts/charts/CSV; missing local prices do not invalidate reports.
+  Preserve null/unpriced totals/forecasts/charts/CSV; missing local prices do not invalidate valid reports.
 - `showComputed` gates Cost's opt-in computed comparison: table/CSV columns, effort
   annotations, computed total and token-tier charts.
-- Cost comparison changes remount affected `DataTable`s to reset sorting, including hidden columns.
+- Cost comparison changes remount affected `DataTable`s to reset sorting, including hidden computed columns.
 - CSV follows displayed columns/order; `toCsv` uses `toText` or raw values, never JSX.
 - With PII masking, `csv.js` masks `user` without `toText: maskEmail`; explicitly mask other
   identities. Formula-like values gain an apostrophe after masking: [CSV](../../docs/reference/ui.md#tables-and-csv).
 - Cost USD accepts zero and at most two decimals. `DonutBody.valueFormatter` ignores
   `valuePrefix`; other charts keep their default formatting.
 - Distinguish trace absence/loading/errors/unpriced values/measured zero.
-  Shared chart empty-bucket zeros mean recorded usage; preserve explicit nulls/coverage:
+  Shared chart empty-bucket zeros mean recorded usage only; preserve explicit nulls/coverage:
   [ADR-015](../../docs/decisions/ADR-015-idle-chart-buckets.md).
 - Activity/approval rates prove neither productivity nor quality. Do not invent saved hours or ROI.
 
@@ -39,7 +39,7 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
   `schema.projectColumns === true` for both URLs and requests.
 - Session-scoped model filters are not precise attribution; follow the server's grain.
 - Query buckets/calendar presets stay UTC. Parse timezone-less API timestamps as UTC;
-  chart labels/timestamps/CSV display values use browser time.
+  chart labels/timestamps/CSV display values use browser time zone.
   Derive rates from actual range duration, not the last preset; resync local chart
   granularity on global range changes.
 - `useApi()` owns range/filters/refresh/aborts/payload identity.
@@ -51,14 +51,14 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
 
 ## Components and channels
 
-- `useGroupsShown()` owns visibility, including single mode/channel overrides;
+- `useGroupsShown()` owns card visibility, including single mode/channel overrides;
   `GROUP_SEGMENT_ORDER` owns within-row splits.
 - Channels are not emitting clients. Do not identify Codex from an OpenAI model name.
 - Use Card/StatTile help/loading/error/empty conventions; absent subtitles/hints are `undefined`.
 - Use one navigation element except with the mobile drawer open. Mobile navigation
   uses `Sidebar`'s NAV; keep route/navigation tests aligned.
 - Time-series drag zoom changes the whole page; categorical axes do not zoom.
-- UI is Korean-first with English names/identifiers. Engineering docs are English;
+- UI is Korean-first with existing English names/identifiers. Engineering docs are English-only;
   documentation fixes must not translate runtime strings.
 
 See [frontend reference](../../docs/reference/frontend.md),
