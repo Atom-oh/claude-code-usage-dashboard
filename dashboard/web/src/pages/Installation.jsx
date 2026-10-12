@@ -72,13 +72,13 @@ export default function Installation() {
           <p className="mt-2 text-xs text-ink-600">수신 여부가 전체 사용량 수집을 보장하지 않습니다. MFA·실제 스키마 적용·백업 복구는 별도로 검증해야 합니다.</p>
         </div>
         <div className="grid gap-6 xl:grid-cols-2">
-          <Card title="조직 로그인·데이터 연결">
+          <Card title={<h2>조직 로그인·데이터 연결</h2>}>
             <Check label="인증 방식" state={data.authentication?.state}>조직 SSO의 그룹·초대·MFA 정책은 조직의 인증 제공자에서 관리합니다.</Check>
             <Check label="ClickHouse 연결" state={data.database?.state}>데이터를 조회할 수 있도록 연결·읽기 계정 설정을 확인하세요.</Check>
             <Check label="읽기 전용 계정" state={data.database?.readonly}>읽기 전용 여부가 확인되지 않으면 SQL 채팅은 비활성화됩니다.
               {data.database?.readonlyCheckedAt && ` 검증 시각: ${formatClientTimestamp(data.database.readonlyCheckedAt)}.`}</Check>
           </Card>
-          <Card title="클라이언트 수집 상태">
+          <Card title={<h2>클라이언트 수집 상태</h2>}>
             {(data.clients || []).map(client => <Check key={client.client} label={CLIENT_LABELS[client.client] || client.client} state={client.state}>
               {client.latest ? `마지막 수신: ${formatClientTimestamp(client.latest)}.`
                 : client.state === "empty" ? "설정된 수집기로 클라이언트를 연결하고 새 세션을 시작해 주세요."
@@ -86,14 +86,14 @@ export default function Installation() {
             </Check>)}
             <p className="mt-3 text-xs text-ink-600">선택한 클라이언트만 표시합니다. 최근 7일의 수신과 {data.staleAfterMinutes}분 기준이며, 완전한 토큰·비용 집계를 검증하지 않습니다.</p>
           </Card>
-          <Card title="스키마 확인">
+          <Card title={<h2>스키마 확인</h2>}>
             <Check label="Claude 카운터 식별자" state={data.schema?.counterIdentity}>이전 키가 관측되면 마이그레이션·롤업 재구축 절차를 관리자와 확인하세요.</Check>
             <Check label="프로젝트 필드" state={data.schema?.projectFields}>선택적 프로젝트 필터는 필드가 확인될 때 사용할 수 있습니다.</Check>
             <p className="mt-3 text-sm text-ink-600">마이그레이션 이력: {Array.isArray(data.schema?.migrations)
               ? data.schema.migrations.length ? data.schema.migrations.join(", ") : "이력 없음" : "확인 불가"}.
               {" "}이력만으로 실제 DDL·데이터 재구축 완료를 판단할 수 없습니다.</p>
           </Card>
-          <Card title="수집 시작">
+          <Card title={<h2>수집 시작</h2>}>
             <ol className="ml-4 list-decimal space-y-3 text-sm leading-relaxed text-ink-700">
               <li>조직 관리자가 승인된 계정과 데이터 접근 범위를 확인합니다.</li>
               <li>조직의 설치 안내에 따라 Collector와 선택한 클라이언트의 텔레메트리를 설정합니다. 수집 인증값은 비밀 관리 도구로 전달합니다.</li>

@@ -31,6 +31,9 @@ test("admin sees empty versus unavailable, missing release identity and schema l
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(fixture)));
   renderPage();
   expect(await screen.findByText("최근 7일 수신 없음")).toBeTruthy();
+  expect(screen.getAllByRole("heading", { level: 2 }).map(node => node.textContent)).toEqual([
+    "조직 로그인·데이터 연결", "클라이언트 수집 상태", "스키마 확인", "수집 시작",
+  ]);
   expect(screen.getAllByText("확인 불가").length).toBeGreaterThan(0);
   expect(screen.getByText(/릴리스 식별자 미확인/)).toBeTruthy();
   expect(screen.getByText(/이력만으로 실제 DDL/)).toBeTruthy();
