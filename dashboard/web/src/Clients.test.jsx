@@ -142,6 +142,19 @@ test("an older server cannot show unfiltered data under a selected model heading
   expect(screen.queryByText("모델별 사용자 비용 비중", { exact: true })).toBeNull();
 });
 
+test("long model detail headings keep their identity and can wrap within the page", async () => {
+  const model = "model-" + "x".repeat(97);
+  mount({ enabledClients: ["codex"], entry: "/cost?days=1",
+    response: clientOverview({ by_model: [{ ...codexUsage, model }] }) });
+  const title = await screen.findByText("모델별 비용", { exact: true });
+  fireEvent.click(within(title.closest(".shadow-card")).getByRole("button", { name: model }));
+  const heading = within(screen.getByRole("region", { name: "비용 상세" })).getByRole("heading");
+  expect(heading.textContent).toContain(model);
+  expect(heading.className).toContain("min-w-0");
+  expect(heading.className).toContain("[overflow-wrap:anywhere]");
+  expect(heading.getAttribute("tabindex")).toBe("-1");
+});
+
 test("a failed linked detail refresh retains its actual bounds without a permanent spinner", async () => {
   let newer = false;
   const initial = { from: "2026-09-01T00:00:00Z", to: "2026-09-02T00:00:00Z" };

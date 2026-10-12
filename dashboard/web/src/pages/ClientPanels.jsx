@@ -224,7 +224,8 @@ function CostDetail({ selection, hours, parentRange, stale, onClose }) {
   const rawClientRows = detail.data?.by_client || [];
   return <section aria-label="비용 상세" className="flex flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 ref={headingRef} tabIndex={-1} className="scroll-mt-6 text-base font-semibold text-ink-800">{title}</h2>
+      <h2 ref={headingRef} tabIndex={-1}
+        className="min-w-0 max-w-full flex-1 scroll-mt-6 [overflow-wrap:anywhere] text-base font-semibold text-ink-800">{title}</h2>
       <button type="button" onClick={onClose} className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700">상세 닫기</button>
     </div>
     {detail.error ? <ErrorBox error={detail.error} /> : detail.loading || pending ? <Loading />
