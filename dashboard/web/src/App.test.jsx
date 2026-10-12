@@ -43,10 +43,11 @@ test("OIDC viewer cannot see SQL chat while analyst and admin retain it", async 
     const session = { mode: "oidc", name: "Fixture", role,
       expiresAt: new Date(Date.now() + 900_000).toISOString(),
       permissions: role === "viewer" ? ["telemetry:read"] : ["telemetry:read", "chat:query"] };
-    render(<MemoryRouter initialEntries={["/?client=claude&view=detail"]}>
+    render(<MemoryRouter initialEntries={["/analytics?client=claude&view=detail"]}>
       <ConfigProvider config={{ enabledClients: ["claude"], session }}><App /></ConfigProvider>
     </MemoryRouter>);
     expect(!!screen.queryByRole("button", { name: "Ask Claude" })).toBe(role !== "viewer");
+    if (role === "viewer") expect(screen.getByText(/SQL 채팅은 분석 또는 관리자 역할/)).toBeTruthy();
   }
 });
 

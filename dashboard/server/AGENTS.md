@@ -5,11 +5,11 @@ Express ESM serves read-only telemetry and the SPA. Run `npm test` (`node:test`)
 ## API and security
 
 - Use `route()` in `index.js` for validation, caching, in-flight deduplication and errors.
-- Basic/OIDC protects config/freshness/data; only probes/OIDC protocol precede auth.
-  OIDC never falls back to Basic. See
+- Basic/OIDC protects config/freshness/data except probes/OIDC protocol. No OIDC fallback.
+  See
   [identity](../../docs/decisions/ADR-019-dedicated-installation-identity.md).
   JSON is `no-store`; successful chat SSE is `no-cache`.
-- Invalid auth fails startup except explicit Basic local bypass; no fallback.
+- Invalid auth fails startup except explicit Basic local bypass.
   Chat requires readonly-session confirmation. Security-review `sanitizeSql()` changes.
 - OIDC unsafe requests require configured Origin; viewers cannot query chat.
 - Imports must not listen; boot checks/probes still run. Liveness is `/healthz`;
@@ -20,8 +20,8 @@ Express ESM serves read-only telemetry and the SPA. Run `npm test` (`node:test`)
 - Temporality 2 is cumulative: `incFlat`/`incBucketed` or justified local differences;
   preserve delta/legacy handling. Use stored `SeriesKey`, never replacement hashes.
   Process start is included except `claude_code.session.count`; verify probes/ledger.
-- Three-day baselines; raw rows through four hours, then hourly rollups.
-  Preserve historical-end/partial-hour approximations, not cross-window equality claims.
+- Three-day baselines; raw through four hours, then hourly rollups.
+  Keep historical-end/partial-hour approximations; no cross-window equality claims.
 - Keep helper dimensions; ADR-001 owns effort/version/language/agent/project differences.
 - `filterCond()` needs source columns: direct models, counters and session
   logs differ. Unknown-channel inclusion is endpoint policy, not `GROUP_MODE`.
@@ -56,7 +56,8 @@ Express ESM serves read-only telemetry and the SPA. Run `npm test` (`node:test`)
 ## Owners and operations
 
 `queries.js`: SQL/models; `pricing.js`: diagnostics; `schema.js`: probes; `http.js`: validation.
-`queryReadonly()` has separate result/time limits; reader profiles may reject `SETTINGS`.
+`queryReadonly()` has result/time limits; reader profiles may reject `SETTINGS`.
+Never assume overrides are allowed.
 
 Chat retains legacy cost/rollup wording. Its size helper/SQL disconnect signal are not
 wired into the live loop; do not claim those guarantees.

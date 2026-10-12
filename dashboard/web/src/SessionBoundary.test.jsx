@@ -5,6 +5,8 @@ import { ConfigProvider } from "./ConfigContext.jsx";
 import { AccountMenu } from "./components/AccountMenu.jsx";
 import ConfigBootstrap from "./ConfigBootstrap.jsx";
 import { apiGet } from "./api.js";
+import { FreshnessProvider } from "./FreshnessContext.jsx";
+import { streamChat } from "./useChatStream.js";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 const settings = (session, child) => <ConfigProvider config={{ session }}>{child}</ConfigProvider>;
@@ -62,4 +64,26 @@ test("config bootstrap distinguishes expired login from a connection error", asy
   expect(await screen.findByRole("link", { name: "다시 로그인" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
   expect(screen.queryByText("private fixture data")).toBeNull();
+});
+
+test("freshness and chat 401 responses also remove session views", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 401, ok: false,
+    json: async () => ({ error: "authentication_required" }) }));
+  render(settings(session(), <SessionBoundary><FreshnessProvider><div>private fixture data</div></FreshnessProvider></SessionBoundary>));
+  await screen.findByRole("link", { name: "다시 로그인" });
+  expect(screen.queryByText("private fixture data")).toBeNull();
+  cleanup();
+  render(settings(session(), <SessionBoundary><div>private fixture data</div></SessionBoundary>));
+  await act(async () => {
+    await expect(streamChat([], {})).rejects.toThrow("authentication_required");
+  });
+  expect(screen.queryByText("private fixture data")).toBeNull();
+});
+
+test("Basic challenge offers login retry without an unavailable OIDC route", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 401, ok: false,
+    headers: { get: () => "Basic realm=fixture" } }));
+  render(<ConfigBootstrap>{() => <div>private fixture data</div>}</ConfigBootstrap>);
+  expect(await screen.findByRole("button", { name: "로그인 다시 확인" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "다시 로그인" })).toBeNull();
 });

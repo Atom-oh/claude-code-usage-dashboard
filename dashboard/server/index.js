@@ -80,7 +80,8 @@ const RANGE_OPTS = { defaultDays: DEFAULT_RANGE_DAYS, capDays: RANGE_CAP_DAYS };
 
 app.use((_req, res, next) => {
   res.set("Cache-Control", "no-store");
-  res.set("Referrer-Policy", "no-referrer");
+  // Preserve same-origin POST Origin while keeping paths/query strings out of referrers.
+  res.set("Referrer-Policy", "strict-origin");
   res.set("X-Content-Type-Options", "nosniff");
   next();
 });

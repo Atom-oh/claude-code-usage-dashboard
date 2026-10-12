@@ -70,6 +70,13 @@ must be recorded/reconciled with Terraform. Source support does not prove live a
    later data requests without cookies return 401.
 8. Confirm authentication/config/data responses are not cached at edge/browser.
 
+The edge must forward Cookie, Origin, callback query parameters and POST requests, and
+must preserve Set-Cookie. The supported CloudFront configuration uses CachingDisabled
+and AllViewer; verify live policies rather than assuming they are applied.
+Preserve a Referrer Policy compatible with same-origin form POST Origin, such as the
+application's `strict-origin`; do not override it with `no-referrer`.
+Test logout in a real browser through the actual edge and directly through the test origin.
+
 ## Rotation, logs and recovery
 
 Rotating `SESSION_SECRET` invalidates sessions after replicas refresh their environment.
@@ -80,6 +87,12 @@ JSON security events cover login/access denial, callback/provider failure, permi
 origin denial and logout. Retain them in protected logs. Actors are pseudonymous and
 stable only for the issuer/key. This is neither a durable app audit database nor a
 complete record of every telemetry read.
+
+Failure events include a bounded stage/class, not raw provider messages, tokens or callback
+parameters. Stages distinguish discovery, transaction, exchange and claims processing.
+Discovery is deferred until login; syntactically valid settings alone do not prove IdP
+availability. If OIDC settings are present, removing `AUTH_MODE` refuses startup rather
+than silently using Basic credentials.
 
 Login/callback allow 60 combined requests/IP/minute/process with at most 4,096 active
 IP buckets; rejection is 429/Retry-After. Configure fleet protection separately and

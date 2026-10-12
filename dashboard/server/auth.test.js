@@ -106,6 +106,7 @@ test("authentication configuration is explicit and fails closed", () => {
   assert.throws(() => parseAuthConfig({}), /BASIC_AUTH_USER/);
   assert.throws(() => parseAuthConfig({ AUTH_MODE: "unknown", AUTH_ALLOW_INSECURE: "1" }), /AUTH_MODE/);
   assert.throws(() => parseAuthConfig({ BASIC_AUTH_USER: "partial", AUTH_ALLOW_INSECURE: "1" }), /together/);
+  assert.throws(() => parseAuthConfig({ BASIC_AUTH_USER: "fixture", BASIC_AUTH_PASSWORD: "fixture", OIDC_ISSUER: issuer }), /AUTH_MODE/);
   assert.equal(parseAuthConfig({ AUTH_ALLOW_INSECURE: "1" }).enabled, false);
   assert.equal(parseAuthConfig({ BASIC_AUTH_USER: "fixture", BASIC_AUTH_PASSWORD: "fixture" }).enabled, true);
   for (const override of [
@@ -223,7 +224,7 @@ test("missing/mismatched state and duplicate cookies fail before token exchange"
 
 test("authorization codes are consumed once and return paths cannot escape installation", async t => {
   const f = await fixture(t);
-  for (const target of ["https://evil.example.invalid", "//evil.example.invalid", "/\\evil.example.invalid", "/..//evil.example.invalid", "/auth/logout"]) {
+  for (const target of ["https://evil.example.invalid", "//evil.example.invalid", "/\\evil.example.invalid", "/..//evil.example.invalid", "/auth/logout", "/AUTH/logout"]) {
     const flow = await f.complete(target);
     assert.equal(flow.response.status, 303);
     assert.equal(flow.response.headers.get("location"), "/");
@@ -260,6 +261,7 @@ test("identity-provider failure is generic, bounded and never falls back to Basi
     assert.ok(!(await response.text()).includes("private identity provider error"));
   }
   assert.equal(attempts, 1);
+  assert.ok(f.events.some(event => event.failure?.stage === "discovery"));
   assert.equal((await f.request("/api/data", { headers: { authorization: "Basic bGVnYWN5OmxlZ2FjeQ==" } })).status, 401);
 });
 

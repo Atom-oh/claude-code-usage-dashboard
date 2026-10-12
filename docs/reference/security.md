@@ -10,7 +10,7 @@ employee rows. Read [server/AGENTS.md](../../dashboard/server/AGENTS.md),
 
 [auth.js](../../dashboard/server/auth.js) defaults `AUTH_MODE` to `basic`, requiring `BASIC_AUTH_USER` and
 `BASIC_AUTH_PASSWORD`, refusing startup otherwise unless `AUTH_ALLOW_INSECURE=1` explicitly
-allows local unauthenticated use. Only `/healthz` and `/readyz` bypass the global gate.
+allows local unauthenticated use. In Basic mode only `/healthz` and `/readyz` bypass the gate.
 `/api/health/data`, `/api/config`, chat, data routes and static files inherit it.
 
 Explicit `AUTH_MODE=oidc` uses authorization code/PKCE, state/nonce, signed ID tokens,
@@ -20,6 +20,9 @@ are protocol exceptions; telemetry/config/static routes remain protected.
 Sessions use encrypted host-only Secure/HttpOnly cookies, default to 15 minutes, and retain
 no IdP tokens. Unsafe requests require the exact configured Origin. Local logout does not
 revoke copied sessions or IdP SSO. See [SSO operations](../runbooks/organization-sso.md).
+Startup validation checks syntax/required inputs; discovery happens at login.
+The application uses `strict-origin` referrers and `no-store` for authenticated static
+bundles as well as JSON, trading repeat-download caching for a uniform auth-response policy.
 
 `POST /api/chat` additionally requires configured auth or `CHAT_ALLOW_INSECURE=1`, and a
 successful readonly-session probe. The two insecure flags are independent. `trust proxy=1`

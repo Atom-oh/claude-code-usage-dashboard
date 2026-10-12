@@ -23,6 +23,8 @@ function httpsUrl(value, name, originOnly = false) {
 }
 
 export function parseAuthConfig(env) {
+  if (!env.AUTH_MODE && Object.keys(env).some(name => (name.startsWith("OIDC_") || name === "SESSION_SECRET") && env[name]))
+    throw new Error("AUTH_MODE is required when OIDC settings are present");
   const mode = env.AUTH_MODE || "basic";
   if (!["basic", "oidc"].includes(mode)) throw new Error("AUTH_MODE must be basic or oidc");
   if (mode === "basic") {
@@ -98,7 +100,7 @@ function setCookie(res, name, value, seconds) {
 
 function safeReturnTo(value) {
   if (typeof value !== "string" || value.length > 2048 || !value.startsWith("/") || value.startsWith("//")
-    || /[\\\u0000-\u0020\u007f]/.test(value) || value.startsWith("/auth/")) return "/";
+    || /[\\\u0000-\u0020\u007f]/.test(value) || value.toLowerCase().startsWith("/auth/")) return "/";
   // WHATWG normalizes paths such as /..//example.invalid into network-path redirects.
   const url = new URL(value, "https://return.invalid");
   const normalized = url.pathname + url.search;
@@ -143,11 +145,16 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
     }
     return clientPromise;
   };
-  const emit = (event, principal, outcome) => {
+  const emit = (event, principal, outcome, failure) => {
     const actor = principal?.subject && config.key
       ? createHmac("sha256", config.key).update(config.issuer + "\0" + principal.subject).digest("hex").slice(0, 24) : undefined;
-    audit({ type: "security", event, outcome, id: randomUUID(), at: new Date(now()).toISOString(), actor, role: principal?.role });
+    audit({ type: "security", event, outcome, id: randomUUID(), at: new Date(now()).toISOString(), actor, role: principal?.role, failure });
   };
+  // Classify failures without recording provider messages, tokens, URLs or callback data.
+  const failureClass = error => error instanceof oidc.AuthorizationResponseError ? "authorization_response"
+    : error instanceof oidc.ResponseBodyError ? "token_response"
+      : error instanceof oidc.ClientError ? "protocol"
+        : error instanceof TypeError ? "configuration" : "unclassified";
   function roleFromClaims(claims) {
     const groups = claims?.[config.claim];
     if (!Array.isArray(groups) || groups.some(group => typeof group !== "string")) return null;
@@ -192,13 +199,14 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
             code_challenge_method: "S256", state: transaction.state, nonce: transaction.nonce });
           setCookie(res, LOGIN_COOKIE, codec.seal(transaction, "login"), 300);
           res.redirect(302, url.href);
-        } catch {
-          emit("login.start", null, "failed");
+        } catch (error) {
+          emit("login.start", null, "failed", { stage: "discovery", class: failureClass(error) });
           loginPage(res, 503, true);
         }
       });
       app.get("/auth/callback", authRateLimit, async (req, res) => {
         setCookie(res, LOGIN_COOKIE, "", 0);
+        let stage = "transaction";
         try {
           const transaction = codec.open(cookieValue(req.headers.cookie, LOGIN_COOKIE), "login");
           if (!transaction || typeof transaction.state !== "string" || typeof transaction.nonce !== "string"
@@ -206,11 +214,13 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
           // Reconstruct from configured public origin, never Host or forwarded headers.
           const callback = new URL("/auth/callback", config.origin);
           callback.search = new URL(req.originalUrl, config.origin).search;
+          stage = "exchange";
           const tokens = await oidc.authorizationCodeGrant(await getClient(), callback, {
             pkceCodeVerifier: transaction.verifier, expectedState: transaction.state,
             expectedNonce: transaction.nonce, idTokenExpected: true,
           });
           const claims = tokens.claims();
+          stage = "claims";
           const role = roleFromClaims(claims);
           const expires = Math.min(claims?.exp, Math.floor(now() / 1000) + config.maxAge);
           if (!role || typeof claims?.sub !== "string" || !claims.sub || claims.sub.length > 256
@@ -224,8 +234,8 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
           setCookie(res, SESSION_COOKIE, codec.seal(principal, "session"), expires - Math.floor(now() / 1000));
           emit("login.access", principal, "granted");
           res.redirect(303, safeReturnTo(transaction.returnTo));
-        } catch {
-          emit("login.callback", null, "failed");
+        } catch (error) {
+          emit("login.callback", null, "failed", { stage, class: failureClass(error) });
           loginPage(res, 400, true);
         }
       });
