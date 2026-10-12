@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { CapacityError, createBudget, createRequestAdmission, createResultCache, createSlidingLimiter } from "./capacity.js";
+import { CapacityError, createBudget, createQueuedBudget, createRequestAdmission, createResultCache, createSlidingLimiter } from "./capacity.js";
 
 const deferred = () => {
   let resolve, reject;
@@ -17,6 +17,41 @@ test("budgets reject excess work and release once", () => {
   assert.equal(budget.active, 0);
   budget.acquire()();
   assert.throws(() => createBudget(0), RangeError);
+});
+
+test("queued budgets preserve ordinary bursts in FIFO order and bound waiting work", async () => {
+  const budget = createQueuedBudget({ maximum: 1, maxWaiting: 2 });
+  const first = await budget.acquire();
+  const order = [];
+  const second = budget.acquire().then(release => { order.push(2); return release; });
+  const third = budget.acquire().then(release => { order.push(3); return release; });
+  await assert.rejects(budget.acquire(), CapacityError);
+  assert.equal(budget.waiting, 2);
+  first(); first();
+  const finishSecond = await second;
+  assert.deepEqual(order, [2]);
+  assert.equal(budget.active, 1);
+  finishSecond();
+  const finishThird = await third;
+  assert.deepEqual(order, [2, 3]);
+  finishThird();
+  assert.equal(budget.active, 0);
+  assert.equal(budget.waiting, 0);
+});
+
+test("queued budget cancellation and timeout remove waiters without reserving a slot", async () => {
+  const budget = createQueuedBudget({ maximum: 1, maxWaiting: 2, waitMs: 5 });
+  const finish = await budget.acquire();
+  const abort = new AbortController();
+  const cancelled = budget.acquire(abort.signal);
+  abort.abort();
+  await assert.rejects(cancelled, error => error.name === "AbortError");
+  assert.equal(budget.waiting, 0);
+  const keepAlive = setTimeout(() => {}, 100);
+  try { await assert.rejects(budget.acquire(), CapacityError); } finally { clearTimeout(keepAlive); }
+  assert.equal(budget.waiting, 0);
+  assert.equal(budget.active, 1);
+  finish();
 });
 
 class Response extends EventEmitter {

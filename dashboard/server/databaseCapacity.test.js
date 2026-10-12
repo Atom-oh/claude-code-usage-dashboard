@@ -32,6 +32,14 @@ test("actual database helpers bound queries through JSON consumption and keep pi
       pending = Array.from({ length: 24 }, () => database.query("SELECT 1"));
       const all = Promise.all(pending);
       all.catch(() => {});
+      const aborted = new AbortController();
+      const cancelled = database.queryReadonly("SELECT 1", aborted.signal);
+      aborted.abort();
+      await assert.rejects(cancelled, error => error.name === "AbortError");
+      const burst = Array.from({ length: 128 }, () => database.query("SELECT 1"));
+      pending.push(...burst);
+      const allBurst = Promise.all(burst);
+      allBurst.catch(() => {});
       await assert.rejects(database.query("SELECT 1"), CapacityError);
       await assert.rejects(database.queryReadonly("SELECT 1"), CapacityError);
       while (queries.length < 24) await once(events, "request", { signal: AbortSignal.timeout(5000) });
@@ -43,10 +51,11 @@ test("actual database helpers bound queries through JSON consumption and keep pi
       pending.push(...probes);
       await assert.rejects(database.ping(), CapacityError);
       while (pings.length < 4) await once(events, "request", { signal: AbortSignal.timeout(5000) });
+      hold = false; // Queued ordinary requests should run as slots become available.
       for (const res of [...queries, ...pings]) res.end();
       assert.deepEqual(await all, Array.from({ length: 24 }, () => [{ value: 1 }]));
+      assert.deepEqual(await allBurst, Array.from({ length: 128 }, () => [{ value: 1 }]));
       assert.deepEqual(await allProbes, [true, true, true, true]);
-      hold = false;
       assert.deepEqual(await database.query("SELECT 1"), [{ value: 1 }]);
       assert.equal(await database.ping(), true);
     } finally {

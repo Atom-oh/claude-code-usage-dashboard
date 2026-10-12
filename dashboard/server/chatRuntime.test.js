@@ -25,8 +25,8 @@ const configuration = { limit: () => false };
 
 test("chat rejects concurrent excess before SSE/model work and releases after settlement", async () => {
   const budget = createBudget(1);
-  let finish, calls = 0;
-  const handler = createChatHandler({ ...configuration, budget,
+  let finish, calls = 0, hits = 0;
+  const handler = createChatHandler({ ...configuration, budget, limit: () => { hits++; return false; },
     runTurn: async () => { calls++; return new Promise(resolve => { finish = resolve; }); },
   });
   const first = handler(request(), new Response());
@@ -36,6 +36,7 @@ test("chat rejects concurrent excess before SSE/model work and releases after se
   assert.equal(denied.headers["Retry-After"], "1");
   assert.equal(denied.chunks.length, 0);
   assert.equal(calls, 1);
+  assert.equal(hits, 1); // Concurrent overload must not consume an IP rate slot.
   finish(done); await first;
   assert.equal(budget.active, 0);
   const broken = new Response();

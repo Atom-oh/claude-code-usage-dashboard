@@ -20,6 +20,55 @@ export function createBudget(maximum) {
   };
 }
 
+export function createQueuedBudget({ maximum = 24, maxWaiting = 128, waitMs = 30_000 } = {}) {
+  if (![maximum, maxWaiting, waitMs].every(value => Number.isSafeInteger(value) && value > 0))
+    throw new RangeError("invalid queued capacity");
+  let active = 0;
+  const waiting = [];
+  const grant = () => {
+    active++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      active--;
+      const next = waiting.shift();
+      if (next) {
+        next.cleanup();
+        next.resolve(grant());
+      }
+    };
+  };
+  return {
+    async acquire(signal) {
+      signal?.throwIfAborted();
+      if (active < maximum) return grant();
+      if (waiting.length >= maxWaiting) throw new CapacityError();
+      return new Promise((resolve, reject) => {
+        let timer;
+        const waiter = { resolve, cleanup: () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+        } };
+        const cancel = error => {
+          const index = waiting.indexOf(waiter);
+          if (index < 0) return;
+          waiting.splice(index, 1);
+          waiter.cleanup();
+          reject(error);
+        };
+        const abort = () => cancel(signal.reason);
+        timer = setTimeout(() => cancel(new CapacityError()), waitMs);
+        timer.unref();
+        signal?.addEventListener("abort", abort, { once: true });
+        waiting.push(waiter);
+      });
+    },
+    get active() { return active; },
+    get waiting() { return waiting.length; },
+  };
+}
+
 export function capacityResponse(res) {
   return res.set("Retry-After", "1").status(503).json({
     error: "요청이 많습니다. 잠시 후 다시 시도해 주세요.", code: "capacity_exhausted",

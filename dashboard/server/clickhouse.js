@@ -1,5 +1,5 @@
 import { createClient } from "@clickhouse/client";
-import { createBudget } from "./capacity.js";
+import { createBudget, createQueuedBudget } from "./capacity.js";
 
 // ponytail: single shared client, no pool wrapper — @clickhouse/client already pools HTTP keep-alive connections.
 // max_open_connections 기본값 10은 index.js의 캐시 warmer(배치당 5개 동시 쿼리)와 실제 브라우저
@@ -15,7 +15,7 @@ const client = createClient({
   request_timeout: 30000,
   max_open_connections: 30,
 });
-const queryBudget = createBudget(24);
+const queryBudget = createQueuedBudget();
 const pingBudget = createBudget(4);
 
 export function toChDateTime(date) {
@@ -23,7 +23,7 @@ export function toChDateTime(date) {
 }
 
 export async function query(sql, query_params = {}) {
-  const release = queryBudget.acquire();
+  const release = await queryBudget.acquire();
   try {
     const rs = await client.query({ query: sql, query_params, format: "JSONEachRow" });
     return await rs.json();
@@ -45,12 +45,13 @@ export async function query(sql, query_params = {}) {
 // 요청을 계속 기다리지 않는다. 타임아웃 abort와 외부 abort를 구분해야 에러 메시지가 정확하다
 // (외부 abort는 "30초 초과"가 아니므로 그대로 AbortError를 던져 위로 전달한다).
 export async function queryReadonly(sql, externalSignal) {
-  const release = queryBudget.acquire();
   const abort = new AbortController();
-  let timer;
+  let timer, release;
   try {
     timer = setTimeout(() => abort.abort(), 30000);
     const signal = externalSignal ? AbortSignal.any([abort.signal, externalSignal]) : abort.signal;
+    release = await queryBudget.acquire(signal);
+    signal.throwIfAborted();
     const rs = await client.query({
       query: `SELECT * FROM (${sql}) LIMIT 201`,
       format: "JSONEachRow",
@@ -63,7 +64,7 @@ export async function queryReadonly(sql, externalSignal) {
     throw err;
   } finally {
     clearTimeout(timer);
-    release();
+    release?.();
   }
 }
 

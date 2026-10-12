@@ -37,6 +37,10 @@ work. Serialized size is an estimate for cache admission, not a heap/response-al
 
 [capacity.js](../../dashboard/server/capacity.js) bounds admitted `/api` requests at 200,
 database queries at 24 (including result consumption), and chat turns at two per process.
+Database bursts wait FIFO in a bounded 128-query queue for at most 30 seconds; only a
+full/expired queue rejects work. Normal query execution retains the client 30-second timeout
+after admission. Readonly SQL's 30-second abort covers queue and execution together;
+disconnect/deadline also cancels queued readonly work. These are cooperative limits.
 Overload JSON has `code: capacity_exhausted` and a localized retry message.
 HTTP admission follows authentication and releases on response finish/close; work budgets
 release on settlement. Probes and OIDC protocol routes remain outside HTTP admission;
@@ -48,6 +52,7 @@ These bounds do not reserve sockets, measure latency or establish a fleet SLO.
 Chat limits admit ten requests per IP/minute, storing at most 4,096 live keys and ten
 timestamps per key. Denied attempts do not extend the admitted-hit window. A full key map
 rejects new keys until expired entries can be removed; live limits are never evicted.
+Concurrent chat overload is checked before consuming an IP rate slot.
 Limits/cache are independent in each replica: they are neither a fleet-wide quota nor a
 billing bound. Shared proxy/NAT addresses can exhaust the IP limit. The existing
 [chat limits](agent-llm.md) and DB timeout/readonly gates still apply.

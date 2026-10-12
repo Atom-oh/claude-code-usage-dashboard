@@ -634,16 +634,16 @@ export function createChatHandler({ query = queryReadonly, runTurn = runConverse
     }
   };
   return async function handleChat(req, res) {
-    if (limit(req.ip)) {
-      res.status(429).json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." });
-      return;
-    }
     let release;
     try { release = budget.acquire(); } catch (error) {
       if (error instanceof CapacityError) return capacityResponse(res);
       throw error;
     }
     try {
+      if (limit(req.ip)) {
+        res.status(429).json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." });
+        return;
+      }
       return await executeChat(req, res);
     } finally {
       release();
