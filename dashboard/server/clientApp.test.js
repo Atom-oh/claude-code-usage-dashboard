@@ -137,6 +137,25 @@ test("client cache identity never reuses a different client's result", async () 
   assert.equal(rows[3].dataQueries, 0);
 });
 
+test("exact cost drilldowns and one-day fine resolution have isolated validated cache entries", async () => {
+  const path = `/api/clients/overview?${range}&client=all`;
+  const fine = `${path}&intervalHours=${1 / 6}`;
+  const rows = await scenario(true, true, [
+    path, `${path}&userExact=alice%40example.invalid`, `${path}&userExact=bob%40example.invalid`,
+    `${path}&modelExact=openai.gpt-6-astra`, fine, fine,
+    `${path}&userExact=a&userExact=b`, `${path}&modelExact=${"a".repeat(257)}`,
+    `/api/codex/insights?${range}&userExact=alice`,
+  ]);
+  for (const row of rows.slice(0, 6)) assert.equal(row.status, 200);
+  for (const row of rows.slice(1, 5)) assert.ok(row.dataQueries > 0);
+  assert.equal(rows[5].dataQueries, 0);
+  assert.equal(rows[4].body.bucket_hours, 1 / 6);
+  for (const row of rows.slice(6)) {
+    assert.equal(row.status, 400);
+    assert.equal(row.dataQueries, 0);
+  }
+});
+
 test("Claude-only defaults expose only that client through the new contract", async () => {
   const rows = await scenario(true, false, ["/api/config", `/api/clients/overview?${range}`]);
   assert.deepEqual(rows[0].body.enabledClients, ["claude"]);

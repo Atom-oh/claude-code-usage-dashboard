@@ -609,8 +609,35 @@ test("client timeline buckets follow the requested interval but never go below n
   assert.equal(clientBucketSeconds(from, at(48), 0.25), 3600);
   assert.equal(clientBucketSeconds(from, at(2), 0.25), 900);
   assert.equal(clientBucketSeconds(from, at(48), 1.5), 7200);
+  assert.equal(clientBucketSeconds(from, at(24), 1), 3600);
+  assert.equal(clientBucketSeconds(from, at(24), 1 / 6), 600);
+  assert.equal(clientBucketSeconds(from, at(24), 0.5), 1800);
+  assert.equal(clientBucketSeconds(from, at(24), 1 / 60), 3600);
+  assert.equal(clientBucketSeconds(from, at(24 + 1 / 3600), 1 / 6), 3600);
   // SQL always groups at the native bucket; display buckets are regrouped afterwards.
   assert.equal(buildCodexQuery(from, at(720)).params.clientBucketSeconds, 3600);
+});
+
+test("one-day fine queries keep historical minute boundaries; hourly requests still trim", () => {
+  const from = new Date("2026-09-01T06:03:00Z"), to = new Date("2026-09-02T06:03:00Z");
+  assert.equal(effectiveClientEnd(from, to, ["claude", "codex"], 1 / 6).getTime(), to.getTime());
+  assert.equal(effectiveClientEnd(from, to, ["claude", "codex"], 1).toISOString(), "2026-09-02T06:00:00.000Z");
+});
+
+test("exact drilldowns validate identities and bind intersecting user/model constraints", () => {
+  const filters = validateClientFilters({ client: "codex", user: "alice", userExact: "alice@example.invalid",
+    model: "openai.", modelExact: "openai.gpt-6-astra" }, ["codex"]);
+  const { sql, params } = buildCodexQuery(new Date("2026-09-01"), new Date("2026-09-02"), filters, undefined, "codex", 600);
+  assert.equal(params.clientBucketSeconds, 600);
+  assert.equal(params.clientUser, "alice");
+  assert.equal(params.clientUserExact, "alice@example.invalid");
+  assert.equal(params.clientModelExact, "openai.gpt-6-astra");
+  assert.match(sql, /user = \{clientUserExact:String\}/);
+  assert.match(sql, /model = \{clientModelExact:String\}/);
+  assert.ok(!sql.includes("alice@example.invalid"));
+  for (const field of ["userExact", "modelExact"])
+    for (const value of [[], {}, "a".repeat(257)])
+      assert.throws(() => validateClientFilters({ [field]: value }, ["codex"]));
 });
 
 test("regrouped rows keep exact per-day sessions and native-grain coverage identity", () => {

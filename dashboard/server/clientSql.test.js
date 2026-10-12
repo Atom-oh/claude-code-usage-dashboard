@@ -71,6 +71,25 @@ test("real ClickHouse client aggregation preserves transport identity and counte
     const both = await overview({}, ["claude", "codex"]);
     assertFields(both.totals, { tokens: 340, sessions: 2, cost_usd: 0.2042405 });
     assert.equal(both.by_client.find((r) => r.client === "claude").cost_usd, 0.2);
+    await t.test("one-day ten-minute cost buckets preserve counter baselines and exact identities", async () => {
+      const end = new Date(from.getTime() + 86400000);
+      const fine = await overview({ intervalHours: 1 / 6 }, ["claude", "codex"], from, end);
+      assertFields(fine.totals, { tokens: 340, cost_usd: 0.2042405 });
+      assert.equal(fine.bucket_hours, 1 / 6);
+      assert.equal(fine.effective_range.to, end.toISOString());
+      assert.equal(fine.timeseries.find((row) => row.client === "claude").cost_usd, 0.2);
+      const user = await overview({ client: "claude", intervalHours: 1 / 6,
+        user: "claude", userExact: "claude@example.invalid", modelExact: "claude-sonnet-5" },
+      ["claude", "codex"], from, end);
+      assertFields(user.totals, { tokens: 70, cost_usd: 0.2 });
+      const absent = await overview({ client: "claude", intervalHours: 1 / 6,
+        user: "claude", userExact: "otherclaude@example.invalid" }, ["claude", "codex"], from, end);
+      assert.equal(absent.observed_records, 0);
+      const model = await overview({ client: "codex", intervalHours: 1 / 6,
+        userExact: "codex@example.invalid", modelExact: "openai.gpt-6-astra" },
+      ["claude", "codex"], from, end);
+      assertFields(model.totals, { tokens: 270, cost_usd: 0.0042405 });
+    });
     const edges = [];
     for (const [metric, type, before, after] of [
       ["claude_code.token.usage", "input", 100, 110],

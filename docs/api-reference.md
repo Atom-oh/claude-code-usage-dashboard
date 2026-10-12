@@ -45,7 +45,7 @@ Wrapped GET data routes validate these parameters before querying or caching:
 | Parameter | Contract |
 |---|---|
 | `from`, `to` | Date strings; use ISO 8601 with timezone. Defaults: `to=now`, `from=to-DEFAULT_RANGE_DAYS`. Require `from < to`; default range is two days and default cap is 90 days. |
-| `intervalHours` | Default 24. Must be finite and in `(0,744]`, even on routes that ignore buckets. Values below one are clamped to one when the range exceeds four hours. Only rows marked **B** below honor this parameter. |
+| `intervalHours` | Default 24. Must be finite and in `(0,744]`, even on routes that ignore buckets. Values below one are clamped to one beyond four hours, except the bounded shared-overview fine resolution below. Only rows marked **B** below and shared overview honor this parameter. |
 | `group` | Exact inferred channel match, normally `bedrock`, `enterprise` or `unknown`; it is not a coding-client selector. |
 | `user` | Case-insensitive substring of the query's identity expression, usually `UserEmail`. |
 | `model` | Case-insensitive substring after the query's model normalization; scope varies by endpoint. |
@@ -133,11 +133,19 @@ sort by observed tokens. Active rows and compact idle observations each have a
 Claude counter/baseline rules remain.
 `effective_range={from,to,requested_to}` applies Claude's resolved end to both clients
 when selected; the UI discloses trimming. Native buckets are one minute through four hours,
-otherwise one hour. A coarser `intervalHours` is honored, rounded up to a whole multiple of the
+otherwise one hour. On this endpoint only, an explicit `intervalHours` between ten minutes
+and one hour (exclusive) enables ten-minute native raw counter buckets through one day.
+Finer requests over four hours and subhour requests over one day fall back to hourly rollups;
+the three-day counter baseline, row limits and query budgets remain. Fine historical queries
+keep their requested end instead of flooring it to the hour.
+A coarser `intervalHours` is honored, rounded up to a whole multiple of the
 native bucket, and reported as `bucket_hours`; finer values fall back to native. Codex buckets in
 SQL at the native bucket; both clients' rows are then regrouped, so distinct sessions stay exact,
 coverage identity stays at the native bucket (`scope_t`), and bucket-only evidence merges as within
-one bucket. Sizes use Claude's trimmed end. The cache key uses the effective bucket size.
+one bucket. Sizes use Claude's resolved end. The cache key uses the effective bucket size.
+Optional `userExact` and `modelExact` select exact row identities in addition to existing
+partial user/model filters. Claude model IDs are normalized; Codex routing prefixes remain.
+These validated, bound parameters have separate cache keys and are rejected by Codex insights.
 
 Codex detail log summaries use one query for full-identity deduplication, per-response
 pricing and scope evidence. The 50,000-row transfer budget applies to aggregate

@@ -20,7 +20,8 @@ Express ESM serves read-only telemetry and the SPA. Run `npm test` (`node:test`)
 - Temporality 2 is cumulative: `incFlat`/`incBucketed` or justified local differences;
   preserve delta/legacy handling. Use stored `SeriesKey`, never replacement hashes.
   Process start is included except `claude_code.session.count`; verify probes/ledger.
-- Three-day baselines; raw through four hours, then hourly rollups.
+- Three-day baselines; raw through four hours, then hourly rollups. Shared overview
+  permits explicit subhour buckets of at least ten minutes through one day.
   Keep historical-end/partial-hour approximations; no cross-window equality claims.
 - Keep helper dimensions; ADR-001 owns effort/version/language/agent/project differences.
 - `filterCond()` needs source columns: direct models, counters and session

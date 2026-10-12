@@ -252,12 +252,13 @@ function cacheKey(path, query) {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
       client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend,
+      userExact: filters.userExact, modelExact: filters.modelExact,
       modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined,
       // Normalized to the effective bucket so the warmer's default view (no intervalHours)
       // and a browser request for the same resolution share one entry.
       ...(path === "/api/clients/overview" ? (() => {
         const { from, to } = parseRange(query, RANGE_OPTS);
-        const end = effectiveClientEnd(from, to, filters.clients);
+        const end = effectiveClientEnd(from, to, filters.clients, query.intervalHours);
         return { bucketSeconds: String(clientBucketSeconds(from, end, query.intervalHours)) };
       })() : {}) };
     return `${path}?${new URLSearchParams(Object.entries(normalized)
@@ -330,7 +331,11 @@ route("/api/clients/overview",
     validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); } });
 
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
-  { client: "codex", warm: false, validate: (raw) => validateClientFilters(raw, ["codex"]) });
+  { client: "codex", warm: false, validate: (raw) => {
+    validateClientFilters(raw, ["codex"]);
+    if (raw.userExact !== undefined || raw.modelExact !== undefined)
+      throw new ValidationError("unsupported filter", "exact drilldowns require /api/clients/overview");
+  } });
 
 // ── 캐시 warmer ──────────────────────────────────────────────────────────
 // 기본 뷰(2일·필터 없음·시간 버킷)를 QUANT_MS(현재 120초) 경계마다 서버가 스스로 조회해

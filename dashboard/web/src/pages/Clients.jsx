@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { formatClientTimestamp } from "../clientPresentation.js";
 import { Card, ErrorBox, Loading } from "../components/Card.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
@@ -11,6 +11,10 @@ import { formatObserved } from "../clientUsage.js";
 import ClientPanels from "./ClientPanels.jsx";
 import CodexInsights from "./CodexInsights.jsx";
 import { OutcomeMetricsNotice } from "./ProductivitySignals.jsx";
+import { useRange } from "../RangeContext.jsx";
+import { useFilters } from "../FilterContext.jsx";
+import { SegmentedControl } from "../components/SegmentedControl.jsx";
+import { costResolutionLabel, costResolutionOptions } from "../costResolution.js";
 
 const INSIGHT_SECTIONS = {
   productivity: ["효율·Effort"], cost: ["효율·Effort"], usage: ["도구·승인"],
@@ -19,11 +23,21 @@ const INSIGHT_SECTIONS = {
 
 export default function Clients({ page = "overview" }) {
   const { client, enabledClients, setDetail } = useClient();
+  const { from, to, intervalHours: defaultHours } = useRange();
+  const { user, model, backend } = useFilters();
+  const rangeKey = `${from.getTime()}|${to.getTime()}`;
+  const [resolution, setResolution] = useState(null);
+  const costTrends = page === "cost" || page === "trends";
+  const resolutionOptions = costResolutionOptions(to - from);
+  const hours = resolution?.key === rangeKey && resolutionOptions.includes(resolution.hours)
+    ? resolution.hours : defaultHours;
   // Only cost and exec chart model cost trends. modelTime=1 is its own cache key, which the
   // default-view warmer does not fill (a cold request), and moving between these two pages and the
   // others changes useApi's identity, so that switch reloads instead of retaining the data.
   const modelTime = page === "cost" || page === "exec" || page === "trends";
-  const { data, loading, error, stale } = useApi("/api/clients/overview", modelTime ? { client, modelTime: "1" } : { client });
+  const { data, loading, error, stale } = useApi("/api/clients/overview", {
+    client, ...(modelTime ? { modelTime: "1" } : {}), ...(costTrends ? { intervalHours: hours } : {}),
+  });
   const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
   // Trends compare the effective (trimmed) window with a preceding window of exactly its length.
   // With Claude over four hours the server floors historical ends to the hour, so the baseline
@@ -74,8 +88,16 @@ export default function Clients({ page = "overview" }) {
           일부 사용량 정보가 불완전해 관측 토큰은 확인된 값의 부분합으로 표시합니다.
           확인된 합계가 없으면 —로 표시하며, 토큰 비율은 불완전한 합계로 계산하지 않습니다.
         </p>}
+      {costTrends && <div className="flex flex-wrap items-center justify-between gap-2" aria-label="비용추이 해상도">
+        <span className="text-sm font-medium text-ink-700">추이 해상도</span>
+        <SegmentedControl options={[...new Set([...resolutionOptions, hours])].sort((a, b) => a - b)
+          .map((value) => ({ value: String(value), label: costResolutionLabel(value) }))}
+          value={String(hours)} onChange={(value) => setResolution({ key: rangeKey, hours: Number(value) })} />
+        <p className="w-full text-[12px] text-ink-500">1일 이하는 10분까지 선택할 수 있습니다. 더 긴 기간은 시간·일·주 단위로 집계합니다.</p>
+      </div>}
       {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
-        : <section data-shared-client-panels><ClientPanels page={page} data={data} clients={clients} stale={stale}
+        : <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}`}
+          page={page} data={data} clients={clients} stale={stale}
           previous={page === "trends" ? previous : undefined} /></section>}
       {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
       {sections && clients.includes("codex") && <CodexInsights sections={sections}

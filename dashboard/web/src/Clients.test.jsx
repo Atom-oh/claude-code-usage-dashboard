@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "./App.jsx";
 import { ConfigProvider } from "./ConfigContext.jsx";
-import { setPiiMask } from "./fmt.js";
+import { maskEmail, setPiiMask } from "./fmt.js";
 import { clientOverview, codexUsage } from "./test/clientOverview.js";
 import * as csv from "./csv.js";
 
@@ -20,13 +20,13 @@ function LocationSpy() {
   return null;
 }
 
-function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500 } = {}) {
+function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500, respond } = {}) {
   setPiiMask(piiMask);
   const fetchMock = vi.fn((url) => {
     const path = String(url).split("?")[0];
     if (path === "/api/clients/overview" && pending) return new Promise(() => {});
     const body = path === "/api/health/data" ? { status: "ok" }
-      : path === "/api/clients/overview" ? response : [];
+      : path === "/api/clients/overview" ? respond?.(new URL(String(url), "http://localhost")) ?? response : [];
     return Promise.resolve({ ok: !(failed && path === "/api/clients/overview"), status: failed ? failStatus : 200, json: async () => body });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -72,6 +72,52 @@ const requests = (mock) => mock.mock.calls.map(([url]) => new URL(url, "http://l
 const commonRequests = (mock) => requests(mock).filter((url) => url.pathname === "/api/clients/overview");
 const selection = () => screen.queryByRole("combobox", { name: "클라이언트" });
 const tile = (label) => screen.getByText(label, { selector: "span.truncate" }).parentElement.parentElement;
+
+test("one-day Cost defaults to hourly and allows ten minutes, then resets on a wider range", async () => {
+  const { fetchMock } = mount({ enabledClients: ["codex"], entry: "/cost?days=1" });
+  await screen.findByText("사용자별 비용", { exact: true });
+  expect(commonRequests(fetchMock).at(-1).searchParams.get("intervalHours")).toBe("1");
+  fireEvent.click(within(screen.getByLabelText("비용추이 해상도")).getByRole("button", { name: "10분" }));
+  await waitFor(() => expect(commonRequests(fetchMock).at(-1).searchParams.get("intervalHours")).toBe(String(1 / 6)));
+  fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
+  await waitFor(() => expect(commonRequests(fetchMock).at(-1).searchParams.get("intervalHours")).toBe("24"));
+  expect(within(screen.getByLabelText("비용추이 해상도")).queryByRole("button", { name: "10분" })).toBeNull();
+});
+
+test("Cost user detail requests the exact masked identity locally and closes on range changes", async () => {
+  const { fetchMock } = mount({ enabledClients: ["codex"], entry: "/cost?days=1", piiMask: true });
+  const title = await screen.findByText("사용자별 비용", { exact: true });
+  fireEvent.click(within(title.closest(".shadow-card")).getByRole("button", { name: maskEmail("alice@example.test") }));
+  await waitFor(() => expect(commonRequests(fetchMock).some((url) =>
+    url.searchParams.get("userExact") === "alice@example.test")).toBe(true));
+  expect(location.search).not.toContain("alice");
+  expect(screen.getByRole("region", { name: "비용 상세" }).textContent).not.toContain("alice@example.test");
+  expect(screen.getByText("선택 대상 비용 추이")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
+  await waitFor(() => expect(screen.queryByRole("region", { name: "비용 상세" })).toBeNull());
+});
+
+test.each([false, true])("Cost model detail retains client/backend and labels user shares (partial=%s)", async (partial) => {
+  const response = clientOverview({ totals: { ...codexUsage, cost_usd: 4, cost_partial: partial },
+    by_user: [{ ...codexUsage, user: "alice@example.test", cost_usd: 1 },
+      { ...codexUsage, user: "bob@example.test", cost_usd: 3 },
+      { ...codexUsage, user: "unknown@example.test", cost_usd: null, cost_partial: true }] });
+  const { fetchMock } = mount({ enabledClients: ["claude", "codex"], entry: "/cost?days=1", response });
+  const title = await screen.findByText("모델별 비용", { exact: true });
+  fireEvent.click(within(title.closest(".shadow-card")).getByRole("button", { name: "fixture-model" }));
+  await screen.findByText("모델별 사용자 비용 비중", { exact: true });
+  const request = commonRequests(fetchMock).find((url) => url.searchParams.has("modelExact"));
+  expect(request.searchParams.get("client")).toBe("codex");
+  expect(request.searchParams.get("backend")).toBe("bedrock-mantle");
+  const panel = screen.getByRole("region", { name: "비용 상세" });
+  expect(panel.textContent).toContain("25%");
+  expect(panel.textContent).toContain("75%");
+  expect(panel.textContent).toContain("—");
+  expect(panel.textContent).toContain(partial ? "부분합 기준" : "알려진 비용");
+  expect(location.search).not.toContain("modelExact");
+  fireEvent.click(within(panel).getByRole("button", { name: "상세 닫기" }));
+  expect(screen.queryByRole("region", { name: "비용 상세" })).toBeNull();
+});
 
 afterEach(() => {
   cleanup();
