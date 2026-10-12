@@ -519,6 +519,8 @@ test.each([["cost", "시간별*"], ["exec", "일간*"]])(
     expect(trendTitles()).toEqual(["Claude Code 모델별 비용 추이", "Codex 모델별 비용 추이"]);
     expect(toggle()).toEqual(["시간별", "일간", "주간"].map((label) => (`${label}*` === active ? active : label)));
     const [claude, codex] = trendCards();
+    expect(claude.dataset.clientAccent).toBe("var(--chart-1)");
+    expect(codex.dataset.clientAccent).toBe("var(--chart-2)");
     expect(claude.textContent).toContain("Claude 보고 비용");
     expect(claude.textContent).not.toContain("Codex AWS 정가 추정");
     expect(codex.textContent).toContain("Codex AWS 정가 추정");
@@ -529,6 +531,23 @@ test.each([["cost", "시간별*"], ["exec", "일간*"]])(
     expect(claude.querySelector("[data-status-headline]").textContent).toBe("확인이 필요한 버킷이 없습니다.");
     expect([...claude.querySelectorAll('ul[aria-label="범례"] li')].map((li) => li.textContent)).toEqual(["claude-sonnet-5"]);
   });
+
+test("shared model color does not replace explicit client identity on the paired cards", async () => {
+  const data = modelTimeData();
+  data.by_model_time = [
+    bmt("claude", "2026-09-01T00:00:00Z", "claude-sonnet-5", "anthropic", 2),
+    bmt("codex", "2026-09-01T00:00:00Z", "global.anthropic.claude-sonnet-5", "bedrock-runtime", 1),
+  ];
+  mount("cost", data);
+  const [claude, codex] = trendCards();
+  expect(claude.dataset.clientAccent).toBe("var(--chart-1)");
+  expect(codex.dataset.clientAccent).toBe("var(--chart-2)");
+  await waitFor(() => {
+    for (const node of [claude, codex])
+      expect(node.querySelector(".recharts-bar-rectangle path")?.getAttribute("fill")).toBe("#5B6BDB");
+  });
+  for (const node of [claude, codex]) expect(node.querySelector("pattern")).toBeNull();
+});
 
 // ADR-017: the basis chip discloses a computed-estimate cell; Codex's chip is unaffected.
 test("the Claude trend basis chip discloses an estimated cell; Codex's stays unaffected", () => {

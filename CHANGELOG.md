@@ -12,6 +12,15 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-12 model cost chart styling)
+
+- Replace fallback-model hatching with stable solid palettes and matching legend swatches.
+  Add GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna colors, broaden vendor fallbacks, and improve
+  dark-surface contrast for the registered Fable/Opus shades.
+- Refine model bar spacing, width and segment corners; shared Claude/Codex cards have
+  explicit client-colored header accents. Availability marks, partial totals, price
+  bases, independent scales, tables and tooltips retain their measurement semantics.
+
 ### Fixed (2026-10-11 telemetry coverage)
 
 - Match commercial geography model prefixes consistently in Codex shared/detail pricing,

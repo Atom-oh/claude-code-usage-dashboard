@@ -163,11 +163,9 @@ export function makeGroupBreakdownColorer(group, labelOrder) {
 }
 
 // Model cost trend palette (ModelCostTrend). These are new keys only: modelColorFor and
-// MODEL_COLOR keep their existing values. The ten model colors pass the dataviz
-// validate_palette adjacent checks in this order (light on #ffffff, dark on #171c27; the dark
-// set carries contrast WARNs for fable-5-1 and opus-5-5, relieved by the legend and table).
-// Other known Claude models and families keep modelColorFor (solid). Only models outside both get
-// a muted vendor ramp plus a hatch: stone (Anthropic without a family), teal (OpenAI), slate (other).
+// MODEL_COLOR keep their existing values. Registered models and vendor fallbacks use solid
+// fills in both themes. Text, state marks and tooltips carry availability; color carries model
+// identity only. Other known Claude models and families retain modelColorFor.
 // 기타 uses an exclusive neutral that no model or ramp uses.
 export const MODEL_TREND_COLORS = {
   light: {
@@ -181,23 +179,35 @@ export const MODEL_TREND_COLORS = {
     "openai.gpt-5.6-sol": "#00A386",
     "openai.gpt-6-astra": "#5325B9",
     "openai.gpt-5.6-luna": "#025A8D",
+    "openai.gpt-6.1-sol": "#0F766E",
+    "openai.gpt-6-sol": "#2563A6",
+    "openai.gpt-6-luna": "#298CA8",
   },
   dark: {
     "claude-fable-5": "#CB6593",
-    "claude-fable-5-1": "#8F3D71",
+    "claude-fable-5-1": "#B66396",
     "claude-sonnet-5": "#6E7DE6",
     "claude-opus-5": "#CD7143",
-    "claude-opus-5-5": "#A8364A",
+    "claude-opus-5-5": "#D26778",
     "claude-opus-4-8": "#B4811F",
     "claude-haiku-4-5": "#9A70E0",
     "openai.gpt-5.6-sol": "#16A085",
     "openai.gpt-6-astra": "#7044EB",
     "openai.gpt-5.6-luna": "#056AB3",
+    "openai.gpt-6.1-sol": "#4EBAA4",
+    "openai.gpt-6-sol": "#5A9FE0",
+    "openai.gpt-6-luna": "#63C5D1",
   },
 };
 export const MODEL_TREND_OTHERS = { light: "#A3A9B6", dark: "#5E6678" };
 export const MODEL_TREND_VENDOR_RAMPS = {
   anthropic: { light: ["#5E4F46", "#72625A", "#87766D"], dark: ["#8D7C73", "#A39188", "#B9A79D"] },
-  openai: { light: ["#306F6B", "#4F8D89", "#6DACA7"], dark: ["#366E6B", "#4E8682", "#669E9A"] },
-  other: { light: ["#53676B", "#677C80", "#7B9195"], dark: ["#78879F", "#8D9CB5", "#A3B2CB"] },
+  openai: {
+    light: ["#277F89", "#4F6FB5", "#248A75", "#487EA8", "#647CC0", "#249CB0"],
+    dark: ["#55A6B0", "#8197D4", "#57B6A0", "#76ACD2", "#9AABEB", "#5AC2D3"],
+  },
+  other: {
+    light: ["#AD7A38", "#5E76B9", "#2D8F84", "#9A6FA6", "#4D869C", "#8E7765"],
+    dark: ["#C6A26A", "#93A6DC", "#6ABBAF", "#BE98C8", "#81B4CA", "#BAA08B"],
+  },
 };
