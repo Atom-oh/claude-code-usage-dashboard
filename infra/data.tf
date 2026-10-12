@@ -18,16 +18,41 @@ data "aws_subnets" "private" {
     name   = "vpc-id"
     values = [data.aws_vpc.this.id]
   }
-  tags = { "karpenter.sh/discovery" = var.eks_cluster_name }
+  dynamic "filter" {
+    for_each = length(var.private_subnet_ids) > 0 ? [var.private_subnet_ids] : []
+    content {
+      name   = "subnet-id"
+      values = filter.value
+    }
+  }
+  tags = length(var.private_subnet_ids) > 0 ? {} : { "karpenter.sh/discovery" = var.eks_cluster_name }
+  lifecycle {
+    postcondition {
+      condition     = length(self.ids) > 0 && (length(var.private_subnet_ids) == 0 || length(self.ids) == length(var.private_subnet_ids))
+      error_message = "No matching subnets, or an explicit subnet is missing/outside the cluster VPC. Set private_subnet_ids to verified private subnets in that VPC."
+    }
+  }
 }
 
 # 노드용 IAM 인스턴스 프로파일 role — 기존 EC2NodeClass(default)가 쓰는 것과 동일한 role 재사용.
 data "aws_iam_roles" "node_role" {
+  count      = var.node_role_name == null ? 1 : 0
   name_regex = "eksctl-${var.eks_cluster_name}-nodegroup.*NodeInstanceRole.*"
+  lifecycle {
+    postcondition {
+      condition     = length(self.names) == 1
+      error_message = "Legacy node-role discovery must match exactly one role. Set node_role_name explicitly after verifying cluster admission and Karpenter permissions."
+    }
+  }
+}
+
+data "aws_iam_role" "explicit_node" {
+  count = var.node_role_name == null ? 0 : 1
+  name  = var.node_role_name
 }
 
 locals {
-  node_role_name = tolist(data.aws_iam_roles.node_role.names)[0]
+  node_role_name = var.node_role_name == null ? try(one(data.aws_iam_roles.node_role[0].names), "") : data.aws_iam_role.explicit_node[0].name
   oidc_issuer    = replace(data.aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")
 }
 

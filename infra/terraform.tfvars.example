@@ -6,6 +6,12 @@
 # 이 스택을 올릴 EKS 클러스터
 eks_cluster_name = "YOUR-EKS-CLUSTER"
 
+# Customer environments can use explicit existing infrastructure instead of eksctl naming
+# and subnet discovery tags. Verify node-role cluster admission/Karpenter permissions and
+# subnet routes/reachability; selecting these inputs does not establish those prerequisites.
+# node_role_name    = "YOUR-EXISTING-NODE-ROLE"
+# private_subnet_ids = ["subnet-00000000000000001", "subnet-00000000000000002"]
+
 # Route53 호스팅 존과 그 안의 호스트명
 domain             = "example.com"
 dashboard_hostname = "dashboard.example.com"

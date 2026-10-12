@@ -92,3 +92,5 @@ jobs:
         working-directory: infra
       - name: Verify dedicated-installation identity inputs without AWS access
         run: bash scripts/test-identity-terraform.sh
+      - name: Verify customer infrastructure lookups with mocked providers
+        run: bash scripts/test-installation-terraform.sh

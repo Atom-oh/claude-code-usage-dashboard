@@ -15,7 +15,7 @@ resource "kubectl_manifest" "claude_code_nodeclass" {
       }]
       role                       = local.node_role_name
       securityGroupSelectorTerms = [{ tags = { "karpenter.sh/discovery" = var.eks_cluster_name } }]
-      subnetSelectorTerms        = [{ tags = { "karpenter.sh/discovery" = var.eks_cluster_name } }]
+      subnetSelectorTerms        = local.node_subnet_selector_terms
       tags                       = { NodePool = "claude-code", Project = "claude-code-dashboard", "managed-by" = "karpenter" }
     }
   })
