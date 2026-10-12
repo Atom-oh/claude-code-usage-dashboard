@@ -59,6 +59,14 @@ Basic mode keeps its resource address/default and requires its protected passwor
 Changing modes refreshes pods and clears unused Basic Secret data; retain protected Basic
 inputs when a rollback to that mode must remain available.
 
+On a first installation the namespace does not exist until Terraform creates it. Review
+and apply a bootstrap plan targeting only `kubernetes_namespace.claude_code` and
+`aws_ecr_repository.dashboard`, then provision the external Secret and review/apply the
+complete stack. Targeted bootstrap is for initial creation, not routine reconciliation.
+Do not create an unmanaged same-name namespace or automatically import a shared one.
+Existing managed installations already have the namespace and can provision the Secret
+before the mode-change rollout.
+
 Source support and successful Terraform validation do not prove live activation.
 Verify the actual mode/secret references and use `/installation` as an authorized admin
 for current connectivity and receipt diagnostics.
