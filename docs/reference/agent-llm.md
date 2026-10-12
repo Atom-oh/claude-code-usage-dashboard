@@ -16,6 +16,7 @@ The UI and system prompt currently request Korean answers.
 |---|---|
 | Input history | Last 30 nonempty user/assistant messages; each content string truncated to 8,000 characters |
 | Rate | At most 10 requests per IP in a rolling minute, per server process; excess returns 429 |
+| Admission | Two active turns per process; excess returns 503 before SSE/model work |
 | `MAX_HOPS` | Four tool-enabled model rounds; if the fourth still requests tools, one final tool-disabled summary round |
 | `MAX_SQL_CALLS` | Eight tool executions per turn, counted independently of rounds; invalid SQL also consumes a slot |
 | Model output | `maxTokens: 8000` for each model call |

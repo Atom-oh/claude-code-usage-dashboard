@@ -2,11 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createChatHandler, capToolResultJson, sendConverseWithRetry } from "./chat.js";
+import { createBudget } from "./capacity.js";
 
 class Response extends EventEmitter {
   writableEnded = false;
   destroyed = false;
   chunks = [];
+  set(name, value) { this.headers = { ...this.headers, [name]: value }; return this; }
+  status(value) { this.statusCode = value; return this; }
+  json(value) { this.body = value; return this; }
   writeHead(status, headers) { this.statusCode = status; this.headers = headers; }
   write(value) { this.chunks.push(value); }
   end() { this.writableEnded = true; this.emit("close"); }
@@ -18,6 +22,27 @@ const toolTurn = (id = "one", sql = "SELECT 1") => ({
 });
 const done = { content: [{ text: "done" }], stopReason: "end_turn", truncatedToolIds: new Set() };
 const configuration = { limit: () => false };
+
+test("chat rejects concurrent excess before SSE/model work and releases after settlement", async () => {
+  const budget = createBudget(1);
+  let finish, calls = 0;
+  const handler = createChatHandler({ ...configuration, budget,
+    runTurn: async () => { calls++; return new Promise(resolve => { finish = resolve; }); },
+  });
+  const first = handler(request(), new Response());
+  const denied = new Response();
+  await handler(request(), denied);
+  assert.equal(denied.statusCode, 503);
+  assert.equal(denied.headers["Retry-After"], "1");
+  assert.equal(denied.chunks.length, 0);
+  assert.equal(calls, 1);
+  finish(done); await first;
+  assert.equal(budget.active, 0);
+  const broken = new Response();
+  broken.writeHead = () => { throw new Error("synthetic header failure"); };
+  await assert.rejects(handler(request(), broken), /header failure/);
+  assert.equal(budget.active, 0);
+});
 
 test("active tool path bounds JSON context and preserves masking configuration", async () => {
   for (const mask of [true, false]) {

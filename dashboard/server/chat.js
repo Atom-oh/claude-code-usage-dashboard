@@ -1,5 +1,6 @@
 import { BedrockRuntimeClient, ConverseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { queryReadonly } from "./clickhouse.js";
+import { CapacityError, capacityResponse, createBudget, createSlidingLimiter } from "./capacity.js";
 import { GROUP_CTE } from "./grouping.js";
 import { normModel } from "./queries.js";
 import { PRICING_PROMPT_TABLE } from "./pricing.js";
@@ -335,16 +336,9 @@ const TOOLS = {
 // 인증된(혹은 탈취된) 크리덴셜 하나로 hop×Bedrock ConverseStream을 무제한 호출하면 비용 증폭/DoS라
 // per-IP 분당 상한을 둔다. ponytail: 단일 파드 in-memory sliding window — 멀티 레플리카로 가면
 // 파드별 카운터라 한도가 N배 느슨해지니 그때 공유 스토어(Redis 등)로 옮긴다.
-const RATE_MAX = 10, RATE_WINDOW_MS = 60_000, MAX_MESSAGES = 30;
-const rateHits = new Map();
-function rateLimited(ip) {
-  const now = Date.now();
-  const hits = (rateHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
-  hits.push(now);
-  rateHits.set(ip, hits);
-  if (rateHits.size > 5000) for (const [k, v] of rateHits) if (!v.some((t) => now - t < RATE_WINDOW_MS)) rateHits.delete(k);
-  return hits.length > RATE_MAX;
-}
+const MAX_MESSAGES = 30;
+const rateLimited = createSlidingLimiter();
+const chatBudget = createBudget(2);
 
 // 툴 결과가 hop마다 messages에 쌓여 다음 hop 입력으로 재전송된다(MAX_HOPS번 누적) — 200행
 // JSON이라도 몇 hop 겹치면 다음 요청의 입력이 눈덩이처럼 불어나 maxTokens를 넘기는 원인이 된다.
@@ -491,12 +485,8 @@ const MAX_SQL_CALLS = 8;
 
 // POST /api/chat {messages:[{role,content}]} → SSE(status/text/done/error 이벤트) 스트림.
 export function createChatHandler({ query = queryReadonly, runTurn = runConverseTurn,
-  mask = piiMaskEnabled, limit = rateLimited, timeoutMs = 180_000 } = {}) {
-  return async function handleChat(req, res) {
-    if (limit(req.ip)) {
-      res.status(429).json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." });
-      return;
-    }
+  mask = piiMaskEnabled, limit = rateLimited, timeoutMs = 180_000, budget = chatBudget } = {}) {
+  const executeChat = async (req, res) => {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     // res.write 자체는 성공/실패를 던지지 않지만, 클라이언트가 이미 연결을 끊은 뒤 write하면
     // 예외가 나거나(소켓 파괴 상태) 조용히 버려진다 — 어느 쪽이든 매 send() 호출부에서 방어하지
@@ -641,6 +631,22 @@ export function createChatHandler({ query = queryReadonly, runTurn = runConverse
       clearTimeout(deadline);
       res.removeListener("close", onClose);
       if (!res.writableEnded && !res.destroyed) res.end();
+    }
+  };
+  return async function handleChat(req, res) {
+    if (limit(req.ip)) {
+      res.status(429).json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." });
+      return;
+    }
+    let release;
+    try { release = budget.acquire(); } catch (error) {
+      if (error instanceof CapacityError) return capacityResponse(res);
+      throw error;
+    }
+    try {
+      return await executeChat(req, res);
+    } finally {
+      release();
     }
   };
 }

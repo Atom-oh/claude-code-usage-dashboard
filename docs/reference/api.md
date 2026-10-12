@@ -20,13 +20,37 @@ Developer instructions live in [server/AGENTS.md](../../dashboard/server/AGENTS.
 ## Request and cache behavior
 
 `route()` registers GET data handlers. It validates range and interval before cache lookup,
-then passes parsed filters to the handler. Validation failures return 400; other failures
-return 500 with an opaque error ID. Config, health and chat handlers bypass this wrapper.
+then passes parsed filters to the handler. Validation failures return 400; capacity
+exhaustion returns 503 with `Retry-After: 1`; other failures return 500 with an opaque
+error ID. Config, health and chat handlers bypass this wrapper.
 
-The process-local cache stores promises for 320 seconds, deduplicating concurrent misses.
+The process-local cache deduplicates pending work until settlement and stores successful
+results for 320 seconds from completion. Pending entries do not expire or get evicted.
 Keys contain the route path plus `from`, `to`, `group`, `user`, `model`, `project`,
 `intervalHours`, `email` and `includeUnknown`, sorted by parameter name. Failed promises are removed. The 2,000-entry
-cap evicts by insertion order, not by last read.
+cap evicts settled entries by insertion order, not by last read. At most 64 distinct
+cache loads execute concurrently; excess misses return 503 while existing-key requests
+can still share work.
+Settled entries have a 16 MiB serialized-JSON byte quota and a 1 MiB per-entry quota.
+Oversized results are returned intact but not cached; byte eviction never removes pending
+work. Serialized size is an estimate for cache admission, not a heap/response-allocation bound.
+
+[capacity.js](../../dashboard/server/capacity.js) bounds admitted `/api` requests at 200,
+database queries at 24 (including result consumption), and chat turns at two per process.
+Overload JSON has `code: capacity_exhausted` and a localized retry message.
+HTTP admission follows authentication and releases on response finish/close; work budgets
+release on settlement. Probes and OIDC protocol routes remain outside HTTP admission;
+`ping` has a separate four-call budget. Busy/failed ping keeps liveness HTTP 200 with
+`ok: false` and makes readiness 503; it must not restart the process. The ClickHouse
+connection pool remains 30.
+These bounds do not reserve sockets, measure latency or establish a fleet SLO.
+
+Chat limits admit ten requests per IP/minute, storing at most 4,096 live keys and ten
+timestamps per key. Denied attempts do not extend the admitted-hit window. A full key map
+rejects new keys until expired entries can be removed; live limits are never evicted.
+Limits/cache are independent in each replica: they are neither a fleet-wide quota nor a
+billing bound. Shared proxy/NAT addresses can exhaust the IP limit. The existing
+[chat limits](agent-llm.md) and DB timeout/readonly gates still apply.
 
 The warmer runs at startup and on 120-second boundaries, in batches of three with two-second
 gaps. It requests an unfiltered `DEFAULT_RANGE_DAYS` window with `intervalHours=1`.

@@ -1,4 +1,5 @@
 import { createClient } from "@clickhouse/client";
+import { createBudget } from "./capacity.js";
 
 // ponytail: single shared client, no pool wrapper — @clickhouse/client already pools HTTP keep-alive connections.
 // max_open_connections 기본값 10은 index.js의 캐시 warmer(배치당 5개 동시 쿼리)와 실제 브라우저
@@ -14,14 +15,21 @@ const client = createClient({
   request_timeout: 30000,
   max_open_connections: 30,
 });
+const queryBudget = createBudget(24);
+const pingBudget = createBudget(4);
 
 export function toChDateTime(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
 export async function query(sql, query_params = {}) {
-  const rs = await client.query({ query: sql, query_params, format: "JSONEachRow" });
-  return rs.json();
+  const release = queryBudget.acquire();
+  try {
+    const rs = await client.query({ query: sql, query_params, format: "JSONEachRow" });
+    return await rs.json();
+  } finally {
+    release();
+  }
 }
 
 // 챗봇 run_sql 툴 전용. otel_reader 계정 프로필이 서버 쪽에서 이미 readonly=1을 강제해
@@ -37,10 +45,12 @@ export async function query(sql, query_params = {}) {
 // 요청을 계속 기다리지 않는다. 타임아웃 abort와 외부 abort를 구분해야 에러 메시지가 정확하다
 // (외부 abort는 "30초 초과"가 아니므로 그대로 AbortError를 던져 위로 전달한다).
 export async function queryReadonly(sql, externalSignal) {
+  const release = queryBudget.acquire();
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 30000);
-  const signal = externalSignal ? AbortSignal.any([abort.signal, externalSignal]) : abort.signal;
+  let timer;
   try {
+    timer = setTimeout(() => abort.abort(), 30000);
+    const signal = externalSignal ? AbortSignal.any([abort.signal, externalSignal]) : abort.signal;
     const rs = await client.query({
       query: `SELECT * FROM (${sql}) LIMIT 201`,
       format: "JSONEachRow",
@@ -53,6 +63,7 @@ export async function queryReadonly(sql, externalSignal) {
     throw err;
   } finally {
     clearTimeout(timer);
+    release();
   }
 }
 
@@ -87,6 +98,11 @@ export async function assertReadonlySession() {
 }
 
 export async function ping() {
-  const r = await client.ping();
-  return r.success;
+  const release = pingBudget.acquire();
+  try {
+    const r = await client.ping();
+    return r.success;
+  } finally {
+    release();
+  }
 }
