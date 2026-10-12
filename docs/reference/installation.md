@@ -3,6 +3,7 @@
 The supported target is a dedicated installation in the customer's AWS account on an
 existing EKS environment. [Organization installation](../deploying-for-your-org.md) owns
 the apply/build/acceptance sequence; [IaC](iac.md) owns inputs and resource lookups.
+The customer boundary is defined in [ADR-019](../decisions/ADR-019-dedicated-installation-identity.md).
 
 ## Read-only checks
 
@@ -32,12 +33,18 @@ wrong kube endpoint skips Kubernetes probes. Each CLI invocation has a 20-second
 CLI stderr/raw metadata are suppressed. The optional new report is mode 0600 and cannot
 overwrite an existing file. It records timestamp, script hash, requested non-secret target
 inputs and check states; keep it private and outside version control.
+The report uses a complete private temporary file and an atomic exclusive hard link in
+the same directory; the filesystem must support hard links. Write failure leaves no partial
+destination. Console check states remain visible even when report publication fails.
 
 ## Interpretation and remaining verification
 
 Checks cover account/cluster/context, served CRD versions, storage/CSI registration,
 ready controller image hints, IRSA OIDC-provider presence, subnet lookup/no automatic
 public IP/available addresses, node-role lookup, public zone and wildcard certificate.
+The certificate query mirrors Terraform's primary-domain/ISSUED/default RSA-2048 lookup
+in `us-east-1`; it does not broaden accepted key types. Independently verify the selected
+certificate's trust/expiry and CloudFront eligibility before apply.
 
 The controller hint accepts a separate Keeper operator or the verified combined
 `altinity/clickhouse-operator:0.26.2` image (optionally digest-pinned). Its

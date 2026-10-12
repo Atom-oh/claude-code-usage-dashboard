@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 
 CRDS = {
@@ -25,9 +26,6 @@ MANUAL_CHECKS = [
     "Terraform state ownership, reviewed plan, service quotas and CloudFront VPC-origin eligibility",
     "Customer IdP, external secrets, collector transport, backup/restore and end-to-end acceptance",
 ]
-CERTIFICATE_KEY_TYPES = (
-    "RSA_1024,RSA_2048,RSA_3072,RSA_4096,EC_prime256v1,EC_secp384r1,EC_secp521r1"
-)
 
 
 class ProbeError(Exception):
@@ -44,6 +42,20 @@ def execute(command):
         # CLI stderr can contain sensitive context. Keep it out of reports and stdout.
         raise ProbeError("command_failed_check_local_credentials_permissions_and_context")
     return result.stdout
+
+
+def write_report(path, report):
+    # Publish a complete private file atomically, never replacing an existing path.
+    descriptor, temporary = tempfile.mkstemp(prefix=".dashboard-preflight-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w") as file:
+            json.dump(report, file, indent=2)
+            file.write("\n")
+            file.flush()
+            os.fsync(file.fileno())
+        os.link(temporary, path)
+    finally:
+        os.unlink(temporary)
 
 
 def check_prerequisites(args, run=execute):
@@ -120,8 +132,16 @@ def check_prerequisites(args, run=execute):
 
             def controllers():
                 deployments = kube("get", "deployments", "--all-namespaces")["items"]
+                def rollout_ready(item):
+                    status = item.get("status", {})
+                    desired = item["spec"].get("replicas", 1)
+                    generation = item.get("metadata", {}).get("generation")
+                    return (isinstance(generation, int) and desired >= 1 and
+                            status.get("observedGeneration") == generation and
+                            all(status.get(field) == desired for field in
+                                ("replicas", "updatedReplicas", "readyReplicas", "availableReplicas")))
                 ready_images = [container.get("image", "") for item in deployments
-                                if item.get("status", {}).get("availableReplicas", 0) >= 1
+                                if rollout_ready(item)
                                 for container in item["spec"]["template"]["spec"]["containers"]]
                 # Package-neutral hints; image names/readiness are not reconciliation proof.
                 basic_hints = all(any(re.search(pattern, image) for image in ready_images) for pattern in (
@@ -176,7 +196,6 @@ def check_prerequisites(args, run=execute):
 
     def certificate():
         certificates = aws("acm", "list-certificates", "--certificate-statuses", "ISSUED",
-                           "--includes", f"keyTypes={CERTIFICATE_KEY_TYPES}",
                            region="us-east-1")["CertificateSummaryList"]
         return any(item["DomainName"].lower() == "*." + args.domain for item in certificates)
 
@@ -199,8 +218,8 @@ def main():
             re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-\d+", args.region) and
             re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,99}", args.cluster) and
             args.context.strip() and not args.context.startswith("-") and
-            re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", args.domain) and
-            len(args.domain) <= 253 and ".." not in args.domain and
+            len(args.domain) <= 253 and all(re.fullmatch(
+                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in args.domain.split(".")) and
             (args.node_role is None or re.fullmatch(r"[A-Za-z0-9_+=,.@-]{1,64}", args.node_role)) and
             len(args.subnet_ids) == len(set(args.subnet_ids)) and all(
                 re.fullmatch(r"subnet-(?:[0-9a-f]{8}|[0-9a-f]{17})", value) for value in args.subnet_ids)):
@@ -215,18 +234,15 @@ def main():
     }
     failed = any(item["status"] != "pass" for item in report["checks"])
     report["automated_checks_passed"] = not failed
-    if args.record:
-        try:
-            descriptor = os.open(args.record, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "w") as file:
-                json.dump(report, file, indent=2)
-                file.write("\n")
-        except OSError:
-            print("Could not create the new private report", file=sys.stderr)
-            return 2
     for item in report["checks"]:
         print(f"{item['status'].upper()}: {item['check']}")
     print("Manual target verification is required; passing checks do not establish installation readiness.")
+    if args.record:
+        try:
+            write_report(args.record, report)
+        except OSError:
+            print("Could not create the new private report", file=sys.stderr)
+            return 2
     return 1 if failed else 0
 
 

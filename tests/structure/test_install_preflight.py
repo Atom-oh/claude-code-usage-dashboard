@@ -35,7 +35,9 @@ class FakeCLI:
             "storageclass": {"provisioner": "ebs.csi.aws.com"},
             "csidriver": {"metadata": {"name": "ebs.csi.aws.com"}},
             "deployments": {"items": [
-                {"status": {"availableReplicas": 1}, "spec": {"template": {"spec": {
+                {"metadata": {"generation": 1}, "status": {"observedGeneration": 1,
+                 "replicas": 1, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1},
+                 "spec": {"template": {"spec": {
                     "containers": [{"image": image}]}}}}
                 for image in ["public.ecr.aws/karpenter/controller:v1",
                               "registry.example.invalid/aws-load-balancer-controller:v2",
@@ -146,11 +148,19 @@ class InstallationPreflightTests(unittest.TestCase):
         deployments[2]["spec"]["template"]["spec"]["containers"][0]["image"] = "altinity/clickhouse-operator:0.23.9"
         self.assertEqual(self.statuses()["ready_controller_image_hints"], "fail")
 
-    def test_certificate_uses_us_east_1_and_includes_nondefault_key_algorithms(self):
+    def test_certificate_uses_us_east_1_and_mirrors_terraform_default_key_filter(self):
         self.report()
         command = next(command for command in self.cli.calls if "list-certificates" in command)
         self.assertEqual(command[2], "us-east-1")
-        self.assertIn("keyTypes=" + PREFLIGHT.CERTIFICATE_KEY_TYPES, command)
+        self.assertNotIn("--includes", command)
+
+    def test_controller_rollout_not_observed_yet_is_not_a_ready_image_hint(self):
+        self.cli.values["deployments"]["items"][0]["status"]["observedGeneration"] = 0
+        self.assertEqual(self.statuses()["ready_controller_image_hints"], "fail")
+
+    def test_old_available_replica_does_not_establish_updated_template_readiness(self):
+        self.cli.values["deployments"]["items"][0]["status"]["replicas"] = 2
+        self.assertEqual(self.statuses()["ready_controller_image_hints"], "fail")
 
     def test_invalid_certificate_shape_is_unavailable_not_a_traceback(self):
         self.cli.values["list-certificates"]["CertificateSummaryList"] = [{"DomainName": None}]
@@ -166,6 +176,17 @@ class InstallationPreflightTests(unittest.TestCase):
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
             self.assertFalse(record.exists())
+
+    def test_invalid_dns_labels_fail_before_lookup(self):
+        for domain in ("-bad.example", "example.-bad", "a" * 64 + ".example", "example..invalid"):
+            with self.subTest(domain=domain), mock.patch.object(PREFLIGHT.sys, "argv", [
+                "preflight", "--account-id", "000000000000", "--region", "eu-west-1",
+                "--cluster", "fixture", "--context", "fixture", "--domain", domain,
+            ]), mock.patch.object(PREFLIGHT, "check_prerequisites") as probe:
+                with self.assertRaises(SystemExit) as error:
+                    PREFLIGHT.main()
+                self.assertEqual(error.exception.code, 2)
+                probe.assert_not_called()
 
     def test_report_is_private_and_an_existing_report_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -187,6 +208,15 @@ class InstallationPreflightTests(unittest.TestCase):
                 self.assertIn("checked_at", report)
                 self.assertEqual(PREFLIGHT.main(), 2)
                 self.assertEqual(record.read_bytes(), contents)
+
+    def test_failed_report_write_leaves_no_partial_destination_or_temporary_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = Path(directory) / "report.json"
+            with mock.patch.object(PREFLIGHT.json, "dump", side_effect=OSError("synthetic write failure")):
+                with self.assertRaises(OSError):
+                    PREFLIGHT.write_report(record, {"fixture": True})
+            self.assertFalse(record.exists())
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_failed_checks_return_nonzero_and_command_errors_are_redacted(self):
         command = ["preflight", "--account-id", "000000000000", "--region", "eu-west-1",
