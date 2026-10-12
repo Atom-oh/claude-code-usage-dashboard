@@ -10,6 +10,17 @@ function costSplit(bedrock, enterprise) {
   return row.lastElementChild;
 }
 
+test("scoreboard channel headers and active row labels use readable ink", () => {
+  render(<ABScoreboard rows={[{ label: "기간 비용", format: "usd", bedrock: 1, enterprise: 2 }]} />);
+  for (const label of ["Bedrock", "Enterprise"]) {
+    const heading = screen.getByText(label);
+    expect(heading.className).toContain("text-ink-700");
+    expect(heading.style.color).toBe("");
+    expect(heading.style.background).toContain("var(--series-");
+  }
+  expect(screen.getByText("기간 비용").className).toContain("text-ink-500");
+});
+
 test.each([
   [null, 7],
   [7, null],

@@ -35,8 +35,10 @@ test("active loading uses readable ink on page and card surfaces", () => {
 test("channel label ink retains contrast on each 9 percent tint and supported light surface", () => {
   for (const surface of [rgb("paper"), rgb("white")]) {
     for (const channel of [rgb("chart-1"), rgb("chart-2"), rgb("ink-400")]) {
-      const tint = channel.map((value, i) => 0.09 * value + 0.91 * surface[i]);
-      expect(contrast(rgb("ink-700"), tint)).toBeGreaterThanOrEqual(4.5);
+      for (const strength of [0.06, 0.09]) {
+        const tint = channel.map((value, i) => strength * value + (1 - strength) * surface[i]);
+        expect(contrast(rgb("ink-700"), tint)).toBeGreaterThanOrEqual(4.5);
+      }
     }
   }
 });
