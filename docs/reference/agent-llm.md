@@ -19,14 +19,25 @@ The UI and system prompt currently request Korean answers.
 | `MAX_HOPS` | Four tool-enabled model rounds; if the fourth still requests tools, one final tool-disabled summary round |
 | `MAX_SQL_CALLS` | Eight tool executions per turn, counted independently of rounds; invalid SQL also consumes a slot |
 | Model output | `maxTokens: 8000` for each model call |
-| Retry | Initial Bedrock throttling failures retried twice with 300/600 ms waits |
+| Retry | Initial Bedrock throttling failures retried twice with abort-aware 300/600 ms waits |
 | SQL output | At most 200 rows, plus a truncation flag; 30-second query abort timer |
+| Tool context | At most 20,000 serialized JSON characters per SQL result, preserving row boundaries and `truncated` |
+| Turn deadline | 180 seconds for model/tool work; expiry aborts the shared signal and returns a timeout error |
 
-`capToolResultJson` defines a 20,000-character cap but is not called by `handleChat`.
-The active tool-result path passes rows directly, optionally masked. Do not claim a
-character cap on tool context. Likewise, `queryReadonly` accepts an external abort signal,
-but this handler does not pass it: disconnect cancellation reaches Bedrock, while SQL is
-bounded by its own timeout. These are implementation limits, not completed fixes.
+The active handler passes SQL results through `capToolResultJson`, after applying the
+configured masking policy. Oversized results lose whole rows and set `truncated`; one
+oversized row can produce an empty truncated result, which is not an empty query result.
+The size limit controls model context, not query-response allocation or token/invoice size.
+Database-side result limits still apply.
+
+Disconnect and the turn deadline propagate the same abort signal to Bedrock, retry waits
+and `queryReadonly`. Aborted SQL is not converted into tool feedback or followed by another
+model round. Timers/listeners are removed at completion; a deadline reports timeout rather
+than `done`, including clean provider completion after abort. A timeout is logged using
+only model/hop/deadline metadata. The timeout response follows settlement of the
+abort-aware operation; this is not a hard process kill or a guarantee of zero billed work.
+SQL HTTP cancellation releases the application request; server-side query termination
+depends on deployed ClickHouse settings, which the readonly session cannot override.
 
 The UI consumes SSE in [FloatingChat.jsx](../../dashboard/web/src/components/FloatingChat.jsx)
 and [Analytics.jsx](../../dashboard/web/src/pages/Analytics.jsx); trace display is handled by

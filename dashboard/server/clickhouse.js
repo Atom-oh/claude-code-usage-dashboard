@@ -29,11 +29,12 @@ export async function query(sql, query_params = {}) {
 // 바꾸는 것도(readonly 자체는 물론 max_result_rows 같은 무관한 값도) 거부한다
 // (실측: "Cannot modify 'max_result_rows' setting in readonly mode") — 그래서 행수 상한은
 // SQL을 LIMIT 201 서브쿼리로 감싸 서버 쪽에서 강제하고(201행이면 잘린 것), 타임아웃은
-// AbortController로 HTTP 요청 자체를 취소해 ClickHouse가 쿼리를 kill하게 한다.
+// AbortController로 HTTP 요청을 취소한다. 서버 측 쿼리 종료는 배포된 ClickHouse 설정에
+// 달려 있으므로 HTTP 취소만으로 보장하지 않는다.
 // sanitize(chat.js)가 1차 방어.
 // externalSignal(브라우저가 SSE 연결을 끊었을 때 chat.js가 넘기는 신호)이 걸리면 30초를
 // 기다리지 않고 즉시 이 쿼리도 취소한다 — 클라이언트가 사라진 뒤에도 ClickHouse가 계속
-// 풀스캔을 도는 걸 막는다. 타임아웃 abort와 외부 abort를 구분해야 에러 메시지가 정확하다
+// 요청을 계속 기다리지 않는다. 타임아웃 abort와 외부 abort를 구분해야 에러 메시지가 정확하다
 // (외부 abort는 "30초 초과"가 아니므로 그대로 AbortError를 던져 위로 전달한다).
 export async function queryReadonly(sql, externalSignal) {
   const abort = new AbortController();

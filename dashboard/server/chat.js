@@ -3,6 +3,7 @@ import { queryReadonly } from "./clickhouse.js";
 import { GROUP_CTE } from "./grouping.js";
 import { normModel } from "./queries.js";
 import { PRICING_PROMPT_TABLE } from "./pricing.js";
+import { setTimeout as wait } from "node:timers/promises";
 
 // Ask Claude — Bedrock ConverseStream + run_sql 툴콜 루프 (whchoi98 대시보드의 Analyze 상당,
 // 대상 저장소만 Athena → 우리 ClickHouse). 모델 기본값은 sonnet-5이고 CHAT_MODEL_ID로 바꿀 수 있다.
@@ -349,8 +350,8 @@ function rateLimited(ip) {
 // JSON이라도 몇 hop 겹치면 다음 요청의 입력이 눈덩이처럼 불어나 maxTokens를 넘기는 원인이 된다.
 // queryReadonly의 행 상한(200)과 별개로 문자수 상한을 둬서 모델에 돌려주는 텍스트 크기 자체를 캡한다.
 const TOOL_RESULT_CHAR_CAP = 20_000;
-export function capToolResultJson(rows, truncated) {
-  const json = { rows: maskEmailValues(rows), truncated };
+export function capToolResultJson(rows, truncated, mask = true) {
+  const json = { rows: mask ? maskEmailValues(rows) : rows, truncated };
   const s = JSON.stringify(json);
   if (s.length <= TOOL_RESULT_CHAR_CAP) return json;
   // 행 단위로 잘라 유효한 JSON을 유지한다 — 문자열을 그냥 slice하면 깨진 JSON을 모델에 준다.
@@ -377,13 +378,14 @@ export function classifyChatError(err) {
 // ThrottlingException은 hop 안에서 스트림이 시작되기 *전에* 던져지므로(SDK가 스트림 자체를
 // 재시도하지 않음) 여기서 짧은 지수 백오프로 재시도한다 — 스트림이 이미 일부 텍스트를 보낸
 // 뒤의 실패는 재시도하지 않는다(중복 답변 방지).
-async function sendConverseWithRetry(cmd, abortSignal) {
+export async function sendConverseWithRetry(cmd, abortSignal, sdk = client) {
   for (let attempt = 0; ; attempt++) {
+    abortSignal?.throwIfAborted();
     try {
-      return await client.send(cmd, { abortSignal });
+      return await sdk.send(cmd, { abortSignal });
     } catch (err) {
       if (err?.name !== "ThrottlingException" || attempt >= 2) throw err;
-      await new Promise((r) => setTimeout(r, 300 * 2 ** attempt));
+      await wait(300 * 2 ** attempt, undefined, { signal: abortSignal });
     }
   }
 }
@@ -420,6 +422,7 @@ async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
   // 않고 호출부에서 전용 오류로 모델에 되돌려준다.
   const truncatedToolIds = new Set();
   for await (const ev of stream) {
+    abortSignal?.throwIfAborted();
     const rd = ev.contentBlockDelta?.delta?.reasoningContent;
     if (ev.contentBlockStart?.start?.toolUse) {
       curTool = { ...ev.contentBlockStart.start.toolUse, input: "" };
@@ -487,131 +490,159 @@ async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
 const MAX_SQL_CALLS = 8;
 
 // POST /api/chat {messages:[{role,content}]} → SSE(status/text/done/error 이벤트) 스트림.
-export async function handleChat(req, res) {
-  if (rateLimited(req.ip)) {
-    res.status(429).json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." });
-    return;
-  }
-  res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-  // res.write 자체는 성공/실패를 던지지 않지만, 클라이언트가 이미 연결을 끊은 뒤 write하면
-  // 예외가 나거나(소켓 파괴 상태) 조용히 버려진다 — 어느 쪽이든 매 send() 호출부에서 방어하지
-  // 않아도 되게 여기서 한 번만 가드한다.
-  const send = (event, data) => {
-    if (res.writableEnded) return;
+export function createChatHandler({ query = queryReadonly, runTurn = runConverseTurn,
+  mask = piiMaskEnabled, limit = rateLimited, timeoutMs = 180_000 } = {}) {
+  return async function handleChat(req, res) {
+    if (limit(req.ip)) {
+      res.status(429).json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." });
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    // res.write 자체는 성공/실패를 던지지 않지만, 클라이언트가 이미 연결을 끊은 뒤 write하면
+    // 예외가 나거나(소켓 파괴 상태) 조용히 버려진다 — 어느 쪽이든 매 send() 호출부에서 방어하지
+    // 않아도 되게 여기서 한 번만 가드한다.
+    const send = (event, data) => {
+      if (res.writableEnded || res.destroyed) return;
+      try {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      } catch {
+        // 소켓이 이미 닫혔다 — 버린다.
+      }
+    };
+
+    // 브라우저가 탭을 닫거나 새 질문으로 이전 요청을 abort()하면(useChatStream.js) 이 SSE 연결도
+    // 끊긴다 — 그때 이미 시작된 Bedrock ConverseStream/ClickHouse 쿼리를 계속 돌리는 건 낭비다.
+    // res.writableEnded가 아직 false인 상태로 'close'가 오면 정상 완료가 아니라 클라이언트가
+    // 먼저 끊은 경우이므로 abort한다.
+    const abortController = new AbortController();
+    const onClose = () => {
+      if (!res.writableEnded) abortController.abort();
+    };
+    res.once("close", onClose);
+    let timedOut = false;
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      abortController.abort();
+    }, timeoutMs);
+    deadline.unref();
+
+    let hop = 0;
+    let sqlCalls = 0;
+    let stopReason = null;
     try {
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    } catch {
-      // 소켓이 이미 닫혔다 — 버린다.
+      const history = req.body?.messages;
+      if (!Array.isArray(history)) throw new Error("메시지 형식이 올바르지 않습니다");
+      const messages = history
+        .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content)
+        .slice(-MAX_MESSAGES)
+        .map((m) => ({ role: m.role, content: [{ text: String(m.content).slice(0, 8000) }] }));
+      if (!messages.length) throw new Error("메시지가 비어 있습니다");
+
+      // hop < MAX_HOPS(이전엔 <=였다 — MAX_HOPS=4인데 hop 0..4로 5회 왕복하는 off-by-one이었다)로
+      // 정확히 MAX_HOPS회 왕복 안에서 끝나야 한다. 루프가 break 없이 다 돌면(마지막 hop도 여전히
+      // tool_use) hop이 MAX_HOPS까지 증가한 상태로 끝나므로, 루프 뒤 `hop === MAX_HOPS`가 곧
+      // "왕복을 다 쓰고도 모델이 더 조회하려 했다"는 뜻이다.
+      for (; hop < MAX_HOPS; hop++) {
+        abortController.signal.throwIfAborted();
+        // 툴 결과를 보낸 뒤 다음 Bedrock 응답이 올 때까지(모델이 결과를 "읽는" 시간, 수 초~수십초)
+        // 클라이언트가 아무 이벤트도 못 받는 공백이 있다(실측: "응답이 없는 것 같다" 리포트) —
+        // 매 hop 시작 시 즉시 상태를 갈아줘서 사용자가 계속 진행 중임을 알 수 있게 한다.
+        send("status", { message: hop === 0 ? "질문을 이해하는 중..." : "조회 결과를 확인하는 중..." });
+        const { content, stopReason: sr, truncatedToolIds } = await runTurn({
+          messages,
+          allowTools: true,
+          send,
+          abortSignal: abortController.signal,
+        });
+        stopReason = sr;
+        messages.push({ role: "assistant", content });
+        if (stopReason !== "tool_use") break;
+
+        const results = [];
+        for (const block of content) {
+          abortController.signal.throwIfAborted();
+          if (!block.toolUse) continue;
+          const { toolUseId, input } = block.toolUse;
+          if (truncatedToolIds.has(toolUseId)) {
+            results.push({ toolResult: { toolUseId, content: [{ text: "쿼리 오류: 입력이 너무 길어 잘렸습니다. 더 짧은 쿼리로 다시 시도하세요." }], status: "error" } });
+            continue;
+          }
+          if (sqlCalls >= MAX_SQL_CALLS) {
+            results.push({ toolResult: { toolUseId, content: [{ text: "쿼리 오류: 이 턴에서 실행 가능한 쿼리 횟수를 모두 사용했습니다." }], status: "error" } });
+            continue;
+          }
+          sqlCalls++;
+          // SQL 원문을 클라이언트로 보낸다. 원래는 "모델이 만든 쿼리에 이메일/세션ID 등 민감
+          // telemetry 조건이 실려 화면공유로 노출된다"는 이유로 숨겼는데, 진행 상황이 안 보여
+          // 멈춘 것처럼 느껴진다는 실제 사용자 피드백으로 노출하는 쪽을 택했다(명시적 결정).
+          // 이메일은 최소한 마스킹한다 — 다른 모든 경로(툴 결과·에러 메시지)가 이미 그렇게 하고
+          // 있어서 SQL만 원문으로 새면 그 방어가 무의미해진다. 세션ID 등은 그대로 보인다.
+          send("status", { message: "쿼리 실행 중...", sql: maskEmailText(input.sql || "") });
+          try {
+            const { rows, truncated } = await query(sanitizeSql(input.sql), abortController.signal);
+            abortController.signal.throwIfAborted();
+            results.push({ toolResult: { toolUseId, content: [{ json: capToolResultJson(rows, truncated, mask) }] } });
+          } catch (err) {
+            if (abortController.signal.aborted) throw err;
+            // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(예: toDateTime(UserEmail) →
+            // "Cannot parse string 'ojs0106@gmail.com' ...") — 모델이 이 텍스트를 답변에 인용해
+            // 화면에 그대로 노출될 수 있으므로 다른 경로와 동일하게 마스킹한다(리뷰에서 MAJOR로 확인).
+            results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${maskEmailText(err.message)}` }], status: "error" } });
+          }
+        }
+        messages.push({ role: "user", content: results });
+      }
+      // hop 예산이 끝났는데 방금 hop의 툴 실행 결과가 messages에 있다면(stopReason이 여전히
+      // "tool_use") — 그 결과를 모델이 한 번도 못 보고 그냥 "조회 횟수를 다 썼다"는 문구만 나가는
+      // 게 원래 동작이었다(실측: 성공한 쿼리 결과가 버려지고 빈 답변으로 끝남). toolConfig 없이
+      // 한 번 더 호출해 이미 모은 데이터로 반드시 텍스트 답을 내게 강제한다(툴을 다시 요청할 수
+      // 없으니 무한 루프가 될 수 없다).
+      if (hop === MAX_HOPS && stopReason === "tool_use") {
+        send("status", { message: "답변을 정리하는 중..." });
+        abortController.signal.throwIfAborted();
+        const { content: finalContent, stopReason: finalStop } = await runTurn({
+          messages,
+          allowTools: false,
+          send,
+          abortSignal: abortController.signal,
+        });
+        messages.push({ role: "assistant", content: finalContent });
+        stopReason = finalStop;
+      }
+      abortController.signal.throwIfAborted();
+      // 스트림이 성공적으로 끝났어도 stopReason이 "성공"을 뜻하지 않는 경우를 알린다 — 안 그러면
+      // 잘린 답변이 그냥 done으로 넘어가 사용자가 잘못된 확신을 갖게 된다.
+      if (stopReason === "max_tokens") send("text", { text: "\n\n_(응답이 길어 일부가 잘렸을 수 있습니다 — 필요하면 더 구체적으로 나눠서 다시 물어봐 주세요.)_" });
+      send("done", {});
+    } catch (err) {
+      if (abortController.signal.aborted) {
+        if (timedOut) {
+          console.warn("/api/chat", { hop, modelId: MODEL_ID, type: "timeout", timeoutMs });
+          send("error", { message: "처리 시간이 초과되었습니다. 질문 범위를 좁혀 다시 시도해 주세요." });
+        }
+        return;
+      }
+      // basic auth 뒤라 위험도는 낮지만, ClickHouse/AWS SDK 원문 에러(내부 테이블명·권한
+      // 정보)를 클라이언트에 그대로 보내지 않는다 — 서버 로그에는 분류에 필요한 필드를 구조화해 남긴다.
+      // 이메일은 로그에 적재하기 전에 마스킹한다 — ClickHouse 파싱 에러는 문제가 된 SQL을 그대로
+      // 에코하므로 UserEmail 리터럴이 파드 로그에 평문으로 남을 수 있다(런북이 이 로그를 grep하도록
+      // 안내하므로 로그 접근자 전원에게 노출된다). 응답 경로에만 마스킹이 있었다.
+      console.error("/api/chat", {
+        hop,
+        modelId: MODEL_ID,
+        name: err?.name,
+        status: err?.$metadata?.httpStatusCode,
+        requestId: err?.$metadata?.requestId,
+        message: maskEmailText(err?.message ?? ""),
+        stack: maskEmailText(err?.stack ?? ""),
+      });
+      send("error", { message: classifyChatError(err) });
+    } finally {
+      clearTimeout(deadline);
+      res.removeListener("close", onClose);
+      if (!res.writableEnded && !res.destroyed) res.end();
     }
   };
-
-  // 브라우저가 탭을 닫거나 새 질문으로 이전 요청을 abort()하면(useChatStream.js) 이 SSE 연결도
-  // 끊긴다 — 그때 이미 시작된 Bedrock ConverseStream/ClickHouse 쿼리를 계속 돌리는 건 낭비다.
-  // res.writableEnded가 아직 false인 상태로 'close'가 오면 정상 완료가 아니라 클라이언트가
-  // 먼저 끊은 경우이므로 abort한다.
-  const abortController = new AbortController();
-  res.on("close", () => {
-    if (!res.writableEnded) abortController.abort();
-  });
-
-  let hop = 0;
-  let sqlCalls = 0;
-  let stopReason = null;
-  try {
-    const messages = (req.body?.messages || [])
-      .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
-      .slice(-MAX_MESSAGES)
-      .map((m) => ({ role: m.role, content: [{ text: String(m.content).slice(0, 8000) }] }));
-    if (!messages.length) throw new Error("메시지가 비어 있습니다");
-
-    // hop < MAX_HOPS(이전엔 <=였다 — MAX_HOPS=4인데 hop 0..4로 5회 왕복하는 off-by-one이었다)로
-    // 정확히 MAX_HOPS회 왕복 안에서 끝나야 한다. 루프가 break 없이 다 돌면(마지막 hop도 여전히
-    // tool_use) hop이 MAX_HOPS까지 증가한 상태로 끝나므로, 루프 뒤 `hop === MAX_HOPS`가 곧
-    // "왕복을 다 쓰고도 모델이 더 조회하려 했다"는 뜻이다.
-    for (; hop < MAX_HOPS; hop++) {
-      // 툴 결과를 보낸 뒤 다음 Bedrock 응답이 올 때까지(모델이 결과를 "읽는" 시간, 수 초~수십초)
-      // 클라이언트가 아무 이벤트도 못 받는 공백이 있다(실측: "응답이 없는 것 같다" 리포트) —
-      // 매 hop 시작 시 즉시 상태를 갈아줘서 사용자가 계속 진행 중임을 알 수 있게 한다.
-      send("status", { message: hop === 0 ? "질문을 이해하는 중..." : "조회 결과를 확인하는 중..." });
-      const { content, stopReason: sr, truncatedToolIds } = await runConverseTurn({
-        messages,
-        allowTools: true,
-        send,
-        abortSignal: abortController.signal,
-      });
-      stopReason = sr;
-      messages.push({ role: "assistant", content });
-      if (stopReason !== "tool_use") break;
-
-      const results = [];
-      for (const block of content) {
-        if (!block.toolUse) continue;
-        const { toolUseId, input } = block.toolUse;
-        if (truncatedToolIds.has(toolUseId)) {
-          results.push({ toolResult: { toolUseId, content: [{ text: "쿼리 오류: 입력이 너무 길어 잘렸습니다. 더 짧은 쿼리로 다시 시도하세요." }], status: "error" } });
-          continue;
-        }
-        if (sqlCalls >= MAX_SQL_CALLS) {
-          results.push({ toolResult: { toolUseId, content: [{ text: "쿼리 오류: 이 턴에서 실행 가능한 쿼리 횟수를 모두 사용했습니다." }], status: "error" } });
-          continue;
-        }
-        sqlCalls++;
-        // SQL 원문을 클라이언트로 보낸다. 원래는 "모델이 만든 쿼리에 이메일/세션ID 등 민감
-        // telemetry 조건이 실려 화면공유로 노출된다"는 이유로 숨겼는데, 진행 상황이 안 보여
-        // 멈춘 것처럼 느껴진다는 실제 사용자 피드백으로 노출하는 쪽을 택했다(명시적 결정).
-        // 이메일은 최소한 마스킹한다 — 다른 모든 경로(툴 결과·에러 메시지)가 이미 그렇게 하고
-        // 있어서 SQL만 원문으로 새면 그 방어가 무의미해진다. 세션ID 등은 그대로 보인다.
-        send("status", { message: "쿼리 실행 중...", sql: maskEmailText(input.sql || "") });
-        try {
-          const { rows, truncated } = await queryReadonly(sanitizeSql(input.sql));
-          results.push({ toolResult: { toolUseId, content: [{ json: { rows: piiMaskEnabled ? maskEmailValues(rows) : rows, truncated } }] } });
-        } catch (err) {
-          // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(예: toDateTime(UserEmail) →
-          // "Cannot parse string 'ojs0106@gmail.com' ...") — 모델이 이 텍스트를 답변에 인용해
-          // 화면에 그대로 노출될 수 있으므로 다른 경로와 동일하게 마스킹한다(리뷰에서 MAJOR로 확인).
-          results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${maskEmailText(err.message)}` }], status: "error" } });
-        }
-      }
-      messages.push({ role: "user", content: results });
-    }
-    // hop 예산이 끝났는데 방금 hop의 툴 실행 결과가 messages에 있다면(stopReason이 여전히
-    // "tool_use") — 그 결과를 모델이 한 번도 못 보고 그냥 "조회 횟수를 다 썼다"는 문구만 나가는
-    // 게 원래 동작이었다(실측: 성공한 쿼리 결과가 버려지고 빈 답변으로 끝남). toolConfig 없이
-    // 한 번 더 호출해 이미 모은 데이터로 반드시 텍스트 답을 내게 강제한다(툴을 다시 요청할 수
-    // 없으니 무한 루프가 될 수 없다).
-    if (hop === MAX_HOPS && stopReason === "tool_use") {
-      send("status", { message: "답변을 정리하는 중..." });
-      const { content: finalContent, stopReason: finalStop } = await runConverseTurn({
-        messages,
-        allowTools: false,
-        send,
-        abortSignal: abortController.signal,
-      });
-      messages.push({ role: "assistant", content: finalContent });
-      stopReason = finalStop;
-    }
-    // 스트림이 성공적으로 끝났어도 stopReason이 "성공"을 뜻하지 않는 경우를 알린다 — 안 그러면
-    // 잘린 답변이 그냥 done으로 넘어가 사용자가 잘못된 확신을 갖게 된다.
-    if (stopReason === "max_tokens") send("text", { text: "\n\n_(응답이 길어 일부가 잘렸을 수 있습니다 — 필요하면 더 구체적으로 나눠서 다시 물어봐 주세요.)_" });
-    send("done", {});
-  } catch (err) {
-    if (abortController.signal.aborted) return; // 클라이언트가 이미 떠났다 — 로그/응답 낼 필요 없음
-    // basic auth 뒤라 위험도는 낮지만, ClickHouse/AWS SDK 원문 에러(내부 테이블명·권한
-    // 정보)를 클라이언트에 그대로 보내지 않는다 — 서버 로그에는 분류에 필요한 필드를 구조화해 남긴다.
-    // 이메일은 로그에 적재하기 전에 마스킹한다 — ClickHouse 파싱 에러는 문제가 된 SQL을 그대로
-    // 에코하므로 UserEmail 리터럴이 파드 로그에 평문으로 남을 수 있다(런북이 이 로그를 grep하도록
-    // 안내하므로 로그 접근자 전원에게 노출된다). 응답 경로에만 마스킹이 있었다.
-    console.error("/api/chat", {
-      hop,
-      modelId: MODEL_ID,
-      name: err?.name,
-      status: err?.$metadata?.httpStatusCode,
-      requestId: err?.$metadata?.requestId,
-      message: maskEmailText(err?.message ?? ""),
-      stack: maskEmailText(err?.stack ?? ""),
-    });
-    send("error", { message: classifyChatError(err) });
-  } finally {
-    if (!res.writableEnded) res.end();
-  }
 }
+
+export const handleChat = createChatHandler();
