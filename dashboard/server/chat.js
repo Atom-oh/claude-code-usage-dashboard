@@ -609,13 +609,17 @@ export function createChatHandler({ query = queryReadonly, runTurn = runConverse
         messages.push({ role: "assistant", content: finalContent });
         stopReason = finalStop;
       }
+      abortController.signal.throwIfAborted();
       // 스트림이 성공적으로 끝났어도 stopReason이 "성공"을 뜻하지 않는 경우를 알린다 — 안 그러면
       // 잘린 답변이 그냥 done으로 넘어가 사용자가 잘못된 확신을 갖게 된다.
       if (stopReason === "max_tokens") send("text", { text: "\n\n_(응답이 길어 일부가 잘렸을 수 있습니다 — 필요하면 더 구체적으로 나눠서 다시 물어봐 주세요.)_" });
       send("done", {});
     } catch (err) {
       if (abortController.signal.aborted) {
-        if (timedOut) send("error", { message: "처리 시간이 초과되었습니다. 질문 범위를 좁혀 다시 시도해 주세요." });
+        if (timedOut) {
+          console.warn("/api/chat", { hop, modelId: MODEL_ID, type: "timeout", timeoutMs });
+          send("error", { message: "처리 시간이 초과되었습니다. 질문 범위를 좁혀 다시 시도해 주세요." });
+        }
         return;
       }
       // basic auth 뒤라 위험도는 낮지만, ClickHouse/AWS SDK 원문 에러(내부 테이블명·권한

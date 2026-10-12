@@ -93,6 +93,18 @@ test("turn deadline aborts model work and reports timeout instead of success", a
   assert.equal(response.listenerCount("close"), 0);
 });
 
+test("a provider ending cleanly after abort still reports timeout, never done", async () => {
+  const response = new Response();
+  const handler = createChatHandler({ ...configuration, timeoutMs: 5,
+    runTurn: ({ abortSignal }) => new Promise(resolve => abortSignal.addEventListener("abort",
+      () => resolve(done), { once: true })),
+  });
+  const keepAlive = setTimeout(() => {}, 200);
+  try { await handler(request(), response); } finally { clearTimeout(keepAlive); }
+  assert.ok(response.chunks.some(chunk => chunk.startsWith("event: error") && chunk.includes("초과")));
+  assert.ok(!response.chunks.some(chunk => chunk.startsWith("event: done")));
+});
+
 test("SQL validation still blocks unsafe statements before execution", async () => {
   let turns = 0;
   let queries = 0;

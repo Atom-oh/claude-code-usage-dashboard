@@ -33,7 +33,9 @@ Database-side result limits still apply.
 Disconnect and the turn deadline propagate the same abort signal to Bedrock, retry waits
 and `queryReadonly`. Aborted SQL is not converted into tool feedback or followed by another
 model round. Timers/listeners are removed at completion; a deadline reports timeout rather
-than `done`. Provider cancellation does not guarantee zero billed work.
+than `done`, including clean provider completion after abort. A timeout is logged using
+only model/hop/deadline metadata. The timeout response follows settlement of the
+abort-aware operation; this is not a hard process kill or a guarantee of zero billed work.
 
 The UI consumes SSE in [FloatingChat.jsx](../../dashboard/web/src/components/FloatingChat.jsx)
 and [Analytics.jsx](../../dashboard/web/src/pages/Analytics.jsx); trace display is handled by
