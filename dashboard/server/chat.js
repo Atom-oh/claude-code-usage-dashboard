@@ -231,13 +231,14 @@ export const SCHEMA_CONTEXT = `테이블(구간·차원에 따라 선택):
 중요 — 공유 테이블에서 클라이언트를 섞지 마세요:
 - otel_logs의 Codex 행은 startsWith(EventName, 'codex.')로 선택합니다. Claude 질문은 필요한
   Claude EventName을 명시적으로 선택하세요(예: EventName IN ('api_request','claude_code.api_request')).
-  광범위한 Claude 로그 조회는 NOT startsWith(EventName, 'codex.') 및
-  ResourceAttributes['client'] != 'codex' 조건을 사용하고, 남은 행의 출처가 확인되는지 점검하세요.
+  광범위한 Claude 로그 조회도 Claude 이벤트 이름·서비스 등 생산자 근거를 확인하세요.
+  상속된 ResourceAttributes['client'] 값만으로 Claude 이벤트를 제외하거나 출처를 확정하지 마세요.
 - otel_traces의 Codex 행은 ResourceAttributes['client'] = 'codex'로 선택합니다.
-  Claude 스팬 조회는 ResourceAttributes['client'] != 'codex'와 해당 Claude SpanType
+  Claude 스팬 조회는 대시보드처럼 해당 Claude SpanType
   (예: SpanType IN ('interaction','llm_request','tool','tool.execution','tool.blocked_on_user','hook'))
   조건을 함께 선택하세요. 필터 없는 전체 스팬 수를
-  Claude 활동으로 답하지 마세요. 빈 client 태그는 검증된 클라이언트 표식이 아닙니다.
+  Claude 활동으로 답하지 마세요. Codex 선택의 client 태그도 상속될 수 있으므로 생산자 근거를
+  함께 확인하세요. 빈 client 태그는 검증된 클라이언트 표식이 아닙니다.
 - Codex 진단 메트릭은 별도 codex_metrics_sum / codex_metrics_gauge /
   codex_metrics_histogram / codex_metrics_exponential_histogram에 있습니다. 이 진단
   샘플을 완료 로그의 사용량·비용에 더하지 마세요. 설치마다 이 테이블이 없을 수 있습니다.

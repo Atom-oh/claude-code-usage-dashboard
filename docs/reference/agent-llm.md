@@ -63,7 +63,8 @@ be labelled unadjusted, not dashboard spend. Missing rates/logs remain unavailab
 The prompt describes Claude analysis and omits automatic Codex deduplication/token/pricing
 adapters; it is not a table allowlist. SQL authorization remains the `claude_code` database
 with existing sanitizer/readonly gates. `otel_logs`/`otel_traces` are shared with Codex:
-the prompt requires client/event/span predicates before attributing shared rows to Claude.
+the prompt requires producer/event/span evidence before attributing shared rows to Claude.
+Inherited client tags alone do not establish a producer or exclude proven Claude events.
 Claude `SpanType` values are unprefixed; `claude_code.` belongs to `SpanName`. Interaction
 duration uses the span's nanoseconds rather than a potentially absent `duration_ms` attribute.
 Codex diagnostic metrics live in separate `codex_metrics_*` tables and never augment

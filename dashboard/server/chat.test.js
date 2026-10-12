@@ -301,9 +301,10 @@ test("SCHEMA_CONTEXT discloses raw-chat limits for non-Anthropic spend and Codex
 test("SCHEMA_CONTEXT separates shared logs and traces using actual client predicates", () => {
   assert.match(SCHEMA_CONTEXT, /otel_logs — Claude\/Codex가 공유/);
   assert.match(SCHEMA_CONTEXT, /otel_traces — Claude\/Codex가 공유/);
-  assert.match(SCHEMA_CONTEXT, /NOT startsWith\(EventName, 'codex\.'\)/);
+  assert.match(SCHEMA_CONTEXT, /Claude 이벤트 이름·서비스 등 생산자 근거/);
   assert.match(SCHEMA_CONTEXT, /ResourceAttributes\['client'\] = 'codex'/);
-  assert.match(SCHEMA_CONTEXT, /ResourceAttributes\['client'\] != 'codex'/);
+  assert.doesNotMatch(SCHEMA_CONTEXT, /ResourceAttributes\['client'\] != 'codex'/);
+  assert.match(SCHEMA_CONTEXT, /상속된 ResourceAttributes\['client'\] 값만으로 Claude 이벤트를 제외/);
   assert.match(SCHEMA_CONTEXT, /SpanType IN \('interaction','llm_request','tool','tool\.execution','tool\.blocked_on_user','hook'\)/);
   assert.doesNotMatch(SCHEMA_CONTEXT, /startsWith\(SpanType, 'claude_code\.'\)/);
   assert.match(SCHEMA_CONTEXT, /Duration \/ 1e6/);
