@@ -1,6 +1,6 @@
 # Web instructions
 
-React 18/Vite/Tailwind/Recharts SPA. Run `npm test` and `npm run build`.
+React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm run build`.
 
 ## Display contracts
 

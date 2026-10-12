@@ -15,9 +15,9 @@ not create the cluster, participant EC2 fleet, or collector sidecars. Before pla
 - A Route53 public zone for the domain and an issued wildcard ACM certificate in `us-east-1`.
   This stack looks them up instead of creating them.
 - Terraform `>= 1.9` (`infra/providers.tf`), AWS CLI, `kubectl`, and Docker buildx capable of
-  `linux/arm64`. Use the committed provider lockfile. Local app checks use Node.js >=22.
+  `linux/arm64`. Use the committed provider lockfile. Local web checks use Node.js >=22.12.
 
-Package engines require Node.js >=22, CI uses 22, and the Docker runtime uses 24.
+Server engines require Node >=22, web >=22.12, CI uses current Node 22, and Docker uses 24.
 `scripts/setup.sh` only checks that `node` exists (its “24+” message is not a version guard)
 and uses `npm install`; use the explicit `npm ci` checks below for reproducible validation.
 

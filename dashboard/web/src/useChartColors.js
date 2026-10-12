@@ -3,7 +3,7 @@ const FALLBACK = {
   lead: "#528DF8",
   palette: ["#528DF8", "#01A88D", "#7B26FF", "#39C2B0", "#7D8A96"],
   grid: "#E7ECEF",
-  axis: "#7D8A96",
+  axis: "#5A6873",
   tooltipBg: "#16202A",
   tooltipFg: "#F4F6F8",
 };

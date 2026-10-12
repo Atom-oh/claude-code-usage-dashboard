@@ -275,6 +275,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
       <ResponsiveContainer width="100%" height={height} className={zoom.className}>
         <BarChart data={rows} maxBarSize={44} barCategoryGap={frame.buckets.length > 32 ? "12%" : "28%"}
           margin={{ top: 24, right: 8, left: 8, bottom: 0 }} {...zoom.handlers}>
+          {zoom.controller}
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={fmtTick} minTickGap={24} />
           <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} tickFormatter={formatAxisUsd} />

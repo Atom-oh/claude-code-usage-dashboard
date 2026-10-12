@@ -17,7 +17,7 @@ missing implementation.
 
 ## Validation
 
-Node 22+; install server/web separately:
+Node 22.12+; install server/web separately:
 
 ```bash
 (cd dashboard/server && npm ci && npm test)

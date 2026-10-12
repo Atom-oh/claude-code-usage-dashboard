@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, DefaultTooltipContent, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useLayoutEffect, useRef, useState } from "react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, DefaultTooltipContent, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis, usePlotArea, useXAxisInverseDataSnapScale } from "recharts";
 import { cn } from "../cn.js";
 import { colorFor } from "../colors.js";
 import { parseUtc } from "../fmt.js";
@@ -20,6 +20,16 @@ function legendProps(c) {
 import { useRange } from "../RangeContext.jsx";
 import { Card } from "./Card.jsx";
 import EmptyState from "./EmptyState.jsx";
+
+function DragZoomAxis({ binding }) {
+  const snap = useXAxisInverseDataSnapScale();
+  const plot = usePlotArea();
+  useLayoutEffect(() => {
+    binding.current = { snap, plot };
+    return () => { binding.current = null; };
+  }, [binding, snap, plot]);
+  return null;
+}
 
 // 시계열 차트에서 좌우로 드래그하면 그 구간으로 전역 range를 좁힌다(RangeContext.setRange) —
 // 페이지의 모든 차트가 같이 줌인되고 해상도도 자동으로 세밀해진다. Recharts 카테고리 x축은
@@ -42,18 +52,39 @@ export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled =
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
   const startRef = useRef(null);
+  const axes = useRef(null);
   const [area, setArea] = useState(null); // { left, right } — 드래그 중 하이라이트 구간
   const cancel = () => { startRef.current = null; setArea(null); };
+  // Recharts 3 reports earlier tooltip state on mousedown. Resolve the actual
+  // event using its public data-snap scale, including CSS-scaled containers.
+  const eventLabel = (data, event) => {
+    const binding = axes.current;
+    const target = event?.currentTarget;
+    if (!target) return data?.activeLabel;
+    if (!binding?.snap || !binding.plot) return null;
+    const rect = target.getBoundingClientRect();
+    const scaleX = target.offsetWidth > 0 ? rect.width / target.offsetWidth : 1;
+    const scaleY = target.offsetHeight > 0 ? rect.height / target.offsetHeight : 1;
+    const x = (event.clientX - rect.left) / scaleX;
+    const y = (event.clientY - rect.top) / scaleY;
+    const { x: left, y: top, width, height } = binding.plot;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < left || x > left + width || y < top || y > top + height) return null;
+    return binding.snap(x);
+  };
   const handlers = {
-    onMouseDown: (e) => {
-      if (disabled || !e || e.activeLabel == null) return;
-      startRef.current = e.activeLabel;
-      setArea({ left: e.activeLabel, right: e.activeLabel });
+    // Preserve immediate drag/release behavior; throttle other frequent events.
+    throttledEvents: ["touchmove", "pointermove", "scroll", "wheel"],
+    onMouseDown: (e, event) => {
+      const label = eventLabel(e, event);
+      if (disabled || label == null) return;
+      startRef.current = label;
+      setArea({ left: label, right: label });
     },
     // activeLabel이 잠깐 비는 순간(점 사이·플롯 밖)은 마지막 유효 구간을 유지한다.
-    onMouseMove: (e) => {
-      if (startRef.current == null || !e || e.activeLabel == null) return;
-      setArea({ left: startRef.current, right: e.activeLabel });
+    onMouseMove: (e, event) => {
+      const label = eventLabel(e, event);
+      if (startRef.current == null || label == null) return;
+      setArea({ left: startRef.current, right: label });
     },
     onMouseUp: () => {
       const a = area;
@@ -98,7 +129,7 @@ export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled =
   // fill 색상은 하드코딩 대신 useChartColors().lead(테마 CSS 변수, 다크모드 대응)를 쓴다
   // (리뷰에서 MINOR로 확인 — 고정 #6366f1은 다크 테마에서 대비가 어긋날 수 있었다).
   const overlay = dragging ? <ReferenceArea yAxisId={yAxisId} x1={area.left} x2={area.right} strokeOpacity={0} fill={chartColors.lead} fillOpacity={0.12} /> : null;
-  return { handlers, overlay, className: dragging ? "select-none" : "" };
+  return { handlers, overlay, controller: <DragZoomAxis binding={axes} />, className: dragging ? "select-none" : "" };
 }
 
 // 모든 시리즈(Area/Bar/Line/Pie)는 isAnimationActive={false}다. useApi는 기간 변경·새로고침 중에
@@ -121,6 +152,7 @@ export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, value
     <Card title={title} subtitle={subtitle} help={help} right={right}>
       <ResponsiveContainer width="100%" height={height} className={zoom.className}>
         <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} {...zoom.handlers}>
+          {zoom.controller}
           <defs>
             {groups.map((g) => (
               <linearGradient key={g} id={`area-${g}`} x1="0" y1="0" x2="0" y2="1">
@@ -232,6 +264,7 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
     <Card title={title} subtitle={subtitle} help={help} right={right}>
       <ResponsiveContainer width="100%" height={h} className={zoom.className}>
         <BarChart data={data} layout={horizontal ? "vertical" : "horizontal"} margin={{ left: horizontal ? 8 : 8, right: 8 }} {...zoom.handlers}>
+          {zoom.controller}
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} horizontal={!horizontal} vertical={horizontal} />
           {horizontal ? (
             <>
@@ -283,6 +316,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
   return (
     <ResponsiveContainer width="100%" height={height} className={zoom.className}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} syncId="dual" {...zoom.handlers}>
+        {zoom.controller}
         <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
         <XAxis
           dataKey={xKey}

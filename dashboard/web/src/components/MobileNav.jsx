@@ -76,8 +76,8 @@ export function MobileNav() {
               </button>
             </div>
             <nav className="flex-1 space-y-0.5">
-              {items.map((item) => (
-                <NavItem key={item.to} {...item} />
+              {items.map(({ key: _key, ...item }) => (
+                <NavItem {...item} key={item.to} />
               ))}
             </nav>
             <AccountMenu />
