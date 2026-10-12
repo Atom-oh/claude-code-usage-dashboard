@@ -4,6 +4,8 @@ The selected commercial target is a paid, customer-owned AWS installation. Works
 development capabilities are evidence inputs, not commercial-release approval.
 Preserve the [measurement contracts](../AGENTS.md#contracts): activity is not employee
 productivity, costs are not invoices, and unknown coverage is not zero.
+The [technical handoff](commercial-handoff.md) owns installation/support responsibilities,
+operating-cost units and the private customer acceptance packet.
 
 ## Release acceptance
 
