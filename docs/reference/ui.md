@@ -43,6 +43,13 @@ component-specific; it is not a guarantee shared by every chart. The model cost 
 
 ## Tables and CSV
 
+Status text uses readable ink: warning notices have a distinct warning-text token,
+loading uses secondary ink, and channel-chip labels use strong ink while their dot/tint
+retains channel identity. A/B scoreboard channel headings use the same strong ink over
+their existing tints; small active row labels use secondary ink. Chart series colors remain a separate encoding. Contrast tests
+cover these normal-text combinations on the supported light page/card surfaces; real
+image-rendered checks remain required.
+
 CSV treats formula-like strings in headers, telemetry fields and derived text as literal
 spreadsheet text by prefixing an apostrophe before RFC 4180 escaping. This also covers
 leading whitespace/BOM and tab/CR/LF prefixes, after optional identity masking. Actual
