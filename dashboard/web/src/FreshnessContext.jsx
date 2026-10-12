@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { checkAuthentication } from "./api.js";
 
 const POLL_MS = 60_000;
 // 측정 불가 상태. fetch 실패·비-JSON 응답이 모두 여기로 접힌다 — 서버의 unknown과 같은 값이라
@@ -22,7 +23,7 @@ export function FreshnessProvider({ children }) {
         // res.ok로 거르지 않는다: 이 엔드포인트는 stale/unknown일 때 의도적으로 503 + 본문을
         // 낸다(index.js). 503을 네트워크 오류로 취급하면 실제 stale 상태를 영원히 못 보고
         // 항상 unknown 문구만 뜬다.
-        .then((res) => res.json())
+        .then((res) => { checkAuthentication(res); return res.json(); })
         .then((body) =>
           setState({
             status: body?.status ?? "unknown",

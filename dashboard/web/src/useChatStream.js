@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { checkAuthentication } from "./api.js";
 
 // Ask Claude 챗 공용 로직 — FloatingChat(우하단 위젯)과 Analytics(전용 탭)가 공유한다.
 // POST /api/chat SSE(text/status/done/error)를 그대로 읽는다.
@@ -9,6 +10,7 @@ export async function streamChat(messages, { onText, onStatus, onThinking, signa
     body: JSON.stringify({ messages }),
     signal,
   });
+  checkAuthentication(res);
   if (!res.ok) {
     // 429/503은 서버가 이미 한국어 안내 문구를 JSON body에 담아 보낸다(index.js/chat.js) —
     // 버리지 않고 그대로 쓴다. body 파싱이 실패하면(예상 밖 5xx) 상태코드로 폴백.

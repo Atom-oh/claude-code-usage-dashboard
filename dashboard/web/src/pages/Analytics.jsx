@@ -8,6 +8,7 @@ import { Card } from "../components/Card.jsx";
 import { useChatStream, useStickToBottom } from "../useChatStream.js";
 import { ChatTrace } from "../components/ChatTrace.jsx";
 import { useRange } from "../RangeContext.jsx";
+import { useConfig } from "../ConfigContext.jsx";
 
 // 카테고리별 미리 준비된 분석 질문 — 클릭하면 그대로 /api/chat 에이전트(chat.js의 run_sql
 // 툴콜 루프)에게 물어본다. 질문 범위는 SYSTEM 프롬프트가 실제로 아는 스키마
@@ -53,12 +54,17 @@ export default function Analytics() {
   const started = msgs.length > 0;
 
   const { containerRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
+  const { session } = useConfig();
+  const allowed = !session || session.permissions?.includes("chat:query");
 
   const submit = (text) => {
-    if (!text.trim() || busy) return;
+    if (!allowed || !text.trim() || busy) return;
     setInput("");
     ask(text);
   };
+
+  if (!allowed) return <div><PageHeader title="Analytics" subtitle="조직 데이터 분석" />
+    <p role="status" className="p-8 text-sm text-ink-600">SQL 채팅은 분석 또는 관리자 역할에서 사용할 수 있습니다.</p></div>;
 
   return (
     <div>

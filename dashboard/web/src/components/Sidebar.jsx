@@ -3,6 +3,7 @@ import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as Use
 import { cn } from "../cn.js";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
 import { CLIENT_PAGES } from "../clientNavigation.js";
+import { AccountMenu } from "./AccountMenu.jsx";
 
 const ICONS = [LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, UsersIcon, DollarSign, ShieldAlert, Sparkles];
 export const NAV = CLIENT_PAGES.map((page, i) => ({ ...page, icon: ICONS[i] }));
@@ -63,6 +64,7 @@ export function Sidebar() {
           <NavItem key={item.to} {...item} />
         ))}
       </nav>
+      <AccountMenu />
 
       <div className="mt-4 border-t border-chrome-border pt-3">
         <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-chrome-fg-muted">

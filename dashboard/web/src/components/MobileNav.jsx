@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { NavItem, useNavigation } from "./Sidebar.jsx";
 import { useClient } from "../ClientContext.jsx";
+import { AccountMenu } from "./AccountMenu.jsx";
 
 // lg(1024px) 미만에서는 SPA에 내비게이션이 아예 없었다 — Sidebar가 `hidden lg:flex`라
 // 모바일/태블릿에서 페이지를 옮길 방법이 주소창 말고 없다. 데스크톱과 같은 NAV·NavItem을
@@ -79,6 +80,7 @@ export function MobileNav() {
                 <NavItem key={item.to} {...item} />
               ))}
             </nav>
+            <AccountMenu />
           </div>
         </>
       )}

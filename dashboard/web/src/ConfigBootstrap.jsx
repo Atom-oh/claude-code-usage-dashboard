@@ -32,6 +32,11 @@ export default function ConfigBootstrap({ children }) {
       try {
         const response = await fetch("/api/config", { signal: abort.signal });
         if (abort.signal.aborted) return;
+        if (response.status === 401) {
+          const basic = /^Basic\b/i.test(response.headers?.get?.("www-authenticate") || "");
+          setState({ status: "unauthenticated", config: null, attempt, basic });
+          return;
+        }
         if (!response.ok) throw new Error("Config request failed");
         const config = await response.json();
         if (abort.signal.aborted) return;
@@ -54,15 +59,19 @@ export default function ConfigBootstrap({ children }) {
   if (state.status === "ready") return children(state.config);
 
   const failed = state.status === "error";
+  const unauthenticated = state.status === "unauthenticated";
   return (
     <main className="flex min-h-screen items-center justify-center px-6">
       <section className="w-full max-w-md rounded-lg border border-ink-100 bg-card p-6 shadow-card" aria-labelledby="config-bootstrap-title">
         <h1 id="config-bootstrap-title" className="text-lg font-semibold">대시보드 준비</h1>
-        <p role={failed ? "alert" : "status"} className="mt-3 break-keep text-sm text-ink-600">
-          {failed
+        <p role={failed || unauthenticated ? "alert" : "status"} className="mt-3 break-keep text-sm text-ink-600">
+          {unauthenticated ? "로그인 확인이 필요합니다. 다시 로그인해 주세요." : failed
             ? state.error || "설정을 불러오지 못했습니다. 연결 상태를 확인한 후 다시 시도해 주세요."
             : "설정을 불러오는 중입니다."}
         </p>
+        {unauthenticated && (state.basic
+          ? <button type="button" onClick={() => window.location.reload()} className="mt-5 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white">로그인 다시 확인</button>
+          : <a href="/auth/login" className="mt-5 inline-block rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">다시 로그인</a>)}
         {failed && (
           <button
             type="button"

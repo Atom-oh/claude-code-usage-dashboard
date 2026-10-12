@@ -20,13 +20,17 @@ import Reliability from "./pages/Reliability.jsx";
 import Clients from "./pages/Clients.jsx";
 import { ClientProvider, useClient } from "./ClientContext.jsx";
 import { CLIENT_PAGES } from "./clientNavigation.js";
+import { useConfig } from "./ConfigContext.jsx";
+import SessionBoundary from "./SessionBoundary.jsx";
 
 export default function App() {
-  return <ClientProvider><Dashboard /></ClientProvider>;
+  return <SessionBoundary><ClientProvider><Dashboard /></ClientProvider></SessionBoundary>;
 }
 
 function Dashboard() {
   const { common } = useClient();
+  const { session } = useConfig();
+  const canChat = !session || session.permissions?.includes("chat:query");
   return (
     <RefreshProvider>
       <RangeProvider>
@@ -56,7 +60,7 @@ function Dashboard() {
                 </Routes>}
               </main>
             </div>
-            {!common && <FloatingChat />}
+            {!common && canChat && <FloatingChat />}
           </FreshnessProvider>
         </FilterProvider>
       </RangeProvider>

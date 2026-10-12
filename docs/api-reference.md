@@ -7,9 +7,23 @@ origin; the local Compose origin is `http://localhost:8080`.
 
 ## Authentication and request parameters
 
-HTTP Basic Auth applies globally using `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD`.
+`AUTH_MODE=basic` (default) applies Basic Auth globally using `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD`.
 Without both, startup fails unless `AUTH_ALLOW_INSECURE=1` explicitly enables local
-unauthenticated use. Only `/healthz` and `/readyz` bypass auth. Chat has additional gates.
+unauthenticated use. Only probes bypass this gate. Explicit `AUTH_MODE=oidc` uses organization
+login/session cookies; login/callback and origin-checked local logout are protocol exceptions.
+Telemetry/config/static routes require a session and never fall back to Basic.
+Chat requires analyst/admin permission in OIDC plus existing readonly/activation gates.
+See [SSO operations](runbooks/organization-sso.md).
+
+`GET /api/session` returns `mode`, `role`, `permissions` and, for OIDC, current-user `name`
+and `expiresAt`, without raw subject/IdP tokens. `/api/config` includes this `session`.
+Unauthenticated OIDC APIs return JSON 401, `error=authentication_required`,
+`loginUrl=/auth/login`. Unsafe session requests without the configured Origin or without
+required permission return 403.
+
+`GET /auth/login` starts OIDC; `GET /auth/callback` completes it. `POST /auth/logout`
+requires the configured Origin, clears local cookies and redirects to `/`; it does not
+end IdP SSO. Protocol responses are `no-store`.
 
 Wrapped GET data routes validate these parameters before querying or caching:
 

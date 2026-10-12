@@ -1,21 +1,35 @@
 # Security Boundaries
 
 The dashboard is a shared authenticated telemetry view, not a multi-tenant authorization
-system. Read [server/AGENTS.md](../../dashboard/server/AGENTS.md) and
-[ADR-004](../decisions/ADR-004-basic-auth-baseline-and-sso-upgrade-path.md) for the current
-boundary and upgrade direction.
+system. Each dedicated customer installation has one shared dataset; roles do not filter
+employee rows. Read [server/AGENTS.md](../../dashboard/server/AGENTS.md),
+[ADR-004](../decisions/ADR-004-basic-auth-baseline-and-sso-upgrade-path.md) and
+[ADR-019](../decisions/ADR-019-dedicated-installation-identity.md).
 
 ## Authentication and credentials
 
-[index.js](../../dashboard/server/index.js) requires both `BASIC_AUTH_USER` and
+[auth.js](../../dashboard/server/auth.js) defaults `AUTH_MODE` to `basic`, requiring `BASIC_AUTH_USER` and
 `BASIC_AUTH_PASSWORD`, refusing startup otherwise unless `AUTH_ALLOW_INSECURE=1` explicitly
-allows local unauthenticated use. Only `/healthz` and `/readyz` bypass the global gate.
+allows local unauthenticated use. In Basic mode only `/healthz` and `/readyz` bypass the gate.
 `/api/health/data`, `/api/config`, chat, data routes and static files inherit it.
+
+Explicit `AUTH_MODE=oidc` uses authorization code/PKCE, state/nonce, signed ID tokens,
+configured issuer/audience and group-based roles. Invalid OIDC configuration refuses
+startup even when Basic/development credentials are present. Login/callback/local logout
+are protocol exceptions; telemetry/config/static routes remain protected.
+Sessions use encrypted host-only Secure/HttpOnly cookies, default to 15 minutes, and retain
+no IdP tokens. Unsafe requests require the exact configured Origin. Local logout does not
+revoke copied sessions or IdP SSO. See [SSO operations](../runbooks/organization-sso.md).
+Startup validation checks syntax/required inputs; discovery happens at login.
+The application uses `strict-origin` referrers and `no-store` for authenticated static
+bundles as well as JSON, trading repeat-download caching for a uniform auth-response policy.
 
 `POST /api/chat` additionally requires configured auth or `CHAT_ALLOW_INSECURE=1`, and a
 successful readonly-session probe. The two insecure flags are independent. `trust proxy=1`
 matches the intended CloudFront-to-NLB path and supplies `req.ip` to chat's per-process
-10-requests-per-minute limiter. Other data routes have no application rate limiter.
+10-requests-per-minute limiter. OIDC additionally requires `chat:query`; viewers cannot
+enter the model/query handler. OIDC login/callback have bounded per-process admission
+control. Other data routes have no application rate limiter.
 
 [infra/dashboard.tf](../../infra/dashboard.tf) supplies credentials through Kubernetes
 Secrets and uses IRSA for Bedrock. [infra/clickhouse.tf](../../infra/clickhouse.tf) separates
