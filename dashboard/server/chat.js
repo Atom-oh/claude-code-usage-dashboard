@@ -180,10 +180,10 @@ export function sanitizeSql(sql) {
 // 스키마·집계 규칙 설명만 따로 export한다 — chat.test.js가 실측 스키마와의 드리프트를
 // 잡아낼 수 있게(문자열 하나를 통째로 바꿔도 회귀 테스트가 실패하도록), 그리고 SYSTEM 안에서
 // "무엇을 조회할 수 있는가"와 "규칙"을 시각적으로 분리한다.
-export const SCHEMA_CONTEXT = `테이블(우선순위 순):
-1. otel_metrics_sum_hourly — 시간당 롤업. **대시보드의 모든 쿼리가 이걸 쓴다. 특별히 분 단위
-   해상도가 필요한 경우가 아니면 항상 이 테이블부터 쓰세요** (원본보다 ~86배 작아 스캔이 훨씬
-   저렴합니다). 컬럼: hour(DateTime, 시간 버킷), MetricName, SessionId, SeriesKey(UInt64,
+export const SCHEMA_CONTEXT = `테이블(구간·차원에 따라 선택):
+1. otel_metrics_sum_hourly — 시간당 롤업. 대시보드는 쿼리 종류·구간·해상도에 따라
+   원본/롤업을 선택하며, 카운터의 기본 분기는 4시간 이하 원본, 그보다 긴 구간 롤업입니다.
+   아래 경계·차원 조건을 만족할 때 롤업을 쓰세요. 컬럼: hour(DateTime, 시간 버킷), MetricName, SessionId, SeriesKey(UInt64,
    시리즈×프로세스 세그먼트 식별자 — '--resume' 등 카운터 재시작마다 새 값; session.count만
    예외), UserEmail, AggregationTemporality(1=delta, 2=cumulative), Model, TokenType, Decision
    (accept/reject), SkillName, ToolName, StartType(session.count의 시작 유형 — 'agents_view'는
@@ -192,7 +192,8 @@ export const SCHEMA_CONTEXT = `테이블(우선순위 순):
    빈 문자열일 수 있음), max_value(그 시간 버킷 종료 시점 누적값 — temporality=2 경계 diff에
    사용), sum_value(그 시간 버킷 내 증가량 합 — temporality=1 구간 합계에 사용), has_org(그
    시간 버킷에 organization.id가 관측됐으면 1).
-2. otel_metrics_sum — 원본 메트릭(분 단위 이하 해상도가 필요할 때만). 컬럼: TimeUnix(DateTime),
+2. otel_metrics_sum — 원본 메트릭(짧은 구간, 분 단위 해상도, 부분 시간 또는 롤업에 없는 차원).
+   컬럼: TimeUnix(DateTime),
    MetricName, Value(Float64), UserEmail, EndUserId(Bedrock 그룹은 UserEmail이 비어 있음 —
    coalesce(nullIf(UserEmail,''), nullIf(EndUserId,''))로 폴백할 것), SessionId, SeriesKey
    (UInt64, 시리즈×프로세스 세그먼트 식별자 — '--resume' 등 카운터 재시작마다 새 값;
@@ -204,7 +205,8 @@ export const SCHEMA_CONTEXT = `테이블(우선순위 순):
    SELECT DISTINCT MetricName으로 확인하세요): claude_code.session.count / .token.usage / .cost.usage /
    .lines_of_code.count / .commit.count / .pull_request.count / .code_edit_tool.decision /
    .active_time.total.
-3. otel_logs — 이벤트. 컬럼: Timestamp, TimestampTime(DateTime), EventName, UserEmail, EndUserId,
+3. otel_logs — Claude/Codex가 공유하는 이벤트. 컬럼: Timestamp, TimestampTime(DateTime),
+   ResourceAttributes(Map), EventName, UserEmail, EndUserId,
    SessionId, PromptId(인터랙션 단위 식별자), ToolName, McpServerName, McpToolName, Success,
    SkillName, InvocationTrigger('user-slash'/'claude-proactive'/'nested-skill'), SkillSource,
    PluginName, MarketplaceName, RefusalCategory, ServerFallbackHop('true'면 사용자가 못 본
@@ -214,14 +216,34 @@ export const SCHEMA_CONTEXT = `테이블(우선순위 순):
    EventName 주요 값: hook_execution_start/complete, api_request, tool_decision, tool_result,
    assistant_response, user_prompt, mcp_server_connection, api_error, api_retries_exhausted,
    compaction, skill_activated, subagent_completed, api_refusal, plugin_loaded.
-4. otel_traces — 스팬(2026-08-11 신설, beta — CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1 켠
-   인스턴스에서만 데이터 존재). 컬럼: Timestamp, TraceId, SpanId, ParentSpanId, SpanType(claude_
-   code.interaction/llm_request/tool/tool.blocked_on_user/tool.execution/hook 중 하나),
+4. otel_traces — Claude/Codex가 공유하는 스팬. Claude 스팬은 beta 설정
+   CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1에 따라 누락될 수 있습니다.
+   컬럼: Timestamp, ResourceAttributes(Map), TraceId, SpanId, ParentSpanId, SpanName,
+   SpanAttributes(Map), Duration(ns), SpanType(interaction/llm_request/tool/
+   tool.blocked_on_user/tool.execution/hook — 접두어 없는 span.type 속성),
    DurationMs, TtftMs(llm_request 전용), AgentId, ParentAgentId, Model, Decision
    (tool.blocked_on_user 전용), UserEmail, EndUserId, SessionId, AppVersion. tool.
    blocked_on_user/tool.execution 스팬은 Claude Code v2.1.214 이전 버전에서는 나오지 않는다
    — 특정 버전 구간에서 이 스팬이 0건이면 "그 그룹의 권한 대기가 0"이 아니라 "그 버전이
    이 스팬을 안 낸다"는 뜻일 수 있으니 AppVersion을 같이 확인하고 단정하지 말 것.
+   claude_code. 접두어는 SpanName에 붙고 SpanType에는 붙지 않습니다. interaction은
+   duration_ms 속성이 없어 DurationMs=0일 수 있으므로 Duration / 1e6으로 ms를 구하세요.
+
+중요 — 공유 테이블에서 클라이언트를 섞지 마세요:
+- otel_logs의 Codex 행은 startsWith(EventName, 'codex.')로 선택합니다. Claude 질문은 필요한
+  Claude EventName을 명시적으로 선택하세요(예: EventName IN ('api_request','claude_code.api_request')).
+  광범위한 Claude 로그 조회도 Claude 이벤트 이름·서비스 등 생산자 근거를 확인하세요.
+  상속된 ResourceAttributes['client'] 값만으로 Claude 이벤트를 제외하거나 출처를 확정하지 마세요.
+- otel_traces의 Codex 행은 ResourceAttributes['client'] = 'codex'로 선택합니다.
+  Claude 스팬 조회는 대시보드처럼 해당 Claude SpanType
+  (예: SpanType IN ('interaction','llm_request','tool','tool.execution','tool.blocked_on_user','hook'))
+  조건을 함께 선택하세요. 필터 없는 전체 스팬 수를
+  Claude 활동으로 답하지 마세요. Codex 선택의 client 태그도 상속될 수 있으므로 생산자 근거를
+  함께 확인하세요. 빈 client 태그는 검증된 클라이언트 표식이 아닙니다.
+- Codex 진단 메트릭은 별도 codex_metrics_sum / codex_metrics_gauge /
+  codex_metrics_histogram / codex_metrics_exponential_histogram에 있습니다. 이 진단
+  샘플을 완료 로그의 사용량·비용에 더하지 마세요. 설치마다 이 테이블이 없을 수 있습니다.
+  존재 여부가 확인되지 않거나 조회가 미지원이면 0으로 답하지 말고 확인 불가로 답하세요.
 
 중요 — temporality 분기(단정하지 말 것): AggregationTemporality는 거의 항상 2(cumulative)지만
 session.count 등 일부 데이터포인트는 1(delta)로도 옵니다. 대시보드 서버(queries.js)도 매번
@@ -234,7 +256,8 @@ if(AggregationTemporality = 2, ..., ...)로 분기합니다 — 2로 가정하�
 - temporality=1(delta): 이미 구간 증가분이므로 diff하면 안 됩니다 — 그냥 구간 sum(sumIf)입니다.
 먼저 테이블을 고르세요 — 롤업은 정각 경계에서만 정확합니다:
 - 조회 구간의 시작·끝이 **둘 다 정각**(예: 최근 2일, 어제 00:00~00:00, 오늘 09:00~18:00)이면
-  otel_metrics_sum_hourly를 쓰세요. 정확합니다.
+  otel_metrics_sum_hourly를 쓸 수 있습니다. 대시보드와 비교할 때는 원본/롤업 경로와
+  기준선·부분 시간 처리까지 확인하세요. 정각 경계만으로 모든 조회 경로의 일치를 보장하지 않습니다.
 - 경계가 정각이 아니거나(예: 10:30~12:30) 분 단위 정확도가 필요하면 **반드시 원본
   otel_metrics_sum을 TimeUnix로 쓰세요**. 롤업으로 근사하지 마세요: hour는 시간 버킷이라
   경계 버킷이 통째로 포함되거나 빠지고, 그때 틀리는 양은 "1시간"이 아니라 **그 경계 시간대에
@@ -271,10 +294,23 @@ GROUP BY Model, TokenType
 
 중요 — 비용 용어를 섞지 마세요(reported cost ≠ computed cost):
 - claude_code.cost.usage("reported_cost")는 Claude Code 클라이언트가 자체 계산해 보고하는
-  값입니다. 참고용이며, 대시보드가 보여주는 값과 다를 수 있습니다.
-- 대시보드 Cost 페이지 카드가 보여주는 비용("computed cost")은 이 값이 아니라, token.usage의
-  4개 TokenType(input/output/cacheRead/cacheCreation) 토큰 수 × 아래 모델별 단가(1M 토큰당
-  USD)를 곱해 서버(pricing.js)에서 계산한 값입니다:
+  값입니다. Anthropic 모델의 Cost 기본 카드·레거시 지출 표시는 reported_cost를 사용하며,
+  computed_cost는 선택해서 보는 계산 진단입니다. 원본 보고 비용은 청구서가 아닙니다.
+- Claude Code로 사용한 non-Anthropic 모델은 예외입니다: 대시보드는 api_request 로그의
+  요청별 토큰·컨텍스트 티어와 AWS 단가로 추정한 비용을 세션·모델별 원본 보고액에 대한 비율로
+  카운터에 적용합니다(ADR-017). 이 챗 SQL은 해당 보정 파라미터를 자동 적용하지 않습니다.
+  AWS 단가 추정도 청구서나 보장된 청구 상·하한이 아니며 할인·실제 청구 조건을 확정하지 않습니다.
+  그런 모델의 원본 cost.usage 합계를 AWS 추정 지출이나 대시보드 비용이라고 답하지 마세요.
+  원본 보고값을 요청하면 "보정 전 원본 보고 비용"으로 구분하고, 로그·단가·티어가 확인되지
+  않으면 대시보드 비교 비용은 확인 불가로 답하세요.
+- 공통 클라이언트 뷰는 cost_basis로 보고 비용/AWS 추정/일부 계산 대체/혼합을 구분합니다.
+  이 프롬프트는 주로 Claude 분석 규칙을 설명하며 Codex 완료 로그의 중복 제거·토큰·가격 집계는
+  자동 적용하지 않습니다. SQL 권한 경계는 claude_code DB이며 이 설명이 테이블 허용 목록은
+  아닙니다. 모델 이름으로 Codex 사용량을 추정하거나
+  Codex 진단 메트릭·트레이스를 사용량·비용에 더하지 마세요.
+- 명시적으로 요청한 computed cost 진단은 token.usage의 4개 TokenType
+  (input/output/cacheRead/cacheCreation) 토큰 수 × 아래 모델별 단가(1M 토큰당 USD)입니다.
+  캐시 생성 TTL 가정과 조회 범위를 밝히고, 단가가 없는 모델의 비용은 확인 불가로 남기세요:
 ${PRICING_PROMPT_TABLE}
   **단가표의 필드명과 TokenType 값이 다릅니다** — 매핑은 다음과 같고, TokenType='cacheWrite'는
   데이터에 존재하지 않으니 그런 조건으로 조회하지 마세요:
@@ -282,16 +318,18 @@ ${PRICING_PROMPT_TABLE}
   즉 계산 비용 = (input 토큰×input) + (output 토큰×output) + (cacheRead 토큰×cacheRead)
                 + (cacheCreation 토큰×cacheWrite), 전부 1e6으로 나눕니다. TokenType별 합계는
   sumIf(inc, TokenType='input') 처럼 위 boundary-diff 결과에 조건 집계로 뽑되, **Model별 GROUP BY를
-  유지하세요** — 여러 모델의 토큰을 먼저 합치고 단가 하나를 곱하면 대시보드 값과 발산합니다.
+  유지하세요** — 여러 모델의 토큰을 먼저 합치고 단가 하나를 곱하면 계산 비용이 틀립니다.
   원본 Model 값(us.anthropic.claude-sonnet-5-20250929-v1:0 등)은 위 표에 없습니다 — 반드시 아래
-  SQL 식으로 정규화한 값을 표의 key와 매칭하고, GROUP BY도 이 식으로 하세요(대시보드가 쓰는 것과
-  같은 식이라 이걸 그대로 쓰면 값이 일치합니다. 직접 다르게 정규화하면 단가 매칭이 빗나가 계산
-  비용이 대시보드보다 작게 나옵니다):
+  SQL 식으로 정규화한 값을 표의 key와 매칭하고, GROUP BY도 이 식으로 하세요. 단가 조회에
+  쓰는 정규화가 같아도 구간·필터·기준선·티어가 다르면 조회 비용은 다를 수 있습니다:
     ${normModel("Model")}
 - 사용자가 그냥 "비용"을 물으면 기본으로 cost.usage(reported_cost)를 조회해 답하되, 반드시
-  "Claude Code 자체 보고 비용"임을 명시하세요. 대시보드 카드 값과 비교/일치를 요구하면 위 단가로
-  직접 계산한 뒤 "계산 비용(단가표 기준)"이라고 구분해서 답하세요. 두 값을 같은 것처럼 뭉뚱그려
-  답하지 마세요 — 실제로 서로 다른 숫자입니다.
+  "Claude Code 자체 보고 비용"임을 명시하고 위 non-Anthropic 예외를 먼저 확인하세요.
+  대시보드 비교는 해당 뷰의 cost_basis, 필터, 시간 경계, 알 수 없는 세션 포함 정책과 누락 상태를
+  맞추세요. 토큰 단가 계산을 기본 카드의 보고 비용으로 바꾸지 마세요.
+- 보고가 없거나 양의 토큰 옆 보고 비용이 0이면 무료 사용으로 단정하지 마세요. 알려진 합계는
+  부분 관측일 수 있으며, 전부 알 수 없으면 확인 불가입니다. 관측 활동은 직원 생산성이나
+  인과적 ROI가 아닙니다.
 
 중요 — 그룹 간 직접 비교가 위험한 값(2026-08-11, 문서로 확인된 동작):
 - claude_code.internal_error는 Bedrock에서는 emit되지 않습니다. 에러율을 bedrock/enterprise로

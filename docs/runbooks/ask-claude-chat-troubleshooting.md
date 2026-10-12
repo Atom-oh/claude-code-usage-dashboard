@@ -89,9 +89,11 @@ Cost-page spend and ordinary chat cost answers use client-reported `cost.usage`.
 window, filters, unknown-session inclusion, and report coverage before comparing them.
 Positive reports can still be incomplete; absent/zero reports with tokens are not confirmed
 free use. Token-price computed cost and cache-write TTL assumptions remain diagnostics.
-The current `SCHEMA_CONTEXT` still contains a legacy instruction describing the Cost card
-as computed cost; treat that as prompt drift, not the current UI contract. The generated
-pricing table remains useful for explicitly requested computed-cost diagnostics.
+For non-Anthropic Claude models, raw `cost.usage` differs from the dashboard's log-derived
+AWS estimate (ADR-017); SQL chat does not automatically apply that adjustment. Verify the
+answer labels raw reports as unadjusted instead of claiming dashboard parity. The generated
+pricing table serves explicitly requested computed-cost diagnostics. A correct prompt does
+not establish a correct generated query or answer.
 
 Check `schema.projectColumns` before expecting project/entrypoint fields and use
 [schema migrations](schema-migrations.md) to inspect actual tables. Do not reconstruct
@@ -105,7 +107,8 @@ chat/SQL tests validate code paths without establishing live Bedrock access. If 
 verification is authorized, use one small aggregate question and inspect SQL/results with
 the same cost basis and range; do not include personal data or credential values in prompts.
 
-Chat grants every authenticated administrator the permitted `claude_code` read surface.
+Chat grants admitted analyst/admin roles (and legacy Basic identities) the permitted
+`claude_code` read surface; OIDC viewers are denied.
 Email masking reduces display/model exposure but does not enforce per-user authorization
 or remove all identifiers. Sharing participant chat access requires reviewing that trust
 model, not just enabling a UI flag.
