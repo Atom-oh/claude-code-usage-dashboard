@@ -30,7 +30,7 @@ export function describeInstallation({ auth, enabledClients, databaseReady, read
       || clients.some(client => client.state !== "receiving")
       || !schemaState.migrations?.length || schemaState.counterIdentity === "legacy"
       || schemaState.counterIdentity === "unavailable" ? "needs_attention" : "operational",
-    release: { version: packageVersion, revision: /^[a-f0-9]{40,64}$/.test(revision || "") ? revision : null },
+    release: { version: packageVersion, revision: /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(revision || "") ? revision : null },
     authentication: { state: authState, mode: auth.mode },
     database: { state: databaseReady ? "reachable" : "unavailable",
       readonly: readonly === true ? "confirmed" : readonly === false ? "not_readonly" : "unavailable",

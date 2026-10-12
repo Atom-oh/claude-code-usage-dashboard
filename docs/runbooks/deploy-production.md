@@ -63,13 +63,26 @@ Secret value alone requires a controlled restart to refresh environment variable
 ```bash
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
-docker buildx build --platform linux/arm64 -t "$REPO:$TAG" --push dashboard/
+docker buildx build --platform linux/arm64 \
+  --build-arg "APP_REVISION=$(git rev-parse HEAD)" -t "$REPO:$TAG" --push dashboard/
 DIGEST=$(aws ecr describe-images --region "$REGION" --repository-name "$REPO_NAME" \
   --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)
 ```
 
 Use a new timestamp tag for each build. Do not overwrite tags or rely on `latest`.
 Record `$DIGEST` as well as `$TAG` even when immutability is verified.
+
+For a clean, committed source archive and a private provenance record, use:
+
+```bash
+python3 scripts/build-release.py --image "$REPO:$TAG" --push \
+  --record "/tmp/dashboard-release-$TAG.json"
+```
+
+The helper requires Python >=3.9. It builds only Git-archived dashboard files, passes the full revision to the
+runtime/OCI label and records the immutable build digest. It does not perform a rollout
+or establish live ECR mutability, pod/edge state or registry signing. Keep the record
+private; verify registry/pod digests using the remaining procedure.
 
 ### 3. Roll out and verify
 
