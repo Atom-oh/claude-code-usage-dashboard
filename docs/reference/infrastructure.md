@@ -6,9 +6,14 @@ SPA. Infrastructure ownership is described in [IaC](iac.md); full topology is in
 
 ## Image and local stack
 
-[dashboard/Dockerfile](../../dashboard/Dockerfile) uses two stages with a digest-pinned
+[dashboard/Dockerfile](../../dashboard/Dockerfile) uses four stages with a digest-pinned
 `node:24-alpine` base. The web stage runs `npm ci` and Vite build; the runtime installs
 server dependencies with `npm ci --omit=dev`, copies the web output, and runs as `node`.
+An isolated notice build inventories installed production dependencies from both lockfiles
+and includes their license/NOTICE texts in `/app/notices`. The runtime also carries the
+canonical application license in `/app/APPLICATION_LICENSE`. Build tools and frontend
+`node_modules` used for collection are not copied into the runtime.
+See [distribution notices](distribution-notices.md) for provenance and limits.
 The EKS NodePool requires arm64. Local builds can use the host architecture because the
 pinned base digest is a multi-architecture image index.
 

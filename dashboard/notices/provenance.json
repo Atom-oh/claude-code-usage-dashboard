@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "catalog": {
+    "victory-37.3.6-LICENSE.txt": {
+      "licenseId": "MIT",
+      "source": "https://raw.githubusercontent.com/FormidableLabs/victory/d9d9ca2d5038d6ef9de91f2cef39e6fb2733baa6/LICENSE.txt",
+      "sha256": "34dee5fd5e5cc756efb5ad4d64652bce719bdf5e900ca5d7538253e737930bc4"
+    },
+    "MIT-spdx.txt": {
+      "licenseId": "MIT",
+      "source": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/json/details/MIT.json",
+      "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+      "copyrightPlaceholdersPreserved": true,
+      "normalization": "Trailing whitespace normalized to one final newline; license wording unchanged."
+    }
+  },
+  "packageDeclarations": {
+    "victory-vendor@37.3.6": {
+      "declaredLicense": "MIT AND ISC",
+      "packageLicenseId": "MIT",
+      "licenseFile": "victory-37.3.6-LICENSE.txt",
+      "repository": "https://github.com/FormidableLabs/victory",
+      "publishedSourceCommit": "d9d9ca2d5038d6ef9de91f2cef39e6fb2733baa6",
+      "authorMetadata": "Formidable",
+      "notice": "The exact version's README declares its own MIT terms and bundled ISC licenses. Preserve the pinned repository MIT text and all packaged vendor texts separately."
+    },
+    "express-basic-auth@1.2.1": {
+      "declaredLicense": "MIT",
+      "repository": "https://github.com/LionC/express-basic-auth",
+      "publishedSourceCommit": "dd17b4de9fee9558269cdc583310bde5331456e7",
+      "authorMetadata": "LionC <me@lionc.de>",
+      "notice": "Upstream declares MIT but packages no full license text or separate copyright notice. Standard SPDX text is included without inventing copyright owner/year."
+    }
+  }
+}

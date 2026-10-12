@@ -9,6 +9,7 @@ Follow the shared [documentation policy](../documentation-policy.md) for languag
 | Reference | Scope |
 |---|---|
 | [Infrastructure](infrastructure.md) | Application image, local stack, runtime and health checks |
+| [Distribution notices](distribution-notices.md) | Packaged third-party license inventory, provenance and limits |
 | [Data](data.md) | Schema, counter differences, time boundaries, identity and channel inference |
 | [API implementation](api.md) | Validation, filters, caching and query ownership |
 | [Infrastructure as code](iac.md) | Terraform resources, prerequisites and deployment ownership |
