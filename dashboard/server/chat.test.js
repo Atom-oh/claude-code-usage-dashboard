@@ -276,9 +276,29 @@ test("SCHEMA_CONTEXT quotes pricing.js's PRICING_PROMPT_TABLE verbatim, not a ha
   assert.ok(SCHEMA_CONTEXT.includes(PRICING_PROMPT_TABLE));
 });
 
-test("SCHEMA_CONTEXT distinguishes reported cost (cost.usage) from the dashboard's computed cost", () => {
+test("SCHEMA_CONTEXT keeps reported spend primary and computed cost diagnostic", () => {
   assert.match(SCHEMA_CONTEXT, /reported_cost/);
   assert.match(SCHEMA_CONTEXT, /computed cost/);
+  assert.match(SCHEMA_CONTEXT, /Cost 기본 카드[\s\S]*reported_cost를 사용/);
+  assert.match(SCHEMA_CONTEXT, /computed_cost는 선택해서 보는 계산 진단/);
+  assert.doesNotMatch(SCHEMA_CONTEXT, /대시보드 Cost 페이지 카드가 보여주는 비용\("computed cost"\)/);
+});
+
+test("SCHEMA_CONTEXT discloses raw-chat limits for non-Anthropic spend and Codex", () => {
+  assert.match(SCHEMA_CONTEXT, /non-Anthropic 모델은 예외/);
+  assert.match(SCHEMA_CONTEXT, /보정 파라미터를 자동 적용하지 않습니다/);
+  assert.match(SCHEMA_CONTEXT, /보정 전 원본 보고 비용/);
+  assert.match(SCHEMA_CONTEXT, /허용 SQL 테이블은 Claude 데이터뿐/);
+  assert.match(SCHEMA_CONTEXT, /cost_basis/);
+  assert.match(SCHEMA_CONTEXT, /무료 사용으로 단정하지 마세요/);
+  assert.match(SCHEMA_CONTEXT, /직원 생산성이나[\s\S]*인과적 ROI가 아닙니다/);
+});
+
+test("SCHEMA_CONTEXT does not promise rollup-only dashboard queries or exact parity", () => {
+  assert.match(SCHEMA_CONTEXT, /4시간 이하 원본/);
+  assert.doesNotMatch(SCHEMA_CONTEXT, /대시보드의 모든 쿼리가 이걸 쓴다/);
+  assert.doesNotMatch(SCHEMA_CONTEXT, /이걸 그대로 쓰면 값이 일치합니다/);
+  assert.match(SCHEMA_CONTEXT, /모든 조회 경로의 일치를 보장하지 않습니다/);
 });
 
 // TokenType 값은 cacheCreation인데 PRICING 단가 필드명은 cacheWrite다 — 매핑을 명시하지 않으면

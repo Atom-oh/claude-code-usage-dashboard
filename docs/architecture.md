@@ -185,9 +185,10 @@ preserving whole rows and a truncation flag. Disconnects and the 180-second turn
 propagate cancellation to Bedrock, retry waits and SQL; SQL retains its own timeout.
 Cancellation depends on operation settlement and does not guarantee zero billed work.
 
-The hardcoded chat prompt still describes computed-primary spend and rollup-only dashboard
-queries. Those statements lag the actual consumers and query branches; this reconciliation
-does not change the prompt. See [chat reference](reference/agent-llm.md) for exact limits.
+The prompt distinguishes primary reported spend from computed diagnostics and raw/rollup
+paths. It discloses non-Anthropic rescaling and Codex data outside its automatic SQL path;
+it cannot guarantee dashboard parity or answer correctness. See the
+[chat reference](reference/agent-llm.md) for limits.
 
 PII masking is a display policy, not API authorization: ordinary data responses retain raw
 identities. The server defaults it off, Terraform defaults it on, and the browser keeps it on

@@ -55,12 +55,15 @@ Follow-up requests send text-only conversation history.
 from [queries.js](../../dashboard/server/queries.js). The interpolated fragments track code;
 the hardcoded schema prose does not.
 
-The current prompt still says dashboard costs are computed and all dashboard queries use
-rollups. Those statements lag the actual spend adapter and raw-query paths. It defaults a
-general cost answer to client-reported `cost.usage`, but its dashboard-comparison guidance
-can disagree with the UI. Use [spend definitions](../metrics.md)
-and [aggregation rules](data.md) as the documented contract; this documentation change does
-not modify the prompt or guarantee assistant parity.
+The prompt keeps Anthropic Claude reported spend primary and computed token-price costs
+diagnostic; it describes the counter raw/rollup branch and rejects unconditional parity.
+Non-Anthropic Claude spend needs [ADR-017](../decisions/ADR-017-backend-cost-fallback.md)'s
+log-derived AWS rescaling, which SQL chat does not automatically apply. Raw reports must
+be labelled unadjusted, not dashboard spend. Missing rates/logs remain unavailable.
+The allowed SQL surface is Claude-only; model names do not supply Codex usage. The prompt
+also distinguishes unknown/partial observation from zero and rejects productivity/causal
+ROI claims. Use [spend definitions](../metrics.md) and [aggregation rules](data.md);
+prompt wording and offline checks do not guarantee generated-SQL or answer correctness.
 
 The prompt includes cautions about `internal_error` availability and version-dependent MCP
 attribution. Treat these as collection-coverage cautions to check against the selected
