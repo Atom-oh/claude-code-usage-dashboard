@@ -25,6 +25,21 @@ required permission return 403.
 requires the configured Origin, clears local cookies and redirects to `/`; it does not
 end IdP SSO. Protocol responses are `no-store`.
 
+`GET /api/installation` requires `installation:read` in OIDC mode; Basic/development
+retain their existing full-installation access. It uses the shared response/error wrapper,
+but is a current snapshot without usage-range/filter semantics. A single per-process
+30-second memo deduplicates DB/receipt probes. Unauthorized roles are rejected before
+probing; disabled clients are not queried or shown.
+
+The response has `checkedAt`, `state=operational|needs_attention`, `release`,
+`authentication`, `database`, `schema`, `clients`, `staleAfterMinutes` and explicit limits.
+Each enabled client's seven-day receipt is `receiving`, `stale`, `empty` or `unavailable`.
+Empty is not a token/cost zero; unavailable is not empty. Readonly/schema fields include
+their cached probe timestamps. Ledger records do not prove actual DDL/rebuild completion;
+receipt does not prove complete telemetry, OIDC configuration does not prove MFA, and no
+backup or full commercial-release claim is made. `release.revision` is null unless the
+runtime supplies a valid Git SHA through `APP_REVISION`.
+
 Wrapped GET data routes validate these parameters before querying or caching:
 
 | Parameter | Contract |

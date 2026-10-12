@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import { RefreshProvider } from "./RefreshContext.jsx";
 import { RangeProvider } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
@@ -22,6 +22,7 @@ import { ClientProvider, useClient } from "./ClientContext.jsx";
 import { CLIENT_PAGES } from "./clientNavigation.js";
 import { useConfig } from "./ConfigContext.jsx";
 import SessionBoundary from "./SessionBoundary.jsx";
+import Installation from "./pages/Installation.jsx";
 
 export default function App() {
   return <SessionBoundary><ClientProvider><Dashboard /></ClientProvider></SessionBoundary>;
@@ -31,6 +32,7 @@ function Dashboard() {
   const { common } = useClient();
   const { session } = useConfig();
   const canChat = !session || session.permissions?.includes("chat:query");
+  const installation = useLocation().pathname === "/installation";
   return (
     <RefreshProvider>
       <RangeProvider>
@@ -40,6 +42,7 @@ function Dashboard() {
               <MobileNav />
               <Sidebar />
               <main className="min-w-0 flex-1 overflow-y-auto animate-fade-in">
+                {installation ? <Installation /> : <>
                 <FreshnessBanner className="mx-8 mt-3" />
                 <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
                   <FilterBar />
@@ -57,10 +60,10 @@ function Dashboard() {
                   <Route path="/cost" element={<Cost />} />
                   <Route path="/reliability" element={<Reliability />} />
                   <Route path="/analytics" element={<Analytics />} />
-                </Routes>}
+                </Routes>}</>}
               </main>
             </div>
-            {!common && canChat && <FloatingChat />}
+            {!installation && !common && canChat && <FloatingChat />}
           </FreshnessProvider>
         </FilterProvider>
       </RangeProvider>

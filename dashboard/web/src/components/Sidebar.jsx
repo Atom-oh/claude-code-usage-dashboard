@@ -1,9 +1,10 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert, Settings } from "lucide-react";
 import { cn } from "../cn.js";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
 import { CLIENT_PAGES } from "../clientNavigation.js";
 import { AccountMenu } from "./AccountMenu.jsx";
+import { useConfig } from "../ConfigContext.jsx";
 
 const ICONS = [LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, UsersIcon, DollarSign, ShieldAlert, Sparkles];
 export const NAV = CLIENT_PAGES.map((page, i) => ({ ...page, icon: ICONS[i] }));
@@ -11,8 +12,12 @@ export const COMMON_NAV = NAV;
 
 export function useNavigation() {
   const { common, enabledClients } = useClient();
+  const { session } = useConfig();
+  const items = session?.permissions?.includes("installation:read") ? [...NAV, {
+    to: "/installation", label: "설치 상태", hint: "연결·수집·조직 로그인", icon: Settings,
+  }] : NAV;
   return {
-    items: NAV,
+    items,
     brand: enabledClients.length > 1 ? "Claude + Codex" : CLIENT_LABELS[enabledClients[0]],
     subtitle: common ? "통합 사용량 대시보드" : "Claude 상세 분석",
     common,

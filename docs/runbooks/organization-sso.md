@@ -50,9 +50,18 @@ group claims deny login. Replicas must share issuer, client, origin, mapping and
 Generate/store secrets through the approved secret manager, not command history, PRs
 or support bundles.
 
-Existing Terraform inputs configure Basic Auth. Until infrastructure explicitly supplies
-OIDC inputs, manual container-environment changes are controlled operational changes that
-must be recorded/reconciled with Terraform. Source support does not prove live activation.
+Terraform supports explicit `auth_mode=oidc`, `oidc_issuer`, `oidc_client_id`,
+`oidc_groups_claim`, `oidc_role_groups`, `session_max_age_seconds` and `oidc_secret_name`.
+The latter references an existing namespace Secret containing `OIDC_CLIENT_SECRET` and
+`SESSION_SECRET`; Terraform neither reads those values nor puts them in state or inline env.
+Provision the Secret through the customer-approved secret manager before rollout.
+Basic mode keeps its resource address/default and requires its protected password input.
+Changing modes refreshes pods and clears unused Basic Secret data; retain protected Basic
+inputs when a rollback to that mode must remain available.
+
+Source support and successful Terraform validation do not prove live activation.
+Verify the actual mode/secret references and use `/installation` as an authorized admin
+for current connectivity and receipt diagnostics.
 
 ## Verify and roll out
 

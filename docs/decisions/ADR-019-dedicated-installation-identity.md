@@ -18,8 +18,7 @@ IdP groups must match an explicit mapping. There is no email-domain allowlist, i
 viewer admission or app-managed self-registration.
 
 `viewer` reads telemetry. `analyst` also queries chat. `admin` has those permissions and
-the reserved `installation:read` permission for diagnostics. This reservation does not
-establish that a diagnostics endpoint exists. Roles do not restrict employee rows;
+`installation:read` for the protected installation diagnostics endpoint. Roles do not restrict employee rows;
 installations needing that boundary require a separately reviewed data model.
 
 Store a minimal principal in an authenticated, encrypted, host-only,

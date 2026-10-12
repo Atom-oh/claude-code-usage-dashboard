@@ -63,7 +63,12 @@ Use the approved secret workflow to populate a protected, gitignored
 
 Do not put credential values in examples, CLI arguments, logs, or committed files. Terraform
 state can contain sensitive values even when plans mask them. Configure the dashboard's
-Basic Auth username deliberately and keep self sign-up disabled.
+Basic Auth username deliberately for legacy Basic deployments. Dedicated commercial
+installations should configure organization OIDC using
+[SSO operations](runbooks/organization-sso.md): create the external namespace Secret
+through the customer's secret workflow, then set explicit `auth_mode=oidc`, issuer,
+client, group mapping and `oidc_secret_name`. Basic's password is required only in Basic
+mode. IdP secret values are not Terraform inputs.
 
 Participant collectors require an out-of-band SSM SecureString whose value matches
 `clickhouse_ingest_password`; Terraform does not create that parameter. Follow
@@ -141,6 +146,8 @@ changes after the first rollout.
 Verify live ECR mutability, pod probes/drain settings, current image, and CloudFront policies.
 `CachingDisabled` is declared; cache invalidation is only needed if the actual edge still
 serves an older cached build. A successful apply or build does not establish these settings.
+An authorized admin can visit `/installation` to check current DB, readonly, schema and
+enabled-client receipt. This does not replace edge, IdP, DDL, backup or restore verification.
 
 For a local server investigation, `npm start`, `npm run dev`, and plain `node index.js`
 do not automatically load `.env`. After preparing the protected root `.env`, load it

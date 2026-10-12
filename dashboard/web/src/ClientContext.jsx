@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConfig } from "./ConfigContext.jsx";
-import { clientPage, isClientPath } from "./clientNavigation.js";
+import { clientPage, isDashboardPath } from "./clientNavigation.js";
 
 export const CLIENT_LABELS = { all: "전체", claude: "Claude Code", codex: "Codex" };
 const ClientContext = createContext({ client: "claude", common: true, detail: false, enabledClients: ["claude"] });
@@ -21,7 +21,8 @@ export function ClientProvider({ children }) {
   const common = !detail;
 
   useEffect(() => {
-    document.title = `${clientPage(pathname).label} · ${client === "all" ? "Claude + Codex" : CLIENT_LABELS[client]}${detail ? " 상세" : ""}`;
+    document.title = pathname === "/installation" ? "설치 상태 · AI 사용량 대시보드"
+      : `${clientPage(pathname).label} · ${client === "all" ? "Claude + Codex" : CLIENT_LABELS[client]}${detail ? " 상세" : ""}`;
   }, [client, detail, pathname]);
 
   // Gate rendering immediately; normalization must never briefly mount a disabled route.
@@ -38,7 +39,7 @@ export function ClientProvider({ children }) {
     }
     if (piiMask) params.delete("user");
     params.sort();
-    const nextPath = isClientPath(pathname) ? pathname : "/";
+    const nextPath = isDashboardPath(pathname) ? pathname : "/";
     const nextSearch = params.toString() ? `?${params}` : "";
     if (nextPath !== pathname || nextSearch !== search) {
       navigate({ pathname: nextPath, search: nextSearch }, { replace: true });
@@ -60,7 +61,7 @@ export function ClientProvider({ children }) {
       }
       if (piiMask) params.delete("user");
       params.sort();
-      navigate({ pathname: isClientPath(pathname) ? pathname : "/", search: `?${params}` }, { replace: true });
+      navigate({ pathname: isDashboardPath(pathname) ? pathname : "/", search: `?${params}` }, { replace: true });
     },
     setDetail(value) {
       if (client !== "claude") return;
@@ -76,7 +77,7 @@ export function ClientProvider({ children }) {
       }
       if (piiMask) params.delete("user");
       params.sort();
-      navigate({ pathname: isClientPath(pathname) ? pathname : "/", search: `?${params}` }, { replace: true });
+      navigate({ pathname: isDashboardPath(pathname) ? pathname : "/", search: `?${params}` }, { replace: true });
     },
   }), [client, common, detail, enabledClients, search, pathname, piiMask, navigate]);
 

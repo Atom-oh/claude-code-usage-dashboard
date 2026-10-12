@@ -4,16 +4,30 @@
 # -var 주입이나 별도 gitignore된 secrets.auto.tfvars로 넘긴다.
 
 # 이 스택을 올릴 EKS 클러스터
-eks_cluster_name = "fsi-demo-cluster"
+eks_cluster_name = "YOUR-EKS-CLUSTER"
 
 # Route53 호스팅 존과 그 안의 호스트명
-domain             = "atomai.click"
-dashboard_hostname = "ccdash.atomai.click"
-ch_ingest_hostname = "ch.atomai.click"
+domain             = "example.com"
+dashboard_hostname = "dashboard.example.com"
+ch_ingest_hostname = "ingest.example.com"
 
 # ECR에 실제로 push된 태그. ECR이 IMMUTABLE이라 `latest`는 존재하지 않는다 —
 # 이미지를 먼저 push하고 그 타임스탬프 태그를 여기 넣는다(docs/runbooks/deploy-production.md).
 dashboard_image_tag = "REPLACE-WITH-A-PUSHED-TIMESTAMP-TAG"
+
+# Dedicated commercial installation: create this Secret in the namespace through the
+# customer's secret manager with OIDC_CLIENT_SECRET and random SESSION_SECRET keys.
+# No secret values belong in this file. Existing Basic installations keep auth_mode=basic.
+# auth_mode        = "oidc"
+# oidc_issuer      = "https://YOUR-IDP-ISSUER"
+# oidc_client_id   = "YOUR-OIDC-CLIENT-ID"
+# oidc_secret_name = "dashboard-oidc-auth"
+# oidc_groups_claim = "groups" # Cognito: "cognito:groups"
+# oidc_role_groups = {
+#   viewer  = ["YOUR-VIEWER-GROUP"]
+#   analyst = ["YOUR-ANALYST-GROUP"]
+#   admin   = ["YOUR-ADMIN-GROUP"]
+# }
 
 # 조직 단위 대시보드 동작(선택) — 기본값은 서버 기본값과 같다. docs/deploying-for-your-org.md §9.
 # group_mode         = "ab"   # "ab" | "single"

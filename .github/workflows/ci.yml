@@ -82,3 +82,5 @@ jobs:
         working-directory: infra
       - run: terraform validate
         working-directory: infra
+      - name: Verify dedicated-installation identity inputs without AWS access
+        run: bash scripts/test-identity-terraform.sh

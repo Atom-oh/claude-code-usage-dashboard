@@ -49,6 +49,14 @@ The dashboard image is separately deployed: Terraform ignores later changes to i
 field. See [runtime](infrastructure.md) for probes and draining, and
 [deployment](../runbooks/deploy-production.md) for operational verification.
 
+[identity.tf](../../infra/identity.tf) supports organization OIDC with an external Kubernetes
+Secret reference. Only `OIDC_CLIENT_SECRET` and `SESSION_SECRET` keys are read by the pod;
+Terraform does not read their values. Group mapping and public origin remain explicit
+non-secret configuration. Basic keeps its resource address/default; mode changes require
+the controlled [SSO rollout](../runbooks/organization-sso.md).
+`scripts/test-identity-terraform.sh` validates the actual identity/variable files in a
+provider-free fixture; it is not a plan or deployment of the complete stack.
+
 The S3 lifecycle expires `backup/` objects after 30 days; table TTL owns cold-data deletion.
 The optional `alert_email` creates a CloudFront alarm/SNS path. The application webhook
 setting is a separate freshness-alert path, described in [alerting](../runbooks/alerting.md).

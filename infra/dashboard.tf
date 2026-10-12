@@ -117,10 +117,11 @@ resource "kubernetes_secret" "dashboard_basic_auth" {
     name      = "dashboard-basic-auth"
     namespace = kubernetes_namespace.claude_code.metadata[0].name
   }
-  data = {
+  # Preserve this resource address for upgrades; OIDC uses an external secret reference.
+  data = var.auth_mode == "basic" ? {
     BASIC_AUTH_USER     = var.dashboard_basic_auth_user
     BASIC_AUTH_PASSWORD = var.dashboard_basic_auth_password
-  }
+  } : {}
 }
 
 # 웹훅 URL은 토큰을 품고 있어 env value가 아니라 Secret으로 — null이면 Secret 자체가 없다.
@@ -352,8 +353,31 @@ resource "kubernetes_deployment_v1" "dashboard" {
             name  = "CODEX_BEDROCK_ENDPOINT"
             value = var.codex_bedrock_endpoint
           }
-          env_from {
-            secret_ref { name = kubernetes_secret.dashboard_basic_auth.metadata[0].name }
+          dynamic "env" {
+            for_each = local.oidc_environment
+            content {
+              name  = env.key
+              value = env.value
+            }
+          }
+          dynamic "env" {
+            for_each = var.auth_mode == "oidc" ? toset(["OIDC_CLIENT_SECRET", "SESSION_SECRET"]) : toset([])
+            content {
+              name = env.value
+              value_from {
+                secret_key_ref {
+                  name     = var.oidc_secret_name
+                  key      = env.value
+                  optional = false
+                }
+              }
+            }
+          }
+          dynamic "env_from" {
+            for_each = var.auth_mode == "basic" ? [kubernetes_secret.dashboard_basic_auth.metadata[0].name] : []
+            content {
+              secret_ref { name = env_from.value }
+            }
           }
           dynamic "env_from" {
             for_each = kubernetes_secret.dashboard_alert

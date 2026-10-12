@@ -5,6 +5,7 @@ import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createAuthentication } from "./auth.js";
+import { createInstallationProbe } from "./installation.js";
 import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
 import { sendJson } from "./jsonResponse.js";
 import * as q from "./queries.js";
@@ -176,15 +177,13 @@ setInterval(() => {
 let segmentAwareSeriesKey = null;
 let schemaMigrations = null;
 let projectColumns = null;
+let schemaCheckedAt = null;
 const refreshSchemaProbe = () => {
-  probeSegmentAwareSeriesKey().then((v) => {
-    segmentAwareSeriesKey = v;
-  });
-  probeMigrations().then((v) => {
-    schemaMigrations = v;
-  });
-  probeProjectColumns().then((v) => {
-    projectColumns = v;
+  Promise.all([probeSegmentAwareSeriesKey(), probeMigrations(), probeProjectColumns()]).then(([segment, migrations, projects]) => {
+    segmentAwareSeriesKey = segment;
+    schemaMigrations = migrations;
+    projectColumns = projects;
+    schemaCheckedAt = new Date().toISOString();
   });
 };
 refreshSchemaProbe();
@@ -195,9 +194,11 @@ setInterval(refreshSchemaProbe, 10 * 60 * 1000).unref();
 // 않은 계정으로 LLM이 만든 SELECT를 실행시키지 않는다(fail-closed). 부팅 직후 프로브가
 // 돌아오기 전 잠깐도 챗은 503이다 — 그게 fail-closed의 정의다.
 let chatSqlSafe = null;
+let readonlyCheckedAt = null;
 const refreshReadonlyProbe = () => {
   assertReadonlySession().then((v) => {
     chatSqlSafe = v;
+    readonlyCheckedAt = new Date().toISOString();
     if (v !== true) console.warn(`chat disabled: ClickHouse session is not confirmed readonly (probe=${String(v)})`);
   });
 };
@@ -287,12 +288,15 @@ function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
 // 성립하지 않는 엔드포인트.
 const warmRoutes = [];
 
-function route(path, handler, { warm = true, client = "claude", validate } = {}) {
+function route(path, handler, { warm = true, client = "claude", validate, permission, snapshot = false } = {}) {
   const active = client === null || clientConfig.enabledClients.includes(client);
-  if (warm && active) warmRoutes.push({ path, handler });
-  app.get(path, async (req, res) => {
+  if (warm && active && !snapshot) warmRoutes.push({ path, handler });
+  const authorize = permission ? authentication.requirePermission(permission) : (_req, _res, next) => next();
+  app.get(path, authorize, async (req, res) => {
     if (!active) return res.status(404).json({ error: "client disabled" });
     try {
+      // Current installation diagnostics have their own bounded memo and no usage window.
+      if (snapshot) return await sendJson(req, res, await handler());
       // 검증은 fetchCached보다 먼저 — 잘못된 요청이 캐시 엔트리를 만들면 안 된다. 무효한
       // from/to도 예전에는 고유한 캐시 키를 하나씩 차지했다(엔트리 상한을 무의미한 키로
       // 밀어내는 형태).
@@ -314,6 +318,17 @@ function route(path, handler, { warm = true, client = "claude", validate } = {})
     }
   });
 }
+
+const installationProbe = createInstallationProbe({
+  auth: authentication, enabledClients: clientConfig.enabledClients, ping,
+  probeLatest: probeLatestTelemetryMs, staleAfterMinutes,
+  getReadonly: () => chatSqlSafe,
+  getReadonlyCheckedAt: () => readonlyCheckedAt,
+  getSchema: () => ({ checkedAt: schemaCheckedAt, segmentAwareSeriesKey, migrations: schemaMigrations, projectColumns }),
+  revision: process.env.APP_REVISION,
+});
+route("/api/installation", installationProbe,
+  { client: null, warm: false, permission: "installation:read", snapshot: true });
 
 route("/api/clients/overview",
   (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),

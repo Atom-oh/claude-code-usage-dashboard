@@ -11,3 +11,4 @@ export const CLIENT_PAGES = [
 ];
 export const clientPage = (pathname) => CLIENT_PAGES.find((p) => p.to === pathname) || CLIENT_PAGES[0];
 export const isClientPath = (pathname) => CLIENT_PAGES.some((p) => p.to === pathname);
+export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation";
