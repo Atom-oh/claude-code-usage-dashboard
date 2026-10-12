@@ -236,7 +236,8 @@ export const SCHEMA_CONTEXT = `테이블(구간·차원에 따라 선택):
   Claude 활동으로 답하지 마세요. 빈 client 태그는 검증된 클라이언트 표식이 아닙니다.
 - Codex 진단 메트릭은 별도 codex_metrics_sum / codex_metrics_gauge /
   codex_metrics_histogram / codex_metrics_exponential_histogram에 있습니다. 이 진단
-  샘플을 완료 로그의 사용량·비용에 더하지 마세요.
+  샘플을 완료 로그의 사용량·비용에 더하지 마세요. 설치마다 이 테이블이 없을 수 있습니다.
+  존재 여부가 확인되지 않거나 조회가 미지원이면 0으로 답하지 말고 확인 불가로 답하세요.
 
 중요 — temporality 분기(단정하지 말 것): AggregationTemporality는 거의 항상 2(cumulative)지만
 session.count 등 일부 데이터포인트는 1(delta)로도 옵니다. 대시보드 서버(queries.js)도 매번
@@ -292,6 +293,7 @@ GROUP BY Model, TokenType
 - Claude Code로 사용한 non-Anthropic 모델은 예외입니다: 대시보드는 api_request 로그의
   요청별 토큰·컨텍스트 티어와 AWS 단가로 추정한 비용을 세션·모델별 원본 보고액에 대한 비율로
   카운터에 적용합니다(ADR-017). 이 챗 SQL은 해당 보정 파라미터를 자동 적용하지 않습니다.
+  AWS 단가 추정도 청구서나 보장된 청구 상·하한이 아니며 할인·실제 청구 조건을 확정하지 않습니다.
   그런 모델의 원본 cost.usage 합계를 AWS 추정 지출이나 대시보드 비용이라고 답하지 마세요.
   원본 보고값을 요청하면 "보정 전 원본 보고 비용"으로 구분하고, 로그·단가·티어가 확인되지
   않으면 대시보드 비교 비용은 확인 불가로 답하세요.
