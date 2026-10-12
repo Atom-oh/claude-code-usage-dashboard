@@ -36,6 +36,8 @@ model round. Timers/listeners are removed at completion; a deadline reports time
 than `done`, including clean provider completion after abort. A timeout is logged using
 only model/hop/deadline metadata. The timeout response follows settlement of the
 abort-aware operation; this is not a hard process kill or a guarantee of zero billed work.
+SQL HTTP cancellation releases the application request; server-side query termination
+depends on deployed ClickHouse settings, which the readonly session cannot override.
 
 The UI consumes SSE in [FloatingChat.jsx](../../dashboard/web/src/components/FloatingChat.jsx)
 and [Analytics.jsx](../../dashboard/web/src/pages/Analytics.jsx); trace display is handled by

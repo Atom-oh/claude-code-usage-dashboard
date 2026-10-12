@@ -72,6 +72,9 @@ classified message does not prove conversation length was the only cause.
 Reload the page to clear a problematic conversation. Closing the floating chat stops the
 stream but retains messages. The 180-second turn deadline and disconnect cancel model/SQL
 work cooperatively; see the [chat reference](../reference/agent-llm.md) for settlement limits.
+Deadline logs carry `type: timeout`; ordinary client disconnects have no timeout log.
+HTTP cancellation does not establish server-side SQL termination; verify the deployed
+ClickHouse cancellation settings independently.
 
 ## 4. Incorrect schema, group, or cost answers
 
