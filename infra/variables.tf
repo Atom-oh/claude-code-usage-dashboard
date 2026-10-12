@@ -56,8 +56,14 @@ variable "dashboard_basic_auth_user" {
 }
 
 variable "dashboard_basic_auth_password" {
+  type      = string
+  default   = null
   sensitive = true
-  # terraform apply -var="dashboard_basic_auth_password=..." 로 주입. 기본값 없음.
+  # Inject through the protected secret workflow. Required only for Basic mode.
+  validation {
+    condition     = var.auth_mode != "basic" ? true : (var.dashboard_basic_auth_password == null ? false : length(var.dashboard_basic_auth_password) > 0)
+    error_message = "Basic authentication requires dashboard_basic_auth_password."
+  }
 }
 
 variable "clickhouse_writer_password" {

@@ -42,10 +42,24 @@ await new Promise(r=>db.listen(0,'127.0.0.1',r));
 process.env.CH_URL='http://127.0.0.1:'+db.address().port;
 process.env.BASIC_AUTH_USER='fixture';process.env.BASIC_AUTH_PASSWORD='fixture-pass';
 delete process.env.AUTH_ALLOW_INSECURE;delete process.env.ALERT_WEBHOOK_URL;
+let sessionCookie;
+if(process.env.FIXTURE_OIDC_ROLE) {
+  process.env.AUTH_MODE='oidc';
+  process.env.OIDC_ISSUER='https://identity.example.invalid/';
+  process.env.APP_PUBLIC_URL='https://dashboard.example.invalid';
+  process.env.OIDC_CLIENT_ID='fixture-client';process.env.OIDC_CLIENT_SECRET='synthetic-client-secret';
+  process.env.SESSION_SECRET=Buffer.alloc(32,42).toString('base64url');
+  process.env.OIDC_ROLE_GROUPS=JSON.stringify({admin:['fixture-admins'],viewer:['fixture-viewers'],analyst:['fixture-analysts']});
+  const {createSessionCodec,parseAuthConfig}=await import('./auth.js');
+  const token=createSessionCodec(parseAuthConfig(process.env)).seal({
+    subject:'fixture-subject',name:'Fixture',role:process.env.FIXTURE_OIDC_ROLE,
+    exp:Math.floor(Date.now()/1000)+600},'session');
+  sessionCookie='__Host-ccdash-session='+token;
+}
 const {app}=await import('./index.js');
 const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
 const base='http://127.0.0.1:'+server.address().port;
-const headers={authorization:'Basic '+Buffer.from('fixture:fixture-pass').toString('base64')};
+const headers=sessionCookie?{cookie:sessionCookie}:{authorization:'Basic '+Buffer.from('fixture:fixture-pass').toString('base64')};
 const requests=JSON.parse(process.env.CLIENT_REQUESTS);
 const results=[];
 for(const path of requests) {
@@ -59,17 +73,33 @@ server.closeAllConnections();server.close();db.closeAllConnections();db.close();
 process.exit(0);
 `;
 const range = "from=2026-09-14T00:00:00Z&to=2026-09-15T00:00:00Z";
-async function scenario(claude, codex, paths) {
+async function scenario(claude, codex, paths, role = "") {
   const { stdout, stderr } = await run(process.execPath, ["--input-type=module", "-e", script], {
     cwd: new URL(".", import.meta.url),
     env: { ...process.env, CLAUDE_ENABLED: String(claude), CODEX_ENABLED: String(codex),
-      CODEX_PRICING_JSON: "", CLIENT_REQUESTS: JSON.stringify(paths) },
+      CODEX_PRICING_JSON: "", CLIENT_REQUESTS: JSON.stringify(paths), FIXTURE_OIDC_ROLE: role },
     timeout: 15000,
   });
   const out = JSON.parse(stdout.trim().split("\n").at(-1));
   if(out.some(r => r.status === 500)) console.error(stderr);
   return out;
 }
+
+test("installation diagnostics enforce admin before any usage query and support Codex-only", async () => {
+  for (const role of ["viewer", "analyst", "admin"]) {
+    const [result] = await scenario(false, true, ["/api/installation"], role);
+    assert.equal(result.status, role === "admin" ? 200 : 403);
+    assert.equal(result.dataQueries, 0);
+    if (role === "admin") {
+      assert.deepEqual(result.body.clients.map(client => client.client), ["codex"]);
+      assert.equal(result.body.schema.counterIdentity, "not_applicable");
+      assert.equal(result.body.authentication.state, "oidc_configured");
+      assert.equal(result.body.release.revision, null);
+      assert.equal(result.cache, "no-store");
+      assert.ok(!JSON.stringify(result.body).includes("synthetic-client-secret"));
+    }
+  }
+});
 
 test("Codex-only deployment gates legacy routes and preserves authenticated client data", async () => {
   const rows = await scenario(false, true, [

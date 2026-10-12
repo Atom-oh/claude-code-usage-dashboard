@@ -6,6 +6,11 @@ Expiry or a data API 401 unmounts telemetry and offers organization login.
 Basic/legacy configuration retains its behavior. See
 [identity contracts](../decisions/ADR-019-dedicated-installation-identity.md).
 
+The permission-aware `/installation` route is preserved independently of client navigation.
+It hides usage filters/chat and shows configuration, per-client receipt and schema checks.
+Non-admin views make no diagnostic request. Refresh failure retains results only with a
+visible previous-result warning; receipt/empty/unavailable never become usage zeros.
+
 The React 18/Vite SPA is built into the same image as the Express server.
 See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions and
 [UI](ui.md) for component and export contracts.
