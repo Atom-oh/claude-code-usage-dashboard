@@ -288,13 +288,24 @@ test("SCHEMA_CONTEXT discloses raw-chat limits for non-Anthropic spend and Codex
   assert.match(SCHEMA_CONTEXT, /non-Anthropic 모델은 예외/);
   assert.match(SCHEMA_CONTEXT, /보정 파라미터를 자동 적용하지 않습니다/);
   assert.match(SCHEMA_CONTEXT, /보정 전 원본 보고 비용/);
-  assert.match(SCHEMA_CONTEXT, /프롬프트는 Claude 스키마만 설명/);
+  assert.match(SCHEMA_CONTEXT, /프롬프트는 주로 Claude 분석 규칙/);
   assert.match(SCHEMA_CONTEXT, /SQL 권한 경계는 claude_code DB/);
   assert.match(SCHEMA_CONTEXT, /테이블 허용 목록은[\s\S]*아닙니다/);
-  assert.doesNotThrow(() => sanitizeSql("SELECT count() FROM claude_code.codex_otel_logs"));
+  assert.doesNotThrow(() => sanitizeSql("SELECT count() FROM claude_code.codex_metrics_sum"));
   assert.match(SCHEMA_CONTEXT, /cost_basis/);
   assert.match(SCHEMA_CONTEXT, /무료 사용으로 단정하지 마세요/);
   assert.match(SCHEMA_CONTEXT, /직원 생산성이나[\s\S]*인과적 ROI가 아닙니다/);
+});
+
+test("SCHEMA_CONTEXT separates shared logs and traces using actual client predicates", () => {
+  assert.match(SCHEMA_CONTEXT, /otel_logs — Claude\/Codex가 공유/);
+  assert.match(SCHEMA_CONTEXT, /otel_traces — Claude\/Codex가 공유/);
+  assert.match(SCHEMA_CONTEXT, /NOT startsWith\(EventName, 'codex\.'\)/);
+  assert.match(SCHEMA_CONTEXT, /ResourceAttributes\['client'\] = 'codex'/);
+  assert.match(SCHEMA_CONTEXT, /ResourceAttributes\['client'\] != 'codex'/);
+  assert.match(SCHEMA_CONTEXT, /startsWith\(SpanType, 'claude_code\.'\)/);
+  assert.match(SCHEMA_CONTEXT, /codex_metrics_exponential_histogram/);
+  assert.match(SCHEMA_CONTEXT, /빈 client 태그는 검증된 클라이언트 표식이 아닙니다/);
 });
 
 test("SCHEMA_CONTEXT does not promise rollup-only dashboard queries or exact parity", () => {
