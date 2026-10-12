@@ -17,13 +17,13 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
 - Common views do not forward Claude-only group/project filters. Client/backend selection
   survives range changes without leaking masked user IDs.
 - Claude detail's `spend.js` selects `reported_cost` and retains computed diagnostics.
-  Preserve null/unpriced totals/forecasts/charts/CSV; missing prices do not invalidate reports.
+  Preserve null/unpriced totals/forecasts/charts/CSV; missing local prices do not invalidate reports.
 - `showComputed` gates Cost's opt-in computed comparison: table/CSV columns, effort
   annotations, computed total and token-tier charts.
 - Cost comparison changes remount affected `DataTable`s to reset sorting, including hidden columns.
 - CSV follows displayed columns/order; `toCsv` uses `toText` or raw values, never JSX.
 - With PII masking, `csv.js` masks `user` without `toText: maskEmail`; explicitly mask other
-  identities. Formula-like values gain an apostrophe after masking: [CSV](../../docs/reference/ui.md).
+  identities. Formula-like values gain an apostrophe after masking: [CSV](../../docs/reference/ui.md#tables-and-csv).
 - Cost USD accepts zero and at most two decimals. `DonutBody.valueFormatter` ignores
   `valuePrefix`; other charts keep their default formatting.
 - Distinguish trace absence/loading/errors/unpriced values/measured zero.
@@ -38,7 +38,7 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
 - Never put masked users in URLs. Project filters need `/api/config` reporting
   `schema.projectColumns === true` for both URLs and requests.
 - Session-scoped model filters are not precise attribution; follow the server's grain.
-- Buckets/calendar presets stay UTC. Parse timezone-less API timestamps as UTC;
+- Query buckets/calendar presets stay UTC. Parse timezone-less API timestamps as UTC;
   chart labels/timestamps/CSV display values use browser time.
   Derive rates from actual range duration, not the last preset; resync local chart
   granularity on global range changes.
