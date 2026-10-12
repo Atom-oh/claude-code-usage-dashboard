@@ -28,11 +28,13 @@ export function validateClientFilters(raw, enabledClients) {
   if (raw.group || raw.project)
     throw new ValidationError("unsupported filter", "use Claude detail pages for channel or project filters");
   const result = { clients };
-  for (const name of ["user", "model"]) {
+  for (const name of ["user", "model", "userExact", "modelExact"]) {
     const value = raw[name];
     if (value !== undefined && (typeof value !== "string" || value.length > 256))
       throw new ValidationError("invalid filter", `${name} must be a string of at most 256 characters`);
-    result[name] = value?.trim() || "";
+    if (name.endsWith("Exact")) {
+      if (value) result[name] = value;
+    } else result[name] = value?.trim() || "";
   }
   const backend = raw.backend;
   if (backend !== undefined && backend !== "" && backend !== "all"
@@ -283,11 +285,16 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
 // Streaming delta events: bulk scope evidence only (no usage keys, never priced).
 const CODEX_DELTA_EVENT = "EventName IN ('codex.sse_event', 'codex.websocket_event') AND endsWith(LogAttributes['event.kind'], '.delta')";
 
-// Timeline bucket for client views. Native resolution is minute up to 4 hours and hour beyond
-// (the Claude counter path cannot go finer). A requested intervalHours coarser than that is
-// honored, rounded up to a whole multiple of the native bucket so finer rows nest exactly.
-export function clientBucketSeconds(from, to, intervalHours) {
-  const native = to - from <= 4 * 3600000 ? 60 : 3600;
+// Fine resolution is opt-in beyond four hours: at least ten minutes, at most one day.
+// Default requests retain the hourly rollup path; wider requests cannot force raw scans.
+export function clientNativeBucketSeconds(from, to, intervalHours) {
+  if (to - from <= 4 * 3600000) return 60;
+  const requested = Number(intervalHours) * 3600;
+  return to - from <= 24 * 3600000 && requested >= 600 && requested < 3600 ? 600 : 3600;
+}
+
+// Coarser display buckets nest exactly within the selected native resolution.
+export function clientBucketSeconds(from, to, intervalHours, native = clientNativeBucketSeconds(from, to, intervalHours)) {
   if (intervalHours === undefined || intervalHours === null || intervalHours === "") return native;
   const requested = Number(intervalHours) * 3600;
   if (!Number.isFinite(requested) || requested <= native) return native;
@@ -308,12 +315,14 @@ export function rebucketRows(rows, from, bucketSeconds) {
   });
 }
 
-export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex") {
+export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex",
+  bucketSeconds = clientNativeBucketSeconds(from, to)) {
   const isCodex = client === "codex";
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: (isCodex ? filters.model : normalizeModelId(filters.model || "")) || "",
-    clientBackend: filters.backend || "",
-    clientBucketSeconds: clientBucketSeconds(from, to) };
+    clientBackend: filters.backend || "", clientUserExact: filters.userExact || "",
+    clientModelExact: (isCodex ? filters.modelExact : normalizeModelId(filters.modelExact || "")) || "",
+    clientBucketSeconds: bucketSeconds };
   const cases = Object.entries(prices).map(([model, rate], i) => {
     params[`priceModel${i}`] = model;
     params[`priceLimit${i}`] = rate.short_context_limit;
@@ -353,8 +362,8 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   const backendExpr = (modelExpr, tagExpr) => isCodex ? backendSql(modelExpr, tagExpr)
     : `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql(modelExpr, tagExpr)})`;
   const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
-  const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
-  const modelSessions = filters.model ? `model_sessions AS (
+  const modelMatch = "(positionCaseInsensitive(model, {clientModel:String}) > 0 AND ({clientModelExact:String} = '' OR model = {clientModelExact:String}))";
+  const modelSessions = filters.model || filters.modelExact ? `model_sessions AS (
     SELECT session, user, project FROM unique_events WHERE session != '' AND ${modelMatch}
     ${isCodex ? `AND event_name IN (${eventNames.map(name => `'${name}'`).join(",")})` : ""}
     ${isCodex ? "" : `UNION ALL
@@ -362,7 +371,8 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     FROM claude_code.otel_metrics_sum LEFT JOIN session_group ug USING (SessionId)
     WHERE TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime} AND SessionId != ''
       AND MetricName IN ('claude_code.token.usage', 'claude_code.cost.usage')
-      AND positionCaseInsensitive(${queries.normModel("Model")}, {clientModel:String}) > 0`}
+      AND positionCaseInsensitive(${queries.normModel("Model")}, {clientModel:String}) > 0
+      AND ({clientModelExact:String} = '' OR ${queries.normModel("Model")} = {clientModelExact:String})`}
   ),` : "";
   const sql = `${isCodex ? "WITH" : `${GROUP_CTE},`}
   unique_events AS (
@@ -412,7 +422,8 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       (out_n_valid AND reason_n_valid AND reason_n > out_n) AS reasoning_invalid
     FROM unique_events
     WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
-      ${filters.model ? `AND (${modelMatch} OR (model = '' AND
+      AND ({clientUserExact:String} = '' OR user = {clientUserExact:String})
+      ${filters.model || filters.modelExact ? `AND (${modelMatch} OR (model = '' AND
         (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
   ), grouped AS (
@@ -456,28 +467,29 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
 }
 
 // Claude's resolved end (historical ends floor to the hour) applies to both clients.
-export function effectiveClientEnd(from, to, clients) {
+export function effectiveClientEnd(from, to, clients, intervalHours) {
   if (!clients.includes("claude")) return to;
-  const resolved = queries.range(from, to, to - from <= 4 * 3600000);
+  const resolved = queries.range(from, to, clientNativeBucketSeconds(from, to, intervalHours) < 3600);
   return new Date(resolved.to.replace(" ", "T") + "Z");
 }
 
 export async function clientOverview(from, to, raw, enabledClients) {
   const validated = validateClientFilters(raw, enabledClients);
   const requestedTo = to;
-  to = effectiveClientEnd(from, to, validated.clients);
+  const requestedNative = clientNativeBucketSeconds(from, to, raw.intervalHours);
+  to = effectiveClientEnd(from, to, validated.clients, raw.intervalHours);
   // Size buckets from the trimmed end: the Claude counter query picks minute vs hour rows
   // from it, so both clients and bucket_hours share one resolution.
-  const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours);
-  const nativeSeconds = clientBucketSeconds(from, to);
+  const nativeSeconds = requestedNative === 600 ? 600 : clientNativeBucketSeconds(from, to);
+  const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours, nativeSeconds);
   const filters = validated;
   const jobs = [];
   for (const client of filters.clients) {
     if (client === "claude") {
-      jobs.push(queries.clientClaudeRows(from, to, filters)
+      jobs.push(queries.clientClaudeRows(from, to, filters, nativeSeconds)
         .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" }))));
     }
-    const { sql, params } = buildCodexQuery(from, to, filters, codexPrices, client);
+    const { sql, params } = buildCodexQuery(from, to, filters, codexPrices, client, nativeSeconds);
     jobs.push(query(sql, params).then((rows) => {
       if (rows.length > ROW_LIMIT) throw new ValidationError("too much client data", "narrow the requested date range");
       return rows.map((row) => ({ ...row, client }));
@@ -489,5 +501,8 @@ export async function clientOverview(from, to, raw, enabledClients) {
   const modelTime = raw.modelTime === "1";
   return { ...foldClientMetrics(records, filters.clients, codexPrices, { modelTime }),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
+    ...(filters.userExact || filters.modelExact ? {
+      applied_filters: { userExact: filters.userExact || "", modelExact: filters.modelExact || "", backend: filters.backend },
+    } : {}),
     bucket_hours: bucketSeconds / 3600 };
 }

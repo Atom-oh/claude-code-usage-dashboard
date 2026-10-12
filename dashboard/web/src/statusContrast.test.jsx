@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 import { Loading } from "./components/Card.jsx";
+import { SegmentedControl } from "./components/SegmentedControl.jsx";
 
 afterEach(cleanup);
 
@@ -23,6 +24,15 @@ const contrast = (fg, bg) => {
 
 test("partial-coverage warning text has normal-text contrast on its actual surface", () => {
   expect(contrast(rgb("warning-text"), rgb("warning-surface"))).toBeGreaterThanOrEqual(4.5);
+});
+
+test("selected resolution controls expose their state and readable text contrast", () => {
+  render(<SegmentedControl options={["10분", "시간별"]} value="시간별" />);
+  const selected = screen.getByRole("button", { name: "시간별" });
+  expect(selected.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("button", { name: "10분" }).getAttribute("aria-pressed")).toBe("false");
+  expect(selected.className).toContain("bg-brand-700");
+  expect(contrast(rgb("white"), rgb("brand-700"))).toBeGreaterThanOrEqual(4.5);
 });
 
 test("active loading uses readable ink on page and card surfaces", () => {

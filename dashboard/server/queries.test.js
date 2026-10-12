@@ -20,6 +20,17 @@ test("bucket maps intervalHours to minute/hour/day intervals", () => {
   assert.deepEqual(bucket(0.001).params, { intervalMinutes: 1 });
 });
 
+test("exact row drilldowns intersect partial filters without overwriting their parameters", () => {
+  const f = filterCond({ user: "alice", userExact: "alice@example.invalid", model: "sonnet",
+    modelExact: "global.anthropic.claude-sonnet-5" }, { user: "m.UserEmail", model: "m.Model" });
+  assert.equal(f.params.fUser, "alice");
+  assert.equal(f.params.fUserExact, "alice@example.invalid");
+  assert.equal(f.params.fModel, "sonnet");
+  assert.equal(f.params.fModelExact, "claude-sonnet-5");
+  assert.match(f.where, /m.UserEmail = \{fUserExact:String\}/);
+  assert.match(f.where, / = \{fModelExact:String\}/);
+});
+
 // normModel()의 5단계 regex는 pricing.js normalizeModelId() / grafana-ab-queries.sql 패널 12와
 // 반드시 동기 유지해야 하는 사본이다(각 파일 주석에 명시) — 값 비교는 SQL 문자열이라 못 하지만,
 // SQL이 만드는 4번째 단계(bedrock 버전 접미사) 패턴이 -v1:0뿐 아니라 :0 없는 맨 -v1까지

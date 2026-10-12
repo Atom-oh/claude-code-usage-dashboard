@@ -61,8 +61,7 @@ function mount(entry, config) {
 const cfg = (extra = {}) => ({ piiMask: false, groupMode: "ab", defaultRangeDays: 7, rangeCapDays: 90, schema: {}, ...extra });
 
 const presetButtons = (container) => [...container.querySelectorAll("button")].filter((b) => /^\d+일$/.test(b.textContent));
-// SegmentedControl은 활성 옵션에만 bg-brand-500을 준다 — aria-pressed가 없어 클래스로 본다.
-const activePreset = (container) => presetButtons(container).find((b) => b.className.includes("bg-brand-500"))?.textContent;
+const activePreset = (container) => presetButtons(container).find((b) => b.getAttribute("aria-pressed") === "true")?.textContent;
 const dataCalls = (fetchMock, prefix) => fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith(prefix));
 
 test("링크의 days/group/user가 range picker와 필터를 시딩하고 마운트 후에도 URL에 남는다 (마스킹 OFF)", async () => {

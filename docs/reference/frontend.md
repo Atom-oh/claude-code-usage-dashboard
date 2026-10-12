@@ -200,6 +200,17 @@ cache key that the default-view warmer does not fill, and moving between those p
 others is a `useApi` identity change that reloads instead of retaining data. Executive's
 default 24h request is also not the warmed default-view key.
 
+Shared Cost and Trends offer page-local resolution controls, including ten and thirty
+minutes through one day. The one-day default stays hourly; range changes reset the pick.
+The response's `bucket_hours` governs chart ticks, gaps and zoom. Cost table identity buttons
+open an inline exact user or model drilldown, scoped to its client and existing filters;
+model rows also retain their backend. Identities stay local and are never added to URLs.
+User drilldowns show cost and model trends. Model drilldowns show each user's percentage
+of known cost, labelling partial denominators and withholding ratios for missing/zero totals.
+Parent bounds drive the detail request; stale periods disable selection and detail export.
+The UI requires exact-filter acknowledgment before showing detail. Background linked-refresh
+failures retain the last response with its actual bounds and the shared refresh warning.
+
 ## Spend and interpretation
 
 [spend.js](../../dashboard/web/src/spend.js) adapts API `reported_cost` to display `cost`

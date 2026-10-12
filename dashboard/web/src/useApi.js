@@ -155,7 +155,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
         ...extraParams,
         // Client overview buckets follow the selected range like the other trend pages; Codex
         // insights have no timeline and ignore it.
-        ...(clientOverview ? { group: undefined, project: undefined, backend: backend || undefined,
+        ...(clientOverview ? { group: undefined, project: undefined, backend: extraParams.backend || backend || undefined,
           intervalHours: path === "/api/clients/overview" ? extraParams.intervalHours ?? intervalHours : undefined } : {}),
       },
       abort.signal

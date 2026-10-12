@@ -115,8 +115,12 @@ export function filterCond(filters = {}, cols = {}) {
   }
   // 유저 드릴다운(드로어) 전용 — 부분일치면 kim@x.com 드로어에 joakim@x.com 데이터가 섞인다.
   if (filters.userExact && cols.user) {
-    conds.push(`${cols.user} = {fUser:String}`);
-    params.fUser = filters.userExact;
+    conds.push(`${cols.user} = {fUserExact:String}`);
+    params.fUserExact = filters.userExact;
+  }
+  if (filters.modelExact && (cols.model || cols.modelNorm)) {
+    conds.push(`${cols.modelNorm || normModel(cols.model)} = {fModelExact:String}`);
+    params.fModelExact = normalizeModelId(filters.modelExact);
   }
   if (filters.model && cols.model) {
     conds.push(`positionCaseInsensitive(${normModel(cols.model)}, {fModel:String}) > 0`);
@@ -476,13 +480,17 @@ const counterObserved = "(m.SessionId, m.UserEmail, m.MetricName, m.TokenType) I
 
 // Client summaries reuse the existing counter and boundary semantics without adding
 // dimensions to shared helpers. Operational Codex events never enter these counters.
-export async function clientClaudeRows(from, to, filters = {}) {
+export async function clientClaudeRows(from, to, filters = {}, nativeSeconds) {
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   // Split the first raw minute at `from` so its pre-window baseline stays outside
   // the returned bucket. This is local to client views; shared helpers are unchanged.
-  const b = to - from <= MAX_SNAPSHOT_RAW_RANGE_MS
+  const fine = nativeSeconds >= 600 && nativeSeconds < 3600 && to - from <= 24 * 3600000;
+  const rawBucket = fine
+    ? "toStartOfInterval(TimeUnix, INTERVAL {clientMinutes:UInt32} MINUTE)"
+    : "toStartOfMinute(TimeUnix)";
+  const b = to - from <= MAX_SNAPSHOT_RAW_RANGE_MS || fine
     ? { raw: true, params: {}, sub: incBucketedRaw(
-      "if(TimeUnix >= {from:DateTime}, greatest(toStartOfMinute(TimeUnix), {from:DateTime}), toStartOfMinute(TimeUnix))",
+      `if(TimeUnix >= {from:DateTime}, greatest(${rawBucket}, {from:DateTime}), ${rawBucket})`,
       metricFilter) }
     : incBucket(1, metricFilter);
   const f = filterCond({ ...filters, excludeUnknown: false },
@@ -527,7 +535,8 @@ export async function clientClaudeRows(from, to, filters = {}) {
       (input_tokens + output_tokens + cache_read_tokens + cache_write_tokens > 0 OR reported_cost != 0))
       OR (timeline_only AND max(changed) = 0 AND (token_observed OR cost_observed))
     ORDER BY t LIMIT 50001 BY timeline_only`,
-  { ...range(from, to, b.raw), ...b.params, ...f.params, clientBackend: filters.backend || "" });
+  { ...range(from, to, b.raw), ...b.params, ...f.params, clientBackend: filters.backend || "",
+    ...(fine ? { clientMinutes: nativeSeconds / 60 } : {}) });
 }
 
 // 패널1: 그룹별 KPI 요약. excludeUnknown: false — 이 응답의 합계(클라이언트에서 groupBy 없이

@@ -1,5 +1,5 @@
-import { memo, useMemo, useState } from "react";
-import { Card } from "../components/Card.jsx";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Card, ErrorBox, Loading } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { DualLineChart, RingGauge, SeriesBarChart } from "../components/GroupCharts.jsx";
@@ -8,6 +8,9 @@ import { SectionLabel } from "../components/SectionLabel.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { fromByModelTime, rollupBuckets } from "../modelCostTrend.js";
 import { useRange } from "../RangeContext.jsx";
+import { useApi } from "../useApi.js";
+import { useFilters } from "../FilterContext.jsx";
+import { costResolutionLabel } from "../costResolution.js";
 import { maskEmail, parseUtc } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
 import { withoutZeroTokenModels } from "../modelRows.js";
@@ -137,7 +140,7 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
     return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
   }
   return <DualLineChart title={title}
-    subtitle={`${bucketHours < 1 ? "분별" : bucketLabel(bucketHours)} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
+    subtitle={`${bucketLabel(bucketHours)} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
     help="0은 해당 시간에 집계된 사용량이 없다는 뜻입니다. 이벤트 자체의 전송 누락은 미사용과 구분할 수 없으며, 차트가 누락된 사용량을 복원하지는 않습니다."
     tooltipFormatter={(value, name, item) => {
       const client = String(item.dataKey).split("_")[0];
@@ -153,7 +156,7 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
 }
 
 const TREND_BASIS = { claude: "Claude 보고 비용", codex: "Codex AWS 정가 추정" };
-const bucketLabel = (h) => h === 1 ? "시간별" : h === 24 ? "일간" : h === 168 ? "주간" : `${Math.round(h * 60)}분`;
+const bucketLabel = costResolutionLabel;
 
 // Cells are always rolled up, even to the source size, so the shared first bucket (keyed at
 // `from`) is floored like every other bucket.
@@ -175,7 +178,8 @@ function ModelTrends({ data, clients, exec, stale }) {
   const source = Number(data?.bucket_hours) > 0 ? Number(data.bucket_hours) : 1;
   const rangeKey = `${from.getTime()}|${to.getTime()}`;
   const [pick, setPick] = useState(null);
-  const fallback = exec ? ((to - from) / 86400000 > 30 ? 168 : 24) : intervalHours;
+  const fallback = exec ? ((to - from) / 86400000 > 30 ? 168 : 24)
+    : source >= 1 / 6 && source < 1 ? source : intervalHours;
   const hours = Math.max(source, pick?.key === rangeKey ? pick.hours : fallback);
   const options = [...new Set([source, hours, 1, 24, 168])].filter((h) => h >= source).sort((a, b) => a - b);
   return <section aria-label="클라이언트별 모델 비용 추이" className="flex flex-col gap-3">
@@ -190,6 +194,62 @@ function ModelTrends({ data, clients, exec, stale }) {
     </div>
   </section>;
 }
+
+// Exact row identities stay local; the shared hook retains the active global filters.
+function CostDetail({ selection, hours, parentRange, stale, onClose }) {
+  const { backend: globalBackend } = useFilters();
+  const selectedBackend = selection.backend || globalBackend || "";
+  const headingRef = useRef(null);
+  useEffect(() => {
+    headingRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    headingRef.current?.focus({ preventScroll: true });
+  }, []);
+  const params = { client: selection.client, intervalHours: hours, modelTime: "1",
+    ...(parentRange?.from && parentRange?.to ? { from: parentRange.from, to: parentRange.to } : {}),
+    ...(selection.kind === "user" ? { userExact: selection.user }
+      : { modelExact: selection.model, backend: selectedBackend }) };
+  const detail = useApi("/api/clients/overview", params, true,
+    { linkedRange: Boolean(parentRange?.from && parentRange?.to), hold: stale });
+  const title = selection.kind === "user" ? `${maskEmail(selection.user)} · 사용자 비용 상세`
+    : `${selection.model} · ${text(selectedBackend)} · 모델별 사용자 비중`;
+  const pending = stale || detail.stale;
+  const applied = detail.data?.applied_filters;
+  const supported = selection.kind === "user" ? applied?.userExact === selection.user
+    : applied?.modelExact === selection.model && applied?.backend === selectedBackend;
+  const rows = (detail.data?.by_user || []).map(presentationRow);
+  const total = observedNumber(detail.data?.totals?.cost_usd);
+  const partial = detail.data?.totals?.cost_partial === true;
+  const shares = rows.map((row) => ({ ...row,
+    share: total !== null && total > 0 && row.cost_usd !== null ? row.cost_usd / total * 100 : null }));
+  const rawClientRows = detail.data?.by_client || [];
+  return <section aria-label="비용 상세" className="flex flex-col gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 ref={headingRef} tabIndex={-1}
+        className="min-w-0 max-w-full flex-1 scroll-mt-6 [overflow-wrap:anywhere] text-base font-semibold text-ink-800">{title}</h2>
+      <button type="button" onClick={onClose} className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700">상세 닫기</button>
+    </div>
+    {detail.error ? <ErrorBox error={detail.error} /> : detail.loading || pending ? <Loading />
+      : !supported ? <Card title="상세 데이터를 확인할 수 없습니다">
+        <p role="alert" className="text-sm text-ink-700">선택한 대상에 대한 집계를 확인하지 못했습니다. 잠시 후 다시 열어 주세요.</p>
+      </Card> : <>
+      {detail.data?.effective_range && <p className="text-[12px] text-ink-500">
+        집계 구간: {formatClientTimestamp(detail.data.effective_range.from)} ~ {formatClientTimestamp(detail.data.effective_range.to)}
+      </p>}
+      <Trend rows={detail.data?.timeseries || []} clients={[selection.client]}
+        clientRows={rawClientRows} bucketHours={detail.data?.bucket_hours || hours}
+        effectiveRange={detail.data?.effective_range} metric="cost" title="선택 대상 비용 추이" />
+      {selection.kind === "model" && <ResultTable title="모델별 사용자 비용 비중"
+        subtitle={`알려진 ${clientName(selection.client)} 비용 합계 내 비중${partial ? " · 부분합 기준" : ""}. 미산정 금액은 비중에서 제외하며, 합계가 없거나 0이면 —로 표시합니다.`}
+        columns={[USER, COST, percent("share", partial ? "알려진 부분합 내 비중 (%)" : "알려진 비용 내 비중 (%)"), BASIS, SESSIONS]}
+        rows={shares} exportName="model_user_cost_shares" />}
+      {selection.kind === "user" && <ModelTrends data={detail.data} clients={[selection.client]} />}
+    </>}
+  </section>;
+}
+
+const detailButton = (label, onClick, disabled) => <button type="button" disabled={disabled}
+  className="text-left text-brand-700 underline decoration-brand-200 underline-offset-4 hover:decoration-brand-700 disabled:text-ink-500 disabled:no-underline"
+  onClick={onClick}>{label}</button>;
 
 // Change against the preceding window of the same length. Unknown on either side stays "—";
 // a zero baseline has no percentage. Partial sums are labelled, never compared as complete.
@@ -296,6 +356,11 @@ function Fractions({ rows }) {
 }
 
 function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false, previous }) {
+  const { from, to } = useRange();
+  const rangeKey = `${from.getTime()}|${to.getTime()}`;
+  const [detailPick, setDetailPick] = useState(null);
+  const selection = detailPick?.key === rangeKey ? detailPick.row : null;
+  const select = (row) => setDetailPick({ key: rangeKey, row });
   const selected = clients;
   const rows = (key) => (data?.[key] || []).filter((row) => selected.includes(row.client)).map(presentationRow);
   const clientRows = selected.map((client) => presentationRow(
@@ -384,10 +449,19 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {compare([...UNIT_COSTS, number("unpriced", "미산정 기록")], { title: "클라이언트별 비용 기준" })}
         <Trend {...trendProps} metric="cost" title="비용 추이" />
         <ModelTrends data={data} clients={selected} stale={stale} />
-        {table("모델별 비용", [CLIENT, BACKEND, MODEL, ...UNIT_COSTS, TOKENS, number("unpriced", "미산정 기록")],
-          usageModels, "model_costs", COST_HELP)}
-        {table("사용자별 비용", [CLIENT, USER, BACKEND, COST, BASIS, SESSIONS, COST_SESSION, TOKENS],
-          users, "user_costs")}
+        {table("모델별 비용", [CLIENT, BACKEND,
+          { ...MODEL, render: (value, row) => detailButton(text(value),
+            () => select({ kind: "model", client: row.client, model: value, backend: row.backend }), stale || !value) },
+          ...UNIT_COSTS, TOKENS, number("unpriced", "미산정 기록")],
+          usageModels, "model_costs", `${COST_HELP} 모델을 누르면 해당 클라이언트·모델의 사용자별 비용 비중을 확인합니다.`)}
+        {table("사용자별 비용", [CLIENT,
+          { ...USER, render: (value, row) => detailButton(maskEmail(value) || "(미식별)",
+            () => select({ kind: "user", client: row.client, user: value }), stale || !value) },
+          BACKEND, COST, BASIS, SESSIONS, COST_SESSION, TOKENS],
+          users, "user_costs", "사용자를 누르면 해당 클라이언트·사용자의 비용 추이와 모델별 상세를 확인합니다.")}
+        {selection && <CostDetail key={JSON.stringify(selection)} selection={selection}
+          hours={data?.bucket_hours || 1} parentRange={data?.effective_range} stale={stale}
+          onClose={() => setDetailPick(null)} />}
       </>;
       break;
     case "reliability":
