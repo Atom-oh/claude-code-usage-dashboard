@@ -26,7 +26,7 @@ export function Card({ children, title, subtitle, help, right, padded = true, cl
 }
 
 export function Loading() {
-  return <div className="text-ink-400 text-sm">불러오는 중...</div>;
+  return <div className="text-ink-500 text-sm">불러오는 중...</div>;
 }
 
 export function ErrorBox({ error }) {

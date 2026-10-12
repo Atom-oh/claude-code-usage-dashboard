@@ -95,15 +95,15 @@ export default function ABScoreboard({ rows }) {
     <div className="overflow-hidden rounded-lg border border-ink-100 bg-card shadow-card">
       <div className={cn(COLS, "border-b border-ink-100")}>
         <div
-          className="py-2.5 pl-5 text-[11px] font-semibold uppercase tracking-[0.04em]"
-          style={{ color: "var(--series-bedrock)", background: "var(--series-bedrock-tint)" }}
+          className="py-2.5 pl-5 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-700"
+          style={{ background: "var(--series-bedrock-tint)" }}
         >
           Bedrock
         </div>
         <div />
         <div
-          className="py-2.5 pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.04em]"
-          style={{ color: "var(--series-enterprise)", background: "var(--series-enterprise-tint)" }}
+          className="py-2.5 pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-700"
+          style={{ background: "var(--series-enterprise-tint)" }}
         >
           Enterprise
         </div>
@@ -122,7 +122,7 @@ export default function ABScoreboard({ rows }) {
                   {fmtValue(row.bedrock, row.format)}
                 </span>
               </div>
-              <div className="flex items-center justify-center px-2 py-3.5 text-center text-[11px] font-semibold uppercase leading-snug tracking-[0.04em] text-ink-400">
+              <div className="flex items-center justify-center px-2 py-3.5 text-center text-[11px] font-semibold uppercase leading-snug tracking-[0.04em] text-ink-500">
                 {row.label}
               </div>
               <div className="flex items-center gap-2 py-3.5 pl-4 pr-5" style={{ background: "var(--series-enterprise-tint)" }}>

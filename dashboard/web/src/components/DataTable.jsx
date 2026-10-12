@@ -18,15 +18,13 @@ function compareValues(a, b, dir) {
   return dir === "asc" ? cmp : -cmp;
 }
 
-// 그룹 셀 — 점+텍스트 대신 시리즈 색 틴트 칩. 색 정체성은 배경 틴트+글자색이 나르고,
-// 텍스트 자체는 시리즈 색이지만 틴트 배경 위라 3:1 대비 WARN 없이 읽힌다(ABScoreboard
-// 헤더와 같은 문법 — 그룹 표기는 표/스코어보드 어디서든 같은 모양이어야 한다).
+// 그룹 색은 점과 틴트로 유지하고, 작은 글자는 충분한 대비를 갖는 잉크색을 사용한다.
 export function GroupChip({ group }) {
   const c = colorFor(group);
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium leading-[1.4]"
-      style={{ color: c, background: `color-mix(in srgb, ${c} 9%, transparent)` }}
+      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium leading-[1.4] text-ink-700"
+      style={{ background: `color-mix(in srgb, ${c} 9%, transparent)` }}
     >
       <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: c }} />
       {group}
