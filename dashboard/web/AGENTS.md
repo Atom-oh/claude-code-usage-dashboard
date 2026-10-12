@@ -37,13 +37,13 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
   initializers; preserve each other's parameters.
 - Never put masked users in URLs. Project filters need `/api/config` reporting
   `schema.projectColumns === true` for both URLs and requests.
-- Session-scoped model filters are not precise attribution; follow the server's grain.
+- Session-scoped model filters are not precise attribution; follow the server's documented grain.
 - Query buckets/calendar presets stay UTC. Parse timezone-less API timestamps as UTC;
   chart labels/timestamps/CSV display values use browser time zone.
   Derive rates from actual range duration, not the last preset; resync local chart
   granularity on global range changes.
-- `useApi()` owns range/filters/refresh/aborts/payload identity.
-  Align quantization/grace constants with the server warmer.
+- Use `useApi()` to forward ranges/filters and handle refresh/aborts/payload identity.
+  Align quantization/grace constants with the server cache warmer.
 - Refreshes and period changes keep loaded data until replaced; a failed period
   load clears it. Unchanged payloads keep references; path/filter/client changes
   clear selection. Background failures retain data and signal refresh errors.

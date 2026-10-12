@@ -47,8 +47,7 @@ CSV treats formula-like strings in headers, telemetry fields and derived text as
 spreadsheet text by prefixing an apostrophe before RFC 4180 escaping. This also covers
 leading whitespace/BOM and tab/CR/LF prefixes, after optional identity masking. Actual
 numeric cells and strictly parsed numeric/percentage text remain machine-readable.
-This changes exported
-string representation; it does not establish API authorization or sanitize every future
+This changes exported string representation; it does not establish API authorization or sanitize every future
 spreadsheet re-import/resave workflow.
 
 `DataTable` sorts using raw column values with numeric-aware string comparison; null and

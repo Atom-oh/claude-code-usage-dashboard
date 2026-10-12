@@ -12,6 +12,8 @@ function quote(field) {
   let s = field == null ? "" : String(field);
   // Telemetry dimensions and derived strings are untrusted spreadsheet input.
   // Quote escaping alone does not stop formulas; keep actual numeric cells numeric.
+  // Only constant numeric/percentage text is exempt. Signed text with separators,
+  // currency/unit suffixes or padding becomes literal text.
   const numericText = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?$/.test(s);
   if (!numericText && (/^[\s\uFEFF]*[=+\-@]/.test(s) || /^[\t\r\n]/.test(s)))
     s = "'" + s;
