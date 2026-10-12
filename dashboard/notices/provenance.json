@@ -4,8 +4,9 @@
     "MIT-spdx.txt": {
       "licenseId": "MIT",
       "source": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/json/details/MIT.json",
-      "sha256": "9f420f8e43bbd65bddb84463a5f96db1f030fc7ecd4f0b35523b9610e8c3fa21",
-      "copyrightPlaceholdersPreserved": true
+      "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+      "copyrightPlaceholdersPreserved": true,
+      "normalization": "Trailing whitespace normalized to one final newline; license wording unchanged."
     }
   },
   "packageDeclarations": {
