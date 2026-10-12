@@ -4,6 +4,7 @@ web/dist
 **/*.log
 **/*.test.js
 **/*.test.jsx
+**/*.test.mjs
 **/.env
 **/.env.*
 **/.aws

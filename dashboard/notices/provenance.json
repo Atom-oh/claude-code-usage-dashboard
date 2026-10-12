@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "catalog": {
+    "MIT-spdx.txt": {
+      "licenseId": "MIT",
+      "source": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/json/details/MIT.json",
+      "sha256": "9f420f8e43bbd65bddb84463a5f96db1f030fc7ecd4f0b35523b9610e8c3fa21",
+      "copyrightPlaceholdersPreserved": true
+    }
+  },
+  "packageDeclarations": {
+    "express-basic-auth@1.2.1": {
+      "declaredLicense": "MIT",
+      "repository": "https://github.com/LionC/express-basic-auth",
+      "publishedSourceCommit": "dd17b4de9fee9558269cdc583310bde5331456e7",
+      "authorMetadata": "LionC <me@lionc.de>",
+      "notice": "Upstream declares MIT but packages no full license text or separate copyright notice. Standard SPDX text is included without inventing copyright owner/year."
+    }
+  }
+}

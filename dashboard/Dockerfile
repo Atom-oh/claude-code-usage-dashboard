@@ -15,15 +15,26 @@ COPY web/ ./
 RUN npm run build
 
 FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS server
-ARG APP_REVISION
-ENV APP_REVISION=${APP_REVISION}
-LABEL org.opencontainers.image.revision=${APP_REVISION}
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./server/
 RUN npm ci --omit=dev --prefix server
+ARG APP_REVISION
+ENV APP_REVISION=${APP_REVISION}
+LABEL org.opencontainers.image.revision=${APP_REVISION}
 COPY server/ ./server/
 COPY --from=web-build /app/web/dist ./web/dist
 
+FROM server AS notices-build
+COPY --from=web-build /app/web/node_modules ./web/node_modules
+COPY --from=web-build /app/web/package-lock.json ./web/package-lock.json
+COPY collect-notices.mjs ./
+COPY notices/ ./notice-sources/
+# Collector reads its adjacent reviewed catalog, not the network.
+RUN mv notice-sources notices && node collect-notices.mjs /app /tmp/distribution-notices
+
+FROM server AS runtime
+COPY --from=notices-build /tmp/distribution-notices ./notices/
+COPY APPLICATION_LICENSE ./APPLICATION_LICENSE
 ENV PORT=8080
 EXPOSE 8080
 USER node
