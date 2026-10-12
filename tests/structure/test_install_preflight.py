@@ -181,6 +181,10 @@ class InstallationPreflightTests(unittest.TestCase):
                 self.assertEqual(PREFLIGHT.main(), 0)
                 self.assertEqual(record.stat().st_mode & 0o777, 0o600)
                 contents = record.read_bytes()
+                report = json.loads(contents)
+                self.assertEqual(report["requested_target"]["account_id"], "000000000000")
+                self.assertEqual(len(report["source_sha256"]), 64)
+                self.assertIn("checked_at", report)
                 self.assertEqual(PREFLIGHT.main(), 2)
                 self.assertEqual(record.read_bytes(), contents)
 

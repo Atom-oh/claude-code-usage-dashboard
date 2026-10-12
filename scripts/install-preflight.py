@@ -3,6 +3,7 @@
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -206,6 +207,12 @@ def main():
         parser.error("Invalid non-secret target inputs")
     report = check_prerequisites(args)
     report["checked_at"] = datetime.now(timezone.utc).isoformat()
+    report["source_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    report["requested_target"] = {
+        "account_id": args.account_id, "region": args.region, "cluster": args.cluster,
+        "context": args.context, "domain": args.domain, "node_role": args.node_role,
+        "subnet_ids": args.subnet_ids,
+    }
     failed = any(item["status"] != "pass" for item in report["checks"])
     report["automated_checks_passed"] = not failed
     if args.record:

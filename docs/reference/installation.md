@@ -30,7 +30,8 @@ Exit 0 means automated checks passed; 1 means a failed/unavailable check; 2 mean
 inputs or a report-write failure. A wrong AWS account stops before cluster queries. A
 wrong kube endpoint skips Kubernetes probes. Each CLI invocation has a 20-second timeout.
 CLI stderr/raw metadata are suppressed. The optional new report is mode 0600 and cannot
-overwrite an existing file; keep it private and outside version control.
+overwrite an existing file. It records timestamp, script hash, requested non-secret target
+inputs and check states; keep it private and outside version control.
 
 ## Interpretation and remaining verification
 

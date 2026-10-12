@@ -12,6 +12,7 @@ Follow the shared [documentation policy](../documentation-policy.md) for languag
 | [Data](data.md) | Schema, counter differences, time boundaries, identity and channel inference |
 | [API implementation](api.md) | Validation, filters, caching and query ownership |
 | [Infrastructure as code](iac.md) | Terraform resources, prerequisites and deployment ownership |
+| [Customer installation](installation.md) | Read-only account/EKS preflight and remaining target verification |
 | [Frontend](frontend.md) | Routes, runtime configuration, range/filter state and fetching |
 | [UI](ui.md) | Shared components, spend formatting, tables and CSV |
 | [Security](security.md) | Authentication, SQL restrictions, masking and retention limits |
