@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-03
 - Reconciled: 2026-09-13
+- Amended for dedicated-installation OIDC: [ADR-019](ADR-019-dedicated-installation-identity.md)
 
 ## Context and decision
 

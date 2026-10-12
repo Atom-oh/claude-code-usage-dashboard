@@ -1,7 +1,8 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App.jsx";
+import { ConfigProvider } from "./ConfigContext.jsx";
 
 // App.jsx의 <Route path>와 Sidebar.jsx의 NAV가 같은 집합인지 보는 스모크 테스트다 —
 // 라우트만 추가하고 nav를 빼먹으면(또는 그 반대) 빌드는 통과하고 화면에서만 사라진다.
@@ -30,6 +31,23 @@ class ResizeObserverStub {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+test("OIDC viewer cannot see SQL chat while analyst and admin retain it", async () => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  vi.stubGlobal("fetch", vi.fn(url => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve(String(url).startsWith("/api/health/data")
+      ? { status: "ok", ageMinutes: 0, staleAfterMinutes: 360 } : []) })));
+  for (const role of ["viewer", "analyst", "admin"]) {
+    cleanup();
+    const session = { mode: "oidc", name: "Fixture", role,
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      permissions: role === "viewer" ? ["telemetry:read"] : ["telemetry:read", "chat:query"] };
+    render(<MemoryRouter initialEntries={["/?client=claude&view=detail"]}>
+      <ConfigProvider config={{ enabledClients: ["claude"], session }}><App /></ConfigProvider>
+    </MemoryRouter>);
+    expect(!!screen.queryByRole("button", { name: "Ask Claude" })).toBe(role !== "viewer");
+  }
 });
 
 test("every App route has a matching sidebar nav link", async () => {

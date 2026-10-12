@@ -1,5 +1,11 @@
 # Frontend Implementation
 
+OIDC installations show the current user's role/logout on desktop and mobile.
+Viewers have no SQL-chat control; the server enforces permission independently.
+Expiry or a data API 401 unmounts telemetry and offers organization login.
+Basic/legacy configuration retains its behavior. See
+[identity contracts](../decisions/ADR-019-dedicated-installation-identity.md).
+
 The React 18/Vite SPA is built into the same image as the Express server.
 See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions and
 [UI](ui.md) for component and export contracts.

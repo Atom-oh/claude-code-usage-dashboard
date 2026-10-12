@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
-import basicAuth from "express-basic-auth";
+import { createAuthentication } from "./auth.js";
 import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
 import { sendJson } from "./jsonResponse.js";
 import * as q from "./queries.js";
@@ -40,16 +40,14 @@ app.set("trust proxy", 1);
 // /healthz(liveness)와 /readyz(readiness)만 무인증 — kubelet은 Authorization 헤더를 붙이지
 // 않는다. /api/health/data는 SPA가 부르는 데이터 라우트라 여기 들어가지 않는다: 마지막 수집
 // 시각은 운영 정보다.
-const AUTH_BYPASS_PATHS = new Set(["/healthz", "/readyz"]);
-const authEnabled = !!(process.env.BASIC_AUTH_USER && process.env.BASIC_AUTH_PASSWORD);
-const authAllowInsecure = process.env.AUTH_ALLOW_INSECURE === "1";
-if (!authEnabled && !authAllowInsecure) {
-  console.error(
-    "FATAL: BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required — refusing to start with authentication disabled. " +
-      "Set both, or set AUTH_ALLOW_INSECURE=1 to run unauthenticated (local dev only — /healthz and /readyz bypass auth regardless)."
-  );
+let authentication;
+try {
+  authentication = createAuthentication();
+} catch (error) {
+  console.error(`FATAL: ${error.message} — refusing to start with invalid authentication configuration.`);
   process.exit(1);
 }
+const authEnabled = authentication.enabled;
 if (!authEnabled) {
   console.warn("WARNING: AUTH_ALLOW_INSECURE=1 — every /api/* route is served WITHOUT authentication.");
 }
@@ -80,15 +78,15 @@ try {
 }
 const RANGE_OPTS = { defaultDays: DEFAULT_RANGE_DAYS, capDays: RANGE_CAP_DAYS };
 
-if (authEnabled) {
-  app.use(
-    "/",
-    (req, res, next) => (AUTH_BYPASS_PATHS.has(req.path) ? next() : basicAuth({
-      users: { [process.env.BASIC_AUTH_USER]: process.env.BASIC_AUTH_PASSWORD },
-      challenge: true,
-    })(req, res, next))
-  );
-}
+app.use((_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  res.set("Referrer-Policy", "no-referrer");
+  res.set("X-Content-Type-Options", "nosniff");
+  next();
+});
+authentication.installRoutes(app);
+app.use(authentication.middleware);
+app.get("/api/session", (req, res) => res.json(authentication.sessionInfo(req)));
 
 // /api/* 응답 전체에 no-store. 라우트마다 res.set을 부르던 예전 방식은 route() 래퍼를 거치는
 // 라우트만 덮었다 — POST /api/chat과 GET /api/config는 래퍼 밖이라 헤더가 아예 없었다(실측
@@ -480,7 +478,7 @@ const chatAllowed = authEnabled || process.env.CHAT_ALLOW_INSECURE === "1";
 if (!authEnabled && chatAllowed) {
   console.warn("WARNING: CHAT_ALLOW_INSECURE=1 — POST /api/chat (LLM-generated SELECTs) is served WITHOUT authentication.");
 }
-app.post("/api/chat", express.json(), (req, res) => {
+app.post("/api/chat", authentication.requirePermission("chat:query"), express.json(), (req, res) => {
   if (!claudeEnabled) return res.status(503).json({ error: "Claude 데이터 채팅이 비활성화되어 있습니다" });
   if (!chatAllowed) {
     return res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" });
@@ -495,7 +493,7 @@ app.post("/api/chat", express.json(), (req, res) => {
 // 재사용하므로(dashboard/Dockerfile) 빌드타임 VITE_ 변수로는 배포별로 못 바꾼다. ClickHouse도
 // 구간 파라미터도 안 쓰므로 route() 래퍼(캐시/range 파싱)를 거치지 않는다.
 // 같은 이유로 캐시쓰기 TTL 가정(pricingConfig)도 런타임에 노출한다 — build-once-deploy-many.
-app.get("/api/config", (_req, res) =>
+app.get("/api/config", (req, res) =>
   res.json({
     piiMask: piiMaskEnabled,
     pricing: pricingConfig,
@@ -505,6 +503,7 @@ app.get("/api/config", (_req, res) =>
     rangeCapDays: RANGE_CAP_DAYS,
     enabledClients: clientConfig.enabledClients,
     codexEndpoint: clientConfig.codexEndpoint,
+    session: authentication.sessionInfo(req),
   })
 );
 
@@ -521,7 +520,7 @@ app.get("/api/health/data", async (_req, res) => {
 });
 
 const webDist = path.join(__dirname, "..", "web", "dist");
-app.use(express.static(webDist));
+app.use(express.static(webDist, { setHeaders: res => res.setHeader("Cache-Control", "no-store") }));
 app.get("*", (_req, res) => res.sendFile(path.join(webDist, "index.html")));
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;

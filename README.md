@@ -16,11 +16,19 @@ ClickHouse; an Express API serves both the data and a React SPA.
 - Request/tool reliability and observed timing; Claude also has optional trace measures.
 - A SQL chat assistant for Claude telemetry, backed by Bedrock with authentication
   and read-only query controls.
+- Optional organization OIDC login with explicit viewer/analyst/admin groups,
+  encrypted short-lived sessions and role-gated SQL chat. See
+  [SSO operations](docs/runbooks/organization-sso.md).
 
 These are observations and estimates, not invoices, causal adoption effects, or validated
 employee productivity scores. Combined user counts union distinct emitted IDs across
 clients; they are neither a verified employee directory nor a sum of client headcounts.
 Claude channels are inferred per session; model names do not establish client identity.
+
+The commercial target is a dedicated installation in each customer's AWS account.
+[Product release acceptance](docs/product-readiness.md) tracks the installation,
+operations, security, support and verification requirements. Features and passing
+development checks alone do not establish commercial-release readiness.
 
 ## Local setup
 

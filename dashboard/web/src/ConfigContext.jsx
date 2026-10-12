@@ -15,6 +15,7 @@ const DEFAULTS = {
   schema: undefined,
   piiMask: true,
   pricing: undefined,
+  session: undefined,
   enabledClients: ["claude"],
   codexEndpoint: "mantle",
 };
@@ -30,6 +31,7 @@ export function ConfigProvider({ config, children }) {
         schema: config.schema,
         piiMask: config.piiMask === false ? false : DEFAULTS.piiMask,
         pricing: config.pricing,
+        session: config.session,
         enabledClients: Array.isArray(config.enabledClients) ? config.enabledClients : DEFAULTS.enabledClients,
         codexEndpoint: config.codexEndpoint === "runtime" ? "runtime" : DEFAULTS.codexEndpoint,
       }
