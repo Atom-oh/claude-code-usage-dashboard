@@ -78,17 +78,33 @@ test("stacked series plus 기타 with stable fills", async () => {
   const fills = paths.map((p) => p.getAttribute("fill"));
   expect(fills[0]).toBe("#5B6BDB");
   expect(fills[1]).toBe("#5B6BDB");
-  expect(fills[2]).toMatch(/^url\(#.+-s1\)$/);
+  expect(fills[2]).toBe("#2D8F84");
   expect(fills[3]).toBe("#A3A9B6");
-  const id = fills[2].slice("url(#".length, -1);
-  const pattern = container.querySelector(`pattern[id="${id}"]`);
-  expect(pattern).not.toBeNull();
-  const rectFills = [...pattern.querySelectorAll("rect")].map((r) => r.getAttribute("fill"));
-  expect(rectFills).toContain("#7B9195");
+  expect(container.querySelector("pattern")).toBeNull();
   const legend = screen.getByRole("list", { name: "범례" });
   expect(texts(legend, "li")).toEqual(["claude-sonnet-5", "zai.glm-5", "기타 2개 모델"]);
   expect([...legend.querySelectorAll("[data-swatch]")].map((el) => el.getAttribute("data-swatch")))
-    .toEqual(["solid", "hatch", "others"]);
+    .toEqual(["solid", "solid", "others"]);
+});
+
+test("Codex vendor models use solid bars and matching swatches while retaining partial status", async () => {
+  const cells = [
+    c(D1, "openai.gpt-6.1-sol", "bedrock-mantle", 4),
+    c(D1, "moonshotai.kimi-k3", "bedrock-mantle", 2),
+    c(D2, "openai.gpt-6.1-sol", "bedrock-mantle", 1,
+      { partial: true, unavailable: 1, reasons: { missing_usage: 1 } }),
+  ];
+  const { container } = mount({ cells, basis: "Codex AWS 정가 추정", accent: "var(--chart-2)" });
+  await chartReady(container);
+  expect(container.querySelector("[data-model-trend]").style.borderTopColor).toBe("var(--chart-2)");
+  const bars = [...container.querySelectorAll(".recharts-bar-rectangle path")];
+  expect(bars.every((path) => /^#[0-9a-f]{6}$/i.test(path.getAttribute("fill")))).toBe(true);
+  expect(container.querySelector("pattern")).toBeNull();
+  const swatches = [...screen.getByRole("list", { name: "범례" }).querySelectorAll("[data-swatch]")];
+  expect(swatches.map((node) => node.dataset.swatch)).toEqual(["solid", "solid"]);
+  for (const node of swatches) expect(node.style.backgroundImage).not.toMatch(/gradient|url\(/);
+  expect(container.querySelector('[data-state="partial"]')).not.toBeNull();
+  expect(statusOf(container).textContent).toContain("사용량 미기록 1건");
 });
 
 test("bucket marks by state", async () => {

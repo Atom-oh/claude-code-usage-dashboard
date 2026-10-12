@@ -161,9 +161,11 @@ partial-preserving stacked bars over the pure helpers in
 [modelCostTrend.js](../../dashboard/web/src/modelCostTrend.js): `fromByModelDaily` adapts the
 detail `/api/cost/by-model-daily` rows and `fromByModelTime` the shared `by_model_time` rows.
 The frame keeps the top six series by known cost plus an Others segment with fixed membership.
-Model colors are stable per name: ten registered models use the trend palette, other known
-Claude models and families keep their `modelColorFor` color (solid), only the remaining models
-get a muted vendor shade plus a hatch, and Others uses an exclusive neutral. Bucket states are known, zero, partial, unavailable, idle and no data: unavailable is
+Model colors are stable per name and theme: registered models use the trend palette,
+other known Claude models/families keep `modelColorFor`, and remaining models use solid
+vendor palettes. OpenAI and other-vendor fallbacks have six tones; Others has an exclusive
+neutral. Bars use bounded widths, subtle separators and rounded segments at moderate
+bucket density, with square segments for dense views. Legends use matching solid swatches. Bucket states are known, zero, partial, unavailable, idle and no data: unavailable is
 never drawn as zero, and idle is the
 [ADR-015](../decisions/ADR-015-idle-chart-buckets.md) recorded-usage zero. The disclosure is a
 persistent status naming each reason with model and channel/backend identities (including
@@ -171,7 +173,9 @@ Others members), a table view, a basis chip and a value-sorted tooltip. Detail p
 `bounds`, so absent buckets collapse as before; the no-data state appears only with bounds.
 
 Sibling rule: the shared Claude and Codex cards come from one response, share its effective
-range and bucket origins, are never summed and keep separate y-scales. Bucket defaults: Cost
+range and bucket origins, are never summed and keep separate y-scales. Client-colored
+header accents identify the cards independently of model color, including when Codex uses
+a Claude model. Texture never represents client identity or availability. Bucket defaults: Cost
 uses the global interval; Executive uses 24h up to 30 days, else 168h; the shared pages use the
 global interval (exec 24h/168h), never below `bucket_hours`, and always roll up so the first
 bucket is floored. `modelTime=1` is sent only on the shared cost and exec pages. It is a cold

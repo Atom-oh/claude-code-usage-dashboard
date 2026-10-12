@@ -316,8 +316,8 @@ test("buildModelCostFrame picks top-N series, folds the rest into 기타 and sta
   const f = buildModelCostFrame(CELLS, { top: 2, bounds: BOUNDS, bucketHours: 24 });
   const s = { label: "claude-sonnet-5", pinned: false, hasIssue: false };
   expect(f.series).toEqual([
-    { ...s, key: "s0", model: "claude-sonnet-5", colorKey: "claude-sonnet-5", hatch: false, known: 8, observed_tokens: 30 },
-    { ...s, key: "s1", model: "zai.glm-5", label: "zai.glm-5", colorKey: "other-2", hatch: true, known: 1, observed_tokens: 10 },
+    { ...s, key: "s0", model: "claude-sonnet-5", colorKey: "claude-sonnet-5", known: 8, observed_tokens: 30 },
+    { ...s, key: "s1", model: "zai.glm-5", label: "zai.glm-5", colorKey: "other-2", known: 1, observed_tokens: 10 },
   ]);
   expect(f.others).toEqual({ key: "__others", label: "기타 2개 모델", count: 2, models: ["claude-haiku-4-5", "claude-opus-5"], known: 0.5, affected: ["claude-opus-5"] });
   expect(f.buckets.map((b) => [b.t, b.state, b.total]))
@@ -520,10 +520,11 @@ test("REASON_GROUPS and STATE_LABELS carry the fixed keys and Korean labels", ()
 const REGISTERED = [
   "claude-fable-5", "claude-fable-5-1", "claude-sonnet-5", "claude-opus-5", "claude-opus-5-5",
   "claude-opus-4-8", "claude-haiku-4-5", "openai.gpt-5.6-sol", "openai.gpt-6-astra", "openai.gpt-5.6-luna",
+  "openai.gpt-6.1-sol", "openai.gpt-6-sol", "openai.gpt-6-luna",
 ];
 
 test.each(REGISTERED)("modelColorKey(%s) is the registered solid key", (name) => {
-  expect(modelColorKey(name)).toEqual({ key: name, hatch: false });
+  expect(modelColorKey(name)).toEqual({ key: name });
 });
 
 test("modelColorKey resolves aliases to registered keys and does not depend on call order", () => {
@@ -537,19 +538,19 @@ test("modelColorKey resolves aliases to registered keys and does not depend on c
 });
 
 test.each([
-  ["zai.glm-5", "other-2"], ["xai.grok-4.6", "other-0"], ["moonshotai.kimi-k2.5", "other-1"],
+  ["zai.glm-5", "other-2"], ["xai.grok-4.6", "other-0"], ["moonshotai.kimi-k2.5", "other-4"],
   ["kimi-k3", "other-1"], ["claude-instant-1", "anthropic-2"],
-  ["openai.gpt-5.6-terra", "openai-1"], ["", "other-0"],
-])("unregistered model %s gets the hatched vendor key %s", (name, key) => {
-  expect(modelColorKey(name)).toEqual({ key, hatch: true });
+  ["openai.gpt-5.6-terra", "openai-4"], ["", "other-0"],
+])("unregistered model %s gets the solid vendor key %s", (name, key) => {
+  expect(modelColorKey(name)).toEqual({ key });
 });
 
-test("vendor ramp keys resolve to the muted ramp shades", () => {
-  expect(trendColor("other-2")).toBe("#7B9195");
+test("vendor ramp keys resolve to the solid palette shades", () => {
+  expect(trendColor("other-2")).toBe("#2D8F84");
   expect(trendColor("anthropic-0", "dark")).toBe("#8D7C73");
-  expect(trendColor("openai-1")).toBe("#4F8D89");
-  // A non-family vendor model is hatched with the slate ramp, never a warning-like red.
-  expect([modelColorKey("xai.grok-4.6"), trendColor(modelColorKey("xai.grok-4.6").key)]).toEqual([{ key: "other-0", hatch: true }, "#53676B"]);
+  expect(trendColor("openai-1")).toBe("#4F6FB5");
+  // Non-family models use name-stable solid colors without changing availability.
+  expect([modelColorKey("xai.grok-4.6"), trendColor(modelColorKey("xai.grok-4.6").key)]).toEqual([{ key: "other-0" }, "#AD7A38"]);
 });
 
 // Other known Claude models and families keep the existing modelColorFor color, solid, in both themes.
@@ -557,8 +558,7 @@ test.each([
   ["claude-sonnet-4-5", "#B7C0F5"], ["us.anthropic.claude-sonnet-4-6-v1:0", "#93A0EC"], ["claude-opus-4-7", "#F5C09B"],
   ["claude-haiku-3-5", "#A8DCC0"], ["claude-opus-9", "#EDB48E"],
 ])("known Claude model %s stays solid with its modelColorFor color %s", (model, color) => {
-  const { key, hatch } = modelColorKey(model);
-  expect(hatch).toBe(false);
+  const { key } = modelColorKey(model);
   expect([trendColor(key), trendColor(key, "dark")]).toEqual([color, color]);
 });
 
@@ -584,6 +584,22 @@ test("trendColor resolves model, 기타 and fallback colors per theme; chartThem
   expect(chartTheme("#171c27")).toBe("dark");
   expect(chartTheme("rgb(23, 28, 39)")).toBe("dark");
   expect(chartTheme("")).toBe("light");
+});
+
+test("solid registered and fallback model colors have visible contrast against their card surfaces", () => {
+  const luminance = (hex) => {
+    const components = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255)
+      .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return components.reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  };
+  for (const [theme, surface] of [["light", "#ffffff"], ["dark", "#171c27"]]) {
+    const colors = [...Object.values(MODEL_TREND_COLORS[theme]),
+      ...Object.values(MODEL_TREND_VENDOR_RAMPS).flatMap((palette) => palette[theme])];
+    for (const color of colors) {
+      const [low, high] = [luminance(surface), luminance(color)].sort((a, b) => a - b);
+      expect((high + 0.05) / (low + 0.05), `${theme} ${color}`).toBeGreaterThanOrEqual(3);
+    }
+  }
 });
 
 test.each([

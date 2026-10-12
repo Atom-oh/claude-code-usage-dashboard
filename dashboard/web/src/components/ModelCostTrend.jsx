@@ -1,6 +1,6 @@
 // Partial-preserving model cost stacked bar: known amounts are drawn, unavailable is never drawn
 // as zero, and each bucket carries a state mark. SeriesBarChart keeps its all-or-nothing policy.
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Info } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { makeTickFmt } from "../fmt.js";
@@ -14,9 +14,11 @@ import { useDragZoom } from "./GroupCharts.jsx";
 
 // Same look as Card, but the header wraps: on narrow screens the controls drop below the title
 // instead of squeezing it (Card keeps its right slot shrink-0 for its other callers).
-function TrendCard({ title, subtitle, help, right, children }) {
+function TrendCard({ title, subtitle, help, right, children, accent }) {
   return (
-    <div className="bg-card border border-ink-100 rounded-lg shadow-card overflow-hidden">
+    <div data-model-trend data-client-accent={accent}
+      className={`bg-card border border-ink-100 rounded-lg shadow-card overflow-hidden${accent ? " border-t-[3px]" : ""}`}
+      style={accent ? { borderTopColor: accent } : undefined}>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-4 pb-3 border-b border-ink-100">
         <div className="min-w-0 flex-1 basis-40">
           <div className="flex items-center gap-1 min-w-0">
@@ -118,7 +120,7 @@ function TrendTooltip({ active, payload, frame, fmtTick, c }) {
 }
 
 export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t", bucketHours, bounds,
-  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange }) {
+  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent }) {
   const c = useChartColors();
   // One bucket-size fallback (the global interval, as useDragZoom uses) for zoom, ticks and grid.
   const { intervalHours } = useRange();
@@ -130,7 +132,6 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const clamp = { from: clampFrom, to: clampTo, maxSpanMs: rangeCapDays * 86400000 };
   const zoom = useDragZoom(undefined, hours, undefined, zoomDisabled, clamp);
   const [showTable, setShowTable] = useState(false);
-  const pid = useId().replace(/[^A-Za-z0-9_-]/g, "");
   const theme = chartTheme(c.surface);
   const fmtTick = tickFormatter ?? makeTickFmt(hours);
   const hasCells = Array.isArray(cells);
@@ -141,7 +142,8 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
     ? buildModelCostFrame(cells, { top, pinned: JSON.parse(pinnedKey), bounds: { from: fromMs, to: toMs }, bucketHours: hours })
     : null), [cells, top, pinnedKey, fromMs, toMs, hours]);
 
-  const chip = basis ? <span className="rounded-full border border-ink-200 px-2 py-0.5 text-[11px] text-ink-600">{basis}</span> : null;
+  const chip = basis ? <span className="rounded-full border border-ink-200 px-2 py-0.5 text-[11px] text-ink-600"
+    style={accent ? { borderColor: accent } : undefined}>{basis}</span> : null;
   const toggle = hasCells && cells.length > 0 ? (
     <button
       type="button"
@@ -158,14 +160,14 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
 
   if (!hasCells) {
     return (
-      <TrendCard title={title} subtitle={subtitle} help={help} right={header}>
+      <TrendCard title={title} subtitle={subtitle} help={help} right={header} accent={accent}>
         <div role="status" className="text-sm text-ink-500">모델별 비용 정보가 없어 추이를 확인할 수 없습니다.</div>
       </TrendCard>
     );
   }
   if (cells.length === 0) {
     return (
-      <TrendCard title={title} subtitle={subtitle} help={help} right={header}>
+      <TrendCard title={title} subtitle={subtitle} help={help} right={header} accent={accent}>
         <EmptyState />
       </TrendCard>
     );
@@ -260,26 +262,19 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
 
   if (frame.allUnavailable) {
     return (
-      <TrendCard title={title} subtitle={subtitle} help={help} right={header}>
+      <TrendCard title={title} subtitle={subtitle} help={help} right={header} accent={accent}>
         {status}
         {tables}
       </TrendCard>
     );
   }
 
-  const hatched = series.filter((s) => s.hatch);
+  const radius = frame.buckets.length > 64 ? 0 : 2;
   return (
-    <TrendCard title={title} subtitle={subtitle} help={help} right={header}>
+    <TrendCard title={title} subtitle={subtitle} help={help} right={header} accent={accent}>
       <ResponsiveContainer width="100%" height={height} className={zoom.className}>
-        <BarChart data={rows} margin={{ top: 24, right: 8, left: 8, bottom: 0 }} {...zoom.handlers}>
-          <defs>
-            {hatched.map((s) => (
-              <pattern key={s.key} id={`${pid}-${s.key}`} width={5} height={5} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <rect width={5} height={5} fill={c.surface} />
-                <rect width={2.2} height={5} fill={trendColor(s.colorKey, theme)} />
-              </pattern>
-            ))}
-          </defs>
+        <BarChart data={rows} maxBarSize={44} barCategoryGap={frame.buckets.length > 32 ? "12%" : "28%"}
+          margin={{ top: 24, right: 8, left: 8, bottom: 0 }} {...zoom.handlers}>
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={fmtTick} minTickGap={24} />
           <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} tickFormatter={formatAxisUsd} />
@@ -290,14 +285,16 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
               dataKey={s.key}
               name={s.label}
               stackId="a"
-              fill={s.hatch ? `url(#${pid}-${s.key})` : trendColor(s.colorKey, theme)}
+              fill={trendColor(s.colorKey, theme)}
               stroke={c.surface}
-              strokeWidth={1}
+              strokeWidth={0.8}
+              radius={radius}
               isAnimationActive={false}
             />
           ))}
           {showOthers && (
-            <Bar dataKey={OTHERS_KEY} name={frame.others.label} stackId="a" fill={othersColor} stroke={c.surface} strokeWidth={1} isAnimationActive={false} />
+            <Bar dataKey={OTHERS_KEY} name={frame.others.label} stackId="a" fill={othersColor}
+              stroke={c.surface} strokeWidth={0.8} radius={radius} isAnimationActive={false} />
           )}
           <Bar dataKey="__mark" stackId="a" isAnimationActive={false} legendType="none" shape={<BucketMark fmtTick={fmtTick} axis={c.axis} />} />
           {zoom.overlay}
@@ -306,12 +303,9 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
       <ul aria-label="범례" className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-500">
         {series.map((s) => {
           const color = trendColor(s.colorKey, theme);
-          const style = s.hatch
-            ? { background: `repeating-linear-gradient(45deg, ${color} 0 2px, transparent 2px 4px)`, border: `1px solid ${color}` }
-            : { background: color };
           return (
             <li key={s.key} className="flex items-center gap-1.5">
-              <span aria-hidden="true" data-swatch={s.hatch ? "hatch" : "solid"} className="inline-block h-2.5 w-2.5 rounded-sm" style={style} />
+              <span aria-hidden="true" data-swatch="solid" className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: color }} />
               {s.label}
             </li>
           );

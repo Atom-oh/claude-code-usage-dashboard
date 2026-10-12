@@ -339,8 +339,8 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
 
   const series = seriesKeys.map((model, i) => {
     const s = stats.get(model);
-    const { key: colorKey, hatch } = modelColorKey(model);
-    return { key: "s" + i, model, label: modelLabel(model), colorKey, hatch, known: s.known,
+    const { key: colorKey } = modelColorKey(model);
+    return { key: "s" + i, model, label: modelLabel(model), colorKey, known: s.known,
       observed_tokens: s.observed_tokens, pinned: pinnedKeys.has(model), hasIssue: s.hasIssue };
   });
   const seriesByModel = new Map(series.map((s) => [s.model, s.key]));
@@ -493,13 +493,11 @@ function nameHash(s) {
 export function modelColorKey(model) {
   const name = displayModel(model);
   const registered = MODEL_TREND_COLORS.light;
-  if (Object.hasOwn(registered, name)) return { key: name, hatch: false };
-  if (Object.hasOwn(registered, "openai." + name)) return { key: "openai." + name, hatch: false };
-  // Other known Claude models and families keep their modelColorFor color, solid: the hatch marks
-  // only models outside both sets, so an older Claude model never reads as unknown.
-  if (modelColorFor(name)) return { key: `family:${name}`, hatch: false };
+  if (Object.hasOwn(registered, name)) return { key: name };
+  if (Object.hasOwn(registered, "openai." + name)) return { key: "openai." + name };
+  if (modelColorFor(name)) return { key: `family:${name}` };
   const vendor = /^claude/.test(name) ? "anthropic" : /^(?:openai\.|gpt-)/.test(name) ? "openai" : "other";
-  return { key: `${vendor}-${nameHash(name) % 3}`, hatch: true };
+  return { key: `${vendor}-${nameHash(name) % MODEL_TREND_VENDOR_RAMPS[vendor].light.length}` };
 }
 
 export function trendColor(key, theme = "light") {
