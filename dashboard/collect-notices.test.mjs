@@ -160,6 +160,23 @@ test("changed publisher metadata cannot reuse a standard-license binding", () =>
   } finally { f.close(); }
 });
 
+test("Victory preserves its pinned package terms alongside supplementary vendor licenses", () => {
+  const f = fixture({ "node_modules/victory-vendor": { version: "37.3.6" } });
+  try {
+    f.add("node_modules/victory-vendor", { name: "victory-vendor", version: "37.3.6",
+      license: "MIT AND ISC", repository: { url: "https://github.com/FormidableLabs/victory" },
+      author: "Formidable" }, { "vendor/LICENSE": "Synthetic vendor ISC terms" });
+    const result = collectNotices(f.root);
+    assert.equal(result.report.complete, true);
+    const files = result.report.packages[0].files;
+    assert.equal(files.find(file => file.kind === "license").standardLicenseText, false);
+    assert.match(result.text, /Permission is hereby granted/);
+    assert.match(result.text, /Synthetic vendor ISC terms/);
+    assert.equal(files.find(file => file.kind === "license").sha256,
+      "34dee5fd5e5cc756efb5ad4d64652bce719bdf5e900ca5d7538253e737930bc4");
+  } finally { f.close(); }
+});
+
 test("missing required dependencies and version drift fail; dev/absent optional packages are omitted", () => {
   for (const mismatch of [false, true]) {
     const f = fixture({ "node_modules/example": { version: "1.2.3" } });

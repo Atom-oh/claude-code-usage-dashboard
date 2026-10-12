@@ -68,12 +68,13 @@ function declaredStandardLicense(manifest, key) {
   if (manifest.license !== declaration.declaredLicense ||
       repository !== declaration.repository || manifest.author !== declaration.authorMetadata)
     throw new Error("standard license declaration differs from reviewed publisher metadata");
-  const file = provenance.catalog["MIT-spdx.txt"];
-  const text = readFileSync(path.join(catalogRoot, "MIT-spdx.txt"), "utf8");
-  if (hash(text) !== file.sha256 || file.licenseId !== declaration.declaredLicense)
+  const filename = declaration.licenseFile || "MIT-spdx.txt";
+  const file = provenance.catalog[filename];
+  const text = readFileSync(path.join(catalogRoot, filename), "utf8");
+  if (hash(text) !== file.sha256 || file.licenseId !== (declaration.packageLicenseId || declaration.declaredLicense))
     throw new Error("pinned standard license source differs");
-  return [{ path: "standard-license/MIT-spdx.txt", text, sha256: file.sha256,
-    source: file.source, publisherDeclaration: declaration, standardLicenseText: true, kind: "license" }];
+  return [{ path: "catalog-license/" + filename, text, sha256: file.sha256,
+    source: file.source, publisherDeclaration: declaration, standardLicenseText: !declaration.licenseFile, kind: "license" }];
 }
 
 export function collectNotices(dashboardRoot) {

@@ -11,8 +11,10 @@ separate, in `/app/APPLICATION_LICENSE`, and tested against the canonical
 
 Each record preserves package/version, component, declared license, complete discovered
 license/NOTICE texts, their kind and SHA-256 hashes. Nested vendor notices are retained.
-NOTICE-only packages remain unresolved; attribution cannot replace license terms or suppress
-README/catalog fallback collection. Source files such as `license.js` do not qualify. Development
+NOTICE and nested vendor files are supplementary; neither can suppress the package's own
+README/catalog terms. Only top-level license files or an explicit package fallback resolve
+its own terms. README extraction retains subordinate sections and stops at the next peer or
+parent heading. Source files such as `license.js` do not qualify. Development
 dependencies and absent optional platform packages are omitted; missing required packages
 and installed-versus-lockfile version differences fail collection.
 
@@ -28,6 +30,9 @@ Some published packages omit a license file:
   Its exact publisher declaration/author and fixed source commit are preserved beside
   standard MIT text from a pinned official SPDX catalog. Copyright placeholders remain
   unfilled; no owner/year or additional grant is invented.
+- `victory-vendor@37.3.6` declares its own MIT terms and bundled ISC components. Its own
+  text comes from the repository commit resolved from that version's official tag and
+  verified against the source package manifest. Packaged vendor licenses remain separate.
 
 [provenance.json](../../dashboard/notices/provenance.json) binds the reviewed declarations
 and standard source/hash. Unrecognized missing license texts/declarations and unlicensed
