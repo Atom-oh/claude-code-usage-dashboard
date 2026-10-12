@@ -13,6 +13,11 @@ ECR/CloudFront access, `kubectl`, Terraform state for this stack, and Docker bui
 `linux/arm64` support. For chat, verify the deployed model/region and IRSA configuration
 using [Workshop Studio notes](../workshop-studio-notes.md).
 
+Before a Terraform plan, verify [existing environment inputs](../reference/iac.md#existing-environment-inputs).
+Legacy node-role discovery now requires exactly one match. Existing clusters with multiple
+nodegroups must set `node_role_name` to the verified deployed role; explicit lookup requires
+IAM read access including `iam:GetRole`. Review any NodeClass change before applying.
+
 Set these non-secret parameters for the target; the namespace default matches Terraform:
 
 ```bash
