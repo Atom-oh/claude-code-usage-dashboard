@@ -108,17 +108,20 @@ test("a provider ending cleanly after abort still reports timeout, never done", 
 test("SQL validation still blocks unsafe statements before execution", async () => {
   let turns = 0;
   let queries = 0;
+  let feedback;
   const response = new Response();
   await createChatHandler({ ...configuration,
     query: async () => { queries++; throw new Error("must not execute"); },
     runTurn: async ({ messages }) => {
       if (!turns++) return toolTurn("unsafe", "DROP TABLE otel_logs");
-      assert.equal(messages.at(-1).content[0].toolResult.status, "error");
+      feedback = messages.at(-1).content[0].toolResult.status;
       return done;
     },
   })(request(), response);
   assert.equal(queries, 0);
   assert.equal(turns, 2);
+  assert.equal(feedback, "error");
+  assert.ok(!response.chunks.some(chunk => chunk.startsWith("event: error")));
 });
 
 test("existing hop and SQL budgets remain bounded independently", async () => {

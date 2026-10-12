@@ -180,9 +180,10 @@ Ordinary JSON data routes do not share chat's per-IP rate limiter.
 
 [chat.js](../dashboard/server/chat.js) uses Bedrock ConverseStream with four tool-enabled
 rounds, at most eight SQL calls, and a possible final tool-disabled summary. The active SQL
-result path returns at most 200 rows. Its `capToolResultJson` character-cap helper exists
-but is unused. Browser disconnects cancel Bedrock work, but the handler does not pass the
-external abort signal to SQL; SQL retains its own timeout.
+result path retains at most 200 rows and 20,000 serialized JSON characters per result,
+preserving whole rows and a truncation flag. Disconnects and the 180-second turn deadline
+propagate cancellation to Bedrock, retry waits and SQL; SQL retains its own timeout.
+Cancellation depends on operation settlement and does not guarantee zero billed work.
 
 The hardcoded chat prompt still describes computed-primary spend and rollup-only dashboard
 queries. Those statements lag the actual consumers and query branches; this reconciliation

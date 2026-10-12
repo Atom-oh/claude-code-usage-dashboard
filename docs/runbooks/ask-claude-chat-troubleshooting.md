@@ -63,15 +63,15 @@ no-tools wrap-up call if the hop budget is exhausted. `maxTokens: 8000` caps out
 input. `hop` resets every request; a value of 4 identifies the wrap-up failure, not history
 length.
 
-`capToolResultJson()` is defined in `chat.js`, but the current handler appends tool-result
-JSON directly instead of calling it. Do **not** assume its 20,000-character cap limits the
-live request. The SQL row limit still applies, but wide cells and repeated results can grow
-context. Inspect the actual `ValidationException` details and request size; the generic
+The handler applies `capToolResultJson()` to each SQL result: at most 20,000 serialized
+JSON characters, dropping whole rows and marking truncation. This is a per-result context
+limit, not a token or total-conversation limit. History, prompt and repeated results still
+grow context. Inspect the actual `ValidationException` details and request size; the generic
 classified message does not prove conversation length was the only cause.
 
 Reload the page to clear a problematic conversation. Closing the floating chat stops the
-stream but retains messages. A prospective context-cap fix requires code/test work; this
-runbook does not declare it implemented.
+stream but retains messages. The 180-second turn deadline and disconnect cancel model/SQL
+work cooperatively; see the [chat reference](../reference/agent-llm.md) for settlement limits.
 
 ## 4. Incorrect schema, group, or cost answers
 
