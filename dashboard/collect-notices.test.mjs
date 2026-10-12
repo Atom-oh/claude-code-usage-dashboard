@@ -97,6 +97,43 @@ test("a full README license section is retained without unrelated README content
   } finally { f.close(); }
 });
 
+test("a nested vendored license cannot suppress the package's own README license", () => {
+  const f = fixture({ "node_modules/example": { version: "1.2.3" } });
+  try {
+    f.add("node_modules/example", { name: "example", version: "1.2.3", license: "MIT" },
+      { "vendor/LICENSE": "Synthetic vendored sub-license\n", "README.md": "## License\nPermission is hereby granted (synthetic test).\n" });
+    const result = collectNotices(f.root);
+    assert.equal(result.report.complete, true);
+    const kinds = result.report.packages[0].files.map(file => file.kind);
+    assert.ok(kinds.includes("supplementary") && kinds.includes("license"));
+    assert.match(result.text, /Permission is hereby granted/);
+    assert.match(result.text, /Synthetic vendored sub-license/);
+  } finally { f.close(); }
+});
+
+test("a nested license alone does not make the inventory complete", () => {
+  const f = fixture({ "node_modules/example": { version: "1.2.3" } });
+  try {
+    f.add("node_modules/example", { name: "example", version: "1.2.3", license: "MIT" },
+      { "vendor/LICENSE": "Synthetic vendored sub-license\n" });
+    const result = collectNotices(f.root);
+    assert.equal(result.report.complete, false);
+    assert.equal(result.report.unresolved[0].reason, "missing_license_text");
+  } finally { f.close(); }
+});
+
+test("README license subsections are retained until a same-level heading", () => {
+  const f = fixture({ "node_modules/example": { version: "1.2.3" } });
+  try {
+    f.add("node_modules/example", { name: "example", version: "1.2.3", license: "MIT" },
+      { "README.md": "## License\nPermission is hereby granted (synthetic test).\n### Third-party\nSubsection-terms-retained\n## Usage\nnot-a-license\n" });
+    const result = collectNotices(f.root);
+    assert.equal(result.report.complete, true);
+    assert.match(result.text, /Subsection-terms-retained/);
+    assert.doesNotMatch(result.text, /not-a-license/);
+  } finally { f.close(); }
+});
+
 test("reviewed MIT declaration uses pinned standard text without inventing copyright", () => {
   const f = fixture({ "node_modules/express-basic-auth": { version: "1.2.1" } });
   try {

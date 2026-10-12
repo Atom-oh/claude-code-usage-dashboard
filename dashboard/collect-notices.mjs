@@ -21,7 +21,7 @@ function licenseFiles(directory, relative = "") {
     if (entry.isFile() && licenseName.test(entry.name)) {
       const text = readFileSync(path.join(directory, name), "utf8");
       if (text.trim()) found.push({ path: name.split(path.sep).join("/"), text, sha256: hash(text),
-        kind: /^notice/i.test(entry.name) ? "notice" : "license" });
+        kind: /^notice/i.test(entry.name) ? "notice" : relative ? "supplementary" : "license" });
     } else if (entry.isDirectory()) {
       found.push(...licenseFiles(directory, name));
     }
@@ -33,10 +33,11 @@ function readmeLicense(directory) {
   const name = readdirSync(directory).find(value => /^readme(?:\.md|\.txt)?$/i.test(value));
   if (!name) return [];
   const text = readFileSync(path.join(directory, name), "utf8");
-  const heading = /^#{1,6}\s+(?:license|licence)\s*$/im.exec(text);
+  const heading = /^(#{1,6})\s+(?:license|licence)\s*$/im.exec(text);
   if (!heading) return [];
+  const level = heading[1].length;
   const tail = text.slice(heading.index + heading[0].length);
-  const next = /^\s*#{1,6}\s+/m.exec(tail);
+  const next = new RegExp(`^\\s*#{1,${level}}\\s+`, "m").exec(tail);
   const section = tail.slice(0, next ? next.index : undefined).trim();
   // A link/badge/declaration alone is not a license text.
   if (!/permission is hereby granted|redistribution and use|terms and conditions/i.test(section)) return [];
