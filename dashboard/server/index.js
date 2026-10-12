@@ -162,7 +162,7 @@ const CACHE_TTL_MS = 320_000;
 // 화이트리스트(CACHE_KEY_PARAMS, 아래)로 무의미한 파라미터 폭증은 막았지만, from/to/user/model/
 // email은 여전히 자유 문자열이라 인증된 클라이언트가 그 값만 계속 바꾸면 만료 전까지 distinct
 // 엔트리가 계속 늘 수 있다(리뷰에서 MAJOR로 확인) — 상한을 두고 초과 시 가장 오래된(생성 순서)
-// 엔트리부터 제거한다. Map은 삽입 순서를 보존하므로 키를 삭제 후 재삽입하면 자연히 LRU가 된다.
+// 완료된 엔트리를 삽입 순서대로 제거한다. 진행 중인 작업은 완료까지 공유하며 읽기는 순서를 바꾸지 않는다.
 const cache = createResultCache();
 setInterval(() => {
   cache.sweep();

@@ -395,7 +395,8 @@ startup and every ten minutes; unknown status is fail-closed. Per-process IP lim
 429 before streaming. SSE events are `status` (`message`, optional `sql`), `thinking`
 (`text`), `text` (`text`), `done` (`{}`), or `error` (`message`). Once streaming starts,
 failures are SSE events on HTTP 200. Successful streams use `Cache-Control: no-cache`.
-See [chat limits and prompt gaps](reference/agent-llm.md).
+Concurrent chat overload returns 503 before SSE without consuming an IP rate slot.
+See [chat limits](reference/agent-llm.md) and [runtime admission](reference/api.md#request-and-cache-behavior).
 
 ### Health and config
 
@@ -438,10 +439,11 @@ Config fields:
 | Status | Contract |
 |---|---|
 | 400 | Wrapped route validation: `{error, detail}` for invalid range/interval or excessive span. The detail does not echo submitted values. |
-| 401 | Missing or invalid Basic Auth when auth is enabled. |
+| 401 | Missing/invalid Basic credentials or an absent/expired OIDC session. |
+| 403 | OIDC permission/group or unsafe-request Origin denied. |
 | 429 | Chat's per-process IP limit. |
 | 500 | Wrapped query failure: `{error:"internal error", id:"<uuid>"}`. The full exception is logged under the ID, not returned. |
-| 503 | Not-ready/freshness states or unmet chat gates. Ordinary wrapped data-query failures are 500. |
+| 503 | Not-ready/freshness states, unmet chat gates, or exhausted runtime admission. Overload JSON has `code:"capacity_exhausted"` and `Retry-After: 1`; other wrapped query failures remain 500. |
 
 After authentication, JSON API middleware sets `no-store`; the server's bounded promise cache is separate.
 There is no general data-route rate limit or pagination contract. Named row caps above are
