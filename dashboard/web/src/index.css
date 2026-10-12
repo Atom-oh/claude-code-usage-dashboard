@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.js";
 
 /* ../awsops의 cobalt 테마 토큰을 그대로 포팅 (light 단일 — 사용자 요청). 그룹 색상은 우연히
    정확히 맞아떨어짐: bedrock = chart-1(blue), enterprise = chart-2(teal). */
@@ -64,7 +63,7 @@
   --chart-4: #eda100;
   --chart-5: #e87ba4;
   --chart-grid: #e7ecef;
-  --chart-axis: #7d8a96;
+  --chart-axis: #5a6873;
   --chart-tooltip-bg: #16202a;
   --chart-tooltip-fg: #f4f6f8;
 

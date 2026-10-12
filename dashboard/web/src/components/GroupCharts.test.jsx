@@ -155,6 +155,32 @@ test("time-axis drag zoom preserves UTC instants, caps the last bucket and ignor
     .toBe("2026-09-01T02:00:00.000Z / 2026-09-01T11:30:00.000Z"));
 });
 
+test("horizontal categorical bars never zoom even with date-like labels and numeric values", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  function Selection() {
+    const { custom } = useRange();
+    return <output aria-label="선택 구간">{custom
+      ? `${custom.from.toISOString()} / ${custom.to.toISOString()}` : "none"}</output>;
+  }
+  const rows = [
+    { category: "2026-09-01", series: "fixture", value: 1 },
+    { category: "2026-09-02", series: "fixture", value: 6 },
+    { category: "2026-09-03", series: "fixture", value: 12 },
+  ];
+  const { container } = render(<>
+    <SeriesBarChart title="범주별 값" rows={rows} xKey="category" seriesKey="series"
+      valueKey="value" horizontal zoomDisabled={false} />
+    <Selection />
+  </>, { wrapper: Providers });
+  await waitFor(() => expect(container.querySelector(".recharts-wrapper svg")).not.toBeNull());
+  const chart = container.querySelector(".recharts-wrapper");
+  fireEvent.mouseDown(chart, { clientX: 180, clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: 650, clientY: 180 });
+  expect(chart.querySelectorAll(".recharts-reference-area").length).toBe(0);
+  fireEvent.mouseUp(chart, { clientX: 650, clientY: 180 });
+  expect(screen.getByLabelText("선택 구간").textContent).toBe("none");
+});
+
 test.each([
   [false, "2026-09-01T00:00:00.000Z / 2026-09-03T01:00:00.000Z", 1],
   [true, "none", 0],

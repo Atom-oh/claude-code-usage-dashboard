@@ -48,7 +48,7 @@ machine, not an exposed server. Seeds initialize only a new volume. `down -v` de
 The SQL chat returns 503 on this default stack: it also needs authenticated access and
 a confirmed read-only ClickHouse session.
 
-For source development, use Node.js 22 or newer; the container builds with Node 24.
+For source development, use Node.js 22.12 or newer; the container builds with Node 24.
 Install the packages separately:
 
 ```bash

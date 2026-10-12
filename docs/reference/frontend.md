@@ -11,11 +11,17 @@ It hides usage filters/chat and shows configuration, per-client receipt and sche
 Non-admin views make no diagnostic request. Refresh failure retains results only with a
 visible previous-result warning; receipt/empty/unavailable never become usage zeros.
 
-The React 18/Vite SPA is built into the same image as the Express server.
+The React 18/Vite 8/Tailwind 4 SPA (Node >=22.12) shares the Express image.
 See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions and
 [UI](ui.md) for component and export contracts.
 
 ## Routes and state
+
+Charts use supported Recharts 3 public data-snap scales for pointer-driven zoom rather
+than stale tooltip state. Mouse drags preserve UTC bucket/range clamps and the existing
+disabled-while-stale contract. Other frequent events retain throttling. Axis text uses
+the higher-contrast ink token; gridlines retain their separate lighter token.
+The legacy Tailwind theme is explicitly loaded through `@config` under Tailwind 4.
 
 [App.jsx](../../dashboard/web/src/App.jsx) shares these nine routes across all clients:
 
