@@ -6,7 +6,7 @@ TASK_DIR=$(mktemp -d /tmp/ccdash-identity-tf.XXXXXX)
 trap 'rm -rf "$TASK_DIR"' EXIT
 cp "$PROJECT_ROOT/infra/identity.tf" "$PROJECT_ROOT/infra/variables.tf" "$TASK_DIR/"
 mkdir "$TASK_DIR/tests"
-cp "$PROJECT_ROOT/tests/fixtures/identity.tftest.hcl" "$TASK_DIR/tests/"
+cp "$PROJECT_ROOT/infra/test-fixtures/identity.tftest.hcl" "$TASK_DIR/tests/"
 cat > "$TASK_DIR/outputs.tf" <<'HCL'
 terraform {
   required_version = ">= 1.9"
