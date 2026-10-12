@@ -60,7 +60,9 @@ diagnostic; it describes the counter raw/rollup branch and rejects unconditional
 Non-Anthropic Claude spend needs [ADR-017](../decisions/ADR-017-backend-cost-fallback.md)'s
 log-derived AWS rescaling, which SQL chat does not automatically apply. Raw reports must
 be labelled unadjusted, not dashboard spend. Missing rates/logs remain unavailable.
-The allowed SQL surface is Claude-only; model names do not supply Codex usage. The prompt
+The prompt describes Claude tables and omits Codex deduplication/token/pricing adapters;
+it is not a table allowlist. SQL authorization remains the `claude_code` database with the
+existing sanitizer/readonly gates. Model names do not supply Codex usage. The prompt
 also distinguishes unknown/partial observation from zero and rejects productivity/causal
 ROI claims. Use [spend definitions](../metrics.md) and [aggregation rules](data.md);
 prompt wording and offline checks do not guarantee generated-SQL or answer correctness.

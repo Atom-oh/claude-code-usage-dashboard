@@ -288,7 +288,10 @@ test("SCHEMA_CONTEXT discloses raw-chat limits for non-Anthropic spend and Codex
   assert.match(SCHEMA_CONTEXT, /non-Anthropic 모델은 예외/);
   assert.match(SCHEMA_CONTEXT, /보정 파라미터를 자동 적용하지 않습니다/);
   assert.match(SCHEMA_CONTEXT, /보정 전 원본 보고 비용/);
-  assert.match(SCHEMA_CONTEXT, /허용 SQL 테이블은 Claude 데이터뿐/);
+  assert.match(SCHEMA_CONTEXT, /프롬프트는 Claude 스키마만 설명/);
+  assert.match(SCHEMA_CONTEXT, /SQL 권한 경계는 claude_code DB/);
+  assert.match(SCHEMA_CONTEXT, /테이블 허용 목록은[\s\S]*아닙니다/);
+  assert.doesNotThrow(() => sanitizeSql("SELECT count() FROM claude_code.codex_otel_logs"));
   assert.match(SCHEMA_CONTEXT, /cost_basis/);
   assert.match(SCHEMA_CONTEXT, /무료 사용으로 단정하지 마세요/);
   assert.match(SCHEMA_CONTEXT, /직원 생산성이나[\s\S]*인과적 ROI가 아닙니다/);

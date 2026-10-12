@@ -281,7 +281,9 @@ GROUP BY Model, TokenType
   원본 보고값을 요청하면 "보정 전 원본 보고 비용"으로 구분하고, 로그·단가·티어가 확인되지
   않으면 대시보드 비교 비용은 확인 불가로 답하세요.
 - 공통 클라이언트 뷰는 cost_basis로 보고 비용/AWS 추정/일부 계산 대체/혼합을 구분합니다.
-  이 챗의 허용 SQL 테이블은 Claude 데이터뿐입니다. 모델 이름으로 Codex 사용량을 추정하거나
+  이 프롬프트는 Claude 스키마만 설명하며 Codex 완료 로그의 중복 제거·토큰·가격 집계 규칙은
+  자동 적용하지 않습니다. SQL 권한 경계는 claude_code DB이며 이 설명이 테이블 허용 목록은
+  아닙니다. 모델 이름으로 Codex 사용량을 추정하거나
   Codex 진단 메트릭·트레이스를 사용량·비용에 더하지 마세요.
 - 명시적으로 요청한 computed cost 진단은 token.usage의 4개 TokenType
   (input/output/cacheRead/cacheCreation) 토큰 수 × 아래 모델별 단가(1M 토큰당 USD)입니다.

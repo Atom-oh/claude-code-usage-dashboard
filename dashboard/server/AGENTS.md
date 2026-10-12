@@ -59,8 +59,8 @@ Express ESM serves read-only telemetry and the SPA. Run `npm test` (`node:test`)
 `queryReadonly()` has result/time limits; reader profiles may reject `SETTINGS`.
 Never assume overrides are allowed.
 
-Chat: whole-row JSON cap; cooperative model/SQL cancellation. Raw SQL excludes
-non-Anthropic rescaling/Codex; no token/billing bound.
+Chat: whole-row cap/cooperative model/SQL cancellation; no token/billing bound.
+SQL does not apply non-Anthropic/Codex spend adapters.
 
 See [API](../../docs/api-reference.md), [metrics](../../docs/metrics.md) and
 [schema operations](../../docs/runbooks/schema-migrations.md).
