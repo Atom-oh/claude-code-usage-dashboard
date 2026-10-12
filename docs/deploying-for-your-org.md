@@ -134,7 +134,8 @@ REPO=$(terraform -chdir=infra output -raw ecr_repository_url)
 REGISTRY=${REPO%%/*}
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
-docker buildx build --platform linux/arm64 -t "$REPO:$TAG" --push dashboard/
+docker buildx build --platform linux/arm64 \
+  --build-arg "APP_REVISION=$(git rev-parse HEAD)" -t "$REPO:$TAG" --push dashboard/
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" set image deployment/dashboard "dashboard=$REPO:$TAG"
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" rollout status deployment/dashboard --timeout=120s
 ```

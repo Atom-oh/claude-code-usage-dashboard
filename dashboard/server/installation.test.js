@@ -67,6 +67,13 @@ test("Basic/development settings are explicit and invalid release identifiers st
   }
 });
 
+test("release identifiers are exactly SHA-1 or SHA-256 length", () => {
+  for (const length of [39, 41, 48, 63, 65])
+    assert.equal(describeInstallation({ ...base, revision: "a".repeat(length) }).release.revision, null);
+  for (const length of [40, 64])
+    assert.equal(describeInstallation({ ...base, revision: "a".repeat(length) }).release.revision, "a".repeat(length));
+});
+
 test("concurrent diagnostics share one bounded memo; expiry starts after work completes", async () => {
   let time = now;
   let calls = 0;
