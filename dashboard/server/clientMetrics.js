@@ -294,8 +294,7 @@ export function clientNativeBucketSeconds(from, to, intervalHours) {
 }
 
 // Coarser display buckets nest exactly within the selected native resolution.
-export function clientBucketSeconds(from, to, intervalHours) {
-  const native = clientNativeBucketSeconds(from, to, intervalHours);
+export function clientBucketSeconds(from, to, intervalHours, native = clientNativeBucketSeconds(from, to, intervalHours)) {
   if (intervalHours === undefined || intervalHours === null || intervalHours === "") return native;
   const requested = Number(intervalHours) * 3600;
   if (!Number.isFinite(requested) || requested <= native) return native;
@@ -477,11 +476,12 @@ export function effectiveClientEnd(from, to, clients, intervalHours) {
 export async function clientOverview(from, to, raw, enabledClients) {
   const validated = validateClientFilters(raw, enabledClients);
   const requestedTo = to;
+  const requestedNative = clientNativeBucketSeconds(from, to, raw.intervalHours);
   to = effectiveClientEnd(from, to, validated.clients, raw.intervalHours);
   // Size buckets from the trimmed end: the Claude counter query picks minute vs hour rows
   // from it, so both clients and bucket_hours share one resolution.
-  const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours);
-  const nativeSeconds = clientNativeBucketSeconds(from, to, raw.intervalHours);
+  const nativeSeconds = requestedNative === 600 ? 600 : clientNativeBucketSeconds(from, to);
+  const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours, nativeSeconds);
   const filters = validated;
   const jobs = [];
   for (const client of filters.clients) {
@@ -501,5 +501,8 @@ export async function clientOverview(from, to, raw, enabledClients) {
   const modelTime = raw.modelTime === "1";
   return { ...foldClientMetrics(records, filters.clients, codexPrices, { modelTime }),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
+    ...(filters.userExact || filters.modelExact ? {
+      applied_filters: { userExact: filters.userExact || "", modelExact: filters.modelExact || "", backend: filters.backend },
+    } : {}),
     bucket_hours: bucketSeconds / 3600 };
 }

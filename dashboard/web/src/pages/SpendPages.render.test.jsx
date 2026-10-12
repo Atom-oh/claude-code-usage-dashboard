@@ -163,7 +163,7 @@ const trendCard = async () => (await screen.findByText("모델별 비용 추이"
 const dailyRequests = () => fetch.mock.calls.map(([url]) => new URL(String(url), "http://localhost"))
   .filter((u) => u.pathname === "/api/cost/by-model-daily").map((u) => u.searchParams.get("intervalHours"));
 // The active SegmentedControl button in the card (the "표 보기" toggle never carries the brand class).
-const activeBucket = (card) => [...card.querySelectorAll("button")].find((b) => b.className.includes("bg-brand-500"))?.textContent;
+const activeBucket = (card) => [...card.querySelectorAll("button")].find((b) => b.getAttribute("aria-pressed") === "true")?.textContent;
 const rowCells = (row) => [...row.querySelectorAll("td")].slice(1).map((td) => td.textContent);
 
 test.each(["/cost?days=30", "/exec?days=30"])("%s draws the reported model cost trend and keeps the unavailable cell out of the bars", async (path) => {

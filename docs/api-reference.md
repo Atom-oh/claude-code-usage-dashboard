@@ -142,10 +142,13 @@ A coarser `intervalHours` is honored, rounded up to a whole multiple of the
 native bucket, and reported as `bucket_hours`; finer values fall back to native. Codex buckets in
 SQL at the native bucket; both clients' rows are then regrouped, so distinct sessions stay exact,
 coverage identity stays at the native bucket (`scope_t`), and bucket-only evidence merges as within
-one bucket. Sizes use Claude's resolved end. The cache key uses the effective bucket size.
+one bucket. Sizes use Claude's resolved end; eligibility for one-day raw resolution uses
+the original requested span. Cache keys include display/native bucket sizes and resolved end.
 Optional `userExact` and `modelExact` select exact row identities in addition to existing
 partial user/model filters. Claude model IDs are normalized; Codex routing prefixes remain.
 These validated, bound parameters have separate cache keys and are rejected by Codex insights.
+Exact responses echo `applied_filters={userExact,modelExact,backend}`; the UI verifies this
+acknowledgment before presenting identity detail, including during a rolling upgrade.
 
 Codex detail log summaries use one query for full-identity deduplication, per-response
 pricing and scope evidence. The 50,000-row transfer budget applies to aggregate

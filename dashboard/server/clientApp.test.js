@@ -150,10 +150,32 @@ test("exact cost drilldowns and one-day fine resolution have isolated validated 
   for (const row of rows.slice(1, 5)) assert.ok(row.dataQueries > 0);
   assert.equal(rows[5].dataQueries, 0);
   assert.equal(rows[4].body.bucket_hours, 1 / 6);
+  assert.equal(rows[1].body.applied_filters.userExact, "alice@example.invalid");
   for (const row of rows.slice(6)) {
     assert.equal(row.status, 400);
     assert.equal(row.dataQueries, 0);
   }
+});
+
+test("raw and rollup requests with identical hourly display buckets never collide", async () => {
+  const path = "/api/clients/overview?client=all&from=2026-09-14T00:05:00Z&to=2026-09-15T00:05:00Z";
+  for (const intervals of [[0.95, 1], [1, 0.95]]) {
+    const rows = await scenario(true, true, [
+      `${path}&intervalHours=${intervals[0]}`, `${path}&intervalHours=${intervals[1]}`,
+      `${path}&intervalHours=${intervals[0]}`,
+    ]);
+    for (const row of rows) assert.equal(row.status, 200);
+    assert.equal(rows[0].body.bucket_hours, 1);
+    assert.equal(rows[1].body.bucket_hours, 1);
+    assert.ok(rows[1].dataQueries > 0);
+    assert.equal(rows[2].dataQueries, 0);
+    assert.deepEqual(rows.slice(0, 2).map(row => row.body.effective_range.to),
+      intervals.map(hours => hours < 1 ? "2026-09-15T00:05:00.000Z" : "2026-09-15T00:00:00.000Z"));
+  }
+  const [wide] = await scenario(true, true, [
+    "/api/clients/overview?client=all&from=2026-09-14T00:00:00Z&to=2026-09-15T00:05:00Z&intervalHours=0.5",
+  ]);
+  assert.equal(wide.body.bucket_hours, 1, "a trimmed window cannot upgrade a request over one day to raw");
 });
 
 test("Claude-only defaults expose only that client through the new contract", async () => {

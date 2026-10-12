@@ -208,6 +208,8 @@ model rows also retain their backend. Identities stay local and are never added 
 User drilldowns show cost and model trends. Model drilldowns show each user's percentage
 of known cost, labelling partial denominators and withholding ratios for missing/zero totals.
 Parent bounds drive the detail request; stale periods disable selection and detail export.
+The UI requires exact-filter acknowledgment before showing detail. Background linked-refresh
+failures retain the last response with its actual bounds and the shared refresh warning.
 
 ## Spend and interpretation
 

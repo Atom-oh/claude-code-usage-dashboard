@@ -19,7 +19,7 @@ import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./
 import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 import { parseClients } from "./clients.js";
-import { clientOverview, validateClientFilters, clientBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
+import { clientOverview, validateClientFilters, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -254,12 +254,15 @@ function cacheKey(path, query) {
       client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend,
       userExact: filters.userExact, modelExact: filters.modelExact,
       modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined,
-      // Normalized to the effective bucket so the warmer's default view (no intervalHours)
-      // and a browser request for the same resolution share one entry.
+      // Query source and resolved end also matter: a subhour request can round to a
+      // one-hour display while reading raw rows through the requested partial-hour end.
       ...(path === "/api/clients/overview" ? (() => {
         const { from, to } = parseRange(query, RANGE_OPTS);
         const end = effectiveClientEnd(from, to, filters.clients, query.intervalHours);
-        return { bucketSeconds: String(clientBucketSeconds(from, end, query.intervalHours)) };
+        const nativeSeconds = clientNativeBucketSeconds(from, to, query.intervalHours) === 600
+          ? 600 : clientNativeBucketSeconds(from, end);
+        return { bucketSeconds: String(clientBucketSeconds(from, end, query.intervalHours, nativeSeconds)),
+          nativeSeconds: String(nativeSeconds), effectiveTo: end.toISOString() };
       })() : {}) };
     return `${path}?${new URLSearchParams(Object.entries(normalized)
       .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString()}`;

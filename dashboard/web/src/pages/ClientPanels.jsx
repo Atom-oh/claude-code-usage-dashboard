@@ -9,6 +9,7 @@ import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { fromByModelTime, rollupBuckets } from "../modelCostTrend.js";
 import { useRange } from "../RangeContext.jsx";
 import { useApi } from "../useApi.js";
+import { useFilters } from "../FilterContext.jsx";
 import { costResolutionLabel } from "../costResolution.js";
 import { maskEmail, parseUtc } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
@@ -196,6 +197,8 @@ function ModelTrends({ data, clients, exec, stale }) {
 
 // Exact row identities stay local; the shared hook retains the active global filters.
 function CostDetail({ selection, hours, parentRange, stale, onClose }) {
+  const { backend: globalBackend } = useFilters();
+  const selectedBackend = selection.backend || globalBackend || "";
   const headingRef = useRef(null);
   useEffect(() => {
     headingRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
@@ -204,15 +207,15 @@ function CostDetail({ selection, hours, parentRange, stale, onClose }) {
   const params = { client: selection.client, intervalHours: hours, modelTime: "1",
     ...(parentRange?.from && parentRange?.to ? { from: parentRange.from, to: parentRange.to } : {}),
     ...(selection.kind === "user" ? { userExact: selection.user }
-      : { modelExact: selection.model, backend: selection.backend }) };
+      : { modelExact: selection.model, backend: selectedBackend }) };
   const detail = useApi("/api/clients/overview", params, true,
     { linkedRange: Boolean(parentRange?.from && parentRange?.to), hold: stale });
   const title = selection.kind === "user" ? `${maskEmail(selection.user)} · 사용자 비용 상세`
-    : `${selection.model} · ${text(selection.backend)} · 모델별 사용자 비중`;
-  // A range transition may retain a response, but never label it as the new parent window.
-  const pending = stale || detail.stale
-    || (parentRange?.from && detail.data
-      && Date.parse(detail.data.effective_range?.from) !== Date.parse(parentRange.from));
+    : `${selection.model} · ${text(selectedBackend)} · 모델별 사용자 비중`;
+  const pending = stale || detail.stale;
+  const applied = detail.data?.applied_filters;
+  const supported = selection.kind === "user" ? applied?.userExact === selection.user
+    : applied?.modelExact === selection.model && applied?.backend === selectedBackend;
   const rows = (detail.data?.by_user || []).map(presentationRow);
   const total = observedNumber(detail.data?.totals?.cost_usd);
   const partial = detail.data?.totals?.cost_partial === true;
@@ -224,7 +227,13 @@ function CostDetail({ selection, hours, parentRange, stale, onClose }) {
       <h2 ref={headingRef} tabIndex={-1} className="scroll-mt-6 text-base font-semibold text-ink-800">{title}</h2>
       <button type="button" onClick={onClose} className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700">상세 닫기</button>
     </div>
-    {detail.error ? <ErrorBox error={detail.error} /> : detail.loading || pending ? <Loading /> : <>
+    {detail.error ? <ErrorBox error={detail.error} /> : detail.loading || pending ? <Loading />
+      : !supported ? <Card title="상세 데이터를 확인할 수 없습니다">
+        <p role="alert" className="text-sm text-ink-700">선택한 대상에 대한 집계를 확인하지 못했습니다. 잠시 후 다시 열어 주세요.</p>
+      </Card> : <>
+      {detail.data?.effective_range && <p className="text-[12px] text-ink-500">
+        집계 구간: {formatClientTimestamp(detail.data.effective_range.from)} ~ {formatClientTimestamp(detail.data.effective_range.to)}
+      </p>}
       <Trend rows={detail.data?.timeseries || []} clients={[selection.client]}
         clientRows={rawClientRows} bucketHours={detail.data?.bucket_hours || hours}
         effectiveRange={detail.data?.effective_range} metric="cost" title="선택 대상 비용 추이" />

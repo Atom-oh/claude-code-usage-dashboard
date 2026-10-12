@@ -509,7 +509,7 @@ function modelTimeData(clients = ["claude", "codex"]) {
 const trends = () => document.querySelector('section[aria-label="클라이언트별 모델 비용 추이"]');
 const trendCards = () => [...trends().querySelectorAll(".shadow-card")];
 const toggle = () => [...trends().children[0].querySelectorAll("button")]
-  .map((b) => `${b.textContent}${b.className.includes("bg-brand-500") ? "*" : ""}`);
+  .map((b) => `${b.textContent}${b.getAttribute("aria-pressed") === "true" ? "*" : ""}`);
 const trendTitles = () => trendCards().map((c) => c.querySelector(".truncate").textContent);
 
 // Cost defaults to the global interval (2 days → 1h); exec defaults to 24h up to 30 days.

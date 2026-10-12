@@ -24,9 +24,14 @@ function mount({ enabledClients, entry = "/", piiMask = true, response = clientO
   setPiiMask(piiMask);
   const fetchMock = vi.fn((url) => {
     const path = String(url).split("?")[0];
+    const u = new URL(String(url), "http://localhost");
+    const exact = u.searchParams.has("userExact") || u.searchParams.has("modelExact");
     if (path === "/api/clients/overview" && pending) return new Promise(() => {});
     const body = path === "/api/health/data" ? { status: "ok" }
-      : path === "/api/clients/overview" ? respond?.(new URL(String(url), "http://localhost")) ?? response : [];
+      : path === "/api/clients/overview" ? respond?.(u) ?? { ...response, ...(exact ? {
+        applied_filters: { userExact: u.searchParams.get("userExact") || "",
+          modelExact: u.searchParams.get("modelExact") || "", backend: u.searchParams.get("backend") || "" },
+      } : {}) } : [];
     return Promise.resolve({ ok: !(failed && path === "/api/clients/overview"), status: failed ? failStatus : 200, json: async () => body });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -117,6 +122,36 @@ test.each([false, true])("Cost model detail retains client/backend and labels us
   expect(location.search).not.toContain("modelExact");
   fireEvent.click(within(panel).getByRole("button", { name: "상세 닫기" }));
   expect(screen.queryByRole("region", { name: "비용 상세" })).toBeNull();
+});
+
+test("an older server cannot show unfiltered data under a selected model heading", async () => {
+  mount({ enabledClients: ["codex"], entry: "/cost?days=1", respond: () => clientOverview() });
+  const title = await screen.findByText("모델별 비용", { exact: true });
+  fireEvent.click(within(title.closest(".shadow-card")).getByRole("button", { name: "fixture-model" }));
+  await screen.findByText(/선택한 대상에 대한 집계를 확인하지 못했습니다/);
+  expect(screen.queryByText("모델별 사용자 비용 비중", { exact: true })).toBeNull();
+});
+
+test("a failed linked detail refresh retains its actual bounds without a permanent spinner", async () => {
+  let newer = false;
+  const initial = { from: "2026-09-01T00:00:00Z", to: "2026-09-02T00:00:00Z" };
+  const advanced = { from: "2026-09-01T00:02:00Z", to: "2026-09-02T00:02:00Z" };
+  mount({ enabledClients: ["codex"], entry: "/cost?days=1", respond: (u) => {
+    if (newer && u.searchParams.has("userExact")) throw new Error("synthetic detail refresh failure");
+    return clientOverview({ effective_range: newer ? advanced : initial,
+      ...(u.searchParams.has("userExact") ? { applied_filters: {
+        userExact: u.searchParams.get("userExact"), modelExact: "", backend: "",
+      } } : {}) });
+  } });
+  const title = await screen.findByText("사용자별 비용", { exact: true });
+  fireEvent.click(within(title.closest(".shadow-card")).getByRole("button", { name: maskEmail("alice@example.test") }));
+  await screen.findByText("선택 대상 비용 추이", { exact: true });
+  newer = true;
+  fireEvent.click(screen.getByRole("button", { name: "지금 새로고침" }));
+  await screen.findByText("갱신 실패 · 이전 데이터 표시");
+  const panel = screen.getByRole("region", { name: "비용 상세" });
+  expect(within(panel).queryByText("불러오는 중...")).toBeNull();
+  expect(within(panel).getByText(/집계 구간:/).textContent).toContain(formatClientTimestamp(initial.from));
 });
 
 afterEach(() => {
