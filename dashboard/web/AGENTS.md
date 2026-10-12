@@ -5,65 +5,61 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
 ## Display contracts
 
 - `ClientContext` defaults all clients to nine shared routes via `Clients.jsx`.
-  Claude `view=detail` retains advanced/A/B pages; see [routing](../../docs/reference/frontend.md#routes-and-state).
+  Claude `view=detail` retains advanced/A/B pages: [routing](../../docs/reference/frontend.md#routes-and-state).
   Shared views label `cost_usd` by `cost_basis`, preserve nulls/tiny positives and
   never render unsupported Claude measures as Codex zeros.
-- Shared cards/charts/tables/CSV label known cost subtotals as partial. Units divide
-  by observed denominators; missing denominators and all-unknown costs stay `—`.
-  See [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
+- Label known cost subtotals as partial in cards/charts/tables/CSV. Units use observed
+  denominators; missing denominators/all-unknown costs stay `—`:
+  [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
 - Token displays/charts use labelled `observed_tokens` subtotals and `tokens_partial`;
   CSV keeps counts numeric with coverage status. Ratios use canonical fields.
-  See [ADR-014](../../docs/decisions/ADR-014-observed-token-subtotals.md).
+  [ADR-014](../../docs/decisions/ADR-014-observed-token-subtotals.md).
 - Common views do not forward Claude-only group/project filters. Client/backend selection
   survives range changes without leaking masked user IDs.
-- Claude detail's `spend.js` selects `reported_cost`, retaining computed diagnostics.
-  Preserve null/unpriced totals, forecasts, charts and CSV. Missing local prices do
-  not invalidate valid reports.
+- Claude detail's `spend.js` selects `reported_cost` and retains computed diagnostics.
+  Preserve null/unpriced totals/forecasts/charts/CSV; missing local prices do not invalidate valid reports.
 - `showComputed` gates Cost's opt-in computed comparison: table/CSV columns, effort
   annotations, computed total and token-tier charts.
-- Cost remounts affected `DataTable`s on comparison changes to reset sorting,
-  including hidden computed columns.
+- Cost comparison changes remount affected `DataTable`s to reset sorting, including hidden computed columns.
 - CSV follows displayed columns/order; `toCsv` uses `toText` or raw values, never JSX.
-- `csv.js` masks `user` under PII masking even without `toText: maskEmail`.
-  Explicitly mask other identity columns.
+- With PII masking, `csv.js` masks `user` without `toText: maskEmail`; explicitly mask other
+  identities. Formula-like values gain an apostrophe after masking: [CSV](../../docs/reference/ui.md#tables-and-csv).
 - Cost USD accepts zero and at most two decimals. `DonutBody.valueFormatter` ignores
   `valuePrefix`; other charts keep their default formatting.
-- Keep trace absence, loading, errors, unpriced values and measured zero distinct.
-  Shared chart empty-bucket zeros mean recorded usage only; preserve explicit nulls
-  and the coverage qualifier in [ADR-015](../../docs/decisions/ADR-015-idle-chart-buckets.md).
+- Distinguish trace absence/loading/errors/unpriced values/measured zero.
+  Shared chart empty-bucket zeros mean recorded usage only; preserve explicit nulls/coverage:
+  [ADR-015](../../docs/decisions/ADR-015-idle-chart-buckets.md).
 - Activity/approval rates prove neither productivity nor quality. Do not invent saved hours or ROI.
 
 ## Filters, ranges, and refresh
 
-- `RangeContext` owns range URL state; `FilterContext` owns filters. Hydrate once in
-  state initializers; preserve each other's parameters.
+- `RangeContext` owns range URLs; `FilterContext` owns filters. Hydrate once in state
+  initializers; preserve each other's parameters.
 - Never put masked users in URLs. Project filters need `/api/config` reporting
   `schema.projectColumns === true` for both URLs and requests.
-- Model filters on session-scoped measures are not precise attribution; follow the
-  server's documented measurement grain.
-- Query buckets/calendar presets stay UTC. Parse timezone-less API timestamps as UTC,
-  then display chart labels, timestamps and CSV display values in the browser time zone.
+- Session-scoped model filters are not precise attribution; follow the server's documented grain.
+- Query buckets/calendar presets stay UTC. Parse timezone-less API timestamps as UTC;
+  chart labels/timestamps/CSV display values use browser time zone.
   Derive rates from actual range duration, not the last preset; resync local chart
   granularity on global range changes.
-- Use `useApi()` for range/filter forwarding, refresh, aborts, and payload identity.
-  Keep its quantization/grace constants aligned with the server cache warmer.
+- Use `useApi()` to forward ranges/filters and handle refresh/aborts/payload identity.
+  Align quantization/grace constants with the server cache warmer.
 - Refreshes and period changes keep loaded data until replaced; a failed period
-  load clears it. Unchanged payloads keep references. Path/filter/client changes
-  clear the selection; background failures retain data and signal refresh errors.
+  load clears it. Unchanged payloads keep references; path/filter/client changes
+  clear selection. Background failures retain data and signal refresh errors.
   `linkedRange` is only for parent-response bounds. `UserDrawer` does not auto-refresh.
 
 ## Components and channels
 
-- `useGroupsShown()` owns card visibility, including single mode/channel overrides.
-  `GROUP_SEGMENT_ORDER` owns within-row splits; keep these roles distinct.
+- `useGroupsShown()` owns card visibility, including single mode/channel overrides;
+  `GROUP_SEGMENT_ORDER` owns within-row splits.
 - Channels are not emitting clients. Do not identify Codex from an OpenAI model name.
-- Use Card/StatTile help/loading/error/empty conventions; omit absent subtitles/hints
-  with `undefined`.
+- Use Card/StatTile help/loading/error/empty conventions; absent subtitles/hints are `undefined`.
 - Use one navigation element except with the mobile drawer open. Mobile navigation
   uses `Sidebar`'s NAV; keep route/navigation tests aligned.
 - Time-series drag zoom changes the whole page; categorical axes do not zoom.
-- UI is Korean-first with existing English names/identifiers; engineering docs are
-  English-only. Do not translate runtime strings in documentation fixes.
+- UI is Korean-first with existing English names/identifiers. Engineering docs are English-only;
+  documentation fixes must not translate runtime strings.
 
 See [frontend reference](../../docs/reference/frontend.md),
 [UI reference](../../docs/reference/ui.md), and [metric definitions](../../docs/metrics.md).
