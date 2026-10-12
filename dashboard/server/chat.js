@@ -217,13 +217,16 @@ export const SCHEMA_CONTEXT = `테이블(구간·차원에 따라 선택):
    compaction, skill_activated, subagent_completed, api_refusal, plugin_loaded.
 4. otel_traces — Claude/Codex가 공유하는 스팬. Claude 스팬은 beta 설정
    CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1에 따라 누락될 수 있습니다.
-   컬럼: Timestamp, ResourceAttributes(Map), TraceId, SpanId, ParentSpanId, SpanType(claude_
-   code.interaction/llm_request/tool/tool.blocked_on_user/tool.execution/hook 중 하나),
+   컬럼: Timestamp, ResourceAttributes(Map), TraceId, SpanId, ParentSpanId, SpanName,
+   SpanAttributes(Map), Duration(ns), SpanType(interaction/llm_request/tool/
+   tool.blocked_on_user/tool.execution/hook — 접두어 없는 span.type 속성),
    DurationMs, TtftMs(llm_request 전용), AgentId, ParentAgentId, Model, Decision
    (tool.blocked_on_user 전용), UserEmail, EndUserId, SessionId, AppVersion. tool.
    blocked_on_user/tool.execution 스팬은 Claude Code v2.1.214 이전 버전에서는 나오지 않는다
    — 특정 버전 구간에서 이 스팬이 0건이면 "그 그룹의 권한 대기가 0"이 아니라 "그 버전이
    이 스팬을 안 낸다"는 뜻일 수 있으니 AppVersion을 같이 확인하고 단정하지 말 것.
+   claude_code. 접두어는 SpanName에 붙고 SpanType에는 붙지 않습니다. interaction은
+   duration_ms 속성이 없어 DurationMs=0일 수 있으므로 Duration / 1e6으로 ms를 구하세요.
 
 중요 — 공유 테이블에서 클라이언트를 섞지 마세요:
 - otel_logs의 Codex 행은 startsWith(EventName, 'codex.')로 선택합니다. Claude 질문은 필요한
@@ -232,7 +235,8 @@ export const SCHEMA_CONTEXT = `테이블(구간·차원에 따라 선택):
   ResourceAttributes['client'] != 'codex' 조건을 사용하고, 남은 행의 출처가 확인되는지 점검하세요.
 - otel_traces의 Codex 행은 ResourceAttributes['client'] = 'codex'로 선택합니다.
   Claude 스팬 조회는 ResourceAttributes['client'] != 'codex'와 해당 Claude SpanType
-  (예: startsWith(SpanType, 'claude_code.'))을 함께 선택하세요. 필터 없는 전체 스팬 수를
+  (예: SpanType IN ('interaction','llm_request','tool','tool.execution','tool.blocked_on_user','hook'))
+  조건을 함께 선택하세요. 필터 없는 전체 스팬 수를
   Claude 활동으로 답하지 마세요. 빈 client 태그는 검증된 클라이언트 표식이 아닙니다.
 - Codex 진단 메트릭은 별도 codex_metrics_sum / codex_metrics_gauge /
   codex_metrics_histogram / codex_metrics_exponential_histogram에 있습니다. 이 진단

@@ -304,7 +304,9 @@ test("SCHEMA_CONTEXT separates shared logs and traces using actual client predic
   assert.match(SCHEMA_CONTEXT, /NOT startsWith\(EventName, 'codex\.'\)/);
   assert.match(SCHEMA_CONTEXT, /ResourceAttributes\['client'\] = 'codex'/);
   assert.match(SCHEMA_CONTEXT, /ResourceAttributes\['client'\] != 'codex'/);
-  assert.match(SCHEMA_CONTEXT, /startsWith\(SpanType, 'claude_code\.'\)/);
+  assert.match(SCHEMA_CONTEXT, /SpanType IN \('interaction','llm_request','tool','tool\.execution','tool\.blocked_on_user','hook'\)/);
+  assert.doesNotMatch(SCHEMA_CONTEXT, /startsWith\(SpanType, 'claude_code\.'\)/);
+  assert.match(SCHEMA_CONTEXT, /Duration \/ 1e6/);
   assert.match(SCHEMA_CONTEXT, /codex_metrics_exponential_histogram/);
   assert.match(SCHEMA_CONTEXT, /설치마다 이 테이블이 없을 수 있습니다/);
   assert.match(SCHEMA_CONTEXT, /빈 client 태그는 검증된 클라이언트 표식이 아닙니다/);
