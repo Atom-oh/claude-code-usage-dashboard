@@ -50,7 +50,7 @@ returns at most 200 rows with `truncated`, and applies a 30-second abort timer. 
 on the account's readonly profile; it does **not** set `readonly=1` per request.
 `assertReadonlySession` probes the actual session at startup and every ten minutes; false
 or undetermined results disable chat with HTTP 503. See [chat](agent-llm.md) for limits and
-current gaps in character capping and disconnect cancellation.
+the active tool-context cap and disconnect/deadline cancellation limits.
 
 ## Data visibility and masking
 
