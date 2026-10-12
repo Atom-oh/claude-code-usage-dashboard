@@ -9,7 +9,12 @@ const BOM = "\uFEFF";
 
 // RFC 4180 — 쉼표/따옴표/CR/LF를 담은 필드만 따옴표로 감싸고, 안의 따옴표는 두 번 쓴다.
 function quote(field) {
-  const s = field == null ? "" : String(field);
+  let s = field == null ? "" : String(field);
+  // Telemetry dimensions and derived strings are untrusted spreadsheet input.
+  // Quote escaping alone does not stop formulas; keep actual numeric cells numeric.
+  const numericText = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?$/.test(s);
+  if (typeof field === "string" && !numericText && (/^[\s\uFEFF]*[=+\-@]/.test(s) || /^[\t\r\n]/.test(s)))
+    s = "'" + s;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

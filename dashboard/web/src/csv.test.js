@@ -22,6 +22,37 @@ test("BOM at index 0", () => {
   expect(csv.charCodeAt(0)).toBe(0xfeff);
 });
 
+test.each(["=1+1", "+1+1", "-1+2", "@SUM(1)", "  =1", "\t=1", "\r=1", "\n=1", "\uFEFF=1"])(
+  "untrusted formula-like string %j is exported as literal text",
+  value => {
+    const csv = toCsv([{ key: "v", label: "V" }], [{ v: value }]);
+    const expected = "'" + value;
+    expect(csv).toBe("\uFEFFV\r\n" + (/[",\r\n]/.test(expected)
+      ? `"${expected.replace(/"/g, '""')}"` : expected));
+  }
+);
+
+test("headers and toText use the same literal protection; numeric counts remain numeric", () => {
+  const csv = toCsv([{ key: "v", label: "=HEADER", toText: () => "=DERIVED" },
+    { key: "n", label: "N" }, { key: "z", label: "Zero" }],
+  [{ v: "raw", n: -12.5, z: 0 }]);
+  expect(csv).toBe("\uFEFF'=HEADER,N,Zero\r\n'=DERIVED,-12.5,0");
+});
+
+test("restricted numeric and percentage text preserves machine-readable metric formatting", () => {
+  const csv = toCsv([{ key: "v", label: "Value" }], [
+    { v: "-50.0%" }, { v: "+200.0%" }, { v: "-12.5" }, { v: "-1e-3" }, { v: "-1+2" },
+  ]);
+  expect(csv).toBe("\uFEFFValue\r\n-50.0%\r\n+200.0%\r\n-12.5\r\n-1e-3\r\n'-1+2");
+});
+
+test("spreadsheet protection applies after optional user masking without leaking raw identity", () => {
+  setPiiMask(true);
+  const csv = toCsv([{ key: "user", label: "User" }], [{ user: "=private@example.invalid" }], { piiMask: true });
+  expect(csv).toBe("\uFEFFUser\r\n'=p******@example.invalid");
+  expect(csv).not.toContain("private@example.invalid");
+});
+
 test("quoting: comma, doubled quote, CRLF", () => {
   const csv = toCsv([{ key: "v", label: "V" }], [{ v: 'a"b' }, { v: "x,y" }]);
   const rows = csv.slice(1).split("\r\n");
