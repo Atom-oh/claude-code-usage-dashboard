@@ -14,7 +14,7 @@ import { OutcomeMetricsNotice } from "./ProductivitySignals.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
-import { costResolutionLabel, costResolutionOptions } from "../costResolution.js";
+import { costDefaultResolution, costResolutionLabel, costResolutionOptions } from "../costResolution.js";
 
 const INSIGHT_SECTIONS = {
   productivity: ["효율·Effort"], cost: ["효율·Effort"], usage: ["도구·승인"],
@@ -30,7 +30,7 @@ export default function Clients({ page = "overview" }) {
   const costTrends = page === "cost" || page === "trends";
   const resolutionOptions = costResolutionOptions(to - from);
   const hours = resolution?.key === rangeKey && resolutionOptions.includes(resolution.hours)
-    ? resolution.hours : defaultHours;
+    ? resolution.hours : costDefaultResolution(to - from, defaultHours);
   // Only cost and exec chart model cost trends. modelTime=1 is its own cache key, which the
   // default-view warmer does not fill (a cold request), and moving between these two pages and the
   // others changes useApi's identity, so that switch reloads instead of retaining the data.
@@ -92,6 +92,7 @@ export default function Clients({ page = "overview" }) {
         <span className="text-sm font-medium text-ink-700">추이 해상도</span>
         <SegmentedControl options={[...new Set([...resolutionOptions, hours])].sort((a, b) => a - b)
           .map((value) => ({ value: String(value), label: costResolutionLabel(value) }))}
+          className="max-w-full flex-wrap"
           value={String(hours)} onChange={(value) => setResolution({ key: rangeKey, hours: Number(value) })} />
         <p className="w-full text-[12px] text-ink-500">1일 이하는 10분까지 선택할 수 있습니다. 더 긴 기간은 시간·일·주 단위로 집계합니다.</p>
       </div>}

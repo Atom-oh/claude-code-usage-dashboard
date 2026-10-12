@@ -89,6 +89,16 @@ test("one-day Cost defaults to hourly and allows ten minutes, then resets on a w
   expect(within(screen.getByLabelText("비용추이 해상도")).queryByRole("button", { name: "10분" })).toBeNull();
 });
 
+test("a narrow custom Cost range normalizes the global five-minute default to ten minutes", async () => {
+  const { fetchMock } = mount({ enabledClients: ["codex"],
+    entry: "/cost?from=2026-09-01T10%3A00%3A00Z&to=2026-09-01T10%3A50%3A00Z" });
+  await screen.findByText("사용자별 비용", { exact: true });
+  const controls = screen.getByLabelText("비용추이 해상도");
+  expect(within(controls).getByRole("button", { name: "10분" }).getAttribute("aria-pressed")).toBe("true");
+  expect(within(controls).queryByRole("button", { name: "5분" })).toBeNull();
+  expect(commonRequests(fetchMock).at(-1).searchParams.get("intervalHours")).toBe(String(1 / 6));
+});
+
 test("Cost user detail requests the exact masked identity locally and closes on range changes", async () => {
   const { fetchMock } = mount({ enabledClients: ["codex"], entry: "/cost?days=1", piiMask: true });
   const title = await screen.findByText("사용자별 비용", { exact: true });
