@@ -39,6 +39,14 @@ test("headers and toText use the same literal protection; numeric counts remain 
   expect(csv).toBe("\uFEFF'=HEADER,N,Zero\r\n'=DERIVED,-12.5,0");
 });
 
+test("coerced arrays, objects and formatter values receive literal protection", () => {
+  const formula = { toString: () => "=1+1" };
+  expect(toCsv([{ key: "v", label: "Value" }], [{ v: ["=1+1"] }, { v: formula }]))
+    .toBe("\uFEFFValue\r\n'=1+1\r\n'=1+1");
+  expect(toCsv([{ key: "v", label: "Value", toText: () => formula }], [{ v: "raw" }]))
+    .toBe("\uFEFFValue\r\n'=1+1");
+});
+
 test("restricted numeric and percentage text preserves machine-readable metric formatting", () => {
   const csv = toCsv([{ key: "v", label: "Value" }], [
     { v: "-50.0%" }, { v: "+200.0%" }, { v: "-12.5" }, { v: "-1e-3" }, { v: "-1+2" },

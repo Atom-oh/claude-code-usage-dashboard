@@ -13,7 +13,7 @@ function quote(field) {
   // Telemetry dimensions and derived strings are untrusted spreadsheet input.
   // Quote escaping alone does not stop formulas; keep actual numeric cells numeric.
   const numericText = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?$/.test(s);
-  if (typeof field === "string" && !numericText && (/^[\s\uFEFF]*[=+\-@]/.test(s) || /^[\t\r\n]/.test(s)))
+  if (!numericText && (/^[\s\uFEFF]*[=+\-@]/.test(s) || /^[\t\r\n]/.test(s)))
     s = "'" + s;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
