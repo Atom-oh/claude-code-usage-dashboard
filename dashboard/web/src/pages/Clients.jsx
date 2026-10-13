@@ -10,6 +10,7 @@ import { useApi } from "../useApi.js";
 import { formatObserved } from "../clientUsage.js";
 import ClientPanels from "./ClientPanels.jsx";
 import CodexInsights from "./CodexInsights.jsx";
+import Analytics from "./Analytics.jsx";
 import { OutcomeMetricsNotice } from "./ProductivitySignals.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
@@ -66,6 +67,8 @@ export default function Clients({ page = "overview" }) {
       subtitle={`${clients.map((name) => CLIENT_LABELS[name]).join(" + ")} · ${definition.hint}`}
       right={<RangePicker />} />
     <div className="p-4 sm:p-8 flex flex-col gap-6">
+      {/* 공통 뷰에서도 Analytics는 진단 위에 같은 질문 입력·프리셋·대화를 둔다(권한이 없으면 렌더하지 않음). */}
+      {page === "analytics" && <Analytics embedded />}
       <p className="text-sm text-ink-600">
         Claude Code는 보고 비용을 기본으로 표시하며, Anthropic 외 모델은 AWS 정가 추정 비용입니다.
         보고가 없어 계산으로 채운 비용은 별도 추정으로 표시합니다. Codex는 AWS 정가 추정 비용입니다.

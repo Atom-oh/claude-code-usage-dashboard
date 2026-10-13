@@ -5,6 +5,13 @@ Analytics and the floating chat widget call `POST /api/chat`, implemented in
 with one `run_sql` tool. It does not ingest client telemetry through this endpoint.
 See the [API contract](../api-reference.md) and [SQL security boundary](security.md).
 
+Chat is served when Claude Code or Codex collection is enabled; the auth, readonly-probe,
+`chat:query`, rate and admission gates are unchanged. Users with `chat:query` see the
+floating widget in every client view except `/installation`. Analytics always shows the
+free-text question input above the preset questions: Claude detail renders the full page,
+and shared `/analytics` embeds the same input, presets and transcript above the model
+diagnostics. Viewers see neither control.
+
 ## Model and tool loop
 
 `CHAT_MODEL_ID` defaults to the literal configured in `MODEL_ID`
@@ -61,8 +68,11 @@ diagnostic; it describes the counter raw/rollup branch and rejects unconditional
 Non-Anthropic Claude spend needs [ADR-017](../decisions/ADR-017-backend-cost-fallback.md)'s
 log-derived AWS rescaling, which SQL chat does not automatically apply. Raw reports must
 be labelled unadjusted, not dashboard spend. Missing rates/logs remain unavailable.
-The prompt describes Claude analysis and omits automatic Codex deduplication/token/pricing
-adapters; it is not a table allowlist. SQL authorization remains the `claude_code` database
+The prompt frames Claude Code and Codex usage. Its Codex guidance covers the
+`codex.tool_result`/`codex.tool_decision` events and their `LogAttributes` keys,
+`ResourceAttributes['user.email']` identity, `conversation.id` sessions, raw-log windows for
+recent-hour questions, and per-client plus per-tool splits for tool questions. It omits
+automatic Codex deduplication/token/pricing adapters; it is not a table allowlist. SQL authorization remains the `claude_code` database
 with existing sanitizer/readonly gates. `otel_logs`/`otel_traces` are shared with Codex:
 the prompt requires producer/event/span evidence before attributing shared rows to Claude.
 Inherited client tags alone do not establish a producer or exclude proven Claude events.

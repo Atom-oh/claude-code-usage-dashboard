@@ -30,6 +30,13 @@ const CATEGORIES = [
     ],
   },
   {
+    label: "사용자 · 도구",
+    prompts: [
+      (days) => `최근 ${days}일간 사용자별로 가장 많이 쓴 도구(tool_name)와 클라이언트(Claude/Codex)를 알려줘`,
+      () => "특정 사용자의 최근 3시간 사용 내역과 주로 사용한 도구를 요약해줘 (예: ojs0106)",
+    ],
+  },
+  {
     label: "생산성",
     prompts: [
       (days) => `최근 ${days}일간 사용자별 코드 편집 권한 허용률을 비교해줘`,
@@ -45,7 +52,9 @@ const CATEGORIES = [
   },
 ];
 
-export default function Analytics() {
+// embedded: 공통(전체·Codex) 뷰의 /analytics가 모델 진단 위에 같은 채팅 섹션을 넣을 때 쓴다
+// (Clients.jsx) — PageHeader 없이 렌더하고, 권한이 없으면 아무것도 그리지 않는다.
+export default function Analytics({ embedded = false }) {
   const { from, to } = useRange();
   // 이번 달·달력 구간에서는 days가 마지막 프리셋 값이라 질문에 엉뚱한 기간이 실린다.
   const days = Math.max(1, Math.ceil((to - from) / 86400000));
@@ -63,13 +72,39 @@ export default function Analytics() {
     ask(text);
   };
 
-  if (!allowed) return <div><PageHeader title="Analytics" subtitle="조직 데이터 분석" />
+  if (!allowed) return embedded ? null : <div><PageHeader title="Analytics" subtitle="조직 데이터 분석" />
     <p role="status" className="p-8 text-sm text-ink-600">SQL 채팅은 분석 또는 관리자 역할에서 사용할 수 있습니다.</p></div>;
 
+  const Root = embedded ? "section" : "div";
   return (
-    <div>
-      <PageHeader title="Analytics" subtitle="미리 준비된 질문을 누르면 에이전트가 ClickHouse를 직접 조회해 답합니다." />
-      <div className="p-8 flex flex-col gap-5">
+    <Root aria-label={embedded ? "데이터 질문" : undefined}>
+      {!embedded && <PageHeader title="Analytics" subtitle="질문을 입력하거나 미리 준비된 질문을 누르면 에이전트가 ClickHouse를 직접 조회해 답합니다." />}
+      <div className={cn("flex flex-col gap-5", !embedded && "p-8")}>
+        {/* 질문 입력은 대화 시작 여부와 상관없이 항상 맨 위에 둔다 — 프리셋만으로는 원하는 질문을 할 수 없다. */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit(input);
+          }}
+          className="flex items-center gap-2"
+        >
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            aria-label="질문"
+            placeholder="예) ojs0106의 최근 3시간 사용은 뭐였고 주로 어떤 툴에서 동작했어?"
+            className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] focus:border-brand-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            aria-label="질문 보내기"
+            disabled={busy || !input.trim()}
+            className="rounded-lg bg-brand-500 p-2 text-white disabled:opacity-40"
+          >
+            <Send size={15} />
+          </button>
+        </form>
+
         {started ? (
           // 대화가 시작되면 카테고리 그리드 대신, 이어서 물어볼 수 있도록 한 줄 스트립으로 압축.
           <div className="flex gap-2 overflow-x-auto whitespace-nowrap pb-1">
@@ -138,30 +173,9 @@ export default function Analytics() {
               <ChatTrace key={trace.turn} thinking={trace.thinking} sqls={trace.sqls} />
               {status && <div className="self-start text-[11px] text-ink-400">{status}</div>}
             </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submit(input);
-              }}
-              className="flex items-center gap-2 border-t border-ink-100 p-3"
-            >
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="추가로 물어보고 싶은 것이 있나요?"
-                className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] focus:border-brand-500 focus:outline-none"
-              />
-              <button
-                type="submit"
-                disabled={busy || !input.trim()}
-                className="rounded-lg bg-brand-500 p-2 text-white disabled:opacity-40"
-              >
-                <Send size={15} />
-              </button>
-            </form>
           </Card>
         )}
       </div>
-    </div>
+    </Root>
   );
 }

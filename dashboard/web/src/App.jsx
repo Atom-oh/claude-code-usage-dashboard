@@ -63,7 +63,7 @@ function Dashboard() {
                 </Routes>}</>}
               </main>
             </div>
-            {!installation && !common && canChat && <FloatingChat />}
+            {!installation && canChat && <FloatingChat />}
           </FreshnessProvider>
         </FilterProvider>
       </RangeProvider>

@@ -41,7 +41,9 @@ All, Claude and Codex default to shared metrics from `/api/clients/overview`, wi
 the same navigation, headers, filters, cards and table columns. Client switching
 preserves valid routes and date/model/unmasked-user state; unknown paths normalize to `/`.
 `ClientContext` owns selection and Claude `view=detail`, which opens existing advanced/A/B
-pages and chat. Claude group/project links without `view` retain detail compatibility.
+pages. Floating chat and the Analytics question input appear in every view for `chat:query`
+users; shared `/analytics` places that chat above the model diagnostics.
+Claude group/project links without `view` retain detail compatibility.
 Shared views use backend filters; detail uses group/project and drops backend. Leaving
 Claude detail clears `view` and its filters. Both URL-state providers preserve `view`.
 No Codex enterprise comparison or unsupported productivity metrics are added.
