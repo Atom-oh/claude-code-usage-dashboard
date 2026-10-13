@@ -12,6 +12,7 @@ views remain available through the default profile.
 
 Cost SQL skips diagnostic durations/errors and tool-name grouping.
 The fold skips project/tool breakdowns and omits uncomputed diagnostics.
+Observed request counts remain available for Trends tables and exports.
 Both profiles compact stream deltas into their original session/user/model/backend/
 project/event scope. A fixed delta marker replaces arbitrary representative maps;
 full sorted-map identity remains mandatory for completion deduplication.
@@ -49,7 +50,7 @@ headroom. Concurrent HTTP sessions alone do not define database demand.
 Measure shared and distinct cache keys separately, cold/warm results, admission
 failures, query CPU/memory, API serialization and ingestion/merge interference.
 The default cache admits 64 distinct pending loads per process. With two processes,
-140 arrivals sharing a view coalesce into at most two computations. If all 140
+140 arrivals sharing the same cache key coalesce into at most two computations. If all 140
 distinct loads stay pending together, at least 12 exceed the combined 128-load
 bound, even with ideal balancing. Unit tests cover these admission scenarios;
 they are not a database load test or latency guarantee.

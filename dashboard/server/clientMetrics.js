@@ -14,7 +14,7 @@ const ROW_LIMIT = 50000;
 export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 const TOKEN_KEYS = ["tokens", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "reasoning_tokens"];
 const OP_KEYS = ["requests", "rejected_requests", "api_errors", "tool_calls", "tool_errors"];
-const DIAGNOSTIC_FIELDS = ["requests", "api_errors", "tool_calls", "tool_errors",
+const DIAGNOSTIC_FIELDS = ["api_errors", "tool_calls", "tool_errors",
   "request_duration_ms", "ttft_ms"];
 const finite = (n) => ["number", "string"].includes(typeof n) && String(n).trim() !== ""
   && Number.isFinite(Number(n)) && Number(n) >= 0;

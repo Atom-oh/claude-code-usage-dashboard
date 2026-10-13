@@ -22,3 +22,14 @@ export function clientOverview(overrides = {}) {
     ...overrides,
   };
 }
+
+// Mirror the opt-in profile so page tests cannot rely on omitted diagnostics.
+export function costClientOverview(response) {
+  const { by_project, tools, ...out } = response;
+  const omitted = new Set(["api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"]);
+  const trim = (row) => Object.fromEntries(Object.entries(row).filter(([key]) => !omitted.has(key)));
+  out.totals = trim(out.totals || {});
+  for (const key of ["by_client", "by_model", "by_user", "timeseries", "by_model_time"])
+    if (out[key]) out[key] = out[key].map(trim);
+  return { ...out, view: "cost" };
+}

@@ -450,7 +450,7 @@ const modelTimeRecords = [
 const modelTimeClients = ["claude", "codex"];
 
 test("cost folds preserve coverage, tiers, identities and idle buckets while omitting diagnostic breakdowns", () => {
-  const fields = ["requests", "api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"];
+  const fields = ["api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"];
   const projectCost = { ...event, project: "second", context_tier: "long", input_tokens_total: 260000 };
   const cases = [
     modelTimeRecords,
@@ -473,6 +473,7 @@ test("cost folds preserve coverage, tiers, identities and idle buckets while omi
     for (const key of ["by_client", "by_user", "by_model", "by_model_time", "timeseries"])
       expected[key] = expected[key].map(trim);
     assert.deepEqual(cost, { ...expected, view: "cost" });
+    assert.equal(cost.totals.requests, full.totals.requests);
     assert.equal("by_project" in cost || "tools" in cost, false);
   }
 });

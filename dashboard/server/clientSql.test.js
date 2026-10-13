@@ -925,7 +925,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       assert.deepEqual(result.by_user.map(row => row.user), [fallback]);
     });
     await t.test("cost SQL preserves full-view amounts, coverage and populations for scoped fixtures", async () => {
-      const diagnostics = new Set(["requests", "api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"]);
+      const diagnostics = new Set(["api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"]);
       const trim = (row) => Object.fromEntries(Object.entries(row).filter(([key]) => !diagnostics.has(key)));
       const stable = (rows) => rows.map(trim).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
       for (const filters of [

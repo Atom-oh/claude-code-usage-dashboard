@@ -159,10 +159,11 @@ Optional `view=cost` selects the bounded cost profile on this endpoint. Any othe
 value, including an empty value or array, returns 400 before caching. Its cache identity
 is separate from the default view. Cost, token coverage, populations, rejected-request
 evidence, effective bounds and exact-filter acknowledgments retain the same semantics.
-It omits `by_project`, `tools`, and row fields `requests`, `api_errors`, `tool_calls`,
+The response echoes `view="cost"`. It omits `by_project`, `tools`, and row fields `api_errors`, `tool_calls`,
 `tool_errors`, `request_duration_ms`, `ttft_ms`; omitted diagnostics are not measured zeros.
 SQL still retains operational records needed for scope coverage, but skips duration/error
-calculations and tool-name grouping. Shared cost/executive/trend views, trend baselines and
+calculations and tool-name grouping. Observed `requests` remains available, including in
+the Trends period table and CSV; unsupported counts retain null. Shared cost/executive/trend views, trend baselines and
 cost drilldowns use this profile. The default profile retains diagnostic fields.
 See [cost query performance](reference/cost-query-performance.md).
 
