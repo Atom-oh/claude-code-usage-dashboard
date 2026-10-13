@@ -25,7 +25,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 8080;
 const clientConfig = parseClients(process.env);
-const claudeEnabled = clientConfig.enabledClients.includes("claude");
+// 챗은 Claude Code와 Codex 데이터를 모두 조회하므로 둘 중 하나라도 수집 중이면 연다. 둘 다 끈
+// 구성은 parseClients가 기동 시 거부하므로 /api/chat의 이 503은 방어용이다.
+const chatClientsEnabled = ["claude", "codex"].some((name) => clientConfig.enabledClients.includes(name));
 
 // CloudFront(VPC Origin) → 내부 NLB(TCP passthrough) → 파드 구조라 신뢰할 프록시 홉은 딱 1개다.
 // CloudFront가 실클라이언트 IP를 X-Forwarded-For에 append하므로 hop=1이면 req.ip가 그 값이 되고,
@@ -497,7 +499,7 @@ if (!authEnabled && chatAllowed) {
   console.warn("WARNING: CHAT_ALLOW_INSECURE=1 — POST /api/chat (LLM-generated SELECTs) is served WITHOUT authentication.");
 }
 app.post("/api/chat", authentication.requirePermission("chat:query"), express.json(), (req, res) => {
-  if (!claudeEnabled) return res.status(503).json({ error: "Claude 데이터 채팅이 비활성화되어 있습니다" });
+  if (!chatClientsEnabled) return res.status(503).json({ error: "Claude Code·Codex 데이터 수집이 모두 비활성화되어 채팅을 쓸 수 없습니다" });
   if (!chatAllowed) {
     return res.status(503).json({ error: "챗은 인증(BASIC_AUTH_*) 설정 시에만 활성화됩니다" });
   }

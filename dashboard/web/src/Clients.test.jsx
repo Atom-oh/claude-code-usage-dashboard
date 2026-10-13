@@ -20,7 +20,7 @@ function LocationSpy() {
   return null;
 }
 
-function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500, respond } = {}) {
+function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500, respond, session } = {}) {
   setPiiMask(piiMask);
   const fetchMock = vi.fn((url) => {
     const path = String(url).split("?")[0];
@@ -38,7 +38,7 @@ function mount({ enabledClients, entry = "/", piiMask = true, response = clientO
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   const rendered = render(
     <MemoryRouter initialEntries={[entry]}>
-      <ConfigProvider config={{ enabledClients, piiMask, schema: { projectColumns: true } }}>
+      <ConfigProvider config={{ enabledClients, piiMask, schema: { projectColumns: true }, session }}>
         <LocationSpy />
         <App />
       </ConfigProvider>
@@ -234,7 +234,7 @@ test.each(["/productivity", "/analytics", "/users", "/cost", "/missing"])("Codex
   expect(commonRequests(fetchMock)[0].searchParams.get("backend")).toBe("bedrock-mantle");
 });
 
-test("switching from Claude clears incompatible filters, preserves range/user/model and closes schema-specific chat", async () => {
+test("switching from Claude clears incompatible filters, preserves range/user/model and keeps chat available", async () => {
   const { fetchMock, container } = mount({
     enabledClients: ["claude", "codex"], piiMask: false,
     entry: "/cost?client=claude&from=2026-09-01T00:00:00.000Z&to=2026-09-03T00:00:00.000Z&group=enterprise&project=repo&model=fixture&user=alice",
@@ -254,8 +254,8 @@ test("switching from Claude clears incompatible filters, preserves range/user/mo
   expect(first.get("model")).toBe("fixture");
   expect(first.has("group")).toBe(false);
   expect(first.has("project")).toBe(false);
-  expect(screen.queryByRole("button", { name: "Ask Claude", exact: true })).toBeNull();
-  expect(screen.queryByPlaceholderText("사용량에 대해 질문하세요")).toBeNull();
+  expect(screen.getByRole("button", { name: "Ask Claude", exact: true })).toBeTruthy();
+  expect(screen.getByPlaceholderText("사용량에 대해 질문하세요")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
   await waitFor(() => expect(new URLSearchParams(location.search).get("days")).toBe("7"));
   expect(selection().value).toBe("codex");
@@ -267,6 +267,37 @@ test("switching from Claude clears incompatible filters, preserves range/user/mo
   expect(screen.getByRole("button", { name: "Claude 상세 보기" })).toBeTruthy();
   expect(container.querySelector("nav").textContent).toContain("Productivity");
   expect(new URLSearchParams(location.search).has("group")).toBe(false);
+});
+
+const QUESTION_PLACEHOLDER = "예) ojs0106의 최근 3시간 사용은 뭐였고 주로 어떤 툴에서 동작했어?";
+
+test.each([[["codex"], "codex"], [["claude", "codex"], "all"]])("common Analytics for %j shows the question input above diagnostics plus the floating chat", async (enabledClients, client) => {
+  const { fetchMock, container } = mount({ enabledClients, entry: `/analytics?client=${client}` });
+  await screen.findByRole("heading", { name: "Analytics" });
+  const chat = screen.getByRole("region", { name: "데이터 질문" });
+  expect(within(chat).getByText("사용자 · 도구")).toBeTruthy();
+  await waitFor(() => expect(container.querySelector("[data-shared-client-panels]")).not.toBeNull());
+  const diagnostics = container.querySelector("[data-shared-client-panels]");
+  expect(chat.compareDocumentPosition(diagnostics) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByText("지표 지원 범위")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Ask Claude", exact: true })).toBeTruthy();
+  const input = within(chat).getByPlaceholderText(QUESTION_PLACEHOLDER);
+  fireEvent.change(input, { target: { value: "alice의 최근 3시간 도구 사용을 알려줘" } });
+  fireEvent.submit(input.closest("form"));
+  await waitFor(() => expect(requests(fetchMock).some((url) => url.pathname === "/api/chat")).toBe(true));
+  const [, init] = fetchMock.mock.calls.find(([url]) => String(url) === "/api/chat");
+  expect(JSON.parse(init.body).messages).toEqual([{ role: "user", content: "alice의 최근 3시간 도구 사용을 알려줘" }]);
+});
+
+test("an OIDC viewer keeps common Analytics diagnostics without any chat control", async () => {
+  const session = { mode: "oidc", name: "Fixture", role: "viewer",
+    expiresAt: new Date(Date.now() + 900_000).toISOString(), permissions: ["telemetry:read"] };
+  const { container } = mount({ enabledClients: ["codex"], entry: "/analytics?client=codex", session });
+  await screen.findByRole("heading", { name: "Analytics" });
+  await waitFor(() => expect(container.querySelector("[data-shared-client-panels]")).not.toBeNull());
+  expect(screen.queryByRole("region", { name: "데이터 질문" })).toBeNull();
+  expect(screen.queryByPlaceholderText(QUESTION_PLACEHOLDER)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Ask Claude", exact: true })).toBeNull();
 });
 
 test("a disabled Codex selection falls back to Claude without removing its supported detail URL", async () => {
