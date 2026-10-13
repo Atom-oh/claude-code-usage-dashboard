@@ -149,7 +149,7 @@ test("fromByModelTime builds model cells, timeline metadata and the idle fill pe
   expect("idle" in codex[0]).toBe(false);
 });
 
-test("fromByModelTime marks a computed_estimate or mixed cost_basis as estimated, and nothing else", () => {
+test("fromByModelTime marks computed fallback without treating a mixed/AWS basis as missing reports", () => {
   const data = { ...OV, by_model_time: [
     { ...OV.by_model_time[0], cost_basis: "computed_estimate" },
     ...OV.by_model_time.slice(1),
@@ -164,7 +164,16 @@ test("fromByModelTime marks a computed_estimate or mixed cost_basis as estimated
   const metaData = { bucket_hours: 1, effective_range: { from: "2026-09-14T10:00:00.000Z", to: "2026-09-14T11:00:00.000Z" },
     timeseries: [{ client: "claude", t: "2026-09-14T10:00:00Z", cost_usd: 3, cost_partial: false, unpriced: 0, cost_basis: "mixed" }],
     by_model_time: [] };
+  expect(fromByModelTime(metaData, "claude")[0].estimated).toBe(false);
+  metaData.timeseries[0].cost_estimated = 1;
   expect(fromByModelTime(metaData, "claude")[0].estimated).toBe(true);
+  for (const basis of ["mixed", "aws_list_estimate"]) {
+    const changed = { ...OV, by_model_time: [{ ...OV.by_model_time[0], cost_basis: basis, cost_estimated: 0 }] };
+    expect(fromByModelTime(changed, "claude").filter(cell => cell.model !== null)
+      .every(cell => cell.estimated === false)).toBe(true);
+    changed.by_model_time[0].cost_estimated = 1;
+    expect(fromByModelTime(changed, "claude").find(cell => cell.model !== null).estimated).toBe(true);
+  }
 });
 
 test("fromByModelTime returns null when the by_model_time dimension is missing", () => {

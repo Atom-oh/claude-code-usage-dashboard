@@ -139,11 +139,11 @@ test("computed_estimate and mixed cost bases disclose the estimated count separa
   expect(presentationRow({ ...codexUsage, cost_basis: "computed_estimate" }).cost_basis_label)
     .toBe("계산 추정");
   expect(presentationRow({ ...codexUsage, cost_basis: "computed_estimate", cost_estimated: 3 })
-    .cost_basis_label).toBe("계산 추정 · 추정 3건");
+    .cost_basis_label).toBe("계산 추정 · 계산 추정 3건");
   expect(presentationRow({ ...codexUsage, cost_basis: "mixed", cost_estimated: 2 }).cost_basis_label)
-    .toBe("보고+추정 · 추정 2건");
+    .toBe("혼합 기준 · 계산 추정 2건");
   expect(presentationRow({ ...codexUsage, cost_basis: "mixed", cost_partial: true, unpriced: 1,
-    cost_estimated: 2 }).cost_basis_label).toBe("보고+추정 · 부분합 · 미산정 1건 제외 · 추정 2건");
+    cost_estimated: 2 }).cost_basis_label).toBe("혼합 기준 · 부분합 · 미산정 1건 제외 · 계산 추정 2건");
 });
 
 test("partial cost does not fill missing token components, identities or zero denominators", () => {

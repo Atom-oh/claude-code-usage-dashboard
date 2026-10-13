@@ -67,7 +67,8 @@ export default function Clients({ page = "overview" }) {
       right={<RangePicker />} />
     <div className="p-4 sm:p-8 flex flex-col gap-6">
       <p className="text-sm text-ink-600">
-        Claude Code는 클라이언트 보고 비용, Codex는 AWS 정가 추정 비용입니다.
+        Claude Code는 보고 비용을 기본으로 표시하며, Anthropic 외 모델은 AWS 정가 추정 비용입니다.
+        보고가 없어 계산으로 채운 비용은 별도 추정으로 표시합니다. Codex는 AWS 정가 추정 비용입니다.
         확인된 보고·추정 비용만 합산하고 미산정 비용은 제외합니다.
         일부가 제외되면 부분합, 비용이 모두 미산정이면 —로 표시합니다. 실청구와 다를 수 있습니다.
       </p>

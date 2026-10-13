@@ -635,6 +635,8 @@ test("exact drilldowns validate identities and bind intersecting user/model cons
   assert.match(sql, /user = \{clientUserExact:String\}/);
   assert.match(sql, /model = \{clientModelExact:String\}/);
   assert.ok(!sql.includes("alice@example.invalid"));
+  assert.match(sql, /mapSort\(any\(ResourceAttributes\)\), mapSort\(any\(LogAttributes\)\)/);
+  assert.ok(!sql.includes("any(mapSort("), "bulk delta representatives are sorted once after aggregation");
   for (const field of ["userExact", "modelExact"])
     for (const value of [[], {}, "a".repeat(257)])
       assert.throws(() => validateClientFilters({ [field]: value }, ["codex"]));

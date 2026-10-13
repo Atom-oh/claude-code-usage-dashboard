@@ -31,6 +31,15 @@ test("exact row drilldowns intersect partial filters without overwriting their p
   assert.match(f.where, / = \{fModelExact:String\}/);
 });
 
+test("client counter raw input narrows only user/model partitions throughout its baseline", () => {
+  const src = readFileSync(fileURLToPath(new URL("./queries.js", import.meta.url)), "utf8");
+  const part = src.slice(src.indexOf("export async function clientClaudeRows("), src.indexOf("export async function kpiSummary("));
+  assert.match(part, /const inputFilter = filterCond/);
+  assert.match(part, /user: "UserEmail", model: "Model"/);
+  assert.ok(part.includes("`${metricFilter} ${inputFilter.where}`"));
+  assert.ok(!part.includes('backend: "Model"'), "session backend is not guessed from the counter model");
+});
+
 // normModel()의 5단계 regex는 pricing.js normalizeModelId() / grafana-ab-queries.sql 패널 12와
 // 반드시 동기 유지해야 하는 사본이다(각 파일 주석에 명시) — 값 비교는 SQL 문자열이라 못 하지만,
 // SQL이 만드는 4번째 단계(bedrock 버전 접미사) 패턴이 -v1:0뿐 아니라 :0 없는 맨 -v1까지
