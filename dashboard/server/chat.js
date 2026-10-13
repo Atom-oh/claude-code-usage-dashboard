@@ -245,6 +245,24 @@ export const SCHEMA_CONTEXT = `테이블(구간·차원에 따라 선택):
   샘플을 완료 로그의 사용량·비용에 더하지 마세요. 설치마다 이 테이블이 없을 수 있습니다.
   존재 여부가 확인되지 않거나 조회가 미지원이면 0으로 답하지 말고 확인 불가로 답하세요.
 
+중요 — Codex 도구·사용자·세션(otel_logs):
+- Codex 도구 이벤트는 EventName 'codex.tool_result'(도구 실행 결과)와 'codex.tool_decision'(승인
+  결정)입니다. LogAttributes 키: tool_name, tool_namespace, mcp_server, success, duration_ms, call_id,
+  conversation.id(세션), model, client, originator, agent_name. tool_decision에는 decision과 source도
+  있습니다. ToolName/Success/DurationMs 컬럼은 같은 tool_name/success/duration_ms 키를 승격한 값입니다.
+- Codex 사용자는 ResourceAttributes['user.email']입니다(UserEmail 컬럼이 같은 값, 비어 있으면
+  ResourceAttributes['enduser.id']). LogAttributes['user.email']은 비어 있을 수 있으니 쓰지 마세요.
+- Codex 세션은 LogAttributes['conversation.id']입니다. SessionId 컬럼(session.id 키)은 Codex 행에서
+  비어 있을 수 있습니다.
+- "최근 N시간" 사용 내역·도구 질문은 시간 롤업이 아니라 원본 otel_logs를
+  Timestamp >= now() - INTERVAL N HOUR로 조회하고, 실제 집계한 구간(시작~끝 시각)을 답변에 밝히세요.
+- "주로 어떤 툴/도구를 썼는지" 질문에는 클라이언트별 분리(Claude Code는 EventName IN
+  ('tool_result','claude_code.tool_result'), Codex는 'codex.tool_result')와 tool_name별 호출 수를 함께
+  답하고, 가능하면 성공률(success 'true'/'false', 그 외 값은 알 수 없음으로 분리)과 duration_ms도
+  보여주세요. 사용자 이름만 주어지면 이메일 앞부분으로 매칭하고(예:
+  coalesce(nullIf(UserEmail,''), nullIf(EndUserId,'')) LIKE 'alice%'), 여러 명이 걸리면 사용자별로
+  나누세요. 이 SQL은 대시보드의 Codex 중복 제거를 적용하지 않으니 원본 이벤트 수로 밝히세요.
+
 중요 — temporality 분기(단정하지 말 것): AggregationTemporality는 거의 항상 2(cumulative)지만
 session.count 등 일부 데이터포인트는 1(delta)로도 옵니다. 대시보드 서버(queries.js)도 매번
 if(AggregationTemporality = 2, ..., ...)로 분기합니다 — 2로 가정하고 max()만 쓰면 delta 행이
@@ -343,7 +361,7 @@ ${PRICING_PROMPT_TABLE}
 // GROUP_CTE(grouping.js)를 그대로 인용한다 — 대시보드 서버가 쓰는 규칙과 프롬프트가 여기서
 // 드리프트하면(예: has_org 판별 로직이 바뀌는데 프롬프트는 그대로면) 모델이 대시보드와 다른
 // 숫자를 답한다. 복제하지 않고 import해서 원본이 바뀌면 프롬프트도 자동으로 따라간다.
-export const SYSTEM = `당신은 Claude Code 사용량 대시보드의 분석 어시스턴트입니다. ClickHouse(claude_code DB)를 조회해 질문에 답하세요.
+export const SYSTEM = `당신은 Claude Code·Codex 사용량 대시보드의 분석 어시스턴트입니다. ClickHouse(claude_code DB)를 조회해 Claude Code와 Codex 사용에 관한 질문에 답하세요.
 
 ${SCHEMA_CONTEXT}
 

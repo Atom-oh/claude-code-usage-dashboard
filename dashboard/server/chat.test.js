@@ -313,6 +313,40 @@ test("SCHEMA_CONTEXT separates shared logs and traces using actual client predic
   assert.match(SCHEMA_CONTEXT, /빈 client 태그는 검증된 클라이언트 표식이 아닙니다/);
 });
 
+test("SCHEMA_CONTEXT teaches Codex tool events, identity, sessions and recent-hour windows", () => {
+  assert.match(SCHEMA_CONTEXT, /'codex\.tool_result'/);
+  assert.match(SCHEMA_CONTEXT, /'codex\.tool_decision'/);
+  for (const key of ["tool_name", "tool_namespace", "mcp_server", "success", "duration_ms", "call_id",
+    "conversation.id", "originator", "agent_name", "decision과 source"]) assert.ok(SCHEMA_CONTEXT.includes(key), key);
+  assert.match(SCHEMA_CONTEXT, /Codex 사용자는 ResourceAttributes\['user\.email'\]/);
+  assert.match(SCHEMA_CONTEXT, /LogAttributes\['user\.email'\]은 비어 있을 수 있으니/);
+  assert.match(SCHEMA_CONTEXT, /Codex 세션은 LogAttributes\['conversation\.id'\]/);
+  assert.match(SCHEMA_CONTEXT, /Timestamp >= now\(\) - INTERVAL N HOUR/);
+  assert.match(SCHEMA_CONTEXT, /EventName IN\s+\('tool_result','claude_code\.tool_result'\)/);
+  assert.match(SCHEMA_CONTEXT, /LIKE 'alice%'/);
+});
+
+test("SYSTEM frames Claude Code and Codex usage and keeps Codex diagnostics out of usage", () => {
+  assert.match(SYSTEM, /^당신은 Claude Code·Codex 사용량 대시보드/);
+  assert.match(SYSTEM, /Codex 진단 메트릭·트레이스를 사용량·비용에 더하지 마세요/);
+  assert.match(SYSTEM, /Codex 완료 로그의 중복 제거·토큰·가격 집계는\s+자동 적용하지 않습니다/);
+});
+
+// 프롬프트가 가르친 도구 질문 형태(클라이언트 분리·tool_name별·최근 N시간·이메일 앞부분 매칭)가
+// 샌드박스를 통과해야 한다 — 막히면 프롬프트대로 써도 챗이 답하지 못한다.
+test("sanitizeSql passes the per-client tool query taught in SCHEMA_CONTEXT", () => {
+  const sql = `
+SELECT if(startsWith(EventName, 'codex.'), 'Codex', 'Claude Code') AS client, ToolName AS tool,
+       count() AS calls, countIf(Success = 'true') AS succeeded, countIf(Success = 'false') AS failed,
+       avg(toFloat64OrNull(LogAttributes['duration_ms'])) AS avg_ms
+FROM claude_code.otel_logs
+WHERE EventName IN ('tool_result','claude_code.tool_result','codex.tool_result')
+  AND Timestamp >= now() - INTERVAL 3 HOUR
+  AND coalesce(nullIf(UserEmail,''), nullIf(EndUserId,'')) LIKE 'alice%'
+GROUP BY client, tool ORDER BY calls DESC`;
+  assert.doesNotThrow(() => sanitizeSql(sql));
+});
+
 test("SCHEMA_CONTEXT does not promise rollup-only dashboard queries or exact parity", () => {
   assert.match(SCHEMA_CONTEXT, /4시간 이하 원본/);
   assert.doesNotMatch(SCHEMA_CONTEXT, /대시보드의 모든 쿼리가 이걸 쓴다/);

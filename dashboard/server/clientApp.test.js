@@ -64,8 +64,18 @@ const requests=JSON.parse(process.env.CLIENT_REQUESTS);
 const results=[];
 for(const path of requests) {
   const before=dataQueries;
-  const r=await fetch(base+path,{headers:path.includes('unauth=1')?{}:headers});
-  const text=await r.text();let body;try{body=JSON.parse(text)}catch{body=text}
+  // 'POST <path>' sends an empty chat history. Chat stays fail-closed until the asynchronous
+  // readonly probe answers, so only that 503 is retried.
+  const post=path.startsWith('POST ');
+  const auth=path.includes('unauth=1')?{}:headers;
+  const init=post?{method:'POST',headers:{...auth,'content-type':'application/json'},body:'{"messages":[]}'}:{headers:auth};
+  let r,text;
+  for(let attempt=0;;attempt++){
+    r=await fetch(base+(post?path.slice(5):path),init);text=await r.text();
+    if(!post||r.status!==503||!text.includes('readonly')||attempt>=50)break;
+    await new Promise(x=>setTimeout(x,20));
+  }
+  let body;try{body=JSON.parse(text)}catch{body=text}
   results.push({status:r.status,body,cache:r.headers.get('cache-control'),dataQueries:dataQueries-before});
 }
 console.log(JSON.stringify(results));
@@ -121,6 +131,17 @@ test("Codex-only deployment gates legacy routes and preserves authenticated clie
   assert.equal(rows[5].status, 400);
   assert.equal(rows[5].dataQueries, 0);
   assert.equal(rows[6].status, 200);
+});
+
+test("chat serves Codex-only deployments behind the unchanged auth and readonly gates", async () => {
+  const [unauthenticated, chat] = await scenario(false, true, ["POST /api/chat?unauth=1", "POST /api/chat"]);
+  assert.equal(unauthenticated.status, 401);
+  // An empty history fails inside the handler, so an SSE error on HTTP 200 shows that every
+  // gate passed without calling the model.
+  assert.equal(chat.status, 200);
+  assert.equal(chat.cache, "no-cache");
+  assert.match(chat.body, /^event: error\n/);
+  assert.equal(chat.dataQueries, 0);
 });
 
 test("client cache identity never reuses a different client's result", async () => {
