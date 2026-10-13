@@ -151,8 +151,21 @@ Exact responses echo `applied_filters={userExact,modelExact,backend}`; the UI ve
 acknowledgment before presenting identity detail, including during a rolling upgrade.
 Raw Claude counter inputs also narrow user/model partitions throughout the baseline.
 Session channel/backend inference and model-less coverage evidence retain their existing scope.
-Bulk delta scope evidence sorts the selected attribute maps after aggregation, rather than
-sorting every stream fragment; completion deduplication keeps the original full identity.
+Bulk delta scope evidence keeps extracted scope dimensions and a fixed delta marker, without
+retaining or sorting arbitrary attribute maps; completion deduplication keeps the original
+full identity. Token-like attributes on a delta never become completion usage.
+
+Optional `view=cost` selects the bounded cost profile on this endpoint. Any other supplied
+value, including an empty value or array, returns 400 before caching. Its cache identity
+is separate from the default view. Cost, token coverage, populations, rejected-request
+evidence, effective bounds and exact-filter acknowledgments retain the same semantics.
+The response echoes `view="cost"`. It omits `by_project`, `tools`, and row fields `api_errors`, `tool_calls`,
+`tool_errors`, `request_duration_ms`, `ttft_ms`; omitted diagnostics are not measured zeros.
+SQL still retains operational records needed for scope coverage, but skips duration/error
+calculations and tool-name grouping. Observed `requests` remains available, including in
+the Trends period table and CSV; unsupported counts retain null. Shared cost/executive/trend views, trend baselines and
+cost drilldowns use this profile. The default profile retains diagnostic fields.
+See [cost query performance](reference/cost-query-performance.md).
 
 Codex detail log summaries use one query for full-identity deduplication, per-response
 pricing and scope evidence. The 50,000-row transfer budget applies to aggregate

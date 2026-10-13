@@ -12,6 +12,16 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-13 cost query profile)
+
+- Add a validated cost profile for shared cost/executive/trend requests and exact
+  drilldowns. Preserve cost/token coverage, populations and observed request counts;
+  skip diagnostic calculations and project/tool response folds.
+- Compact stream-delta evidence without representative attribute maps, retaining
+  scope identity and full completion deduplication. Hardware and capacity limits remain.
+- Document schema accelerator proposals and distinguish shared-cache arrivals from
+  distinct pending requests; no database-engine replacement or capacity guarantee.
+
 ### Changed (2026-10-12 model cost chart styling)
 
 - Replace fallback-model hatching with stable solid palettes and matching legend swatches.

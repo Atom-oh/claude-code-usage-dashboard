@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "./App.jsx";
 import { ConfigProvider } from "./ConfigContext.jsx";
 import { maskEmail, setPiiMask } from "./fmt.js";
-import { clientOverview, codexUsage } from "./test/clientOverview.js";
+import { clientOverview, costClientOverview, codexUsage } from "./test/clientOverview.js";
 import * as csv from "./csv.js";
 
 class ResizeObserverStub {
@@ -27,11 +27,13 @@ function mount({ enabledClients, entry = "/", piiMask = true, response = clientO
     const u = new URL(String(url), "http://localhost");
     const exact = u.searchParams.has("userExact") || u.searchParams.has("modelExact");
     if (path === "/api/clients/overview" && pending) return new Promise(() => {});
-    const body = path === "/api/health/data" ? { status: "ok" }
+    let body = path === "/api/health/data" ? { status: "ok" }
       : path === "/api/clients/overview" ? respond?.(u) ?? { ...response, ...(exact ? {
         applied_filters: { userExact: u.searchParams.get("userExact") || "",
           modelExact: u.searchParams.get("modelExact") || "", backend: u.searchParams.get("backend") || "" },
       } : {}) } : [];
+    if (path === "/api/clients/overview" && u.searchParams.get("view") === "cost")
+      body = costClientOverview(body);
     return Promise.resolve({ ok: !(failed && path === "/api/clients/overview"), status: failed ? failStatus : 200, json: async () => body });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -82,6 +84,7 @@ test("one-day Cost defaults to hourly and allows ten minutes, then resets on a w
   const { fetchMock } = mount({ enabledClients: ["codex"], entry: "/cost?days=1" });
   await screen.findByText("사용자별 비용", { exact: true });
   expect(commonRequests(fetchMock).at(-1).searchParams.get("intervalHours")).toBe("1");
+  expect(commonRequests(fetchMock).at(-1).searchParams.get("view")).toBe("cost");
   fireEvent.click(within(screen.getByLabelText("비용추이 해상도")).getByRole("button", { name: "10분" }));
   await waitFor(() => expect(commonRequests(fetchMock).at(-1).searchParams.get("intervalHours")).toBe(String(1 / 6)));
   fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
@@ -105,6 +108,7 @@ test("Cost user detail requests the exact masked identity locally and closes on 
   fireEvent.click(within(title.closest(".shadow-card")).getByRole("button", { name: maskEmail("alice@example.test") }));
   await waitFor(() => expect(commonRequests(fetchMock).some((url) =>
     url.searchParams.get("userExact") === "alice@example.test")).toBe(true));
+  expect(commonRequests(fetchMock).find((url) => url.searchParams.has("userExact")).searchParams.get("view")).toBe("cost");
   expect(location.search).not.toContain("alice");
   expect(screen.getByRole("region", { name: "비용 상세" }).textContent).not.toContain("alice@example.test");
   expect(screen.getByText("선택 대상 비용 추이")).toBeTruthy();
@@ -577,7 +581,10 @@ const trendTitles = (container) => [...container.querySelectorAll('section[aria-
 test.each([["/exec", "1"], ["/cost", "1"], ["/usage", null], ["/", null]])("%s requests modelTime=%s on the shared overview", async (entry, expected) => {
   const { fetchMock } = mount({ enabledClients: ["claude", "codex"], entry, response: modelTimeResponse() });
   await waitFor(() => expect(commonRequests(fetchMock).length).toBeGreaterThan(0));
-  for (const url of commonRequests(fetchMock)) expect(url.searchParams.get("modelTime")).toBe(expected);
+  for (const url of commonRequests(fetchMock)) {
+    expect(url.searchParams.get("modelTime")).toBe(expected);
+    expect(url.searchParams.get("view")).toBe(expected ? "cost" : null);
+  }
 });
 
 test.each([
@@ -598,15 +605,20 @@ test("a row-limit 400 on the shared overview shows the error and no model cost t
 test("Trends request range-sized buckets and compare against the preceding window", async () => {
   setPiiMask(true);
   const current = clientOverview({ effective_range: { from: "2026-09-02T00:00:00.000Z",
-    to: "2026-09-09T00:00:00.000Z", requested_to: "2026-09-09T00:00:00.000Z" }, bucket_hours: 24 });
+    to: "2026-09-09T00:00:00.000Z", requested_to: "2026-09-09T00:00:00.000Z" }, bucket_hours: 24,
+    timeseries: [{ ...codexUsage, t: "2026-09-02T00:00:00.000Z", requests: 7 },
+      { ...codexUsage, t: "2026-09-03T00:00:00.000Z", requests: 0 },
+      { ...codexUsage, t: "2026-09-04T00:00:00.000Z", requests: null }] });
   const before = clientOverview({ by_client: current.by_client.map((row) => ({ ...row,
     cost_usd: row.cost_usd / 2, sessions: 1, tokens_partial: true })),
     effective_range: { from: "2026-08-26T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" } });
   const fetchMock = vi.fn((url) => {
     const u = new URL(String(url), "http://localhost");
-    const body = u.pathname === "/api/health/data" ? { status: "ok" }
+    let body = u.pathname === "/api/health/data" ? { status: "ok" }
       : u.pathname !== "/api/clients/overview" ? []
       : u.searchParams.get("to") === "2026-09-02T00:00:00.000Z" ? before : current;
+    if (u.pathname === "/api/clients/overview" && u.searchParams.get("view") === "cost")
+      body = costClientOverview(body);
     return Promise.resolve(ok(body));
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -621,12 +633,21 @@ test("Trends request range-sized buckets and compare against the preceding windo
   await waitFor(() => expect(commonRequests(fetchMock).some((u) => u.searchParams.get("to") === "2026-09-02T00:00:00.000Z")).toBe(true));
   const [first] = commonRequests(fetchMock);
   expect(first.searchParams.get("intervalHours")).toBe("24");
+  expect(first.searchParams.get("view")).toBe("cost");
   const previous = commonRequests(fetchMock).find((u) => u.searchParams.get("to") === "2026-09-02T00:00:00.000Z");
+  expect(previous.searchParams.get("view")).toBe("cost");
   expect(previous.searchParams.get("from")).toBe("2026-08-26T00:00:00.000Z");
   const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
   await waitFor(() => expect(comparison.textContent).toContain("+100%"));
   // A partial baseline is labelled in the table (and its CSV), never shown as complete.
   expect(comparison.textContent).toContain("(부분합 포함)");
+  const periods = screen.getByText("기간별 관측값", { exact: true }).closest(".shadow-card");
+  const rows = within(periods).getAllByRole("row").slice(1);
+  expect(rows.map(row => within(row).getAllByRole("cell").at(-1).textContent)).toEqual(["7", "0", "—"]);
+  const downloaded = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+  fireEvent.click(within(periods).getByRole("button", { name: "CSV" }));
+  const exported = downloaded.mock.calls.at(-1)[1].trimEnd().split("\r\n").slice(1);
+  expect(exported.map(row => row.split(",").at(-1))).toEqual(["7", "0", ""]);
   expect(screen.getByText("일간 집계")).toBeTruthy();
   expect(document.body.textContent).not.toContain("이전 기간 대비 증감은 제공하지 않습니다");
 });

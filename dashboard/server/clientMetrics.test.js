@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldClientMetrics, validateClientFilters, buildCodexQuery, clientBucketSeconds, rebucketRows, effectiveClientEnd } from "./clientMetrics.js";
+import { foldClientMetrics, validateClientFilters, validateClientView, buildCodexQuery, clientBucketSeconds, rebucketRows, effectiveClientEnd } from "./clientMetrics.js";
 
 const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", session: "conversation-1",
   user: "person@example.invalid", backend: "bedrock-mantle", model: "openai.gpt-6-astra",
@@ -399,8 +399,28 @@ test("Codex stream deltas skip the full-row DISTINCT and keep one evidence row p
   assert.match(distinctBranch, /NOT \(EventName IN \('codex.sse_event', 'codex.websocket_event'\) AND endsWith\(LogAttributes\['event.kind'\], '.delta'\)\)/);
   assert.match(deltaBranch, /GROUP BY session, user, model, backend, project, event_name/);
   assert.doesNotMatch(deltaBranch.split("), typed AS")[0], /DISTINCT/);
+  assert.doesNotMatch(deltaBranch.split("), typed AS")[0], /any\(ResourceAttributes\)|any\(LogAttributes\)/);
+  assert.match(deltaBranch, /map\('event.kind', 'scope.delta'\)/);
   const claude = buildCodexQuery(new Date("2026-09-14"), new Date("2026-09-15"), {}, {}, "claude").sql;
   assert.doesNotMatch(claude, /endsWith\(LogAttributes\['event.kind'\], '.delta'\)/);
+});
+
+test("cost view is explicit and invalid values cannot select a query profile", () => {
+  assert.equal(validateClientView({}), false);
+  assert.equal(validateClientView({ view: "cost" }), true);
+  for (const view of ["", "all", "Cost", ["cost"], true])
+    assert.throws(() => validateClientView({ view }), /invalid view/);
+});
+
+test("cost SQL retains full event deduplication and rejection evidence without diagnostic calculations", () => {
+  const { sql } = buildCodexQuery(new Date("2026-09-14"), new Date("2026-09-15"),
+    {}, undefined, "codex", 600, { costView: true });
+  assert.match(sql, /SELECT DISTINCT Timestamp, mapSort\(ResourceAttributes\)/);
+  assert.match(sql, /NOT arrayExists\(k -> mapContains\(a,k\)/);
+  assert.match(sql, /requires_usage/);
+  assert.match(sql, /toFloat64OrZero\(a\['input_token_count'\]\) AS in_n/);
+  assert.match(sql, /NULL AS errors, NULL AS duration_ms, NULL AS duration_count/);
+  assert.doesNotMatch(sql, /a\['duration_ms'\]|a\['tool_name'\]|a\['success'\]/);
 });
 
 test("client model terms are normalized and bound", () => {
@@ -428,6 +448,35 @@ const modelTimeRecords = [
     input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reported_cost: 0 },
 ];
 const modelTimeClients = ["claude", "codex"];
+
+test("cost folds preserve coverage, tiers, identities and idle buckets while omitting diagnostic breakdowns", () => {
+  const fields = ["api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"];
+  const projectCost = { ...event, project: "second", context_tier: "long", input_tokens_total: 260000 };
+  const cases = [
+    modelTimeRecords,
+    [event, projectCost, { ...event, kind: "tool", tool: "fixture", model: "", count: 3 }],
+    [{ ...event, kind: "request", rejected_count: 1, requires_usage: 0 }],
+    [event, { ...event, kind: "request", user: "other@example.invalid" }],
+    [{ ...event, input_tokens_total: null, usage_valid: false },
+      { ...event, model: "unknown", output_tokens: 0 }],
+    [{ ...event, client: "claude", input_tokens: null, reported_cost: 3 },
+      { ...event, client: "claude", timeline_only: 1, token_observed: 1, cost_observed: 0, cost_missing: 1 }],
+    [{ ...event, client: "claude", reported_cost: 0, input_tokens: 0, output_tokens: 0,
+      cache_read_tokens: 0, cache_write_tokens: 0 }],
+  ];
+  const trim = (row) => Object.fromEntries(Object.entries(row).filter(([key]) => !fields.includes(key)));
+  for (const records of cases) {
+    const full = foldClientMetrics(records, modelTimeClients, undefined, { modelTime: true });
+    const cost = foldClientMetrics(records, modelTimeClients, undefined, { modelTime: true, costView: true });
+    const { by_project, tools, ...expected } = full;
+    expected.totals = trim(expected.totals);
+    for (const key of ["by_client", "by_user", "by_model", "by_model_time", "timeseries"])
+      expected[key] = expected[key].map(trim);
+    assert.deepEqual(cost, { ...expected, view: "cost" });
+    assert.equal(cost.totals.requests, full.totals.requests);
+    assert.equal("by_project" in cost || "tools" in cost, false);
+  }
+});
 
 test("modelTime adds by_model_time without changing any other output", () => {
   const without = foldClientMetrics(modelTimeRecords, modelTimeClients);
@@ -635,7 +684,8 @@ test("exact drilldowns validate identities and bind intersecting user/model cons
   assert.match(sql, /user = \{clientUserExact:String\}/);
   assert.match(sql, /model = \{clientModelExact:String\}/);
   assert.ok(!sql.includes("alice@example.invalid"));
-  assert.match(sql, /mapSort\(any\(ResourceAttributes\)\), mapSort\(any\(LogAttributes\)\)/);
+  assert.match(sql, /SELECT DISTINCT Timestamp, mapSort\(ResourceAttributes\) AS r, mapSort\(LogAttributes\) AS a/);
+  assert.match(sql, /CAST\(map\(\), 'Map\(String, String\)'\), map\('event.kind', 'scope.delta'\)/);
   assert.ok(!sql.includes("any(mapSort("), "bulk delta representatives are sorted once after aggregation");
   for (const field of ["userExact", "modelExact"])
     for (const value of [[], {}, "a".repeat(257)])

@@ -178,6 +178,30 @@ test("exact cost drilldowns and one-day fine resolution have isolated validated 
   }
 });
 
+test("cost views keep independent cache entries and validate before loading", async () => {
+  const plain = `/api/clients/overview?${range}&client=all&modelTime=1`;
+  const cost = `${plain}&view=cost`;
+  for (const paths of [[plain, cost, plain, cost], [cost, plain, cost, plain]]) {
+    const rows = await scenario(true, true, paths);
+    for (const row of rows) assert.equal(row.status, 200);
+    assert.ok(rows[0].dataQueries > 0 && rows[1].dataQueries > 0);
+    assert.equal(rows[2].dataQueries + rows[3].dataQueries, 0);
+    for (let i = 0; i < paths.length; i++) {
+      assert.equal(rows[i].body.totals.cost_usd, 2.00238425);
+      assert.equal(rows[i].body.view, paths[i] === cost ? "cost" : undefined);
+      assert.equal("tools" in rows[i].body, paths[i] === plain);
+      assert.equal("request_duration_ms" in rows[i].body.totals, paths[i] === plain);
+    }
+  }
+  const invalid = await scenario(true, true, [`${plain}&view=`, `${plain}&view=Cost`,
+    `${plain}&view=cost&view=cost`, `${plain}&view=all`]);
+  for (const row of invalid) {
+    assert.equal(row.status, 400);
+    assert.equal(row.body.error, "invalid view");
+    assert.equal(row.dataQueries, 0);
+  }
+});
+
 test("raw and rollup requests with identical hourly display buckets never collide", async () => {
   const path = "/api/clients/overview?client=all&from=2026-09-14T00:05:00Z&to=2026-09-15T00:05:00Z";
   for (const intervals of [[0.95, 1], [1, 0.95]]) {
