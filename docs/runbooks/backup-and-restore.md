@@ -6,6 +6,8 @@
 `otel_writer` for SQL and ClickHouse pod IRSA for S3. It synchronizes every replicated table
 on the dedicated replica-0 service, then backs up on the same replica. Each run writes a
 self-contained **object set**, not one object, to `backup/<UTC-date>_<HHMMSS>/`.
+The CronJob declares `Forbid` concurrency to skip overlapping scheduled runs. Manually
+created Jobs still require an operator check that no other backup is active.
 
 `infra/s3.tf` declares 30-day expiry for `backup/` only. These are desired settings: inspect
 the deployed schedule, job results, destinations, lifecycle, and complete backup objects.
