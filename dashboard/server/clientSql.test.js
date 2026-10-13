@@ -924,6 +924,33 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       assert.equal(result.quality.missing_usage, 0, "model-less request and delta scope remain covered");
       assert.deepEqual(result.by_user.map(row => row.user), [fallback]);
     });
+    await t.test("cost SQL preserves full-view amounts, coverage and populations for scoped fixtures", async () => {
+      const diagnostics = new Set(["requests", "api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"]);
+      const trim = (row) => Object.fromEntries(Object.entries(row).filter(([key]) => !diagnostics.has(key)));
+      const stable = (rows) => rows.map(trim).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+      for (const filters of [
+        { client: "codex", userExact: "codex@example.invalid" },
+        { client: "claude", userExact: "claude@example.invalid" },
+        { client: "codex", userExact: "scope-fallback-id", modelExact: "openai.gpt-6-astra" },
+        { client: "codex", userExact: "rejection-400@example.invalid" },
+        { client: "codex", userExact: "rejection-mixed@example.invalid" },
+        { client: "codex", userExact: "rejection-stream-sse_event-false@example.invalid" },
+        { client: "codex", userExact: "rejection-model-isolation@example.invalid", model: "openai" },
+        { client: "claude", user: "scope-filter", intervalHours: 1 / 6 },
+      ]) {
+        const end = new Date(from.getTime() + 86400000);
+        const full = await overview({ ...filters, modelTime: "1" }, ["claude", "codex"], from, end);
+        const cost = await overview({ ...filters, modelTime: "1", view: "cost" }, ["claude", "codex"], from, end);
+        assert.deepEqual(trim(cost.totals), trim(full.totals), JSON.stringify(filters));
+        assert.deepEqual(cost.quality, full.quality);
+        assert.deepEqual(cost.effective_range, full.effective_range);
+        assert.equal(cost.bucket_hours, full.bucket_hours);
+        assert.equal(cost.observed_records, full.observed_records);
+        for (const key of ["by_client", "by_user", "by_model", "by_model_time", "timeseries"])
+          assert.deepEqual(stable(cost[key]), stable(full[key]), `${key}: ${JSON.stringify(filters)}`);
+        assert.equal("tools" in cost || "by_project" in cost, false);
+      }
+    });
   } finally {
     await db.close();
   }

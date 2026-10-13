@@ -37,7 +37,7 @@ export default function Clients({ page = "overview" }) {
   // others changes useApi's identity, so that switch reloads instead of retaining the data.
   const modelTime = page === "cost" || page === "exec" || page === "trends";
   const { data, loading, error, stale } = useApi("/api/clients/overview", {
-    client, ...(modelTime ? { modelTime: "1" } : {}), ...(costTrends ? { intervalHours: hours } : {}),
+    client, ...(modelTime ? { modelTime: "1", view: "cost" } : {}), ...(costTrends ? { intervalHours: hours } : {}),
   });
   const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
   // Trends compare the effective (trimmed) window with a preceding window of exactly its length.
@@ -49,7 +49,7 @@ export default function Clients({ page = "overview" }) {
     const end = clients.includes("claude") && to - from > 4 * 3600000 ? Math.floor(from / 3600000) * 3600000 : from;
     return { from: new Date(end - (to - from)).toISOString(), to: new Date(end).toISOString() };
   }, [page, clients, data?.effective_range?.from, data?.effective_range?.to]);
-  const previousApi = useApi("/api/clients/overview", { client, ...(previousRange || {}) }, previousRange !== null);
+  const previousApi = useApi("/api/clients/overview", { client, view: "cost", ...(previousRange || {}) }, previousRange !== null);
   // A baseline whose effective window differs from the requested one (stale while refetching,
   // or trimmed) is never compared as current.
   const baselineWindow = previousApi.data?.effective_range;

@@ -82,6 +82,7 @@ test("one-day Cost defaults to hourly and allows ten minutes, then resets on a w
   const { fetchMock } = mount({ enabledClients: ["codex"], entry: "/cost?days=1" });
   await screen.findByText("사용자별 비용", { exact: true });
   expect(commonRequests(fetchMock).at(-1).searchParams.get("intervalHours")).toBe("1");
+  expect(commonRequests(fetchMock).at(-1).searchParams.get("view")).toBe("cost");
   fireEvent.click(within(screen.getByLabelText("비용추이 해상도")).getByRole("button", { name: "10분" }));
   await waitFor(() => expect(commonRequests(fetchMock).at(-1).searchParams.get("intervalHours")).toBe(String(1 / 6)));
   fireEvent.click(screen.getByRole("button", { name: "7일", exact: true }));
@@ -105,6 +106,7 @@ test("Cost user detail requests the exact masked identity locally and closes on 
   fireEvent.click(within(title.closest(".shadow-card")).getByRole("button", { name: maskEmail("alice@example.test") }));
   await waitFor(() => expect(commonRequests(fetchMock).some((url) =>
     url.searchParams.get("userExact") === "alice@example.test")).toBe(true));
+  expect(commonRequests(fetchMock).find((url) => url.searchParams.has("userExact")).searchParams.get("view")).toBe("cost");
   expect(location.search).not.toContain("alice");
   expect(screen.getByRole("region", { name: "비용 상세" }).textContent).not.toContain("alice@example.test");
   expect(screen.getByText("선택 대상 비용 추이")).toBeTruthy();
@@ -621,7 +623,9 @@ test("Trends request range-sized buckets and compare against the preceding windo
   await waitFor(() => expect(commonRequests(fetchMock).some((u) => u.searchParams.get("to") === "2026-09-02T00:00:00.000Z")).toBe(true));
   const [first] = commonRequests(fetchMock);
   expect(first.searchParams.get("intervalHours")).toBe("24");
+  expect(first.searchParams.get("view")).toBe("cost");
   const previous = commonRequests(fetchMock).find((u) => u.searchParams.get("to") === "2026-09-02T00:00:00.000Z");
+  expect(previous.searchParams.get("view")).toBe("cost");
   expect(previous.searchParams.get("from")).toBe("2026-08-26T00:00:00.000Z");
   const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
   await waitFor(() => expect(comparison.textContent).toContain("+100%"));

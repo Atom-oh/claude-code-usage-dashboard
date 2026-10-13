@@ -209,7 +209,7 @@ function CostDetail({ selection, hours, parentRange, stale, onClose }) {
     headingRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     headingRef.current?.focus({ preventScroll: true });
   }, []);
-  const params = { client: selection.client, intervalHours: hours, modelTime: "1",
+  const params = { client: selection.client, intervalHours: hours, modelTime: "1", view: "cost",
     ...(parentRange?.from && parentRange?.to ? { from: parentRange.from, to: parentRange.to } : {}),
     ...(selection.kind === "user" ? { userExact: selection.user }
       : { modelExact: selection.model, backend: selectedBackend }) };

@@ -100,6 +100,37 @@ test("pending cache entries stay shared past TTL and cannot be evicted to duplic
   assert.equal(await cache.get("one", () => "new", 10), "new");
 });
 
+test("140 shared-view arrivals coalesce into one computation per API process", async () => {
+  const caches = [createResultCache(), createResultCache()];
+  const waiting = deferred();
+  let calls = 0;
+  const promises = Array.from({ length: 140 }, (_, i) => caches[i % 2].get("cost:same-window",
+    () => { calls++; return waiting.promise; }, 10000));
+  await Promise.resolve();
+  assert.equal(calls, 2);
+  assert.deepEqual(caches.map(cache => cache.pending), [1, 1]);
+  waiting.resolve({ view: "cost" });
+  assert.equal((await Promise.all(promises)).length, 140);
+  assert.deepEqual(caches.map(cache => cache.pending), [0, 0]);
+});
+
+test("140 distinct pending arrivals expose the existing two-process admission bound", async () => {
+  const caches = [createResultCache(), createResultCache()];
+  const waiting = deferred();
+  const accepted = [];
+  let denied = 0;
+  for (let i = 0; i < 140; i++) {
+    try { accepted.push(caches[i % 2].get(`cost:user:${i}`, () => waiting.promise, 10000)); }
+    catch (error) { assert.ok(error instanceof CapacityError); denied++; }
+  }
+  assert.equal(accepted.length, 128);
+  assert.equal(denied, 12);
+  assert.deepEqual(caches.map(cache => cache.pending), [64, 64]);
+  waiting.resolve({ view: "cost" });
+  await Promise.all(accepted);
+  assert.deepEqual(caches.map(cache => cache.pending), [0, 0]);
+});
+
 test("cache errors are removed and synchronous throws release admission", async () => {
   const cache = createResultCache({ maxEntries: 1, maxPending: 1 });
   await assert.rejects(cache.get("one", () => { throw new Error("failure"); }, 10), /failure/);
