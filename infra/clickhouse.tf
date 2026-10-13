@@ -357,7 +357,8 @@ resource "kubernetes_cron_job_v1" "backup" {
     namespace = kubernetes_namespace.claude_code.metadata[0].name
   }
   spec {
-    schedule = "0 18 * * *" # 03:00 KST
+    schedule           = "0 18 * * *" # 03:00 KST
+    concurrency_policy = "Forbid"
     job_template {
       metadata {}
       spec {
