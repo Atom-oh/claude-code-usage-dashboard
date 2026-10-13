@@ -560,6 +560,21 @@ test("the Claude trend basis chip discloses an estimated cell; Codex's stays una
   expect(codex.textContent).not.toContain("일부 계산 추정");
 });
 
+test.each([
+  ["aws_list_estimate", "Claude AWS 정가 추정"],
+  ["mixed", "Claude 혼합 기준 비용"],
+  ["computed_estimate", "Claude 계산 추정 비용"],
+])("Claude model trends retain the actual %s basis", (basis, label) => {
+  const data = modelTimeData(["claude"]);
+  data.by_client = data.by_client.map(row => ({ ...row, cost_basis: basis, cost_estimated: 0 }));
+  data.by_model_time = data.by_model_time.map(row => ({ ...row, cost_basis: basis, cost_estimated: 0 }));
+  mount("cost", data);
+  const node = trendCards()[0];
+  expect(node.textContent).toContain(label);
+  expect(node.textContent).not.toContain("Claude 보고 비용");
+  if (basis !== "computed_estimate") expect(node.textContent).not.toContain("보고 비용이 없어");
+});
+
 test("a response without by_model_time leaves each model cost trend card unavailable, never $0", () => {
   mount("cost", { ...modelTimeData(), by_model_time: undefined });
   const cards = trendCards();

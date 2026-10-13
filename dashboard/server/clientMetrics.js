@@ -391,7 +391,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     -- presence (not count) feeds requires_usage; the final SELECT drops those rows. One row per
     -- scope keeps that evidence without a full-row DISTINCT over millions of maps.
     UNION ALL
-    SELECT min(Timestamp), any(mapSort(ResourceAttributes)), any(mapSort(LogAttributes)),
+    SELECT min(Timestamp), mapSort(any(ResourceAttributes)), mapSort(any(LogAttributes)),
       LogAttributes['conversation.id'] AS session, ${user} AS user, LogAttributes['model'] AS model,
       ${backendExpr("LogAttributes['model']", "ResourceAttributes['backend']")} AS backend,
       ResourceAttributes['project.name'] AS project, EventName AS event_name

@@ -155,7 +155,10 @@ function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric 
     tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
 }
 
-const TREND_BASIS = { claude: "Claude 보고 비용", codex: "Codex AWS 정가 추정" };
+const TREND_BASIS = {
+  client_reported: "보고 비용", aws_list_estimate: "AWS 정가 추정",
+  computed_estimate: "계산 추정 비용", mixed: "혼합 기준 비용",
+};
 const bucketLabel = costResolutionLabel;
 
 // Cells are always rolled up, even to the source size, so the shared first bucket (keyed at
@@ -163,8 +166,10 @@ const bucketLabel = costResolutionLabel;
 function ClientModelTrend({ data, client, hours, source, stale }) {
   const cells = useMemo(() => rollupBuckets(fromByModelTime(data, client), hours, { sourceHours: source }),
     [data, client, hours, source]);
-  // ADR-017: don't draw a computed-estimate cell as an ordinary report.
-  const basis = TREND_BASIS[client] + (cells?.some((c) => c.estimated) ? " · 일부 계산 추정" : "");
+  // The emitting client does not select its cost basis. Non-Anthropic Claude uses AWS estimates.
+  const sourceBasis = data?.by_client?.find((row) => row.client === client)?.cost_basis;
+  const basis = `${client === "claude" ? "Claude" : clientName(client)} ${TREND_BASIS[sourceBasis] || "비용 기준 미제공"}`
+    + (sourceBasis !== "computed_estimate" && cells?.some((c) => c.estimated) ? " · 일부 계산 추정" : "");
   return <ModelCostTrend title={`${clientName(client)} 모델별 비용 추이`} basis={basis} cells={cells}
     xKey="t" bucketHours={hours} bounds={data?.effective_range} zoomDisabled={stale} accent={color(client)} />;
 }

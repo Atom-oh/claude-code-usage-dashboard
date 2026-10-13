@@ -882,6 +882,48 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal(foldCodexLogAggregates(rows).effort[0].cost_usd, shared.totals.cost_usd, prefix);
       }
     });
+    await t.test("early filters preserve raw counter baselines and canonical log user fallback", async () => {
+      const email = "scope-filter@example.invalid";
+      const values = [];
+      for (const [user, session, model, before, increment, beforeCost, costIncrement] of [
+        [email, "scope-a", "claude-sonnet-5", 100, 10, 1, 0.2],
+        ["x" + email, "scope-b", "claude-sonnet-5", 1000, 100, 10, 2],
+        [email, "scope-c", "claude-opus-5", 500, 50, 5, 1],
+      ]) {
+        for (const [metric, type, startValue, increase] of [
+          ["claude_code.token.usage", "input", before, increment],
+          ["claude_code.cost.usage", "", beforeCost, costIncrement],
+        ]) for (const [clock, value] of [["09:59:00", startValue], ["10:01:00", startValue + increase]]) {
+          const row = counter(metric, type, clock, value);
+          row.ResourceAttributes = { "user.email": user };
+          row.Attributes = { ...row.Attributes, "session.id": session, model };
+          values.push(row);
+        }
+      }
+      await insertMetrics(values);
+      const end = new Date(from.getTime() + 86400000);
+      const partial = await overview({ client: "claude", user: "scope-filter", intervalHours: 1 / 6 },
+        ["claude"], from, end);
+      assertFields(partial.totals, { tokens: 160, cost_usd: 3.2 });
+      const exact = await overview({ client: "claude", user: "scope-filter", userExact: email,
+        modelExact: "claude-sonnet-5", intervalHours: 1 / 6 }, ["claude"], from, end);
+      assertFields(exact.totals, { tokens: 10, cost_usd: 0.2 });
+      assert.deepEqual(exact.by_user.map(row => row.user), [email]);
+      const fallback = "scope-fallback-id";
+      await insertLogs([
+        log(3100, "codex.sse_event", { ...usage1.LogAttributes, "conversation.id": "scope-fallback" },
+          { "user.email": "", "enduser.id": fallback }),
+        log(3101, "codex.api_request", { model: "", "conversation.id": "scope-fallback",
+          "http.response.status_code": "200" }, { "user.email": "", "enduser.id": fallback }),
+        log(3102, "codex.sse_event", { "event.kind": "response.output_text.delta", "conversation.id": "scope-fallback" },
+          { "user.email": "", "enduser.id": fallback }),
+      ]);
+      const result = await overview({ client: "codex", user: "scope-fallback", userExact: fallback,
+        modelExact: "openai.gpt-6-astra" }, ["codex"], from, to);
+      assertFields(result.totals, { tokens: 130, requests: 1, cost_usd: 0.00238425 });
+      assert.equal(result.quality.missing_usage, 0, "model-less request and delta scope remain covered");
+      assert.deepEqual(result.by_user.map(row => row.user), [fallback]);
+    });
   } finally {
     await db.close();
   }

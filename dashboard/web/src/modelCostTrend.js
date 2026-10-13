@@ -150,7 +150,9 @@ export function fromByModelDaily(rows) {
   return cells.sort(compareCells);
 }
 
-const isEstimatedBasis = (basis) => basis === "computed_estimate" || basis === "mixed";
+// AWS list estimates and a mixed basis alone never mean that a missing report was computed.
+const hasComputedFallback = (row) => row?.cost_basis === "computed_estimate"
+  || (amount(row?.cost_estimated) ?? 0) > 0;
 
 export function fromByModelTime(data, client) {
   if (!Array.isArray(data?.by_model_time)) return null;
@@ -162,7 +164,7 @@ export function fromByModelTime(data, client) {
     if (t === null) continue;
     const cell = finishCell(t, typeof row.model === "string" ? row.model : "", row.backend || "unknown",
       amount(row.cost_usd), row.unpriced, row.unpriced_reasons || {}, row.cost_partial, amount(row.observed_tokens),
-      isEstimatedBasis(row.cost_basis));
+      client === "claude" && hasComputedFallback(row));
     cells.push(cell);
     if (!modelByT.has(t)) modelByT.set(t, []);
     modelByT.get(t).push(cell);
@@ -181,7 +183,7 @@ export function fromByModelTime(data, client) {
     const covered = M.reduce((s, cell) => s + cell.unavailable, 0);
     const residual = Math.max(0, (count(ts.unpriced) ?? 0) - covered);
     const cost = amount(ts.cost_usd);
-    const tsEstimated = isEstimatedBasis(ts.cost_basis);
+    const tsEstimated = client === "claude" && hasComputedFallback(ts);
     if (M.length === 0) {
       if (cost === null) {
         const n = Math.max(residual, 1);

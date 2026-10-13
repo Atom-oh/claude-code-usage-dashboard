@@ -482,6 +482,10 @@ const counterObserved = "(m.SessionId, m.UserEmail, m.MetricName, m.TokenType) I
 // dimensions to shared helpers. Operational Codex events never enter these counters.
 export async function clientClaudeRows(from, to, filters = {}, nativeSeconds) {
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
+  // User/model are partition dimensions in the local counter window, so narrowing them
+  // throughout the lookback preserves the baseline. Session channel/backend inference stays global.
+  const inputFilter = filterCond({ ...filters, excludeUnknown: false },
+    { user: "UserEmail", model: "Model" });
   // Split the first raw minute at `from` so its pre-window baseline stays outside
   // the returned bucket. This is local to client views; shared helpers are unchanged.
   const fine = nativeSeconds >= 600 && nativeSeconds < 3600 && to - from <= 24 * 3600000;
@@ -491,7 +495,7 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds) {
   const b = to - from <= MAX_SNAPSHOT_RAW_RANGE_MS || fine
     ? { raw: true, params: {}, sub: incBucketedRaw(
       `if(TimeUnix >= {from:DateTime}, greatest(${rawBucket}, {from:DateTime}), ${rawBucket})`,
-      metricFilter) }
+      `${metricFilter} ${inputFilter.where}`) }
     : incBucket(1, metricFilter);
   const f = filterCond({ ...filters, excludeUnknown: false },
     { user: "m.UserEmail", model: "m.Model" });

@@ -149,6 +149,10 @@ partial user/model filters. Claude model IDs are normalized; Codex routing prefi
 These validated, bound parameters have separate cache keys and are rejected by Codex insights.
 Exact responses echo `applied_filters={userExact,modelExact,backend}`; the UI verifies this
 acknowledgment before presenting identity detail, including during a rolling upgrade.
+Raw Claude counter inputs also narrow user/model partitions throughout the baseline.
+Session channel/backend inference and model-less coverage evidence retain their existing scope.
+Bulk delta scope evidence sorts the selected attribute maps after aggregation, rather than
+sorting every stream fragment; completion deduplication keeps the original full identity.
 
 Codex detail log summaries use one query for full-identity deduplication, per-response
 pricing and scope evidence. The 50,000-row transfer budget applies to aggregate
