@@ -37,7 +37,7 @@ export function buildMetricQuery(type, from, to, filters = {}) {
   const histogram = type.endsWith("histogram");
   const identity = `name, unit, scope, scope_version, scope_attributes, resource, attributes,
     service_name, resource_schema_url, scope_schema_url, temporality, monotonic`;
-  const source = `SELECT DISTINCT TimeUnix AS t, StartTimeUnix AS started,
+  const source = `SELECT TimeUnix AS t, StartTimeUnix AS started,
     MetricName AS name, MetricUnit AS unit, ScopeName AS scope, ScopeVersion AS scope_version,
     mapSort(ScopeAttributes) AS scope_attributes, mapSort(ResourceAttributes) AS resource,
     mapSort(Attributes) AS attributes, ServiceName AS service_name,
@@ -57,7 +57,8 @@ export function buildMetricQuery(type, from, to, filters = {}) {
       : "sample_value AS value"},
     toUInt64(1) AS points, toUInt64(0) AS invalid_samples, toUInt64(0) AS extremes_missing,
     ${histogram ? "toUInt64(sample_count > 0 AND sample_sum = 0)" : "toUInt64(0)"} AS sum_ambiguous`;
-  const window = `${source}
+  const distinctSource = source.replace("SELECT ", "SELECT DISTINCT ");
+  const window = `${distinctSource}
     AND TimeUnix >= {signalFrom:DateTime} AND TimeUnix < {signalTo:DateTime}`;
   if (type === "gauge") return { sql: `WITH window_points AS (${window})
     ${raw} FROM window_points ORDER BY timestamp LIMIT 50001`, params: params(from, to, filters) };
@@ -71,16 +72,24 @@ export function buildMetricQuery(type, from, to, filters = {}) {
   // their intervals; retain every resource/scope/label identity, but not each start.
   // Cumulative baselines retain the start boundary and ALL ties at the latest
   // timestamp so a conflicting retry cannot become an arbitrary prior value.
+  // Find that timestamp with one state per series before DISTINCT reads payloads.
+  // A window over every prior export retains and sorts the three-day history.
   return { sql: `WITH window_points AS (${window}),
-    baseline_candidates AS (
-      ${source}
-      AND AggregationTemporality = 2
-      AND TimeUnix >= {signalFrom:DateTime} - INTERVAL 3 DAY AND TimeUnix < {signalFrom:DateTime}
-      AND (${identity}, started) IN (
-        SELECT ${identity}, started FROM window_points WHERE temporality = 2)
+    baseline_times AS (
+      SELECT ${identity}, started, max(t) AS latest FROM (
+        ${source}
+        AND AggregationTemporality = 2
+        AND TimeUnix >= {signalFrom:DateTime} - INTERVAL 3 DAY AND TimeUnix < {signalFrom:DateTime}
+        AND (${identity}, started) IN (
+          SELECT ${identity}, started FROM window_points WHERE temporality = 2)
+      ) GROUP BY ${identity}, started
     ),
     baselines AS (
-      SELECT *, max(t) OVER (PARTITION BY ${identity}, started) AS latest FROM baseline_candidates
+      ${distinctSource}
+      AND AggregationTemporality = 2
+      AND TimeUnix >= {signalFrom:DateTime} - INTERVAL 3 DAY AND TimeUnix < {signalFrom:DateTime}
+      AND (${identity}, started, t) IN (
+        SELECT ${identity}, started, latest FROM baseline_times)
     ),
     delta_points AS (
       SELECT *, (${valid}) AND variants = 1 AS valid FROM (
@@ -89,7 +98,7 @@ export function buildMetricQuery(type, from, to, filters = {}) {
     )
     SELECT * FROM (
       ${raw} FROM window_points WHERE temporality != 1
-      UNION ALL ${raw} FROM baselines WHERE t = latest
+      UNION ALL ${raw} FROM baselines
       UNION ALL
       SELECT toString(toTimeZone(max(t), 'UTC')) AS timestamp,
         toString(toTimeZone(min(started), 'UTC')) AS start, '${type}' AS type, ${identity},

@@ -35,6 +35,19 @@ Do not indiscriminately drop these, sum cumulative samples as usage, or infer
 missing telemetry as zero. Separate verified aggregation from collection reduction;
 preserve raw boundary fallback and disclose sampling/coverage if introduced.
 
+## Cumulative diagnostic baselines
+
+Codex cumulative metric queries group the latest prior export timestamp by the
+complete resource/scope/attribute identity and process start. Only then do they
+select and deduplicate full samples at that timestamp. Every distinct latest tie
+is retained, so conflicting retries still withhold the affected aggregate.
+The three-day lookback, delta handling, range semantics and result guard remain.
+
+This replaces a window over all prior sample payloads with one timestamp state
+per active series. It still scans raw history and can hit time/result limits;
+query-memory reduction alone is not a latency or concurrency guarantee.
+No samples, model dimensions or diagnostic feeds are removed from collection.
+
 ## Subsequent schema design
 
 The following accelerators are proposals, not deployed tables:
