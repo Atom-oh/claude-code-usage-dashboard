@@ -210,3 +210,35 @@ test("queries bind selectors, scope Codex, retain a counter baseline and reject 
   assert(t.sql.includes("SpanAttributes['model']"));
   assert(!t.sql.includes(filters.user));
 });
+
+test("cumulative baseline timestamps are grouped before full-point deduplication", () => {
+  for (const type of ["sum", "histogram", "exponential_histogram"]) {
+    const { sql } = buildMetricQuery(type, from, to);
+    assert.match(sql, /baseline_times AS \(\s+SELECT[\s\S]*started, max\(t\) AS latest/);
+    const times = sql.slice(sql.indexOf("baseline_times AS"), sql.indexOf("baselines AS"));
+    assert.doesNotMatch(times, /SELECT DISTINCT|OVER/);
+    for (const dimension of ["name", "unit", "scope", "scope_version", "scope_attributes",
+      "resource", "attributes", "service_name", "resource_schema_url", "scope_schema_url",
+      "temporality", "monotonic", "started"]) assert(times.includes(dimension));
+    assert.match(times, /GROUP BY[\s\S]*started/);
+    const points = sql.slice(sql.indexOf("baselines AS"), sql.indexOf("delta_points AS"));
+    assert.match(points, /SELECT DISTINCT/);
+    assert.match(points, /started, t\) IN \(\s+SELECT[\s\S]*started, latest FROM baseline_times/);
+    assert.doesNotMatch(sql, /max\(t\) OVER/);
+    assert.match(sql, /count\(\) OVER[\s\S]*AS variants/);
+  }
+  assert.doesNotMatch(buildMetricQuery("gauge", from, to).sql, /baseline_times/);
+});
+
+test("an explicit SQL result limit cannot manufacture diagnostic observations", () => {
+  assert.throws(() => foldCodexMetrics([{ ...point, result_limited: 1 }], from, to),
+    /too much signal data/);
+  for (const type of ["sum", "gauge", "histogram", "exponential_histogram"]) {
+    const { sql } = buildMetricQuery(type, from, to);
+    assert.match(sql, /limit_probe AS/);
+    assert.match(sql, /toUInt8\(1\) AS result_limited/);
+    assert.match(sql, /\(SELECT points FROM limit_probe\) <= 50000/);
+    if (type !== "gauge") assert.match(sql, /FROM window_points WHERE temporality != 1 LIMIT 50001/);
+  }
+  assert.equal(foldCodexMetrics([{ ...point, result_limited: 0 }], from, to).coverage.status, "observed");
+});

@@ -277,4 +277,65 @@ test("Codex signal SQL against isolated ClickHouse", {
     assert.deepEqual(result.traces, [
       { trace_id: "capped-conflict", span_count: null, wall_ms: null, errors: null, spans: [], partial: true }]);
   });
+  for (const type of ["sum", "histogram", "exponential_histogram"]) {
+    await t.test(`${type} retains every latest baseline tie after a long export history`, () => {
+      const metricName = `codex.baseline-scale.${type}`;
+      const valueColumns = type === "sum" ? "Value, IsMonotonic" : "Count, Sum, Min, Max";
+      const values = type === "sum" ? "2, true" : "2, 20, 1, 10";
+      execute(`INSERT INTO claude_code.codex_metrics_${type}
+        (ResourceAttributes, ScopeName, ScopeVersion, ScopeAttributes, Attributes,
+         MetricName, MetricUnit, StartTimeUnix, TimeUnix, AggregationTemporality, ${valueColumns})
+        SELECT map('client','codex','backend','bedrock-mantle'), 'codex', '1', map('mode','one'),
+          map('model','baseline-scale'), '${metricName}', '1',
+          toDateTime64('2026-09-11 00:00:00',9),
+          addSeconds(toDateTime64('2026-09-12 00:00:00',9), number), 2, ${values}
+        FROM numbers(60000)`);
+      const current = { ...base, ResourceAttributes: { client: "codex", backend: "bedrock-mantle" },
+        Attributes: { model: "baseline-scale" }, MetricName: metricName,
+        StartTimeUnix: "2026-09-11 00:00:00", AggregationTemporality: 2,
+        ...(type === "sum" ? { Value: 13, IsMonotonic: true } : { Count: 13, Sum: 130, Min: 1, Max: 10 }) };
+      const prior = { ...current, TimeUnix: "2026-09-14 23:59:59.123456789",
+        ...(type === "sum" ? { Value: 5 } : { Count: 5, Sum: 50 }) };
+      insert(type, [current]);
+      const history = metric(type, { model: "baseline-scale" });
+      assert.equal(history.rows.length, 2);
+      assert(history.rows.some((row) => row.timestamp.startsWith("2026-09-12 16:39:59")),
+        "the active series uses the latest point from all 60000 prior exports");
+      assert.equal(history.metrics[0][type === "sum" ? "value" : "count"], 11,
+        "the long history supplies a real baseline, not a missing-baseline fallback");
+      insert(type, [prior, prior]);
+      let result = metric(type, { model: "baseline-scale" });
+      assert.equal(result.rows.length, 2, "older exports and identical latest retries are omitted");
+      assert.equal(result.metrics[0][type === "sum" ? "value" : "count"], 8);
+      assert.equal(result.metrics[0].points, 1);
+      assert.equal(result.metrics[0].partial, type !== "sum", "cumulative histogram extremes remain unknown");
+      insert(type, [{ ...prior, ...(type === "sum" ? { Value: 7 } : { Count: 7, Sum: 70 }) }]);
+      result = metric(type, { model: "baseline-scale" });
+      assert.equal(result.rows.length, 3, "all conflicting latest points survive timestamp selection");
+      assert.equal(result.metrics[0].partial, true);
+      assert.equal(result.metrics[0][type === "sum" ? "value" : "count"], null);
+      assert.equal(result.metrics[0].points, 1);
+    });
+  }
+
+  for (const type of ["sum", "gauge", "histogram", "exponential_histogram"]) {
+    await t.test(`${type} marks oversized non-DELTA windows before transferring payloads`, () => {
+      const histogram = type.endsWith("histogram");
+      const valueColumns = histogram ? "Count, Sum, Min, Max" : "Value";
+      const values = histogram ? "1, 10, 10, 10" : "1";
+      execute(`INSERT INTO claude_code.codex_metrics_${type}
+        (ResourceAttributes, Attributes, MetricName, StartTimeUnix, TimeUnix,
+         ${type === "gauge" ? "" : "AggregationTemporality,"} ${valueColumns})
+        SELECT map('client','codex'), map('model','guard-scale'), 'codex.guard',
+          toDateTime64('2026-09-14 00:00:00',9),
+          addMicroseconds(toDateTime64('2026-09-15 00:00:00',9), number),
+          ${type === "gauge" ? "" : "2,"} ${values} FROM numbers(60000)`);
+      const request = buildMetricQuery(type, from, to, { model: "guard-scale" });
+      const output = execute(`${request.sql} FORMAT JSONEachRow`, request.params);
+      const rows = output.split("\n").map(JSON.parse);
+      assert.equal(rows.length, 1);
+      assert.equal(Number(rows[0].result_limited), 1);
+      assert.throws(() => foldCodexMetrics(rows, from, to), /too much signal data/);
+    });
+  }
 });
