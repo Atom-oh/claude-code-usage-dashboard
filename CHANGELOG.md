@@ -18,6 +18,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   diagnostic breakdowns and quantiles. Preserve usage, denominators, scope coverage
   and full event identity; distinguish unqueried signals from absent collection.
 
+### Changed (2026-10-14 log body collection)
+
+- Clear unconsumed Claude log bodies before export while preserving structured
+  identity and measurements. Provide a private body-only draft helper for standalone
+  receivers; validate and drain queues before a separate controlled rollout.
+
 ### Changed (2026-10-13 cost query profile)
 
 - Add a validated cost profile for shared cost/executive/trend requests and exact

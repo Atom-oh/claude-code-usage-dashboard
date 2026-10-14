@@ -212,6 +212,8 @@ class CollectorTests(unittest.TestCase):
                     if values(record["attributes"])["event.name"] in CLAUDE_EVENTS:
                         self.assertEqual(values(resource["resource"]["attributes"])["experiment.group"], "bedrock")
                         self.assertNotIn("prompt", values(record["attributes"]))
+                        self.assertNotIn("private body", json.dumps(record))
+                        self.assertEqual(record.get("body", {}).get("stringValue", ""), "")
 
     def test_codex_default_identity_fills_only_absent_resource_identity(self):
         def codex_logs(identity):
