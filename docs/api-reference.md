@@ -177,6 +177,16 @@ sets `partial=true`. Only affected results are withheld: limited scope evidence 
 known subtotals partial while withholding strict ratios and session units. See
 [Codex bounds](reference/codex-observability.md#api-and-bounds).
 
+`profile=effort` on `/api/codex/insights` selects one log query instead of the default
+log, four metric and trace queries. It preserves Effort/usage totals, denominators,
+full event identity and missing-usage scope evidence. It skips latency/tool/approval/runtime
+breakdowns and quantile work, omits those arrays and `summary.tool_success_rate`, and
+reports `coverage.logs.omitted_sections`. Unqueried metric/trace coverage has
+`status="not_requested"`, `records=null`, `last_seen=null`; empty signal arrays do not
+assert absent collection. The response echoes `profile="effort"`. Invalid profile
+values fail before caching; the profile has a distinct cache identity. The default
+profile remains full. See [Effort profile](reference/codex-observability.md#effort-profile).
+
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key and is not warmed; `/api/codex/insights`
 ignores it. It adds `by_model_time`: one row per `client`, `t`, `model`, `backend` from the

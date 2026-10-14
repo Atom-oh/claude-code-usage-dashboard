@@ -1,5 +1,5 @@
 import express from "express";
-import { codexInsights } from "./codexInsights.js";
+import { codexInsights, validateInsightsProfile } from "./codexInsights.js";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -257,6 +257,7 @@ function cacheKey(path, query) {
       userExact: filters.userExact, modelExact: filters.modelExact,
       modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined,
       view: path === "/api/clients/overview" && validateClientView(query) ? "cost" : undefined,
+      profile: path === "/api/codex/insights" && validateInsightsProfile(query) ? "effort" : undefined,
       // Query source and resolved end also matter: a subhour request can round to a
       // one-hour display while reading raw rows through the requested partial-hour end.
       ...(path === "/api/clients/overview" ? (() => {
@@ -339,6 +340,7 @@ route("/api/clients/overview",
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
   { client: "codex", warm: false, validate: (raw) => {
     validateClientFilters(raw, ["codex"]);
+    validateInsightsProfile(raw);
     if (raw.userExact !== undefined || raw.modelExact !== undefined)
       throw new ValidationError("unsupported filter", "exact drilldowns require /api/clients/overview");
   } });

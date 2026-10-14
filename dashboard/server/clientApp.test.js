@@ -325,3 +325,20 @@ test("Codex insights ignore modelTime", async () => {
   assert.equal(rows[2].dataQueries, 0);
   assert.ok(!("by_model_time" in rows[0].body));
 });
+
+test("Effort insights profiles have distinct validated cache identities", async () => {
+  const path = `/api/codex/insights?${range}&client=codex`;
+  const rows = await scenario(true, true, [path, `${path}&profile=effort`, path, `${path}&profile=effort`,
+    `${path}&profile=`, `${path}&profile=full`, `${path}&profile=effort&profile=effort`]);
+  for (const row of rows.slice(0, 4)) assert.equal(row.status, 200);
+  assert.ok(rows[0].dataQueries > 0 && rows[1].dataQueries > 0);
+  assert.equal(rows[2].dataQueries + rows[3].dataQueries, 0);
+  assert.equal(rows[1].body.profile, "effort");
+  assert.equal(rows[1].body.coverage.metrics.status, "not_requested");
+  assert.equal(rows[1].body.coverage.traces.status, "not_requested");
+  assert.equal(rows[0].body.profile, undefined);
+  for (const row of rows.slice(4)) {
+    assert.equal(row.status, 400);
+    assert.equal(row.dataQueries, 0);
+  }
+});

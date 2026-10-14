@@ -48,6 +48,48 @@ test("empty insights expose no costs and a non-partial empty log summary", async
   assert.equal(result.summary.tokens_partial, false);
 });
 
+test("Effort profile queries only logs and preserves billing summaries without unrequested diagnostics", async () => {
+  const queries = [];
+  const run = async sql => { queries.push(sql); return diagnostic(sql) ? [] : usageRows; };
+  const full = await codexInsights(from, to, {}, run);
+  assert.equal(queries.length, 6);
+  queries.length = 0;
+  const selected = await codexInsights(from, to, { profile: "effort" }, run);
+  assert.equal(queries.length, 1);
+  assert.ok(!diagnostic(queries[0]));
+  assert.doesNotMatch(queries[0], /quantilesExactWeightedIf|startup_phase:|tuple\('tool'|tuple\('latency'/);
+  const { tool_success_rate, ...expected } = full.summary;
+  assert.deepEqual(selected.summary, expected);
+  assert.deepEqual(selected.effort, full.effort);
+  assert.deepEqual(selected.events, full.events);
+  assert.equal(selected.coverage.metrics.status, "not_requested");
+  assert.equal(selected.coverage.metrics.records, null);
+  assert.equal(selected.coverage.traces.status, "not_requested");
+  assert.equal(selected.profile, "effort");
+  for (const name of ["tools", "approvals", "latency", "runtime"])
+    assert.equal(name in selected, false);
+});
+
+test("invalid profiles fail before all signal queries", async () => {
+  for (const profile of ["", "full", "Effort", ["effort"], true]) {
+    let calls = 0;
+    await assert.rejects(codexInsights(from, to, { profile }, async () => { calls++; return []; }),
+      /invalid profile/);
+    assert.equal(calls, 0);
+  }
+});
+
+test("Effort profile retains missing-usage coverage instead of treating sparse scopes as free", async () => {
+  const result = await codexInsights(from, to, { profile: "effort" }, async () => [
+    ...usageRows, row("scope", ["unfinished", "", "bedrock-mantle", "", "model", ""],
+      { has_bulk: 1, requires_usage: 1 }),
+  ]);
+  assert.equal(result.summary.cost_partial, true);
+  assert.equal(result.summary.tokens_partial, true);
+  assert.equal(result.summary.cost_per_request, 0.00238425);
+  assert.equal(result.summary.tokens_per_request, null);
+});
+
 test("stream-only scopes keep available tokens and costs partial", async () => {
   const result = await codexInsights(from, to, {}, async sql => diagnostic(sql) ? [] : [
     ...usageRows,

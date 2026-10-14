@@ -237,6 +237,9 @@ processors:
         statements:
           - delete_key(attributes, "prompt")
           - delete_key(attributes, "prompt_text")
+          # Supported Claude measurements and deduplication use structured attributes,
+          # not free-text bodies. Keep the documented no-body storage contract.
+          - set(body, "")
           # bash_command 완전 차단이 필요하면 아래 주석 해제
           # - delete_key(attributes, "tool_parameters")
 

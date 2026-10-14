@@ -29,6 +29,21 @@ test("efficiency distinguishes unpriced cost from measured ratios and tiny price
   expect(screen.getByText("Metrics · 관측 없음")).toBeTruthy();
   expect(screen.getByText("Traces · 수집 미확인")).toBeTruthy();
 });
+
+test("an Effort-only section requests its profile and does not mislabel skipped diagnostics as absent collection", () => {
+  const data = fixture();
+  data.coverage.metrics = { status: "not_requested", records: null };
+  data.coverage.traces = { status: "not_requested", records: null };
+  state.result = { data, loading: false, error: null };
+  const { rerender } = render(<CodexInsights sections={["효율·Effort"]} />);
+  expect(state.calls.at(-1)[1].profile).toBe("effort");
+  expect(screen.getByText("Logs · 수집 확인 · 8개")).toBeTruthy();
+  expect(screen.queryByText(/Metrics ·/)).toBeNull();
+  expect(screen.queryByText(/Traces ·/)).toBeNull();
+  expect(screen.getByText("high")).toBeTruthy();
+  rerender(<CodexInsights sections={["효율·Effort", "Trace"]} />);
+  expect(state.calls.at(-1)[1].profile).toBeUndefined();
+});
 test.each([148, 0, null])("Codex observed token summary and effort export preserve %s independently of ratios", (observed_tokens) => {
   const data = fixture();
   data.summary = { ...data.summary, observed_tokens, tokens_partial: true, tokens: 999,

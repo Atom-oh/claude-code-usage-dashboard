@@ -110,7 +110,8 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
  * evidence. The transferred rows are aggregate dimensions, not individual events.
  * Exact weighted quantiles use the same nearest-rank convention as the raw fold.
  */
-export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEFAULT_PRICES) {
+export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEFAULT_PRICES,
+  { effortOnly = false } = {}) {
   // Count complete identities inside each compact group instead of retaining a
   // separate DISTINCT set of every large resource/attribute map in the window.
   const selected = logSelection(from, to, filters, false);
@@ -120,7 +121,7 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
   const parsed = [
     ...TOKEN_KEYS.map((key, i) => `${numeric(`attributes['${tokenAttributes[i]}']`)} AS ${key}_number`),
     ...["duration_ms", "prompt_length", "attempt", "http.response.status_code"].map((key, i) =>
-      `${numeric(`attributes['${key}']`)} AS operation_number${i}`),
+      `${effortOnly && key === "duration_ms" ? "CAST(NULL, 'Nullable(Float64)')" : numeric(`attributes['${key}']`)} AS operation_number${i}`),
   ].join(",\n");
   const tokens = TOKEN_KEYS.map(key => `${integer(`${key}_number`)} AS ${key}_raw`).join(",\n");
   const priced = priceExpression(prices, params);
@@ -141,7 +142,7 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
       safeText("coalesce(nullIf(attributes['app.version'], ''), resource['service.version'])"),
       safeText("attributes['provider_name']"), safeText("attributes['reasoning_effort']"),
       policy("attributes['sandbox_policy']", SANDBOX), policy("attributes['approval_policy']", APPROVAL)]),
-  ];
+  ].filter((_, index) => !effortOnly || ["event", "usage", "effort", "scope", "operations"].includes(FAMILIES[index]));
   const usageFamily = "family IN ('usage','effort')";
   const completeSum = (value, condition = "1") =>
     `if(countIf(${usageFamily} AND NOT (${condition} AND isNotNull(${value}))) > 0,
@@ -156,8 +157,8 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
           'backend',${backendSql("attributes['model']", "resource['backend']")},
           'project.name',resource['project.name']),resource) AS compact_resource,
         if(intermediate, map('event.name',attributes['event.name'],'event.kind','progress',
-          'conversation.id',attributes['conversation.id'],'model',attributes['model'],
-          'duration_ms',attributes['duration_ms']),attributes) AS compact_attributes
+          'conversation.id',attributes['conversation.id'],'model',attributes['model']${effortOnly ? "" : `,
+          'duration_ms',attributes['duration_ms']`}),attributes) AS compact_attributes
       FROM selected WHERE startsWith(attributes['event.name'], 'codex.')
     ), compacted AS (
       SELECT max(compact_source.timestamp) AS timestamp, min(compact_source.timestamp) AS first_timestamp,
@@ -193,10 +194,10 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
             OR attributes['success'] = 'false', 1,
           http_status >= 100 AND http_status <= 599, toUInt8(http_status >= 400),
           attributes['success'] = 'true', 0, NULL) AS failed,
-        multiIf(event = 'codex.startup_phase', concat('startup_phase:', ${safeText("attributes['startup.phase']")}),
+        ${effortOnly ? "''" : `multiIf(event = 'codex.startup_phase', concat('startup_phase:', ${safeText("attributes['startup.phase']")}),
           event IN ('codex.api_request','codex.api_error'), 'api_request',
           event IN ('codex.sse_event','codex.websocket_request','codex.websocket_event','codex.turn_ttft','codex.tool_result'),
-          substring(event,7), '') AS latency_name
+          substring(event,7), '')`} AS latency_name
       FROM parsed
     ), values AS (
       SELECT *, input_raw AS input_value, output_raw AS output_value,
@@ -240,12 +241,14 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
       sumIf(weight, attributes['success'] = 'true') AS successes,
       sumIf(weight, attributes['success'] = 'false') AS failures,
       sumIf(weight, attributes['success'] NOT IN ('true','false')) AS unknown_outcomes,
-      sumIf(weight, isNotNull(duration) AND family IN ('latency','tool')) AS duration_count,
+      ${effortOnly ? `toUInt64(0) AS duration_count, CAST(NULL, 'Nullable(Float64)') AS average_ms,
+      CAST([], 'Array(Float64)') AS percentiles, CAST(NULL, 'Nullable(Float64)') AS max_ms, toUInt64(0) AS sessions,`
+        : `sumIf(weight, isNotNull(duration) AND family IN ('latency','tool')) AS duration_count,
       sumKahanIf(duration * weight, family IN ('latency','tool')) / nullIf(duration_count,0) AS average_ms,
       quantilesExactWeightedIf(0.5,0.95)(ifNull(duration,0), weight,
         isNotNull(duration) AND family IN ('latency','tool')) AS percentiles,
       maxOrNullIf(duration, family IN ('latency','tool')) AS max_ms,
-      uniqExactIf(session, family = 'runtime' AND session != '') AS sessions,
+      uniqExactIf(session, family = 'runtime' AND session != '') AS sessions,`}
       max(toUInt8(session = '')) AS anonymous,
       ${TOKEN_KEYS.map(k => `${completeSum(`${k}_value`)} AS ${k}`).join(",\n")},
       ${completeSum("input_value + output_value", "usage_valid AND pair_valid")} AS tokens,

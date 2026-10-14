@@ -21,6 +21,25 @@ These changes do not eliminate raw scans or establish capacity for 140 distinct
 viewers. Requests sharing a cache key can reuse work; independent filters may miss.
 Existing admission, query, result and cache limits remain.
 
+## Avoiding unused work and collection
+
+The Effort detail panel on cost/productivity views requests `profile=effort`,
+reducing its database round trips from six to one. Its log query omits diagnostic
+families/quantiles but preserves original event deduplication, usage tiers and
+scope coverage. Full diagnostics remain available on their relevant views.
+See [observability](codex-observability.md#effort-profile).
+
+Claude and Codex log bodies are cleared before export. Supported measurements and
+completion identity use structured attributes, not bodies. Collector changes must
+be installed and validated on the emitting hosts; an application image rollout
+alone does not change collection.
+
+High-volume intermediate stream events also carry counts, latency and scope
+coverage. Repeated cumulative exports preserve observation/baseline evidence.
+Do not indiscriminately drop these, sum cumulative samples as usage, or infer
+missing telemetry as zero. Separate verified aggregation from collection reduction;
+preserve raw boundary fallback and disclose sampling/coverage if introduced.
+
 ## Subsequent schema design
 
 The following accelerators are proposals, not deployed tables:
