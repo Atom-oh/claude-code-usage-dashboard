@@ -61,9 +61,11 @@ const EFFICIENCY_TILES = [
 
 export default function CodexInsights({ range, enabled = true, hold = false, sections }) {
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
-  const { data, loading, error, stale } = useApi("/api/codex/insights", { client: "codex", ...bounds }, enabled, { linkedRange: true, hold });
-  const [preferredTab, setTab] = useState(TABS[0]);
   const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
+  const effortOnly = allowedTabs.length === 1 && allowedTabs[0] === TABS[0];
+  const { data, loading, error, stale } = useApi("/api/codex/insights",
+    { client: "codex", ...bounds, ...(effortOnly ? { profile: "effort" } : {}) }, enabled, { linkedRange: true, hold });
+  const [preferredTab, setTab] = useState(TABS[0]);
   const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
   const [search, setSearch] = useState("");
   const metrics = useMemo(() => (data?.metrics || []).filter((r) => r.name.toLowerCase().includes(search.toLowerCase())), [data?.metrics, search]);
@@ -83,7 +85,8 @@ export default function CodexInsights({ range, enabled = true, hold = false, sec
             상세 조회 구간: {formatClientTimestamp(data.range.from)} ~ {formatClientTimestamp(data.range.to)} (브라우저 시간)
           </p>}
           <div className="flex flex-wrap gap-2" aria-label="신호 수집 상태">
-            {["logs", "metrics", "traces"].map((signal) => {
+            {["logs", "metrics", "traces"].filter((signal) =>
+              data?.coverage?.[signal]?.status !== "not_requested").map((signal) => {
               const c = data?.coverage?.[signal];
               return <span key={signal} className="rounded-lg border border-ink-200 bg-card px-3 py-2 text-sm text-ink-700"
                 title={c?.last_seen ? `최근 관측: ${formatClientTimestamp(c.last_seen)}` : "선택한 구간의 수집 상태"}>

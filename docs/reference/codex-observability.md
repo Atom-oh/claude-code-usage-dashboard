@@ -112,6 +112,21 @@ they do not suppress log or metric results.
 Model filters require model evidence on metrics/spans; model-less spans can therefore
 be absent from a filtered trace. Span status is not a business-success determination.
 
+## Effort profile
+
+`profile=effort` on `/api/codex/insights` queries only logs. It retains full-identity
+counts, usage, Effort, operational denominators and scope evidence in one snapshot,
+while omitting latency/tool/approval/runtime breakdowns and their quantile work.
+Cost and productivity views use it when their only detail section is Effort.
+
+Metrics and traces are not queried; their coverage is `not_requested`, with null
+record counts, rather than empty or unavailable collection. The UI hides those
+irrelevant badges. `coverage.logs.omitted_sections` names unqueried log breakdowns.
+The response omits their arrays and `summary.tool_success_rate`; observed request,
+rejection, retry, approval and prompt summaries still retain their source semantics.
+Other profile values are rejected before querying/caching; profile identity is separate.
+The default profile retains all diagnostic signals and exact distributions.
+
 ## Privacy and deployment
 
 Structured signal allowlists retain identity, backend, model, effort and operational

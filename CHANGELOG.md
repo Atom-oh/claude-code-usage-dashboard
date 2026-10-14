@@ -12,6 +12,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-14 focused diagnostic queries)
+
+- Cost/productivity Effort detail queries omit unrequested metrics, traces,
+  diagnostic breakdowns and quantiles. Preserve usage, denominators, scope coverage
+  and full event identity; distinguish unqueried signals from absent collection.
+
 ### Changed (2026-10-13 cost query profile)
 
 - Add a validated cost profile for shared cost/executive/trend requests and exact

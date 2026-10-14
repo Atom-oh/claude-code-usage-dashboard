@@ -91,6 +91,14 @@ test("Codex log compaction against isolated ClickHouse", {
     assert.deepEqual(normalize(actual),normalize(expected));
     const aggregated = foldCodexLogAggregates(select(buildCodexLogAggregateQuery(from, to, filters)));
     assert.deepEqual(normalize(aggregated), normalize(expected));
+    const focused = foldCodexLogAggregates(select(
+      buildCodexLogAggregateQuery(from, to, filters, undefined, { effortOnly: true })));
+    const { tool_success_rate, ...billingSummary } = aggregated.summary;
+    const { tool_success_rate: uncomputed, ...focusedSummary } = focused.summary;
+    assert.deepEqual(focusedSummary, billingSummary);
+    assert.deepEqual(focused.effort, aggregated.effort);
+    assert.deepEqual(focused.events, aggregated.events);
+    assert.deepEqual(focused.coverage, aggregated.coverage);
     return actual;
   };
   await t.test("compaction preserves the raw fold, full identity, missingness and private-field exclusion", () => {

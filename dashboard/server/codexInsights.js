@@ -5,6 +5,11 @@ import { buildCodexLogAggregateQuery, foldCodexLogAggregates } from "./codexLogA
 import { buildMetricQuery, buildTraceQuery, foldCodexMetrics, foldCodexTraces } from "./codexSignals.js";
 
 const TYPES = ["sum", "gauge", "histogram", "exponential_histogram"];
+export function validateInsightsProfile(raw) {
+  if (raw.profile !== undefined && raw.profile !== "effort")
+    throw new ValidationError("invalid profile", "profile accepts only effort");
+  return raw.profile === "effort";
+}
 function foldSignal(rows, fold, limitMessage, emptyResult = () => fold([])) {
   try { return fold(rows); }
   catch (error) {
@@ -25,25 +30,35 @@ async function optionalQuery(request, run) {
 
 export async function codexInsights(from, to, raw = {}, run = query) {
   const filters = validateClientFilters(raw, ["codex"]);
-  const logQuery = buildCodexLogAggregateQuery(from, to, filters, codexPrices);
+  const effortOnly = validateInsightsProfile(raw);
+  const logQuery = buildCodexLogAggregateQuery(from, to, filters, codexPrices, { effortOnly });
   const [logRows, metricResults, traceResult] = await Promise.all([
     run(logQuery.sql, logQuery.params),
-    Promise.all(TYPES.map((type) => optionalQuery(buildMetricQuery(type, from, to, filters), run))),
-    optionalQuery(buildTraceQuery(from, to, filters), run),
+    effortOnly ? [] : Promise.all(TYPES.map((type) => optionalQuery(buildMetricQuery(type, from, to, filters), run))),
+    effortOnly ? { rows: [], unavailable: false }
+      : optionalQuery(buildTraceQuery(from, to, filters), run),
   ]);
   const { coverage: logCoverage, ...logs } = foldCodexLogAggregates(logRows);
   const { coverage: metricCoverage, metrics } = foldSignal(metricResults.flatMap((r) => r.rows),
     (rows) => foldCodexMetrics(rows, from, to), "too much signal data");
   const { coverage: traceCoverage, spans, traces } = foldCodexTraces(traceResult.rows);
-  const unavailable = TYPES.filter((_, i) => metricResults[i].unavailable);
+  const unavailable = effortOnly ? [] : TYPES.filter((_, i) => metricResults[i].unavailable);
+  if (effortOnly) {
+    delete logs.summary.tool_success_rate;
+    for (const name of ["tools", "approvals", "latency", "runtime"]) delete logs[name];
+  }
   return {
     range: { from: from.toISOString(), to: to.toISOString() },
     ...logs, metrics, spans, traces,
+    ...(effortOnly ? { profile: "effort" } : {}),
     coverage: {
-      logs: logCoverage,
-      metrics: { ...metricCoverage, ...(unavailable.length === TYPES.length ? { status: "unavailable" } : {}),
+      logs: { ...logCoverage,
+        ...(effortOnly ? { omitted_sections: ["latency", "tool", "approval", "runtime"] } : {}) },
+      metrics: effortOnly ? { status: "not_requested", records: null, last_seen: null }
+        : { ...metricCoverage, ...(unavailable.length === TYPES.length ? { status: "unavailable" } : {}),
         unavailable_types: unavailable, partial: unavailable.length > 0 || metrics.some((m) => m.partial) },
-      traces: { ...traceCoverage, selection: "latest_50_traces", span_limit_per_trace: 200,
+      traces: effortOnly ? { status: "not_requested", records: null, last_seen: null }
+        : { ...traceCoverage, selection: "latest_50_traces", span_limit_per_trace: 200,
         ...(traceResult.unavailable ? { status: "unavailable" } : {}) },
     },
     limitations: [
