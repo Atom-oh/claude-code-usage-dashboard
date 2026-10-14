@@ -141,6 +141,21 @@ test("a limited operational table cannot hide independently aggregated usage or 
   assert.equal(result.traces[0].wall_ms, 1);
 });
 
+test("a metric SQL limit marker preserves log usage and discloses limited diagnostics", async () => {
+  const result = await codexInsights(from, to, {}, async sql => {
+    if (sql.includes("codex_metrics_")) return [{ result_limited: 1 }];
+    if (sql.includes("FROM claude_code.otel_traces")) return [];
+    return usageRows;
+  });
+  assert.equal(result.summary.observed_tokens, 130);
+  assert.equal(result.summary.cost_per_request, 0.00238425);
+  assert.deepEqual(result.metrics, []);
+  assert.equal(result.coverage.metrics.status, "limited");
+  assert.equal(result.coverage.metrics.records, null);
+  assert.equal(result.coverage.metrics.last_seen, null);
+  assert.equal(result.coverage.logs.status, "observed");
+});
+
 test("limited scope evidence retains known usage while withholding complete ratios and session units", async () => {
   const result = await codexInsights(from, to, {}, async sql => diagnostic(sql) ? [] : [
     ...usageRows, ...Array.from({ length: 50001 }, (_, n) =>

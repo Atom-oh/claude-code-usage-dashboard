@@ -311,5 +311,24 @@ test("Codex signal SQL against isolated ClickHouse", {
     });
   }
 
-
+  for (const type of ["sum", "gauge", "histogram", "exponential_histogram"]) {
+    await t.test(`${type} marks oversized non-DELTA windows before transferring payloads`, () => {
+      const histogram = type.endsWith("histogram");
+      const valueColumns = histogram ? "Count, Sum, Min, Max" : "Value";
+      const values = histogram ? "1, 10, 10, 10" : "1";
+      execute(`INSERT INTO claude_code.codex_metrics_${type}
+        (ResourceAttributes, Attributes, MetricName, StartTimeUnix, TimeUnix,
+         ${type === "gauge" ? "" : "AggregationTemporality,"} ${valueColumns})
+        SELECT map('client','codex'), map('model','guard-scale'), 'codex.guard',
+          toDateTime64('2026-09-14 00:00:00',9),
+          addMicroseconds(toDateTime64('2026-09-15 00:00:00',9), number),
+          ${type === "gauge" ? "" : "2,"} ${values} FROM numbers(60000)`);
+      const request = buildMetricQuery(type, from, to, { model: "guard-scale" });
+      const output = execute(`${request.sql} FORMAT JSONEachRow`, request.params);
+      const rows = output.split("\n").map(JSON.parse);
+      assert.equal(rows.length, 1);
+      assert.equal(Number(rows[0].result_limited), 1);
+      assert.throws(() => foldCodexMetrics(rows, from, to), /too much signal data/);
+    });
+  }
 });

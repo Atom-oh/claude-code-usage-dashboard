@@ -229,3 +229,16 @@ test("cumulative baseline timestamps are grouped before full-point deduplication
   }
   assert.doesNotMatch(buildMetricQuery("gauge", from, to).sql, /baseline_times/);
 });
+
+test("an explicit SQL result limit cannot manufacture diagnostic observations", () => {
+  assert.throws(() => foldCodexMetrics([{ ...point, result_limited: 1 }], from, to),
+    /too much signal data/);
+  for (const type of ["sum", "gauge", "histogram", "exponential_histogram"]) {
+    const { sql } = buildMetricQuery(type, from, to);
+    assert.match(sql, /limit_probe AS/);
+    assert.match(sql, /toUInt8\(1\) AS result_limited/);
+    assert.match(sql, /\(SELECT points FROM limit_probe\) <= 50000/);
+    if (type !== "gauge") assert.match(sql, /FROM window_points WHERE temporality != 1 LIMIT 50001/);
+  }
+  assert.equal(foldCodexMetrics([{ ...point, result_limited: 0 }], from, to).coverage.status, "observed");
+});

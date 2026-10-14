@@ -17,6 +17,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Group Codex cumulative baseline timestamps before full-point deduplication,
   retaining complete series/start identity and every conflicting latest tie.
   Preserve the three-day lookback, result limits and unavailable/partial semantics.
+- Detect already oversized non-DELTA windows before baseline work and diagnostic
+  payload transfer; report the existing limited state without hiding log usage.
 
 ### Changed (2026-10-14 focused diagnostic queries)
 
