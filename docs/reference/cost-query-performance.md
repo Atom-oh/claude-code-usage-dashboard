@@ -44,13 +44,14 @@ is retained, so conflicting retries still withhold the affected aggregate.
 The three-day lookback, delta handling, range semantics and result guard remain.
 
 If distinct in-window non-DELTA points already exceed the existing 50,000-row
-guard, SQL returns an explicit limit marker before baseline work and payload
+guard, SQL returns an explicit limit marker before baseline work and bulk payload
 transfer. The fold reports unavailable diagnostic values with `status: limited`;
 independent log costs and usage remain available. DELTA exports are aggregated
 before that guard, so many advancing intervals can still produce usable metrics.
 
 This replaces a window over all prior sample payloads with one timestamp state
-per active series. It still scans raw history and can hit time/result limits;
+per active series. It reads the lookback twice and adds an in-window guard probe;
+those extra reads can increase elapsed time below the guard. It can hit time/result limits;
 query-memory reduction alone is not a latency or concurrency guarantee.
 No samples, model dimensions or diagnostic feeds are removed from collection.
 

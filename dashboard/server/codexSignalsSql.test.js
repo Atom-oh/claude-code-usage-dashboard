@@ -284,9 +284,9 @@ test("Codex signal SQL against isolated ClickHouse", {
       const values = type === "sum" ? "2, true" : "2, 20, 1, 10";
       execute(`INSERT INTO claude_code.codex_metrics_${type}
         (ResourceAttributes, ScopeName, ScopeVersion, ScopeAttributes, Attributes,
-         MetricName, StartTimeUnix, TimeUnix, AggregationTemporality, ${valueColumns})
+         MetricName, MetricUnit, StartTimeUnix, TimeUnix, AggregationTemporality, ${valueColumns})
         SELECT map('client','codex','backend','bedrock-mantle'), 'codex', '1', map('mode','one'),
-          map('model','baseline-scale'), '${metricName}',
+          map('model','baseline-scale'), '${metricName}', '1',
           toDateTime64('2026-09-11 00:00:00',9),
           addSeconds(toDateTime64('2026-09-12 00:00:00',9), number), 2, ${values}
         FROM numbers(60000)`);
@@ -296,7 +296,14 @@ test("Codex signal SQL against isolated ClickHouse", {
         ...(type === "sum" ? { Value: 13, IsMonotonic: true } : { Count: 13, Sum: 130, Min: 1, Max: 10 }) };
       const prior = { ...current, TimeUnix: "2026-09-14 23:59:59.123456789",
         ...(type === "sum" ? { Value: 5 } : { Count: 5, Sum: 50 }) };
-      insert(type, [prior, prior, current]);
+      insert(type, [current]);
+      const history = metric(type, { model: "baseline-scale" });
+      assert.equal(history.rows.length, 2);
+      assert(history.rows.some((row) => row.timestamp.startsWith("2026-09-12 16:39:59")),
+        "the active series uses the latest point from all 60000 prior exports");
+      assert.equal(history.metrics[0][type === "sum" ? "value" : "count"], 11,
+        "the long history supplies a real baseline, not a missing-baseline fallback");
+      insert(type, [prior, prior]);
       let result = metric(type, { model: "baseline-scale" });
       assert.equal(result.rows.length, 2, "older exports and identical latest retries are omitted");
       assert.equal(result.metrics[0][type === "sum" ? "value" : "count"], 8);
