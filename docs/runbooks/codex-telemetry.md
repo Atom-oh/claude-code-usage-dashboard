@@ -307,28 +307,6 @@ SSE/WebSocket completions. Input contains cache reads/writes; output contains
 reasoning. Missing/partial usage is not measured zero. HTTP 200 with `response.failed`
 is an error, and a fatal CLI exit may omit unflushed telemetry entirely.
 
-Claude log scrubbing also clears the body before export. Its supported queries
-and deduplication use timestamps and structured resource/log attributes. This
-preserves request/tool/usage metadata while preventing unconsumed free-text bodies
-from reaching storage. Existing historical rows are not rewritten. Validate the
-pinned Collector and restart the host service with its persistent queue retained;
-source configuration alone is not evidence of a fleet rollout.
-
-For a standalone receiver with a different pipeline configuration, prepare a private
-draft using Python 3 and PyYAML:
-
-```bash
-python3 scripts/scrub-collector-log-bodies.py \
-  --input "$EXISTING_CONFIG" --output "$NEW_PRIVATE_CONFIG"
-```
-
-The helper preserves receivers, authentication, exporters and non-log pipelines.
-It inserts a dedicated body transform before the log batch stage, refuses a
-conflicting processor definition and never overwrites the running configuration.
-Validate the draft with the installed Collector version before any controlled
-rollout. Retain the original configuration and wait for exporter queues to drain;
-an in-memory queue is not restart persistence.
-
 ### Storage interface
 
 Columns follow the actual pinned exporter's
