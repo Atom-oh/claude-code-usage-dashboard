@@ -54,6 +54,17 @@ class CapacityBenchmark(unittest.TestCase):
                               ({"cost": 0.1}, {"cost": 0.2}), ([1, 2], [1])]:
             self.assertFalse(benchmark.equivalent(first, second))
 
+    def test_exact_user_baseline_retains_both_clients_and_shared_amounts(self):
+        rows = [{"client": "claude", "user": "a", "cost": 0.1},
+                {"client": "codex", "user": "a", "cost": None},
+                {"client": "codex", "user": "b", "cost": 0.2}]
+        shared = {"by_user": rows}
+        self.assertTrue(benchmark.exact_user_baseline({"by_user": rows[:2][::-1]}, shared, "a"))
+        for actual in [{}, {"by_user": []}, {"by_user": rows[:1]},
+                       {"by_user": rows},
+                       {"by_user": [rows[0], {**rows[1], "cost": 0}]}]:
+            self.assertFalse(benchmark.exact_user_baseline(actual, shared, "a"))
+
     def test_admission_rejection_is_distinct_from_success_and_failure(self):
         result = benchmark.summarize([
             {"status": 200, "elapsedMs": 10, "semanticMatch": True},

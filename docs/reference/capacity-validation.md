@@ -49,7 +49,8 @@ It does not redefine rejected attempts as immediate successes.
   Cumulative values are increments with a real prior boundary, never summed exports.
   Codex diagnostic series retain unit, full identity and process-start boundaries.
 - Cost views request ten-minute buckets. Each distinct exact-user baseline must
-  preserve population before concurrent requests are admitted.
+  match both client rows from the shared baseline, including amounts and coverage,
+  before concurrent requests are admitted. Empty filtered responses fail validation.
 - Shared cold/warm requests and distinct cold/follow-up requests use simultaneous barriers.
   Distinct follow-up does not guarantee every key is warm on every replica: rejected
   work and load-balancer redistribution can still cause cache misses.
@@ -88,7 +89,8 @@ synthetic trials, with the resource envelope above:
 | Retry plus private query cancellation, no projection | 127 / 13 | 38 | 226 | 42.3 s |
 | Promoted-user PREWHERE plus synthetic projection, retry and cancellation | 140 / 0 | 39 | 186 | 8.0 s |
 
-No trial observed a container OOM or restart. Product-retry resource samples
+No trial observed a container OOM or automatic restart. API containers were
+intentionally restarted to clear their caches. Product-retry resource samples
 were added after these trials; their reports prove recorded running/OOM/restart
 state, not peak resource usage. Do not infer a cancellation-only speedup from
 the slower second trial. The projection result combines multiple changes and
@@ -99,3 +101,13 @@ Promoted-user PREWHERE reduced logical read bytes from about 4.64 GB to 3.62 GB.
 A six-column projection actually selected by ClickHouse reduced those bytes to
 41 MB and read rows from 2,016,000 to 17,824. These single-user query-log values
 are not concurrent fleet measurements or ingestion/merge/restore evidence.
+
+A subsequent full-scenario repetition with resource sampling returned 140/140
+shared and follow-up successes, but 100/140 successes plus 40 coded 503s for bare
+distinct cold requests. Actual product retry returned 140/140 final successes,
+39 initial 503s and 185 HTTP attempts, with p95 7.8 s. Sampled maxima during that
+retry were about 1,276 MiB per database and 128 MiB per API process; samples do not
+prove absolute peaks. All successful semantic comparisons passed, with no observed
+OOM/automatic restart. The all-scenario success flag remained false because the
+bare cold arrivals exceeded admission. This repetition preceded the stronger
+shared-to-exact-user baseline check above.

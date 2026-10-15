@@ -85,6 +85,13 @@ def equivalent(actual, expected):
     return actual == expected
 
 
+def exact_user_baseline(actual, shared, user):
+    expected = [row for row in shared.get("by_user", []) if row.get("user") == user]
+    # Both clients are seeded. An empty or incomplete filtered response cannot
+    # become its own golden and falsely establish successful capacity.
+    return len(expected) == 2 and equivalent(actual.get("by_user"), expected)
+
+
 def seed_sql(day, users, requests, resource_bytes):
     # All values are bounded integers/date objects. Neither endpoints nor user SQL are accepted.
     start = day.strftime("%Y-%m-%d 00:00:00")
@@ -452,8 +459,8 @@ def main(argv=None):
                 path = "/api/clients/overview?" + urllib.parse.urlencode(
                     {**params, "userExact": f"user-{index}@fixture.invalid"})
                 code, result, _, _ = request(stack, path)
-                if code != 200 or any(row["user"] != f"user-{index}@fixture.invalid"
-                                      for row in result.get("by_user", [])):
+                if code != 200 or not exact_user_baseline(
+                        result, golden, f"user-{index}@fixture.invalid"):
                     raise RuntimeError("exact-user baseline mismatch")
                 distinct.append(path); expected.append(result)
                 if (index+1) % 20 == 0:
