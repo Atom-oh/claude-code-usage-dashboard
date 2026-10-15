@@ -42,8 +42,8 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
   chart labels/timestamps/CSV display values use browser time zone.
   Derive rates from actual range duration, not the last preset; resync local chart
   granularity on global range changes.
-- Use `useApi()` to forward ranges/filters and handle refresh/aborts/payload identity.
-  Align quantization/grace constants with the server cache warmer.
+- `useApi()` owns range/filter requests, refresh, aborts and payload identity.
+  Match server quantization/grace.
 - Refreshes and period changes keep loaded data until replaced; a failed period
   load clears it. Unchanged payloads keep references; path/filter/client changes
   clear selection. Background failures retain data and signal refresh errors.
@@ -58,8 +58,8 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm
 - Use one navigation element except with the mobile drawer open. Mobile navigation
   uses `Sidebar`'s NAV; keep route/navigation tests aligned.
 - Time-series drag zoom changes the whole page; categorical axes do not zoom.
-- UI is Korean-first with existing English names/identifiers. Engineering docs are English-only;
-  documentation fixes must not translate runtime strings.
+- Keep UI Korean-first and technical names/identifiers English. Engineering docs are
+  English; doc edits must not translate runtime strings.
 
 See [frontend reference](../../docs/reference/frontend.md),
 [UI reference](../../docs/reference/ui.md), and [metric definitions](../../docs/metrics.md).

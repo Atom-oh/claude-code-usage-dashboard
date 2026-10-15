@@ -13,6 +13,7 @@ Follow the shared [documentation policy](../documentation-policy.md) for languag
 | [Data](data.md) | Schema, counter differences, time boundaries, identity and channel inference |
 | [API implementation](api.md) | Validation, filters, caching and query ownership |
 | [Cost query performance](cost-query-performance.md) | Cost profiles, accelerator proposals and capacity validation limits |
+| [Synthetic capacity validation](capacity-validation.md) | Isolated ARM64 HTTP/SQL workload, admission, latency and interpretation |
 | [Infrastructure as code](iac.md) | Terraform resources, prerequisites and deployment ownership |
 | [Customer installation](installation.md) | Read-only account/EKS preflight and remaining target verification |
 | [Frontend](frontend.md) | Routes, runtime configuration, range/filter state and fetching |

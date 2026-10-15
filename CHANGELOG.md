@@ -12,6 +12,15 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-15 constrained capacity)
+
+- Prioritize shared full/cost cache profiles and stop warming unused legacy views.
+  Recent authenticated default-window demand retains legacy warming.
+- Retry only explicit capacity-exhausted GET responses with bounded delay, jitter
+  and cancellation; preserve authentication/error handling and runtime limits.
+- Add isolated ARM64 synthetic HTTP/SQL capacity validation with immutable images,
+  ownership-checked cleanup, exact-user baselines and honest admission/latency results.
+
 ### Changed (2026-10-14 cumulative diagnostic baselines)
 
 - Group Codex cumulative baseline timestamps before full-point deduplication,

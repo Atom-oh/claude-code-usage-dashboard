@@ -76,6 +76,17 @@ not zero. Do not rebuild raw sorting keys as the first optimization.
 
 ## Capacity validation
 
+[Synthetic capacity validation](capacity-validation.md) runs actual constrained
+API/ClickHouse containers with synthetic data. It distinguishes admitted requests,
+bounded rejection and numeric correctness from a production capacity guarantee.
+
+The [warming plan](../../dashboard/server/warming.js) prioritizes shared full/cost
+defaults, including the cost model-time key. Legacy routes warm only after recent
+authenticated unfiltered requests matching the default window.
+The [API fetcher](../../dashboard/web/src/api.js) retries only coded capacity
+responses with a bounded server delay and jitter; other errors and cancellation
+retain their existing behavior. Admission, cache and database limits remain.
+
 For `N` independent viewers requesting every `T` seconds, the cold request rate is
 `N / T` only when every request misses. Database CPU demand is that rate multiplied
 by measured CPU-seconds per request. Query CPU budget must leave ingestion/merge
