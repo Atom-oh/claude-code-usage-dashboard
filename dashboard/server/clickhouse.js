@@ -22,10 +22,13 @@ export function toChDateTime(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
-export async function query(sql, query_params = {}) {
-  const release = await queryBudget.acquire();
+export async function query(sql, query_params = {}, signal) {
+  signal?.throwIfAborted();
+  const release = await queryBudget.acquire(signal);
   try {
-    const rs = await client.query({ query: sql, query_params, format: "JSONEachRow" });
+    signal?.throwIfAborted();
+    const rs = await client.query({ query: sql, query_params, format: "JSONEachRow",
+      ...(signal ? { abort_signal: signal } : {}) });
     return await rs.json();
   } finally {
     release();

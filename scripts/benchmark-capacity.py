@@ -28,6 +28,7 @@ def arguments(argv=None):
     parser.add_argument("--requests-per-user", type=int, default=720)
     parser.add_argument("--resource-bytes", type=int, default=2048)
     parser.add_argument("--dashboard-image", required=True)
+    parser.add_argument("--scenario", choices=["all", "product_retry"], default="all")
     args = parser.parse_args(argv)
     if not 1 <= args.users <= 140 or not 1 <= args.requests_per_user <= 1440:
         parser.error("users must be 1..140 and requests per user 1..1440")
@@ -366,6 +367,31 @@ def burst(stack, paths, expected):
     return {**summarize(rows), "samples": samples}
 
 
+def client_burst(stack, paths, expected):
+    name = "client-" + stack.run_id + "-0"
+    stack.containers.append(name)
+    value = {"runId": stack.run_id, "paths": paths, "authorization": stack.authorization}
+    output = stack.docker("run", "--rm", "-i", "--name", name, "--network", stack.network,
+        "--label", "ccdash.capacity-run=" + stack.run_id, "--cpus", "1", "--memory", "256m",
+        "--entrypoint", "node",
+        "-v", str(ROOT / "scripts/capacity-client.mjs") + ":/capacity-client.mjs:ro",
+        "-v", str(ROOT / "dashboard/web/src/api.js") + ":/capacity-api.mjs:ro",
+        stack.args.dashboard_image, "/capacity-client.mjs", data=json.dumps(value), timeout=120)
+    native = json.loads(output)
+    if len(native) != len(paths):
+        raise RuntimeError("product retry result population mismatch")
+    rows = [{"status": row["status"], "elapsedMs": row["elapsedMs"],
+             "semanticMatch": row["status"] == 200 and equivalent(row["body"], expected[index]),
+             "capacityRejected": row["status"] == 503 and row.get("body", {}).get("code")
+               == "capacity_exhausted" and row.get("retryAfter") == "1"}
+            for index, row in enumerate(native)]
+    return {**summarize(rows), "initial503": sum(row["attempts"][:1] == [503] for row in native),
+            "totalHttpAttempts": sum(len(row["attempts"]) for row in native),
+            "retries": sum(max(0, len(row["attempts"])-1) for row in native),
+            "apiFetchSha256": hashlib.sha256((ROOT / "dashboard/web/src/api.js").read_bytes()).hexdigest(),
+            "productRetry": True}
+
+
 def main(argv=None):
     args = arguments(argv)
     os.umask(0o077)
@@ -375,6 +401,7 @@ def main(argv=None):
               "scope": "synthetic local ARM64 HTTP/SQL, Basic authentication; not customer OIDC or production capacity",
               "users": args.users, "requestsPerUser": args.requests_per_user,
               "resourceBytes": args.resource_bytes,
+              "selectedScenario": args.scenario,
               "envelope": {"clickhouse": {"replicas": 3, "cpuEach": 3.5, "memoryEach": "13Gi"},
                            "api": {"replicas": 2, "cpuEach": 0.5, "memoryEach": "256Mi"}},
               "limitations": ["independent database copies omit Keeper/replication overhead",
@@ -397,7 +424,7 @@ def main(argv=None):
             if not (golden["totals"].get("observed_tokens") or 0) > 0 or len(golden["by_user"]) != args.users*2:
                 raise RuntimeError("fixture population/usage mismatch")
             cases = [("shared_cold", [base_path]*args.users, [golden]*args.users),
-                     ("shared_warm", [base_path]*args.users, [golden]*args.users)]
+                     ("shared_warm", [base_path]*args.users, [golden]*args.users)] if args.scenario == "all" else []
             distinct, expected = [], []
             for index in range(args.users):
                 path = "/api/clients/overview?" + urllib.parse.urlencode(
@@ -410,7 +437,8 @@ def main(argv=None):
                 if (index+1) % 20 == 0:
                     print(json.dumps({"phase": "verify_exact_user_baselines",
                                       "verifiedUsers": index+1}), flush=True)
-            cases.extend([("distinct_cold", distinct, expected), ("distinct_followup", distinct, expected)])
+            if args.scenario == "all":
+                cases.extend([("distinct_cold", distinct, expected), ("distinct_followup", distinct, expected)])
             for name, paths, expected in cases:
                 print(json.dumps({"phase": name, "requests": len(paths)}), flush=True)
                 if name.endswith("_cold"):
@@ -418,6 +446,11 @@ def main(argv=None):
                 summary = burst(stack, paths, expected)
                 summary.update(name=name, after=stack.state())
                 record["scenarios"].append(summary)
+            stack.clear_api_caches()
+            print(json.dumps({"phase": "distinct_cold_product_retry", "requests": args.users}), flush=True)
+            summary = client_burst(stack, distinct, expected)
+            summary.update(name="distinct_cold_product_retry", after=stack.state())
+            record["scenarios"].append(summary)
             record["allUsersSucceededInEveryScenario"] = all(
                 case["successfulSemanticChecks"] == args.users for case in record["scenarios"])
             record["responsesSemanticallyValid"] = all(

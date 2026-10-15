@@ -480,7 +480,7 @@ const counterObserved = "(m.SessionId, m.UserEmail, m.MetricName, m.TokenType) I
 
 // Client summaries reuse the existing counter and boundary semantics without adding
 // dimensions to shared helpers. Operational Codex events never enter these counters.
-export async function clientClaudeRows(from, to, filters = {}, nativeSeconds) {
+export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, signal) {
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   // User/model are partition dimensions in the local counter window, so narrowing them
   // throughout the lookback preserves the baseline. Session channel/backend inference stays global.
@@ -540,7 +540,7 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds) {
       OR (timeline_only AND max(changed) = 0 AND (token_observed OR cost_observed))
     ORDER BY t LIMIT 50001 BY timeline_only`,
   { ...range(from, to, b.raw), ...b.params, ...f.params, clientBackend: filters.backend || "",
-    ...(fine ? { clientMinutes: nativeSeconds / 60 } : {}) });
+    ...(fine ? { clientMinutes: nativeSeconds / 60 } : {}) }, signal);
 }
 
 // 패널1: 그룹별 KPI 요약. excludeUnknown: false — 이 응답의 합계(클라이언트에서 groupBy 없이

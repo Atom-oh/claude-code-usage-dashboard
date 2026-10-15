@@ -77,6 +77,14 @@ class CapacityBenchmark(unittest.TestCase):
         self.assertIn('"--internal"', source)
         self.assertNotIn("AUTH_ALLOW_INSECURE", source)
 
+    def test_product_retry_uses_actual_module_and_owned_fixture(self):
+        source = (ROOT / "scripts/capacity-client.mjs").read_text()
+        self.assertIn('from "/capacity-api.mjs"', source)
+        self.assertIn("fetchWithCapacityRetry", source)
+        self.assertIn("data.runId", source)
+        self.assertIn('"/api/clients/overview?"', source)
+        self.assertNotIn("CH_URL", source)
+
 
 if __name__ == "__main__":
     unittest.main()

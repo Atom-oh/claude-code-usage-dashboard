@@ -86,6 +86,10 @@ authenticated unfiltered requests matching the default window.
 The [API fetcher](../../dashboard/web/src/api.js) retries only coded capacity
 responses with a bounded server delay and jitter; other errors and cancellation
 retain their existing behavior. Admission, cache and database limits remain.
+One failed overview [query batch](../../dashboard/server/clientQueryBatch.js) cancels
+its own queued/HTTP siblings instead of leaving rejected work running without a
+consumer. A shared cache computation is never cancelled by one HTTP subscriber.
+HTTP cancellation does not guarantee immediate ClickHouse execution termination.
 
 For `N` independent viewers requesting every `T` seconds, the cold request rate is
 `N / T` only when every request misses. Database CPU demand is that rate multiplied

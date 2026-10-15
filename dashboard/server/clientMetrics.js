@@ -3,6 +3,7 @@ import { ValidationError } from "./http.js";
 import { selectClients } from "./clients.js";
 import { priceCodexUsage, parseCodexPricing, codexModelSql } from "./codexPricing.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
+import { clientQueryBatch } from "./clientQueryBatch.js";
 import { normalizeModelId, computeCost } from "./pricing.js";
 import { isNonAnthropicModel } from "./nonAnthropicCost.js";
 import { backendSql } from "./backend.js";
@@ -504,16 +505,16 @@ export async function clientOverview(from, to, raw, enabledClients) {
   const jobs = [];
   for (const client of filters.clients) {
     if (client === "claude") {
-      jobs.push(queries.clientClaudeRows(from, to, filters, nativeSeconds)
+      jobs.push(signal => queries.clientClaudeRows(from, to, filters, nativeSeconds, signal)
         .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" }))));
     }
     const { sql, params } = buildCodexQuery(from, to, filters, codexPrices, client, nativeSeconds, { costView });
-    jobs.push(query(sql, params).then((rows) => {
+    jobs.push(signal => query(sql, params, signal).then((rows) => {
       if (rows.length > ROW_LIMIT) throw new ValidationError("too much client data", "narrow the requested date range");
       return rows.map((row) => ({ ...row, client }));
     }));
   }
-  const lists = await Promise.all(jobs);
+  const lists = await clientQueryBatch(jobs);
   const records = bucketSeconds > nativeSeconds ? rebucketRows(lists.flat(), from, bucketSeconds) : lists.flat();
   // The route validates modelTime; only the literal "1" enables the dimension.
   const modelTime = raw.modelTime === "1";

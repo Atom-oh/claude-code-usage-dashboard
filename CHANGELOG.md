@@ -18,6 +18,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Recent authenticated default-window demand retains legacy warming.
 - Retry only explicit capacity-exhausted GET responses with bounded delay, jitter
   and cancellation; preserve authentication/error handling and runtime limits.
+- Cancel private sibling queries when an overview fails, preserving the original
+  error classification and shared-cache ownership.
 - Add isolated ARM64 synthetic HTTP/SQL capacity validation with immutable images,
   ownership-checked cleanup, exact-user baselines and honest admission/latency results.
 
