@@ -690,3 +690,34 @@ test.each([
 ])("fromByModelTime without a valid range or bucket size stays sparse (%#)", (patch) => {
   expect(fromByModelTime({ ...OV, ...patch }, "codex")).toEqual(fromByModelTime(OV, "codex").filter((x) => x.idle !== true));
 });
+
+test("fromByModelTime reads by_user_time for the user dimension with no channel", () => {
+  const data = { ...OV, by_user_time: [
+    { client: "claude", t: "2026-09-14T10:00:00Z", user: "kim@example.com", cost_usd: 2, cost_partial: true,
+      unpriced: 2, unpriced_reasons: { report_missing: 1, report_zero_with_tokens: 1, missing_usage: 0 }, observed_tokens: 147 },
+  ] };
+  const cells = fromByModelTime(data, "claude", { dimension: "user" });
+  const user = cells.find((cell) => cell.model === "kim@example.com");
+  expect(user).toMatchObject({ t: H10, channel: null, known: 2, partial: true, unavailable: 2 });
+  // The same residual and idle rules as the model dimension: no extra metadata cell at 10:00.
+  expect(cells.filter((cell) => cell.t === H10)).toHaveLength(1);
+  expect(fromByModelTime({ ...OV, by_user_time: undefined }, "claude", { dimension: "user" })).toBeNull();
+});
+
+test("the user axis keeps raw identities as keys, masks labels and ranks colors", async () => {
+  const { setPiiMask } = await import("./fmt.js");
+  setPiiMask(true);
+  const cells = [c(D1, "kim@example.com", null, 5), c(D1, "lee@example.com", null, 1), c(D1, "", null, 0.5),
+    c(D2, "park@example.com", null, null, u("report_missing"))];
+  const frame = buildModelCostFrame(cells, { top: 2, bounds: BOUNDS, bucketHours: 24, dimension: "user" });
+  expect(frame.series.map((s) => [s.model, s.label, s.colorKey])).toEqual([
+    ["kim@example.com", "ki******@example.com", "user-0"],
+    ["lee@example.com", "le******@example.com", "user-1"],
+  ]);
+  expect(frame.others.label).toBe("기타 2명");
+  expect(frame.othersBreakdown.map((e) => e.label)).toEqual(["(사용자 미상)", "pa******@example.com"]);
+  expect(frame.totals.issues[0].identities[0].label).toBe("pa******@example.com");
+  expect(trendColor("user-0")).toBe(Object.values(MODEL_TREND_COLORS.light)[0]);
+  expect(trendColor("user-1", "dark")).toBe(Object.values(MODEL_TREND_COLORS.dark)[1]);
+  expect(buildModelCostFrame([], { dimension: "user" }).others.label).toBe("사용자 미귀속");
+});

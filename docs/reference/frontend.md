@@ -190,6 +190,11 @@ never drawn as zero, and idle is the
 persistent status naming each reason with model and channel/backend identities (including
 Others members), a table view, a basis chip and a value-sorted tooltip. Detail pages pass no
 `bounds`, so absent buckets collapse as before; the no-data state appears only with bounds.
+Shared views also draw a per-client user cost trend from `by_user_time`
+(`fromByModelTime(data, client, { dimension: "user" })`, `dimension="user"` on the component).
+It shares the model trend's bucket pick; user labels are masked with `maskEmail` while keys stay
+raw, user series take palette colors by rank (users have no stable color identity), and the
+Others table drops the channel column.
 
 Sibling rule: the shared Claude and Codex cards come from one response, share its effective
 range and bucket origins, are never summed and keep separate y-scales. Client-colored

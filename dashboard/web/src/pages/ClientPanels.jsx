@@ -163,15 +163,17 @@ const bucketLabel = costResolutionLabel;
 
 // Cells are always rolled up, even to the source size, so the shared first bucket (keyed at
 // `from`) is floored like every other bucket.
-function ClientModelTrend({ data, client, hours, source, stale }) {
-  const cells = useMemo(() => rollupBuckets(fromByModelTime(data, client), hours, { sourceHours: source }),
-    [data, client, hours, source]);
+function ClientModelTrend({ data, client, hours, source, stale, dimension = "model" }) {
+  const cells = useMemo(() => rollupBuckets(fromByModelTime(data, client, { dimension }), hours, { sourceHours: source }),
+    [data, client, hours, source, dimension]);
   // The emitting client does not select its cost basis. Non-Anthropic Claude uses AWS estimates.
   const sourceBasis = data?.by_client?.find((row) => row.client === client)?.cost_basis;
   const basis = `${client === "claude" ? "Claude" : clientName(client)} ${TREND_BASIS[sourceBasis] || "비용 기준 미제공"}`
     + (sourceBasis !== "computed_estimate" && cells?.some((c) => c.estimated) ? " · 일부 계산 추정" : "");
-  return <ModelCostTrend title={`${clientName(client)} 모델별 비용 추이`} basis={basis} cells={cells}
-    xKey="t" bucketHours={hours} bounds={data?.effective_range} zoomDisabled={stale} accent={color(client)} />;
+  const noun = dimension === "user" ? "사용자" : "모델";
+  return <ModelCostTrend title={`${clientName(client)} ${noun}별 비용 추이`} basis={basis} cells={cells}
+    xKey="t" bucketHours={hours} bounds={data?.effective_range} zoomDisabled={stale} accent={color(client)}
+    dimension={dimension} />;
 }
 
 // One card per selected, enabled client from the same response, so both share the effective range
@@ -187,17 +189,28 @@ function ModelTrends({ data, clients, exec, stale }) {
     : source >= 1 / 6 && source < 1 ? source : intervalHours;
   const hours = Math.max(source, pick?.key === rangeKey ? pick.hours : fallback);
   const options = [...new Set([source, hours, 1, 24, 168])].filter((h) => h >= source).sort((a, b) => a - b);
-  return <section aria-label="클라이언트별 모델 비용 추이" className="flex flex-col gap-3">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <SectionLabel>모델별 비용 추이 · 클라이언트별 비용 기준 · 합산하지 않음</SectionLabel>
-      <SegmentedControl options={options.map((h) => ({ value: String(h), label: bucketLabel(h) }))}
-        value={String(hours)} onChange={(v) => setPick({ key: rangeKey, hours: Number(v) })} />
-    </div>
-    <div className={`grid gap-4 ${clients.length > 1 ? "xl:grid-cols-2" : ""}`}>
-      {clients.map((client) => <ClientModelTrend key={client} data={data} client={client}
-        hours={hours} source={source} stale={stale} />)}
-    </div>
-  </section>;
+  const grid = `grid gap-4 ${clients.length > 1 ? "xl:grid-cols-2" : ""}`;
+  // The user trend shares the model trend's bucket pick; both regroup the same usage records.
+  return <>
+    <section aria-label="클라이언트별 모델 비용 추이" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SectionLabel>모델별 비용 추이 · 클라이언트별 비용 기준 · 합산하지 않음</SectionLabel>
+        <SegmentedControl options={options.map((h) => ({ value: String(h), label: bucketLabel(h) }))}
+          value={String(hours)} onChange={(v) => setPick({ key: rangeKey, hours: Number(v) })} />
+      </div>
+      <div className={grid}>
+        {clients.map((client) => <ClientModelTrend key={client} data={data} client={client}
+          hours={hours} source={source} stale={stale} />)}
+      </div>
+    </section>
+    <section aria-label="클라이언트별 사용자 비용 추이" className="flex flex-col gap-3">
+      <SectionLabel>{`사용자별 비용 추이 · 상위 사용자 ID 기준 · ${bucketLabel(hours)}`}</SectionLabel>
+      <div className={grid}>
+        {clients.map((client) => <ClientModelTrend key={client} data={data} client={client}
+          hours={hours} source={source} stale={stale} dimension="user" />)}
+      </div>
+    </section>
+  </>;
 }
 
 // Exact row identities stay local; the shared hook retains the active global filters.

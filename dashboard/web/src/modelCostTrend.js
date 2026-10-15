@@ -1,6 +1,7 @@
 // Partial-preserving model cost cells for ModelCostTrend: known amounts are summed as they are,
 // unavailable is never zero, a measured $0 stays distinct, and idle cells follow ADR-015.
 import { MODEL_TREND_COLORS, MODEL_TREND_OTHERS, MODEL_TREND_VENDOR_RAMPS, modelColorFor } from "./colors.js";
+import { maskEmail } from "./fmt.js";
 
 export const MAX_INTERVALS = 5000;
 export const OTHERS_KEY = "__others";
@@ -91,6 +92,29 @@ export function identityLabel(model, channel) {
   return typeof channel === "string" && channel !== "" ? `${part} · ${channel}` : part;
 }
 
+// Identity axis of a trend frame. A cell's `model` field holds the identity either way: the model
+// id for "model", the raw user identity for "user" (masked only in labels, never in keys).
+const MODEL_AXIS = {
+  key: displayModel,
+  label: modelLabel,
+  identity: identityLabel,
+  color: (key) => modelColorKey(key),
+  others: (n) => (n ? `기타 ${n}개 모델` : "모델 미귀속"),
+};
+const userLabel = (key) => (key === "" ? "(사용자 미상)" : maskEmail(key));
+const USER_AXIS = {
+  key: (raw) => String(raw ?? ""),
+  label: userLabel,
+  identity: (user, channel) => {
+    const part = user === null ? "사용자 미귀속" : userLabel(user);
+    return typeof channel === "string" && channel !== "" ? `${part} · ${channel}` : part;
+  },
+  // Users have no stable color identity, so series colors follow rank within the frame.
+  color: (key, rank) => ({ key: `user-${rank}` }),
+  others: (n) => (n ? `기타 ${n}명` : "사용자 미귀속"),
+};
+const axisFor = (dimension) => (dimension === "user" ? USER_AXIS : MODEL_AXIS);
+
 export function reasonLabel(reason) {
   const group = REASON_GROUPS.find((g) => g.reasons.includes(reason));
   return group ? group.label : "사유 미확인";
@@ -154,15 +178,20 @@ export function fromByModelDaily(rows) {
 const hasComputedFallback = (row) => row?.cost_basis === "computed_estimate"
   || (amount(row?.cost_estimated) ?? 0) > 0;
 
-export function fromByModelTime(data, client) {
-  if (!Array.isArray(data?.by_model_time)) return null;
+// dimension "user" reads by_user_time: the same usage regrouped per (client, t, user), so the
+// residual and idle rules below apply unchanged. User cells carry no channel.
+export function fromByModelTime(data, client, { dimension = "model" } = {}) {
+  const byUser = dimension === "user";
+  const source = byUser ? data?.by_user_time : data?.by_model_time;
+  if (!Array.isArray(source)) return null;
   const cells = [];
   const modelByT = new Map();
-  for (const row of data.by_model_time) {
+  for (const row of source) {
     if (!row || row.client !== client) continue;
     const t = bucketKey(row.t);
     if (t === null) continue;
-    const cell = finishCell(t, typeof row.model === "string" ? row.model : "", row.backend || "unknown",
+    const identity = byUser ? row.user : row.model;
+    const cell = finishCell(t, typeof identity === "string" ? identity : "", byUser ? null : row.backend || "unknown",
       amount(row.cost_usd), row.unpriced, row.unpriced_reasons || {}, row.cost_partial, amount(row.observed_tokens),
       client === "claude" && hasComputedFallback(row));
     cells.push(cell);
@@ -304,7 +333,9 @@ function parseBound(value) {
   return NaN;
 }
 
-export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucketHours, maxIntervals = MAX_INTERVALS } = {}) {
+export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucketHours, maxIntervals = MAX_INTERVALS,
+  dimension = "model" } = {}) {
+  const axis = axisFor(dimension);
   const list = Array.isArray(cells) ? cells : [];
   const isModelCell = (cell) => cell.idle !== true && cell.model !== null;
 
@@ -312,7 +343,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
   const stats = new Map();
   for (const cell of list) {
     if (!isModelCell(cell)) continue;
-    const key = displayModel(cell.model);
+    const key = axis.key(cell.model);
     let s = stats.get(key);
     if (!s) {
       s = { known: null, observed_tokens: null, hasIssue: false };
@@ -332,7 +363,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
   });
 
   // 3. Series membership: top-N plus pinned models present in the period, in ranked order.
-  const pinnedKeys = new Set((Array.isArray(pinned) ? pinned : []).filter(Boolean).map(displayModel));
+  const pinnedKeys = new Set((Array.isArray(pinned) ? pinned : []).filter(Boolean).map(axis.key));
   const picked = new Set(ranked.slice(0, top));
   for (const key of pinnedKeys) {
     if (stats.has(key)) picked.add(key);
@@ -341,13 +372,13 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
 
   const series = seriesKeys.map((model, i) => {
     const s = stats.get(model);
-    const { key: colorKey } = modelColorKey(model);
-    return { key: "s" + i, model, label: modelLabel(model), colorKey, known: s.known,
+    const { key: colorKey } = axis.color(model, i);
+    return { key: "s" + i, model, label: axis.label(model), colorKey, known: s.known,
       observed_tokens: s.observed_tokens, pinned: pinnedKeys.has(model), hasIssue: s.hasIssue };
   });
   const seriesByModel = new Map(series.map((s) => [s.model, s.key]));
   // A model === null cell never belongs to a series even though displayModel(null) is "".
-  const seriesOf = (cell) => (cell.model === null ? null : seriesByModel.get(displayModel(cell.model)) ?? null);
+  const seriesOf = (cell) => (cell.model === null ? null : seriesByModel.get(axis.key(cell.model)) ?? null);
 
   // 5. 기타 summary over every non-idle cell outside the series.
   const otherModels = ranked.filter((key) => !seriesByModel.has(key));
@@ -355,7 +386,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
   for (const cell of list) {
     if (cell.idle !== true && seriesOf(cell) === null) othersKnown = addKnown(othersKnown, cell.known);
   }
-  const others = { key: OTHERS_KEY, label: otherModels.length ? `기타 ${otherModels.length}개 모델` : "모델 미귀속", count: otherModels.length,
+  const others = { key: OTHERS_KEY, label: axis.others(otherModels.length), count: otherModels.length,
     models: otherModels, known: othersKnown, affected: otherModels.filter((key) => stats.get(key).hasIssue) };
 
   // 6. Bucket keys: every cell's t plus the bounded grid when it fits the interval cap.
@@ -397,7 +428,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
       total = addKnown(total, cell.known);
       if (cell.estimated) hasEstimate = true;
       if (cell.known === null || cell.partial) {
-        issues.push({ model: cell.model, channel: cell.channel, label: identityLabel(cell.model, cell.channel),
+        issues.push({ model: cell.model, channel: cell.channel, label: axis.identity(cell.model, cell.channel),
           unavailable: cell.unavailable, reasons: cell.reasons, series: sk ?? OTHERS_KEY });
       }
     }
@@ -431,7 +462,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
       const key = identityKey(cell);
       let entry = perIdentity.get(key);
       if (!entry) {
-        entry = { model: cell.model, channel: cell.channel, label: identityLabel(cell.model, cell.channel),
+        entry = { model: cell.model, channel: cell.channel, label: axis.identity(cell.model, cell.channel),
           count: 0, inOthers: seriesOf(cell) === null };
         perIdentity.set(key, entry);
       }
@@ -449,7 +480,7 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
     const key = identityKey(cell);
     let entry = breakdown.get(key);
     if (!entry) {
-      entry = { model: cell.model, label: identityLabel(cell.model, null), channel: cell.channel, known: null, unavailable: 0 };
+      entry = { model: cell.model, label: axis.identity(cell.model, null), channel: cell.channel, known: null, unavailable: 0 };
       breakdown.set(key, entry);
     }
     entry.known = addKnown(entry.known, cell.known);
@@ -507,6 +538,12 @@ export function trendColor(key, theme = "light") {
   const k = String(key ?? "");
   if (Object.hasOwn(MODEL_TREND_COLORS[mode], k)) return MODEL_TREND_COLORS[mode][k];
   if (k === OTHERS_COLOR_KEY) return MODEL_TREND_OTHERS[mode];
+  // User series reuse the model palette in its validated adjacent order.
+  const user = /^user-(\d+)$/.exec(k);
+  if (user) {
+    const palette = Object.values(MODEL_TREND_COLORS[mode]);
+    return palette[Number(user[1]) % palette.length];
+  }
   // modelColorFor has one set for both themes.
   if (k.startsWith("family:")) return modelColorFor(k.slice(7)) ?? MODEL_TREND_OTHERS[mode];
   const ramp = /^(anthropic|openai|other)-(\d+)$/.exec(k);

@@ -120,7 +120,8 @@ function TrendTooltip({ active, payload, frame, fmtTick, c }) {
 }
 
 export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t", bucketHours, bounds,
-  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent }) {
+  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent, dimension = "model" }) {
+  const noun = dimension === "user" ? "사용자" : "모델";
   const c = useChartColors();
   // One bucket-size fallback (the global interval, as useDragZoom uses) for zoom, ticks and grid.
   const { intervalHours } = useRange();
@@ -139,8 +140,8 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const pinnedKey = JSON.stringify(pinned ?? []);
   const fromMs = boundMs(bounds?.from), toMs = boundMs(bounds?.to);
   const frame = useMemo(() => (Array.isArray(cells)
-    ? buildModelCostFrame(cells, { top, pinned: JSON.parse(pinnedKey), bounds: { from: fromMs, to: toMs }, bucketHours: hours })
-    : null), [cells, top, pinnedKey, fromMs, toMs, hours]);
+    ? buildModelCostFrame(cells, { top, pinned: JSON.parse(pinnedKey), bounds: { from: fromMs, to: toMs }, bucketHours: hours, dimension })
+    : null), [cells, top, pinnedKey, fromMs, toMs, hours, dimension]);
 
   const chip = basis ? <span className="rounded-full border border-ink-200 px-2 py-0.5 text-[11px] text-ink-600"
     style={accent ? { borderColor: accent } : undefined}>{basis}</span> : null;
@@ -161,7 +162,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   if (!hasCells) {
     return (
       <TrendCard title={title} subtitle={subtitle} help={help} right={header} accent={accent}>
-        <div role="status" className="text-sm text-ink-500">모델별 비용 정보가 없어 추이를 확인할 수 없습니다.</div>
+        <div role="status" className="text-sm text-ink-500">{`${noun}별 비용 정보가 없어 추이를 확인할 수 없습니다.`}</div>
       </TrendCard>
     );
   }
@@ -241,15 +242,15 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
         </tbody>
       </table>
       {frame.othersBreakdown.length > 0 && (
-        <table aria-label="기타 모델 내역" className={TABLE_CLASS}>
+        <table aria-label={`기타 ${noun} 내역`} className={TABLE_CLASS}>
           <thead>
-            <tr><th>모델</th><th>채널/백엔드</th><th>알려진 비용</th><th>확인 불가</th></tr>
+            <tr><th>{noun}</th>{dimension !== "user" && <th>채널/백엔드</th>}<th>알려진 비용</th><th>확인 불가</th></tr>
           </thead>
           <tbody>
             {frame.othersBreakdown.map((entry) => (
               <tr key={`${entry.model}\u0000${entry.channel}`}>
                 <td className="break-words">{entry.label}</td>
-                <td>{entry.channel ?? "—"}</td>
+                {dimension !== "user" && <td>{entry.channel ?? "—"}</td>}
                 <td>{formatUsdPrecise(entry.known)}</td>
                 <td>{entry.unavailable > 0 ? `${entry.unavailable}건` : "—"}</td>
               </tr>

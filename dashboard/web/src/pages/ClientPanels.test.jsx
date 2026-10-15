@@ -575,6 +575,31 @@ test.each([
   if (basis !== "computed_estimate") expect(node.textContent).not.toContain("보고 비용이 없어");
 });
 
+test("each client also gets a masked user cost trend that follows the shared bucket pick", () => {
+  const data = modelTimeData();
+  data.by_user_time = data.by_model_time.map(({ model, backend, ...row }, i) =>
+    ({ ...row, user: i % 2 ? "lee@example.com" : "kim@example.com" }));
+  mount("cost", data);
+  const section = document.querySelector('section[aria-label="클라이언트별 사용자 비용 추이"]');
+  const cards = [...section.querySelectorAll(".shadow-card")];
+  expect(cards.map((c) => c.querySelector(".truncate").textContent))
+    .toEqual(["Claude Code 사용자별 비용 추이", "Codex 사용자별 비용 추이"]);
+  expect(section.textContent).toContain("시간별");
+  const legend = [...cards[0].querySelectorAll('ul[aria-label="범례"] li')].map((li) => li.textContent);
+  // Ranked by known cost: lee $3, kim $2.
+  expect(legend).toEqual(["le******@example.com", "ki******@example.com"]);
+  expect(section.textContent).not.toContain("kim@example.com");
+  // The model section and its cards are unchanged.
+  expect(trendTitles()).toEqual(["Claude Code 모델별 비용 추이", "Codex 모델별 비용 추이"]);
+});
+
+test("a response without by_user_time leaves the user trend unavailable, never $0", () => {
+  mount("cost", modelTimeData());
+  const section = document.querySelector('section[aria-label="클라이언트별 사용자 비용 추이"]');
+  expect(section.textContent).toContain("사용자별 비용 정보가 없어 추이를 확인할 수 없습니다.");
+  expect(section.textContent).not.toContain("$0");
+});
+
 test("a response without by_model_time leaves each model cost trend card unavailable, never $0", () => {
   mount("cost", { ...modelTimeData(), by_model_time: undefined });
   const cards = trendCards();
