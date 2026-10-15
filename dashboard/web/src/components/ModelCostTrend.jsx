@@ -216,11 +216,12 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   );
 
   const tables = showTable ? (
-    <>
+    <div role="region" aria-label={typeof title === "string" && title ? `${title} 표` : `${noun}별 비용 추이 표`} tabIndex={0}
+      className="max-w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-500">
       <table aria-label="버킷별 비용 표" className={TABLE_CLASS}>
         <thead>
           <tr>
-            <th>버킷</th>
+            <th className="whitespace-nowrap">버킷</th>
             {series.map((s) => <th key={s.key}>{s.label}</th>)}
             {showOthers && <th>{frame.others.label}</th>}
             <th>알려진 합계</th>
@@ -230,7 +231,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
         <tbody>
           {frame.buckets.map((b) => (
             <tr key={b.t} data-bucket={b.t}>
-              <td>{fmtTick(b.t)}</td>
+              <td className="whitespace-nowrap">{fmtTick(b.t)}</td>
               {series.map((s) => (
                 <td key={s.key}>{formatUsdPrecise(b.segments[s.key]) + (b.partialSeries.includes(s.key) ? " ⚠" : "")}</td>
               ))}
@@ -258,7 +259,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
           </tbody>
         </table>
       )}
-    </>
+    </div>
   ) : null;
 
   if (frame.allUnavailable) {
