@@ -41,8 +41,8 @@ function mount(dimension, cells, extra = {}) {
   return title;
 }
 
-// JSDOM cannot prove actual scrolling. This guards the focusable overflow boundary;
-// the rendered-image mobile gate checks real width, keyboard scroll and final columns.
+// JSDOM cannot prove actual scrolling. This guards the focusable overflow boundary.
+// Verify real width, keyboard scrolling and final columns in a browser before rollout.
 test.each(["model", "user"])("%s tables expose a named keyboard-focusable horizontal scroll region", (dimension) => {
   const title = mount(dimension, [
     cell("fixture-long-name-a@example.invalid", 2),
