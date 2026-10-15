@@ -17,13 +17,14 @@ async function within(promise, milliseconds = 2000) {
 
 test("private batch abort reaches Claude factor and counter HTTP queries",
   { timeout: 10000 }, async t => {
-    let stage, hold, held, cancelled;
+    let stage, hold, held, cancelled, factorRequests = 0, counterRequests = 0;
     const responses = [];
     const server = createServer(async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const sql = Buffer.concat(chunks).toString();
       const factor = sql.includes("SELECT SessionId AS session");
+      if (factor) factorRequests++; else counterRequests++;
       if (!hold || (stage === "counter" && factor)) return res.end("");
       assert.equal(factor, stage === "factor");
       responses.push(res);
@@ -64,6 +65,36 @@ test("private batch abort reaches Claude factor and counter HTTP queries",
           }
         });
       }
+      await t.test("one cancelled Claude view leaves its peer's shared factor request alive", async () => {
+        clearNonAnthropicFactorCache();
+        stage = "factor"; hold = true;
+        factorRequests = 0; counterRequests = 0;
+        const received = new Promise(resolve => { held = resolve; });
+        let unexpectedClose = false;
+        cancelled = () => { unexpectedClose = true; };
+        const first = new AbortController(), second = new AbortController();
+        const a = clientClaudeRows(new Date("2026-09-14"), new Date("2026-09-15"), {}, 600, first.signal);
+        const b = clientClaudeRows(new Date("2026-09-14"), new Date("2026-09-15"), {}, 600, second.signal);
+        b.catch(() => {}); // Preserve the result while observing cancellation first.
+        const rejected = assert.rejects(a, error => error === first.signal.reason);
+        try {
+          await within(received);
+          first.abort();
+          await within(rejected);
+          await new Promise(resolve => setImmediate(resolve));
+          assert.equal(factorRequests, 1);
+          assert.equal(unexpectedClose, false);
+          hold = false;
+          for (const res of responses) if (!res.writableEnded) res.end();
+          assert.deepEqual(await within(b), []);
+          assert.equal(counterRequests, 1);
+          assert.equal(unexpectedClose, false);
+        } finally {
+          hold = false;
+          for (const res of responses) if (!res.writableEnded) res.end();
+          await Promise.allSettled([a, b]);
+        }
+      });
     } finally {
       for (const [key, value] of Object.entries(previous))
         if (value === undefined) delete process.env[key]; else process.env[key] = value;

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldFactors, isNonAnthropicModel, nacCostSql, withNacParams } from "./nonAnthropicCost.js";
+import { foldFactors, isNonAnthropicModel, nacCostSql, withNacParams,
+  nonAnthropicFactors, clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
 
 // Live request (2026-10-07 12:54:42): Claude Code reported $1.819543 (Opus 5.5 rates); mayu
 // priced it at the AWS long-context rate, $0.099921.
@@ -60,4 +61,36 @@ test("factor params are added only for queries that reference them, over [prevFr
   // An empty factor set still binds both params (the client drops empty arrays).
   const empty = await withNacParams(sql, { from: "2026-10-01 00:00:00", to: "2026-10-01 01:00:00" }, async () => []);
   assert.deepEqual([empty.nacKeys, empty.nacFactors], [["|"], [-1]]);
+});
+
+test("140 cold views share one factor lookup for the same window", async () => {
+  clearNonAnthropicFactorCache();
+  let resolve, calls = 0;
+  const held = new Promise(done => { resolve = done; });
+  const run = async () => { calls++; return held; };
+  const loads = Array.from({ length: 140 }, () =>
+    nonAnthropicFactors(new Date("2026-10-14"), new Date("2026-10-15"), run));
+  try {
+    await new Promise(done => setImmediate(done));
+    assert.equal(calls, 1);
+  } finally {
+    resolve([]);
+    await Promise.allSettled(loads);
+    clearNonAnthropicFactorCache();
+  }
+});
+
+test("factor caches keep runner identity and invalidation separate", async () => {
+  clearNonAnthropicFactorCache();
+  const from = new Date("2026-10-14"), to = new Date("2026-10-15");
+  let calls = 0;
+  const first = async () => { calls++; return [luna]; };
+  const second = async () => [];
+  assert.deepEqual(await nonAnthropicFactors(from, to, first), foldFactors([luna]));
+  assert.deepEqual(await nonAnthropicFactors(from, to, second), { keys: [], factors: [] });
+  await nonAnthropicFactors(from, to, first);
+  assert.equal(calls, 1);
+  clearNonAnthropicFactorCache();
+  await nonAnthropicFactors(from, to, first);
+  assert.equal(calls, 2);
 });

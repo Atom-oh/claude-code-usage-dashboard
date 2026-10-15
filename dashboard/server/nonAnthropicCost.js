@@ -2,6 +2,7 @@ import { query as rawQuery, toChDateTime } from "./clickhouse.js";
 import { normalizeModelId } from "./pricing.js";
 import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.js";
 import { resolveBackend } from "./backend.js";
+import { createFactorCache } from "./factorCache.js";
 
 // ADR-017: Claude Code prices models it does not know (OpenAI, xAI, Z.ai, ... on Bedrock) with
 // its default Opus rates, so its cost.usage counter is not a usable report for them (measured
@@ -78,15 +79,15 @@ export function foldFactors(rows, normalize = normalizeModelId, priceTable = pri
   return { keys, factors };
 }
 
-// Factors for the query window [from, to). Memoized briefly: one dashboard view issues several
-// queries over the same window.
-const cache = new Map();
-const CACHE_MS = 60_000;
-export async function nonAnthropicFactors(from, to, run = rawQuery) {
+// Equal windows share one pending lookup. Runner identity isolates injected
+// sources; the default database runner stays stable across all overview loads.
+let caches = new WeakMap();
+export async function nonAnthropicFactors(from, to, run = rawQuery, signal) {
+  let cache = caches.get(run);
+  if (!cache) { cache = createFactorCache(); caches.set(run, cache); }
   const key = `${from.toISOString()}|${to.toISOString()}`;
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
-  const rows = await run(
+  return cache.get(key, async ownedSignal => {
+    const rows = await run(
     `SELECT SessionId AS session, LogAttributes['model'] AS model,
         LogAttributes['input_tokens'] AS input_tokens, LogAttributes['output_tokens'] AS output_tokens,
         LogAttributes['cache_read_tokens'] AS cache_read_tokens,
@@ -98,11 +99,9 @@ export async function nonAnthropicFactors(from, to, run = rawQuery) {
        AND LogAttributes['model'] != ''
        AND NOT startsWith(replaceRegexpOne(replaceRegexpOne(LogAttributes['model'],
          '^(us|us-gov|eu|apac|jp|au|global)\\\\.', ''), '^anthropic\\\\.', ''), 'claude-')`,
-    { from: toChDateTime(from), to: toChDateTime(to) });
-  const value = foldFactors(rows);
-  cache.set(key, { at: Date.now(), value });
-  if (cache.size > 64) cache.delete(cache.keys().next().value);
-  return value;
+      { from: toChDateTime(from), to: toChDateTime(to) }, ownedSignal);
+    return foldFactors(rows);
+  }, signal);
 }
 
 // ClickHouse DateTime param text ('YYYY-MM-DD HH:MM:SS', UTC) → Date.
@@ -112,12 +111,13 @@ const parseCh = (text) => new Date(String(text).replace(" ", "T") + "Z");
 // prices, [prevFrom ?? from, to), widened two hours back: rollup branches align their starts down
 // to the hour (and the comparison re-derives the previous start from the aligned current one).
 const ALIGN_SLACK_MS = 2 * 3600000;
-export async function withNacParams(sql, params, run = rawQuery) {
+export async function withNacParams(sql, params, run = rawQuery, signal) {
+  signal?.throwIfAborted();
   if (!sql.includes(NAC_PLACEHOLDER)) return params;
   const from = new Date(parseCh(params.prevFrom ?? params.from).getTime() - ALIGN_SLACK_MS), to = parseCh(params.to);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()))
     throw new Error("non-Anthropic cost factors need from/to params");
-  const { keys, factors } = await nonAnthropicFactors(from, to, run);
+  const { keys, factors } = await nonAnthropicFactors(from, to, run, signal);
   // The client omits empty array params; a key no session|model can equal keeps them bound.
   return keys.length ? { ...params, nacKeys: keys, nacFactors: factors }
     : { ...params, nacKeys: ["|"], nacFactors: [-1] };
@@ -125,5 +125,5 @@ export async function withNacParams(sql, params, run = rawQuery) {
 
 // Tests insert logs between queries over the same window.
 export function clearNonAnthropicFactorCache() {
-  cache.clear();
+  caches = new WeakMap();
 }
