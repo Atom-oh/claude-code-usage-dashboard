@@ -53,6 +53,15 @@ release on settlement. Probes and OIDC protocol routes remain outside HTTP admis
 connection pool remains 30.
 These bounds do not reserve sockets, measure latency or establish a fleet SLO.
 
+Large immutable data-route values share serialized bytes and one gzip operation
+among active responses. Representations are released after the last response
+finishes/closes and any compression settles; no settled encoding cache or copied
+source is retained. JSON policy/Express application changes do not share old bytes.
+Custom replacers/boxed spacing retain per-response evaluation. Content negotiation,
+JSON escaping, null/zero/tiny values, auth, status and private cache headers remain.
+This reduces duplicate response work, not the size of data received by each client
+or an absolute heap/socket bound.
+
 Chat limits admit ten requests per IP/minute, storing at most 4,096 live keys and ten
 timestamps per key. Denied attempts do not extend the admitted-hit window. A full key map
 rejects new keys until expired entries can be removed; live limits are never evicted.

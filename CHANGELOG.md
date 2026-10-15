@@ -17,6 +17,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Let up to 64 distinct cold views per process wait up to 30 seconds for an
   existing cache-load slot. Preserve 64 active loads, database/request limits,
   single-flight sharing, result quotas and explicit overload errors.
+- Start at most two private overview queries at once, preserving result order,
+  cancellation and the first error.
+- Share immutable JSON bytes and one gzip operation while responses are active;
+  release representations after the last response/compression settles.
 
 ### Fixed (2026-10-15 mobile cost tables)
 
