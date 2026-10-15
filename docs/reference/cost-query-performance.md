@@ -35,6 +35,25 @@ Do not indiscriminately drop these, sum cumulative samples as usage, or infer
 missing telemetry as zero. Separate verified aggregation from collection reduction;
 preserve raw boundary fallback and disclose sampling/coverage if introduced.
 
+Codex user filters use existing promoted email/end-user identity in `PREWHERE` to
+reject unrelated wide maps early. The original map-derived filter, completion
+deduplication, scope evidence and pricing remain. Queries without a user selector
+retain their previous source path. Verify promoted definitions/history on the target;
+source schema alone does not establish runtime state.
+
+An additive user/event/time log projection remains a synthetic accelerator proposal.
+The private benchmark can materialize it without changing production sorting keys,
+data, ingestion or Keeper. Live rollout needs reviewed schema/history, retention,
+storage, backup/restore and parity evidence.
+
+A single-table synthetic lifecycle trial on ClickHouse 24.8.14.39 restored all
+1,008,000 logs and the projection from a local Native backup, retaining 144-row
+query parity. Late duplicate completions, heavy `ALTER ... DELETE`, table TTL
+expiry and dropping the projection retained the expected raw/projected results.
+Lightweight `DELETE FROM` was rejected while the projection existed. Operator
+deletion procedures must account for that restriction before live adoption.
+This is not a customer S3/Keeper/full-database restore or RTO measurement.
+
 ## Cumulative diagnostic baselines
 
 Codex cumulative metric queries group the latest prior export timestamp by the
@@ -75,6 +94,26 @@ an idempotent strategy or a bounded writer pause. Unfilled history is unavailabl
 not zero. Do not rebuild raw sorting keys as the first optimization.
 
 ## Capacity validation
+
+[Synthetic capacity validation](capacity-validation.md) runs actual constrained
+API/ClickHouse containers with synthetic data. It distinguishes admitted requests,
+bounded rejection and numeric correctness from a production capacity guarantee.
+
+The [warming plan](../../dashboard/server/warming.js) prioritizes shared full/cost
+defaults, including the cost model-time key. Legacy routes warm only after recent
+authenticated unfiltered requests matching the default window.
+The [API fetcher](../../dashboard/web/src/api.js) retries only coded capacity
+responses with a bounded server delay and jitter; other errors and cancellation
+retain their existing behavior. Admission, cache and database limits remain.
+One failed overview [query batch](../../dashboard/server/clientQueryBatch.js) cancels
+its own queued/HTTP siblings instead of leaving rejected work running without a
+consumer. A shared cache computation is never cancelled by one HTTP subscriber.
+HTTP cancellation does not guarantee immediate ClickHouse execution termination.
+The Claude query wrapper forwards the batch signal through both its non-Anthropic
+factor lookup and final counter query. The
+[HTTP regression](../../dashboard/server/clientCancellation.test.js) holds each
+response open and verifies that a sibling failure aborts it while retaining the
+original capacity error.
 
 For `N` independent viewers requesting every `T` seconds, the cold request rate is
 `N / T` only when every request misses. Database CPU demand is that rate multiplied

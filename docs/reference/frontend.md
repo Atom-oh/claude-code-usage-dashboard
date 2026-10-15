@@ -195,12 +195,13 @@ Sibling rule: the shared Claude and Codex cards come from one response, share it
 range and bucket origins, are never summed and keep separate y-scales. Client-colored
 header accents identify the cards independently of model color, including when Codex uses
 a Claude model. Texture never represents client identity or availability. Bucket defaults: Cost
-uses the global interval; Executive uses 24h up to 30 days, else 168h; the shared pages use the
-global interval (exec 24h/168h), never below `bucket_hours`, and always roll up so the first
-bucket is floored. `modelTime=1` is sent only on the shared cost and exec pages. It is a cold
-cache key that the default-view warmer does not fill, and moving between those pages and the
-others is a `useApi` identity change that reloads instead of retaining data. Executive's
-default 24h request is also not the warmed default-view key.
+uses the global interval; Executive renders 24h up to 30 days, else 168h. Shared charts
+never render below `bucket_hours` and roll up so the first bucket is floored.
+Shared Cost/Trends request their selected resolution; shared Executive requests the
+global resolution and rolls up for display. These three pages send `modelTime=1`
+with `view=cost`, sharing the default cost warming profile. Custom windows, filters
+and resolutions may remain cold. Moving between these pages and the others is a
+`useApi` identity change that reloads instead of retaining data.
 
 Shared chart basis chips use the response's cost basis rather than assuming every Claude
 amount is reported. `mixed` is a combination of known bases, not proof of a missing report.

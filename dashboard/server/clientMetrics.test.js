@@ -7,6 +7,19 @@ const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", sessio
   project: "fixture", context_tier: "short", count: 1, input_tokens_total: 100, cache_read_tokens: 40,
   cache_write_tokens: 11, output_tokens: 30, reasoning_tokens: 10, invalid: 0 };
 
+test("Codex user prefilter keeps native fallback, original checks and both dedup branches", () => {
+  const from = new Date("2026-09-14"), to = new Date("2026-09-15");
+  const { sql, params } = buildCodexQuery(from, to, { userExact: "fixture@example.invalid" });
+  assert.equal((sql.match(/PREWHERE/g) || []).length, 2);
+  assert.match(sql, /coalesce\(nullIf\(UserEmail, ''\), nullIf\(EndUserId, ''\), ''\)/);
+  assert.match(sql, /coalesce\(nullIf\(ResourceAttributes\['user.email'\], ''\)/);
+  assert.match(sql, /SELECT DISTINCT Timestamp, mapSort\(ResourceAttributes\)/);
+  assert.equal(params.clientUserExact, "fixture@example.invalid");
+  assert(!sql.includes("fixture@example.invalid"));
+  assert(!buildCodexQuery(from, to).sql.includes("PREWHERE"));
+  assert(!buildCodexQuery(from, to, { user: "fixture" }, {}, "claude").sql.includes("PREWHERE"));
+});
+
 test("idle Claude counter observations fill only the timeline, not active population or totals", () => {
   const active = { ...event, client: "claude", input_tokens: 49, reported_cost: 2 };
   const baseline = foldClientMetrics([active], ["claude", "codex"]);

@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { createAuthentication } from "./auth.js";
 import { createInstallationProbe } from "./installation.js";
 import { CapacityError, capacityResponse, createRequestAdmission, createResultCache } from "./capacity.js";
+import { createWarmingPlan } from "./warming.js";
 import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
 import { sendJson } from "./jsonResponse.js";
 import * as q from "./queries.js";
@@ -287,11 +288,11 @@ function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
 
 // warmer가 순회할 라우트 레지스트리 — warm:false는 필수 파라미터(email 등)가 있어 기본 뷰가
 // 성립하지 않는 엔드포인트.
-const warmRoutes = [];
+const warmingPlan = createWarmingPlan({ defaultDays: DEFAULT_RANGE_DAYS });
 
 function route(path, handler, { warm = true, client = "claude", validate, permission, snapshot = false } = {}) {
   const active = client === null || clientConfig.enabledClients.includes(client);
-  if (warm && active && !snapshot) warmRoutes.push({ path, handler });
+  if (warm && active && !snapshot) warmingPlan.register(path, handler);
   const authorize = permission ? authentication.requirePermission(permission) : (_req, _res, next) => next();
   app.get(path, authorize, async (req, res) => {
     if (!active) return res.status(404).json({ error: "client disabled" });
@@ -304,6 +305,7 @@ function route(path, handler, { warm = true, client = "claude", validate, permis
       parseRange(req.query, RANGE_OPTS);
       parseIntervalHours(req.query.intervalHours);
       validate?.(req.query);
+      if (warm) warmingPlan.requested(path, req.query);
       await sendJson(req, res, await fetchCached(path, handler, req.query));
     } catch (err) {
       if (err instanceof CapacityError) return capacityResponse(res);
@@ -334,7 +336,7 @@ route("/api/installation", installationProbe,
 
 route("/api/clients/overview",
   (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),
-  { client: null, warm: clientConfig.enabledClients.includes("codex"),
+  { client: null, warm: true,
     validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); validateClientView(raw); } });
 
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
@@ -346,7 +348,9 @@ route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
   } });
 
 // ── 캐시 warmer ──────────────────────────────────────────────────────────
-// 기본 뷰(2일·필터 없음·시간 버킷)를 QUANT_MS(현재 120초) 경계마다 서버가 스스로 조회해
+// Shared full/cost defaults are warmed first. Legacy views join the plan only after
+// recent authenticated, unfiltered demand; disabled/snapshot routes never register.
+// 기본 뷰(기본 기간·필터 없음)를 QUANT_MS(현재 120초) 경계마다 서버가 스스로 조회해
 // 캐시를 채운다 — 첫 방문자든 새 세션이든 캐시 히트로 즉각 응답한다. 클라이언트(useApi)가
 // to를 같은 QUANT_MS 경계로 내림(quantize)하므로 warmer가 만든 키와 문자 그대로 일치한다.
 // 기본 창은 DEFAULT_RANGE_DAYS 하나가 정한다 — 서버 warmer와 parseRange의 기본 구간, 그리고
@@ -356,10 +360,8 @@ route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
 // 동시에 9개씩 워밍하자 가장 무거운 leaderboard가 15초 클라이언트 타임아웃) 배치로 나눠
 // 분산한다. 실측(2026-07-10, otel_metrics_sum ~9.5M행): 배치 크기 5에서 쿼리 1건이 단독
 // 2~4.5초인데 배치 내 5개 동시 실행 시 9~11초로 늘어남(ClickHouse CPU 경쟁) — 배치를 3으로
-// 줄여 경쟁을 완화. 한 사이클 ≈ 10배치 × (쿼리 최대 ~9초 + 2초) ≈ 최대 110초(WARM_CYCLE_MAX_MS)
-// — QUANT_MS(120초) 창 안에 끝나야 하고, 클라이언트 WARM_GRACE_MS(useApi.js)가 이보다 커야
-// 항상 warm-완료 상태를 히트한다. 캐시가 파드 로컬 메모리라 파드마다 각자 데워야 한다(공유
-// 불가, 의도된 구조).
+// 줄여 경쟁을 완화. 실제 소요 시간은 데이터와 최근 사용한 경로에 달린다. 시간 유예만으로
+// 캐시 적중을 보장하지 않는다. 캐시는 파드 로컬이므로 각 파드가 같은 계획을 수행한다.
 const WARM_BATCH = 3;
 const WARM_BATCH_GAP_MS = 2_000;
 
@@ -375,15 +377,16 @@ async function warmCache() {
   const query = {
     from: new Date(toMs - DEFAULT_RANGE_DAYS * 86400000).toISOString(),
     to: new Date(toMs).toISOString(),
-    intervalHours: "1", // days<=2일 때 프론트가 보내는 값과 동일(문자열 — URLSearchParams 정합)
+    intervalHours: DEFAULT_RANGE_DAYS <= 2 ? "1" : "24",
   };
-  for (let i = 0; i < warmRoutes.length; i += WARM_BATCH) {
+  const jobs = warmingPlan.jobs();
+  for (let i = 0; i < jobs.length; i += WARM_BATCH) {
     await Promise.allSettled(
-      warmRoutes.slice(i, i + WARM_BATCH).map(({ path, handler }) =>
-        fetchCached(path, handler, query).catch((err) => console.error("warm", path, err.message))
+      jobs.slice(i, i + WARM_BATCH).map(({ path, handler, params }) =>
+        fetchCached(path, handler, { ...query, ...params }).catch((err) => console.error("warm", path, err.message))
       )
     );
-    if (i + WARM_BATCH < warmRoutes.length) await new Promise((r) => setTimeout(r, WARM_BATCH_GAP_MS));
+    if (i + WARM_BATCH < jobs.length) await new Promise((r) => setTimeout(r, WARM_BATCH_GAP_MS));
   }
 }
 

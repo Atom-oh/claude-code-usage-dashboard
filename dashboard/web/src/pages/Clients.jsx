@@ -32,8 +32,7 @@ export default function Clients({ page = "overview" }) {
   const resolutionOptions = costResolutionOptions(to - from);
   const hours = resolution?.key === rangeKey && resolutionOptions.includes(resolution.hours)
     ? resolution.hours : costDefaultResolution(to - from, defaultHours);
-  // Only cost and exec chart model cost trends. modelTime=1 is its own cache key, which the
-  // default-view warmer does not fill (a cold request), and moving between these two pages and the
+  // Cost/exec/trends use the separate modelTime=1 cost cache profile. Moving between them and the
   // others changes useApi's identity, so that switch reloads instead of retaining the data.
   const modelTime = page === "cost" || page === "exec" || page === "trends";
   const { data, loading, error, stale } = useApi("/api/clients/overview", {

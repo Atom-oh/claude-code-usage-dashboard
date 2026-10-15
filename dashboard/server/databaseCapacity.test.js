@@ -36,6 +36,10 @@ test("actual database helpers bound queries through JSON consumption and keep pi
       const cancelled = database.queryReadonly("SELECT 1", aborted.signal);
       aborted.abort();
       await assert.rejects(cancelled, error => error.name === "AbortError");
+      const ordinaryAbort = new AbortController();
+      const cancelledOrdinary = database.query("SELECT 1", {}, ordinaryAbort.signal);
+      ordinaryAbort.abort();
+      await assert.rejects(cancelledOrdinary, error => error.name === "AbortError");
       const burst = Array.from({ length: 128 }, () => database.query("SELECT 1"));
       pending.push(...burst);
       const allBurst = Promise.all(burst);
