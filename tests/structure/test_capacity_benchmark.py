@@ -85,6 +85,13 @@ class CapacityBenchmark(unittest.TestCase):
         self.assertIn('"/api/clients/overview?"', source)
         self.assertNotIn("CH_URL", source)
 
+    def test_projection_is_explicit_and_only_targets_owned_synthetic_tables(self):
+        self.assertFalse(self.parse().fixture_user_projection)
+        self.assertTrue(self.parse("--fixture-user-projection").fixture_user_projection)
+        source = (ROOT / "scripts/benchmark-capacity.py").read_text()
+        self.assertIn("SELECT Timestamp, ResourceAttributes, LogAttributes, EventName, UserEmail, EndUserId", source)
+        self.assertIn('"syntheticUserProjection": args.fixture_user_projection', source)
+
 
 if __name__ == "__main__":
     unittest.main()

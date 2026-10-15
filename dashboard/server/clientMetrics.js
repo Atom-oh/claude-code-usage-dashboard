@@ -378,6 +378,13 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   const backendExpr = (modelExpr, tagExpr) => isCodex ? backendSql(modelExpr, tagExpr)
     : `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql(modelExpr, tagExpr)})`;
   const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
+  // Promoted identities let PREWHERE reject other users before reading wide maps.
+  // The original map-derived predicate below remains the final semantic check.
+  const earlyUser = "coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '')";
+  const prewhere = isCodex && (filters.user || filters.userExact) ? `PREWHERE
+      Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+      AND ({clientUser:String} = '' OR positionCaseInsensitive(${earlyUser}, {clientUser:String}) > 0)
+      AND ({clientUserExact:String} = '' OR ${earlyUser} = {clientUserExact:String})` : "";
   const modelMatch = "(positionCaseInsensitive(model, {clientModel:String}) > 0 AND ({clientModelExact:String} = '' OR model = {clientModelExact:String}))";
   const modelSessions = filters.model || filters.modelExact ? `model_sessions AS (
     SELECT session, user, project FROM unique_events WHERE session != '' AND ${modelMatch}
@@ -400,6 +407,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       ${isCodex ? "EventName" : "replaceRegexpOne(EventName, '^claude_code\\\\.', '')"} AS event_name
     FROM claude_code.otel_logs
     ${isCodex ? "" : "LEFT JOIN session_group ug USING (SessionId)"}
+    ${prewhere}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
       AND ${isCodex ? `startsWith(EventName, 'codex.') AND NOT (${CODEX_DELTA_EVENT})`
         : `EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})`}${isCodex ? `
@@ -414,6 +422,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
       ${backendExpr("LogAttributes['model']", "ResourceAttributes['backend']")} AS backend,
       ResourceAttributes['project.name'] AS project, EventName AS event_name
     FROM claude_code.otel_logs
+    ${prewhere}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND ${CODEX_DELTA_EVENT}
     GROUP BY session, user, model, backend, project, event_name` : ""}
   ), ${modelSessions} typed AS (

@@ -35,6 +35,17 @@ Do not indiscriminately drop these, sum cumulative samples as usage, or infer
 missing telemetry as zero. Separate verified aggregation from collection reduction;
 preserve raw boundary fallback and disclose sampling/coverage if introduced.
 
+Codex user filters use existing promoted email/end-user identity in `PREWHERE` to
+reject unrelated wide maps early. The original map-derived filter, completion
+deduplication, scope evidence and pricing remain. Queries without a user selector
+retain their previous source path. Verify promoted definitions/history on the target;
+source schema alone does not establish runtime state.
+
+An additive user/event/time log projection remains a synthetic accelerator proposal.
+The private benchmark can materialize it without changing production sorting keys,
+data, ingestion or Keeper. Live rollout needs reviewed schema/history, retention,
+storage, backup/restore and parity evidence.
+
 ## Cumulative diagnostic baselines
 
 Codex cumulative metric queries group the latest prior export timestamp by the

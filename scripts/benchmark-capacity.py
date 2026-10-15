@@ -29,6 +29,8 @@ def arguments(argv=None):
     parser.add_argument("--resource-bytes", type=int, default=2048)
     parser.add_argument("--dashboard-image", required=True)
     parser.add_argument("--scenario", choices=["all", "product_retry"], default="all")
+    parser.add_argument("--fixture-user-projection", action="store_true",
+                        help="Materialize an additive read projection on owned synthetic tables only.")
     args = parser.parse_args(argv)
     if not 1 <= args.users <= 140 or not 1 <= args.requests_per_user <= 1440:
         parser.error("users must be 1..140 and requests per user 1..1440")
@@ -234,6 +236,16 @@ class Stack:
               flush=True)
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
             list(pool.map(lambda node: self.sql(node, fixture), self.nodes))
+        if self.args.fixture_user_projection:
+            self.stage = "materialize_synthetic_user_projection"
+            print(json.dumps({"phase": self.stage}), flush=True)
+            sql = """ALTER TABLE claude_code.otel_logs ADD PROJECTION capacity_user_order (
+              SELECT Timestamp, ResourceAttributes, LogAttributes, EventName, UserEmail, EndUserId
+              ORDER BY (coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), ''), EventName, Timestamp));
+              ALTER TABLE claude_code.otel_logs MATERIALIZE PROJECTION capacity_user_order
+              SETTINGS mutations_sync=1"""
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+                list(pool.map(lambda node: self.sql(node, sql), self.nodes))
         targets = {"api": [f"http://{name}:8080" for name in self.apps],
                    "database": [f"http://{name}:8123" for name in self.nodes]}
         proxy_env = self.directory / "proxy.env"
@@ -402,6 +414,7 @@ def main(argv=None):
               "users": args.users, "requestsPerUser": args.requests_per_user,
               "resourceBytes": args.resource_bytes,
               "selectedScenario": args.scenario,
+              "syntheticUserProjection": args.fixture_user_projection,
               "envelope": {"clickhouse": {"replicas": 3, "cpuEach": 3.5, "memoryEach": "13Gi"},
                            "api": {"replicas": 2, "cpuEach": 0.5, "memoryEach": "256Mi"}},
               "limitations": ["independent database copies omit Keeper/replication overhead",

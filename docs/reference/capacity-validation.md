@@ -25,6 +25,13 @@ All containers use an internal network. The host connects directly to its owned
 private transport; there are no published ports or ambient HTTP proxies.
 No production credentials are consumed and authentication remains enabled.
 
+`--fixture-user-projection` adds and materializes a six-column projection only on
+owned synthetic log tables. It preserves timestamps, full resource/log attributes,
+event names and promoted identities, ordered by resolved user/event/time.
+The report records this option. It is not a production migration, materialization
+proof, retention/backup validation or deployment approval. Inspect actual projection
+selection through query-log/plan evidence when interpreting it.
+
 ## Workload and checks
 
 - Three independent ClickHouse 24.8 copies, each limited to 3.5 CPUs and 13 GiB.
