@@ -278,8 +278,10 @@ test("modelTime=1 is an overview dimension with its own cache identity", async (
   assert.equal(rows[3].dataQueries, 0);
   assert.ok(!("by_model_time" in rows[0].body));
   assert.ok(!("by_model_time" in rows[2].body));
-  const { by_model_time, ...rest } = rows[1].body;
+  assert.ok(!("by_user_time" in rows[0].body));
+  const { by_model_time, by_user_time, ...rest } = rows[1].body;
   assert.deepEqual(rest, rows[0].body);
+  assert.ok(by_user_time.some((r) => r.client === "codex"));
   const codex = by_model_time.find((r) => r.client === "codex" && r.model === "openai.gpt-6-astra");
   assert.equal(codex.backend, "bedrock-mantle");
   assert.equal(codex.cost_usd, 0.00238425);

@@ -483,7 +483,7 @@ test("cost folds preserve coverage, tiers, identities and idle buckets while omi
     const cost = foldClientMetrics(records, modelTimeClients, undefined, { modelTime: true, costView: true });
     const { by_project, tools, ...expected } = full;
     expected.totals = trim(expected.totals);
-    for (const key of ["by_client", "by_user", "by_model", "by_model_time", "timeseries"])
+    for (const key of ["by_client", "by_user", "by_model", "by_model_time", "by_user_time", "timeseries"])
       expected[key] = expected[key].map(trim);
     assert.deepEqual(cost, { ...expected, view: "cost" });
     assert.equal(cost.totals.requests, full.totals.requests);
@@ -491,16 +491,18 @@ test("cost folds preserve coverage, tiers, identities and idle buckets while omi
   }
 });
 
-test("modelTime adds by_model_time without changing any other output", () => {
+test("modelTime adds by_model_time and by_user_time without changing any other output", () => {
   const without = foldClientMetrics(modelTimeRecords, modelTimeClients);
   const off = foldClientMetrics(modelTimeRecords, modelTimeClients, undefined, { modelTime: false });
   const on = foldClientMetrics(modelTimeRecords, modelTimeClients, undefined, { modelTime: true });
   assert.ok(!("by_model_time" in without));
+  assert.ok(!("by_user_time" in without));
   assert.deepEqual(off, without);
-  const { by_model_time, ...rest } = on;
+  const { by_model_time, by_user_time, ...rest } = on;
   assert.deepEqual(rest, without);
   assert.ok(Array.isArray(by_model_time));
   assert.equal(by_model_time.length, 7);
+  assert.ok(Array.isArray(by_user_time));
   for (const row of [without.totals, ...without.by_client, ...without.by_model, ...without.by_user,
     ...without.by_project, ...without.timeseries]) {
     assert.ok(!("unpriced_reasons" in row));
@@ -508,7 +510,7 @@ test("modelTime adds by_model_time without changing any other output", () => {
   // Accumulator internals such as _reasons must not leak into any row. A leak changes today's
   // output identically with and without the option, so the deep-equal above cannot see it.
   for (const row of [without.totals, ...without.by_client, ...without.by_model, ...without.by_user,
-    ...without.by_project, ...without.timeseries, ...by_model_time]) {
+    ...without.by_project, ...without.timeseries, ...by_model_time, ...by_user_time]) {
     assert.ok(Object.keys(row).every((k) => !k.startsWith("_")), Object.keys(row).join(","));
   }
 });
@@ -569,6 +571,27 @@ test("by_model_time known costs sum to the timeseries per client and bucket", ()
   const codex = on.timeseries.find((r) => r.client === "codex" && r.t === "2026-09-14 10:00:00");
   assert.ok(Math.abs(codex.cost_usd - 0.00455175) < 1e-9);
   assert.ok(on.by_model_time.filter((r) => r.client === "codex" && r.t === codex.t).length >= 2);
+});
+
+test("by_user_time regroups the same usage per user and keeps the timeseries sums", () => {
+  const on = foldClientMetrics(modelTimeRecords, modelTimeClients, undefined, { modelTime: true });
+  const recordUsers = new Set(modelTimeRecords.map((r) => r.user || ""));
+  for (const row of on.by_user_time) {
+    assert.ok(recordUsers.has(row.user), row.user);
+    assert.ok(!("model" in row));
+    assert.equal(Object.values(row.unpriced_reasons).reduce((s, n) => s + n, 0), row.unpriced);
+  }
+  // Idle-only buckets never become a known $0 user row.
+  assert.ok(!on.by_user_time.some((r) => r.t === "2026-09-14 11:00:00"));
+  for (const ts of on.timeseries) {
+    const users = on.by_user_time.filter((r) => r.client === ts.client && r.t === ts.t);
+    const models = on.by_model_time.filter((r) => r.client === ts.client && r.t === ts.t);
+    const message = `${ts.client}/${ts.t}`;
+    const sum = (rows, k) => rows.reduce((s, r) => s + (r[k] ?? 0), 0);
+    assert.ok(Math.abs(sum(users, "cost_usd") - sum(models, "cost_usd")) < 1e-9, message);
+    assert.equal(sum(users, "unpriced"), sum(models, "unpriced"), message);
+    if (ts.cost_usd !== null) assert.ok(Math.abs(sum(users, "cost_usd") - ts.cost_usd) < 1e-9, message);
+  }
 });
 
 test("Claude by_model_time rows use the claudeUsage rule", () => {

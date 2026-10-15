@@ -207,6 +207,9 @@ non-numeric) report and a zero report on a counter row whose `cost_observed` is 
 unpriced Codex response has one `unpriced_reason`, checked in order: backend, scope
 (`us-gov.`, a commercial routing prefix on mantle, or no rate for the scope/tier), model rate,
 then usage validity; a configured rate with a non-finite estimate reports `unknown_model`.
+It also adds `by_user_time`: the same backed usage regrouped per `client`, `t`, `user`
+(raw identity, `""` when absent) with the same fields and `unpriced_reasons`; per `client`, `t`
+its known `cost_usd` and `unpriced` sum to the `by_model_time` rows.
 
 ## Filter scope
 

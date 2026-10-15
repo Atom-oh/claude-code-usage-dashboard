@@ -192,7 +192,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
   const byClient = new Map(clients.map((client) => [client, accumulator({ client,
     cost_basis: client === "claude" ? "client_reported" : "aws_list_estimate" })]));
   const groups = { by_model: new Map(), by_user: new Map(), ...(!costView ? { by_project: new Map() } : {}), timeseries: new Map(),
-    ...(modelTime ? { by_model_time: new Map() } : {}) };
+    ...(modelTime ? { by_model_time: new Map(), by_user_time: new Map() } : {}) };
   const tools = new Map();
   const quality = { unpriced: 0, invalid: 0, missing_identity: 0, missing_usage: 0 };
   // Availability spans the requested range: request/completion exports can straddle
@@ -211,10 +211,10 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
     if (row.session) usageSessions.add(usageScope(row, null));
   }
   const missingUsage = new Set();
-  // by_model_time keeps a row only when usage (Claude counters, Codex usage-bearing completions)
+  // by_model_time and by_user_time keep a row only when usage (Claude counters, Codex usage-bearing completions)
   // or a Codex missing-usage scope backs it. Operational rows attach but never create a known $0;
   // idle uncertainty stays in timeseries.
-  const backedModelTime = new Set();
+  const backedTime = new Set();
   for (const row of records) {
     if (!byClient.has(row.client)) continue;
     // Repeated, unchanged Claude counters prove an observed zero for this bucket.
@@ -255,12 +255,16 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
       timeseries: { client: row.client, t: row.t },
     };
     if (!costView && row.client === "codex") dimensions.by_project = { client: row.client, project: row.project || "" };
-    if (modelTime) dimensions.by_model_time = { client: row.client, t: row.t, model: row.model || "", backend: row.backend || "unknown" };
+    if (modelTime) {
+      dimensions.by_model_time = { client: row.client, t: row.t, model: row.model || "", backend: row.backend || "unknown" };
+      dimensions.by_user_time = { client: row.client, t: row.t, user: row.user || "" };
+    }
     for (const [key, meta] of Object.entries(dimensions)) {
+      const timed = key === "by_model_time" || key === "by_user_time";
       const id = JSON.stringify(meta);
-      if (key === "by_model_time" && (row.kind === "usage" || missingScope)) backedModelTime.add(id);
+      if (timed && (row.kind === "usage" || missingScope)) backedTime.add(`${key}\u0000${id}`);
       if (!groups[key].has(id)) groups[key].set(id, accumulator({ ...meta,
-        cost_basis: row.client === "claude" ? "client_reported" : "aws_list_estimate" }, key === "by_model_time"));
+        cost_basis: row.client === "claude" ? "client_reported" : "aws_list_estimate" }, timed));
       accumulate(groups[key].get(id), row, usage, missingScope);
     }
     if (!costView && row.kind === "tool") {
@@ -279,6 +283,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
     if (costView) for (const key of DIAGNOSTIC_FIELDS) delete row[key];
     return row;
   };
+  const backedRows = (key) => [...groups[key]].filter(([id]) => backedTime.has(`${key}\u0000${id}`)).map(([, group]) => finishRow(group));
   const by_client = [...byClient.values()].map(finishRow);
   const total = finishRow(totals);
   quality.missing_usage = missingUsage.size;
@@ -294,8 +299,10 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
       tools: [...tools.values()].sort((a, b) => b.calls - a.calls),
     } : { view: "cost" }),
     timeseries: [...groups.timeseries.values()].map(finishRow).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client)), quality,
-    ...(modelTime ? { by_model_time: [...groups.by_model_time].filter(([id]) => backedModelTime.has(id))
-      .map(([, group]) => finishRow(group)).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.model.localeCompare(b.model) || a.backend.localeCompare(b.backend)) } : {}) };
+    ...(modelTime ? {
+      by_model_time: backedRows("by_model_time").sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.model.localeCompare(b.model) || a.backend.localeCompare(b.backend)),
+      by_user_time: backedRows("by_user_time").sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.user.localeCompare(b.user)),
+    } : {}) };
 }
 
 // Streaming delta events: bulk scope evidence only (no usage keys, never priced).
