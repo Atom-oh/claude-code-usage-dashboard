@@ -188,8 +188,9 @@ values fail before caching; the profile has a distinct cache identity. The defau
 profile remains full. See [Effort profile](reference/codex-observability.md#effort-profile).
 
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
-before caching. It is part of the cache key and is not warmed; `/api/codex/insights`
-ignores it. It adds `by_model_time`: one row per `client`, `t`, `model`, `backend` from the
+before caching. It is part of the cache key; the shared default cost profile warms
+`view=cost&modelTime=1`. Custom windows, filters and resolutions may remain cold;
+`/api/codex/insights` ignores it. It adds `by_model_time`: one row per `client`, `t`, `model`, `backend` from the
 same fold and buckets as `timeseries`, with Codex raw model IDs (routing prefixes
 kept; Claude models are normalized as in `by_model`) and the usual cost/token/coverage fields. A row exists only where Claude counter
 usage, a Codex usage-bearing completion or a Codex missing-usage scope backs it;

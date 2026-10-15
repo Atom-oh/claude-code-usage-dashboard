@@ -46,6 +46,14 @@ The private benchmark can materialize it without changing production sorting key
 data, ingestion or Keeper. Live rollout needs reviewed schema/history, retention,
 storage, backup/restore and parity evidence.
 
+A single-table synthetic lifecycle trial on ClickHouse 24.8.14.39 restored all
+1,008,000 logs and the projection from a local Native backup, retaining 144-row
+query parity. Late duplicate completions, heavy `ALTER ... DELETE`, table TTL
+expiry and dropping the projection retained the expected raw/projected results.
+Lightweight `DELETE FROM` was rejected while the projection existed. Operator
+deletion procedures must account for that restriction before live adoption.
+This is not a customer S3/Keeper/full-database restore or RTO measurement.
+
 ## Cumulative diagnostic baselines
 
 Codex cumulative metric queries group the latest prior export timestamp by the
@@ -101,6 +109,11 @@ One failed overview [query batch](../../dashboard/server/clientQueryBatch.js) ca
 its own queued/HTTP siblings instead of leaving rejected work running without a
 consumer. A shared cache computation is never cancelled by one HTTP subscriber.
 HTTP cancellation does not guarantee immediate ClickHouse execution termination.
+The Claude query wrapper forwards the batch signal through both its non-Anthropic
+factor lookup and final counter query. The
+[HTTP regression](../../dashboard/server/clientCancellation.test.js) holds each
+response open and verifies that a sibling failure aborts it while retaining the
+original capacity error.
 
 For `N` independent viewers requesting every `T` seconds, the cold request rate is
 `N / T` only when every request misses. Database CPU demand is that rate multiplied

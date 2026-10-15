@@ -190,7 +190,16 @@ class Stack:
         image = json.loads(self.docker("image", "inspect", self.args.dashboard_image))[0]
         if image["Architecture"] != "arm64":
             raise RuntimeError("ARM64 dashboard image required")
-        self.revision = image["Config"]["Labels"].get("org.opencontainers.image.revision")
+        self.revision = (image["Config"].get("Labels") or {}).get("org.opencontainers.image.revision", "")
+        if not re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", self.revision):
+            raise RuntimeError("dashboard image must identify a full Git revision")
+        health = image["Config"].get("Healthcheck", {}).get("Test", [])
+        if not health or health[0] == "NONE":
+            raise RuntimeError("dashboard image must include its readiness healthcheck")
+        database = json.loads(self.docker("image", "inspect", "clickhouse/clickhouse-server:24.8"))[0]
+        self.clickhouse_image = database["Id"]
+        if database["Architecture"] != "arm64" or not re.fullmatch(r"sha256:[a-f0-9]{64}", self.clickhouse_image):
+            raise RuntimeError("an existing ARM64 ClickHouse 24.8 image is required")
         self.docker("network", "create", "--internal", "--label",
                     "ccdash.capacity-run=" + self.run_id, self.network)
         self.network_created = True
@@ -211,7 +220,8 @@ class Stack:
 <readonly>1</readonly><max_execution_time>60</max_execution_time>
 <max_memory_usage>4000000000</max_memory_usage><max_result_bytes>104857600</max_result_bytes>
 <max_rows_to_read>2000000000</max_rows_to_read></capacity_reader></profiles>
-<users><capacity_reader><password_sha256_hex>{digest}</password_sha256_hex>
+<users><default><networks replace="replace"><ip>127.0.0.1</ip><ip>::1</ip></networks></default>
+<capacity_reader><password_sha256_hex>{digest}</password_sha256_hex>
 <networks><ip>::/0</ip></networks><profile>capacity_reader</profile>
 <quota>default</quota><allow_databases><database>claude_code</database></allow_databases>
 </capacity_reader></users></clickhouse>""")
@@ -225,7 +235,7 @@ class Stack:
                      "-v", volume + ":/var/lib/clickhouse",
                      "-v", str(config) + ":/etc/clickhouse-server/config.d/capacity.xml:ro",
                      "-v", str(users) + ":/etc/clickhouse-server/users.d/capacity.xml:ro",
-                     "clickhouse/clickhouse-server:24.8")
+                     self.clickhouse_image)
         for node in self.nodes:
             self.stage = "initialize_schema"
             for _ in range(60):
@@ -440,10 +450,13 @@ def main(argv=None):
               "scenarios": []}
     with tempfile.TemporaryDirectory(prefix="ccdash-capacity-") as directory:
         stack = Stack(args, Path(directory))
+        record["runId"] = stack.run_id
         try:
+            print(json.dumps({"phase": "initialize_isolated_stack", "runId": stack.run_id}), flush=True)
             stack.start(day)
             record["runtimeRevision"] = stack.revision
             record["dashboardImage"] = args.dashboard_image
+            record["clickhouseImage"] = stack.clickhouse_image
             params = {"from": day.isoformat(), "to": (day+datetime.timedelta(days=1)).isoformat(),
                       "client": "all", "view": "cost", "intervalHours": str(1/6), "modelTime": "1"}
             base_path = "/api/clients/overview?" + urllib.parse.urlencode(params)

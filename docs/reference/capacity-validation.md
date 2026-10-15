@@ -10,6 +10,9 @@ private transport. These measurements contribute to
 Use an ARM64 host with Docker and enough existing capacity for the full envelope.
 The script requires an already-present registry digest or immutable local image ID. It does not
 pull customer data, use caller database URLs, invoke models or change AWS resources.
+The dashboard image must include a full Git revision and readiness healthcheck.
+The locally cached ClickHouse 24.8 tag resolves once to an immutable image ID;
+that ID is used for every database and recorded. Earlier reports did not record it.
 
 ```bash
 python3 scripts/benchmark-capacity.py \
@@ -24,6 +27,10 @@ ownership label and cleanup deletes only resources bearing that label.
 All containers use an internal network. The host connects directly to its owned
 private transport; there are no published ports or ambient HTTP proxies.
 No production credentials are consumed and authentication remains enabled.
+The database default account accepts loopback connections only; private transport
+uses the generated read-only identity. If forcibly terminated, use the printed
+`runId` to inspect `ccdash.capacity-run=<id>` labels on containers, volumes and the
+network before removing only that run's resources. Normal errors clean up automatically.
 
 `--fixture-user-projection` adds and materializes a six-column projection only on
 owned synthetic log tables. It preserves timestamps, full resource/log attributes,
@@ -81,7 +88,8 @@ customer workload/acceptance packet for further evidence.
 The private reports used 140 distinct exact users, ten-minute cost buckets,
 1,008,000 log events and 17,137,400 total rows per database. Every successful
 response matched its sequential semantic baseline. These are individual
-synthetic trials, with the resource envelope above:
+synthetic trials, with the resource envelope above. They preceded the Claude
+wrapper signal-forwarding fix; new release evidence must identify its actual revision:
 
 | Candidate and scenario | Final 200 / coded 503 | Initial 503 | HTTP attempts | p95 |
 |---|---:|---:|---:|---:|

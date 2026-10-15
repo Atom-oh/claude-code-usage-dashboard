@@ -9,8 +9,11 @@ import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetric
 
 // Every query here goes through this wrapper: a query that prices Claude cost counters
 // (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-017).
-async function query(sql, params = {}) {
-  return rawQuery(sql, await withNacParams(sql, params));
+async function query(sql, params = {}, signal) {
+  signal?.throwIfAborted();
+  const pricedParams = await withNacParams(sql, params,
+    (factorSql, factorParams) => rawQuery(factorSql, factorParams, signal));
+  return rawQuery(sql, pricedParams, signal);
 }
 
 // 원본: ../grafana-ab-queries.sql 의 10개 패널을 그대로 이식했다. ExperimentGroup(env 기반) 컬럼

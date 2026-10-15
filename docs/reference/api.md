@@ -58,9 +58,12 @@ billing bound. Shared proxy/NAT addresses can exhaust the IP limit. The existing
 [chat limits](agent-llm.md) and DB timeout/readonly gates still apply.
 
 The warmer runs at startup and on 120-second boundaries, in batches of three with two-second
-gaps. It requests an unfiltered `DEFAULT_RANGE_DAYS` window with `intervalHours=1`.
-User drilldowns and beta trace handlers have `warm: false`. Warming is per process and
-best effort; it does not guarantee a cache hit for every range, filter or replica.
+gaps. The [warming plan](../../dashboard/server/warming.js) prioritizes shared full and
+cost/model-time profiles. Legacy views join only after recent authenticated, unfiltered
+default-window demand. It requests `DEFAULT_RANGE_DAYS` with hourly resolution through
+two days, otherwise daily. User drilldowns, snapshots and beta trace handlers do not warm.
+Warming is per process and best effort; it does not guarantee a cache hit for every
+range, filter or replica. See [query performance](cost-query-performance.md#capacity-validation).
 
 JSON API responses use `Cache-Control: no-store`. The successful chat SSE handler overrides
 this with `no-cache`. Keep frontend quantization in [useApi.js](../../dashboard/web/src/useApi.js)

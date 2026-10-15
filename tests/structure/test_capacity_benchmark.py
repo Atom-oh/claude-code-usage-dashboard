@@ -3,6 +3,7 @@ import importlib.util
 import io
 import contextlib
 import threading
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -14,8 +15,9 @@ spec.loader.exec_module(benchmark)
 
 class CapacityBenchmark(unittest.TestCase):
     def parse(self, *args):
-        return benchmark.arguments(["--report", "/tmp/unused-capacity-fixture-report.json",
-                                    "--dashboard-image", "fixture@sha256:" + "a"*64, *args])
+        with tempfile.TemporaryDirectory() as directory:
+            return benchmark.arguments(["--report", str(Path(directory) / "report.json"),
+                                        "--dashboard-image", "fixture@sha256:" + "a"*64, *args])
 
     def test_defaults_match_bounded_declared_envelope(self):
         args = self.parse()
@@ -88,6 +90,15 @@ class CapacityBenchmark(unittest.TestCase):
         self.assertIn('self.owned("network", self.network)', source)
         self.assertIn('"--internal"', source)
         self.assertNotIn("AUTH_ALLOW_INSECURE", source)
+
+    def test_cached_database_is_frozen_and_default_account_is_loopback_only(self):
+        source = (ROOT / "scripts/benchmark-capacity.py").read_text()
+        self.assertIn('self.clickhouse_image = database["Id"]', source)
+        self.assertIn('self.clickhouse_image)', source)
+        self.assertIn('record["clickhouseImage"] = stack.clickhouse_image', source)
+        self.assertIn('<default><networks replace="replace"><ip>127.0.0.1</ip><ip>::1</ip>', source)
+        self.assertIn("dashboard image must identify a full Git revision", source)
+        self.assertIn("readiness healthcheck", source)
 
     def test_product_retry_uses_actual_module_and_owned_fixture(self):
         source = (ROOT / "scripts/capacity-client.mjs").read_text()
