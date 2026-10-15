@@ -29,8 +29,12 @@ results for 320 seconds from completion. Pending entries do not expire or get ev
 Keys contain the route path plus `from`, `to`, `group`, `user`, `model`, `project`,
 `intervalHours`, `email` and `includeUnknown`, sorted by parameter name. Failed promises are removed. The 2,000-entry
 cap evicts settled entries by insertion order, not by last read. At most 64 distinct
-cache loads execute concurrently; excess misses return 503 while existing-key requests
-can still share work.
+cache loads execute concurrently. Up to 64 additional distinct keys wait FIFO for
+at most 30 seconds without starting their loaders or acquiring database slots.
+Existing-key requests share the same promise while waiting or executing. A full or
+expired cache queue returns the same coded 503; failed keys are removed.
+Completion starts the successful-result TTL. This cache wait is separate from the
+database queue/execution deadlines below; it is not an end-to-end request deadline.
 Settled entries have a 16 MiB serialized-JSON byte quota and a 1 MiB per-entry quota.
 Oversized results are returned intact but not cached; byte eviction never removes pending
 work. Serialized size is an estimate for cache admission, not a heap/response-allocation bound.

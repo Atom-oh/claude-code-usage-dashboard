@@ -12,6 +12,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-15 distinct cache admission)
+
+- Let up to 64 distinct cold views per process wait up to 30 seconds for an
+  existing cache-load slot. Preserve 64 active loads, database/request limits,
+  single-flight sharing, result quotas and explicit overload errors.
+
 ### Fixed (2026-10-15 mobile cost tables)
 
 - Make model/user cost trend tables horizontally scrollable and keyboard-focusable
