@@ -20,6 +20,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   and cancellation; preserve authentication/error handling and runtime limits.
 - Cancel private sibling queries when an overview fails, preserving the original
   error classification and shared-cache ownership.
+- Use promoted user identities to reject unrelated Codex log maps in PREWHERE,
+  retaining original deduplication and final filters.
 - Add isolated ARM64 synthetic HTTP/SQL capacity validation with immutable images,
   ownership-checked cleanup, exact-user baselines and honest admission/latency results.
 

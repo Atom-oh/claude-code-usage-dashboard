@@ -32,6 +32,11 @@ The report records this option. It is not a production migration, materializatio
 proof, retention/backup validation or deployment approval. Inspect actual projection
 selection through query-log/plan evidence when interpreting it.
 
+To exercise the product's actual bounded GET retry policy alone, add
+`--scenario product_retry`. This imports the frontend fetch module and records
+initial admission failures, all HTTP attempts and final per-user outcomes.
+It does not redefine rejected attempts as immediate successes.
+
 ## Workload and checks
 
 - Three independent ClickHouse 24.8 copies, each limited to 3.5 CPUs and 13 GiB.
@@ -69,3 +74,28 @@ fleet limit. Do not infer a production SLO, continuous 140-user capacity, restor
 complete telemetry or employee productivity from this experiment.
 Use [query performance](cost-query-performance.md#capacity-validation) and the private
 customer workload/acceptance packet for further evidence.
+
+## Recorded experiment: 2026-10-15
+
+The private reports used 140 distinct exact users, ten-minute cost buckets,
+1,008,000 log events and 17,137,400 total rows per database. Every successful
+response matched its sequential semantic baseline. These are individual
+synthetic trials, with the resource envelope above:
+
+| Candidate and scenario | Final 200 / coded 503 | Initial 503 | HTTP attempts | p95 |
+|---|---:|---:|---:|---:|
+| Bounded frontend retry, no projection | 118 / 22 | 40 | 242 | 29.0 s |
+| Retry plus private query cancellation, no projection | 127 / 13 | 38 | 226 | 42.3 s |
+| Promoted-user PREWHERE plus synthetic projection, retry and cancellation | 140 / 0 | 39 | 186 | 8.0 s |
+
+No trial observed a container OOM or restart. Product-retry resource samples
+were added after these trials; their reports prove recorded running/OOM/restart
+state, not peak resource usage. Do not infer a cancellation-only speedup from
+the slower second trial. The projection result combines multiple changes and
+still includes admission/retry delay. The projection is not installed in production.
+
+Separate sequential SQL measurements retained identical 144-row fingerprints.
+Promoted-user PREWHERE reduced logical read bytes from about 4.64 GB to 3.62 GB.
+A six-column projection actually selected by ClickHouse reduced those bytes to
+41 MB and read rows from 2,016,000 to 17,824. These single-user query-log values
+are not concurrent fleet measurements or ingestion/merge/restore evidence.

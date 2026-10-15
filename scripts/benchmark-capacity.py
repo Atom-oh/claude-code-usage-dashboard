@@ -3,6 +3,7 @@
 import argparse
 import base64
 import concurrent.futures
+import contextlib
 import datetime
 import hashlib
 import ipaddress
@@ -314,7 +315,8 @@ DEFAULT_RANGE_DAYS=1
 
     def sample(self):
         return [json.loads(line) for line in self.docker("stats", "--no-stream",
-                "--format", "{{json .}}", *self.nodes, *self.apps, self.proxy).splitlines()]
+                "--format", "{{json .}}", *self.nodes, *self.apps, self.proxy,
+                timeout=4).splitlines()]
 
     def owned(self, kind, name):
         result = subprocess.run(["docker", kind, "inspect", name], capture_output=True, text=True)
@@ -346,6 +348,25 @@ def request(stack, path):
         return error.code, json.loads(error.read()), error.headers, (time.monotonic()-started)*1000
 
 
+@contextlib.contextmanager
+def observe_usage(stack):
+    samples, stopped = [], threading.Event()
+    def observe():
+        while not stopped.is_set():
+            try:
+                samples.append({"sampledAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                "containers": stack.sample()})
+            except Exception:
+                samples.append({"status": "unavailable"})
+            stopped.wait(0.25)
+    observer = threading.Thread(target=observe, daemon=True)
+    observer.start()
+    try:
+        yield samples
+    finally:
+        stopped.set(); observer.join(timeout=5)
+
+
 def burst(stack, paths, expected):
     barrier = threading.Barrier(len(paths))
 
@@ -360,22 +381,9 @@ def burst(stack, paths, expected):
         except Exception as error:
             return {"status": "transport_error", "elapsedMs": 75000,
                     "errorType": type(error).__name__}
-    samples, stopped = [], threading.Event()
-    def observe():
-        while not stopped.is_set():
-            try:
-                samples.append({"sampledAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                                "containers": stack.sample()})
-            except Exception:
-                samples.append({"status": "unavailable"})
-            stopped.wait(0.25)
-    observer = threading.Thread(target=observe, daemon=True)
-    observer.start()
-    try:
+    with observe_usage(stack) as samples:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(paths)) as pool:
             rows = list(pool.map(visit, range(len(paths))))
-    finally:
-        stopped.set(); observer.join(timeout=5)
     return {**summarize(rows), "samples": samples}
 
 
@@ -383,12 +391,13 @@ def client_burst(stack, paths, expected):
     name = "client-" + stack.run_id + "-0"
     stack.containers.append(name)
     value = {"runId": stack.run_id, "paths": paths, "authorization": stack.authorization}
-    output = stack.docker("run", "--rm", "-i", "--name", name, "--network", stack.network,
-        "--label", "ccdash.capacity-run=" + stack.run_id, "--cpus", "1", "--memory", "256m",
-        "--entrypoint", "node",
-        "-v", str(ROOT / "scripts/capacity-client.mjs") + ":/capacity-client.mjs:ro",
-        "-v", str(ROOT / "dashboard/web/src/api.js") + ":/capacity-api.mjs:ro",
-        stack.args.dashboard_image, "/capacity-client.mjs", data=json.dumps(value), timeout=120)
+    with observe_usage(stack) as samples:
+        output = stack.docker("run", "--rm", "-i", "--name", name, "--network", stack.network,
+            "--label", "ccdash.capacity-run=" + stack.run_id, "--cpus", "1", "--memory", "256m",
+            "--entrypoint", "node",
+            "-v", str(ROOT / "scripts/capacity-client.mjs") + ":/capacity-client.mjs:ro",
+            "-v", str(ROOT / "dashboard/web/src/api.js") + ":/capacity-api.mjs:ro",
+            stack.args.dashboard_image, "/capacity-client.mjs", data=json.dumps(value), timeout=120)
     native = json.loads(output)
     if len(native) != len(paths):
         raise RuntimeError("product retry result population mismatch")
@@ -401,7 +410,7 @@ def client_burst(stack, paths, expected):
             "totalHttpAttempts": sum(len(row["attempts"]) for row in native),
             "retries": sum(max(0, len(row["attempts"])-1) for row in native),
             "apiFetchSha256": hashlib.sha256((ROOT / "dashboard/web/src/api.js").read_bytes()).hexdigest(),
-            "productRetry": True}
+            "productRetry": True, "samples": samples}
 
 
 def main(argv=None):

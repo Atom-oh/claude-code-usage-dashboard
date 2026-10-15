@@ -2,6 +2,7 @@ import datetime
 import importlib.util
 import io
 import contextlib
+import threading
 from pathlib import Path
 import unittest
 
@@ -91,6 +92,22 @@ class CapacityBenchmark(unittest.TestCase):
         source = (ROOT / "scripts/benchmark-capacity.py").read_text()
         self.assertIn("SELECT Timestamp, ResourceAttributes, LogAttributes, EventName, UserEmail, EndUserId", source)
         self.assertIn('"syntheticUserProjection": args.fixture_user_projection', source)
+
+    def test_resource_observer_records_samples_and_stops_on_failure(self):
+        sampled = threading.Event()
+        observers = []
+        class FakeStack:
+            def sample(self):
+                observers.append(threading.current_thread())
+                sampled.set()
+                return [{"CPUPerc": "10%", "MemPerc": "20%"}]
+        with self.assertRaisesRegex(RuntimeError, "fixture failure"):
+            with benchmark.observe_usage(FakeStack()) as samples:
+                self.assertTrue(sampled.wait(timeout=1))
+                raise RuntimeError("fixture failure")
+        self.assertEqual(samples[0]["containers"][0]["CPUPerc"], "10%")
+        self.assertTrue(observers)
+        self.assertTrue(all(not observer.is_alive() for observer in observers))
 
 
 if __name__ == "__main__":
