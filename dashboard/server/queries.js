@@ -11,8 +11,7 @@ import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetric
 // (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-017).
 async function query(sql, params = {}, signal) {
   signal?.throwIfAborted();
-  const pricedParams = await withNacParams(sql, params,
-    (factorSql, factorParams) => rawQuery(factorSql, factorParams, signal));
+  const pricedParams = await withNacParams(sql, params, rawQuery, signal);
   return rawQuery(sql, pricedParams, signal);
 }
 

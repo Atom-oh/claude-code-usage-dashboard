@@ -12,6 +12,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-15 shared factor lookup)
+
+- Coalesce equal non-Anthropic factor windows with bounded pending/settled caches
+  and independent subscriber cancellation; preserve pricing, unknown values and
+  the private counter-query signal.
+
 ### Changed (2026-10-15 constrained capacity)
 
 - Prioritize shared full/cost cache profiles and stop warming unused legacy views.

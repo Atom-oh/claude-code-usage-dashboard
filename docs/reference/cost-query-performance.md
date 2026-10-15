@@ -115,6 +115,17 @@ factor lookup and final counter query. The
 response open and verifies that a sibling failure aborts it while retaining the
 original capacity error.
 
+Equal factor windows share one lookup through the
+[factor cache](../../dashboard/server/factorCache.js), isolated by runner identity.
+Each caller can cancel its subscription; the database lookup aborts only after
+its last subscriber leaves. Successful values expire sixty seconds after completion.
+Pending and settled keys are each bounded at 64 per runner. Settled serialized
+values have a 4 MiB total and 1 MiB per-entry admission quota; larger values are
+returned intact but not cached. This is not a heap or in-flight allocation bound.
+Failures/aborts are not cached and late abandoned results cannot replace a newer lookup. Factor SQL, pricing
+tiers, unknown values and final counter cancellation remain unchanged. This reduces
+duplicate queries, not collection or guaranteed ClickHouse execution time.
+
 For `N` independent viewers requesting every `T` seconds, the cold request rate is
 `N / T` only when every request misses. Database CPU demand is that rate multiplied
 by measured CPU-seconds per request. Query CPU budget must leave ingestion/merge
