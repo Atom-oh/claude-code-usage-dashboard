@@ -12,6 +12,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed (2026-10-15 mobile cost tables)
+
+- Make model/user cost trend tables horizontally scrollable and keyboard-focusable
+  so narrow screens can reach totals, coverage states and overflow details.
+
 ### Changed (2026-10-15 shared factor lookup)
 
 - Coalesce equal non-Anthropic factor windows with bounded pending/settled caches
