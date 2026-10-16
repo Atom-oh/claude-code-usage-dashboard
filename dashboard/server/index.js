@@ -426,6 +426,7 @@ route("/api/cost/by-model", (from, to, _q, filters) => q.costByModel(from, to, f
 route("/api/cost/by-user-model", (from, to, query, filters) =>
   q.costByUserModel(from, to, query.includeUnknown === "1" ? { ...filters, excludeUnknown: false } : filters));
 route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, bucketHours(query, from, to), filters));
+route("/api/cost/by-user-daily", (from, to, query, filters) => q.costByUserDaily(from, to, bucketHours(query, from, to), filters));
 route("/api/cost/by-model-compare", (from, to, _q, filters) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from)), filters));
 route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(from, to, filters));
 // agenticness는 otel_logs(lookback 없음, 요청 구간만 스캔)를 직접 읽어 다른 rollup 경로들과

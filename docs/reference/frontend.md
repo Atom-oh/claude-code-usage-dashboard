@@ -186,7 +186,12 @@ vendor palettes. OpenAI and other-vendor fallbacks have six tones; Others has an
 neutral. Series are monotone stacked areas; unavailable and no-data buckets are gaps (null,
 never a drawn $0), as is a series whose cost is unavailable inside a partial bucket; a
 series with no usage stacks as 0, and a positive point between gaps is drawn as a dot, and an invisible
-zero-height bar carries the bucket state marks. Legends use matching solid swatches. Bucket states are known, zero, partial, unavailable, idle and no data: unavailable is
+zero-height bar carries the bucket state marks. A header toggle switches between stacked
+areas and unstacked lines (the default-style view). Legend items are buttons: a click isolates that item
+(or restores all when it is already the only one shown), Ctrl/Cmd/Shift-click toggles it, and
+hiding every item restores all. Hidden items are keyed by model/user identity, not rank; the
+tooltip lists shown items with a shown subtotal beside the full known total, while state marks,
+the status and the table keep the full frame. Legends use matching solid swatches. Bucket states are known, zero, partial, unavailable, idle and no data: unavailable is
 never drawn as zero, and idle is the
 [ADR-015](../decisions/ADR-015-idle-chart-buckets.md) recorded-usage zero. The disclosure is a
 persistent status naming each reason with model and channel/backend identities (including
@@ -197,6 +202,13 @@ Shared views also draw a per-client user cost trend from `by_user_time`
 It shares the model trend's bucket pick; user labels are masked with `maskEmail` while keys stay
 raw, user series take palette colors by rank (users have no stable color identity), and the
 Others table drops the channel column.
+Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`
+(`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; the server's
+`user: null` residual becomes one "rest of N users" identity that always joins Others and
+counts as N users in its label. With legend items hidden, the tooltip's
+shown subtotal is unavailable when only unavailable shown costs exist and is labelled partial
+when some are; a frame change that would hide every item restores all. Legend buttons carry
+the series key, never the raw identity.
 
 Sibling rule: the shared Claude and Codex cards come from one response, share its effective
 range and bucket origins, are never summed and keep separate y-scales. Client-colored

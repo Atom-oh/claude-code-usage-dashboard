@@ -163,7 +163,9 @@ const trendCard = async () => (await screen.findByText("모델별 비용 추이"
 const dailyRequests = () => fetch.mock.calls.map(([url]) => new URL(String(url), "http://localhost"))
   .filter((u) => u.pathname === "/api/cost/by-model-daily").map((u) => u.searchParams.get("intervalHours"));
 // The active SegmentedControl button in the card (the "표 보기" toggle never carries the brand class).
-const activeBucket = (card) => [...card.querySelectorAll("button")].find((b) => b.getAttribute("aria-pressed") === "true")?.textContent;
+const BUCKET_LABELS = new Set(["시간별", "일간", "주간"]);
+const activeBucket = (card) => [...card.querySelectorAll("button")]
+  .find((b) => b.getAttribute("aria-pressed") === "true" && BUCKET_LABELS.has(b.textContent))?.textContent;
 const rowCells = (row) => [...row.querySelectorAll("td")].slice(1).map((td) => td.textContent);
 
 test.each(["/cost?days=30", "/exec?days=30"])("%s draws the reported model cost trend and keeps the unavailable cell out of the bars", async (path) => {
@@ -220,4 +222,15 @@ test("Productivity Top 10 lists a user active in both channels once", async () =
   const card = screen.getByText("활동 지수 상위 10위").closest("div.bg-card") || container;
   expect(within(card).getAllByText("re******@example.com (bedrock+enterprise)")).toHaveLength(1);
   expect(within(card).queryByText("re******@example.com (bedrock)")).toBeNull();
+});
+
+test.each(["/cost?days=30", "/exec?days=30"])("%s detail adds a masked user cost trend on the model trend's bucket", async (path) => {
+  const users = DAILY30.slice(0, 6).map(({ model, cost, ...row }, i) => ({ ...row, user: i % 2 ? "lee@example.com" : "kim@example.com" }));
+  mount(path, [spend], false, DAILY30, [user], { "/api/cost/by-user-daily": users });
+  const card = (await screen.findByText("사용자별 비용 추이", { exact: true, selector: "div" })).closest(".rounded-lg");
+  await waitFor(() => expect(card.querySelectorAll('ul[aria-label="범례"] li').length).toBe(2));
+  expect(card.textContent).not.toContain("kim@example.com");
+  const userRequests = fetch.mock.calls.map(([url]) => new URL(String(url), "http://localhost"))
+    .filter((u) => u.pathname === "/api/cost/by-user-daily").map((u) => u.searchParams.get("intervalHours"));
+  expect(userRequests.at(-1)).toBe(dailyRequests().at(-1));
 });

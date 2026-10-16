@@ -2,7 +2,7 @@
 // buckets break the areas instead of dipping to zero, and each bucket carries a state mark. SeriesBarChart keeps its all-or-nothing policy.
 import { useMemo, useState } from "react";
 import { Info } from "lucide-react";
-import { Area, Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { makeTickFmt } from "../fmt.js";
 import { buildModelCostFrame, chartTheme, formatAxisUsd, formatUsd, formatUsdPrecise, OTHERS_COLOR_KEY,
   OTHERS_KEY, REASON_GROUPS, reasonLabel, STATE_LABELS, trendColor } from "../modelCostTrend.js";
@@ -10,6 +10,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
 import EmptyState from "./EmptyState.jsx";
+import { SegmentedControl } from "./SegmentedControl.jsx";
 import { useDragZoom } from "./GroupCharts.jsx";
 
 // Same look as Card, but the header wraps: on narrow screens the controls drop below the title
@@ -96,17 +97,43 @@ function reasonLabels(reasons) {
   return REASON_GROUPS.map((g) => g.label).filter((label) => present.has(label)).join(" / ");
 }
 
-function TrendTooltip({ active, payload, frame, fmtTick, c }) {
+// Legend identities: a series by its model/user key (stable across rank changes), Others by its key.
+const legendId = (s) => `s:${s.model}`;
+const OTHERS_ID = `o:${OTHERS_KEY}`;
+
+// Grafana-style: a click isolates the item (or restores all when it is already the only one
+// shown); Ctrl/Cmd/Shift toggles just that item. Hiding every item restores all instead.
+export function nextHidden(hidden, id, ids, toggle) {
+  const visible = ids.filter((x) => !hidden.has(x));
+  let next;
+  if (toggle) {
+    next = new Set(hidden);
+    if (next.has(id)) next.delete(id); else next.add(id);
+  } else {
+    next = visible.length === 1 && visible[0] === id ? new Set() : new Set(ids.filter((x) => x !== id));
+  }
+  return ids.every((x) => next.has(x)) ? new Set() : next;
+}
+
+function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
   if (!active || !payload || payload.length === 0) return null;
   const b = payload[0].payload.__bucket;
   if (b.state === "nodata") return null;
   const entries = frame.series
-    .filter((s) => b.segments[s.key] !== null)
+    .filter((s) => b.segments[s.key] !== null && !hidden.has(legendId(s)))
     .map((s) => ({ key: s.key, label: s.label, value: b.segments[s.key], partial: b.partialSeries.includes(s.key) }));
-  if (b.others !== null) {
+  if (b.others !== null && !hidden.has(OTHERS_ID)) {
     entries.push({ key: OTHERS_KEY, label: frame.others.label, value: b.others, partial: b.othersPartial });
   }
   entries.sort((a, z) => z.value - a.value);
+  const filtered = hidden.size > 0;
+  // Shown subtotal follows the bucket rules for the shown items only: unavailable when nothing
+  // shown is known but something shown is, partial when some shown cost is unavailable.
+  const shownUnavailable = frame.series.some((s) => !hidden.has(legendId(s)) && b.partialSeries.includes(s.key))
+    || (!hidden.has(OTHERS_ID) && b.othersPartial);
+  const shownText = entries.length === 0
+    ? (shownUnavailable ? "확인 불가" : "기록된 사용 없음")
+    : `${shownUnavailable ? "(부분합) " : ""}${formatUsd(entries.reduce((sum, e) => sum + e.value, 0))}`;
   const total = b.state === "unavailable" ? "확인 불가" : b.state === "idle" ? "기록된 사용 없음" : formatUsd(b.total);
   return (
     <div data-mct-tooltip style={{ ...tooltipStyles(c).contentStyle, color: c.tooltipFg, fontSize: 12 }}>
@@ -118,7 +145,10 @@ function TrendTooltip({ active, payload, frame, fmtTick, c }) {
           </li>
         ))}
       </ul>
-      <div data-tooltip-total>{`알려진 합계${b.state === "partial" ? " (부분합)" : ""} ${total}`}</div>
+      {filtered && b.state !== "unavailable" && b.state !== "idle" && (
+        <div data-tooltip-shown>{`표시 계열 합계 ${shownText}`}</div>
+      )}
+      <div data-tooltip-total>{`알려진 합계${filtered ? " (전체)" : ""}${b.state === "partial" ? " (부분합)" : ""} ${total}`}</div>
       {b.hasEstimate && <div data-tooltip-estimate>계산 추정 포함 — 보고 비용이 없어 토큰 단가로 채운 값입니다</div>}
       {b.issues.length > 0 && (
         <div data-tooltip-note>{`확인 필요: ${b.issues.map((i) => `${i.label} (${reasonLabels(i.reasons)})`).join(", ")}`}</div>
@@ -142,6 +172,8 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const clamp = { from: clampFrom, to: clampTo, maxSpanMs: rangeCapDays * 86400000 };
   const zoom = useDragZoom(undefined, hours, undefined, zoomDisabled, clamp);
   const [showTable, setShowTable] = useState(false);
+  const [stacked, setStacked] = useState(true);
+  const [hiddenIds, setHiddenIds] = useState(() => new Set());
   const theme = chartTheme(c.surface);
   const fmtTick = tickFormatter ?? makeTickFmt(hours);
   const hasCells = Array.isArray(cells);
@@ -164,8 +196,13 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
       표 보기
     </button>
   ) : null;
-  const header = chip || toggle || right != null
-    ? <div className="flex flex-wrap items-center justify-end gap-2">{chip}{toggle}{right}</div>
+  const modeToggle = hasCells && cells.length > 0 && !frame.allUnavailable ? (
+    <SegmentedControl className="[&_button]:h-[22px] [&_button]:px-2 [&_button]:text-[11px]"
+      options={[{ value: "stacked", label: "누적" }, { value: "lines", label: "기본" }]}
+      value={stacked ? "stacked" : "lines"} onChange={(v) => setStacked(v === "stacked")} />
+  ) : null;
+  const header = chip || toggle || modeToggle || right != null
+    ? <div className="flex flex-wrap items-center justify-end gap-2">{chip}{modeToggle}{toggle}{right}</div>
     : undefined;
 
   if (!hasCells) {
@@ -286,22 +323,26 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
     );
   }
 
-  const area = (key, name, color) => (
-    <Area
-      key={key}
-      type="monotone"
-      dataKey={key}
-      name={name}
-      stackId="a"
-      fill={color}
-      fillOpacity={0.78}
-      stroke={color}
-      strokeWidth={1.2}
-      connectNulls={false}
-      dot={<IsolatedDot rows={rows} fill={color} />}
-      activeDot={{ r: 3, stroke: c.surface, strokeWidth: 1 }}
-      isAnimationActive={false}
-    />
+  const items = [
+    ...series.map((s) => ({ id: legendId(s), key: s.key, label: s.label, color: trendColor(s.colorKey, theme), swatch: "solid" })),
+    ...(showOthers ? [{ id: OTHERS_ID, key: OTHERS_KEY, label: frame.others.label, color: othersColor, swatch: "others" }] : []),
+  ];
+  const ids = items.map((item) => item.id);
+  // Ids from an earlier frame that no longer exist do not count as hidden, and a frame change that
+  // would leave nothing shown restores all.
+  const current = ids.filter((id) => hiddenIds.has(id));
+  const hidden = new Set(current.length === ids.length ? [] : current);
+  const onLegend = (id) => (event) =>
+    setHiddenIds(nextHidden(hidden, id, ids, event.ctrlKey || event.metaKey || event.shiftKey));
+  // Stacked areas sum the shown series; "기본" draws each shown series as its own line.
+  const plot = ({ key, label, color }) => stacked ? (
+    <Area key={key} type="monotone" dataKey={key} name={label} stackId="a" fill={color} fillOpacity={0.78}
+      stroke={color} strokeWidth={1.2} connectNulls={false} dot={<IsolatedDot rows={rows} fill={color} />}
+      activeDot={{ r: 3, stroke: c.surface, strokeWidth: 1 }} isAnimationActive={false} />
+  ) : (
+    <Line key={key} type="monotone" dataKey={key} name={label} stroke={color} strokeWidth={1.6}
+      connectNulls={false} dot={<IsolatedDot rows={rows} fill={color} />}
+      activeDot={{ r: 3, stroke: c.surface, strokeWidth: 1 }} isAnimationActive={false} />
   );
   return (
     <TrendCard title={title} subtitle={subtitle} help={help} right={header} accent={accent}>
@@ -311,31 +352,36 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={fmtTick} minTickGap={24} />
           <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} tickFormatter={formatAxisUsd} />
-          <Tooltip content={<TrendTooltip frame={frame} fmtTick={fmtTick} c={c} theme={theme} />} />
-          {series.map((s) => area(s.key, s.label, trendColor(s.colorKey, theme)))}
-          {showOthers && area(OTHERS_KEY, frame.others.label, othersColor)}
+          <Tooltip content={<TrendTooltip frame={frame} fmtTick={fmtTick} c={c} theme={theme} hidden={hidden} />} />
+          {items.filter((item) => !hidden.has(item.id)).map(plot)}
           {/* An invisible zero-height bar carries each bucket's state mark above the plot band. */}
           <Bar dataKey="__mark" stackId="marks" isAnimationActive={false} legendType="none" shape={<BucketMark fmtTick={fmtTick} axis={c.axis} />} />
           {zoom.overlay}
         </ComposedChart>
       </ResponsiveContainer>
-      <ul aria-label="범례" className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-500">
-        {series.map((s) => {
-          const color = trendColor(s.colorKey, theme);
+      <ul aria-label="범례" className="mt-2 flex flex-wrap gap-x-1 gap-y-1 text-[11px] text-ink-500">
+        {items.map((item) => {
+          const shown = !hidden.has(item.id);
           return (
-            <li key={s.key} className="flex items-center gap-1.5">
-              <span aria-hidden="true" data-swatch="solid" className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: color }} />
-              {s.label}
+            <li key={item.id}>
+              <button type="button" aria-pressed={shown} data-legend={item.key} onClick={onLegend(item.id)}
+                title="클릭: 이 계열만 보기 · Ctrl/⌘/Shift+클릭: 표시 전환"
+                className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-ink-50 ${shown ? "" : "opacity-40 line-through"}`}>
+                <span aria-hidden="true" data-swatch={item.swatch}
+                  className={`inline-block h-2.5 w-2.5 ${item.swatch === "others" ? "rounded-sm" : "rounded-[3px]"}`}
+                  style={{ background: item.color }} />
+                {item.label}
+              </button>
             </li>
           );
         })}
-        {showOthers && (
-          <li className="flex items-center gap-1.5">
-            <span aria-hidden="true" data-swatch="others" className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: othersColor }} />
-            {frame.others.label}
-          </li>
-        )}
       </ul>
+      {hidden.size > 0 && (
+        <p data-legend-filtered className="mt-1 text-[11px] text-ink-500">
+          {`${hidden.size}개 계열 숨김 — 상태 표시·확인 필요 목록·표는 전체 기준입니다. `}
+          <button type="button" className="underline" onClick={() => setHiddenIds(new Set())}>모두 보기</button>
+        </p>
+      )}
       {status}
       {tables}
     </TrendCard>
