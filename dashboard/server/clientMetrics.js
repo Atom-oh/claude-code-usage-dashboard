@@ -325,7 +325,8 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
     if ((!costView || !DIAGNOSTIC_FIELDS.includes(k)) && by_client.some((r) => r[k] === null)) total[k] = null;
   return { clients, observed_records: total.observed_records, totals: total, by_client,
     by_model: [...groups.by_model.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
-    by_user: [...groups.by_user.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
+    by_user: [...groups.by_user.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)
+      || a.client.localeCompare(b.client) || a.user.localeCompare(b.user)),
     ...(!costView ? {
       by_project: [...groups.by_project.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
       tools: [...tools.values()].sort((a, b) => b.calls - a.calls),

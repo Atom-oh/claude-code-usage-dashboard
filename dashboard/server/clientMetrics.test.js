@@ -498,6 +498,25 @@ test("compact format requires the cost time profile and rejects non-scalar value
     assert.throws(() => validateTimeFormat({ ...raw, timeFormat: "compact" }), /invalid timeFormat/);
 });
 
+test("equal observed usage has stable client/user ranking across independent row orders", () => {
+  const records = [
+    { ...event, user: "b@fixture.invalid", session: "b" },
+    { ...event, user: "a@fixture.invalid", session: "a" },
+    { ...event, user: "", session: "unknown" },
+    { ...event, client: "claude", user: "a@fixture.invalid", session: "claude",
+      input_tokens: 98, reported_cost: 2 },
+  ];
+  for (const costView of [false, true]) {
+    const options = { modelTime: true, costView };
+    const first = foldClientMetrics(records, modelTimeClients, undefined, options).by_user;
+    const second = foldClientMetrics([...records].reverse(), modelTimeClients, undefined, options).by_user;
+    assert.deepEqual(first, second);
+    const codex = first.filter(row => row.client === "codex");
+    assert.deepEqual(codex.map(row => row.user), ["", "a@fixture.invalid", "b@fixture.invalid"]);
+    assert.ok(codex.every(row => row.observed_tokens === codex[0].observed_tokens));
+  }
+});
+
 test("cost folds preserve coverage, tiers, identities and idle buckets while omitting diagnostic breakdowns", () => {
   const fields = ["api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"];
   const projectCost = { ...event, project: "second", context_tier: "long", input_tokens_total: 260000 };

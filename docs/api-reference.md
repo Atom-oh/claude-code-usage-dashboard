@@ -219,7 +219,10 @@ cache identity and echoes `time_format="compact-v1"`. Only `by_model_time` and
 is an array in `columns` order. Columns present in `dictionaries` use zero-based
 indices into their dictionary; null remains null. Other cells retain their original
 values. No fields, identities, buckets or coverage information are removed.
-Totals, rankings, `timeseries`, filters and cost calculation are unchanged.
+The format changes only the two time tables; totals, rankings and `timeseries`
+retain their representation. Filters and cost calculation are unchanged.
+User rankings sort descending by observed tokens, then client and raw user identity
+for ties, so identical usage does not reorder users during refresh.
 The SPA requests this format and reads rows lazily; older array responses remain
 supported. Malformed or unknown compact formats are unavailable, never zero.
 This reduces response and cache size; it does not reduce the underlying SQL scan

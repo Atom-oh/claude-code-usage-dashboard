@@ -612,7 +612,8 @@ test("cost renders compact model/user trends and keeps exact drilldown filters",
   expect(screen.getByText("Codex 모델별 비용 추이", { exact: true })).toBeTruthy();
   expect(screen.getByText("Codex 사용자별 비용 추이", { exact: true })).toBeTruthy();
   await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBeGreaterThan(1));
-  fireEvent.click(screen.getByRole("button", { name: maskEmail("alice@example.test") }));
+  const ranking = screen.getByText("사용자별 비용", { exact: true }).closest(".shadow-card");
+  fireEvent.click(within(ranking).getByRole("button", { name: maskEmail("alice@example.test") }));
   await waitFor(() => expect(commonRequests(fetchMock).some(url => url.searchParams.has("userExact"))).toBe(true));
   const detail = commonRequests(fetchMock).find(url => url.searchParams.has("userExact"));
   expect(detail.searchParams.get("timeFormat")).toBe("compact");
