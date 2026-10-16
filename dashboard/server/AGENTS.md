@@ -15,7 +15,7 @@ Express ESM read-only telemetry/SPA; run npm test (node:test).
 - Temporality 2: cumulative, incFlat/incBucketed or justified local differences. Keep delta/legacy handling; stored SeriesKey, no replacement hashes. Process start included except claude_code.session.count; verify probes/ledger.
 - 3-day baselines; raw through 4h, then hourly rollups. Shared overview: explicit subhour buckets >=10m through 24h. Historical-end/partial-hour approximations; no cross-window equality claims.
 - Keep ADR-001 helper dimensions: effort/version/language/agent/project.
-- filterCond(): source columns; distinct model/counter/session-log grains. Unknown-channel inclusion: endpoint-owned, not GROUP_MODE.
+- filterCond() needs source columns; distinct model/counter/session-log grains. Unknown-channel inclusion: endpoint-owned, not GROUP_MODE.
 - grouping.js: inferred session channels; UserEmail often has no identity fallback.
 - Logs lack promoted Model/Decision/Source/status-code: use attributes/normalized models.
 - Project filters: logs-only project-column probe ===true; promoted fields match both schemas/grafana-ab-queries.sql. Files do not prove rollout.

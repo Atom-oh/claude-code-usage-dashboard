@@ -38,7 +38,7 @@ Engineering docs/guides/ADRs/PR prose: concise English over bilingual review tem
 
 Review new behavior using code/tests/trusted base. Preferences/intentional conventions are not defects; report uncertainty. Correctness/security regressions block. Never weaken auth/no-tools checks/coverage/CI to pass. Follow user's latest-HEAD review/fix/push/merge.
 
-ROLE_REVIEW=1: Codex/Claude independently check full change; Kiro: applicable AWS/operations. NOT_APPLICABLE only via trusted routing. Required failed/incomplete output blocks; no chair coverage waiver. Supersedes matrix/dropout rules: [review](docs/pr-review-specialists.md).
+ROLE_REVIEW=1: Codex/Claude independently check full change; Kiro: applicable AWS/operations. NOT_APPLICABLE only via trusted routing. Failed or incomplete required output blocks; no chair coverage waiver. Supersedes matrix/dropout rules: [review](docs/pr-review-specialists.md).
 
 ## Owners
 
