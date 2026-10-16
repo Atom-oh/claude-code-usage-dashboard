@@ -486,7 +486,7 @@ Config fields:
 | 429 | Chat's per-process IP limit. |
 | 500 | Wrapped query failure: `{error:"internal error", id:"<uuid>"}`. The full exception is logged under the ID, not returned. |
 | 503 | Not-ready/freshness states, unmet chat gates, or exhausted runtime admission. Overload JSON has `code:"capacity_exhausted"` and `Retry-After: 1`; other wrapped query failures remain 500. |
-| 504 | The shared data-query load exceeded its cooperative 25-second budget: `{error, code:"query_timeout"}`. The localized message suggests a smaller range or retry. Timeout results are not cached as empty or zero data. |
+| 504 | The shared data-query load exceeded its cooperative 25-second budget: `{error, code:"query_timeout", id:"<uuid>"}` and `Retry-After: 5`. A warning logs the ID, registered route and code without filters or SQL. The localized message suggests a smaller range or retry. Timeout results are not cached as empty or zero data. |
 
 After authentication, JSON API middleware sets `no-store`; the server's bounded promise cache is separate.
 There is no general data-route rate limit or pagination contract. Named row caps above are

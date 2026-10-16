@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createAuthentication } from "./auth.js";
 import { createInstallationProbe } from "./installation.js";
-import { CapacityError, capacityResponse, createRequestAdmission, createResultCache } from "./capacity.js";
+import { CapacityError, capacityResponse, queryTimeoutResponse, createRequestAdmission, createResultCache } from "./capacity.js";
 import { QueryDeadlineError } from "./queryContext.js";
 import { createWarmingPlan } from "./warming.js";
 import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
@@ -311,10 +311,7 @@ function route(path, handler, { warm = true, client = "claude", validate, permis
       if (warm) warmingPlan.requested(path, req.query);
       await sendJson(req, res, await fetchCached(path, handler, req.query));
     } catch (err) {
-      if (err instanceof QueryDeadlineError) return res.status(504).json({
-        error: "요청 처리 시간이 초과되었습니다. 조회 범위를 줄이거나 잠시 후 다시 시도해 주세요.",
-        code: "query_timeout",
-      });
+      if (err instanceof QueryDeadlineError) return queryTimeoutResponse(res, path);
       if (err instanceof CapacityError) return capacityResponse(res);
       if (err instanceof ValidationError) {
         res.status(400).json({ error: err.message, detail: err.detail });

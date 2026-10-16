@@ -23,24 +23,31 @@ Developer instructions live in [server/AGENTS.md](../../dashboard/server/AGENTS.
 `route()` registers GET data handlers. It validates range and interval before cache lookup,
 then passes parsed filters to the handler. Validation failures return 400; capacity
 exhaustion returns 503 with `Retry-After: 1`; other failures return 500 with an opaque
-error ID. A shared query-load deadline returns 504 with `code: query_timeout`.
+error ID. A shared query-load deadline returns 504 with `code: query_timeout`,
+an opaque error ID and `Retry-After: 5`. A warning logs only that ID, the registered
+route and the timeout code; it excludes submitted filters and SQL.
 Config, health and chat handlers bypass this wrapper.
+[ADR-020](../decisions/ADR-020-cooperative-query-load-deadlines.md) records the shared
+deadline and reader-profile decision, including repeated expensive-view timeouts.
 
 The process-local cache deduplicates pending work until settlement and stores successful
 results for 320 seconds from completion. Pending entries do not expire or get evicted.
 Keys contain the route path plus `from`, `to`, `group`, `user`, `model`, `project`,
 `intervalHours`, `email` and `includeUnknown`, sorted by parameter name. Failed promises are removed. The 2,000-entry
 cap evicts settled entries by insertion order, not by last read. At most 64 distinct
-cache loads execute concurrently. Up to 64 additional distinct keys wait FIFO for
-at most 30 seconds without starting their loaders or acquiring database slots.
-Existing-key requests share the same promise while waiting or executing. A full or
-expired cache queue returns the same coded 503; failed keys are removed.
+cache loads execute concurrently. Up to 64 additional distinct keys wait FIFO without
+starting their loaders or acquiring database slots. The cache queue's own wait limit
+is 30 seconds. Existing-key requests share the same promise while waiting or executing.
+A full queue returns the same coded 503; failed keys are removed.
 Completion starts the successful-result TTL. Each new shared key also has a 25-second
 cooperative deadline, starting before cache admission and covering its loader's DB
 queue, sequential/parallel queries and result consumption together. It cancels queued
 work and closes pending result bodies. Timeout results are removed, never cached as
 empty/zero telemetry. An uncooperative loader remains accounted until it settles;
 a timer does not free its slot while work is still active.
+For data-route loads, the shared 25-second deadline expires before either queue's
+30-second wait limit and returns 504. Cache/DB queues used without that deadline
+retain their own 30-second expiration and coded 503 behavior.
 
 The deadline belongs to the shared key, not one HTTP subscriber. Factor lookups retain
 separate ownership: an expired caller leaves, while another subscriber's request stays
@@ -56,11 +63,17 @@ work. Serialized size is an estimate for cache admission, not a heap/response-al
 database queries at 24 (including result consumption), and chat turns at two per process.
 Database bursts wait FIFO in a bounded 128-query queue for at most 30 seconds; only a
 full/expired queue rejects work. Normal query execution retains the client 30-second timeout
-after admission. Readonly SQL's 30-second abort covers queue and execution together;
+after admission, with a data-route shared deadline taking precedence if it expires first.
+Readonly SQL's 30-second abort covers queue and execution together;
 disconnect/deadline also cancels queued readonly work. These are cooperative limits.
 Ordinary and readonly helpers explicitly close result bodies on abort after headers,
-preserving the originating cancellation reason. HTTP cancellation does not establish
-ClickHouse server-side termination; inspect the deployed reader/server limits.
+preserving the originating cancellation reason. The declared `otel_reader` profile enables
+`cancel_http_readonly_queries_on_client_close` and retains its 60-second execution,
+memory/result/read ceilings as backstops. Older installations may still disable that
+setting; inspect `getSetting(...)` in the actual dashboard session after applying the
+reviewed infrastructure change. HTTP cancellation alone does not establish server-side
+termination. Cancellation and execution checks are cooperative, so a client slot can be
+released before server work stops; neither setting certifies fleet capacity or a hard deadline.
 Overload JSON has `code: capacity_exhausted` and a localized retry message.
 HTTP admission follows authentication and releases on response finish/close; work budgets
 release on settlement. Probes and OIDC protocol routes remain outside HTTP admission;

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createQueryDeadline } from "./queryContext.js";
 
 export class CapacityError extends Error {
@@ -77,6 +78,17 @@ export function capacityResponse(res) {
   });
 }
 
+export function queryTimeoutResponse(res, routePath, warn = console.warn) {
+  const id = randomUUID();
+  // routePath is the registered route, never submitted query/filter values or SQL.
+  warn(`[${id}] ${routePath} query_timeout`);
+  return res.set("Cache-Control", "no-store").set("Retry-After", "5").status(504).json({
+    error: "요청 처리 시간이 초과되었습니다. 조회 범위를 줄이거나 잠시 후 다시 시도해 주세요.",
+    code: "query_timeout",
+    id,
+  });
+}
+
 export function createRequestAdmission(maximum = 200) {
   const budget = createBudget(maximum);
   return (_req, res, next) => {
@@ -101,9 +113,10 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
   maxWaiting = 0, waitMs = 30_000, loadMs = 0,
   maxBytes = 16 * 1024 * 1024, maxEntryBytes = 1024 * 1024, now = Date.now } = {}) {
   if (!Number.isSafeInteger(maxWaiting) || maxWaiting < 0 ||
-      !Number.isSafeInteger(waitMs) || waitMs < 1 ||
-      !Number.isSafeInteger(loadMs) || loadMs < 0 || loadMs > 2_147_483_647)
+      !Number.isSafeInteger(waitMs) || waitMs < 1)
     throw new RangeError("invalid cache waiting capacity");
+  if (!Number.isSafeInteger(loadMs) || loadMs < 0 || loadMs > 2_147_483_647)
+    throw new RangeError("invalid shared query load deadline");
   const budget = maxWaiting
     ? createQueuedBudget({ maximum: maxPending, maxWaiting, waitMs })
     : createBudget(maxPending);

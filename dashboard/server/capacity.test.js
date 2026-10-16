@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { CapacityError, createBudget, createQueuedBudget, createRequestAdmission, createResultCache, createSlidingLimiter } from "./capacity.js";
+import { CapacityError, queryTimeoutResponse, createBudget, createQueuedBudget, createRequestAdmission, createResultCache, createSlidingLimiter } from "./capacity.js";
 
 const deferred = () => {
   let resolve, reject;
@@ -60,6 +60,29 @@ class Response extends EventEmitter {
   status(value) { this.statusCode = value; return this; }
   json(value) { this.body = value; return this; }
 }
+
+test("query timeouts have private-safe correlation, no-store and a retry hint", () => {
+  const response = new Response(), logs = [];
+  assert.equal(queryTimeoutResponse(response, "/api/clients/overview", line => logs.push(line)), response);
+  assert.equal(response.statusCode, 504);
+  assert.equal(response.headers["Cache-Control"], "no-store");
+  assert.equal(response.headers["Retry-After"], "5");
+  assert.deepEqual(Object.keys(response.body), ["error", "code", "id"]);
+  assert.equal(response.body.code, "query_timeout");
+  assert.match(response.body.error, /다시 시도/);
+  assert.match(response.body.id, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(logs, [`[${response.body.id}] /api/clients/overview query_timeout`]);
+  const next = new Response();
+  queryTimeoutResponse(next, "/api/clients/overview", () => {});
+  assert.notEqual(next.body.id, response.body.id);
+});
+
+test("invalid load deadlines have their own configuration error", () => {
+  assert.throws(() => createResultCache({ loadMs: -1 }),
+    { name: "RangeError", message: "invalid shared query load deadline" });
+  assert.throws(() => createResultCache({ waitMs: 0 }),
+    { name: "RangeError", message: "invalid cache waiting capacity" });
+});
 
 test("request admission sends 503 and releases on finish/close without double release", () => {
   const middleware = createRequestAdmission(1);
