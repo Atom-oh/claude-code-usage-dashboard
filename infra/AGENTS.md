@@ -12,7 +12,7 @@ terraform init -backend=false
 terraform validate
 ```
 
-Validation proves neither a plan nor deployment. Read the runbook before plan/apply.
+Validation proves neither a plan nor deployment. Read the relevant runbook before plan/apply.
 Never commit credentials, real tfvars, state, plans or backend secrets.
 Source files and static validation do not prove live resource state.
 
@@ -22,7 +22,7 @@ Source files and static validation do not prove live resource state.
   Never create an unauthenticated alternate entry point.
 - Keep application secrets in the existing secret references, not image layers or
   public outputs. Client-side PII masking does not authorize publishing raw data.
-- Readiness uses `/readyz` and graceful draining; liveness uses `/healthz`.
+- Dashboard readiness uses `/readyz` and graceful draining; liveness uses `/healthz`.
   Docker health checks do not configure Kubernetes probes.
 - Use immutable release identifiers; verify image digests.
   Verify that the Terraform-declared immutable ECR policy is actually applied.
