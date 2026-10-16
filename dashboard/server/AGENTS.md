@@ -2,12 +2,12 @@
 
 Express ESM read-only telemetry/SPA; run npm test (node:test).
 
-## API
+## API and security
 
 - index.js route(): validate/cache/deduplicate in-flight work/handle errors.
 - Basic/OIDC protects config/freshness/data except probes/OIDC protocol; no OIDC fallback. [Identity](../../docs/decisions/ADR-019-dedicated-installation-identity.md). JSON: no-store; chat SSE success: no-cache.
 - Invalid auth fails startup except explicit local Basic bypass. Chat needs confirmed readonly sessions; security-review sanitizeSql() changes.
-- Unsafe OIDC: configured Origin required; viewers cannot query chat.
+- OIDC unsafe requests require configured Origin; viewers cannot query chat.
 - Imports never listen; boot checks/probes run. /healthz: liveness; /readyz: fail on drain/ClickHouse outage. DB failure must not restart app.
 
 ## Queries

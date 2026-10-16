@@ -27,7 +27,7 @@ CI harness discovers test-*.sh; absent gitignored .claude/ tooling: expected ski
 - Bedrock/enterprise: inferred session channels, not clients; model names do not identify emitting clients.
 - CLAUDE_ENABLED/CODEX_ENABLED select collection/views; both false invalid. Separate client/backend/model; no Codex enterprise A/B row.
 - Use shared API wrapping, bound SQL parameters, existing filter semantics.
-- Never add diagnostic Codex metrics/traces to completion-log usage/cost: [interpretation](docs/reference/codex-observability.md).
+- Codex metrics/traces are diagnostic feeds; never add them to completion-log usage/cost: [interpretation](docs/reference/codex-observability.md).
 - Unavailable differs from zero; positive totals do not prove complete telemetry.
 - Shared views: known costs/observed_tokens, partial flags; all-unknown unavailable. Strict canonical tokens for ratios: [coverage](docs/decisions/ADR-014-observed-token-subtotals.md).
 - No secrets/personal/customer data in commits/public reviews/site assets. UI masking is not API access control.
