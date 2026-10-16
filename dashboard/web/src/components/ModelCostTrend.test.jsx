@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider, useRange } from "../RangeContext.jsx";
 import { ModelCostTrend, nextHidden } from "./ModelCostTrend.jsx";
-import { fromByModelDaily, fromByModelTime, modelColorKey, trendColor } from "../modelCostTrend.js";
+import { fromByModelDaily, fromByModelTime, modelColorKey, trendColor, trendStrokeColor } from "../modelCostTrend.js";
 
 // jsdom has no layout or ResizeObserver. Keep the real Recharts render path and
 // supply only the browser dimensions its ResponsiveContainer and Tooltip need.
@@ -82,6 +82,23 @@ test("stacked series plus 기타 with stable fills", async () => {
   expect(texts(legend, "li")).toEqual(["claude-sonnet-5", "zai.glm-5", "기타 2개 모델"]);
   expect([...legend.querySelectorAll("[data-swatch]")].map((el) => el.getAttribute("data-swatch")))
     .toEqual(["solid", "solid", "others"]);
+});
+
+test("pastel model fills retain darker essential strokes in area and line modes", async () => {
+  const { container } = mount({
+    cells: [c(D1, "claude-sonnet-4-5", "enterprise", 2), c(D2, "claude-sonnet-4-5", "enterprise", 3)],
+    bounds: BOUNDS,
+  });
+  await chartReady(container);
+  const stroke = trendStrokeColor("#B7C0F5");
+  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#B7C0F5");
+  expect(container.querySelector(".recharts-area-curve").getAttribute("stroke")).toBe(stroke);
+  fireEvent.click(screen.getByRole("button", { name: "기본" }));
+  await waitFor(() => expect(container.querySelector(".recharts-line-curve")).not.toBeNull());
+  expect(container.querySelector(".recharts-line-curve").getAttribute("stroke")).toBe(stroke);
+  expect(container.querySelector(".recharts-line-curve").getAttribute("stroke-width")).toBe("2");
+  const swatch = screen.getByRole("list", { name: "범례" }).querySelector("[data-swatch]");
+  expect(swatch.style.background).not.toBe("rgb(183, 192, 245)");
 });
 
 test("Codex vendor models use solid areas and matching swatches while retaining partial status", async () => {
@@ -405,7 +422,8 @@ test("an older Claude model draws its solid modelColorFor fill, never the unknow
   const { container } = mount({ cells: [c(D1, "claude-sonnet-4-5", "bedrock", 1)] });
   await chartReady(container);
   // A single bucket has no area width, so the isolated point is drawn as a dot.
-  expect([...container.querySelectorAll("[data-isolated]")].map((p) => p.getAttribute("fill"))).toEqual(["#B7C0F5"]);
+  expect([...container.querySelectorAll("[data-isolated]")].map((p) => p.getAttribute("fill")))
+    .toEqual([trendStrokeColor("#B7C0F5")]);
   expect(container.querySelector("pattern")).toBeNull();
   expect(screen.getByRole("list", { name: "범례" }).querySelector("[data-swatch]").getAttribute("data-swatch")).toBe("solid");
 });

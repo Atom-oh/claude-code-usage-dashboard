@@ -5,7 +5,7 @@ import { Info } from "lucide-react";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { makeTickFmt } from "../fmt.js";
 import { buildModelCostFrame, chartTheme, formatAxisUsd, formatUsd, formatUsdPrecise, OTHERS_COLOR_KEY,
-  OTHERS_KEY, REASON_GROUPS, reasonLabel, STATE_LABELS, trendColor } from "../modelCostTrend.js";
+  OTHERS_KEY, REASON_GROUPS, reasonLabel, STATE_LABELS, trendColor, trendStrokeColor } from "../modelCostTrend.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
@@ -326,7 +326,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const items = [
     ...series.map((s) => ({ id: legendId(s), key: s.key, label: s.label, color: trendColor(s.colorKey, theme), swatch: "solid" })),
     ...(showOthers ? [{ id: OTHERS_ID, key: OTHERS_KEY, label: frame.others.label, color: othersColor, swatch: "others" }] : []),
-  ];
+  ].map((item) => ({ ...item, stroke: trendStrokeColor(item.color, c.surface) }));
   const ids = items.map((item) => item.id);
   // Ids from an earlier frame that no longer exist do not count as hidden, and a frame change that
   // would leave nothing shown restores all.
@@ -335,13 +335,13 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const onLegend = (id) => (event) =>
     setHiddenIds(nextHidden(hidden, id, ids, event.ctrlKey || event.metaKey || event.shiftKey));
   // Stacked areas sum the shown series; "기본" draws each shown series as its own line.
-  const plot = ({ key, label, color }) => stacked ? (
+  const plot = ({ key, label, color, stroke }) => stacked ? (
     <Area key={key} type="monotone" dataKey={key} name={label} stackId="a" fill={color} fillOpacity={0.78}
-      stroke={color} strokeWidth={1.2} connectNulls={false} dot={<IsolatedDot rows={rows} fill={color} />}
+      stroke={stroke} strokeWidth={1.2} connectNulls={false} dot={<IsolatedDot rows={rows} fill={stroke} />}
       activeDot={{ r: 3, stroke: c.surface, strokeWidth: 1 }} isAnimationActive={false} />
   ) : (
-    <Line key={key} type="monotone" dataKey={key} name={label} stroke={color} strokeWidth={1.6}
-      connectNulls={false} dot={<IsolatedDot rows={rows} fill={color} />}
+    <Line key={key} type="monotone" dataKey={key} name={label} stroke={stroke} strokeWidth={2}
+      connectNulls={false} dot={<IsolatedDot rows={rows} fill={stroke} />}
       activeDot={{ r: 3, stroke: c.surface, strokeWidth: 1 }} isAnimationActive={false} />
   );
   return (
@@ -369,7 +369,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
                 className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-ink-50 ${shown ? "" : "opacity-40 line-through"}`}>
                 <span aria-hidden="true" data-swatch={item.swatch}
                   className={`inline-block h-2.5 w-2.5 ${item.swatch === "others" ? "rounded-sm" : "rounded-[3px]"}`}
-                  style={{ background: item.color }} />
+                  style={{ background: stacked ? item.color : item.stroke }} />
                 {item.label}
               </button>
             </li>
