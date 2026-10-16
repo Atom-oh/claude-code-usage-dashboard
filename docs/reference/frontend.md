@@ -201,10 +201,10 @@ Shared views also draw a per-client user cost trend from `by_user_time`
 (`fromByModelTime(data, client, { dimension: "user" })`, `dimension="user"` on the component).
 It shares the model trend's bucket pick; user labels are masked with `maskEmail` while keys stay
 raw, user series take palette colors by rank (users have no stable color identity), and the
-Others table drops the channel column.
+Others table drops the channel column, so a user's channels fold into one row.
 Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`
-(`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; the server's
-`user: null` residual becomes one "rest of N users" identity that always joins Others and
+(`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; in both sources the
+server's `user: null` residual becomes one "rest of N users" identity that always joins Others and
 counts as N users in its label. With legend items hidden, the tooltip's
 shown subtotal is unavailable when only unavailable shown costs exist and is labelled partial
 when some are; a frame change that would hide every item restores all. Legend buttons carry

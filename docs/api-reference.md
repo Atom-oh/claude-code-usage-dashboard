@@ -209,8 +209,12 @@ unpriced Codex response has one `unpriced_reason`, checked in order: backend, sc
 (`us-gov.`, a commercial routing prefix on mantle, or no rate for the scope/tier), model rate,
 then usage validity; a configured rate with a non-finite estimate reports `unknown_model`.
 It also adds `by_user_time`: the same backed usage regrouped per `client`, `t`, `user`
-(raw identity, `""` when absent) with the same fields and `unpriced_reasons`; per `client`, `t`
-its known `cost_usd` and `unpriced` sum to the `by_model_time` rows.
+(raw identity, `""` when absent) with the same fields except `model` (`backend` is the rows' single backend or `mixed`), plus
+`unpriced_reasons`; per `client`, `t` its known `cost_usd` and `unpriced` sum to the
+`by_model_time` rows. Each client keeps its top 20 users with backed usage (known range
+`cost_usd`, then `observed_tokens`, then identity) and `""`; the rest fold into one `user: null`
+row per `client`, `t` whose `rest_users` is the client's folded user count (null on named
+rows), sorted last.
 
 Optional `timeFormat=compact` requires `view=cost&modelTime=1`; other supplied values
 or combinations return 400 before cache lookup or database work. It has a separate
