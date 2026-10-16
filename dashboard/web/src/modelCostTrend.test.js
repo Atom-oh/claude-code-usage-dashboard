@@ -16,6 +16,7 @@ import {
   OTHERS_COLOR_KEY,
   REASON_GROUPS,
   reasonLabel,
+  REST_USERS_PREFIX,
   rollupBuckets,
   STATE_LABELS,
   trendColor,
@@ -704,6 +705,20 @@ test("fromByModelTime reads by_user_time for the user dimension with no channel"
   expect(fromByModelTime({ ...OV, by_user_time: undefined }, "claude", { dimension: "user" })).toBeNull();
 });
 
+test("the shared by_user_time residual joins 기타 with its folded head count", () => {
+  const data = { ...OV, by_user_time: [
+    { client: "claude", t: "2026-09-14T10:00:00Z", user: "kim@example.com", cost_usd: 3, observed_tokens: 10 },
+    { client: "claude", t: "2026-09-14T10:00:00Z", user: null, rest_users: 40, cost_usd: 1.5, observed_tokens: 5 },
+  ] };
+  const cells = fromByModelTime(data, "claude", { dimension: "user" });
+  expect(cells.find((cell) => cell.model === `${REST_USERS_PREFIX}40`)).toMatchObject({ known: 1.5, channel: null });
+  const frame = buildModelCostFrame(cells, { top: 6, dimension: "user" });
+  expect(frame.series.map((s) => s.model)).toEqual(["kim@example.com"]);
+  expect(frame.others.label).toBe("기타 40명");
+  // OV's own timeseries residuals add a 사용자 미귀속 entry; the folded row is one entry of its own.
+  expect(frame.othersBreakdown.filter((e) => e.label === "그 외 40명").map((e) => e.known)).toEqual([1.5]);
+});
+
 test("the user axis keeps raw identities as keys, masks labels and ranks colors", async () => {
   const { setPiiMask } = await import("./fmt.js");
   setPiiMask(true);
@@ -731,4 +746,16 @@ test("a server residual of 80 users folds into 기타 with its full head count",
   expect(frame.series.some((s) => s.label.startsWith("그 외"))).toBe(false);
   expect(frame.others.label).toBe("기타 94명");
   expect(frame.othersBreakdown.find((e) => e.label === "그 외 80명").known).toBe(500);
+});
+
+test("a folded user active on two channels is one 기타 row; models keep one row per channel", () => {
+  const users = [c(D1, "kim@example.com", "e", 5), c(D1, "lee@example.com", "e", 2), c(D2, "lee@example.com", "b", 1),
+    c(D2, "lee@example.com", "b", null, u("report_missing"))];
+  const frame = buildModelCostFrame(users, { top: 1, bounds: BOUNDS, bucketHours: 24, dimension: "user" });
+  expect(frame.othersBreakdown).toEqual([
+    { model: "lee@example.com", label: "le******@example.com", channel: null, known: 3, unavailable: 1 },
+  ]);
+  const models = buildModelCostFrame([c(D1, "a", "e", 5), c(D1, "b", "e", 2), c(D2, "b", "x", 1)], { top: 1, bounds: BOUNDS, bucketHours: 24 });
+  expect(frame.others.count).toBe(1);
+  expect(models.othersBreakdown.map((e) => [e.model, e.channel])).toEqual([["b", "e"], ["b", "x"]]);
 });

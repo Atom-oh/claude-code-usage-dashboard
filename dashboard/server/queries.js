@@ -770,10 +770,11 @@ export async function skillUsage(from, to, filters = {}) {
 // by user, so user cells carry exactly the model cells' scope counts. Only the top
 // USER_TREND_TOP users by known report over the whole range stay separate (plus the empty
 // identity); the rest fold into one "user" = NULL row per (day, group) carrying rest_users,
-// which bounds rows by buckets, not by user count.
+// which bounds rows by buckets, not by user count. Inner levels name the identity scope_user so
+// the folded output alias "user" never shadows a source column in the final GROUP BY.
 export function costByModelDailySql(intervalHours, filters = {}, { dimension = "model" } = {}) {
   const byUser = dimension === "user";
-  const key = byUser ? `"user"` : "model";
+  const key = byUser ? "scope_user" : "model";
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const b = incBucket(intervalHours, metricFilter);
@@ -814,7 +815,7 @@ export function costByModelDailySql(intervalHours, filters = {}, { dimension = "
       FROM (
         SELECT t AS day,
             ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, m.SessionId AS session,
-            ${byUser ? `max(m.UserEmail) AS "user",` : ""}
+            ${byUser ? `max(m.UserEmail) AS scope_user,` : ""}
             ${TOKEN_SUMS},
             countIf(${observed} AND m.MetricName = 'claude_code.cost.usage') AS report_obs,
             countIf(${observed} AND m.MetricName = 'claude_code.token.usage') AS token_obs
@@ -832,7 +833,7 @@ export function costByModelDailySql(intervalHours, filters = {}, { dimension = "
   // one pass (a CTE referenced three times would re-run the per-session scan each time). The
   // empty identity sorts last and is never folded; rest_users counts folded non-empty users.
   const sql = byUser ? `${GROUP_CTE}${firstObservations}
-    SELECT day, "group", if(rnk <= ${USER_TREND_TOP} OR "user" = '', "user", NULL) AS "user",
+    SELECT day, "group", if(rnk <= ${USER_TREND_TOP} OR scope_user = '', scope_user, NULL) AS "user",
         any(greatest(0, total_ranks - has_empty - ${USER_TREND_TOP})) AS rest_users,
         sum(known_report) AS known_report, sum(usable_scopes) AS usable_scopes,
         sum(report_missing) AS report_missing, sum(report_zero_with_tokens) AS report_zero_with_tokens,
@@ -840,12 +841,12 @@ export function costByModelDailySql(intervalHours, filters = {}, { dimension = "
         sum(observed_token_sum) AS observed_token_sum, sum(observed_token_scopes) AS observed_token_scopes,
         sum(unobserved_token_scopes) AS unobserved_token_scopes
     FROM (
-      SELECT *, max(rnk) OVER () AS total_ranks, max("user" = '') OVER () AS has_empty
+      SELECT *, max(rnk) OVER () AS total_ranks, max(scope_user = '') OVER () AS has_empty
       FROM (
-        SELECT *, dense_rank() OVER (ORDER BY "user" = '', user_known DESC, user_tokens DESC, "user") AS rnk
+        SELECT *, dense_rank() OVER (ORDER BY scope_user = '', user_known DESC, user_tokens DESC, scope_user) AS rnk
         FROM (
-          SELECT *, sum(known_report) OVER (PARTITION BY "user") AS user_known,
-              sum(observed_token_sum) OVER (PARTITION BY "user") AS user_tokens
+          SELECT *, sum(known_report) OVER (PARTITION BY scope_user) AS user_known,
+              sum(observed_token_sum) OVER (PARTITION BY scope_user) AS user_tokens
           FROM (${cells})
         )
       )

@@ -594,6 +594,35 @@ test("by_user_time regroups the same usage per user and keeps the timeseries sum
   }
 });
 
+test("by_user_time keeps each client's top users and folds the rest per bucket", async () => {
+  const { USER_TREND_TOP } = await import("./modelCostTrend.js");
+  const claude = (t, user, cost, extra = {}) => ({ ...event, client: "claude", backend: "anthropic",
+    model: "claude-sonnet-5", t, user, session: `s-${user}`, input_tokens: undefined, reported_cost: String(cost), ...extra });
+  const users = Array.from({ length: USER_TREND_TOP + 3 }, (_, i) => `u${String(i).padStart(2, "0")}@example.invalid`);
+  const records = [
+    ...users.map((user, i) => claude("2026-09-14 10:00:00", user, 100 - i)),
+    claude("2026-09-14 11:00:00", users.at(-1), 1),
+    claude("2026-09-14 10:00:00", "", 0.5),
+    // An operational-only user never takes a top slot or counts as folded.
+    { ...event, client: "claude", kind: "tool", tool: "Bash", user: "ops@example.invalid", count: 1 },
+  ];
+  const on = foldClientMetrics(records, ["claude"], undefined, { modelTime: true });
+  const named = new Set(on.by_user_time.filter((r) => r.user).map((r) => r.user));
+  assert.deepEqual([...named].sort(), users.slice(0, USER_TREND_TOP));
+  const rest = on.by_user_time.filter((r) => r.user === null);
+  assert.deepEqual(rest.map((r) => [r.t, r.rest_users, r.cost_usd]),
+    [["2026-09-14 10:00:00", 3, 80 + 79 + 78], ["2026-09-14 11:00:00", 3, 1]]);
+  assert.ok(on.by_user_time.some((r) => r.user === "" && r.cost_usd === 0.5));
+  // Folding moves cost between rows, never changes a bucket's total.
+  for (const ts of on.timeseries) {
+    const sum = on.by_user_time.filter((r) => r.t === ts.t).reduce((s, r) => s + r.cost_usd, 0);
+    assert.ok(Math.abs(sum - ts.cost_usd) < 1e-9, ts.t);
+  }
+  // Within a bucket the residual sorts after every named user.
+  const at10 = on.by_user_time.filter((r) => r.t === "2026-09-14 10:00:00");
+  assert.equal(at10.at(-1).user, null);
+});
+
 test("Claude by_model_time rows use the claudeUsage rule", () => {
   const valid = foldClientMetrics([
     { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5", input_tokens: undefined, reported_cost: "2.5" },
