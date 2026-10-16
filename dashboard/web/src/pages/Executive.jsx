@@ -63,6 +63,8 @@ export default function Executive() {
   const costHours = costPick?.key === rangeKey ? costPick.hours : (to - from) / 86400000 > 30 ? 168 : 24;
   const costDaily = useApi("/api/cost/by-model-daily", { intervalHours: costHours });
   const costCells = useMemo(() => fromByModelDaily(costDaily.data), [costDaily.data]);
+  const userDaily = useApi("/api/cost/by-user-daily", { intervalHours: costHours });
+  const userCells = useMemo(() => fromByModelDaily(userDaily.data, { dimension: "user" }), [userDaily.data]);
   const costCompare = useApi("/api/cost/by-model-compare");
   const decisions = useApi("/api/productivity/decisions");
   const leaderboard = useApi("/api/users/leaderboard");
@@ -416,6 +418,24 @@ export default function Executive() {
                   pinned={model ? [model] : undefined}
                   bucketHours={costHours}
                   zoomDisabled={costDaily.stale}
+                  clampRange={[from, null]}
+                />
+              )}
+              {userDaily.loading ? (
+                <Loading />
+              ) : userDaily.error ? (
+                <ErrorBox error={userDaily.error} />
+              ) : (
+                <ModelCostTrend
+                  title="사용자별 비용 추이"
+                  subtitle="상위 사용자 ID 기준 · 모델별 비용 추이와 같은 버킷"
+                  cells={userCells}
+                  help={SPEND_HELP}
+                  basis="Claude 보고 비용"
+                  xKey="t"
+                  dimension="user"
+                  bucketHours={costHours}
+                  zoomDisabled={userDaily.stale}
                   clampRange={[from, null]}
                 />
               )}

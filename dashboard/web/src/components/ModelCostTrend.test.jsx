@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider, useRange } from "../RangeContext.jsx";
-import { ModelCostTrend } from "./ModelCostTrend.jsx";
-import { fromByModelTime, modelColorKey, trendColor } from "../modelCostTrend.js";
+import { ModelCostTrend, nextHidden } from "./ModelCostTrend.jsx";
+import { fromByModelDaily, fromByModelTime, modelColorKey, trendColor } from "../modelCostTrend.js";
 
 // jsdom has no layout or ResizeObserver. Keep the real Recharts render path and
 // supply only the browser dimensions its ResponsiveContainer and Tooltip need.
@@ -436,4 +436,95 @@ test("a series unavailable inside a partial bucket breaks while the known series
   // Opus at D1 sits between the chart edge and the D2 gap: one dot, and none for continuous points.
   expect([...container.querySelectorAll("[data-isolated]")].map((d) => d.getAttribute("fill")))
     .toEqual([trendColor(modelColorKey("claude-opus-5").key)]);
+});
+
+test("nextHidden isolates on click, toggles with a modifier and never hides everything", () => {
+  const ids = ["a", "b", "c"];
+  const none = new Set();
+  expect([...nextHidden(none, "b", ids, false)]).toEqual(["a", "c"]);
+  // Clicking the only visible item restores all.
+  expect([...nextHidden(new Set(["a", "c"]), "b", ids, false)]).toEqual([]);
+  // Clicking another item while isolated switches the isolation.
+  expect([...nextHidden(new Set(["a", "c"]), "a", ids, false)]).toEqual(["b", "c"]);
+  expect([...nextHidden(none, "a", ids, true)]).toEqual(["a"]);
+  expect([...nextHidden(new Set(["a"]), "a", ids, true)]).toEqual([]);
+  expect([...nextHidden(new Set(["a", "b"]), "c", ids, true)]).toEqual([]);
+});
+
+test("legend clicks isolate a series Grafana-style and the mode toggle switches to plain lines", async () => {
+  const { container } = mount(MAIN);
+  await chartReady(container);
+  const legend = screen.getByRole("list", { name: "범례" });
+  const button = (label) => within(legend).getByRole("button", { name: label });
+  fireEvent.click(button("zai.glm-5"));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
+  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#2D8F84");
+  expect(button("zai.glm-5").getAttribute("aria-pressed")).toBe("true");
+  expect(button("claude-sonnet-5").getAttribute("aria-pressed")).toBe("false");
+  expect(container.querySelector("[data-legend-filtered]").textContent).toContain("2개 계열 숨김");
+  // Ctrl-click adds a series back; clicking the "모두 보기" link restores everything.
+  fireEvent.click(button("claude-sonnet-5"), { ctrlKey: true });
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(2));
+  fireEvent.click(within(container.querySelector("[data-legend-filtered]")).getByRole("button", { name: "모두 보기" }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(3));
+  expect(container.querySelector("[data-legend-filtered]")).toBeNull();
+  // "기본" draws each series as its own line; bucket state marks stay.
+  fireEvent.click(screen.getByRole("button", { name: "기본" }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-line-curve").length).toBe(3));
+  expect(container.querySelectorAll(".recharts-area-area").length).toBe(0);
+  expect(container.querySelectorAll('[data-state="partial"]').length).toBe(1);
+});
+
+test("an isolated series whose cost is unavailable shows an unavailable shown subtotal, never $0", async () => {
+  const cells = [c(D1, "claude-sonnet-5", "e", 5),
+    c(D1, "claude-opus-5", "e", null, { unavailable: 1, reasons: { report_missing: 1 } }),
+    c(D2, "claude-opus-5", "e", 2), c(D2, "claude-sonnet-5", "e", 1)];
+  const { container } = mount({ cells, bounds: BOUNDS });
+  await chartReady(container);
+  fireEvent.click(within(screen.getByRole("list", { name: "범례" })).getByRole("button", { name: "claude-opus-5" }));
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 6);
+  fireEvent.mouseMove(chart, { clientX: x(0), clientY: 80 });
+  await waitFor(() => expect(container.querySelector("[data-mct-tooltip]")).not.toBeNull());
+  const tip = container.querySelector("[data-mct-tooltip]");
+  expect(tip.querySelector("[data-tooltip-shown]").textContent).toBe("표시 계열 합계 확인 불가");
+  expect(tip.querySelector("[data-tooltip-total]").textContent).toBe("알려진 합계 (전체) (부분합) $5.00");
+  // Ctrl-click shows sonnet again: nothing is hidden, so the shown subtotal line goes away.
+  fireEvent.click(within(screen.getByRole("list", { name: "범례" })).getByRole("button", { name: "claude-sonnet-5" }), { ctrlKey: true });
+  fireEvent.mouseMove(chart, { clientX: x(0), clientY: 80 });
+  await waitFor(() => expect(container.querySelector("[data-tooltip-shown]")).toBeNull());
+});
+
+test("user legends isolate by identity, keep raw addresses out of the DOM and fold the server residual", async () => {
+  const { setPiiMask } = await import("../fmt.js");
+  setPiiMask(true);
+  const rows = [D1, D2].flatMap((day) => [
+    { day, group: "e", user: "kim@example.com", reported_cost: 3, reported_unavailable: 0, reported_reasons: {} },
+    { day, group: "e", user: "lee@example.com", reported_cost: 2, reported_unavailable: 0, reported_reasons: {} },
+    { day, group: "e", user: null, rest_users: 7, reported_cost: 1, reported_unavailable: 0, reported_reasons: {} },
+  ]);
+  const cells = fromByModelDaily(rows, { dimension: "user" });
+  const { container } = mount({ cells, bounds: BOUNDS, dimension: "user" });
+  await chartReady(container);
+  const legend = screen.getByRole("list", { name: "범례" });
+  // The server residual is never its own series: it joins 기타 and counts as its 7 users.
+  expect(texts(legend, "button")).toEqual(["ki******@example.com", "le******@example.com", "기타 7명"]);
+  expect(container.innerHTML).not.toContain("kim@example.com");
+  fireEvent.click(within(legend).getByRole("button", { name: "le******@example.com" }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
+  expect(texts(legend, 'button[aria-pressed="true"]')).toEqual(["le******@example.com"]);
+});
+
+test("a frame change that would leave nothing shown restores every series", async () => {
+  const two = [c(D1, "claude-sonnet-5", "e", 5), c(D2, "claude-sonnet-5", "e", 1),
+    c(D1, "claude-opus-5", "e", 2), c(D2, "claude-opus-5", "e", 2)];
+  const { container, rerender } = mount({ cells: two, bounds: BOUNDS });
+  await chartReady(container);
+  fireEvent.click(within(screen.getByRole("list", { name: "범례" })).getByRole("button", { name: "claude-opus-5" }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
+  rerender(<><ModelCostTrend title="모델별 비용 추이" xKey="t" bucketHours={24} bounds={BOUNDS}
+    cells={two.filter((cell) => cell.model === "claude-sonnet-5")} /><Selection /></>);
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
+  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#5B6BDB");
+  expect(container.querySelector("[data-legend-filtered]")).toBeNull();
 });

@@ -100,8 +100,13 @@ const MODEL_AXIS = {
   identity: identityLabel,
   color: (key) => modelColorKey(key),
   others: (n) => (n ? `기타 ${n}개 모델` : "모델 미귀속"),
+  seriesEligible: () => true,
+  weight: () => 1,
 };
-const userLabel = (key) => (key === "" ? "(사용자 미상)" : maskEmail(key));
+// The detail endpoint folds users past its top list into one row; fromByModelDaily keys it here.
+export const REST_USERS_PREFIX = "\u0000rest:";
+const userLabel = (key) => (key === "" ? "(사용자 미상)"
+  : key.startsWith(REST_USERS_PREFIX) ? `그 외 ${key.slice(REST_USERS_PREFIX.length)}명` : maskEmail(key));
 const USER_AXIS = {
   key: (raw) => String(raw ?? ""),
   label: userLabel,
@@ -112,6 +117,9 @@ const USER_AXIS = {
   // Users have no stable color identity, so series colors follow rank within the frame.
   color: (key, rank) => ({ key: `user-${rank}` }),
   others: (n) => (n ? `기타 ${n}명` : "사용자 미귀속"),
+  // The server residual is already a fold, so it always joins 기타 and counts as its users.
+  seriesEligible: (key) => !key.startsWith(REST_USERS_PREFIX),
+  weight: (key) => (key.startsWith(REST_USERS_PREFIX) ? Number(key.slice(REST_USERS_PREFIX.length)) || 1 : 1),
 };
 const axisFor = (dimension) => (dimension === "user" ? USER_AXIS : MODEL_AXIS);
 
@@ -161,14 +169,17 @@ function compareCells(a, b) {
   return 0;
 }
 
-export function fromByModelDaily(rows) {
+// dimension "user" adapts /api/cost/by-user-daily rows: the identity is the raw user.
+export function fromByModelDaily(rows, { dimension = "model" } = {}) {
+  const field = dimension === "user" ? "user" : "model";
   const cells = [];
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row) continue;
     const t = bucketKey(row.day);
     if (t === null) continue;
     const known = row.reported_all_unavailable === true ? null : amount(row.reported_cost);
-    cells.push(finishCell(t, String(row.model ?? ""), row.group || "unknown", known,
+    const identity = field === "user" && row.user === null ? `${REST_USERS_PREFIX}${row.rest_users ?? "?"}` : String(row[field] ?? "");
+    cells.push(finishCell(t, identity, row.group || "unknown", known,
       row.reported_unavailable, row.reported_reasons || {}, row.reported_partial, amount(row.observed_tokens)));
   }
   return cells.sort(compareCells);
@@ -397,9 +408,9 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
 
   // 3. Series membership: top-N plus pinned models present in the period, in ranked order.
   const pinnedKeys = new Set((Array.isArray(pinned) ? pinned : []).filter(Boolean).map(axis.key));
-  const picked = new Set(ranked.slice(0, top));
+  const picked = new Set(ranked.filter(axis.seriesEligible).slice(0, top));
   for (const key of pinnedKeys) {
-    if (stats.has(key)) picked.add(key);
+    if (stats.has(key) && axis.seriesEligible(key)) picked.add(key);
   }
   const seriesKeys = ranked.filter((key) => picked.has(key));
 
@@ -419,7 +430,8 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
   for (const cell of list) {
     if (cell.idle !== true && seriesOf(cell) === null) othersKnown = addKnown(othersKnown, cell.known);
   }
-  const others = { key: OTHERS_KEY, label: axis.others(otherModels.length), count: otherModels.length,
+  const otherCount = otherModels.reduce((n, key) => n + axis.weight(key), 0);
+  const others = { key: OTHERS_KEY, label: axis.others(otherCount), count: otherModels.length,
     models: otherModels, known: othersKnown, affected: otherModels.filter((key) => stats.get(key).hasIssue) };
 
   // 6. Bucket keys: every cell's t plus the bounded grid when it fits the interval cap.

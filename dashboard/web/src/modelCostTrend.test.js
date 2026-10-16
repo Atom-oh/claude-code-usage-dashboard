@@ -773,3 +773,14 @@ test("the user axis keeps raw identities as keys, masks labels and ranks colors"
   expect(trendColor("user-1", "dark")).toBe(Object.values(MODEL_TREND_COLORS.dark)[1]);
   expect(buildModelCostFrame([], { dimension: "user" }).others.label).toBe("사용자 미귀속");
 });
+
+test("a server residual of 80 users folds into 기타 with its full head count", () => {
+  const rows = [];
+  for (let i = 0; i < 20; i++) rows.push({ day: "2026-09-01", group: "e", user: `u${String(i).padStart(2, "0")}@x.test`, reported_cost: 100 - i });
+  rows.push({ day: "2026-09-01", group: "e", user: null, rest_users: 80, reported_cost: 500 });
+  const frame = buildModelCostFrame(fromByModelDaily(rows, { dimension: "user" }), { top: 6, dimension: "user" });
+  expect(frame.series).toHaveLength(6);
+  expect(frame.series.some((s) => s.label.startsWith("그 외"))).toBe(false);
+  expect(frame.others.label).toBe("기타 94명");
+  expect(frame.othersBreakdown.find((e) => e.label === "그 외 80명").known).toBe(500);
+});

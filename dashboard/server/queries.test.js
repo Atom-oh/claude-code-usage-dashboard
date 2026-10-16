@@ -338,6 +338,26 @@ test("entrypointBreakdown filters model per row while its two siblings keep the 
 // costByModelDailySql groups per session inside a subquery so report availability is judged
 // before model aggregation. The builder and modelCostTrend.js are loaded inside each test so
 // that the rest of this file keeps running while those exports are still missing.
+test("the user grain keeps per-(model, session) scopes, folds users past the top list and regroups by user", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  for (const hours of [1, 24]) {
+    const { sql } = costByModelDailySql(hours, {}, { dimension: "user" });
+    for (const text of ['max(m.UserEmail) AS "user"', 'GROUP BY day, "group", model, session\n',
+      'SELECT day, "group", "user",', `if(rnk <= 20 OR "user" = '', "user", NULL) AS "user"`,
+      `dense_rank() OVER (ORDER BY "user" = '', user_known DESC, user_tokens DESC, "user") AS rnk`,
+      'sum(known_report) OVER (PARTITION BY "user") AS user_known',
+      'GROUP BY day, "group", "user" ORDER BY day']) {
+      assert.ok(sql.includes(text), `${hours}h user SQL must include ${text}`);
+    }
+    // One user per (model, session) scope: the scope grouping never includes the user.
+    assert.ok(!sql.includes('session, "user"'));
+    // The per-session scan appears once: no CTE re-referenced by IN or scalar subqueries.
+    assert.equal(sql.split("GROUP BY day, \"group\", model, session").length - 1, 1);
+  }
+  // The model grain is unchanged.
+  assert.ok(!costByModelDailySql(24).sql.includes('"user"'));
+});
+
 test("costByModelDailySql groups per session and counts observed cost/token samples", async () => {
   const { costByModelDailySql } = await import("./queries.js");
   for (const hours of [1, 24, 168]) {
