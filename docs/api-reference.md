@@ -189,7 +189,8 @@ profile remains full. See [Effort profile](reference/codex-observability.md#effo
 
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key; the shared default cost profile warms
-`view=cost&modelTime=1`. Custom windows, filters and resolutions may remain cold;
+`view=cost&modelTime=1&timeFormat=compact`. Custom windows, filters, resolutions and
+legacy time-row responses may remain cold;
 `/api/codex/insights` ignores it. It adds `by_model_time`: one row per `client`, `t`, `model`, `backend` from the
 same fold and buckets as `timeseries`, with Codex raw model IDs (routing prefixes
 kept; Claude models are normalized as in `by_model`) and the usual cost/token/coverage fields. A row exists only where Claude counter
@@ -210,6 +211,22 @@ then usage validity; a configured rate with a non-finite estimate reports `unkno
 It also adds `by_user_time`: the same backed usage regrouped per `client`, `t`, `user`
 (raw identity, `""` when absent) with the same fields and `unpriced_reasons`; per `client`, `t`
 its known `cost_usd` and `unpriced` sum to the `by_model_time` rows.
+
+Optional `timeFormat=compact` requires `view=cost&modelTime=1`; other supplied values
+or combinations return 400 before cache lookup or database work. It has a separate
+cache identity and echoes `time_format="compact-v1"`. Only `by_model_time` and
+`by_user_time` change representation to `{columns, dictionaries, rows}`. Each row
+is an array in `columns` order. Columns present in `dictionaries` use zero-based
+indices into their dictionary; null remains null. Other cells retain their original
+values. No fields, identities, buckets or coverage information are removed.
+The format changes only the two time tables; totals, rankings and `timeseries`
+retain their representation. Filters and cost calculation are unchanged.
+User rankings sort descending by observed tokens, then client and raw user identity
+for ties, so identical usage does not reorder users during refresh.
+The SPA requests this format and reads rows lazily; older array responses remain
+supported. Malformed or unknown compact formats are unavailable, never zero.
+This reduces response and cache size; it does not reduce the underlying SQL scan
+or prove a fleet capacity limit.
 
 ## Filter scope
 
@@ -487,8 +504,16 @@ Config fields:
 | 429 | Chat's per-process IP limit. |
 | 500 | Wrapped query failure: `{error:"internal error", id:"<uuid>"}`. The full exception is logged under the ID, not returned. |
 | 503 | Not-ready/freshness states, unmet chat gates, or exhausted runtime admission. Overload JSON has `code:"capacity_exhausted"` and `Retry-After: 1`; other wrapped query failures remain 500. |
+| 504 | The shared data-query load exceeded its cooperative 25-second budget: `{error, code:"query_timeout", id:"<uuid>"}` and `Retry-After: 5`. A warning logs the ID, registered route and code without filters or SQL. The localized message suggests a smaller range or retry. Timeout results are not cached as empty or zero data. |
 
 After authentication, JSON API middleware sets `no-store`; the server's bounded promise cache is separate.
+[CloudFront configuration](../infra/dns_cdn.tf) declares zero error-cache TTL for dashboard
+403/500/502/503/504 without rewriting status or body. CloudFront can cache these errors
+under other cache policies or positive origin cache directives; verify the actual policy,
+error TTL and response headers. AWS [error processing](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HTTPStatusCodes.html)
+documents that managed `CachingDisabled` disables cached 5xx errors; 400/403 caching
+requires positive `max-age` or `s-maxage`.
+The explicit zero-TTL entries protect this deployment contract if its policy changes.
 There is no general data-route rate limit or pagination contract. Named row caps above are
 part of the returned subset. See [API implementation](reference/api.md) for cache and warmer
 behavior, and [security](reference/security.md) for SQL and identity boundaries.

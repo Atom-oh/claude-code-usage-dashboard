@@ -10,6 +10,7 @@ import {
   formatUsdPrecise,
   fromByModelDaily,
   fromByModelTime,
+  readTimeRows,
   identityLabel,
   modelColorKey,
   modelLabel,
@@ -174,6 +175,57 @@ test("fromByModelTime marks computed fallback without treating a mixed/AWS basis
     changed.by_model_time[0].cost_estimated = 1;
     expect(fromByModelTime(changed, "claude").find(cell => cell.model !== null).estimated).toBe(true);
   }
+});
+
+test("compact tables preserve model/user cells and every value without expanding a second row array", () => {
+  // Dictionary indices are explicit to independently check the server wire contract.
+  const columns = ["client", "t", "model", "backend", "cost_usd", "cost_partial", "unpriced",
+    "unpriced_reasons", "observed_tokens", "cost_basis", "cost_estimated", "tokens_partial"];
+  const dictionaries = { client: ["claude", "codex"], t: ["2026-09-14T10:00:00Z"],
+    model: ["claude-sonnet-5", "openai.gpt-6-astra"], backend: ["anthropic", "bedrock-mantle"],
+    unpriced_reasons: [{ report_missing: 1 }, { missing_usage: 2 }],
+    cost_basis: ["computed_estimate", "aws_list_estimate"] };
+  const rows = [[0, 0, 0, 0, 0.002, true, 1, 0, 30, 0, 1, false],
+    [1, 0, 1, 1, null, true, 2, 1, null, 1, 0, true],
+    [1, 0, 1, 1, 0, false, 0, null, 0, 1, 0, false]];
+  const table = { columns, dictionaries, rows };
+  const compact = { ...OV, time_format: "compact-v1", by_model_time: table };
+  const decoded = [...readTimeRows(compact)];
+  expect(Array.isArray(readTimeRows(compact))).toBe(false);
+  expect(decoded[0]).toEqual({ client: "claude", t: dictionaries.t[0], model: dictionaries.model[0],
+    backend: "anthropic", cost_usd: 0.002, cost_partial: true, unpriced: 1,
+    unpriced_reasons: { report_missing: 1 }, observed_tokens: 30, cost_basis: "computed_estimate",
+    cost_estimated: 1, tokens_partial: false });
+  expect(decoded[1].cost_usd).toBeNull();
+  expect(decoded[2].cost_usd).toBe(0);
+  const original = { ...compact, by_model_time: decoded };
+  for (const client of ["claude", "codex"]) {
+    expect(fromByModelTime(compact, client)).toEqual(fromByModelTime(original, client));
+    const users = { ...table, columns: columns.map(key => key === "model" ? "user" : key),
+      dictionaries: { ...dictionaries, user: ["", "fixture@example.invalid"] } };
+    delete users.dictionaries.model;
+    const userCompact = { ...compact, by_user_time: users };
+    const userOriginal = { ...compact, by_user_time: [...readTimeRows(userCompact, "user")] };
+    expect(fromByModelTime(userCompact, client, { dimension: "user" }))
+      .toEqual(fromByModelTime(userOriginal, client, { dimension: "user" }));
+  }
+  expect(readTimeRows({ time_format: "compact-v1", by_model_time: { columns: [], dictionaries: {}, rows: [] } })).not.toBeNull();
+  expect(fromByModelTime({ time_format: "compact-v1", by_model_time: { columns: [], dictionaries: {}, rows: [] } }, "claude")).toEqual([]);
+});
+
+test("malformed and unknown compact tables remain unavailable", () => {
+  const valid = { columns: ["client", "t", "model"], dictionaries: { client: ["claude"], t: [H10], model: ["a"] }, rows: [[0, 0, 0]] };
+  for (const table of [null, {}, { ...valid, columns: ["client", "client", "model"] },
+    { ...valid, rows: [[0]] }, { ...valid, rows: [[0, 0, -1]] }, { ...valid, rows: [[0, 0, 1]] },
+    { ...valid, rows: [[0, 0, "0"]] }, { ...valid, rows: [[0, 0, 0.5]] },
+    { ...valid, dictionaries: { ...valid.dictionaries, extra: [] } },
+    { ...valid, dictionaries: { ...valid.dictionaries, model: {} } },
+    { ...valid, dictionaries: { t: [H10], model: ["a"] } },
+    { ...valid, dictionaries: { ...valid.dictionaries, model: [0] } },
+    { ...valid, columns: [] }]) {
+    expect(fromByModelTime({ time_format: "compact-v1", by_model_time: table }, "claude")).toBeNull();
+  }
+  expect(fromByModelTime({ time_format: "compact-v2", by_model_time: valid }, "claude")).toBeNull();
 });
 
 test("fromByModelTime returns null when the by_model_time dimension is missing", () => {

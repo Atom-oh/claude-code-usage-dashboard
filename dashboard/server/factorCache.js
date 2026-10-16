@@ -1,4 +1,5 @@
 import { CapacityError } from "./capacity.js";
+import { querySignal, withoutQueryContext } from "./queryContext.js";
 
 // One factor lookup belongs to all of its current subscribers. A failed overview
 // can leave immediately, but must not cancel the lookup another view still needs.
@@ -15,6 +16,7 @@ export function createFactorCache({
   };
   return {
     get(key, load, signal) {
+      signal = querySignal(signal);
       if (signal?.aborted) return Promise.reject(signal.reason);
       const hit = settled.get(key);
       if (hit && now() - hit.at < ttlMs) return Promise.resolve(hit.value);
@@ -26,7 +28,7 @@ export function createFactorCache({
         pending.set(key, entry);
         entry.promise = Promise.resolve().then(() => {
           entry.abort.signal.throwIfAborted();
-          return load(entry.abort.signal);
+          return withoutQueryContext(() => load(entry.abort.signal));
         }).then(value => {
           if (pending.get(key) === entry) {
             let bytes = Infinity;

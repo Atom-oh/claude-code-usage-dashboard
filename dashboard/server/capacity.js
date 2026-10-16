@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { createQueryDeadline } from "./queryContext.js";
+
 export class CapacityError extends Error {
   constructor() {
     super("runtime capacity exhausted");
@@ -75,6 +78,17 @@ export function capacityResponse(res) {
   });
 }
 
+export function queryTimeoutResponse(res, routePath, warn = console.warn) {
+  const id = randomUUID();
+  // routePath is the registered route, never submitted query/filter values or SQL.
+  warn(`[${id}] ${routePath} query_timeout`);
+  return res.set("Cache-Control", "no-store").set("Retry-After", "5").status(504).json({
+    error: "요청 처리 시간이 초과되었습니다. 조회 범위를 줄이거나 잠시 후 다시 시도해 주세요.",
+    code: "query_timeout",
+    id,
+  });
+}
+
 export function createRequestAdmission(maximum = 200) {
   const budget = createBudget(maximum);
   return (_req, res, next) => {
@@ -96,11 +110,13 @@ export function createRequestAdmission(maximum = 200) {
 }
 
 export function createResultCache({ maxEntries = 2000, maxPending = 64,
-  maxWaiting = 0, waitMs = 30_000,
+  maxWaiting = 0, waitMs = 30_000, loadMs = 0,
   maxBytes = 16 * 1024 * 1024, maxEntryBytes = 1024 * 1024, now = Date.now } = {}) {
   if (!Number.isSafeInteger(maxWaiting) || maxWaiting < 0 ||
       !Number.isSafeInteger(waitMs) || waitMs < 1)
     throw new RangeError("invalid cache waiting capacity");
+  if (!Number.isSafeInteger(loadMs) || loadMs < 0 || loadMs > 2_147_483_647)
+    throw new RangeError("invalid shared query load deadline");
   const budget = maxWaiting
     ? createQueuedBudget({ maximum: maxPending, maxWaiting, waitMs })
     : createBudget(maxPending);
@@ -134,16 +150,25 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
       if (entries.size >= maxEntries && !oldest) throw new CapacityError();
       // Reserve admission before work. A queued key holds no database/load slot;
       // its promise stays shared, including while waiting past the response TTL.
-      const reservation = budget.acquire();
+      // One deadline belongs to a shared key, including cache admission, DB
+      // admission and every sequential/parallel query in its loader.
+      const deadline = loadMs ? createQueryDeadline(loadMs) : null;
+      let reservation;
+      try { reservation = budget.acquire(deadline?.signal); }
+      catch (error) { deadline?.dispose(); throw error; }
       let release;
       if (oldest) remove(oldest[0]);
       const entry = { pending: true, expires: Infinity, promise: null };
       entry.promise = Promise.resolve(reservation).then(slot => {
         release = slot;
-        return load();
+        deadline?.check();
+        return deadline ? deadline.run(() => load(deadline.signal)) : load();
       }).then(value => {
+        deadline?.check();
         const serialized = JSON.stringify(value);
+        deadline?.check();
         const size = serialized === undefined ? 0 : Buffer.byteLength(serialized);
+        deadline?.check();
         if (size > maxEntryBytes) {
           remove(key); // Return the full result; only cache admission changes.
           return value;
@@ -157,11 +182,18 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
         entry.bytes = size;
         bytes += size;
         entry.expires = now() + ttlMs;
+        deadline?.check();
         return value;
       }).catch(error => {
+        // A parallel loader can reject before its other queries settle.
+        // Cancel owned work before releasing admission or clearing its timer.
+        deadline?.cancel(error);
         if (entries.get(key) === entry) remove(key);
         throw error;
-      }).finally(() => release?.());
+      }).finally(() => {
+        deadline?.dispose();
+        release?.();
+      });
       entries.set(key, entry);
       return entry.promise;
     },

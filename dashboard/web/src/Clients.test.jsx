@@ -20,7 +20,7 @@ function LocationSpy() {
   return null;
 }
 
-function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500, respond, session } = {}) {
+function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500, respond, session, resizeObserver = ResizeObserverStub } = {}) {
   setPiiMask(piiMask);
   const fetchMock = vi.fn((url) => {
     const path = String(url).split("?")[0];
@@ -37,7 +37,7 @@ function mount({ enabledClients, entry = "/", piiMask = true, response = clientO
     return Promise.resolve({ ok: !(failed && path === "/api/clients/overview"), status: failed ? failStatus : 200, json: async () => body });
   });
   vi.stubGlobal("fetch", fetchMock);
-  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  vi.stubGlobal("ResizeObserver", resizeObserver);
   const rendered = render(
     <MemoryRouter initialEntries={[entry]}>
       <ConfigProvider config={{ enabledClients, piiMask, schema: { projectColumns: true }, session }}>
@@ -584,7 +584,50 @@ test.each([["/exec", "1"], ["/cost", "1"], ["/usage", null], ["/", null]])("%s r
   for (const url of commonRequests(fetchMock)) {
     expect(url.searchParams.get("modelTime")).toBe(expected);
     expect(url.searchParams.get("view")).toBe(expected ? "cost" : null);
+    expect(url.searchParams.get("timeFormat")).toBe(expected ? "compact" : null);
   }
+});
+
+test.each(["/cost", "/exec", "/trends"])("%s renders compact trends through the shared decoder", async (page) => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({
+    width: 800, height: 300, top: 0, left: 0, right: 800, bottom: 300, x: 0, y: 0,
+  }));
+  class ChartObserver {
+    constructor(callback) { this.callback = callback; }
+    observe(target) { this.callback([{ contentRect: target.getBoundingClientRect() }]); }
+    unobserve() {}
+    disconnect() {}
+  }
+  const columns = ["client", "t", "model", "backend", "cost_usd", "cost_partial", "unpriced", "observed_tokens"];
+  const table = { columns, dictionaries: { client: ["codex"], t: ["2026-09-01T00:00:00Z"],
+    model: ["fixture-model"], backend: ["bedrock-mantle"] }, rows: [[0, 0, 0, 0, 0.0042405, false, 0, 270]] };
+  const users = { columns: columns.map(key => key === "model" ? "user" : key),
+    dictionaries: { client: ["codex"], t: table.dictionaries.t, user: ["alice@example.test"],
+      backend: ["bedrock-mantle"] }, rows: table.rows };
+  const response = clientOverview({ bucket_hours: 1 / 6, time_format: "compact-v1",
+    by_model_time: table, by_user_time: users,
+    effective_range: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-01T01:00:00.000Z" } });
+  const { fetchMock, container } = mount({ enabledClients: ["codex"], entry: `${page}?client=codex`, response, resizeObserver: ChartObserver });
+  await waitFor(() => expect(container.querySelector("[data-shared-client-panels]")).not.toBeNull());
+  expect(screen.getByText("Codex 모델별 비용 추이", { exact: true })).toBeTruthy();
+  // Exec defaults to daily buckets; select the one-hour fixture's source resolution.
+  if (page === "/exec")
+    fireEvent.click(within(screen.getByRole("region", { name: "클라이언트별 모델 비용 추이" }))
+      .getByRole("button", { name: "10분", exact: true }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBeGreaterThan(0));
+  expect(commonRequests(fetchMock)[0].searchParams.get("timeFormat")).toBe("compact");
+  if (page !== "/cost") return; // Exact cost drilldowns belong to the Cost page.
+  expect(screen.getByText("Codex 사용자별 비용 추이", { exact: true })).toBeTruthy();
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBeGreaterThan(1));
+  const ranking = screen.getByText("사용자별 비용", { exact: true }).closest(".shadow-card");
+  fireEvent.click(within(ranking).getByRole("button", { name: maskEmail("alice@example.test") }));
+  await waitFor(() => expect(commonRequests(fetchMock).some(url => url.searchParams.has("userExact"))).toBe(true));
+  const detail = commonRequests(fetchMock).find(url => url.searchParams.has("userExact"));
+  expect(detail.searchParams.get("timeFormat")).toBe("compact");
+  expect(detail.searchParams.get("userExact")).toBe("alice@example.test");
+  expect(detail.searchParams.get("intervalHours")).toBe(String(1 / 6));
+  await waitFor(() => expect(screen.getByRole("heading", { name: `${maskEmail("alice@example.test")} · 사용자 비용 상세` })).toBeTruthy());
+  expect(screen.queryByText("선택한 대상에 대한 집계를 확인하지 못했습니다. 잠시 후 다시 열어 주세요.")).toBeNull();
 });
 
 test.each([

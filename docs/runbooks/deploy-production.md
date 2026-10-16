@@ -46,6 +46,93 @@ kube get pdb dashboard
 Reconcile drift through the reviewed Terraform plan before relying on those protections.
 The ECR lifecycle declaration retains only ten images; confirm a rollback digest still exists.
 
+## Reader-profile reconciliation
+
+[dashboard.tf](../../infra/dashboard.tf) declares `CH_USER=otel_reader`; Compose uses
+`default`. Verify the actual connection; declarations do not prove deployed settings.
+[ADR-020](../decisions/ADR-020-cooperative-query-load-deadlines.md) enables readonly HTTP
+disconnect cancellation while retaining execution/memory/result/read ceilings.
+
+Before applying a profile change:
+
+1. Record ClickHouse/operator versions, CHI users/profiles, pod UIDs/restarts,
+   readiness, replication health and ingestion freshness. Keep manifests private:
+   user configuration can contain credential hashes.
+2. Review the complete Terraform plan against target state. Stop on resource replacement,
+   schema-init retrigger or unrelated drift. Source checks do not establish a reconcile.
+3. Establish the installed operator's behavior from its version/configuration and isolated
+   rehearsal. Reconciliation can affect readiness or restart workloads; unknown effects
+   block apply. Agree an ingestion/availability window and rollback first.
+4. After reviewed apply, check CHI/operator events, pod UIDs/restarts and replica readiness.
+   Use existing dashboard credentials; print no environment values or SQL `SETTINGS`
+   overrides. Check each API pod, then connect directly to every ClickHouse replica:
+
+```bash
+verify_reader_session() {
+  kube exec -i "$DASHBOARD_POD" -c dashboard -- node --input-type=module - "$@" <<'NODE'
+try {
+  if (process.argv[2]) {
+    const url = new URL(process.env.CH_URL);
+    url.hostname = process.argv[2];
+    process.env.CH_URL = url.href;
+  }
+  const { query } = await import("/app/server/clickhouse.js");
+  const rows = await query(`SELECT hostName() AS replica, currentUser() AS connection_user,
+    getSetting('readonly') AS readonly,
+    getSetting('cancel_http_readonly_queries_on_client_close') AS cancel_on_close,
+    getSetting('max_execution_time') AS max_execution_time,
+    getSetting('max_memory_usage') AS max_memory_usage,
+    getSetting('max_result_bytes') AS max_result_bytes,
+    getSetting('max_rows_to_read') AS max_rows_to_read`);
+  console.log(JSON.stringify(rows));
+  process.exit(0);
+} catch { console.error("Reader-session verification failed"); process.exit(1); }
+NODE
+}
+DASHBOARD_PODS=$(kube get pods -l app=dashboard -o name) || exit 1
+: "${DASHBOARD_PODS:?No dashboard pods}"
+for DASHBOARD_POD in $DASHBOARD_PODS; do
+  kube wait --for=condition=Ready "$DASHBOARD_POD" --timeout=60s || exit 1
+  verify_reader_session || exit 1
+done
+
+: "${CLICKHOUSE_CHI:?Set the target ClickHouseInstallation name}"
+REPLICAS=$(kube get pods -l "clickhouse.altinity.com/chi=$CLICKHOUSE_CHI" \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.podIP}{"\n"}{end}') || exit 1
+: "${REPLICAS:?No ClickHouse replicas}"
+while IFS=$'\t' read -r replica ip; do
+  : "${ip:?Replica has no Pod IP}"
+  kube wait --for=condition=Ready "pod/$replica" --timeout=60s || exit 1
+  printf 'Checking %s\n' "$replica"
+  case "$ip" in *:*) ip="[$ip]";; esac
+  verify_reader_session "$ip" || exit 1
+done <<< "$REPLICAS"
+```
+
+Direct probes change only the process's `CH_URL` hostname, retaining protocol/port/path.
+First verify that the retained service port is also the replica's listening port and
+that network policy permits dashboard-to-replica traffic. If ports differ, review a
+probe variant that changes the target hostname/port, keeping credentials and TLS settings.
+For TLS certificates requiring DNS, use verified replica DNS names instead of Pod IPs;
+never disable certificate verification. Match each returned hostname to its replica.
+Expected: `otel_reader`, readonly/cancellation `1`,
+execution `60`, memory `4000000000`, result bytes `104857600`, rows read `2000000000`.
+Any mismatch blocks rollout; a balanced service session cannot prove every replica.
+For a failed probe, inspect private dashboard/operator logs, service `targetPort`,
+replica endpoints and network policy. Keep credentials, connection URLs and query
+details out of shared diagnostics.
+
+Recheck ingestion, freshness, replica health and readiness. Use isolated synthetic
+disconnect controls to observe server termination; client abort alone is insufficient.
+Persistent warmer timeouts require investigation of logs, SQL and remaining server work;
+there is no runtime warming-disable switch. Deadlines do not certify fleet capacity.
+
+For an application-only regression, roll back the image and retain a verified healthy
+cancellation profile. Roll back the profile only for a profile-specific reconciliation,
+readiness or availability regression, through reviewed prior configuration; repeat session/
+replica checks. Image rollback does not restore profiles. Disabling cancellation can leave
+abandoned server work; retain readonly and resource ceilings.
+
 ## Procedure
 
 ### 1. Record the revision and rollback image
@@ -130,12 +217,29 @@ DIST_ID=$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?Aliases.Items && contains(Aliases.Items, '$DASHBOARD_HOST')].Id" \
   --output text)
 : "${DIST_ID:?No matching dashboard distribution}"
+[[ "$DIST_ID" =~ ^[A-Z0-9]+$ ]] || { echo "Expected one distribution ID" >&2; exit 1; }
 aws cloudfront get-distribution-config --id "$DIST_ID" \
-  --query 'DistributionConfig.DefaultCacheBehavior.{cachePolicy:CachePolicyId,headersPolicy:ResponseHeadersPolicyId}'
+  --query 'DistributionConfig.{behavior:DefaultCacheBehavior.{cachePolicy:CachePolicyId,originRequestPolicy:OriginRequestPolicyId,headersPolicy:ResponseHeadersPolicyId},origins:Origins.Items[].{id:Id,vpcReadTimeout:VpcOriginConfig.OriginReadTimeout,customReadTimeout:CustomOriginConfig.OriginReadTimeout},errorResponses:CustomErrorResponses}'
 ```
 
-Stop if the alias lookup returns multiple IDs. If a previously cached build remains after
-rollout, invalidate the selected distribution and wait:
+Verify the dashboard origin's read timeout against the 25-second producer budget;
+the declared VPC origin uses 30 seconds. Encoding and delivery are outside that budget,
+so verify large responses through the actual edge before claiming a response SLO.
+Read the selected policy with `aws cloudfront get-origin-request-policy --id <policy-id>`
+and verify its `QueryStringsConfig` forwards all supported filters, including
+`timeFormat`. Compact and legacy responses have distinct keys; only compact cost
+responses are warmed, so legacy clients can still incur cold loads during rollout.
+
+Require 403/500/502/503/504 entries with `ErrorCachingMinTTL=0`, without status/page
+rewrites, matching the declared deployment contract. Verify the actual policy and origin
+cache directives: AWS [error processing](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HTTPStatusCodes.html)
+documents that managed `CachingDisabled` disables cached 5xx errors, while 400/403 caching
+requires positive `max-age` or `s-maxage`. Missing explicit entries alone do not
+prove a live replay defect. Reconcile them through a reviewed configuration update;
+other policies can retain the default ten-second error TTL.
+
+If a previously cached build remains after rollout, invalidate the selected distribution
+and wait:
 
 ```bash
 INV_ID=$(aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths '/*' \

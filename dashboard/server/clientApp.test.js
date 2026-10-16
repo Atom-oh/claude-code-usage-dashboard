@@ -202,6 +202,34 @@ test("cost views keep independent cache entries and validate before loading", as
   }
 });
 
+test("compact time routes use independent caches and validate before database work", async () => {
+  const plain = `/api/clients/overview?${range}&client=all&modelTime=1&view=cost`;
+  const compact = `${plain}&timeFormat=compact`;
+  const decode = table => table.rows.map(values => Object.fromEntries(table.columns.map((key, i) =>
+    [key, Object.hasOwn(table.dictionaries, key) && values[i] !== null ? table.dictionaries[key][values[i]] : values[i]])));
+  for (const paths of [[plain, compact, plain, compact], [compact, plain, compact, plain]]) {
+    const result = await scenario(true, true, paths);
+    for (const row of result) assert.equal(row.status, 200);
+    assert.ok(result[0].dataQueries > 0 && result[1].dataQueries > 0);
+    assert.equal(result[2].dataQueries + result[3].dataQueries, 0);
+    const full = result[paths.indexOf(plain)].body;
+    const { time_format, ...encoded } = result[paths.indexOf(compact)].body;
+    assert.equal(time_format, "compact-v1");
+    encoded.by_model_time = decode(encoded.by_model_time);
+    encoded.by_user_time = decode(encoded.by_user_time);
+    assert.deepEqual(encoded, full);
+  }
+  const invalid = [`${plain}&timeFormat=`, `${plain}&timeFormat=compact&timeFormat=compact`,
+    `${plain}&timeFormat=Compact`, `/api/clients/overview?${range}&timeFormat=compact`,
+    `/api/clients/overview?${range}&modelTime=1&timeFormat=compact`,
+    `/api/clients/overview?${range}&view=cost&timeFormat=compact`];
+  for (const row of await scenario(true, true, invalid)) {
+    assert.equal(row.status, 400);
+    assert.equal(row.body.error, "invalid timeFormat");
+    assert.equal(row.dataQueries, 0);
+  }
+});
+
 test("raw and rollup requests with identical hourly display buckets never collide", async () => {
   const path = "/api/clients/overview?client=all&from=2026-09-14T00:05:00Z&to=2026-09-15T00:05:00Z";
   for (const intervals of [[0.95, 1], [1, 0.95]]) {

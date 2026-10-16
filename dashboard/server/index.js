@@ -6,7 +6,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createAuthentication } from "./auth.js";
 import { createInstallationProbe } from "./installation.js";
-import { CapacityError, capacityResponse, createRequestAdmission, createResultCache } from "./capacity.js";
+import { CapacityError, capacityResponse, queryTimeoutResponse, createRequestAdmission, createResultCache } from "./capacity.js";
+import { QueryDeadlineError } from "./queryContext.js";
 import { createWarmingPlan } from "./warming.js";
 import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
 import { sendJson } from "./jsonResponse.js";
@@ -20,7 +21,7 @@ import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./
 import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 import { parseClients } from "./clients.js";
-import { clientOverview, validateClientFilters, validateClientView, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
+import { clientOverview, validateClientFilters, validateClientView, validateTimeFormat, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -168,7 +169,7 @@ const CACHE_TTL_MS = 320_000;
 // 완료된 엔트리를 삽입 순서대로 제거한다. 진행 중인 작업은 완료까지 공유하며 읽기는 순서를 바꾸지 않는다.
 // Distinct cold views wait for an existing load slot instead of retrying before
 // one is free. Active loads, DB concurrency and cached-result byte quotas stay bounded.
-const cache = createResultCache({ maxWaiting: 64 });
+const cache = createResultCache({ maxWaiting: 64, loadMs: 25_000 });
 setInterval(() => {
   cache.sweep();
 }, CACHE_TTL_MS).unref();
@@ -260,6 +261,7 @@ function cacheKey(path, query) {
       userExact: filters.userExact, modelExact: filters.modelExact,
       modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined,
       view: path === "/api/clients/overview" && validateClientView(query) ? "cost" : undefined,
+      timeFormat: path === "/api/clients/overview" && validateTimeFormat(query) ? "compact" : undefined,
       profile: path === "/api/codex/insights" && validateInsightsProfile(query) ? "effort" : undefined,
       // Query source and resolved end also matter: a subhour request can round to a
       // one-hour display while reading raw rows through the requested partial-hour end.
@@ -310,6 +312,7 @@ function route(path, handler, { warm = true, client = "claude", validate, permis
       if (warm) warmingPlan.requested(path, req.query);
       await sendJson(req, res, await fetchCached(path, handler, req.query));
     } catch (err) {
+      if (err instanceof QueryDeadlineError) return queryTimeoutResponse(res, path);
       if (err instanceof CapacityError) return capacityResponse(res);
       if (err instanceof ValidationError) {
         res.status(400).json({ error: err.message, detail: err.detail });
@@ -339,7 +342,7 @@ route("/api/installation", installationProbe,
 route("/api/clients/overview",
   (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: true,
-    validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); validateClientView(raw); } });
+    validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); validateClientView(raw); validateTimeFormat(raw); } });
 
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
   { client: "codex", warm: false, validate: (raw) => {

@@ -20,6 +20,8 @@ const DIAGNOSTIC_FIELDS = ["api_errors", "tool_calls", "tool_errors",
 const finite = (n) => ["number", "string"].includes(typeof n) && String(n).trim() !== ""
   && Number.isFinite(Number(n)) && Number(n) >= 0;
 const round = (n) => Number.isFinite(n * 1e12) ? Math.round(n * 1e12) / 1e12 : null;
+// Collation can equate distinct identities; finish ties with their exact raw strings.
+const compareIdentity = (a, b) => a.localeCompare(b) || (a < b ? -1 : a > b ? 1 : 0);
 // by_model_time reason keys per client; missing_usage is always counted separately.
 const UNPRICED_REASONS = {
   claude: ["report_missing", "report_zero_with_tokens"],
@@ -51,6 +53,34 @@ export function validateClientView(raw) {
   if (raw.view !== undefined && raw.view !== "cost")
     throw new ValidationError("invalid view", "view accepts only cost");
   return raw.view === "cost";
+}
+
+export function validateTimeFormat(raw) {
+  if (raw.timeFormat === undefined) return false;
+  if (raw.timeFormat !== "compact" || raw.modelTime !== "1" || raw.view !== "cost")
+    throw new ValidationError("invalid timeFormat", "compact requires modelTime=1 and view=cost");
+  return true;
+}
+
+// Preserve every field and row. Only repeated column names and categorical values
+// move into shared dictionaries; numeric values and explicit nulls stay exact.
+const TIME_DICTIONARIES = new Set(["client", "t", "model", "user", "backend", "cost_basis", "unpriced_reasons"]);
+export function compactTimeRows(rows) {
+  const columns = rows.length ? Object.keys(rows[0]) : [];
+  const dictionaries = Object.fromEntries(columns.filter(key => TIME_DICTIONARIES.has(key)).map(key => [key, []]));
+  const indices = new Map(Object.keys(dictionaries).map(key => [key, new Map()]));
+  return { columns, dictionaries, rows: rows.map(row => {
+    if (Object.keys(row).length !== columns.length || columns.some(key => !Object.hasOwn(row, key)))
+      throw new Error("inconsistent time table columns");
+    return columns.map(key => {
+      const value = row[key];
+      if (value === null || !indices.has(key)) return value;
+      const dictionary = dictionaries[key], lookup = indices.get(key);
+      const identity = JSON.stringify(value);
+      if (!lookup.has(identity)) { lookup.set(identity, dictionary.length); dictionary.push(value); }
+      return lookup.get(identity);
+    });
+  }) };
 }
 
 function accumulator(meta, reasons = false) {
@@ -182,7 +212,7 @@ function finish(target) {
       ..._reasons, missing_usage: _missingUsage.size } } : {}) };
 }
 
-export function foldClientMetrics(records, clients, prices = codexPrices, { modelTime = false, costView = false } = {}) {
+export function foldClientMetrics(records, clients, prices = codexPrices, { modelTime = false, costView = false, compactTime = false } = {}) {
   // Idle observations have their own bound; they cannot evict usage records
   // from the existing active-row budget.
   const idleRows = records.filter(row => row.client === "claude" && Number(row.timeline_only) === 1).length;
@@ -284,6 +314,10 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
     return row;
   };
   const backedRows = (key) => [...groups[key]].filter(([id]) => backedTime.has(`${key}\u0000${id}`)).map(([, group]) => finishRow(group));
+  const timeRows = (key, compare) => {
+    const rows = backedRows(key).sort(compare);
+    return compactTime ? compactTimeRows(rows) : rows;
+  };
   const by_client = [...byClient.values()].map(finishRow);
   const total = finishRow(totals);
   quality.missing_usage = missingUsage.size;
@@ -293,15 +327,17 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
     if ((!costView || !DIAGNOSTIC_FIELDS.includes(k)) && by_client.some((r) => r[k] === null)) total[k] = null;
   return { clients, observed_records: total.observed_records, totals: total, by_client,
     by_model: [...groups.by_model.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
-    by_user: [...groups.by_user.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
+    by_user: [...groups.by_user.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)
+      || compareIdentity(a.client, b.client) || compareIdentity(a.user, b.user)),
     ...(!costView ? {
       by_project: [...groups.by_project.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
       tools: [...tools.values()].sort((a, b) => b.calls - a.calls),
     } : { view: "cost" }),
     timeseries: [...groups.timeseries.values()].map(finishRow).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client)), quality,
     ...(modelTime ? {
-      by_model_time: backedRows("by_model_time").sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.model.localeCompare(b.model) || a.backend.localeCompare(b.backend)),
-      by_user_time: backedRows("by_user_time").sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.user.localeCompare(b.user)),
+      ...(compactTime ? { time_format: "compact-v1" } : {}),
+      by_model_time: timeRows("by_model_time", (a, b) => String(a.t).localeCompare(String(b.t)) || compareIdentity(a.client, b.client) || compareIdentity(a.model, b.model) || compareIdentity(a.backend, b.backend)),
+      by_user_time: timeRows("by_user_time", (a, b) => String(a.t).localeCompare(String(b.t)) || compareIdentity(a.client, b.client) || compareIdentity(a.user, b.user)),
     } : {}) };
 }
 
@@ -510,6 +546,7 @@ export function effectiveClientEnd(from, to, clients, intervalHours) {
 export async function clientOverview(from, to, raw, enabledClients) {
   const validated = validateClientFilters(raw, enabledClients);
   const costView = validateClientView(raw);
+  const compactTime = validateTimeFormat(raw);
   const requestedTo = to;
   const requestedNative = clientNativeBucketSeconds(from, to, raw.intervalHours);
   to = effectiveClientEnd(from, to, validated.clients, raw.intervalHours);
@@ -534,7 +571,7 @@ export async function clientOverview(from, to, raw, enabledClients) {
   const records = bucketSeconds > nativeSeconds ? rebucketRows(lists.flat(), from, bucketSeconds) : lists.flat();
   // The route validates modelTime; only the literal "1" enables the dimension.
   const modelTime = raw.modelTime === "1";
-  return { ...foldClientMetrics(records, filters.clients, codexPrices, { modelTime, costView }),
+  return { ...foldClientMetrics(records, filters.clients, codexPrices, { modelTime, costView, compactTime }),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
     ...(filters.userExact || filters.modelExact ? {
       applied_filters: { userExact: filters.userExact || "", modelExact: filters.modelExact || "", backend: filters.backend },

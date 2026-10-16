@@ -36,7 +36,7 @@ export default function Clients({ page = "overview" }) {
   // others changes useApi's identity, so that switch reloads instead of retaining the data.
   const modelTime = page === "cost" || page === "exec" || page === "trends";
   const { data, loading, error, stale } = useApi("/api/clients/overview", {
-    client, ...(modelTime ? { modelTime: "1", view: "cost" } : {}), ...(costTrends ? { intervalHours: hours } : {}),
+    client, ...(modelTime ? { modelTime: "1", view: "cost", timeFormat: "compact" } : {}), ...(costTrends ? { intervalHours: hours } : {}),
   });
   const clients = useMemo(() => client === "all" ? enabledClients : [client], [client, enabledClients]);
   // Trends compare the effective (trimmed) window with a preceding window of exactly its length.
