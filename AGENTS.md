@@ -1,21 +1,12 @@
-# Project instructions
+# Project
 
-## Scope and authority
+## Scope
 
-Workshop telemetry: Claude Code and Codex OTel signals → ClickHouse
-→ Express → React, with Terraform,
-a documentation site and a separate video project. These observations are not
-validated employee productivity or causal ROI measures.
+Workshop Claude Code/Codex OTel → ClickHouse → Express → React; Terraform/docs site/separate video project. Not validated employee productivity/causal ROI.
 
-Code/tests establish behavior. Follow this file and the nearest scoped `AGENTS.md`;
-`CLAUDE.md` imports its adjacent guide. References own implementation details,
-runbooks own operations, and ADRs record scoped decisions. Superseded ADRs and dated
-investigations are historical evidence. Configuration/build success does not prove
-an image, migration, Terraform change or runtime option is deployed. Explicit user
-instructions take precedence. Surface actual conflicts; missing excerpts do not prove
-missing implementation.
+Behavior: code/tests. Follow this/nearest scoped AGENTS.md; CLAUDE.md imports adjacent guide. References: implementation; runbooks: operations; ADRs: scoped decisions. Superseded ADRs/dated investigations: historical evidence. Config/build success does not prove deployed images/migrations/Terraform changes/runtime options. Explicit user instructions win. Surface actual conflicts; missing excerpts do not prove missing implementation.
 
-## Validation
+## Checks
 
 Node 22.12+; install server/web separately:
 
@@ -27,50 +18,31 @@ terraform fmt -check -recursive infra/
 (cd infra && terraform init -backend=false && terraform validate)
 ```
 
-CI runs the harness, which discovers `test-*.sh`. Missing gitignored `.claude/` tooling
-is an expected skip. Use the deployment runbook for production changes.
+CI harness discovers test-*.sh; absent gitignored .claude/ tooling: expected skip. Production: deployment runbook.
 
 ## Contracts
 
-- Claude spend uses `reported_cost`; retain `cost`/`computed_cost` diagnostics.
-  Codex and non-Anthropic Claude (ADR-017) use AWS list estimates, keeping
-  token subsets/tiers. Neither basis is an invoice or guaranteed billing bound.
-- Never sum cumulative OTel samples as usage; preserve identity, boundaries and
-  temporality handling.
-- Bedrock/enterprise are inferred session channels, not client identities. Model
-  names do not identify the emitting client.
-- `CLAUDE_ENABLED`/`CODEX_ENABLED` select collection and views; both false is invalid.
-  Preserve client/backend/model separation; Codex has no enterprise A/B row.
-- Use shared API wrapping, bound SQL parameters and existing filter semantics.
-- Codex metrics/traces are diagnostic feeds; never add them to completion-log usage
-  or cost. See [support and interpretation](docs/reference/codex-observability.md).
-- Unavailable is distinct from zero; positive totals do not prove complete telemetry.
-- Shared views expose known costs and `observed_tokens` with partial flags; all-unknown
-  stays unavailable. Canonical tokens stay strict for ratios.
-  See [coverage policies](docs/decisions/ADR-014-observed-token-subtotals.md).
-- Exclude secrets, personal/customer data from commits, public reviews and site assets.
-  UI masking is not API access control.
+- Claude spend: reported_cost; retain cost/computed_cost diagnostics. Codex/non-Anthropic Claude (ADR-017): AWS list estimates; retain token subsets/tiers. Neither basis is an invoice/guaranteed billing bound.
+- Never sum cumulative OTel samples as usage; keep identity/boundaries/temporality.
+- Bedrock/enterprise: inferred session channels, not clients; model names do not identify emitting clients.
+- CLAUDE_ENABLED/CODEX_ENABLED select collection/views; both false invalid. Separate client/backend/model; no Codex enterprise A/B row.
+- Use shared API wrapping, bound SQL parameters, existing filter semantics.
+- Codex metrics/traces are diagnostic feeds; never add them to completion-log usage/cost: [interpretation](docs/reference/codex-observability.md).
+- Unavailable differs from zero; positive totals do not prove complete telemetry.
+- Shared views: known costs/observed_tokens, partial flags; all-unknown unavailable. Strict canonical tokens for ratios: [coverage](docs/decisions/ADR-014-observed-token-subtotals.md).
+- No secrets/personal/customer data in commits/public reviews/site assets. UI masking is not API access control.
 
-## Documentation and review
+## Review
 
-Engineering docs, guides, ADRs and PR prose are concise English; this supersedes
-bilingual review templates. UI localization is separate. Link each rule's owner;
-retain current contracts/reasons/limits without duplicated translations, transcripts
-or stale line references.
+Engineering docs/guides/ADRs/PR prose: concise English over bilingual review templates; separate UI localization. Link owners; keep contracts/reasons/limits, no duplicate translations/transcripts/stale line refs.
 
-Review introduced behavior against code, tests and trusted base context. Preferences
-and intentional conventions are not defects; report uncertainty explicitly. Real
-correctness/security regressions block. Never weaken auth, no-tools checks, coverage
-or CI for a pass. Follow the user's latest-HEAD review/fix/push/merge policy.
+Review new behavior using code/tests/trusted base. Preferences/intentional conventions are not defects; report uncertainty. Correctness/security regressions block. Never weaken auth/no-tools checks/coverage/CI to pass. Follow user's latest-HEAD review/fix/push/merge.
 
-`ROLE_REVIEW=1` assigns specialists: Codex/Claude independently check the full change;
-Kiro covers applicable AWS/operations. Only trusted routing marks NOT_APPLICABLE.
-Failed/incomplete required output blocks; the chair cannot waive coverage. This
-supersedes older matrix/dropout rules. See [review contracts](docs/pr-review-specialists.md).
+ROLE_REVIEW=1: Codex/Claude independently check full change; Kiro: applicable AWS/operations. NOT_APPLICABLE only via trusted routing. Failed or incomplete required output blocks; no chair coverage waiver. Supersedes matrix/dropout rules: [review](docs/pr-review-specialists.md).
 
 ## Owners
 
-[Packaging](dashboard/AGENTS.md) · [Server](dashboard/server/AGENTS.md) ·
-[Web](dashboard/web/AGENTS.md) · [Infrastructure](infra/AGENTS.md) ·
-[PR tooling](scripts/pr-review/AGENTS.md) · [Video](video/AGENTS.md) ·
-[Documentation policy](docs/documentation-policy.md)
+[Package](dashboard/AGENTS.md); [Server](dashboard/server/AGENTS.md);
+[Web](dashboard/web/AGENTS.md); [Infra](infra/AGENTS.md);
+[PR](scripts/pr-review/AGENTS.md); [Video](video/AGENTS.md);
+[Policy](docs/documentation-policy.md)
