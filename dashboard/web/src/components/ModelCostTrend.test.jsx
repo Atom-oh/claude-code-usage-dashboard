@@ -507,7 +507,8 @@ test("user legends isolate by identity, keep raw addresses out of the DOM and fo
   const { container } = mount({ cells, bounds: BOUNDS, dimension: "user" });
   await chartReady(container);
   const legend = screen.getByRole("list", { name: "범례" });
-  expect(texts(legend, "button")).toEqual(["ki******@example.com", "le******@example.com", "그 외 7명"]);
+  // The server residual is never its own series: it joins 기타 and counts as its 7 users.
+  expect(texts(legend, "button")).toEqual(["ki******@example.com", "le******@example.com", "기타 7명"]);
   expect(container.innerHTML).not.toContain("kim@example.com");
   fireEvent.click(within(legend).getByRole("button", { name: "le******@example.com" }));
   await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));

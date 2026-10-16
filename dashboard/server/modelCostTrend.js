@@ -38,9 +38,9 @@ function mapCell(row, byUser) {
     ...finishObservedTokens(observed),
   };
   // A user row mixes models, so it has no single price: no computed diagnostic.
-  // user === null is the server's fold of every user outside the top list; total_users counts all.
+  // user === null is the server's fold of every user outside the top list.
   if (byUser) return { day: row.day, group: row.group, user: row.user === null ? null : String(row.user ?? ""),
-    ...(row.user === null ? { rest_users: Math.max(0, (amount(row.total_users) ?? 0) - USER_TREND_TOP) } : {}),
+    ...(row.user === null ? { rest_users: amount(row.rest_users) ?? 0 } : {}),
     ...reported };
   // The model is constant within a row, so pricing the summed tokens equals the per-session sum.
   const [priced] = withComputedCost([{ model: row.model, ...tokens }]);

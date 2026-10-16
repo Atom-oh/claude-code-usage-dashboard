@@ -245,8 +245,8 @@ test("user cells keep the reported fields and omit the model-priced diagnostic",
 
 test("the residual user row stays null and reports the users folded into it", () => {
   const out = foldModelCostCells([
-    { ...cell({ known_report: 3 }), model: undefined, user: null, total_users: 25 },
-    { ...cell({ known_report: 1 }), model: undefined, user: "a@example.invalid", total_users: 25 },
+    { ...cell({ known_report: 3 }), model: undefined, user: null, rest_users: 5 },
+    { ...cell({ known_report: 1 }), model: undefined, user: "a@example.invalid", rest_users: 5 },
   ], { dimension: "user" });
   assert.deepEqual(out.map((r) => [r.user, r.reported_cost, r.rest_users]),
     [[null, 3, 5], ["a@example.invalid", 1, undefined]]);

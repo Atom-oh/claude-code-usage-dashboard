@@ -614,6 +614,11 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         sample("utrend-mixed", email, "claude_code.cost.usage", "", clock, k * 5);
         sample("utrend-mixed", email, "claude_code.token.usage", "input", clock, k * 50);
       }
+      // An identity-less session ranks last yet stays its own "" row, never in the residual.
+      for (const [clock, k] of [["22:05:00", 0], ["22:35:00", 1]]) {
+        sample("utrend-anon", "", "claude_code.cost.usage", "", clock, k * 0.001);
+        sample("utrend-anon", "", "claude_code.token.usage", "input", clock, k);
+      }
       await insertMetrics(values);
       const start = new Date(`${day}T22:00:00Z`), end = new Date(`${day}T23:00:00Z`);
       const filter = { model };
@@ -622,10 +627,13 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       const sum = (rows, k) => rows.reduce((acc, r) => acc + (r[k] ?? 0), 0);
       assert.ok(Math.abs(sum(byUser, "reported_cost") - sum(byModel, "reported_cost")) < 1e-9);
       assert.equal(sum(byUser, "reported_unavailable"), sum(byModel, "reported_unavailable"));
-      const named = byUser.filter((r) => r.user !== null);
+      const named = byUser.filter((r) => r.user !== null && r.user !== "");
       assert.equal(new Set(named.map((r) => r.user)).size, USER_TREND_TOP);
       assert.ok(named.some((r) => r.user === "utrend-mixed@example.invalid"));
-      assert.ok(!byUser.some((r) => r.user === ""), "the mixed session must not split into an empty identity");
+      // Only the identity-less session lands on "": the mixed session did not split into it.
+      const anon = byUser.filter((r) => r.user === "");
+      assert.equal(anon.length, 1);
+      assert.ok(Math.abs(anon[0].reported_cost - 0.001) < 1e-9);
       const rest = byUser.filter((r) => r.user === null);
       assert.equal(rest.length, 1);
       assert.equal(rest[0].rest_users, users + 1 - USER_TREND_TOP);

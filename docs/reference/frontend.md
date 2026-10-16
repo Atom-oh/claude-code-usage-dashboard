@@ -204,7 +204,8 @@ raw, user series take palette colors by rank (users have no stable color identit
 Others table drops the channel column.
 Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`
 (`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; the server's
-`user: null` residual becomes one "rest of N users" identity. With legend items hidden, the tooltip's
+`user: null` residual becomes one "rest of N users" identity that always joins Others and
+counts as N users in its label. With legend items hidden, the tooltip's
 shown subtotal is unavailable when only unavailable shown costs exist and is labelled partial
 when some are; a frame change that would hide every item restores all. Legend buttons carry
 the series key, never the raw identity.

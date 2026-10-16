@@ -100,6 +100,8 @@ const MODEL_AXIS = {
   identity: identityLabel,
   color: (key) => modelColorKey(key),
   others: (n) => (n ? `기타 ${n}개 모델` : "모델 미귀속"),
+  seriesEligible: () => true,
+  weight: () => 1,
 };
 // The detail endpoint folds users past its top list into one row; fromByModelDaily keys it here.
 export const REST_USERS_PREFIX = "\u0000rest:";
@@ -115,6 +117,9 @@ const USER_AXIS = {
   // Users have no stable color identity, so series colors follow rank within the frame.
   color: (key, rank) => ({ key: `user-${rank}` }),
   others: (n) => (n ? `기타 ${n}명` : "사용자 미귀속"),
+  // The server residual is already a fold, so it always joins 기타 and counts as its users.
+  seriesEligible: (key) => !key.startsWith(REST_USERS_PREFIX),
+  weight: (key) => (key.startsWith(REST_USERS_PREFIX) ? Number(key.slice(REST_USERS_PREFIX.length)) || 1 : 1),
 };
 const axisFor = (dimension) => (dimension === "user" ? USER_AXIS : MODEL_AXIS);
 
@@ -370,9 +375,9 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
 
   // 3. Series membership: top-N plus pinned models present in the period, in ranked order.
   const pinnedKeys = new Set((Array.isArray(pinned) ? pinned : []).filter(Boolean).map(axis.key));
-  const picked = new Set(ranked.slice(0, top));
+  const picked = new Set(ranked.filter(axis.seriesEligible).slice(0, top));
   for (const key of pinnedKeys) {
-    if (stats.has(key)) picked.add(key);
+    if (stats.has(key) && axis.seriesEligible(key)) picked.add(key);
   }
   const seriesKeys = ranked.filter((key) => picked.has(key));
 
@@ -392,7 +397,8 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
   for (const cell of list) {
     if (cell.idle !== true && seriesOf(cell) === null) othersKnown = addKnown(othersKnown, cell.known);
   }
-  const others = { key: OTHERS_KEY, label: axis.others(otherModels.length), count: otherModels.length,
+  const otherCount = otherModels.reduce((n, key) => n + axis.weight(key), 0);
+  const others = { key: OTHERS_KEY, label: axis.others(otherCount), count: otherModels.length,
     models: otherModels, known: othersKnown, affected: otherModels.filter((key) => stats.get(key).hasIssue) };
 
   // 6. Bucket keys: every cell's t plus the bounded grid when it fits the interval cap.
