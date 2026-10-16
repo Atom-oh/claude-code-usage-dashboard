@@ -176,15 +176,16 @@ Categorical axes do not zoom, and `UserDrawer` clears to loading on range change
 ## Model cost trend
 
 `ModelCostTrend` ([component](../../dashboard/web/src/components/ModelCostTrend.jsx)) draws
-partial-preserving stacked bars over the pure helpers in
+partial-preserving stacked areas over the pure helpers in
 [modelCostTrend.js](../../dashboard/web/src/modelCostTrend.js): `fromByModelDaily` adapts the
 detail `/api/cost/by-model-daily` rows and `fromByModelTime` the shared `by_model_time` rows.
 The frame keeps the top six series by known cost plus an Others segment with fixed membership.
 Model colors are stable per name and theme: registered models use the trend palette,
 other known Claude models/families keep `modelColorFor`, and remaining models use solid
 vendor palettes. OpenAI and other-vendor fallbacks have six tones; Others has an exclusive
-neutral. Bars use bounded widths, subtle separators and rounded segments at moderate
-bucket density, with square segments for dense views. Legends use matching solid swatches. Bucket states are known, zero, partial, unavailable, idle and no data: unavailable is
+neutral. Series are monotone stacked areas; unavailable and no-data buckets are gaps (null,
+never a drawn $0), a known point between gaps is drawn as a dot, and an invisible
+zero-height bar carries the bucket state marks. Legends use matching solid swatches. Bucket states are known, zero, partial, unavailable, idle and no data: unavailable is
 never drawn as zero, and idle is the
 [ADR-015](../decisions/ADR-015-idle-chart-buckets.md) recorded-usage zero. The disclosure is a
 persistent status naming each reason with model and channel/backend identities (including

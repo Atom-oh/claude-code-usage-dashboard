@@ -1,8 +1,8 @@
-// Partial-preserving model cost stacked bar: known amounts are drawn, unavailable is never drawn
-// as zero, and each bucket carries a state mark. SeriesBarChart keeps its all-or-nothing policy.
+// Partial-preserving model cost stacked area: known amounts are drawn, unavailable and no-data
+// buckets break the areas instead of dipping to zero, and each bucket carries a state mark. SeriesBarChart keeps its all-or-nothing policy.
 import { useMemo, useState } from "react";
 import { Info } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { makeTickFmt } from "../fmt.js";
 import { buildModelCostFrame, chartTheme, formatAxisUsd, formatUsd, formatUsdPrecise, OTHERS_COLOR_KEY,
   OTHERS_KEY, REASON_GROUPS, reasonLabel, STATE_LABELS, trendColor } from "../modelCostTrend.js";
@@ -82,6 +82,13 @@ function BucketMark({ x, width, payload, background, fmtTick, axis }) {
 }
 
 // Distinct reason-group labels for the reasons with a positive count, in REASON_GROUPS order.
+// Areas need two neighbours to show any width, so a known point between gaps gets a dot.
+function IsolatedDot({ cx, cy, index, dataKey, rows, fill }) {
+  const has = (i) => rows[i] != null && rows[i][dataKey] != null;
+  if (!Number.isFinite(cx) || !Number.isFinite(cy) || has(index - 1) || has(index + 1)) return null;
+  return <circle data-isolated cx={cx} cy={cy} r={2.5} fill={fill} />;
+}
+
 function reasonLabels(reasons) {
   const present = new Set(Object.entries(reasons || {}).filter(([, n]) => n > 0).map(([key]) => reasonLabel(key)));
   return REASON_GROUPS.map((g) => g.label).filter((label) => present.has(label)).join(" / ");
@@ -179,8 +186,11 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const othersColor = trendColor(OTHERS_COLOR_KEY, theme);
   const rows = frame.buckets.map((b) => {
     const row = { [xKey]: b.t };
-    for (const s of series) row[s.key] = b.segments[s.key] ?? 0;
-    row[OTHERS_KEY] = b.others ?? 0;
+    // Unavailable and no-data buckets are gaps, never a drawn $0; elsewhere a series with no
+    // known amount in the bucket stacks as 0 (only known amounts are drawn).
+    const gap = b.state === "unavailable" || b.state === "nodata";
+    for (const s of series) row[s.key] = gap ? null : b.segments[s.key] ?? 0;
+    row[OTHERS_KEY] = gap ? null : b.others ?? 0;
     row.__mark = 0;
     row.__bucket = b;
     return row;
@@ -204,7 +214,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
         </ul>
       )}
       {totals.issues.length > 0 && (
-        <p data-status-note>알려진 금액만 막대에 포함했고, 확인할 수 없는 금액은 0으로 그리지 않았습니다.</p>
+        <p data-status-note>알려진 금액만 차트에 포함했고, 확인할 수 없는 금액은 0으로 그리지 않았습니다.</p>
       )}
       {totals.idleBuckets > 0 && (
         <p data-status-idle>{`기록된 사용 없음 ${totals.idleBuckets}개 버킷 — 수집이 완전하다는 뜻은 아닙니다.`}</p>
@@ -271,37 +281,38 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
     );
   }
 
-  const radius = frame.buckets.length > 64 ? 0 : 2;
+  const area = (key, name, color) => (
+    <Area
+      key={key}
+      type="monotone"
+      dataKey={key}
+      name={name}
+      stackId="a"
+      fill={color}
+      fillOpacity={0.78}
+      stroke={color}
+      strokeWidth={1.2}
+      connectNulls={false}
+      dot={<IsolatedDot rows={rows} fill={color} />}
+      activeDot={{ r: 3, stroke: c.surface, strokeWidth: 1 }}
+      isAnimationActive={false}
+    />
+  );
   return (
     <TrendCard title={title} subtitle={subtitle} help={help} right={header} accent={accent}>
       <ResponsiveContainer width="100%" height={height} className={zoom.className}>
-        <BarChart data={rows} maxBarSize={44} barCategoryGap={frame.buckets.length > 32 ? "12%" : "28%"}
-          margin={{ top: 24, right: 8, left: 8, bottom: 0 }} {...zoom.handlers}>
+        <ComposedChart data={rows} margin={{ top: 24, right: 8, left: 8, bottom: 0 }} {...zoom.handlers}>
           {zoom.controller}
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
           <XAxis dataKey={xKey} tick={axisTick(c)} tickLine={false} axisLine={{ stroke: c.grid }} tickFormatter={fmtTick} minTickGap={24} />
           <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} tickFormatter={formatAxisUsd} />
           <Tooltip content={<TrendTooltip frame={frame} fmtTick={fmtTick} c={c} theme={theme} />} />
-          {series.map((s) => (
-            <Bar
-              key={s.key}
-              dataKey={s.key}
-              name={s.label}
-              stackId="a"
-              fill={trendColor(s.colorKey, theme)}
-              stroke={c.surface}
-              strokeWidth={0.8}
-              radius={radius}
-              isAnimationActive={false}
-            />
-          ))}
-          {showOthers && (
-            <Bar dataKey={OTHERS_KEY} name={frame.others.label} stackId="a" fill={othersColor}
-              stroke={c.surface} strokeWidth={0.8} radius={radius} isAnimationActive={false} />
-          )}
-          <Bar dataKey="__mark" stackId="a" isAnimationActive={false} legendType="none" shape={<BucketMark fmtTick={fmtTick} axis={c.axis} />} />
+          {series.map((s) => area(s.key, s.label, trendColor(s.colorKey, theme)))}
+          {showOthers && area(OTHERS_KEY, frame.others.label, othersColor)}
+          {/* An invisible zero-height bar carries each bucket's state mark above the plot band. */}
+          <Bar dataKey="__mark" stackId="marks" isAnimationActive={false} legendType="none" shape={<BucketMark fmtTick={fmtTick} axis={c.axis} />} />
           {zoom.overlay}
-        </BarChart>
+        </ComposedChart>
       </ResponsiveContainer>
       <ul aria-label="범례" className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-500">
         {series.map((s) => {
