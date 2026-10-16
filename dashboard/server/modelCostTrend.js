@@ -9,6 +9,8 @@ import { withComputedCost } from "./pricing.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 
 export const MODEL_COST_ROW_LIMIT = 50000;
+// Users the by-user-daily SQL keeps separate before folding the rest into one residual row.
+export const USER_TREND_TOP = 20;
 
 const amount = (v) => ["number", "string"].includes(typeof v) && String(v).trim() !== ""
   && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null;
@@ -36,7 +38,10 @@ function mapCell(row, byUser) {
     ...finishObservedTokens(observed),
   };
   // A user row mixes models, so it has no single price: no computed diagnostic.
-  if (byUser) return { day: row.day, group: row.group, user: String(row.user ?? ""), ...reported };
+  // user === null is the server's fold of every user outside the top list; total_users counts all.
+  if (byUser) return { day: row.day, group: row.group, user: row.user === null ? null : String(row.user ?? ""),
+    ...(row.user === null ? { rest_users: Math.max(0, (amount(row.total_users) ?? 0) - USER_TREND_TOP) } : {}),
+    ...reported };
   // The model is constant within a row, so pricing the summed tokens equals the per-session sum.
   const [priced] = withComputedCost([{ model: row.model, ...tokens }]);
   const tokensKnown = TOKEN_KEYS.every((k) => tokens[k] !== null);
@@ -52,7 +57,7 @@ export function foldModelCostCells(rows, { dimension = "model" } = {}) {
   const byUser = dimension === "user";
   const id = byUser ? "user" : "model";
   if (rows.length > MODEL_COST_ROW_LIMIT)
-    throw new ValidationError("too much model cost data", "narrow the requested date range or use a wider bucket");
+    throw new ValidationError(`too much ${byUser ? "user" : "model"} cost data`, "narrow the requested date range or use a wider bucket");
   const out = [];
   for (const row of rows) {
     const cell = mapCell(row, byUser);
@@ -61,5 +66,5 @@ export function foldModelCostCells(rows, { dimension = "model" } = {}) {
   return out.sort((a, b) =>
     String(a.day).localeCompare(String(b.day))
     || String(a.group).localeCompare(String(b.group))
-    || String(a[id]).localeCompare(String(b[id])));
+    || String(a[id] ?? "").localeCompare(String(b[id] ?? "")));
 }

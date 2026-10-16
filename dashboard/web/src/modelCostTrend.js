@@ -101,7 +101,10 @@ const MODEL_AXIS = {
   color: (key) => modelColorKey(key),
   others: (n) => (n ? `기타 ${n}개 모델` : "모델 미귀속"),
 };
-const userLabel = (key) => (key === "" ? "(사용자 미상)" : maskEmail(key));
+// The detail endpoint folds users past its top list into one row; fromByModelDaily keys it here.
+export const REST_USERS_PREFIX = "\u0000rest:";
+const userLabel = (key) => (key === "" ? "(사용자 미상)"
+  : key.startsWith(REST_USERS_PREFIX) ? `그 외 ${key.slice(REST_USERS_PREFIX.length)}명` : maskEmail(key));
 const USER_AXIS = {
   key: (raw) => String(raw ?? ""),
   label: userLabel,
@@ -170,7 +173,8 @@ export function fromByModelDaily(rows, { dimension = "model" } = {}) {
     const t = bucketKey(row.day);
     if (t === null) continue;
     const known = row.reported_all_unavailable === true ? null : amount(row.reported_cost);
-    cells.push(finishCell(t, String(row[field] ?? ""), row.group || "unknown", known,
+    const identity = field === "user" && row.user === null ? `${REST_USERS_PREFIX}${row.rest_users ?? "?"}` : String(row[field] ?? "");
+    cells.push(finishCell(t, identity, row.group || "unknown", known,
       row.reported_unavailable, row.reported_reasons || {}, row.reported_partial, amount(row.observed_tokens)));
   }
   return cells.sort(compareCells);

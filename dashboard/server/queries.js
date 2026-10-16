@@ -4,7 +4,7 @@ import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl } from "./pricing.js";
 import { backendSql } from "./backend.js";
 import { rollupAdoption } from "./activity.js";
-import { foldModelCostCells, MODEL_COST_ROW_LIMIT } from "./modelCostTrend.js";
+import { foldModelCostCells, MODEL_COST_ROW_LIMIT, USER_TREND_TOP } from "./modelCostTrend.js";
 import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetrics.js";
 
 // Every query here goes through this wrapper: a query that prices Claude cost counters
@@ -765,10 +765,14 @@ export async function skillUsage(from, to, filters = {}) {
 // The usability rule mirrors clientMetrics.js claudeUsage(): a positive report is usable even
 // with partial tokens; a zero report only beside known zero tokens or no token sample. Every
 // observed scope is exactly one of usable, report_missing or report_zero_with_tokens.
-// dimension "user" keeps the same per-(day, group, model, session) scopes and only regroups the
-// outer level by UserEmail, so user cells carry the same scope counts as the model cells.
+// dimension "user" keeps the same per-(day, group, model, session) scopes, gives each scope one
+// user (max(UserEmail): a non-empty address wins over an empty one) and regroups the outer level
+// by user, so user cells carry exactly the model cells' scope counts. Only the top
+// USER_TREND_TOP users by known report stay separate; the rest fold into one "user" = NULL row
+// per (day, group) carrying total_users, which bounds rows by buckets, not by user count.
 export function costByModelDailySql(intervalHours, filters = {}, { dimension = "model" } = {}) {
-  const key = dimension === "user" ? `"user"` : "model";
+  const byUser = dimension === "user";
+  const key = byUser ? `"user"` : "model";
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const b = incBucket(intervalHours, metricFilter);
@@ -785,7 +789,7 @@ export function costByModelDailySql(intervalHours, filters = {}, { dimension = "
   const tokenColumns = ["scope_input", "scope_output", "scope_cache_read", "scope_cache_write"];
   const strictSum = (col, name) =>
     `if(countIf(NOT (isFinite(${col}) AND ${col} >= 0)) > 0, NULL, sum(${col})) AS ${name}`;
-  const sql = `${GROUP_CTE}${firstObservations}
+  const cells = `
     SELECT day, "group", ${key},
         sumIf(scope_report, usable) AS known_report,
         countIf(usable) AS usable_scopes,
@@ -809,19 +813,35 @@ export function costByModelDailySql(intervalHours, filters = {}, { dimension = "
       FROM (
         SELECT t AS day,
             ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, m.SessionId AS session,
-            ${dimension === "user" ? `m.UserEmail AS "user",` : ""}
+            ${byUser ? `max(m.UserEmail) AS "user",` : ""}
             ${TOKEN_SUMS},
             countIf(${observed} AND m.MetricName = 'claude_code.cost.usage') AS report_obs,
             countIf(${observed} AND m.MetricName = 'claude_code.token.usage') AS token_obs
         FROM ${b.sub} m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
         WHERE 1 = 1 ${f.where}
-        GROUP BY day, "group", model, session${dimension === "user" ? `, "user"` : ""}
+        GROUP BY day, "group", model, session
       )
       -- A scope with no observed cost or token sample is a baseline-only row: no data.
       WHERE report_obs > 0 OR token_obs > 0
     )
-    GROUP BY day, "group", ${key} ORDER BY day
+    GROUP BY day, "group", ${key}`;
+  const strictResum = (col) => `if(countIf(isNull(${col})) > 0, NULL, sum(${col})) AS ${col}`;
+  const sql = byUser ? `${GROUP_CTE}${firstObservations}, user_cells AS (${cells}
+    ), top_users AS (
+      SELECT "user" FROM user_cells GROUP BY "user"
+      ORDER BY sum(known_report) DESC, sum(observed_token_sum) DESC, "user" LIMIT ${USER_TREND_TOP}
+    )
+    SELECT day, "group", if("user" IN (SELECT "user" FROM top_users), "user", NULL) AS "user",
+        (SELECT uniqExact("user") FROM user_cells) AS total_users,
+        sum(known_report) AS known_report, sum(usable_scopes) AS usable_scopes,
+        sum(report_missing) AS report_missing, sum(report_zero_with_tokens) AS report_zero_with_tokens,
+        ${["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"].map(strictResum).join(", ")},
+        sum(observed_token_sum) AS observed_token_sum, sum(observed_token_scopes) AS observed_token_scopes,
+        sum(unobserved_token_scopes) AS unobserved_token_scopes
+    FROM user_cells
+    GROUP BY day, "group", "user" ORDER BY day
+    LIMIT ${MODEL_COST_ROW_LIMIT + 1}` : `${GROUP_CTE}${firstObservations}${cells} ORDER BY day
     LIMIT ${MODEL_COST_ROW_LIMIT + 1}`;
   return { sql, params: { ...b.params, ...f.params }, raw: b.raw };
 }

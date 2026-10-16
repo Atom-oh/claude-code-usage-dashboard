@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider, useRange } from "../RangeContext.jsx";
 import { ModelCostTrend, nextHidden } from "./ModelCostTrend.jsx";
-import { fromByModelTime, modelColorKey, trendColor } from "../modelCostTrend.js";
+import { fromByModelDaily, fromByModelTime, modelColorKey, trendColor } from "../modelCostTrend.js";
 
 // jsdom has no layout or ResizeObserver. Keep the real Recharts render path and
 // supply only the browser dimensions its ResponsiveContainer and Tooltip need.
@@ -473,4 +473,57 @@ test("legend clicks isolate a series Grafana-style and the mode toggle switches 
   await waitFor(() => expect(container.querySelectorAll(".recharts-line-curve").length).toBe(3));
   expect(container.querySelectorAll(".recharts-area-area").length).toBe(0);
   expect(container.querySelectorAll('[data-state="partial"]').length).toBe(1);
+});
+
+test("an isolated series whose cost is unavailable shows an unavailable shown subtotal, never $0", async () => {
+  const cells = [c(D1, "claude-sonnet-5", "e", 5),
+    c(D1, "claude-opus-5", "e", null, { unavailable: 1, reasons: { report_missing: 1 } }),
+    c(D2, "claude-opus-5", "e", 2), c(D2, "claude-sonnet-5", "e", 1)];
+  const { container } = mount({ cells, bounds: BOUNDS });
+  await chartReady(container);
+  fireEvent.click(within(screen.getByRole("list", { name: "범례" })).getByRole("button", { name: "claude-opus-5" }));
+  const chart = container.querySelector(".recharts-wrapper");
+  const x = bucketX(chart, 6);
+  fireEvent.mouseMove(chart, { clientX: x(0), clientY: 80 });
+  await waitFor(() => expect(container.querySelector("[data-mct-tooltip]")).not.toBeNull());
+  const tip = container.querySelector("[data-mct-tooltip]");
+  expect(tip.querySelector("[data-tooltip-shown]").textContent).toBe("표시 계열 합계 확인 불가");
+  expect(tip.querySelector("[data-tooltip-total]").textContent).toBe("알려진 합계 (전체) (부분합) $5.00");
+  // Ctrl-click shows sonnet again: nothing is hidden, so the shown subtotal line goes away.
+  fireEvent.click(within(screen.getByRole("list", { name: "범례" })).getByRole("button", { name: "claude-sonnet-5" }), { ctrlKey: true });
+  fireEvent.mouseMove(chart, { clientX: x(0), clientY: 80 });
+  await waitFor(() => expect(container.querySelector("[data-tooltip-shown]")).toBeNull());
+});
+
+test("user legends isolate by identity, keep raw addresses out of the DOM and fold the server residual", async () => {
+  const { setPiiMask } = await import("../fmt.js");
+  setPiiMask(true);
+  const rows = [D1, D2].flatMap((day) => [
+    { day, group: "e", user: "kim@example.com", reported_cost: 3, reported_unavailable: 0, reported_reasons: {} },
+    { day, group: "e", user: "lee@example.com", reported_cost: 2, reported_unavailable: 0, reported_reasons: {} },
+    { day, group: "e", user: null, rest_users: 7, reported_cost: 1, reported_unavailable: 0, reported_reasons: {} },
+  ]);
+  const cells = fromByModelDaily(rows, { dimension: "user" });
+  const { container } = mount({ cells, bounds: BOUNDS, dimension: "user" });
+  await chartReady(container);
+  const legend = screen.getByRole("list", { name: "범례" });
+  expect(texts(legend, "button")).toEqual(["ki******@example.com", "le******@example.com", "그 외 7명"]);
+  expect(container.innerHTML).not.toContain("kim@example.com");
+  fireEvent.click(within(legend).getByRole("button", { name: "le******@example.com" }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
+  expect(texts(legend, 'button[aria-pressed="true"]')).toEqual(["le******@example.com"]);
+});
+
+test("a frame change that would leave nothing shown restores every series", async () => {
+  const two = [c(D1, "claude-sonnet-5", "e", 5), c(D2, "claude-sonnet-5", "e", 1),
+    c(D1, "claude-opus-5", "e", 2), c(D2, "claude-opus-5", "e", 2)];
+  const { container, rerender } = mount({ cells: two, bounds: BOUNDS });
+  await chartReady(container);
+  fireEvent.click(within(screen.getByRole("list", { name: "범례" })).getByRole("button", { name: "claude-opus-5" }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
+  rerender(<><ModelCostTrend title="모델별 비용 추이" xKey="t" bucketHours={24} bounds={BOUNDS}
+    cells={two.filter((cell) => cell.model === "claude-sonnet-5")} /><Selection /></>);
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
+  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#5B6BDB");
+  expect(container.querySelector("[data-legend-filtered]")).toBeNull();
 });

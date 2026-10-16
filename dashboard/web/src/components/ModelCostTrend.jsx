@@ -127,6 +127,13 @@ function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
   }
   entries.sort((a, z) => z.value - a.value);
   const filtered = hidden.size > 0;
+  // Shown subtotal follows the bucket rules for the shown items only: unavailable when nothing
+  // shown is known but something shown is, partial when some shown cost is unavailable.
+  const shownUnavailable = frame.series.some((s) => !hidden.has(legendId(s)) && b.partialSeries.includes(s.key))
+    || (!hidden.has(OTHERS_ID) && b.othersPartial);
+  const shownText = entries.length === 0
+    ? (shownUnavailable ? "확인 불가" : "기록된 사용 없음")
+    : `${shownUnavailable ? "(부분합) " : ""}${formatUsd(entries.reduce((sum, e) => sum + e.value, 0))}`;
   const total = b.state === "unavailable" ? "확인 불가" : b.state === "idle" ? "기록된 사용 없음" : formatUsd(b.total);
   return (
     <div data-mct-tooltip style={{ ...tooltipStyles(c).contentStyle, color: c.tooltipFg, fontSize: 12 }}>
@@ -139,7 +146,7 @@ function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
         ))}
       </ul>
       {filtered && b.state !== "unavailable" && b.state !== "idle" && (
-        <div data-tooltip-shown>{`표시 계열 합계 ${formatUsd(entries.reduce((sum, e) => sum + e.value, 0))}`}</div>
+        <div data-tooltip-shown>{`표시 계열 합계 ${shownText}`}</div>
       )}
       <div data-tooltip-total>{`알려진 합계${filtered ? " (전체)" : ""}${b.state === "partial" ? " (부분합)" : ""} ${total}`}</div>
       {b.hasEstimate && <div data-tooltip-estimate>계산 추정 포함 — 보고 비용이 없어 토큰 단가로 채운 값입니다</div>}
@@ -321,8 +328,10 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
     ...(showOthers ? [{ id: OTHERS_ID, key: OTHERS_KEY, label: frame.others.label, color: othersColor, swatch: "others" }] : []),
   ];
   const ids = items.map((item) => item.id);
-  // Ids from an earlier frame that no longer exist do not count as hidden.
-  const hidden = new Set(ids.filter((id) => hiddenIds.has(id)));
+  // Ids from an earlier frame that no longer exist do not count as hidden, and a frame change that
+  // would leave nothing shown restores all.
+  const current = ids.filter((id) => hiddenIds.has(id));
+  const hidden = new Set(current.length === ids.length ? [] : current);
   const onLegend = (id) => (event) =>
     setHiddenIds(nextHidden(hidden, id, ids, event.ctrlKey || event.metaKey || event.shiftKey));
   // Stacked areas sum the shown series; "기본" draws each shown series as its own line.
@@ -355,7 +364,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
           const shown = !hidden.has(item.id);
           return (
             <li key={item.id}>
-              <button type="button" aria-pressed={shown} data-legend={item.id} onClick={onLegend(item.id)}
+              <button type="button" aria-pressed={shown} data-legend={item.key} onClick={onLegend(item.id)}
                 title="클릭: 이 계열만 보기 · Ctrl/⌘/Shift+클릭: 표시 전환"
                 className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-ink-50 ${shown ? "" : "opacity-40 line-through"}`}>
                 <span aria-hidden="true" data-swatch={item.swatch}

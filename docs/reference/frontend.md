@@ -203,7 +203,11 @@ It shares the model trend's bucket pick; user labels are masked with `maskEmail`
 raw, user series take palette colors by rank (users have no stable color identity), and the
 Others table drops the channel column.
 Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`
-(`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket.
+(`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; the server's
+`user: null` residual becomes one "rest of N users" identity. With legend items hidden, the tooltip's
+shown subtotal is unavailable when only unavailable shown costs exist and is labelled partial
+when some are; a frame change that would hide every item restores all. Legend buttons carry
+the series key, never the raw identity.
 
 Sibling rule: the shared Claude and Codex cards come from one response, share its effective
 range and bucket origins, are never summed and keep separate y-scales. Client-colored

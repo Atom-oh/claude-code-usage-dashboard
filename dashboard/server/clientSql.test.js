@@ -589,6 +589,47 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       }
     });
     // Pins current detail behavior: an increment inside the partial first minute is dropped.
+    await t.test("user cost trend keeps the top users, folds the rest and never splits a session", async () => {
+      const { costByModelDaily, costByUserDaily } = await import("./queries.js");
+      const { USER_TREND_TOP } = await import("./modelCostTrend.js");
+      const model = "claude-haiku-4-5";
+      const values = [];
+      const sample = (session, email, metric, type, clock, value) => {
+        const row = counter(metric, type, clock, value);
+        row.ResourceAttributes = { "user.email": email };
+        row.Attributes["session.id"] = session;
+        row.Attributes.model = model;
+        values.push(row);
+      };
+      const users = USER_TREND_TOP + 2;
+      for (let i = 0; i < users; i++) {
+        const email = `utrend-${String(i).padStart(2, "0")}@example.invalid`;
+        for (const [clock, k] of [["22:05:00", 0], ["22:35:00", 1]]) {
+          sample(`utrend-${i}`, email, "claude_code.cost.usage", "", clock, k * (i + 1) / 100);
+          sample(`utrend-${i}`, email, "claude_code.token.usage", "input", clock, k * (i + 1));
+        }
+      }
+      // One session whose samples carry an empty and a real identity stays one scope.
+      for (const [clock, k, email] of [["22:05:00", 0, ""], ["22:35:00", 1, "utrend-mixed@example.invalid"]]) {
+        sample("utrend-mixed", email, "claude_code.cost.usage", "", clock, k * 5);
+        sample("utrend-mixed", email, "claude_code.token.usage", "input", clock, k * 50);
+      }
+      await insertMetrics(values);
+      const start = new Date(`${day}T22:00:00Z`), end = new Date(`${day}T23:00:00Z`);
+      const filter = { model };
+      const byModel = await costByModelDaily(start, end, 1, filter);
+      const byUser = await costByUserDaily(start, end, 1, filter);
+      const sum = (rows, k) => rows.reduce((acc, r) => acc + (r[k] ?? 0), 0);
+      assert.ok(Math.abs(sum(byUser, "reported_cost") - sum(byModel, "reported_cost")) < 1e-9);
+      assert.equal(sum(byUser, "reported_unavailable"), sum(byModel, "reported_unavailable"));
+      const named = byUser.filter((r) => r.user !== null);
+      assert.equal(new Set(named.map((r) => r.user)).size, USER_TREND_TOP);
+      assert.ok(named.some((r) => r.user === "utrend-mixed@example.invalid"));
+      assert.ok(!byUser.some((r) => r.user === ""), "the mixed session must not split into an empty identity");
+      const rest = byUser.filter((r) => r.user === null);
+      assert.equal(rest.length, 1);
+      assert.equal(rest[0].rest_users, users + 1 - USER_TREND_TOP);
+    });
     await t.test("minute buckets drop an unaligned first minute on the detail endpoint (pre-existing boundary)", async () => {
       const { costByModelDaily } = await import("./queries.js");
       const user = "partial-minute@example.invalid";
