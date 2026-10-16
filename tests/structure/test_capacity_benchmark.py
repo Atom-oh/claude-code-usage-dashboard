@@ -6,6 +6,7 @@ import threading
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("capacity_benchmark", ROOT / "scripts/benchmark-capacity.py")
@@ -25,6 +26,22 @@ class CapacityBenchmark(unittest.TestCase):
         self.assertEqual(args.requests_per_user, 720)
         self.assertEqual(args.resource_bytes, 2048)
         self.assertIn("@sha256:", args.dashboard_image)
+        self.assertIsNone(args.fixture_day)
+
+    def test_fixture_day_can_be_frozen_for_paired_runs_and_must_be_closed(self):
+        class FixedUtcDateTime(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 10, 16, tzinfo=tz)
+
+        with patch.object(benchmark.datetime, "datetime", FixedUtcDateTime):
+            for value in ["2026-10-15", "2026-10-14", "2026-09-16"]:
+                self.assertEqual(self.parse("--fixture-day", value).fixture_day,
+                                 datetime.date.fromisoformat(value))
+            for value in ["not-a-date", "2020-02-31", "2026-10-16", "2999-01-01",
+                          "2026-09-15", "2020-01-02"]:
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    self.parse("--fixture-day", value)
 
     def test_rejects_invalid_inputs_and_floating_images(self):
         for args in [("--users", "0"), ("--users", "141"),

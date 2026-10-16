@@ -109,6 +109,9 @@ One failed overview [query batch](../../dashboard/server/clientQueryBatch.js) ca
 its own queued/HTTP siblings instead of leaving rejected work running without a
 consumer. A shared cache computation is never cancelled by one HTTP subscriber.
 HTTP cancellation does not guarantee immediate ClickHouse execution termination.
+An overview starts at most two private query tasks concurrently. The next task
+waits without reserving a DB slot; failure stops unstarted tasks, cancels started
+siblings and preserves the first error/result ordering.
 The Claude query wrapper forwards the batch signal through both its non-Anthropic
 factor lookup and final counter query. The
 [HTTP regression](../../dashboard/server/clientCancellation.test.js) holds each
@@ -133,11 +136,21 @@ headroom. Concurrent HTTP sessions alone do not define database demand.
 
 Measure shared and distinct cache keys separately, cold/warm results, admission
 failures, query CPU/memory, API serialization and ingestion/merge interference.
-The default cache admits 64 distinct pending loads per process. With two processes,
-140 arrivals sharing the same cache key coalesce into at most two computations. If all 140
-distinct loads stay pending together, at least 12 exceed the combined 128-load
-bound, even with ideal balancing. Unit tests cover these admission scenarios;
-they are not a database load test or latency guarantee.
+The API cache runs at most 64 distinct loads per process. It can hold another 64
+distinct keys in a FIFO queue for at most 30 seconds, sharing each queued key's
+promise and starting no loader until a slot is free. Database/request budgets,
+active-load slots and result byte quotas are unchanged. Queue saturation or expiry
+still returns coded overload; waiting does not guarantee a later database slot.
+With two processes, 140 arrivals sharing one key coalesce into at most two
+computations. Under ideal balancing, 140 distinct keys occupy 64 active and six
+waiting slots per process rather than immediately exceeding the former 128-load
+fleet bound. Unit tests verify admission, single-flight and result semantics;
+they are not database load tests, heap bounds or latency guarantees.
+Large immutable results also share their serialized/gzip representations while
+responses are active, preventing per-viewer copies of an identical result. The
+representation disappears after the last response and compression settle. Numeric
+fields, scopes, coverage and client payloads are unchanged; browser/network work
+and the decoded result's own memory remain.
 Any ClickHouse/DuckDB comparison needs equivalent data, semantics, CPU/memory and
 ingestion conditions. DuckDB replacement remains a review proposal; this query
 optimization does not change the database engine or hardware allocation.

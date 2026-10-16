@@ -166,7 +166,9 @@ const CACHE_TTL_MS = 320_000;
 // email은 여전히 자유 문자열이라 인증된 클라이언트가 그 값만 계속 바꾸면 만료 전까지 distinct
 // 엔트리가 계속 늘 수 있다(리뷰에서 MAJOR로 확인) — 상한을 두고 초과 시 가장 오래된(생성 순서)
 // 완료된 엔트리를 삽입 순서대로 제거한다. 진행 중인 작업은 완료까지 공유하며 읽기는 순서를 바꾸지 않는다.
-const cache = createResultCache();
+// Distinct cold views wait for an existing load slot instead of retrying before
+// one is free. Active loads, DB concurrency and cached-result byte quotas stay bounded.
+const cache = createResultCache({ maxWaiting: 64 });
 setInterval(() => {
   cache.sweep();
 }, CACHE_TTL_MS).unref();

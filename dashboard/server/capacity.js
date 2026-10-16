@@ -96,9 +96,15 @@ export function createRequestAdmission(maximum = 200) {
 }
 
 export function createResultCache({ maxEntries = 2000, maxPending = 64,
+  maxWaiting = 0, waitMs = 30_000,
   maxBytes = 16 * 1024 * 1024, maxEntryBytes = 1024 * 1024, now = Date.now } = {}) {
-  const budget = createBudget(maxPending);
-  if (!Number.isSafeInteger(maxEntries) || maxEntries < maxPending ||
+  if (!Number.isSafeInteger(maxWaiting) || maxWaiting < 0 ||
+      !Number.isSafeInteger(waitMs) || waitMs < 1)
+    throw new RangeError("invalid cache waiting capacity");
+  const budget = maxWaiting
+    ? createQueuedBudget({ maximum: maxPending, maxWaiting, waitMs })
+    : createBudget(maxPending);
+  if (!Number.isSafeInteger(maxEntries) || maxEntries < maxPending + maxWaiting ||
       ![maxBytes, maxEntryBytes].every(value => Number.isSafeInteger(value) && value > 0) ||
       maxEntryBytes > maxBytes)
     throw new RangeError("cache must accommodate pending entries");
@@ -119,14 +125,23 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
       if (existing?.pending || (existing && existing.expires > now())) return existing.promise;
       if (existing) remove(key);
       this.sweep();
-      // Acquire before invoking work. Pending promises stay shared until settlement.
-      const release = budget.acquire();
-      if (entries.size >= maxEntries) {
-        const oldest = [...entries].find(([, entry]) => !entry.pending);
-        if (oldest) remove(oldest[0]);
-      }
+      // Reject before inserting a key or allocating a queued promise. Repeated
+      // denied arrivals must not temporarily grow the cache beyond its bound.
+      if (budget.active >= maxPending && (budget.waiting || 0) >= maxWaiting)
+        throw new CapacityError();
+      const oldest = entries.size >= maxEntries
+        ? [...entries].find(([, entry]) => !entry.pending) : null;
+      if (entries.size >= maxEntries && !oldest) throw new CapacityError();
+      // Reserve admission before work. A queued key holds no database/load slot;
+      // its promise stays shared, including while waiting past the response TTL.
+      const reservation = budget.acquire();
+      let release;
+      if (oldest) remove(oldest[0]);
       const entry = { pending: true, expires: Infinity, promise: null };
-      entry.promise = Promise.resolve().then(load).then(value => {
+      entry.promise = Promise.resolve(reservation).then(slot => {
+        release = slot;
+        return load();
+      }).then(value => {
         const serialized = JSON.stringify(value);
         const size = serialized === undefined ? 0 : Buffer.byteLength(serialized);
         if (size > maxEntryBytes) {
@@ -146,13 +161,14 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
       }).catch(error => {
         if (entries.get(key) === entry) remove(key);
         throw error;
-      }).finally(release);
+      }).finally(() => release?.());
       entries.set(key, entry);
       return entry.promise;
     },
     get size() { return entries.size; },
     get bytes() { return bytes; },
     get pending() { return budget.active; },
+    get waiting() { return budget.waiting || 0; },
   };
 }
 

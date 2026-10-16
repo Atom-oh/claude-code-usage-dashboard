@@ -29,8 +29,12 @@ results for 320 seconds from completion. Pending entries do not expire or get ev
 Keys contain the route path plus `from`, `to`, `group`, `user`, `model`, `project`,
 `intervalHours`, `email` and `includeUnknown`, sorted by parameter name. Failed promises are removed. The 2,000-entry
 cap evicts settled entries by insertion order, not by last read. At most 64 distinct
-cache loads execute concurrently; excess misses return 503 while existing-key requests
-can still share work.
+cache loads execute concurrently. Up to 64 additional distinct keys wait FIFO for
+at most 30 seconds without starting their loaders or acquiring database slots.
+Existing-key requests share the same promise while waiting or executing. A full or
+expired cache queue returns the same coded 503; failed keys are removed.
+Completion starts the successful-result TTL. This cache wait is separate from the
+database queue/execution deadlines below; it is not an end-to-end request deadline.
 Settled entries have a 16 MiB serialized-JSON byte quota and a 1 MiB per-entry quota.
 Oversized results are returned intact but not cached; byte eviction never removes pending
 work. Serialized size is an estimate for cache admission, not a heap/response-allocation bound.
@@ -48,6 +52,15 @@ release on settlement. Probes and OIDC protocol routes remain outside HTTP admis
 `ok: false` and makes readiness 503; it must not restart the process. The ClickHouse
 connection pool remains 30.
 These bounds do not reserve sockets, measure latency or establish a fleet SLO.
+
+Large immutable data-route values share serialized bytes and one gzip operation
+among active responses. Representations are released after the last response
+finishes/closes and any compression settles; no settled encoding cache or copied
+source is retained. JSON policy/Express application changes do not share old bytes.
+Custom replacers/boxed spacing retain per-response evaluation. Content negotiation,
+JSON escaping, null/zero/tiny values, auth, status and private cache headers remain.
+This reduces duplicate response work, not the size of data received by each client
+or an absolute heap/socket bound.
 
 Chat limits admit ten requests per IP/minute, storing at most 4,096 live keys and ten
 timestamps per key. Denied attempts do not extend the admitted-hit window. A full key map
