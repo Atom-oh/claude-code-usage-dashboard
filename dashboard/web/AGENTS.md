@@ -1,65 +1,39 @@
-# Web instructions
+# Web
 
-React 18/Vite 8/Tailwind 4/Recharts 3 SPA (Node 22.12+). Run `npm test` and `npm run build`.
+React 18/Vite 8/Tailwind 4/Recharts 3 SPA, Node 22.12+. Run npm test/npm run build.
 
-## Display contracts
+## Display
 
-- `ClientContext` defaults all clients to nine shared routes via `Clients.jsx`.
-  Claude `view=detail` retains advanced/A/B pages: [routing](../../docs/reference/frontend.md#routes-and-state).
-  Shared views label `cost_usd` by `cost_basis`, preserve nulls/tiny positives and
-  never render unsupported Claude measures as Codex zeros.
-- Label known cost subtotals as partial in cards/charts/tables/CSV. Units use observed
-  denominators; missing denominators/all-unknown costs stay `—`:
-  [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
-- Token displays/charts use labelled `observed_tokens` subtotals and `tokens_partial`;
-  CSV keeps counts numeric with coverage status. Ratios use canonical fields.
-  [ADR-014](../../docs/decisions/ADR-014-observed-token-subtotals.md).
-- Common views do not forward Claude-only group/project filters. Client/backend selection
-  survives range changes without leaking masked user IDs.
-- Claude detail's `spend.js` selects `reported_cost` and retains computed diagnostics.
-  Preserve null/unpriced totals/forecasts/charts/CSV; missing local prices do not invalidate valid reports.
-- `showComputed` gates Cost's opt-in computed comparison: table/CSV columns, effort
-  annotations, computed total and token-tier charts.
-- Cost comparison changes remount affected `DataTable`s to reset sorting, including hidden computed columns.
-- CSV follows displayed columns/order; `toCsv` uses `toText` or raw values, never JSX.
-- With PII masking, `csv.js` masks `user` without `toText: maskEmail`; explicitly mask other
-  identities. Formula-like values gain an apostrophe after masking: [CSV](../../docs/reference/ui.md#tables-and-csv).
-- Cost USD accepts zero and at most two decimals. `DonutBody.valueFormatter` ignores
-  `valuePrefix`; other charts keep their default formatting.
-- Distinguish trace absence/loading/errors/unpriced values/measured zero.
-  Shared chart empty-bucket zeros mean recorded usage only; preserve explicit nulls/coverage:
-  [ADR-015](../../docs/decisions/ADR-015-idle-chart-buckets.md).
-- Activity/approval rates prove neither productivity nor quality. Do not invent saved hours or ROI.
+- ClientContext: all clients default to nine shared routes via Clients.jsx; Claude view=detail: advanced/A/B pages, [routing](../../docs/reference/frontend.md#routes-and-state). Label shared cost_usd by cost_basis; keep nulls/tiny positives. Unsupported Claude measures never become Codex zeros.
+- Label known cost subtotals as partial in cards/charts/tables/CSV. Units: observed denominators; missing denominators/all-unknown costs: —, [ADR-013](../../docs/decisions/ADR-013-known-cost-subtotals.md).
+- Token displays/charts: label observed_tokens subtotals/tokens_partial; CSV: numeric counts/coverage. Ratios use canonical fields: [ADR-014](../../docs/decisions/ADR-014-observed-token-subtotals.md).
+- Common views never forward Claude-only group/project filters. Preserve client/backend selection across ranges; never leak masked user IDs.
+- Claude detail spend.js: select reported_cost; retain computed diagnostics; keep null/unpriced totals/forecasts/charts/CSV. Valid reports survive missing local prices.
+- showComputed gates Cost's opt-in comparison: table/CSV columns, effort annotations, computed total/token-tier charts.
+- Comparison changes: remount affected DataTables, reset sorting including hidden computed columns.
+- CSV follows displayed columns/order; toCsv: toText/raw values, never JSX.
+- PII masking: csv.js masks user without `toText: maskEmail`; mask other IDs explicitly. Prefix formula-like values with apostrophe after masking: [CSV](../../docs/reference/ui.md#tables-and-csv).
+- Cost USD accepts zero/≤2 decimals. DonutBody.valueFormatter ignores valuePrefix; other charts keep defaults.
+- Distinguish trace absence/loading/errors/unpriced/measured zero. Shared empty-bucket zeros: recorded usage only; keep nulls/coverage, [ADR-015](../../docs/decisions/ADR-015-idle-chart-buckets.md).
+- Activity/approval rates prove neither productivity nor quality; never invent saved hours/ROI.
 
-## Filters, ranges, and refresh
+## State
 
-- `RangeContext` owns range URLs; `FilterContext` owns filters. Hydrate once in state
-  initializers; preserve each other's parameters.
-- Never put masked users in URLs. Project filters need `/api/config` reporting
-  `schema.projectColumns === true` for both URLs and requests.
-- Session-scoped model filters are not precise attribution; follow the server's documented grain.
-- Query buckets/calendar presets stay UTC. Parse timezone-less API timestamps as UTC;
-  chart labels/timestamps/CSV display values use browser time zone.
-  Derive rates from actual range duration, not the last preset; resync local chart
-  granularity on global range changes.
-- `useApi()` owns range/filter requests, refresh, aborts and payload identity.
-  Match server quantization/grace.
-- Refreshes and period changes keep loaded data until replaced; a failed period
-  load clears it. Unchanged payloads keep references; path/filter/client changes
-  clear selection. Background failures retain data and signal refresh errors.
-  `linkedRange` is only for parent-response bounds. `UserDrawer` does not auto-refresh.
+- RangeContext: range URLs; FilterContext: filters. Initializers hydrate once; preserve each other's parameters.
+- No masked users in URLs. Project URLs/requests require /api/config schema.projectColumns ===true.
+- Session-scoped model filters are not precise attribution; follow server's documented grain.
+- Buckets/calendar presets: UTC; parse timezone-less API timestamps as UTC. Chart labels/timestamps/CSV: browser time zone. Rates: actual duration, not last preset; resync local granularity on global range changes.
+- useApi(): range/filter requests/refresh/aborts/payload identity; match server quantization/grace.
+- Refresh/period changes: retain data until replaced; period failures clear it. Unchanged payloads: same references. Path/filter/client changes: clear selection. Background failures: retain data/show refresh errors. linkedRange: parent-response bounds only; UserDrawer: no auto-refresh.
 
-## Components and channels
+## UI
 
-- `useGroupsShown()` owns card visibility, including single mode/channel overrides;
-  `GROUP_SEGMENT_ORDER` owns within-row splits.
-- Channels are not emitting clients. Do not identify Codex from an OpenAI model name.
-- Use Card/StatTile help/loading/error/empty conventions; absent subtitles/hints are `undefined`.
-- Use one navigation element except with the mobile drawer open. Mobile navigation
-  uses `Sidebar`'s NAV; keep route/navigation tests aligned.
-- Time-series drag zoom changes the whole page; categorical axes do not zoom.
-- Keep UI Korean-first and technical names/identifiers English. Engineering docs are
-  English; doc edits must not translate runtime strings.
+- useGroupsShown(): card visibility/single mode/channel overrides; GROUP_SEGMENT_ORDER: within-row splits.
+- Channels ≠ emitting clients; never infer Codex from OpenAI model names.
+- Card/StatTile: help/loading/error/empty conventions; absent subtitles/hints: undefined.
+- One nav element except mobile drawer open; mobile: Sidebar NAV. Align route/navigation tests.
+- Time-series drag: whole-page zoom; categorical axes never zoom.
+- UI Korean-first, technical names/IDs English; engineering docs English. Never translate runtime strings in doc edits.
 
-See [frontend reference](../../docs/reference/frontend.md),
-[UI reference](../../docs/reference/ui.md), and [metric definitions](../../docs/metrics.md).
+[Frontend](../../docs/reference/frontend.md),
+[UI](../../docs/reference/ui.md); [Metrics](../../docs/metrics.md).
