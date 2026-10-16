@@ -22,11 +22,11 @@ CI harness discovers test-*.sh; absent gitignored .claude/ tooling: expected ski
 
 ## Contracts
 
-- Claude spend: reported_cost; retain cost/computed_cost diagnostics. Codex/non-Anthropic Claude (ADR-017): AWS list estimates with token subsets/tiers. Neither basis is an invoice/guaranteed billing bound.
+- Claude spend: reported_cost; retain cost/computed_cost diagnostics. Codex/non-Anthropic Claude (ADR-017): AWS list estimates; retain token subsets/tiers. Neither basis is an invoice/guaranteed billing bound.
 - Never sum cumulative OTel samples as usage; keep identity/boundaries/temporality.
 - Bedrock/enterprise: inferred session channels, not clients; model names do not identify emitting clients.
 - CLAUDE_ENABLED/CODEX_ENABLED select collection/views; both false invalid. Separate client/backend/model; no Codex enterprise A/B row.
-- Shared API wrapping, bound SQL parameters, existing filter semantics.
+- Use shared API wrapping, bound SQL parameters, existing filter semantics.
 - Never add diagnostic Codex metrics/traces to completion-log usage/cost: [interpretation](docs/reference/codex-observability.md).
 - Unavailable differs from zero; positive totals do not prove complete telemetry.
 - Shared views: known costs/observed_tokens, partial flags; all-unknown unavailable. Strict canonical tokens for ratios: [coverage](docs/decisions/ADR-014-observed-token-subtotals.md).
