@@ -62,8 +62,8 @@ resource "aws_cloudfront_distribution" "dashboard" {
   aliases         = [var.dashboard_hostname]
   price_class     = "PriceClass_200"
 
-  # CloudFront ignores no-store for these errors. Preserve origin status/body and
-  # permission/retry decisions instead of replaying failures to later requests.
+  # Declare zero error TTL as part of the installation contract.
+  # Preserve origin status/body; verify actual cache policy and response headers.
   dynamic "custom_error_response" {
     for_each = [403, 500, 502, 503, 504]
     content {
