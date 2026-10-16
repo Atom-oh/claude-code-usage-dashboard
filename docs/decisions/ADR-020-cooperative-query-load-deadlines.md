@@ -29,6 +29,8 @@ alive for another subscriber and aborting when their final subscriber leaves.
 Close pending SDK result bodies explicitly on abort. Failed or late results are removed
 instead of becoming zero/empty telemetry or cache entries; an uncooperative loader
 retains its admission slot until settlement.
+An early producer failure aborts its remaining queries before deadline cleanup and
+admission release. A shared factor lookup survives while another subscriber needs it.
 
 Return a coded, uncached 504 with an opaque correlation ID and a five-second
 `Retry-After` hint. Logs contain the ID, registered route and code, excluding submitted

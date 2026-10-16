@@ -185,6 +185,9 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
         deadline?.check();
         return value;
       }).catch(error => {
+        // A parallel loader can reject before its other queries settle.
+        // Cancel owned work before releasing admission or clearing its timer.
+        deadline?.cancel(error);
         if (entries.get(key) === entry) remove(key);
         throw error;
       }).finally(() => {

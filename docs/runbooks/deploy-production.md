@@ -218,9 +218,12 @@ aws cloudfront get-distribution-config --id "$DIST_ID" \
 ```
 
 Require 403/500/502/503/504 entries with `ErrorCachingMinTTL=0`, without status/page
-rewrites. `CachingDisabled` and origin `no-store` alone do not prove this: CloudFront
-can replay those errors for its default ten seconds. Resolve missing entries through
-a reviewed configuration update before relying on permission or retry responses.
+rewrites, matching the declared deployment contract. Verify the actual policy and origin
+cache directives: AWS [error processing](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HTTPStatusCodes.html)
+documents that managed `CachingDisabled` disables cached 5xx errors, while 400/403 caching
+requires positive `max-age` or `s-maxage`. Missing explicit entries alone do not
+prove a live replay defect. Reconcile them through a reviewed configuration update;
+other policies can retain the default ten-second error TTL.
 
 Stop if the alias lookup returns multiple IDs. If a previously cached build remains after
 rollout, invalidate the selected distribution and wait:

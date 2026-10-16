@@ -509,8 +509,11 @@ Config fields:
 After authentication, JSON API middleware sets `no-store`; the server's bounded promise cache is separate.
 [CloudFront configuration](../infra/dns_cdn.tf) declares zero error-cache TTL for dashboard
 403/500/502/503/504 without rewriting status or body. CloudFront can cache these errors
-despite `no-store`; verify the actual distribution before relying on retry/permission
-responses. Older deployments may still use the default ten-second error cache.
+under other cache policies or positive origin cache directives; verify the actual policy,
+error TTL and response headers. AWS [error processing](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HTTPStatusCodes.html)
+documents that managed `CachingDisabled` disables cached 5xx errors; 400/403 caching
+requires positive `max-age` or `s-maxage`.
+The explicit zero-TTL entries protect this deployment contract if its policy changes.
 There is no general data-route rate limit or pagination contract. Named row caps above are
 part of the returned subset. See [API implementation](reference/api.md) for cache and warmer
 behavior, and [security](reference/security.md) for SQL and identity boundaries.

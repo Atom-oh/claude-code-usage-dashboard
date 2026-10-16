@@ -31,6 +31,7 @@ export function createQueryDeadline(milliseconds) {
   return {
     signal: abort.signal,
     run(load) { return context.run(abort.signal, load); },
+    cancel(error) { abort.abort(error); },
     check() {
       // Synchronous parsing/serialization can delay the timer callback.
       if (!abort.signal.aborted && performance.now() >= expires) abort.abort(reason);

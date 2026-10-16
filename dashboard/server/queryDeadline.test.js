@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { EventEmitter, once } from "node:events";
-import { createResultCache } from "./capacity.js";
+import { createQueuedBudget, createResultCache } from "./capacity.js";
+import { codexInsights } from "./codexInsights.js";
 import { createFactorCache } from "./factorCache.js";
 import { createQueryDeadline, QueryDeadlineError, querySignal } from "./queryContext.js";
 
@@ -71,6 +72,78 @@ test("deadline context combines sibling cancellation and remains isolated betwee
   } finally { a.dispose(); b.dispose(); }
 });
 
+test("failed parallel Codex producer cancels every surviving query with the original error", async () => {
+  const cache = createResultCache({ loadMs: 1000 });
+  const failure = new Error("synthetic primary query failure");
+  const signals = [], work = [];
+  const run = () => {
+    const signal = querySignal();
+    signals.push(signal);
+    const task = signals.length === 1 ? Promise.reject(failure) : untilAborted(signal);
+    work.push(task);
+    return task;
+  };
+  await assert.rejects(cache.get("insights", () => codexInsights(
+    new Date("2026-10-14T00:00:00Z"), new Date("2026-10-15T00:00:00Z"), {}, run,
+  ), 1000), error => error === failure);
+  assert.equal(signals.length, 6);
+  assert.ok(signals.every(signal => signal.aborted && signal.reason === failure));
+  assert.ok((await Promise.allSettled(work)).every(result => result.status === "rejected"));
+  assert.equal(cache.pending, 0);
+  assert.equal(cache.size, 0);
+});
+
+test("failed producer removes its queued database work without releasing another owner's slot", async () => {
+  const budget = createQueuedBudget({ maximum: 1, maxWaiting: 8, waitMs: 1000 });
+  const releaseHeld = await budget.acquire();
+  const cache = createResultCache({ loadMs: 1000 });
+  const failure = new Error("synthetic parallel failure");
+  let work;
+  try {
+    await assert.rejects(cache.get("queued-failure", () => {
+      work = Array.from({ length: 5 }, async () => {
+        const signal = querySignal();
+        const release = await budget.acquire(signal);
+        try { return await untilAborted(signal); }
+        finally { release(); }
+      });
+      return Promise.all([Promise.reject(failure), ...work]);
+    }, 1000), error => error === failure);
+    assert.equal(budget.waiting, 0);
+    assert.equal(budget.active, 1);
+    assert.ok((await Promise.allSettled(work)).every(result => result.status === "rejected"));
+    assert.equal(cache.pending, 0);
+  } finally { releaseHeld(); }
+});
+
+test("failed producer leaves a shared factor query alive for its peer subscriber", async () => {
+  const factor = createFactorCache();
+  const firstCache = createResultCache({ loadMs: 1000 });
+  const peerCache = createResultCache({ loadMs: 1000 });
+  const held = deferred();
+  const failure = new Error("synthetic producer failure");
+  let factorSignal, started = 0;
+  const load = signal => {
+    started++;
+    factorSignal = querySignal(signal);
+    return held.promise;
+  };
+  const first = firstCache.get("first", () => Promise.all([
+    factor.get("shared", load), Promise.reject(failure),
+  ]), 1000);
+  const peer = peerCache.get("peer", () => factor.get("shared", load), 1000);
+  try {
+    await assert.rejects(first, error => error === failure);
+    assert.equal(started, 1);
+    assert.equal(factorSignal.aborted, false);
+    assert.equal(peerCache.pending, 1);
+    held.resolve([{ factor: 2 }]);
+    assert.deepEqual(await peer, [{ factor: 2 }]);
+    assert.equal(firstCache.pending, 0);
+    assert.equal(peerCache.pending, 0);
+  } finally { held.resolve([]); }
+});
+
 test("sequential work keeps the original shared deadline rather than starting a new one", async () => {
   const cache = createResultCache({ loadMs: 60 });
   const alive = setTimeout(() => {}, 1000);
@@ -124,15 +197,23 @@ test("actual HTTP queries cancel on a shared deadline while peer factor subscrib
     const events = new EventEmitter();
     const responses = [];
     let hold = true, received = 0, prematurelyClosed = 0;
+    let failAt = 0, failWhen = 0, failedResponse;
     const server = createServer((req, res) => {
       req.resume();
       received++;
       if (!hold) return res.end('{"value":1}\n');
       responses.push(res);
       res.on("close", () => { if (!res.writableEnded) prematurelyClosed++; });
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.write('{"value":1}\n');
+      if (received === failAt) failedResponse = res;
+      else {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.write('{"value":1}\n');
+      }
       events.emit("request");
+      if (received === failWhen) {
+        failedResponse.writeHead(500, { "Content-Type": "text/plain" });
+        failedResponse.end("synthetic primary query failure");
+      }
     });
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     const previous = Object.fromEntries(["CH_URL", "CH_USER", "CH_PASSWORD"]
@@ -177,6 +258,30 @@ test("actual HTTP queries cancel on a shared deadline while peer factor subscrib
         hold = false;
         assert.deepEqual(await database.queryReadonly("SELECT 1"),
           { rows: [{ value: 1 }], truncated: false });
+      });
+      await t.test("early Codex query failure closes all five sibling HTTP response bodies", async () => {
+        hold = true;
+        const before = received, closedBefore = prematurelyClosed;
+        failAt = before + 1;
+        failWhen = before + 6;
+        const cache = createResultCache({ loadMs: 2000 });
+        const result = cache.get("failed-http-insights", () => codexInsights(
+          new Date("2026-10-14T00:00:00Z"), new Date("2026-10-15T00:00:00Z"), {}, database.query,
+        ), 1000);
+        pending.push(result);
+        const rejected = assert.rejects(result, error =>
+          !(error instanceof QueryDeadlineError) && /synthetic primary query failure/.test(error.message));
+        try {
+          while (received < failWhen)
+            await once(events, "request", { signal: AbortSignal.timeout(3000) });
+          await rejected;
+          for (let i = 0; i < 20 && prematurelyClosed < closedBefore + 5; i++) await delay(25);
+          assert.equal(prematurelyClosed, closedBefore + 5);
+          assert.equal(cache.pending, 0);
+          assert.equal(cache.size, 0);
+        } finally { failAt = 0; failWhen = 0; }
+        hold = false;
+        assert.deepEqual(await database.query("SELECT 1"), [{ value: 1 }]);
       });
       await t.test("expired first producer cannot cancel a peer's shared factor HTTP request", async () => {
         hold = true;
