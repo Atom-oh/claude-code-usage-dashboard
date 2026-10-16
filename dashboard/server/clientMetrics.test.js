@@ -517,6 +517,24 @@ test("equal observed usage has stable client/user ranking across independent row
   }
 });
 
+test("collating Unicode identities keep exact identities and stable ranking/time tables", () => {
+  const users = ["café@fixture.invalid", "cafe\u0301@fixture.invalid"];
+  const records = users.map((user, index) => ({ ...event, user, session: `unicode-${index}` }));
+  for (const costView of [false, true]) {
+    for (const compactTime of [false, true]) {
+      const options = { modelTime: true, costView, compactTime };
+      const first = foldClientMetrics(records, modelTimeClients, undefined, options);
+      const second = foldClientMetrics([...records].reverse(), modelTimeClients, undefined, options);
+      assert.deepEqual(first.by_user, second.by_user);
+      assert.deepEqual(first.by_user_time, second.by_user_time);
+      assert.deepEqual(first.by_model_time, second.by_model_time);
+      assert.deepEqual(first.by_user.map(row => row.user), [...users].sort());
+      assert.equal(new Set(first.by_user.map(row => row.user)).size, 2);
+      assert.equal(first.totals.observed_tokens, 2 * first.by_user[0].observed_tokens);
+    }
+  }
+});
+
 test("cost folds preserve coverage, tiers, identities and idle buckets while omitting diagnostic breakdowns", () => {
   const fields = ["api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"];
   const projectCost = { ...event, project: "second", context_tier: "long", input_tokens_total: 260000 };

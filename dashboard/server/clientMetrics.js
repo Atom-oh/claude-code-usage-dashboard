@@ -20,6 +20,8 @@ const DIAGNOSTIC_FIELDS = ["api_errors", "tool_calls", "tool_errors",
 const finite = (n) => ["number", "string"].includes(typeof n) && String(n).trim() !== ""
   && Number.isFinite(Number(n)) && Number(n) >= 0;
 const round = (n) => Number.isFinite(n * 1e12) ? Math.round(n * 1e12) / 1e12 : null;
+// Collation can equate distinct identities; finish ties with their exact raw strings.
+const compareIdentity = (a, b) => a.localeCompare(b) || (a < b ? -1 : a > b ? 1 : 0);
 // by_model_time reason keys per client; missing_usage is always counted separately.
 const UNPRICED_REASONS = {
   claude: ["report_missing", "report_zero_with_tokens"],
@@ -326,7 +328,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
   return { clients, observed_records: total.observed_records, totals: total, by_client,
     by_model: [...groups.by_model.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
     by_user: [...groups.by_user.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)
-      || a.client.localeCompare(b.client) || a.user.localeCompare(b.user)),
+      || compareIdentity(a.client, b.client) || compareIdentity(a.user, b.user)),
     ...(!costView ? {
       by_project: [...groups.by_project.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
       tools: [...tools.values()].sort((a, b) => b.calls - a.calls),
@@ -334,8 +336,8 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
     timeseries: [...groups.timeseries.values()].map(finishRow).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client)), quality,
     ...(modelTime ? {
       ...(compactTime ? { time_format: "compact-v1" } : {}),
-      by_model_time: timeRows("by_model_time", (a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.model.localeCompare(b.model) || a.backend.localeCompare(b.backend)),
-      by_user_time: timeRows("by_user_time", (a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.user.localeCompare(b.user)),
+      by_model_time: timeRows("by_model_time", (a, b) => String(a.t).localeCompare(String(b.t)) || compareIdentity(a.client, b.client) || compareIdentity(a.model, b.model) || compareIdentity(a.backend, b.backend)),
+      by_user_time: timeRows("by_user_time", (a, b) => String(a.t).localeCompare(String(b.t)) || compareIdentity(a.client, b.client) || compareIdentity(a.user, b.user)),
     } : {}) };
 }
 
