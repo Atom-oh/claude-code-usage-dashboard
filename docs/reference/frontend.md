@@ -184,7 +184,8 @@ Model colors are stable per name and theme: registered models use the trend pale
 other known Claude models/families keep `modelColorFor`, and remaining models use solid
 vendor palettes. OpenAI and other-vendor fallbacks have six tones; Others has an exclusive
 neutral. Series are monotone stacked areas; unavailable and no-data buckets are gaps (null,
-never a drawn $0), a known point between gaps is drawn as a dot, and an invisible
+never a drawn $0), as is a series whose cost is unavailable inside a partial bucket; a
+series with no usage stacks as 0, and a positive point between gaps is drawn as a dot, and an invisible
 zero-height bar carries the bucket state marks. Legends use matching solid swatches. Bucket states are known, zero, partial, unavailable, idle and no data: unavailable is
 never drawn as zero, and idle is the
 [ADR-015](../decisions/ADR-015-idle-chart-buckets.md) recorded-usage zero. The disclosure is a

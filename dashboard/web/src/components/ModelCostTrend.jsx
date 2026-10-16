@@ -83,9 +83,11 @@ function BucketMark({ x, width, payload, background, fmtTick, axis }) {
 
 // Distinct reason-group labels for the reasons with a positive count, in REASON_GROUPS order.
 // Areas need two neighbours to show any width, so a known point between gaps gets a dot.
+// A zero contribution (no usage for that series) gets no dot.
 function IsolatedDot({ cx, cy, index, dataKey, rows, fill }) {
   const has = (i) => rows[i] != null && rows[i][dataKey] != null;
-  if (!Number.isFinite(cx) || !Number.isFinite(cy) || has(index - 1) || has(index + 1)) return null;
+  if (!(rows[index]?.[dataKey] > 0) || !Number.isFinite(cx) || !Number.isFinite(cy)
+    || has(index - 1) || has(index + 1)) return null;
   return <circle data-isolated cx={cx} cy={cy} r={2.5} fill={fill} />;
 }
 
@@ -186,11 +188,14 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const othersColor = trendColor(OTHERS_COLOR_KEY, theme);
   const rows = frame.buckets.map((b) => {
     const row = { [xKey]: b.t };
-    // Unavailable and no-data buckets are gaps, never a drawn $0; elsewhere a series with no
-    // known amount in the bucket stacks as 0 (only known amounts are drawn).
+    // Unavailable and no-data buckets are gaps, never a drawn $0. Inside a partial bucket a series
+    // whose cost is unavailable (no known amount) is a gap too; a series with no usage stacks as 0.
     const gap = b.state === "unavailable" || b.state === "nodata";
-    for (const s of series) row[s.key] = gap ? null : b.segments[s.key] ?? 0;
-    row[OTHERS_KEY] = gap ? null : b.others ?? 0;
+    for (const s of series) {
+      const known = b.segments[s.key];
+      row[s.key] = gap || (known === null && b.partialSeries.includes(s.key)) ? null : known ?? 0;
+    }
+    row[OTHERS_KEY] = gap || (b.others === null && b.othersPartial) ? null : b.others ?? 0;
     row.__mark = 0;
     row.__bucket = b;
     return row;
