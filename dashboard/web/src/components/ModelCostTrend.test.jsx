@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider, useRange } from "../RangeContext.jsx";
 import { ModelCostTrend } from "./ModelCostTrend.jsx";
-import { fromByModelTime } from "../modelCostTrend.js";
+import { fromByModelTime, modelColorKey, trendColor } from "../modelCostTrend.js";
 
 // jsdom has no layout or ResizeObserver. Keep the real Recharts render path and
 // supply only the browser dimensions its ResponsiveContainer and Tooltip need.
@@ -73,13 +73,10 @@ const statusOf = (container) => {
 test("stacked series plus 기타 with stable fills", async () => {
   const { container } = mount(MAIN);
   await chartReady(container);
-  const paths = [...container.querySelectorAll(".recharts-bar-rectangle path")];
-  expect(paths.length).toBe(4);
-  const fills = paths.map((p) => p.getAttribute("fill"));
-  expect(fills[0]).toBe("#5B6BDB");
-  expect(fills[1]).toBe("#5B6BDB");
-  expect(fills[2]).toBe("#2D8F84");
-  expect(fills[3]).toBe("#A3A9B6");
+  const paths = [...container.querySelectorAll(".recharts-area-area")];
+  expect(paths.map((p) => p.getAttribute("fill"))).toEqual(["#5B6BDB", "#2D8F84", "#A3A9B6"]);
+  // No bars are drawn for the series; only the invisible state-mark bar remains.
+  expect(container.querySelectorAll(".recharts-bar-rectangle path").length).toBe(0);
   expect(container.querySelector("pattern")).toBeNull();
   const legend = screen.getByRole("list", { name: "범례" });
   expect(texts(legend, "li")).toEqual(["claude-sonnet-5", "zai.glm-5", "기타 2개 모델"]);
@@ -87,7 +84,7 @@ test("stacked series plus 기타 with stable fills", async () => {
     .toEqual(["solid", "solid", "others"]);
 });
 
-test("Codex vendor models use solid bars and matching swatches while retaining partial status", async () => {
+test("Codex vendor models use solid areas and matching swatches while retaining partial status", async () => {
   const cells = [
     c(D1, "openai.gpt-6.1-sol", "bedrock-mantle", 4),
     c(D1, "moonshotai.kimi-k3", "bedrock-mantle", 2),
@@ -97,8 +94,9 @@ test("Codex vendor models use solid bars and matching swatches while retaining p
   const { container } = mount({ cells, basis: "Codex AWS 정가 추정", accent: "var(--chart-2)" });
   await chartReady(container);
   expect(container.querySelector("[data-model-trend]").style.borderTopColor).toBe("var(--chart-2)");
-  const bars = [...container.querySelectorAll(".recharts-bar-rectangle path")];
-  expect(bars.every((path) => /^#[0-9a-f]{6}$/i.test(path.getAttribute("fill")))).toBe(true);
+  const areas = [...container.querySelectorAll(".recharts-area-area")];
+  expect(areas.length).toBeGreaterThan(0);
+  expect(areas.every((path) => /^#[0-9a-f]{6}$/i.test(path.getAttribute("fill")))).toBe(true);
   expect(container.querySelector("pattern")).toBeNull();
   const swatches = [...screen.getByRole("list", { name: "범례" }).querySelectorAll("[data-swatch]")];
   expect(swatches.map((node) => node.dataset.swatch)).toEqual(["solid", "solid"]);
@@ -406,7 +404,36 @@ test("without bucketHours, ticks and grid use the global interval (1h here) like
 test("an older Claude model draws its solid modelColorFor fill, never the unknown-model hatch", async () => {
   const { container } = mount({ cells: [c(D1, "claude-sonnet-4-5", "bedrock", 1)] });
   await chartReady(container);
-  expect([...container.querySelectorAll(".recharts-bar-rectangle path")].map((p) => p.getAttribute("fill"))).toEqual(["#B7C0F5"]);
+  // A single bucket has no area width, so the isolated point is drawn as a dot.
+  expect([...container.querySelectorAll("[data-isolated]")].map((p) => p.getAttribute("fill"))).toEqual(["#B7C0F5"]);
   expect(container.querySelector("pattern")).toBeNull();
   expect(screen.getByRole("list", { name: "범례" }).querySelector("[data-swatch]").getAttribute("data-swatch")).toBe("solid");
+});
+
+test("an unavailable bucket breaks the stacked area instead of dipping to $0", async () => {
+  const cells = [c(D1, "claude-sonnet-5", "e", 2), c(D2, "claude-sonnet-5", "e", 3),
+    c(D3, "claude-sonnet-5", "e", null, { unavailable: 1, reasons: { report_missing: 1 } }),
+    c(D4, "claude-sonnet-5", "e", 4), c(D5, "claude-sonnet-5", "e", 1)];
+  const { container } = mount({ cells, bounds: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-06T00:00:00.000Z" } });
+  await chartReady(container);
+  const [area] = container.querySelectorAll(".recharts-area-area");
+  // Two separate subpaths around D3; a zero dip would be one continuous path.
+  expect(area.getAttribute("d").match(/M/g).length).toBe(2);
+  expect(container.querySelectorAll('[data-state="unavailable"]').length).toBe(1);
+});
+
+test("a series unavailable inside a partial bucket breaks while the known series stays continuous", async () => {
+  const cells = [D1, D2, D3, D4].flatMap((t) => [
+    c(t, "claude-sonnet-5", "e", 2),
+    t === D2 ? c(t, "claude-opus-5", "e", null, { unavailable: 1, reasons: { report_missing: 1 } }) : c(t, "claude-opus-5", "e", 1),
+  ]);
+  const { container } = mount({ cells, bounds: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-05T00:00:00.000Z" } });
+  await chartReady(container);
+  const subpaths = [...container.querySelectorAll(".recharts-area-area")].map((p) => p.getAttribute("d").match(/M/g).length);
+  // Ranked by known cost: sonnet ($8) is continuous, opus breaks at D2 (D1 alone, then D3–D4).
+  expect(subpaths).toEqual([1, 2]);
+  expect(container.querySelectorAll('[data-state="partial"]').length).toBe(1);
+  // Opus at D1 sits between the chart edge and the D2 gap: one dot, and none for continuous points.
+  expect([...container.querySelectorAll("[data-isolated]")].map((d) => d.getAttribute("fill")))
+    .toEqual([trendColor(modelColorKey("claude-opus-5").key)]);
 });

@@ -332,9 +332,10 @@ test("effort, agents and efficiency use reported spend with computed secondary d
   expect(efficiencyCsv).toContain("missing,bedrock,,10,2,,");
 });
 
-// 막대 차트 드래그는 레이아웃이 필요하다(GroupCharts.test.jsx와 같은 치수 스텁).
+// 추이 차트 드래그는 레이아웃이 필요하다(GroupCharts.test.jsx와 같은 치수 스텁).
 let location;
 function LocationSpy() { location = useLocation(); return null; }
+// One model across three days: one stacked area and three known bucket marks.
 const DAILY = ["2026-09-01", "2026-09-02", "2026-09-03"].map((day) => ({ day, group: "bedrock", model: "m1", cost: 1, reported_cost: 1 }));
 const MODELS = [{ group: "bedrock", model: "m1", cost: 3, reported_cost: 3, tokens: 10 }];
 function mountHeld() {
@@ -362,7 +363,8 @@ function mountHeld() {
 }
 async function dailyChart() {
   const card = (await screen.findByText("모델별 비용 추이", { exact: true })).closest(".rounded-lg");
-  await waitFor(() => expect(card.querySelectorAll(".recharts-bar-rectangle path").length).toBe(3));
+  await waitFor(() => expect(card.querySelectorAll(".recharts-area-area").length).toBe(1));
+  expect(card.querySelectorAll('[data-state="known"]').length).toBe(3);
   return card;
 }
 function dragAcross(card) {
@@ -376,7 +378,7 @@ function dragAcross(card) {
 }
 const csvButton = (title) => within(screen.getByText(title, { exact: true }).closest(".rounded-lg")).getByRole("button", { name: "CSV" });
 
-test("dragging the daily cost bars zooms the whole page to their full days", async () => {
+test("dragging the daily cost trend zooms the whole page to their full days", async () => {
   // The zoom is clamped to the selected range, so the clock must put the fixture days inside it.
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-05T12:00:00Z"));
@@ -391,13 +393,14 @@ test("dragging the daily cost bars zooms the whole page to their full days", asy
   vi.useRealTimers();
 });
 
-test("a pending granularity change blocks drag zoom on the retained daily bars", async () => {
+test("a pending granularity change blocks drag zoom on the retained daily trend", async () => {
   const { held } = mountHeld();
   const chartCard = await dailyChart();
   fireEvent.click(within(chartCard).getByRole("button", { name: "시간별" }));
   await act(async () => {});
   expect(held.length).toBe(1);
-  expect(chartCard.querySelectorAll(".recharts-bar-rectangle path").length).toBe(3);
+  expect(chartCard.querySelectorAll(".recharts-area-area").length).toBe(1);
+  expect(chartCard.querySelectorAll('[data-state="known"]').length).toBe(3);
   dragAcross(chartCard);
   await act(async () => {});
   expect(new URLSearchParams(location.search).get("from")).toBe(null);

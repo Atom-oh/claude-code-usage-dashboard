@@ -544,7 +544,7 @@ test("shared model color does not replace explicit client identity on the paired
   expect(codex.dataset.clientAccent).toBe("var(--chart-2)");
   await waitFor(() => {
     for (const node of [claude, codex])
-      expect(node.querySelector(".recharts-bar-rectangle path")?.getAttribute("fill")).toBe("#5B6BDB");
+      expect(node.querySelector(".recharts-area-area")?.getAttribute("fill")).toBe("#5B6BDB");
   });
   for (const node of [claude, codex]) expect(node.querySelector("pattern")).toBeNull();
 });

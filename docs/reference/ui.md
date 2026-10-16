@@ -12,7 +12,7 @@ symbols. See [frontend state](frontend.md) and [web/AGENTS.md](../../dashboard/w
 | [SegmentedControl.jsx](../../dashboard/web/src/components/SegmentedControl.jsx) | Local group/interval selection |
 | [DataTable.jsx](../../dashboard/web/src/components/DataTable.jsx) | Column rendering, sorting, row actions and optional CSV |
 | [GroupCharts.jsx](../../dashboard/web/src/components/GroupCharts.jsx) | Group lines/areas/bars, series bars, donuts, paired panels and ranked lists |
-| [ModelCostTrend.jsx](../../dashboard/web/src/components/ModelCostTrend.jsx), [modelCostTrend.js](../../dashboard/web/src/modelCostTrend.js) | Partial-preserving model cost stacked bars: state marks, reason status, table view, basis chip |
+| [ModelCostTrend.jsx](../../dashboard/web/src/components/ModelCostTrend.jsx), [modelCostTrend.js](../../dashboard/web/src/modelCostTrend.js) | Partial-preserving model cost stacked areas: state marks, reason status, table view, basis chip |
 | [PageHeader.jsx](../../dashboard/web/src/components/PageHeader.jsx), [RangePicker.jsx](../../dashboard/web/src/components/RangePicker.jsx) | Page context, freshness and date selection |
 | [colors.js](../../dashboard/web/src/colors.js), [useChartColors.js](../../dashboard/web/src/useChartColors.js), [index.css](../../dashboard/web/src/index.css) | Channel/model colors and CSS-variable theme values |
 | [labels.js](../../dashboard/web/src/labels.js) | `effortLabel`, `unclassifiedLabel`, `decisionLabel` display mappings |
