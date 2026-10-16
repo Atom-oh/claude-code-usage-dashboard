@@ -48,64 +48,84 @@ The ECR lifecycle declaration retains only ten images; confirm a rollback digest
 
 ## Reader-profile reconciliation
 
-[dashboard.tf](../../infra/dashboard.tf) declares `CH_USER=otel_reader`; local Compose uses
-`default`. A historical comment claiming ordinary dashboard queries use `default` was
-stale. This declaration does not prove an existing deployment's environment or session.
+[dashboard.tf](../../infra/dashboard.tf) declares `CH_USER=otel_reader`; Compose uses
+`default`. Verify the actual connection; declarations do not prove deployed settings.
 [ADR-020](../decisions/ADR-020-cooperative-query-load-deadlines.md) enables readonly HTTP
 disconnect cancellation while retaining execution/memory/result/read ceilings.
 
 Before applying a profile change:
 
-1. Record the deployed ClickHouse and operator versions, CHI user/profile configuration,
-   pod UIDs/restart counts, readiness, replication health and ingestion freshness. Keep
-   complete manifests private because user configuration can contain credential hashes.
-2. Review the complete Terraform plan against the target state. Confirm the reader-profile
-   change; stop on resource replacement, schema-init retrigger or unrelated drift.
-   Source validation alone does not authorize or establish a reconcile.
-3. Determine the installed operator's user-configuration reconciliation behavior from its
-   version/configuration and an isolated rehearsal. Do not assume hot reload; settings
-   reconciliation can affect pod readiness or restart workloads. If the effect is unknown,
-   stop before apply. Agree an ingestion/availability window and rollback first.
-4. After the reviewed apply, observe CHI/operator events, pod UIDs/restarts and every
-   replica's readiness. Verify effective settings through each dashboard pod's existing
-   credentials, without printing environment values or submitting SQL `SETTINGS` overrides:
+1. Record ClickHouse/operator versions, CHI users/profiles, pod UIDs/restarts,
+   readiness, replication health and ingestion freshness. Keep manifests private:
+   user configuration can contain credential hashes.
+2. Review the complete Terraform plan against target state. Stop on resource replacement,
+   schema-init retrigger or unrelated drift. Source checks do not establish a reconcile.
+3. Establish the installed operator's behavior from its version/configuration and isolated
+   rehearsal. Reconciliation can affect readiness or restart workloads; unknown effects
+   block apply. Agree an ingestion/availability window and rollback first.
+4. After reviewed apply, check CHI/operator events, pod UIDs/restarts and replica readiness.
+   Use existing dashboard credentials; print no environment values or SQL `SETTINGS`
+   overrides. Check each API pod, then connect directly to every ClickHouse replica:
 
 ```bash
-kube get pods -l app=dashboard -o name
-# Repeat for every Ready dashboard pod returned above.
-: "${DASHBOARD_POD:?Set one verified dashboard pod name}"
-kube exec "$DASHBOARD_POD" -c dashboard -- node --input-type=module -e '
-import { query } from "/app/server/clickhouse.js";
+verify_reader_session() {
+  kube exec -i "$DASHBOARD_POD" -c dashboard -- node --input-type=module - "$@" <<'NODE'
 try {
-  const rows = await query(`SELECT currentUser() AS connection_user,
-    getSetting('\''readonly'\'') AS readonly,
-    getSetting('\''cancel_http_readonly_queries_on_client_close'\'') AS cancel_on_close,
-    getSetting('\''max_execution_time'\'') AS max_execution_time,
-    getSetting('\''max_memory_usage'\'') AS max_memory_usage,
-    getSetting('\''max_result_bytes'\'') AS max_result_bytes,
-    getSetting('\''max_rows_to_read'\'') AS max_rows_to_read`);
+  if (process.argv[2]) {
+    const url = new URL(process.env.CH_URL);
+    url.hostname = process.argv[2];
+    process.env.CH_URL = url.href;
+  }
+  const { query } = await import("/app/server/clickhouse.js");
+  const rows = await query(`SELECT hostName() AS replica, currentUser() AS connection_user,
+    getSetting('readonly') AS readonly,
+    getSetting('cancel_http_readonly_queries_on_client_close') AS cancel_on_close,
+    getSetting('max_execution_time') AS max_execution_time,
+    getSetting('max_memory_usage') AS max_memory_usage,
+    getSetting('max_result_bytes') AS max_result_bytes,
+    getSetting('max_rows_to_read') AS max_rows_to_read`);
   console.log(JSON.stringify(rows));
   process.exit(0);
 } catch { console.error("Reader-session verification failed"); process.exit(1); }
-'
+NODE
+}
+DASHBOARD_PODS=$(kube get pods -l app=dashboard -o name) || exit 1
+: "${DASHBOARD_PODS:?No dashboard pods}"
+for DASHBOARD_POD in $DASHBOARD_PODS; do
+  kube wait --for=condition=Ready "$DASHBOARD_POD" --timeout=60s || exit 1
+  verify_reader_session || exit 1
+done
+
+: "${CLICKHOUSE_CHI:?Set the target ClickHouseInstallation name}"
+REPLICAS=$(kube get pods -l "clickhouse.altinity.com/chi=$CLICKHOUSE_CHI" \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.podIP}{"\n"}{end}') || exit 1
+: "${REPLICAS:?No ClickHouse replicas}"
+while IFS=$'\t' read -r replica ip; do
+  : "${ip:?Replica has no Pod IP}"
+  kube wait --for=condition=Ready "pod/$replica" --timeout=60s || exit 1
+  printf 'Checking %s\n' "$replica"
+  case "$ip" in *:*) ip="[$ip]";; esac
+  verify_reader_session "$ip" || exit 1
+done <<< "$REPLICAS"
 ```
 
-Expected: `otel_reader`, readonly/cancellation `1`, execution `60`, memory `4000000000`,
-result bytes `104857600`, rows read `2000000000`. A successful query is insufficient if
-any value differs. Verify every ClickHouse replica as well when the service balances
-connections; one session does not prove cluster-wide settings.
+Direct probes change only the process's `CH_URL` hostname, retaining protocol/port/path.
+For TLS certificates requiring DNS, use verified replica DNS names instead of Pod IPs;
+never disable certificate verification. Match each returned hostname to its replica.
+Expected: `otel_reader`, readonly/cancellation `1`,
+execution `60`, memory `4000000000`, result bytes `104857600`, rows read `2000000000`.
+Any mismatch blocks rollout; a balanced service session cannot prove every replica.
 
-Confirm live ingestion, freshness, replica health and readiness after reconciliation.
-Use a private synthetic long-query disconnect control on an isolated installation to
-observe server termination; client abort alone does not prove it. Persistently timing-out
-warmers are an incident: investigate timeout logs, SQL and remaining server work, and
-rollback the application/profile together when the new behavior harms availability.
-There is no runtime warming-disable switch. Request deadlines do not certify fleet capacity.
+Recheck ingestion, freshness, replica health and readiness. Use isolated synthetic
+disconnect controls to observe server termination; client abort alone is insufficient.
+Persistent warmer timeouts require investigation of logs, SQL and remaining server work;
+there is no runtime warming-disable switch. Deadlines do not certify fleet capacity.
 
-Rollback a profile through the reviewed prior configuration and repeat all session/
-replica checks. Reverting an image does not restore a user profile; disabling disconnect
-cancellation can again leave abandoned server work. Do not compensate by relaxing readonly
-or resource ceilings.
+For an application-only regression, roll back the image and retain a verified healthy
+cancellation profile. Roll back the profile only for a profile-specific reconciliation,
+readiness or availability regression, through reviewed prior configuration; repeat session/
+replica checks. Image rollback does not restore profiles. Disabling cancellation can leave
+abandoned server work; retain readonly and resource ceilings.
 
 ## Procedure
 
