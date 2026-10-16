@@ -611,13 +611,35 @@ function parseSurface(value) {
   return null;
 }
 
-// Relative luminance of the card surface below 0.2 selects the dark palette.
-export function chartTheme(surface) {
-  const rgb = parseSurface(surface);
-  if (!rgb) return "light";
+function luminance(rgb) {
   const [r, g, b] = rgb.map((c) => {
     const v = c / 255;
     return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
   });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.2 ? "dark" : "light";
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+// Pastel area fills remain stable; essential lines and isolated dots need >=3:1
+// against the actual card surface. Mix toward black/white only when necessary.
+export function trendStrokeColor(color, surface = "#ffffff") {
+  const rgb = parseSurface(color);
+  if (!rgb) return color;
+  const background = luminance(parseSurface(surface) ?? [255, 255, 255]);
+  const contrast = (value) => (Math.max(value, background) + 0.05) / (Math.min(value, background) + 0.05);
+  if (contrast(luminance(rgb)) >= 3) return color;
+  const target = contrast(0) > contrast(1) ? 0 : 255;
+  const mixed = (amount) => rgb.map((value) => Math.round(value + (target - value) * amount));
+  let low = 0, high = 1;
+  for (let i = 0; i < 16; i += 1) {
+    const middle = (low + high) / 2;
+    if (contrast(luminance(mixed(middle))) >= 3.1) high = middle;
+    else low = middle;
+  }
+  return "#" + mixed(high).map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+// Relative luminance of the card surface below 0.2 selects the dark palette.
+export function chartTheme(surface) {
+  const rgb = parseSurface(surface);
+  return rgb && luminance(rgb) < 0.2 ? "dark" : "light";
 }

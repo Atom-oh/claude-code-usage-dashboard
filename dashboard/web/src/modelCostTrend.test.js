@@ -20,6 +20,7 @@ import {
   rollupBuckets,
   STATE_LABELS,
   trendColor,
+  trendStrokeColor,
 } from "./modelCostTrend.js";
 import { modelColorFor, MODEL_TREND_COLORS, MODEL_TREND_OTHERS, MODEL_TREND_VENDOR_RAMPS } from "./colors.js";
 
@@ -661,6 +662,30 @@ test("solid registered and fallback model colors have visible contrast against t
       expect((high + 0.05) / (low + 0.05), `${theme} ${color}`).toBeGreaterThanOrEqual(3);
     }
   }
+});
+
+test("essential trend strokes contrast with actual surfaces while preserving pastel fills", () => {
+  const luminance = (hex) => [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255)
+    .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  const colors = [
+    ...Object.values(MODEL_TREND_COLORS).flatMap(Object.values),
+    ...Object.values(MODEL_TREND_VENDOR_RAMPS).flatMap((ramp) => [...ramp.light, ...ramp.dark]),
+    ...Object.values(MODEL_TREND_OTHERS),
+    ...["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-3-5"].map((name) => trendColor(modelColorKey(name).key)),
+  ];
+  for (const surface of ["#ffffff", "#171c27", "#334155", "#e2e8f0"]) {
+    for (const color of colors) {
+      const stroke = trendStrokeColor(color, surface);
+      const [low, high] = [luminance(surface), luminance(stroke)].sort((a, b) => a - b);
+      expect((high + 0.05) / (low + 0.05), `${color} on ${surface}: ${stroke}`).toBeGreaterThanOrEqual(3);
+    }
+  }
+  expect(trendColor(modelColorKey("claude-sonnet-4-5").key)).toBe("#B7C0F5");
+  expect(trendStrokeColor("#B7C0F5")).not.toBe("#B7C0F5");
+  expect(trendStrokeColor("#025A8D")).toBe("#025A8D");
+  expect(trendStrokeColor("#b7c0f5", "rgb(255, 255, 255)")).toBe(trendStrokeColor("#b7c0f5", "#fff"));
+  expect(trendStrokeColor("#b7c0f5", "")).toBe(trendStrokeColor("#b7c0f5"));
 });
 
 test.each([
