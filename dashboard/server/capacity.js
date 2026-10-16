@@ -168,6 +168,7 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
         const serialized = JSON.stringify(value);
         deadline?.check();
         const size = serialized === undefined ? 0 : Buffer.byteLength(serialized);
+        deadline?.check();
         if (size > maxEntryBytes) {
           remove(key); // Return the full result; only cache admission changes.
           return value;
@@ -181,6 +182,7 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
         entry.bytes = size;
         bytes += size;
         entry.expires = now() + ttlMs;
+        deadline?.check();
         return value;
       }).catch(error => {
         if (entries.get(key) === entry) remove(key);

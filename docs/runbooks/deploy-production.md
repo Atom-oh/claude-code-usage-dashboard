@@ -46,6 +46,67 @@ kube get pdb dashboard
 Reconcile drift through the reviewed Terraform plan before relying on those protections.
 The ECR lifecycle declaration retains only ten images; confirm a rollback digest still exists.
 
+## Reader-profile reconciliation
+
+[dashboard.tf](../../infra/dashboard.tf) declares `CH_USER=otel_reader`; local Compose uses
+`default`. A historical comment claiming ordinary dashboard queries use `default` was
+stale. This declaration does not prove an existing deployment's environment or session.
+[ADR-020](../decisions/ADR-020-cooperative-query-load-deadlines.md) enables readonly HTTP
+disconnect cancellation while retaining execution/memory/result/read ceilings.
+
+Before applying a profile change:
+
+1. Record the deployed ClickHouse and operator versions, CHI user/profile configuration,
+   pod UIDs/restart counts, readiness, replication health and ingestion freshness. Keep
+   complete manifests private because user configuration can contain credential hashes.
+2. Review the complete Terraform plan against the target state. Confirm the reader-profile
+   change; stop on resource replacement, schema-init retrigger or unrelated drift.
+   Source validation alone does not authorize or establish a reconcile.
+3. Determine the installed operator's user-configuration reconciliation behavior from its
+   version/configuration and an isolated rehearsal. Do not assume hot reload; settings
+   reconciliation can affect pod readiness or restart workloads. If the effect is unknown,
+   stop before apply. Agree an ingestion/availability window and rollback first.
+4. After the reviewed apply, observe CHI/operator events, pod UIDs/restarts and every
+   replica's readiness. Verify effective settings through each dashboard pod's existing
+   credentials, without printing environment values or submitting SQL `SETTINGS` overrides:
+
+```bash
+kube get pods -l app=dashboard -o name
+# Repeat for every Ready dashboard pod returned above.
+: "${DASHBOARD_POD:?Set one verified dashboard pod name}"
+kube exec "$DASHBOARD_POD" -c dashboard -- node --input-type=module -e '
+import { query } from "/app/server/clickhouse.js";
+try {
+  const rows = await query(`SELECT currentUser() AS connection_user,
+    getSetting('\''readonly'\'') AS readonly,
+    getSetting('\''cancel_http_readonly_queries_on_client_close'\'') AS cancel_on_close,
+    getSetting('\''max_execution_time'\'') AS max_execution_time,
+    getSetting('\''max_memory_usage'\'') AS max_memory_usage,
+    getSetting('\''max_result_bytes'\'') AS max_result_bytes,
+    getSetting('\''max_rows_to_read'\'') AS max_rows_to_read`);
+  console.log(JSON.stringify(rows));
+  process.exit(0);
+} catch { console.error("Reader-session verification failed"); process.exit(1); }
+'
+```
+
+Expected: `otel_reader`, readonly/cancellation `1`, execution `60`, memory `4000000000`,
+result bytes `104857600`, rows read `2000000000`. A successful query is insufficient if
+any value differs. Verify every ClickHouse replica as well when the service balances
+connections; one session does not prove cluster-wide settings.
+
+Confirm live ingestion, freshness, replica health and readiness after reconciliation.
+Use a private synthetic long-query disconnect control on an isolated installation to
+observe server termination; client abort alone does not prove it. Persistently timing-out
+warmers are an incident: investigate timeout logs, SQL and remaining server work, and
+rollback the application/profile together when the new behavior harms availability.
+There is no runtime warming-disable switch. Request deadlines do not certify fleet capacity.
+
+Rollback a profile through the reviewed prior configuration and repeat all session/
+replica checks. Reverting an image does not restore a user profile; disabling disconnect
+cancellation can again leave abandoned server work. Do not compensate by relaxing readonly
+or resource ceilings.
+
 ## Procedure
 
 ### 1. Record the revision and rollback image

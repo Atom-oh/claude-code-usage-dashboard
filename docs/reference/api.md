@@ -31,9 +31,11 @@ Config, health and chat handlers bypass this wrapper.
 deadline and reader-profile decision, including repeated expensive-view timeouts.
 
 The process-local cache deduplicates pending work until settlement and stores successful
-results for 320 seconds from completion. Pending entries do not expire or get evicted.
+results for 320 seconds from completion. Successful-result TTL and byte eviction do not
+remove pending entries; producer deadlines below can reject pending work.
 Keys contain the route path plus `from`, `to`, `group`, `user`, `model`, `project`,
-`intervalHours`, `email` and `includeUnknown`, sorted by parameter name. Failed promises are removed. The 2,000-entry
+`intervalHours`, `email`, `includeUnknown`, `view`, `modelTime`, `timeFormat` and `profile`,
+sorted by parameter name. Failed promises are removed. The 2,000-entry
 cap evicts settled entries by insertion order, not by last read. At most 64 distinct
 cache loads execute concurrently. Up to 64 additional distinct keys wait FIFO without
 starting their loaders or acquiring database slots. The cache queue's own wait limit
@@ -67,11 +69,14 @@ after admission, with a data-route shared deadline taking precedence if it expir
 Readonly SQL's 30-second abort covers queue and execution together;
 disconnect/deadline also cancels queued readonly work. These are cooperative limits.
 Ordinary and readonly helpers explicitly close result bodies on abort after headers,
-preserving the originating cancellation reason. The declared `otel_reader` profile enables
+preserving the originating cancellation reason. [dashboard.tf](../../infra/dashboard.tf)
+declares `CH_USER=otel_reader` for the shared SDK; local Compose instead uses `default`.
+The declared `otel_reader` profile enables
 `cancel_http_readonly_queries_on_client_close` and retains its 60-second execution,
 memory/result/read ceilings as backstops. Older installations may still disable that
-setting; inspect `getSetting(...)` in the actual dashboard session after applying the
-reviewed infrastructure change. HTTP cancellation alone does not establish server-side
+setting; inspect `getSetting(...)` in the actual dashboard session using the
+[reader reconciliation procedure](../runbooks/deploy-production.md#reader-profile-reconciliation).
+HTTP cancellation alone does not establish server-side
 termination. Cancellation and execution checks are cooperative, so a client slot can be
 released before server work stops; neither setting certifies fleet capacity or a hard deadline.
 Overload JSON has `code: capacity_exhausted` and a localized retry message.

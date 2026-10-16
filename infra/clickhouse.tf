@@ -155,7 +155,9 @@ resource "kubectl_manifest" "chi" {
             "GRANT SELECT ON claude_code.otel_metrics_sum",
           ]
         }
-        # The configured reader serves dashboard and readonly assistant queries.
+        # dashboard.tf declares CH_USER=otel_reader for the shared SDK in clickhouse.js;
+        # the previous default-user comment was stale. Local compose uses default.
+        # Existing deployments must verify their actual connection user and settings.
         # Cancel HTTP SELECT work after client disconnect; retain execution, memory,
         # result and scan ceilings as backstops. Server cancellation is cooperative,
         # not proof of immediate termination or an end-to-end request deadline.

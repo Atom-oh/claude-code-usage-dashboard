@@ -21,6 +21,12 @@ class ReaderCancellationProfile(unittest.TestCase):
         self.assertEqual(self.profile["readonly/max_execution_time"], "60")
         self.assertRegex(self.source, r'"otel_reader/grants/query"\s*=\s*"GRANT SELECT ON claude_code\.\*"')
 
+    def test_dashboard_declares_the_same_reader_user(self):
+        deployment = (ROOT / "infra/dashboard.tf").read_text()
+        self.assertRegex(deployment, r'env\s*\{\s*name\s*=\s*"CH_USER"\s*value\s*=\s*"otel_reader"\s*\}')
+        adapter = (ROOT / "dashboard/server/clickhouse.js").read_text()
+        self.assertIn('username: process.env.CH_USER || "default"', adapter)
+
     def test_memory_result_and_scan_ceilings_are_retained(self):
         self.assertEqual(self.profile["readonly/max_memory_usage"], "4000000000")
         self.assertEqual(self.profile["readonly/max_result_bytes"], "104857600")

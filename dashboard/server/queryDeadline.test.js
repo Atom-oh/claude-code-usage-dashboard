@@ -99,6 +99,19 @@ test("synchronous overrun is rejected before cache admission even before the tim
   assert.equal(cache.pending, 0);
 });
 
+test("cache bookkeeping overrun rejects the result and reverses byte accounting", async () => {
+  const cache = createResultCache({ loadMs: 10, now: () => {
+    const end = performance.now() + 25;
+    while (performance.now() < end) { /* Block settlement after serialization. */ }
+    return 0;
+  } });
+  await assert.rejects(cache.get("late-accounting", () => ({ cost_usd: null }), 1000),
+    QueryDeadlineError);
+  assert.equal(cache.size, 0);
+  assert.equal(cache.bytes, 0);
+  assert.equal(cache.pending, 0);
+});
+
 test("deadline configuration rejects invalid and overflowing timer values", () => {
   for (const loadMs of [-1, NaN, Infinity, 0.5, 2_147_483_648])
     assert.throws(() => createResultCache({ loadMs }), RangeError);
