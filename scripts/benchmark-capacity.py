@@ -22,6 +22,8 @@ import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+MAX_FIXTURE_AGE_DAYS = 30  # Stay inside 90-day log and 180-day counter retention.
+
 def arguments(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True, type=Path)
@@ -31,7 +33,7 @@ def arguments(argv=None):
     parser.add_argument("--dashboard-image", required=True)
     parser.add_argument("--scenario", choices=["all", "product_retry"], default="all")
     parser.add_argument("--fixture-day", type=datetime.date.fromisoformat,
-                        help="Closed UTC day (YYYY-MM-DD) for repeatable paired fixtures.")
+                        help="Closed UTC day within the past 30 days (YYYY-MM-DD).")
     parser.add_argument("--fixture-user-projection", action="store_true",
                         help="Materialize an additive read projection on owned synthetic tables only.")
     args = parser.parse_args(argv)
@@ -39,8 +41,9 @@ def arguments(argv=None):
         parser.error("users must be 1..140 and requests per user 1..1440")
     if not 0 <= args.resource_bytes <= 32768:
         parser.error("synthetic resource bytes must be 0..32768")
-    if args.fixture_day and args.fixture_day >= datetime.datetime.now(datetime.timezone.utc).date():
-        parser.error("fixture day must be a closed UTC day")
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    if args.fixture_day and not today-datetime.timedelta(days=MAX_FIXTURE_AGE_DAYS) <= args.fixture_day < today:
+        parser.error("fixture day must be a closed UTC day within the past 30 days")
     if not re.fullmatch(r"(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}", args.dashboard_image):
         parser.error("dashboard image must be a registry digest or immutable local image ID")
     if args.report.exists():
