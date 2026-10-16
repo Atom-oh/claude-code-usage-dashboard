@@ -556,6 +556,21 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal(row.group, "enterprise");
         assert.notEqual(row.model, "claude-haiku-4-5");
       }
+      // The user grain regroups the same per-session scopes: per bucket its known report and
+      // unavailable counts equal the model rows' sums.
+      const { costByUserDaily } = await import("./queries.js");
+      for (const [i, hours] of [1, 24, 168].entries()) {
+        const users = await costByUserDaily(start, end, hours, filter);
+        for (const u of users) {
+          assert.equal(u.user, "model-cost-partial@example.invalid");
+          const models = grains[i].filter((r) => r.day === u.day && r.group === u.group);
+          const known = models.reduce((sum, r) => sum + (r.reported_cost ?? 0), 0);
+          assert.ok(Math.abs(u.reported_cost - known) < 1e-9, `${hours}h ${u.day}`);
+          assert.equal(u.reported_unavailable, models.reduce((sum, r) => sum + r.reported_unavailable, 0));
+          assert.ok(!("cost" in u));
+        }
+        assert.equal(new Set(users.map((u) => u.day)).size, new Set(grains[i].map((r) => r.day)).size);
+      }
       // Sessions never fan out: claude-sonnet-5 (mc-observed, mc-observed-missing) and
       // claude-opus-4-8 (mc-zero-known, mc-zero-tokens) each have two sessions in every bucket,
       // yet each grain returns exactly one row per (day, group, model).

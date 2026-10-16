@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider, useRange } from "../RangeContext.jsx";
-import { ModelCostTrend } from "./ModelCostTrend.jsx";
+import { ModelCostTrend, nextHidden } from "./ModelCostTrend.jsx";
 import { fromByModelTime, modelColorKey, trendColor } from "../modelCostTrend.js";
 
 // jsdom has no layout or ResizeObserver. Keep the real Recharts render path and
@@ -436,4 +436,41 @@ test("a series unavailable inside a partial bucket breaks while the known series
   // Opus at D1 sits between the chart edge and the D2 gap: one dot, and none for continuous points.
   expect([...container.querySelectorAll("[data-isolated]")].map((d) => d.getAttribute("fill")))
     .toEqual([trendColor(modelColorKey("claude-opus-5").key)]);
+});
+
+test("nextHidden isolates on click, toggles with a modifier and never hides everything", () => {
+  const ids = ["a", "b", "c"];
+  const none = new Set();
+  expect([...nextHidden(none, "b", ids, false)]).toEqual(["a", "c"]);
+  // Clicking the only visible item restores all.
+  expect([...nextHidden(new Set(["a", "c"]), "b", ids, false)]).toEqual([]);
+  // Clicking another item while isolated switches the isolation.
+  expect([...nextHidden(new Set(["a", "c"]), "a", ids, false)]).toEqual(["b", "c"]);
+  expect([...nextHidden(none, "a", ids, true)]).toEqual(["a"]);
+  expect([...nextHidden(new Set(["a"]), "a", ids, true)]).toEqual([]);
+  expect([...nextHidden(new Set(["a", "b"]), "c", ids, true)]).toEqual([]);
+});
+
+test("legend clicks isolate a series Grafana-style and the mode toggle switches to plain lines", async () => {
+  const { container } = mount(MAIN);
+  await chartReady(container);
+  const legend = screen.getByRole("list", { name: "범례" });
+  const button = (label) => within(legend).getByRole("button", { name: label });
+  fireEvent.click(button("zai.glm-5"));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
+  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#2D8F84");
+  expect(button("zai.glm-5").getAttribute("aria-pressed")).toBe("true");
+  expect(button("claude-sonnet-5").getAttribute("aria-pressed")).toBe("false");
+  expect(container.querySelector("[data-legend-filtered]").textContent).toContain("2개 계열 숨김");
+  // Ctrl-click adds a series back; clicking the "모두 보기" link restores everything.
+  fireEvent.click(button("claude-sonnet-5"), { ctrlKey: true });
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(2));
+  fireEvent.click(within(container.querySelector("[data-legend-filtered]")).getByRole("button", { name: "모두 보기" }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(3));
+  expect(container.querySelector("[data-legend-filtered]")).toBeNull();
+  // "기본" draws each series as its own line; bucket state marks stay.
+  fireEvent.click(screen.getByRole("button", { name: "기본" }));
+  await waitFor(() => expect(container.querySelectorAll(".recharts-line-curve").length).toBe(3));
+  expect(container.querySelectorAll(".recharts-area-area").length).toBe(0);
+  expect(container.querySelectorAll('[data-state="partial"]').length).toBe(1);
 });

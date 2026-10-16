@@ -338,6 +338,20 @@ test("entrypointBreakdown filters model per row while its two siblings keep the 
 // costByModelDailySql groups per session inside a subquery so report availability is judged
 // before model aggregation. The builder and modelCostTrend.js are loaded inside each test so
 // that the rest of this file keeps running while those exports are still missing.
+test("the user grain keeps per-(model, session) scopes and regroups the outer level by user", async () => {
+  const { costByModelDailySql } = await import("./queries.js");
+  for (const hours of [1, 24]) {
+    const { sql } = costByModelDailySql(hours, {}, { dimension: "user" });
+    for (const text of ['m.UserEmail AS "user"', 'GROUP BY day, "group", model, session, "user"',
+      'SELECT day, "group", "user",', 'GROUP BY day, "group", "user" ORDER BY day']) {
+      assert.ok(sql.includes(text), `${hours}h user SQL must include ${text}`);
+    }
+    assert.ok(!sql.includes('GROUP BY day, "group", model ORDER BY day'));
+  }
+  // The model grain is unchanged.
+  assert.ok(!costByModelDailySql(24).sql.includes('"user"'));
+});
+
 test("costByModelDailySql groups per session and counts observed cost/token samples", async () => {
   const { costByModelDailySql } = await import("./queries.js");
   for (const hours of [1, 24, 168]) {

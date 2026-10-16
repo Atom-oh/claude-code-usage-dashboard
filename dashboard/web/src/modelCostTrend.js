@@ -161,14 +161,16 @@ function compareCells(a, b) {
   return 0;
 }
 
-export function fromByModelDaily(rows) {
+// dimension "user" adapts /api/cost/by-user-daily rows: the identity is the raw user.
+export function fromByModelDaily(rows, { dimension = "model" } = {}) {
+  const field = dimension === "user" ? "user" : "model";
   const cells = [];
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row) continue;
     const t = bucketKey(row.day);
     if (t === null) continue;
     const known = row.reported_all_unavailable === true ? null : amount(row.reported_cost);
-    cells.push(finishCell(t, String(row.model ?? ""), row.group || "unknown", known,
+    cells.push(finishCell(t, String(row[field] ?? ""), row.group || "unknown", known,
       row.reported_unavailable, row.reported_reasons || {}, row.reported_partial, amount(row.observed_tokens)));
   }
   return cells.sort(compareCells);

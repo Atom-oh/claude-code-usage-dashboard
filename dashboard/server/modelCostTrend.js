@@ -15,7 +15,7 @@ const amount = (v) => ["number", "string"].includes(typeof v) && String(v).trim(
 const round = (n) => Number.isFinite(n * 1e12) ? Math.round(n * 1e12) / 1e12 : null;
 const TOKEN_KEYS = ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"];
 
-function mapCell(row) {
+function mapCell(row, byUser) {
   const usable = amount(row.usable_scopes) ?? 0;
   const missing = amount(row.report_missing) ?? 0;
   const zero = amount(row.report_zero_with_tokens) ?? 0;
@@ -26,11 +26,7 @@ function mapCell(row) {
   const observed = createObservedTokens();
   if ((amount(row.observed_token_scopes) ?? 0) > 0) addObservedTokens(observed, row.observed_token_sum);
   if ((amount(row.unobserved_token_scopes) ?? 0) > 0) addObservedTokens(observed, null);
-  // The model is constant within a row, so pricing the summed tokens equals the per-session sum.
-  const [priced] = withComputedCost([{ model: row.model, ...tokens }]);
-  const tokensKnown = TOKEN_KEYS.every((k) => tokens[k] !== null);
-  return {
-    day: row.day, group: row.group, model: row.model,
+  const reported = {
     reported_cost,
     reported_partial: missing + zero > 0 || (usable > 0 && reported_cost === null),
     reported_unavailable: missing + zero,
@@ -38,21 +34,32 @@ function mapCell(row) {
     reported_all_unavailable: usable === 0,
     ...tokens,
     ...finishObservedTokens(observed),
+  };
+  // A user row mixes models, so it has no single price: no computed diagnostic.
+  if (byUser) return { day: row.day, group: row.group, user: String(row.user ?? ""), ...reported };
+  // The model is constant within a row, so pricing the summed tokens equals the per-session sum.
+  const [priced] = withComputedCost([{ model: row.model, ...tokens }]);
+  const tokensKnown = TOKEN_KEYS.every((k) => tokens[k] !== null);
+  return {
+    day: row.day, group: row.group, model: row.model,
+    ...reported,
     cost: priced.unpriced || !tokensKnown ? null : round(priced.cost),
     unpriced: priced.unpriced,
   };
 }
 
-export function foldModelCostCells(rows) {
+export function foldModelCostCells(rows, { dimension = "model" } = {}) {
+  const byUser = dimension === "user";
+  const id = byUser ? "user" : "model";
   if (rows.length > MODEL_COST_ROW_LIMIT)
     throw new ValidationError("too much model cost data", "narrow the requested date range or use a wider bucket");
   const out = [];
   for (const row of rows) {
-    const cell = mapCell(row);
+    const cell = mapCell(row, byUser);
     if (cell) out.push(cell);
   }
   return out.sort((a, b) =>
     String(a.day).localeCompare(String(b.day))
     || String(a.group).localeCompare(String(b.group))
-    || String(a.model).localeCompare(String(b.model)));
+    || String(a[id]).localeCompare(String(b[id])));
 }

@@ -223,6 +223,9 @@ export default function Cost() {
   const summaryRows = asSpendRows(summary.data);
   // Raw rows, not asSpendRows: the trend keeps known subtotals beside per-session exclusions.
   const dailyCells = useMemo(() => fromByModelDaily(byModelDaily.data), [byModelDaily.data]);
+  // Same bucket and filters as the model trend, regrouped per user.
+  const byUserDaily = useApi("/api/cost/by-user-daily", { intervalHours });
+  const userDailyCells = useMemo(() => fromByModelDaily(byUserDaily.data, { dimension: "user" }), [byUserDaily.data]);
   const effortRows = asSpendRows(effortMix.data);
   const agentRows = asSpendRows(agentCost.data).sort(spendOrder).slice(0, 15);
   const prevCostByModel = new Map(asSpendRows(compare.data).map((r) => [r.model, r.prev_cost]));
@@ -539,6 +542,25 @@ export default function Cost() {
             pinned={model ? [model] : undefined}
             bucketHours={intervalHours}
             zoomDisabled={byModelDaily.stale}
+            clampRange={[from, null]}
+          />
+        )}
+
+        {byUserDaily.loading ? (
+          <Loading />
+        ) : byUserDaily.error ? (
+          <ErrorBox error={byUserDaily.error} />
+        ) : (
+          <ModelCostTrend
+            title="사용자별 비용 추이"
+            subtitle="상위 사용자 ID 기준 · 모델별 비용 추이와 같은 버킷"
+            cells={userDailyCells}
+            help={SPEND_HELP}
+            basis="Claude 보고 비용"
+            xKey="t"
+            dimension="user"
+            bucketHours={intervalHours}
+            zoomDisabled={byUserDaily.stale}
             clampRange={[from, null]}
           />
         )}

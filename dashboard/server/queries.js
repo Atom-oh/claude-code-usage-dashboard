@@ -765,7 +765,10 @@ export async function skillUsage(from, to, filters = {}) {
 // The usability rule mirrors clientMetrics.js claudeUsage(): a positive report is usable even
 // with partial tokens; a zero report only beside known zero tokens or no token sample. Every
 // observed scope is exactly one of usable, report_missing or report_zero_with_tokens.
-export function costByModelDailySql(intervalHours, filters = {}) {
+// dimension "user" keeps the same per-(day, group, model, session) scopes and only regroups the
+// outer level by UserEmail, so user cells carry the same scope counts as the model cells.
+export function costByModelDailySql(intervalHours, filters = {}, { dimension = "model" } = {}) {
+  const key = dimension === "user" ? `"user"` : "model";
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const b = incBucket(intervalHours, metricFilter);
@@ -783,7 +786,7 @@ export function costByModelDailySql(intervalHours, filters = {}) {
   const strictSum = (col, name) =>
     `if(countIf(NOT (isFinite(${col}) AND ${col} >= 0)) > 0, NULL, sum(${col})) AS ${name}`;
   const sql = `${GROUP_CTE}${firstObservations}
-    SELECT day, "group", model,
+    SELECT day, "group", ${key},
         sumIf(scope_report, usable) AS known_report,
         countIf(usable) AS usable_scopes,
         countIf(NOT report_valid) AS report_missing,
@@ -796,7 +799,7 @@ export function costByModelDailySql(intervalHours, filters = {}) {
         countIf(token_obs > 0 AND tokens_valid) AS observed_token_scopes,
         countIf(token_obs = 0 OR NOT tokens_valid) AS unobserved_token_scopes
     FROM (
-      SELECT day, "group", model, report_obs, token_obs,
+      SELECT day, "group", ${key}, report_obs, token_obs,
           reported_cost AS scope_report, input_tokens AS scope_input, output_tokens AS scope_output,
           cache_read_tokens AS scope_cache_read, cache_write_tokens AS scope_cache_write,
           report_obs > 0 AND isFinite(scope_report) AND scope_report >= 0 AS report_valid,
@@ -806,18 +809,19 @@ export function costByModelDailySql(intervalHours, filters = {}) {
       FROM (
         SELECT t AS day,
             ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, m.SessionId AS session,
+            ${dimension === "user" ? `m.UserEmail AS "user",` : ""}
             ${TOKEN_SUMS},
             countIf(${observed} AND m.MetricName = 'claude_code.cost.usage') AS report_obs,
             countIf(${observed} AND m.MetricName = 'claude_code.token.usage') AS token_obs
         FROM ${b.sub} m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
         WHERE 1 = 1 ${f.where}
-        GROUP BY day, "group", model, session
+        GROUP BY day, "group", model, session${dimension === "user" ? `, "user"` : ""}
       )
       -- A scope with no observed cost or token sample is a baseline-only row: no data.
       WHERE report_obs > 0 OR token_obs > 0
     )
-    GROUP BY day, "group", model ORDER BY day
+    GROUP BY day, "group", ${key} ORDER BY day
     LIMIT ${MODEL_COST_ROW_LIMIT + 1}`;
   return { sql, params: { ...b.params, ...f.params }, raw: b.raw };
 }
@@ -828,6 +832,13 @@ export async function costByModelDaily(from, to, intervalHours = 24, filters = {
   // SQL asks for one more); per-session rows never leave ClickHouse.
   // Existing keys stay: `cost` remains the computed diagnostic, `reported_cost` the spend.
   return foldModelCostCells(await query(sql, { ...range(from, to, raw), ...params }));
+}
+
+// 사용자별 지출 트렌드: the model trend's scopes regrouped per (day, group, user). Spend is the
+// reported cost only; the computed diagnostic is model-priced and is not emitted per user.
+export async function costByUserDaily(from, to, intervalHours = 24, filters = {}) {
+  const { sql, params, raw } = costByModelDailySql(intervalHours, filters, { dimension: "user" });
+  return foldModelCostCells(await query(sql, { ...range(from, to, raw), ...params }), { dimension: "user" });
 }
 
 // 모델별 지출 vs 이전 동일 길이 기간. cumulative의 진짜 이점이 여기서 나온다 — 두 구간(현재/이전)

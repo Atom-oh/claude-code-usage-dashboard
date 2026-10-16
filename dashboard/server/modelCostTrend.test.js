@@ -232,3 +232,13 @@ test("an unsafe observed token sum reports null and partial", () => {
 test("an empty input folds to an empty array", () => {
   assert.deepEqual(foldModelCostCells([]), []);
 });
+
+test("user cells keep the reported fields and omit the model-priced diagnostic", () => {
+  const out = foldModelCostCells([
+    { ...cell({ known_report: 2, report_missing: 1 }), model: undefined, user: "b@example.invalid" },
+    { ...cell({ known_report: 1 }), model: undefined, user: "a@example.invalid" },
+  ], { dimension: "user" });
+  assert.deepEqual(out.map((r) => [r.user, r.reported_cost, r.reported_partial, r.reported_unavailable]),
+    [["a@example.invalid", 1, false, 0], ["b@example.invalid", 2, true, 1]]);
+  for (const row of out) assert.ok(!("cost" in row) && !("unpriced" in row) && !("model" in row));
+});
