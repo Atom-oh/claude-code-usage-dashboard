@@ -25,6 +25,15 @@ class CapacityBenchmark(unittest.TestCase):
         self.assertEqual(args.requests_per_user, 720)
         self.assertEqual(args.resource_bytes, 2048)
         self.assertIn("@sha256:", args.dashboard_image)
+        self.assertIsNone(args.fixture_day)
+
+    def test_fixture_day_can_be_frozen_for_paired_runs_and_must_be_closed(self):
+        args = self.parse("--fixture-day", "2020-01-02")
+        self.assertEqual(args.fixture_day, datetime.date(2020, 1, 2))
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        for value in ["not-a-date", "2020-02-31", today, "2999-01-01"]:
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                self.parse("--fixture-day", value)
 
     def test_rejects_invalid_inputs_and_floating_images(self):
         for args in [("--users", "0"), ("--users", "141"),

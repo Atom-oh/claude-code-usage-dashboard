@@ -30,6 +30,8 @@ def arguments(argv=None):
     parser.add_argument("--resource-bytes", type=int, default=2048)
     parser.add_argument("--dashboard-image", required=True)
     parser.add_argument("--scenario", choices=["all", "product_retry"], default="all")
+    parser.add_argument("--fixture-day", type=datetime.date.fromisoformat,
+                        help="Closed UTC day (YYYY-MM-DD) for repeatable paired fixtures.")
     parser.add_argument("--fixture-user-projection", action="store_true",
                         help="Materialize an additive read projection on owned synthetic tables only.")
     args = parser.parse_args(argv)
@@ -37,6 +39,8 @@ def arguments(argv=None):
         parser.error("users must be 1..140 and requests per user 1..1440")
     if not 0 <= args.resource_bytes <= 32768:
         parser.error("synthetic resource bytes must be 0..32768")
+    if args.fixture_day and args.fixture_day >= datetime.datetime.now(datetime.timezone.utc).date():
+        parser.error("fixture day must be a closed UTC day")
     if not re.fullmatch(r"(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}", args.dashboard_image):
         parser.error("dashboard image must be a registry digest or immutable local image ID")
     if args.report.exists():
@@ -435,11 +439,14 @@ def main(argv=None):
     os.umask(0o077)
     day = datetime.datetime.now(datetime.timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0)-datetime.timedelta(days=1)
+    if args.fixture_day:
+        day = datetime.datetime.combine(args.fixture_day, datetime.time(), datetime.timezone.utc)
     record = {"startedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "scope": "synthetic local ARM64 HTTP/SQL, Basic authentication; not customer OIDC or production capacity",
               "users": args.users, "requestsPerUser": args.requests_per_user,
               "resourceBytes": args.resource_bytes,
               "selectedScenario": args.scenario,
+              "fixtureDay": day.date().isoformat(),
               "syntheticUserProjection": args.fixture_user_projection,
               "envelope": {"clickhouse": {"replicas": 3, "cpuEach": 3.5, "memoryEach": "13Gi"},
                            "api": {"replicas": 2, "cpuEach": 0.5, "memoryEach": "256Mi"}},

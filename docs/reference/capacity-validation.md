@@ -27,6 +27,9 @@ ownership label and cleanup deletes only resources bearing that label.
 All containers use an internal network. The host connects directly to its owned
 private transport; there are no published ports or ambient HTTP proxies.
 No production credentials are consumed and authentication remains enabled.
+For paired trials across UTC midnight, set the same closed `--fixture-day YYYY-MM-DD`
+on both runs. The report records the selected day; the default remains the previous
+UTC day. A common day does not flush storage caches or ensure equal host interference.
 The database default account accepts loopback connections only; private transport
 uses the generated read-only identity. If forcibly terminated, use the printed
 `runId` to inspect `ccdash.capacity-run=<id>` labels on containers, volumes and the
