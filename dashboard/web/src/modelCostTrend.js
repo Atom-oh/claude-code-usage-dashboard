@@ -102,6 +102,7 @@ const MODEL_AXIS = {
   others: (n) => (n ? `기타 ${n}개 모델` : "모델 미귀속"),
   seriesEligible: () => true,
   weight: () => 1,
+  breakdownChannels: true,
 };
 // The detail endpoint folds users past its top list into one row; fromByModelDaily keys it here.
 export const REST_USERS_PREFIX = "\u0000rest:";
@@ -120,6 +121,8 @@ const USER_AXIS = {
   // The server residual is already a fold, so it always joins 기타 and counts as its users.
   seriesEligible: (key) => !key.startsWith(REST_USERS_PREFIX),
   weight: (key) => (key.startsWith(REST_USERS_PREFIX) ? Number(key.slice(REST_USERS_PREFIX.length)) || 1 : 1),
+  // The user table has no channel column, so one user's channels fold into one row.
+  breakdownChannels: false,
 };
 const axisFor = (dimension) => (dimension === "user" ? USER_AXIS : MODEL_AXIS);
 
@@ -201,7 +204,8 @@ export function fromByModelTime(data, client, { dimension = "model" } = {}) {
     if (!row || row.client !== client) continue;
     const t = bucketKey(row.t);
     if (t === null) continue;
-    const identity = byUser ? row.user : row.model;
+    // The server folds users past its top list into one user: null row per bucket, as the detail endpoint does.
+    const identity = byUser && row.user === null ? `${REST_USERS_PREFIX}${row.rest_users ?? "?"}` : byUser ? row.user : row.model;
     const cell = finishCell(t, typeof identity === "string" ? identity : "", byUser ? null : row.backend || "unknown",
       amount(row.cost_usd), row.unpriced, row.unpriced_reasons || {}, row.cost_partial, amount(row.observed_tokens),
       client === "claude" && hasComputedFallback(row));
@@ -485,14 +489,15 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
   }
   const totals = { known: totalsKnown, reviewBuckets, idleBuckets, estimateBuckets, reasons: allReasons, issues, identityCount };
 
-  // 9. 기타 breakdown by (model, channel).
+  // 9. 기타 breakdown by (model, channel), or by model alone when the axis shows no channel.
   const breakdown = new Map();
   for (const cell of list) {
     if (cell.idle === true || seriesOf(cell) !== null) continue;
-    const key = identityKey(cell);
+    const channel = axis.breakdownChannels ? cell.channel : null;
+    const key = identityKey({ model: cell.model, channel });
     let entry = breakdown.get(key);
     if (!entry) {
-      entry = { model: cell.model, label: axis.identity(cell.model, null), channel: cell.channel, known: null, unavailable: 0 };
+      entry = { model: cell.model, label: axis.identity(cell.model, null), channel, known: null, unavailable: 0 };
       breakdown.set(key, entry);
     }
     entry.known = addKnown(entry.known, cell.known);

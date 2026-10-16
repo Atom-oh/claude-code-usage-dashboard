@@ -10,6 +10,7 @@ import { backendSql } from "./backend.js";
 import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS, isRejectedRequestGroup } from "./codexRequests.js";
+import { USER_TREND_TOP } from "./modelCostTrend.js";
 
 const ROW_LIMIT = 50000;
 export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -182,6 +183,44 @@ function finish(target) {
       ..._reasons, missing_usage: _missingUsage.size } } : {}) };
 }
 
+// by_user_time keeps each client's top USER_TREND_TOP users (ranked like the detail endpoint:
+// known range cost, then observed tokens, then identity) plus the empty identity; the rest fold into
+// one user: null row per (client, t) carrying rest_users, so the payload grows with buckets, not
+// users. Backing (usage or a missing-usage scope) is judged per output row, as for by_model_time.
+function foldUserTime(groups, entries, finishRow) {
+  const desc = (x, y) => (x === y ? 0 : x === null ? 1 : y === null ? -1 : y - x);
+  // Only users with a backed row compete, so operational-only users cannot take a top slot.
+  const backedUsers = new Set(entries.filter(({ row, missingScope }) => row.user && (row.kind === "usage" || missingScope))
+    .map(({ row }) => JSON.stringify([row.client, row.user])));
+  const ranked = new Map();
+  for (const user of [...groups.by_user.values()].map(finish)) {
+    if (!ranked.has(user.client)) ranked.set(user.client, []);
+    if (backedUsers.has(JSON.stringify([user.client, user.user]))) ranked.get(user.client).push(user);
+  }
+  const kept = new Map(), restUsers = new Map();
+  for (const [client, users] of ranked) {
+    users.sort((a, b) => desc(a.cost_usd, b.cost_usd) || desc(a.observed_tokens, b.observed_tokens)
+      || (a.user < b.user ? -1 : a.user > b.user ? 1 : 0));
+    kept.set(client, new Set(users.slice(0, USER_TREND_TOP).map((u) => u.user)));
+    restUsers.set(client, Math.max(0, users.length - USER_TREND_TOP));
+  }
+  const cells = new Map(), backed = new Set();
+  for (const { row, usage, missingScope } of entries) {
+    const user = row.user || "";
+    const folded = user !== "" && !kept.get(row.client)?.has(user);
+    const meta = { client: row.client, t: row.t, user: folded ? null : user,
+      ...(folded ? { rest_users: restUsers.get(row.client) } : {}) };
+    const id = JSON.stringify([row.client, row.t, meta.user]);
+    if (row.kind === "usage" || missingScope) backed.add(id);
+    if (!cells.has(id)) cells.set(id, accumulator({ ...meta,
+      cost_basis: row.client === "claude" ? "client_reported" : "aws_list_estimate" }, true));
+    accumulate(cells.get(id), row, usage, missingScope);
+  }
+  return [...cells].filter(([id]) => backed.has(id)).map(([, cell]) => finishRow(cell))
+    .sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client)
+      || (a.user === null) - (b.user === null) || (a.user ?? "").localeCompare(b.user ?? ""));
+}
+
 export function foldClientMetrics(records, clients, prices = codexPrices, { modelTime = false, costView = false } = {}) {
   // Idle observations have their own bound; they cannot evict usage records
   // from the existing active-row budget.
@@ -192,7 +231,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
   const byClient = new Map(clients.map((client) => [client, accumulator({ client,
     cost_basis: client === "claude" ? "client_reported" : "aws_list_estimate" })]));
   const groups = { by_model: new Map(), by_user: new Map(), ...(!costView ? { by_project: new Map() } : {}), timeseries: new Map(),
-    ...(modelTime ? { by_model_time: new Map(), by_user_time: new Map() } : {}) };
+    ...(modelTime ? { by_model_time: new Map() } : {}) };
   const tools = new Map();
   const quality = { unpriced: 0, invalid: 0, missing_identity: 0, missing_usage: 0 };
   // Availability spans the requested range: request/completion exports can straddle
@@ -215,6 +254,8 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
   // or a Codex missing-usage scope backs it. Operational rows attach but never create a known $0;
   // idle uncertainty stays in timeseries.
   const backedTime = new Set();
+  // by_user_time is filled after ranking users (see foldUserTime), so its rows wait here.
+  const userTimeRows = [];
   for (const row of records) {
     if (!byClient.has(row.client)) continue;
     // Repeated, unchanged Claude counters prove an observed zero for this bucket.
@@ -257,10 +298,10 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
     if (!costView && row.client === "codex") dimensions.by_project = { client: row.client, project: row.project || "" };
     if (modelTime) {
       dimensions.by_model_time = { client: row.client, t: row.t, model: row.model || "", backend: row.backend || "unknown" };
-      dimensions.by_user_time = { client: row.client, t: row.t, user: row.user || "" };
+      userTimeRows.push({ row, usage, missingScope });
     }
     for (const [key, meta] of Object.entries(dimensions)) {
-      const timed = key === "by_model_time" || key === "by_user_time";
+      const timed = key === "by_model_time";
       const id = JSON.stringify(meta);
       if (timed && (row.kind === "usage" || missingScope)) backedTime.add(`${key}\u0000${id}`);
       if (!groups[key].has(id)) groups[key].set(id, accumulator({ ...meta,
@@ -301,7 +342,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices, { mode
     timeseries: [...groups.timeseries.values()].map(finishRow).sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client)), quality,
     ...(modelTime ? {
       by_model_time: backedRows("by_model_time").sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.model.localeCompare(b.model) || a.backend.localeCompare(b.backend)),
-      by_user_time: backedRows("by_user_time").sort((a, b) => String(a.t).localeCompare(String(b.t)) || a.client.localeCompare(b.client) || a.user.localeCompare(b.user)),
+      by_user_time: foldUserTime(groups, userTimeRows, finishRow),
     } : {}) };
 }
 
