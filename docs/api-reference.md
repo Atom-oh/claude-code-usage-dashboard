@@ -507,6 +507,10 @@ Config fields:
 | 504 | The shared data-query load exceeded its cooperative 25-second budget: `{error, code:"query_timeout", id:"<uuid>"}` and `Retry-After: 5`. A warning logs the ID, registered route and code without filters or SQL. The localized message suggests a smaller range or retry. Timeout results are not cached as empty or zero data. |
 
 After authentication, JSON API middleware sets `no-store`; the server's bounded promise cache is separate.
+[CloudFront configuration](../infra/dns_cdn.tf) declares zero error-cache TTL for dashboard
+403/500/502/503/504 without rewriting status or body. CloudFront can cache these errors
+despite `no-store`; verify the actual distribution before relying on retry/permission
+responses. Older deployments may still use the default ten-second error cache.
 There is no general data-route rate limit or pagination contract. Named row caps above are
 part of the returned subset. See [API implementation](reference/api.md) for cache and warmer
 behavior, and [security](reference/security.md) for SQL and identity boundaries.

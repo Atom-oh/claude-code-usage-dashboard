@@ -62,6 +62,16 @@ resource "aws_cloudfront_distribution" "dashboard" {
   aliases         = [var.dashboard_hostname]
   price_class     = "PriceClass_200"
 
+  # CloudFront ignores no-store for these errors. Preserve origin status/body and
+  # permission/retry decisions instead of replaying failures to later requests.
+  dynamic "custom_error_response" {
+    for_each = [403, 500, 502, 503, 504]
+    content {
+      error_code            = custom_error_response.value
+      error_caching_min_ttl = 0
+    }
+  }
+
   origin {
     domain_name = var.dashboard_hostname
     origin_id   = "dashboard-nlb"

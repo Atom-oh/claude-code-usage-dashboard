@@ -213,7 +213,14 @@ DIST_ID=$(aws cloudfront list-distributions \
 : "${DIST_ID:?No matching dashboard distribution}"
 aws cloudfront get-distribution-config --id "$DIST_ID" \
   --query 'DistributionConfig.DefaultCacheBehavior.{cachePolicy:CachePolicyId,headersPolicy:ResponseHeadersPolicyId}'
+aws cloudfront get-distribution-config --id "$DIST_ID" \
+  --query 'DistributionConfig.CustomErrorResponses'
 ```
+
+Require 403/500/502/503/504 entries with `ErrorCachingMinTTL=0`, without status/page
+rewrites. `CachingDisabled` and origin `no-store` alone do not prove this: CloudFront
+can replay those errors for its default ten seconds. Resolve missing entries through
+a reviewed configuration update before relying on permission or retry responses.
 
 Stop if the alias lookup returns multiple IDs. If a previously cached build remains after
 rollout, invalidate the selected distribution and wait:

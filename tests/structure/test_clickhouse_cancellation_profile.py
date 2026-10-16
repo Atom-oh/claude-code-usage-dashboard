@@ -27,6 +27,21 @@ class ReaderCancellationProfile(unittest.TestCase):
         adapter = (ROOT / "dashboard/server/clickhouse.js").read_text()
         self.assertIn('username: process.env.CH_USER || "default"', adapter)
 
+    def test_dashboard_edge_preserves_permission_and_query_failure_responses(self):
+        source = (ROOT / "infra/dns_cdn.tf").read_text()
+        dashboard = source.split('resource "aws_cloudfront_distribution" "dashboard" {', 1)[1]
+        dashboard = dashboard.split('resource "aws_cloudfront_distribution" "ch_ingest" {', 1)[0]
+        blocks = re.findall(r'dynamic "custom_error_response"\s*\{(.*?)\n  \}', dashboard, re.S)
+        self.assertEqual(len(blocks), 1)
+        block = blocks[0]
+        codes = re.search(r'for_each\s*=\s*\[([^\]]+)\]', block)
+        self.assertIsNotNone(codes)
+        self.assertEqual([int(code.strip()) for code in codes.group(1).split(",")],
+                         [403, 500, 502, 503, 504])
+        self.assertRegex(block, r'error_code\s*=\s*custom_error_response\.value')
+        self.assertRegex(block, r'error_caching_min_ttl\s*=\s*0\b')
+        self.assertNotRegex(block, r'\b(response_code|response_page_path)\s*=')
+
     def test_memory_result_and_scan_ceilings_are_retained(self):
         self.assertEqual(self.profile["readonly/max_memory_usage"], "4000000000")
         self.assertEqual(self.profile["readonly/max_result_bytes"], "104857600")
