@@ -18,6 +18,23 @@ Legacy node-role discovery now requires exactly one match. Existing clusters wit
 nodegroups must set `node_role_name` to the verified deployed role; explicit lookup requires
 IAM read access including `iam:GetRole`. Review any NodeClass change before applying.
 
+For an existing installation, read both distributions' actual certificate ARNs. If they
+use the same certificate and it should remain installed, set `cloudfront_certificate_arn`
+in private inputs to that verified ARN. The null default selects the most recent issued
+wildcard and can propose a certificate change. Check status, expiry and coverage of both
+public hostnames before planning:
+
+```bash
+: "${CLOUDFRONT_CERTIFICATE_ARN:?Set the verified existing certificate ARN}"
+aws acm describe-certificate --region us-east-1 \
+  --certificate-arn "$CLOUDFRONT_CERTIFICATE_ARN" \
+  --query 'Certificate.{status:Status,expires:NotAfter,names:SubjectAlternativeNames}'
+```
+
+If the distributions use different certificates, stop and review their ownership and
+selection separately; this shared input cannot preserve two different ARNs. ARN validation
+and a successful lookup do not prove hostname coverage or a deployed certificate change.
+
 Set these non-secret parameters for the target; the namespace default matches Terraform:
 
 ```bash
