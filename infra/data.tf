@@ -69,6 +69,7 @@ data "aws_route53_zone" "public" {
 # 읽기 전용 참조). CloudFront(us-east-1)에서만 필요 — NLB는 TCP passthrough라 리전 인증서 불필요
 # (CloudFront VPC Origin이 NLB의 TLS 리스너를 허용하지 않음: "Use a TCP listener").
 data "aws_acm_certificate" "wildcard_cloudfront" {
+  count       = var.cloudfront_certificate_arn == null ? 1 : 0
   provider    = aws.us_east_1
   domain      = "*.${var.domain}"
   statuses    = ["ISSUED"]

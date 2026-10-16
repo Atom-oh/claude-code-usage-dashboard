@@ -95,7 +95,7 @@ resource "aws_cloudfront_distribution" "dashboard" {
     response_headers_policy_id = "67f7725c-6f97-4210-82d7-5512b31e9d03"
   }
   viewer_certificate {
-    acm_certificate_arn      = data.aws_acm_certificate.wildcard_cloudfront.arn
+    acm_certificate_arn      = local.cloudfront_certificate_arn
     minimum_protocol_version = "TLSv1.2_2021"
     ssl_support_method       = "sni-only"
   }
@@ -130,7 +130,7 @@ resource "aws_cloudfront_distribution" "ch_ingest" {
     origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eafa07d3" # AllViewer — Authorization 포함 전달
   }
   viewer_certificate {
-    acm_certificate_arn      = data.aws_acm_certificate.wildcard_cloudfront.arn
+    acm_certificate_arn      = local.cloudfront_certificate_arn
     minimum_protocol_version = "TLSv1.2_2021"
     ssl_support_method       = "sni-only"
   }

@@ -28,6 +28,7 @@ terraform {
   }
 }
 output "node_role_name" { value = local.node_role_name }
+output "cloudfront_certificate_arn" { value = local.cloudfront_certificate_arn }
 output "nodeclass" {
   value     = yamldecode(kubectl_manifest.claude_code_nodeclass.yaml_body)
   sensitive = true

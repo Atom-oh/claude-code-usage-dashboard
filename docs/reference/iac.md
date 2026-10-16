@@ -13,6 +13,14 @@ pattern; its cluster admission and Karpenter permissions remain operator prerequ
 The planning identity needs IAM read access including `iam:GetRole` for explicit roles.
 The default lookup must return exactly one role instead of choosing an arbitrary match.
 
+`cloudfront_certificate_arn` pins an existing certificate for both public distributions,
+skipping wildcard discovery. Terraform checks ARN syntax, `us-east-1` and the installation
+account. The operator must independently verify `ISSUED` status, expiry and coverage of
+both hostnames. Null retains the most recent issued wildcard lookup; a newer matching
+certificate can therefore change the next plan. Pin the verified installed ARN when
+retaining an existing certificate, then inspect the complete plan. This input does not
+create, renew or validate a certificate.
+
 Explicit subnets must all exist in the cluster VPC and are used by both EC2NodeClass and
 the internal NLB services. The NodeClass selector depends on the validated lookup, including
 targeted operations. Empty input retains discovery tags. Empty/mismatched results

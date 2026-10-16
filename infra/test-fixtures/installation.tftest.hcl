@@ -1,4 +1,7 @@
 mock_provider "aws" {
+  mock_data "aws_caller_identity" {
+    defaults = { account_id = "000000000000" }
+  }
   mock_data "aws_eks_cluster" {
     defaults = {
       vpc_config = [{ vpc_id = "vpc-00000000000000001" }]
@@ -38,6 +41,53 @@ run "legacy_discovery_preserves_selector" {
     condition     = output.nodeclass.spec.subnetSelectorTerms[0].tags["karpenter.sh/discovery"] == "fixture-cluster"
     error_message = "The legacy tagged selector must remain unchanged."
   }
+  assert {
+    condition     = length(data.aws_acm_certificate.wildcard_cloudfront) == 1 && output.cloudfront_certificate_arn == data.aws_acm_certificate.wildcard_cloudfront[0].arn
+    error_message = "Null certificate input must retain wildcard discovery."
+  }
+}
+
+run "explicit_certificate_bypasses_wildcard_discovery" {
+  command = plan
+  variables {
+    cloudfront_certificate_arn = "arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000001"
+  }
+  assert {
+    condition     = output.cloudfront_certificate_arn == var.cloudfront_certificate_arn && length(data.aws_acm_certificate.wildcard_cloudfront) == 0
+    error_message = "An explicit certificate must be selected without latest-wildcard discovery."
+  }
+}
+
+run "certificate_region_rejected" {
+  command = plan
+  variables {
+    cloudfront_certificate_arn = "arn:aws:acm:ap-northeast-2:000000000000:certificate/00000000-0000-0000-0000-000000000001"
+  }
+  expect_failures = [var.cloudfront_certificate_arn]
+}
+
+run "certificate_account_rejected" {
+  command = plan
+  variables {
+    cloudfront_certificate_arn = "arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-0000-0000-000000000001"
+  }
+  expect_failures = [var.cloudfront_certificate_arn]
+}
+
+run "certificate_arn_rejected" {
+  command = plan
+  variables {
+    cloudfront_certificate_arn = "not-an-arn"
+  }
+  expect_failures = [var.cloudfront_certificate_arn]
+}
+
+run "empty_certificate_rejected" {
+  command = plan
+  variables {
+    cloudfront_certificate_arn = ""
+  }
+  expect_failures = [var.cloudfront_certificate_arn]
 }
 
 run "explicit_customer_environment" {
