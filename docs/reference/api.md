@@ -33,9 +33,13 @@ deadline and reader-profile decision, including repeated expensive-view timeouts
 The process-local cache deduplicates pending work until settlement and stores successful
 results for 320 seconds from completion. Successful-result TTL and byte eviction do not
 remove pending entries; producer deadlines below can reject pending work.
-Keys contain the route path plus `from`, `to`, `group`, `user`, `model`, `project`,
-`intervalHours`, `email`, `includeUnknown`, `view`, `modelTime`, `timeFormat` and `profile`,
-sorted by parameter name. Failed promises are removed. The 2,000-entry
+Keys contain the route path and sorted parameters. Ordinary routes use `from`, `to`,
+`group`, `user`, `model`, `project`, `intervalHours`, `email` and `includeUnknown`.
+Client overview and Codex insights instead use range bounds and validated client/backend/user/model
+filters, including `userExact`/`modelExact`, and their applicable `view`, `modelTime`,
+`timeFormat` or `profile`. Overview also keys the resolved bucket size, native query
+source and effective range end. [index.js](../../dashboard/server/index.js)'s `cacheKey()`
+owns this normalization. Failed promises are removed. The 2,000-entry
 cap evicts settled entries by insertion order, not by last read. At most 64 distinct
 cache loads execute concurrently. Up to 64 additional distinct keys wait FIFO without
 starting their loaders or acquiring database slots. The cache queue's own wait limit

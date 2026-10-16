@@ -110,11 +110,17 @@ done <<< "$REPLICAS"
 ```
 
 Direct probes change only the process's `CH_URL` hostname, retaining protocol/port/path.
+First verify that the retained service port is also the replica's listening port and
+that network policy permits dashboard-to-replica traffic. If ports differ, review a
+probe variant that changes the target hostname/port, keeping credentials and TLS settings.
 For TLS certificates requiring DNS, use verified replica DNS names instead of Pod IPs;
 never disable certificate verification. Match each returned hostname to its replica.
 Expected: `otel_reader`, readonly/cancellation `1`,
 execution `60`, memory `4000000000`, result bytes `104857600`, rows read `2000000000`.
 Any mismatch blocks rollout; a balanced service session cannot prove every replica.
+For a failed probe, inspect private dashboard/operator logs, service `targetPort`,
+replica endpoints and network policy. Keep credentials, connection URLs and query
+details out of shared diagnostics.
 
 Recheck ingestion, freshness, replica health and readiness. Use isolated synthetic
 disconnect controls to observe server termination; client abort alone is insufficient.
@@ -211,11 +217,18 @@ DIST_ID=$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?Aliases.Items && contains(Aliases.Items, '$DASHBOARD_HOST')].Id" \
   --output text)
 : "${DIST_ID:?No matching dashboard distribution}"
+[[ "$DIST_ID" =~ ^[A-Z0-9]+$ ]] || { echo "Expected one distribution ID" >&2; exit 1; }
 aws cloudfront get-distribution-config --id "$DIST_ID" \
-  --query 'DistributionConfig.DefaultCacheBehavior.{cachePolicy:CachePolicyId,headersPolicy:ResponseHeadersPolicyId}'
-aws cloudfront get-distribution-config --id "$DIST_ID" \
-  --query 'DistributionConfig.CustomErrorResponses'
+  --query 'DistributionConfig.{behavior:DefaultCacheBehavior.{cachePolicy:CachePolicyId,originRequestPolicy:OriginRequestPolicyId,headersPolicy:ResponseHeadersPolicyId},origins:Origins.Items[].{id:Id,vpcReadTimeout:VpcOriginConfig.OriginReadTimeout,customReadTimeout:CustomOriginConfig.OriginReadTimeout},errorResponses:CustomErrorResponses}'
 ```
+
+Verify the dashboard origin's read timeout against the 25-second producer budget;
+the declared VPC origin uses 30 seconds. Encoding and delivery are outside that budget,
+so verify large responses through the actual edge before claiming a response SLO.
+Read the selected policy with `aws cloudfront get-origin-request-policy --id <policy-id>`
+and verify its `QueryStringsConfig` forwards all supported filters, including
+`timeFormat`. Compact and legacy responses have distinct keys; only compact cost
+responses are warmed, so legacy clients can still incur cold loads during rollout.
 
 Require 403/500/502/503/504 entries with `ErrorCachingMinTTL=0`, without status/page
 rewrites, matching the declared deployment contract. Verify the actual policy and origin
@@ -225,8 +238,8 @@ requires positive `max-age` or `s-maxage`. Missing explicit entries alone do not
 prove a live replay defect. Reconcile them through a reviewed configuration update;
 other policies can retain the default ten-second error TTL.
 
-Stop if the alias lookup returns multiple IDs. If a previously cached build remains after
-rollout, invalidate the selected distribution and wait:
+If a previously cached build remains after rollout, invalidate the selected distribution
+and wait:
 
 ```bash
 INV_ID=$(aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths '/*' \
