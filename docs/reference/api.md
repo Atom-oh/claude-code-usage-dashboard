@@ -12,6 +12,7 @@ Developer instructions live in [server/AGENTS.md](../../dashboard/server/AGENTS.
 | [http.js](../../dashboard/server/http.js) | `parseRange`, `parseIntervalHours`, `parseFilters` and configuration validation |
 | [queries.js](../../dashboard/server/queries.js) | SQL builders and endpoint queries |
 | [clickhouse.js](../../dashboard/server/clickhouse.js) | JSON queries, time conversion, ping and readonly-session probe |
+| [queryContext.js](../../dashboard/server/queryContext.js) | Shared-load deadline and query cancellation ownership |
 | [pricing.js](../../dashboard/server/pricing.js) | Computed cost diagnostics and token-tier estimates |
 | [costEfficiency.js](../../dashboard/server/costEfficiency.js) | Reported-cost efficiency ratios, retaining computed diagnostics |
 | [productivity.js](../../dashboard/server/productivity.js) | Activity heuristic added to leaderboard rows |
@@ -22,7 +23,8 @@ Developer instructions live in [server/AGENTS.md](../../dashboard/server/AGENTS.
 `route()` registers GET data handlers. It validates range and interval before cache lookup,
 then passes parsed filters to the handler. Validation failures return 400; capacity
 exhaustion returns 503 with `Retry-After: 1`; other failures return 500 with an opaque
-error ID. Config, health and chat handlers bypass this wrapper.
+error ID. A shared query-load deadline returns 504 with `code: query_timeout`.
+Config, health and chat handlers bypass this wrapper.
 
 The process-local cache deduplicates pending work until settlement and stores successful
 results for 320 seconds from completion. Pending entries do not expire or get evicted.
@@ -33,8 +35,19 @@ cache loads execute concurrently. Up to 64 additional distinct keys wait FIFO fo
 at most 30 seconds without starting their loaders or acquiring database slots.
 Existing-key requests share the same promise while waiting or executing. A full or
 expired cache queue returns the same coded 503; failed keys are removed.
-Completion starts the successful-result TTL. This cache wait is separate from the
-database queue/execution deadlines below; it is not an end-to-end request deadline.
+Completion starts the successful-result TTL. Each new shared key also has a 25-second
+cooperative deadline, starting before cache admission and covering its loader's DB
+queue, sequential/parallel queries and result consumption together. It cancels queued
+work and closes pending result bodies. Timeout results are removed, never cached as
+empty/zero telemetry. An uncooperative loader remains accounted until it settles;
+a timer does not free its slot while work is still active.
+
+The deadline belongs to the shared key, not one HTTP subscriber. Factor lookups retain
+separate ownership: an expired caller leaves, while another subscriber's request stays
+alive; the last cancellation aborts the lookup. Standalone DB helpers retain their
+independent limits below. This is not a transport, response-encoding/delivery or
+end-to-end fleet deadline. Synchronous work can delay cancellation; expiration checks
+reject late loader/serialization results but do not preempt JavaScript.
 Settled entries have a 16 MiB serialized-JSON byte quota and a 1 MiB per-entry quota.
 Oversized results are returned intact but not cached; byte eviction never removes pending
 work. Serialized size is an estimate for cache admission, not a heap/response-allocation bound.
@@ -45,6 +58,9 @@ Database bursts wait FIFO in a bounded 128-query queue for at most 30 seconds; o
 full/expired queue rejects work. Normal query execution retains the client 30-second timeout
 after admission. Readonly SQL's 30-second abort covers queue and execution together;
 disconnect/deadline also cancels queued readonly work. These are cooperative limits.
+Ordinary and readonly helpers explicitly close result bodies on abort after headers,
+preserving the originating cancellation reason. HTTP cancellation does not establish
+ClickHouse server-side termination; inspect the deployed reader/server limits.
 Overload JSON has `code: capacity_exhausted` and a localized retry message.
 HTTP admission follows authentication and releases on response finish/close; work budgets
 release on settlement. Probes and OIDC protocol routes remain outside HTTP admission;

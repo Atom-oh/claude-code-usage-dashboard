@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { createAuthentication } from "./auth.js";
 import { createInstallationProbe } from "./installation.js";
 import { CapacityError, capacityResponse, createRequestAdmission, createResultCache } from "./capacity.js";
+import { QueryDeadlineError } from "./queryContext.js";
 import { createWarmingPlan } from "./warming.js";
 import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
 import { sendJson } from "./jsonResponse.js";
@@ -168,7 +169,7 @@ const CACHE_TTL_MS = 320_000;
 // 완료된 엔트리를 삽입 순서대로 제거한다. 진행 중인 작업은 완료까지 공유하며 읽기는 순서를 바꾸지 않는다.
 // Distinct cold views wait for an existing load slot instead of retrying before
 // one is free. Active loads, DB concurrency and cached-result byte quotas stay bounded.
-const cache = createResultCache({ maxWaiting: 64 });
+const cache = createResultCache({ maxWaiting: 64, loadMs: 25_000 });
 setInterval(() => {
   cache.sweep();
 }, CACHE_TTL_MS).unref();
@@ -310,6 +311,10 @@ function route(path, handler, { warm = true, client = "claude", validate, permis
       if (warm) warmingPlan.requested(path, req.query);
       await sendJson(req, res, await fetchCached(path, handler, req.query));
     } catch (err) {
+      if (err instanceof QueryDeadlineError) return res.status(504).json({
+        error: "요청 처리 시간이 초과되었습니다. 조회 범위를 줄이거나 잠시 후 다시 시도해 주세요.",
+        code: "query_timeout",
+      });
       if (err instanceof CapacityError) return capacityResponse(res);
       if (err instanceof ValidationError) {
         res.status(400).json({ error: err.message, detail: err.detail });

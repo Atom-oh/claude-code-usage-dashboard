@@ -1,3 +1,5 @@
+import { createQueryDeadline } from "./queryContext.js";
+
 export class CapacityError extends Error {
   constructor() {
     super("runtime capacity exhausted");
@@ -96,10 +98,11 @@ export function createRequestAdmission(maximum = 200) {
 }
 
 export function createResultCache({ maxEntries = 2000, maxPending = 64,
-  maxWaiting = 0, waitMs = 30_000,
+  maxWaiting = 0, waitMs = 30_000, loadMs = 0,
   maxBytes = 16 * 1024 * 1024, maxEntryBytes = 1024 * 1024, now = Date.now } = {}) {
   if (!Number.isSafeInteger(maxWaiting) || maxWaiting < 0 ||
-      !Number.isSafeInteger(waitMs) || waitMs < 1)
+      !Number.isSafeInteger(waitMs) || waitMs < 1 ||
+      !Number.isSafeInteger(loadMs) || loadMs < 0 || loadMs > 2_147_483_647)
     throw new RangeError("invalid cache waiting capacity");
   const budget = maxWaiting
     ? createQueuedBudget({ maximum: maxPending, maxWaiting, waitMs })
@@ -134,15 +137,23 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
       if (entries.size >= maxEntries && !oldest) throw new CapacityError();
       // Reserve admission before work. A queued key holds no database/load slot;
       // its promise stays shared, including while waiting past the response TTL.
-      const reservation = budget.acquire();
+      // One deadline belongs to a shared key, including cache admission, DB
+      // admission and every sequential/parallel query in its loader.
+      const deadline = loadMs ? createQueryDeadline(loadMs) : null;
+      let reservation;
+      try { reservation = budget.acquire(deadline?.signal); }
+      catch (error) { deadline?.dispose(); throw error; }
       let release;
       if (oldest) remove(oldest[0]);
       const entry = { pending: true, expires: Infinity, promise: null };
       entry.promise = Promise.resolve(reservation).then(slot => {
         release = slot;
-        return load();
+        deadline?.check();
+        return deadline ? deadline.run(() => load(deadline.signal)) : load();
       }).then(value => {
+        deadline?.check();
         const serialized = JSON.stringify(value);
+        deadline?.check();
         const size = serialized === undefined ? 0 : Buffer.byteLength(serialized);
         if (size > maxEntryBytes) {
           remove(key); // Return the full result; only cache admission changes.
@@ -161,7 +172,10 @@ export function createResultCache({ maxEntries = 2000, maxPending = 64,
       }).catch(error => {
         if (entries.get(key) === entry) remove(key);
         throw error;
-      }).finally(() => release?.());
+      }).finally(() => {
+        deadline?.dispose();
+        release?.();
+      });
       entries.set(key, entry);
       return entry.promise;
     },

@@ -1,5 +1,6 @@
 import { createClient } from "@clickhouse/client";
 import { createBudget, createQueuedBudget } from "./capacity.js";
+import { querySignal } from "./queryContext.js";
 
 // ponytail: single shared client, no pool wrapper — @clickhouse/client already pools HTTP keep-alive connections.
 // max_open_connections 기본값 10은 index.js의 캐시 warmer(배치당 5개 동시 쿼리)와 실제 브라우저
@@ -18,18 +19,41 @@ const client = createClient({
 const queryBudget = createQueuedBudget();
 const pingBudget = createBudget(4);
 
+async function consumeRows(result, signal) {
+  // The SDK's request abort listener can finish when headers arrive. Keep body
+  // consumption cancellable too, with a reader attached before closing it.
+  const pending = result.json();
+  const cancel = () => result.close();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
+  try {
+    const rows = await pending;
+    signal?.throwIfAborted();
+    return rows;
+  } catch (error) {
+    result.close();
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+  }
+}
+
 export function toChDateTime(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
 export async function query(sql, query_params = {}, signal) {
+  signal = querySignal(signal);
   signal?.throwIfAborted();
   const release = await queryBudget.acquire(signal);
   try {
     signal?.throwIfAborted();
     const rs = await client.query({ query: sql, query_params, format: "JSONEachRow",
       ...(signal ? { abort_signal: signal } : {}) });
-    return await rs.json();
+    return await consumeRows(rs, signal);
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
   } finally {
     release();
   }
@@ -48,6 +72,7 @@ export async function query(sql, query_params = {}, signal) {
 // 요청을 계속 기다리지 않는다. 타임아웃 abort와 외부 abort를 구분해야 에러 메시지가 정확하다
 // (외부 abort는 "30초 초과"가 아니므로 그대로 AbortError를 던져 위로 전달한다).
 export async function queryReadonly(sql, externalSignal) {
+  externalSignal = querySignal(externalSignal);
   const abort = new AbortController();
   let timer, release;
   try {
@@ -60,10 +85,11 @@ export async function queryReadonly(sql, externalSignal) {
       format: "JSONEachRow",
       abort_signal: signal,
     });
-    const rows = await rs.json();
+    const rows = await consumeRows(rs, signal);
     return { rows: rows.slice(0, 200), truncated: rows.length > 200 };
   } catch (err) {
     if (abort.signal.aborted) throw new Error("쿼리 30초 초과");
+    externalSignal?.throwIfAborted();
     throw err;
   } finally {
     clearTimeout(timer);
