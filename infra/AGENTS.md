@@ -2,7 +2,7 @@
 
 Terraform configures dashboard/ClickHouse on existing EKS. Use Terraform 1.9+,
 retain the provider lockfile; follow checked-in variable/output definitions.
-Workshop Studio EC2 collector/user-data has a separate lifecycle.
+This directory excludes the Workshop Studio EC2 collector/user-data lifecycle.
 
 ## Validation and state
 
@@ -18,14 +18,14 @@ Source files and static validation do not prove live resource state.
 
 ## Contracts
 
-- Public access uses CloudFront and an internal load-balancer origin.
-  Never create an unauthenticated alternate entry point.
+- The public application path uses CloudFront and an internal load-balancer origin.
+  Never create an unauthenticated alternate application entry point.
 - Keep application secrets in the existing secret references, not image layers or
   public outputs. Client-side PII masking does not authorize publishing raw data.
 - Dashboard readiness uses `/readyz` and graceful draining; liveness uses `/healthz`.
   Docker health checks do not configure Kubernetes probes.
 - Use immutable release identifiers; verify image digests.
-  Verify that the Terraform-declared immutable ECR policy is actually applied.
+  Operators must verify that the Terraform-declared immutable ECR policy is applied.
 - Schema-file hash changes can retrigger ClickHouse initialization. DDL may partly
   apply before Job failure. Inspect the Job, actual columns/keys and migration ledger;
   Job completion does not prove every intended change.

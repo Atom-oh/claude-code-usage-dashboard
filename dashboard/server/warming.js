@@ -20,7 +20,7 @@ export function createWarmingPlan({ now = Date.now, defaultDays = 2 } = {}) {
       const shared = routes.get("/api/clients/overview");
       const jobs = shared ? [
         { path: "/api/clients/overview", handler: shared, params: {} },
-        { path: "/api/clients/overview", handler: shared, params: { view: "cost", modelTime: "1" } },
+        { path: "/api/clients/overview", handler: shared, params: { view: "cost", modelTime: "1", timeFormat: "compact" } },
       ] : [];
       for (const [path, lastUsed] of used) {
         if (now() - lastUsed >= RECENT_MS) { used.delete(path); continue; }

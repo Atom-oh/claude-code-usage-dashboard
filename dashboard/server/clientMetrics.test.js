@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldClientMetrics, validateClientFilters, validateClientView, buildCodexQuery, clientBucketSeconds, rebucketRows, effectiveClientEnd } from "./clientMetrics.js";
+import { foldClientMetrics, compactTimeRows, validateTimeFormat, validateClientFilters, validateClientView, buildCodexQuery, clientBucketSeconds, rebucketRows, effectiveClientEnd } from "./clientMetrics.js";
 
 const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", session: "conversation-1",
   user: "person@example.invalid", backend: "bedrock-mantle", model: "openai.gpt-6-astra",
@@ -461,6 +461,42 @@ const modelTimeRecords = [
     input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reported_cost: 0 },
 ];
 const modelTimeClients = ["claude", "codex"];
+
+test("compact time tables preserve every cost-view field, value and row order", () => {
+  const decode = table => table.rows.map(values => Object.fromEntries(table.columns.map((key, i) =>
+    [key, Object.hasOwn(table.dictionaries, key) && values[i] !== null ? table.dictionaries[key][values[i]] : values[i]])));
+  for (const records of [modelTimeRecords, [], [{ ...event, user: "", model: "", backend: "unknown" }],
+    [{ ...event, user: "__proto__", session: "", input_tokens_total: null }],
+    [{ ...event, client: "claude", reported_cost: 3, input_tokens: null }]]) {
+    const options = { modelTime: true, costView: true };
+    const ordinary = foldClientMetrics(records, modelTimeClients, undefined, options);
+    const compact = foldClientMetrics(records, modelTimeClients, undefined, { ...options, compactTime: true });
+    assert.equal(compact.time_format, "compact-v1");
+    const { time_format, ...rest } = compact;
+    rest.by_model_time = decode(compact.by_model_time);
+    rest.by_user_time = decode(compact.by_user_time);
+    assert.deepEqual(JSON.parse(JSON.stringify(rest)), JSON.parse(JSON.stringify(ordinary)));
+  }
+  const rows = Array.from({ length: 1000 }, (_, i) => ({
+    client: "codex", t: "2026-10-14 00:00:00", user: `fixture-${i % 140}@example.invalid`,
+    backend: "bedrock-mantle", cost_basis: "aws_list_estimate", cost_usd: i / 1e8,
+    unpriced_reasons: { unknown_model: 0, invalid_usage: 0, missing_usage: 0 },
+    cost_partial: false, observed_tokens: 10, tokens: null, tokens_partial: true,
+  }));
+  const compact = compactTimeRows(rows);
+  assert.deepEqual(decode(compact), rows);
+  assert.ok(JSON.stringify(compact).length < JSON.stringify(rows).length / 3);
+  assert.throws(() => compactTimeRows([{ t: "" }, { t: "", extra: null }]), /inconsistent/);
+});
+
+test("compact format requires the cost time profile and rejects non-scalar values", () => {
+  assert.equal(validateTimeFormat({}), false);
+  assert.equal(validateTimeFormat({ timeFormat: "compact", modelTime: "1", view: "cost" }), true);
+  for (const timeFormat of ["", "columns", ["compact"], true])
+    assert.throws(() => validateTimeFormat({ timeFormat, modelTime: "1", view: "cost" }), /invalid timeFormat/);
+  for (const raw of [{}, { modelTime: "1" }, { view: "cost" }, { modelTime: "0", view: "cost" }])
+    assert.throws(() => validateTimeFormat({ ...raw, timeFormat: "compact" }), /invalid timeFormat/);
+});
 
 test("cost folds preserve coverage, tiers, identities and idle buckets while omitting diagnostic breakdowns", () => {
   const fields = ["api_errors", "tool_calls", "tool_errors", "request_duration_ms", "ttft_ms"];

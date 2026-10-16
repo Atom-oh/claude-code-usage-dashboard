@@ -9,7 +9,7 @@ test("default warming covers shared full and cost keys without unused legacy que
   plan.register("/api/users/leaderboard", handler);
   assert.deepEqual(plan.jobs().map(job => [job.path, job.params]), [
     ["/api/clients/overview", {}],
-    ["/api/clients/overview", { view: "cost", modelTime: "1" }],
+    ["/api/clients/overview", { view: "cost", modelTime: "1", timeFormat: "compact" }],
   ]);
 });
 

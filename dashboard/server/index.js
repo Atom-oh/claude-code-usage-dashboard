@@ -21,7 +21,7 @@ import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./
 import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 import { parseClients } from "./clients.js";
-import { clientOverview, validateClientFilters, validateClientView, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
+import { clientOverview, validateClientFilters, validateClientView, validateTimeFormat, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -261,6 +261,7 @@ function cacheKey(path, query) {
       userExact: filters.userExact, modelExact: filters.modelExact,
       modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined,
       view: path === "/api/clients/overview" && validateClientView(query) ? "cost" : undefined,
+      timeFormat: path === "/api/clients/overview" && validateTimeFormat(query) ? "compact" : undefined,
       profile: path === "/api/codex/insights" && validateInsightsProfile(query) ? "effort" : undefined,
       // Query source and resolved end also matter: a subhour request can round to a
       // one-hour display while reading raw rows through the requested partial-hour end.
@@ -341,7 +342,7 @@ route("/api/installation", installationProbe,
 route("/api/clients/overview",
   (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: true,
-    validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); validateClientView(raw); } });
+    validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); validateClientView(raw); validateTimeFormat(raw); } });
 
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
   { client: "codex", warm: false, validate: (raw) => {

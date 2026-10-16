@@ -178,12 +178,45 @@ export function fromByModelDaily(rows) {
 const hasComputedFallback = (row) => row?.cost_basis === "computed_estimate"
   || (amount(row?.cost_estimated) ?? 0) > 0;
 
+// Read compact tables lazily: retain the wire arrays rather than allocating a
+// second complete set of row objects. Malformed/unknown tables stay unavailable.
+export function readTimeRows(data, dimension = "model") {
+  const table = dimension === "user" ? data?.by_user_time : data?.by_model_time;
+  if (Array.isArray(table)) return table; // Older servers retain the original response.
+  if (data?.time_format !== "compact-v1" || !table || !Array.isArray(table.columns)
+      || !Array.isArray(table.rows) || !table.dictionaries || typeof table.dictionaries !== "object"
+      || Array.isArray(table.dictionaries)) return null;
+  const { columns, dictionaries, rows } = table;
+  const dictionaryFields = new Set(["client", "t", "model", "user", "backend", "cost_basis", "unpriced_reasons"]);
+  if (columns.some(key => typeof key !== "string") || new Set(columns).size !== columns.length
+      || columns.some(key => dictionaryFields.has(key) && !Object.hasOwn(dictionaries, key))
+      || Object.keys(dictionaries).some(key => !columns.includes(key) || !dictionaryFields.has(key)
+        || !Array.isArray(dictionaries[key]) || dictionaries[key].some(value => key === "unpriced_reasons"
+          ? value === null || typeof value !== "object" || Array.isArray(value) : typeof value !== "string"))
+      || (rows.length > 0 && (!columns.includes("client") || !columns.includes("t")
+        || !columns.includes(dimension === "user" ? "user" : "model")))) return null;
+  const lookups = columns.map(key => Object.hasOwn(dictionaries, key) ? dictionaries[key] : null);
+  for (const values of rows) {
+    if (!Array.isArray(values) || values.length !== columns.length) return null;
+    for (let i = 0; i < columns.length; i++) {
+      if (lookups[i] && values[i] !== null
+          && (!Number.isSafeInteger(values[i]) || values[i] < 0 || values[i] >= lookups[i].length)) return null;
+    }
+  }
+  return (function* () {
+    for (const values of rows) {
+      yield Object.fromEntries(columns.map((key, i) =>
+        [key, lookups[i] && values[i] !== null ? lookups[i][values[i]] : values[i]]));
+    }
+  })();
+}
+
 // dimension "user" reads by_user_time: the same usage regrouped per (client, t, user), so the
 // residual and idle rules below apply unchanged. User cells carry no channel.
 export function fromByModelTime(data, client, { dimension = "model" } = {}) {
   const byUser = dimension === "user";
-  const source = byUser ? data?.by_user_time : data?.by_model_time;
-  if (!Array.isArray(source)) return null;
+  const source = readTimeRows(data, dimension);
+  if (source === null) return null;
   const cells = [];
   const modelByT = new Map();
   for (const row of source) {

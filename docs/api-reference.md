@@ -189,7 +189,8 @@ profile remains full. See [Effort profile](reference/codex-observability.md#effo
 
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key; the shared default cost profile warms
-`view=cost&modelTime=1`. Custom windows, filters and resolutions may remain cold;
+`view=cost&modelTime=1&timeFormat=compact`. Custom windows, filters, resolutions and
+legacy time-row responses may remain cold;
 `/api/codex/insights` ignores it. It adds `by_model_time`: one row per `client`, `t`, `model`, `backend` from the
 same fold and buckets as `timeseries`, with Codex raw model IDs (routing prefixes
 kept; Claude models are normalized as in `by_model`) and the usual cost/token/coverage fields. A row exists only where Claude counter
@@ -210,6 +211,19 @@ then usage validity; a configured rate with a non-finite estimate reports `unkno
 It also adds `by_user_time`: the same backed usage regrouped per `client`, `t`, `user`
 (raw identity, `""` when absent) with the same fields and `unpriced_reasons`; per `client`, `t`
 its known `cost_usd` and `unpriced` sum to the `by_model_time` rows.
+
+Optional `timeFormat=compact` requires `view=cost&modelTime=1`; other supplied values
+or combinations return 400 before cache lookup or database work. It has a separate
+cache identity and echoes `time_format="compact-v1"`. Only `by_model_time` and
+`by_user_time` change representation to `{columns, dictionaries, rows}`. Each row
+is an array in `columns` order. Columns present in `dictionaries` use zero-based
+indices into their dictionary; null remains null. Other cells retain their original
+values. No fields, identities, buckets or coverage information are removed.
+Totals, rankings, `timeseries`, filters and cost calculation are unchanged.
+The SPA requests this format and reads rows lazily; older array responses remain
+supported. Malformed or unknown compact formats are unavailable, never zero.
+This reduces response and cache size; it does not reduce the underlying SQL scan
+or prove a fleet capacity limit.
 
 ## Filter scope
 
