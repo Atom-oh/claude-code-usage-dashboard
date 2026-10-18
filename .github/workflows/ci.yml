@@ -94,3 +94,5 @@ jobs:
         run: bash scripts/test-identity-terraform.sh
       - name: Verify customer infrastructure lookups with mocked providers
         run: bash scripts/test-installation-terraform.sh
+      - name: Verify Bedrock profile IAM resources with mocked AWS data
+        run: bash scripts/test-bedrock-routing-terraform.sh

@@ -98,7 +98,7 @@ export async function nonAnthropicFactors(from, to, run = rawQuery, signal) {
        AND EventName IN ('api_request', 'claude_code.api_request')
        AND LogAttributes['model'] != ''
        AND NOT startsWith(replaceRegexpOne(replaceRegexpOne(LogAttributes['model'],
-         '^(us|us-gov|eu|apac|jp|au|global)\\\\.', ''), '^anthropic\\\\.', ''), 'claude-')`,
+         '^(us|us-gov|eu|apac|jp|au|in|global)\\\\.', ''), '^anthropic\\\\.', ''), 'claude-')`,
       { from: toChDateTime(from), to: toChDateTime(to) }, ownedSignal);
     return foldFactors(rows);
   }, signal);

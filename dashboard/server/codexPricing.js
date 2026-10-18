@@ -265,7 +265,7 @@ export function parseCodexPricing(raw) {
 }
 
 // Commercial geography profiles share the regional tier; GovCloud stays unsupported.
-export const CODEX_ROUTING_PATTERN = "^(us|eu|apac|jp|au|global)\\.";
+export const CODEX_ROUTING_PATTERN = "^(us|eu|apac|jp|au|in|global)\\.";
 const CODEX_ROUTING_RE = new RegExp(CODEX_ROUTING_PATTERN);
 export function codexModel(model) {
   return String(model || "").replace(CODEX_ROUTING_RE, "");

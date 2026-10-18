@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { priceCodexUsage, parseCodexPricing, DEFAULT_CODEX_PRICING, RUNTIME_ID_ALIASES } from "./codexPricing.js";
+import { priceCodexUsage, parseCodexPricing, DEFAULT_CODEX_PRICING, RUNTIME_ID_ALIASES, codexModel, codexModelSql } from "./codexPricing.js";
 
 const usage = { backend: "bedrock-mantle", model: "openai.gpt-6-astra", context_tier: "short",
   input_tokens_total: 100, cache_read_tokens: 40, cache_write_tokens: 11,
@@ -50,7 +50,7 @@ test("global inference and long context use their own rates", () => {
 });
 
 test("commercial geography prefixes retain known rates and the Haiku context tier", () => {
-  for (const prefix of ["us.", "eu.", "apac.", "jp.", "au."]) {
+  for (const prefix of ["us.", "eu.", "apac.", "jp.", "au.", "in."]) {
     const priced = priceCodexUsage({ ...usage, backend: "bedrock-runtime",
       model: `${prefix}openai.gpt-6-astra` });
     assert.equal(priced.cost_usd, 0.00238425, prefix);
@@ -259,8 +259,25 @@ test("pricing overrides are validated rather than silently making costs zero", (
 
 test("pricing keys reject routing prefixes stripped by lookup", () => {
   const value = parseCodexPricing()["openai.gpt-6-astra"];
-  for (const prefix of ["us.", "eu.", "apac.", "jp.", "au.", "global."])
+  for (const prefix of ["us.", "eu.", "apac.", "jp.", "au.", "in.", "global."])
     assert.throws(() => parseCodexPricing(JSON.stringify({ [prefix + "openai.gpt-6-astra"]: value })));
+});
+
+test("India profiles normalize for lookup and retain request tiers and scope checks", () => {
+  assert.equal(codexModel("in.anthropic.claude-haiku-5-5"), "anthropic.claude-haiku-5-5");
+  assert.match(codexModelSql("model"), /jp\|au\|in\|global/);
+  for (const context_tier of ["short", "long"]) {
+    const indian = priceCodexUsage({ ...usage, model: "in.anthropic.claude-haiku-5-5",
+      backend: "bedrock-runtime", context_tier });
+    const regional = priceCodexUsage({ ...usage, model: "us.anthropic.claude-haiku-5-5",
+      backend: "bedrock-runtime", context_tier });
+    assert.equal(indian.cost_usd, regional.cost_usd);
+    assert.equal(indian.unpriced, false);
+    assert.equal(indian.price_source, undefined, "The request-tier Codex entry wins over flat Claude fallback.");
+  }
+  assert.equal(priceCodexUsage({ ...usage, model: "in.openai.gpt-6-astra" }).unpriced_reason, "scope");
+  assert.equal(priceCodexUsage({ ...usage, model: "in.openai.unknown", backend: "bedrock-runtime" })
+    .unpriced_reason, "unknown_model");
 });
 
 test("an overflowing configured estimate is unavailable, not a JSON infinity", () => {

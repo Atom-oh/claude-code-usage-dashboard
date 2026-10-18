@@ -3,7 +3,7 @@ import { VALID_BACKENDS } from "./backend.js";
 // Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 cacheWrite(5m) = 입력×1.25,
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
 // 0.025x, opus-5-5는 0.05x인 예외라 값을 명시한다(아래 주석). 아래 단가는 global(=1st-party) 기준이다.
-// Bedrock 리전/지역 엔드포인트(us./eu./apac./jp./au. 프로파일, 접두사 없는 anthropic.* in-region)는
+// Bedrock 리전/지역 엔드포인트(us./eu./apac./jp./au./in. 프로파일, 접두사 없는 anthropic.* in-region)는
 // Claude 4.5+ 모델에 10% 할증이 붙는다(pricing 페이지, 2026-10-02 확인). computeCost는 원본 모델 ID를
 // 받을 때만 regionalMultiplier()를 적용한다 — 현재는 Codex의 Claude 단가표 fallback뿐이다. Claude
 // 클라이언트 행과 withComputedCost/tierCosts/costAtTtl 진단은 정규화된 ID로 오므로 global 단가로 남는다.
@@ -54,7 +54,7 @@ const BASE_PRICING = {
 export function normalizeModelId(raw) {
   return String(raw || "")
     .replace(/\[[^\]]*\]$/, "") // [1m] 컨텍스트 윈도우 접미사
-    .replace(/^(?:us|us-gov|eu|apac|jp|au|global)\./, "") // cross-region 추론 프로파일 접두사
+    .replace(/^(?:us|us-gov|eu|apac|jp|au|in|global)\./, "") // cross-region 추론 프로파일 접두사
     .replace(/^anthropic\./, "") // bedrock provider 접두사
     .replace(/-v\d+(?::\d+)?$/, "") // bedrock 버전 접미사 -v1:0 / -v1
     .replace(/-\d{8}$/, ""); // 날짜 스냅샷 접미사 -20250929
@@ -190,7 +190,7 @@ export function resolvedRatesTable() {
 // 4.5 이전 모델은 리전 할증 없이 기존 단가를 유지한다(pricing 페이지 "Earlier models ... retain").
 export const NO_REGIONAL_PREMIUM = ["claude-opus-4-1", "claude-opus-4", "claude-sonnet-4",
   "claude-haiku-3-5", "claude-3-5-haiku"];
-export const REGIONAL_MODEL_PATTERN = "^((us|eu|apac|jp|au)\\.|anthropic\\.)";
+export const REGIONAL_MODEL_PATTERN = "^((us|eu|apac|jp|au|in)\\.|anthropic\\.)";
 const REGIONAL_MODEL_RE = new RegExp(REGIONAL_MODEL_PATTERN);
 
 // 원본 모델 ID 기준 리전 할증 배율. 정규화된 ID(claude-*)·global.·us-gov.는 1.
