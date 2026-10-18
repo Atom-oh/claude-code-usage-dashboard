@@ -157,8 +157,8 @@ Do not delete PVCs, Keeper registrations, or objects under the live `cold/` pref
   [schema migrations](schema-migrations.md). During migration 003, raw and live rollup
   values can both be inflated until the relevant rewrite/rebuild finishes.
 - Grouping is per session. `grouping.js` uses any nonempty model not starting with `claude-`
-  as Bedrock evidence, then `has_org` for Enterprise, otherwise unknown. User-level grouping
-  or `ExperimentGroup` is not equivalent.
+  as Bedrock evidence, then `has_org` for Enterprise, then any other nonempty model for
+  Bedrock, otherwise unknown. User-level grouping or `ExperimentGroup` is not equivalent.
 - Compare the same window, filters, cohort/client versions, and reported/computed cost basis.
   Current Cost-page spend and ordinary chat cost use client reports; token-price computed
   cost is diagnostic. Missing reports are not evidence of free use. Consult
