@@ -211,9 +211,27 @@ test("GROUP_CTE falls back to bedrock for model-bearing sessions without account
   assert.match(GROUP_CTE, /max\(has_org\) = 1, 'enterprise',\s+countIf\(Model != ''\) > 0, 'bedrock',\s+'unknown'/);
 });
 
+// 위 multiIf 순서를 그대로 옮긴 JS 미러로 세션 단위 결과를 고정한다(SQL 실행 검증 대용).
+test("GROUP_CTE multiIf order yields the expected session outcomes", () => {
+  const classify = (models, hasOrg) => {
+    if (models.some((m) => m !== "" && !m.startsWith("claude-"))) return "bedrock";
+    if (hasOrg) return "enterprise";
+    if (models.some((m) => m !== "")) return "bedrock";
+    return "unknown";
+  };
+  assert.equal(classify([], false), "unknown");
+  assert.equal(classify(["claude-sonnet-5"], false), "bedrock");
+  assert.equal(classify(["claude-sonnet-5"], true), "enterprise");
+  assert.equal(classify(["global.anthropic.claude-opus-4-8"], true), "bedrock");
+  assert.equal(classify(["openai.x"], false), "bedrock");
+  assert.equal(classify(["", ""], false), "unknown");
+});
+
 // 위 SQL 조건의 의미론을 라이브 census(2026-09-04, otel_metrics_sum_hourly의 distinct Model
-// 전수) 기준으로 고정하는 진리표 — SQL의 startsWith와 동일한 JS 판별식으로 각 형태가 어느
-// 그룹 증거인지 문서화한다. 새 모델 형태가 라이브에 나타나면 여기에 추가할 것.
+// 전수) 기준으로 고정하는 진리표 — SQL의 startsWith와 동일한 JS 판별식으로 각 형태가 multiIf
+// 첫 분기(모델 기반 bedrock 증거)에 걸리는지만 문서화한다. 첫 분기에 안 걸리는 bare claude-*도
+// 뒤따르는 has_org(enterprise) 분기와 모델 폴백(bedrock) 분기로 최종 그룹이 정해진다(위 테스트
+// 및 아래 classify 미러 참고). 새 모델 형태가 라이브에 나타나면 여기에 추가할 것.
 test("bedrock-evidence rule truth table over the live model roster", () => {
   const isBedrockEvidence = (m) => m !== "" && !m.startsWith("claude-");
   // Bedrock: [global.|us.]anthropic.* (글로벌/리전 추론 프로파일), anthropic.* (인리전),

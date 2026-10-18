@@ -82,7 +82,8 @@ Compare the assistant's SQL with `dashboard/server/chat.js` (`SYSTEM`/`SCHEMA_CO
 `queries.js`, and `grouping.js`. The system prompt already describes the hourly rollup and
 session grouping. Verify with the dashboard's query before deciding the prompt or schema
 is missing. Grouping is inferred per `SessionId`: any nonempty model not starting with
-`claude-` gives Bedrock evidence, then `has_org` gives Enterprise, otherwise unknown.
+`claude-` gives Bedrock evidence, then `has_org` gives Enterprise, then any other nonempty
+model gives Bedrock, otherwise unknown.
 It does not identify the emitting client or enforce a static experiment group.
 
 Cost-page spend and ordinary chat cost answers use client-reported `cost.usage`. Align the

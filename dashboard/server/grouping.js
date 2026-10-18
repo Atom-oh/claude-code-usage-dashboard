@@ -37,11 +37,14 @@
 // [1m] 접미사(claude-fable-5[1m])는 통과시키고, anthropic./us.anthropic./global.anthropic./
 // ':' 버전 접미사/비-Anthropic 프로바이더를 전부 포섭한다(예전 조건의 상위집합).
 //
-// 실측 확인(2026-10-18, 최근 30일 405세션): organization.id/user.account_uuid/client_request_id/
-// request_id는 Anthropic 로그인 세션에만 실린다. 모델이 bare claude-*인데 계정 신호가 전혀 없는
-// 세션이 149개 있었고(request_id도 비어 있음 — Bedrock 응답과 같은 패턴) 예전에는 전부 unknown이었다.
-// 계정 신호 없는 세션은 3P 경로(= bedrock)로 확정한다. 단 모델 관측이 하나도 없는 세션은 근거가
-// 없으므로 계속 unknown이다.
+// 실측 확인(2026-10-18, 최근 30일 405세션): rollup이 접어 두는 계정 신호는 organization.id
+// 존재 여부(has_org) 하나뿐이고 규칙도 이것만 본다. 모델이 관측됐는데 has_org가 없으면 bedrock이다.
+// user.account_uuid/client_request_id/request_id는 규칙에 쓰지 않는 보강 근거일 뿐이다: bare
+// claude-* 모델인데 organization.id가 없는 149세션은 어떤 api_request 로그에도 request_id/
+// client_request_id가 없었다(bedrock 모델 15세션과 같은 패턴) — 즉 organization 없는 세션 중
+// request_id를 내는 1P Anthropic API-key 세션은 관측되지 않았다. 실패 조건: organization.id 없이 bare claude-* id를 내는 Anthropic API-key/
+// Vertex/게이트웨이 경로는 bedrock(3P 라벨, 소유자 승인)으로 분류된다. 모델 관측이 없는 세션은
+// 계속 unknown이다.
 export const GROUP_CTE = `
 WITH session_group AS (
     SELECT
