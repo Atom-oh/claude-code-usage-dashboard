@@ -38,7 +38,8 @@ fixed-group behavior and must be adapted for this scenario.
    non-Anthropic model names.
 2. Otherwise `max(has_org)=1` is Enterprise evidence; `has_org` comes from datapoint
    `Attributes['organization.id']`.
-3. Otherwise the session is unknown. Empty `SessionId` values are excluded from the classifier.
+3. Otherwise any other nonempty `Model` is Bedrock evidence.
+4. Otherwise the session is unknown. Empty `SessionId` values are excluded from the classifier.
 
 `EXPERIMENT_GROUP`/`ExperimentGroup` is not the dashboard's classification source. Remove or
 neutralize the collector's static `experiment.group` upsert for the shared-image scenario

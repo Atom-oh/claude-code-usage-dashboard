@@ -56,3 +56,8 @@ Workshop Studio image with participant-selected authentication, use the adaptati
 See [ADR-001](ADR-001-local-diff-over-shared-incflat-extension.md),
 [server guidance](../../dashboard/server/AGENTS.md), and the
 [data reference](../reference/data.md) before altering shared identity/grouping behavior.
+
+- 2026-10-18: the channel classifier no longer leaves model-bearing sessions without
+  `organization.id` as `unknown`; they are `bedrock` (see the
+  [data reference channel rules](../reference/data.md#claude-channels-users-and-projects)).
+  The 2026-08-11 census scope caveat above applies to this rule too.
