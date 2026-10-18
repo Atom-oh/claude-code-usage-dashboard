@@ -95,6 +95,8 @@ test("displayModel strips scope, vendor, version and date suffixes; labels keep 
   expect(displayModel("us.openai.gpt-5.6-luna")).toBe("openai.gpt-5.6-luna");
   expect(displayModel("global.anthropic.claude-fable-5-1")).toBe("claude-fable-5-1");
   expect(displayModel("us.anthropic.claude-opus-5-v1:0")).toBe("claude-opus-5");
+  expect(displayModel("in.anthropic.claude-opus-5")).toBe("claude-opus-5");
+  expect(displayModel("india.anthropic.claude-opus-5")).toBe("india.anthropic.claude-opus-5");
   expect(displayModel("claude-sonnet-5[1m]")).toBe("claude-sonnet-5");
   expect(displayModel("claude-sonnet-4-5-20250929")).toBe("claude-sonnet-4-5");
   expect(displayModel("")).toBe("");

@@ -933,7 +933,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
     });
     await t.test("commercial geography Haiku models retain the request tier in both cost feeds", async () => {
       const { buildCodexLogAggregateQuery, foldCodexLogAggregates } = await import("./codexLogAggregates.js");
-      for (const [index, prefix] of ["us.", "eu.", "apac.", "jp.", "au."].entries()) {
+      for (const [index, prefix] of ["us.", "eu.", "apac.", "jp.", "au.", "in."].entries()) {
         const email = `geo-pricing-${index}@example.invalid`;
         await insertLogs([log(2000 + index, "codex.sse_event", { ...zeroUsage,
           model: `${prefix}anthropic.claude-haiku-5-5`, input_token_count: "100001" },

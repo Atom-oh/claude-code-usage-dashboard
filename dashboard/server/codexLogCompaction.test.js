@@ -238,6 +238,23 @@ test("Codex log compaction against isolated ClickHouse", {
     }
   });
 
+  await t.test("India routing overrides stale gateway tags and prices identically in SQL and JS", () => {
+    const user = "india-routing@example.test";
+    insert([completion(630, { model: "in.anthropic.claude-opus-5",
+      input_token_count: "1000000", cached_token_count: "0", cache_write_token_count: "0",
+      output_token_count: "0", reasoning_token_count: "0" },
+      { "user.email": user, backend: "bedrock-mantle" })]);
+    const filters = { user, backend: "bedrock-runtime" };
+    const rawRows = select(logs.buildCodexInsightsLogQuery(from, to, filters));
+    assert.equal(rawRows.length, 1, "Runtime filtering must retain the India completion.");
+    const raw = logs.foldCodexInsightsLogs(rawRows);
+    const aggregated = foldCodexLogAggregates(select(buildCodexLogAggregateQuery(from, to, filters)));
+    assert.equal(raw.summary.cost_per_session, 5.5);
+    assert.equal(aggregated.summary.cost_per_session, raw.summary.cost_per_session);
+    assert.equal(raw.effort[0].unpriced, 0);
+    assert.equal(aggregated.effort[0].unpriced, 0);
+  });
+
   await t.test("120000 request/completion events retain per-request tiers in bounded aggregates", () => {
     const rates = input => ({ input, cacheRead: 0, cacheWrite: 0, output: 0 });
     const prices = { "test.model": { short_context_limit: 100,

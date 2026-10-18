@@ -5,7 +5,8 @@ import { resolveBackend, backendSql, VALID_BACKENDS } from "./backend.js";
 test("a cross-region routing prefix always resolves to bedrock-runtime, regardless of tag", () => {
   for (const model of ["us.anthropic.claude-opus-5", "us.openai.gpt-6-astra",
     "us-gov.openai.gpt-6-astra", "eu.anthropic.claude-fable-5", "apac.openai.x",
-    "jp.openai.x", "au.openai.x", "global.anthropic.claude-fable-5-1", "global.openai.gpt-6-astra",
+    "jp.openai.x", "au.openai.x", "in.anthropic.claude-opus-5", "in.openai.x",
+    "global.anthropic.claude-fable-5-1", "global.openai.gpt-6-astra",
     "global.xai.grok-4.6"]) {
     assert.equal(resolveBackend(model, "bedrock-mantle"), "bedrock-runtime", model);
     assert.equal(resolveBackend(model, "unknown"), "bedrock-runtime", model);
@@ -50,7 +51,7 @@ test("VALID_BACKENDS lists exactly the two known backend strings", () => {
 
 test("backendSql embeds the exact same region/vendor regexes as resolveBackend", () => {
   const sql = backendSql("MODEL_EXPR", "TAG_EXPR");
-  assert.match(sql, /multiIf\(match\(MODEL_EXPR, '\^\(us\|us-gov\|eu\|apac\|jp\|au\|global\)\\\\\.'\), 'bedrock-runtime',/);
+  assert.match(sql, /multiIf\(match\(MODEL_EXPR, '\^\(us\|us-gov\|eu\|apac\|jp\|au\|in\|global\)\\\\\.'\), 'bedrock-runtime',/);
   assert.match(sql, /match\(MODEL_EXPR, '\^\[a-z\]\[a-z0-9-\]\*\[a-z\]\\\\\.'\), 'bedrock-mantle',/);
   assert.match(sql, /TAG_EXPR IN \('bedrock-mantle','bedrock-runtime'\), TAG_EXPR, 'unknown'\)/);
 });

@@ -17,6 +17,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - `/api/reliability/reported-vs-computed` rows now include `cache_write_5m_tokens`, `cache_write_1h_tokens`, `cache_split_coverage`, `cost_split` and `ratio_split`, using the `cache_creation_5m_tokens`/`cache_creation_1h_tokens` `api_request` attributes (Claude Code 2.1.300+). Unsplit tokens keep the `PRICING_CACHE_WRITE_TTL` assumption.
 - Reliability's reported-vs-computed table shows the split coverage, split cost and split ratio. Reported spend, the metric-based computed costs and `PRICING_CACHE_WRITE_TTL` are unchanged.
 
+### Fixed (2026-10-18 India Bedrock routing)
+
+- Recognize `in.` profiles as Bedrock Runtime in backend inference and normalize
+  them consistently for prices, SQL, Grafana and model labels. Preserve request
+  tiers, regional rate policy, unknown prices and unsupported GovCloud scopes.
+- Strip supported commercial geography prefixes from chat foundation-model IAM
+  ARNs while retaining full inference-profile IDs.
+
 ### Changed (2026-10-18 channel fallback)
 
 - Sessions with an observed model and no `organization.id` are now classed `bedrock`
