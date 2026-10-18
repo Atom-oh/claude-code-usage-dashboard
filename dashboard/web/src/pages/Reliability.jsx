@@ -40,6 +40,11 @@ const ttlShareBadge = (v) => {
   return Number(v).toFixed(2);
 };
 
+// cache_split_coverage: 캐시 쓰기 토큰 중 cache_creation_5m/1h_tokens(Claude Code 2.1.300+)로 분리 수집된
+// 비율. 1이면 cost_split에 TTL 가정이 없고, 0이면 cost_split이 기존 계산 비용과 같다.
+const splitCoverageText = (v) => (v == null ? "" : `${(Number(v) * 100).toFixed(0)}%`);
+const splitCoverageCell = (v) => (v == null ? <span className="text-ink-400">—</span> : splitCoverageText(v));
+
 // 2026-08-11 STEP 3/4 — 신뢰성(refusal/재시도) + A/B 무결성(버전 코호트) 신규 패널 전용 페이지.
 // 기존 페이지(Productivity/Usage)와 성격이 달라(생산성/사용량이 아니라 "이 A/B 비교를 믿어도
 // 되는가") 별도 페이지로 분리한다.
@@ -106,6 +111,9 @@ const REPORTED_VS_COMPUTED_COLUMNS = [
   { key: "cost_5m", label: "계산 비용 (5m 캐시)", render: scenarioCostCell, toText: scenarioCostText },
   { key: "cost_1h", label: "계산 비용 (1h 캐시)", render: scenarioCostCell, toText: scenarioCostText },
   { key: "ttl_share", label: "TTL 비중 (0=5m, 1=1h)", render: ttlShareBadge, toText: ttlShareText },
+  { key: "cache_split_coverage", label: "TTL 분리 수집률", render: splitCoverageCell, toText: splitCoverageText },
+  { key: "cost_split", label: "계산 비용 (TTL 분리)", render: scenarioCostCell, toText: scenarioCostText },
+  { key: "ratio_split", label: "비율 (TTL 분리)", render: ratioBadge, toText: ratioText },
 ];
 
 const VERSION_SESSION_COLUMNS = [
