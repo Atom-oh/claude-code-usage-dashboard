@@ -70,7 +70,8 @@ the installation's infrastructure bill.
 | Operations | Monitoring/alerts, backup/restore drills, maintenance and agreed support effort |
 
 With default backup monitoring, record one custom CloudWatch metric, one regional alarm,
-up to 288 observer Jobs and metric publications per day, API/network requests and actual
+288 scheduled observer Jobs per day and one logical metric per completed observation.
+SDK retries and manual runs can add API requests; record actual API/network activity and
 SNS notifications. Jobs share existing compute with 100m CPU/256 MiB limits; those limits
 do not establish measured consumption. A disabled monitor removes this path, and a topic
 without a confirmed subscriber does not establish alert delivery.
