@@ -45,6 +45,7 @@ and do not verify an installation.
 | [s3.tf](../../infra/s3.tf) | Cold/backup bucket, public-access block, IRSA and backup-prefix expiration |
 | [dns_cdn.tf](../../infra/dns_cdn.tf) | Two CloudFront VPC origins/distributions and Route53 aliases |
 | [alerting.tf](../../infra/alerting.tf) | Optional CloudFront 5xx alarm and SNS email subscription |
+| [backup-monitor.tf](../../infra/backup-monitor.tf) | Independent bounded backup observer, restricted IRSA/RBAC, regional health alarm and SNS topic |
 | [variables.tf](../../infra/variables.tf), [outputs.tf](../../infra/outputs.tf) | Deployment inputs and resource outputs |
 
 Karpenter and the ClickHouse/Keeper operators must already be available to reconcile the
@@ -85,6 +86,13 @@ the controlled [SSO rollout](../runbooks/organization-sso.md).
 provider-free fixture; it is not a plan or deployment of the complete stack.
 
 The S3 lifecycle expires `backup/` objects after 30 days; table TTL owns cold-data deletion.
+Backup Jobs have a configurable deadline (default two hours) and two-retry backoff limit.
+The independent backup observer defaults on, reuses the released dashboard image and
+publishes one metric per installation every five minutes. A regional alarm treats
+missing metrics as breaching. Configure and confirm a recipient or attach an authorized
+subscriber; a topic alone is not delivery coverage. The observer does not inspect S3
+objects or establish restore usability. Its runtime, IAM and delivery checks are owned by
+[alerting](../runbooks/alerting.md#backup-observation).
 The optional `alert_email` creates a CloudFront alarm/SNS path. The application webhook
 setting is a separate freshness-alert path, described in [alerting](../runbooks/alerting.md).
 
