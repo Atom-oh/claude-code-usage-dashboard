@@ -163,7 +163,8 @@ TAG=$(date -u +%Y%m%d-%H%M%S)
 ```
 
 Keep the previous image/digest with the deployment record. `dashboard_image_tag` seeds the
-first rollout only: Terraform ignores subsequent image changes, which this procedure owns.
+dashboard and backup observer's first images: Terraform ignores subsequent image changes,
+which this procedure owns for both workloads.
 Terraform does not rebuild application images. A changed pod template rolls pods; a changed
 Secret value alone requires a controlled restart to refresh environment variables.
 
@@ -251,6 +252,35 @@ Both should return 200. `/readyz` also depends on ClickHouse connectivity and sh
 match the built image. The Docker build's frontend assets are authoritative; a stale local
 `dashboard/web/dist` is not.
 
+#### Refresh the backup observer
+
+When `backup_monitor_enabled=true`, every release must also refresh the observer.
+ECR retains only ten images; leaving the observer on its initial tag can eventually
+make scheduled Jobs fail to pull. Before first enabling it, publish and inspect a
+release containing `server/backupHealth.js` and its production dependencies, then
+set the private `dashboard_image_tag` to that release for the reviewed Terraform
+creation plan. Inspect existing backup durations before accepting the default
+two-hour Job deadline. For later releases, Terraform preserves the live observer image.
+
+Record its previous image/digest separately from the dashboard's rollback image:
+
+```bash
+PREVIOUS_MONITOR_IMAGE=$(kube get cronjob clickhouse-backup-monitor \
+  -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[?(@.name=="monitor")].image}') || exit 1
+: "${PREVIOUS_MONITOR_IMAGE:?Expected the enabled backup observer}"
+kube set image cronjob/clickhouse-backup-monitor "monitor=$REPO:$TAG" || exit 1
+MONITOR_IMAGE=$(kube get cronjob clickhouse-backup-monitor \
+  -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[?(@.name=="monitor")].image}') || exit 1
+[ "$MONITOR_IMAGE" = "$REPO:$TAG" ] || exit 1
+```
+
+An enabled but missing observer blocks release acceptance. Skip this step only when
+the reviewed configuration disables monitoring and the CronJob is absent. Existing
+Jobs retain their original image: verify a subsequent scheduled Job uses the new
+image/digest, completes and publishes the expected metric before accepting the
+release. Follow [backup observation](alerting.md#backup-observation) for metric and
+delivery checks. Do not create a backup Job to test the observer.
+
 ### 4. Check the edge and invalidate only when needed
 
 `infra/dns_cdn.tf` declares `CachingDisabled`. Do not assume the live distribution caches
@@ -305,6 +335,16 @@ kube rollout status deployment/dashboard --timeout=120s
 
 `kube rollout undo deployment/dashboard` is the history-based alternative. Recheck the edge
 and health endpoints. Image rollback does not undo Terraform, Secret, or schema changes.
+
+Keep a healthy backup observer running during an application-only rollback. If the
+observer itself regressed, restore its separately recorded, still-present known-good
+image and verify a subsequent Job and metric. Do not copy the dashboard rollback
+image blindly: older dashboard releases can lack the observer entrypoint.
+
+```bash
+: "${PREVIOUS_MONITOR_IMAGE:?Recover the known-good observer image first}"
+kube set image cronjob/clickhouse-backup-monitor "monitor=$PREVIOUS_MONITOR_IMAGE"
+```
 
 ## Schema and boot failures
 

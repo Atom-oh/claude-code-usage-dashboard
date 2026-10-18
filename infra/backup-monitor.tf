@@ -242,6 +242,11 @@ resource "kubernetes_cron_job_v1" "backup_monitor" {
       }
     }
   }
+  # The release runbook refreshes the observer with each dashboard release.
+  # Keep later Terraform applies from restoring the first-install image.
+  lifecycle {
+    ignore_changes = [spec[0].job_template[0].spec[0].template[0].spec[0].container[0].image]
+  }
   depends_on = [kubernetes_role_binding_v1.backup_monitor, aws_iam_role_policy.backup_monitor]
 }
 

@@ -70,8 +70,10 @@ tables are not altered, materialized or repaired by this Job. Its contract check
 column types/default expressions, engines, keys, TTL, view query/target, storage policy,
 replication path and migration checksums. It does not verify historical data or backfills.
 The [migration procedure](../runbooks/schema-migrations.md) owns upgrades and partial repair.
-Codex's four metric tables are mirrored in schema-init; existing installations can apply
-additive migration 006 alone after ledger 004, without migration 005 or rollup rebuilds.
+Codex's four metric tables are mirrored in schema-init. Standalone migration 006 is
+additive and requires ledger 004; it does not run migration 005 or rebuild rollups.
+The full installation compatibility check also requires completed migrations 003 and
+005, including their schema and ledger evidence.
 The [collection contract](../runbooks/codex-telemetry.md#storage-interface) owns their
 exporter columns and retention. Generate and check the metadata contract using the
 network-isolated ClickHouse 24.8 fixture; CI rejects a stale contract. Code changes do not
@@ -92,7 +94,9 @@ provider-free fixture; it is not a plan or deployment of the complete stack.
 The S3 lifecycle expires `backup/` objects after 30 days; table TTL owns cold-data deletion.
 Backup Jobs have a configurable deadline (default two hours) and two-retry backoff limit.
 The independent backup observer defaults on, reuses the released dashboard image and
-publishes one metric per installation every five minutes. A regional alarm treats
+publishes one metric per installation every five minutes. Terraform seeds its initial
+image; [deployment](../runbooks/deploy-production.md#refresh-the-backup-observer) owns later
+image updates and its separate rollback record. A regional alarm treats
 missing metrics as breaching. Configure and confirm a recipient or attach an authorized
 subscriber; a topic alone is not delivery coverage. The observer does not inspect S3
 objects or establish restore usability. Its runtime, IAM and delivery checks are owned by

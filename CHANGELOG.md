@@ -32,6 +32,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   regional SNS topic and optional confirmed email delivery.
 - Bound new backup Jobs by a configurable deadline and two-retry backoff limit.
   Job completion remains distinct from complete objects and a usable restore.
+- Refresh the observer image on every release, preserve it across Terraform applies
+  and record its rollback image independently from the dashboard.
 
 ### Added (2026-10-18 cache TTL split cost)
 

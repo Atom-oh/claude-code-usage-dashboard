@@ -45,7 +45,9 @@ replica duplicates was also rejected as unnecessary complexity for the current a
 
 Each replica maintains independent alert state; multiple replicas can send equivalent
 messages distinguished by hostname. Restarting a replica resets that state. Coverage is
-freshness plus edge 5xx, **not backup CronJob failures**. A recovery message does not prove
+freshness plus edge 5xx within this decision's original scope. The 2026-10-18
+[backup observer](../runbooks/alerting.md#backup-observation) adds independent backup
+Job-status coverage; it does not extend the in-process webhook loop. A recovery message does not prove
 missing telemetry was recovered, and a sent notification is not proof of receipt.
 
 Treat the webhook URL, Terraform state, and Kubernetes Secret as sensitive. Disabling either

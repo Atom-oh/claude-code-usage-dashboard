@@ -50,10 +50,12 @@ alerts independently; two replicas can produce two messages with different pod n
 
 ## Backup observation
 
-`backup_monitor_enabled` defaults to true. The worker reuses the released dashboard image;
-set `dashboard_image_tag` to a reviewed immutable release containing `server/backupHealth.js`
-and its CloudWatch SDK dependency. This variable updates the monitor template. Dashboard
-image rollout remains separate, as described in [deployment](deploy-production.md).
+`backup_monitor_enabled` defaults to true. Before first creation, set `dashboard_image_tag`
+to a published, reviewed immutable release containing `server/backupHealth.js` and its
+CloudWatch SDK dependency. It seeds the observer image; Terraform ignores later image
+changes. Every subsequent release refreshes both workload images through
+[deployment](deploy-production.md#refresh-the-backup-observer), with a separate observer
+rollback image. This prevents the initial observer tag aging out of ECR's ten-image retention.
 
 The worker reads the named CronJob and at most 500 namespace Jobs in five bounded pages.
 It selects controller owners by the current CronJob UID, so old/recreated/foreign Jobs do
@@ -77,6 +79,8 @@ CloudWatch can retrieve older real points before filling missing periods; two-of
 evaluation is not an exact ten-minute outage-detection guarantee. See AWS
 [missing-data evaluation](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarms-and-missing-data.html).
 SNS notifies on state transitions, not repeated paging while the alarm stays active.
+First enablement can notify before healthy datapoints arrive; a new installation
+without a successful backup also legitimately reports unhealthy.
 
 Configure and confirm `backup_alert_email`, or attach an authorized regional subscriber
 to `backup_alert_topic_arn`. A topic without a confirmed subscriber does not deliver
