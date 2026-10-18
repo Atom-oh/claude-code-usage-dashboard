@@ -24,6 +24,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   installations. Freeze schema inputs, stop automatic partial-bootstrap retries and check
   schema/ledger drift before explicit upgrades.
 
+### Added (2026-10-18 backup health observation)
+
+- Observe backup Job failures, stalls, suspension and success age independently of
+  the dashboard, with bounded read-only Kubernetes access and one regional metric.
+- Declare a CloudWatch alarm covering unhealthy and missing monitor signals, a
+  regional SNS topic and optional confirmed email delivery.
+- Bound new backup Jobs by a configurable deadline and two-retry backoff limit.
+  Job completion remains distinct from complete objects and a usable restore.
+- Refresh the observer image on every release, preserve it across Terraform applies
+  and record its rollback image independently from the dashboard.
+
 ### Added (2026-10-18 cache TTL split cost)
 
 - `/api/reliability/reported-vs-computed` rows now include `cache_write_5m_tokens`, `cache_write_1h_tokens`, `cache_split_coverage`, `cost_split` and `ratio_split`, using the `cache_creation_5m_tokens`/`cache_creation_1h_tokens` `api_request` attributes (Claude Code 2.1.300+). Unsplit tokens keep the `PRICING_CACHE_WRITE_TTL` assumption.

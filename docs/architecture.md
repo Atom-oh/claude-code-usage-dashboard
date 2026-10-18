@@ -226,7 +226,11 @@ Health and alerts have distinct responsibilities:
   enabled Claude metric or Codex log timestamp. One fresh client can hide another's gap;
   this is not a per-client completeness check. Optional webhooks run per replica.
 - The optional CloudFront 5xx alarm/SNS path detects edge failures, not silent ingestion
-  gaps. Neither alert path covers every failure, including backup-job failures.
+  gaps.
+- A separate bounded CronJob reads backup scheduling status and publishes one regional
+  CloudWatch metric. Its alarm covers unhealthy or missing monitor signals; regional
+  SNS delivery requires a confirmed subscriber. It runs independently of the dashboard
+  and does not query telemetry or inspect S3 backup objects.
 - Native database backups target the S3 `backup/` prefix, whose lifecycle expires objects
   after 30 days. Cold data uses table TTL. Configuration and replication do not prove a
   usable backup, measured recovery time or completed restore.
