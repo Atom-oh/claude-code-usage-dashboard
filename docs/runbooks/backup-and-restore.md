@@ -9,6 +9,12 @@ self-contained **object set**, not one object, to `backup/<UTC-date>_<HHMMSS>/`.
 The CronJob declares `Forbid` concurrency to skip overlapping scheduled runs. Manually
 created Jobs still require an operator check that no other backup is active.
 
+Each newly created backup Job has `backup_job_deadline_seconds` (default 7200) and a
+two-retry backoff limit. The deadline includes Pending time and prevents an indefinitely
+active Job from blocking later schedules. Tune it from observed duration before rollout;
+an existing Job does not inherit a changed CronJob template. A terminated run can leave
+partial S3 objects, which must not be treated as a usable snapshot.
+
 `infra/s3.tf` declares 30-day expiry for `backup/` only. These are desired settings: inspect
 the deployed schedule, job results, destinations, lifecycle, and complete backup objects.
 A daily schedule targets roughly 24-hour intervals; actual recoverable-data age can exceed
@@ -88,7 +94,10 @@ A failed scratch restore does not modify production. Stop and recreate the scrat
 before retrying; do not enable nonempty restore to suppress an unexplained mismatch.
 Never drop the production database as drill cleanup.
 
-There is no backup-job failure alarm declared under `infra/`; the two optional paths in
-[alerting](alerting.md) cover freshness and edge errors only. There is no declared automatic
-cross-region backup copy. Use [permanent archival](archive-clickhouse.md) before source
+An independent backup health worker and regional CloudWatch/SNS alarm are declared in
+`infra/backup-monitor.tf`; see [alerting](alerting.md#backup-observation) for recipient
+confirmation, failure/missing-data semantics and actual deployment verification. These
+observe successful Job age and failures, not snapshot completeness or restore usability.
+There is no declared automatic cross-region backup copy.
+Use [permanent archival](archive-clickhouse.md) before source
 expiry/account teardown; source TTLs and lifecycle do not establish archive retention.

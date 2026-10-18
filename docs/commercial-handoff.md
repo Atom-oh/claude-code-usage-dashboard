@@ -69,6 +69,13 @@ the installation's infrastructure bill.
 | Identity and assistant | Customer IdP usage and actual model requests/tokens/routing/tier; per-process admission is not a billing bound |
 | Operations | Monitoring/alerts, backup/restore drills, maintenance and agreed support effort |
 
+With default backup monitoring, record one custom CloudWatch metric, one regional alarm,
+288 scheduled observer Jobs per day and one logical metric per completed observation.
+SDK retries and manual runs can add API requests; record actual API/network activity and
+SNS notifications. Jobs share existing compute with 100m CPU/256 MiB limits; those limits
+do not establish measured consumption. A disabled monitor removes this path, and a topic
+without a confirmed subscriber does not establish alert delivery.
+
 The [IaC owner](reference/iac.md) defines these resource sizes. They describe source declarations, not verified deployed quantities or a
 recommended fleet size. Establish capacity and restore timing with customer-style workload
 evidence; do not promise a throughput/SLO, full-database RTO or RPO from defaults.

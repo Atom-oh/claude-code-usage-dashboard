@@ -257,6 +257,8 @@ resource "kubernetes_cron_job_v1" "backup" {
     job_template {
       metadata {}
       spec {
+        active_deadline_seconds = var.backup_job_deadline_seconds
+        backoff_limit           = 2
         template {
           metadata {}
           spec {
