@@ -50,8 +50,9 @@ derived from another override field.
   through Codex price from the Claude table.
 - A Claude row with no usable report but known tokens/rate shows a disclosed estimate
   instead of `—`; the web trend chip, status, tooltip and table all disclose it.
-- A bedrock-channel Claude row with a bare model reports `unknown` — live verification
-  found zero such rows, so this is not a regression.
+- A bedrock-channel Claude row with a bare model reports `unknown` — the 2026-10-18
+  channel fallback (organization-less, model-bearing sessions are `bedrock`) now makes such
+  rows possible; their spend stays reported and their backend stays `unknown`.
 - Collection, the raw tag, and the legacy cost-basis contract are unchanged.
 
 ### India routing coverage correction (2026-10-18)

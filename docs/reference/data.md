@@ -165,7 +165,16 @@ rollup rows, without a request-time restriction on that classification:
 
 1. Any nonempty model that does not start with `claude-` selects `bedrock`.
 2. Otherwise `has_org=1` selects `enterprise`.
-3. Otherwise the channel is `unknown`.
+3. Otherwise any nonempty model selects `bedrock`: account signals (`organization.id`) appear only
+   on Anthropic-login sessions, so a model-bearing session without them is a third-party route.
+4. Otherwise the channel is `unknown` (no model observed).
+
+The fallback is an owner-approved assumption: `organization.id` is the only account signal the
+rollup keeps, and a model-bearing session without it is treated as a third-party (Bedrock) route.
+Census 2026-10-18: of 405 sessions in 30 days, the 149 organization-less bare-model sessions
+carried no `request_id`/`client_request_id`, i.e. no first-party Anthropic API-key session was
+observed. Limitation: an Anthropic API-key, Vertex or gateway route without `organization.id`
+would be labelled `bedrock`; re-run the census before relying on this in another deployment.
 
 These are access-channel heuristics, not coding-client identities or randomized experiment
 assignments. The broad model rule is not a client detector; Codex uses its log namespace

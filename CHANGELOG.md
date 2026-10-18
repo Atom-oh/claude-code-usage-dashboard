@@ -20,6 +20,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Strip supported commercial geography prefixes from chat foundation-model IAM
   ARNs while retaining full inference-profile IDs.
 
+### Changed (2026-10-18 channel fallback)
+
+- Sessions with an observed model and no `organization.id` are now classed `bedrock`
+  instead of `unknown`; sessions with no observed model stay `unknown`. Live rollup
+  effect: 4 sessions moved from `unknown` to `bedrock`.
+- No collection, schema or cost-basis change; backend resolution (ADR-017) is unchanged.
+
 ### Changed (2026-10-15 distinct cache admission)
 
 - Let up to 64 distinct cold views per process wait up to 30 seconds for an
