@@ -2,6 +2,7 @@ import datetime
 import importlib.util
 import io
 import contextlib
+import copy
 import threading
 import tempfile
 from pathlib import Path
@@ -27,6 +28,7 @@ class CapacityBenchmark(unittest.TestCase):
         self.assertEqual(args.resource_bytes, 2048)
         self.assertIn("@sha256:", args.dashboard_image)
         self.assertIsNone(args.fixture_day)
+        self.assertEqual(args.time_format, "compact")
 
     def test_fixture_day_can_be_frozen_for_paired_runs_and_must_be_closed(self):
         class FixedUtcDateTime(datetime.datetime):
@@ -46,9 +48,117 @@ class CapacityBenchmark(unittest.TestCase):
     def test_rejects_invalid_inputs_and_floating_images(self):
         for args in [("--users", "0"), ("--users", "141"),
                      ("--requests-per-user", "1441"), ("--resource-bytes", "32769"),
+                     ("--time-format", "other"),
                      ("--dashboard-image", "fixture:latest"), ("--dashboard-image", "x@sha256:" + "z"*64)]:
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 self.parse(*args)
+
+    def test_time_format_is_recordable_and_requests_match_the_ui(self):
+        day = datetime.datetime(2026, 10, 17, tzinfo=datetime.timezone.utc)
+        compact = benchmark.overview_path(day, self.parse().time_format)
+        expanded = benchmark.overview_path(day, self.parse("--time-format", "expanded").time_format)
+        params = benchmark.urllib.parse.parse_qs(compact.split("?", 1)[1])
+        self.assertEqual(params["timeFormat"], ["compact"])
+        self.assertEqual(params["modelTime"], ["1"])
+        self.assertEqual(params["view"], ["cost"])
+        self.assertEqual(float(params["intervalHours"][0]), 1/6)
+        self.assertNotIn("timeFormat", benchmark.urllib.parse.parse_qs(expanded.split("?", 1)[1]))
+        path = benchmark.overview_path(day, "compact", "user-0@fixture.invalid")
+        self.assertEqual(benchmark.urllib.parse.parse_qs(path.split("?", 1)[1])["userExact"],
+                         ["user-0@fixture.invalid"])
+
+    def compact_fixture(self):
+        def table(dimension):
+            return {"columns": ["client", "t", dimension, "cost_usd", "observed_tokens",
+                                "unpriced_reasons", "cost_basis"],
+                    "dictionaries": {"client": ["claude", "codex"], "t": ["2026-10-17T00:00:00Z"],
+                                     dimension: ["first", "second"],
+                                     "unpriced_reasons": [{"missing_usage": 1}],
+                                     "cost_basis": ["reported", "aws_list_estimate"]},
+                    "rows": [[0, 0, 0, 0.1, 30, 0, 0], [1, 0, 1, None, 0, None, 1]]}
+        return {"time_format": "compact-v1", "by_model_time": table("model"),
+                "by_user_time": table("user"), "totals": {"cost_usd": 0.1}}
+
+    def test_compact_semantics_preserve_null_zero_fields_and_dictionary_values(self):
+        compact = self.compact_fixture()
+        expanded = benchmark.overview_semantics(compact, "compact")
+        self.assertEqual(expanded["by_user_time"][0]["cost_usd"], 0.1)
+        self.assertEqual(expanded["by_user_time"][1]["cost_usd"], None)
+        self.assertEqual(expanded["by_user_time"][1]["observed_tokens"], 0)
+        self.assertEqual(expanded["by_user_time"][0]["unpriced_reasons"], {"missing_usage": 1})
+        self.assertNotIn("time_format", expanded)
+        self.assertTrue(benchmark.matches_overview(compact, expanded, "compact"))
+        self.assertTrue(benchmark.matches_overview(expanded, expanded, "expanded"))
+
+    def test_compact_dictionary_and_column_reordering_keeps_semantics(self):
+        compact = self.compact_fixture()
+        expected = benchmark.overview_semantics(compact, "compact")
+        for key in ["by_model_time", "by_user_time"]:
+            table = compact[key]
+            table["dictionaries"]["client"].reverse()
+            for row in table["rows"]:
+                row[0] = 1-row[0]
+            table["columns"].reverse()
+            table["rows"] = [row[::-1] for row in reversed(table["rows"])]
+        self.assertTrue(benchmark.matches_overview(compact, expected, "compact"))
+
+    def test_compact_cell_order_is_not_ignored(self):
+        compact = self.compact_fixture()
+        expected = benchmark.overview_semantics(compact, "compact")
+        compact["by_user_time"]["rows"][0][3:5] = [30, 0.1]
+        self.assertFalse(benchmark.matches_overview(compact, expected, "compact"))
+
+    def test_compact_numeric_and_population_changes_are_rejected(self):
+        original = self.compact_fixture()
+        expected = benchmark.overview_semantics(original, "compact")
+        for row, column, value in [(1, 3, 0), (1, 4, 1e-15), (0, 3, 0.2), (0, 2, 1)]:
+            changed = copy.deepcopy(original)
+            changed["by_user_time"]["rows"][row][column] = value
+            self.assertFalse(benchmark.matches_overview(changed, expected, "compact"))
+        changed = copy.deepcopy(original)
+        changed["by_user_time"]["rows"].pop()
+        self.assertFalse(benchmark.matches_overview(changed, expected, "compact"))
+
+    def test_compact_malformed_and_wrong_format_payloads_are_rejected(self):
+        original = self.compact_fixture()
+        expected = benchmark.overview_semantics(original, "compact")
+        mutations = [
+            lambda table: table["columns"].append("client"),
+            lambda table: table["dictionaries"].pop("client"),
+            lambda table: table["dictionaries"].update(extra=[]),
+            lambda table: table["dictionaries"].update(client=[None]),
+            lambda table: table["dictionaries"].update(unpriced_reasons=["bad"]),
+            lambda table: table["rows"][0].pop(),
+            lambda table: table["rows"][0].__setitem__(0, True),
+            lambda table: table["rows"][0].__setitem__(0, -1),
+            lambda table: table["rows"][0].__setitem__(0, 0.0),
+            lambda table: table["rows"][0].__setitem__(0, 2),
+        ]
+        for mutate in mutations:
+            changed = copy.deepcopy(original)
+            mutate(changed["by_user_time"])
+            self.assertFalse(benchmark.matches_overview(changed, expected, "compact"))
+        for changed in [None, [], {}, {**original, "time_format": "compact-v2"}]:
+            self.assertFalse(benchmark.matches_overview(changed, expected, "compact"))
+        self.assertFalse(benchmark.matches_overview(original, expected, "expanded"))
+        self.assertFalse(benchmark.matches_overview(expected, expected, "compact"))
+        self.assertFalse(benchmark.matches_overview({**expected, "by_user_time": {}}, expected, "expanded"))
+
+    def test_empty_compact_tables_preserve_empty_population(self):
+        table = {"columns": [], "dictionaries": {}, "rows": []}
+        self.assertEqual(benchmark.decode_time_table(table, "user"), [])
+        for changed in [[], {**table, "rows": [[]]}]:
+            with self.assertRaises(ValueError):
+                benchmark.decode_time_table(changed, "user")
+
+    def test_shared_and_every_user_are_checked_across_both_formats(self):
+        source = (ROOT / "scripts/benchmark-capacity.py").read_text()
+        self.assertIn('"timeFormat": args.time_format', source)
+        self.assertIn('"sharedResponseBytes"', source)
+        self.assertIn('"compactExpandedSemanticParity": True', source)
+        self.assertIn('overview_path(day, other_format, user)', source)
+        self.assertIn('"exactUsersWithCompactExpandedSemanticParity"] = args.users', source)
+        self.assertIn('matches_overview(', source)
 
     def test_seed_preserves_cumulative_boundaries_and_complete_usage(self):
         sql = benchmark.seed_sql(datetime.datetime(2026, 10, 14), 140, 24, 2048)

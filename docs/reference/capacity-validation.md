@@ -27,6 +27,13 @@ ownership label and cleanup deletes only resources bearing that label.
 All containers use an internal network. The host connects directly to its owned
 private transport; there are no published ports or ambient HTTP proxies.
 No production credentials are consumed and authentication remains enabled.
+The default `--time-format compact` requests the same `timeFormat=compact` payload
+as the cost/exec/trends UI. Use `--time-format expanded` for compatibility stress
+tests. The report records the selected format and both shared response sizes.
+Both formats must have identical decoded semantics for the shared response and
+every exact-user baseline before the bursts start. Compact tables are decoded
+with their column positions and dictionary indices intact; array sorting cannot
+turn a shifted cost/token cell into a passing comparison.
 For paired trials across UTC midnight, set the same closed `--fixture-day YYYY-MM-DD`
 on both runs. Explicit days must be within the previous 30 UTC days, keeping logs
 inside their 90-day TTL and counter baselines inside their 180-day TTL. The report
@@ -63,6 +70,8 @@ It does not redefine rejected attempts as immediate successes.
 - Cost views request ten-minute buckets. Each distinct exact-user baseline must
   match both client rows from the shared baseline, including amounts and coverage,
   before concurrent requests are admitted. Empty filtered responses fail validation.
+- The compact/expanded parity check preserves every field, null, zero, tiny value
+  and population. Malformed columns, dictionaries, indices or format markers fail.
 - Shared cold/warm requests and distinct cold/follow-up requests use simultaneous barriers.
   Distinct follow-up does not guarantee every key is warm on every replica: rejected
   work and load-balancer redistribution can still cause cache misses.
@@ -78,6 +87,9 @@ The synthetic fixture is not evidence that customer data has the same distributi
 HTTP-cold runs restart API caches; they do not flush database/storage caches.
 Independent database copies omit Keeper, replication and network overhead.
 Basic authentication omits real customer OIDC, cookies and browser rendering.
+Latency includes response download and JSON parsing. The host workload shares
+Python threads; all 140 product retry jobs share a single 1-CPU/256-MiB Node client.
+These client limits and format sizes can affect latency independently of SQL.
 The cost endpoint/drilldown workload does not cover every product page, assistant,
 ongoing ingestion or a complete customer installation.
 
@@ -94,7 +106,9 @@ The private reports used 140 distinct exact users, ten-minute cost buckets,
 1,008,000 log events and 17,137,400 total rows per database. Every successful
 response matched its sequential semantic baseline. These are individual
 synthetic trials, with the resource envelope above. They preceded the Claude
-wrapper signal-forwarding fix; new release evidence must identify its actual revision:
+wrapper signal-forwarding fix; new release evidence must identify its actual revision.
+These trials requested expanded time rows, before the harness default matched
+the compact UI payload. Their latency is evidence for that expanded API workload.
 
 | Candidate and scenario | Final 200 / coded 503 | Initial 503 | HTTP attempts | p95 |
 |---|---:|---:|---:|---:|

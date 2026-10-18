@@ -562,7 +562,7 @@ test("costWithCacheSplit prices split cache writes at their own TTL and the rema
   assert.equal(mixed, 3.75 + rest);
 });
 
-test("costWithCacheSplit returns null for unpriced models and never counts split tokens above the total", () => {
+test("costWithCacheSplit returns null for unpriced models and prices splits above the total with no remainder", () => {
   assert.equal(costWithCacheSplit({ model: "some-unknown-model", input_tokens: M, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 }), null);
   const row = { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
   // 분리 합계가 총합보다 커도(잘린 행) 나머지는 음수가 되지 않는다.

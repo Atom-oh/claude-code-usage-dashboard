@@ -1,11 +1,5 @@
 # Changelog
 
-## 2026-10-18
-
-- Separate empty ClickHouse bootstrap from read-only compatibility verification of existing
-  installations. Freeze schema inputs, stop automatic partial-bootstrap retries and check
-  schema/ledger drift before explicit upgrades.
-
 Notable changes follow the categories of Keep a Changelog and Semantic Versioning.
 All changes recorded here are under **Unreleased**. Entries describe changes at their
 recorded dates, not proof that infrastructure or migrations are deployed. Later entries
@@ -17,6 +11,18 @@ UI behavior and billing-lower-bound wording. Neither reported nor computed estim
 invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
+
+### Fixed (2026-10-18 runtime OS zlib)
+
+- Install the authenticated Alpine OS zlib fix for `CVE-2026-85091` and verify
+  its pinned version in actual image package metadata before publication.
+  Record Node's bundled zlib separately; package inspection is not CVE clearance.
+
+### Changed (2026-10-18 schema lifecycle)
+
+- Separate empty ClickHouse bootstrap from read-only compatibility verification of existing
+  installations. Freeze schema inputs, stop automatic partial-bootstrap retries and check
+  schema/ledger drift before explicit upgrades.
 
 ### Added (2026-10-18 cache TTL split cost)
 

@@ -2308,9 +2308,11 @@ export async function reportedVsComputedByVersion(from, to, filters = {}) {
   });
 }
 
-// cache_split_coverage: 캐시 쓰기 토큰 중 5m/1h로 분리 수집된 비율(없으면 0, 쓰기 토큰이 0이면 null).
+// cache_split_coverage: positive-total split share, capped at 1; otherwise null.
 // cost_split은 분리된 토큰만 실제 TTL 단가로, 나머지는 서버 가정으로 계산한다 — 커버리지가 1이면 가정이
 // 없는 값이다. 커버리지가 0이면 cost_split은 기존 cost와 같으므로 ratio_split도 ratio와 같다.
+// A capped share does not establish agreement between total and split token fields.
+// Split costs retain over-total split counts and use a zero unsplit remainder.
 export function ttlSplitFields(r) {
   const write = Number(r.cache_write_tokens);
   const split = Number(r.cache_write_5m_tokens) + Number(r.cache_write_1h_tokens);

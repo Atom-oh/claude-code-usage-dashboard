@@ -34,7 +34,10 @@ RUN mv notice-sources notices && node collect-notices.mjs /app /tmp/distribution
 FROM server-deps AS runtime
 # Package managers are build tools; the production entrypoint needs Node and locked
 # server dependencies. Retain OS software and its metadata for image scanning.
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+# Patch the base's OS zlib for CVE-2026-85091 using authenticated Alpine packages.
+# Keep this version aligned with verify-runtime.mjs; Node's bundled zlib is separate.
+RUN apk add --no-cache 'zlib=1.3.2-r1' \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
       /opt/yarn-v* \
       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn \
       /usr/local/bin/yarnpkg /usr/local/bin/corepack /root/.npm \

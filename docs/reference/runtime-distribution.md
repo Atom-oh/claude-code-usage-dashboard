@@ -8,6 +8,12 @@ OS packages/metadata, readiness tooling and distribution notices remain.
 The entrypoint uses Node directly. Removing build tools does not establish that the
 remaining packages are free of vulnerabilities.
 
+The runtime stage installs authenticated Alpine `zlib=1.3.2-r1`, the vendor fix
+for the OS package finding `CVE-2026-85091` observed on the pinned base. Keep this
+literal pin and the inspector's required version aligned when refreshing packages.
+Unavailable package versions fail the build; never bypass APK signature checking.
+This OS package is separate from the zlib bundled into the Node binary.
+
 ## Source and actual-image verification
 
 [build-release.py](../../scripts/build-release.py) requires clean committed source and
@@ -20,7 +26,10 @@ The committed [verify-runtime.mjs](../../dashboard/verify-runtime.mjs) is evalua
 inside that immutable image ID using Node builtins. It checks UID 1000, Node 24 and an
 available OpenSSL version, the runtime revision, absent package managers/frontend
 modules/collectors, license hash, complete nonempty notices, both committed lock
-hashes and the installed server lock. It does not import app modules, read credentials
+hashes and the installed server lock. It requires one OS zlib package at the pinned
+version in `/lib/apk/db/installed`; missing, old or ambiguous metadata fails.
+The release record keeps `zlibPackageVersion` separate from `nodeZlibVersion`.
+It does not import app modules, read credentials
 or contact a database. These checks do not establish auth/health behavior, CVE
 applicability, base-image licensing completeness or a customer license grant.
 
