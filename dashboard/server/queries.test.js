@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel, UNTAGGED_PROJECT } from "./queries.js";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel, UNTAGGED_PROJECT, ttlSplitFields } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 import { GROUP_CTE } from "./grouping.js";
 
@@ -496,4 +496,30 @@ test("costByModelDailySql responds at the (day, group, model) grain", async () =
       "countIf(token_obs = 0 OR NOT tokens_valid) AS unobserved_token_scopes",
     ]) assert.ok(sql.includes(text), `${hours}h SQL must include ${text}`);
   }
+});
+
+// reportedVsComputedByVersion은 TTL 분리 필드(Claude Code 2.1.300+)를 합산하고, 분리 수집률과 분리 계산
+// 비용을 파생한다. SQL은 실행 검증이 없어 속성 키와 별칭을 고정하고, 파생 필드는 순수 함수로 검증한다.
+test("reportedVsComputedByVersion sums the 5m/1h cache creation attributes", () => {
+  const src = readFileSync(fileURLToPath(new URL("./queries.js", import.meta.url)), "utf8");
+  assert.match(src, /sum\(toUInt64OrZero\(l\.LogAttributes\['cache_creation_5m_tokens'\]\)\) AS cache_write_5m_tokens/);
+  assert.match(src, /sum\(toUInt64OrZero\(l\.LogAttributes\['cache_creation_1h_tokens'\]\)\) AS cache_write_1h_tokens/);
+});
+
+test("ttlSplitFields derives coverage, split cost and split ratio", () => {
+  const base = { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
+  // 완전 분리: 5m 1M + 1h 1M = 9.75, 보고 비용 9.75 → 비율 1
+  const full = ttlSplitFields({ ...base, reported_cost: 9.75, cache_write_tokens: 2e6, cache_write_5m_tokens: 1e6, cache_write_1h_tokens: 1e6 });
+  assert.equal(full.cache_split_coverage, 1);
+  assert.equal(full.cost_split, 9.75);
+  assert.equal(full.ratio_split, 1);
+  // 분리 없음(구버전): 커버리지 0, cost_split은 서버 가정 단가
+  const none = ttlSplitFields({ ...base, reported_cost: 1, cache_write_tokens: 1e6, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0 });
+  assert.equal(none.cache_split_coverage, 0);
+  assert.ok(none.cost_split > 0);
+  // 쓰기 토큰 0: 커버리지 null, 단가표 밖 모델: 비용/비율 null
+  assert.equal(ttlSplitFields({ ...base, reported_cost: 0, cache_write_tokens: 0, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0 }).cache_split_coverage, null);
+  const unpriced = ttlSplitFields({ ...base, model: "no-such-model", reported_cost: 1, cache_write_tokens: 1, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0 });
+  assert.equal(unpriced.cost_split, null);
+  assert.equal(unpriced.ratio_split, null);
 });

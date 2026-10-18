@@ -13,6 +13,7 @@ import {
   pricingConfig,
   PRICING_PROMPT_TABLE,
   costAtTtl,
+  costWithCacheSplit,
 } from "./pricing.js";
 
 // 이 파일의 모듈 레벨 단언(withComputedCost/tierCosts/pricingConfig/PRICING_PROMPT_TABLE)은
@@ -540,4 +541,26 @@ test("rollupComputedCost keeps a group with unknown reported spend unavailable",
 test("haiku-5-5 is priced at its <=100K row with the standard 0.1x cache read", () => {
   assert.equal(normalizeModelId("global.anthropic.claude-haiku-5-5"), "claude-haiku-5-5");
   assert.deepEqual(priceFor("claude-haiku-5-5"), { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01, cacheWrite1h: 0.2 });
+});
+
+// costWithCacheSplit: 분리 필드(5m/1h)는 실제 TTL 단가로, 분리되지 않은 나머지는 서버 가정으로 계산한다.
+test("costWithCacheSplit prices split cache writes at their own TTL and the remainder at the env assumption", () => {
+  const row = { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
+  // sonnet-4-5: 5m = 3.75/M, 1h = 6/M
+  assert.equal(costWithCacheSplit({ ...row, cache_write_tokens: M, cache_write_5m_tokens: M, cache_write_1h_tokens: 0 }), 3.75);
+  assert.equal(costWithCacheSplit({ ...row, cache_write_tokens: M, cache_write_5m_tokens: 0, cache_write_1h_tokens: M }), 6);
+  assert.equal(costWithCacheSplit({ ...row, cache_write_tokens: 2 * M, cache_write_5m_tokens: M, cache_write_1h_tokens: M }), 9.75);
+  // 미분리 토큰은 기존 가정(withComputedCost와 동일 단가)
+  const rest = costWithCacheSplit({ ...row, cache_write_tokens: M });
+  assert.equal(rest, withComputedCost([{ ...row, cache_write_tokens: M }])[0].cost);
+  // 일부만 분리: 분리분 + 나머지(합계 보존)
+  const mixed = costWithCacheSplit({ ...row, cache_write_tokens: 2 * M, cache_write_5m_tokens: M, cache_write_1h_tokens: 0 });
+  assert.equal(mixed, 3.75 + rest);
+});
+
+test("costWithCacheSplit returns null for unpriced models and never counts split tokens above the total", () => {
+  assert.equal(costWithCacheSplit({ model: "some-unknown-model", input_tokens: M, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 }), null);
+  const row = { model: "claude-sonnet-4-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
+  // 분리 합계가 총합보다 커도(잘린 행) 나머지는 음수가 되지 않는다.
+  assert.equal(costWithCacheSplit({ ...row, cache_write_tokens: 0, cache_write_5m_tokens: M, cache_write_1h_tokens: 0 }), 3.75);
 });
