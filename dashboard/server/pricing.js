@@ -228,7 +228,9 @@ export function costAtTtl(row, ttl) {
 
 // api_request 로그의 cache_creation_5m_tokens/cache_creation_1h_tokens(Claude Code 2.1.300+)가 있으면
 // 캐시 쓰기를 TTL별 실제 단가로 계산한다. 분리 필드가 없는 토큰(구버전 행, 합계와 5m+1h의 차이)은
-// 서버 가정(PRICING_CACHE_WRITE_TTL)으로 남긴다 — 한 그룹에 분리/비분리 행이 섞여도 총 쓰기 토큰이 보존된다.
+// 서버 가정(PRICING_CACHE_WRITE_TTL)으로 남긴다.
+// Split counts remain authoritative when they exceed the total; only the remainder
+// is clamped to zero. This diagnostic does not validate consistency of the token fields.
 // 실측 2026-10-18(14d): 분리 필드가 있는 버전은 보고 비용과 ±2% 이내로 일치(1h 가정은 약 -8%).
 export function costWithCacheSplit(row) {
   const p = priceFor(row.model);
