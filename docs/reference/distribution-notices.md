@@ -6,6 +6,8 @@ stage and ships `THIRD_PARTY_NOTICES.txt` and `.json` in `/app/notices`; the fin
 does not include frontend `node_modules` or the collector. The application license is
 separate, in `/app/APPLICATION_LICENSE`, and tested against the canonical
 [repository LICENSE](../../LICENSE).
+The [runtime distribution contract](runtime-distribution.md) checks these packaged
+artifacts and committed lock hashes inside the actual image before publication.
 
 ## Source and coverage
 
