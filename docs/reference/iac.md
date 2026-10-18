@@ -39,7 +39,8 @@ and do not verify an installation.
 | [providers.tf](../../infra/providers.tf) | Terraform >=1.9; AWS, Kubernetes, kubectl and time providers; local state |
 | [data.tf](../../infra/data.tf) | Existing cluster/network/IAM/DNS/certificate lookups |
 | [nodepool.tf](../../infra/nodepool.tf) | Dedicated Karpenter `NodePool` and `EC2NodeClass`, arm64/on-demand, tainted for this workload |
-| [clickhouse.tf](../../infra/clickhouse.tf) | Namespace, credentials, Keeper and ClickHouse custom resources, schema-init and backup jobs |
+| [clickhouse.tf](../../infra/clickhouse.tf) | Namespace, credentials, Keeper and ClickHouse custom resources and backup jobs |
+| [schema.tf](../../infra/schema.tf) | Immutable schema inputs; empty bootstrap and existing-installation compatibility Job |
 | [dashboard.tf](../../infra/dashboard.tf) | Dashboard deployment, service account, Secrets, NLB services, security groups and runtime settings |
 | [ecr.tf](../../infra/ecr.tf) | Dashboard image repository |
 | [s3.tf](../../infra/s3.tf) | Cold/backup bucket, public-access block, IRSA and backup-prefix expiration |
@@ -61,16 +62,21 @@ because sensitive values can still be stored there. Use
 [backend.hcl.example](../../infra/backend.hcl.example) as inputs, not evidence that a remote
 backend or deployment exists. A shared operator workflow needs explicit state coordination.
 
-The schema-init Job name includes a hash of
-[clickhouse-schema-replicated.sql](../../infra/files/clickhouse-schema-replicated.sql), so a
-schema edit changes the Job identity on apply. This gives executable ALTER statements a
-rerun path; it does not make every existing table/view match a CREATE definition.
-The segment-key cutover and rollup rebuild require the
-[migration procedure](../runbooks/schema-migrations.md).
-Codex's four metric tables are mirrored in schema-init; existing installations can apply
-additive migration 006 alone after ledger 004, without migration 005 or rollup rebuilds.
+The schema-init Job and immutable ConfigMap names include a hash of the replicated SQL,
+metadata contract and runner. On every expected replica, an empty database permits
+bootstrap; any existing object selects read-only compatibility verification. Existing
+tables are not altered, materialized or repaired by this Job. Its contract checks named
+column types/default expressions, engines, keys, TTL, view query/target, storage policy,
+replication path and migration checksums. It does not verify historical data or backfills.
+The [migration procedure](../runbooks/schema-migrations.md) owns upgrades and partial repair.
+Codex's four metric tables are mirrored in schema-init. Standalone migration 006 is
+additive and requires ledger 004; it does not run migration 005 or rebuild rollups.
+The full installation compatibility check also requires completed migrations 003 and
+005, including their schema and ledger evidence.
 The [collection contract](../runbooks/codex-telemetry.md#storage-interface) owns their
-exporter columns and retention. A schema-init rerun still executes older statements.
+exporter columns and retention. Generate and check the metadata contract using the
+network-isolated ClickHouse 24.8 fixture; CI rejects a stale contract. Code changes do not
+establish that the existing target has the required schema.
 
 The dashboard image is separately deployed: Terraform ignores later changes to its image
 field. See [runtime](infrastructure.md) for probes and draining, and

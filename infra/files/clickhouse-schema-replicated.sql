@@ -98,13 +98,10 @@ ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
            cityHash64(toString(Attributes), toUnixTimestamp64Nano(StartTimeUnix)));
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated' MATERIALIZE COLUMN SeriesKey;
 
--- 2026-09-02 세그먼트 인식 SeriesKey 전환(ADR-003) — 이 파일에는 의도적으로 MODIFY COLUMN을
--- 추가하지 않는다. 이 파일은 infra/clickhouse.tf의 schema_init Job이 파일이 바뀔 때마다(Job
--- 이름이 파일 md5) 재실행한다 — raw 키를 여기서 조율 없이 바꾸면 그 순간 살아있던 세션들의
--- 롤업이 누군가 재구축하기 전까지 이중집계된다. 전환은 롤업 재구축과 함께 조율되어야 하므로
--- clickhouse-migration-003.sql + docs/runbooks/rollup-rebuild-segment-key.md로 사람이 직접
--- 수행한다. 신규 설치는 위 CREATE에서 바로 새 키를 받고, 기존 클러스터는 migration-003으로만
--- 전환된다.
+-- ADR-003: never MODIFY the raw SeriesKey here. Existing installations receive read-only
+-- compatibility checks through infra/schema.tf. An uncoordinated key change can double-count
+-- active sessions until the rollup is rebuilt. Use migration 003 and the explicit cutover
+-- in docs/runbooks/rollup-rebuild-segment-key.md. Empty bootstrap creates the segment key directly.
 
 -- 2026-08-11 스펙 동기화 — clickhouse-migration-002.sql(실행용)과 동일 정의.
 ALTER TABLE claude_code.otel_metrics_sum ON CLUSTER 'replicated'
@@ -460,9 +457,9 @@ SETTINGS storage_policy = 'hot_cold';
 --    증거가 이미 성립하므로 아래 가드가 세 행을 모두 남긴다. 기존 배포에 이 파일을 다시
 --    돌려도 두 번째 가드((b) 아직 기록되지 않았다)가 걸려 멱등이다(실측 2026-09-03,
 --    24.8.14.39 컨테이너: 재실행 후에도 정확히 3행).
---    이 파일을 수정하면 schema-init Job 이름에 박힌 filemd5(...)가 바뀐다
---    (infra/clickhouse.tf) — 그래서 다음 terraform apply가 Job을 재생성하고 다시
---    실행하는데, 이 파일의 모든 문장이 IF NOT EXISTS / 가드된 INSERT라서 안전하다.
+--    Terraform executes this SQL only when every expected replica has an empty database.
+--    Existing installations run the metadata contract in infra/schema.tf instead.
+--    Never stream this entire file into populated tables to bypass explicit migrations.
 --    로컬/참조 사본은 clickhouse-schema.sql, 오퍼레이터가 직접 실행하는 파일은
 --    clickhouse-migration-004.sql이며 세 파일의 INSERT는 동일 텍스트다.
 --    절차는 docs/runbooks/schema-migrations.md.
