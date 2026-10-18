@@ -214,6 +214,7 @@ test('Terraform binds worker budgets, role scope, dimensions and missing data', 
   assert.match(tf, /read_only_root_filesystem\s*=\s*true/);
   assert.match(tf, /active_deadline_seconds\s*=\s*120/);
   assert.match(tf, /backoff_limit\s*=\s*0/);
+  assert.match(tf, /ignore_changes\s*=\s*\[spec\[0\]\.job_template\[0\]\.spec\[0\]\.template\[0\]\.spec\[0\]\.container\[0\]\.image\]/);
   assert.match(backup, /active_deadline_seconds\s*=\s*var.backup_job_deadline_seconds/);
 });
 

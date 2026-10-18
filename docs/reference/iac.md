@@ -94,7 +94,9 @@ provider-free fixture; it is not a plan or deployment of the complete stack.
 The S3 lifecycle expires `backup/` objects after 30 days; table TTL owns cold-data deletion.
 Backup Jobs have a configurable deadline (default two hours) and two-retry backoff limit.
 The independent backup observer defaults on, reuses the released dashboard image and
-publishes one metric per installation every five minutes. A regional alarm treats
+publishes one metric per installation every five minutes. Terraform seeds its initial
+image; [deployment](../runbooks/deploy-production.md#refresh-the-backup-observer) owns later
+image updates and its separate rollback record. A regional alarm treats
 missing metrics as breaching. Configure and confirm a recipient or attach an authorized
 subscriber; a topic alone is not delivery coverage. The observer does not inspect S3
 objects or establish restore usability. Its runtime, IAM and delivery checks are owned by
