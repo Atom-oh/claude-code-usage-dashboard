@@ -30,6 +30,7 @@ export function verifyRuntime({
   };
   for (const name of [
     "usr/local/lib/node_modules/npm",
+    "usr/local/lib/node_modules/corepack",
     "usr/local/bin/npm", "usr/local/bin/npx", "usr/local/bin/yarn",
     "usr/local/bin/yarnpkg", "usr/local/bin/corepack",
     "app/web/node_modules", "app/collect-notices.mjs", "app/verify-runtime.mjs",

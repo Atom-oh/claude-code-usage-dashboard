@@ -60,12 +60,16 @@ test("runtime inspection rejects root, unsupported Node and missing release iden
   });
 });
 
-test("runtime inspection detects broken package-manager symlinks and Yarn directories", () => {
+test("runtime inspection detects broken package-manager symlinks, Corepack and Yarn directories", () => {
   fixture(({ root, options }) => {
     const npm = path.join(root, "usr/local/bin/npm");
     symlinkSync("/synthetic/missing/npm", npm);
     assert.throws(() => verifyRuntime(options), /unexpected build artifact/);
     rmSync(npm);
+    const corepack = path.join(root, "usr/local/lib/node_modules/corepack");
+    mkdirSync(corepack, { recursive: true });
+    assert.throws(() => verifyRuntime(options), /unexpected build artifact/);
+    rmSync(corepack, { recursive: true });
     mkdirSync(path.join(root, "opt/yarn-v1.22.22"));
     assert.throws(() => verifyRuntime(options), /Yarn installation/);
   });

@@ -32,12 +32,14 @@ COPY notices/ ./notice-sources/
 RUN mv notice-sources notices && node collect-notices.mjs /app /tmp/distribution-notices
 
 FROM server-deps AS runtime
-# npm/Yarn are build tools; the production entrypoint only needs Node and locked
+# Package managers are build tools; the production entrypoint needs Node and locked
 # server dependencies. Retain OS software and its metadata for image scanning.
-RUN rm -rf /usr/local/lib/node_modules/npm /opt/yarn-v* \
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /opt/yarn-v* \
       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn \
       /usr/local/bin/yarnpkg /usr/local/bin/corepack /root/.npm \
     && test ! -e /usr/local/lib/node_modules/npm \
+    && test ! -e /usr/local/lib/node_modules/corepack \
     && test ! -e /usr/local/bin/npm \
     && test ! -e /usr/local/bin/yarn
 COPY --from=notices-build /tmp/distribution-notices ./notices/
