@@ -8,7 +8,7 @@ if [[ ! -d "$PROJECT_ROOT/infra/.terraform/providers" ]]; then
 fi
 TASK_DIR=$(mktemp -d /tmp/ccdash-bedrock-routing-tf.XXXXXX)
 trap 'rm -rf "$TASK_DIR"' EXIT
-cp "$PROJECT_ROOT"/infra/{bedrock,variables}.tf "$TASK_DIR/"
+cp "$PROJECT_ROOT"/infra/{bedrock,variables,identity}.tf "$TASK_DIR/"
 cp "$PROJECT_ROOT/infra/.terraform.lock.hcl" "$TASK_DIR/"
 mkdir "$TASK_DIR/tests"
 cp "$PROJECT_ROOT/infra/test-fixtures/bedrock-routing.tftest.hcl" "$TASK_DIR/tests/"
