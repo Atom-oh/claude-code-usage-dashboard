@@ -128,7 +128,7 @@ Run app checks before building:
 bash tests/run-all.sh
 ```
 
-Build and inspect the tag selected before apply. These commands run from the
+Push the tag selected before apply, then verify rollout. These commands run from the
 repository root with the intended AWS identity:
 
 ```bash
@@ -138,29 +138,10 @@ repository root with the intended AWS identity:
 NAMESPACE=${NAMESPACE:-claude-code}
 REPO=$(terraform -chdir=infra output -raw ecr_repository_url)
 REGISTRY=${REPO%%/*}
-python3 scripts/build-release.py --image "$REPO:$TAG" \
-  --record "/tmp/dashboard-release-$TAG-local.json"
-```
-
-After applicable publication approval, publish the inspected artifact using its
-recorded image ID. Retain the same trusted Docker builder and cache: publication
-rebuilds the image and stops before upload if its identity changes.
-
-```bash
-APPROVED_IMAGE_ID=$(python3 -c \
-  'import json,sys; print(json.load(open(sys.argv[1]))["localImageId"])' \
-  "/tmp/dashboard-release-$TAG-local.json")
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
 python3 scripts/build-release.py --image "$REPO:$TAG" --push \
-  --expected-image-id "$APPROVED_IMAGE_ID" \
   --record "/tmp/dashboard-release-$TAG.json"
-```
-
-Complete the [published image identity and enhanced scan checks](runbooks/deploy-production.md#2-build-inspect-and-publish)
-before rollout. Preserve unresolved findings and their scope.
-
-```bash
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" set image deployment/dashboard "dashboard=$REPO:$TAG"
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" rollout status deployment/dashboard --timeout=120s
 ```
