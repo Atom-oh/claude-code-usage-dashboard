@@ -129,7 +129,7 @@ test('metric publication errors propagate and do not manufacture a success', asy
   }), /publication failed/);
 });
 
-function mockRequest(responseBody, statusCode = 200) {
+function mockRequest(responseBody, statusCode = 200, afterDestroy = () => {}) {
   const captured = {};
   const implementation = (options, callback) => {
     captured.options = options;
@@ -139,6 +139,10 @@ function mockRequest(responseBody, statusCode = 200) {
       const response = new EventEmitter();
       response.statusCode = statusCode;
       response.resume = () => { captured.drained = true; };
+      response.destroy = () => {
+        captured.destroyed = true;
+        queueMicrotask(() => afterDestroy(response));
+      };
       callback(response);
       if (statusCode === 200) {
         response.emit('data', responseBody);
@@ -168,9 +172,31 @@ test('Kubernetes permission and malformed JSON errors do not expose response con
   for (const [body, code] of [[Buffer.from('sensitive-body'), 403], [Buffer.from('sensitive-body'), 200]]) {
     const mock = mockRequest(body, code);
     await assert.rejects(kubernetesJsonReader({ requestImpl: mock.implementation })('/fixture'), error => !error.message.includes('sensitive-body'));
-    if (code !== 200) assert.equal(mock.captured.drained, true);
+    if (code !== 200) {
+      assert.equal(mock.captured.destroyed, true);
+      assert.equal(mock.captured.drained, undefined);
+    }
   }
 });
+
+for (const event of ['error', 'aborted']) {
+  test(`Kubernetes non-200 ${event} after cleanup publishes unhealthy without crashing`, async () => {
+    const mock = mockRequest(Buffer.from('sensitive-body'), 403, response => {
+      response.emit(event, new Error('sensitive-response-error'));
+    });
+    let input;
+    const health = await runBackupMonitor({
+      getJson: kubernetesJsonReader({ requestImpl: mock.implementation }),
+      publish: async value => { input = value; },
+      namespace: 'test', cluster: 'fixture', ...options, now: () => now,
+    });
+    assert.equal(mock.captured.destroyed, true);
+    assert.equal(mock.captured.drained, undefined);
+    assert.equal(health.reason, 'STATUS_UNAVAILABLE');
+    assert.equal(input.MetricData[0].Value, 1);
+    assert.ok(!JSON.stringify({ health, input }).includes('sensitive'));
+  });
+}
 
 test('Terraform binds worker budgets, role scope, dimensions and missing data', () => {
   const tf = readFileSync(new URL('../../infra/backup-monitor.tf', import.meta.url), 'utf8');

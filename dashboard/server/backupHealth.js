@@ -89,9 +89,11 @@ export function kubernetesJsonReader({ hostname, port = 443, token, ca, requestI
       signal, timeout: API_TIMEOUT_MS,
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     }, response => {
+      response.on('aborted', () => reject(new Error('KUBERNETES_RESPONSE_ABORTED')));
+      response.on('error', () => reject(new Error('KUBERNETES_RESPONSE_FAILED')));
       if (response.statusCode !== 200) {
-        response.resume();
         reject(new Error('KUBERNETES_READ_FAILED'));
+        response.destroy();
         return;
       }
       const chunks = [];
@@ -105,8 +107,6 @@ export function kubernetesJsonReader({ hostname, port = 443, token, ca, requestI
         }
         chunks.push(chunk);
       });
-      response.on('aborted', () => reject(new Error('KUBERNETES_RESPONSE_ABORTED')));
-      response.on('error', () => reject(new Error('KUBERNETES_RESPONSE_FAILED')));
       response.on('end', () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
         catch { reject(new Error('KUBERNETES_INVALID_JSON')); }
