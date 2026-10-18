@@ -26,9 +26,9 @@ Source files and static validation do not prove live resource state.
   Docker health checks do not configure Kubernetes probes.
 - Use immutable release identifiers; verify image digests.
   Verify that the Terraform-declared immutable ECR policy is actually applied.
-- Schema-file hash changes can retrigger ClickHouse initialization. DDL may partly
-  apply before Job failure. Inspect the Job, actual columns/keys and migration ledger;
-  Job completion does not prove every intended change.
+- Schema lifecycle inputs are immutable and hash-bound. Empty replicas bootstrap;
+  existing installations receive metadata/ledger verification only. Partial bootstrap
+  and upgrades require explicit repair/migrations; compatibility is not backfill proof.
 - Migrations 003 onward record versions; migrations/rollup rebuilds remain explicit.
   Keep the `session.count` key exception and documented ingestion freeze/rebuild order.
 - Backup/retention/archive behavior must match actual storage policies and bucket

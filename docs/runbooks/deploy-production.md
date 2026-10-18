@@ -280,11 +280,13 @@ and health endpoints. Image rollback does not undo Terraform, Secret, or schema 
 
 ## Schema and boot failures
 
-Follow [schema migrations](schema-migrations.md) separately. The schema-init Job name embeds
-the replicated SQL file's hash; a changed file causes a new Job on apply. Terraform waits
-for completion, but background mutations and actual DDL still require independent checks.
-A failed `--multiquery` run stops at its first failing statement; earlier statements may
-already have executed. Inspect Job logs before retrying costly materializations.
+Follow [schema migrations](schema-migrations.md) separately. The schema-init Job freezes
+its replicated SQL, metadata contract and runner in an immutable ConfigMap. A changed input
+changes both names. Existing installations receive only compatibility checks on every
+expected replica; migration/retention/key drift fails without DDL or fabricated ledger rows.
+Empty replicas permit fresh bootstrap. Keep collection off until it completes. A partial
+bootstrap requires inspection and explicit repair; the Job never automatically restarts.
+Terraform waiting for this Job does not prove historical backfill, recovery or runtime health.
 
 A boot failure requiring `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` is intentional. Verify
 Secret `dashboard-basic-auth` keys without printing values and restart after correction.
