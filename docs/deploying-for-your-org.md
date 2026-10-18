@@ -128,8 +128,13 @@ Run app checks before building:
 bash tests/run-all.sh
 ```
 
-Push the tag selected before apply, then verify rollout. These commands run from the
-repository root with the intended AWS identity:
+Use the [production build and publication procedure](runbooks/deploy-production.md#procedure)
+with the initial tag already selected in `dashboard_image_tag`. That procedure owns
+local inspection, applicable publication approval, image identity and scan checks.
+Do not choose another timestamp tag for this first installation.
+
+After those checks pass, run these commands from the repository root with the
+intended AWS identity:
 
 ```bash
 : "${TAG:?Set the same initial tag recorded in dashboard_image_tag}"
@@ -137,11 +142,6 @@ repository root with the intended AWS identity:
 : "${REGION:?Set the ECR region}"
 NAMESPACE=${NAMESPACE:-claude-code}
 REPO=$(terraform -chdir=infra output -raw ecr_repository_url)
-REGISTRY=${REPO%%/*}
-aws ecr get-login-password --region "$REGION" \
-  | docker login --username AWS --password-stdin "$REGISTRY"
-python3 scripts/build-release.py --image "$REPO:$TAG" --push \
-  --record "/tmp/dashboard-release-$TAG.json"
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" set image deployment/dashboard "dashboard=$REPO:$TAG"
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" rollout status deployment/dashboard --timeout=120s
 ```

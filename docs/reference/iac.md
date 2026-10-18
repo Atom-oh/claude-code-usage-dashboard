@@ -70,8 +70,10 @@ tables are not altered, materialized or repaired by this Job. Its contract check
 column types/default expressions, engines, keys, TTL, view query/target, storage policy,
 replication path and migration checksums. It does not verify historical data or backfills.
 The [migration procedure](../runbooks/schema-migrations.md) owns upgrades and partial repair.
-Codex's four metric tables are mirrored in schema-init; existing installations can apply
-additive migration 006 alone after ledger 004, without migration 005 or rollup rebuilds.
+Codex's four metric tables are mirrored in schema-init. Standalone migration 006 is
+additive and requires ledger 004; it does not run migration 005 or rebuild rollups.
+The full installation compatibility check also requires completed migrations 003 and
+005, including their schema and ledger evidence.
 The [collection contract](../runbooks/codex-telemetry.md#storage-interface) owns their
 exporter columns and retention. Generate and check the metadata contract using the
 network-isolated ClickHouse 24.8 fixture; CI rejects a stale contract. Code changes do not
