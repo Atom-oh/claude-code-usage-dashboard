@@ -81,7 +81,9 @@ else: raise RuntimeError('unexpected docker command')
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FIXTURE_EVENTS: events };
     const record = path.join(directory, "release.json");
     const invoke = (args = [], fault = "") => spawnSync("python3",
-      ["scripts/build-release.py", "--image", "fixture:version-one", "--record", record, ...args],
+      ["scripts/build-release.py", "--image", "fixture:version-one", "--record", record, ...args,
+        ...(args.includes("--push") && !args.includes("--expected-image-id")
+          ? ["--expected-image-id", "sha256:" + "c".repeat(64)] : [])],
       { cwd: root, env: { ...env, FIXTURE_FAULT: fault }, encoding: "utf8" });
     const calls = () => {
       try { return readFileSync(events, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse); }
@@ -109,6 +111,7 @@ test("release builder rejects latest and archives only committed source with ver
     assert.match(metadata.lockfileSha256.server, /^[a-f0-9]{64}$/);
     assert.equal(metadata.runtime.uid, 1000);
     assert.equal(metadata.runtime.packageManagersAbsent, true);
+    assert.ok(Date.parse(metadata.completedAt) >= Date.parse(metadata.builtAt));
     assert.equal(statSync(record).mode & 0o777, 0o600);
     assert.ok(!JSON.stringify(metadata).includes("SYNTHETIC_SECRET"));
     assert.ok(calls().some((args) => args[0] === "rm"));
@@ -130,6 +133,23 @@ test("publishing validates locally before upload and binds the registry ARM64 co
     assert.equal(metadata.digest, "sha256:" + "d".repeat(64));
     assert.equal(metadata.arm64ManifestDigest, "sha256:" + "b".repeat(64));
     assert.equal(metadata.localBuildDigest, "sha256:" + "b".repeat(64));
+  });
+});
+
+test("publishing requires the approved image identity and rejects a different rebuilt artifact", () => {
+  fixture(({ root, record, env, calls }) => {
+    const invalid = spawnSync("python3",
+      ["scripts/build-release.py", "--image", "fixture:version-one", "--record", record, "--push"],
+      { cwd: root, env, encoding: "utf8" });
+    assert.notEqual(invalid.status, 0);
+    assert.match(invalid.stderr, /expected-image-id/);
+    assert.deepEqual(calls(), []);
+  });
+  fixture(({ invoke, calls }) => {
+    const invalid = invoke(["--push", "--expected-image-id", "sha256:" + "e".repeat(64)]);
+    assert.notEqual(invalid.status, 0);
+    assert.match(invalid.stderr, /approved image ID/);
+    assert.ok(!calls().some((args) => args[0] === "push"));
   });
 });
 

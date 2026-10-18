@@ -30,14 +30,17 @@ absence fails the operation. A failed pre-publication check prevents upload.
 
 ## Publication identity and record
 
-`--push` uploads the same locally verified image. The registry index/manifest is then
+`--push` requires `--expected-image-id` from the approved local record. A rebuild
+that changes the config ID fails before upload. The same locally verified image is
+uploaded; the registry index/manifest is then
 read back; exactly one Linux ARM64 child must resolve to the verified image config ID.
 A registry mismatch fails without a successful provenance record; publication may
 already have occurred, so inspect that unique tag before any retry or rollout.
 
 The new private JSON record preserves full revision, archived-source SHA-256, both
 lock hashes, local image/config ID, immutable build digest, actual runtime versions,
-notices/license hashes and completion time. Publication records additionally preserve
+notices/license hashes, build time and successful operation completion time.
+Publication records additionally preserve
 the registry digest and ARM64 manifest digest. A local index digest is not proof of a
 published child manifest or an Inspector scan result.
 

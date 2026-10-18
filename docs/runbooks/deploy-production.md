@@ -167,32 +167,41 @@ first rollout only: Terraform ignores subsequent image changes, which this proce
 Terraform does not rebuild application images. A changed pod template rolls pods; a changed
 Secret value alone requires a controlled restart to refresh environment variables.
 
-### 2. Build and push
+### 2. Build, inspect and publish
+
+Use a new timestamp tag for each release. Build and inspect locally before requesting
+publication approval:
+
+```bash
+python3 scripts/build-release.py --image "$REPO:$TAG" \
+  --record "/tmp/dashboard-release-$TAG-local.json"
+```
+
+The helper requires Python >=3.9, Docker Buildx and local ARM64 execution (native or
+configured emulation). It builds only committed files and inspects the loaded image.
+After applicable approval for that artifact, publish with its recorded config ID:
 
 ```bash
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
+APPROVED_IMAGE_ID=$(python3 -c \
+  'import json,sys; print(json.load(open(sys.argv[1]))["localImageId"])' \
+  "/tmp/dashboard-release-$TAG-local.json")
 python3 scripts/build-release.py --image "$REPO:$TAG" --push \
+  --expected-image-id "$APPROVED_IMAGE_ID" \
   --record "/tmp/dashboard-release-$TAG.json"
 DIGEST=$(aws ecr describe-images --region "$REGION" --repository-name "$REPO_NAME" \
   --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)
 ```
 
-Use a new timestamp tag for each build. Do not overwrite tags or rely on `latest`.
+Do not overwrite registry tags or rely on `latest`.
 Record `$DIGEST` as well as `$TAG` even when immutability is verified.
 
-For a local build and inspection before requesting publication approval, use:
-
-```bash
-python3 scripts/build-release.py --image "$REPO:$TAG" \
-  --record "/tmp/dashboard-release-$TAG.json"
-```
-
-The helper requires Python >=3.9, Docker Buildx and local ARM64 execution (native or
-configured emulation). It builds only committed files and inspects the loaded image
-before publication. `--push` uploads that verified image, then checks the registry's
-ARM64 config digest against its local image ID. Preserve both the index and ARM64
-manifest digests; an index scan result is not its child manifest's scan result.
+`--push` requires the approved local image ID; a different rebuilt artifact stops
+before upload. It then checks the registry's ARM64 config digest
+against the locally verified image ID. Use distinct local/publication record paths.
+Preserve both the index and ARM64 manifest digests; an index scan result is not its
+child manifest's scan result.
 See the [runtime distribution contract](../reference/runtime-distribution.md) for the
 checked runtime/notices and private record. This does not establish vulnerability
 clearance, signing, rollout, pod/edge state or live ECR mutability. Verify the exact

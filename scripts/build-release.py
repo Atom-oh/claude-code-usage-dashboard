@@ -92,8 +92,12 @@ def main():
     parser.add_argument("--image", required=True, help="Unique image name/tag; never latest.")
     parser.add_argument("--push", action="store_true",
                         help="Push the locally verified image using configured registry credentials.")
+    parser.add_argument("--expected-image-id",
+                        help="Approved local config digest; required for --push, checked before upload.")
     parser.add_argument("--record", type=Path, required=True, help="Private output JSON record outside the source build context.")
     args = parser.parse_args()
+    if (args.push or args.expected_image_id is not None) and not valid_digest(args.expected_image_id):
+        parser.error("--push requires a valid --expected-image-id from the approved local record")
     if not re.fullmatch(r"[a-z0-9][a-z0-9./:_-]+", args.image) or ":" not in args.image.rsplit("/", 1)[-1] or args.image.endswith(":latest"):
         parser.error("--image must be an explicit unique name/tag, not latest")
     if args.record.exists():
@@ -160,6 +164,8 @@ def main():
         image_id = image.get("Id")
         if not valid_digest(image_id) or image_id != build_metadata.get("containerimage.config.digest"):
             raise RuntimeError("loaded image differs from the build config digest")
+        if args.expected_image_id and image_id != args.expected_image_id:
+            raise RuntimeError("built image differs from the approved image ID")
         if image.get("Os") != "linux" or image.get("Architecture") != "arm64" or \
                 config.get("Labels", {}).get("org.opencontainers.image.revision") != revision:
             raise RuntimeError("built image architecture or revision does not match source")
@@ -175,6 +181,7 @@ def main():
             subprocess.run(["docker", "push", args.image], cwd=root, check=True)
             record["localBuildDigest"] = record["digest"]
             record["digest"], record["arm64ManifestDigest"] = registry_identity(args.image, image_id, root)
+        record["completedAt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         args.record.parent.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(args.record, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w") as output:
