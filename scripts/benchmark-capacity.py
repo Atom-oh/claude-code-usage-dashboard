@@ -32,6 +32,8 @@ def arguments(argv=None):
     parser.add_argument("--resource-bytes", type=int, default=2048)
     parser.add_argument("--dashboard-image", required=True)
     parser.add_argument("--scenario", choices=["all", "product_retry"], default="all")
+    parser.add_argument("--time-format", choices=["compact", "expanded"], default="compact",
+                        help="Compact matches cost/exec/trends UI requests; expanded tests compatibility.")
     parser.add_argument("--fixture-day", type=datetime.date.fromisoformat,
                         help="Closed UTC day within the past 30 days (YYYY-MM-DD).")
     parser.add_argument("--fixture-user-projection", action="store_true",
@@ -62,9 +64,12 @@ def summarize(rows):
         status = str(row["status"])
         statuses[status] = statuses.get(status, 0) + 1
     latency = [row["elapsedMs"] for row in rows]
+    body_sizes = [row["responseBytes"] for row in rows if "responseBytes" in row]
     return {"requests": len(rows), "statuses": statuses,
             "p50Ms": quantile(latency, 0.5), "p95Ms": quantile(latency, 0.95),
             "maxMs": max(latency) if latency else None,
+             **({"responseBytes": {"min": min(body_sizes), "max": max(body_sizes),
+                                   "total": sum(body_sizes)}} if body_sizes else {}),
             "successfulSemanticChecks": sum(row.get("semanticMatch", False) for row in rows),
             "capacityRejections": sum(row.get("capacityRejected", False) for row in rows),
             "invalidSuccessfulResponses": sum(row["status"] == 200 and not row.get("semanticMatch") for row in rows),
@@ -97,6 +102,78 @@ def exact_user_baseline(actual, shared, user):
     # Both clients are seeded. An empty or incomplete filtered response cannot
     # become its own golden and falsely establish successful capacity.
     return len(expected) == 2 and equivalent(actual.get("by_user"), expected)
+
+
+TIME_DICTIONARIES = frozenset(
+    ["client", "t", "model", "user", "backend", "cost_basis", "unpriced_reasons"])
+
+
+def decode_time_table(table, dimension):
+    """Decode positional compact cells before any order-insensitive comparison."""
+    if not isinstance(table, dict) or set(table) != {"columns", "dictionaries", "rows"}:
+        raise ValueError("invalid compact time table")
+    columns, dictionaries, rows = table["columns"], table["dictionaries"], table["rows"]
+    if not isinstance(columns, list) or not all(isinstance(key, str) for key in columns):
+        raise ValueError("invalid compact columns")
+    if len(set(columns)) != len(columns) or not isinstance(dictionaries, dict) or not isinstance(rows, list):
+        raise ValueError("invalid compact shape")
+    if set(dictionaries) != set(columns).intersection(TIME_DICTIONARIES):
+        raise ValueError("invalid compact dictionary fields")
+    for key, values in dictionaries.items():
+        if not isinstance(values, list) or any(
+                not isinstance(value, dict) if key == "unpriced_reasons"
+                else not isinstance(value, str) for value in values):
+            raise ValueError("invalid compact dictionary")
+    if rows and not {"client", "t", dimension}.issubset(columns):
+        raise ValueError("missing compact identities")
+    decoded = []
+    for values in rows:
+        if not isinstance(values, list) or len(values) != len(columns):
+            raise ValueError("invalid compact row width")
+        row = {}
+        for key, value in zip(columns, values):
+            if key in dictionaries and value is not None:
+                if type(value) is not int or not 0 <= value < len(dictionaries[key]):
+                    raise ValueError("invalid compact dictionary index")
+                value = dictionaries[key][value]
+            row[key] = value
+        decoded.append(row)
+    return decoded
+
+
+def overview_semantics(payload, time_format):
+    if not isinstance(payload, dict):
+        raise ValueError("invalid overview response")
+    compact = time_format == "compact"
+    if compact and payload.get("time_format") != "compact-v1":
+        raise ValueError("compact response marker mismatch")
+    if not compact and "time_format" in payload:
+        raise ValueError("expanded response marker mismatch")
+    result = {key: value for key, value in payload.items() if key != "time_format"}
+    for key, dimension in [("by_model_time", "model"), ("by_user_time", "user")]:
+        if compact:
+            result[key] = decode_time_table(payload.get(key), dimension)
+        elif not isinstance(payload.get(key), list) or not all(
+                isinstance(row, dict) for row in payload[key]):
+            raise ValueError("invalid expanded time rows")
+    return result
+
+
+def matches_overview(payload, expected, time_format):
+    try:
+        return equivalent(overview_semantics(payload, time_format), expected)
+    except ValueError:
+        return False
+
+
+def overview_path(day, time_format, user=None):
+    params = {"from": day.isoformat(), "to": (day+datetime.timedelta(days=1)).isoformat(),
+              "client": "all", "view": "cost", "intervalHours": str(1/6), "modelTime": "1"}
+    if time_format == "compact":
+        params["timeFormat"] = "compact"
+    if user is not None:
+        params["userExact"] = user
+    return "/api/clients/overview?" + urllib.parse.urlencode(params)
 
 
 def seed_sql(day, users, requests, resource_bytes):
@@ -367,9 +444,11 @@ def request(stack, path):
     try:
         # The host reaches its owned internal Docker bridge directly; never use ambient proxies.
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(call, timeout=75) as response:
-            return response.status, json.loads(response.read()), response.headers, (time.monotonic()-started)*1000
+            body = response.read()
+            return response.status, json.loads(body), response.headers, (time.monotonic()-started)*1000, len(body)
     except urllib.error.HTTPError as error:
-        return error.code, json.loads(error.read()), error.headers, (time.monotonic()-started)*1000
+        body = error.read()
+        return error.code, json.loads(body), error.headers, (time.monotonic()-started)*1000, len(body)
 
 
 @contextlib.contextmanager
@@ -397,9 +476,11 @@ def burst(stack, paths, expected):
     def visit(index):
         barrier.wait(timeout=10)
         try:
-            status, body, headers, elapsed = request(stack, paths[index])
+            status, body, headers, elapsed, body_bytes = request(stack, paths[index])
             return {"status": status, "elapsedMs": round(elapsed, 2),
-                    "semanticMatch": status == 200 and equivalent(body, expected[index]),
+                    "responseBytes": body_bytes,
+                    "semanticMatch": status == 200 and matches_overview(
+                        body, expected[index], stack.args.time_format),
                     "capacityRejected": status == 503 and body.get("code") == "capacity_exhausted"
                     and headers.get("Retry-After") == "1"}
         except Exception as error:
@@ -426,7 +507,8 @@ def client_burst(stack, paths, expected):
     if len(native) != len(paths):
         raise RuntimeError("product retry result population mismatch")
     rows = [{"status": row["status"], "elapsedMs": row["elapsedMs"],
-             "semanticMatch": row["status"] == 200 and equivalent(row["body"], expected[index]),
+             "semanticMatch": row["status"] == 200 and matches_overview(
+                 row["body"], expected[index], stack.args.time_format),
              "capacityRejected": row["status"] == 503 and row.get("body", {}).get("code")
                == "capacity_exhausted" and row.get("retryAfter") == "1"}
             for index, row in enumerate(native)]
@@ -449,6 +531,7 @@ def main(argv=None):
               "users": args.users, "requestsPerUser": args.requests_per_user,
               "resourceBytes": args.resource_bytes,
               "selectedScenario": args.scenario,
+              "timeFormat": args.time_format,
               "fixtureDay": day.date().isoformat(),
               "syntheticUserProjection": args.fixture_user_projection,
               "envelope": {"clickhouse": {"replicas": 3, "cpuEach": 3.5, "memoryEach": "13Gi"},
@@ -456,7 +539,9 @@ def main(argv=None):
               "limitations": ["independent database copies omit Keeper/replication overhead",
                               "HTTP cache cold does not flush database/storage caches",
                               "synthetic density and labels do not prove customer workload equivalence",
-                              "Basic auth omits real OIDC/cookie and browser rendering overhead"],
+                              "Basic auth omits real OIDC/cookie and browser rendering overhead",
+                              "latency includes body download and JSON parsing on the synthetic clients",
+                              "140 retry jobs share one 1-CPU/256-MiB client; host clients share Python threads"],
               "scenarios": []}
     with tempfile.TemporaryDirectory(prefix="ccdash-capacity-") as directory:
         stack = Stack(args, Path(directory))
@@ -467,28 +552,39 @@ def main(argv=None):
             record["runtimeRevision"] = stack.revision
             record["dashboardImage"] = args.dashboard_image
             record["clickhouseImage"] = stack.clickhouse_image
-            params = {"from": day.isoformat(), "to": (day+datetime.timedelta(days=1)).isoformat(),
-                      "client": "all", "view": "cost", "intervalHours": str(1/6), "modelTime": "1"}
-            base_path = "/api/clients/overview?" + urllib.parse.urlencode(params)
-            status, golden, _, _ = request(stack, base_path)
+            base_path = overview_path(day, args.time_format)
+            status, selected, _, _, selected_bytes = request(stack, base_path)
+            golden = overview_semantics(selected, args.time_format) if status == 200 else {}
             if status != 200 or not (golden.get("totals", {}).get("cost_usd") or 0) > 0:
                 raise RuntimeError("fixture cost baseline unavailable")
             if not (golden["totals"].get("observed_tokens") or 0) > 0 or len(golden["by_user"]) != args.users*2:
                 raise RuntimeError("fixture population/usage mismatch")
+            other_format = "expanded" if args.time_format == "compact" else "compact"
+            code, other, _, _, other_bytes = request(stack, overview_path(day, other_format))
+            if code != 200 or not matches_overview(other, golden, other_format):
+                raise RuntimeError("compact/expanded shared baseline mismatch")
+            record["baseline"] = {"compactExpandedSemanticParity": True,
+                                  "sharedResponseBytes": {
+                                      args.time_format: selected_bytes, other_format: other_bytes}}
             cases = [("shared_cold", [base_path]*args.users, [golden]*args.users),
                      ("shared_warm", [base_path]*args.users, [golden]*args.users)] if args.scenario == "all" else []
             distinct, expected = [], []
             for index in range(args.users):
-                path = "/api/clients/overview?" + urllib.parse.urlencode(
-                    {**params, "userExact": f"user-{index}@fixture.invalid"})
-                code, result, _, _ = request(stack, path)
+                user = f"user-{index}@fixture.invalid"
+                path = overview_path(day, args.time_format, user)
+                code, payload, _, _, _ = request(stack, path)
+                result = overview_semantics(payload, args.time_format) if code == 200 else {}
                 if code != 200 or not exact_user_baseline(
-                        result, golden, f"user-{index}@fixture.invalid"):
+                        result, golden, user):
                     raise RuntimeError("exact-user baseline mismatch")
+                code, other, _, _, _ = request(stack, overview_path(day, other_format, user))
+                if code != 200 or not matches_overview(other, result, other_format):
+                    raise RuntimeError("compact/expanded exact-user baseline mismatch")
                 distinct.append(path); expected.append(result)
                 if (index+1) % 20 == 0:
                     print(json.dumps({"phase": "verify_exact_user_baselines",
                                       "verifiedUsers": index+1}), flush=True)
+            record["baseline"]["exactUsersWithCompactExpandedSemanticParity"] = args.users
             if args.scenario == "all":
                 cases.extend([("distinct_cold", distinct, expected), ("distinct_followup", distinct, expected)])
             for name, paths, expected in cases:
