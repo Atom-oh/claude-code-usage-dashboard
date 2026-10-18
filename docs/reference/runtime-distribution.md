@@ -2,9 +2,17 @@
 
 [Dockerfile](../../dashboard/Dockerfile) pins one official Node 24 image index for all
 build stages. Refresh it through a reviewed change and verify its supported ARM64
-platform and actual Node/system package versions. The final image removes npm, npx,
+platform and actual Node/system package versions. The build compiles the checksum-pinned
+official Node 24.22.0 source with `--shared-openssl`, using authenticated Alpine
+OpenSSL 3.5.9 development packages. The runtime uses that binary and exact
+`libcrypto3`/`libssl3` 3.5.9-r0 packages. The pinned upstream binary bundled 3.5.8;
+updating OS libraries alone cannot patch it. The supported Node major stays at 24.
+This project owns the source build and must refresh it with future Node/OpenSSL fixes.
+Node's source license is retained under `/usr/local/share/doc/node/LICENSE`.
+The final image removes npm, npx,
 Yarn and Corepack after dependency installation; locked server dependencies, Node,
 OS packages/metadata, readiness tooling and distribution notices remain.
+Unused Node development headers are removed; their absence is not vulnerability clearance.
 The entrypoint uses Node directly. Removing build tools does not establish that the
 remaining packages are free of vulnerabilities.
 
@@ -23,11 +31,12 @@ committed repository license. Both local and publication builds load the ARM64 i
 and check Linux/ARM64, its build config digest, nonroot user and full revision label/env.
 
 The committed [verify-runtime.mjs](../../dashboard/verify-runtime.mjs) is evaluated
-inside that immutable image ID using Node builtins. It checks UID 1000, Node 24 and an
-available OpenSSL version, the runtime revision, absent package managers/frontend
+inside that immutable image ID using Node builtins. It checks UID 1000, Node 24.22.0,
+OpenSSL 3.5.9 with shared linking enabled, the runtime revision, absent package managers/frontend
 modules/collectors, license hash, complete nonempty notices, both committed lock
 hashes and the installed server lock. It requires one OS zlib package at the pinned
 version in `/lib/apk/db/installed`; missing, old or ambiguous metadata fails.
+It applies the same uniqueness/version checks to both OpenSSL runtime packages.
 The release record keeps `zlibPackageVersion` separate from `nodeZlibVersion`.
 It does not import app modules, read credentials
 or contact a database. These checks do not establish auth/health behavior, CVE
@@ -53,8 +62,10 @@ Publication records additionally preserve
 the registry digest and ARM64 manifest digest. A local index digest is not proof of a
 published child manifest or an Inspector scan result.
 
-[CI](../../.github/workflows/ci.yml) builds and runs this inspection on ARM64 emulation
-without registry publication. Native release acceptance still requires latest-HEAD
+[CI](../../.github/workflows/ci.yml) builds and runs this inspection on a native ARM64
+runner without registry publication. Node source compilation uses two make jobs;
+the runtime job has a 90-minute deadline, with all existing inspections retained.
+Native release acceptance still requires latest-HEAD
 review, actual image/edge/auth checks and the other [product acceptance](../product-readiness.md)
 rows. [Enhanced ECR scanning](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-enhanced.html)
 reports OS and language-package findings; query the exact published ARM64 manifest,
