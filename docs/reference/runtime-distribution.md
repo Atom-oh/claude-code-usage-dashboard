@@ -64,7 +64,7 @@ published child manifest or an Inspector scan result.
 
 [CI](../../.github/workflows/ci.yml) builds and runs this inspection on a native ARM64
 runner without registry publication. Node source compilation uses two make jobs;
-the runtime job has a 90-minute deadline, with all existing inspections retained.
+the runtime job has a 180-minute deadline, with all existing inspections retained.
 Native release acceptance still requires latest-HEAD
 review, actual image/edge/auth checks and the other [product acceptance](../product-readiness.md)
 rows. [Enhanced ECR scanning](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-enhanced.html)
