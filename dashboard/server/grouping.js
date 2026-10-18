@@ -36,6 +36,12 @@
 // "빈 값이 아니고 claude-로 시작하지 않는 모델이 하나라도 있으면"으로 잡는다. 이 조건은
 // [1m] 접미사(claude-fable-5[1m])는 통과시키고, anthropic./us.anthropic./global.anthropic./
 // ':' 버전 접미사/비-Anthropic 프로바이더를 전부 포섭한다(예전 조건의 상위집합).
+//
+// 실측 확인(2026-10-18, 최근 30일 405세션): organization.id/user.account_uuid/client_request_id/
+// request_id는 Anthropic 로그인 세션에만 실린다. 모델이 bare claude-*인데 계정 신호가 전혀 없는
+// 세션이 149개 있었고(request_id도 비어 있음 — Bedrock 응답과 같은 패턴) 예전에는 전부 unknown이었다.
+// 계정 신호 없는 세션은 3P 경로(= bedrock)로 확정한다. 단 모델 관측이 하나도 없는 세션은 근거가
+// 없으므로 계속 unknown이다.
 export const GROUP_CTE = `
 WITH session_group AS (
     SELECT
@@ -43,6 +49,7 @@ WITH session_group AS (
         multiIf(
             countIf(Model != '' AND NOT startsWith(Model, 'claude-')) > 0, 'bedrock',
             max(has_org) = 1, 'enterprise',
+            countIf(Model != '') > 0, 'bedrock',
             'unknown'
         ) AS grp
     FROM claude_code.otel_metrics_sum_hourly

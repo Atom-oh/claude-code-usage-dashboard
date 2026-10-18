@@ -205,6 +205,12 @@ test("GROUP_CTE classifies any non-bare-claude model as bedrock, and bedrock win
   );
 });
 
+// 계정 신호(has_org)가 없고 모델이 관측된 세션은 3P 경로라 bedrock이다(실측 2026-10-18, 149세션).
+// 모델 관측이 없으면 unknown으로 남고, enterprise 분기가 이 폴백보다 먼저여야 한다.
+test("GROUP_CTE falls back to bedrock for model-bearing sessions without account signals", () => {
+  assert.match(GROUP_CTE, /max\(has_org\) = 1, 'enterprise',\s+countIf\(Model != ''\) > 0, 'bedrock',\s+'unknown'/);
+});
+
 // 위 SQL 조건의 의미론을 라이브 census(2026-09-04, otel_metrics_sum_hourly의 distinct Model
 // 전수) 기준으로 고정하는 진리표 — SQL의 startsWith와 동일한 JS 판별식으로 각 형태가 어느
 // 그룹 증거인지 문서화한다. 새 모델 형태가 라이브에 나타나면 여기에 추가할 것.
