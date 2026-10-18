@@ -111,7 +111,7 @@ coverage. No cost estimate should silently invent a rate.
 | Model/effort/agent spend | Reported cost at the returned grain. Effort's empty value becomes `unknown`, displayed by `effortLabel` as unspecified; empty agent becomes `main`. Agent results are capped by computed cost before frontend spend sorting. |
 | Previous-period comparison | `costByModelCompare` returns reported and computed current/previous values; longer windows have separate alignment logic. Compare selected populations and effective windows, not only labels. |
 | Token-tier dollars | `tierCostsByGroup`: computed input/cache-read/cache-write/output costs, not an exact allocation of reported spend. |
-| Reported/computed ratio | `reportedVsComputedByVersion`, using `api_request` logs at channel/version/model grain; null if computed cost is not positive. A deviation does not isolate its cause. |
+| Reported/computed ratio | `reportedVsComputedByVersion`, using `api_request` logs at channel/version/model grain; null if computed cost is not positive. A deviation does not isolate its cause. `ratio_split` prices cache writes by the logged 5m/1h split where present (Claude Code 2.1.300+; see `cache_split_coverage`), so it removes the TTL assumption only for those tokens. |
 
 Cost's `showComputed` defaults false. The optional comparison section, computed table columns
 and effort annotations disclose computed diagnostics and the TTL assumption. The donut

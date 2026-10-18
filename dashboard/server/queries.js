@@ -1,7 +1,7 @@
 import { query as rawQuery, toChDateTime } from "./clickhouse.js";
 import { nacCostSql, withNacParams } from "./nonAnthropicCost.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl } from "./pricing.js";
+import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl, costWithCacheSplit } from "./pricing.js";
 import { backendSql } from "./backend.js";
 import { rollupAdoption } from "./activity.js";
 import { foldModelCostCells, MODEL_COST_ROW_LIMIT, USER_TREND_TOP } from "./modelCostTrend.js";
@@ -2277,7 +2277,9 @@ export async function reportedVsComputedByVersion(from, to, filters = {}) {
         sum(toUInt64OrZero(l.LogAttributes['input_tokens']))          AS input_tokens,
         sum(toUInt64OrZero(l.LogAttributes['output_tokens']))         AS output_tokens,
         sum(toUInt64OrZero(l.LogAttributes['cache_read_tokens']))     AS cache_read_tokens,
-        sum(toUInt64OrZero(l.LogAttributes['cache_creation_tokens'])) AS cache_write_tokens
+        sum(toUInt64OrZero(l.LogAttributes['cache_creation_tokens'])) AS cache_write_tokens,
+        sum(toUInt64OrZero(l.LogAttributes['cache_creation_5m_tokens'])) AS cache_write_5m_tokens,
+        sum(toUInt64OrZero(l.LogAttributes['cache_creation_1h_tokens'])) AS cache_write_1h_tokens
     FROM claude_code.otel_logs l
     LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
     WHERE l.EventName = 'api_request'
@@ -2301,8 +2303,23 @@ export async function reportedVsComputedByVersion(from, to, filters = {}) {
       cost_1h: cost1h,
       ttl_share: denom !== null && denom !== 0 ? (Number(r.reported_cost) - cost5m) / denom : null,
       ratio: r.cost > 0 ? Number(r.reported_cost) / r.cost : null,
+      ...ttlSplitFields(r),
     };
   });
+}
+
+// cache_split_coverage: 캐시 쓰기 토큰 중 5m/1h로 분리 수집된 비율(없으면 0, 쓰기 토큰이 0이면 null).
+// cost_split은 분리된 토큰만 실제 TTL 단가로, 나머지는 서버 가정으로 계산한다 — 커버리지가 1이면 가정이
+// 없는 값이다. 커버리지가 0이면 cost_split은 기존 cost와 같으므로 ratio_split도 ratio와 같다.
+export function ttlSplitFields(r) {
+  const write = Number(r.cache_write_tokens);
+  const split = Number(r.cache_write_5m_tokens) + Number(r.cache_write_1h_tokens);
+  const costSplit = costWithCacheSplit(r);
+  return {
+    cache_split_coverage: write > 0 ? Math.min(1, split / write) : null,
+    cost_split: costSplit,
+    ratio_split: costSplit > 0 ? Number(r.reported_cost) / costSplit : null,
+  };
 }
 
 // 유저 1명의 턴별 워터폴 — "왜 이 세션이 느렸나"에 답한다. interactionBreakdown과 동일한
