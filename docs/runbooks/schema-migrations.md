@@ -115,17 +115,39 @@ an existing incompatible table is not repaired by `CREATE IF NOT EXISTS`. See th
 Collector/ClickHouse tests before enabling the new exporter. The standalone 006 file
 creates no mutations and avoids schema-init's older materialization statements.
 
-## 3. Schema-init is a separate application path
+## 3. Bootstrap and existing-installation verification
 
-A fresh install uses `infra/files/clickhouse-schema-replicated.sql` through the Terraform
-schema-init Job. Verify Job completion, final DDL, all-replica mutation state, and ledger;
-do not declare a cluster migrated merely because the source includes the blocks.
+[schema.tf](../../infra/schema.tf) freezes the replicated SQL, generated metadata contract
+and runner in a hash-named immutable ConfigMap. Their combined hash also names the Job.
+Terraform waits for completion. The Job has no automatic restart or retry after failure;
+connection and replication waits are bounded inside the runner.
 
-Changing that SQL file changes the Job's hash-based name and causes a rerun on apply.
-Existing `CREATE ... IF NOT EXISTS` statements do not replace a live engine, sorting key,
-or rollup history. In particular, schema-init is **not a substitute for migration 003's
-shadow backfill and exchange** on an existing legacy cluster. Missing version 3 after apply
-can reflect an unfinished rebuild rather than a ledger bug.
+Before executing SQL, the runner verifies the contract's source hash and reads the expected
+distinct replica endpoints from `system.clusters`. Every endpoint must be reachable.
+Bootstrap is permitted only if `claude_code` contains no objects on any expected replica.
+Keep collectors and other writers off until the Job completes, and serialize installers
+through the Terraform state lock. Fresh bootstrap waits for materializations before ledger
+guards and then allows the replicated ledger to converge.
+
+If any replica already has an object, the runner issues only metadata/ledger SELECTs.
+It checks all owned objects' column types/default expressions, engines, partition/sorting/
+primary keys, TTL, view query/target, storage policies, replication paths and exact migration
+version/name/checksum rows. Retained rollback objects outside that owned set are preserved.
+The existing DELETE-only hourly table may use `default` or `hot_cold` storage. Codec or
+physical column order differences do not affect the named-input compatibility signature.
+
+Compatibility checks fail on drift or incomplete migration records. They neither alter
+tables nor create completion records. Apply the selected numbered migrations explicitly
+and verify their data/replica prerequisites before retrying compatibility verification.
+In particular, schema-init cannot replace migration 003's shadow backfill and exchange.
+Column/ledger compatibility does not prove historical materialization, rollup coverage,
+retention completion or recovery.
+
+Inspection/verification sessions enforce `readonly=1`, 15-second execution and bounded
+memory/read/result budgets. A 25-second process timeout, with a two-second kill grace, also
+bounds an unresponsive native connection; server execution settings alone do not cover it.
+Only the empty-bootstrap client has write access. The existing
+writer Secret reference is retained; its value is passed in the client's environment.
 
 ```bash
 kube get jobs | grep clickhouse-schema-init
@@ -136,12 +158,35 @@ SHOW CREATE TABLE claude_code.otel_logs;
 SQL
 ```
 
-Inspect the exact Job logs for failure. The client stops at its first failing statement;
-earlier DDL/materializations remain applied. The replicated schema currently has 29
-unguarded `ALTER TABLE ... MATERIALIZE COLUMN` statements. A rerun/retry can reschedule
-that work even when guarded column additions and ledger inserts are no-ops. Job completion
-does not mean asynchronous mutations have finished. Verify TTLs in the live DDL; do not
-infer retention from a successful apply or source file alone.
+Inspect the exact Job logs and live state after failure. A partial fresh bootstrap selects
+the existing-installation path on the next run and fails compatibility until explicitly
+repaired. Do not drop populated tables, erase ledger rows, or stream the entire schema file
+to force another bootstrap. Earlier DDL may remain; repair only the missing/incompatible
+objects after reviewing mutation/replication state and recovery evidence. Re-run the Job
+only after the repair and recorded migration evidence satisfy the contract.
+Confirm that the exact failed Job is terminal before deleting it to permit recreation;
+review the complete Terraform plan afterward. Do not delete a running initializer or use
+a targeted apply to conceal other changes.
+
+The SQL source retains 29 `MATERIALIZE COLUMN` statements for empty bootstrap. Streaming
+it directly into a populated installation bypasses the lifecycle guard and can reschedule
+large historical mutations. Existing installations must use numbered migrations instead.
+Verify actual TTLs and data lifecycle independently of compatibility or apply success.
+
+After an intentional schema change, regenerate the contract in an isolated fixture and
+review the corresponding migration:
+
+```bash
+python3 scripts/build-schema-contract.py
+python3 scripts/build-schema-contract.py --check
+python3 scripts/test-schema-lifecycle.py
+```
+
+These use synthetic credentials and an embedded Keeper. Single-server fixtures have no
+network; the three-server fixture uses an internal-only Docker network with no published
+ports. They access no AWS resources or customer data. CI requires source/contract equivalence
+and exercises bootstrap, populated no-write reruns, drift, missing ledger, partial installation,
+failure retries, one-replica drift/unavailability and inconsistent cluster topology.
 
 The replicated schema declares these TTLs; compare each actual table with its declaration:
 

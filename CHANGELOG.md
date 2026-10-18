@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-18
+
+- Separate empty ClickHouse bootstrap from read-only compatibility verification of existing
+  installations. Freeze schema inputs, stop automatic partial-bootstrap retries and check
+  schema/ledger drift before explicit upgrades.
+
 Notable changes follow the categories of Keep a Changelog and Semantic Versioning.
 All changes recorded here are under **Unreleased**. Entries describe changes at their
 recorded dates, not proof that infrastructure or migrations are deployed. Later entries

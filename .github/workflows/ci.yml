@@ -39,6 +39,16 @@ jobs:
       - name: Verify client aggregation against ClickHouse
         run: bash scripts/test-client-sql.sh
 
+  schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify declared schema compatibility contract against ClickHouse
+        run: python3 scripts/build-schema-contract.py --check
+      - name: Verify empty bootstrap and read-only existing-schema lifecycle
+        run: python3 scripts/test-schema-lifecycle.py
+
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -94,3 +104,5 @@ jobs:
         run: bash scripts/test-identity-terraform.sh
       - name: Verify customer infrastructure lookups with mocked providers
         run: bash scripts/test-installation-terraform.sh
+      - name: Verify immutable schema inputs and initializer behavior with mocked providers
+        run: bash scripts/test-schema-lifecycle-terraform.sh
