@@ -128,7 +128,7 @@ Run app checks before building:
 bash tests/run-all.sh
 ```
 
-Use the [production build and publication procedure](runbooks/deploy-production.md#2-build-inspect-and-publish)
+Use the [production build and publication procedure](runbooks/deploy-production.md#procedure)
 with the initial tag already selected in `dashboard_image_tag`. That procedure owns
 local inspection, applicable publication approval, image identity and scan checks.
 Do not choose another timestamp tag for this first installation.
