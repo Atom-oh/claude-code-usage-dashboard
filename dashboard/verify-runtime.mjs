@@ -3,6 +3,7 @@ import { readFileSync, lstatSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+export const REQUIRED_RUNTIME_ZLIB_VERSION = "1.3.2-r1";
 
 // This inspector is evaluated inside the built image using Node's builtins. It
 // never imports application modules, reads credentials or contacts a database.
@@ -23,6 +24,24 @@ export function verifyRuntime({
     fail("expected Node 24 and its OpenSSL version");
   }
   const location = (name) => path.join(root, name);
+  let installedPackages;
+  try {
+    installedPackages = readFileSync(location("lib/apk/db/installed"), "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") fail("OS package database is missing");
+    throw error;
+  }
+  const zlibRecords = installedPackages.split(/\r?\n\r?\n/)
+    .map((record) => record.split(/\r?\n/))
+    .filter((fields) => fields.includes("P:zlib"));
+  if (zlibRecords.length !== 1) fail("expected one installed OS zlib package");
+  const zlibNames = zlibRecords[0].filter((field) => field.startsWith("P:"));
+  const zlibVersions = zlibRecords[0].filter((field) => field.startsWith("V:"));
+  if (zlibNames.length !== 1 || zlibVersions.length !== 1 ||
+      zlibVersions[0] !== `V:${REQUIRED_RUNTIME_ZLIB_VERSION}`) {
+    fail(`expected OS zlib ${REQUIRED_RUNTIME_ZLIB_VERSION}`);
+  }
+  const zlibPackageVersion = zlibVersions[0].slice(2);
   const absent = (name) => {
     try { lstatSync(location(name)); }
     catch (error) { if (error.code === "ENOENT") return; throw error; }
@@ -57,6 +76,7 @@ export function verifyRuntime({
   if (serverLockSha256 !== expectedLockfiles.server) fail("runtime server lock differs");
   return {
     revision, uid, node: versions.node, openssl: versions.openssl,
+    zlibPackageVersion, nodeZlibVersion: versions.zlib ?? null,
     packageManagersAbsent: true,
     noticePackageCount: notices.packages.length,
     noticesJsonSha256: sha256(noticeJson),

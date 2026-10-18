@@ -12,6 +12,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed (2026-10-18 runtime OS zlib)
+
+- Install the authenticated Alpine OS zlib fix for `CVE-2026-85091` and verify
+  its pinned version in actual image package metadata before publication.
+  Record Node's bundled zlib separately; package inspection is not CVE clearance.
+
 ### Changed (2026-10-18 schema lifecycle)
 
 - Separate empty ClickHouse bootstrap from read-only compatibility verification of existing
