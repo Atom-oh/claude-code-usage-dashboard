@@ -124,6 +124,10 @@ connection and replication waits are bounded inside the runner.
 
 Before executing SQL, the runner verifies the contract's source hash and reads the expected
 distinct replica endpoints from `system.clusters`. Every endpoint must be reachable.
+The service and discovered endpoints share the configured connection-wait deadline;
+failed connection probes retry within it, each bounded by the process timeout.
+This tolerates replicas becoming ready after the service first answers. Exhaustion
+fails before bootstrap, naming the unavailable endpoint.
 Bootstrap is permitted only if `claude_code` contains no objects on any expected replica.
 Keep collectors and other writers off until the Job completes, and serialize installers
 through the Terraform state lock. Fresh bootstrap waits for materializations before ledger

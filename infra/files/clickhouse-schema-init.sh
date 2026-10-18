@@ -69,16 +69,20 @@ if [ "$expected" != "$actual" ]; then
   exit 1
 fi
 
-attempt=0
 connect_deadline=$(( $(date +%s) + SCHEMA_CONNECT_WAIT_SECONDS ))
-until query "$CH_HOST:$CH_PORT" 'SELECT 1' >/dev/null 2>&1; do
-  attempt=$((attempt + 1))
-  if [ "$attempt" -ge "$SCHEMA_CONNECT_ATTEMPTS" ] || [ "$(date +%s)" -ge "$connect_deadline" ]; then
-    echo "Schema lifecycle could not connect to ClickHouse within the configured wait" >&2
-    exit 1
-  fi
-  sleep 5
-done
+wait_for_endpoint() {
+  connect_attempt=0
+  until query "$1" 'SELECT 1' >/dev/null 2>&1; do
+    connect_attempt=$((connect_attempt + 1))
+    if [ "$connect_attempt" -ge "$SCHEMA_CONNECT_ATTEMPTS" ] || [ "$(date +%s)" -ge "$connect_deadline" ]; then
+      echo "Schema lifecycle could not connect to expected endpoint $1 within the configured wait; no bootstrap was started" >&2
+      exit 1
+    fi
+    echo "Schema lifecycle: waiting for ClickHouse endpoint $1" >&2
+    sleep 5
+  done
+}
+wait_for_endpoint "$CH_HOST:$CH_PORT"
 
 replicas=$(query "$CH_HOST:$CH_PORT" "SELECT concat(host_name, ':', toString(port)) FROM system.clusters WHERE cluster = 'replicated' ORDER BY shard_num, replica_num FORMAT TSV")
 shards=$(query "$CH_HOST:$CH_PORT" "SELECT uniqExact(shard_num) FROM system.clusters WHERE cluster = 'replicated' FORMAT TSV")
@@ -94,6 +98,9 @@ set -f
 nonempty=0
 for host in $replicas; do
   case "$host" in ''|*[!a-zA-Z0-9.:_-]*) echo "Invalid ClickHouse replica hostname" >&2; exit 1;; esac
+  # A ready service can route to the first pod while the operator starts its peers.
+  # Share the connection wait deadline; every probe retains its process deadline.
+  wait_for_endpoint "$host"
   topology=$(query "$host" "SELECT concat(host_name, ':', toString(port)) FROM system.clusters WHERE cluster = 'replicated' ORDER BY shard_num, replica_num FORMAT TSV")
   replica_shards=$(query "$host" "SELECT uniqExact(shard_num) FROM system.clusters WHERE cluster = 'replicated' FORMAT TSV")
   if [ "$topology" != "$replicas" ] || [ "$replica_shards" != 1 ]; then
