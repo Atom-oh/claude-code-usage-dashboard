@@ -12,6 +12,16 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-18 runtime distribution)
+
+- Refresh the immutable official Node 24 base and remove npm/Yarn from the final
+  runtime while retaining OS package metadata and application notices.
+- Inspect the actual ARM64 image's nonroot revision, runtime versions, license,
+  notices and lock hashes before publication. Verify the published ARM64 config
+  against the local image ID and record its manifest digest separately from the index.
+- Exercise committed-source ARM64 image inspection in CI without registry publication.
+  Vulnerability clearance, live authentication and production rollout remain separate.
+
 ### Changed (2026-10-18 channel fallback)
 
 - Sessions with an observed model and no `organization.id` are now classed `bedrock`
