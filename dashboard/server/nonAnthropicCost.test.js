@@ -11,7 +11,8 @@ const luna = { session: "s1", model: "us.openai.gpt-6-luna", input_tokens: "2", 
 test("only models that do not normalize to claude-* are rescaled", () => {
   for (const model of ["us.openai.gpt-6-luna", "global.xai.grok-4.6", "zai.glm-5", "gemma-4-31b-vllm"])
     assert.equal(isNonAnthropicModel(model), true, model);
-  for (const model of ["claude-opus-5-5[1m]", "us.anthropic.claude-fable-5-1", "anthropic.claude-sonnet-5", ""])
+  for (const model of ["claude-opus-5-5[1m]", "us.anthropic.claude-fable-5-1",
+    "in.anthropic.claude-opus-5", "anthropic.claude-sonnet-5", ""])
     assert.equal(isNonAnthropicModel(model), false, model);
 });
 

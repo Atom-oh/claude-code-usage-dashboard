@@ -173,29 +173,6 @@ resource "aws_iam_role" "dashboard_bedrock" {
   })
 }
 
-# InvokeModel* 리소스는 foundation-model(리전 무관 ARN)과 inference-profile 둘 다 필요 —
-# global.anthropic.* 프로파일이 내부적으로 여러 리전의 foundation-model ARN을 참조하므로
-# foundation-model은 리전 와일드카드(*)를 유지한다. inference-profile은 사용 모델 하나로 좁힌다.
-# chat_model_id에서 리전 프리픽스(global./us./eu./apac.)를 떼면 foundation-model 이름이 된다.
-locals {
-  chat_foundation_model = replace(var.chat_model_id, "/^(global|us|eu|apac)\\./", "")
-}
-resource "aws_iam_role_policy" "dashboard_bedrock" {
-  name = "bedrock-invoke"
-  role = aws_iam_role.dashboard_bedrock.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-      Resource = [
-        "arn:aws:bedrock:*::foundation-model/${local.chat_foundation_model}",
-        "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/${var.chat_model_id}"
-      ]
-    }]
-  })
-}
-
 resource "kubernetes_deployment_v1" "dashboard" {
   # ECR엔 아직 이미지가 없다 — apply 시점에 rollout이 안 끝나는 게 정상이므로 여기서 막지 않는다.
   # 이미지 push 후 `kubectl rollout restart`로 실제로 뜬다.

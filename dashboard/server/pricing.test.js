@@ -340,15 +340,17 @@ test("normalizeModelId strips the date snapshot without eating a minor version",
 
 // 실측: Bedrock cross-region 추론 프로파일 접두사는 us./global./eu./apac. 외에
 // us-gov./jp./au.도 있다. 안 벗기면 모델 분포가 리전별로 쪼개지고 단가표에도 안 맞는다.
-test("normalizeModelId strips the us-gov/jp/au cross-region profile prefixes", () => {
+test("normalizeModelId strips the us-gov/jp/au/in cross-region profile prefixes", () => {
   assert.equal(normalizeModelId("jp.anthropic.claude-sonnet-5"), "claude-sonnet-5");
   assert.equal(normalizeModelId("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0"), "claude-haiku-4-5");
   assert.equal(normalizeModelId("au.anthropic.claude-opus-5"), "claude-opus-5");
+  assert.equal(normalizeModelId("in.anthropic.claude-opus-5"), "claude-opus-5");
   // us-gov는 us보다 뒤에 오는 대안이라(정규식 순서) us가 먼저 매칭됐다가 백트래킹으로
   // us-gov를 잡는다 — 위 두 번째 단정문이 그 백트래킹을 고정한다.
   assert.equal(priceFor("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0").input, 1);
   // 대조군: 접두사처럼 보이지만 목록에 없는 값은 그대로 남아야 한다(과잉 매칭 방지).
   assert.equal(normalizeModelId("us-gov-west.anthropic.claude-opus-5"), "us-gov-west.anthropic.claude-opus-5");
+  assert.equal(normalizeModelId("india.anthropic.claude-opus-5"), "india.anthropic.claude-opus-5");
 });
 
 // rollupComputedCost: 그룹 컬럼 × model 그레인의 쿼리 결과를 그룹 컬럼 단위로 접는다. 이 헬퍼가
@@ -516,12 +518,14 @@ test("a PRICING_JSON backends override only fills the fields it sets; unset fiel
 test("regional Bedrock routes of 4.5+ models carry a 10% premium", () => {
   assert.equal(regionalMultiplier("us.anthropic.claude-opus-5"), 1.1);
   assert.equal(regionalMultiplier("eu.anthropic.claude-sonnet-5-5"), 1.1);
+  assert.equal(regionalMultiplier("in.anthropic.claude-opus-5"), 1.1);
   assert.equal(regionalMultiplier("anthropic.claude-sonnet-5-5"), 1.1);
   for (const model of ["global.anthropic.claude-opus-5", "claude-opus-5", "us-gov.anthropic.claude-opus-5",
     "us.anthropic.claude-opus-4-1-20250805-v1:0", ""]) assert.equal(regionalMultiplier(model), 1, model);
   const tokens = { input: 1e6, output: 0, cacheRead: 0, cacheWrite: 0 };
   assert.equal(computeCost("global.anthropic.claude-opus-5", "bedrock-runtime", tokens), 5);
   assert.equal(computeCost("us.anthropic.claude-opus-5", "bedrock-runtime", tokens), 5.5);
+  assert.equal(computeCost("in.anthropic.claude-opus-5", "bedrock-runtime", tokens), 5.5);
 });
 
 // ADR-017 amendment: unknown non-Anthropic spend arrives as null and must not fold into $0.

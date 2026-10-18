@@ -77,7 +77,7 @@ export function bucketKey(value) {
 export function displayModel(raw) {
   return String(raw ?? "")
     .replace(/\[[^\]]*\]$/, "")
-    .replace(/^(?:us|us-gov|eu|apac|jp|au|global)\./, "")
+    .replace(/^(?:us|us-gov|eu|apac|jp|au|in|global)\./, "")
     .replace(/^anthropic\./, "")
     .replace(/-v\d+(?::\d+)?$/, "")
     .replace(/-\d{8}$/, "");

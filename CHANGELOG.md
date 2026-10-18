@@ -12,6 +12,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed (2026-10-18 India Bedrock routing)
+
+- Recognize `in.` profiles as Bedrock Runtime in backend inference and normalize
+  them consistently for prices, SQL, Grafana and model labels. Preserve request
+  tiers, regional rate policy, unknown prices and unsupported GovCloud scopes.
+- Strip supported commercial geography prefixes from chat foundation-model IAM
+  ARNs while retaining full inference-profile IDs.
+
 ### Changed (2026-10-15 distinct cache admission)
 
 - Let up to 64 distinct cold views per process wait up to 30 seconds for an

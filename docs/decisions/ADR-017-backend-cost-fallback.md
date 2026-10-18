@@ -18,7 +18,7 @@ not contemplate: a token-priced estimate filling in only where no report exists.
 ## Decision
 
 **Backend resolution** (`backend.js`, both clients): cross-region routing prefix
-(`us.`/`us-gov.`/`eu.`/`apac.`/`jp.`/`au.`/`global.`) → `bedrock-runtime`; else a bare
+(`us.`/`us-gov.`/`eu.`/`apac.`/`jp.`/`au.`/`in.`/`global.`) → `bedrock-runtime`; else a bare
 vendor namespace (`anthropic.`, `openai.`, ...) ending in a letter before the dot →
 `bedrock-mantle` (excludes a bare model's own versioned dot, e.g. `grok-4.6`); else the
 resource tag if valid (Codex only); else `unknown`. Claude's enterprise short-circuit to
@@ -53,6 +53,21 @@ derived from another override field.
 - A bedrock-channel Claude row with a bare model reports `unknown` — live verification
   found zero such rows, so this is not a regression.
 - Collection, the raw tag, and the legacy cost-basis contract are unchanged.
+
+### India routing coverage correction (2026-10-18)
+
+Recognize the `in.` geography prefix in backend inference, Claude/Codex price lookup,
+SQL normalization, Grafana queries and model labels. The
+[AWS Claude Opus 5 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-5.html)
+lists the India inference ID. India profiles use the existing
+commercial regional rate policy; global and unsupported GovCloud scope rules remain.
+Codex request tiers still take precedence over the flat Claude fallback. Chat IAM
+removes every supported commercial geography prefix from the foundation-model ARN
+while retaining it in the inference-profile ARN.
+
+Backend labels remain inference. A bare vendor ID can also be invoked through
+Bedrock Runtime; the prefix alone does not prove the API endpoint. This correction
+preserves the existing bare-vendor rule and does not add endpoint telemetry.
 
 ## Verification
 
