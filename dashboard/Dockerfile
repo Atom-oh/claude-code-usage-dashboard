@@ -3,7 +3,29 @@
 # do not establish which Node/system packages a build uses.
 FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS node-base
 
-FROM node-base AS web-build
+# Keep the Node LTS version, but replace its bundled OpenSSL 3.5.8 with the
+# supported 3.5.9 branch fix. An OS-only update cannot patch the original binary.
+FROM node-base AS patched-node-build
+WORKDIR /node-source
+RUN apk add --no-cache python3 make g++ linux-headers 'openssl-dev=3.5.9-r0' \
+    && wget -O node.tar.xz https://nodejs.org/dist/v24.22.0/node-v24.22.0.tar.xz \
+    && echo '41f97cff2c666f1f8293dc5f85c65e8dd605c16b43fd9febd49ede32ee1e0329  node.tar.xz' | sha256sum -c - \
+    && tar -xJf node.tar.xz --strip-components=1 \
+    && ./configure --shared-openssl --without-npm \
+    && make -j2 \
+    && strip out/Release/node \
+    && ./out/Release/node -e 'if (process.versions.node !== "24.22.0" || process.versions.openssl !== "3.5.9" || process.config.variables.node_shared_openssl !== true) process.exit(1)' \
+    && mkdir /node-runtime \
+    && cp out/Release/node LICENSE /node-runtime/ \
+    && cd / \
+    && rm -rf /node-source
+
+FROM node-base AS patched-node
+RUN apk add --no-cache 'libcrypto3=3.5.9-r0' 'libssl3=3.5.9-r0'
+COPY --from=patched-node-build /node-runtime/node /usr/local/bin/node
+COPY --from=patched-node-build /node-runtime/LICENSE /usr/local/share/doc/node/LICENSE
+
+FROM patched-node AS web-build
 WORKDIR /app/web
 # 락파일 COPY에 `*`를 붙이지 않는다(선택적으로 만들지 않는다) + npm install이 아니라 npm ci:
 # 락파일이 없거나 낡으면 빌드가 semver 범위를 그 시점 최신으로 다시 풀어, 같은 커밋의 두 빌드가
@@ -13,7 +35,7 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM node-base AS server-deps
+FROM patched-node AS server-deps
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./server/
 RUN npm ci --omit=dev --prefix server
@@ -41,6 +63,7 @@ RUN apk add --no-cache 'zlib=1.3.2-r1' \
       /opt/yarn-v* \
       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn \
       /usr/local/bin/yarnpkg /usr/local/bin/corepack /root/.npm \
+      /usr/local/include/node \
     && test ! -e /usr/local/lib/node_modules/npm \
     && test ! -e /usr/local/lib/node_modules/corepack \
     && test ! -e /usr/local/bin/npm \

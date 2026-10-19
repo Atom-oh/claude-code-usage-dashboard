@@ -5,7 +5,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSy
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { REQUIRED_RUNTIME_ZLIB_VERSION } from "../verify-runtime.mjs";
+import {
+  REQUIRED_RUNTIME_ZLIB_VERSION, REQUIRED_RUNTIME_OPENSSL_VERSION,
+  REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION,
+} from "../verify-runtime.mjs";
 
 const source = fileURLToPath(new URL("../../scripts/build-release.py", import.meta.url));
 const probe = fileURLToPath(new URL("../verify-runtime.mjs", import.meta.url));
@@ -63,7 +66,7 @@ elif args[0]=='create':
 elif args[:2]==['start','--attach']:
   assert args[-1]=='a'*64
   if fault=='runtime': sys.exit(12)
-  print(json.dumps({'revision':revision,'uid':1000,'node':'24.22.0','openssl':'synthetic-version','zlibPackageVersion':'${REQUIRED_RUNTIME_ZLIB_VERSION}','nodeZlibVersion':'synthetic-node-zlib','packageManagersAbsent':True,'noticePackageCount':1}))
+  print(json.dumps({'revision':revision,'uid':1000,'node':'24.22.0','openssl':'${REQUIRED_RUNTIME_OPENSSL_VERSION}','sharedOpenSSL':True,'opensslPackages':{'libcrypto3':'${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}','libssl3':'${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}'},'zlibPackageVersion':'${REQUIRED_RUNTIME_ZLIB_VERSION}','nodeZlibVersion':'synthetic-node-zlib','packageManagersAbsent':True,'noticePackageCount':1}))
 elif args[:2]==['rm','--force']:
   assert args[-1]=='a'*64
 elif args[:2]==['container','inspect']:
@@ -112,6 +115,12 @@ test("release builder rejects latest and archives only committed source with ver
     assert.match(metadata.lockfileSha256.server, /^[a-f0-9]{64}$/);
     assert.equal(metadata.runtime.uid, 1000);
     assert.equal(metadata.runtime.zlibPackageVersion, REQUIRED_RUNTIME_ZLIB_VERSION);
+    assert.equal(metadata.runtime.openssl, REQUIRED_RUNTIME_OPENSSL_VERSION);
+    assert.equal(metadata.runtime.sharedOpenSSL, true);
+    assert.deepEqual(metadata.runtime.opensslPackages, {
+      libcrypto3: REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION,
+      libssl3: REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION,
+    });
     assert.equal(metadata.runtime.nodeZlibVersion, "synthetic-node-zlib");
     assert.equal(metadata.runtime.packageManagersAbsent, true);
     assert.ok(Date.parse(metadata.completedAt) >= Date.parse(metadata.builtAt));

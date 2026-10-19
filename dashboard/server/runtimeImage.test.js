@@ -4,9 +4,14 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { REQUIRED_RUNTIME_ZLIB_VERSION, verifyRuntime } from "../verify-runtime.mjs";
+import {
+  REQUIRED_RUNTIME_ZLIB_VERSION, REQUIRED_RUNTIME_NODE_VERSION,
+  REQUIRED_RUNTIME_OPENSSL_VERSION, REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION, verifyRuntime,
+} from "../verify-runtime.mjs";
 
 const hash = (text) => createHash("sha256").update(text).digest("hex");
+const opensslMetadata = ["libcrypto3", "libssl3"].map(name =>
+  `P:${name}\nV:${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}\n\n`).join("");
 
 function fixture(run) {
   const root = mkdtempSync(path.join(tmpdir(), "ccdash-runtime-"));
@@ -27,9 +32,10 @@ function fixture(run) {
     writeFileSync(path.join(root, "app/notices/THIRD_PARTY_NOTICES.json"), JSON.stringify(notices));
     writeFileSync(path.join(root, "app/notices/THIRD_PARTY_NOTICES.txt"), "Synthetic dependency notices.\n");
     writeFileSync(path.join(root, "lib/apk/db/installed"),
-      `P:busybox\nV:synthetic\n\nP:zlib\nV:${REQUIRED_RUNTIME_ZLIB_VERSION}\nA:aarch64\n\n`);
+      `P:busybox\nV:synthetic\n\nP:zlib\nV:${REQUIRED_RUNTIME_ZLIB_VERSION}\nA:aarch64\n\n${opensslMetadata}`);
     const options = {
-      root, uid: 1000, versions: { node: "24.22.0", openssl: "synthetic-version", zlib: "synthetic-node-zlib" },
+      root, uid: 1000, sharedOpenSSL: true,
+      versions: { node: REQUIRED_RUNTIME_NODE_VERSION, openssl: REQUIRED_RUNTIME_OPENSSL_VERSION, zlib: "synthetic-node-zlib" },
       revision: "a".repeat(40), expectedRevision: "a".repeat(40),
       expectedLicenseSha256: hash(license), expectedLockfiles,
     };
@@ -42,6 +48,12 @@ test("runtime inspection binds actual notices, license, lock and nonroot release
     const result = verifyRuntime(options);
     assert.equal(result.uid, 1000);
     assert.equal(result.node, "24.22.0");
+    assert.equal(result.openssl, REQUIRED_RUNTIME_OPENSSL_VERSION);
+    assert.equal(result.sharedOpenSSL, true);
+    assert.deepEqual(result.opensslPackages, {
+      libcrypto3: REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION,
+      libssl3: REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION,
+    });
     assert.equal(result.zlibPackageVersion, REQUIRED_RUNTIME_ZLIB_VERSION);
     assert.equal(result.nodeZlibVersion, "synthetic-node-zlib");
     assert.equal(result.revision, options.expectedRevision);
@@ -54,11 +66,47 @@ test("runtime inspection binds actual notices, license, lock and nonroot release
   });
 });
 
+test("runtime inspection rejects unpatched or statically linked OpenSSL", () => {
+  fixture(({ options }) => {
+    assert.throws(() => verifyRuntime({ ...options, sharedOpenSSL: false }), /shared OpenSSL/);
+    assert.throws(() => verifyRuntime({ ...options, versions: { ...options.versions, openssl: "3.5.8" } }),
+      /shared OpenSSL/);
+  });
+});
+
+test("runtime inspection rejects absent, old and ambiguous OpenSSL package records", () => {
+  for (const name of ["libcrypto3", "libssl3"]) {
+    for (const replacement of [
+      "", `P:${name}\nV:3.5.8-r0\n\n`, `P:${name}\n\n`,
+      `P:${name}\nV:${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}\nV:3.5.8-r0\n\n`,
+      `P:${name}\nP:other\nV:${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}\n\n`,
+      `P:${name}\nV:${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}\n\n`.repeat(2),
+    ]) {
+      fixture(({ root, options }) => {
+        const file = path.join(root, "lib/apk/db/installed");
+        writeFileSync(file, readFileSync(file, "utf8").replace(
+          `P:${name}\nV:${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}\n\n`, replacement));
+        assert.throws(() => verifyRuntime(options), new RegExp(`OS ${name}`));
+      });
+    }
+  }
+});
+
 test("runtime Dockerfile pin agrees with actual-image OS zlib verification", () => {
   const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
   const runtime = dockerfile.split("FROM server-deps AS runtime\n")[1];
   assert.ok(runtime?.includes(`apk add --no-cache 'zlib=${REQUIRED_RUNTIME_ZLIB_VERSION}'`));
   assert.ok(!runtime.includes("--allow-untrusted"));
+});
+
+test("Node source build and OpenSSL pins agree with the runtime inspector", () => {
+  const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
+  assert.ok(dockerfile.includes(`https://nodejs.org/dist/v${REQUIRED_RUNTIME_NODE_VERSION}/node-v${REQUIRED_RUNTIME_NODE_VERSION}.tar.xz`));
+  assert.ok(dockerfile.includes("./configure --shared-openssl --without-npm"));
+  for (const name of ["openssl-dev", "libcrypto3", "libssl3"])
+    assert.ok(dockerfile.includes(`'${name}=${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}'`));
+  assert.ok(dockerfile.includes("sha256sum -c -"));
+  assert.ok(!dockerfile.includes("--allow-untrusted"));
 });
 
 test("runtime inspection rejects a missing OS package database or zlib record", () => {
@@ -94,8 +142,10 @@ test("runtime inspection rejects old, missing, duplicate or malformed OS zlib ve
 test("runtime inspection accepts APK CRLF metadata and keeps Node zlib separate", () => {
   fixture(({ root, options }) => {
     writeFileSync(path.join(root, "lib/apk/db/installed"),
-      `P:busybox\r\nV:synthetic\r\n\r\nP:zlib\r\nV:${REQUIRED_RUNTIME_ZLIB_VERSION}\r\n\r\n`);
-    const result = verifyRuntime({ ...options, versions: { node: "24.22.0", openssl: "synthetic" } });
+      (`P:busybox\nV:synthetic\n\nP:zlib\nV:${REQUIRED_RUNTIME_ZLIB_VERSION}\n\n${opensslMetadata}`).replaceAll("\n", "\r\n"));
+    const result = verifyRuntime({ ...options, versions: {
+      node: REQUIRED_RUNTIME_NODE_VERSION, openssl: REQUIRED_RUNTIME_OPENSSL_VERSION,
+    } });
     assert.equal(result.zlibPackageVersion, REQUIRED_RUNTIME_ZLIB_VERSION);
     assert.equal(result.nodeZlibVersion, null);
   });
@@ -127,7 +177,8 @@ test("runtime inspection detects broken package-manager symlinks, Corepack and Y
 });
 
 test("runtime inspection rejects frontend modules and build collectors", () => {
-  for (const filename of ["app/web/node_modules", "app/collect-notices.mjs", "app/verify-runtime.mjs"]) {
+  for (const filename of ["app/web/node_modules", "app/collect-notices.mjs", "app/verify-runtime.mjs",
+    "usr/local/include/node"]) {
     fixture(({ root, options }) => {
       mkdirSync(path.dirname(path.join(root, filename)), { recursive: true });
       writeFileSync(path.join(root, filename), "synthetic build artifact");
