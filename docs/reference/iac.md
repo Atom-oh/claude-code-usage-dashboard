@@ -32,6 +32,33 @@ After `terraform -chdir=infra init -backend=false`, run
 with mocked providers and the committed provider versions. These tests make no AWS calls
 and do not verify an installation.
 
+## EKS provider authentication
+
+Both Kubernetes providers execute AWS CLI v2 `eks get-token` with the installation's
+explicit cluster name and region. They consume the returned `ExecCredential`, including
+its expiration, instead of storing a planning-time token in provider configuration.
+This lets a saved-plan apply obtain fresh credentials after review. The cluster endpoint
+and CA still come from `aws_eks_cluster`; TLS verification remains enabled.
+
+Install AWS CLI v2 **2.12.3 or later** on **both** the plan and apply runners, matching
+the [EKS client prerequisite](https://docs.aws.amazon.com/eks/latest/userguide/create-kubeconfig.html).
+Use the same intended AWS
+credential chain for Terraform and the CLI (for example, the same `AWS_PROFILE` or
+workload role), with EKS admission and Kubernetes permissions for the installation.
+Authenticate before each operation and keep the underlying AWS session valid through
+it. Exec refresh cannot repair an expired AWS session or missing cluster permissions.
+Do not supply competing Kubernetes credentials or configuration through `KUBE_TOKEN`,
+`KUBE_CONFIG_PATH`, `KUBE_CONFIG_PATHS` or client-certificate environment variables.
+The kubectl provider also disables kubeconfig loading.
+
+Old saved plans retain their old configuration. Recreate and review a complete plan
+after adopting this change; do not reuse a previously saved static-token plan. Old state
+and plan backups may still contain short-lived tokens or other secrets and remain private.
+Fresh authentication does not make an old resource plan safe to apply without checking
+state and drift. See the [deployment runbook](../runbooks/deploy-production.md).
+The [AWS CLI command reference](https://docs.aws.amazon.com/cli/latest/reference/eks/get-token.html)
+describes the credential response.
+
 ## Resource ownership
 
 | Source | Responsibility |
