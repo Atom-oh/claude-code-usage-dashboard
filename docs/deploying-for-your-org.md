@@ -17,7 +17,8 @@ not create the cluster, participant EC2 fleet, or collector sidecars. Before pla
   by `replicasCount` in a manifest.
 - A Route53 public zone for the domain and an issued wildcard ACM certificate in `us-east-1`.
   This stack looks them up instead of creating them.
-- Terraform `>= 1.9` (`infra/providers.tf`), AWS CLI, `kubectl`, and Docker buildx capable of
+- Terraform `>= 1.9` (`infra/providers.tf`), AWS CLI v2 `>= 2.12.3` on the plan and apply runners,
+  `kubectl`, and Docker buildx capable of
   `linux/arm64`. Use the committed provider lockfile. Local web checks use Node.js >=22.12.
 
 Server engines require Node >=22, web >=22.12, CI uses current Node 22, and Docker uses 24.

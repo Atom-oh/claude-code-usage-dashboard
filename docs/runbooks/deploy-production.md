@@ -13,6 +13,19 @@ ECR/CloudFront access, `kubectl`, Terraform state for this stack, and Docker bui
 `linux/arm64` support. For chat, verify the deployed model/region and IRSA configuration
 using [Workshop Studio notes](../workshop-studio-notes.md).
 
+Install AWS CLI v2 2.12.3 or later on the Terraform plan and apply runners, and authenticate
+both with the intended installation identity. The [EKS authentication contract](../reference/iac.md#eks-provider-authentication)
+uses executable credentials for both Kubernetes providers. Check the caller before each
+operation with `aws sts get-caller-identity`; do not print an EKS token. An expired AWS
+session still requires reauthentication. When upgrading from static-token providers,
+discard the old saved plan and create a new complete plan for review.
+
+If an apply fails with an authentication error, first record its exit status and inspect
+the updated state and actual resources: AWS resources may have changed before Kubernetes
+authentication failed. Restore the intended AWS session, generate and review a fresh
+complete plan, then apply the remaining changes. Never infer that a failed apply made
+no changes or blindly replay the original plan.
+
 Before a Terraform plan, verify [existing environment inputs](../reference/iac.md#existing-environment-inputs).
 Legacy node-role discovery now requires exactly one match. Existing clusters with multiple
 nodegroups must set `node_role_name` to the verified deployed role; explicit lookup requires

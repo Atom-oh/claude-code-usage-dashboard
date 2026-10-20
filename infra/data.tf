@@ -5,10 +5,6 @@ data "aws_eks_cluster" "this" {
   name = var.eks_cluster_name
 }
 
-data "aws_eks_cluster_auth" "this" {
-  name = var.eks_cluster_name
-}
-
 data "aws_vpc" "this" {
   id = data.aws_eks_cluster.this.vpc_config[0].vpc_id
 }
