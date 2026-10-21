@@ -17,9 +17,12 @@ Explicit `AUTH_MODE=oidc` uses authorization code/PKCE, state/nonce, signed ID t
 configured issuer/audience and group-based roles. Invalid OIDC configuration refuses
 startup even when Basic/development credentials are present. Login/callback/local logout
 are protocol exceptions; telemetry/config/static routes remain protected.
-Sessions use encrypted host-only Secure/HttpOnly cookies, default to 15 minutes, and retain
-no IdP tokens. Unsafe requests require the exact configured Origin. Local logout does not
-revoke copied sessions or IdP SSO. See [SSO operations](../runbooks/organization-sso.md).
+Principal cookies are encrypted, host-only, Secure/HttpOnly and default to 15 minutes.
+Optional [refresh sessions](../decisions/ADR-021-refresh-token-sessions.md) retain an
+encrypted refresh credential for an absolute maximum of 30 days and recheck signed
+identity/group claims at renewal. Unsafe requests require the exact configured Origin.
+Logout clears cookies and revokes retained refresh credentials; copied short principal
+cookies and hosted IdP SSO remain separate. See [SSO operations](../runbooks/organization-sso.md).
 Startup validation checks syntax/required inputs; discovery happens at login.
 The application uses `strict-origin` referrers and `no-store` for authenticated static
 bundles as well as JSON, trading repeat-download caching for a uniform auth-response policy.

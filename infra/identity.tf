@@ -80,14 +80,28 @@ variable "session_max_age_seconds" {
   }
 }
 
+variable "session_refresh_max_age_seconds" {
+  description = "Absolute login lifetime with non-rotating, revocable OIDC refresh tokens; 0 disables persistence."
+  type        = number
+  default     = 0
+  validation {
+    condition = floor(var.session_refresh_max_age_seconds) == var.session_refresh_max_age_seconds && (
+      var.session_refresh_max_age_seconds == 0 ||
+      (var.session_refresh_max_age_seconds >= 3600 && var.session_refresh_max_age_seconds <= 2592000)
+    )
+    error_message = "session_refresh_max_age_seconds must be 0 or an integer from 3600 to 2592000."
+  }
+}
+
 locals {
   oidc_environment = var.auth_mode == "oidc" ? {
-    AUTH_MODE               = "oidc"
-    APP_PUBLIC_URL          = "https://${var.dashboard_hostname}"
-    OIDC_ISSUER             = var.oidc_issuer
-    OIDC_CLIENT_ID          = var.oidc_client_id
-    OIDC_GROUPS_CLAIM       = var.oidc_groups_claim
-    OIDC_ROLE_GROUPS        = jsonencode(var.oidc_role_groups)
-    SESSION_MAX_AGE_SECONDS = tostring(var.session_max_age_seconds)
+    AUTH_MODE                       = "oidc"
+    APP_PUBLIC_URL                  = "https://${var.dashboard_hostname}"
+    OIDC_ISSUER                     = var.oidc_issuer
+    OIDC_CLIENT_ID                  = var.oidc_client_id
+    OIDC_GROUPS_CLAIM               = var.oidc_groups_claim
+    OIDC_ROLE_GROUPS                = jsonencode(var.oidc_role_groups)
+    SESSION_MAX_AGE_SECONDS         = tostring(var.session_max_age_seconds)
+    SESSION_REFRESH_MAX_AGE_SECONDS = tostring(var.session_refresh_max_age_seconds)
   } : {}
 }

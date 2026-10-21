@@ -5,6 +5,7 @@ import { createRateLimiter } from "./rateLimit.js";
 
 const SESSION_COOKIE = "__Host-ccdash-session";
 const LOGIN_COOKIE = "__Host-ccdash-login";
+const REFRESH_COOKIES = ["__Host-ccdash-refresh-0", "__Host-ccdash-refresh-1"];
 const PROBES = new Set(["/healthz", "/readyz"]);
 const ROLES = ["viewer", "analyst", "admin"];
 const PERMISSIONS = {
@@ -47,6 +48,9 @@ export function parseAuthConfig(env) {
   const maxAge = env.SESSION_MAX_AGE_SECONDS === undefined ? 900 : Number(env.SESSION_MAX_AGE_SECONDS);
   if (!Number.isInteger(maxAge) || maxAge < 300 || maxAge > 3600)
     throw new Error("SESSION_MAX_AGE_SECONDS must be an integer from 300 to 3600");
+  const refreshMaxAge = env.SESSION_REFRESH_MAX_AGE_SECONDS === undefined ? 0 : Number(env.SESSION_REFRESH_MAX_AGE_SECONDS);
+  if (!Number.isInteger(refreshMaxAge) || (refreshMaxAge !== 0 && (refreshMaxAge < 3600 || refreshMaxAge > 2592000)))
+    throw new Error("SESSION_REFRESH_MAX_AGE_SECONDS must be 0 or an integer from 3600 to 2592000");
   const claim = env.OIDC_GROUPS_CLAIM || "groups";
   if (!/^[A-Za-z][A-Za-z0-9:_-]{0,127}$/.test(claim)) throw new Error("OIDC_GROUPS_CLAIM must name a top-level claim");
   let roleGroups;
@@ -57,7 +61,7 @@ export function parseAuthConfig(env) {
     || Object.values(roleGroups).some(groups => !Array.isArray(groups) || !groups.length || groups.length > 64
       || groups.some(group => typeof group !== "string" || !group.trim() || group.length > 128)))
     throw new Error("OIDC_ROLE_GROUPS must map viewer, analyst or admin to explicit group arrays");
-  return { mode, enabled: true, issuer, origin, key, maxAge, claim, roleGroups,
+  return { mode, enabled: true, issuer, origin, key, maxAge, refreshMaxAge, claim, roleGroups,
     clientId: env.OIDC_CLIENT_ID, clientSecret: env.OIDC_CLIENT_SECRET };
 }
 
@@ -68,6 +72,7 @@ function cookieValue(header, name) {
 
 export function createSessionCodec(config, now = Date.now) {
   const aad = purpose => Buffer.from(JSON.stringify(["ccdash-auth-v1", purpose, config.issuer, config.clientId, config.origin]));
+  const limit = purpose => purpose === "refresh" ? 6000 : 3500;
   return {
     seal(payload, purpose) {
       const iv = randomBytes(12);
@@ -75,12 +80,12 @@ export function createSessionCodec(config, now = Date.now) {
       cipher.setAAD(aad(purpose));
       const encrypted = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
       const token = ["v1", iv.toString("base64url"), encrypted.toString("base64url"), cipher.getAuthTag().toString("base64url")].join(".");
-      if (token.length > 3500) throw new Error("Session payload exceeds cookie limit");
+      if (token.length > limit(purpose)) throw new Error("Session payload exceeds cookie limit");
       return token;
     },
     open(token, purpose) {
       try {
-        if (typeof token !== "string" || token.length > 3500 || !/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) return null;
+        if (typeof token !== "string" || token.length > limit(purpose) || !/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) return null;
         const [, iv, body, tag] = token.split(".").map((part, index) => index ? Buffer.from(part, "base64url") : part);
         if (iv.length !== 12 || tag.length !== 16) return null;
         const decipher = createDecipheriv("aes-256-gcm", config.key, iv);
@@ -119,7 +124,7 @@ async function discover(config) {
     client_secret: config.clientSecret,
     redirect_uris: [config.origin + "/auth/callback"],
     response_types: ["code"],
-  }, oidc.ClientSecretPost(config.clientSecret), {
+  }, config.refreshMaxAge ? oidc.ClientSecretBasic(config.clientSecret) : oidc.ClientSecretPost(config.clientSecret), {
     timeout: 10,
     execute: [oidc.enableNonRepudiationChecks],
   });
@@ -132,6 +137,10 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
     ? basicAuth({ users: { [config.user]: config.password }, challenge: true }) : null;
   const codec = config.mode === "oidc" ? createSessionCodec(config, now) : null;
   const authRateLimit = createRateLimiter({ now });
+  // Bound refresh work independently of IP: workshops share corporate egress.
+  // Only in-flight requests are shared; successful credentials are not cached.
+  const refreshes = new Map();
+  const refreshFailures = new Map();
   let clientPromise;
   let retryAfter = 0;
   const getClient = () => {
@@ -166,6 +175,68 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
       || session.subject.length > 256 || typeof session.name !== "string" || session.name.length > 160) return null;
     return session;
   }
+  function clearSession(res) {
+    for (const name of [SESSION_COOKIE, LOGIN_COOKIE, ...REFRESH_COOKIES]) setCookie(res, name, "", 0);
+  }
+  function readRefresh(req) {
+    if (!config.refreshMaxAge) return null;
+    const parts = REFRESH_COOKIES.map(name => cookieValue(req.headers.cookie, name));
+    if (parts.some(part => !part || part.length > 3000)) return null;
+    const value = codec.open(parts.join(""), "refresh");
+    const time = Math.floor(now() / 1000);
+    if (!value || typeof value.token !== "string" || !value.token || value.token.length > 4096
+      || typeof value.subject !== "string" || !value.subject || value.subject.length > 256
+      || !Number.isInteger(value.iat) || value.iat > time || value.iat + config.refreshMaxAge <= time
+      || value.exp > value.iat + config.refreshMaxAge) return null;
+    return value;
+  }
+  function principalFromClaims(claims, refresh) {
+    const time = Math.floor(now() / 1000);
+    const role = roleFromClaims(claims);
+    const expires = Math.min(claims?.exp, time + config.maxAge, refresh?.exp ?? Infinity);
+    if (!role || typeof claims?.sub !== "string" || !claims.sub || claims.sub.length > 256
+      || (refresh && claims.sub !== refresh.subject) || !Number.isInteger(expires) || expires <= time)
+      throw new Error("Invalid identity claims");
+    return { subject: claims.sub, role, name: typeof claims.name === "string" ? claims.name.slice(0, 160) : "조직 사용자",
+      exp: expires, ...(refresh ? { refreshExp: refresh.exp } : {}) };
+  }
+  function writePrincipal(res, principal) {
+    setCookie(res, SESSION_COOKIE, codec.seal(principal, "session"), principal.exp - Math.floor(now() / 1000));
+  }
+  function refreshKey(refresh) {
+    return createHmac("sha256", config.key).update(refresh.token).digest("hex");
+  }
+  async function renew(refresh) {
+    const key = refreshKey(refresh);
+    if (refreshes.has(key)) return refreshes.get(key);
+    for (const [id, failure] of refreshFailures) if (failure.until <= now()) refreshFailures.delete(id);
+    const previous = refreshFailures.get(key);
+    if (previous) throw previous.error;
+    if (refreshes.size >= 16 || refreshFailures.size >= 1024)
+      throw new Error("Identity provider temporarily unavailable");
+    const pending = (async () => {
+      try {
+        const tokens = await oidc.refreshTokenGrant(await getClient(), refresh.token);
+        // This stateless confidential-client mode requires a non-rotating token.
+        // Multiple replicas/tabs must not race to overwrite a rotated credential.
+        if (tokens.refresh_token && tokens.refresh_token !== refresh.token)
+          throw new Error("Refresh token rotation requires a shared session store");
+        let principal;
+        try { principal = principalFromClaims(tokens.claims(), refresh); }
+        catch { throw Object.assign(new Error("Identity no longer authorized"), { reauthenticate: true }); }
+        emit("session.refresh", principal, "granted");
+        return principal;
+      } catch (error) {
+        if (error instanceof oidc.ResponseBodyError && error.error === "invalid_grant")
+          error.reauthenticate = true;
+        refreshFailures.set(key, { until: now() + 5000, error });
+        emit("session.refresh", null, "failed", { class: failureClass(error) });
+        throw error;
+      } finally { refreshes.delete(key); }
+    })();
+    refreshes.set(key, pending);
+    return pending;
+  }
   function checkOrigin(req, res, next) {
     if (config.mode !== "oidc" || SAFE_METHODS.has(req.method) || req.get("origin") === config.origin) return next();
     emit("request.origin", req.principal, "denied");
@@ -182,7 +253,8 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
     requirePermission,
     sessionInfo(req) {
       return config.mode === "oidc" ? { mode: "oidc", name: req.principal.name, role: req.principal.role,
-        permissions: PERMISSIONS[req.principal.role], expiresAt: new Date(req.principal.exp * 1000).toISOString() }
+        permissions: PERMISSIONS[req.principal.role], expiresAt: new Date(req.principal.exp * 1000).toISOString(),
+        ...(req.principal.refreshExp ? { refreshExpiresAt: new Date(req.principal.refreshExp * 1000).toISOString() } : {}) }
         : { mode: config.enabled ? "basic" : "development", role: "admin", permissions: PERMISSIONS.admin };
     },
     installRoutes(app) {
@@ -190,6 +262,8 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
       app.get("/auth/login", authRateLimit, async (req, res) => {
         try {
           const client = await getClient();
+          if (config.refreshMaxAge && !client.serverMetadata().revocation_endpoint)
+            throw new Error("Refresh sessions require token revocation support");
           const verifier = oidc.randomPKCECodeVerifier();
           const transaction = { verifier, state: oidc.randomState(), nonce: oidc.randomNonce(),
             returnTo: safeReturnTo(req.query.returnTo), exp: Math.floor(now() / 1000) + 300 };
@@ -226,32 +300,74 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
           if (!role || typeof claims?.sub !== "string" || !claims.sub || claims.sub.length > 256
             || !Number.isInteger(expires) || expires <= Math.floor(now() / 1000)) {
             emit("login.access", null, "denied");
-            setCookie(res, SESSION_COOKIE, "", 0);
+            clearSession(res);
             return loginPage(res, 403, true);
           }
-          const principal = { subject: claims.sub, role, name: typeof claims.name === "string"
-            ? claims.name.slice(0, 160) : "조직 사용자", exp: expires };
-          setCookie(res, SESSION_COOKIE, codec.seal(principal, "session"), expires - Math.floor(now() / 1000));
+          const issuedAt = Math.floor(now() / 1000);
+          const refresh = config.refreshMaxAge ? { token: tokens.refresh_token, subject: claims.sub,
+            iat: issuedAt, exp: issuedAt + config.refreshMaxAge } : null;
+          let refreshCookie;
+          if (refresh) {
+            if (typeof refresh.token !== "string" || !refresh.token || refresh.token.length > 4096)
+              throw new Error("Provider did not return a supported refresh token");
+            refreshCookie = codec.seal(refresh, "refresh");
+          }
+          const principal = principalFromClaims(claims, refresh);
+          // Construct every cookie before publishing credentials (oversize fails closed).
+          const principalCookie = codec.seal(principal, "session");
+          if (refreshCookie) {
+            const middle = Math.ceil(refreshCookie.length / 2);
+            setCookie(res, REFRESH_COOKIES[0], refreshCookie.slice(0, middle), config.refreshMaxAge);
+            setCookie(res, REFRESH_COOKIES[1], refreshCookie.slice(middle), config.refreshMaxAge);
+          } else for (const name of REFRESH_COOKIES) setCookie(res, name, "", 0);
+          setCookie(res, SESSION_COOKIE, principalCookie, principal.exp - issuedAt);
           emit("login.access", principal, "granted");
           res.redirect(303, safeReturnTo(transaction.returnTo));
         } catch (error) {
+          for (const name of REFRESH_COOKIES) setCookie(res, name, "", 0);
           emit("login.callback", null, "failed", { stage, class: failureClass(error) });
           loginPage(res, 400, true);
         }
       });
-      app.post("/auth/logout", checkOrigin, (req, res) => {
+      app.post("/auth/logout", checkOrigin, async (req, res) => {
         const principal = readPrincipal(req);
-        setCookie(res, SESSION_COOKIE, "", 0);
-        setCookie(res, LOGIN_COOKIE, "", 0);
+        const refresh = readRefresh(req);
+        clearSession(res);
+        if (refresh) {
+          try {
+            await oidc.tokenRevocation(await getClient(), refresh.token, { token_type_hint: "refresh_token" });
+          } catch (error) {
+            emit("logout.revocation", principal, "failed", { class: failureClass(error) });
+            return res.status(503).type("text").send("이 브라우저에서는 로그아웃되었습니다. 인증 서버의 토큰 폐기를 완료하지 못했습니다. 관리자에게 문의해 주세요.");
+          }
+        }
         emit("logout", principal, "completed");
-        // Local logout; no retained ID/access/refresh tokens or IdP-session promises.
+        // Hosted IdP SSO and copied short-lived principal cookies are separate.
         res.redirect(303, "/");
       });
     },
-    middleware(req, res, next) {
+    async middleware(req, res, next) {
       if (PROBES.has(req.path)) return next();
       if (config.mode === "basic") return basic ? basic(req, res, next) : next();
-      const principal = readPrincipal(req);
+      // Reject unsafe cross-origin requests before exchanging any credential.
+      let principal = readPrincipal(req);
+      const refresh = readRefresh(req);
+      if ((principal || refresh) && !SAFE_METHODS.has(req.method) && req.get("origin") !== config.origin)
+        return checkOrigin(req, res, next);
+      if (refresh && (!principal || (req.path === "/api/session" && principal.exp <= Math.floor(now() / 1000) + 60))) {
+        try {
+          principal = await renew(refresh);
+          writePrincipal(res, principal);
+        } catch (error) {
+          if (error.reauthenticate) {
+            clearSession(res);
+            principal = null;
+          } else {
+            res.set("Retry-After", "5");
+            return res.status(503).json({ error: "authentication_temporarily_unavailable" });
+          }
+        }
+      }
       if (!principal) {
         if (req.path.startsWith("/api/") || !SAFE_METHODS.has(req.method))
           return res.status(401).json({ error: "authentication_required", loginUrl: "/auth/login" });
