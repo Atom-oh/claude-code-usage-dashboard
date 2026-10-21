@@ -229,7 +229,8 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
       } catch (error) {
         if (error instanceof oidc.ResponseBodyError && error.error === "invalid_grant")
           error.reauthenticate = true;
-        refreshFailures.set(key, { until: now() + 5000, error });
+        if (refreshFailures.size < 1024)
+          refreshFailures.set(key, { until: now() + 5000, error });
         emit("session.refresh", null, "failed", { class: failureClass(error) });
         throw error;
       } finally { refreshes.delete(key); }
