@@ -1,0 +1,13 @@
+{
+  "managedGroups": ["portal-demo", "portal-admin", "portal-editor"],
+  "emailGroups": {
+    "guest@example.net": ["portal-demo"],
+    "owner@example.org": ["portal-admin"]
+  },
+  "domainGroups": {
+    "example.org": ["portal-editor"]
+  },
+  "requireVerifiedEmail": true,
+  "requireEnabledUser": true,
+  "exactEmailOverridesDomain": true
+}
