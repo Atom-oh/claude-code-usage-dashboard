@@ -43,7 +43,7 @@ but unflushed records. These limits are not delivery guarantees.
 
 ## Enable on EKS
 
-Source: [device_ingest.tf](../../infra/device_ingest.tf). This is opt-in and requires
+Source: `infra/device_ingest.tf`. This is opt-in and requires
 OIDC. The application mounts the internal receiver credential from a Kubernetes Secret;
 the receiver separately mounts the existing INSERT-only ClickHouse credential.
 The application query account remains read-only. The receiver has only a ClusterIP
