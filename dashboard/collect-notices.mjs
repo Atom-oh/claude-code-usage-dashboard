@@ -8,8 +8,11 @@ const licenseName = /^(licen[sc]e|copying|notice)(?:[-_][^.]+)?(?:\.(?:txt|md|rs
 const hasLicenseText = files => files.some(file => file.kind === "license");
 const awsSharedLicensePackages = new Set([
   "@aws-sdk/credential-provider-http@3.972.56",
+  "@aws-sdk/credential-provider-http@3.972.77",
   "@aws-sdk/credential-provider-login@3.972.60",
+  "@aws-sdk/credential-provider-login@3.972.82",
   "@aws-sdk/nested-clients@3.997.28",
+  "@aws-sdk/nested-clients@3.997.49",
 ]);
 const catalogRoot = fileURLToPath(new URL("./notices/", import.meta.url));
 
