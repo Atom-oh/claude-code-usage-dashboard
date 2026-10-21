@@ -37,6 +37,12 @@ dashboard_image_tag = "REPLACE-WITH-A-PUSHED-TIMESTAMP-TAG"
 #   admin   = ["YOUR-ADMIN-GROUP"]
 # }
 
+# Optional editor/admin device installers and authenticated OTLP gateway. Provision
+# this Secret's token key through the customer's secret manager, never in tfvars.
+# Requires auth_mode=oidc; see docs/runbooks/device-collectors.md.
+# device_ingest_enabled     = true
+# device_ingest_secret_name = "dashboard-device-ingest"
+
 # 조직 단위 대시보드 동작(선택) — 기본값은 서버 기본값과 같다. docs/deploying-for-your-org.md §9.
 # group_mode         = "ab"   # "ab" | "single"
 # default_range_days = 2

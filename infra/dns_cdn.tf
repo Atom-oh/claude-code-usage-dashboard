@@ -104,8 +104,8 @@ resource "aws_cloudfront_distribution" "dashboard" {
   }
 }
 
-# CH ingest — Collector가 OTLP/HTTP를 여기로 보낸다. Authorization 헤더(otel_writer basic auth)
-# 전달 필요 + 캐시 비활성 + POST 허용.
+# Existing ClickHouse SQL HTTP ingestion for host ClickHouse exporters.
+# Device OTLP uses the dashboard's authenticated /api/ingest gateway instead.
 resource "aws_cloudfront_distribution" "ch_ingest" {
   enabled         = true
   is_ipv6_enabled = true

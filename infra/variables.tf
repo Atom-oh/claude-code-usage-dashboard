@@ -43,7 +43,7 @@ variable "dashboard_hostname" {
 }
 
 variable "ch_ingest_hostname" {
-  description = "컬렉터가 OTLP를 쓰는 ClickHouse ingest 호스트명. var.domain 안의 FQDN."
+  description = "ClickHouse SQL HTTP ingest hostname for existing host exporters, within var.domain. Device OTLP uses the dashboard gateway."
 }
 
 variable "clickhouse_node_instance_type" {

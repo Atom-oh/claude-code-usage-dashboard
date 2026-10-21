@@ -42,10 +42,11 @@ def main():
                 release = json.loads((ROOT / "dashboard/collector/release.json").read_text())
                 installer.download_binary(scratch, release)
                 binary = str(scratch / "otelcol-contrib")
-            subprocess.run(
-                [sys.executable, "-m", "unittest", "discover",
-                 "-s", str(ROOT / "dashboard/collector/tests"), "-p", "test_runtime.py", "-v"],
-                env=dict(os.environ, CCDASH_TEST_COLLECTOR_BINARY=binary), check=True)
+            for fixture in ("test_runtime.py", "test_privacy.py"):
+                subprocess.run(
+                    [sys.executable, "-m", "unittest", "discover",
+                     "-s", str(ROOT / "dashboard/collector/tests"), "-p", fixture, "-v"],
+                    env=dict(os.environ, CCDASH_TEST_COLLECTOR_BINARY=binary), check=True)
             container = command("docker", "run", "--detach", "--rm",
                                 "--publish", "127.0.0.1::8123", "--publish", "127.0.0.1::9000",
                                 "--env", "CLICKHOUSE_SKIP_USER_SETUP=1", "--ulimit", "nofile=262144:262144",

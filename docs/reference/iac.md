@@ -69,6 +69,7 @@ describes the credential response.
 | [clickhouse.tf](../../infra/clickhouse.tf) | Namespace, credentials, Keeper and ClickHouse custom resources and backup jobs |
 | [schema.tf](../../infra/schema.tf) | Immutable schema inputs; empty bootstrap and existing-installation compatibility Job |
 | [dashboard.tf](../../infra/dashboard.tf) | Dashboard deployment, service account, Secrets, NLB services, security groups and runtime settings |
+| [device_ingest.tf](../../infra/device_ingest.tf) | Opt-in device token registry, scoped IAM, private Collector, mounted credentials and ingress policy |
 | [ecr.tf](../../infra/ecr.tf) | Dashboard image repository |
 | [s3.tf](../../infra/s3.tf) | Cold/backup bucket, public-access block, IRSA and backup-prefix expiration |
 | [dns_cdn.tf](../../infra/dns_cdn.tf) | Two CloudFront VPC origins/distributions and Route53 aliases |
@@ -135,3 +136,12 @@ For exports outside this stack, [archive-clickhouse.sh](../../scripts/archive-cl
 requires a workshop source profile and accepts optional `ARCHIVE_PROFILE` for the destination;
 otherwise the destination uses ambient credentials. See the [archive runbook](../runbooks/archive-clickhouse.md).
 Do not infer live resource or migration state from these declarations.
+
+### Device receiver schema compatibility
+
+The derived receiver uses synchronous ClickHouse inserts and enables
+`insert_allow_materialized_columns` for its exporter connection. Before export it
+sets the OTLP event name from `event.name`, or an empty string when absent, matching
+the existing materialized `EventName` expression. This lets Collector 0.163.1 use
+the existing tables without changing their DDL. The native integration fixture
+checks conflicting and missing event names and all seven destination tables.

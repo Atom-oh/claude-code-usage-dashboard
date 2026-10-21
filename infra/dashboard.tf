@@ -222,6 +222,10 @@ resource "kubernetes_deployment_v1" "dashboard" {
         node_selector                    = local.ch_node_selector
         service_account_name             = kubernetes_service_account.dashboard.metadata[0].name
         termination_grace_period_seconds = 30
+        dynamic "security_context" {
+          for_each = var.device_ingest_enabled ? [1] : []
+          content { fs_group = 1000 }
+        }
         container {
           name  = "dashboard"
           image = "${aws_ecr_repository.dashboard.repository_url}:${var.dashboard_image_tag}"
@@ -362,6 +366,21 @@ resource "kubernetes_deployment_v1" "dashboard" {
               secret_ref { name = env_from.value.metadata[0].name }
             }
           }
+          dynamic "env" {
+            for_each = local.device_ingest_environment
+            content {
+              name  = env.key
+              value = env.value
+            }
+          }
+          dynamic "volume_mount" {
+            for_each = var.device_ingest_enabled ? [1] : []
+            content {
+              name       = "device-receiver-auth"
+              mount_path = "/var/run/ccdash-ingest"
+              read_only  = true
+            }
+          }
           liveness_probe {
             http_get {
               path = "/healthz"
@@ -397,6 +416,20 @@ resource "kubernetes_deployment_v1" "dashboard" {
           resources {
             requests = { cpu = "100m", memory = "128Mi" }
             limits   = { cpu = "500m", memory = "256Mi" }
+          }
+        }
+        dynamic "volume" {
+          for_each = var.device_ingest_enabled ? [1] : []
+          content {
+            name = "device-receiver-auth"
+            secret {
+              secret_name  = var.device_ingest_secret_name
+              default_mode = "0440"
+              items {
+                key  = "token"
+                path = "token"
+              }
+            }
           }
         }
       }

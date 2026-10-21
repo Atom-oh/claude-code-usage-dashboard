@@ -8,6 +8,7 @@ Express ESM read-only telemetry/SPA; run npm test (node:test).
 - Basic/OIDC protects config/freshness/data except probes/OIDC protocol; no OIDC fallback. [Identity](../../docs/decisions/ADR-019-dedicated-installation-identity.md). JSON: no-store; chat SSE success: no-cache.
 - Invalid auth fails startup except explicit local Basic bypass. Chat needs confirmed readonly sessions; security-review sanitizeSql() changes.
 - OIDC unsafe requests require configured Origin; viewers cannot query chat.
+- Device collectors: collectorRoutes.js mounts bounded token-only OTLP before human auth; management requires collector:manage. Never accept browser cookies for ingest or expose raw tokens after issuance. [Operations](../../docs/runbooks/device-collectors.md).
 - Imports never listen; boot checks/probes run. /healthz: liveness; /readyz: fail on drain/ClickHouse outage. DB failure must not restart app.
 
 ## Queries
