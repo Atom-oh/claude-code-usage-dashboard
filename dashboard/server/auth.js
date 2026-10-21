@@ -51,6 +51,12 @@ export function parseAuthConfig(env) {
   const refreshMaxAge = env.SESSION_REFRESH_MAX_AGE_SECONDS === undefined ? 0 : Number(env.SESSION_REFRESH_MAX_AGE_SECONDS);
   if (!Number.isInteger(refreshMaxAge) || (refreshMaxAge !== 0 && (refreshMaxAge < 3600 || refreshMaxAge > 2592000)))
     throw new Error("SESSION_REFRESH_MAX_AGE_SECONDS must be 0 or an integer from 3600 to 2592000");
+  const scopes = env.OIDC_SCOPES === undefined ? "openid profile" : env.OIDC_SCOPES;
+  // OAuth scope-token syntax excludes quotes, backslashes and whitespace other than separators.
+  if (typeof scopes !== "string" || scopes.length > 512
+    || !/^[\x21\x23-\x5B\x5D-\x7E]+(?: [\x21\x23-\x5B\x5D-\x7E]+)*$/.test(scopes)
+    || !scopes.split(" ").includes("openid"))
+    throw new Error("OIDC_SCOPES must be a space-delimited scope set including openid, at most 512 characters");
   const claim = env.OIDC_GROUPS_CLAIM || "groups";
   if (!/^[A-Za-z][A-Za-z0-9:_-]{0,127}$/.test(claim)) throw new Error("OIDC_GROUPS_CLAIM must name a top-level claim");
   let roleGroups;
@@ -61,7 +67,7 @@ export function parseAuthConfig(env) {
     || Object.values(roleGroups).some(groups => !Array.isArray(groups) || !groups.length || groups.length > 64
       || groups.some(group => typeof group !== "string" || !group.trim() || group.length > 128)))
     throw new Error("OIDC_ROLE_GROUPS must map viewer, analyst or admin to explicit group arrays");
-  return { mode, enabled: true, issuer, origin, key, maxAge, refreshMaxAge, claim, roleGroups,
+  return { mode, enabled: true, issuer, origin, key, maxAge, refreshMaxAge, scopes, claim, roleGroups,
     clientId: env.OIDC_CLIENT_ID, clientSecret: env.OIDC_CLIENT_SECRET };
 }
 
@@ -141,6 +147,8 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
   // Only in-flight requests are shared; successful credentials are not cached.
   const refreshes = new Map();
   const refreshFailures = new Map();
+  const revocations = new Map();
+  const revocationResults = new Map();
   let clientPromise;
   let retryAfter = 0;
   const getClient = () => {
@@ -220,7 +228,7 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
         // This stateless confidential-client mode requires a non-rotating token.
         // Multiple replicas/tabs must not race to overwrite a rotated credential.
         if (tokens.refresh_token && tokens.refresh_token !== refresh.token)
-          throw new Error("Refresh token rotation requires a shared session store");
+          throw Object.assign(new Error("Refresh token rotation requires a shared session store"), { reauthenticate: true });
         let principal;
         try { principal = principalFromClaims(tokens.claims(), refresh); }
         catch { throw Object.assign(new Error("Identity no longer authorized"), { reauthenticate: true }); }
@@ -238,6 +246,30 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
     refreshes.set(key, pending);
     return pending;
   }
+  async function revoke(refresh) {
+    const key = refreshKey(refresh);
+    if (revocations.has(key)) return revocations.get(key);
+    for (const [id, result] of revocationResults) if (result.until <= now()) revocationResults.delete(id);
+    const previous = revocationResults.get(key);
+    if (previous) {
+      if (previous.error) throw previous.error;
+      return;
+    }
+    if (revocations.size >= 16 || revocationResults.size >= 1024)
+      throw new Error("Identity provider temporarily unavailable");
+    const pending = (async () => {
+      try {
+        await oidc.tokenRevocation(await getClient(), refresh.token, { token_type_hint: "refresh_token" });
+        // Store only keyed outcomes, never the revoked credential, to bound replay work.
+        if (revocationResults.size < 1024) revocationResults.set(key, { until: now() + 60000 });
+      } catch (error) {
+        if (revocationResults.size < 1024) revocationResults.set(key, { until: now() + 5000, error });
+        throw error;
+      } finally { revocations.delete(key); }
+    })();
+    revocations.set(key, pending);
+    return pending;
+  }
   function checkOrigin(req, res, next) {
     if (config.mode !== "oidc" || SAFE_METHODS.has(req.method) || req.get("origin") === config.origin) return next();
     emit("request.origin", req.principal, "denied");
@@ -253,9 +285,11 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
     enabled: config.enabled,
     requirePermission,
     sessionInfo(req) {
+      const refresh = config.mode === "oidc" && req.principal.refreshExp ? readRefresh(req) : null;
       return config.mode === "oidc" ? { mode: "oidc", name: req.principal.name, role: req.principal.role,
         permissions: PERMISSIONS[req.principal.role], expiresAt: new Date(req.principal.exp * 1000).toISOString(),
-        ...(req.principal.refreshExp ? { refreshExpiresAt: new Date(req.principal.refreshExp * 1000).toISOString() } : {}) }
+        ...(refresh?.subject === req.principal.subject && refresh.exp === req.principal.refreshExp
+          ? { refreshExpiresAt: new Date(refresh.exp * 1000).toISOString() } : {}) }
         : { mode: config.enabled ? "basic" : "development", role: "admin", permissions: PERMISSIONS.admin };
     },
     installRoutes(app) {
@@ -270,7 +304,7 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
             returnTo: safeReturnTo(req.query.returnTo), exp: Math.floor(now() / 1000) + 300 };
           const challenge = await oidc.calculatePKCECodeChallenge(verifier);
           const url = oidc.buildAuthorizationUrl(client, { redirect_uri: config.origin + "/auth/callback",
-            scope: "openid profile", response_type: "code", code_challenge: challenge,
+            scope: config.scopes, response_type: "code", code_challenge: challenge,
             code_challenge_method: "S256", state: transaction.state, nonce: transaction.nonce });
           setCookie(res, LOGIN_COOKIE, codec.seal(transaction, "login"), 300);
           res.redirect(302, url.href);
@@ -336,7 +370,7 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
         clearSession(res);
         if (refresh) {
           try {
-            await oidc.tokenRevocation(await getClient(), refresh.token, { token_type_hint: "refresh_token" });
+            await revoke(refresh);
           } catch (error) {
             emit("logout.revocation", principal, "failed", { class: failureClass(error) });
             return res.status(503).type("text").send("이 브라우저에서는 로그아웃되었습니다. 인증 서버의 토큰 폐기를 완료하지 못했습니다. 관리자에게 문의해 주세요.");
@@ -355,7 +389,8 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
       const refresh = readRefresh(req);
       if ((principal || refresh) && !SAFE_METHODS.has(req.method) && req.get("origin") !== config.origin)
         return checkOrigin(req, res, next);
-      if (refresh && (!principal || (req.path === "/api/session" && principal.exp <= Math.floor(now() / 1000) + 60))) {
+      if (refresh && (!principal || (req.path === "/api/session" && principal.exp < refresh.exp
+        && principal.exp <= Math.floor(now() / 1000) + 60))) {
         try {
           principal = await renew(refresh);
           writePrincipal(res, principal);

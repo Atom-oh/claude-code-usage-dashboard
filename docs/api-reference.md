@@ -17,18 +17,23 @@ See [SSO operations](runbooks/organization-sso.md).
 
 `GET /api/session` returns `mode`, `role`, `permissions` and, for OIDC, current-user `name`
 and `expiresAt`, without raw subject/IdP tokens. Optional `refreshExpiresAt` is the
-absolute login deadline; `expiresAt` remains the short authorization deadline.
+absolute login deadline, present only while renewal is enabled and a valid refresh
+cookie matches the current principal; `expiresAt` remains the short authorization deadline.
 `/api/session` renews credentials within 60 seconds of short-session expiry when a
-valid refresh cookie is present; other protected requests renew expired principals.
+valid refresh cookie is present and renewal can extend that deadline; other protected
+requests renew expired principals.
 `/api/config` includes this `session`.
 Unauthenticated OIDC APIs return JSON 401, `error=authentication_required`,
 `loginUrl=/auth/login`. Unsafe session requests without the configured Origin or without
 required permission return 403. Transient refresh failures return 503,
-`error=authentication_temporarily_unavailable`, with `Retry-After: 5`.
+`error=authentication_temporarily_unavailable`, with `Retry-After: 5`. A rotated refresh
+response requires a fresh login because this mode does not retain rotating credentials.
 
 `GET /auth/login` starts OIDC; `GET /auth/callback` completes it. `POST /auth/logout`
 requires the configured Origin, clears local cookies, revokes any retained refresh
-credential and redirects to `/`. Failed revocation returns a visible 503 after clearing
+credential and redirects to `/`. Concurrent or replayed revocations share bounded work;
+see [SSO operational limits](runbooks/organization-sso.md#rotation-logs-and-recovery).
+Failed revocation or admission exhaustion returns a visible 503 after clearing
 cookies. Logout does not end IdP SSO or immediately revoke copied short principal cookies.
 Protocol responses are `no-store`.
 

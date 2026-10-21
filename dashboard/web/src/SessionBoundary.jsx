@@ -28,6 +28,7 @@ export default function SessionBoundary({ children }) {
     const deadline = setTimeout(() => setClock(Date.now()), Math.max(0, expires - Date.now()));
     const renew = async () => {
       if (request || !active) return;
+      clearTimeout(retryTimer);
       if (Date.now() >= refreshExpires) return invalidate();
       const controller = new AbortController();
       request = controller;
@@ -43,6 +44,9 @@ export default function SessionBoundary({ children }) {
           throw new Error("Invalid session response");
         setRetrying(false);
         updateSession(next);
+        // Clock skew can put the browser ahead of the server's renewal window.
+        // An unchanged expiry does not rerun this effect, so keep a bounded retry.
+        if (Date.parse(next.expiresAt) === expires) retryTimer = setTimeout(renew, 5000);
       } catch {
         if (active) {
           setRetrying(true);

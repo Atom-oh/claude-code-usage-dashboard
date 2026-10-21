@@ -44,6 +44,19 @@ variable "oidc_secret_name" {
   }
 }
 
+variable "oidc_scopes" {
+  description = "Space-delimited authorization scopes including openid; add customer-required group/offline scopes."
+  type        = string
+  default     = "openid profile"
+  nullable    = false
+  validation {
+    condition = length(var.oidc_scopes) <= 512 && contains(split(" ", var.oidc_scopes), "openid") && (
+      can(regex("^[\\x21\\x23-\\x5B\\x5D-\\x7E]+( [\\x21\\x23-\\x5B\\x5D-\\x7E]+)*$", var.oidc_scopes))
+    )
+    error_message = "oidc_scopes must contain space-delimited OAuth scope tokens including openid, at most 512 characters."
+  }
+}
+
 variable "oidc_groups_claim" {
   description = "Top-level signed ID-token group claim; use cognito:groups for Cognito."
   type        = string
@@ -99,6 +112,7 @@ locals {
     APP_PUBLIC_URL                  = "https://${var.dashboard_hostname}"
     OIDC_ISSUER                     = var.oidc_issuer
     OIDC_CLIENT_ID                  = var.oidc_client_id
+    OIDC_SCOPES                     = var.oidc_scopes
     OIDC_GROUPS_CLAIM               = var.oidc_groups_claim
     OIDC_ROLE_GROUPS                = jsonencode(var.oidc_role_groups)
     SESSION_MAX_AGE_SECONDS         = tostring(var.session_max_age_seconds)
