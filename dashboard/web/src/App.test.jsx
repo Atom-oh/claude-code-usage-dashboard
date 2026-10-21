@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App.jsx";
 import { ConfigProvider } from "./ConfigContext.jsx";
@@ -101,4 +101,52 @@ test("every App route has a matching sidebar nav link", async () => {
     );
     expect(c.querySelector("main").children.length).toBe(2);
   }
+});
+
+test("direct collector route denies viewers and gives analysts and admins a dedicated setup page", async () => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  const fetch = vi.fn(url => Promise.resolve({ ok: true, status: 200, json: async () =>
+    String(url).startsWith("/api/collector/devices") ? { devices: [], nextCursor: null }
+      : String(url).startsWith("/api/collector") ? { enabled: true, endpoint: "https://collector.example/api/ingest",
+        tokenLifetimeDays: 30, collectorVersion: "0.163.1", platforms: ["linux", "darwin"] }
+        : String(url).startsWith("/api/health/data") ? { status: "ok" } : [] }));
+  vi.stubGlobal("fetch", fetch);
+  for (const role of ["viewer", "analyst", "admin"]) {
+    cleanup();
+    fetch.mockClear();
+    const session = { mode: "oidc", role, expiresAt: new Date(Date.now() + 900000).toISOString(),
+      permissions: role === "viewer" ? ["telemetry:read"] : ["telemetry:read", "chat:query", "collector:manage"] };
+    const { container } = render(<MemoryRouter initialEntries={["/collector?days=7&model=fixture"]}>
+      <ConfigProvider config={{ enabledClients: ["claude", "codex"], session }}><App /></ConfigProvider>
+    </MemoryRouter>);
+    expect(screen.getByRole("heading", { level: 1, name: "수집기 설치" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ask Claude" })).toBeNull();
+    const links = [...container.querySelector("nav").querySelectorAll("a")];
+    expect(links.some(link => new URL(link.href).pathname === "/collector")).toBe(role !== "viewer");
+    if (role === "viewer") {
+      expect(screen.getByRole("alert").textContent).toContain("권한");
+      expect(fetch.mock.calls.some(([url]) => String(url).includes("/api/collector"))).toBe(false);
+    } else {
+      await screen.findByRole("button", { name: "Linux 패키지 다운로드" });
+      const requests = fetch.mock.calls.filter(([url]) => String(url).includes("/api/collector"));
+      expect(requests.every(([url]) => !String(url).includes("days=") && !String(url).includes("model="))).toBe(true);
+    }
+  }
+});
+
+test("revoked session during package download removes the collector setup", async () => {
+  vi.stubGlobal("fetch", vi.fn(url => Promise.resolve({ ok: !String(url).includes("/package/"),
+    status: String(url).includes("/package/") ? 401 : 200,
+    json: async () => String(url).startsWith("/api/collector/devices") ? { devices: [], nextCursor: null }
+      : String(url).startsWith("/api/collector") ? { enabled: true, endpoint: "https://collector.example/api/ingest",
+        tokenLifetimeDays: 30, collectorVersion: "0.163.1", platforms: ["linux", "darwin"] } : { status: "ok" } })));
+  const session = { mode: "oidc", role: "analyst", permissions: ["telemetry:read", "collector:manage"],
+    expiresAt: new Date(Date.now() + 900000).toISOString() };
+  render(<MemoryRouter initialEntries={["/collector"]}>
+    <ConfigProvider config={{ session }}><App /></ConfigProvider>
+  </MemoryRouter>);
+  const button = await screen.findByRole("button", { name: "Linux 패키지 다운로드" });
+  fireEvent.click(button);
+  expect(await screen.findByRole("heading", { name: "로그인 세션 만료" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /패키지 다운로드/ })).toBeNull();
 });
