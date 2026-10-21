@@ -42,6 +42,8 @@ receivers:
         endpoint: 127.0.0.1:4318
         include_metadata: true
 """
+    # Contrib 0.163.1 `components` registers otlp_http; native validation confirms
+    # this component ID even though its Go module is named otlphttpexporter.
     local_exporters = """exporters:
   otlp_http:
     endpoint: ${env:CCDASH_INGEST_ENDPOINT}
