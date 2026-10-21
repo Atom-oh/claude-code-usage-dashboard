@@ -83,4 +83,6 @@
 - Native Collector 0.163.1 fixtures verify both hops and all seven existing ClickHouse tables without DDL changes. Central synchronous inserts and an EventName adapter preserve the materialized-column contract.
 - Web suite: 751 passed; harness: 124 passed, eight expected skips. Native macOS installation remains unverified.
 
-- Final pre-PR verification: server 659 passed / five expected integration skips; web 751 passed and build passed; harness 124 passed / eight expected skips; device Terraform mock 5 passed. Content review passed 90/90. Four stacked PRs keep each reviewed diff under the existing size limits.
+- Final pre-PR verification: server 659 passed / five expected integration skips; web 751 passed and build passed; harness 124 passed / eight expected skips; device Terraform mock 5 passed. Content review passed 90/90. Five stacked PRs keep each reviewed diff and its trusted-context prompt under the existing size limits.
+
+- Actual image inspection caught three newly resolved AWS SDK versions without packaged license text. The exact-version repository-license catalog and fail-closed regression tests now cover them; installed inventory is complete for 264 packages.
