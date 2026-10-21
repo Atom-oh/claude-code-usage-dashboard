@@ -43,6 +43,11 @@ but unflushed records. These limits are not delivery guarantees.
 
 ## Enable on EKS
 
+**Infrastructure stage pending:** this UI-stage revision does not yet include
+`infra/device_ingest.tf` or its input variables. The enablement and live verification
+steps below are integration guidance for the following infrastructure stage. Do not
+run them from this revision; first install the revision containing those resources.
+
 Source: `infra/device_ingest.tf`. This is opt-in and requires
 OIDC. The application mounts the internal receiver credential from a Kubernetes Secret;
 the receiver separately mounts the existing INSERT-only ClickHouse credential.
