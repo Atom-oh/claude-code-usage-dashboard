@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-12
 - Amends: [ADR-004](ADR-004-basic-auth-baseline-and-sso-upgrade-path.md)
+- Token retention/session renewal/logout amended by [ADR-021](ADR-021-refresh-token-sessions.md)
 
 ## Decision
 

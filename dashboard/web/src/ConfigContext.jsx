@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useCallback, useContext, useState } from "react";
 
 // /api/config의 런타임 설정. main.jsx가 첫 렌더 전에 한 번 받아 App으로 넘긴다 — 소비자마다
 // 따로 fetch하면 같은 값을 두 번 받고 실패 처리도 두 벌이 된다.
@@ -23,6 +23,8 @@ const DEFAULTS = {
 const ConfigContext = createContext(DEFAULTS);
 
 export function ConfigProvider({ config, children }) {
+  const [renewed, setRenewed] = useState(null);
+  const updateSession = useCallback(session => setRenewed({ source: config, session }), [config]);
   const value = config
     ? {
         groupMode: config.groupMode === "single" ? "single" : DEFAULTS.groupMode,
@@ -31,7 +33,8 @@ export function ConfigProvider({ config, children }) {
         schema: config.schema,
         piiMask: config.piiMask === false ? false : DEFAULTS.piiMask,
         pricing: config.pricing,
-        session: config.session,
+        session: renewed?.source === config ? renewed.session : config.session,
+        updateSession,
         enabledClients: Array.isArray(config.enabledClients) ? config.enabledClients : DEFAULTS.enabledClients,
         codexEndpoint: config.codexEndpoint === "runtime" ? "runtime" : DEFAULTS.codexEndpoint,
       }

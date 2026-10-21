@@ -113,3 +113,79 @@ run "invalid_duration" {
   }
   expect_failures = [var.session_max_age_seconds]
 }
+
+run "scope_and_refresh_defaults_preserve_short_sessions" {
+  command = plan
+  assert {
+    condition     = output.oidc_environment.OIDC_SCOPES == "openid profile" && output.oidc_environment.SESSION_REFRESH_MAX_AGE_SECONDS == "0"
+    error_message = "Default scopes and disabled persistence must preserve existing installations."
+  }
+}
+
+run "custom_scopes_and_persistent_lifetime_reach_runtime" {
+  command = plan
+  variables {
+    oidc_scopes                     = "openid profile groups offline_access"
+    session_refresh_max_age_seconds = 2592000
+  }
+  assert {
+    condition     = output.oidc_environment.OIDC_SCOPES == "openid profile groups offline_access" && output.oidc_environment.SESSION_REFRESH_MAX_AGE_SECONDS == "2592000"
+    error_message = "Configured scopes and refresh lifetime must reach the application."
+  }
+}
+
+run "scopes_require_openid" {
+  command = plan
+  variables {
+    oidc_scopes = "profile email"
+  }
+  expect_failures = [var.oidc_scopes]
+}
+
+run "scopes_reject_empty_tokens" {
+  command = plan
+  variables {
+    oidc_scopes = "openid  profile"
+  }
+  expect_failures = [var.oidc_scopes]
+}
+
+run "scopes_reject_quote_characters" {
+  command = plan
+  variables {
+    oidc_scopes = "openid \"profile"
+  }
+  expect_failures = [var.oidc_scopes]
+}
+
+run "scopes_reject_backslash_characters" {
+  command = plan
+  variables {
+    oidc_scopes = "openid \\profile"
+  }
+  expect_failures = [var.oidc_scopes]
+}
+
+run "scopes_reject_excessive_length" {
+  command = plan
+  variables {
+    oidc_scopes = "openid ${join("", [for index in range(512) : "a"])}"
+  }
+  expect_failures = [var.oidc_scopes]
+}
+
+run "refresh_duration_has_absolute_upper_bound" {
+  command = plan
+  variables {
+    session_refresh_max_age_seconds = 2592001
+  }
+  expect_failures = [var.session_refresh_max_age_seconds]
+}
+
+run "refresh_duration_rejects_fraction" {
+  command = plan
+  variables {
+    session_refresh_max_age_seconds = 3600.5
+  }
+  expect_failures = [var.session_refresh_max_age_seconds]
+}

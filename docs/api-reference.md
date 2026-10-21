@@ -16,14 +16,26 @@ Chat requires analyst/admin permission in OIDC plus existing readonly/activation
 See [SSO operations](runbooks/organization-sso.md).
 
 `GET /api/session` returns `mode`, `role`, `permissions` and, for OIDC, current-user `name`
-and `expiresAt`, without raw subject/IdP tokens. `/api/config` includes this `session`.
+and `expiresAt`, without raw subject/IdP tokens. Optional `refreshExpiresAt` is the
+absolute login deadline, present only while renewal is enabled and a valid refresh
+cookie matches the current principal; `expiresAt` remains the short authorization deadline.
+`/api/session` renews credentials within 60 seconds of short-session expiry when a
+valid refresh cookie is present and renewal can extend that deadline; other protected
+requests renew expired principals.
+`/api/config` includes this `session`.
 Unauthenticated OIDC APIs return JSON 401, `error=authentication_required`,
 `loginUrl=/auth/login`. Unsafe session requests without the configured Origin or without
-required permission return 403.
+required permission return 403. Transient refresh failures return 503,
+`error=authentication_temporarily_unavailable`, with `Retry-After: 5`. A rotated refresh
+response requires a fresh login because this mode does not retain rotating credentials.
 
 `GET /auth/login` starts OIDC; `GET /auth/callback` completes it. `POST /auth/logout`
-requires the configured Origin, clears local cookies and redirects to `/`; it does not
-end IdP SSO. Protocol responses are `no-store`.
+requires the configured Origin, clears local cookies, revokes any retained refresh
+credential and redirects to `/`. Concurrent or replayed revocations share bounded work;
+see [SSO operational limits](runbooks/organization-sso.md#rotation-logs-and-recovery).
+Failed revocation or admission exhaustion returns a visible 503 after clearing
+cookies. Logout does not end IdP SSO or immediately revoke copied short principal cookies.
+Protocol responses are `no-store`.
 
 `GET /api/installation` requires `installation:read` in OIDC mode; Basic/development
 retain their existing full-installation access. It uses the shared response/error wrapper,
@@ -503,7 +515,7 @@ Config fields:
 | Status | Contract |
 |---|---|
 | 400 | Wrapped route validation: `{error, detail}` for invalid range/interval or excessive span. The detail does not echo submitted values. |
-| 401 | Missing/invalid Basic credentials or an absent/expired OIDC session. |
+| 401 | Missing/invalid Basic credentials or an OIDC session that cannot be renewed. |
 | 403 | OIDC permission/group or unsafe-request Origin denied. |
 | 429 | Chat's per-process IP limit. |
 | 500 | Wrapped query failure: `{error:"internal error", id:"<uuid>"}`. The full exception is logged under the ID, not returned. |

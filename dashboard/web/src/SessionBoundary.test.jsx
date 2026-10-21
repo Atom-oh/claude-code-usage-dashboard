@@ -87,3 +87,99 @@ test("Basic challenge offers login retry without an unavailable OIDC route", asy
   expect(await screen.findByRole("button", { name: "로그인 다시 확인" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "다시 로그인" })).toBeNull();
 });
+
+const persistentSession = (seconds = 60, refreshSeconds = 3600) => ({ ...session(seconds),
+  refreshExpiresAt: new Date(Date.now() + refreshSeconds * 1000).toISOString() });
+const successfulSession = body => ({ status: 200, ok: true, json: async () => body });
+const advance = async ms => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+
+test("renewal with unchanged expiry retries and then applies new permissions without stalling", async () => {
+  vi.useFakeTimers();
+  const initial = persistentSession();
+  const renewed = { ...initial, expiresAt: new Date(Date.now() + 660_000).toISOString(),
+    role: "admin", permissions: ["telemetry:read", "chat:query", "installation:read"] };
+  const fetcher = vi.fn().mockResolvedValueOnce(successfulSession(initial)).mockResolvedValueOnce(successfulSession(renewed));
+  vi.stubGlobal("fetch", fetcher);
+  render(settings(initial, <SessionBoundary><AccountMenu /><div>private fixture data</div></SessionBoundary>));
+  await advance(30_000);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await advance(4999);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await advance(1);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("관리자")).toBeTruthy();
+  await advance(30_000);
+  expect(screen.getByText("private fixture data")).toBeTruthy();
+  expect(screen.queryByText("로그인 상태 확인 중")).toBeNull();
+});
+
+test("server rollback or missing refresh credential removes renewal capability and expires normally", async () => {
+  vi.useFakeTimers();
+  const initial = persistentSession();
+  const { refreshExpiresAt: _refresh, ...shortOnly } = initial;
+  const fetcher = vi.fn().mockResolvedValue(successfulSession(shortOnly));
+  vi.stubGlobal("fetch", fetcher);
+  render(settings(initial, <SessionBoundary><div>private fixture data</div></SessionBoundary>));
+  await advance(30_000);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await advance(30_001);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("private fixture data")).toBeNull();
+  expect(screen.getByRole("link", { name: "다시 로그인" })).toBeTruthy();
+});
+
+test("temporary renewal failures hide expired content and recover on the bounded retry", async () => {
+  vi.useFakeTimers();
+  const initial = persistentSession(31);
+  const fetcher = vi.fn().mockResolvedValue({ status: 503, ok: false });
+  vi.stubGlobal("fetch", fetcher);
+  render(settings(initial, <SessionBoundary><div>private fixture data</div></SessionBoundary>));
+  await advance(31_001);
+  expect(screen.queryByText("private fixture data")).toBeNull();
+  expect(screen.getByText("로그인 상태 확인 중")).toBeTruthy();
+  expect(screen.getByText(/인증 서버에 연결하지 못했습니다/)).toBeTruthy();
+  fetcher.mockResolvedValue(successfulSession({ ...initial, expiresAt: new Date(Date.now() + 600_000).toISOString() }));
+  await advance(5000);
+  expect(screen.getByText("private fixture data")).toBeTruthy();
+});
+
+test("absolute refresh expiry ends repeated same-expiry responses without a request loop", async () => {
+  vi.useFakeTimers();
+  const initial = persistentSession(20, 20);
+  const fetcher = vi.fn().mockResolvedValue(successfulSession(initial));
+  vi.stubGlobal("fetch", fetcher);
+  render(settings(initial, <SessionBoundary><div>private fixture data</div></SessionBoundary>));
+  await advance(20_001);
+  expect(fetcher.mock.calls.length).toBeLessThanOrEqual(4);
+  expect(screen.queryByText("private fixture data")).toBeNull();
+  expect(screen.getByRole("link", { name: "다시 로그인" })).toBeTruthy();
+});
+
+test("renewal 401 immediately removes data and never retries expired credentials", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.fn().mockResolvedValue({ status: 401, ok: false });
+  vi.stubGlobal("fetch", fetcher);
+  render(settings(persistentSession(), <SessionBoundary><div>private fixture data</div></SessionBoundary>));
+  await advance(30_000);
+  expect(screen.queryByText("private fixture data")).toBeNull();
+  expect(screen.getByRole("link", { name: "다시 로그인" })).toBeTruthy();
+  await advance(60_000);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+test("focus events share an in-flight renewal and cleanup aborts it", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.fn().mockImplementation(() => new Promise(() => {}));
+  vi.stubGlobal("fetch", fetcher);
+  const { unmount } = render(settings(persistentSession(), <SessionBoundary><div>private fixture data</div></SessionBoundary>));
+  await advance(30_000);
+  fireEvent(window, new Event("focus"));
+  fireEvent(document, new Event("visibilitychange"));
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const signal = fetcher.mock.calls[0][1].signal;
+  expect(signal.aborted).toBe(false);
+  unmount();
+  expect(signal.aborted).toBe(true);
+  await advance(60_000);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

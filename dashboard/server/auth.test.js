@@ -31,37 +31,73 @@ async function fixture(t, options = {}) {
   const events = [];
   const codes = new Map();
   const tokenRequests = [];
+  const revocations = [];
   let consumed = 0;
   const configEnv = { ...env, ...options.env };
+  const originalFetch = globalThis.fetch;
+  const clientBasicMatches = request => {
+    const header = new Headers(request.headers).get("authorization") || "";
+    if (!header.startsWith("Basic ")) return false;
+    const credentials = Buffer.from(header.slice(6), "base64").toString().split(":")
+      .map(value => decodeURIComponent(value.replace(/\+/g, " ")));
+    return credentials.length === 2 && credentials[0] === configEnv.OIDC_CLIENT_ID
+      && credentials[1] === configEnv.OIDC_CLIENT_SECRET;
+  };
   const transport = async (url, request = {}) => {
+    if (new URL(url).protocol === "http:") return originalFetch(url, request);
     const path = new URL(url).pathname;
     if (path === "/.well-known/openid-configuration") return json({
       issuer, authorization_endpoint: issuer + "authorize", token_endpoint: issuer + "token",
       jwks_uri: issuer + "keys", response_types_supported: ["code"], subject_types_supported: ["public"],
-      id_token_signing_alg_values_supported: ["RS256"], token_endpoint_auth_methods_supported: ["client_secret_post"],
+      id_token_signing_alg_values_supported: ["RS256"], token_endpoint_auth_methods_supported: ["client_secret_post", "client_secret_basic"],
       code_challenge_methods_supported: ["S256"],
+      ...(!options.noRevocation ? { revocation_endpoint: issuer + "revoke" } : {}),
     });
     if (path === "/keys") return json({ keys: [publicKey] });
     if (path === "/token") {
       const body = new URLSearchParams(request.body);
       tokenRequests.push(Object.fromEntries(body));
+      const authorizedClient = options.defaultDiscovery ? clientBasicMatches(request)
+        : body.get("client_secret") === configEnv.OIDC_CLIENT_SECRET;
+      if (!authorizedClient) return json({ error: "invalid_client" }, 401);
+      if (body.get("grant_type") === "refresh_token") {
+        if (options.refreshWait) await options.refreshWait();
+        if (options.refreshError) return json({ error: options.refreshError }, options.refreshStatus || 400);
+        const now = Math.floor((options.now || Date.now)() / 1000);
+        return json({ token_type: "Bearer", access_token: "synthetic-renewed-access-token", expires_in: 600,
+          ...(options.rotatedToken ? { refresh_token: options.rotatedToken } : {}),
+          id_token: idToken({ iss: issuer, aud: configEnv.OIDC_CLIENT_ID, sub: "fixture-subject",
+            name: "Renewed Fixture", iat: now, exp: now + 600,
+            groups: ["dashboard-analysts"], ...options.refreshClaims }, options.refreshBadSignature) });
+      }
       const code = codes.get(body.get("code"));
       codes.delete(body.get("code"));
       if (!code || createHash("sha256").update(body.get("code_verifier") || "").digest("base64url") !== code.challenge
-        || body.get("redirect_uri") !== origin + "/auth/callback"
-        || body.get("client_secret") !== configEnv.OIDC_CLIENT_SECRET) return json({ error: "invalid_grant" }, 400);
+        || body.get("redirect_uri") !== origin + "/auth/callback") return json({ error: "invalid_grant" }, 400);
       consumed++;
       const now = Math.floor(Date.now() / 1000);
       return json({ token_type: "Bearer", access_token: "synthetic-access-token", expires_in: 600,
+        ...(options.refreshToken !== undefined ? { refresh_token: options.refreshToken } : {}),
         id_token: idToken({ iss: issuer, aud: configEnv.OIDC_CLIENT_ID, sub: "fixture-subject",
           name: "Fixture Analyst", iat: now, exp: now + 600, nonce: code.nonce,
           groups: ["dashboard-analysts"], ...options.claims }, options.badSignature) });
     }
+    if (path === "/revoke") {
+      const body = new URLSearchParams(request.body);
+      revocations.push(Object.fromEntries(body));
+      if (options.defaultDiscovery && !clientBasicMatches(request)) return json({ error: "invalid_client" }, 401);
+      if (options.revocationWait) await options.revocationWait();
+      return options.revocationError ? json({ error: "temporarily_unavailable" }, 503) : new Response(null);
+    }
     throw new Error("Unexpected fixture endpoint");
   };
+  if (options.defaultDiscovery) {
+    globalThis.fetch = transport;
+    t.after(() => { globalThis.fetch = originalFetch; });
+  }
   const authentication = createAuthentication({
     env: configEnv, now: options.now, audit: entry => events.push(entry),
-    discoverClient: options.discoverClient || (config => oidc.discovery(new URL(config.issuer),
+    discoverClient: options.defaultDiscovery ? undefined : options.discoverClient || (config => oidc.discovery(new URL(config.issuer),
       config.clientId, { client_secret: config.clientSecret }, oidc.ClientSecretPost(config.clientSecret),
       { execute: [oidc.enableNonRepudiationChecks], [oidc.customFetch]: transport })),
   });
@@ -97,9 +133,10 @@ async function fixture(t, options = {}) {
     const response = await request(flow.callback, { headers: { cookie: flow.cookie,
       host: "attacker.example.invalid", "x-forwarded-host": "attacker.example.invalid" } });
     const session = response.headers.getSetCookie().find(cookie => cookie.startsWith("__Host-ccdash-session="))?.split(";")[0];
-    return { ...flow, response, session };
+    const cookies = response.headers.getSetCookie().filter(value => !value.includes("Max-Age=0")).map(value => value.split(";")[0]).join("; ");
+    return { ...flow, response, session, cookies };
   }
-  return { request, login, complete, events, tokenRequests, get consumed() { return consumed; } };
+  return { request, login, complete, events, tokenRequests, revocations, get consumed() { return consumed; } };
 }
 
 test("authentication configuration is explicit and fails closed", () => {
@@ -281,4 +318,370 @@ test("bounded admission limiter rejects active buckets and releases expired capa
   time += 1001;
   assert.ok(result("three").allowed);
   assert.ok(result("one").allowed);
+});
+
+test("configured scopes reach authorization URLs and require a bounded OIDC scope set", async t => {
+  const f = await fixture(t, { env: { OIDC_SCOPES: "openid profile email groups offline_access" } });
+  const flow = await f.login();
+  assert.equal(flow.authorization.searchParams.get("scope"), "openid profile email groups offline_access");
+  assert.equal(parseAuthConfig(env).scopes, "openid profile");
+  for (const scopes of ["", "profile", "openid  profile", " openid", "openid ", "openid\nprofile", 'openid "profile', "openid \\profile", "openid " + "x".repeat(512)]) {
+    assert.throws(() => parseAuthConfig({ ...env, OIDC_SCOPES: scopes }), /OIDC_SCOPES/);
+  }
+});
+
+const refreshEnv = { SESSION_REFRESH_MAX_AGE_SECONDS: "2592000" };
+const refreshToken = "synthetic-private-refresh-token";
+function refreshCookies(config, now, overrides = {}) {
+  const time = Math.floor(now / 1000);
+  const token = createSessionCodec(parseAuthConfig({ ...env, ...refreshEnv, ...config }), () => now)
+    .seal({ token: refreshToken, subject: "fixture-subject", iat: time, exp: time + 2592000, ...overrides }, "refresh");
+  const mid = Math.ceil(token.length / 2);
+  return `__Host-ccdash-refresh-0=${token.slice(0, mid)}; __Host-ccdash-refresh-1=${token.slice(mid)}`;
+}
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  return { promise, resolve };
+};
+
+function applyResponseCookies(cookies, response) {
+  const jar = new Map(cookies.split("; ").filter(Boolean).map(cookie => {
+    const separator = cookie.indexOf("=");
+    return [cookie.slice(0, separator), cookie.slice(separator + 1)];
+  }));
+  for (const cookie of response.headers.getSetCookie()) {
+    const [pair] = cookie.split(";");
+    const separator = pair.indexOf("=");
+    const name = pair.slice(0, separator);
+    if (/(?:^|; )Max-Age=0(?:;|$)/.test(cookie)) jar.delete(name);
+    else jar.set(name, pair.slice(separator + 1));
+  }
+  return [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
+}
+
+for (const failure of ["missing transaction", "invalid transaction", "mismatched state"]) {
+  test(`failed callback with ${failure} preserves an existing persistent login`, async t => {
+    let time = Date.now();
+    const f = await fixture(t, { env: refreshEnv, now: () => time, refreshToken });
+    const logged = await f.complete();
+    assert.equal(logged.response.status, 303);
+    const flow = await f.login();
+    const callback = new URL(flow.callback, origin);
+    if (failure === "mismatched state") callback.searchParams.set("state", "forged");
+    const transaction = failure === "missing transaction" ? ""
+      : failure === "invalid transaction" ? "__Host-ccdash-login=invalid" : flow.cookie;
+    const cookies = [logged.cookies, transaction].filter(Boolean).join("; ");
+    const response = await f.request(callback.pathname + callback.search, { headers: { cookie: cookies } });
+    assert.equal(response.status, 400);
+    assert.equal(f.consumed, 1, "the invalid callback must not exchange another code");
+    const retainedCookies = applyResponseCookies(cookies, response);
+    time += 650_000;
+    const renewed = await f.request("/api/session", { headers: { cookie: retainedCookies } });
+    assert.equal(renewed.status, 200, "the prior refresh credentials must survive the rejected callback");
+    const profile = await renewed.json();
+    assert.equal(profile.role, "analyst");
+    assert.ok(Date.parse(profile.expiresAt) > time);
+    assert.ok(Date.parse(profile.refreshExpiresAt) > time);
+    assert.equal(response.headers.getSetCookie().filter(cookie =>
+      cookie.startsWith("__Host-ccdash-session=") || cookie.startsWith("__Host-ccdash-refresh-")).length, 0);
+  });
+}
+
+test("callback with a verified unauthorized identity clears the existing persistent login", async t => {
+  const original = await fixture(t, { env: refreshEnv, refreshToken });
+  const logged = await original.complete();
+  assert.equal(logged.response.status, 303);
+  const denied = await fixture(t, { env: refreshEnv, refreshToken, claims: { groups: ["unrelated-group"] } });
+  const flow = await denied.login();
+  const cookies = logged.cookies + "; " + flow.cookie;
+  const response = await denied.request(flow.callback, { headers: { cookie: cookies } });
+  assert.equal(response.status, 403);
+  assert.equal(denied.consumed, 1);
+  for (const name of ["__Host-ccdash-session", "__Host-ccdash-refresh-0", "__Host-ccdash-refresh-1"]) {
+    assert.ok(response.headers.getSetCookie().some(cookie => cookie.startsWith(name + "=") && cookie.includes("Max-Age=0")));
+  }
+  const clearedCookies = applyResponseCookies(cookies, response);
+  assert.equal((await original.request("/api/session", { headers: { cookie: clearedCookies } })).status, 401);
+  assert.ok(denied.events.some(event => event.event === "login.access" && event.outcome === "denied"));
+});
+
+test("persistent login retains encrypted split refresh cookies and exposes only expiry metadata", async t => {
+  const f = await fixture(t, { env: refreshEnv, refreshToken });
+  const { response, cookies } = await f.complete();
+  assert.equal(response.status, 303);
+  const retained = response.headers.getSetCookie().filter(value => value.startsWith("__Host-ccdash-refresh-"));
+  assert.equal(retained.length, 2);
+  for (const cookie of retained) {
+    assert.match(cookie, /Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000$/);
+    assert.ok(cookie.split(";")[0].length < 3100);
+    assert.ok(!cookie.includes(refreshToken));
+  }
+  const profile = await f.request("/api/session", { headers: { cookie: cookies } });
+  const body = await profile.json();
+  assert.ok(Date.parse(body.refreshExpiresAt) > Date.now() + 2591990_000);
+  assert.equal(body.role, "analyst");
+  assert.ok(!JSON.stringify(body).includes("token"));
+  assert.ok(!JSON.stringify(f.events).includes(refreshToken));
+});
+
+test("refresh config bounds and missing provider capability/token fail closed", async t => {
+  for (const age of ["1", "3599", "2592001", "1.5", "NaN", "-1"]) {
+    assert.throws(() => parseAuthConfig({ ...env, SESSION_REFRESH_MAX_AGE_SECONDS: age }), /SESSION_REFRESH/);
+  }
+  const unsupported = await fixture(t, { env: refreshEnv, noRevocation: true });
+  assert.equal((await unsupported.request("/auth/login")).status, 503);
+  for (const token of [undefined, "", "x".repeat(4097)]) {
+    const f = await fixture(t, { env: refreshEnv, refreshToken: token });
+    const { response, session } = await f.complete();
+    assert.equal(response.status, 400);
+    assert.equal(session, undefined);
+  }
+});
+
+test("renewal validates signed identity and refreshes groups without extending the absolute deadline", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { env: refreshEnv, now: () => time, refreshToken,
+    refreshClaims: { groups: ["dashboard-viewers"] } });
+  const logged = await f.complete();
+  const before = await (await f.request("/api/session", { headers: { cookie: logged.cookies } })).json();
+  time += 550_000;
+  const response = await f.request("/api/session", { headers: { cookie: logged.cookies } });
+  assert.equal(response.status, 200);
+  const after = await response.json();
+  assert.equal(after.role, "viewer");
+  assert.deepEqual(after.permissions, ["telemetry:read"]);
+  assert.ok(Date.parse(after.expiresAt) > Date.parse(before.expiresAt));
+  assert.equal(after.refreshExpiresAt, before.refreshExpiresAt);
+  assert.equal(response.headers.getSetCookie().length, 1);
+  assert.match(response.headers.getSetCookie()[0], /^__Host-ccdash-session=/);
+  assert.equal(f.tokenRequests.filter(body => body.grant_type === "refresh_token").length, 1);
+});
+
+test("refresh cannot authenticate bad signatures or mismatched issuer/audience/subject/groups", async t => {
+  const cases = [
+    { refreshBadSignature: true, expectedStatus: 503 },
+    { refreshClaims: { iss: "https://other.example.invalid/" }, expectedStatus: 503 },
+    { refreshClaims: { aud: "another-client" }, expectedStatus: 503 },
+    { refreshClaims: { sub: "different-subject" }, expectedStatus: 401 },
+    { refreshClaims: { groups: [] }, expectedStatus: 401 },
+    { refreshClaims: { groups: "dashboard-admins" }, expectedStatus: 401 },
+  ];
+  for (const options of cases) {
+    const f = await fixture(t, { env: refreshEnv, ...options });
+    const response = await f.request("/api/data", { headers: { cookie: refreshCookies({}, Date.now()) } });
+    assert.equal(response.status, options.expectedStatus);
+    assert.ok(!response.headers.getSetCookie().some(value => value.startsWith("__Host-ccdash-session=v1")));
+    assert.ok(!f.events.some(event => event.event === "session.refresh" && event.outcome === "granted"));
+  }
+});
+
+test("revoked credentials and rotated refresh responses require fresh login", async t => {
+  for (const options of [{ refreshError: "invalid_grant" }, { rotatedToken: "new-rotated-fixture" }]) {
+    const f = await fixture(t, { env: refreshEnv, ...options });
+    const response = await f.request("/api/data", { headers: { cookie: refreshCookies({}, Date.now()) } });
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error, "authentication_required");
+    assert.equal(response.headers.getSetCookie().length, 4);
+    assert.ok(response.headers.getSetCookie().every(value => value.includes("Max-Age=0")));
+  }
+});
+
+test("missing, duplicated, tampered, expired and cross-installation refresh cookies never reach the provider", async t => {
+  const time = Date.now();
+  const f = await fixture(t, { env: refreshEnv });
+  const cookie = refreshCookies({}, time);
+  for (const value of [cookie.split("; ")[0], cookie + "; " + cookie.split("; ")[0], cookie + "x",
+    refreshCookies({}, time, { exp: Math.floor(time / 1000) - 1 }),
+    refreshCookies({}, time, { iat: Math.floor(time / 1000) + 1 }),
+    refreshCookies({ OIDC_CLIENT_ID: "other-client" }, time),
+    refreshCookies({}, time, { exp: Math.floor(time / 1000) + 2592001 }),
+  ]) assert.equal((await f.request("/api/data", { headers: { cookie: value } })).status, 401);
+  assert.equal(f.tokenRequests.length, 0);
+});
+
+test("absolute refresh expiry caps short principals and avoids renewals at the capped deadline", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { env: refreshEnv, now: () => time });
+  const deadline = Math.floor(time / 1000) + 20;
+  const cookie = refreshCookies({}, time, { exp: deadline });
+  const first = await f.request("/api/session", { headers: { cookie } });
+  const profile = await first.json();
+  assert.equal(Date.parse(profile.expiresAt), deadline * 1000);
+  const principal = first.headers.getSetCookie()[0].split(";")[0];
+  const repeated = await f.request("/api/session", { headers: { cookie: cookie + "; " + principal } });
+  assert.equal(repeated.status, 200);
+  assert.equal(f.tokenRequests.length, 1);
+  time += 21_000;
+  assert.equal((await f.request("/api/session", { headers: { cookie: cookie + "; " + principal } })).status, 401);
+  assert.equal(f.tokenRequests.length, 1);
+});
+
+test("session metadata advertises persistence only for an enabled matching refresh credential", async t => {
+  const active = await fixture(t, { env: refreshEnv, refreshToken });
+  const logged = await active.complete();
+  const disabled = await fixture(t);
+  const cases = [
+    [active, logged.session],
+    [active, logged.session + "; " + refreshCookies({}, Date.now(), { subject: "other-subject" })],
+    [active, logged.session + "; " + refreshCookies({}, Date.now(), { exp: Math.floor(Date.now() / 1000) + 100 })],
+    [disabled, logged.cookies],
+  ];
+  for (const [f, cookie] of cases) {
+    const response = await f.request("/api/session", { headers: { cookie } });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).refreshExpiresAt, undefined);
+    assert.equal(f.tokenRequests.filter(body => body.grant_type === "refresh_token").length, 0);
+  }
+  assert.equal((await disabled.request("/api/data", { headers: { cookie: refreshCookies({}, Date.now()) } })).status, 401);
+});
+
+test("cross-origin requests reject refresh and revocation before any provider request", async t => {
+  const f = await fixture(t, { env: refreshEnv });
+  for (const path of ["/api/chat", "/auth/logout"]) {
+    for (const requestOrigin of [undefined, "null", "https://attacker.example.invalid"]) {
+      const response = await f.request(path, { method: "POST", headers: {
+        cookie: refreshCookies({}, Date.now()), ...(requestOrigin ? { origin: requestOrigin } : {}),
+      } });
+      assert.equal(response.status, 403);
+      assert.equal(response.headers.getSetCookie().length, 0);
+    }
+  }
+  assert.equal(f.tokenRequests.length, 0);
+  assert.equal(f.revocations.length, 0);
+});
+
+test("refresh work deduplicates concurrent callers and does not cache successful credentials", async t => {
+  const wait = deferred();
+  const entered = deferred();
+  const f = await fixture(t, { env: refreshEnv, refreshWait: () => { entered.resolve(); return wait.promise; } });
+  const cookie = refreshCookies({}, Date.now());
+  const first = f.request("/api/data", { headers: { cookie } });
+  await entered.promise;
+  const concurrent = Array.from({ length: 5 }, () => f.request("/api/data", { headers: { cookie } }));
+  // Allow all request handlers to join the outstanding exchange.
+  await new Promise(resolve => setTimeout(resolve, 30));
+  wait.resolve();
+  for (const response of await Promise.all([first, ...concurrent])) assert.equal(response.status, 200);
+  assert.equal(f.tokenRequests.length, 1);
+  assert.equal((await f.request("/api/data", { headers: { cookie } })).status, 200);
+  assert.equal(f.tokenRequests.length, 2);
+});
+
+test("temporary refresh failure cooldown bounds provider retries and preserves retryable cookies", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { env: refreshEnv, now: () => time, refreshError: "temporarily_unavailable", refreshStatus: 503 });
+  const cookie = refreshCookies({}, time);
+  for (let i = 0; i < 3; i++) {
+    const response = await f.request("/api/data", { headers: { cookie } });
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("retry-after"), "5");
+    assert.equal(response.headers.getSetCookie().length, 0);
+    assert.equal((await response.json()).error, "authentication_temporarily_unavailable");
+  }
+  assert.equal(f.tokenRequests.length, 1);
+  time += 5001;
+  assert.equal((await f.request("/api/data", { headers: { cookie } })).status, 503);
+  assert.equal(f.tokenRequests.length, 2);
+});
+
+test("refresh failure storage rejects new work at capacity and releases expired entries", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { env: refreshEnv, now: () => time, refreshError: "temporarily_unavailable", refreshStatus: 503 });
+  for (let i = 0; i < 1025; i++) {
+    const response = await f.request("/api/data", { headers: { cookie: refreshCookies({}, time, { token: "fixture-" + i }) } });
+    assert.equal(response.status, 503);
+    await response.arrayBuffer();
+  }
+  assert.equal(f.tokenRequests.length, 1024);
+  time += 5001;
+  const response = await f.request("/api/data", { headers: { cookie: refreshCookies({}, time, { token: "new-fixture" }) } });
+  assert.equal(response.status, 503);
+  assert.equal(f.tokenRequests.length, 1025);
+});
+
+test("logout revokes the original credential and reports provider failure after clearing cookies", async t => {
+  for (const revocationError of [false, true]) {
+    const f = await fixture(t, { env: refreshEnv, revocationError });
+    const response = await f.request("/auth/logout", { method: "POST", headers: { cookie: refreshCookies({}, Date.now()), origin } });
+    assert.equal(response.status, revocationError ? 503 : 303);
+    assert.equal(response.headers.getSetCookie().length, 4);
+    assert.ok(response.headers.getSetCookie().every(value => value.includes("Max-Age=0")));
+    assert.equal(f.revocations.length, 1);
+    assert.equal(f.revocations[0].token, refreshToken);
+    assert.equal(f.revocations[0].token_type_hint, "refresh_token");
+    assert.ok(!JSON.stringify(f.events).includes(refreshToken));
+  }
+});
+
+test("refresh admission caps simultaneous distinct exchanges and recovers after completion", async t => {
+  const wait = deferred();
+  const entered = deferred();
+  let active = 0;
+  const f = await fixture(t, { env: refreshEnv, refreshWait: () => {
+    if (++active === 16) entered.resolve();
+    return wait.promise;
+  } });
+  const pending = Array.from({ length: 16 }, (_, i) => f.request("/api/data", {
+    headers: { cookie: refreshCookies({}, Date.now(), { token: "concurrent-" + i }) },
+  }));
+  await entered.promise;
+  const overflow = await f.request("/api/data", { headers: { cookie: refreshCookies({}, Date.now(), { token: "overflow" }) } });
+  assert.equal(overflow.status, 503);
+  assert.equal(f.tokenRequests.length, 16);
+  wait.resolve();
+  for (const response of await Promise.all(pending)) assert.equal(response.status, 200);
+  assert.equal((await f.request("/api/data", { headers: { cookie: refreshCookies({}, Date.now(), { token: "released" }) } })).status, 200);
+  assert.equal(f.tokenRequests.length, 17);
+});
+
+test("concurrent and replayed logout requests share bounded revocation work", async t => {
+  const wait = deferred();
+  const entered = deferred();
+  const f = await fixture(t, { env: refreshEnv, revocationWait: () => { entered.resolve(); return wait.promise; } });
+  const request = () => f.request("/auth/logout", { method: "POST", headers: { cookie: refreshCookies({}, Date.now()), origin } });
+  const first = request();
+  await entered.promise;
+  const second = request();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  wait.resolve();
+  for (const response of await Promise.all([first, second])) assert.equal(response.status, 303);
+  assert.equal(f.revocations.length, 1);
+  assert.equal((await request()).status, 303);
+  assert.equal(f.revocations.length, 1);
+});
+
+test("logout revocation admission is bounded while clearing every browser's cookies", async t => {
+  const wait = deferred();
+  const entered = deferred();
+  let active = 0;
+  const f = await fixture(t, { env: refreshEnv, revocationWait: () => {
+    if (++active === 16) entered.resolve();
+    return wait.promise;
+  } });
+  const request = token => f.request("/auth/logout", { method: "POST", headers: {
+    cookie: refreshCookies({}, Date.now(), { token }), origin,
+  } });
+  const pending = Array.from({ length: 16 }, (_, i) => request("logout-" + i));
+  await entered.promise;
+  const overflow = await request("overflow");
+  assert.equal(overflow.status, 503);
+  assert.equal(overflow.headers.getSetCookie().length, 4);
+  assert.equal(f.revocations.length, 16);
+  wait.resolve();
+  for (const response of await Promise.all(pending)) assert.equal(response.status, 303);
+});
+
+test("production discovery uses confidential Basic authentication for login, renewal and revocation", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { defaultDiscovery: true, env: refreshEnv, refreshToken, now: () => time });
+  const logged = await f.complete();
+  assert.equal(logged.response.status, 303);
+  time += 601_000;
+  const renewed = await f.request("/api/session", { headers: { cookie: logged.cookies } });
+  assert.equal(renewed.status, 200);
+  const logout = await f.request("/auth/logout", { method: "POST", headers: { cookie: logged.cookies, origin } });
+  assert.equal(logout.status, 303);
+  assert.equal(f.revocations.length, 1);
+  assert.ok(f.tokenRequests.every(body => body.client_secret === undefined));
 });
