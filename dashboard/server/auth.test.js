@@ -345,6 +345,67 @@ const deferred = () => {
   return { promise, resolve };
 };
 
+function applyResponseCookies(cookies, response) {
+  const jar = new Map(cookies.split("; ").filter(Boolean).map(cookie => {
+    const separator = cookie.indexOf("=");
+    return [cookie.slice(0, separator), cookie.slice(separator + 1)];
+  }));
+  for (const cookie of response.headers.getSetCookie()) {
+    const [pair] = cookie.split(";");
+    const separator = pair.indexOf("=");
+    const name = pair.slice(0, separator);
+    if (/(?:^|; )Max-Age=0(?:;|$)/.test(cookie)) jar.delete(name);
+    else jar.set(name, pair.slice(separator + 1));
+  }
+  return [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
+}
+
+for (const failure of ["missing transaction", "invalid transaction", "mismatched state"]) {
+  test(`failed callback with ${failure} preserves an existing persistent login`, async t => {
+    let time = Date.now();
+    const f = await fixture(t, { env: refreshEnv, now: () => time, refreshToken });
+    const logged = await f.complete();
+    assert.equal(logged.response.status, 303);
+    const flow = await f.login();
+    const callback = new URL(flow.callback, origin);
+    if (failure === "mismatched state") callback.searchParams.set("state", "forged");
+    const transaction = failure === "missing transaction" ? ""
+      : failure === "invalid transaction" ? "__Host-ccdash-login=invalid" : flow.cookie;
+    const cookies = [logged.cookies, transaction].filter(Boolean).join("; ");
+    const response = await f.request(callback.pathname + callback.search, { headers: { cookie: cookies } });
+    assert.equal(response.status, 400);
+    assert.equal(f.consumed, 1, "the invalid callback must not exchange another code");
+    const retainedCookies = applyResponseCookies(cookies, response);
+    time += 650_000;
+    const renewed = await f.request("/api/session", { headers: { cookie: retainedCookies } });
+    assert.equal(renewed.status, 200, "the prior refresh credentials must survive the rejected callback");
+    const profile = await renewed.json();
+    assert.equal(profile.role, "analyst");
+    assert.ok(Date.parse(profile.expiresAt) > time);
+    assert.ok(Date.parse(profile.refreshExpiresAt) > time);
+    assert.equal(response.headers.getSetCookie().filter(cookie =>
+      cookie.startsWith("__Host-ccdash-session=") || cookie.startsWith("__Host-ccdash-refresh-")).length, 0);
+  });
+}
+
+test("callback with a verified unauthorized identity clears the existing persistent login", async t => {
+  const original = await fixture(t, { env: refreshEnv, refreshToken });
+  const logged = await original.complete();
+  assert.equal(logged.response.status, 303);
+  const denied = await fixture(t, { env: refreshEnv, refreshToken, claims: { groups: ["unrelated-group"] } });
+  const flow = await denied.login();
+  const cookies = logged.cookies + "; " + flow.cookie;
+  const response = await denied.request(flow.callback, { headers: { cookie: cookies } });
+  assert.equal(response.status, 403);
+  assert.equal(denied.consumed, 1);
+  for (const name of ["__Host-ccdash-session", "__Host-ccdash-refresh-0", "__Host-ccdash-refresh-1"]) {
+    assert.ok(response.headers.getSetCookie().some(cookie => cookie.startsWith(name + "=") && cookie.includes("Max-Age=0")));
+  }
+  const clearedCookies = applyResponseCookies(cookies, response);
+  assert.equal((await original.request("/api/session", { headers: { cookie: clearedCookies } })).status, 401);
+  assert.ok(denied.events.some(event => event.event === "login.access" && event.outcome === "denied"));
+});
+
 test("persistent login retains encrypted split refresh cookies and exposes only expiry metadata", async t => {
   const f = await fixture(t, { env: refreshEnv, refreshToken });
   const { response, cookies } = await f.complete();

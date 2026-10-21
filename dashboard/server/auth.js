@@ -359,7 +359,7 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
           emit("login.access", principal, "granted");
           res.redirect(303, safeReturnTo(transaction.returnTo));
         } catch (error) {
-          for (const name of REFRESH_COOKIES) setCookie(res, name, "", 0);
+          // A failed callback must not discard credentials from an existing login.
           emit("login.callback", null, "failed", { stage, class: failureClass(error) });
           loginPage(res, 400, true);
         }
