@@ -1,0 +1,8 @@
+__pycache__/
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/*.tfplan
+terraform/*.auto.tfvars*
+terraform/terraform.tfvars*
+!terraform/terraform.tfvars.example
+terraform/group-sync.zip

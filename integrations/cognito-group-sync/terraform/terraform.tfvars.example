@@ -1,0 +1,10 @@
+aws_region            = "us-east-1"
+user_pool_id          = "us-east-1_REPLACE"
+name                  = "portal-group-sync"
+policy_parameter_name = "/portal/identity/group-policy"
+dry_run               = true
+schedule_enabled      = true
+
+# Supply policy_json privately, for example through a protected variable file.
+# policy_kms_key_arn = "arn:aws:kms:us-east-1:000000000000:key/REPLACE"
+# alarm_action_arns = ["arn:aws:sns:us-east-1:000000000000:operations"]
