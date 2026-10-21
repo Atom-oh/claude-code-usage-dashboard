@@ -10,8 +10,8 @@ const PROBES = new Set(["/healthz", "/readyz"]);
 const ROLES = ["viewer", "analyst", "admin"];
 const PERMISSIONS = {
   viewer: ["telemetry:read"],
-  analyst: ["telemetry:read", "chat:query"],
-  admin: ["telemetry:read", "chat:query", "installation:read"],
+  analyst: ["telemetry:read", "chat:query", "collector:manage"],
+  admin: ["telemetry:read", "chat:query", "installation:read", "collector:manage"],
 };
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 

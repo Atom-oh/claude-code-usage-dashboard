@@ -111,6 +111,7 @@ async function fixture(t, options = {}) {
   app.get("/api/session", (req, res) => res.json(authentication.sessionInfo(req)));
   app.get("/api/data", authentication.requirePermission("telemetry:read"), (_req, res) => res.json({ rows: 1 }));
   app.post("/api/chat", authentication.requirePermission("chat:query"), (_req, res) => res.json({ queried: true }));
+  app.post("/api/collector/access", authentication.requirePermission("collector:manage"), (_req, res) => res.json({ allowed: true }));
   app.get("/asset.js", (_req, res) => res.type("js").send("private fixture asset"));
   app.get("/", (_req, res) => res.send("private dashboard"));
   const server = app.listen(0, "127.0.0.1");
@@ -206,7 +207,7 @@ test("real OIDC library validates a signed code flow with PKCE, state and nonce"
   assert.equal(profile.status, 200);
   const body = await profile.json();
   assert.equal(body.role, "analyst");
-  assert.deepEqual(body.permissions, ["telemetry:read", "chat:query"]);
+  assert.deepEqual(body.permissions, ["telemetry:read", "chat:query", "collector:manage"]);
   assert.ok(!JSON.stringify(body).includes("fixture-subject"));
   assert.equal((await f.request("/api/chat", { method: "POST", headers: { cookie: session, origin } })).status, 200);
   assert.equal(f.consumed, 1);
@@ -225,6 +226,21 @@ test("viewer access cannot run SQL chat; highest explicitly mapped group wins", 
   const logged = await admin.complete();
   const profile = await admin.request("/api/session", { headers: { cookie: logged.session } });
   assert.equal((await profile.json()).role, "admin");
+});
+
+test("collector management uses signed generic roles and keeps unsafe origin checks", async t => {
+  for (const [group, allowed] of [["dashboard-viewers", false], ["dashboard-analysts", true], ["dashboard-admins", true]]) {
+    const f = await fixture(t, { claims: { groups: [group] } });
+    const { session } = await f.complete();
+    const profile = await (await f.request("/api/session", { headers: { cookie: session } })).json();
+    assert.equal(profile.permissions.includes("collector:manage"), allowed);
+    assert.equal((await f.request("/api/collector/access", {
+      method: "POST", headers: { cookie: session, origin },
+    })).status, allowed ? 200 : 403);
+    for (const headers of [{ cookie: session }, { cookie: session, origin: "https://untrusted.example.invalid" }]) {
+      assert.equal((await f.request("/api/collector/access", { method: "POST", headers })).status, 403);
+    }
+  }
 });
 
 test("valid identity without an authorized group is denied, not defaulted to viewer", async t => {

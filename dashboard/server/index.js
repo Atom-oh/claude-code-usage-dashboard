@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createAuthentication } from "./auth.js";
 import { createInstallationProbe } from "./installation.js";
+import { createCollectorFeature } from "./collectorRoutes.js";
 import { CapacityError, capacityResponse, queryTimeoutResponse, createRequestAdmission, createResultCache } from "./capacity.js";
 import { QueryDeadlineError } from "./queryContext.js";
 import { createWarmingPlan } from "./warming.js";
@@ -92,8 +93,16 @@ app.use((_req, res, next) => {
   next();
 });
 authentication.installRoutes(app);
+// Device credentials authorize only these bounded OTLP POST routes. Browser
+// sessions continue through the existing authentication and origin checks below.
+const collectorFeature = createCollectorFeature({
+  env: process.env, authentication,
+  packageDir: path.resolve(__dirname, "../collector-packages"),
+});
+collectorFeature.installIngest(app);
 app.use(authentication.middleware);
 app.use("/api", createRequestAdmission());
+collectorFeature.installManagement(app);
 app.get("/api/session", (req, res) => res.json(authentication.sessionInfo(req)));
 
 // /api/* 응답 전체에 no-store. 라우트마다 res.set을 부르던 예전 방식은 route() 래퍼를 거치는
