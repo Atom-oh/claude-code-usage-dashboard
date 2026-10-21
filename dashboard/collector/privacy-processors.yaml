@@ -45,6 +45,22 @@
     log_statements:
       - context: log
         statements:
-          - 'delete_matching_keys(attributes, "(?i)^(prompt|prompt_text|user_prompt|user[.]prompt|content|new_context|system_reminders|system_prompt_preview|user_system_prompt|tool[._]input|tool[._]output|tool[._]parameters|tool[._]arguments|arguments|full_command|bash_command|stdout|stderr|message|body|body_ref|api_request_body|api_response_body|model_output|response[.]model_output|response_text|error)$")'
+          # Queries distinguish nonempty errors; retain presence without text.
+          - set(cache["error"], "") where attributes["error"] != nil
+          - set(cache["error"], "[redacted]") where attributes["error"] != nil and attributes["error"] != ""
+          - 'delete_matching_keys(attributes, "(?i)^(prompt|prompt_text|user_prompt|user[.]prompt|content|new_context|system_reminders|system_prompt_preview|user_system_prompt|tool[._]input|tool[._]output|tool[._]arguments|arguments|full_command|bash_command|stdout|stderr|message|body|body_ref|api_request_body|api_response_body|model_output|response[.]model_output|response_text|error)$")'
           - 'delete_matching_keys(resource.attributes, "(?i)^(prompt|prompt_text|user_prompt|user[.]prompt|content|new_context|system_reminders|system_prompt_preview|user_system_prompt|tool[._]input|tool[._]output|tool[._]parameters|tool[._]arguments|arguments|full_command|bash_command|stdout|stderr|message|body|body_ref|api_request_body|api_response_body|model_output|response[.]model_output|response_text|error)$")'
           - set(body, "")
+          - set(attributes["error"], cache["error"]) where cache["error"] != nil
+      # Remove raw parameters before parsing. Malformed JSON must neither drop
+      # a batch nor print content; only the existing MCP identifiers may return.
+      - context: log
+        error_mode: silent
+        statements:
+          - set(cache["tool_parameters"], attributes["tool_parameters"]) where IsString(attributes["tool_parameters"])
+          - 'delete_matching_keys(attributes, "(?i)^tool[._]parameters$")'
+          - set(cache["mcp"], ParseJSON("{}"))
+          - set(cache["tool_parameters"], ParseJSON(cache["tool_parameters"])) where IsString(cache["tool_parameters"])
+          - set(cache["mcp"]["mcp_server_name"], cache["tool_parameters"]["mcp_server_name"]) where IsMap(cache["tool_parameters"]) and IsString(cache["tool_parameters"]["mcp_server_name"])
+          - set(cache["mcp"]["mcp_tool_name"], cache["tool_parameters"]["mcp_tool_name"]) where IsMap(cache["tool_parameters"]) and IsString(cache["tool_parameters"]["mcp_tool_name"])
+          - set(attributes["tool_parameters"], String(cache["mcp"])) where Len(cache["mcp"]) > 0
