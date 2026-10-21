@@ -89,3 +89,21 @@ test("unknown paths normalize equally for both clients", async () => {
     view.unmount();
   }
 });
+
+test("collector route stays available while navigation requires its permission", async () => {
+  for (const permissions of [[], ["collector:manage"], ["collector:manage", "installation:read"]]) {
+    const view = render(<MemoryRouter initialEntries={["/collector?client=codex&days=7"]}>
+      <ConfigProvider config={{ enabledClients: ["claude", "codex"], session: { permissions } }}>
+        <ClientProvider><Probe /></ClientProvider>
+      </ConfigProvider>
+    </MemoryRouter>);
+    await waitFor(() => expect(current.location.pathname).toBe("/collector"));
+    expect(document.title).toContain("수집기 설치");
+    expect(current.navigation.items.some(item => item.to === "/collector")).toBe(permissions.includes("collector:manage"));
+    expect(current.navigation.items.some(item => item.to === "/installation")).toBe(permissions.includes("installation:read"));
+    fireEvent.click(screen.getByText("claude", { selector: "button" }));
+    await waitFor(() => expect(current.client).toBe("claude"));
+    expect(current.location.pathname).toBe("/collector");
+    view.unmount();
+  }
+});

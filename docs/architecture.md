@@ -33,18 +33,24 @@ flowchart TB
         KEEPER -.-> ROLLUP
         API -->|"Read queries"| RAW
         API -->|"Read queries"| ROLLUP
+        API -->|"Device token validation and lifecycle"| TOKENS[("DynamoDB device token hashes")]
+        API -->|"Optional authenticated OTLP forwarding"| RECEIVER["Private Collector receiver"]
+        RECEIVER -->|"INSERT-only ClickHouse credential"| RAW
         BACKUP["Backup CronJob"] -->|"Read database"| RAW
     end
     EDGE -->|"VPC origin / TCP port 443"| NLB
     NLB -->|"HTTP to port 8080"| API
     COLLECTOR -->|"Configured ClickHouse exporter target"| RAW
+    COLLECTOR -->|"Optional device-token HTTPS OTLP"| EDGE
     API -->|"ConverseStream and SQL tool results"| BEDROCK["Amazon Bedrock"]
     RAW -->|"Configured cold-storage TTL"| COLD[("S3 cold prefix")]
     BACKUP -->|"Native BACKUP TO S3"| ARCHIVE[("S3 backup prefix")]
 ```
 
 The SPA and API are served by one Express process in one image; the browser does not query
-ClickHouse directly. The collector writes telemetry independently of the dashboard API.
+ClickHouse directly. Existing collectors write telemetry independently of the dashboard
+API. The opt-in [device installer](runbooks/device-collectors.md) instead forwards
+bounded machine-authenticated OTLP through that API to a private receiver.
 The static [site](../site/) and [video project](../video/) are separate from this runtime.
 
 Shared client and Codex detail costs use
