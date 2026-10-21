@@ -16,7 +16,7 @@ const opensslMetadata = ["libcrypto3", "libssl3"].map(name =>
 function fixture(run) {
   const root = mkdtempSync(path.join(tmpdir(), "ccdash-runtime-"));
   try {
-    for (const directory of ["opt", "app/notices", "app/server", "usr/local/bin", "lib/apk/db"]) {
+    for (const directory of ["opt", "app/notices", "app/server", "app/collector-packages", "usr/local/bin", "lib/apk/db"]) {
       mkdirSync(path.join(root, directory), { recursive: true });
     }
     const license = "Synthetic fixture license.\n";
@@ -31,6 +31,15 @@ function fixture(run) {
     writeFileSync(path.join(root, "app/server/package-lock.json"), serverLock);
     writeFileSync(path.join(root, "app/notices/THIRD_PARTY_NOTICES.json"), JSON.stringify(notices));
     writeFileSync(path.join(root, "app/notices/THIRD_PARTY_NOTICES.txt"), "Synthetic dependency notices.\n");
+    const packages = {};
+    for (const platform of ["linux", "darwin"]) {
+      const name = `ccdash-collector-${platform}.tar.gz`;
+      const content = `Synthetic ${platform} installer fixture`;
+      writeFileSync(path.join(root, "app/collector-packages", name), content);
+      packages[name] = hash(content);
+    }
+    writeFileSync(path.join(root, "app/collector-packages/manifest.json"),
+      JSON.stringify({ collectorVersion: "0.163.1", packages }));
     writeFileSync(path.join(root, "lib/apk/db/installed"),
       `P:busybox\nV:synthetic\n\nP:zlib\nV:${REQUIRED_RUNTIME_ZLIB_VERSION}\nA:aarch64\n\n${opensslMetadata}`);
     const options = {
@@ -63,7 +72,24 @@ test("runtime inspection binds actual notices, license, lock and nonroot release
     assert.equal(result.serverLockSha256, options.expectedLockfiles.server);
     assert.match(result.noticesJsonSha256, /^[a-f0-9]{64}$/);
     assert.match(result.noticesTextSha256, /^[a-f0-9]{64}$/);
+    assert.equal(result.collectorVersion, "0.163.1");
+    assert.equal(Object.keys(result.collectorPackages).length, 2);
   });
+});
+
+test("runtime inspection rejects missing, altered and unlisted collector packages", () => {
+  for (const change of ["missing", "altered", "unlisted", "invalid-manifest", "symlink"]) {
+    fixture(({ root, options }) => {
+      const directory = path.join(root, "app/collector-packages");
+      const archive = path.join(directory, "ccdash-collector-linux.tar.gz");
+      if (change === "missing" || change === "symlink") rmSync(archive);
+      if (change === "symlink") symlinkSync("ccdash-collector-darwin.tar.gz", archive);
+      if (change === "altered") writeFileSync(archive, "different");
+      if (change === "unlisted") writeFileSync(path.join(directory, "unexpected.txt"), "not packaged");
+      if (change === "invalid-manifest") writeFileSync(path.join(directory, "manifest.json"), "{}");
+      assert.throws(() => verifyRuntime(options), /collector package/);
+    });
+  }
 });
 
 test("runtime inspection rejects unpatched or statically linked OpenSSL", () => {
