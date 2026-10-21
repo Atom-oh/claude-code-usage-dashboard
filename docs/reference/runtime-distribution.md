@@ -37,6 +37,11 @@ modules/collectors, license hash, complete nonempty notices, both committed lock
 hashes and the installed server lock. It requires one OS zlib package at the pinned
 version in `/lib/apk/db/installed`; missing, old or ambiguous metadata fails.
 It applies the same uniqueness/version checks to both OpenSSL runtime packages.
+The image also contains two deterministic device installer archives. Inspection
+requires both regular files and their SHA-256 manifest, rejecting missing, modified
+or unexpected files. Archives contain installation sources and third-party notices;
+the installer downloads the checksum-pinned Collector binary on the target device.
+See [device collection](../runbooks/device-collectors.md).
 The release record keeps `zlibPackageVersion` separate from `nodeZlibVersion`.
 It does not import app modules, read credentials
 or contact a database. These checks do not establish auth/health behavior, CVE

@@ -9,6 +9,8 @@ export const CLIENT_PAGES = [
   { to: "/reliability", key: "reliability", label: "Reliability", hint: "오류·응답 시간" },
   { to: "/analytics", key: "analytics", label: "Analytics", hint: "모델·진단 분석" },
 ];
-export const clientPage = (pathname) => CLIENT_PAGES.find((p) => p.to === pathname) || CLIENT_PAGES[0];
+export const COLLECTOR_PAGE = { to: "/collector", key: "collector", label: "수집기 설치", hint: "기기 연결·수집 토큰" };
+export const clientPage = (pathname) => pathname === COLLECTOR_PAGE.to ? COLLECTOR_PAGE
+  : CLIENT_PAGES.find((p) => p.to === pathname) || CLIENT_PAGES[0];
 export const isClientPath = (pathname) => CLIENT_PAGES.some((p) => p.to === pathname);
-export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation";
+export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation" || pathname === COLLECTOR_PAGE.to;

@@ -13,6 +13,8 @@ unauthenticated use. Only probes bypass this gate. Explicit `AUTH_MODE=oidc` use
 login/session cookies; login/callback and origin-checked local logout are protocol exceptions.
 Telemetry/config/static routes require a session and never fall back to Basic.
 Chat requires analyst/admin permission in OIDC plus existing readonly/activation gates.
+The opt-in device-ingestion namespace uses separate machine credentials as described below;
+browser cookies never authorize that namespace.
 See [SSO operations](runbooks/organization-sso.md).
 
 `GET /api/session` returns `mode`, `role`, `permissions` and, for OIDC, current-user `name`
@@ -51,6 +53,28 @@ their cached probe timestamps. Ledger records do not prove actual DDL/rebuild co
 receipt does not prove complete telemetry, OIDC configuration does not prove MFA, and no
 backup or full commercial-release claim is made. `release.revision` is null unless the
 runtime supplies a valid Git SHA through `APP_REVISION`.
+
+### Device collection
+
+`/api/collector` management routes require OIDC `collector:manage` (analyst/admin).
+Unsafe requests retain the existing exact-Origin gate. Responses and downloads are
+`no-store`; viewer/demo requests are denied before store or file access.
+
+| Method and path | Contract |
+|---|---|
+| `GET /api/collector` | Feature state, public ingestion endpoint, Collector version, supported platforms and 30-day token lifetime. |
+| `GET /api/collector/devices` | Owner-scoped `devices` and `nextCursor`; up to 50 records per page. Supply the returned `cursor` unchanged. |
+| `POST /api/collector/devices` | `{name, platform}` where name is 1–64 characters without controls and platform is `linux` or `darwin`; 201 returns `device` and the token once. |
+| `DELETE /api/collector/devices/:id` | Revoke an owned device; 204 for existing/already revoked, 404 for absent. |
+| `GET /api/collector/package/:platform` | Authenticated installer archive for `linux` or `darwin`; no credentials embedded. |
+| `POST /api/ingest/v1/{logs,metrics,traces}` | Device bearer token only; OTLP JSON/protobuf, at most 2 MiB, no content compression. |
+
+Device fields are `id`, `name`, `platform`, `createdAt`, `expiresAt`, `revokedAt`
+and `lastSeenAt`; dates are ISO strings or null. Tokens are ingestion-only, expire
+30 days after issuance and may remain cached on another replica for up to ten seconds
+after revocation. Last receipt does not prove database persistence. These APIs do not
+use usage range/filter semantics. See [device operations](runbooks/device-collectors.md)
+for installation, identity limitations, resource bounds and offboarding.
 
 Wrapped GET data routes validate these parameters before querying or caching:
 

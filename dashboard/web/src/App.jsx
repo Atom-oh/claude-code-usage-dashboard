@@ -23,6 +23,7 @@ import { CLIENT_PAGES } from "./clientNavigation.js";
 import { useConfig } from "./ConfigContext.jsx";
 import SessionBoundary from "./SessionBoundary.jsx";
 import Installation from "./pages/Installation.jsx";
+import CollectorSetup from "./pages/CollectorSetup.jsx";
 
 export default function App() {
   return <SessionBoundary><ClientProvider><Dashboard /></ClientProvider></SessionBoundary>;
@@ -33,6 +34,7 @@ function Dashboard() {
   const { session } = useConfig();
   const canChat = !session || session.permissions?.includes("chat:query");
   const installation = useLocation().pathname === "/installation";
+  const collector = useLocation().pathname === "/collector";
   return (
     <RefreshProvider>
       <RangeProvider>
@@ -42,7 +44,7 @@ function Dashboard() {
               <MobileNav />
               <Sidebar />
               <main className="min-w-0 flex-1 overflow-y-auto animate-fade-in">
-                {installation ? <Installation /> : <>
+                {installation ? <Installation /> : collector ? <CollectorSetup /> : <>
                 <FreshnessBanner className="mx-8 mt-3" />
                 <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
                   <FilterBar />
@@ -63,7 +65,7 @@ function Dashboard() {
                 </Routes>}</>}
               </main>
             </div>
-            {!installation && canChat && <FloatingChat />}
+            {!installation && !collector && canChat && <FloatingChat />}
           </FreshnessProvider>
         </FilterProvider>
       </RangeProvider>

@@ -1,8 +1,8 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert, Settings } from "lucide-react";
+import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert, Settings, Download } from "lucide-react";
 import { cn } from "../cn.js";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
-import { CLIENT_PAGES } from "../clientNavigation.js";
+import { CLIENT_PAGES, COLLECTOR_PAGE } from "../clientNavigation.js";
 import { AccountMenu } from "./AccountMenu.jsx";
 import { useConfig } from "../ConfigContext.jsx";
 
@@ -13,9 +13,14 @@ export const COMMON_NAV = NAV;
 export function useNavigation() {
   const { common, enabledClients } = useClient();
   const { session } = useConfig();
-  const items = session?.permissions?.includes("installation:read") ? [...NAV, {
-    to: "/installation", label: "설치 상태", hint: "연결·수집·조직 로그인", icon: Settings,
-  }] : NAV;
+  const items = [...NAV,
+    ...(session?.permissions?.includes("collector:manage") ? [{
+      ...COLLECTOR_PAGE, icon: Download,
+    }] : []),
+    ...(session?.permissions?.includes("installation:read") ? [{
+      to: "/installation", label: "설치 상태", hint: "연결·수집·조직 로그인", icon: Settings,
+    }] : []),
+  ];
   return {
     items,
     brand: enabledClients.length > 1 ? "Claude + Codex" : CLIENT_LABELS[enabledClients[0]],

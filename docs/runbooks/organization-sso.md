@@ -51,6 +51,9 @@ Replace example groups with exact customer identifiers:
 
 Only listed groups grant access; highest matching role wins. Missing/malformed/unrelated
 group claims deny login. Replicas must share issuer, client, origin, mapping and key.
+Analyst and admin also receive `collector:manage` for the optional
+[device installer](device-collectors.md); viewer does not. Removing a group or logging
+out does not revoke already issued device tokens, which require explicit offboarding.
 Generate/store secrets through the approved secret manager, not command history, PRs
 or support bundles.
 

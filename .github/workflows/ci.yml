@@ -49,6 +49,19 @@ jobs:
       - name: Verify empty bootstrap and read-only existing-schema lifecycle
         run: python3 scripts/test-schema-lifecycle.py
 
+  device-collector:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify deterministic packages and configuration preservation
+        run: python3 -m unittest discover -s dashboard/collector/tests -p 'test_*.py'
+      - name: Verify pinned Collector policies and existing ClickHouse schema
+        run: python3 scripts/test-device-collector-sql.py
+
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -121,3 +134,5 @@ jobs:
         run: bash scripts/test-bedrock-routing-terraform.sh
       - name: Verify immutable schema inputs and initializer behavior with mocked providers
         run: bash scripts/test-schema-lifecycle-terraform.sh
+      - name: Verify opt-in device ingestion resources with mocked providers
+        run: bash scripts/test-device-ingest-terraform.sh
