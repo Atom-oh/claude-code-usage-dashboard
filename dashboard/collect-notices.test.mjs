@@ -160,6 +160,75 @@ test("changed publisher metadata cannot reuse a standard-license binding", () =>
   } finally { f.close(); }
 });
 
+const awsRepository = "https://github.com/aws/aws-sdk-js-v3.git";
+const reviewedAwsPackages = [
+  ["@aws-sdk/credential-provider-http", "3.972.77"],
+  ["@aws-sdk/credential-provider-login", "3.972.82"],
+  ["@aws-sdk/nested-clients", "3.997.49"],
+];
+
+test("reviewed AWS dependency versions preserve the installed same-repository Apache license", () => {
+  const locations = Object.fromEntries(reviewedAwsPackages.map(([name, version]) =>
+    ["node_modules/" + name, { version }]));
+  const f = fixture(locations);
+  const text = "Apache License\nVersion 2.0\nSynthetic shared license fixture.\n";
+  try {
+    for (const [name, version] of reviewedAwsPackages)
+      f.add("node_modules/" + name, { name, version, license: "Apache-2.0", repository: { url: awsRepository } }, {});
+    f.add("node_modules/@aws-sdk/core", { name: "@aws-sdk/core", version: "3.978.4",
+      license: "Apache-2.0", repository: { url: awsRepository } }, { LICENSE: text });
+    const result = collectNotices(f.root);
+    assert.equal(result.report.complete, true);
+    assert.equal(result.report.packages.length, 3);
+    for (const entry of result.report.packages) {
+      assert.equal(entry.files.length, 1);
+      assert.equal(entry.files[0].path, "shared-repository/@aws-sdk/core@3.978.4/LICENSE");
+      assert.equal(entry.files[0].text, text);
+      assert.match(entry.files[0].provenance, /exact installed peer text/);
+    }
+  } finally { f.close(); }
+});
+
+test("AWS version drift and changed package declarations cannot reuse the reviewed license exception", () => {
+  for (const [name, version] of reviewedAwsPackages) {
+    for (const mutation of [{ version: "9.9.9" }, { license: "MIT" },
+      { repository: { url: "https://example.invalid/unrelated" } }]) {
+      const manifest = { name, version, license: "Apache-2.0", repository: { url: awsRepository }, ...mutation };
+      const f = fixture({ ["node_modules/" + name]: { version: manifest.version } });
+      try {
+        f.add("node_modules/" + name, manifest, {});
+        f.add("node_modules/@aws-sdk/core", { name: "@aws-sdk/core", version: "3.978.4",
+          license: "Apache-2.0", repository: { url: awsRepository } }, { LICENSE: "Synthetic Apache license\n" });
+        const result = collectNotices(f.root);
+        assert.equal(result.report.complete, false);
+        assert.deepEqual(result.report.unresolved, [
+          { package: `${name}@${manifest.version}`, reason: "missing_license_text" },
+        ]);
+      } finally { f.close(); }
+    }
+  }
+});
+
+test("AWS shared license fallback rejects changed peer provenance and missing license text", () => {
+  const name = "@aws-sdk/credential-provider-http", version = "3.972.77";
+  for (const mutation of [{ license: "MIT" }, { repository: { url: "https://example.invalid/unrelated" } },
+    { missingPeer: true }, { missingText: true }]) {
+    const f = fixture({ ["node_modules/" + name]: { version } });
+    try {
+      f.add("node_modules/" + name, { name, version, license: "Apache-2.0", repository: { url: awsRepository } }, {});
+      if (!mutation.missingPeer)
+        f.add("node_modules/@aws-sdk/core", { name: "@aws-sdk/core", version: "3.978.4",
+          license: "Apache-2.0", repository: { url: awsRepository }, ...mutation },
+        mutation.missingText ? {} : { LICENSE: "Synthetic Apache license\n" });
+      if (mutation.missingPeer || mutation.missingText) {
+        const result = collectNotices(f.root);
+        assert.equal(result.report.complete, false);
+        assert.equal(result.report.unresolved[0].reason, "missing_license_text");
+      } else assert.throws(() => collectNotices(f.root), /shared repository license provenance differs/);
+    } finally { f.close(); }
+  }
+});
+
 test("Victory preserves its pinned package terms alongside supplementary vendor licenses", () => {
   const f = fixture({ "node_modules/victory-vendor": { version: "37.3.6" } });
   try {
