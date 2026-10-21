@@ -93,6 +93,31 @@ export function verifyRuntime({
   }
   const serverLockSha256 = sha256(readFileSync(location("app/server/package-lock.json")));
   if (serverLockSha256 !== expectedLockfiles.server) fail("runtime server lock differs");
+  let collectorManifest;
+  const packageNames = ["ccdash-collector-darwin.tar.gz", "ccdash-collector-linux.tar.gz"];
+  try {
+    const directory = location("app/collector-packages");
+    const names = readdirSync(directory).sort();
+    if (JSON.stringify(names) !== JSON.stringify([...packageNames, "manifest.json"].sort()))
+      fail("unexpected collector package files");
+    for (const name of names) {
+      if (!lstatSync(path.join(directory, name)).isFile())
+        fail("collector package must be a regular file");
+    }
+    collectorManifest = JSON.parse(readFileSync(path.join(directory, "manifest.json"), "utf8"));
+    if (!/^\d+\.\d+\.\d+$/.test(collectorManifest.collectorVersion || "") ||
+        JSON.stringify(Object.keys(collectorManifest.packages || {}).sort()) !== JSON.stringify(packageNames))
+      fail("invalid collector package manifest");
+    for (const name of packageNames) {
+      const digest = collectorManifest.packages[name];
+      const bytes = readFileSync(path.join(directory, name));
+      if (!bytes.length || !/^[a-f0-9]{64}$/.test(digest || "") || sha256(bytes) !== digest)
+        fail("collector package digest differs");
+    }
+  } catch (error) {
+    if (error.message?.startsWith("runtime verification:")) throw error;
+    fail("collector package inspection failed");
+  }
   return {
     revision, uid, node: versions.node, openssl: versions.openssl, sharedOpenSSL,
     opensslPackages,
@@ -103,5 +128,7 @@ export function verifyRuntime({
     noticesTextSha256: sha256(noticeText),
     applicationLicenseSha256: sha256(license),
     serverLockSha256,
+    collectorVersion: collectorManifest.collectorVersion,
+    collectorPackages: collectorManifest.packages,
   };
 }

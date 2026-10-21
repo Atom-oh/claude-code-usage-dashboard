@@ -45,6 +45,11 @@ LABEL org.opencontainers.image.revision=${APP_REVISION}
 COPY server/ ./server/
 COPY --from=web-build /app/web/dist ./web/dist
 
+FROM patched-node AS collector-packages
+WORKDIR /package-source
+COPY collector/ ./
+RUN node build-packages.mjs /collector-packages
+
 FROM server-deps AS notices-build
 COPY --from=web-build /app/web/node_modules ./web/node_modules
 COPY --from=web-build /app/web/package-lock.json ./web/package-lock.json
@@ -69,6 +74,7 @@ RUN apk add --no-cache 'zlib=1.3.2-r1' \
     && test ! -e /usr/local/bin/npm \
     && test ! -e /usr/local/bin/yarn
 COPY --from=notices-build /tmp/distribution-notices ./notices/
+COPY --from=collector-packages /collector-packages ./collector-packages/
 COPY APPLICATION_LICENSE ./APPLICATION_LICENSE
 ENV PORT=8080
 EXPOSE 8080
