@@ -1,0 +1,10 @@
+{
+  "version": "0.163.1",
+  "source": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/tag/v0.163.1",
+  "assets": {
+    "linux-amd64": "e93e6fd2b59427420a9e8eba5b9e78260df6d21e95283a7298084d2aa07f9df7",
+    "linux-arm64": "5ac4fb93e9858f6c7b5d5b2e81991dded61ca14b1a29bb01c3364e69567c76e3",
+    "darwin-amd64": "25d9caed08fe1403da652563eba451fcc5c64bffb16448b9a164235a0727b3c8",
+    "darwin-arm64": "c25aa7abb438d0474ffec02b0abeb04aeb688ad72e083cc1af0bed1f84dae856"
+  }
+}
