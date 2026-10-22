@@ -12,7 +12,8 @@ Python 3.9/3.10 use the included MIT-licensed Tomli parser.
 |---|---|
 | Personal Mac or EC2 without a Collector | Follow Install below. |
 | Already using this device-token package | Rerun installation with a replacement token and the same attribution ID. |
-| Installed with `setup-test-telemetry-all.sh` or `setup-test-telemetry.sh` | Follow Migrate a legacy local Collector below first. |
+| Legacy personal macOS Collector (`com.ccdash.otelcol`) | Run Install; confirm the installer's migration prompt. |
+| Legacy Linux Collector | Follow Migrate a legacy local Collector below first. |
 | Workshop EC2 prepared by the organizer | Use the prepared clients; do not install a second Collector or issue an individual token. |
 
 The device package requires a device token, not a ClickHouse password. The organizer's
@@ -80,10 +81,13 @@ It checks for concurrent edits again after downloading. Failed updates restore
 the previous managed files and service; client files edited by another process
 are retained. If recovery itself fails, setup reports the private recovery
 directory instead of deleting its backups.
-Unmanaged telemetry and service conflicts require manual migration.
+The known personal macOS Collector has an interactive migration path described below.
+Other unmanaged telemetry and service conflicts require manual migration.
 Custom `CODEX_HOME` or `CLAUDE_CONFIG_DIR` layouts require manual configuration.
-The default attribution ID is your login name; `--user-id` accepts a chosen
-nonsecret ID. Restart clients after setup.
+The default attribution ID for a fresh installation is your login name; `--user-id`
+accepts a chosen nonsecret ID. Legacy macOS migration reuses `user.email` from Claude
+settings or the current shell when available; otherwise it asks for the existing ID.
+Restart clients after setup.
 
 Claude uses loopback gRPC on 127.0.0.1:4317; Codex uses loopback HTTP on
 127.0.0.1:4318. For Codex backend provenance use:
@@ -128,7 +132,34 @@ Keep `~/.otelcol`, the old binary, and service files for recovery.
 
 ### macOS
 
-Identify listeners and the legacy service without printing its credential environment:
+Run the normal install command with the latest package. No separate service-stop
+command is needed for the supported legacy layout. The installer verifies:
+
+- The current user's `com.ccdash.otelcol` LaunchAgent points to their
+  `~/.otelcol/config.yaml` using `otelcol-contrib`.
+- The loaded job matches that file and command; occupied ports belong to its PID.
+- Service/configuration files belong to the current user and are not symlinks or
+  writable by other users.
+
+At `Migrate this legacy Collector now? [y/N]:`, enter `y` to approve the transfer.
+Declining leaves the old service unchanged. For unattended installation, use
+`--migrate-legacy` with `--token-file` and an explicit `--user-id`.
+The option approves only the same verified layout; it never forces unknown services
+to stop. The installer does not read or reuse a ClickHouse password for device auth.
+
+The installer downloads and validates the replacement before stopping the old
+service. It saves a mode-0700 `legacy-backup-*` directory under
+`~/.local/share/ccdash-collector/` with mode-0600 copies of the plist, config, env and
+shell helper when present. Treat these backups as secrets. The old binary and queue
+remain in place. The old LaunchAgent is disabled and unloaded, then the replacement
+starts and must pass a local health check. This does not prove remote ingestion.
+
+If startup or local health fails, the installer restores client/managed files and
+the previous legacy service enablement/load state. If recovery itself fails, keep
+the reported private recovery files and inspect service/port ownership before
+manual recovery. Retrying a completed installation updates the new managed service.
+
+For an unrecognized service, inspect without printing its credential environment:
 
 ```bash
 lsof -nP -iTCP:4317 -iTCP:4318 -iTCP:13133 -sTCP:LISTEN
@@ -136,16 +167,9 @@ launchctl list | awk '$3 == "com.ccdash.otelcol" || $3 == "org.ccdash.collector"
 /usr/libexec/PlistBuddy -c 'Print :ProgramArguments' "$HOME/Library/LaunchAgents/com.ccdash.otelcol.plist"
 ```
 
-Proceed only if the label is `com.ccdash.otelcol` and its config argument points to
-your own `~/.otelcol/config.yaml`. `org.ccdash.collector` is the new package: update
-it through its installer instead of stopping another service.
-
-Disable automatic launch and unload the legacy service:
-
-```bash
-launchctl disable "gui/$(id -u)/com.ccdash.otelcol" &&
-launchctl bootout "gui/$(id -u)/com.ccdash.otelcol"
-```
+Do not kill the displayed PID or delete settings to bypass the checks. An unfamiliar
+launchd diagnostic format also stops automatic migration. `org.ccdash.collector` is
+the new package: update it through its installer instead of stopping another service.
 
 ### EC2 / Linux personal installation
 
@@ -174,8 +198,8 @@ state before proceeding.
 
 ### Continue or recover
 
-Stop on service-management errors. Repeat the listener query: all three ports must be free
-before a first installation. A permissions error is not an empty listener result.
+For manual Linux migration, stop on service-management errors. Repeat the listener
+query: all three ports must be free before a first installation. A permissions error is not an empty listener result.
 Unknown listeners require their owner's migration procedure; do not kill arbitrary PIDs.
 Missing legacy service files can be normal on a new machine.
 
@@ -185,7 +209,8 @@ The unloaded macOS job or masked Linux service will not be restarted by its guar
 Its printed destination can be stale after migration; confirm the new path through
 device receipt and actual dashboard data.
 
-If installation fails after a new service was created, remove the new managed service:
+Successful macOS automatic recovery needs no manual commands. If manual recovery is
+needed after a new service was created, remove the new managed service:
 
 ```bash
 python3 "$HOME/.local/share/ccdash-collector/install.py" uninstall
@@ -218,7 +243,9 @@ Revoke the unused new device token in the dashboard.
 
 | Symptom | Next action |
 |---|---|
-| `local Collector port is occupied` | Follow legacy migration above; the check covers 4317, 4318, and health port 13133. |
+| `local Collector port is occupied` | This is an older package. Download the updated package for the macOS migration prompt. |
+| `local port ... is occupied by an unverified service` | Inspect the reported port/PID; follow the owner's migration procedure. Checks cover 4317, 4318 and health port 13133. |
+| `cannot check local port ... EACCES` | Resolve local socket permissions; this is not evidence of an occupied port. |
 | `systemd user manager unavailable` | Enable linger, reconnect over SSH, and rerun as the normal user. |
 | Missing archive or `install.py` | Use the directory containing the download/extracted package. |
 | Download or connection failure | Check HTTPS access to GitHub and the configured dashboard; retain TLS verification. |

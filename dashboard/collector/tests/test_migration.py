@@ -1,0 +1,350 @@
+"""Legacy macOS migration, exercising real files with simulated launchd/socket I/O."""
+import errno
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import plistlib
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+TOKEN = "ccd1." + "a" * 64 + "." + "b" * 32 + "." + "C" * 43
+
+
+class Migration(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("migration_installer", ROOT / "install.py")
+        self.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.module)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.root = self.home / ".local/share/ccdash-collector"
+        self.unit = self.home / "Library/LaunchAgents/org.ccdash.collector.plist"
+        self.legacy = self.unit.with_name("com.ccdash.otelcol.plist")
+        self.config = self.home / ".otelcol/config.yaml"
+        self.env = self.home / ".otelcol/env"
+        self.queue = self.home / ".otelcol/queue/pending"
+        self.helper = self.home / ".otelcol/enable-test-telemetry.sh"
+        self.binary = self.home / ".local/bin/otelcol-contrib"
+        for path, content in ((self.config, "legacy configuration"), (self.env, "PRIVATE_FIXTURE"),
+                              (self.queue, "unexported records"), (self.helper, "old shell identity"),
+                              (self.binary, "old binary")):
+            self.module.atomic(path, content)
+        self.arguments = [str(self.binary), "--config=" + str(self.config)]
+        self.module.atomic(self.legacy, plistlib.dumps({
+            "Label": "com.ccdash.otelcol", "ProgramArguments": self.arguments,
+            "EnvironmentVariables": {"PRIVATE": "PRIVATE_FIXTURE"}, "KeepAlive": True,
+        }))
+        self.original = {p: p.read_bytes() for p in (self.config, self.env, self.queue, self.helper, self.legacy)}
+        self.token = self.home / "supplied-token"
+        self.module.atomic(self.token, TOKEN)
+        self.args = SimpleNamespace(endpoint="https://dashboard.example/api/ingest",
+                                    token_file=self.token, user_id="fixture", migrate_legacy=True)
+        self.loaded = True
+        self.disabled = False
+        self.disabled_text = None
+        self.new_running = False
+        self.validated = False
+        self.download_hook = None
+        self.start_error = False
+        self.bind_errno = None
+        self.extra_port = None
+        self.time_wait = False
+        self.reuse_address = False
+        self.runtime_path = str(self.legacy)
+        self.runtime_arguments = self.arguments
+        self.output = io.StringIO()
+        contexts = [
+            patch.object(self.module.sys, "platform", "darwin"),
+            patch.object(self.module, "run", self.external),
+            patch.object(self.module, "download_binary", self.download),
+            patch.object(self.module.socket, "socket"),
+            patch.object(self.module.urllib.request, "urlopen"),
+            patch("sys.stdout", self.output),
+        ]
+        for context in contexts:
+            mock = context.start()
+            self.addCleanup(context.stop)
+            if context.attribute == "socket":
+                mock.return_value.__enter__.return_value.bind.side_effect = self.bind
+                mock.return_value.__enter__.return_value.setsockopt.side_effect = self.socket_option
+            if context.attribute == "urlopen":
+                mock.return_value.__enter__.return_value.status = 200
+
+    def download(self, stage, release):
+        self.assertTrue(self.loaded or self.disabled, "old service must survive preparation")
+        self.module.atomic(stage / "otelcol-contrib", "new binary", 0o700)
+        if self.download_hook:
+            self.download_hook()
+
+    def bind(self, address):
+        if self.bind_errno:
+            raise OSError(self.bind_errno, "simulated bind error")
+        if (self.loaded and address[1] in (4317, 4318)) or address[1] == self.extra_port:
+            raise OSError(errno.EADDRINUSE, "address in use")
+        if self.time_wait and not self.reuse_address:
+            raise OSError(errno.EADDRINUSE, "closed connection in TIME_WAIT")
+
+    def socket_option(self, level, option, value):
+        if (level, option, value) == (self.module.socket.SOL_SOCKET, self.module.socket.SO_REUSEADDR, 1):
+            self.reuse_address = True
+
+    def external(self, command, required=True, output=False):
+        domain = "gui/" + str(os.getuid())
+        target = domain + "/com.ccdash.otelcol"
+        if command[0] == "lsof":
+            port = next(int(x[6:]) for x in command if x.startswith("-iTCP:"))
+            return "p999\n" if port == self.extra_port else ("p1321\n" if self.loaded else None)
+        if command[0].endswith("otelcol-contrib"):
+            self.validated = True
+            return True
+        if command == ["launchctl", "print", domain]:
+            return True
+        if command == ["launchctl", "print-disabled", domain]:
+            return ('disabled services = {\n\t"com.ccdash.otelcol" => '
+                    + (self.disabled_text or str(self.disabled).lower()) + '\n}')
+        if command == ["launchctl", "print", target]:
+            if not self.loaded:
+                return None if output else False
+            return (target + " = {\n\tpath = " + self.runtime_path +
+                    "\n\tprogram = " + str(self.binary) + "\n\targuments = {\n\t\t" +
+                    "\n\t\t".join(self.runtime_arguments) + "\n\t}\n\tpid = 1321\n}\n") if output else True
+        if command == ["launchctl", "disable", target]:
+            self.assertTrue(self.validated, "no legacy changes before validation")
+            self.disabled = True
+            return True
+        if command == ["launchctl", "enable", target]:
+            self.disabled = False
+            return True
+        if command == ["launchctl", "bootout", target]:
+            self.loaded = False
+            return True
+        if command == ["launchctl", "bootstrap", domain, str(self.legacy)]:
+            self.assertFalse(self.disabled)
+            self.loaded = True
+            return True
+        if command == ["launchctl", "print", domain + "/org.ccdash.collector"]:
+            return self.new_running
+        if command == ["launchctl", "bootout", domain + "/org.ccdash.collector"]:
+            self.new_running = False
+            return True
+        if command == ["launchctl", "bootstrap", domain, str(self.unit)]:
+            self.assertFalse(self.loaded)
+            self.new_running = True
+            if self.start_error:
+                raise ValueError("simulated startup failure")
+            return True
+        self.fail("unexpected OS command: " + repr(command))
+
+    def install(self):
+        self.module.install(self.args, self.home, "fixture", os.getuid(), self.root, self.unit)
+
+    def test_known_legacy_is_migrated_after_validation_and_privately_backed_up(self):
+        self.install()
+        self.assertTrue(self.new_running)
+        self.assertFalse(self.loaded)
+        self.assertTrue(self.disabled)
+        for path, original in self.original.items():
+            self.assertEqual(path.read_bytes(), original)
+        backups = list(self.root.glob("legacy-backup-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].stat().st_mode & 0o777, 0o700)
+        self.assertEqual((backups[0] / self.legacy.name).read_bytes(), self.original[self.legacy])
+        self.assertNotIn("PRIVATE_FIXTURE", self.output.getvalue())
+
+    def test_failed_new_start_restores_legacy_and_client_files(self):
+        self.start_error = True
+        with self.assertRaisesRegex(ValueError, "startup failure"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+        self.assertFalse(self.new_running)
+        self.assertFalse(self.unit.exists())
+        self.assertFalse((self.root / "token").exists())
+        self.assertFalse((self.home / ".claude/settings.json").exists())
+        self.assertFalse((self.home / ".codex/config.toml").exists())
+        for path, original in self.original.items():
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_declining_prompt_keeps_legacy_running_without_installing(self):
+        self.args.migrate_legacy = False
+        with patch.object(self.module.sys.stdin, "isatty", return_value=True), \
+                patch("builtins.input", return_value="n"), self.assertRaisesRegex(ValueError, "cancelled"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+        self.assertFalse(self.root.exists())
+
+    def test_noninteractive_migration_requires_explicit_option(self):
+        self.args.migrate_legacy = False
+        with patch.object(self.module.sys.stdin, "isatty", return_value=False), \
+                self.assertRaisesRegex(ValueError, "--migrate-legacy"):
+            self.install()
+        self.assertTrue(self.loaded)
+
+    def test_unrelated_port_owner_blocks_before_stopping_legacy(self):
+        self.extra_port = 13133
+        with self.assertRaisesRegex(ValueError, "13133"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+
+    def test_loaded_service_from_another_path_is_not_migrated(self):
+        self.runtime_path = "/elsewhere/other.plist"
+        with self.assertRaisesRegex(ValueError, "loaded|location"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+
+    def test_configuration_edit_during_download_keeps_legacy_running(self):
+        self.download_hook = lambda: self.config.write_text("concurrent edit")
+        with self.assertRaisesRegex(ValueError, "changed"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+        self.assertEqual(self.config.read_text(), "concurrent edit")
+
+    def test_permission_error_is_not_reported_as_a_port_conflict(self):
+        self.bind_errno = errno.EACCES
+        with self.assertRaisesRegex(ValueError, "EACCES"):
+            self.install()
+        self.assertTrue(self.loaded)
+
+    def test_legacy_symlink_is_not_followed(self):
+        other = self.legacy.with_suffix(".saved")
+        self.legacy.rename(other)
+        self.legacy.symlink_to(other)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            self.install()
+        self.assertTrue(self.loaded)
+
+    def test_confirmed_interactive_migration_is_supported(self):
+        self.args.migrate_legacy = False
+        with patch.object(self.module.sys.stdin, "isatty", return_value=True), \
+                patch("builtins.input", return_value="yes"):
+            self.install()
+        self.assertTrue(self.new_running)
+        self.assertTrue(self.disabled)
+
+    def test_download_failure_keeps_old_service_running(self):
+        def fail():
+            raise ValueError("simulated download failure")
+        self.download_hook = fail
+        with self.assertRaisesRegex(ValueError, "download failure"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+        self.assertFalse(self.unit.exists())
+
+    def test_failed_new_health_restores_old_service(self):
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=OSError("unhealthy")), \
+                patch.object(self.module.time, "sleep"), self.assertRaisesRegex(ValueError, "locally healthy"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.new_running)
+
+    def test_originally_disabled_and_unloaded_service_stays_so_on_failure(self):
+        self.loaded = False
+        self.disabled = True
+        self.start_error = True
+        with self.assertRaisesRegex(ValueError, "startup failure"):
+            self.install()
+        self.assertFalse(self.loaded)
+        self.assertTrue(self.disabled)
+
+    def test_loaded_service_with_different_arguments_is_not_migrated(self):
+        self.runtime_arguments = [str(self.binary), "--config=/etc/otelcol/config.yaml"]
+        with self.assertRaisesRegex(ValueError, "arguments"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+
+    def test_malformed_plist_reports_a_safe_actionable_error(self):
+        self.legacy.write_bytes(b"<plist><dict>PRIVATE_FIXTURE</plist>")
+        with self.assertRaisesRegex(ValueError, "invalid"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertNotIn("PRIVATE_FIXTURE", self.output.getvalue())
+
+    def test_valid_non_dictionary_plist_is_rejected(self):
+        self.legacy.write_bytes(plistlib.dumps(["PRIVATE_FIXTURE"]))
+        with self.assertRaisesRegex(ValueError, "invalid"):
+            self.install()
+        self.assertTrue(self.loaded)
+
+    def test_socket_is_still_owned_by_legacy_after_failed_stop(self):
+        previous = self.external
+        def external(command, required=True, output=False):
+            if command[:2] == ["launchctl", "bootout"] and command[-1].endswith("/com.ccdash.otelcol"):
+                raise ValueError("simulated bootout failure")
+            return previous(command, required, output)
+        with patch.object(self.module, "run", external), \
+                self.assertRaisesRegex(ValueError, "bootout failure"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+        self.assertFalse(self.unit.exists())
+
+    def test_disabled_word_preserves_original_persistence_on_failure(self):
+        self.disabled = True
+        self.disabled_text = "disabled"
+        self.start_error = True
+        with self.assertRaisesRegex(ValueError, "startup failure"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertTrue(self.disabled)
+
+    def test_unknown_enablement_text_blocks_without_stopping(self):
+        self.disabled_text = "unknown-state"
+        with self.assertRaisesRegex(ValueError, "enablement"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+
+    def test_migration_without_user_id_keeps_claude_identity(self):
+        self.args.user_id = None
+        settings = self.home / ".claude/settings.json"
+        self.module.atomic(settings, json.dumps({
+            "model": "preserved-model",
+            "env": {"OTEL_RESOURCE_ATTRIBUTES": "user.email=existing@example.test,team.name=example"},
+        }))
+        self.install()
+        data = json.loads(settings.read_text())
+        self.assertEqual(data["env"]["OTEL_RESOURCE_ATTRIBUTES"],
+                         "user.email=existing@example.test,team.name=example")
+        self.assertEqual(data["model"], "preserved-model")
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "existing@example.test")
+
+    def test_migration_without_user_id_reuses_shell_identity(self):
+        self.args.user_id = None
+        with patch.dict(os.environ, {"OTEL_RESOURCE_ATTRIBUTES": "user.email=from-shell@example.test"}):
+            self.install()
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "from-shell@example.test")
+
+    def test_missing_attribution_requires_explicit_id_when_unattended(self):
+        self.args.user_id = None
+        with patch.dict(os.environ, {"OTEL_RESOURCE_ATTRIBUTES": ""}), \
+                patch.object(self.module.sys.stdin, "isatty", return_value=False), \
+                self.assertRaisesRegex(ValueError, "--user-id"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+
+    def test_closed_connections_do_not_block_migration_or_rollback(self):
+        previous = self.external
+        def external(command, required=True, output=False):
+            result = previous(command, required, output)
+            if command[:2] == ["launchctl", "bootout"]:
+                self.time_wait = True
+            return result
+        self.start_error = True
+        with patch.object(self.module, "run", external), patch.object(self.module.time, "sleep"), \
+                self.assertRaisesRegex(ValueError, "startup failure"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)

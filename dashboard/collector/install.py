@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Install, check, or remove the private per-device ccdash Collector."""
 import argparse
+import errno
 import fcntl
 import getpass
 import hashlib
@@ -20,8 +21,10 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.parse
 import urllib.request
+from xml.parsers.expat import ExpatError
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "vendor"))
@@ -29,6 +32,7 @@ spec = importlib.util.spec_from_file_location("client_telemetry", HERE / "genera
 configurator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(configurator)
 LABEL = "org.ccdash.collector"
+LEGACY_LABEL = "com.ccdash.otelcol"
 MARKER = "ccdash-device-collector-v1"
 TOKEN_PATTERN = re.compile(r"ccd1\.[a-f0-9]{64}\.[a-f0-9]{32}\.[A-Za-z0-9_-]{43}")
 MAINTENANCE_FILES = (
@@ -258,7 +262,6 @@ def check_service(unit, user):
         raise ValueError("service file is a symlink")
     if unit.exists() and MARKER not in unit.read_text():
         raise ValueError("existing service is unmanaged; migrate it before installing")
-    # Do not take ports from an unrelated Collector, including historical services.
     if sys.platform == "linux":
         command = ["systemctl", "--user"]
         if not run(command + ["show-environment"], required=False):
@@ -274,13 +277,215 @@ def check_service(unit, user):
             raise ValueError("service has unmanaged drop-ins; migrate them before installing")
     elif not unit.exists() and service_command(unit, "status", os.getuid()):
         raise ValueError("LaunchAgent label is already loaded from an unmanaged location")
-    if not unit.exists():
-        for port in (4317, 4318, 13133):
-            with socket.socket() as sock:
-                try:
-                    sock.bind(("127.0.0.1", port))
-                except OSError:
-                    raise ValueError("local Collector port is occupied; migrate the existing service first") from None
+
+
+def occupied_ports():
+    ports = []
+    for port in (4317, 4318, 13133):
+        with socket.socket() as sock:
+            try:
+                # Match the Collector's Go TCP listener: closed connections in
+                # TIME_WAIT must not prevent replacement or rollback.
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind(("127.0.0.1", port))
+            except OSError as error:
+                if error.errno != errno.EADDRINUSE:
+                    raise ValueError("cannot check local port " + str(port) + ": "
+                                     + errno.errorcode.get(error.errno, "OS error")) from None
+                ports.append(port)
+    return ports
+
+
+def check_ports(legacy=None):
+    ports = occupied_ports()
+    for port in ports:
+        # Read PID fields only; process arguments and environments may contain secrets.
+        owners = set()
+        if sys.platform == "darwin":
+            output = run(["lsof", "-nP", "-a", "-iTCP:" + str(port), "-sTCP:LISTEN", "-Fp"],
+                         required=False, output=True)
+            owners = set(re.findall(r"^p([0-9]+)$", output or "", re.MULTILINE))
+        if not legacy or not legacy["pid"] or owners != {legacy["pid"]}:
+            detail = " (PID " + ", ".join(sorted(owners)) + ")" if owners else ""
+            inspect = "lsof -nP -iTCP -sTCP:LISTEN" if sys.platform == "darwin" else "ss -ltnp"
+            raise ValueError("local port " + str(port) + detail
+                             + " is occupied by an unverified service; inspect with `" + inspect
+                             + "`. Workshop collectors require organizer migration.")
+
+
+def legacy_mac_state(home, uid):
+    """Recognize only the historical per-user script layout and its loaded job."""
+    unit = home / "Library/LaunchAgents" / (LEGACY_LABEL + ".plist")
+    if not unit.exists() and not unit.is_symlink():
+        return None
+    config = home / ".otelcol/config.yaml"
+    paths = [unit, config]
+    for name in ("env", "enable-test-telemetry.sh"):
+        path = home / ".otelcol" / name
+        if path.exists() or path.is_symlink():
+            paths.append(path)
+    states = {}
+    for path in paths:
+        if any(p.is_symlink() for p in (path, *path.parents)):
+            raise ValueError("legacy service/configuration has a symlink; manual migration required")
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != uid or info.st_mode & 0o022:
+            raise ValueError("legacy service/configuration must be regular files owned by you, not writable by others")
+        states[path] = file_state(path)
+    try:
+        data = plistlib.loads(unit.read_bytes())
+    except (ValueError, plistlib.InvalidFileException, ExpatError):
+        raise ValueError("legacy LaunchAgent is invalid; manual migration required") from None
+    if not isinstance(data, dict):
+        raise ValueError("legacy LaunchAgent is invalid; manual migration required") from None
+    arguments = data.get("ProgramArguments")
+    if (data.get("Label") != LEGACY_LABEL or not isinstance(arguments, list)
+            or not all(isinstance(arg, str) and not any(ord(c) < 32 for c in arg) for arg in arguments)
+            or not arguments or not Path(arguments[0]).is_absolute()
+            or Path(arguments[0]).name != "otelcol-contrib"
+            or arguments[1:] not in (["--config=" + str(config)], ["--config", str(config)])
+            or data.get("Program", arguments[0]) != arguments[0]):
+        raise ValueError("legacy LaunchAgent does not match the known personal Collector; manual migration required")
+    domain = "gui/" + str(uid)
+    target = domain + "/" + LEGACY_LABEL
+    if not run(["launchctl", "print", domain], required=False):
+        raise ValueError("macOS login service manager unavailable; run setup from your logged-in desktop session")
+    disabled = run(["launchctl", "print-disabled", domain], required=False, output=True)
+    if disabled is None:
+        raise ValueError("cannot inspect legacy LaunchAgent enablement; no service was changed")
+    override = re.search(r'^\s*"' + re.escape(LEGACY_LABEL) + r'"\s*=>\s*(.*?)\s*$',
+                         disabled, re.MULTILINE)
+    if ("disabled services = {" not in disabled
+            or (override and override[1] not in ("true", "false", "enabled", "disabled"))
+            or (not override and '"' + LEGACY_LABEL + '"' in disabled)):
+        raise ValueError("cannot interpret legacy LaunchAgent enablement; no service was changed")
+    is_disabled = override[1] in ("true", "disabled") if override else bool(data.get("Disabled", False))
+    loaded = run(["launchctl", "print", target], required=False, output=True)
+    pid = None
+    if loaded is not None:
+        # launchctl print is diagnostic text, not a stable API. Fail closed if
+        # its format changes; never print the captured environment to the user.
+        path_match = re.search(r"^\tpath = (.+)$", loaded, re.MULTILINE)
+        program_match = re.search(r"^\tprogram = (.+)$", loaded, re.MULTILINE)
+        args_match = re.search(r"^\targuments = \{\n(.*?)^\t\}", loaded, re.MULTILINE | re.DOTALL)
+        runtime_arguments = args_match[1].splitlines() if args_match else []
+        if (not path_match or path_match[1] != str(unit)
+                or not program_match or program_match[1] != arguments[0]
+                or runtime_arguments != ["\t\t" + arg for arg in arguments]):
+            raise ValueError("loaded legacy service has an unverified location or arguments; manual migration required")
+        pid_match = re.search(r"^\tpid = ([0-9]+)$", loaded, re.MULTILINE)
+        pid = pid_match[1] if pid_match else None
+    return {"unit": unit, "target": target, "domain": domain, "files": states,
+            "loaded": loaded is not None, "disabled": is_disabled, "pid": pid}
+
+
+def confirm_legacy(args, legacy):
+    print("Found legacy macOS Collector: " + str(legacy["unit"]))
+    print("Migration will back up its settings, disable its LaunchAgent, and start the device Collector.")
+    print("Close Claude Code/Codex and let the old queue drain first. The old queue stays in ~/.otelcol; "
+          "it is not imported. Failed installation restores the previous service state.")
+    if getattr(args, "migrate_legacy", False):
+        return
+    if not sys.stdin.isatty():
+        raise ValueError("legacy migration requires terminal confirmation or explicit --migrate-legacy")
+    try:
+        answer = input("Migrate this legacy Collector now? [y/N]: ").strip().lower()
+    except EOFError:
+        answer = ""
+    if answer not in ("y", "yes"):
+        raise ValueError("migration cancelled; the existing service is unchanged")
+
+
+def migration_user_id(args, home):
+    if args.user_id:
+        return args.user_id
+    settings = home / ".claude/settings.json"
+    if settings.is_symlink():
+        raise ValueError("client configuration is a symlink; configure its owner instead")
+    try:
+        data = json.loads(settings.read_text()) if settings.exists() else {}
+    except ValueError:
+        raise ValueError("invalid Claude settings JSON; no client configuration was changed") from None
+    if not isinstance(data, dict) or not isinstance(data.get("env", {}), dict):
+        raise ValueError("Claude settings and env must be JSON objects; no files changed")
+    # Settings-owned attributes shadow shell attributes. Do not invent a new
+    # identity when the existing owner does not specify a usable user.email.
+    attributes = data.get("env", {}).get("OTEL_RESOURCE_ATTRIBUTES", os.environ.get("OTEL_RESOURCE_ATTRIBUTES", ""))
+    if not isinstance(attributes, str):
+        raise ValueError("Claude resource attributes must be a string; no files changed")
+    values = {}
+    for part in attributes.split(","):
+        key, separator, value = part.partition("=")
+        if separator:
+            values[key.strip()] = value.strip()
+    candidate = values.get("user.email", "")
+    if re.fullmatch(r"[A-Za-z0-9._+@-]+", candidate):
+        return candidate
+    if not sys.stdin.isatty():
+        raise ValueError("existing telemetry identity could not be determined; provide --user-id for migration")
+    try:
+        return input("Existing telemetry user ID/email (required): ").strip()
+    except EOFError:
+        raise ValueError("provide --user-id for migration; no service was changed") from None
+
+
+def backup_legacy(legacy, root):
+    directory = Path(tempfile.mkdtemp(prefix="legacy-backup-", dir=root))
+    for path, state in legacy["files"].items():
+        copy_atomic(path, directory / path.name, 0o600)
+        if file_state(path) != state or file_state(directory / path.name)[1] != state[1]:
+            raise ValueError("legacy configuration changed while backing up; no service was changed")
+    atomic(directory / "migration.json", json.dumps({
+        "service": str(legacy["unit"]), "loaded": legacy["loaded"], "disabled": legacy["disabled"],
+        "files": [{"path": str(path), "backup": path.name, "mode": state[0], "sha256": state[1].hex()}
+                  for path, state in legacy["files"].items()],
+        "queue": "Preserved in place at ~/.otelcol/queue; not imported.",
+    }, indent=2) + "\n")
+    print("Private legacy backup: " + str(directory))
+    return directory
+
+
+def stop_legacy(legacy):
+    run(["launchctl", "disable", legacy["target"]])
+    if legacy["loaded"]:
+        run(["launchctl", "bootout", legacy["target"]])
+    # bootout can return before the old listener has released its sockets.
+    for _ in range(50):
+        if not occupied_ports():
+            return
+        time.sleep(0.1)
+    raise ValueError("ports did not become available after stopping the legacy Collector")
+
+
+def restore_legacy(legacy, home, uid):
+    current = legacy_mac_state(home, uid)
+    if current is None or current["files"] != legacy["files"]:
+        raise ValueError("legacy files changed during installation; manual recovery required")
+    if current["loaded"] and not legacy["loaded"]:
+        raise ValueError("legacy service was started by another process; manual recovery required")
+    if legacy["loaded"] and not current["loaded"]:
+        check_ports()
+        run(["launchctl", "enable", legacy["target"]])
+        try:
+            run(["launchctl", "bootstrap", legacy["domain"], str(legacy["unit"])])
+        finally:
+            if legacy["disabled"]:
+                run(["launchctl", "disable", legacy["target"]])
+    else:
+        run(["launchctl", "disable" if legacy["disabled"] else "enable", legacy["target"]])
+
+
+def wait_for_local_collector(unit, uid):
+    for _ in range(30):
+        if service_command(unit, "status", uid):
+            try:
+                with urllib.request.urlopen("http://127.0.0.1:13133", timeout=1) as response:
+                    if response.status == 200:
+                        return
+            except OSError:
+                pass
+        time.sleep(0.2)
+    raise ValueError("new Collector did not become locally healthy; restoring the previous service")
 
 
 def render_config(root, ingest_endpoint, user_id):
@@ -323,7 +528,13 @@ def install(args, home, user, uid, root, unit):
     ingest_endpoint = endpoint(args.endpoint)
     check_install_root(root)
     check_service(unit, user)
-    changes, notes = client_plan(home, args.user_id or user)
+    legacy = legacy_mac_state(home, uid) if sys.platform == "darwin" and not unit.exists() else None
+    if not unit.exists():
+        check_ports(legacy)
+    if legacy:
+        confirm_legacy(args, legacy)
+    user_id = migration_user_id(args, home) if legacy else args.user_id or user
+    changes, notes = client_plan(home, user_id)
     for note in notes:
         print(note)
     token = read_token(args.token_file)
@@ -350,17 +561,17 @@ def install(args, home, user, uid, root, unit):
             print("Downloading and verifying OpenTelemetry Collector " + release["version"])
             download_binary(stage, release)
             atomic(stage / "token", token + "\n")
-            atomic(stage / "config.yaml", render_config(stage, ingest_endpoint, args.user_id or user))
+            atomic(stage / "config.yaml", render_config(stage, ingest_endpoint, user_id))
             if not run([str(stage / "otelcol-contrib"), "validate", "--config", str(stage / "config.yaml")],
                        required=False):
                 raise ValueError("Collector rejected its configuration; client settings were not changed")
             # Prepare every runtime file before stopping the current service.
-            atomic(stage / "config.yaml", render_config(root, ingest_endpoint, args.user_id or user))
+            atomic(stage / "config.yaml", render_config(root, ingest_endpoint, user_id))
             for relative in MAINTENANCE_FILES:
                 copy_atomic(HERE / relative, stage / relative)
             atomic(stage / "state.json", json.dumps({"managedBy": MARKER, "endpoint": ingest_endpoint,
                                                      "version": release["version"], "unit": str(unit),
-                                                     "userId": args.user_id or user}) + "\n")
+                                                     "userId": user_id}) + "\n")
             atomic(stage / "service", systemd_service(root) if sys.platform == "linux" else launchd_service(root))
             prepared = {path: stage / ("service" if path == unit else str(path.relative_to(root)))
                         for path in managed_paths}
@@ -369,12 +580,24 @@ def install(args, home, user, uid, root, unit):
             # empty change plan, but an edit during download still cancels setup.
             assert_unchanged(managed_before)
             assert_unchanged(clients_before)
-            if client_plan(home, args.user_id or user)[0] != changes:
+            if client_plan(home, user_id)[0] != changes:
                 raise ValueError("client configuration changed during preparation; rerun setup")
             check_service(unit, user)
+            if not unit.exists():
+                if legacy and legacy_mac_state(home, uid) != legacy:
+                    raise ValueError("legacy service or configuration changed during preparation; rerun setup")
+                check_ports(legacy)
+            if legacy:
+                backup_legacy(legacy, root)
+                if legacy_mac_state(home, uid) != legacy:
+                    raise ValueError("legacy service or configuration changed during backup; rerun setup")
             written = []
             clients_attempted = False
+            legacy_attempted = False
             try:
+                if legacy:
+                    legacy_attempted = True
+                    stop_legacy(legacy)
                 if unit.exists():
                     stop_service(unit, uid)
                 assert_unchanged(clients_before)
@@ -384,6 +607,8 @@ def install(args, home, user, uid, root, unit):
                 clients_attempted = True
                 configurator.apply(changes)
                 service_command(unit, "start", uid)
+                if legacy:
+                    wait_for_local_collector(unit, uid)
             except BaseException:
                 try:
                     # A failed start may already have launched the new process.
@@ -413,6 +638,8 @@ def install(args, home, user, uid, root, unit):
                         run(["systemctl", "--user", "enable", unit.name])
                     if old_running and not old_enabled and sys.platform == "linux":
                         run(["systemctl", "--user", "disable", unit.name])
+                    if legacy_attempted:
+                        restore_legacy(legacy, home, uid)
                 except BaseException:
                     keep_recovery = True
                     raise ValueError("installation rollback could not finish; private recovery files remain in "
@@ -433,6 +660,8 @@ def main():
     parser.add_argument("--endpoint", help="dashboard HTTPS /api/ingest URL")
     parser.add_argument("--token-file", type=Path, help="private mode 0600 file; token values are never CLI arguments")
     parser.add_argument("--user-id", help="nonsecret telemetry attribution ID (defaults to local login)")
+    parser.add_argument("--migrate-legacy", action="store_true",
+                        help="approve migration of the verified legacy personal macOS Collector without a prompt")
     args = parser.parse_args()
     try:
         if os.geteuid() == 0:

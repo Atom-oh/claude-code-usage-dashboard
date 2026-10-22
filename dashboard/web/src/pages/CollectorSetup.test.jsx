@@ -46,7 +46,7 @@ async function register() {
 }
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-test("existing collector guidance follows the selected OS and copies only its migration commands", async () => {
+test("Mac setup uses installer migration while Linux retains its scoped manual command", async () => {
   const writeText = vi.fn().mockResolvedValue();
   vi.stubGlobal("navigator", { clipboard: { writeText } });
   installFetch();
@@ -54,13 +54,12 @@ test("existing collector guidance follows the selected OS and copies only its mi
   await screen.findByText("등록한 기기가 없습니다.");
   fireEvent.click(screen.getByRole("button", { name: "기존 수집기 전환 안내" }));
   expect(screen.getByLabelText("기존 서비스 중지 명령").textContent).toContain("sudo systemctl disable --now otelcol.service");
-  fireEvent.click(screen.getByRole("button", { name: "macOS 선택" }));
-  const stop = screen.getByLabelText("기존 서비스 중지 명령").textContent;
-  expect(stop).toContain('launchctl bootout "gui/$(id -u)/com.ccdash.otelcol"');
-  expect(stop).not.toContain("systemctl");
-  expect(stop).not.toContain("kill ");
   fireEvent.click(screen.getByRole("button", { name: "기존 서비스 중지 명령 복사" }));
-  await waitFor(() => expect(writeText).toHaveBeenCalledWith(stop));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("sudo systemctl disable")));
+  fireEvent.click(screen.getByRole("button", { name: "macOS 선택" }));
+  expect(screen.queryByLabelText("기존 서비스 중지 명령")).toBeNull();
+  expect(screen.getByText(/설치기가 기존 macOS 수집기를 확인/)).toBeTruthy();
+  expect(screen.getByText(/Migrate this legacy Collector now/)).toBeTruthy();
   expect(screen.getByLabelText("기존 서비스 복구 명령").textContent).toContain("launchctl enable");
   expect(screen.getByLabelText("기존 서비스 복구 명령").textContent).toContain("launchctl bootstrap");
 });

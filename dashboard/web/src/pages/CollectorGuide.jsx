@@ -8,8 +8,6 @@ const COMMANDS = {
     inspect: `lsof -nP -iTCP:4317 -iTCP:4318 -iTCP:13133 -sTCP:LISTEN
 launchctl list | awk '$3 == "com.ccdash.otelcol" || $3 == "org.ccdash.collector"'
 /usr/libexec/PlistBuddy -c 'Print :ProgramArguments' "$HOME/Library/LaunchAgents/com.ccdash.otelcol.plist"`,
-    stop: `launchctl disable ${LEGACY_MAC} &&
-launchctl bootout ${LEGACY_MAC}`,
     restore: `launchctl enable ${LEGACY_MAC} &&
 launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.ccdash.otelcol.plist"`,
     logs: 'tail -n 50 "$HOME/.local/share/ccdash-collector/collector.log"',
@@ -68,28 +66,41 @@ export function CollectorPreparation({ platform }) {
       {expanded && <div className="mt-3">
         <p><code>local Collector port is occupied</code>는 포트 검사 실패입니다.
           기존 설치 스크립트 <code>setup-test-telemetry-all.sh</code> 또는 <code>setup-test-telemetry.sh</code>를 사용했다면 다음 순서로 전환하세요.</p>
-        <h3 className="mt-4 font-semibold text-ink-800">1. 기존 서비스 확인</h3>
+        {platform === "darwin" && <div className="mt-3 rounded-lg bg-brand-50 p-3 text-ink-800">
+          <p>설치기가 기존 macOS 수집기를 확인하고 전환을 안내합니다. 최신 패키지로 아래 설치 명령을 실행하세요.</p>
+          <p className="mt-2"><code>Migrate this legacy Collector now? [y/N]</code>가 나오면 확인 후 <code>y</code>를 입력하세요.
+            새 Collector를 다운로드·검증한 뒤 기존 설정을 비공개 백업하고 전환합니다.
+            새 서비스가 시작되지 않으면 기존 상태로 복구합니다.</p>
+          <p className="mt-2">먼저 Claude Code·Codex 작업을 종료하고 기존 전송 대기 데이터가 전송되도록 기다리세요.
+            기존 대기열은 보존되지만 새 Collector로 가져오지는 않습니다.</p>
+        </div>}
+        <h3 className="mt-4 font-semibold text-ink-800">{platform === "darwin" ? "자동 인식이 안 될 때 확인" : "1. 기존 서비스 확인"}</h3>
         <GuideCommand key={`inspect-${platform}`} label="기존 서비스 확인 명령" command={commands.inspect} />
         <p>{platform === "darwin"
           ? <>서비스 이름이 <code>com.ccdash.otelcol</code>이고, ProgramArguments의 설정 경로가 본인의 <code>~/.otelcol/config.yaml</code>인지 확인하세요.</>
           : <>서비스 경로가 <code>/etc/systemd/system/otelcol.service</code>이고, ExecStart의 설정 경로가 본인의 <code>~/.otelcol/config.yaml</code>인지 확인하세요.</>}
-          {" "}일치할 때만 다음 중지 명령을 실행하세요. 다른 프로그램이나 관리자가 설치한 수집기는 해당 운영 절차로 전환해야 합니다.</p>
+          {" "}{platform === "linux" && "일치할 때만 다음 중지 명령을 실행하세요. "}
+          다른 프로그램이나 관리자가 설치한 수집기는 해당 운영 절차로 전환해야 합니다.</p>
         <p className="mt-2">새 서비스 {platform === "darwin" ? <code>org.ccdash.collector</code> : <code>ccdash-collector.service</code>}가
           이미 동작한다면 기존 서비스 중지 단계는 건너뛰고 설치를 다시 실행하세요.
           서비스가 없다는 오류는 신규 설치에서 정상일 수 있지만, 포트를 사용하는 프로세스가 남아 있으면 진행하지 마세요.</p>
+        {platform === "linux" && <>
         <h3 className="mt-4 font-semibold text-ink-800">2. 자동 시작 해제 후 중지</h3>
         <p>Claude Code·Codex 작업을 마치고 종료하세요. 기존 Collector의 전송 오류를 해결하고 대기 데이터가 전송된 후 전환하세요.
           아래 명령은 기존 설정·자격증명·대기 데이터를 삭제하지 않습니다.</p>
-        {platform === "linux" && <p className="mt-2">기존 셸 초기화 파일이 수집기를 다시 시작할 수 있어 서비스 파일을 <code>.ccdash-backup</code>으로 보관하고 실행을 차단합니다.
-          이미 백업이 있으면 명령이 중단됩니다. 덮어쓰지 말고 이전 전환 상태를 확인하세요.</p>}
+        <p className="mt-2">기존 셸 초기화 파일이 수집기를 다시 시작할 수 있어 서비스 파일을 <code>.ccdash-backup</code>으로 보관하고 실행을 차단합니다.
+          이미 백업이 있으면 명령이 중단됩니다. 덮어쓰지 말고 이전 전환 상태를 확인하세요.</p>
         <GuideCommand key={`stop-${platform}`} label="기존 서비스 중지 명령" command={commands.stop} />
         <p>포트 조회 명령을 다시 실행해 4317·4318·13133의 리스너가 없는지 확인한 뒤 아래 설치 단계로 진행하세요.
           조회 권한 오류를 빈 결과로 판단하지 마세요. 중지 오류가 나면 설치를 진행하지 말고 서비스 상태를 다시 확인하세요.</p>
+        </>}
         <p className="mt-2"><code>~/.otelcol</code>과 기존 LaunchAgent/systemd 파일을 보관하세요.
           기존 셸의 <code>enable-test-telemetry.sh</code>는 사용자·팀 식별값을 유지하므로 이번 전환에서는 그대로 둡니다.
           새 수집기는 기존 전송 대기 데이터를 가져오지 않습니다.</p>
         <details className="mt-4 border-t border-ink-100 pt-3">
-          <summary className="cursor-pointer font-medium text-ink-800">설치 실패 시 기존 서비스로 복구</summary>
+          <summary className="cursor-pointer font-medium text-ink-800">수동 복구가 필요할 때</summary>
+          {platform === "darwin" && <p className="mt-2">자동 복구가 성공했다면 추가 명령을 실행할 필요가 없습니다.
+            자동 복구 실패 메시지가 나왔다면 출력된 비공개 백업 경로와 서비스 상태를 먼저 확인하세요.</p>}
           <p className="mt-2">새 서비스가 생성되었다면 먼저 아래 명령으로 제거합니다. 파일이 없으면 건너뜁니다.
             제거가 실패하거나 포트에 리스너가 남아 있으면 기존 서비스를 시작하지 마세요.</p>
           <GuideCommand label="새 서비스 제거 명령" command={`python3 ${INSTALL_ROOT} uninstall`} />
