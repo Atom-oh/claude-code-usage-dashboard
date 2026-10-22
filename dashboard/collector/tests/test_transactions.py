@@ -76,6 +76,39 @@ class Transactions(unittest.TestCase):
         paths = [path for path in self.root.rglob("*") if path.is_file() and path.name != ".install.lock"]
         return {str(path): (path.read_bytes(), path.stat().st_mode & 0o777) for path in [*paths, self.unit]}
 
+    def test_migration_flag_without_legacy_does_not_replace_claude_telemetry(self):
+        original = '{"env":{"OTEL_EXPORTER_OTLP_ENDPOINT":"https://previous.example"}}\n'
+        self.claude.write_text(original)
+        for flag in (False, True):
+            with self.subTest(migrate_legacy=flag):
+                self.args.migrate_legacy = flag
+                with self.assertRaisesRegex(ValueError, "unmanaged Claude telemetry"):
+                    self.install()
+                self.assertEqual(self.claude.read_text(), original)
+                self.assertFalse(self.root.exists())
+                self.assertFalse(self.running)
+
+    def test_cli_explicitly_replaces_claude_telemetry_without_legacy(self):
+        original = '{"model":"original","env":{"OTEL_EXPORTER_OTLP_HEADERS":"fixture-header"}}\n'
+        self.claude.write_text(original)
+        account = SimpleNamespace(pw_dir=str(self.home), pw_name="fixture",
+                                  pw_uid=os.getuid(), pw_gid=os.getgid())
+        argv = ["install.py", "install", "--endpoint", self.args.endpoint,
+                "--token-file", str(self.token), "--user-id", "old", "--replace-claude-telemetry"]
+        with patch.object(self.module.os, "geteuid", return_value=1000), \
+                patch.object(self.module.pwd, "getpwuid", return_value=account), \
+                patch.object(self.module.sys, "argv", argv), \
+                patch.dict(os.environ, {"CODEX_HOME": "", "CLAUDE_CONFIG_DIR": ""}):
+            self.assertEqual(self.module.main(), 0)
+        data = json.loads(self.claude.read_text())
+        self.assertEqual(data["model"], "original")
+        self.assertEqual(data["env"]["OTEL_EXPORTER_OTLP_HEADERS"], "")
+        self.assertEqual(data["env"]["OTEL_EXPORTER_OTLP_ENDPOINT"], "http://127.0.0.1:4317")
+        self.assertTrue(self.running)
+        backups = list(self.claude.parent.glob("settings.json.ccdash-backup-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), original)
+
     def test_client_edit_during_download_keeps_old_service_and_installed_files(self):
         self.install()
         original = self.snapshot()

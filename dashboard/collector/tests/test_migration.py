@@ -158,6 +158,83 @@ class Migration(unittest.TestCase):
     def install(self):
         self.module.install(self.args, self.home, "fixture", os.getuid(), self.root, self.unit)
 
+    def conflicting_claude_settings(self):
+        path = self.home / ".claude/settings.json"
+        self.module.atomic(path, json.dumps({
+            "model": "original",
+            "permissions": {"allow": ["Read"]},
+            "env": {
+                "ANTHROPIC_AUTH_TOKEN": "fixture-login-token",
+                "CLAUDE_CODE_USE_BEDROCK": "1",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "https://previous.example",
+                "OTEL_EXPORTER_OTLP_HEADERS": "authorization=fixture-old-header",
+                "OTEL_EXPORTER_OTLP_LOGS_HEADERS": "authorization=fixture-old-log-header",
+                "OTEL_EXPORTER_OTLP_CERTIFICATE": "/fixture/previous-ca.pem",
+                "OTEL_METRIC_EXPORT_INTERVAL": "60000",
+                "OTEL_RESOURCE_ATTRIBUTES": "user.email=fixture,team.name=example",
+            },
+        }) + "\n")
+        return path, path.read_bytes()
+
+    def test_confirmed_migration_replaces_claude_exporters_and_backs_up_original(self):
+        path, original = self.conflicting_claude_settings()
+        self.args.migrate_legacy = False
+        with patch.object(self.module.sys.stdin, "isatty", return_value=True), \
+                patch("builtins.input", return_value="y"):
+            self.install()
+        data = json.loads(path.read_text())
+        self.assertEqual(data["model"], "original")
+        self.assertEqual(data["permissions"], {"allow": ["Read"]})
+        self.assertEqual(data["env"]["ANTHROPIC_AUTH_TOKEN"], "fixture-login-token")
+        self.assertEqual(data["env"]["CLAUDE_CODE_USE_BEDROCK"], "1")
+        self.assertEqual(data["env"]["OTEL_RESOURCE_ATTRIBUTES"], "user.email=fixture,team.name=example")
+        self.assertEqual(data["env"]["OTEL_EXPORTER_OTLP_ENDPOINT"], "http://127.0.0.1:4317")
+        self.assertEqual(data["env"]["OTEL_EXPORTER_OTLP_HEADERS"], "")
+        for signal in ("LOGS", "METRICS", "TRACES"):
+            self.assertEqual(data["env"][f"OTEL_EXPORTER_OTLP_{signal}_ENDPOINT"], "http://127.0.0.1:4317")
+            self.assertEqual(data["env"][f"OTEL_EXPORTER_OTLP_{signal}_HEADERS"], "")
+        self.assertNotIn("OTEL_EXPORTER_OTLP_CERTIFICATE", data["env"])
+        self.assertEqual(data["env"]["OTEL_METRIC_EXPORT_INTERVAL"], "10000")
+        backups = list(path.parent.glob(path.name + ".ccdash-backup-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), original)
+        self.assertEqual(backups[0].stat().st_mode & 0o777, 0o600)
+        self.assertTrue(self.new_running)
+        self.assertNotIn("fixture-old-header", self.output.getvalue())
+        self.assertNotIn("fixture-login-token", self.output.getvalue())
+
+    def test_failed_migration_restores_conflicting_claude_settings(self):
+        path, original = self.conflicting_claude_settings()
+        self.start_error = True
+        with self.assertRaisesRegex(ValueError, "startup failure"):
+            self.install()
+        self.assertEqual(path.read_bytes(), original)
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+        self.assertFalse(self.new_running)
+
+    def test_declining_migration_preserves_conflicting_claude_settings(self):
+        path, original = self.conflicting_claude_settings()
+        self.args.migrate_legacy = False
+        with patch.object(self.module.sys.stdin, "isatty", return_value=True), \
+                patch("builtins.input", return_value="n"), self.assertRaisesRegex(ValueError, "cancelled"):
+            self.install()
+        self.assertEqual(path.read_bytes(), original)
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.root.exists())
+        self.assertEqual(list(path.parent.glob("*.ccdash-backup-*")), [])
+
+    def test_claude_edit_during_migration_preparation_is_preserved(self):
+        path, _ = self.conflicting_claude_settings()
+        edited = '{"model":"concurrent-edit"}\n'
+        self.download_hook = lambda: path.write_text(edited)
+        with self.assertRaisesRegex(ValueError, "changed"):
+            self.install()
+        self.assertEqual(path.read_text(), edited)
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+        self.assertFalse(self.new_running)
+
     def test_known_legacy_is_migrated_after_validation_and_privately_backed_up(self):
         self.install()
         self.assertTrue(self.new_running)

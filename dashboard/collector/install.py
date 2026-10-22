@@ -164,10 +164,11 @@ def unpack_binary(archive, checksum, destination):
         atomic(destination, bundle.extractfile(matches[0]).read(), 0o700)
 
 
-def client_plan(home, user_id):
+def client_plan(home, user_id, replace_claude_telemetry=False):
     codex = home / ".codex/config.toml"
     claude = home / ".claude/settings.json"
-    changes = configurator.plan(codex, claude, True, True, user_id)
+    changes = configurator.plan(codex, claude, True, True, user_id,
+                                replace_claude_telemetry=replace_claude_telemetry)
     original = configurator.toml_load(codex.read_text() if codex.exists() else "")
     notes = []
     if original.get("analytics", {}).get("enabled") is False:
@@ -398,6 +399,8 @@ def legacy_mac_state(home, uid):
 def confirm_legacy(args, legacy):
     print("Found legacy macOS Collector: " + str(legacy["unit"]))
     print("Migration will back up its settings, disable its LaunchAgent, and start the device Collector.")
+    print("Claude telemetry exporter overrides will be replaced with local loopback settings, "
+          "and old telemetry authentication headers cleared. Model/provider/login settings are preserved.")
     print("Close Claude Code/Codex and let the old queue drain first. The old queue stays in ~/.otelcol; "
           "it is not imported. Failed installation restores the previous service state.")
     if getattr(args, "migrate_legacy", False):
@@ -562,7 +565,8 @@ def install(args, home, user, uid, root, unit):
     if legacy:
         confirm_legacy(args, legacy)
     user_id = migration_user_id(args, home) if legacy else args.user_id or user
-    changes, notes = client_plan(home, user_id)
+    replace_claude_telemetry = bool(legacy) or getattr(args, "replace_claude_telemetry", False)
+    changes, notes = client_plan(home, user_id, replace_claude_telemetry)
     for note in notes:
         print(note)
     token = read_token(args.token_file)
@@ -608,7 +612,7 @@ def install(args, home, user, uid, root, unit):
             # empty change plan, but an edit during download still cancels setup.
             assert_unchanged(managed_before)
             assert_unchanged(clients_before)
-            if client_plan(home, user_id)[0] != changes:
+            if client_plan(home, user_id, replace_claude_telemetry)[0] != changes:
                 raise ValueError("client configuration changed during preparation; rerun setup")
             check_service(unit, user)
             if not unit.exists():
@@ -689,7 +693,11 @@ def main():
     parser.add_argument("--token-file", type=Path, help="private mode 0600 file; token values are never CLI arguments")
     parser.add_argument("--user-id", help="nonsecret telemetry attribution ID (defaults to local login)")
     parser.add_argument("--migrate-legacy", action="store_true",
-                        help="approve migration of the verified legacy personal macOS Collector without a prompt")
+                        help="approve verified legacy personal macOS Collector migration, including Claude "
+                             "telemetry replacement, without a prompt")
+    parser.add_argument("--replace-claude-telemetry", action="store_true",
+                        help="replace Claude telemetry exporter settings with local defaults and clear old "
+                             "telemetry headers; preserve model/provider/login settings")
     args = parser.parse_args()
     try:
         if os.geteuid() == 0:

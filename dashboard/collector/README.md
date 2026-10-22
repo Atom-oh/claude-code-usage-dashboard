@@ -148,7 +148,10 @@ command is needed for the supported legacy layout. The installer verifies:
   writable by other users.
 
 At `Migrate this legacy Collector now? [y/N]:`, enter `y` to approve the transfer.
-Declining leaves the old service unchanged. For unattended installation, use
+This also approves replacing Claude telemetry exporter overrides with the package's
+loopback defaults and clearing old telemetry authentication headers. Model, provider,
+login, and unrelated settings are preserved; changed client files get private backups.
+Declining leaves the old service and client settings unchanged. For unattended installation, use
 `--migrate-legacy` with `--token-file` and an explicit `--user-id`.
 The option approves only the same verified layout; it never forces unknown services
 to stop. The installer does not read or reuse a ClickHouse password for device auth.
@@ -270,7 +273,7 @@ Revoke the unused new device token in the dashboard.
 | Expired/revoked token or authentication failure | Register a replacement device, install with its token, verify receipt, then revoke the old device. |
 | Healthy local service but no receipt | Restart clients, perform work, inspect exporter errors, check filters, and refresh the device list. |
 | `unmanaged Codex [otel] conflicts` | Privately back up `~/.codex/config.toml`. Explicitly migrate only its OTel table to the loopback exporters in `generated/configure-client-telemetry.py`; keep model/provider/login settings. |
-| `unmanaged Claude telemetry conflicts` | Review the exporter owner and endpoints. The bundled configurator offers `--replace-claude-telemetry`; read its `--help` and use `--check` first with the intended paths and attribution ID. Do not delete `settings.json`. |
+| `unmanaged Claude telemetry conflicts` | For the verified legacy macOS service, download the latest package and approve migration. Otherwise review the exporter owner and endpoints, then add `--replace-claude-telemetry` to the install command only if replacing those telemetry settings and clearing old telemetry headers is intended. This option does not stop unknown services. Do not delete `settings.json`. |
 | Custom config roots or symlinks | Configure the actual owner manually; the installer supports normal default paths. |
 
 Inspect local logs without posting credentials or full configuration files:
