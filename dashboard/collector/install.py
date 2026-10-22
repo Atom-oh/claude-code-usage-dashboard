@@ -446,16 +446,20 @@ def backup_legacy(legacy, root):
     return directory
 
 
-def stop_legacy(legacy):
-    run(["launchctl", "disable", legacy["target"]])
-    if legacy["loaded"]:
-        run(["launchctl", "bootout", legacy["target"]])
-    # bootout can return before the old listener has released its sockets.
+def wait_for_free_ports():
+    # bootout can return before either Collector has released its listeners.
     for _ in range(50):
         if not occupied_ports():
             return
         time.sleep(0.1)
-    raise ValueError("ports did not become available after stopping the legacy Collector")
+    check_ports()  # Report the remaining conflict without touching its owner.
+
+
+def stop_legacy(legacy):
+    run(["launchctl", "disable", legacy["target"]])
+    if legacy["loaded"]:
+        run(["launchctl", "bootout", legacy["target"]])
+    wait_for_free_ports()
 
 
 def restore_legacy(legacy, home, uid):
@@ -465,7 +469,7 @@ def restore_legacy(legacy, home, uid):
     if current["loaded"] and not legacy["loaded"]:
         raise ValueError("legacy service was started by another process; manual recovery required")
     if legacy["loaded"] and not current["loaded"]:
-        check_ports()
+        wait_for_free_ports()
         run(["launchctl", "enable", legacy["target"]])
         try:
             run(["launchctl", "bootstrap", legacy["domain"], str(legacy["unit"])])

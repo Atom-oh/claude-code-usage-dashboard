@@ -35,7 +35,7 @@ flowchart TB
         API -->|"Read queries"| ROLLUP
         API -->|"Device token validation and lifecycle"| TOKENS[("DynamoDB device token hashes")]
         API -->|"Optional authenticated OTLP forwarding"| RECEIVER["Private Collector receiver"]
-        RECEIVER -->|"INSERT-only ClickHouse credential"| RAW
+        RECEIVER -->|"Scoped ClickHouse ingest credential"| RAW
         BACKUP["Backup CronJob"] -->|"Read database"| RAW
     end
     EDGE -->|"VPC origin / TCP port 443"| NLB

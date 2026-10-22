@@ -67,7 +67,11 @@ endpoint in its copyable command.
 ```bash
 printf 'Telemetry user ID/email: '
 IFS= read -r ccdash_user_id
-python3 install.py install --endpoint 'https://YOUR-DASHBOARD/api/ingest' --user-id "$ccdash_user_id"
+if [ -n "$ccdash_user_id" ]; then
+  python3 install.py install --endpoint 'https://YOUR-DASHBOARD/api/ingest' --user-id "$ccdash_user_id"
+else
+  printf '%s\n' 'Enter a nonempty telemetry user ID/email before installing.'
+fi
 ```
 
 Paste the device token at the hidden prompt. For automation, use `--token-file`
@@ -158,6 +162,10 @@ If startup or local health fails, the installer restores client/managed files an
 the previous legacy service enablement/load state. If recovery itself fails, keep
 the reported private recovery files and inspect service/port ownership before
 manual recovery. Retrying a completed installation updates the new managed service.
+After verifying remote receipt and deciding that rollback is no longer needed, remove
+only the identified `legacy-backup-*` directory and any obsolete credential-bearing
+legacy files under your retention policy. Preserve queued records until delivery or an
+explicit discard decision; coordinate revocation of shared credentials with their owner.
 
 For an unrecognized service, inspect without printing its credential environment:
 
@@ -188,8 +196,9 @@ Retain the unit under a backup name, then mask the old service to prevent that r
 
 ```bash
 sudo test ! -e /etc/systemd/system/otelcol.service.ccdash-backup &&
+sudo cp -p /etc/systemd/system/otelcol.service /etc/systemd/system/otelcol.service.ccdash-backup &&
 sudo systemctl disable --now otelcol.service &&
-sudo mv /etc/systemd/system/otelcol.service /etc/systemd/system/otelcol.service.ccdash-backup &&
+sudo rm /etc/systemd/system/otelcol.service &&
 sudo systemctl mask otelcol.service
 ```
 
@@ -217,13 +226,20 @@ python3 "$HOME/.local/share/ccdash-collector/install.py" uninstall
 ```
 
 Skip this command if that file does not exist. If removal fails or a listener remains,
-resolve that before restarting the old service. Restore only the service identified above:
+resolve that before restarting the old service. For macOS, first inspect `migration.json`
+in the reported private backup directory. The following command applies only when
+`loaded` was `true` and `disabled` was `false`:
 
 ```bash
 # macOS
 launchctl enable "gui/$(id -u)/com.ccdash.otelcol" &&
 launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.ccdash.otelcol.plist"
 ```
+
+If `loaded` was `false`, do not bootstrap. Restore enablement with `launchctl enable`
+or `launchctl disable` according to the recorded `disabled` value. If both were `true`,
+temporarily enable and bootstrap as above, then disable the label again without
+booting it out. Stop if any command fails; preserve the recovery files.
 
 ```bash
 # Linux

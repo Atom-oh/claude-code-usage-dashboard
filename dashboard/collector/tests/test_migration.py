@@ -56,6 +56,8 @@ class Migration(unittest.TestCase):
         self.extra_port = None
         self.time_wait = False
         self.reuse_address = False
+        self.linger_after_new_stop = 0
+        self.replacement_release_probes = 0
         self.runtime_path = str(self.legacy)
         self.runtime_arguments = self.arguments
         self.output = io.StringIO()
@@ -85,6 +87,11 @@ class Migration(unittest.TestCase):
     def bind(self, address):
         if self.bind_errno:
             raise OSError(self.bind_errno, "simulated bind error")
+        if address[1] == 4317 and self.replacement_release_probes:
+            self.replacement_release_probes -= 1
+            raise OSError(errno.EADDRINUSE, "replacement listener still closing")
+        if self.new_running and address[1] in (4317, 4318, 13133):
+            raise OSError(errno.EADDRINUSE, "replacement listener")
         if (self.loaded and address[1] in (4317, 4318)) or address[1] == self.extra_port:
             raise OSError(errno.EADDRINUSE, "address in use")
         if self.time_wait and not self.reuse_address:
@@ -132,6 +139,7 @@ class Migration(unittest.TestCase):
             return self.new_running
         if command == ["launchctl", "bootout", domain + "/org.ccdash.collector"]:
             self.new_running = False
+            self.replacement_release_probes = self.linger_after_new_stop
             return True
         if command == ["launchctl", "bootstrap", domain, str(self.unit)]:
             self.assertFalse(self.loaded)
@@ -360,3 +368,27 @@ class Migration(unittest.TestCase):
             self.install()
         self.assertTrue(self.loaded)
         self.assertFalse(self.disabled)
+
+    def test_rollback_waits_for_replacement_listener_release(self):
+        self.start_error = True
+        self.linger_after_new_stop = 2
+        with patch.object(self.module.time, "sleep") as sleep, \
+                self.assertRaisesRegex(ValueError, "startup failure"):
+            self.install()
+        self.assertEqual(sleep.call_count, 2)
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+        self.assertFalse(self.new_running)
+        self.assertFalse(self.unit.exists())
+
+    def test_rollback_preserves_recovery_when_listener_does_not_release(self):
+        self.start_error = True
+        self.linger_after_new_stop = 60
+        with patch.object(self.module.time, "sleep") as sleep, \
+                self.assertRaisesRegex(ValueError, "rollback could not finish"):
+            self.install()
+        self.assertEqual(sleep.call_count, 50)
+        self.assertFalse(self.loaded)
+        self.assertTrue(self.disabled)
+        self.assertTrue(list(self.root.glob(".prepare-*")))
+        self.assertTrue(list(self.root.glob("legacy-backup-*")))

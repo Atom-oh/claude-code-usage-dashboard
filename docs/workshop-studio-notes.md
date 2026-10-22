@@ -10,7 +10,7 @@ and deployed endpoints before a session; repository declarations do not prove av
 | Audience | Provisioning | Ingestion credential |
 |---|---|---|
 | Personal Mac or self-managed EC2 | Editor/admin downloads the device package | Revocable per-device token; no database credential on the client |
-| Organizer-provisioned Workshop Studio EC2 | Organizer prepares the instance through the event's infrastructure template | Scoped workshop ingest account retrieved at boot from SSM SecureString |
+| Organizer-provisioned Workshop Studio EC2 | Organizer prepares the instance through the event's infrastructure template | Organizer must provision a scoped workshop ingest account; the instance retrieves its credential at boot from SSM SecureString |
 
 Participants on prepared EC2 instances should start the clients directly. They do not
 need to open the device installation page, register a device, or install another Collector.
@@ -46,7 +46,10 @@ The event preparation checklist is:
    Stage the Collector policy and `scripts/codex-launch.py` from the same release.
 3. Explicitly enable both `CLAUDE_ENABLED=true` and `CODEX_ENABLED=true` for a dual-client
    workshop. `user-data.sh` currently defaults Codex to disabled.
-4. Provision the event credential/SSM access and deploy a sample participant instance.
+4. Provision the event credential and exact-parameter `ssm:GetParameter` access, plus
+   `kms:Decrypt` for the applicable key. Verify network access to SSM/KMS as required,
+   the pinned GitHub release/download hosts and the ingestion endpoint, then deploy
+   a sample participant instance.
 5. Check client startup, both telemetry feeds, effective grants, secret-free bootstrap
    logs and actual dashboard receipt before distributing participant access.
 

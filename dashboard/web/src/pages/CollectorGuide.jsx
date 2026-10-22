@@ -17,8 +17,9 @@ launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.ccdash.otelco
 systemctl show otelcol.service --property=FragmentPath,ExecStart
 systemctl --user is-active ccdash-collector.service`,
     stop: `sudo test ! -e /etc/systemd/system/otelcol.service.ccdash-backup &&
+sudo cp -p /etc/systemd/system/otelcol.service /etc/systemd/system/otelcol.service.ccdash-backup &&
 sudo systemctl disable --now otelcol.service &&
-sudo mv /etc/systemd/system/otelcol.service /etc/systemd/system/otelcol.service.ccdash-backup &&
+sudo rm /etc/systemd/system/otelcol.service &&
 sudo systemctl mask otelcol.service`,
     restore: `sudo test -f /etc/systemd/system/otelcol.service.ccdash-backup &&
 sudo systemctl unmask otelcol.service &&
@@ -64,7 +65,9 @@ export function CollectorPreparation({ platform }) {
         기존 수집기 전환 안내
       </button>
       {expanded && <div className="mt-3">
-        <p><code>local Collector port is occupied</code>는 포트 검사 실패입니다.
+        <p><code>local Collector port is occupied</code>는 이전 패키지의 메시지이므로 최신 패키지를 다시 받으세요.
+          새 패키지의 <code>occupied by an unverified service</code>는 확인되지 않은 리스너가 있다는 뜻이며,
+          <code>cannot check local port</code>는 권한 등으로 검사에 실패했다는 뜻입니다.
           기존 설치 스크립트 <code>setup-test-telemetry-all.sh</code> 또는 <code>setup-test-telemetry.sh</code>를 사용했다면 다음 순서로 전환하세요.</p>
         {platform === "darwin" && <div className="mt-3 rounded-lg bg-brand-50 p-3 text-ink-800">
           <p>설치기가 기존 macOS 수집기를 확인하고 전환을 안내합니다. 최신 패키지로 아래 설치 명령을 실행하세요.</p>
@@ -100,7 +103,9 @@ export function CollectorPreparation({ platform }) {
         <details className="mt-4 border-t border-ink-100 pt-3">
           <summary className="cursor-pointer font-medium text-ink-800">수동 복구가 필요할 때</summary>
           {platform === "darwin" && <p className="mt-2">자동 복구가 성공했다면 추가 명령을 실행할 필요가 없습니다.
-            자동 복구 실패 메시지가 나왔다면 출력된 비공개 백업 경로와 서비스 상태를 먼저 확인하세요.</p>}
+            자동 복구 실패 메시지가 나왔다면 출력된 비공개 백업의 <code>migration.json</code>을 확인하세요.
+            아래 복구 명령은 원래 <code>loaded: true</code>, <code>disabled: false</code>였을 때만 사용합니다.
+            그 외 상태는 패키지 README의 복구 절차를 따라 원래 활성화·실행 상태를 유지하세요.</p>}
           <p className="mt-2">새 서비스가 생성되었다면 먼저 아래 명령으로 제거합니다. 파일이 없으면 건너뜁니다.
             제거가 실패하거나 포트에 리스너가 남아 있으면 기존 서비스를 시작하지 마세요.</p>
           <GuideCommand label="새 서비스 제거 명령" command={`python3 ${INSTALL_ROOT} uninstall`} />

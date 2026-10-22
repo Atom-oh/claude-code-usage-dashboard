@@ -48,7 +48,10 @@ These defaults are engineering choices, not additional user requirements:
   always enforced. Revocation reaches other replicas within that cache window.
 - Forward to a private Collector service with a separate internal bearer secret
   mounted from Kubernetes Secret files. No public receiver load balancer. The
-  Collector owns the existing INSERT-only ClickHouse credential. Dashboard queries
+  Collector owns the existing scoped ClickHouse ingest credential (`INSERT` on
+  `claude_code.*`, plus `SELECT` on `claude_code.otel_metrics_sum` for the materialized
+  view). See [effective grants](../../runbooks/clickhouse-ingest-user-cutover.md).
+  Dashboard queries
   retain their read-only DB account. Two small receiver replicas fit existing nodes;
   no node type/count expansion is authorized by this feature.
 - Local Collector listens only on 127.0.0.1:4317/4318, sends OTLP/HTTP with
