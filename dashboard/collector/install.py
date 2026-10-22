@@ -288,6 +288,7 @@ def occupied_ports():
                 # TIME_WAIT must not prevent replacement or rollback.
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 sock.bind(("127.0.0.1", port))
+                sock.listen(1)
             except OSError as error:
                 if error.errno != errno.EADDRINUSE:
                     raise ValueError("cannot check local port " + str(port) + ": "

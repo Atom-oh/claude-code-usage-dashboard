@@ -51,7 +51,9 @@ but unflushed records. These limits are not delivery guarantees.
 
 Source: `infra/device_ingest.tf`. This is opt-in and requires
 OIDC. The application mounts the internal receiver credential from a Kubernetes Secret;
-the receiver separately mounts the existing INSERT-only ClickHouse credential.
+the receiver separately mounts the existing `otel_ingest` ClickHouse credential.
+Its grants include `INSERT ON claude_code.*` and
+`SELECT ON claude_code.otel_metrics_sum`; it is not strictly write-only.
 The application query account remains read-only. The receiver has only a ClusterIP
 service, bearer authentication and dashboard-pod ingress policy; there is no new public
 load balancer or DNS name. Verify CNI NetworkPolicy enforcement on the target cluster.

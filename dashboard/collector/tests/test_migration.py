@@ -348,3 +348,15 @@ class Migration(unittest.TestCase):
             self.install()
         self.assertTrue(self.loaded)
         self.assertFalse(self.disabled)
+
+    def test_reusable_address_must_also_allow_listening(self):
+        # Some systems permit a specific-address bind alongside a reusable
+        # wildcard bind, but the second socket still cannot become a listener.
+        self.extra_port = 4317
+        sock = self.module.socket.socket.return_value.__enter__.return_value
+        sock.bind.side_effect = None
+        sock.listen.side_effect = OSError(errno.EADDRINUSE, "another listener")
+        with self.assertRaisesRegex(ValueError, "4317"):
+            self.install()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
