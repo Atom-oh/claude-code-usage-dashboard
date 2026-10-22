@@ -27,6 +27,12 @@ settings/services are rejected; migrate their owner explicitly. Codex's
 not silently override this privacy choice. Identity entered during setup is
 client-provided telemetry attribution, not verified SSO identity.
 
+The [package guide](../../dashboard/collector/README.md) includes the complete personal
+installation flow, legacy macOS/Linux service migration, receipt checks and recovery.
+Use the [Workshop Studio preparation notes](../workshop-studio-notes.md#installation-and-ingestion-choices)
+for organizer-provisioned participant EC2 instances. Those instances keep their prepared
+Collector and do not need individual device enrollment.
+
 A token authorizes ingestion only and expires 30 days after issue. To replace it,
 issue a new token, rerun setup, verify delivery and revoke the old device. Revocation
 may take up to ten seconds to reach another API replica's validation cache. Browser

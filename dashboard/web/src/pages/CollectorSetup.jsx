@@ -4,6 +4,7 @@ import { apiGet, checkAuthentication, fetchWithCapacityRetry } from "../api.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { Card, Loading } from "../components/Card.jsx";
+import { CollectorPreparation, CollectorVerification } from "./CollectorGuide.jsx";
 
 const BUTTON = "inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
 const SECONDARY = `${BUTTON} border border-ink-200 bg-white text-ink-700 hover:bg-ink-50`;
@@ -230,7 +231,14 @@ function CollectorManager() {
   const activePlatform = PLATFORMS[platform];
   const prerequisite = platform === "linux" ? 'sudo loginctl enable-linger "$USER"\n' : "";
   const command = setup.data?.endpoint
-    ? `${prerequisite}tar -xzf ccdash-collector-${platform}.tar.gz\npython3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.endpoint)}`
+    ? `(
+set -e
+${prerequisite}tar -xzf ccdash-collector-${platform}.tar.gz
+printf '수집 사용자 ID/이메일 (기존 설치는 동일한 값): '
+IFS= read -r ccdash_user_id
+test -n "$ccdash_user_id" || { printf '사용자 ID를 입력한 뒤 다시 실행하세요.\\n' >&2; exit 1; }
+python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.endpoint)} --user-id "$ccdash_user_id"
+)`
     : "";
   const busy = issuing || devices.loading || revoking !== null;
 
@@ -304,7 +312,10 @@ function CollectorManager() {
             {tokenMessage && <p role="status" className="mt-3 text-sm text-ink-600">{tokenMessage}</p>}
           </Card>
         </div>
-        <Card title={<StepTitle number="3">터미널에서 설치</StepTitle>} subtitle="수집할 기기에서 다운로드한 파일이 있는 폴더를 여세요.">
+        <Card title={<StepTitle number="3">설치 전 확인</StepTitle>}>
+          <CollectorPreparation platform={platform} />
+        </Card>
+        <Card title={<StepTitle number="4">터미널에서 설치</StepTitle>} subtitle="수집할 기기에서 다운로드한 파일이 있는 폴더를 여세요.">
           {platform === "linux" && <p className="mb-3 text-sm leading-relaxed text-ink-600">SSH 로그아웃·재부팅 후에도 수집을 유지하려면 첫 명령으로 사용자 서비스의 지속 실행을 설정하세요.
             이 설정에만 sudo 권한이 필요하며, 수집기 설치 명령은 일반 사용자로 실행하세요.</p>}
           <div className="overflow-hidden rounded-lg bg-ink-900 text-ink-50">
@@ -317,11 +328,15 @@ function CollectorManager() {
           </div>
           {commandMessage && <p role="status" className="mt-3 text-sm text-ink-600">{commandMessage}</p>}
           <ol className="mt-4 space-y-2 text-sm leading-relaxed text-ink-600">
+            <li>사용자 ID에는 기존 수집에 사용하던 ID/이메일을 입력하세요. 처음 설치한다면 조직에서 사용할 식별값을 입력하세요. 영문·숫자와 . _ + @ -만 사용할 수 있습니다.</li>
             {platform === "linux" && <li>사용자 서비스 연결 오류가 나면 다시 로그인한 뒤 수집기 설치 명령을 실행하세요.</li>}
             <li>명령을 실행한 뒤 토큰 입력 안내가 나오면 복사한 토큰을 붙여 넣고 Enter를 누르세요. 입력 내용은 화면에 표시되지 않습니다.</li>
             <li>설치 후 터미널을 새로 열고 Claude Code와 Codex에서 새 세션을 시작하세요.</li>
           </ol>
           <p className="mt-3 text-xs leading-relaxed text-ink-500">토큰을 명령에 직접 넣지 마세요. 만료 시 새 토큰을 발급하고 설치를 다시 실행하세요.</p>
+        </Card>
+        <Card title={<StepTitle number="5">수신 확인</StepTitle>}>
+          <CollectorVerification platform={platform} />
         </Card>
         <Card title={<h2>내 기기</h2>} subtitle="내가 등록한 기기의 만료일과 최근 수신을 확인하세요."
           right={<button type="button" className={SECONDARY} disabled={busy} onClick={() => loadDevices()}>
