@@ -46,6 +46,40 @@ async function register() {
 }
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+test("Mac setup uses installer migration while Linux retains its scoped manual command", async () => {
+  const writeText = vi.fn().mockResolvedValue();
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  installFetch();
+  mount();
+  await screen.findByText("등록한 기기가 없습니다.");
+  fireEvent.click(screen.getByRole("button", { name: "기존 수집기 전환 안내" }));
+  expect(screen.getByLabelText("기존 서비스 중지 명령").textContent).toContain("sudo systemctl disable --now otelcol.service");
+  fireEvent.click(screen.getByRole("button", { name: "기존 서비스 중지 명령 복사" }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("sudo systemctl disable")));
+  fireEvent.click(screen.getByRole("button", { name: "macOS 선택" }));
+  expect(screen.queryByLabelText("기존 서비스 중지 명령")).toBeNull();
+  expect(screen.getByText(/설치기가 기존 macOS 수집기를 확인/)).toBeTruthy();
+  expect(screen.getByText(/Migrate this legacy Collector now/)).toBeTruthy();
+  expect(screen.getByLabelText("기존 서비스 복구 명령").textContent).toContain("launchctl enable");
+  expect(screen.getByLabelText("기존 서비스 복구 명령").textContent).toContain("launchctl bootstrap");
+});
+
+test("installation commands ask for attribution and keep endpoint quoting and token entry separate", async () => {
+  const writeText = vi.fn().mockResolvedValue();
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  installFetch({ config: { ...config, endpoint: "https://another.example/api/ingest" } });
+  mount();
+  await screen.findByText("등록한 기기가 없습니다.");
+  fireEvent.click(screen.getByRole("button", { name: "설치 명령 복사" }));
+  await waitFor(() => expect(writeText).toHaveBeenCalled());
+  const command = writeText.mock.calls[0][0];
+  expect(command).toContain("set -e");
+  expect(command).toContain("IFS= read -r ccdash_user_id");
+  expect(command).toContain('--user-id "$ccdash_user_id"');
+  expect(command).toContain("--endpoint 'https://another.example/api/ingest'");
+  expect(command).not.toContain(token);
+});
+
 test("viewer and absent permissions make no requests and cannot access setup", () => {
   const fetch = installFetch();
   for (const permissions of [["telemetry:read"], []]) {
@@ -276,8 +310,8 @@ test("installation commands shell-quote endpoint apostrophes and expansions", as
   const endpoint = "https://collector.example/api/ingest?value='$(example)";
   installFetch({ config: { ...config, endpoint } });
   mount();
-  expect((await screen.findByLabelText("설치 명령")).textContent).toBe(
-    "sudo loginctl enable-linger \"$USER\"\ntar -xzf ccdash-collector-linux.tar.gz\npython3 ccdash-collector/install.py install --endpoint 'https://collector.example/api/ingest?value='\"'\"'$(example)'"
+  expect((await screen.findByLabelText("설치 명령")).textContent).toContain(
+    "python3 ccdash-collector/install.py install --endpoint 'https://collector.example/api/ingest?value='\"'\"'$(example)' --user-id \"$ccdash_user_id\""
   );
 });
 

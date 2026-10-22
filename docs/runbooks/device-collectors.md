@@ -27,6 +27,12 @@ settings/services are rejected; migrate their owner explicitly. Codex's
 not silently override this privacy choice. Identity entered during setup is
 client-provided telemetry attribution, not verified SSO identity.
 
+The [package guide](../../dashboard/collector/README.md) includes the complete personal
+installation flow, legacy macOS/Linux service migration, receipt checks and recovery.
+Use the [Workshop Studio preparation notes](../workshop-studio-notes.md#installation-and-ingestion-choices)
+for organizer-provisioned participant EC2 instances. Those instances keep their prepared
+Collector and do not need individual device enrollment.
+
 A token authorizes ingestion only and expires 30 days after issue. To replace it,
 issue a new token, rerun setup, verify delivery and revoke the old device. Revocation
 may take up to ten seconds to reach another API replica's validation cache. Browser
@@ -45,7 +51,9 @@ but unflushed records. These limits are not delivery guarantees.
 
 Source: `infra/device_ingest.tf`. This is opt-in and requires
 OIDC. The application mounts the internal receiver credential from a Kubernetes Secret;
-the receiver separately mounts the existing INSERT-only ClickHouse credential.
+the receiver separately mounts the existing `otel_ingest` ClickHouse credential.
+Its grants include `INSERT ON claude_code.*` and
+`SELECT ON claude_code.otel_metrics_sum`; it is not strictly write-only.
 The application query account remains read-only. The receiver has only a ClusterIP
 service, bearer authentication and dashboard-pod ingress policy; there is no new public
 load balancer or DNS name. Verify CNI NetworkPolicy enforcement on the target cluster.

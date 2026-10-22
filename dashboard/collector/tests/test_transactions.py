@@ -43,7 +43,9 @@ class Transactions(unittest.TestCase):
             patch.object(self.module.socket, "socket"),
         ]
         for context in self.patches:
-            context.start()
+            mock = context.start()
+            if context.attribute == "socket":
+                mock.return_value.__enter__.return_value.connect_ex.return_value = self.module.errno.ECONNREFUSED
             self.addCleanup(context.stop)
 
     def download(self, stage, release):

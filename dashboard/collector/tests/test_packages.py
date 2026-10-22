@@ -218,7 +218,8 @@ class Installer(unittest.TestCase):
             def external(command, required=True, output=False):
                 return "" if output else True
             with patch.object(self.module, "download_binary", binary), patch.object(self.module, "run", external), \
-                    patch.object(self.module.socket, "socket"):
+                    patch.object(self.module.socket, "socket") as sockets:
+                sockets.return_value.__enter__.return_value.connect_ex.return_value = self.module.errno.ECONNREFUSED
                 self.module.install(args, home, "fixture", os.getuid(), root, unit)
                 token_file.write_text(TOKEN[:-1] + "D")
                 self.module.install(args, home, "fixture", os.getuid(), root, unit)

@@ -5,6 +5,60 @@ contains Terraform for the admin workload and an EC2 cloud-init template, not a 
 Workshop Studio CloudFormation deployment. Validate the actual workshop account constraints
 and deployed endpoints before a session; repository declarations do not prove availability.
 
+## Installation and ingestion choices
+
+| Audience | Provisioning | Ingestion credential |
+|---|---|---|
+| Personal Mac or self-managed EC2 | Editor/admin downloads the device package | Revocable per-device token; no database credential on the client |
+| Organizer-provisioned Workshop Studio EC2 | Organizer prepares the instance through the event's infrastructure template | Organizer must provision a scoped workshop ingest account; the instance retrieves its credential at boot from SSM SecureString |
+
+Participants on prepared EC2 instances should start the clients directly. They do not
+need to open the device installation page, register a device, or install another Collector.
+This does not grant them editor/admin access to the dashboard. Personal Mac setup follows
+the [package guide](../dashboard/collector/README.md), including legacy-service migration.
+
+Using the existing password-based path is possible, with these boundaries:
+
+- The current `otel_ingest` declaration is **not strictly write-only**:
+  `INSERT ON claude_code.*` plus `SELECT ON claude_code.otel_metrics_sum` supports the
+  existing materialized view. See [effective grants and rotation](runbooks/clickhouse-ingest-user-cutover.md).
+  Do not remove SELECT without a separately validated schema/security change.
+- Participants who control their EC2 instance or its secret-reading role can obtain
+  that credential. SSM encryption and a root-only local file protect distribution and
+  storage; they do not hide the credential from an instance administrator.
+- For events with untrusted participants, provision a separate workshop data scope and
+  account rather than sharing the long-lived demo/customer credential. That isolation
+  needs operator provisioning; a user/team tag or dashboard filter is not access control.
+  A shared credential also permits fabricated telemetry and cannot revoke just one device.
+- Keep the value out of public scripts, AMIs, CloudFormation/UserData literals, workshop
+  pages and logs. Inject it through the intended account/region's SSM SecureString and
+  scope the instance role to the exact parameter and required KMS key.
+- Restrict ingest network reachability to the intended workshop path. Rotate or revoke
+  the event credential after delivery has drained, and retain protected queued records
+  until delivery or an explicit retention decision. Current collectors read the value
+  at boot; changing SSM alone does not update running instances.
+
+The event preparation checklist is:
+
+1. Adapt the actual Workshop Studio CloudFormation/launch template; this repository does
+   not yet provide a completed event template.
+2. Set endpoints, account/region secret mapping, participant identity and networking.
+   Stage the Collector policy and `scripts/codex-launch.py` from the same release.
+3. Explicitly enable both `CLAUDE_ENABLED=true` and `CODEX_ENABLED=true` for a dual-client
+   workshop. `user-data.sh` currently defaults Codex to disabled.
+4. Provision the event credential and exact-parameter `ssm:GetParameter` access, plus
+   `kms:Decrypt` for the applicable key. Verify network access to SSM/KMS as required,
+   the pinned GitHub release/download hosts and the ingestion endpoint, then deploy
+   a sample participant instance.
+5. Check client startup, both telemetry feeds, effective grants, secret-free bootstrap
+   logs and actual dashboard receipt before distributing participant access.
+
+An ingestion gateway with automatically provisioned instance credentials is a possible
+future alternative when sharing a database credential is unacceptable. The existing
+interactive device enrollment does not implement that workshop provisioning flow.
+Do not describe it as available or send participants through manual enrollment to
+compensate for missing organizer setup.
+
 ## 1. Participant identity
 
 For the workshop scenario with one AWS account per participant, an account-based synthetic
