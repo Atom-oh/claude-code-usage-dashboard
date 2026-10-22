@@ -65,6 +65,7 @@ Replace `YOUR-DASHBOARD` with your dashboard host; the web page supplies the con
 endpoint in its copyable command.
 
 ```bash
+(
 printf 'Telemetry user ID/email: '
 IFS= read -r ccdash_user_id
 if [ -n "$ccdash_user_id" ]; then
@@ -72,6 +73,7 @@ if [ -n "$ccdash_user_id" ]; then
 else
   printf '%s\n' 'Enter a nonempty telemetry user ID/email before installing.'
 fi
+)
 ```
 
 Paste the device token at the hidden prompt. For automation, use `--token-file`

@@ -5,6 +5,7 @@ import errno
 import fcntl
 import getpass
 import hashlib
+import http.client
 import importlib.util
 import json
 import os
@@ -282,6 +283,20 @@ def check_service(unit, user):
 def occupied_ports():
     ports = []
     for port in (4317, 4318, 13133):
+        # Detect wildcard listeners even on systems that permit a reusable
+        # loopback bind beside them. Closed TIME_WAIT connections refuse this.
+        with socket.socket() as probe:
+            try:
+                probe.settimeout(0.2)
+                result = probe.connect_ex(("127.0.0.1", port))
+            except OSError as error:
+                result = error.errno
+            if result == 0:
+                ports.append(port)
+                continue
+            if result != errno.ECONNREFUSED:
+                raise ValueError("cannot check local port " + str(port) + ": "
+                                 + errno.errorcode.get(result, "OS error"))
         with socket.socket() as sock:
             try:
                 # Match the Collector's Go TCP listener: closed connections in
@@ -480,15 +495,23 @@ def restore_legacy(legacy, home, uid):
         run(["launchctl", "disable" if legacy["disabled"] else "enable", legacy["target"]])
 
 
+def local_collector_healthy(timeout=1):
+    # Direct loopback HTTP ignores corporate proxy environment settings
+    # and does not follow redirects away from the local Collector.
+    connection = http.client.HTTPConnection("127.0.0.1", 13133, timeout=timeout)
+    try:
+        connection.request("GET", "/")
+        return connection.getresponse().status == 200
+    except (OSError, http.client.HTTPException):
+        return False
+    finally:
+        connection.close()
+
+
 def wait_for_local_collector(unit, uid):
     for _ in range(30):
-        if service_command(unit, "status", uid):
-            try:
-                with urllib.request.urlopen("http://127.0.0.1:13133", timeout=1) as response:
-                    if response.status == 200:
-                        return
-            except OSError:
-                pass
+        if service_command(unit, "status", uid) and local_collector_healthy():
+            return
         time.sleep(0.2)
     raise ValueError("new Collector did not become locally healthy; restoring the previous service")
 
@@ -710,12 +733,7 @@ def main():
         for note in notes:
             print(note)
         running = service_command(unit, "status", uid)
-        healthy = False
-        try:
-            with urllib.request.urlopen("http://127.0.0.1:13133", timeout=3) as response:
-                healthy = response.status == 200
-        except OSError:
-            pass
+        healthy = local_collector_healthy(timeout=3)
         print(json.dumps({"serviceRunning": running, "localCollectorHealthy": healthy,
                           "clientConfigurationCurrent": not changes,
                           "deliveryVerification": "Check device last-delivery time on the dashboard"}))

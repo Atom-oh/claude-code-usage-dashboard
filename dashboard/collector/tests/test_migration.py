@@ -1,6 +1,7 @@
 """Legacy macOS migration, exercising real files with simulated launchd/socket I/O."""
 import errno
 import importlib.util
+import http.client
 import io
 import json
 import os
@@ -67,6 +68,7 @@ class Migration(unittest.TestCase):
             patch.object(self.module, "download_binary", self.download),
             patch.object(self.module.socket, "socket"),
             patch.object(self.module.urllib.request, "urlopen"),
+            patch.object(http.client, "HTTPConnection"),
             patch("sys.stdout", self.output),
         ]
         for context in contexts:
@@ -75,8 +77,12 @@ class Migration(unittest.TestCase):
             if context.attribute == "socket":
                 mock.return_value.__enter__.return_value.bind.side_effect = self.bind
                 mock.return_value.__enter__.return_value.setsockopt.side_effect = self.socket_option
+                mock.return_value.__enter__.return_value.connect_ex.return_value = errno.ECONNREFUSED
             if context.attribute == "urlopen":
                 mock.return_value.__enter__.return_value.status = 200
+            if context.attribute == "HTTPConnection":
+                self.health_connection = mock
+                mock.return_value.getresponse.return_value.status = 200
 
     def download(self, stage, release):
         self.assertTrue(self.loaded or self.disabled, "old service must survive preparation")
@@ -250,6 +256,7 @@ class Migration(unittest.TestCase):
         self.assertFalse(self.unit.exists())
 
     def test_failed_new_health_restores_old_service(self):
+        self.health_connection.return_value.getresponse.side_effect = OSError("unhealthy")
         with patch.object(self.module.urllib.request, "urlopen", side_effect=OSError("unhealthy")), \
                 patch.object(self.module.time, "sleep"), self.assertRaisesRegex(ValueError, "locally healthy"):
             self.install()
@@ -392,3 +399,56 @@ class Migration(unittest.TestCase):
         self.assertTrue(self.disabled)
         self.assertTrue(list(self.root.glob(".prepare-*")))
         self.assertTrue(list(self.root.glob("legacy-backup-*")))
+
+    def test_local_health_does_not_use_environment_proxy(self):
+        with patch.dict(os.environ, {"http_proxy": "http://proxy.invalid:3128", "no_proxy": ""}), \
+                patch.object(self.module.urllib.request, "urlopen", side_effect=OSError("proxy denied")), \
+                patch.object(self.module.time, "sleep"):
+            self.install()
+        self.health_connection.assert_called_once_with("127.0.0.1", 13133, timeout=1)
+        self.health_connection.return_value.request.assert_called_once_with("GET", "/")
+        self.health_connection.return_value.close.assert_called_once()
+        self.assertTrue(self.new_running)
+
+    def test_connection_detects_listener_even_when_bind_and_listen_are_permitted(self):
+        self.extra_port = 4317
+        sock = self.module.socket.socket.return_value.__enter__.return_value
+        sock.bind.side_effect = None
+        sock.connect_ex.side_effect = lambda address: 0 if address[1] == 4317 else errno.ECONNREFUSED
+        for platform in ("darwin", "linux"):
+            with self.subTest(platform=platform), patch.object(self.module.sys, "platform", platform), \
+                    self.assertRaisesRegex(ValueError, "4317"):
+                self.module.check_ports()
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.disabled)
+
+    def test_connection_errors_are_not_mistaken_for_a_free_port(self):
+        sock = self.module.socket.socket.return_value.__enter__.return_value
+        sock.bind.side_effect = None
+        sock.connect_ex.return_value = errno.EACCES
+        with self.assertRaisesRegex(ValueError, "cannot check local port 4317: EACCES"):
+            self.module.check_ports()
+
+    def test_local_health_does_not_follow_redirects(self):
+        self.health_connection.return_value.getresponse.return_value.status = 302
+        with patch.object(self.module.time, "sleep"), \
+                self.assertRaisesRegex(ValueError, "locally healthy"):
+            self.install()
+        self.assertEqual(self.health_connection.return_value.close.call_count, 30)
+        self.assertTrue(self.loaded)
+        self.assertFalse(self.new_running)
+
+    def test_status_and_check_use_direct_health_with_proxy_environment(self):
+        self.install()
+        account = SimpleNamespace(pw_dir=str(self.home), pw_name="fixture",
+                                  pw_uid=os.getuid(), pw_gid=os.getgid())
+        for action in ("status", "check"):
+            with self.subTest(action=action), \
+                    patch.object(self.module.sys, "argv", ["install.py", action]), \
+                    patch.object(self.module.os, "geteuid", return_value=1000), \
+                    patch.object(self.module.pwd, "getpwuid", return_value=account), \
+                    patch.dict(os.environ, {"CODEX_HOME": "", "CLAUDE_CONFIG_DIR": "",
+                                            "http_proxy": "http://proxy.invalid:3128", "no_proxy": ""}), \
+                    patch.object(self.module.urllib.request, "urlopen", side_effect=OSError("proxy denied")):
+                self.assertEqual(self.module.main(), 0)
+        self.health_connection.assert_called_with("127.0.0.1", 13133, timeout=3)
