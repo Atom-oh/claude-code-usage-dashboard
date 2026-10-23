@@ -4,6 +4,7 @@ import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.j
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { CODEX_USAGE_KEYS, isRejectedRequestEvent, isSetupMetadataEvent as setupMetadata } from "./codexRequests.js";
 import { resolveBackend, backendSql } from "./backend.js";
+import { completionUsage } from "./codexCompletionUsage.js";
 
 const ROW_LIMIT = 50000;
 const pricesDefault = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -170,8 +171,9 @@ const hasUsage = (row) => completed(row)
   && Object.keys(TOKEN_FIELDS).some((key) => Object.hasOwn(row.attributes, key));
 
 function usageTotals() {
-  return { requests: 0, tokens: 0, cost_usd: 0, hasCost: false, unpriced: 0,
-    input: 0, read: 0, write: 0, output: 0, reasoning: 0, observedTokens: createObservedTokens() };
+  return { requests: 0, tokens: 0, cost_usd: 0, hasCost: false, priced: 0, unpriced: 0,
+    input: 0, read: 0, write: 0, output: 0, reasoning: 0,
+    completionRead: 0, completionWrite: 0, observedTokens: createObservedTokens() };
 }
 
 function addUsage(target, usage) {
@@ -179,13 +181,20 @@ function addUsage(target, usage) {
   addObservedTokens(target.observedTokens, usage.observed_tokens);
   target.unpriced += Number(usage.unpriced);
   if (Number.isFinite(usage.cost_usd)) {
+    target.priced++;
     target.hasCost = true;
     const sum = target.cost_usd === null ? null : target.cost_usd + usage.cost_usd;
     target.cost_usd = Number.isFinite(sum) ? sum : null;
   }
   for (const [key, value] of Object.entries({ tokens: usage.tokens,
     input: usage.input_tokens_total, read: usage.cache_read_tokens, write: usage.cache_write_tokens,
-    output: usage.output_tokens, reasoning: usage.reasoning_tokens })) {
+    output: usage.output_tokens, reasoning: usage.reasoning_tokens,
+    // Cohort ratios must reject impossible individual subsets even if the
+    // other cache component is missing. Whole-window fields remain unchanged.
+    completionRead: usage.input_tokens_total !== null && usage.cache_read_tokens <= usage.input_tokens_total
+      ? usage.cache_read_tokens : null,
+    completionWrite: usage.input_tokens_total !== null && usage.cache_write_tokens <= usage.input_tokens_total
+      ? usage.cache_write_tokens : null })) {
     const sum = target[key] === null || value === null ? null : target[key] + value;
     target[key] = Number.isSafeInteger(sum) ? sum : null;
   }
@@ -253,6 +262,7 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
     else missingSession = true;
   }
   const total = usageTotals(), efforts = new Map(), latencies = new Map(), tools = new Map();
+  const identified = usageTotals(), identifiedSessions = new Set();
   const approvals = new Map(), runtime = new Map(), events = new Map(), missingUsage = new Set();
   let requests = 0, rejectedRequests = 0, retries = 0, errors = 0, missingAttempts = false, missingOutcomes = false;
   let prompts = 0, promptLength = 0, approved = 0, denied = 0, unknownDecisions = 0, lastSeen = null;
@@ -284,6 +294,10 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
       if (!efforts.has(effort)) efforts.set(effort, usageTotals());
       addUsage(total, usage);
       addUsage(efforts.get(effort), usage);
+      if (a["conversation.id"]) {
+        addUsage(identified, usage);
+        identifiedSessions.add(a["conversation.id"]);
+      }
     }
     if (event === "codex.api_request" || event === "codex.api_error") {
       requests++;
@@ -351,6 +365,14 @@ export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, d
   return {
     coverage: summary?.coverage ?? { status: records.length ? "observed" : "empty", records: records.length,
       last_seen: lastSeen === null ? null : new Date(lastSeen).toISOString() },
+    completion_usage: completionUsage({ ...total, read: total.completionRead, write: total.completionWrite },
+      { ...identified, sessions: identifiedSessions.size }),
+    completeness: {
+      missing_usage: missingUsageScopes, missing_session: missingSession,
+      usage_limited: false, scope_limited: false, operations_limited: false,
+      incomplete_tokens: total.requests > 0 && total.tokens === null,
+      request_count: requests, session_count: sessions.size,
+    },
     summary: {
       ...finishObservedTokens(total.observedTokens, { partial: missingUsageScopes || total.tokens === null,
         emptyValue: rejectedOnly ? 0 : null }),

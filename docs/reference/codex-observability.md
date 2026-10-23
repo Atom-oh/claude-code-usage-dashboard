@@ -20,6 +20,7 @@ alone does not establish its availability in this deployment.
 | Token composition and AWS list estimate | Usage-bearing SSE/WebSocket completion logs | Input includes cache subsets; output includes reasoning. Existing overview remains the billing-estimate authority. |
 | Effort usage/cost and cache/reasoning fractions | Completion `model_reasoning_effort` and token fields | Missing effort stays unknown; conversation-start settings do not replace per-response evidence. |
 | Per-request/per-session units | Completion logs plus observed HTTP attempts and sessions | Retries count as attempts. Costs use known subtotals with partial disclosure; unknown token usage or denominators remain unavailable. |
+| Recorded completion units | Usage-bearing completion logs only | Separate cohort: tokens/cost per completion and cost per identified usage-bearing session. These do not estimate missing requests or sessions. |
 | API error records per request and retry fraction | Request status, stream failures and zero-based attempt | HTTP and failed-stream records use the overview's error definition. Multiple error records per request are possible; this is not a failure probability. |
 | Tool outcomes and approvals | `tool_result`, `tool_decision` | Permission decisions include automatic approvals; they are not retained-code acceptance. |
 | Latency distributions | Valid per-event durations | Empirical percentiles of observations; request, SSE processing, TTFT, tools and startup stages remain distinct. |
@@ -80,6 +81,27 @@ including when unrelated usage or cache metadata is missing. Canonical token cou
 fractions and rates keep their completeness guards; observations are not a replacement
 denominator. Empty/all-unknown observations stay null and measured zero stays zero.
 See [ADR-014](../decisions/ADR-014-observed-token-subtotals.md).
+
+The detail view also exposes `completion_usage`, explicitly labelled **recorded
+completions**. Cache/reasoning fractions and tokens per completion use validated
+canonical components within this cohort, never observed token subtotals.
+Cache subsets are validated per response before summation; an impossible
+individual subset cannot become valid by combining it with other responses.
+Missing whole-window scope evidence does not invalidate the cohort; missing
+components within it still withhold the affected rates.
+Cost per completion divides known completion costs by all recorded completions.
+Cost per identified session uses only completions with a nonempty conversation ID
+for both the cost numerator and distinct-session denominator. Unidentified
+completions are counted separately and excluded from that session unit.
+Unknown prices retain partial disclosure; all-unknown costs and zero denominators
+remain unavailable. The cohort is withheld if the usage aggregate is limited.
+
+Existing `summary` fields retain their whole-window guards and remain available
+in the expandable HTTP request/session section. `completeness` reports missing
+usage/session evidence, limited aggregate families and incomplete canonical
+tokens, with observed request/session counts when available. These reasons
+distinguish an unavailable denominator from an unpriced cost.
+
 Rejected-only request scopes retain errors and zero recorded completion usage.
 Accepted/uncertain requests and other missing evidence stay partial; see
 [ADR-016](../decisions/ADR-016-rejected-codex-requests.md).
