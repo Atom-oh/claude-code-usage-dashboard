@@ -213,6 +213,29 @@ sets `partial=true`. Only affected results are withheld: limited scope evidence 
 known subtotals partial while withholding strict ratios and session units. See
 [Codex bounds](reference/codex-observability.md#api-and-bounds).
 
+Codex insights additionally returns two log-derived objects in both profiles:
+
+- `completion_usage`, with `basis="recorded_completions"` and
+  `status="observed"|"empty"|"limited"|"unavailable"`, describes only deduplicated usage-bearing
+  completion logs. Fields include `completions`, canonical `tokens`,
+  `tokens_partial`, `cache_hit_rate`, `cache_write_share`, `reasoning_share`,
+  `tokens_per_completion`, `cost_usd`, `unpriced`, `cost_partial`, and
+  `cost_per_completion`. Costs retain `cost_basis="aws_list_estimate"`.
+  `identified_sessions`, `identified_completions`, `unidentified_completions`,
+  `identified_cost_usd`, `identified_unpriced`, and `identified_cost_partial`
+  describe the subset with conversation IDs. `cost_per_identified_session`
+  divides that subset's known cost by its distinct sessions. Anonymous costs
+  never enter this session unit. Unknown components/prices, zero denominators
+  and limited usage remain unavailable or partial; this cohort is not a
+  replacement for whole-window completeness.
+- `completeness` contains boolean `missing_usage`, `missing_session`,
+  `usage_limited`, `scope_limited`, `operations_limited`, and `incomplete_tokens`
+  reasons. `request_count` and `session_count` are observed whole-window
+  denominators, null when their aggregate family is limited.
+
+Existing `summary` and Effort fields are unchanged. Both objects use the same
+log query and filters; they add no queries or identifiers to the response.
+
 `profile=effort` on `/api/codex/insights` selects one log query instead of the default
 log, four metric and trace queries. It preserves Effort/usage totals, denominators,
 full event identity and missing-usage scope evidence. It skips latency/tool/approval/runtime

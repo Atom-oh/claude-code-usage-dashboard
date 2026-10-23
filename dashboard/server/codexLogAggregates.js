@@ -5,6 +5,7 @@ import { createObservedTokens, addObservedTokens, finishObservedTokens } from ".
 import { backendSql, VALID_BACKENDS } from "./backend.js";
 import { resolvedRatesTable, NO_REGIONAL_PREMIUM, REGIONAL_MODEL_PATTERN } from "./pricing.js";
 import { normModel } from "./queries.js";
+import { completionUsage } from "./codexCompletionUsage.js";
 
 const LIMIT = 50000;
 const DEFAULT_PRICES = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -257,7 +258,14 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
       sumIf((input_value + output_value) * weight, ${usageFamily} AND pair_valid) AS observed_tokens,
       sumIf(weight, ${usageFamily} AND isNotNull(cost_value)) AS priced,
       sumIf(weight, ${usageFamily} AND isNull(cost_value)) AS unpriced,
-      sumKahanIf(cost_value * weight, ${usageFamily}) AS cost_usd
+      sumKahanIf(cost_value * weight, ${usageFamily}) AS cost_usd,
+      ${completeSum("read_value", "ifNull(read_value <= input_value, 0)")} AS completion_read,
+      ${completeSum("write_value", "ifNull(write_value <= input_value, 0)")} AS completion_write,
+      uniqExactIf(session, family = 'usage' AND session != '') AS completion_sessions,
+      sumIf(weight, family = 'usage' AND session != '') AS identified_completions,
+      sumIf(weight, family = 'usage' AND session != '' AND isNotNull(cost_value)) AS identified_priced,
+      sumIf(weight, family = 'usage' AND session != '' AND isNull(cost_value)) AS identified_unpriced,
+      sumKahanIf(cost_value * weight, family = 'usage' AND session != '') AS identified_cost_usd
     FROM grouped_source GROUP BY family, dimensions
     ), bounded AS (
       SELECT *, count() OVER () AS aggregate_rows, count() OVER (PARTITION BY family) AS family_rows,
@@ -359,6 +367,13 @@ export function foldCodexLogAggregates(rows) {
   const requests = number("requests"), rejected = number("rejected_requests");
   const rejectedOnly = requests > 0 && requests === rejected && !total.requests && !missingUsage && !usageLimited;
   const cost = usageLimited ? null : total.priced ? rounded(total.cost_usd) : rejectedOnly ? 0 : null;
+  // The usage family has one global row. Do not sum distinct-session counts
+  // across arbitrary input groups, or invent metadata for older aggregate rows.
+  const usage = groups.usage.length === 1 ? groups.usage[0] : {};
+  const identified = groups.usage.length === 0
+    ? { requests: 0, sessions: 0, priced: 0, unpriced: 0, cost_usd: 0 }
+    : { requests: usage.identified_completions, sessions: usage.completion_sessions,
+      priced: usage.identified_priced, unpriced: usage.identified_unpriced, cost_usd: usage.identified_cost_usd };
   const tools = groups.tool.map(row => ({ tool: JSON.parse(row.dimensions)[0], calls: Number(row.records),
     successes: Number(row.successes), failures: Number(row.failures), unknown: Number(row.unknown_outcomes),
     success_rate: Number(row.unknown_outcomes) ? null : ratio(Number(row.successes), Number(row.records)),
@@ -373,6 +388,16 @@ export function foldCodexLogAggregates(rows) {
     coverage: { status: limited.includes("event") ? "limited" : records ? "observed" : "empty",
       records: limited.includes("event") ? null : records, last_seen: lastSeen,
       ...(limited.length ? { partial: true, limited_sections: limited } : {}) },
+    completion_usage: completionUsage({ ...total, read: usage.completion_read,
+      write: usage.completion_write }, identified, { limited: usageLimited }),
+    completeness: {
+      missing_usage: scopes.missingUsage, missing_session: scopes.missingSession,
+      usage_limited: usageLimited, scope_limited: scopeLimited,
+      operations_limited: limited.includes("operations"),
+      incomplete_tokens: !usageLimited && total.requests > 0 && total.tokens === null,
+      request_count: limited.includes("operations") ? null : requests,
+      session_count: scopeLimited ? null : scopes.sessions,
+    },
     summary: {
       ...finishObservedTokens(total.observed, { partial: missingUsage || total.tokens === null || usageLimited,
         emptyValue: rejectedOnly ? 0 : null }),
