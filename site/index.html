@@ -1,322 +1,63 @@
 <!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Claude Code Usage Dashboard</title>
-    <meta
-      name="description"
-      content="Claude Code 텔레메트리(OTel → ClickHouse)를 비용·도입·생산성 KPI로 보여주는 A/B 대시보드 — bedrock vs enterprise."
-    />
-    <link rel="stylesheet" href="assets/site.css" />
-  </head>
-  <body>
-    <header class="top">
-      <div class="wrap">
-        <a class="brand" href="index.html"><span class="mark">CC</span> Usage Dashboard</a>
-        <nav class="tabs">
-          <a href="index.html" aria-current="page">Overview</a>
-          <a href="architecture.html">Architecture</a>
-          <a href="api.html">API</a>
-          <a href="operations.html">Operations</a>
-          <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
-        </nav>
-      </div>
-    </header>
-
-    <main>
-      <div class="wrap">
-        <div class="hero">
-          <p class="eyebrow">Measured, not estimated</p>
-          <h1>Claude Code 사용량을<br />텔레메트리로 실측하는 대시보드</h1>
-          <p class="lede">
-            Claude Code가 내보내는 OpenTelemetry 메트릭·로그를 <strong>ClickHouse</strong>에 모아,
-            비용 · 도입 · 생산성 KPI로 집계합니다. Amazon Bedrock으로 쓴 세션과 Claude Enterprise로
-            쓴 세션을 자동으로 갈라 나란히 비교하고, 화면에 없는 질문은
-            <strong>AI 에이전트가 ClickHouse를 직접 조회해</strong> 답합니다. 애플리케이션은 컨테이너
-            하나라 <strong>EKS든 ECS든</strong> 같은 이미지로 돌아갑니다.
-          </p>
-
-          <div class="video-frame">
-            <video
-              src="assets/video/dashboard-demo.mp4"
-              poster="assets/img/demo-poster.jpg"
-              autoplay
-              muted
-              loop
-              playsinline
-              preload="metadata"
-              aria-label="대시보드 화면을 훑는 28초 무음 데모"
-            ></video>
-          </div>
-          <p class="caption">
-            28초 무음 데모 — 실제 워크샵 데이터(2026-07-26 ~ 07-28, 개발자 72명)로 찍은 화면입니다.
-          </p>
-        </div>
-      </div>
-
-      <div class="wrap">
-        <section>
-          <h2>이 화면이 답하는 질문</h2>
-          <p>
-            워크샵 참가자는 로그인할 때 인증 방식을 스스로 고릅니다. 그래서 "누가 어느 그룹인지"를
-            사전에 심을 수 없고, 세션이 실제로 호출한 모델 이름과 조직 식별자에서 사후에
-            판별합니다. 아래 수치는 그 판별을 거친 실측값입니다.
-          </p>
-
-          <div class="tiles">
-            <div class="tile">
-              <div class="k">활성 개발자</div>
-              <div class="v">72</div>
-              <div class="n">기간 내 세션 1건 이상</div>
-            </div>
-            <div class="tile">
-              <div class="k">세션</div>
-              <div class="v">1,587</div>
-              <div class="n">2일 누적</div>
-            </div>
-            <div class="tile">
-              <div class="k">작성 라인</div>
-              <div class="v">46,539</div>
-              <div class="n">커밋 115건</div>
-            </div>
-            <div class="tile">
-              <div class="k">제안 수락률</div>
-              <div class="v">98%</div>
-              <div class="n">code_edit_tool.decision</div>
-            </div>
-            <div class="tile">
-              <div class="k">계산 비용</div>
-              <div class="v">$507.88</div>
-              <div class="n">토큰 실측 × 모델 단가</div>
-            </div>
-            <div class="tile">
-              <div class="k">30일 프로젝션</div>
-              <div class="v">$7,618</div>
-              <div class="n">일평균 $254 × 30</div>
-            </div>
-            <div class="tile">
-              <div class="k">$ / 1K LOC</div>
-              <div class="v">$11</div>
-              <div class="n">지출 ÷ (라인 ÷ 1000)</div>
-            </div>
-            <div class="tile green">
-              <div class="k">전체 토큰</div>
-              <div class="v">405M</div>
-              <div class="n">캐시 읽기 포함</div>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h2>bedrock vs enterprise</h2>
-          <p>
-            그룹은 <strong>세션 단위</strong>로 판별합니다. 한 사람이 두 방식을 번갈아 쓴 경우가
-            실제로 있었고, 유저 단위로 판별하면 소수의 bedrock 세션이 그 사람의 enterprise 세션까지
-            덮어써 버렸습니다(실측 15세션 중 3건).
-          </p>
-
-          <div class="cards">
-            <div class="card bedrock">
-              <h3><span class="dot" style="background: var(--bedrock-bright)"></span>bedrock</h3>
-              <p>
-                개발자 52명 · 세션 602건 · 평균 생산성 점수 <strong>58.1</strong> · 수락률 98% ·
-                캐시율 91.7% · 사용자당 평균 $5.51
-              </p>
-              <p class="caption">
-                판별 근거: 호출 모델 이름에 <code>anthropic.</code> 또는 <code>:</code>가 포함
-                (예: <code>global.anthropic.claude-sonnet-5</code>)
-              </p>
-            </div>
-            <div class="card enterprise">
-              <h3><span class="dot" style="background: var(--enterprise-bright)"></span>enterprise</h3>
-              <p>
-                개발자 65명 · 세션 755건 · 평균 생산성 점수 <strong>48.1</strong> · 수락률 98% ·
-                캐시율 94.0% · 사용자당 평균 $3.40
-              </p>
-              <p class="caption">
-                판별 근거: 모델 이름에 Bedrock 신호가 없고 datapoint에
-                <code>organization.id</code>가 실려 있음 (예: <code>claude-sonnet-5</code>)
-              </p>
-            </div>
-          </div>
-
-          <div class="note">
-            <p>
-              두 그룹 합이 전체 유저 수와 맞지 않는 것은 정상입니다 — 어느 쪽 신호도 없는
-              <code>unknown</code> 세션이 약 11% 있고, 한 유저가 두 그룹에 모두 등장할 수 있습니다.
-              그룹 비교 화면은 <code>unknown</code>을 제외하고, 조직 전체 합계를 보여주는 몇몇
-              엔드포인트는 포함합니다.
-            </p>
-          </div>
-        </section>
-
-        <section>
-          <h2>AI로 분석 — 화면에 없는 질문은 물어보면 된다</h2>
-          <p>
-            KPI 화면은 미리 정한 질문에만 답합니다. Analytics 탭의 에이전트는 자연어 질문을 받아
-            <strong>ClickHouse에 읽기 전용 SQL을 직접 실행</strong>하고, 그 결과로 표와 요약을
-            만들어 줍니다. Amazon Bedrock의 Claude가 뒤에 있고, 응답은 SSE로 스트리밍됩니다.
-          </p>
-
-          <div class="cards">
-            <div class="card">
-              <h3>미리 준비된 질문</h3>
-              <p>
-                비용 · 도입/활동 · 생산성 · 이상 탐지 네 갈래로 프리셋이 있습니다 — "최근 N일간
-                bedrock과 enterprise 그룹의 모델별 비용을 비교해줘", "텔레메트리 수집이 끊긴 구간이
-                있는지 찾아줘" 같은 것들. 누르면 그대로 에이전트에게 갑니다.
-              </p>
-            </div>
-            <div class="card">
-              <h3>스키마를 아는 프롬프트</h3>
-              <p>
-                누적 카운터 diff, 세션 단위 그룹 판별, 수집 끊김은 "행 도착 여부로 본다" 같은 이
-                데이터셋의 함정이 시스템 프롬프트에 들어 있습니다. 모델이 <code>sum(Value)</code>로
-                과대집계하거나 존재하지 않는 그룹 컬럼을 찾아다니지 않도록 하는 장치입니다.
-              </p>
-            </div>
-            <div class="card">
-              <h3>SQL 샌드박스</h3>
-              <p>
-                LLM이 만든 SQL은 <code>sanitizeSql()</code>을 통과해야 합니다 —
-                <code>SELECT</code>/<code>WITH</code> 단일 문장만, 테이블 함수
-                (<code>url()</code>·<code>s3()</code>·<code>file()</code>) 차단,
-                <code>claude_code</code> 스키마 밖 조회 차단, 결과 200행 상한. ClickHouse 쪽 계정도
-                읽기 전용입니다.
-              </p>
-            </div>
-          </div>
-
-          <div class="note">
-            <p>
-              에이전트가 보는 결과 행은 이메일 마스킹을 거칠 수 있고(<code>PII_MASK_ENABLED</code>),
-              ClickHouse 오류 메시지가 입력값을 에코하는 경로는 플래그와 무관하게 항상 마스킹합니다.
-            </p>
-          </div>
-        </section>
-
-        <section>
-          <h2>EKS든 ECS든 — 필요한 건 ClickHouse 하나</h2>
-          <p>
-            대시보드는 <strong>컨테이너 하나</strong>입니다. 멀티스테이지 빌드로 React SPA를
-            <code>dist/</code>로 만들고, Node 서버가 API와 정적 파일을 같이 서빙합니다
-            (<code>PORT=8080</code>, non-root). 쿠버네티스에 의존하는 코드는 없습니다 — 현재
-            운영은 EKS(Graviton 노드풀)지만, 같은 이미지를 ECS/Fargate 태스크로 그대로 띄울 수
-            있습니다.
-          </p>
-
-          <div class="cards">
-            <div class="card">
-              <h3>런타임이 요구하는 것</h3>
-              <p>
-                HTTP로 닿는 ClickHouse(기본 8123)와 접속 정보 4개
-                (<code>CH_URL</code>/<code>CH_DB</code>/<code>CH_USER</code>/<code>CH_PASSWORD</code>).
-                그 외는 전부 선택입니다.
-              </p>
-            </div>
-            <div class="card">
-              <h3>EKS (현재)</h3>
-              <p>
-                Deployment 2 replica + ClickHouse Kubernetes Operator, ClickHouse Keeper는 별도
-                StatefulSet. Terraform 전체가 <code>infra/</code>에 있습니다.
-              </p>
-            </div>
-            <div class="card">
-              <h3>ECS / Fargate</h3>
-              <p>
-                <code>linux/arm64</code> 태스크 정의 + ALB 타깃 8080, 헬스체크는
-                <code>/healthz</code>(Basic Auth 면제). Ask Claude 챗을 쓰려면 태스크 롤에 Bedrock
-                <code>InvokeModelWithResponseStream</code> 권한만 주면 됩니다.
-              </p>
-            </div>
-            <div class="card">
-              <h3>로컬 / 온프렘</h3>
-              <p>
-                <code>docker compose</code> 한 줄로 ClickHouse까지 함께 뜁니다. ClickHouse가
-                자체 호스팅이든 매니지드든 앱은 구분하지 않습니다.
-              </p>
-            </div>
-          </div>
-
-          <div class="note">
-            <p>
-              단, 이 저장소의 Terraform은 <strong>EKS 기준</strong>으로만 작성돼 있습니다. ECS로
-              옮기려면 태스크 정의·서비스·ALB IaC는 따로 써야 합니다 — 애플리케이션 이미지와 환경
-              변수는 그대로입니다.
-            </p>
-          </div>
-        </section>
-
-        <section>
-          <h2>화면</h2>
-          <p>
-            9개 페이지 — Overview(KPI 요약), Executive(경영 보고 원페이지), Trends(DAU/WAU/MAU),
-            Productivity(토큰 정규화 생산성), Usage(Tool/MCP/Skill), Users(유저별 상세),
-            Cost(모델별 비용), Reliability(API 오류·재시도·거부율), Analytics(AI 분석 에이전트).
-          </p>
-
-          <div class="shots">
-            <figure>
-              <img src="assets/img/overview.png" alt="Overview 페이지 — KPI 타일과 그룹별 요약 표" />
-              <figcaption>Overview — KPI 타일, 도입·고착도, 그룹별 요약</figcaption>
-            </figure>
-            <figure>
-              <img src="assets/img/executive.png" alt="Executive 페이지 — PEOPLE/PRODUCTIVITY/COST 3단 타일" />
-              <figcaption>Executive — 경영 보고용 원페이지 (PDF 내보내기 포함)</figcaption>
-            </figure>
-            <figure>
-              <img src="assets/img/cost.png" alt="Cost 페이지 — 계산 비용과 캐시 티어별 도넛" />
-              <figcaption>Cost — 계산 비용 vs 보고 비용, 캐시 티어별 지출</figcaption>
-            </figure>
-            <figure>
-              <img src="assets/img/users.png" alt="Users 페이지 — bedrock/enterprise 비교와 Top10 리더보드" />
-              <figcaption>Users — 그룹 비교 + 리더보드 (유저 라벨은 익명화)</figcaption>
-            </figure>
-            <figure>
-              <img src="assets/img/productivity.png" alt="Productivity 페이지 — 수락률과 사용자별 생산성 점수" />
-              <figcaption>Productivity — 토큰 정규화 지표, 생산성 점수 공식 노출</figcaption>
-            </figure>
-            <figure>
-              <img src="assets/img/analytics.png" alt="Analytics 페이지 — AI 에이전트가 ClickHouse를 조회해 답하는 화면" />
-              <figcaption>Analytics — 질문을 던지면 에이전트가 ClickHouse를 직접 조회</figcaption>
-            </figure>
-          </div>
-          <p class="caption">
-            리더보드에 보이던 참가자 계정 식별자는 공개용으로 <code>dev-NN@ws</code> /
-            <code>eng-NN@ws</code>로 치환했습니다. 나머지 수치는 손대지 않은 실측값입니다.
-          </p>
-        </section>
-
-        <section>
-          <h2>직접 돌려보기</h2>
-          <p>
-            서버는 빌드 단계 없는 ESM Node.js, 웹은 Vite 빌드입니다. ClickHouse까지 포함한 전체
-            스택은 compose로 뜁니다.
-          </p>
-          <pre><code># 서버
-cd dashboard/server &amp;&amp; npm install &amp;&amp; npm run dev
-
-# 웹 (별 터미널)
-cd dashboard/web &amp;&amp; npm install &amp;&amp; npm run dev
-
-# 전체 스택 (ClickHouse 포함)
-docker compose -f dashboard/docker-compose.yml up</code></pre>
-          <p>
-            데모/워크샵용 시드 데이터는 <code>dashboard/seed/*.sql</code>에 있습니다. 배포는
-            <a href="operations.html">Operations</a>를, 데이터 모델과 파이프라인은
-            <a href="architecture.html">Architecture</a>를 보세요.
-          </p>
-        </section>
-      </div>
-    </main>
-
-    <footer>
-      <div class="wrap">
-        claude-code-usage-dashboard ·
-        <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a> · 내부
-        워크샵용 도구이며 대시보드 자체는 Basic Auth 뒤에서만 접근할 수 있습니다.
-      </div>
-    </footer>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Understand AI coding usage and cost — ccdash</title>
+  <meta name="description" content="Explore Claude Code and Codex usage in one dashboard, then follow costs into a time window, user, model or recorded completion." />
+  <link rel="stylesheet" href="assets/site.css" />
+  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="Main navigation"><a href="index.html" aria-current="page">Overview</a><a href="installation.html">Install</a><a href="architecture.html">Architecture</a><a href="api.html">API</a><a href="operations.html">Operations</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · Documentation</p>
+      <h1>Understand AI coding usage and cost</h1>
+      <p class="lede">Explore Claude Code and Codex usage in one dashboard, then follow costs into a time window, user, model or recorded completion.</p>
+      <p class="caption">Updated October 24, 2026 · Describes source behavior; verify your installed revision.</p>
+    </div>
+    <section id="demo"><h2>See the current dashboard</h2>
+<div class="demo-layout">
+  <div>
+    <div class="video-frame"><video controls playsinline preload="metadata" poster="assets/img/demo-poster.png" aria-label="48-second ccdash demo with Korean captions and instrumental music">
+      <source src="https://github.com/Atom-oh/claude-code-usage-dashboard/releases/download/docs-media-20261024/dashboard-demo.mp4" type="video/mp4" />
+      <source src="https://github.com/Atom-oh/claude-code-usage-dashboard/releases/download/docs-media-20261024/dashboard-demo.webm" type="video/webm" />
+      Your browser cannot play this video. <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/releases/download/docs-media-20261024/dashboard-demo.mp4">Download the demo</a>.
+    </video></div>
+    <p class="caption">48 seconds · Korean captions · instrumental music. Current application screens with synthetic identities and fictional costs; no production telemetry.</p>
+  </div>
+  <div>
+    <h3>From totals to an explanation</h3>
+    <ol>
+      <li>Compare Claude Code and Codex with separate cost bases.</li>
+      <li>Change cost trends from hourly to ten-minute buckets for a window of up to one day.</li>
+      <li>Select a user for their trend and models, or a model for its user cost shares.</li>
+      <li>Inspect Codex completion efficiency alongside coverage and missing-data reasons.</li>
+    </ol>
+    <p><a class="button-link" href="installation.html">Install a device Collector</a></p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/organization-sso.md">Connect your organization's SSO</a></p>
+  </div>
+</div></section><section id="latest"><h2>What changed</h2>
+<div class="cards">
+  <article class="card"><h3>Cost drilldowns</h3><p>User and model selections open filtered details. Model shares use the known cost subtotal and disclose missing prices.</p></article>
+  <article class="card"><h3>Codex completion efficiency</h3><p>Cache and reasoning ratios, tokens per completion, and estimated cost per identified session have explicit denominators and coverage.</p></article>
+  <article class="card"><h3>Device installation</h3><p>A macOS/Linux package configures both clients. Per-device tokens, revocation and a confirmed legacy macOS migration keep setup manageable.</p></article>
+  <article class="card"><h3>Configurable SSO</h3><p>Map signed OIDC groups to application roles. Enable a fixed login lifetime of up to 30 days when the identity provider supports the refresh contract.</p></article>
+</div></section><section id="costs"><h2>Read cost and coverage together</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Measurement reference table"><table><thead><tr><th scope="col">Measurement</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td>Claude reported spend</td><td>Use <code>reported_cost</code> for the Claude reported-cost path; retain computed-cost diagnostics separately.</td></tr><tr><td>AWS list-price estimate</td><td>Codex and non-Anthropic Claude pricing use supported AWS list rates, routing and request tiers. This is not a cloud invoice.</td></tr><tr><td>Known cost subtotal</td><td>Sum usable prices and label missing prices as partial. An all-unknown cost stays unavailable.</td></tr><tr><td>Observed tokens</td><td>Keep usable input/output pairs with partial disclosure. A positive subtotal does not prove complete canonical token components.</td></tr><tr><td>Activity indicators</td><td>Explore observed adoption, tools and activity. These are not validated employee-performance or causal productivity measurements.</td></tr></tbody></table></div><p>See <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">measurement definitions</a> and <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/codex-observability.md">Codex completion semantics</a>.</p></section><section id="resolution"><h2>Choose the right time resolution</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Selected window reference table"><table><thead><tr><th scope="col">Selected window</th><th scope="col">Cost and Trends controls</th></tr></thead><tbody><tr><td>Up to 24 hours</td><td>10 minutes, 30 minutes, hourly, daily or weekly. A one-day view starts at hourly resolution.</td></tr><tr><td>More than 24 hours</td><td>Hourly, daily or weekly. A two-day view does not offer ten-minute resolution.</td></tr></tbody></table></div><p>Read the returned interval and effective time bounds. Historical rollups and telemetry coverage can affect the visible period.</p><div class="shots"><figure><img src="assets/img/cost-detail.png" width="1830" height="655" loading="lazy" alt="Synthetic user-specific cost trend in the current dashboard" /><figcaption>Selected-user detail, using synthetic data.</figcaption></figure><figure><img src="assets/img/model-share.png" width="1830" height="353" loading="lazy" alt="Synthetic model cost detail showing each user share" /><figcaption>Selected-model user shares, using synthetic data.</figcaption></figure></div></section><section id="boundaries"><h2>Keep the dimensions separate</h2>
+<p><strong>Client</strong> identifies the emitting application. <strong>Backend</strong> describes the observed or inferred provider path. <strong>Model</strong> identifies the model. A model name alone does not identify the coding client.</p>
+<p>The Claude <code>bedrock</code>/<code>enterprise</code> comparison is an inferred session-channel view. It is separate from dashboard login and is not a Codex enterprise A/B comparison. One user can appear in multiple channels.</p>
+<p>Analytics can answer additional questions through the guarded, read-only query path when enabled. Its availability depends on role, model access and deployment configuration.</p>
+<p><a href="architecture.html">Read the pipeline and trust boundaries</a> · <a href="api.html">Explore the API</a></p></section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Full API reference</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Measurement definitions</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Change history</a> · <a href="assets/credits.html">Demo credits</a></p>
+    <p>Telemetry may be incomplete. Reported costs and list-price estimates are not invoices. Activity indicators do not establish employee productivity or causal ROI.</p>
+  </div></footer>
+</body>
 </html>

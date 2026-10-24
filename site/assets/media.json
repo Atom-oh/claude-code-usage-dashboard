@@ -1,0 +1,28 @@
+{
+  "release": "docs-media-20261024",
+  "source_revision": "4ae980c50030be4adb59fed5c24dc47b747f1c2b",
+  "privacy": "Current application UI with synthetic fixtures only; no production telemetry.",
+  "content_review": {
+    "score": 98.5,
+    "verdict": "PASS",
+    "date": "2026-10-24"
+  },
+  "files": [
+    {
+      "name": "dashboard-demo.mp4",
+      "bytes": 5606385,
+      "sha256": "c5578af927af29ed4b0c0d08934fb905dead85ce373f35c479fb376c4f59d590",
+      "url": "https://github.com/Atom-oh/claude-code-usage-dashboard/releases/download/docs-media-20261024/dashboard-demo.mp4",
+      "duration_seconds": 48,
+      "format": "1080x1080 H.264/AAC"
+    },
+    {
+      "name": "dashboard-demo.webm",
+      "bytes": 2007869,
+      "sha256": "de19ec84468562eb48a6037ff8b5c5427d17e52cfb9c1de71ec03bee7160c0df",
+      "url": "https://github.com/Atom-oh/claude-code-usage-dashboard/releases/download/docs-media-20261024/dashboard-demo.webm",
+      "duration_seconds": 48.008,
+      "format": "720x720 VP9/Opus"
+    }
+  ]
+}

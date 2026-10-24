@@ -12,6 +12,15 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-10-24 documentation site)
+
+- Refresh the public site for combined Claude Code/Codex costs, completion-scoped
+  efficiency, cost drilldowns, device installation and configurable OIDC sessions.
+- Add the Collector installation guide with attribution, migration and workshop
+  boundaries. Link the complete API and operational runbooks.
+- Replace the historical workshop demo/captures with a captioned synthetic-data demo;
+  retain historical video provenance through immutable Git references.
+
 ### Fixed (2026-10-18 runtime OS zlib)
 
 - Install the authenticated Alpine OS zlib fix for `CVE-2026-85091` and verify
