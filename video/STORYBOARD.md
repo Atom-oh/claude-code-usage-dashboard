@@ -11,7 +11,8 @@ music: none
 # Existing demo storyboard
 
 Reconciled on 2026-09-13 from `index.html` and the six frame HTML files. This describes the
-existing artifact, not an instruction to regenerate it. The original sample period is
+historical artifact, not an instruction to regenerate it. The site now publishes a
+separate [48-second synthetic-data demo](../site/assets/credits.html). The original sample period is
 2026-07-26 through 2026-07-28. All captions/figures below are retained media content, not
 claims about today's dashboard, billed spend, or causal productivity.
 
@@ -30,7 +31,7 @@ while the complete timeline lasts 28 seconds.
 | Agent | 19 s | 6 s | 25 s | Cut | [05-agent.html](compositions/frames/05-agent.html) |
 | Outro | 24.5 s | 3.5 s | 28 s | 0.5 s crossfade | [06-outro.html](compositions/frames/06-outro.html) |
 
-The checked-in MP4 is 1920x1080 at 30 fps, 28 seconds long, with no audio stream. Its metadata
+The historical MP4 at Git revision `4ae980c50030be4adb59fed5c24dc47b747f1c2b` is 1920x1080 at 30 fps, 28 seconds long, with no audio stream. Its metadata
 was inspected locally; no render was run for this reconciliation.
 
 ## 1. Hook
