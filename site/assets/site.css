@@ -222,6 +222,7 @@ li {
 }
 
 code {
+  overflow-wrap: anywhere;
   font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
   font-size: 0.9em;
   background: var(--code-bg);
