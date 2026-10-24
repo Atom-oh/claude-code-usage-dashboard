@@ -1,208 +1,61 @@
 <!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Operations — Claude Code Usage Dashboard</title>
-    <meta name="description" content="배포 절차, 환경 변수, 장애 대응 — 대시보드 운영 요약." />
-    <link rel="stylesheet" href="assets/site.css" />
-    <link rel="icon" type="image/png" href="assets/img/favicon.png" />
-  </head>
-  <body>
-    <header class="top">
-      <div class="wrap">
-        <a class="brand" href="index.html"><span class="mark">CC</span> Usage Dashboard</a>
-        <nav class="tabs">
-          <a href="index.html">Overview</a>
-          <a href="architecture.html">Architecture</a>
-          <a href="api.html">API</a>
-          <a href="operations.html" aria-current="page">Operations</a>
-          <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
-        </nav>
-      </div>
-    </header>
-
-    <main class="wrap">
-      <div class="hero">
-        <p class="eyebrow">Operations</p>
-        <h1>배포와 운영</h1>
-        <p class="lede">
-          배포는 커밋 기반이 아니라 <strong>이미지 기반</strong>입니다 — 이미지는 빌드 시점의 작업
-          트리를 반영하므로, 어느 브랜치에 서 있는지가 곧 배포 내용입니다.
-        </p>
-      </div>
-
-      <section>
-        <h2>배포 (EKS)</h2>
-        <p>
-          아래는 저장소의 <code>docs/runbooks/deploy-production.md</code> 요약입니다. 계정 ID와
-          클러스터 이름은 자리표시자로 바꿔 두었습니다.
-        </p>
-        <h3>1. 무엇을 배포하는지 확인</h3>
-        <pre><code>git status
-git branch --show-current
-git log -1 --oneline</code></pre>
-        <p>관련 없는 변경이 섞여 있으면 먼저 <code>git stash</code> 합니다.</p>
-
-        <h3>2. 사전 검사</h3>
-        <pre><code>cd dashboard/server &amp;&amp; node --test *.test.js
-cd dashboard/web &amp;&amp; npm install &amp;&amp; npm run build</code></pre>
-
-        <h3>3. 빌드 &amp; 푸시 (Graviton = arm64)</h3>
-        <pre><code>TAG=$(date -u +%Y%m%d-%H%M%S)
-aws ecr get-login-password --region &lt;region&gt; \
-  | docker login --username AWS --password-stdin &lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com
-
-docker buildx build --platform linux/arm64 \
-  -t &lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com/cc-ab-dashboard:$TAG \
-  -t &lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com/cc-ab-dashboard:latest \
-  --push dashboard/</code></pre>
-
-        <h3>4. 롤아웃 &amp; 검증</h3>
-        <pre><code>kubectl --context &lt;cluster&gt; -n claude-code set image deployment/dashboard \
-  dashboard=&lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com/cc-ab-dashboard:$TAG
-kubectl --context &lt;cluster&gt; -n claude-code rollout status deployment/dashboard --timeout=120s
-kubectl --context &lt;cluster&gt; -n claude-code get pods -l app=dashboard</code></pre>
-        <p>
-          기대 상태: 파드 2/2 <code>Running</code>, deployment 이미지가 방금 태그와 일치,
-          로그에 <code>dashboard listening on :8080</code>만 있고 스택트레이스 없음.
-        </p>
-        <div class="note">
-          <p>
-            롤백은 <code>kubectl rollout undo deployment/dashboard</code>. 크래시 루프면 먼저
-            의심할 것: 이름이 바뀐 환경 변수, ClickHouse 접속 실패(<code>CH_URL</code> /
-            <code>CH_PASSWORD</code>), Basic Auth 값 오류. <code>/healthz</code>는 Basic Auth
-            면제이므로 포트포워딩으로 직접 찔러 보는 게 가장 빠릅니다.
-          </p>
-        </div>
-      </section>
-
-      <section>
-        <h2>ECS / Fargate에 올리기</h2>
-        <p>
-          이미지는 그대로 씁니다 — 위 3번까지가 동일하고, 롤아웃만 ECS 방식으로 바뀝니다. 앱이
-          쿠버네티스에 의존하지 않으므로 코드 변경은 없습니다.
-        </p>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>항목</th><th>값</th></tr></thead>
-            <tbody>
-              <tr><td>태스크 아키텍처</td><td><code>ARM64</code> (이미지가 <code>linux/arm64</code>) · Fargate</td></tr>
-              <tr><td>컨테이너 포트</td><td><code>8080</code> (<code>PORT</code> env로 변경 가능)</td></tr>
-              <tr><td>헬스체크</td><td><code>GET /healthz</code> — Basic Auth 면제, ClickHouse ping 포함</td></tr>
-              <tr><td>필수 env</td><td><code>CH_URL</code> · <code>CH_DB</code> · <code>CH_USER</code> · <code>CH_PASSWORD</code></td></tr>
-              <tr><td>태스크 롤</td><td>Ask Claude 챗을 쓸 때만 Bedrock <code>InvokeModelWithResponseStream</code> (해당 inference profile ARN으로 좁힐 것)</td></tr>
-              <tr><td>시크릿</td><td>ClickHouse 비밀번호와 Basic Auth는 Secrets Manager/SSM <code>secrets</code>로 주입</td></tr>
-              <tr><td>네트워크</td><td>ClickHouse에 HTTP(기본 8123)로 닿는 서브넷 · ALB 타깃 그룹 8080</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <pre><code>aws ecs update-service --cluster &lt;cluster&gt; --service dashboard \
-  --task-definition dashboard:&lt;revision&gt; --force-new-deployment
-aws ecs wait services-stable --cluster &lt;cluster&gt; --services dashboard</code></pre>
-        <div class="note">
-          <p>
-            이 저장소의 Terraform은 EKS 기준이라 태스크 정의·서비스·ALB는 새로 작성해야 합니다.
-            반대로 ClickHouse 쪽은 손댈 게 없습니다 — 앱은 ClickHouse가 EKS 위의 오퍼레이터든,
-            별도 클러스터든, 매니지드든 <code>CH_URL</code>만 봅니다.
-          </p>
-        </div>
-      </section>
-
-      <section>
-        <h2>환경 변수</h2>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>변수</th><th>역할</th><th>기본값</th></tr></thead>
-            <tbody>
-              <tr><td><code>CH_URL</code> / <code>CH_DB</code> / <code>CH_USER</code> / <code>CH_PASSWORD</code></td><td>ClickHouse 접속(읽기 전용 계정)</td><td>—</td></tr>
-              <tr><td><code>BASIC_AUTH_USER</code> / <code>BASIC_AUTH_PASSWORD</code></td><td>전역 Basic Auth. 둘 다 비면 인증 없음(로컬 개발)</td><td>미설정</td></tr>
-              <tr><td><code>CHAT_MODEL_ID</code></td><td>Ask Claude 챗이 호출하는 Bedrock inference profile</td><td><code>global.anthropic.claude-sonnet-5</code></td></tr>
-              <tr><td><code>BEDROCK_REGION</code></td><td>Bedrock 호출 리전. 인프라 리전과 독립</td><td><code>AWS_REGION</code> → <code>us-east-1</code></td></tr>
-              <tr><td><code>PII_MASK_ENABLED</code></td><td>이메일 마스킹(<code>"1"</code> / <code>"true"</code> = ON)</td><td>앱 기본 OFF · Terraform 기본 ON</td></tr>
-              <tr><td><code>GROUP_MODE</code></td><td><code>ab</code>는 bedrock/enterprise 비교, <code>single</code>은 채널이 하나인 조직(빈 두 번째 카드 숨김)</td><td><code>ab</code></td></tr>
-              <tr><td><code>DEFAULT_RANGE_DAYS</code> / <code>RANGE_CAP_DAYS</code></td><td>기본 조회 구간 / 요청 가능한 최대 구간(넘으면 400)</td><td><code>2</code> / <code>90</code></td></tr>
-              <tr><td><code>DATA_STALE_MINUTES</code></td><td><code>GET /api/health/data</code>의 <code>stale</code> 판정 임계(분)</td><td><code>360</code></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          모델·리전 같은 값은 Terraform 변수 한 곳(<code>infra/variables.tf</code>)만 고치면 env와
-          IAM 정책 ARN이 함께 반영됩니다. <code>kubectl set env</code>로 손으로 바꾸면 다음
-          <code>terraform apply</code>에서 되돌아갑니다.
-        </p>
-      </section>
-
-      <section>
-        <h2>흔한 증상과 첫 확인 지점</h2>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>증상</th><th>먼저 볼 것</th></tr></thead>
-            <tbody>
-              <tr>
-                <td>숫자가 비현실적으로 큼(100배 단위)</td>
-                <td>누적 카운터를 <code>sum(Value)</code>로 더한 쿼리가 새로 들어왔는지 —
-                  <a href="architecture.html">boundary diff</a>를 쓰지 않으면 반드시 이렇게 됩니다.</td>
-              </tr>
-              <tr>
-                <td>대시보드는 뜨는데 값이 전부 0</td>
-                <td>수집이 끊겼는지: 시간 버킷별 <em>행 수</em>가 0인 구간을 찾습니다(값의 변화가
-                  아니라 행 도착 여부로 판단).</td>
-              </tr>
-              <tr>
-                <td>쿼리가 갑자기 느려짐</td>
-                <td>rollup(<code>otel_metrics_sum_hourly</code>) 대신 원본을 읽는 쿼리가
-                  섞였는지, 그리고 materialized view가 살아 있는지.</td>
-              </tr>
-              <tr>
-                <td>그룹이 전부 <code>unknown</code></td>
-                <td>rollup의 <code>has_org</code> 컬럼과 MV 정의 — <code>organization.id</code>는
-                  ResourceAttributes가 아니라 datapoint <code>Attributes</code>에 실립니다.</td>
-              </tr>
-              <tr>
-                <td>Ask Claude 챗이 답을 못 함 / 느림</td>
-                <td>Bedrock 모델 접근 권한과 리전, 그리고 질문 1건이 직렬 호출 3~5회(hop)라는
-                  구조. 체감 지연은 첫 토큰(TTFT)이 지배합니다.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2>이 저장소의 관례</h2>
-        <ul>
-          <li>
-            <strong>절대 <code>sum(Value)</code> 금지</strong> —
-            <code>incFlat()</code>/<code>incBucketed()</code>를 씁니다.
-          </li>
-          <li>
-            프로모션/머티리얼라이즈 컬럼을 건드리면 <code>clickhouse-schema.sql</code>,
-            <code>grafana-ab-queries.sql</code>, 아키텍처 문서를 함께 고칩니다 — 과거 리뷰에서 세
-            파일이 어긋난 적이 있습니다.
-          </li>
-          <li>
-            새 엔드포인트는 <code>index.js</code>의 공용 <code>route()</code> 래퍼를 통과시킵니다
-            (범위 파싱 · 오류 처리 · TTL 캐시 + in-flight 중복 제거).
-          </li>
-          <li>
-            <code>sanitizeSql()</code>은 LLM이 만든 SQL이 ClickHouse에 닿는 유일한 지점입니다 —
-            여기 변경은 보안 리뷰 수준의 검토가 필요합니다.
-          </li>
-          <li>
-            주석은 "왜"가 비자명할 때만. 이 저장소는 실측 결과(<code>실측 확인: …</code>)와
-            의도한 단순화(<code>ponytail: …</code>)를 주석으로 남기는 스타일을 유지합니다.
-          </li>
-        </ul>
-      </section>
-    </main>
-
-    <footer>
-      <div class="wrap">
-        claude-code-usage-dashboard ·
-        <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a> · 이 페이지의
-        계정 ID · 클러스터 이름 · 호스트명은 자리표시자로 대체돼 있습니다.
-      </div>
-    </footer>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Operate your own installation — ccdash</title>
+  <meta name="description" content="Configure organization identity, verify deployed components and follow the owned runbooks for rollout and recovery." />
+  <link rel="stylesheet" href="assets/site.css" />
+  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="Main navigation"><a href="index.html">Overview</a><a href="installation.html">Install</a><a href="architecture.html">Architecture</a><a href="api.html">API</a><a href="operations.html" aria-current="page">Operations</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · Documentation</p>
+      <h1>Operate your own installation</h1>
+      <p class="lede">Configure organization identity, verify deployed components and follow the owned runbooks for rollout and recovery.</p>
+      <p class="caption">Updated October 24, 2026 · Describes source behavior; verify your installed revision.</p>
+    </div>
+    <section id="sso"><h2>Connect organization SSO</h2>
+<p>Set <code>AUTH_MODE=oidc</code> for a confidential OIDC client with discovery/JWKS, signed ID tokens, authorization code and PKCE S256. Register the exact callback <code>https://dashboard.example.com/auth/callback</code>.</p>
+<p>A shared Cognito user pool can serve multiple projects through separate app clients, callbacks, secrets and role mappings. Application-specific group assignment belongs in identity administration. Customer emails, domains and pool IDs are configuration, not general application rules.</p><div class="table-scroll" tabindex="0" role="region" aria-label="Setting reference table"><table><thead><tr><th scope="col">Setting</th><th scope="col">Purpose</th></tr></thead><tbody><tr><td><code>APP_PUBLIC_URL</code></td><td>Exact HTTPS origin, without a path, query or fragment.</td></tr><tr><td><code>OIDC_ISSUER</code>, <code>OIDC_CLIENT_ID</code></td><td>Exact issuer identifier and the dedicated application client.</td></tr><tr><td><code>OIDC_CLIENT_SECRET</code>, <code>SESSION_SECRET</code></td><td>Provision through protected secret references. Replicas must share the session key and identity configuration.</td></tr><tr><td><code>OIDC_GROUPS_CLAIM</code></td><td>Top-level signed group claim: for Cognito, <code>cognito:groups</code>; otherwise the provider's configured claim.</td></tr><tr><td><code>OIDC_SCOPES</code></td><td>Default <code>openid profile</code>. Add only scopes needed by the configured provider, including refresh issuance requirements.</td></tr><tr><td><code>OIDC_ROLE_GROUPS</code></td><td>JSON mapping from <code>viewer</code>, <code>analyst</code> and <code>admin</code> to explicit group arrays.</td></tr></tbody></table></div>
+<pre><code class="language-json">{
+  "viewer": ["YOUR_VIEWER_GROUP"],
+  "analyst": ["YOUR_EDITOR_GROUP"],
+  "admin": ["YOUR_ADMIN_GROUP"]
+}</code></pre>
+<p>The UI's editor role maps to <code>analyst</code>; <code>editor</code> is not a configuration role key. Unmapped groups cannot log in. The highest mapped role wins.</p><div class="table-scroll" tabindex="0" role="region" aria-label="Role reference table"><table><thead><tr><th scope="col">Role</th><th scope="col">Permissions</th></tr></thead><tbody><tr><td>viewer</td><td>Read installation-wide telemetry; no Collector management or chat.</td></tr><tr><td>analyst / editor</td><td>Read telemetry, use enabled chat, download installers and manage owned devices.</td></tr><tr><td>admin</td><td>Analyst permissions plus installation diagnostics.</td></tr></tbody></table></div><p>Okta and Keycloak can supply this OIDC contract with the appropriate scopes and signed group claims. Verify the actual customer provider; generic support is not a completed provider acceptance test. Login does not provide per-user data isolation.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/organization-sso.md">Provider setup and SSO operations</a></p></section><section id="sessions"><h2>Keep login for up to 30 days</h2>
+<p>Persistent login is optional and disabled by default. A one-hour authorization ceiling with a fixed 30-day login limit can be configured as:</p>
+<pre><code class="language-bash">SESSION_MAX_AGE_SECONDS=3600
+SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
+<p>The normal short-session default is 900 seconds; permitted values are 300–3600. Refresh lifetime is either 0 (disabled) or 3600–2592000 seconds. Short sessions are also bounded by provider token expiry, so one hour is a ceiling rather than a guaranteed renewal interval.</p>
+<p>Renewal is request-driven near or after short-session expiry, not a background hourly timer. The 30-day deadline starts at initial login and does not slide forward. The provider can end it earlier.</p>
+<ul>
+  <li>Refresh mode requires a reusable non-rotating refresh token, a fresh signed ID token with current groups, and exchange/revocation using <code>client_secret_basic</code>.</li>
+  <li>Rotation-only providers are unsupported in this mode. A rotated refresh response requires a new login.</li>
+  <li>Use encrypted Secure/HttpOnly cookies. Raw identity tokens are not returned by the session API.</li>
+  <li>Logout clears local cookies and attempts refresh revocation. It does not end the provider's SSO session, instantly revoke copied short-lived cookies, or revoke device tokens.</li>
+</ul><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/decisions/ADR-021-refresh-token-sessions.md">Refresh-session design and limits</a></p></section><section id="deploy"><h2>Deploy a reviewed application revision</h2>
+<ol>
+  <li>Use a clean, reviewed build context and record its commit. Follow the deployment runbook's preflight checks.</li>
+  <li>Confirm AWS identity, target cluster, existing Terraform inputs, migration state and a usable rollback image.</li>
+  <li>Build for the target architecture and publish an immutable image tag/digest. The provided EKS deployment targets arm64.</li>
+  <li>Review the complete infrastructure plan where needed. Existing installations use compatibility verification and explicit upgrades, not automatic bootstrap retries.</li>
+  <li>Roll out, check readiness and actual image digests, then verify login, API behavior, ingestion freshness and representative data.</li>
+</ol>
+<p>Use <code>/healthz</code> for liveness and <code>/readyz</code> for readiness. Source declarations, passing builds and a healthy process do not establish a working identity provider, fresh telemetry or applied migrations.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md">EKS deployment and rollback</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">Schema migration procedure</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">Customer installation prerequisites</a></p></section><section id="symptoms"><h2>Start with the failing boundary</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Symptom reference table"><table><thead><tr><th scope="col">Symptom</th><th scope="col">First checks</th></tr></thead><tbody><tr><td>Login fails or ends early</td><td>Exact origin/callback/issuer, signed mapped groups, provider expiry and refresh contract. Do not print token values.</td></tr><tr><td>Collector port occupied</td><td>Download the latest package; follow guided macOS migration or the existing service owner's manual procedure.</td></tr><tr><td>Unidentified or split users</td><td>Check the intended <code>--user-id</code>, emitted identity and dashboard filters. A device's SSO owner is not automatic telemetry attribution.</td></tr><tr><td>Token issued but no telemetry</td><td>Restart coding clients, generate work, check local service/exporter errors and device receipt, then confirm stored data.</td></tr><tr><td>Codex detail shows a dash</td><td>Inspect completion cohort and whole-window completeness separately. Missing denominators, prices or components must not become zero.</td></tr><tr><td>Slow cost detail</td><td>Inspect query admission, filters and effective resolution; use cost/effort profiles and measure target workloads before changing capacity.</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector limits and recovery</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">Cost-query behavior</a></p></section><section id="site"><h2>Documentation deployment</h2>
+<p>This documentation is static HTML in <code>site/</code>. The Pages workflow uploads that directory on a merged <code>main</code> change. There is no bundler build and no application/EKS rollout for a documentation-only release.</p>
+<p>Use source-linked runbooks for complete procedures. The website summarizes supported behavior and does not attest to the configuration of a particular customer installation.</p></section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Full API reference</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Measurement definitions</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Change history</a> · <a href="assets/credits.html">Demo credits</a></p>
+    <p>Telemetry may be incomplete. Reported costs and list-price estimates are not invoices. Activity indicators do not establish employee productivity or causal ROI.</p>
+  </div></footer>
+</body>
 </html>

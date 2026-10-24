@@ -1,224 +1,37 @@
 <!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>API — Claude Code Usage Dashboard</title>
-    <meta name="description" content="대시보드 API 레퍼런스 — 공통 쿼리 파라미터와 엔드포인트 목록." />
-    <link rel="stylesheet" href="assets/site.css" />
-    <link rel="icon" type="image/png" href="assets/img/favicon.png" />
-  </head>
-  <body>
-    <header class="top">
-      <div class="wrap">
-        <a class="brand" href="index.html"><span class="mark">CC</span> Usage Dashboard</a>
-        <nav class="tabs">
-          <a href="index.html">Overview</a>
-          <a href="architecture.html">Architecture</a>
-          <a href="api.html" aria-current="page">API</a>
-          <a href="operations.html">Operations</a>
-          <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
-        </nav>
-      </div>
-    </header>
-
-    <main class="wrap">
-      <div class="hero">
-        <p class="eyebrow">API</p>
-        <h1>엔드포인트</h1>
-        <p class="lede">
-          데이터 라우트는 전부 <code>GET</code>, 읽기 전용, ClickHouse 쿼리 하나가 뒤에 있습니다.
-          공개 base URL은 없습니다 — Basic Auth 뒤의 배포 도메인이나 로컬
-          <code>http://localhost:8080</code>으로 접근합니다.
-        </p>
-      </div>
-
-      <section>
-        <h2>공통 쿼리 파라미터</h2>
-        <p>
-          아래 파라미터는 모든 데이터 라우트가 받습니다(<code>POST /api/chat</code>만 JSON 본문을
-          받는 예외).
-        </p>
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr><th>파라미터</th><th>타입</th><th>설명</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>from</code></td>
-                <td>ISO 8601</td>
-                <td>범위 시작. 기본값 <code>to - 2일</code>(워크샵 기본). uniq/존재 여부 계열
-                  엔드포인트는 서버에서 시각을 시간 단위로 내림하므로 좁은(1시간 미만) 범위에서는
-                  최대 59분이 더 포함될 수 있습니다 — rollup 그레인과의 의도된 트레이드오프.</td>
-              </tr>
-              <tr><td><code>to</code></td><td>ISO 8601</td><td>범위 끝. 기본값 now</td></tr>
-              <tr>
-                <td><code>group</code></td>
-                <td><code>bedrock</code> | <code>enterprise</code></td>
-                <td>세션 그룹 필터. 그룹 스코프 쿼리는 <code>unknown</code>을 기본 제외하고,
-                  조직 전체 합계를 보는 몇몇 엔드포인트는 포함합니다.</td>
-              </tr>
-              <tr><td><code>user</code></td><td>string</td><td>이메일 부분 일치 필터</td></tr>
-              <tr><td><code>model</code></td><td>string</td><td>모델명 부분 일치(정규화 후) 필터</td></tr>
-              <tr>
-                <td><code>intervalHours</code></td>
-                <td>number</td>
-                <td>시계열 버킷 크기. <code>0.25</code>=15분(차트 드래그 줌), <code>1</code>=시간,
-                  <code>24</code>=일, <code>168</code>=주. <code>1</code> 미만은 범위가 4시간을
-                  넘으면 서버에서 <code>1</code>로 클램프됩니다(분 버킷은 원본 테이블을 스캔).</td>
-              </tr>
-              <tr>
-                <td><code>email</code></td>
-                <td>string</td>
-                <td>유저 드릴다운 3개 라우트 전용(정확 일치). 다른 라우트는 무시합니다.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2>Overview · Adoption</h2>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>Path</th><th>반환</th></tr></thead>
-            <tbody>
-              <tr><td><code>GET /api/overview/kpi</code></td><td>그룹별 세션·유저·커밋·PR·토큰·LOC 요약</td></tr>
-              <tr><td><code>GET /api/overview/active-users</code></td><td>그룹 무관 고유 활성 유저 수(<code>unknown</code> 포함)</td></tr>
-              <tr><td><code>GET /api/overview/tokens-timeseries</code></td><td>시계열 — 그룹별 토큰 사용량</td></tr>
-              <tr><td><code>GET /api/overview/cache-efficiency</code></td><td>캐시 재사용률 + 토큰 타입 분해</td></tr>
-              <tr><td><code>GET /api/overview/model-distribution</code></td><td>그룹 × 모델 토큰 분포</td></tr>
-              <tr><td><code>GET /api/adoption/levels</code></td><td>DAU/WAU/MAU 스냅샷 + 전체 멤버</td></tr>
-              <tr><td><code>GET /api/adoption/timeseries</code></td><td>시계열 — 일별 DAU/WAU/MAU 롤링</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2>Productivity · Usage</h2>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>Path</th><th>반환</th></tr></thead>
-            <tbody>
-              <tr><td><code>GET /api/productivity/normalized</code></td><td>백만 토큰당 LOC/커밋</td></tr>
-              <tr><td><code>GET /api/productivity/decisions</code></td><td>그룹별 수락/거절 수</td></tr>
-              <tr><td><code>GET /api/productivity/decisions-by-tool</code></td><td>그룹 × 툴 수락/거절</td></tr>
-              <tr><td><code>GET /api/productivity/active-time</code></td><td>시계열 — 활성 시간(초)</td></tr>
-              <tr><td><code>GET /api/productivity/agenticness</code></td><td>시계열 — 프롬프트당 툴 호출 수</td></tr>
-              <tr><td><code>GET /api/productivity/engagement</code></td><td>시계열 — 일별 유저/세션/PR</td></tr>
-              <tr><td><code>GET /api/productivity/loc-timeseries</code></td><td>시계열 — 추가/삭제 라인</td></tr>
-              <tr><td><code>GET /api/usage/tool-mcp</code></td><td>툴 · MCP 호출 수</td></tr>
-              <tr><td><code>GET /api/usage/skills</code></td><td>스킬 호출 수(OTel 리댁션 영향 받음)</td></tr>
-              <tr><td><code>GET /api/usage/connectors</code></td><td>MCP 커넥터 사용량</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2>Users</h2>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>Path</th><th>반환</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><code>GET /api/users/leaderboard</code></td>
-                <td>유저 × 그룹 지표 + 생산성 점수. 두 그룹에 걸친 유저는 그룹당 1행이고,
-                  <code>user_active_days</code>는 그룹 무관 값이라 조직 전체 점수를 다시 계산할 때
-                  활성일이 이중 계산되지 않습니다.</td>
-              </tr>
-              <tr><td><code>GET /api/users/tools</code></td><td>유저 × 그룹 툴 사용량</td></tr>
-              <tr><td><code>GET /api/users/skills</code></td><td>유저 × 그룹 스킬 사용량</td></tr>
-              <tr><td><code>GET /api/users/cost-efficiency</code></td><td>유저 × 그룹 <code>$/LOC</code>, <code>$/commit</code></td></tr>
-              <tr><td><code>GET /api/users/daily</code></td><td>시계열 — 한 유저의 일별 세션/LOC/토큰/커밋. <code>email</code> 필수</td></tr>
-              <tr><td><code>GET /api/users/decisions-by-tool</code></td><td>한 유저의 툴별 수락/거절. <code>email</code> 필수</td></tr>
-              <tr><td><code>GET /api/users/heatmap</code></td><td>최근 91일 일별 세션 히트맵. <code>email</code> 필수, <code>from</code> 무시</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2>Cost</h2>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>Path</th><th>반환</th></tr></thead>
-            <tbody>
-              <tr><td><code>GET /api/cost/summary</code></td><td>그룹별 계산 비용 + 보고 비용, 토큰 분해</td></tr>
-              <tr><td><code>GET /api/cost/by-model</code></td><td>그룹 × 모델 비용·토큰</td></tr>
-              <tr><td><code>GET /api/cost/by-user-model</code></td><td>유저 × 그룹 × 모델 비용·토큰</td></tr>
-              <tr><td><code>GET /api/cost/by-model-daily</code></td><td>시계열 — 그룹 × 모델 일별 비용</td></tr>
-              <tr><td><code>GET /api/cost/by-model-compare</code></td><td>직전 동일 길이 기간과의 모델별 비교</td></tr>
-              <tr><td><code>GET /api/cost/tiers</code></td><td>토큰 티어별(uncachedInput/cacheRead/cacheWrite/output) 비용, 그룹 분리</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="note">
-          <p>
-            <strong>계산 비용 vs 보고 비용.</strong> 화면의 기본값은 토큰 실측 × 모델 단가로 계산한
-            값입니다. Claude Code가 자체 보고하는 <code>cost.usage</code>는 근사치라 A/B 비교의
-            기준으로 쓰지 않고, 참고용으로 나란히 보여줍니다.
-          </p>
-        </div>
-      </section>
-
-      <section>
-        <h2>Chat · Config</h2>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>Path</th><th>반환</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><code>POST /api/chat</code></td>
-                <td>SSE 스트림. 본문 <code>{"messages":[{"role","content"}]}</code>. Bedrock
-                  ConverseStream + 읽기 전용 SQL 툴콜 루프(최대 4 hop). LLM이 만든 SQL은
-                  <code>sanitizeSql()</code> 샌드박스를 통과해야 하고, 결과는 200행으로 잘립니다.</td>
-              </tr>
-              <tr>
-                <td><code>GET /api/config</code></td>
-                <td><code>{"piiMask", "pricing", "schema", "groupMode", "defaultRangeDays", "rangeCapDays"}</code> —
-                  런타임 설정. 이미지는 한 번 빌드해 여러 배포에서 재사용하므로 빌드타임 플래그가
-                  아니라 런타임 값입니다. <code>piiMask</code>는 프론트가 이메일을 마스킹할지
-                  (fail-closed: 오류·타임아웃이면 마스킹), <code>groupMode</code>는
-                  <code>ab</code>(기본)/<code>single</code>(단일 채널 조직) 여부입니다.</td>
-              </tr>
-              <tr><td><code>GET /healthz</code></td><td>Basic Auth 면제. Liveness — 항상 200, ClickHouse ping 결과를 body에 포함</td></tr>
-              <tr><td><code>GET /readyz</code></td><td>Basic Auth 면제. Readiness — ClickHouse에 닿고 종료 중이 아니면 200, 아니면 503</td></tr>
-              <tr><td><code>GET /api/health/data</code></td><td>데이터 신선도. 가장 최근 텔레메트리 행을 <code>ok</code>/<code>stale</code>/<code>unknown</code>으로 분류, <code>ok</code>만 200</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="note">
-          <p>
-            마스킹은 <strong>표시 계층</strong>에만 적용됩니다 — 데이터 엔드포인트는 항상 원본
-            이메일을 반환하므로, Basic Auth를 통과한 사람은 네트워크 탭에서 볼 수 있습니다. 화면
-            공유나 공개 URL을 가리는 장치이고, 데이터 자체의 접근 제어가 아닙니다.
-          </p>
-        </div>
-      </section>
-
-      <section>
-        <h2>오류 · 레이트 리밋</h2>
-        <ul>
-          <li><code>401</code> — Basic Auth 누락/불일치 (<code>BASIC_AUTH_*</code>가 설정된 경우에만)</li>
-          <li><code>500</code> — 대개 ClickHouse 쿼리 오류. 응답은 <code>{"error": "..."}</code>, 원문 스택은 서버 로그에만 남습니다</li>
-          <li><code>503</code> — <code>/readyz</code>가 종료 중이거나 ClickHouse에 닿지 못할 때; <code>/api/health/data</code>가 <code>stale</code>/<code>unknown</code>일 때; <code>POST /api/chat</code>이 인증 미설정이거나 ClickHouse 세션이 readonly로 확인되지 않았을 때</li>
-          <li><code>429</code> — <code>POST /api/chat</code>의 IP당 분당 상한(단일 파드 in-memory)</li>
-        </ul>
-        <p>
-          데이터 라우트에는 애플리케이션 레벨 레이트 리밋이 없습니다. 워크샵 소규모 코호트를
-          전제한 결정이며, 전제가 바뀌면 이 문장을 지우기 전에 리밋을 먼저 넣어야 합니다.
-        </p>
-      </section>
-    </main>
-
-    <footer>
-      <div class="wrap">
-        claude-code-usage-dashboard ·
-        <a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a>
-      </div>
-    </footer>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>API contracts and cost detail — ccdash</title>
+  <meta name="description" content="Use the shared client endpoints for combined views. Keep source coverage, exact filters and the meaning of each denominator visible." />
+  <link rel="stylesheet" href="assets/site.css" />
+  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="Main navigation"><a href="index.html">Overview</a><a href="installation.html">Install</a><a href="architecture.html">Architecture</a><a href="api.html" aria-current="page">API</a><a href="operations.html">Operations</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · Documentation</p>
+      <h1>API contracts and cost detail</h1>
+      <p class="lede">Use the shared client endpoints for combined views. Keep source coverage, exact filters and the meaning of each denominator visible.</p>
+      <p class="caption">Updated October 24, 2026 · Describes source behavior; verify your installed revision.</p>
+    </div>
+    <section id="access"><h2>Authentication</h2><p>In OIDC mode, telemetry APIs use session cookies. Unauthenticated API requests return JSON <code>401</code> with <code>authentication_required</code> and a login URL. Unsafe session requests require the configured Origin and permission.</p>
+<p>Basic mode requires both configured credentials. Unauthenticated local development is an explicit opt-in; an empty password configuration is not a production login mode. Device ingestion uses its own bearer-token gate.</p>
+<p><code>GET /api/session</code> reports role, permissions and the short <code>expiresAt</code>; optional <code>refreshExpiresAt</code> is the absolute login deadline. It never returns raw IdP tokens.</p></section><section id="filters"><h2>Time and filters</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Parameter reference table"><table><thead><tr><th scope="col">Parameter</th><th scope="col">Contract</th></tr></thead><tbody><tr><td><code>from</code>, <code>to</code></td><td>Use ISO 8601 with timezone and <code>from &lt; to</code>. Default range is two days; default cap is 90 days. Deployment settings can change them.</td></tr><tr><td><code>client</code></td><td>Shared overview: <code>all</code>, <code>claude</code> or <code>codex</code>; disabled sources are rejected.</td></tr><tr><td><code>backend</code></td><td>Client views: <code>all</code>, <code>bedrock-mantle</code>, <code>bedrock-runtime</code>, <code>anthropic</code> or <code>unknown</code>.</td></tr><tr><td><code>user</code>, <code>model</code></td><td>Existing partial filters. Model normalization and identity expressions depend on the endpoint.</td></tr><tr><td><code>userExact</code>, <code>modelExact</code></td><td>Shared overview only: exact row identities for drilldowns. Verify returned <code>applied_filters</code>. Codex insights rejects these parameters.</td></tr><tr><td><code>intervalHours</code></td><td>Wrapped routes require a finite value in <code>(0,744]</code>. Shared overview supports bounded subhour resolution; read actual <code>bucket_hours</code> and <code>effective_range</code>.</td></tr><tr><td><code>group</code></td><td>Claude inferred session channel, not the emitting client or an SSO authorization group.</td></tr><tr><td><code>project</code></td><td>Endpoint-specific, not a universal filter. Consult the complete API reference before applying it.</td></tr></tbody></table></div><p>Cost/Trends expose ten- and thirty-minute options only through 24 hours. Older windows use hourly rollups; arbitrary finer requests can fall back to a supported native bucket.</p></section><section id="shared"><h2>Shared client and cost endpoints</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Endpoint reference table"><table><thead><tr><th scope="col">Endpoint</th><th scope="col">Use</th></tr></thead><tbody><tr><td><code>GET /api/clients/overview</code></td><td>Totals, client/model/user breakdowns, timeseries and coverage. Optional <code>modelTime=1</code> returns model timeseries.</td></tr><tr><td><code>GET /api/clients/overview?view=cost</code></td><td>Same cost, token coverage, population and bounds; skips unused project/tool/operational diagnostics. Omitted fields are not zero.</td></tr><tr><td><code>GET /api/codex/insights</code></td><td>Codex completion efficiency plus log, metric and trace diagnostics.</td></tr><tr><td><code>GET /api/codex/insights?profile=effort</code></td><td>Log-only detail for cost/effort views. Metric and trace coverage is <code>not_requested</code>.</td></tr><tr><td><code>GET /api/cost/summary</code>, <code>/by-model</code>, <code>/by-user-model</code></td><td>Existing Claude-specific cost routes. Do not treat them as combined-client totals.</td></tr></tbody></table></div><p>Model user shares divide known user costs by the selected model's known cost subtotal. Unknown prices are disclosed; an unknown or zero denominator yields no percentage.</p></section><section id="completion"><h2>Codex recorded-completion efficiency</h2>
+<p><code>completion_usage</code> describes deduplicated usage-bearing completion logs, with <code>basis="recorded_completions"</code>. It does not claim every HTTP attempt or session in the selected window has complete telemetry.</p><div class="table-scroll" tabindex="0" role="region" aria-label="Field reference table"><table><thead><tr><th scope="col">Field</th><th scope="col">Denominator and boundary</th></tr></thead><tbody><tr><td><code>cache_hit_rate</code>, <code>cache_write_share</code></td><td>Validated cache-read/cache-write subsets divided by canonical input tokens within recorded completions.</td></tr><tr><td><code>reasoning_share</code></td><td>Validated reasoning subset divided by canonical output tokens in that cohort.</td></tr><tr><td><code>tokens_per_completion</code></td><td>Canonical tokens divided by recorded completion count; observed token subtotals cannot replace missing canonical components.</td></tr><tr><td><code>cost_per_completion</code></td><td>Known completion costs divided by all recorded completions, retaining partial-price disclosure.</td></tr><tr><td><code>cost_per_identified_session</code></td><td>Only completions with a conversation ID contribute to both the cost numerator and distinct-session denominator.</td></tr><tr><td><code>unidentified_completions</code></td><td>Counted separately and excluded from the identified-session cost unit.</td></tr><tr><td><code>completeness</code></td><td>Reports missing usage/session evidence, limited aggregate families, incomplete tokens and available whole-window request/session counts.</td></tr></tbody></table></div><div class="note"><p>Missing components, impossible subsets, zero denominators, all-unknown prices or limited usage can still produce <code>null</code>. Existing whole-window HTTP request/session ratios keep their stricter guards. The UI exposes them in an expandable section.</p></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/codex-observability.md">Full completion, coverage and aggregate-limit semantics</a></p></section><section id="device-api"><h2>Collector and device APIs</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Endpoint reference table"><table><thead><tr><th scope="col">Endpoint</th><th scope="col">Contract</th></tr></thead><tbody><tr><td><code>GET /api/collector</code></td><td>Feature state, configured public ingestion endpoint, version, platforms and token lifetime.</td></tr><tr><td><code>GET /api/collector/devices</code></td><td>Owner-scoped devices, at most 50 per page; use returned cursor unchanged.</td></tr><tr><td><code>POST /api/collector/devices</code></td><td>Register with <code>name</code> and <code>platform</code> (<code>darwin</code> or <code>linux</code>). Returns the token once.</td></tr><tr><td><code>DELETE /api/collector/devices/:id</code></td><td>Revoke an owned device.</td></tr><tr><td><code>GET /api/collector/package/:platform</code></td><td>Authenticated download, no embedded credentials.</td></tr><tr><td><code>POST /api/ingest/v1/{logs,metrics,traces}</code></td><td>Device bearer token only. OTLP JSON/protobuf, maximum 2 MiB, no content compression.</td></tr></tbody></table></div><p>Management and downloads require OIDC <code>collector:manage</code> (analyst/admin). Viewer/demo access is denied. Device endpoints do not use usage-range filters; their responses and downloads are <code>no-store</code>.</p></section><section id="health"><h2>Health and errors</h2>
+<p><code>/healthz</code> is liveness; <code>/readyz</code> gates readiness. Protected <code>/api/health/data</code> reports ingestion freshness. A live process does not establish fresh telemetry.</p>
+<p>Malformed filters fail before querying. Refresh service failures can return <code>503</code> with <code>Retry-After: 5</code>; expired or invalid credentials require login. Bounded query admission can reject overload instead of creating unbounded database work.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Complete route list, response fields and errors</a></p></section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Full API reference</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Measurement definitions</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Change history</a> · <a href="assets/credits.html">Demo credits</a></p>
+    <p>Telemetry may be incomplete. Reported costs and list-price estimates are not invoices. Activity indicators do not establish employee productivity or causal ROI.</p>
+  </div></footer>
+</body>
 </html>
