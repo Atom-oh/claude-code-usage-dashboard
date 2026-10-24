@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Install the device Collector — ccdash</title>
+  <meta name="description" content="Connect an existing Claude Code and Codex installation on macOS or Linux, including EC2, through a device-specific ingestion token." />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="Main navigation"><a href="index.html">Overview</a><a href="installation.html" aria-current="page">Install</a><a href="architecture.html">Architecture</a><a href="api.html">API</a><a href="operations.html">Operations</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · Documentation</p>
+      <h1>Install the device Collector</h1>
+      <p class="lede">Connect an existing Claude Code and Codex installation on macOS or Linux, including EC2, through a device-specific ingestion token.</p>
+      <p class="caption">Updated October 24, 2026 · Describes source behavior; verify your installed revision.</p>
+    </div>
+    <section id="choose"><h2>Choose your installation path</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Environment reference table"><table><thead><tr><th scope="col">Environment</th><th scope="col">Action</th></tr></thead><tbody><tr><td>Personal macOS or Linux machine</td><td>Follow the package setup below. Python 3.9+, outbound HTTPS to GitHub and the dashboard, and installed coding clients are required.</td></tr><tr><td>Existing device-token package</td><td>Register a replacement token and rerun installation with the same attribution ID.</td></tr><tr><td>Legacy personal macOS Collector</td><td>The current installer recognizes the supported legacy service and asks before migrating it.</td></tr><tr><td>Legacy Linux or unknown service</td><td>Follow the owner's manual migration procedure before installing.</td></tr><tr><td>Organizer-prepared Workshop Studio EC2</td><td>Use the prepared clients and Collector. Do not install a second Collector or register an individual device token.</td></tr></tbody></table></div><p>Packages support macOS/Linux on amd64 and arm64. The installer downloads Collector 0.163.1 from the official release and checks pinned SHA-256 values. Archives contain no binary or credential.</p></section><section id="setup"><h2>Download and run</h2><ol>
+  <li>Sign in to your dashboard as an editor (<code>analyst</code>) or admin and open <strong>Collector installation</strong>. Viewer/demo users cannot download packages or register devices.</li>
+  <li>Select your OS, download the archive and register a device. Keep its one-time token available until setup completes.</li>
+  <li>Move the archive to the machine running the clients. Open a terminal in its download directory and confirm <code>python3 --version</code> is 3.9 or later.</li>
+</ol>
+<h3>macOS</h3>
+<pre><code class="language-bash">tar -xzf ccdash-collector-darwin.tar.gz
+cd ccdash-collector</code></pre>
+<h3>Linux / EC2</h3>
+<pre><code class="language-bash">tar -xzf ccdash-collector-linux.tar.gz
+cd ccdash-collector
+sudo loginctl enable-linger "$USER"</code></pre>
+<p>Run only your platform's commands. If the browser already extracted the archive, enter its directory. On Linux, reconnect if the user service manager was unavailable. Run the installer as your normal user.</p>
+<h3>Set the telemetry identity</h3>
+<p>Use the attribution ID your organization expects, preserving the existing ID when migrating. Replace the example endpoint with the command shown by your dashboard.</p>
+<pre><code class="language-bash">(
+  printf 'Telemetry user ID/email: '
+  IFS= read -r ccdash_user_id
+  if [ -n "$ccdash_user_id" ]; then
+    python3 install.py install \
+      --endpoint 'https://dashboard.example.com/api/ingest' \
+      --user-id "$ccdash_user_id"
+  else
+    printf '%s\n' 'Enter a nonempty telemetry user ID/email before installing.'
+  fi
+)</code></pre>
+<p>Paste the device token at the hidden prompt. For automation, <code>--token-file</code> accepts an existing regular file owned by your user with mode <code>0600</code>. Do not put the token value in command arguments.</p>
+<div class="note"><p>The token owner is not automatically written into telemetry as an SSO email. <code>--user-id</code> is client-provided attribution, not verified identity. A fresh installation otherwise defaults to the local login name.</p></div>
+<p>The installer validates both client configurations, preserves model/provider/login settings and creates private backups. Custom <code>CODEX_HOME</code> or <code>CLAUDE_CONFIG_DIR</code> layouts need manual configuration.</p>
+<p>Restart Claude Code and Codex after setup. To include recognized Codex backend provenance, use:</p>
+<pre><code class="language-bash">python3 "$HOME/.local/share/ccdash-collector/launch-codex.py"</code></pre>
+<p>Direct Codex launches still collect, but can lack backend provenance. Unknown/custom providers and profile or project overrides can remain unknown.</p></section><section id="migration"><h2>Migrate an existing Collector</h2>
+<p>The supported personal macOS legacy service is <code>com.ccdash.otelcol</code>, using <code>~/.otelcol/config.yaml</code>. Close the coding clients and let the old queue drain before running the current installer.</p>
+<ol>
+  <li>The installer verifies the service and prompts for migration.</li>
+  <li>Confirmation permits the service transition and replacement of legacy Claude telemetry settings and old telemetry authentication headers.</li>
+  <li>Settings are backed up, the old LaunchAgent is disabled, and the device Collector is started. Failed installation attempts restore the previous state; recovery failures report the private backup directory.</li>
+</ol>
+<p>The old queue stays in <code>~/.otelcol</code> and is not imported. Do not delete it during migration. Unknown listeners are not stopped automatically; ports <code>4317</code>, <code>4318</code> and <code>13133</code> must belong to the supported service or be available.</p>
+<p>A package reporting <code>local Collector port is occupied; migrate the existing service first</code> predates the guided migration. Download the current package. For unmanaged Claude telemetry outside the recognized legacy service, review the old destination before using <code>--replace-claude-telemetry</code>.</p><p>Use the <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">complete installer guide</a> for Linux migration, recovery and conflict-specific commands.</p></section><section id="verify"><h2>Confirm receipt and manage devices</h2>
+<p>After restarting the clients, perform a small amount of work, refresh the device list and check a recent dashboard time window with the intended user filter.</p>
+<ul>
+  <li>Local health and <code>lastSeenAt</code> indicate stages of delivery, not database persistence or complete cost telemetry.</li>
+  <li>Device tokens expire 30 days after issuance. Revoke lost or unused devices; cached validation on another replica can remain valid for up to ten seconds.</li>
+  <li>Browser logout or group removal does not revoke device tokens. Include explicit device revocation in offboarding.</li>
+  <li>macOS uses a per-user LaunchAgent while logged in. Linux uses a user systemd service; linger enables persistence across logout and reboot.</li>
+</ul>
+<pre><code class="language-bash">python3 "$HOME/.local/share/ccdash-collector/install.py" uninstall</code></pre>
+<p>Uninstall removes the managed service and local token. Revoke the device in the dashboard too; client settings, queues and private backups need separate review.</p></section><section id="workshops"><h2>Workshop provisioning is a separate path</h2>
+<p>Organizers can prepare EC2 clients and the existing password-based ingest path centrally. Participants use that prepared environment. The device package accepts device tokens, not a ClickHouse password.</p>
+<p>The repository's <code>user-data.sh</code> requires deployment inputs and secret provisioning; it is not a generic command participants can run unchanged.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/workshop-studio-notes.md">Workshop Studio notes</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Device collection operations</a></p></section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Full API reference</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Measurement definitions</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Change history</a> · <a href="assets/credits.html">Demo credits</a></p>
+    <p>Telemetry may be incomplete. Reported costs and list-price estimates are not invoices. Activity indicators do not establish employee productivity or causal ROI.</p>
+  </div></footer>
+</body>
+</html>

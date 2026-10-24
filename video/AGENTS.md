@@ -1,6 +1,8 @@
 # Video project instructions
 
-This directory owns the historical silent documentation-site demo. Follow
+This directory owns the historical silent demo, superseded on the documentation site
+on 2026-10-24 by a separate 48-second synthetic-data video. The current delivery and
+credits live in [site/assets/credits.html](../site/assets/credits.html). Follow
 [root guidance](../AGENTS.md); this file owns video-specific rules. `CLAUDE.md` imports it.
 Documentation changes do not authorize recapturing the dashboard, changing captions,
 calling models, rendering, publishing, or upgrading dependencies.
@@ -37,20 +39,23 @@ is reproducible merely because the family name is present.
 ## Assets and meaning
 
 Runtime images are `assets/overview.png`, `assets/cost.png`, and `assets/analytics.png`.
-They are ignored local copies of tracked images in `../site/assets/img/`. All seven source
-screenshots and their roles are listed in [the inventory](capture/extracted/asset-descriptions.md).
-For a separately authorized render, restore the copies from `video/`:
+They are ignored local copies of historical captures, retained in Git revision
+`4ae980c50030be4adb59fed5c24dc47b747f1c2b`. The current site no longer serves those captures.
+See [the inventory](capture/extracted/asset-descriptions.md) for immutable source links.
+For a separately authorized historical render, restore from `video/`:
 
 ```bash
 mkdir -p assets capture/assets
-cp ../site/assets/img/*.png capture/assets/
-cp ../site/assets/img/{overview,cost,analytics}.png assets/
+for name in overview executive executive-charts cost productivity users analytics; do
+  git show 4ae980c50030be4adb59fed5c24dc47b747f1c2b:site/assets/img/$name.png > "capture/assets/$name.png"
+done
+cp capture/assets/{overview,cost,analytics}.png assets/
 ```
 
-Do not commit these duplicate copies, `.hyperframes/`, `renders/`, or `snapshots/`.
-The committed delivery is `../site/assets/video/dashboard-demo.mp4`, embedded by
-`../site/index.html` with `../site/assets/img/demo-poster.jpg`. Rendering does not by itself
-replace that delivery file.
+Do not commit duplicate copies, `.hyperframes/`, `renders/`, or `snapshots/`.
+The old MP4 and poster remain in that Git revision. The current
+`../site/assets/video/dashboard-demo.mp4` is a different composition; do not overwrite
+it with a render of this historical project.
 
 Keep this demo's dated figures/captions separate from current application behavior. It shows
 historical computed spend; today's spend contract is reported-primary with opt-in computed
@@ -60,5 +65,5 @@ rates do not prove code quality. Do not turn a media caption into an invoice or 
 Maintain English Markdown. Describe existing Korean screenshot labels in English without
 changing their pixels; existing composition overlays use Latin text. Use the curated site
 screenshots, not raw customer/account captures. [BRIEF.md](BRIEF.md),
-[STORYBOARD.md](STORYBOARD.md), and [frame.md](frame.md) describe the current artifact;
+[STORYBOARD.md](STORYBOARD.md), and [frame.md](frame.md) describe this historical artifact;
 HTML and actual media metadata establish timing and content.

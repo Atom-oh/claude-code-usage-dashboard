@@ -1,13 +1,11 @@
-/* claude-code-usage-dashboard — docs site.
-   대시보드 UI와 같은 토큰을 쓴다: 밝은 회백 캔버스, bedrock 파랑 / enterprise 초록.
-   빌드 단계 없음 — 정적 HTML + 이 파일 하나. */
+/* ccdash documentation: static HTML, shared light/dark theme. */
 
 :root {
   --canvas: #f4f6f9;
   --surface: #ffffff;
   --ink: #0f172a;
   --ink-soft: #46526b;
-  --ink-mute: #6d7789;
+  --ink-mute: #596579;
   --line: #e2e8f0;
   --bedrock: #4a63be;
   --bedrock-bright: #6183f0;
@@ -90,8 +88,8 @@ header.top {
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: var(--bedrock-bright);
-  color: #fff;
+  background: var(--bedrock);
+  color: var(--surface);
   font-size: 13px;
   font-weight: 700;
 }
@@ -166,15 +164,15 @@ h1 {
   display: block;
   width: 100%;
   height: auto;
-  /* 메타데이터 로드 전에도 박스가 접히지 않게 종횡비를 고정한다(포스터와 동일한 16:9). */
-  aspect-ratio: 16 / 9;
+  /* Reserve the square demo's space before its metadata loads. */
+  aspect-ratio: 1;
   border-radius: 8px;
   background: var(--canvas);
 }
 
 .caption {
   margin: 10px 2px 0;
-  font-size: 13.5px;
+  font-size: 15px;
   color: var(--ink-mute);
 }
 
@@ -245,7 +243,7 @@ pre code {
   background: none;
   border: none;
   padding: 0;
-  font-size: 13.5px;
+  font-size: 15px;
   line-height: 1.6;
 }
 
@@ -467,7 +465,82 @@ footer a {
   color: var(--ink-mute);
 }
 
+.skip-link {
+  position: absolute;
+  left: 20px;
+  top: -80px;
+  z-index: 20;
+  padding: 10px 16px;
+  background: var(--surface);
+}
+
+.skip-link:focus {
+  top: 10px;
+}
+
+:focus-visible {
+  outline: 3px solid var(--bedrock);
+  outline-offset: 4px;
+}
+
+main,
+section {
+  scroll-margin-top: 130px;
+}
+
+.demo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: center;
+}
+
+.demo-layout .video-frame {
+  margin-top: 20px;
+}
+
+.button-link {
+  display: inline-block;
+  border: 1px solid var(--bedrock);
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-top: 8px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.card h3 {
+  margin-top: 0;
+}
+
+.table-scroll {
+  max-width: 100%;
+}
+
+th,
+td {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 640px) {
+  .demo-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .top .wrap {
+    gap: 6px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  nav.tabs {
+    margin-left: 0;
+  }
+  nav.tabs a {
+    padding: 5px 8px;
+  }
+  .shots {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .pipe .arrow {
     flex-basis: 100%;
     transform: rotate(90deg);

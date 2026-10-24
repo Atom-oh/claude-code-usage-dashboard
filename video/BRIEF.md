@@ -15,8 +15,9 @@ angle: product-demo
 # Existing demo brief
 
 This is the recorded brief for the silent documentation-site hero loop, reconciled on
-2026-09-13. The original target was at most 30 seconds; `index.html` and the committed MP4
-are 28 seconds. `meta.json` records creation on 2026-07-28. Workflow/flow fields preserve
+2026-09-13. It was superseded on the site on 2026-10-24 by the separate
+[synthetic-data demo](../site/assets/credits.html). The original target was at most
+30 seconds; this project and its historical MP4 are 28 seconds. `meta.json` records creation on 2026-07-28. Workflow/flow fields preserve
 provenance and are not instructions to restart generation during a documentation edit.
 
 ## Intent and evidence
@@ -32,14 +33,13 @@ does not relabel captured costs as invoices or imply that a later UI change is i
 
 ## Assets and presentation
 
-Source captures live in `../site/assets/img/`; the runtime uses ignored copies under
+Source captures remain in the Git revision linked by the asset inventory; the runtime uses ignored copies under
 `video/assets/`. The actual image dependencies are Overview, Cost, and Analytics. Users is
 a reference for composed comparison figures; Executive and Productivity captures remain
 available reference material rather than additional scenes. See the
 [asset inventory](capture/extracted/asset-descriptions.md) for paths and dimensions.
 
-There is no narration, music, or audio stream. The existing `<video>` is embedded as a muted
-autoplay loop on the docs site. Korean UI text remains inside screenshots; composition
+There is no narration, music, or audio stream. It was previously embedded as a muted autoplay loop on the docs site. Korean UI text remains inside screenshots; composition
 callouts use Latin text. The `language: ko` field describes captured product language, not
 the language of these Markdown documents. No new captions or media are generated here.
 
