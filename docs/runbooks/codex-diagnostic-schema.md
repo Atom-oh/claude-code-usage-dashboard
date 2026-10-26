@@ -6,10 +6,6 @@ Migration 008 adds `codex_diagnostic_events_v1` and its ingestion view. Tools an
 performance profiles can read these states after verified backfill. Default and
 effort profiles retain raw logs. Costs remain independent.
 
-Activation and configuration validation require the companion application that
-imports `codexDiagnosticSource.js` from `codexLogAggregates.js`. Schema installation
-alone neither changes queries nor validates the application's read boundary.
-
 The table retains exact identity sets at second grain, filter dimensions, compact
 diagnostic attributes and first/last timestamps. Identity uses the same full
 timestamp and sorted resource/log maps as the raw query. Reads merge aggregate
@@ -20,9 +16,6 @@ stream events; no sampling or completion-only substitution is permitted.
 State bytes represent sensitive identities and must have the same access,
 retention and backup protections as raw telemetry. They are not public report
 artifacts. No new collector permission is required.
-The ingestion view adds work from installation onward, including while reads use
-raw logs. Monitor insert failures, latency, parts, merges, replication and free
-disk during installation and normal operation, as well as backfill.
 
 ## Install and backfill
 
@@ -70,12 +63,6 @@ investigation. Image rollback does not undo schema changes. A stored transform
 change requires a new table version and migration; do not mutate activated v1
 semantics. Verify the generated compatibility contract before applying a new
 schema initializer.
-
-Read rollback does not remove ingestion overhead. If the view degrades ingestion,
-use the [dependent-view incident procedure](codex-cost-schema.md#rollback-and-maintenance):
-save its exact definition, coordinate ingress, and detach only the affected view.
-Detachment creates a coverage gap and fails schema verification. Keep state reads
-disabled until the view is restored, the gap is backfilled and parity is verified.
 
 ## Development checks
 

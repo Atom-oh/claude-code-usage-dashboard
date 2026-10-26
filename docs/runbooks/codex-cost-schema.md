@@ -113,11 +113,7 @@ Optional exact-user/model/backend filters use bound parameters. Use settled
 intervals; concurrent arrivals can change sequential query results.
 Mismatch/query errors block activation. Then set `codex_cost_read_from` or
 `CODEX_COST_READ_FROM` to the verified UTC boundary and roll out the companion app.
-Only whole ranges starting there or later use typed data, for both cost and full
-Codex overview profiles. Full views decode diagnostic attributes from retained
-event identities; they require no new migration. The isolated schema regression
-also compares full SQL/fold diagnostics, boundaries and duplicate deliveries.
-Invalid configuration
+Only whole ranges starting there or later use typed data. Invalid configuration
 fails startup; query errors surface without a hidden raw retry. Insights/Effort
 retain their sources; this does not establish whole-page latency or capacity.
 
