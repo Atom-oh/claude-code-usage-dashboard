@@ -19,8 +19,28 @@ test("cost facts replace raw scans while retaining the existing grouping contrac
   assert.equal(params.clientUserExact, "synthetic@example.test");
 });
 
-test("facts selection is restricted to Codex cost views", () => {
-  for (const [client, costView] of [["codex", false], ["claude", true], ["claude", false]]) {
+test("full Codex views reuse facts and recover diagnostics after identity deduplication", () => {
+  const { sql } = buildCodexQuery(from, to, {}, undefined, "codex", 3600,
+    { costSource: "facts" });
+  assert.match(sql, /FROM claude_code\.codex_cost_events_v1/);
+  assert.doesNotMatch(sql, /FROM claude_code\.otel_logs/);
+  assert.match(sql, /JSONExtract\(Identity, 2, 'Map\(String,\s*String\)'\) AS a/);
+  assert.match(sql, /CAST\(map\(\), 'Map\(String,\s*String\)'\)/);
+  assert.match(sql, /GROUP BY Timestamp, Identity/);
+  assert.match(sql, /kind != 'scope_evidence' AND in_n >/);
+  for (const field of ["tool_name", "http.response.status_code", "success", "error", "duration_ms"])
+    assert.ok(sql.includes(`a['${field}']`), field);
+});
+
+test("cost views keep the narrow facts path without decoding diagnostic maps", () => {
+  const { sql } = buildCodexQuery(from, to, {}, undefined, "codex", 3600,
+    { costView: true, costSource: "facts" });
+  assert.doesNotMatch(sql, /JSONExtract/);
+  assert.match(sql, /NULL AS errors, NULL AS duration_ms, NULL AS duration_count/);
+});
+
+test("facts selection remains restricted to Codex", () => {
+  for (const [client, costView] of [["claude", true], ["claude", false]]) {
     const { sql } = buildCodexQuery(from, to, {}, undefined, client, 3600,
       { costView, costSource: "facts" });
     assert.match(sql, /FROM claude_code\.otel_logs/);

@@ -14,6 +14,7 @@ const numeric = (key, label) => ({ key, label, render: formatObserved });
 const ratio = (key, label) => ({ key, label, render: percent });
 const cost = (key, label) => ({ key, label, render: formatClientCost });
 const TABS = ["효율·Effort", "도구·승인", "성능", "런타임·메트릭", "Trace"];
+const PROFILES = { "효율·Effort": "effort", "도구·승인": "tools", "성능": "performance" };
 const STATUS = { observed: "수집 확인", empty: "관측 없음", unavailable: "수집 미확인", limited: "조회 한도 초과" };
 const codexCostLabel = (row) => costBasisLabel({ ...row, cost_basis: "aws_list_estimate" });
 const EFFORT = [text("effort", "Effort"), numeric("requests", "완료 응답"), numeric("observed_tokens", "관측 토큰"),
@@ -54,9 +55,9 @@ const partialHint = (rows, name) => rows?.some((r) => r.name === name && r.parti
 export default function CodexInsights({ range, enabled = true, hold = false, sections }) {
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
   const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
-  const effortOnly = allowedTabs.length === 1 && allowedTabs[0] === TABS[0];
+  const profile = allowedTabs.length === 1 ? PROFILES[allowedTabs[0]] : undefined;
   const { data, loading, error, stale } = useApi("/api/codex/insights",
-    { client: "codex", ...bounds, ...(effortOnly ? { profile: "effort" } : {}) }, enabled, { linkedRange: true, hold });
+    { client: "codex", ...bounds, ...(profile ? { profile } : {}) }, enabled, { linkedRange: true, hold });
   const [preferredTab, setTab] = useState(TABS[0]);
   const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
   const [search, setSearch] = useState("");

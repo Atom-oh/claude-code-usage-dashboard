@@ -421,7 +421,7 @@ export function rebucketRows(rows, from, bucketSeconds) {
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex",
   bucketSeconds = clientNativeBucketSeconds(from, to), { costView = false, costSource = "raw" } = {}) {
   const isCodex = client === "codex";
-  const facts = isCodex && costView && costSource === "facts";
+  const facts = isCodex && costSource === "facts";
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: (isCodex ? filters.model : normalizeModelId(filters.model || "")) || "",
     clientBackend: filters.backend || "", clientUserExact: filters.userExact || "",
@@ -487,7 +487,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   ),` : "";
   const sql = `${isCodex ? "WITH" : `${GROUP_CTE},`}
   unique_events AS (
-    ${facts ? costSourceSql() : `SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
+    ${facts ? costSourceSql({ diagnostics: !costView }) : `SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
       ${session} AS session,
       ${user} AS user,
       ${isCodex ? "a['model']" : queries.normModel("a['model']")} AS model,

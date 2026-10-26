@@ -33,8 +33,9 @@ const filter = (attributes, model = `${attributes}['model']`) => `
   AND ({signalModel:String} = '' OR positionCaseInsensitive(${model}, {signalModel:String}) > 0)
   AND ({signalBackend:String} = '' OR ${backendSql(model, "ResourceAttributes['backend']")} = {signalBackend:String})`;
 
-export function buildMetricQuery(type, from, to, filters = {}) {
+export function buildMetricQuery(type, from, to, filters = {}, { metricNames } = {}) {
   if (!TYPES.includes(type)) throw new Error("unsupported metric table");
+  const queryParams = { ...params(from, to, filters), ...(metricNames ? { signalMetricNames: metricNames } : {}) };
   const histogram = type.endsWith("histogram");
   const identity = `name, unit, scope, scope_version, scope_attributes, resource, attributes,
     service_name, resource_schema_url, scope_schema_url, temporality, monotonic`;
@@ -50,7 +51,8 @@ export function buildMetricQuery(type, from, to, filters = {}) {
     ${type === "gauge" ? "0" : "AggregationTemporality"} AS temporality,
     ${type === "sum" ? "IsMonotonic" : "true"} AS monotonic
     FROM claude_code.codex_metrics_${type}
-    WHERE startsWith(MetricName, 'codex.') ${filter("Attributes")}`;
+    WHERE startsWith(MetricName, 'codex.')
+      ${metricNames ? "AND MetricName IN {signalMetricNames:Array(String)}" : ""} ${filter("Attributes")}`;
   const raw = `SELECT toString(toTimeZone(t, 'UTC')) AS timestamp,
     toString(toTimeZone(started, 'UTC')) AS start, '${type}' AS type, ${identity},
     sample_flags AS flags, ${histogram
@@ -73,7 +75,7 @@ export function buildMetricQuery(type, from, to, filters = {}) {
     SELECT * FROM (
       ${raw}, toUInt8(0) AS result_limited FROM window_points WHERE ${withinLimit}
       UNION ALL (${limitMarker})
-    ) ORDER BY timestamp LIMIT 50001`, params: params(from, to, filters) };
+    ) ORDER BY timestamp LIMIT 50001`, params: queryParams };
   const valid = `bitAnd(sample_flags, 1) = 0 AND ${histogram
     ? "sample_count <= 9007199254740991 AND isFinite(sample_sum) AND sample_sum >= 0"
     : "isFinite(sample_value) AND (NOT monotonic OR sample_value >= 0)"}`;
@@ -127,7 +129,7 @@ export function buildMetricQuery(type, from, to, filters = {}) {
         toUInt8(0) AS result_limited
       FROM delta_points GROUP BY ${identity}
       UNION ALL (${limitMarker})
-    ) ORDER BY timestamp LIMIT 50001`, params: params(from, to, filters) };
+    ) ORDER BY timestamp LIMIT 50001`, params: queryParams };
 }
 
 const monotonic = (row) => ![false, 0, "0", "false"].includes(row.monotonic);

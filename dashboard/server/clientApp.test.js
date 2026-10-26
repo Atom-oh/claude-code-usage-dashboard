@@ -372,3 +372,20 @@ test("Effort insights profiles have distinct validated cache identities", async 
     assert.equal(row.dataQueries, 0);
   }
 });
+
+test("tools and performance insights cannot reuse each other's or full-profile cached payloads", async () => {
+  const path = `/api/codex/insights?${range}&client=codex`;
+  const profiles = ["effort", "tools", "performance"];
+  const paths = [path, ...profiles.map(profile => `${path}&profile=${profile}`)];
+  const rows = await scenario(true, true, [...paths, ...paths, `${path}&profile=tools&profile=performance`]);
+  for (let i = 0; i < paths.length; i++) {
+    assert.equal(rows[i].status, 200);
+    assert.ok(rows[i].dataQueries > 0);
+    assert.equal(rows[i].body.profile, i ? profiles[i - 1] : undefined);
+    assert.equal(rows[i + paths.length].status, 200);
+    assert.equal(rows[i + paths.length].dataQueries, 0);
+    assert.deepEqual(rows[i + paths.length].body, rows[i].body);
+  }
+  assert.equal(rows.at(-1).status, 400);
+  assert.equal(rows.at(-1).dataQueries, 0);
+});

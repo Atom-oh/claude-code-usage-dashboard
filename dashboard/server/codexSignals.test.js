@@ -13,6 +13,24 @@ const point = {
   resource: { client: "codex", backend: "bedrock-mantle", "service.instance.id": "one" },
   attributes: { tool: "shell", success: "true" }, scope: "codex", flags: 0,
 };
+test("selected metric names constrain window and cumulative baselines without removing identity or labels", () => {
+  const metricNames = ["codex.turn.e2e_duration_ms", "codex.turn.ttft.duration_ms",
+    "codex.turn.tool.call", "codex.turn.token_usage"];
+  for (const type of ["sum", "gauge", "histogram", "exponential_histogram"]) {
+    const { sql, params } = buildMetricQuery(type, from, to, { backend: "bedrock-mantle" }, { metricNames });
+    assert.deepEqual(params.signalMetricNames, metricNames);
+    assert.equal(params.signalBackend, "bedrock-mantle");
+    assert.match(sql, /MetricName IN \{signalMetricNames:Array\(String\)\}/);
+    assert.match(sql, /mapSort\(ScopeAttributes\) AS scope_attributes/);
+    assert.match(sql, /mapSort\(Attributes\) AS attributes/);
+    if (type !== "gauge") {
+      assert.match(sql, /INTERVAL 3 DAY/);
+      assert.equal(sql.match(/MetricName IN \{signalMetricNames:Array\(String\)\}/g).length, 3);
+      assert.match(sql, /started\) IN/);
+    }
+    assert.equal(buildMetricQuery(type, from, to).params.signalMetricNames, undefined);
+  }
+});
 test("delta exports deduplicate retries and remain separate from billing usage", () => {
   const out = foldCodexMetrics([point, point, { ...point, timestamp: "2026-09-15T00:02:00Z", value: 2 }], from, to);
   fields(out.metrics[0], { value: 5, points: 2 });

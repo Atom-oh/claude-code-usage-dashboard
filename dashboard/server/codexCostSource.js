@@ -17,7 +17,7 @@ export function costSourceForRange(from, boundary = readFrom) {
 
 // Bound values only. Model-less rows must survive here: the caller performs its
 // existing model-session matching after assembling both event and scope sources.
-export function costSourceSql() {
+export function costSourceSql({ diagnostics = false } = {}) {
   const user = `({clientUser:String} = '' OR positionCaseInsensitive(UserEmail, {clientUser:String}) > 0)
     AND ({clientUserExact:String} = '' OR UserEmail = {clientUserExact:String})`;
   // An explicit GROUP BY identity remains semantically significant when the
@@ -26,6 +26,7 @@ export function costSourceSql() {
     Model AS model, Backend AS backend, ProjectName AS project, EventName AS event_name,
     Kind AS kind, Rejected AS rejected,
     ${COST_TOKEN_FIELDS.map(([, column, alias]) => `${column}Value AS ${alias}, ${column}Valid AS ${alias}_valid`).join(",\n    ")}
+    ${diagnostics ? ", JSONExtract(Identity, 2, 'Map(String,String)') AS a" : ""}
   FROM claude_code.codex_cost_events_v1
   PREWHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND ${user}
   GROUP BY Timestamp, Identity, ConversationId, UserEmail, Model, Backend, ProjectName, EventName, Kind, Rejected,
@@ -35,6 +36,7 @@ export function costSourceSql() {
     '' AS Identity, ConversationId, UserEmail, Model, Backend, ProjectName, EventName,
     'scope_evidence', toUInt8(0),
     ${COST_TOKEN_FIELDS.map(() => "toFloat64(0), toUInt8(0)").join(", ")}
+    ${diagnostics ? ", CAST(map(), 'Map(String,String)')" : ""}
   FROM (
     SELECT Minute, UserEmail, ConversationId, Model, Backend, ProjectName, EventName,
       arrayFilter(second -> toUnixTimestamp(Minute) + second >= toUnixTimestamp({from:DateTime})

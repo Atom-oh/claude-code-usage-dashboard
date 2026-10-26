@@ -1015,6 +1015,79 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal("tools" in cost || "by_project" in cost, false);
       }
     });
+    await t.test("shared Insights profiles retain displayed diagnostics and log coverage across filters", async () => {
+      const { codexInsights } = await import("./codexInsights.js");
+      const email = "insights-profiles@example.invalid";
+      const resource = { "user.email": email };
+      const tool = log(4100, "codex.tool_result",
+        { tool_name: "shell", success: "true", duration_ms: "12", model: "" }, resource);
+      await insertLogs([
+        log(4101, "codex.conversation_starts", { sandbox_policy: "read-only" }, resource),
+        tool, tool,
+        log(4102, "codex.tool_result", { tool_name: "shell", success: "false", duration_ms: "24" }, resource),
+        log(4103, "codex.tool_decision", { tool_name: "shell", decision: "approved", source: "user" }, resource),
+        log(4104, "codex.tool_decision", { tool_name: "shell", decision: "denied", source: "config" }, resource),
+        log(4105, "codex.api_request", { "http.response.status_code": "200", attempt: "0", duration_ms: "10" }, resource),
+        log(4106, "codex.api_error", { "http.response.status_code": "500", attempt: "1", duration_ms: "30" }, resource),
+        log(4107, "codex.startup_phase", { "startup.phase": "load", duration_ms: "7" }, resource),
+        log(4108, "codex.sse_event", { "event.kind": "response.output_text.delta", duration_ms: "2" }, resource),
+        log(4109, "codex.sse_event", { "event.kind": "response.output_text.delta", duration_ms: "4" }, resource),
+        log(4110, "codex.sse_event", usage1.LogAttributes, resource),
+      ]);
+      const metricNames = ["codex.turn.e2e_duration_ms", "codex.turn.ttft.duration_ms",
+        "codex.turn.tool.call", "codex.turn.token_usage"];
+      for (const [type, name, before, after] of [
+        ["sum", "codex.turn.tool.call", { Value: 10, IsMonotonic: true }, { Value: 13, IsMonotonic: true }],
+        ["gauge", "codex.turn.token_usage", { Value: 50 }, { Value: 80 }],
+        ["histogram", "codex.turn.e2e_duration_ms", { Count: 2, Sum: 100, Min: 20, Max: 80 },
+          { Count: 3, Sum: 150, Min: 20, Max: 80 }],
+        ["exponential_histogram", "codex.turn.ttft.duration_ms", { Count: 2, Sum: 20, Min: 5, Max: 15 },
+          { Count: 3, Sum: 30, Min: 5, Max: 15 }],
+      ]) {
+        const base = { ResourceAttributes: { ...resource, backend: "bedrock-mantle" },
+          Attributes: { model: "openai.gpt-6-astra", token_type: "total" }, MetricName: name,
+          ScopeName: "codex", ScopeVersion: "profile-fixture", ScopeAttributes: { fixture: "profiles" },
+          StartTimeUnix: `${day} 09:00:00`, ...(type === "gauge" ? {} : { AggregationTemporality: 2 }) };
+        await db.insert({ table: `codex_metrics_${type}`, format: "JSONEachRow", values: [
+          { ...base, ...before, TimeUnix: `${day} 09:59:00` },
+          { ...base, ...after, TimeUnix: `${day} 10:01:00` },
+          { ...base, ...after, MetricName: "codex.unrequested", TimeUnix: `${day} 10:01:00` },
+        ] });
+      }
+      for (const filters of [
+        { user: email },
+        { user: email, model: "gpt-6-astra", backend: "bedrock-mantle" },
+        { user: email, model: "absent-model" },
+      ]) {
+        const full = await codexInsights(from, to, filters);
+        for (const [profile, fields, tables] of [
+          ["tools", ["tool_success_rate", "approval_rate"], ["tools", "approvals"]],
+          ["performance", ["retry_rate", "api_error_rate"], ["latency"]],
+        ]) {
+          const selected = await codexInsights(from, to, { ...filters, profile });
+          assert.deepEqual(selected.summary, Object.fromEntries(fields.map(key => [key, full.summary[key]])));
+          for (const table of tables) assert.deepEqual(selected[table], full[table], `${profile}: ${table}`);
+          assert.deepEqual(selected.events, full.events);
+          const { omitted_sections, ...coverage } = selected.coverage.logs;
+          assert.deepEqual(coverage, full.coverage.logs);
+          assert.equal(selected.coverage.traces.status, "not_requested");
+          if (profile === "performance")
+            assert.deepEqual(selected.metrics, full.metrics.filter(metric => metricNames.includes(metric.name)));
+        }
+      }
+      const tools = await codexInsights(from, to, { user: email, profile: "tools" });
+      assert.equal(tools.tools[0].calls, 2, "repeated export does not add a tool call");
+      assert.equal(tools.tools[0].average_ms, 18);
+      assert.equal(tools.tools[0].p95_ms, 24);
+      assert.equal(tools.summary.tool_success_rate, 0.5);
+      assert.equal(tools.summary.approval_rate, 0.5);
+      const performance = await codexInsights(from, to, { user: email, profile: "performance" });
+      assert.equal(performance.metrics.length, 4);
+      assert.equal(performance.metrics.find(metric => metric.type === "sum").value, 3);
+      assert.equal(performance.metrics.find(metric => metric.type === "histogram").mean, 50);
+      assert.equal(performance.metrics.find(metric => metric.type === "exponential_histogram").mean, 10);
+      assert.equal(performance.coverage.metrics.records, 4, "only selected metric exports count as coverage");
+    });
   } finally {
     await db.close();
   }
