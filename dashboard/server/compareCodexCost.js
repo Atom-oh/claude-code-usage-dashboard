@@ -6,8 +6,10 @@ import { buildCodexQuery, codexPrices, foldClientMetrics } from "./clientMetrics
 import { parseCostReadFrom } from "./codexCostSource.js";
 import { query, assertReadonlySession } from "./clickhouse.js";
 
-const stable = value => Array.isArray(value) ? value.map(stable).sort((a, b) =>
-  JSON.stringify(a).localeCompare(JSON.stringify(b))) : value && typeof value === "object"
+const stable = value => Array.isArray(value) ? value.map(stable).sort((a, b) => {
+  const left = JSON.stringify(a), right = JSON.stringify(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+}) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
 
 export async function compareCodexCost(options, runQuery = query) {

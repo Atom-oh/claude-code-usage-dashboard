@@ -41,3 +41,12 @@ test("query failures abort comparison instead of pretending to match", async () 
   await assert.rejects(compareCodexCost(range, async () => { throw new Error("query failed"); }),
     /query failed/);
 });
+
+test("comparison ordering distinguishes strings with equal locale collation", async () => {
+  const rows = ["caf\u00e9", "cafe\u0301"].map(user =>
+    ({ kind: "scope_evidence", user, requires_usage: 1 }));
+  let calls = 0;
+  const result = await compareCodexCost(range, async () => ++calls === 1 ? rows : [...rows].reverse());
+  assert.equal(result.sql_match, true);
+  assert.equal(result.matched, true);
+});

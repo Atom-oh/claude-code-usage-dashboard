@@ -107,8 +107,10 @@ function request(source, filter = {}, start = from, end = to, seconds = 3600) {
     { costView: true, costSource: source });
 }
 function query(request, extra = []) { return rows(request.sql, request.params, extra); }
-const stable = value => Array.isArray(value) ? value.map(stable).sort((a, b) =>
-  JSON.stringify(a).localeCompare(JSON.stringify(b))) : value && typeof value === "object"
+const stable = value => Array.isArray(value) ? value.map(stable).sort((a, b) => {
+  const left = JSON.stringify(a), right = JSON.stringify(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+}) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
 let assertions = 0;
 function equal(filter = {}, start = from, end = to, seconds = 3600) {
