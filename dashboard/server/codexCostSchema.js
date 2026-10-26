@@ -86,7 +86,8 @@ ORDER BY (UserEmail, ${time}, Model, ConversationId, Backend, ProjectName, Event
 TTL toDateTime(${time}) + INTERVAL ${replicated ? "45 DAY TO VOLUME 'cold',\n  toDateTime(" + time + ") + INTERVAL " : ""}90 DAY DELETE${replicated ? "\nSETTINGS storage_policy = 'hot_cold'" : ""};
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.${name}_mv${cluster}
-TO claude_code.${name} AS
+TO claude_code.${name}
+DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
 ${costTransform(type)};`;
   }).join("\n\n");
 }

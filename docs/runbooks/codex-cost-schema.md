@@ -39,6 +39,12 @@ CH_USER=otel_writer CH_SECRET=clickhouse-writer ch < clickhouse-migration-007.sq
 ```
 
 Run once; `ON CLUSTER` creates both targets and both views on all replicas.
+The new views use `DEFINER = CURRENT_USER SQL SECURITY DEFINER`: their creator
+must remain an available service principal on every replica, with SELECT on
+`otel_logs` and INSERT on the two cost targets. Use the established `otel_writer`
+for replicated installations. Do not grant raw-log SELECT to collectors.
+The pinned Collector regression verifies insertion with the existing ingestion
+grants and confirms that raw-log reads remain denied.
 The ledger records local column evidence, not backfill completeness.
 For an existing local, non-replicated installation, execute the generated
 `BEGIN GENERATED CODEX COST V1` block in `clickhouse-schema.sql` after its

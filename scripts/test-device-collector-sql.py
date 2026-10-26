@@ -185,6 +185,13 @@ def main():
                     {"EventName": ""}, {"EventName": "api_request"}, {"EventName": "codex.api_request"}]
                 assert query("SELECT count() AS n FROM claude_code.otel_logs "
                              "WHERE EventName != LogAttributes['event.name']") == [{"n": "0"}]
+                assert query("SELECT count() AS n FROM claude_code.codex_cost_events_v1 "
+                             "WHERE Kind = 'request'") == [{"n": "1"}]
+                denied = subprocess.run(
+                    ["docker", "exec", container, "clickhouse-client", "--user", "fixture_ingest",
+                     "--password", "fixture-only", "--query", "SELECT count() FROM claude_code.otel_logs"],
+                    capture_output=True, text=True)
+                assert denied.returncode != 0 and "Not enough privileges" in denied.stderr, denied.stderr
                 assert before == query("SELECT name, create_table_query FROM system.tables WHERE database='claude_code' ORDER BY name")
                 print("Collector → existing ClickHouse schema: both clients, logs/metrics/traces, "
                       "all seven tables, cumulative counters and unchanged schema passed.")
