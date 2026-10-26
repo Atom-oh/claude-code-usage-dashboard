@@ -49,7 +49,7 @@ def compile_contract():
             "'/clickhouse/tables/{shard}/') AS path "
             "FROM system.replicas WHERE database = 'claude_code' ORDER BY table"
         )
-    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6, 7]:
+    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6, 7, 8]:
         raise RuntimeError("Reference schema did not record every required migration.")
     names = [row["name"] for row in tables]
     declared = re.findall(
@@ -107,19 +107,19 @@ SELECT throwIf(
 
 SELECT throwIf(
   (SELECT count() FROM system.tables WHERE database = 'claude_code'
-    AND name IN ('codex_cost_events_v1_mv', 'codex_cost_scope_v1_mv')
+    AND name IN ('codex_cost_events_v1_mv', 'codex_cost_scope_v1_mv', 'codex_diagnostic_events_v1_mv')
     AND position(replaceAll(create_table_query, '`', ''),
-      concat('TO claude_code.', replaceRegexpOne(name, '_mv$', ''), ' ')) > 0) != 2,
-  'SCHEMA_COMPATIBILITY: Codex cost materialized view target differs');
+      concat('TO claude_code.', replaceRegexpOne(name, '_mv$', ''), ' ')) > 0) != 3,
+  'SCHEMA_COMPATIBILITY: Codex materialized view target differs');
 
 -- The creator is installation-specific; require explicit definer security so
 -- insert-only collectors never need permission to read raw logs.
 SELECT throwIf(
   (SELECT count() FROM system.tables WHERE database = 'claude_code'
-    AND name IN ('codex_cost_events_v1_mv', 'codex_cost_scope_v1_mv')
+    AND name IN ('codex_cost_events_v1_mv', 'codex_cost_scope_v1_mv', 'codex_diagnostic_events_v1_mv')
     AND position(create_table_query, ' SQL SECURITY DEFINER') > 0
-    AND position(create_table_query, 'DEFINER = ') > 0) != 2,
-  'SCHEMA_COMPATIBILITY: Codex cost views require explicit definer security');
+    AND position(create_table_query, 'DEFINER = ') > 0) != 3,
+  'SCHEMA_COMPATIBILITY: Codex views require explicit definer security');
 """
 
 
