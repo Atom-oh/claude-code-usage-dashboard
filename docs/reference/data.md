@@ -13,6 +13,7 @@ Client, backend and model remain distinct: model names do not identify the produ
 | `otel_metrics_sum_hourly` | Per-series hourly max/sum states, fed by a materialized view | Same schema |
 | `otel_metrics_gauge` | Exporter-compatible gauge storage; not the main KPI source | Same schema |
 | `codex_metrics_{sum,gauge,histogram,exponential_histogram}` | Native Codex diagnostic observations, separate from billed usage | [migration 006](../../clickhouse-migration-006.sql) |
+| `codex_cost_{events,scope}_v1` | Typed completion/activity facts and compact missing-usage evidence; explicitly activated for cost overviews | [cost schema](../runbooks/codex-cost-schema.md) |
 | `otel_logs` | Event records; `EventName` reads `event.name`: Claude normally uses `api_request`, `tool_result`, etc.; Codex uses `codex.*` | Same schema |
 | `otel_traces` | Claude spans and resource-tagged Codex spans | Same schema |
 | `schema_migrations` | Recorded migration versions and evidence metadata | [migration 004](../../clickhouse-migration-004.sql) |
@@ -233,7 +234,8 @@ The [replicated schema](../../infra/files/clickhouse-schema-replicated.sql) is a
 the Terraform schema-init Job; the root schema is for local single-node ClickHouse.
 Migration 002 adds telemetry dimensions and traces; 003 changes keys and rebuilds rollups;
 004 records migrations; 005 adds project/entrypoint fields; 006 adds four Codex metric
-tables after 004, independently of 005. Existing tables and materialized
+tables after 004, independently of 005; 007 adds typed Codex cost sources after 004,
+with separate backfill and read activation. Existing tables and materialized
 views are not automatically replaced by `CREATE ... IF NOT EXISTS`.
 Operators run the numbered migration scripts through the schema runbook; the Terraform
 Job executes the replicated schema file, not those numbered scripts.
@@ -246,6 +248,7 @@ The configured retention is:
 | Codex native metrics | 90 days | 180 days |
 | Hourly rollup | None; delete-only TTL | 180 days |
 | Logs/traces | 45 days | 90 days |
+| Codex cost events/scope | 45 days | 90 days |
 
 The rollup has a delete-only TTL because an existing table may use a storage policy without
 a cold volume. It still contains user identities and must not outlive raw retention.

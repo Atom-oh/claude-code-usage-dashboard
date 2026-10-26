@@ -49,11 +49,11 @@ def compile_contract():
             "'/clickhouse/tables/{shard}/') AS path "
             "FROM system.replicas WHERE database = 'claude_code' ORDER BY table"
         )
-    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6]:
+    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6, 7]:
         raise RuntimeError("Reference schema did not record every required migration.")
     names = [row["name"] for row in tables]
     declared = re.findall(
-        r"CREATE (?:TABLE|MATERIALIZED VIEW) IF NOT EXISTS claude_code\.([a-z_]+)", source
+        r"CREATE (?:TABLE|MATERIALIZED VIEW) IF NOT EXISTS claude_code\.([a-z0-9_]+)", source
     )
     if sorted(declared) != names:
         raise RuntimeError("Reference objects do not match the schema's declared objects.")
@@ -104,6 +104,22 @@ SELECT throwIf(
   (SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_metrics_sum_hourly_mv'
     AND position(replaceAll(create_table_query, '`', ''), 'TO claude_code.otel_metrics_sum_hourly ') > 0) != 1,
   'SCHEMA_COMPATIBILITY: hourly materialized view target differs');
+
+SELECT throwIf(
+  (SELECT count() FROM system.tables WHERE database = 'claude_code'
+    AND name IN ('codex_cost_events_v1_mv', 'codex_cost_scope_v1_mv')
+    AND position(replaceAll(create_table_query, '`', ''),
+      concat('TO claude_code.', replaceRegexpOne(name, '_mv$', ''), ' ')) > 0) != 2,
+  'SCHEMA_COMPATIBILITY: Codex cost materialized view target differs');
+
+-- The creator is installation-specific; require explicit definer security so
+-- insert-only collectors never need permission to read raw logs.
+SELECT throwIf(
+  (SELECT count() FROM system.tables WHERE database = 'claude_code'
+    AND name IN ('codex_cost_events_v1_mv', 'codex_cost_scope_v1_mv')
+    AND position(create_table_query, ' SQL SECURITY DEFINER') > 0
+    AND position(create_table_query, 'DEFINER = ') > 0) != 2,
+  'SCHEMA_COMPATIBILITY: Codex cost views require explicit definer security');
 """
 
 

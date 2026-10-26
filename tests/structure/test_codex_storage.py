@@ -28,8 +28,11 @@ class CodexStorageTests(unittest.TestCase):
     digest = hashlib.sha256("".join(line for line in migration.splitlines(keepends=True)
                     if "INSERT INTO claude_code.schema_migrations" not in line).encode()).hexdigest()
     self.assertIn("'" + digest + "'", migration)
-    local = (ROOT / "clickhouse-schema.sql").read_text().split("-- 006:")[1]
-    replicated = (ROOT / "infra/files/clickhouse-schema-replicated.sql").read_text().split("-- 006:")[1]
+    def section(path):
+      text = (ROOT / path).read_text().split("-- 006:", 1)[1]
+      return text.split("-- BEGIN GENERATED CODEX COST V1", 1)[0].rstrip() + "\n"
+    local = section("clickhouse-schema.sql")
+    replicated = section("infra/files/clickhouse-schema-replicated.sql")
     def localize(text):
       text = text[text.index("CREATE TABLE"):]
       text = re.sub(r" ON CLUSTER 'replicated'", "", text)
