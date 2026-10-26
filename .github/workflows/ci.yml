@@ -44,6 +44,9 @@ jobs:
           node scripts/generate-codex-cost-schema.mjs --check
           python3 scripts/test-codex-cost-schema.py
 
+      - name: Verify generated Codex diagnostic schema
+        run: node scripts/generate-codex-diagnostic-schema.mjs --check
+
   schema:
     runs-on: ubuntu-latest
     timeout-minutes: 10

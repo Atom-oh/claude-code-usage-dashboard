@@ -52,7 +52,7 @@ class SchemaLifecycle(unittest.TestCase):
         self.assertEqual(
             [row["version"] for row in self.fixture.rows(
                 "SELECT version FROM claude_code.schema_migrations ORDER BY version"
-            )], [2, 3, 4, 5, 6, 7],
+            )], [2, 3, 4, 5, 6, 7, 8],
         )
 
     def test_populated_compatible_installation_only_reads_metadata(self):
@@ -77,21 +77,22 @@ class SchemaLifecycle(unittest.TestCase):
         result = self.verify_without_writes(False, CH_EXPECTED_REPLICAS="2")
         self.assertIn("replica count", result.stderr)
 
-    def test_cost_view_security_drift_is_rejected_without_repair(self):
-        view = "claude_code.codex_cost_events_v1_mv"
-        self.fixture.query(f"ALTER TABLE {view} MODIFY SQL SECURITY NONE")
-        try:
-            result = self.verify_without_writes(False)
-            self.assertIn("Codex cost views require explicit definer security", result.stderr)
-        finally:
-            self.fixture.query(
-                f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER"
-            )
+    def test_codex_view_security_drift_is_rejected_without_repair(self):
+        for view in ("claude_code.codex_cost_events_v1_mv", "claude_code.codex_diagnostic_events_v1_mv"):
+            with self.subTest(view=view):
+                self.fixture.query(f"ALTER TABLE {view} MODIFY SQL SECURITY NONE")
+                try:
+                    result = self.verify_without_writes(False)
+                    self.assertIn("Codex views require explicit definer security", result.stderr)
+                finally:
+                    self.fixture.query(
+                        f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER"
+                    )
 
     def test_cost_view_destination_drift_is_rejected_without_repair(self):
-        for kind in ("events", "scope"):
-            with self.subTest(kind=kind):
-                target = f"claude_code.codex_cost_{kind}_v1"
+        for target in ("claude_code.codex_cost_events_v1", "claude_code.codex_cost_scope_v1",
+                       "claude_code.codex_diagnostic_events_v1"):
+            with self.subTest(target=target):
                 view = target + "_mv"
                 ddl = self.fixture.query(f"SHOW CREATE TABLE {view} FORMAT TSVRaw").stdout
                 self.fixture.query(f"CREATE TABLE {target}_other AS {target} ENGINE=MergeTree ORDER BY tuple()")
@@ -99,7 +100,7 @@ class SchemaLifecycle(unittest.TestCase):
                 try:
                     self.fixture.query(ddl.replace("TO " + target, "TO " + target + "_other", 1))
                     result = self.verify_without_writes(False)
-                    self.assertIn("Codex cost materialized view target differs", result.stderr)
+                    self.assertIn("Codex materialized view target differs", result.stderr)
                 finally:
                     self.fixture.query(f"DROP VIEW IF EXISTS {view}")
                     self.fixture.query(ddl)
@@ -134,6 +135,39 @@ class SchemaLifecycle(unittest.TestCase):
     def test_zero_timeout_cannot_disable_the_process_deadline(self):
         result = self.verify_without_writes(False, SCHEMA_QUERY_TIMEOUT_SECONDS="00")
         self.assertIn("must be positive integers", result.stderr)
+
+    def test_diagnostic_live_and_backfill_states_merge_exact_identities(self):
+        table = "claude_code.codex_diagnostic_events_v1"
+        self.fixture.query("""INSERT INTO claude_code.otel_logs
+          (Timestamp, ResourceAttributes, LogAttributes)
+          SELECT toStartOfSecond(now64(9)) + toIntervalNanosecond(number % 2),
+            map('user.email','diagnostic-lifecycle@example.invalid'),
+            map('event.name','codex.sse_event','event.kind','response.output_text.delta',
+              'conversation.id','diagnostic-lifecycle','duration_ms','4.25')
+          FROM numbers(4)""")
+        bounds = self.fixture.rows(
+            "SELECT toString(toStartOfHour(now(), 'UTC')) AS start, "
+            "toString(toStartOfHour(now(), 'UTC') + INTERVAL 1 HOUR) AS end"
+        )[0]
+        expected = self.fixture.rows("""SELECT toUInt32(uniqExact(tuple(
+          toString(toTimeZone(Timestamp,'UTC')),mapSort(ResourceAttributes),mapSort(LogAttributes)))) AS n
+          FROM claude_code.otel_logs
+          WHERE ResourceAttributes['user.email']='diagnostic-lifecycle@example.invalid'""")
+        self.assertEqual(expected, [{"n": 2}])
+        selected = f"""SELECT toUInt32(sum(finalizeAggregation(Identities))) AS n
+          FROM {table} FINAL WHERE UserEmail='diagnostic-lifecycle@example.invalid'"""
+        self.assertEqual(self.fixture.rows(selected), expected)
+        self.fixture.query(f"SYSTEM STOP MERGES {table}")
+        try:
+            for zone in ("UTC", "Asia/Seoul"):
+                self.fixture.query((ROOT / "clickhouse-backfill-008.sql").read_text(),
+                                   param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                                   session_timezone=zone, insert_deduplicate=0)
+                self.assertEqual(self.fixture.rows(selected), expected)
+        finally:
+            self.fixture.query(f"SYSTEM START MERGES {table}")
+        self.fixture.query(f"OPTIMIZE TABLE {table} FINAL")
+        self.assertEqual(self.fixture.rows(selected), expected)
 
     def test_source_contract_mismatch_fails_before_schema_execution(self):
         self.fixture.docker("exec", self.fixture.name, "sh", "-c",
@@ -313,7 +347,7 @@ class MultiReplicaSchemaLifecycle(unittest.TestCase):
             self.assertEqual(
                 [row["version"] for row in self.fixture.rows(
                     "SELECT version FROM claude_code.schema_migrations ORDER BY version", node_index=index
-                )], [2, 3, 4, 5, 6, 7],
+                )], [2, 3, 4, 5, 6, 7, 8],
             )
         self.verify_without_writes(True)
 
