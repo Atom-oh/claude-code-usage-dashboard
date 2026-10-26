@@ -88,6 +88,49 @@ class SchemaLifecycle(unittest.TestCase):
                 f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER"
             )
 
+    def test_cost_view_destination_drift_is_rejected_without_repair(self):
+        for kind in ("events", "scope"):
+            with self.subTest(kind=kind):
+                target = f"claude_code.codex_cost_{kind}_v1"
+                view = target + "_mv"
+                ddl = self.fixture.query(f"SHOW CREATE TABLE {view} FORMAT TSVRaw").stdout
+                self.fixture.query(f"CREATE TABLE {target}_other AS {target} ENGINE=MergeTree ORDER BY tuple()")
+                self.fixture.query(f"DROP VIEW {view}")
+                try:
+                    self.fixture.query(ddl.replace("TO " + target, "TO " + target + "_other", 1))
+                    result = self.verify_without_writes(False)
+                    self.assertIn("Codex cost materialized view target differs", result.stderr)
+                finally:
+                    self.fixture.query(f"DROP VIEW IF EXISTS {view}")
+                    self.fixture.query(ddl)
+                    self.fixture.query(f"DROP TABLE {target}_other")
+
+    def test_cost_backfill_preserves_values_when_columns_are_reordered(self):
+        table = "claude_code.codex_cost_events_v1"
+        self.fixture.query("""INSERT INTO claude_code.otel_logs
+          (Timestamp, ResourceAttributes, LogAttributes)
+          VALUES (now64(9), map('user.email','column-order@example.invalid'),
+            map('event.name','codex.sse_event','event.kind','response.completed',
+              'input_token_count','11','output_token_count','7'))""")
+        self.fixture.query(f"ALTER TABLE {table} MODIFY COLUMN InputValue Float64 AFTER OutputValue")
+        self.fixture.query(f"ALTER TABLE {table} MODIFY COLUMN OutputValue Float64 AFTER Rejected")
+        try:
+            bounds = self.fixture.rows(
+                "SELECT toString(toStartOfHour(now(), 'UTC')) AS start, "
+                "toString(toStartOfHour(now(), 'UTC') + INTERVAL 1 HOUR) AS end"
+            )[0]
+            for count, zone in enumerate(("UTC", "Asia/Seoul"), start=2):
+                self.fixture.query((ROOT / "clickhouse-backfill-007.sql").read_text(),
+                                   param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                                   session_timezone=zone, insert_deduplicate=0)
+                where = f"FROM {table} WHERE UserEmail = 'column-order@example.invalid'"
+                self.assertEqual(self.fixture.rows("SELECT DISTINCT InputValue, OutputValue " + where),
+                                 [{"InputValue": 11, "OutputValue": 7}])
+                self.assertEqual(self.fixture.rows("SELECT toUInt32(count()) AS n " + where), [{"n": count}])
+        finally:
+            self.fixture.query(f"ALTER TABLE {table} MODIFY COLUMN OutputValue Float64 AFTER InputValue")
+            self.fixture.query(f"ALTER TABLE {table} MODIFY COLUMN InputValue Float64 AFTER Rejected")
+
     def test_zero_timeout_cannot_disable_the_process_deadline(self):
         result = self.verify_without_writes(False, SCHEMA_QUERY_TIMEOUT_SECONDS="00")
         self.assertIn("must be positive integers", result.stderr)
