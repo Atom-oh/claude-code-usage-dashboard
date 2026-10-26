@@ -24,8 +24,11 @@ export async function compareCodexCost(options, runQuery = query) {
       { costView: true, costSource });
     results.push(await runQuery(request.sql, request.params, AbortSignal.timeout(25000)));
   }
-  const [raw, facts] = results;
-  const sqlMatch = isDeepStrictEqual(stable(raw), stable(facts));
+  // SQL row order is unspecified. Use identical ordering before folding so
+  // floating-point accumulation order cannot masquerade as a schema mismatch.
+  // Every SQL value and duplicate remains subject to exact comparison.
+  const [raw, facts] = results.map(stable);
+  const sqlMatch = isDeepStrictEqual(raw, facts);
   const foldMatch = [false, true].every(compactTime => {
     const fold = rows => stable(foldClientMetrics(rows.map(row => ({ ...row, client: "codex" })),
       ["codex"], codexPrices, { costView: true, modelTime: true, compactTime }));
