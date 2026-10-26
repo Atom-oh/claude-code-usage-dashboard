@@ -93,10 +93,11 @@ ${costTransform(type)};`;
 }
 
 export function costBackfillSql() {
-  return `SELECT throwIf({backfillTo:DateTime} <= {backfillFrom:DateTime}
-  OR dateDiff('second', {backfillFrom:DateTime}, {backfillTo:DateTime}) > 86400,
+  const from = "{backfillFrom:DateTime('UTC')}", to = "{backfillTo:DateTime('UTC')}";
+  return `SELECT throwIf(${to} <= ${from}
+  OR dateDiff('second', ${from}, ${to}) > 86400,
   'Codex cost backfill requires a positive interval of at most one day');
 
-` + ["events", "scope"].map(type => `INSERT INTO claude_code.codex_cost_${type}_v1
-${costTransform(type, "Timestamp >= {backfillFrom:DateTime} AND Timestamp < {backfillTo:DateTime}")};`).join("\n\n");
+` + ["events", "scope"].map(type => `INSERT INTO claude_code.codex_cost_${type}_v1 (${COST_COLUMNS[type].map(([name]) => name).join(", ")})
+${costTransform(type, `Timestamp >= ${from} AND Timestamp < ${to}`)};`).join("\n\n");
 }

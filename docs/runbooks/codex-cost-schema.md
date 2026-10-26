@@ -2,76 +2,68 @@
 
 ## Contract
 
-Read activation and the comparison command require an application release containing
-`codexCostSource.js` and `compareCodexCost.js`. The additive schema can be installed
-in advance while existing application releases continue using raw logs.
+See [data](../reference/data.md) for typed events, scope sets, retention and
+interpretation. Costs remain runtime estimates; metrics/traces remain diagnostic.
 
-`codex_cost_events_v1` stores typed tokens, validity flags, dimensions and exact
-original map identity for usage, request and relevant activity events.
-`codex_cost_scope_v1` stores minute-level sets of observed seconds for other
-activity. This preserves missing-usage evidence at the API's second-resolution
-range boundaries without scanning every stream delta.
-
-Materialized views compute these columns on insertion. Costs are still calculated
-by the existing runtime price catalog and context-tier rules. Native Codex metrics
-remain diagnostic; they are never added to completion usage.
-
-The new source applies only to the Codex `clientOverview` cost view. Insights,
-Effort and other queries retain their existing sources. Improving this query alone
-does not establish an end-to-end page latency target.
-
-Replicated tables move to cold storage after 45 days. Both local and replicated
-tables expire after 90 days, matching raw-log retention. Full original map identity
-is retained for exact deduplication, so treat cost events as sensitive telemetry.
-Expired raw data cannot be reconstructed or retrospectively verified.
+Activation requires the **companion application release** containing
+`codexCostSource.js`, `compareCodexCost.js`, `test-codex-cost-schema.py` and
+`codex_cost_read_from`. Keep raw reads until that release; section 3 and application
+validation below are deferred. Its reader must deduplicate
+**every event kind** by timestamp plus full identity and merge scope sets; only
+under that contract are repeated/backfill-live overlaps logically idempotent.
 
 ## 1. Install without activating reads
 
-Use the target context, selected Ready pod and credential-safe `ch` helper from
-[incident response](incident-response.md). Inspect and snapshot the existing
-installation according to [schema migrations](schema-migrations.md).
+Use `kube`, selected Ready `POD` and credential-safe `ch` from
+[incident response](incident-response.md). Take a verified snapshot following
+[schema migrations](schema-migrations.md) and [backup/restore](backup-and-restore.md).
+The declared backup covers the database; confirm actual objects include both new
+tables in the next backup. Full identity maps are sensitive telemetry. Measure added storage/insert CPU on a
+small trial and cold reads beyond 45 days; expired raw data cannot be reconstructed.
 
-Keep `CODEX_COST_READ_FROM` empty throughout migration and validation.
-Migration 007 requires ledger 004. From the repository root:
+Keep `CODEX_COST_READ_FROM` empty. Migration 007 requires ledger 004. The migration
+principal `otel_writer`/`clickhouse-writer` is **distinct from collector-facing
+`otel_ingest`/`clickhouse-ingest`**. Views run as their stable creator via
+`DEFINER = CURRENT_USER SQL SECURITY DEFINER`; that principal must remain available
+on every writable replica. Never grant collectors raw-log SELECT.
+
+Before attaching views, select **each writable replica** as `POD` and run this
+ClickHouse 24.8 preflight (newer `CHECK GRANT` syntax is not available):
+
+```bash
+CH_USER=otel_writer CH_SECRET=clickhouse-writer ch <<'SQL'
+SELECT currentUser();
+SHOW GRANTS;
+SELECT count() FROM claude_code.otel_logs WHERE 0;
+SQL
+```
+
+Require a distinct stable migration identity and effective grants for CREATE
+TABLE/VIEW on `claude_code`, CLUSTER, SELECT/INSERT on `schema_migrations`, SELECT
+on `otel_logs`, and INSERT on both cost targets (database-wide INSERT includes
+future tables). Inspect inherited role grants too. Stop on missing or unproven
+rights; use the installation's access-management owner to provision them. Recheck
+after rotations. Confirm raw-log SELECT remains denied for `otel_ingest` on every
+replica. Then execute once from the repository root:
 
 ```bash
 CH_USER=otel_writer CH_SECRET=clickhouse-writer ch < clickhouse-migration-007.sql
 ```
 
-Run once; `ON CLUSTER` creates both targets and both views on all replicas.
-The new views use `DEFINER = CURRENT_USER SQL SECURITY DEFINER`: their creator
-must remain an available service principal on every replica, with SELECT on
-`otel_logs` and INSERT on the two cost targets. Use the established `otel_writer`
-for replicated installations. Do not grant raw-log SELECT to collectors.
-The pinned Collector regression verifies insertion with the existing ingestion
-grants and confirms that raw-log reads remain denied.
-The ledger records local column evidence, not backfill completeness.
-For an existing local, non-replicated installation, execute the generated
-`BEGIN GENERATED CODEX COST V1` block in `clickhouse-schema.sql` after its
-ledger prerequisite. Fresh bootstrap includes these objects automatically.
-
-Verify every replica's columns, sorting keys, engines, storage policy and view
-definitions against `infra/files/clickhouse-schema-contract.sql`. The schema
-initializer verifies existing installations without repairing them. Apply 007
-before deploying its updated schema contract to an existing installation.
+Verify `infra/files/clickhouse-schema-contract.sql` on every replica **before
+deploying its initializer**; it never repairs drift. Local non-replicated upgrades
+use the generated Codex block in `clickhouse-schema.sql`; fresh bootstrap includes it.
 
 ## 2. Backfill bounded intervals
 
-Choose a contiguous UTC coverage start still available in raw logs. Run at most
-one day per invocation, serially, on one replica per shard. Start with an hour on
-a busy installation and reduce the range if memory or query duration approaches
-the existing hardware limits.
-
-The following wrapper uses the same `kube`, `POD` and secret conventions as `ch`
-and passes credentials through stdin. Dates are bound parameters, not SQL text.
-Do not enable shell tracing:
+Choose a retained UTC start. Run serially on one replica per shard, at most one
+day per invocation; start with one hour. Credentials use stdin; keep tracing off.
 
 ```bash
 cost_backfill() (
   set -o pipefail
   set +x
-  : "${COST_FROM:?UTC start, for example 2026-10-25 00:00:00}"
-  : "${COST_TO:?UTC end, for example 2026-10-25 01:00:00}"
+  : "${COST_FROM:?UTC start}" "${COST_TO:?UTC end}"
   cost_pw=$(kube get secret clickhouse-writer \
     -o jsonpath='{.data.CH_PASSWORD}' | base64 -d) || exit 1
   [ -n "$cost_pw" ] || exit 1
@@ -86,77 +78,67 @@ cost_backfill() (
          --param_backfillFrom="$1" --param_backfillTo="$2"' \
       sh "$COST_FROM" "$COST_TO"
 )
-```
-
-Invoke it with the selected interval:
-
-```bash
 COST_FROM='2026-10-25 00:00:00' COST_TO='2026-10-25 01:00:00' cost_backfill
 ```
 
-Record each successful interval privately. Repeat a failed or overlapping interval
-in full: event queries deduplicate exact identities and scope queries merge second
-sets. Repetition can add physical rows until TTL, but cannot add logical usage.
-Neither a successful command nor ledger 007 activates reads.
+Between intervals observe active parts per partition (`system.parts`), ongoing
+merges (`system.merges`), replication queues/delay (`system.replicas`), disk space,
+insert failures and query memory/time. Small blocks trade memory for more parts.
+Pause if merge/replication backlog grows or ingestion degrades; let queues drain
+and reduce the interval. Do not raise thresholds or force OPTIMIZE to hide pressure.
 
-Views capture new inserts, including late arrivals. Replica fetches do not replace
-installing the views at every ingestion destination. A failed dependent view can
-leave a gap despite source rows existing: reconcile the affected raw interval and
-check replica queues before treating that interval as ready.
+Record successful intervals privately. Retry a failed interval in full; this may
+add physical event rows until TTL. Live views capture new inserts and late arrivals,
+but replica fetches do not replace installing every view. Dependent-view failures
+can leave gaps even when raw rows exist; reconcile affected intervals from raw logs.
 
-## 3. Verify and activate
+## 3. Verify and activate — companion application required
 
-Before activation:
+1. Confirm all replica contracts, healthy replication and writable-view privileges.
+2. Compare raw/fact SQL and folded responses for **every closed interval** from
+   the boundary through view installation, then a closed post-install interval.
+   Include all users, exact-user/model filters, missing usage and time boundaries.
+3. Reconcile insertion failures; retain the coverage boundary and evidence privately.
+   Samples, table existence and ledger 007 alone do not prove completeness.
 
-1. Confirm the schema contract on every serving replica, healthy replication and
-   both ingestion views on every writable replica.
-2. Compare raw versus typed query results and folded API fields for bounded,
-   closed intervals using `dashboard/server/compareCodexCost.js`. Include all
-   users, user filters, models, missing usage and time boundaries.
-3. Cover every historical interval from the proposed boundary through view
-   installation. Reconcile any insertion failures and verify a closed interval
-   ingested after installation. Sample parity alone does not prove full coverage.
-4. Keep the verified boundary and evidence in the private deployment record.
-
-The comparison command uses the normal server `CH_*` configuration and requires
-a database session with readonly enabled. Supply credentials through the existing
-secret environment, never command arguments. It prints counts and match status,
-not identities or telemetry:
+Use normal server `CH_*` secrets and a readonly session; output contains only
+counts/status:
 
 ```bash
 node dashboard/server/compareCodexCost.js \
   --from 2026-10-25T00:00:00Z --to 2026-10-25T01:00:00Z
 ```
 
-Optional `--user-exact`, `--model-exact` and `--backend` use existing bound filter
-semantics. Use closed, settled intervals: live writes between the two sequential
-queries can legitimately produce a mismatch. A mismatch or query error exits
-nonzero and blocks activation.
-
-Set Terraform `codex_cost_read_from` or runtime `CODEX_COST_READ_FROM` to the
-verified boundary, for example `2026-10-25T00:00:00Z`, and roll out the application.
-Only ranges starting at or after it use typed data; earlier or crossing ranges
-use raw logs. Invalid timestamp configuration fails startup. Query failures after
-activation surface normally; there is no hidden retry against raw logs.
+Optional exact-user/model/backend filters use bound parameters. Use settled
+intervals; concurrent arrivals can change sequential query results.
+Mismatch/query errors block activation. Then set `codex_cost_read_from` or
+`CODEX_COST_READ_FROM` to the verified UTC boundary and roll out the companion app.
+Only whole ranges starting there or later use typed data. Invalid configuration
+fails startup; query errors surface without a hidden raw retry. Insights/Effort
+retain their sources; this does not establish whole-page latency or capacity.
 
 ## Rollback and maintenance
 
-Unset `CODEX_COST_READ_FROM` and roll out the application to restore raw reads.
-Keep the new tables and views while investigating. Image rollback does not undo
-DDL, and deleting a ledger record does not repair data.
+Unset the boundary and roll out to restore raw reads. Keep tables/views for
+investigation. Image rollback does not undo DDL; deleting ledger rows repairs nothing.
+For a dependent-view ingestion incident, first pause the affected ingress, save
+exact SHOW CREATE definitions, and follow [incident response](incident-response.md).
+Detaching affected views can restore raw writes, but creates a coverage gap and
+**intentionally fails schema verification**: hold schema deployment, keep raw reads,
+repair privileges/targets, restore every view, backfill the gap, verify all replicas
+and parity before resuming typed reads. Never bypass the compatibility gate.
 
-Changes to stored classification, dimensions, identity or token parsing require a
-new schema version and migration; changing the runtime price catalog does not.
-Never change the v1 insertion transform in place on an activated installation.
-
-Regenerate and verify declarations after development changes:
+Stored classification, dimensions, identity or parsing changes require a new version
+and migration; never change an activated v1 transform in place. Runtime prices can
+change independently. Storage development checks:
 
 ```bash
 node scripts/generate-codex-cost-schema.mjs
 python3 scripts/build-schema-contract.py
 node scripts/generate-codex-cost-schema.mjs --check
-python3 scripts/test-codex-cost-schema.py
+python3 scripts/test-schema-lifecycle.py
 ```
 
-`COST_BENCHMARK=1` on the last command adds a synthetic comparison. It measures a
-single isolated query workload, not production concurrency or monthly capacity.
+With the companion application present, also run `python3 scripts/test-codex-cost-schema.py`.
+`COST_BENCHMARK=1` adds a synthetic single-query comparison, not production concurrency
+or monthly capacity evidence.

@@ -2,7 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { costBackfillSql, costSchemaSql } from "./codexCostSchema.js";
+import { COST_COLUMNS, costBackfillSql, costSchemaSql } from "./codexCostSchema.js";
+
+test("backfill names every destination column and binds UTC independently of server timezone", () => {
+  const sql = costBackfillSql();
+  for (const [type, columns] of Object.entries(COST_COLUMNS))
+    assert.ok(sql.includes(`INSERT INTO claude_code.codex_cost_${type}_v1 (${columns.map(([name]) => name).join(", ")})`));
+  assert.match(sql, /\{backfillFrom:DateTime\('UTC'\)\}/);
+  assert.match(sql, /\{backfillTo:DateTime\('UTC'\)\}/);
+});
 
 test("bootstrap and bounded backfill retain the same insertion transformations", () => {
   const ddl = costSchemaSql(), replicated = costSchemaSql({ replicated: true });
@@ -15,7 +23,7 @@ test("bootstrap and bounded backfill retain the same insertion transformations",
   assert.match(ddl, /INTERVAL 90 DAY DELETE/);
   assert.match(replicated, /INTERVAL 45 DAY TO VOLUME 'cold'/);
   assert.doesNotMatch(ddl + replicated, /180 DAY|ttl_only_drop_parts/);
-  assert.match(backfill, /Timestamp >= \{backfillFrom:DateTime\} AND Timestamp < \{backfillTo:DateTime\}/);
+  assert.ok(backfill.includes("Timestamp >= {backfillFrom:DateTime('UTC')} AND Timestamp < {backfillTo:DateTime('UTC')}"));
   assert.match(backfill, /mapSort\(ResourceAttributes\),mapSort\(LogAttributes\)/);
   assert.match(backfill, /> 86400/);
 });
