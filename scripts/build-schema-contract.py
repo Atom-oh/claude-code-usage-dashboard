@@ -49,11 +49,11 @@ def compile_contract():
             "'/clickhouse/tables/{shard}/') AS path "
             "FROM system.replicas WHERE database = 'claude_code' ORDER BY table"
         )
-    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6]:
+    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6, 7]:
         raise RuntimeError("Reference schema did not record every required migration.")
     names = [row["name"] for row in tables]
     declared = re.findall(
-        r"CREATE (?:TABLE|MATERIALIZED VIEW) IF NOT EXISTS claude_code\.([a-z_]+)", source
+        r"CREATE (?:TABLE|MATERIALIZED VIEW) IF NOT EXISTS claude_code\.([a-z0-9_]+)", source
     )
     if sorted(declared) != names:
         raise RuntimeError("Reference objects do not match the schema's declared objects.")

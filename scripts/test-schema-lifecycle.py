@@ -52,7 +52,7 @@ class SchemaLifecycle(unittest.TestCase):
         self.assertEqual(
             [row["version"] for row in self.fixture.rows(
                 "SELECT version FROM claude_code.schema_migrations ORDER BY version"
-            )], [2, 3, 4, 5, 6],
+            )], [2, 3, 4, 5, 6, 7],
         )
 
     def test_populated_compatible_installation_only_reads_metadata(self):
@@ -259,7 +259,7 @@ class MultiReplicaSchemaLifecycle(unittest.TestCase):
             self.assertEqual(
                 [row["version"] for row in self.fixture.rows(
                     "SELECT version FROM claude_code.schema_migrations ORDER BY version", node_index=index
-                )], [2, 3, 4, 5, 6],
+                )], [2, 3, 4, 5, 6, 7],
             )
         self.verify_without_writes(True)
 

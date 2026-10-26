@@ -16,6 +16,7 @@ installations use `clickhouse-schema.sql` instead.
 | `clickhouse-migration-004.sql` | Requires 002, not completion of 003. Create the ledger and backfill 002/003 records only when their evidence guards pass. |
 | `clickhouse-migration-005.sql` | Requires 004. Add `ProjectName`/`Entrypoint` to raw metrics, logs, and traces where present; deliberately no materialization or rollup change. |
 | `clickhouse-migration-006.sql` | Requires ledger 004, not 005. Create four dedicated Codex metric tables and record exporter-compatible column evidence; no rebuild or materialization. |
+| `clickhouse-migration-007.sql` | Requires ledger 004. Add typed Codex cost events, scope evidence and ingestion views. Use the [cost schema runbook](codex-cost-schema.md) for separate bounded backfill and read activation. |
 
 Run a numbered migration through one selected pod. `ON CLUSTER` DDL propagates through the
 cluster; the guarded ledger `INSERT` is **not** `ON CLUSTER` and replicates normally. Do not
@@ -199,6 +200,7 @@ The replicated schema declares these TTLs; compare each actual table with its de
 | `otel_metrics_sum`, `otel_metrics_gauge` | 90 days | 180 days |
 | `codex_metrics_sum`, `codex_metrics_gauge`, `codex_metrics_histogram`, `codex_metrics_exponential_histogram` | 90 days | 180 days |
 | `otel_logs`, `otel_traces` | 45 days | 90 days |
+| `codex_cost_events_v1`, `codex_cost_scope_v1` | 45 days | 90 days |
 | `otel_metrics_sum_hourly` | No move TTL | 180 days |
 
 These table TTLs are separate from the S3 `backup/` lifecycle. Never apply a bucket expiry
