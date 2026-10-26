@@ -11,6 +11,7 @@ import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS, isRejectedRequestGroup } from "./codexRequests.js";
 import { USER_TREND_TOP } from "./modelCostTrend.js";
+import { costSourceForRange, costSourceSql } from "./codexCostSource.js";
 
 const ROW_LIMIT = 50000;
 export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -418,8 +419,9 @@ export function rebucketRows(rows, from, bucketSeconds) {
 }
 
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex",
-  bucketSeconds = clientNativeBucketSeconds(from, to), { costView = false } = {}) {
+  bucketSeconds = clientNativeBucketSeconds(from, to), { costView = false, costSource = "raw" } = {}) {
   const isCodex = client === "codex";
+  const facts = isCodex && costView && costSource === "facts";
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: (isCodex ? filters.model : normalizeModelId(filters.model || "")) || "",
     clientBackend: filters.backend || "", clientUserExact: filters.userExact || "",
@@ -485,7 +487,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
   ),` : "";
   const sql = `${isCodex ? "WITH" : `${GROUP_CTE},`}
   unique_events AS (
-    SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
+    ${facts ? costSourceSql() : `SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
       ${session} AS session,
       ${user} AS user,
       ${isCodex ? "a['model']" : queries.normModel("a['model']")} AS model,
@@ -510,11 +512,11 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     FROM claude_code.otel_logs
     ${prewhere}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND ${CODEX_DELTA_EVENT}
-    GROUP BY session, user, model, backend, project, event_name` : ""}
+    GROUP BY session, user, model, backend, project, event_name` : ""}`}
   ), ${modelSessions} typed AS (
     SELECT *,
       ${codexModelSql("model")} AS base_model,
-      multiIf(event_name IN ('codex.sse_event','codex.websocket_event')
+      ${facts ? "" : `multiIf(event_name IN ('codex.sse_event','codex.websocket_event')
           AND a['event.kind'] = 'response.completed'
           AND arrayExists(k -> mapContains(a, k),
             ['input_token_count','output_token_count','cached_token_count','cache_write_token_count','reasoning_token_count']), 'usage',
@@ -530,7 +532,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
         ${isCodex ? `(event_name NOT IN (${SETUP_METADATA_EVENTS.map(name => `'${name}'`).join(",")})
           OR arrayExists(k -> mapContains(a,k), [${CODEX_USAGE_KEYS.map(key => `'${key}'`).join(",")}])),
           'scope_evidence',` : ""} '') AS kind,
-      ${tokenValues},
+      ${tokenValues},`}
       (in_n_valid AND read_n_valid AND write_n_valid AND read_n + write_n > in_n) AS cache_invalid,
       (out_n_valid AND reason_n_valid AND reason_n > out_n) AS reasoning_invalid
     FROM unique_events
@@ -550,9 +552,9 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     (kind = 'usage' AND token_pair_valid
       AND sum(in_n) + sum(out_n) > 9007199254740991) AS observed_tokens_overflow,
     count() AS count,
-    countIf(kind = 'request'
-      AND trimBoth(a['http.response.status_code']) IN (${REJECTED_REQUEST_STATUSES.map(s => `'${s}'`).join(",")})
-      AND NOT arrayExists(k -> mapContains(a,k), [${CODEX_USAGE_KEYS.map(k => `'${k}'`).join(",")}])) AS rejected_count,
+    countIf(kind = 'request' AND ${facts ? "rejected" : `
+      trimBoth(a['http.response.status_code']) IN (${REJECTED_REQUEST_STATUSES.map(s => `'${s}'`).join(",")})
+      AND NOT arrayExists(k -> mapContains(a,k), [${CODEX_USAGE_KEYS.map(k => `'${k}'`).join(",")}])`}) AS rejected_count,
     ${tokenSums},
     countIf(kind = 'usage' AND NOT (${validUsage})) AS invalid,
     ${costView ? "NULL AS errors, NULL AS duration_ms, NULL AS duration_count" : `countIf(event_name = '${prefix}api_error' OR toInt32OrZero(trimBoth(a['http.response.status_code'])) >= 400
@@ -604,7 +606,8 @@ export async function clientOverview(from, to, raw, enabledClients) {
       jobs.push(signal => queries.clientClaudeRows(from, to, filters, nativeSeconds, signal)
         .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" }))));
     }
-    const { sql, params } = buildCodexQuery(from, to, filters, codexPrices, client, nativeSeconds, { costView });
+    const { sql, params } = buildCodexQuery(from, to, filters, codexPrices, client, nativeSeconds,
+      { costView, costSource: costSourceForRange(from) });
     jobs.push(signal => query(sql, params, signal).then((rows) => {
       if (rows.length > ROW_LIMIT) throw new ValidationError("too much client data", "narrow the requested date range");
       return rows.map((row) => ({ ...row, client }));

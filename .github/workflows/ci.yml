@@ -39,6 +39,10 @@ jobs:
         working-directory: dashboard/server
       - name: Verify client aggregation against ClickHouse
         run: bash scripts/test-client-sql.sh
+      - name: Verify generated Codex cost schema and raw/fact parity
+        run: |
+          node scripts/generate-codex-cost-schema.mjs --check
+          python3 scripts/test-codex-cost-schema.py
 
   schema:
     runs-on: ubuntu-latest

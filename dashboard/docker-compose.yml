@@ -46,6 +46,8 @@ services:
       AUTH_ALLOW_INSECURE: "1"
       # 시드 이메일은 {accountid}@ws 형태의 가짜 주소라 마스킹할 이유가 없다.
       PII_MASK_ENABLED: "false"
+      # Explicit opt-in after verified history/live coverage; bootstrap alone is insufficient.
+      CODEX_COST_READ_FROM: "${CODEX_COST_READ_FROM:-}"
 
 volumes:
   clickhouse-data:

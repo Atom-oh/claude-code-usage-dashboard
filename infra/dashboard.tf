@@ -31,6 +31,17 @@ variable "codex_bedrock_endpoint" {
   }
 }
 
+variable "codex_cost_read_from" {
+  description = "Verified UTC coverage boundary for migration 007 cost facts. Empty keeps raw reads; set only after replica and backfill verification."
+  type        = string
+  default     = ""
+  nullable    = false
+  validation {
+    condition     = var.codex_cost_read_from == "" || can(regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$", var.codex_cost_read_from)) && can(formatdate("YYYY", var.codex_cost_read_from))
+    error_message = "codex_cost_read_from must be empty or a valid UTC timestamp such as 2026-10-01T00:00:00Z."
+  }
+}
+
 variable "data_stale_minutes" {
   description = "GET /api/health/data가 stale로 판정하는 기준(분). 서버 기본값과 같은 360."
   type        = number
@@ -329,6 +340,10 @@ resource "kubernetes_deployment_v1" "dashboard" {
           env {
             name  = "CODEX_ENABLED"
             value = tostring(var.codex_enabled)
+          }
+          env {
+            name  = "CODEX_COST_READ_FROM"
+            value = var.codex_cost_read_from
           }
           env {
             name  = "CODEX_BEDROCK_ENDPOINT"
