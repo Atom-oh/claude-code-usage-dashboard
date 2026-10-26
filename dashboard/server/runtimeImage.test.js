@@ -56,7 +56,7 @@ test("runtime inspection binds actual notices, license, lock and nonroot release
   fixture(({ options }) => {
     const result = verifyRuntime(options);
     assert.equal(result.uid, 1000);
-    assert.equal(result.node, "24.22.0");
+    assert.equal(result.node, "24.22.1");
     assert.equal(result.openssl, REQUIRED_RUNTIME_OPENSSL_VERSION);
     assert.equal(result.sharedOpenSSL, true);
     assert.deepEqual(result.opensslPackages, {
@@ -97,6 +97,13 @@ test("runtime inspection rejects unpatched or statically linked OpenSSL", () => 
     assert.throws(() => verifyRuntime({ ...options, sharedOpenSSL: false }), /shared OpenSSL/);
     assert.throws(() => verifyRuntime({ ...options, versions: { ...options.versions, openssl: "3.5.8" } }),
       /shared OpenSSL/);
+  });
+});
+
+test("runtime inspection rejects Node before the October security release", () => {
+  fixture(({ options }) => {
+    assert.throws(() => verifyRuntime({ ...options,
+      versions: { ...options.versions, node: "24.22.0" } }), /Node 24\.22\.1/);
   });
 });
 
@@ -181,7 +188,7 @@ test("runtime inspection rejects root, unsupported Node and missing release iden
   fixture(({ options }) => {
     assert.throws(() => verifyRuntime({ ...options, uid: 0 }), /nonroot/);
     assert.throws(() => verifyRuntime({ ...options, versions: { node: "22.0.0", openssl: "x" } }), /Node 24/);
-    assert.throws(() => verifyRuntime({ ...options, versions: { node: "24.22.0" } }), /OpenSSL/);
+    assert.throws(() => verifyRuntime({ ...options, versions: { node: REQUIRED_RUNTIME_NODE_VERSION } }), /OpenSSL/);
     assert.throws(() => verifyRuntime({ ...options, revision: undefined }), /revision/);
     assert.throws(() => verifyRuntime({ ...options, expectedRevision: "short" }), /revision/);
   });

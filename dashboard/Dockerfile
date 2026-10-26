@@ -1,20 +1,20 @@
-# Deploy linux/arm64. This immutable official index resolves Node 24.22.0 on Alpine
-# 3.24 (verified 2026-10-18). Refresh the pin through a reviewed release; tags alone
+# Deploy linux/arm64. This immutable official index resolves Node 24.22.1 on Alpine
+# 3.24 (verified 2026-10-26). Refresh the pin through a reviewed release; tags alone
 # do not establish which Node/system packages a build uses.
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS node-base
+FROM node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS node-base
 
-# Keep the Node LTS version, but replace its bundled OpenSSL 3.5.8 with the
-# supported 3.5.9 branch fix. An OS-only update cannot patch the original binary.
+# Retain the shared OpenSSL distribution contract while taking Node's October
+# security fixes, including its bundled Brotli decoder fix.
 FROM node-base AS patched-node-build
 WORKDIR /node-source
 RUN apk add --no-cache python3 make g++ linux-headers 'openssl-dev=3.5.9-r0' \
-    && wget -O node.tar.xz https://nodejs.org/dist/v24.22.0/node-v24.22.0.tar.xz \
-    && echo '41f97cff2c666f1f8293dc5f85c65e8dd605c16b43fd9febd49ede32ee1e0329  node.tar.xz' | sha256sum -c - \
+    && wget -O node.tar.xz https://nodejs.org/dist/v24.22.1/node-v24.22.1.tar.xz \
+    && echo '4f5379796280cdaeb0c2f358fd04b6a16cc4fb7dfa83b5a8c91a9d963b435231  node.tar.xz' | sha256sum -c - \
     && tar -xJf node.tar.xz --strip-components=1 \
     && ./configure --shared-openssl --without-npm \
     && make -j2 \
     && strip out/Release/node \
-    && ./out/Release/node -e 'if (process.versions.node !== "24.22.0" || process.versions.openssl !== "3.5.9" || process.config.variables.node_shared_openssl !== true) process.exit(1)' \
+    && ./out/Release/node -e 'if (process.versions.node !== "24.22.1" || process.versions.openssl !== "3.5.9" || process.config.variables.node_shared_openssl !== true) process.exit(1)' \
     && mkdir /node-runtime \
     && cp out/Release/node LICENSE /node-runtime/ \
     && cd / \
