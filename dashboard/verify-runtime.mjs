@@ -4,7 +4,7 @@ import path from "node:path";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 export const REQUIRED_RUNTIME_ZLIB_VERSION = "1.3.2-r1";
-export const REQUIRED_RUNTIME_NODE_VERSION = "24.22.0";
+export const REQUIRED_RUNTIME_NODE_VERSION = "24.22.1";
 export const REQUIRED_RUNTIME_OPENSSL_VERSION = "3.5.9";
 export const REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION = "3.5.9-r0";
 

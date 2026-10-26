@@ -3,10 +3,12 @@
 [Dockerfile](../../dashboard/Dockerfile) pins one official Node 24 image index for all
 build stages. Refresh it through a reviewed change and verify its supported ARM64
 platform and actual Node/system package versions. The build compiles the checksum-pinned
-official Node 24.22.0 source with `--shared-openssl`, using authenticated Alpine
+official Node 24.22.1 source with `--shared-openssl`, using authenticated Alpine
 OpenSSL 3.5.9 development packages. The runtime uses that binary and exact
-`libcrypto3`/`libssl3` 3.5.9-r0 packages. The pinned upstream binary bundled 3.5.8;
-updating OS libraries alone cannot patch it. The supported Node major stays at 24.
+`libcrypto3`/`libssl3` 3.5.9-r0 packages. Node 24.22.1 includes the
+[October security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases),
+including the bundled Brotli decoder fix. Updating OS libraries alone cannot patch
+Node's bundled dependencies. The supported Node major stays at 24.
 This project owns the source build and must refresh it with future Node/OpenSSL fixes.
 Node's source license is retained under `/usr/local/share/doc/node/LICENSE`.
 The final image removes npm, npx,
@@ -31,7 +33,7 @@ committed repository license. Both local and publication builds load the ARM64 i
 and check Linux/ARM64, its build config digest, nonroot user and full revision label/env.
 
 The committed [verify-runtime.mjs](../../dashboard/verify-runtime.mjs) is evaluated
-inside that immutable image ID using Node builtins. It checks UID 1000, Node 24.22.0,
+inside that immutable image ID using Node builtins. It checks UID 1000, Node 24.22.1,
 OpenSSL 3.5.9 with shared linking enabled, the runtime revision, absent package managers/frontend
 modules/collectors, license hash, complete nonempty notices, both committed lock
 hashes and the installed server lock. It requires one OS zlib package at the pinned
