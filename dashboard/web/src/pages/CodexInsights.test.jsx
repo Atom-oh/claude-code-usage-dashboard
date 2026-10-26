@@ -44,6 +44,29 @@ test("an Effort-only section requests its profile and does not mislabel skipped 
   rerender(<CodexInsights sections={["효율·Effort", "Trace"]} />);
   expect(state.calls.at(-1)[1].profile).toBeUndefined();
 });
+
+test.each([["도구·승인", "tools"], ["성능", "performance"]])(
+  "the shared %s section requests only its diagnostic profile and restores full requests for mixed sections",
+  (section, profile) => {
+    const data = fixture();
+    data.coverage.traces = { status: "not_requested", records: null };
+    if (profile === "tools") data.coverage.metrics = { status: "not_requested", records: null };
+    state.result = { data, loading: false, error: null };
+    const { rerender } = render(<CodexInsights sections={[section]} />);
+    expect(state.calls.at(-1)[1].profile).toBe(profile);
+    expect(screen.getByText("Logs · 수집 확인 · 8개")).toBeTruthy();
+    expect(screen.queryByText(/Traces ·/)).toBeNull();
+    if (profile === "tools") {
+      expect(screen.queryByText(/Metrics ·/)).toBeNull();
+      expect(screen.getByText("도구 실행 결과")).toBeTruthy();
+      expect(screen.getByText("승인·거절과 결정 출처")).toBeTruthy();
+    } else {
+      expect(screen.getByText("Metrics · 관측 없음")).toBeTruthy();
+      expect(screen.getByText("요청·도구·시작 단계 지연")).toBeTruthy();
+    }
+    rerender(<CodexInsights sections={[section, "Trace"]} />);
+    expect(state.calls.at(-1)[1].profile).toBeUndefined();
+  });
 test.each([148, 0, null])("Codex observed token summary and effort export preserve %s independently of ratios", (observed_tokens) => {
   const data = fixture();
   data.summary = { ...data.summary, observed_tokens, tokens_partial: true, tokens: 999,

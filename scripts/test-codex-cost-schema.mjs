@@ -88,7 +88,29 @@ historical.push({ ...historical[0],
   ResourceAttributes: Object.fromEntries(Object.entries(historical[0].ResourceAttributes).reverse()),
   LogAttributes: Object.fromEntries(Object.entries(historical[0].LogAttributes).reverse()) });
 historical.push(event({ ...token, diagnostic_extra: "distinct" }));
+const tool = event({ "event.name": "codex.tool_result", tool_name: 'shell "quoted"\\path\n한국어',
+  success: "false", error: "synthetic failure", duration_ms: "12.5" });
+historical.push(tool, tool, event({ ...tool.LogAttributes, diagnostic_extra: "distinct" }));
+for (const duration_ms of ["0", "4.25", "", "bad", "-1", "NaN", "Infinity"])
+  historical.push(event({ "event.name": "codex.api_request", duration_ms,
+    "http.response.status_code": " 503 ", "conversation.id": "request-durations" }));
+historical.push(
+  event({ "event.name": "codex.turn_ttft", duration_ms: "7.5" }),
+  event({ "event.name": "codex.tool_decision", tool_name: "apply_patch", success: "false" }),
+  // Full views split non-usage operations by input context too.
+  event({ "event.name": "codex.api_request", input_token_count: "272001", duration_ms: "10" }),
+  event({ "event.name": "codex.api_request", input_token_count: "272000", duration_ms: "11" }),
+  event({ "event.kind": "response.failed", error: "synthetic stream failure", duration_ms: "20" }),
+);
 insert(historical);
+// Map permits duplicate keys. JSON identity decoding must retain their lookup
+// semantics instead of collapsing the map through a JavaScript object.
+execute(`INSERT INTO claude_code.otel_logs (Timestamp,ResourceAttributes,LogAttributes)
+  SELECT toDateTime64('2026-10-21 12:00:21.000000001',9),
+    map('user.email','synthetic@example.test','backend','bedrock-mantle'),
+    map('event.name','codex.tool_result','conversation.id','duplicate-map-keys',
+      'model','${model}','tool_name','first','tool_name','second',
+      'duration_ms','5','duration_ms','9','success','false')`);
 execute(costSchemaSql());
 // Fixed historical fixtures must not disappear as wall-clock time advances.
 // The independent schema lifecycle suite verifies the declared retention.
@@ -102,9 +124,9 @@ const filters = [{}, { user: "SYNTHETIC" }, { userExact: "synthetic@example.test
   { modelExact: model }, { modelExact: "unknown-model" }, { backend: "bedrock-mantle" },
   { backend: "bedrock-runtime" }, { backend: "unknown" },
   { userExact: "synthetic@example.test", modelExact: model, backend: "bedrock-mantle" }];
-function request(source, filter = {}, start = from, end = to, seconds = 3600) {
+function request(source, filter = {}, start = from, end = to, seconds = 3600, costView = true) {
   return buildCodexQuery(start, end, filter, codexPrices, "codex", seconds,
-    { costView: true, costSource: source });
+    { costView, costSource: source });
 }
 function query(request, extra = []) { return rows(request.sql, request.params, extra); }
 const stable = value => Array.isArray(value) ? value.map(stable).sort((a, b) => {
@@ -114,15 +136,22 @@ const stable = value => Array.isArray(value) ? value.map(stable).sort((a, b) => 
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
 let assertions = 0;
 function equal(filter = {}, start = from, end = to, seconds = 3600) {
-  const raw = query(request("raw", filter, start, end, seconds));
-  const facts = query(request("facts", filter, start, end, seconds));
-  assert.deepEqual(stable(facts), stable(raw), "SQL parity " + JSON.stringify({ filter, start, end }));
-  for (const compactTime of [false, true]) {
-    const fold = values => foldClientMetrics(values.map(row => ({ ...row, client: "codex" })),
-      ["codex"], codexPrices, { costView: true, modelTime: true, compactTime });
-    assert.deepEqual(stable(fold(facts)), stable(fold(raw)), "Fold parity");
+  for (const costView of [true, false]) {
+    const rawRequest = request("raw", filter, start, end, seconds, costView);
+    const factsRequest = request("facts", filter, start, end, seconds, costView);
+    assert.match(factsRequest.sql, /FROM claude_code\.codex_cost_events_v1/,
+      "Parity must exercise facts, including full views");
+    const raw = query(rawRequest);
+    const facts = query(factsRequest);
+    assert.deepEqual(stable(facts), stable(raw),
+      "SQL parity " + JSON.stringify({ filter, start, end, costView }));
+    for (const compactTime of [false, true]) {
+      const fold = values => foldClientMetrics(values.map(row => ({ ...row, client: "codex" })),
+        ["codex"], codexPrices, { costView, modelTime: true, compactTime });
+      assert.deepEqual(stable(fold(facts)), stable(fold(raw)), "Fold parity");
+    }
+    assertions += 3;
   }
-  assertions += 3;
 }
 assert.equal(query(request("facts")).length, 0, "Creating views must not pretend to backfill history");
 execute(costBackfillSql(), backfillParams);

@@ -6,6 +6,8 @@ import { backendSql, VALID_BACKENDS } from "./backend.js";
 import { resolvedRatesTable, NO_REGIONAL_PREMIUM, REGIONAL_MODEL_PATTERN } from "./pricing.js";
 import { normModel } from "./queries.js";
 import { completionUsage } from "./codexCompletionUsage.js";
+import { diagnosticAttributesSql } from "./codexDiagnosticSchema.js";
+import { diagnosticSelection, diagnosticSourceForRange } from "./codexDiagnosticSource.js";
 
 const LIMIT = 50000;
 const DEFAULT_PRICES = parseCodexPricing(process.env.CODEX_PRICING_JSON);
@@ -112,20 +114,36 @@ function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
  * Exact weighted quantiles use the same nearest-rank convention as the raw fold.
  */
 export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEFAULT_PRICES,
-  { effortOnly = false } = {}) {
+  { effortOnly = false, profile = effortOnly ? "effort" : undefined,
+    diagnosticSource = diagnosticSourceForRange(from, to) } = {}) {
+  effortOnly = profile === "effort";
+  const diagnosticOnly = profile === "tools" || profile === "performance";
+  const latency = !profile || profile === "performance";
+  const families = {
+    effort: ["event", "usage", "effort", "scope", "operations"],
+    tools: ["event", "operations", "tool", "approval"],
+    performance: ["event", "operations", "latency"],
+  }[profile] || FAMILIES;
+  // Event coverage still counts every selected full log identity. Narrow the
+  // computed families without narrowing that source population or its deduplication.
   // Count complete identities inside each compact group instead of retaining a
   // separate DISTINCT set of every large resource/attribute map in the window.
-  const selected = logSelection(from, to, filters, false);
+  const useStates = diagnosticOnly && diagnosticSource === "states";
+  const selected = useStates ? diagnosticSelection(from, to, filters) : logSelection(from, to, filters, false);
   const params = { ...selected.params };
   const tokenAttributes = ["input_token_count", "cached_token_count", "cache_write_token_count",
     "output_token_count", "reasoning_token_count"];
   const parsed = [
-    ...TOKEN_KEYS.map((key, i) => `${numeric(`attributes['${tokenAttributes[i]}']`)} AS ${key}_number`),
+    ...(diagnosticOnly ? [] : TOKEN_KEYS.map((key, i) =>
+      `${numeric(`attributes['${tokenAttributes[i]}']`)} AS ${key}_number`)),
     ...["duration_ms", "prompt_length", "attempt", "http.response.status_code"].map((key, i) =>
-      `${effortOnly && key === "duration_ms" ? "CAST(NULL, 'Nullable(Float64)')" : numeric(`attributes['${key}']`)} AS operation_number${i}`),
+      `${effortOnly && key === "duration_ms" || diagnosticOnly && key === "prompt_length"
+        || profile === "tools" && ["attempt", "http.response.status_code"].includes(key)
+        ? "CAST(NULL, 'Nullable(Float64)')" : numeric(`attributes['${key}']`)} AS operation_number${i}`),
   ].join(",\n");
-  const tokens = TOKEN_KEYS.map(key => `${integer(`${key}_number`)} AS ${key}_raw`).join(",\n");
-  const priced = priceExpression(prices, params);
+  const tokens = TOKEN_KEYS.map(key =>
+    `${diagnosticOnly ? "CAST(NULL, 'Nullable(Float64)')" : integer(`${key}_number`)} AS ${key}_raw`).join(",\n");
+  const priced = diagnosticOnly ? "CAST(NULL, 'Nullable(Float64)')" : priceExpression(prices, params);
   const group = (kind, condition, keys) =>
     `if(${condition}, tuple('${kind}', toJSONString([${keys.join(",")}])), tuple('', ''))`;
   const groups = [
@@ -143,14 +161,17 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
       safeText("coalesce(nullIf(attributes['app.version'], ''), resource['service.version'])"),
       safeText("attributes['provider_name']"), safeText("attributes['reasoning_effort']"),
       policy("attributes['sandbox_policy']", SANDBOX), policy("attributes['approval_policy']", APPROVAL)]),
-  ].filter((_, index) => !effortOnly || ["event", "usage", "effort", "scope", "operations"].includes(FAMILIES[index]));
+  ].filter((_, index) => families.includes(FAMILIES[index]));
   const usageFamily = "family IN ('usage','effort')";
   const completeSum = (value, condition = "1") =>
     `if(countIf(${usageFamily} AND NOT (${condition} AND isNotNull(${value}))) > 0,
       NULL, sumIf((${value}) * weight, ${usageFamily}))`;
-  return { params, sql: `WITH selected AS (${selected.sql}),
+  const source = useStates ? `compacted AS (${selected.sql})` : `selected AS (${selected.sql}),
     compact_source AS (
-      SELECT *,
+      SELECT *, ${diagnosticOnly ? `
+        '' AS identity_time,
+        CAST(map(), 'Map(String, String)') AS compact_resource,
+        ${diagnosticAttributesSql("attributes")} AS compact_attributes` : `
         attributes['event.name'] IN ('codex.sse_event','codex.websocket_event')
           AND attributes['event.kind'] NOT IN ('response.completed','response.failed') AS intermediate,
         if(intermediate, '', timestamp) AS identity_time,
@@ -158,15 +179,17 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
           'backend',${backendSql("attributes['model']", "resource['backend']")},
           'project.name',resource['project.name']),resource) AS compact_resource,
         if(intermediate, map('event.name',attributes['event.name'],'event.kind','progress',
-          'conversation.id',attributes['conversation.id'],'model',attributes['model']${effortOnly ? "" : `,
-          'duration_ms',attributes['duration_ms']`}),attributes) AS compact_attributes
+          'conversation.id',attributes['conversation.id'],'model',attributes['model']${!latency ? "" : `,
+          'duration_ms',attributes['duration_ms']`}),attributes) AS compact_attributes`}
       FROM selected WHERE startsWith(attributes['event.name'], 'codex.')
     ), compacted AS (
       SELECT max(compact_source.timestamp) AS timestamp, min(compact_source.timestamp) AS first_timestamp,
         uniqExact(tuple(compact_source.timestamp,compact_source.resource,compact_source.attributes)) AS weight,
         compact_resource AS resource, compact_attributes AS attributes
       FROM compact_source GROUP BY identity_time, compact_resource, compact_attributes
-    ), parsed AS (
+    )`;
+  return { params, omittedSections: FAMILIES.filter(family => !families.includes(family)),
+    sql: `WITH ${source}, parsed AS (
       SELECT *, ${parsed} FROM compacted
     ),
     typed AS (
@@ -195,7 +218,7 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
             OR attributes['success'] = 'false', 1,
           http_status >= 100 AND http_status <= 599, toUInt8(http_status >= 400),
           attributes['success'] = 'true', 0, NULL) AS failed,
-        ${effortOnly ? "''" : `multiIf(event = 'codex.startup_phase', concat('startup_phase:', ${safeText("attributes['startup.phase']")}),
+        ${!latency ? "''" : `multiIf(event = 'codex.startup_phase', concat('startup_phase:', ${safeText("attributes['startup.phase']")}),
           event IN ('codex.api_request','codex.api_error'), 'api_request',
           event IN ('codex.sse_event','codex.websocket_request','codex.websocket_event','codex.turn_ttft','codex.tool_result'),
           substring(event,7), '')`} AS latency_name
@@ -208,8 +231,8 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
         isNotNull(input_raw) AND isNotNull(output_raw)
           AND ifNull(input_raw + output_raw <= 9007199254740991, 0) AS pair_valid,
         ${TOKEN_KEYS.map(k => `isNotNull(${k}_value)`).join(" AND ")} AS usage_valid,
-        ${codexModelSql("model")} AS base_model,
-        ${normModel("model")} AS claude_model
+        ${diagnosticOnly ? "''" : codexModelSql("model")} AS base_model,
+        ${diagnosticOnly ? "''" : normModel("model")} AS claude_model
       FROM typed
     ), priced AS (
       SELECT *, ${priced} AS amount,

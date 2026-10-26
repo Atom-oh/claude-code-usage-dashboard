@@ -43,9 +43,22 @@ jobs:
         run: |
           node scripts/generate-codex-cost-schema.mjs --check
           python3 scripts/test-codex-cost-schema.py
-
-      - name: Verify generated Codex diagnostic schema
-        run: node scripts/generate-codex-diagnostic-schema.mjs --check
+  diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/server/package-lock.json
+      - run: npm ci
+        working-directory: dashboard/server
+      - name: Verify generated Codex diagnostic schema and raw/state parity
+        run: |
+          node scripts/generate-codex-diagnostic-schema.mjs --check
+          python3 scripts/test-codex-diagnostic-schema.py
 
   schema:
     runs-on: ubuntu-latest

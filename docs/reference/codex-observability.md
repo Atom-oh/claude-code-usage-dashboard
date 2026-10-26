@@ -146,8 +146,33 @@ record counts, rather than empty or unavailable collection. The UI hides those
 irrelevant badges. `coverage.logs.omitted_sections` names unqueried log breakdowns.
 The response omits their arrays and `summary.tool_success_rate`; observed request,
 rejection, retry, approval and prompt summaries still retain their source semantics.
-Other profile values are rejected before querying/caching; profile identity is separate.
-The default profile retains all diagnostic signals and exact distributions.
+Profile identity is part of the cache key. Unknown profile values are rejected
+before querying/caching. The default profile retains all diagnostic signals and
+exact distributions.
+
+## Page-specific diagnostic profiles
+
+The shared Usage page requests `profile=tools`: one log query provides tool
+success, approval rates and their breakdowns. Metrics and traces are
+`not_requested`. The shared Reliability page requests `profile=performance`:
+one log query provides retry/error rates and latency, while four metric storage
+types are queried for `codex.turn.e2e_duration_ms`,
+`codex.turn.ttft.duration_ms`, `codex.turn.tool.call` and
+`codex.turn.token_usage`. It does not request traces.
+
+These profiles omit completion usage, cost, Effort and completeness outputs.
+Omitted arrays and summary fields are absent, and `coverage.logs.omitted_sections`
+identifies the skipped log aggregates. Event coverage still counts all
+deduplicated log identities in the filtered window. After migration 008 and
+verified `CODEX_DIAGNOSTIC_READ_FROM`, covered tools/performance ranges read
+exact aggregate identity states with the same weighted diagnostics. Earlier or
+unconfigured ranges use compact raw logs; default/Effort retain raw reads.
+See [diagnostic cutover](../runbooks/codex-diagnostic-schema.md). Metric filters preserve
+series identity, temporality and the prior-baseline window. Missing optional
+metric tables remain unavailable, and permission/transport failures remain errors.
+
+The common summary above these diagnostics can use the verified typed Codex
+tables independently; see [read-path activation](../runbooks/codex-cost-schema.md).
 
 ## Privacy and deployment
 

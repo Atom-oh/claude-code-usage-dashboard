@@ -271,7 +271,7 @@ function cacheKey(path, query) {
       modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined,
       view: path === "/api/clients/overview" && validateClientView(query) ? "cost" : undefined,
       timeFormat: path === "/api/clients/overview" && validateTimeFormat(query) ? "compact" : undefined,
-      profile: path === "/api/codex/insights" && validateInsightsProfile(query) ? "effort" : undefined,
+      profile: path === "/api/codex/insights" ? validateInsightsProfile(query) : undefined,
       // Query source and resolved end also matter: a subhour request can round to a
       // one-hour display while reading raw rows through the requested partial-hour end.
       ...(path === "/api/clients/overview" ? (() => {

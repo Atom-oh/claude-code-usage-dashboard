@@ -95,7 +95,8 @@ Key contracts:
 | `CLAUDE_ENABLED`, `CODEX_ENABLED` | Defaults: `true`, `false`. Enable either client or both; both false is invalid. Keep dashboard, bootstrap and collector settings consistent. |
 | `CODEX_BEDROCK_ENDPOINT` | `mantle` (default) or `runtime`; selects Codex launcher defaults independently of Claude channels. |
 | `CODEX_PRICING_JSON` | Validated inline JSON overrides for Codex AWS list-price estimates; see the [Codex runbook](docs/runbooks/codex-telemetry.md#dashboard-cost-and-query-contract). |
-| `CODEX_COST_READ_FROM` | Empty by default. Verified UTC coverage boundary for typed Codex cost reads after migration 007 and backfill; see the [cutover runbook](docs/runbooks/codex-cost-schema.md). |
+| `CODEX_COST_READ_FROM` | Empty by default. Verified UTC coverage boundary for typed Codex cost/full overview reads after migration 007 and backfill; see the [cutover runbook](docs/runbooks/codex-cost-schema.md). |
+| `CODEX_DIAGNOSTIC_READ_FROM` | Empty by default. Verified UTC coverage boundary for tools/performance diagnostic states after migration 008 and backfill; see the [diagnostic cutover runbook](docs/runbooks/codex-diagnostic-schema.md). |
 | `GROUP_MODE` | `ab` or `single`; affects Claude presentation, not channel inference or client selection. |
 | `DEFAULT_RANGE_DAYS`, `RANGE_CAP_DAYS` | Default window 2 days, maximum 90 days; invalid configuration fails startup. |
 | `PII_MASK_ENABLED` | Presentation/CSV/chat masking; not an authorization boundary for raw API access. |

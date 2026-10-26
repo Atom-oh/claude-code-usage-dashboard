@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { codexInsights } from "./codexInsights.js";
 
 const from = new Date("2026-09-15T00:00:00Z"), to = new Date("2026-09-15T01:00:00Z");
@@ -18,6 +19,39 @@ const usageRows = [
   row("effort", ["high"], pricedUsage),
 ];
 const diagnostic = sql => sql.includes("codex_metrics_") || sql.includes("FROM claude_code.otel_traces");
+
+test("configured diagnostic states activate only for covered tools/performance ranges and remain required logs", () => {
+  const script = `
+    import assert from "node:assert/strict";
+    import { codexInsights } from "./codexInsights.js";
+    const from = new Date("2026-10-01T00:00:15Z"), to = new Date("2026-10-26T00:00:45Z");
+    const selected = [];
+    for (const profile of [undefined, "effort", "tools", "performance"]) {
+      const queries = [];
+      const result = await codexInsights(from, to, { profile }, async sql => { queries.push(sql); return []; });
+      selected.push({ profile: profile || "default", queries: queries.length,
+        states: queries.some(sql => sql.includes("codex_diagnostic_events_v1")),
+        metrics: result.coverage.metrics.status, traces: result.coverage.traces.status });
+    }
+    let uncovered;
+    await codexInsights(new Date(+from - 1), to, { profile: "tools" }, async sql => { uncovered = sql; return []; });
+    assert.ok(uncovered.includes("FROM claude_code.otel_logs"));
+    const missingState = Object.assign(new Error("missing verified state table"), { code: "60" });
+    await assert.rejects(codexInsights(from, to, { profile: "tools" }, async () => { throw missingState; }),
+      error => error === missingState);
+    console.log(JSON.stringify(selected));`;
+  const results = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: new URL(".", import.meta.url),
+    env: { ...process.env, CODEX_DIAGNOSTIC_READ_FROM: "2026-10-01T00:00:15Z" },
+    encoding: "utf8",
+  }));
+  assert.deepEqual(results, [
+    { profile: "default", queries: 6, states: false, metrics: "empty", traces: "empty" },
+    { profile: "effort", queries: 1, states: false, metrics: "not_requested", traces: "not_requested" },
+    { profile: "tools", queries: 1, states: true, metrics: "not_requested", traces: "not_requested" },
+    { profile: "performance", queries: 5, states: true, metrics: "empty", traces: "not_requested" },
+  ]);
+});
 
 test("missing optional signal tables do not hide existing logs or manufacture observations", async () => {
   let logQueries = 0;
@@ -68,6 +102,90 @@ test("Effort profile queries only logs and preserves billing summaries without u
   assert.equal(selected.profile, "effort");
   for (const name of ["tools", "approvals", "latency", "runtime"])
     assert.equal(name in selected, false);
+});
+
+const diagnosticRows = [
+  row("event", ["codex.tool_result"], { records: 4 }),
+  row("event", ["codex.api_request"], { records: 2 }),
+  row("operations", [], { requests: 2, retries: 1, errors: 1, approved: 3, denied: 1 }),
+  row("tool", ["shell"], { records: 4, successes: 3, failures: 1, unknown_outcomes: 0,
+    duration_count: 4, average_ms: 25, percentiles: [20, 40] }),
+  row("approval", ["shell", "approved", "user"], { records: 3 }),
+  row("approval", ["shell", "denied", "user"]),
+  row("latency", ["api_request"], { records: 2, duration_count: 2,
+    average_ms: 50, percentiles: [40, 60], max_ms: 60 }),
+];
+const performanceNames = ["codex.turn.e2e_duration_ms", "codex.turn.ttft.duration_ms",
+  "codex.turn.tool.call", "codex.turn.token_usage"];
+
+test("tools profile preserves tool durations, decisions and log coverage with one log query", async () => {
+  const requests = [];
+  const result = await codexInsights(from, to, { profile: "tools" }, async (sql, params) => {
+    requests.push({ sql, params });
+    return diagnosticRows.filter(r => r.family !== "latency");
+  });
+  assert.equal(requests.length, 1);
+  assert.ok(!diagnostic(requests[0].sql));
+  assert.deepEqual(result.summary, { tool_success_rate: 0.75, approval_rate: 0.75 });
+  assert.deepEqual(result.tools, [{ tool: "shell", calls: 4, successes: 3, failures: 1, unknown: 0,
+    success_rate: 0.75, average_ms: 25, p95_ms: 40 }]);
+  assert.deepEqual(result.approvals.map(r => [r.decision, r.count]), [["approved", 3], ["denied", 1]]);
+  assert.equal(result.coverage.logs.records, 6);
+  assert.deepEqual(result.coverage.logs.omitted_sections, ["usage", "effort", "scope", "latency", "runtime"]);
+  assert.equal(result.profile, "tools");
+  for (const signal of ["metrics", "traces"])
+    assert.deepEqual(result.coverage[signal], { status: "not_requested", records: null, last_seen: null });
+  for (const section of ["completion_usage", "completeness", "effort", "latency", "runtime"])
+    assert.equal(section in result, false, section);
+});
+
+test("performance profile preserves request outcomes and latency while selecting all four metric types", async () => {
+  const requests = [];
+  const result = await codexInsights(from, to, { profile: "performance", user: "fixture", model: "model" },
+    async (sql, params) => {
+      requests.push({ sql, params });
+      if (sql.includes("codex_metrics_")) return [];
+      return diagnosticRows.filter(r => !["tool", "approval"].includes(r.family));
+    });
+  assert.equal(requests.length, 5);
+  assert.equal(requests.some(({ sql }) => sql.includes("otel_traces")), false);
+  for (const type of ["sum", "gauge", "histogram", "exponential_histogram"]) {
+    const request = requests.find(({ sql }) => sql.includes(`FROM claude_code.codex_metrics_${type}\n`));
+    assert.ok(request, type);
+    assert.deepEqual(request.params.signalMetricNames, performanceNames);
+    assert.match(request.sql, /MetricName IN \{signalMetricNames:Array\(String\)\}/);
+    assert.equal(request.params.signalUser, "fixture");
+    assert.equal(request.params.signalModel, "model");
+    if (type !== "gauge") assert.match(request.sql, /INTERVAL 3 DAY/);
+  }
+  assert.deepEqual(result.summary, { retry_rate: 0.5, api_error_rate: 0.5 });
+  assert.deepEqual(result.latency, [{ name: "api_request", count: 2, average_ms: 50,
+    p50_ms: 40, p95_ms: 60, max_ms: 60 }]);
+  assert.equal(result.coverage.logs.records, 6);
+  assert.deepEqual(result.coverage.logs.omitted_sections, ["usage", "effort", "scope", "tool", "approval", "runtime"]);
+  assert.equal(result.coverage.metrics.status, "empty");
+  assert.equal(result.coverage.traces.status, "not_requested");
+  assert.equal(result.profile, "performance");
+  for (const section of ["completion_usage", "completeness", "effort", "tools", "approvals", "runtime"])
+    assert.equal(section in result, false, section);
+});
+
+test("performance profile preserves missing-table, limited and failed metric distinctions", async () => {
+  for (const [response, status] of [[{ code: "60" }, "unavailable"], [[{ result_limited: 1 }], "limited"]]) {
+    const result = await codexInsights(from, to, { profile: "performance" }, async sql => {
+      if (!sql.includes("codex_metrics_")) return [];
+      if (!Array.isArray(response)) throw response;
+      return response;
+    });
+    assert.equal(result.coverage.metrics.status, status);
+    assert.equal(result.coverage.traces.status, "not_requested");
+    assert.equal(result.summary.retry_rate, null);
+    assert.equal(result.summary.api_error_rate, null);
+  }
+  await assert.rejects(codexInsights(from, to, { profile: "performance" }, async sql => {
+    if (sql.includes("codex_metrics_")) throw { code: "497" };
+    return [];
+  }), error => error.code === "497");
 });
 
 test("invalid profiles fail before all signal queries", async () => {

@@ -5,7 +5,7 @@ the public contract is [Coding-client views](../api-reference.md#coding-client-v
 
 ## Current query path
 
-`view=cost` uses the existing counter, pricing and log-deduplication paths. It keeps
+`view=cost` uses the existing counter, pricing and event-deduplication paths. It keeps
 all evidence needed to distinguish known amounts, incomplete usage and explicit
 rejections. It does not discard model-less operational records. Full diagnostic
 views remain available through the default profile.
@@ -17,7 +17,16 @@ Both profiles compact stream deltas into their original session/user/model/backe
 project/event scope. A fixed delta marker replaces arbitrary representative maps;
 full sorted-map identity remains mandatory for completion deduplication.
 
-These changes do not eliminate raw scans or establish capacity for 140 distinct
+For Codex ranges covered by the verified `CODEX_COST_READ_FROM` boundary, both
+cost and full overview profiles read the typed event and compact scope tables.
+Full views recover diagnostic log attributes from the retained identity tuple
+after explicit event deduplication; cost views skip this decoding. Tools, errors,
+valid durations and non-usage context tiers retain their previous semantics.
+Older ranges and unconfigured installations use raw logs. Claude retains its
+counter and operational-log sources.
+See the [cutover runbook](../runbooks/codex-cost-schema.md).
+
+These changes do not eliminate every raw scan or establish capacity for 140 distinct
 viewers. Requests sharing a cache key can reuse work; independent filters may miss.
 Existing admission, query, result and cache limits remain.
 
@@ -28,6 +37,21 @@ reducing its database round trips from six to one. Its log query omits diagnosti
 families/quantiles but preserves original event deduplication, usage tiers and
 scope coverage. Full diagnostics remain available on their relevant views.
 See [observability](codex-observability.md#effort-profile).
+
+The Usage tools panel requests `profile=tools` (one log query); the Reliability
+performance panel requests `profile=performance` (logs and four metric storage
+types). Neither requests traces. Performance metric selection retains displayed
+turn duration, TTFT, tool-call and token-usage families, including cumulative
+baselines. Profile identity separates cached responses. Unqueried coverage is
+`not_requested`; it is not zero or absent collection.
+
+Covered tools/performance ranges can read migration 008's exact diagnostic
+identity states instead of raw maps, after `CODEX_DIAGNOSTIC_READ_FROM` is
+verified. `FINAL` merges repeated insertion/backfill states before finalizing
+weights. All stream durations, event counts and filter semantics remain.
+Unconfigured or earlier ranges retain a compact raw fallback; removing hidden
+breakdowns alone does not eliminate its scanned bytes. Default/Effort remain
+raw. See the [diagnostic cutover](../runbooks/codex-diagnostic-schema.md).
 
 High-volume intermediate stream events also carry counts, latency and scope
 coverage. Repeated cumulative exports preserve observation/baseline evidence.
@@ -74,16 +98,16 @@ those extra reads can increase elapsed time below the guard. It can hit time/res
 query-memory reduction alone is not a latency or concurrency guarantee.
 No samples, model dimensions or diagnostic feeds are removed from collection.
 
-## Subsequent schema design
+## Typed storage and subsequent schema design
 
-The following accelerators are proposals, not deployed tables:
+Migration 007 supplies typed usage/operational events and compact scope states.
+Activation requires verified history and parity; source files alone do not prove
+deployment. Full original identity and nanosecond timestamps remain in event
+facts. Scope states retain exact second membership for whole-second query bounds.
+The [schema owner](../../dashboard/server/codexCostSchema.js) and
+[cutover runbook](../runbooks/codex-cost-schema.md) define their lifecycle.
 
-- Typed usage events retain exact timestamps, original deduplication identity,
-  per-response input/context tier, token validity, pricing inputs and raw fallback.
-  Diagnostic metrics/traces cannot become additional cost.
-- Compact scope evidence retains identity and exact window membership. Closed
-  buckets can be compacted; incomplete boundaries require raw refinement.
-- Ten-minute metric states retain stored `SeriesKey`, helper dimensions and
+Ten-minute metric states remain a proposal. They must retain stored `SeriesKey`, helper dimensions and
   temporality. Cumulative samples use maxima and correct query-time baselines,
   while delta samples retain sums. Never sum cumulative exports or compute
   cross-block cumulative differences inside an incremental materialized view.
