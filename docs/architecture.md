@@ -107,6 +107,7 @@ ClickHouse, applying the root schema before synthetic seed inserts on first volu
 | `codex_metrics_{sum,gauge,histogram,exponential_histogram}` | Separate native Codex diagnostics, without usage rollups | Cold at 90 days, delete at 180 |
 | `otel_metrics_sum_hourly` | Per-series hourly max/sum aggregates | Delete at 180 days; no cold move |
 | `otel_logs` | Claude bare-name events such as `api_request`/`tool_result`, and `codex.*` events | Cold at 45 days, delete at 90 |
+| `codex_cost_{events,scope}_v1` | Typed log-derived cost events and compact activity evidence, opt-in for cost overviews | Cold at 45 days, delete at 90 |
 | `otel_traces` | Claude spans and Codex spans tagged by resource client | Cold at 45 days, delete at 90 |
 | `schema_migrations` | Migration evidence ledger | Separate metadata table |
 
@@ -114,6 +115,9 @@ The [replicated schema](../infra/files/clickhouse-schema-replicated.sql) and
 [local schema](../clickhouse-schema.sql) share measurement columns but differ in engines and
 cold-storage configuration. Promoted fields avoid repeated map decoding; their existence
 alone does not prove event coverage. See [data reference](reference/data.md) for field sources.
+The [cost schema runbook](runbooks/codex-cost-schema.md) separates migration 007,
+bounded historical backfill and `CODEX_COST_READ_FROM` activation. Pricing still
+uses runtime rates; the new source does not change native metric or Insights queries.
 
 The rollup retains user identities, so indefinite retention would outlive raw-data deletion.
 Its delete-only TTL also works when an existing rollup has no cold volume. The configured
