@@ -77,6 +77,17 @@ class SchemaLifecycle(unittest.TestCase):
         result = self.verify_without_writes(False, CH_EXPECTED_REPLICAS="2")
         self.assertIn("replica count", result.stderr)
 
+    def test_cost_view_security_drift_is_rejected_without_repair(self):
+        view = "claude_code.codex_cost_events_v1_mv"
+        self.fixture.query(f"ALTER TABLE {view} MODIFY SQL SECURITY NONE")
+        try:
+            result = self.verify_without_writes(False)
+            self.assertIn("Codex cost views require explicit definer security", result.stderr)
+        finally:
+            self.fixture.query(
+                f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER"
+            )
+
     def test_zero_timeout_cannot_disable_the_process_deadline(self):
         result = self.verify_without_writes(False, SCHEMA_QUERY_TIMEOUT_SECONDS="00")
         self.assertIn("must be positive integers", result.stderr)

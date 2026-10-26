@@ -34,7 +34,8 @@ TTL toDateTime(Timestamp) + INTERVAL 45 DAY TO VOLUME 'cold',
 SETTINGS storage_policy = 'hot_cold';
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.codex_cost_events_v1_mv ON CLUSTER 'replicated'
-TO claude_code.codex_cost_events_v1 AS
+TO claude_code.codex_cost_events_v1
+DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
 SELECT Timestamp,
   toJSONString(tuple(mapSort(ResourceAttributes),mapSort(LogAttributes))) AS Identity,
   coalesce(nullIf(ResourceAttributes['user.email'], ''),
@@ -104,7 +105,8 @@ TTL toDateTime(Minute) + INTERVAL 45 DAY TO VOLUME 'cold',
 SETTINGS storage_policy = 'hot_cold';
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.codex_cost_scope_v1_mv ON CLUSTER 'replicated'
-TO claude_code.codex_cost_scope_v1 AS
+TO claude_code.codex_cost_scope_v1
+DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
 SELECT toStartOfMinute(Timestamp) AS Minute, coalesce(nullIf(ResourceAttributes['user.email'], ''),
     nullIf(ResourceAttributes['enduser.id'], ''), '') AS UserEmail,
   LogAttributes['conversation.id'] AS ConversationId, LogAttributes['model'] AS Model,
@@ -159,6 +161,6 @@ SELECT throwIf(
     ('codex_cost_scope_v1','Seconds','AggregateFunction(groupUniqArray, UInt8)'))) != 28,
   'Codex cost schema columns differ; repair before recording migration 007');
 
-INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 7, '007-codex-cost-facts', '1e8ca91dbdc3d1585753251f675776eab6d9941f748ae4963769c8f52e3dc556'
+INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 7, '007-codex-cost-facts', '85c41c7619edf637e118d02819b2c9d42ed3ad6ea9bed06c8c1985f5e2ab2902'
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version=4) > 0
 AND (SELECT count() FROM claude_code.schema_migrations WHERE version=7) = 0;

@@ -104,6 +104,15 @@ SELECT throwIf(
   (SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'otel_metrics_sum_hourly_mv'
     AND position(replaceAll(create_table_query, '`', ''), 'TO claude_code.otel_metrics_sum_hourly ') > 0) != 1,
   'SCHEMA_COMPATIBILITY: hourly materialized view target differs');
+
+-- The creator is installation-specific; require explicit definer security so
+-- insert-only collectors never need permission to read raw logs.
+SELECT throwIf(
+  (SELECT count() FROM system.tables WHERE database = 'claude_code'
+    AND name IN ('codex_cost_events_v1_mv', 'codex_cost_scope_v1_mv')
+    AND position(create_table_query, ' SQL SECURITY DEFINER') > 0
+    AND position(create_table_query, 'DEFINER = ') > 0) != 2,
+  'SCHEMA_COMPATIBILITY: Codex cost views require explicit definer security');
 """
 
 
