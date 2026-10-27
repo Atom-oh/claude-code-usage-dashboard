@@ -480,6 +480,8 @@ rows cannot establish that zero. Efficiency retains the existing per-user/model
 report eligibility, including its zero policy without observation metadata.
 Effort/agent model scopes without an in-window cost or token sample are omitted;
 pre-window samples still establish counter baselines.
+Current token samples with zero increments and no cost sample remain unavailable
+coverage; they mark a mixed Effort/agent subtotal partial rather than establish zero.
 The model endpoint retains its legacy rows and strict values. Its observation fields
 count folded series with current cost samples or any current cost/token samples,
 respectively, not raw exports. They use the existing raw/rollup window boundaries.

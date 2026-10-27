@@ -799,6 +799,9 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         { session: "detail-zero", effort: "low", agent: "zero", amount: 0, tokens: 0, model: "global.anthropic.claude-opus-5" },
         { session: "detail-baseline", effort: "", agent: "baseline", amount: 0, tokens: 0, model: "global.anthropic.claude-haiku-5", baselineOnly: true },
         { session: "detail-token-only", effort: "token-only", agent: "token-only", amount: null, tokens: 10, model: "global.anthropic.claude-sonnet-5" },
+        { session: "detail-idle-known", effort: "idle-mixed", agent: "idle-mixed", amount: 3, tokens: 10, model: "global.anthropic.claude-sonnet-5" },
+        { session: "detail-idle-missing", effort: "idle-mixed", agent: "idle-mixed", amount: null, tokens: 0, model: "global.anthropic.fixture-idle-unpriced" },
+        { session: "detail-idle-unknown", effort: "idle-unknown", agent: "idle-unknown", amount: null, tokens: 0, model: "global.anthropic.fixture-idle-unpriced" },
       ];
       for (const fixture of fixtures) {
         for (const [metric, type, amount] of [
@@ -823,12 +826,16 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal(efforts.find((r) => r.effort === "unknown"), undefined, "historical-only Effort is not current missing coverage");
         assert.equal(efforts.find((r) => r.effort === "token-only").known_reported_cost, null, "current token-only usage stays unavailable");
         assert.equal(efforts.find((r) => r.effort === "low").known_reported_cost, 0);
+        assertFields(efforts.find((r) => r.effort === "idle-mixed"), { known_reported_cost: 3, reported_partial: true });
+        assert.equal(efforts.find((r) => r.effort === "idle-unknown").known_reported_cost, null);
         const agents = await q.agentCost(from, end, filters);
         assertFields(agents.find((r) => r.agent === "mixed"), { known_reported_cost: 5, reported_partial: true });
         assert.equal(agents.find((r) => r.agent === "unknown").known_reported_cost, null);
         assert.equal(agents.find((r) => r.agent === "baseline"), undefined, "historical-only agent is not current missing coverage");
         assert.equal(agents.find((r) => r.agent === "token-only").known_reported_cost, null);
         assert.equal(agents.find((r) => r.agent === "zero").known_reported_cost, 0);
+        assertFields(agents.find((r) => r.agent === "idle-mixed"), { known_reported_cost: 3, reported_partial: true });
+        assert.equal(agents.find((r) => r.agent === "idle-unknown").known_reported_cost, null);
         const models = await q.costByModel(from, end, filters);
         const baseline = models.find((r) => r.model === "claude-haiku-5");
         assertFields(baseline, { reported_cost: 0, known_reported_cost: null });
@@ -841,6 +848,9 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         const missing = models.find((r) => r.model === "fixture-unpriced");
         assert.equal(missing.known_reported_cost, null);
         assert.ok(Number(missing.observed_usage_rows) > 0);
+        const idle = models.find((r) => r.model === "fixture-idle-unpriced");
+        assert.equal(idle.known_reported_cost, null, "current zero tokens without a report are unavailable");
+        assert.ok(Number(idle.observed_usage_rows) > 0);
       }
       const scoped = await q.effortMix(from, to, { user: "detail-coverage@", group: "bedrock", model: "global.anthropic.claude-sonnet-5" });
       assertFields(scoped.find((r) => r.effort === "high"), { known_reported_cost: 5, reported_partial: false });

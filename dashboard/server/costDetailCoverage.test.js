@@ -53,11 +53,30 @@ test("an observed zero remains available beside excluded positive-token models",
 });
 
 test("lookback-only zero counters establish neither measured zero nor exclusions", () => {
-  const baseline = model({ reported_cost: 0, input_tokens: 0, cost_counter_rows: 0 });
+  const baseline = model({ reported_cost: 0, input_tokens: 0, cost_counter_rows: 0, observed_usage_rows: "0" });
   assert.equal(fold([baseline])[0].known_reported_cost, null);
   const [row] = fold([model(), baseline]);
   assert.equal(row.known_reported_cost, 5);
   assert.equal(row.reported_partial, false);
+});
+
+test("current zero-token samples without reports remain unavailable coverage", () => {
+  for (const observed_usage_rows of [1, "1"]) {
+    const missing = model({
+      reported_cost: 0, input_tokens: 0, cost_counter_rows: 0, observed_usage_rows,
+    });
+    for (const dimension of ["effort", "agent"]) {
+      const [mixed] = fold([model(), missing], dimension);
+      assert.equal(mixed.known_reported_cost, 5);
+      assert.equal(mixed.reported_partial, true);
+      const [unknown] = fold([missing], dimension);
+      assert.equal(unknown.known_reported_cost, null);
+      assert.equal(unknown.reported_partial, false);
+      const [zero] = fold([model({ reported_cost: 0, input_tokens: 0 }), missing], dimension);
+      assert.equal(zero.known_reported_cost, 0);
+      assert.equal(zero.reported_partial, true);
+    }
+  }
 });
 
 test("dimension coverage rejects explicitly unverified reports and overflowing totals", () => {

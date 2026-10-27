@@ -15,7 +15,7 @@ export function knownReportedCost(rows, { requireObservedZero = false } = {}) {
       && (report > 0 || (!hasTokens && (!requireObservedZero || hasCounter)))) {
       known = true;
       total += report;
-    } else if (!requireObservedZero || hasCounter || hasTokens) {
+    } else if (!requireObservedZero || hasCounter || hasTokens || Number(row.observed_usage_rows) > 0) {
       unknown = true;
     }
   }
