@@ -1228,13 +1228,19 @@ export async function costSummary(from, to, filters = {}) {
     GROUP BY "group", model ORDER BY "group"`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
+  return foldCostSummary(withComputedCost(rows));
+}
+
+// Group × model rows → one row per group. Exported for tests.
+export function foldCostSummary(rows) {
   const byGroup = new Map();
-  for (const r of withComputedCost(rows)) {
+  for (const r of rows) {
     if (!byGroup.has(r.group)) {
       byGroup.set(r.group, {
         group: r.group,
         computed_cost: 0,
-        reported_cost: 0,
+        reported_cost: null,
+        reported_partial: false,
         input_tokens: 0,
         output_tokens: 0,
         cache_read_tokens: 0,
@@ -1245,8 +1251,12 @@ export async function costSummary(from, to, filters = {}) {
     }
     const g = byGroup.get(r.group);
     g.computed_cost += r.cost || 0;
-    // Unknown non-Anthropic spend (ADR-017 amendment) arrives as null: keep the total unavailable.
-    g.reported_cost = g.reported_cost === null || r.reported_cost === null ? null : g.reported_cost + Number(r.reported_cost);
+    // Unknown non-Anthropic spend (ADR-017 amendment) arrives as null per model: keep the known
+    // subtotal and flag it (ADR-013), so one unpriced model never hides the group's other models.
+    // A group whose every model is unknown stays null.
+    if (r.reported_cost === null) g.reported_unknown = true;
+    else g.reported_cost = (g.reported_cost ?? 0) + Number(r.reported_cost);
+    g.reported_partial = g.reported_unknown === true && g.reported_cost !== null;
     g.input_tokens += Number(r.input_tokens);
     g.output_tokens += Number(r.output_tokens);
     g.cache_read_tokens += Number(r.cache_read_tokens);
@@ -1257,7 +1267,9 @@ export async function costSummary(from, to, filters = {}) {
     }
     g.sessions += Number(r.sessions);
   }
-  return [...byGroup.values()].sort((a, b) => a.group.localeCompare(b.group));
+  return [...byGroup.values()]
+    .map(({ reported_unknown, ...g }) => g)
+    .sort((a, b) => a.group.localeCompare(b.group));
 }
 
 // Cost 페이지: 모델별 비용/토큰. cost는 토큰 실측 × 단가표로 계산한 값, reported_cost는

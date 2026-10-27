@@ -76,7 +76,10 @@ tokens is treated as unpriced by spend consumers; zero without token evidence is
 misleading partial total or average. The Claude detail Cost page folds (summary totals, model
 and user tables, top-user chart) instead sum known reports with `sumKnownSpend`, labelling
 mixed results as partial subtotals and keeping null only when every piece is unusable
-([ADR-013](decisions/ADR-013-known-cost-subtotals.md) semantics). Missing reports already
+([ADR-013](decisions/ADR-013-known-cost-subtotals.md) semantics). `/api/cost/summary` likewise
+sums each group's known model reports and sets `reported_partial` when a model's report is
+unknown; `asSpendRow` maps it to `cost_partial`, and strict `sumSpend` withholds such rows.
+Missing reports already
 folded into a positive SQL aggregate cannot always be detected, so total and detail status
 can differ.
 

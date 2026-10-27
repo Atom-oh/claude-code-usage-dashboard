@@ -388,6 +388,21 @@ test("summary with one usable and one unusable report shows the known subtotal l
   expect(card("토큰 단가 계산 비용").textContent).toContain("$7,827.28");
 });
 
+test("a server partial group subtotal stays visible on the Cost page and labels its basis", async () => {
+  mount("ab", {
+    "/api/cost/summary": [
+      { ...summary, reported_cost: 100, reported_partial: true },
+      { ...summary, group: "enterprise", reported_cost: 50 },
+    ],
+    "/api/overview/active-users": { users: 2, bedrock_users: 2, enterprise_users: 1 },
+  });
+  await waitFor(() => expect(card("총 비용").textContent).toContain("$150"));
+  expect(card("총 비용").textContent).toContain("알려진 보고 비용 부분합 · 일부 보고값 누락");
+  expect(card("사용자당 비용 — bedrock").textContent).toContain("$50");
+  expect(card("사용자당 비용 — bedrock").textContent).toContain("부분합 기준");
+  expect(card("사용자당 비용 — enterprise").textContent).not.toContain("부분합");
+});
+
 test("effort, agents and efficiency use reported spend with computed secondary diagnostics", async () => {
   mount("single", {
     "/api/cost/effort-mix": [

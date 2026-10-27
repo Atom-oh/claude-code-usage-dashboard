@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel, UNTAGGED_PROJECT, ttlSplitFields } from "./queries.js";
+import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel, UNTAGGED_PROJECT, ttlSplitFields, foldCostSummary } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 import { GROUP_CTE } from "./grouping.js";
 
@@ -522,4 +522,20 @@ test("ttlSplitFields derives coverage, split cost and split ratio", () => {
   const unpriced = ttlSplitFields({ ...base, model: "no-such-model", reported_cost: 1, cache_write_tokens: 1, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0 });
   assert.equal(unpriced.cost_split, null);
   assert.equal(unpriced.ratio_split, null);
+});
+
+test("foldCostSummary keeps a group's known reports beside an unknown model (ADR-013)", () => {
+  const row = (group, model, reported_cost) => ({ group, model, reported_cost, cost: 1, input_tokens: "10", output_tokens: "2",
+    cache_read_tokens: "0", cache_write_tokens: "0", sessions: "1", unpriced: false });
+  const out = foldCostSummary([
+    row("bedrock", "claude-opus-5-5", "228.1"), row("bedrock", "kimi-k3", null), row("bedrock", "claude-haiku-5-5", 0.5),
+    row("enterprise", "claude-sonnet-5-5", 10),
+    row("unknown", "kimi-k3", null),
+  ]);
+  assert.deepEqual(out.map((g) => [g.group, g.reported_cost, g.reported_partial]),
+    [["bedrock", 228.6, true], ["enterprise", 10, false], ["unknown", null, false]]);
+  assert.equal(out[0].input_tokens, 30);
+  assert.ok(!Object.hasOwn(out[0], "reported_unknown"));
+  // An unknown model first still yields the later known subtotal.
+  assert.deepEqual(foldCostSummary([row("b", "x", null), row("b", "y", 2)]).map((g) => [g.reported_cost, g.reported_partial]), [[2, true]]);
 });

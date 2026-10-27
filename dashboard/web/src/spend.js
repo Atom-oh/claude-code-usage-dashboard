@@ -23,6 +23,8 @@ export function asSpendRow(row) {
     computed_cost: Object.hasOwn(row, "computed_cost") ? row.computed_cost : row.cost ?? null,
     prev_computed_cost: Object.hasOwn(row, "prev_computed_cost") ? row.prev_computed_cost : row.prev_cost ?? null,
     cost: current,
+    // A server known subtotal (reported_partial, ADR-013) excludes unknown spend.
+    cost_partial: row.cost_partial === true || (current !== null && row.reported_partial === true),
     reported_unpriced: current === null,
     prev_cost: previous,
     prev_reported_unpriced: previous === null,
@@ -37,7 +39,8 @@ export function sumSpend(rows, key = "cost") {
   let total = 0;
   for (const row of rows || []) {
     const value = amount(row[key]);
-    if (value === null) return null;
+    // Strict totals never present a partial subtotal as complete; sumKnownSpend discloses it instead.
+    if (value === null || (key === "cost" && row.cost_partial === true)) return null;
     total += value;
   }
   return Number.isFinite(total) ? total : null;

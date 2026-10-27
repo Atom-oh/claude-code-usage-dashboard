@@ -747,8 +747,21 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       // A group mixing a priced and a factor-less session is unavailable, never understated.
       const mixed = await queries.costByModel(from, to, { user: "nac-" });
       assert.equal(mixed.find((r) => r.model === "openai.gpt-6-luna").reported_cost, null);
+      // The group summary keeps the known model subtotal and flags the unknown model (ADR-013).
+      // Each group sums its known model reports; one with an unknown model is flagged, and a
+      // group whose every model is unknown stays null.
       const summary = await queries.costSummary(from, to, { user: "nac-" });
-      assert.equal(summary.find((r) => r.reported_cost !== undefined).reported_cost, null);
+      const nacGroups = summary.filter((g) => mixed.some((r) => r.group === g.group));
+      assert.ok(nacGroups.length > 0);
+      for (const g of nacGroups) {
+        const models = mixed.filter((r) => r.group === g.group);
+        const known = models.filter((r) => r.reported_cost !== null);
+        const unknown = models.length > known.length;
+        if (!known.length) assert.equal(g.reported_cost, null);
+        else close(g.reported_cost, known.reduce((sum, r) => sum + Number(r.reported_cost), 0));
+        assert.equal(g.reported_partial, unknown && known.length > 0);
+      }
+      assert.ok(nacGroups.some((g) => g.reported_cost === null));
       const projects = await queries.projectBreakdown(from, to, { user: "nac-" });
       assert.equal(projects[0].cost_usd, null);
     });

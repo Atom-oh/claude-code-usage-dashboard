@@ -99,3 +99,15 @@ test("sumKnownSpend carries a usable partial piece and ignores the flag on an un
   // sumSpend keeps its strict propagation for the pages that still use it.
   expect(sumSpend([{ cost: 5, cost_partial: true }, { cost: null }])).toBeNull();
 });
+
+test("a server known subtotal marks the adapted row partial and strict totals withhold it", () => {
+  const group = asSpendRow({ group: "bedrock", reported_cost: 12, reported_partial: true, input_tokens: 10 });
+  expect(group).toMatchObject({ cost: 12, cost_partial: true, reported_unpriced: false });
+  expect(asSpendRow({ reported_cost: 12 }).cost_partial).toBe(false);
+  // An all-unknown group stays unavailable without a partial flag.
+  expect(asSpendRow({ reported_cost: null, reported_partial: false })).toMatchObject({ cost: null, cost_partial: false });
+  expect(sumKnownSpend([group, asSpendRow({ reported_cost: 3 })])).toEqual({ total: 15, partial: true });
+  expect(sumSpend([group, asSpendRow({ reported_cost: 3 })])).toBeNull();
+  expect(sumSpend([group], "computed_cost")).toBeNull();
+  expect(sumSpend([{ computed_cost: 4, cost_partial: true }], "computed_cost")).toBe(4);
+});
