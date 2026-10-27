@@ -138,7 +138,9 @@ export default function Executive() {
     return { bedrock: v("bedrock"), enterprise: v("enterprise") };
   };
   const abDevs = { bedrock: Number(activeUsers.data?.bedrock_users ?? 0), enterprise: Number(activeUsers.data?.enterprise_users ?? 0) };
-  const abCost = pickAB(spendSummary, "cost");
+  // A partial group subtotal (cost_partial) is withheld like the strict headline total, so the
+  // scoreboard never compares an understated cost or picks a winner on it.
+  const abCost = pickAB(spendSummary.map((r) => (r.cost_partial ? { ...r, cost: null } : r)), "cost");
   const abLoc = pickAB(kpi.data?.map((row) => ({
     ...row, lines_of_code: sumObservedMetric([row], "lines_of_code"),
   })), "lines_of_code");

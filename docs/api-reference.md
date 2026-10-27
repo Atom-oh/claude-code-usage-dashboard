@@ -461,7 +461,7 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 
 | Path | Fields and grain |
 |---|---|
-| `/api/cost/summary` | Per `group`: `computed_cost`, `reported_cost` (known model reports; null only when every model is unknown), `reported_partial` (an unknown model was excluded), token fields, `unpriced_tokens`, `sessions`; includes unknown-channel rows by default. |
+| `/api/cost/summary` | Per `group`: `computed_cost`, `reported_cost` (known model reports; null only when every model is unknown), `reported_partial` (true when the known subtotal excluded an unknown model report; false for an all-unknown null group), token fields, `unpriced_tokens`, `sessions`; includes unknown-channel rows by default. |
 | `/api/cost/by-model` | Per `group, model`: priced row plus `tokens`; empty model stays `model=""`. |
 | `/api/cost/by-user-model` | Per `user, group, model`: priced row plus `tokens`; nonempty email required; empty model stays `model=""`. `includeUnknown=1` broadens channel coverage. |
 | `/api/cost/by-model-daily` | **B**, per `day, group, model`: priced row plus the report coverage fields below. The field is named `day` even for sub-day buckets. |

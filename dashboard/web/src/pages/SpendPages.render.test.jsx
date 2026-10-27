@@ -21,7 +21,7 @@ const spend = {
   tokens: 1000, unpriced: false,
 };
 
-function mount(path, rows = [spend], costError = false, daily = [], leaderboard = [user], overrides = {}) {
+function mount(path, rows = [spend], costError = false, daily = [], leaderboard = [user], overrides = {}, config = {}) {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   vi.stubGlobal("fetch", vi.fn((url) => {
     const key = String(url).split("?")[0];
@@ -41,7 +41,7 @@ function mount(path, rows = [spend], costError = false, daily = [], leaderboard 
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
   }));
   return render(
-    <ConfigProvider config={{ piiMask: false, groupMode: "single", schema: {} }}>
+    <ConfigProvider config={{ piiMask: false, groupMode: "single", schema: {}, ...config }}>
       <MemoryRouter initialEntries={[claudeDetail(path)]}><App /></MemoryRouter>
     </ConfigProvider>
   );
@@ -60,6 +60,19 @@ test("Executive does not turn an unavailable report into a zero forecast", async
   await waitFor(() => expect(container.textContent).toContain("기간 비용은"));
   expect(container.textContent).toContain("기간 비용은 확인 필요");
   expect(container.textContent).not.toContain("30일 기준 $0");
+});
+
+test("Executive withholds a partial group subtotal from its A/B scoreboard", async () => {
+  const { container } = mount("/exec", [spend], false, [], [user], {
+    "/api/cost/summary": [
+      { group: "bedrock", reported_cost: 100, reported_partial: true, computed_cost: 100 },
+      { group: "enterprise", reported_cost: 50, computed_cost: 50 },
+    ],
+    "/api/overview/active-users": { users: 2, bedrock_users: 1, enterprise_users: 1 },
+  }, { groupMode: "ab" });
+  await waitFor(() => expect(container.textContent).toContain("$50"));
+  expect(container.textContent).not.toContain("$100");
+  expect(container.textContent).not.toContain("$150");
 });
 
 test("Productivity costs include a reported model with no computed price", async () => {

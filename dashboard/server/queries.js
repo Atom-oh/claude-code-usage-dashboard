@@ -1219,6 +1219,7 @@ export async function costSummary(from, to, filters = {}) {
         ${GROUP_EXPR} AS "group",
         ${normModel("m.Model")} AS model,
         ${TOKEN_SUMS},
+        countIf(m.MetricName = 'claude_code.cost.usage') AS cost_samples,
         sumIf(m.Value, m.MetricName = 'claude_code.session.count') AS sessions
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.cost.usage', 'claude_code.token.usage', 'claude_code.session.count'
@@ -1254,8 +1255,11 @@ export function foldCostSummary(rows) {
     // Unknown non-Anthropic spend (ADR-017 amendment) arrives as null per model: keep the known
     // subtotal and flag it (ADR-013), so one unpriced model never hides the group's other models.
     // A group whose every model is unknown stays null.
-    if (r.reported_cost === null) g.reported_unknown = true;
-    else g.reported_cost = (g.reported_cost ?? 0) + Number(r.reported_cost);
+    // A row without cost samples (e.g. model-less session.count rows) carries no report: it is
+    // unknown only when it has token usage, and otherwise contributes nothing.
+    const tokens = Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens);
+    if (r.reported_cost === null || (!(Number(r.cost_samples) > 0) && tokens > 0)) g.reported_unknown = true;
+    else if (Number(r.cost_samples) > 0) g.reported_cost = (g.reported_cost ?? 0) + Number(r.reported_cost);
     g.reported_partial = g.reported_unknown === true && g.reported_cost !== null;
     g.input_tokens += Number(r.input_tokens);
     g.output_tokens += Number(r.output_tokens);

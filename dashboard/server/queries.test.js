@@ -526,7 +526,7 @@ test("ttlSplitFields derives coverage, split cost and split ratio", () => {
 
 test("foldCostSummary keeps a group's known reports beside an unknown model (ADR-013)", () => {
   const row = (group, model, reported_cost) => ({ group, model, reported_cost, cost: 1, input_tokens: "10", output_tokens: "2",
-    cache_read_tokens: "0", cache_write_tokens: "0", sessions: "1", unpriced: false });
+    cache_read_tokens: "0", cache_write_tokens: "0", sessions: "1", unpriced: false, cost_samples: "1" });
   const out = foldCostSummary([
     row("bedrock", "claude-opus-5-5", "228.1"), row("bedrock", "kimi-k3", null), row("bedrock", "claude-haiku-5-5", 0.5),
     row("enterprise", "claude-sonnet-5-5", 10),
@@ -538,4 +538,12 @@ test("foldCostSummary keeps a group's known reports beside an unknown model (ADR
   assert.ok(!Object.hasOwn(out[0], "reported_unknown"));
   // An unknown model first still yields the later known subtotal.
   assert.deepEqual(foldCostSummary([row("b", "x", null), row("b", "y", 2)]).map((g) => [g.reported_cost, g.reported_partial]), [[2, true]]);
+  // A model-less session.count row (no cost samples, no tokens) never turns an all-unknown
+  // group into a known $0; a model with tokens but no cost samples is unknown.
+  const sessionOnly = { ...row("b", "", 0), cost_samples: "0", input_tokens: "0", output_tokens: "0" };
+  assert.deepEqual(foldCostSummary([row("b", "kimi-k3", null), sessionOnly]).map((g) => [g.reported_cost, g.reported_partial]), [[null, false]]);
+  assert.deepEqual(foldCostSummary([sessionOnly, row("b", "m", 3)]).map((g) => [g.reported_cost, g.reported_partial]), [[3, false]]);
+  const noSamples = { ...row("b", "m2", 0), cost_samples: "0" };
+  assert.deepEqual(foldCostSummary([row("b", "m", 3), noSamples]).map((g) => [g.reported_cost, g.reported_partial]), [[3, true]]);
+  assert.equal(foldCostSummary([sessionOnly])[0].sessions, 1);
 });
