@@ -5,6 +5,7 @@ import { BarTip } from "../components/BarTip.jsx";
 import { DonutBody, DonutBreakdown, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { ModelCostTrend } from "../components/ModelCostTrend.jsx";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
+import EmptyState from "../components/EmptyState.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
@@ -18,7 +19,7 @@ import { isZeroTokenModel } from "../modelRows.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
-import { asCostSummaryRows, asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
+import { asCostSummaryRows, asKnownSpendRows, asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -46,6 +47,25 @@ const agentLabel = (v) => (v === "main" ? "메인 세션" : v);
 const TIER_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시 입력"];
 const TOKEN_TYPE_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "입력"];
 const EFFORT_LABEL_ORDER = ["medium", "high", "xhigh", "미지정"];
+
+function ReportedCostDonut({ rows, nameKey, colorOf, listUnknown = false }) {
+  if (rows.length === 0) return <EmptyState />;
+  const { total, partial } = sumKnownSpend(rows);
+  const known = rows.filter((r) => r.cost !== null);
+  return (
+    <>
+      {partial && <p className="mb-3 text-sm text-ink-500">알려진 보고 비용 부분합 · 일부 보고값 누락</p>}
+      {total === null ? <p className="text-sm text-ink-400">{unavailable}</p>
+        : total === 0 ? <p className="tabular text-sm text-ink-600">{usd(total)}</p>
+          : <DonutBody data={known} nameKey={nameKey} valueKey="cost" valueFormatter={usd} colorOf={colorOf} />}
+      {listUnknown && rows.some((r) => r.cost === null) && (
+        <ul className="mt-3 text-[12px] text-ink-400">
+          {rows.filter((r) => r.cost === null).map((r) => <li key={r[nameKey]}>{r[nameKey]}: 확인 필요</li>)}
+        </ul>
+      )}
+    </>
+  );
+}
 
 // ADR-013 known subtotal: an unusable piece is never $0 — null + null stays null and null + x is x.
 // cost_partial marks a non-null subtotal that excludes an unusable or partial piece. A fresh
@@ -252,8 +272,8 @@ export default function Cost() {
   // Same bucket and filters as the model trend, regrouped per user.
   const byUserDaily = useApi("/api/cost/by-user-daily", { intervalHours });
   const userDailyCells = useMemo(() => fromByModelDaily(byUserDaily.data, { dimension: "user" }), [byUserDaily.data]);
-  const effortRows = asSpendRows(effortMix.data);
-  const agentRows = asSpendRows(agentCost.data).sort(spendOrder).slice(0, 15);
+  const effortRows = asKnownSpendRows(effortMix.data);
+  const agentRows = asKnownSpendRows(agentCost.data).sort(spendOrder).slice(0, 15).map((r) => ({ ...r, cost_status: costStatus(r) }));
   const prevCostByModel = new Map(asSpendRows(compare.data).map((r) => [r.model, r.prev_cost]));
 
   const totals = summaryRows.reduce(
@@ -312,9 +332,9 @@ export default function Cost() {
   // bedrock/enterprise 도넛은 그룹=색상 계열 규칙을 따른다(사용자 지시) — 같은 모델이라도
   // bedrock 카드에선 블루, enterprise 카드에선 틸로 다르게 보인다(groupModelColorFor). 모델
   // 정체성은 그 계열 안의 명도로 표현되지, 색조(hue)로 표현되지 않는다 — 그룹이 우선.
-  // 도넛은 기존 sumSpend 규칙을 유지한다 — 부분합 모델은 null로 넘겨 카드 전체를 확인 필요로 둔다.
+  // Donut shares use the same disclosed known subtotal as the model table.
   const modelRowsFor = (group) => foldModelRows((byModel.data || []).filter((r) => r.group === group))
-    .map((row) => ({ ...row, cost: row.cost_partial ? null : row.cost, model_label: modelLabel(row.model) }));
+    .map((row) => ({ ...row, model_label: modelLabel(row.model) }));
 
   // 탭으로 그룹을 고르던 방식 대신 bedrock/enterprise 카드를 좌우로 분리 — 각 카드는 그 그룹만의 합계.
   function tokenTypeRowsFor(group) {
@@ -389,12 +409,13 @@ export default function Cost() {
       .sort((a, b) => effortOrder(a.effort) - effortOrder(b.effort));
 
   // LOC 없이 커밋만 있는 사용자도 유지하며 보고 단위 비용 미확인 행은 마지막에 둔다.
-  const efficiencyRows = asSpendRows(efficiency.data)
+  const efficiencyRows = asKnownSpendRows(efficiency.data)
     .filter((r) => r.loc > 0 || r.commits > 0)
     .map((r) => ({
       ...r,
-      cost_per_loc: r.reported_unpriced ? null : r.cost_per_loc,
-      cost_per_commit: r.reported_unpriced ? null : r.cost_per_commit,
+      cost_per_loc: r.reported_unpriced || r.cost_partial ? null : r.cost_per_loc,
+      cost_per_commit: r.reported_unpriced || r.cost_partial ? null : r.cost_per_commit,
+      cost_status: costStatus(r),
       computed_cost_per_loc: !r.unpriced && r.computed_cost !== null && r.loc > 0 ? r.computed_cost / r.loc : null,
       computed_cost_per_commit: !r.unpriced && r.computed_cost !== null && r.commits > 0 ? r.computed_cost / r.commits : null,
     }))
@@ -498,17 +519,14 @@ export default function Cost() {
                 title={`Effort 수준별 보고 비용 — ${g}`}
                 help={`${SPEND_HELP} Effort 정보가 없으면 미지정으로 묶습니다. Thinking 토큰은 출력 토큰에 포함됩니다. ${comparisonHelp}`}
               >
-                {sumSpend(effortRowsFor(g)) === null ? <p className="text-sm text-ink-400">{unavailable}</p> : <DonutBody
-                  data={effortRowsFor(g)}
+                <ReportedCostDonut
+                  rows={effortRowsFor(g)}
                   nameKey="effort"
-                  valueKey="cost"
-                  valuePrefix="$"
-                  valueFormatter={usd}
                   colorOf={makeGroupBreakdownColorer(g, EFFORT_LABEL_ORDER)}
-                />}
+                />
                 <ul className="mt-3 text-[12px] text-ink-400">
                   {effortRowsFor(g).map((r) => (
-                    <li key={r.effort}>{`${effortLabel(r.effort)}: ${usd(r.cost)}${showComputed ? ` (계산값 ${usd(r.computed_cost)}${r.unpriced_tokens > 0 ? "; 단가 미등록 토큰 제외" : ""})` : ""}`}</li>
+                    <li key={r.effort}>{`${effortLabel(r.effort)}: ${usd(r.cost)}${r.cost_partial ? " (부분합)" : ""}${showComputed ? ` (계산값 ${usd(r.computed_cost)}${r.unpriced_tokens > 0 ? "; 단가 미등록 토큰 제외" : ""})` : ""}`}</li>
                   ))}
                 </ul>
               </Card>
@@ -524,14 +542,12 @@ export default function Cost() {
           ) : (
             shownGroups(byModel.data).map((g) => (
               <Card key={g} title={`모델별 비용 비중 — ${g}`} help={SPEND_HELP}>
-                {sumSpend(modelRowsFor(g)) === null ? <p className="text-sm text-ink-400">{unavailable}</p> : <DonutBody
-                  data={modelRowsFor(g)}
+                <ReportedCostDonut
+                  rows={modelRowsFor(g)}
                   nameKey="model_label"
-                  valueKey="cost"
-                  valuePrefix="$"
-                  valueFormatter={usd}
                   colorOf={(name) => groupModelColorFor(g, name)}
-                />}
+                  listUnknown
+                />
               </Card>
             ))
           )}
@@ -643,9 +659,10 @@ export default function Cost() {
             columns={[
               { key: "agent", label: "에이전트", render: agentLabel, toText: agentLabel },
               { key: "group", label: "채널" },
-              { key: "cost", label: "비용", render: usd },
+              { key: "cost", label: "비용", render: knownUsd },
               ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
               { key: "tokens", label: "토큰", render: fmt },
+              costStatusColumn,
             ]}
             rows={agentRows}
             exportName="cost_by_agent"
@@ -772,7 +789,7 @@ export default function Cost() {
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
               { key: "group", label: "채널" },
-              { key: "cost", label: "비용", render: usd },
+              { key: "cost", label: "비용", render: knownUsd },
               { key: "loc", label: "추가 코드 라인", render: fmt },
               { key: "commits", label: "커밋", render: fmt },
               { key: "cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) },
@@ -780,6 +797,7 @@ export default function Cost() {
               ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
               ...(showComputed ? [{ key: "computed_cost_per_loc", label: "계산 $/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) }] : []),
               ...(showComputed ? [{ key: "computed_cost_per_commit", label: "계산 $/커밋", render: usd }] : []),
+              costStatusColumn,
             ]}
             rows={efficiencyRows}
             exportName="cost_efficiency_by_user"

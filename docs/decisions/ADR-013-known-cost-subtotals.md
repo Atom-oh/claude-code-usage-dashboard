@@ -52,15 +52,23 @@ efficiency estimates. Neither cost basis establishes an invoice or causal produc
 
 This does not change collection, model choice, rates, or the opt-in legacy Claude
 detail/LOC/commit cost contracts, except that the Claude detail Cost page folds follow
-option 3 since 2026-10-27 at the user's request. LOC/commit efficiency and the other detail
-endpoints retain their separately documented report policies.
+option 3 since 2026-10-27 at the user's request. LOC/commit unit eligibility and other
+detail endpoints retain their separately documented report policies.
 
-The Claude Cost summary API preserves strict `reported_cost` and adds
-`known_reported_cost`/`reported_partial` for that page. Its existing model-grain fold
-retains usable model totals within a channel; unavailable model scopes remain excluded.
-Session-count-only and lookback-only rows are not measured zero-cost evidence; the summary
-tracks observations in its existing counter scans. Computed diagnostics and
-other strict consumers retain their original contracts.
+Claude Cost summary, Effort, and agent APIs preserve strict `reported_cost` and add
+`known_reported_cost`/`reported_partial` for that page. Their existing model-grain folds
+retain usable model totals within each channel and endpoint dimension; unavailable model
+scopes remain excluded. Session-count-only and lookback-only rows are not measured
+zero-cost evidence; existing counter scans track in-window observations.
+
+The efficiency API adds the same subtotal fields without changing strict report flags
+or unit eligibility. Cost shows known user costs with table/CSV coverage status, while
+$/LOC and $/commit remain unavailable for partial costs. Such rows stay below rows
+with valid $/LOC. Effort and model-share donuts disclose partial totals, draw usable
+amounts, and retain unavailable items in textual details. Observed zero stays visible;
+all-unknown costs never become zero. Computed diagnostics and strict consumers retain
+their original contracts. These folds do not recover reports within an unavailable
+model aggregate or guarantee telemetry completeness.
 
 ## References
 

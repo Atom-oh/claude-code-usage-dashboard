@@ -788,6 +788,48 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       }
     });
 
+    await t.test("Effort and agent report coverage retains known models and requires observed zero", async () => {
+      const q = await import("./queries.js");
+      const values = [];
+      const fixtures = [
+        { session: "detail-known", effort: "high", agent: "mixed", amount: 5, tokens: 10, model: "global.anthropic.claude-sonnet-5" },
+        { session: "detail-missing", effort: "high", agent: "mixed", amount: 0, tokens: 10, model: "global.anthropic.fixture-unpriced" },
+        { session: "detail-complete", effort: "medium", agent: "complete", amount: 2, tokens: 10, model: "global.anthropic.claude-sonnet-5" },
+        { session: "detail-unknown", effort: "xhigh", agent: "unknown", amount: 0, tokens: 10, model: "global.anthropic.fixture-unpriced" },
+        { session: "detail-zero", effort: "low", agent: "zero", amount: 0, tokens: 0, model: "global.anthropic.claude-sonnet-5" },
+        { session: "detail-baseline", effort: "", agent: "baseline", amount: 0, tokens: 0, model: "global.anthropic.claude-sonnet-5", baselineOnly: true },
+      ];
+      for (const fixture of fixtures) {
+        for (const [metric, type, amount] of [
+          ["claude_code.cost.usage", "", fixture.amount],
+          ["claude_code.token.usage", "input", fixture.tokens],
+        ]) for (const clock of fixture.baselineOnly ? ["09:59:00"] : ["09:59:00", "10:01:00"]) {
+          const row = counter(metric, type, clock, clock === "09:59:00" ? 0 : amount);
+          row.ResourceAttributes = { "user.email": "detail-coverage@example.invalid" };
+          row.Attributes = { ...row.Attributes, "session.id": fixture.session, model: fixture.model,
+            effort: fixture.effort, "agent.name": fixture.agent };
+          values.push(row);
+        }
+      }
+      await insertMetrics(values);
+      for (const end of [to, new Date(`${day}T15:00:00Z`)]) {
+        const filters = { user: "detail-coverage@", group: "bedrock" };
+        const efforts = await q.effortMix(from, end, filters);
+        assertFields(efforts.find((r) => r.effort === "high"), { known_reported_cost: 5, reported_partial: true });
+        assertFields(efforts.find((r) => r.effort === "medium"), { known_reported_cost: 2, reported_partial: false });
+        assert.equal(efforts.find((r) => r.effort === "xhigh").known_reported_cost, null);
+        assert.equal(efforts.find((r) => r.effort === "unknown").known_reported_cost, null);
+        assert.equal(efforts.find((r) => r.effort === "low").known_reported_cost, 0);
+        const agents = await q.agentCost(from, end, filters);
+        assertFields(agents.find((r) => r.agent === "mixed"), { known_reported_cost: 5, reported_partial: true });
+        assert.equal(agents.find((r) => r.agent === "unknown").known_reported_cost, null);
+        assert.equal(agents.find((r) => r.agent === "baseline").known_reported_cost, null);
+        assert.equal(agents.find((r) => r.agent === "zero").known_reported_cost, 0);
+      }
+      const scoped = await q.effortMix(from, to, { user: "detail-coverage@", group: "bedrock", model: "global.anthropic.claude-sonnet-5" });
+      assertFields(scoped.find((r) => r.effort === "high"), { known_reported_cost: 5, reported_partial: false });
+    });
+
     await t.test("a daily intervalHours buckets Codex by UTC day with exact per-day sessions", async () => {
       const prev = new Date(from.getTime() - 86400000).toISOString().slice(0, 10);
       const make = (date, clock, session) => {

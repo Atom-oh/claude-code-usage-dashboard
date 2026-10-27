@@ -430,7 +430,7 @@ bug — see [cost accuracy review](cost-accuracy-review-2026-09-10.md).
 | `/api/users/leaderboard` | Per `user, group`: `sessions`, `tokens`, `input_tokens`, `output_tokens`, `loc`, `commits`, `prs`, `accepted`, `decisions`, `active_days`, `user_active_days`, `accept_rate`, `productivity_score` (both null without a positive decision denominator). |
 | `/api/users/tools` | Per `user, group, tool`: `uses` from tool-result logs. |
 | `/api/users/skills` | Per `user, group, skill`: `invocations`, counting raw cost datapoints rather than activation events. |
-| `/api/users/cost-efficiency` | Per `user, group`: computed `cost`, `unpriced`, `reported_cost`, `reported_unpriced`, `loc`, `commits`, `cost_per_loc`, `cost_per_commit`. Ratios use reported cost. |
+| `/api/users/cost-efficiency` | Per `user, group`: computed `cost`, `unpriced`, `reported_cost`, `reported_unpriced`, additive `known_reported_cost` and `reported_partial`, `loc`, `commits`, `cost_per_loc`, `cost_per_commit`. Ratios require usable reports from every included model; partial costs do not establish valid ratios. |
 | `/api/users/daily` | Exact-email daily `t, sessions, loc, tokens, commits`; fixed daily buckets. |
 | `/api/users/decisions-by-tool` | Exact-email `group, tool, decision, n`. |
 | `/api/users/heatmap` | Exact-email `d, sessions`, fixed 91-day lookback ending at `to`. |
@@ -453,7 +453,7 @@ See [activity availability](decisions/ADR-018-activity-observation-availability.
 
 ### Cost
 
-Primary spend consumers use `reported_cost` through frontend
+Primary spend consumers select reported costs through frontend
 [spend.js](../dashboard/web/src/spend.js). Original `cost` or summary `computed_cost` remains
 a token-price diagnostic. The API does not add display-status fields globally. Missing
 reports and zero reports with positive tokens are unpriced at spend consumers; positive
@@ -468,15 +468,20 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 | `/api/cost/by-user-daily` | **B**, per `day, group, user`: the same per-(model, session) report scopes, each attributed to one user (`max(UserEmail)`, so a non-empty address wins; `""` means no identity), regrouped by user. The top 20 users by known report over the whole requested range are separate, and `""` always is; the other users fold into one `user: null` row per `day, group`, whose `rest_users` is the range-wide count of folded users (constant across rows). Report coverage fields and tokens, no computed `cost`/`unpriced` (a user row mixes models). |
 | `/api/cost/by-model-compare` | Per `model` across selected channels: current priced-row fields, `prev_reported_cost`, previous token fields prefixed `prev_`, and computed `prev_cost`; previous period derived server-side. |
 | `/api/cost/tiers` | **Object** `{bedrock, enterprise}`, each with computed `uncachedInput`, `cacheRead`, `cacheWrite`, `output`; unknown rates are skipped. |
-| `/api/cost/effort-mix` | Per `group, effort`: computed `cost`, `reported_cost`, `tokens`, `unpriced_tokens`; empty effort becomes `unknown`. |
-| `/api/cost/by-agent` | Per `group, agent`: computed `cost`, `reported_cost`, `tokens`, `unpriced_tokens`; empty agent becomes `main`. Returns the top **30 by computed cost** after aggregation. |
+| `/api/cost/effort-mix` | Per `group, effort`: computed `cost`, strict `reported_cost`, additive `known_reported_cost` and `reported_partial`, `tokens`, `unpriced_tokens`; empty effort becomes `unknown`. |
+| `/api/cost/by-agent` | Per `group, agent`: the same cost/coverage fields as Effort; empty agent becomes `main`. Returns the top **30 by computed cost** after aggregation. |
 
-`known_reported_cost` retains usable model totals inside each channel, with
+Summary, Effort, agent, and efficiency `known_reported_cost` retain usable model totals
+inside each channel and endpoint dimension, with
 `reported_partial` when other model totals are unavailable. All-unpriced evidence
 remains null; session-count-only and lookback-only rows cannot establish a measured zero.
-Zero requires an in-window cost counter and no positive tokens in that model scope.
-The Claude detail Cost page uses this subtotal and labels its derived units as partial.
-Executive and other strict consumers retain `reported_cost`. These fields do not
+Summary/Effort/agent zero requires an in-window cost counter and no positive tokens in
+that model scope. Efficiency retains the existing user/model report eligibility.
+The Claude detail Cost page uses these subtotals, discloses partial chart totals,
+lists unavailable chart scopes, and exports cost status for its tables.
+Summary-derived averages retain partial labels; efficiency $/LOC and $/commit remain
+null when any included model lacks a usable report. Executive and other strict
+consumers retain their existing report selection. These fields do not
 recover an unavailable model's sessions or establish complete collection.
 
 `/api/cost/by-model-daily` judges report availability per session inside ClickHouse

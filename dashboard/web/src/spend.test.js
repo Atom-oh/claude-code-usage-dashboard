@@ -2,6 +2,20 @@ import { expect, test } from "vitest";
 import { asSpendRow, asSpendRows, sumKnownSpend, sumSpend } from "./spend.js";
 import * as spend from "./spend.js";
 
+test("Cost dimension adapter shares summary coverage without changing strict consumers", () => {
+  expect(typeof spend.asKnownSpendRows).toBe("function");
+  const rows = [
+    { reported_cost: null, known_reported_cost: 5, reported_partial: true, computed_cost: 99 },
+    { reported_cost: null, known_reported_cost: 0, reported_partial: true, tokens: 100 },
+    { reported_cost: 99, known_reported_cost: null },
+    { reported_cost: 2, cost: 4 },
+  ];
+  expect(spend.asKnownSpendRows(rows)).toEqual(spend.asCostSummaryRows(rows));
+  expect(spend.asKnownSpendRows(rows).map((r) => r.cost)).toEqual([5, 0, null, 2]);
+  expect(asSpendRows(rows).map((r) => r.cost)).toEqual([null, null, 99, 2]);
+  expect(spend.asKnownSpendRows()).toEqual([]);
+});
+
 test("Cost summary alone opts into the server's known subtotal and preserves diagnostics", () => {
   expect(typeof spend.asCostSummaryRows).toBe("function");
   const raw = { reported_cost: null, known_reported_cost: 5, reported_partial: true, computed_cost: 99, input_tokens: 100 };
