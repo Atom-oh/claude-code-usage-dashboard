@@ -73,8 +73,12 @@ own meaning; the adapter is not a change to stored telemetry or all API fields.
 Missing, blank, negative or nonfinite reports are unusable. A zero report with positive
 tokens is treated as unpriced by spend consumers; zero without token evidence is valid and
 `usd(0)` displays `$0`. `sumSpend` propagates unusable supplied rows as null, suppressing a
-misleading partial total or average. Missing reports already folded into a positive SQL
-aggregate cannot always be detected, so total and detail status can differ.
+misleading partial total or average. The Claude detail Cost page folds (summary totals, model
+and user tables, top-user chart) instead sum known reports with `sumKnownSpend`, labelling
+mixed results as partial subtotals and keeping null only when every piece is unusable
+([ADR-013](decisions/ADR-013-known-cost-subtotals.md) semantics). Missing reports already
+folded into a positive SQL aggregate cannot always be detected, so total and detail status
+can differ.
 
 Reported spend is an estimate affected by client pricing/version, collection gaps and
 contract terms. It is not an invoice, guaranteed lower bound, or proof of complete capture.
