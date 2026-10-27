@@ -505,7 +505,8 @@ test("revoked credentials and rotated refresh responses require fresh login", as
 
 test("missing, duplicated, tampered, expired and cross-installation refresh cookies never reach the provider", async t => {
   const time = Date.now();
-  const f = await fixture(t, { env: refreshEnv });
+  // Keep one-second future/maximum-lifetime boundaries fixed even on a busy runner.
+  const f = await fixture(t, { env: refreshEnv, now: () => time });
   const cookie = refreshCookies({}, time);
   for (const value of [cookie.split("; ")[0], cookie + "; " + cookie.split("; ")[0], cookie + "x",
     refreshCookies({}, time, { exp: Math.floor(time / 1000) - 1 }),
