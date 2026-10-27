@@ -22,7 +22,8 @@ const DETAIL_ATTRIBUTES = [...CODEX_USAGE_KEYS, "event.name", "event.kind", "con
 const DETAIL_RESOURCES = ["user.email", "enduser.id", "backend", "project.name", "service.version"];
 const sqlStrings = (values) => `[${values.map((v) => `'${v}'`).join(",")}]`;
 
-export function logSelection(from, to, filters = {}, distinct = true) {
+export function logSelection(from, to, filters = {}, distinct = true,
+  { excludeBulk = false, modelEvidenceSql } = {}) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
@@ -34,12 +35,14 @@ export function logSelection(from, to, filters = {}, distinct = true) {
       ${backendSql("a['model']", "r['backend']")} AS backend,
       r['project.name'] AS project
     FROM claude_code.otel_logs
-    WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+    ${excludeBulk ? "PREWHERE" : "WHERE"} Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
       AND startsWith(EventName, 'codex.')
+      ${excludeBulk ? `AND NOT (a['event.name'] IN ('codex.sse_event','codex.websocket_event')
+        AND a['event.kind'] NOT IN ('response.completed','response.failed'))` : ""}
   )${filters.model ? `, model_sessions AS (
-    SELECT session, user, project FROM unique_events
+    ${modelEvidenceSql || `SELECT session, user, project FROM unique_events
     WHERE session != '' AND ${modelMatch}
-      AND a['event.name'] IN (${OVERVIEW_EVENTS.map((name) => `'${name}'`).join(", ")})
+      AND a['event.name'] IN (${OVERVIEW_EVENTS.map((name) => `'${name}'`).join(", ")})`}
   )` : ""}
   SELECT toString(toTimeZone(Timestamp, 'UTC')) AS timestamp, r AS resource, a AS attributes
   FROM unique_events

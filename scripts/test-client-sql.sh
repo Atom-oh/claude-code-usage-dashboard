@@ -26,3 +26,5 @@ CODEX_LOG_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test codexInsightsLogs.te
 CODEX_SIGNALS_SQL_TEST=1 node --test codexSignalsSql.test.js
 
 CODEX_LOG_COMPACTION_SQL_TEST=1 node --test codexLogCompaction.test.js
+CODEX_EFFORT_SQL_TEST=1 node --test codexEffortSql.test.js
+CODEX_PRICING_SQL_TEST=1 node --test codexLogPricing.test.js
