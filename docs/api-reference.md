@@ -477,6 +477,8 @@ inside each channel and endpoint dimension, with
 remains null; session-count-only and lookback-only rows cannot establish a measured zero.
 Summary/Effort/agent zero requires an in-window cost counter and no positive tokens in
 that model scope. Efficiency retains the existing user/model report eligibility.
+Effort/agent model scopes without an in-window cost or token sample are omitted;
+pre-window samples still establish counter baselines.
 The Claude detail Cost page uses these subtotals, discloses partial chart totals,
 lists unavailable chart scopes, and exports cost status for its tables.
 Summary-derived averages retain partial labels; efficiency $/LOC and $/commit remain

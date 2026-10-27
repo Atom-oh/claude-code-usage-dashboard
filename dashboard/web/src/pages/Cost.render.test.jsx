@@ -342,6 +342,7 @@ test("monthly Bedrock Effort preserves known amounts and lists unavailable scope
   await waitFor(() => expect(screen.queryByText("Effort 수준별 보고 비용 — bedrock")).not.toBeNull());
   const effort = card("Effort 수준별 보고 비용 — bedrock");
   expect(effort.textContent).toContain("알려진 보고 비용 부분합");
+  expect(effort.textContent).toContain("일부 보고값 누락 또는 검증 불가");
   expect(effort.querySelector(".pointer-events-none .tabular").textContent).toBe("$7");
   expect(effort.textContent).toContain("high: $5 (부분합)");
   expect(effort.textContent).toContain("medium: $2");

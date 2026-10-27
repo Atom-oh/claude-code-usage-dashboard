@@ -2022,7 +2022,8 @@ export async function permissionWaitOccupancy(from, to, filters = {}) {
 
 // Effort is absent from incFlat, so retain local series differences and the model grain
 // for diagnostic prices. Known reports fold separately; an in-window counter is required
-// to distinguish observed zero from a lookback baseline. Missing models stay in coverage.
+// to distinguish observed zero from a lookback baseline. Missing current models stay in
+// coverage; historical-only model scopes are omitted after calculating their baselines.
 export async function effortMix(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
@@ -2050,7 +2051,9 @@ export async function effortMix(from, to, filters = {}) {
     ) m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
-    GROUP BY "group", effort, model ORDER BY "group", effort`,
+    GROUP BY "group", effort, model
+    HAVING countIf(m.InWindow) > 0
+    ORDER BY "group", effort`,
     { ...range(from, to, true), ...f.params }
   );
   return rollupComputedCost(rows, ["group", "effort"], { knownReports: true }).sort((a, b) => a.group.localeCompare(b.group) || b.cost - a.cost);
@@ -2268,7 +2271,9 @@ export async function agentCost(from, to, filters = {}) {
     ) m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
-    GROUP BY "group", agent, model ORDER BY "group", agent`,
+    GROUP BY "group", agent, model
+    HAVING countIf(m.InWindow) > 0
+    ORDER BY "group", agent`,
     { ...range(from, to, true), ...f.params }
   );
   return rollupComputedCost(rows, ["group", "agent"], { knownReports: true }).sort((a, b) => b.cost - a.cost).slice(0, 30);

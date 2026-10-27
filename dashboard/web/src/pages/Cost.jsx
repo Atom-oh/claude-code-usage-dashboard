@@ -54,7 +54,7 @@ function ReportedCostDonut({ rows, nameKey, colorOf, listUnknown = false }) {
   const known = rows.filter((r) => r.cost !== null);
   return (
     <>
-      {partial && <p className="mb-3 text-sm text-ink-500">알려진 보고 비용 부분합 · 일부 보고값 누락</p>}
+      {partial && <p className="mb-3 text-sm text-ink-500">알려진 보고 비용 부분합 · 일부 보고값 누락 또는 검증 불가</p>}
       {total === null ? <p className="text-sm text-ink-400">{unavailable}</p>
         : total === 0 ? <p className="tabular text-sm text-ink-600">{usd(total)}</p>
           : <DonutBody data={known} nameKey={nameKey} valueKey="cost" valueFormatter={usd} colorOf={colorOf} />}
