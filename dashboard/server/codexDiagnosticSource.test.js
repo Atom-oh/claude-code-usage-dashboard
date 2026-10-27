@@ -34,7 +34,10 @@ test("diagnostic model-session evidence precedes backend filtering and retains u
   const { sql, params } = diagnosticSelection(from, to,
     { user: "fixture'", model: "model'", backend: "bedrock-runtime" });
   const modelSessions = sql.slice(sql.indexOf("model_sessions AS"), sql.indexOf("SELECT toString"));
-  assert.match(modelSessions, /SELECT ConversationId, UserEmail, ProjectName FROM diagnostic_events/);
+  assert.match(modelSessions, /SELECT ConversationId AS session, UserEmail AS user, ProjectName AS project/);
+  assert.match(modelSessions, /FROM claude_code\.codex_diagnostic_events_v1/);
+  assert.match(modelSessions, /Second >= \{from:DateTime\} AND Second < \{to:DateTime\}/);
+  assert.doesNotMatch(modelSessions, /Identities|FINAL/);
   assert.match(modelSessions, /ConversationId != ''/);
   assert.match(modelSessions, /positionCaseInsensitive\(Model, \{clientModel:String\}\)/);
   assert.doesNotMatch(modelSessions, /clientBackend/);

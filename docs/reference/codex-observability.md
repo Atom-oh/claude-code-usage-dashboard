@@ -166,7 +166,10 @@ identifies the skipped log aggregates. Event coverage still counts all
 deduplicated log identities in the filtered window. After migration 008 and
 verified `CODEX_DIAGNOSTIC_READ_FROM`, covered tools/performance ranges read
 exact aggregate identity states with the same weighted diagnostics. Earlier or
-unconfigured ranges use compact raw logs; default/Effort retain raw reads.
+unconfigured ranges use compact raw logs. Default insights retain raw reads;
+covered Effort ranges use these exact states only for intermediate stream
+events and retain raw non-bulk events for token encodings, prompt lengths and
+anonymous scope timestamps. Its coverage and pricing contract is unchanged.
 See [diagnostic cutover](../runbooks/codex-diagnostic-schema.md). Metric filters preserve
 series identity, temporality and the prior-baseline window. Missing optional
 metric tables remain unavailable, and permission/transport failures remain errors.

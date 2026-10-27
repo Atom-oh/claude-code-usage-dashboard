@@ -3,8 +3,9 @@
 ## Contract
 
 Migration 008 adds `codex_diagnostic_events_v1` and its ingestion view. Tools and
-performance profiles can read these states after verified backfill. Default and
-effort profiles retain raw logs. Costs remain independent.
+performance profiles can read these states after verified backfill. Covered
+effort profiles use states for intermediate stream events and raw logs for every
+other event. Default insights retain raw logs. Cost overview activation is independent.
 
 Activation and configuration validation require the companion application that
 imports `codexDiagnosticSource.js` from `codexLogAggregates.js`. Schema installation
@@ -58,8 +59,9 @@ Expired raw records cannot be reconstructed.
 
 Set Terraform `codex_diagnostic_read_from` or application
 `CODEX_DIAGNOSTIC_READ_FROM` to the earliest verified UTC second, then deploy the
-companion application. Only whole tools/performance ranges beginning at or after
-that boundary use states. Earlier ranges keep raw queries. Invalid configuration
+companion application. Whole tools/performance ranges beginning at or after
+that boundary use states; covered effort ranges use the hybrid source described
+above. Earlier ranges keep raw queries. Invalid configuration
 fails startup; query failures surface instead of silently retrying raw logs.
 
 Measure the deployed query and page within the unchanged reader limits. Schema
