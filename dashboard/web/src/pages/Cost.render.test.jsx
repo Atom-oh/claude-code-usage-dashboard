@@ -30,7 +30,7 @@ const ROWS = [
   { user: "b@x.com", group: "unknown", model: "titan-text-lite", cost: null, reported_cost: 3, tokens: 300, unpriced: true },
 ];
 
-function mount(groupMode, responses = {}, pricing = { cacheWriteTtl: "5m", overriddenModels: [] }) {
+function mount(groupMode, responses = {}, pricing = { cacheWriteTtl: "5m", overriddenModels: [] }, path = "/cost") {
   setPiiMask(false);
   // /api/config는 객체, /api/health/data는 status를 가진 객체, 나머지는 배열 — shape가 다르므로
   // 하나로 뭉뚱그리면 렌더 중에 터진다(App.test.jsx와 같은 규칙).
@@ -52,7 +52,7 @@ function mount(groupMode, responses = {}, pricing = { cacheWriteTtl: "5m", overr
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   return render(
     <ConfigProvider config={{ piiMask: false, groupMode, schema: {}, pricing }}>
-      <MemoryRouter initialEntries={[claudeDetail("/cost")]}>
+      <MemoryRouter initialEntries={[claudeDetail(path)]}>
         <App />
       </MemoryRouter>
     </ConfigProvider>
@@ -386,6 +386,31 @@ test("summary with one usable and one unusable report shows the known subtotal l
   expect(card("비교 기준 보고 비용").textContent).toContain("$6,647.79");
   expect(card("비교 기준 보고 비용").textContent).toContain("부분합");
   expect(card("토큰 단가 계산 비용").textContent).toContain("$7,827.28");
+});
+
+test("one Bedrock group retains its known model subtotal when another model is unavailable", async () => {
+  mount("ab", {
+    "/api/cost/summary": [{ ...summary, reported_cost: null, known_reported_cost: 6647.79, reported_partial: true }],
+    "/api/overview/active-users": { users: 2, bedrock_users: 2 },
+  }, undefined, "/cost?period=month&group=bedrock");
+  await waitFor(() => expect(card("총 비용").textContent).toContain("$6,647.79"));
+  expect(card("총 비용").textContent).toContain("알려진 보고 비용 부분합");
+  expect(card("사용자당 비용 — bedrock").textContent).toContain("$3,323.9");
+  expect(card("사용자당 비용 — bedrock").textContent).toContain("부분합");
+  expect(card("30일 예상 비용").textContent).toContain("부분합 기준");
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => {
+    const query = new URL(String(url), "https://example.invalid");
+    return query.pathname === "/api/cost/summary" && new Date(query.searchParams.get("from")).getUTCDate() === 1
+      && query.searchParams.get("group") === "bedrock";
+  })).toBe(true);
+});
+
+test("an entirely unpriced Bedrock summary still has no known cost", async () => {
+  mount("single", {
+    "/api/cost/summary": [{ ...summary, reported_cost: null, known_reported_cost: null, reported_partial: false }],
+  });
+  await waitFor(() => expect(card("총 비용").textContent).toContain("확인 필요"));
+  expect(card("총 비용").textContent).not.toContain("$");
 });
 
 test("effort, agents and efficiency use reported spend with computed secondary diagnostics", async () => {

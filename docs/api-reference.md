@@ -461,7 +461,7 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 
 | Path | Fields and grain |
 |---|---|
-| `/api/cost/summary` | Per `group`: `computed_cost`, `reported_cost`, token fields, `unpriced_tokens`, `sessions`; includes unknown-channel rows by default. |
+| `/api/cost/summary` | Per `group`: `computed_cost`, strict `reported_cost`, additive `known_reported_cost` and `reported_partial`, token fields, `unpriced_tokens`, `sessions`; includes unknown-channel rows by default. |
 | `/api/cost/by-model` | Per `group, model`: priced row plus `tokens`; empty model stays `model=""`. |
 | `/api/cost/by-user-model` | Per `user, group, model`: priced row plus `tokens`; nonempty email required; empty model stays `model=""`. `includeUnknown=1` broadens channel coverage. |
 | `/api/cost/by-model-daily` | **B**, per `day, group, model`: priced row plus the report coverage fields below. The field is named `day` even for sub-day buckets. |
@@ -470,6 +470,14 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 | `/api/cost/tiers` | **Object** `{bedrock, enterprise}`, each with computed `uncachedInput`, `cacheRead`, `cacheWrite`, `output`; unknown rates are skipped. |
 | `/api/cost/effort-mix` | Per `group, effort`: computed `cost`, `reported_cost`, `tokens`, `unpriced_tokens`; empty effort becomes `unknown`. |
 | `/api/cost/by-agent` | Per `group, agent`: computed `cost`, `reported_cost`, `tokens`, `unpriced_tokens`; empty agent becomes `main`. Returns the top **30 by computed cost** after aggregation. |
+
+`known_reported_cost` retains usable model totals inside each channel, with
+`reported_partial` when other model totals are unavailable. All-unpriced evidence
+remains null; session-count-only and lookback-only rows cannot establish a measured zero.
+Zero requires an in-window cost counter and no positive tokens in that model scope.
+The Claude detail Cost page uses this subtotal and labels its derived units as partial.
+Executive and other strict consumers retain `reported_cost`. These fields do not
+recover an unavailable model's sessions or establish complete collection.
 
 `/api/cost/by-model-daily` judges report availability per session inside ClickHouse
 (`costByModelDailySql` in [queries.js](../dashboard/server/queries.js)) and returns one row per

@@ -5,6 +5,60 @@ import { fileURLToPath } from "node:url";
 import { bucket, filterCond, alignHistoricalTo, range, incFlat, incFlatRaw, incBucketed, normModel, UNTAGGED_PROJECT, ttlSplitFields } from "./queries.js";
 import { toChDateTime } from "./clickhouse.js"; // queries.js가 이미 로드하는 모듈 — 부작용 없음
 import { GROUP_CTE } from "./grouping.js";
+import * as queries from "./queries.js";
+
+test("cost summary keeps a known model subtotal without relaxing the strict report", () => {
+  assert.equal(typeof queries.foldCostSummary, "function");
+  const row = { group: "bedrock", model: "claude-sonnet-5", reported_cost: 5,
+    cost_counter_rows: 1, input_tokens: 100, output_tokens: 0, cache_read_tokens: 0,
+    cache_write_tokens: 0, sessions: 0 };
+  const [summary] = queries.foldCostSummary([row, { ...row, model: "unknown-model", reported_cost: null }]);
+  assert.equal(summary.reported_cost, null);
+  assert.equal(summary.known_reported_cost, 5);
+  assert.equal(summary.reported_partial, true);
+  assert.equal(summary.input_tokens, 200);
+});
+
+test("cost summary distinguishes observed zero from session-only and unusable evidence", () => {
+  assert.equal(typeof queries.foldCostSummary, "function");
+  const row = { group: "bedrock", model: "unknown-model", reported_cost: null,
+    cost_counter_rows: 1, input_tokens: 100, output_tokens: 0, cache_read_tokens: 0,
+    cache_write_tokens: 0, sessions: 0 };
+  const session = { ...row, model: "", reported_cost: 0, cost_counter_rows: 0, input_tokens: 0, sessions: 1 };
+  const [unknown] = queries.foldCostSummary([row, session]);
+  assert.equal(unknown.known_reported_cost, null, "a session count cannot establish measured $0");
+  assert.equal(unknown.sessions, 1);
+  const zero = { ...session, model: "claude-sonnet-5", cost_counter_rows: 1 };
+  const [partialZero] = queries.foldCostSummary([row, zero]);
+  assert.equal(partialZero.known_reported_cost, 0);
+  assert.equal(partialZero.reported_partial, true);
+  const [unverifiedZero] = queries.foldCostSummary([{ ...row, reported_cost: 0 }]);
+  assert.equal(unverifiedZero.known_reported_cost, null);
+  const [empty] = queries.foldCostSummary([session]);
+  assert.equal(empty.known_reported_cost, null);
+  const groups = queries.foldCostSummary([row, { ...session, group: "enterprise" }]);
+  assert.ok(groups.every((r) => r.known_reported_cost === null),
+    "a session-only channel cannot make all-unknown spend across channels appear free");
+  assert.deepEqual(queries.foldCostSummary([]), []);
+});
+
+test("cost summary uses positive reports without rates and rejects invalid report amounts", () => {
+  assert.equal(typeof queries.foldCostSummary, "function");
+  const row = { group: "bedrock", model: "unlisted-model", reported_cost: "3",
+    cost_counter_rows: 1, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0,
+    cache_write_tokens: 0, sessions: 0 };
+  const [valid] = queries.foldCostSummary([row]);
+  assert.equal(valid.known_reported_cost, 3);
+  assert.equal(valid.reported_partial, false);
+  for (const reported_cost of [null, undefined, "", " ", false, -1, NaN, Infinity]) {
+    const [invalid] = queries.foldCostSummary([{ ...row, reported_cost }]);
+    assert.equal(invalid.known_reported_cost, null);
+  }
+  const [overflow] = queries.foldCostSummary([{ ...row, reported_cost: Number.MAX_VALUE },
+    { ...row, reported_cost: Number.MAX_VALUE }]);
+  assert.equal(overflow.known_reported_cost, null);
+});
+
 
 // bucket()이 intervalHours를 세 가지 버킷(분/시/일)으로 올바르게 매핑하는지 — 차트 드래그 줌이
 // 넘기는 fractional intervalHours(예: 15분=0.25)가 UInt32 MINUTE로 환산되는 게 핵심.

@@ -1,5 +1,29 @@
 import { expect, test } from "vitest";
 import { asSpendRow, asSpendRows, sumKnownSpend, sumSpend } from "./spend.js";
+import * as spend from "./spend.js";
+
+test("Cost summary alone opts into the server's known subtotal and preserves diagnostics", () => {
+  expect(typeof spend.asCostSummaryRows).toBe("function");
+  const raw = { reported_cost: null, known_reported_cost: 5, reported_partial: true, computed_cost: 99, input_tokens: 100 };
+  const [view] = spend.asCostSummaryRows([raw]);
+  expect(view).toMatchObject({ cost: 5, cost_partial: true, computed_cost: 99, reported_unpriced: false });
+  expect(sumKnownSpend([view])).toEqual({ total: 5, partial: true });
+  expect(asSpendRow(raw).cost).toBeNull();
+  expect(raw.reported_cost).toBeNull();
+});
+
+test("Cost summary preserves measured partial zero but never invents an unknown cost", () => {
+  expect(typeof spend.asCostSummaryRows).toBe("function");
+  const raw = { reported_cost: null, known_reported_cost: 0, reported_partial: true, input_tokens: 100, computed_cost: 99 };
+  expect(spend.asCostSummaryRows([raw])[0]).toMatchObject({ cost: 0, cost_partial: true });
+  for (const known_reported_cost of [null, "", false, NaN, Infinity, -1]) {
+    expect(spend.asCostSummaryRows([{ ...raw, known_reported_cost }])[0].cost).toBeNull();
+  }
+  const old = { reported_cost: 5, computed_cost: 99 };
+  expect(spend.asCostSummaryRows([old])).toEqual(asSpendRows([old]));
+  expect(spend.asCostSummaryRows()).toEqual([]);
+});
+
 
 test("reported spend replaces view cost without mutating computed diagnostics", () => {
   const raw = { cost: 7817.28, reported_cost: 6647.79, tokens: 1200 };

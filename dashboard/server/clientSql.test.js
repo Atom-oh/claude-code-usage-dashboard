@@ -704,7 +704,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       for (const [session, user, model, cost] of [
         ["nac-luna", "nac-luna@example.invalid", "us.openai.gpt-6-luna", 1.819543],
         ["nac-nolog", "nac-nolog@example.invalid", "us.openai.gpt-6-luna", 1.819543],
-        ["nac-claude", "nac-claude@example.invalid", "claude-sonnet-5", 0.5],
+        ["nac-claude", "nac-claude@example.invalid", "global.anthropic.claude-sonnet-5", 0.5],
       ]) {
         for (const [clock, scale] of [["09:59:00", 0], ["10:01:00", 1]]) {
           const rows = [counter("claude_code.cost.usage", "", clock, cost * scale),
@@ -725,7 +725,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
           cache_creation_tokens: "361675", cost_usd: String(cost) },
       });
       await insertLogs([request("nac-luna", "nac-luna@example.invalid", "us.openai.gpt-6-luna", 1.819543),
-        request("nac-claude", "nac-claude@example.invalid", "claude-sonnet-5", 0.5)]);
+        request("nac-claude", "nac-claude@example.invalid", "global.anthropic.claude-sonnet-5", 0.5)]);
       const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} vs ${expected}`);
       clearNonAnthropicFactorCache();
 
@@ -744,13 +744,48 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       close(compare.find((r) => r.model === "openai.gpt-6-luna").reported_cost, 0.099921415);
       const sonnet = await queries.costByModel(from, to, { user: "nac-claude@" });
       close(sonnet.find((r) => r.model === "claude-sonnet-5").reported_cost, 0.5);
-      // A group mixing a priced and a factor-less session is unavailable, never understated.
+      // Same Bedrock group: strict report is unavailable; the separate model subtotal survives.
       const mixed = await queries.costByModel(from, to, { user: "nac-" });
       assert.equal(mixed.find((r) => r.model === "openai.gpt-6-luna").reported_cost, null);
       const summary = await queries.costSummary(from, to, { user: "nac-" });
       assert.equal(summary.find((r) => r.reported_cost !== undefined).reported_cost, null);
+      const bedrock = summary.find((r) => r.group === "bedrock");
+      close(bedrock.known_reported_cost, 0.5);
+      assert.equal(bedrock.reported_partial, true);
       const projects = await queries.projectBreakdown(from, to, { user: "nac-" });
       assert.equal(projects[0].cost_usd, null);
+    });
+
+    await t.test("cost summaries distinguish observed zero from raw and hourly baseline-only counters", async () => {
+      const q = await import("./queries.js");
+      const values = [];
+      for (const [name, clocks] of [
+        ["summary-baseline", ["09:59:00"]],
+        ["summary-pre-first", ["10:00:00"]],
+        ["summary-zero-first", ["09:59:00", "10:01:00"]],
+        ["summary-zero-later", ["09:59:00", "12:01:00"]],
+      ]) for (const clock of clocks) {
+        const row = counter("claude_code.cost.usage", "", clock, 0);
+        row.ResourceAttributes = { "user.email": `${name}@example.invalid` };
+        row.Attributes = { ...row.Attributes, "session.id": name, model: "global.anthropic.claude-sonnet-5" };
+        values.push(row);
+      }
+      await insertMetrics(values);
+      for (const end of [to, new Date(`${day}T15:00:00Z`)]) {
+        const [baseline] = await q.costSummary(from, end, { user: "summary-baseline@" });
+        assert.equal(Number(baseline.reported_cost), 0, "strict legacy report is preserved");
+        assert.equal(baseline.known_reported_cost, null, "lookback alone is not measured zero");
+        const [zero] = await q.costSummary(from, end, { user: "summary-zero-first@" });
+        assert.equal(zero.known_reported_cost, 0);
+        assert.equal(zero.reported_partial, false);
+      }
+      const [later] = await q.costSummary(from, new Date(`${day}T15:00:00Z`), { user: "summary-zero-later@" });
+      assert.equal(later.known_reported_cost, 0);
+      const partialFrom = new Date(`${day}T10:00:30Z`);
+      for (const end of [to, new Date(`${day}T15:00:00Z`)]) {
+        const [firstHourBaseline] = await q.costSummary(partialFrom, end, { user: "summary-pre-first@" });
+        assert.equal(firstHourBaseline.known_reported_cost, null, "a first-hour pre-from sample is not observed zero");
+      }
     });
 
     await t.test("a daily intervalHours buckets Codex by UTC day with exact per-day sessions", async () => {

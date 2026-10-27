@@ -18,7 +18,7 @@ import { isZeroTokenModel } from "../modelRows.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
-import { asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
+import { asCostSummaryRows, asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -245,7 +245,7 @@ export default function Cost() {
   const efficiency = useApi("/api/users/cost-efficiency");
   const effortMix = useApi("/api/cost/effort-mix");
   const agentCost = useApi("/api/cost/by-agent");
-  const summaryRows = asSpendRows(summary.data);
+  const summaryRows = asCostSummaryRows(summary.data);
   const knownSummary = sumKnownSpend(summaryRows);
   // Raw rows, not asSpendRows: the trend keeps known subtotals beside per-session exclusions.
   const dailyCells = useMemo(() => fromByModelDaily(byModelDaily.data), [byModelDaily.data]);

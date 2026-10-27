@@ -55,6 +55,13 @@ detail/LOC/commit cost contracts, except that the Claude detail Cost page folds 
 option 3 since 2026-10-27 at the user's request. LOC/commit efficiency and the other detail
 endpoints retain their separately documented report policies.
 
+The Claude Cost summary API preserves strict `reported_cost` and adds
+`known_reported_cost`/`reported_partial` for that page. Its existing model-grain fold
+retains usable model totals within a channel; unavailable model scopes remain excluded.
+Session-count-only and lookback-only rows are not measured zero-cost evidence; the summary
+tracks observations in its existing counter scans. Computed diagnostics and
+other strict consumers retain their original contracts.
+
 ## References
 
 - [API contract](../api-reference.md#coding-client-views)
