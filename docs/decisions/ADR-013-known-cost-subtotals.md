@@ -62,6 +62,9 @@ scopes remain excluded. Session-count-only and lookback-only rows are not measur
 zero-cost evidence; existing counter scans track in-window observations.
 Effort and agent aggregates omit scopes with no in-window cost or token sample after
 calculating counter baselines, so inactive historical dimensions do not imply partial coverage.
+The model endpoint retains legacy rows and strict costs, adding observation-backed
+known costs and folded-series observation counts. Cost omits explicitly historical-only
+model rows, so lookback zeros cannot turn current unknown costs into a partial zero.
 
 The efficiency API adds the same subtotal fields without changing strict report flags
 or unit eligibility. Cost shows known user costs with table/CSV coverage status, while

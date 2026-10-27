@@ -390,8 +390,8 @@ test("observed partial zero stays visible beside unknown Effort and model scopes
   mount("single", {
     "/api/cost/effort-mix": [{ group: "bedrock", effort: "high", reported_cost: null, known_reported_cost: 0, reported_partial: true, tokens: 100 }],
     "/api/cost/by-model": [
-      { group: "bedrock", model: "measured-zero", reported_cost: 0, tokens: 0 },
-      { group: "bedrock", model: "missing", reported_cost: null, tokens: 100 },
+      { group: "bedrock", model: "measured-zero", reported_cost: 0, known_reported_cost: 0, cost_counter_rows: 1, observed_usage_rows: 1, tokens: 0 },
+      { group: "bedrock", model: "missing", reported_cost: null, known_reported_cost: null, observed_usage_rows: 1, tokens: 100 },
     ],
   });
   await waitFor(() => expect(screen.queryByText("Effort 수준별 보고 비용 — bedrock")).not.toBeNull());
@@ -401,6 +401,33 @@ test("observed partial zero stays visible beside unknown Effort and model scopes
     expect(card(title).textContent).not.toContain("보고 비용 확인 필요 —");
   }
   expect(card("모델별 비용 비중 — bedrock").textContent).toContain("missing: 확인 필요");
+});
+
+test("historical model zeros cannot make current unknown spend a partial zero", async () => {
+  mount("single", {
+    "/api/cost/by-model": [
+      { group: "bedrock", model: "historical", reported_cost: 0, known_reported_cost: null, cost_counter_rows: 0, observed_usage_rows: "0", tokens: 0 },
+      { group: "bedrock", model: "current-unknown", reported_cost: null, known_reported_cost: null, observed_usage_rows: 1, tokens: 100 },
+    ],
+  });
+  await waitFor(() => expect(screen.queryByText("모델별 비용 비중 — bedrock")).not.toBeNull());
+  const model = card("모델별 비용 비중 — bedrock");
+  expect(model.textContent).toContain("보고 비용 확인 필요 —");
+  expect(model.textContent).not.toContain("$0");
+  expect(model.textContent).not.toContain("부분합");
+  expect(model.textContent).not.toContain("historical");
+});
+
+test("historical-only model scopes remain no data in current Cost panels", async () => {
+  mount("single", {
+    "/api/cost/by-model": [
+      { group: "bedrock", model: "historical", reported_cost: 0, known_reported_cost: null, cost_counter_rows: 0, observed_usage_rows: 0, tokens: 0 },
+    ],
+  });
+  await waitFor(() => expect(screen.queryByText("모델별 비용 비중 — bedrock")).not.toBeNull());
+  const model = card("모델별 비용 비중 — bedrock");
+  expect(model.textContent).toContain("선택한 기간에 데이터가 없습니다.");
+  expect(model.textContent).not.toContain("$0");
 });
 
 test("agent and efficiency amounts disclose partial coverage in the table and CSV", async () => {

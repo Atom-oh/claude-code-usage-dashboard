@@ -1,5 +1,5 @@
 // Report coverage is independent of diagnostic model prices. Dimension queries require
-// in-window evidence for zero; legacy user/model rows retain their existing zero contract.
+// in-window evidence for zero; legacy per-user/model rows retain their zero contract.
 export function knownReportedCost(rows, { requireObservedZero = false } = {}) {
   let total = 0;
   let known = false;

@@ -462,7 +462,7 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 | Path | Fields and grain |
 |---|---|
 | `/api/cost/summary` | Per `group`: `computed_cost`, strict `reported_cost`, additive `known_reported_cost` and `reported_partial`, token fields, `unpriced_tokens`, `sessions`; includes unknown-channel rows by default. |
-| `/api/cost/by-model` | Per `group, model`: priced row plus `tokens`; empty model stays `model=""`. |
+| `/api/cost/by-model` | Per `group, model`: priced row plus `tokens`, `known_reported_cost`, `reported_partial`, `cost_counter_rows`, and `observed_usage_rows`; empty model stays `model=""`. |
 | `/api/cost/by-user-model` | Per `user, group, model`: priced row plus `tokens`; nonempty email required; empty model stays `model=""`. `includeUnknown=1` broadens channel coverage. |
 | `/api/cost/by-model-daily` | **B**, per `day, group, model`: priced row plus the report coverage fields below. The field is named `day` even for sub-day buckets. |
 | `/api/cost/by-user-daily` | **B**, per `day, group, user`: the same per-(model, session) report scopes, each attributed to one user (`max(UserEmail)`, so a non-empty address wins; `""` means no identity), regrouped by user. The top 20 users by known report over the whole requested range are separate, and `""` always is; the other users fold into one `user: null` row per `day, group`, whose `rest_users` is the range-wide count of folded users (constant across rows). Report coverage fields and tokens, no computed `cost`/`unpriced` (a user row mixes models). |
@@ -471,14 +471,19 @@ aggregates are not proof of complete capture. See [metrics](metrics.md).
 | `/api/cost/effort-mix` | Per `group, effort`: computed `cost`, strict `reported_cost`, additive `known_reported_cost` and `reported_partial`, `tokens`, `unpriced_tokens`; empty effort becomes `unknown`. |
 | `/api/cost/by-agent` | Per `group, agent`: the same cost/coverage fields as Effort; empty agent becomes `main`. Returns the top **30 by computed cost** after aggregation. |
 
-Summary, Effort, agent, and efficiency `known_reported_cost` retain usable model totals
+Summary, model, Effort, agent, and efficiency `known_reported_cost` retain usable model totals
 inside each channel and endpoint dimension, with
 `reported_partial` when other model totals are unavailable. All-unpriced evidence
-remains null; session-count-only and lookback-only rows cannot establish a measured zero.
-Summary/Effort/agent zero requires an in-window cost counter and no positive tokens in
-that model scope. Efficiency retains the existing user/model report eligibility.
+remains null. Summary/model/Effort/agent zero requires an in-window cost counter
+and no positive tokens in that model scope; session-count-only and lookback-only
+rows cannot establish that zero. Efficiency retains the existing per-user/model
+report eligibility, including its zero policy without observation metadata.
 Effort/agent model scopes without an in-window cost or token sample are omitted;
 pre-window samples still establish counter baselines.
+The model endpoint retains its legacy rows and strict values. Its observation fields
+count folded series with current cost samples or any current cost/token samples,
+respectively, not raw exports. They use the existing raw/rollup window boundaries.
+Cost omits explicitly historical-only model rows before computing current model shares.
 The Claude detail Cost page uses these subtotals, discloses partial chart totals,
 lists unavailable chart scopes, and exports cost status for its tables.
 Summary-derived averages retain partial labels; efficiency $/LOC and $/commit remain

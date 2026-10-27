@@ -6,6 +6,7 @@ import { backendSql } from "./backend.js";
 import { rollupAdoption } from "./activity.js";
 import { foldModelCostCells, MODEL_COST_ROW_LIMIT, USER_TREND_TOP } from "./modelCostTrend.js";
 import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetrics.js";
+import { knownReportedCost } from "./reportedCost.js";
 
 // Every query here goes through this wrapper: a query that prices Claude cost counters
 // (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-017).
@@ -1295,8 +1296,10 @@ export async function costByModel(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
     `${GROUP_CTE}
-    SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
-    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from)} m
+    SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS},
+        countIf(m.MetricName = 'claude_code.cost.usage' AND m.InWindow) AS cost_counter_rows,
+        countIf(m.InWindow) AS observed_usage_rows
+    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from, true)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
@@ -1304,6 +1307,7 @@ export async function costByModel(from, to, filters = {}) {
   );
   return withComputedCost(rows).map((r) => ({
     ...r,
+    ...knownReportedCost([r], { requireObservedZero: true }),
     tokens: Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens),
   }));
 }
@@ -2024,6 +2028,8 @@ export async function permissionWaitOccupancy(from, to, filters = {}) {
 // for diagnostic prices. Known reports fold separately; an in-window counter is required
 // to distinguish observed zero from a lookback baseline. Missing current models stay in
 // coverage; historical-only model scopes are omitted after calculating their baselines.
+// Keep empty models so reports are not silently lost; unpriced_tokens exposes diagnostic
+// gaps. Reported rates depend on client versions and are not invoice or AWS price evidence.
 export async function effortMix(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(
@@ -2244,6 +2250,7 @@ export async function mcpHealth(from, to, filters = {}) {
 
 // AgentName also requires local series differences. Preserve the Effort coverage rule
 // and diagnostic model grain. Limit after folding so model rows cannot truncate an agent.
+// The same empty-model retention and client-version pricing limits as Effort apply.
 export async function agentCost(from, to, filters = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
   const rows = await query(

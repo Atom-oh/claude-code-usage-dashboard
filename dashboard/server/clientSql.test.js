@@ -796,7 +796,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         { session: "detail-missing", effort: "high", agent: "mixed", amount: 0, tokens: 10, model: "global.anthropic.fixture-unpriced" },
         { session: "detail-complete", effort: "medium", agent: "complete", amount: 2, tokens: 10, model: "global.anthropic.claude-sonnet-5" },
         { session: "detail-unknown", effort: "xhigh", agent: "unknown", amount: 0, tokens: 10, model: "global.anthropic.fixture-unpriced" },
-        { session: "detail-zero", effort: "low", agent: "zero", amount: 0, tokens: 0, model: "global.anthropic.claude-sonnet-5" },
+        { session: "detail-zero", effort: "low", agent: "zero", amount: 0, tokens: 0, model: "global.anthropic.claude-opus-5" },
         { session: "detail-baseline", effort: "", agent: "baseline", amount: 0, tokens: 0, model: "global.anthropic.claude-haiku-5", baselineOnly: true },
         { session: "detail-token-only", effort: "token-only", agent: "token-only", amount: null, tokens: 10, model: "global.anthropic.claude-sonnet-5" },
       ];
@@ -829,6 +829,18 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal(agents.find((r) => r.agent === "baseline"), undefined, "historical-only agent is not current missing coverage");
         assert.equal(agents.find((r) => r.agent === "token-only").known_reported_cost, null);
         assert.equal(agents.find((r) => r.agent === "zero").known_reported_cost, 0);
+        const models = await q.costByModel(from, end, filters);
+        const baseline = models.find((r) => r.model === "claude-haiku-5");
+        assertFields(baseline, { reported_cost: 0, known_reported_cost: null });
+        assert.equal(Number(baseline.cost_counter_rows), 0);
+        assert.equal(Number(baseline.observed_usage_rows), 0);
+        const measuredZero = models.find((r) => r.model === "claude-opus-5");
+        assert.equal(measuredZero.known_reported_cost, 0);
+        assert.ok(Number(measuredZero.cost_counter_rows) > 0);
+        assert.ok(Number(measuredZero.observed_usage_rows) > 0);
+        const missing = models.find((r) => r.model === "fixture-unpriced");
+        assert.equal(missing.known_reported_cost, null);
+        assert.ok(Number(missing.observed_usage_rows) > 0);
       }
       const scoped = await q.effortMix(from, to, { user: "detail-coverage@", group: "bedrock", model: "global.anthropic.claude-sonnet-5" });
       assertFields(scoped.find((r) => r.effort === "high"), { known_reported_cost: 5, reported_partial: false });

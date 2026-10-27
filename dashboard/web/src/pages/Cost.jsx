@@ -78,7 +78,9 @@ function addKnownCost(acc, row) {
 
 function foldModelRows(rows) {
   const totals = new Map();
-  for (const r of asSpendRows(rows)) {
+  for (const r of asKnownSpendRows(rows)) {
+    // Preserve legacy API rows; explicitly historical-only model evidence is not current use.
+    if (r.observed_usage_rows === 0 || r.observed_usage_rows === "0") continue;
     const acc = totals.get(r.model) || { model: r.model, cost: undefined, cost_partial: false, computed_cost: 0, tokens: 0, inputTokens: 0, outputTokens: 0, unpriced: false };
     addKnownCost(acc, r);
     acc.computed_cost = sumPair(acc.computed_cost, r.computed_cost);
