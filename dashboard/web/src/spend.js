@@ -33,10 +33,10 @@ export function asSpendRows(rows = []) {
   return (rows || []).map(asSpendRow);
 }
 
-// Only Cost summaries opt into the additive API subtotal. Older servers and other detail
+// Cost panels opt into the additive API subtotal. Older servers and other detail
 // consumers retain strict report selection. A measured partial zero has its own evidence
 // on the server; the group's excluded positive tokens must not invalidate that zero.
-export function asCostSummaryRows(rows = []) {
+export function asKnownSpendRows(rows = []) {
   return (rows || []).map((row) => {
     const view = asSpendRow(row);
     if (!Object.hasOwn(row, "known_reported_cost")) return view;
@@ -45,6 +45,8 @@ export function asCostSummaryRows(rows = []) {
       cost_partial: cost !== null && row.reported_partial === true };
   });
 }
+
+export const asCostSummaryRows = asKnownSpendRows;
 
 export function sumSpend(rows, key = "cost") {
   let total = 0;

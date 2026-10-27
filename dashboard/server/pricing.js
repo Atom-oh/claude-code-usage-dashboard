@@ -1,4 +1,5 @@
 import { VALID_BACKENDS } from "./backend.js";
+import { knownReportedCost } from "./reportedCost.js";
 
 // Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 cacheWrite(5m) = 입력×1.25,
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
@@ -293,8 +294,9 @@ export function withComputedCost(rows) {
 // 뒤에는 어느 단가를 쓸지 고를 수 없다. 그래서 SQL에서 바로 합계를 내지 않고 두 단계로 나눈다.
 // 단가표에 없는 모델은 cost에 0을 더하고(null이 아니다 — 합계가 null이 되면 도넛/표가 통째로
 // 비어 버린다) tokens/unpriced_tokens/reported_cost에는 그대로 반영한다.
-export function rollupComputedCost(rows, keys) {
+export function rollupComputedCost(rows, keys, { knownReports = false } = {}) {
   const out = new Map();
+  const reports = new Map();
   for (const r of withComputedCost(rows)) {
     // 구분자는 "\u0000"(NUL) — agent 이름은 Attributes['agent.name']에서 온 자유 문자열이라 공백을
     // 포함할 수 있고, 공백을 구분자로 쓰면 ("a", "b c")와 ("a b", "c")가 한 키로 뭉개진다(실측).
@@ -305,6 +307,7 @@ export function rollupComputedCost(rows, keys) {
       for (const key of keys) acc[key] = r[key];
       Object.assign(acc, { cost: 0, reported_cost: 0, tokens: 0, unpriced_tokens: 0 });
       out.set(k, acc);
+      if (knownReports) reports.set(k, []);
     }
     // 드라이버가 집계값을 문자열로 돌려주는 경우가 있어 전부 Number()로 강제한다 — 빠뜨리면
     // += 가 문자열 연결이 되어 "37" 같은 값이 나온다.
@@ -315,6 +318,8 @@ export function rollupComputedCost(rows, keys) {
     acc.reported_cost = acc.reported_cost === null || r.reported_cost === null ? null : acc.reported_cost + Number(r.reported_cost);
     acc.tokens += tokens;
     if (r.unpriced) acc.unpriced_tokens += tokens;
+    if (knownReports) reports.get(k).push(r);
   }
-  return [...out.values()];
+  return [...out.entries()].map(([key, row]) => knownReports
+    ? { ...row, ...knownReportedCost(reports.get(key), { requireObservedZero: true }) } : row);
 }

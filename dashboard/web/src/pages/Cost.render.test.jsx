@@ -318,7 +318,7 @@ test("partial model and user folds render known subtotals labelled 부분합 and
   expect(userCsv).toContain("known,$5 — bedrock $5,77,100 — bedrock 100토큰,확인됨");
 });
 
-test("model donuts keep the strict rule while the model table shows the partial subtotal", async () => {
+test("model donuts disclose the same known partial subtotal as the model table", async () => {
   const rows = [
     { group: "bedrock", model: "dup-model", cost: 9, reported_cost: 10, tokens: 100 },
     { group: "bedrock", model: "dup-model", cost: 4, reported_cost: 0, tokens: 100 },
@@ -326,7 +326,134 @@ test("model donuts keep the strict rule while the model table shows the partial 
   mount("single", { "/api/cost/by-model": rows });
   await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(1));
   expect(cells("모델별 비용과 토큰")[0].slice(0, 2)).toEqual(["dup-model", "$10부분합"]);
-  expect(card("모델별 비용 비중 — bedrock").textContent).toContain("보고 비용 확인 필요");
+  expect(card("모델별 비용 비중 — bedrock").textContent).toContain("알려진 보고 비용 부분합");
+  expect(card("모델별 비용 비중 — bedrock").querySelector(".pointer-events-none .tabular").textContent).toBe("$10");
+});
+
+test("monthly Bedrock Effort preserves known amounts and lists unavailable scopes", async () => {
+  mount("single", {
+    "/api/cost/effort-mix": [
+      { group: "bedrock", effort: "high", reported_cost: null, known_reported_cost: 5, reported_partial: true, computed_cost: 99, tokens: 100 },
+      { group: "bedrock", effort: "medium", reported_cost: 2, known_reported_cost: 2, reported_partial: false, tokens: 100 },
+      { group: "bedrock", effort: "xhigh", reported_cost: 0, known_reported_cost: null, tokens: 100 },
+      { group: "bedrock", effort: "unknown", reported_cost: 0, known_reported_cost: null, tokens: 0 },
+    ],
+  }, undefined, "/cost?period=month&group=bedrock");
+  await waitFor(() => expect(screen.queryByText("Effort 수준별 보고 비용 — bedrock")).not.toBeNull());
+  const effort = card("Effort 수준별 보고 비용 — bedrock");
+  expect(effort.textContent).toContain("알려진 보고 비용 부분합");
+  expect(effort.textContent).toContain("일부 보고값 누락 또는 검증 불가");
+  expect(effort.querySelector(".pointer-events-none .tabular").textContent).toBe("$7");
+  expect(effort.textContent).toContain("high: $5 (부분합)");
+  expect(effort.textContent).toContain("medium: $2");
+  expect(effort.textContent).toContain("xhigh: 확인 필요");
+  expect(effort.textContent).toContain("미지정: 확인 필요");
+  expect(effort.textContent).not.toContain("$99");
+});
+
+test("all-unknown Effort and model shares stay unavailable without inventing zero", async () => {
+  mount("single", {
+    "/api/cost/effort-mix": [{ group: "bedrock", effort: "high", reported_cost: 0, known_reported_cost: null, tokens: 100 }],
+    "/api/cost/by-model": [{ group: "bedrock", model: "unknown-model", reported_cost: null, tokens: 100 }],
+  });
+  await waitFor(() => expect(screen.queryByText("Effort 수준별 보고 비용 — bedrock")).not.toBeNull());
+  for (const title of ["Effort 수준별 보고 비용 — bedrock", "모델별 비용 비중 — bedrock"]) {
+    expect(card(title).textContent).toContain("보고 비용 확인 필요");
+    expect(card(title).textContent).not.toContain("$0");
+    expect(card(title).textContent).not.toContain("알려진 보고 비용 부분합");
+  }
+});
+
+test("empty responses and empty selected channels keep the existing no-data state", async () => {
+  const view = mount("single", {
+    "/api/cost/effort-mix": [],
+    "/api/cost/by-model": [],
+  });
+  await waitFor(() => expect(screen.queryByText("Effort 수준별 보고 비용 — bedrock")).not.toBeNull());
+  for (const title of ["Effort 수준별 보고 비용 — bedrock", "모델별 비용 비중 — bedrock"]) {
+    expect(card(title).textContent).toContain("선택한 기간에 데이터가 없습니다.");
+    expect(card(title).textContent).not.toContain("$0");
+  }
+  view.unmount();
+  mount("ab", {
+    "/api/cost/effort-mix": [{ group: "bedrock", effort: "high", reported_cost: 2, tokens: 10 }],
+    "/api/cost/by-model": [{ group: "bedrock", model: "known", reported_cost: 2, tokens: 10 }],
+  }, undefined, "/cost?group=enterprise");
+  await waitFor(() => expect(screen.queryByText("Effort 수준별 보고 비용 — enterprise")).not.toBeNull());
+  for (const title of ["Effort 수준별 보고 비용 — enterprise", "모델별 비용 비중 — enterprise"]) {
+    expect(card(title).textContent).toContain("선택한 기간에 데이터가 없습니다.");
+    expect(card(title).textContent).not.toContain("$0");
+  }
+});
+
+test("observed partial zero stays visible beside unknown Effort and model scopes", async () => {
+  mount("single", {
+    "/api/cost/effort-mix": [{ group: "bedrock", effort: "high", reported_cost: null, known_reported_cost: 0, reported_partial: true, tokens: 100 }],
+    "/api/cost/by-model": [
+      { group: "bedrock", model: "measured-zero", reported_cost: 0, known_reported_cost: 0, cost_counter_rows: 1, observed_usage_rows: 1, tokens: 0 },
+      { group: "bedrock", model: "missing", reported_cost: null, known_reported_cost: null, observed_usage_rows: 1, tokens: 100 },
+    ],
+  });
+  await waitFor(() => expect(screen.queryByText("Effort 수준별 보고 비용 — bedrock")).not.toBeNull());
+  for (const title of ["Effort 수준별 보고 비용 — bedrock", "모델별 비용 비중 — bedrock"]) {
+    expect(card(title).textContent).toContain("알려진 보고 비용 부분합");
+    expect(card(title).textContent).toContain("$0");
+    expect(card(title).textContent).not.toContain("보고 비용 확인 필요 —");
+  }
+  expect(card("모델별 비용 비중 — bedrock").textContent).toContain("missing: 확인 필요");
+});
+
+test("historical model zeros cannot make current unknown spend a partial zero", async () => {
+  mount("single", {
+    "/api/cost/by-model": [
+      { group: "bedrock", model: "historical", reported_cost: 0, known_reported_cost: null, cost_counter_rows: 0, observed_usage_rows: "0", tokens: 0 },
+      { group: "bedrock", model: "current-unknown", reported_cost: null, known_reported_cost: null, observed_usage_rows: 1, tokens: 100 },
+    ],
+  });
+  await waitFor(() => expect(screen.queryByText("모델별 비용 비중 — bedrock")).not.toBeNull());
+  const model = card("모델별 비용 비중 — bedrock");
+  expect(model.textContent).toContain("보고 비용 확인 필요 —");
+  expect(model.textContent).not.toContain("$0");
+  expect(model.textContent).not.toContain("부분합");
+  expect(model.textContent).not.toContain("historical");
+});
+
+test("historical-only model scopes remain no data in current Cost panels", async () => {
+  mount("single", {
+    "/api/cost/by-model": [
+      { group: "bedrock", model: "historical", reported_cost: 0, known_reported_cost: null, cost_counter_rows: 0, observed_usage_rows: 0, tokens: 0 },
+    ],
+  });
+  await waitFor(() => expect(screen.queryByText("모델별 비용 비중 — bedrock")).not.toBeNull());
+  const model = card("모델별 비용 비중 — bedrock");
+  expect(model.textContent).toContain("선택한 기간에 데이터가 없습니다.");
+  expect(model.textContent).not.toContain("$0");
+});
+
+test("agent and efficiency amounts disclose partial coverage in the table and CSV", async () => {
+  mount("single", {
+    "/api/cost/by-agent": [
+      { group: "bedrock", agent: "mixed", reported_cost: null, known_reported_cost: 5, reported_partial: true, computed_cost: 99, tokens: 20 },
+      { group: "bedrock", agent: "unknown", reported_cost: 0, known_reported_cost: null, tokens: 10 },
+    ],
+    "/api/users/cost-efficiency": [
+      { user: "partial@example.invalid", group: "bedrock", reported_cost: 6, reported_unpriced: true, known_reported_cost: 6, reported_partial: true, computed_cost: 99, loc: 10, commits: 2, cost_per_loc: null, cost_per_commit: null },
+      { user: "complete@example.invalid", group: "bedrock", reported_cost: 2, known_reported_cost: 2, reported_partial: false, loc: 10, commits: 2, cost_per_loc: 0.2, cost_per_commit: 1 },
+    ],
+  });
+  await waitFor(() => expect(cells("에이전트별 비용")).toHaveLength(2));
+  expect(cells("에이전트별 비용")[0]).toEqual(["mixed", "bedrock", "$5부분합", "20", "부분합"]);
+  expect(cells("에이전트별 비용")[1]).toEqual(["unknown", "bedrock", "확인 필요", "10", "확인 필요"]);
+  const efficiency = cells("비용 효율 ($/LOC · $/커밋)");
+  expect(efficiency[0][0]).toBe("complete@example.invalid");
+  expect(efficiency[1]).toEqual(["partial@example.invalid", "bedrock", "$6부분합", "10", "2", "확인 필요", "확인 필요", "부분합"]);
+  const agentCsv = await exportTable("에이전트별 비용");
+  expect(agentCsv).toContain("mixed,bedrock,5,20,부분합");
+  expect(agentCsv).toContain("unknown,bedrock,,10,확인 필요");
+  const efficiencyCsv = await exportTable("비용 효율 ($/LOC · $/커밋)");
+  expect(efficiencyCsv).toContain("partial@example.invalid,bedrock,6,10,2,,,부분합");
+  expect(efficiencyCsv).not.toContain("99");
+  expect(agentCsv).not.toContain("99");
 });
 
 test("model shares use the known total when one model has no usable report", async () => {
@@ -432,7 +559,7 @@ test("effort, agents and efficiency use reported spend with computed secondary d
   });
   fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
   await waitFor(() => expect(cells("에이전트별 비용")).toHaveLength(2));
-  expect(cells("에이전트별 비용")[0]).toEqual(["메인 세션", "bedrock", "$20", "$1", "10"]);
+  expect(cells("에이전트별 비용")[0]).toEqual(["메인 세션", "bedrock", "$20", "$1", "10", "확인됨"]);
   expect(card("Effort 수준별 보고 비용 — bedrock").textContent).toContain("high: $7 (계산값 $100)");
   expect(card("Effort 수준별 보고 비용 — bedrock").textContent).toContain("medium: $9");
   expect(card("Effort 수준별 보고 비용 — bedrock").textContent).toContain("미지정: 확인 필요");

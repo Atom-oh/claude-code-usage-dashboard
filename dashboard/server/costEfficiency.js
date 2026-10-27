@@ -2,14 +2,19 @@
 // costByUserModel의 모델별 계산비용)를 새 SQL 없이 유저×그룹 단위로 합치기만 하면 된다. 둘 다
 // group이 세션 단위 실제 값(다수결 아님)이라 user만으로 조인하면 두 그룹을 오간 유저의 전체
 // 비용이 양쪽 그룹 행에 중복으로 붙는다 — 조인 키를 user+group으로 넓혀야 한다.
+import { knownReportedCost } from "./reportedCost.js";
+
 export function userCostEfficiency(leaderboardRows, costByUserModelRows) {
   const key = (user, group) => `${user}|${group}`;
   const costByUserGroup = new Map();
   const unpricedUserGroups = new Set();
   const reportedByUserGroup = new Map();
   const reportedUnpricedGroups = new Set();
+  const reportsByUserGroup = new Map();
   for (const r of costByUserModelRows) {
     const k = key(r.user, r.group);
+    if (!reportsByUserGroup.has(k)) reportsByUserGroup.set(k, []);
+    reportsByUserGroup.get(k).push(r);
     const raw = r.reported_cost;
     const reported = Number(raw);
     const valid = (typeof raw === "number" || (typeof raw === "string" && raw.trim() !== ""))
@@ -41,6 +46,7 @@ export function userCostEfficiency(leaderboardRows, costByUserModelRows) {
       unpriced,
       reported_cost,
       reported_unpriced,
+      ...knownReportedCost(reportsByUserGroup.get(k) || []),
       loc,
       commits,
       cost_per_loc: !reported_unpriced && loc > 0 ? reported_cost / loc : null,
