@@ -13,7 +13,7 @@ const ROWS = [
 test("user×model fold selects reported spend across groups and retains computed diagnostics", () => {
   const merged = mergeUserModelRows(ROWS);
   expect(merged).toHaveLength(3);
-  expect(merged[0]).toMatchObject({ cost: 16, computed_cost: 19.55, reported_cost: 16, tokens: 1500 });
+  expect(merged[0]).toMatchObject({ cost: 16, cost_partial: false, computed_cost: 19.55, reported_cost: 16, tokens: 1500 });
   expect(merged[0].groups.bedrock).toMatchObject({ cost: 10, tokens: 1000 });
   expect(merged[0].groups.enterprise).toMatchObject({ cost: 6, tokens: 500 });
   expect(merged[2]).toMatchObject({ cost: 10, computed_cost: null, unpriced: true, tokens: 1000 });
@@ -35,16 +35,47 @@ test("user folds and model bars include positive reports for models without a pr
   expect(groupTotalsText(b.groups, "cost")).toBe("bedrock $7 · 미분류 $3");
 });
 
-test("a missing piece poisons user, model and group spend while retaining tokens", () => {
-  const rows = [...ROWS, { ...ROWS[0], reported_cost: 0 }];
+// ADR-013: an unusable piece (a zero report with tokens, or a model without any usable report) is
+// excluded from the known subtotal and disclosed as partial; it never counts as $0.
+const UNLISTED = { user: "a@x.com", group: "bedrock", model: "unlisted-model", cost: null, reported_cost: null, tokens: 400, unpriced: true };
+
+test("an unusable piece leaves known user, model and group subtotals marked partial while retaining tokens", () => {
+  const rows = [...ROWS, { ...ROWS[0], reported_cost: 0 }, UNLISTED];
   const a = mergeUserRows(rows)[0];
-  expect(a.cost).toBeNull();
-  expect(a.groups.bedrock.models["claude-sonnet-5"].cost).toBeNull();
-  expect(mergeUserModelRows(rows)[0].cost).toBeNull();
-  expect(mergeUserModelRows([...rows].reverse()).find((r) => r.user === "a@x.com" && r.model === "claude-sonnet-5").cost).toBeNull();
-  expect(groupModelSegments(a.groups, "bedrock", "cost")).toBeNull();
-  expect(groupTotalsText(a.groups, "cost")).toContain("bedrock 확인 필요");
-  expect(groupModelSegments(a.groups, "bedrock", "tokens").total).toBe(2300);
+  expect(a).toMatchObject({ cost: 18, cost_partial: true, reported_cost: 18, reported_unpriced: false, tokens: 3200 });
+  expect(a.groups.bedrock.models["claude-sonnet-5"]).toMatchObject({ cost: 10, cost_partial: true });
+  expect(a.groups.bedrock.models["claude-opus-5"]).toMatchObject({ cost: 2, cost_partial: false });
+  expect(a.groups.bedrock.models["unlisted-model"]).toMatchObject({ cost: null, cost_partial: false, reported_unpriced: true });
+  expect(a.groups.enterprise.models["claude-sonnet-5"]).toMatchObject({ cost: 6, cost_partial: false });
+  const merged = mergeUserModelRows(rows);
+  expect(merged[0]).toMatchObject({ model: "claude-sonnet-5", cost: 16, cost_partial: true });
+  expect(merged[0].groups.bedrock).toMatchObject({ cost: 10, cost_partial: true });
+  expect(merged[0].groups.enterprise).toMatchObject({ cost: 6, cost_partial: false });
+  expect(merged.find((r) => r.model === "unlisted-model")).toMatchObject({ cost: null, cost_partial: false });
+  expect(mergeUserModelRows([...rows].reverse()).find((r) => r.user === "a@x.com" && r.model === "claude-sonnet-5")).toMatchObject({ cost: 16, cost_partial: true });
+  const line = groupModelSegments(a.groups, "bedrock", "cost");
+  expect(line.segs.map((x) => [x.model, x.value])).toEqual([["claude-opus-5", 2], ["claude-sonnet-5", 10]]);
+  expect(line).toMatchObject({ total: 12, partial: true });
+  expect(groupModelSegments(a.groups, "enterprise", "cost")).toMatchObject({ total: 6, partial: false });
+  expect(groupTotalsText(a.groups, "cost")).toBe("bedrock $12 (부분합) · enterprise $6");
+  expect(groupModelSegments(a.groups, "bedrock", "tokens")).toMatchObject({ total: 2700, partial: false });
+  expect(groupTotalsText(a.groups, "tokens")).toBe("bedrock 2,700토큰 · enterprise 500토큰");
+  const readapted = asSpendRows(mergeUserRows(rows))[0];
+  expect(readapted).toMatchObject({ cost: 18, cost_partial: true });
+});
+
+test("a user whose every piece is unusable stays unavailable rather than $0", () => {
+  const rows = [
+    { user: "c", group: "bedrock", model: "m1", cost: 4, reported_cost: 0, tokens: 10 },
+    { user: "c", group: "bedrock", model: "m2", cost: null, reported_cost: null, tokens: 5, unpriced: true },
+  ];
+  const [c] = mergeUserRows(rows);
+  expect(c).toMatchObject({ cost: null, cost_partial: false, reported_cost: null, reported_unpriced: true, tokens: 15 });
+  expect(groupModelSegments(c.groups, "bedrock", "cost")).toBeNull();
+  expect(groupTotalsText(c.groups, "cost")).toBe("bedrock 확인 필요");
+  expect(groupModelSegments(c.groups, "bedrock", "tokens").total).toBe(15);
+  expect(mergeUserModelRows(rows).map((r) => [r.cost, r.cost_partial])).toEqual([[null, false], [null, false]]);
+  expect(asSpendRows([c])[0].cost).toBeNull();
 });
 
 test("folds accept adapted rows and preserve their selected totals on another adaptation", () => {
@@ -63,4 +94,9 @@ test("zero reported spend is valid only when token usage is absent", () => {
   ];
   expect(mergeUserRows(rows).map((r) => r.cost)).toEqual([null, 0]);
   expect(mergeUserModelRows(rows).map((r) => r.cost)).toEqual([null, 0]);
+  expect(mergeUserRows(rows).map((r) => r.cost_partial)).toEqual([false, false]);
+  // A measured zero stays zero beside an excluded piece, and the exclusion is disclosed.
+  const mixed = mergeUserRows(rows.map((r) => ({ ...r, user: "mixed" })));
+  expect(mixed).toHaveLength(1);
+  expect(mixed[0]).toMatchObject({ cost: 0, cost_partial: true });
 });

@@ -51,8 +51,9 @@ unit values describe known costs over observed activity; they are not full-cost
 efficiency estimates. Neither cost basis establishes an invoice or causal productivity.
 
 This does not change collection, model choice, rates, or the opt-in legacy Claude
-detail/LOC/commit cost contracts. Those endpoints retain their separately documented
-report policies.
+detail/LOC/commit cost contracts, except that the Claude detail Cost page folds follow
+option 3 since 2026-10-27 at the user's request. LOC/commit efficiency and the other detail
+endpoints retain their separately documented report policies.
 
 ## References
 

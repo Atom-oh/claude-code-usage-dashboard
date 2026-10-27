@@ -6,6 +6,7 @@ const SOFT = {
   brand: "bg-brand-50 text-brand-700",
   positive: "bg-positive-surface text-positive-text",
   negative: "bg-negative-surface text-negative-text",
+  warning: "bg-warning-surface text-warning-text",
   inverse: "bg-ink-800 text-paper",
 };
 const DOT = {
@@ -13,6 +14,7 @@ const DOT = {
   brand: "bg-brand-500",
   positive: "bg-positive",
   negative: "bg-negative",
+  warning: "bg-warning",
   inverse: "bg-paper",
 };
 

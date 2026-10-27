@@ -42,3 +42,25 @@ export function sumSpend(rows, key = "cost") {
   }
   return Number.isFinite(total) ? total : null;
 }
+
+// ADR-013 known subtotal: sums usable amounts with the same rule as sumSpend, never counts an
+// unusable piece as $0, and is null only when every supplied piece is unusable. `partial` marks
+// a mixed sum or a usable piece that is itself a partial subtotal.
+export function sumKnownSpend(rows, key = "cost") {
+  let total = 0;
+  let known = false;
+  let unknown = false;
+  let partial = false;
+  for (const row of rows || []) {
+    const value = amount(row[key]);
+    if (value === null) {
+      unknown = true;
+      continue;
+    }
+    known = true;
+    total += value;
+    partial ||= row.cost_partial === true;
+  }
+  if (!known) return { total: unknown ? null : 0, partial: false };
+  return Number.isFinite(total) ? { total, partial: partial || unknown } : { total: null, partial: false };
+}

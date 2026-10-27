@@ -18,7 +18,7 @@ import { isZeroTokenModel } from "../modelRows.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
-import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
+import { asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -28,6 +28,18 @@ const computedCsv = (v, r) => r.unpriced ? "" : v;
 const spendOrder = (a, b) => (a.cost == null) - (b.cost == null) || b.cost - a.cost;
 const sumPair = (a, b) => sumSpend([{ cost: a }, { cost: b }]);
 const unavailable = "보고 비용 확인 필요 — 누락되거나 검증되지 않은 보고값이 포함되어 있습니다.";
+const costStatus = (r) => (r.cost_partial ? "부분합" : r.cost === null ? "확인 필요" : "확인됨");
+const costStatusColumn = { key: "cost_status", label: "비용 상태" };
+// 알려진 보고 비용 부분합은 금액 옆 배지로 밝힌다. CSV는 render를 쓰지 않으므로 숫자 그대로 나간다.
+const knownUsd = (v, r) =>
+  r.cost_partial ? (
+    <span className="inline-flex items-center gap-1.5">
+      {usd(v)}
+      <Badge tone="warning">부분합</Badge>
+    </span>
+  ) : (
+    usd(v)
+  );
 const agentLabel = (v) => (v === "main" ? "메인 세션" : v);
 // bedrock/enterprise로 나뉘는 도넛들(캐시 티어·토큰 타입·Effort)의 라벨 순서 — 그룹 색상 배정이
 // 데이터 등장 순서가 아니라 이 고정 순서를 따르게 한다(colors.js makeGroupBreakdownColorer).
@@ -35,11 +47,20 @@ const TIER_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시
 const TOKEN_TYPE_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "입력"];
 const EFFORT_LABEL_ORDER = ["medium", "high", "xhigh", "미지정"];
 
+// ADR-013 known subtotal: an unusable piece is never $0 — null + null stays null and null + x is x.
+// cost_partial marks a non-null subtotal that excludes an unusable or partial piece. A fresh
+// accumulator's cost is undefined (no piece yet), so its first piece is taken as-is.
+function addKnownCost(acc, row) {
+  const { total, partial } = sumKnownSpend(acc.cost === undefined ? [row] : [acc, row]);
+  acc.cost = total;
+  acc.cost_partial = partial;
+}
+
 function foldModelRows(rows) {
   const totals = new Map();
   for (const r of asSpendRows(rows)) {
-    const acc = totals.get(r.model) || { model: r.model, cost: 0, computed_cost: 0, tokens: 0, inputTokens: 0, outputTokens: 0, unpriced: false };
-    acc.cost = sumPair(acc.cost, r.cost);
+    const acc = totals.get(r.model) || { model: r.model, cost: undefined, cost_partial: false, computed_cost: 0, tokens: 0, inputTokens: 0, outputTokens: 0, unpriced: false };
+    addKnownCost(acc, r);
     acc.computed_cost = sumPair(acc.computed_cost, r.computed_cost);
     acc.unpriced ||= r.unpriced === true || r.computed_cost === null;
     acc.tokens += Number(r.tokens || 0);
@@ -52,17 +73,19 @@ function foldModelRows(rows) {
   return [...totals.values()].sort(spendOrder);
 }
 
-// 미산정 조각이 섞였다는 표시를 유지해야 양수 부분합을 완전한 보고 비용으로 다시 쓰지 않는다.
+// cost/reported_cost는 알려진 보고 비용 부분합이고 cost_partial이 미산정 조각을 밝힌다 — 다시
+// asSpendRows를 거쳐도(...row) 부분합 표시가 남아 완전한 보고 비용으로 읽히지 않는다.
+// computed_cost는 진단값이라 기존처럼 조각 하나만 없어도 null이다.
 function addSpend(acc, row) {
-  acc.cost = sumPair(acc.cost, row.cost);
+  addKnownCost(acc, row);
   acc.computed_cost = sumPair(acc.computed_cost, row.computed_cost);
-  acc.reported_cost = sumPair(acc.reported_cost, row.reported_cost);
+  acc.reported_cost = acc.cost;
   acc.reported_unpriced = acc.cost === null;
   acc.unpriced ||= row.unpriced === true || row.computed_cost === null;
   acc.tokens += Number(row.tokens || 0);
 }
 
-const spendTotal = () => ({ cost: 0, computed_cost: 0, reported_cost: 0, tokens: 0, unpriced: false, reported_unpriced: false });
+const spendTotal = () => ({ cost: undefined, cost_partial: false, computed_cost: 0, reported_cost: 0, tokens: 0, unpriced: false, reported_unpriced: false });
 
 export function mergeUserModelRows(rows) {
   const totals = new Map();
@@ -91,15 +114,17 @@ export function mergeUserRows(rows) {
 }
 
 // 한 그룹 줄의 모델 세그먼트 목록 — 값 0 모델 제외, 순서는 범례 규칙(byModelLegendOrder) 고정.
+// 비용 줄은 알려진 모델 보고값만 그리고, 미산정·부분합 모델이 있으면 partial로 밝힌다.
 export function groupModelSegments(groups, group, metric) {
   const models = groups?.[group]?.models;
-  if (!models || (metric === "cost" && sumSpend(Object.values(models)) === null)) return null;
+  if (!models) return null;
   const segs = Object.entries(models)
     .map(([model, v]) => ({ model, value: Number(v[metric] || 0) }))
     .filter((x) => x.value > 0)
     .sort((a, b) => byModelLegendOrder(a.model, b.model));
   const total = segs.reduce((sum, x) => sum + x.value, 0);
-  return total > 0 ? { segs, total } : null;
+  const partial = metric === "cost" && Object.values(models).some((v) => v.cost === null || v.cost_partial === true);
+  return total > 0 ? { segs, total, partial } : null;
 }
 
 // 셀 툴팁/CSV용 그룹 합계 문자열 — 모델 내역은 각 줄의 hover가, 여기는 그룹 총액만.
@@ -107,9 +132,9 @@ export function groupTotalsText(groups, metric) {
   const fmtVal = (v) => (metric === "tokens" ? `${fmt(v)}토큰` : usd(v));
   return GROUP_SEGMENT_ORDER.map((g) => {
     const models = groups?.[g]?.models;
-    if (metric === "cost" && models && sumSpend(Object.values(models)) === null) return `${unclassifiedLabel(g)} 확인 필요`;
+    if (metric === "cost" && models && sumKnownSpend(Object.values(models)).total === null) return `${unclassifiedLabel(g)} 확인 필요`;
     const line = groupModelSegments(groups, g, metric);
-    return line ? `${unclassifiedLabel(g)} ${fmtVal(line.total)}` : null;
+    return line ? `${unclassifiedLabel(g)} ${fmtVal(line.total)}${line.partial ? " (부분합)" : ""}` : null;
   })
     .filter(Boolean)
     .join(" · ");
@@ -129,13 +154,13 @@ function UserGroupModelBars({ groups, metric, max }) {
         <BarTip
           key={group}
           className="flex items-center gap-1.5"
-          label={`${unclassifiedLabel(group)} ${fmtVal(line.total)} — ${line.segs.map((x) => `${modelLabel(x.model)} ${fmtVal(x.value)}`).join(" · ")}`}
+          label={`${unclassifiedLabel(group)} ${fmtVal(line.total)}${line.partial ? " (부분합)" : ""} — ${line.segs.map((x) => `${modelLabel(x.model)} ${fmtVal(x.value)}`).join(" · ")}`}
           tip={
             <span className="flex flex-col gap-0.5">
               <span className="flex items-center gap-1.5 font-semibold">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: colorFor(group) }} />
                 {unclassifiedLabel(group)}
-                <span className="tabular ml-auto pl-4">{fmtVal(line.total)}</span>
+                <span className="tabular ml-auto pl-4">{`${fmtVal(line.total)}${line.partial ? " (부분합)" : ""}`}</span>
               </span>
               {line.segs.map((x) => (
                 <span key={x.model} className="flex items-center gap-1.5">
@@ -221,6 +246,7 @@ export default function Cost() {
   const effortMix = useApi("/api/cost/effort-mix");
   const agentCost = useApi("/api/cost/by-agent");
   const summaryRows = asSpendRows(summary.data);
+  const knownSummary = sumKnownSpend(summaryRows);
   // Raw rows, not asSpendRows: the trend keeps known subtotals beside per-session exclusions.
   const dailyCells = useMemo(() => fromByModelDaily(byModelDaily.data), [byModelDaily.data]);
   // Same bucket and filters as the model trend, regrouped per user.
@@ -240,23 +266,27 @@ export default function Cost() {
       unpricedTokens: acc.unpricedTokens + Number(r.unpriced_tokens),
       sessions: acc.sessions + Number(r.sessions),
     }),
-    { cost: sumSpend(summaryRows), computed: sumSpend(summaryRows, "computed_cost"), input: 0, output: 0, cacheRead: 0, cacheWrite: 0, unpricedTokens: 0, sessions: 0 }
+    { cost: knownSummary.total, costPartial: knownSummary.partial, computed: sumSpend(summaryRows, "computed_cost"), input: 0, output: 0, cacheRead: 0, cacheWrite: 0, unpricedTokens: 0, sessions: 0 }
   );
+  // 비용에서 파생한 예상·단위 값도 같은 부분합을 쓰므로 힌트에 기준을 밝힌다.
+  const partialBasis = totals.costPartial ? " · 부분합 기준" : "";
 
   const modelTotals = foldModelRows(byModel.data || []);
-  const totalModelCost = sumSpend(modelTotals);
+  const totalModelCost = sumKnownSpend(modelTotals).total;
   // Totals keep every row (missingness included); only the listed rows drop zero-token models.
+  // A partial model subtotal is not comparable with the previous period's full report.
   const modelRows = modelTotals.filter((r) => !r.zeroTokens).map((r) => {
     const prev = prevCostByModel.get(r.model);
     return {
       ...r,
       share: r.cost === null || totalModelCost === null ? null : totalModelCost > 0 ? r.cost / totalModelCost * 100 : 0,
-      change: r.cost === null || prev == null || prev <= 0 ? null : (r.cost - prev) / prev * 100,
+      change: r.cost === null || r.cost_partial || prev == null || prev <= 0 ? null : (r.cost - prev) / prev * 100,
+      cost_status: costStatus(r),
     };
   });
 
   const mergedUserModel = mergeUserModelRows(byUserModel.data || []);
-  const userRows = mergeUserRows(byUserModelTable.data || []).sort(spendOrder);
+  const userRows = mergeUserRows(byUserModelTable.data || []).sort(spendOrder).map((r) => ({ ...r, cost_status: costStatus(r) }));
   // 범례는 실제로 등장한 그룹만 — 'unknown 그룹 포함'을 켰는데 unknown 행이 없으면 unknown 점을
   // 띄우지 않는다(막대에도 안 나오므로 범례에도 없어야 한다).
   const shareGroups = GROUP_SEGMENT_ORDER.filter((g) => userRows.some((r) => r.groups?.[g]));
@@ -267,8 +297,10 @@ export default function Cost() {
   const tokenLineMax = lineMax("tokens");
 
   const rankedUsers = mergeUserRows(byUserModel.data || []);
+  // 순위는 알려진 보고 비용(부분합 포함)으로 매기고, 모든 조각이 미산정인 사용자만 제외한다.
   const unavailableUsers = rankedUsers.filter((r) => r.cost === null).length;
   const topUsers = rankedUsers.filter((r) => r.cost !== null).sort(spendOrder).slice(0, topN);
+  const partialTopUsers = topUsers.filter((r) => r.cost_partial).length;
 
   // pivotByKey는 자체 정렬/제한이 없고 행의 등장 순서를 그대로 유지한다(비-날짜 xKey일 때) — 그래서
   // topUsers(지출 내림차순)를 순회하며 그 유저의 행만 그 순서로 모아야 스택 바도 지출 순으로 나온다.
@@ -280,8 +312,9 @@ export default function Cost() {
   // bedrock/enterprise 도넛은 그룹=색상 계열 규칙을 따른다(사용자 지시) — 같은 모델이라도
   // bedrock 카드에선 블루, enterprise 카드에선 틸로 다르게 보인다(groupModelColorFor). 모델
   // 정체성은 그 계열 안의 명도로 표현되지, 색조(hue)로 표현되지 않는다 — 그룹이 우선.
+  // 도넛은 기존 sumSpend 규칙을 유지한다 — 부분합 모델은 null로 넘겨 카드 전체를 확인 필요로 둔다.
   const modelRowsFor = (group) => foldModelRows((byModel.data || []).filter((r) => r.group === group))
-    .map((row) => ({ ...row, model_label: modelLabel(row.model) }));
+    .map((row) => ({ ...row, cost: row.cost_partial ? null : row.cost, model_label: modelLabel(row.model) }));
 
   // 탭으로 그룹을 고르던 방식 대신 bedrock/enterprise 카드를 좌우로 분리 — 각 카드는 그 그룹만의 합계.
   function tokenTypeRowsFor(group) {
@@ -323,8 +356,8 @@ export default function Cost() {
   // 사용자당 평균으로 정규화한다. 분자는 summary(그룹별 보고 비용), 분모는 activeUsers의
   // 그룹별 uniq — 위 spendPerDeveloper와 같은 모수 규칙(excludeUnknown:false)을 그대로 따른다.
   const groupUserCount = (g) => Number(activeUsers.data?.[`${g}_users`] ?? 0);
-  const groupCost = (g) => sumSpend(summaryRows.filter((r) => r.group === g));
-  const spendPerUserFor = (g) => (groupCost(g) !== null && groupUserCount(g) > 0 ? groupCost(g) / groupUserCount(g) : null);
+  const groupCost = (g) => sumKnownSpend(summaryRows.filter((r) => r.group === g));
+  const spendPerUserFor = (g) => (groupCost(g).total !== null && groupUserCount(g) > 0 ? groupCost(g).total / groupUserCount(g) : null);
 
   // 그룹별 캐시 티어별 지출 — bedrock/enterprise 좌우 분리(다른 카드들과 동일 패턴).
   function tierRowsFor(group) {
@@ -401,7 +434,13 @@ export default function Cost() {
               value={usd(totals.cost)}
               variant="accent"
               help={SPEND_HELP}
-              hint={totals.cost === null ? "보고값 누락 또는 부분 수집" : "선택 기간 보고 비용 · 미분류 채널 포함"}
+              hint={
+                totals.cost === null
+                  ? "보고값 누락 또는 부분 수집"
+                  : totals.costPartial
+                    ? "알려진 보고 비용 부분합 · 일부 보고값 누락"
+                    : "선택 기간 보고 비용 · 미분류 채널 포함"
+              }
             />
             <StatTile label="입력 토큰" value={fmt(totals.input)} />
             <StatTile label="출력 토큰" value={fmt(totals.output)} help="Thinking 토큰이 포함됩니다." />
@@ -412,11 +451,11 @@ export default function Cost() {
               label="30일 예상 비용"
               value={usd(projection30d)}
               help="선택한 기간의 일평균 비용을 30일 기준으로 환산한 값입니다."
-              hint="선택 기간의 일평균을 30일로 환산"
+              hint={`선택 기간의 일평균을 30일로 환산${partialBasis}`}
             />
             {/* developerCount/spendPerDeveloper는 activeUsers에서 나온다 — summary만 게이트하면
                 activeUsers가 아직 로딩 중이거나 에러여도 "$0 / 0명 기준"이 실제 값처럼 보인다. */}
-            <StatTile label="개발자당 비용" value={usd(spendPerDeveloper)} hint={spendPerDeveloperHint} />
+            <StatTile label="개발자당 비용" value={usd(spendPerDeveloper)} hint={`${spendPerDeveloperHint}${partialBasis}`} />
             {/* A/B 비교용 — 총지출이 아니라 사용자당 평균이라야 그룹 간 사용자 수 차이가 상쇄된다.
                 전체(개발자당 지출)는 그룹 합이 아니다: 한 유저가 두 그룹에 걸칠 수 있어(세션 단위
                 판별, grouping.js) 전역 uniq 분모가 그룹 분모의 합보다 작을 수 있다. */}
@@ -437,11 +476,11 @@ export default function Cost() {
                   </span>
                 }
                 value={usd(spendPerUserFor(g))}
-                hint={
+                hint={`${
                   model
                     ? `사용자 ${fmt(groupUserCount(g))}명 기준, 모델 필터는 비용에만 적용`
-                    : `사용자 ${fmt(groupUserCount(g))}명 · 총 비용 ${usd(groupCost(g))}`
-                }
+                    : `사용자 ${fmt(groupUserCount(g))}명 · 총 비용 ${usd(groupCost(g).total)}`
+                }${groupCost(g).partial ? " · 부분합 기준" : ""}`}
               />
             ))}
           </div>
@@ -569,10 +608,10 @@ export default function Cost() {
           key={`models-${showComputed}`}
           title="모델별 비용과 토큰"
           subtitle="비용 기준 정렬"
-          help={`${SPEND_HELP} 이전 기간 대비는 같은 길이의 직전 기간 보고 비용과 비교합니다. ${comparisonHelp}`}
+          help={`${SPEND_HELP} 전체 대비는 알려진 보고 비용 기준이며 일부 보고값이 빠진 모델은 부분합으로 표시합니다. 이전 기간 대비는 같은 길이의 직전 기간 보고 비용과 비교하며 부분합 모델은 확인 필요로 둡니다. ${comparisonHelp}`}
           columns={[
             { key: "model", label: "모델", render: modelLabel, toText: modelLabel },
-            { key: "cost", label: "비용", render: usd },
+            { key: "cost", label: "비용", render: knownUsd },
             ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
             { key: "share", label: "전체 대비", render: (v) => v === null ? "확인 필요" : `${v.toFixed(1)}%`, toText: (v) => v === null ? "" : `${v.toFixed(1)}%` },
             {
@@ -583,6 +622,7 @@ export default function Cost() {
             },
             { key: "inputTokens", label: "입력 토큰", render: fmt },
             { key: "outputTokens", label: "출력 토큰", render: fmt },
+            costStatusColumn,
           ]}
           rows={modelRows}
           groupKey="__none__"
@@ -620,7 +660,7 @@ export default function Cost() {
         ) : (
           <SeriesBarChart
             title={`비용 상위 사용자 ${topN}명`}
-            subtitle={`모델별 보고 비용 구성${unavailableUsers ? ` · 보고 비용 확인 필요 사용자 ${unavailableUsers}명 제외` : ""}`}
+            subtitle={`모델별 보고 비용 구성${unavailableUsers ? ` · 보고 비용 확인 필요 사용자 ${unavailableUsers}명 제외` : ""}${partialTopUsers ? ` · 부분합 사용자 ${partialTopUsers}명 포함` : ""}`}
             help={`미분류 채널은 제외됩니다. 단가 미등록 모델도 유효한 보고 비용은 포함합니다. ${SPEND_HELP}`}
             right={
               <SegmentedControl
@@ -685,7 +725,7 @@ export default function Cost() {
                 label: "비용",
                 render: (_v, r) => (
                   <span className="inline-flex items-center gap-3">
-                    <span className="min-w-[4.5rem]">{usd(r.cost)}</span>
+                    <span className="min-w-[4.5rem]">{knownUsd(r.cost, r)}</span>
                     {groupMode !== "single" && <UserGroupModelBars groups={r.groups} metric="cost" max={costLineMax} />}
                   </span>
                 ),
@@ -711,6 +751,7 @@ export default function Cost() {
                   return split ? `${fmt(v)} — ${split}` : fmt(v);
                 },
               },
+              costStatusColumn,
             ]}
             rows={userRows}
             exportName="cost_by_user"
@@ -754,7 +795,7 @@ export default function Cost() {
             </div>
             {summary.loading ? <Loading /> : summary.error ? <ErrorBox error={summary.error} /> : (
               <div className="grid grid-cols-2 gap-4">
-                <StatTile label="비교 기준 보고 비용" value={usd(totals.cost)} help={SPEND_HELP} />
+                <StatTile label="비교 기준 보고 비용" value={usd(totals.cost)} help={SPEND_HELP} hint={totals.costPartial ? "알려진 보고 비용 부분합" : undefined} />
                 <StatTile
                   label="토큰 단가 계산 비용"
                   value={usd(totals.computed)}

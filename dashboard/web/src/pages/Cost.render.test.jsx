@@ -274,8 +274,8 @@ test("model sorting, shares, period changes and CSV use reported spend including
   });
   fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
   await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(2));
-  await waitFor(() => expect(cells("모델별 비용과 토큰")[0]).toEqual(["reported-leader", "$30", "단가 미등록", "75.0%", "+200.0%", "0", "0"]));
-  expect(cells("모델별 비용과 토큰")[1]).toEqual(["computed-leader", "$10", "$900", "25.0%", "-50.0%", "0", "0"]);
+  await waitFor(() => expect(cells("모델별 비용과 토큰")[0]).toEqual(["reported-leader", "$30", "단가 미등록", "75.0%", "+200.0%", "0", "0", "확인됨"]));
+  expect(cells("모델별 비용과 토큰")[1]).toEqual(["computed-leader", "$10", "$900", "25.0%", "-50.0%", "0", "0", "확인됨"]);
   const csv = await exportTable("모델별 비용과 토큰");
   expect(csv).toContain("reported-leader,30,,75.0%,+200.0%");
   expect(csv).toContain("computed-leader,10,900,25.0%,-50.0%");
@@ -285,20 +285,107 @@ test("model sorting, shares, period changes and CSV use reported spend including
   expect(sortedCsv.indexOf("computed-leader")).toBeLessThan(sortedCsv.indexOf("reported-leader"));
 });
 
-test("partial model and user folds render unavailable and export blank spend cells", async () => {
+test("partial model and user folds render known subtotals labelled 부분합 and export numeric spend", async () => {
   const rows = [
     { user: "partial", model: "partial-model", group: "bedrock", cost: 99, reported_cost: 10, tokens: 100 },
     { user: "partial", model: "partial-model", group: "enterprise", cost: 55, reported_cost: 0, tokens: 100 },
     { user: "known", model: "known-model", group: "bedrock", cost: 77, reported_cost: 5, tokens: 100 },
   ];
-  mount("ab", { "/api/cost/by-model": rows, "/api/cost/by-user-model": rows });
+  mount("ab", {
+    "/api/cost/by-model": rows,
+    "/api/cost/by-user-model": rows,
+    "/api/cost/by-model-compare": [
+      { model: "partial-model", cost: 99, reported_cost: 10, prev_cost: 50, prev_reported_cost: 5 },
+      { model: "known-model", cost: 77, reported_cost: 5, prev_cost: 40, prev_reported_cost: 4 },
+    ],
+  });
   fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
   await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(2));
-  expect(cells("모델별 비용과 토큰")[1].slice(0, 5)).toEqual(["partial-model", "확인 필요", "$154", "확인 필요", "확인 필요"]);
-  expect(cells("모델별 비용과 토큰")[0][3]).toBe("확인 필요");
-  expect((await exportTable("모델별 비용과 토큰"))).toContain("partial-model,,154,,,");
-  expect(cells("사용자 · 모델별 비용")[1][1]).toContain("확인 필요");
-  expect((await exportTable("사용자 · 모델별 비용"))).toContain("partial,,154,");
+  // Known subtotal $10 of $15 known spend; a partial subtotal is not compared with the previous period.
+  await waitFor(() => expect(cells("모델별 비용과 토큰")[1][4]).toBe("+25.0%"));
+  expect(cells("모델별 비용과 토큰")[0]).toEqual(["partial-model", "$10부분합", "$154", "66.7%", "확인 필요", "0", "0", "부분합"]);
+  expect(cells("모델별 비용과 토큰")[1]).toEqual(["known-model", "$5", "$77", "33.3%", "+25.0%", "0", "0", "확인됨"]);
+  expect(headers(card("모델별 비용과 토큰")).at(-1)).toMatch(/^비용 상태/);
+  const modelCsv = await exportTable("모델별 비용과 토큰");
+  expect(modelCsv).toContain("partial-model,10,154,66.7%,,0,0,부분합");
+  expect(modelCsv).toContain("known-model,5,77,33.3%,+25.0%,0,0,확인됨");
+  expect(cells("사용자 · 모델별 비용").map((r) => r[0])).toEqual(["partial", "known"]);
+  expect(cells("사용자 · 모델별 비용")[0][1]).toContain("$10부분합");
+  expect(cells("사용자 · 모델별 비용")[0].at(-1)).toBe("부분합");
+  expect(cells("사용자 · 모델별 비용")[1].at(-1)).toBe("확인됨");
+  const userCsv = await exportTable("사용자 · 모델별 비용");
+  expect(userCsv).toContain("partial,$10 — bedrock $10 · enterprise 확인 필요,154,200 — bedrock 100토큰 · enterprise 100토큰,부분합");
+  expect(userCsv).toContain("known,$5 — bedrock $5,77,100 — bedrock 100토큰,확인됨");
+});
+
+test("model donuts keep the strict rule while the model table shows the partial subtotal", async () => {
+  const rows = [
+    { group: "bedrock", model: "dup-model", cost: 9, reported_cost: 10, tokens: 100 },
+    { group: "bedrock", model: "dup-model", cost: 4, reported_cost: 0, tokens: 100 },
+  ];
+  mount("single", { "/api/cost/by-model": rows });
+  await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(1));
+  expect(cells("모델별 비용과 토큰")[0].slice(0, 2)).toEqual(["dup-model", "$10부분합"]);
+  expect(card("모델별 비용 비중 — bedrock").textContent).toContain("보고 비용 확인 필요");
+});
+
+test("model shares use the known total when one model has no usable report", async () => {
+  mount("single", {
+    "/api/cost/by-model": [
+      { group: "bedrock", model: "known-model", cost: 40, reported_cost: 30, tokens: 100 },
+      { group: "bedrock", model: "other-model", cost: 12, reported_cost: 10, tokens: 100 },
+      { group: "bedrock", model: "unlisted-model", cost: null, reported_cost: null, unpriced: true, tokens: 50 },
+    ],
+  });
+  await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(3));
+  expect(cells("모델별 비용과 토큰").map((r) => [r[0], r[1], r[2], r.at(-1)])).toEqual([
+    ["known-model", "$30", "75.0%", "확인됨"],
+    ["other-model", "$10", "25.0%", "확인됨"],
+    ["unlisted-model", "확인 필요", "확인 필요", "확인 필요"],
+  ]);
+  expect(await exportTable("모델별 비용과 토큰")).toContain("unlisted-model,,,,0,0,확인 필요");
+});
+
+test("an unlisted model without a usable report keeps the user's known spend as a disclosed partial", async () => {
+  const rows = [
+    { user: "mixed", model: "claude-opus-5", group: "bedrock", cost: 2400, reported_cost: 2100, tokens: 1000 },
+    { user: "mixed", model: "unlisted-model", group: "bedrock", cost: null, reported_cost: null, unpriced: true, tokens: 50 },
+    { user: "missing", model: "unlisted-model", group: "bedrock", cost: null, reported_cost: null, unpriced: true, tokens: 40 },
+    { user: "known", model: "claude-opus-5", group: "enterprise", cost: 6, reported_cost: 5, tokens: 10 },
+  ];
+  const { container } = mount("ab", { "/api/cost/by-user-model": rows });
+  await waitFor(() => expect(cells("사용자 · 모델별 비용")).toHaveLength(3));
+  const table = cells("사용자 · 모델별 비용");
+  expect(table.map((r) => [r[0], r.at(-1)])).toEqual([["mixed", "부분합"], ["known", "확인됨"], ["missing", "확인 필요"]]);
+  expect(table[0][1]).toContain("$2,100부분합");
+  expect(table[2][1]).toContain("확인 필요");
+  const labels = [...container.querySelectorAll("[aria-label]")].map((d) => d.getAttribute("aria-label"));
+  expect(labels).toContain("bedrock $2,100 (부분합) — claude-opus-5 $2,100");
+  expect(labels).toContain("enterprise $5 — claude-opus-5 $5");
+  expect(screen.getByText("모델별 보고 비용 구성 · 보고 비용 확인 필요 사용자 1명 제외 · 부분합 사용자 1명 포함")).toBeTruthy();
+  const csv = await exportTable("사용자 · 모델별 비용");
+  expect(csv).toContain('mixed,"$2,100 — bedrock $2,100 (부분합)","1,050 — bedrock 1,050토큰",부분합');
+  expect(csv).toContain("missing,,40 — bedrock 40토큰,확인 필요");
+});
+
+test("summary with one usable and one unusable report shows the known subtotal labelled 부분합", async () => {
+  mount("ab", {
+    "/api/cost/summary": [summary, { ...summary, group: "enterprise", computed_cost: 10, reported_cost: 0 }],
+    "/api/overview/active-users": { users: 2, bedrock_users: 2, enterprise_users: 1 },
+  });
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
+  await waitFor(() => expect(card("총 비용").textContent).toContain("$6,647.79"));
+  expect(card("총 비용").textContent).toContain("알려진 보고 비용 부분합 · 일부 보고값 누락");
+  expect(card("30일 예상 비용").textContent).toContain("$99,716.85");
+  expect(card("30일 예상 비용").textContent).toContain("부분합 기준");
+  expect(card("개발자당 비용").textContent).toContain("$3,323.9");
+  expect(card("개발자당 비용").textContent).toContain("2명 기준 · 부분합 기준");
+  expect(card("사용자당 비용 — bedrock").textContent).toContain("$3,323.9");
+  expect(card("사용자당 비용 — bedrock").textContent).not.toContain("부분합");
+  expect(card("사용자당 비용 — enterprise").textContent).toContain("확인 필요");
+  expect(card("비교 기준 보고 비용").textContent).toContain("$6,647.79");
+  expect(card("비교 기준 보고 비용").textContent).toContain("부분합");
+  expect(card("토큰 단가 계산 비용").textContent).toContain("$7,827.28");
 });
 
 test("effort, agents and efficiency use reported spend with computed secondary diagnostics", async () => {
