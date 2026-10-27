@@ -247,7 +247,9 @@ const MAX_SNAPSHOT_RAW_RANGE_MS = 4 * 3600000;
 export function incFlatRaw(spanMs) {
   return spanMs <= MAX_SNAPSHOT_RAW_RANGE_MS;
 }
-export function incFlat(metricFilter = "", spanMs = Infinity) {
+// Opt-in observation evidence uses these same scans; lookback rows remain in Value
+// arithmetic but cannot establish a measured zero in the Cost summary.
+export function incFlat(metricFilter = "", spanMs = Infinity, includeObservation = false) {
   if (incFlatRaw(spanMs)) {
     // ToolName은 rollup에서만 실컬럼(code_edit_tool.decision의 tool_name을 접어놓음) — 원본
     // otel_metrics_sum에는 없어서 그대로 SELECT하면 "Unknown expression identifier"로 쿼리가
@@ -256,6 +258,7 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
       SELECT
           SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
           Attributes['tool_name'] AS ToolName,
+          ${includeObservation ? "max(TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime}) AS InWindow," : ""}
           if(temp = 2,
               greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
               sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
@@ -291,6 +294,7 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
   return `(
     SELECT
         SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
+        ${includeObservation ? "max(hh > toStartOfHour({from:DateTime}) OR from_hour_raw_observed > 0) AS InWindow," : ""}
         if(temp = 2,
             greatest(
                 maxIf(mv, hh < {to:DateTime})
@@ -303,6 +307,7 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
         SELECT hour AS hh, ${seriesKey} AS sk, SessionId, AggregationTemporality, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
             max_value AS mv, sum_value AS sv,
             0 AS from_hour_raw_baseline, 0 AS from_hour_raw_delta
+            ${includeObservation ? ", 0 AS from_hour_raw_observed" : ""}
         FROM claude_code.otel_metrics_sum_hourly
         WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
           ${metricFilter}
@@ -313,6 +318,7 @@ export function incFlat(metricFilter = "", spanMs = Infinity) {
             0 AS mv, 0 AS sv,
             maxIf(Value, TimeUnix < {from:DateTime}) AS from_hour_raw_baseline,
             sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR) AS from_hour_raw_delta
+            ${includeObservation ? ", countIf(TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime}) AS from_hour_raw_observed" : ""}
         FROM claude_code.otel_metrics_sum
         WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < toStartOfHour({from:DateTime}) + INTERVAL 1 HOUR
           ${metricFilter}
@@ -1203,9 +1209,8 @@ export async function toolMcpUsage(from, to, filters = {}) {
   );
 }
 
-// Cost 페이지: 그룹별 비용/토큰 요약. 비용은 토큰 실측 × 단가표(pricing.js)로 계산 —
-// Claude Code 자체 보고 비용(reported_cost)은 비교용으로만 같이 내려준다.
-// 단가는 모델별로 다르므로 SQL은 그룹+모델 단위로 집계하고, 그룹 합계는 JS에서 fold한다.
+// Model-grain summaries retain the strict report and computed diagnostics. Cost also gets
+// an explicitly partial known-report subtotal; one unavailable model cannot erase another.
 // excludeUnknown: false — kpiSummary와 동일한 이유(응답 전체 합계가 "총 지출/개발자당 지출"
 // 총계로 쓰인다, Cost.jsx/Executive.jsx). unknown을 빼면 activeUsers(unknown 포함) 대비
 // 분자가 작아져 개발자당 지출이 실제보다 낮게 나온다(리뷰에서 MAJOR로 확인).
@@ -1219,16 +1224,22 @@ export async function costSummary(from, to, filters = {}) {
         ${GROUP_EXPR} AS "group",
         ${normModel("m.Model")} AS model,
         ${TOKEN_SUMS},
+        countIf(m.MetricName = 'claude_code.cost.usage' AND m.InWindow) AS cost_counter_rows,
         sumIf(m.Value, m.MetricName = 'claude_code.session.count') AS sessions
     FROM ${incFlat(`AND MetricName IN (
         'claude_code.cost.usage', 'claude_code.token.usage', 'claude_code.session.count'
-      )`, to - from)} m
+      )`, to - from, true)} m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
     GROUP BY "group", model ORDER BY "group"`,
     { ...range(from, to, incFlatRaw(to - from)), ...f.params }
   );
+  return foldCostSummary(rows);
+}
+
+export function foldCostSummary(rows) {
   const byGroup = new Map();
+  const coverage = new Map();
   for (const r of withComputedCost(rows)) {
     if (!byGroup.has(r.group)) {
       byGroup.set(r.group, {
@@ -1242,6 +1253,7 @@ export async function costSummary(from, to, filters = {}) {
         unpriced_tokens: 0,
         sessions: 0,
       });
+      coverage.set(r.group, { total: 0, known: false, unknown: false });
     }
     const g = byGroup.get(r.group);
     g.computed_cost += r.cost || 0;
@@ -1256,8 +1268,25 @@ export async function costSummary(from, to, filters = {}) {
         Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens);
     }
     g.sessions += Number(r.sessions);
+    const c = coverage.get(r.group);
+    const hasTokens = ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"]
+      .some((key) => Number(r[key]) > 0);
+    const hasCounter = Number(r.cost_counter_rows) > 0;
+    const report = (typeof r.reported_cost === "number" ||
+      (typeof r.reported_cost === "string" && r.reported_cost.trim()))
+      ? Number(r.reported_cost) : NaN;
+    if (Number.isFinite(report) && report >= 0 && (report > 0 || (hasCounter && !hasTokens))) {
+      c.known = true;
+      c.total += report;
+    } else if (hasCounter || hasTokens) {
+      c.unknown = true;
+    }
   }
-  return [...byGroup.values()].sort((a, b) => a.group.localeCompare(b.group));
+  return [...byGroup.values()].map((g) => {
+    const c = coverage.get(g.group);
+    const total = Number.isFinite(c.total) && c.known ? c.total : null;
+    return { ...g, known_reported_cost: total, reported_partial: total !== null && c.unknown };
+  }).sort((a, b) => a.group.localeCompare(b.group));
 }
 
 // Cost 페이지: 모델별 비용/토큰. cost는 토큰 실측 × 단가표로 계산한 값, reported_cost는
