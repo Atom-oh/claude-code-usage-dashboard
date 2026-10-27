@@ -1,17 +1,16 @@
 import { logSelection } from "./codexInsightsLogs.js";
-import { parseCodexPricing, codexModelSql, CODEX_ROUTING_PATTERN } from "./codexPricing.js";
+import { parseCodexPricing, codexModelSql } from "./codexPricing.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS } from "./codexRequests.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
-import { backendSql, VALID_BACKENDS } from "./backend.js";
-import { resolvedRatesTable, NO_REGIONAL_PREMIUM, REGIONAL_MODEL_PATTERN } from "./pricing.js";
+import { backendSql } from "./backend.js";
+import { codexLogPricingSql } from "./codexLogPricing.js";
 import { normModel } from "./queries.js";
 import { completionUsage } from "./codexCompletionUsage.js";
 import { diagnosticAttributesSql } from "./codexDiagnosticSchema.js";
-import { diagnosticSelection, diagnosticSourceForRange } from "./codexDiagnosticSource.js";
+import { diagnosticSelection, diagnosticSourceForRange, diagnosticModelSessionsSql } from "./codexDiagnosticSource.js";
 
 const LIMIT = 50000;
 const DEFAULT_PRICES = parseCodexPricing(process.env.CODEX_PRICING_JSON);
-const CLAUDE_RATES = resolvedRatesTable(); // ADR-017 fallback rates.
 const FAMILIES = ["event", "usage", "effort", "scope", "operations", "latency", "tool", "approval", "runtime"];
 const FAMILY_BUDGET = Math.floor((LIMIT - FAMILIES.length) / FAMILIES.length);
 const TOKEN_KEYS = ["input", "read", "write", "output", "reasoning"];
@@ -49,65 +48,6 @@ function policy(value, allowed) {
     has(${strings(allowed)}, ${candidate}), ${candidate}, 'unknown')`;
 }
 
-// Query parameters travel in the request URL, which proxies and servers cap near 16 KiB. Rates
-// repeat heavily across models, tiers and backends, so one parameter per distinct value keeps
-// the price table's URL cost from growing with every model added.
-function rateParams(params, rates) {
-  const placeholder = (value) => {
-    const name = `rate${String(value).replace(/\W/g, "_")}`;
-    params[name] = value;
-    return `{${name}:Float64}`;
-  };
-  return Object.fromEntries(["input", "cacheRead", "cacheWrite", "output"].map((f) => [f, placeholder(rates[f])]));
-}
-
-function priceExpression(prices, params, claudeRates = CLAUDE_RATES) {
-  const cases = [];
-  Object.entries(prices).forEach(([model, entry], i) => {
-    params[`aggregateModel${i}`] = model;
-    params[`aggregateThreshold${i}`] = entry.short_context_limit;
-    for (const backendKey of [...VALID_BACKENDS, null]) {
-      const source = backendKey ? entry.backends?.[backendKey] : entry;
-      if (!source) continue;
-      for (const scope of ["regional", "global"]) for (const tier of ["short", "long"]) {
-        const rates = source[scope]?.[tier];
-        if (!rates) continue;
-        const rate = rateParams(params, rates);
-        const condition = `base_model = {aggregateModel${i}:String}
-          ${backendKey ? `AND backend = '${backendKey}'` : ""}
-          AND ${scope === "global" ? "" : "NOT "}startsWith(model, 'global.')
-          AND input_value ${tier === "short" ? "<=" : ">"} {aggregateThreshold${i}:UInt64}`;
-        const amount = `((input_value - read_value - write_value) * ${rate.input}
-          + read_value * ${rate.cacheRead} + write_value * ${rate.cacheWrite}
-          + output_value * ${rate.output}) / 1000000`;
-        cases.push(condition, amount);
-      }
-    }
-  });
-  const codexModelKeys = Object.keys(prices);
-  const notCodexEntry = codexModelKeys.length ? `NOT has(${strings(codexModelKeys)}, base_model)` : "1";
-  // Mirrors pricing.js regionalMultiplier() for the Claude-table fallback only: Claude rates are
-  // global, while Codex-table regional rates already include the regional fee.
-  const regional = `if(match(model, '${REGIONAL_MODEL_PATTERN.replace(/\\/g, "\\\\")}')
-    AND NOT has(${strings(NO_REGIONAL_PREMIUM)}, claude_model), 1.1, 1)`;
-  Object.entries(claudeRates).forEach(([model, entry], i) => {
-    params[`claudeModel${i}`] = model;
-    for (const backendKey of VALID_BACKENDS) {
-      const rates = entry.backends[backendKey];
-      const rate = rateParams(params, rates);
-      const condition = `claude_model = {claudeModel${i}:String} AND backend = '${backendKey}' AND ${notCodexEntry}`;
-      const amount = `${regional} * ((input_value - read_value - write_value) * ${rate.input}
-        + read_value * ${rate.cacheRead} + write_value * ${rate.cacheWrite}
-        + output_value * ${rate.output}) / 1000000`;
-      cases.push(condition, amount);
-    }
-  });
-  return cases.length ? `if(has_usage AND usage_valid AND backend IN ('bedrock-mantle','bedrock-runtime')
-    AND NOT startsWith(model, 'us-gov.')
-    AND NOT (backend = 'bedrock-mantle' AND match(model, '${CODEX_ROUTING_PATTERN.replace(/\\/g, "\\\\")}')),
-    multiIf(${cases.join(",")}, NULL), NULL)` : "CAST(NULL, 'Nullable(Float64)')";
-}
-
 /**
  * One log aggregation query supplies all log-derived summaries and their scope
  * evidence. The transferred rows are aggregate dimensions, not individual events.
@@ -129,7 +69,10 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
   // Count complete identities inside each compact group instead of retaining a
   // separate DISTINCT set of every large resource/attribute map in the window.
   const useStates = diagnosticOnly && diagnosticSource === "states";
-  const selected = useStates ? diagnosticSelection(from, to, filters) : logSelection(from, to, filters, false);
+  const hybridEffort = effortOnly && diagnosticSource === "states";
+  const selected = useStates ? diagnosticSelection(from, to, filters) : logSelection(from, to, filters, false,
+    hybridEffort ? { excludeBulk: true, modelEvidenceSql: diagnosticModelSessionsSql() } : {});
+  const bulk = hybridEffort ? diagnosticSelection(from, to, filters, { bulkOnly: true }) : null;
   const params = { ...selected.params };
   const tokenAttributes = ["input_token_count", "cached_token_count", "cache_write_token_count",
     "output_token_count", "reasoning_token_count"];
@@ -143,7 +86,8 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
   ].join(",\n");
   const tokens = TOKEN_KEYS.map(key =>
     `${diagnosticOnly ? "CAST(NULL, 'Nullable(Float64)')" : integer(`${key}_number`)} AS ${key}_raw`).join(",\n");
-  const priced = diagnosticOnly ? "CAST(NULL, 'Nullable(Float64)')" : priceExpression(prices, params);
+  const pricing = diagnosticOnly ? null : codexLogPricingSql(prices, params);
+  const priced = pricing?.amount || "CAST(NULL, 'Nullable(Float64)')";
   const group = (kind, condition, keys) =>
     `if(${condition}, tuple('${kind}', toJSONString([${keys.join(",")}])), tuple('', ''))`;
   const groups = [
@@ -152,7 +96,8 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
     group("effort", "has_usage", [safeText("attributes['model_reasoning_effort']")]),
     group("scope", "NOT bulk OR session != ''",
       ["session", "user", "backend", "project", "model", "if(session = '', timestamp, '')"]),
-    group("operations", "NOT bulk", []),
+    group("operations", profile === "tools" ? "event = 'codex.tool_decision'"
+      : profile === "performance" ? "is_request OR (stream AND event_kind = 'response.failed')" : "NOT bulk", []),
     group("latency", "latency_name != '' AND isNotNull(duration)", ["latency_name"]),
     group("tool", "event = 'codex.tool_result'", [safeText("attributes['tool_name']")]),
     group("approval", "event = 'codex.tool_decision'",
@@ -182,12 +127,15 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
           'conversation.id',attributes['conversation.id'],'model',attributes['model']${!latency ? "" : `,
           'duration_ms',attributes['duration_ms']`}),attributes) AS compact_attributes`}
       FROM selected WHERE startsWith(attributes['event.name'], 'codex.')
-    ), compacted AS (
+    ), ${hybridEffort ? "compacted_raw" : "compacted"} AS (
       SELECT max(compact_source.timestamp) AS timestamp, min(compact_source.timestamp) AS first_timestamp,
         uniqExact(tuple(compact_source.timestamp,compact_source.resource,compact_source.attributes)) AS weight,
         compact_resource AS resource, compact_attributes AS attributes
       FROM compact_source GROUP BY identity_time, compact_resource, compact_attributes
-    )`;
+    )${hybridEffort ? `, compacted AS (
+      SELECT * FROM compacted_raw
+      UNION ALL ${bulk.sql}
+    )` : ""}`;
   return { params, omittedSections: FAMILIES.filter(family => !families.includes(family)),
     sql: `WITH ${source}, parsed AS (
       SELECT *, ${parsed} FROM compacted
@@ -234,10 +182,12 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEF
         ${diagnosticOnly ? "''" : codexModelSql("model")} AS base_model,
         ${diagnosticOnly ? "''" : normModel("model")} AS claude_model
       FROM typed
-    ), priced AS (
+    )${pricing ? `, rated AS (
+      SELECT *, ${pricing.selection} AS price_row FROM values
+    )` : ""}, priced AS (
       SELECT *, ${priced} AS amount,
         if(isFinite(amount * 1e12), floor(amount * 1e12 + 0.5) / 1e12, NULL) AS cost_value
-      FROM values
+      FROM ${pricing ? "rated" : "values"}
     ), grouped_source AS (
       SELECT *, category.1 AS family, category.2 AS dimensions
       FROM priced ARRAY JOIN arrayFilter(x -> x.1 != '', [${groups.join(",\n")}]) AS category

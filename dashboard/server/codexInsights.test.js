@@ -20,7 +20,7 @@ const usageRows = [
 ];
 const diagnostic = sql => sql.includes("codex_metrics_") || sql.includes("FROM claude_code.otel_traces");
 
-test("configured diagnostic states activate only for covered tools/performance ranges and remain required logs", () => {
+test("configured diagnostic states activate for covered diagnostic and hybrid effort ranges and remain required logs", () => {
   const script = `
     import assert from "node:assert/strict";
     import { codexInsights } from "./codexInsights.js";
@@ -47,7 +47,7 @@ test("configured diagnostic states activate only for covered tools/performance r
   }));
   assert.deepEqual(results, [
     { profile: "default", queries: 6, states: false, metrics: "empty", traces: "empty" },
-    { profile: "effort", queries: 1, states: false, metrics: "not_requested", traces: "not_requested" },
+    { profile: "effort", queries: 1, states: true, metrics: "not_requested", traces: "not_requested" },
     { profile: "tools", queries: 1, states: true, metrics: "not_requested", traces: "not_requested" },
     { profile: "performance", queries: 5, states: true, metrics: "empty", traces: "not_requested" },
   ]);

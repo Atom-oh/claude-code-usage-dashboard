@@ -35,6 +35,14 @@ test("every default price entry yields a parameter for each of its rates", () =>
   }
 });
 
+test("the rate catalog selects rates before evaluating one token pricing expression", () => {
+  const { sql } = buildCodexLogAggregateQuery(new Date("2026-09-14T00:00:00Z"),
+    new Date("2026-09-15T00:00:00Z"), {}, undefined, { profile: "effort" });
+  assert.equal((sql.match(/input_value - read_value - write_value/g) || []).length, 1);
+  assert.match(sql, /arrayFirst\(/);
+  assert.match(sql, /AS price_row/);
+});
+
 test("shared diagnostic profiles omit pricing and unrelated log aggregate families", () => {
   const from = new Date("2026-09-14T00:00:00Z"), to = new Date("2026-09-15T00:00:00Z");
   for (const [profile, included, omitted] of [
@@ -69,6 +77,39 @@ test("diagnostic states bypass raw maps and finalize merged identities before we
   }
 });
 
+test("verified effort source excludes raw bulk before dedup and reuses exact diagnostic weights", () => {
+  const from = new Date("2026-10-01T00:00:15Z"), to = new Date("2026-10-26T00:00:45Z");
+  const { sql, params } = buildCodexLogAggregateQuery(from, to,
+    { user: "fixture'", model: "needle-model-quote'", backend: "bedrock-mantle" }, undefined,
+    { profile: "effort", diagnosticSource: "states" });
+  assert.match(sql, /FROM claude_code\.codex_diagnostic_events_v1 FINAL/);
+  assert.match(sql, /FROM claude_code\.otel_logs\s+PREWHERE/);
+  assert.match(sql, /NOT \(a\['event.name'\] IN \('codex.sse_event','codex.websocket_event'\)/);
+  assert.match(sql, /finalizeAggregation\(Identities\) AS weight/);
+  assert.match(sql, /uniqExact\(tuple\(compact_source.timestamp,compact_source.resource,compact_source.attributes\)\)/);
+  assert.match(sql, /UNION ALL/);
+  assert.match(sql, /AS prompt_length/);
+  assert.match(sql, /AS input_number/);
+  assert.doesNotMatch(sql, /fixture'|needle-model-quote'/);
+  assert.equal(params.clientUser, "fixture'");
+});
+
+test("unverified effort queries retain the full raw source", () => {
+  const { sql } = buildCodexLogAggregateQuery(new Date("2026-09-14T00:00:00Z"),
+    new Date("2026-09-15T00:00:00Z"), {}, undefined, { profile: "effort", diagnosticSource: "raw" });
+  assert.doesNotMatch(sql, /codex_diagnostic_events_v1|PREWHERE|UNION ALL/);
+  assert.match(sql, /FROM claude_code\.otel_logs/);
+});
+
+test("diagnostic operation families select only consumed outcomes while retaining every event", () => {
+  const from = new Date("2026-09-14T00:00:00Z"), to = new Date("2026-09-15T00:00:00Z");
+  const tools = buildCodexLogAggregateQuery(from, to, {}, undefined, { profile: "tools" }).sql;
+  const performance = buildCodexLogAggregateQuery(from, to, {}, undefined, { profile: "performance" }).sql;
+  assert.match(tools, /if\(event = 'codex.tool_decision', tuple\('operations'/);
+  assert.match(performance, /if\(is_request OR \(stream AND event_kind = 'response.failed'\), tuple\('operations'/);
+  for (const sql of [tools, performance]) assert.match(sql, /if\(1, tuple\('event'/);
+});
+
 test("diagnostic raw fallback groups only displayed attributes and retains exact full identities", () => {
   const from = new Date("2026-10-01T00:00:15Z"), to = new Date("2026-10-26T00:00:45Z");
   const { sql } = buildCodexLogAggregateQuery(from, to, {}, undefined,
@@ -86,6 +127,7 @@ test("default and effort profiles keep their raw usage source even when diagnost
     const { sql } = buildCodexLogAggregateQuery(from, to, {}, undefined,
       { profile, diagnosticSource: "states" });
     assert.match(sql, /FROM claude_code\.otel_logs/);
-    assert.doesNotMatch(sql, /codex_diagnostic_events_v1/);
+    if (profile === "effort") assert.match(sql, /codex_diagnostic_events_v1 FINAL/);
+    else assert.doesNotMatch(sql, /codex_diagnostic_events_v1/);
   }
 });

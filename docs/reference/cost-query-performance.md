@@ -50,8 +50,26 @@ identity states instead of raw maps, after `CODEX_DIAGNOSTIC_READ_FROM` is
 verified. `FINAL` merges repeated insertion/backfill states before finalizing
 weights. All stream durations, event counts and filter semantics remain.
 Unconfigured or earlier ranges retain a compact raw fallback; removing hidden
-breakdowns alone does not eliminate its scanned bytes. Default/Effort remain
-raw. See the [diagnostic cutover](../runbooks/codex-diagnostic-schema.md).
+breakdowns alone does not eliminate its scanned bytes. Default insights remain raw.
+Covered Effort ranges combine exact diagnostic weights for intermediate stream
+events with a raw branch excluding those events before full-identity deduplication.
+The raw branch preserves prompt lengths, completion token encodings and exact
+anonymous timestamps. Both sources share the existing aggregate/fold contract;
+diagnostic model-session presence is selected before backend filtering. User
+selection precedes diagnostic state payload reads. Tools/performance operational
+families aggregate only decisions or request/failure outcomes respectively,
+while event coverage still includes every selected identity.
+No schema, collection, storage or deadline changes are required. This reduces
+deduplication work; raw attribute filtering and state merges can still be expensive.
+See the [diagnostic cutover](../runbooks/codex-diagnostic-schema.md).
+
+Codex log pricing uses an ordered, bound rate catalog and one token arithmetic
+expression. Backend-specific entries precede generic entries, short/long tiers
+retain the inclusive short-context limit, and Codex entries still prevent an
+unpriced scope from falling through to Claude fallback rates. The Claude regional
+premium applies only to fallback rates. Missing or invalid usage remains unpriced.
+This reduces expression expansion during query planning; it does not eliminate
+the retained raw-map scan or establish a monthly latency/capacity target.
 
 High-volume intermediate stream events also carry counts, latency and scope
 coverage. Repeated cumulative exports preserve observation/baseline evidence.
