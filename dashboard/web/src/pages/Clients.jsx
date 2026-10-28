@@ -16,6 +16,7 @@ import { useRange } from "../RangeContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { costDefaultResolution, costResolutionLabel, costResolutionOptions } from "../costResolution.js";
+import CostBreakdowns from "../components/CostBreakdowns.jsx";
 
 const INSIGHT_SECTIONS = {
   productivity: ["효율·Effort"], cost: ["효율·Effort"], usage: ["도구·승인"],
@@ -60,6 +61,15 @@ export default function Clients({ page = "overview" }) {
   const hasUnpricedCost = data?.totals?.cost_partial === true || quality.unpriced > 0 || data?.totals?.unpriced > 0;
   const empty = data?.observed_records === 0 && !data?.timeseries?.length;
   const sections = INSIGHT_SECTIONS[page];
+  const effortBounds = data?.effective_range?.from && data?.effective_range?.to
+    ? { from: data.effective_range.from, to: data.effective_range.to } : {};
+  const effortEnabled = page === "cost" && !loading && !error && Boolean(effortBounds.from);
+  const claudeEffort = useApi("/api/clients/claude-effort", { client: "claude", ...effortBounds },
+    effortEnabled && clients.includes("claude"), { linkedRange: true, hold: stale });
+  const codexEffort = useApi("/api/codex/insights", { client: "codex", profile: "effort", ...effortBounds },
+    effortEnabled && clients.includes("codex"), { linkedRange: true, hold: stale });
+  const breakdowns = page === "cost" ? <CostBreakdowns clients={clients} data={data}
+    loading={loading} error={error} empty={empty} claudeEffort={claudeEffort} codexEffort={codexEffort} /> : null;
 
   return <div data-client-page={page}>
     <PageHeader title={definition.label}
@@ -102,10 +112,12 @@ export default function Clients({ page = "overview" }) {
       {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
         : <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}`}
           page={page} data={data} clients={clients} stale={stale}
-          previous={page === "trends" ? previous : undefined} /></section>}
+          previous={page === "trends" ? previous : undefined} breakdowns={breakdowns} /></section>}
+      {(loading || error || empty) && breakdowns}
       {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
       {sections && clients.includes("codex") && <CodexInsights sections={sections}
-        range={!loading && !error ? data?.effective_range : null} enabled={!loading} hold={stale} />}
+        range={!loading && !error ? data?.effective_range : null} enabled={page === "cost" ? effortEnabled : !loading}
+        hold={stale} api={page === "cost" ? { ...codexEffort, error: error || codexEffort.error } : undefined} />}
       {(page === "productivity" || page === "analytics") &&
         <Card title="지표 지원 범위">
           <p className="text-sm text-ink-600">

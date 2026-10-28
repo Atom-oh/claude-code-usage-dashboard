@@ -52,12 +52,22 @@ const milliseconds = (value) => value == null ? "—" : `${formatObserved(value)
 const partialHint = (rows, name) => rows?.some((r) => r.name === name && r.partial)
   ? "일부 원본 통계 미확인" : undefined;
 
-export default function CodexInsights({ range, enabled = true, hold = false, sections }) {
+export default function CodexInsights(props) {
+  return props.api ? <CodexInsightsBody {...props} /> : <RequestedCodexInsights {...props} />;
+}
+
+function RequestedCodexInsights({ range, enabled = true, hold = false, sections }) {
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
   const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
   const profile = allowedTabs.length === 1 ? PROFILES[allowedTabs[0]] : undefined;
-  const { data, loading, error, stale } = useApi("/api/codex/insights",
+  const api = useApi("/api/codex/insights",
     { client: "codex", ...bounds, ...(profile ? { profile } : {}) }, enabled, { linkedRange: true, hold });
+  return <CodexInsightsBody api={api} enabled={enabled} sections={sections} />;
+}
+
+function CodexInsightsBody({ api, enabled = true, sections }) {
+  const { data, loading, error, stale } = api;
+  const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
   const [preferredTab, setTab] = useState(TABS[0]);
   const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
   const [search, setSearch] = useState("");
@@ -69,7 +79,7 @@ export default function CodexInsights({ range, enabled = true, hold = false, sec
         <h2 id="codex-insights-heading" className="text-xl font-semibold text-ink-800">Codex 상세 관측</h2>
         <p className="mt-1 text-sm text-ink-600">Codex 비용은 AWS 정가 추정입니다. 실행 관측값은 실청구·코드 품질·절감 시간을 뜻하지 않습니다.</p>
       </div>
-      {!enabled || loading ? <Loading /> : error ? <ErrorBox error={error} /> : (
+      {error ? <ErrorBox error={error} /> : !enabled || loading ? <Loading /> : (
         <>
           {data?.range && <p className="text-sm text-ink-600">
             상세 조회 구간: {formatClientTimestamp(data.range.from)} ~ {formatClientTimestamp(data.range.to)} (브라우저 시간)

@@ -1,5 +1,6 @@
 import express from "express";
 import { codexInsights, validateInsightsProfile } from "./codexInsights.js";
+import { claudeEffort, validateClaudeEffort } from "./claudeEffort.js";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -263,8 +264,9 @@ function validateModelTime(raw) {
     throw new ValidationError("invalid modelTime", "modelTime accepts only 1");
 }
 function cacheKey(path, query) {
-  if (path === "/api/clients/overview" || path === "/api/codex/insights") {
-    const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"] : clientConfig.enabledClients);
+  if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort") {
+    const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
+      : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
       client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend,
       userExact: filters.userExact, modelExact: filters.modelExact,
@@ -360,6 +362,9 @@ route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
     if (raw.userExact !== undefined || raw.modelExact !== undefined)
       throw new ValidationError("unsupported filter", "exact drilldowns require /api/clients/overview");
   } });
+
+route("/api/clients/claude-effort", (from, to, raw) => claudeEffort(from, to, raw),
+  { client: "claude", warm: false, validate: validateClaudeEffort });
 
 // ── 캐시 warmer ──────────────────────────────────────────────────────────
 // Shared full/cost defaults are warmed first. Legacy views join the plan only after

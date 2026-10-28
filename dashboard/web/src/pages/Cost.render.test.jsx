@@ -30,7 +30,7 @@ const ROWS = [
   { user: "b@x.com", group: "unknown", model: "titan-text-lite", cost: null, reported_cost: 3, tokens: 300, unpriced: true },
 ];
 
-function mount(groupMode, responses = {}, pricing = { cacheWriteTtl: "5m", overriddenModels: [] }, path = "/cost") {
+function mount(groupMode, responses = {}, pricing = { cacheWriteTtl: "5m", overriddenModels: [] }, path = "/cost", requestOverride) {
   setPiiMask(false);
   // /api/config는 객체, /api/health/data는 status를 가진 객체, 나머지는 배열 — shape가 다르므로
   // 하나로 뭉뚱그리면 렌더 중에 터진다(App.test.jsx와 같은 규칙).
@@ -39,6 +39,8 @@ function mount(groupMode, responses = {}, pricing = { cacheWriteTtl: "5m", overr
     vi.fn((url) => {
       const u = String(url);
       const path = u.split("?")[0];
+      const override = requestOverride?.(path);
+      if (override !== undefined) return override;
       const body = Object.hasOwn(responses, path) ? responses[path] : u.startsWith("/api/config")
         ? { piiMask: false, groupMode, schema: {} }
         : u.startsWith("/api/health/data")
@@ -70,6 +72,25 @@ const headers = (container) => [...container.querySelectorAll("th")].map((th) =>
 // 스택 바 줄은 aria-label을 가진 유일한 요소다(BarTip) — 텍스트가 없어 role/text 조회로는 잡히지 않는다.
 // 상세 툴팁은 hover 시 fixed로 뜨는 커스텀(BarTip)이고, 같은 문자열이 aria-label로 상시 노출된다.
 const mirrorBars = (container) => [...container.querySelectorAll("[aria-label]")].filter((d) => (d.getAttribute("aria-label") || "").includes("bedrock"));
+
+test.each([
+  ["/api/cost/effort-mix", "Effort 수준별 보고 비용", "loading"],
+  ["/api/cost/effort-mix", "Effort 수준별 보고 비용", "error"],
+  ["/api/cost/by-model", "모델별 비용 비중", "loading"],
+  ["/api/cost/by-model", "모델별 비용 비중", "error"],
+  ["/api/cost/summary", "토큰 유형별 사용량", "loading"],
+  ["/api/cost/summary", "토큰 유형별 사용량", "error"],
+])("Claude detail keeps card headings for %s (%s) during %s", async (endpoint, heading, state) => {
+  mount("ab", {}, undefined, "/cost", (path) => path === endpoint
+    ? state === "loading" ? new Promise(() => {})
+      : Promise.resolve({ ok: false, status: 500, json: async () => ({}) }) : undefined);
+  for (const group of ["bedrock", "enterprise"]) {
+    const title = await screen.findByText(`${heading} — ${group}`, { exact: true });
+    await waitFor(() => expect(title.closest(".shadow-card").textContent).toContain(
+      state === "loading" ? "불러오는 중..." : "데이터를 불러오지 못했습니다."));
+    expect(title.closest(".shadow-card").querySelector(".shadow-card")).toBeNull();
+  }
+});
 
 test("그룹별 모델 스택 바 두 줄: 줄=그룹, 색 분할=모델, 길이는 컬럼 최대 그룹 줄 대비", async () => {
   const { container } = mount("ab");
