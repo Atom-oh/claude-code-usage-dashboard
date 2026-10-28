@@ -46,7 +46,7 @@ function CellBar({ value, max, color }) {
   );
 }
 
-export function DataTable({ columns, rows, groupKey = "group", title, subtitle, help, right, onRowClick, exportName, stale = false }) {
+export function DataTable({ columns, rows, groupKey = "group", title, subtitle, help, right, onRowClick, isRowSelected, exportName, stale = false }) {
   const [sort, setSort] = useState(null);
 
   const sortedRows = useMemo(() => {
@@ -125,7 +125,8 @@ export function DataTable({ columns, rows, groupKey = "group", title, subtitle, 
               <tr
                 key={i}
                 onClick={onRowClick ? () => onRowClick(r) : undefined}
-                className={`border-t border-ink-100 hover:bg-ink-50 ${onRowClick ? "cursor-pointer" : ""}`}
+                data-selected={isRowSelected?.(r) ? "true" : undefined}
+                className={`border-t border-ink-100 hover:bg-ink-50 ${onRowClick ? "cursor-pointer" : ""} ${isRowSelected?.(r) ? "bg-brand-50" : ""}`}
               >
                 {columns.map((c) => {
                   const content = c.key === groupKey ? <GroupChip group={r[groupKey]} /> : c.render ? c.render(r[c.key], r) : r[c.key];

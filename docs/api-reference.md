@@ -488,8 +488,9 @@ respectively, not raw exports. They use the existing raw/rollup window boundarie
 Cost omits explicitly historical-only model rows before computing current model shares.
 The Claude detail Cost page uses these subtotals, discloses partial chart totals,
 lists unavailable chart scopes, and exports cost status for its tables.
-Summary-derived averages retain partial labels; efficiency $/LOC and $/commit remain
-null when any included model lacks a usable report. Executive and other strict
+Summary-derived averages retain partial labels; the API's efficiency $/LOC and $/commit
+remain null when any included model lacks a usable report, while Cost divides the known
+subtotal and labels the result partial (ADR-013). Executive and other strict
 consumers retain their existing report selection. These fields do not
 recover an unavailable model's sessions or establish complete collection.
 

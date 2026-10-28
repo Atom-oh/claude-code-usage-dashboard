@@ -439,6 +439,7 @@ test("agent and efficiency amounts disclose partial coverage in the table and CS
     "/api/users/cost-efficiency": [
       { user: "partial@example.invalid", group: "bedrock", reported_cost: 6, reported_unpriced: true, known_reported_cost: 6, reported_partial: true, computed_cost: 99, loc: 10, commits: 2, cost_per_loc: null, cost_per_commit: null },
       { user: "complete@example.invalid", group: "bedrock", reported_cost: 2, known_reported_cost: 2, reported_partial: false, loc: 10, commits: 2, cost_per_loc: 0.2, cost_per_commit: 1 },
+      { user: "unknown@example.invalid", group: "bedrock", reported_cost: 0, reported_unpriced: true, known_reported_cost: null, reported_partial: false, loc: 10, commits: 2, cost_per_loc: null, cost_per_commit: null },
     ],
   });
   await waitFor(() => expect(cells("에이전트별 비용")).toHaveLength(2));
@@ -446,12 +447,13 @@ test("agent and efficiency amounts disclose partial coverage in the table and CS
   expect(cells("에이전트별 비용")[1]).toEqual(["unknown", "bedrock", "확인 필요", "10", "확인 필요"]);
   const efficiency = cells("비용 효율 ($/LOC · $/커밋)");
   expect(efficiency[0][0]).toBe("complete@example.invalid");
-  expect(efficiency[1]).toEqual(["partial@example.invalid", "bedrock", "$6부분합", "10", "2", "확인 필요", "확인 필요", "부분합"]);
+  expect(efficiency[1]).toEqual(["partial@example.invalid", "bedrock", "$6부분합", "10", "2", "$0.6000부분합", "$3부분합", "부분합"]);
+  expect(efficiency[2].slice(5, 7)).toEqual(["확인 필요", "확인 필요"]);
   const agentCsv = await exportTable("에이전트별 비용");
   expect(agentCsv).toContain("mixed,bedrock,5,20,부분합");
   expect(agentCsv).toContain("unknown,bedrock,,10,확인 필요");
   const efficiencyCsv = await exportTable("비용 효율 ($/LOC · $/커밋)");
-  expect(efficiencyCsv).toContain("partial@example.invalid,bedrock,6,10,2,,,부분합");
+  expect(efficiencyCsv).toContain("partial@example.invalid,bedrock,6,10,2,0.6,3,부분합");
   expect(efficiencyCsv).not.toContain("99");
   expect(agentCsv).not.toContain("99");
 });
@@ -577,19 +579,21 @@ function LocationSpy() { location = useLocation(); return null; }
 // One model across three days: one stacked area and three known bucket marks.
 const DAILY = ["2026-09-01", "2026-09-02", "2026-09-03"].map((day) => ({ day, group: "bedrock", model: "m1", cost: 1, reported_cost: 1 }));
 const MODELS = [{ group: "bedrock", model: "m1", cost: 3, reported_cost: 3, tokens: 10 }];
+const USER_MODELS = [{ user: "u@x.com", group: "bedrock", model: "m1", cost: 3, reported_cost: 3, tokens: 10 }];
 function mountHeld() {
   setPiiMask(false);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 300, top: 0, left: 0, right: 800, bottom: 300, x: 0, y: 0 });
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   const held = [];
-  const gate = { models: false };
+  const gate = { models: false, userModels: false };
   vi.stubGlobal("fetch", vi.fn((url) => {
     const u = new URL(String(url), "http://localhost");
     const body = u.pathname === "/api/health/data" ? { status: "ok", latest: null, ageMinutes: 0, staleAfterMinutes: 360 }
-      : u.pathname === "/api/cost/by-model-daily" ? DAILY : u.pathname === "/api/cost/by-model" ? MODELS : [];
+      : u.pathname === "/api/cost/by-model-daily" ? DAILY : u.pathname === "/api/cost/by-model" ? MODELS : u.pathname === "/api/cost/by-user-model" ? USER_MODELS : [];
     if (u.pathname === "/api/cost/by-model-daily" && u.searchParams.get("intervalHours") === "1")
       return new Promise((resolve) => held.push({ u, resolve }));
     if (gate.models && u.pathname === "/api/cost/by-model") return new Promise((resolve) => held.push({ u, resolve }));
+    if (gate.userModels && u.pathname === "/api/cost/by-user-model") return new Promise((resolve) => held.push({ u, resolve }));
     return Promise.resolve({ ok: true, status: 200, json: async () => body });
   }));
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
@@ -657,4 +661,38 @@ test("a period change disables CSV export until the new rows arrive", async () =
   const req = held.find((h) => h.u.pathname === "/api/cost/by-model");
   await act(async () => req.resolve({ ok: true, status: 200, json: async () => MODELS }));
   await waitFor(() => expect(csvButton("모델별 비용과 토큰").disabled).toBe(false));
+});
+
+test("clicking a model row opens a per-user share panel beside the table and toggles it closed", async () => {
+  mount("single", {
+    "/api/cost/by-model": [{ group: "bedrock", model: "claude-sonnet-5", cost: 20, reported_cost: 20, tokens: 1500 }],
+  });
+  await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(1));
+  const row = within(card("모델별 비용과 토큰")).getAllByRole("row")[1];
+  fireEvent.click(row);
+  const panel = screen.getByText(/— 사용자별 비용$/).closest(".rounded-lg");
+  expect(panel.textContent).toContain("a@x.com");
+  expect(panel.textContent).toContain("$16");
+  expect(panel.textContent).toContain("100.0%");
+  expect(panel.textContent).not.toContain("사용자 ID 없음");
+  expect(row.getAttribute("data-selected")).toBe("true");
+  fireEvent.click(row);
+  expect(screen.queryByText(/— 사용자별 비용$/)).toBeNull();
+});
+
+test("a period change holds the model user panel until the user rows are for the new period", async () => {
+  const { held, gate } = mountHeld();
+  await dailyChart();
+  fireEvent.click(within(screen.getByText("모델별 비용과 토큰", { exact: true }).closest(".rounded-lg")).getAllByRole("row")[1]);
+  const panel = () => screen.getByText(/— 사용자별 비용$/).closest(".rounded-lg");
+  await waitFor(() => expect(panel().textContent).toContain("100.0%"));
+  gate.userModels = true;
+  fireEvent.click(screen.getByRole("button", { name: "30일", exact: true }));
+  await act(async () => {});
+  expect(panel().textContent).toContain("불러오는 중");
+  expect(panel().textContent).not.toContain("100.0%");
+  const pending = held.filter((h) => h.u.pathname === "/api/cost/by-user-model");
+  expect(pending.length).toBeGreaterThan(0);
+  await act(async () => { for (const h of pending) h.resolve({ ok: true, status: 200, json: async () => USER_MODELS }); });
+  await waitFor(() => expect(panel().textContent).toContain("100.0%"));
 });
