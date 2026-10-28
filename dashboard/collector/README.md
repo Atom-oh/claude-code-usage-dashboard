@@ -12,6 +12,7 @@ Python 3.9/3.10 use the included MIT-licensed Tomli parser.
 |---|---|
 | Personal Mac or EC2 without a Collector | Follow Install below. |
 | Already using this device-token package | Rerun installation with a replacement token and the same attribution ID. |
+| Installed before automatic token renewal | See Automatic token renewal below. |
 | Legacy personal macOS Collector (`com.ccdash.otelcol`) | Run Install; confirm the installer's migration prompt. |
 | Legacy Linux Collector | Follow Migrate a legacy local Collector below first. |
 | Workshop EC2 prepared by the organizer | Use the prepared clients; do not install a second Collector or issue an individual token. |
@@ -126,6 +127,26 @@ Then check actual usage with the intended dashboard time, client, and user filte
 queues or local health alone do not prove complete or successful telemetry.
 Linux logs use `journalctl --user -u ccdash-collector`; macOS logs are in
 `~/.local/share/ccdash-collector/collector.log`.
+
+## Automatic token renewal
+
+Installation schedules `install.py renew`: a daily `ccdash-collector-renew.timer` (up to two
+hours of random delay) on Linux, or the `org.ccdash.collector.renew` LaunchAgent every six
+hours and at login on macOS. Within seven days of expiry the dashboard returns a replacement
+token; the renewer saves it privately and restarts the Collector, keeping its queue. The old
+token stops working once the replacement is first used. Failed attempts retry on the next
+run. `status` shows `renewalScheduled` and `lastRenewal`; the device list shows expiry and
+the last renewal. `renew` exits 0 (current or renewed), 1 (retry later) or 2 (rejected).
+
+Earlier installations enable renewal by rerunning the latest installer once:
+
+```bash
+python3 install.py install --endpoint 'https://YOUR-DASHBOARD/api/ingest' \
+  --user-id 'YOUR-EXISTING-ID' --token-file "$HOME/.local/share/ccdash-collector/token"
+```
+
+A device that is off or cannot renew for 30 days expires. Renewal continues until the device
+is revoked, so revoke devices explicitly when offboarding.
 
 ## Migrate a legacy local Collector
 
@@ -271,6 +292,7 @@ Revoke the unused new device token in the dashboard.
 | Missing archive or `install.py` | Use the directory containing the download/extracted package. |
 | Download or connection failure | Check HTTPS access to GitHub and the configured dashboard; retain TLS verification. |
 | Expired/revoked token or authentication failure | Register a replacement device, install with its token, verify receipt, then revoke the old device. |
+| `renew` exits 2 or `lastRenewal` is `unauthorized` | The token expired, was revoked or was superseded; replace the device as above. |
 | Healthy local service but no receipt | Restart clients, perform work, inspect exporter errors, check filters, and refresh the device list. |
 | `unmanaged Codex [otel] conflicts` | Privately back up `~/.codex/config.toml`. Explicitly migrate only its OTel table to the loopback exporters in `generated/configure-client-telemetry.py`; keep model/provider/login settings. |
 | `unmanaged Claude telemetry conflicts` | For the verified legacy macOS service, download the latest package and approve migration. Otherwise review the exporter owner and endpoints, then add `--replace-claude-telemetry` to the install command only if replacing those telemetry settings and clearing old telemetry headers is intended. This option does not stop unknown services. Do not delete `settings.json`. |
@@ -299,7 +321,7 @@ drop data; token expiry/revocation prevents further delivery.
 python3 "$HOME/.local/share/ccdash-collector/install.py" uninstall
 ```
 
-Uninstall stops/removes the managed service and removes the local token. Revoke
+Uninstall stops/removes the managed service, renewal schedule, local token and renewal state. Revoke
 the device in the dashboard too. Client settings and private backups remain for
 review: restore a matching `.ccdash-backup-*` file or remove only the managed
 Codex telemetry block and Claude OTEL settings, keeping models/authentication.
