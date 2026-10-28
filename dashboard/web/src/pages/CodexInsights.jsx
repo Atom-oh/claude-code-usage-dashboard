@@ -52,12 +52,22 @@ const milliseconds = (value) => value == null ? "—" : `${formatObserved(value)
 const partialHint = (rows, name) => rows?.some((r) => r.name === name && r.partial)
   ? "일부 원본 통계 미확인" : undefined;
 
-export default function CodexInsights({ range, enabled = true, hold = false, sections }) {
+export default function CodexInsights(props) {
+  return props.api ? <CodexInsightsBody {...props} /> : <RequestedCodexInsights {...props} />;
+}
+
+function RequestedCodexInsights({ range, enabled = true, hold = false, sections }) {
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
   const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
   const profile = allowedTabs.length === 1 ? PROFILES[allowedTabs[0]] : undefined;
-  const { data, loading, error, stale } = useApi("/api/codex/insights",
+  const api = useApi("/api/codex/insights",
     { client: "codex", ...bounds, ...(profile ? { profile } : {}) }, enabled, { linkedRange: true, hold });
+  return <CodexInsightsBody api={api} enabled={enabled} sections={sections} />;
+}
+
+function CodexInsightsBody({ api, enabled = true, sections }) {
+  const { data, loading, error, stale } = api;
+  const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
   const [preferredTab, setTab] = useState(TABS[0]);
   const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
   const [search, setSearch] = useState("");

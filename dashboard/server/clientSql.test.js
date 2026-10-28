@@ -802,6 +802,8 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         { session: "detail-idle-known", effort: "idle-mixed", agent: "idle-mixed", amount: 3, tokens: 10, model: "global.anthropic.claude-sonnet-5" },
         { session: "detail-idle-missing", effort: "idle-mixed", agent: "idle-mixed", amount: null, tokens: 0, model: "global.anthropic.fixture-idle-unpriced" },
         { session: "detail-idle-unknown", effort: "idle-unknown", agent: "idle-unknown", amount: null, tokens: 0, model: "global.anthropic.fixture-idle-unpriced" },
+        { session: "shared-known", effort: "shared-scope", agent: "shared-scope", amount: 4, tokens: 7, model: "global.anthropic.claude-sonnet-5" },
+        { session: "shared-missing", effort: "shared-scope", agent: "shared-scope", amount: null, tokens: 7, model: "global.anthropic.claude-sonnet-5" },
       ];
       for (const fixture of fixtures) {
         for (const [metric, type, amount] of [
@@ -828,6 +830,21 @@ test("real ClickHouse client aggregation preserves transport identity and counte
         assert.equal(efforts.find((r) => r.effort === "low").known_reported_cost, 0);
         assertFields(efforts.find((r) => r.effort === "idle-mixed"), { known_reported_cost: 3, reported_partial: true });
         assert.equal(efforts.find((r) => r.effort === "idle-unknown").known_reported_cost, null);
+        const { claudeEffort } = await import("./claudeEffort.js");
+        const shared = await claudeEffort(from, end, { client: "claude",
+          user: "detail-coverage@", backend: "bedrock-runtime" });
+        assertFields(shared.effort.find((r) => r.effort === "high"),
+          { cost_usd: 5, cost_partial: true, backend: "bedrock-runtime" });
+        assert.equal(shared.effort.find((r) => r.effort === "low").cost_usd, 0);
+        assert.equal(shared.effort.find((r) => r.effort === "token-only").cost_usd, null);
+        assertFields(shared.effort.find((r) => r.effort === "shared-scope"),
+          { cost_usd: 4, cost_partial: true, unpriced: 1 });
+        const normalized = await claudeEffort(from, end, { user: "detail-coverage@",
+          model: "global.anthropic.claude-sonnet-5", backend: "bedrock-runtime" });
+        assertFields(normalized.effort.find((r) => r.effort === "high"),
+          { cost_usd: 5, cost_partial: false });
+        assert.deepEqual((await claudeEffort(from, end, { user: "detail-coverage@",
+          backend: "anthropic" })).effort, []);
         const agents = await q.agentCost(from, end, filters);
         assertFields(agents.find((r) => r.agent === "mixed"), { known_reported_cost: 5, reported_partial: true });
         assert.equal(agents.find((r) => r.agent === "unknown").known_reported_cost, null);

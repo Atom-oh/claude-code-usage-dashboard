@@ -2030,14 +2030,20 @@ export async function permissionWaitOccupancy(from, to, filters = {}) {
 // coverage; historical-only model scopes are omitted after calculating their baselines.
 // Keep empty models so reports are not silently lost; unpriced_tokens exposes diagnostic
 // gaps. Reported rates depend on client versions and are not invoice or AWS price evidence.
-export async function effortMix(from, to, filters = {}) {
+export function effortMixSql(from, to, filters = {}, { byModel = false } = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
-  const rows = await query(
-    `${GROUP_CTE}
+  const backend = `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("m.Model", "''")})`;
+  const earlyFilters = byModel
+    ? `${filters.user ? " AND positionCaseInsensitive(source.UserEmail, {fUser:String}) > 0" : ""}
+       ${filters.model ? ` AND positionCaseInsensitive(${normModel("source.Model")}, {fModel:String}) > 0` : ""}`
+    : "";
+  return { sql: `${byModel ? "/* coding-client:claude-effort */" : ""}
+    ${GROUP_CTE}
     SELECT
         ${GROUP_EXPR} AS "group",
         if(m.Effort = '', 'unknown', m.Effort) AS effort,
         ${normModel("m.Model")} AS model,
+        ${byModel ? `${backend} AS backend,` : ""}
         sumIf(${nacCostSql("m.inc", "m.SessionId", normModel("m.Model"))}, m.MetricName = 'claude_code.cost.usage') AS reported_cost,
         countIf(m.MetricName = 'claude_code.cost.usage' AND m.InWindow) AS cost_counter_rows,
         countIf(m.InWindow) AS observed_usage_rows,
@@ -2051,18 +2057,26 @@ export async function effortMix(from, to, filters = {}) {
             if(temp = 2,
                 greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
                 sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS inc
-        FROM claude_code.otel_metrics_sum
+        FROM claude_code.otel_metrics_sum${byModel ? " AS source" : ""}
         WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
           AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
+          ${earlyFilters}
         GROUP BY sk, SessionId, temp, MetricName, Model, Effort, TokenType
     ) m
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     WHERE 1 = 1 ${f.where}
-    GROUP BY "group", effort, model
+      ${byModel && filters.backend ? "AND backend = {fBackend:String}" : ""}
+    GROUP BY "group", effort, model${byModel ? ", backend, m.SessionId, m.UserEmail" : ""}
     HAVING countIf(m.InWindow) > 0
     ORDER BY "group", effort`,
-    { ...range(from, to, true), ...f.params }
-  );
+    params: { ...range(from, to, true), ...f.params,
+      ...(byModel && filters.backend ? { fBackend: filters.backend } : {}) } };
+}
+
+export async function effortMix(from, to, filters = {}, options = {}) {
+  const { sql, params } = effortMixSql(from, to, filters, options);
+  const rows = await query(sql, params);
+  if (options.byModel) return rows;
   return rollupComputedCost(rows, ["group", "effort"], { knownReports: true }).sort((a, b) => a.group.localeCompare(b.group) || b.cost - a.cost);
 }
 

@@ -31,6 +31,12 @@ const db = http.createServer(async(req,res)=>{
   } else if(sql.includes('coding-client:claude-usage')) {
     dataQueries++;
     rows=[{...base,model:'claude-sonnet-5',backend:'anthropic',input_tokens:49,reported_cost:2}];
+  } else if(sql.includes('coding-client:claude-effort')) {
+    dataQueries++;
+    const selected=new URL(req.url,'http://fixture.invalid').searchParams.get('param_fBackend');
+    rows=[{effort:'high',model:'claude-sonnet-5',backend:selected||'bedrock-runtime',
+      reported_cost:selected==='anthropic'?3:2,input_tokens:49,output_tokens:30,
+      cost_counter_rows:1,observed_usage_rows:1}];
   } else if(sql.includes('FROM claude_code.otel_traces')) {
     rows=[1,2].map(duration_ns=>({timestamp:base.t,trace_id:'conflict',span_id:'one',duration_ns}));
   } else if(sql.includes('FROM claude_code.codex_metrics_sum')) {
@@ -156,6 +162,43 @@ test("client cache identity never reuses a different client's result", async () 
   assert.equal(rows[1].body.totals.cost_usd, 2);
   assert.equal(rows[2].body.totals.cost_usd, 2.00238425);
   assert.equal(rows[3].dataQueries, 0);
+});
+
+test("shared Claude effort enforces auth/client gates and validates filters before queries", async () => {
+  const base = `/api/clients/claude-effort?${range}`;
+  const rows = await scenario(true, true, [
+    `${base}&unauth=1`, `${base}&client=codex`, `${base}&group=bedrock`,
+    `${base}&project=fixture`, `${base}&userExact=fixture`, `${base}&modelExact=opus`,
+    `${base}&backend=bedrock`, `${base}&backend=all`, base,
+  ]);
+  assert.equal(rows[0].status, 401);
+  for (const row of rows.slice(1, 7)) assert.equal(row.status, 400);
+  for (const row of rows.slice(0, 7)) assert.equal(row.dataQueries, 0);
+  assert.equal(rows[7].status, 200);
+  assert.equal(rows[7].cache, "no-store");
+  assert.equal(rows[7].dataQueries, 1);
+  assert.equal(rows[7].body.effort[0].cost_usd, 2);
+  assert.equal(rows[7].body.cost_scope, "reported_or_rescaled_counters");
+  assert.equal(rows[8].dataQueries, 0);
+  const [disabled] = await scenario(false, true, [base]);
+  assert.equal(disabled.status, 404);
+  assert.equal(disabled.dataQueries, 0);
+});
+
+test("shared Claude effort caches isolate backend/user/model and preserve exact parent bounds", async () => {
+  const base = `/api/clients/claude-effort?${range}&client=claude`;
+  const paths = [base, `${base}&backend=anthropic`, `${base}&backend=bedrock-runtime`,
+    `${base}&user=fixture`, `${base}&model=opus`, `${base}&backend=anthropic`];
+  const rows = await scenario(true, true, paths);
+  for (const row of rows) {
+    assert.equal(row.status, 200);
+    assert.deepEqual(row.body.range, { from: "2026-09-14T00:00:00.000Z", to: "2026-09-15T00:00:00.000Z" });
+  }
+  assert.deepEqual(rows.slice(0, 5).map(row => row.dataQueries), [1, 1, 1, 1, 1]);
+  assert.equal(rows[5].dataQueries, 0);
+  assert.equal(rows[1].body.effort[0].backend, "anthropic");
+  assert.equal(rows[1].body.effort[0].cost_usd, 3);
+  assert.equal(rows[2].body.effort[0].cost_usd, 2);
 });
 
 test("exact cost drilldowns and one-day fine resolution have isolated validated cache entries", async () => {

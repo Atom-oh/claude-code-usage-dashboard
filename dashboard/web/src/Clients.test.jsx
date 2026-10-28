@@ -641,7 +641,7 @@ test.each([
 
 test("a row-limit 400 on the shared overview shows the error and no model cost trend section", async () => {
   const { container } = mount({ enabledClients: ["claude", "codex"], entry: "/cost", failed: true, failStatus: 400 });
-  await screen.findByText("데이터를 불러오지 못했습니다.");
+  await screen.findAllByText("데이터를 불러오지 못했습니다.");
   expect(container.querySelector('section[aria-label="클라이언트별 모델 비용 추이"]')).toBeNull();
 });
 

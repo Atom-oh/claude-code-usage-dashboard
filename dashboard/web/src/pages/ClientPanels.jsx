@@ -373,7 +373,7 @@ function Fractions({ rows }) {
   </Card>;
 }
 
-function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false, previous }) {
+function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false, previous, breakdowns }) {
   const { from, to } = useRange();
   const rangeKey = `${from.getTime()}|${to.getTime()}`;
   const [detailPick, setDetailPick] = useState(null);
@@ -464,6 +464,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
     case "cost":
       content = <>
         {tiles([COST, COST_SESSION, COST_USER, MILLION])}
+        {breakdowns}
         {compare([...UNIT_COSTS, number("unpriced", "미산정 기록")], { title: "클라이언트별 비용 기준" })}
         <Trend {...trendProps} metric="cost" title="비용 추이" />
         <ModelTrends data={data} clients={selected} stale={stale} />

@@ -246,6 +246,28 @@ assert absent collection. The response echoes `profile="effort"`. Invalid profil
 values fail before caching; the profile has a distinct cache identity. The default
 profile remains full. See [Effort profile](reference/codex-observability.md#effort-profile).
 
+`GET /api/clients/claude-effort` supplies the common cost page's independent
+Claude effort card. It accepts the same range, user, model and backend filters;
+only `client=claude|all` is valid. Group/project and exact drilldown filters are
+unsupported. Authentication, disabled-client checks, validation and cache
+isolation use the shared route wrapper.
+The response includes `range`, `cost_scope="reported_or_rescaled_counters"` and
+`effort` rows with `effort`, `backend`, nullable `cost_usd`, `cost_partial`,
+`cost_basis` and `unpriced`. Empty effort becomes `unknown`; backend identities
+remain separate. `unpriced` counts aggregated user/session/model scopes, not requests.
+Known counter reports and ADR-017 rescaled estimates retain cumulative/delta
+boundaries. Token-derived overview fallback estimates are outside this card's
+scope, so its total need not equal the overview total. All-unknown cost is null;
+known zero requires observed zero-cost evidence. Filtered responses are cached
+independently; this endpoint is not warmed.
+
+Cost pages keep model, effort and input-cache headings visible during loading,
+empty results and errors. Model sectors retain version/backend identities and
+family colors. Input-cache composition requires complete canonical components;
+an observed token subtotal cannot replace a missing cache denominator. The
+Codex effort card and detail table share one `profile=effort` response using the
+overview's effective bounds.
+
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key; the shared default cost profile warms
 `view=cost&modelTime=1&timeFormat=compact`. Custom windows, filters, resolutions and

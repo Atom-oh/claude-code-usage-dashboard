@@ -18,6 +18,7 @@ import { maskEmail } from "../fmt.js";
 import { isZeroTokenModel } from "../modelRows.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { useGroupsShown } from "../useGroupsShown.js";
+import { CostBreakdownCard } from "../components/CostBreakdowns.jsx";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
 import { asCostSummaryRows, asKnownSpendRows, asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
@@ -507,69 +508,55 @@ export default function Cost() {
           </div>
         )}
 
-        {effortMix.loading ? (
-          <Loading />
-        ) : effortMix.error ? (
-          <ErrorBox error={effortMix.error} />
-        ) : (
-          <div className="group-grid">
-            {shownGroups(effortMix.data).map((g) => (
-              <Card
-                key={g}
-                title={`Effort 수준별 보고 비용 — ${g}`}
-                help={`${SPEND_HELP} Effort 정보가 없으면 미지정으로 묶습니다. Thinking 토큰은 출력 토큰에 포함됩니다. ${comparisonHelp}`}
-              >
-                <ReportedCostDonut
-                  rows={effortRowsFor(g)}
-                  nameKey="effort"
-                  colorOf={makeGroupBreakdownColorer(g, EFFORT_LABEL_ORDER)}
-                />
-                <ul className="mt-3 text-[12px] text-ink-400">
-                  {effortRowsFor(g).map((r) => (
-                    <li key={r.effort}>{`${effortLabel(r.effort)}: ${usd(r.cost)}${r.cost_partial ? " (부분합)" : ""}${showComputed ? ` (계산값 ${usd(r.computed_cost)}${r.unpriced_tokens > 0 ? "; 단가 미등록 토큰 제외" : ""})` : ""}`}</li>
-                  ))}
-                </ul>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        <div className="grid gap-4 md:grid-cols-2">
-          {byModel.loading ? (
-            <Loading />
-          ) : byModel.error ? (
-            <ErrorBox error={byModel.error} />
-          ) : (
-            shownGroups(byModel.data).map((g) => (
-              <Card key={g} title={`모델별 비용 비중 — ${g}`} help={SPEND_HELP}>
-                <ReportedCostDonut
-                  rows={modelRowsFor(g)}
-                  nameKey="model_label"
-                  colorOf={(name, _index, theme) => groupModelColorFor(g, name, theme)}
-                  listUnknown
-                />
-              </Card>
-            ))
-          )}
+        <div className="group-grid">
+          {shownGroups(effortMix.data).map((g) => (
+            <CostBreakdownCard
+              key={g}
+              title={`Effort 수준별 보고 비용 — ${g}`}
+              loading={effortMix.loading}
+              error={effortMix.error}
+              help={`${SPEND_HELP} Effort 정보가 없으면 미지정으로 묶습니다. Thinking 토큰은 출력 토큰에 포함됩니다. ${comparisonHelp}`}
+            >
+              <ReportedCostDonut
+                rows={effortRowsFor(g)}
+                nameKey="effort"
+                colorOf={makeGroupBreakdownColorer(g, EFFORT_LABEL_ORDER)}
+              />
+              <ul className="mt-3 text-[12px] text-ink-400">
+                {effortRowsFor(g).map((r) => (
+                  <li key={r.effort}>{`${effortLabel(r.effort)}: ${usd(r.cost)}${r.cost_partial ? " (부분합)" : ""}${showComputed ? ` (계산값 ${usd(r.computed_cost)}${r.unpriced_tokens > 0 ? "; 단가 미등록 토큰 제외" : ""})` : ""}`}</li>
+                ))}
+              </ul>
+            </CostBreakdownCard>
+          ))}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {summary.loading ? (
-            <Loading />
-          ) : summary.error ? (
-            <ErrorBox error={summary.error} />
-          ) : (
-            shownGroups(summary.data).map((g) => (
-              <DonutBreakdown
-                key={g}
-                title={`토큰 유형별 사용량 — ${g}`}
+          {shownGroups(byModel.data).map((g) => (
+            <CostBreakdownCard key={g} title={`모델별 비용 비중 — ${g}`} help={SPEND_HELP}
+              loading={byModel.loading} error={byModel.error}>
+              <ReportedCostDonut
+                rows={modelRowsFor(g)}
+                nameKey="model_label"
+                colorOf={(name, _index, theme) => groupModelColorFor(g, name, theme)}
+                listUnknown
+              />
+            </CostBreakdownCard>
+          ))}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {shownGroups(summary.data).map((g) => (
+            <CostBreakdownCard key={g} title={`토큰 유형별 사용량 — ${g}`}
+              loading={summary.loading} error={summary.error}>
+              <DonutBody
                 data={tokenTypeRowsFor(g)}
                 nameKey="type"
                 valueKey="tokens"
                 colorOf={makeGroupBreakdownColorer(g, TOKEN_TYPE_LABEL_ORDER)}
               />
-            ))
-          )}
+            </CostBreakdownCard>
+          ))}
         </div>
 
         {byModelDaily.loading ? (
