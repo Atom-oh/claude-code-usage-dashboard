@@ -101,21 +101,17 @@ test("zero reported spend is valid only when token usage is absent", () => {
   expect(mixed[0]).toMatchObject({ cost: 0, cost_partial: true });
 });
 
-test("model user shares divide by the model total and disclose unattributed spend only when complete", () => {
-  const merged = mergeUserModelRows([
-    ...ROWS,
-    { user: "c@x.com", group: "bedrock", model: "claude-sonnet-5", cost: 1, reported_cost: 4, tokens: 100, unpriced: false },
-  ]);
-  const shares = modelUserShares(merged, { model: "claude-sonnet-5", cost: 25, cost_partial: false });
-  expect(shares.rows.map((r) => [r.user, r.cost, r.share])).toEqual([["a@x.com", 16, 64], ["c@x.com", 4, 16]]);
-  expect(shares.unattributed).toEqual({ cost: 5, share: 20 });
+test("model user shares divide by the model's known user total from one response", () => {
+  const extra = { user: "c@x.com", group: "bedrock", model: "claude-sonnet-5", cost: 1, reported_cost: 4, tokens: 100, unpriced: false };
+  const shares = modelUserShares(mergeUserModelRows([...ROWS, extra]), "claude-sonnet-5");
+  expect(shares.rows.map((r) => [r.user, r.cost, r.share])).toEqual([["a@x.com", 16, 80], ["c@x.com", 4, 20]]);
+  expect(shares.total).toBe(20);
   expect(shares.partial).toBe(false);
 
-  const partial = modelUserShares(merged, { model: "claude-sonnet-5", cost: 25, cost_partial: true });
-  expect(partial.partial).toBe(true);
-  expect(partial.unattributed).toBeNull();
-
-  const unknownTotal = modelUserShares(merged, { model: "claude-sonnet-5", cost: null, cost_partial: false });
-  expect(unknownTotal.rows.every((r) => r.share === null)).toBe(true);
-  expect(modelUserShares(merged, { model: "missing", cost: 1 }).rows).toEqual([]);
+  const unknown = { user: "d@x.com", group: "bedrock", model: "claude-sonnet-5", cost: null, reported_cost: null, tokens: 100, unpriced: true };
+  const withUnknown = modelUserShares(mergeUserModelRows([...ROWS, extra, unknown]), "claude-sonnet-5");
+  expect(withUnknown.partial).toBe(true);
+  expect(withUnknown.total).toBe(20);
+  expect(withUnknown.rows.find((r) => r.user === "d@x.com").share).toBeNull();
+  expect(modelUserShares(mergeUserModelRows(ROWS), "missing")).toEqual({ rows: [], total: 0, partial: false });
 });

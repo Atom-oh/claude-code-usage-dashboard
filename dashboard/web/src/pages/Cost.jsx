@@ -132,22 +132,17 @@ export function mergeUserModelRows(rows) {
   return [...totals.values()];
 }
 
-// 모델 표 한 행의 사용자별 보고 비용 비중. 분모는 그 행의 비용 — by-model과 by-user-model은
-// 같은 unknown 제외 정책을 쓰지만 by-user-model은 사용자 ID가 빈 사용량을 빼므로, 양쪽이 모두
-// 완전할 때만 그 차액을 '사용자 ID 없음'으로 밝힌다(부분합끼리의 차액은 의미가 없다).
-export function modelUserShares(userModelRows, modelRow) {
-  const users = userModelRows.filter((r) => r.model === modelRow.model).sort(spendOrder);
-  const total = modelRow.cost;
-  const known = sumKnownSpend(users);
+// 모델 하나의 사용자별 보고 비용 비중 — by-user-model 한 응답만으로 계산한다. by-model과 섞으면 두 응답이
+// 따로 도착하는 사이(기간 변경·백그라운드 새로고침의 창 이동) 서로 다른 시점의 합계끼리 차액이 꾸며진다
+// (PR #178 리뷰). 분모는 그 모델의 알려진 사용자 비용 합계이고, 사용자 ID가 없는 사용량은 들어 있지 않다.
+export function modelUserShares(userModelRows, model) {
+  const users = userModelRows.filter((r) => r.model === model).sort(spendOrder);
+  const { total, partial } = sumKnownSpend(users);
   const share = (cost) => cost === null || total === null ? null : total > 0 ? cost / total * 100 : 0;
-  const rows = users.map((r) => ({ user: r.user, cost: r.cost, cost_partial: r.cost_partial, tokens: r.tokens, share: share(r.cost) }));
-  const complete = total !== null && known.total !== null && !modelRow.cost_partial && !known.partial;
-  const gap = complete ? total - known.total : 0;
   return {
-    rows,
+    rows: users.map((r) => ({ user: r.user, cost: r.cost, cost_partial: r.cost_partial, tokens: r.tokens, share: share(r.cost) })),
     total,
-    partial: modelRow.cost_partial || known.partial,
-    unattributed: gap >= 0.005 ? { cost: gap, share: share(gap) } : null,
+    partial,
   };
 }
 
@@ -160,24 +155,23 @@ function ModelUserPanel({ modelRow, userModelRows, loading, error, onClose }) {
   const title = `${modelLabel(modelRow.model)} — 사용자별 비용`;
   if (loading) return <Card title={title} right={close}><Loading /></Card>;
   if (error) return <Card title={title} right={close}><ErrorBox error={error} /></Card>;
-  const { rows, total, partial, unattributed } = modelUserShares(userModelRows, modelRow);
-  const listed = unattributed ? [...rows, { user: null, cost: unattributed.cost, share: unattributed.share }] : rows;
+  const { rows, total, partial } = modelUserShares(userModelRows, modelRow.model);
   return (
     <Card
       title={title}
-      subtitle={`모델 비용 ${usd(total)}${partial ? " · 부분합 기준" : ""} 대비 · 사용자 ${rows.length}명`}
-      help={`비율의 분모는 왼쪽 표의 모델 비용입니다. 사용자 ID가 없는 사용량은 둘 다 완전할 때만 별도 행으로 표시합니다. ${SPEND_HELP}`}
+      subtitle={`사용자 합계 ${usd(total)}${partial ? " · 부분합 기준" : ""} 대비 · 사용자 ${rows.length}명`}
+      help={`비율의 분모는 이 모델의 사용자별 보고 비용 합계입니다. 사용자 ID가 없는 사용량은 포함되지 않아 왼쪽 표의 모델 비용보다 작을 수 있습니다. ${SPEND_HELP}`}
       right={close}
       padded={false}
     >
-      {listed.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="p-4"><EmptyState /></div>
       ) : (
         <ul className="max-h-[28rem] overflow-y-auto divide-y divide-ink-100">
-          {listed.map((r) => (
-            <li key={r.user ?? "__unattributed__"} className="px-4 py-2 text-[13px]">
+          {rows.map((r) => (
+            <li key={r.user} className="px-4 py-2 text-[13px]">
               <div className="flex items-baseline justify-between gap-3">
-                <span className={`truncate ${r.user === null ? "text-ink-500" : "text-ink-800"}`}>{r.user === null ? "사용자 ID 없음" : maskEmail(r.user)}</span>
+                <span className="truncate text-ink-800">{maskEmail(r.user)}</span>
                 <span className="shrink-0 tabular text-ink-800">
                   {knownUsd(r.cost, r)}
                   <span className="ml-2 inline-block min-w-[3.5rem] text-right text-ink-500">{r.share === null ? "확인 필요" : `${r.share.toFixed(1)}%`}</span>
@@ -729,12 +723,12 @@ export default function Cost() {
           exportName="cost_by_model"
           stale={byModel.stale || compare.stale}
         />
-        {/* by-model·by-user-model 두 응답이 모두 같은 기간 기준일 때만 비중/잔여(사용자 ID 없음)를 계산한다. */}
+        {/* 패널은 by-user-model 응답만 쓴다 — 그 응답이 이전 기간의 것이면(stale) 비중을 보이지 않는다. */}
         {selectedModelRow && (
           <ModelUserPanel
             modelRow={selectedModelRow}
             userModelRows={mergedUserModel}
-            loading={byUserModel.loading || byUserModel.stale || byModel.stale}
+            loading={byUserModel.loading || byUserModel.stale}
             error={byUserModel.error}
             onClose={() => setSelectedModel(null)}
           />
