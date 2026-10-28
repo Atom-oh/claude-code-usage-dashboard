@@ -41,6 +41,16 @@ const knownUsd = (v, r) =>
   ) : (
     usd(v)
   );
+// 부분합 비용에서 나온 단위 값($/LOC·$/커밋)도 같은 배지로 밝힌다. CSV는 숫자 그대로 나간다.
+const partialUnit = (text, r) =>
+  r.cost_partial ? (
+    <span className="inline-flex items-center gap-1.5">
+      {text}
+      <Badge tone="warning">부분합</Badge>
+    </span>
+  ) : (
+    text
+  );
 const agentLabel = (v) => (v === "main" ? "메인 세션" : v);
 // bedrock/enterprise로 나뉘는 도넛들(캐시 티어·토큰 타입·Effort)의 라벨 순서 — 그룹 색상 배정이
 // 데이터 등장 순서가 아니라 이 고정 순서를 따르게 한다(colors.js makeGroupBreakdownColorer).
@@ -120,6 +130,68 @@ export function mergeUserModelRows(rows) {
     totals.set(key, acc);
   }
   return [...totals.values()];
+}
+
+// 모델 표 한 행의 사용자별 보고 비용 비중. 분모는 그 행의 비용 — by-model과 by-user-model은
+// 같은 unknown 제외 정책을 쓰지만 by-user-model은 사용자 ID가 빈 사용량을 빼므로, 양쪽이 모두
+// 완전할 때만 그 차액을 '사용자 ID 없음'으로 밝힌다(부분합끼리의 차액은 의미가 없다).
+export function modelUserShares(userModelRows, modelRow) {
+  const users = userModelRows.filter((r) => r.model === modelRow.model).sort(spendOrder);
+  const total = modelRow.cost;
+  const known = sumKnownSpend(users);
+  const share = (cost) => cost === null || total === null ? null : total > 0 ? cost / total * 100 : 0;
+  const rows = users.map((r) => ({ user: r.user, cost: r.cost, cost_partial: r.cost_partial, tokens: r.tokens, share: share(r.cost) }));
+  const complete = total !== null && known.total !== null && !modelRow.cost_partial && !known.partial;
+  const gap = complete ? total - known.total : 0;
+  return {
+    rows,
+    total,
+    partial: modelRow.cost_partial || known.partial,
+    unattributed: gap >= 0.005 ? { cost: gap, share: share(gap) } : null,
+  };
+}
+
+function ModelUserPanel({ modelRow, userModelRows, loading, error, onClose }) {
+  const close = (
+    <button type="button" onClick={onClose} aria-label="사용자별 비용 닫기" className="text-[12px] text-ink-500 hover:text-ink-800">
+      닫기 ✕
+    </button>
+  );
+  const title = `${modelLabel(modelRow.model)} — 사용자별 비용`;
+  if (loading) return <Card title={title} right={close}><Loading /></Card>;
+  if (error) return <Card title={title} right={close}><ErrorBox error={error} /></Card>;
+  const { rows, total, partial, unattributed } = modelUserShares(userModelRows, modelRow);
+  const listed = unattributed ? [...rows, { user: null, cost: unattributed.cost, share: unattributed.share }] : rows;
+  return (
+    <Card
+      title={title}
+      subtitle={`모델 비용 ${usd(total)}${partial ? " · 부분합 기준" : ""} 대비 · 사용자 ${rows.length}명`}
+      help={`비율의 분모는 왼쪽 표의 모델 비용입니다. 사용자 ID가 없는 사용량은 둘 다 완전할 때만 별도 행으로 표시합니다. ${SPEND_HELP}`}
+      right={close}
+      padded={false}
+    >
+      {listed.length === 0 ? (
+        <div className="p-4"><EmptyState /></div>
+      ) : (
+        <ul className="max-h-[28rem] overflow-y-auto divide-y divide-ink-100">
+          {listed.map((r) => (
+            <li key={r.user ?? "__unattributed__"} className="px-4 py-2 text-[13px]">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className={`truncate ${r.user === null ? "text-ink-500" : "text-ink-800"}`}>{r.user === null ? "사용자 ID 없음" : maskEmail(r.user)}</span>
+                <span className="shrink-0 tabular text-ink-800">
+                  {knownUsd(r.cost, r)}
+                  <span className="ml-2 inline-block min-w-[3.5rem] text-right text-ink-500">{r.share === null ? "확인 필요" : `${r.share.toFixed(1)}%`}</span>
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 rounded bg-ink-100">
+                <div className="h-1.5 rounded" style={{ width: `${Math.min(100, Math.max(0, r.share || 0))}%`, background: modelColorFor(modelLabel(modelRow.model)) }} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
 }
 
 export function mergeUserRows(rows) {
@@ -232,7 +304,7 @@ export default function Cost() {
   const computedHelp = `토큰 사용량 × 서버 단가의 진단용 계산값입니다. ${ttlHint}. 실제 요청의 TTL·클라이언트 버전·수집 범위에 따라 보고 비용 및 청구액과 다를 수 있습니다.`;
   const shownGroups = useGroupsShown();
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
-  const { model } = useFilters();
+  const { model, group, user, project, backend } = useFilters();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
   const [topN, setTopN] = useState(20);
   const [showComputed, setShowComputed] = useState(false);
@@ -254,6 +326,9 @@ export default function Cost() {
   // 체크가 꺼져 있으면 이 호출은 위와 문자 그대로 같은 요청이라 서버 TTL 캐시에 히트한다.
   // 항상 includeUnknown=1을 받아두는 대안은 warmer가 데우지 않는 콜드 뷰를 매 방문마다 긁게 만든다.
   const [includeUnknown, setIncludeUnknown] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(null);
+  // 필터가 바뀌면 사용자별 패널 선택을 해제한다(web AGENTS.md State 규칙).
+  useEffect(() => setSelectedModel(null), [model, group, user, project, backend]);
   const byUserModelTable = useApi("/api/cost/by-user-model", includeUnknown ? { includeUnknown: "1" } : {});
   const byModelDaily = useApi("/api/cost/by-model-daily", { intervalHours });
   const compare = useApi("/api/cost/by-model-compare");
@@ -308,6 +383,8 @@ export default function Cost() {
   });
 
   const mergedUserModel = mergeUserModelRows(byUserModel.data || []);
+  // 새 기간·필터에 선택 모델이 없으면 패널은 사라진다(선택값은 남아 다시 나타나면 복원).
+  const selectedModelRow = modelRows.find((r) => r.model === selectedModel) || null;
   const userRows = mergeUserRows(byUserModelTable.data || []).sort(spendOrder).map((r) => ({ ...r, cost_status: costStatus(r) }));
   // 범례는 실제로 등장한 그룹만 — 'unknown 그룹 포함'을 켰는데 unknown 행이 없으면 unknown 점을
   // 띄우지 않는다(막대에도 안 나오므로 범례에도 없어야 한다).
@@ -411,12 +488,14 @@ export default function Cost() {
       .sort((a, b) => effortOrder(a.effort) - effortOrder(b.effort));
 
   // LOC 없이 커밋만 있는 사용자도 유지하며 보고 단위 비용 미확인 행은 마지막에 둔다.
+  // 부분합 사용자는 추적된 보고 비용(알려진 부분합)을 같은 분모로 나누고 부분합 배지로 밝힌다
+  // (ADR-013 2026-10-28 개정) — API의 엄격한 cost_per_loc/cost_per_commit은 그대로 둔다.
   const efficiencyRows = asKnownSpendRows(efficiency.data)
     .filter((r) => r.loc > 0 || r.commits > 0)
     .map((r) => ({
       ...r,
-      cost_per_loc: r.reported_unpriced || r.cost_partial ? null : r.cost_per_loc,
-      cost_per_commit: r.reported_unpriced || r.cost_partial ? null : r.cost_per_commit,
+      cost_per_loc: r.cost === null || !(r.loc > 0) ? null : r.cost_partial ? r.cost / r.loc : r.cost_per_loc,
+      cost_per_commit: r.cost === null || !(r.commits > 0) ? null : r.cost_partial ? r.cost / r.commits : r.cost_per_commit,
       cost_status: costStatus(r),
       computed_cost_per_loc: !r.unpriced && r.computed_cost !== null && r.loc > 0 ? r.computed_cost / r.loc : null,
       computed_cost_per_commit: !r.unpriced && r.computed_cost !== null && r.commits > 0 ? r.computed_cost / r.commits : null,
@@ -622,10 +701,11 @@ export default function Cost() {
           />
         )}
 
+        <div className={selectedModelRow ? "grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start" : undefined}>
         <DataTable
           key={`models-${showComputed}`}
           title="모델별 비용과 토큰"
-          subtitle="비용 기준 정렬"
+          subtitle="비용 기준 정렬 · 모델을 누르면 사용자별 비용"
           help={`${SPEND_HELP} 전체 대비는 알려진 보고 비용 기준이며 일부 보고값이 빠진 모델은 부분합으로 표시합니다. 이전 기간 대비는 같은 길이의 직전 기간 보고 비용과 비교하며 부분합 모델은 확인 필요로 둡니다. ${comparisonHelp}`}
           columns={[
             { key: "model", label: "모델", render: modelLabel, toText: modelLabel },
@@ -644,9 +724,21 @@ export default function Cost() {
           ]}
           rows={modelRows}
           groupKey="__none__"
+          onRowClick={(r) => setSelectedModel((m) => (m === r.model ? null : r.model))}
+          isRowSelected={(r) => r.model === selectedModel}
           exportName="cost_by_model"
           stale={byModel.stale || compare.stale}
         />
+        {selectedModelRow && (
+          <ModelUserPanel
+            modelRow={selectedModelRow}
+            userModelRows={mergedUserModel}
+            loading={byUserModel.loading}
+            error={byUserModel.error}
+            onClose={() => setSelectedModel(null)}
+          />
+        )}
+        </div>
 
         {agentCost.loading ? (
           <Loading />
@@ -787,15 +879,15 @@ export default function Cost() {
             key={`efficiency-${showComputed}`}
             title="비용 효율 ($/LOC · $/커밋)"
             subtitle="코드 라인당 비용이 낮은 순"
-            help={`추가된 코드 라인과 커밋 수로 보고 비용을 나눕니다. 개인 성과 평가용이 아닌 참고 지표이며 보고값 미확인 사용자는 맨 아래에 표시합니다. ${SPEND_HELP} ${comparisonHelp}`}
+            help={`추가된 코드 라인과 커밋 수로 보고 비용을 나눕니다. 일부 보고값이 빠진 사용자는 추적된 비용만으로 나눈 부분합 값이라 실제보다 낮을 수 있습니다. 개인 성과 평가용이 아닌 참고 지표이며 보고값 미확인 사용자는 맨 아래에 표시합니다. ${SPEND_HELP} ${comparisonHelp}`}
             columns={[
               { key: "user", label: "사용자", render: maskEmail },
               { key: "group", label: "채널" },
               { key: "cost", label: "비용", render: knownUsd },
               { key: "loc", label: "추가 코드 라인", render: fmt },
               { key: "commits", label: "커밋", render: fmt },
-              { key: "cost_per_loc", label: "$/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) },
-              { key: "cost_per_commit", label: "$/커밋", render: usd },
+              { key: "cost_per_loc", label: "$/LOC", render: (v, r) => (v == null ? "확인 필요" : partialUnit(`$${Number(v).toFixed(4)}`, r)) },
+              { key: "cost_per_commit", label: "$/커밋", render: (v, r) => (v == null ? "확인 필요" : partialUnit(usd(v), r)) },
               ...(showComputed ? [{ key: "computed_cost", label: "토큰 단가 계산값", render: computedText, toText: computedCsv }] : []),
               ...(showComputed ? [{ key: "computed_cost_per_loc", label: "계산 $/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) }] : []),
               ...(showComputed ? [{ key: "computed_cost_per_commit", label: "계산 $/커밋", render: usd }] : []),

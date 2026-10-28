@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { asSpendRows } from "../spend.js";
-import { mergeUserModelRows, mergeUserRows, groupTotalsText, groupModelSegments } from "./Cost.jsx";
+import { mergeUserModelRows, mergeUserRows, groupTotalsText, groupModelSegments, modelUserShares } from "./Cost.jsx";
 
 const ROWS = [
   { user: "a@x.com", group: "bedrock", model: "claude-sonnet-5", cost: 12.34, reported_cost: 10, tokens: 1000, unpriced: false },
@@ -99,4 +99,23 @@ test("zero reported spend is valid only when token usage is absent", () => {
   const mixed = mergeUserRows(rows.map((r) => ({ ...r, user: "mixed" })));
   expect(mixed).toHaveLength(1);
   expect(mixed[0]).toMatchObject({ cost: 0, cost_partial: true });
+});
+
+test("model user shares divide by the model total and disclose unattributed spend only when complete", () => {
+  const merged = mergeUserModelRows([
+    ...ROWS,
+    { user: "c@x.com", group: "bedrock", model: "claude-sonnet-5", cost: 1, reported_cost: 4, tokens: 100, unpriced: false },
+  ]);
+  const shares = modelUserShares(merged, { model: "claude-sonnet-5", cost: 25, cost_partial: false });
+  expect(shares.rows.map((r) => [r.user, r.cost, r.share])).toEqual([["a@x.com", 16, 64], ["c@x.com", 4, 16]]);
+  expect(shares.unattributed).toEqual({ cost: 5, share: 20 });
+  expect(shares.partial).toBe(false);
+
+  const partial = modelUserShares(merged, { model: "claude-sonnet-5", cost: 25, cost_partial: true });
+  expect(partial.partial).toBe(true);
+  expect(partial.unattributed).toBeNull();
+
+  const unknownTotal = modelUserShares(merged, { model: "claude-sonnet-5", cost: null, cost_partial: false });
+  expect(unknownTotal.rows.every((r) => r.share === null)).toBe(true);
+  expect(modelUserShares(merged, { model: "missing", cost: 1 }).rows).toEqual([]);
 });

@@ -69,9 +69,10 @@ known costs and folded-series observation counts. Cost omits explicitly historic
 model rows, so lookback zeros cannot turn current unknown costs into a partial zero.
 
 The efficiency API adds the same subtotal fields without changing strict report flags
-or unit eligibility. Cost shows known user costs with table/CSV coverage status, while
-$/LOC and $/commit remain unavailable for partial costs. Such rows stay below rows
-with valid $/LOC. Effort and model-share donuts disclose partial totals, draw usable
+or unit eligibility. Cost shows known user costs with table/CSV coverage status. Since
+2026-10-28, at the user's request, Cost also divides a partial user cost by the same LOC/commit
+denominators and labels the result partial; the API's strict `cost_per_loc`/`cost_per_commit`
+are unchanged, and all-unknown costs or zero denominators stay unavailable and sort last. Effort and model-share donuts disclose partial totals, draw usable
 amounts, and retain unavailable items in textual details. Observed zero stays visible;
 all-unknown costs never become zero. Computed diagnostics and strict consumers retain
 their original contracts. These folds do not recover reports within an unavailable

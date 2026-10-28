@@ -439,6 +439,7 @@ test("agent and efficiency amounts disclose partial coverage in the table and CS
     "/api/users/cost-efficiency": [
       { user: "partial@example.invalid", group: "bedrock", reported_cost: 6, reported_unpriced: true, known_reported_cost: 6, reported_partial: true, computed_cost: 99, loc: 10, commits: 2, cost_per_loc: null, cost_per_commit: null },
       { user: "complete@example.invalid", group: "bedrock", reported_cost: 2, known_reported_cost: 2, reported_partial: false, loc: 10, commits: 2, cost_per_loc: 0.2, cost_per_commit: 1 },
+      { user: "unknown@example.invalid", group: "bedrock", reported_cost: 0, reported_unpriced: true, known_reported_cost: null, reported_partial: false, loc: 10, commits: 2, cost_per_loc: null, cost_per_commit: null },
     ],
   });
   await waitFor(() => expect(cells("에이전트별 비용")).toHaveLength(2));
@@ -446,12 +447,13 @@ test("agent and efficiency amounts disclose partial coverage in the table and CS
   expect(cells("에이전트별 비용")[1]).toEqual(["unknown", "bedrock", "확인 필요", "10", "확인 필요"]);
   const efficiency = cells("비용 효율 ($/LOC · $/커밋)");
   expect(efficiency[0][0]).toBe("complete@example.invalid");
-  expect(efficiency[1]).toEqual(["partial@example.invalid", "bedrock", "$6부분합", "10", "2", "확인 필요", "확인 필요", "부분합"]);
+  expect(efficiency[1]).toEqual(["partial@example.invalid", "bedrock", "$6부분합", "10", "2", "$0.6000부분합", "$3부분합", "부분합"]);
+  expect(efficiency[2].slice(5, 7)).toEqual(["확인 필요", "확인 필요"]);
   const agentCsv = await exportTable("에이전트별 비용");
   expect(agentCsv).toContain("mixed,bedrock,5,20,부분합");
   expect(agentCsv).toContain("unknown,bedrock,,10,확인 필요");
   const efficiencyCsv = await exportTable("비용 효율 ($/LOC · $/커밋)");
-  expect(efficiencyCsv).toContain("partial@example.invalid,bedrock,6,10,2,,,부분합");
+  expect(efficiencyCsv).toContain("partial@example.invalid,bedrock,6,10,2,0.6,3,부분합");
   expect(efficiencyCsv).not.toContain("99");
   expect(agentCsv).not.toContain("99");
 });
@@ -657,4 +659,21 @@ test("a period change disables CSV export until the new rows arrive", async () =
   const req = held.find((h) => h.u.pathname === "/api/cost/by-model");
   await act(async () => req.resolve({ ok: true, status: 200, json: async () => MODELS }));
   await waitFor(() => expect(csvButton("모델별 비용과 토큰").disabled).toBe(false));
+});
+
+test("clicking a model row opens a per-user share panel beside the table and toggles it closed", async () => {
+  mount("single", {
+    "/api/cost/by-model": [{ group: "bedrock", model: "claude-sonnet-5", cost: 20, reported_cost: 20, tokens: 1500 }],
+  });
+  await waitFor(() => expect(cells("모델별 비용과 토큰")).toHaveLength(1));
+  const row = within(card("모델별 비용과 토큰")).getAllByRole("row")[1];
+  fireEvent.click(row);
+  const panel = screen.getByText(/— 사용자별 비용$/).closest(".rounded-lg");
+  expect(panel.textContent).toContain("a@x.com");
+  expect(panel.textContent).toContain("$16");
+  expect(panel.textContent).toContain("80.0%");
+  expect(panel.textContent).toContain("사용자 ID 없음");
+  expect(row.getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(row);
+  expect(screen.queryByText(/— 사용자별 비용$/)).toBeNull();
 });
