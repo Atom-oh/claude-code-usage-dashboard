@@ -48,10 +48,16 @@ export function memoryStore() {
       if (!record || record.pendingHash !== pending.hash || record.pendingExpiresAt !== pending.expiresAt
         || pending.expiresAt <= at || record.revokedAt !== undefined) return false;
       Object.assign(record, { secretHash: pending.hash, expiresAt: pending.expiresAt, purgeAt: pending.purgeAt,
-        renewedAt: at });
+        renewedAt: at, previousHash: pending.previous });
       delete record.pendingHash;
       delete record.pendingIssuedAt;
       delete record.pendingExpiresAt;
+      return true;
+    },
+    async flagReuse(owner, id, at) {
+      const record = records.get(`${owner}:${id}`);
+      if (!record || record.reuseDetectedAt !== undefined) return false;
+      record.reuseDetectedAt = at;
       return true;
     },
   };
@@ -67,7 +73,7 @@ test("issued secret is returned once, stored only as a hash, and owner includes 
   assert.equal(device.id, id);
   assert.deepEqual(device, { id, name: "Laptop", platform: "darwin",
     createdAt: "2026-10-21T12:00:00.000Z", expiresAt: "2026-11-20T12:00:00.000Z",
-    revokedAt: null, lastSeenAt: null, renewedAt: null });
+    revokedAt: null, lastSeenAt: null, renewedAt: null, reuseDetectedAt: null });
   const stored = await store.get(owner, id);
   assert.equal(stored.secretHash, createHash("sha256").update(secret).digest("hex"));
   assert.equal(JSON.stringify(stored).includes(secret), false);
@@ -235,7 +241,7 @@ test("a due renewal stages a replaceable pending token while the current token s
   assert.ok(await f.service.verify(f.token));
   const listed = await f.service.list("alice");
   assert.deepEqual(Object.keys(listed.devices[0]),
-    ["id", "name", "platform", "createdAt", "expiresAt", "revokedAt", "lastSeenAt", "renewedAt"]);
+    ["id", "name", "platform", "createdAt", "expiresAt", "revokedAt", "lastSeenAt", "renewedAt", "reuseDetectedAt"]);
   assert.equal(listed.devices[0].renewedAt, null);
   // A repeated renewal replaces the earlier pending token.
   const second = await f.service.renew(f.token);
@@ -327,4 +333,23 @@ test("a pending token outlives the previous token and then expires", async () =>
   assert.deepEqual(await f.service.verify(n1), { owner: f.owner, id: f.id });
   f.clock.time = Date.parse(NEXT);
   assert.equal(await f.service.verify(n2), null);
+});
+
+test("reusing a token superseded by promotion is rejected and flags the device once", async () => {
+  const f = await renewalFixture(1);
+  f.clock.time = due;
+  const { token: next } = await f.service.renew(f.token);
+  assert.ok(await f.service.verify(next));
+  f.clock.time += 10001;
+  // A forged secret for the same device is rejected without a flag.
+  assert.equal(await f.service.verify(f.token.replace(/[A-Za-z0-9_-]{43}$/, "A".repeat(43))), null);
+  assert.equal(f.record().reuseDetectedAt, undefined);
+  assert.equal(await f.service.verify(f.token), null);
+  const flagged = f.record().reuseDetectedAt;
+  assert.equal(flagged, f.clock.time);
+  f.clock.time += 5000;
+  assert.equal(await f.service.verify(f.token), null);
+  assert.equal(f.record().reuseDetectedAt, flagged);
+  assert.ok(await f.service.verify(next));
+  assert.equal((await f.service.list("alice")).devices[0].reuseDetectedAt, new Date(flagged).toISOString());
 });

@@ -63,7 +63,8 @@ test("renewal staging and promotion are conditional updates on verified hashes",
     async send(command) { commands.push(command); return {}; },
   } });
   assert.equal(await store.stage("alice", "id", "current", { hash: "next", issuedAt: 10, expiresAt: 20, purgeAt: 30 }), true);
-  assert.equal(await store.promote("alice", "id", { hash: "next", expiresAt: 20, purgeAt: 30 }, 15), true);
+  assert.equal(await store.promote("alice", "id", { hash: "next", expiresAt: 20, purgeAt: 30, previous: "current" }, 15), true);
+  assert.equal(await store.flagReuse("alice", "id", 16), true);
   const base = { TableName: "devices", Key: { owner: "alice", id: "id" },
     ExpressionAttributeNames: { "#owner": "owner", "#id": "id" } };
   assert.deepEqual(commands[0].input, { ...base,
@@ -74,7 +75,10 @@ test("renewal staging and promotion are conditional updates on verified hashes",
   assert.deepEqual(commands[1].input, { ...base,
     ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND pendingHash = :hash"
       + " AND pendingExpiresAt = :expiresAt AND pendingExpiresAt > :at AND attribute_not_exists(revokedAt)",
-    UpdateExpression: "SET secretHash = :hash, expiresAt = :expiresAt, purgeAt = :purgeAt, renewedAt = :at"
-      + " REMOVE pendingHash, pendingIssuedAt, pendingExpiresAt",
-    ExpressionAttributeValues: { ":hash": "next", ":expiresAt": 20, ":purgeAt": 30, ":at": 15 } });
+    UpdateExpression: "SET secretHash = :hash, expiresAt = :expiresAt, purgeAt = :purgeAt, renewedAt = :at,"
+      + " previousHash = :previous REMOVE pendingHash, pendingIssuedAt, pendingExpiresAt",
+    ExpressionAttributeValues: { ":hash": "next", ":expiresAt": 20, ":purgeAt": 30, ":at": 15, ":previous": "current" } });
+  assert.deepEqual(commands[2].input, { ...base,
+    ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND attribute_not_exists(reuseDetectedAt)",
+    UpdateExpression: "SET reuseDetectedAt = :at", ExpressionAttributeValues: { ":at": 16 } });
 });

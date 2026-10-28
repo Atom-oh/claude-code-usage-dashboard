@@ -68,7 +68,7 @@ Unsafe requests retain the existing exact-Origin gate. Responses and downloads a
 | `DELETE /api/collector/devices/:id` | Revoke an owned device; 204 for existing/already revoked, 404 for absent. |
 | `GET /api/collector/package/:platform` | Authenticated installer archive for `linux` or `darwin`; no credentials embedded. |
 | `POST /api/ingest/v1/{logs,metrics,traces}` | Device bearer token only; OTLP JSON/protobuf, at most 2 MiB, no content compression. |
-| `POST /api/ingest/renew` | Device bearer token; JSON content type, empty body; six per device per hour. 200 `{renewed: false, expiresAt}` while more than seven days remain or for an unused replacement, else `{renewed: true, token, expiresAt}` with a new 30-day token. |
+| `POST /api/ingest/renew` | Device bearer token; JSON content type, empty body; six per device per hour. 200 `{renewed: false, expiresAt}` while more than seven days remain or for an unused replacement, else `{renewed: true, token, expiresAt}` with a new 30-day token. Device views add `renewedAt` and `reuseDetectedAt` (first use of a superseded token). |
 
 Device fields are `id`, `name`, `platform`, `createdAt`, `expiresAt`, `revokedAt`,
 `lastSeenAt` and `renewedAt` (last completed renewal); dates are ISO strings or null.

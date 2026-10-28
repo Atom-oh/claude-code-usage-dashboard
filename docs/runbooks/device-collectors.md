@@ -45,7 +45,9 @@ logout or removal of an IdP group does not revoke previously issued device token
 revoke them explicitly during offboarding. Renewal does not recheck IdP group membership.
 A stolen token can also be renewed: if someone else renews and uses it first, the
 legitimate device fails with `invalid_token`, its last receipt stops and `renewedAt`
-changes unexpectedly. Revoke that device. Owners manage only their own devices.
+changes unexpectedly. Revoke that device. A token superseded by renewal is rejected; its
+first later use sets `reuseDetectedAt` once and shows a revocation warning on the device,
+since either copy may be the stolen one. Owners manage only their own devices.
 An installation operator can revoke an inaccessible owner's record through its
 controlled DynamoDB operational workflow; never copy the stored hash into a token.
 

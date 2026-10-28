@@ -23,7 +23,8 @@ function deviceView(record) {
   const date = value => Number.isFinite(value) ? new Date(value).toISOString() : null;
   return { id: record.id, name: record.name, platform: record.platform,
     createdAt: date(record.createdAt), expiresAt: date(record.expiresAt),
-    revokedAt: date(record.revokedAt), lastSeenAt: date(record.lastSeenAt), renewedAt: date(record.renewedAt) };
+    revokedAt: date(record.revokedAt), lastSeenAt: date(record.lastSeenAt), renewedAt: date(record.renewedAt),
+    reuseDetectedAt: date(record.reuseDetectedAt) };
 }
 
 // Each stored hash is valid only before its own expiry; comparison is timing-safe.
@@ -74,10 +75,16 @@ export function createDeviceTokenService({ store, issuer, now = Date.now }) {
         cache.set(key, { record, until: Math.min(readStarted + 10000, record.expiresAt) });
         return { owner, id, hash: record.secretHash, expiresAt: record.expiresAt, promoted: attempt > 0 };
       }
-      if (attempt > 0 || !matches(record.pendingHash, record.pendingExpiresAt, hash, at)) return null;
+      if (attempt > 0 || !matches(record.pendingHash, record.pendingExpiresAt, hash, at)) {
+        // A token superseded by promotion should never return; its use suggests a copied token.
+        // Flag the device once (the owner sees it on /collector) and still reject the request.
+        if (record.reuseDetectedAt === undefined && matches(record.previousHash, Number.MAX_SAFE_INTEGER, hash, at))
+          await store.flagReuse(owner, id, at, options).catch(() => {});
+        return null;
+      }
       cache.delete(key);
       const pending = { hash: record.pendingHash, expiresAt: record.pendingExpiresAt,
-        purgeAt: purgeFor(record.pendingExpiresAt) };
+        purgeAt: purgeFor(record.pendingExpiresAt), previous: record.secretHash };
       if (await store.promote(owner, id, pending, at, options))
         return { owner, id, hash: pending.hash, expiresAt: pending.expiresAt, promoted: true };
       // Another replica won the promotion (or the record changed): verify the fresh record normally.

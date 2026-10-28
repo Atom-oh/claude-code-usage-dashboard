@@ -478,7 +478,7 @@ test("total deadlines bound body receipt and upstream response, release slots an
 });
 
 const DAY = 86400000;
-const DEVICE_KEYS = ["id", "name", "platform", "createdAt", "expiresAt", "revokedAt", "lastSeenAt", "renewedAt"];
+const DEVICE_KEYS = ["id", "name", "platform", "createdAt", "expiresAt", "revokedAt", "lastSeenAt", "renewedAt", "reuseDetectedAt"];
 const dueFixture = async t => {
   const clock = { time: Date.now() };
   const f = await fixture(t, { now: () => clock.time });
