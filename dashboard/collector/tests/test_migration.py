@@ -27,6 +27,8 @@ class Migration(unittest.TestCase):
         self.root = self.home / ".local/share/ccdash-collector"
         self.unit = self.home / "Library/LaunchAgents/org.ccdash.collector.plist"
         self.legacy = self.unit.with_name("com.ccdash.otelcol.plist")
+        self.renewal = self.unit.with_name("org.ccdash.collector.renew.plist")
+        self.renewal_loaded = False
         self.config = self.home / ".otelcol/config.yaml"
         self.env = self.home / ".otelcol/env"
         self.queue = self.home / ".otelcol/queue/pending"
@@ -153,6 +155,15 @@ class Migration(unittest.TestCase):
             if self.start_error:
                 raise ValueError("simulated startup failure")
             return True
+        renew = domain + "/org.ccdash.collector.renew"
+        if command == ["launchctl", "print", renew]:
+            return self.renewal_loaded
+        if command == ["launchctl", "bootout", renew]:
+            self.renewal_loaded = False
+            return True
+        if command == ["launchctl", "bootstrap", domain, str(self.renewal)]:
+            self.renewal_loaded = True
+            return True
         self.fail("unexpected OS command: " + repr(command))
 
     def install(self):
@@ -247,11 +258,14 @@ class Migration(unittest.TestCase):
         self.assertEqual(backups[0].stat().st_mode & 0o777, 0o700)
         self.assertEqual((backups[0] / self.legacy.name).read_bytes(), self.original[self.legacy])
         self.assertNotIn("PRIVATE_FIXTURE", self.output.getvalue())
+        self.assertTrue(self.renewal_loaded)
+        self.assertEqual(plistlib.loads(self.renewal.read_bytes())["ProgramArguments"][-1], "renew")
 
     def test_failed_new_start_restores_legacy_and_client_files(self):
         self.start_error = True
         with self.assertRaisesRegex(ValueError, "startup failure"):
             self.install()
+        self.assertFalse(self.renewal.exists() or self.renewal_loaded)
         self.assertTrue(self.loaded)
         self.assertFalse(self.disabled)
         self.assertFalse(self.new_running)
