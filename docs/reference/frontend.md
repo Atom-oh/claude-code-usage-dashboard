@@ -180,10 +180,13 @@ partial-preserving stacked areas over the pure helpers in
 [modelCostTrend.js](../../dashboard/web/src/modelCostTrend.js): `fromByModelDaily` adapts the
 detail `/api/cost/by-model-daily` rows and `fromByModelTime` the shared `by_model_time` rows.
 The frame keeps the top six series by known cost plus an Others segment with fixed membership.
-Model colors are stable per name and theme: registered models use the trend palette,
-other known Claude models/families keep `modelColorFor`, and remaining models use solid
-vendor palettes. OpenAI and other-vendor fallbacks have six tones; Others has an exclusive
-neutral. Series are monotone stacked areas; unavailable and no-data buckets are gaps (null,
+Model colors are stable per name and theme. Model donuts and trends share the
+[family palette](../../dashboard/web/src/colors.js): Claude Opus, Sonnet, Haiku and
+Fable; OpenAI Sol, Terra, Luna and Astra. Versions remain separate and use bounded
+shades within their family's hue; regional aliases keep the same color across
+backend cards. Unrecognized models use neutral shades, and the aggregate Others
+segment keeps an exclusive neutral. Family names do not identify emitting clients.
+Series are monotone stacked areas; unavailable and no-data buckets are gaps (null,
 never a drawn $0), as is a series whose cost is unavailable inside a partial bucket; a
 series with no usage stacks as 0, and a positive point between gaps is drawn as a dot, and an invisible
 zero-height bar carries the bucket state marks. A header toggle switches between stacked

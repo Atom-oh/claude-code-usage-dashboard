@@ -594,8 +594,7 @@ export function trendColor(key, theme = "light") {
     const palette = Object.values(MODEL_TREND_COLORS[mode]);
     return palette[Number(user[1]) % palette.length];
   }
-  // modelColorFor has one set for both themes.
-  if (k.startsWith("family:")) return modelColorFor(k.slice(7)) ?? MODEL_TREND_OTHERS[mode];
+  if (k.startsWith("family:")) return modelColorFor(k.slice(7), mode) ?? MODEL_TREND_OTHERS[mode];
   const ramp = /^(anthropic|openai|other)-(\d+)$/.exec(k);
   if (ramp) {
     const color = MODEL_TREND_VENDOR_RAMPS[ramp[1]][mode][Number(ramp[2])];

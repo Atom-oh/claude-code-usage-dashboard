@@ -89,9 +89,9 @@ test("그룹별 모델 스택 바 두 줄: 줄=그룹, 색 분할=모델, 길이
   expect([...bLine.querySelectorAll("span")].some((x) => /width:\s*100%/.test(x.getAttribute("style") || ""))).toBe(true);
   const eLine = lines.find((d) => d.getAttribute("aria-label") === "enterprise $6 — claude-sonnet-5 $6");
   expect([...eLine.querySelectorAll("span")].some((x) => /width:\s*60%/.test(x.getAttribute("style") || ""))).toBe(true);
-  // 모델 세그먼트 색 = MODEL_COLOR(sonnet-5) — 그룹 색이 아니라 모델 색.
-  // jsdom은 hex를 rgb()로 정규화한다 — #6C7CE0 = rgb(108, 124, 224)
-  expect([...bLine.querySelectorAll("span")].some((x) => /rgb\(108,\s*124,\s*224\)|#6C7CE0/i.test(x.getAttribute("style") || ""))).toBe(true);
+  // The Sonnet family hue follows the model across backend channels.
+  // jsdom normalizes #355FC7 to rgb(53, 95, 199).
+  expect([...bLine.querySelectorAll("span")].some((x) => /rgb\(53,\s*95,\s*199\)|#355FC7/i.test(x.getAttribute("style") || ""))).toBe(true);
 
   // 단가표 밖 모델도 유효한 보고값은 지출 막대에 포함된다.
   expect(titles).toContain("bedrock $7 — titan-text-lite $7");
