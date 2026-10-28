@@ -184,7 +184,7 @@ function ModelUserPanel({ modelRow, userModelRows, loading, error, onClose }) {
                 </span>
               </div>
               <div className="mt-1 h-1.5 rounded bg-ink-100">
-                <div className="h-1.5 rounded" style={{ width: `${Math.min(100, Math.max(0, r.share || 0))}%`, background: modelColorFor(modelLabel(modelRow.model)) }} />
+                <div className="h-1.5 rounded" style={{ width: `${Math.min(100, Math.max(0, r.share || 0))}%`, background: modelColorFor(modelLabel(modelRow.model)) || "var(--chart-1)" }} />
               </div>
             </li>
           ))}
@@ -729,11 +729,12 @@ export default function Cost() {
           exportName="cost_by_model"
           stale={byModel.stale || compare.stale}
         />
+        {/* by-model·by-user-model 두 응답이 모두 같은 기간 기준일 때만 비중/잔여(사용자 ID 없음)를 계산한다. */}
         {selectedModelRow && (
           <ModelUserPanel
             modelRow={selectedModelRow}
             userModelRows={mergedUserModel}
-            loading={byUserModel.loading}
+            loading={byUserModel.loading || byUserModel.stale || byModel.stale}
             error={byUserModel.error}
             onClose={() => setSelectedModel(null)}
           />

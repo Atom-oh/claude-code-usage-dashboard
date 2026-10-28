@@ -125,7 +125,7 @@ export function DataTable({ columns, rows, groupKey = "group", title, subtitle, 
               <tr
                 key={i}
                 onClick={onRowClick ? () => onRowClick(r) : undefined}
-                aria-selected={isRowSelected ? isRowSelected(r) : undefined}
+                data-selected={isRowSelected?.(r) ? "true" : undefined}
                 className={`border-t border-ink-100 hover:bg-ink-50 ${onRowClick ? "cursor-pointer" : ""} ${isRowSelected?.(r) ? "bg-brand-50" : ""}`}
               >
                 {columns.map((c) => {

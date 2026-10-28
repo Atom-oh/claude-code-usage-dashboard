@@ -673,7 +673,23 @@ test("clicking a model row opens a per-user share panel beside the table and tog
   expect(panel.textContent).toContain("$16");
   expect(panel.textContent).toContain("80.0%");
   expect(panel.textContent).toContain("사용자 ID 없음");
-  expect(row.getAttribute("aria-selected")).toBe("true");
+  expect(row.getAttribute("data-selected")).toBe("true");
   fireEvent.click(row);
   expect(screen.queryByText(/— 사용자별 비용$/)).toBeNull();
+});
+
+test("a period change holds the model user panel until both responses are for the new period", async () => {
+  const { held, gate } = mountHeld();
+  await dailyChart();
+  fireEvent.click(within(screen.getByText("모델별 비용과 토큰", { exact: true }).closest(".rounded-lg")).getAllByRole("row")[1]);
+  const panel = () => screen.getByText(/— 사용자별 비용$/).closest(".rounded-lg");
+  expect(panel().textContent).toContain("사용자 ID 없음");
+  gate.models = true;
+  fireEvent.click(screen.getByRole("button", { name: "30일", exact: true }));
+  await act(async () => {});
+  expect(panel().textContent).toContain("불러오는 중");
+  expect(panel().textContent).not.toContain("사용자 ID 없음");
+  const req = held.find((h) => h.u.pathname === "/api/cost/by-model");
+  await act(async () => req.resolve({ ok: true, status: 200, json: async () => MODELS }));
+  await waitFor(() => expect(panel().textContent).toContain("사용자 ID 없음"));
 });
