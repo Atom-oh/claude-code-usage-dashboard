@@ -79,7 +79,7 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
         <h2 id="codex-insights-heading" className="text-xl font-semibold text-ink-800">Codex 상세 관측</h2>
         <p className="mt-1 text-sm text-ink-600">Codex 비용은 AWS 정가 추정입니다. 실행 관측값은 실청구·코드 품질·절감 시간을 뜻하지 않습니다.</p>
       </div>
-      {!enabled || loading ? <Loading /> : error ? <ErrorBox error={error} /> : (
+      {error ? <ErrorBox error={error} /> : !enabled || loading ? <Loading /> : (
         <>
           {data?.range && <p className="text-sm text-ink-600">
             상세 조회 구간: {formatClientTimestamp(data.range.from)} ~ {formatClientTimestamp(data.range.to)} (브라우저 시간)

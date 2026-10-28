@@ -117,7 +117,7 @@ export default function Clients({ page = "overview" }) {
       {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
       {sections && clients.includes("codex") && <CodexInsights sections={sections}
         range={!loading && !error ? data?.effective_range : null} enabled={page === "cost" ? effortEnabled : !loading}
-        hold={stale} api={page === "cost" ? codexEffort : undefined} />}
+        hold={stale} api={page === "cost" ? { ...codexEffort, error: error || codexEffort.error } : undefined} />}
       {(page === "productivity" || page === "analytics") &&
         <Card title="지표 지원 범위">
           <p className="text-sm text-ink-600">

@@ -89,8 +89,28 @@ test.each(["pending", "failed", "empty"])("breakdown titles remain visible while
       await waitFor(() => expect(card(title).textContent).toContain("데이터를 불러오지 못했습니다."));
       expect(card(title).textContent).not.toContain("불러오는 중...");
     }
+    const details = screen.getByRole("heading", { name: "Codex 상세 관측" }).closest("section");
+    await waitFor(() => expect(details.textContent).toContain("데이터를 불러오지 못했습니다."));
+    expect(details.textContent).not.toContain("불러오는 중...");
   }
   if (state === "empty") await waitFor(() => expect(card(TITLES[0]).textContent).toContain("데이터가 없습니다"));
+});
+
+test.each(["claude", "codex"])("effort uses its own observations when the %s overview has no logs", async (client) => {
+  mount({ enabledClients: [client], entry: `/cost?client=${client}`,
+    data: overview({ observed_records: 0, by_client: [], by_model: [], timeseries: [] }) });
+  await waitFor(() => expect(card(TITLES[1]).textContent).toContain(client === "claude" ? "medium" : "high"));
+  expect(card(TITLES[1]).textContent).not.toContain("데이터가 없습니다");
+});
+
+test.each(["logs", "effort", "tool"])("Codex effort distinguishes %s coverage limits from no observations", async (section) => {
+  const insights = codexDetail(section === "tool" ? undefined : []);
+  insights.coverage.logs = section === "logs" ? { status: "limited", records: null }
+    : { status: "observed", records: 1, limited_sections: [section] };
+  mount({ enabledClients: ["codex"], entry: "/cost?client=codex", insights });
+  await waitFor(() => expect(card(TITLES[1]).textContent).toContain(section === "tool" ? "high" : "조회 한도"));
+  expect(card(TITLES[1]).textContent).not.toContain("데이터가 없습니다");
+  if (section !== "tool") expect(card(TITLES[1]).querySelector("svg.recharts-surface")).toBeNull();
 });
 
 test.each([0, null])("model and effort cards preserve partial zero or all-unknown costs (%s)", async (cost_usd) => {

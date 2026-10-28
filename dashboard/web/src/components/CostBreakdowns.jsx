@@ -8,9 +8,11 @@ import { modelColorFor } from "../colors.js";
 import { sumKnownSpend } from "../spend.js";
 
 // Keep a card's question visible while its independently requested answer changes.
-export function CostBreakdownCard({ loading, error, empty, children, ...props }) {
+export function CostBreakdownCard({ loading, error, limited, empty, children, ...props }) {
   return <Card {...props}>
-    {error ? <ErrorBox error={error} /> : loading ? <Loading /> : empty ? <EmptyState /> : children}
+    {error ? <ErrorBox error={error} /> : loading ? <Loading /> : limited
+      ? <p role="status" className="text-sm text-warning-text">조회 한도를 넘어 비용 비중을 보류했습니다. 기간을 줄이면 확인할 수 있습니다.</p>
+      : empty ? <EmptyState /> : children}
   </Card>;
 }
 
@@ -69,6 +71,9 @@ export default function CostBreakdowns({ clients, data, loading, error, empty, c
       const modelRows = withBasis((data?.by_model || []).filter((source) => source.client === client), modelLabel);
       const effortApi = client === "claude" ? claudeEffort : codexEffort;
       const effortRows = withBasis(effortApi?.data?.effort || [], effortLabel, client === "codex" ? "aws_list_estimate" : undefined);
+      const effortCoverage = effortApi?.data?.coverage?.logs;
+      const effortLimited = client === "codex" && (effortCoverage?.status === "limited"
+        || effortCoverage?.limited_sections?.includes("effort"));
       return <div key={client} className="grid items-start gap-4 xl:grid-cols-3">
         <CostBreakdownCard title={suffix("모델별 비용 비중", client)}
           subtitle="모델 버전·백엔드별 알려진 비용 · 실청구와 다를 수 있습니다."
@@ -81,7 +86,7 @@ export default function CostBreakdowns({ clients, data, loading, error, empty, c
             ? "보고·재산정 비용 카운터 기준 · 토큰 계산으로 채운 비용은 제외합니다."
             : "기록된 완료 응답의 AWS 정가 추정 · 실청구와 다를 수 있습니다."}
           loading={loading || effortApi?.loading} error={error || effortApi?.error}
-          empty={clientEmpty || effortRows.length === 0}>
+          limited={effortLimited} empty={effortRows.length === 0}>
           <CostShare rows={effortRows} />
         </CostBreakdownCard>
         <CostBreakdownCard title={suffix("입력·캐시 구성", client)}
