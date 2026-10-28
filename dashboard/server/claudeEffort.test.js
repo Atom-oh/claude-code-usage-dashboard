@@ -84,4 +84,24 @@ test("legacy effort SQL keeps its existing grain and unknown-group policy", () =
   assert.match(sql, /GROUP BY "group", effort, model\s/);
   assert.ok(!sql.includes("AS backend"));
   assert.ok(!Object.hasOwn(params, "fBackend"));
+  assert.ok(!sql.includes("LIMIT 50001"));
+});
+
+test("shared effort bounds transported scopes without returning a truncated subtotal", async () => {
+  assert.match(effortMixSql(from, to, {}, { byModel: true }).sql, /LIMIT 50001\s*$/);
+  const scopes = Array(50000).fill(row());
+  assert.equal((await claudeEffort(from, to, {}, async () => scopes)).effort[0].cost_usd, 250000);
+  await assert.rejects(claudeEffort(from, to, {}, async () => [...scopes, row()]),
+    error => error.status === 400 && error.message === "too much client data");
+});
+
+test("known effort subtotal bases omit excluded scopes while all-unknown bases retain sources", () => {
+  const awsMissing = row({ model: "openai.gpt-6.1-sol", reported_cost: null });
+  const known = foldClaudeEffort([row(), awsMissing])[0];
+  assert.equal(known.cost_basis, "client_reported");
+  assert.equal(known.cost_usd, 5);
+  assert.equal(known.cost_partial, true);
+  assert.equal(known.unpriced, 1);
+  assert.equal(foldClaudeEffort([awsMissing])[0].cost_basis, "aws_list_estimate");
+  assert.equal(foldClaudeEffort([row({ reported_cost: null }), awsMissing])[0].cost_basis, "mixed");
 });

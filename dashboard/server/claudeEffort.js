@@ -28,23 +28,32 @@ export function foldClaudeEffort(rows) {
     const effort = row.effort || "unknown", backend = row.backend || "unknown";
     const key = JSON.stringify([effort, backend]);
     const group = groups.get(key) || { effort, backend, cost_usd: null,
-      cost_partial: false, unpriced: 0, bases: new Set() };
-    group.bases.add(isNonAnthropicModel(row.model) ? "aws_list_estimate" : "client_reported");
+      cost_partial: false, unpriced: 0, bases: new Set(), knownBases: new Set() };
+    const basis = isNonAnthropicModel(row.model) ? "aws_list_estimate" : "client_reported";
+    group.bases.add(basis);
     if (cost === null) group.unpriced++;
-    else group.cost_usd = (group.cost_usd ?? 0) + cost;
+    else {
+      group.knownBases.add(basis);
+      group.cost_usd = (group.cost_usd ?? 0) + cost;
+    }
     groups.set(key, group);
   }
-  return [...groups.values()].map(({ bases, ...row }) => ({
-    ...row,
-    cost_usd: Number.isFinite(row.cost_usd) ? row.cost_usd : null,
-    cost_partial: row.cost_usd !== null && (row.unpriced > 0 || !Number.isFinite(row.cost_usd)),
-    cost_basis: bases.size === 1 ? [...bases][0] : "mixed",
-  })).sort((a, b) => a.effort.localeCompare(b.effort) || a.backend.localeCompare(b.backend));
+  return [...groups.values()].map(({ bases, knownBases, ...row }) => {
+    const displayedBases = knownBases.size ? knownBases : bases;
+    return {
+      ...row,
+      cost_usd: Number.isFinite(row.cost_usd) ? row.cost_usd : null,
+      cost_partial: row.cost_usd !== null && (row.unpriced > 0 || !Number.isFinite(row.cost_usd)),
+      cost_basis: displayedBases.size === 1 ? [...displayedBases][0] : "mixed",
+    };
+  }).sort((a, b) => a.effort.localeCompare(b.effort) || a.backend.localeCompare(b.backend));
 }
 
 export async function claudeEffort(from, to, raw = {}, load = effortMix) {
   const { user, model, backend } = validateClaudeEffort(raw);
   const rows = await load(from, to, { user, model, backend, excludeUnknown: false }, { byModel: true });
+  if (rows.length > 50000)
+    throw new ValidationError("too much client data", "narrow the requested date range");
   return { range: { from: from.toISOString(), to: to.toISOString() },
     effort: foldClaudeEffort(rows), cost_scope: "reported_or_rescaled_counters" };
 }

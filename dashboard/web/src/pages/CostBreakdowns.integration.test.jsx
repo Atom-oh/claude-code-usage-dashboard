@@ -140,21 +140,21 @@ test("excluded cost scopes do not claim that Claude model/session counts are com
 });
 
 test("model versions and their backend identities remain separate and keep family shades", async () => {
-  const older = { ...claude, model: "claude-sonnet-4-5", backend: "bedrock", cost_usd: 1 };
+  const older = { ...claude, model: "claude-sonnet-4-5", backend: "bedrock-runtime", cost_usd: 1 };
   mount({ enabledClients: ["claude"], entry: "/cost?client=claude",
     data: overview({ by_client: [claude], by_model: [claude, older] }) });
   await screen.findByText(TITLES[0], { exact: true });
   await waitFor(() => expect(card(TITLES[0]).textContent).toContain("claude-sonnet-4-5"));
   const model = card(TITLES[0]);
   expect(model.textContent).toContain("claude-sonnet-5 · anthropic");
-  expect(model.textContent).toContain("claude-sonnet-4-5 · bedrock");
+  expect(model.textContent).toContain("claude-sonnet-4-5 · bedrock-runtime");
   const swatches = [...model.querySelectorAll("li span[style]")].map((node) => node.style.background);
   expect(swatches).toContain("rgb(53, 95, 199)");
   expect(swatches).toContain("rgb(45, 86, 186)");
 });
 
 test("effort requests share effective bounds and supported filters while independent failures leave model and cache usable", async () => {
-  const { requests } = mount({ entry: "/cost?client=all&view=common&user=fixture&model=sonnet&backend=bedrock",
+  const { requests } = mount({ entry: "/cost?client=all&view=common&user=fixture&model=sonnet&backend=bedrock-runtime",
     respond: (u) => u.pathname === "/api/clients/claude-effort"
       ? Promise.resolve({ ok: false, status: 500, json: async () => ({}) }) : undefined });
   await screen.findByText("Effort별 비용 비중 — Claude Code", { exact: true });
@@ -166,13 +166,21 @@ test("effort requests share effective bounds and supported filters while indepen
     expect(u.searchParams.get("to")).toBe(RANGE.to);
     expect(u.searchParams.get("user")).toBe("fixture");
     expect(u.searchParams.get("model")).toBe("sonnet");
-    expect(u.searchParams.get("backend")).toBe("bedrock");
+    expect(u.searchParams.get("backend")).toBe("bedrock-runtime");
     expect(u.searchParams.has("group")).toBe(false);
     expect(u.searchParams.has("project")).toBe(false);
   }
   expect(effortRequests.find((u) => u.pathname === "/api/codex/insights").searchParams.get("profile")).toBe("effort");
   expect(card("모델별 비용 비중 — Claude Code").textContent).toContain("claude-sonnet-5");
   expect(card("입력·캐시 구성 — Claude Code").textContent).toContain("220");
+});
+
+test("unknown Claude effort backend uses the shared Korean placeholder", async () => {
+  mount({ enabledClients: ["claude"], entry: "/cost?client=claude",
+    effort: claudeDetail([{ effort: "medium", backend: "unknown", cost_usd: 3,
+      cost_partial: false, unpriced: 0, cost_basis: "client_reported" }]) });
+  await waitFor(() => expect(card(TITLES[1]).textContent).toContain("medium · 백엔드 미제공"));
+  expect(card(TITLES[1]).textContent).not.toContain("unknown");
 });
 
 test("changing the client clears old breakdown identities and does not request disabled-client effort", async () => {

@@ -2068,7 +2068,7 @@ export function effortMixSql(from, to, filters = {}, { byModel = false } = {}) {
       ${byModel && filters.backend ? "AND backend = {fBackend:String}" : ""}
     GROUP BY "group", effort, model${byModel ? ", backend, m.SessionId, m.UserEmail" : ""}
     HAVING countIf(m.InWindow) > 0
-    ORDER BY "group", effort`,
+    ORDER BY "group", effort${byModel ? " LIMIT 50001" : ""}`,
     params: { ...range(from, to, true), ...f.params,
       ...(byModel && filters.backend ? { fBackend: filters.backend } : {}) } };
 }

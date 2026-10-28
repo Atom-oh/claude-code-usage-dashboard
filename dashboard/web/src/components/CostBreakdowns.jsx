@@ -50,9 +50,10 @@ function InputCache({ row }) {
     : <DonutBody data={data} nameKey="label" valueKey="tokens" valueFormatter={formatObserved} />;
 }
 
-const modelLabel = (row) => [row.model || "(모델 미지정)", row.backend || "백엔드 미제공"].join(" · ");
+const backendLabel = (backend) => backend === "unknown" ? "백엔드 미제공" : backend;
+const modelLabel = (row) => [row.model || "(모델 미지정)", backendLabel(row.backend) || "백엔드 미제공"].join(" · ");
 const effortLabel = (row) => [!row.effort || row.effort === "unknown" ? "미지정" : row.effort,
-  row.backend].filter(Boolean).join(" · ");
+  backendLabel(row.backend)].filter(Boolean).join(" · ");
 const withBasis = (rows, label, fallback) => {
   const bases = new Set(rows.map((row) => row.cost_basis || fallback));
   return rows.map((row) => ({ ...row, cost_basis: row.cost_basis || fallback,

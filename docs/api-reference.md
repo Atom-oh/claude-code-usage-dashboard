@@ -255,6 +255,9 @@ The response includes `range`, `cost_scope="reported_or_rescaled_counters"` and
 `effort` rows with `effort`, `backend`, nullable `cost_usd`, `cost_partial`,
 `cost_basis` and `unpriced`. Empty effort becomes `unknown`; backend identities
 remain separate. `unpriced` counts aggregated user/session/model scopes, not requests.
+`cost_basis` describes the known subtotal's contributing scopes; when all costs
+are unknown, it describes their source bases. More than 50,000 scopes returns
+400 and asks for a narrower range, without returning a truncated subtotal.
 Known counter reports and ADR-017 rescaled estimates retain cumulative/delta
 boundaries. Token-derived overview fallback estimates are outside this card's
 scope, so its total need not equal the overview total. All-unknown cost is null;
