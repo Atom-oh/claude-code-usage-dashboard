@@ -333,7 +333,8 @@ python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.e
             <li>명령을 실행한 뒤 토큰 입력 안내가 나오면 복사한 토큰을 붙여 넣고 Enter를 누르세요. 입력 내용은 화면에 표시되지 않습니다.</li>
             <li>설치 후 터미널을 새로 열고 Claude Code와 Codex에서 새 세션을 시작하세요.</li>
           </ol>
-          <p className="mt-3 text-xs leading-relaxed text-ink-500">토큰을 명령에 직접 넣지 마세요. 만료 시 새 토큰을 발급하고 설치를 다시 실행하세요.</p>
+          <p className="mt-3 text-xs leading-relaxed text-ink-500">토큰을 명령에 직접 넣지 마세요. 실행 중인 기기는 만료 7일 전부터 토큰을 자동으로 갱신합니다.
+            만료·해지된 기기는 새 토큰으로 설치를 다시 실행하세요. 이전 패키지 설치는 README 안내대로 다시 설치해야 갱신이 켜집니다.</p>
         </Card>
         <Card title={<StepTitle number="5">수신 확인</StepTitle>}>
           <CollectorVerification platform={platform} />
@@ -373,6 +374,7 @@ python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.e
                   <div><dt className="text-ink-500">최근 수신</dt><dd className="mt-1 text-ink-700">{device.lastSeenAt ? <DeviceTime value={device.lastSeenAt} /> : "수신 기록 없음"}</dd></div>
                 </dl>
                 {device.revokedAt && <p className="mt-2 text-xs text-ink-500">해지 시각: <DeviceTime value={device.revokedAt} /></p>}
+                {device.renewedAt && <p className="mt-2 text-xs text-ink-500">자동 갱신 <DeviceTime value={device.renewedAt} /></p>}
                 {confirmId === device.id && !disabled && <div role="group" aria-label={`${device.name} 해지 확인`}
                   className="mt-3 rounded-md border border-warning-border bg-warning-surface p-3">
                   <p className="text-sm text-warning-text">이 기기의 수집을 중단할까요? 다시 연결하려면 새 토큰이 필요합니다.</p>

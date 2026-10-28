@@ -10,7 +10,7 @@ const config = {
 const device = {
   id: "device-one", name: "작업용 Mac", platform: "darwin",
   createdAt: "2026-10-20T12:00:00Z", expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
-  revokedAt: null, lastSeenAt: null,
+  revokedAt: null, lastSeenAt: null, renewedAt: null,
 };
 const token = "ccd1.fixture-owner.fixture-device.fixture-secret";
 const response = (body, status = 200, type = "application/json") => ({
@@ -390,4 +390,22 @@ test("expiry status updates while the setup page remains open", async () => {
   await act(() => vi.advanceTimersByTimeAsync(30000));
   expect(screen.getByText("만료됨")).toBeTruthy();
   expect(screen.queryByRole("button", { name: `${device.name} 해지` })).toBeNull();
+});
+
+test("renewed devices show the automatic renewal time and help explains renewal", async () => {
+  const renewedAt = "2026-10-27T03:04:05.000Z";
+  installFetch({ devices: [{ ...device, renewedAt }] });
+  mount();
+  await screen.findByText(device.name);
+  const renewed = screen.getByTitle(renewedAt);
+  expect(renewed.tagName).toBe("TIME");
+  expect(renewed.closest("p").textContent.startsWith("자동 갱신 ")).toBe(true);
+  expect(screen.getAllByText(/만료 7일 전부터 토큰을 자동으로 갱신합니다/).length).toBeGreaterThanOrEqual(1);
+});
+
+test("devices without a completed renewal show no renewal time", async () => {
+  installFetch({ devices: [device] });
+  mount();
+  await screen.findByText(device.name);
+  expect(screen.queryByText(/^자동 갱신/)).toBeNull();
 });
