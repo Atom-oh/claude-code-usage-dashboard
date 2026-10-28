@@ -29,6 +29,25 @@ function storeFixture() {
       record.lastSeenAt = at;
       return true;
     },
+    async stage(owner, id, current, pending) {
+      const record = records.get(`${owner}:${id}`);
+      if (!record || record.secretHash !== current || record.revokedAt !== undefined
+        || record.expiresAt <= pending.issuedAt) return false;
+      Object.assign(record, { pendingHash: pending.hash, pendingIssuedAt: pending.issuedAt,
+        pendingExpiresAt: pending.expiresAt, purgeAt: pending.purgeAt });
+      return true;
+    },
+    async promote(owner, id, pending, at) {
+      const record = records.get(`${owner}:${id}`);
+      if (!record || record.pendingHash !== pending.hash || record.pendingExpiresAt !== pending.expiresAt
+        || pending.expiresAt <= at || record.revokedAt !== undefined) return false;
+      Object.assign(record, { secretHash: pending.hash, expiresAt: pending.expiresAt, purgeAt: pending.purgeAt,
+        renewedAt: at });
+      delete record.pendingHash;
+      delete record.pendingIssuedAt;
+      delete record.pendingExpiresAt;
+      return true;
+    },
   };
 }
 
@@ -88,7 +107,9 @@ async function fixture(t, overrides = {}) {
     method: "POST", body: "{}", ...init,
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers },
   });
-  return { request, management, issue, ingest, deliveries, directory, feature, store, base, env, authentication };
+  const renew = (token, init = {}) => request("/api/ingest/renew", { method: "POST", ...init,
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
+  return { request, management, issue, ingest, renew, deliveries, directory, feature, store, base, env, authentication };
 }
 
 async function uploadAfterAdmission(t, f, token, beforeBody) {
@@ -128,6 +149,7 @@ test("disabled feature is explicit and opt-in fails closed on invalid configurat
     collectorVersion: "0.163.1", platforms: ["linux", "darwin"] });
   assert.equal(metadata.headers.get("cache-control"), "no-store");
   assert.equal((await f.ingest("bad")).status, 404);
+  assert.equal((await f.request("/api/ingest/renew", { method: "POST" })).status, 404);
   for (const bad of [{ INGEST_ENABLED: "true" }, { INGEST_TOKEN_TABLE: "" }, { OIDC_ISSUER: "" },
     { INGEST_UPSTREAM_TOKEN_FILE: "/missing" }, { APP_PUBLIC_URL: "https://a.invalid/path" },
     { INGEST_UPSTREAM_URL: "http://user:secret@internal/" }])
@@ -453,4 +475,112 @@ test("total deadlines bound body receipt and upstream response, release slots an
   assert.ok(Date.now() - began < 17000);
   hanging = false;
   assert.equal((await f.ingest(token)).status, 200);
+});
+
+const DAY = 86400000;
+const DEVICE_KEYS = ["id", "name", "platform", "createdAt", "expiresAt", "revokedAt", "lastSeenAt", "renewedAt"];
+const dueFixture = async t => {
+  const clock = { time: Date.now() };
+  const f = await fixture(t, { now: () => clock.time });
+  const issued = await f.issue();
+  return { f, clock, ...issued, makeDue: () => { clock.time = Date.parse(issued.device.expiresAt) - 7 * DAY; } };
+};
+
+test("a due renewal returns a one-time replacement promoted by its first delivery", async t => {
+  const { f, clock, token, device, makeDue } = await dueFixture(t);
+  const idle = await f.renew(token);
+  assert.equal(idle.status, 200);
+  assert.deepEqual(await idle.json(), { renewed: false, expiresAt: device.expiresAt });
+  makeDue();
+  const result = await f.renew(token);
+  assert.equal(result.status, 200);
+  assert.equal(result.headers.get("cache-control"), "no-store");
+  const body = await result.json();
+  assert.deepEqual(Object.keys(body).sort(), ["expiresAt", "renewed", "token"]);
+  assert.equal(body.renewed, true);
+  assert.equal(body.expiresAt, new Date(clock.time + 30 * DAY).toISOString());
+  assert.match(body.token, /^ccd1\.[a-f0-9]{64}\.[a-f0-9]{32}\.[A-Za-z0-9_-]{43}$/);
+  assert.equal(body.token.split(".").slice(0, 3).join("."), token.split(".").slice(0, 3).join("."));
+  assert.notEqual(body.token, token);
+  assert.equal(f.deliveries.length, 0);
+  assert.equal((await (await f.management("/api/collector/devices")).json()).devices[0].lastSeenAt, null);
+  assert.equal((await f.ingest(token)).status, 200);
+  assert.equal((await f.ingest(body.token)).status, 200);
+  assert.equal((await f.ingest(token)).status, 401);
+  const text = await (await f.management("/api/collector/devices")).text();
+  assert.equal(text.includes("pending"), false);
+  assert.equal(text.includes(body.token.split(".")[3]), false);
+  const [listed] = JSON.parse(text).devices;
+  assert.deepEqual(Object.keys(listed), DEVICE_KEYS);
+  assert.equal(listed.renewedAt, new Date(clock.time).toISOString());
+  assert.equal(listed.expiresAt, body.expiresAt);
+});
+
+test("renewal applies the ingest gateway request rules", async t => {
+  const f = await fixture(t);
+  const { token } = await f.issue();
+  const get = await f.request("/api/ingest/renew");
+  assert.equal(get.status, 405);
+  assert.equal(get.headers.get("allow"), "POST");
+  assert.equal(get.headers.get("connection"), "close");
+  assert.equal((await f.request("/api/ingest/renew?token=x", { method: "POST" })).status, 400);
+  for (const path of ["/api/ingest/renew/", "/api/ingest/Renew", "/api/ingest/renewal"])
+    assert.equal((await f.request(path, { method: "POST" })).status, 404, path);
+  assert.equal((await f.renew(token, { headers: { "content-encoding": "gzip" } })).status, 415);
+  assert.equal((await f.renew(token, { headers: { "content-type": "text/plain" } })).status, 415);
+  const withBody = await f.renew(token, { body: "{}" });
+  assert.equal(withBody.status, 400);
+  assert.deepEqual(await withBody.json(), { error: "invalid_request" });
+  const chunked = await new Promise((resolveResponse, reject) => {
+    const request = httpRequest(f.base + "/api/ingest/renew", { method: "POST", headers: {
+      authorization: `Bearer ${token}`, "content-type": "application/json", "transfer-encoding": "chunked",
+    } }, res => {
+      res.resume();
+      res.on("end", () => resolveResponse(res));
+    });
+    request.on("error", reject);
+    request.end("{}");
+  });
+  assert.equal(chunked.statusCode, 400);
+  assert.equal((await f.renew("invalid")).status, 401);
+  assert.equal((await f.request("/api/ingest/renew", { method: "POST", headers: {
+    cookie: "__Host-session=browser", "x-fixture-role": "admin", "content-type": "application/json" } })).status, 401);
+  assert.equal(f.deliveries.length, 0);
+  assert.equal([...f.store.records.values()].some(record => "pendingHash" in record), false);
+});
+
+test("renewal is rate limited per device and recovers after the window", async t => {
+  const { f, clock, token } = await dueFixture(t);
+  for (let i = 0; i < 6; i++) assert.equal((await f.renew(token)).status, 200);
+  const limited = await f.renew(token);
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get("retry-after"), "3600");
+  assert.deepEqual(await limited.json(), { error: "renew_rate_limited" });
+  assert.equal((await f.ingest(token)).status, 200);
+  clock.time += 3600000;
+  assert.equal((await f.renew(token)).status, 200);
+});
+
+test("pending and revoked tokens get no replacement", async t => {
+  const { f, token, device, makeDue } = await dueFixture(t);
+  makeDue();
+  const { token: next, expiresAt } = await (await f.renew(token)).json();
+  const pending = await f.renew(next);
+  assert.equal(pending.status, 200);
+  assert.deepEqual(await pending.json(), { renewed: false, expiresAt });
+  assert.equal((await f.renew(token)).status, 401);
+  assert.equal((await f.management("/api/collector/devices/" + device.id, { method: "DELETE" })).status, 204);
+  const revoked = await f.renew(next);
+  assert.equal(revoked.status, 401);
+  assert.deepEqual(await revoked.json(), { error: "invalid_token" });
+});
+
+test("renewal and promotion log nothing", async t => {
+  const logs = ["log", "info", "warn", "error", "debug"].map(name => t.mock.method(console, name, () => {}));
+  const { f, token, makeDue } = await dueFixture(t);
+  makeDue();
+  const renewed = await (await f.renew(token)).json();
+  assert.equal(renewed.renewed, true);
+  assert.equal((await f.ingest(renewed.token)).status, 200);
+  assert.equal(logs.every(mock => mock.mock.callCount() === 0), true);
 });

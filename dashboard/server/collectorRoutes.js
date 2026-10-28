@@ -8,6 +8,7 @@ const BODY_LIMIT = 2 * 1024 * 1024;
 const RESPONSE_LIMIT = 64 * 1024;
 const TYPES = new Set(["application/json", "application/x-protobuf"]);
 const SIGNAL_PATHS = new Set(["/api/ingest/v1/metrics", "/api/ingest/v1/logs", "/api/ingest/v1/traces"]);
+const RENEW_PATH = "/api/ingest/renew";
 const COLLECTOR_VERSION = "0.163.1";
 const mediaType = value => (value || "").split(";")[0].trim().toLowerCase();
 const fail = (code, status) => new DeviceTokenError(code, status);
@@ -138,6 +139,7 @@ export function createCollectorFeature({ env = process.env, authentication, pack
   }) : null;
   const mintAllowed = fixedWindow(10, 3600000, now);
   const ingestAllowed = fixedWindow(120, 60000, now);
+  const renewAllowed = fixedWindow(6, 3600000, now);
   let active = 0;
   let pendingTouches = 0;
 
@@ -169,13 +171,17 @@ export function createCollectorFeature({ env = process.env, authentication, pack
       res.set("Connection", "close");
       errorResponse(res, fail(code, status));
     };
-    if (!config.enabled || !SIGNAL_PATHS.has(req.path)) return rejectEarly("not_found", 404);
+    const renewal = req.path === RENEW_PATH;
+    if (!config.enabled || (!renewal && !SIGNAL_PATHS.has(req.path))) return rejectEarly("not_found", 404);
     if (req.method !== "POST") { res.set("Allow", "POST"); return rejectEarly("method_not_allowed", 405); }
     if (req.originalUrl.includes("?")) return rejectEarly("invalid_request", 400);
     const type = mediaType(req.get("content-type"));
     if ((req.get("content-encoding") && req.get("content-encoding").toLowerCase() !== "identity")
       || !TYPES.has(type)) return rejectEarly("unsupported_media_type", 415);
     const length = req.get("content-length");
+    // Renewal carries only the bearer token; any request body is refused unread.
+    if (renewal && (req.get("transfer-encoding") || (length !== undefined && length !== "0")))
+      return rejectEarly("invalid_request", 400);
     if (length && (!/^\d+$/.test(length) || Number(length) > BODY_LIMIT)) return rejectEarly("body_too_large", 413);
     const authorization = /^Bearer (\S+)$/i.exec(req.get("authorization") || "");
     if (!authorization || req.rawHeaders.filter((value, i) => i % 2 === 0 && value.toLowerCase() === "authorization").length !== 1)
@@ -195,6 +201,13 @@ export function createCollectorFeature({ env = process.env, authentication, pack
     res.once("close", closed);
     try {
       const result = await Promise.race([aborted, (async () => {
+        if (renewal) {
+          // The only response that carries a secret: the one-time replacement token (no-store).
+          const reply = await service.renew(authorization[1], { signal,
+            admit: identity => renewAllowed(`${identity.owner}:${identity.id}`) });
+          signal.throwIfAborted();
+          return { reply };
+        }
         const identity = await service.verify(authorization[1], { signal });
         signal.throwIfAborted();
         if (!identity) throw fail("invalid_token", 401);
@@ -236,11 +249,13 @@ export function createCollectorFeature({ env = process.env, authentication, pack
         signal.throwIfAborted();
         return { bytes, responseType, status: upstream.status, identity };
       })()]);
+      // Renewal is not a delivery, so it never updates last-seen metadata.
+      if (result.reply) return void res.json(result.reply);
       res.status(result.status).set("Content-Type", result.responseType).send(result.bytes);
       touchAccepted(result.identity);
     } catch (error) {
       if (!req.complete) res.set("Connection", "close");
-      if (error?.status === 429) res.set("Retry-After", "60");
+      if (error?.status === 429) res.set("Retry-After", error.code === "renew_rate_limited" ? "3600" : "60");
       errorResponse(res, error);
     } finally {
       clearTimeout(timer);
