@@ -5,6 +5,7 @@ import { colorFor } from "../colors.js";
 import { parseUtc } from "../fmt.js";
 import { pivotByGroup, pivotByKey, groupsPresent } from "../pivot.js";
 import { useChartColors, axisTick, tooltipStyles } from "../useChartColors.js";
+import { chartTheme } from "../modelCostTrend.js";
 
 // 공통 범례 스타일 — recharts 기본 Legend는 라벨 텍스트를 시리즈 색으로 칠한다(dataviz: 텍스트는
 // 잉크 토큰만, 색 정체성은 옆의 스와치가 나른다). formatter로 잉크색을 강제하고 스와치는 다른
@@ -436,14 +437,14 @@ export function RingGauge({ pct, color, label, sub }) {
 }
 
 // 도넛 본체 (Card 없음) — 한 카드에 도넛을 여러 개 넣을 때 직접 조합한다 (예: Cost의
-// 모델별 지출 비중 bedrock/enterprise 나란히). colorOf(name, i)로 색을 넘기면 도넛 간에
+// 모델별 지출 비중 bedrock/enterprise 나란히). colorOf(name, i, theme)로 색을 넘기면 도넛 간에
 // 같은 항목이 같은 색을 갖도록 밖에서 고정할 수 있다.
 export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", valueFormatter, colorOf }) {
   const c = useChartColors();
   // colorOf가 전역 top-N에서 만든 고정 맵이면, 그 top-N 밖 모델이 이 도넛에 등장할 때
   // undefined를 반환할 수 있다 — Cell fill/범례 스와치가 깨지지 않도록 팔레트로 폴백한다
   // (리뷰에서 MINOR로 확인).
-  const color = (name, i) => colorOf?.(name, i) ?? c.palette[i % c.palette.length];
+  const color = (name, i) => colorOf?.(name, i, chartTheme(c.surface)) ?? c.palette[i % c.palette.length];
   const total = data.reduce((s, d) => s + (Number(d[valueKey]) || 0), 0);
   // Math.round만 쓰면 짧은 기간의 소액 tier(몇 센트)가 전부 "$0"으로 보인다 — $10 미만은 소수 2자리.
   const fmt = valueFormatter || ((v) =>

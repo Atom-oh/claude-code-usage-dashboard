@@ -24,128 +24,105 @@ export function colorFor(group) {
   return GROUP_COLOR[group] || GROUP_COLOR.unknown;
 }
 
-// 모델 색상은 계열(패밀리)별 고정 색상군 — 파스텔/소프트 재설계(미리보기 A안, 사용자 선택):
-// sonnet=소프트 페리윙클 블루, opus=소프트 코럴/피치, haiku=세이지 민트그린, fable=더스티
-// 로즈. 같은 계열의 버전은 같은 색상군 안에서 신버전일수록 살짝 더 진하게(과격한 대비 아님).
-// 인덱스 순환 배정과 달리 기간/필터로 모델 순위가 변해도 색이 흔들리지 않는다(dataviz: 색은
-// 엔티티를 따라감). 이전 "팝" 조합은 dataviz validate_palette 전 항목을 강제로 통과시키려고
-// 채도를 끌어올렸는데 결과가 안 예뻤다는 피드백으로, 이번엔 검증기를 강제 기준으로 두지 않고
-// 미학을 우선했다(사용자 명시 지시) — 계열 구분은 유지되지만 색각이상 분리는 이전보다 약할
-// 수 있음, 범례·툴팁이 여전히 보조 인코딩이라 식별엔 문제없음. 키는 normModel() 정규화 후 이름.
-const MODEL_COLOR = {
-  "claude-sonnet-5": "#6C7CE0",
-  "claude-sonnet-4-6": "#93A0EC",
-  "claude-sonnet-4-5": "#B7C0F5",
-  "claude-opus-5": "#E8845F",
-  "claude-opus-4-8": "#F0A47C",
-  "claude-opus-4-7": "#F5C09B",
-  "claude-opus-4-6": "#FAD8BE",
-  "claude-opus-4-5": "#FDEADB",
-  "claude-haiku-4-5": "#7FC9A0",
-  "claude-haiku-3-5": "#A8DCC0",
-  "claude-3-5-haiku": "#A8DCC0",
-  "claude-fable-5": "#E091B0",
+// Hue identifies the model family; bounded shades distinguish versions without fading
+// old/unregistered models into the card surface. Backend and emitting client remain separate.
+export const MODEL_FAMILY_COLORS = {
+  light: {
+    opus: ["#B4532E", "#C66136", "#D37145", "#A84B27", "#BC603C", "#CC6B41"],
+    sonnet: ["#355FC7", "#426CCE", "#2D56BA", "#547ADB", "#335EAD", "#496CBC"],
+    haiku: ["#167A63", "#20856D", "#2B9077", "#116F59", "#23816B", "#318A75"],
+    fable: ["#AF3C70", "#BC4A7C", "#C65889", "#9F3463", "#AF527B", "#BA6087"],
+    sol: ["#A76B0F", "#B67A1C", "#C18728", "#94600E", "#AA7729", "#B88536"],
+    terra: ["#856044", "#936C4D", "#9F7656", "#78543B", "#89674E", "#97755A"],
+    luna: ["#137A9B", "#2287A6", "#3291AF", "#0E6E8F", "#29809C", "#388BA5"],
+    astra: ["#7545B8", "#8353C5", "#9062CF", "#6939AA", "#8056B6", "#8D66C0"],
+    other: ["#606B7B", "#707989", "#7F8896", "#556171", "#657383", "#77818F"],
+  },
+  dark: {
+    opus: ["#D9855F", "#E5936B", "#CE7851", "#E29A7A", "#D18161", "#DB8E70"],
+    sonnet: ["#7898E8", "#89A6EF", "#6F8BDA", "#96B0F1", "#7E9DDF", "#8BA7E5"],
+    haiku: ["#52B99A", "#65C5A7", "#43AC8D", "#76CDB3", "#5FB699", "#70C0A5"],
+    fable: ["#D97BA6", "#E48DB5", "#CA6B97", "#EA9EC0", "#D886AA", "#E098B8"],
+    sol: ["#D5A046", "#E1AF58", "#C59236", "#E8BB70", "#CCA15A", "#D8AF6A"],
+    terra: ["#B88B69", "#C69A78", "#AA7D5D", "#CDA588", "#B89073", "#C29D81"],
+    luna: ["#51AECA", "#64BCD4", "#409FBF", "#77C6DC", "#58ACC5", "#6AB8CE"],
+    astra: ["#AB87E3", "#B99AEF", "#9B76D3", "#C4A9F2", "#AB8BCF", "#B79CDD"],
+    other: ["#9AA5B5", "#A8B1BF", "#8C99AC", "#B3BCC9", "#9AAABE", "#A6B4C4"],
+  },
 };
-// 미등록 신버전도 계열 기본색으로 — 아예 모르는 모델(null)은 호출부가 기존 팔레트로 폴백.
-// 등록색과 겹치지 않는 중간 톤(같은 차트에서 등록 모델과 동일색으로 합쳐 보이는 것 방지) —
-// 새 버전이 데이터에 보이면 MODEL_COLOR에 정식 등록하는 게 정도.
-const FAMILY_FALLBACK = { sonnet: "#8290E8", opus: "#EDB48E", haiku: "#93D2B0", fable: "#D67CA0" };
 
-// 모델 id에서 계열만 뽑는다(정규화된 이름/Bedrock 프리픽스 붙은 이름 모두 대응) — 계열별
-// 색상·범례 순서·계열 단위 집계가 전부 같은 규칙을 쓰도록 한 곳으로 모은다.
+const FAMILY_MODELS = {
+  opus: ["claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5"],
+  sonnet: ["claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5"],
+  haiku: ["claude-haiku-4-5", "claude-haiku-3-5"],
+  fable: ["claude-fable-5-1", "claude-fable-5"],
+  sol: ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"],
+  terra: ["gpt-6-terra", "gpt-5.6-terra"],
+  luna: ["gpt-6-luna", "gpt-5.6-luna"],
+  astra: ["gpt-6-astra", "gpt-6.1-astra"],
+};
+
+function normalizedFamilyModel(model) {
+  return String(model ?? "").trim().toLowerCase()
+    .replace(/\[[^\]]*\]$/, "")
+    .replace(/^(?:(?:us|us-gov|eu|apac|jp|au|in|global)|[a-z]{2}(?:-gov)?-[a-z]+-\d+)\./, "")
+    .replace(/^(?:anthropic|openai)\./, "")
+    .replace(/-v\d+(?::\d+)?$/, "")
+    .replace(/-\d{8}$/, "")
+    .replace(/^claude-(\d+(?:-\d+)*)-(opus|sonnet|haiku|fable)$/, "claude-$2-$1");
+}
+
 export function modelFamily(model) {
-  return String(model || "").match(/sonnet|opus|haiku|fable/)?.[0] ?? null;
+  const name = normalizedFamilyModel(model);
+  return name.match(/^claude-(opus|sonnet|haiku|fable)(?:-|$)/)?.[1]
+    ?? name.match(/^gpt-\d+(?:\.\d+)?-(sol|terra|luna|astra)(?:-|$)/)?.[1]
+    ?? null;
 }
 
-// 계열 색 스와치 — 등록 모델 색과 겹치지 않는 중간 톤이라 "계열 대표색"으로도 그대로 쓴다.
-export function familyColorFor(family) {
-  return FAMILY_FALLBACK[family] ?? null;
+function familyShade(model, family, theme) {
+  const name = normalizedFamilyModel(model);
+  const palette = MODEL_FAMILY_COLORS[theme === "dark" ? "dark" : "light"][family];
+  const registered = FAMILY_MODELS[family]?.indexOf(name) ?? -1;
+  let hash = 0;
+  for (const ch of name) hash = (Math.imul(hash, 31) + ch.codePointAt(0)) >>> 0;
+  return palette[(registered >= 0 ? registered : hash) % palette.length];
 }
 
-export function modelColorFor(model) {
-  const m = String(model || "");
-  if (MODEL_COLOR[m]) return MODEL_COLOR[m];
-  const fam = modelFamily(m);
-  return fam ? FAMILY_FALLBACK[fam] : null;
+export function familyColorFor(family, theme = "light") {
+  return MODEL_FAMILY_COLORS[theme === "dark" ? "dark" : "light"][family]?.[0] ?? null;
 }
 
-// 범례/스택 순서 — 계열은 항상 fable → opus → sonnet → haiku 순으로 고정하고, 계열 내부는
-// 최신 모델이 먼저 오게(버전 랭크 0이 최신). 지출 순위 등 데이터 값에 따라 흔들리지 않는
-// 고정 순서라는 점이 색상 배정 규칙(엔티티를 따라감)과 동일한 이유다. 미등록 모델/계열
-// 밖 값은 각각 그 계열의 마지막, 아예 모르는 값은 전체 마지막으로 보낸다.
-export const FAMILY_LEGEND_ORDER = ["fable", "opus", "sonnet", "haiku"];
-const VERSION_RANK = {
-  "claude-fable-5": 0,
-  "claude-opus-5": 0,
-  "claude-opus-4-8": 1,
-  "claude-opus-4-7": 2,
-  "claude-opus-4-6": 3,
-  "claude-opus-4-5": 4,
-  "claude-sonnet-5": 0,
-  "claude-sonnet-4-6": 1,
-  "claude-sonnet-4-5": 2,
-  "claude-haiku-4-5": 0,
-  "claude-haiku-3-5": 1,
-  "claude-3-5-haiku": 1,
-};
+export function modelColorFor(model, theme = "light") {
+  const family = modelFamily(model);
+  return family ? familyShade(model, family, theme) : null;
+}
+
+// Legend/stack order follows the family registry, independent of spend rankings.
+// Unregistered versions follow registered versions; unrecognized families come last.
+export const FAMILY_LEGEND_ORDER = ["fable", "opus", "sonnet", "haiku", "sol", "terra", "luna", "astra"];
 
 export function modelLegendRank(model) {
-  const m = String(model || "");
+  const m = normalizedFamilyModel(model);
   const fam = modelFamily(m);
   const famIdx = fam ? FAMILY_LEGEND_ORDER.indexOf(fam) : FAMILY_LEGEND_ORDER.length;
-  return famIdx * 100 + (VERSION_RANK[m] ?? 99);
+  const versionIdx = FAMILY_MODELS[fam]?.indexOf(m) ?? -1;
+  return famIdx * 100 + (versionIdx >= 0 ? versionIdx : 99);
 }
 
 export function byModelLegendOrder(a, b) {
   return modelLegendRank(a) - modelLegendRank(b);
 }
 
-// bedrock/enterprise로 나뉘는 도넛(모델별 지출 비중 · 캐시 티어별 지출 · 토큰 타입별 비중)은
-// 의도적으로 "그룹 = 색상 계열" 규칙을 따른다 — bedrock 카드 안의 모든 조각은 블루 계열만,
-// enterprise 카드 안의 모든 조각은 틸 계열만(사용자 명시 지시). 위쪽 MODEL_COLOR(계열별
-// 무지개 팔레트)와는 별도 축이다 — 그 팔레트는 그룹과 무관하게 "모델별 지출 추이"/"Top 지출
-// 유저" 같이 bedrock+enterprise가 한 차트에 섞여 나오는 곳에서만 쓴다. 이 두 축을 섞으면
-// "같은 모델이 그룹에 따라 다른 색"이 되는데, 그건 이 규칙에서 의도된 트레이드오프다 — 그룹
-// 정체성이 모델 정체성보다 우선한다.
-// 램프는 브랜드 블루(--brand-700~100)를 그대로 재사용하고, 틸은 같은 명도 단계로 새로 만들되
-// 기존 토큰(positive #01a88d, chart-4 #39c2b0)을 중간 단계에 그대로 끼워 넣어 나머지 색상
-// 시스템과 어긋나지 않게 했다.
+// Non-model breakdowns still use backend ramps; model donuts use family hues.
 const BLUE_RAMP = ["#1F54C2", "#2E6BE6", "#528DF8", "#7FA9F9", "#A9C7FB", "#D2E2FD"];
 const TEAL_RAMP = ["#0F6B57", "#128577", "#01A88D", "#39C2B0", "#8FDFD1", "#D2F3EC"];
-
-// 그룹 안에서 조각(모델/캐시 티어/토큰 타입)을 몇 단계 밝기로 나눌지 — 데이터 등장 순서가
-// 아니라 고정된 라벨/모델 목록에서의 위치로 정해야 필터·기간이 바뀌어도 흔들리지 않는다.
-// 현재 활성 6모델(fable-5/opus-5/opus-4-8/sonnet-5/sonnet-4-5/haiku-4-5)이 정확히 6단계 램프를
-// 채우고, 활성 도메인 밖의 구버전은 같은 계열의 가장 가까운 활성 버전 슬롯을 재사용한다(램프
-// 길이가 유한하므로 구버전끼리는 명도가 겹칠 수 있음 — 실데이터에 안 나오면 문제 없음).
-const GROUP_MODEL_ORDER = [
-  "claude-fable-5",
-  "claude-opus-5",
-  "claude-opus-4-8",
-  "claude-sonnet-5",
-  "claude-sonnet-4-5",
-  "claude-haiku-4-5",
-];
-const GROUP_MODEL_ALIAS = {
-  "claude-opus-4-7": "claude-opus-4-8",
-  "claude-opus-4-6": "claude-opus-4-8",
-  "claude-opus-4-5": "claude-opus-4-8",
-  "claude-sonnet-4-6": "claude-sonnet-4-5",
-  "claude-haiku-3-5": "claude-haiku-4-5",
-  "claude-3-5-haiku": "claude-haiku-4-5",
-};
 
 function rampFor(group) {
   return group === "bedrock" ? BLUE_RAMP : group === "enterprise" ? TEAL_RAMP : null;
 }
 
-export function groupModelColorFor(group, model) {
-  const ramp = rampFor(group);
-  if (!ramp) return null;
-  const m = String(model || "");
-  const canonical = GROUP_MODEL_ORDER.includes(m) ? m : GROUP_MODEL_ALIAS[m];
-  const idx = canonical ? GROUP_MODEL_ORDER.indexOf(canonical) : ramp.length - 1; // 완전 미지 모델 → 가장 밝은 끝
-  return ramp[idx];
+export function groupModelColorFor(_group, model, theme = "light") {
+  return modelColorFor(model, theme) ?? familyShade(model, "other", theme);
 }
 
 // 캐시 티어(4종)·토큰 타입(4종) 도넛용 — 라벨 순서만 다르고 로직은 동일해서 라벨 배열을
@@ -162,52 +139,18 @@ export function makeGroupBreakdownColorer(group, labelOrder) {
   };
 }
 
-// Model cost trend palette (ModelCostTrend). These are new keys only: modelColorFor and
-// MODEL_COLOR keep their existing values. Registered models and vendor fallbacks use solid
-// fills in both themes. Text, state marks and tooltips carry availability; color carries model
-// identity only. Other known Claude models and families retain modelColorFor.
-// 기타 uses an exclusive neutral that no model or ramp uses.
-export const MODEL_TREND_COLORS = {
-  light: {
-    "claude-fable-5": "#C95A8E",
-    "claude-fable-5-1": "#7E2D5C",
-    "claude-sonnet-5": "#5B6BDB",
-    "claude-opus-5": "#D9703F",
-    "claude-opus-5-5": "#A62A36",
-    "claude-opus-4-8": "#B37A12",
-    "claude-haiku-4-5": "#8A5CD6",
-    "openai.gpt-5.6-sol": "#00A386",
-    "openai.gpt-6-astra": "#5325B9",
-    "openai.gpt-5.6-luna": "#025A8D",
-    "openai.gpt-6.1-sol": "#0F766E",
-    "openai.gpt-6-sol": "#2563A6",
-    "openai.gpt-6-luna": "#298CA8",
-  },
-  dark: {
-    "claude-fable-5": "#CB6593",
-    "claude-fable-5-1": "#B66396",
-    "claude-sonnet-5": "#6E7DE6",
-    "claude-opus-5": "#CD7143",
-    "claude-opus-5-5": "#D26778",
-    "claude-opus-4-8": "#B4811F",
-    "claude-haiku-4-5": "#9A70E0",
-    "openai.gpt-5.6-sol": "#16A085",
-    "openai.gpt-6-astra": "#7044EB",
-    "openai.gpt-5.6-luna": "#056AB3",
-    "openai.gpt-6.1-sol": "#4EBAA4",
-    "openai.gpt-6-sol": "#5A9FE0",
-    "openai.gpt-6-luna": "#63C5D1",
-  },
-};
+// Preserve registered keys and user-series ordering, with the same family shades as donuts.
+const TREND_MODELS = [
+  "claude-fable-5", "claude-fable-5-1", "claude-sonnet-5", "claude-opus-5", "claude-opus-5-5",
+  "claude-opus-4-8", "claude-haiku-4-5", "openai.gpt-5.6-sol", "openai.gpt-6-astra",
+  "openai.gpt-5.6-luna", "openai.gpt-6.1-sol", "openai.gpt-6-sol", "openai.gpt-6-luna",
+];
+export const MODEL_TREND_COLORS = Object.fromEntries(["light", "dark"].map((theme) => [
+  theme, Object.fromEntries(TREND_MODELS.map((model) => [model, modelColorFor(model, theme)])),
+]));
 export const MODEL_TREND_OTHERS = { light: "#A3A9B6", dark: "#5E6678" };
 export const MODEL_TREND_VENDOR_RAMPS = {
-  anthropic: { light: ["#5E4F46", "#72625A", "#87766D"], dark: ["#8D7C73", "#A39188", "#B9A79D"] },
-  openai: {
-    light: ["#277F89", "#4F6FB5", "#248A75", "#487EA8", "#647CC0", "#249CB0"],
-    dark: ["#55A6B0", "#8197D4", "#57B6A0", "#76ACD2", "#9AABEB", "#5AC2D3"],
-  },
-  other: {
-    light: ["#AD7A38", "#5E76B9", "#2D8F84", "#9A6FA6", "#4D869C", "#8E7765"],
-    dark: ["#C6A26A", "#93A6DC", "#6ABBAF", "#BE98C8", "#81B4CA", "#BAA08B"],
-  },
+  anthropic: { light: MODEL_FAMILY_COLORS.light.other.slice(0, 3), dark: MODEL_FAMILY_COLORS.dark.other.slice(0, 3) },
+  openai: { light: MODEL_FAMILY_COLORS.light.other, dark: MODEL_FAMILY_COLORS.dark.other },
+  other: { light: MODEL_FAMILY_COLORS.light.other, dark: MODEL_FAMILY_COLORS.dark.other },
 };

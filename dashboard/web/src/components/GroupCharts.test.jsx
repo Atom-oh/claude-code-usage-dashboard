@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider, useRange } from "../RangeContext.jsx";
+import { groupModelColorFor } from "../colors.js";
 import { DonutBody, DualLineChart, GroupAreaChart, GroupBarChart, SeriesBarChart } from "./GroupCharts.jsx";
 
 // jsdom has no layout or ResizeObserver. Keep the real Recharts render path and
@@ -22,8 +23,31 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.documentElement.style.removeProperty("--surface-card");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+test.each([
+  ["light", "#ffffff", ["#B4532E", "#C66136", "#355FC7"]],
+  ["dark", "#171c27", ["#D9855F", "#E5936B", "#7898E8"]],
+])("model donuts keep separate versions and matching %s slice/legend colors", async (_theme, surface, fills) => {
+  document.documentElement.style.setProperty("--surface-card", surface);
+  const rows = [
+    { model: "claude-opus-5-5", cost: 5 },
+    { model: "claude-opus-5", cost: 3 },
+    { model: "claude-sonnet-5", cost: 2 },
+  ];
+  const { container } = render(<DonutBody data={rows} nameKey="model" valueKey="cost" valuePrefix="$"
+    colorOf={(model, _index, theme) => groupModelColorFor("bedrock", model, theme)} />);
+  await waitFor(() => expect(container.querySelectorAll(".recharts-pie-sector path").length).toBe(3));
+  expect([...container.querySelectorAll(".recharts-pie-sector path")].map((path) => path.getAttribute("fill"))).toEqual(fills);
+  const legend = screen.getByRole("list");
+  expect([...legend.querySelectorAll("li")].map((row) => row.textContent))
+    .toEqual(["claude-opus-5-5$5.00", "claude-opus-5$3.00", "claude-sonnet-5$2.00"]);
+  expect([...legend.querySelectorAll("li > span:first-child")].map((swatch) => swatch.style.background))
+    .toEqual(fills.map((hex) => `rgb(${[1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)).join(", ")})`));
+  expect(screen.getByText("$10")).toBeTruthy();
 });
 
 function Providers({ children }) {

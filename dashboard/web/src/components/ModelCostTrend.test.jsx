@@ -74,7 +74,7 @@ test("stacked series plus 기타 with stable fills", async () => {
   const { container } = mount(MAIN);
   await chartReady(container);
   const paths = [...container.querySelectorAll(".recharts-area-area")];
-  expect(paths.map((p) => p.getAttribute("fill"))).toEqual(["#5B6BDB", "#2D8F84", "#A3A9B6"]);
+  expect(paths.map((p) => p.getAttribute("fill"))).toEqual(["#355FC7", "#7F8896", "#A3A9B6"]);
   // No bars are drawn for the series; only the invisible state-mark bar remains.
   expect(container.querySelectorAll(".recharts-bar-rectangle path").length).toBe(0);
   expect(container.querySelector("pattern")).toBeNull();
@@ -84,21 +84,21 @@ test("stacked series plus 기타 with stable fills", async () => {
     .toEqual(["solid", "solid", "others"]);
 });
 
-test("pastel model fills retain darker essential strokes in area and line modes", async () => {
+test("family model fills retain visible essential strokes in area and line modes", async () => {
   const { container } = mount({
     cells: [c(D1, "claude-sonnet-4-5", "enterprise", 2), c(D2, "claude-sonnet-4-5", "enterprise", 3)],
     bounds: BOUNDS,
   });
   await chartReady(container);
-  const stroke = trendStrokeColor("#B7C0F5");
-  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#B7C0F5");
+  const stroke = trendStrokeColor("#2D56BA");
+  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#2D56BA");
   expect(container.querySelector(".recharts-area-curve").getAttribute("stroke")).toBe(stroke);
   fireEvent.click(screen.getByRole("button", { name: "기본" }));
   await waitFor(() => expect(container.querySelector(".recharts-line-curve")).not.toBeNull());
   expect(container.querySelector(".recharts-line-curve").getAttribute("stroke")).toBe(stroke);
   expect(container.querySelector(".recharts-line-curve").getAttribute("stroke-width")).toBe("2");
   const swatch = screen.getByRole("list", { name: "범례" }).querySelector("[data-swatch]");
-  expect(swatch.style.background).not.toBe("rgb(183, 192, 245)");
+  expect(swatch.style.background).toBe("rgb(45, 86, 186)");
 });
 
 test("Codex vendor models use solid areas and matching swatches while retaining partial status", async () => {
@@ -423,7 +423,7 @@ test("an older Claude model draws its solid modelColorFor fill, never the unknow
   await chartReady(container);
   // A single bucket has no area width, so the isolated point is drawn as a dot.
   expect([...container.querySelectorAll("[data-isolated]")].map((p) => p.getAttribute("fill")))
-    .toEqual([trendStrokeColor("#B7C0F5")]);
+    .toEqual([trendStrokeColor("#2D56BA")]);
   expect(container.querySelector("pattern")).toBeNull();
   expect(screen.getByRole("list", { name: "범례" }).querySelector("[data-swatch]").getAttribute("data-swatch")).toBe("solid");
 });
@@ -476,7 +476,7 @@ test("legend clicks isolate a series Grafana-style and the mode toggle switches 
   const button = (label) => within(legend).getByRole("button", { name: label });
   fireEvent.click(button("zai.glm-5"));
   await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
-  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#2D8F84");
+  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#7F8896");
   expect(button("zai.glm-5").getAttribute("aria-pressed")).toBe("true");
   expect(button("claude-sonnet-5").getAttribute("aria-pressed")).toBe("false");
   expect(container.querySelector("[data-legend-filtered]").textContent).toContain("2개 계열 숨김");
@@ -543,6 +543,6 @@ test("a frame change that would leave nothing shown restores every series", asyn
   rerender(<><ModelCostTrend title="모델별 비용 추이" xKey="t" bucketHours={24} bounds={BOUNDS}
     cells={two.filter((cell) => cell.model === "claude-sonnet-5")} /><Selection /></>);
   await waitFor(() => expect(container.querySelectorAll(".recharts-area-area").length).toBe(1));
-  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#5B6BDB");
+  expect(container.querySelector(".recharts-area-area").getAttribute("fill")).toBe("#355FC7");
   expect(container.querySelector("[data-legend-filtered]")).toBeNull();
 });

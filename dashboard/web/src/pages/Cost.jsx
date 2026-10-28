@@ -331,9 +331,7 @@ export default function Cost() {
       .map((row) => ({ ...row, model_label: modelLabel(row.model) }))
   );
 
-  // bedrock/enterprise 도넛은 그룹=색상 계열 규칙을 따른다(사용자 지시) — 같은 모델이라도
-  // bedrock 카드에선 블루, enterprise 카드에선 틸로 다르게 보인다(groupModelColorFor). 모델
-  // 정체성은 그 계열 안의 명도로 표현되지, 색조(hue)로 표현되지 않는다 — 그룹이 우선.
+  // Model versions remain separate; family hue is stable across backend cards.
   // Donut shares use the same disclosed known subtotal as the model table.
   const modelRowsFor = (group) => foldModelRows((byModel.data || []).filter((r) => r.group === group))
     .map((row) => ({ ...row, model_label: modelLabel(row.model) }));
@@ -547,7 +545,7 @@ export default function Cost() {
                 <ReportedCostDonut
                   rows={modelRowsFor(g)}
                   nameKey="model_label"
-                  colorOf={(name) => groupModelColorFor(g, name)}
+                  colorOf={(name, _index, theme) => groupModelColorFor(g, name, theme)}
                   listUnknown
                 />
               </Card>
