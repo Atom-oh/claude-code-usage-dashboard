@@ -439,7 +439,7 @@ export function RingGauge({ pct, color, label, sub }) {
 // 도넛 본체 (Card 없음) — 한 카드에 도넛을 여러 개 넣을 때 직접 조합한다 (예: Cost의
 // 모델별 지출 비중 bedrock/enterprise 나란히). colorOf(name, i, theme)로 색을 넘기면 도넛 간에
 // 같은 항목이 같은 색을 갖도록 밖에서 고정할 수 있다.
-export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", valueFormatter, colorOf }) {
+export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", valueFormatter, colorOf, legendRenderer }) {
   const c = useChartColors();
   // colorOf가 전역 top-N에서 만든 고정 맵이면, 그 top-N 밖 모델이 이 도넛에 등장할 때
   // undefined를 반환할 수 있다 — Cell fill/범례 스와치가 깨지지 않도록 팔레트로 폴백한다
@@ -459,7 +459,7 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", va
       {total <= 0 ? (
         <EmptyState />
       ) : (
-        <div className="flex items-center gap-4">
+        <div className={cn("flex items-center gap-4", legendRenderer && "flex-wrap justify-center")}>
           <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
             <PieChart width={170} height={170}>
               <Pie data={data} dataKey={valueKey} nameKey={nameKey} innerRadius={55} outerRadius={80} paddingAngle={2} stroke="none" isAnimationActive={false}>
@@ -474,11 +474,14 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", va
               <div className="text-[10px] uppercase tracking-[0.04em] text-ink-400 mt-1">합계</div>
             </div>
           </div>
-          <ul className="min-w-0 flex-1 space-y-1.5">
+          <ul className={cn("min-w-0 flex-1 space-y-1.5", legendRenderer && "basis-40")}>
             {data.map((d, i) => (
               <li key={i} className="flex items-center gap-2 text-[12px]">
                 <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color(String(d[nameKey]), i) }} />
-                <span className="min-w-0 flex-1 truncate text-ink-600">{String(d[nameKey])}</span>
+                <span className={cn("min-w-0 flex-1 text-ink-600", !legendRenderer && "truncate")}
+                  title={String(d[nameKey])}>
+                  {legendRenderer ? legendRenderer(d) : String(d[nameKey])}
+                </span>
                 <span className="tabular shrink-0 font-medium text-ink-800">{fmt(Number(d[valueKey]))}</span>
               </li>
             ))}

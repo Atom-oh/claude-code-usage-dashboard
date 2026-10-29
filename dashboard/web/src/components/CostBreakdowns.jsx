@@ -16,7 +16,7 @@ export function CostBreakdownCard({ loading, error, limited, empty, children, ..
   </Card>;
 }
 
-function CostShare({ rows, colorOf }) {
+function CostShare({ rows, colorOf, legendRenderer }) {
   const values = rows.map((row) => ({ ...row, cost_usd: observedNumber(row.cost_usd),
     cost_partial: row.cost_partial === true || observedNumber(row.unpriced) > 0 }));
   const { total, partial } = sumKnownSpend(values, "cost_usd");
@@ -32,7 +32,7 @@ function CostShare({ rows, colorOf }) {
     {total === null ? <p className="text-sm text-ink-500">— · 비용 미산정</p>
       : total === 0 ? <p className="tabular text-sm text-ink-600">{formatClientCost(0)}</p>
         : <DonutBody data={known} nameKey="label" valueKey="cost_usd"
-          valueFormatter={formatClientCost} colorOf={colorOf} />}
+          valueFormatter={formatClientCost} colorOf={colorOf} legendRenderer={legendRenderer} />}
     {unknown.length > 0 && <ul className="mt-3 text-[12px] text-ink-500">
       {unknown.map((row, index) => <li key={index}>{row.label}: — · 미산정</li>)}
     </ul>}
@@ -54,11 +54,20 @@ function InputCache({ row }) {
 
 const backendLabel = (backend) => backend === "unknown" ? "백엔드 미제공" : backend;
 const modelLabel = (row) => [row.model || "(모델 미지정)", backendLabel(row.backend) || "백엔드 미제공"].join(" · ");
+const modelLegend = (row) => <>
+  <span className="block truncate" title={row.model || "(모델 미지정)"}>
+    {row.model || "(모델 미지정)"}
+  </span>
+  <span className="block break-words text-[11px] text-ink-500">
+    {backendLabel(row.backend) || "백엔드 미제공"}{row.basis_label && ` · ${row.basis_label}`}
+  </span>
+</>;
 const effortLabel = (row) => [!row.effort || row.effort === "unknown" ? "미지정" : row.effort,
   backendLabel(row.backend)].filter(Boolean).join(" · ");
 const withBasis = (rows, label, fallback) => {
   const bases = new Set(rows.map((row) => row.cost_basis || fallback));
   return rows.map((row) => ({ ...row, cost_basis: row.cost_basis || fallback,
+    basis_label: bases.size > 1 ? basisLabel(row.cost_basis || fallback) : null,
     label: `${label(row)}${bases.size > 1 ? ` · ${basisLabel(row.cost_basis || fallback)}` : ""}` }));
 };
 
@@ -78,7 +87,7 @@ export default function CostBreakdowns({ clients, data, loading, error, empty, c
         <CostBreakdownCard title={suffix("모델별 비용 비중", client)}
           subtitle="모델 버전·백엔드별 알려진 비용 · 실청구와 다를 수 있습니다."
           loading={loading} error={error} empty={clientEmpty || modelRows.length === 0}>
-          <CostShare rows={modelRows} colorOf={(label, _index, theme) =>
+          <CostShare rows={modelRows} legendRenderer={modelLegend} colorOf={(label, _index, theme) =>
             modelColorFor(modelRows.find((source) => source.label === label)?.model, theme)} />
         </CostBreakdownCard>
         <CostBreakdownCard title={suffix("Effort별 비용 비중", client)}

@@ -28,6 +28,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("donut legends render structured identity labels while preserving amounts and full names", () => {
+  const data = [{ label: "openai.gpt-6.1-sol · bedrock-mantle", model: "openai.gpt-6.1-sol",
+    backend: "bedrock-mantle", cost: 5 }];
+  render(<DonutBody data={data} nameKey="label" valueKey="cost" valuePrefix="$"
+    legendRenderer={(row) => <><span>{row.model}</span><span>{row.backend}</span></>} />);
+  const legend = screen.getByRole("list");
+  expect(within(legend).getByText("openai.gpt-6.1-sol", { exact: true })).toBeTruthy();
+  expect(within(legend).getByText("bedrock-mantle", { exact: true })).toBeTruthy();
+  expect(within(legend).getByText("$5.00", { exact: true })).toBeTruthy();
+  expect(within(legend).getByTitle("openai.gpt-6.1-sol · bedrock-mantle")).toBeTruthy();
+});
+
 test.each([
   ["light", "#ffffff", ["#B4532E", "#C66136", "#355FC7"]],
   ["dark", "#171c27", ["#D9855F", "#E5936B", "#7898E8"]],
