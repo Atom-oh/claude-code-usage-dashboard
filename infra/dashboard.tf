@@ -195,6 +195,21 @@ resource "aws_iam_role" "dashboard_bedrock" {
   })
 }
 
+# AWS Price List rate refresh (dashboard/server/priceCatalog.js). pricing:GetProducts has no
+# resource-level permissions, so Resource must be "*"; the action is read-only public list prices.
+resource "aws_iam_role_policy" "dashboard_price_list" {
+  name = "aws-price-list-read"
+  role = aws_iam_role.dashboard_bedrock.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["pricing:GetProducts"]
+      Resource = "*"
+    }]
+  })
+}
+
 resource "kubernetes_deployment_v1" "dashboard" {
   # ECR엔 아직 이미지가 없다 — apply 시점에 rollout이 안 끝나는 게 정상이므로 여기서 막지 않는다.
   # 이미지 push 후 `kubectl rollout restart`로 실제로 뜬다.

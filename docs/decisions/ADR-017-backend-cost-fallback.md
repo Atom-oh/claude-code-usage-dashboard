@@ -1,7 +1,8 @@
 # ADR-017: Model-prefix backend resolution and a computed-cost fallback for missing reports
 
 Status: accepted, 2026-09-25, following the user's explicit request. Amended 2026-10-07 for
-non-Anthropic models used through Claude Code (see the amendment below).
+non-Anthropic models used through Claude Code, and 2026-10-28 for the AWS Price List rate source
+(see the amendments below).
 
 ## Context
 
@@ -157,3 +158,99 @@ checks: a luna session prices at $0.0999 in `/api/clients/overview`, `costByMode
 `costByModelCompare`; a session without logs is unavailable; Claude Sonnet keeps its $0.50
 report. A read-only run against production reproduced the gateway's per-request luna cost
 and the per-model totals above.
+
+## Amendment (2026-10-28): AWS Price List as a rate source
+
+Accepted 2026-10-28 at the user's request
+([design](../superpowers/specs/2026-10-28-aws-price-list-pricing-design.md)). It changes where
+rates come from. The cost bases, both fallbacks above, the 2026-10-07 factor and the
+[ADR-009](ADR-009-reported-spend-with-computed-diagnostics.md)/[ADR-013](ADR-013-known-cost-subtotals.md)
+contracts are unchanged.
+
+### Context
+
+Rates lived only in hand-maintained tables (`pricing.js` `BASE_PRICING`, `codexPricing.js`
+`DEFAULT_CODEX_PRICING`). A model in neither table is unpriced, which makes a non-Anthropic
+Claude session factor unknown and its totals unavailable. On 2026-10-28 that applied to Claude
+Code sessions reporting `kimi-k3`, `zai.glm-5.3` and `openai.gpt-6.1-terra`. Every new model or
+price change needed a code change and a release.
+
+### Decision
+
+- **Layers**, highest first, per model: `PRICING_JSON`/`CODEX_PRICING_JSON` (operator rates,
+  whole-model replacement as before); the latest successful runtime Price List refresh (in
+  memory); the build snapshot `dashboard/server/awsPriceSnapshot.json`; the code tables.
+  `priceCatalog.js` owns the merged view; pricing paths read it at call time.
+- **Source**: `pricing:GetProducts` against `us-east-1` for `AmazonBedrockFoundationModels`
+  (Anthropic and OpenAI display names, e.g. `Claude Fable 5.1` → `claude-fable-5-1`,
+  `OpenAI GPT-6 Astra` → `openai.gpt-6-astra`) and `AmazonBedrock` (Bedrock-hosted model ids from
+  runtime and `-mantle` usage types). Only On-Demand USD `standard`/`global-standard` rows count;
+  flex, priority, batch, latency-optimized and reserved rows are ignored. Per-1K prices become
+  per-1M prices by decimal shift (`awsPriceList.js`).
+- **Shapes**: a Claude entry is the global row set and needs input, output, cache read, 5-minute
+  and 1-hour cache write; the regional multiplier still applies to regional ids. A Codex entry is
+  per scope: global from `global_standard` rows, regional from the other `standard` rows, `long`
+  from `long_ctx` rows. Cache write is the only write bucket present (30 minutes for OpenAI and
+  Kimi K3), otherwise 5 minutes.
+- **Completeness**: entries missing a required bucket, with conflicting duplicate prices or with
+  a non-token unit are skipped and logged, never partially merged. One clarification of the
+  design: a model that publishes no cache rows prices cache reads and writes as ordinary input,
+  and a model with cache reads but no cache-write row prices writes as input. That is the code
+  tables' existing convention (`grok-4.6`, `glm-4.7`), and on 2026-10-28 it reproduces every
+  such code entry exactly. A cache-write row without a cache-read row is still incomplete.
+- **Merge**: a Price List scope replaces the code scope; the code entry keeps its
+  `short_context_limit` and any scope the Price List lacks. When the code entry has distinct
+  long-context rates and the Price List has no long-context rows for that scope, the code scope
+  is kept. A model new to the code tables has no published context limit: it prices flat at its
+  short rates (`short_context_limit` = `Number.MAX_SAFE_INTEGER`), so long requests are
+  underestimated; ignored long-context rows are logged.
+- **Bare ids**: a non-Anthropic model id without a vendor namespace (e.g. `kimi-k3`) prices as
+  the table's unique `<vendor>.<id>` entry (`moonshotai.kimi-k3`), with that id's inferred mantle
+  backend and the regional scope unless routed; ambiguous ids stay unpriced. Only the
+  non-Anthropic factor (`nonAnthropicCost.js`) applies this; Codex rows still need a namespaced
+  id or a matching table key. The factor key keeps the reported id.
+- **Context-window suffix**: the non-Anthropic factor prices `<id>[1m]` as `<id>` (the suffix
+  names no separate rate; the context tier still comes from request size). Before this, priced
+  models such as `global.zai.glm-5.3[1m]` and `global.openai.gpt-6.1-sol[1m]` had unknown factors.
+- **Runtime**: the snapshot loads at startup. After `listen()` the first refresh runs in the
+  background and then every `AWS_PRICE_REFRESH_HOURS` (default 12, 1-168). A failure or an empty
+  response keeps the last good layer; logs carry error names and status codes, not provider
+  messages. `AWS_PRICE_LIST=off` disables the fetch (`npm test` sets it). Response caches keep
+  their entries until their TTL. No rates are persisted to ClickHouse.
+- **Disclosure**: `/api/config` `pricing.priceList` is `{source: "runtime"|"snapshot"|"code",
+  fetchedAt, models}`, metadata only. The Cost page computed-cost help names that source and
+  time. `priceCodexUsage()` marks records priced from a Price List rate
+  `price_source: "aws_price_list"` (the Claude-table fallback keeps `claude_table`); no current
+  endpoint serializes that record field. A rate more than 2x from the code table is applied and
+  logged.
+- **Build and IAM**: `npm run prices:snapshot` regenerates the snapshot before an image build;
+  an unchanged rate set leaves the file untouched. The dashboard IRSA role gains
+  `pricing:GetProducts` on `*` (the action has no resource-level scoping).
+
+### Consequences
+
+- In the 2026-10-28 snapshot every model already in a code table parses to the same rates
+  (15 Claude and 26 Codex entries), and 19 Codex-shape models become priced (for example
+  `nvidia.nemotron-super-3-120b`, `mistral.mistral-large-3-675b-instruct`, `deepseek.v3.1`).
+  Code entries absent from the us-east-1 Price List (for example GPT-6.1 Sol, GPT-6 Sol/Luna,
+  the GPT-5.x entries, `zai.glm-5.3`, `zai.glm-5`) keep code rates; `openai.gpt-6.1-terra` is in
+  neither source and stays unpriced.
+  The Price List id `zai.glm5` does not match the code-table id `zai.glm-5`, so it adds a separate key.
+- Bare `kimi-k3` sessions now get a known factor from the existing `moonshotai.kimi-k3` rate.
+- Live prices can change computed diagnostics, Codex estimates and non-Anthropic Claude
+  estimates without a release. Reported Claude spend is unchanged. Neither basis is an invoice:
+  no Flex/Priority/Batch tiers, discounts or Savings Plans.
+- The release helper builds committed files only, so a changed snapshot must be committed and
+  reviewed before the image build.
+- The Codex SQL rate catalog grows with the Price List. Context-limit parameters are shared per
+  value; tests keep both Codex queries' URL parameters below 8 KiB with the snapshot loaded.
+- The chat prompt's rate table is rendered per request from the current Claude table.
+
+### Verification
+
+`awsPriceList.test.js` parses trimmed real responses (Fable 5.1, GPT-6 Astra, Kimi K3, GLM 4.7)
+to the hand-table rates and covers skipped entries. `priceCatalog.test.js` covers precedence,
+incomplete entries, failed refreshes and logging. `codexLogPricing.test.js`
+(`CODEX_PRICING_SQL_TEST=1`) checks SQL/JavaScript parity for every catalog entry in ClickHouse.
+`nonAnthropicCost.test.js` covers the bare-id factor. A full parse of the 2026-10-28 us-east-1
+responses matched an independent reference parser.

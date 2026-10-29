@@ -165,7 +165,25 @@ abandoned server work; retain readonly and resource ceilings.
 
 ## Procedure
 
-### 1. Record the revision and rollback image
+### 1. Refresh the price snapshot, record the revision and rollback image
+
+The image carries `dashboard/server/awsPriceSnapshot.json`, the AWS Price List rates used until
+the pods' first successful runtime refresh
+([ADR-017 amendment](../decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-28-aws-price-list-as-a-rate-source)).
+Regenerate it before every image build, with AWS credentials allowed `pricing:GetProducts`:
+
+```bash
+(cd dashboard/server && npm ci && npm run prices:snapshot)
+git status --short dashboard/server/awsPriceSnapshot.json
+```
+
+`unchanged` leaves the file untouched; continue. A rewritten snapshot is a source change: the
+release helper builds committed files only, so review the rate and `skipped` diff, commit it
+through the normal review path, and start this procedure again on that revision. A failure
+exits 1 and leaves the committed snapshot in place; stop and fix credentials or connectivity.
+Building with the committed snapshot anyway is an explicit decision (`--skip-price-snapshot` in
+the `/deploy` skill); record it with the release. Pods still refresh rates at runtime unless
+`AWS_PRICE_LIST=off`.
 
 ```bash
 git status --short
