@@ -35,7 +35,7 @@ enter the model/query handler. OIDC login/callback have bounded per-process admi
 control. Other data routes have no application rate limiter.
 
 [infra/dashboard.tf](../../infra/dashboard.tf) supplies credentials through Kubernetes
-Secrets and uses IRSA for Bedrock. [infra/clickhouse.tf](../../infra/clickhouse.tf) separates
+Secrets and uses IRSA for Bedrock and the read-only AWS Price List (`pricing:GetProducts`). [infra/clickhouse.tf](../../infra/clickhouse.tf) separates
 reader, ingest and writer credentials. The reader profile is readonly and grants SELECT on
 `claude_code.*`; its configured execution, memory, result-byte and scanned-row limits are
 server-side protections. Source definitions require deployment verification.

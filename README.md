@@ -102,6 +102,8 @@ Key contracts:
 | `PII_MASK_ENABLED` | Presentation/CSV/chat masking; not an authorization boundary for raw API access. |
 | `PRICING_JSON` | Inline JSON overrides for diagnostic token prices, not a filename. |
 | `PRICING_CACHE_WRITE_TTL` | Diagnostic cache-write assumption: `1h` or `5m`, default `1h`. |
+| `AWS_PRICE_LIST` | `on` (default) or `off`. On, the server refreshes AWS Price List rates (`pricing:GetProducts`, us-east-1) in the background after startup; off keeps the image's snapshot and code tables. Invalid values fail startup. See [ADR-017](docs/decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-28-aws-price-list-as-a-rate-source). |
+| `AWS_PRICE_REFRESH_HOURS` | Refresh interval in hours, 1-168, default 12. A failed refresh keeps the last good rates. |
 | `CHAT_MODEL_ID`, `BEDROCK_REGION`, `AWS_REGION` | Configure the chat's Bedrock model and region; check deployment overrides. |
 | `CHAT_ALLOW_INSECURE` | Independent chat-auth bypass for local development only; never enable on an internet-facing deployment. |
 | `DATA_STALE_MINUTES` | Freshness threshold for enabled sources, default 360 minutes: Claude metric `TimeUnix` or Codex log `Timestamp`. |
