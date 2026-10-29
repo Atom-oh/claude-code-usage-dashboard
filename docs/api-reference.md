@@ -144,7 +144,7 @@ Positive Claude reports remain usable with missing token fields; zero reports st
 require known zero usage. Codex estimates still require valid usage and a known rate
 (its own table, or the Claude table for an Anthropic model; `price_source: "claude_table"`).
 Table rates come from the merged price catalog: operator overrides, then the AWS Price List
-layer, then code tables ([ADR-017 amendment](decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-28-aws-price-list-as-a-rate-source)).
+layer, then code tables ([ADR-017 amendment](decisions/ADR-017-backend-cost-fallback.md)).
 Cost unit values use the known subtotal and observed denominators, with partial
 labels in the UI/CSV. See [ADR-013](decisions/ADR-013-known-cost-subtotals.md).
 User counts union IDs; sessions include client; model identity counts overlap.
@@ -600,7 +600,7 @@ Config fields:
   when configured; invalid values fail startup. Override names come from `PRICING_JSON`.
   Rates are not exposed. Cost displays this TTL as an assumption in computed diagnostics.
 - `pricing.priceList`: `{source, fetchedAt, models}` for the active AWS Price List layer
-  ([ADR-017 amendment](decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-28-aws-price-list-as-a-rate-source)).
+  ([ADR-017 amendment](decisions/ADR-017-backend-cost-fallback.md)).
   `source` is `runtime` (latest successful in-memory refresh), `snapshot` (the image's
   `awsPriceSnapshot.json`) or `code` (neither; code tables only). `fetchedAt` is the layer's
   ISO 8601 fetch time or null; `models` lists the model keys the layer prices, sorted.
