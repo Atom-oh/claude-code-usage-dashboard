@@ -627,6 +627,8 @@ def install(args, home, user, uid, root, unit):
     # The lock prevents two token replacements from crossing configuration updates.
     with (root / ".install.lock").open("a") as lock:
         lock_installation(lock)
+        if args.token_file:
+            token = read_token(args.token_file)  # reread under the lock; a renewal may have replaced it
         stage = Path(tempfile.mkdtemp(prefix=".prepare-", dir=root))
         keep_recovery = False
         try:
@@ -806,6 +808,11 @@ def renew(root, unit, uid, state):
         outcome = "failed"
         try:
             current = read_token(root / "token")
+            if (root / "restart-pending").exists():
+                # An earlier replacement is live only after a successful restart.
+                outcome = "restart_failed"
+                service_command(unit, "restart", uid)
+                (root / "restart-pending").unlink()
             # Reuse the endpoint validated and saved in the private state file at install time.
             result = renewal_response(current, endpoint(str(state.get("endpoint", ""))))
             if result is None:
@@ -816,10 +823,12 @@ def renew(root, unit, uid, state):
             if not result["renewed"]:
                 outcome = "not_due"
                 return 0
+            atomic(root / "restart-pending", "\n")
             atomic(root / "token", result["token"] + "\n")
             outcome = "restart_failed"
             # Restart rather than rely on file watching; the persistent queue survives it.
             service_command(unit, "restart", uid)
+            (root / "restart-pending").unlink()
             outcome = "renewed"
             print("Device token renewed; Collector restarted.")
             return 0
@@ -899,7 +908,7 @@ def main():
                 stop_service(unit, uid)
                 for path in (*renewal, unit):
                     path.unlink(missing_ok=True)
-                for name in ("token", "renew-state.json"):
+                for name in ("token", "renew-state.json", "restart-pending"):
                     (root / name).unlink(missing_ok=True)
             print("Service, token renewal and local token removed. Revoke the device on /collector.")
             print("Client configuration and backups are retained. Restore reviewed .ccdash-backup files "

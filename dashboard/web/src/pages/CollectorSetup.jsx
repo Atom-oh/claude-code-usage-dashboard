@@ -364,7 +364,7 @@ python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.e
                     </div>
                     <p className="mt-1 text-xs text-ink-500">{PLATFORMS[device.platform]?.label || device.platform}</p>
                   </div>
-                  {!disabled && <button type="button" className={SECONDARY} aria-label={`${device.name} 해지`} disabled={busy}
+                  {!device.revokedAt && <button type="button" className={SECONDARY} aria-label={`${device.name} 해지`} disabled={busy}
                     onClick={() => { setConfirmId(device.id); setRevokeError(""); }}>
                     <Trash2 size={14} aria-hidden="true" />해지</button>}
                 </div>
@@ -377,7 +377,7 @@ python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.e
                 {device.renewedAt && <p className="mt-2 text-xs text-ink-500">자동 갱신 <DeviceTime value={device.renewedAt} /></p>}
                 {device.reuseDetectedAt && !device.revokedAt && <p role="alert" className="mt-2 rounded-md border border-warning-border bg-warning-surface p-2 text-xs text-warning-text">
                   교체된 이전 토큰이 다시 사용됐습니다(<DeviceTime value={device.reuseDetectedAt} />). 토큰이 유출됐을 수 있으니 이 기기를 해지하고 새로 등록하세요.</p>}
-                {confirmId === device.id && !disabled && <div role="group" aria-label={`${device.name} 해지 확인`}
+                {confirmId === device.id && !device.revokedAt && <div role="group" aria-label={`${device.name} 해지 확인`}
                   className="mt-3 rounded-md border border-warning-border bg-warning-surface p-3">
                   <p className="text-sm text-warning-text">이 기기의 수집을 중단할까요? 다시 연결하려면 새 토큰이 필요합니다.</p>
                   <div className="mt-3 flex gap-2">

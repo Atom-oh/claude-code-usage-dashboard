@@ -118,6 +118,7 @@ class Renewal(unittest.TestCase):
         self.assertEqual(timeout, 15)
         self.assertIn(self.module.NoRedirect, self.handlers)
         self.assertEqual(self.state(), "renewed")
+        self.assertFalse((self.root / "restart-pending").exists())
         state = self.root / "renew-state.json"
         self.assertEqual(state.stat().st_mode & 0o777, 0o600)
         for secret in (TOKEN, NEW, "C" * 43):
@@ -180,6 +181,14 @@ class Renewal(unittest.TestCase):
             self.renew()
         self.assertEqual(self.token(), NEW + "\n")
         self.assertEqual(self.state(), "restart_failed")
+        self.assertTrue((self.root / "restart-pending").exists())
+        self.restart_error = False
+        self.commands.clear()
+        self.outcome = Response(NOT_DUE)
+        self.assertEqual(self.renew(), 0)
+        self.assertEqual(self.commands, [["systemctl", "--user", "restart", "ccdash-collector.service"]])
+        self.assertFalse((self.root / "restart-pending").exists())
+        self.assertEqual(self.state(), "not_due")
 
     def test_running_installation_defers_renewal(self):
         lock = (self.root / ".install.lock").open("a")

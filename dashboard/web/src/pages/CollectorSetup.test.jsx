@@ -389,7 +389,8 @@ test("expiry status updates while the setup page remains open", async () => {
   expect(screen.getByText("등록됨")).toBeTruthy();
   await act(() => vi.advanceTimersByTimeAsync(30000));
   expect(screen.getByText("만료됨")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: `${device.name} 해지` })).toBeNull();
+  // An unpromoted replacement can outlive the shown expiry, so revocation stays available.
+  expect(screen.getByRole("button", { name: `${device.name} 해지` })).toBeTruthy();
 });
 
 test("renewed devices show the automatic renewal time and help explains renewal", async () => {

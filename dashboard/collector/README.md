@@ -148,6 +148,8 @@ python3 install.py install --endpoint 'https://YOUR-DASHBOARD/api/ingest' \
 A device that is off or cannot renew for 30 days expires. Renewal continues until the device
 is revoked, so revoke devices explicitly when offboarding.
 
+Do not roll the dashboard back to a release without renewal: it rejects a replacement token that has not been used yet, and those devices must be registered again.
+
 ## Migrate a legacy local Collector
 
 Use this only for a personal installation created by `setup-test-telemetry-all.sh`
