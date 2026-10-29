@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeSql, maskEmailValues, maskEmailText, capToolResultJson, classifyChatError, SCHEMA_CONTEXT, SYSTEM } from "./chat.js";
+import { sanitizeSql, maskEmailValues, maskEmailText, capToolResultJson, classifyChatError, SCHEMA_CONTEXT, SYSTEM, PRICING_TABLE_SLOT, systemPrompt } from "./chat.js";
 import { GROUP_CTE } from "./grouping.js";
-import { PRICING_PROMPT_TABLE, normalizeModelId } from "./pricing.js";
+import { pricingPromptTable, normalizeModelId } from "./pricing.js";
+import { setPriceListLayersForTesting } from "./priceCatalog.js";
 import { normModel } from "./queries.js";
 
 // 정상 쿼리는 통과해야 한다 — 특히 cumulative 함정을 피하는 max() 서브쿼리 패턴,
@@ -273,8 +274,20 @@ test("SCHEMA_CONTEXT documents TokenType's per-metric meaning (not just token.us
 // pricing.js가 단가를 바꾸면(PRICING) 이 문자열도 같이 바뀌어야 챗이 대시보드 Cost 카드와
 // 같은 숫자를 계산할 수 있다 — 인용이 아니라 하드코딩된 복제로 되돌아가면(리뷰에서 실제로
 // 있었던 실수 유형) 값이 조용히 드리프트한다.
-test("SCHEMA_CONTEXT quotes pricing.js's PRICING_PROMPT_TABLE verbatim, not a hand-copied duplicate", () => {
-  assert.ok(SCHEMA_CONTEXT.includes(PRICING_PROMPT_TABLE));
+test("the system prompt quotes pricing.js's pricingPromptTable() verbatim, not a hand-copied duplicate", () => {
+  assert.ok(SCHEMA_CONTEXT.includes(PRICING_TABLE_SLOT));
+  assert.ok(systemPrompt().includes(pricingPromptTable()));
+  assert.ok(!systemPrompt().includes(PRICING_TABLE_SLOT));
+  assert.equal(systemPrompt(), SYSTEM.replace(PRICING_TABLE_SLOT, () => pricingPromptTable()));
+});
+
+test("the system prompt follows a runtime AWS Price List refresh", (t) => {
+  t.after(() => setPriceListLayersForTesting());
+  const before = systemPrompt();
+  setPriceListLayersForTesting({ runtime: { fetchedAt: "2026-10-28T00:00:00Z", codex: {},
+    claude: { "claude-sonnet-5": { input: 7, output: 9, cacheWrite: 8, cacheWrite1h: 11, cacheRead: 1 } } } });
+  assert.match(systemPrompt(), /claude-sonnet-5: input \$7, output \$9, cacheWrite \$11, cacheRead \$1 /);
+  assert.notEqual(systemPrompt(), before);
 });
 
 test("SCHEMA_CONTEXT keeps reported spend primary and computed cost diagnostic", () => {
@@ -359,8 +372,8 @@ test("SCHEMA_CONTEXT does not promise rollup-only dashboard queries or exact par
 // 모델이 캐시 생성 비용을 누락하거나 존재하지 않는 TokenType='cacheWrite'로 조회해 Cost 카드와
 // 다른 값을 낸다(리뷰에서 MAJOR로 확인). 두 이름이 실제로 어긋나 있음을 여기서 함께 고정한다.
 test("SCHEMA_CONTEXT maps the cacheCreation TokenType onto pricing's cacheWrite field", () => {
-  assert.match(PRICING_PROMPT_TABLE, /cacheWrite/); // 단가표 쪽 이름
-  assert.doesNotMatch(PRICING_PROMPT_TABLE, /cacheCreation/); // 단가표에는 없는 이름
+  assert.match(pricingPromptTable(), /cacheWrite/); // 단가표 쪽 이름
+  assert.doesNotMatch(pricingPromptTable(), /cacheCreation/); // 단가표에는 없는 이름
   assert.match(SCHEMA_CONTEXT, /cacheCreation\s*→\s*cacheWrite/);
   assert.match(SCHEMA_CONTEXT, /TokenType='cacheWrite'는[\s\S]*?존재하지 않/);
 });

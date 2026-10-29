@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { foldFactors, isNonAnthropicModel, nacCostSql, withNacParams,
   nonAnthropicFactors, clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
+import { setPriceListLayersForTesting } from "./priceCatalog.js";
 
 // Live request (2026-10-07 12:54:42): Claude Code reported $1.819543 (Opus 5.5 rates); mayu
 // priced it at the AWS long-context rate, $0.099921.
@@ -94,4 +95,40 @@ test("factor caches keep runner identity and invalidation separate", async () =>
   clearNonAnthropicFactorCache();
   await nonAnthropicFactors(from, to, first);
   assert.equal(calls, 2);
+});
+
+// 2026-10-28: Claude Code reported bare ids (kimi-k3) that the namespaced price keys never matched.
+test("a bare model id prices as its unique vendor entry and keeps its own factor key", () => {
+  const row = { session: "s1", model: "kimi-k3", input_tokens: "1000", output_tokens: "100",
+    cache_read_tokens: "0", cache_creation_tokens: "0", cost_usd: 1 };
+  const { keys, factors } = foldFactors([row]);
+  assert.deepEqual(keys, ["s1|kimi-k3"]);
+  assert.equal(factors[0], 0.00495); // regional kimi-k3: (1,000 x 3.3 + 100 x 16.5) / 1M over $1
+  const entry = { short_context_limit: 1000000, regional: { short: { input: 1, cacheWrite: 1, cacheRead: 1, output: 1 },
+    long: { input: 1, cacheWrite: 1, cacheRead: 1, output: 1 } } };
+  const ambiguous = { "moonshotai.kimi-k3": entry, "other.kimi-k3": entry };
+  assert.deepEqual(foldFactors([row], undefined, ambiguous).factors, [-1]);
+  assert.deepEqual(foldFactors([row], undefined, {}).factors, [-1]);
+});
+
+test("foldFactors prices a model once the AWS Price List catalog has it", (t) => {
+  t.after(() => setPriceListLayersForTesting());
+  const row = { session: "s2", model: "nemotron-super-3-120b", input_tokens: "1000", output_tokens: "100",
+    cache_read_tokens: "0", cache_creation_tokens: "0", cost_usd: 1 };
+  setPriceListLayersForTesting({ snapshot: null });
+  assert.deepEqual(foldFactors([row]).factors, [-1], "the code table has no Nemotron rate");
+  setPriceListLayersForTesting();
+  // Committed snapshot: nvidia.nemotron-super-3-120b standard rates $0.15 / $0.65 per 1M.
+  assert.equal(foldFactors([row]).factors[0], 0.000215);
+});
+
+// 2026-10-28: "[1m]" ids (global.zai.glm-5.3[1m], kimi-k3[1m]) missed priced base entries.
+test("a context-window suffix prices as the base model and shares its factor key", () => {
+  const row = (model) => ({ session: "s1", model, input_tokens: "1000", output_tokens: "100",
+    cache_read_tokens: "0", cache_creation_tokens: "0", cost_usd: 1 });
+  const base = foldFactors([row("global.openai.gpt-6.1-sol")]);
+  const suffixed = foldFactors([row("global.openai.gpt-6.1-sol[1m]")]);
+  assert.deepEqual(suffixed, base);
+  assert.notEqual(suffixed.factors[0], -1);
+  assert.deepEqual(foldFactors([row("kimi-k3[1m]")]), foldFactors([row("kimi-k3")]));
 });

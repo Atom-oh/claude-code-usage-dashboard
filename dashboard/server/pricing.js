@@ -1,5 +1,8 @@
 import { VALID_BACKENDS } from "./backend.js";
 import { knownReportedCost } from "./reportedCost.js";
+// Import cycle by design: priceCatalog.js builds the merged table with buildPricing() below, and this
+// module reads it back at call time. Neither module may call the other while it is being evaluated.
+import { claudePricing } from "./priceCatalog.js";
 
 // Bedrock/Anthropic per-1M-token USD 단가. 캐시 배율은 cacheWrite(5m) = 입력×1.25,
 // cacheWrite1h = 입력×2, cacheRead = 입력×0.1 — 단 fable-5-1/mythos-5-1은 cacheRead가
@@ -63,7 +66,9 @@ export function normalizeModelId(raw) {
 
 // env(테스트 가능하도록 process.env를 직접 읽지 않고 인자로만 받음)로부터 실효 단가표를 만든다.
 // PRICING_CACHE_WRITE_TTL과 PRICING_JSON을 여기서 한 번만 파싱 — 두 번째 파싱 경로를 만들지 않는다.
-export function buildPricing(env) {
+// priceList: an optional parsed AWS Price List Claude layer (awsPriceList.js; complete global rates
+// per model). Precedence per model: PRICING_JSON > Price List > BASE_PRICING.
+export function buildPricing(env, priceList = {}) {
   const ttlRaw = env.PRICING_CACHE_WRITE_TTL;
   let cacheWriteTtl = "1h";
   if (ttlRaw !== undefined && ttlRaw !== "") {
@@ -78,6 +83,10 @@ export function buildPricing(env) {
   const table = {};
   for (const [model, p] of Object.entries(BASE_PRICING)) {
     table[model] = { ...p, cacheWrite1h: p.input * 2 };
+  }
+  for (const [model, p] of Object.entries(priceList || {})) {
+    table[model] = { input: p.input, output: p.output, cacheWrite: p.cacheWrite, cacheRead: p.cacheRead,
+      cacheWrite1h: p.cacheWrite1h };
   }
 
   const overriddenModels = [];
@@ -149,41 +158,50 @@ export function buildPricing(env) {
   return { table, cacheWriteTtl, overriddenModels };
 }
 
-const { table: PRICING, cacheWriteTtl: CACHE_WRITE_TTL, overriddenModels: OVERRIDDEN_MODELS } =
-  buildPricing(process.env);
+// Parsing the env here keeps the import-time failure for an invalid PRICING_JSON/TTL. Rates are read
+// at call time from priceCatalog.js (code table, AWS Price List layer, then PRICING_JSON).
+const { cacheWriteTtl: CACHE_WRITE_TTL, overriddenModels: OVERRIDDEN_MODELS } = buildPricing(process.env);
 
 // /api/config가 그대로 내려주는 값 — 단가(negotiated rate)는 고객의 사업 조건이라 절대 노출하지
 // 않고, TTL 가정과 오버라이드된 모델 key 목록만 노출한다(R5: no secrets).
 export const pricingConfig = { cacheWriteTtl: CACHE_WRITE_TTL, overriddenModels: OVERRIDDEN_MODELS };
 
 // cache_write_tokens에 실제로 적용할 단가 — tierCosts/withComputedCost가 서로 다른 숫자를 쓰지
-// 않도록 단일 헬퍼로 통일.
-const effectiveCacheWrite = (p) => (CACHE_WRITE_TTL === "1h" ? p.cacheWrite1h : p.cacheWrite);
+// 않도록 단일 헬퍼로 통일. `current` is one claudePricing() view, read once per call so a whole
+// row loop prices against one table even if a refresh lands meanwhile.
+const effectiveCacheWrite = (current, p) => (current.cacheWriteTtl === "1h" ? p.cacheWrite1h : p.cacheWrite);
+function lookup(current, model, backend) {
+  const base = current.table[normalizeModelId(model)];
+  if (!base) return null;
+  const override = backend && base.backends?.[backend];
+  return override ? { ...base, ...override } : base;
+}
 
 // Ask Claude 챗의 SYSTEM 프롬프트(chat.js)가 이 문자열을 그대로 인용한다 — Cost 페이지 카드가
 // 보여주는 "계산 비용"(withComputedCost, 아래)과 챗이 답하는 비용이 서로 다른 숫자를 쓰게
 // 드리프트하지 않도록, 단가를 PRICING에서만 유지하고 여기서 렌더링만 한다.
 // cacheWrite 열은 실효 단가(effectiveCacheWrite) — cacheWrite1h를 별도 열로 추가하면 모델이
 // 두 숫자 중 하나를 골라야 해서 chat.js의 "cacheCreation → cacheWrite" 공식이 깨진다.
-export const PRICING_PROMPT_TABLE =
-  Object.entries(PRICING)
-    .map(([model, p]) => `${model}: input $${p.input}, output $${p.output}, cacheWrite $${effectiveCacheWrite(p)}, cacheRead $${p.cacheRead} (1M 토큰당 USD)`)
+// A function, not a constant: a runtime Price List refresh changes the rates it renders.
+export function pricingPromptTable() {
+  const current = claudePricing();
+  return Object.entries(current.table)
+    .map(([model, p]) => `${model}: input $${p.input}, output $${p.output}, cacheWrite $${effectiveCacheWrite(current, p)}, cacheRead $${p.cacheRead} (1M 토큰당 USD)`)
     .join("\n") +
-  `\n(위 cacheWrite는 캐시 쓰기 TTL 가정 "${CACHE_WRITE_TTL}" 기준 단가다 — 서버 env PRICING_CACHE_WRITE_TTL로 1h/5m 전환)`;
+  `\n(위 cacheWrite는 캐시 쓰기 TTL 가정 "${current.cacheWriteTtl}" 기준 단가다 — 서버 env PRICING_CACHE_WRITE_TTL로 1h/5m 전환)`;
+}
 
 export function priceFor(model, backend) {
-  const base = PRICING[normalizeModelId(model)];
-  if (!base) return null;
-  const override = backend && base.backends?.[backend];
-  return override ? { ...base, ...override } : base;
+  return lookup(claudePricing(), model, backend);
 }
 
 export function resolvedRatesTable() {
-  const rates = (p) => ({ input: p.input, output: p.output, cacheRead: p.cacheRead, cacheWrite: effectiveCacheWrite(p) });
+  const current = claudePricing();
+  const rates = (p) => ({ input: p.input, output: p.output, cacheRead: p.cacheRead, cacheWrite: effectiveCacheWrite(current, p) });
   const out = {};
-  for (const model of Object.keys(PRICING)) {
-    out[model] = { base: rates(priceFor(model)),
-      backends: Object.fromEntries(VALID_BACKENDS.map((backend) => [backend, rates(priceFor(model, backend))])) };
+  for (const model of Object.keys(current.table)) {
+    out[model] = { base: rates(lookup(current, model)),
+      backends: Object.fromEntries(VALID_BACKENDS.map((backend) => [backend, rates(lookup(current, model, backend))])) };
   }
   return out;
 }
@@ -202,10 +220,11 @@ export function regionalMultiplier(rawModel) {
 }
 
 export function computeCost(model, backend, tokens) {
-  const p = priceFor(model, backend);
+  const current = claudePricing();
+  const p = lookup(current, model, backend);
   if (!p) return null;
   const amount = regionalMultiplier(model) * (Number(tokens.input) * p.input + Number(tokens.output) * p.output
-    + Number(tokens.cacheRead) * p.cacheRead + Number(tokens.cacheWrite) * effectiveCacheWrite(p)) / 1e6;
+    + Number(tokens.cacheRead) * p.cacheRead + Number(tokens.cacheWrite) * effectiveCacheWrite(current, p)) / 1e6;
   return Number.isFinite(amount) ? amount : null;
 }
 
@@ -234,7 +253,8 @@ export function costAtTtl(row, ttl) {
 // is clamped to zero. This diagnostic does not validate consistency of the token fields.
 // 실측 2026-10-18(14d): 분리 필드가 있는 버전은 보고 비용과 ±2% 이내로 일치(1h 가정은 약 -8%).
 export function costWithCacheSplit(row) {
-  const p = priceFor(row.model);
+  const current = claudePricing();
+  const p = lookup(current, row.model);
   if (!p) return null;
   const w5 = Number(row.cache_write_5m_tokens) || 0;
   const w1 = Number(row.cache_write_1h_tokens) || 0;
@@ -243,7 +263,7 @@ export function costWithCacheSplit(row) {
     (Number(row.input_tokens) * p.input +
       Number(row.output_tokens) * p.output +
       Number(row.cache_read_tokens) * p.cacheRead +
-      w5 * p.cacheWrite + w1 * p.cacheWrite1h + rest * effectiveCacheWrite(p)) /
+      w5 * p.cacheWrite + w1 * p.cacheWrite1h + rest * effectiveCacheWrite(current, p)) /
     1e6
   );
 }
@@ -253,12 +273,13 @@ export function costWithCacheSplit(row) {
 // 조용히 건너뛴다(withComputedCost의 unpriced 플래그와 동일 정책 — 전체가 깨지지 않게).
 export function tierCosts(rows) {
   const t = { uncachedInput: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  const current = claudePricing();
   for (const r of rows) {
-    const p = priceFor(r.model);
+    const p = lookup(current, r.model);
     if (!p) continue;
     t.uncachedInput += (Number(r.input_tokens) * p.input) / 1e6;
     t.cacheRead += (Number(r.cache_read_tokens) * p.cacheRead) / 1e6;
-    t.cacheWrite += (Number(r.cache_write_tokens) * effectiveCacheWrite(p)) / 1e6;
+    t.cacheWrite += (Number(r.cache_write_tokens) * effectiveCacheWrite(current, p)) / 1e6;
     t.output += (Number(r.output_tokens) * p.output) / 1e6;
   }
   return t;
@@ -276,13 +297,14 @@ export function tierCostsByGroup(rows) {
 // rows는 input_tokens/output_tokens/cache_read_tokens/cache_write_tokens를 갖고 있어야 한다.
 // cost(계산 비용, 미산정 모델이면 null) + unpriced 플래그를 추가한다. reported_cost는 그대로 통과.
 export function withComputedCost(rows) {
+  const current = claudePricing();
   return rows.map((r) => {
-    const p = priceFor(r.model);
+    const p = lookup(current, r.model);
     const cost = p
       ? (Number(r.input_tokens) * p.input +
           Number(r.output_tokens) * p.output +
           Number(r.cache_read_tokens) * p.cacheRead +
-          Number(r.cache_write_tokens) * effectiveCacheWrite(p)) /
+          Number(r.cache_write_tokens) * effectiveCacheWrite(current, p)) /
         1e6
       : null;
     return { ...r, cost, unpriced: !p };

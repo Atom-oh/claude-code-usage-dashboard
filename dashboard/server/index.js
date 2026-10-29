@@ -16,6 +16,7 @@ import { sendJson } from "./jsonResponse.js";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
+import { codexPrices, priceListConfig, priceListStatus, startPriceListRefresh } from "./priceCatalog.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping, assertReadonlySession } from "./clickhouse.js";
 import { probeSegmentAwareSeriesKey, probeMigrations, probeProjectColumns } from "./schema.js";
@@ -29,6 +30,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 8080;
 const clientConfig = parseClients(process.env);
+// AWS_PRICE_LIST / AWS_PRICE_REFRESH_HOURS are validated at import like the other settings; the
+// refresh itself starts only after listen() (imports never fetch).
+const priceListSettings = priceListConfig(process.env);
+// Merged tables build lazily; build the Codex one now so an invalid CODEX_PRICING_JSON still fails
+// startup (pricing.js already rejects an invalid PRICING_JSON at import).
+codexPrices();
 // 챗은 Claude Code와 Codex 데이터를 모두 조회하므로 둘 중 하나라도 수집 중이면 연다. 둘 다 끈
 // 구성은 parseClients가 기동 시 거부하므로 /api/chat의 이 503은 방어용이다.
 const chatClientsEnabled = ["claude", "codex"].some((name) => clientConfig.enabledClients.includes(name));
@@ -539,10 +546,12 @@ app.post("/api/chat", authentication.requirePermission("chat:query"), express.js
 // 재사용하므로(dashboard/Dockerfile) 빌드타임 VITE_ 변수로는 배포별로 못 바꾼다. ClickHouse도
 // 구간 파라미터도 안 쓰므로 route() 래퍼(캐시/range 파싱)를 거치지 않는다.
 // 같은 이유로 캐시쓰기 TTL 가정(pricingConfig)도 런타임에 노출한다 — build-once-deploy-many.
+// pricing.priceList names the active rate layer (runtime/snapshot/code) and when it was fetched;
+// metadata only, never rates.
 app.get("/api/config", (req, res) =>
   res.json({
     piiMask: piiMaskEnabled,
-    pricing: pricingConfig,
+    pricing: { ...pricingConfig, priceList: priceListStatus() },
     schema: { segmentAwareSeriesKey, migrations: schemaMigrations, projectColumns },
     groupMode: GROUP_MODE,
     defaultRangeDays: DEFAULT_RANGE_DAYS,
@@ -586,6 +595,8 @@ if (isMain) {
     // 부팅 직후 즉시 한 번 데우고(배포 직후 첫 방문자도 히트), 이후 QUANT_MS 경계마다 반복.
     warmCache().catch((err) => console.error("warmCache(boot)", err));
     scheduleWarmer();
+    // Background and unref'd: startup and requests never wait for the AWS Price List.
+    startPriceListRefresh(priceListSettings);
   });
 
   // k8s 롤링 업데이트에서 SIGTERM은 파드가 Service endpoints에서 빠지기 *전에* 도착한다 —

@@ -13,6 +13,20 @@ test("aggregate query parameters stay far below the URL header limit with the de
   assert.ok(urlBytes(params) < 8192, `query parameters take ${urlBytes(params)} URL bytes`);
 });
 
+test("the AWS Price List catalog keeps both Codex queries within the URL budget and shares context limits", async () => {
+  const { codexPrices } = await import("./priceCatalog.js");
+  const { buildCodexQuery } = await import("./clientMetrics.js");
+  const from = new Date("2026-09-14T00:00:00Z"), to = new Date("2026-09-15T00:00:00Z");
+  const prices = codexPrices();
+  assert.ok(Object.keys(prices).length > Object.keys(DEFAULT_CODEX_PRICING).length, "the snapshot adds models");
+  const limits = new Set(Object.values(prices).map((entry) => entry.short_context_limit));
+  for (const [request, prefix] of [[buildCodexLogAggregateQuery(from, to), "aggregateThreshold"],
+    [buildCodexQuery(from, to, {}, prices), "priceLimit"]]) {
+    assert.ok(urlBytes(request.params) < 8192, `${prefix}: ${urlBytes(request.params)} URL bytes`);
+    assert.equal(Object.keys(request.params).filter((key) => key.startsWith(prefix)).length, limits.size, prefix);
+  }
+});
+
 test("identical rates share one query parameter regardless of how many models use them", () => {
   const from = new Date("2026-09-14T00:00:00Z"), to = new Date("2026-09-15T00:00:00Z");
   const flat = { input: 0.62, cacheWrite: 0.62, cacheRead: 0.62, output: 1.85 };

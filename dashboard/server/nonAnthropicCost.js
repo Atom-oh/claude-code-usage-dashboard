@@ -1,6 +1,7 @@
 import { query as rawQuery, toChDateTime } from "./clickhouse.js";
 import { normalizeModelId } from "./pricing.js";
-import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.js";
+import { bareModelAlias, codexModel, priceCodexUsage } from "./codexPricing.js";
+import { codexPrices } from "./priceCatalog.js";
 import { resolveBackend } from "./backend.js";
 import { createFactorCache } from "./factorCache.js";
 
@@ -13,8 +14,6 @@ import { createFactorCache } from "./factorCache.js";
 // times tokens, so the ratio carries each request's 272K context tier exactly, and duplicate
 // log deliveries cancel when every request is duplicated alike. No usable factor (no logs, an
 // unpriced request, a missing or zero report) makes that spend unknown (see nacCostSql()).
-
-const prices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 
 // Anthropic models normalize to claude-*; an empty model keeps its report unchanged.
 export function isNonAnthropicModel(model) {
@@ -44,7 +43,7 @@ const count = (value) => {
 };
 
 // Pure fold, exported for tests. rows: one per api_request log with raw model and counts.
-export function foldFactors(rows, normalize = normalizeModelId, priceTable = prices) {
+export function foldFactors(rows, normalize = normalizeModelId, priceTable = codexPrices()) {
   const groups = new Map();
   for (const row of rows) {
     const model = String(row.model || "");
@@ -58,9 +57,14 @@ export function foldFactors(rows, normalize = normalizeModelId, priceTable = pri
     const reported = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
     // Claude input excludes cache; the Codex pricer takes the inclusive total and subsets.
     const total = input === null || read === null || write === null ? null : input + read + write;
-    const limit = priceTable[codexModel(model)]?.short_context_limit;
+    // A bare id (e.g. "kimi-k3") prices as its unique "<vendor>.<id>" entry, which also gives it a
+    // backend; the factor key keeps the reported id. Ambiguous or unknown ids stay unpriced.
+    // A context-window suffix ("[1m]") names no separate rate; the context tier below prices it.
+    const unsuffixed = model.replace(/\[[^\]]*\]$/, "");
+    const priceModel = bareModelAlias(unsuffixed, priceTable) ?? unsuffixed;
+    const limit = priceTable[codexModel(priceModel)]?.short_context_limit;
     const priced = total === null || output === null ? null : priceCodexUsage({
-      model, backend: resolveBackend(model, ""),
+      model: priceModel, backend: resolveBackend(priceModel, ""),
       context_tier: limit !== undefined && total > limit ? "long" : "short",
       input_tokens_total: total, cache_read_tokens: read, cache_write_tokens: write,
       output_tokens: output, reasoning_tokens: 0,

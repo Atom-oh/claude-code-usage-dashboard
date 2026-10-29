@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { buildCodexQuery, codexPrices, foldClientMetrics } from "../dashboard/server/clientMetrics.js";
+import { buildCodexQuery, foldClientMetrics } from "../dashboard/server/clientMetrics.js";
+import { codexPrices } from "../dashboard/server/priceCatalog.js";
 import { costSchemaSql, costBackfillSql } from "../dashboard/server/codexCostSchema.js";
 import { compareCodexCost } from "../dashboard/server/compareCodexCost.js";
 
@@ -125,7 +126,7 @@ const filters = [{}, { user: "SYNTHETIC" }, { userExact: "synthetic@example.test
   { backend: "bedrock-runtime" }, { backend: "unknown" },
   { userExact: "synthetic@example.test", modelExact: model, backend: "bedrock-mantle" }];
 function request(source, filter = {}, start = from, end = to, seconds = 3600, costView = true) {
-  return buildCodexQuery(start, end, filter, codexPrices, "codex", seconds,
+  return buildCodexQuery(start, end, filter, codexPrices(), "codex", seconds,
     { costView, costSource: source });
 }
 function query(request, extra = []) { return rows(request.sql, request.params, extra); }
@@ -147,7 +148,7 @@ function equal(filter = {}, start = from, end = to, seconds = 3600) {
       "SQL parity " + JSON.stringify({ filter, start, end, costView }));
     for (const compactTime of [false, true]) {
       const fold = values => foldClientMetrics(values.map(row => ({ ...row, client: "codex" })),
-        ["codex"], codexPrices, { costView, modelTime: true, compactTime });
+        ["codex"], codexPrices(), { costView, modelTime: true, compactTime });
       assert.deepEqual(stable(fold(facts)), stable(fold(raw)), "Fold parity");
     }
     assertions += 3;

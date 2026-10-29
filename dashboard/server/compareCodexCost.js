@@ -2,7 +2,8 @@
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { isDeepStrictEqual, parseArgs } from "node:util";
-import { buildCodexQuery, codexPrices, foldClientMetrics } from "./clientMetrics.js";
+import { buildCodexQuery, foldClientMetrics } from "./clientMetrics.js";
+import { codexPrices } from "./priceCatalog.js";
 import { parseCostReadFrom } from "./codexCostSource.js";
 import { query, assertReadonlySession } from "./clickhouse.js";
 
@@ -18,9 +19,11 @@ export async function compareCodexCost(options, runQuery = query) {
     throw new Error("Comparison requires a positive timestamp interval of at most one day");
   const filters = { userExact: options.userExact || "", modelExact: options.modelExact || "",
     backend: options.backend || "" };
+  // Both reads and both folds price against the same table.
+  const prices = codexPrices();
   const results = [];
   for (const costSource of ["raw", "facts"]) {
-    const request = buildCodexQuery(from, to, filters, codexPrices, "codex", undefined,
+    const request = buildCodexQuery(from, to, filters, prices, "codex", undefined,
       { costView: true, costSource });
     results.push(await runQuery(request.sql, request.params, AbortSignal.timeout(25000)));
   }
@@ -31,7 +34,7 @@ export async function compareCodexCost(options, runQuery = query) {
   const sqlMatch = isDeepStrictEqual(raw, facts);
   const foldMatch = [false, true].every(compactTime => {
     const fold = rows => stable(foldClientMetrics(rows.map(row => ({ ...row, client: "codex" })),
-      ["codex"], codexPrices, { costView: true, modelTime: true, compactTime }));
+      ["codex"], prices, { costView: true, modelTime: true, compactTime }));
     return isDeepStrictEqual(fold(raw), fold(facts));
   });
   return { matched: sqlMatch && foldMatch, sql_match: sqlMatch, fold_match: foldMatch,
