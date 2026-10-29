@@ -60,6 +60,36 @@ export function createDynamoDeviceStore({ tableName, client }) {
         ExpressionAttributeNames: keyNames, ExpressionAttributeValues: { ":at": at } }), options, true);
       return result !== false;
     },
+    // Replaces any pending token, only while the verified current token is still active.
+    async stage(owner, id, currentHash, pending, options) {
+      const result = await send(new UpdateCommand({ TableName: tableName, Key: { owner, id },
+        ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND secretHash = :current"
+          + " AND attribute_not_exists(revokedAt) AND expiresAt > :at",
+        UpdateExpression: "SET pendingHash = :hash, pendingIssuedAt = :at, pendingExpiresAt = :expiresAt, purgeAt = :purgeAt",
+        ExpressionAttributeNames: keyNames, ExpressionAttributeValues: { ":current": currentHash, ":hash": pending.hash,
+          ":at": pending.issuedAt, ":expiresAt": pending.expiresAt, ":purgeAt": pending.purgeAt } }), options, true);
+      return result !== false;
+    },
+    // Exactly one replica promotes a given pending token; the others observe a condition miss.
+    async promote(owner, id, pending, at, options) {
+      const result = await send(new UpdateCommand({ TableName: tableName, Key: { owner, id },
+        ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND pendingHash = :hash"
+          + " AND pendingExpiresAt = :expiresAt AND pendingExpiresAt > :at AND attribute_not_exists(revokedAt)",
+        UpdateExpression: "SET secretHash = :hash, expiresAt = :expiresAt, purgeAt = :purgeAt, renewedAt = :at,"
+          + " previousHash = :previous REMOVE pendingHash, pendingIssuedAt, pendingExpiresAt",
+        ExpressionAttributeNames: keyNames, ExpressionAttributeValues: { ":hash": pending.hash,
+          ":expiresAt": pending.expiresAt, ":purgeAt": pending.purgeAt, ":at": at, ":previous": pending.previous } }),
+      options, true);
+      return result !== false;
+    },
+    // First reuse of a superseded token only; later reuse keeps the original time.
+    async flagReuse(owner, id, at, options) {
+      const result = await send(new UpdateCommand({ TableName: tableName, Key: { owner, id },
+        ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND attribute_not_exists(reuseDetectedAt)",
+        UpdateExpression: "SET reuseDetectedAt = :at",
+        ExpressionAttributeNames: keyNames, ExpressionAttributeValues: { ":at": at } }), options, true);
+      return result !== false;
+    },
     async touch(owner, id, at, options) {
       const result = await send(new UpdateCommand({ TableName: tableName, Key: { owner, id },
         ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND attribute_not_exists(revokedAt) AND expiresAt > :at",

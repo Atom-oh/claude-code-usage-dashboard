@@ -24,7 +24,9 @@ These defaults are engineering choices, not additional user requirements:
   expiry, last accepted delivery and a revoke action. Never save tokens in browser
   storage, URLs, archives or generated shell commands.
 - Tokens expire after 30 days, independently of browser sessions. A device is replaced
-  by issuing a fresh token and rerunning setup; usage never extends expiry. Registry
+  by issuing a fresh token and rerunning setup; usage never extends expiry. Amended
+  2026-10-28: active devices renew automatically; see the
+  [device collector runbook](../../runbooks/device-collectors.md). Registry
   metadata is retained seven days beyond expiry. No automatic IdP role-demotion
   claim: minting requires the current editor/admin session; existing device tokens
   remain valid until expiry or explicit revocation.

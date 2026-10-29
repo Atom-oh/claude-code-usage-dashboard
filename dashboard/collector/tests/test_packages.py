@@ -241,7 +241,7 @@ class Installer(unittest.TestCase):
                 self.module.check_service(unit, "fixture")
 
     def test_failed_service_stop_does_not_allow_install_or_uninstall_to_continue(self):
-        def service(unit, action, uid):
+        def service(unit, action, uid, label=None):
             return action == "status"
         with patch.object(self.module, "service_command", service), self.assertRaisesRegex(ValueError, "still running"):
             self.module.stop_service(Path("/tmp/fixture.service"), os.getuid())

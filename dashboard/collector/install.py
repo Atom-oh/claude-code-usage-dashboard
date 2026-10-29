@@ -23,6 +23,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from xml.parsers.expat import ExpatError
@@ -33,6 +34,9 @@ spec = importlib.util.spec_from_file_location("client_telemetry", HERE / "genera
 configurator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(configurator)
 LABEL = "org.ccdash.collector"
+RENEW_LABEL = "org.ccdash.collector.renew"
+RENEW_UNITS = ("ccdash-collector-renew.service", "ccdash-collector-renew.timer")
+RENEW_OUTCOMES = ("renewed", "not_due", "unauthorized", "restart_failed", "failed")
 LEGACY_LABEL = "com.ccdash.otelcol"
 MARKER = "ccdash-device-collector-v1"
 TOKEN_PATTERN = re.compile(r"ccd1\.[a-f0-9]{64}\.[a-f0-9]{32}\.[A-Za-z0-9_-]{43}")
@@ -216,6 +220,35 @@ def launchd_service(root):
                            "StandardErrorPath": str(root / "collector.log")})
 
 
+def renewal_command(root):
+    python = sys.executable
+    if not python or not os.path.isabs(python) or any(ord(char) < 32 or ord(char) == 127 for char in python):
+        raise ValueError("cannot determine an absolute Python interpreter path for token renewal")
+    return [python, str(root / "install.py"), "renew"]
+
+
+def systemd_renewal(root):
+    """Oneshot renewal service and its daily timer, ordered like renewal_locations()."""
+    command = " ".join(systemd_quote(part) for part in renewal_command(root))
+    return [("# " + MARKER + "\n[Unit]\nDescription=ccdash device token renewal\n"
+             "After=network-online.target\nWants=network-online.target\n[Service]\nType=oneshot\n"
+             "ExecStart=:" + command + "\nTimeoutStartSec=180\nUMask=0077\nNoNewPrivileges=true\n"),
+            ("# " + MARKER + "\n[Unit]\nDescription=Daily ccdash device token renewal\n[Timer]\n"
+             "OnCalendar=daily\nRandomizedDelaySec=2h\nPersistent=true\n[Install]\nWantedBy=timers.target\n")]
+
+
+def launchd_renewal(root):
+    return [plistlib.dumps({"Label": RENEW_LABEL, "Comment": MARKER, "ProgramArguments": renewal_command(root),
+                            "StartInterval": 21600, "RunAtLoad": True, "Umask": 0o077})]
+
+
+def renewal_locations(home):
+    """The last path is the unit or agent that service_command controls."""
+    if sys.platform == "darwin":
+        return [home / "Library/LaunchAgents" / (RENEW_LABEL + ".plist")]
+    return [home / ".config/systemd/user" / name for name in RENEW_UNITS]
+
+
 def run(command, required=True, output=False):
     environment = dict(os.environ)
     runtime = Path("/run/user") / str(os.getuid())
@@ -238,28 +271,31 @@ def service_location(home):
     return home / ".config/systemd/user/ccdash-collector.service"
 
 
-def service_command(unit, action, uid):
+def service_command(unit, action, uid, label=LABEL):
     if sys.platform == "darwin":
         domain = "gui/" + str(uid)
         commands = {"start": ["launchctl", "bootstrap", domain, str(unit)],
-                    "stop": ["launchctl", "bootout", domain + "/" + LABEL],
-                    "status": ["launchctl", "print", domain + "/" + LABEL]}
-        return run(commands[action], required=action == "start")
+                    "restart": ["launchctl", "kickstart", "-k", domain + "/" + label],
+                    "stop": ["launchctl", "bootout", domain + "/" + label],
+                    "status": ["launchctl", "print", domain + "/" + label]}
+        return run(commands[action], required=action in ("start", "restart"))
     command = ["systemctl", "--user"]
     if action == "start":
         run(command + ["daemon-reload"])
         return run(command + ["enable", "--now", unit.name])
+    if action == "restart":
+        return run(command + ["restart", unit.name])
     if action == "stop":
         return run(command + ["disable", "--now", unit.name], required=False)
     return run(command + ["is-active", "--quiet", unit.name], required=False)
 
 
-def stop_service(unit, uid):
-    if not service_command(unit, "stop", uid) and service_command(unit, "status", uid):
+def stop_service(unit, uid, label=LABEL):
+    if not service_command(unit, "stop", uid, label) and service_command(unit, "status", uid, label):
         raise ValueError("managed Collector is still running; resolve the service error before retrying")
 
 
-def check_service(unit, user):
+def check_service(unit, user, label=LABEL):
     if unit.is_symlink():
         raise ValueError("service file is a symlink")
     if unit.exists() and MARKER not in unit.read_text():
@@ -277,8 +313,21 @@ def check_service(unit, user):
                       required=False, output=True)
         if dropins:
             raise ValueError("service has unmanaged drop-ins; migrate them before installing")
-    elif not unit.exists() and service_command(unit, "status", os.getuid()):
+    elif not unit.exists() and service_command(unit, "status", os.getuid(), label):
         raise ValueError("LaunchAgent label is already loaded from an unmanaged location")
+
+
+def check_services(unit, renewal, user):
+    check_service(unit, user)
+    for path in renewal:
+        check_service(path, user, RENEW_LABEL)
+
+
+def lock_installation(lock):
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise ValueError("another installation or token renewal is running; retry shortly") from None
 
 
 def occupied_ports():
@@ -558,7 +607,8 @@ def download_binary(root, release):
 def install(args, home, user, uid, root, unit):
     ingest_endpoint = endpoint(args.endpoint)
     check_install_root(root)
-    check_service(unit, user)
+    renewal = renewal_locations(home)
+    check_services(unit, renewal, user)
     legacy = legacy_mac_state(home, uid) if sys.platform == "darwin" and not unit.exists() else None
     if not unit.exists():
         check_ports(legacy)
@@ -576,16 +626,20 @@ def install(args, home, user, uid, root, unit):
         atomic(root / "state.json", json.dumps({"managedBy": MARKER, "pending": True}) + "\n")
     # The lock prevents two token replacements from crossing configuration updates.
     with (root / ".install.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_installation(lock)
+        if args.token_file:
+            token = read_token(args.token_file)  # reread under the lock; a renewal may have replaced it
         stage = Path(tempfile.mkdtemp(prefix=".prepare-", dir=root))
         keep_recovery = False
         try:
             managed_paths = [root / name for name in ("token", "config.yaml", "otelcol-contrib",
-                                                     "state.json", *MAINTENANCE_FILES)] + [unit]
+                                                     "state.json", *MAINTENANCE_FILES)] + [unit, *renewal]
             managed_before = snapshot_files(managed_paths, stage / "before-managed")
             clients_before = snapshot_files([home / ".codex/config.toml", home / ".claude/settings.json"],
                                             stage / "before-clients")
             old_running = unit.exists() and service_command(unit, "status", uid)
+            old_renewal = (all(path.exists() for path in renewal)
+                           and service_command(renewal[-1], "status", uid, RENEW_LABEL))
             old_enabled = unit.exists() and (old_running if sys.platform == "darwin" else
                                              run(["systemctl", "--user", "is-enabled", "--quiet", unit.name],
                                                  required=False))
@@ -605,7 +659,12 @@ def install(args, home, user, uid, root, unit):
                                                      "version": release["version"], "unit": str(unit),
                                                      "userId": user_id}) + "\n")
             atomic(stage / "service", systemd_service(root) if sys.platform == "linux" else launchd_service(root))
-            prepared = {path: stage / ("service" if path == unit else str(path.relative_to(root)))
+            services = {unit: "service"}
+            for path, content in zip(renewal, systemd_renewal(root) if sys.platform == "linux"
+                                     else launchd_renewal(root)):
+                services[path] = "renewal-" + path.name
+                atomic(stage / services[path], content)
+            prepared = {path: stage / (services[path] if path in services else str(path.relative_to(root)))
                         for path in managed_paths}
             prepared_states = {path: file_state(source) for path, source in prepared.items()}
             # Include unchanged client files: rerunning token setup often has an
@@ -614,7 +673,7 @@ def install(args, home, user, uid, root, unit):
             assert_unchanged(clients_before)
             if client_plan(home, user_id, replace_claude_telemetry)[0] != changes:
                 raise ValueError("client configuration changed during preparation; rerun setup")
-            check_service(unit, user)
+            check_services(unit, renewal, user)
             if not unit.exists():
                 if legacy and legacy_mac_state(home, uid) != legacy:
                     raise ValueError("legacy service or configuration changed during preparation; rerun setup")
@@ -632,6 +691,8 @@ def install(args, home, user, uid, root, unit):
                     stop_legacy(legacy)
                 if unit.exists():
                     stop_service(unit, uid)
+                if any(path.exists() for path in renewal):
+                    stop_service(renewal[-1], uid, RENEW_LABEL)
                 assert_unchanged(clients_before)
                 for path, source in prepared.items():
                     written.append(path)
@@ -641,12 +702,15 @@ def install(args, home, user, uid, root, unit):
                 service_command(unit, "start", uid)
                 if legacy:
                     wait_for_local_collector(unit, uid)
+                service_command(renewal[-1], "start", uid, RENEW_LABEL)
             except BaseException:
                 try:
                     # A failed start may already have launched the new process.
                     # Stop it before restoring its token, binary or configuration.
                     if unit.exists():
                         stop_service(unit, uid)
+                    if any(path.exists() for path in renewal):
+                        stop_service(renewal[-1], uid, RENEW_LABEL)
                     for path in reversed(written):
                         current = file_state(path)
                         if current == managed_before[path][0]:
@@ -670,6 +734,8 @@ def install(args, home, user, uid, root, unit):
                         run(["systemctl", "--user", "enable", unit.name])
                     if old_running and not old_enabled and sys.platform == "linux":
                         run(["systemctl", "--user", "disable", unit.name])
+                    if old_renewal:
+                        service_command(renewal[-1], "start", uid, RENEW_LABEL)
                     if legacy_attempted:
                         restore_legacy(legacy, home, uid)
                 except BaseException:
@@ -686,9 +752,111 @@ def install(args, home, user, uid, root, unit):
         print("Delivery is confirmed by the dashboard device last-delivery time, not an idle local queue.")
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Report every redirect as a failed renewal instead of following it."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def unique_object(pairs):
+    data = {}
+    for key, value in pairs:
+        if key in data:
+            raise ValueError("duplicate key")
+        data[key] = value
+    return data
+
+
+def renewal_response(current, ingest_endpoint):
+    """POST the current token to the renewal endpoint; return validated JSON, or None for 401."""
+    request = urllib.request.Request(ingest_endpoint + "/renew", data=b"", method="POST", headers={
+        "Authorization": "Bearer " + current, "Content-Type": "application/json"})
+    invalid = "invalid renewal response; the local token was not changed"
+    try:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=15) as response:
+            status, kind, body = response.status, response.headers.get_content_type(), response.read(4097)
+    except urllib.error.HTTPError as error:
+        error.close()
+        if error.code == 401:
+            return None
+        raise ValueError("renewal was refused with HTTP " + str(error.code) + "; it will be retried") from None
+    except http.client.HTTPException:
+        raise ValueError("renewal request failed; it will be retried") from None
+    if status != 200 or kind != "application/json" or len(body) > 4096:
+        raise ValueError(invalid)
+    try:
+        data = json.loads(body.decode("utf-8"), object_pairs_hook=unique_object)
+    except (ValueError, RecursionError):
+        raise ValueError(invalid) from None
+    if not isinstance(data, dict) or not isinstance(data.get("expiresAt"), str) or len(data["expiresAt"]) > 64:
+        raise ValueError(invalid)
+    if data.get("renewed") is False and set(data) == {"renewed", "expiresAt"}:
+        return data
+    token = data.get("token")
+    # A replacement must keep this device's owner and ID and change only the secret.
+    if (data.get("renewed") is not True or set(data) != {"renewed", "token", "expiresAt"}
+            or not isinstance(token, str) or not TOKEN_PATTERN.fullmatch(token)
+            or token.rsplit(".", 1)[0] != current.rsplit(".", 1)[0] or token == current):
+        raise ValueError(invalid)
+    return data
+
+
+def renew(root, unit, uid, state):
+    """Exit 0: current or renewed, 1: retry on the next run, 2: re-enrollment required."""
+    with (root / ".install.lock").open("a") as lock:
+        lock_installation(lock)
+        outcome = "failed"
+        try:
+            current = read_token(root / "token")
+            if (root / "restart-pending").exists():
+                # An earlier replacement is live only after a successful restart.
+                outcome = "restart_failed"
+                service_command(unit, "restart", uid)
+                (root / "restart-pending").unlink()
+            # Reuse the endpoint validated and saved in the private state file at install time.
+            result = renewal_response(current, endpoint(str(state.get("endpoint", ""))))
+            if result is None:
+                outcome = "unauthorized"
+                print("ccdash collector: the dashboard rejected this device token (expired, revoked or replaced). "
+                      "Register a new device on /collector and rerun install.", file=sys.stderr)
+                return 2
+            if not result["renewed"]:
+                outcome = "not_due"
+                return 0
+            atomic(root / "restart-pending", "\n")
+            atomic(root / "token", result["token"] + "\n")
+            outcome = "restart_failed"
+            # Restart rather than rely on file watching; the persistent queue survives it.
+            service_command(unit, "restart", uid)
+            (root / "restart-pending").unlink()
+            outcome = "renewed"
+            print("Device token renewed; Collector restarted.")
+            return 0
+        finally:
+            # Time and outcome only: the state file never stores token material.
+            try:
+                atomic(root / "renew-state.json", json.dumps({
+                    "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "outcome": outcome}) + "\n")
+            except (OSError, ValueError):
+                pass
+
+
+def last_renewal(root):
+    path = root / "renew-state.json"
+    try:
+        data = json.loads(path.read_text()) if path.is_file() and not path.is_symlink() else None
+    except (OSError, ValueError, RecursionError):
+        return None
+    if (not isinstance(data, dict) or data.get("outcome") not in RENEW_OUTCOMES
+            or not isinstance(data.get("time"), str)
+            or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", data["time"])):
+        return None
+    return {"time": data["time"], "outcome": data["outcome"]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("install", "status", "check", "uninstall"))
+    parser.add_argument("action", choices=("install", "status", "check", "uninstall", "renew"))
     parser.add_argument("--endpoint", help="dashboard HTTPS /api/ingest URL")
     parser.add_argument("--token-file", type=Path, help="private mode 0600 file; token values are never CLI arguments")
     parser.add_argument("--user-id", help="nonsecret telemetry attribution ID (defaults to local login)")
@@ -706,7 +874,8 @@ def main():
         home, user, uid, gid = Path(account.pw_dir), account.pw_name, account.pw_uid, account.pw_gid
         if not re.fullmatch(r"[a-zA-Z0-9_.@-]+", user):
             raise ValueError("unsupported login name")
-        for name in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):
+        # Scheduled renewal never reads or changes client configuration.
+        for name in ("CODEX_HOME", "CLAUDE_CONFIG_DIR") if args.action != "renew" else ():
             if os.environ.get(name):
                 raise ValueError("custom client config directories need manual setup; unset " + name
                                  + " only if the default home config is intended")
@@ -714,6 +883,7 @@ def main():
             raise ValueError("install requires --endpoint from the dashboard collector page")
         root = home / ".local/share/ccdash-collector"
         unit = service_location(home)
+        renewal = renewal_locations(home)
         if args.action == "install":
             install(args, home, user, uid, root, unit)
             return 0
@@ -725,13 +895,22 @@ def main():
             raise ValueError("installation is incomplete; rerun install")
         if state["unit"] != str(unit):
             raise ValueError("installation service path differs; review the saved state")
+        if args.action == "renew":
+            return renew(root, unit, uid, state)
         if args.action == "uninstall":
-            if unit.is_symlink() or (unit.exists() and MARKER not in unit.read_text()):
-                raise ValueError("service no longer belongs to ccdash; refusing to remove it")
-            stop_service(unit, uid)
-            unit.unlink(missing_ok=True)
-            (root / "token").unlink(missing_ok=True)
-            print("Service and local token removed. Revoke the device on /collector.")
+            for path in (unit, *renewal):
+                if path.is_symlink() or (path.exists() and MARKER not in path.read_text()):
+                    raise ValueError("service no longer belongs to ccdash; refusing to remove it")
+            with (root / ".install.lock").open("a") as lock:
+                lock_installation(lock)
+                if any(path.exists() for path in renewal):
+                    stop_service(renewal[-1], uid, RENEW_LABEL)
+                stop_service(unit, uid)
+                for path in (*renewal, unit):
+                    path.unlink(missing_ok=True)
+                for name in ("token", "renew-state.json", "restart-pending"):
+                    (root / name).unlink(missing_ok=True)
+            print("Service, token renewal and local token removed. Revoke the device on /collector.")
             print("Client configuration and backups are retained. Restore reviewed .ccdash-backup files "
                   "or remove only the managed Codex block and Claude OTEL settings; keep model/auth settings.")
             print("After reviewing retained queue and files, you may remove " + str(root))
@@ -742,10 +921,14 @@ def main():
             print(note)
         running = service_command(unit, "status", uid)
         healthy = local_collector_healthy(timeout=3)
+        scheduled = (all(path.exists() for path in renewal)
+                     and service_command(renewal[-1], "status", uid, RENEW_LABEL))
         print(json.dumps({"serviceRunning": running, "localCollectorHealthy": healthy,
-                          "clientConfigurationCurrent": not changes,
+                          "clientConfigurationCurrent": not changes, "renewalScheduled": scheduled,
+                          "lastRenewal": last_renewal(root),
+                          "tokenExpiry": "unknown locally; check the device list on /collector",
                           "deliveryVerification": "Check device last-delivery time on the dashboard"}))
-        return 0 if running and healthy and not changes else 1
+        return 0 if running and healthy and not changes and scheduled else 1
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         # SDK/download/OS diagnostics may expose URLs or environment details.
         message = str(error) if isinstance(error, ValueError) else "operation failed; check permissions, network and service status"

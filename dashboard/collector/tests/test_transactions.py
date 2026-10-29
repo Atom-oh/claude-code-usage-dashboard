@@ -1,8 +1,10 @@
 """Installer transaction regressions; service/download boundaries are simulated."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -37,6 +39,11 @@ class Transactions(unittest.TestCase):
         self.start_failure = None
         self.download_hook = None
         self.stop_count = 0
+        self.renewal = [self.home / ".config/systemd/user" / name for name in
+                        ("ccdash-collector-renew.service", "ccdash-collector-renew.timer")]
+        self.renewal_active = False
+        self.renewal_failure = False
+        self.commands = []
         self.patches = [
             patch.object(self.module, "run", self.external),
             patch.object(self.module, "download_binary", self.download),
@@ -54,8 +61,20 @@ class Transactions(unittest.TestCase):
             self.download_hook()
 
     def external(self, command, required=True, output=False):
+        self.commands.append(command)
         if output:
             return ""
+        if any(str(part).startswith("ccdash-collector-renew") for part in command):
+            if "is-active" in command:
+                return self.renewal_active
+            if "disable" in command:
+                self.renewal_active = False
+            if "enable" in command:
+                if self.renewal_failure:
+                    self.renewal_failure = False
+                    raise ValueError("simulated renewal schedule failure")
+                self.renewal_active = True
+            return True
         if "is-active" in command:
             return self.running
         if "disable" in command:
@@ -72,9 +91,83 @@ class Transactions(unittest.TestCase):
     def install(self):
         self.module.install(self.args, self.home, "fixture", os.getuid(), self.root, self.unit)
 
+    def main(self, *argv):
+        account = SimpleNamespace(pw_dir=str(self.home), pw_name="fixture", pw_uid=os.getuid(), pw_gid=os.getgid())
+        output = io.StringIO()
+        with patch.object(self.module.os, "geteuid", return_value=1000), \
+                patch.object(self.module.pwd, "getpwuid", return_value=account), \
+                patch.object(self.module.sys, "argv", ["install.py", *argv]), \
+                patch.dict(os.environ, {"CODEX_HOME": "", "CLAUDE_CONFIG_DIR": ""}), \
+                patch.object(self.module, "local_collector_healthy", return_value=True), \
+                patch("sys.stdout", output):
+            return self.module.main(), output.getvalue()
+
     def snapshot(self):
         paths = [path for path in self.root.rglob("*") if path.is_file() and path.name != ".install.lock"]
-        return {str(path): (path.read_bytes(), path.stat().st_mode & 0o777) for path in [*paths, self.unit]}
+        renewal = [p for p in self.renewal if p.exists()]
+        return {str(path): (path.read_bytes(), path.stat().st_mode & 0o777)
+                for path in [*paths, self.unit, *renewal]}
+
+    def test_renewal_schedule_failure_restores_previous_installation(self):
+        self.install()
+        original = self.snapshot()
+        self.assertTrue(self.renewal_active)
+        self.token.write_text(TOKEN[:-1] + "D")
+        self.renewal_failure = True
+        with self.assertRaisesRegex(ValueError, "renewal schedule failure"):
+            self.install()
+        self.assertTrue(self.running)
+        self.assertTrue(self.renewal_active)
+        self.assertEqual(self.snapshot(), original)
+
+    def test_install_schedules_renewal_and_uninstall_removes_it(self):
+        self.install()
+        service, timer = (path.read_text() for path in self.renewal)
+        self.assertTrue(service.startswith("# " + self.module.MARKER))
+        self.assertIn("Type=oneshot", service)
+        command = [sys.executable, self.root / "install.py", "renew"]
+        self.assertIn("ExecStart=:" + " ".join(self.module.systemd_quote(part) for part in command), service)
+        for line in ("OnCalendar=daily", "RandomizedDelaySec=2h", "Persistent=true", "WantedBy=timers.target"):
+            self.assertIn(line, timer)
+        self.assertTrue(self.renewal_active)
+        self.module.atomic(self.root / "renew-state.json", "{}\n")
+        self.assertEqual(self.main("uninstall")[0], 0)
+        for path in (*self.renewal, self.unit, self.root / "token", self.root / "renew-state.json"):
+            self.assertFalse(path.exists(), path)
+        self.assertFalse(self.renewal_active)
+
+    def test_reinstall_stops_the_renewal_timer_before_replacing_files(self):
+        self.install()
+        self.commands.clear()
+        self.install()
+        timer = ["systemctl", "--user", "disable", "--now", "ccdash-collector-renew.timer"]
+        self.assertLess(self.commands.index(timer), self.commands.index(timer[:2] + ["enable"] + timer[3:]))
+
+    def test_upgrade_reuses_the_installed_token_file(self):
+        self.install()
+        for path in self.renewal:
+            path.unlink()
+        self.renewal_active = False
+        self.args.token_file = self.root / "token"
+        self.install()
+        self.assertEqual((self.root / "token").read_text(), TOKEN + "\n")
+        self.assertTrue(all(path.exists() for path in self.renewal) and self.renewal_active)
+
+    def test_status_reports_schedule_and_last_renewal_without_secrets(self):
+        self.install()
+        state = self.root / "renew-state.json"
+        self.module.atomic(state, json.dumps({"time": "2026-10-28T00:00:00Z", "outcome": "not_due"}))
+        code, out = self.main("status")
+        data = json.loads(out)
+        self.assertEqual((code, data["renewalScheduled"]), (0, True))
+        self.assertEqual(data["lastRenewal"], {"time": "2026-10-28T00:00:00Z", "outcome": "not_due"})
+        self.assertIn("unknown", data["tokenExpiry"])
+        self.assertNotIn(TOKEN, out)
+        self.module.atomic(state, json.dumps({"time": "x", "outcome": "renewed"}))
+        self.assertIsNone(json.loads(self.main("status")[1])["lastRenewal"])
+        self.renewal_active = False
+        code, out = self.main("status")
+        self.assertEqual((code, json.loads(out)["renewalScheduled"]), (1, False))
 
     def test_migration_flag_without_legacy_does_not_replace_claude_telemetry(self):
         original = '{"env":{"OTEL_EXPORTER_OTLP_ENDPOINT":"https://previous.example"}}\n'

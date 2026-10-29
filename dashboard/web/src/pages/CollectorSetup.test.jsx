@@ -10,7 +10,7 @@ const config = {
 const device = {
   id: "device-one", name: "작업용 Mac", platform: "darwin",
   createdAt: "2026-10-20T12:00:00Z", expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
-  revokedAt: null, lastSeenAt: null,
+  revokedAt: null, lastSeenAt: null, renewedAt: null, reuseDetectedAt: null,
 };
 const token = "ccd1.fixture-owner.fixture-device.fixture-secret";
 const response = (body, status = 200, type = "application/json") => ({
@@ -389,5 +389,39 @@ test("expiry status updates while the setup page remains open", async () => {
   expect(screen.getByText("등록됨")).toBeTruthy();
   await act(() => vi.advanceTimersByTimeAsync(30000));
   expect(screen.getByText("만료됨")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: `${device.name} 해지` })).toBeNull();
+  // An unpromoted replacement can outlive the shown expiry, so revocation stays available.
+  expect(screen.getByRole("button", { name: `${device.name} 해지` })).toBeTruthy();
+});
+
+test("renewed devices show the automatic renewal time and help explains renewal", async () => {
+  const renewedAt = "2026-10-27T03:04:05.000Z";
+  installFetch({ devices: [{ ...device, renewedAt }] });
+  mount();
+  await screen.findByText(device.name);
+  const renewed = screen.getByTitle(renewedAt);
+  expect(renewed.tagName).toBe("TIME");
+  expect(renewed.closest("p").textContent.startsWith("자동 갱신 ")).toBe(true);
+  expect(screen.getAllByText(/만료 7일 전부터 토큰을 자동으로 갱신합니다/).length).toBeGreaterThanOrEqual(1);
+});
+
+test("devices without a completed renewal show no renewal time", async () => {
+  installFetch({ devices: [device] });
+  mount();
+  await screen.findByText(device.name);
+  expect(screen.queryByText(/^자동 갱신/)).toBeNull();
+});
+
+test("a reused superseded token shows a revocation warning until the device is revoked", async () => {
+  const reuseDetectedAt = "2026-10-28T05:06:07.000Z";
+  installFetch({ devices: [{ ...device, reuseDetectedAt }] });
+  mount();
+  await screen.findByText(device.name);
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toContain("이전 토큰이 다시 사용됐습니다");
+  expect(within(alert).getByTitle(reuseDetectedAt).tagName).toBe("TIME");
+  cleanup();
+  installFetch({ devices: [{ ...device, reuseDetectedAt, revokedAt: "2026-10-28T06:00:00.000Z" }] });
+  mount();
+  await screen.findByText(device.name);
+  expect(screen.queryByText(/이전 토큰이 다시 사용됐습니다/)).toBeNull();
 });

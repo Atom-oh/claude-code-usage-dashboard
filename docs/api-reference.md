@@ -68,12 +68,16 @@ Unsafe requests retain the existing exact-Origin gate. Responses and downloads a
 | `DELETE /api/collector/devices/:id` | Revoke an owned device; 204 for existing/already revoked, 404 for absent. |
 | `GET /api/collector/package/:platform` | Authenticated installer archive for `linux` or `darwin`; no credentials embedded. |
 | `POST /api/ingest/v1/{logs,metrics,traces}` | Device bearer token only; OTLP JSON/protobuf, at most 2 MiB, no content compression. |
+| `POST /api/ingest/renew` | Device bearer token; JSON content type, empty body; six per device per hour. 200 `{renewed: false, expiresAt}` while more than seven days remain or for an unused replacement, else `{renewed: true, token, expiresAt}` with a new 30-day token. Device views add `renewedAt` and `reuseDetectedAt` (first use of a superseded token). |
 
-Device fields are `id`, `name`, `platform`, `createdAt`, `expiresAt`, `revokedAt`
-and `lastSeenAt`; dates are ISO strings or null. Tokens are ingestion-only, expire
-30 days after issuance and may remain cached on another replica for up to ten seconds
-after revocation. Last receipt does not prove database persistence. These APIs do not
-use usage range/filter semantics. See [device operations](runbooks/device-collectors.md)
+Device fields are `id`, `name`, `platform`, `createdAt`, `expiresAt`, `revokedAt`,
+`lastSeenAt` and `renewedAt` (last completed renewal); dates are ISO strings or null.
+Tokens are ingestion-only, expire 30 days after issuance and may remain cached on another
+replica for up to ten seconds after revocation. A replacement token becomes current on its
+first use (delivery or renewal request) and the previous token is then rejected, subject to
+the same cache window. Renewing again before that replaces the unused replacement. Last
+receipt does not prove database persistence. These APIs do not use usage range/filter
+semantics. See [device operations](runbooks/device-collectors.md)
 for installation, identity limitations, resource bounds and offboarding.
 
 Wrapped GET data routes validate these parameters before querying or caching:
