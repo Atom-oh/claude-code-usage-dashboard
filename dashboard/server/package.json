@@ -11,12 +11,14 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node --test *.test.js ../collect-notices.test.mjs"
+    "test": "AWS_PRICE_LIST=off node --test *.test.js ../collect-notices.test.mjs",
+    "prices:snapshot": "node scripts/prices-snapshot.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1080.0",
     "@aws-sdk/client-cloudwatch": "3.1080.0",
     "@aws-sdk/client-dynamodb": "3.1154.0",
+    "@aws-sdk/client-pricing": "3.1154.0",
     "@aws-sdk/lib-dynamodb": "3.1154.0",
     "@clickhouse/client": "^1.9.1",
     "express": "^4.21.2",
