@@ -143,6 +143,8 @@ Groups with only unpriced evidence remain null; explicit zero stays zero.
 Positive Claude reports remain usable with missing token fields; zero reports still
 require known zero usage. Codex estimates still require valid usage and a known rate
 (its own table, or the Claude table for an Anthropic model; `price_source: "claude_table"`).
+Table rates come from the merged price catalog: operator overrides, then the AWS Price List
+layer, then code tables ([ADR-017 amendment](decisions/ADR-017-backend-cost-fallback.md)).
 Cost unit values use the known subtotal and observed denominators, with partial
 labels in the UI/CSV. See [ADR-013](decisions/ADR-013-known-cost-subtotals.md).
 User counts union IDs; sessions include client; model identity counts overlap.
@@ -580,7 +582,7 @@ See [chat limits](reference/agent-llm.md) and [runtime admission](reference/api.
 | `/healthz` | HTTP 200 `{ok:boolean}` from ClickHouse ping, even when false. |
 | `/readyz` | `{ready:boolean}`, HTTP 200 when ready, 503 when draining or ping fails. |
 | `/api/health/data` | `{status, latest, ageMinutes, staleAfterMinutes}`; status is `ok`, `stale` or `unknown`. HTTP 200 only for `ok`, 503 otherwise. |
-| `/api/config` | `{piiMask, pricing, schema, groupMode, defaultRangeDays, rangeCapDays}`; reads in-memory configuration/probe snapshots, with no query in this handler. |
+| `/api/config` | `{piiMask, pricing, schema, groupMode, defaultRangeDays, rangeCapDays}`; reads in-memory configuration/probe snapshots and the in-memory price catalog status, with no query or AWS call in this handler. |
 
 Freshness uses the maximum enabled-source timestamp (Claude raw metrics, Codex logs)
 over seven days, memoized for 30 seconds; one fresh source can mask another's outage.
@@ -594,9 +596,18 @@ Config fields:
 - `piiMask`: true for case-insensitive `PII_MASK_ENABLED=1` or `true`; otherwise false.
   Terraform defaults masking on. The frontend masks unless this response explicitly says
   false. Ordinary API payloads still contain raw identities.
-- `pricing`: `{cacheWriteTtl, overriddenModels}`. TTL is `1h` by default or `5m` when
-  configured; invalid values fail startup. Override names come from `PRICING_JSON`.
+- `pricing`: `{cacheWriteTtl, overriddenModels, priceList}`. TTL is `1h` by default or `5m`
+  when configured; invalid values fail startup. Override names come from `PRICING_JSON`.
   Rates are not exposed. Cost displays this TTL as an assumption in computed diagnostics.
+- `pricing.priceList`: `{source, fetchedAt, models}` for the active AWS Price List layer
+  ([ADR-017 amendment](decisions/ADR-017-backend-cost-fallback.md)).
+  `source` is `runtime` (latest successful in-memory refresh), `snapshot` (the image's
+  `awsPriceSnapshot.json`) or `code` (neither; code tables only). `fetchedAt` is the layer's
+  ISO 8601 fetch time or null; `models` lists the model keys the layer prices, sorted.
+  Operator overrides (`PRICING_JSON`, `CODEX_PRICING_JSON`) still win per model, and code tables
+  price models the layer lacks. Metadata only: no rates. Each replica refreshes independently,
+  so two replicas can briefly report different layers. The Cost page names the source in its
+  computed-cost help.
 - `schema.segmentAwareSeriesKey`: true, false or null from up to 2,000 newest cost datapoints
   within 24 hours. Mixed, absent or failed evidence is null; this does not certify old data
   or rollup rebuild completion.

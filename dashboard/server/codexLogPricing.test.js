@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { buildCodexLogAggregateQuery, foldCodexLogAggregates } from "./codexLogAggregates.js";
 import { foldCodexInsightsLogs } from "./codexInsightsLogs.js";
-import { DEFAULT_CODEX_PRICING, codexModel, priceCodexUsage } from "./codexPricing.js";
+import { DEFAULT_CODEX_PRICING, FLAT_CONTEXT_LIMIT, codexModel, priceCodexUsage } from "./codexPricing.js";
+import { codexPrices } from "./priceCatalog.js";
 import { resolveBackend, VALID_BACKENDS } from "./backend.js";
 import { resolvedRatesTable } from "./pricing.js";
 
@@ -130,6 +131,25 @@ test("Codex log pricing matches JavaScript across batched rate selections", {
         add(`Claude fallback ${prefix}${model}/${backend}`, `${prefix}${model}`, backend);
     }
     assertBatch(user, cases, DEFAULT_CODEX_PRICING);
+  });
+
+  await t.test("every AWS Price List catalog entry selects the JavaScript rate", () => {
+    const user = "catalog-pricing@example.test";
+    const { cases, add } = batch(user);
+    const prices = codexPrices();
+    for (const [model, entry] of Object.entries(prices)) {
+      if (entry === DEFAULT_CODEX_PRICING[model]) continue; // the default batch covers it
+      for (const backend of VALID_BACKENDS) for (const scope of ["regional", "global"]) {
+        const routed = scope === "global" ? `global.${model}`
+          : backend === "bedrock-runtime" ? `us.${model}` : model;
+        const limit = entry.short_context_limit;
+        // A flat new model has no long tier: every request is short.
+        for (const [tier, input] of limit === FLAT_CONTEXT_LIMIT ? [["short", 272001]] : [["short", limit], ["long", limit + 1]])
+          add(`catalog ${model}/${scope}/${tier}/${backend}`, routed, backend, input);
+      }
+    }
+    assert.ok(cases.length > 0, "the committed snapshot adds catalog entries");
+    assertBatch(user, cases, prices);
   });
 
   await t.test("backend override priority, missing rates and malformed usage retain availability", () => {

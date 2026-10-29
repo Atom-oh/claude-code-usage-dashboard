@@ -223,8 +223,57 @@ function validRates(prices) {
   return object(prices) && RATE_FIELDS.every(
     (key) => typeof prices[key] === "number" && Number.isFinite(prices[key]) && prices[key] >= 0);
 }
-export function parseCodexPricing(raw) {
-  if (!raw) return DEFAULT_CODEX_PRICING;
+const sameRates = (a, b) => RATE_FIELDS.every((key) => a?.[key] === b?.[key]);
+
+// A model the code table does not know has no published context limit in the Price List: price it
+// flat at its short rates, so every request is "short" (an underestimate for long requests).
+export const FLAT_CONTEXT_LIMIT = Number.MAX_SAFE_INTEGER;
+// Rate objects that came from an AWS Price List layer; priceCodexUsage labels their rows.
+const PRICE_LIST_RATES = new WeakSet();
+
+/**
+ * Overlay a parsed AWS Price List Codex layer (awsPriceList.js shape: per model, per scope,
+ * `{ short, long? }` without a context limit) on a code table. Per model and scope, a Price List
+ * scope replaces the code scope; the code table keeps its context limit and every scope the
+ * Price List does not provide. A scope whose code entry has distinct long-context rates is kept
+ * when the Price List publishes no long-context rows. `notes` collects these decisions for logs.
+ */
+export function mergeCodexPriceList(base, layer, notes = []) {
+  const merged = { ...base };
+  for (const [model, listed] of Object.entries(layer || {})) {
+    const code = Object.hasOwn(base, model) ? base[model] : undefined;
+    const limit = code?.short_context_limit;
+    const entry = code ? { ...code } : { short_context_limit: FLAT_CONTEXT_LIMIT };
+    let replaced = false;
+    for (const scope of ["regional", "global"]) {
+      const rates = listed?.[scope];
+      if (!rates) continue;
+      let long = rates.long;
+      if (limit === undefined) {
+        if (long) notes.push(`${model} ${scope}: no known context limit; long-context rates ignored (flat short rates)`);
+        long = rates.short;
+      } else if (!long) {
+        if (code[scope] && !sameRates(code[scope].short, code[scope].long)) {
+          notes.push(`${model} ${scope}: no long-context rows; keeping the code table's tiered rates`);
+          continue;
+        }
+        long = rates.short;
+      }
+      PRICE_LIST_RATES.add(rates.short);
+      PRICE_LIST_RATES.add(long);
+      entry[scope] = { short: rates.short, long };
+      replaced = true;
+    }
+    if (replaced) merged[model] = entry;
+  }
+  return merged;
+}
+
+// `priceList` is an optional parsed AWS Price List layer between the code table and the operator's
+// CODEX_PRICING_JSON entries, which still replace whole models.
+export function parseCodexPricing(raw, priceList) {
+  const base = priceList ? mergeCodexPriceList(DEFAULT_CODEX_PRICING, priceList) : DEFAULT_CODEX_PRICING;
+  if (!raw) return priceList ? resolveRuntimeAliases(base) : DEFAULT_CODEX_PRICING;
   let additions;
   try { additions = JSON.parse(raw); } catch { throw new Error("CODEX_PRICING_JSON must be a JSON object"); }
   if (!object(additions) || Object.keys(additions).length > 32)
@@ -261,7 +310,7 @@ export function parseCodexPricing(raw) {
       }
     }
   }
-  return resolveRuntimeAliases({ ...DEFAULT_CODEX_PRICING, ...additions }, additions);
+  return resolveRuntimeAliases({ ...base, ...additions }, additions);
 }
 
 // Commercial geography profiles share the regional tier; GovCloud stays unsupported.
@@ -272,6 +321,32 @@ export function codexModel(model) {
 }
 export function codexModelSql(expression) {
   return `replaceRegexpOne(${expression}, '${CODEX_ROUTING_PATTERN.replace(/\\/g, "\\\\")}', '')`;
+}
+
+// Bare telemetry ids (no vendor namespace, e.g. "kimi-k3") → the table's unique "<vendor>.<id>"
+// key, keeping any routing prefix. Ambiguous ids (two vendors) and ids the table prices directly
+// resolve to null. Runtime-id aliases and anthropic.* keys never act as targets: Claude ids
+// normalize through the Claude table instead. The vendor test mirrors backend.js.
+const VENDOR_NAMESPACE = /^([a-z][a-z0-9-]*[a-z])\.(.+)$/;
+const bareIndexes = new WeakMap();
+function bareIndex(prices) {
+  let index = bareIndexes.get(prices);
+  if (index) return index;
+  index = new Map();
+  for (const key of Object.keys(prices)) {
+    if (Object.hasOwn(RUNTIME_ID_ALIASES, key) || key.startsWith("anthropic.")) continue;
+    const match = VENDOR_NAMESPACE.exec(key);
+    if (match) index.set(match[2], index.has(match[2]) ? null : key);
+  }
+  bareIndexes.set(prices, index);
+  return index;
+}
+export function bareModelAlias(model, prices = DEFAULT_CODEX_PRICING) {
+  const raw = String(model || "");
+  const id = codexModel(raw);
+  if (!id || VENDOR_NAMESPACE.test(id) || Object.hasOwn(prices, id)) return null;
+  const canonical = bareIndex(prices).get(id);
+  return canonical ? raw.slice(0, raw.length - id.length) + canonical : null;
 }
 
 function count(value) {
@@ -328,7 +403,8 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
     observed_tokens: observedTokenPair(row.input_tokens_total, row.output_tokens),
     cost_usd: cost,
     cost_basis: "aws_list_estimate",
-    ...(cost !== null && !rates ? { price_source: "claude_table" } : {}),
+    ...(cost === null ? {} : !rates ? { price_source: "claude_table" }
+      : PRICE_LIST_RATES.has(rates) ? { price_source: "aws_price_list" } : {}),
     unpriced: cost === null, unpriced_reason, invalid: !valid,
   };
 }

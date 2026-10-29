@@ -21,7 +21,7 @@ test("5m billing end to end: cache writes bill at the 5m rate, not 1h", async ()
   const [row] = m.withComputedCost(rows);
   assert.equal(row.cost, 3.75);
 
-  assert.match(m.PRICING_PROMPT_TABLE, /5m/);
+  assert.match(m.pricingPromptTable(), /5m/);
 });
 
 // 컨트롤 케이스: 같은 픽스처를 1h로 로드했을 때 6이 나와야 5m 케이스가 실제로 env를
