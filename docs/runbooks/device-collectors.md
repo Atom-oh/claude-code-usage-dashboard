@@ -40,6 +40,8 @@ There is no maximum lifetime: a renewing device stays enrolled until revoked, wh
 is off or cannot renew for 30 days expires. Earlier installations must rerun the latest
 installer once. Do not roll the dashboard back to a release without renewal: it rejects
 replacement tokens that have not been used yet, and those devices must be registered again.
+During a rolling update, a device that renews through a new pod can be rejected by an old
+pod for a few minutes; it recovers once a new pod accepts the replacement.
 To replace a token manually, issue a new token, rerun setup, verify delivery
 and revoke the old device. Revocation
 may take up to ten seconds to reach another API replica's validation cache. Browser
