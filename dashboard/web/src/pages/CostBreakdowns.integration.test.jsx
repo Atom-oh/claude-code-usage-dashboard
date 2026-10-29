@@ -62,6 +62,32 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); setPiiMask(true); });
 const card = (title) => screen.getByText(title, { exact: true }).closest(".shadow-card");
 const TITLES = ["모델별 비용 비중", "Effort별 비용 비중", "입력·캐시 구성"];
 
+test("GPT model legends expose separate Mantle and Runtime labels alongside long model names", async () => {
+  const mantle = { ...codex, model: "openai.gpt-6.1-sol", backend: "bedrock-mantle", cost_usd: 4 };
+  const runtime = { ...codex, model: "global.openai.gpt-6-astra", backend: "bedrock-runtime", cost_usd: 1 };
+  mount({ enabledClients: ["codex"], entry: "/cost?client=codex",
+    data: overview({ by_client: [{ ...mantle, backend: "mixed", cost_usd: 5 }],
+      by_model: [mantle, runtime] }) });
+  await screen.findByText(TITLES[0], { exact: true });
+  const legend = within(card(TITLES[0]));
+  await waitFor(() => expect(legend.getByText("bedrock-mantle", { exact: true })).toBeTruthy());
+  expect(legend.getByText("bedrock-runtime", { exact: true })).toBeTruthy();
+  expect(legend.getByText("openai.gpt-6.1-sol", { exact: true })).toBeTruthy();
+  expect(legend.getByText("global.openai.gpt-6-astra", { exact: true })).toBeTruthy();
+});
+
+test("structured model legends retain each row's cost basis when reports and estimates share a card", async () => {
+  const estimate = { ...claude, model: "openai.gpt-6.1-sol", backend: "bedrock-mantle",
+    cost_usd: 2, cost_basis: "aws_list_estimate" };
+  mount({ enabledClients: ["claude"], entry: "/cost?client=claude",
+    data: overview({ by_client: [{ ...claude, cost_usd: 5, cost_basis: "mixed" }],
+      by_model: [claude, estimate] }) });
+  await screen.findByText(TITLES[0], { exact: true });
+  const legend = within(card(TITLES[0]));
+  await waitFor(() => expect(legend.getByText("anthropic · 클라이언트 보고", { exact: true })).toBeTruthy());
+  expect(legend.getByText("bedrock-mantle · AWS 정가 추정", { exact: true })).toBeTruthy();
+});
+
 test("common Cost places the same three breakdowns per client before trends and shares one Codex detail response", async () => {
   mount();
   await screen.findByText("Effort별 비용 비중 — Claude Code", { exact: true });
@@ -166,8 +192,10 @@ test("model versions and their backend identities remain separate and keep famil
   await screen.findByText(TITLES[0], { exact: true });
   await waitFor(() => expect(card(TITLES[0]).textContent).toContain("claude-sonnet-4-5"));
   const model = card(TITLES[0]);
-  expect(model.textContent).toContain("claude-sonnet-5 · anthropic");
-  expect(model.textContent).toContain("claude-sonnet-4-5 · bedrock-runtime");
+  expect(within(model).getByText("claude-sonnet-5", { exact: true })).toBeTruthy();
+  expect(within(model).getByText("anthropic", { exact: true })).toBeTruthy();
+  expect(within(model).getByText("claude-sonnet-4-5", { exact: true })).toBeTruthy();
+  expect(within(model).getByText("bedrock-runtime", { exact: true })).toBeTruthy();
   const swatches = [...model.querySelectorAll("li span[style]")].map((node) => node.style.background);
   expect(swatches).toContain("rgb(53, 95, 199)");
   expect(swatches).toContain("rgb(45, 86, 186)");
