@@ -33,11 +33,25 @@ Use the [Workshop Studio preparation notes](../workshop-studio-notes.md#installa
 for organizer-provisioned participant EC2 instances. Those instances keep their prepared
 Collector and do not need individual device enrollment.
 
-A token authorizes ingestion only and expires 30 days after issue. To replace it,
-issue a new token, rerun setup, verify delivery and revoke the old device. Revocation
+A token authorizes ingestion only and expires 30 days after issue. Installed packages
+[renew it](../../dashboard/collector/README.md#automatic-token-renewal) within seven days of
+expiry; the replacement becomes current on first use and the old token is then rejected.
+There is no maximum lifetime: a renewing device stays enrolled until revoked, while one that
+is off or cannot renew for 30 days expires. Earlier installations must rerun the latest
+installer once. Do not roll the dashboard back to a release without renewal: it rejects
+replacement tokens that have not been used yet, and those devices must be registered again.
+During a rolling update, a device that renews through a new pod can be rejected by an old
+pod for a few minutes; it recovers once a new pod accepts the replacement.
+To replace a token manually, issue a new token, rerun setup, verify delivery
+and revoke the old device. Revocation
 may take up to ten seconds to reach another API replica's validation cache. Browser
 logout or removal of an IdP group does not revoke previously issued device tokens;
-revoke them explicitly during offboarding. Owners manage only their own devices.
+revoke them explicitly during offboarding. Renewal does not recheck IdP group membership.
+A stolen token can also be renewed: if someone else renews and uses it first, the
+legitimate device fails with `invalid_token`, its last receipt stops and `renewedAt`
+changes unexpectedly. Revoke that device. A token superseded by renewal is rejected; its
+first later use sets `reuseDetectedAt` once and shows a revocation warning on the device,
+since either copy may be the stolen one. Owners manage only their own devices.
 An installation operator can revoke an inaccessible owner's record through its
 controlled DynamoDB operational workflow; never copy the stored hash into a token.
 
@@ -93,6 +107,7 @@ revocation does not revoke credentials previously issued for that path.
 - Send isolated Claude and Codex OTLP fixtures through the gateway, then inspect
   the correct existing-schema tables and retained client/backend identities.
 - Revoke one fixture token and verify both API replicas reject it after ten seconds.
+- After a device's first renewal, check its `status` (`lastRenewal`) and `renewedAt`.
 - Exercise upstream outage/retry and confirm bounded queue/admission behavior.
 - Check `/readyz`, receiver health, errors and telemetry receipt after rollout.
 
