@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { priceCodexUsage, parseCodexPricing, DEFAULT_CODEX_PRICING, RUNTIME_ID_ALIASES, codexModel, codexModelSql } from "./codexPricing.js";
+import { priceCodexUsage, parseCodexPricing, DEFAULT_CODEX_PRICING, RUNTIME_ID_ALIASES, codexModel, codexModelSql,
+  mergeCodexPriceList, bareModelAlias, FLAT_CONTEXT_LIMIT } from "./codexPricing.js";
 
 const usage = { backend: "bedrock-mantle", model: "openai.gpt-6-astra", context_tier: "short",
   input_tokens_total: 100, cache_read_tokens: 40, cache_write_tokens: 11,
@@ -425,4 +426,90 @@ test("CODEX_PRICING_JSON accepts an optional per-backend rate override", () => {
     short_context_limit: 1000, regional: { short: { input: 1, cacheWrite: 1, cacheRead: 1, output: 1 },
       long: { input: 1, cacheWrite: 1, cacheRead: 1, output: 1 } }, ...bad,
   } })));
+});
+
+// AWS Price List layer (ADR-017 amendment 2026-10-28). Layers always carry fresh rate objects:
+// merging marks them as Price List rates, so tests never pass the code table's own objects.
+const flatRates = (input, output) => ({ input, cacheWrite: input, cacheRead: input, output });
+const copyRates = (rates) => ({ ...rates });
+
+test("a Price List scope replaces the code scope and keeps the code context limit", () => {
+  const code = DEFAULT_CODEX_PRICING["moonshotai.kimi-k3"];
+  const listed = { regional: { short: { input: 1, cacheWrite: 2, cacheRead: 0.5, output: 3 } } };
+  const merged = mergeCodexPriceList(DEFAULT_CODEX_PRICING, { "moonshotai.kimi-k3": listed });
+  const kimi = merged["moonshotai.kimi-k3"];
+  assert.equal(kimi.short_context_limit, code.short_context_limit);
+  assert.equal(kimi.regional.short, listed.regional.short);
+  assert.equal(kimi.regional.long, listed.regional.short, "a flat code entry keeps long equal to short");
+  assert.equal(kimi.global, code.global, "a scope the Price List lacks keeps the code rates");
+  assert.equal(code.regional.short.input, 3.3, "the code table itself is never mutated");
+});
+
+test("Price List long-context rows set the long tier; without them tiered code rates are kept", () => {
+  const short = { input: 1, cacheWrite: 1.25, cacheRead: 0.1, output: 5 };
+  const long = { input: 2, cacheWrite: 2.5, cacheRead: 0.2, output: 7.5 };
+  const notes = [];
+  const merged = mergeCodexPriceList(DEFAULT_CODEX_PRICING,
+    { "openai.gpt-6-astra": { regional: { short, long }, global: { short: copyRates(short) } } }, notes);
+  assert.deepEqual(merged["openai.gpt-6-astra"].regional, { short, long });
+  assert.equal(merged["openai.gpt-6-astra"].global, DEFAULT_CODEX_PRICING["openai.gpt-6-astra"].global);
+  assert.deepEqual(notes, ["openai.gpt-6-astra global: no long-context rows; keeping the code table's tiered rates"]);
+});
+
+test("a model new to the code table prices flat at its short rates and is labelled", () => {
+  const short = flatRates(0.2, 0.6), long = flatRates(0.4, 1.2);
+  const notes = [];
+  const merged = mergeCodexPriceList(DEFAULT_CODEX_PRICING, { "acme.new-model": { regional: { short, long } } }, notes);
+  assert.deepEqual(merged["acme.new-model"], { short_context_limit: FLAT_CONTEXT_LIMIT, regional: { short, long: short } });
+  assert.match(notes[0], /^acme\.new-model regional: no known context limit/);
+  const row = priceCodexUsage({ ...usage, model: "acme.new-model" }, merged);
+  assert.equal(row.cost_usd, 0.000038); // (49 + 40 + 11) x 0.2 + 30 x 0.6, per 1M
+  assert.equal(row.price_source, "aws_price_list");
+});
+
+test("price_source names the AWS Price List only for rates that came from it", () => {
+  const astra = DEFAULT_CODEX_PRICING["openai.gpt-6-astra"];
+  const prices = parseCodexPricing(undefined, { "openai.gpt-6-astra":
+    { global: { short: copyRates(astra.global.short), long: copyRates(astra.global.long) } } });
+  const globalUsage = { ...usage, backend: "bedrock-runtime", model: "global.openai.gpt-6-astra" };
+  const listed = priceCodexUsage(globalUsage, prices);
+  assert.equal(listed.price_source, "aws_price_list");
+  assert.equal(listed.cost_usd, priceCodexUsage(globalUsage).cost_usd);
+  assert.equal(priceCodexUsage(usage, prices).price_source, undefined, "regional rates still come from code");
+  assert.equal(priceCodexUsage(globalUsage).price_source, undefined);
+  assert.equal(priceCodexUsage({ ...globalUsage, output_tokens: undefined }, prices).price_source, undefined);
+});
+
+test("CODEX_PRICING_JSON entries beat the Price List and runtime aliases follow the merged entry", () => {
+  const own = { short_context_limit: 1000, regional: { short: flatRates(9, 9), long: flatRates(9, 9) } };
+  const prices = parseCodexPricing(JSON.stringify({ "zai.glm-4.7": own }), {
+    "zai.glm-4.7": { regional: { short: flatRates(0.5, 2) } },
+    "openai.gpt-oss-120b": { regional: { short: flatRates(0.5, 2) } },
+  });
+  assert.deepEqual(prices["zai.glm-4.7"], own);
+  assert.equal(prices["openai.gpt-oss-120b"].regional.short.output, 2);
+  assert.equal(prices["openai.gpt-oss-120b-1:0"], prices["openai.gpt-oss-120b"]);
+  assert.equal(DEFAULT_CODEX_PRICING["openai.gpt-oss-120b-1:0"], DEFAULT_CODEX_PRICING["openai.gpt-oss-120b"]);
+  assert.equal(DEFAULT_CODEX_PRICING["openai.gpt-oss-120b"].regional.short.output, 0.6);
+});
+
+test("without CODEX_PRICING_JSON, runtime aliases still follow a Price List entry", () => {
+  const prices = parseCodexPricing(undefined, { "openai.gpt-oss-120b": { regional: { short: flatRates(0.5, 2) } } });
+  assert.equal(prices["openai.gpt-oss-120b"].regional.short.output, 2);
+  assert.equal(prices["openai.gpt-oss-120b-1:0"], prices["openai.gpt-oss-120b"]);
+  assert.notEqual(prices, DEFAULT_CODEX_PRICING);
+});
+
+test("bare model ids resolve to a unique vendor entry and stay unpriced when ambiguous", () => {
+  assert.equal(bareModelAlias("kimi-k3"), "moonshotai.kimi-k3");
+  assert.equal(bareModelAlias("global.kimi-k3"), "global.moonshotai.kimi-k3");
+  assert.equal(bareModelAlias("grok-4.6"), "xai.grok-4.6");
+  assert.equal(bareModelAlias("kimi-k2-thinking"), "moonshotai.kimi-k2-thinking", "a runtime alias id is not a second vendor");
+  for (const model of ["moonshotai.kimi-k3", "claude-haiku-5-5", "unknown-model", "", undefined])
+    assert.equal(bareModelAlias(model), null, String(model));
+  const entry = DEFAULT_CODEX_PRICING["zai.glm-4.7"];
+  const table = { "aa.shared": entry, "bb.shared": entry, "cc.unique": entry, direct: entry, "dd.direct": entry };
+  assert.equal(bareModelAlias("shared", table), null);
+  assert.equal(bareModelAlias("unique", table), "cc.unique");
+  assert.equal(bareModelAlias("direct", table), null, "an id the table prices directly needs no alias");
 });
