@@ -11,12 +11,12 @@ import {
   tierCostsByGroup,
   buildPricing,
   pricingConfig,
-  PRICING_PROMPT_TABLE,
+  pricingPromptTable,
   costAtTtl,
   costWithCacheSplit,
 } from "./pricing.js";
 
-// 이 파일의 모듈 레벨 단언(withComputedCost/tierCosts/pricingConfig/PRICING_PROMPT_TABLE)은
+// 이 파일의 모듈 레벨 단언(withComputedCost/tierCosts/pricingConfig/pricingPromptTable)은
 // pricing.js가 import 시점에 읽은 env를 그대로 검증하므로, 셸에 PRICING_* 가 export되어 있으면
 // 4개가 한꺼번에 깨진다. 원인 없는 4개 실패보다 이 한 줄이 낫다 — env를 바꿔서 검증하는 쪽은
 // pricing.ttl5m.test.js(별도 프로세스)의 몫이다.
@@ -282,11 +282,12 @@ test("pricingConfig exposes only cacheWriteTtl and overriddenModels, no rates", 
   assert.equal(Object.keys(pricingConfig).length, 2);
 });
 
-test("PRICING_PROMPT_TABLE renders the in-effect rate and the TTL assumption, without cacheCreation", () => {
-  assert.match(PRICING_PROMPT_TABLE, /claude-sonnet-5: input \$2, output \$10/);
-  assert.match(PRICING_PROMPT_TABLE, /cacheWrite \$4/); // sonnet-5 1h = 2 × 2
-  assert.match(PRICING_PROMPT_TABLE, /PRICING_CACHE_WRITE_TTL/);
-  assert.doesNotMatch(PRICING_PROMPT_TABLE, /cacheCreation/);
+test("pricingPromptTable renders the in-effect rate and the TTL assumption, without cacheCreation", () => {
+  const table = pricingPromptTable();
+  assert.match(table, /claude-sonnet-5: input \$2, output \$10/);
+  assert.match(table, /cacheWrite \$4/); // sonnet-5 1h = 2 × 2
+  assert.match(table, /PRICING_CACHE_WRITE_TTL/);
+  assert.doesNotMatch(table, /cacheCreation/);
 });
 
 // 2026-09-02 단가표 보강: 이 6개 계열이 표에 없어 토큰이 unpriced로 새고 있었다(계산 비용에서

@@ -1,5 +1,6 @@
 import { logSelection } from "./codexInsightsLogs.js";
-import { parseCodexPricing, codexModelSql } from "./codexPricing.js";
+import { codexModelSql } from "./codexPricing.js";
+import { codexPrices } from "./priceCatalog.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS } from "./codexRequests.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { backendSql } from "./backend.js";
@@ -10,7 +11,6 @@ import { diagnosticAttributesSql } from "./codexDiagnosticSchema.js";
 import { diagnosticSelection, diagnosticSourceForRange, diagnosticModelSessionsSql } from "./codexDiagnosticSource.js";
 
 const LIMIT = 50000;
-const DEFAULT_PRICES = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 const FAMILIES = ["event", "usage", "effort", "scope", "operations", "latency", "tool", "approval", "runtime"];
 const FAMILY_BUDGET = Math.floor((LIMIT - FAMILIES.length) / FAMILIES.length);
 const TOKEN_KEYS = ["input", "read", "write", "output", "reasoning"];
@@ -53,7 +53,7 @@ function policy(value, allowed) {
  * evidence. The transferred rows are aggregate dimensions, not individual events.
  * Exact weighted quantiles use the same nearest-rank convention as the raw fold.
  */
-export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = DEFAULT_PRICES,
+export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = codexPrices(),
   { effortOnly = false, profile = effortOnly ? "effort" : undefined,
     diagnosticSource = diagnosticSourceForRange(from, to) } = {}) {
   effortOnly = profile === "effort";

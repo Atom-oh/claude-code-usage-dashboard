@@ -14,6 +14,8 @@ Developer instructions live in [server/AGENTS.md](../../dashboard/server/AGENTS.
 | [clickhouse.js](../../dashboard/server/clickhouse.js) | JSON queries, time conversion, ping and readonly-session probe |
 | [queryContext.js](../../dashboard/server/queryContext.js) | Shared-load deadline and query cancellation ownership |
 | [pricing.js](../../dashboard/server/pricing.js) | Computed cost diagnostics and token-tier estimates |
+| [priceCatalog.js](../../dashboard/server/priceCatalog.js) | Merged rate view (operator overrides, AWS Price List runtime/snapshot layers, code tables), background refresh and `/api/config` `pricing.priceList` |
+| [awsPriceList.js](../../dashboard/server/awsPriceList.js) | `pricing:GetProducts` fetch and parser; `npm run prices:snapshot` writes `awsPriceSnapshot.json` |
 | [costEfficiency.js](../../dashboard/server/costEfficiency.js) | Reported-cost efficiency ratios, retaining computed diagnostics |
 | [productivity.js](../../dashboard/server/productivity.js) | Activity heuristic added to leaderboard rows |
 | [chat.js](../../dashboard/server/chat.js) | SSE assistant and SQL tool loop; see [chat reference](agent-llm.md) |

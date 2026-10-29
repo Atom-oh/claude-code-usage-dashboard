@@ -29,7 +29,9 @@ export function codexLogPricingSql(prices, params, claudeRates = resolvedRatesTa
   const codexModels = [];
   Object.entries(prices).forEach(([model, entry], index) => {
     params[`aggregateModel${index}`] = model;
-    params[`aggregateThreshold${index}`] = entry.short_context_limit;
+    // Context limits repeat across models: share one parameter per value, like the rates.
+    const threshold = `aggregateThreshold${entry.short_context_limit}`;
+    params[threshold] = entry.short_context_limit;
     const modelSql = `{aggregateModel${index}:String}`;
     codexModels.push(modelSql);
     // Specific backend rates precede generic rates, exactly as in the old
@@ -42,7 +44,7 @@ export function codexLogPricingSql(prices, params, claudeRates = resolvedRatesTa
           const rates = source[scope]?.[tier];
           if (!rates) continue;
           rows.push(`tuple(toUInt8(1),${modelSql},'${backend || ""}',
-            toUInt8(${scopeIndex + 1}),{aggregateThreshold${index}:UInt64},
+            toUInt8(${scopeIndex + 1}),{${threshold}:UInt64},
             toUInt8(${tierIndex + 1}),${ratesSql(params, rates).join(",")})`);
         }
       }

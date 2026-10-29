@@ -1,7 +1,8 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
 import { selectClients } from "./clients.js";
-import { priceCodexUsage, parseCodexPricing, codexModelSql } from "./codexPricing.js";
+import { priceCodexUsage, codexModelSql } from "./codexPricing.js";
+import { codexPrices } from "./priceCatalog.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { clientQueryBatch } from "./clientQueryBatch.js";
 import { normalizeModelId, computeCost } from "./pricing.js";
@@ -14,7 +15,6 @@ import { USER_TREND_TOP } from "./modelCostTrend.js";
 import { costSourceForRange, costSourceSql } from "./codexCostSource.js";
 
 const ROW_LIMIT = 50000;
-export const codexPrices = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 const TOKEN_KEYS = ["tokens", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "reasoning_tokens"];
 const OP_KEYS = ["requests", "rejected_requests", "api_errors", "tool_calls", "tool_errors"];
 const DIAGNOSTIC_FIELDS = ["api_errors", "tool_calls", "tool_errors",
@@ -253,7 +253,7 @@ function foldUserTime(groups, entries, finishRow) {
       || (a.user === null) - (b.user === null) || compareIdentity(a.user ?? "", b.user ?? ""));
 }
 
-export function foldClientMetrics(records, clients, prices = codexPrices, { modelTime = false, costView = false, compactTime = false } = {}) {
+export function foldClientMetrics(records, clients, prices = codexPrices(), { modelTime = false, costView = false, compactTime = false } = {}) {
   // Idle observations have their own bound; they cannot evict usage records
   // from the existing active-row budget.
   const idleRows = records.filter(row => row.client === "claude" && Number(row.timeline_only) === 1).length;
@@ -418,7 +418,7 @@ export function rebucketRows(rows, from, bucketSeconds) {
   });
 }
 
-export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, client = "codex",
+export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), client = "codex",
   bucketSeconds = clientNativeBucketSeconds(from, to), { costView = false, costSource = "raw" } = {}) {
   const isCodex = client === "codex";
   const facts = isCodex && costSource === "facts";
@@ -427,10 +427,12 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices, cl
     clientBackend: filters.backend || "", clientUserExact: filters.userExact || "",
     clientModelExact: (isCodex ? filters.modelExact : normalizeModelId(filters.modelExact || "")) || "",
     clientBucketSeconds: bucketSeconds };
+  // Limits repeat across models; one parameter per distinct value keeps the request URL small
+  // as the AWS Price List adds models.
   const cases = Object.entries(prices).map(([model, rate], i) => {
     params[`priceModel${i}`] = model;
-    params[`priceLimit${i}`] = rate.short_context_limit;
-    return `base_model = {priceModel${i}:String}, {priceLimit${i}:UInt64}`;
+    params[`priceLimit${rate.short_context_limit}`] = rate.short_context_limit;
+    return `base_model = {priceModel${i}:String}, {priceLimit${rate.short_context_limit}:UInt64}`;
   });
   const threshold = cases.length ? `multiIf(${cases.join(", ")}, 0)` : "0";
   const prefix = isCodex ? "codex." : "";
@@ -600,13 +602,15 @@ export async function clientOverview(from, to, raw, enabledClients) {
   const nativeSeconds = requestedNative === 600 ? 600 : clientNativeBucketSeconds(from, to);
   const bucketSeconds = clientBucketSeconds(from, to, raw.intervalHours, nativeSeconds);
   const filters = validated;
+  // One table for the SQL tiers and the JS pricing even if a Price List refresh lands mid-request.
+  const prices = codexPrices();
   const jobs = [];
   for (const client of filters.clients) {
     if (client === "claude") {
       jobs.push(signal => queries.clientClaudeRows(from, to, filters, nativeSeconds, signal)
         .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" }))));
     }
-    const { sql, params } = buildCodexQuery(from, to, filters, codexPrices, client, nativeSeconds,
+    const { sql, params } = buildCodexQuery(from, to, filters, prices, client, nativeSeconds,
       { costView, costSource: costSourceForRange(from) });
     jobs.push(signal => query(sql, params, signal).then((rows) => {
       if (rows.length > ROW_LIMIT) throw new ValidationError("too much client data", "narrow the requested date range");
@@ -617,7 +621,7 @@ export async function clientOverview(from, to, raw, enabledClients) {
   const records = bucketSeconds > nativeSeconds ? rebucketRows(lists.flat(), from, bucketSeconds) : lists.flat();
   // The route validates modelTime; only the literal "1" enables the dimension.
   const modelTime = raw.modelTime === "1";
-  return { ...foldClientMetrics(records, filters.clients, codexPrices, { modelTime, costView, compactTime }),
+  return { ...foldClientMetrics(records, filters.clients, prices, { modelTime, costView, compactTime }),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
     ...(filters.userExact || filters.modelExact ? {
       applied_filters: { userExact: filters.userExact || "", modelExact: filters.modelExact || "", backend: filters.backend },

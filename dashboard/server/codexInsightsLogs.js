@@ -1,13 +1,13 @@
 import { toChDateTime } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
-import { codexModel, parseCodexPricing, priceCodexUsage } from "./codexPricing.js";
+import { codexModel, priceCodexUsage } from "./codexPricing.js";
+import { codexPrices } from "./priceCatalog.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { CODEX_USAGE_KEYS, isRejectedRequestEvent, isSetupMetadataEvent as setupMetadata } from "./codexRequests.js";
 import { resolveBackend, backendSql } from "./backend.js";
 import { completionUsage } from "./codexCompletionUsage.js";
 
 const ROW_LIMIT = 50000;
-const pricesDefault = parseCodexPricing(process.env.CODEX_PRICING_JSON);
 const TOKEN_FIELDS = { input_token_count: "input_tokens_total", cached_token_count: "cache_read_tokens",
   cache_write_token_count: "cache_write_tokens", output_token_count: "output_tokens",
   reasoning_token_count: "reasoning_tokens" };
@@ -218,7 +218,7 @@ const APPROVED = new Set(["approved", "approved_for_session", "approved_with_ame
   "approved_mcp_policy_amendment", "approved_with_network_policy_allow"]);
 const DENIED = new Set(["denied", "denied_with_network_policy_deny"]);
 
-export function foldCodexInsightsLogs(rows, prices = pricesDefault, { summary, deduplicated = false } = {}) {
+export function foldCodexInsightsLogs(rows, prices = codexPrices(), { summary, deduplicated = false } = {}) {
   if (rows.length > ROW_LIMIT)
     throw new ValidationError("too much Codex log data", "narrow the requested date range");
   const unique = new Map();
