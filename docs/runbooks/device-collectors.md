@@ -38,7 +38,9 @@ A token authorizes ingestion only and expires 30 days after issue. Installed pac
 expiry; the replacement becomes current on first use and the old token is then rejected.
 There is no maximum lifetime: a renewing device stays enrolled until revoked, while one that
 is off or cannot renew for 30 days expires. Earlier installations must rerun the latest
-installer once. To replace a token manually, issue a new token, rerun setup, verify delivery
+installer once. Do not roll the dashboard back to a release without renewal: it rejects
+replacement tokens that have not been used yet, and those devices must be registered again.
+To replace a token manually, issue a new token, rerun setup, verify delivery
 and revoke the old device. Revocation
 may take up to ten seconds to reach another API replica's validation cache. Browser
 logout or removal of an IdP group does not revoke previously issued device tokens;
