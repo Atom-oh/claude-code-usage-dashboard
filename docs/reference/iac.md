@@ -68,7 +68,7 @@ describes the credential response.
 | [nodepool.tf](../../infra/nodepool.tf) | Dedicated Karpenter `NodePool` and `EC2NodeClass`, arm64/on-demand, tainted for this workload |
 | [clickhouse.tf](../../infra/clickhouse.tf) | Namespace, credentials, Keeper and ClickHouse custom resources and backup jobs |
 | [schema.tf](../../infra/schema.tf) | Immutable schema inputs; empty bootstrap and existing-installation compatibility Job |
-| [dashboard.tf](../../infra/dashboard.tf) | Dashboard deployment, service account, Secrets, NLB services, security groups and runtime settings |
+| [dashboard.tf](../../infra/dashboard.tf) | Dashboard deployment, service account and its Price List read policy, Secrets, NLB services, security groups and runtime settings |
 | [device_ingest.tf](../../infra/device_ingest.tf) | Opt-in device token registry, scoped IAM, private Collector, mounted credentials and ingress policy |
 | [ecr.tf](../../infra/ecr.tf) | Dashboard image repository |
 | [s3.tf](../../infra/s3.tf) | Cold/backup bucket, public-access block, IRSA and backup-prefix expiration |

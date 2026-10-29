@@ -22,6 +22,7 @@ import { CostBreakdownCard } from "../components/CostBreakdowns.jsx";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
 import { asCostSummaryRows, asKnownSpendRows, asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
+import { priceSourceText } from "../pricingSource.js";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null || !Number.isFinite(Number(n)) ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -296,7 +297,8 @@ export default function Cost() {
   const { groupMode, pricing } = useConfig();
   const ttl = pricing?.cacheWriteTtl === "5m" ? "5분" : pricing?.cacheWriteTtl === "1h" ? "1시간" : "미확인";
   const ttlHint = `캐시 쓰기 TTL 가정: ${ttl}`;
-  const computedHelp = `토큰 사용량 × 서버 단가의 진단용 계산값입니다. ${ttlHint}. 실제 요청의 TTL·클라이언트 버전·수집 범위에 따라 보고 비용 및 청구액과 다를 수 있습니다.`;
+  const priceSource = priceSourceText(pricing?.priceList);
+  const computedHelp = `토큰 사용량 × 서버 단가의 진단용 계산값입니다. ${ttlHint}. ${priceSource} 실제 요청의 TTL·클라이언트 버전·수집 범위에 따라 보고 비용 및 청구액과 다를 수 있습니다.`;
   const shownGroups = useGroupsShown();
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
   const { model, group, user, project, backend } = useFilters();
@@ -883,7 +885,7 @@ export default function Cost() {
           <section id="computed-cost-comparison" aria-label="계산 비용 교차검증" className="mt-4 flex flex-col gap-4 border-t border-dashed border-ink-200 pt-5">
             <div>
               <h2 className="text-base font-semibold text-ink-800">계산 비용 교차검증</h2>
-              <p className="mt-1 text-sm text-ink-500">토큰 수와 단가표로 계산한 비교값입니다. 보고 비용과 합계가 다를 수 있습니다.</p>
+              <p className="mt-1 text-sm text-ink-500">{`토큰 수와 단가표로 계산한 비교값입니다. 보고 비용과 합계가 다를 수 있습니다. ${priceSource}`}</p>
             </div>
             {summary.loading ? <Loading /> : summary.error ? <ErrorBox error={summary.error} /> : (
               <div className="grid grid-cols-2 gap-4">
