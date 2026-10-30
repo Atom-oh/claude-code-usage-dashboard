@@ -425,6 +425,7 @@ route("/api/overview/active-users", (from, to, _q, filters) => q.activeUsers(fro
 route("/api/overview/tokens-timeseries", (from, to, query, filters) => q.tokenTimeseries(from, to, bucketHours(query, from, to), filters));
 route("/api/overview/cache-efficiency", (from, to, _q, filters) => q.cacheEfficiency(from, to, filters));
 route("/api/overview/model-distribution", (from, to, _q, filters) => q.modelDistribution(from, to, filters));
+route("/api/overview/session-turns", (from, to, _q, filters) => q.sessionTurns(from, to, filters));
 route("/api/productivity/normalized", (from, to, _q, filters) => q.normalizedProductivity(from, to, filters));
 route("/api/productivity/decisions", (from, to, _q, filters) => q.codeEditDecisions(from, to, filters));
 route("/api/productivity/active-time", (from, to, query, filters) => q.activeTimeSeries(from, to, bucketHours(query, from, to), filters));

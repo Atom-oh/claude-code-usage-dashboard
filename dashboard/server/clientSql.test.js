@@ -1215,3 +1215,100 @@ test("real ClickHouse client aggregation preserves transport identity and counte
     await db.close();
   }
 });
+
+test("real ClickHouse session turns deduplicate log deliveries and keep unavailable costs", {
+  skip: !process.env.CLIENT_SQL_TEST_URL,
+}, async () => {
+  process.env.CH_URL = process.env.CLIENT_SQL_TEST_URL;
+  process.env.CH_USER = "default";
+  process.env.CH_PASSWORD = "";
+  const { createClient } = await import("@clickhouse/client");
+  const db = createClient({ url: process.env.CH_URL, database: "claude_code" });
+  const { sessionTurns } = await import("./queries.js");
+  // Ten days back keeps these series outside other tests' windows and three-day lookbacks.
+  const day = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10);
+  const from = new Date(`${day}T10:00:00Z`), to = new Date(`${day}T11:00:00Z`);
+  const counter = (session, user, org, model, MetricName, type, clock, Value) => ({
+    ResourceAttributes: { "user.email": user },
+    Attributes: { "session.id": session, ...(org ? { "organization.id": "fixture" } : {}), model, type },
+    MetricName, StartTimeUnix: `${day} 09:00:00`, TimeUnix: `${day} ${clock}`,
+    Value, AggregationTemporality: 2, IsMonotonic: true,
+  });
+  const usage = (session, user, org, model, cost, tokens) => [
+    ...(cost ? [counter(session, user, org, model, "claude_code.cost.usage", "", "09:59:00", cost[0]),
+      counter(session, user, org, model, "claude_code.cost.usage", "", "10:30:00", cost[1])] : []),
+    counter(session, user, org, model, "claude_code.token.usage", "input", "09:59:00", tokens[0]),
+    counter(session, user, org, model, "claude_code.token.usage", "input", "10:30:00", tokens[1]),
+  ];
+  const log = (session, user, name, clock, attributes = {}) => ({
+    Timestamp: `${day} 10:${clock}`, ResourceAttributes: { "user.email": user },
+    LogAttributes: { "event.name": name, "session.id": session, ...attributes },
+  });
+  const a = "turns-a@example.invalid", b = "turns-b@example.invalid", c = "turns-c@example.invalid";
+  const p1 = log("turns-s1", a, "user_prompt", "01:00.000000001", { "prompt.id": "p1", "event.sequence": "1" });
+  const s1call = log("turns-s1", a, "api_request", "01:00.000000003", { "event.sequence": "3" });
+  const s2prompt = log("turns-s2", a, "user_prompt", "05:00.000000001", { "event.sequence": "7" });
+  const s2call = log("turns-s2", a, "api_request", "05:00.000000002", { model: "claude-sonnet-5" });
+  try {
+    await db.insert({ table: "otel_metrics_sum", format: "JSONEachRow", values: [
+      ...usage("turns-s1", a, true, "claude-sonnet-5", [1, 1.5], [100, 160]),
+      ...usage("turns-s2", a, true, "claude-sonnet-5", [0, 0.25], [0, 40]),
+      ...usage("turns-s3", b, true, "claude-sonnet-5", [2, 2.75], [10, 90]),
+      counter("turns-s4", b, true, "", "claude_code.session.count", "", "10:00:30", 1),
+      ...usage("turns-s5", c, false, "us.anthropic.claude-sonnet-5", null, [5, 25]),
+      ...usage("turns-s7", c, true, "claude-sonnet-5", [0, 0.125], [0, 10]),
+      ...usage("turns-s7", c, true, "claude-haiku-5-5", null, [0, 30]),
+      // Lookback-only counters are not an in-window session.
+      counter("turns-s8", a, true, "claude-sonnet-5", "claude_code.cost.usage", "", "09:10:00", 0),
+      counter("turns-s8", a, true, "claude-sonnet-5", "claude_code.cost.usage", "", "09:50:00", 0.5),
+    ] });
+    await db.insert({ table: "otel_logs", format: "JSONEachRow", values: [
+      p1, p1, { ...p1, Timestamp: `${day} 10:01:30.000000001` }, // One prompt delivered three times.
+      log("turns-s1", a, "user_prompt", "02:00.000000001", { "prompt.id": "p2", "event.sequence": "5" }),
+      log("turns-s1", a, "user_prompt", "03:00.000000001", { "prompt.id": "p3", "event.sequence": "9" }),
+      log("turns-s1", a, "api_request", "01:00.000000002", { "event.sequence": "2" }),
+      s1call, s1call,
+      log("turns-s1", a, "api_request", "02:00.000000002", { "event.sequence": "6" }),
+      log("turns-s1", a, "api_request", "03:00.000000002", { "event.sequence": "10" }),
+      // A resumed process may restart its sequence; a new timestamp is a new request.
+      log("turns-s1", a, "api_request", "04:00.000000002", { "event.sequence": "2" }),
+      s2prompt, { ...s2prompt, LogAttributes: { ...s2prompt.LogAttributes, redelivered: "1" } }, s2call, s2call,
+      log("turns-s2", a, "api_request", "06:00.000000002", { model: "claude-sonnet-5" }),
+      log("turns-s4", b, "user_prompt", "07:00.000000001", { "prompt.id": "p4" }),
+      log("turns-s4", b, "user_prompt", "08:00.000000001", { "prompt.id": "p5" }),
+      log("turns-s5", c, "user_prompt", "09:00.000000001", { "prompt.id": "p6" }),
+      log("turns-s5", c, "api_request", "09:00.000000002", { "event.sequence": "2" }),
+      ...["p7", "p8", "p9"].map((id, i) => log("turns-s7", c, "user_prompt", `1${i}:00.000000001`, { "prompt.id": id })),
+      ...[1, 2, 3].map((n) => log("turns-s7", c, "api_request", `1${n}:00.000000002`, { "event.sequence": String(n) })),
+      // No metric evidence: an unknown channel is outside the A/B default.
+      log("turns-s6", c, "user_prompt", "20:00.000000001", { "prompt.id": "p10" }),
+      // Before the window.
+      { ...log("turns-s1", a, "user_prompt", "00:00.000000001", { "prompt.id": "early" }), Timestamp: `${day} 09:59:59.000000001` },
+    ] });
+    const expected = {
+      sessions: 6, sessions_with_turns: 5, turns: 10, median_turns_per_session: 2, p90_turns_per_session: 3,
+      known_cost: 1.625, cost_partial: true, cost_per_turn: 0.125, model_calls_per_turn: 1.1,
+      sessions_without_turns: 1, sessions_cost_unavailable: 2,
+    };
+    for (const end of [to, new Date(from.getTime() + 86400000)]) {
+      const result = await sessionTurns(from, end);
+      assert.deepEqual(result.summary, expected, `summary through ${end.toISOString()}`);
+      assert.deepEqual(result.sessions.map((s) => [s.session, s.turns, s.model_calls, s.known_cost, s.cost_partial]), [
+        ["turns-s3", 0, 0, 0.75, false], ["turns-s1", 3, 5, 0.5, false], ["turns-s2", 1, 2, 0.25, false],
+        ["turns-s7", 3, 3, 0.125, true], ["turns-s4", 2, 0, null, false], ["turns-s5", 1, 1, null, false],
+      ]);
+      assert.equal(result.sessions[1].started, `${day}T10:01:00Z`);
+      assert.deepEqual(result.users.map((u) => [u.user, u.sessions, u.turns, u.known_cost, u.cost_partial,
+        u.cost_per_turn, u.cost_per_session]), [
+        [a, 2, 4, 0.75, false, 0.1875, 0.375], [b, 2, 2, 0.75, true, null, 0.75], [c, 2, 4, 0.125, true, 0.125 / 3, 0.125],
+      ]);
+    }
+    assert.deepEqual((await sessionTurns(from, to, { user: "turns-b@" })).sessions.map((s) => s.session), ["turns-s3", "turns-s4"]);
+    const haiku = await sessionTurns(from, to, { model: "haiku" });
+    assert.deepEqual(haiku.sessions.map((s) => [s.session, s.turns, s.known_cost, s.cost_partial]), [["turns-s7", 3, 0.125, true]]);
+    assert.deepEqual((await sessionTurns(from, to, { group: "bedrock" })).sessions.map((s) => s.session), ["turns-s5"]);
+    assert.equal((await sessionTurns(from, to, { user: "' OR 1=1" })).summary.sessions, 0);
+  } finally {
+    await db.close();
+  }
+});

@@ -7,6 +7,7 @@ import { rollupAdoption } from "./activity.js";
 import { foldModelCostCells, MODEL_COST_ROW_LIMIT, USER_TREND_TOP } from "./modelCostTrend.js";
 import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetrics.js";
 import { knownReportedCost } from "./reportedCost.js";
+import { foldSessionTurns } from "./sessionTurns.js";
 
 // Every query here goes through this wrapper: a query that prices Claude cost counters
 // (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-017).
@@ -1331,6 +1332,44 @@ export async function costByUserModel(from, to, filters = {}) {
     ...r,
     tokens: Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens),
   }));
+}
+
+// Session turns (docs/metrics.md): counter known costs and deduplicated logs over the same
+// bounds. A duplicate delivery repeats Timestamp; a resumed process may restart sequences.
+const SEQUENCE = "l.LogAttributes['event.sequence']";
+const RECORD_KEY = "concat('r:', toString(l.Timestamp), ':', toString(cityHash64(toString(mapSort(l.LogAttributes)))))";
+const SEQUENCE_KEY = `concat('s:', ${SEQUENCE}, ':', toString(l.Timestamp))`;
+const TURN_KEY = `multiIf(l.PromptId != '', concat('p:', l.PromptId), ${SEQUENCE} != '', ${SEQUENCE_KEY}, ${RECORD_KEY})`;
+const CALL_KEY = `if(${SEQUENCE} != '', ${SEQUENCE_KEY}, ${RECORD_KEY})`;
+
+// Model filters select sessions, so each session keeps its whole cost and turn count.
+export async function sessionTurns(from, to, filters = {}, options = {}) {
+  const params = range(from, to, incFlatRaw(to - from));
+  const fm = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", modelViaSession: "m.SessionId" });
+  const fl = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", modelViaSession: "l.SessionId" });
+  const [counters, logs] = await Promise.all([
+    query(`${GROUP_CTE}
+    SELECT m.SessionId AS session, m.UserEmail AS user, ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model,
+        ${TOKEN_SUMS},
+        countIf(m.MetricName = 'claude_code.cost.usage' AND m.InWindow) AS cost_counter_rows,
+        countIf(m.InWindow) AS observed_usage_rows
+    FROM ${incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from, true)} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    WHERE m.SessionId != '' ${fm.where}
+    GROUP BY session, user, "group", model
+    HAVING observed_usage_rows > 0`, { ...params, ...fm.params }),
+    query(`${GROUP_CTE}
+    SELECT l.SessionId AS session, any(l.UserEmail) AS user, ${GROUP_EXPR} AS "group",
+        uniqExactIf(${TURN_KEY}, l.EventName = 'user_prompt') AS turns,
+        uniqExactIf(${CALL_KEY}, l.EventName = 'api_request') AS model_calls,
+        formatDateTime(min(l.Timestamp), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    WHERE l.EventName IN ('user_prompt', 'api_request') AND l.SessionId != ''
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${fl.where}
+    GROUP BY session, "group"`, { ...params, ...fl.params }),
+  ]);
+  return foldSessionTurns(counters, logs, options);
 }
 
 // 유저별 어떤 tool을 얼마나 썼는지 (Usage/Users 페이지의 "사용자별 사용 내역"). model 필터는
