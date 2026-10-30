@@ -17,6 +17,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 import { unclassifiedLabel } from "../labels.js";
 import SessionTurns from "../components/SessionTurns.jsx";
+import DailyInsights from "../components/DailyInsights.jsx";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const TOKEN_VIEWS = [
@@ -178,6 +179,7 @@ export default function Overview() {
           )}
         </Card>
         <SessionTurns />
+        <DailyInsights />
 
         {activeTrend.loading ? (
           <Loading />

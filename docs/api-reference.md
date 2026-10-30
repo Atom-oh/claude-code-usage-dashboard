@@ -575,6 +575,21 @@ failures are SSE events on HTTP 200. Successful streams use `Cache-Control: no-c
 Concurrent chat overload returns 503 before SSE without consuming an IP rate slot.
 See [chat limits](reference/agent-llm.md) and [runtime admission](reference/api.md#request-and-cache-behavior).
 
+### Insights
+
+`GET /api/insights/daily?period=YYYY-MM-DD` reads stored daily AI insights (Claude Code only;
+404 when Claude is disabled). It returns **object** `{enabled:false}` when the feature is disabled
+or misconfigured. `period` must be one of the last seven UTC days, otherwise 400; the default is the
+latest stored period, else the previous day. A stored period returns `enabled`, `status: "ready"`,
+`period`, `generatedAt`, `model`, `empty` (no sessions, no model call), `summary`,
+`findings[{user, pseudonym, title, detail, metric}]`, `caveats`, `org` (period totals and the
+seven-day daily-average baseline), `users[{pseudonym, user, ...aggregates}]`,
+`usage{inputTokens, outputTokens, estimatedCostUsd}` and `available` (stored periods). Otherwise it
+returns `{enabled:true, period, status, available}` with `status` `pending` (the previous day before
+success or exhausted attempts) or `failed`. `user` is the raw email mapped from the stored pseudonym;
+the UI masks it. Model text is untrusted plain text and can be wrong; the card's numbers come from
+the stored aggregates. Operations: [daily insights](reference/iac.md#daily-insights).
+
 ### Health and config
 
 | Path | Response |

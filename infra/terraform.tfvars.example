@@ -43,6 +43,11 @@ dashboard_image_tag = "REPLACE-WITH-A-PUSHED-TIMESTAMP-TAG"
 # device_ingest_enabled     = true
 # device_ingest_secret_name = "dashboard-device-ingest"
 
+# Optional daily AI insights from aggregate telemetry: one Bedrock call per day, stored in
+# DynamoDB. See docs/reference/iac.md (Daily insights).
+# insights_enabled  = true
+# insights_model_id = "global.anthropic.claude-haiku-5-5"
+
 # 조직 단위 대시보드 동작(선택) — 기본값은 서버 기본값과 같다. docs/deploying-for-your-org.md §9.
 # group_mode         = "ab"   # "ab" | "single"
 # default_range_days = 2

@@ -70,6 +70,7 @@ describes the credential response.
 | [schema.tf](../../infra/schema.tf) | Immutable schema inputs; empty bootstrap and existing-installation compatibility Job |
 | [dashboard.tf](../../infra/dashboard.tf) | Dashboard deployment, service account, Secrets, NLB services, security groups and runtime settings |
 | [device_ingest.tf](../../infra/device_ingest.tf) | Opt-in device token registry, scoped IAM, private Collector, mounted credentials and ingress policy |
+| [insights.tf](../../infra/insights.tf) | Opt-in daily insight table, scoped DynamoDB/Bedrock IRSA policy and runtime settings |
 | [ecr.tf](../../infra/ecr.tf) | Dashboard image repository |
 | [s3.tf](../../infra/s3.tf) | Cold/backup bucket, public-access block, IRSA and backup-prefix expiration |
 | [dns_cdn.tf](../../infra/dns_cdn.tf) | Two CloudFront VPC origins/distributions and Route53 aliases |
@@ -145,3 +146,30 @@ sets the OTLP event name from `event.name`, or an empty string when absent, matc
 the existing materialized `EventName` expression. This lets Collector 0.163.1 use
 the existing tables without changing their DDL. The native integration fixture
 checks conflicting and missing event names and all seven destination tables.
+
+## Daily insights
+
+[insights.tf](../../infra/insights.tf) is off by default. `insights_enabled = true` creates
+`<k8s_namespace>-ccdash-insights` (on-demand, `pk` hash key, TTL on `purgeAt` 90 days after the
+period, AWS-managed encryption, deletion protection). It grants the dashboard IRSA role
+`dynamodb:GetItem`/`PutItem` on that table and `bedrock:InvokeModel` on the `insights_model_id`
+foundation model and inference profile, and sets `INSIGHTS_ENABLED`, `INSIGHTS_TABLE` and
+`INSIGHTS_MODEL_ID`. Bedrock calls use the chat region (`BEDROCK_REGION`, else `AWS_REGION`).
+Missing or invalid settings disable the feature without failing startup.
+
+Each pod checks every ten minutes after 00:30 UTC for the previous UTC day. A conditional lease
+item (`lease#<period>`, 15 minutes, at most three attempts) allows one model call per attempt, and
+the result item (`daily#<period>`) is written once. The model receives aggregates only: no prompt
+text, code, file paths, tool inputs or emails, with the top ten users by known cost renamed
+`U1`..`U10`. Stored items keep those aggregates, token usage, the estimated call cost and the
+pseudonym-to-email map used when [`/api/insights/daily`](../api-reference.md#insights) serves them.
+
+- Enable: confirm the model and inference profile are available in the Bedrock region, set the
+  variables, apply, then roll out the dashboard as usual.
+- Verify after 00:30 UTC: the endpoint returns `status: "ready"` for the previous day, or `pending`
+  or `failed`. Pod logs record only failure codes such as `invalid_output`, never model text.
+- A period stays `failed` after three failed attempts; there is no manual regenerate endpoint.
+- Turning `insights_enabled` off plans removal of the table and policy. Deletion protection makes
+  that apply fail until an operator disables protection after deciding to discard stored insights.
+
+Validation of these files is not a plan or deployment, and model output can be wrong.
