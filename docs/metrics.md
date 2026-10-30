@@ -144,6 +144,22 @@ The Executive scoreboard's `abUserSec` displays channel `user_seconds / 3600`; i
 per-developer time. Its `abAutoRatio` divides `cli_seconds` by `user_seconds` when positive.
 Group-mode presentation does not change any backend population policy.
 
+### Session turns
+
+The Overview card and `/api/overview/session-turns` describe Claude Code sessions. A session is
+in scope when it has in-window cost/token counter samples or in-window `user_prompt`/`api_request`
+events. Counter costs and log events use the same query bounds. Unknown channels are excluded by
+default; see [filter scope](api-reference.md#filter-scope).
+
+| Measure | Source and calculation | Limits |
+|---|---|---|
+| Turn | One `user_prompt` event, deduplicated per session by `prompt.id`; without it by `event.sequence` plus the event timestamp; without either by the exact record (timestamp and attribute map). | Logs are retained 90 days and counters 180 days, so older ranges show sessions without turns. A turn count describes interaction shape, not work quality or productivity. |
+| Model calls per turn | Deduplicated `api_request` events (by `event.sequence` plus timestamp, else the exact record) divided by turns, over sessions with at least one turn. | A resumed process can restart `event.sequence`; the timestamp keeps its events distinct. |
+| Session cost | Known reported cost of the session's counter rows ([ADR-013](decisions/ADR-013-known-cost-subtotals.md) subtotal; non-Anthropic models use the [ADR-017](decisions/ADR-017-backend-cost-fallback.md) estimate). `cost_partial` marks a session with an unusable model scope. | Lookback-only counters do not put a session in scope. A session without counters or usable reports is unavailable, not zero. |
+| Cost per turn | Sum of known costs divided by turns, over sessions with both a known cost and at least one turn; also per user and per session. | Excluded sessions are counted in `sessions_without_turns` and `sessions_cost_unavailable`. The summary and user `cost_partial` flags also mark those exclusions. |
+| Turns per session | Median (mean of the middle pair) and nearest-rank p90 over sessions with at least one turn. | Sessions without observed turns are excluded, not counted as zero. |
+| Cost per session (users) | A user's known cost divided by that user's sessions with a known cost. | Users and sessions lists keep the top 20 by known cost; unavailable costs sort last. |
+
 ## Productivity and Users
 
 `claude_code.code_edit_tool.decision` counts permission decisions, including automatically

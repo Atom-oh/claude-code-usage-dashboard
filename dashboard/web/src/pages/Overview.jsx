@@ -16,6 +16,7 @@ import { useFilters } from "../FilterContext.jsx";
 import { useConfig } from "../ConfigContext.jsx";
 import { makeTickFmt } from "../fmt.js";
 import { unclassifiedLabel } from "../labels.js";
+import SessionTurns from "../components/SessionTurns.jsx";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const TOKEN_VIEWS = [
@@ -176,6 +177,7 @@ export default function Overview() {
             </table>
           )}
         </Card>
+        <SessionTurns />
 
         {activeTrend.loading ? (
           <Loading />
