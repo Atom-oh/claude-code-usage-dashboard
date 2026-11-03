@@ -263,6 +263,29 @@ class RoleExecutionTests(unittest.TestCase):
                     (result[0], result[1], result[3], len(calls)),
                     (passed, code, retryable, expected_calls),
                 )
+                # Only a plain wrong reply carries the bounded reply excerpt.
+                self.assertEqual(self.runner.REPLY_MISMATCH in result[2], name == "wrong reply")
+                if name == "wrong reply":
+                    self.assertIn("'TOOLS_AVAILABLE'", result[2])
+
+    def test_reply_mismatch_excerpt_is_bounded_and_single_line(self):
+        cwd = self.root / "mismatch"
+        cwd.mkdir()
+        long_reply = "I cannot comply.\n" + "x" * 500
+        def execute(command, cwd, environment, input_text, timeout):
+            if command[1] == "settings":
+                return (0, "", "") if command[-1] == "true" else (0, "true", "")
+            return 0, long_reply, ""
+        with patch.object(self.runner, "execute", side_effect=execute):
+            passed, code, error, retryable = self.runner.preflight_attempt(
+                "kiro-cli", "claude-opus-5", cwd, os.environ.copy(), 2
+            )
+        self.assertEqual((passed, code, retryable), (False, 0, False))
+        line = [l for l in error.splitlines() if l.startswith(self.runner.REPLY_MISMATCH)][0]
+        excerpt = line[len(self.runner.REPLY_MISMATCH):]
+        self.assertLessEqual(len(excerpt), 160 + 2)
+        self.assertNotIn("\n", excerpt)
+        self.assertTrue(excerpt.startswith("'I cannot comply. x"))
 
     def test_late_exit_zero_is_classified_before_it_becomes_a_timeout(self):
         # The call at index `stage` overruns the 2 s budget; the others are quick.

@@ -162,6 +162,9 @@ def safety_signal(diagnostic):
     return bool(FAILURE.search(diagnostic) or diagnostic_failure(diagnostic))
 
 
+REPLY_MISMATCH = "Kiro preflight reply was not exactly NO_TOOLS: "
+
+
 def preflight_attempt(binary, model, cwd, environment, timeout, *, deadline=None):
     """Run one startup check: (passed, exit code, stderr, retryable).
 
@@ -218,7 +221,10 @@ def preflight_attempt(binary, model, cwd, environment, timeout, *, deadline=None
     if code:
         return False, code, error, True
     if reply != "NO_TOOLS":  # The tool-isolation canary failed.
-        return False, code, error, False
+        # The startup prompt carries no PR input and a canary echo was rejected above,
+        # so a bounded excerpt is safe to report and makes intermittent failures diagnosable.
+        excerpt = re.sub(r"\s+", " ", reply)[:160]
+        return False, code, error + f"\n{REPLY_MISMATCH}{excerpt!r}", False
     if late or time.monotonic() >= deadline:
         return False, 124, error + "\nKiro startup timed out.", True
     return True, code, error, False
@@ -253,6 +259,9 @@ def preflight_with_retries(binary, model, cwd, environment, timeout, attempts, t
             return True, code, "\n".join(errors), False
         if not retryable:
             print(f"{label} failed a startup safety check (exit {code}); not retrying")
+            mismatch = [line for line in error.splitlines() if line.startswith(REPLY_MISMATCH)]
+            if mismatch:
+                print(f"{label} {mismatch[-1]}")
             return False, code, "\n".join(errors), False
         outcome = f"timed out after {elapsed:.1f}s" if code == 124 else f"failed (exit {code})"
         print(f"{label} {outcome}; " + ("retrying" if attempt < attempts else "PR input withheld"))
