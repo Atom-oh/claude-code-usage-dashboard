@@ -873,3 +873,30 @@ test("buckets are sized from Claude's trimmed end, so a range just over four hou
   // Codex-only views keep the requested end.
   assert.equal(effectiveClientEnd(from, to, ["codex"]).getTime(), to.getTime());
 });
+
+test("client views accept a trimmed exact team and reject unbounded values before queries", () => {
+  assert.deepEqual(validateClientFilters({ client: "codex", team: " fsi " }, ["codex"]),
+    { clients: ["codex"], user: "", model: "", backend: "", team: "fsi" });
+  assert.equal(Object.hasOwn(validateClientFilters({ team: "" }, ["codex"]), "team"), false);
+  for (const team of [["a"], "x".repeat(257)])
+    assert.throws(() => validateClientFilters({ team }, ["codex"]), /invalid filter/);
+});
+
+test("client SQL narrows Codex and Claude log scopes to the team's sessions with a bound value", () => {
+  const from = new Date("2026-09-14"), to = new Date("2026-09-15");
+  const codex = buildCodexQuery(from, to, { team: "fsi'--" });
+  assert.ok(codex.sql.includes("AND session IN (SELECT session FROM ("));
+  assert.ok(codex.sql.includes("LogAttributes['conversation.id'] AS session"));
+  assert.ok(codex.sql.includes("WHERE team = {clientTeam:String})"));
+  assert.ok(!codex.sql.includes("fsi'--"));
+  assert.equal(codex.params.clientTeam, "fsi'--");
+  const claude = buildCodexQuery(from, to, { team: "fsi" }, {}, "claude");
+  assert.ok(claude.sql.includes("'claude' AS client, SessionId AS session"));
+  assert.ok(!claude.sql.includes("'codex' AS client"));
+  const facts = buildCodexQuery(from, to, { team: "fsi" }, {}, "codex", 3600, { costView: true, costSource: "facts" });
+  assert.ok(facts.sql.includes("FROM claude_code.codex_cost_events_v1"));
+  assert.ok(facts.sql.includes("AND session IN (SELECT session FROM ("));
+  const none = buildCodexQuery(from, to, {});
+  assert.ok(!none.sql.includes("clientTeam"));
+  assert.equal(Object.hasOwn(none.params, "clientTeam"), false);
+});

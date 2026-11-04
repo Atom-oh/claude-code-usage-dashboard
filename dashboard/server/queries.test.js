@@ -577,3 +577,117 @@ test("ttlSplitFields derives coverage, split cost and split ratio", () => {
   assert.equal(unpriced.cost_split, null);
   assert.equal(unpriced.ratio_split, null);
 });
+
+test("filterCond applies team as a session semi-join with a bound parameter", () => {
+  const f = filterCond({ team: "fsi'--" }, { teamViaSession: "l.SessionId" });
+  assert.ok(f.where.includes("AND l.SessionId IN (SELECT session FROM ("));
+  assert.ok(f.where.includes("WHERE team = {fTeam:String})"));
+  assert.ok(f.where.includes("NOT startsWith(EventName, 'codex.')"));
+  assert.ok(!f.where.includes("fsi'--"));
+  assert.equal(f.params.fTeam, "fsi'--");
+});
+
+test("filterCond reuses a declared modelViaSession or modelMixed session column for team", () => {
+  assert.ok(filterCond({ team: "fsi" }, { modelViaSession: "l.SessionId" }).where
+    .includes("l.SessionId IN (SELECT session FROM ("));
+  assert.ok(filterCond({ team: "fsi" }, { modelMixed: { model: "m.Model", session: "m.SessionId" } }).where
+    .includes("m.SessionId IN (SELECT session FROM ("));
+  const both = filterCond({ team: "fsi" }, { teamViaSession: "a.SessionId", modelViaSession: "b.SessionId" }).where;
+  assert.ok(both.includes("a.SessionId IN (SELECT session FROM ("));
+  assert.ok(!both.includes("b.SessionId"));
+});
+
+test("filterCond refuses a team filter without a session column", () => {
+  assert.throws(() => filterCond({ team: "fsi" }, { group: "grp", user: "UserEmail" }),
+    /team filter requires a session column/);
+  assert.equal(filterCond({ group: "bedrock" }, { group: "grp" }).params.fTeam, undefined);
+});
+
+test("filterCond leaves queries untouched when no team is selected", () => {
+  for (const team of [undefined, ""]) {
+    const f = filterCond({ user: "u", team }, { user: "m.UserEmail", teamViaSession: "m.SessionId" });
+    assert.ok(!f.where.includes("SELECT session"));
+    assert.equal(f.params.fTeam, undefined);
+  }
+});
+
+test("team sessions scan the window plus the counter lookback from the declared start", () => {
+  assert.ok(filterCond({ team: "x" }, { teamViaSession: "m.SessionId" }).where
+    .includes("Timestamp >= toStartOfHour({from:DateTime}) - INTERVAL 3 DAY AND Timestamp < {to:DateTime}"));
+  assert.ok(filterCond({ team: "x" }, { teamViaSession: "m.SessionId", teamSince: "{prevFrom:DateTime}" }).where
+    .includes("Timestamp >= toStartOfHour({prevFrom:DateTime}) - INTERVAL 3 DAY"));
+});
+
+test("sessionTeamsSql resolves the most frequent team per client session from resource then log attributes", () => {
+  const claude = queries.sessionTeamsSql(["claude"]);
+  for (const part of [
+    "'claude' AS client",
+    "SessionId AS session",
+    "coalesce(nullIf(ResourceAttributes['team'], ''), nullIf(LogAttributes['team'], '')) AS value",
+    "AND NOT startsWith(EventName, 'codex.') AND session != '' AND value IS NOT NULL",
+    "GROUP BY session, value",
+    "argMin(value, (-n, value)) AS team",
+    "argMax(identity, seen) AS user",
+    "max(seen) AS last_seen",
+    "GROUP BY client, session",
+  ]) assert.ok(claude.includes(part), part);
+  assert.ok(!claude.includes("conversation.id"));
+  assert.ok(!claude.includes("UNION ALL"));
+
+  const codex = queries.sessionTeamsSql(["codex"]);
+  assert.ok(codex.includes("LogAttributes['conversation.id'] AS session"));
+  assert.ok(codex.includes("AND startsWith(EventName, 'codex.') AND session != ''"));
+  assert.ok(!codex.includes("NOT startsWith"));
+
+  const both = queries.sessionTeamsSql(["claude", "codex"]);
+  assert.equal(both.split("UNION ALL").length, 2);
+  assert.ok(both.includes("'claude' AS client"));
+  assert.ok(both.includes("'codex' AS client"));
+
+  assert.throws(() => queries.sessionTeamsSql(["opencode"]), /unknown client opencode/);
+});
+
+test("foldUserTeams lists every team of a user, most recent first, ties lexically", () => {
+  const rows = [
+    { user: "b@example.invalid", team: "A", seen: "2026-11-04 10:05:00.000000000" },
+    { user: "b@example.invalid", team: "B", seen: "2026-11-04 10:40:00.000000000" },
+    { user: "a@example.invalid", team: "Z", seen: "2026-11-04 10:00:00.000000000" },
+    { user: "a@example.invalid", team: "Y", seen: "2026-11-04 10:00:00.000000000" },
+    { user: "", team: "A", seen: "2026-11-04 10:00:00.000000000" },
+    { user: "c@example.invalid", team: "", seen: "2026-11-04 10:00:00.000000000" },
+    { user: "d@example.invalid", team: null, seen: "2026-11-04 10:00:00.000000000" },
+  ];
+  assert.deepEqual(queries.foldUserTeams(rows), [
+    { user: "a@example.invalid", team: "Y", teams: ["Y", "Z"] },
+    { user: "b@example.invalid", team: "B", teams: ["B", "A"] },
+  ]);
+  assert.deepEqual(queries.foldUserTeams([]), []);
+});
+
+test("every team-capable query declares a session column; adoption snapshots and drilldowns do not", () => {
+  const src = readFileSync(fileURLToPath(new URL("./queries.js", import.meta.url)), "utf8");
+  const calls = (name) => {
+    let start = src.indexOf("export async function " + name + "(");
+    if (start < 0) start = src.indexOf("export function " + name + "(");
+    assert.ok(start >= 0, name);
+    let end = src.indexOf("\nexport ", start + 10);
+    if (end === -1) end = src.length;
+    return (src.slice(start, end).match(/filterCond\([^;]*;/g) || []).join("\n");
+  };
+  const session = /teamViaSession|modelViaSession|modelMixed/;
+  const teamCapable = `kpiSummary tokenTimeseries locTimeseries cacheEfficiency modelDistribution normalizedProductivity
+    codeEditDecisions codeEditDecisionsByTool activeTimeSeries skillUsage costByModelDailySql
+    costByModelCompare activeUsers dailyEngagement mcpConnectorUsage agenticness toolMcpUsage costSummary
+    costByModel costByUserModel userToolUsage userSkillUsage userLeaderboard versionCohortSessions
+    versionCohortCost subagentFanout skillActivations compactionPressure refusalRate retriesExhausted
+    pluginInventory permissionWaitOverhead ttftComparison apiErrors toolDecisionFunnel interactionBreakdown
+    activeTimeSummary activityDensitySql toolOutcomesSql permissionWaitOccupancy effortMixSql
+    languageBreakdown apiLatency toolLatency commandAdoption hookOverhead mcpHealth agentCost
+    reportedVsComputedByVersion projectBreakdown permissionModeChanges toolDecisionSources
+    entrypointBreakdown clientClaudeRows`.trim().split(/\s+/);
+  for (const name of teamCapable) assert.match(calls(name), session, name);
+  for (const name of "adoptionLevels adoptionTimeseries userDaily userHeatmap".split(/\s+/)) {
+    assert.ok(calls(name).length > 0, name);
+    assert.doesNotMatch(calls(name), session, name);
+  }
+});
