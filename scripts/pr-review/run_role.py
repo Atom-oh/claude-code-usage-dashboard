@@ -221,9 +221,9 @@ def preflight_attempt(binary, model, cwd, environment, timeout, *, deadline=None
     if code:
         return False, code, error, True
     if reply != "NO_TOOLS":  # The tool-isolation canary failed.
-        # The startup prompt carries no PR input and a canary echo was rejected above,
-        # so a bounded excerpt is safe to report and makes intermittent failures diagnosable.
-        excerpt = re.sub(r"\s+", " ", reply)[:160]
+        # Scrub the complete reply before whitespace normalization or truncation;
+        # otherwise a credential or multiline key can escape the log filter.
+        excerpt = re.sub(r"\s+", " ", scrub(reply)).strip()[:160]
         return False, code, error + f"\n{REPLY_MISMATCH}{excerpt!r}", False
     if late or time.monotonic() >= deadline:
         return False, 124, error + "\nKiro startup timed out.", True
