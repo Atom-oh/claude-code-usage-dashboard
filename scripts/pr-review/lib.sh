@@ -54,3 +54,31 @@ scrub_secrets() {
     -e 's/((api[_-]?key|aws_secret_access_key|aws_access_key_id|access[_-]?token|client[_-]?secret|secret|passwd|password|token)['"'"'"]?[[:space:]]*[:=][[:space:]]*['"'"'"])[^'"'"'"]{8,}(['"'"'"])/\1[REDACTED]\3/gI' \
     -e 's/((^|[^A-Za-z0-9_])(api[_-]?key|aws_secret_access_key|aws_access_key_id|access[_-]?token|client[_-]?secret|secret|passwd|password|token)[[:space:]]*[:=][[:space:]]*)[A-Za-z0-9/+_-]{16,}/\1[REDACTED]/gI'
 }
+
+# AWS variables a review model process may receive: region settings plus the runner's
+# EKS Pod Identity (or IRSA) credential handles. Profiles, shared config/credential
+# files, static keys and Bedrock bearer tokens are deliberately absent.
+REVIEW_AWS_VARS=(AWS_REGION AWS_DEFAULT_REGION AWS_STS_REGIONAL_ENDPOINTS
+  AWS_CONTAINER_CREDENTIALS_FULL_URI AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE
+  AWS_CONTAINER_AUTHORIZATION_TOKEN AWS_WEB_IDENTITY_TOKEN_FILE AWS_ROLE_ARN
+  AWS_ROLE_SESSION_NAME)
+
+# Run a model CLI with an allowlisted environment and an isolated HOME/TMPDIR.
+#   review_env <home> <tmpdir> [NAME=VALUE ...] -- <cmd ...>
+review_env() {
+  local home="$1" tmp="$2" name; shift 2
+  local -a keep=(PATH="$PATH" HOME="$home" TMPDIR="$tmp" LANG="${LANG:-C.UTF-8}")
+  [ -n "${LC_ALL:-}" ] && keep+=(LC_ALL="$LC_ALL")
+  for name in "${REVIEW_AWS_VARS[@]}"; do
+    [ -n "${!name:-}" ] && keep+=("$name=${!name}")
+  done
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do keep+=("$1"); shift; done
+  [ "${1:-}" = -- ] && shift
+  env -i "${keep[@]}" "$@"
+}
+
+# Fresh, empty review sandbox directory with home/, cwd/ and tmp/; refuses symlinks.
+fresh_review_dir() {
+  [ -n "$1" ] && [ ! -L "$1" ] || { echo "fresh_review_dir: refusing '$1'" >&2; return 1; }
+  rm -rf "$1" && mkdir -p "$1/home" "$1/cwd" "$1/tmp"
+}

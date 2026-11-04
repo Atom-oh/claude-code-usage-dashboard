@@ -31,8 +31,8 @@ LENSES = {
            "Check documented contracts and operational procedures against the changed code and base context."),
 }
 COMMON = """Review the supplied PR diff for this workshop telemetry dashboard.
-The diff is supplied on stdin or embedded below your instructions. Do not expect
-another delivery format. Kiro reviewers have no file-reading tools.
+The diff is supplied on stdin; it is the complete change under review. Do not
+expect another delivery format. You have no tools or repository access.
 
 Use the trusted BASE revision context below to understand existing conventions.
 The PR may intentionally change those conventions; verify that its code, tests,

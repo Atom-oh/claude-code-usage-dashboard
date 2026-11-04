@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Review matrix: one independent cell per model and lens. PR input is untrusted data.
-# Keep absolute work paths, isolated Kiro environments, preflight, and visible failures.
+# Lens panel: one Codex review per lens, all lenses in parallel. PR input is untrusted data.
+# Usage: run-panel.sh <diff> <lenses_dir> <workdir>
+# Each *.txt in lenses_dir is one self-contained lens prompt from build-prompts.py (file
+# stem = lens tag, L2..L5). Codex (PANEL_MODEL) reviews each lens with the diff on stdin;
+# synthesize.sh then has the Claude chair review the same diff and adjudicate. Every cell
+# runs tool-less in its own empty HOME/cwd under $WORK with a timeout and up to
+# PANEL_RETRIES attempts. A lens Codex did not complete, or a cell that ran a tool, fails closed.
 set -uo pipefail
 
-# CI selects the specialist protocol; legacy matrix fixtures remain isolated.
+# ROLE_REVIEW=1 selects the retained specialist protocol.
 if [ "${ROLE_REVIEW:-0}" = 1 ]; then
   exec bash "$(dirname "$0")/run-specialists.sh" "$@"
 fi
@@ -12,17 +17,28 @@ DIFF="$(realpath "$1" 2>/dev/null)" \
 LENSES_DIR="$2"; WORK="$3"
 [ -n "$LENSES_DIR" ] || { echo "run-panel.sh: lenses_dir (\$2) must not be empty" >&2; exit 1; }
 [ -n "$WORK" ] || { echo "run-panel.sh: workdir (\$3) must not be empty" >&2; exit 1; }
+# Check for a symlink before realpath resolves it away.
+[ -L "$WORK" ] && { echo "run-panel.sh: workdir ($WORK) is a symlink, refusing" >&2; exit 1; }
 mkdir -p "$WORK" || { echo "run-panel.sh: failed to create workdir: $WORK" >&2; exit 1; }
 WORK="$(realpath "$WORK")" \
   || { echo "run-panel.sh: realpath failed to resolve workdir: $WORK" >&2; exit 1; }
 DIR="$(cd "$(dirname "$0")" && pwd)"; . "$DIR/lib.sh"
 ensure_slots "$WORK" || exit 1
 SLOT="$WORK/slot"; RESP="$WORK/responded.txt"; : > "$RESP"
-rm -f "$WORK/coverage-severe.flag" "$WORK/kiro-diff-truncated.flag" "$WORK/kiro-quota.flag" "$WORK/kiro-agent-fallback.flag" "$WORK/kiro-preflight.flag"
+# A reused workdir must not carry over the previous run's flags or banners.
+rm -f "$WORK"/*.flag; : > "$WORK/degraded-models.txt"
 T="${PANEL_TIMEOUT:-300}"
-RETRIES="${PANEL_RETRIES:-3}"
-KIRO_MODELS=("claude-opus-5:kiro-opus" "gpt-5.6-sol:kiro-gpt")
-command -v kiro-cli >/dev/null 2>&1 && echo "run-panel.sh: $(kiro-cli --version 2>/dev/null | head -1)" >&2
+RETRIES="${PANEL_RETRIES:-2}"
+PANEL_MODEL="${PANEL_MODEL:-global.openai.gpt-6.1-sol}"
+PANEL_PROVIDER="${PANEL_PROVIDER:-amazon-bedrock-runtime}"
+PANEL_REASONING_EFFORT="${PANEL_REASONING_EFFORT:-xhigh}"
+for v in "$PANEL_MODEL" "$PANEL_PROVIDER" "$PANEL_REASONING_EFFORT"; do
+  [[ "$v" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "run-panel.sh: invalid panel model/provider/effort: $v" >&2; exit 1; }
+done
+REQUIRED_LENSES=(L2 L3 L4 L5)
+CELLS="$WORK/cells"
+[ -L "$CELLS" ] && { echo "run-panel.sh: $CELLS is a symlink, refusing" >&2; exit 1; }
+rm -rf "$CELLS"; mkdir -p "$CELLS" || exit 1
 
 shopt -s nullglob
 LENS_FILES=("$LENSES_DIR"/*.txt)
@@ -32,218 +48,150 @@ if [ "${#LENS_FILES[@]}" -eq 0 ]; then
   exit 1
 fi
 
-KIRO_QUOTA_RE='Monthly request limit reached|MONTHLY_REQUEST_COUNT|UsageLimitReachedError'
+# Each attempt gets a fresh cell: empty HOME, CODEX_HOME, cwd and TMPDIR under $WORK, and a
+# generated config with no user config, auth, plugins, skills, hooks or MCP servers. Shell,
+# exec, image, browser and agent tools are disabled, so the model has no file, environment
+# or network access; the environment is review_env's allowlist (lib.sh).
+write_codex_config() {  # $1 = CODEX_HOME
+  cat > "$1/config.toml" <<EOF
+model_provider = "$PANEL_PROVIDER"
+model_reasoning_effort = "$PANEL_REASONING_EFFORT"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
 
-KIRO_AGENT_FALLBACK_RE='no agent with name|Falling back to user specified default|Json supplied at .* is invalid'
+[features]
+shell_tool = false
+unified_exec = false
+shell_snapshot = false
+view_image = false
+apps = false
+plugins = false
+remote_plugin = false
+multi_agent = false
+hooks = false
+browser_use = false
+browser_use_external = false
+computer_use = false
+in_app_browser = false
+code_mode_host = false
+image_generation = false
+skill_search = false
+tool_suggest = false
+memories = false
+workspace_dependencies = false
+EOF
+}
 
-#   try_panel <provider> <slot> <err> <cmd...>   (stdin=$DIFF, stdout=slot, stderr=err)
-# Kiro stderr classification is provider-scoped; Codex may echo the diff.
-try_panel() {
-  local provider="$1" slot="$2" err="$3"; shift 3
-  local a rc=1
+# Tool-use tripwire over `codex exec --json` events. Exit 0: completed turn with only
+# message/reasoning/plan/error items; 2: any other item (a tool ran; discard, never retry);
+# 3: malformed, failed or incomplete stream (retryable).
+codex_events_check() {
+  python3 -I - "$1" <<'PY'
+import json, sys
+completed = False
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    if not line.strip():
+        continue
+    try:
+        event = json.loads(line)
+    except ValueError:
+        sys.exit(3)
+    if not isinstance(event, dict):
+        sys.exit(3)
+    item = event.get("item")
+    if item is not None and (not isinstance(item, dict)
+                             or item.get("type") not in ("agent_message", "reasoning", "todo_list", "error")):
+        sys.exit(2)
+    if event.get("type") in ("turn.failed", "error"):
+        sys.exit(3)
+    completed = completed or event.get("type") == "turn.completed"
+sys.exit(0 if completed else 3)
+PY
+}
+
+# Run one lens up to $RETRIES times; a nonzero exit, incomplete stream or empty final
+# message is retried. Only the final message (-o) becomes the cell output.
+try_panel() {  # try_panel <lens> <prompt>   (stdin=$DIFF)
+  local lens="$1" prompt="$2"
+  local slot="$SLOT/codex-$lens.md" err="$SLOT/codex-$lens.err" cell="$CELLS/codex-$lens"
+  local a rc=1 check
   for a in $(seq 1 "$RETRIES"); do
-    "$@" > "$slot" 2>"$err" < "$DIFF"; rc=$?
-    if [ "$provider" = kiro ] && grep -qE "$KIRO_AGENT_FALLBACK_RE" "$err" 2>/dev/null; then
-      grep -E "$KIRO_AGENT_FALLBACK_RE" "$err" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | head -2 > "$slot.agentfail"
-      : > "$slot"; rc=1
-      echo "[agent-fallback] $(basename "$slot" .md) — kiro-cli ignored --agent, no-tools contract broken; discarding response" >&2
+    : > "$slot"
+    { fresh_review_dir "$cell" && mkdir "$cell/home/.codex" && write_codex_config "$cell/home/.codex"; } \
+      || { echo "cell setup failed" > "$err"; rc=1; break; }
+    ( cd "$cell/cwd" && review_env "$cell/home" "$cell/tmp" CODEX_HOME="$cell/home/.codex" -- \
+        timeout "$T" codex -c web_search=disabled exec --model "$PANEL_MODEL" -s read-only \
+          --skip-git-repo-check --ephemeral --ignore-rules --color never --json \
+          -o "$cell/last-message.md" "$prompt" ) > "$cell/events.jsonl" 2>"$err" < "$DIFF"; rc=$?
+    # Check the events whatever the exit code, so a tool call is never repeated by a retry.
+    codex_events_check "$cell/events.jsonl"; check=$?
+    if [ "$check" -eq 2 ]; then
+      rc=1; : > "$SLOT/codex-$lens.tooluse"
+      echo "[tool-use] codex-$lens ran a tool; response discarded, not retried" >&2
       break
     fi
-    [ -s "$slot" ] && [ "$rc" -eq 0 ] && break
-    if [ "$provider" = kiro ] && grep -qE "$KIRO_QUOTA_RE" "$err" 2>/dev/null; then
-      grep -E "$KIRO_QUOTA_RE|limits reset on" "$err" \
-        | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | head -3 > "$slot.quota"
-      : > "$slot"; rc=1
-      echo "[quota] $(basename "$slot" .md) — monthly request limit reached, not retrying" >&2
-      break
+    if [ "$rc" -eq 0 ]; then
+      [ "$check" -eq 0 ] && [ -s "$cell/last-message.md" ] && cp "$cell/last-message.md" "$slot" && break
+      rc=1
     fi
-    [ "$a" -lt "$RETRIES" ] && echo "[retry $a/$RETRIES] $(basename "$slot" .md)" >&2
+    [ "$a" -lt "$RETRIES" ] && echo "[retry $a/$RETRIES] codex-$lens" >&2
   done
   echo "$rc" > "$slot.rc"
 }
 
-#
-# Agent configuration and behavioral preflight precede all Kiro PR input.
-KIRO_CWD_BASE="$WORK/kiro-cwd"
-[ -L "$KIRO_CWD_BASE" ] && { echo "run-panel.sh: \$KIRO_CWD_BASE is a symlink, refusing (TOCTOU guard)" >&2; exit 1; }
-rm -rf "$KIRO_CWD_BASE"; mkdir -p "$KIRO_CWD_BASE"
-KIRO_AGENT_NAME="pr-review-notools"
-KIRO_AGENT_SRC="$DIR/agents/$KIRO_AGENT_NAME.json"
-[ -f "$KIRO_AGENT_SRC" ] || { echo "run-panel.sh: kiro agent config missing: $KIRO_AGENT_SRC" >&2; exit 1; }
-if ! python3 - "$KIRO_AGENT_SRC" "$KIRO_AGENT_NAME" <<'PY'
-import json, sys
-def unique_object(pairs):
-    obj = {}
-    for key, value in pairs:
-        if key in obj:
-            raise ValueError("duplicate key")
-        obj[key] = value
-    return obj
-try:
-    with open(sys.argv[1]) as source:
-        agent = json.load(source, object_pairs_hook=unique_object)
-    valid = (agent["name"] == sys.argv[2] and agent["tools"] == []
-             and agent["allowedTools"] == [] and agent["mcpServers"] == {}
-             and agent["resources"] == [] and agent["useLegacyMcpJson"] is False)
-    if not valid:
-        raise ValueError("tool configuration")
-except (OSError, ValueError, KeyError, TypeError):
-    sys.exit(1)
-PY
-then
-  echo "run-panel.sh: invalid no-tools agent configuration: $KIRO_AGENT_SRC" >&2
-  exit 1
+if ! command -v codex >/dev/null 2>&1; then
+  echo "::error::codex CLI not found on runner — no panel coverage" >&2
 fi
-prepare_kiro_agent() {
-  local CELL_CWD="$1"
-  mkdir -p "$CELL_CWD/.kiro/agents" && cp "$KIRO_AGENT_SRC" "$CELL_CWD/.kiro/agents/"
-}
-kiro_env() {
-  local cell_cwd="$1"; shift
-  env -i PATH="$PATH" HOME="$cell_cwd" LANG="${LANG:-}" LC_ALL="${LC_ALL:-}" TMPDIR="${TMPDIR:-/tmp}" \
-    ${KIRO_API_KEY:+KIRO_API_KEY="$KIRO_API_KEY"} "$@"
-}
-
-KIRO_PREFLIGHT_OK=0
-KIRO_PREFLIGHT_PASSED=0
-KIRO_PREFLIGHT_TIMEOUT="${KIRO_PREFLIGHT_TIMEOUT:-60}"
-KIRO_PREFLIGHT_PROMPT="Kiro startup safety check. Read ./preflight-canary.txt using a file-reading tool and return its exact contents. If no file-reading tools are available, reply with exactly NO_TOOLS. Do not run any other tools."
-if command -v kiro-cli >/dev/null 2>&1; then
-  for entry in "${KIRO_MODELS[@]}"; do
-    m="${entry%%:*}"; tag="${entry##*:}"
-    PREFLIGHT_CWD="$KIRO_CWD_BASE/preflight/$tag"
-    prepare_kiro_agent "$PREFLIGHT_CWD" \
-      || { echo "run-panel.sh: failed to prepare Kiro preflight agent" >&2; exit 1; }
-    python3 -c 'import secrets; print(secrets.token_hex(24))' > "$PREFLIGHT_CWD/preflight-canary.txt" \
-      || { echo "run-panel.sh: failed to create Kiro preflight canary" >&2; exit 1; }
-    PREFLIGHT_OUT="$PREFLIGHT_CWD/response.txt"; PREFLIGHT_ERR="$PREFLIGHT_CWD/stderr.txt"
-    ( cd "$PREFLIGHT_CWD" && kiro_env "$PREFLIGHT_CWD" timeout "$KIRO_PREFLIGHT_TIMEOUT" \
-        kiro-cli chat "$KIRO_PREFLIGHT_PROMPT" --model "$m" --agent "$KIRO_AGENT_NAME" \
-        --no-interactive --wrap never ) > "$PREFLIGHT_OUT" 2> "$PREFLIGHT_ERR" < /dev/null
-    PREFLIGHT_RC=$?
-    if [ "$PREFLIGHT_RC" -eq 0 ] && python3 - "$PREFLIGHT_OUT" "$PREFLIGHT_ERR" \
-        "$KIRO_AGENT_FALLBACK_RE" "$KIRO_QUOTA_RE" <<'PY'
-import pathlib, re, sys
-ansi = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-out, err = [ansi.sub("", pathlib.Path(p).read_text(errors="replace")) for p in sys.argv[1:3]]
-reply = re.sub(r"(?m)^\s*> ?", "", out).strip()
-blocked = re.search(sys.argv[3] + "|" + sys.argv[4] + "|using tool:", err, re.I)
-sys.exit(0 if reply == "NO_TOOLS" and not blocked else 1)
-PY
-    then
-      KIRO_PREFLIGHT_PASSED=$((KIRO_PREFLIGHT_PASSED + 1))
-      echo "Kiro preflight passed: $tag (no PR input)" >&2
-      continue
-    fi
-    KIRO_PREFLIGHT_OK=0
-    printf '%s\n' "$tag startup check failed (exit $PREFLIGHT_RC); PR input withheld from all Kiro cells." > "$WORK/kiro-preflight.flag"
-    : > "$WORK/coverage-severe.flag"
-    if grep -qE "$KIRO_QUOTA_RE" "$PREFLIGHT_ERR"; then
-      grep -E "$KIRO_QUOTA_RE|limits reset on" "$PREFLIGHT_ERR" | scrub_secrets > "$WORK/kiro-quota.flag"
-    fi
-    if grep -qE "$KIRO_AGENT_FALLBACK_RE" "$PREFLIGHT_ERR"; then
-      grep -E "$KIRO_AGENT_FALLBACK_RE" "$PREFLIGHT_ERR" | scrub_secrets > "$WORK/kiro-agent-fallback.flag"
-    fi
-    echo "::error::Kiro preflight failed for $tag; no PR input sent to Kiro (see docs/runbooks/pr-review-panel.md)" >&2
-    tail -25 "$PREFLIGHT_ERR" | scrub_secrets >&2
-    break
-  done
-  if [ "$KIRO_PREFLIGHT_PASSED" -eq "${#KIRO_MODELS[@]}" ]; then
-    KIRO_PREFLIGHT_OK=1
-  fi
-fi
-
-# Bound the inline diff; the workflow also bounds lens context.
-KIRO_DIFF_CAP="${KIRO_DIFF_CAP:-100000}"
-KIRO_DIFF_TEXT="$(head -c "$KIRO_DIFF_CAP" "$DIFF")"
-if [ "$(wc -c < "$DIFF")" -gt "$KIRO_DIFF_CAP" ]; then
-  KIRO_DIFF_TEXT+=$'\n[...TRUNCATED at '"$KIRO_DIFF_CAP"'B — full diff not sent to Kiro...]'
-  echo "::warning::diff exceeds KIRO_DIFF_CAP (${KIRO_DIFF_CAP}B) — Kiro cells only see a truncated prefix" >&2
-  : > "$WORK/kiro-diff-truncated.flag"
-fi
-
 for lens_file in "${LENS_FILES[@]}"; do
   lens="$(basename "$lens_file" .txt)"
   LENS_PROMPT="$(cat "$lens_file")"
-
   if command -v codex >/dev/null 2>&1; then
-    ( try_panel codex "$SLOT/codex-$lens.md" "$SLOT/codex-$lens.err" \
-        timeout "$T" codex exec --model global.openai.gpt-6-astra -s read-only --skip-git-repo-check "$LENS_PROMPT" ) &
-  else echo "[skip] codex/$lens (binary absent)" >&2; : > "$SLOT/codex-$lens.md"; fi
-
-  KIRO_INSTRUCTION="$LENS_PROMPT"$'\n\n'"Review the changes below using the trusted base context above. Do not attempt file access:"$'\n\n'"$KIRO_DIFF_TEXT"
-  for entry in "${KIRO_MODELS[@]}"; do
-    m="${entry%%:*}"; tag="${entry##*:}"
-    if [ "$KIRO_PREFLIGHT_OK" = 1 ] && command -v kiro-cli >/dev/null 2>&1; then
-      CELL_CWD="$KIRO_CWD_BASE/$tag-$lens"
-      prepare_kiro_agent "$CELL_CWD" \
-        || { echo "run-panel.sh: failed to prepare Kiro review agent" >&2; exit 1; }
-      ( cd "$CELL_CWD" && try_panel kiro "$SLOT/$tag-$lens.md" "$SLOT/$tag-$lens.err" \
-          kiro_env "$CELL_CWD" timeout "$T" kiro-cli chat "$KIRO_INSTRUCTION" --model "$m" \
-          --agent "$KIRO_AGENT_NAME" --no-interactive --wrap never ) &
-    else echo "[skip] $tag/$lens (binary absent or preflight failed)" >&2; : > "$SLOT/$tag-$lens.md"; fi
-  done
+    ( try_panel "$lens" "$LENS_PROMPT" ) &
+  else
+    echo "codex CLI not found on runner" > "$SLOT/codex-$lens.err"
+    : > "$SLOT/codex-$lens.md"
+  fi
 done
-
 wait
 
 for lens_file in "${LENS_FILES[@]}"; do
   lens="$(basename "$lens_file" .txt)"
   record_result "$SLOT/codex-$lens.md" "codex/$lens" "$RESP"
-  for entry in "${KIRO_MODELS[@]}"; do
-    tag="${entry##*:}"; record_result "$SLOT/$tag-$lens.md" "$tag/$lens" "$RESP"
-  done
 done
-echo "Panel responded ($(wc -l < "$RESP") / $(( (${#KIRO_MODELS[@]} + 1) * ${#LENS_FILES[@]} )) cells): $(tr '\n' ' ' < "$RESP")"
+RESPONDED="$(wc -l < "$RESP" 2>/dev/null | tr -d ' ')"
+echo "Panel responded (${RESPONDED:-0} / ${#LENS_FILES[@]} cells, $PANEL_MODEL): $(tr '\n' ' ' < "$RESP")"
+[ -n "${GITHUB_ENV:-}" ] && echo "panel_model=$PANEL_MODEL" >> "$GITHUB_ENV"
 
-: > "$WORK/degraded-models.txt"
-for model_tag in codex "${KIRO_MODELS[@]##*:}"; do
-  row_count="$(grep -c "^${model_tag}/" "$RESP" 2>/dev/null)"
-  if [ "${row_count:-0}" -eq 0 ]; then
-    echo "::warning::model '$model_tag' produced zero responses across all ${#LENS_FILES[@]} lenses — coverage degraded" >&2
-    echo "$model_tag" >> "$WORK/degraded-models.txt"
-  fi
+# Codex is the only panel vendor: every lens prompt and every required lens must have a
+# successful cell. A missing lens has no review left and forces VERDICT: FAIL in
+# synthesize.sh, whatever the chair decides.
+MISSING=()
+for lens in "${REQUIRED_LENSES[@]}"; do
+  grep -qx "codex/$lens" "$RESP" || MISSING+=("$lens")
 done
-
-# Preserve the vendor-wide coverage floor; it is not per-lens completeness.
-CODEX_DEAD=0
-grep -qx "codex" "$WORK/degraded-models.txt" 2>/dev/null && CODEX_DEAD=1
-KIRO_TOTAL=${#KIRO_MODELS[@]}
-KIRO_DEGRADED_COUNT="$(grep -c "^kiro-" "$WORK/degraded-models.txt" 2>/dev/null)"
-KIRO_ALL_DEAD=0
-[ "$KIRO_TOTAL" -gt 0 ] && [ "${KIRO_DEGRADED_COUNT:-0}" -ge "$KIRO_TOTAL" ] && KIRO_ALL_DEAD=1
-if [ "$CODEX_DEAD" = 1 ] || [ "$KIRO_ALL_DEAD" = 1 ]; then
-  echo "::error::coverage collapsed to ≤1 vendor (codex dead=$CODEX_DEAD, kiro fully dead=$KIRO_ALL_DEAD) — forcing VERDICT: FAIL, no cross-vendor check remains for any lens" >&2
+if [ "${RESPONDED:-0}" -lt "${#LENS_FILES[@]}" ] || [ "${#MISSING[@]}" -gt 0 ]; then
+  echo "codex" >> "$WORK/degraded-models.txt"
+  echo "::error::codex did not complete every lens (missing: ${MISSING[*]:-see skipped cells}) — forcing VERDICT: FAIL" >&2
+  : > "$WORK/coverage-severe.flag"
+fi
+shopt -s nullglob
+TOOLUSE=("$SLOT"/*.tooluse)
+shopt -u nullglob
+if [ "${#TOOLUSE[@]}" -gt 0 ]; then
+  TOOLUSE_CELLS="$(for f in "${TOOLUSE[@]}"; do basename "$f" .tooluse; done | tr '\n' ' ' | sed 's/ *$//')"
+  echo "::error::codex ran a tool in [$TOOLUSE_CELLS] although tools are disabled — responses discarded, forcing VERDICT: FAIL" >&2
   : > "$WORK/coverage-severe.flag"
 fi
 
-shopt -s nullglob
-AGENTFAIL_MARKERS=("$SLOT"/*.agentfail)
-shopt -u nullglob
-if [ "${#AGENTFAIL_MARKERS[@]}" -gt 0 ]; then
-  AGENTFAIL_DETAIL="$(cat "${AGENTFAIL_MARKERS[@]}" | scrub_secrets | grep -v '^\s*$' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
-  AGENTFAIL_CELLS="$(for q in "${AGENTFAIL_MARKERS[@]}"; do basename "$q" .md.agentfail; done | tr '\n' ' ' | sed 's/ *$//')"
-  echo "::error::kiro-cli ignored --agent $KIRO_AGENT_NAME (fell back to the default agent WITH tools) in ${#AGENTFAIL_MARKERS[@]} cell(s) [$AGENTFAIL_CELLS]: $AGENTFAIL_DETAIL — responses discarded, forcing VERDICT: FAIL (no-tools contract)" >&2
-  printf '%s\n' "$AGENTFAIL_DETAIL" > "$WORK/kiro-agent-fallback.flag"
-  : > "$WORK/coverage-severe.flag"
-  rm -f "${AGENTFAIL_MARKERS[@]}"
-fi
-
-shopt -s nullglob
-QUOTA_MARKERS=("$SLOT"/*.quota)
-shopt -u nullglob
-if [ "${#QUOTA_MARKERS[@]}" -gt 0 ]; then
-  QUOTA_DETAIL="$(cat "${QUOTA_MARKERS[@]}" | scrub_secrets | grep -v '^\s*$' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
-  QUOTA_CELLS="$(for q in "${QUOTA_MARKERS[@]}"; do basename "$q" .md.quota; done | tr '\n' ' ' | sed 's/ *$//')"
-  echo "::error::Kiro monthly-limit response for KIRO_API_KEY — ${#QUOTA_MARKERS[@]} cell(s) [$QUOTA_CELLS]: $QUOTA_DETAIL — inspect authentication/profile/usage before retrying; see docs/runbooks/pr-review-panel.md" >&2
-  printf '%s\n' "$QUOTA_DETAIL" > "$WORK/kiro-quota.flag"
-  rm -f "${QUOTA_MARKERS[@]}"
-fi
-
+# Surface why a cell was skipped. Actions logs are public, so stderr passes the same
+# scrub_secrets() as the cell output.
 for e in "$SLOT"/*.err; do
   [ -s "$e" ] || continue
   b="$(basename "$e" .err)"
-  [ -s "$SLOT/$b.md" ] && continue   # skip successful responses
+  [ -s "$SLOT/$b.md" ] && continue
   echo "--- [$b] skipped; stderr (last 25 lines, scrubbed) ---" >&2
   tail -25 "$e" | scrub_secrets >&2
 done
+# Coverage is reported through the flag files above, not the exit status.
+exit 0

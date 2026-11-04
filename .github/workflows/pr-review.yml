@@ -1,15 +1,18 @@
 name: AI Code Review
 
 # Trusted base checkout; PR content is data, never executable workflow code.
-
+# Codex reviews each lens L2-L5 in parallel (scripts/pr-review/run-panel.sh), then the
+# tool-less Claude chair reviews the same diff, adjudicates and emits one fail-closed
+# VERDICT (scripts/pr-review/synthesize.sh). See docs/runbooks/pr-review-panel.md.
 
 on:
   pull_request_target:
     types: [opened, synchronize]
 
 env:
-  GH_TOKEN: ${{ github.token }}
-  ROLE_REVIEW: "1"
+  # Owner decision 2026-11-04: Codex lens panel -> Claude chair VERDICT.
+  # ROLE_REVIEW=1 re-enables the retained specialist protocol.
+  ROLE_REVIEW: "0"
   HEAD_SHA: ${{ github.event.pull_request.head.sha }}
   BASE_SHA: ${{ github.event.pull_request.base.sha }}
   GH_REPO: ${{ github.repository }}
@@ -19,6 +22,8 @@ jobs:
     name: AI Code Review
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: claude-code-usage-dashboard-claude-arm
+    # Normal upper bound: PANEL_TIMEOUT (300 s) x PANEL_RETRIES (2) + CHAIR_TIMEOUT
+    # (900 s) x 2 chair models = 40 minutes; 50 minutes only cuts genuine hangs.
     timeout-minutes: 50
     concurrency:
       group: pr-review-${{ github.event.pull_request.number }}
@@ -27,8 +32,8 @@ jobs:
       pull-requests: write
       contents: read
     env:
-      # Signing region must match the endpoint even with a global inference profile.
-      ANTHROPIC_MODEL: global.anthropic.claude-fable-5-1
+      # The chair model comes from synthesize.sh. Signing region must match the
+      # endpoint even with a global inference profile.
       CLAUDE_CODE_USE_BEDROCK: 1
       ANTHROPIC_BEDROCK_BASE_URL: https://bedrock-runtime.ap-northeast-2.amazonaws.com
       AWS_REGION: ap-northeast-2
@@ -48,68 +53,80 @@ jobs:
         run: |
           command -v claude >/dev/null 2>&1 || { echo "::warning::claude not found"; npm install -g @anthropic-ai/claude-code; }
           claude --version
-          command -v python3 >/dev/null 2>&1 || { echo "::error::python3 is required for review context and preflight"; exit 1; }
-          for c in codex kiro-cli; do
-            command -v "$c" >/dev/null 2>&1 || echo "::warning::$c not found on runner (image needs rebuild)"
-          done
+          command -v python3 >/dev/null 2>&1 || { echo "::error::python3 is required for review context"; exit 1; }
+          command -v codex >/dev/null 2>&1 || { echo "::error::codex not found on runner (image needs rebuild)"; exit 1; }
+          codex --version
+          if [ "$ROLE_REVIEW" = 1 ]; then
+            command -v kiro-cli >/dev/null 2>&1 || echo "::warning::kiro-cli not found on runner (image needs rebuild)"
+          fi
 
       - name: Get PR diff
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          gh pr diff "$PR_NUMBER" > /tmp/pr-diff-raw.txt
-          awk '
-            /^diff --git/ {
-              path = substr($3, 3)
-              skip = (path ~ /(^|\/)package-lock\.json$/) ||
-                     (path ~ /(^|\/)pnpm-lock\.yaml$/) ||
-                     (path ~ /(^|\/)yarn\.lock$/) ||
-                     (path ~ /(^|\/)node_modules\//) ||
-                     (path ~ /\.(pptx|png|jpg|jpeg|gif|pdf|vsix|zip)$/) ||
-                     (path ~ /(^|\/)(dist|out|build)\//) ||
-                     (path ~ /\.terraform\.lock\.hcl$/)
-            }
-            !skip
-          ' /tmp/pr-diff-raw.txt > /tmp/pr-diff.txt
-          echo "total_lines=$(wc -l < /tmp/pr-diff.txt)" >> "$GITHUB_ENV"
-
-      - name: Build lens prompts (L2-L5 — each self-contained, one lens only)
         run: |
           set -euo pipefail
-          MAX_LINES=3000
-          head -"$MAX_LINES" /tmp/pr-diff.txt > /tmp/pr-diff-truncated.txt
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid head SHA"; exit 1; }
+          MERGE_BASE_SHA=$(gh api "repos/${GH_REPO}/compare/${BASE_SHA}...${HEAD_SHA}" --jq '.merge_base_commit.sha')
+          [[ "$MERGE_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid merge base"; exit 1; }
+          # Fetch objects as data; PR-head code is never checked out or run.
+          git fetch --no-tags --depth=1 origin "$MERGE_BASE_SHA" "$HEAD_SHA"
+          # Diff the pinned commits, not the live PR. Exclusions mirror
+          # scripts/pr-review/role-input-scope.json.
+          git diff --no-color --no-ext-diff --no-textconv "$MERGE_BASE_SHA" "$HEAD_SHA" -- . \
+            ':(glob,exclude)**/package-lock.json' ':(glob,exclude)**/pnpm-lock.yaml' \
+            ':(glob,exclude)**/yarn.lock' ':(glob,exclude)**/.terraform.lock.hcl' \
+            ':(glob,exclude)**/node_modules/**' ':(glob,exclude)**/dist/**' \
+            ':(glob,exclude)**/out/**' ':(glob,exclude)**/build/**' \
+            ':(glob,exclude)**/*.pptx' ':(glob,exclude)**/*.png' \
+            ':(glob,exclude)**/*.jpg' ':(glob,exclude)**/*.jpeg' \
+            ':(glob,exclude)**/*.gif' ':(glob,exclude)**/*.pdf' \
+            ':(glob,exclude)**/*.vsix' ':(glob,exclude)**/*.zip' > /tmp/pr-diff.txt
+          echo "total_bytes=$(wc -c < /tmp/pr-diff.txt)" >> "$GITHUB_ENV"
+          echo "total_lines=$(wc -l < /tmp/pr-diff.txt)" >> "$GITHUB_ENV"
+
+      - name: Build lens prompts (L2-L5, one self-contained lens each)
+        run: |
+          set -euo pipefail
+          # Fail closed: an oversized diff is blocked, never reviewed as a prefix.
+          MAX_LINES=12000
+          MAX_BYTES=512000
+          if [ "${total_lines:-0}" -gt "$MAX_LINES" ] || [ "${total_bytes:-0}" -gt "$MAX_BYTES" ]; then
+            {
+              echo "## Review blocked"
+              echo ""
+              echo "The diff is ${total_lines} lines / ${total_bytes} bytes, over the ${MAX_LINES}-line / ${MAX_BYTES}-byte review limit. Split the PR; a partial review is never published as a pass."
+              echo ""
+              echo "VERDICT: FAIL"
+            } > /tmp/review.md
+            echo "diff_oversize=1" >> "$GITHUB_ENV"
+            echo "chair_failed=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
           rm -rf /tmp/pr-review/lenses
           mkdir -p /tmp/pr-review/lenses
           python3 scripts/pr-review/build-prompts.py panel \
-            /tmp/pr-diff-truncated.txt /tmp/pr-review/lenses --revision "$BASE_SHA"
+            /tmp/pr-diff.txt /tmp/pr-review/lenses --revision "$BASE_SHA"
 
-          if [ "${total_lines:-0}" -gt "$MAX_LINES" ]; then
-            for f in /tmp/pr-review/lenses/*.txt; do
-              echo "WARNING: diff was ${total_lines} lines; only the first ${MAX_LINES} were reviewed." >> "$f"
-            done
-            echo "panel_truncated=1" >> "$GITHUB_ENV"
-          fi
-
-      - name: Run specialists and conditionally adjudicate findings
+      - name: Run Codex lens panel and Claude chair
+        if: ${{ env.diff_oversize != '1' }}
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
-          PANEL_TIMEOUT: "600"
-          # Each Kiro startup attempt gets its own 90 s budget; only transient
-          # failures retry. Worst case stays inside the 50-minute job limit.
-          KIRO_PREFLIGHT_TIMEOUT: "90"
-          KIRO_PREFLIGHT_ATTEMPTS: "2"
+          PANEL_TIMEOUT: "300"
+          # Only the retained specialist path (ROLE_REVIEW=1) calls the GitHub API here.
+          GH_TOKEN: ${{ env.ROLE_REVIEW == '1' && github.token || '' }}
         run: |
           set -euo pipefail
-          mkdir -p /tmp/pr-review
-          bash scripts/pr-review/run-panel.sh /tmp/pr-diff-truncated.txt /tmp/pr-review/lenses /tmp/pr-review
-          bash scripts/pr-review/synthesize.sh /tmp/pr-diff-truncated.txt /tmp/pr-review \
+          DIFF_SHA="$(sha256sum /tmp/pr-diff.txt | cut -d' ' -f1)"
+          bash scripts/pr-review/run-panel.sh /tmp/pr-diff.txt /tmp/pr-review/lenses /tmp/pr-review
+          # The chair must adjudicate the exact diff the panel reviewed.
+          [ "$(sha256sum /tmp/pr-diff.txt | cut -d' ' -f1)" = "$DIFF_SHA" ] || { echo "::error::diff changed after panel review"; exit 1; }
+          bash scripts/pr-review/synthesize.sh /tmp/pr-diff.txt /tmp/pr-review \
             "$PR_NUMBER" "$PR_TITLE" /tmp/review.md
-          echo "panel_responded=$(tr '\n' ' ' < /tmp/pr-review/responded.txt 2>/dev/null)" >> "$GITHUB_ENV"
+          echo "panel_responded=$(paste -sd ' ' /tmp/pr-review/responded.txt 2>/dev/null)" >> "$GITHUB_ENV"
 
       - name: Preserve specialist scope and execution evidence
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.ROLE_REVIEW == '1' }}
         uses: actions/upload-artifact@v4
         with:
           name: specialist-review-${{ github.event.pull_request.head.sha }}
@@ -157,11 +174,8 @@ jobs:
           sed '$ { /^VERDICT:/d }' /tmp/review.md > /tmp/review-clean.md
           {
             echo "$MARKER"
-            echo "## AI Code Review — specialists"
-            echo "_Synthesis: ${chair_used:-pending}_"
-            echo ""
-            echo "_Panel: Claude(chair) · ${panel_responded:-solo}_"
-            [ "${panel_truncated:-0}" = "1" ] && echo "_Warning: diff truncated to first 3000 lines — review is partial._"
+            echo "## AI Code Review — Codex + Claude"
+            echo "_Panel: Codex ${panel_model:-not run} (${panel_responded:-none}) · Chair: ${chair_used:-pending}_"
             echo ""
             echo "$STATUS_BADGE"
             echo ""
