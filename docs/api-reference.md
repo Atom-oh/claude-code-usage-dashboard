@@ -334,6 +334,7 @@ applies a filter only when the query supplies its column expression.
 | Plugin inventory | Range only; no group/user/model/project filtering. |
 | Subagent fanout, skill activations, compaction, refusals, exhausted retries, permission wait, interaction breakdown | Honor group/user; ignore model/project. TTFT separately supports row-level model filtering. |
 | Activity density, tool outcomes, permission occupancy | Honor group/user and session-level model filtering; ignore project. Unknown channels are excluded by default. |
+| Session turns | Honor group/user. A model filter selects sessions that used a matching model (rollup lookback semi-join) and keeps each selected session's whole cost and turn count. Ignore project. Unknown channels are excluded by default. |
 | Mixed metric queries | Model-bearing rows match directly; model-less session/commit/PR/LOC/decision/activity rows use a matching-session semi-join when `modelMixed` is configured. |
 | Many log queries | `modelViaSession` accepts every matching session's events if that session has a matching model in the rollup lookback. This is not event-level model attribution. |
 | Reported-vs-computed and entrypoints | Match the model on each `api_request` log row. |
@@ -371,6 +372,7 @@ query failures still use the normal error path.
 | `/api/overview/tokens-timeseries` | **B**, per `t, group`: `tokens`, `input_tokens`, `output_tokens`. |
 | `/api/overview/cache-efficiency` | Per `group`: `cache_read`, `input_side`, `cache_read_ratio`, `uncached_input`, `cache_write`, `output_tokens`. Input side includes uncached input, cache read and cache creation. |
 | `/api/overview/model-distribution` | Per `group, model`: `tokens`, `input_tokens`, `output_tokens`. |
+| `/api/overview/session-turns` | **Object** `{summary, users, sessions}`, Claude Code only. `summary`: `sessions`, `sessions_with_turns`, `turns`, `median_turns_per_session`, `p90_turns_per_session`, `known_cost`, `cost_partial`, `cost_per_turn`, `model_calls_per_turn`, `sessions_without_turns`, `sessions_cost_unavailable`. `users` (top 20 by known cost): `user`, `sessions`, `turns`, `known_cost`, `cost_partial`, `cost_per_turn`, `cost_per_session`. `sessions` (top 20 by known cost, unavailable last): `session`, `user`, `group`, `started` (first in-window prompt/model-call event, ISO UTC, or null), `turns`, `model_calls`, `known_cost`, `cost_partial`, `cost_per_turn`. Unavailable costs and ratios are null, never 0. Definitions: [session turns](metrics.md#session-turns). |
 
 ### Productivity
 

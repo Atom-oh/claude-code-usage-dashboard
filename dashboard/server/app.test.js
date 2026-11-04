@@ -114,3 +114,15 @@ test("/api/config가 schema.projectColumns를 노출한다 (프로브 미확정�
   assert.ok("projectColumns" in b.schema, "schema.projectColumns 키가 있어야 프론트가 게이팅할 수 있다");
   assert.equal(b.schema.projectColumns, null);
 });
+
+test("/api/overview/session-turns keeps the shared route() 400/500 contract", async () => {
+  const bad = await fetch(`${base}/api/overview/session-turns?from=garbage`);
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error, "invalid range");
+  const r = await fetch(`${base}/api/overview/session-turns`);
+  assert.equal(r.status, 500);
+  assert.equal(r.headers.get("cache-control"), "no-store");
+  const text = await r.text();
+  assert.ok(!/SELECT|ECONNREFUSED|clickhouse/i.test(text), `leaked: ${text}`);
+  assert.deepEqual(Object.keys(JSON.parse(text)), ["error", "id"]);
+});
