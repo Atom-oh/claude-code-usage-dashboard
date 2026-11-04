@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -43,12 +44,20 @@ function fixture(run) {
     writeFileSync(path.join(root, "dashboard/server/.env"), "YOUR_SYNTHETIC_SECRET=never-ship\n");
     const events = path.join(directory, "events.jsonl");
     writeFileSync(path.join(bin, "docker"), `#!/usr/bin/env python3
-import sys,json,pathlib,subprocess,os
+import sys,json,pathlib,subprocess,os,hashlib,io,tarfile
 args=sys.argv[1:]
 with open(os.environ['FIXTURE_EVENTS'],'a') as log: log.write(json.dumps(args)+'\\n')
 revision=subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()
 fault=os.environ.get('FIXTURE_FAULT','')
 config_digest='sha256:'+'c'*64
+build_digest='sha256:'+'b'*64
+containerd=fault.startswith('containerd')
+if containerd:
+  # The containerd image store reports the loaded manifest; its saved blobs carry the config.
+  config_blob=b'{"architecture":"arm64","os":"linux"}'
+  config_digest='sha256:'+hashlib.sha256(config_blob).hexdigest()
+  manifest_blob=json.dumps({'config':{'digest':config_digest}}).encode()
+  build_digest='sha256:'+hashlib.sha256(manifest_blob).hexdigest()
 if args[:2]==['buildx','build']:
   context=pathlib.Path(args[-1])
   assert (context/'server/index.js').exists()
@@ -56,14 +65,16 @@ if args[:2]==['buildx','build']:
   assert 'APP_REVISION='+revision in args
   assert 'linux/arm64' in args and '--load' in args and '--push' not in args
   metadata=pathlib.Path(args[args.index('--metadata-file')+1])
-  metadata.write_text(json.dumps({'containerimage.digest':'sha256:'+'b'*64,'containerimage.config.digest':config_digest}))
+  reported={'containerimage.digest':build_digest}
+  if not containerd: reported['containerimage.config.digest']=config_digest
+  metadata.write_text(json.dumps(reported))
 elif args[:2]==['image','inspect']:
   env=[] if fault=='revision' else ['APP_REVISION='+revision]
-  image_id={'config_digest':'sha256:'+'e'*64,'containerd_store':'sha256:'+'b'*64}.get(fault,config_digest)
+  image_id='sha256:'+'e'*64 if fault=='config_digest' else build_digest if containerd else config_digest
   print(json.dumps([{'Architecture':'arm64','Os':'linux','Id':image_id,'Config':{'User':'root' if fault=='root' else 'node','Labels':{'org.opencontainers.image.revision':revision},'Env':env}}]))
 elif args[0]=='create':
   assert '--network' in args and 'none' in args and '--read-only' in args
-  assert ('sha256:'+'b'*64 if fault=='containerd_store' else config_digest) in args
+  assert (build_digest if containerd else config_digest) in args
   assert 'expectedRevision' in args[-1] and revision in args[-1]
   print('a'*64)
 elif args[:2]==['start','--attach']:
@@ -76,8 +87,15 @@ elif args[:2]==['container','inspect']:
   assert args[-1]=='a'*64
   print('permission denied' if fault=='cleanup' else 'Error: No such container: '+'a'*64,file=sys.stderr)
   sys.exit(1)
+elif args[0]=='save':
+  assert containerd
+  out=io.BytesIO()
+  with tarfile.open(fileobj=out,mode='w') as archive:
+    for digest,blob in ((build_digest,manifest_blob),(config_digest,b'tampered' if fault=='containerd_tampered' else config_blob)):
+      info=tarfile.TarInfo('blobs/sha256/'+digest[7:]); info.size=len(blob); archive.addfile(info,io.BytesIO(blob))
+  sys.stdout.buffer.write(out.getvalue())
 elif args[0]=='push':
-  assert fault not in ['runtime','cleanup','root','revision','config_digest']
+  assert fault not in ['runtime','cleanup','root','revision','config_digest','containerd_tampered']
 elif args[:3]==['buildx','imagetools','inspect']:
   if '--raw' in args:
     print(json.dumps({'config':{'digest':'sha256:'+'e'*64 if fault=='registry_config' else config_digest}}))
@@ -186,10 +204,20 @@ test("publishing refuses an unverified runtime, identity, config or cleanup befo
 
 test("a containerd image store binds its loaded manifest to the build and records the config", () => {
   fixture(({ record, invoke, calls }) => {
-    const valid = invoke(["--push"], "containerd_store");
+    const config = "sha256:" + createHash("sha256").update('{"architecture":"arm64","os":"linux"}').digest("hex");
+    const valid = invoke(["--push", "--expected-image-id", config], "containerd_store");
     assert.equal(valid.status, 0, valid.stderr);
     assert.ok(calls().some((args) => args[0] === "push"));
-    assert.equal(JSON.parse(readFileSync(record, "utf8")).localImageId, "sha256:" + "c".repeat(64));
+    const metadata = JSON.parse(readFileSync(record, "utf8"));
+    assert.equal(metadata.localImageId, config);
+    assert.notEqual(metadata.localImageId, metadata.localBuildDigest);
+  });
+  fixture(({ record, invoke, calls }) => {
+    const invalid = invoke(["--push", "--expected-image-id", "sha256:" + "c".repeat(64)], "containerd_tampered");
+    assert.notEqual(invalid.status, 0);
+    assert.match(invalid.stderr, /does not match its digest/);
+    assert.ok(!calls().some((args) => args[0] === "push"));
+    assert.throws(() => readFileSync(record), { code: "ENOENT" });
   });
 });
 

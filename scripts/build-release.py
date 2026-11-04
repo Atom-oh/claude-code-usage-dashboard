@@ -22,6 +22,34 @@ def valid_digest(value):
     return isinstance(value, str) and re.fullmatch(r"sha256:[a-f0-9]{64}", value)
 
 
+def stored_config_digest(image, manifest_digest, directory, cwd):
+    """Read a containerd-store image's ARM64 config digest from its content-addressed archive."""
+    archive_path = Path(directory) / "loaded-image.tar"
+    with archive_path.open("xb") as output:
+        subprocess.run(["docker", "save", image], cwd=cwd, stdout=output, check=True, timeout=600)
+    with tarfile.open(archive_path) as archive:
+        def blob(digest):
+            if not valid_digest(digest):
+                raise RuntimeError("saved image references an invalid digest")
+            member = archive.extractfile("blobs/sha256/" + digest[7:])
+            data = member.read() if member else b""
+            if hashlib.sha256(data).hexdigest() != digest[7:]:
+                raise RuntimeError("saved image blob does not match its digest")
+            return data
+        manifest = json.loads(blob(manifest_digest))
+        if "manifests" in manifest:
+            children = [child for child in manifest["manifests"]
+                        if child.get("platform", {}).get("os") == "linux"
+                        and child.get("platform", {}).get("architecture") == "arm64"]
+            if len(children) != 1:
+                raise RuntimeError("saved image index lacks exactly one Linux ARM64 manifest")
+            manifest = json.loads(blob(children[0].get("digest")))
+        config_digest = manifest.get("config", {}).get("digest")
+        blob(config_digest)
+    archive_path.unlink()
+    return config_digest
+
+
 def inspect_runtime(image_id, probe, cwd):
     container = command([
         "docker", "create", "--network", "none", "--read-only", "--cap-drop", "ALL",
@@ -188,12 +216,17 @@ def main():
         config = image.get("Config", {})
         # The recorded identity is the build's config digest. The classic image store reports
         # it as Id; the containerd image store (for example the CI runner's dind) reports the
-        # loaded manifest, which must then be this build's reported immutable digest.
+        # loaded manifest, which must be this build's digest, and its saved content then
+        # supplies the config digest (buildx may not report one for that store).
         image_id = build_metadata.get("containerimage.config.digest")
         local_ref = image.get("Id")
+        if local_ref == record["digest"]:
+            stored = stored_config_digest(args.image, local_ref, directory, root)
+            if image_id is not None and image_id != stored:
+                raise RuntimeError("loaded image config differs from the build config digest")
+            image_id = stored
         if not valid_digest(image_id) or local_ref not in (image_id, record["digest"]):
-            raise RuntimeError(f"loaded image {local_ref} differs from the build config digest "
-                               f"{image_id} and manifest {record['digest']}")
+            raise RuntimeError("loaded image differs from the build config digest")
         if args.expected_image_id and image_id != args.expected_image_id:
             raise RuntimeError("built image differs from the approved image ID")
         if image.get("Os") != "linux" or image.get("Architecture") != "arm64" or \
