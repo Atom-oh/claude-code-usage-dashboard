@@ -69,15 +69,16 @@ Publication records additionally preserve
 the registry digest and ARM64 manifest digest. A local index digest is not proof of a
 published child manifest or an Inspector scan result.
 
-[CI](../../.github/workflows/ci.yml) builds and runs this inspection on the repository's
-self-hosted ARM64 runner (`claude-code-usage-dashboard-arm`: ephemeral ARC pods with
-Docker-in-Docker, no AWS credentials or secrets) for same-repository pushes and pull requests,
-and on the GitHub-hosted ARM64 runner for fork pull requests, without registry publication. Node compiles with all available cores;
-an `actions/cache` buildx layer cache keyed on `dashboard/Dockerfile` skips that compile unless
-the Node stage changes, and the cache never replaces the archived-source build or any digest
-check. Pull requests build only when a runtime-image input changes (Dockerfile, package
-manifests/lockfiles, `scripts/build-release.py`, the CI workflow or this page); every `main`
-push builds. The runtime job has a 180-minute deadline, with all existing inspections retained.
+[CI](../../.github/workflows/ci.yml) builds and runs this inspection without registry
+publication: pushes on the repository's self-hosted ARM64 runner
+(`claude-code-usage-dashboard-arm`: ephemeral ARC pods with Docker-in-Docker, no AWS
+credentials or secrets), pull requests on the GitHub-hosted ARM64 runner so PR code never runs in
+the shared cluster. Node compiles with up to eight jobs; an `actions/cache` buildx layer cache
+keyed on `dashboard/Dockerfile` skips that compile unless the Node stage changes, and only a
+`type=local` cache is accepted, never replacing the archived-source build or any digest check.
+Pull requests build whenever an archived build input changes (anything under `dashboard/`,
+`LICENSE`, `scripts/build-release.py`, the CI workflow or this page); every push builds.
+The runtime job has a 180-minute deadline, with all existing inspections retained.
 Native release acceptance still requires latest-HEAD
 review, actual image/edge/auth checks and the other [product acceptance](../product-readiness.md)
 rows. [Enhanced ECR scanning](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-enhanced.html)

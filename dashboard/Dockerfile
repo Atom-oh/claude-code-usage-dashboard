@@ -12,7 +12,8 @@ RUN apk add --no-cache python3 make g++ linux-headers 'openssl-dev=3.5.9-r0' \
     && echo '4f5379796280cdaeb0c2f358fd04b6a16cc4fb7dfa83b5a8c91a9d963b435231  node.tar.xz' | sha256sum -c - \
     && tar -xJf node.tar.xz --strip-components=1 \
     && ./configure --shared-openssl --without-npm \
-    && make -j"$(nproc)" \
+    && jobs="$(nproc)" && if [ "$jobs" -gt 8 ]; then jobs=8; fi \
+    && make -j"$jobs" \
     && strip out/Release/node \
     && ./out/Release/node -e 'if (process.versions.node !== "24.22.1" || process.versions.openssl !== "3.5.9" || process.config.variables.node_shared_openssl !== true) process.exit(1)' \
     && mkdir /node-runtime \

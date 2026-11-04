@@ -153,10 +153,13 @@ def main():
                       "--build-arg", "APP_REVISION=" + revision, "--label",
                       "org.opencontainers.image.revision=" + revision,
                       "--metadata-file", str(metadata), "-t", args.image]
-        if args.cache_from:
-            invocation += ["--cache-from", args.cache_from]
-        if args.cache_to:
-            invocation += ["--cache-to", args.cache_to]
+        # Only a local directory cache: a registry cache would make remote layers a trust input.
+        for flag, value in (("--cache-from", args.cache_from), ("--cache-to", args.cache_to)):
+            if value is None:
+                continue
+            if not value.startswith("type=local,") or any(c in value for c in "\n\r\0"):
+                raise RuntimeError(flag + " must be a type=local buildx cache")
+            invocation += [flag, value]
         invocation += ["--load", str(context_root / "dashboard")]
         subprocess.run(invocation, cwd=root, check=True)
         build_metadata = json.loads(metadata.read_text())

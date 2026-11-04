@@ -113,13 +113,14 @@ jobs:
         run: node scripts/test-auth-browser.mjs
 
   runtime:
-    # Same-repository pushes and PRs use the self-hosted ARM runner (ephemeral ARC pod, dind, no
-    # AWS credentials or secrets); fork PRs - this repository is public - stay on the GitHub-
-    # hosted ARM runner so outside code never reaches the shared cluster or its privileged dind.
-    # Never the AI review runner. Node compiles from source with all cores; the layer cache
-    # keyed on the Dockerfile skips that compile unless the Node stage changes. PRs build only
-    # when a file that shapes the runtime image changed; main pushes always build.
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'claude-code-usage-dashboard-arm' || 'ubuntu-24.04-arm' }}
+    # Pushes use the self-hosted ARM runner (ephemeral ARC pod, dind, no AWS credentials or
+    # secrets); pull requests - this repository is public - run on the GitHub-hosted ARM runner,
+    # so PR code never executes in the shared cluster's privileged dind. Never the AI review
+    # runner. Node compiles from source (at most 8 jobs); the layer cache keyed on the
+    # Dockerfile skips that compile unless the Node stage changes, on either runner. PRs build
+    # whenever an archived build input changes (all of dashboard/, LICENSE, the release script,
+    # this workflow or the runtime page); pushes always build.
+    runs-on: ${{ github.event_name == 'push' && 'claude-code-usage-dashboard-arm' || 'ubuntu-24.04-arm' }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -133,11 +134,11 @@ jobs:
         run: |
           if [ "$EVENT" != pull_request ]; then echo "build=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           changed="$(git diff --name-only "$BASE_SHA...HEAD")"
-          if printf '%s\n' "$changed" | grep -qE '^(dashboard/Dockerfile|dashboard/\.dockerignore|dashboard/(server|web|collector)/package(-lock)?\.json|scripts/build-release\.py|\.github/workflows/ci\.yml|docs/reference/runtime-distribution\.md)$'; then
+          if printf '%s\n' "$changed" | grep -qE '^(dashboard/|LICENSE$|scripts/build-release\.py$|\.github/workflows/ci\.yml$|docs/reference/runtime-distribution\.md$)'; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
             echo "build=false" >> "$GITHUB_OUTPUT"
-            echo "No runtime-image input changed; the build runs on the next main push."
+            echo "No archived build input changed; the build runs on the next main push."
           fi
       - uses: docker/setup-buildx-action@v3
         if: steps.scope.outputs.build == 'true'
