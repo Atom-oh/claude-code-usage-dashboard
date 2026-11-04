@@ -3,6 +3,7 @@ import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "./SegmentedControl.jsx";
 import { RefreshControl } from "./RefreshControl.jsx";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
+import { useTeams } from "../TeamsContext.jsx";
 
 const GROUP_OPTIONS = [
   { value: "", label: "전체" },
@@ -16,7 +17,10 @@ const GROUP_OPTIONS = [
 // 쿼리에서만 드롭되고(전체 응답의 ~11%), 사용자가 명시적으로 고를 그룹 옵션이 아니라 "필터
 // 없음"과 겹치는 상태라 탭으로 넣지 않는다(queries.js filterCond 정책표 참고).
 export function FilterBar() {
-  const { group, setGroup, userInput, setUser, modelInput, setModel, projectInput, setProject, backendInput, setBackend } = useFilters();
+  const { group, setGroup, userInput, setUser, modelInput, setModel, projectInput, setProject, team, setTeam, backendInput, setBackend } = useFilters();
+  // Options are the teams observed in the range. With none the control is hidden, unless a linked
+  // team is already applied: it must stay visible so it can be cleared.
+  const teamOptions = [...new Set([...useTeams().options, ...(team ? [team] : [])])];
   const { groupMode, schema } = useConfig();
   const { client, setClient, common, setDetail, enabledClients } = useClient();
   return (
@@ -77,6 +81,18 @@ export function FilterBar() {
         placeholder="모델 검색"
         className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
       />
+      {teamOptions.length > 0 && (
+        <select aria-label="팀" value={team} onChange={(e) => setTeam(e.target.value)}
+          className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40">
+          <option value="">모든 팀</option>
+          {teamOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+        </select>
+      )}
+      {team && (
+        <span className="text-[11px] text-warning-text">
+          팀은 클라이언트가 보낸 속성이며, 로그(90일 보관)에서 팀이 확인된 세션만 포함합니다. 도입 지표·사용자 상세 차트·Codex 상세 진단에는 적용되지 않습니다.
+        </span>
+      )}
       {common && (
         <select
           value={backendInput}

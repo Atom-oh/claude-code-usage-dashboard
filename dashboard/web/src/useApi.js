@@ -26,13 +26,19 @@ const utcMonthStart = (ms) => {
   return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1));
 };
 const CLEARED = { shownIdentity: null, shownPeriod: null };
+// The server rejects team on these grains (index.js `team: false`): adoption windows reach before the
+// session lookback and Codex diagnostics are not team-scoped. FilterBar discloses them; the drawer's
+// drilldowns use apiGet without global filters. unfiltered lookups send no filters at all.
+const TEAMLESS = new Set(["/api/adoption/levels", "/api/adoption/timeseries", "/api/codex/insights"]);
 
 // hold: linkedRange 패널처럼 부모 응답의 경계를 따라가는 훅이 부모의 기간 변경 응답을 기다리는 동안
 // true로 둔다. 그동안 요청도 ref·state 갱신도 하지 않고 지금 보이는 것을 그대로 둔다(떠 있는 요청은
 // 정상적으로 끝난다). hold가 풀리면 보류 중 일어난 기간 변경을 기간 변경으로 판정하고 새 경계로 요청한다.
-export function useApi(path, extraParams = {}, enabled = true, { linkedRange = false, hold = false } = {}) {
+export function useApi(path, extraParams = {}, enabled = true, { linkedRange = false, hold = false, unfiltered = false } = {}) {
   const { days, intervalHours, custom, month } = useRange();
-  const { group, user, model, project, backend } = useFilters();
+  const filters = useFilters();
+  const { group, user, model, project, backend } = unfiltered ? {} : filters;
+  const team = unfiltered || TEAMLESS.has(path) ? "" : filters.team;
   const clientOverview = path === "/api/clients/overview" || path === "/api/clients/claude-effort"
     || path === "/api/codex/insights";
   // 이중 안전 — 파싱 단계(urlState.js parseUrlState)에서 이미 걸러지므로 여기서 걸리는 값은
@@ -68,7 +74,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
   // 커스텀 구간·이번 달의 월초·extraParams의 기간 키). 양자화된 창이 움직이는 것은 둘 다 바꾸지
   // 않는다 — 같은 뷰의 새로고침이다. 두 키는 렌더에서 계산한다: stale이 기간이 바뀐 바로 그 렌더부터
   // true여야 하기 때문이다(아래). 월초는 effect의 from과 같은 양자화 시계로 계산한다.
-  const identityKey = JSON.stringify([path, group, user, model, project, backend, identityExtraJson, linkedRange]);
+  const identityKey = JSON.stringify([path, group, user, model, project, backend, team, identityExtraJson, linkedRange]);
   const periodKey = JSON.stringify([days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(),
     month ? utcMonthStart(quantizedNow()).toISOString() : null, periodExtraJson]);
   // stale: 같은 뷰의 다른 기간 데이터가 새 기간의 응답을 기다리며 화면에 남아 있다. state로 미루지
@@ -111,7 +117,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
     // quantum만 앞으로 밀어 빈 창을 요청한다.
     if (to.getTime() <= from.getTime()) to = new Date(from.getTime() + QUANT_MS);
 
-    const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, project, backend, intervalHours, extraJson]);
+    const paramsKey = JSON.stringify([path, from.toISOString(), to.toISOString(), group, user, model, project, backend, team, intervalHours, extraJson]);
     const paramsChanged = paramsKey !== paramsKeyRef.current;
     const identityChanged = identityKey !== identityKeyRef.current;
     const selectionChanged = identityChanged || periodKey !== periodKeyRef.current;
@@ -152,6 +158,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
         user: user || undefined,
         model: model || undefined,
         project: projectParam || undefined,
+        team: team || undefined,
         intervalHours, // 시계열이 아닌 엔드포인트는 그냥 무시됨. extraParams가 뒤에 와서 override 가능.
         ...extraParams,
         // Client overview buckets follow the selected range like the other trend pages; Codex
@@ -197,7 +204,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
       });
     // 이 cleanup에는 abort가 없다 — 틱만 바뀐 리런이 파라미터 로드를 취소하면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, extraJson, identityExtraJson, periodExtraJson, linkedRange, tick, enabled, hold, beginRequest, reportFailure]);
+  }, [path, days, month, intervalHours, custom?.from.getTime(), custom?.to.getTime(), group, user, model, project, backend, team, extraJson, identityExtraJson, periodExtraJson, linkedRange, tick, enabled, hold, beginRequest, reportFailure]);
 
   // 언마운트 시에만 abort한다.
   useEffect(() => () => {

@@ -159,7 +159,7 @@ function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
 }
 
 export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t", bucketHours, bounds,
-  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent, dimension = "model" }) {
+  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent, dimension = "model", userSuffix }) {
   const noun = dimension === "user" ? "사용자" : "모델";
   const c = useChartColors();
   // One bucket-size fallback (the global interval, as useDragZoom uses) for zoom, ticks and grid.
@@ -181,8 +181,8 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const pinnedKey = JSON.stringify(pinned ?? []);
   const fromMs = boundMs(bounds?.from), toMs = boundMs(bounds?.to);
   const frame = useMemo(() => (Array.isArray(cells)
-    ? buildModelCostFrame(cells, { top, pinned: JSON.parse(pinnedKey), bounds: { from: fromMs, to: toMs }, bucketHours: hours, dimension })
-    : null), [cells, top, pinnedKey, fromMs, toMs, hours, dimension]);
+    ? buildModelCostFrame(cells, { top, pinned: JSON.parse(pinnedKey), bounds: { from: fromMs, to: toMs }, bucketHours: hours, dimension, userSuffix })
+    : null), [cells, top, pinnedKey, fromMs, toMs, hours, dimension, userSuffix]);
 
   const chip = basis ? <span className="rounded-full border border-ink-200 px-2 py-0.5 text-[11px] text-ink-600"
     style={accent ? { borderColor: accent } : undefined}>{basis}</span> : null;

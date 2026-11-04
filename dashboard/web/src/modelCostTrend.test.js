@@ -846,3 +846,20 @@ test("a folded user active on two channels is one 기타 row; models keep one ro
   expect(frame.others.count).toBe(1);
   expect(models.othersBreakdown.map((e) => [e.model, e.channel])).toEqual([["b", "e"], ["b", "x"]]);
 });
+
+test("a user label suffix extends series labels, never keys or breakdown identities", async () => {
+  const { setPiiMask } = await import("./fmt.js");
+  setPiiMask(true);
+  const cells = [c(D1, "kim@example.com", null, 5), c(D1, "lee@example.com", null, 1), c(D1, "", null, 0.5),
+    c(D2, "park@example.com", null, null, u("report_missing"))];
+  const userSuffix = (user) => (user === "kim@example.com" ? " · fsi" : "");
+  const options = { top: 2, bounds: BOUNDS, bucketHours: 24 };
+  const frame = buildModelCostFrame(cells, { ...options, dimension: "user", userSuffix });
+  expect(frame.series.map((s) => [s.model, s.label])).toEqual([
+    ["kim@example.com", "ki******@example.com · fsi"],
+    ["lee@example.com", "le******@example.com"],
+  ]);
+  expect(frame.othersBreakdown.map((e) => e.label)).toEqual(["(사용자 미상)", "pa******@example.com"]);
+  expect(buildModelCostFrame(cells, { ...options, userSuffix }).series.map((s) => s.label))
+    .toEqual(buildModelCostFrame(cells, options).series.map((s) => s.label));
+});
