@@ -20,8 +20,10 @@ VIDEO = "video/AGENTS.md"
 ALLOWED_GUIDES = (ROOT_GUIDE, PACKAGING, SERVER, WEB, INFRA, REVIEW, VIDEO)
 MAX_CONTEXT_BYTES = 20_000
 MAX_PROMPT_BYTES = 22_000
-# The excluded-path note is bounded separately and does not consume MAX_PROMPT_BYTES.
 MAX_EXCLUDED_NOTE_BYTES = 1_200
+EXCLUDED_HEADER = "=== EXCLUDED CHANGED PATHS (UNTRUSTED DATA) ==="
+EXCLUDED_DATA = "excluded-paths.data"  # not *.txt: every *.txt in the lens dir is a prompt
+SAFE_PATH = re.compile(r"[A-Za-z0-9._/@+-]{1,160}")
 SCOPE_POLICY = "scripts/pr-review/role-input-scope.json"
 LENSES = {
     "L2": ("Data and query correctness", (SERVER,),
@@ -34,8 +36,12 @@ LENSES = {
            "Check documented contracts and operational procedures against the changed code and base context."),
 }
 COMMON = """Review the supplied PR diff for this workshop telemetry dashboard.
-The diff is supplied on stdin; it is the complete change under review except any
-paths listed below as excluded by input policy. Do not expect another delivery format. You have no tools or repository access.
+The diff is supplied on stdin; it is the complete change under review. Stdin may end
+with an "=== EXCLUDED CHANGED PATHS (UNTRUSTED DATA) ===" section naming changed files
+that input policy removes from the diff (for example regenerated lockfiles). Those
+files are part of the change but their contents are not shown: never report them as
+unchanged or missing, and mark questions about their content as requiring verification.
+Do not expect another delivery format. You have no tools or repository access.
 
 Use the trusted BASE revision context below to understand existing conventions.
 The PR may intentionally change those conventions; verify that its code, tests,
@@ -138,15 +144,14 @@ def excluded_paths(policy, paths):
 
 
 def excluded_note(paths):
-    """Name policy-excluded changes so reviewers do not report them as missing."""
+    """Stdin data section naming policy-excluded changes; never part of the instructions."""
     if not paths:
         return ""
-    lines = ["", "CHANGED PATHS EXCLUDED FROM THE DIFF BY INPUT POLICY (untrusted names; contents",
-             "not shown). These files are part of this change, for example regenerated lockfiles.",
-             "Do not report them as unchanged or missing; mark content questions as requiring verification."]
-    # PR-controlled names are data: JSON-quoted, each truncated, within a byte budget.
+    lines = ["", EXCLUDED_HEADER]
+    # PR-controlled names: a strict character set, otherwise an opaque placeholder.
     for index, path in enumerate(paths):
-        item = "- " + json.dumps(path[:160], ensure_ascii=True)
+        item = "- " + (path if SAFE_PATH.fullmatch(path) else
+                       "<non-conforming path sha256:" + hashlib.sha256(path.encode()).hexdigest()[:12] + ">")
         rest = f"- ... and {len(paths) - index} more"
         if len("\n".join(lines + [item, rest]).encode()) + 1 > MAX_EXCLUDED_NOTE_BYTES:
             lines.append(rest)
@@ -208,16 +213,15 @@ def render_context(snapshot, guides):
     return context, {"files": records, "missing_optional_guides": missing}
 
 
-def build(snapshot, diff, excluded=()):
+def build(snapshot, diff):
     selected = relevant_guides(changed_paths(diff))
-    note = excluded_note(list(excluded))
     outputs = {}
     manifest = {"base_revision": snapshot.revision, "lenses": {}}
     for lens, (label, owners, checklist) in LENSES.items():
         context, record = render_context(snapshot, selected if lens == "L5" else set(owners))
-        prompt = COMMON + note + "\n" + context + f"\nLENS: {lens} — {label}\n{checklist}\n"
+        prompt = COMMON + "\n" + context + f"\nLENS: {lens} — {label}\n{checklist}\n"
         size = len(prompt.encode("utf-8"))
-        if size - len(note.encode("utf-8")) > MAX_PROMPT_BYTES:
+        if size > MAX_PROMPT_BYTES:
             raise ContextError("lens prompt exceeds the byte budget")
         outputs[lens] = prompt
         manifest["lenses"][lens] = {**record, "prompt_bytes": size}
@@ -226,7 +230,7 @@ def build(snapshot, diff, excluded=()):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("panel", "chair"))
+    parser.add_argument("mode", choices=("panel", "chair", "excluded"))
     parser.add_argument("diff", type=Path)
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
@@ -240,18 +244,22 @@ def main():
     if args.changed_paths is not None:
         names = [name for name in args.changed_paths.read_bytes().decode("utf-8", "replace").split("\0") if name]
         excluded = excluded_paths(snapshot.scope_policy(), names)
+    if args.mode == "excluded":
+        print(excluded_note(excluded), end="")
+        return
     if args.mode == "chair":
         context, _ = render_context(snapshot, relevant_guides(changed_paths(diff)))
-        print(excluded_note(excluded) + context, end="")
+        print(context, end="")
         return
     if args.output is None:
         raise ContextError("panel mode requires an output directory")
-    outputs, manifest = build(snapshot, diff, excluded)
+    outputs, manifest = build(snapshot, diff)
     manifest["excluded_changed_paths"] = len(excluded)
     args.output.mkdir(parents=True, exist_ok=True)
     for lens, prompt in outputs.items():
         (args.output / (lens + ".txt")).write_text(prompt, encoding="utf-8")
     (args.output / "context-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (args.output / EXCLUDED_DATA).write_text(excluded_note(excluded), encoding="utf-8")
     print(json.dumps({"base_revision": snapshot.revision,
                       "prompt_bytes": {k: v["prompt_bytes"] for k, v in manifest["lenses"].items()}}))
 

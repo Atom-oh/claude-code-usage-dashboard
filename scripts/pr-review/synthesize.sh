@@ -33,13 +33,20 @@ done < <(printf '%s\n' "$SLOT"/*.md | LC_ALL=C sort)
 rm -f "$SCRUB_TMP"
 
 # Fixed instructions travel in argv; the variable, large diff and panel text go on stdin.
-BASE_CONTEXT="$(python3 "$DIR/build-prompts.py" chair "$DIFF" --revision "${BASE_SHA:-HEAD}" \
-  ${CHANGED_PATHS:+--changed-paths "$CHANGED_PATHS"})"
+BASE_CONTEXT="$(python3 "$DIR/build-prompts.py" chair "$DIFF" --revision "${BASE_SHA:-HEAD}")"
+# PR-controlled excluded names stay in the stdin data, never in these instructions.
+EXCLUDED_SECTION=""
+if [ -n "${CHANGED_PATHS:-}" ]; then
+  EXCLUDED_SECTION="$(python3 "$DIR/build-prompts.py" excluded "$DIFF" --revision "${BASE_SHA:-HEAD}" \
+    --changed-paths "$CHANGED_PATHS")" || exit 1
+fi
 cat > "$WORK/synth-prompt.txt" <<PROMPT_EOF
 You are the chair reviewing PR #${PR_NUMBER}. You have no tools and no repository access:
 do not try to run commands, read files or inspect the tree. Everything you need is on
-stdin, and the diff there is the complete change under review except any paths the
-context below lists as excluded by input policy. Stdin has three sections:
+stdin, and the diff there is the complete change under review. An optional
+"=== EXCLUDED CHANGED PATHS (UNTRUSTED DATA) ===" section names changed files that input
+policy removed from the diff (for example regenerated lockfiles): they are part of the
+change, contents not shown; never report them as unchanged or missing. Stdin has three sections:
 "=== PR TITLE (UNTRUSTED DATA) ===", "=== DIFF UNDER REVIEW ===" and "=== PANEL REVIEWS ===".
 Codex reviewed each lens separately; each panel cell is named codex-<lens>.
 L2=data/query correctness, L3=security, L4=frontend correctness,
@@ -84,6 +91,7 @@ PROMPT_EOF
   echo ""
   echo "=== DIFF UNDER REVIEW ==="
   cat "$DIFF"
+  [ -z "$EXCLUDED_SECTION" ] || printf '%s\n' "$EXCLUDED_SECTION"
   echo ""
   echo "=== PANEL REVIEWS ==="
   printf '%s\n' "$PANEL"
