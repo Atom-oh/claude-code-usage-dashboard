@@ -186,9 +186,14 @@ def main():
             raise RuntimeError("build did not report an immutable image digest")
         image = json.loads(command(["docker", "image", "inspect", args.image], root))[0]
         config = image.get("Config", {})
-        image_id = image.get("Id")
-        if not valid_digest(image_id) or image_id != build_metadata.get("containerimage.config.digest"):
-            raise RuntimeError("loaded image differs from the build config digest")
+        # The recorded identity is the build's config digest. The classic image store reports
+        # it as Id; the containerd image store (for example the CI runner's dind) reports the
+        # loaded manifest, which must then be this build's reported immutable digest.
+        image_id = build_metadata.get("containerimage.config.digest")
+        local_ref = image.get("Id")
+        if not valid_digest(image_id) or local_ref not in (image_id, record["digest"]):
+            raise RuntimeError(f"loaded image {local_ref} differs from the build config digest "
+                               f"{image_id} and manifest {record['digest']}")
         if args.expected_image_id and image_id != args.expected_image_id:
             raise RuntimeError("built image differs from the approved image ID")
         if image.get("Os") != "linux" or image.get("Architecture") != "arm64" or \
@@ -199,9 +204,9 @@ def main():
         if "APP_REVISION=" + revision not in config.get("Env", []):
             raise RuntimeError("runtime release identifier missing")
         record["localImageId"] = image_id
-        record["runtime"] = inspect_runtime(image_id, probe, root)
+        record["runtime"] = inspect_runtime(local_ref, probe, root)
         if args.push:
-            if json.loads(command(["docker", "image", "inspect", args.image], root))[0]["Id"] != image_id:
+            if json.loads(command(["docker", "image", "inspect", args.image], root))[0]["Id"] != local_ref:
                 raise RuntimeError("image tag changed after local verification")
             subprocess.run(["docker", "push", args.image], cwd=root, check=True)
             record["localBuildDigest"] = record["digest"]

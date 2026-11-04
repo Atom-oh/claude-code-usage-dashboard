@@ -59,11 +59,11 @@ if args[:2]==['buildx','build']:
   metadata.write_text(json.dumps({'containerimage.digest':'sha256:'+'b'*64,'containerimage.config.digest':config_digest}))
 elif args[:2]==['image','inspect']:
   env=[] if fault=='revision' else ['APP_REVISION='+revision]
-  image_id='sha256:'+'e'*64 if fault=='config_digest' else config_digest
+  image_id={'config_digest':'sha256:'+'e'*64,'containerd_store':'sha256:'+'b'*64}.get(fault,config_digest)
   print(json.dumps([{'Architecture':'arm64','Os':'linux','Id':image_id,'Config':{'User':'root' if fault=='root' else 'node','Labels':{'org.opencontainers.image.revision':revision},'Env':env}}]))
 elif args[0]=='create':
   assert '--network' in args and 'none' in args and '--read-only' in args
-  assert config_digest in args
+  assert ('sha256:'+'b'*64 if fault=='containerd_store' else config_digest) in args
   assert 'expectedRevision' in args[-1] and revision in args[-1]
   print('a'*64)
 elif args[:2]==['start','--attach']:
@@ -182,6 +182,15 @@ test("publishing refuses an unverified runtime, identity, config or cleanup befo
       }
     });
   }
+});
+
+test("a containerd image store binds its loaded manifest to the build and records the config", () => {
+  fixture(({ record, invoke, calls }) => {
+    const valid = invoke(["--push"], "containerd_store");
+    assert.equal(valid.status, 0, valid.stderr);
+    assert.ok(calls().some((args) => args[0] === "push"));
+    assert.equal(JSON.parse(readFileSync(record, "utf8")).localImageId, "sha256:" + "c".repeat(64));
+  });
 });
 
 test("a different published config cannot produce a verified release record", () => {

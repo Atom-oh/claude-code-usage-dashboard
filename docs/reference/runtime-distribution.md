@@ -34,7 +34,8 @@ This OS package is separate from the zlib bundled into the Node binary.
 a unique image tag. Only Git-archived dashboard files enter the build context; ignored
 local credentials are excluded. The packaged application license must equal the
 committed repository license. Both local and publication builds load the ARM64 image
-and check Linux/ARM64, its build config digest, nonroot user and full revision label/env.
+and check Linux/ARM64, its build config digest (a containerd image store's loaded
+manifest must equal the build's reported digest), nonroot user and full revision label/env.
 
 The committed [verify-runtime.mjs](../../dashboard/verify-runtime.mjs) is evaluated
 inside that immutable image ID using Node builtins. It checks UID 1000, Node 24.22.1,
