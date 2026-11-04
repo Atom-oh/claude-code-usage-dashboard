@@ -84,14 +84,20 @@ four-hour windows. Month mode uses daily buckets.
 [FilterContext.jsx](../../dashboard/web/src/FilterContext.jsx) debounces user, model and
 project inputs by 300 ms. [urlState.js](../../dashboard/web/src/urlState.js) serializes one
 range shape: `days`, `period=month`, or `from`/`to`. Masked-mode URLs omit user identity;
-project URL state requires `schema.projectColumns === true`.
+project URL state requires `schema.projectColumns === true`. The `team` filter is a select
+without debounce, kept in URL state for shared and Claude detail views, preserved across range
+and client changes, and kept when masking is on because it is not a user identity. The control
+lists `/api/teams` and is hidden when none exist unless a linked team is applied.
 
 ## Fetch and refresh behavior
 
 [useApi.js](../../dashboard/web/src/useApi.js) forwards range, interval and filters, followed
 by endpoint-specific overrides. Project forwarding has a second schema gate. Forwarding
 does not imply that every endpoint honors every filter; consult the
-[API filter scope](../api-reference.md).
+[API filter scope](../api-reference.md). `team` is forwarded except to routes that reject it,
+and the `unfiltered` option sends no filters.
+[TeamsContext.jsx](../../dashboard/web/src/TeamsContext.jsx)'s `TeamsProvider` shares the
+`/api/teams` and `/api/users/teams` lookups for the routed views.
 
 Requests quantize the current time to 120-second boundaries after a 150-second grace
 period for server warming. Custom ends later than that boundary are clipped, and a
