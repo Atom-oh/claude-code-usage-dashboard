@@ -1,18 +1,16 @@
 name: AI Code Review
 
 # Trusted base checkout; PR content is data, never executable workflow code.
-# Codex reviews each lens L2-L5 in parallel (scripts/pr-review/run-panel.sh), then the
-# tool-less Claude chair reviews the same diff, adjudicates and emits one fail-closed
-# VERDICT (scripts/pr-review/synthesize.sh). See docs/runbooks/pr-review-panel.md.
+# Independent Codex and Claude specialists review the complete change; trusted
+# routing requires Kiro for applicable AWS and operations changes. Missing coverage
+# blocks the verdict. See docs/pr-review-specialists.md.
 
 on:
   pull_request_target:
     types: [opened, synchronize]
 
 env:
-  # Owner decision 2026-11-04: Codex lens panel -> Claude chair VERDICT.
-  # ROLE_REVIEW=1 re-enables the retained specialist protocol.
-  ROLE_REVIEW: "0"
+  ROLE_REVIEW: "1"
   HEAD_SHA: ${{ github.event.pull_request.head.sha }}
   BASE_SHA: ${{ github.event.pull_request.base.sha }}
   GH_REPO: ${{ github.repository }}
@@ -70,18 +68,10 @@ jobs:
           [[ "$MERGE_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid merge base"; exit 1; }
           # Fetch objects as data; PR-head code is never checked out or run.
           git fetch --no-tags --depth=1 origin "$MERGE_BASE_SHA" "$HEAD_SHA"
-          # Diff the pinned commits, not the live PR. Exclusions mirror
-          # scripts/pr-review/role-input-scope.json.
-          git diff --no-color --no-ext-diff --no-textconv "$MERGE_BASE_SHA" "$HEAD_SHA" -- . \
-            ':(glob,exclude)**/package-lock.json' ':(glob,exclude)**/pnpm-lock.yaml' \
-            ':(glob,exclude)**/yarn.lock' ':(glob,exclude)**/.terraform.lock.hcl' \
-            ':(glob,exclude)**/node_modules/**' ':(glob,exclude)**/dist/**' \
-            ':(glob,exclude)**/out/**' ':(glob,exclude)**/build/**' \
-            ':(glob,exclude)**/*.pptx' ':(glob,exclude)**/*.png' \
-            ':(glob,exclude)**/*.jpg' ':(glob,exclude)**/*.jpeg' \
-            ':(glob,exclude)**/*.gif' ':(glob,exclude)**/*.pdf' \
-            ':(glob,exclude)**/*.vsix' ':(glob,exclude)**/*.zip' > /tmp/pr-diff.txt
-          # Every changed name, so reviewers learn which changes the exclusions hid.
+          # Diff pinned commits as data, including lockfiles. Disable renames so
+          # specialist collection retains both sides of every changed path.
+          git -c diff.noprefix=false diff --no-color --no-ext-diff --no-textconv --no-renames \
+            "$MERGE_BASE_SHA" "$HEAD_SHA" -- > /tmp/pr-diff.txt
           git diff --name-only -z --no-renames "$MERGE_BASE_SHA" "$HEAD_SHA" -- . > /tmp/pr-changed-paths.txt
           echo "total_bytes=$(wc -c < /tmp/pr-diff.txt)" >> "$GITHUB_ENV"
           echo "total_lines=$(wc -l < /tmp/pr-diff.txt)" >> "$GITHUB_ENV"
@@ -117,7 +107,7 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PANEL_TIMEOUT: "300"
           CHANGED_PATHS: /tmp/pr-changed-paths.txt
-          # Only the retained specialist path (ROLE_REVIEW=1) calls the GitHub API here.
+          # Specialist input collection resolves the pinned merge base through the API.
           GH_TOKEN: ${{ env.ROLE_REVIEW == '1' && github.token || '' }}
         run: |
           set -euo pipefail
@@ -178,8 +168,8 @@ jobs:
           sed '$ { /^VERDICT:/d }' /tmp/review.md > /tmp/review-clean.md
           {
             echo "$MARKER"
-            echo "## AI Code Review — Codex + Claude"
-            echo "_Panel: Codex ${panel_model:-not run} (${panel_responded:-none}) · Chair: ${chair_used:-pending}_"
+            echo "## AI Code Review — Specialists"
+            echo "_Specialists responded: ${panel_responded:-none} · Summary: ${chair_used:-pending}_"
             echo ""
             echo "$STATUS_BADGE"
             echo ""
