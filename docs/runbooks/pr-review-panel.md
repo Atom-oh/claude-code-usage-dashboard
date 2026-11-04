@@ -165,7 +165,7 @@ prerequisite PRs. Do not disable checks or hide failures to obtain a pass.
 
 ## Background
 
-Until 2026-11-04, CI ran the specialist protocol (`ROLE_REVIEW=1`: `codex`, `kiro-fable`,
+Before the temporary legacy panel on 2026-11-04, CI ran the specialist protocol (`ROLE_REVIEW=1`: `codex`, `kiro-fable`,
 `kiro-sol`, `claude-self` plus a conditional chair, with two Kiro startup preflights).
 Earlier, CI ran a Codex x two-Kiro model-by-lens matrix.
 
