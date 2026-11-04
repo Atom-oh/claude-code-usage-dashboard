@@ -1,32 +1,13 @@
 # Deploy linux/arm64. This immutable official index resolves Node 24.22.1 on Alpine
 # 3.24 (verified 2026-10-26). Refresh the pin through a reviewed release; tags alone
-# do not establish which Node/system packages a build uses.
-FROM node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS node-base
+# do not establish which Node/system packages a build uses. Node 24.22.1 carries the
+# October security fixes with bundled OpenSSL 3.5.9 and Brotli 1.2.0.
+# NODE_IMAGE may name another registry path (for example an ECR pull-through cache) of
+# the same index; build-release.py requires this exact digest on any override.
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+FROM ${NODE_IMAGE} AS node-base
 
-# Retain the shared OpenSSL distribution contract while taking Node's October
-# security fixes, including its bundled Brotli decoder fix.
-FROM node-base AS patched-node-build
-WORKDIR /node-source
-RUN apk add --no-cache python3 make g++ linux-headers 'openssl-dev=3.5.9-r0' \
-    && wget -O node.tar.xz https://nodejs.org/dist/v24.22.1/node-v24.22.1.tar.xz \
-    && echo '4f5379796280cdaeb0c2f358fd04b6a16cc4fb7dfa83b5a8c91a9d963b435231  node.tar.xz' | sha256sum -c - \
-    && tar -xJf node.tar.xz --strip-components=1 \
-    && ./configure --shared-openssl --without-npm \
-    && jobs="$(nproc)" && if [ "$jobs" -gt 8 ]; then jobs=8; fi \
-    && make -j"$jobs" \
-    && strip out/Release/node \
-    && ./out/Release/node -e 'if (process.versions.node !== "24.22.1" || process.versions.openssl !== "3.5.9" || process.config.variables.node_shared_openssl !== true) process.exit(1)' \
-    && mkdir /node-runtime \
-    && cp out/Release/node LICENSE /node-runtime/ \
-    && cd / \
-    && rm -rf /node-source
-
-FROM node-base AS patched-node
-RUN apk add --no-cache 'libcrypto3=3.5.9-r0' 'libssl3=3.5.9-r0'
-COPY --from=patched-node-build /node-runtime/node /usr/local/bin/node
-COPY --from=patched-node-build /node-runtime/LICENSE /usr/local/share/doc/node/LICENSE
-
-FROM patched-node AS web-build
+FROM node-base AS web-build
 WORKDIR /app/web
 # 락파일 COPY에 `*`를 붙이지 않는다(선택적으로 만들지 않는다) + npm install이 아니라 npm ci:
 # 락파일이 없거나 낡으면 빌드가 semver 범위를 그 시점 최신으로 다시 풀어, 같은 커밋의 두 빌드가
@@ -36,7 +17,7 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM patched-node AS server-deps
+FROM node-base AS server-deps
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./server/
 RUN npm ci --omit=dev --prefix server
@@ -46,7 +27,7 @@ LABEL org.opencontainers.image.revision=${APP_REVISION}
 COPY server/ ./server/
 COPY --from=web-build /app/web/dist ./web/dist
 
-FROM patched-node AS collector-packages
+FROM node-base AS collector-packages
 WORKDIR /package-source
 COPY collector/ ./
 RUN node build-packages.mjs /collector-packages

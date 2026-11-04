@@ -13,6 +13,8 @@ import {
 const source = fileURLToPath(new URL("../../scripts/build-release.py", import.meta.url));
 const probe = fileURLToPath(new URL("../verify-runtime.mjs", import.meta.url));
 
+const pinnedBase = "sha256:" + "f".repeat(64);
+
 function fixture(run) {
   const directory = mkdtempSync(path.join(tmpdir(), "ccdash-release-test-"));
   try {
@@ -24,7 +26,8 @@ function fixture(run) {
     mkdirSync(bin);
     copyFileSync(source, path.join(root, "scripts/build-release.py"));
     copyFileSync(probe, path.join(root, "dashboard/verify-runtime.mjs"));
-    writeFileSync(path.join(root, "dashboard/Dockerfile"), "FROM scratch\n");
+    writeFileSync(path.join(root, "dashboard/Dockerfile"),
+      `ARG NODE_IMAGE=example.invalid/node:fixture@${pinnedBase}\nFROM \${NODE_IMAGE}\n`);
     writeFileSync(path.join(root, "dashboard/server/index.js"), "// synthetic source\n");
     writeFileSync(path.join(root, "dashboard/server/package-lock.json"), '{"fixture":"server"}\n');
     writeFileSync(path.join(root, "dashboard/web/package-lock.json"), '{"fixture":"web"}\n');
@@ -66,7 +69,7 @@ elif args[0]=='create':
 elif args[:2]==['start','--attach']:
   assert args[-1]=='a'*64
   if fault=='runtime': sys.exit(12)
-  print(json.dumps({'revision':revision,'uid':1000,'node':'${REQUIRED_RUNTIME_NODE_VERSION}','openssl':'${REQUIRED_RUNTIME_OPENSSL_VERSION}','sharedOpenSSL':True,'opensslPackages':{'libcrypto3':'${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}','libssl3':'${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}'},'zlibPackageVersion':'${REQUIRED_RUNTIME_ZLIB_VERSION}','nodeZlibVersion':'synthetic-node-zlib','packageManagersAbsent':True,'noticePackageCount':1}))
+  print(json.dumps({'revision':revision,'uid':1000,'node':'${REQUIRED_RUNTIME_NODE_VERSION}','openssl':'${REQUIRED_RUNTIME_OPENSSL_VERSION}','sharedOpenSSL':False,'opensslPackages':{'libcrypto3':'${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}','libssl3':'${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}'},'zlibPackageVersion':'${REQUIRED_RUNTIME_ZLIB_VERSION}','nodeZlibVersion':'synthetic-node-zlib','packageManagersAbsent':True,'noticePackageCount':1}))
 elif args[:2]==['rm','--force']:
   assert args[-1]=='a'*64
 elif args[:2]==['container','inspect']:
@@ -117,7 +120,7 @@ test("release builder rejects latest and archives only committed source with ver
     assert.equal(metadata.runtime.node, REQUIRED_RUNTIME_NODE_VERSION);
     assert.equal(metadata.runtime.zlibPackageVersion, REQUIRED_RUNTIME_ZLIB_VERSION);
     assert.equal(metadata.runtime.openssl, REQUIRED_RUNTIME_OPENSSL_VERSION);
-    assert.equal(metadata.runtime.sharedOpenSSL, true);
+    assert.equal(metadata.runtime.sharedOpenSSL, false);
     assert.deepEqual(metadata.runtime.opensslPackages, {
       libcrypto3: REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION,
       libssl3: REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION,
@@ -187,6 +190,23 @@ test("a different published config cannot produce a verified release record", ()
     assert.notEqual(invalid.status, 0);
     assert.ok(calls().some((args) => args[0] === "push"));
     assert.throws(() => readFileSync(record), { code: "ENOENT" });
+  });
+});
+
+test("base image override must carry the pinned NODE_IMAGE digest", () => {
+  fixture(({ invoke, calls }) => {
+    for (const invalid of ["mirror.invalid/node:fixture", `mirror.invalid/node@sha256:${"0".repeat(64)}`,
+      `mirror.invalid/node@${pinnedBase}\n`]) {
+      const result = invoke(["--base-image", invalid]);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pinned NODE_IMAGE digest/);
+    }
+    assert.deepEqual(calls(), []);
+    const mirror = `mirror.invalid/ecr-public/docker/library/node:fixture@${pinnedBase}`;
+    const valid = invoke(["--base-image", mirror]);
+    assert.equal(valid.status, 0, valid.stderr);
+    const build = calls().find(args => args[0] === "buildx" && args[1] === "build");
+    assert.equal(build[build.indexOf("NODE_IMAGE=" + mirror) - 1], "--build-arg");
   });
 });
 

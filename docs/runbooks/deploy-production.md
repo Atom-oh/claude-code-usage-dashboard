@@ -187,9 +187,18 @@ Use a new timestamp tag for each release. Build and inspect locally before reque
 publication approval:
 
 ```bash
-python3 scripts/build-release.py --image "$REPO:$TAG" \
+aws ecr get-login-password --region "$REGION" \
+  | docker login --username AWS --password-stdin "$REGISTRY"
+BASE_DIGEST=$(sed -n 's/^ARG NODE_IMAGE=.*@\(sha256:[a-f0-9]\{64\}\)$/\1/p' dashboard/Dockerfile)
+BASE_IMAGE="$REGISTRY/ecr-public/docker/library/node@$BASE_DIGEST"
+python3 scripts/build-release.py --image "$REPO:$TAG" --base-image "$BASE_IMAGE" \
   --record "/tmp/dashboard-release-$TAG-local.json"
 ```
+
+`BASE_IMAGE` reads the pinned Node index through the registry's `ecr-public` pull-through
+cache rule (upstream `public.ecr.aws`); the helper rejects any other digest. The first pull
+creates the cached repository, which needs `ecr:CreateRepository` and
+`ecr:BatchImportUpstreamImage`. Without that rule, omit `--base-image` to use the public path.
 
 The helper requires Python >=3.9, Docker Buildx and local ARM64 execution (native or
 configured emulation). It builds only committed files and inspects the loaded image.
@@ -201,7 +210,7 @@ aws ecr get-login-password --region "$REGION" \
 APPROVED_IMAGE_ID=$(python3 -c \
   'import json,sys; print(json.load(open(sys.argv[1]))["localImageId"])' \
   "/tmp/dashboard-release-$TAG-local.json")
-python3 scripts/build-release.py --image "$REPO:$TAG" --push \
+python3 scripts/build-release.py --image "$REPO:$TAG" --push --base-image "$BASE_IMAGE" \
   --expected-image-id "$APPROVED_IMAGE_ID" \
   --record "/tmp/dashboard-release-$TAG.json"
 DIGEST=$(aws ecr describe-images --region "$REGION" --repository-name "$REPO_NAME" \

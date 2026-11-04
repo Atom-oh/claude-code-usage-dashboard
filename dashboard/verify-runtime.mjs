@@ -26,8 +26,10 @@ export function verifyRuntime({
   if (uid !== 1000) fail("expected the nonroot Node user");
   if (versions.node !== REQUIRED_RUNTIME_NODE_VERSION)
     fail(`expected Node ${REQUIRED_RUNTIME_NODE_VERSION}`);
-  if (versions.openssl !== REQUIRED_RUNTIME_OPENSSL_VERSION || sharedOpenSSL !== true)
-    fail(`expected shared OpenSSL ${REQUIRED_RUNTIME_OPENSSL_VERSION}`);
+  // The official binary links its bundled OpenSSL statically; the Node release
+  // pins that copy, separate from the OS libcrypto3/libssl3 packages checked below.
+  if (versions.openssl !== REQUIRED_RUNTIME_OPENSSL_VERSION)
+    fail(`expected Node OpenSSL ${REQUIRED_RUNTIME_OPENSSL_VERSION}`);
   const location = (name) => path.join(root, name);
   let installedPackages;
   try {

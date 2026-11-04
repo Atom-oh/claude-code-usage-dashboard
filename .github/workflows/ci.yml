@@ -118,12 +118,13 @@ jobs:
     # and a required pod anti-affinity so they never share a node with another runner - in
     # particular the *-claude-arm review runners that hold Bedrock/AWS credentials
     # (AWS-Demo-Platform runner appset). Fork PRs - this repository is public - stay on the
-    # GitHub-hosted ARM runner. Node compiles from source (at most 8 jobs); the layer cache keyed
-    # on the Dockerfile skips that compile unless the Node stage changes. PRs build whenever an
-    # archived build input changes (all of dashboard/, LICENSE, the release script, this
-    # workflow or the runtime page); pushes always build.
+    # GitHub-hosted ARM runner. Both pull the digest-pinned official Node image from its
+    # default public.ecr.aws path (no registry credentials); the layer cache keyed on the
+    # Dockerfile reuses unchanged dependency layers. PRs build whenever an archived build input
+    # changes (all of dashboard/, LICENSE, the release script, this workflow or the runtime
+    # page); pushes always build.
     runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'claude-code-usage-dashboard-arm' || 'ubuntu-24.04-arm' }}
-    timeout-minutes: 180
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:

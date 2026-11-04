@@ -100,6 +100,8 @@ def main():
     # every digest/identity check below still applies. Local release builds pass neither.
     parser.add_argument("--cache-from", help="buildx --cache-from value (for example type=local,src=DIR).")
     parser.add_argument("--cache-to", help="buildx --cache-to value (for example type=local,dest=DIR,mode=max).")
+    # Same pinned index from another registry path (for example an ECR pull-through cache).
+    parser.add_argument("--base-image", help="NODE_IMAGE override; must carry the Dockerfile's pinned digest.")
     args = parser.parse_args()
     if (args.push or args.expected_image_id is not None) and not valid_digest(args.expected_image_id):
         parser.error("--push requires a valid --expected-image-id from the approved local record")
@@ -149,8 +151,19 @@ def main():
                         shutil.copyfileobj(incoming, output)
                     destination.chmod(member.mode & 0o777)
         metadata = context_root / "metadata.json"
+        pinned = re.search(r"^ARG NODE_IMAGE=\S+?(@sha256:[a-f0-9]{64})$",
+                           committed("dashboard/Dockerfile").decode(), re.M)
+        if not pinned:
+            raise RuntimeError("Dockerfile does not pin NODE_IMAGE by digest")
+        base_args = []
+        if args.base_image is not None:
+            # A digest names content, so any registry path holding the same index is equivalent.
+            if (not re.fullmatch(r"[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}", args.base_image)
+                    or not args.base_image.endswith(pinned.group(1))):
+                raise RuntimeError("--base-image must use the Dockerfile's pinned NODE_IMAGE digest")
+            base_args = ["--build-arg", "NODE_IMAGE=" + args.base_image]
         invocation = ["docker", "buildx", "build", "--platform", "linux/arm64",
-                      "--build-arg", "APP_REVISION=" + revision, "--label",
+                      "--build-arg", "APP_REVISION=" + revision, *base_args, "--label",
                       "org.opencontainers.image.revision=" + revision,
                       "--metadata-file", str(metadata), "-t", args.image]
         # Only a local directory cache: a registry cache would make remote layers a trust input.

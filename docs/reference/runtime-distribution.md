@@ -1,16 +1,20 @@
 # Runtime distribution contract
 
-[Dockerfile](../../dashboard/Dockerfile) pins one official Node 24 image index for all
-build stages. Refresh it through a reviewed change and verify its supported ARM64
-platform and actual Node/system package versions. The build compiles the checksum-pinned
-official Node 24.22.1 source with `--shared-openssl`, using authenticated Alpine
-OpenSSL 3.5.9 development packages. The runtime uses that binary and exact
-`libcrypto3`/`libssl3` 3.5.9-r0 packages. Node 24.22.1 includes the
-[October security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases),
-including the bundled Brotli decoder fix. Updating OS libraries alone cannot patch
-Node's bundled dependencies. The supported Node major stays at 24.
-This project owns the source build and must refresh it with future Node/OpenSSL fixes.
-Node's source license is retained under `/usr/local/share/doc/node/LICENSE`.
+[Dockerfile](../../dashboard/Dockerfile) pins one official Node 24 image index by digest
+(`NODE_IMAGE`) for all build stages and uses its Node binary unchanged. Refresh it through
+a reviewed change and verify its supported ARM64 platform and actual Node/system package
+versions. Node 24.22.1 includes the
+[October security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)
+with its statically linked bundled OpenSSL 3.5.9 and Brotli 1.2.0. OS package scanning
+does not see those bundled copies, and updating OS libraries alone cannot patch them:
+take future Node/OpenSSL fixes by refreshing the pinned Node release. The base's OS
+`libcrypto3`/`libssl3` packages are separately required at 3.5.9-r0. The supported Node
+major stays at 24.
+
+The default `NODE_IMAGE` is the index's credential-free `public.ecr.aws/docker/library`
+path. `build-release.py --base-image` may substitute another path of the same index, such
+as the deployment account's ECR pull-through cache; it must end in the Dockerfile's pinned
+digest, so registry choice never changes build content.
 The final image removes npm, npx,
 Yarn and Corepack after dependency installation; locked server dependencies, Node,
 OS packages/metadata, readiness tooling and distribution notices remain.
@@ -34,7 +38,7 @@ and check Linux/ARM64, its build config digest, nonroot user and full revision l
 
 The committed [verify-runtime.mjs](../../dashboard/verify-runtime.mjs) is evaluated
 inside that immutable image ID using Node builtins. It checks UID 1000, Node 24.22.1,
-OpenSSL 3.5.9 with shared linking enabled, the runtime revision, absent package managers/frontend
+Node's OpenSSL 3.5.9 (its linkage is recorded), the runtime revision, absent package managers/frontend
 modules/collectors, license hash, complete nonempty notices, both committed lock
 hashes and the installed server lock. It requires one OS zlib package at the pinned
 version in `/lib/apk/db/installed`; missing, old or ambiguous metadata fails.
@@ -74,12 +78,13 @@ publication: pushes and same-repository pull requests on the repository's self-h
 runner (`claude-code-usage-dashboard-arm`: ephemeral ARC pods with Docker-in-Docker under a
 no-permission service account, IMDSv2 hop limit 1, and a required pod anti-affinity that keeps
 them off nodes running any other runner, including the credential-holding review runners), and
-fork pull requests on the GitHub-hosted ARM64 runner. Node compiles with up to eight jobs; an `actions/cache` buildx layer cache
-keyed on `dashboard/Dockerfile` skips that compile unless the Node stage changes, and only a
-`type=local` cache is accepted, never replacing the archived-source build or any digest check.
+fork pull requests on the GitHub-hosted ARM64 runner. Both use the default public base path.
+An `actions/cache` buildx layer cache keyed on `dashboard/Dockerfile` reuses unchanged
+layers; only a `type=local` cache is accepted, never replacing the archived-source build or
+any digest check.
 Pull requests build whenever an archived build input changes (anything under `dashboard/`,
 `LICENSE`, `scripts/build-release.py`, the CI workflow or this page); every push builds.
-The runtime job has a 180-minute deadline, with all existing inspections retained.
+The runtime job has a 30-minute deadline, with all existing inspections retained.
 Native release acceptance still requires latest-HEAD
 review, actual image/edge/auth checks and the other [product acceptance](../product-readiness.md)
 rows. [Enhanced ECR scanning](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-enhanced.html)
