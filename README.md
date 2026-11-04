@@ -157,7 +157,7 @@ terraform fmt -check -recursive infra/
 ```
 
 GitHub CI runs server/web tests, the shell harness, and Terraform validation. AI review
-uses a separate self-hosted runner and a model-by-lens panel with a chair. Failed or
+uses a separate self-hosted runner with a Codex lens panel and a Claude chair. Failed or
 missing required review coverage is not a passing result. See the
 [review runbook](docs/runbooks/pr-review-panel.md).
 

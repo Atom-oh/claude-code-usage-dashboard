@@ -38,7 +38,7 @@ Engineering docs/guides/ADRs/PR prose: concise English over bilingual review tem
 
 Review new behavior using code/tests/trusted base. Preferences/intentional conventions are not defects; report uncertainty. Correctness/security regressions block. Never weaken auth/no-tools checks/coverage/CI to pass. Follow user's latest-HEAD review/fix/push/merge.
 
-ROLE_REVIEW=1: Codex/Claude independently check full change; Kiro: applicable AWS/operations. NOT_APPLICABLE only via trusted routing. Failed or incomplete required output blocks; no chair coverage waiver. Supersedes matrix/dropout rules: [review](docs/pr-review-specialists.md).
+CI ROLE_REVIEW=0: one Codex cell per lens L2-L5, tool-less Claude chair emits the VERDICT. An incomplete Codex lens, oversized diff or missing chair verdict blocks; no chair coverage waiver. ROLE_REVIEW=1 specialist protocol: retained, inactive. [review](docs/runbooks/pr-review-panel.md).
 
 ## Owners
 

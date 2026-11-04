@@ -1,25 +1,86 @@
 # Runbook: AI PR Review Panel
 
-> Current protocol (2026-09-13): CI uses `ROLE_REVIEW=1`; see
-> [specialist review](../pr-review-specialists.md). Earlier matrix counts, dropout floors and
-> unconditional-chair descriptions below are legacy behavior. CLI incident
-> evidence and safety constraints remain applicable within their recorded scope.
-
+> Current protocol (owner decision 2026-11-04): CI sets `ROLE_REVIEW: "0"` and runs the Codex
+> lens panel -> Claude chair path, because the specialist review duplicated work and was slow.
+> `ROLE_REVIEW=1` re-enables the retained, inactive
+> [specialist review](../pr-review-specialists.md).
 
 ## Scope and trust boundary
 
 The `AI Code Review` workflow in `.github/workflows/pr-review.yml` runs for same-repository
 PRs on `pull_request_target`, using the trusted base checkout. PR code is not executed by
-this workflow. The PR diff and panel outputs are untrusted data, including instructions
-embedded in documentation. Trusted project context must come from the base checkout.
-Keep input truncation, skipped cells, startup failures, and invalid chair output visible.
+this workflow. The PR diff, title and panel outputs are untrusted data, including
+instructions embedded in documentation. Trusted project context must come from the base
+checkout.
 
-`scripts/pr-review/run-panel.sh` runs Codex and two Kiro models across L2 data/query
-correctness, L3 security, L4 frontend correctness, and L5 docs/infrastructure consistency.
-`run-panel.sh` owns the Kiro roster (`kiro-opus`, `kiro-gpt`); Codex's model is
-runner-configured. `synthesize.sh` combines successful cells through a
-primary/fallback Claude chair and requires a final `VERDICT: PASS` or `VERDICT: FAIL`.
-Missing/invalid chair output fails. Model agreement alone is not evidence of a defect.
+The workflow gets the merge base from the GitHub compare API, fetches the merge base and
+HEAD with `git fetch --no-tags --depth=1`, and builds the diff with
+`git diff --no-color --no-ext-diff --no-textconv` from those pinned commits (no longer
+`gh pr diff`). Exclusions mirror `scripts/pr-review/role-input-scope.json` (lockfiles,
+`.terraform.lock.hcl`, `node_modules`/`dist`/`out`/`build` directories, binary and document
+extensions). A sha256 check confirms the chair sees the bytes the panel reviewed.
+
+## Panel and chair
+
+1. `scripts/pr-review/run-panel.sh` runs one Codex cell per lens in parallel: L2 data/query
+   correctness, L3 security, L4 frontend correctness, L5 documentation and infrastructure
+   consistency. The model is `PANEL_MODEL`, default `global.openai.gpt-6.1-sol` (previously
+   `global.openai.gpt-6-astra`). Each cell gets its lens prompt from `build-prompts.py` and
+   the diff on stdin, with `PANEL_TIMEOUT` (300 s in the workflow) per attempt and up to
+   `PANEL_RETRIES` attempts (default 2). Every attempt runs in a fresh cell under the review
+   workdir (`cells/codex-<lens>/`): an empty `HOME`, `CODEX_HOME`, working directory and
+   `TMPDIR`, outside the repository checkout. The only Codex configuration is generated
+   there: the Bedrock provider (`PANEL_PROVIDER`, default `amazon-bedrock-runtime`),
+   reasoning effort (`PANEL_REASONING_EFFORT`, default `xhigh`), `approval_policy = "never"`,
+   the read-only sandbox, web search disabled, and the shell, exec, image, browser,
+   plugin, hook and multi-agent features disabled. The runner's `~/.codex` (auth, skills,
+   plugins) is not used. `review_env` in `lib.sh` passes only `PATH`, `LANG`/`LC_ALL`, the
+   cell directories and the AWS region and Pod Identity/IRSA credential handles
+   (`REVIEW_AWS_VARS`); profiles, `AWS_CONFIG_FILE`/`AWS_SHARED_CREDENTIALS_FILE`, static
+   keys, Bedrock bearer tokens, `CODEX_*`, `GH_TOKEN` and `KIRO_API_KEY` are dropped.
+   Codex runs as `codex exec ... -s read-only --skip-git-repo-check --ephemeral
+   --ignore-rules --json -o <cell>/last-message.md`; only that final message is the cell
+   output. A tool-use tripwire reads the JSON events: any item other than a message,
+   reasoning, plan or error item (for example `command_execution`) discards the cell
+   without a retry. A nonzero exit, malformed or incomplete event stream, or empty final
+   message is retried.
+2. Coverage fails closed: every lens L2-L5 needs a successful Codex cell. Otherwise
+   `run-panel.sh` logs `::error::codex did not complete every lens (missing: ...)`, writes
+   `coverage-severe.flag` and `degraded-models.txt`, and `synthesize.sh` replaces the chair
+   verdict with `VERDICT: FAIL` under a "Required coverage failed" banner. Missing or failed
+   review is never approval.
+3. `scripts/pr-review/synthesize.sh` runs the Claude chair `global.anthropic.claude-opus-5-5`
+   (`CHAIR_PRIMARY_MODEL`; fallback `global.anthropic.claude-opus-5`, `CHAIR_FALLBACK_MODEL`),
+   `CHAIR_TIMEOUT` default 900 s per attempt, as `claude -p ... --tools "" --strict-mcp-config
+   --setting-sources ""` from a fresh `chair/` box (empty `HOME`, working directory and
+   `TMPDIR`) under the same `review_env` allowlist plus `CLAUDE_CODE_USE_BEDROCK`,
+   `ANTHROPIC_BEDROCK_BASE_URL` and `ANTHROPIC_MODEL`, so no user settings, memory files,
+   API keys or GitHub/Kiro tokens reach it.
+   Fixed instructions carry the trusted base context; the PR title, diff and Codex cells
+   arrive on stdin as untrusted data. The chair reviews the diff itself as the second
+   independent reviewer, adjudicates the Codex findings and must end with exactly
+   `VERDICT: PASS` or `VERDICT: FAIL`. A rejected attempt logs `--- chair '<label>' rejected`
+   with scrubbed output; if both models fail, the review is "Review generation failed" plus
+   `VERDICT: FAIL`. The empty-directory rule comes from cc-on-bedrock, where a tool-less
+   chair started in the checkout tried to inspect the tree and stopped without a verdict.
+
+## Credential exposure and residual risk
+
+Both model processes receive untrusted PR text and must hold Bedrock credentials. The
+runner authenticates with EKS Pod Identity, so the processes get
+`AWS_CONTAINER_CREDENTIALS_FULL_URI` and `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` for the
+shared runner role, which the runner platform grants more than Bedrock access (for
+example read-only AWS access and S3 access). Neither model has a tool that can read files,
+the environment or the network: the chair runs with `--tools ""`, and Codex runs with its
+tool features disabled behind the event tripwire. Published output still passes
+`scrub_secrets`, which is defense in depth, not a boundary.
+
+Not enforced here: short-lived credentials scoped to `bedrock:InvokeModel*`. Minting them
+needs a Bedrock-only role the runner role may assume (or a session policy on such an
+assumption); that is a runner-platform IAM change. Until it exists, a Codex or Claude CLI
+defect, or a future tool that ignores the disabled features, could reach the runner
+role's credentials. The tripwire discards such a cell's output and fails coverage, but
+cannot undo a tool call that already ran.
 
 ## Trusted review context
 
@@ -32,139 +93,92 @@ Panel and chair instructions use English. Reviewers must verify claims against e
 behavior rather than treating removed prose as automatically correct. Baseline contracts
 may be intentionally updated by a PR; real introduced defects still block.
 
-Each context is limited to 20,000 UTF-8 bytes and each lens prompt to 22,000 bytes. The
-default Kiro diff cap plus that prompt stays below the single-argument limit. Context
+Each context is limited to 20,000 UTF-8 bytes and each lens prompt to 22,000 bytes. Context
 overflow fails explicitly rather than silently dropping guidance. Split oversized changes.
 `lenses/context-manifest.json` records the base revision, included files, content hashes,
-sizes, and missing optional guides. The chair independently reads the same base snapshot.
+sizes, and missing optional guides.
 
 `review_verdict()` in `lib.sh` is shared by synthesis validation and the CI gate. It accepts
 only an exact final nonempty `VERDICT: PASS` or `VERDICT: FAIL` line; body quotations do not
 override that final decision. Missing, empty, malformed, or noncanonical output is not
 approval. Coverage/safety failures still append a final FAIL regardless of the chair.
 
-## Startup verification
+## Limits and time budget
 
-The runner needs Bash, `python3`, `timeout`, `realpath`, standard GNU text utilities, `gh`,
-and the configured `codex`, `kiro-cli`, and `claude` binaries. Check the actual runner's CLI
-version in the panel log; do not infer it from an old validation date.
+Diffs over 12,000 lines or 512,000 bytes are blocked (`## Review blocked`, BLOCKED,
+`VERDICT: FAIL`), never truncated; the same limits as cc-on-bedrock. Both reviewers read the
+diff from stdin and have 1M-token context windows (Bedrock model cards for
+`openai.gpt-6.1-sol` and `anthropic.claude-opus-5-5`, checked 2026-11-04); 512,000 bytes is
+roughly 150K tokens, under Codex's 272K standard-rate tier. The specialist protocol's
+3,000 lines / 95,000 bytes came from Kiro receiving its prompt as one command-line argument
+(`MAX_REQUEST_BYTES`, 128 KiB) and still applies only to that inactive path. The old
+3,000-line truncation of this path and Kiro's `KIRO_DIFF_CAP` are gone.
 
-1. Python validates `scripts/pr-review/agents/pr-review-notools.json` before Kiro calls: no duplicate JSON
-   keys; matching agent name; empty `tools`, `allowedTools`, `resources`, and `mcpServers`;
-   `useLegacyMcpJson: false`. Invalid JSON or a failed agent-file copy aborts the step.
-2. Each configured Kiro model receives the same fixed canary prompt in a separate fresh
-   working directory/HOME containing the no-tools agent and a random, non-secret file.
-   **Preflight stdin is `/dev/null`; neither its prompt nor stdin contains PR input.**
-3. Passing requires exit 0, exactly `NO_TOOLS` after CLI-format normalization, and no
-   fallback, quota, or `using tool:` signal. Under `ROLE_REVIEW=1` (CI) each preflight
-   attempt has its own `KIRO_PREFLIGHT_TIMEOUT` budget (default 60 seconds, maximum 180;
-   CI sets 90) covering both settings calls and the canary, and a role makes up to
-   `KIRO_PREFLIGHT_ATTEMPTS` attempts (default 2, maximum 3; CI sets 2). Only a timeout
-   (exit 124) or a nonzero exit whose normalized stderr carries no safety diagnostic is
-   retried. Tool use, quota, fallback, agent-file or model-selection diagnostics, an
-   exit-0 reply other than `NO_TOOLS`, a reply exposing the canary, and an unconfirmed
-   Markdown-rendering setting are never retried. Each retry re-runs both settings steps
-   with a fresh canary and sends no PR input; the workflow log has one line per attempt,
-   e.g. `kiro-sol: preflight attempt 1/2 timed out after 90.0s; retrying`. The legacy
-   `run-panel.sh` matrix keeps one `KIRO_PREFLIGHT_TIMEOUT` limit per call (default 60
-   seconds) and stops at the first failure.
-4. **Both models must pass before either receives PR input.** Under `ROLE_REVIEW=1` each
-   Kiro role waits for its peers' receipts until attempts × timeout after its own preflight
-   start, so a peer that passes on a retry can still release both cells; a failed peer
-   receipt blocks immediately. A failed preflight skips every Kiro review cell, permits
-   Codex work to continue, and always forces the gate to fail.
-   Canary calls do not count as review coverage.
-
-Worst-case CI budget with the current settings: 2 × 90 s of Kiro preflight
-(`KIRO_PREFLIGHT_ATTEMPTS` × `KIRO_PREFLIGHT_TIMEOUT`), 2 × 600 s of review calls
-(`PANEL_RETRIES` × `PANEL_TIMEOUT`) and 2 × 600 s of chair calls (primary then fallback,
-`CHAIR_TIMEOUT`) sum to 2580 s, about 43 minutes, inside the job's `timeout-minutes: 50`.
-
-This is a behavioral startup check, not formal proof or an OS tool sandbox. Review cells
-still use `--agent pr-review-notools` and isolated directories with a minimal environment.
-Kiro receives the size-capped diff inline in its prompt; the shared review runner also
-redirects the diff to stdin, although Kiro's non-interactive mode uses the prompt argument.
-Codex receives the diff on stdin with `-s read-only`. Post-execution fallback detection,
-quota handling, exit/nonempty-output checks, and output secret scrubbing remain necessary.
+The job has `timeout-minutes: 50`. The normal worst case is 300 s x 2 panel attempts plus
+900 s x 2 chair models, 40 minutes.
 
 ## Diagnose the failed run
 
 Inspect the latest HEAD's workflow log, review comment, and inline findings. Match the
 comment's triggering commit to the current HEAD; an older passing review is insufficient.
-Within the runner work directory, these files identify the failure without copying secrets:
 
 | Signal | Meaning and action |
 |---|---|
-| `kiro-preflight.flag` | Startup behavior was not established. Inspect the model's preflight stderr for timeout, authentication, unexpected output, tool use, quota, or fallback. Resolve the cause and rerun; never bypass this check. |
-| `kiro_preflight_timeout:<tag>` | The role's own startup timed out in every permitted attempt; no PR input was sent. The workflow log has one line per attempt. Usually a transient startup delay: rerun. Repeated timeouts point at runner load or provider latency, not at the PR. |
-| `kiro_preflight_peer:<tag>` | The role passed its own preflight, but a required Kiro peer (named in `slot/kiro-preflight-<tag>.flag` and the role's stderr) failed or timed out. Diagnose the peer's own code; this role's failure is a consequence. |
-| `slot/kiro-preflight-<tag>.flag` / `slot/<tag>-preflight.json` | Per-role specialist flag (its text names the cause) and receipt (cohort, plan digest, tag, model, ok), both uploaded as artifacts. A flag with `cli_nonzero_exit:<tag>` and no preflight code is either a startup safety failure (tool use, quota, fallback, model selection, unexpected canary reply or unconfirmed rendering setting; never retried) or a nonzero startup exit without a safety diagnostic, such as an authentication error, that persisted through every attempt. The per-attempt log lines tell them apart; never bypass it. |
-| `kiro-agent-fallback.flag` | Agent lookup/schema failed and the CLI continued with a default agent. The affected response is discarded and the gate fails regardless of remaining coverage. |
-| `kiro-quota.flag` | Kiro stderr matched `Monthly request limit reached`, `MONTHLY_REQUEST_COUNT`, or `UsageLimitReachedError`. Diagnose authentication and usage as below. |
-| `kiro-diff-truncated.flag` | Kiro received only the byte-capped portion of the workflow input. Inspect the truncation banner; omitted content has not been reviewed by those cells. |
-| `degraded-models.txt` | A model returned zero successful cells across all lenses. |
-| `coverage-severe.flag` | Zero successful Codex cells, all Kiro models with zero successful cells, or a preflight/fallback safety failure forces `VERDICT: FAIL`. |
-| `responded.txt` and `slot/` | Actual successful review cells and their output; canaries are excluded. |
+| `::error::codex did not complete every lens (missing: ...)` | Read the `--- [codex-L*] skipped; stderr (last 25 lines, scrubbed) ---` block. Transient Bedrock errors or timeouts: rerun. |
+| `::error::codex CLI not found on runner` | The runner image needs a rebuild; the CLI check step also fails. |
+| `[tool-use] codex-L*` / `::error::codex ran a tool in [...]` | A Codex event stream contained a tool item although tools are disabled; the output was discarded and coverage fails. Treat it as a security event: check `cells/codex-<lens>/events.jsonl` and the runner's Codex version for renamed or new tool features before rerunning. |
+| `::warning::chair ... degraded` / `--- chair ... rejected` | Check the scrubbed excerpt. Confirm the Claude signing region matches `ANTHROPIC_BEDROCK_BASE_URL`, since `global.` profiles change routing only. Bedrock capacity errors such as `ServiceUnavailableException` appear in CloudTrail as failed `InvokeModelWithResponseStream` calls. Rerun. |
+| `Review generation failed` | Both chair models failed; apply the same checks. |
+| `## Review blocked` | The diff exceeds the limits. Split the PR; never raise limits to obtain a pass. |
+| `::error::PR head changed` | Review the latest HEAD; an older pass is insufficient. |
+| `coverage-severe.flag` / `degraded-models.txt` / `responded.txt` / `slot/` | Files under the review workdir. |
 
-Quota failures **after successful startup** remove affected cells without retry. Partial
-quota failures can retain enough coverage to pass: the coverage floor is vendor-wide,
-not a requirement that all 12 cells or every model/lens pair succeed. Preflight failures
-and agent fallback are independent blocking conditions. `kiro_preflight_timeout` and
-`kiro_preflight_peer` block coverage like every other failure code; they name the cause
-and never award coverage. Kiro stderr signatures are not applied to Codex stderr, which
-may contain quoted diff text matching those signatures.
+## Rollback
 
-The workflow caps its diff at 3,000 lines. Kiro has a further `KIRO_DIFF_CAP` byte limit
-(default 100,000). Truncation banners describe partial review; Codex sees the workflow's
-input, not necessarily the full original PR. Neither a canary pass nor a nonempty cell
-establishes review of omitted content.
-
-## Recover Kiro authentication or quota
-
-Record the exact error class, reason, reset date if present, model, and whether failure
-occurred during preflight or review. A quota response does **not** prove a specific API
-key's independent cap is exhausted. Check which account/profile actually authenticates the
-worker, its usage/entitlement, and any shared consumption. The isolated Kiro process only
-inherits `KIRO_API_KEY` when present; a successful interactive login elsewhere may use a
-different identity and does not verify the worker.
-
-If rotation is required, update `KIRO_API_KEY` through the runner platform's approved secret
-store. Locate the `ai-panel-keys` ExternalSecret mapping in the runner platform repository,
-verify External Secrets Operator (ESO) refreshed the target Secret, then start a **fresh
-runner worker/pod**. An already running worker retains its old environment. Verify refresh
-status and worker creation time without decoding credentials into logs. Rerun the workflow
-and inspect both startup checks and actual review coverage. Do not blindly enable paid
-usage or overages in response to a banner.
-
-For agent failures, validate the checked-out file using the installed CLI:
-
-```bash
-kiro-cli --version
-kiro-cli agent validate --path scripts/pr-review/agents/pr-review-notools.json
-```
-
-Repair the runner/configuration if validation fails. Validation alone does not replace the
-behavioral preflight. Do not work around failure with `--trust-tools=` or the v3 engine:
-the repository's regression tests preserve the no-tools agent path and exclude those
-previously unsafe alternatives. Runner image changes belong to the runner platform project.
+Reverting the scripts or workflow restores the earlier panel shape; it does not change
+account-side Bedrock access. To re-enable the specialist protocol, set `ROLE_REVIEW: "1"`;
+the panel step then receives `GH_TOKEN`, Kiro preflight uses its defaults (60 s, 2 attempts)
+unless `KIRO_PREFLIGHT_TIMEOUT`/`KIRO_PREFLIGHT_ATTEMPTS` are set again, and the specialist
+chair reads its default timeout from `synthesize.sh`, now 900 s.
 
 ## Offline verification and merge gate
 
-From the repository root, these tests stub the model CLIs; they do not make real model calls:
+From the repository root, these tests stub the model CLIs:
 
 ```bash
 bash tests/run-all.sh pr-review-panel
+bash tests/run-all.sh pr-review-workflow
 bash tests/run-all.sh review-context
 bash tests/run-all.sh pr-review-verdict
 bash tests/run-all.sh
 ```
 
-`tests/structure/test-pr-review-panel.sh` is registered through `tests/run-all.sh`, and
-`.github/workflows/ci.yml` actually runs that harness alongside server tests, web tests/build,
-and Terraform checks. Missing local `.claude/` tooling causes designated harness groups
-to skip; it is not a successful execution of those groups.
+`tests/structure/test-pr-review-panel.sh` uses stub codex/claude binaries to check 4/4 lens
+coverage, allowlisted environments, per-cell HOME/CODEX_HOME/cwd, the generated config with
+tools disabled, the tool-use tripwire, fail-closed missing or empty lenses, retries, the
+isolated tool-less chair, fallback, and scrubbing. `tests/structure/test-pr-review-workflow.sh`
+runs the workflow's lens, panel, gate and comment steps against stubs: oversize block,
+unchanged marker/badges/footer, changed-head refusal, and exclusions equal to
+`role-input-scope.json`. `bash tests/run-all.sh review` runs them with the verdict and
+review-context tests. They spend no model credits and do not prove a live run. Specialist
+tests run with `python3 -m unittest discover -s scripts/pr-review -p 'test_*role*.py'`.
 
 After fixes, obtain review on the new HEAD and satisfy required CI/branch protection.
 Resolve verified Critical/Major findings; missing review or failed coverage is not “no
 blocking findings.” Immediately before merging, recheck HEAD, target branch, and any
 prerequisite PRs. Do not disable checks or hide failures to obtain a pass.
+
+## Background
+
+Until 2026-11-04, CI ran the specialist protocol (`ROLE_REVIEW=1`: `codex`, `kiro-fable`,
+`kiro-sol`, `claude-self` plus a conditional chair, with two Kiro startup preflights).
+Earlier, CI ran a Codex x two-Kiro model-by-lens matrix.
+
+A live smoke run on 2026-11-04 (local, not CI) used this repository's
+`origin/main~1..origin/main` diff (1 file, 41 lines) with the runner's Codex configuration.
+With the isolated, tool-less cells, Codex covered 4/4 lenses in 40 s with only
+`agent_message` events, and the isolated Opus 5.5 chair returned a lens-grouped review ending
+in one `VERDICT: PASS` in 27 s. Nothing was posted to GitHub.
+
+The runner image and its CLI versions belong to the runner platform repository, not this
+one. Kiro incident procedures live in Git history.
