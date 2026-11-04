@@ -403,6 +403,13 @@ resource "kubernetes_deployment_v1" "dashboard" {
               value = env.value
             }
           }
+          dynamic "env" {
+            for_each = local.insights_environment
+            content {
+              name  = env.key
+              value = env.value
+            }
+          }
           dynamic "volume_mount" {
             for_each = var.device_ingest_enabled ? [1] : []
             content {

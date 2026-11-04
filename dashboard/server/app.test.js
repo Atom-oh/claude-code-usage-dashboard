@@ -13,6 +13,7 @@ process.env.AUTH_ALLOW_INSECURE = "1";
 process.env.CH_URL = "http://127.0.0.1:1";
 delete process.env.BASIC_AUTH_USER;
 delete process.env.BASIC_AUTH_PASSWORD;
+delete process.env.INSIGHTS_ENABLED;
 
 const { app } = await import("./index.js");
 
@@ -125,4 +126,14 @@ test("/api/overview/session-turns keeps the shared route() 400/500 contract", as
   const text = await r.text();
   assert.ok(!/SELECT|ECONNREFUSED|clickhouse/i.test(text), `leaked: ${text}`);
   assert.deepEqual(Object.keys(JSON.parse(text)), ["error", "id"]);
+});
+
+test("/api/insights/daily is disabled by default and validates period", async () => {
+  const r = await fetch(`${base}/api/insights/daily`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await r.json(), { enabled: false });
+  const bad = await fetch(`${base}/api/insights/daily?period=yesterday`);
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error, "invalid period");
 });

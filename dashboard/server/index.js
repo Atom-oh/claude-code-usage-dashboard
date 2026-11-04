@@ -23,6 +23,7 @@ import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./
 import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 import { parseClients } from "./clients.js";
+import { createInsightsFeature, validateInsightsQuery } from "./insights.js";
 import { clientOverview, validateClientFilters, validateClientView, validateTimeFormat, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -312,8 +313,12 @@ function route(path, handler, { warm = true, client = "claude", validate, permis
   app.get(path, authorize, async (req, res) => {
     if (!active) return res.status(404).json({ error: "client disabled" });
     try {
-      // Current installation diagnostics have their own bounded memo and no usage window.
-      if (snapshot) return await sendJson(req, res, await handler());
+      // Snapshot routes (installation diagnostics, stored insights) have their own bounded
+      // memo and no usage window; they validate only their own parameters.
+      if (snapshot) {
+        validate?.(req.query);
+        return await sendJson(req, res, await handler(req.query));
+      }
       // 검증은 fetchCached보다 먼저 — 잘못된 요청이 캐시 엔트리를 만들면 안 된다. 무효한
       // from/to도 예전에는 고유한 캐시 키를 하나씩 차지했다(엔트리 상한을 무의미한 키로
       // 밀어내는 형태).
@@ -365,6 +370,12 @@ route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
 
 route("/api/clients/claude-effort", (from, to, raw) => claudeEffort(from, to, raw),
   { client: "claude", warm: false, validate: validateClaudeEffort });
+
+// Daily AI insights read stored DynamoDB results; disabled or invalid configuration
+// returns {enabled:false}. The scheduler starts only in the listening entry process.
+const insights = createInsightsFeature();
+route("/api/insights/daily", (query) => insights.handler(query),
+  { client: "claude", warm: false, snapshot: true, validate: validateInsightsQuery });
 
 // ── 캐시 warmer ──────────────────────────────────────────────────────────
 // Shared full/cost defaults are warmed first. Legacy views join the plan only after
@@ -587,6 +598,7 @@ if (isMain) {
     // 부팅 직후 즉시 한 번 데우고(배포 직후 첫 방문자도 히트), 이후 QUANT_MS 경계마다 반복.
     warmCache().catch((err) => console.error("warmCache(boot)", err));
     scheduleWarmer();
+    if (clientConfig.enabledClients.includes("claude")) insights.start();
   });
 
   // k8s 롤링 업데이트에서 SIGTERM은 파드가 Service endpoints에서 빠지기 *전에* 도착한다 —
