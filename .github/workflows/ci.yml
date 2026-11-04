@@ -113,11 +113,13 @@ jobs:
         run: node scripts/test-auth-browser.mjs
 
   runtime:
-    # Self-hosted ARM (dind, no AWS credentials or secrets: safe for PR code), not the AI
-    # review runner. Node compiles from source with all cores; the layer cache keyed on the
-    # Dockerfile skips that compile unless the Node stage changes. PRs build only when a file
-    # that shapes the runtime image changed; main pushes always build.
-    runs-on: claude-code-usage-dashboard-arm
+    # Same-repository pushes and PRs use the self-hosted ARM runner (ephemeral ARC pod, dind, no
+    # AWS credentials or secrets); fork PRs - this repository is public - stay on the GitHub-
+    # hosted ARM runner so outside code never reaches the shared cluster or its privileged dind.
+    # Never the AI review runner. Node compiles from source with all cores; the layer cache
+    # keyed on the Dockerfile skips that compile unless the Node stage changes. PRs build only
+    # when a file that shapes the runtime image changed; main pushes always build.
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'claude-code-usage-dashboard-arm' || 'ubuntu-24.04-arm' }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4

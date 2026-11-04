@@ -70,8 +70,9 @@ the registry digest and ARM64 manifest digest. A local index digest is not proof
 published child manifest or an Inspector scan result.
 
 [CI](../../.github/workflows/ci.yml) builds and runs this inspection on the repository's
-self-hosted ARM64 runner (`claude-code-usage-dashboard-arm`: Docker-in-Docker, no AWS
-credentials or secrets) without registry publication. Node compiles with all available cores;
+self-hosted ARM64 runner (`claude-code-usage-dashboard-arm`: ephemeral ARC pods with
+Docker-in-Docker, no AWS credentials or secrets) for same-repository pushes and pull requests,
+and on the GitHub-hosted ARM64 runner for fork pull requests, without registry publication. Node compiles with all available cores;
 an `actions/cache` buildx layer cache keyed on `dashboard/Dockerfile` skips that compile unless
 the Node stage changes, and the cache never replaces the archived-source build or any digest
 check. Pull requests build only when a runtime-image input changes (Dockerfile, package
