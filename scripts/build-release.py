@@ -46,8 +46,9 @@ def inspect_runtime(image_id, probe, cwd):
                 )
             except subprocess.TimeoutExpired:
                 continue
+            # Newer Docker clients lowercase the "No such object" message.
             if result.returncode and any(
-                marker in result.stderr for marker in
+                marker.lower() in result.stderr.lower() for marker in
                 (f"No such container: {container}", f"No such object: {container}")
             ):
                 break

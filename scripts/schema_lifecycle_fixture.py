@@ -8,6 +8,13 @@ import time
 import uuid
 
 
+
+def absent_container(stderr):
+    """Docker reports a missing container as "Error: No such object" (<= 25) or
+    "error: no such object" (newer clients); match either casing."""
+    message = stderr.lower()
+    return "no such object" in message or "no such container" in message
+
 class SchemaFixture:
     image = "clickhouse/clickhouse-server:24.8"
     password = "YOUR_SYNTHETIC_SCHEMA_FIXTURE_PASSWORD"
@@ -104,7 +111,7 @@ class SchemaFixture:
                 try:
                     observed = self.docker("inspect", container_id, timeout=10, check=False)
                     if observed.returncode:
-                        if "No such object" in observed.stderr or "No such container" in observed.stderr:
+                        if absent_container(observed.stderr):
                             continue
                         raise RuntimeError(observed.stderr)
                     info = json.loads(observed.stdout)[0]
@@ -125,9 +132,7 @@ class SchemaFixture:
                         pass
                     for attempt in range(5):
                         observed = self.docker("inspect", container_id, timeout=10, check=False)
-                        absent = observed.returncode and (
-                            "No such object" in observed.stderr or "No such container" in observed.stderr
-                        )
+                        absent = observed.returncode and absent_container(observed.stderr)
                         if absent:
                             break
                         if observed.returncode:
