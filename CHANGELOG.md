@@ -12,6 +12,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-11-04 AI review panel)
+
+- Run the AI PR review as a Codex lens panel (L2-L5) with a tool-less Claude chair and
+  retire the Kiro cells; the specialist protocol remains available behind `ROLE_REVIEW=1`.
+- Review the pinned merge-base diff and block oversized diffs instead of truncating them.
+- Run each Codex cell and the chair without tools in an empty HOME/cwd with an allowlisted
+  environment; a Codex cell that uses a tool is discarded and fails coverage.
+
 ### Changed (2026-10-24 documentation site)
 
 - Refresh the public site for combined Claude Code/Codex costs, completion-scoped

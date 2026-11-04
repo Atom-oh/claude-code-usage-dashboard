@@ -1,7 +1,9 @@
 # Specialist review protocol
 
-CI selects `ROLE_REVIEW=1`. Trusted inputs feed specialist executors; validated
-results feed aggregation and, when needed, the chair. See
+This protocol is inactive in CI since 2026-11-04; CI runs `ROLE_REVIEW=0` (see
+[AGENTS.md](AGENTS.md) and the [runbook](../../docs/runbooks/pr-review-panel.md)).
+With `ROLE_REVIEW=1`, trusted inputs feed specialist executors; validated results
+feed aggregation and, when needed, the chair. See
 [the project contract](../../docs/pr-review-specialists.md).
 
 | Tag | Requested model | Scope |

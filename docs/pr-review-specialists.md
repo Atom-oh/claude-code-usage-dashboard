@@ -1,8 +1,13 @@
 # Specialist PR review
 
-CI assigns distinct responsibilities instead of asking every model to repeat
-every review lens. The trusted workflow enables this protocol with
-`ROLE_REVIEW=1`; legacy matrix entrypoints remain for regression fixtures.
+This protocol is retained but INACTIVE in CI (owner decision 2026-11-04,
+[ADR-011 amendment](decisions/ADR-011-specialist-review-protocol.md#amendment-2026-11-04--codex-lens-panel-and-claude-chair)).
+The workflow sets `ROLE_REVIEW: "0"` and runs the Codex lens panel -> Claude chair
+path in the [panel runbook](runbooks/pr-review-panel.md). Setting `ROLE_REVIEW: "1"`
+re-enables this protocol: the panel step then receives `GH_TOKEN`, Kiro preflight
+uses its defaults (60 s, 2 attempts) unless `KIRO_PREFLIGHT_TIMEOUT`/`KIRO_PREFLIGHT_ATTEMPTS`
+are set again, and the specialist chair's default timeout in synthesize.sh is 900 s.
+The rest of this document describes the protocol as designed.
 
 | Slot | Configured model | Responsibility |
 | --- | --- | --- |
