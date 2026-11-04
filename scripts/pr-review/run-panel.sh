@@ -112,7 +112,14 @@ PY
 
 # Run one lens up to $RETRIES times; a nonzero exit, incomplete stream or empty final
 # message is retried. Only the final message (-o) becomes the cell output.
-try_panel() {  # try_panel <lens> <prompt>   (stdin=$DIFF)
+# Stdin is the diff plus build-prompts.py's optional excluded-paths data section.
+STDIN_DATA="$WORK/panel-stdin.txt"
+cat "$DIFF" > "$STDIN_DATA" || exit 1
+if [ -f "$LENSES_DIR/excluded-paths.data" ]; then
+  cat "$LENSES_DIR/excluded-paths.data" >> "$STDIN_DATA" || exit 1
+fi
+
+try_panel() {  # try_panel <lens> <prompt>   (stdin=$STDIN_DATA)
   local lens="$1" prompt="$2"
   local slot="$SLOT/codex-$lens.md" err="$SLOT/codex-$lens.err" cell="$CELLS/codex-$lens"
   local a rc=1 check
@@ -123,7 +130,7 @@ try_panel() {  # try_panel <lens> <prompt>   (stdin=$DIFF)
     ( cd "$cell/cwd" && review_env "$cell/home" "$cell/tmp" CODEX_HOME="$cell/home/.codex" -- \
         timeout "$T" codex -c web_search=disabled exec --model "$PANEL_MODEL" -s read-only \
           --skip-git-repo-check --ephemeral --ignore-rules --color never --json \
-          -o "$cell/last-message.md" "$prompt" ) > "$cell/events.jsonl" 2>"$err" < "$DIFF"; rc=$?
+          -o "$cell/last-message.md" "$prompt" ) > "$cell/events.jsonl" 2>"$err" < "$STDIN_DATA"; rc=$?
     # Check the events whatever the exit code, so a tool call is never repeated by a retry.
     codex_events_check "$cell/events.jsonl"; check=$?
     if [ "$check" -eq 2 ]; then
