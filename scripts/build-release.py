@@ -96,6 +96,10 @@ def main():
     parser.add_argument("--expected-image-id",
                         help="Approved local config digest; required for --push, checked before upload.")
     parser.add_argument("--record", type=Path, required=True, help="Private output JSON record outside the source build context.")
+    # Build-cache locations only: layers are still built from the archived committed source and
+    # every digest/identity check below still applies. Local release builds pass neither.
+    parser.add_argument("--cache-from", help="buildx --cache-from value (for example type=local,src=DIR).")
+    parser.add_argument("--cache-to", help="buildx --cache-to value (for example type=local,dest=DIR,mode=max).")
     args = parser.parse_args()
     if (args.push or args.expected_image_id is not None) and not valid_digest(args.expected_image_id):
         parser.error("--push requires a valid --expected-image-id from the approved local record")
@@ -148,8 +152,12 @@ def main():
         invocation = ["docker", "buildx", "build", "--platform", "linux/arm64",
                       "--build-arg", "APP_REVISION=" + revision, "--label",
                       "org.opencontainers.image.revision=" + revision,
-                      "--metadata-file", str(metadata), "-t", args.image,
-                      "--load", str(context_root / "dashboard")]
+                      "--metadata-file", str(metadata), "-t", args.image]
+        if args.cache_from:
+            invocation += ["--cache-from", args.cache_from]
+        if args.cache_to:
+            invocation += ["--cache-to", args.cache_to]
+        invocation += ["--load", str(context_root / "dashboard")]
         subprocess.run(invocation, cwd=root, check=True)
         build_metadata = json.loads(metadata.read_text())
         record = {"revision": revision, "image": args.image, "platform": "linux/arm64",
