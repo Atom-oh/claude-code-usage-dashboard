@@ -113,14 +113,16 @@ jobs:
         run: node scripts/test-auth-browser.mjs
 
   runtime:
-    # Pushes use the self-hosted ARM runner (ephemeral ARC pod, dind, no AWS credentials or
-    # secrets); pull requests - this repository is public - run on the GitHub-hosted ARM runner,
-    # so PR code never executes in the shared cluster's privileged dind. Never the AI review
-    # runner. Node compiles from source (at most 8 jobs); the layer cache keyed on the
-    # Dockerfile skips that compile unless the Node stage changes, on either runner. PRs build
-    # whenever an archived build input changes (all of dashboard/, LICENSE, the release script,
-    # this workflow or the runtime page); pushes always build.
-    runs-on: ${{ github.event_name == 'push' && 'claude-code-usage-dashboard-arm' || 'ubuntu-24.04-arm' }}
+    # Pushes and same-repository PRs use the self-hosted ARM runner: ephemeral ARC pods with dind
+    # under a no-permission service account (no Pod Identity, no secrets), IMDSv2 hop limit 1,
+    # and a required pod anti-affinity so they never share a node with another runner - in
+    # particular the *-claude-arm review runners that hold Bedrock/AWS credentials
+    # (AWS-Demo-Platform runner appset). Fork PRs - this repository is public - stay on the
+    # GitHub-hosted ARM runner. Node compiles from source (at most 8 jobs); the layer cache keyed
+    # on the Dockerfile skips that compile unless the Node stage changes. PRs build whenever an
+    # archived build input changes (all of dashboard/, LICENSE, the release script, this
+    # workflow or the runtime page); pushes always build.
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'claude-code-usage-dashboard-arm' || 'ubuntu-24.04-arm' }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
