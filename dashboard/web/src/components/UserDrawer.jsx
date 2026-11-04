@@ -8,6 +8,7 @@ import { DualLineChart, GroupBarChart } from "./GroupCharts.jsx";
 import { BarTip } from "./BarTip.jsx";
 import { makeTickFmt, maskEmail, parseUtc } from "../fmt.js";
 import { APPROVAL_HELP, formatActivityScore } from "../score.js";
+import { teamText, useTeams } from "../TeamsContext.jsx";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
@@ -161,6 +162,7 @@ function InteractionWaterfall({ resp }) {
 export function UserDrawer({ row, onClose }) {
   const { from, to } = useRange();
   const fmtTick = makeTickFmt(24);
+  const teams = useTeams();
   const [state, setState] = useState({ loading: true, error: null, daily: [], byTool: [], heatmap: [], interactions: null });
 
   useEffect(() => {
@@ -198,6 +200,7 @@ export function UserDrawer({ row, onClose }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-[18px] font-semibold text-ink-800 truncate">{maskEmail(row.user)}</h2>
+            <p className="text-[12px] text-ink-500 mt-0.5">팀 {teamText(teams, row.user)}</p>
             {/* 아래 차트들은 row.group(이 유저×그룹 행)으로만 필터 — 전역 model 필터는 여전히
                 미적용이라 model 필터가 켜진 상태에서 리더보드 행과 정확히 일치하진 않는다. */}
             <p className="text-[12px] text-ink-400 mt-0.5 inline-flex items-center gap-1">
@@ -205,8 +208,8 @@ export function UserDrawer({ row, onClose }) {
               <Info
                 size={12}
                 className="shrink-0 text-ink-400"
-                title="이 채널에서의 활동만 집계합니다. 아래 차트에는 상단 모델 필터가 적용되지 않아, 필터를 켠 상태에서는 위 요약 수치와 차이가 날 수 있습니다."
-                aria-label="이 채널에서의 활동만 집계합니다. 아래 차트에는 상단 모델 필터가 적용되지 않아, 필터를 켠 상태에서는 위 요약 수치와 차이가 날 수 있습니다."
+                title="이 채널에서의 활동만 집계합니다. 아래 차트에는 상단 모델·팀 필터가 적용되지 않아, 필터를 켠 상태에서는 위 요약 수치와 차이가 날 수 있습니다."
+                aria-label="이 채널에서의 활동만 집계합니다. 아래 차트에는 상단 모델·팀 필터가 적용되지 않아, 필터를 켠 상태에서는 위 요약 수치와 차이가 날 수 있습니다."
               />
             </p>
           </div>

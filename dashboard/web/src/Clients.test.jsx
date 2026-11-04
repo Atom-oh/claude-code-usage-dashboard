@@ -213,7 +213,8 @@ test.each([
   expect(container.textContent).not.toContain("A/B Dashboard");
   expect(document.title).toContain("Overview");
   expect(document.title).not.toContain("A/B");
-  expect(requests(fetchMock).every((url) => ["/api/clients/overview", "/api/codex/insights", "/api/health/data"].includes(url.pathname))).toBe(true);
+  expect(requests(fetchMock).every((url) => ["/api/clients/overview", "/api/codex/insights", "/api/health/data",
+    "/api/teams", "/api/users/teams"].includes(url.pathname))).toBe(true);
 });
 
 test.each(["/productivity", "/analytics", "/users", "/cost", "/missing"])("Codex deep URL %s redirects with supported filters before any legacy fetch", async (path) => {
@@ -230,7 +231,7 @@ test.each(["/productivity", "/analytics", "/users", "/cost", "/missing"])("Codex
   expect(params.has("group")).toBe(false);
   expect(params.has("project")).toBe(false);
   for (const url of requests(fetchMock)) {
-    expect(["/api/clients/overview", "/api/codex/insights", "/api/health/data"]).toContain(url.pathname);
+    expect(["/api/clients/overview", "/api/codex/insights", "/api/health/data", "/api/teams", "/api/users/teams"]).toContain(url.pathname);
     expect(url.searchParams.has("group")).toBe(false);
     expect(url.searchParams.has("project")).toBe(false);
   }

@@ -52,6 +52,7 @@ export function parseUrlState(searchParams, { defaultDays = 2, piiMask = true, p
       user: piiMask ? "" : get("user"),
       model: get("model"),
       project: projectColumns === true ? get("project") : "",
+      team: get("team"),
     },
   };
 }
@@ -69,6 +70,7 @@ export function serializeUrlState({ range, filters, piiMask = true, projectColum
   if (filters?.group) p.set("group", filters.group);
   if (filters?.model) p.set("model", filters.model);
   if (projectColumns === true && filters?.project) p.set("project", filters.project);
+  if (filters?.team) p.set("team", filters.team);
   // 마스킹이 켜져 있으면 user는 담지 않는다(위 주석 참고).
   if (!piiMask && filters?.user) p.set("user", filters.user);
   return p;

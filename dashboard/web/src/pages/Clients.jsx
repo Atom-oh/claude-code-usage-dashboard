@@ -26,7 +26,7 @@ const INSIGHT_SECTIONS = {
 export default function Clients({ page = "overview" }) {
   const { client, enabledClients, setDetail } = useClient();
   const { from, to, intervalHours: defaultHours } = useRange();
-  const { user, model, backend } = useFilters();
+  const { user, model, backend, team } = useFilters();
   const rangeKey = `${from.getTime()}|${to.getTime()}`;
   const [resolution, setResolution] = useState(null);
   const costTrends = page === "cost" || page === "trends";
@@ -110,7 +110,7 @@ export default function Clients({ page = "overview" }) {
         <p className="w-full text-[12px] text-ink-500">1일 이하는 10분까지 선택할 수 있습니다. 더 긴 기간은 시간·일·주 단위로 집계합니다.</p>
       </div>}
       {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
-        : <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}`}
+        : <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}|${team}`}
           page={page} data={data} clients={clients} stale={stale}
           previous={page === "trends" ? previous : undefined} breakdowns={breakdowns} /></section>}
       {(loading || error || empty) && breakdowns}

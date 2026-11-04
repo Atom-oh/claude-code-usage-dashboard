@@ -24,6 +24,8 @@ export function FilterProvider({ children }) {
   // 시딩해야 한다. 입력창만 시딩하면 첫 fetch가 무필터로 나가고 300ms 뒤 다시 나간다.
   const initial = useState(() => parseUrlState(searchParams, { piiMask, projectColumns }).filters)[0];
   const [storedGroup, setGroup] = useState(common ? "" : initial.group);
+  // Team is a select (no debounce) and applies to shared and Claude detail views alike.
+  const [team, setTeam] = useState(initial.team);
   const [userInput, setUser] = useState(initial.user);
   const [modelInput, setModel] = useState(initial.model);
   const [projectInput, setProject] = useState(common ? "" : initial.project);
@@ -71,7 +73,7 @@ export function FilterProvider({ children }) {
   useEffect(() => {
     setSearchParams(
       (prev) => {
-        const next = serializeUrlState({ range: null, filters: { group, user, model, project }, piiMask, projectColumns });
+        const next = serializeUrlState({ range: null, filters: { group, user, model, project, team }, piiMask, projectColumns });
         if (common && backend) next.set("backend", backend);
         for (const k of ["days", "from", "to", "period", "client", "view"]) {
           const v = prev.get(k);
@@ -82,10 +84,10 @@ export function FilterProvider({ children }) {
       },
       { replace: true }
     );
-  }, [group, user, model, project, backend, common, piiMask, projectColumns, setSearchParams]);
+  }, [group, user, model, project, team, backend, common, piiMask, projectColumns, setSearchParams]);
 
   return (
-    <FilterContext.Provider value={{ group, setGroup, user, userInput, setUser, model, modelInput, setModel, project, projectInput, setProject, backend: common ? backend : "", backendInput, setBackend }}>
+    <FilterContext.Provider value={{ group, setGroup, user, userInput, setUser, model, modelInput, setModel, project, projectInput, setProject, team, setTeam, backend: common ? backend : "", backendInput, setBackend }}>
       {children}
     </FilterContext.Provider>
   );

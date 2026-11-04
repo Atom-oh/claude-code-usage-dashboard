@@ -15,6 +15,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { maskEmail } from "../fmt.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
 import { ACTIVITY_SCORE_HELP, averageActivityScore, formatActivityScore } from "../score.js";
+import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -101,6 +102,7 @@ export default function Users() {
   // includeUnknown=1 — 계열별 평균은 group으로 나누지 않고 전 행을 합산하는 총계 지표라
   // unknown 세션도 포함해야 한다(queries.js filterCond 정책표). 기본값은 unknown을 제외한다.
   const byUserModel = useApi("/api/cost/by-user-model", { includeUnknown: 1 });
+  const teams = useTeams();
 
   // 필터/기간 변경으로 선택 행이 leaderboard에서 사라지면 selected를 비운다 — 안 그러면
   // 나중에 그 행이 다시 나타났을 때(예: 필터를 되돌림) 재클릭 없이 드로어가 조용히 재오픈된다.
@@ -175,7 +177,7 @@ export default function Users() {
                     title={`활동 지수 상위 10명 — ${g}`}
                     help={ACTIVITY_SCORE_HELP}
                     subtitle="계산 가능한 사용자만 표시 · 아래 표에서 사용자 상세 활동을 확인합니다"
-                    data={data.map((d) => ({ ...d, user: maskEmail(d.user) }))}
+                    data={data.map((d) => ({ ...d, user: maskEmail(d.user) + teamSuffix(teams, d.user) }))}
                     labelKey="user"
                     valueKey="score"
                     color={colorFor(g)}
@@ -230,7 +232,7 @@ export default function Users() {
                   onRowClick={(r) => setSelected({ user: r.user, group: r.group })}
                   subtitle="임의 가중치 기반 참고 지수 · 생산성이나 코드 품질을 측정하지 않습니다"
                   help={ACTIVITY_SCORE_HELP}
-                  columns={[
+                  columns={withTeamColumn([
                     { key: "user", label: "사용자", render: maskEmail },
                     { key: "productivity_score", label: "활동 지수", render: formatActivityScore },
                     { key: "sessions", label: "세션", render: fmt },
@@ -244,8 +246,8 @@ export default function Users() {
                     { key: "active_days", label: "활성일", render: fmt },
                     { key: "top_tool", label: "주요 도구" },
                     { key: "top_skill", label: "주요 Skill" },
-                  ]}
-                  rows={rows.filter((r) => r.group === g)}
+                  ], teams)}
+                  rows={withTeams(rows.filter((r) => r.group === g), teams)}
                   exportName={`users_leaderboard_${g}`}
                   stale={leaderboard.stale || tools.stale || skills.stale}
                 />
@@ -261,12 +263,12 @@ export default function Users() {
               <DataTable
                 key={g}
                 title={`사용자별 도구 사용 내역 — ${g}`}
-                columns={[
+                columns={withTeamColumn([
                   { key: "user", label: "사용자", render: maskEmail },
                   { key: "tool", label: "도구" },
                   { key: "uses", label: "사용 횟수", render: fmt },
-                ]}
-                rows={(tools.data || []).filter((r) => r.group === g)}
+                ], teams)}
+                rows={withTeams((tools.data || []).filter((r) => r.group === g), teams)}
                 exportName={`users_tools_${g}`}
                 stale={tools.stale}
               />
@@ -285,12 +287,12 @@ export default function Users() {
                 key={g}
                 title={`사용자별 Skill 사용 내역 — ${g}`}
                 help="Skill 사용 횟수는 텔레메트리 보고 횟수 기준의 근사값입니다."
-                columns={[
+                columns={withTeamColumn([
                   { key: "user", label: "사용자", render: maskEmail },
                   { key: "skill", label: "Skill" },
                   { key: "invocations", label: "사용 횟수", render: fmt },
-                ]}
-                rows={(skills.data || []).filter((r) => r.group === g)}
+                ], teams)}
+                rows={withTeams((skills.data || []).filter((r) => r.group === g), teams)}
                 exportName={`users_skills_${g}`}
                 stale={skills.stale}
               />

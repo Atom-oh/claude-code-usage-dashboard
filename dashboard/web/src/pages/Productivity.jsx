@@ -9,6 +9,7 @@ import { StatTile } from "../components/StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { makeTickFmt, maskEmail } from "../fmt.js";
+import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { colorFor, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { foldLeaderboardByUser, formatActivityScore, ACTIVITY_SCORE_HELP, APPROVAL_HELP } from "../score.js";
@@ -125,6 +126,7 @@ export default function Productivity() {
   const locTrend = useApi("/api/productivity/loc-timeseries");
   const leaderboard = useApi("/api/users/leaderboard");
   const byUserCost = useApi("/api/cost/by-user-model");
+  const teams = useTeams();
 
   // 사용자별 생산성 표: 유저×그룹 행을 유저 단위로 접고 점수를 재계산(score.js — Executive의
   // 조직 점수와 같은 폴드). 비용은 by-user-model의 보고값을 유저×그룹으로 접는다.
@@ -191,7 +193,8 @@ export default function Productivity() {
   }
   const top10ByScore = userProductivityRows.filter((r) => r.productivity_score != null).slice(0, 10).map((r) => {
     const groups = [...(groupsByUser.get(r.user) || [])].sort();
-    return { ...r, label: groups.length > 1 ? `${maskEmail(r.user)} (${groups.join("+")})` : maskEmail(r.user) };
+    const label = groups.length > 1 ? `${maskEmail(r.user)} (${groups.join("+")})` : maskEmail(r.user);
+    return { ...r, label: label + teamSuffix(teams, r.user) };
   });
 
   return (
@@ -244,7 +247,7 @@ export default function Productivity() {
             title="사용자별 관측 활동"
             subtitle="사용자 단위로 합산 · 비용은 Claude Code 보고값 · 막대 색은 채널"
             help={`${ACTIVITY_SCORE_HELP} 여러 채널의 원시 활동을 합친 뒤 지수를 다시 계산합니다. 비용 막대의 색은 채널, 길이는 가장 큰 사용자 대비 비율입니다.`}
-            columns={[
+            columns={withTeamColumn([
               { key: "user", label: "사용자", render: maskEmail },
               { key: "productivity_score", label: "활동 지수", render: formatActivityScore, bar: true },
               {
@@ -270,8 +273,8 @@ export default function Productivity() {
               { key: "accept_rate", label: "권한 허용률", render: (value, row) => pct(row.decisions > 0 ? value : null), toText: (value, row) => pct(row.decisions > 0 ? value : null) },
               { key: "sessions", label: "세션", render: fmt },
               { key: "active_days", label: "활성일", render: fmt },
-            ]}
-            rows={userProductivityRows}
+            ], teams)}
+            rows={withTeams(userProductivityRows, teams)}
             exportName="productivity_by_user"
             stale={leaderboard.stale || byUserCost.stale}
           />
