@@ -83,6 +83,23 @@ test("Codex precedence: CODEX_PRICING_JSON > runtime > snapshot > code, per mode
   assert.deepEqual(codexPrices()[model].global.short, codexRates(5));
 });
 
+test("a refresh replaces snapshot entries per model and scope, keeping the rest", (t) => {
+  restore(t);
+  const only = "claude-sonnet-5";
+  const shared = "claude-fable-5-1";
+  const vendor = "moonshotai.kimi-k3";
+  setPriceListLayersForTesting({
+    snapshot: layer("2026-10-01T00:00:00Z", { [only]: claudeRates(3), [shared]: claudeRates(6) },
+      { [vendor]: { regional: { short: codexRates(1) }, global: { short: codexRates(2) } } }),
+    runtime: layer("2026-10-28T00:00:00Z", { [shared]: claudeRates(7) }, { [vendor]: { global: { short: codexRates(5) } } }),
+  });
+  assert.deepEqual(claudePricing().table[only], claudeRates(3), "a model the refresh omitted keeps its snapshot rates");
+  assert.deepEqual(claudePricing().table[shared], claudeRates(7));
+  assert.deepEqual(codexPrices()[vendor].global.short, codexRates(5));
+  assert.deepEqual(codexPrices()[vendor].regional.short, codexRates(1), "a scope the refresh omitted keeps its snapshot rates");
+  assert.deepEqual(priceListStatus(), { source: "runtime", fetchedAt: "2026-10-28T00:00:00Z", models: [shared, only, vendor].sort() });
+});
+
 test("an incomplete Price List entry never shadows the code rate", async (t) => {
   restore(t);
   quiet(t);
@@ -112,8 +129,10 @@ test("a failed or empty refresh keeps the last good layer", async (t) => {
   assert.equal(await refreshPriceList({ fetch: async () => { throw new Error("offline"); } }), false);
   assert.equal(priceListStatus().source, "snapshot");
   assert.equal(await refreshPriceList({ fetch: async () => products(), now: () => new Date("2026-10-28T05:06:07.890Z") }), true);
-  assert.deepEqual(priceListStatus(), { source: "runtime", fetchedAt: "2026-10-28T05:06:07Z",
-    models: ["claude-fable-5-1", "moonshotai.kimi-k3", "openai.gpt-6-astra", "zai.glm-4.7"] });
+  const status = priceListStatus();
+  assert.deepEqual([status.source, status.fetchedAt], ["runtime", "2026-10-28T05:06:07Z"]);
+  for (const model of ["claude-fable-5-1", "moonshotai.kimi-k3", "openai.gpt-6-astra", "zai.glm-4.7"])
+    assert.ok(status.models.includes(model), model);
   assert.equal(await refreshPriceList({ fetch: async () => ({ AmazonBedrock: [], AmazonBedrockFoundationModels: [] }) }), false);
   const secret = new Error("User: arn:aws:sts::123456789012:assumed-role/x is not authorized");
   secret.name = "AccessDeniedException";

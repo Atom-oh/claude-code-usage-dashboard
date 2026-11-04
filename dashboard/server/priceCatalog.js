@@ -65,7 +65,14 @@ let codexMemo = null;
 let refreshing = null;
 let timer = null;
 
-const activeLayer = () => runtime ?? snapshot;
+// A refresh replaces snapshot entries per model (Codex: per model and scope); models and scopes it
+// did not return keep their snapshot rates. fetchedAt names the newest layer.
+function activeLayer() {
+  if (!runtime || !snapshot) return runtime ?? snapshot;
+  const codex = { ...snapshot.codex };
+  for (const [model, entry] of Object.entries(runtime.codex)) codex[model] = { ...codex[model], ...entry };
+  return { fetchedAt: runtime.fetchedAt, claude: { ...snapshot.claude, ...runtime.claude }, codex };
+}
 
 // Memoized per layer version and env text. The env is part of the key so a test that re-imports
 // pricing.js under a different PRICING_* env sees its own table.
@@ -150,7 +157,9 @@ export function refreshPriceList({ fetch = fetchPriceList, now = () => new Date(
         throw new Error("no complete model rates in the AWS Price List response");
       runtime = layer;
       version += 1;
-      logLayer(`runtime refresh, ${parsed.skipped.length} skipped entries`, layer);
+      const kept = snapshot ? [...Object.keys(snapshot.claude), ...Object.keys(snapshot.codex)]
+        .filter((model) => !Object.hasOwn(layer.claude, model) && !Object.hasOwn(layer.codex, model)).length : 0;
+      logLayer(`runtime refresh, ${parsed.skipped.length} skipped entries, ${kept} snapshot-only models kept`, layer);
       return true;
     } catch (error) {
       console.warn(`[price-list] refresh failed; keeping ${priceListStatus().source} rates: ${describe(error)}`);

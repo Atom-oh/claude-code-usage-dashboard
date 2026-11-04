@@ -180,6 +180,8 @@ price change needed a code change and a release.
 - **Layers**, highest first, per model: `PRICING_JSON`/`CODEX_PRICING_JSON` (operator rates,
   whole-model replacement as before); the latest successful runtime Price List refresh (in
   memory); the build snapshot `dashboard/server/awsPriceSnapshot.json`; the code tables.
+  A refresh replaces snapshot entries per model (Codex: per model and scope); models and scopes it
+  did not return keep their snapshot rates, and `/api/config` names the newest layer's source and time.
   `priceCatalog.js` owns the merged view; pricing paths read it at call time.
 - **Source**: `pricing:GetProducts` against `us-east-1` for `AmazonBedrockFoundationModels`
   (Anthropic and OpenAI display names, e.g. `Claude Fable 5.1` → `claude-fable-5-1`,
