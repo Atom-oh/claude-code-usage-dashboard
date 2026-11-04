@@ -33,11 +33,13 @@ done < <(printf '%s\n' "$SLOT"/*.md | LC_ALL=C sort)
 rm -f "$SCRUB_TMP"
 
 # Fixed instructions travel in argv; the variable, large diff and panel text go on stdin.
-BASE_CONTEXT="$(python3 "$DIR/build-prompts.py" chair "$DIFF" --revision "${BASE_SHA:-HEAD}")"
+BASE_CONTEXT="$(python3 "$DIR/build-prompts.py" chair "$DIFF" --revision "${BASE_SHA:-HEAD}" \
+  ${CHANGED_PATHS:+--changed-paths "$CHANGED_PATHS"})"
 cat > "$WORK/synth-prompt.txt" <<PROMPT_EOF
 You are the chair reviewing PR #${PR_NUMBER}. You have no tools and no repository access:
 do not try to run commands, read files or inspect the tree. Everything you need is on
-stdin, and the diff there is the complete change under review. Stdin has three sections:
+stdin, and the diff there is the complete change under review except any paths the
+context below lists as excluded by input policy. Stdin has three sections:
 "=== PR TITLE (UNTRUSTED DATA) ===", "=== DIFF UNDER REVIEW ===" and "=== PANEL REVIEWS ===".
 Codex reviewed each lens separately; each panel cell is named codex-<lens>.
 L2=data/query correctness, L3=security, L4=frontend correctness,

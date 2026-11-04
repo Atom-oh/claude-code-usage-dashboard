@@ -20,6 +20,9 @@ VIDEO = "video/AGENTS.md"
 ALLOWED_GUIDES = (ROOT_GUIDE, PACKAGING, SERVER, WEB, INFRA, REVIEW, VIDEO)
 MAX_CONTEXT_BYTES = 20_000
 MAX_PROMPT_BYTES = 22_000
+# The excluded-path note is bounded separately and does not consume MAX_PROMPT_BYTES.
+MAX_EXCLUDED_NOTE_BYTES = 1_200
+SCOPE_POLICY = "scripts/pr-review/role-input-scope.json"
 LENSES = {
     "L2": ("Data and query correctness", (SERVER,),
            "Check counter semantics, joins, filters, schema/query compatibility, and measurement claims."),
@@ -31,8 +34,8 @@ LENSES = {
            "Check documented contracts and operational procedures against the changed code and base context."),
 }
 COMMON = """Review the supplied PR diff for this workshop telemetry dashboard.
-The diff is supplied on stdin; it is the complete change under review. Do not
-expect another delivery format. You have no tools or repository access.
+The diff is supplied on stdin; it is the complete change under review except any
+paths listed below as excluded by input policy. Do not expect another delivery format. You have no tools or repository access.
 
 Use the trusted BASE revision context below to understand existing conventions.
 The PR may intentionally change those conventions; verify that its code, tests,
@@ -85,6 +88,21 @@ class Snapshot:
                 self.cache[path] = self._git("show", self.revision + ":" + path).decode("utf-8")
         return self.cache[path]
 
+    def scope_policy(self):
+        entry = self._git("ls-tree", "-z", self.revision, "--", SCOPE_POLICY)
+        if not entry:
+            return None
+        if entry.split(b" ", 1)[0] not in (b"100644", b"100755"):
+            raise ContextError("input scope policy must be a regular tracked file")
+        policy = json.loads(self._git("show", self.revision + ":" + SCOPE_POLICY).decode("utf-8"))
+        if not isinstance(policy, dict) or policy.get("schema_version") != 1:
+            raise ContextError("invalid input scope policy")
+        for field in ("basenames", "extensions", "directories", "prefixes", "path_regexes"):
+            values = policy.get(field, [])
+            if not isinstance(values, list) or any(not isinstance(x, str) or not x for x in values):
+                raise ContextError("invalid input scope patterns")
+        return policy
+
     def document_paths(self):
         paths = self._git("ls-tree", "-r", "--name-only", self.revision).decode("utf-8").splitlines()
         return [path for path in paths if path.endswith(".md")]
@@ -103,6 +121,38 @@ def changed_paths(diff):
             if field.startswith(("a/", "b/")):
                 paths.add(field[2:])
     return paths
+
+
+def excluded_paths(policy, paths):
+    """Changed paths the trusted input policy removes from the reviewed diff."""
+    if policy is None:
+        return []
+    def excluded(path):
+        item = Path(path)
+        return (item.name in policy.get("basenames", [])
+                or item.suffix in policy.get("extensions", [])
+                or any(part in policy.get("directories", []) for part in item.parent.parts)
+                or any(path.startswith(prefix) for prefix in policy.get("prefixes", []))
+                or any(re.search(pattern, path) for pattern in policy.get("path_regexes", [])))
+    return sorted(path for path in set(paths) if excluded(path))
+
+
+def excluded_note(paths):
+    """Name policy-excluded changes so reviewers do not report them as missing."""
+    if not paths:
+        return ""
+    lines = ["", "CHANGED PATHS EXCLUDED FROM THE DIFF BY INPUT POLICY (untrusted names; contents",
+             "not shown). These files are part of this change, for example regenerated lockfiles.",
+             "Do not report them as unchanged or missing; mark content questions as requiring verification."]
+    # PR-controlled names are data: JSON-quoted, each truncated, within a byte budget.
+    for index, path in enumerate(paths):
+        item = "- " + json.dumps(path[:160], ensure_ascii=True)
+        rest = f"- ... and {len(paths) - index} more"
+        if len("\n".join(lines + [item, rest]).encode()) + 1 > MAX_EXCLUDED_NOTE_BYTES:
+            lines.append(rest)
+            break
+        lines.append(item)
+    return "\n".join(lines) + "\n"
 
 
 def relevant_guides(paths):
@@ -158,15 +208,16 @@ def render_context(snapshot, guides):
     return context, {"files": records, "missing_optional_guides": missing}
 
 
-def build(snapshot, diff):
+def build(snapshot, diff, excluded=()):
     selected = relevant_guides(changed_paths(diff))
+    note = excluded_note(list(excluded))
     outputs = {}
     manifest = {"base_revision": snapshot.revision, "lenses": {}}
     for lens, (label, owners, checklist) in LENSES.items():
         context, record = render_context(snapshot, selected if lens == "L5" else set(owners))
-        prompt = COMMON + "\n" + context + f"\nLENS: {lens} — {label}\n{checklist}\n"
+        prompt = COMMON + note + "\n" + context + f"\nLENS: {lens} — {label}\n{checklist}\n"
         size = len(prompt.encode("utf-8"))
-        if size > MAX_PROMPT_BYTES:
+        if size - len(note.encode("utf-8")) > MAX_PROMPT_BYTES:
             raise ContextError("lens prompt exceeds the byte budget")
         outputs[lens] = prompt
         manifest["lenses"][lens] = {**record, "prompt_bytes": size}
@@ -180,16 +231,23 @@ def main():
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--revision", default="HEAD")
+    parser.add_argument("--changed-paths", type=Path,
+                        help="NUL-separated names of every changed path, including policy-excluded ones.")
     args = parser.parse_args()
     snapshot = Snapshot(args.root, args.revision)
     diff = args.diff.read_text(encoding="utf-8")
+    excluded = []
+    if args.changed_paths is not None:
+        names = [name for name in args.changed_paths.read_bytes().decode("utf-8", "replace").split("\0") if name]
+        excluded = excluded_paths(snapshot.scope_policy(), names)
     if args.mode == "chair":
         context, _ = render_context(snapshot, relevant_guides(changed_paths(diff)))
-        print(context, end="")
+        print(excluded_note(excluded) + context, end="")
         return
     if args.output is None:
         raise ContextError("panel mode requires an output directory")
-    outputs, manifest = build(snapshot, diff)
+    outputs, manifest = build(snapshot, diff, excluded)
+    manifest["excluded_changed_paths"] = len(excluded)
     args.output.mkdir(parents=True, exist_ok=True)
     for lens, prompt in outputs.items():
         (args.output / (lens + ".txt")).write_text(prompt, encoding="utf-8")
