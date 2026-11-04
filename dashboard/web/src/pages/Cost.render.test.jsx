@@ -219,6 +219,24 @@ test("computed comparison is opt-in and preserves the original values and TTL as
   expect(screen.queryByRole("region", { name: "계산 비용 교차검증" })).toBeNull();
 });
 
+test("computed comparison names the AWS Price List source and fetch time", async () => {
+  mount("single", {
+    "/api/cost/summary": [summary],
+    "/api/cost/tiers": { bedrock: { cacheRead: 100, cacheWrite: 400, output: 6500, uncachedInput: 817.28 } },
+  }, { cacheWriteTtl: "5m", overriddenModels: [], priceList: { source: "snapshot", fetchedAt: "2026-10-28T12:00:00Z", models: ["claude-fable-5-1"] } });
+  await waitFor(() => expect(card("총 비용").textContent).toContain("$6,647.79"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
+  const comparison = screen.getByRole("region", { name: "계산 비용 교차검증" });
+  expect(comparison.textContent).toContain("단가 출처: AWS Price List 빌드 스냅샷(2026-10-28 ");
+});
+
+test("computed comparison keeps an unknown price source explicit for older servers", async () => {
+  mount("single", { "/api/cost/summary": [summary] });
+  await waitFor(() => expect(card("총 비용").textContent).toContain("$6,647.79"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "계산 비용 비교" }));
+  expect(screen.getByRole("region", { name: "계산 비용 교차검증" }).textContent).toContain("단가 출처: 미확인.");
+});
+
 test("Effort donut total and legend use the same cent precision as reported totals", async () => {
   mount("single", {
     "/api/cost/summary": [{ ...summary, reported_cost: 77.64 }],

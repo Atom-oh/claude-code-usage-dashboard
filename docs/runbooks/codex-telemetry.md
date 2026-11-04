@@ -431,6 +431,10 @@ an Anthropic model with no Codex-table entry falls back to the Claude price tabl
 (`price_source: "claude_table"`); an unusable Claude report (`/api/clients/overview` only)
 falls back to a token-computed estimate (`cost_basis: "computed_estimate"`/`"mixed"`). See
 [ADR-017](../decisions/ADR-017-backend-cost-fallback.md) for the full contract.
+Code-table rates sit below an AWS Price List layer (runtime refresh, then the image snapshot);
+`CODEX_PRICING_JSON` entries still replace whole models above it. `/api/config`
+`pricing.priceList` reports the active layer
+([ADR-017 amendment](../decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-28-aws-price-list-as-a-rate-source)).
 
 With Docker/server dependencies, `bash scripts/test-client-sql.sh` owns a disposable
 loopback ClickHouse using the local schema; external DB URLs are ignored.

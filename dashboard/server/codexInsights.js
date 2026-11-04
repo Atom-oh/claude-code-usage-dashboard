@@ -1,6 +1,7 @@
 import { query } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
-import { codexPrices, validateClientFilters } from "./clientMetrics.js";
+import { validateClientFilters } from "./clientMetrics.js";
+import { codexPrices } from "./priceCatalog.js";
 import { buildCodexLogAggregateQuery, foldCodexLogAggregates } from "./codexLogAggregates.js";
 import { buildMetricQuery, buildTraceQuery, foldCodexMetrics, foldCodexTraces } from "./codexSignals.js";
 
@@ -37,7 +38,7 @@ export async function codexInsights(from, to, raw = {}, run = query) {
   const diagnosticOnly = profile === "tools" || profile === "performance";
   const requestMetrics = !profile || profile === "performance";
   const requestTraces = !profile;
-  const logQuery = buildCodexLogAggregateQuery(from, to, filters, codexPrices, { profile });
+  const logQuery = buildCodexLogAggregateQuery(from, to, filters, codexPrices(), { profile });
   const [logRows, metricResults, traceResult] = await Promise.all([
     run(logQuery.sql, logQuery.params),
     requestMetrics ? Promise.all(TYPES.map((type) => optionalQuery(buildMetricQuery(type, from, to, filters,

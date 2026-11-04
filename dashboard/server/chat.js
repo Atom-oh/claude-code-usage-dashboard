@@ -3,7 +3,7 @@ import { queryReadonly } from "./clickhouse.js";
 import { CapacityError, capacityResponse, createBudget, createSlidingLimiter } from "./capacity.js";
 import { GROUP_CTE } from "./grouping.js";
 import { normModel } from "./queries.js";
-import { PRICING_PROMPT_TABLE } from "./pricing.js";
+import { pricingPromptTable } from "./pricing.js";
 import { setTimeout as wait } from "node:timers/promises";
 
 // Ask Claude — Bedrock ConverseStream + run_sql 툴콜 루프 (whchoi98 대시보드의 Analyze 상당,
@@ -180,6 +180,9 @@ export function sanitizeSql(sql) {
 // 스키마·집계 규칙 설명만 따로 export한다 — chat.test.js가 실측 스키마와의 드리프트를
 // 잡아낼 수 있게(문자열 하나를 통째로 바꿔도 회귀 테스트가 실패하도록), 그리고 SYSTEM 안에서
 // "무엇을 조회할 수 있는가"와 "규칙"을 시각적으로 분리한다.
+// The rate table changes when the AWS Price List refreshes, so the prompt keeps a slot and
+// systemPrompt() fills it per request (the same table the Cost page uses at that moment).
+export const PRICING_TABLE_SLOT = "{{pricing_table}}";
 export const SCHEMA_CONTEXT = `테이블(구간·차원에 따라 선택):
 1. otel_metrics_sum_hourly — 시간당 롤업. 대시보드는 쿼리 종류·구간·해상도에 따라
    원본/롤업을 선택하며, 카운터의 기본 분기는 4시간 이하 원본, 그보다 긴 구간 롤업입니다.
@@ -329,7 +332,7 @@ GROUP BY Model, TokenType
 - 명시적으로 요청한 computed cost 진단은 token.usage의 4개 TokenType
   (input/output/cacheRead/cacheCreation) 토큰 수 × 아래 모델별 단가(1M 토큰당 USD)입니다.
   캐시 생성 TTL 가정과 조회 범위를 밝히고, 단가가 없는 모델의 비용은 확인 불가로 남기세요:
-${PRICING_PROMPT_TABLE}
+${PRICING_TABLE_SLOT}
   **단가표의 필드명과 TokenType 값이 다릅니다** — 매핑은 다음과 같고, TokenType='cacheWrite'는
   데이터에 존재하지 않으니 그런 조건으로 조회하지 마세요:
     input → input, output → output, cacheRead → cacheRead, **cacheCreation → cacheWrite**
@@ -389,6 +392,12 @@ const TOOLS = {
   ],
 };
 
+// A replacer function, not a string: the table text contains "$" sequences that String.replace
+// would otherwise interpret.
+export function systemPrompt() {
+  const table = pricingPromptTable();
+  return SYSTEM.replace(PRICING_TABLE_SLOT, () => table);
+}
 // 인증된(혹은 탈취된) 크리덴셜 하나로 hop×Bedrock ConverseStream을 무제한 호출하면 비용 증폭/DoS라
 // per-IP 분당 상한을 둔다. ponytail: 단일 파드 in-memory sliding window — 멀티 레플리카로 가면
 // 파드별 카운터라 한도가 N배 느슨해지니 그때 공유 스토어(Redis 등)로 옮긴다.
@@ -446,7 +455,7 @@ export async function sendConverseWithRetry(cmd, abortSignal, sdk = client) {
 async function runConverseTurn({ messages, allowTools, send, abortSignal }) {
   const cmd = new ConverseStreamCommand({
     modelId: MODEL_ID,
-    system: [{ text: SYSTEM }],
+    system: [{ text: systemPrompt() }],
     messages,
     ...(allowTools ? { toolConfig: TOOLS } : {}),
     inferenceConfig: { maxTokens: 8000 },
