@@ -1,5 +1,5 @@
 import { query, toChDateTime } from "./clickhouse.js";
-import { ValidationError } from "./http.js";
+import { ValidationError, parseTeam } from "./http.js";
 import { selectClients } from "./clients.js";
 import { priceCodexUsage, codexModelSql } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
@@ -48,6 +48,8 @@ export function validateClientFilters(raw, enabledClients) {
       && !["bedrock-mantle", "bedrock-runtime", "anthropic", "unknown"].includes(backend))
     throw new ValidationError("invalid backend", "select a supported backend");
   result.backend = backend && backend !== "all" ? backend : "";
+  const team = parseTeam(raw.team);
+  if (team) result.team = team;
   return result;
 }
 
@@ -426,7 +428,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
     clientUser: filters.user || "", clientModel: (isCodex ? filters.model : normalizeModelId(filters.model || "")) || "",
     clientBackend: filters.backend || "", clientUserExact: filters.userExact || "",
     clientModelExact: (isCodex ? filters.modelExact : normalizeModelId(filters.modelExact || "")) || "",
-    clientBucketSeconds: bucketSeconds };
+    clientBucketSeconds: bucketSeconds, ...(filters.team ? { clientTeam: filters.team } : {}) };
   // Limits repeat across models; one parameter per distinct value keeps the request URL small
   // as the AWS Price List adds models.
   const cases = Object.entries(prices).map(([model, rate], i) => {
@@ -543,6 +545,8 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
       ${filters.model || filters.modelExact ? `AND (${modelMatch} OR (model = '' AND
         (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
+      ${filters.team ? `AND session IN (SELECT session FROM (${queries.sessionTeamsSql([isCodex ? "codex" : "claude"])})
+        WHERE team = {clientTeam:String})` : ""}
   ), grouped AS (
   SELECT if(kind = 'scope_evidence', '',
     formatDateTime(greatest(toStartOfInterval(Timestamp, INTERVAL {clientBucketSeconds:UInt32} SECOND), {from:DateTime}),

@@ -168,7 +168,74 @@ export function filterCond(filters = {}, cols = {}) {
     conds.push(`${cols.project} = {fProject:String}`);
     params.fProject = filters.project === UNTAGGED_PROJECT ? "" : filters.project;
   }
+  // Team (exact): a session semi-join like modelViaSession, against the sessions whose resolved
+  // team is the selected one. Queries already declaring a session column reuse it. Rows without a
+  // session or team evidence never match. A team filter without a session column is a routing bug:
+  // fail loudly rather than return an unfiltered result.
+  const teamSession = cols.teamViaSession || cols.modelViaSession || cols.modelMixed?.session;
+  if (filters.team) {
+    if (!teamSession) throw new Error("team filter requires a session column");
+    conds.push(`${teamSession} IN (SELECT session FROM (${sessionTeamsSql(["claude"], cols.teamSince)})
+      WHERE team = {fTeam:String})`);
+    params.fTeam = filters.team;
+  }
   return { where: conds.map((c) => `AND ${c}`).join(" "), params };
+}
+
+// Team is a client-provided OTel resource attribute, not verified identity (like user.email).
+// The hourly rollup has no team column, so each session resolves it from logs over the window
+// plus the counter lookback: the most frequent value, ties lexically first. Sessions without
+// evidence (no attribute, or counter-only beyond log retention) have no team; none is guessed.
+const TEAM_EXPR = "coalesce(nullIf(ResourceAttributes['team'], ''), nullIf(LogAttributes['team'], ''))";
+const TEAM_SESSIONS = {
+  claude: ["SessionId", "NOT startsWith(EventName, 'codex.')"],
+  codex: ["LogAttributes['conversation.id']", "startsWith(EventName, 'codex.')"],
+};
+const LOG_USER = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
+// Columns: client, session, team, user, last_seen (latest in-window team evidence; epoch if none).
+export function sessionTeamsSql(clients, since = "{from:DateTime}") {
+  const branches = clients.map((client) => {
+    if (!TEAM_SESSIONS[client]) throw new Error(`unknown client ${client}`);
+    const [session, where] = TEAM_SESSIONS[client];
+    return `SELECT '${client}' AS client, ${session} AS session, ${TEAM_EXPR} AS value, count() AS n,
+        maxIf(Timestamp, Timestamp >= {from:DateTime}) AS seen, argMax(${LOG_USER}, Timestamp) AS identity
+      FROM claude_code.otel_logs
+      WHERE Timestamp >= toStartOfHour(${since}) - INTERVAL ${LOOKBACK_DAYS} DAY AND Timestamp < {to:DateTime}
+        AND ${where} AND session != '' AND value IS NOT NULL
+      GROUP BY session, value`;
+  });
+  // Distinct output names: an alias shadowing its own aggregate argument nests aggregates.
+  return `SELECT client, session, argMin(value, (-n, value)) AS team, argMax(identity, seen) AS user,
+      max(seen) AS last_seen
+    FROM (${branches.join("\n    UNION ALL\n    ")}) GROUP BY client, session`;
+}
+
+// Teams of sessions with team evidence inside the window (the filter control's options).
+export async function listTeams(from, to, clients) {
+  const rows = await query(`SELECT DISTINCT team FROM (${sessionTeamsSql(clients)})
+    WHERE last_seen >= {from:DateTime} ORDER BY team`, range(from, to, true));
+  return { teams: rows.map((row) => row.team) };
+}
+
+// User display lookup: every team of the user's in-window sessions, the most recent first.
+export async function userTeams(from, to, clients) {
+  return { users: foldUserTeams(await query(`SELECT user, team, max(last_seen) AS seen
+    FROM (${sessionTeamsSql(clients)}) WHERE last_seen >= {from:DateTime} AND user != ''
+    GROUP BY user, team`, range(from, to, true))) };
+}
+
+const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+export function foldUserTeams(rows) {
+  const users = new Map();
+  for (const { user, team, seen } of rows) {
+    if (!user || !team) continue;
+    if (!users.has(user)) users.set(user, []);
+    users.get(user).push({ team, seen: String(seen) });
+  }
+  return [...users].sort(([a], [b]) => byText(a, b)).map(([user, list]) => {
+    const teams = list.sort((a, b) => byText(b.seen, a.seen) || byText(a.team, b.team)).map((e) => e.team);
+    return { user, team: teams[0], teams };
+  });
 }
 
 // OTel AggregationTemporality: UNSPECIFIED=0, DELTA=1, CUMULATIVE=2. Claude Code는 세션(session.id)
@@ -494,7 +561,7 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   // User/model are partition dimensions in the local counter window, so narrowing them
   // throughout the lookback preserves the baseline. Session channel/backend inference stays global.
-  const inputFilter = filterCond({ ...filters, excludeUnknown: false },
+  const inputFilter = filterCond({ ...filters, team: undefined, excludeUnknown: false },
     { user: "UserEmail", model: "Model" });
   // Split the first raw minute at `from` so its pre-window baseline stays outside
   // the returned bucket. This is local to client views; shared helpers are unchanged.
@@ -508,7 +575,7 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
       `${metricFilter} ${inputFilter.where}`) }
     : incBucket(1, metricFilter);
   const f = filterCond({ ...filters, excludeUnknown: false },
-    { user: "m.UserEmail", model: "m.Model" });
+    { user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   // Hourly helpers can emit a baseline-only first bucket. Check actual samples
   // after `from` before describing that bucket as an observed zero.
   const firstObservations = b.raw ? "" : `, client_first_observations AS (
@@ -589,7 +656,7 @@ export async function kpiSummary(from, to, filters = {}) {
 
 // 패널2: 토큰 시계열
 export async function tokenTimeseries(from, to, intervalHours = 24, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   const b = incBucket(intervalHours, `AND MetricName = 'claude_code.token.usage'`);
   return query(
     `${GROUP_CTE}
@@ -632,7 +699,7 @@ export async function locTimeseries(from, to, intervalHours = 24, filters = {}) 
 
 // 패널3: 캐시 효율
 export async function cacheEfficiency(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -653,7 +720,7 @@ export async function cacheEfficiency(from, to, filters = {}) {
 
 // 패널6: 모델별 토큰 분포 (교란 점검)
 export async function modelDistribution(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model,
@@ -751,7 +818,7 @@ export async function activeTimeSeries(from, to, intervalHours = 24, filters = {
 // incFlat이 세션 단위로 이미 접어놓은 뒤라 "세션 수" 근사다(delta였을 때도 export 횟수 근사였던
 // 것과 마찬가지로 정확한 invocation 수는 아님).
 export async function skillUsage(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations,
@@ -784,7 +851,7 @@ export function costByModelDailySql(intervalHours, filters = {}, { dimension = "
   const byUser = dimension === "user";
   const key = byUser ? "scope_user" : "model";
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   const b = incBucket(intervalHours, metricFilter);
   const firstObservations = b.raw ? "" : `, model_cost_first_observations AS (
     SELECT DISTINCT SessionId, UserEmail, MetricName, Model, TokenType, Decision
@@ -886,7 +953,8 @@ export async function costByUserDaily(from, to, intervalHours = 24, filters = {}
 // 계산(withComputedCost 2회 호출). group/user 필터를 걸려면 session_group을 여기서도 조인한다.
 export async function costByModelCompare(from, to, prevFrom, filters = {}) {
   // outer는 서브쿼리 m의 projection만 보인다 — 원본 Model 컬럼이 아니라 정규화된 alias(model)로 필터.
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelNorm: "model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "UserEmail", modelNorm: "model",
+    teamViaSession: "m.SessionId", teamSince: "{prevFrom:DateTime}" });
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   // rollup 분기의 WITH절이 curFrom/curTo/prevFrom을 SQL 스칼라로 재계산하는데, 그 절은 같은
   // SELECT 레벨의 표현식에만 보이고 FROM의 nested 서브쿼리(raw stitch branch)에는 안 보인다 —
@@ -1094,7 +1162,7 @@ export async function adoptionLevels(from, to, filters = {}) {
 // 조건 집계로 뽑는 이유: 그룹 판별이 세션 단위라 한 유저가 두 그룹에 걸칠 수 있어(grouping.js)
 // 총계 users는 그룹 합이 아닌 전역 uniq여야 하고, GROUP BY로는 두 그레인을 한 쿼리에서 못 낸다.
 export async function activeUsers(from, to, filters = {}) {
-  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail" });
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail", teamViaSession: "m.SessionId" });
   const uniqs = `uniqExactIf(m.UserEmail, m.UserEmail != '') AS users,
         uniqExactIf(m.UserEmail, m.UserEmail != '' AND ${GROUP_EXPR} = 'bedrock') AS bedrock_users,
         uniqExactIf(m.UserEmail, m.UserEmail != '' AND ${GROUP_EXPR} = 'enterprise') AS enterprise_users`;
@@ -1294,7 +1362,7 @@ export function foldCostSummary(rows) {
 // Cost 페이지: 모델별 비용/토큰. cost는 토큰 실측 × 단가표로 계산한 값, reported_cost는
 // Claude Code 자체 보고값(비교용). 단가표에 없는 모델은 cost: null + unpriced: true로 노출.
 export async function costByModel(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS},
@@ -1318,7 +1386,7 @@ export async function costByModel(from, to, filters = {}) {
 // 오간 유저의 전체 비용이 양쪽 그룹 행에 중복으로 붙는다), 여기도 topK(1) 다수결이 아니라 실제
 // 그룹으로 쪼갠다.
 export async function costByUserModel(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT m.UserEmail AS user, ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS}
@@ -1397,7 +1465,7 @@ export async function userToolUsage(from, to, filters = {}) {
 // 시간별 rollup으로 접으면 값이 달라진다. cost.usage+SkillName!='' 필터가 좁아 원본이어도 저렴.
 // group은 세션 단위 실제 값(다수결 아님) — userToolUsage와 동일 이유.
 export async function userSkillUsage(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT m.UserEmail AS user, ${GROUP_EXPR} AS "group", m.SkillName AS skill, count() AS invocations
@@ -1574,7 +1642,7 @@ export async function userLeaderboard(from, to, filters = {}) {
 // sum(Value) 대신 uniqExact(SessionId)로 "존재 여부"만 본다(adoptionLevels와 동일 근거) —
 // 세션 하나가 30초마다 재-export하는 session.count를 그대로 sum하면 안 된다.
 export async function versionCohortSessions(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR });
+  const f = filterCond(filters, { group: GROUP_EXPR, teamViaSession: "m.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -1601,7 +1669,7 @@ export async function versionCohortSessions(from, to, filters = {}) {
 // 관측된 버전(2.1.202~2.1.226)이 전부 세 자리라 우연히 안 틀렸을 뿐이다. grafana-ab-queries.sql
 // 패널 20과 동일한 수정.
 export async function versionCohortCost(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR });
+  const f = filterCond(filters, { group: GROUP_EXPR, teamViaSession: "m.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -1642,7 +1710,7 @@ export async function versionCohortCost(from, to, filters = {}) {
 // STEP 2 패널 13: 서브에이전트 팬아웃 — traces beta가 아니라 otel_logs의 subagent_completed로
 // (오늘 실데이터 존재, 베타 플래그 불필요). PromptId(인터랙션 단위)당 완료 건수 분포.
 export async function subagentFanout(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", teamViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -1662,7 +1730,7 @@ export async function subagentFanout(from, to, filters = {}) {
 // STEP 3 패널 14: 스킬 발동 분포 — skill.name × invocation_trigger. claude-proactive 비율이
 // "우리가 만든 스킬이 실제로 자동 발동하는지"의 핵심 지표.
 export async function skillActivations(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", teamViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -1681,7 +1749,7 @@ export async function skillActivations(from, to, filters = {}) {
 
 // STEP 3 패널 15: compaction 압박 — 세션당 발생 횟수 + 압축률(1 - post/pre tokens).
 export async function compactionPressure(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", teamViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -1703,7 +1771,7 @@ export async function compactionPressure(from, to, filters = {}) {
 // STEP 3 패널 16: refusal 율 — server_fallback_hop='true'(사용자가 못 본 refusal)은
 // user_visible_refusals에서 제외하고 별도 컬럼으로 둔다(최종 집계에 합산 금지).
 export async function refusalRate(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", teamViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -1721,7 +1789,7 @@ export async function refusalRate(from, to, filters = {}) {
 
 // STEP 3 패널 17: 재시도 소진 — Bedrock 쿼터 병목 탐지에 직결.
 export async function retriesExhausted(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", teamViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -1739,15 +1807,16 @@ export async function retriesExhausted(from, to, filters = {}) {
 }
 
 // STEP 3 패널 18: 플러그인 인벤토리 — 그룹 무관, 플릿 전체에서 어떤 플러그인이 활성인지.
-export async function pluginInventory(from, to) {
+export async function pluginInventory(from, to, filters = {}) {
+  const f = filterCond({ team: filters.team }, { teamViaSession: "SessionId" });
   return query(
     `SELECT PluginName AS plugin, MarketplaceName AS marketplace,
         count() AS session_loads, uniqExact(SessionId) AS sessions
     FROM claude_code.otel_logs
     WHERE EventName = 'plugin_loaded' AND PluginName != ''
-      AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+      AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} ${f.where}
     GROUP BY plugin, marketplace ORDER BY session_loads DESC`,
-    range(from, to, true)
+    { ...range(from, to, true), ...f.params }
   );
 }
 
@@ -1756,7 +1825,7 @@ export async function pluginInventory(from, to) {
 // 우선, 구버전 호환은 범위 밖)에 따라 데이터가 없는 구간은 0으로 위장하지 않고
 // {unsupported:true}를 반환해 프론트가 "데이터 없음"으로 구분해 그릴 수 있게 한다.
 export async function permissionWaitOverhead(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "t.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "t.UserEmail", teamViaSession: "t.SessionId" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -1779,7 +1848,7 @@ export async function permissionWaitOverhead(from, to, filters = {}) {
 // 그룹 × 모델로. normModel()과 동일한 5단계 regex를 인라인 재현(JS 함수라 SQL에서 직접
 // 호출 불가 — grafana-ab-queries.sql 패널 12와 동일한 이유).
 export async function ttftComparison(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "t.UserEmail", model: "t.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "t.UserEmail", model: "t.Model", teamViaSession: "t.SessionId" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -1917,7 +1986,7 @@ export async function toolDecisionFunnel(from, to, filters = {}) {
 // 구분할 수 있게 한다. minVersion "2.1.214"는 tool.blocked_on_user / tool.execution 스팬이
 // 그 버전부터 나오기 때문(문서 확인).
 export async function interactionBreakdown(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "i.UserEmail" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "i.UserEmail", teamViaSession: "i.SessionId" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -2070,7 +2139,7 @@ export async function permissionWaitOccupancy(from, to, filters = {}) {
 // Keep empty models so reports are not silently lost; unpriced_tokens exposes diagnostic
 // gaps. Reported rates depend on client versions and are not invoice or AWS price evidence.
 export function effortMixSql(from, to, filters = {}, { byModel = false } = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   const backend = `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("m.Model", "''")})`;
   const earlyFilters = byModel
     ? `${filters.user ? " AND positionCaseInsensitive(source.UserEmail, {fUser:String}) > 0" : ""}
@@ -2306,7 +2375,7 @@ export async function mcpHealth(from, to, filters = {}) {
 // and diagnostic model grain. Limit after folding so model rows cannot truncate an agent.
 // The same empty-model retention and client-version pricing limits as Effort apply.
 export async function agentCost(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -2354,7 +2423,7 @@ export async function agentCost(from, to, filters = {}) {
 // withComputedCost는 cache_write_tokens를 읽으므로 별칭이 곧 가격 계산의 전제조건이다. 단가표
 // 밖 모델도 행을 버리지 않는다 — cost/ratio가 null일 뿐이다.
 export async function reportedVsComputedByVersion(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']", teamViaSession: "l.SessionId" });
   const rows = await query(
     `${GROUP_CTE}
     SELECT
@@ -2483,7 +2552,7 @@ export async function userInteractions(from, to, email) {
 // 세션을 섞은 픽스처에서 같은 프로젝트의 sessions/users가 2/2 → 1/1로 줄고 cost/tokens(4/400)는
 // 그대로였다. 부작용으로, 구간 안 활동이 전혀 없는 프로젝트는 사라지지 않고 전부 0인 행이 된다.
 export async function projectBreakdown(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.user_id", model: "m.Model", project: "m.ProjectName" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.user_id", model: "m.Model", project: "m.ProjectName", teamViaSession: "m.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT
@@ -2575,7 +2644,7 @@ export async function toolDecisionSources(from, to, filters = {}) {
 // cost $1.00, 행 단위로는 1·$0.10). permissionModeChanges/toolDecisionSources는 그 이벤트에
 // model 속성이 없어 세미조인을 유지한다(PR #31 리뷰에서 MAJOR로 확인).
 export async function entrypointBreakdown(from, to, filters = {}) {
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']", project: "l.ProjectName" });
+  const f = filterCond(filters, { group: GROUP_EXPR, user: "l.UserEmail", model: "l.LogAttributes['model']", project: "l.ProjectName", teamViaSession: "l.SessionId" });
   return query(
     `${GROUP_CTE}
     SELECT

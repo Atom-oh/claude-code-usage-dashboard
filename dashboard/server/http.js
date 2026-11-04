@@ -83,7 +83,7 @@ export function parsePositiveInt(raw, fallback, { min = 1 } = {}) {
   return n;
 }
 
-// 대시보드 전역 필터(group/user/model/project) — 쿼리 파라미터로 안 오면 undefined라
+// 대시보드 전역 필터(group/user/model/project/team) — 쿼리 파라미터로 안 오면 undefined라
 // queries.js의 filterCond()가 그냥 건너뛴다. index.js에 있던 함수를 여기로 옮겼다: project
 // 분기가 테스트 가능한 순수 판정이라서다.
 // project는 005의 ProjectName 컬럼에 의존한다 — 컬럼이 없는 클러스터에서 그 조건이 SQL에
@@ -93,5 +93,16 @@ export function parsePositiveInt(raw, fallback, { min = 1 } = {}) {
 // 삼상태이고 null(확인 못 함)은 적용된 것으로 오인되면 안 된다.
 export function parseFilters(query, projectColumns) {
   const { group, user, model, project } = query;
-  return { group, user, model, project: projectColumns === true ? project : undefined };
+  const team = parseTeam(query.team);
+  return { group, user, model, project: projectColumns === true ? project : undefined, ...(team ? { team } : {}) };
+}
+
+// team is a client-provided OTel resource attribute (not verified identity) matched exactly.
+// Same bounds as the client views' user/model filters: arrays, objects and oversized values
+// are rejected before caching instead of reaching a bound String parameter.
+export function parseTeam(raw) {
+  if (raw === undefined) return "";
+  if (typeof raw !== "string" || raw.length > 256)
+    throw new ValidationError("invalid filter", "team must be a string of at most 256 characters");
+  return raw.trim();
 }

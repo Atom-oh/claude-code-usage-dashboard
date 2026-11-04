@@ -45,3 +45,12 @@ test("historical or custom ranges do not warm unrelated default windows", () => 
     from: "2026-10-14T07:58:00Z", to: "2026-10-15T07:58:00Z" });
   assert.equal(plan.jobs().length, 1);
 });
+
+test("team-filtered demand does not warm a legacy route", () => {
+  const plan = createWarmingPlan();
+  plan.register("/api/cost/summary", () => {});
+  plan.requested("/api/cost/summary", { team: "fsi" });
+  assert.deepEqual(plan.jobs(), []);
+  plan.requested("/api/cost/summary", { team: "" });
+  assert.equal(plan.jobs().length, 1);
+});

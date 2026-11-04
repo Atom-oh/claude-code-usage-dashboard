@@ -7,7 +7,7 @@ export function createWarmingPlan({ now = Date.now, defaultDays = 2 } = {}) {
     register(path, handler) { routes.set(path, handler); },
     requested(path, query = {}) {
       // Filtered/custom windows do not justify warming an unrelated global result.
-      if (["user", "userExact", "model", "modelExact", "backend", "project", "email", "group"]
+      if (["user", "userExact", "model", "modelExact", "backend", "project", "team", "email", "group"]
         .some(key => query[key] && query[key] !== "all")) return;
       if (query.from !== undefined || query.to !== undefined) {
         const from = Date.parse(query.from), to = Date.parse(query.to);

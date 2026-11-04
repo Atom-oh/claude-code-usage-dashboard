@@ -50,8 +50,8 @@ export function foldClaudeEffort(rows) {
 }
 
 export async function claudeEffort(from, to, raw = {}, load = effortMix) {
-  const { user, model, backend } = validateClaudeEffort(raw);
-  const rows = await load(from, to, { user, model, backend, excludeUnknown: false }, { byModel: true });
+  const { user, model, backend, team } = validateClaudeEffort(raw);
+  const rows = await load(from, to, { user, model, backend, ...(team ? { team } : {}), excludeUnknown: false }, { byModel: true });
   if (rows.length > 50000)
     throw new ValidationError("too much client data", "narrow the requested date range");
   return { range: { from: from.toISOString(), to: to.toISOString() },

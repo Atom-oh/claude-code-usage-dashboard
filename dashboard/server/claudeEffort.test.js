@@ -105,3 +105,14 @@ test("known effort subtotal bases omit excluded scopes while all-unknown bases r
   assert.equal(foldClaudeEffort([awsMissing])[0].cost_basis, "aws_list_estimate");
   assert.equal(foldClaudeEffort([row({ reported_cost: null }), awsMissing])[0].cost_basis, "mixed");
 });
+
+test("shared effort forwards a validated team to the counter query", async () => {
+  let args;
+  await claudeEffort(from, to, { client: "claude", team: " fsi " },
+    async (...received) => { args = received; return [row()]; });
+  assert.deepEqual(args[2], { user: "", model: "", backend: "", team: "fsi", excludeUnknown: false });
+  assert.throws(() => validateClaudeEffort({ team: ["a"] }), /invalid filter/);
+  const { sql, params } = effortMixSql(from, to, { team: "fsi", excludeUnknown: false }, { byModel: true });
+  assert.ok(sql.includes("m.SessionId IN (SELECT session FROM ("));
+  assert.equal(params.fTeam, "fsi");
+});
