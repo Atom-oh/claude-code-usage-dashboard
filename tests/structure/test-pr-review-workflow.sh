@@ -98,6 +98,7 @@ EOF
             echo "LENS: $rw_l" > "$RW_CASE/pr-review/lenses/$rw_l.txt"
         done
         printf 'diff --git a/x b/x\n+RW_DIFF_MARKER\n' > "$RW_CASE/pr-diff.txt"
+        : > "$RW_CASE/pr-changed-paths.txt"
         : > "$RW_CASE/github-env"
         python3 "$RW_DIR/extract_step.py" "$RW_WF" "Build lens prompts (L2-L5, one self-contained lens each)" "$RW_CASE/lens.sh" "$RW_CASE" || true
         python3 "$RW_DIR/extract_step.py" "$RW_WF" "Run Codex lens panel and Claude chair" "$RW_CASE/panel.sh" "$RW_CASE" || true

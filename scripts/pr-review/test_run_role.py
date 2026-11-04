@@ -338,6 +338,47 @@ class RoleExecutionTests(unittest.TestCase):
             return reply
         return execute
 
+    def test_unexpected_preflight_reply_redacts_before_logging_and_truncation(self):
+        samples = [
+            ("credential prefix " + "x" * 125 + " AKIA" + "ABCDEFGHIJKLMNOP", "AKIA" + "ABCDEFGHIJKLMNOP"),
+            ("unexpected api token sk-" + "A" * 24, "sk-" + "A" * 24),
+            ("-----BEGIN PRIVATE KEY-----\nsynthetic-private-material\n-----END PRIVATE KEY-----", "synthetic-private-material"),
+        ]
+        for index, (reply, secret) in enumerate(samples):
+            with self.subTest(index=index):
+                cwd = self.root / f"redaction-{index}"
+                cwd.mkdir()
+                now, calls, canaries = [100.0], [], []
+                output = io.StringIO()
+                with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
+                        patch.object(self.runner, "execute",
+                                     side_effect=self.retry_stub(now, calls, canaries, [(0, reply, "")])), \
+                        contextlib.redirect_stdout(output):
+                    passed, code, error, timed_out = self.runner.preflight_with_retries(
+                        "kiro-cli", "gpt-5.6-sol", cwd, os.environ.copy(), 2, 2, "kiro-sol"
+                    )
+                self.assertFalse(passed)
+                self.assertEqual(code, 0)
+                self.assertFalse(timed_out)
+                self.assertEqual(len(canaries), 1)
+                self.assertNotIn(secret, output.getvalue())
+                self.assertNotIn(secret, error)
+                self.assertIn("REDACTED", output.getvalue())
+                self.assertIn("REDACTED", error)
+
+    def test_preflight_scrubber_failure_does_not_emit_raw_reply(self):
+        cwd = self.root / "scrubber-failure"
+        cwd.mkdir()
+        output = io.StringIO()
+        with patch.object(self.runner, "execute", side_effect=self.retry_stub(
+                [100.0], [], [], [(0, "unexpected-reply", "")])), \
+                patch.object(self.runner, "scrub", side_effect=RuntimeError("scrubber failed")), \
+                contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(RuntimeError, "scrubber failed"):
+                self.runner.preflight_with_retries("kiro-cli", "gpt-5.6-sol", cwd,
+                                                   os.environ.copy(), 2, 2, "kiro-sol")
+        self.assertNotIn("unexpected-reply", output.getvalue())
+
     def test_retries_give_each_attempt_a_full_budget_and_fresh_canary(self):
         cwd = self.root / "retry"
         cwd.mkdir()
