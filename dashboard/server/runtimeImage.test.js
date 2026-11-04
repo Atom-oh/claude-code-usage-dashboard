@@ -92,11 +92,11 @@ test("runtime inspection rejects missing, altered and unlisted collector package
   }
 });
 
-test("runtime inspection rejects unpatched or statically linked OpenSSL", () => {
+test("runtime inspection rejects unpatched Node OpenSSL and records its linkage", () => {
   fixture(({ options }) => {
-    assert.throws(() => verifyRuntime({ ...options, sharedOpenSSL: false }), /shared OpenSSL/);
     assert.throws(() => verifyRuntime({ ...options, versions: { ...options.versions, openssl: "3.5.8" } }),
-      /shared OpenSSL/);
+      /Node OpenSSL/);
+    assert.equal(verifyRuntime({ ...options, sharedOpenSSL: false }).sharedOpenSSL, false);
   });
 });
 
@@ -132,14 +132,13 @@ test("runtime Dockerfile pin agrees with actual-image OS zlib verification", () 
   assert.ok(!runtime.includes("--allow-untrusted"));
 });
 
-test("Node source build and OpenSSL pins agree with the runtime inspector", () => {
+test("official Node base pin agrees with the runtime inspector", () => {
   const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
-  assert.ok(dockerfile.includes(`https://nodejs.org/dist/v${REQUIRED_RUNTIME_NODE_VERSION}/node-v${REQUIRED_RUNTIME_NODE_VERSION}.tar.xz`));
-  assert.ok(dockerfile.includes("./configure --shared-openssl --without-npm"));
-  for (const name of ["openssl-dev", "libcrypto3", "libssl3"])
-    assert.ok(dockerfile.includes(`'${name}=${REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION}'`));
-  assert.ok(dockerfile.includes("sha256sum -c -"));
-  assert.ok(!dockerfile.includes("--allow-untrusted"));
+  assert.match(dockerfile, new RegExp(`^ARG NODE_IMAGE=[a-z0-9./-]+/node:${REQUIRED_RUNTIME_NODE_VERSION.replaceAll(".", "\\.")}-alpine@sha256:[a-f0-9]{64}$`, "m"));
+  assert.match(dockerfile, /^FROM \$\{NODE_IMAGE\} AS node-base$/m);
+  assert.equal(dockerfile.match(/^FROM /gm).length, dockerfile.match(/^FROM (?:\$\{NODE_IMAGE\}|node-base|server-deps) AS /gm).length);
+  for (const forbidden of ["nodejs.org/dist", "./configure", "make -j", "--allow-untrusted"])
+    assert.ok(!dockerfile.includes(forbidden), forbidden);
 });
 
 test("runtime inspection rejects a missing OS package database or zlib record", () => {

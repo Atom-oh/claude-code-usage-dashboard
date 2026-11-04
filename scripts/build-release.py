@@ -22,6 +22,34 @@ def valid_digest(value):
     return isinstance(value, str) and re.fullmatch(r"sha256:[a-f0-9]{64}", value)
 
 
+def stored_config_digest(image, manifest_digest, directory, cwd):
+    """Read a containerd-store image's ARM64 config digest from its content-addressed archive."""
+    archive_path = Path(directory) / "loaded-image.tar"
+    with archive_path.open("xb") as output:
+        subprocess.run(["docker", "save", image], cwd=cwd, stdout=output, check=True, timeout=600)
+    with tarfile.open(archive_path) as archive:
+        def blob(digest):
+            if not valid_digest(digest):
+                raise RuntimeError("saved image references an invalid digest")
+            member = archive.extractfile("blobs/sha256/" + digest[7:])
+            data = member.read() if member else b""
+            if hashlib.sha256(data).hexdigest() != digest[7:]:
+                raise RuntimeError("saved image blob does not match its digest")
+            return data
+        manifest = json.loads(blob(manifest_digest))
+        if "manifests" in manifest:
+            children = [child for child in manifest["manifests"]
+                        if child.get("platform", {}).get("os") == "linux"
+                        and child.get("platform", {}).get("architecture") == "arm64"]
+            if len(children) != 1:
+                raise RuntimeError("saved image index lacks exactly one Linux ARM64 manifest")
+            manifest = json.loads(blob(children[0].get("digest")))
+        config_digest = manifest.get("config", {}).get("digest")
+        blob(config_digest)
+    archive_path.unlink()
+    return config_digest
+
+
 def inspect_runtime(image_id, probe, cwd):
     container = command([
         "docker", "create", "--network", "none", "--read-only", "--cap-drop", "ALL",
@@ -96,6 +124,12 @@ def main():
     parser.add_argument("--expected-image-id",
                         help="Approved local config digest; required for --push, checked before upload.")
     parser.add_argument("--record", type=Path, required=True, help="Private output JSON record outside the source build context.")
+    # Build-cache locations only: layers are still built from the archived committed source and
+    # every digest/identity check below still applies. Local release builds pass neither.
+    parser.add_argument("--cache-from", help="buildx --cache-from value (for example type=local,src=DIR).")
+    parser.add_argument("--cache-to", help="buildx --cache-to value (for example type=local,dest=DIR,mode=max).")
+    # Same pinned index from another registry path (for example an ECR pull-through cache).
+    parser.add_argument("--base-image", help="NODE_IMAGE override; must carry the Dockerfile's pinned digest.")
     args = parser.parse_args()
     if (args.push or args.expected_image_id is not None) and not valid_digest(args.expected_image_id):
         parser.error("--push requires a valid --expected-image-id from the approved local record")
@@ -145,11 +179,29 @@ def main():
                         shutil.copyfileobj(incoming, output)
                     destination.chmod(member.mode & 0o777)
         metadata = context_root / "metadata.json"
+        pinned = re.search(r"^ARG NODE_IMAGE=\S+?(@sha256:[a-f0-9]{64})$",
+                           committed("dashboard/Dockerfile").decode(), re.M)
+        if not pinned:
+            raise RuntimeError("Dockerfile does not pin NODE_IMAGE by digest")
+        base_args = []
+        if args.base_image is not None:
+            # A digest names content, so any registry path holding the same index is equivalent.
+            if (not re.fullmatch(r"[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}", args.base_image)
+                    or not args.base_image.endswith(pinned.group(1))):
+                raise RuntimeError("--base-image must use the Dockerfile's pinned NODE_IMAGE digest")
+            base_args = ["--build-arg", "NODE_IMAGE=" + args.base_image]
         invocation = ["docker", "buildx", "build", "--platform", "linux/arm64",
-                      "--build-arg", "APP_REVISION=" + revision, "--label",
+                      "--build-arg", "APP_REVISION=" + revision, *base_args, "--label",
                       "org.opencontainers.image.revision=" + revision,
-                      "--metadata-file", str(metadata), "-t", args.image,
-                      "--load", str(context_root / "dashboard")]
+                      "--metadata-file", str(metadata), "-t", args.image]
+        # Only a local directory cache: a registry cache would make remote layers a trust input.
+        for flag, value in (("--cache-from", args.cache_from), ("--cache-to", args.cache_to)):
+            if value is None:
+                continue
+            if not value.startswith("type=local,") or any(c in value for c in "\n\r\0"):
+                raise RuntimeError(flag + " must be a type=local buildx cache")
+            invocation += [flag, value]
+        invocation += ["--load", str(context_root / "dashboard")]
         subprocess.run(invocation, cwd=root, check=True)
         build_metadata = json.loads(metadata.read_text())
         record = {"revision": revision, "image": args.image, "platform": "linux/arm64",
@@ -162,8 +214,18 @@ def main():
             raise RuntimeError("build did not report an immutable image digest")
         image = json.loads(command(["docker", "image", "inspect", args.image], root))[0]
         config = image.get("Config", {})
-        image_id = image.get("Id")
-        if not valid_digest(image_id) or image_id != build_metadata.get("containerimage.config.digest"):
+        # The recorded identity is the build's config digest. The classic image store reports
+        # it as Id; the containerd image store (for example the CI runner's dind) reports the
+        # loaded manifest, which must be this build's digest, and its saved content then
+        # supplies the config digest (buildx may not report one for that store).
+        image_id = build_metadata.get("containerimage.config.digest")
+        local_ref = image.get("Id")
+        if local_ref == record["digest"]:
+            stored = stored_config_digest(args.image, local_ref, directory, root)
+            if image_id is not None and image_id != stored:
+                raise RuntimeError("loaded image config differs from the build config digest")
+            image_id = stored
+        if not valid_digest(image_id) or local_ref not in (image_id, record["digest"]):
             raise RuntimeError("loaded image differs from the build config digest")
         if args.expected_image_id and image_id != args.expected_image_id:
             raise RuntimeError("built image differs from the approved image ID")
@@ -175,9 +237,9 @@ def main():
         if "APP_REVISION=" + revision not in config.get("Env", []):
             raise RuntimeError("runtime release identifier missing")
         record["localImageId"] = image_id
-        record["runtime"] = inspect_runtime(image_id, probe, root)
+        record["runtime"] = inspect_runtime(local_ref, probe, root)
         if args.push:
-            if json.loads(command(["docker", "image", "inspect", args.image], root))[0]["Id"] != image_id:
+            if json.loads(command(["docker", "image", "inspect", args.image], root))[0]["Id"] != local_ref:
                 raise RuntimeError("image tag changed after local verification")
             subprocess.run(["docker", "push", args.image], cwd=root, check=True)
             record["localBuildDigest"] = record["digest"]
