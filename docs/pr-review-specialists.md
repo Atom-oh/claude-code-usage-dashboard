@@ -107,6 +107,9 @@ expanded into deletion/addition records. Binary content cannot be reviewed as te
 and blocks the review; oversized or missing input also blocks rather than yielding a
 partial pass. Split oversized changes into reviewable PRs.
 
+If a single lockfile or binary asset cannot be split into reviewable text changes, it
+remains blocked until a separately reviewed complete-coverage method is available.
+
 The generic protocol also supports exclusions-only input, but production does not
 configure any exclusions. An approved exclusions-only input explicitly supplies `--allow-exclusions-only` and
 a private `--policy` file copied from Git BASE. The engine checks its byte hash

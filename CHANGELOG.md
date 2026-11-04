@@ -12,6 +12,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-11-04 specialist review coverage)
+
+- Require independent Codex and Claude reviews and Kiro when applicable, covering all
+  changed paths. Binary and oversized input blocks until a complete review is available.
+
 ### Changed (2026-11-04 AI review panel)
 
 - Run the AI PR review as a Codex lens panel (L2-L5) with a tool-less Claude chair and
