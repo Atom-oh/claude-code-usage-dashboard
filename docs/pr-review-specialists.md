@@ -1,13 +1,8 @@
 # Specialist PR review
 
-This protocol is retained but INACTIVE in CI (owner decision 2026-11-04,
-[ADR-011 amendment](decisions/ADR-011-specialist-review-protocol.md#amendment-2026-11-04--codex-lens-panel-and-claude-chair)).
-The workflow sets `ROLE_REVIEW: "0"` and runs the Codex lens panel -> Claude chair
-path in the [panel runbook](runbooks/pr-review-panel.md). Setting `ROLE_REVIEW: "1"`
-re-enables this protocol: the panel step then receives `GH_TOKEN`, Kiro preflight
-uses its defaults (60 s, 2 attempts) unless `KIRO_PREFLIGHT_TIMEOUT`/`KIRO_PREFLIGHT_ATTEMPTS`
-are set again, and the specialist chair's default timeout in synthesize.sh is 900 s.
-The rest of this document describes the protocol as designed.
+CI uses `ROLE_REVIEW=1` to run independent Codex and Claude specialists.
+Trusted routing requires Kiro for applicable AWS and operations changes; missing
+required coverage blocks the review. See [ADR-011](decisions/ADR-011-specialist-review-protocol.md).
 
 | Slot | Configured model | Responsibility |
 | --- | --- | --- |
@@ -103,17 +98,19 @@ resolve real Critical/Major findings, satisfy required CI and branch rules, and
 verify the integration path before merge. Missing review or quota failure is not
 a clean result. Model limits and required gates remain in force.
 
-## Approved source scope
+## Review scope
 
-`role-input-scope.json` preserves this repository's existing lockfile/generated-
-asset exclusions. The trusted base copy classifies immutable Git paths before
-requests are prepared. Provenance records every excluded path and both raw and
-approved diff hashes. Renames are expanded into deletion/addition records so a
-source path cannot disappear through an artifact rename. A verified exclusions-
-only change is explicitly NOT_APPLICABLE and invokes no model; missing inputs,
-unknown exclusions and truncated required source remain blocked. The policy does
-not authorize excluding additional source merely to obtain a pass.
+`role-input-scope.json` selects every changed path, including lockfiles and generated
+assets. The trusted base classifies immutable Git paths before requests are prepared.
+Provenance records every path and the raw and selected diff hashes. Renames are
+expanded into deletion/addition records. Binary content cannot be reviewed as text
+and blocks the review; oversized or missing input also blocks rather than yielding a
+partial pass. Split oversized changes into reviewable PRs.
 
-Approved exclusions-only input explicitly supplies `--allow-exclusions-only` and
+If a single lockfile or binary asset cannot be split into reviewable text changes, it
+remains blocked until a separately reviewed complete-coverage method is available.
+
+The generic protocol also supports exclusions-only input, but production does not
+configure any exclusions. An approved exclusions-only input explicitly supplies `--allow-exclusions-only` and
 a private `--policy` file copied from Git BASE. The engine checks its byte hash
 and retains an anchor through aggregation; arbitrary provenance cannot opt in.

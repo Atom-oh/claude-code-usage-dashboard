@@ -8,7 +8,7 @@ RW_WF_SRC="$(grep -v '^\s*#' "$RW_WF" || true)"
 RW_WF_TEXT="$(cat "$RW_WF" 2>/dev/null || true)"
 
 # Section A: static workflow contract
-assert_grep_match "CI runs the Codex panel path" 'ROLE_REVIEW: "0"' "$RW_WF_SRC"
+assert_grep_match "CI runs the required specialist path" 'ROLE_REVIEW: "1"' "$RW_WF_SRC"
 assert_grep_match "runner label is unchanged" 'runs\-on: claude-code-usage-dashboard-claude-arm' "$RW_WF_SRC"
 assert_grep_no_match "the diff is not read from the live PR" 'gh pr diff' "$RW_WF_SRC"
 assert_grep_no_match "the diff is never truncated" 'head \-"\$MAX_LINES"|pr-diff-truncated' "$RW_WF_SRC"
@@ -133,8 +133,8 @@ EOF
     # B1 complete coverage and a chair PASS
     rw_case pass; rw_panel; rw_publish
     assert_eq "comment line 1 is the review marker" "<!-- multi-ai-pr-review -->" "$(rw_line 1)"
-    assert_eq "comment title names the panel" "## AI Code Review — Codex + Claude" "$(rw_line 2)"
-    assert_eq "comment header lists model, cells and chair" "_Panel: Codex global.openai.gpt-6.1-sol (codex/L2 codex/L3 codex/L4 codex/L5) · Chair: Claude Opus 5.5_" "$(rw_line 3)"
+    assert_eq "comment title names the specialists" "## AI Code Review — Specialists" "$(rw_line 2)"
+    assert_eq "comment header names responding reviewers and summary" "_Specialists responded: codex/L2 codex/L3 codex/L4 codex/L5 · Summary: Claude Opus 5.5_" "$(rw_line 3)"
     if grep -qxF '**Status: PASSED** — No blocking issues found' <<< "$RW_BODY"; then
         pass "PASSED badge is unchanged"
     else

@@ -147,10 +147,10 @@ class EndToEndRoleTests(unittest.TestCase):
     def git(self, *arguments):
         return subprocess.check_output(["git", *arguments], cwd=self.repo, text=True)
 
-    def run_pipeline(self, path):
+    def run_pipeline(self, path, content=b"export const result = 1;\n"):
         changed = self.repo / path
         changed.parent.mkdir(parents=True, exist_ok=True)
-        changed.write_text("export const result = 1;\n")
+        changed.write_bytes(content)
         self.git("add", ".")
         self.git("commit", "-qm", "change")
         self.environment["HEAD_SHA"] = self.git("rev-parse", "HEAD").strip()
@@ -166,6 +166,41 @@ class EndToEndRoleTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = self.root / "calls.jsonl"
         return [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+
+    def use_production_scope(self):
+        target = self.repo / "scripts/pr-review/role-input-scope.json"
+        target.write_bytes((SOURCE / "role-input-scope.json").read_bytes())
+        self.git("add", str(target.relative_to(self.repo)))
+        self.git("commit", "-qm", "production review scope")
+        self.base = self.git("rev-parse", "HEAD").strip()
+        (self.root / "base-sha").write_text(self.base)
+        self.environment["BASE_SHA"] = self.base
+
+    def test_production_lockfile_change_receives_independent_reviews(self):
+        self.use_production_scope()
+        calls = self.run_pipeline("dashboard/server/package-lock.json", b'{"version": "1.2.3"}\n')
+        self.assertTrue({"codex", "claude"}.issubset({call["name"] for call in calls}))
+        source = json.loads((self.work / "role-source.json").read_text())
+        self.assertEqual(source["excluded_paths"], [])
+        self.assertIn("dashboard/server/package-lock.json", source["scope_paths"])
+        self.assertIn('"version": "1.2.3"', (self.work / "role-diff.txt").read_text())
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+
+    def test_production_oversized_lockfile_is_blocked_without_model_calls(self):
+        self.use_production_scope()
+        calls = self.run_pipeline("dashboard/server/package-lock.json", b"x" * 95001 + b"\n")
+        self.assertEqual(calls, [])
+        self.assertIn("diff_byte_limit", (self.work / "review.md").read_text())
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: FAIL\n"))
+
+    def test_production_binary_change_is_blocked_without_model_calls(self):
+        self.use_production_scope()
+        calls = self.run_pipeline("assets/example.png", b"\x00\x01\x02binary")
+        self.assertEqual(calls, [])
+        source = json.loads((self.work / "role-source.json").read_text())
+        self.assertEqual(source["excluded_paths"], [])
+        self.assertIn("binary_content_not_reviewable", (self.work / "review.md").read_text())
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: FAIL\n"))
 
     def test_frontend_uses_two_reviews_and_no_chair(self):
         calls = self.run_pipeline("frontend/components/Button.tsx")

@@ -1,9 +1,9 @@
 # Runbook: AI PR Review Panel
 
-> Current protocol (owner decision 2026-11-04): CI sets `ROLE_REVIEW: "0"` and runs the Codex
-> lens panel -> Claude chair path, because the specialist review duplicated work and was slow.
-> `ROLE_REVIEW=1` re-enables the retained, inactive
-> [specialist review](../pr-review-specialists.md).
+> Current protocol: CI uses `ROLE_REVIEW=1`. See the
+> [specialist review contract](../pr-review-specialists.md) and
+> [specialist tooling](../../scripts/pr-review/README.md). The panel and chair
+> procedure below describes the retained legacy `ROLE_REVIEW=0` path.
 
 ## Scope and trust boundary
 
@@ -13,14 +13,11 @@ this workflow. The PR diff, title and panel outputs are untrusted data, includin
 instructions embedded in documentation. Trusted project context must come from the base
 checkout.
 
-The workflow gets the merge base from the GitHub compare API, fetches the merge base and
-HEAD with `git fetch --no-tags --depth=1`, and builds the diff with
-`git diff --no-color --no-ext-diff --no-textconv` from those pinned commits (no longer
-`gh pr diff`). Exclusions mirror `scripts/pr-review/role-input-scope.json` (lockfiles,
-`.terraform.lock.hcl`, `node_modules`/`dist`/`out`/`build` directories, binary and document
-extensions). A sha256 check confirms the chair sees the bytes the panel reviewed.
+The workflow fetches immutable merge-base and HEAD objects without checking out PR
+code. Its diff includes every changed path. Binary or oversized input blocks rather
+than yielding a partial pass; the specialist contract documents its limits and evidence.
 
-## Panel and chair
+## Legacy panel and chair (ROLE_REVIEW=0)
 
 1. `scripts/pr-review/run-panel.sh` runs one Codex cell per lens in parallel: L2 data/query
    correctness, L3 security, L4 frontend correctness, L5 documentation and infrastructure
@@ -103,7 +100,7 @@ only an exact final nonempty `VERDICT: PASS` or `VERDICT: FAIL` line; body quota
 override that final decision. Missing, empty, malformed, or noncanonical output is not
 approval. Coverage/safety failures still append a final FAIL regardless of the chair.
 
-## Limits and time budget
+## Legacy limits and time budget
 
 Diffs over 12,000 lines or 512,000 bytes are blocked (`## Review blocked`, BLOCKED,
 `VERDICT: FAIL`), never truncated; the same limits as cc-on-bedrock. Both reviewers read the
@@ -111,13 +108,13 @@ diff from stdin and have 1M-token context windows (Bedrock model cards for
 `openai.gpt-6.1-sol` and `anthropic.claude-opus-5-5`, checked 2026-11-04); 512,000 bytes is
 roughly 150K tokens, under Codex's 272K standard-rate tier. The specialist protocol's
 3,000 lines / 95,000 bytes came from Kiro receiving its prompt as one command-line argument
-(`MAX_REQUEST_BYTES`, 128 KiB) and still applies only to that inactive path. The old
+(`MAX_REQUEST_BYTES`, 128 KiB) and applies to the active specialist path. The old
 3,000-line truncation of this path and Kiro's `KIRO_DIFF_CAP` are gone.
 
 The job has `timeout-minutes: 50`. The normal worst case is 300 s x 2 panel attempts plus
 900 s x 2 chair models, 40 minutes.
 
-## Diagnose the failed run
+## Diagnose the legacy panel run
 
 Inspect the latest HEAD's workflow log, review comment, and inline findings. Match the
 comment's triggering commit to the current HEAD; an older passing review is insufficient.
@@ -133,13 +130,11 @@ comment's triggering commit to the current HEAD; an older passing review is insu
 | `::error::PR head changed` | Review the latest HEAD; an older pass is insufficient. |
 | `coverage-severe.flag` / `degraded-models.txt` / `responded.txt` / `slot/` | Files under the review workdir. |
 
-## Rollback
+## Legacy panel rollback
 
-Reverting the scripts or workflow restores the earlier panel shape; it does not change
-account-side Bedrock access. To re-enable the specialist protocol, set `ROLE_REVIEW: "1"`;
-the panel step then receives `GH_TOKEN`, Kiro preflight uses its defaults (60 s, 2 attempts)
-unless `KIRO_PREFLIGHT_TIMEOUT`/`KIRO_PREFLIGHT_ATTEMPTS` are set again, and the specialist
-chair reads its default timeout from `synthesize.sh`, now 900 s.
+Changing the workflow selection does not change account-side Bedrock access. The
+legacy panel does not meet the independent specialist requirement; it cannot replace
+the active protocol for a passing review.
 
 ## Offline verification and merge gate
 

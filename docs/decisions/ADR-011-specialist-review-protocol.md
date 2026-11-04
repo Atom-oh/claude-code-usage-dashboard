@@ -4,7 +4,7 @@
 
 Accepted 2026-09-13. `ROLE_REVIEW=1` activates specialist responsibilities and
 retains the project input, runner, coverage and publication safeguards.
-Inactive in CI since the 2026-11-04 amendment; retained behind `ROLE_REVIEW=1`.
+Active in CI following the 2026-11-04 full-coverage amendment below.
 
 ## Decision
 
@@ -71,3 +71,12 @@ Known gaps (accepted): one panel model family (OpenAI) plus the Anthropic chair,
 cross-family checking rests on the chair; both processes still hold the shared runner role's
 credentials, because Bedrock-scoped short-lived credentials need a runner-platform IAM change
 (see the [runbook](../runbooks/pr-review-panel.md#credential-exposure-and-residual-risk)).
+
+## Amendment 2026-11-04 — Restore independent full-scope review
+
+The owner requires `ROLE_REVIEW=1`: Codex and Claude independently review the
+complete change, and trusted routing requires Kiro for applicable AWS and operations
+changes. Missing required output blocks. This supersedes the preceding CI selection
+and coverage amendment. The production scope has no path exclusions; binary content
+and oversized input block instead of producing a partial pass. Existing safety,
+credential isolation, timeouts and SHA-bound publication remain in force.
