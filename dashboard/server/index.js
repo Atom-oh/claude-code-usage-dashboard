@@ -20,6 +20,8 @@ import { codexPrices, priceListConfig, priceListStatus, startPriceListRefresh,
   previewModelCardPrices, publishModelCardPrices, priceCatalogVersion } from "./priceCatalog.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping, assertReadonlySession } from "./clickhouse.js";
+import { createHealthProbe } from "./health.js";
+import { readSecret } from "./secrets.js";
 import { probeSegmentAwareSeriesKey, probeMigrations, probeProjectColumns } from "./schema.js";
 import { classifyFreshness, probeLatestTelemetryMs, staleAfterMinutes } from "./freshness.js";
 import { startAlertLoop } from "./alerting.js";
@@ -130,8 +132,9 @@ app.use("/api", (_req, res, next) => {
   next();
 });
 
+const healthProbe = createHealthProbe(ping);
 app.get("/healthz", async (_req, res) => {
-  res.json({ ok: await ping().catch(() => false) });
+  res.json({ ok: await healthProbe() });
 });
 
 // SIGTERM 이후 이미 열려 있는 keep-alive 연결로 들어오는 /readyz에 503을 돌려주기 위한 플래그
@@ -143,7 +146,7 @@ let shuttingDown = false;
 // not-ready로 본다(읽을 데이터가 없는 파드에 트래픽을 보낼 이유가 없다). 반대로 liveness를
 // 이렇게 만들면 클러스터 장애가 정상 파드를 재시작 루프에 빠뜨린다.
 app.get("/readyz", async (_req, res) => {
-  const ready = !shuttingDown && (await ping().catch(() => false));
+  const ready = !shuttingDown && (await healthProbe());
   res.status(ready ? 200 : 503).json({ ready: !!ready });
 });
 
@@ -257,7 +260,8 @@ function freshnessSnapshot() {
 // 실어 구분하고, 리더 선출로 하나만 보내는 건 ADR-005의 검토한 대안(복잡도 대비 이득 없음).
 // URL이 없으면 startAlertLoop을 부르지 않는다 — 타이머도, import 시점 부작용도 없어야 한다
 // (app.test.js가 이 파일을 import한다).
-if (process.env.ALERT_WEBHOOK_URL) startAlertLoop({ url: process.env.ALERT_WEBHOOK_URL, getSnapshot: freshnessSnapshot, hostname: os.hostname(), repeatMs: alertRepeatMinutes * 60_000 });
+const alertWebhookUrl = readSecret(process.env, "ALERT_WEBHOOK_URL");
+if (alertWebhookUrl) startAlertLoop({ url: alertWebhookUrl, getSnapshot: freshnessSnapshot, hostname: os.hostname(), repeatMs: alertRepeatMinutes * 60_000 });
 
 // 캐시 키는 핸들러가 실제로 읽는 파라미터(from/to/group/user/model/intervalHours/email)만
 // 화이트리스트로 넣은 canonical 형태 — 브라우저(useApi의 객체 삽입 순서)와 warmer(아래)가
@@ -649,6 +653,7 @@ if (isMain) {
     process.on(signal, () => {
       if (shuttingDown) return;
       shuttingDown = true;
+      healthProbe.stop();
       console.log(`${signal} received — readiness now failing, draining connections`);
       server.close(() => process.exit(0));
       setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
