@@ -49,7 +49,7 @@ def compile_contract():
             "'/clickhouse/tables/{shard}/') AS path "
             "FROM system.replicas WHERE database = 'claude_code' ORDER BY table"
         )
-    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6, 7, 8]:
+    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6, 7, 8, 9]:
         raise RuntimeError("Reference schema did not record every required migration.")
     names = [row["name"] for row in tables]
     declared = re.findall(
@@ -120,6 +120,13 @@ SELECT throwIf(
     AND position(create_table_query, ' SQL SECURITY DEFINER') > 0
     AND position(create_table_query, 'DEFINER = ') > 0) != 3,
   'SCHEMA_COMPATIBILITY: Codex views require explicit definer security');
+
+SELECT throwIf(
+  (SELECT count() FROM system.tables WHERE database = 'claude_code' AND name = 'claude_session_providers_v1_mv'
+    AND position(replaceAll(create_table_query, '`', ''), 'TO claude_code.claude_session_providers_v1 ') > 0
+    AND position(create_table_query, ' SQL SECURITY DEFINER') > 0
+    AND position(create_table_query, 'DEFINER = ') > 0) != 1,
+  'SCHEMA_COMPATIBILITY: Claude provider view target or definer security differs');
 """
 
 
