@@ -37,6 +37,10 @@ Using the existing password-based path is possible, with these boundaries:
   the event credential after delivery has drained, and retain protected queued records
   until delivery or an explicit retention decision. Current collectors read the value
   at boot; changing SSM alone does not update running instances.
+- The CloudFront ClickHouse endpoint accepts SQL using the ingest credential; it is not
+  an OTLP-only authorization boundary. Restrict access at the edge to trusted networks
+  and apply a fleet-wide request limit. Prefer the per-device gateway when participants
+  must not receive a shared database credential.
 
 The event preparation checklist is:
 

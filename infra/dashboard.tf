@@ -164,6 +164,25 @@ resource "kubernetes_secret" "clickhouse_reader" {
   data = { CH_PASSWORD = var.clickhouse_reader_password }
 }
 
+locals {
+  dashboard_secret_mounts = merge(
+    { reader = { secret = kubernetes_secret.clickhouse_reader.metadata[0].name, path = "/var/run/ccdash-secrets/reader", keys = ["CH_PASSWORD"] } },
+    var.auth_mode == "basic" ? { auth = { secret = kubernetes_secret.dashboard_basic_auth.metadata[0].name, path = "/var/run/ccdash-secrets/auth", keys = ["BASIC_AUTH_USER", "BASIC_AUTH_PASSWORD"] } } : { auth = { secret = var.oidc_secret_name, path = "/var/run/ccdash-secrets/auth", keys = ["OIDC_CLIENT_SECRET", "SESSION_SECRET"] } },
+    length(kubernetes_secret.dashboard_alert) > 0 ? { alert = { secret = kubernetes_secret.dashboard_alert[0].metadata[0].name, path = "/var/run/ccdash-secrets/alert", keys = ["ALERT_WEBHOOK_URL"] } } : {}
+  )
+  dashboard_secret_files = merge(
+    { CH_PASSWORD_FILE = "/var/run/ccdash-secrets/reader/CH_PASSWORD" },
+    var.auth_mode == "basic" ? {
+      BASIC_AUTH_USER_FILE     = "/var/run/ccdash-secrets/auth/BASIC_AUTH_USER"
+      BASIC_AUTH_PASSWORD_FILE = "/var/run/ccdash-secrets/auth/BASIC_AUTH_PASSWORD"
+      } : {
+      OIDC_CLIENT_SECRET_FILE = "/var/run/ccdash-secrets/auth/OIDC_CLIENT_SECRET"
+      SESSION_SECRET_FILE     = "/var/run/ccdash-secrets/auth/SESSION_SECRET"
+    },
+    length(kubernetes_secret.dashboard_alert) > 0 ? { ALERT_WEBHOOK_URL_FILE = "/var/run/ccdash-secrets/alert/ALERT_WEBHOOK_URL" } : {}
+  )
+}
+
 # Ask Claude 챗(dashboard/server/chat.js)이 Bedrock ConverseStream을 호출하려면 자격증명이
 # 필요하다 — clickhouse_s3(s3.tf)와 동일한 IRSA 패턴: 이 SA만 assume 가능하도록 trust를
 # namespace/이름으로 좁힌다.
@@ -259,10 +278,7 @@ resource "kubernetes_deployment_v1" "dashboard" {
         node_selector                    = local.ch_node_selector
         service_account_name             = kubernetes_service_account.dashboard.metadata[0].name
         termination_grace_period_seconds = 30
-        dynamic "security_context" {
-          for_each = var.device_ingest_enabled ? [1] : []
-          content { fs_group = 1000 }
-        }
+        security_context { fs_group = 1000 }
         container {
           name  = "dashboard"
           image = "${aws_ecr_repository.dashboard.repository_url}:${var.dashboard_image_tag}"
@@ -286,15 +302,6 @@ resource "kubernetes_deployment_v1" "dashboard" {
           env {
             name  = "CH_USER"
             value = "otel_reader"
-          }
-          env {
-            name = "CH_PASSWORD"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.clickhouse_reader.metadata[0].name
-                key  = "CH_PASSWORD"
-              }
-            }
           }
           # 새 env는 리스트 끝에 둔다 — k8s 프로바이더는 env 블록을 순서 있는 리스트로 diff해서
           # 중간에 삽입하면 뒤 항목 전체가 "변경"으로 잡히는 노이즈가 생긴다(terraform plan 확인).
@@ -387,28 +394,18 @@ resource "kubernetes_deployment_v1" "dashboard" {
             }
           }
           dynamic "env" {
-            for_each = var.auth_mode == "oidc" ? toset(["OIDC_CLIENT_SECRET", "SESSION_SECRET"]) : toset([])
+            for_each = local.dashboard_secret_files
             content {
-              name = env.value
-              value_from {
-                secret_key_ref {
-                  name     = var.oidc_secret_name
-                  key      = env.value
-                  optional = false
-                }
-              }
+              name  = env.key
+              value = env.value
             }
           }
-          dynamic "env_from" {
-            for_each = var.auth_mode == "basic" ? [kubernetes_secret.dashboard_basic_auth.metadata[0].name] : []
+          dynamic "volume_mount" {
+            for_each = local.dashboard_secret_mounts
             content {
-              secret_ref { name = env_from.value }
-            }
-          }
-          dynamic "env_from" {
-            for_each = kubernetes_secret.dashboard_alert
-            content {
-              secret_ref { name = env_from.value.metadata[0].name }
+              name       = "dashboard-secret-${volume_mount.key}"
+              mount_path = volume_mount.value.path
+              read_only  = true
             }
           }
           dynamic "env" {
@@ -468,6 +465,23 @@ resource "kubernetes_deployment_v1" "dashboard" {
           resources {
             requests = { cpu = "100m", memory = "128Mi" }
             limits   = { cpu = "500m", memory = "256Mi" }
+          }
+        }
+        dynamic "volume" {
+          for_each = local.dashboard_secret_mounts
+          content {
+            name = "dashboard-secret-${volume.key}"
+            secret {
+              secret_name  = volume.value.secret
+              default_mode = "0440"
+              dynamic "items" {
+                for_each = volume.value.keys
+                content {
+                  key  = items.value
+                  path = items.value
+                }
+              }
+            }
           }
         }
         dynamic "volume" {

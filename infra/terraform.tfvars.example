@@ -21,6 +21,9 @@ ch_ingest_hostname = "ingest.example.com"
 # 이미지를 먼저 push하고 그 타임스탬프 태그를 여기 넣는다(docs/runbooks/deploy-production.md).
 dashboard_image_tag = "REPLACE-WITH-A-PUSHED-TIMESTAMP-TAG"
 
+# Before applying to an existing installation, deploy an image that supports *_FILE secrets.
+# Follow the staged rollout in docs/runbooks/deploy-production.md first.
+
 # Dedicated commercial installation: create this Secret in the namespace through the
 # customer's secret manager with OIDC_CLIENT_SECRET and random SESSION_SECRET keys.
 # No secret values belong in this file. Existing Basic installations keep auth_mode=basic.
