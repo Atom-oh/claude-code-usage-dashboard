@@ -24,3 +24,34 @@ export function createRateLimiter({ max = 60, windowMs = 60_000, capacity = 4096
     next();
   };
 }
+
+// Only failed Basic credentials consume a budget; ordinary asset/API traffic does not.
+// This is per process, so the public edge still needs a shared fleet-wide limit.
+export function createFailedAuthLimiter({ max = 20, windowMs = 60_000, capacity = 4096, now = Date.now } = {}) {
+  const buckets = new Map();
+  function current(key) {
+    const bucket = buckets.get(key);
+    if (bucket && bucket.reset <= now()) { buckets.delete(key); return undefined; }
+    return bucket;
+  }
+  return {
+    retryAfter(key) {
+      const bucket = current(key);
+      if (bucket?.count >= max) return Math.max(1, Math.ceil((bucket.reset - now()) / 1000));
+      if (!bucket && buckets.size >= capacity) {
+        for (const [id, entry] of buckets) if (entry.reset <= now()) buckets.delete(id);
+        if (buckets.size >= capacity) return Math.ceil(windowMs / 1000);
+      }
+      return 0;
+    },
+    failed(key) {
+      let bucket = current(key);
+      if (!bucket) {
+        if (buckets.size >= capacity) return;
+        bucket = { count: 0, reset: now() + windowMs };
+        buckets.set(key, bucket);
+      }
+      bucket.count++;
+    },
+  };
+}

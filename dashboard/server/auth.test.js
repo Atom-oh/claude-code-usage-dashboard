@@ -157,6 +157,22 @@ test("authentication configuration is explicit and fails closed", () => {
   assert.equal(parseAuthConfig({ ...env, OIDC_GROUPS_CLAIM: "cognito:groups" }).claim, "cognito:groups");
 });
 
+test("Basic authentication limits failed guesses per client without limiting successful requests", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { now: () => time, env: {
+    AUTH_MODE: "basic", BASIC_AUTH_USER: "fixture", BASIC_AUTH_PASSWORD: "fixture-password",
+  } });
+  const header = password => ({ authorization: "Basic " + Buffer.from(`fixture:${password}`).toString("base64") });
+  for (let i = 0; i < 70; i++) assert.equal((await f.request("/api/data", { headers: header("fixture-password") })).status, 200);
+  for (let i = 0; i < 20; i++) assert.equal((await f.request("/api/data", { headers: header("wrong") })).status, 401);
+  const limited = await f.request("/api/data", { headers: header("fixture-password") });
+  assert.equal(limited.status, 429);
+  assert.ok(limited.headers.get("retry-after"));
+  assert.equal((await f.request("/healthz")).status, 200);
+  time += 60_001;
+  assert.equal((await f.request("/api/data", { headers: header("fixture-password") })).status, 200);
+});
+
 test("encrypted sessions reject tampering, wrong purpose, another installation and expiration", () => {
   let time = Date.now();
   const config = parseAuthConfig(env);
