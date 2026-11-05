@@ -32,6 +32,9 @@ export function codexLogPricingSql(prices, params, claudeRates = resolvedRatesTa
     // Context limits repeat across models: share one parameter per value, like the rates.
     const threshold = `aggregateThreshold${entry.short_context_limit}`;
     params[threshold] = entry.short_context_limit;
+    const geoSql = entry.runtime_geo_prefix ? `{aggregateGeoPrefix${index}:String}` : "''";
+    if (entry.runtime_geo_prefix) params[`aggregateGeoPrefix${index}`] = entry.runtime_geo_prefix;
+    const inRegionSql = entry.runtime_in_region === false ? "toUInt8(0)" : "toUInt8(1)";
     const modelSql = `{aggregateModel${index}:String}`;
     codexModels.push(modelSql);
     // Specific backend rates precede generic rates, exactly as in the old
@@ -45,7 +48,7 @@ export function codexLogPricingSql(prices, params, claudeRates = resolvedRatesTa
           if (!rates) continue;
           rows.push(`tuple(toUInt8(1),${modelSql},'${backend || ""}',
             toUInt8(${scopeIndex + 1}),{${threshold}:UInt64},
-            toUInt8(${tierIndex + 1}),${ratesSql(params, rates).join(",")})`);
+            toUInt8(${tierIndex + 1}),${ratesSql(params, rates).join(",")},${geoSql},${inRegionSql})`);
         }
       }
     }
@@ -54,7 +57,7 @@ export function codexLogPricingSql(prices, params, claudeRates = resolvedRatesTa
     params[`claudeModel${index}`] = model;
     for (const backend of VALID_BACKENDS) {
       rows.push(`tuple(toUInt8(2),{claudeModel${index}:String},'${backend}',
-        toUInt8(0),toUInt64(0),toUInt8(0),${ratesSql(params, entry.backends[backend]).join(",")})`);
+        toUInt8(0),toUInt64(0),toUInt8(0),${ratesSql(params, entry.backends[backend]).join(",")},'',toUInt8(1))`);
     }
   });
   const notCodexEntry = codexModels.length ? `NOT has([${codexModels.join(",")}],base_model)` : "1";
@@ -62,10 +65,14 @@ export function codexLogPricingSql(prices, params, claudeRates = resolvedRatesTa
     (rate.3 = '' OR rate.3 = backend) AND (
       (rate.1 = 1 AND rate.2 = base_model
         AND rate.4 = if(startsWith(model,'global.'),2,1)
+        AND (backend != 'bedrock-runtime' OR rate.11 = '' OR startsWith(model,'global.')
+          OR NOT match(model,'${CODEX_ROUTING_PATTERN.replace(/\\/g, "\\\\")}')
+          OR startsWith(model,concat(rate.11,'.')))
+        AND (backend != 'bedrock-runtime' OR rate.12 = 1 OR match(model,'${CODEX_ROUTING_PATTERN.replace(/\\/g, "\\\\")}'))
         AND if(rate.6 = 1,input_value <= rate.5,input_value > rate.5))
       OR (rate.1 = 2 AND rate.2 = claude_model AND ${notCodexEntry})
     ),0),[${rows.join(",")}])` : `tuple(toUInt8(0),'','',toUInt8(0),toUInt64(0),
-      toUInt8(0),toFloat64(0),toFloat64(0),toFloat64(0),toFloat64(0))`;
+      toUInt8(0),toFloat64(0),toFloat64(0),toFloat64(0),toFloat64(0),'',toUInt8(1))`;
   // Claude fallback rates are global. Codex catalog rates already include
   // regional adjustments, so only source 2 receives the Claude premium.
   const regional = `if(price_row.1 = 2

@@ -16,7 +16,8 @@ import { sendJson } from "./jsonResponse.js";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
 import { tierCostsByGroup, pricingConfig } from "./pricing.js";
-import { codexPrices, priceListConfig, priceListStatus, startPriceListRefresh } from "./priceCatalog.js";
+import { codexPrices, priceListConfig, priceListStatus, startPriceListRefresh,
+  previewModelCardPrices, publishModelCardPrices, priceCatalogVersion } from "./priceCatalog.js";
 import { userCostEfficiency } from "./costEfficiency.js";
 import { ping, assertReadonlySession } from "./clickhouse.js";
 import { probeSegmentAwareSeriesKey, probeMigrations, probeProjectColumns } from "./schema.js";
@@ -26,6 +27,10 @@ import { handleChat, piiMaskEnabled } from "./chat.js";
 import { parseClients } from "./clients.js";
 import { createInsightsFeature, validateInsightsQuery } from "./insights.js";
 import { clientOverview, validateClientFilters, validateClientView, validateTimeFormat, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
+import { RUNTIME_ID_ALIASES } from "./codexPricing.js";
+import { createAwsModelPriceUpdater, priceCatalogFits } from "./awsModelPricing.js";
+import { createPriceDiscovery, setPriceDiscoveryObserver } from "./pricingDiscovery.js";
+import { clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -302,7 +307,7 @@ function cacheKey(path, query) {
 }
 
 function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
-  const key = cacheKey(path, query);
+  const key = `${priceCatalogVersion()}:${cacheKey(path, query)}`;
   return cache.get(key, () => {
     const { from, to } = parseRange(query, RANGE_OPTS);
     return handler(from, to, query, parseFilters(query, projectColumns));
@@ -611,6 +616,16 @@ const isMain = process.argv[1] && import.meta.url === pathToFileURL(path.resolve
 if (isMain) {
   const server = app.listen(PORT, () => {
     console.log(`dashboard listening on :${PORT}`);
+    const overrides = new Set(Object.keys(JSON.parse(process.env.CODEX_PRICING_JSON || "{}")));
+    const cards = {};
+    const updater = createAwsModelPriceUpdater({ prices: cards, overrides, aliases: RUNTIME_ID_ALIASES,
+      acceptPrices: next => priceCatalogFits(previewModelCardPrices(next)) });
+    const discovery = createPriceDiscovery({ prices: codexPrices, refresh: () => updater.refresh(),
+      onChanged: ({ changed, parsed, failed, total, excluded, conflicts }) => {
+        publishModelCardPrices(cards); clearNonAnthropicFactorCache();
+        console.log(`AWS model prices refreshed (${changed} changed; ${parsed}/${total} supported; ${failed} unavailable or unsupported; ${excluded} over query budget; ${conflicts} conflicting)`);
+      }, onError: () => console.warn("AWS model prices unavailable; using last known prices") });
+    if (priceListSettings.enabled) setPriceDiscoveryObserver(discovery.observe);
     // 부팅 직후 즉시 한 번 데우고(배포 직후 첫 방문자도 히트), 이후 QUANT_MS 경계마다 반복.
     warmCache().catch((err) => console.error("warmCache(boot)", err));
     scheduleWarmer();

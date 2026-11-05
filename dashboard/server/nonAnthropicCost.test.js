@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { codexPrices } from "./priceCatalog.js";
+import { setPriceDiscoveryObserver } from "./pricingDiscovery.js";
 import { foldFactors, isNonAnthropicModel, nacCostSql, withNacParams,
   nonAnthropicFactors, clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
 import { setPriceListLayersForTesting } from "./priceCatalog.js";
@@ -8,6 +10,32 @@ import { setPriceListLayersForTesting } from "./priceCatalog.js";
 // priced it at the AWS long-context rate, $0.099921.
 const luna = { session: "s1", model: "us.openai.gpt-6-luna", input_tokens: "2", output_tokens: "558",
   cache_read_tokens: "0", cache_creation_tokens: "361675", cost_usd: 1.819543 };
+
+test("Claude non-Anthropic request logs report their models for discovery", async () => {
+  clearNonAnthropicFactorCache();
+  const observed = [];
+  setPriceDiscoveryObserver(rows => observed.push(...rows));
+  try {
+    const run = async () => [{ ...luna, model: "openai.gpt-6.1-terra[1m]" }];
+    await nonAnthropicFactors(new Date("2026-10-14"), new Date("2026-10-15"), run);
+    assert.deepEqual(observed, [{ model: "openai.gpt-6.1-terra", backend: "bedrock-mantle" }]);
+  } finally { setPriceDiscoveryObserver(); clearNonAnthropicFactorCache(); }
+});
+
+test("factor loads use their captured price snapshot even if the live catalog changes", async () => {
+  clearNonAnthropicFactorCache();
+  const snapshot = codexPrices();
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const load = nonAnthropicFactors(new Date("2026-10-14"), new Date("2026-10-15"), () => held, undefined, snapshot);
+  const rates = { input: 99, output: 99, cacheRead: 99, cacheWrite: 99 };
+  setPriceListLayersForTesting({ snapshot: null, runtime: { fetchedAt: "2026-10-14T00:00:00Z", claude: {},
+    codex: { "openai.gpt-6-luna": { regional: { short: rates, long: rates } } } } });
+  try {
+    release([luna]);
+    assert.equal((await load).factors[0], foldFactors([luna], undefined, snapshot).factors[0]);
+  } finally { setPriceListLayersForTesting(); clearNonAnthropicFactorCache(); }
+});
 
 test("only models that do not normalize to claude-* are rescaled", () => {
   for (const model of ["us.openai.gpt-6-luna", "global.xai.grok-4.6", "zai.glm-5", "gemma-4-31b-vllm"])

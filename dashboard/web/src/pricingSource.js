@@ -17,8 +17,9 @@ const FALLBACK = "목록에 없는 모델은 서버 내장 단가표를 쓰고, 
 export function priceSourceText(priceList, format) {
   const time = formatPriceListTime(priceList?.fetchedAt, format);
   const at = time ? `${time} 조회` : "조회 시각 미확인";
-  if (priceList?.source === "runtime") return `단가 출처: AWS Price List 실시간 조회(${at}). ${FALLBACK}`;
-  if (priceList?.source === "snapshot") return `단가 출처: AWS Price List 빌드 스냅샷(${at}). ${FALLBACK}`;
-  if (priceList?.source === "code") return "단가 출처: 서버 내장 단가표(AWS Price List 단가 없음). 운영자 단가 설정이 있으면 그 값이 우선합니다.";
+  const cards = priceList?.modelCardModels?.length ? " 일부 미등록 모델에는 AWS 모델 카드 단가를 사용합니다." : "";
+  if (priceList?.source === "runtime") return `단가 출처: AWS Price List 실시간 조회(${at}). ${FALLBACK}${cards}`;
+  if (priceList?.source === "snapshot") return `단가 출처: AWS Price List 빌드 스냅샷(${at}). ${FALLBACK}${cards}`;
+  if (priceList?.source === "code") return `단가 출처: 서버 내장 단가표(AWS Price List 단가 없음). 운영자 단가 설정이 있으면 그 값이 우선합니다.${cards}`;
   return "단가 출처: 미확인.";
 }

@@ -285,6 +285,9 @@ export function parseCodexPricing(raw, priceList) {
         || !Number.isSafeInteger(value.short_context_limit) || value.short_context_limit <= 0
         || !object(value.regional))
       throw new Error("Invalid Codex model pricing or context limit");
+    if (value.runtime_geo_prefix !== undefined && !["us", "eu", "apac", "jp", "au", "in"].includes(value.runtime_geo_prefix)
+        || value.runtime_in_region !== undefined && typeof value.runtime_in_region !== "boolean")
+      throw new Error("Invalid Codex runtime routing restriction");
     for (const scope of ["regional", "global"]) {
       if (scope === "global" && value[scope] === undefined) continue;
       for (const tier of ["short", "long"]) {
@@ -370,9 +373,13 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
   const rawModel = String(row.model || "");
   const knownBackend = ["bedrock-mantle", "bedrock-runtime"].includes(row.backend);
   const scope = rawModel.startsWith("global.") ? "global" : "regional";
-  const validScope = !rawModel.startsWith("us-gov.")
-    && !(row.backend === "bedrock-mantle" && CODEX_ROUTING_RE.test(rawModel));
   const entry = prices[codexModel(rawModel)]; // ADR-017 backend override, then base rate.
+  const routing = CODEX_ROUTING_RE.exec(rawModel)?.[1];
+  const validScope = !rawModel.startsWith("us-gov.")
+    && !(row.backend === "bedrock-mantle" && routing)
+    && !(row.backend === "bedrock-runtime" && entry?.runtime_geo_prefix && routing
+      && routing !== "global" && routing !== entry.runtime_geo_prefix)
+    && !(row.backend === "bedrock-runtime" && !routing && entry?.runtime_in_region === false);
   const rates = entry?.backends?.[row.backend]?.[scope]?.[row.context_tier] ?? entry?.[scope]?.[row.context_tier];
   // ADR-017 Claude-table fallback; existing entry always wins.
   const claudeCost = !entry && knownBackend && validScope

@@ -62,6 +62,7 @@ let runtime = null;
 let version = 0;
 let claudeMemo = null;
 let codexMemo = null;
+let modelCards = {};
 let refreshing = null;
 let timer = null;
 
@@ -84,17 +85,35 @@ export function claudePricing() {
 
 export function codexPrices() {
   const key = `${version}\u0000${process.env.CODEX_PRICING_JSON ?? ""}`;
-  if (codexMemo?.key !== key) codexMemo = { key, value: parseCodexPricing(process.env.CODEX_PRICING_JSON, activeLayer()?.codex) };
+  if (codexMemo?.key !== key) codexMemo = { key, value: previewModelCardPrices(modelCards) };
   return codexMemo.value;
 }
+
+// Cards are a fallback only: code, both Price List layers and operator overrides win.
+// Every publication creates a new table identity for in-flight queries and alias caches.
+export function previewModelCardPrices(cards) {
+  const base = parseCodexPricing(process.env.CODEX_PRICING_JSON, activeLayer()?.codex);
+  const merged = { ...base };
+  for (const [model, price] of Object.entries(cards))
+    if (!Object.hasOwn(merged, model)) merged[model] = price;
+  return merged;
+}
+export function publishModelCardPrices(cards) {
+  modelCards = { ...cards };
+  version += 1;
+}
+export function priceCatalogVersion() { return version; }
 
 // /api/config metadata: never rates.
 export function priceListStatus() {
   const layer = activeLayer();
+  const cards = Object.keys(modelCards).filter(model => !Object.hasOwn(
+    parseCodexPricing(process.env.CODEX_PRICING_JSON, layer?.codex), model));
   return {
     source: runtime ? "runtime" : snapshot ? "snapshot" : "code",
     fetchedAt: layer?.fetchedAt ?? null,
     models: layer ? [...new Set([...Object.keys(layer.claude), ...Object.keys(layer.codex)])].sort() : [],
+    ...(cards.length ? { modelCardModels: cards.sort() } : {}),
   };
 }
 
@@ -198,5 +217,6 @@ export function setPriceListLayersForTesting({ snapshot: nextSnapshot = readSnap
     if (layer !== null && !validLayer(layer)) throw new Error("invalid price list layer");
   snapshot = nextSnapshot;
   runtime = nextRuntime;
+  modelCards = {};
   version += 1;
 }
