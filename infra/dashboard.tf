@@ -53,6 +53,13 @@ variable "codex_diagnostic_read_from" {
   }
 }
 
+variable "claude_provider_groups" {
+  description = "Classify Claude sessions with the anthropic.provider evidence from migration 009. Keep false until the table exists on every replica and the provider window is backfilled."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "data_stale_minutes" {
   description = "GET /api/health/data가 stale로 판정하는 기준(분). 서버 기본값과 같은 360."
   type        = number
@@ -374,6 +381,10 @@ resource "kubernetes_deployment_v1" "dashboard" {
           env {
             name  = "CODEX_DIAGNOSTIC_READ_FROM"
             value = var.codex_diagnostic_read_from
+          }
+          env {
+            name  = "CLAUDE_PROVIDER_GROUPS"
+            value = tostring(var.claude_provider_groups)
           }
           env {
             name  = "CODEX_BEDROCK_ENDPOINT"
