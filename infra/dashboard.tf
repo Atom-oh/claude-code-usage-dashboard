@@ -129,7 +129,7 @@ variable "pricing_cache_write_ttl" {
   validation {
     # 서버가 받아주는 값은 이 둘뿐이고, 그 밖의 값은 모듈 로드 시점에 부팅을 막는다 —
     # 잘못된 값이 롤아웃까지 가지 않게 여기서 먼저 거른다.
-    condition     = var.pricing_cache_write_ttl == null || contains(["1h", "5m"], var.pricing_cache_write_ttl)
+    condition     = var.pricing_cache_write_ttl == null ? true : contains(["1h", "5m"], var.pricing_cache_write_ttl)
     error_message = "pricing_cache_write_ttl must be \"1h\" or \"5m\" when set."
   }
 }
