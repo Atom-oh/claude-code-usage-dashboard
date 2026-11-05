@@ -45,20 +45,78 @@
 // request_id를 내는 1P Anthropic API-key 세션은 관측되지 않았다. 실패 조건: organization.id 없이 bare claude-* id를 내는 Anthropic API-key/
 // Vertex/게이트웨이 경로는 bedrock(3P 라벨, 소유자 승인)으로 분류된다. 모델 관측이 없는 세션은
 // 계속 unknown이다.
-export const GROUP_CTE = `
-WITH session_group AS (
-    SELECT
-        SessionId,
-        multiIf(
+const LEGACY_GROUP = `multiIf(
             countIf(Model != '' AND NOT startsWith(Model, 'claude-')) > 0, 'bedrock',
             max(has_org) = 1, 'enterprise',
             countIf(Model != '') > 0, 'bedrock',
             'unknown'
-        ) AS grp
+        )`;
+
+// Claude Code v2.1.317+ reports the API provider as `anthropic.provider` on
+// every metric (observed 2026-11-04: 'bedrock', 'firstParty'). Migration 009
+// keeps session-hour membership in claude_session_providers_v1. When enabled,
+// reported evidence precedes the heuristic above:
+//   - any 'bedrock' → bedrock (a resumed session that crossed providers keeps
+//     the existing "bedrock evidence wins" precedence);
+//   - Bedrock-style model ids still win over 'firstParty': the attribute covers
+//     only the post-upgrade part of a resumed session (observed: a session on
+//     global.anthropic.* under 2.1.303 that reports 'firstParty' after 2.1.317);
+//   - 'firstParty' with organization.id → enterprise; without it (API key or
+//     failed login, observed: zero-token sessions with api_error only) → unknown,
+//     closing the heuristic's documented API-key-as-bedrock failure;
+//   - other or absent values (older clients, unobserved providers) → heuristic.
+// Disabled by default: the table exists only after migration 009.
+export function groupCte({ provider = false } = {}) {
+  if (!provider) return `
+WITH session_group AS (
+    SELECT
+        SessionId,
+        ${LEGACY_GROUP} AS grp
     FROM claude_code.otel_metrics_sum_hourly
     WHERE SessionId != ''
     GROUP BY SessionId
 )`;
+  return `
+WITH session_provider AS (
+    SELECT
+        SessionId,
+        max(Provider = 'bedrock') AS provider_bedrock,
+        max(Provider = 'firstParty') AS provider_first_party
+    FROM claude_code.claude_session_providers_v1
+    GROUP BY SessionId
+), session_group AS (
+    SELECT
+        r.SessionId AS SessionId,
+        multiIf(
+            p.provider_bedrock = 1, 'bedrock',
+            r.bedrock_model = 1, 'bedrock',
+            p.provider_first_party = 1 AND r.org = 1, 'enterprise',
+            p.provider_first_party = 1, 'unknown',
+            r.legacy_grp
+        ) AS grp
+    FROM (
+        SELECT
+            SessionId,
+            max(has_org) AS org,
+            countIf(Model != '' AND NOT startsWith(Model, 'claude-')) > 0 AS bedrock_model,
+            ${LEGACY_GROUP} AS legacy_grp
+        FROM claude_code.otel_metrics_sum_hourly
+        WHERE SessionId != ''
+        GROUP BY SessionId
+    ) AS r
+    LEFT JOIN session_provider AS p ON p.SessionId = r.SessionId
+)`;
+}
+
+export function parseProviderGroups(value) {
+  if (value === undefined || value === "") return false;
+  if (/^(true|1)$/i.test(String(value))) return true;
+  if (/^(false|0)$/i.test(String(value))) return false;
+  throw new Error("CLAUDE_PROVIDER_GROUPS must be true or false");
+}
+
+export const PROVIDER_GROUPS = parseProviderGroups(process.env.CLAUDE_PROVIDER_GROUPS);
+export const GROUP_CTE = groupCte({ provider: PROVIDER_GROUPS });
 
 // ponytail: ClickHouse 기본 설정(join_use_nulls=0)에서 LEFT JOIN 미매칭은 NULL이 아니라
 // String 기본값('')을 반환한다 — coalesce(ug.grp, 'unknown')은 그래서 무력화됐었다.

@@ -9,11 +9,11 @@ emails or other attributes are stored, and repeated delivery or backfill overlap
 cannot change results (ReplacingMergeTree keys only). Retention matches the hourly
 rollup (180 days, DELETE only).
 
-No dashboard query reads the table yet. The read path, its `CLAUDE_PROVIDER_GROUPS`
-flag and Terraform variable ship in the companion grouping release; until then channels
-use the model/organization heuristic in
-[Claude channels](../reference/data.md#claude-channels-users-and-projects), and schema
-installation changes no query.
+With `CLAUDE_PROVIDER_GROUPS=true`, [grouping.js](../../dashboard/server/grouping.js)
+reads the table before its model/organization heuristic; see
+[Claude channels](../reference/data.md#claude-channels-users-and-projects). Schema
+installation alone changes no query. The flag is off by default because the query
+fails while the table is absent.
 
 Observed values on 2026-11-04 were `bedrock` and `firstParty`. Other values (for
 example Vertex or gateway routes) fall back to the heuristic until they are observed
@@ -40,8 +40,12 @@ stable migration identity rather than the collector identity.
 Sessions outside the backfilled window keep the heuristic; that is a coverage gap, not an
 error. Expired raw rows cannot be reconstructed.
 
-## Activation
+## Activate and roll back
 
-Activation requires the companion grouping release; this release has no flag to set.
-Install and backfill may run first, and the retained table/view is unaffected by later
-activation. A transform change requires a new table version and migration.
+Set Terraform `claude_provider_groups = true` (or `CLAUDE_PROVIDER_GROUPS=true`) and
+deploy. Before activating, compare per-session groups from both CTE variants over the
+retained data and review every changed session. Invalid values fail startup; query
+failures surface rather than falling back.
+
+Set the flag to `false` and redeploy to roll back. Retain the table/view. A transform
+change requires a new table version and migration.

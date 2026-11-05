@@ -140,7 +140,8 @@ alignment, latest-hour approximation, bounded baselines and some existence/bucke
 remain. No universal equality between all windows, snapshots and charts is claimed.
 
 [grouping.js](../dashboard/server/grouping.js) classifies Claude sessions from retained rollup
-model/organization signals. One user's sessions can span channels. Most identity queries
+model/organization signals, optionally preceded by reported `anthropic.provider` membership
+(migration 009). One user's sessions can span channels. Most identity queries
 still use `UserEmail`; EndUserId fallback is query-specific. Model and project filters are
 also query-specific: project filtering covers only four Usage queries, and its capability
 probe checks logs only. `GROUP_MODE=single` changes presentation, not those SQL policies.
