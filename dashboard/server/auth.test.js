@@ -140,6 +140,15 @@ async function fixture(t, options = {}) {
   return { request, login, complete, events, tokenRequests, revocations, get consumed() { return consumed; } };
 }
 
+test("one user's failed Basic guesses do not lock out others behind the same address", async t => {
+  const f = await fixture(t, { env: { AUTH_MODE: "basic", BASIC_AUTH_USER: "fixture", BASIC_AUTH_PASSWORD: "fixture-password" } });
+  const header = (user, password) => ({ authorization: "Basic " + Buffer.from(`${user}:${password}`).toString("base64") });
+  for (let i = 0; i < 20; i++) assert.equal((await f.request("/api/data", { headers: header("typo-user", "wrong") })).status, 401);
+  assert.equal((await f.request("/api/data", { headers: header("typo-user", "wrong") })).status, 429);
+  assert.equal((await f.request("/api/data", { headers: header("fixture", "fixture-password") })).status, 200,
+    "a shared egress address keeps working for correct credentials");
+});
+
 test("authentication configuration is explicit and fails closed", () => {
   assert.throws(() => parseAuthConfig({}), /BASIC_AUTH_USER/);
   assert.throws(() => parseAuthConfig({ AUTH_MODE: "unknown", AUTH_ALLOW_INSECURE: "1" }), /AUTH_MODE/);

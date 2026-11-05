@@ -143,10 +143,18 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
   audit = entry => console.log(JSON.stringify(entry)) } = {}) {
   const config = parseAuthConfig(env);
   const basicFailures = createFailedAuthLimiter({ now });
+  // Failures count per client address and presented user name: workshops share corporate
+  // egress, so one participant's typos must not lock out everyone behind the same address.
+  const basicFailureKey = (req) => {
+    const match = /^Basic\s+([A-Za-z0-9+/=]+)$/.exec(req.get?.("authorization") || "");
+    const decoded = match ? Buffer.from(match[1], "base64").toString("utf8") : "";
+    const user = decoded.includes(":") ? decoded.slice(0, decoded.indexOf(":")).slice(0, 256) : "";
+    return `${clientAddress(req)}\u0000${user}`;
+  };
   const clientAddress = req => req.ip || req.socket?.remoteAddress || "unknown";
   const basic = config.mode === "basic" && config.enabled
     ? basicAuth({ users: { [config.user]: config.password }, challenge: true,
-      unauthorizedResponse: req => { if (req.auth) basicFailures.failed(clientAddress(req)); return ""; } }) : null;
+      unauthorizedResponse: req => { if (req.auth) basicFailures.failed(basicFailureKey(req)); return ""; } }) : null;
   const codec = config.mode === "oidc" ? createSessionCodec(config, now) : null;
   const authRateLimit = createRateLimiter({ now });
   // Bound refresh work independently of IP: workshops share corporate egress.
@@ -391,7 +399,7 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
       if (PROBES.has(req.path)) return next();
       if (config.mode === "basic") {
         if (!basic) return next();
-        const retryAfter = basicFailures.retryAfter(clientAddress(req));
+        const retryAfter = basicFailures.retryAfter(basicFailureKey(req));
         if (retryAfter) return res.set("Retry-After", String(retryAfter)).status(429).json({ error: "too_many_requests" });
         return basic(req, res, next);
       }
