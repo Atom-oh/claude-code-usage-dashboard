@@ -9,14 +9,24 @@ import { useApi } from "./useApi.js";
 export const TeamsContext = createContext(null);
 const UNAVAILABLE = { options: [], byUser: null, loading: false };
 
+// A roster still showing the previous period (useApi stale) or loading is unavailable for the current
+// one: a user missing from it is not known to have no team, and its labels must not reach a new
+// range's table or CSV.
+export function teamsValue(list, users) {
+  const pending = users.loading || users.stale;
+  return {
+    options: Array.isArray(list.data?.teams) ? list.data.teams : [],
+    byUser: !pending && Array.isArray(users.data?.users)
+      ? new Map(users.data.users.map((row) => [row.user, row.teams])) : null,
+    loading: pending,
+  };
+}
+
 export function TeamsProvider({ children }) {
   const list = useApi("/api/teams", {}, true, { unfiltered: true });
   const users = useApi("/api/users/teams", {}, true, { unfiltered: true });
-  const value = useMemo(() => ({
-    options: Array.isArray(list.data?.teams) ? list.data.teams : [],
-    byUser: Array.isArray(users.data?.users) ? new Map(users.data.users.map((row) => [row.user, row.teams])) : null,
-    loading: users.loading,
-  }), [list.data, users.data, users.loading]);
+  const value = useMemo(() => teamsValue(list, users),
+    [list.data, users.data, users.loading, users.stale]);
   return <TeamsContext.Provider value={value}>{children}</TeamsContext.Provider>;
 }
 

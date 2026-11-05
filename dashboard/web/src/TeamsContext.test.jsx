@@ -7,7 +7,7 @@ import { RangeProvider } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
 import { useApi } from "./useApi.js";
 import { toCsv } from "./csv.js";
-import { TeamsProvider, teamSuffix, teamText, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
+import { TeamsProvider, teamSuffix, teamText, teamsValue, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -51,6 +51,20 @@ test("teamText distinguishes several teams, none and an unavailable lookup", () 
   expect(teamText(UNAVAILABLE, "a@example.invalid", { csv: true })).toBe("확인 불가");
   expect(teamText(LOADING, "a@example.invalid")).toBe("\u2026");
   expect(teamText(LOADING, "a@example.invalid", { csv: true })).toBe("확인 불가");
+});
+
+test("a stale or loading roster is unavailable, never a confirmed absence", () => {
+  const list = { data: { teams: ["fsi"] } };
+  const roster = { data: { users: [{ user: "a@example.invalid", teams: ["fsi"] }] }, loading: false, stale: false };
+  expect(teamText(teamsValue(list, roster), "z@example.invalid")).toBe("—");
+  for (const pending of [{ stale: true }, { loading: true }]) {
+    const teams = teamsValue(list, { ...roster, ...pending });
+    expect(teams.byUser).toBeNull();
+    expect(teams.options).toEqual(["fsi"]);
+    expect(teamText(teams, "a@example.invalid")).toBe("\u2026");
+    expect(teamText(teams, "z@example.invalid", { csv: true })).toBe("확인 불가");
+    expect(teamSuffix(teams, "a@example.invalid")).toBe("");
+  }
 });
 
 test("teamSuffix labels only known teams", () => {
