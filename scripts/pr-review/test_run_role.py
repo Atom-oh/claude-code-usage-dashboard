@@ -591,6 +591,20 @@ class RoleExecutionTests(unittest.TestCase):
         self.assertTrue(ok, error)
         self.assertEqual(code, 0)
 
+    def test_preflight_accepts_a_quoted_no_tools_reply_only(self):
+        for reply, expected in (("> > NO_TOOLS\n", True), ("\x1b[38;5;141m> \x1b[0m> NO_TOOLS", True),
+                                ("> > NO_TOOLS, but I could read files", False), ("> NOTOOLS", False)):
+            with self.subTest(reply=reply):
+                def execute(command, *arguments):
+                    if command[1] == "chat":
+                        return 0, reply, ""
+                    return (0, "true", "") if command[-1] == "json" else (0, "", "")
+                with patch.object(self.runner, "execute", side_effect=execute):
+                    ok, code, error = self.runner.preflight(
+                        "kiro-cli", "claude-opus-5", self.root, os.environ.copy(), 2
+                    )
+                self.assertEqual(ok, expected, error)
+
     def test_codex_transport_requires_a_complete_unambiguous_event_stream(self):
         message = {"type": "item.completed", "item": {
             "id": "reply", "type": "agent_message", "text": '{"review":"exact"}',

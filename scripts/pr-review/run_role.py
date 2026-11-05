@@ -214,7 +214,9 @@ def preflight_attempt(binary, model, cwd, environment, timeout, *, deadline=None
          "--no-interactive", "--wrap", "never", "--legacy-ui", "--agent-engine", "v1"],
     )
     text = controls(output)
-    reply = re.sub(r"(?m)^\s*> ?", "", text).strip()
+    # Legacy UI prefixes the reply with "> "; with Markdown rendering disabled a model that
+    # quotes its answer adds another, so strip every leading quote marker per line.
+    reply = re.sub(r"(?m)^(?:\s*> ?)+", "", text).strip()
     # Any exposed canary proves a file read, whatever the exit status.
     if safety_signal(controls(error)) or canary in text:
         return False, code or 1, error, False
