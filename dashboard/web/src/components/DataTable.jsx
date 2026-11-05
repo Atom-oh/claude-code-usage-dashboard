@@ -46,13 +46,15 @@ function CellBar({ value, max, color }) {
   );
 }
 
-export function DataTable({ columns, rows, groupKey = "group", title, subtitle, help, right, onRowClick, isRowSelected, exportName, stale = false }) {
+// pinLast(row) keeps matching rows (e.g. a "no team" bucket) after every other row in any sort.
+export function DataTable({ columns, rows, groupKey = "group", title, subtitle, help, right, onRowClick, isRowSelected, exportName, stale = false, pinLast }) {
   const [sort, setSort] = useState(null);
 
   const sortedRows = useMemo(() => {
     if (!sort) return rows;
-    return [...rows].sort((ra, rb) => compareValues(ra[sort.key], rb[sort.key], sort.dir));
-  }, [rows, sort]);
+    const sorted = [...rows].sort((ra, rb) => compareValues(ra[sort.key], rb[sort.key], sort.dir));
+    return pinLast ? [...sorted.filter((r) => !pinLast(r)), ...sorted.filter((r) => pinLast(r))] : sorted;
+  }, [rows, sort, pinLast]);
 
   // bar 컬럼의 스케일 기준(컬럼 최대값) — 정렬과 무관하게 전체 행 기준으로 한 번만 계산.
   const barMax = useMemo(() => {

@@ -4,7 +4,7 @@
 // clientSql.test.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldModelCostCells, MODEL_COST_ROW_LIMIT } from "./modelCostTrend.js";
+import { foldModelCostCells, MODEL_COST_ROW_LIMIT, TEAM_TREND_TOP } from "./modelCostTrend.js";
 import { withComputedCost } from "./pricing.js";
 import { ValidationError } from "./http.js";
 
@@ -250,4 +250,15 @@ test("the residual user row stays null and reports the users folded into it", ()
   ], { dimension: "user" });
   assert.deepEqual(out.map((r) => [r.user, r.reported_cost, r.rest_users]),
     [[null, 3, 5], ["a@example.invalid", 1, undefined]]);
+});
+
+test("team cells keep 팀 없음 and the residual apart", () => {
+  const base = { day: "2026-11-01T00:00:00Z", group: "enterprise", known_report: 1, usable_scopes: 1,
+    report_missing: 0, report_zero_with_tokens: 0, input_tokens: 1, output_tokens: 0, cache_read_tokens: 0,
+    cache_write_tokens: 0, observed_token_sum: 1, observed_token_scopes: 1, unobserved_token_scopes: 0 };
+  const out = foldModelCostCells([{ ...base, team: "A" }, { ...base, team: "" }, { ...base, team: null, rest_teams: 3 }],
+    { dimension: "team" });
+  assert.deepEqual(out.map((c) => [c.team, c.rest_teams]), [["A", undefined], [null, 3], ["", undefined]]);
+  assert.ok(out.every((c) => !("cost" in c) && !("unpriced" in c) && !("model" in c)));
+  assert.equal(TEAM_TREND_TOP, 8);
 });

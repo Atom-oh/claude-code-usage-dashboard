@@ -129,6 +129,24 @@ test("/api/overview/session-turns keeps the shared route() 400/500 contract", as
   assert.deepEqual(Object.keys(JSON.parse(text)), ["error", "id"]);
 });
 
+test("/api/cost/by-team keeps the shared route() contract and accepts team", async () => {
+  const bad = await fetch(`${base}/api/cost/by-team?from=garbage`);
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error, "invalid range");
+  const r = await fetch(`${base}/api/cost/by-team?team=fsi`);
+  assert.equal(r.status, 500, "team is accepted and reaches the (absent) database");
+  assert.equal(r.headers.get("cache-control"), "no-store");
+  assert.deepEqual(Object.keys(await r.json()), ["error", "id"]);
+});
+
+test("/api/cost/by-team-daily keeps the shared route() contract", async () => {
+  const bad = await fetch(`${base}/api/cost/by-team-daily?from=garbage`);
+  assert.equal(bad.status, 400);
+  const r = await fetch(`${base}/api/cost/by-team-daily?intervalHours=24&team=fsi`);
+  assert.equal(r.status, 500);
+  assert.equal(r.headers.get("cache-control"), "no-store");
+});
+
 test("/api/insights/daily is disabled by default and validates period", async () => {
   const r = await fetch(`${base}/api/insights/daily`);
   assert.equal(r.status, 200);

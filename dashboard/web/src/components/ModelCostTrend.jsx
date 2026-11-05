@@ -160,7 +160,7 @@ function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
 
 export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t", bucketHours, bounds,
   pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent, dimension = "model", userSuffix }) {
-  const noun = dimension === "user" ? "사용자" : "모델";
+  const noun = dimension === "user" ? "사용자" : dimension === "team" ? "팀" : "모델";
   const c = useChartColors();
   // One bucket-size fallback (the global interval, as useDragZoom uses) for zoom, ticks and grid.
   const { intervalHours } = useRange();
@@ -297,13 +297,13 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
       {frame.othersBreakdown.length > 0 && (
         <table aria-label={`기타 ${noun} 내역`} className={TABLE_CLASS}>
           <thead>
-            <tr><th>{noun}</th>{dimension !== "user" && <th>채널/백엔드</th>}<th>알려진 비용</th><th>확인 불가</th></tr>
+            <tr><th>{noun}</th>{dimension === "model" && <th>채널/백엔드</th>}<th>알려진 비용</th><th>확인 불가</th></tr>
           </thead>
           <tbody>
             {frame.othersBreakdown.map((entry) => (
               <tr key={`${entry.model}\u0000${entry.channel}`}>
                 <td className="break-words">{entry.label}</td>
-                {dimension !== "user" && <td>{entry.channel ?? "—"}</td>}
+                {dimension === "model" && <td>{entry.channel ?? "—"}</td>}
                 <td>{formatUsdPrecise(entry.known)}</td>
                 <td>{entry.unavailable > 0 ? `${entry.unavailable}건` : "—"}</td>
               </tr>

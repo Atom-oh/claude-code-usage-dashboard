@@ -214,7 +214,14 @@ Others table drops the channel column, so a user's channels fold into one row.
 Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`
 (`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; in both sources the
 server's `user: null` residual becomes one "rest of N users" identity that always joins Others and
-counts as N users in its label. With legend items hidden, the tooltip's
+counts as N users in its label. The Cost page's team cost section
+([TeamCostSection.jsx](../../dashboard/web/src/components/TeamCostSection.jsx)) draws the team
+trend from `/api/cost/by-team-daily` (`dimension: "team"`) on the same bucket: `""` is labelled
+the no-team row and is never folded, and the `team: null` residual becomes "Other N teams". Its tiles, a
+horizontal range-total bar of known team spend and the table come from `/api/cost/by-team`; the
+trend draws the top 8 teams plus the no-team series, and the table keeps the no-team row last under
+any sort; the table keeps the server order (known spend, the no-team row last)
+and exports the displayed columns (team, cost, share of total, tokens, requests, active users, sessions). With legend items hidden, the tooltip's
 shown subtotal is unavailable when only unavailable shown costs exist and is labelled partial
 when some are; a frame change that would hide every item restores all. Legend buttons carry
 the series key, never the raw identity.

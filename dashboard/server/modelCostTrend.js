@@ -11,13 +11,15 @@ import { createObservedTokens, addObservedTokens, finishObservedTokens } from ".
 export const MODEL_COST_ROW_LIMIT = 50000;
 // Users the by-user-daily SQL keeps separate before folding the rest into one residual row.
 export const USER_TREND_TOP = 20;
+// Teams the by-team-daily SQL keeps separate; 팀 없음 ("") is never folded.
+export const TEAM_TREND_TOP = 8;
 
 const amount = (v) => ["number", "string"].includes(typeof v) && String(v).trim() !== ""
   && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null;
 const round = (n) => Number.isFinite(n * 1e12) ? Math.round(n * 1e12) / 1e12 : null;
 const TOKEN_KEYS = ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"];
 
-function mapCell(row, byUser) {
+function mapCell(row, dimension) {
   const usable = amount(row.usable_scopes) ?? 0;
   const missing = amount(row.report_missing) ?? 0;
   const zero = amount(row.report_zero_with_tokens) ?? 0;
@@ -37,11 +39,14 @@ function mapCell(row, byUser) {
     ...tokens,
     ...finishObservedTokens(observed),
   };
-  // A user row mixes models, so it has no single price: no computed diagnostic.
-  // user === null is the server's fold of every user outside the top list.
-  if (byUser) return { day: row.day, group: row.group, user: row.user === null ? null : String(row.user ?? ""),
-    ...(row.user === null ? { rest_users: amount(row.rest_users) ?? 0 } : {}),
-    ...reported };
+  // A user or team row mixes models, so it has no single price: no computed diagnostic.
+  // null is the server's fold of every user/team outside the top list.
+  if (dimension === "user" || dimension === "team") {
+    const id = row[dimension];
+    return { day: row.day, group: row.group, [dimension]: id === null ? null : String(id ?? ""),
+      ...(id === null ? { [`rest_${dimension}s`]: amount(row[`rest_${dimension}s`]) ?? 0 } : {}),
+      ...reported };
+  }
   // The model is constant within a row, so pricing the summed tokens equals the per-session sum.
   const [priced] = withComputedCost([{ model: row.model, ...tokens }]);
   const tokensKnown = TOKEN_KEYS.every((k) => tokens[k] !== null);
@@ -53,18 +58,23 @@ function mapCell(row, byUser) {
   };
 }
 
+// Team order within a bucket: named teams, then the residual (null), then 팀 없음 ("").
+const teamRank = (v) => v === null ? 1 : v === "" ? 2 : 0;
+
 export function foldModelCostCells(rows, { dimension = "model" } = {}) {
-  const byUser = dimension === "user";
-  const id = byUser ? "user" : "model";
+  const id = dimension === "user" || dimension === "team" ? dimension : "model";
   if (rows.length > MODEL_COST_ROW_LIMIT)
-    throw new ValidationError(`too much ${byUser ? "user" : "model"} cost data`, "narrow the requested date range or use a wider bucket");
+    throw new ValidationError(`too much ${id} cost data`, "narrow the requested date range or use a wider bucket");
+  const compareId = (a, b) => id === "team"
+    ? teamRank(a.team) - teamRank(b.team) || String(a.team ?? "").localeCompare(String(b.team ?? ""))
+    : String(a[id] ?? "").localeCompare(String(b[id] ?? ""));
   const out = [];
   for (const row of rows) {
-    const cell = mapCell(row, byUser);
+    const cell = mapCell(row, id);
     if (cell) out.push(cell);
   }
   return out.sort((a, b) =>
     String(a.day).localeCompare(String(b.day))
     || String(a.group).localeCompare(String(b.group))
-    || String(a[id] ?? "").localeCompare(String(b[id] ?? "")));
+    || compareId(a, b));
 }

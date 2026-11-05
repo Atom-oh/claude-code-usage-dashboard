@@ -470,7 +470,9 @@ route("/api/cost/by-model", (from, to, _q, filters) => q.costByModel(from, to, f
 // 유저 랭킹)를 위해 그대로 둔다 — 그쪽은 group으로 갈라 보는 지표라 unknown을 넣을 자리가 없다.
 route("/api/cost/by-user-model", (from, to, query, filters) =>
   q.costByUserModel(from, to, query.includeUnknown === "1" ? { ...filters, excludeUnknown: false } : filters));
+route("/api/cost/by-team", (from, to, _q, filters) => q.costByTeam(from, to, filters));
 route("/api/cost/by-model-daily", (from, to, query, filters) => q.costByModelDaily(from, to, bucketHours(query, from, to), filters));
+route("/api/cost/by-team-daily", (from, to, query, filters) => q.costByTeamDaily(from, to, bucketHours(query, from, to), filters));
 route("/api/cost/by-user-daily", (from, to, query, filters) => q.costByUserDaily(from, to, bucketHours(query, from, to), filters));
 route("/api/cost/by-model-compare", (from, to, _q, filters) => q.costByModelCompare(from, to, new Date(from.getTime() - (to - from)), filters));
 route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(from, to, filters));

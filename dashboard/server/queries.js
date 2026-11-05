@@ -4,7 +4,7 @@ import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl, costWithCacheSplit } from "./pricing.js";
 import { backendSql } from "./backend.js";
 import { rollupAdoption } from "./activity.js";
-import { foldModelCostCells, MODEL_COST_ROW_LIMIT, USER_TREND_TOP } from "./modelCostTrend.js";
+import { foldModelCostCells, MODEL_COST_ROW_LIMIT, TEAM_TREND_TOP, USER_TREND_TOP } from "./modelCostTrend.js";
 import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetrics.js";
 import { knownReportedCost } from "./reportedCost.js";
 import { foldSessionTurns } from "./sessionTurns.js";
@@ -849,9 +849,13 @@ export async function skillUsage(from, to, filters = {}) {
 // the folded output alias "user" never shadows a source column in the final GROUP BY.
 export function costByModelDailySql(intervalHours, filters = {}, { dimension = "model" } = {}) {
   const byUser = dimension === "user";
-  const key = byUser ? "scope_user" : "model";
+  const byTeam = dimension === "team";
+  const folded = byUser || byTeam;
+  const key = byUser ? "scope_user" : byTeam ? "scope_team" : "model";
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
-  const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
+  // Team cost is a total metric (Σ teams = 총 비용), so it keeps the unknown channel.
+  const f = filterCond(byTeam ? { ...filters, excludeUnknown: false } : filters,
+    { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   const b = incBucket(intervalHours, metricFilter);
   const firstObservations = b.raw ? "" : `, model_cost_first_observations AS (
     SELECT DISTINCT SessionId, UserEmail, MetricName, Model, TokenType, Decision
@@ -891,11 +895,13 @@ export function costByModelDailySql(intervalHours, filters = {}, { dimension = "
         SELECT t AS day,
             ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, m.SessionId AS session,
             ${byUser ? `max(m.UserEmail) AS scope_user,` : ""}
+            ${byTeam ? `ifNull(any(st.team), '') AS scope_team,` : ""}
             ${TOKEN_SUMS},
             countIf(${observed} AND m.MetricName = 'claude_code.cost.usage') AS report_obs,
             countIf(${observed} AND m.MetricName = 'claude_code.token.usage') AS token_obs
         FROM ${b.sub} m
         LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+        ${byTeam ? `LEFT JOIN (${sessionTeamsSql(["claude"])}) st ON m.SessionId = st.session` : ""}
         WHERE 1 = 1 ${f.where}
         GROUP BY day, "group", model, session
       )
@@ -907,26 +913,30 @@ export function costByModelDailySql(intervalHours, filters = {}, { dimension = "
   // Ranking and the residual count use window functions over the per-(day, group, user) cells in
   // one pass (a CTE referenced three times would re-run the per-session scan each time). The
   // empty identity sorts last and is never folded; rest_users counts folded non-empty users.
-  const sql = byUser ? `${GROUP_CTE}${firstObservations}
-    SELECT day, "group", if(rnk <= ${USER_TREND_TOP} OR scope_user = '', scope_user, NULL) AS "user",
-        any(greatest(0, total_ranks - has_empty - ${USER_TREND_TOP})) AS rest_users,
+  // The empty identity ("" user / 팀 없음) sorts last and is never folded; rest_* counts folded
+  // non-empty identities.
+  const out = byUser ? "user" : "team";
+  const top = byUser ? USER_TREND_TOP : TEAM_TREND_TOP;
+  const sql = folded ? `${GROUP_CTE}${firstObservations}
+    SELECT day, "group", if(rnk <= ${top} OR ${key} = '', ${key}, NULL) AS "${out}",
+        any(greatest(0, total_ranks - has_empty - ${top})) AS rest_${out}s,
         sum(known_report) AS known_report, sum(usable_scopes) AS usable_scopes,
         sum(report_missing) AS report_missing, sum(report_zero_with_tokens) AS report_zero_with_tokens,
         ${["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"].map(strictResum).join(", ")},
         sum(observed_token_sum) AS observed_token_sum, sum(observed_token_scopes) AS observed_token_scopes,
         sum(unobserved_token_scopes) AS unobserved_token_scopes
     FROM (
-      SELECT *, max(rnk) OVER () AS total_ranks, max(scope_user = '') OVER () AS has_empty
+      SELECT *, max(rnk) OVER () AS total_ranks, max(${key} = '') OVER () AS has_empty
       FROM (
-        SELECT *, dense_rank() OVER (ORDER BY scope_user = '', user_known DESC, user_tokens DESC, scope_user) AS rnk
+        SELECT *, dense_rank() OVER (ORDER BY ${key} = '', ${out}_known DESC, ${out}_tokens DESC, ${key}) AS rnk
         FROM (
-          SELECT *, sum(known_report) OVER (PARTITION BY scope_user) AS user_known,
-              sum(observed_token_sum) OVER (PARTITION BY scope_user) AS user_tokens
+          SELECT *, sum(known_report) OVER (PARTITION BY ${key}) AS ${out}_known,
+              sum(observed_token_sum) OVER (PARTITION BY ${key}) AS ${out}_tokens
           FROM (${cells})
         )
       )
     )
-    GROUP BY day, "group", "user" ORDER BY day
+    GROUP BY day, "group", "${out}" ORDER BY day
     LIMIT ${MODEL_COST_ROW_LIMIT + 1}` : `${GROUP_CTE}${firstObservations}${cells} ORDER BY day
     LIMIT ${MODEL_COST_ROW_LIMIT + 1}`;
   return { sql, params: { ...b.params, ...f.params }, raw: b.raw };
@@ -945,6 +955,12 @@ export async function costByModelDaily(from, to, intervalHours = 24, filters = {
 export async function costByUserDaily(from, to, intervalHours = 24, filters = {}) {
   const { sql, params, raw } = costByModelDailySql(intervalHours, filters, { dimension: "user" });
   return foldModelCostCells(await query(sql, { ...range(from, to, raw), ...params }), { dimension: "user" });
+}
+
+// 팀별 지출 트렌드: the same scopes per session team; top TEAM_TREND_TOP teams, the rest folded.
+export async function costByTeamDaily(from, to, intervalHours = 24, filters = {}) {
+  const { sql, params, raw } = costByModelDailySql(intervalHours, filters, { dimension: "team" });
+  return foldModelCostCells(await query(sql, { ...range(from, to, raw), ...params }), { dimension: "team" });
 }
 
 // 모델별 지출 vs 이전 동일 길이 기간. cumulative의 진짜 이점이 여기서 나온다 — 두 구간(현재/이전)
@@ -1307,13 +1323,16 @@ export async function costSummary(from, to, filters = {}) {
   return foldCostSummary(rows);
 }
 
-export function foldCostSummary(rows) {
+// key "team" folds the same rows per session team instead of channel: '' and null are both
+// 팀 없음 (team: null, sorted last); known teams sort by known spend, then name.
+export function foldCostSummary(rows, key = "group") {
   const byGroup = new Map();
   const coverage = new Map();
   for (const r of withComputedCost(rows)) {
-    if (!byGroup.has(r.group)) {
-      byGroup.set(r.group, {
-        group: r.group,
+    const id = key === "team" ? (r.team || null) : r.group;
+    if (!byGroup.has(id)) {
+      byGroup.set(id, {
+        [key]: id,
         computed_cost: 0,
         reported_cost: 0,
         input_tokens: 0,
@@ -1323,9 +1342,9 @@ export function foldCostSummary(rows) {
         unpriced_tokens: 0,
         sessions: 0,
       });
-      coverage.set(r.group, { total: 0, known: false, unknown: false });
+      coverage.set(id, { total: 0, known: false, unknown: false });
     }
-    const g = byGroup.get(r.group);
+    const g = byGroup.get(id);
     g.computed_cost += r.cost || 0;
     // Unknown non-Anthropic spend (ADR-017 amendment) arrives as null: keep the total unavailable.
     g.reported_cost = g.reported_cost === null || r.reported_cost === null ? null : g.reported_cost + Number(r.reported_cost);
@@ -1338,7 +1357,7 @@ export function foldCostSummary(rows) {
         Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens);
     }
     g.sessions += Number(r.sessions);
-    const c = coverage.get(r.group);
+    const c = coverage.get(id);
     const hasTokens = ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"]
       .some((key) => Number(r[key]) > 0);
     const hasCounter = Number(r.cost_counter_rows) > 0;
@@ -1352,11 +1371,15 @@ export function foldCostSummary(rows) {
       c.unknown = true;
     }
   }
-  return [...byGroup.values()].map((g) => {
-    const c = coverage.get(g.group);
+  const out = [...byGroup.entries()].map(([id, g]) => {
+    const c = coverage.get(id);
     const total = Number.isFinite(c.total) && c.known ? c.total : null;
     return { ...g, known_reported_cost: total, reported_partial: total !== null && c.unknown };
-  }).sort((a, b) => a.group.localeCompare(b.group));
+  });
+  if (key !== "team") return out.sort((a, b) => a.group.localeCompare(b.group));
+  return out.sort((a, b) => (a.team === null) - (b.team === null)
+    || (b.known_reported_cost ?? -1) - (a.known_reported_cost ?? -1)
+    || String(a.team).localeCompare(String(b.team)));
 }
 
 // Cost 페이지: 모델별 비용/토큰. cost는 토큰 실측 × 단가표로 계산한 값, reported_cost는
@@ -1399,6 +1422,54 @@ export async function costByUserModel(from, to, filters = {}) {
   return withComputedCost(rows).map((r) => ({
     ...r,
     tokens: Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens),
+  }));
+}
+
+// 팀별 비용: costSummary's counters regrouped by each session's team (sessionTeamsSql). A total
+// metric, so the unknown channel is included and Σ teams (with 팀 없음) equals the 총 비용 tile.
+// Sessions are distinct sessions with in-window usage, not claude_code.session.count.
+export async function costByTeam(from, to, filters = {}) {
+  const teams = `LEFT JOIN (${sessionTeamsSql(["claude"])}) st ON m.SessionId = st.session`;
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail",
+    modelMixed: { model: "m.Model", session: "m.SessionId" }, teamViaSession: "m.SessionId" });
+  const fl = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "l.UserEmail",
+    modelViaSession: "l.SessionId", teamViaSession: "l.SessionId" });
+  const counters = incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from, true);
+  const params = { ...range(from, to, incFlatRaw(to - from)), ...f.params };
+  const [costRows, usageRows, requestRows] = await Promise.all([
+    query(`${GROUP_CTE}
+    SELECT ifNull(st.team, '') AS team, ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS},
+        countIf(m.MetricName = 'claude_code.cost.usage' AND m.InWindow) AS cost_counter_rows, 0 AS sessions
+    FROM ${counters} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    ${teams}
+    WHERE 1 = 1 ${f.where}
+    GROUP BY team, "group", model
+    -- Lookback-only baselines are not activity: a team idle in the range has no row.
+    HAVING countIf(m.InWindow) > 0`, params),
+    query(`${GROUP_CTE}
+    SELECT ifNull(st.team, '') AS team, uniqExactIf(m.UserEmail, m.InWindow AND m.UserEmail != '') AS users,
+        uniqExactIf(m.SessionId, m.InWindow AND m.SessionId != '') AS sessions
+    FROM ${counters} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    ${teams}
+    WHERE 1 = 1 ${f.where}
+    GROUP BY team`, params),
+    query(`${GROUP_CTE}
+    SELECT ifNull(st.team, '') AS team, count() AS requests
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    LEFT JOIN (${sessionTeamsSql(["claude"])}) st ON l.SessionId = st.session
+    WHERE l.EventName = 'api_request' AND l.SessionId != ''
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${fl.where}
+    GROUP BY team`, { ...range(from, to, true), ...fl.params }),
+  ]);
+  const by = (rows, k) => new Map(rows.map((r) => [r.team || null, Number(r[k])]));
+  const users = by(usageRows, "users"), sessions = by(usageRows, "sessions"), requests = by(requestRows, "requests");
+  return foldCostSummary(costRows, "team").map(({ sessions: _unused, ...r }) => ({
+    ...r,
+    tokens: r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens,
+    users: users.get(r.team) ?? 0, sessions: sessions.get(r.team) ?? 0, requests: requests.get(r.team) ?? 0,
   }));
 }
 

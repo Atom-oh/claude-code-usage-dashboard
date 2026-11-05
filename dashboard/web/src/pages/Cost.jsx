@@ -24,6 +24,7 @@ import { asCostSummaryRows, asKnownSpendRows, asSpendRows, sumKnownSpend, sumSpe
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
 import { priceSourceText } from "../pricingSource.js";
 import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
+import { TeamCostSection } from "../components/TeamCostSection.jsx";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null || !Number.isFinite(Number(n)) ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -686,6 +687,8 @@ export default function Cost() {
             clampRange={[from, null]}
           />
         )}
+
+        <TeamCostSection intervalHours={intervalHours} />
 
         <div className={selectedModelRow ? "grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start" : undefined}>
         <DataTable
