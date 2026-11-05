@@ -36,8 +36,8 @@ The process-local cache deduplicates pending work until settlement and stores su
 results for 320 seconds from completion. Successful-result TTL and byte eviction do not
 remove pending entries; producer deadlines below can reject pending work.
 Keys contain the route path and sorted parameters. Ordinary routes use `from`, `to`,
-`group`, `user`, `model`, `project`, `intervalHours`, `email` and `includeUnknown`.
-Client overview and Codex insights instead use range bounds and validated client/backend/user/model
+`group`, `user`, `model`, `project`, `team`, `intervalHours`, `email` and `includeUnknown`.
+Client overview and Codex insights instead use range bounds and validated client/backend/user/model/team
 filters, including `userExact`/`modelExact`, and their applicable `view`, `modelTime`,
 `timeFormat` or `profile`. Overview also keys the resolved bucket size, native query
 source and effective range end. [index.js](../../dashboard/server/index.js)'s `cacheKey()`
@@ -127,7 +127,9 @@ consistent with the server constants.
 Filters are applied only where each query supplies a corresponding expression to
 `filterCond()`. Model matching can be row-level, mixed metric matching, or a session
 semi-join; these have different populations. Project matching covers four Usage endpoints
-and requires the project-column gate. See the [filter contract](../api-reference.md).
+and requires the project-column gate. Team matching is a session semi-join from `otel_logs`
+team evidence; routes that cannot apply it reject it with 400 `unsupported filter`.
+See the [filter contract](../api-reference.md).
 
 `incFlat` and `incBucketed` handle shared counter aggregation. Queries needing additional
 dimensions such as effort, agent, language, version or project use local raw-table

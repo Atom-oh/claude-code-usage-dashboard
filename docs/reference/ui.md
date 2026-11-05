@@ -68,6 +68,14 @@ when supplied; otherwise it exports the raw field. It does **not** scrape render
 Provide `toText` when badges or derived cells need a textual equivalent. CSV uses a UTF-8 BOM,
 CRLF rows and standard quote escaping.
 
+A sortable team column follows the user column in the Users, Claude detail per-user cost and
+efficiency, Productivity user, and shared per-user usage/cost and model-share tables. Several
+teams are joined with commas, most recent first. An em dash means no team, "unavailable" text
+means the lookup failed, and an ellipsis shows while it loads. CSV exports the team after the
+user: empty for no team, the unavailable text on failure. Top-user bars, user cost trends, the
+per-model user panel and the user cost detail title append ` · <teams>`; the user drawer header
+shows the team. Team is a client-provided OTel attribute, not verified identity.
+
 When masking is enabled, `toCsv` centrally applies `maskEmail` to the `user` column after
 `toText`, preventing custom formatters from bypassing that display policy. It is not a
 general PII scanner for every column. [fmt.js](../../dashboard/web/src/fmt.js) holds the

@@ -113,6 +113,9 @@ responses and streaming chat keep their separate response handling.
 `client=all|claude|codex` selects enabled sources;
 `backend=all|bedrock-mantle|bedrock-runtime|anthropic|unknown`. Invalid/disabled clients,
 arrays and nonempty group/project filters fail before caching.
+An exact `team` filter is accepted with the session semantics in [Filter scope](#filter-scope),
+applied to Claude counters, Claude and Codex logs and the Codex cost facts;
+`/api/codex/insights` rejects it.
 Backend is resolved from the model id prefix first (region prefix → runtime, bare vendor
 namespace → mantle), falling back to the resource tag (Codex) or the enterprise channel
 (Claude → `anthropic`); otherwise `unknown`. See
@@ -331,23 +334,33 @@ applies a filter only when the query supplies its column expression.
 |---|---|
 | Most A/B queries | Exclude `unknown` by default; an explicit `group=unknown` bypasses that default exclusion. |
 | `kpiSummary`, `costSummary`, `activeUsers`, `adoptionLevels`, `adoptionTimeseries` | Include unknown-channel rows when no channel is selected. |
-| `activeUsers`, adoption routes | Honor group/user; ignore model and project. Adoption snapshots ignore `from` and use windows ending at `to`. |
-| Integrity version cohorts | Honor group only; ignore user/model/project. |
-| Plugin inventory | Range only; no group/user/model/project filtering. |
+| `activeUsers`, adoption routes | Honor group/user; ignore model and project. `activeUsers` honors team; adoption routes reject it. Adoption snapshots ignore `from` and use windows ending at `to`. |
+| Integrity version cohorts | Honor group and team; ignore user/model/project. |
+| Plugin inventory | Range and team only; no group/user/model/project filtering. |
 | Subagent fanout, skill activations, compaction, refusals, exhausted retries, permission wait, interaction breakdown | Honor group/user; ignore model/project. TTFT separately supports row-level model filtering. |
 | Activity density, tool outcomes, permission occupancy | Honor group/user and session-level model filtering; ignore project. Unknown channels are excluded by default. |
 | Session turns | Honor group/user. A model filter selects sessions that used a matching model (rollup lookback semi-join) and keeps each selected session's whole cost and turn count. Ignore project. Unknown channels are excluded by default. |
 | Mixed metric queries | Model-bearing rows match directly; model-less session/commit/PR/LOC/decision/activity rows use a matching-session semi-join when `modelMixed` is configured. |
 | Many log queries | `modelViaSession` accepts every matching session's events if that session has a matching model in the rollup lookback. This is not event-level model attribution. |
 | Reported-vs-computed and entrypoints | Match the model on each `api_request` log row. |
-| User daily/decisions/heatmap | Exact `email` and optional `group`; ignore global user/model/project. With no group, include all channels. Heatmap uses 91 days ending at `to`, ignoring `from`. |
-| User interactions | Exact `email` and range only; ignores group/user/model/project. |
+| User daily/decisions/heatmap | Exact `email` and optional `group`; ignore global user/model/project. With no group, include all channels. Heatmap uses 91 days ending at `to`, ignoring `from`. Reject team. |
+| User interactions | Exact `email` and range only; ignores group/user/model/project. Reject team. |
 | Projects, permission modes, decision sources, entrypoints | The only queries applying project filters. Projects filter identity using the email/EndUserId fallback; the other three filter `UserEmail`. |
+| Team (all applying routes) | Session semi-join (`teamViaSession`, else the declared `modelViaSession`/`modelMixed` session), not event-level attribution. Each session's team is its most frequent `otel_logs` value of resource, else log, attribute `team` (ties lexically first) over the range plus the three-day counter lookback. Rows without a session, and sessions without team evidence, never match. |
 
 `GROUP_MODE=single` affects frontend presentation only. The project filter is silently dropped
 on both server and frontend unless the project probe is true. `/api/usage/projects` also
 returns `[]` while gated off; the other three routes can run without the new columns when
 no project predicate is applied. The probe checks logs only, not every table or migration.
+
+`team` is a client-provided OTel resource attribute, not verified identity (like `user.email`).
+The parameter is an exact match after trimming; empty means no filter. A non-string or a
+value longer than 256 characters returns 400 `invalid filter` before caching. It is part of
+the result cache keys, and team-filtered requests never mark a legacy route for warming.
+The adoption routes, the four user drilldowns, `/api/codex/insights` and the two team
+lookups return 400 `unsupported filter` with detail `the team filter does not apply to this
+endpoint`. The SPA does not forward `team` to them; the filter bar discloses the views it
+does not cover.
 
 ## Response conventions
 
@@ -473,6 +486,17 @@ bug — see [cost accuracy review](cost-accuracy-review-2026-09-10.md).
 across a user's channel rows; summing per-channel active days can double-count dates.
 `agents` is a distinct-agent count, not agent depth. Child duration totals can exceed the
 interaction duration. All four drilldowns are excluded from cache warming.
+
+### Teams
+
+Both lookups are range-only over enabled clients: they reject `team` and ignore the other filters.
+
+| Path | Fields and grain |
+|---|---|
+| `/api/teams` | **Object** `{teams}`: sorted distinct resolved teams of sessions with team evidence inside the range. |
+| `/api/users/teams` | **Object** `{users}`: per raw user identity (email, else `enduser.id`), `{user, team, teams}` with every resolved team of the user's sessions with in-range team evidence, most recent first; `team` is the first. Users without team evidence are absent. IDs are raw like other user APIs; UI masking is not access control. |
+
+Logs are retained 90 days ([data retention](reference/data.md)), so older counter-only sessions have no team.
 
 KPI rows also expose `commits_observed`, `prs_observed`, and `lines_of_code_observed`.
 Active-time rows expose separate user/CLI observation flags. These require in-window
