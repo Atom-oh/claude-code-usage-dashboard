@@ -140,13 +140,16 @@ async function fixture(t, options = {}) {
   return { request, login, complete, events, tokenRequests, revocations, get consumed() { return consumed; } };
 }
 
-test("one user's failed Basic guesses do not lock out others behind the same address", async t => {
-  const f = await fixture(t, { env: { AUTH_MODE: "basic", BASIC_AUTH_USER: "fixture", BASIC_AUTH_PASSWORD: "fixture-password" } });
-  const header = (user, password) => ({ authorization: "Basic " + Buffer.from(`${user}:${password}`).toString("base64") });
-  for (let i = 0; i < 20; i++) assert.equal((await f.request("/api/data", { headers: header("typo-user", "wrong") })).status, 401);
-  assert.equal((await f.request("/api/data", { headers: header("typo-user", "wrong") })).status, 429);
-  assert.equal((await f.request("/api/data", { headers: header("fixture", "fixture-password") })).status, 200,
-    "a shared egress address keeps working for correct credentials");
+test("the Basic failure limit is configurable for shared workshop egress and validated", async t => {
+  const base = { AUTH_MODE: "basic", BASIC_AUTH_USER: "fixture", BASIC_AUTH_PASSWORD: "fixture-password" };
+  for (const value of ["0", "-1", "1.5", "abc", "10001"])
+    assert.throws(() => parseAuthConfig({ ...base, BASIC_AUTH_FAILURE_LIMIT: value }), /BASIC_AUTH_FAILURE_LIMIT/);
+  assert.equal(parseAuthConfig(base).failureLimit, 20);
+  const f = await fixture(t, { env: { ...base, BASIC_AUTH_FAILURE_LIMIT: "100" } });
+  const header = (password) => ({ authorization: "Basic " + Buffer.from(`fixture:${password}`).toString("base64") });
+  for (let i = 0; i < 30; i++) assert.equal((await f.request("/api/data", { headers: header("wrong") })).status, 401);
+  assert.equal((await f.request("/api/data", { headers: header("fixture-password") })).status, 200,
+    "a raised limit keeps a shared address working past the default 20 failures");
 });
 
 test("authentication configuration is explicit and fails closed", () => {

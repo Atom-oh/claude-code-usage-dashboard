@@ -37,7 +37,13 @@ export function parseAuthConfig(env) {
     // A partially configured credential must never silently enable the development bypass.
     if (!enabled && (user || password))
       throw new Error("BASIC_AUTH_USER and BASIC_AUTH_PASSWORD must be configured together");
-    return { mode, enabled, user, password };
+    // Failed guesses allowed per client address and minute. Workshops behind one corporate egress
+    // share an address, so operators can raise it; it stays a per-process guard behind the edge limit.
+    const rawLimit = env.BASIC_AUTH_FAILURE_LIMIT ?? "20";
+    const failureLimit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+    if (!Number.isInteger(failureLimit) || failureLimit < 1 || failureLimit > 10000)
+      throw new Error("BASIC_AUTH_FAILURE_LIMIT must be an integer from 1 to 10000");
+    return { mode, enabled, user, password, failureLimit };
   }
   const issuer = httpsUrl(env.OIDC_ISSUER, "OIDC_ISSUER");
   const origin = httpsUrl(env.APP_PUBLIC_URL, "APP_PUBLIC_URL", true);
@@ -142,19 +148,13 @@ async function discover(config) {
 export function createAuthentication({ env = process.env, now = Date.now, discoverClient = discover,
   audit = entry => console.log(JSON.stringify(entry)) } = {}) {
   const config = parseAuthConfig(env);
-  const basicFailures = createFailedAuthLimiter({ now });
-  // Failures count per client address and presented user name: workshops share corporate
-  // egress, so one participant's typos must not lock out everyone behind the same address.
-  const basicFailureKey = (req) => {
-    const match = /^Basic\s+([A-Za-z0-9+/=]+)$/.exec(req.get?.("authorization") || "");
-    const decoded = match ? Buffer.from(match[1], "base64").toString("utf8") : "";
-    const user = decoded.includes(":") ? decoded.slice(0, decoded.indexOf(":")).slice(0, 256) : "";
-    return `${clientAddress(req)}\u0000${user}`;
-  };
+  // Keyed on the client address only: a client-chosen field (such as the user name) would let one
+  // client fill the bucket table and deny every new address.
+  const basicFailures = createFailedAuthLimiter({ now, max: config.failureLimit ?? 20 });
   const clientAddress = req => req.ip || req.socket?.remoteAddress || "unknown";
   const basic = config.mode === "basic" && config.enabled
     ? basicAuth({ users: { [config.user]: config.password }, challenge: true,
-      unauthorizedResponse: req => { if (req.auth) basicFailures.failed(basicFailureKey(req)); return ""; } }) : null;
+      unauthorizedResponse: req => { if (req.auth) basicFailures.failed(clientAddress(req)); return ""; } }) : null;
   const codec = config.mode === "oidc" ? createSessionCodec(config, now) : null;
   const authRateLimit = createRateLimiter({ now });
   // Bound refresh work independently of IP: workshops share corporate egress.
@@ -399,7 +399,7 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
       if (PROBES.has(req.path)) return next();
       if (config.mode === "basic") {
         if (!basic) return next();
-        const retryAfter = basicFailures.retryAfter(basicFailureKey(req));
+        const retryAfter = basicFailures.retryAfter(clientAddress(req));
         if (retryAfter) return res.set("Retry-After", String(retryAfter)).status(429).json({ error: "too_many_requests" });
         return basic(req, res, next);
       }

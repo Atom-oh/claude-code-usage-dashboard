@@ -225,6 +225,10 @@ An empty `bedrock_region` omits the override and follows the infrastructure regi
 The workshop can disable `pii_mask_enabled` so participants recognize synthetic `@ws`
 identifiers, but verify Enterprise sessions have not introduced real emails before doing so.
 UI masking is not an API boundary. Basic Auth and chat's readonly probe remain required.
+Basic Auth rejects every request from a client address after 20 failed credentials in a minute
+(per dashboard process), including correct ones; participants behind one corporate egress share
+that budget. For a shared-egress workshop raise `BASIC_AUTH_FAILURE_LIMIT` (1 to 10000) and keep the
+edge rate limit in place.
 Chat exposes the permitted database read surface to everyone sharing the admin credential;
 per-participant isolation requires additional authorization design. The product UI stays
 Korean; these notes describe its fields and behavior in English.
