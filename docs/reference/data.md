@@ -177,6 +177,16 @@ carried no `request_id`/`client_request_id`, i.e. no first-party Anthropic API-k
 observed. Limitation: an Anthropic API-key, Vertex or gateway route without `organization.id`
 would be labelled `bedrock`; re-run the census before relying on this in another deployment.
 
+With `CLAUDE_PROVIDER_GROUPS=true` (after [migration 009](../runbooks/claude-provider-schema.md)),
+the `anthropic.provider` value reported by Claude Code v2.1.317+ is applied first:
+
+1. Any `bedrock` provider value selects `bedrock`.
+2. Otherwise step 1 above (Bedrock-style model ids) still selects `bedrock`; the attribute
+   covers only the post-upgrade part of a resumed session.
+3. Otherwise `firstParty` selects `enterprise` with `has_org=1`, else `unknown` (API key or
+   failed login; this closes the API-key-as-`bedrock` limitation for reporting clients).
+4. Sessions with no or an unrecognized provider value keep steps 1-4 above.
+
 These are access-channel heuristics, not coding-client identities or randomized experiment
 assignments. The broad model rule is not a client detector; Codex uses its log namespace
 and explicit backend instead. One user can have sessions in both channels; channel
