@@ -16,7 +16,7 @@ department column in the user table), without its budgets.
 - A **team cost section on the Cost page**:
   - Summary cards: active teams in the range; share of cost with a known team.
   - Team cost distribution: one bar per team for the range total, and a trend chart with
-    the same bucket as the existing "모델별 비용 추이" (`intervalHours`).
+    the same bucket as the existing "model cost trend" (`intervalHours`).
   - Team table: team, cost, share of total, tokens, requests, active users, sessions;
     sortable, CSV export, stale-gated like other Cost tables.
 - The existing per-user cost tables keep their team column (no change needed).
@@ -34,10 +34,10 @@ department column in the user table), without its budgets.
 
 ## Anti-goals
 
-- Guessing a team. Cost without team evidence is shown as its own "팀 없음" row, never
+- Guessing a team. Cost without team evidence is shown as its own "No team" row, never
   spread across teams.
-- Totals that disagree with the page: the sum of team rows plus "팀 없음" must equal the
-  "총 비용" tile (`costSummary`) for the same filters and range.
+- Totals that disagree with the page: the sum of team rows plus "No team" must equal the
+  "Total cost" tile (`costSummary`) for the same filters and range.
 - Treating team as verified identity (it is client-provided, like `user.email`).
 
 ## Constraints (project contracts)
@@ -50,7 +50,7 @@ department column in the user table), without its budgets.
   the window plus the counter lookback; ties lexical). A user who changed teams has each
   session's cost on that session's team.
 - Sessions without team evidence (no attribute, or counter-only beyond 90-day log
-  retention) land in "팀 없음". The UI discloses why such cost can exist.
+  retention) land in "No team". The UI discloses why such cost can exist.
 - Bound SQL parameters, shared `route()` wrapping (validation, cache, in-flight
   deduplication, no-store JSON), and the existing filter semantics. The new route accepts
   `team`: with a team selected the table shows that team's row only.
@@ -60,10 +60,10 @@ department column in the user table), without its budgets.
 ## Shape
 
 - **Server:** one route, `GET /api/cost/by-team` (and `intervalHours` for the trend),
-  returning per team: `team` (null = 팀 없음), `cost`, `cost_partial`, token subtotals and
+  returning per team: `team` (null = No team), `cost`, `cost_partial`, token subtotals and
   `tokens`, `requests`, `users`, `sessions`, plus per-bucket cost for the trend.
   Reuse `TOKEN_SUMS`/`withComputedCost` and `sessionTeamsSql`.
-- **Web:** a "팀별 비용" section on Cost.jsx using the existing Card/DataTable/chart
+- **Web:** a "Team cost" section on Cost.jsx using the existing Card/DataTable/chart
   components and `useApi` stale handling.
 - **Docs:** API reference row for the route, metrics/UI references for the section.
 
@@ -72,20 +72,20 @@ department column in the user table), without its budgets.
 - **Channel basis: include `unknown`.** Team cost is a total-type metric, so it follows the
   `filterCond` policy for totals (`excludeUnknown: false`, as `costSummary` and
   `activeUsers` do), not the A/B comparison default. Consequence: the team trend has its
-  own query and is not bucket-for-bucket comparable with "모델별 비용 추이", which excludes
-  `unknown`; the section subtitle says the basis matches "총 비용". An explicit
+  own query and is not bucket-for-bucket comparable with "model cost trend", which excludes
+  `unknown`; the section subtitle says the basis matches "Total cost". An explicit
   `group=unknown` or other group filter still applies.
 - **Many teams:** the bar chart and trend show the top 8 teams by known cost over the
-  range plus one "기타" series (and "팀 없음"), like the user trend's top-N fold; the table
+  range plus one "Other" series (and "No team"), like the user trend's top-N fold; the table
   and CSV list every team. The trend stays within the existing row limits.
 - **Sessions:** distinct `SessionId`s with in-window usage per team. This does not
-  reconcile with the "세션" tile (`claude_code.session.count`), and the column help says
+  reconcile with the "Sessions" tile (`claude_code.session.count`), and the column help says
   so.
 - Claude only. The Cost page is Claude spend; Codex spend lives in the Clients views
   and uses different session ids and pricing adapters. Codex-by-team can follow the
   same pattern later.
 - Placement on the Cost page rather than a new page or Overview.
-- "팀 없음" is listed last regardless of sort, and excluded from the active-teams count.
+- "No team" is listed last regardless of sort, and excluded from the active-teams count.
 
 ## Left to the builder
 
