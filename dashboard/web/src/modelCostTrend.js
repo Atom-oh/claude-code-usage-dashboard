@@ -124,7 +124,9 @@ const USER_AXIS = {
   // The user table has no channel column, so one user's channels fold into one row.
   breakdownChannels: false,
 };
-const axisFor = (dimension) => (dimension === "user" ? USER_AXIS : MODEL_AXIS);
+// userSuffix (raw identity -> text) extends user series labels, e.g. with a team; keys stay raw.
+const axisFor = (dimension, userSuffix) => (dimension !== "user" ? MODEL_AXIS
+  : userSuffix ? { ...USER_AXIS, label: (key) => userLabel(key) + userSuffix(key) } : USER_AXIS);
 
 export function reasonLabel(reason) {
   const group = REASON_GROUPS.find((g) => g.reasons.includes(reason));
@@ -382,8 +384,8 @@ function parseBound(value) {
 }
 
 export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucketHours, maxIntervals = MAX_INTERVALS,
-  dimension = "model" } = {}) {
-  const axis = axisFor(dimension);
+  dimension = "model", userSuffix } = {}) {
+  const axis = axisFor(dimension, userSuffix);
   const list = Array.isArray(cells) ? cells : [];
   const isModelCell = (cell) => cell.idle !== true && cell.model !== null;
 

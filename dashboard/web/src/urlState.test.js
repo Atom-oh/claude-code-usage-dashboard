@@ -178,3 +178,12 @@ describe("urlState", () => {
     expect(other.filters.model).toBe("opus");
   });
 });
+
+test("team survives URL parsing and serialization regardless of masking", () => {
+  for (const piiMask of [true, false]) {
+    expect(parseUrlState(new URLSearchParams("days=7&team=fsi"), { piiMask }).filters.team).toBe("fsi");
+  }
+  expect(parseUrlState(new URLSearchParams("days=7")).filters.team).toBe("");
+  expect(serializeUrlState({ range: { days: 7 }, filters: { model: "m", team: "fsi" } }).toString()).toBe("days=7&model=m&team=fsi");
+  expect(serializeUrlState({ range: null, filters: { team: "" } }).has("team")).toBe(false);
+});

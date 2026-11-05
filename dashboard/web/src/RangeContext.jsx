@@ -90,7 +90,7 @@ export function RangeProvider({ children }) {
     setSearchParams(
       (prev) => {
         const next = serializeUrlState({ range: { days, custom, month }, filters: {}, piiMask });
-        const filterKeys = ["client", "view", "model"];
+        const filterKeys = ["client", "view", "model", "team"];
         if (!piiMask) filterKeys.push("user");
         if (common) filterKeys.push("backend");
         else {

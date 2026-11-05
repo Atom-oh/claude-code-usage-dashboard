@@ -24,6 +24,7 @@ import { useConfig } from "./ConfigContext.jsx";
 import SessionBoundary from "./SessionBoundary.jsx";
 import Installation from "./pages/Installation.jsx";
 import CollectorSetup from "./pages/CollectorSetup.jsx";
+import { TeamsProvider } from "./TeamsContext.jsx";
 
 export default function App() {
   return <SessionBoundary><ClientProvider><Dashboard /></ClientProvider></SessionBoundary>;
@@ -44,7 +45,7 @@ function Dashboard() {
               <MobileNav />
               <Sidebar />
               <main className="min-w-0 flex-1 overflow-y-auto animate-fade-in">
-                {installation ? <Installation /> : collector ? <CollectorSetup /> : <>
+                {installation ? <Installation /> : collector ? <CollectorSetup /> : <TeamsProvider>
                 <FreshnessBanner className="mx-8 mt-3" />
                 <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
                   <FilterBar />
@@ -62,7 +63,7 @@ function Dashboard() {
                   <Route path="/cost" element={<Cost />} />
                   <Route path="/reliability" element={<Reliability />} />
                   <Route path="/analytics" element={<Analytics />} />
-                </Routes>}</>}
+                </Routes>}</TeamsProvider>}
               </main>
             </div>
             {!installation && !collector && canChat && <FloatingChat />}

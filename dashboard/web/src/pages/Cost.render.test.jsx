@@ -349,12 +349,14 @@ test("partial model and user folds render known subtotals labelled 부분합 and
   expect(modelCsv).toContain("partial-model,10,154,66.7%,,0,0,부분합");
   expect(modelCsv).toContain("known-model,5,77,33.3%,+25.0%,0,0,확인됨");
   expect(cells("사용자 · 모델별 비용").map((r) => r[0])).toEqual(["partial", "known"]);
-  expect(cells("사용자 · 모델별 비용")[0][1]).toContain("$10부분합");
+  // Without the team lookup (no TeamsProvider) the team column is unavailable, not "no team".
+  expect(cells("사용자 · 모델별 비용")[0][1]).toBe("확인 불가");
+  expect(cells("사용자 · 모델별 비용")[0][2]).toContain("$10부분합");
   expect(cells("사용자 · 모델별 비용")[0].at(-1)).toBe("부분합");
   expect(cells("사용자 · 모델별 비용")[1].at(-1)).toBe("확인됨");
   const userCsv = await exportTable("사용자 · 모델별 비용");
-  expect(userCsv).toContain("partial,$10 — bedrock $10 · enterprise 확인 필요,154,200 — bedrock 100토큰 · enterprise 100토큰,부분합");
-  expect(userCsv).toContain("known,$5 — bedrock $5,77,100 — bedrock 100토큰,확인됨");
+  expect(userCsv).toContain("partial,확인 불가,$10 — bedrock $10 · enterprise 확인 필요,154,200 — bedrock 100토큰 · enterprise 100토큰,부분합");
+  expect(userCsv).toContain("known,확인 불가,$5 — bedrock $5,77,100 — bedrock 100토큰,확인됨");
 });
 
 test("model donuts disclose the same known partial subtotal as the model table", async () => {
@@ -486,13 +488,13 @@ test("agent and efficiency amounts disclose partial coverage in the table and CS
   expect(cells("에이전트별 비용")[1]).toEqual(["unknown", "bedrock", "확인 필요", "10", "확인 필요"]);
   const efficiency = cells("비용 효율 ($/LOC · $/커밋)");
   expect(efficiency[0][0]).toBe("complete@example.invalid");
-  expect(efficiency[1]).toEqual(["partial@example.invalid", "bedrock", "$6부분합", "10", "2", "$0.6000부분합", "$3부분합", "부분합"]);
-  expect(efficiency[2].slice(5, 7)).toEqual(["확인 필요", "확인 필요"]);
+  expect(efficiency[1]).toEqual(["partial@example.invalid", "확인 불가", "bedrock", "$6부분합", "10", "2", "$0.6000부분합", "$3부분합", "부분합"]);
+  expect(efficiency[2].slice(6, 8)).toEqual(["확인 필요", "확인 필요"]);
   const agentCsv = await exportTable("에이전트별 비용");
   expect(agentCsv).toContain("mixed,bedrock,5,20,부분합");
   expect(agentCsv).toContain("unknown,bedrock,,10,확인 필요");
   const efficiencyCsv = await exportTable("비용 효율 ($/LOC · $/커밋)");
-  expect(efficiencyCsv).toContain("partial@example.invalid,bedrock,6,10,2,0.6,3,부분합");
+  expect(efficiencyCsv).toContain("partial@example.invalid,확인 불가,bedrock,6,10,2,0.6,3,부분합");
   expect(efficiencyCsv).not.toContain("99");
   expect(agentCsv).not.toContain("99");
 });
@@ -525,15 +527,15 @@ test("an unlisted model without a usable report keeps the user's known spend as 
   await waitFor(() => expect(cells("사용자 · 모델별 비용")).toHaveLength(3));
   const table = cells("사용자 · 모델별 비용");
   expect(table.map((r) => [r[0], r.at(-1)])).toEqual([["mixed", "부분합"], ["known", "확인됨"], ["missing", "확인 필요"]]);
-  expect(table[0][1]).toContain("$2,100부분합");
-  expect(table[2][1]).toContain("확인 필요");
+  expect(table[0][2]).toContain("$2,100부분합");
+  expect(table[2][2]).toContain("확인 필요");
   const labels = [...container.querySelectorAll("[aria-label]")].map((d) => d.getAttribute("aria-label"));
   expect(labels).toContain("bedrock $2,100 (부분합) — claude-opus-5 $2,100");
   expect(labels).toContain("enterprise $5 — claude-opus-5 $5");
   expect(screen.getByText("모델별 보고 비용 구성 · 보고 비용 확인 필요 사용자 1명 제외 · 부분합 사용자 1명 포함")).toBeTruthy();
   const csv = await exportTable("사용자 · 모델별 비용");
-  expect(csv).toContain('mixed,"$2,100 — bedrock $2,100 (부분합)","1,050 — bedrock 1,050토큰",부분합');
-  expect(csv).toContain("missing,,40 — bedrock 40토큰,확인 필요");
+  expect(csv).toContain('mixed,확인 불가,"$2,100 — bedrock $2,100 (부분합)","1,050 — bedrock 1,050토큰",부분합');
+  expect(csv).toContain("missing,확인 불가,,40 — bedrock 40토큰,확인 필요");
 });
 
 test("summary with one usable and one unusable report shows the known subtotal labelled 부분합", async () => {
@@ -605,11 +607,11 @@ test("effort, agents and efficiency use reported spend with computed secondary d
   expect(card("Effort 수준별 보고 비용 — bedrock").textContent).toContain("medium: $9");
   expect(card("Effort 수준별 보고 비용 — bedrock").textContent).toContain("미지정: 확인 필요");
   await waitFor(() => expect(cells("비용 효율 ($/LOC · $/커밋)")).toHaveLength(3));
-  expect(cells("비용 효율 ($/LOC · $/커밋)")[0].slice(0, 7)).toEqual(["reported-best", "bedrock", "$10", "10", "2", "$1.0000", "$5"]);
+  expect(cells("비용 효율 ($/LOC · $/커밋)")[0].slice(0, 8)).toEqual(["reported-best", "확인 불가", "bedrock", "$10", "10", "2", "$1.0000", "$5"]);
   expect((await exportTable("에이전트별 비용"))).toContain("메인 세션,bedrock,20,1,10");
   const efficiencyCsv = await exportTable("비용 효율 ($/LOC · $/커밋)");
-  expect(efficiencyCsv).toContain("reported-best,bedrock,10,10,2,1,5");
-  expect(efficiencyCsv).toContain("missing,bedrock,,10,2,,");
+  expect(efficiencyCsv).toContain("reported-best,확인 불가,bedrock,10,10,2,1,5");
+  expect(efficiencyCsv).toContain("missing,확인 불가,bedrock,,10,2,,");
 });
 
 // 추이 차트 드래그는 레이아웃이 필요하다(GroupCharts.test.jsx와 같은 치수 스텁).

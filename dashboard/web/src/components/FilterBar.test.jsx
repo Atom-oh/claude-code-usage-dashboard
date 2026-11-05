@@ -5,14 +5,15 @@ import { ConfigProvider } from "../ConfigContext.jsx";
 import { FilterProvider } from "../FilterContext.jsx";
 import { FilterBar } from "./FilterBar.jsx";
 import { ClientProvider } from "../ClientContext.jsx";
+import { TeamsContext } from "../TeamsContext.jsx";
 
 afterEach(() => cleanup());
 
 const cfg = (extra = {}) => ({ piiMask: false, groupMode: "ab", defaultRangeDays: 7, rangeCapDays: 90, schema: {}, ...extra });
 
-function mount(config) {
+function mount(config, entry = "/cost?client=claude&view=detail") {
   return render(
-    <MemoryRouter initialEntries={["/cost?client=claude&view=detail"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <ConfigProvider config={config}>
         <ClientProvider>
           <FilterProvider>
@@ -86,4 +87,36 @@ test("프로젝트 값을 입력하면 적용 범위 안내가 보인다", () =>
   mount(cfg({ schema: { projectColumns: true } }));
   fireEvent.change(screen.getByPlaceholderText("프로젝트"), { target: { value: "repo-a" } });
   expect(screen.getByText(SCOPE_NOTE)).toBeTruthy();
+});
+
+test("the team control is hidden without observed teams or a linked team", () => {
+  mount(cfg());
+  expect(screen.queryByRole("combobox", { name: "팀" })).toBeNull();
+  expect(screen.queryByText(/팀은 클라이언트가 보낸 속성/)).toBeNull();
+});
+
+test("a linked team stays visible and clearable without observed teams, with its disclosure", () => {
+  mount(cfg(), "/cost?client=claude&view=detail&team=fsi");
+  const select = screen.getByRole("combobox", { name: "팀" });
+  expect(select.value).toBe("fsi");
+  expect([...select.options].map((o) => o.value)).toEqual(["", "fsi"]);
+  expect(screen.getByText(/도입 지표·사용자 상세 차트·Codex 상세 진단에는 적용되지 않습니다/)).toBeTruthy();
+  fireEvent.change(select, { target: { value: "" } });
+  expect(screen.queryByRole("combobox", { name: "팀" })).toBeNull();
+  expect(screen.queryByText(/팀은 클라이언트가 보낸 속성/)).toBeNull();
+});
+
+test("observed teams populate the control in shared views", () => {
+  render(
+    <MemoryRouter initialEntries={["/cost"]}>
+      <ClientProvider><FilterProvider>
+        <TeamsContext.Provider value={{ options: ["fsi", "ops"], byUser: new Map(), loading: false }}>
+          <FilterBar />
+        </TeamsContext.Provider>
+      </FilterProvider></ClientProvider>
+    </MemoryRouter>
+  );
+  const select = screen.getByRole("combobox", { name: "팀" });
+  expect(select.value).toBe("");
+  expect([...select.options].map((o) => [o.value, o.textContent])).toEqual([["", "모든 팀"], ["fsi", "fsi"], ["ops", "ops"]]);
 });

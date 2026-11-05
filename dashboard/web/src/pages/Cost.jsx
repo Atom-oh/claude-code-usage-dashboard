@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { BarTip } from "../components/BarTip.jsx";
@@ -23,6 +23,7 @@ import { effortLabel, unclassifiedLabel } from "../labels.js";
 import { asCostSummaryRows, asKnownSpendRows, asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
 import { priceSourceText } from "../pricingSource.js";
+import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const usd = (n) => n == null || !Number.isFinite(Number(n)) ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -149,6 +150,7 @@ export function modelUserShares(userModelRows, model) {
 }
 
 function ModelUserPanel({ modelRow, userModelRows, loading, error, onClose }) {
+  const teams = useTeams();
   const close = (
     <button type="button" onClick={onClose} aria-label="사용자별 비용 닫기" className="text-[12px] text-ink-500 hover:text-ink-800">
       닫기 ✕
@@ -173,7 +175,7 @@ function ModelUserPanel({ modelRow, userModelRows, loading, error, onClose }) {
           {rows.map((r) => (
             <li key={r.user} className="px-4 py-2 text-[13px]">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="truncate text-ink-800">{maskEmail(r.user)}</span>
+                <span className="truncate text-ink-800">{maskEmail(r.user)}{teamSuffix(teams, r.user)}</span>
                 <span className="shrink-0 tabular text-ink-800">
                   {knownUsd(r.cost, r)}
                   <span className="ml-2 inline-block min-w-[3.5rem] text-right text-ink-500">{r.share === null ? "확인 필요" : `${r.share.toFixed(1)}%`}</span>
@@ -301,7 +303,7 @@ export default function Cost() {
   const computedHelp = `토큰 사용량 × 서버 단가의 진단용 계산값입니다. ${ttlHint}. ${priceSource} 실제 요청의 TTL·클라이언트 버전·수집 범위에 따라 보고 비용 및 청구액과 다를 수 있습니다.`;
   const shownGroups = useGroupsShown();
   const { intervalHours: defaultIntervalHours, days, from, to } = useRange();
-  const { model, group, user, project, backend } = useFilters();
+  const { model, group, user, project, backend, team } = useFilters();
   const [intervalHours, setIntervalHours] = useState(defaultIntervalHours);
   const [topN, setTopN] = useState(20);
   const [showComputed, setShowComputed] = useState(false);
@@ -317,6 +319,8 @@ export default function Cost() {
   const summary = useApi("/api/cost/summary");
   const byModel = useApi("/api/cost/by-model");
   const byUserModel = useApi("/api/cost/by-user-model");
+  const teams = useTeams();
+  const userSuffix = useCallback((user) => teamSuffix(teams, user), [teams]);
   // 표시용 per-user 테이블만 unknown 그룹 포함 뷰로 전환한다. 위 byUserModel을 쓰는 지출 유저
   // 랭킹과 서버의 userCostEfficiency는 A/B 조인 소비자라 기본(제외) 뷰를 계속 써야 한다 —
   // index.js의 /api/cost/by-user-model 주석에 있는 정책 그대로.
@@ -325,7 +329,7 @@ export default function Cost() {
   const [includeUnknown, setIncludeUnknown] = useState(false);
   const [selectedModel, setSelectedModel] = useState(null);
   // 필터가 바뀌면 사용자별 패널 선택을 해제한다(web AGENTS.md State 규칙).
-  useEffect(() => setSelectedModel(null), [model, group, user, project, backend]);
+  useEffect(() => setSelectedModel(null), [model, group, user, project, backend, team]);
   const byUserModelTable = useApi("/api/cost/by-user-model", includeUnknown ? { includeUnknown: "1" } : {});
   const byModelDaily = useApi("/api/cost/by-model-daily", { intervalHours });
   const compare = useApi("/api/cost/by-model-compare");
@@ -676,6 +680,7 @@ export default function Cost() {
             basis="Claude 보고 비용"
             xKey="t"
             dimension="user"
+            userSuffix={userSuffix}
             bucketHours={intervalHours}
             zoomDisabled={byUserDaily.stale}
             clampRange={[from, null]}
@@ -769,7 +774,7 @@ export default function Cost() {
             colorOf={modelColorFor}
             seriesSort={byModelLegendOrder}
             valuePrefix="$"
-            tickFormatter={maskEmail}
+            tickFormatter={(user) => maskEmail(user) + userSuffix(user)}
             horizontal
           />
         )}
@@ -809,7 +814,7 @@ export default function Cost() {
                 미분류 포함
               </label>
             }
-            columns={[
+            columns={withTeamColumn([
               { key: "user", label: "사용자", render: maskEmail },
               // 스택 바 두 줄은 숫자 옆에 산다(사용자 지정) — 행 그레인이 사용자라 모델 축은
               // 이 막대(색 분할)와 hover가 나른다. single 모드에선 그룹 줄이 하나뿐이라 숫자만.
@@ -845,8 +850,8 @@ export default function Cost() {
                 },
               },
               costStatusColumn,
-            ]}
-            rows={userRows}
+            ], teams)}
+            rows={withTeams(userRows, teams)}
             exportName="cost_by_user"
             stale={byUserModelTable.stale}
           />
@@ -862,7 +867,7 @@ export default function Cost() {
             title="비용 효율 ($/LOC · $/커밋)"
             subtitle="코드 라인당 비용이 낮은 순"
             help={`추가된 코드 라인과 커밋 수로 보고 비용을 나눕니다. 일부 보고값이 빠진 사용자는 추적된 비용만으로 나눈 부분합 값이라 실제보다 낮을 수 있습니다. 개인 성과 평가용이 아닌 참고 지표이며 보고값 미확인 사용자는 맨 아래에 표시합니다. ${SPEND_HELP} ${comparisonHelp}`}
-            columns={[
+            columns={withTeamColumn([
               { key: "user", label: "사용자", render: maskEmail },
               { key: "group", label: "채널" },
               { key: "cost", label: "비용", render: knownUsd },
@@ -874,8 +879,8 @@ export default function Cost() {
               ...(showComputed ? [{ key: "computed_cost_per_loc", label: "계산 $/LOC", render: (v) => (v == null ? "확인 필요" : `$${Number(v).toFixed(4)}`) }] : []),
               ...(showComputed ? [{ key: "computed_cost_per_commit", label: "계산 $/커밋", render: usd }] : []),
               costStatusColumn,
-            ]}
-            rows={efficiencyRows}
+            ], teams)}
+            rows={withTeams(efficiencyRows, teams)}
             exportName="cost_efficiency_by_user"
             stale={efficiency.stale}
           />

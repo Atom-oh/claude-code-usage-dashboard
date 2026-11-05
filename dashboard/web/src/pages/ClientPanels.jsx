@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, ErrorBox, Loading } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { DataTable } from "../components/DataTable.jsx";
@@ -14,6 +14,7 @@ import { costResolutionLabel } from "../costResolution.js";
 import { maskEmail, parseUtc } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
 import { withoutZeroTokenModels } from "../modelRows.js";
+import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
 import {
   basisLabel, BROWSER_TIME_ZONE, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, OBSERVED_TOKEN_HELP, presentationRow,
 } from "../clientPresentation.js";
@@ -167,13 +168,15 @@ function ClientModelTrend({ data, client, hours, source, stale, dimension = "mod
   const cells = useMemo(() => rollupBuckets(fromByModelTime(data, client, { dimension }), hours, { sourceHours: source }),
     [data, client, hours, source, dimension]);
   // The emitting client does not select its cost basis. Non-Anthropic Claude uses AWS estimates.
+  const teams = useTeams();
+  const userSuffix = useCallback((user) => teamSuffix(teams, user), [teams]);
   const sourceBasis = data?.by_client?.find((row) => row.client === client)?.cost_basis;
   const basis = `${client === "claude" ? "Claude" : clientName(client)} ${TREND_BASIS[sourceBasis] || "비용 기준 미제공"}`
     + (sourceBasis !== "computed_estimate" && cells?.some((c) => c.estimated) ? " · 일부 계산 추정" : "");
   const noun = dimension === "user" ? "사용자" : "모델";
   return <ModelCostTrend title={`${clientName(client)} ${noun}별 비용 추이`} basis={basis} cells={cells}
     xKey="t" bucketHours={hours} bounds={data?.effective_range} zoomDisabled={stale} accent={color(client)}
-    dimension={dimension} />;
+    dimension={dimension} userSuffix={dimension === "user" ? userSuffix : undefined} />;
 }
 
 // One card per selected, enabled client from the same response, so both share the effective range
@@ -216,6 +219,7 @@ function ModelTrends({ data, clients, exec, stale }) {
 // Exact row identities stay local; the shared hook retains the active global filters.
 function CostDetail({ selection, hours, parentRange, stale, onClose }) {
   const { backend: globalBackend } = useFilters();
+  const teams = useTeams();
   const selectedBackend = selection.backend || globalBackend || "";
   const headingRef = useRef(null);
   useEffect(() => {
@@ -228,7 +232,7 @@ function CostDetail({ selection, hours, parentRange, stale, onClose }) {
       : { modelExact: selection.model, backend: selectedBackend }) };
   const detail = useApi("/api/clients/overview", params, true,
     { linkedRange: Boolean(parentRange?.from && parentRange?.to), hold: stale });
-  const title = selection.kind === "user" ? `${maskEmail(selection.user)} · 사용자 비용 상세`
+  const title = selection.kind === "user" ? `${maskEmail(selection.user)}${teamSuffix(teams, selection.user)} · 사용자 비용 상세`
     : `${selection.model} · ${text(selectedBackend)} · 모델별 사용자 비중`;
   const pending = stale || detail.stale;
   const applied = detail.data?.applied_filters;
@@ -258,8 +262,8 @@ function CostDetail({ selection, hours, parentRange, stale, onClose }) {
         effectiveRange={detail.data?.effective_range} metric="cost" title="선택 대상 비용 추이" />
       {selection.kind === "model" && <ResultTable title="모델별 사용자 비용 비중"
         subtitle={`알려진 ${clientName(selection.client)} 비용 합계 내 비중${partial ? " · 부분합 기준" : ""}. 미산정 금액은 비중에서 제외하며, 합계가 없거나 0이면 —로 표시합니다.`}
-        columns={[USER, COST, percent("share", partial ? "알려진 부분합 내 비중 (%)" : "알려진 비용 내 비중 (%)"), BASIS, SESSIONS]}
-        rows={shares} exportName="model_user_cost_shares" />}
+        columns={withTeamColumn([USER, COST, percent("share", partial ? "알려진 부분합 내 비중 (%)" : "알려진 비용 내 비중 (%)"), BASIS, SESSIONS], teams)}
+        rows={withTeams(shares, teams)} exportName="model_user_cost_shares" />}
       {selection.kind === "user" && <ModelTrends data={detail.data} clients={[selection.client]} />}
     </>}
   </section>;
@@ -377,6 +381,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
   const { from, to } = useRange();
   const rangeKey = `${from.getTime()}|${to.getTime()}`;
   const [detailPick, setDetailPick] = useState(null);
+  const teams = useTeams();
   const selection = detailPick?.key === rangeKey ? detailPick.row : null;
   const select = (row) => setDetailPick({ key: rangeKey, row });
   const selected = clients;
@@ -457,7 +462,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {compare([USERS, SESSIONS, SESSION_USER, COST_USER, BASIS])}
         <ClientBars title="클라이언트별 관측 사용자" rows={clientRows} metric={USERS}
           subtitle="클라이언트별 고유 ID 수입니다. 서로 겹치는 ID가 있어 전체 사용자 수로 합산하지 않습니다." />
-        {table("사용자별 사용량", [CLIENT, USER, BACKEND, ...USAGE], users, "users",
+        {table("사용자별 사용량", withTeamColumn([CLIENT, USER, BACKEND, ...USAGE], teams), withTeams(users, teams), "users",
           "동일 ID도 클라이언트별 행으로 표시합니다. 전체 사용자 수는 서버의 중복 제거 값이며 행 수의 합이 아닙니다. CSV는 표시 열·정렬·마스킹 설정을 따릅니다.")}
       </>;
       break;
@@ -473,11 +478,11 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
             () => select({ kind: "model", client: row.client, model: value, backend: row.backend }), stale || !value) },
           ...UNIT_COSTS, TOKENS, number("unpriced", "미산정 기록")],
           usageModels, "model_costs", `${COST_HELP} 모델을 누르면 해당 클라이언트·모델의 사용자별 비용 비중을 확인합니다.`)}
-        {table("사용자별 비용", [CLIENT,
+        {table("사용자별 비용", withTeamColumn([CLIENT,
           { ...USER, render: (value, row) => detailButton(maskEmail(value) || "(미식별)",
             () => select({ kind: "user", client: row.client, user: value }), stale || !value) },
-          BACKEND, COST, BASIS, SESSIONS, COST_SESSION, TOKENS],
-          users, "user_costs", "사용자를 누르면 해당 클라이언트·사용자의 비용 추이와 모델별 상세를 확인합니다.")}
+          BACKEND, COST, BASIS, SESSIONS, COST_SESSION, TOKENS], teams),
+          withTeams(users, teams), "user_costs", "사용자를 누르면 해당 클라이언트·사용자의 비용 추이와 모델별 상세를 확인합니다.")}
         {selection && <CostDetail key={JSON.stringify(selection)} selection={selection}
           hours={data?.bucket_hours || 1} parentRange={data?.effective_range} stale={stale}
           onClose={() => setDetailPick(null)} />}
