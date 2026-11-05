@@ -97,9 +97,10 @@ This changes the dashboard pod only. Other workloads may still use environment v
 and Kubernetes Secret RBAC and encryption must be configured separately. Terraform-managed
 Secret values remain in Terraform state; see [state protection](../reference/iac.md#state-schema-and-rollout).
 
-Basic authentication limits failed credentials to 20 per client address per minute on
-each dashboard process. Users sharing an address can be temporarily blocked, and the
-limit is neither shared across replicas nor a substitute for an edge-wide WAF limit.
+Basic authentication limits failed credentials to 20 per client address and presented user
+name per minute on each dashboard process, so one participant's typos do not block others behind
+the same egress address; that user name is still blocked for the window. The limit is neither
+shared across replicas nor a substitute for an edge-wide WAF limit.
 Validate the trusted proxy chain and prefer organization SSO for shared installations.
 If 4,096 distinct client addresses occupy a process's failure buckets, new addresses are
 also rejected until a bucket expires; monitor and rate-limit traffic at the edge.
