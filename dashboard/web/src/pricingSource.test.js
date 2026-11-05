@@ -24,6 +24,11 @@ test("code source names the built-in table", () => {
     .toBe("단가 출처: 서버 내장 단가표(AWS Price List 단가 없음). 운영자 단가 설정이 있으면 그 값이 우선합니다.");
 });
 
+test("model-card fallback is disclosed alongside the Price List source", () => {
+  expect(priceSourceText({ source: "snapshot", modelCardModels: ["openai.gpt-6.1-terra"] }, utc))
+    .toContain("일부 미등록 모델에는 AWS 모델 카드 단가를 사용합니다.");
+});
+
 test("absent or unknown source is reported as unknown", () => {
   expect(priceSourceText(undefined, utc)).toBe("단가 출처: 미확인.");
   expect(priceSourceText({}, utc)).toBe("단가 출처: 미확인.");

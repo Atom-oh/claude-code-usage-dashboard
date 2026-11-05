@@ -3,6 +3,8 @@ import { normalizeModelId } from "./pricing.js";
 import { bareModelAlias, codexModel, priceCodexUsage } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
 import { resolveBackend } from "./backend.js";
+import { observePricingModels } from "./pricingDiscovery.js";
+import { createHash } from "node:crypto";
 import { createFactorCache } from "./factorCache.js";
 
 // ADR-017: Claude Code prices models it does not know (OpenAI, xAI, Z.ai, ... on Bedrock) with
@@ -86,10 +88,11 @@ export function foldFactors(rows, normalize = normalizeModelId, priceTable = cod
 // Equal windows share one pending lookup. Runner identity isolates injected
 // sources; the default database runner stays stable across all overview loads.
 let caches = new WeakMap();
-export async function nonAnthropicFactors(from, to, run = rawQuery, signal) {
+export async function nonAnthropicFactors(from, to, run = rawQuery, signal, priceTable = codexPrices()) {
   let cache = caches.get(run);
   if (!cache) { cache = createFactorCache(); caches.set(run, cache); }
-  const key = `${from.toISOString()}|${to.toISOString()}`;
+  const revision = createHash("sha256").update(JSON.stringify(priceTable)).digest("hex");
+  const key = `${from.toISOString()}|${to.toISOString()}|${revision}`;
   return cache.get(key, async ownedSignal => {
     const rows = await run(
     `SELECT SessionId AS session, LogAttributes['model'] AS model,
@@ -104,7 +107,11 @@ export async function nonAnthropicFactors(from, to, run = rawQuery, signal) {
        AND NOT startsWith(replaceRegexpOne(replaceRegexpOne(LogAttributes['model'],
          '^(us|us-gov|eu|apac|jp|au|in|global)\\\\.', ''), '^anthropic\\\\.', ''), 'claude-')`,
       { from: toChDateTime(from), to: toChDateTime(to) }, ownedSignal);
-    return foldFactors(rows);
+    observePricingModels(rows.filter(row => isNonAnthropicModel(row.model)).map(row => {
+      const model = String(row.model || "").replace(/\[[^\]]*\]$/, "");
+      return { model, backend: resolveBackend(model, "") };
+    }));
+    return foldFactors(rows, undefined, priceTable);
   }, signal);
 }
 
@@ -115,13 +122,13 @@ const parseCh = (text) => new Date(String(text).replace(" ", "T") + "Z");
 // prices, [prevFrom ?? from, to), widened two hours back: rollup branches align their starts down
 // to the hour (and the comparison re-derives the previous start from the aligned current one).
 const ALIGN_SLACK_MS = 2 * 3600000;
-export async function withNacParams(sql, params, run = rawQuery, signal) {
+export async function withNacParams(sql, params, run = rawQuery, signal, priceTable) {
   signal?.throwIfAborted();
   if (!sql.includes(NAC_PLACEHOLDER)) return params;
   const from = new Date(parseCh(params.prevFrom ?? params.from).getTime() - ALIGN_SLACK_MS), to = parseCh(params.to);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()))
     throw new Error("non-Anthropic cost factors need from/to params");
-  const { keys, factors } = await nonAnthropicFactors(from, to, run, signal);
+  const { keys, factors } = await nonAnthropicFactors(from, to, run, signal, priceTable);
   // The client omits empty array params; a key no session|model can equal keeps them bound.
   return keys.length ? { ...params, nacKeys: keys, nacFactors: factors }
     : { ...params, nacKeys: ["|"], nacFactors: [-1] };

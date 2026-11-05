@@ -4,6 +4,7 @@ import { validateClientFilters } from "./clientMetrics.js";
 import { codexPrices } from "./priceCatalog.js";
 import { buildCodexLogAggregateQuery, foldCodexLogAggregates } from "./codexLogAggregates.js";
 import { buildMetricQuery, buildTraceQuery, foldCodexMetrics, foldCodexTraces } from "./codexSignals.js";
+import { observePricingModels } from "./pricingDiscovery.js";
 
 const TYPES = ["sum", "gauge", "histogram", "exponential_histogram"];
 const PERFORMANCE_METRICS = ["codex.turn.e2e_duration_ms", "codex.turn.ttft.duration_ms",
@@ -45,6 +46,15 @@ export async function codexInsights(from, to, raw = {}, run = query) {
       { metricNames: profile === "performance" ? PERFORMANCE_METRICS : undefined }), run))) : [],
     requestTraces ? optionalQuery(buildTraceQuery(from, to, filters), run) : { rows: [], unavailable: false },
   ]);
+  const observed = [];
+  for (const row of logRows) {
+    if (row.family !== "scope" || Number(row.family_limited) || !Number(row.has_usage)) continue;
+    try {
+      const dimensions = JSON.parse(row.dimensions);
+      if (Array.isArray(dimensions)) observed.push({ model: dimensions[4], backend: dimensions[2] });
+    } catch { /* Malformed dimensions are handled by the normal fold. */ }
+  }
+  observePricingModels(observed);
   const { coverage: logCoverage, ...logs } = foldCodexLogAggregates(logRows);
   const { coverage: metricCoverage, metrics } = foldSignal(metricResults.flatMap((r) => r.rows),
     (rows) => foldCodexMetrics(rows, from, to), "too much signal data");

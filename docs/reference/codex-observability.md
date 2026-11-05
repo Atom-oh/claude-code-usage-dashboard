@@ -66,7 +66,8 @@ distinct counts and duration weights, then aggregates event counts, usage/Effort
 latency distributions, runtime settings and session-scope evidence. The server
 receives aggregate dimensions instead of individual events. Exact weighted quantiles
 retain empirical nearest-rank P50/P95. Pricing evaluates each completion's context
-tier and routing before aggregation, using the configured `codexPricing.js` rates;
+tier and routing before aggregation, using the configured and AWS-refreshed
+`codexPricing.js` rates ([pricing details](data.md#codex-logs-and-common-client-aggregates));
 compensated summation reduces rounding error across large groups. The raw fold remains
 a regression oracle, not a second production query.
 

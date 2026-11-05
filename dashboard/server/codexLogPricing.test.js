@@ -168,6 +168,8 @@ test("Codex log pricing matches JavaScript across batched rate selections", {
         },
       },
       "fixture-free": { short_context_limit: 100, regional: { short: rates(0), long: rates(0) } },
+      "fixture-discovered": { short_context_limit: 100, runtime_geo_prefix: "us", runtime_in_region: false,
+        regional: { short: rates(1), long: rates(2) }, global: { short: rates(3), long: rates(4) } },
       "fixture-missing": { short_context_limit: 100, regional: { short: rates(1) } },
       "fixture-overflow": { short_context_limit: 100,
         regional: { short: rates(Number.MAX_VALUE / 4), long: rates(Number.MAX_VALUE / 4) } },
@@ -182,6 +184,11 @@ test("Codex log pricing matches JavaScript across batched rate selections", {
     add("runtime global override long", "global.fixture-override", "bedrock-runtime", 101, {}, 0.1172);
     add("routing corrects stale backend", "global.fixture-override", "bedrock-mantle", 100, {}, 0.0873);
     add("all-zero rates remain priced", "fixture-free", "bedrock-mantle", 100, {}, 0);
+    add("discovered in-region mantle", "fixture-discovered", "bedrock-mantle", 100, {}, 0.000291);
+    add("discovered supported geo", "us.fixture-discovered", "bedrock-runtime", 100, {}, 0.000291);
+    add("discovered unsupported geo", "eu.fixture-discovered", "bedrock-runtime", 100, {}, null);
+    add("discovered unsupported runtime in-region", "fixture-discovered", "bedrock-runtime", 100, {}, null);
+    add("discovered global", "global.fixture-discovered", "bedrock-runtime", 100, {}, 0.000873);
     add("missing global rates", "global.fixture-free", "bedrock-runtime", 100, {}, null);
     add("missing long tier", "fixture-missing", "bedrock-mantle", 101, {}, null);
     add("Codex entry blocks global Claude fallback", "global.anthropic.claude-fable-5-1", "bedrock-runtime", 100, {}, null);

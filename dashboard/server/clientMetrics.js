@@ -3,6 +3,7 @@ import { ValidationError, parseTeam } from "./http.js";
 import { selectClients } from "./clients.js";
 import { priceCodexUsage, codexModelSql } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
+import { observePricingModels } from "./pricingDiscovery.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { clientQueryBatch } from "./clientQueryBatch.js";
 import { normalizeModelId, computeCost } from "./pricing.js";
@@ -611,7 +612,7 @@ export async function clientOverview(from, to, raw, enabledClients) {
   const jobs = [];
   for (const client of filters.clients) {
     if (client === "claude") {
-      jobs.push(signal => queries.clientClaudeRows(from, to, filters, nativeSeconds, signal)
+      jobs.push(signal => queries.clientClaudeRows(from, to, filters, nativeSeconds, signal, prices)
         .then((rows) => rows.map((row) => ({ ...row, client, kind: "usage" }))));
     }
     const { sql, params } = buildCodexQuery(from, to, filters, prices, client, nativeSeconds,
@@ -623,6 +624,7 @@ export async function clientOverview(from, to, raw, enabledClients) {
   }
   const lists = await clientQueryBatch(jobs);
   const records = bucketSeconds > nativeSeconds ? rebucketRows(lists.flat(), from, bucketSeconds) : lists.flat();
+  observePricingModels(records.filter(row => row.client === "codex" && row.kind === "usage"));
   // The route validates modelTime; only the literal "1" enables the dimension.
   const modelTime = raw.modelTime === "1";
   return { ...foldClientMetrics(records, filters.clients, prices, { modelTime, costView, compactTime }),

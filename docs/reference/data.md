@@ -87,6 +87,23 @@ tokens (`cost_basis: "computed_estimate"`/`"mixed"`), `/api/clients/overview` on
 models are rescaled by a per-session factor (AWS list estimate / reported, from `api_request`
 logs); an unknown factor makes any total that includes it unavailable (`null`).
 
+Separately from the existing scheduled AWS Price List refresh, when an unknown
+non-Anthropic Bedrock model appears in usage, the server refreshes
+supported prices asynchronously from the public AWS Bedrock model cards. Repeated
+unknown models are retried after six hours; failed scans are retried after five minutes
+when usage is observed again. Distinct unknowns share a scan and scans are limited to
+one per five minutes. Only recognized Standard-tier commercial prices
+with explicit model IDs, context limits, routing and 30-minute cache prices are applied.
+Other formats remain on the existing offline catalog or unpriced. Price List and
+`CODEX_PRICING_JSON` entries take precedence; Anthropic pricing and its cache TTL remain unchanged.
+`AWS_PRICE_LIST=off` disables both runtime Price List and model-card requests. The
+refresh needs HTTPS access to `docs.aws.amazon.com` and does not send telemetry or use
+AWS credentials. The first response can remain unpriced while the scan runs. Logs report
+refresh failures and changed catalog counts. Model-card rates are not refreshed solely because time
+passes, and a failed refresh keeps the last in-memory or bundled rates, so rates may be
+stale; separate server replicas can therefore temporarily use different rates. List
+prices are estimates for the selected data, not historical invoice prices.
+
 `observed_tokens` sums safe input/output pairs independently of pricing or incomplete
 cache/reasoning metadata. Pair validity is a separate SQL grouping dimension so an
 unknown pair cannot erase a usable pair in the same malformed-usage group. Canonical
