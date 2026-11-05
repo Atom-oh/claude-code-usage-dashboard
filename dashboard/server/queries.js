@@ -1307,13 +1307,16 @@ export async function costSummary(from, to, filters = {}) {
   return foldCostSummary(rows);
 }
 
-export function foldCostSummary(rows) {
+// key "team" folds the same rows per session team instead of channel: '' and null are both
+// 팀 없음 (team: null, sorted last); known teams sort by known spend, then name.
+export function foldCostSummary(rows, key = "group") {
   const byGroup = new Map();
   const coverage = new Map();
   for (const r of withComputedCost(rows)) {
-    if (!byGroup.has(r.group)) {
-      byGroup.set(r.group, {
-        group: r.group,
+    const id = key === "team" ? (r.team || null) : r.group;
+    if (!byGroup.has(id)) {
+      byGroup.set(id, {
+        [key]: id,
         computed_cost: 0,
         reported_cost: 0,
         input_tokens: 0,
@@ -1323,9 +1326,9 @@ export function foldCostSummary(rows) {
         unpriced_tokens: 0,
         sessions: 0,
       });
-      coverage.set(r.group, { total: 0, known: false, unknown: false });
+      coverage.set(id, { total: 0, known: false, unknown: false });
     }
-    const g = byGroup.get(r.group);
+    const g = byGroup.get(id);
     g.computed_cost += r.cost || 0;
     // Unknown non-Anthropic spend (ADR-017 amendment) arrives as null: keep the total unavailable.
     g.reported_cost = g.reported_cost === null || r.reported_cost === null ? null : g.reported_cost + Number(r.reported_cost);
@@ -1338,7 +1341,7 @@ export function foldCostSummary(rows) {
         Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens);
     }
     g.sessions += Number(r.sessions);
-    const c = coverage.get(r.group);
+    const c = coverage.get(id);
     const hasTokens = ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"]
       .some((key) => Number(r[key]) > 0);
     const hasCounter = Number(r.cost_counter_rows) > 0;
@@ -1352,11 +1355,15 @@ export function foldCostSummary(rows) {
       c.unknown = true;
     }
   }
-  return [...byGroup.values()].map((g) => {
-    const c = coverage.get(g.group);
+  const out = [...byGroup.entries()].map(([id, g]) => {
+    const c = coverage.get(id);
     const total = Number.isFinite(c.total) && c.known ? c.total : null;
     return { ...g, known_reported_cost: total, reported_partial: total !== null && c.unknown };
-  }).sort((a, b) => a.group.localeCompare(b.group));
+  });
+  if (key !== "team") return out.sort((a, b) => a.group.localeCompare(b.group));
+  return out.sort((a, b) => (a.team === null) - (b.team === null)
+    || (b.known_reported_cost ?? -1) - (a.known_reported_cost ?? -1)
+    || String(a.team).localeCompare(String(b.team)));
 }
 
 // Cost 페이지: 모델별 비용/토큰. cost는 토큰 실측 × 단가표로 계산한 값, reported_cost는
@@ -1399,6 +1406,52 @@ export async function costByUserModel(from, to, filters = {}) {
   return withComputedCost(rows).map((r) => ({
     ...r,
     tokens: Number(r.input_tokens) + Number(r.output_tokens) + Number(r.cache_read_tokens) + Number(r.cache_write_tokens),
+  }));
+}
+
+// 팀별 비용: costSummary's counters regrouped by each session's team (sessionTeamsSql). A total
+// metric, so the unknown channel is included and Σ teams (with 팀 없음) equals the 총 비용 tile.
+// Sessions are distinct sessions with in-window usage, not claude_code.session.count.
+export async function costByTeam(from, to, filters = {}) {
+  const teams = `LEFT JOIN (${sessionTeamsSql(["claude"])}) st ON m.SessionId = st.session`;
+  const f = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "m.UserEmail",
+    modelMixed: { model: "m.Model", session: "m.SessionId" }, teamViaSession: "m.SessionId" });
+  const fl = filterCond({ ...filters, excludeUnknown: false }, { group: GROUP_EXPR, user: "l.UserEmail",
+    modelViaSession: "l.SessionId", teamViaSession: "l.SessionId" });
+  const counters = incFlat(`AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')`, to - from, true);
+  const params = { ...range(from, to, incFlatRaw(to - from)), ...f.params };
+  const [costRows, usageRows, requestRows] = await Promise.all([
+    query(`${GROUP_CTE}
+    SELECT ifNull(st.team, '') AS team, ${GROUP_EXPR} AS "group", ${normModel("m.Model")} AS model, ${TOKEN_SUMS},
+        countIf(m.MetricName = 'claude_code.cost.usage' AND m.InWindow) AS cost_counter_rows, 0 AS sessions
+    FROM ${counters} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    ${teams}
+    WHERE 1 = 1 ${f.where}
+    GROUP BY team, "group", model`, params),
+    query(`${GROUP_CTE}
+    SELECT ifNull(st.team, '') AS team, uniqExactIf(m.UserEmail, m.InWindow AND m.UserEmail != '') AS users,
+        uniqExactIf(m.SessionId, m.InWindow AND m.SessionId != '') AS sessions
+    FROM ${counters} m
+    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
+    ${teams}
+    WHERE 1 = 1 ${f.where}
+    GROUP BY team`, params),
+    query(`${GROUP_CTE}
+    SELECT ifNull(st.team, '') AS team, count() AS requests
+    FROM claude_code.otel_logs l
+    LEFT JOIN session_group ug ON l.SessionId = ug.SessionId
+    LEFT JOIN (${sessionTeamsSql(["claude"])}) st ON l.SessionId = st.session
+    WHERE l.EventName = 'api_request' AND l.SessionId != ''
+      AND l.Timestamp >= {from:DateTime} AND l.Timestamp < {to:DateTime} ${fl.where}
+    GROUP BY team`, { ...range(from, to, true), ...fl.params }),
+  ]);
+  const by = (rows, k) => new Map(rows.map((r) => [r.team || null, Number(r[k])]));
+  const users = by(usageRows, "users"), sessions = by(usageRows, "sessions"), requests = by(requestRows, "requests");
+  return foldCostSummary(costRows, "team").map(({ sessions: _unused, ...r }) => ({
+    ...r,
+    tokens: r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens,
+    users: users.get(r.team) ?? 0, sessions: sessions.get(r.team) ?? 0, requests: requests.get(r.team) ?? 0,
   }));
 }
 
