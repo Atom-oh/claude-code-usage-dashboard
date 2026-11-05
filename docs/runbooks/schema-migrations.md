@@ -18,6 +18,7 @@ installations use `clickhouse-schema.sql` instead.
 | `clickhouse-migration-006.sql` | Requires ledger 004, not 005. Create four dedicated Codex metric tables and record exporter-compatible column evidence; no rebuild or materialization. |
 | `clickhouse-migration-007.sql` | Requires ledger 004. Add typed Codex cost events, scope evidence and ingestion views. Use the [cost schema runbook](codex-cost-schema.md) for separate bounded backfill and read activation. |
 | `clickhouse-migration-008.sql` | Requires ledger 004. Add exact Codex diagnostic identity states and an ingestion view. Use the [diagnostic schema runbook](codex-diagnostic-schema.md) for bounded backfill and tools/performance read activation. |
+| `clickhouse-migration-009.sql` | Requires ledger 004. Add Claude session provider membership and an ingestion view. Use the [provider schema runbook](claude-provider-schema.md) for bounded backfill and `CLAUDE_PROVIDER_GROUPS` activation. |
 
 Run a numbered migration through one selected pod. `ON CLUSTER` DDL propagates through the
 cluster; the guarded ledger `INSERT` is **not** `ON CLUSTER` and replicates normally. Do not
