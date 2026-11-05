@@ -52,7 +52,7 @@ class SchemaLifecycle(unittest.TestCase):
         self.assertEqual(
             [row["version"] for row in self.fixture.rows(
                 "SELECT version FROM claude_code.schema_migrations ORDER BY version"
-            )], [2, 3, 4, 5, 6, 7, 8],
+            )], [2, 3, 4, 5, 6, 7, 8, 9],
         )
 
     def test_populated_compatible_installation_only_reads_metadata(self):
@@ -168,6 +168,45 @@ class SchemaLifecycle(unittest.TestCase):
             self.fixture.query(f"SYSTEM START MERGES {table}")
         self.fixture.query(f"OPTIMIZE TABLE {table} FINAL")
         self.assertEqual(self.fixture.rows(selected), expected)
+
+    def test_provider_live_and_backfill_rows_keep_session_membership(self):
+        table = "claude_code.claude_session_providers_v1"
+        self.fixture.query("""INSERT INTO claude_code.otel_metrics_sum
+          (ResourceAttributes, MetricName, Attributes, StartTimeUnix, TimeUnix, Value,
+           AggregationTemporality, IsMonotonic)
+          SELECT map('user.email','provider-lifecycle@example.invalid'), 'claude_code.cost.usage',
+            map('session.id', 'provider-lifecycle', 'model', 'claude-sonnet-5',
+                'anthropic.provider', if(number = 0, 'bedrock', 'firstParty'),
+                'anthropic.custom_base_url', 'https://gateway.example.invalid'),
+            now64(9), now64(9), number + 1, 2, 1
+          FROM numbers(3)""")
+        bounds = self.fixture.rows(
+            "SELECT toString(toStartOfHour(now(), 'UTC')) AS start, "
+            "toString(toStartOfHour(now(), 'UTC') + INTERVAL 1 HOUR) AS end"
+        )[0]
+        selected = f"""SELECT Provider FROM {table} FINAL
+          WHERE SessionId = 'provider-lifecycle' ORDER BY Provider"""
+        expected = [{"Provider": "bedrock"}, {"Provider": "firstParty"}]
+        self.assertEqual(self.fixture.rows(selected), expected)
+        for zone in ("UTC", "Asia/Seoul"):
+            self.fixture.query((ROOT / "clickhouse-backfill-009.sql").read_text(),
+                               param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                               session_timezone=zone, insert_deduplicate=0)
+            self.assertEqual(self.fixture.rows(selected), expected)
+        columns = self.fixture.rows(
+            "SELECT name FROM system.columns WHERE database = 'claude_code' "
+            "AND table = 'claude_session_providers_v1' ORDER BY name"
+        )
+        self.assertEqual(columns, [{"name": "Provider"}, {"name": "SessionId"}, {"name": "hour"}])
+
+    def test_provider_view_security_drift_is_rejected_without_repair(self):
+        view = "claude_code.claude_session_providers_v1_mv"
+        self.fixture.query(f"ALTER TABLE {view} MODIFY SQL SECURITY NONE")
+        try:
+            result = self.verify_without_writes(False)
+            self.assertIn("Claude provider view target or definer security differs", result.stderr)
+        finally:
+            self.fixture.query(f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER")
 
     def test_source_contract_mismatch_fails_before_schema_execution(self):
         self.fixture.docker("exec", self.fixture.name, "sh", "-c",
@@ -347,7 +386,7 @@ class MultiReplicaSchemaLifecycle(unittest.TestCase):
             self.assertEqual(
                 [row["version"] for row in self.fixture.rows(
                     "SELECT version FROM claude_code.schema_migrations ORDER BY version", node_index=index
-                )], [2, 3, 4, 5, 6, 7, 8],
+                )], [2, 3, 4, 5, 6, 7, 8, 9],
             )
         self.verify_without_writes(True)
 
