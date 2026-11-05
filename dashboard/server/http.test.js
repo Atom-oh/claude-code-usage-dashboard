@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
+import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters, parseTeam } from "./http.js";
 
 test("parseRange returns the requested window when both dates are valid", () => {
   const { from, to } = parseRange({ from: "2026-08-01T00:00:00Z", to: "2026-08-03T00:00:00Z" });
@@ -192,4 +192,23 @@ test("parseFilters leaves the other three filters untouched and undefined when a
   const only = parseFilters({ user: "u@x" }, false);
   assert.strictEqual(only.user, "u@x");
   assert.strictEqual(only.project, undefined);
+});
+
+test("parseTeam trims strings, maps absent to empty and rejects non-strings or oversized values", () => {
+  assert.equal(parseTeam(undefined), "");
+  assert.equal(parseTeam(""), "");
+  assert.equal(parseTeam(" fsi-a "), "fsi-a");
+  assert.equal(parseTeam("x".repeat(256)).length, 256);
+  for (const raw of [["a", "b"], { x: "y" }, 1, "x".repeat(257)]) {
+    assert.throws(() => parseTeam(raw), (err) => err instanceof ValidationError && err.status === 400
+      && err.message === "invalid filter" && err.detail === "team must be a string of at most 256 characters");
+  }
+});
+
+test("parseFilters adds a trimmed team only when one is given", () => {
+  assert.equal(parseFilters({ team: " fsi " }, false).team, "fsi");
+  for (const q of [{ team: "" }, { team: "   " }, {}]) {
+    assert.equal(Object.hasOwn(parseFilters(q, true), "team"), false);
+  }
+  assert.throws(() => parseFilters({ team: ["a"] }, true), ValidationError);
 });

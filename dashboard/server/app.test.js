@@ -8,6 +8,7 @@
 // AUTH_ALLOW_INSECURE=1` 경고가 찍힌다 — 전부 정상이고 실패가 아니다.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 process.env.AUTH_ALLOW_INSECURE = "1";
 process.env.CH_URL = "http://127.0.0.1:1";
@@ -136,4 +137,52 @@ test("/api/insights/daily is disabled by default and validates period", async ()
   const bad = await fetch(`${base}/api/insights/daily?period=yesterday`);
   assert.equal(bad.status, 400);
   assert.equal((await bad.json()).error, "invalid period");
+});
+
+test("endpoints that cannot apply team reject it before caching or querying", async () => {
+  const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
+  for (const path of ["/api/adoption/levels", "/api/adoption/timeseries", "/api/users/daily",
+    "/api/users/decisions-by-tool", "/api/users/heatmap", "/api/users/interactions", "/api/teams",
+    "/api/users/teams"]) {
+    const r = await fetch(`${base}${path}?${range}&team=fsi`);
+    assert.equal(r.status, 400, path);
+    assert.equal(r.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await r.json(),
+      { error: "unsupported filter", detail: "the team filter does not apply to this endpoint" });
+  }
+});
+
+test("an empty team is no filter on team-less routes", async () => {
+  const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
+  for (const path of ["/api/teams", "/api/users/teams", "/api/adoption/levels"])
+    assert.equal((await fetch(`${base}${path}?${range}&team=`)).status, 500, path);
+});
+
+test("team-capable routes validate team before the database", async () => {
+  const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
+  const invalid = { error: "invalid filter", detail: "team must be a string of at most 256 characters" };
+  const repeated = await fetch(`${base}/api/overview/kpi?${range}&team=a&team=b`);
+  assert.equal(repeated.status, 400);
+  assert.deepEqual(await repeated.json(), invalid);
+  const long = await fetch(`${base}/api/overview/kpi?${range}&team=${"x".repeat(257)}`);
+  assert.equal(long.status, 400);
+  assert.deepEqual(await long.json(), invalid);
+  for (const path of ["/api/overview/kpi", "/api/usage/plugins", "/api/cost/by-model-compare",
+    "/api/clients/overview", "/api/clients/claude-effort"])
+    assert.equal((await fetch(`${base}${path}?${range}&team=fsi`)).status, 500, path);
+});
+
+test("the Codex diagnostics route declares the team filter unsupported", () => {
+  const src = readFileSync(new URL("./index.js", import.meta.url), "utf8");
+  assert.match(src, /route\("\/api\/codex\/insights"[\s\S]{0,200}?team: false/);
+});
+
+test("team is part of both cache-key shapes and reaches the plugin inventory", () => {
+  const src = readFileSync(new URL("./index.js", import.meta.url), "utf8");
+  // Ordinary routes key on team.
+  assert.match(src, /const CACHE_KEY_PARAMS = \[[^\]]*"team"[^\]]*\];/);
+  // Client views key on the validated team.
+  assert.match(src, /backend: filters\.backend, team: filters\.team,/);
+  // The plugin route forwards parsed filters (it previously passed only the range).
+  assert.match(src, /route\("\/api\/usage\/plugins", \(from, to, _q, filters\) => q\.pluginInventory\(from, to, filters\)\)/);
 });

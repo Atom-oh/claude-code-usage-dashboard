@@ -11,7 +11,7 @@ import { createCollectorFeature } from "./collectorRoutes.js";
 import { CapacityError, capacityResponse, queryTimeoutResponse, createRequestAdmission, createResultCache } from "./capacity.js";
 import { QueryDeadlineError } from "./queryContext.js";
 import { createWarmingPlan } from "./warming.js";
-import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters } from "./http.js";
+import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters, parseTeam } from "./http.js";
 import { sendJson } from "./jsonResponse.js";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
@@ -265,7 +265,7 @@ if (process.env.ALERT_WEBHOOK_URL) startAlertLoop({ url: process.env.ALERT_WEBHO
 // (Cost 유저 랭킹=기본, Users 계열별 평균=1)가 같은 키를 공유해, 먼저 도착한 쪽의 응답이 다른
 // 쪽에 그대로 나간다(실측: 두 요청이 동일 결과를 반환해 확인). warmer는 기본 뷰만 데우므로
 // includeUnknown=1 뷰는 첫 조회가 콜드다 — 정확성 우선.
-const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "project", "intervalHours", "email", "includeUnknown"];
+const CACHE_KEY_PARAMS = ["from", "to", "group", "user", "model", "project", "team", "intervalHours", "email", "includeUnknown"];
 // Only /api/clients/overview accepts modelTime, and only the literal 1; Codex insights ignore it.
 function validateModelTime(raw) {
   if (raw.modelTime !== undefined && raw.modelTime !== "1")
@@ -276,7 +276,7 @@ function cacheKey(path, query) {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
       : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
-      client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend,
+      client: filters.clients.join(","), user: filters.user, model: filters.model, backend: filters.backend, team: filters.team,
       userExact: filters.userExact, modelExact: filters.modelExact,
       modelTime: path === "/api/clients/overview" && query.modelTime === "1" ? "1" : undefined,
       view: path === "/api/clients/overview" && validateClientView(query) ? "cost" : undefined,
@@ -313,7 +313,9 @@ function fetchCached(path, handler, query, ttlMs = CACHE_TTL_MS) {
 // 성립하지 않는 엔드포인트.
 const warmingPlan = createWarmingPlan({ defaultDays: DEFAULT_RANGE_DAYS });
 
-function route(path, handler, { warm = true, client = "claude", validate, permission, snapshot = false } = {}) {
+// team: false marks endpoints whose grain cannot apply the session-scoped team filter; they reject
+// it (400) instead of answering unfiltered. The web never forwards team to them (useApi.js).
+function route(path, handler, { warm = true, client = "claude", validate, permission, snapshot = false, team = true } = {}) {
   const active = client === null || clientConfig.enabledClients.includes(client);
   if (warm && active && !snapshot) warmingPlan.register(path, handler);
   const authorize = permission ? authentication.requirePermission(permission) : (_req, _res, next) => next();
@@ -331,6 +333,8 @@ function route(path, handler, { warm = true, client = "claude", validate, permis
       // 밀어내는 형태).
       parseRange(req.query, RANGE_OPTS);
       parseIntervalHours(req.query.intervalHours);
+      if (parseTeam(req.query.team) && !team)
+        throw new ValidationError("unsupported filter", "the team filter does not apply to this endpoint");
       validate?.(req.query);
       if (warm) warmingPlan.requested(path, req.query);
       await sendJson(req, res, await fetchCached(path, handler, req.query));
@@ -368,7 +372,7 @@ route("/api/clients/overview",
     validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); validateClientView(raw); validateTimeFormat(raw); } });
 
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
-  { client: "codex", warm: false, validate: (raw) => {
+  { client: "codex", warm: false, team: false, validate: (raw) => {
     validateClientFilters(raw, ["codex"]);
     validateInsightsProfile(raw);
     if (raw.userExact !== undefined || raw.modelExact !== undefined)
@@ -469,11 +473,11 @@ route("/api/usage/connectors", (from, to, _q, filters) => q.mcpConnectorUsage(fr
 // 위협 모델이 다르지만, intervalHours<1(분 버킷) 요청을 검증 없이 받는 건 형제 라우트들과
 // 비대칭이라 일관성 차원에서 같은 가드를 적용한다(리뷰에서 MAJOR로 확인).
 route("/api/productivity/agenticness", (from, to, query, filters) => q.agenticness(from, to, bucketHours(query, from, to), filters));
-route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters));
+route("/api/adoption/levels", (from, to, _q, filters) => q.adoptionLevels(from, to, filters), { team: false });
 route("/api/productivity/engagement", (from, to, query, filters) => q.dailyEngagement(from, to, bucketHours(query, from, to), filters));
 // adoptionTimeseries를 채택 — 필터 지원, DAU/WAU/MAU + 고착도를 반환하고 Trends/Executive가
 // 이 값을 쓴다. 롤링 윈도우는 queries.js 안에서 자체 계산한다.
-route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters));
+route("/api/adoption/timeseries", (from, to, _q, filters) => q.adoptionTimeseries(from, to, filters), { team: false });
 route("/api/productivity/decisions-by-tool", (from, to, _q, filters) => q.codeEditDecisionsByTool(from, to, filters));
 route("/api/productivity/loc-timeseries", (from, to, query, filters) => q.locTimeseries(from, to, bucketHours(query, from, to), filters));
 route("/api/cost/tiers", async (from, to, _q, filters) => tierCostsByGroup(await q.costByModel(from, to, filters)));
@@ -488,10 +492,13 @@ route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
 // 를 배열로, ?group[x]=y를 객체로 파싱할 수 있어 raw query 값을 그대로 filterCond에 넘기면
 // 안 된다.
 const groupParam = (query) => (query.group === undefined ? undefined : String(query.group));
-route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || ""), groupParam(query)), { warm: false });
-route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || ""), groupParam(query)), { warm: false });
-route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || ""), 91, groupParam(query)), { warm: false });
-route("/api/users/interactions", (from, to, query) => q.userInteractions(from, to, String(query.email || "")), { warm: false });
+route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || ""), groupParam(query)), { warm: false, team: false });
+route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || ""), groupParam(query)), { warm: false, team: false });
+route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || ""), 91, groupParam(query)), { warm: false, team: false });
+route("/api/users/interactions", (from, to, query) => q.userInteractions(from, to, String(query.email || "")), { warm: false, team: false });
+// Range-only team lookups across enabled clients (filter options and the user display join).
+route("/api/teams", (from, to) => q.listTeams(from, to, clientConfig.enabledClients), { client: null, team: false });
+route("/api/users/teams", (from, to) => q.userTeams(from, to, clientConfig.enabledClients), { client: null, team: false });
 
 // 2026-08-11 스펙 동기화 — STEP 2/3/4 신규 패널. traces beta(권한 대기/TTFT)는 아직 라이브
 // 데이터가 없을 수 있어 warm: false(빈 결과를 매 사이클 워밍하는 낭비를 피함) — 데이터가
@@ -506,7 +513,7 @@ route("/api/reliability/refusals", (from, to, _q, filters) => q.refusalRate(from
 route("/api/reliability/retries-exhausted", (from, to, _q, filters) => q.retriesExhausted(from, to, filters));
 route("/api/reliability/api-errors", (from, to, _q, filters) => q.apiErrors(from, to, filters));
 route("/api/reliability/reported-vs-computed", (from, to, _q, filters) => q.reportedVsComputedByVersion(from, to, filters));
-route("/api/usage/plugins", (from, to) => q.pluginInventory(from, to));
+route("/api/usage/plugins", (from, to, _q, filters) => q.pluginInventory(from, to, filters));
 route("/api/integrity/version-cohort-sessions", (from, to, _q, filters) => q.versionCohortSessions(from, to, filters));
 route("/api/integrity/version-cohort-cost", (from, to, _q, filters) => q.versionCohortCost(from, to, filters));
 
