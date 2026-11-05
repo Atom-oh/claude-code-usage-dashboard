@@ -136,6 +136,8 @@ const TEAM_AXIS = {
   others: (n) => (n ? `기타 ${n}개 팀` : "팀 미귀속"),
   seriesEligible: (key) => !key.startsWith(REST_TEAMS_PREFIX),
   weight: (key) => (key.startsWith(REST_TEAMS_PREFIX) ? Number(key.slice(REST_TEAMS_PREFIX.length)) || 1 : 1),
+  // 팀 없음 is never folded into 기타 and does not take a top-N slot.
+  alwaysSeries: (key) => key === "",
 };
 // userSuffix (raw identity -> text) extends user series labels, e.g. with a team; keys stay raw.
 const axisFor = (dimension, userSuffix) => (dimension === "team" ? TEAM_AXIS : dimension !== "user" ? MODEL_AXIS
@@ -429,7 +431,9 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
 
   // 3. Series membership: top-N plus pinned models present in the period, in ranked order.
   const pinnedKeys = new Set((Array.isArray(pinned) ? pinned : []).filter(Boolean).map(axis.key));
-  const picked = new Set(ranked.filter(axis.seriesEligible).slice(0, top));
+  const always = axis.alwaysSeries ?? (() => false);
+  const picked = new Set([...ranked.filter((key) => axis.seriesEligible(key) && !always(key)).slice(0, top),
+    ...ranked.filter((key) => always(key))]);
   for (const key of pinnedKeys) {
     if (stats.has(key) && axis.seriesEligible(key)) picked.add(key);
   }
@@ -605,8 +609,8 @@ export function trendColor(key, theme = "light") {
   const k = String(key ?? "");
   if (Object.hasOwn(MODEL_TREND_COLORS[mode], k)) return MODEL_TREND_COLORS[mode][k];
   if (k === OTHERS_COLOR_KEY) return MODEL_TREND_OTHERS[mode];
-  // User series reuse the model palette in its validated adjacent order.
-  const user = /^user-(\d+)$/.exec(k);
+  // User and team series reuse the model palette in its validated adjacent order.
+  const user = /^(?:user|team)-(\d+)$/.exec(k);
   if (user) {
     const palette = Object.values(MODEL_TREND_COLORS[mode]);
     return palette[Number(user[1]) % palette.length];

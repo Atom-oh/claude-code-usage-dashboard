@@ -877,3 +877,29 @@ test("fromByModelDaily team dimension labels 팀 없음 and the residual", () =>
   expect(labels).toContain("팀 없음");
   expect(JSON.stringify(frame)).toContain("기타 2개 팀");
 });
+
+const teamCells = () => {
+  const day = "2026-11-01T00:00:00Z";
+  const row = (team, cost, patch = {}) => ({ day, group: "enterprise", team, reported_cost: cost, reported_unavailable: 0,
+    reported_reasons: {}, reported_partial: false, observed_tokens: 1, ...patch });
+  const rows = [...Array.from({ length: 8 }, (_, i) => row(`t${i}`, 10 + i)), row("", 1), row(null, 0.5, { rest_teams: 3 })];
+  return { cells: fromByModelDaily(rows, { dimension: "team" }),
+    bounds: { from: Date.parse(day), to: Date.parse(day) + 86400000 } };
+};
+
+test("team trend keeps 8 teams and 팀 없음 as its own series", () => {
+  const { cells, bounds } = teamCells();
+  const frame = buildModelCostFrame(cells, { bucketHours: 24, dimension: "team", top: 8, bounds });
+  const labels = frame.series.map((s) => s.label);
+  expect(labels.filter((l) => /^t\d$/.test(l)).length).toBe(8);
+  expect(labels).toContain("팀 없음");
+  expect(frame.others.label).toBe("기타 3개 팀");
+});
+
+test("team trend series get distinct colors, none the 기타 grey", () => {
+  const { cells, bounds } = teamCells();
+  const frame = buildModelCostFrame(cells, { bucketHours: 24, dimension: "team", top: 8, bounds });
+  const colors = frame.series.map((s) => trendColor(s.colorKey));
+  expect(colors).not.toContain(trendColor("others"));
+  expect(new Set(colors.slice(0, 8)).size).toBeGreaterThan(1);
+});

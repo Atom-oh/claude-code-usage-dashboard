@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Badge } from "./Badge.jsx";
 import { Card, ErrorBox, Loading } from "./Card.jsx";
 import { DataTable } from "./DataTable.jsx";
+import { SeriesBarChart } from "./GroupCharts.jsx";
 import { ModelCostTrend } from "./ModelCostTrend.jsx";
 import { SegmentedControl } from "./SegmentedControl.jsx";
 import { StatTile } from "./StatTile.jsx";
@@ -12,6 +13,7 @@ import { SPEND_HELP } from "../spend.js";
 // /api/cost/by-team(-daily): Claude reported spend per session team. A total metric: the
 // unknown channel is included, so team rows plus 팀 없음 equal the 총 비용 tile.
 export const NO_TEAM = "팀 없음";
+const isNoTeam = (row) => row.team === null;
 const BASIS = "Claude 보고 비용 · 총 비용과 같은 기준(미분류 채널 포함) · 세션별 팀 귀속";
 const HELP = `${SPEND_HELP} 각 세션의 비용은 그 세션이 보낸 OTel team 값에 붙습니다. ${NO_TEAM}은 team 값을 보내지 않았거나 로그 보존 기간이 지나 팀을 확인할 수 없는 세션입니다. 세션은 기간 안에 사용 기록이 있는 세션 수라 상단 세션 타일과 다를 수 있습니다.`;
 
@@ -57,11 +59,15 @@ export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
           <StatTile label="팀이 확인된 비용 비중" value={known > 0 ? pct((teamed / known) * 100) : "—"}
             help={`알려진 보고 비용 중 팀이 확인된 몫 · 확인 필요 팀의 비용은 분자·분모에서 제외`} />
         </div>
+        {/* Known spend only: an all-unknown team has no bar (its table cell reads 확인 필요). */}
+        <SeriesBarChart title="팀별 비용 분포" subtitle={`기간 합계 · ${BASIS}`} help={HELP}
+          rows={rows.filter((r) => r.cost !== null).map((r) => ({ team: r.label, part: "보고 비용", value: r.cost }))}
+          xKey="team" seriesKey="part" valueKey="value" valuePrefix="$" horizontal />
         <DataTable title="팀별 비용과 사용량" subtitle={BASIS} help={HELP} columns={TEAM_COLUMNS} rows={rows}
-          groupKey={null} exportName="team-cost" stale={table.stale || trend.stale} />
+          groupKey={null} exportName="team-cost" stale={table.stale || trend.stale} pinLast={isNoTeam} />
       </>}
       {trend.loading ? <Loading /> : trend.error ? <ErrorBox error={trend.error} /> : (
-        <ModelCostTrend title="팀별 비용 추이" subtitle={`상위 8개 팀 · ${BASIS}`} cells={cells} help={HELP}
+        <ModelCostTrend title="팀별 비용 추이" subtitle={`상위 8개 팀 · ${BASIS}`} cells={cells} help={HELP} top={8}
           basis="Claude 보고 비용" xKey="t" dimension="team" bucketHours={intervalHours} zoomDisabled={trend.stale}
           right={onIntervalHours ? <SegmentedControl options={[{ value: "1", label: "시간별" },
             { value: "24", label: "일간" }, { value: "168", label: "주간" }]} value={String(intervalHours)}

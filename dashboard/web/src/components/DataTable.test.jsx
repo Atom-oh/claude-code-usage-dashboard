@@ -45,3 +45,14 @@ test("an empty table stays disabled without stale", () => {
   render(<DataTable title="표" columns={columns} rows={[]} exportName="x" />);
   expect(screen.getByRole("button", { name: "CSV" }).disabled).toBe(true);
 });
+
+test("pinLast rows stay last whatever column is sorted", () => {
+  const cols = [{ key: "name", label: "이름" }, { key: "n", label: "값" }];
+  const rows = [{ name: "b", n: 2 }, { name: "a", n: 5 }, { name: "z-none", n: 9, pin: true }];
+  render(<DataTable title="표" columns={cols} rows={rows} groupKey={null} pinLast={(r) => r.pin === true} />);
+  const first = () => screen.getAllByRole("row").slice(1).map((r) => r.firstChild.textContent);
+  for (const header of ["이름", "이름", "값", "값"]) {
+    fireEvent.click(screen.getByText(header));
+    expect(first().at(-1)).toBe("z-none");
+  }
+});

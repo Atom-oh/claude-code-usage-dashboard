@@ -37,3 +37,28 @@ test("CSV export is disabled while a response is stale", () => {
   view(ok(TABLE, { stale: true }));
   expect(screen.getByRole("button", { name: /CSV/ }).disabled).toBe(true);
 });
+
+test("the team trend draws the top 8 teams and 팀 없음", () => {
+  const day = "2026-11-01T00:00:00Z";
+  const cell = (team, cost) => ({ day, group: "enterprise", team, reported_cost: cost, reported_unavailable: 0,
+    reported_reasons: {}, reported_partial: false, observed_tokens: 1 });
+  view(ok(TABLE), ok([...Array.from({ length: 8 }, (_, i) => cell(`team-${i}`, 10 + i)), cell("", 1)]));
+  for (let i = 0; i < 8; i++) expect(screen.getAllByText(`team-${i}`).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("팀 없음").length).toBeGreaterThan(1);
+});
+
+test("팀 없음 stays last when the table is sorted", async () => {
+  const { fireEvent } = await import("@testing-library/react");
+  view(ok([row("A", 3), row(null, 9), row("B", 1)]));
+  const order = () => within(screen.getByRole("table")).getAllByRole("row").slice(1)
+    .map((r) => within(r).getAllByRole("cell")[0].textContent);
+  for (const header of ["비용", "비용", "팀"]) {
+    fireEvent.click(within(screen.getByRole("table")).getByText(header));
+    expect(order().at(-1)).toBe("팀 없음");
+  }
+});
+
+test("a range-total bar compares known team spend", () => {
+  view();
+  expect(screen.getByText("팀별 비용 분포")).toBeTruthy();
+});
