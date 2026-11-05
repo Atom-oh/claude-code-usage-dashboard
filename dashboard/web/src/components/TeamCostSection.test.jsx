@@ -29,8 +29,12 @@ test("TeamCostSection shows cards, table and 팀 없음 last", () => {
 
 test("team CSV follows the displayed columns", () => {
   expect(toCsv(TEAM_COLUMNS, teamTableRows(TABLE), { piiMask: true }).split("\r\n")[0])
-    .toBe("﻿팀,비용,전체 대비,토큰,요청,활성 사용자,세션");
-  expect(toCsv(TEAM_COLUMNS, teamTableRows(TABLE), { piiMask: true }).split("\r\n")[3]).toBe("팀 없음,1,25.0%,10,3,1,2");
+    .toBe("﻿팀,비용,전체 대비,토큰,요청,활성 사용자,세션,비용 상태");
+  const lines = toCsv(TEAM_COLUMNS, teamTableRows([row("A", 3, { reported_partial: true }), row("B", null), row(null, 1)]),
+    { piiMask: true }).split("\r\n");
+  expect(lines[1].endsWith(",부분합")).toBe(true);
+  expect(lines[2].endsWith(",확인 필요")).toBe(true);
+  expect(lines[3]).toBe("팀 없음,1,25.0%,10,3,1,2,확인됨");
 });
 
 test("CSV export is disabled while a response is stale", () => {
@@ -61,4 +65,10 @@ test("팀 없음 stays last when the table is sorted", async () => {
 test("a range-total bar compares known team spend", () => {
   view();
   expect(screen.getByText("팀별 비용 분포")).toBeTruthy();
+});
+
+test("tiles and the bar disclose partial and unavailable team spend", () => {
+  view(ok([row("A", 3, { reported_partial: true }), row("B", null), row(null, 1)]));
+  expect(screen.getAllByText(/부분합 포함/).length).toBeGreaterThan(1);
+  expect(screen.getAllByText(/확인 필요 팀 1개 제외/).length).toBeGreaterThan(1);
 });

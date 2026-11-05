@@ -37,7 +37,10 @@ department column in the user table), without its budgets.
 - Guessing a team. Cost without team evidence is shown as its own "No team" row, never
   spread across teams.
 - Totals that disagree with the page: the sum of team rows plus "No team" must equal the
-  "Total cost" tile (`costSummary`) for the same filters and range.
+  "Total cost" tile (`costSummary`) for the same filters and range when every amount is known.
+  Amendment (PR #208 review): an unusable ADR-017 non-Anthropic factor makes only the affected
+  team slice unknown, while the summary drops the whole channel and model amount, so the team
+  known sum can then exceed the tile; this is disclosed rather than forced equal.
 - Treating team as verified identity (it is client-provided, like `user.email`).
 
 ## Constraints (project contracts)

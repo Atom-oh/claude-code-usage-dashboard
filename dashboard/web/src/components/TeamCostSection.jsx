@@ -15,7 +15,7 @@ import { SPEND_HELP } from "../spend.js";
 export const NO_TEAM = "팀 없음";
 const isNoTeam = (row) => row.team === null;
 const BASIS = "Claude 보고 비용 · 총 비용과 같은 기준(미분류 채널 포함) · 세션별 팀 귀속";
-const HELP = `${SPEND_HELP} 각 세션의 비용은 그 세션이 보낸 OTel team 값에 붙습니다. ${NO_TEAM}은 team 값을 보내지 않았거나 로그 보존 기간이 지나 팀을 확인할 수 없는 세션입니다. 세션은 기간 안에 사용 기록이 있는 세션 수라 상단 세션 타일과 다를 수 있습니다.`;
+const HELP = `${SPEND_HELP} 각 세션의 비용은 그 세션이 보낸 OTel team 값에 붙습니다. ${NO_TEAM}은 team 값을 보내지 않았거나 로그 보존 기간이 지나 팀을 확인할 수 없는 세션입니다. 세션은 기간 안에 사용 기록이 있는 세션 수라 상단 세션 타일과 다를 수 있습니다. 단가 계수를 확인할 수 없는 비Anthropic 모델 사용분은 해당 팀 부분만 확인 필요로 남으므로, 팀별 알려진 합계가 총 비용의 알려진 합계보다 클 수 있습니다.`;
 
 const usd = (n) => n == null || !Number.isFinite(Number(n)) ? "확인 필요"
   : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -29,6 +29,7 @@ export function teamTableRows(rows) {
   const total = list.reduce((s, r) => s + (r.known_reported_cost ?? 0), 0);
   return list.map((r) => ({ ...r, label: r.team ?? NO_TEAM, cost: r.known_reported_cost,
     cost_partial: r.reported_partial === true,
+    cost_status: r.reported_partial === true ? "부분합" : r.known_reported_cost === null ? "확인 필요" : "확인됨",
     share: r.known_reported_cost === null || total <= 0 ? null : (r.known_reported_cost / total) * 100 }));
 }
 
@@ -42,7 +43,16 @@ export const TEAM_COLUMNS = [
   { key: "requests", label: "요청", render: num },
   { key: "users", label: "활성 사용자", render: num },
   { key: "sessions", label: "세션", render: num },
+  { key: "cost_status", label: "비용 상태" },
 ];
+
+// Partial and unavailable team spend, disclosed wherever known sums are shown (ADR-013).
+export function coverageNote(rows) {
+  const partial = rows.some((r) => r.cost_partial);
+  const unavailable = rows.filter((r) => r.cost === null).length;
+  return [partial ? "부분합 포함" : null, unavailable ? `확인 필요 팀 ${unavailable}개 제외` : null]
+    .filter(Boolean).join(" · ") || undefined;
+}
 
 export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
   const rows = useMemo(() => teamTableRows(table.data), [table.data]);
@@ -50,17 +60,19 @@ export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
   const known = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
   const teamed = rows.filter((r) => r.team !== null).reduce((s, r) => s + (r.cost ?? 0), 0);
   const activeTeams = rows.filter((r) => r.team !== null).length;
+  const note = coverageNote(rows);
   return (
     <section className="flex flex-col gap-4" aria-label="팀별 비용">
       <h2 className="text-base font-semibold text-ink-800">팀별 비용</h2>
       {table.loading ? <Loading /> : table.error ? <ErrorBox error={table.error} /> : <>
         <div className="grid gap-3 sm:grid-cols-2">
-          <StatTile label="활성 팀" value={num(activeTeams)} help={`비용 기록이 있는 팀 수 · ${NO_TEAM} 제외`} />
+          <StatTile label="활성 팀" value={num(activeTeams)} hint={note}
+            help={`기간 안에 사용 기록이 있는 팀 수 · ${NO_TEAM} 제외`} />
           <StatTile label="팀이 확인된 비용 비중" value={known > 0 ? pct((teamed / known) * 100) : "—"}
-            help={`알려진 보고 비용 중 팀이 확인된 몫 · 확인 필요 팀의 비용은 분자·분모에서 제외`} />
+            hint={note} help={`알려진 보고 비용 중 팀이 확인된 몫 · 확인 필요 팀의 비용은 분자·분모에서 제외`} />
         </div>
         {/* Known spend only: an all-unknown team has no bar (its table cell reads 확인 필요). */}
-        <SeriesBarChart title="팀별 비용 분포" subtitle={`기간 합계 · ${BASIS}`} help={HELP}
+        <SeriesBarChart title="팀별 비용 분포" subtitle={[`기간 합계 · ${BASIS}`, note].filter(Boolean).join(" · ")} help={HELP}
           rows={rows.filter((r) => r.cost !== null).map((r) => ({ team: r.label, part: "보고 비용", value: r.cost }))}
           xKey="team" seriesKey="part" valueKey="value" valuePrefix="$" horizontal />
         <DataTable title="팀별 비용과 사용량" subtitle={BASIS} help={HELP} columns={TEAM_COLUMNS} rows={rows}

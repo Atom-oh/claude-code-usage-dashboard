@@ -1444,7 +1444,9 @@ export async function costByTeam(from, to, filters = {}) {
     LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
     ${teams}
     WHERE 1 = 1 ${f.where}
-    GROUP BY team, "group", model`, params),
+    GROUP BY team, "group", model
+    -- Lookback-only baselines are not activity: a team idle in the range has no row.
+    HAVING countIf(m.InWindow) > 0`, params),
     query(`${GROUP_CTE}
     SELECT ifNull(st.team, '') AS team, uniqExactIf(m.UserEmail, m.InWindow AND m.UserEmail != '') AS users,
         uniqExactIf(m.SessionId, m.InWindow AND m.SessionId != '') AS sessions

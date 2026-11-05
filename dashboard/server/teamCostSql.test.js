@@ -44,11 +44,19 @@ test("team cost reconciles with the cost summary and attributes sessions to team
         ["claude_code.cost.usage", "", 1, 1 + cost]])
         for (const [clock, value] of [["13:59:00", a], ["14:30:00", b]])
           metrics.push(counter(session, user, metric, type, clock, value, opts));
+    // A team active only in the three-day counter lookback is not active in the range.
+    const prev = new Date(Date.parse(`${day}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+    logs.push({ Timestamp: `${prev} 09:00:00.000000001`, ResourceAttributes: { "user.email": U("u9"), team: T("OLD") },
+      LogAttributes: { "event.name": "user_prompt", "session.id": T("sold") } });
+    for (const [clock, value] of [["09:01:00", 1], ["09:30:00", 5]])
+      metrics.push({ ...counter(T("sold"), U("u9"), "claude_code.cost.usage", "", clock, value), StartTimeUnix: `${prev} 09:00:00`,
+        TimeUnix: `${prev} ${clock}` });
     await db.insert({ table: "otel_logs", values: logs, format: "JSONEachRow" });
     await db.insert({ table: "otel_metrics_sum", values: metrics, format: "JSONEachRow" });
 
     const filters = { user: id };
     const teams = await q.costByTeam(from, to, filters);
+    assert.ok(!teams.some((r) => r.team === T("OLD")), "a lookback-only team has no row");
     const summary = await q.costSummary(from, to, filters);
     const sum = (rows) => rows.reduce((s, r) => s + (r.known_reported_cost ?? 0), 0);
     assert.ok(Math.abs(sum(teams) - sum(summary)) < 1e-9, `team ${sum(teams)} vs summary ${sum(summary)}`);
