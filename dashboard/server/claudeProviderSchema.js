@@ -1,5 +1,5 @@
 // Session-hour evidence of the Claude Code `anthropic.provider` attribute
-// (v2.1.317+). grouping.js reads it to replace the model/organization
+// (v2.1.317+), for the companion grouping release to replace the model/organization
 // heuristic for sessions that report a provider. Kept outside the hourly
 // rollup so the rollup's keys and sums stay untouched and backfill repeats
 // cannot inflate usage: the table stores only key membership.
