@@ -65,3 +65,46 @@ test("team cost reconciles with the cost summary and attributes sessions to team
     await db.close();
   }
 });
+
+test("team cost trend keeps the top 8 teams, folds the rest and never folds 팀 없음", {
+  skip: !process.env.TEAM_COST_SQL_TEST_URL,
+}, async () => {
+  process.env.CH_URL = process.env.TEAM_COST_SQL_TEST_URL;
+  process.env.CH_USER = "default";
+  process.env.CH_PASSWORD = "";
+  const { createClient } = await import("@clickhouse/client");
+  const db = createClient({ url: process.env.CH_URL, database: "claude_code" });
+  const q = await import("./queries.js");
+  try {
+    const id = randomUUID().slice(0, 8);
+    const day = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    const from = new Date(`${day}T14:00:00Z`), to = new Date(`${day}T15:00:00Z`);
+    const logs = [], metrics = [];
+    for (let i = 0; i <= 10; i++) {
+      const session = `${id}-s${i}`, user = `u${i}-${id}@example.invalid`;
+      const team = i < 10 ? `${id}-t${String(i).padStart(2, "0")}` : null;
+      logs.push({ Timestamp: `${day} 14:0${i % 10}:00.${String(i).padStart(9, "0")}`,
+        ResourceAttributes: { "user.email": user, ...(team ? { team } : {}) },
+        LogAttributes: { "event.name": "user_prompt", "session.id": session } });
+      for (const [clock, value] of [["13:59:00", 1], ["14:30:00", 1 + (i + 1)]])
+        metrics.push({ ResourceAttributes: { "user.email": user },
+          Attributes: { "session.id": session, "organization.id": "fixture", model: "claude-sonnet-5" },
+          MetricName: "claude_code.cost.usage", StartTimeUnix: `${day} 13:00:00`, TimeUnix: `${day} ${clock}`,
+          Value: value, AggregationTemporality: 2, IsMonotonic: true });
+    }
+    await db.insert({ table: "otel_logs", values: logs, format: "JSONEachRow" });
+    await db.insert({ table: "otel_metrics_sum", values: metrics, format: "JSONEachRow" });
+    const filters = { user: id };
+    const cells = await q.costByTeamDaily(from, to, 24, filters);
+    const named = cells.filter((c) => typeof c.team === "string" && c.team !== "");
+    assert.deepEqual(named.map((c) => c.team).sort(), [9, 8, 7, 6, 5, 4, 3, 2].map((i) => `${id}-t0${i}`).sort());
+    const rest = cells.filter((c) => c.team === null);
+    assert.deepEqual(rest.map((c) => [c.rest_teams, c.reported_cost]), [[2, 3]], "t00 ($1) + t01 ($2) fold");
+    assert.deepEqual(cells.filter((c) => c.team === "").map((c) => c.reported_cost), [11]);
+    const total = cells.reduce((s, c) => s + (c.reported_cost ?? 0), 0);
+    const table = (await q.costByTeam(from, to, filters)).reduce((s, r) => s + (r.known_reported_cost ?? 0), 0);
+    assert.ok(Math.abs(total - table) < 1e-9, `trend ${total} vs table ${table}`);
+  } finally {
+    await db.close();
+  }
+});

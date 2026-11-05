@@ -139,6 +139,14 @@ test("/api/cost/by-team keeps the shared route() contract and accepts team", asy
   assert.deepEqual(Object.keys(await r.json()), ["error", "id"]);
 });
 
+test("/api/cost/by-team-daily keeps the shared route() contract", async () => {
+  const bad = await fetch(`${base}/api/cost/by-team-daily?from=garbage`);
+  assert.equal(bad.status, 400);
+  const r = await fetch(`${base}/api/cost/by-team-daily?intervalHours=24&team=fsi`);
+  assert.equal(r.status, 500);
+  assert.equal(r.headers.get("cache-control"), "no-store");
+});
+
 test("/api/insights/daily is disabled by default and validates period", async () => {
   const r = await fetch(`${base}/api/insights/daily`);
   assert.equal(r.status, 200);
