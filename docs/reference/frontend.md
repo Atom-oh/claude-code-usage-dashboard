@@ -214,7 +214,12 @@ Others table drops the channel column, so a user's channels fold into one row.
 Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`
 (`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; in both sources the
 server's `user: null` residual becomes one "rest of N users" identity that always joins Others and
-counts as N users in its label. With legend items hidden, the tooltip's
+counts as N users in its label. The Cost page's 팀별 비용 section
+([TeamCostSection.jsx](../../dashboard/web/src/components/TeamCostSection.jsx)) draws the team
+trend from `/api/cost/by-team-daily` (`dimension: "team"`) on the same bucket: `""` is labelled
+팀 없음 and is never folded, and the `team: null` residual becomes "기타 N개 팀". Its tiles and
+table come from `/api/cost/by-team`; the table keeps the server order (known spend, 팀 없음 last)
+and exports `팀,비용,전체 대비,토큰,요청,활성 사용자,세션`. With legend items hidden, the tooltip's
 shown subtotal is unavailable when only unavailable shown costs exist and is labelled partial
 when some are; a frame change that would hide every item restores all. Legend buttons carry
 the series key, never the raw identity.

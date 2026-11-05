@@ -124,8 +124,21 @@ const USER_AXIS = {
   // The user table has no channel column, so one user's channels fold into one row.
   breakdownChannels: false,
 };
+// /api/cost/by-team-daily: "" is 팀 없음 (never folded); the server residual is keyed like users'.
+export const REST_TEAMS_PREFIX = "\u0000rest-teams:";
+const teamLabel = (key) => (key === "" ? "팀 없음"
+  : key.startsWith(REST_TEAMS_PREFIX) ? `기타 ${key.slice(REST_TEAMS_PREFIX.length)}개 팀` : key);
+const TEAM_AXIS = {
+  ...USER_AXIS,
+  label: teamLabel,
+  identity: (team) => (team === null ? "팀 미귀속" : teamLabel(team)),
+  color: (key, rank) => ({ key: `team-${rank}` }),
+  others: (n) => (n ? `기타 ${n}개 팀` : "팀 미귀속"),
+  seriesEligible: (key) => !key.startsWith(REST_TEAMS_PREFIX),
+  weight: (key) => (key.startsWith(REST_TEAMS_PREFIX) ? Number(key.slice(REST_TEAMS_PREFIX.length)) || 1 : 1),
+};
 // userSuffix (raw identity -> text) extends user series labels, e.g. with a team; keys stay raw.
-const axisFor = (dimension, userSuffix) => (dimension !== "user" ? MODEL_AXIS
+const axisFor = (dimension, userSuffix) => (dimension === "team" ? TEAM_AXIS : dimension !== "user" ? MODEL_AXIS
   : userSuffix ? { ...USER_AXIS, label: (key) => userLabel(key) + userSuffix(key) } : USER_AXIS);
 
 export function reasonLabel(reason) {
@@ -176,14 +189,16 @@ function compareCells(a, b) {
 
 // dimension "user" adapts /api/cost/by-user-daily rows: the identity is the raw user.
 export function fromByModelDaily(rows, { dimension = "model" } = {}) {
-  const field = dimension === "user" ? "user" : "model";
+  const field = dimension === "user" || dimension === "team" ? dimension : "model";
+  const restPrefix = field === "team" ? REST_TEAMS_PREFIX : REST_USERS_PREFIX;
   const cells = [];
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row) continue;
     const t = bucketKey(row.day);
     if (t === null) continue;
     const known = row.reported_all_unavailable === true ? null : amount(row.reported_cost);
-    const identity = field === "user" && row.user === null ? `${REST_USERS_PREFIX}${row.rest_users ?? "?"}` : String(row[field] ?? "");
+    const identity = field !== "model" && row[field] === null
+      ? `${restPrefix}${row[`rest_${field}s`] ?? "?"}` : String(row[field] ?? "");
     cells.push(finishCell(t, identity, row.group || "unknown", known,
       row.reported_unavailable, row.reported_reasons || {}, row.reported_partial, amount(row.observed_tokens)));
   }

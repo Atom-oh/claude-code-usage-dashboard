@@ -50,6 +50,6 @@ test("every drag-zoomable time-series chart suspends zoom while its data hook is
   expect(found.unguarded).toEqual([]);
   // 스캐너가 아무것도 찾지 못해 통과하는 일을 막는 호출부 수 — 차트를 더하거나 빼면 이 숫자를 고친다.
   // ModelCostTrend replaced the two detail SeriesBarChart sites and added one shared site;
-  // the detail Cost/Executive user cost trends add two more.
-  expect([found.guarded.length, found.categorical.length, found.exempt.length]).toEqual([17, 4, 1]);
+  // the detail Cost/Executive user cost trends add two more, and the Cost team cost trend one.
+  expect([found.guarded.length, found.categorical.length, found.exempt.length]).toEqual([18, 4, 1]);
 });

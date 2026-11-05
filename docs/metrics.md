@@ -61,6 +61,13 @@ See [setup and pricing assumptions](runbooks/codex-telemetry.md).
 
 ## Spend and cost diagnostics
 
+Team spend (Claude detail Cost, 팀별 비용) attributes each session's reported cost to that
+session's OTel `team` (most frequent value in its logs); sessions without team evidence are
+팀 없음. It is a total metric that includes the unknown channel, so team rows plus 팀 없음 equal
+the 총 비용 tile, while its trend is not bucket-comparable with the model trend, which excludes
+that channel. Team sessions count distinct sessions with usage, not `claude_code.session.count`.
+"팀이 확인된 비용 비중" is the known spend with a team over all known spend.
+
 Shared pages use the client overview's `cost_usd` and label its basis: Claude reports
 or Codex AWS list-price estimates. The following adapter rules apply to Claude detail.
 

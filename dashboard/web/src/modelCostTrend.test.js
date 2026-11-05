@@ -863,3 +863,17 @@ test("a user label suffix extends series labels, never keys or breakdown identit
   expect(buildModelCostFrame(cells, { ...options, userSuffix }).series.map((s) => s.label))
     .toEqual(buildModelCostFrame(cells, options).series.map((s) => s.label));
 });
+
+test("fromByModelDaily team dimension labels 팀 없음 and the residual", () => {
+  const day = "2026-11-01T00:00:00Z";
+  const row = (patch) => ({ day, group: "enterprise", reported_cost: 1, reported_unavailable: 0,
+    reported_reasons: {}, reported_partial: false, observed_tokens: 1, ...patch });
+  const cells = fromByModelDaily([row({ team: "fsi" }), row({ team: "" }), row({ team: null, rest_teams: 2 })],
+    { dimension: "team" });
+  const frame = buildModelCostFrame(cells, { bucketHours: 24, dimension: "team",
+    bounds: { from: Date.parse(day), to: Date.parse(day) + 86400000 } });
+  const labels = frame.series.map((s) => s.label);
+  expect(labels).toContain("fsi");
+  expect(labels).toContain("팀 없음");
+  expect(JSON.stringify(frame)).toContain("기타 2개 팀");
+});
