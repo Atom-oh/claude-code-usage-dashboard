@@ -130,6 +130,16 @@ variable "codex_pricing_json" {
   }
 }
 
+variable "basic_auth_failure_limit" {
+  description = "Optional failed Basic credentials allowed per client address and minute per dashboard process (server default 20). Raise it for workshops behind one shared egress address."
+  type        = number
+  default     = null
+  validation {
+    condition     = var.basic_auth_failure_limit == null ? true : (floor(var.basic_auth_failure_limit) == var.basic_auth_failure_limit && var.basic_auth_failure_limit >= 1 && var.basic_auth_failure_limit <= 10000)
+    error_message = "basic_auth_failure_limit must be an integer from 1 to 10000 when set."
+  }
+}
+
 variable "pricing_cache_write_ttl" {
   type    = string
   default = null
@@ -341,6 +351,13 @@ resource "kubernetes_deployment_v1" "dashboard" {
             for_each = var.codex_pricing_json == null ? [] : [var.codex_pricing_json]
             content {
               name  = "CODEX_PRICING_JSON"
+              value = env.value
+            }
+          }
+          dynamic "env" {
+            for_each = var.basic_auth_failure_limit == null ? [] : [tostring(var.basic_auth_failure_limit)]
+            content {
+              name  = "BASIC_AUTH_FAILURE_LIMIT"
               value = env.value
             }
           }

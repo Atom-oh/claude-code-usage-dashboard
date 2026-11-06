@@ -98,8 +98,12 @@ and Kubernetes Secret RBAC and encryption must be configured separately. Terrafo
 Secret values remain in Terraform state; see [state protection](../reference/iac.md#state-schema-and-rollout).
 
 Basic authentication limits failed credentials to 20 per client address per minute on
-each dashboard process. Users sharing an address can be temporarily blocked, and the
-limit is neither shared across replicas nor a substitute for an edge-wide WAF limit.
+each dashboard process (`basic_auth_failure_limit`, 1 to 10000). Once an address reaches it,
+every request from that address, including correct credentials, is rejected for the window,
+so participants behind one corporate egress share the budget; raise the limit for such
+workshops. Addresses without recorded failures are never rejected, and a full failure table
+evicts its oldest entry. The limit is neither shared across replicas nor a substitute for an
+edge-wide WAF limit.
 Validate the trusted proxy chain and prefer organization SSO for shared installations.
 If 4,096 distinct client addresses occupy a process's failure buckets, new addresses are
 also rejected until a bucket expires; monitor and rate-limit traffic at the edge.
