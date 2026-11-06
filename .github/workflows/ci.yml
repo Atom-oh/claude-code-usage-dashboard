@@ -196,5 +196,7 @@ jobs:
         run: bash scripts/test-bedrock-routing-terraform.sh
       - name: Verify immutable schema inputs and initializer behavior with mocked providers
         run: bash scripts/test-schema-lifecycle-terraform.sh
+      - name: Verify dashboard secret migration with mocked providers
+        run: bash scripts/test-dashboard-secrets-terraform.sh
       - name: Verify opt-in device ingestion resources with mocked providers
         run: bash scripts/test-device-ingest-terraform.sh
