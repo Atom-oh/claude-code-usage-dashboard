@@ -1,6 +1,6 @@
 # ClickHouse/대시보드 전용 Karpenter NodePool — 기존 EC2NodeClass(default/graviton 등)는
-# 건드리지 않고 이 워크로드만 위한 새 풀을 추가한다. m8g.xlarge 단일 타입(../aws-ec2-benchmark
-# ClickBench 실측 가성비 1위). taint로 격리해 다른 워크로드가 여기 스케줄되지 않게 한다.
+# 건드리지 않고 이 워크로드만 위한 새 풀을 추가한다. 단일 인스턴스 타입(var.clickhouse_node_instance_type).
+# taint로 격리해 다른 워크로드가 여기 스케줄되지 않게 한다.
 
 resource "kubectl_manifest" "claude_code_nodeclass" {
   yaml_body = yamlencode({
@@ -28,7 +28,8 @@ resource "kubectl_manifest" "claude_code_nodepool" {
     metadata   = { name = "claude-code" }
     spec = {
       disruption = { consolidationPolicy = "WhenEmptyOrUnderutilized", consolidateAfter = "10m" }
-      limits     = { cpu = "16", memory = "64Gi" }
+      # 3 × c9g.2xlarge = 24 vCPU / 48GiB, with headroom for one replacement node during drift.
+      limits = { cpu = "32", memory = "64Gi" }
       template = {
         metadata = { labels = { "node-type" = "claude-code" } }
         spec = {

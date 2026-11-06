@@ -118,8 +118,8 @@ resource "kubectl_manifest" "chi" {
         # 이미 CPU limit 합계 153~178%로 오버커밋 상태라, 페이지 하나가 useApi로 7~9개 API를
         # 동시에 쏘면 cgroup CPU throttling이 실제로 발생한다(9개 동시 쿼리 발사 시 컨테이너의
         # /sys/fs/cgroup/cpu.stat nr_throttled가 10회 증가 — 커널이 강제로 CPU를 끊은 횟수).
-        # Karpenter가 이 nodepool(claude-code)을 관리하며 limits.cpu=16(현재 8 사용)이라
-        # 여유가 있어, 세 번째 레플리카는 새 m8g.xlarge 노드에 자동 프로비저닝될 것으로 예상.
+        # Karpenter가 이 nodepool(claude-code)을 관리한다. 노드 타입/limits.cpu는 nodepool.tf와
+        # var.clickhouse_node_instance_type 참고(2026-11-06 c9g.2xlarge로 변경).
         clusters = [{ name = "replicated", layout = { shardsCount = 1, replicasCount = 3 } }]
         # CHK 서비스 이름은 <chk 이름>-<cluster 이름>이라 "keeper-keeper" (실측 확인: kubectl get svc).
         zookeeper = { nodes = [{ host = "keeper-keeper.${var.k8s_namespace}.svc.cluster.local", port = 2181 }] }
@@ -219,12 +219,19 @@ resource "kubectl_manifest" "chi" {
             containers = [{
               name  = "clickhouse"
               image = "clickhouse/clickhouse-server:24.8"
+              # No CPU limit: ClickHouse sizes max_threads from the cgroup quota, and the
+              # 3.5-core limit capped it at 4 while bursts of concurrent dashboard queries
+              # waited on CPU (measured 2026-11-06: OSCPUWait 4.1s vs 1.6s user time per
+              # heavy query, 0.6 core average). Keeper/dashboard keep CPU weight through
+              # their requests. The request (6 of a c9g.2xlarge's 8 vCPUs) also leaves
+              # room for only one ClickHouse pod per node. Memory stays limited.
               resources = {
-                requests = { cpu = "2", memory = "6Gi" }
-                limits   = { cpu = "3.5", memory = "13Gi" }
+                requests = { cpu = "6", memory = "6Gi" }
+                limits   = { memory = "13Gi" }
               }
             }]
           }
+          podDistribution = [{ type = "ClickHouseAntiAffinity", scope = "ClickHouseInstallation" }]
         }]
         volumeClaimTemplates = [{
           name = "hot-data"

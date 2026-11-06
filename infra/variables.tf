@@ -47,8 +47,8 @@ variable "ch_ingest_hostname" {
 }
 
 variable "clickhouse_node_instance_type" {
-  description = "8세대 그래비톤 — ../aws-ec2-benchmark ClickBench 실측 가성비 1위(m8g.xlarge)"
-  default     = "m8g.xlarge"
+  description = "ClickHouse node type. c9g.2xlarge: 8 vCPU/16GiB; ClickBench (../aws-ec2-benchmark, CH 24.8) c9g.xlarge was ~17% faster than c8g.xlarge at equal memory, and the workload is CPU-bound on small data."
+  default     = "c9g.2xlarge"
 }
 
 variable "dashboard_basic_auth_user" {
