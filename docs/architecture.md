@@ -212,7 +212,7 @@ for streamed text and session identifiers. See [security](reference/security.md)
 node role, hosted zone and certificate. [nodepool.tf](../infra/nodepool.tf) adds a dedicated
 arm64/on-demand Karpenter NodePool and EC2NodeClass; it does not create a cluster or an EKS
 managed node group. Karpenter and ClickHouse/Keeper operators are prerequisites. Region
-`ap-northeast-2` and node type `m8g.xlarge` are source defaults, not assertions about a fleet.
+`ap-northeast-2` and node type `c9g.2xlarge` are source defaults, not assertions about a fleet.
 
 [dashboard.tf](../infra/dashboard.tf) declares two replicas, rolling-update/disruption
 controls, preferred anti-affinity, Secret-backed credentials and Bedrock IRSA. CloudFront
