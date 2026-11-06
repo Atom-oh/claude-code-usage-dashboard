@@ -8,7 +8,7 @@ vi.mock("../RangeContext.jsx", () => ({
   useRange: () => ({ from: new Date("2026-10-06T00:00:00Z"), to: new Date("2026-10-13T00:00:00Z") }),
 }));
 
-const PLACEHOLDER = "예) ojs0106의 최근 3시간 사용은 뭐였고 주로 어떤 툴에서 동작했어?";
+const PLACEHOLDER = "예) 최근 3시간 동안 가장 많이 사용한 도구는 무엇인가요?";
 const TOOL_PRESET = "최근 7일간 사용자별로 가장 많이 쓴 도구(tool_name)와 클라이언트(Claude/Codex)를 알려줘";
 
 function mount({ embedded = false, permissions } = {}) {
@@ -32,7 +32,7 @@ test("the question input renders above the presets before any message", () => {
   const preset = screen.getByRole("button", { name: TOOL_PRESET });
   expect(input.compareDocumentPosition(preset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByText("사용자 · 도구")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "특정 사용자의 최근 3시간 사용 내역과 주로 사용한 도구를 요약해줘 (예: ojs0106)" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "최근 3시간 사용자별 사용 내역과 주로 사용한 도구를 요약해줘" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "질문 보내기" }).disabled).toBe(true);
 });
 

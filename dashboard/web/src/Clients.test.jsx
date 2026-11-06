@@ -274,7 +274,7 @@ test("switching from Claude clears incompatible filters, preserves range/user/mo
   expect(new URLSearchParams(location.search).has("group")).toBe(false);
 });
 
-const QUESTION_PLACEHOLDER = "예) ojs0106의 최근 3시간 사용은 뭐였고 주로 어떤 툴에서 동작했어?";
+const QUESTION_PLACEHOLDER = "예) 최근 3시간 동안 가장 많이 사용한 도구는 무엇인가요?";
 
 test.each([[["codex"], "codex"], [["claude", "codex"], "all"]])("common Analytics for %j shows the question input above diagnostics plus the floating chat", async (enabledClients, client) => {
   const { fetchMock, container } = mount({ enabledClients, entry: `/analytics?client=${client}` });

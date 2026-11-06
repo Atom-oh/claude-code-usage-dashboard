@@ -21,7 +21,7 @@ import { setTimeout as wait } from "node:timers/promises";
 // 같은 케이스), 배열/객체 값도 재귀 순회한다(groupArray(UserEmail)/Attributes map 등이 통째로
 // 새는 걸 막음 — 리뷰에서 MAJOR로 확인된 실제 우회 경로).
 // 유저별 인증/멀티테넌시가 들어오면 이 가정이 깨지므로 그때 aggregate/컬럼 allowlist로 전환한다.
-// 로컬 파트를 `[^\s@]+`(공백/@만 제외)로 느슨하게 잡으면 "user=ojs0106@gmail.com"처럼 앞에
+// 로컬 파트를 `[^\s@]+`(공백/@만 제외)로 느슨하게 잡으면 "user=person.one@example.test"처럼 앞에
 // 인접한 비-이메일 문자(=, ' 등)까지 그리디하게 로컬 파트로 삼켜, 실제 마스킹은 그 삼켜진
 // 구간의 뒷부분 2글자만 남기고 앞부분(prefix)까지 가려버린다(테스트에서 확인된 회귀) — 실제
 // 이메일 로컬 파트에 쓰이는 문자 집합으로 좁혀 프리픽스와의 경계를 명확히 한다.
@@ -640,7 +640,7 @@ export function createChatHandler({ query = queryReadonly, runTurn = runConverse
           } catch (err) {
             if (abortController.signal.aborted) throw err;
             // ClickHouse 파싱 오류는 입력값을 메시지에 에코한다(예: toDateTime(UserEmail) →
-            // "Cannot parse string 'ojs0106@gmail.com' ...") — 모델이 이 텍스트를 답변에 인용해
+            // "Cannot parse string 'person.one@example.test' ...") — 모델이 이 텍스트를 답변에 인용해
             // 화면에 그대로 노출될 수 있으므로 다른 경로와 동일하게 마스킹한다(리뷰에서 MAJOR로 확인).
             results.push({ toolResult: { toolUseId, content: [{ text: `쿼리 오류: ${maskEmailText(err.message)}` }], status: "error" } });
           }
