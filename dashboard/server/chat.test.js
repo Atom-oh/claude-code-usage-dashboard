@@ -97,12 +97,12 @@ test("url inside a string literal is not a table function", () => {
 // `SELECT UserEmail AS user` 같은 별칭도 잡혀야 하고, 이메일이 아닌 문자열/숫자는 그대로여야 한다.
 test("maskEmailValues masks email-shaped strings regardless of column alias", () => {
   const rows = [
-    { UserEmail: "ojs0106@gmail.com", n: 921 },
+    { UserEmail: "person.one@example.test", n: 921 },
     { user: "x@y.com", model: "claude-3" }, // 별칭 컬럼 + 1글자 로컬 파트
     { note: "not-an-email", count: 5 },
   ];
   assert.deepEqual(maskEmailValues(rows), [
-    { UserEmail: "oj******@gmail.com", n: 921 },
+    { UserEmail: "pe******@example.test", n: 921 },
     { user: "x******@y.com", model: "claude-3" },
     { note: "not-an-email", count: 5 },
   ]);
@@ -112,20 +112,20 @@ test("maskEmailValues masks email-shaped strings regardless of column alias", ()
 // 한다 — 리뷰에서 MAJOR로 확인된 우회 경로(top-level string만 검사하면 통째로 샘).
 test("maskEmailValues recurses into arrays and nested objects", () => {
   const rows = [
-    { emails: ["ojs0106@gmail.com", "ssminji@amazon.com"], n: 2 },
-    { attrs: { UserEmail: "comeddy@gmail.com", nested: { again: "x@y.com" } } },
+    { emails: ["person.one@example.test", "sample.one@example.test"], n: 2 },
+    { attrs: { UserEmail: "another@example.test", nested: { again: "x@y.com" } } },
   ];
   assert.deepEqual(maskEmailValues(rows), [
-    { emails: ["oj******@gmail.com", "ss******@amazon.com"], n: 2 },
-    { attrs: { UserEmail: "co******@gmail.com", nested: { again: "x******@y.com" } } },
+    { emails: ["pe******@example.test", "sa******@example.test"], n: 2 },
+    { attrs: { UserEmail: "an******@example.test", nested: { again: "x******@y.com" } } },
   ]);
 });
 
 // concat('user=', UserEmail)처럼 이메일이 문자열 중간에 박혀 있어도(값 전체 일치가 아님)
 // 마스킹돼야 한다 — 리뷰에서 MAJOR로 확인된 우회 경로.
 test("maskEmailValues masks an email embedded inside a larger string", () => {
-  const rows = [{ label: "user=ojs0106@gmail.com done" }];
-  assert.deepEqual(maskEmailValues(rows), [{ label: "user=oj******@gmail.com done" }]);
+  const rows = [{ label: "user=person.one@example.test done" }];
+  assert.deepEqual(maskEmailValues(rows), [{ label: "user=pe******@example.test done" }]);
 });
 
 // 마스킹은 many-to-one이라 로컬 파트가 같은 두 글자로 시작하는 서로 다른 이메일은 같은 라벨로
@@ -143,16 +143,16 @@ test("maskEmailValues: distinct emails can collide on the same masked label (doc
 // {values: [...]}로 감싼다 — 충돌 없어도(각 라벨당 유저 1명) 이 모양을 유지해야 "배열이면
 // 충돌"이라는 추측 없이 모델이 일관되게 처리할 수 있다.
 test("maskEmailValues wraps email-shaped object keys' values in {values:[...]}, even without collision", () => {
-  const rows = [{ "ojs0106@gmail.com": 921, "ssminji@amazon.com": 50 }];
-  assert.deepEqual(maskEmailValues(rows), [{ "oj******@gmail.com": { values: [921] }, "ss******@amazon.com": { values: [50] } }]);
+  const rows = [{ "person.one@example.test": 921, "sample.one@example.test": 50 }];
+  assert.deepEqual(maskEmailValues(rows), [{ "pe******@example.test": { values: [921] }, "sa******@example.test": { values: [50] } }]);
 });
 
-// 같은 도메인(@amazon.com)에 로컬 파트 앞 2글자까지 겹치는 두 유저의 map(UserEmail, count())
+// 같은 도메인(@example.test)에 로컬 파트 앞 2글자까지 겹치는 두 유저의 map(UserEmail, count())
 // 결과처럼, 서로 다른 key가 같은 마스킹 라벨로 충돌해도 values 배열에 둘 다 남아야 한다
 // (리뷰에서 MAJOR로 확인된 데이터 정확성 결함 — last-wins로 값이 사라졌던 최초 버전의 회귀 방지).
 test("maskEmailValues preserves both values when two object keys collide on the same masked label", () => {
-  const rows = [{ "ssminji@amazon.com": 50, "sskim@amazon.com": 30 }];
-  assert.deepEqual(maskEmailValues(rows), [{ "ss******@amazon.com": { values: [50, 30] } }]);
+  const rows = [{ "sample.one@example.test": 50, "sample.two@example.test": 30 }];
+  assert.deepEqual(maskEmailValues(rows), [{ "sa******@example.test": { values: [50, 30] } }]);
 });
 
 // map(UserEmail, groupArray(...))처럼 값 자체가 배열일 때, 충돌한 두 유저의 배열이
@@ -168,8 +168,8 @@ test("maskEmailValues does not flatten array values when colliding object keys b
 // (리뷰에서 MAJOR로 확인된 우회 경로).
 test("maskEmailText masks emails embedded in error messages", () => {
   assert.equal(
-    maskEmailText("Code: 27. DB::Exception: Cannot parse string 'ojs0106@gmail.com' as DateTime"),
-    "Code: 27. DB::Exception: Cannot parse string 'oj******@gmail.com' as DateTime"
+    maskEmailText("Code: 27. DB::Exception: Cannot parse string 'person.one@example.test' as DateTime"),
+    "Code: 27. DB::Exception: Cannot parse string 'pe******@example.test' as DateTime"
   );
 });
 
@@ -183,7 +183,7 @@ function webMaskEmail(s) {
   return at === -1 ? `${str.slice(0, 2)}******` : `${str.slice(0, Math.min(2, at))}******${str.slice(at)}`;
 }
 test("server maskEmailText agrees with web fmt.js's maskEmail on full-string email inputs", () => {
-  for (const s of ["ojs0106@gmail.com", "x@y.com", "ab@c.com", "test.user@corp.io"]) {
+  for (const s of ["person.one@example.test", "x@y.com", "ab@c.com", "test.user@corp.io"]) {
     assert.equal(maskEmailText(s), webMaskEmail(s), s);
   }
 });
