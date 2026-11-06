@@ -1,4 +1,5 @@
 import { createClient } from "@clickhouse/client";
+import { readSecret } from "./secrets.js";
 import { createBudget, createQueuedBudget } from "./capacity.js";
 import { querySignal } from "./queryContext.js";
 
@@ -12,7 +13,7 @@ const client = createClient({
   url: process.env.CH_URL || `http://${process.env.CH_HOST || "localhost"}:${process.env.CH_PORT || "8123"}`,
   database: process.env.CH_DB || "claude_code",
   username: process.env.CH_USER || "default",
-  password: process.env.CH_PASSWORD || "",
+  password: readSecret(process.env, "CH_PASSWORD") || "",
   request_timeout: 30000,
   max_open_connections: 30,
 });

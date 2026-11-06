@@ -1,7 +1,8 @@
 import basicAuth from "express-basic-auth";
 import * as oidc from "openid-client";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from "node:crypto";
-import { createRateLimiter } from "./rateLimit.js";
+import { createFailedAuthLimiter, createRateLimiter } from "./rateLimit.js";
+import { readSecret } from "./secrets.js";
 
 const SESSION_COOKIE = "__Host-ccdash-session";
 const LOGIN_COOKIE = "__Host-ccdash-login";
@@ -24,26 +25,34 @@ function httpsUrl(value, name, originOnly = false) {
 }
 
 export function parseAuthConfig(env) {
-  if (!env.AUTH_MODE && Object.keys(env).some(name => (name.startsWith("OIDC_") || name === "SESSION_SECRET") && env[name]))
+  if (!env.AUTH_MODE && Object.keys(env).some(name => (name.startsWith("OIDC_") || name === "SESSION_SECRET" || name === "SESSION_SECRET_FILE") && env[name]))
     throw new Error("AUTH_MODE is required when OIDC settings are present");
   const mode = env.AUTH_MODE || "basic";
   if (!["basic", "oidc"].includes(mode)) throw new Error("AUTH_MODE must be basic or oidc");
   if (mode === "basic") {
-    const enabled = !!(env.BASIC_AUTH_USER && env.BASIC_AUTH_PASSWORD);
+    const user = readSecret(env, "BASIC_AUTH_USER"), password = readSecret(env, "BASIC_AUTH_PASSWORD");
+    const enabled = !!(user && password);
     if (!enabled && env.AUTH_ALLOW_INSECURE !== "1")
       throw new Error("BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are both required");
     // A partially configured credential must never silently enable the development bypass.
-    if (!enabled && (env.BASIC_AUTH_USER || env.BASIC_AUTH_PASSWORD))
+    if (!enabled && (user || password))
       throw new Error("BASIC_AUTH_USER and BASIC_AUTH_PASSWORD must be configured together");
-    return { mode, enabled, user: env.BASIC_AUTH_USER, password: env.BASIC_AUTH_PASSWORD };
+    // Failed guesses allowed per client address and minute. Workshops behind one corporate egress
+    // share an address, so operators can raise it; it stays a per-process guard behind the edge limit.
+    const rawLimit = env.BASIC_AUTH_FAILURE_LIMIT ?? "20";
+    const failureLimit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+    if (!Number.isInteger(failureLimit) || failureLimit < 1 || failureLimit > 10000)
+      throw new Error("BASIC_AUTH_FAILURE_LIMIT must be an integer from 1 to 10000");
+    return { mode, enabled, user, password, failureLimit };
   }
   const issuer = httpsUrl(env.OIDC_ISSUER, "OIDC_ISSUER");
   const origin = httpsUrl(env.APP_PUBLIC_URL, "APP_PUBLIC_URL", true);
-  if (!env.OIDC_CLIENT_ID || !env.OIDC_CLIENT_SECRET) throw new Error("OIDC_CLIENT_ID and OIDC_CLIENT_SECRET are required");
-  if (!/^[A-Za-z0-9_-]{43}$/.test(env.SESSION_SECRET || ""))
+  const clientSecret = readSecret(env, "OIDC_CLIENT_SECRET"), sessionSecret = readSecret(env, "SESSION_SECRET");
+  if (!env.OIDC_CLIENT_ID || !clientSecret) throw new Error("OIDC_CLIENT_ID and OIDC_CLIENT_SECRET are required");
+  if (!/^[A-Za-z0-9_-]{43}$/.test(sessionSecret || ""))
     throw new Error("SESSION_SECRET must be a base64url-encoded 32-byte random key");
-  const key = Buffer.from(env.SESSION_SECRET, "base64url");
-  if (key.length !== 32 || key.toString("base64url") !== env.SESSION_SECRET)
+  const key = Buffer.from(sessionSecret, "base64url");
+  if (key.length !== 32 || key.toString("base64url") !== sessionSecret)
     throw new Error("SESSION_SECRET must be a base64url-encoded 32-byte random key");
   const maxAge = env.SESSION_MAX_AGE_SECONDS === undefined ? 900 : Number(env.SESSION_MAX_AGE_SECONDS);
   if (!Number.isInteger(maxAge) || maxAge < 300 || maxAge > 3600)
@@ -68,7 +77,7 @@ export function parseAuthConfig(env) {
       || groups.some(group => typeof group !== "string" || !group.trim() || group.length > 128)))
     throw new Error("OIDC_ROLE_GROUPS must map viewer, analyst or admin to explicit group arrays");
   return { mode, enabled: true, issuer, origin, key, maxAge, refreshMaxAge, scopes, claim, roleGroups,
-    clientId: env.OIDC_CLIENT_ID, clientSecret: env.OIDC_CLIENT_SECRET };
+    clientId: env.OIDC_CLIENT_ID, clientSecret };
 }
 
 function cookieValue(header, name) {
@@ -139,8 +148,13 @@ async function discover(config) {
 export function createAuthentication({ env = process.env, now = Date.now, discoverClient = discover,
   audit = entry => console.log(JSON.stringify(entry)) } = {}) {
   const config = parseAuthConfig(env);
+  // Keyed on the client address only: a client-chosen field (such as the user name) would let one
+  // client fill the bucket table and deny every new address.
+  const basicFailures = createFailedAuthLimiter({ now, max: config.failureLimit ?? 20 });
+  const clientAddress = req => req.ip || req.socket?.remoteAddress || "unknown";
   const basic = config.mode === "basic" && config.enabled
-    ? basicAuth({ users: { [config.user]: config.password }, challenge: true }) : null;
+    ? basicAuth({ users: { [config.user]: config.password }, challenge: true,
+      unauthorizedResponse: req => { if (req.auth) basicFailures.failed(clientAddress(req)); return ""; } }) : null;
   const codec = config.mode === "oidc" ? createSessionCodec(config, now) : null;
   const authRateLimit = createRateLimiter({ now });
   // Bound refresh work independently of IP: workshops share corporate egress.
@@ -383,7 +397,12 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
     },
     async middleware(req, res, next) {
       if (PROBES.has(req.path)) return next();
-      if (config.mode === "basic") return basic ? basic(req, res, next) : next();
+      if (config.mode === "basic") {
+        if (!basic) return next();
+        const retryAfter = basicFailures.retryAfter(clientAddress(req));
+        if (retryAfter) return res.set("Retry-After", String(retryAfter)).status(429).json({ error: "too_many_requests" });
+        return basic(req, res, next);
+      }
       // Reject unsafe cross-origin requests before exchanging any credential.
       let principal = readPrincipal(req);
       const refresh = readRefresh(req);
