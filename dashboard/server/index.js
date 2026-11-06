@@ -1,5 +1,5 @@
 import express from "express";
-import { codexInsights, validateInsightsProfile } from "./codexInsights.js";
+import { codexInsights, validateInsightsExactFilters, validateInsightsProfile } from "./codexInsights.js";
 import { claudeEffort, validateClaudeEffort } from "./claudeEffort.js";
 import path from "node:path";
 import os from "node:os";
@@ -384,8 +384,7 @@ route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
   { client: "codex", warm: false, team: false, validate: (raw) => {
     validateClientFilters(raw, ["codex"]);
     validateInsightsProfile(raw);
-    if (raw.userExact !== undefined || raw.modelExact !== undefined)
-      throw new ValidationError("unsupported filter", "exact drilldowns require /api/clients/overview");
+    validateInsightsExactFilters(raw);
   } });
 
 route("/api/clients/claude-effort", (from, to, raw) => claudeEffort(from, to, raw),

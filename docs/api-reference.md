@@ -191,7 +191,10 @@ one bucket. Sizes use Claude's resolved end; eligibility for one-day raw resolut
 the original requested span. Cache keys include display/native bucket sizes and resolved end.
 Optional `userExact` and `modelExact` select exact row identities in addition to existing
 partial user/model filters. Claude model IDs are normalized; Codex routing prefixes remain.
-These validated, bound parameters have separate cache keys and are rejected by Codex insights.
+These validated, bound parameters have separate cache keys. `/api/codex/insights` rejects `modelExact`
+and rejects `userExact` unless `profile=tools`, which then compares the identity by equality
+(`UserEmail`, or `user.email` falling back to `enduser.id` on the raw-log path) beside any substring `user` filter.
+Other profiles, including the default, return 400 `unsupported filter`.
 Exact responses echo `applied_filters={userExact,modelExact,backend}`; the UI verifies this
 acknowledgment before presenting identity detail, including during a rolling upgrade.
 Raw Claude counter inputs also narrow user/model partitions throughout the baseline.

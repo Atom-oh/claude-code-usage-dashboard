@@ -618,3 +618,12 @@ test("compact stream scopes retain unpriced session IDs without leaking scope id
   assert.ok(!JSON.stringify(actual).includes("stream-only"));
   assert.ok(!JSON.stringify(actual).includes("test@example.invalid"));
 });
+
+test("userExact binds clientUserExact and compares by equality", () => {
+  const { sql, params } = buildCodexInsightsLogQuery(new Date("2026-09-15T00:00:00Z"),
+    new Date("2026-09-15T01:00:00Z"), { userExact: "kim@x.com" });
+  assert.equal(params.clientUserExact, "kim@x.com");
+  assert.match(sql, /\{clientUserExact:String\} = '' OR user = \{clientUserExact:String\}/);
+  assert.doesNotMatch(sql, /kim@x\.com/);
+  assert.equal(buildCodexInsightsLogQuery(new Date(0), new Date(1000), {}).params.clientUserExact, "");
+});

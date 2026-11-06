@@ -25,7 +25,7 @@ const sqlStrings = (values) => `[${values.map((v) => `'${v}'`).join(",")}]`;
 export function logSelection(from, to, filters = {}, distinct = true,
   { excludeBulk = false, modelEvidenceSql } = {}) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
-    clientUser: filters.user || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
+    clientUser: filters.user || "", clientUserExact: filters.userExact || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
   const sql = `WITH unique_events AS (
     SELECT ${distinct ? "DISTINCT " : ""}Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
@@ -47,6 +47,7 @@ export function logSelection(from, to, filters = {}, distinct = true,
   SELECT toString(toTimeZone(Timestamp, 'UTC')) AS timestamp, r AS resource, a AS attributes
   FROM unique_events
   WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
+    AND ({clientUserExact:String} = '' OR user = {clientUserExact:String})
     AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
     ${filters.model ? `AND (${modelMatch} OR (model = '' AND
       (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}`;
