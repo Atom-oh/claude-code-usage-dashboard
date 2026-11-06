@@ -76,6 +76,44 @@ kube get pdb dashboard
 Reconcile drift through the reviewed Terraform plan before relying on those protections.
 The ECR lifecycle declaration retains only ten images; confirm a rollback digest still exists.
 
+## Dashboard secret file migration
+
+The updated Terraform mounts dashboard credentials as files. Applying it with an older
+image that does not support `*_FILE` prevents the dashboard from starting. For existing
+installations, complete the image rollout before applying the updated Terraform:
+
+1. Using the previously deployed Terraform configuration, build and roll out an image
+   containing `dashboard/server/secrets.js`. Verify both replicas are ready and
+   authenticated dashboard requests work. The image remains managed by the rollout
+   procedure below; Terraform does not update its tag on existing deployments.
+2. Review and apply the updated Terraform plan in the normal change window. Verify both pods become ready
+   and authentication, ClickHouse reads, and any configured alerts work. The deployment
+   mounts only the needed Secret keys read-only; process environment contains file paths.
+3. After rotating a mounted value, restart the dashboard deployment and repeat these checks:
+   the application reads secrets at startup. For rollback to an older image, first restore
+   the previously deployed Terraform configuration and verify its rollout.
+
+This changes the dashboard pod only. Other workloads may still use environment variables,
+and Kubernetes Secret RBAC and encryption must be configured separately. Terraform-managed
+Secret values remain in Terraform state; see [state protection](../reference/iac.md#state-schema-and-rollout).
+
+Basic authentication limits failed credentials to 20 per client address per minute on
+each dashboard process (`basic_auth_failure_limit`, 1 to 10000). Once an address reaches it,
+every request from that address, including correct credentials, is rejected for the window,
+so participants behind one corporate egress share the budget; raise the limit for such
+workshops. Addresses without recorded failures are never rejected, and a full failure table
+evicts its oldest entry. The limit is neither shared across replicas nor a substitute for an
+edge-wide WAF limit.
+Validate the trusted proxy chain and prefer organization SSO for shared installations.
+If 4,096 distinct client addresses occupy a process's failure buckets, new addresses are
+also rejected until a bucket expires; monitor and rate-limit traffic at the edge.
+
+Health endpoints return a cached ClickHouse probe result immediately. A single background
+probe refreshes it periodically; readiness remains false before the first success and after
+a result is more than 15 seconds old. A stalled ping can delay failure detection until the
+result expires, and recovery appears only after a successful ping completes. Liveness still
+returns HTTP 200, and shutdown fails readiness.
+
 ## Reader-profile reconciliation
 
 [dashboard.tf](../../infra/dashboard.tf) declares `CH_USER=otel_reader`; Compose uses
@@ -363,6 +401,10 @@ aws cloudfront wait invalidation-completed --distribution-id "$DIST_ID" --id "$I
 ```
 
 ## Rollback
+
+Before rolling back to an image without `*_FILE` support, restore the previous Terraform
+configuration as described in [Dashboard secret file migration](#dashboard-secret-file-migration).
+Otherwise the older image cannot read its credentials and will not start.
 
 Redeploy the recorded known-good image, or use deployment history after confirming the prior
 revision and its image still exist:

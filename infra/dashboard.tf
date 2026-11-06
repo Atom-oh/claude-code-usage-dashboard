@@ -130,13 +130,23 @@ variable "codex_pricing_json" {
   }
 }
 
+variable "basic_auth_failure_limit" {
+  description = "Optional failed Basic credentials allowed per client address and minute per dashboard process (server default 20). Raise it for workshops behind one shared egress address."
+  type        = number
+  default     = null
+  validation {
+    condition     = var.basic_auth_failure_limit == null ? true : (floor(var.basic_auth_failure_limit) == var.basic_auth_failure_limit && var.basic_auth_failure_limit >= 1 && var.basic_auth_failure_limit <= 10000)
+    error_message = "basic_auth_failure_limit must be an integer from 1 to 10000 when set."
+  }
+}
+
 variable "pricing_cache_write_ttl" {
   type    = string
   default = null
   validation {
     # 서버가 받아주는 값은 이 둘뿐이고, 그 밖의 값은 모듈 로드 시점에 부팅을 막는다 —
     # 잘못된 값이 롤아웃까지 가지 않게 여기서 먼저 거른다.
-    condition     = var.pricing_cache_write_ttl == null || contains(["1h", "5m"], var.pricing_cache_write_ttl)
+    condition     = var.pricing_cache_write_ttl == null ? true : contains(["1h", "5m"], var.pricing_cache_write_ttl)
     error_message = "pricing_cache_write_ttl must be \"1h\" or \"5m\" when set."
   }
 }
@@ -169,6 +179,25 @@ resource "kubernetes_secret" "clickhouse_reader" {
     namespace = kubernetes_namespace.claude_code.metadata[0].name
   }
   data = { CH_PASSWORD = var.clickhouse_reader_password }
+}
+
+locals {
+  dashboard_secret_mounts = merge(
+    { reader = { secret = kubernetes_secret.clickhouse_reader.metadata[0].name, path = "/var/run/ccdash-secrets/reader", keys = ["CH_PASSWORD"] } },
+    var.auth_mode == "basic" ? { auth = { secret = kubernetes_secret.dashboard_basic_auth.metadata[0].name, path = "/var/run/ccdash-secrets/auth", keys = ["BASIC_AUTH_USER", "BASIC_AUTH_PASSWORD"] } } : { auth = { secret = var.oidc_secret_name, path = "/var/run/ccdash-secrets/auth", keys = ["OIDC_CLIENT_SECRET", "SESSION_SECRET"] } },
+    length(kubernetes_secret.dashboard_alert) > 0 ? { alert = { secret = kubernetes_secret.dashboard_alert[0].metadata[0].name, path = "/var/run/ccdash-secrets/alert", keys = ["ALERT_WEBHOOK_URL"] } } : {}
+  )
+  dashboard_secret_files = merge(
+    { CH_PASSWORD_FILE = "/var/run/ccdash-secrets/reader/CH_PASSWORD" },
+    var.auth_mode == "basic" ? {
+      BASIC_AUTH_USER_FILE     = "/var/run/ccdash-secrets/auth/BASIC_AUTH_USER"
+      BASIC_AUTH_PASSWORD_FILE = "/var/run/ccdash-secrets/auth/BASIC_AUTH_PASSWORD"
+      } : {
+      OIDC_CLIENT_SECRET_FILE = "/var/run/ccdash-secrets/auth/OIDC_CLIENT_SECRET"
+      SESSION_SECRET_FILE     = "/var/run/ccdash-secrets/auth/SESSION_SECRET"
+    },
+    length(kubernetes_secret.dashboard_alert) > 0 ? { ALERT_WEBHOOK_URL_FILE = "/var/run/ccdash-secrets/alert/ALERT_WEBHOOK_URL" } : {}
+  )
 }
 
 # Ask Claude 챗(dashboard/server/chat.js)이 Bedrock ConverseStream을 호출하려면 자격증명이
@@ -266,10 +295,7 @@ resource "kubernetes_deployment_v1" "dashboard" {
         node_selector                    = local.ch_node_selector
         service_account_name             = kubernetes_service_account.dashboard.metadata[0].name
         termination_grace_period_seconds = 30
-        dynamic "security_context" {
-          for_each = var.device_ingest_enabled ? [1] : []
-          content { fs_group = 1000 }
-        }
+        security_context { fs_group = 1000 }
         container {
           name  = "dashboard"
           image = "${aws_ecr_repository.dashboard.repository_url}:${var.dashboard_image_tag}"
@@ -293,15 +319,6 @@ resource "kubernetes_deployment_v1" "dashboard" {
           env {
             name  = "CH_USER"
             value = "otel_reader"
-          }
-          env {
-            name = "CH_PASSWORD"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.clickhouse_reader.metadata[0].name
-                key  = "CH_PASSWORD"
-              }
-            }
           }
           # 새 env는 리스트 끝에 둔다 — k8s 프로바이더는 env 블록을 순서 있는 리스트로 diff해서
           # 중간에 삽입하면 뒤 항목 전체가 "변경"으로 잡히는 노이즈가 생긴다(terraform plan 확인).
@@ -334,6 +351,13 @@ resource "kubernetes_deployment_v1" "dashboard" {
             for_each = var.codex_pricing_json == null ? [] : [var.codex_pricing_json]
             content {
               name  = "CODEX_PRICING_JSON"
+              value = env.value
+            }
+          }
+          dynamic "env" {
+            for_each = var.basic_auth_failure_limit == null ? [] : [tostring(var.basic_auth_failure_limit)]
+            content {
+              name  = "BASIC_AUTH_FAILURE_LIMIT"
               value = env.value
             }
           }
@@ -398,28 +422,18 @@ resource "kubernetes_deployment_v1" "dashboard" {
             }
           }
           dynamic "env" {
-            for_each = var.auth_mode == "oidc" ? toset(["OIDC_CLIENT_SECRET", "SESSION_SECRET"]) : toset([])
+            for_each = local.dashboard_secret_files
             content {
-              name = env.value
-              value_from {
-                secret_key_ref {
-                  name     = var.oidc_secret_name
-                  key      = env.value
-                  optional = false
-                }
-              }
+              name  = env.key
+              value = env.value
             }
           }
-          dynamic "env_from" {
-            for_each = var.auth_mode == "basic" ? [kubernetes_secret.dashboard_basic_auth.metadata[0].name] : []
+          dynamic "volume_mount" {
+            for_each = local.dashboard_secret_mounts
             content {
-              secret_ref { name = env_from.value }
-            }
-          }
-          dynamic "env_from" {
-            for_each = kubernetes_secret.dashboard_alert
-            content {
-              secret_ref { name = env_from.value.metadata[0].name }
+              name       = "dashboard-secret-${volume_mount.key}"
+              mount_path = volume_mount.value.path
+              read_only  = true
             }
           }
           dynamic "env" {
@@ -479,6 +493,23 @@ resource "kubernetes_deployment_v1" "dashboard" {
           resources {
             requests = { cpu = "100m", memory = "128Mi" }
             limits   = { cpu = "500m", memory = "256Mi" }
+          }
+        }
+        dynamic "volume" {
+          for_each = local.dashboard_secret_mounts
+          content {
+            name = "dashboard-secret-${volume.key}"
+            secret {
+              secret_name  = volume.value.secret
+              default_mode = "0440"
+              dynamic "items" {
+                for_each = volume.value.keys
+                content {
+                  key  = items.value
+                  path = items.value
+                }
+              }
+            }
           }
         }
         dynamic "volume" {

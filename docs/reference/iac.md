@@ -92,6 +92,17 @@ because sensitive values can still be stored there. Use
 [backend.hcl.example](../../infra/backend.hcl.example) as inputs, not evidence that a remote
 backend or deployment exists. A shared operator workflow needs explicit state coordination.
 
+Terraform `sensitive` markings redact normal output but do not remove secret values from
+state or saved plans. Limit access to state, plans, tfvars and backups; keep them out of
+logs and source control. Before a shared production workflow, provision a private encrypted
+S3 backend with restricted IAM, versioning and locking. In a coordinated maintenance
+window, back up and protect the existing state, configure the `backend "s3"` block in
+`providers.tf` and a private backend configuration based on the example, then run
+`terraform init -migrate-state -backend-config=backend.hcl`. Verify the remote state and
+locking and review a fresh plan before resuming work. The example S3 lockfile requires
+Terraform 1.10 or later; update the version constraint before enabling it. Do not discard
+local state or old backups until recovery is verified.
+
 The schema-init Job and immutable ConfigMap names include a hash of the replicated SQL,
 metadata contract and runner. On every expected replica, an empty database permits
 bootstrap; any existing object selects read-only compatibility verification. Existing
