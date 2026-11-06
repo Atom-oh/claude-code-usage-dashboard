@@ -8,9 +8,8 @@ import { expect, test } from "vitest";
 // xKey가 시간 키가 아닌 차트)는 라벨이 날짜로 파싱되지 않아 줌 자체가 no-op이라 제외한다.
 const ZOOMABLE = ["GroupAreaChart", "DualLineChart", "SeriesBarChart", "ModelCostTrend"];
 const TIME_KEYS = new Set(["t", "day"]);
-// UserDrawer는 useApi가 아닌 자체 fetch로, 기간이 바뀌면 곧바로 "불러오는 중..."으로 비운다 — 이전
-// 기간의 행을 보여주는 구간이 없다.
-const EXEMPT = new Set(["components/UserDrawer.jsx"]);
+// Files whose charts never show a previous period's rows (none since UserDrawer was removed).
+const EXEMPT = new Set();
 
 function sources() {
   return ["pages", "components"].flatMap((dir) => fs.readdirSync(path.join(__dirname, dir))
@@ -51,6 +50,6 @@ test("every drag-zoomable time-series chart suspends zoom while its data hook is
   // 스캐너가 아무것도 찾지 못해 통과하는 일을 막는 호출부 수 — 차트를 더하거나 빼면 이 숫자를 고친다.
   // ModelCostTrend replaced the two detail SeriesBarChart sites and added one shared site;
   // the detail Cost/Executive user cost trends add two more, and the Cost team cost trend one;
-  // the team cost bar is categorical.
-  expect([found.guarded.length, found.categorical.length, found.exempt.length]).toEqual([18, 5, 1]);
+  // the team cost bar is categorical. UserDrawer's exempt site was removed with the drawer.
+  expect([found.guarded.length, found.categorical.length, found.exempt.length]).toEqual([18, 5, 0]);
 });

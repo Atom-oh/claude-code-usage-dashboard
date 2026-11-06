@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider, useRange } from "../RangeContext.jsx";
 import { ConfigProvider } from "../ConfigContext.jsx";
+import { FilterProvider } from "../FilterContext.jsx";
+import { RefreshProvider } from "../RefreshContext.jsx";
 import { setPiiMask } from "../fmt.js";
 import { clientOverview, codexUsage } from "../test/clientOverview.js";
 import * as csv from "../csv.js";
@@ -694,4 +696,84 @@ test("a shared bucket pick lasts until the range changes", () => {
   expect(toggle()).toEqual(["시간별", "일간", "주간*"]);
   fireEvent.click(screen.getByRole("button", { name: "range-7" }));
   expect(toggle()).toEqual(["시간별", "일간*", "주간"]);
+});
+
+// Shared Users page: one row per identity across clients, opening the unified user detail.
+function usersAcrossClients() {
+  const data = fixture(["claude", "codex"]);
+  data.by_user = [
+    { ...data.by_user[0], user: "alice@example.test", sessions: 2, cost_usd: 0.5 },
+    { ...data.by_user[1], user: "alice@example.test", sessions: 3, cost_usd: 0.25 },
+    { ...data.by_user[1], user: "zoe@example.test", sessions: 1, cost_usd: null, unpriced: 1 },
+  ];
+  return data;
+}
+
+test("users page shows one row per user across clients", () => {
+  mount("users", usersAcrossClients());
+  const users = card("사용자별 사용량");
+  const rows = within(users).getAllByRole("row").slice(1);
+  expect(rows).toHaveLength(2);
+  const headers = within(users).getAllByRole("columnheader").map((node) => node.textContent.replace("↕", ""));
+  const alice = rows.find((row) => row.textContent.includes("al******@example.test"));
+  const cells = within(alice).getAllByRole("cell");
+  expect(cells[headers.indexOf("세션")].textContent).toBe("5");
+  expect(cells[headers.indexOf("비용 (USD)")].textContent).toBe("$0.75");
+  const parts = cells[headers.indexOf("클라이언트별 구성")].textContent;
+  expect(parts).toContain("Claude Code $0.5");
+  expect(parts).toContain("Codex $0.25");
+  expect(cells[headers.indexOf("비용 기준")].textContent).toContain("클라이언트 보고 + AWS 정가 추정");
+  const zoe = rows.find((row) => row.textContent.includes("zo******@example.test"));
+  expect(within(zoe).getAllByRole("cell")[headers.indexOf("비용 (USD)")].textContent).toBe("—");
+});
+
+test("clicking a user opens 사용자 상세 for the selected clients and a range change closes it", async () => {
+  const fetchMock = vi.fn((url) => {
+    const u = new URL(String(url), "http://localhost");
+    const body = u.pathname === "/api/clients/overview"
+      ? clientOverview({ applied_filters: { userExact: u.searchParams.get("userExact") || "" } }) : [];
+    return Promise.resolve({ ok: true, status: 200, json: async () => body });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  function Seven() { const { setDays } = useRange(); return <button type="button" onClick={() => setDays(7)}>range-7</button>; }
+  const data = usersAcrossClients();
+  render(<MemoryRouter><ConfigProvider config={{ piiMask: true }}><RefreshProvider><RangeProvider><FilterProvider>
+    <ClientPanels page="users" data={data} clients={["codex"]} /><Seven />
+  </FilterProvider></RangeProvider></RefreshProvider></ConfigProvider></MemoryRouter>);
+  expect(screen.queryByRole("region", { name: "사용자 상세" })).toBeNull();
+  fireEvent.click(within(card("사용자별 사용량")).getByRole("button", { name: "al******@example.test" }));
+  const region = await screen.findByRole("region", { name: "사용자 상세" });
+  expect(region.textContent).toContain("al******@example.test · 사용자 상세");
+  expect(screen.queryByRole("region", { name: "비용 상세" })).toBeNull();
+  const overview = fetchMock.mock.calls.map(([url]) => new URL(String(url), "http://localhost"))
+    .filter((u) => u.pathname === "/api/clients/overview");
+  expect(overview.length).toBeGreaterThan(0);
+  expect(overview.every((u) => u.searchParams.get("client") === "codex"
+    && u.searchParams.get("userExact") === "alice@example.test")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "range-7" }));
+  expect(screen.queryByRole("region", { name: "사용자 상세" })).toBeNull();
+});
+
+test("a Users pick does not reopen as a Cost detail and a client change clears it", async () => {
+  vi.stubGlobal("fetch", vi.fn((url) => {
+    const u = new URL(String(url), "http://localhost");
+    const body = u.pathname === "/api/clients/overview"
+      ? clientOverview({ applied_filters: { userExact: u.searchParams.get("userExact") || "" } }) : [];
+    return Promise.resolve({ ok: true, status: 200, json: async () => body });
+  }));
+  const data = usersAcrossClients();
+  const tree = (page, clients) => <MemoryRouter><ConfigProvider config={{ piiMask: true }}><RefreshProvider><RangeProvider><FilterProvider>
+    <ClientPanels page={page} data={data} clients={clients} />
+  </FilterProvider></RangeProvider></RefreshProvider></ConfigProvider></MemoryRouter>;
+  const { rerender } = render(tree("users", ["claude", "codex"]));
+  fireEvent.click(within(card("사용자별 사용량")).getByRole("button", { name: "al******@example.test" }));
+  expect(await screen.findByRole("region", { name: "사용자 상세" })).toBeTruthy();
+  rerender(tree("cost", ["claude", "codex"]));
+  expect(screen.queryByRole("region", { name: "비용 상세" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "사용자 상세" })).toBeNull();
+  rerender(tree("users", ["claude", "codex"]));
+  fireEvent.click(within(card("사용자별 사용량")).getByRole("button", { name: "al******@example.test" }));
+  expect(await screen.findByRole("region", { name: "사용자 상세" })).toBeTruthy();
+  rerender(tree("users", ["codex"]));
+  expect(screen.queryByRole("region", { name: "사용자 상세" })).toBeNull();
 });

@@ -50,7 +50,7 @@ No Codex enterprise comparison or unsupported productivity metrics are added.
 
 Claude detail's Productivity page adds independent activity-density, permission-occupancy
 and tool-outcome tables with coverage and unavailable states. The legacy score is labelled
-an activity index across Productivity, Users, Executive and the user drawer; its API field
+an activity index across Productivity, Users and Executive; its API field
 stays unchanged, while an unavailable permission denominator withholds the score.
 Means require scores for every returned user, and rankings omit unavailable scores. Permission approvals no longer imply accepted code, and the
 estimated accepted-lines card is removed. Shared Productivity explains the external data
@@ -176,7 +176,7 @@ The label fallback is not a substitute: date-only labels get 24 hours, including
 buckets, and other labels use the global interval. Charts whose bucket size cannot change
 (daily adoption series, shared client trends that take `bucket_hours` from their own
 response) are suspended too, so no drag selects a range from the previous period's rows.
-Categorical axes do not zoom, and `UserDrawer` clears to loading on range changes.
+Categorical axes do not zoom.
 [zoomGuard.test.js](../../dashboard/web/src/zoomGuard.test.js) checks every call site.
 
 ## Model cost trend
@@ -261,6 +261,17 @@ of known cost, labelling partial denominators and withholding ratios for missing
 Parent bounds drive the detail request; stale periods disable selection and detail export.
 The UI requires exact-filter acknowledgment before showing detail. Background linked-refresh
 failures retain the last response with its actual bounds and the shared refresh warning.
+
+Both Users entry points open the same in-page
+[UserDetail](../../dashboard/web/src/components/UserDetail.jsx) below their tables; the
+side drawer is removed. Shared Users combines `by_user` into one row per exact identity with
+`combineUsers` ([userDetail.js](../../dashboard/web/src/userDetail.js)): sessions add (session
+IDs are client-scoped), known tokens and costs add with partial flags, and empty identities stay
+per client. The combined cost can mix bases, so the basis column lists every contributing basis
+and a client-parts column keeps each client's value and basis (also in CSV). The detail uses the
+page's selected clients and closes on range, page or client-selection changes. Claude
+detail Users opens it from a leaderboard row with every enabled client and that row's
+bedrock/enterprise group; the group applies only to the Claude-only sections.
 
 ## Spend and interpretation
 

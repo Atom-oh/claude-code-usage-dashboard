@@ -7,6 +7,8 @@ import { ModelCostTrend } from "../components/ModelCostTrend.jsx";
 import { SectionLabel } from "../components/SectionLabel.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { clientColor as color, ClientTrend as Trend, EMPTY_VALUE } from "../components/ClientTrend.jsx";
+import { UserDetail } from "../components/UserDetail.jsx";
+import { combineUsers } from "../userDetail.js";
 import { fromByModelTime, rollupBuckets } from "../modelCostTrend.js";
 import { useRange } from "../RangeContext.jsx";
 import { useApi } from "../useApi.js";
@@ -19,6 +21,7 @@ import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext
 import { CostUsers } from "./ClientCostUsers.jsx";
 import {
   basisLabel, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, OBSERVED_TOKEN_HELP, presentationRow,
+  tokenStatusLabel,
 } from "../clientPresentation.js";
 
 const text = (v) => v || "—";
@@ -227,6 +230,23 @@ const detailButton = (label, onClick, disabled) => <button type="button" disable
   className="text-left text-brand-700 underline decoration-brand-200 underline-offset-4 hover:decoration-brand-700 disabled:text-ink-500 disabled:no-underline"
   onClick={onClick}>{label}</button>;
 
+// One row per identity across the selected clients (combineUsers). Costs of different bases are a
+// known-cost total labelled with every contributing basis; the parts column keeps each client's
+// own value and basis so the mix stays visible in the table and CSV.
+const partText = (part) => `${clientName(part.client)} ${formatClientCost(part.cost_usd)} (${part.cost_basis_label})`;
+function combinedUserRows(users, clients) {
+  return combineUsers(users, clients).map((row) => {
+    const parts = [...row.parts].sort((a, b) => a.client.localeCompare(b.client));
+    const unpriced = parts.reduce((n, p) => n + (observedNumber(p.unpriced) ?? 0), 0);
+    const bases = [...new Set(parts.map((p) => basisLabel(p.cost_basis)))].join(" + ");
+    return { ...row, parts, token_status: tokenStatusLabel(row),
+      cost_basis_label: costBasisLabel({ cost_usd: row.cost_usd, cost_partial: row.cost_partial, unpriced }, bases),
+      client_parts: parts.map(partText).join(" / ") };
+  });
+}
+const CLIENT_PARTS = { key: "client_parts", label: "클라이언트별 구성",
+  render: (value) => <span className="block min-w-[12rem]">{text(value)}</span>, toText: text };
+
 // Change against the preceding window of the same length. Unknown on either side stays "—";
 // a zero baseline has no percentage. Partial sums are labelled, never compared as complete.
 const PERIOD_METRICS = [COST, TOKENS, SESSIONS, USERS];
@@ -336,9 +356,12 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
   const rangeKey = `${from.getTime()}|${to.getTime()}`;
   const [detailPick, setDetailPick] = useState(null);
   const teams = useTeams();
-  const selection = detailPick?.key === rangeKey ? detailPick.row : null;
-  const select = (row) => setDetailPick({ key: rangeKey, row });
   const selected = clients;
+  // Keyed by page and client selection as well: the shared panel stays mounted across routes, so a
+  // Users pick must not reopen as a Cost detail (or the reverse), and client changes clear it.
+  const pickKey = `${page}|${rangeKey}|${selected.join(",")}`;
+  const selection = detailPick?.key === pickKey ? detailPick.row : null;
+  const select = (row) => setDetailPick({ key: pickKey, row });
   const rows = (key) => (data?.[key] || []).filter((row) => selected.includes(row.client)).map(presentationRow);
   const clientRows = selected.map((client) => presentationRow(
     (data?.by_client || []).find((row) => row.client === client) || { client, observed_records: 0 },
@@ -416,8 +439,15 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {compare([USERS, SESSIONS, SESSION_USER, COST_USER, BASIS])}
         <ClientBars title="클라이언트별 관측 사용자" rows={clientRows} metric={USERS}
           subtitle="클라이언트별 고유 ID 수입니다. 서로 겹치는 ID가 있어 전체 사용자 수로 합산하지 않습니다." />
-        {table("사용자별 사용량", withTeamColumn([CLIENT, USER, BACKEND, ...USAGE], teams), withTeams(users, teams), "users",
-          "동일 ID도 클라이언트별 행으로 표시합니다. 전체 사용자 수는 서버의 중복 제거 값이며 행 수의 합이 아닙니다. CSV는 표시 열·정렬·마스킹 설정을 따릅니다.")}
+        {table("사용자별 사용량", withTeamColumn([
+          { ...USER, render: (value) => detailButton(maskEmail(value) || "(미식별)",
+            () => select({ kind: "user-detail", user: value }), stale || !value) },
+          CLIENT_PARTS, SESSIONS, TOKENS, COST, BASIS], teams),
+          withTeams(combinedUserRows(users, selected), teams), "users",
+          "선택한 클라이언트의 같은 ID를 한 행으로 합칩니다. 비용 합계는 클라이언트별 비용 기준이 섞일 수 있어 구성 열에 클라이언트별 값과 기준을 함께 표시합니다. 미식별 ID는 클라이언트별 행으로 남깁니다. 전체 사용자 수는 서버의 중복 제거 값이며 행 수의 합이 아닙니다. 사용자를 누르면 사용자 상세를 엽니다. CSV는 표시 열·정렬·마스킹 설정을 따릅니다.")}
+        {selection?.kind === "user-detail" && <UserDetail key={selection.user} user={selection.user} clients={selected}
+          hours={data?.bucket_hours || 1} parentRange={data?.effective_range} stale={stale}
+          onClose={() => setDetailPick(null)} />}
       </>;
       break;
     case "cost":
@@ -434,7 +464,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
           usageModels, "model_costs", `${COST_HELP} 모델을 누르면 해당 클라이언트·모델의 사용자별 비용 비중을 확인합니다.`)}
         <CostUsers key={`${page}-user_costs`} users={users} modelRows={data?.by_user_model}
           clients={selected} stale={stale} onSelect={select} />
-        {selection && <CostDetail key={JSON.stringify(selection)} selection={selection}
+        {(selection?.kind === "user" || selection?.kind === "model") && <CostDetail key={JSON.stringify(selection)} selection={selection}
           hours={data?.bucket_hours || 1} parentRange={data?.effective_range} stale={stale}
           onClose={() => setDetailPick(null)} />}
       </>;

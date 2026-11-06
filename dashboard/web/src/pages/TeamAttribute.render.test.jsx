@@ -55,13 +55,13 @@ async function exportTable(title) {
 test("shared users table, CSV and filter control carry the team", async () => {
   const fetchMock = mount("/users");
   await waitFor(() => expect(card("사용자별 사용량").textContent).toContain("fsi, ops"));
-  expect(cells("사용자별 사용량").map((r) => r.slice(0, 4))).toEqual([
-    ["Codex", "al******@example.test", "fsi, ops", "bedrock-mantle"],
-    ["Codex", "bo******@example.test", "—", "bedrock-mantle"]]);
+  expect(cells("사용자별 사용량").map((r) => r.slice(0, 3))).toEqual([
+    ["al******@example.test", "fsi, ops", "Codex $0.0042405 (AWS 정가 추정)"],
+    ["bo******@example.test", "—", "Codex $0.0042405 (AWS 정가 추정)"]]);
   const csv = await exportTable("사용자별 사용량");
-  expect(csv.startsWith("클라이언트,사용자,팀,백엔드,")).toBe(true);
-  expect(csv).toContain('\r\nCodex,alice@example.test,"fsi, ops",bedrock-mantle,');
-  expect(csv).toContain("\r\nCodex,bob@example.test,,bedrock-mantle,");
+  expect(csv.startsWith("사용자,팀,클라이언트별 구성,")).toBe(true);
+  expect(csv).toContain('\r\nalice@example.test,"fsi, ops",Codex $0.0042405 (AWS 정가 추정),');
+  expect(csv).toContain("\r\nbob@example.test,,Codex $0.0042405 (AWS 정가 추정),");
   const select = await screen.findByRole("combobox", { name: "팀" });
   expect([...select.options].map((o) => o.value)).toEqual(["", "fsi", "ops"]);
   fireEvent.change(select, { target: { value: "ops" } });
@@ -88,10 +88,10 @@ test("shared user costs and the user cost detail title carry the team", async ()
 test("an unavailable user lookup shows 확인 불가, never the no-team dash", async () => {
   mount("/users", { "/api/users/teams": "fail" });
   await waitFor(() => expect(card("사용자별 사용량").textContent).toContain("확인 불가"));
-  expect(cells("사용자별 사용량").map((r) => r[2])).toEqual(["확인 불가", "확인 불가"]);
+  expect(cells("사용자별 사용량").map((r) => r[1])).toEqual(["확인 불가", "확인 불가"]);
 });
 
-test("Claude detail users table, top bars and drawer carry the team", async () => {
+test("Claude detail users table, top bars and user detail carry the team", async () => {
   mount(claudeDetail("/users"), {}, ["claude"]);
   await waitFor(() => expect(document.body.textContent).toContain("fsi, ops"));
   const rows = [...document.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent));
@@ -100,9 +100,8 @@ test("Claude detail users table, top bars and drawer carry the team", async () =
   expect(labels).toContain("al******@example.test · fsi, ops");
   expect(labels).toContain("bo******@example.test");
   fireEvent.click([...document.querySelectorAll("tbody tr")].find((tr) => tr.textContent.includes("al******")));
-  const drawer = await waitFor(() => { const a = document.querySelector("aside.fixed"); if (!a) throw new Error("drawer"); return a; });
-  expect(drawer.querySelector("h2").textContent).toBe("al******@example.test");
-  expect(drawer.querySelector("h2").nextElementSibling.textContent).toBe("팀 fsi, ops");
+  const detail = await screen.findByRole("region", { name: "사용자 상세" });
+  expect(detail.querySelector("h2").textContent).toBe("al******@example.test · fsi, ops · 사용자 상세");
 });
 
 test("Claude detail per-user cost CSV puts the team after the user", async () => {

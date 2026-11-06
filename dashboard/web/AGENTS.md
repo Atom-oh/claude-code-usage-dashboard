@@ -24,7 +24,7 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA, Node 22.12+. Run npm test/npm run bui
 - Session-scoped model filters are not precise attribution; follow server's documented grain.
 - Buckets/calendar presets: UTC; parse timezone-less API timestamps as UTC. Chart labels/timestamps/CSV: browser time zone. Rates: actual duration, not last preset; resync local granularity on global range changes.
 - useApi(): range/filter requests/refresh/aborts/payload identity; match server quantization/grace.
-- Refresh/period changes: retain data until replaced; period failures clear it. Unchanged payloads: same references. Path/filter/client changes: clear selection. Background failures: retain data/show refresh errors. linkedRange: parent-response bounds only; UserDrawer: no auto-refresh.
+- Refresh/period changes: retain data until replaced; period failures clear it. Unchanged payloads: same references. Path/filter/client changes: clear selection. Background failures: retain data/show refresh errors. linkedRange: parent-response bounds only.
 
 ## UI
 

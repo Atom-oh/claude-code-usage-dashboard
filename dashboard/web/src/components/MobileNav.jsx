@@ -57,7 +57,7 @@ export function MobileNav() {
 
       {open && (
         <>
-          {/* 백드롭/패널 형태는 이 저장소의 기존 슬라이드오버(UserDrawer.jsx)와 같은 규칙 —
+          {/* 백드롭/패널 형태는 이 저장소의 슬라이드오버 규칙 —
               z-40 백드롭 + z-50 패널, 백드롭 클릭으로 닫기. */}
           <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setOpen(false)} />
           <div
