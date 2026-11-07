@@ -16,11 +16,11 @@
 - All SQL uses bound parameters; all routes go through `route()` in `dashboard/server/index.js`; 500 bodies never contain error text.
 - Claude spend basis: reported `cost_usd` (Anthropic models); non-Anthropic Claude models use the ADR-017 AWS list estimate per request, unknown when not computable; unmatched Anthropic calls use `computeCost()` labelled `computed`.
 - Codex tokens/cost only from usage-bearing `response.completed` completions; Codex spans/metrics never contribute usage. Codex input includes cache subsets, output includes reasoning — never add subsets again (ADR-014).
-- Unavailable ≠ zero: unknown values are `null` with partial flags; UI shows "미수집" / "trace 미수집", never 0.
+- Unavailable ≠ zero: unknown values are `null` with partial flags; UI shows "not collected" / "trace not collected", never 0.
 - Never return or render `user_prompt`, `full_command`, `file_path`, `bash_argv0`, prompt/command/path/URL/tool-output text. Server-side attribute allowlist only.
 - Exact user matching: `coalesce(nullIf(UserEmail,''), nullIf(EndUserId,''), '') = {userExact:String}` (same as `clientMetrics.js` `earlyUser`).
 - `CLAUDE_ENABLED`/`CODEX_ENABLED`: clients outside `clientConfig.enabledClients` are rejected (400) or omitted, never queried.
-- UI copy is Korean; code comments/docs English. Labels pinned by the spec: "부분 수집", "trace 미수집", "미수집", "연결 추정", "Claude Code에서만 수집".
+- UI copy is Korean; code comments/docs English. Quoted UI labels in this plan and the spec are English glosses of the Korean UI copy already used in the code (implemented components are the source of truth). Labels pinned by the spec: "partial collection", "trace not collected", "not collected", "estimated linkage", "Claude Code only".
 - Checks before each commit: `(cd dashboard/server && npm test)`, `(cd dashboard/web && npm test && npm run build)`; before the final PR also `bash tests/run-all.sh`.
 - No schema migration in this plan. If Task 9's measurement exceeds the budget, stop and report; a migration is a separate approved change.
 
@@ -83,14 +83,14 @@
 
 **Interfaces:**
 - Consumes: Task 1 endpoint; Task 2 helpers; `useApi` (`dashboard/web/src/useApi.js`); existing `/api/users/daily`, `/api/users/decisions-by-tool` (Claude, with `email`, `group`).
-- Produces: `export function UserDetail({ user, clients, group = null, hours, parentRange, stale, onClose, onBucket = null, children })` — full-width `<section aria-label="사용자 상세">` with heading (masked user), "상세 닫기" button, scroll/focus on mount (same as `CostDetail`). `children` is the Phase 2 slot (task list). Requests:
-  - overview: `/api/clients/overview` `{ client: clients.length > 1 ? "all" : clients[0], userExact: user, intervalHours: hours, from, to }` → summary tiles (세션, 비용, 토큰) + `Trend`-style cost/token chart; clicking a bucket calls `onBucket({ from, to })` (bucket bounds, UTC) when provided (used in Task 10).
-  - heatmap: same endpoint with `intervalHours: 24` and the last 90 days ending at `to` (range cap is 90 days) → "활동 히트맵 · 최근 90일".
-  - Claude-only (when `clients` includes `"claude"`): `/api/users/daily` (LOC, commits) and `/api/users/decisions-by-tool` with `group` → section titled "Claude Code에서만 수집"; when `clients` includes `"codex"`, these tiles show "Codex: 미수집".
-  - Codex tools (when `clients` includes `"codex"`): `/api/codex/insights` `{ profile: "tools", userExact: user }` → separate "Codex 도구 권한 결정" card with the note that automatic approvals are included; never summed with Claude decisions.
-  - When `group` is set: a note "그룹(<group>) 필터는 Claude 전용 영역에만 적용됩니다" above common sections.
+- Produces: `export function UserDetail({ user, clients, group = null, hours, parentRange, stale, onClose, onBucket = null, children })` — full-width `<section aria-label="user detail">` with heading (masked user), "close detail" button, scroll/focus on mount (same as `CostDetail`). `children` is the Phase 2 slot (task list). Requests:
+  - overview: `/api/clients/overview` `{ client: clients.length > 1 ? "all" : clients[0], userExact: user, intervalHours: hours, from, to }` → summary tiles (sessions, cost, tokens) + `Trend`-style cost/token chart; clicking a bucket calls `onBucket({ from, to })` (bucket bounds, UTC) when provided (used in Task 10).
+  - heatmap: same endpoint with `intervalHours: 24` and the last 90 days ending at `to` (range cap is 90 days) → "activity heatmap · last 90 days".
+  - Claude-only (when `clients` includes `"claude"`): `/api/users/daily` (LOC, commits) and `/api/users/decisions-by-tool` with `group` → section titled "Claude Code only"; when `clients` includes `"codex"`, these tiles show "Codex: not collected".
+  - Codex tools (when `clients` includes `"codex"`): `/api/codex/insights` `{ profile: "tools", userExact: user }` → separate "Codex tool permission decisions" card with the note that automatic approvals are included; never summed with Claude decisions.
+  - When `group` is set: a note "the <group> filter applies only to Claude-only sections" above common sections.
 
-- [ ] **Step 1: Write failing tests** (mock `fetch` like `ClientPanels.test.jsx`): `renders combined summary for claude and codex`; `codex-only hides Claude fetches and shows 미수집 for LOC`; `claude-only does not request codex insights`; `group note appears and group is sent only to /api/users/* requests`; `never renders raw email when masking is on` (`setPiiMask(true)`).
+- [ ] **Step 1: Write failing tests** (mock `fetch` like `ClientPanels.test.jsx`): `renders combined summary for claude and codex`; `codex-only hides Claude fetches and shows not collected for LOC`; `claude-only does not request codex insights`; `group note appears and group is sent only to /api/users/* requests`; `never renders raw email when masking is on` (`setPiiMask(true)`).
 - [ ] **Step 2: Run** `npx vitest run src/components/UserDetail.test.jsx` — Expected: FAIL.
 - [ ] **Step 3: Implement** `UserDetail.jsx` per the interface.
 - [ ] **Step 4: Run** — Expected: PASS.
@@ -107,9 +107,9 @@
 
 **Interfaces:**
 - Consumes: `UserDetail` (Task 3), `combineUsers` (Task 2).
-- Produces: shared Users page table "사용자별 사용량" becomes one row per user (`combineUsers`) with a client-parts column; clicking the user cell calls `select({ kind: "user-detail", user })` and renders `<UserDetail user clients={selected} hours parentRange stale onClose />` below the table, reusing the `detailPick`/`rangeKey` pattern (range change closes it). Legacy `Users.jsx` row click renders `<UserDetail user={row.user} clients={enabledClients} group={row.group} ... />` in-page below the leaderboard instead of the drawer.
+- Produces: shared Users page table "usage by user" becomes one row per user (`combineUsers`) with a client-parts column; clicking the user cell calls `select({ kind: "user-detail", user })` and renders `<UserDetail user clients={selected} hours parentRange stale onClose />` below the table, reusing the `detailPick`/`rangeKey` pattern (range change closes it). Legacy `Users.jsx` row click renders `<UserDetail user={row.user} clients={enabledClients} group={row.group} ... />` in-page below the leaderboard instead of the drawer.
 
-- [ ] **Step 1: Write failing tests** — `ClientPanels.test.jsx`: `users page shows one row per user across clients` and `clicking a user opens 사용자 상세`; a legacy Users test (`dashboard/web/src/pages/Users.test.jsx`, create): `leaderboard click opens UserDetail with group`.
+- [ ] **Step 1: Write failing tests** — `ClientPanels.test.jsx`: `users page shows one row per user across clients` and `clicking a user opens user detail`; a legacy Users test (`dashboard/web/src/pages/Users.test.jsx`, create): `leaderboard click opens UserDetail with group`.
 - [ ] **Step 2: Run** `npx vitest run src/pages` — Expected: FAIL.
 - [ ] **Step 3: Implement** the wiring; delete `UserDrawer.jsx`; keep `/api/users/heatmap` and `/api/users/interactions` server routes (Phase 2 removes `interactions`).
 - [ ] **Step 4: Run** `npm test && npm run build` (web) — Expected: PASS, build succeeds.
@@ -216,11 +216,11 @@
 
 **Interfaces:**
 - Consumes: `/api/users/tasks` (Task 5/6), `UserDetail` `onBucket`.
-- Produces: `export function TaskList({ user, clients, group, from, to, onOpen })` — table per mockup step ②: 시작, 클라이언트 배지, 모델, LLM 호출, 서브에이전트, 토큰 구성 바, 총 토큰, 비용 (basis label; "연결 추정" for Codex), 소요; sort toggle "토큰 많은 순 / 느린 순"; "부분 수집" badge always; unattached Codex note "trace와 연결되지 않은 Codex completion N건 · $X"; empty → "trace 미수집". Row click → `onOpen(task.id)`.
+- Produces: `export function TaskList({ user, clients, group, from, to, onOpen })` — table per mockup step ②: start, client badge, model, LLM calls, subagents, token composition bar, total tokens, cost (basis label; "estimated linkage" for Codex), duration; sort toggle "most tokens / slowest"; "partial collection" badge always; unattached Codex note "N Codex completions not linked to a trace · $X"; empty → "trace not collected". Row click → `onOpen(task.id)`.
 
-- Buckets starting more than 90 days before now (trace TTL) render "trace 보관 기간(90일) 경과 · 미수집" without a request.
+- Buckets starting more than 90 days before now (trace TTL) render "past trace retention (90 days) · not collected" without a request.
 
-- [ ] **Step 1: Write failing tests** — `clicking a trend bucket loads tasks for that bucket` (request has bucket `from/to`); `bucket older than 90 days shows retention notice without fetching`; `sort toggle requests sort=duration`; `codex row shows 연결 추정`; `unknown cost renders 미수집 not $0`; `empty response shows trace 미수집`; `unattached note renders count`.
+- [ ] **Step 1: Write failing tests** — `clicking a trend bucket loads tasks for that bucket` (request has bucket `from/to`); `bucket older than 90 days shows retention notice without fetching`; `sort toggle requests sort=duration`; `codex row shows estimated linkage`; `unknown cost renders not collected not $0`; `empty response shows trace not collected`; `unattached note renders count`.
 - [ ] **Step 2: Run** `npx vitest run src/components/TaskList.test.jsx` — Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** — Expected: PASS.
@@ -238,10 +238,10 @@
   - `laneOrder(lanes) -> Lane[]` — main first, then by first span start.
   - `cumulativeByLane(spans, lanes, buckets = 120) -> Array<{ t_ms, total: number|null, by_lane: Record<laneId, number|null> }>` — stacked cumulative cost; a lane with any unknown cost becomes `null` from that point (not dropped).
   - `iconFor(kindOrToolName) -> IconKey` — `main|general-purpose|Explore|fork|custom|Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|mcp|wait`; tool names starting `mcp__` → `mcp`; unknown → `custom` (agents) / `tool` (tools).
-  - `export function TaskTraceOverlay({ taskId, user, from, to, onClose })` — full-screen overlay (`role="dialog"`, Esc closes): KPI row, lane timeline (mockup v3: icon + label + "N 호출 · $X" per lane, LLM bars shaded by context size, tool bars, wait marks, dashed spawn connectors), click a bar → side panel with allowlisted fields (Codex missing fields "미수집"), stacked cumulative cost band with hover tooltip, "왜 많이 썼나" list from `why`, "부분 수집" badge, truncated banner "일부 span만 표시 — 전체 합계 미표시".
+  - `export function TaskTraceOverlay({ taskId, user, from, to, onClose })` — full-screen overlay (`role="dialog"`, Esc closes): KPI row, lane timeline (mockup v3: icon + label + "N calls · $X" per lane, LLM bars shaded by context size, tool bars, wait marks, dashed spawn connectors), click a bar → side panel with allowlisted fields (Codex missing fields "not collected"), stacked cumulative cost band with hover tooltip, "why it cost this much" list from `why`, "partial collection" badge, truncated banner "showing some spans only — totals hidden".
   - Lane colours: add `lane` palette entries in `dashboard/web/src/colors.js` (main, general-purpose, Explore, fork, custom) reused by bars and band.
 
-- [ ] **Step 1: Write failing tests** — `laneOrder puts main first`; `cumulativeByLane stacks lanes and is monotonic`; `cumulativeByLane marks unknown lane null`; `iconFor maps mcp__slack__x to mcp`; overlay: `renders one lane per subagent with labels`; `clicking an llm bar shows tokens and cost basis`; `codex bar shows 미수집 for TTFT breakdown`; `truncated detail shows banner and hides totals`; `no forbidden fields rendered even if present in payload` (inject `full_command` into attrs → not in DOM).
+- [ ] **Step 1: Write failing tests** — `laneOrder puts main first`; `cumulativeByLane stacks lanes and is monotonic`; `cumulativeByLane marks unknown lane null`; `iconFor maps mcp__slack__x to mcp`; overlay: `renders one lane per subagent with labels`; `clicking an llm bar shows tokens and cost basis`; `codex bar shows not collected for TTFT breakdown`; `truncated detail shows banner and hides totals`; `no forbidden fields rendered even if present in payload` (inject `full_command` into attrs → not in DOM).
 - [ ] **Step 2: Run** `npx vitest run src/taskTrace.test.js src/components/TaskTraceOverlay.test.jsx` — Expected: FAIL.
 - [ ] **Step 3: Implement** (SVG like the mockup or Recharts; follow `ModelCostTrend.jsx` patterns for tooltips).
 - [ ] **Step 4: Run** web `npm test && npm run build` — Expected: PASS.

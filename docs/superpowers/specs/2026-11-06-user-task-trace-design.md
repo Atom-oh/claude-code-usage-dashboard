@@ -45,8 +45,8 @@ One design; the plan splits into these two phases, each shippable on its own.
     summed: Codex decisions include automatic approvals and are not code
     acceptance (`docs/reference/codex-observability.md`).
   - **Claude-only**: lines of code, commits/PRs, code-edit accept rate, activity
-    index — labelled "Claude Code에서만 수집". Codex has no LOC/commit/PR source;
-    when Codex is selected these show "미수집", never 0.
+    index — labelled "Claude Code only". Codex has no LOC/commit/PR source;
+    when Codex is selected these show "not collected", never 0.
 - Filters: follow the page's client selection (respecting `CLAUDE_ENABLED` /
   `CODEX_ENABLED`) and exact user identity. When opened from the legacy
   Claude-detail leaderboard, carry that row's group (bedrock/enterprise) for
@@ -85,7 +85,7 @@ One design; the plan splits into these two phases, each shippable on its own.
 - Never add Codex metrics or spans to usage/cost. Codex tokens and cost come only
   from usage-bearing completion logs (AGENTS.md contracts;
   `docs/reference/codex-observability.md`).
-- Unavailable is not zero: missing trace collection shows "trace 미수집", never 0.
+- Unavailable is not zero: missing trace collection shows "trace not collected", never 0.
 
 ## Data facts (verified against production ClickHouse, 2026-11-06)
 
@@ -148,11 +148,11 @@ One design; the plan splits into these two phases, each shippable on its own.
 - Codex cost and tokens per turn: attach completion logs by `conversation.id`
   whose timestamp falls within the turn window, priced with the existing Codex
   pricing path (`codexPricing.js`, per-completion tier/routing). Label the cost
-  "연결 추정" (estimated linkage). The user approved this accuracy.
+  "estimated linkage" (estimated linkage). The user approved this accuracy.
 - Show, for the day, how many Codex completions (and their cost) could not be
   attached to any traced turn, so the table is not mistaken for the full day.
-- Always show a "부분 수집" badge: only trace-enabled users and clients appear.
-  Users with no traces see "trace 미수집". Dates older than trace retention (90d)
+- Always show a "partial collection" badge: only trace-enabled users and clients appear.
+  Users with no traces see "trace not collected". Dates older than trace retention (90d)
   are unavailable.
 - Filter scope (designer's call): follow the shared view's existing filter
   semantics — client selection (respecting `CLAUDE_ENABLED`/`CODEX_ENABLED`),
@@ -163,7 +163,7 @@ One design; the plan splits into these two phases, each shippable on its own.
   group-filtered. The unattached-completion note counts the user's Codex
   completions in the bucket.
 - A user with only one client's traces still gets the task list; a user with no
-  traces sees "trace 미수집" while the cost trend above still works.
+  traces sees "trace not collected" while the cost trend above still works.
 
 ### Task detail overlay (phase 2)
 
@@ -178,8 +178,8 @@ One design; the plan splits into these two phases, each shippable on its own.
 - LLM-call detail: model, start offset, duration, TTFT, context (input total),
   token composition, cost (reported or computed, labelled), query source, stop
   reason, attempt/retry, error class. Codex: model, effort, tokens, cost
-  ("연결 추정"), TTFT/duration from the completion log; missing fields show
-  "미수집".
+  ("estimated linkage"), TTFT/duration from the completion log; missing fields show
+  "not collected".
 - Tool detail: tool name, start offset, execution time, permission wait and
   decision/source, success/error class, `bash_command_class`, MCP server, skill.
 - Cumulative cost band: stacked per lane, same colours; hover tooltip with
@@ -204,7 +204,7 @@ One design; the plan splits into these two phases, each shippable on its own.
 
 - Phase 1 data sources for Codex in the common sections (sessions, activity
   heatmap, permission decisions) — reuse existing shared/Codex insights queries
-  where they exist; a section with no supported Codex source shows "미수집".
+  where they exist; a section with no supported Codex source shows "not collected".
 - Whether the unified detail is reached by URL (deep link) and how its state
   survives refresh — follow the Cost detail's existing behaviour.
 - Endpoint paths, payload shapes, detail identifier format for Claude vs Codex.
