@@ -510,7 +510,6 @@ route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
 const groupParam = (query) => (query.group === undefined ? undefined : String(query.group));
 route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || ""), groupParam(query)), { warm: false, team: false });
 route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || ""), groupParam(query)), { warm: false, team: false });
-route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || ""), 91, groupParam(query)), { warm: false, team: false });
 // Range-only team lookups across enabled clients (filter options and the user display join).
 route("/api/teams", (from, to) => q.listTeams(from, to, clientConfig.enabledClients), { client: null, team: false });
 // Per-user task list from traces (Claude interactions, Codex turns); see docs/api-reference.md.
