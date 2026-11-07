@@ -334,6 +334,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     if (!costView && row.client === "codex") dimensions.by_project = { client: row.client, project: row.project || "" };
     if (costView) dimensions.by_user_model = {
       client: row.client, user: row.user || "", model: row.model || "", backend: row.backend || "unknown",
+      ...(row.client === "claude" ? { channel: row.channel || "unknown" } : {}),
     };
     if (modelTime) {
       dimensions.by_model_time = { client: row.client, t: row.t, model: row.model || "", backend: row.backend || "unknown" };

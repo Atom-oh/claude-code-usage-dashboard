@@ -214,8 +214,9 @@ Others table drops the channel column, so a user's channels fold into one row.
 The shared Cost user table ([ClientCostUsers.jsx](../../dashboard/web/src/pages/ClientCostUsers.jsx))
 combines identical emitted user IDs from `by_user` (known-cost sum, mixed basis labelled) and,
 beside each amount, draws Claude detail's line-per-channel model bars from `by_user_model`:
-CCB (Claude rows on a `bedrock-*` backend), C4E (backend `anthropic`, the inferred enterprise
-channel), a Claude unclassified line, and Codex (the client). Dots carry the channel colour,
+CCB and C4E (the inferred Claude session `channel`, bedrock/enterprise, so Bedrock spend on a
+bare model id with an `unknown` backend stays CCB; older responses fall back to the backend),
+a Claude unclassified line, and Codex (the client). Dots carry the channel colour,
 segments the model colour; an all-unknown line reads unavailable, never $0. Column structure
 is identical for every client selection, and help text names only the selected clients.
 Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`

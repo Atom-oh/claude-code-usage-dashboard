@@ -94,6 +94,15 @@ test("client counter raw input narrows only user/model partitions throughout its
   assert.ok(!part.includes('backend: "Model"'), "session backend is not guessed from the counter model");
 });
 
+test("client counter rows carry the inferred session channel without changing their grouping", () => {
+  const src = readFileSync(fileURLToPath(new URL("./queries.js", import.meta.url)), "utf8");
+  const part = src.slice(src.indexOf("export async function clientClaudeRows("), src.indexOf("export async function kpiSummary("));
+  assert.ok(part.includes("any(${GROUP_EXPR}) AS channel,"));
+  assert.ok(part.includes("SELECT t, session, user, model, backend, any(channel) AS channel, 1 AS count,"));
+  assert.ok(part.includes("GROUP BY t, session, user, model, backend\n"));
+  assert.ok(part.includes("GROUP BY GROUPING SETS ((t, session, user, model, backend), (t))"));
+});
+
 // normModel()의 5단계 regex는 pricing.js normalizeModelId() / grafana-ab-queries.sql 패널 12와
 // 반드시 동기 유지해야 하는 사본이다(각 파일 주석에 명시) — 값 비교는 SQL 문자열이라 못 하지만,
 // SQL이 만드는 4번째 단계(bedrock 버전 접미사) 패턴이 -v1:0뿐 아니라 :0 없는 맨 -v1까지

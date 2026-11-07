@@ -71,6 +71,10 @@ test("user cost channels split Claude by inferred channel and keep Codex as the 
   // Never infer a client from an OpenAI-style model name.
   expect(userCostChannel({ client: "claude", backend: "bedrock-mantle", model: "openai.gpt-6-sol" })).toBe("ccb");
   expect(userCostChannel({ client: "codex", backend: "bedrock-runtime" })).toBe("codex");
+  // The session channel wins over a model-derived backend (bare model ids on Bedrock).
+  expect(userCostChannel({ client: "claude", backend: "unknown", channel: "bedrock" })).toBe("ccb");
+  expect(userCostChannel({ client: "claude", backend: "anthropic", channel: "enterprise" })).toBe("c4e");
+  expect(userCostChannel({ client: "claude", backend: "bedrock-runtime", channel: "unknown" })).toBe("claude_unknown");
   const lines = userChannelLines({
     claude: [
       { client: "claude", backend: "anthropic", model: "claude-opus-5-5", cost_usd: 2 },

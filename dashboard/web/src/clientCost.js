@@ -61,9 +61,10 @@ export function combineCostUsers(userRows, modelRows, clients) {
 }
 
 // Channel lines for the shared user cost table, mirroring the Claude detail
-// per-group model bars. CCB/C4E are inferred Claude session channels carried as
-// the shared backend (enterprise → "anthropic", otherwise the model-derived
-// Bedrock route); Codex is the emitting client. Never infer a client from a model.
+// per-group model bars. CCB/C4E are the inferred Claude session channels
+// (`channel`: bedrock/enterprise); older responses without it fall back to the
+// shared backend (enterprise → "anthropic", a `bedrock-*` route → CCB); Codex is
+// the emitting client. Never infer a client from a model.
 export const USER_COST_CHANNELS = [
   { key: "ccb", label: "CCB", title: "Claude Code · Bedrock 채널", color: "var(--series-bedrock)" },
   { key: "c4e", label: "C4E", title: "Claude Code · Enterprise(Anthropic) 채널", color: "var(--series-enterprise)" },
@@ -74,6 +75,8 @@ export const USER_COST_CHANNELS = [
 export function userCostChannel(row) {
   if (row.client === "codex") return "codex";
   if (row.client !== "claude") return null;
+  if (row.channel !== undefined && row.channel !== null && row.channel !== "")
+    return row.channel === "bedrock" ? "ccb" : row.channel === "enterprise" ? "c4e" : "claude_unknown";
   if (row.backend === "anthropic") return "c4e";
   return /^bedrock-/.test(row.backend || "") ? "ccb" : "claude_unknown";
 }

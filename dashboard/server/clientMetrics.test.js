@@ -51,6 +51,18 @@ test("cost user/model breakdown never turns operational-only groups into a known
   assert.equal(result.by_user_model.some(row => row.model === ""), false);
 });
 
+test("cost user/model breakdown keeps the inferred Claude channel apart from an unknown backend", () => {
+  const result = foldClientMetrics([
+    { ...event, client: "claude", backend: "unknown", channel: "bedrock", model: "claude-sonnet-5", reported_cost: 2 },
+    { ...event, client: "claude", backend: "anthropic", channel: "enterprise", model: "claude-sonnet-5", reported_cost: 1 },
+  ], ["claude"], undefined, { costView: true });
+  const byChannel = Object.fromEntries(result.by_user_model.map(row => [row.channel, row]));
+  assert.equal(byChannel.bedrock.backend, "unknown");
+  assert.equal(byChannel.bedrock.cost_usd, 2);
+  assert.equal(byChannel.enterprise.cost_usd, 1);
+  assert.equal(result.totals.cost_usd, 3);
+});
+
 test("Codex user prefilter keeps native fallback, original checks and both dedup branches", () => {
   const from = new Date("2026-09-14"), to = new Date("2026-09-15");
   const { sql, params } = buildCodexQuery(from, to, { userExact: "fixture@example.invalid" });
