@@ -265,6 +265,10 @@ users, so every result is partial. Rules:
 - Ownership: a Claude task is an `interaction` span of the exact user (`UserEmail`, else
   `EndUserId`) starting in `[from, to)`; a Codex task is a `client=codex` turn of that user
   whose first span starts in `[from, to)`. Anything else is the same 404.
+- Turn identity: Codex spans group by turn id alone, so only UUID-shaped turn ids identify
+  a turn. Synthetic ids such as `auto-compact-N` repeat across conversations; those turns
+  are unlinkable (counted in `turns_without_unique_id`, never listed, never win a
+  completion), and the detail span query also requires the task's conversation id or none.
 - Windows: Claude spans of the `TraceId` are read in `[from, to + 24h)` because subagent
   spans can start hours after the interaction; Codex turn spans in `[from - 24h, to + 24h)`
   so a turn crossing a bucket edge belongs to its starting bucket only.
@@ -281,7 +285,7 @@ users, so every result is partial. Rules:
   subsets and output includes reasoning (ADR-014).
 - Truncation: the detail returns the newest 5000 spans (`SPAN_BOUND`) and `span_total`.
   When truncated, Claude whole-task and per-lane totals (`llm_calls`, `subagents`,
-  `tokens`, `cost_usd`) are null and `why` is empty. Codex totals come from the turn
+  `tokens`, `cost_usd`) and `task.models` are null and `why` is empty. Codex totals come from the turn
   aggregate and completions, not the span list, so they stay.
 - Allowlist: span attributes leave the database one key per column, only from
   `SPAN_ATTRIBUTE_ALLOWLIST`; enumerated values must match an identifier shape (no spaces

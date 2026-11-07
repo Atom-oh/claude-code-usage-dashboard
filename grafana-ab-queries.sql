@@ -600,9 +600,8 @@ GROUP BY ExperimentGroup, app_version, model
 ORDER BY ExperimentGroup, requests DESC;
 
 
--- 【패널 27】유저 인터랙션 워터폴 — 플릿 전체 버전 (traces beta). 대시보드의 userInteractions는
--- 유저 1명의 드릴다운이지만 Grafana엔 유저별 드로어가 없으므로, ExperimentGroup × 인터랙션으로
--- 일반화해 트레이스 1건당 1행을 낸다. 루트는 패널 23과 동일하게 intDiv(Duration, 1000000)을
+-- 【패널 27】유저 인터랙션 워터폴 — 플릿 전체 버전 (traces beta). Grafana엔 유저별 드로어가
+-- 없으므로, ExperimentGroup × 인터랙션으로 일반화해 트레이스 1건당 1행을 낸다. 루트는 패널 23과 동일하게 intDiv(Duration, 1000000)을
 -- 쓴다(interaction 스팬엔 duration_ms 속성이 없어 DurationMs가 0으로 잡히기 때문). 자식은
 -- TraceId로 접되(llm_ms/tool_exec_ms/blocked_ms/agents/llm_calls), 패널 23의 자식 서브쿼리와
 -- 달리 여기엔 SpanType IN (...) 필터가 없다 — AgentId는 스팬 타입을 가리지 않고 실리므로

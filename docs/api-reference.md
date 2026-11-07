@@ -90,7 +90,7 @@ Wrapped GET data routes validate these parameters before querying or caching:
 | `user` | Case-insensitive substring of the query's identity expression, usually `UserEmail`. |
 | `model` | Case-insensitive substring after the query's model normalization; scope varies by endpoint. |
 | `project` | Exact project tag, only for the four Usage routes listed below and only while `schema.projectColumns === true`. `(untagged)` maps to the stored empty string. |
-| `email` | Supply an exact identity for the four user drilldown routes. Omission is coerced to an empty string, not rejected as a missing required parameter; callers must not rely on uniform behavior without it. |
+| `email` | Supply an exact identity for the two user drilldown routes (`/api/users/daily`, `/api/users/decisions-by-tool`). Omission is coerced to an empty string, not rejected as a missing required parameter; callers must not rely on uniform behavior without it. |
 | `includeUnknown` | Only `/api/cost/by-user-model` recognizes the literal `1`, including unknown-channel rows in that result. |
 
 Minute/day widths are rounded by `bucket()` where needed. Dates are bound to ClickHouse at
@@ -368,7 +368,7 @@ no project predicate is applied. The probe checks logs only, not every table or 
 The parameter is an exact match after trimming; empty means no filter. A non-string or a
 value longer than 256 characters returns 400 `invalid filter` before caching. It is part of
 the result cache keys, and team-filtered requests never mark a legacy route for warming.
-The adoption routes, the four user drilldowns, `/api/codex/insights` and the two team
+The adoption routes, the two email drilldowns, the task routes, `/api/codex/insights` and the two team
 lookups return 400 `unsupported filter` with detail `the team filter does not apply to this
 endpoint`. The SPA does not forward `team` to them; the filter bar discloses the views it
 does not cover.
@@ -490,12 +490,10 @@ bug — see [cost accuracy review](cost-accuracy-review-2026-09-10.md).
 | `/api/users/cost-efficiency` | Per `user, group`: computed `cost`, `unpriced`, `reported_cost`, `reported_unpriced`, additive `known_reported_cost` and `reported_partial`, `loc`, `commits`, `cost_per_loc`, `cost_per_commit`. Ratios require usable reports from every included model; partial costs do not establish valid ratios. |
 | `/api/users/daily` | Exact-email daily `t, sessions, loc, tokens, commits`; fixed daily buckets. |
 | `/api/users/decisions-by-tool` | Exact-email `group, tool, decision, n`. |
-| `/api/users/heatmap` | Exact-email `d, sessions`, fixed 91-day lookback ending at `to`. |
 
 `user_active_days` is the distinct-day union within the query's filtered population, shared
 across a user's channel rows; summing per-channel active days can double-count dates.
-`agents` is a distinct-agent count, not agent depth. Child duration totals can exceed the
-interaction duration. All four drilldowns are excluded from cache warming.
+Both email drilldowns are excluded from cache warming.
 
 `/api/users/tasks` (not warmed; `team` rejected) lists at most **20** tasks for one
 exact user: required `userExact` (email, else `enduser.id`, equality match), optional
@@ -516,7 +514,9 @@ and `cost_usd`/`cost_partial`/`cost_basis`. Per call: Anthropic models use the
 `cost_basis` is null for a task without calls.
 
 A Codex task is one turn (`id` `codex:<conversation.id>:<turn id>`) of `client=codex` spans
-whose first span starts in `[from, to)`; spans are read in `[from - 24h, to + 24h)` so a
+whose first span starts in `[from, to)` and whose turn id is UUID-shaped; spans group by
+turn id alone, so a synthetic id that repeats across conversations (`auto-compact-N`)
+cannot identify one turn and is never listed; spans are read in `[from - 24h, to + 24h)` so a
 turn crossing a bucket edge is listed once, by its starting bucket. Turns starting in
 the neighbouring 24h are attachment context only: completions they win are neither
 listed nor unattached here.
@@ -532,14 +532,17 @@ reasoning ([ADR-014](decisions/ADR-014-observed-token-subtotals.md)). Unpriced o
 token-less completions leave the cost known-partial (`cost_partial`) or null. Codex
 tasks are never group-filtered; with `backend`, a turn needs a linked completion on
 that backend (a turn without one is `unknown`). When Codex is selected,
-`unattached_codex` is `{completions, cost_usd, cost_partial, turns_without_conversation}`:
-the user's completions in `[from, to)` linked to no traced turn and their known cost
-(0 when none, null when all unpriced), plus turns skipped for lacking a conversation id;
-otherwise it is null.
+`unattached_codex` is `{completions, cost_usd, cost_partial, turns_without_conversation,
+turns_without_unique_id}`: the user's completions in `[from, to)` linked to no traced turn
+and their known cost (0 when none, null when all unpriced), plus the bucket's turns skipped
+for lacking a conversation id and, separately, for a non-UUID turn id (distinct ids: one
+synthetic id shared by several conversations counts once). Completions inside a skipped
+turn's window are unattached unless another turn wins them; otherwise it is null.
 
 `/api/users/tasks/detail` (not warmed; `team` rejected) returns one task of the list:
 required `id` (exactly as listed: `claude:<32 lowercase hex>` or
-`codex:<conversation id>:<turn id>`, identifier characters only; else 400), `userExact`,
+`codex:<conversation id>:<turn id>` with identifier characters and a UUID-shaped turn
+id; else 400), `userExact`,
 `from` and `to` (the list's bucket). A disabled client's id is 400. A task that does not
 belong to `userExact` in that bucket, or does not exist, returns 404 `{"error": "not found"}`
 either way. Response `{task, lanes, spans, truncated, span_total, why}`:
@@ -549,10 +552,16 @@ either way. Response `{task, lanes, spans, truncated, span_total, why}`:
 - `lanes`: `{id, label, kind, spawned_by, llm_calls, cost_usd, cost_partial}`. Claude has
   `main` plus one lane per `agent_id`; `kind` is `general-purpose`, `Explore`, `fork` or
   `custom`, `label` is the spawning span's `subagent_type` (null when not found) and
-  `spawned_by` is the parent span of the lane's first `llm_request`. Codex has only `main`.
+  `spawned_by` is the drawn tool span that spawned the lane's first `llm_request` (the
+  `tool` span when the `tool.execution` parent is folded into it). Codex has only `main`.
 - `spans`: `{id, parent, lane, kind: llm|tool|wait, name, start_ms, duration_ms, attrs}`;
   `start_ms` is the offset from the task start and `parent` is null when the parent is not
-  in the payload. LLM spans add `tokens`, `cost_usd`, `cost_basis`; Codex `codex.sampling`
+  in the payload. Claude emits one tool span per tool call: a `tool.execution` span whose
+  parent `tool` span is present folds into that span (its allowlisted attrs fill keys the
+  tool span lacks; `execution_ms` is its duration, while `duration_ms` stays the whole
+  call including permission wait), and children of the execution span point at the tool
+  span. An execution span without its `tool` span is returned as the tool span. Codex
+  spans are the turn's spans that carry the task's conversation id or none. LLM spans add `tokens`, `cost_usd`, `cost_basis`; Codex `codex.sampling`
   spans carry the linked completion's values and `completion: {model, effort, ttft_ms,
   duration_ms, count}`. `attrs` holds only allowlisted keys: LLM `model`, token counts,
   `ttft_ms`, `attempt`, `error_class`, `status_code`, `stop_reason`, `query_source_safe`,
@@ -560,11 +569,12 @@ either way. Response `{task, lanes, spans, truncated, span_total, why}`:
   `anthropic.mcp.server.name`, `bash_command_class`, `success`, `error_class`; wait
   `decision`, `source`; Codex `model`, `tool_name`, `aborted`.
 - `truncated`/`span_total`: at most the newest 5000 spans. Truncated Claude details null
-  whole-task and lane totals and return no `why`; Codex totals do not depend on spans.
+  whole-task and lane totals and `task.models` (the newest spans' models are not the
+  task's) and return no `why`; Codex totals do not depend on spans.
 - `why`: `{rule, value}` for `cache_read_share` (share of complete canonical tokens),
   `context_growth` (`{first, last, calls}` main-lane input context), `top_lane_share`
   (`{lane, share}`, two or more lanes, all costs known), `most_expensive_call`
-  (`{span, cost_usd}`, all costs known), `retries` (calls with `attempt > 1`) and
+  (`{span, cost_usd}`, all costs known), `retries` (calls with `attempt > 1`; omitted unless every call carries `attempt`) and
   `permission_wait` (Claude wait-span milliseconds). A rule whose inputs are unavailable is
   omitted, never zero-filled. Data rules: [data reference](reference/data.md#user-task-traces).
 
