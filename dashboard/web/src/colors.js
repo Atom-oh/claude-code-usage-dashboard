@@ -154,3 +154,17 @@ export const MODEL_TREND_VENDOR_RAMPS = {
   openai: { light: MODEL_FAMILY_COLORS.light.other, dark: MODEL_FAMILY_COLORS.dark.other },
   other: { light: MODEL_FAMILY_COLORS.light.other, dark: MODEL_FAMILY_COLORS.dark.other },
 };
+
+// Task trace lanes: one fixed hue per agent kind, shared by timeline bars and the cumulative
+// cost band. Several lanes of one kind share its hue; labels tell them apart.
+export const LANE_COLOR = {
+  main: "var(--chart-1)",
+  "general-purpose": "var(--chart-3)",
+  Explore: "var(--chart-2)",
+  fork: "var(--chart-4)",
+  custom: "var(--chart-5)",
+};
+
+export function laneColorFor(kind) {
+  return LANE_COLOR[kind] || LANE_COLOR.custom;
+}

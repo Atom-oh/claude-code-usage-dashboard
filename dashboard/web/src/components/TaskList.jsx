@@ -12,7 +12,7 @@ const DAY = 86400000;
 const TRACE_RETENTION_DAYS = 90; // trace TTL
 const MISSING = "미수집";
 const SORTS = [{ value: "tokens", label: "토큰 많은 순" }, { value: "duration", label: "느린 순" }];
-const COST_BASIS = {
+export const COST_BASIS = {
   client_reported: "클라이언트 보고", computed: "계산 추정", aws_list_estimate: "AWS 정가 추정",
   mixed: "혼합 기준", linked_estimate: "연결 추정",
 };

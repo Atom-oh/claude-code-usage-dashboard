@@ -56,12 +56,15 @@ function overview(u) {
 }
 
 let fetchMock, tasksBody;
+const detailBody = { task: claudeTask, truncated: false, span_total: 0, spans: [], why: [],
+  lanes: [{ id: "main", label: "main", kind: "main", spawned_by: null, llm_calls: 7, cost_usd: 1.5, cost_partial: false }] };
 beforeEach(() => {
   vi.spyOn(Date, "now").mockReturnValue(NOW);
   tasksBody = response();
   fetchMock = vi.fn((url) => {
     const u = new URL(String(url), "http://localhost");
     const body = u.pathname === "/api/users/tasks" ? tasksBody
+      : u.pathname === "/api/users/tasks/detail" ? detailBody
       : u.pathname === "/api/clients/overview" ? overview(u)
       : u.pathname === "/api/codex/insights" ? { coverage: {}, summary: {}, approvals: [] } : [];
     return Promise.resolve({ ok: true, status: 200, json: async () => body });
@@ -118,6 +121,34 @@ test("clicking a trend bucket loads tasks for that bucket", async () => {
   expect(req.searchParams.has("team")).toBe(false);
   // No custom range was set: a click selects a bucket, it does not zoom.
   expect(screen.getAllByText("부분 수집").length).toBeGreaterThan(0);
+});
+
+test("opening a task shows its trace overlay for the bucket and Escape closes it", async () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 800, height: 300, top: 0, left: 0, right: 800, bottom: 300, x: 0, y: 0,
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const parent = { from: "2026-09-01T00:00:00.000Z", to: "2026-09-04T00:00:00.000Z" };
+  const { container } = wrap(<UserDetail user={USER} clients={["claude", "codex"]} hours={24} parentRange={parent}
+    stale={false} onClose={() => {}} />);
+  await waitFor(() => expect(container.querySelector(".recharts-wrapper")).not.toBeNull());
+  const chart = container.querySelector(".recharts-wrapper");
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const x = Number(grid.getAttribute("x1")) + (Number(grid.getAttribute("x2")) - Number(grid.getAttribute("x1"))) / 3;
+  fireEvent.mouseDown(chart, { clientX: x, clientY: 60 });
+  fireEvent.mouseUp(chart, { clientX: x, clientY: 60 });
+  fireEvent.click((await screen.findByText("claude-opus-5-5")).closest("tr"));
+  expect(await screen.findByRole("dialog", { name: "작업 상세" })).toBeTruthy();
+  await screen.findByRole("group", { name: "메인 세션 레인" });
+  const req = fetchMock.mock.calls.map(([url]) => new URL(String(url), "http://localhost"))
+    .find((u) => u.pathname === "/api/users/tasks/detail");
+  expect(req.searchParams.get("id")).toBe(claudeTask.id);
+  expect(req.searchParams.get("from")).toBe(BUCKET.from);
+  expect(req.searchParams.get("to")).toBe(BUCKET.to);
+  expect(req.searchParams.get("userExact")).toBe(USER);
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByText("claude-opus-5-5")).toBeTruthy();
 });
 
 test("bucket older than 90 days shows retention notice without fetching", async () => {

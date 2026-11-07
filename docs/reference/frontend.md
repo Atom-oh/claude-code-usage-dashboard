@@ -283,6 +283,35 @@ unattached Codex completion note and the `limited` coverage note, and skips the 
 buckets older than the 90-day trace retention. Task ids are opaque and not displayed. The
 selected bucket and task clear when the user, clients, group or range changes.
 
+Opening a task renders
+[TaskTraceOverlay](../../dashboard/web/src/components/TaskTraceOverlay.jsx), a full-screen
+dialog (Escape or the close button clears the selected task) over `/api/users/tasks/detail`
+with the list's bucket bounds and exact user, no global filters. It shows a KPI row, an agent
+lane timeline ([TaskTimeline](../../dashboard/web/src/components/TaskTimeline.jsx): main
+first, then lanes by first span; per-lane calls and cost; LLM bars shaded by input context;
+tool bars and permission-wait marks; dashed connectors from a spawning span that is in the
+payload), a cumulative cost band stacked by lane colour with a hover tooltip
+([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a side panel for the
+clicked span and the server's `why` rules. Pure helpers live in
+[taskTrace.js](../../dashboard/web/src/taskTrace.js); lane hues are `LANE_COLOR` in
+[colors.js](../../dashboard/web/src/colors.js) and icons in
+[taskIcons.jsx](../../dashboard/web/src/components/taskIcons.jsx).
+
+- The side panel ([TaskSpanPanel](../../dashboard/web/src/components/TaskSpanPanel.jsx))
+  renders a fixed field list per span kind from allowlisted keys only; other payload keys are
+  never read. Fields the client does not emit (Codex TTFT, call source, stop reason, attempt)
+  and unknown values render as not collected, never zero.
+- A lane whose spawning span is missing (`kind: custom`, `label: null`) shows a generic icon
+  and a neutral subagent label.
+- The band counts a call at its end time and only LLM spans carrying `cost_usd` (a Codex
+  sampling span without a linked completion is not a priced call). A lane turns unknown from
+  its first unknown-cost call; from there the stack stops and the rest of the axis is marked
+  not collected. Codex completions without a span are noted as excluded from the band.
+- A truncated detail shows the "some spans only, totals hidden" banner and hides the KPI
+  row, lane totals, the band and the `why` list, for both clients.
+- The dialog shows the masked user, start time, client and models; task ids and span ids are
+  never displayed.
+
 ## Spend and interpretation
 
 [spend.js](../../dashboard/web/src/spend.js) adapts API `reported_cost` to display `cost`

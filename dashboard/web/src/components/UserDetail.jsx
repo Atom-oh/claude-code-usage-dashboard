@@ -6,6 +6,7 @@ import { GroupBarChart } from "./GroupCharts.jsx";
 import { SectionLabel } from "./SectionLabel.jsx";
 import { ClientTrend } from "./ClientTrend.jsx";
 import { TaskList } from "./TaskList.jsx";
+import { TaskTraceOverlay } from "./TaskTraceOverlay.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { maskEmail } from "../fmt.js";
@@ -155,13 +156,13 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
   const [selection, setSelection] = useState(null);
   const current = selection?.key === selectionKey ? selection : null;
   const bucket = current?.bucket ?? null;
-  // Task 11 renders the task overlay for `taskId`.
   const taskId = current?.taskId ?? null;
   const selectBucket = (next) => {
     setSelection({ key: selectionKey, bucket: next, taskId: null });
     onBucket?.(next);
   };
   const openTask = (id) => setSelection((s) => (s?.key === selectionKey ? { ...s, taskId: id } : s));
+  const closeTask = () => setSelection((s) => (s?.key === selectionKey ? { ...s, taskId: null } : s));
 
   const pending = stale || overview.loading || overview.stale;
   const supported = overview.data?.applied_filters?.userExact === user;
@@ -188,6 +189,8 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
       </>}
     {bucket && <TaskList user={user} clients={clients} group={group}
       from={bucket.from} to={bucket.to} onOpen={openTask} selectedId={taskId} />}
+    {bucket && taskId && <TaskTraceOverlay key={taskId} taskId={taskId} user={user} from={bucket.from} to={bucket.to}
+      onClose={closeTask} />}
     <Card title="활동 히트맵 · 최근 90일" subtitle="UTC 일 기준 · 일별 관측 세션 (버킷별 세션 수의 합이며 고유 세션 수가 아닙니다)">
       {heat.error ? <ErrorBox error={heat.error} /> : heat.loading || heat.stale || stale ? <Loading />
         : !heatSupported ? <p role="alert" className="text-sm text-ink-700">히트맵 집계를 확인하지 못했습니다.</p>
