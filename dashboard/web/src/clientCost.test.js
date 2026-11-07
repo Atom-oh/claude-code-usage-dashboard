@@ -44,6 +44,10 @@ test("operational-only parts without usage-backed model rows never establish a k
   expect(combineCostUsers(users, undefined, ["claude", "codex"])[0].cost_usd).toBe(0);
   // Positive amounts survive even without backed rows.
   expect(combineCostUsers([user("claude", 2)], [], ["claude"])[0].cost_usd).toBe(2);
+  // ADR-016: rejection-only Codex groups keep their recorded zero without model rows.
+  const rejected = combineCostUsers([user("codex", 0, { observed_tokens: 0, request_rejections_only: true })], [], ["codex"])[0];
+  expect(rejected.cost_usd).toBe(0);
+  expect(rejected.observed_tokens).toBe(0);
 });
 
 test("missing IDs remain separate by client; selection and exact raw identities are preserved", () => {

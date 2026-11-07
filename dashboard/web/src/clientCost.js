@@ -35,7 +35,8 @@ export function combineCostUsers(userRows, modelRows, clients) {
     // A part with no usage-backed model rows (when the breakdown is present) cannot
     // establish a known zero: its default 0 cost/tokens become unavailable. Positive
     // values are kept as-is.
-    const evidence = Array.isArray(modelRows) ? parts.map(part => models[part.client] ? part : { ...part,
+    // ADR-016 rejection-only groups keep their recorded zero.
+    const evidence = Array.isArray(modelRows) ? parts.map(part => models[part.client] || part.request_rejections_only === true ? part : { ...part,
       cost_usd: observedNumber(part.cost_usd) > 0 ? part.cost_usd : null,
       observed_tokens: observedTokens(part) > 0 ? observedTokens(part) : null }) : parts;
     const cost = knownSum(evidence, row => row.cost_usd, row => row.cost_partial === true || row.unpriced > 0);
