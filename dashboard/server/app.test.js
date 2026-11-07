@@ -160,7 +160,7 @@ test("/api/insights/daily is disabled by default and validates period", async ()
 test("endpoints that cannot apply team reject it before caching or querying", async () => {
   const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
   for (const path of ["/api/adoption/levels", "/api/adoption/timeseries", "/api/users/daily",
-    "/api/users/decisions-by-tool", "/api/users/heatmap", "/api/users/interactions", "/api/teams",
+    "/api/users/decisions-by-tool", "/api/users/heatmap", "/api/teams",
     "/api/users/teams"]) {
     const r = await fetch(`${base}${path}?${range}&team=fsi`);
     assert.equal(r.status, 400, path);

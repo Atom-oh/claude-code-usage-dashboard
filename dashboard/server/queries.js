@@ -2554,52 +2554,6 @@ export function ttlSplitFields(r) {
   };
 }
 
-// 유저 1명의 턴별 워터폴 — "왜 이 세션이 느렸나"에 답한다. interactionBreakdown과 동일한
-// TraceId 자식 접기를 쓰지만, 자식 서브쿼리에는 일부러 SpanType 필터가 없다 — AgentId는
-// 스팬 타입을 가리지 않고 실린다(실측 2026-09-04). SpanType 필터를 걸면 agents가 과소집계된다.
-// SpanType 값은 접두사 없이 'interaction'/'llm_request'/'tool'/'tool.execution'/
-// 'tool.blocked_on_user'로 온다 — claude_code. 접두사는 SpanName에만 붙는다. ParentAgentId는
-// 라이브 데이터에서 한 번도 채워진 적이 없다(실측 2026-09-04: 0행) — 그래서 에이전트 깊이/트리는
-// 도출할 수 없고, 인터랙션당 distinct 에이전트 수만 도출 가능하다. llm/tool/blocked 세 구간은
-// 서로 겹칠 수 있어(tool 스팬의 duration_ms가 대기+실행을 함께 담음) 합이 interaction_ms를
-// 넘을 수 있다 — interactionBreakdown과 동일한 주의사항.
-export async function userInteractions(from, to, email) {
-  const rows = await query(
-    `SELECT
-        i.SessionId    AS session_id,
-        i.TraceId      AS trace_id,
-        i.started_at   AS started_at,
-        i.DurationMs   AS interaction_ms,
-        c.llm_ms       AS llm_ms,
-        c.tool_exec_ms AS tool_exec_ms,
-        c.blocked_ms   AS blocked_ms,
-        c.agents       AS agents,
-        c.llm_calls    AS llm_calls
-    FROM (
-        SELECT TraceId, SessionId, Timestamp,
-            formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S', 'UTC') AS started_at,
-            intDiv(Duration, 1000000) AS DurationMs
-        FROM claude_code.otel_traces
-        WHERE SpanType = 'interaction' AND UserEmail = {email:String}
-          AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
-    ) i
-    LEFT JOIN (
-        SELECT TraceId,
-            sumIf(DurationMs, SpanType = 'llm_request')          AS llm_ms,
-            sumIf(DurationMs, SpanType = 'tool.execution')       AS tool_exec_ms,
-            sumIf(DurationMs, SpanType = 'tool.blocked_on_user') AS blocked_ms,
-            uniqExactIf(AgentId, AgentId != '')                  AS agents,
-            countIf(SpanType = 'llm_request')                    AS llm_calls
-        FROM claude_code.otel_traces
-        WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
-        GROUP BY TraceId
-    ) c ON i.TraceId = c.TraceId
-    ORDER BY i.Timestamp DESC LIMIT 200`,
-    { ...range(from, to, true), email }
-  );
-  return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: "2.1.214", rows: [] };
-}
-
 // =============================================================================
 // 2026-09-09 추가 패널 — project.name / app.entrypoint (clickhouse-migration-005.sql).
 // ProjectName은 incFlat/incBucketed가 나르지 않는 차원이고 시간별 롤업에도 없다(005는 롤업을

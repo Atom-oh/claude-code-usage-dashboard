@@ -356,7 +356,6 @@ applies a filter only when the query supplies its column expression.
 | Many log queries | `modelViaSession` accepts every matching session's events if that session has a matching model in the rollup lookback. This is not event-level model attribution. |
 | Reported-vs-computed and entrypoints | Match the model on each `api_request` log row. |
 | User daily/decisions/heatmap | Exact `email` and optional `group`; ignore global user/model/project. With no group, include all channels. Heatmap uses 91 days ending at `to`, ignoring `from`. Reject team. |
-| User interactions | Exact `email` and range only; ignores group/user/model/project. Reject team. |
 | Projects, permission modes, decision sources, entrypoints | The only queries applying project filters. Projects filter identity using the email/EndUserId fallback; the other three filter `UserEmail`. |
 | Team (all applying routes) | Session semi-join (`teamViaSession`, else the declared `modelViaSession`/`modelMixed` session), not event-level attribution. Each session's team is its most frequent `otel_logs` value of resource, else log, attribute `team` (ties lexically first) over the range plus the three-day counter lookback. Rows without a session, and sessions without team evidence, never match. |
 
@@ -492,7 +491,6 @@ bug — see [cost accuracy review](cost-accuracy-review-2026-09-10.md).
 | `/api/users/daily` | Exact-email daily `t, sessions, loc, tokens, commits`; fixed daily buckets. |
 | `/api/users/decisions-by-tool` | Exact-email `group, tool, decision, n`. |
 | `/api/users/heatmap` | Exact-email `d, sessions`, fixed 91-day lookback ending at `to`. |
-| `/api/users/interactions` | **Trace result**, `minVersion: "2.1.214"`; `session_id`, `trace_id`, UTC `started_at`, `interaction_ms`, `llm_ms`, `tool_exec_ms`, `blocked_ms`, `agents`, `llm_calls`; newest **200** interactions. |
 
 `user_active_days` is the distinct-day union within the query's filtered population, shared
 across a user's channel rows; summing per-channel active days can double-count dates.
