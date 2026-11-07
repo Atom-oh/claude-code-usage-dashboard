@@ -273,6 +273,16 @@ page's selected clients and closes on range, page or client-selection changes. C
 detail Users opens it from a leaderboard row with every enabled client and that row's
 bedrock/enterprise group; the group applies only to the Claude-only sections.
 
+Clicking a trend bucket (a click, not a drag; drags still zoom) opens
+[TaskList](../../dashboard/web/src/components/TaskList.jsx) for that bucket's UTC bounds,
+clamped to the detail's effective range. It reads `/api/users/tasks` with the detail's
+client selection, the global backend and the detail's group (Claude only), never team. It
+always shows the partial-collection badge, labels Codex cost as linked estimates, renders
+unknown tokens, cost, subagents or duration as not collected (never zero), shows the
+unattached Codex completion note and the `limited` coverage note, and skips the request for
+buckets older than the 90-day trace retention. Task ids are opaque and not displayed. The
+selected bucket and task clear when the user, clients, group or range changes.
+
 ## Spend and interpretation
 
 [spend.js](../../dashboard/web/src/spend.js) adapts API `reported_cost` to display `cost`

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, ErrorBox, Loading } from "./Card.jsx";
 import { StatTile } from "./StatTile.jsx";
 import { DataTable } from "./DataTable.jsx";
 import { GroupBarChart } from "./GroupCharts.jsx";
 import { SectionLabel } from "./SectionLabel.jsx";
 import { ClientTrend } from "./ClientTrend.jsx";
+import { TaskList } from "./TaskList.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { maskEmail } from "../fmt.js";
@@ -118,8 +119,8 @@ function CodexDecisions({ api }) {
   </section>;
 }
 
-// Full-width in-page detail for one exact user across the selected clients. `onBucket` is reserved
-// for trend bucket selection (phase 2); `children` is the phase 2 task-list slot.
+// Full-width in-page detail for one exact user across the selected clients. Clicking a trend bucket
+// lists that bucket's tasks (TaskList); `onBucket({ from, to })` is also notified when provided.
 export function UserDetail({ user, clients, group = null, hours, parentRange, stale, onClose, onBucket = null, children }) {
   const range = useRange();
   const teams = useTeams();
@@ -147,7 +148,20 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
   const codexTools = useApi("/api/codex/insights", { client: "codex", profile: "tools", userExact: user, ...bounds }, showCodex,
     { linkedRange: linked, hold: stale });
   const days = useMemo(() => heatmapDays(heat.data?.timeseries, clients), [heat.data, clients.join(",")]);
-  void onBucket; // DualLineChart has no bucket click yet; wired with the phase 2 task list.
+  // Selected trend bucket and task. Both clear when the user, clients, group or range changes
+  // (polling moves parentRange bounds, so the range identity comes from RangeContext).
+  const selectionKey = JSON.stringify([user, clients, group, hours, range.days, range.month,
+    range.custom?.from?.getTime?.(), range.custom?.to?.getTime?.()]);
+  const [selection, setSelection] = useState(null);
+  const current = selection?.key === selectionKey ? selection : null;
+  const bucket = current?.bucket ?? null;
+  // Task 11 renders the task overlay for `taskId`.
+  const taskId = current?.taskId ?? null;
+  const selectBucket = (next) => {
+    setSelection({ key: selectionKey, bucket: next, taskId: null });
+    onBucket?.(next);
+  };
+  const openTask = (id) => setSelection((s) => (s?.key === selectionKey ? { ...s, taskId: id } : s));
 
   const pending = stale || overview.loading || overview.stale;
   const supported = overview.data?.applied_filters?.userExact === user;
@@ -169,8 +183,11 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
         </p>}
         <Summary totals={overview.data.totals} />
         <ClientTrend rows={overview.data.timeseries || []} clients={clients} clientRows={overview.data.by_client || []}
-          bucketHours={overview.data.bucket_hours || hours} effectiveRange={overview.data.effective_range} />
+          bucketHours={overview.data.bucket_hours || hours} effectiveRange={overview.data.effective_range}
+          onBucket={selectBucket} />
       </>}
+    {bucket && <TaskList user={user} clients={clients} group={group}
+      from={bucket.from} to={bucket.to} onOpen={openTask} selectedId={taskId} />}
     <Card title="활동 히트맵 · 최근 90일" subtitle="UTC 일 기준 · 일별 관측 세션 (버킷별 세션 수의 합이며 고유 세션 수가 아닙니다)">
       {heat.error ? <ErrorBox error={heat.error} /> : heat.loading || heat.stale || stale ? <Loading />
         : !heatSupported ? <p role="alert" className="text-sm text-ink-700">히트맵 집계를 확인하지 못했습니다.</p>

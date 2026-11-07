@@ -49,7 +49,9 @@ function DragZoomAxis({ binding }) {
 // clamp ({ from, to, maxSpanMs }, all optional): keep the zoom inside the given bounds and span.
 // Epoch-aligned weekly buckets can start before and end after the selected range, so an unclamped
 // full-width drag can exceed the server range cap. Pass `to` only when it is a live bound.
-export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false, clamp) {
+// onPick (optional, time axes only): a pure click (below the zoom threshold) reports the
+// clicked bucket's start (ms) instead of being ignored. Drags still zoom and never pick.
+export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false, clamp, onPick) {
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
   const startRef = useRef(null);
@@ -100,7 +102,10 @@ export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled =
       // d1===d2라 delta가 0인데, 확장 후 to-from을 기준으로 삼으면 항상 버킷 하나 크기(예: 1시간)가
       // 되어 가드를 통과해버린다(리뷰에서 CRITICAL로 확인: 툴팁을 보려는 클릭마다 전역이 그 버킷
       // 하나로 줌인되는 오동작). 그래서 순수 클릭 판정은 raw delta 기준으로 먼저 걸러낸다.
-      if (Math.abs(d2 - d1) < 10 * 60000) return; // 클릭·미세 드래그 무시(최소 10분)
+      if (Math.abs(d2 - d1) < 10 * 60000) { // 클릭·미세 드래그 무시(최소 10분)
+        if (onPick && a.left === a.right) onPick(d1.getTime());
+        return;
+      }
       const bound = (v) => (v == null ? NaN : new Date(v).getTime());
       const lo = bound(clamp?.from), hi = bound(clamp?.to), maxSpan = Number(clamp?.maxSpanMs);
       const rawFrom = d1 <= d2 ? d1 : d2;
@@ -313,9 +318,9 @@ function AvailableTooltipContent(props) {
     payload={props.payload?.map(entry => entry.value == null ? { ...entry, value: "미확인" } : entry)} />;
 }
 
-function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c, timeDomain, tooltipFormatter }) {
+function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c, timeDomain, tooltipFormatter, clickable = false }) {
   return (
-    <ResponsiveContainer width="100%" height={height} className={zoom.className}>
+    <ResponsiveContainer width="100%" height={height} className={cn(zoom.className, clickable && "cursor-pointer")}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} syncId="dual" {...zoom.handlers}>
         {zoom.controller}
         <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
@@ -359,12 +364,13 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
   );
 }
 
-export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter, zoomDisabled = false }) {
+// onBucketClick(startMs): optional; a click on a time-axis bucket (not a drag) reports its start.
+export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter, zoomDisabled = false, onBucketClick }) {
   const c = useChartColors();
   const domain = Array.isArray(timeDomain) && timeDomain.length === 2
     && timeDomain.every(Number.isFinite) && timeDomain[0] < timeDomain[1] ? timeDomain : undefined;
-  const zoomTop = useDragZoom(undefined, bucketHours, domain, zoomDisabled);
-  const zoomBottom = useDragZoom(undefined, bucketHours, domain, zoomDisabled);
+  const zoomTop = useDragZoom(undefined, bucketHours, domain, zoomDisabled, undefined, onBucketClick);
+  const zoomBottom = useDragZoom(undefined, bucketHours, domain, zoomDisabled, undefined, onBucketClick);
   if ((rows || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} help={help} right={right}>
@@ -405,6 +411,7 @@ export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines,
               c={c}
               timeDomain={domain}
               tooltipFormatter={tooltipFormatter}
+              clickable={Boolean(onBucketClick)}
             />
           </div>
         ))}
