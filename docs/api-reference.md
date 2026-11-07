@@ -210,7 +210,10 @@ It adds `by_user_model`, grouped by `client`, raw `user` (`""` when absent), `mo
 and `backend`, using the same bounded records and cost accumulator as `by_user`.
 These range-level rows retain cost basis, known subtotals, token coverage, and
 per-group sessions. Model-level sessions must not be summed into user sessions;
-use `by_user` for user totals. This breakdown is absent from the default profile.
+use `by_user` for user totals. Like `by_model_time`, it keeps a group only when usage or a
+Codex missing-usage scope backs it, so operational-only groups never appear as a known $0
+and a `by_user` user may have no `by_user_model` rows. This breakdown is absent from the
+default profile.
 SQL still retains operational records needed for scope coverage, but skips duration/error
 calculations and tool-name grouping. Observed `requests` remains available, including in
 the Trends period table and CSV; unsupported counts retain null. Shared cost/executive/trend views, trend baselines and

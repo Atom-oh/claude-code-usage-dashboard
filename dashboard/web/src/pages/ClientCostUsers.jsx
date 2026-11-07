@@ -14,12 +14,13 @@ import { useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
 function help(clients) {
   const claude = clients.includes("claude"), codex = clients.includes("codex");
   const channels = [claude && "CCB: Claude Code Bedrock 채널, C4E: Claude Code Enterprise 채널", codex && "Codex"].filter(Boolean).join(", ");
-  const bases = [claude && "Claude Code는 클라이언트 보고 비용", codex && "Codex는 AWS 정가 추정"].filter(Boolean).join(", ");
+  const bases = [claude && "Claude Code는 클라이언트 보고 비용(비-Anthropic 모델 등 일부는 AWS 정가·계산 추정이며 비용 기준 열에 표시)", codex && "Codex는 AWS 정가 추정"].filter(Boolean).join(", ");
   return `알려진 보고·추정 비용만 합산합니다. 미산정 금액은 제외하고 부분합으로 표시하며, 모두 미산정이면 —입니다. 같은 사용자 ID를 한 행으로 합치지만 직원 신원을 확인한 값은 아닙니다. 비용 옆 막대의 줄은 ${claude ? "채널" : "클라이언트"}(${channels}), 색은 모델입니다.${claude ? " CCB·C4E는 세션 단위로 추론한 접근 채널입니다." : ""} ${bases}이며 실청구와 다를 수 있습니다.`;
 }
 
 const lineAmount = (line) => line.total === null ? "미산정" : `${formatClientCost(line.total)}${line.partial ? " (부분합)" : ""}`;
 export const channelTotalsText = (lines) => lines.map((line) => `${line.label} ${lineAmount(line)}`).join(" · ");
+const csvAmount = (value, row) => value === null ? "" : `${formatClientCost(value)}${row?.cost_partial ? " (부분합)" : ""}`;
 
 function Dot({ color }) {
   return <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />;
@@ -91,10 +92,10 @@ export function CostUsers({ users, modelRows, clients, stale, onSelect }) {
     toText: (value, row) => {
       if (value === null) return "";
       const split = channelTotalsText(row.lines);
-      return split ? `${formatClientCost(value)} — ${split}` : formatClientCost(value);
+      return split ? `${csvAmount(value, row)} — ${split}` : csvAmount(value, row);
     } },
     { key: "sessions", label: "세션", render: formatObserved },
-    { key: "cost_per_session", label: "세션당 비용 (USD)", render: amount },
+    { key: "cost_per_session", label: "세션당 비용 (USD)", render: amount, toText: csvAmount },
     { key: "observed_tokens", label: "관측 토큰", render: formatObserved },
     { key: "token_status", label: "토큰 상태" },
     { key: "cost_basis_label", label: "비용 기준" },
