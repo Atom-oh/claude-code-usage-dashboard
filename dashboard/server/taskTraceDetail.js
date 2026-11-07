@@ -7,7 +7,7 @@ import { query as defaultQuery, toChDateTime } from "./clickhouse.js";
 import { ValidationError, NotFoundError } from "./http.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
-import { EXACT_USER, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
+import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
   CODEX_COMPLETION_LIMIT, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
   foldCodexTask, claudeCostSql, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 
@@ -39,13 +39,14 @@ const TRACE_ID = /^[0-9a-f]{32}$/;
 const IDENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 // Task ids exactly as the list emits them: claude:<TraceId> (lowercase hex) and
-// codex:<conversation id>:<turn id> (identifier characters, no colon inside either part).
+// codex:<conversation id>:<turn id> (identifier characters, no colon; the turn id UUID-shaped,
+// as only those turns are listed).
 export function parseTaskId(id) {
   if (typeof id === "string" && id.length <= 300) {
     if (id.startsWith("claude:") && TRACE_ID.test(id.slice(7))) return { client: "claude", traceId: id.slice(7) };
     if (id.startsWith("codex:")) {
       const parts = id.slice(6).split(":");
-      if (parts.length === 2 && IDENT.test(parts[0]) && IDENT.test(parts[1]))
+      if (parts.length === 2 && IDENT.test(parts[0]) && TURN_ID.test(parts[1]))
         return { client: "codex", conversationId: parts[0], turnId: parts[1] };
     }
   }
@@ -124,7 +125,8 @@ LIMIT ${SPAN_BOUND}`,
 
 // Codex: the conversation's turns and completions (the complete competitor set for the
 // list's latest-start-wins linking) and the turn's spans in [from - 24h, to + 24h), the
-// list's turn window.
+// list's turn window. Spans that name another conversation are excluded; spans without a
+// conversation id stay, as in the list's turn grouping.
 export function codexDetailSql(from, to, q, conversationId, turnId) {
   return {
     turns: codexTurnSql(from, to, q, { conversationId }),
@@ -146,12 +148,13 @@ FROM (
       AND ${EXACT_USER}
     WHERE ResourceAttributes['client'] = 'codex'
       AND coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) = {turnId:String}
+      AND SpanAttributes['conversation.id'] IN ('', {conversationId:String})
     LIMIT 1 BY TraceId, SpanId
 )
 ORDER BY ts DESC, span_id
 LIMIT ${SPAN_BOUND}`,
       params: { spanFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
-        spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact, turnId },
+        spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact, turnId, conversationId },
     },
   };
 }
@@ -211,23 +214,44 @@ function whyRules({ task, calls, lanes, retries, waitMs }) {
 
 const CLAUDE_KIND = { llm_request: "llm", tool: "tool", "tool.execution": "tool", "tool.blocked_on_user": "wait" };
 
+// One bar per Claude tool call: a `tool.execution` span whose parent `tool` span is in the
+// rows folds into that bar (its allowlisted attrs fill keys the tool span lacks, its duration
+// becomes `execution_ms`); children of a folded execution span hang off the tool bar. An
+// execution span without its tool span (bound or export gap) is drawn as the tool bar.
+function foldedExecutions(rows, byId) {
+  const folded = new Map();
+  for (const r of rows)
+    if (r.span_type === "tool.execution" && byId.get(r.parent_id)?.span_type === "tool") folded.set(r.span_id, r.parent_id);
+  return folded;
+}
+
 function foldClaudeDetail(head, rows, costRows) {
   const costs = claudeCostMap(costRows);
   const t0 = count(head.start_ms);
   const total = spanTotal(rows);
   const truncated = total > rows.length;
   const byId = new Map(rows.map(r => [r.span_id, r]));
+  const folded = foldedExecutions(rows, byId);
+  const execOf = new Map([...folded].map(([exec, tool]) => [tool, byId.get(exec)]));
+  // The drawn bar standing for a span id (a folded execution span is drawn as its tool).
+  const drawn = (id) => folded.get(id) ?? id;
   const ordered = rows.map(r => ({ r, start: count(r.start_ms), id: r.span_id })).sort(byStart);
   const spans = [], calls = [], rawCalls = [], agents = new Set();
-  let waitMs = 0, retries = null;
+  let waitMs = 0, attempts = 0;
   for (const { r, start } of ordered) {
     if (r.agent_id) agents.add(r.agent_id);
     const kind = CLAUDE_KIND[r.span_type];
-    if (!kind) continue;
+    if (!kind || folded.has(r.span_id)) continue;
     const lane = r.agent_id || "main";
-    const span = { id: r.span_id, parent: r.parent_id && byId.has(r.parent_id) ? r.parent_id : null, lane, kind,
+    const parentId = r.parent_id && byId.has(r.parent_id) ? drawn(r.parent_id) : null;
+    const span = { id: r.span_id, parent: parentId, lane, kind,
       name: label(r.span_name) ?? r.span_type, start_ms: start !== null && t0 !== null ? start - t0 : null,
       duration_ms: count(r.duration_ms), attrs: pickAttrs(r, SPAN_ATTRIBUTE_ALLOWLIST[kind]) };
+    const exec = execOf.get(r.span_id);
+    if (exec) {
+      span.attrs = { ...pickAttrs(exec, SPAN_ATTRIBUTE_ALLOWLIST.tool), ...span.attrs };
+      span.execution_ms = count(exec.duration_ms);
+    }
     if (kind === "llm") {
       const raw = [r.request_id ?? "", r[column("model")] ?? "", ...CLAUDE_TOKEN_ATTRS.map(k => r[column(k)])];
       const priced = priceClaudeCall(raw, head.session_grp, costs);
@@ -237,16 +261,19 @@ function foldClaudeDetail(head, rows, costRows) {
       const context = [tk.input, tk.cache_read, tk.cache_write].every(v => v !== null)
         ? tk.input + tk.cache_read + tk.cache_write : null;
       calls.push({ id: span.id, lane, start, context, cost: priced.cost_usd });
-      if (span.attrs.attempt !== undefined) retries = (retries ?? 0) + (span.attrs.attempt > 1 ? 1 : 0);
+      if (span.attrs.attempt === undefined) attempts = null;
+      else if (attempts !== null) attempts += span.attrs.attempt > 1 ? 1 : 0;
     }
     if (kind === "wait") waitMs = waitMs === null || span.duration_ms === null ? null : waitMs + span.duration_ms;
     spans.push(span);
   }
+  // Retries are known only when every call carries `attempt`; partial evidence is unavailable.
+  const retries = rawCalls.length && attempts !== null ? attempts : null;
   let task = foldTask({ trace_id: head.trace_id, started_at: head.started_at, duration_ms: head.duration_ms,
     session_grp: head.session_grp, llm_calls: rawCalls.length, subagents: agents.size, calls: rawCalls }, costs);
   // Lanes: main first, then agents by first span. A subagent lane is spawned by the parent of
-  // its first llm_request (the tool.execution span); its type comes from that span or its
-  // parent tool span (subagent_type).
+  // its first llm_request (the tool.execution span), reported as the drawn tool bar; its type
+  // comes from that span or its parent tool span (subagent_type).
   const laneIds = ["main", ...new Set(spans.filter(s => s.lane !== "main").map(s => s.lane))];
   const lanes = laneIds.map(id => {
     const own = calls.filter(c => c.lane === id);
@@ -256,7 +283,7 @@ function foldClaudeDetail(head, rows, costRows) {
       const first = spans.find(s => s.lane === id && s.kind === "llm");
       const parent = first && byId.get(byId.get(first.id).parent_id);
       if (parent) {
-        spawnedBy = parent.span_id;
+        spawnedBy = drawn(parent.span_id);
         type = label(parent[column("subagent_type")]) ?? label(byId.get(parent.parent_id)?.[column("subagent_type")]);
       }
     }
@@ -267,8 +294,10 @@ function foldClaudeDetail(head, rows, costRows) {
     return truncated ? { ...lane, llm_calls: null, cost_usd: null, cost_partial: true } : lane;
   });
   if (truncated) {
-    // The newest SPAN_BOUND spans cannot produce whole-task totals: withhold them.
-    task = { ...task, llm_calls: null, subagents: null, tokens: null, cost_usd: null, cost_partial: true, cost_basis: null };
+    // The newest SPAN_BOUND spans cannot produce whole-task totals or the task's model set:
+    // withhold them.
+    task = { ...task, models: null, llm_calls: null, subagents: null, tokens: null, cost_usd: null,
+      cost_partial: true, cost_basis: null };
     return { task, lanes, spans, truncated, span_total: total, why: [] };
   }
   return { task, lanes, spans, truncated, span_total: total,

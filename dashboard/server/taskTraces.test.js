@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
-  sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions } from "./taskTraces.js";
+  sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -221,10 +221,13 @@ test("index.js keys the task route through taskCacheKey", async () => {
   assert.match(src, /path === "\/api\/users\/tasks"\) return `\$\{path\}\?\$\{taskCacheKey\(query, clientConfig\.enabledClients\)\}`/);
 });
 
-// Codex fixtures: a turn window and usage-bearing completions.
+// Codex fixtures: a turn window and usage-bearing completions. Turn ids are UUID-shaped,
+// as Codex emits them; a synthetic id (auto-compact-N) is unlinkable.
+const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const U1 = uuid(1), U2 = uuid(2), U3 = uuid(3);
 const ms = (iso) => Date.parse(iso);
 const turn = (overrides = {}) => ({
-  conversation_id: "c1", turn_id: "u1", started_at: "2026-11-05T01:00:00Z",
+  conversation_id: "c1", turn_id: U1, started_at: "2026-11-05T01:00:00Z",
   start_ms: String(ms("2026-11-05T01:00:00Z")), end_ms: String(ms("2026-11-05T01:00:10Z")),
   llm_calls: "2", models: ["openai.gpt-6-astra"], ...overrides,
 });
@@ -285,7 +288,7 @@ test("attaches completion inside turn window", () => {
   const { tasks, unattached } = attachCompletions([turn()], [completion("2026-11-05T01:00:05Z")], opts);
   assert.equal(tasks.length, 1);
   const [t] = tasks;
-  assert.equal(t.id, "codex:c1:u1");
+  assert.equal(t.id, `codex:c1:${U1}`);
   assert.equal(t.client, "codex");
   assert.equal(t.duration_ms, 10000);
   assert.equal(t.duration_basis, "observed_span_window");
@@ -330,13 +333,13 @@ test("duplicate completion identity counts once", () => {
 });
 
 test("overlapping turns: latest start wins", () => {
-  const early = turn({ turn_id: "u1" });
-  const later = turn({ turn_id: "u2", started_at: "2026-11-05T01:00:04Z",
+  const early = turn({ turn_id: U1 });
+  const later = turn({ turn_id: U2, started_at: "2026-11-05T01:00:04Z",
     start_ms: String(ms("2026-11-05T01:00:04Z")), end_ms: String(ms("2026-11-05T01:00:08Z")) });
   const { tasks } = attachCompletions([early, later], [completion("2026-11-05T01:00:06Z")], opts);
   const byId = Object.fromEntries(tasks.map(t => [t.id, t]));
-  assert.equal(byId["codex:c1:u2"].tokens.observed_tokens, 120);
-  assert.equal(byId["codex:c1:u1"].tokens.observed_tokens, null);
+  assert.equal(byId[`codex:c1:${U2}`].tokens.observed_tokens, 120);
+  assert.equal(byId[`codex:c1:${U1}`].tokens.observed_tokens, null);
 });
 
 test("codex tokens do not add cache or reasoning subsets", () => {
@@ -372,16 +375,46 @@ test("missing token fields stay unknown, not zero", () => {
 });
 
 test("backend filter keeps turns with matching completion evidence", () => {
-  const other = turn({ turn_id: "u2", conversation_id: "c2" });
-  const bare = turn({ turn_id: "u3", conversation_id: "c3" });
+  const other = turn({ turn_id: U2, conversation_id: "c2" });
+  const bare = turn({ turn_id: U3, conversation_id: "c3" });
   const rows = [completion("2026-11-05T01:00:01Z"), completion("2026-11-05T01:00:01Z",
     { conversation_id: "c2", model: "us.openai.gpt-6-astra" }),
   completion("2026-11-05T09:00:00Z", { model: "us.openai.gpt-6-astra" })];
   const mantle = attachCompletions([turn(), other, bare], rows, { ...opts, backend: "bedrock-mantle" });
-  assert.deepEqual(mantle.tasks.map(t => t.id), ["codex:c1:u1"]);
+  assert.deepEqual(mantle.tasks.map(t => t.id), [`codex:c1:${U1}`]);
   assert.equal(mantle.unattached.completions, 0);
   const unknown = attachCompletions([turn(), other, bare], rows, { ...opts, backend: "unknown" });
-  assert.deepEqual(unknown.tasks.map(t => t.id), ["codex:c3:u3"]);
+  assert.deepEqual(unknown.tasks.map(t => t.id), [`codex:c3:${U3}`]);
+});
+
+test("a synthetic turn id is unlinkable: not listed, counted, its completions unattached", () => {
+  // auto-compact-1 repeats across conversations: GROUP BY turn id merges both into one row.
+  const merged = turn({ turn_id: "auto-compact-1", conversation_id: "c2",
+    start_ms: String(ms("2026-11-05T02:00:00Z")), end_ms: String(ms("2026-11-05T02:00:10Z")) });
+  const context = turn({ turn_id: "auto-compact-2", in_bucket: "0" });
+  const rows = [completion("2026-11-05T01:00:05Z"), completion("2026-11-05T02:00:05Z", { conversation_id: "c2" })];
+  const out = attachCompletions([turn(), merged, context], rows, opts);
+  assert.deepEqual(out.tasks.map(t => t.id), [`codex:c1:${U1}`]);
+  assert.equal(out.non_unique_turns, 1, "context turns are not counted");
+  assert.equal(out.skipped_turns, 0);
+  assert.equal(out.unattached.completions, 1);
+  assert.equal(out.unattached.cost_usd, unitCost);
+  // A synthetic turn never wins a completion over a UUID turn of the same window.
+  const overlap = turn({ turn_id: "auto-compact-3", start_ms: String(ms("2026-11-05T01:00:04Z")) });
+  const won = attachCompletions([turn(), overlap], [completion("2026-11-05T01:00:06Z")], opts);
+  assert.equal(won.tasks[0].tokens.observed_tokens, 120);
+  assert.ok(!linkCompletions([overlap], [], { prices: DEFAULT_CODEX_PRICING }).entries.length);
+  for (const id of ["auto-compact-1", "turn-2", "", `${U1}x`, U1.replaceAll("-", "")]) assert.equal(isUniqueTurnId(id), false, id);
+  assert.equal(isUniqueTurnId(U1.toUpperCase()), true);
+});
+
+test("userTasks reports turns without a unique id beside turns without a conversation", async () => {
+  const turns = [turn(), turn({ turn_id: "auto-compact-1" }), turn({ turn_id: "auto-compact-2", conversation_id: "" })];
+  const out = await userTasks(from, to, { userExact: "a", client: "codex" }, both,
+    async (sql) => (sql.includes("otel_traces") ? turns : []));
+  assert.deepEqual(out.tasks.map(t => t.id), [`codex:c1:${U1}`]);
+  assert.equal(out.unattached_codex.turns_without_conversation, 1);
+  assert.equal(out.unattached_codex.turns_without_unique_id, 1);
 });
 
 test("merged list mixes clients sorted by tokens", () => {
@@ -389,13 +422,13 @@ test("merged list mixes clients sorted by tokens", () => {
     task({ trace_id: "small", calls: [call("r2", "claude-opus-5", "1")] })], []);
   const { tasks: codex } = attachCompletions([turn()], [completion("2026-11-05T01:00:01Z")], opts);
   assert.deepEqual(sortTasks([...claude, ...codex], "tokens").map(t => t.id),
-    ["claude:big", "codex:c1:u1", "claude:small"]);
-  assert.deepEqual(sortTasks([...claude, ...codex], "duration").map(t => t.id)[0], "codex:c1:u1");
+    ["claude:big", `codex:c1:${U1}`, "claude:small"]);
+  assert.deepEqual(sortTasks([...claude, ...codex], "duration").map(t => t.id)[0], `codex:c1:${U1}`);
 });
 
 test("userTasks merges Codex turns, counts skipped turns and keeps 20", async () => {
   const calls = [];
-  const turns = [...Array.from({ length: 25 }, (_, i) => turn({ turn_id: `u${i}`,
+  const turns = [...Array.from({ length: 25 }, (_, i) => turn({ turn_id: uuid(i),
     start_ms: String(ms("2026-11-05T01:00:00Z") + i * 60000), end_ms: String(ms("2026-11-05T01:00:10Z") + i * 60000) })),
   turn({ turn_id: "orphan", conversation_id: "" })];
   const run = async (sql, params) => {
@@ -408,10 +441,11 @@ test("userTasks merges Codex turns, counts skipped turns and keeps 20", async ()
   const out = await userTasks(from, to, { userExact: "kim@x.com" }, both, run);
   assert.equal(out.tasks.length, 20);
   assert.equal(out.tasks[0].id, "claude:t1");
-  assert.equal(out.tasks[1].id, "codex:c1:u0");
+  assert.equal(out.tasks[1].id, `codex:c1:${uuid(0)}`);
   assert.deepEqual(out.coverage, { claude: "observed", codex: "observed" });
   assert.equal(out.unattached_codex.completions, 1);
   assert.equal(out.unattached_codex.turns_without_conversation, 1);
+  assert.equal(out.unattached_codex.turns_without_unique_id, 0);
   assert.ok(!out.tasks.some(t => t.id.includes("orphan")));
 
   const claudeOnly = [];
@@ -427,7 +461,7 @@ test("userTasks merges Codex turns, counts skipped turns and keeps 20", async ()
   assert.ok(codexOnly.every(sql => !sql.includes("SpanType = 'interaction'")));
   assert.deepEqual(res2.coverage, { claude: "not_requested", codex: "empty" });
   assert.deepEqual(res2.unattached_codex, { completions: 0, cost_usd: 0, cost_partial: false,
-    turns_without_conversation: 0 });
+    turns_without_conversation: 0, turns_without_unique_id: 0 });
 
   // Group filters Claude tasks only; Codex rows are still returned.
   const grouped = [];
@@ -437,7 +471,7 @@ test("userTasks merges Codex turns, counts skipped turns and keeps 20", async ()
 });
 
 test("userTasks marks Codex coverage limited when a row guard is hit", async () => {
-  const many = Array.from({ length: CODEX_TURN_LIMIT + 1 }, (_, i) => turn({ turn_id: `u${i}` }));
+  const many = Array.from({ length: CODEX_TURN_LIMIT + 1 }, (_, i) => turn({ turn_id: uuid(i) }));
   const out = await userTasks(from, to, { userExact: "a", client: "codex" }, both,
     async (sql) => (sql.includes("otel_traces") ? many : []));
   assert.equal(out.coverage.codex, "limited");
@@ -457,7 +491,7 @@ test("codexTurnSql reads spans from a 24h lookback and orders bucket turns first
 
 test("a turn spanning the bucket start is listed once, by its starting bucket", () => {
   // Turn started 23:59:50 the day before and ran to 00:00:30.
-  const boundary = (inBucket) => turn({ turn_id: "edge", in_bucket: inBucket,
+  const boundary = (inBucket) => turn({ turn_id: uuid(900), in_bucket: inBucket,
     started_at: "2026-11-04T23:59:50Z", start_ms: String(ms("2026-11-04T23:59:50Z")),
     end_ms: String(ms("2026-11-05T00:00:30Z")) });
   const inside = completion("2026-11-05T00:00:20Z");
@@ -472,7 +506,7 @@ test("a turn spanning the bucket start is listed once, by its starting bucket", 
   // A context turn without a conversation id is not counted as skipped here either.
   assert.equal(attachCompletions([turn({ conversation_id: "", in_bucket: "0" })], [], opts).skipped_turns, 0);
   // A later context turn (next bucket) still wins its completion over an earlier bucket turn.
-  const next = turn({ turn_id: "next", in_bucket: "0", start_ms: String(ms("2026-11-05T01:00:04Z")) });
+  const next = turn({ turn_id: uuid(901), in_bucket: "0", start_ms: String(ms("2026-11-05T01:00:04Z")) });
   const won = attachCompletions([turn(), next], [completion("2026-11-05T01:00:06Z")], opts);
   assert.equal(won.tasks.length, 1);
   assert.equal(won.tasks[0].tokens.observed_tokens, null);
@@ -505,16 +539,20 @@ test("SPAN_BOUND and allowlist are pinned", () => {
 
 test("parseTaskId rejects injection-shaped ids", () => {
   assert.deepEqual(parseTaskId(`claude:${TRACE}`), { client: "claude", traceId: TRACE });
-  assert.deepEqual(parseTaskId("codex:019a-conv_1:turn-2"),
-    { client: "codex", conversationId: "019a-conv_1", turnId: "turn-2" });
+  const turnId = "019a5f3e-7c2b-7d41-9a3e-0f1e2d3c4b5a";
+  assert.deepEqual(parseTaskId(`codex:019a-conv_1:${turnId}`),
+    { client: "codex", conversationId: "019a-conv_1", turnId });
+  assert.equal(parseTaskId(`codex:c1:${turnId.toUpperCase()}`).turnId, turnId.toUpperCase());
   for (const bad of [undefined, "", ["claude:" + TRACE], `claude:${TRACE}' OR 1=1 --`, `claude:${TRACE.slice(1)}`,
     `claude:${TRACE.toUpperCase()}`, "claude:", "codex:c1", "codex::t1", "codex:c1:", "codex:c 1:t1",
-    "codex:c1:t1;DROP", "codex:c1:t1'", "codex:c1:t1\n", "gemini:abc", `codex:${"a".repeat(200)}:t1`])
+    "codex:c1:t1;DROP", "codex:c1:t1'", "codex:c1:t1\n", "gemini:abc", `codex:${"a".repeat(200)}:t1`,
+    // Synthetic turn ids are not listed, so they are not task ids either.
+    "codex:c1:auto-compact-1", "codex:c1:turn-2", `codex:c1:${turnId}x`, `codex:c1:${turnId};DROP`])
     assert.throws(() => parseTaskId(bad), { name: "ValidationError" }, String(bad));
 });
 
 test("validateTaskDetailQuery rejects a disabled client and requires userExact", () => {
-  assert.throws(() => validateTaskDetailQuery({ id: "codex:c1:t1", userExact: "a" }, ["claude"]), { name: "ValidationError" });
+  assert.throws(() => validateTaskDetailQuery({ id: `codex:c1:${U1}`, userExact: "a" }, ["claude"]), { name: "ValidationError" });
   assert.throws(() => validateTaskDetailQuery({ id: `claude:${TRACE}` }, both), { name: "ValidationError" });
   assert.equal(validateTaskDetailQuery({ id: `claude:${TRACE}`, userExact: "a" }, both).task.traceId, TRACE);
 });
@@ -522,7 +560,7 @@ test("validateTaskDetailQuery rejects a disabled client and requires userExact",
 test("detail SQL never selects whole SpanAttributes or forbidden keys", () => {
   const q = { userExact: "kim@x.com" };
   const claude = claudeDetailSql(from, to, TRACE, q);
-  const codex = codexDetailSql(from, to, q, "c1", "u1");
+  const codex = codexDetailSql(from, to, q, "c1", U1);
   for (const { sql, params } of [claude.header, claude.spans, codex.turns, codex.completions, codex.spans]) {
     assert.ok(!/user_prompt|full_command|file_path|bash_argv0/.test(sql));
     // Every SpanAttributes/LogAttributes use is a single-key lookup (or the logSelection map sort).
@@ -535,9 +573,12 @@ test("detail SQL never selects whole SpanAttributes or forbidden keys", () => {
   assert.ok(codex.spans.sql.includes(`LIMIT ${SPAN_BOUND}`) && codex.spans.sql.includes("count() OVER ()"));
   assert.equal(claude.spans.params.traceId, TRACE);
   assert.equal(claude.header.params.userExact, "kim@x.com");
-  assert.equal(codex.spans.params.turnId, "u1");
+  assert.equal(codex.spans.params.turnId, U1);
   assert.match(codex.spans.sql, /PREWHERE Timestamp >= \{spanFrom:DateTime\} AND Timestamp < \{spanTo:DateTime\}\s+AND coalesce\(nullIf\(UserEmail, ''\), nullIf\(EndUserId, ''\), ''\) = \{userExact:String\}\s+WHERE ResourceAttributes\['client'\] = 'codex'/);
   assert.match(codex.turns.sql, /HAVING conversation_id = \{conversationId:String\}/);
+  // Spans naming another conversation are not this turn's spans.
+  assert.ok(codex.spans.sql.includes("AND SpanAttributes['conversation.id'] IN ('', {conversationId:String})"));
+  assert.equal(codex.spans.params.conversationId, "c1");
   assert.ok(!codex.turns.sql.includes("SpanAttributes['conversation.id'] = "), "conversation stays a turn-level HAVING");
   assert.equal(codex.turns.params.conversationId, "c1");
   assert.equal(codex.completions.params.conversationId, "c1");
@@ -555,7 +596,7 @@ test("subagent spans after the bucket end are included", () => {
       span("x", "tool.execution", late - 10, { a_subagent_type: "Explore" })], []);
   assert.equal(out.spans.find(s => s.id === "b").start_ms, late);
   assert.equal(out.lanes.find(l => l.id === "ag1").llm_calls, 1);
-  const codex = codexDetailSql(from, to, { userExact: "a" }, "c1", "u1");
+  const codex = codexDetailSql(from, to, { userExact: "a" }, "c1", U1);
   assert.equal(codex.spans.params.spanFrom, "2026-11-04 00:00:00");
   assert.equal(codex.spans.params.spanTo, "2026-11-07 00:00:00");
 });
@@ -578,13 +619,18 @@ test("foldTaskDetail builds lanes from AgentId with subagent_type labels", () =>
   assert.deepEqual(out.lanes.map(l => l.id), ["main", "agA", "agB", "agC"]);
   assert.equal(lanes.main.kind, "main");
   assert.equal(lanes.main.spawned_by, null);
-  assert.deepEqual([lanes.agA.kind, lanes.agA.label, lanes.agA.spawned_by], ["general-purpose", "general-purpose", "exec1"]);
+  assert.deepEqual([lanes.agA.kind, lanes.agA.label, lanes.agA.spawned_by], ["general-purpose", "general-purpose", "tool1"]);
+  assert.equal(lanes.agB.spawned_by, "tool2");
   assert.deepEqual([lanes.agB.kind, lanes.agB.label], ["custom", "co-agent:pr-autofix-implementer"]);
   assert.deepEqual([lanes.agC.kind, lanes.agC.label, lanes.agC.spawned_by], ["custom", null, null]);
   assert.equal(lanes.agA.llm_calls, 2);
   assert.equal(lanes.main.cost_usd, 0.5);
   const s1 = out.spans.find(s => s.id === "s1");
-  assert.deepEqual([s1.kind, s1.lane, s1.parent, s1.start_ms], ["llm", "agA", "exec1", 200]);
+  assert.deepEqual([s1.kind, s1.lane, s1.parent, s1.start_ms], ["llm", "agA", "tool1", 200]);
+  // One bar per tool call: each tool.execution folds into its tool span.
+  assert.ok(!out.spans.some(s => s.id === "exec1" || s.id === "exec2"));
+  assert.equal(out.spans.filter(s => s.kind === "tool").length, 2);
+  assert.equal(out.spans.find(s => s.id === "tool1").execution_ms, 1000);
   assert.deepEqual(s1.tokens, { input: 10, cache_read: 100, cache_write: 0, output: 5 });
   assert.equal(out.spans.find(s => s.id === "o1").parent, null);
   assert.deepEqual(out.spans.find(s => s.id === "w1").attrs, { decision: "accept", source: "config" });
@@ -595,6 +641,26 @@ test("foldTaskDetail builds lanes from AgentId with subagent_type labels", () =>
   assert.equal(out.task.llm_calls, 5);
   assert.equal(out.task.subagents, 3);
   assert.equal(out.task.id, `claude:${TRACE}`);
+});
+
+test("a tool.execution span folds into its tool bar, or is drawn when the tool span is absent", () => {
+  const out = foldTaskDetail({ client: "claude", ...header() }, [
+    span("t", "tool", 0, { a_tool_name: "Bash", a_bash_command_class: "read_only", duration_ms: "3000" }),
+    span("w", "tool.blocked_on_user", 10, { parent_id: "t", a_decision: "accept", duration_ms: "500" }),
+    span("x", "tool.execution", 600, { parent_id: "t", a_success: "false", a_error_class: "timeout",
+      a_tool_name: "Other", duration_ms: "2000" }),
+    span("lone", "tool.execution", 5000, { parent_id: "gone", a_tool_name: "Read", a_success: "true" }),
+  ], []);
+  const tools = out.spans.filter(s => s.kind === "tool");
+  assert.deepEqual(tools.map(s => s.id), ["t", "lone"]);
+  const bar = tools[0];
+  // The tool span's own attrs win; execution attrs fill the rest.
+  assert.deepEqual(bar.attrs, { tool_name: "Bash", bash_command_class: "read_only", success: false, error_class: "timeout" });
+  assert.equal(bar.duration_ms, 3000);
+  assert.equal(bar.execution_ms, 2000);
+  assert.equal(out.spans.find(s => s.id === "w").parent, "t");
+  assert.equal(tools[1].execution_ms, undefined);
+  assert.equal(tools[1].parent, null);
 });
 
 test("detail totals equal the list fold for the same task", () => {
@@ -634,6 +700,8 @@ test("truncated detail withholds totals", () => {
   assert.deepEqual(out.why, []);
   assert.equal(out.spans.length, 2);
   assert.equal(out.task.duration_ms, 60000);
+  // Models of the newest spans are not the task's models.
+  assert.equal(out.task.models, null);
 });
 
 const ruleMap = (out) => Object.fromEntries(out.why.map(r => [r.rule, r.value]));
@@ -650,6 +718,16 @@ test("why omits rules with missing inputs", () => {
   assert.equal(rules.permission_wait, 0);
   const codex = foldTaskDetail({ client: "codex", turn: turn({ llm_calls: "0", models: [] }), linked: [] }, [], []);
   assert.deepEqual(codex.why, []);
+});
+
+test("retries are unavailable when any call lacks attempt", () => {
+  const rows = [llm("a", 0, { a_attempt: "2" }), llm("b", 10)];
+  assert.ok(!("retries" in ruleMap(foldTaskDetail({ client: "claude", ...header() }, rows, []))));
+  // Order does not matter: a missing attempt before a known one is still partial evidence.
+  const reversed = [llm("a", 0), llm("b", 10, { a_attempt: "3" })];
+  assert.ok(!("retries" in ruleMap(foldTaskDetail({ client: "claude", ...header() }, reversed, []))));
+  const complete = [llm("a", 0, { a_attempt: "1" }), llm("b", 10, { a_attempt: "1" })];
+  assert.equal(ruleMap(foldTaskDetail({ client: "claude", ...header() }, complete, [])).retries, 0);
 });
 
 test("why context_growth reports first and last call context", () => {
@@ -719,8 +797,8 @@ test("detail for another user's task returns 404", async () => {
   const errors = [];
   for (const raw of [{ id: `claude:${TRACE}`, userExact: "lee@x.com" },
     { id: `claude:${"f".repeat(32)}`, userExact: "kim@x.com" },
-    { id: "codex:c1:u1", userExact: "lee@x.com" }, { id: "codex:c1:nope", userExact: "kim@x.com" },
-    { id: "codex:c2:u1", userExact: "kim@x.com" }]) {
+    { id: `codex:c1:${U1}`, userExact: "lee@x.com" }, { id: `codex:c1:${uuid(99)}`, userExact: "kim@x.com" },
+    { id: `codex:c2:${U1}`, userExact: "kim@x.com" }]) {
     const err = await userTaskDetail(from, to, raw, both, run, DEFAULT_CODEX_PRICING).then(() => null, e => e);
     assert.ok(err instanceof NotFoundError, JSON.stringify(raw));
     errors.push(err.message);
@@ -732,13 +810,13 @@ test("detail for another user's task returns 404", async () => {
   const spy = async (sql, params) => { seen.push(sql); return run(sql, params); };
   await userTaskDetail(from, to, { id: `claude:${TRACE}`, userExact: "lee@x.com" }, both, spy).catch(() => {});
   assert.equal(seen.length, 1);
-  const codex = await userTaskDetail(from, to, { id: "codex:c1:u1", userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
-  assert.equal(codex.task.id, "codex:c1:u1");
+  const codex = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
+  assert.equal(codex.task.id, `codex:c1:${U1}`);
 });
 
 test("a context turn starting before the bucket is not a detail of this bucket", async () => {
   const run = async (sql) => sql.includes("GROUP BY turn_id") ? [turn({ in_bucket: 0 })] : [];
-  const err = await userTaskDetail(from, to, { id: "codex:c1:u1", userExact: "a" }, both, run, DEFAULT_CODEX_PRICING)
+  const err = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING)
     .then(() => null, e => e);
   assert.ok(err instanceof NotFoundError);
 });

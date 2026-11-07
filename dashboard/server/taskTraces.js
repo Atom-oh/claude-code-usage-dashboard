@@ -29,6 +29,10 @@ export const CODEX_TURN_LIMIT = 5000;
 export const CODEX_COMPLETION_LIMIT = 50000;
 export const COMPLETION_SLACK_MS = 5000;
 export const EXACT_USER = "coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') = {userExact:String}";
+// Codex turn ids are UUIDs except a few synthetic ones (e.g. `auto-compact-N`) that repeat
+// across conversations. A turn groups by its id alone, so only UUID-shaped ids identify a turn.
+export const TURN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUniqueTurnId = (id) => typeof id === "string" && TURN_ID.test(id);
 
 export function validateTaskQuery(raw, enabledClients) {
   const clients = selectClients(raw.client, enabledClients);
@@ -374,17 +378,23 @@ export function foldCodexTask(turn, linked) {
 // Shared linking pass (list and detail): each unique completion goes to the turn of its
 // conversation whose [start, end + slack] contains its event time (latest start, then
 // greatest turn id, when several), at most once. Returns every turn entry with its linked
-// completions and the completions linked to no turn.
+// completions and the completions linked to no turn. Turns without a conversation id or
+// without a UUID-shaped turn id (a synthetic id can merge turns of several conversations)
+// are unlinkable: they are skipped and counted, and never win a completion.
 export function linkCompletions(turns, completions, { slackMs = COMPLETION_SLACK_MS, prices = codexPrices() } = {}) {
   const byConversation = new Map();
   const entries = [];
-  let skippedTurns = 0;
+  let skippedTurns = 0, nonUniqueTurns = 0;
   for (const turn of turns) {
     const start = count(turn.start_ms), end = count(turn.end_ms);
     // Rows without the flag (pure callers) are bucket turns.
     const inBucket = turn.in_bucket === undefined || Number(turn.in_bucket) === 1;
     if (!turn.conversation_id || !turn.turn_id || start === null || end === null) {
       if (inBucket) skippedTurns++;
+      continue;
+    }
+    if (!isUniqueTurnId(turn.turn_id)) {
+      if (inBucket) nonUniqueTurns++;
       continue;
     }
     const entry = { turn, start, end, inBucket, linked: [] };
@@ -411,7 +421,7 @@ export function linkCompletions(turns, completions, { slackMs = COMPLETION_SLACK
     if (best) best.linked.push({ row, usage, time });
     else unlinked.push({ row, usage, time });
   }
-  return { entries, unlinked, skippedTurns };
+  return { entries, unlinked, skippedTurns, nonUniqueTurns };
 }
 
 // Only bucket turns (in_bucket) become tasks; a completion won by a context turn belongs
@@ -420,7 +430,7 @@ export function linkCompletions(turns, completions, { slackMs = COMPLETION_SLACK
 // completion on that backend (a turn without one is "unknown").
 export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLACK_MS,
   prices = codexPrices(), from = null, to = null, backend = "" } = {}) {
-  const { entries, unlinked, skippedTurns } = linkCompletions(turns, completions, { slackMs, prices });
+  const { entries, unlinked, skippedTurns, nonUniqueTurns } = linkCompletions(turns, completions, { slackMs, prices });
   const lost = { completions: 0, cost: null, unknown: 0 };
   for (const { usage, time } of unlinked) {
     const inBucket = time !== null && (from === null || time >= from.getTime()) && (to === null || time < to.getTime());
@@ -442,6 +452,7 @@ export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLA
     unattached: { completions: lost.completions, cost_usd: Number.isFinite(lostCost) ? lostCost : null,
       cost_partial: lost.unknown > 0 || (lostCost !== null && !Number.isFinite(lostCost)) },
     skipped_turns: skippedTurns,
+    non_unique_turns: nonUniqueTurns,
   };
 }
 
@@ -484,7 +495,7 @@ export async function userTasks(from, to, raw, enabledClients, run = defaultQuer
     tasks = sortTasks([...tasks, ...codex.tasks], q.sort);
     coverage.codex = codex.limited ? "limited" : codex.tasks.length ? "observed" : "empty";
     unattached = { ...codex.unattached, cost_partial: codex.unattached.cost_partial || codex.limited,
-      turns_without_conversation: codex.skipped_turns };
+      turns_without_conversation: codex.skipped_turns, turns_without_unique_id: codex.non_unique_turns };
   }
   return { tasks, unattached_codex: unattached, coverage, partial: true };
 }
