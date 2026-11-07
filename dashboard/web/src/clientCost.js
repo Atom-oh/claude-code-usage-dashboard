@@ -32,8 +32,14 @@ export function combineCostUsers(userRows, modelRows, clients) {
     if (group) (group.models[row.client] ||= []).push(row);
   }
   return [...groups.values()].map(({ user, parts, models }) => {
-    const cost = knownSum(parts, row => row.cost_usd, row => row.cost_partial === true || row.unpriced > 0);
-    const tokens = knownSum(parts, observedTokens, row => row.tokens_partial === true);
+    // A part with no usage-backed model rows (when the breakdown is present) cannot
+    // establish a known zero: its default 0 cost/tokens become unavailable. Positive
+    // values are kept as-is.
+    const evidence = Array.isArray(modelRows) ? parts.map(part => models[part.client] ? part : { ...part,
+      cost_usd: observedNumber(part.cost_usd) > 0 ? part.cost_usd : null,
+      observed_tokens: observedTokens(part) > 0 ? observedTokens(part) : null }) : parts;
+    const cost = knownSum(evidence, row => row.cost_usd, row => row.cost_partial === true || row.unpriced > 0);
+    const tokens = knownSum(evidence, observedTokens, row => row.tokens_partial === true);
     if (tokens.total !== null && !Number.isSafeInteger(tokens.total)) {
       tokens.total = null;
       tokens.partial = true;
@@ -47,7 +53,7 @@ export function combineCostUsers(userRows, modelRows, clients) {
       cost_estimated: parts.reduce((sum, part) => sum + (observedNumber(part.cost_estimated) || 0), 0),
     };
     for (const client of ["claude", "codex"]) {
-      const pieces = parts.filter(part => part.client === client);
+      const pieces = evidence.filter(part => part.client === client);
       const amount = knownSum(pieces, part => part.cost_usd,
         part => part.cost_partial === true || part.unpriced > 0);
       row[`${client}_cost`] = amount.total;
@@ -62,9 +68,9 @@ export function combineCostUsers(userRows, modelRows, clients) {
 
 // Channel lines for the shared user cost table, mirroring the Claude detail
 // per-group model bars. CCB/C4E are the inferred Claude session channels
-// (`channel`: bedrock/enterprise); older responses without it fall back to the
-// shared backend (enterprise → "anthropic", a `bedrock-*` route → CCB); Codex is
-// the emitting client. Never infer a client from a model.
+// (`channel`: bedrock/enterprise); an unresolved or absent channel falls back to
+// the shared backend (enterprise → "anthropic", a `bedrock-*` route → CCB); Codex
+// is the emitting client. Never infer a client from a model.
 export const USER_COST_CHANNELS = [
   { key: "ccb", label: "CCB", title: "Claude Code · Bedrock 채널", color: "var(--series-bedrock)" },
   { key: "c4e", label: "C4E", title: "Claude Code · Enterprise(Anthropic) 채널", color: "var(--series-enterprise)" },
@@ -75,8 +81,8 @@ export const USER_COST_CHANNELS = [
 export function userCostChannel(row) {
   if (row.client === "codex") return "codex";
   if (row.client !== "claude") return null;
-  if (row.channel !== undefined && row.channel !== null && row.channel !== "")
-    return row.channel === "bedrock" ? "ccb" : row.channel === "enterprise" ? "c4e" : "claude_unknown";
+  if (row.channel === "bedrock") return "ccb";
+  if (row.channel === "enterprise") return "c4e";
   if (row.backend === "anthropic") return "c4e";
   return /^bedrock-/.test(row.backend || "") ? "ccb" : "claude_unknown";
 }

@@ -30,7 +30,20 @@ test("known user subtotals preserve missing client costs and token coverage", ()
     claude_cost: null, codex_cost: 0.000001, claude_cost_status: "미산정",
     codex_cost_status: "확인됨", observed_tokens: 100, tokens_partial: true });
   expect(combineCostUsers([user("claude", null), user("codex", null)], [], ["claude", "codex"])[0].cost_usd).toBeNull();
-  expect(combineCostUsers([user("claude", 0), user("codex", null)], [], ["claude", "codex"])[0].cost_usd).toBe(0);
+  expect(combineCostUsers([user("claude", 0), user("codex", null)], [{ ...user("claude", 0), model: "a" }], ["claude", "codex"])[0].cost_usd).toBe(0);
+});
+
+test("operational-only parts without usage-backed model rows never establish a known zero", () => {
+  const users = [user("claude", 0, { observed_tokens: 0 }), user("codex", null, { observed_tokens: null })];
+  const row = combineCostUsers(users, [{ ...users[1], model: "openai.unpriced" }], ["claude", "codex"])[0];
+  expect(row.cost_usd).toBeNull();
+  expect(row.cost_partial).toBe(true);
+  expect(row.observed_tokens).toBeNull();
+  expect(row.claude_cost).toBeNull();
+  // Without a breakdown (older responses) the server totals are used unchanged.
+  expect(combineCostUsers(users, undefined, ["claude", "codex"])[0].cost_usd).toBe(0);
+  // Positive amounts survive even without backed rows.
+  expect(combineCostUsers([user("claude", 2)], [], ["claude"])[0].cost_usd).toBe(2);
 });
 
 test("missing IDs remain separate by client; selection and exact raw identities are preserved", () => {
@@ -74,7 +87,8 @@ test("user cost channels split Claude by inferred channel and keep Codex as the 
   // The session channel wins over a model-derived backend (bare model ids on Bedrock).
   expect(userCostChannel({ client: "claude", backend: "unknown", channel: "bedrock" })).toBe("ccb");
   expect(userCostChannel({ client: "claude", backend: "anthropic", channel: "enterprise" })).toBe("c4e");
-  expect(userCostChannel({ client: "claude", backend: "bedrock-runtime", channel: "unknown" })).toBe("claude_unknown");
+  expect(userCostChannel({ client: "claude", backend: "bedrock-runtime", channel: "unknown" })).toBe("ccb");
+  expect(userCostChannel({ client: "claude", backend: "unknown", channel: "unknown" })).toBe("claude_unknown");
   const lines = userChannelLines({
     claude: [
       { client: "claude", backend: "anthropic", model: "claude-opus-5-5", cost_usd: 2 },
