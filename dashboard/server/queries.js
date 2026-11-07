@@ -593,6 +593,7 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
     SELECT formatDateTime(greatest(m.t, {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
       m.SessionId AS session, m.UserEmail AS user, ${normModel("m.Model")} AS model,
       multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("m.Model", "''")}) AS backend,
+      any(${GROUP_EXPR}) AS channel,
       countIf(m.MetricName = 'claude_code.token.usage' AND ${observed}) > 0 AS token_seen,
       countIf(m.MetricName = 'claude_code.cost.usage' AND ${observed}) > 0 AS cost_seen,
       countIf(m.Value != 0) > 0 AS changed, ${TOKEN_SUMS}
@@ -601,7 +602,7 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
     GROUP BY t, session, user, model, backend
     )
-    SELECT t, session, user, model, backend, 1 AS count,
+    SELECT t, session, user, model, backend, any(channel) AS channel, 1 AS count,
       -- Bits mark omitted keys: detailed scopes = 0, bucket-only scopes = 15.
       GROUPING(session, user, model, backend) != 0 AS timeline_only,
       sum(reported_cost) AS reported_cost, sum(input_tokens) AS input_tokens,

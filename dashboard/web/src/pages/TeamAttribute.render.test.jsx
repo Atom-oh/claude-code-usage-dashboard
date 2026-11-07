@@ -78,8 +78,8 @@ test("shared users table, CSV and filter control carry the team", async () => {
 test("shared user costs and the user cost detail title carry the team", async () => {
   mount("/cost");
   await waitFor(() => expect(card("사용자별 비용").textContent).toContain("fsi, ops"));
-  expect(cells("사용자별 비용").map((r) => r.slice(0, 3))).toEqual([
-    ["Codex", "al******@example.test", "fsi, ops"], ["Codex", "bo******@example.test", "—"]]);
+  expect(cells("사용자별 비용").map((r) => r.slice(0, 2))).toEqual([
+    ["al******@example.test", "fsi, ops"], ["bo******@example.test", "—"]]);
   fireEvent.click(within(card("사용자별 비용")).getByRole("button", { name: "al******@example.test" }));
   const heading = await screen.findByRole("heading", { name: /사용자 비용 상세/ });
   expect(heading.textContent).toBe("al******@example.test · fsi, ops · 사용자 비용 상세");

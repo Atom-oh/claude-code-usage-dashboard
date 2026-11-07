@@ -15,6 +15,7 @@ import { maskEmail, parseUtc } from "../fmt.js";
 import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
 import { withoutZeroTokenModels } from "../modelRows.js";
 import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
+import { CostUsers } from "./ClientCostUsers.jsx";
 import {
   basisLabel, BROWSER_TIME_ZONE, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, OBSERVED_TOKEN_HELP, presentationRow,
 } from "../clientPresentation.js";
@@ -236,6 +237,7 @@ function CostDetail({ selection, hours, parentRange, stale, onClose }) {
     : `${selection.model} · ${text(selectedBackend)} · 모델별 사용자 비중`;
   const pending = stale || detail.stale;
   const applied = detail.data?.applied_filters;
+  const detailClients = selection.client === "all" ? detail.data?.clients || [] : [selection.client];
   const supported = selection.kind === "user" ? applied?.userExact === selection.user
     : applied?.modelExact === selection.model && applied?.backend === selectedBackend;
   const rows = (detail.data?.by_user || []).map(presentationRow);
@@ -257,14 +259,14 @@ function CostDetail({ selection, hours, parentRange, stale, onClose }) {
       {detail.data?.effective_range && <p className="text-[12px] text-ink-500">
         집계 구간: {formatClientTimestamp(detail.data.effective_range.from)} ~ {formatClientTimestamp(detail.data.effective_range.to)}
       </p>}
-      <Trend rows={detail.data?.timeseries || []} clients={[selection.client]}
+      <Trend rows={detail.data?.timeseries || []} clients={detailClients}
         clientRows={rawClientRows} bucketHours={detail.data?.bucket_hours || hours}
         effectiveRange={detail.data?.effective_range} metric="cost" title="선택 대상 비용 추이" />
       {selection.kind === "model" && <ResultTable title="모델별 사용자 비용 비중"
         subtitle={`알려진 ${clientName(selection.client)} 비용 합계 내 비중${partial ? " · 부분합 기준" : ""}. 미산정 금액은 비중에서 제외하며, 합계가 없거나 0이면 —로 표시합니다.`}
         columns={withTeamColumn([USER, COST, percent("share", partial ? "알려진 부분합 내 비중 (%)" : "알려진 비용 내 비중 (%)"), BASIS, SESSIONS], teams)}
         rows={withTeams(shares, teams)} exportName="model_user_cost_shares" />}
-      {selection.kind === "user" && <ModelTrends data={detail.data} clients={[selection.client]} />}
+      {selection.kind === "user" && <ModelTrends data={detail.data} clients={detailClients} />}
     </>}
   </section>;
 }
@@ -478,11 +480,8 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
             () => select({ kind: "model", client: row.client, model: value, backend: row.backend }), stale || !value) },
           ...UNIT_COSTS, TOKENS, number("unpriced", "미산정 기록")],
           usageModels, "model_costs", `${COST_HELP} 모델을 누르면 해당 클라이언트·모델의 사용자별 비용 비중을 확인합니다.`)}
-        {table("사용자별 비용", withTeamColumn([CLIENT,
-          { ...USER, render: (value, row) => detailButton(maskEmail(value) || "(미식별)",
-            () => select({ kind: "user", client: row.client, user: value }), stale || !value) },
-          BACKEND, COST, BASIS, SESSIONS, COST_SESSION, TOKENS], teams),
-          withTeams(users, teams), "user_costs", "사용자를 누르면 해당 클라이언트·사용자의 비용 추이와 모델별 상세를 확인합니다.")}
+        <CostUsers key={`${page}-user_costs`} users={users} modelRows={data?.by_user_model}
+          clients={selected} stale={stale} onSelect={select} />
         {selection && <CostDetail key={JSON.stringify(selection)} selection={selection}
           hours={data?.bucket_hours || 1} parentRange={data?.effective_range} stale={stale}
           onClose={() => setDetailPick(null)} />}
