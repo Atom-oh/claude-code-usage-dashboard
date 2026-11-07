@@ -503,8 +503,9 @@ interaction duration. All four drilldowns are excluded from cache warming.
 exact user: required `userExact` (email, else `enduser.id`, equality match), optional
 `client`, `backend`, `group` (Claude tasks only; 400 unless Claude is selected) and
 `sort=tokens|duration` (default `tokens`). Response `{tasks, unattached_codex, coverage,
-partial: true}`; `coverage.<client>` is `observed`, `empty` or `not_requested`. Only
-trace-enabled users emit spans, so `partial` is always true. A Claude task is one
+partial: true}`; `coverage.<client>` is `observed`, `empty` or `not_requested` (Codex also
+`limited` when a row guard is hit). Only trace-enabled users emit spans, so `partial` is
+always true. Claude and Codex tasks are merged, sorted and capped together. A Claude task is one
 `interaction` span starting in `[from, to)`; its `llm_request` spans are read through
 `to + 24h`. Each task has `id` (`claude:<TraceId>`), `started_at`, `duration_ms`
 (`duration_basis: "interaction_span"`), normalized `models`, `llm_calls`, `subagents`
@@ -514,8 +515,26 @@ and `cost_usd`/`cost_partial`/`cost_basis`. Per call: Anthropic models use the
 `api_request` `cost_usd` joined by request id (`client_reported`), else `computeCost()`
 (`computed`); non-Anthropic models use the ADR-017 per-request AWS list estimate
 (`aws_list_estimate`, null when unpriced). Calls with different bases make `mixed`;
-`cost_basis` is null for a task without calls. Codex tasks are not yet returned
-(`coverage.codex: "not_requested"`, `unattached_codex: null`).
+`cost_basis` is null for a task without calls.
+
+A Codex task is one turn (`id` `codex:<conversation.id>:<turn id>`) of `client=codex` spans
+whose first span starts in `[from, to)`; spans are read through `to + 24h`.
+`duration_ms` is the observed span window (min start .. max end, `duration_basis:
+"observed_span_window"`), `llm_calls` counts `codex.sampling` spans, and `subagents` is
+null (no parent link). Spans carry no usage: tokens and cost come only from unique
+usage-bearing `response.completed` completions of the same conversation whose event
+time falls in `[start, end + 5s]` (latest-starting turn when several; each completion
+once), priced per completion with the Codex AWS list estimate (`cost_basis:
+"linked_estimate"`). `tokens.input` is the uncached remainder beside `cache_read`/
+`cache_write`, so `observed_tokens` is input + output without re-adding cache or
+reasoning ([ADR-014](decisions/ADR-014-observed-token-subtotals.md)). Unpriced or
+token-less completions leave the cost known-partial (`cost_partial`) or null. Codex
+tasks are never group-filtered; with `backend`, a turn needs a linked completion on
+that backend (a turn without one is `unknown`). When Codex is selected,
+`unattached_codex` is `{completions, cost_usd, cost_partial, turns_without_conversation}`:
+the user's completions in `[from, to)` linked to no traced turn and their known cost
+(0 when none, null when all unpriced), plus turns skipped for lacking a conversation id;
+otherwise it is null.
 
 ### Teams
 

@@ -33,7 +33,7 @@ import { RUNTIME_ID_ALIASES } from "./codexPricing.js";
 import { createAwsModelPriceUpdater, priceCatalogFits } from "./awsModelPricing.js";
 import { createPriceDiscovery, setPriceDiscoveryObserver } from "./pricingDiscovery.js";
 import { clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
-import { userTasks, validateTaskQuery } from "./taskTraces.js";
+import { taskCacheKey, userTasks, validateTaskQuery } from "./taskTraces.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -282,12 +282,7 @@ function validateModelTime(raw) {
     throw new ValidationError("invalid modelTime", "modelTime accepts only 1");
 }
 function cacheKey(path, query) {
-  if (path === "/api/users/tasks") {
-    const { clients, userExact, backend, group, sort } = validateTaskQuery(query, clientConfig.enabledClients);
-    const normalized = { from: query.from, to: query.to, client: clients.join(","), userExact, backend, group, sort };
-    return `${path}?${new URLSearchParams(Object.entries(normalized)
-      .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString()}`;
-  }
+  if (path === "/api/users/tasks") return `${path}?${taskCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort") {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
       : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
@@ -515,7 +510,7 @@ route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query
 route("/api/users/interactions", (from, to, query) => q.userInteractions(from, to, String(query.email || "")), { warm: false, team: false });
 // Range-only team lookups across enabled clients (filter options and the user display join).
 route("/api/teams", (from, to) => q.listTeams(from, to, clientConfig.enabledClients), { client: null, team: false });
-// Per-user task list from traces (Claude interactions); see docs/api-reference.md.
+// Per-user task list from traces (Claude interactions, Codex turns); see docs/api-reference.md.
 route("/api/users/tasks", (from, to, raw) => userTasks(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: false, team: false, validate: (raw) => validateTaskQuery(raw, clientConfig.enabledClients) });
 route("/api/users/teams", (from, to) => q.userTeams(from, to, clientConfig.enabledClients), { client: null, team: false });
