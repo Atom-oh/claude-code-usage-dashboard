@@ -7,6 +7,38 @@ const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", sessio
   project: "fixture", context_tier: "short", count: 1, input_tokens_total: 100, cache_read_tokens: 40,
   cache_write_tokens: 11, output_tokens: 30, reasoning_tokens: 10, invalid: 0 };
 
+test("cost profile adds user/model/backend amounts without changing totals or counting sessions per model", () => {
+  const records = [
+    event,
+    { ...event, model: "openai.unpriced" },
+    { ...event, client: "claude", backend: "anthropic", model: "claude-sonnet-5",
+      input_tokens: 49, reported_cost: 2 },
+  ];
+  const ordinary = foldClientMetrics(records, ["claude", "codex"]);
+  const costs = foldClientMetrics(records, ["claude", "codex"], undefined, { costView: true });
+  assert.equal(ordinary.by_user_model, undefined);
+  assert.equal(costs.by_user_model.length, 3);
+  assert.equal(costs.totals.cost_usd, ordinary.totals.cost_usd);
+  assert.equal(costs.totals.sessions, 2);
+  const unknown = costs.by_user_model.find(row => row.model === "openai.unpriced");
+  assert.equal(unknown.cost_usd, null);
+  assert.equal(unknown.cost_partial, true);
+  const claude = costs.by_user_model.find(row => row.client === "claude");
+  assert.equal(claude.cost_usd, 2);
+  assert.equal(claude.user, event.user);
+  assert.equal(claude.backend, "anthropic");
+  assert(!Object.hasOwn(claude, "tool_calls"));
+});
+
+test("cost user/model breakdown preserves missing identity and valid reports without token coverage", () => {
+  const result = foldClientMetrics([
+    { ...event, client: "claude", model: "claude-sonnet-5", user: "", reported_cost: 3 },
+  ], ["claude"], undefined, { costView: true });
+  assert.equal(result.by_user_model[0].user, "");
+  assert.equal(result.by_user_model[0].cost_usd, 3);
+  assert.equal(result.by_user_model[0].tokens, null);
+});
+
 test("Codex user prefilter keeps native fallback, original checks and both dedup branches", () => {
   const from = new Date("2026-09-14"), to = new Date("2026-09-15");
   const { sql, params } = buildCodexQuery(from, to, { userExact: "fixture@example.invalid" });
@@ -558,7 +590,10 @@ test("cost folds preserve coverage, tiers, identities and idle buckets while omi
     expected.totals = trim(expected.totals);
     for (const key of ["by_client", "by_user", "by_model", "by_model_time", "by_user_time", "timeseries"])
       expected[key] = expected[key].map(trim);
-    assert.deepEqual(cost, { ...expected, view: "cost" });
+    const { by_user_model, ...existingCost } = cost;
+    assert.deepEqual(existingCost, { ...expected, view: "cost" });
+    assert.ok(Array.isArray(by_user_model));
+    assert.ok(by_user_model.every(row => fields.every(field => !Object.hasOwn(row, field))));
     assert.equal(cost.totals.requests, full.totals.requests);
     assert.equal("by_project" in cost || "tools" in cost, false);
   }

@@ -206,6 +206,11 @@ is separate from the default view. Cost, token coverage, populations, rejected-r
 evidence, effective bounds and exact-filter acknowledgments retain the same semantics.
 The response echoes `view="cost"`. It omits `by_project`, `tools`, and row fields `api_errors`, `tool_calls`,
 `tool_errors`, `request_duration_ms`, `ttft_ms`; omitted diagnostics are not measured zeros.
+It adds `by_user_model`, grouped by `client`, raw `user` (`""` when absent), `model`,
+and `backend`, using the same bounded records and cost accumulator as `by_user`.
+These range-level rows retain cost basis, known subtotals, token coverage, and
+per-group sessions. Model-level sessions must not be summed into user sessions;
+use `by_user` for user totals. This breakdown is absent from the default profile.
 SQL still retains operational records needed for scope coverage, but skips duration/error
 calculations and tool-name grouping. Observed `requests` remains available, including in
 the Trends period table and CSV; unsupported counts retain null. Shared cost/executive/trend views, trend baselines and
