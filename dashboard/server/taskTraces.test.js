@@ -247,6 +247,12 @@ test("codexTurnSql uses client=codex predicate and exact user", () => {
   assert.ok(sql.includes("coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id'])"));
   assert.ok(sql.includes("SpanAttributes['conversation.id']"));
   assert.ok(sql.includes("SpanName = 'codex.sampling'"));
+  // Turn-id spans only, filtered in the inner query before the per-span dedupe.
+  const inner = sql.slice(sql.indexOf("FROM claude_code.otel_traces"), sql.indexOf("LIMIT 1 BY TraceId, SpanId"));
+  assert.ok(inner.includes("(SpanAttributes['turn_id'] != '' OR SpanAttributes['turn.id'] != '')"));
+  // PREWHERE reads promoted columns only: the span window and the exact user.
+  const prewhere = inner.slice(inner.indexOf("PREWHERE"), inner.indexOf("WHERE ResourceAttributes"));
+  assert.match(prewhere, /^PREWHERE Timestamp >= \{spanFrom:DateTime\} AND Timestamp < \{spanTo:DateTime\}\s+AND coalesce\(nullIf\(UserEmail, ''\), nullIf\(EndUserId, ''\), ''\) = \{userExact:String\}\s*$/);
   assert.equal(params.userExact, "kim@x.com");
   assert.equal(params.spanTo, "2026-11-07 00:00:00");
   assert.ok(!sql.includes("kim@x.com"));
@@ -530,6 +536,9 @@ test("detail SQL never selects whole SpanAttributes or forbidden keys", () => {
   assert.equal(claude.spans.params.traceId, TRACE);
   assert.equal(claude.header.params.userExact, "kim@x.com");
   assert.equal(codex.spans.params.turnId, "u1");
+  assert.match(codex.spans.sql, /PREWHERE Timestamp >= \{spanFrom:DateTime\} AND Timestamp < \{spanTo:DateTime\}\s+AND coalesce\(nullIf\(UserEmail, ''\), nullIf\(EndUserId, ''\), ''\) = \{userExact:String\}\s+WHERE ResourceAttributes\['client'\] = 'codex'/);
+  assert.match(codex.turns.sql, /HAVING conversation_id = \{conversationId:String\}/);
+  assert.ok(!codex.turns.sql.includes("SpanAttributes['conversation.id'] = "), "conversation stays a turn-level HAVING");
   assert.equal(codex.turns.params.conversationId, "c1");
   assert.equal(codex.completions.params.conversationId, "c1");
   assert.ok(codex.spans.sql.includes("{userExact:String}") && codex.spans.sql.includes("ResourceAttributes['client'] = 'codex'"));

@@ -231,6 +231,11 @@ export function foldClaudeTasks(taskRows, costRows, { sort = "tokens" } = {}) {
 
 const CODEX_STREAM_EVENTS = "('codex.sse_event', 'codex.websocket_event')";
 
+// Most Codex spans carry no turn id; dropping them before the per-span dedupe keeps the
+// LIMIT BY state to turn spans. The conversation stays a HAVING over the turn: spans of
+// one turn need not all carry conversation.id.
+export const TURN_SPAN = "(SpanAttributes['turn_id'] != '' OR SpanAttributes['turn.id'] != '')";
+
 // Codex turns of the exact user: Codex has no turn-root span, so a turn is every span
 // carrying its turn id; window = min start .. max end. Spans carry no usage. Turns whose
 // spans carry no conversation id return ''. Spans are read in [from - 24h, to + 24h), the
@@ -262,9 +267,10 @@ export function codexTurnSql(from, to, q, { conversationId = null } = {}) {
             SpanAttributes['conversation.id'] AS conversation,
             coalesce(nullIf(SpanAttributes['model'], ''), SpanAttributes['gen_ai.request.model']) AS span_model
         FROM claude_code.otel_traces
-        WHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
-          AND ResourceAttributes['client'] = 'codex'
+        PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
           AND ${EXACT_USER}
+        WHERE ResourceAttributes['client'] = 'codex'
+          AND ${TURN_SPAN}
         LIMIT 1 BY TraceId, SpanId
     )
     WHERE turn_id != ''

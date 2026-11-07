@@ -84,6 +84,10 @@ const traces = [
   llm(JOAKIM, JOAKIM_TRACE, "j2", "j1", "2026-11-05T05:00:05Z", "rj", ANTHROPIC),
   // kim's Codex turn U1: two sampling spans and one exec_command, window 10:00:10..10:00:55.
   sampling(KIM, "C1", "U1", "s1", "2026-11-05T10:00:10Z", 15),
+  // Duplicate export of s1 (counted once) and a turn-less span (never part of a turn).
+  sampling(KIM, "C1", "U1", "s1", "2026-11-05T10:00:10Z", 15),
+  { ...sampling(KIM, "C1", "U1", "s0", "2026-11-05T09:59:00Z", 600), SpanName: "session_task",
+    SpanAttributes: { "conversation.id": "C1" } },
   exec(KIM, "C1", "U1", "e1", "2026-11-05T10:00:26Z", 3),
   sampling(KIM, "C1", "U1", "s2", "2026-11-05T10:00:30Z", 25),
   // kim's turn U2 crosses into the bucket: it starts on 11-04 and belongs to that bucket.

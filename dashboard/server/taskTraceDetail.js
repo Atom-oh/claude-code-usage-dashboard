@@ -142,9 +142,9 @@ FROM (
         SpanAttributes['tool_name'] AS ${column("tool_name")},
         SpanAttributes['aborted'] AS ${column("aborted")}
     FROM claude_code.otel_traces
-    WHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
-      AND ResourceAttributes['client'] = 'codex'
+    PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
       AND ${EXACT_USER}
+    WHERE ResourceAttributes['client'] = 'codex'
       AND coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) = {turnId:String}
     LIMIT 1 BY TraceId, SpanId
 )
