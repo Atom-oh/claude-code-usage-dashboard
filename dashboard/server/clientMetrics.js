@@ -286,7 +286,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     if (row.session) usageSessions.add(usageScope(row, null));
   }
   const missingUsage = new Set();
-  // by_model_time and by_user_time keep a row only when usage (Claude counters, Codex usage-bearing completions)
+  // by_model_time, by_user_time and by_user_model keep a row only when usage (Claude counters, Codex usage-bearing completions)
   // or a Codex missing-usage scope backs it. Operational rows attach but never create a known $0;
   // idle uncertainty stays in timeseries.
   const backedTime = new Set();
@@ -341,8 +341,9 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     }
     for (const [key, meta] of Object.entries(dimensions)) {
       const timed = key === "by_model_time";
+      const backed = timed || key === "by_user_model";
       const id = JSON.stringify(meta);
-      if (timed && (row.kind === "usage" || missingScope)) backedTime.add(`${key}\u0000${id}`);
+      if (backed && (row.kind === "usage" || missingScope)) backedTime.add(`${key}\u0000${id}`);
       if (!groups[key].has(id)) groups[key].set(id, accumulator({ ...meta,
         cost_basis: row.client === "claude" ? "client_reported" : "aws_list_estimate" }, timed));
       accumulate(groups[key].get(id), row, usage, missingScope);
@@ -383,7 +384,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     ...(!costView ? {
       by_project: [...groups.by_project.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
       tools: [...tools.values()].sort((a, b) => b.calls - a.calls),
-    } : { view: "cost", by_user_model: [...groups.by_user_model.values()].map(finishRow)
+    } : { view: "cost", by_user_model: backedRows("by_user_model")
       .sort((a, b) => (b.cost_usd ?? -1) - (a.cost_usd ?? -1)
         || compareIdentity(a.client, b.client) || compareIdentity(a.user, b.user)
         || compareIdentity(a.model, b.model) || compareIdentity(a.backend, b.backend)) }),

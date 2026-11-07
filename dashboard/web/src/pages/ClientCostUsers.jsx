@@ -102,7 +102,7 @@ export function CostUsers({ users, modelRows, clients, stale, onSelect }) {
   const unidentified = rows.filter((row) => !row.user).length;
   return <DataTable title="사용자별 비용"
     subtitle={<span className="inline-flex flex-wrap items-center gap-x-1.5">
-      {`사용자 단위로 합산 · 막대의 줄은 채널, 색은 모델${unidentified ? ` · 미식별 ${unidentified}행 포함` : ""}${rows.length > 20 ? ` · ${visible.length}/${rows.length}행 표시` : ""}`}
+      {`사용자 단위로 합산 · 막대의 줄은 채널, 색은 모델${unidentified ? ` · 미식별 ${unidentified}행 포함` : ""}${rows.length > 20 ? ` · ${visible.length}/${rows.length}행 표시 · CSV는 표시된 행만 내보냅니다.` : ""}`}
       <Legend lines={legend} />
     </span>}
     help={help(clients)} columns={columns} rows={withTeams(visible, teams)} exportName="clients_user_costs" stale={stale}

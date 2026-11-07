@@ -39,6 +39,18 @@ test("cost user/model breakdown preserves missing identity and valid reports wit
   assert.equal(result.by_user_model[0].tokens, null);
 });
 
+test("cost user/model breakdown never turns operational-only groups into a known $0", () => {
+  const result = foldClientMetrics([
+    { ...event, model: "openai.unpriced" },
+    { ...event, kind: "tool", model: "", tool: "shell", count: 1, errors: 0, duration_ms: 5, duration_count: 1 },
+  ], ["codex"], undefined, { costView: true });
+  assert.equal(result.by_user_model.length, 1);
+  assert.equal(result.by_user_model[0].model, "openai.unpriced");
+  assert.equal(result.by_user_model[0].cost_usd, null);
+  assert.equal(result.by_user_model[0].cost_partial, true);
+  assert.equal(result.by_user_model.some(row => row.model === ""), false);
+});
+
 test("Codex user prefilter keeps native fallback, original checks and both dedup branches", () => {
   const from = new Date("2026-09-14"), to = new Date("2026-09-15");
   const { sql, params } = buildCodexQuery(from, to, { userExact: "fixture@example.invalid" });
