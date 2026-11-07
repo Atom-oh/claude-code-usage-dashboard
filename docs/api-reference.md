@@ -539,6 +539,37 @@ the user's completions in `[from, to)` linked to no traced turn and their known 
 (0 when none, null when all unpriced), plus turns skipped for lacking a conversation id;
 otherwise it is null.
 
+`/api/users/tasks/detail` (not warmed; `team` rejected) returns one task of the list:
+required `id` (exactly as listed: `claude:<32 lowercase hex>` or
+`codex:<conversation id>:<turn id>`, identifier characters only; else 400), `userExact`,
+`from` and `to` (the list's bucket). A disabled client's id is 400. A task that does not
+belong to `userExact` in that bucket, or does not exist, returns 404 `{"error": "not found"}`
+either way. Response `{task, lanes, spans, truncated, span_total, why}`:
+
+- `task`: the list row (same fold, same totals) for that task; Codex adds
+  `completions_without_span` (linked completions matching no `codex.sampling` span).
+- `lanes`: `{id, label, kind, spawned_by, llm_calls, cost_usd, cost_partial}`. Claude has
+  `main` plus one lane per `agent_id`; `kind` is `general-purpose`, `Explore`, `fork` or
+  `custom`, `label` is the spawning span's `subagent_type` (null when not found) and
+  `spawned_by` is the parent span of the lane's first `llm_request`. Codex has only `main`.
+- `spans`: `{id, parent, lane, kind: llm|tool|wait, name, start_ms, duration_ms, attrs}`;
+  `start_ms` is the offset from the task start and `parent` is null when the parent is not
+  in the payload. LLM spans add `tokens`, `cost_usd`, `cost_basis`; Codex `codex.sampling`
+  spans carry the linked completion's values and `completion: {model, effort, ttft_ms,
+  duration_ms, count}`. `attrs` holds only allowlisted keys: LLM `model`, token counts,
+  `ttft_ms`, `attempt`, `error_class`, `status_code`, `stop_reason`, `query_source_safe`,
+  `effort`, `speed`; tool `tool_name`, `subagent_type`, `skill_name`,
+  `anthropic.mcp.server.name`, `bash_command_class`, `success`, `error_class`; wait
+  `decision`, `source`; Codex `model`, `tool_name`, `aborted`.
+- `truncated`/`span_total`: at most the newest 5000 spans. Truncated Claude details null
+  whole-task and lane totals and return no `why`; Codex totals do not depend on spans.
+- `why`: `{rule, value}` for `cache_read_share` (share of complete canonical tokens),
+  `context_growth` (`{first, last, calls}` main-lane input context), `top_lane_share`
+  (`{lane, share}`, two or more lanes, all costs known), `most_expensive_call`
+  (`{span, cost_usd}`, all costs known), `retries` (calls with `attempt > 1`) and
+  `permission_wait` (Claude wait-span milliseconds). A rule whose inputs are unavailable is
+  omitted, never zero-filled. Data rules: [data reference](reference/data.md#user-task-traces).
+
 ### Teams
 
 Both lookups are range-only over enabled clients: they reject `team` and ignore the other filters.

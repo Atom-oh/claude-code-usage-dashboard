@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
-  sortTasks, taskCacheKey, CODEX_TURN_LIMIT } from "./taskTraces.js";
+  sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -462,4 +462,284 @@ test("a turn spanning the bucket start is listed once, by its starting bucket", 
   assert.equal(won.tasks.length, 1);
   assert.equal(won.tasks[0].tokens.observed_tokens, null);
   assert.equal(won.unattached.completions, 0);
+});
+
+// ── Task detail (taskTraceDetail.js) ─────────────────────────────────────
+const detail = await import("./taskTraceDetail.js");
+const { parseTaskId, claudeDetailSql, codexDetailSql, foldTaskDetail, userTaskDetail, taskDetailCacheKey,
+  validateTaskDetailQuery, SPAN_ATTRIBUTE_ALLOWLIST, SPAN_BOUND } = detail;
+const { NotFoundError } = await import("./http.js");
+
+const TRACE = "0123456789abcdef0123456789abcdef";
+const t0 = ms("2026-11-05T01:00:00Z");
+const header = (overrides = {}) => ({ trace_id: TRACE, started_at: "2026-11-05T01:00:00Z",
+  start_ms: String(t0), duration_ms: "60000", session_grp: "enterprise", ...overrides });
+const span = (id, type, at, overrides = {}) => ({ span_id: id, parent_id: "", span_type: type,
+  span_name: `claude_code.${type}`, start_ms: String(t0 + at), duration_ms: "1000", agent_id: "",
+  request_id: "", total_spans: "0", ...overrides });
+const llm = (id, at, overrides = {}) => span(id, "llm_request", at, { request_id: `r-${id}`, a_model: "claude-opus-5",
+  a_input_tokens: "10", a_cache_read_tokens: "100", a_cache_creation_tokens: "0", a_output_tokens: "5", ...overrides });
+
+test("SPAN_BOUND and allowlist are pinned", () => {
+  assert.equal(SPAN_BOUND, 5000);
+  assert.deepEqual(SPAN_ATTRIBUTE_ALLOWLIST.wait, ["decision", "source"]);
+  assert.deepEqual(SPAN_ATTRIBUTE_ALLOWLIST.codex, ["model", "tool_name", "aborted"]);
+  assert.equal(SPAN_ATTRIBUTE_ALLOWLIST.llm.length, 13);
+  assert.equal(SPAN_ATTRIBUTE_ALLOWLIST.tool.length, 7);
+});
+
+test("parseTaskId rejects injection-shaped ids", () => {
+  assert.deepEqual(parseTaskId(`claude:${TRACE}`), { client: "claude", traceId: TRACE });
+  assert.deepEqual(parseTaskId("codex:019a-conv_1:turn-2"),
+    { client: "codex", conversationId: "019a-conv_1", turnId: "turn-2" });
+  for (const bad of [undefined, "", ["claude:" + TRACE], `claude:${TRACE}' OR 1=1 --`, `claude:${TRACE.slice(1)}`,
+    `claude:${TRACE.toUpperCase()}`, "claude:", "codex:c1", "codex::t1", "codex:c1:", "codex:c 1:t1",
+    "codex:c1:t1;DROP", "codex:c1:t1'", "codex:c1:t1\n", "gemini:abc", `codex:${"a".repeat(200)}:t1`])
+    assert.throws(() => parseTaskId(bad), { name: "ValidationError" }, String(bad));
+});
+
+test("validateTaskDetailQuery rejects a disabled client and requires userExact", () => {
+  assert.throws(() => validateTaskDetailQuery({ id: "codex:c1:t1", userExact: "a" }, ["claude"]), { name: "ValidationError" });
+  assert.throws(() => validateTaskDetailQuery({ id: `claude:${TRACE}` }, both), { name: "ValidationError" });
+  assert.equal(validateTaskDetailQuery({ id: `claude:${TRACE}`, userExact: "a" }, both).task.traceId, TRACE);
+});
+
+test("detail SQL never selects whole SpanAttributes or forbidden keys", () => {
+  const q = { userExact: "kim@x.com" };
+  const claude = claudeDetailSql(from, to, TRACE, q);
+  const codex = codexDetailSql(from, to, q, "c1", "u1");
+  for (const { sql, params } of [claude.header, claude.spans, codex.turns, codex.completions, codex.spans]) {
+    assert.ok(!/user_prompt|full_command|file_path|bash_argv0/.test(sql));
+    // Every SpanAttributes/LogAttributes use is a single-key lookup (or the logSelection map sort).
+    assert.ok(!/SpanAttributes(?!\[')/.test(sql), sql);
+    assert.ok(!sql.includes("kim@x.com") && !sql.includes(TRACE));
+    assert.ok(!/\bSELECT \*/.test(sql));
+    for (const v of Object.values(params)) assert.notEqual(typeof v, "object");
+  }
+  assert.ok(claude.spans.sql.includes(`LIMIT ${SPAN_BOUND}`) && claude.spans.sql.includes("count() OVER ()"));
+  assert.ok(codex.spans.sql.includes(`LIMIT ${SPAN_BOUND}`) && codex.spans.sql.includes("count() OVER ()"));
+  assert.equal(claude.spans.params.traceId, TRACE);
+  assert.equal(claude.header.params.userExact, "kim@x.com");
+  assert.equal(codex.spans.params.turnId, "u1");
+  assert.equal(codex.turns.params.conversationId, "c1");
+  assert.equal(codex.completions.params.conversationId, "c1");
+  assert.ok(codex.spans.sql.includes("{userExact:String}") && codex.spans.sql.includes("ResourceAttributes['client'] = 'codex'"));
+});
+
+test("subagent spans after the bucket end are included", () => {
+  const { spans } = claudeDetailSql(from, to, TRACE, { userExact: "a" });
+  assert.equal(spans.params.from, "2026-11-05 00:00:00");
+  assert.equal(spans.params.spanTo, "2026-11-07 00:00:00");
+  // A subagent call at to + 2h is inside the window and folds into its lane.
+  const late = Date.parse("2026-11-06T02:00:00Z") - t0;
+  const out = foldTaskDetail({ client: "claude", ...header() },
+    [llm("a", 0), llm("b", late, { agent_id: "ag1", parent_id: "x" }),
+      span("x", "tool.execution", late - 10, { a_subagent_type: "Explore" })], []);
+  assert.equal(out.spans.find(s => s.id === "b").start_ms, late);
+  assert.equal(out.lanes.find(l => l.id === "ag1").llm_calls, 1);
+  const codex = codexDetailSql(from, to, { userExact: "a" }, "c1", "u1");
+  assert.equal(codex.spans.params.spanFrom, "2026-11-04 00:00:00");
+  assert.equal(codex.spans.params.spanTo, "2026-11-07 00:00:00");
+});
+
+test("foldTaskDetail builds lanes from AgentId with subagent_type labels", () => {
+  const rows = [
+    llm("m1", 0),
+    span("tool1", "tool", 100, { a_tool_name: "Agent", a_subagent_type: "general-purpose" }),
+    span("exec1", "tool.execution", 110, { parent_id: "tool1" }),
+    llm("s1", 200, { agent_id: "agA", parent_id: "exec1" }),
+    llm("s2", 300, { agent_id: "agA", parent_id: "exec1" }),
+    span("tool2", "tool", 400, { a_tool_name: "Agent", a_subagent_type: "co-agent:pr-autofix-implementer" }),
+    span("exec2", "tool.execution", 410, { parent_id: "tool2" }),
+    llm("c1", 500, { agent_id: "agB", parent_id: "exec2" }),
+    span("w1", "tool.blocked_on_user", 600, { a_decision: "accept", a_source: "config", duration_ms: "250" }),
+    llm("o1", 700, { agent_id: "agC", parent_id: "missing" }),
+  ];
+  const out = foldTaskDetail({ client: "claude", ...header() }, rows, [{ request_id: "r-m1", cost_usd: 0.5 }]);
+  const lanes = Object.fromEntries(out.lanes.map(l => [l.id, l]));
+  assert.deepEqual(out.lanes.map(l => l.id), ["main", "agA", "agB", "agC"]);
+  assert.equal(lanes.main.kind, "main");
+  assert.equal(lanes.main.spawned_by, null);
+  assert.deepEqual([lanes.agA.kind, lanes.agA.label, lanes.agA.spawned_by], ["general-purpose", "general-purpose", "exec1"]);
+  assert.deepEqual([lanes.agB.kind, lanes.agB.label], ["custom", "co-agent:pr-autofix-implementer"]);
+  assert.deepEqual([lanes.agC.kind, lanes.agC.label, lanes.agC.spawned_by], ["custom", null, null]);
+  assert.equal(lanes.agA.llm_calls, 2);
+  assert.equal(lanes.main.cost_usd, 0.5);
+  const s1 = out.spans.find(s => s.id === "s1");
+  assert.deepEqual([s1.kind, s1.lane, s1.parent, s1.start_ms], ["llm", "agA", "exec1", 200]);
+  assert.deepEqual(s1.tokens, { input: 10, cache_read: 100, cache_write: 0, output: 5 });
+  assert.equal(out.spans.find(s => s.id === "o1").parent, null);
+  assert.deepEqual(out.spans.find(s => s.id === "w1").attrs, { decision: "accept", source: "config" });
+  assert.equal(out.spans.find(s => s.id === "w1").kind, "wait");
+  assert.equal(out.spans.find(s => s.id === "tool1").attrs.tool_name, "Agent");
+  assert.equal(out.spans.find(s => s.id === "m1").cost_basis, "client_reported");
+  assert.equal(out.truncated, false);
+  assert.equal(out.task.llm_calls, 5);
+  assert.equal(out.task.subagents, 3);
+  assert.equal(out.task.id, `claude:${TRACE}`);
+});
+
+test("detail totals equal the list fold for the same task", () => {
+  const rows = [llm("a", 0), llm("b", 10, { agent_id: "x", a_model: "openai.gpt-6-astra" }), span("t", "tool", 20)];
+  const costRows = [{ request_id: "r-a", cost_usd: 0.25 }];
+  const out = foldTaskDetail({ client: "claude", ...header() }, rows, costRows);
+  const [listed] = foldClaudeTasks([task({ trace_id: TRACE, duration_ms: "60000", llm_calls: "2", subagents: "1",
+    calls: [call("r-a", "claude-opus-5", "10", "100", "0", "5"), call("r-b", "openai.gpt-6-astra", "10", "100", "0", "5")] })],
+  costRows);
+  for (const k of ["id", "llm_calls", "subagents", "tokens", "cost_partial", "cost_basis", "models", "duration_ms"])
+    assert.deepEqual(out.task[k], listed[k], k);
+  assert.ok(Math.abs(out.task.cost_usd - listed.cost_usd) < 1e-12);
+});
+
+test("span attributes outside the allowlist never reach the payload", () => {
+  const out = foldTaskDetail({ client: "claude", ...header() }, [
+    span("t", "tool", 0, { a_tool_name: "Bash", a_bash_command_class: "read_only", a_success: "true",
+      user_prompt: "secret", full_command: "rm -rf /", file_path: "/etc/x", a_decision: "accept",
+      a_skill_name: "has space", request_id: "r-x" }),
+    llm("l", 1, { a_stop_reason: "end_turn", a_attempt: "2", a_tool_name: "Bash" }),
+  ], []);
+  const text = JSON.stringify(out);
+  assert.ok(!/secret|rm -rf|\/etc\/x|has space|r-x|r-l/.test(text), text);
+  assert.deepEqual(out.spans.find(s => s.id === "t").attrs, { tool_name: "Bash", bash_command_class: "read_only", success: true });
+  assert.deepEqual(out.spans.find(s => s.id === "l").attrs,
+    { model: "claude-opus-5", input_tokens: 10, output_tokens: 5, cache_read_tokens: 100, cache_creation_tokens: 0,
+      attempt: 2, stop_reason: "end_turn" });
+});
+
+test("truncated detail withholds totals", () => {
+  const rows = [llm("a", 0, { total_spans: String(SPAN_BOUND + 7) }), llm("b", 5, { agent_id: "x", total_spans: String(SPAN_BOUND + 7) })];
+  const out = foldTaskDetail({ client: "claude", ...header() }, rows, []);
+  assert.equal(out.truncated, true);
+  for (const k of ["llm_calls", "cost_usd", "tokens", "subagents"]) assert.equal(out.task[k], null, k);
+  assert.equal(out.task.cost_partial, true);
+  for (const lane of out.lanes) { assert.equal(lane.llm_calls, null); assert.equal(lane.cost_usd, null); }
+  assert.deepEqual(out.why, []);
+  assert.equal(out.spans.length, 2);
+  assert.equal(out.task.duration_ms, 60000);
+});
+
+const ruleMap = (out) => Object.fromEntries(out.why.map(r => [r.rule, r.value]));
+
+test("why omits rules with missing inputs", () => {
+  // One unknown-token call, no attempt attribute, a single lane, an unmatched non-Anthropic
+  // unpriced model: no cache share, context growth, lane share, top call or retries.
+  const out = foldTaskDetail({ client: "claude", ...header() },
+    [llm("a", 0, { a_cache_read_tokens: null, a_model: "openai.unknown-x", request_id: "" })], []);
+  const rules = ruleMap(out);
+  for (const r of ["cache_read_share", "context_growth", "top_lane_share", "most_expensive_call", "retries"])
+    assert.ok(!(r in rules), r);
+  // A Claude trace without wait spans has a known zero permission wait.
+  assert.equal(rules.permission_wait, 0);
+  const codex = foldTaskDetail({ client: "codex", turn: turn({ llm_calls: "0", models: [] }), linked: [] }, [], []);
+  assert.deepEqual(codex.why, []);
+});
+
+test("why context_growth reports first and last call context", () => {
+  const out = foldTaskDetail({ client: "claude", ...header() }, [
+    llm("a", 0, { a_input_tokens: "5", a_cache_read_tokens: "1000", a_cache_creation_tokens: "200", a_attempt: "1" }),
+    llm("sub", 50, { agent_id: "x", a_input_tokens: "1", a_cache_read_tokens: "1", a_attempt: "3" }),
+    llm("b", 100, { a_input_tokens: "7", a_cache_read_tokens: "9000", a_cache_creation_tokens: "300", a_attempt: "2" }),
+    span("w", "tool.blocked_on_user", 20, { duration_ms: "1500" }),
+  ], [{ request_id: "r-a", cost_usd: 0.1 }, { request_id: "r-sub", cost_usd: 0.05 }, { request_id: "r-b", cost_usd: 0.6 }]);
+  const rules = ruleMap(out);
+  assert.deepEqual(rules.context_growth, { first: 1205, last: 9307, calls: 2 });
+  assert.equal(rules.retries, 2);
+  assert.equal(rules.permission_wait, 1500);
+  assert.deepEqual(rules.most_expensive_call, { span: "b", cost_usd: 0.6 });
+  assert.equal(rules.top_lane_share.lane, "main");
+  assert.ok(Math.abs(rules.top_lane_share.share - 0.7 / 0.75) < 1e-12);
+  const tokens = out.task.tokens;
+  const total = tokens.input + tokens.cache_read + tokens.cache_write + tokens.output;
+  assert.ok(Math.abs(rules.cache_read_share - tokens.cache_read / total) < 1e-12);
+});
+
+test("codex detail links completions to sampling spans and keeps the list totals", () => {
+  const turnRow = turn({ in_bucket: 1 });
+  const c1 = completion("2026-11-05T01:00:02Z", { ttft_ms: "120", duration_ms: "900" });
+  const c2 = completion("2026-11-05T01:00:08Z");
+  const c3 = completion("2026-11-05T01:00:00.500Z");
+  const cspan = (id, name, at, dur, overrides = {}) => ({ span_id: id, parent_id: "", span_name: name,
+    start_ms: String(ms(at)), duration_ms: String(dur), a_model: "", a_tool_name: "", a_aborted: "", total_spans: "3", ...overrides });
+  const rows = [cspan("s1", "codex.sampling", "2026-11-05T01:00:01Z", 1500, { a_model: "openai.gpt-6-astra" }),
+    cspan("s2", "codex.sampling", "2026-11-05T01:00:07Z", 1500),
+    cspan("e1", "exec_command", "2026-11-05T01:00:04Z", 200, { a_tool_name: "shell", a_aborted: "false" })];
+  const { entries } = linkCompletions([turnRow], [c1, c2, c3], { prices: DEFAULT_CODEX_PRICING });
+  const out = foldTaskDetail({ client: "codex", turn: entries[0].turn, linked: entries[0].linked }, rows, []);
+  const { tasks } = attachCompletions([turnRow], [c1, c2, c3], opts);
+  for (const k of ["id", "llm_calls", "tokens", "cost_usd", "cost_partial", "cost_basis", "duration_ms"])
+    assert.deepEqual(out.task[k], tasks[0][k], k);
+  assert.deepEqual(out.lanes.map(l => [l.id, l.kind]), [["main", "main"]]);
+  const s1 = out.spans.find(s => s.id === "s1"), s2 = out.spans.find(s => s.id === "s2");
+  assert.equal(s1.kind, "llm");
+  assert.equal(s1.cost_basis, "linked_estimate");
+  assert.deepEqual(s1.tokens, { input: 50, cache_read: 40, cache_write: 10, output: 20 });
+  assert.deepEqual(s1.completion, { model: "openai.gpt-6-astra", effort: "high", ttft_ms: 120, duration_ms: 900, count: 1 });
+  assert.equal(s2.completion.count, 1);
+  assert.equal(out.task.completions_without_span, 1);
+  assert.deepEqual(out.spans.find(s => s.id === "e1").attrs, { tool_name: "shell", aborted: false });
+  assert.equal(out.spans.find(s => s.id === "e1").kind, "tool");
+  assert.equal(s1.start_ms, 1000);
+  assert.deepEqual(ruleMap(out).context_growth, { first: 100, last: 100, calls: 3 });
+});
+
+const fakeRun = (tables) => async (sql, params) => {
+  if (sql.includes("SpanType = 'interaction'"))
+    return tables.owner === params.userExact && params.traceId === TRACE ? [header()] : [];
+  // Claude spans are gated by the header; Codex spans carry the exact user.
+  if (sql.includes("count() OVER ()"))
+    return params.userExact === undefined || tables.owner === params.userExact ? [llm("a", 0, { total_spans: "1" })] : [];
+  if (sql.includes("otel_logs") && sql.includes("request_id")) return [{ request_id: "r-a", cost_usd: 0.3 }];
+  if (sql.includes("GROUP BY turn_id")) return tables.owner === params.userExact ? [turn({ in_bucket: 1 })] : [];
+  if (sql.includes("otel_logs")) return [];
+  throw new Error(`unexpected SQL ${sql.slice(0, 40)}`);
+};
+
+test("detail for another user's task returns 404", async () => {
+  const run = fakeRun({ owner: "kim@x.com" });
+  const ok = await userTaskDetail(from, to, { id: `claude:${TRACE}`, userExact: "kim@x.com" }, both, run);
+  assert.equal(ok.task.cost_usd, 0.3);
+  const errors = [];
+  for (const raw of [{ id: `claude:${TRACE}`, userExact: "lee@x.com" },
+    { id: `claude:${"f".repeat(32)}`, userExact: "kim@x.com" },
+    { id: "codex:c1:u1", userExact: "lee@x.com" }, { id: "codex:c1:nope", userExact: "kim@x.com" },
+    { id: "codex:c2:u1", userExact: "kim@x.com" }]) {
+    const err = await userTaskDetail(from, to, raw, both, run, DEFAULT_CODEX_PRICING).then(() => null, e => e);
+    assert.ok(err instanceof NotFoundError, JSON.stringify(raw));
+    errors.push(err.message);
+  }
+  // Same message whether the id exists for another user or not at all.
+  assert.equal(new Set(errors).size, 1);
+  // Ownership is checked before any span query runs.
+  const seen = [];
+  const spy = async (sql, params) => { seen.push(sql); return run(sql, params); };
+  await userTaskDetail(from, to, { id: `claude:${TRACE}`, userExact: "lee@x.com" }, both, spy).catch(() => {});
+  assert.equal(seen.length, 1);
+  const codex = await userTaskDetail(from, to, { id: "codex:c1:u1", userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
+  assert.equal(codex.task.id, "codex:c1:u1");
+});
+
+test("a context turn starting before the bucket is not a detail of this bucket", async () => {
+  const run = async (sql) => sql.includes("GROUP BY turn_id") ? [turn({ in_bucket: 0 })] : [];
+  const err = await userTaskDetail(from, to, { id: "codex:c1:u1", userExact: "a" }, both, run, DEFAULT_CODEX_PRICING)
+    .then(() => null, e => e);
+  assert.ok(err instanceof NotFoundError);
+});
+
+test("taskDetailCacheKey isolates ids, users and ranges", () => {
+  const base = { from: "2026-11-05T00:00:00Z", to: "2026-11-06T00:00:00Z" };
+  const a = taskDetailCacheKey({ ...base, id: `claude:${TRACE}`, userExact: "kim@x.com" }, both);
+  const b = taskDetailCacheKey({ ...base, id: `claude:${TRACE}`, userExact: "joakim@x.com" }, both);
+  const c = taskDetailCacheKey({ ...base, id: `claude:${"f".repeat(32)}`, userExact: "kim@x.com" }, both);
+  const d = taskDetailCacheKey({ ...base, to: "2026-11-07T00:00:00Z", id: `claude:${TRACE}`, userExact: "kim@x.com" }, both);
+  assert.equal(new Set([a, b, c, d]).size, 4);
+  assert.equal(taskDetailCacheKey({ x: "1", userExact: "kim@x.com", ...base, id: `claude:${TRACE}` }, both), a);
+  assert.throws(() => taskDetailCacheKey({ ...base, id: "claude:x", userExact: "kim@x.com" }, both), { name: "ValidationError" });
+});
+
+test("index.js keys and routes the detail endpoint", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("./index.js", import.meta.url), "utf8");
+  assert.match(src, /path === "\/api\/users\/tasks\/detail"\) return `\$\{path\}\?\$\{taskDetailCacheKey\(query, clientConfig\.enabledClients\)\}`/);
+  assert.match(src, /err instanceof NotFoundError\) return res\.status\(404\)\.json\(\{ error: "not found" \}\)/);
+  assert.match(src, /route\("\/api\/users\/tasks\/detail"/);
 });

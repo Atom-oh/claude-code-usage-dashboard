@@ -20,15 +20,15 @@ import { codexPrices } from "./priceCatalog.js";
 export const TASK_LIMIT = 20;
 // Subagent spans of a long task can start after the selected bucket ends (spec: ~12% of
 // subagent llm_request spans had no interaction in the same 7-day window).
-const SPAN_SLACK_MS = 24 * 3600000;
+export const SPAN_SLACK_MS = 24 * 3600000;
 const SORTS = ["tokens", "duration"];
-const TOKEN_FIELDS = ["input", "cache_read", "cache_write", "output"];
+export const TOKEN_FIELDS = ["input", "cache_read", "cache_write", "output"];
 // Row guards: a user's turns/completions in one bucket stay far below these; hitting one
 // marks Codex coverage "limited" rather than silently dropping evidence.
 export const CODEX_TURN_LIMIT = 5000;
 export const CODEX_COMPLETION_LIMIT = 50000;
-const COMPLETION_SLACK_MS = 5000;
-const EXACT_USER = "coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') = {userExact:String}";
+export const COMPLETION_SLACK_MS = 5000;
+export const EXACT_USER = "coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') = {userExact:String}";
 
 export function validateTaskQuery(raw, enabledClients) {
   const clients = selectClients(raw.client, enabledClients);
@@ -56,7 +56,7 @@ export function taskCacheKey(query, enabledClients) {
     .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString();
 }
 
-const tokenAttr = (key) => `toUInt64OrNull(SpanAttributes['${key}'])`;
+export const tokenAttr = (key) => `toUInt64OrNull(SpanAttributes['${key}'])`;
 // Claude per-call backend, as clientMetrics.js resolves it for Claude rows.
 const claudeBackendSql = (modelExpr) =>
   `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql(modelExpr, "''")})`;
@@ -139,7 +139,7 @@ export function claudeCostSql(from, to, requestIds) {
   };
 }
 
-const count = (value) => {
+export const count = (value) => {
   if (!["number", "string"].includes(typeof value) || String(value).trim() === "") return null;
   const n = Number(value);
   return Number.isSafeInteger(n) && n >= 0 ? n : null;
@@ -164,14 +164,24 @@ export function claudeCallCost({ model, backend, tokens, reported }) {
   return { cost_usd: Number.isFinite(cost) ? cost : null, basis: "computed" };
 }
 
-function foldTask(row, costs) {
+// One Claude llm_request call: [request_id, model, input, cache_read, cache_write, output]
+// values as the SQL returns them, priced by claudeCallCost with the session's backend.
+export function priceClaudeCall(raw, sessionGroup, costs) {
+  const [requestId, model = "", ...values] = raw;
+  const tokens = Object.fromEntries(TOKEN_FIELDS.map((k, i) => [k, count(values[i])]));
+  const backend = sessionGroup === "enterprise" ? "anthropic" : resolveBackend(model, "");
+  const { cost_usd, basis } = claudeCallCost({ model, backend, tokens,
+    reported: requestId && costs.has(requestId) ? costs.get(requestId) : null });
+  return { model, tokens, cost_usd, basis };
+}
+
+export function foldTask(row, costs) {
   const sums = Object.fromEntries(TOKEN_FIELDS.map(k => [k, null]));
   const observed = createObservedTokens();
   let tokensPartial = false, cost = null, unknownCost = 0;
   const bases = new Set(), knownBases = new Set(), models = new Set();
   for (const raw of Array.isArray(row.calls) ? row.calls : []) {
-    const [requestId, model = "", ...values] = raw;
-    const tokens = Object.fromEntries(TOKEN_FIELDS.map((k, i) => [k, count(values[i])]));
+    const { model, tokens, cost_usd, basis } = priceClaudeCall(raw, row.session_grp, costs);
     if (model) models.add(normalizeModelId(model));
     for (const k of TOKEN_FIELDS) {
       if (tokens[k] === null) { tokensPartial = true; continue; }
@@ -182,9 +192,6 @@ function foldTask(row, costs) {
     const known = TOKEN_FIELDS.every(k => tokens[k] !== null);
     const total = known ? TOKEN_FIELDS.reduce((a, k) => a + tokens[k], 0) : null;
     addObservedTokens(observed, total, known && !Number.isSafeInteger(total));
-    const backend = row.session_grp === "enterprise" ? "anthropic" : resolveBackend(model, "");
-    const { cost_usd, basis } = claudeCallCost({ model, backend, tokens,
-      reported: requestId && costs.has(requestId) ? costs.get(requestId) : null });
     bases.add(basis);
     if (cost_usd === null) unknownCost++;
     else { knownBases.add(basis); cost = (cost ?? 0) + cost_usd; }
@@ -211,9 +218,14 @@ export const sortTasks = (tasks, sort = "tokens") =>
   [...tasks].sort(sort === "duration" ? byDuration : byTokens).slice(0, TASK_LIMIT);
 
 // Pure fold: SQL rows (one per interaction, per-call arrays) plus reported costs by request id.
-export function foldClaudeTasks(taskRows, costRows, { sort = "tokens" } = {}) {
+export function claudeCostMap(costRows) {
   const costs = new Map();
   for (const row of costRows) if (row.request_id) costs.set(row.request_id, row.cost_usd);
+  return costs;
+}
+
+export function foldClaudeTasks(taskRows, costRows, { sort = "tokens" } = {}) {
+  const costs = claudeCostMap(costRows);
   return sortTasks(taskRows.map(row => foldTask(row, costs)), sort);
 }
 
@@ -226,8 +238,13 @@ const CODEX_STREAM_EVENTS = "('codex.sse_event', 'codex.websocket_event')";
 // from its true start and never re-listed here with a truncated window. Turns starting
 // outside [from, to) come back with in_bucket = 0 as attachment context only: a completion
 // they win belongs to that neighbouring bucket and is neither listed nor counted as
-// unattached here. Bucket turns sort first so a capped result keeps them.
-export function codexTurnSql(from, to, q) {
+// unattached here. Bucket turns sort first so a capped result keeps them. `conversationId`
+// (task detail) keeps only that conversation's turns: the complete competitor set for linking.
+export function codexTurnSql(from, to, q, { conversationId = null } = {}) {
+  const params = { from: toChDateTime(from), to: toChDateTime(to),
+    spanFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
+    spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact };
+  if (conversationId !== null) params.conversationId = conversationId;
   return {
     sql: `SELECT turn_id,
         toUInt8(min(Timestamp) >= {from:DateTime} AND min(Timestamp) < {to:DateTime}) AS in_bucket,
@@ -251,20 +268,21 @@ export function codexTurnSql(from, to, q) {
         LIMIT 1 BY TraceId, SpanId
     )
     WHERE turn_id != ''
-    GROUP BY turn_id
+    GROUP BY turn_id${conversationId === null ? "" : "\n    HAVING conversation_id = {conversationId:String}"}
     ORDER BY in_bucket DESC, start_ms ASC, turn_id ASC
     LIMIT ${CODEX_TURN_LIMIT + 1}`,
-    params: { from: toChDateTime(from), to: toChDateTime(to),
-      spanFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
-      spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact },
+    params,
   };
 }
 
 // Usage-bearing completions of the exact user in [from, to + 24h). One unique event is a
 // DISTINCT (Timestamp, sorted resource map, sorted log map), as logSelection() defines it;
 // `identity` names that event so the fold attaches it at most once. Only allowlisted
-// attributes leave the database.
-export function codexCompletionSql(from, to, q) {
+// attributes leave the database. `conversationId` (task detail) keeps one conversation.
+export function codexCompletionSql(from, to, q, { conversationId = null } = {}) {
+  const params = { logFrom: toChDateTime(from), logTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)),
+    userExact: q.userExact };
+  if (conversationId !== null) params.conversationId = conversationId;
   const tokens = COMPLETION_TOKEN_KEYS.map(k => `a['${k}'] AS ${k}`).join(",\n        ");
   return {
     sql: `SELECT toString(cityHash64(toString(Timestamp), toString(r), toString(a))) AS identity,
@@ -273,6 +291,8 @@ export function codexCompletionSql(from, to, q) {
         a['conversation.id'] AS conversation_id,
         a['model'] AS model,
         a['model_reasoning_effort'] AS effort,
+        a['ttft_ms'] AS ttft_ms,
+        a['duration_ms'] AS duration_ms,
         r['backend'] AS backend_tag,
         ${tokens}
     FROM (
@@ -282,7 +302,8 @@ export function codexCompletionSql(from, to, q) {
           AND startsWith(EventName, 'codex.')
           AND ${EXACT_USER}
           AND LogAttributes['event.name'] IN ${CODEX_STREAM_EVENTS}
-          AND LogAttributes['event.kind'] = 'response.completed'
+          AND LogAttributes['event.kind'] = 'response.completed'${conversationId === null ? ""
+            : "\n          AND LogAttributes['conversation.id'] = {conversationId:String}"}
     )
     WHERE a['event.name'] IN ${CODEX_STREAM_EVENTS}
       AND a['event.kind'] = 'response.completed'
@@ -290,18 +311,17 @@ export function codexCompletionSql(from, to, q) {
       AND coalesce(nullIf(r['user.email'], ''), nullIf(r['enduser.id'], ''), '') = {userExact:String}
     ORDER BY timestamp_ms
     LIMIT ${CODEX_COMPLETION_LIMIT + 1}`,
-    params: { logFrom: toChDateTime(from), logTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)),
-      userExact: q.userExact },
+    params,
   };
 }
 
 // Model ids are shown as labels; anything outside an id shape is dropped.
-const modelLabel = (value) => typeof value === "string" && /^[a-z0-9][a-z0-9_.:/+-]{0,127}$/i.test(value)
+export const modelLabel = (value) => typeof value === "string" && /^[a-z0-9][a-z0-9_.:/+-]{0,127}$/i.test(value)
   ? value : null;
 
 // Event time of a completion: the source event.timestamp, else the collector Timestamp
 // (Codex 0.154 emits zero timeUnixNano, so Timestamp can be the later observed time).
-function completionTime(row) {
+export function completionTime(row) {
   const source = typeof row.event_timestamp === "string" && row.event_timestamp !== ""
     ? Date.parse(row.event_timestamp) : NaN;
   if (Number.isFinite(source)) return source;
@@ -309,7 +329,7 @@ function completionTime(row) {
   return observed === null ? null : observed;
 }
 
-function foldCodexTask(turn, linked) {
+export function foldCodexTask(turn, linked) {
   const sums = Object.fromEntries(TOKEN_FIELDS.map(k => [k, null]));
   const observed = createObservedTokens();
   let tokensPartial = false, cost = null, unknownCost = 0;
@@ -346,15 +366,13 @@ function foldCodexTask(turn, linked) {
   };
 }
 
-// Links each unique completion to the turn of its conversation whose [start, end + slack]
-// contains its event time (latest start when several), at most once. Only bucket turns
-// (in_bucket) become tasks; a completion won by a context turn belongs to that turn's
-// bucket. Unattached counts only unlinked completions inside [from, to); later ones were
-// read for attachment only. With a backend
-// filter, a turn needs a linked completion on that backend (a turn without one is "unknown").
-export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLACK_MS,
-  prices = codexPrices(), from = null, to = null, backend = "" } = {}) {
+// Shared linking pass (list and detail): each unique completion goes to the turn of its
+// conversation whose [start, end + slack] contains its event time (latest start, then
+// greatest turn id, when several), at most once. Returns every turn entry with its linked
+// completions and the completions linked to no turn.
+export function linkCompletions(turns, completions, { slackMs = COMPLETION_SLACK_MS, prices = codexPrices() } = {}) {
   const byConversation = new Map();
+  const entries = [];
   let skippedTurns = 0;
   for (const turn of turns) {
     const start = count(turn.start_ms), end = count(turn.end_ms);
@@ -364,12 +382,14 @@ export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLA
       if (inBucket) skippedTurns++;
       continue;
     }
+    const entry = { turn, start, end, inBucket, linked: [] };
     const list = byConversation.get(turn.conversation_id) ?? [];
-    list.push({ turn, start, end, inBucket, linked: [] });
+    list.push(entry);
     byConversation.set(turn.conversation_id, list);
+    entries.push(entry);
   }
   const seen = new Set();
-  const lost = { completions: 0, cost: null, unknown: 0 };
+  const unlinked = [];
   for (const row of completions) {
     if (row.identity) {
       if (seen.has(row.identity)) continue;
@@ -383,7 +403,21 @@ export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLA
       if (!best || entry.start > best.start || (entry.start === best.start && entry.turn.turn_id > best.turn.turn_id))
         best = entry;
     }
-    if (best) { best.linked.push({ row, usage }); continue; }
+    if (best) best.linked.push({ row, usage, time });
+    else unlinked.push({ row, usage, time });
+  }
+  return { entries, unlinked, skippedTurns };
+}
+
+// Only bucket turns (in_bucket) become tasks; a completion won by a context turn belongs
+// to that turn's bucket. Unattached counts only unlinked completions inside [from, to);
+// later ones were read for attachment only. With a backend filter, a turn needs a linked
+// completion on that backend (a turn without one is "unknown").
+export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLACK_MS,
+  prices = codexPrices(), from = null, to = null, backend = "" } = {}) {
+  const { entries, unlinked, skippedTurns } = linkCompletions(turns, completions, { slackMs, prices });
+  const lost = { completions: 0, cost: null, unknown: 0 };
+  for (const { usage, time } of unlinked) {
     const inBucket = time !== null && (from === null || time >= from.getTime()) && (to === null || time < to.getTime());
     if (!inBucket || (backend && usage.backend !== backend)) continue;
     lost.completions++;
@@ -391,7 +425,7 @@ export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLA
     else lost.cost = (lost.cost ?? 0) + usage.cost_usd;
   }
   const tasks = [];
-  for (const entries of byConversation.values()) for (const entry of entries) {
+  for (const entry of entries) {
     if (!entry.inBucket) continue;
     if (backend && !(entry.linked.length ? entry.linked.some(l => l.usage.backend === backend) : backend === "unknown"))
       continue;
