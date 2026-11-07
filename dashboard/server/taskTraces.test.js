@@ -429,3 +429,37 @@ test("userTasks marks Codex coverage limited when a row guard is hit", async () 
   assert.equal(out.unattached_codex.cost_partial, true);
   assert.equal(out.tasks.length, TASK_LIMIT);
 });
+
+test("codexTurnSql reads spans from a 24h lookback and orders bucket turns first", () => {
+  const { sql, params } = codexTurnSql(from, to, validateTaskQuery({ userExact: "a" }, both));
+  assert.equal(params.spanFrom, "2026-11-04 00:00:00");
+  assert.ok(params.spanFrom < params.from);
+  assert.ok(sql.includes("Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}"));
+  assert.ok(sql.includes("toUInt8(min(Timestamp) >= {from:DateTime} AND min(Timestamp) < {to:DateTime}) AS in_bucket"));
+  assert.ok(!/HAVING/.test(sql), "context turns are returned, flagged rather than dropped");
+  assert.ok(/ORDER BY in_bucket DESC, start_ms ASC, turn_id ASC\s+LIMIT/.test(sql));
+});
+
+test("a turn spanning the bucket start is listed once, by its starting bucket", () => {
+  // Turn started 23:59:50 the day before and ran to 00:00:30.
+  const boundary = (inBucket) => turn({ turn_id: "edge", in_bucket: inBucket,
+    started_at: "2026-11-04T23:59:50Z", start_ms: String(ms("2026-11-04T23:59:50Z")),
+    end_ms: String(ms("2026-11-05T00:00:30Z")) });
+  const inside = completion("2026-11-05T00:00:20Z");
+  const prevFrom = new Date("2026-11-04T00:00:00Z");
+  const prev = attachCompletions([boundary("1")], [inside], { ...opts, from: prevFrom, to: from });
+  assert.equal(prev.tasks.length, 1);
+  assert.equal(prev.tasks[0].tokens.observed_tokens, 120);
+  // This bucket sees the same turn as context: not listed, and its completion is not unattached.
+  const cur = attachCompletions([boundary("0")], [inside], opts);
+  assert.deepEqual(cur.tasks, []);
+  assert.equal(cur.unattached.completions, 0);
+  // A context turn without a conversation id is not counted as skipped here either.
+  assert.equal(attachCompletions([turn({ conversation_id: "", in_bucket: "0" })], [], opts).skipped_turns, 0);
+  // A later context turn (next bucket) still wins its completion over an earlier bucket turn.
+  const next = turn({ turn_id: "next", in_bucket: "0", start_ms: String(ms("2026-11-05T01:00:04Z")) });
+  const won = attachCompletions([turn(), next], [completion("2026-11-05T01:00:06Z")], opts);
+  assert.equal(won.tasks.length, 1);
+  assert.equal(won.tasks[0].tokens.observed_tokens, null);
+  assert.equal(won.unattached.completions, 0);
+});

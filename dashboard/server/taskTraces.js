@@ -219,12 +219,18 @@ export function foldClaudeTasks(taskRows, costRows, { sort = "tokens" } = {}) {
 
 const CODEX_STREAM_EVENTS = "('codex.sse_event', 'codex.websocket_event')";
 
-// Codex turns of the exact user starting in [from, to): Codex has no turn-root span, so a
-// turn is every span carrying its turn id, read through to + 24h; window = min start ..
-// max end. Spans carry no usage. Turns whose spans carry no conversation id return ''.
+// Codex turns of the exact user: Codex has no turn-root span, so a turn is every span
+// carrying its turn id; window = min start .. max end. Spans carry no usage. Turns whose
+// spans carry no conversation id return ''. Spans are read in [from - 24h, to + 24h), the
+// same 24h bound used forward for long tasks, so a turn that started before `from` is seen
+// from its true start and never re-listed here with a truncated window. Turns starting
+// outside [from, to) come back with in_bucket = 0 as attachment context only: a completion
+// they win belongs to that neighbouring bucket and is neither listed nor counted as
+// unattached here. Bucket turns sort first so a capped result keeps them.
 export function codexTurnSql(from, to, q) {
   return {
     sql: `SELECT turn_id,
+        toUInt8(min(Timestamp) >= {from:DateTime} AND min(Timestamp) < {to:DateTime}) AS in_bucket,
         anyIf(conversation, conversation != '') AS conversation_id,
         formatDateTime(min(Timestamp), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
         min(span_start_ms) AS start_ms,
@@ -239,16 +245,17 @@ export function codexTurnSql(from, to, q) {
             SpanAttributes['conversation.id'] AS conversation,
             coalesce(nullIf(SpanAttributes['model'], ''), SpanAttributes['gen_ai.request.model']) AS span_model
         FROM claude_code.otel_traces
-        WHERE Timestamp >= {from:DateTime} AND Timestamp < {spanTo:DateTime}
+        WHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
           AND ResourceAttributes['client'] = 'codex'
           AND ${EXACT_USER}
         LIMIT 1 BY TraceId, SpanId
     )
     WHERE turn_id != ''
     GROUP BY turn_id
-    HAVING min(Timestamp) >= {from:DateTime} AND min(Timestamp) < {to:DateTime}
+    ORDER BY in_bucket DESC, start_ms ASC, turn_id ASC
     LIMIT ${CODEX_TURN_LIMIT + 1}`,
     params: { from: toChDateTime(from), to: toChDateTime(to),
+      spanFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
       spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact },
   };
 }
@@ -340,8 +347,10 @@ function foldCodexTask(turn, linked) {
 }
 
 // Links each unique completion to the turn of its conversation whose [start, end + slack]
-// contains its event time (latest start when several), at most once. Unattached counts only
-// completions inside [from, to); later ones were read for attachment only. With a backend
+// contains its event time (latest start when several), at most once. Only bucket turns
+// (in_bucket) become tasks; a completion won by a context turn belongs to that turn's
+// bucket. Unattached counts only unlinked completions inside [from, to); later ones were
+// read for attachment only. With a backend
 // filter, a turn needs a linked completion on that backend (a turn without one is "unknown").
 export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLACK_MS,
   prices = codexPrices(), from = null, to = null, backend = "" } = {}) {
@@ -349,9 +358,14 @@ export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLA
   let skippedTurns = 0;
   for (const turn of turns) {
     const start = count(turn.start_ms), end = count(turn.end_ms);
-    if (!turn.conversation_id || !turn.turn_id || start === null || end === null) { skippedTurns++; continue; }
+    // Rows without the flag (pure callers) are bucket turns.
+    const inBucket = turn.in_bucket === undefined || Number(turn.in_bucket) === 1;
+    if (!turn.conversation_id || !turn.turn_id || start === null || end === null) {
+      if (inBucket) skippedTurns++;
+      continue;
+    }
     const list = byConversation.get(turn.conversation_id) ?? [];
-    list.push({ turn, start, end, linked: [] });
+    list.push({ turn, start, end, inBucket, linked: [] });
     byConversation.set(turn.conversation_id, list);
   }
   const seen = new Set();
@@ -378,6 +392,7 @@ export function attachCompletions(turns, completions, { slackMs = COMPLETION_SLA
   }
   const tasks = [];
   for (const entries of byConversation.values()) for (const entry of entries) {
+    if (!entry.inBucket) continue;
     if (backend && !(entry.linked.length ? entry.linked.some(l => l.usage.backend === backend) : backend === "unknown"))
       continue;
     tasks.push(foldCodexTask(entry.turn, entry.linked));

@@ -518,7 +518,10 @@ and `cost_usd`/`cost_partial`/`cost_basis`. Per call: Anthropic models use the
 `cost_basis` is null for a task without calls.
 
 A Codex task is one turn (`id` `codex:<conversation.id>:<turn id>`) of `client=codex` spans
-whose first span starts in `[from, to)`; spans are read through `to + 24h`.
+whose first span starts in `[from, to)`; spans are read in `[from - 24h, to + 24h)` so a
+turn crossing a bucket edge is listed once, by its starting bucket. Turns starting in
+the neighbouring 24h are attachment context only: completions they win are neither
+listed nor unattached here.
 `duration_ms` is the observed span window (min start .. max end, `duration_basis:
 "observed_span_window"`), `llm_calls` counts `codex.sampling` spans, and `subagents` is
 null (no parent link). Spans carry no usage: tokens and cost come only from unique
