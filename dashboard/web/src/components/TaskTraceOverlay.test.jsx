@@ -196,3 +196,38 @@ test("not found renders an error, not totals", async () => {
   expect(await screen.findByText("데이터를 불러오지 못했습니다.")).toBeTruthy();
   expect(screen.queryByText("총 토큰")).toBeNull();
 });
+
+test("cost band legend keeps every lane inside the viewBox with many subagents", async () => {
+  const base = claudeDetail();
+  const extra = Array.from({ length: 7 }, (_, i) => ({ id: `agent-x${i}`, label: "general-purpose", kind: "general-purpose",
+    spawned_by: null, llm_calls: 1, cost_usd: 0.1, cost_partial: false }));
+  const extraSpans = extra.map((l, i) => ({ id: `llm-x${i}`, parent: null, lane: l.id, kind: "llm", name: "claude_code.llm_request",
+    start_ms: 80000 + i * 1000, duration_ms: 500, attrs: {}, tokens: tokens(1, 1, 1, 1), cost_usd: 0.1, cost_basis: "client_reported" }));
+  body = { ...base, lanes: [...base.lanes, ...extra], spans: [...base.spans, ...extraSpans] };
+  mount();
+  const band = await screen.findByRole("img", { name: /누적 비용/ });
+  const [, , , viewH] = band.getAttribute("viewBox").split(" ").map(Number);
+  const rows = band.querySelectorAll("[data-band-lane]");
+  expect(rows).toHaveLength(10);
+  for (const row of rows) {
+    const swatch = row.querySelector("[data-band-legend]");
+    const bottom = Number(swatch.getAttribute("y")) + Number(swatch.getAttribute("height"));
+    expect(bottom).toBeLessThanOrEqual(viewH);
+    for (const label of row.querySelectorAll("text")) expect(Number(label.getAttribute("y"))).toBeLessThanOrEqual(viewH);
+    expect(row.querySelectorAll("text")[1].textContent).toMatch(/^\$/);
+  }
+});
+
+test("a keyboard-focused bar draws a visible focus ring", async () => {
+  mount();
+  const bar = await screen.findByRole("button", { name: "LLM 호출 #2 · Explore" });
+  expect(bar.style.stroke).toBe("none");
+  fireEvent.focus(bar);
+  expect(bar.hasAttribute("data-focused")).toBe(true);
+  expect(bar.style.stroke).toBe("var(--brand-600)");
+  fireEvent.keyDown(bar, { key: "Enter" });
+  expect(within(panel()).getByText("LLM 호출 #2")).toBeTruthy();
+  fireEvent.blur(bar);
+  expect(bar.hasAttribute("data-focused")).toBe(false);
+  expect(bar.style.stroke).toBe("var(--ink-800)"); // selected, no longer focused
+});

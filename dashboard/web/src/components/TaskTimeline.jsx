@@ -1,6 +1,7 @@
 // Lane timeline of one task (mockup v3 option B): one row per agent lane with its icon, name
 // and "N 호출 · $X", LLM bars shaded by input context, tool bars and permission-wait marks
 // under the lane, dashed connectors from a spawning tool span to its subagent lane.
+import { useState } from "react";
 import { laneColorFor } from "../colors.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { observedNumber } from "../clientPresentation.js";
@@ -11,6 +12,8 @@ import { TaskIconMark } from "./taskIcons.jsx";
 export const X0 = 200, PLOT_W = 680, VIEW_W = 900;
 const LANE_H = 64, TOP = 8, BAR_H = 22, MARK_H = 7, TICKS = 4;
 const TOOL_FILL = "var(--ink-400)", WAIT_FILL = "var(--negative)";
+// SVG bars get no reliable native focus outline, so the focused bar draws its own ring.
+const FOCUS_STROKE = "var(--brand-600)", SELECTED_STROKE = "var(--ink-800)";
 
 export function laneStats(lane, truncated) {
   if (truncated) return "합계 미표시";
@@ -44,16 +47,20 @@ export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId
   const maxContext = Math.max(1, ...contexts);
   const byId = new Map(spans.map((s) => [s.id, s]));
   const height = TOP + lanes.length * LANE_H + 18;
+  const [focusedId, setFocusedId] = useState(null);
 
   const bar = (s) => {
     const y = row.get(s.lane), color = laneColorFor(lanes.find((l) => l.id === s.lane)?.kind);
     const ctx = s.kind === "llm" ? contextOf(s.tokens) : null;
     const common = {
       role: "button", tabIndex: 0, "aria-label": spanLabel(s, names.get(s.lane), numbers.get(s.id)),
-      "aria-pressed": selectedId === s.id, className: "cursor-pointer outline-none",
+      "aria-pressed": selectedId === s.id, "data-focused": focusedId === s.id ? "" : undefined,
+      className: "cursor-pointer outline-none",
+      onFocus: () => setFocusedId(s.id), onBlur: () => setFocusedId((f) => (f === s.id ? null : f)),
       onClick: () => onSelect(s.id),
       onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(s.id); } },
-      style: { stroke: selectedId === s.id ? "var(--ink-800)" : "none", strokeWidth: 1.5 },
+      style: focusedId === s.id ? { stroke: FOCUS_STROKE, strokeWidth: 2.5 }
+        : { stroke: selectedId === s.id ? SELECTED_STROKE : "none", strokeWidth: 1.5 },
     };
     if (s.kind === "llm") return <rect key={s.id} {...common} x={x(s.start_ms)} y={y + 2} width={width(s.duration_ms)} height={BAR_H}
       rx={2} style={{ ...common.style, fill: color, opacity: ctx === null ? 0.45 : 0.3 + 0.7 * (ctx / maxContext) }} />;

@@ -9,13 +9,17 @@ import { formatTaskDuration } from "./TaskList.jsx";
 import { TimeAxis, PLOT_W, VIEW_W, X0 } from "./TaskTimeline.jsx";
 import { tooltipStyles, useChartColors } from "../useChartColors.js";
 
-const BASE = 130, H = 110, VIEW_H = 150, BUCKETS = 120;
+const BUCKETS = 120, LEGEND_TOP = 28, LEGEND_ROW = 18, AXIS_GAP = 20;
+// Height grows with the lane count so every legend row (swatch, name, final cost) stays inside
+// the viewBox; the plot fills the height above the time axis.
+export const bandHeight = (laneCount) => Math.max(150, LEGEND_TOP + laneCount * LEGEND_ROW + AXIS_GAP);
 const money = (v) => (v === null ? "미수집" : formatClientCost(v));
 
 export function TaskCostBand({ lanes, spans, end, durationMs }) {
   const c = useChartColors();
   const points = useMemo(() => cumulativeByLane(spans, lanes, BUCKETS, durationMs), [spans, lanes, durationMs]);
   const [hover, setHover] = useState(null);
+  const VIEW_H = bandHeight(lanes.length), BASE = VIEW_H - AXIS_GAP, H = BASE - 20;
   const known = points.findIndex((p) => p.total === null);
   const lastKnown = known === -1 ? points.length - 1 : known - 1;
   const max = Math.max(...points.slice(0, lastKnown + 1).map((p) => p.total), 0);
@@ -50,10 +54,11 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
   return <div className="relative">
     <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" className="block" role="img" aria-label={`에이전트별 ${title}`}>
       <text x={8} y={16} style={{ fill: "var(--text-primary)", fontSize: 12, fontWeight: 600 }}>{title}</text>
-      {lanes.map((l, i) => <g key={l.id} aria-hidden="true">
-        <rect x={8} y={28 + i * 18} width={10} height={10} rx={2} style={{ fill: laneColorFor(l.kind) }} />
-        <text x={24} y={37 + i * 18} style={{ fill: "var(--text-primary)", fontSize: 11 }}>{laneName(l)}</text>
-        <text x={190} y={37 + i * 18} textAnchor="end" style={{ fill: "var(--text-secondary)", fontSize: 11 }}>
+      {lanes.map((l, i) => <g key={l.id} data-band-lane={l.id} aria-hidden="true">
+        <rect data-band-legend="" x={8} y={LEGEND_TOP + i * LEGEND_ROW} width={10} height={10} rx={2}
+          style={{ fill: laneColorFor(l.kind) }} />
+        <text x={24} y={LEGEND_TOP + 9 + i * LEGEND_ROW} style={{ fill: "var(--text-primary)", fontSize: 11 }}>{laneName(l)}</text>
+        <text x={190} y={LEGEND_TOP + 9 + i * LEGEND_ROW} textAnchor="end" style={{ fill: "var(--text-secondary)", fontSize: 11 }}>
           {money(final.by_lane[l.id] ?? null)}</text>
       </g>)}
       {areas}
