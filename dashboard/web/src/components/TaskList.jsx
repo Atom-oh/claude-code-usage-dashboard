@@ -109,7 +109,8 @@ export function TaskList({ user, clients, group = null, from, to, onOpen, select
   const data = !expired && !api.error && !api.loading && !api.stale ? api.data : null;
   const unattached = data?.unattached_codex;
   const skipped = observedNumber(unattached?.turns_without_conversation) ?? 0;
-  const showUnattached = unattached && ((observedNumber(unattached.completions) ?? 0) > 0 || skipped > 0);
+  const nonUnique = observedNumber(unattached?.turns_without_unique_id) ?? 0;
+  const showUnattached = unattached && ((observedNumber(unattached.completions) ?? 0) > 0 || skipped > 0 || nonUnique > 0);
   return <section aria-label="작업 목록" className="flex flex-col gap-2">
     {data?.coverage?.codex === "limited" && <p role="status" className="text-sm text-warning-text">
       Codex 로그가 조회 한도를 넘어 일부 Codex 작업과 연결 정보가 누락될 수 있습니다. 비용은 부분합입니다.</p>}
@@ -117,6 +118,7 @@ export function TaskList({ user, clients, group = null, from, to, onOpen, select
       {`trace와 연결되지 않은 Codex completion ${formatObserved(unattached.completions ?? 0)}건 · ${orMissing(unattached.cost_usd, formatClientCost)}`}
       {unattached.cost_partial && " (부분합)"}
       {skipped > 0 && ` · conversation id가 없어 제외한 turn ${formatObserved(skipped)}건`}
+      {nonUnique > 0 && ` · 고유하지 않은 turn id로 제외한 turn ${formatObserved(nonUnique)}건`}
     </p>}
     {body}
   </section>;

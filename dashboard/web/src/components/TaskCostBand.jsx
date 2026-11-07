@@ -54,7 +54,7 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
   return <div className="relative">
     <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" className="block" role="img" aria-label={`에이전트별 ${title}`}>
       <text x={8} y={16} style={{ fill: "var(--text-primary)", fontSize: 12, fontWeight: 600 }}>{title}</text>
-      {lanes.map((l, i) => <g key={l.id} data-band-lane={l.id} aria-hidden="true">
+      {lanes.map((l, i) => <g key={l.id} data-band-lane={i} aria-hidden="true">
         <rect data-band-legend="" x={8} y={LEGEND_TOP + i * LEGEND_ROW} width={10} height={10} rx={2}
           style={{ fill: laneColorFor(l.kind) }} />
         <text x={24} y={LEGEND_TOP + 9 + i * LEGEND_ROW} style={{ fill: "var(--text-primary)", fontSize: 11 }}>{laneName(l)}</text>

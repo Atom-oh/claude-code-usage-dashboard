@@ -144,9 +144,19 @@ test("codex bar shows not collected for TTFT breakdown", async () => {
   expect(screen.getByText(/가장 비싼 호출/).textContent).toContain("$0.25");
 });
 
+test("a folded tool bar shows the whole call and its execution time", async () => {
+  body.spans = body.spans.map((s) => (s.id === "tool-1" ? { ...s, execution_ms: 59000 } : s));
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: /Agent/ }));
+  const row = (label) => within(panel()).getByText(label).nextElementSibling.textContent;
+  expect(row("소요")).toBe("1분 0초");
+  expect(row("실행 시간")).toBe("59.0초");
+});
+
 test("truncated detail shows banner and hides totals", async () => {
   body = { ...claudeDetail(), truncated: true, span_total: 9000, why: [],
-    task: { ...claudeDetail().task, llm_calls: null, subagents: null, tokens: null, cost_usd: null, cost_partial: true, cost_basis: null },
+    task: { ...claudeDetail().task, models: null, llm_calls: null, subagents: null, tokens: null, cost_usd: null,
+      cost_partial: true, cost_basis: null },
     lanes: claudeDetail().lanes.map((l) => ({ ...l, llm_calls: null, cost_usd: null, cost_partial: true })) };
   mount();
   expect(await screen.findByText("일부 span만 표시 — 전체 합계 미표시")).toBeTruthy();
@@ -154,6 +164,8 @@ test("truncated detail shows banner and hides totals", async () => {
   expect(screen.queryByText(/누적 비용/)).toBeNull();
   expect(screen.queryByText(/\$0(\.00)?$/)).toBeNull();
   expect(screen.queryByText(/호출 · \$/)).toBeNull();
+  // The newest spans' models are not the task's models: the header omits them.
+  expect(screen.getByRole("dialog").textContent).not.toContain("claude-opus-5-5 ·");
 });
 
 test("no forbidden fields rendered even if present in payload", async () => {
@@ -209,6 +221,9 @@ test("cost band legend keeps every lane inside the viewBox with many subagents",
   const [, , , viewH] = band.getAttribute("viewBox").split(" ").map(Number);
   const rows = band.querySelectorAll("[data-band-lane]");
   expect(rows).toHaveLength(10);
+  // Lane rows are keyed by index in the DOM, never by the raw agent id.
+  expect([...rows].map((r) => r.getAttribute("data-band-lane"))).toEqual([...rows].map((_, i) => String(i)));
+  expect(band.innerHTML).not.toContain("agent-x");
   for (const row of rows) {
     const swatch = row.querySelector("[data-band-legend]");
     const bottom = Number(swatch.getAttribute("y")) + Number(swatch.getAttribute("height"));

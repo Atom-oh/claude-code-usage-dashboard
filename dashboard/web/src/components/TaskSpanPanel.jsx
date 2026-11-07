@@ -68,7 +68,11 @@ function toolRows(span) {
   if (a.bash_command_class) rows.push(["분류", text(a.bash_command_class)]);
   rows.push(["결과", outcome(a)]);
   if (a.error_class) rows.push(["오류", text(a.error_class)]);
-  rows.push(["시작", offset(span.start_ms)], ["실행 시간", duration(span.duration_ms)]);
+  // A Claude tool bar folds its tool.execution span: the bar is the whole call (including any
+  // permission wait) and execution_ms the execution part.
+  if (span.execution_ms !== undefined)
+    rows.push(["시작", offset(span.start_ms)], ["소요", duration(span.duration_ms)], ["실행 시간", duration(span.execution_ms)]);
+  else rows.push(["시작", offset(span.start_ms)], ["실행 시간", duration(span.duration_ms)]);
   return rows;
 }
 

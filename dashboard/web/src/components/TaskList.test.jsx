@@ -210,6 +210,15 @@ test("unattached note renders count", async () => {
   expect(screen.getByText(/Codex 로그가 조회 한도/)).toBeTruthy();
 });
 
+test("unattached note counts turns without a unique turn id", async () => {
+  tasksBody = response({ unattached_codex: { completions: 0, cost_usd: 0, cost_partial: false,
+    turns_without_conversation: 0, turns_without_unique_id: 3 } });
+  mount();
+  const note = await screen.findByText(/고유하지 않은 turn id로 제외한 turn 3건/);
+  expect(note.textContent).toContain("trace와 연결되지 않은 Codex completion 0건");
+  expect(note.textContent).not.toContain("conversation id가 없어");
+});
+
 test("row click opens the task and the raw id is not rendered", async () => {
   const onOpen = vi.fn();
   mount({ onOpen, group: "bedrock", clients: ["claude"] });
