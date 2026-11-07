@@ -276,40 +276,39 @@ export function codexTurnSql(from, to, q, { conversationId = null } = {}) {
 }
 
 // Usage-bearing completions of the exact user in [from, to + 24h). One unique event is a
-// DISTINCT (Timestamp, sorted resource map, sorted log map), as logSelection() defines it;
-// `identity` names that event so the fold attaches it at most once. Only allowlisted
-// attributes leave the database. `conversationId` (task detail) keeps one conversation.
+// (Timestamp, sorted resource map, sorted log map), as logSelection() defines it, hashed once
+// per row without stringifying the maps; LIMIT 1 BY that hash keeps one delivery and
+// `identity` names it so the fold attaches it at most once. PREWHERE reads only promoted
+// columns (event, time, exact user); the map-derived checks repeat in WHERE. Only
+// allowlisted attributes leave the database. `conversationId` (task detail) keeps one conversation.
 export function codexCompletionSql(from, to, q, { conversationId = null } = {}) {
   const params = { logFrom: toChDateTime(from), logTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)),
     userExact: q.userExact };
   if (conversationId !== null) params.conversationId = conversationId;
-  const tokens = COMPLETION_TOKEN_KEYS.map(k => `a['${k}'] AS ${k}`).join(",\n        ");
+  const tokens = COMPLETION_TOKEN_KEYS.map(k => `LogAttributes['${k}'] AS ${k}`).join(",\n        ");
   return {
-    sql: `SELECT toString(cityHash64(toString(Timestamp), toString(r), toString(a))) AS identity,
+    sql: `SELECT toString(identity_hash) AS identity,
         toString(toUnixTimestamp64Milli(Timestamp)) AS timestamp_ms,
-        a['event.timestamp'] AS event_timestamp,
-        a['conversation.id'] AS conversation_id,
-        a['model'] AS model,
-        a['model_reasoning_effort'] AS effort,
-        a['ttft_ms'] AS ttft_ms,
-        a['duration_ms'] AS duration_ms,
-        r['backend'] AS backend_tag,
-        ${tokens}
-    FROM (
-        SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a
-        FROM claude_code.otel_logs
-        WHERE Timestamp >= {logFrom:DateTime} AND Timestamp < {logTo:DateTime}
-          AND startsWith(EventName, 'codex.')
-          AND ${EXACT_USER}
-          AND LogAttributes['event.name'] IN ${CODEX_STREAM_EVENTS}
-          AND LogAttributes['event.kind'] = 'response.completed'${conversationId === null ? ""
-            : "\n          AND LogAttributes['conversation.id'] = {conversationId:String}"}
-    )
-    WHERE a['event.name'] IN ${CODEX_STREAM_EVENTS}
-      AND a['event.kind'] = 'response.completed'
-      AND arrayExists(k -> mapContains(a, k), [${COMPLETION_TOKEN_KEYS.map(k => `'${k}'`).join(", ")}])
-      AND coalesce(nullIf(r['user.email'], ''), nullIf(r['enduser.id'], ''), '') = {userExact:String}
+        LogAttributes['event.timestamp'] AS event_timestamp,
+        LogAttributes['conversation.id'] AS conversation_id,
+        LogAttributes['model'] AS model,
+        LogAttributes['model_reasoning_effort'] AS effort,
+        LogAttributes['ttft_ms'] AS ttft_ms,
+        LogAttributes['duration_ms'] AS duration_ms,
+        ResourceAttributes['backend'] AS backend_tag,
+        ${tokens},
+        cityHash64(Timestamp, mapSort(ResourceAttributes), mapSort(LogAttributes)) AS identity_hash
+    FROM claude_code.otel_logs
+    PREWHERE Timestamp >= {logFrom:DateTime} AND Timestamp < {logTo:DateTime}
+      AND EventName IN ${CODEX_STREAM_EVENTS}
+      AND ${EXACT_USER}
+    WHERE LogAttributes['event.name'] IN ${CODEX_STREAM_EVENTS}
+      AND LogAttributes['event.kind'] = 'response.completed'${conversationId === null ? ""
+        : "\n      AND LogAttributes['conversation.id'] = {conversationId:String}"}
+      AND arrayExists(k -> mapContains(LogAttributes, k), [${COMPLETION_TOKEN_KEYS.map(k => `'${k}'`).join(", ")}])
+      AND coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') = {userExact:String}
     ORDER BY timestamp_ms
+    LIMIT 1 BY identity_hash
     LIMIT ${CODEX_COMPLETION_LIMIT + 1}`,
     params,
   };

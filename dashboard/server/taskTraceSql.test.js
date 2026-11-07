@@ -100,8 +100,11 @@ const logs = [
   // Non-Anthropic report is ignored for the ADR-017 list estimate.
   apiRequest(KIM, "2026-11-06T02:05:02Z", "r3", NON_ANTHROPIC, 9.99),
   apiRequest(JOAKIM, "2026-11-05T05:00:07Z", "rj", ANTHROPIC, 7),
-  // kim's U1: two completions plus one duplicate delivery of the first.
+  // kim's U1: two completions plus duplicate deliveries of the first.
   kimFirst, { ...kimFirst },
+  // The same delivery with reordered map keys: still one event (sorted-map identity).
+  { ...kimFirst, ResourceAttributes: Object.fromEntries(Object.entries(kimFirst.ResourceAttributes).reverse()),
+    LogAttributes: Object.fromEntries(Object.entries(kimFirst.LogAttributes).reverse()) },
   completion(KIM, "C1", "2026-11-05T10:00:50Z"),
   // Unattached: same conversation, far outside every turn window.
   completion(KIM, "C1", "2026-11-05T12:00:00Z"),

@@ -255,12 +255,21 @@ test("codexTurnSql uses client=codex predicate and exact user", () => {
 
 test("codexCompletionSql selects deduplicated usage-bearing completions of the exact user", () => {
   const { sql, params } = codexCompletionSql(from, to, validateTaskQuery({ userExact: "kim@x.com" }, both));
-  assert.ok(sql.includes("SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a"));
-  assert.ok(sql.includes("a['event.name'] IN ('codex.sse_event', 'codex.websocket_event')"));
-  assert.ok(sql.includes("a['event.kind'] = 'response.completed'"));
+  // One-pass hash identity over the full sorted maps; no DISTINCT or stringified maps.
+  assert.ok(sql.includes("cityHash64(Timestamp, mapSort(ResourceAttributes), mapSort(LogAttributes)) AS identity_hash"));
+  assert.match(sql, /LIMIT 1 BY identity_hash\s+LIMIT 50001\b/);
+  assert.doesNotMatch(sql, /DISTINCT|toString\((r|a|ResourceAttributes|LogAttributes|mapSort)\b/);
+  // PREWHERE reads promoted columns only: time, stream event names and the exact user.
+  const prewhere = sql.slice(sql.indexOf("PREWHERE"), sql.indexOf("\n    WHERE"));
+  assert.ok(prewhere.startsWith("PREWHERE Timestamp >= {logFrom:DateTime} AND Timestamp < {logTo:DateTime}"));
+  assert.ok(prewhere.includes("EventName IN ('codex.sse_event', 'codex.websocket_event')"));
+  assert.ok(prewhere.includes("coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') = {userExact:String}"));
+  assert.doesNotMatch(prewhere, /Attributes\[/);
+  assert.ok(sql.includes("LogAttributes['event.name'] IN ('codex.sse_event', 'codex.websocket_event')"));
+  assert.ok(sql.includes("LogAttributes['event.kind'] = 'response.completed'"));
   assert.ok(sql.includes("'input_token_count'") && sql.includes("'reasoning_token_count'"));
   assert.ok(sql.includes("coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') = {userExact:String}"));
-  assert.ok(sql.includes("a['event.timestamp']") && sql.includes("a['model_reasoning_effort']"));
+  assert.ok(sql.includes("LogAttributes['event.timestamp']") && sql.includes("LogAttributes['model_reasoning_effort']"));
   assert.equal(params.logTo, "2026-11-07 00:00:00");
   assert.ok(!sql.includes("kim@x.com"));
   assert.ok(!/user_prompt|full_command|file_path/.test(sql));
