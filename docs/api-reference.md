@@ -499,6 +499,24 @@ across a user's channel rows; summing per-channel active days can double-count d
 `agents` is a distinct-agent count, not agent depth. Child duration totals can exceed the
 interaction duration. All four drilldowns are excluded from cache warming.
 
+`/api/users/tasks` (not warmed; `team` rejected) lists at most **20** tasks for one
+exact user: required `userExact` (email, else `enduser.id`, equality match), optional
+`client`, `backend`, `group` (Claude tasks only; 400 unless Claude is selected) and
+`sort=tokens|duration` (default `tokens`). Response `{tasks, unattached_codex, coverage,
+partial: true}`; `coverage.<client>` is `observed`, `empty` or `not_requested`. Only
+trace-enabled users emit spans, so `partial` is always true. A Claude task is one
+`interaction` span starting in `[from, to)`; its `llm_request` spans are read through
+`to + 24h`. Each task has `id` (`claude:<TraceId>`), `started_at`, `duration_ms`
+(`duration_basis: "interaction_span"`), normalized `models`, `llm_calls`, `subagents`
+(distinct non-empty `agent_id`), `tokens` (`input`, `cache_read`, `cache_write`,
+`output` from span attributes, `observed_tokens`, `tokens_partial`; unknown is null)
+and `cost_usd`/`cost_partial`/`cost_basis`. Per call: Anthropic models use the
+`api_request` `cost_usd` joined by request id (`client_reported`), else `computeCost()`
+(`computed`); non-Anthropic models use the ADR-017 per-request AWS list estimate
+(`aws_list_estimate`, null when unpriced). Calls with different bases make `mixed`;
+`cost_basis` is null for a task without calls. Codex tasks are not yet returned
+(`coverage.codex: "not_requested"`, `unattached_codex: null`).
+
 ### Teams
 
 Both lookups are range-only over enabled clients: they reject `team` and ignore the other filters.

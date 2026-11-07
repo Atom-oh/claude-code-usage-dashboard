@@ -204,3 +204,15 @@ test("team is part of both cache-key shapes and reaches the plugin inventory", (
   // The plugin route forwards parsed filters (it previously passed only the range).
   assert.match(src, /route\("\/api\/usage\/plugins", \(from, to, _q, filters\) => q\.pluginInventory\(from, to, filters\)\)/);
 });
+
+test("the user task list validates before the database and never leaks errors", async () => {
+  const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
+  for (const qs of ["", "&userExact=a&sort=foo", "&userExact=a&team=fsi", "&userExact=a&backend=nope"]) {
+    const r = await fetch(`${base}/api/users/tasks?${range}${qs}`);
+    assert.equal(r.status, 400, qs);
+  }
+  const r = await fetch(`${base}/api/users/tasks?${range}&userExact=kim%40x.com`);
+  assert.equal(r.status, 500);
+  const text = await r.text();
+  assert.ok(!/SELECT|ECONNREFUSED|clickhouse/i.test(text), `leaked: ${text}`);
+});
