@@ -73,3 +73,34 @@ test("SQL charts cannot relabel known token and cost columns", () => {
     assert.throws(() => buildChatChart({ ...spec, unit, series: [{ key, label: key }] },
       results([{ t: "one", [key]: 3 }])), /unit/i);
 });
+
+test("dashboard rows without observations chart as unknown while idle observed zeros stay zero", () => {
+  const chart = buildChatChart({ ...spec, type: "bar", x: "label", x_type: "category", series: [{ key: "cost_usd", label: "Cost" }] },
+    new Map([["query_1", { source: "dashboard", rows: [
+      { label: "claude · anthropic", cost_usd: 1.5, cost_basis: "client_reported", observed_records: 3 },
+      { label: "codex · unknown", cost_usd: 0, cost_basis: "aws_list_estimate", observed_records: 0 },
+      { label: "claude · 2026-11-06 01:00:00", cost_usd: 0, cost_basis: "client_reported", observed_records: 0, timeline_observed: true },
+    ] }]]));
+  assert.deepEqual(chart.data.map(row => row.cost_usd), [1.5, null, 0]);
+  assert.equal(chart.coverage, "canonical");
+  // SQL results carry no fold markers; a column that happens to be named observed_records changes nothing.
+  assert.deepEqual(buildChatChart(spec, results([{ t: "one", cost: 0, observed_records: 0 }])).data.map(row => row.cost), [0]);
+});
+
+test("partial and cost basis disclosure cover stored rows beyond the charted points", () => {
+  const rows = Array.from({ length: 60 }, (_, i) => ({ t: String(i), cost: i, cost_basis: "client_reported",
+    ...(i === 55 ? { cost_basis: "computed_estimate", cost_partial: true } : {}) }));
+  const chart = buildChatChart(spec, results(rows));
+  assert.equal(chart.data.length, 50);
+  assert.equal(chart.truncated, true);
+  assert.equal(chart.partial, true);
+  assert.deepEqual(chart.cost_bases, ["client_reported", "computed_estimate"]);
+});
+
+test("integers beyond the safe range are unknown points, not rounded values", () => {
+  const chart = buildChatChart(spec, results([
+    { t: "safe", cost: String(Number.MAX_SAFE_INTEGER) }, { t: "unsafe", cost: "9007199254740993" },
+    { t: "number", cost: Number.MAX_SAFE_INTEGER + 2 }, { t: "decimal", cost: "0.000001" },
+  ]));
+  assert.deepEqual(chart.data.map(row => row.cost), [Number.MAX_SAFE_INTEGER, null, null, 0.000001]);
+});
