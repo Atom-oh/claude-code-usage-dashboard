@@ -151,7 +151,7 @@ test("a conversation agent cannot execute SQL or keep requesting tools after the
   assert.ok(!res.chunks.some(c => c.startsWith("event: done")));
 });
 
-test("Bedrock calls use Haiku for chat, Sonnet for analysis and never send analysis tools to chat", async () => {
+test("Bedrock calls use Haiku for chat, Sonnet for analysis, never send analysis tools to chat and request thinking only for analysis", async () => {
   const commands = [];
   const sdk = { send: async cmd => {
     commands.push(cmd.input);
@@ -170,6 +170,10 @@ test("Bedrock calls use Haiku for chat, Sonnet for analysis and never send analy
   assert.equal(commands[2].toolConfig, undefined);
   assert.ok(commands[0].system[0].text.length < commands[1].system[0].text.length / 3);
   assert.ok(!commands[0].system[0].text.includes("CREATE TABLE"));
+  // Adaptive thinking is model-generation sensitive and unverified for the conversation model.
+  assert.equal(commands[0].additionalModelRequestFields, undefined);
+  assert.deepEqual(commands[1].additionalModelRequestFields, { thinking: { type: "adaptive", display: "summarized" } });
+  assert.equal(commands[2].additionalModelRequestFields, undefined);
 });
 
 test("one request permits only one analysis delegation even with repeated tool blocks", async () => {

@@ -5,7 +5,7 @@ const label = value => typeof value === "string" && value.trim().length > 0 && v
 const own = (row, key) => Object.hasOwn(row, key);
 const columnUnit = key => key === "cost_usd" ? "usd"
   : key === "tokens" || key === "observed_tokens" || key.endsWith("_tokens") ? "tokens"
-    : ["sessions", "users", "unpriced", "missing_usage"].includes(key) ? "count" : undefined;
+    : ["sessions", "users", "unpriced", "missing_usage", "rejected_requests"].includes(key) ? "count" : undefined;
 
 function numeric(value) {
   if (value === null) return null;

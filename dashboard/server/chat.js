@@ -499,13 +499,17 @@ export async function runConverseTurn({ messages, allowTools, send, abortSignal,
     messages,
     ...(allowTools ? { toolConfig: agent === "analysis" ? ANALYSIS_TOOLS : TOOLS } : {}),
     inferenceConfig: { maxTokens: agent === "analysis" ? 8000 : 4800 },
-    // 확장 추론(thinking)을 켠다 — 켜지 않으면 첫 응답 전 수 초가 완전한 공백이라 멈춘 것처럼
-    // 보인다. 두 값 모두 이 모델 세대에서 필수 형태다:
+    // 확장 추론(thinking)은 분석 에이전트(Sonnet)에만 켠다 — 켜지 않으면 첫 응답 전 수 초가
+    // 완전한 공백이라 멈춘 것처럼 보인다. 두 값 모두 sonnet-5 세대에서 검증된 필수 형태다:
     //   - type: "adaptive" — 구버전 {type:"enabled", budget_tokens:N}는 sonnet-5에서 400.
     //     모델이 문제 난이도에 따라 사고량을 스스로 조절한다(고정 토큰 예산 개념 자체가 폐기됨).
     //   - display: "summarized" — sonnet-5의 기본값은 "omitted"이고, 그 경우 reasoning 블록이
     //     빈 문자열로 와서 화면에 보여줄 내용이 없다. 요약이라도 받으려면 명시해야 한다.
-    additionalModelRequestFields: { thinking: { type: "adaptive", display: "summarized" } },
+    // 대화 에이전트(기본 Haiku 5.5)에는 보내지 않는다 — 이 필드는 모델 세대에 민감한데 Haiku 5.5가
+    // 같은 형태를 받는지 라이브 호출로 확인되지 않았고(리뷰 지적), 라우팅/최종 작성 턴은 즉시
+    // 보내는 status("질문을 이해하는 중...", "답변을 정리하는 중...")가 공백을 채운다. 확인 뒤
+    // 켜려면 여기서 agent 분기만 바꾼다.
+    ...(agent === "analysis" ? { additionalModelRequestFields: { thinking: { type: "adaptive", display: "summarized" } } } : {}),
   });
   const { stream } = await sendConverseWithRetry(cmd, abortSignal, sdk);
 

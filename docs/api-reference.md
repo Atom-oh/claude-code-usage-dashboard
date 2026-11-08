@@ -615,8 +615,8 @@ Concurrent chat overload returns 503 before SSE without consuming an IP rate slo
 rows selected from a stored query result. `source`, `coverage`, `cost_bases`,
 `partial`, `truncated` and
 optional `effective_range` describe its evidence. Null values remain unavailable.
-Chart-capable clients render the template without executing model-generated
-code and exclude chart arrays from subsequent model history.
+The dashboard web validates each event again, renders the template without executing
+model-generated code and excludes chart arrays from subsequent model history.
 See [chat limits](reference/agent-llm.md) and [runtime admission](reference/api.md#request-and-cache-behavior).
 
 ### Insights

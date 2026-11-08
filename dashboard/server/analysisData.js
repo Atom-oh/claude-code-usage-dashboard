@@ -6,7 +6,9 @@ import { pricingConfig } from "./pricing.js";
 const DIMENSIONS = { model: "by_model", user: "by_user", time: "timeseries", client: "by_client" };
 const FIELDS = ["client", "backend", "model", "user", "t", "cost_usd", "cost_basis", "cost_partial",
   "tokens", "observed_tokens", "tokens_partial", "input_tokens", "output_tokens", "cache_read_tokens",
-  "cache_write_tokens", "reasoning_tokens", "sessions", "users", "unpriced", "missing_usage"];
+  "cache_write_tokens", "reasoning_tokens", "sessions", "users", "unpriced", "missing_usage",
+  // ADR-016: rejection-only Codex groups are not observed zero usage.
+  "rejected_requests", "request_rejections_only"];
 const project = row => Object.fromEntries(FIELDS.filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]]));
 
 export const USAGE_TOOL = { toolSpec: {

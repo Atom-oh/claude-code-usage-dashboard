@@ -38,10 +38,13 @@ force readonly: the deployed readonly profile can reject setting changes.
 
 ## 2. Provider access or throttling
 
-For `AccessDeniedException`, inspect the deployed `CHAT_MODEL_ID`, effective
-`BEDROCK_REGION` (falling back to `AWS_REGION`, then `us-east-1`), account/model availability,
-and the dashboard ServiceAccount's IRSA policy. `infra/dashboard.tf` derives model/profile
-ARNs and the env value from `chat_model_id`, but verify the running pod and applied policy.
+For `AccessDeniedException`, inspect the deployed `CHAT_MODEL_ID` and `ANALYSIS_MODEL_ID`,
+effective `BEDROCK_REGION` (falling back to `AWS_REGION`, then `us-east-1`), account/model
+availability, and the dashboard ServiceAccount's IRSA policy. `infra/bedrock.tf` derives
+model/profile ARNs from `chat_model_id` and `analysis_model_id`, and `infra/dashboard.tf`
+injects both env values, but verify the running pod and applied policy. Changing a model ID
+default removes the previous model's invoke grant in the same apply; pods still running the
+old env value are denied until the rollout completes.
 The Workshop Studio region exception is documented in
 [Workshop Studio notes](../workshop-studio-notes.md).
 Do not switch model IDs based only on a familiar name from a different provider catalog.
