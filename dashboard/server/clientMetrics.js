@@ -604,7 +604,8 @@ export function effectiveClientEnd(from, to, clients, intervalHours) {
   return new Date(resolved.to.replace(" ", "T") + "Z");
 }
 
-export async function clientOverview(from, to, raw, enabledClients) {
+export async function clientOverview(from, to, raw, enabledClients, externalSignal) {
+  externalSignal?.throwIfAborted();
   const validated = validateClientFilters(raw, enabledClients);
   const costView = validateClientView(raw);
   const compactTime = validateTimeFormat(raw);
@@ -631,7 +632,7 @@ export async function clientOverview(from, to, raw, enabledClients) {
       return rows.map((row) => ({ ...row, client }));
     }));
   }
-  const lists = await clientQueryBatch(jobs);
+  const lists = await clientQueryBatch(jobs, externalSignal);
   const records = bucketSeconds > nativeSeconds ? rebucketRows(lists.flat(), from, bucketSeconds) : lists.flat();
   observePricingModels(records.filter(row => row.client === "codex" && row.kind === "usage"));
   // The route validates modelTime; only the literal "1" enables the dimension.
