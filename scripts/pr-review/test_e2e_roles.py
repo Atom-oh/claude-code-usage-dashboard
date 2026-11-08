@@ -147,10 +147,14 @@ class EndToEndRoleTests(unittest.TestCase):
     def git(self, *arguments):
         return subprocess.check_output(["git", *arguments], cwd=self.repo, text=True)
 
-    def run_pipeline(self, path, content=b"export const result = 1;\n"):
+    def run_pipeline(self, path, content=b"export const result = 1;\n", extra_changes=None):
         changed = self.repo / path
         changed.parent.mkdir(parents=True, exist_ok=True)
         changed.write_bytes(content)
+        for extra_path, extra_content in (extra_changes or {}).items():
+            extra = self.repo / extra_path
+            extra.parent.mkdir(parents=True, exist_ok=True)
+            extra.write_bytes(extra_content)
         self.git("add", ".")
         self.git("commit", "-qm", "change")
         self.environment["HEAD_SHA"] = self.git("rev-parse", "HEAD").strip()
@@ -188,7 +192,7 @@ class EndToEndRoleTests(unittest.TestCase):
 
     def test_production_oversized_lockfile_is_blocked_without_model_calls(self):
         self.use_production_scope()
-        calls = self.run_pipeline("dashboard/server/package-lock.json", b"x" * 95001 + b"\n")
+        calls = self.run_pipeline("dashboard/server/package-lock.json", b"x" * 512001 + b"\n")
         self.assertEqual(calls, [])
         self.assertIn("diff_byte_limit", (self.work / "review.md").read_text())
         self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: FAIL\n"))
@@ -227,6 +231,31 @@ class EndToEndRoleTests(unittest.TestCase):
             self.assertIn("preflight-canary.txt", cell[2]["args"][1])
             self.assertIn("BEGIN DIFF ", cell[3]["args"][1])
             self.assertFalse(Path(home).exists())
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+
+    def test_mixed_change_passes_only_resource_patches_to_kiro_processes(self):
+        calls = self.run_pipeline(
+            "dashboard/server/chat.js", b'const model = "bedrock";\n',
+            {"infra/network.tf": b'resource "aws_vpc" "main" {}\n'},
+        )
+        kiro_reviews = [call for call in calls
+                        if call["name"] == "kiro-cli" and "BEGIN DIFF " in call["args"][1]]
+        self.assertEqual(len(kiro_reviews), 2)
+        for call in calls:
+            if call["name"] == "kiro-cli" and "BEGIN DIFF " in call["args"][1]:
+                self.assertIn("infra/network.tf", call["args"][1])
+                self.assertNotIn("dashboard/server/chat.js", call["args"][1])
+                self.assertNotIn('const model = "bedrock"', call["args"][1])
+            elif call["name"] in {"codex", "claude"}:
+                self.assertIn("dashboard/server/chat.js", call["stdin"])
+                self.assertIn("infra/network.tf", call["stdin"])
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+
+    def test_large_application_change_uses_only_stdin_reviewers(self):
+        calls = self.run_pipeline("dashboard/server/large.js", b"x" * 150000 + b"\n")
+        self.assertEqual(sorted(call["name"] for call in calls), ["claude", "codex"])
+        for call in calls:
+            self.assertIn("x" * 150000, call["stdin"])
         self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
 
     def assert_kiro_literals_preserved(self, fenced):

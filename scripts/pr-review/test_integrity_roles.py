@@ -21,8 +21,8 @@ class IntegrityTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.work = self.root / "work"
         self.raw = (
-            "diff --git a/backend/worker.ts b/backend/worker.ts\n"
-            "--- a/backend/worker.ts\n+++ b/backend/worker.ts\n"
+            "diff --git a/infra/worker.tf b/infra/worker.tf\n"
+            "--- a/infra/worker.tf\n+++ b/infra/worker.tf\n"
             "@@ -1 +1 @@\n-return 1;\r\n+return 1;\n"
         )
         (self.root / "diff").write_bytes(self.raw.encode())
@@ -46,8 +46,8 @@ class IntegrityTests(unittest.TestCase):
     def response(self, tag):
         return json.dumps({
             "head_sha": self.plan["head_sha"], "role": self.plan["roles"][tag]["role"],
-            "scope_complete": True, "reviewed_paths": ["backend/worker.ts"],
-            "checks": [{"path": "backend/worker.ts", "evidence": "Checked changed return bytes."}],
+            "scope_complete": True, "reviewed_paths": ["infra/worker.tf"],
+            "checks": [{"path": "infra/worker.tf", "evidence": "Checked changed return bytes."}],
             "findings": [], "uncertainties": [],
         })
 

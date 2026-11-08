@@ -662,7 +662,7 @@ class RoleRecordingTests(unittest.TestCase):
         self.harness = fixture.RoleReviewTests()
         self.harness.setUp()
         self.addCleanup(self.harness.tearDown)
-        self.path = "fixtures/password=abcdefghijklmnop.txt"
+        self.path = "infra/fixtures/password=abcdefghijklmnop.txt"
         self.harness.prepare(fixture.patch(self.path))
         self.private_value = "synthetic_private_response_value"
         response = self.harness.response("codex", findings=[{
@@ -740,7 +740,7 @@ class RoleRecordingTests(unittest.TestCase):
 
 
     def test_colored_kiro_response_records_without_scrubbing_valid_paths(self):
-        self.path = "fixtures/이한-password=abcdefghijklmnop.txt"
+        self.path = "infra/fixtures/이한-password=abcdefghijklmnop.txt"
         self.harness.prepare(fixture.patch(self.path))
         report = self.harness.response("kiro-sol", findings=[{
             "severity": "MINOR", "path": self.path, "condition": "On change",

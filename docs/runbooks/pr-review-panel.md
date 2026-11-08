@@ -5,6 +5,21 @@
 > [specialist tooling](../../scripts/pr-review/README.md). The panel and chair
 > procedure below describes the retained legacy `ROLE_REVIEW=0` path.
 
+## Active specialist scopes
+
+Codex and Claude independently receive the complete change, bounded to 512,000
+UTF-8 bytes / 12,000 lines. Kiro receives complete patches only for AWS
+architecture, infrastructure resources and relevant deployment documentation.
+Each Kiro projection retains the 95,000-byte / 3,000-line diff limit and a framed
+argument below 128 KiB. Application-only changes invoke neither Kiro slot.
+
+Inspect `role-plan.json` or `role-summary.json`: each role records its scope,
+paths, diff hash and byte/line counts. Scope-specific failures such as
+`diff_byte_limit:kiro-fable` refer to the AWS projection. The full canonical hash
+still binds every request. Oversized required projections block; no input is
+truncated. Run the candidate offline tests before integration: live
+`pull_request_target` reviews use trusted base scripts until this change lands.
+
 ## Scope and trust boundary
 
 The `AI Code Review` workflow in `.github/workflows/pr-review.yml` runs for same-repository
@@ -108,7 +123,7 @@ diff from stdin and have 1M-token context windows (Bedrock model cards for
 `openai.gpt-6.1-sol` and `anthropic.claude-opus-5-5`, checked 2026-11-04); 512,000 bytes is
 roughly 150K tokens, under Codex's 272K standard-rate tier. The specialist protocol's
 3,000 lines / 95,000 bytes came from Kiro receiving its prompt as one command-line argument
-(`MAX_REQUEST_BYTES`, 128 KiB) and applies to the active specialist path. The old
+(`MAX_REQUEST_BYTES`, 128 KiB) and now applies only to the active AWS projection. The old
 3,000-line truncation of this path and Kiro's `KIRO_DIFF_CAP` are gone.
 
 The job has `timeout-minutes: 50`. The normal worst case is 300 s x 2 panel attempts plus

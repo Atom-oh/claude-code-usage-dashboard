@@ -17,7 +17,7 @@ from test_run_role import fake_kiro_settings
 
 
 TAGS = ("codex", "claude-self", "kiro-fable", "kiro-sol")
-PATHS = ["src/first.py", "src/second.py"]
+PATHS = ["infra/first.tf", "infra/second.tf"]
 TIMEOUT = (124, "", "\nReview CLI timed out.")
 PASS = (0, "NO_TOOLS", "")
 
