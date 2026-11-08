@@ -3,6 +3,7 @@
 locals {
   chat_model_routing_pattern = "/^(global|us|eu|apac|jp|au|in)\\./"
   chat_foundation_model      = replace(var.chat_model_id, local.chat_model_routing_pattern, "")
+  dashboard_model_ids        = distinct([var.chat_model_id, var.analysis_model_id])
 }
 
 resource "aws_iam_role_policy" "dashboard_bedrock" {
@@ -13,10 +14,10 @@ resource "aws_iam_role_policy" "dashboard_bedrock" {
     Statement = [{
       Effect = "Allow"
       Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-      Resource = [
-        "arn:aws:bedrock:*::foundation-model/${local.chat_foundation_model}",
-        "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/${var.chat_model_id}"
-      ]
+      Resource = flatten([for model_id in local.dashboard_model_ids : [
+        "arn:aws:bedrock:*::foundation-model/${replace(model_id, local.chat_model_routing_pattern, "")}",
+        "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/${model_id}"
+      ]])
     }]
   })
 }

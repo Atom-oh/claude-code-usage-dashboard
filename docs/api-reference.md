@@ -607,9 +607,16 @@ It returns 503 unless auth is configured (or `CHAT_ALLOW_INSECURE=1`) and
 `assertReadonlySession()` has confirmed a readonly ClickHouse session. The probe runs at
 startup and every ten minutes; unknown status is fail-closed. Per-process IP limits return
 429 before streaming. SSE events are `status` (`message`, optional `sql`), `thinking`
-(`text`), `text` (`text`), `done` (`{}`), or `error` (`message`). Once streaming starts,
+(`text`), `text` (`text`), `chart`, `done` (`{}`), or `error` (`message`). Once streaming starts,
 failures are SSE events on HTTP 200. Successful streams use `Cache-Control: no-cache`.
 Concurrent chat overload returns 503 before SSE without consuming an IP rate slot.
+`chart` carries a fixed `bar|stacked_bar|line` template, title, category/time column
+`x`, `x_type`, one to three `series` (`key`, `label`), `unit`, and at most 50 `data`
+rows selected from a stored query result. `source`, `coverage`, `cost_bases`,
+`partial`, `truncated` and
+optional `effective_range` describe its evidence. Null values remain unavailable.
+The browser renders the template without executing model-generated code and
+excludes chart arrays from subsequent model history.
 See [chat limits](reference/agent-llm.md) and [runtime admission](reference/api.md#request-and-cache-behavior).
 
 ### Insights

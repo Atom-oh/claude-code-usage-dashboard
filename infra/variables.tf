@@ -10,10 +10,14 @@ variable "k8s_namespace" {
   default = "claude-code"
 }
 
-# Ask Claude 챗이 호출하는 Bedrock 모델(inference profile id). 변경 시 env(CHAT_MODEL_ID)와
-# IAM policy의 foundation-model/inference-profile ARN이 이 변수 하나로 함께 좁혀진다.
+# Conversation and analysis IDs configure both container env and scoped Bedrock IAM.
 variable "chat_model_id" {
-  default = "global.anthropic.claude-sonnet-5"
+  default = "global.anthropic.claude-haiku-5-5"
+}
+
+variable "analysis_model_id" {
+  description = "Bedrock model/profile for the separate query and analysis agent."
+  default     = "global.anthropic.claude-sonnet-5-5"
 }
 
 # Bedrock ConverseStream 호출 리전. var.region(EKS/ClickHouse 리전)과 독립 — 워크샵 계정으로
