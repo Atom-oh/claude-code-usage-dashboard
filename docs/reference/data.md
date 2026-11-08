@@ -255,6 +255,43 @@ project labels. Untagged sessions fold into `(untagged)`.
 trace columns, backfills or all migration steps exist. It gates project filtering and
 `projectBreakdown`; see [API scope](../api-reference.md).
 
+## User task traces
+
+`/api/users/tasks` and `/api/users/tasks/detail`
+([taskTraces.js](../../dashboard/server/taskTraces.js),
+[taskTraceDetail.js](../../dashboard/server/taskTraceDetail.js)) read only trace-enabled
+users, so every result is partial. Rules:
+
+- Ownership: a Claude task is an `interaction` span of the exact user (`UserEmail`, else
+  `EndUserId`) starting in `[from, to)`; a Codex task is a `client=codex` turn of that user
+  whose first span starts in `[from, to)`. Anything else is the same 404.
+- Turn identity: Codex spans group by turn id alone, so only UUID-shaped turn ids identify
+  a turn. Synthetic ids such as `auto-compact-N` repeat across conversations; those turns
+  are unlinkable (counted in `turns_without_unique_id`, never listed, never win a
+  completion), and the detail span query also requires the task's conversation id or none.
+- Windows: Claude spans of the `TraceId` are read in `[from, to + 24h)` because subagent
+  spans can start hours after the interaction; Codex turn spans in `[from - 24h, to + 24h)`
+  so a turn crossing a bucket edge belongs to its starting bucket only.
+- Claude cost per `llm_request`: Anthropic models use the `api_request` `cost_usd` joined
+  by `request_id` (`client_reported`), else `computeCost()` (`computed`); non-Anthropic
+  models use the ADR-017 per-request AWS list estimate (`aws_list_estimate`), null when
+  unpriced. `request_id` is a join key only and never leaves the server.
+- Codex linkage: spans carry no usage. A unique usage-bearing `response.completed`
+  completion links to the conversation's turn whose `[start, end + 5s]` contains its event
+  time (latest start wins, each completion once), and in the detail to the latest-starting
+  `codex.sampling` span of that turn by the same rule. The detail re-runs the link over the
+  whole conversation, so it picks the same turn as the list. Codex cost is
+  `linked_estimate` (Codex AWS list estimate per completion); input already includes cache
+  subsets and output includes reasoning (ADR-014).
+- Truncation: the detail returns the newest 5000 spans (`SPAN_BOUND`) and `span_total`.
+  When truncated, Claude whole-task and per-lane totals (`llm_calls`, `subagents`,
+  `tokens`, `cost_usd`) and `task.models` are null and `why` is empty. Codex totals come from the turn
+  aggregate and completions, not the span list, so they stay.
+- Allowlist: span attributes leave the database one key per column, only from
+  `SPAN_ATTRIBUTE_ALLOWLIST`; enumerated values must match an identifier shape (no spaces
+  or slashes). Prompts, commands, paths, URLs, tool output and whole attribute maps are
+  never selected.
+
 ## Migration and retention evidence
 
 The [replicated schema](../../infra/files/clickhouse-schema-replicated.sql) is applied by

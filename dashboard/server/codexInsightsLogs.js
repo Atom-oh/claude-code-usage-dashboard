@@ -11,6 +11,8 @@ const ROW_LIMIT = 50000;
 const TOKEN_FIELDS = { input_token_count: "input_tokens_total", cached_token_count: "cache_read_tokens",
   cache_write_token_count: "cache_write_tokens", output_token_count: "output_tokens",
   reasoning_token_count: "reasoning_tokens" };
+// A completion carrying any of these attributes is usage-bearing (see hasUsage below).
+export const COMPLETION_TOKEN_KEYS = Object.keys(TOKEN_FIELDS);
 // Keep coarse model attribution aligned with clientMetrics' selected log evidence.
 const OVERVIEW_EVENTS = ["sse_event", "websocket_event", "api_request", "api_error",
   "tool_result", "tool_decision", "turn_ttft"].map((name) => `codex.${name}`);
@@ -25,7 +27,7 @@ const sqlStrings = (values) => `[${values.map((v) => `'${v}'`).join(",")}]`;
 export function logSelection(from, to, filters = {}, distinct = true,
   { excludeBulk = false, modelEvidenceSql } = {}) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
-    clientUser: filters.user || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
+    clientUser: filters.user || "", clientUserExact: filters.userExact || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
   const modelMatch = "positionCaseInsensitive(model, {clientModel:String}) > 0";
   const sql = `WITH unique_events AS (
     SELECT ${distinct ? "DISTINCT " : ""}Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
@@ -47,6 +49,7 @@ export function logSelection(from, to, filters = {}, distinct = true,
   SELECT toString(toTimeZone(Timestamp, 'UTC')) AS timestamp, r AS resource, a AS attributes
   FROM unique_events
   WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
+    AND ({clientUserExact:String} = '' OR user = {clientUserExact:String})
     AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
     ${filters.model ? `AND (${modelMatch} OR (model = '' AND
       (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}`;
@@ -167,6 +170,14 @@ function scope(row, includeModel = true, model = row.attributes.model) {
   return JSON.stringify(includeModel
     ? [...identity, resolveBackend(a.model, r.backend), model || ""] : identity);
 }
+// Prices one usage-bearing completion from its log attributes (per-completion tier/routing).
+export function priceCodexCompletion(attributes, resourceBackend, prices = codexPrices()) {
+  const a = attributes || {};
+  const input = Object.fromEntries(Object.entries(TOKEN_FIELDS).map(([raw, name]) => [name, count(a[raw])]));
+  return priceCodexUsage({ ...input, model: a.model || "", backend: resolveBackend(a.model, resourceBackend),
+    context_tier: input.input_tokens_total > (prices[codexModel(a.model)]?.short_context_limit ?? 0) ? "long" : "short" }, prices);
+}
+
 const stream = (event) => ["codex.sse_event", "codex.websocket_event"].includes(event);
 const completed = (row) => stream(row.attributes["event.name"])
   && row.attributes["event.kind"] === "response.completed";
@@ -290,9 +301,7 @@ export function foldCodexInsightsLogs(rows, prices = codexPrices(), { summary, d
       : a["conversation.id"] && !usageSessions.has(scope(row, false)))) missingUsage.add(scope(row));
 
     if (hasUsage(row)) {
-      const input = Object.fromEntries(Object.entries(TOKEN_FIELDS).map(([raw, name]) => [name, count(a[raw])]));
-      const usage = priceCodexUsage({ ...input, model: a.model || "", backend: resolveBackend(a.model, r.backend),
-        context_tier: input.input_tokens_total > (prices[codexModel(a.model)]?.short_context_limit ?? 0) ? "long" : "short" }, prices);
+      const usage = priceCodexCompletion(a, r.backend, prices);
       const effort = text(a.model_reasoning_effort);
       if (!efforts.has(effort)) efforts.set(effort, usageTotals());
       addUsage(total, usage);

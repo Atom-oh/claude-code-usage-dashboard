@@ -3,7 +3,7 @@ import { Card, Loading, ErrorBox } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
-import { UserDrawer } from "../components/UserDrawer.jsx";
+import { UserDetail } from "../components/UserDetail.jsx";
 import { HBarList } from "../components/GroupCharts.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import EmptyState from "../components/EmptyState.jsx";
@@ -12,6 +12,7 @@ import { topPerUser, groupLabel } from "../pivot.js";
 import { useGroupsShown } from "../useGroupsShown.js";
 import { useApi } from "../useApi.js";
 import { useConfig } from "../ConfigContext.jsx";
+import { useRange } from "../RangeContext.jsx";
 import { maskEmail } from "../fmt.js";
 import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
 import { ACTIVITY_SCORE_HELP, averageActivityScore, formatActivityScore } from "../score.js";
@@ -90,11 +91,8 @@ function GroupFaceOff({ rows }) {
 export default function Users() {
   const [q, setQ] = useState("");
   const shownGroups = useGroupsShown();
-  // 클릭한 유저 email+group만 저장하고 헤더/StatTile용 row는 현재 leaderboard에서 파생한다 — row
-  // 객체를 통째로 스냅샷하면 드로어를 연 채 기간을 바꿀 때 상단 타일(리더보드 값)과 하단 차트(재조회)의
-  // 모수가 어긋난다. 기간 변경 시 leaderboard가 재조회되면 타일도 자동 갱신되고, 새 기간에 해당
-  // 유저가 없으면 row=undefined라 드로어가 자연스럽게 닫힌다. group까지 저장하는 이유: 리더보드가
-  // 유저×그룹으로 행이 갈라져 있어(userLeaderboard) email만으로는 straddler의 행이 모호하다.
+  // Store only the clicked user+group: the leaderboard splits rows by user×group, so the email alone
+  // is ambiguous for a user in both groups. The detail opens in-page below the leaderboard tables.
   const [selected, setSelected] = useState(null); // { user, group } | null
   const leaderboard = useApi("/api/users/leaderboard");
   const tools = useApi("/api/users/tools");
@@ -103,9 +101,12 @@ export default function Users() {
   // unknown 세션도 포함해야 한다(queries.js filterCond 정책표). 기본값은 unknown을 제외한다.
   const byUserModel = useApi("/api/cost/by-user-model", { includeUnknown: 1 });
   const teams = useTeams();
+  // The unified detail covers every enabled client; this page has no client selection of its own.
+  const { enabledClients } = useConfig();
+  const { intervalHours } = useRange();
 
   // 필터/기간 변경으로 선택 행이 leaderboard에서 사라지면 selected를 비운다 — 안 그러면
-  // 나중에 그 행이 다시 나타났을 때(예: 필터를 되돌림) 재클릭 없이 드로어가 조용히 재오픈된다.
+  // 나중에 그 행이 다시 나타났을 때(예: 필터를 되돌림) 재클릭 없이 상세가 조용히 재오픈된다.
   useEffect(() => {
     if (selected && leaderboard.data && !leaderboard.data.some((r) => r.user === selected.user && r.group === selected.group)) {
       setSelected(null);
@@ -230,6 +231,7 @@ export default function Users() {
                   key={g}
                   title={`사용자별 관측 활동 — ${g}`}
                   onRowClick={(r) => setSelected({ user: r.user, group: r.group })}
+                  isRowSelected={(r) => selected?.user === r.user && selected?.group === r.group}
                   subtitle="임의 가중치 기반 참고 지수 · 생산성이나 코드 품질을 측정하지 않습니다"
                   help={ACTIVITY_SCORE_HELP}
                   columns={withTeamColumn([
@@ -252,6 +254,10 @@ export default function Users() {
                   stale={leaderboard.stale || tools.stale || skills.stale}
                 />
               ))}
+
+        {selected && <UserDetail key={`${selected.user}|${selected.group}`} user={selected.user} clients={enabledClients}
+          group={selected.group} hours={intervalHours} parentRange={null} stale={leaderboard.stale}
+          onClose={() => setSelected(null)} />}
 
         {tools.loading ? (
           <Loading />
@@ -300,10 +306,6 @@ export default function Users() {
           </div>
         )}
       </div>
-      <UserDrawer
-        row={selected ? (leaderboard.data || []).find((r) => r.user === selected.user && r.group === selected.group) || null : null}
-        onClose={() => setSelected(null)}
-      />
     </div>
   );
 }

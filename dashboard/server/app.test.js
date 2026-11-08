@@ -160,7 +160,7 @@ test("/api/insights/daily is disabled by default and validates period", async ()
 test("endpoints that cannot apply team reject it before caching or querying", async () => {
   const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
   for (const path of ["/api/adoption/levels", "/api/adoption/timeseries", "/api/users/daily",
-    "/api/users/decisions-by-tool", "/api/users/heatmap", "/api/users/interactions", "/api/teams",
+    "/api/users/decisions-by-tool", "/api/teams",
     "/api/users/teams"]) {
     const r = await fetch(`${base}${path}?${range}&team=fsi`);
     assert.equal(r.status, 400, path);
@@ -203,4 +203,30 @@ test("team is part of both cache-key shapes and reaches the plugin inventory", (
   assert.match(src, /backend: filters\.backend, team: filters\.team,/);
   // The plugin route forwards parsed filters (it previously passed only the range).
   assert.match(src, /route\("\/api\/usage\/plugins", \(from, to, _q, filters\) => q\.pluginInventory\(from, to, filters\)\)/);
+});
+
+test("the user task list validates before the database and never leaks errors", async () => {
+  const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
+  for (const qs of ["", "&userExact=a&sort=foo", "&userExact=a&team=fsi", "&userExact=a&backend=nope"]) {
+    const r = await fetch(`${base}/api/users/tasks?${range}${qs}`);
+    assert.equal(r.status, 400, qs);
+  }
+  const r = await fetch(`${base}/api/users/tasks?${range}&userExact=kim%40x.com`);
+  assert.equal(r.status, 500);
+  const text = await r.text();
+  assert.ok(!/SELECT|ECONNREFUSED|clickhouse/i.test(text), `leaked: ${text}`);
+});
+
+test("the task detail validates before the database and never leaks errors", async () => {
+  const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
+  const trace = "0123456789abcdef0123456789abcdef";
+  for (const qs of ["&userExact=a", `&id=claude:${trace}`, "&userExact=a&id=claude:x' OR 1=1",
+    `&userExact=a&id=claude:${trace}&team=fsi`, "&userExact=a&id=codex:c1:t1;x"]) {
+    const r = await fetch(`${base}/api/users/tasks/detail?${range}${qs}`);
+    assert.equal(r.status, 400, qs);
+  }
+  const r = await fetch(`${base}/api/users/tasks/detail?${range}&userExact=kim%40x.com&id=claude:${trace}`);
+  assert.equal(r.status, 500);
+  const text = await r.text();
+  assert.ok(!/SELECT|ECONNREFUSED|clickhouse/i.test(text), `leaked: ${text}`);
 });

@@ -20,6 +20,16 @@ export class ValidationError extends Error {
   }
 }
 
+// A requested resource outside the caller's scope. route() answers 404 with a fixed body,
+// so the response never reveals whether the resource exists for someone else.
+export class NotFoundError extends Error {
+  constructor() {
+    super("not found");
+    this.name = "NotFoundError";
+    this.status = 404;
+  }
+}
+
 // detail에 사용자가 보낸 값을 되돌려 담지 않는다 — 무엇이 틀렸는지만 알려준다(에러 본문이
 // 임의 문자열의 반사 채널이 되지 않게).
 // String() 강제: Express는 ?to=a&to=b를 배열로, ?to[x]=y를 객체로 파싱하므로 raw 값을 그대로

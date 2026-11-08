@@ -50,7 +50,7 @@ No Codex enterprise comparison or unsupported productivity metrics are added.
 
 Claude detail's Productivity page adds independent activity-density, permission-occupancy
 and tool-outcome tables with coverage and unavailable states. The legacy score is labelled
-an activity index across Productivity, Users, Executive and the user drawer; its API field
+an activity index across Productivity, Users and Executive; its API field
 stays unchanged, while an unavailable permission denominator withholds the score.
 Means require scores for every returned user, and rankings omit unavailable scores. Permission approvals no longer imply accepted code, and the
 estimated accepted-lines card is removed. Shared Productivity explains the external data
@@ -176,7 +176,7 @@ The label fallback is not a substitute: date-only labels get 24 hours, including
 buckets, and other labels use the global interval. Charts whose bucket size cannot change
 (daily adoption series, shared client trends that take `bucket_hours` from their own
 response) are suspended too, so no drag selects a range from the previous period's rows.
-Categorical axes do not zoom, and `UserDrawer` clears to loading on range changes.
+Categorical axes do not zoom.
 [zoomGuard.test.js](../../dashboard/web/src/zoomGuard.test.js) checks every call site.
 
 ## Model cost trend
@@ -261,6 +261,56 @@ of known cost, labelling partial denominators and withholding ratios for missing
 Parent bounds drive the detail request; stale periods disable selection and detail export.
 The UI requires exact-filter acknowledgment before showing detail. Background linked-refresh
 failures retain the last response with its actual bounds and the shared refresh warning.
+
+Both Users entry points open the same in-page
+[UserDetail](../../dashboard/web/src/components/UserDetail.jsx) below their tables; the
+side drawer is removed. Shared Users combines `by_user` into one row per exact identity with
+`combineUsers` ([userDetail.js](../../dashboard/web/src/userDetail.js)): sessions add (session
+IDs are client-scoped), known tokens and costs add with partial flags, and empty identities stay
+per client. The combined cost can mix bases, so the basis column lists every contributing basis
+and a client-parts column keeps each client's value and basis (also in CSV). The detail uses the
+page's selected clients and closes on range, page or client-selection changes. Claude
+detail Users opens it from a leaderboard row with every enabled client and that row's
+bedrock/enterprise group; the group applies only to the Claude-only sections.
+
+Clicking a trend bucket (a click, not a drag; drags still zoom) opens
+[TaskList](../../dashboard/web/src/components/TaskList.jsx) for that bucket's UTC bounds,
+clamped to the detail's effective range. It reads `/api/users/tasks` with the detail's
+client selection, the global backend and the detail's group (Claude only), never team. It
+always shows the partial-collection badge, labels Codex cost as linked estimates, renders
+unknown tokens, cost, subagents or duration as not collected (never zero), shows the
+unattached Codex completion note and the `limited` coverage note, and skips the request for
+buckets older than the 90-day trace retention. Task ids are opaque and not displayed. The
+selected bucket and task clear when the user, clients, group or range changes.
+
+Opening a task renders
+[TaskTraceOverlay](../../dashboard/web/src/components/TaskTraceOverlay.jsx), a full-screen
+dialog (Escape or the close button clears the selected task) over `/api/users/tasks/detail`
+with the list's bucket bounds and exact user, no global filters. It shows a KPI row, an agent
+lane timeline ([TaskTimeline](../../dashboard/web/src/components/TaskTimeline.jsx): main
+first, then lanes by first span; per-lane calls and cost; LLM bars shaded by input context;
+tool bars and permission-wait marks; dashed connectors from a spawning span that is in the
+payload), a cumulative cost band stacked by lane colour with a hover tooltip
+([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a side panel for the
+clicked span and the server's `why` rules. Pure helpers live in
+[taskTrace.js](../../dashboard/web/src/taskTrace.js); lane hues are `LANE_COLOR` in
+[colors.js](../../dashboard/web/src/colors.js) and icons in
+[taskIcons.jsx](../../dashboard/web/src/components/taskIcons.jsx).
+
+- The side panel ([TaskSpanPanel](../../dashboard/web/src/components/TaskSpanPanel.jsx))
+  renders a fixed field list per span kind from allowlisted keys only; other payload keys are
+  never read. Fields the client does not emit (Codex TTFT, call source, stop reason, attempt)
+  and unknown values render as not collected, never zero.
+- A lane whose spawning span is missing (`kind: custom`, `label: null`) shows a generic icon
+  and a neutral subagent label.
+- The band counts a call at its end time and only LLM spans carrying `cost_usd` (a Codex
+  sampling span without a linked completion is not a priced call). A lane turns unknown from
+  its first unknown-cost call; from there the stack stops and the rest of the axis is marked
+  not collected. Codex completions without a span are noted as excluded from the band.
+- A truncated detail shows the "some spans only, totals hidden" banner and hides the KPI
+  row, lane totals, the band and the `why` list, for both clients.
+- The dialog shows the masked user, start time, client and models; task ids and span ids are
+  never displayed.
 
 ## Spend and interpretation
 

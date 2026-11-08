@@ -1603,31 +1603,12 @@ export async function userDaily(from, to, email, group) {
   );
 }
 
-// 유저 드릴다운: 특정 유저의 도구별 수락/거부. userDaily/userHeatmap과 같은 exact match —
+// 유저 드릴다운: 특정 유저의 도구별 수락/거부. userDaily와 같은 exact match —
 // 부분일치({user})면 kim@x.com 드로어에 joakim@x.com 데이터가 섞인다. group/excludeUnknown도
 // userDaily와 같은 이유로 전달 — 안 그러면 group 미지정 시 이 차트만 unknown 세션을 제외해
 // 드로어의 나머지 두 차트(전체 활동 기준)와 모수가 어긋난다.
 export async function userDecisionsByTool(from, to, email, group) {
   return codeEditDecisionsByTool(from, to, { userExact: email, group, excludeUnknown: false });
-}
-
-// 유저 드릴다운: GitHub식 활동 히트맵 — to 기준 지난 91일(13주)의 일별 세션 수. group을 넘기면
-// 그 그룹 세션만(userDaily와 동일 이유). 세션 수는 SessionId 존재 기반(uniqExact)이라
-// temporality와 무관.
-export async function userHeatmap(to, email, days = 91, group) {
-  // excludeUnknown: false — group 미지정(드로어를 그룹 무관 컨텍스트에서 열 때)이면 이 유저의
-  // 전체 활동을 봐야 한다. 기본값(true)이면 group을 안 넘겨도 unknown 세션이 조용히 빠진다.
-  const f = filterCond({ group, excludeUnknown: false }, { group: GROUP_EXPR });
-  return query(
-    `${GROUP_CTE}
-    SELECT toDate(m.hour, 'UTC') AS d, uniqExact(m.SessionId) AS sessions
-    FROM claude_code.otel_metrics_sum_hourly m
-    LEFT JOIN session_group ug ON m.SessionId = ug.SessionId
-    WHERE m.UserEmail = {email:String} AND m.MetricName = 'claude_code.session.count' AND m.SessionId != ''
-      AND m.hour >= {to:DateTime} - INTERVAL {days:UInt32} DAY AND m.hour < {to:DateTime} ${f.where}
-    GROUP BY d ORDER BY d`,
-    { to: toChDateTime(to), email, days, ...f.params }
-  );
 }
 
 // 패널10 확장: 유저별 리더보드 (생산성 점수는 이 raw 값을 productivity.js에서 계산). active_days는
@@ -1646,8 +1627,8 @@ export async function userLeaderboard(from, to, filters = {}) {
   // sessions/loc는 필터되는데 활성일수(점수 가중치 0.15)만 전체 활동 기준이라 점수가 불일치한다.
   // 파라미터 이름/값이 f와 동일해 중복 병합은 무해.
   // active_days CTE의 MetricName='claude_code.session.count' 필터: "존재 여부"만 보므로 활동이
-  // 있는 날엔 반드시 session.count 행이 있어(30초마다 재보고) 의미 손실이 없고(adoptionLevels/
-  // userHeatmap과 동일 근거), 전체 metric을 스캔할 때보다 3배 빠르다(실측 2026-07-10: 8.0→2.5초 —
+  // 있는 날엔 반드시 session.count 행이 있어(30초마다 재보고) 의미 손실이 없고(adoptionLevels와
+  // 동일 근거), 전체 metric을 스캔할 때보다 3배 빠르다(실측 2026-07-10: 8.0→2.5초 —
   // 필터가 없으면 이 쿼리가 워밍/실요청에서 ClickHouse 클라이언트 15초 타임아웃까지 갔다).
   // 좌경계 fuzz는 activeUsers 위 주석과 동일(document 판정) — 여기선 active_days가 생산성
   // 점수 가중치 0.15의 입력이라 극단적으로 좁은 커스텀 구간에서 ±1일 정도의 왜곡 가능성 인지.
@@ -2552,52 +2533,6 @@ export function ttlSplitFields(r) {
     cost_split: costSplit,
     ratio_split: costSplit > 0 ? Number(r.reported_cost) / costSplit : null,
   };
-}
-
-// 유저 1명의 턴별 워터폴 — "왜 이 세션이 느렸나"에 답한다. interactionBreakdown과 동일한
-// TraceId 자식 접기를 쓰지만, 자식 서브쿼리에는 일부러 SpanType 필터가 없다 — AgentId는
-// 스팬 타입을 가리지 않고 실린다(실측 2026-09-04). SpanType 필터를 걸면 agents가 과소집계된다.
-// SpanType 값은 접두사 없이 'interaction'/'llm_request'/'tool'/'tool.execution'/
-// 'tool.blocked_on_user'로 온다 — claude_code. 접두사는 SpanName에만 붙는다. ParentAgentId는
-// 라이브 데이터에서 한 번도 채워진 적이 없다(실측 2026-09-04: 0행) — 그래서 에이전트 깊이/트리는
-// 도출할 수 없고, 인터랙션당 distinct 에이전트 수만 도출 가능하다. llm/tool/blocked 세 구간은
-// 서로 겹칠 수 있어(tool 스팬의 duration_ms가 대기+실행을 함께 담음) 합이 interaction_ms를
-// 넘을 수 있다 — interactionBreakdown과 동일한 주의사항.
-export async function userInteractions(from, to, email) {
-  const rows = await query(
-    `SELECT
-        i.SessionId    AS session_id,
-        i.TraceId      AS trace_id,
-        i.started_at   AS started_at,
-        i.DurationMs   AS interaction_ms,
-        c.llm_ms       AS llm_ms,
-        c.tool_exec_ms AS tool_exec_ms,
-        c.blocked_ms   AS blocked_ms,
-        c.agents       AS agents,
-        c.llm_calls    AS llm_calls
-    FROM (
-        SELECT TraceId, SessionId, Timestamp,
-            formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S', 'UTC') AS started_at,
-            intDiv(Duration, 1000000) AS DurationMs
-        FROM claude_code.otel_traces
-        WHERE SpanType = 'interaction' AND UserEmail = {email:String}
-          AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
-    ) i
-    LEFT JOIN (
-        SELECT TraceId,
-            sumIf(DurationMs, SpanType = 'llm_request')          AS llm_ms,
-            sumIf(DurationMs, SpanType = 'tool.execution')       AS tool_exec_ms,
-            sumIf(DurationMs, SpanType = 'tool.blocked_on_user') AS blocked_ms,
-            uniqExactIf(AgentId, AgentId != '')                  AS agents,
-            countIf(SpanType = 'llm_request')                    AS llm_calls
-        FROM claude_code.otel_traces
-        WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
-        GROUP BY TraceId
-    ) c ON i.TraceId = c.TraceId
-    ORDER BY i.Timestamp DESC LIMIT 200`,
-    { ...range(from, to, true), email }
-  );
-  return rows.length ? { unsupported: false, rows } : { unsupported: true, minVersion: "2.1.214", rows: [] };
 }
 
 // =============================================================================

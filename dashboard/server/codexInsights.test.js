@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { codexInsights } from "./codexInsights.js";
+import { codexInsights, validateInsightsExactFilters } from "./codexInsights.js";
+import { ValidationError } from "./http.js";
 
 const from = new Date("2026-09-15T00:00:00Z"), to = new Date("2026-09-15T01:00:00Z");
 const row = (family, dimensions, values = {}) => ({ family, dimensions: JSON.stringify(dimensions),
@@ -327,4 +328,26 @@ test("aggregate query failures remain visible instead of manufacturing complete 
     if (!diagnostic(sql)) throw new Error("aggregate transport failure");
     return [];
   }), /aggregate transport failure/);
+});
+
+test("tools profile accepts userExact", () => {
+  assert.doesNotThrow(() => validateInsightsExactFilters({ profile: "tools", userExact: "kim@x.com" }));
+});
+
+test("non-tools profile rejects userExact and every profile rejects modelExact", () => {
+  for (const profile of [undefined, "effort", "performance"])
+    assert.throws(() => validateInsightsExactFilters({ profile, userExact: "kim@x.com" }),
+      error => error instanceof ValidationError && error.message === "unsupported filter");
+  assert.throws(() => validateInsightsExactFilters({ profile: "tools", modelExact: "m" }),
+    error => error instanceof ValidationError && error.message === "unsupported filter");
+  assert.doesNotThrow(() => validateInsightsExactFilters({ profile: "tools" }));
+});
+
+test("tools profile restricts the log query to the exact user", async () => {
+  const seen = [];
+  await codexInsights(from, to, { profile: "tools", userExact: "kim@x.com" }, async (sql, params) => {
+    seen.push(params); return [];
+  });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].clientUserExact, "kim@x.com");
 });

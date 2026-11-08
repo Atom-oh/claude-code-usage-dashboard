@@ -191,6 +191,39 @@ test("time-axis drag zoom preserves UTC instants, caps the last bucket and ignor
     .toBe("2026-09-01T02:00:00.000Z / 2026-09-01T11:30:00.000Z"));
 });
 
+test("onBucketClick reports a clicked bucket start without zooming; drags never pick", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  function Selection() {
+    const { custom } = useRange();
+    return <output aria-label="선택 구간">{custom ? "zoomed" : "none"}</output>;
+  }
+  const start = Date.UTC(2026, 8, 1);
+  const pick = vi.fn();
+  const { container } = render(<>
+    <DualLineChart title="시간 축" xKey="t" bucketHours={1} onBucketClick={pick}
+      timeDomain={[start, Date.UTC(2026, 8, 1, 11, 30)]}
+      rows={[{ t: start, value: 1 }, { t: Date.UTC(2026, 8, 1, 2), value: 2 },
+        { t: Date.UTC(2026, 8, 1, 11), value: 3 }]}
+      lines={[{ key: "value" }]} />
+    <Selection />
+  </>, { wrapper: Providers });
+  await waitFor(() => expect(container.querySelector(".recharts-wrapper")).not.toBeNull());
+  const chart = container.querySelector(".recharts-wrapper");
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  const x = (hour) => left + (right - left) * hour / 11.5;
+  fireEvent.mouseDown(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(2), clientY: 80 });
+  expect(pick).toHaveBeenCalledWith(Date.UTC(2026, 8, 1, 2));
+  expect(screen.getByLabelText("선택 구간").textContent).toBe("none");
+  pick.mockClear();
+  fireEvent.mouseDown(chart, { clientX: x(2), clientY: 80 });
+  fireEvent.mouseMove(chart, { clientX: x(11), clientY: 80 });
+  fireEvent.mouseUp(chart, { clientX: x(11), clientY: 80 });
+  await waitFor(() => expect(screen.getByLabelText("선택 구간").textContent).toBe("zoomed"));
+  expect(pick).not.toHaveBeenCalled();
+});
+
 test("horizontal categorical bars never zoom even with date-like labels and numeric values", async () => {
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   function Selection() {

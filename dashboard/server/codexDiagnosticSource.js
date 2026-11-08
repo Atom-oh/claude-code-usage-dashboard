@@ -21,7 +21,9 @@ export function diagnosticSourceForRange(from, to, boundary = readFrom) {
 
 const OVERVIEW_EVENTS = ["sse_event", "websocket_event", "api_request", "api_error",
   "tool_result", "tool_decision", "turn_ttft"].map(name => `'codex.${name}'`).join(", ");
-const USER_MATCH = "({clientUser:String} = '' OR positionCaseInsensitive(UserEmail, {clientUser:String}) > 0)";
+// UserEmail is already coalesce(user.email, enduser.id) in the state table; exact matching is equality.
+const USER_MATCH = "({clientUser:String} = '' OR positionCaseInsensitive(UserEmail, {clientUser:String}) > 0)"
+  + " AND ({clientUserExact:String} = '' OR UserEmail = {clientUserExact:String})";
 
 // FINAL merges repeated insertion blocks/backfill overlap before finalization.
 // All model-session evidence is selected before applying the backend filter,
@@ -38,7 +40,7 @@ export function diagnosticModelSessionsSql() {
 
 export function diagnosticSelection(from, to, filters = {}, { bulkOnly = false } = {}) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
-    clientUser: filters.user || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
+    clientUser: filters.user || "", clientUserExact: filters.userExact || "", clientModel: filters.model || "", clientBackend: filters.backend || "" };
   const modelMatch = "positionCaseInsensitive(Model, {clientModel:String}) > 0";
   return { params, sql: `WITH diagnostic_events AS (
     SELECT * FROM claude_code.codex_diagnostic_events_v1 FINAL

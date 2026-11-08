@@ -66,7 +66,7 @@ test("shared diagnostic profiles omit pricing and unrelated log aggregate famili
     const { sql, params } = buildCodexLogAggregateQuery(from, to, { model: "fixture" }, undefined, { profile });
     for (const family of included) assert.ok(sql.includes(`tuple('${family}'`), `${profile}: ${family}`);
     for (const family of omitted) assert.ok(!sql.includes(`tuple('${family}'`), `${profile}: ${family}`);
-    assert.deepEqual(Object.keys(params).sort(), ["clientBackend", "clientModel", "clientUser", "from", "to"]);
+    assert.deepEqual(Object.keys(params).sort(), ["clientBackend", "clientModel", "clientUser", "clientUserExact", "from", "to"]);
     assert.match(sql, /quantilesExactWeightedIf/);
     assert.match(sql, /model_sessions AS/);
     assert.match(sql, /uniqExact\(tuple\(compact_source.timestamp,compact_source.resource,compact_source.attributes\)\)/);

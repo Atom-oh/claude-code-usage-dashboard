@@ -51,3 +51,13 @@ test("diagnostic model-session evidence precedes backend filtering and retains u
   assert.equal(params.clientUser, "fixture'");
   assert.equal(params.clientModel, "model'");
 });
+
+test("userExact binds clientUserExact and compares by equality", () => {
+  const { sql, params } = diagnosticSelection(from, to, { user: "", userExact: "kim@x.com", model: "m" });
+  assert.equal(params.clientUserExact, "kim@x.com");
+  assert.match(sql, /\{clientUserExact:String\} = '' OR UserEmail = \{clientUserExact:String\}/);
+  assert.doesNotMatch(sql, /kim@x\.com/);
+  const modelSessions = sql.slice(sql.indexOf("model_sessions AS"), sql.indexOf("SELECT toString"));
+  assert.match(modelSessions, /UserEmail = \{clientUserExact:String\}/);
+  assert.equal(diagnosticSelection(from, to).params.clientUserExact, "");
+});

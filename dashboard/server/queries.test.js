@@ -695,7 +695,7 @@ test("every team-capable query declares a session column; adoption snapshots and
     reportedVsComputedByVersion projectBreakdown permissionModeChanges toolDecisionSources
     entrypointBreakdown clientClaudeRows`.trim().split(/\s+/);
   for (const name of teamCapable) assert.match(calls(name), session, name);
-  for (const name of "adoptionLevels adoptionTimeseries userDaily userHeatmap".split(/\s+/)) {
+  for (const name of "adoptionLevels adoptionTimeseries userDaily".split(/\s+/)) {
     assert.ok(calls(name).length > 0, name);
     assert.doesNotMatch(calls(name), session, name);
   }
