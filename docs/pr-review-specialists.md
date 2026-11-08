@@ -7,8 +7,8 @@ required coverage blocks the review. See [ADR-011](decisions/ADR-011-specialist-
 | Slot | Configured model | Responsibility |
 | --- | --- | --- |
 | `codex` | `global.openai.gpt-6-astra` | Implementation, concurrency, errors and tests |
-| `kiro-fable` | `claude-opus-5-5` | AWS architecture, IAM, networking and service constraints |
-| `kiro-sol` | `claude-opus-5-5` | AWS resource deployment order, contracts, lifecycle and recovery |
+| `kiro-fable` | `claude-opus-5.5` | AWS architecture, IAM, networking and service constraints |
+| `kiro-sol` | `claude-opus-5.5` | AWS resource deployment order, contracts, lifecycle and recovery |
 | `claude-self` | `global.anthropic.claude-fable-5-1` | Authentication, data boundaries, requirements, API and ADR consistency |
 
 The shared Kiro tags are stable role identifiers; both slots use Opus 5.5 in

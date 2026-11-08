@@ -66,7 +66,7 @@ if name == "claude" and argv[1].startswith("Produce a bounded AWS"):
     raise SystemExit(0)
 model = argv[argv.index("--model") + 1]
 if name == "kiro-cli":
-    assert model == "claude-opus-5-5"
+    assert model == "claude-opus-5.5"
     tag = next(tag for tag in ("kiro-fable", "kiro-sol")
                if f"Review tag: {tag}\n" in stdin)
 else:
@@ -296,7 +296,7 @@ class EndToEndRoleTests(unittest.TestCase):
             self.assertTrue(all(call["stdin"] == "" for call in cell[:3]))
             for call in cell[2:]:
                 self.assertEqual(call["args"][call["args"].index("--model") + 1],
-                                 "claude-opus-5-5")
+                                 "claude-opus-5.5")
             self.assertIn("preflight-canary.txt", cell[2]["args"][1])
             self.assertIn("BEGIN DIFF ", cell[3]["stdin"])
             self.assertNotIn("BEGIN DIFF ", " ".join(cell[3]["args"]))

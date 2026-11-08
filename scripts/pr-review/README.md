@@ -7,8 +7,8 @@ results feed aggregation and, when needed, the chair. See
 | Tag | Requested model | Scope |
 | --- | --- | --- |
 | codex | `global.openai.gpt-6-astra` | Implementation/tests |
-| kiro-fable | `claude-opus-5-5` | AWS/IAM/network |
-| kiro-sol | `claude-opus-5-5` | AWS resource deployment/contracts/recovery |
+| kiro-fable | `claude-opus-5.5` | AWS/IAM/network |
+| kiro-sol | `claude-opus-5.5` | AWS resource deployment/contracts/recovery |
 | claude-self | `global.anthropic.claude-fable-5-1` | Auth/data/API/ADR |
 
 Both Kiro slots use Opus 5.5 in separate sessions; tags identify responsibilities,
