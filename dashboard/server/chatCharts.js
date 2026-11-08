@@ -5,16 +5,18 @@ const label = value => typeof value === "string" && value.trim().length > 0 && v
 const own = (row, key) => Object.hasOwn(row, key);
 const columnUnit = key => key === "cost_usd" ? "usd"
   : key === "tokens" || key === "observed_tokens" || key.endsWith("_tokens") ? "tokens"
-    : ["sessions", "users", "unpriced", "missing_usage"].includes(key) ? "count" : undefined;
+    : ["sessions", "users", "unpriced", "missing_usage", "rejected_requests"].includes(key) ? "count" : undefined;
 
 function numeric(value) {
   if (value === null) return null;
-  if (typeof value === "number" && Number.isFinite(value)) return value;
   // ClickHouse can encode large integers as strings. Never turn missing, blank,
   // booleans, NaN or infinity into zero.
-  if (typeof value === "string" && /^-?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(value) && Number.isFinite(Number(value)))
-    return Number(value);
-  throw new Error("Chart series must contain finite numbers or null.");
+  const number = typeof value === "number" ? value
+    : typeof value === "string" && /^-?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(value) ? Number(value) : NaN;
+  if (!Number.isFinite(number)) throw new Error("Chart series must contain finite numbers or null.");
+  // An integer beyond the safe range has already lost precision: unknown, never a rounded
+  // point (same rule as observedTokens.js).
+  return Number.isInteger(number) && !Number.isSafeInteger(number) ? null : number;
 }
 
 export const CHART_TOOL = {
@@ -67,6 +69,10 @@ export function buildChatChart(spec, results) {
   }
   const rows = source.rows.slice(0, 50);
   if (!rows.length) throw new Error("No observed rows to chart.");
+  // Dashboard folds seed one row per enabled client and keep totals without records. A row with
+  // observed_records 0 and no idle counter observation (timeline_observed) is unavailable, not a known
+  // zero (ADR-015; mirrors web clientPresentation.js). SQL rows carry no such markers.
+  const unobserved = row => source.source === "dashboard" && row.observed_records === 0 && row.timeline_observed !== true;
   const data = rows.map(row => {
     if (!row || typeof row !== "object" || !own(row, spec.x)
         || !["string", "number"].includes(typeof row[spec.x]))
@@ -76,13 +82,14 @@ export function buildChatChart(spec, results) {
     const result = { [spec.x]: x };
     for (const key of keys) {
       if (!own(row, key)) throw new Error("Missing chart series column.");
-      result[key] = numeric(row[key]);
+      const value = numeric(row[key]);
+      result[key] = unobserved(row) ? null : value;
     }
     return result;
   });
   if (new Set(data.map(row => row[spec.x])).size !== data.length)
     throw new Error("Chart x values must be unique; use label or filter the dimension.");
-  const costBases = [...new Set(rows.map(row => row.cost_basis).filter(Boolean))]
+  const costBases = [...new Set(source.rows.map(row => row?.cost_basis).filter(Boolean))]
     .map(basis => ["client_reported", "aws_list_estimate", "computed_estimate", "mixed"].includes(basis) ? basis : "unknown");
   return {
     type: spec.type, title: spec.title, x: spec.x, x_type: spec.x_type || "category",
@@ -92,6 +99,6 @@ export function buildChatChart(spec, results) {
     cost_bases: [...new Set(costBases)],
     ...(source.effective_range ? { effective_range: source.effective_range } : {}),
     truncated: Boolean(source.truncated || source.rows.length > rows.length),
-    partial: rows.some(row => row.cost_partial === true || row.tokens_partial === true),
+    partial: source.rows.some(row => row?.cost_partial === true || row?.tokens_partial === true),
   };
 }

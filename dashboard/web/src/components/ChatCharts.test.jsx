@@ -24,7 +24,8 @@ test("charts provide an accessible numeric table distinguishing unknown from zer
   expect(screen.getByText(/커버리지 미확인/)).toBeTruthy();
   expect(screen.getByText(/알 수 없음/)).toBeTruthy();
   expect(screen.getByText("$0.00")).toBeTruthy();
-  expect(screen.getByRole("table")).toBeTruthy();
+  // The table sits inside a collapsed <details>; query regardless of jsdom's visibility model.
+  expect(screen.getByRole("table", { hidden: true })).toBeTruthy();
 });
 
 test("cost chart labels include the actual contributing bases", () => {

@@ -53,6 +53,7 @@ Each summary returns one selected dimension and its totals to limit model contex
 | Model rounds | One Haiku routing/direct-answer call; one optional Sonnet delegation with four tool-enabled rounds and one optional tool-disabled summary; one final tool-disabled Haiku answer |
 | Data calls | Eight SQL/usage-summary attempts per turn, counted independently of rounds; invalid inputs consume slots; one summary can execute multiple bounded internal DB queries |
 | Model output | `maxTokens: 8000` for Sonnet, `4800` for Haiku; analysis handoff capped at 12,000 characters with an incomplete flag |
+| Summary observations | A budget-exhausted or truncated analysis summary receives stored results newest first, each with the producing tool call (`run_sql` text or `get_usage_summary` input, email-masked, at most 2,000 characters), up to 40,000 serialized JSON characters in total; omitted results set `observations_truncated` and the handoff `incomplete` flag |
 | Retry | Initial Bedrock throttling failures retried twice with abort-aware 300/600 ms waits |
 | SQL output | At most 200 rows, plus a truncation flag; 30-second query abort timer |
 | Tool context | At most 20,000 serialized JSON characters per data result including result reference/metadata, preserving row boundaries and `truncated` |
@@ -75,19 +76,26 @@ SQL HTTP cancellation releases the application request; server-side query termin
 depends on deployed ClickHouse settings, which the readonly session cannot override.
 
 The UI consumes SSE in [FloatingChat.jsx](../../dashboard/web/src/components/FloatingChat.jsx)
-and [Analytics.jsx](../../dashboard/web/src/pages/Analytics.jsx); trace display is handled by
-[ChatTrace.jsx](../../dashboard/web/src/components/ChatTrace.jsx). Status events carry query
+and [Analytics.jsx](../../dashboard/web/src/pages/Analytics.jsx) through the shared
+[useChatStream.js](../../dashboard/web/src/useChatStream.js); trace display is handled by
+[ChatTrace.jsx](../../dashboard/web/src/components/ChatTrace.jsx) and chart rendering by
+[ChatCharts.jsx](../../dashboard/web/src/components/ChatCharts.jsx). Status events carry query
 progress and masked SQL; thinking events carry summarized reasoning, text events carry
 answer deltas; chart events contain validated template metadata and stored result
-columns. Done/error events terminate the turn. The server keeps Bedrock reasoning
+columns. Done/error events terminate the turn. Only analysis requests enable adaptive
+summarized thinking through `additionalModelRequestFields`; conversation requests omit the
+field because Haiku 5.5 acceptance of that shape has not been verified live, so thinking
+events come from analysis rounds. The server keeps Bedrock reasoning
 blocks and signatures across tool rounds within one request, without exposing signatures.
 Follow-up requests send text-only conversation history.
 
 ## Fixed chart templates
 
-[ChatCharts.jsx](../../dashboard/web/src/components/ChatCharts.jsx) renders bar,
-stacked-bar and line templates with the existing Recharts dependency, shared
-colors, localized time labels and an accessible data table. Sonnet selects
+[chatCharts.js](../../dashboard/server/chatCharts.js) validates bar, stacked-bar
+and line events. The web client re-validates each event in
+[chatCharts.js](../../dashboard/web/src/chatCharts.js) and renders it in
+[ChatCharts.jsx](../../dashboard/web/src/components/ChatCharts.jsx) with fixed Recharts
+templates, shared colors, localized time labels and an accessible data table. Sonnet selects
 `result_id`, columns, labels, unit and template through `show_chart`; the server
 supplies numeric rows directly from its masked, capped result store. No generated
 JavaScript/HTML is accepted. A turn permits three charts, each with at most
@@ -95,9 +103,10 @@ JavaScript/HTML is accepted. A turn permits three charts, each with at most
 cost bases, truncation and partial coverage remain visible; raw SQL charts show
 unverified coverage. The server rejects duplicate categories and stacked token
 parents/subsets that would double-count usage. Filter a client for time trends
-or use the composite `label` to distinguish category identities. Charts stay
-with their answers in both Analytics and the floating widget, including a
-chart received before a later writer failure.
+or use the composite `label` to distinguish category identities. The web client
+keeps at most three charts on the assistant message, including a chart received
+before a later writer failure, and excludes chart arrays from the next request.
+Other clients without chart integration ignore chart events.
 
 Templates remove generated chart-code tokens. Result references avoid repeating
 chart arrays in tool acknowledgments, the Haiku handoff and later chat history.

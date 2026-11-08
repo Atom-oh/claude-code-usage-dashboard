@@ -7,7 +7,7 @@ import { useChatStream, useStickToBottom } from "../useChatStream.js";
 import { ChatTrace } from "./ChatTrace.jsx";
 import { ChatCharts } from "./ChatCharts.jsx";
 
-// Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/status/done/error)를 읽는
+// Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/thinking/chart/status/done/error)를 읽는
 // 공용 로직은 useChatStream.js에 있다 — Analytics 탭도 같은 훅을 쓴다.
 
 const SUGGESTIONS = [
@@ -74,6 +74,7 @@ export function FloatingChat() {
                     m.role === "user"
                       ? "self-end whitespace-pre-wrap bg-brand-500 text-white"
                       : "self-start bg-ink-100 text-ink-800 chat-md",
+                    // 차트가 있으면 말풍선을 허용 폭까지 넓힌다 — 좁은 위젯에서 축 라벨이 겹친다.
                     m.charts?.length && "w-full"
                   )}
                 >

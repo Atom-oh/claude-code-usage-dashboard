@@ -14,6 +14,11 @@ export function validateInsightsProfile(raw) {
     throw new ValidationError("invalid profile", "profile accepts only effort, tools, or performance");
   return raw.profile;
 }
+// Exact drilldowns: userExact narrows only the tools profile; modelExact is never accepted.
+export function validateInsightsExactFilters(raw) {
+  if (raw.modelExact !== undefined || (raw.userExact !== undefined && raw.profile !== "tools"))
+    throw new ValidationError("unsupported filter", "exact drilldowns require /api/clients/overview");
+}
 function foldSignal(rows, fold, limitMessage, emptyResult = () => fold([])) {
   try { return fold(rows); }
   catch (error) {

@@ -1,17 +1,34 @@
-import { clientOverview, validateClientFilters } from "./clientMetrics.js";
+import { CLIENT_BACKENDS, clientOverview, validateClientFilters } from "./clientMetrics.js";
 import { parseClients } from "./clients.js";
 import { parseIntervalHours, parsePositiveInt, parseRange } from "./http.js";
 import { pricingConfig } from "./pricing.js";
 
 const DIMENSIONS = { model: "by_model", user: "by_user", time: "timeseries", client: "by_client" };
+// Whole-row cap shared with the SQL chat path (clickhouse.js queryReadonly). Totals come from the
+// full fold, so a truncated dimension never changes them.
+const ROW_CAP = 200;
 const FIELDS = ["client", "backend", "model", "user", "t", "cost_usd", "cost_basis", "cost_partial",
   "tokens", "observed_tokens", "tokens_partial", "input_tokens", "output_tokens", "cache_read_tokens",
-  "cache_write_tokens", "reasoning_tokens", "sessions", "users", "unpriced", "missing_usage"];
-const project = row => Object.fromEntries(FIELDS.filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]]));
+  "cache_write_tokens", "reasoning_tokens", "sessions", "users", "unpriced", "missing_usage",
+  // ADR-016: rejection-only Codex groups are not observed zero usage.
+  "rejected_requests", "request_rejections_only",
+  // ADR-015 observation evidence. The fold seeds one by_client row per enabled client and keeps totals
+  // without records; like the web (clientPresentation.js), observed_records 0 without an idle counter
+  // observation (timeline_observed) is unavailable, not a known zero.
+  "observed_records", "timeline_observed"];
+// Measures an unobserved row would otherwise present as a known zero (web MEASURES within FIELDS).
+const UNOBSERVED_NULL = ["cost_usd", "tokens", "observed_tokens", "input_tokens", "output_tokens",
+  "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "sessions", "users", "rejected_requests"];
+const unobserved = row => row.observed_records === 0 && row.timeline_observed !== true;
+const project = row => {
+  const unavailable = unobserved(row);
+  return Object.fromEntries(FIELDS.filter(key => Object.hasOwn(row, key))
+    .map(key => [key, unavailable && UNOBSERVED_NULL.includes(key) ? null : row[key]]));
+};
 
 export const USAGE_TOOL = { toolSpec: {
   name: "get_usage_summary",
-  description: "Preferred source for dashboard costs/tokens: canonical Claude counters and deduplicated Codex completions with server pricing, cost_basis and partial flags. Returns one dimension plus totals, effective range and result_id. Channels/groups require diagnostic SQL.",
+  description: "Preferred source for dashboard costs/tokens: canonical Claude counters and deduplicated Codex completions with server pricing, cost_basis and partial flags. Returns one dimension plus totals, effective range and result_id. Rows with observed_records 0 and no timeline_observed are unobserved: their measures are null, never zero. At most 200 rows; truncated marks a cut (totals stay complete). Channels/groups require diagnostic SQL.",
   inputSchema: { json: {
     type: "object", additionalProperties: false,
     properties: {
@@ -19,7 +36,7 @@ export const USAGE_TOOL = { toolSpec: {
       to: { type: "string", description: "ISO 8601 exclusive end with timezone" },
       dimension: { type: "string", enum: Object.keys(DIMENSIONS) },
       client: { type: "string", enum: ["all", "claude", "codex"] },
-      backend: { type: "string", enum: ["all", "bedrock-mantle", "bedrock-runtime", "anthropic", "unknown"] },
+      backend: { type: "string", enum: ["all", ...CLIENT_BACKENDS] },
       user: { type: "string", maxLength: 256 },
       model: { type: "string", maxLength: 256 },
       intervalHours: { type: "number", description: "Optional time bucket size in hours" },
@@ -46,14 +63,15 @@ export function createUsageLookup({ overview = clientOverview, enabledClients = 
     validateClientFilters(raw, enabledClients);
     const result = await overview(from, to, raw, enabledClients, signal);
     signal.throwIfAborted();
+    const dimension = result[DIMENSIONS[input.dimension]];
     return {
-      rows: result[DIMENSIONS[input.dimension]].map(row => ({
+      rows: dimension.slice(0, ROW_CAP).map(row => ({
         ...project(row),
         label: [row.client, row.backend, row.model || row.user || row.t].filter(Boolean).join(" · "),
       })),
       totals: project(result.totals), quality: result.quality,
       effective_range: result.effective_range, bucket_hours: result.bucket_hours,
-      cache_write_ttl: pricingConfig.cacheWriteTtl, source: "dashboard", truncated: false,
+      cache_write_ttl: pricingConfig.cacheWriteTtl, source: "dashboard", truncated: dimension.length > ROW_CAP,
     };
   };
 }

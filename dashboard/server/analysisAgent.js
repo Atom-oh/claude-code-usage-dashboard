@@ -24,7 +24,7 @@ export async function runAnalysisAgent({ messages, question, runTurn, executeQue
   const context = `분석 요청: ${question}`;
   if (history.at(-1)?.role === "user") history.at(-1).content.push({ text: context });
   else history.push({ role: "user", content: [{ text: context }] });
-  const results = new Map();
+  const results = new Map(), requests = new Map();
   let queries = 0, charts = 0, last, lastFeedback = [], summaryLimited = false, incompleteToolOutput = false;
   // Analysis prose is private working material; stream only its trace/status.
   const analysisSend = (event, data) => { if (event !== "text") send(event, data); };
@@ -54,6 +54,8 @@ export async function runAnalysisAgent({ messages, question, runTurn, executeQue
           abortSignal.throwIfAborted();
           const id = `query_${queries}`;
           results.set(id, value);
+          // Keep the producing tool call (email-masked, bounded) so a tool-free summary can attribute each result.
+          requests.set(id, { tool: name, input: maskText(JSON.stringify(name === "run_sql" ? { sql: input?.sql } : input ?? {})).slice(0, 2000) });
           result = { ...value, result_id: id };
         } else if (name === "show_chart") {
           if (charts >= MAX_CHARTS) throw new Error("The chart budget is exhausted.");
@@ -86,7 +88,7 @@ export async function runAnalysisAgent({ messages, question, runTurn, executeQue
     const observations = [];
     let size = 0;
     for (const [result_id, value] of [...results.entries()].reverse()) {
-      const item = { result_id, ...value };
+      const item = { result_id, request: requests.get(result_id), ...value };
       const length = JSON.stringify(item).length;
       if (size + length > 40000) { summaryLimited = true; continue; }
       size += length;

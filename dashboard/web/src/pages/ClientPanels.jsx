@@ -2,27 +2,29 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, ErrorBox, Loading } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { DataTable } from "../components/DataTable.jsx";
-import { DualLineChart, RingGauge, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { RingGauge, SeriesBarChart } from "../components/GroupCharts.jsx";
 import { ModelCostTrend } from "../components/ModelCostTrend.jsx";
 import { SectionLabel } from "../components/SectionLabel.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
+import { clientColor as color, ClientTrend as Trend, EMPTY_VALUE } from "../components/ClientTrend.jsx";
+import { UserDetail } from "../components/UserDetail.jsx";
+import { combineUsers } from "../userDetail.js";
 import { fromByModelTime, rollupBuckets } from "../modelCostTrend.js";
 import { useRange } from "../RangeContext.jsx";
 import { useApi } from "../useApi.js";
 import { useFilters } from "../FilterContext.jsx";
 import { costResolutionLabel } from "../costResolution.js";
-import { maskEmail, parseUtc } from "../fmt.js";
-import { clientTimeline, formatClientCost, formatObserved } from "../clientUsage.js";
+import { maskEmail } from "../fmt.js";
+import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { withoutZeroTokenModels } from "../modelRows.js";
 import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
 import { CostUsers } from "./ClientCostUsers.jsx";
 import {
-  basisLabel, BROWSER_TIME_ZONE, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, OBSERVED_TOKEN_HELP, presentationRow,
+  basisLabel, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, OBSERVED_TOKEN_HELP, presentationRow,
+  tokenStatusLabel,
 } from "../clientPresentation.js";
 
 const text = (v) => v || "—";
-const compactAxis = new Intl.NumberFormat("en-US", { notation: "compact", maximumSignificantDigits: 3 });
-const color = (client) => client === "claude" ? "var(--chart-1)" : "var(--chart-2)";
 const number = (key, label) => ({ key, label, render: formatObserved });
 const percent = (key, label) => ({ key, label, render: formatPercent });
 const money = (key, label) => ({ key, label, render: formatClientCost });
@@ -61,7 +63,6 @@ const USAGE = [SESSIONS, TOKENS, ...TOKEN_PARTS, REASONING_TOKENS, COST, BASIS];
 const UNIT_COSTS = [COST, COST_SESSION, COST_USER, MILLION, BASIS];
 const OPERATIONS = [REQUESTS, ERRORS, ERROR_RATIO, TOOL_CALLS, TOOL_ERRORS, REQUEST_TIME, TTFT];
 const GRID = "grid grid-cols-2 xl:grid-cols-4 gap-4";
-const EMPTY_VALUE = "—는 미수집·미지원·미산정 값입니다. 관측된 0과 구분합니다.";
 const TOKEN_HELP = "구성값은 기존 전체 토큰 기준입니다: 입력(캐시 제외) + 캐시 읽기 + 캐시 쓰기 + 출력. 추론은 출력에 포함됩니다. 관측 토큰과 집계 범위가 다를 수 있으며, 누락된 구성값은 —로 유지합니다.";
 const COST_HELP = "미산정 기록은 제외하고 알려진 비용만 부분합으로 표시합니다. 단위 비용은 알려진 비용 / 관측된 분모의 근삿값이며, 비용이 모두 미산정이거나 분모가 없거나 0이면 —로 표시합니다.";
 
@@ -109,52 +110,6 @@ function Comparison({ rows, columns, cards = false, title = "클라이언트별 
     </div> : <DataTable title={title} subtitle={subtitle} columns={[CLIENT, BACKEND, ...withTokenStatus(columns)]}
       rows={rows} exportName="clients_comparison" stale={stale} />}
   </section>;
-}
-
-function Trend({ rows, clients, clientRows, bucketHours, effectiveRange, metric = "both", title = "사용량·비용 추이", stale = false }) {
-  const { timeline, timeDomain, rejections } = useMemo(() => {
-    const timeline = clientTimeline(rows, { bucketHours, effectiveRange })
-      .map((row) => ({ ...row, t: parseUtc(row.t).getTime() }))
-      .filter((row) => Number.isFinite(row.t));
-    const from = Date.parse(effectiveRange?.from), to = Date.parse(effectiveRange?.to);
-    const step = Number.isFinite(bucketHours * 3600000) && bucketHours > 0 ? bucketHours * 3600000 : 3600000;
-    const timeDomain = Number.isFinite(from) && Number.isFinite(to) && from < to
-      ? [from, to] : timeline.length ? [timeline[0].t, timeline.at(-1).t + step] : undefined;
-    const rejections = new Map(rows.filter(row => row.request_rejections_only === true)
-      .map(row => [`${row.client}:${parseUtc(row.t.replace(/(?:\.\d+)?Z$/, "")).getTime()}`,
-        observedNumber(row.rejected_requests)]));
-    return { timeline, timeDomain, rejections };
-  }, [rows, bucketHours, effectiveRange?.from, effectiveRange?.to]);
-  const lines = clients.flatMap((client) => {
-    const row = clientRows.find((row) => row.client === client);
-    const partial = row?.cost_partial === true || observedNumber(row?.unpriced) > 0
-      || rows.some(period => period.client === client && period.cost_partial === true);
-    const status = row?.cost_usd == null ? " · 미산정" : partial ? " · 부분합 포함" : "";
-    const basis = `${basisLabel(row?.cost_basis)}${status}`;
-    const tokenPartial = row?.tokens_partial === true
-      || rows.some((period) => period.client === client && (period.tokens_partial === true || period.observed_tokens === null));
-    return [
-      ...(metric !== "cost" ? [{ key: `${client}_tokens`, label: `${clientName(client)} 관측 토큰${tokenPartial ? " · 부분합 포함" : ""}`, color: color(client) }] : []),
-      ...(metric !== "tokens" ? [{ key: `${client}_cost`, label: `${clientName(client)} 비용 (USD · ${basis})`, color: color(client), axis: metric === "both" ? "right" : "left" }] : []),
-    ];
-  });
-  if (!timeline.some((row) => lines.some((line) => observedNumber(row[line.key]) !== null))) {
-    return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
-  }
-  return <DualLineChart title={title}
-    subtitle={`${bucketLabel(bucketHours)} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}`}
-    help="0은 해당 시간에 집계된 사용량이 없다는 뜻입니다. 이벤트 자체의 전송 누락은 미사용과 구분할 수 없으며, 차트가 누락된 사용량을 복원하지는 않습니다."
-    tooltipFormatter={(value, name, item) => {
-      const client = String(item.dataKey).split("_")[0];
-      const rejected = rejections.get(`${client}:${item.payload?.t}`);
-      const unpriced = String(item.dataKey).endsWith("_cost") && item.payload?.[item.dataKey] == null;
-      return [unpriced ? "미산정" : value == null ? "미확인" : value === 0 && rejected > 0
-        ? `0 (요청 거절 ${formatObserved(rejected)}건)`
-        : item.payload?.empty_clients?.includes(client) ? `${value} (관측 사용량 없음)` : value, name];
-    }}
-    rows={timeline} xKey="t" zoomDisabled={stale} lines={lines} bucketHours={bucketHours}
-    timeDomain={timeDomain}
-    tickFormatter={formatClientTime} valueTickFormatter={compactAxis.format} height={metric === "both" ? 320 : 240} />;
 }
 
 const TREND_BASIS = {
@@ -275,6 +230,23 @@ const detailButton = (label, onClick, disabled) => <button type="button" disable
   className="text-left text-brand-700 underline decoration-brand-200 underline-offset-4 hover:decoration-brand-700 disabled:text-ink-500 disabled:no-underline"
   onClick={onClick}>{label}</button>;
 
+// One row per identity across the selected clients (combineUsers). Costs of different bases are a
+// known-cost total labelled with every contributing basis; the parts column keeps each client's
+// own value and basis so the mix stays visible in the table and CSV.
+const partText = (part) => `${clientName(part.client)} ${formatClientCost(part.cost_usd)} (${part.cost_basis_label})`;
+function combinedUserRows(users, clients) {
+  return combineUsers(users, clients).map((row) => {
+    const parts = [...row.parts].sort((a, b) => a.client.localeCompare(b.client));
+    const unpriced = parts.reduce((n, p) => n + (observedNumber(p.unpriced) ?? 0), 0);
+    const bases = [...new Set(parts.map((p) => basisLabel(p.cost_basis)))].join(" + ");
+    return { ...row, parts, token_status: tokenStatusLabel(row),
+      cost_basis_label: costBasisLabel({ cost_usd: row.cost_usd, cost_partial: row.cost_partial, unpriced }, bases),
+      client_parts: parts.map(partText).join(" / ") };
+  });
+}
+const CLIENT_PARTS = { key: "client_parts", label: "클라이언트별 구성",
+  render: (value) => <span className="block min-w-[12rem]">{text(value)}</span>, toText: text };
+
 // Change against the preceding window of the same length. Unknown on either side stays "—";
 // a zero baseline has no percentage. Partial sums are labelled, never compared as complete.
 const PERIOD_METRICS = [COST, TOKENS, SESSIONS, USERS];
@@ -384,9 +356,12 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
   const rangeKey = `${from.getTime()}|${to.getTime()}`;
   const [detailPick, setDetailPick] = useState(null);
   const teams = useTeams();
-  const selection = detailPick?.key === rangeKey ? detailPick.row : null;
-  const select = (row) => setDetailPick({ key: rangeKey, row });
   const selected = clients;
+  // Keyed by page and client selection as well: the shared panel stays mounted across routes, so a
+  // Users pick must not reopen as a Cost detail (or the reverse), and client changes clear it.
+  const pickKey = `${page}|${rangeKey}|${selected.join(",")}`;
+  const selection = detailPick?.key === pickKey ? detailPick.row : null;
+  const select = (row) => setDetailPick({ key: pickKey, row });
   const rows = (key) => (data?.[key] || []).filter((row) => selected.includes(row.client)).map(presentationRow);
   const clientRows = selected.map((client) => presentationRow(
     (data?.by_client || []).find((row) => row.client === client) || { client, observed_records: 0 },
@@ -464,8 +439,15 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {compare([USERS, SESSIONS, SESSION_USER, COST_USER, BASIS])}
         <ClientBars title="클라이언트별 관측 사용자" rows={clientRows} metric={USERS}
           subtitle="클라이언트별 고유 ID 수입니다. 서로 겹치는 ID가 있어 전체 사용자 수로 합산하지 않습니다." />
-        {table("사용자별 사용량", withTeamColumn([CLIENT, USER, BACKEND, ...USAGE], teams), withTeams(users, teams), "users",
-          "동일 ID도 클라이언트별 행으로 표시합니다. 전체 사용자 수는 서버의 중복 제거 값이며 행 수의 합이 아닙니다. CSV는 표시 열·정렬·마스킹 설정을 따릅니다.")}
+        {table("사용자별 사용량", withTeamColumn([
+          { ...USER, render: (value) => detailButton(maskEmail(value) || "(미식별)",
+            () => select({ kind: "user-detail", user: value }), stale || !value) },
+          CLIENT_PARTS, SESSIONS, TOKENS, COST, BASIS], teams),
+          withTeams(combinedUserRows(users, selected), teams), "users",
+          "선택한 클라이언트의 같은 ID를 한 행으로 합칩니다. 비용 합계는 클라이언트별 비용 기준이 섞일 수 있어 구성 열에 클라이언트별 값과 기준을 함께 표시합니다. 미식별 ID는 클라이언트별 행으로 남깁니다. 전체 사용자 수는 서버의 중복 제거 값이며 행 수의 합이 아닙니다. 사용자를 누르면 사용자 상세를 엽니다. CSV는 표시 열·정렬·마스킹 설정을 따릅니다.")}
+        {selection?.kind === "user-detail" && <UserDetail key={selection.user} user={selection.user} clients={selected}
+          hours={data?.bucket_hours || 1} parentRange={data?.effective_range} stale={stale}
+          onClose={() => setDetailPick(null)} />}
       </>;
       break;
     case "cost":
@@ -482,7 +464,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
           usageModels, "model_costs", `${COST_HELP} 모델을 누르면 해당 클라이언트·모델의 사용자별 비용 비중을 확인합니다.`)}
         <CostUsers key={`${page}-user_costs`} users={users} modelRows={data?.by_user_model}
           clients={selected} stale={stale} onSelect={select} />
-        {selection && <CostDetail key={JSON.stringify(selection)} selection={selection}
+        {(selection?.kind === "user" || selection?.kind === "model") && <CostDetail key={JSON.stringify(selection)} selection={selection}
           hours={data?.bucket_hours || 1} parentRange={data?.effective_range} stale={stale}
           onClose={() => setDetailPick(null)} />}
       </>;
