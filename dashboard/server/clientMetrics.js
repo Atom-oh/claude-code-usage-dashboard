@@ -31,6 +31,9 @@ const UNPRICED_REASONS = {
   codex: ["unknown_backend", "scope", "unknown_model", "invalid_usage"],
 };
 
+// Shared-view backend filter vocabulary; the chat usage tool schema reuses it.
+export const CLIENT_BACKENDS = ["bedrock-mantle", "bedrock-runtime", "anthropic", "unknown"];
+
 export function validateClientFilters(raw, enabledClients) {
   const clients = selectClients(raw.client, enabledClients);
   if (raw.group || raw.project)
@@ -46,7 +49,7 @@ export function validateClientFilters(raw, enabledClients) {
   }
   const backend = raw.backend;
   if (backend !== undefined && backend !== "" && backend !== "all"
-      && !["bedrock-mantle", "bedrock-runtime", "anthropic", "unknown"].includes(backend))
+      && !CLIENT_BACKENDS.includes(backend))
     throw new ValidationError("invalid backend", "select a supported backend");
   result.backend = backend && backend !== "all" ? backend : "";
   const team = parseTeam(raw.team);
