@@ -37,7 +37,9 @@ currently deployed manual flow. This proposal does not claim deployed behavior.
    they started themselves, never a code or link sent by another person. This
    explicit action is required even
    when the browser is already signed in. The page explains that the device
-   receives ingestion access for 30 days.
+   receives ingestion access that expires after 30 days but renews automatically while the
+   Collector keeps reporting, and that access ends only when the device is revoked or stops
+   renewing.
 6. The helper notices approval, obtains package access, verifies/downloads the
    package, constructs and privately saves the device credential, and invokes
    the existing installer. No token prompt is shown.
@@ -58,8 +60,9 @@ messages. A denial does not create a registered device.
 Code matching alone does not establish device ownership: an attacker can send
 both their verification link and matching code to an editor. This remote-phishing
 risk remains even with explicit confirmation, as described in RFC 8628 section
-5.4. Treat the warning as mitigation, not a guarantee, and make the 30-day
-ingestion permission visible before approval.
+5.4. Treat the warning as mitigation, not a guarantee, and make the renewable
+ingestion permission (30-day expiry, automatic renewal, revocation as the only hard stop)
+visible before approval.
 
 ## Boundaries
 
@@ -79,6 +82,8 @@ ingestion permission visible before approval.
   Short-lived enrollment credentials authorize only this installation flow.
 - Keep the manual download/token flow as an advanced recovery option.
   Workshop organizer provisioning remains a separate documented mode.
+- Browser enrollment requires OIDC sign-in. Basic-auth deployments do not offer it and
+  keep the manual download/token flow.
 - No new service, user pool, domain, collector port, database engine or node
   expansion is required.
 
@@ -95,9 +100,10 @@ plus a bounded device name and platform, to an enrollment-start endpoint.
 
 The server generates an unpredictable public request handle, a separate
 256-bit polling credential, a short human-readable confirmation code and a
-ten-minute deadline. Only the polling credential's digest is persisted. Return
-the verification URL, confirmation code, polling interval and deadline to the
-helper over HTTPS. Never include the polling credential or device secret in a
+ten-minute deadline. The polling credential is stored only as a digest; the other
+request fields are stored as written. Return the verification URL, confirmation
+code, polling credential, polling interval and deadline to the helper once, in the
+HTTPS response body. Never include the polling credential or device secret in a
 URL, shell argument, browser page or log.
 
 The request's device-secret digest, device metadata and deadline become immutable.
@@ -200,7 +206,8 @@ Before implementation is released, add and run installer/auth regression tests:
 - open-browser and headless-link paths, including piped interactive migration;
 - anonymous start cannot issue a token; demo/viewer approval and download denied;
 - browser GET/callback cannot approve; cross-origin approval denied;
-- distinct browser handle and polling credential; wrong or expired proof denied;
+- distinct browser handle and polling credential; the polling credential is delivered
+  once in the start response body; wrong or expired proof denied;
 - two API replicas, concurrent approval, lost responses and idempotent delivery;
 - secret digest immutability and absence of raw credentials from stored records;
 - revocation before package download, failure after approval, and expiration;
