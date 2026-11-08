@@ -51,7 +51,19 @@ test("observed charts remain visible when the final writer fails", async () => {
   expect(result.current.msgs.at(-1).charts).toEqual([chart]);
   stubStream(event("text", { text: "다시 답변" }) + event("done", {}));
   await act(() => result.current.ask("다음 질문"));
+  expect(result.current.msgs[1].charts).toEqual([chart]);
   const sent = JSON.parse(fetch.mock.calls.at(-1)[1].body);
   expect(sent.messages).toEqual([{ role: "user", content: "첫 질문\n다음 질문" }]);
   expect(JSON.stringify(sent)).not.toContain('"data"');
+  expect(JSON.stringify(sent)).not.toContain("synthetic writer failure");
+});
+
+test("chart-only turns remain visible without entering model history", async () => {
+  stubStream(event("chart", chart) + event("done", {}));
+  const { result } = renderHook(() => useChatStream());
+  await act(() => result.current.ask("첫 질문"));
+  await act(() => result.current.ask("다음 질문"));
+  expect(result.current.msgs[1].charts).toEqual([chart]);
+  const sent = JSON.parse(fetch.mock.calls.at(-1)[1].body);
+  expect(sent.messages).toEqual([{ role: "user", content: "첫 질문\n다음 질문" }]);
 });

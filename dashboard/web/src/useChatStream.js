@@ -118,7 +118,7 @@ export function useChatStream() {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    // 이전 오류 말풍선(error:true)과 빈 assistant placeholder(content·charts 없음)는 서버로 다시
+    // 이전 오류 말풍선(error:true, 차트 없음)과 빈 assistant placeholder(content·charts 없음)는 서버로 다시
     // 보내지 않는다 — 걸러도 앞선 user 턴이 그대로 남을 수 있다(예: 에러 후 재질문 시
     // [user:Q1, assistant:오류] 에서 오류만 빠지면 [user:Q1, user:Q2]로 연속 user 턴이 되고,
     // Bedrock Converse가 역할 교차를 요구해 거부 → 리로드 전까지 챗이 먹통이 된다(실측: 리뷰에서
@@ -127,10 +127,12 @@ export function useChatStream() {
     // 본문(modelHistory)에서는 뺀다 — 차트 배열을 모델 히스토리에 되돌려보내지 않는다(agent-llm.md).
     const history = [];
     for (const m of [...msgs, { role: "user", content: q }]) {
-      if ((!m.content && !m.charts?.length) || m.error) continue;
+      if ((!m.content && !m.charts?.length) || (m.error && !m.charts?.length)) continue;
+      // Retain observed charts after a failed writer, without replaying its error.
+      const content = m.error ? "" : m.content;
       const last = history[history.length - 1];
-      if (last && last.role === m.role) last.content += "\n" + m.content;
-      else history.push({ role: m.role, content: m.content, ...(m.charts?.length ? { charts: m.charts } : {}) });
+      if (last && last.role === m.role && !last.charts?.length && !m.charts?.length) last.content += "\n" + content;
+      else history.push({ role: m.role, content, ...(m.charts?.length ? { charts: m.charts } : {}) });
     }
     setMsgs([...history, { role: "assistant", content: "" }]);
     try {

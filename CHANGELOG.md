@@ -12,6 +12,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed (2026-11-08 chat and analysis agents)
+
+- Split `POST /api/chat` into a conversation agent (`CHAT_MODEL_ID`, default
+  `global.anthropic.claude-haiku-5-5`) that delegates data questions once per turn to a
+  separate analysis agent (`ANALYSIS_MODEL_ID`, default `global.anthropic.claude-sonnet-5-5`).
+  Terraform `chat_model_id`/`analysis_model_id` scope the Bedrock invoke grant to both IDs;
+  an installation on the previous default loses the old model's grant in the same apply.
+- Add `chart` SSE events built from stored query results (`show_chart`) and render them as
+  fixed Recharts templates in both chat surfaces. Only the analysis agent requests adaptive
+  summarized thinking.
+
 ### Changed (2026-11-04 specialist review coverage)
 
 - Require independent Codex and Claude reviews and Kiro when applicable, covering all
