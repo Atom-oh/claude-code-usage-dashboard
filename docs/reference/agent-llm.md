@@ -85,9 +85,9 @@ Follow-up requests send text-only conversation history.
 
 ## Fixed chart templates
 
-[ChatCharts.jsx](../../dashboard/web/src/components/ChatCharts.jsx) renders bar,
-stacked-bar and line templates with the existing Recharts dependency, shared
-colors, localized time labels and an accessible data table. Sonnet selects
+[chatCharts.js](../../dashboard/server/chatCharts.js) validates bar, stacked-bar
+and line events. Chart-capable frontends can render them with fixed Recharts
+templates, shared colors, localized time labels and an accessible data table. Sonnet selects
 `result_id`, columns, labels, unit and template through `show_chart`; the server
 supplies numeric rows directly from its masked, capped result store. No generated
 JavaScript/HTML is accepted. A turn permits three charts, each with at most
@@ -95,9 +95,9 @@ JavaScript/HTML is accepted. A turn permits three charts, each with at most
 cost bases, truncation and partial coverage remain visible; raw SQL charts show
 unverified coverage. The server rejects duplicate categories and stacked token
 parents/subsets that would double-count usage. Filter a client for time trends
-or use the composite `label` to distinguish category identities. Charts stay
-with their answers in both Analytics and the floating widget, including a
-chart received before a later writer failure.
+or use the composite `label` to distinguish category identities. Chart-capable
+frontends retain charts with their answers, including a chart received before
+a later writer failure. Clients without chart integration ignore chart events.
 
 Templates remove generated chart-code tokens. Result references avoid repeating
 chart arrays in tool acknowledgments, the Haiku handoff and later chat history.
