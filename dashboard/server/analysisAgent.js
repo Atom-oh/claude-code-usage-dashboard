@@ -14,6 +14,9 @@ export const ANALYSIS_TOOLS = { tools: [
 const MAX_ROUNDS = 4;
 const MAX_QUERIES = 8;
 const MAX_CHARTS = 3;
+const MAX_FAILURES = 8; // Failed tool calls retained across rounds for the forced summary.
+const MAX_REQUEST_CHARS = 2000;
+const MAX_ERROR_CHARS = 500;
 
 // Owns a private Sonnet conversation. Haiku reasoning and raw tool transcripts
 // never enter this history, and Sonnet reasoning never returns to Haiku.
@@ -24,8 +27,13 @@ export async function runAnalysisAgent({ messages, question, runTurn, executeQue
   const context = `분석 요청: ${question}`;
   if (history.at(-1)?.role === "user") history.at(-1).content.push({ text: context });
   else history.push({ role: "user", content: [{ text: context }] });
-  const results = new Map(), requests = new Map();
-  let queries = 0, charts = 0, last, lastFeedback = [], summaryLimited = false, incompleteToolOutput = false;
+  const results = new Map(), requests = new Map(), failures = [];
+  let queries = 0, charts = 0, last, failuresTruncated = false, summaryLimited = false, incompleteToolOutput = false;
+  // Email-masked, bounded producing tool call; a clipped input is marked so a summary never mistakes it for the full request.
+  const describeRequest = (tool, input) => {
+    const text = maskText(JSON.stringify(tool === "run_sql" ? { sql: input?.sql } : input ?? {}));
+    return text.length > MAX_REQUEST_CHARS ? { tool, input: text.slice(0, MAX_REQUEST_CHARS), input_truncated: true } : { tool, input: text };
+  };
   // Analysis prose is private working material; stream only its trace/status.
   const analysisSend = (event, data) => { if (event !== "text") send(event, data); };
   const call = allowTools => runTurn({
@@ -54,8 +62,8 @@ export async function runAnalysisAgent({ messages, question, runTurn, executeQue
           abortSignal.throwIfAborted();
           const id = `query_${queries}`;
           results.set(id, value);
-          // Keep the producing tool call (email-masked, bounded) so a tool-free summary can attribute each result.
-          requests.set(id, { tool: name, input: maskText(JSON.stringify(name === "run_sql" ? { sql: input?.sql } : input ?? {})).slice(0, 2000) });
+          // Keep the producing tool call so a tool-free summary can attribute each result.
+          requests.set(id, describeRequest(name, input));
           result = { ...value, result_id: id };
         } else if (name === "show_chart") {
           if (charts >= MAX_CHARTS) throw new Error("The chart budget is exhausted.");
@@ -73,11 +81,14 @@ export async function runAnalysisAgent({ messages, question, runTurn, executeQue
         feedback.push({ toolResult: { toolUseId, content: [{ json: result }] } });
       } catch (err) {
         if (abortSignal.aborted) throw err;
-        feedback.push({ toolResult: { toolUseId, status: "error", content: [{ text: maskText(err.message) }] } });
+        const message = maskText(err.message);
+        // Keep failure evidence from every round (newest kept) so the forced summary can report unresolved requests.
+        failures.push({ round: round + 1, ...describeRequest(name, input), error: message.slice(0, MAX_ERROR_CHARS) });
+        if (failures.length > MAX_FAILURES) { failures.shift(); failuresTruncated = true; }
+        feedback.push({ toolResult: { toolUseId, status: "error", content: [{ text: message }] } });
       }
     }
     if (!feedback.length) throw new Error("Analysis requested tools without a tool call.");
-    lastFeedback = feedback;
     history.push({ role: "user", content: feedback });
   }
   const budgetExhausted = last.stopReason === "tool_use";
@@ -85,8 +96,9 @@ export async function runAnalysisAgent({ messages, question, runTurn, executeQue
     abortSignal.throwIfAborted();
     // Start a fresh text-only summary request: a tool-free Bedrock request must
     // not carry toolUse/toolResult or another conversation's signed thinking.
-    const observations = [];
-    let size = 0;
+    // Retained failures share the 40,000 budget and are charged first; the count and clip bounds keep them to about half of it at most.
+    const observations = [], failed = [...failures].reverse();
+    let size = JSON.stringify(failed).length;
     for (const [result_id, value] of [...results.entries()].reverse()) {
       const item = { result_id, request: requests.get(result_id), ...value };
       const length = JSON.stringify(item).length;
@@ -99,8 +111,8 @@ export async function runAnalysisAgent({ messages, question, runTurn, executeQue
       messages: [{ role: "user", content: [{ text: JSON.stringify({
         question, observations, observations_truncated: summaryLimited,
         output_truncated: incompleteToolOutput,
-        last_errors: lastFeedback.filter(b => b.toolResult.status === "error").map(b => b.toolResult.content),
-        instruction: "Summarize the observed evidence, limits and unresolved requests. Do not request tools.",
+        failures: failed, failures_truncated: failuresTruncated,
+        instruction: "Summarize the observed evidence, limits, failed tool calls and unresolved requests. Do not request tools.",
       }) }] }],
     });
   }

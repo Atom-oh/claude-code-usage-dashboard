@@ -354,6 +354,66 @@ test("the budget-exhausted summary request carries the tool call that produced e
   assertSuccess(response);
 });
 
+test("the budget-exhausted summary retains masked failures from every round and marks clipped attribution", async () => {
+  let rounds = 0;
+  const response = new Response();
+  const failing = "SELECT 1 AS cost FROM otel_logs WHERE UserEmail = 'synthetic@example.invalid'";
+  const masked = failing.replace("synthetic@", "sy******@");
+  const long = `SELECT 3 AS cost, '${"x".repeat(2100)}' AS pad`;
+  await createChatHandler({ limit: () => false,
+    query: async (sql) => {
+      if (sql === failing) throw new Error("Cannot parse string 'synthetic@example.invalid'");
+      return { rows: [{ cost: 1 }], truncated: false };
+    },
+    runTurn: async ({ agent, allowTools, messages }) => {
+      if (agent === "chat") return allowTools ? delegate() : done();
+      if (allowTools) {
+        rounds++;
+        if (rounds === 1) return tool("run_sql", { sql: failing });
+        if (rounds === 3) return tool("unknown_tool", { note: "x" });
+        return tool("run_sql", { sql: rounds === 4 ? long : "SELECT 2 AS cost" });
+      }
+      assert.ok(!messages.some(m => m.content.some(b => b.toolUse || b.toolResult)));
+      const summary = JSON.parse(messages[0].content[0].text);
+      assert.deepEqual(summary.observations.map(o => o.result_id), ["query_3", "query_2"]);
+      assert.deepEqual(summary.failures, [
+        { round: 3, tool: "unknown_tool", input: JSON.stringify({ note: "x" }), error: "Unknown analysis tool." },
+        { round: 1, tool: "run_sql", input: JSON.stringify({ sql: masked }), error: "Cannot parse string 'sy******@example.invalid'" },
+      ]);
+      assert.equal(summary.failures_truncated, false);
+      assert.equal(summary.last_errors, undefined);
+      assert.equal(summary.observations[0].request.input_truncated, true);
+      assert.equal(summary.observations[0].request.input.length, 2000);
+      assert.equal(summary.observations[1].request.input_truncated, undefined);
+      assert.ok(!JSON.stringify(summary).includes("synthetic@"));
+      return done("Attributed evidence and failures.");
+    },
+  })(request(), response);
+  assert.equal(rounds, 4);
+  assertSuccess(response);
+});
+
+test("retained failures are bounded to the most recent eight and the cut is marked", async () => {
+  let rounds = 0;
+  const response = new Response();
+  const burst = { stopReason: "tool_use", truncatedToolIds: new Set(),
+    content: Array.from({ length: 9 }, (_, i) => tool("unknown_tool", { id: i + 1 }, `u${i + 1}`).content[0]) };
+  await createChatHandler({ limit: () => false,
+    query: async () => ({ rows: [{ cost: 1 }], truncated: false }),
+    runTurn: async ({ agent, allowTools, messages }) => {
+      if (agent === "chat") return allowTools ? delegate() : done();
+      if (allowTools) return ++rounds === 1 ? burst : tool("run_sql", { sql: "SELECT 1 AS cost" });
+      const summary = JSON.parse(messages[0].content[0].text);
+      assert.equal(summary.failures_truncated, true);
+      assert.deepEqual(summary.failures.map(f => f.input), Array.from({ length: 8 }, (_, i) => JSON.stringify({ id: 9 - i })));
+      assert.ok(summary.failures.every(f => f.round === 1 && f.tool === "unknown_tool" && f.error === "Unknown analysis tool."));
+      return done("Bounded failures.");
+    },
+  })(request(), response);
+  assert.equal(rounds, 4);
+  assertSuccess(response);
+});
+
 test("failure logs name the model that was actually invoked", async (t) => {
   const logs = [];
   const original = console.error;
