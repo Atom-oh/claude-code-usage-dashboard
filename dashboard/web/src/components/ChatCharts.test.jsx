@@ -35,6 +35,19 @@ test("cost chart labels include the actual contributing bases", () => {
   expect(screen.getByText(/AWS 정가 추정/)).toBeTruthy();
 });
 
+test("tiny positive costs remain visible instead of rounding to zero", () => {
+  render(<ChatCharts charts={[{ ...chart, data: [{ model: "tiny", cost: 0.000000004 }] }]} />);
+  expect(screen.getByText("$4.00e-9")).toBeTruthy();
+  expect(screen.queryByText("$0.00")).toBeNull();
+});
+
+test("charts disclose effective time bounds and a shortened requested end", () => {
+  const from = "2026-11-06T00:00:00.000Z", to = "2026-11-07T00:00:00.000Z";
+  render(<ChatCharts charts={[{ ...chart, effective_range: { from, to, requested_to: "2026-11-07T00:30:00.000Z" } }]} />);
+  expect(screen.getByText(new RegExp(`집계 기간: ${new Date(from).toLocaleString()}`, "u"))).toBeTruthy();
+  expect(screen.getByText(/요청 종료 시각보다 짧은 집계/)).toBeTruthy();
+});
+
 test("model supplied code, malformed data and unbounded charts are rejected", () => {
   const { container } = render(<ChatCharts charts={[
     { ...chart, type: "javascript", code: "alert(1)" },

@@ -57,7 +57,9 @@ estimated accepted-lines card is removed. Shared Productivity explains the exter
 needed for task outcome measures. See [definitions and coverage](../metrics.md#activity-and-flow-coverage).
 
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
-chat. [main.jsx](../../dashboard/web/src/main.jsx) renders
+chat. The floating chat window resizes from its top-left handle (pointer drag or arrow keys)
+and has an expand toggle; the size is clamped to the viewport and remembered in
+`localStorage` ([chatWindowSize.js](../../dashboard/web/src/chatWindowSize.js)). [main.jsx](../../dashboard/web/src/main.jsx) renders
 [ConfigBootstrap.jsx](../../dashboard/web/src/ConfigBootstrap.jsx) before mounting the router
 or App. The gate fetches `/api/config` with a three-second deadline covering both the request
 and JSON body. Loading, timeout, HTTP/network failure, invalid JSON and malformed config
