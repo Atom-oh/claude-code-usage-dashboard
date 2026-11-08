@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { checkAuthentication } from "./api.js";
-import { validChatChart } from "./chatCharts.js";
 
 // Ask Claude 챗 공용 로직 — FloatingChat(우하단 위젯)과 Analytics(전용 탭)가 공유한다.
 // POST /api/chat SSE(text/status/done/error)를 그대로 읽는다.
-export async function streamChat(messages, { onText, onStatus, onThinking, onChart, signal }) {
+export async function streamChat(messages, { onText, onStatus, onThinking, signal }) {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -39,7 +38,6 @@ export async function streamChat(messages, { onText, onStatus, onThinking, onCha
         continue; // 잘린/깨진 SSE 라인은 무시
       }
       if (event === "text") onText(payload.text);
-      else if (event === "chart" && validChatChart(payload)) onChart?.(payload);
       else if (event === "thinking") onThinking?.(payload.text);
       else if (event === "status") onStatus(payload.message, payload.sql);
       else if (event === "error") throw new Error(payload.message);
@@ -124,42 +122,23 @@ export function useChatStream() {
     // 만든다 — 어떤 필터 조합에서도 안전하다.
     const history = [];
     for (const m of [...msgs, { role: "user", content: q }]) {
-      if ((!m.content && !m.charts?.length) || (m.error && !m.charts?.length)) continue;
-      // Retain observed charts after a failed writer, without replaying its error.
-      const content = m.error ? "" : m.content;
+      if (!m.content || m.error) continue;
       const last = history[history.length - 1];
-      if (last && last.role === m.role && !last.charts?.length && !m.charts?.length) last.content += "\n" + content;
-      else history.push({ role: m.role, content, ...(m.charts?.length ? { charts: m.charts } : {}) });
+      if (last && last.role === m.role) last.content += "\n" + m.content;
+      else history.push({ role: m.role, content: m.content });
     }
     setMsgs([...history, { role: "assistant", content: "" }]);
     try {
-      const modelHistory = [];
-      for (const m of history) {
-        if (!m.content) continue;
-        const last = modelHistory.at(-1);
-        if (last?.role === m.role) last.content += "\n" + m.content;
-        else modelHistory.push({ role: m.role, content: m.content });
-      }
-      await streamChat(modelHistory, {
+      await streamChat(history, {
         signal: ac.signal,
         onText: (t) => {
-          if (ac.signal.aborted) return;
           // 실제 답변 텍스트가 오면 직전 hop의 상태 문구("쿼리 작성 중..." 등)는 이미 낡은
           // 정보다 — 안 지우면 답변이 스트리밍되는 동안 위/아래에 안 맞는 상태줄이 계속 남아
           // 있는 것처럼 보인다.
           setStatus("");
           setMsgs((m) => {
             const next = [...m];
-            next[next.length - 1] = { ...next[next.length - 1], content: next[next.length - 1].content + t };
-            return next;
-          });
-        },
-        onChart: (chart) => {
-          if (ac.signal.aborted) return;
-          setMsgs(m => {
-            const next = [...m];
-            const last = next.at(-1);
-            next[next.length - 1] = { ...last, charts: [...(last.charts || []), chart].slice(0, 3) };
+            next[next.length - 1] = { role: "assistant", content: next[next.length - 1].content + t };
             return next;
           });
         },
@@ -173,7 +152,7 @@ export function useChatStream() {
       if (ac.signal.aborted) return; // 사용자가 닫거나 다시 보낸 경우 — 오류로 표시하지 않는다
       setMsgs((m) => {
         const next = [...m];
-        next[next.length - 1] = { ...next.at(-1), role: "assistant", content: `응답을 받지 못했습니다: ${err.message}`, error: true };
+        next[next.length - 1] = { role: "assistant", content: `응답을 받지 못했습니다: ${err.message}`, error: true };
         return next;
       });
     } finally {

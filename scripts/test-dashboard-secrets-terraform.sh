@@ -36,6 +36,7 @@ terraform {
 }
 variable "region" { default = "ap-northeast-2" }
 variable "chat_model_id" { default = "fixture" }
+variable "analysis_model_id" { default = "fixture-analysis" }
 variable "bedrock_region" { default = "" }
 variable "pii_mask_enabled" { default = false }
 variable "auth_mode" { default = "basic" }
