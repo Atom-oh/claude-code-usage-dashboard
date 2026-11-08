@@ -138,7 +138,7 @@ class IntegrityTests(unittest.TestCase):
                               if tag == "codex" else lambda *args: (0, response, ""))
                     with patch.object(run_role, "execute", side_effect=invoke) as execute:
                         run_role.run(self.work, tag)
-                delivered = execute.call_args.args[3] if tag == "codex" else execute.call_args.args[0][2]
+                delivered = execute.call_args.args[3]
                 self.assertIn(self.raw.encode(), delivered.encode())
                 self.assertIn("BEGIN DIFF ", delivered)
                 self.assertIn("END DIFF ", delivered)
@@ -150,6 +150,9 @@ class IntegrityTests(unittest.TestCase):
                 if tag == "codex":
                     self.assertEqual(execute.call_args.args[0][-1], "-")
                     self.assertIn("Review tag: codex", delivered)
+                else:
+                    self.assertNotIn(self.raw, execute.call_args.args[0])
+                    self.assertEqual(execute.call_args.args[0][-2:], ["--agent-engine", "v3"])
 
     def test_codex_tool_data_is_not_a_diagnostic_or_review(self):
         tool = ('Monthly request limit reached\n'

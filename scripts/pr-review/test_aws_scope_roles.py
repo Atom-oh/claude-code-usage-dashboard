@@ -128,10 +128,10 @@ class AwsScopeTests(unittest.TestCase):
         self.assertTrue(self.prepare(app + infra)["input_complete"])
         self.assertEqual((self.work / "roles/kiro-fable.diff").read_text(), infra)
 
-    def test_oversized_infra_is_blocked_and_never_truncated(self):
+    def test_oversized_infra_requires_summary_and_keeps_the_raw_scope(self):
         infra = patch("infra/main.tf", after="x" * 100000)
-        plan = self.prepare(infra, expected=2)
-        self.assertIn("diff_byte_limit:kiro-fable", plan["input_failures"])
+        plan = self.prepare(infra)
+        self.assertEqual(plan["roles"]["kiro-fable"]["input_basis"], "chair_summary")
         self.assertEqual((self.work / "roles/kiro-fable.diff").read_text(), infra)
 
     def test_application_line_budget_is_independent_of_kiro_budget(self):
@@ -141,20 +141,29 @@ class AwsScopeTests(unittest.TestCase):
                "@@ -0,0 +1,3500 @@\n" + lines)
         self.assertTrue(self.prepare(app)["input_complete"])
         infra = app.replace("src/many.js", "infra/many.tf")
-        plan = self.prepare(infra, expected=2)
-        self.assertIn("diff_line_limit:kiro-fable", plan["input_failures"])
+        plan = self.prepare(infra)
+        self.assertEqual(plan["roles"]["kiro-fable"]["input_basis"], "chair_summary")
         self.assertEqual((self.work / "roles/kiro-fable.diff").read_text(), infra)
 
     def test_utf8_aws_budget_counts_bytes(self):
         infra = patch("infra/main.tf", after="é" * 48000)
-        plan = self.prepare(infra, expected=2)
-        self.assertIn("diff_byte_limit:kiro-fable", plan["input_failures"])
+        plan = self.prepare(infra)
+        self.assertEqual(plan["roles"]["kiro-fable"]["input_basis"], "chair_summary")
         self.assertEqual((self.work / "roles/kiro-fable.diff").read_bytes(), infra.encode())
 
     def test_full_diff_store_cannot_be_modified_after_preparation(self):
         self.prepare(patch("infra/main.tf"))
         (self.work / "complete.diff").write_text(patch("infra/main.tf", after="changed"))
         self.cli("issue", "--work", self.work, "--tag", "codex", expected=2)
+
+    def test_resource_and_operation_identity_does_not_require_hunk_keywords(self):
+        for path in ("docs/runbooks/deploy-production.md", "task-definition.json",
+                     "template.yaml", "lib/app_stack.py"):
+            with self.subTest(path=path):
+                plan = self.prepare(patch(path, after="memory: 1024"))
+                self.assertTrue(plan["roles"]["kiro-fable"]["required"])
+        plan = self.prepare(patch("lib/arbitrary.py", after="from aws_cdk import Stack"))
+        self.assertTrue(plan["roles"]["kiro-fable"]["required"])
 
     def test_full_change_path_list_cannot_omit_application_files(self):
         sys.path.insert(0, str(ENGINE.parent))

@@ -18,9 +18,12 @@ diff; a caller cannot replace a required scope with an arbitrary subset.
 Unrelated application changes deactivate Kiro deterministically.
 
 Codex and Claude use the existing workflow's 512,000-byte / 12,000-line full-diff
-budget. Kiro retains 95,000 bytes / 3,000 lines and a request below 128 KiB because
-its CLI receives one command-line argument. Full requests have a separate bounded
-stdin budget. Oversized required scopes block; no scope is truncated. Existing
+budget. The subsequent user instruction selects Kiro V3 and chair summaries above
+its direct 95,000-byte / 3,000-line budget. A shared hash-bound packet accounts for
+every metadata/hunk unit and fits 64,000 bytes; the full Kiro stdin request stays
+below 120,000 bytes. Full-change reviewers retain raw input below their separate
+640,000-byte request budget. Invalid or incomplete summary input blocks; no scope
+is truncated. Existing
 no-tools checks, credential isolation, preflight barriers and latest-HEAD
 publication remain required.
 
@@ -33,7 +36,7 @@ publication remain required.
 - [x] Update instructions and reference/runbook documentation.
 - [x] Run the review and documentation suites and obtain independent review.
 
-## Validation
+## Initial routing validation
 
 The full protocol suite passed 259 tests. After narrowing standalone application
 ARN routing, 96 scope, protocol, integrity and transport regression tests passed.
@@ -41,6 +44,15 @@ The review shell harness passed 161 checks, and documentation validation passed.
 Independent Claude full-change review and final routing-delta review returned
 PASS. Advice about unfamiliar IAM policy formats remains a classifier limitation;
 this repository's IAM definitions live in matched Terraform paths.
+
+## Authorized follow-up
+
+Use modern V3 tool exclusions/deny permissions, retaining fresh canaries and the
+peer barrier. Classify keyword-free operational updates and property-only
+resource changes using stable paths and immutable Git source identity. Print
+installed CLI versions, centralize budgets and disclose summary evidence in
+reports. Validate bounded delivery, unit accounting, tamper rejection and provider
+failure without awarding partial coverage. Latest validation is recorded in the PR.
 
 ## Release
 

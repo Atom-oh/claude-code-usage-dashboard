@@ -530,7 +530,7 @@ class RoleExecutionTests(unittest.TestCase):
         scripts = self.root / "scripts"
         scripts.mkdir()
         for name in ("run-specialists.sh", "run_role.py", "role_review.py", "review_format.py",
-                     "lib.sh", "role-controls.sh"):
+                     "lib.sh", "role-controls.sh", "input_limits.py", "aws_summary.py"):
             shutil.copyfile(MODULE.parent / name, scripts / name)
         (scripts / "prepare_roles.py").write_text(
             "import pathlib,subprocess,sys\n"
@@ -577,11 +577,13 @@ class RoleExecutionTests(unittest.TestCase):
             KIRO_SETTINGS +
             "import json,pathlib,sys\n"
             "agent=json.loads(pathlib.Path('.kiro/agents/inline-review.json').read_text())\n"
-            "assert agent['tools']==[] and agent['allowedTools']==[]\n"
+            "assert agent['tools']==[] and agent['excludedTools']==['*']\n"
+            "assert agent['permissions']=={'rules':[{'capability':'all','effect':'deny'}]}\n"
+            "assert 'allowedTools' not in agent and 'toolsSettings' not in agent\n"
+            "assert not agent['includeMcpJson'] and not agent['includePowers']\n"
             "assert sys.stdin.read()==''\n"
-            "assert '--agent' in sys.argv and '--v3' not in sys.argv\n"
-            "assert '--legacy-ui' in sys.argv\n"
-            "assert sys.argv[sys.argv.index('--agent-engine')+1]=='v1'\n"
+            "assert '--agent' in sys.argv and '--legacy-ui' not in sys.argv\n"
+            "assert sys.argv[sys.argv.index('--agent-engine')+1]=='v3'\n"
             "assert 'preflight-canary.txt' in sys.argv[2]\n"
             "print('> NO_TOOLS')\n"
         )
@@ -754,8 +756,11 @@ class RoleRecordingTests(unittest.TestCase):
             if settings is not None:
                 return settings
             self.assertEqual(command[1], "chat")
-            self.assertIn("--legacy-ui", command)
-            self.assertEqual(command[command.index("--agent-engine") + 1], "v1")
+            self.assertNotIn("--legacy-ui", command)
+            self.assertEqual(command[command.index("--agent-engine") + 1], "v3")
+            if "preflight-canary.txt" not in command[2]:
+                self.assertIn("BEGIN DIFF ", input_text)
+                self.assertNotIn("BEGIN DIFF ", " ".join(command))
             calls.append(command)
             if "preflight-canary.txt" in command[2]:
                 return 0, "\x1b[32m> NO_TOOLS\x1b[0m\n", ""

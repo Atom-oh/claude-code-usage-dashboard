@@ -55,11 +55,11 @@ class RoleRetryTests(unittest.TestCase):
                 self.assertEqual(input_text, prompt + "\n" + payload)
             elif tag.startswith("kiro-"):
                 self.assertEqual(command[1:], [
-                    "chat", prompt + "\n" + payload, "--model", plan["roles"][tag]["model"],
-                    "--agent", "inline-review", "--no-interactive", "--wrap", "never",
-                    "--legacy-ui", "--agent-engine", "v1",
+                    "chat", "--model", plan["roles"][tag]["model"],
+                    "--agent", "inline-review", "--no-interactive", "--output-format", "text",
+                    "--agent-engine", "v3",
                 ])
-                self.assertEqual(input_text, "")
+                self.assertEqual(input_text, prompt + "\n" + payload)
             else:
                 self.assertEqual(command, [
                     "claude", "-p", prompt, "--model", plan["roles"][tag]["model"],
@@ -135,7 +135,8 @@ class RoleRetryTests(unittest.TestCase):
                 calls["budgets"].append(timeout)
                 return reply(Path(cwd)) if callable(reply) else reply
             calls["reviews"] += 1
-            self.assertIn("BEGIN DIFF", command[2])
+            self.assertIn("BEGIN DIFF", input_text)
+            self.assertNotIn("BEGIN DIFF", command)
             return 0, json.dumps(harness.response(tag)), ""
 
         variables = {"PANEL_RETRIES": "2", "PANEL_TIMEOUT": "2",

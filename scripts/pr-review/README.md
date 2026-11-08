@@ -47,13 +47,15 @@ deletions. Verify eligibility before withholding bodies.
 
 ## Coverage and lifecycle
 
-Codex/Claude independently receive the full reviewable change. Kiro receives only
-complete AWS architecture/resource file patches and relevant AWS deployment docs.
+Codex/Claude independently receive the full raw change. Kiro V3 receives only
+AWS architecture/resource patches and operational docs, using a shared chair
+summary when its direct-input budget is exceeded.
 Removed definitions and rename source paths count; unrelated application SDK calls,
 ARN references, region names and unknown application paths do not activate Kiro.
 Each role records its expected paths, scoped diff hash/size and scope label.
-Request digests additionally bind the complete diff hash. Validation reconstructs
-the expected scope from `complete.diff`, so rewriting plan/request digests cannot
+Request digests additionally bind the complete diff hash and any summary hash.
+Validation reconstructs the expected scope from `complete.diff` and immutable
+source identity, so rewriting plan/request digests cannot
 deactivate required Kiro coverage or substitute arbitrary subsets.
 Failed output is never N/A. Parsing misses whole omissions/some cut prefixes:
 verify Git scope/hashes.
@@ -79,8 +81,8 @@ Exit 2 means blocked. Aggregate exit 0: `deterministic` permits the report when 
 blocking candidate/uncertainty exists (Minor/Info remain); `review` needs a chair.
 Blocked input yields deterministic FAIL; the chair cannot waive coverage failures.
 
-Publish scrubbed reports/receipts/metadata only; never raw `complete.diff`, `roles/*.diff` or
-`requests/*.input/.prompt`.
+Publish scrubbed reports/receipts/metadata only; never raw `complete.diff`, `roles/*.diff`,
+`aws-summary.json` or `requests/*.input/.prompt`.
 
 ## Review presentation
 
@@ -127,12 +129,18 @@ blocks retain the existing filter; their format is still checked afterwards.
 ## Limits and checks
 
 Codex/Claude: full diff up to 512,000 UTF-8 bytes / 12,000 lines, framed request
-below 640,000 bytes. Kiro: AWS projection up to 95,000 bytes / 3,000 lines,
-framed single argument below 128 KiB. Claude's instruction argument also stays
-below 128 KiB; its diff uses stdin. Context is at most 24,000 bytes, reduced to
+below 640,000 bytes. Direct Kiro AWS patches: up to 95,000 bytes / 3,000 lines,
+with the complete V3 stdin request below 120,000 bytes. Larger AWS scopes need a
+shared chair packet of at most 64,000 bytes of compact JSON. Claude's instruction
+argument also stays below 120,000 bytes; its diff uses stdin. Context is at most
+24,000 bytes, reduced to
 20,000 by this repository's context builder. Projects may lower budgets.
-Oversize required scopes block before any provider call. No chunk coordinator or
-combining partial PASS results; preserve custody/budgets.
+`input_limits.py` owns these budgets; see [verified headless limits](../../docs/reference/pr-review-headless-limits.md).
+Oversized full input blocks before provider calls. `aws_summary.py` validates
+every metadata/hunk unit and literal evidence against retained raw AWS input.
+Missing, invalid or incomplete summaries block required Kiro coverage; their
+uncertainties enter adjudication. Reports disclose the input basis. Accounting
+does not prove semantic completeness. No prefix or combined partial PASS earns coverage.
 
 Run `python3 -m unittest discover -s scripts/pr-review -p 'test_*role*.py'`.
 Offline CI: `.github/workflows/pr-review-roles-tests.yml`. Also verify

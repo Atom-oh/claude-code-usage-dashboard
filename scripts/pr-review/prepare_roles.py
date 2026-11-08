@@ -163,6 +163,7 @@ def prepare(head, base, work, supplied_diff=None):
                 raise ValueError("Invalid scoped context manifest or increased cap")
             provenance["scoped_context"] = manifest
             cap = effective_cap
+    provenance["aws_source_revisions"] = [merge_base, head]
     work.mkdir(parents=True, exist_ok=True)
     (work / "project-context.md").write_bytes(context.encode("utf-8"))
     (work / "role-diff.txt").write_bytes(diff.encode("utf-8"))
