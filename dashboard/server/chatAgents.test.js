@@ -327,3 +327,43 @@ test("analysis usage queries receive the shared disconnect cancellation signal",
   assert.equal(calls, 2);
   assert.ok(!response.chunks.some(c => /event: (done|error)/.test(c)));
 });
+
+test("the budget-exhausted summary request carries the tool call that produced each stored result", async () => {
+  let rounds = 0;
+  const response = new Response();
+  const usage = { from: "2026-11-06T00:00:00Z", to: "2026-11-07T00:00:00Z", dimension: "model" };
+  const sql = "SELECT 1 AS cost FROM otel_logs WHERE UserEmail = 'synthetic@example.invalid'";
+  await createChatHandler({ limit: () => false,
+    query: async () => ({ rows: [{ cost: 1 }], truncated: false }),
+    lookupUsage: async () => ({ rows: [{ model: "synthetic", cost_usd: 1 }], totals: { cost_usd: 1 }, source: "dashboard", truncated: false }),
+    runTurn: async ({ agent, allowTools, messages }) => {
+      if (agent === "chat") return allowTools ? delegate() : done();
+      if (allowTools) return ++rounds === 2 ? tool("get_usage_summary", usage) : tool("run_sql", { sql });
+      assert.ok(!messages.some(m => m.content.some(b => b.toolUse || b.toolResult)));
+      const summary = JSON.parse(messages[0].content[0].text);
+      const requests = Object.fromEntries(summary.observations.map(o => [o.result_id, o.request]));
+      assert.equal(summary.observations.length, 4);
+      assert.deepEqual(requests.query_1, { tool: "run_sql", input: JSON.stringify({ sql: sql.replace("synthetic@", "sy******@") }) });
+      assert.deepEqual(requests.query_2, { tool: "get_usage_summary", input: JSON.stringify(usage) });
+      assert.deepEqual(requests.query_4, requests.query_1);
+      assert.ok(!JSON.stringify(summary).includes("synthetic@"));
+      return done("Attributed evidence.");
+    },
+  })(request(), response);
+  assert.equal(rounds, 4);
+  assertSuccess(response);
+});
+
+test("failure logs name the model that was actually invoked", async (t) => {
+  const logs = [];
+  const original = console.error;
+  console.error = (...args) => logs.push(args);
+  t.after(() => { console.error = original; });
+  const response = new Response();
+  await createChatHandler({ limit: () => false, runTurn: async ({ agent }) => {
+    if (agent === "chat") return delegate();
+    throw new Error("synthetic analysis failure");
+  } })(request(), response);
+  assert.ok(response.chunks.some(c => c.startsWith("event: error")));
+  assert.equal(logs.at(-1)[1].modelId, ANALYSIS_MODEL_ID);
+});

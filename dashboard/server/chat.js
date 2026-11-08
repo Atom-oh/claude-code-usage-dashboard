@@ -94,7 +94,6 @@ export function maskEmailValues(rows) {
 export const piiMaskEnabled = ["1", "true"].includes((process.env.PII_MASK_ENABLED || "").toLowerCase());
 export const CHAT_MODEL_ID = process.env.CHAT_MODEL_ID || "global.anthropic.claude-haiku-5-5";
 export const ANALYSIS_MODEL_ID = process.env.ANALYSIS_MODEL_ID || "global.anthropic.claude-sonnet-5-5";
-const MODEL_ID = CHAT_MODEL_ID;
 const MAX_HOPS = 4;
 
 // 워크샵 계정은 Bedrock 호출을 us-west-2만 허용 — 인프라 리전(AWS_REGION)과 달라야 하므로
@@ -621,6 +620,7 @@ export function createChatHandler({ query = queryReadonly, runTurn = runConverse
     deadline.unref();
 
     let hop = 0;
+    let modelId = CHAT_MODEL_ID; // Model of the latest Bedrock call, for failure logs.
     let stopReason = null;
     try {
       const history = req.body?.messages;
@@ -634,7 +634,10 @@ export function createChatHandler({ query = queryReadonly, runTurn = runConverse
       // Pin live pricing and the timestamp across signed thinking replays.
       const now = new Date().toISOString();
       const analysisSystem = systemPrompt(ANALYSIS_SYSTEM);
-      const call = options => runTurn({ ...options, now, analysisSystem });
+      const call = options => {
+        modelId = options.agent === "analysis" ? ANALYSIS_MODEL_ID : CHAT_MODEL_ID;
+        return runTurn({ ...options, now, analysisSystem });
+      };
       const analysisHistory = messages.map(m => ({ ...m, content: m.content.map(b => ({ ...b })) }));
       send("status", { message: "질문을 이해하는 중..." });
       let routerText = false;
@@ -708,7 +711,7 @@ export function createChatHandler({ query = queryReadonly, runTurn = runConverse
     } catch (err) {
       if (abortController.signal.aborted) {
         if (timedOut) {
-          console.warn("/api/chat", { hop, modelId: MODEL_ID, type: "timeout", timeoutMs });
+          console.warn("/api/chat", { hop, modelId, type: "timeout", timeoutMs });
           send("error", { message: "처리 시간이 초과되었습니다. 질문 범위를 좁혀 다시 시도해 주세요." });
         }
         return;
@@ -720,7 +723,7 @@ export function createChatHandler({ query = queryReadonly, runTurn = runConverse
       // 안내하므로 로그 접근자 전원에게 노출된다). 응답 경로에만 마스킹이 있었다.
       console.error("/api/chat", {
         hop,
-        modelId: MODEL_ID,
+        modelId,
         name: err?.name,
         status: err?.$metadata?.httpStatusCode,
         requestId: err?.$metadata?.requestId,

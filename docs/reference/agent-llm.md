@@ -53,7 +53,7 @@ Each summary returns one selected dimension and its totals to limit model contex
 | Model rounds | One Haiku routing/direct-answer call; one optional Sonnet delegation with four tool-enabled rounds and one optional tool-disabled summary; one final tool-disabled Haiku answer |
 | Data calls | Eight SQL/usage-summary attempts per turn, counted independently of rounds; invalid inputs consume slots; one summary can execute multiple bounded internal DB queries |
 | Model output | `maxTokens: 8000` for Sonnet, `4800` for Haiku; analysis handoff capped at 12,000 characters with an incomplete flag |
-| Summary observations | A budget-exhausted or truncated analysis summary receives stored results newest first, up to 40,000 serialized JSON characters; omitted results set `observations_truncated` and the handoff `incomplete` flag |
+| Summary observations | A budget-exhausted or truncated analysis summary receives stored results newest first, each with the producing tool call (`run_sql` text or `get_usage_summary` input, email-masked, at most 2,000 characters), up to 40,000 serialized JSON characters in total; omitted results set `observations_truncated` and the handoff `incomplete` flag |
 | Retry | Initial Bedrock throttling failures retried twice with abort-aware 300/600 ms waits |
 | SQL output | At most 200 rows, plus a truncation flag; 30-second query abort timer |
 | Tool context | At most 20,000 serialized JSON characters per data result including result reference/metadata, preserving row boundaries and `truncated` |

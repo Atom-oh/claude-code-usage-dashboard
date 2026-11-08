@@ -2,7 +2,6 @@
 # Model regions retain the existing wildcard; model and profile IDs remain scoped.
 locals {
   chat_model_routing_pattern = "/^(global|us|eu|apac|jp|au|in)\\./"
-  chat_foundation_model      = replace(var.chat_model_id, local.chat_model_routing_pattern, "")
   dashboard_model_ids        = distinct([var.chat_model_id, var.analysis_model_id])
 }
 

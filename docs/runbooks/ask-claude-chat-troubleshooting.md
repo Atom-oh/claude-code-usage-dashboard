@@ -89,7 +89,9 @@ is missing. Grouping is inferred per `SessionId`: any nonempty model not startin
 model gives Bedrock, otherwise unknown.
 It does not identify the emitting client or enforce a static experiment group.
 
-Cost-page spend and ordinary chat cost answers use client-reported `cost.usage`. Align the
+Cost-page spend uses client-reported `cost.usage`. The analysis prompt prefers
+`get_usage_summary`, which reuses the dashboard aggregation and pricing adapters, for chat
+cost answers; raw-SQL answers still read `cost.usage` directly. Align the
 window, filters, unknown-session inclusion, and report coverage before comparing them.
 Positive reports can still be incomplete; absent/zero reports with tokens are not confirmed
 free use. Token-price computed cost and cache-write TTL assumptions remain diagnostics.
