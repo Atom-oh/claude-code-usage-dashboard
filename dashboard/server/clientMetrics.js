@@ -31,6 +31,9 @@ const UNPRICED_REASONS = {
   codex: ["unknown_backend", "scope", "unknown_model", "invalid_usage"],
 };
 
+// Shared-view backend filter vocabulary; the chat usage tool schema reuses it.
+export const CLIENT_BACKENDS = ["bedrock-mantle", "bedrock-runtime", "anthropic", "unknown"];
+
 export function validateClientFilters(raw, enabledClients) {
   const clients = selectClients(raw.client, enabledClients);
   if (raw.group || raw.project)
@@ -46,7 +49,7 @@ export function validateClientFilters(raw, enabledClients) {
   }
   const backend = raw.backend;
   if (backend !== undefined && backend !== "" && backend !== "all"
-      && !["bedrock-mantle", "bedrock-runtime", "anthropic", "unknown"].includes(backend))
+      && !CLIENT_BACKENDS.includes(backend))
     throw new ValidationError("invalid backend", "select a supported backend");
   result.backend = backend && backend !== "all" ? backend : "";
   const team = parseTeam(raw.team);
@@ -604,7 +607,8 @@ export function effectiveClientEnd(from, to, clients, intervalHours) {
   return new Date(resolved.to.replace(" ", "T") + "Z");
 }
 
-export async function clientOverview(from, to, raw, enabledClients) {
+export async function clientOverview(from, to, raw, enabledClients, externalSignal) {
+  externalSignal?.throwIfAborted();
   const validated = validateClientFilters(raw, enabledClients);
   const costView = validateClientView(raw);
   const compactTime = validateTimeFormat(raw);
@@ -631,7 +635,7 @@ export async function clientOverview(from, to, raw, enabledClients) {
       return rows.map((row) => ({ ...row, client }));
     }));
   }
-  const lists = await clientQueryBatch(jobs);
+  const lists = await clientQueryBatch(jobs, externalSignal);
   const records = bucketSeconds > nativeSeconds ? rebucketRows(lists.flat(), from, bucketSeconds) : lists.flat();
   observePricingModels(records.filter(row => row.client === "codex" && row.kind === "usage"));
   // The route validates modelTime; only the literal "1" enables the dimension.
