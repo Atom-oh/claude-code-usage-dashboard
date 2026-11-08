@@ -7,6 +7,7 @@ import { PageHeader } from "../components/PageHeader.jsx";
 import { Card } from "../components/Card.jsx";
 import { useChatStream, useStickToBottom } from "../useChatStream.js";
 import { ChatTrace } from "../components/ChatTrace.jsx";
+import { ChatCharts } from "../components/ChatCharts.jsx";
 import { useRange } from "../RangeContext.jsx";
 import { useConfig } from "../ConfigContext.jsx";
 
@@ -144,7 +145,7 @@ export default function Analytics({ embedded = false }) {
             <div ref={containerRef} onScroll={onScroll} className="flex flex-col gap-3 p-4 max-h-[60vh] overflow-y-auto">
               {msgs.map((m, i) => {
                 // 첫 토큰 도착 전 빈 assistant placeholder는 진행 중이 아니면 렌더하지 않는다.
-                if (!m.content && !(busy && i === msgs.length - 1)) return null;
+                if (!m.content && !m.charts?.length && !(busy && i === msgs.length - 1)) return null;
                 // useChatStream이 비-2xx 응답의 JSON body.error를 그대로 err.message로 쓰므로
                 // (index.js/chat.js가 이미 사용자용 한국어 문구를 준다) 여기서 상태코드로 문구를
                 // 되짚어 재구성할 필요가 없다.
@@ -155,7 +156,8 @@ export default function Analytics({ embedded = false }) {
                       "max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed",
                       m.role === "user"
                         ? "self-end whitespace-pre-wrap bg-brand-500 text-white"
-                        : "self-start bg-ink-100 text-ink-800 chat-md"
+                        : "self-start bg-ink-100 text-ink-800 chat-md",
+                      m.charts?.length && "w-full"
                     )}
                   >
                     {m.role === "user" ? (
@@ -165,6 +167,7 @@ export default function Analytics({ embedded = false }) {
                     ) : (
                       "…"
                     )}
+                    {m.role === "assistant" && <ChatCharts charts={m.charts} />}
                   </div>
                 );
               })}
