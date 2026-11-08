@@ -73,6 +73,11 @@ class AwsScopeTests(unittest.TestCase):
                 self.assertEqual({tag for tag, role in plan["roles"].items() if role["required"]},
                                  {"codex", "claude-self"})
 
+    def test_immutable_source_identity_cannot_be_omitted_from_collected_provenance(self):
+        import role_review
+        with self.assertRaisesRegex(role_review.Invalid, "invalid_aws_scope"):
+            role_review.source_revisions({"merge_base_sha": BASE}, HEAD)
+
     def test_architecture_resource_and_aws_operation_paths_activate_kiro(self):
         for path, content in (
             ("docs/architecture.md", "service boundaries"),

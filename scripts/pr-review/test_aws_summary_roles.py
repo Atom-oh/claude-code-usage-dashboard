@@ -71,6 +71,27 @@ class AwsSummaryTests(unittest.TestCase):
             self.assertIn("Review the changed resource value", delivered)
             self.assertLess(len((instruction + "\n" + delivered).encode()), 120000)
 
+    def test_summary_is_created_when_only_deployment_framing_exceeds_budget(self):
+        self.context.write_text("x" * 24000)
+        raw = scope.patch("infra/main.tf", after="x")
+        self.prepare(raw)
+        body = (self.work / "roles/kiro-fable.txt").read_text()
+        instruction, payload = role_review.frame_request(body, raw, "0" * 32)
+        padding = 119999 - len((instruction + "\n" + payload).encode())
+        plan = self.prepare(scope.patch("infra/main.tf", after="x" * (padding + 1)))
+        self.assertEqual(plan["roles"]["kiro-fable"]["input_basis"], "raw_diff")
+        self.assertEqual(plan["roles"]["kiro-sol"]["input_basis"], "chair_summary")
+        with patch.object(aws_summary, "execute",
+                          return_value=(0, json.dumps(self.packet(plan)), "")) as execute:
+            self.assertTrue(aws_summary.summarize(self.work))
+            self.assertEqual(execute.call_count, 1)
+        for tag in ("kiro-fable", "kiro-sol"):
+            role_review.issue_request(self.work, tag)
+        self.assertNotIn("summary_sha256",
+                         role_review.issued_request(self.work, plan, "kiro-fable"))
+        self.assertIn("summary_sha256",
+                      role_review.issued_request(self.work, plan, "kiro-sol"))
+
     def test_missing_or_invented_unit_blocks(self):
         plan = self.large_plan()
         packet = self.packet(plan)

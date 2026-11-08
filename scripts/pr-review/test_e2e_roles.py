@@ -65,8 +65,13 @@ if name == "claude" and argv[1].startswith("Produce a bounded AWS"):
                      "complete": True, "entries": entries, "uncertainties": []}))
     raise SystemExit(0)
 model = argv[argv.index("--model") + 1]
-tag = {"global.openai.gpt-6-astra":"codex", "claude-opus-5":"kiro-fable",
-       "gpt-5.6-sol":"kiro-sol", "global.anthropic.claude-fable-5-1":"claude-self"}[model]
+if name == "kiro-cli":
+    assert model == "claude-opus-5-5"
+    tag = next(tag for tag in ("kiro-fable", "kiro-sol")
+               if f"Review tag: {tag}\n" in stdin)
+else:
+    tag = {"global.openai.gpt-6-astra":"codex",
+           "global.anthropic.claude-fable-5-1":"claude-self"}[model]
 plan = json.loads((root / "work/role-plan.json").read_text())
 role = plan["roles"][tag]
 paths = role["paths"]
@@ -289,12 +294,20 @@ class EndToEndRoleTests(unittest.TestCase):
                              ["settings", "chat.disableMarkdownRendering", "--format", "json"])
             self.assertTrue(all(call["cwd"] == home for call in cell))
             self.assertTrue(all(call["stdin"] == "" for call in cell[:3]))
+            for call in cell[2:]:
+                self.assertEqual(call["args"][call["args"].index("--model") + 1],
+                                 "claude-opus-5-5")
             self.assertIn("preflight-canary.txt", cell[2]["args"][1])
             self.assertIn("BEGIN DIFF ", cell[3]["stdin"])
             self.assertNotIn("BEGIN DIFF ", " ".join(cell[3]["args"]))
             self.assertEqual(cell[3]["args"][-2:], ["--agent-engine", "v3"])
             self.assertFalse(Path(home).exists())
         self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+        plan = json.loads((self.work / "role-plan.json").read_text())
+        self.assertEqual({plan["roles"][tag]["role"] for tag in ("kiro-fable", "kiro-sol")},
+                         {"aws", "deployment"})
+        self.assertTrue(all(plan["roles"][tag]["family"] == "Anthropic"
+                            for tag in ("kiro-fable", "kiro-sol")))
 
     def test_mixed_change_passes_only_resource_patches_to_kiro_processes(self):
         calls = self.run_pipeline(

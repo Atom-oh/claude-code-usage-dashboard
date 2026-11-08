@@ -7,13 +7,14 @@ required coverage blocks the review. See [ADR-011](decisions/ADR-011-specialist-
 | Slot | Configured model | Responsibility |
 | --- | --- | --- |
 | `codex` | `global.openai.gpt-6-astra` | Implementation, concurrency, errors and tests |
-| `kiro-fable` | `claude-opus-5` | AWS architecture, IAM, networking and service constraints |
-| `kiro-sol` | `gpt-5.6-sol` | AWS resource deployment order, contracts, lifecycle and recovery |
+| `kiro-fable` | `claude-opus-5-5` | AWS architecture, IAM, networking and service constraints |
+| `kiro-sol` | `claude-opus-5-5` | AWS resource deployment order, contracts, lifecycle and recovery |
 | `claude-self` | `global.anthropic.claude-fable-5-1` | Authentication, data boundaries, requirements, API and ADR consistency |
 
-The shared `kiro-fable` tag identifies the Opus slot. Kiro catalog aliases differ
-from Bedrock inference-profile IDs. These are configured model identities, not
-attestation of the provider's internal routing or weights.
+The shared Kiro tags are stable role identifiers; both slots use Opus 5.5 in
+separate sessions. Codex/Claude retain independent OpenAI/Anthropic full-change
+coverage. Kiro catalog aliases differ from Bedrock inference-profile IDs. These
+are configured identities, not attestation of provider routing or weights.
 
 ## Routing and evidence
 
@@ -48,7 +49,8 @@ Every result confirms its role, HEAD and reviewed paths. Codex and Claude must
 cover all changed paths; Kiro must cover all projected paths. Host metadata binds
 each request to both the canonical complete diff hash and its own scope hash,
 and records the process status. Validation reconstructs scopes from `complete.diff`
-and pinned source identities;
+and pinned source identities. Collected merge-base provenance requires both source
+revisions;
 rewriting a plan digest cannot deactivate a required AWS review or select an
 arbitrary subset. Nonzero exits, malformed
 or empty reports, missing paths, invalid fingerprints, model selection errors,
@@ -70,8 +72,8 @@ documented V3 maxima. See [verified headless limits](reference/pr-review-headles
 
 An oversized AWS scope triggers one shared chair packet while Codex and Claude
 retain the complete raw change. The packet must account for every metadata/hunk
-unit, bind HEAD/source hashes and quote literal source evidence. Both Kiro receipts
-bind its hash; reports disclose `chair_summary`. Missing, invalid, incomplete or
+unit, bind HEAD/source hashes and quote literal source evidence. Each receipt using
+the packet binds its hash; reports disclose `chair_summary`. Missing, invalid, incomplete or
 oversized packets block required coverage. Packet uncertainties enter adjudication
 even if a specialist omits them. Unit accounting does not prove semantic completeness:
 Kiro must report insufficient detail. No raw prefix or combined partial PASS earns

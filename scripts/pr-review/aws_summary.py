@@ -148,7 +148,8 @@ def summarize(work):
     remove(work / "aws-summary.json")
     if not plan["input_complete"]:
         return False
-    if plan["roles"]["kiro-fable"].get("input_basis") != "chair_summary":
+    if not any(role.get("input_basis") == "chair_summary"
+               for tag, role in plan["roles"].items() if tag.startswith("kiro-")):
         return True
     from prepare_roles import project_policy
     from synthesize_roles import chair_options

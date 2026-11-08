@@ -7,11 +7,12 @@ results feed aggregation and, when needed, the chair. See
 | Tag | Requested model | Scope |
 | --- | --- | --- |
 | codex | `global.openai.gpt-6-astra` | Implementation/tests |
-| kiro-fable | `claude-opus-5` | AWS/IAM/network |
-| kiro-sol | `gpt-5.6-sol` | AWS resource deployment/contracts/recovery |
+| kiro-fable | `claude-opus-5-5` | AWS/IAM/network |
+| kiro-sol | `claude-opus-5-5` | AWS resource deployment/contracts/recovery |
 | claude-self | `global.anthropic.claude-fable-5-1` | Auth/data/API/ADR |
 
-`kiro-fable` means Opus. `ROLES` governs specialists; legacy files govern legacy
+Both Kiro slots use Opus 5.5 in separate sessions; tags identify responsibilities,
+not model families. `ROLES` governs specialists; legacy files govern legacy
 execution. Kiro/Bedrock IDs differ. English is requested, not validated; configured
 IDs do not attest model weights.
 

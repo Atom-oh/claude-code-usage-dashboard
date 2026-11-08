@@ -49,9 +49,9 @@ from input_limits import (
 ROLES = {
     "codex": ("implementation", "OpenAI", "global.openai.gpt-6-astra",
               "Implementation correctness, concurrency and tests"),
-    "kiro-fable": ("aws", "Anthropic", "claude-opus-5",
+    "kiro-fable": ("aws", "Anthropic", "claude-opus-5-5",
                    "AWS, IAM, network and service constraints"),
-    "kiro-sol": ("deployment", "OpenAI", "gpt-5.6-sol",
+    "kiro-sol": ("deployment", "Anthropic", "claude-opus-5-5",
                  "AWS resource deployment, contracts, lifecycle and recovery"),
     "claude-self": ("requirements", "Anthropic", "global.anthropic.claude-fable-5-1",
                     "Authentication, data, API and ADR requirements"),
@@ -368,6 +368,8 @@ def source_blob(revision, path):
 def source_revisions(provenance, head):
     revisions = provenance.get("aws_source_revisions")
     if revisions is None:
+        if "merge_base_sha" in provenance:
+            raise Invalid("invalid_aws_scope")
         return ()
     if (not isinstance(revisions, list) or len(revisions) != 2
             or any(not isinstance(rev, str) or not SHA.fullmatch(rev) for rev in revisions)
