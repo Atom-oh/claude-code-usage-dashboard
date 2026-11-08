@@ -67,3 +67,16 @@ test("failure cancels started siblings and never starts later private tasks", as
   assert.equal(cancelled, true);
   assert.equal(laterStarted, false);
 });
+
+test("a private analysis subscriber can cancel its batch without starting later tasks", async () => {
+  const parent = new AbortController();
+  let laterStarted = false;
+  const result = clientQueryBatch([
+    signal => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })),
+    signal => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })),
+    async () => { laterStarted = true; return []; },
+  ], parent.signal);
+  parent.abort(new Error("synthetic cancellation"));
+  await assert.rejects(result, /synthetic cancellation/);
+  assert.equal(laterStarted, false);
+});

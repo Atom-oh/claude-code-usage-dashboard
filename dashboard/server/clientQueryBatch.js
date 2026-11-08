@@ -1,9 +1,16 @@
 // A failed overview has no consumer for its remaining private queries.
-// This signal belongs to one shared cache load, never to one HTTP subscriber.
-export async function clientQueryBatch(tasks) {
+// A shared cache load has no subscriber signal. A private, uncached analysis
+// invocation may pass its own signal; it cannot cancel a shared cache load.
+export async function clientQueryBatch(tasks, externalSignal) {
+  externalSignal?.throwIfAborted();
   const abort = new AbortController();
   const results = new Array(tasks.length);
   let next = 0, failed = false, original;
+  const onAbort = () => {
+    if (!failed) { failed = true; original = externalSignal.reason; }
+    abort.abort(externalSignal.reason);
+  };
+  externalSignal?.addEventListener("abort", onAbort, { once: true });
   // At most two private queries per overview enter the shared DB budget at once.
   // Keep result order and stop unstarted work after the first failure.
   const worker = async () => {
@@ -19,7 +26,11 @@ export async function clientQueryBatch(tasks) {
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(2, tasks.length) }, worker));
+  try {
+    await Promise.all(Array.from({ length: Math.min(2, tasks.length) }, worker));
+  } finally {
+    externalSignal?.removeEventListener("abort", onAbort);
+  }
   if (failed) throw original;
   return results;
 }
