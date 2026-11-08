@@ -49,9 +49,9 @@ from input_limits import (
 ROLES = {
     "codex": ("implementation", "OpenAI", "global.openai.gpt-6-astra",
               "Implementation correctness, concurrency and tests"),
-    "kiro-fable": ("aws", "Anthropic", "claude-opus-5-5",
+    "kiro-fable": ("aws", "Anthropic", "claude-opus-5.5",
                    "AWS, IAM, network and service constraints"),
-    "kiro-sol": ("deployment", "Anthropic", "claude-opus-5-5",
+    "kiro-sol": ("deployment", "Anthropic", "claude-opus-5.5",
                  "AWS resource deployment, contracts, lifecycle and recovery"),
     "claude-self": ("requirements", "Anthropic", "global.anthropic.claude-fable-5-1",
                     "Authentication, data, API and ADR requirements"),
