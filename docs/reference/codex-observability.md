@@ -5,13 +5,60 @@ one shell call exported logs, delta metrics and traces to a loopback OTLP receiv
 It exposed 39 distinct metric names and 136 distinct span operation names. These
 are observations from one run, not a fixed catalog or a promise every feature emits.
 
-Primary configuration references:
+Official configuration references checked on 2026-11-08:
 
 - [Advanced configuration](https://developers.openai.com/codex/config-advanced/)
 - [Configuration reference](https://developers.openai.com/codex/config-reference/)
 
 The documentation separates OTel export from product analytics. A catalog entry
 alone does not establish its availability in this deployment.
+
+## Export and configuration
+
+Codex configures logs, metrics and traces separately through `otel.exporter`,
+`otel.metrics_exporter` and `otel.trace_exporter`. Log export defaults to `none`;
+the configuration reference lists `statsig` as the metrics exporter default.
+Choose OTLP/HTTP or OTLP/gRPC explicitly for the project's Collector, using the
+[collection runbook](../runbooks/codex-telemetry.md) or
+[device Collector guide](../../dashboard/collector/README.md).
+
+The advanced guide says Codex ignores `otel` in project-local `.codex/config.toml`.
+Configure the active user-level configuration root, account for managed requirements
+and launch-time overrides, then restart the relevant CLI, editor extension or
+app-server. Enabled exporters batch asynchronously; configuration or a running
+Collector alone does not prove delivery.
+
+`analytics.enabled` is a separate analytics preference. The upstream advanced guide
+and this project's [installer](../../dashboard/collector/install.py) warn that
+disabling analytics can disable metrics collection. Preserve the user's privacy
+choice and verify the client version and received signals instead of changing that
+preference to repair a missing cost row.
+
+Keep prompt-content logging disabled unless explicitly intended. The Collector
+scrubs known content fields, but neither those rules nor UI masking prove arbitrary
+sensitive content is absent or access is restricted.
+
+## Missing users or costs
+
+The shared user and cost views require recognized Codex log records. Usage and
+estimates come from usage-bearing `response.completed` SSE/WebSocket events;
+a generic completion without token fields is not usage. Runtime metrics and spans
+remain diagnostics, so receiving them does not prove a user's costs were collected.
+
+Check the selected range and client, then inspect each signal independently. Clear
+model/backend filters when checking model-less diagnostic metrics. Identity uses
+resource `user.email`, falling back to `enduser.id` when the email is empty.
+A record with neither cannot be attributed to a named user. Backend attribution
+can remain `unknown` and be excluded by a Bedrock filter; see
+[backend resolution](../decisions/ADR-017-backend-cost-fallback.md).
+
+If metrics arrive without usage, check the active client's log exporter, identity
+and Collector log pipeline, then make a new request and look for a usage-bearing
+completion. If completion usage exists without a price, check model/backend
+attribution and pricing coverage. A missing rate is unavailable, not zero cost.
+Use the [collection runbook](../runbooks/codex-telemetry.md) or
+[device troubleshooting guide](../../dashboard/collector/README.md#troubleshooting)
+for operating steps. Do not publish raw configuration, headers, prompts or logs.
 
 ## Supported surfaces
 
@@ -24,7 +71,7 @@ alone does not establish its availability in this deployment.
 | API error records per request and retry fraction | Request status, stream failures and zero-based attempt | HTTP and failed-stream records use the overview's error definition. Multiple error records per request are possible; this is not a failure probability. |
 | Tool outcomes and approvals | `tool_result`, `tool_decision` | Permission decisions include automatic approvals; they are not retained-code acceptance. |
 | Latency distributions | Valid per-event durations | Empirical percentiles of observations; request, SSE processing, TTFT, tools and startup stages remain distinct. |
-| Runtime settings and prompt length | Conversation-start and prompt metadata | Start settings are snapshots. No prompt body is exposed. |
+| Runtime settings and prompt length | Conversation-start and prompt metadata | Start settings are snapshots. The dashboard displays prompt length, not prompt text. |
 | Runtime/turn/tool/skill counters and histograms | Native metrics | Independently labelled diagnostics, never added to log-derived usage or cost. |
 | Internal operations and parent relationships | Native spans | Observed span window, not guaranteed complete turn time. Overlapping durations are not summed. |
 | LOC, commits, PR output and saved hours | Not present in this integration | Requires separate Git/CI/activity evidence; no causal ROI or work-time estimate is fabricated. |

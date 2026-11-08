@@ -21,7 +21,9 @@ test("SSE charts survive fragmented UTF-8 transport without becoming answer text
   stubStream(event("chart", chart) + event("text", { text: "부분 비용" }) + event("done", {}));
   const onChart = vi.fn(), onText = vi.fn();
   await streamChat([], { onChart, onText, onStatus: vi.fn() });
+  expect(onChart).toHaveBeenCalledTimes(1);
   expect(onChart).toHaveBeenCalledWith(chart);
+  expect(onText).toHaveBeenCalledTimes(1);
   expect(onText).toHaveBeenCalledWith("부분 비용");
 });
 
@@ -33,7 +35,11 @@ test("charts stay with their answer and are excluded from later model history", 
   await act(() => result.current.ask("다음 질문"));
   expect(result.current.msgs[1].charts).toEqual([chart]);
   const sent = JSON.parse(fetch.mock.calls.at(-1)[1].body);
-  expect(sent.messages.every(m => !("charts" in m))).toBe(true);
+  expect(sent.messages).toEqual([
+    { role: "user", content: "첫 질문" },
+    { role: "assistant", content: "답변" },
+    { role: "user", content: "다음 질문" },
+  ]);
   expect(JSON.stringify(sent)).not.toContain('"data"');
 });
 
@@ -47,9 +53,9 @@ test("observed charts remain visible when the final writer fails", async () => {
   await act(() => result.current.ask("다음 질문"));
   expect(result.current.msgs[1].charts).toEqual([chart]);
   const sent = JSON.parse(fetch.mock.calls.at(-1)[1].body);
+  expect(sent.messages).toEqual([{ role: "user", content: "첫 질문\n다음 질문" }]);
   expect(JSON.stringify(sent)).not.toContain('"data"');
   expect(JSON.stringify(sent)).not.toContain("synthetic writer failure");
-  expect(sent.messages).toEqual([{ role: "user", content: "첫 질문\n다음 질문" }]);
 });
 
 test("chart-only turns remain visible without entering model history", async () => {
