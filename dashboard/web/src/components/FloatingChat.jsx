@@ -78,7 +78,7 @@ export function FloatingChat() {
                     m.charts?.length && "w-full"
                   )}
                 >
-                  {m.role === "user" ? m.content : m.content ? <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown> : "…"}
+                  {m.role === "user" ? m.content : m.content ? <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown> : busy && i === msgs.length - 1 ? "…" : null}
                   {m.role === "assistant" && <ChatCharts charts={m.charts} />}
                 </div>
               );

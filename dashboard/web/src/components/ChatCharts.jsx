@@ -6,15 +6,25 @@ import { basisLabel } from "../clientPresentation.js";
 
 function formatValue(value, unit) {
   if (value === null) return "— (알 수 없음)";
+  if (unit === "usd" && value !== 0 && Math.abs(value) < 0.000001) return `$${value.toExponential(2)}`;
   if (unit === "usd") return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: value > 0 && value < 0.01 ? 6 : 2 })}`;
   return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}${unit === "percent" ? "%" : ""}`;
 }
 
+function parseTime(value) {
+  return /(?:Z|[+-]\d{2}:\d{2})$/i.test(String(value)) ? new Date(value) : parseUtc(value);
+}
+
 function Chart({ chart }) {
   const colors = useChartColors();
+  const effective = chart.effective_range;
+  const hasRange = typeof effective?.from === "string" && typeof effective?.to === "string"
+    && Number.isFinite(parseTime(effective.from).getTime()) && Number.isFinite(parseTime(effective.to).getTime());
+  const shortened = hasRange && typeof effective.requested_to === "string"
+    && parseTime(effective.requested_to).getTime() > parseTime(effective.to).getTime();
   const timeLabel = value => {
     if (chart.x_type !== "time") return value;
-    const date = parseUtc(value);
+    const date = parseTime(value);
     return Number.isFinite(date.getTime()) ? date.toLocaleString() : value;
   };
   const Frame = chart.type === "line" ? LineChart : BarChart;
@@ -29,6 +39,10 @@ function Chart({ chart }) {
         {chart.truncated && " · 표시 행 제한"}
         {chart.partial && " · 부분 집계"}
       </div>
+      {hasRange && <div className="mt-1 text-[10px] text-ink-500">
+        집계 기간: {parseTime(effective.from).toLocaleString()} ~ {parseTime(effective.to).toLocaleString()}
+        {shortened && " · 요청 종료 시각보다 짧은 집계"}
+      </div>}
       <div className="mt-2 h-[220px] w-full" aria-label={`${chart.title} 차트`}>
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <Frame data={chart.data} margin={{ top: 8, right: 8, bottom: 8, left: 8 }} accessibilityLayer>
