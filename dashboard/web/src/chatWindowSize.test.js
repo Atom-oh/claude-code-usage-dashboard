@@ -32,3 +32,15 @@ test("the remembered size round-trips and malformed storage is ignored", () => {
   expect(loadChatSize(memory({ [CHAT_SIZE_KEY]: '{"w":"wide"}' }))).toBeNull();
   expect(() => saveChatSize({ w: 1, h: 1 }, { setItem: () => { throw new Error("quota"); } })).not.toThrow();
 });
+
+test("a localStorage getter that throws (blocked storage) is treated as no remembered size", () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, get() { throw new Error("SecurityError"); } });
+  try {
+    expect(loadChatSize()).toBeNull();
+    expect(() => saveChatSize({ w: 500, h: 500 })).not.toThrow();
+  } finally {
+    if (original) Object.defineProperty(globalThis, "localStorage", original);
+    else delete globalThis.localStorage;
+  }
+});

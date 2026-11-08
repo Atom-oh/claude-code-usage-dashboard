@@ -54,6 +54,7 @@ test("the floating window can be resized from its corner handle, by keyboard and
 
   fireEvent.click(screen.getByRole("button", { name: "창 크게 보기" }));
   expect([dialog.style.width, dialog.style.height]).toEqual(["960px", "888px"]);
+  expect(JSON.parse(localStorage.getItem("ccdash.chatWindowSize"))).toEqual({ w: 720, h: 540 });
   fireEvent.click(screen.getByRole("button", { name: "창 크기 되돌리기" }));
   expect([dialog.style.width, dialog.style.height]).toEqual(["720px", "540px"]);
 });

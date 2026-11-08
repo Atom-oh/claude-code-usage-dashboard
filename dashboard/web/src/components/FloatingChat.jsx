@@ -69,7 +69,8 @@ export function FloatingChat() {
       setRestore(null);
     } else {
       setRestore(size);
-      resizeTo(expandedChatSize(viewport()));
+      // The expanded preset is temporary; only the normal size is remembered.
+      resizeTo(expandedChatSize(viewport()), { persist: false });
     }
   };
 
@@ -106,7 +107,7 @@ export function FloatingChat() {
             onPointerCancel={onHandleUp}
             onKeyDown={onHandleKey}
             title="드래그해서 창 크기를 조절합니다"
-            className="absolute left-0 top-0 z-10 h-4 w-4 cursor-nwse-resize rounded-br-md border-b border-r border-ink-200 bg-ink-100/70 hover:bg-ink-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            className="absolute left-0 top-0 z-10 h-4 w-4 cursor-nwse-resize touch-none rounded-br-md border-b border-r border-ink-200 bg-ink-100/70 hover:bg-ink-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           />
           <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
             <div>

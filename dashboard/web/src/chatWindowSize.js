@@ -21,18 +21,21 @@ export function expandedChatSize(viewport) {
   return clampChatSize({ w: Math.min(960, viewport.w), h: viewport.h }, viewport);
 }
 
-export function loadChatSize(storage = globalThis.localStorage) {
+// Resolve localStorage inside try: some browsers throw SecurityError from the getter itself.
+export function loadChatSize(storage) {
   try {
-    const parsed = JSON.parse(storage?.getItem(CHAT_SIZE_KEY) ?? "null");
+    const store = storage ?? globalThis.localStorage;
+    const parsed = JSON.parse(store?.getItem(CHAT_SIZE_KEY) ?? "null");
     return parsed && Number.isFinite(parsed.w) && Number.isFinite(parsed.h) ? { w: parsed.w, h: parsed.h } : null;
   } catch {
     return null;
   }
 }
 
-export function saveChatSize(size, storage = globalThis.localStorage) {
+export function saveChatSize(size, storage) {
   try {
-    storage?.setItem(CHAT_SIZE_KEY, JSON.stringify({ w: size.w, h: size.h }));
+    const store = storage ?? globalThis.localStorage;
+    store?.setItem(CHAT_SIZE_KEY, JSON.stringify({ w: size.w, h: size.h }));
   } catch {
     // Private mode or a full quota only loses the remembered size.
   }
