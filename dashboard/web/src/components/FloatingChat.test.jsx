@@ -31,3 +31,40 @@ test("the floating widget renders chart events and keeps a chart received before
   expect(screen.getByText(/커버리지 미확인/)).toBeTruthy();
   expect(screen.getByText(/표시 행 제한/)).toBeTruthy();
 });
+
+test("the floating window can be resized from its corner handle, by keyboard and with the expand toggle", () => {
+  localStorage.clear();
+  vi.stubGlobal("innerWidth", 1600);
+  vi.stubGlobal("innerHeight", 1000);
+  render(<FloatingChat />);
+  fireEvent.click(screen.getByRole("button", { name: "Ask Claude" }));
+  const dialog = screen.getByRole("dialog", { name: "Ask Claude" });
+  expect([dialog.style.width, dialog.style.height]).toEqual(["400px", "520px"]);
+
+  const handle = screen.getByRole("separator", { name: /채팅 창 크기 조절/ });
+  fireEvent.pointerDown(handle, { clientX: 1000, clientY: 400, pointerId: 1 });
+  fireEvent.pointerMove(handle, { clientX: 700, clientY: 300, pointerId: 1 });
+  fireEvent.pointerUp(handle, { pointerId: 1 });
+  expect([dialog.style.width, dialog.style.height]).toEqual(["700px", "620px"]);
+  expect(JSON.parse(localStorage.getItem("ccdash.chatWindowSize"))).toEqual({ w: 700, h: 620 });
+
+  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  fireEvent.keyDown(handle, { key: "ArrowDown", shiftKey: true });
+  expect([dialog.style.width, dialog.style.height]).toEqual(["720px", "540px"]);
+
+  fireEvent.click(screen.getByRole("button", { name: "창 크게 보기" }));
+  expect([dialog.style.width, dialog.style.height]).toEqual(["960px", "888px"]);
+  fireEvent.click(screen.getByRole("button", { name: "창 크기 되돌리기" }));
+  expect([dialog.style.width, dialog.style.height]).toEqual(["720px", "540px"]);
+});
+
+test("a remembered window size is restored when the widget opens again", () => {
+  localStorage.setItem("ccdash.chatWindowSize", JSON.stringify({ w: 820, h: 700 }));
+  vi.stubGlobal("innerWidth", 1600);
+  vi.stubGlobal("innerHeight", 1000);
+  render(<FloatingChat />);
+  fireEvent.click(screen.getByRole("button", { name: "Ask Claude" }));
+  const dialog = screen.getByRole("dialog", { name: "Ask Claude" });
+  expect([dialog.style.width, dialog.style.height]).toEqual(["820px", "700px"]);
+  localStorage.clear();
+});
