@@ -10,7 +10,14 @@ python3 "$DIR/prepare_roles.py" --work "$WORK" --prepared-diff "$1"
 KIRO_PREFLIGHT_COHORT="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 export KIRO_PREFLIGHT_COHORT
 pids=()
-for tag in codex kiro-fable kiro-sol claude-self; do
+for tag in codex claude-self; do
+  python3 "$DIR/run_role.py" --work "$WORK" --tag "$tag" &
+  pids+=("$!")
+done
+# A failed summary leaves required Kiro coverage blocked. Full independent
+# reviewers still finish; no chair summary can waive either role.
+python3 "$DIR/aws_summary.py" --work "$WORK" || true
+for tag in kiro-fable kiro-sol; do
   python3 "$DIR/run_role.py" --work "$WORK" --tag "$tag" &
   pids+=("$!")
 done

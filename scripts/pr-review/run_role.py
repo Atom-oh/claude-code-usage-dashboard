@@ -30,8 +30,9 @@ FAILURE = re.compile(
 AGENT = {
     "name": "inline-review",
     "description": "Review inline data without tools, hooks or external resources.",
-    "tools": [], "allowedTools": [], "mcpServers": {}, "resources": [],
-    "hooks": {}, "useLegacyMcpJson": False,
+    "tools": [], "excludedTools": ["*"], "mcpServers": {}, "resources": [],
+    "hooks": [], "includeMcpJson": False, "includePowers": False,
+    "permissions": {"rules": [{"capability": "all", "effect": "deny"}]},
 }
 
 
@@ -184,7 +185,8 @@ def preflight_attempt(binary, model, cwd, environment, timeout, *, deadline=None
         # A late exit 0 still times out, but only after its reply is classified.
         return code, output, error, code == 0 and time.monotonic() >= deadline
 
-    # Keep model selection and the empty-agent guard on the validated Kiro v1 path.
+    # CLI V3 needs the current permission schema. Legacy allowedTools without
+    # permissions can cause the entire profile to be skipped and defaults used.
     install_agent(cwd)
     # --wrap never only disables line wrapping; Markdown rendering corrupts JSON
     # fences and literals. The native setting must be confirmed in this HOME.
@@ -211,11 +213,10 @@ def preflight_attempt(binary, model, cwd, environment, timeout, *, deadline=None
     )
     code, output, error, late = startup(
         [binary, "chat", prompt, "--model", model, "--agent", "inline-review",
-         "--no-interactive", "--wrap", "never", "--legacy-ui", "--agent-engine", "v1"],
+         "--no-interactive", "--output-format", "text", "--agent-engine", "v3"],
     )
     text = controls(output)
-    # Legacy UI prefixes the reply with "> "; with Markdown rendering disabled a model that
-    # quotes its answer adds another, so strip every leading quote marker per line.
+    # Strip quoted model replies, without changing evidence inside the JSON body.
     reply = re.sub(r"(?m)^(?:\s*> ?)+", "", text).strip()
     # Any exposed canary proves a file read, whatever the exit status.
     if safety_signal(controls(error)) or canary in text:
@@ -423,18 +424,21 @@ def run(work, tag):
             else:
                 instruction = framed_prompt + "\n" + payload
                 if len(instruction.encode()) >= MAX_REQUEST_BYTES:
-                    code, error = 1, "Complete Kiro input exceeds argument limit."
+                    code, error = 1, "Complete Kiro input exceeds review request budget."
                 else:
                     command = [
-                        binary, "chat", instruction, "--model", role["model"],
-                        "--agent", "inline-review", "--no-interactive", "--wrap", "never",
-                        "--legacy-ui", "--agent-engine", "v1",
+                        binary, "chat", "--model", role["model"],
+                        "--agent", "inline-review", "--no-interactive", "--output-format", "text",
+                        "--agent-engine", "v3",
                     ]
                     for _ in range(attempts):
                         nonce, framed_prompt, payload = issue_request(work, tag)
-                        command[2] = framed_prompt + "\n" + payload
+                        delivered = framed_prompt + "\n" + payload
+                        if len(delivered.encode()) >= MAX_REQUEST_BYTES:
+                            code, error = 1, "Complete Kiro input exceeds review request budget."
+                            break
                         code, output, error = execute(
-                            command, cwd, kiro_environment(cwd, environment), "", timeout
+                            command, cwd, kiro_environment(cwd, environment), delivered, timeout
                         )
                         error = controls(error)
                         error = preserve_stdout_error(output, error)

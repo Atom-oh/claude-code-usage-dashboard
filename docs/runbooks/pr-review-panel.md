@@ -5,6 +5,24 @@
 > [specialist tooling](../../scripts/pr-review/README.md). The panel and chair
 > procedure below describes the retained legacy `ROLE_REVIEW=0` path.
 
+## Active specialist scopes
+
+Codex and Claude independently receive the complete change, bounded to 512,000
+UTF-8 bytes / 12,000 lines. Kiro V3 receives only AWS architecture/resource
+patches and operational docs. Above 95,000 bytes / 3,000 lines, or when framing
+exceeds its budget, the chair creates one shared packet of at most 64,000 bytes.
+The entire Kiro stdin request must remain below 120,000 bytes. These are project
+budgets; see [verified headless limits](../reference/pr-review-headless-limits.md).
+Application-only changes invoke neither Kiro slot.
+
+Inspect `role-plan.json` or `role-summary.json`: each role records its scope,
+paths, diff hash, byte/line counts and `input_basis`. For `chair_summary`, inspect
+the private `aws-summary-status.txt` and hash-bound packet; receipts also bind its
+hash. Missing, invalid, incomplete or oversized packets block Kiro coverage.
+The complete canonical hash still binds every request. No input is truncated.
+Run the candidate offline tests before integration: live
+`pull_request_target` reviews use trusted base scripts until this change lands.
+
 ## Scope and trust boundary
 
 The `AI Code Review` workflow in `.github/workflows/pr-review.yml` runs for same-repository
@@ -104,15 +122,14 @@ approval. Coverage/safety failures still append a final FAIL regardless of the c
 
 Diffs over 12,000 lines or 512,000 bytes are blocked (`## Review blocked`, BLOCKED,
 `VERDICT: FAIL`), never truncated; the same limits as cc-on-bedrock. Both reviewers read the
-diff from stdin and have 1M-token context windows (Bedrock model cards for
-`openai.gpt-6.1-sol` and `anthropic.claude-opus-5-5`, checked 2026-11-04); 512,000 bytes is
-roughly 150K tokens, under Codex's 272K standard-rate tier. The specialist protocol's
-3,000 lines / 95,000 bytes came from Kiro receiving its prompt as one command-line argument
-(`MAX_REQUEST_BYTES`, 128 KiB) and applies to the active specialist path. The old
-3,000-line truncation of this path and Kiro's `KIRO_DIFF_CAP` are gone.
+diff from stdin. Byte budgets do not establish token usage, model acceptance or
+pricing tiers. The former Kiro single-argument ceiling is historical: the active
+V3 specialist uses bounded stdin and chair summaries.
 
-The job has `timeout-minutes: 50`. The normal worst case is 300 s x 2 panel attempts plus
-900 s x 2 chair models, 40 minutes.
+The job has `timeout-minutes: 60`. Legacy panel/adjudication defaults allow 40
+minutes of model calls. The active specialist path also allows bounded AWS summary
+fallback and Kiro preflights/barrier, approximately 54 minutes before
+collection/publication overhead.
 
 ## Diagnose the legacy panel run
 

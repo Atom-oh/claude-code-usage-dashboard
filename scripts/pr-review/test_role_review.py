@@ -348,15 +348,11 @@ VERDICT: PASS
                 plan = self.prepare(patch(path, "old policy", "ECS IAM role and recovery"))
                 self.assertTrue(all(role["required"] for role in plan["roles"].values()))
 
-    def test_aws_semantics_in_frontend_and_unknown_paths_are_conservative(self):
+    def test_resource_definitions_in_application_paths_activate_aws_review(self):
         for raw in (
-            patch(after='import { S3Client } from "@aws-sdk/client-s3";'),
-            patch(after='const region = "us-west-2";'),
-            patch(after='const origin = "internal-app.ap-northeast-2.elb.amazonaws.com";'),
-            patch(after='const resource = "aws_iam_role";'),
-            patch("misc/unknown.xyz"),
-            patch("app/src/app/history/page.tsx"),
-            patch("dashboard/frontend/app/page.tsx"),
+            patch(after='resource "aws_iam_role" "chat" {}'),
+            patch("lib/stack.ts", after='import { Stack } from "aws-cdk-lib";'),
+            patch("deployment/stack.yaml", after="Type: AWS::S3::Bucket"),
         ):
             with self.subTest(raw=raw):
                 plan = self.prepare(raw)
@@ -789,7 +785,7 @@ VERDICT: PASS
         self.finish()
         report = (self.work / "deterministic-review.md").read_text()
         for value in ("codex", "kiro-fable", "kiro-sol", "claude-self", "implementation",
-                      "clear_frontend_only", "inactive"):
+                      "no_aws_architecture_changes", "inactive"):
             self.assertIn(value, report)
         self.work = self.root / "quota-report"
         self.prepare()
@@ -821,19 +817,19 @@ VERDICT: PASS
 
     def test_oversized_diff_blocks_without_truncating_role_input(self):
         prefix = patch()
-        raw = prefix + "+" + "x" * (95001 - len(prefix) - 1)
+        raw = prefix + "+" + "x" * (512001 - len(prefix) - 1)
         self.prepare(raw, expected=2)
         self.assertEqual((self.work / "roles/codex.diff").read_text(), raw)
         self.assert_blocked()
 
     def test_line_limit_and_empty_or_unparseable_inputs_block(self):
-        for raw in (patch() + "+x\n" * 3001, "", "not a git diff\n"):
+        for raw in (patch() + "+x\n" * 12001, "", "not a git diff\n"):
             with self.subTest(raw=raw[:30]):
                 self.prepare(raw, expected=2)
                 self.assert_blocked()
 
     def test_utf8_byte_limit_is_not_a_character_limit(self):
-        self.prepare(patch(after="é" * 48000), expected=2)
+        self.prepare(patch(after="é" * 257000), expected=2)
         self.assert_blocked()
 
     def test_empty_context_blocks_preparation(self):
