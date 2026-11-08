@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { checkAuthentication } from "./api.js";
+import { validChatChart } from "./chatCharts.js";
 
 // Ask Claude 챗 공용 로직 — FloatingChat(우하단 위젯)과 Analytics(전용 탭)가 공유한다.
-// POST /api/chat SSE(text/status/done/error)를 그대로 읽는다.
-export async function streamChat(messages, { onText, onStatus, onThinking, signal }) {
+// POST /api/chat SSE(text/thinking/chart/status/done/error)를 그대로 읽는다.
+export async function streamChat(messages, { onText, onStatus, onThinking, onChart, signal }) {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -38,6 +39,9 @@ export async function streamChat(messages, { onText, onStatus, onThinking, signa
         continue; // 잘린/깨진 SSE 라인은 무시
       }
       if (event === "text") onText(payload.text);
+      // 서버(chatCharts.js)가 이미 검증한 템플릿이지만 렌더 전에 같은 모양을 다시 확인한다 —
+      // 모델이 만든 코드/임의 데이터는 어떤 경로로도 그리지 않고, 깨진 chart 이벤트는 버린다.
+      else if (event === "chart" && validChatChart(payload)) onChart?.(payload);
       else if (event === "thinking") onThinking?.(payload.text);
       else if (event === "status") onStatus(payload.message, payload.sql);
       else if (event === "error") throw new Error(payload.message);
@@ -82,7 +86,7 @@ export function useStickToBottom(deps, resetKey) {
 }
 
 export function useChatStream() {
-  const [msgs, setMsgs] = useState([]); // {role, content}
+  const [msgs, setMsgs] = useState([]); // {role, content, charts?, error?}
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   // 진행 중인 턴의 사고 과정과 실행한 SQL — 답변 말풍선과 별개로 접이식 영역에 렌더한다.
@@ -114,31 +118,51 @@ export function useChatStream() {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    // 이전 오류 말풍선(error:true)과 빈 assistant placeholder(content 없음)는 서버로 다시
+    // 이전 오류 말풍선(error:true)과 빈 assistant placeholder(content·charts 없음)는 서버로 다시
     // 보내지 않는다 — 걸러도 앞선 user 턴이 그대로 남을 수 있다(예: 에러 후 재질문 시
     // [user:Q1, assistant:오류] 에서 오류만 빠지면 [user:Q1, user:Q2]로 연속 user 턴이 되고,
     // Bedrock Converse가 역할 교차를 요구해 거부 → 리로드 전까지 챗이 먹통이 된다(실측: 리뷰에서
     // 확인). 그래서 필터 후 같은 role이 연속되면 하나로 합쳐 항상 user/assistant가 교차하게
-    // 만든다 — 어떤 필터 조합에서도 안전하다.
+    // 만든다 — 어떤 필터 조합에서도 안전하다. 차트는 화면 기록(history)에만 남기고 서버로 보내는
+    // 본문(modelHistory)에서는 뺀다 — 차트 배열을 모델 히스토리에 되돌려보내지 않는다(agent-llm.md).
     const history = [];
     for (const m of [...msgs, { role: "user", content: q }]) {
-      if (!m.content || m.error) continue;
+      if ((!m.content && !m.charts?.length) || m.error) continue;
       const last = history[history.length - 1];
       if (last && last.role === m.role) last.content += "\n" + m.content;
-      else history.push({ role: m.role, content: m.content });
+      else history.push({ role: m.role, content: m.content, ...(m.charts?.length ? { charts: m.charts } : {}) });
     }
     setMsgs([...history, { role: "assistant", content: "" }]);
     try {
-      await streamChat(history, {
+      const modelHistory = [];
+      for (const m of history) {
+        if (!m.content) continue;
+        const last = modelHistory[modelHistory.length - 1];
+        if (last && last.role === m.role) last.content += "\n" + m.content;
+        else modelHistory.push({ role: m.role, content: m.content });
+      }
+      await streamChat(modelHistory, {
         signal: ac.signal,
         onText: (t) => {
+          if (ac.signal.aborted) return;
           // 실제 답변 텍스트가 오면 직전 hop의 상태 문구("쿼리 작성 중..." 등)는 이미 낡은
           // 정보다 — 안 지우면 답변이 스트리밍되는 동안 위/아래에 안 맞는 상태줄이 계속 남아
           // 있는 것처럼 보인다.
           setStatus("");
           setMsgs((m) => {
             const next = [...m];
-            next[next.length - 1] = { role: "assistant", content: next[next.length - 1].content + t };
+            next[next.length - 1] = { ...next[next.length - 1], content: next[next.length - 1].content + t };
+            return next;
+          });
+        },
+        // 차트는 답변 말풍선에 붙여 보관한다(최대 3개 — 서버 MAX_CHARTS와 동일). 이후 writer가
+        // 실패해도 이미 받은 차트는 남긴다(아래 catch가 기존 필드를 보존).
+        onChart: (chart) => {
+          if (ac.signal.aborted) return;
+          setMsgs((m) => {
+            const next = [...m];
+            const last = next[next.length - 1];
+            next[next.length - 1] = { ...last, charts: [...(last.charts || []), chart].slice(0, 3) };
             return next;
           });
         },
@@ -152,7 +176,7 @@ export function useChatStream() {
       if (ac.signal.aborted) return; // 사용자가 닫거나 다시 보낸 경우 — 오류로 표시하지 않는다
       setMsgs((m) => {
         const next = [...m];
-        next[next.length - 1] = { role: "assistant", content: `응답을 받지 못했습니다: ${err.message}`, error: true };
+        next[next.length - 1] = { ...next[next.length - 1], role: "assistant", content: `응답을 받지 못했습니다: ${err.message}`, error: true };
         return next;
       });
     } finally {

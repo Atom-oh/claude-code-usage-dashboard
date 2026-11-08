@@ -5,8 +5,9 @@ import { MessageCircle, Send, X } from "lucide-react";
 import { cn } from "../cn.js";
 import { useChatStream, useStickToBottom } from "../useChatStream.js";
 import { ChatTrace } from "./ChatTrace.jsx";
+import { ChatCharts } from "./ChatCharts.jsx";
 
-// Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/status/done/error)를 읽는
+// Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/thinking/chart/status/done/error)를 읽는
 // 공용 로직은 useChatStream.js에 있다 — Analytics 탭도 같은 훅을 쓴다.
 
 const SUGGESTIONS = [
@@ -64,7 +65,7 @@ export function FloatingChat() {
             {msgs.map((m, i) => {
               // 첫 토큰 도착 전 닫혔다가 다시 열린 빈 assistant placeholder는 진행 중이 아니면
               // 렌더하지 않는다 — 그냥 두면 빈 회색 버블이 잔상으로 남는다.
-              if (!m.content && !(busy && i === msgs.length - 1)) return null;
+              if (!m.content && !m.charts?.length && !(busy && i === msgs.length - 1)) return null;
               return (
                 <div
                   key={i}
@@ -72,10 +73,13 @@ export function FloatingChat() {
                     "max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed",
                     m.role === "user"
                       ? "self-end whitespace-pre-wrap bg-brand-500 text-white"
-                      : "self-start bg-ink-100 text-ink-800 chat-md"
+                      : "self-start bg-ink-100 text-ink-800 chat-md",
+                    // 차트가 있으면 말풍선을 허용 폭까지 넓힌다 — 좁은 위젯에서 축 라벨이 겹친다.
+                    m.charts?.length && "w-full"
                   )}
                 >
                   {m.role === "user" ? m.content : m.content ? <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown> : "…"}
+                  {m.role === "assistant" && <ChatCharts charts={m.charts} />}
                 </div>
               );
             })}
