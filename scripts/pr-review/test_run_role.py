@@ -115,7 +115,7 @@ class RoleExecutionTests(unittest.TestCase):
                        "GH_TOKEN": "private", "AWS_SECRET_ACCESS_KEY": "private",
                        "XDG_CONFIG_HOME": str(self.root / "unrelated-config")}
         ok, code, error = self.runner.preflight(
-            cli, "claude-opus-5-5", self.root, environment, 2
+            cli, "claude-opus-5.5", self.root, environment, 2
         )
         self.assertTrue(ok, error)
         commands = [json.loads(line) for line in events.read_text().splitlines()]
@@ -151,7 +151,7 @@ class RoleExecutionTests(unittest.TestCase):
                     return setting if command[-1] == "true" else readback
                 with patch.object(self.runner, "execute", side_effect=execute):
                     ok, code, error = self.runner.preflight(
-                        "kiro-cli", "claude-opus-5-5", self.root, os.environ.copy(), 2
+                        "kiro-cli", "claude-opus-5.5", self.root, os.environ.copy(), 2
                     )
                 self.assertFalse(ok)
                 self.assertNotEqual(code, 0)
@@ -169,7 +169,7 @@ class RoleExecutionTests(unittest.TestCase):
         with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
                 patch.object(self.runner, "execute", side_effect=execute):
             ok, code, error = self.runner.preflight(
-                "kiro-cli", "claude-opus-5-5", self.root, os.environ.copy(), 2
+                "kiro-cli", "claude-opus-5.5", self.root, os.environ.copy(), 2
             )
         self.assertTrue(ok, error)
         self.assertEqual(budgets, [2.0, 1.5, 1.0])
@@ -187,7 +187,7 @@ class RoleExecutionTests(unittest.TestCase):
                 with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
                         patch.object(self.runner, "execute", side_effect=execute):
                     ok, code, error = self.runner.preflight(
-                        "kiro-cli", "claude-opus-5-5", self.root, os.environ.copy(), 2
+                        "kiro-cli", "claude-opus-5.5", self.root, os.environ.copy(), 2
                     )
                 self.assertFalse(ok)
                 self.assertEqual(code, 124)
@@ -211,7 +211,7 @@ class RoleExecutionTests(unittest.TestCase):
                     f"print({message!r}, file=sys.stderr)\n"
                 )
                 ok, code, error = self.runner.preflight(
-                    cli, "claude-opus-5-5", self.root, os.environ.copy(), 2
+                    cli, "claude-opus-5.5", self.root, os.environ.copy(), 2
                 )
                 self.assertFalse(ok)
 
@@ -257,7 +257,7 @@ class RoleExecutionTests(unittest.TestCase):
                     return canary
                 with patch.object(self.runner, "execute", side_effect=execute):
                     result = self.runner.preflight_attempt(
-                        "kiro-cli", "claude-opus-5-5", cwd, os.environ.copy(), 2
+                        "kiro-cli", "claude-opus-5.5", cwd, os.environ.copy(), 2
                     )
                 self.assertEqual(
                     (result[0], result[1], result[3], len(calls)),
@@ -278,7 +278,7 @@ class RoleExecutionTests(unittest.TestCase):
             return 0, long_reply, ""
         with patch.object(self.runner, "execute", side_effect=execute):
             passed, code, error, retryable = self.runner.preflight_attempt(
-                "kiro-cli", "claude-opus-5-5", cwd, os.environ.copy(), 2
+                "kiro-cli", "claude-opus-5.5", cwd, os.environ.copy(), 2
             )
         self.assertEqual((passed, code, retryable), (False, 0, False))
         line = [l for l in error.splitlines() if l.startswith(self.runner.REPLY_MISMATCH)][0]
@@ -314,7 +314,7 @@ class RoleExecutionTests(unittest.TestCase):
                 with patch.object(self.runner.time, "monotonic", side_effect=lambda: now[0]), \
                         patch.object(self.runner, "execute", side_effect=execute):
                     result = self.runner.preflight_attempt(
-                        "kiro-cli", "claude-opus-5-5", cwd, os.environ.copy(), 2
+                        "kiro-cli", "claude-opus-5.5", cwd, os.environ.copy(), 2
                     )
                 # A late exit-0 wrong canary reply is a canary failure, never a timeout.
                 self.assertEqual(
@@ -355,7 +355,7 @@ class RoleExecutionTests(unittest.TestCase):
                                      side_effect=self.retry_stub(now, calls, canaries, [(0, reply, "")])), \
                         contextlib.redirect_stdout(output):
                     passed, code, error, timed_out = self.runner.preflight_with_retries(
-                        "kiro-cli", "claude-opus-5-5", cwd, os.environ.copy(), 2, 2, "kiro-sol"
+                        "kiro-cli", "claude-opus-5.5", cwd, os.environ.copy(), 2, 2, "kiro-sol"
                     )
                 self.assertFalse(passed)
                 self.assertEqual(code, 0)
@@ -375,7 +375,7 @@ class RoleExecutionTests(unittest.TestCase):
                 patch.object(self.runner, "scrub", side_effect=RuntimeError("scrubber failed")), \
                 contextlib.redirect_stdout(output):
             with self.assertRaisesRegex(RuntimeError, "scrubber failed"):
-                self.runner.preflight_with_retries("kiro-cli", "claude-opus-5-5", cwd,
+                self.runner.preflight_with_retries("kiro-cli", "claude-opus-5.5", cwd,
                                                    os.environ.copy(), 2, 2, "kiro-sol")
         self.assertNotIn("unexpected-reply", output.getvalue())
 
@@ -391,7 +391,7 @@ class RoleExecutionTests(unittest.TestCase):
                              side_effect=self.retry_stub(now, calls, tokens, replies)), \
                 contextlib.redirect_stdout(output):
             passed, code, error, timed_out = self.runner.preflight_with_retries(
-                "kiro-cli", "claude-opus-5-5", cwd, os.environ.copy(), 2, 2, "kiro-sol"
+                "kiro-cli", "claude-opus-5.5", cwd, os.environ.copy(), 2, 2, "kiro-sol"
             )
         self.assertTrue(passed, error)
         self.assertEqual(code, 0)
@@ -434,7 +434,7 @@ class RoleExecutionTests(unittest.TestCase):
                                      side_effect=self.retry_stub(now, calls, tokens, replies)), \
                         contextlib.redirect_stdout(output):
                     passed, code, error, timed_out = self.runner.preflight_with_retries(
-                        "kiro-cli", "claude-opus-5-5", cwd, os.environ.copy(), 2, attempts,
+                        "kiro-cli", "claude-opus-5.5", cwd, os.environ.copy(), 2, attempts,
                         "kiro-sol"
                     )
                 self.assertEqual((passed, code, timed_out), expected)
@@ -444,8 +444,8 @@ class RoleExecutionTests(unittest.TestCase):
 
     BARRIER_PLAN = {"plan_digest": "d" * 64, "roles": {
         "codex": {"model": "m-codex", "required": True},
-        "kiro-fable": {"model": "claude-opus-5-5", "required": True},
-        "kiro-sol": {"model": "claude-opus-5-5", "required": True}}}
+        "kiro-fable": {"model": "claude-opus-5.5", "required": True},
+        "kiro-sol": {"model": "claude-opus-5.5", "required": True}}}
     COHORT = "0123456789abcdef" * 2
 
     def peer_receipt(self, work, peer, ok):
@@ -590,7 +590,7 @@ class RoleExecutionTests(unittest.TestCase):
             "print('> NO_TOOLS')\n"
         )
         ok, code, error = self.runner.preflight(
-            cli, "claude-opus-5-5", self.root, os.environ.copy(), 2
+            cli, "claude-opus-5.5", self.root, os.environ.copy(), 2
         )
         self.assertTrue(ok, error)
         self.assertEqual(code, 0)
@@ -605,7 +605,7 @@ class RoleExecutionTests(unittest.TestCase):
                     return (0, "true", "") if command[-1] == "json" else (0, "", "")
                 with patch.object(self.runner, "execute", side_effect=execute):
                     ok, code, error = self.runner.preflight(
-                        "kiro-cli", "claude-opus-5-5", self.root, os.environ.copy(), 2
+                        "kiro-cli", "claude-opus-5.5", self.root, os.environ.copy(), 2
                     )
                 self.assertEqual(ok, expected, error)
 
