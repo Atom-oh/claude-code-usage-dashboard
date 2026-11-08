@@ -1,5 +1,5 @@
 import express from "express";
-import { codexInsights, validateInsightsProfile } from "./codexInsights.js";
+import { codexInsights, validateInsightsExactFilters, validateInsightsProfile } from "./codexInsights.js";
 import { claudeEffort, validateClaudeEffort } from "./claudeEffort.js";
 import path from "node:path";
 import os from "node:os";
@@ -11,7 +11,7 @@ import { createCollectorFeature } from "./collectorRoutes.js";
 import { CapacityError, capacityResponse, queryTimeoutResponse, createRequestAdmission, createResultCache } from "./capacity.js";
 import { QueryDeadlineError } from "./queryContext.js";
 import { createWarmingPlan } from "./warming.js";
-import { ValidationError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters, parseTeam } from "./http.js";
+import { ValidationError, NotFoundError, parseRange, parseIntervalHours, parseGroupMode, parsePositiveInt, parseFilters, parseTeam } from "./http.js";
 import { sendJson } from "./jsonResponse.js";
 import * as q from "./queries.js";
 import { withProductivityScore } from "./productivity.js";
@@ -33,6 +33,8 @@ import { RUNTIME_ID_ALIASES } from "./codexPricing.js";
 import { createAwsModelPriceUpdater, priceCatalogFits } from "./awsModelPricing.js";
 import { createPriceDiscovery, setPriceDiscoveryObserver } from "./pricingDiscovery.js";
 import { clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
+import { taskCacheKey, userTasks, validateTaskQuery } from "./taskTraces.js";
+import { taskDetailCacheKey, userTaskDetail, validateTaskDetailQuery } from "./taskTraceDetail.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -281,6 +283,8 @@ function validateModelTime(raw) {
     throw new ValidationError("invalid modelTime", "modelTime accepts only 1");
 }
 function cacheKey(path, query) {
+  if (path === "/api/users/tasks") return `${path}?${taskCacheKey(query, clientConfig.enabledClients)}`;
+  if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort") {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
       : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
@@ -354,6 +358,8 @@ function route(path, handler, { warm = true, client = "claude", validate, permis
         res.status(400).json({ error: err.message, detail: err.detail });
         return;
       }
+      // Fixed body: never reveals whether the resource exists outside the caller's scope.
+      if (err instanceof NotFoundError) return res.status(404).json({ error: "not found" });
       // 500 본문에는 err.message를 절대 넣지 않는다 — ClickHouse 에러 텍스트에는 실패한
       // 쿼리 SQL이 통째로 실려 있어서, 인증만 통과하면 스키마와 쿼리 구조가 그대로 노출된다.
       // 클라이언트에는 id만 주고, 실제 원인은 파드 로그에서 [id]로 찾는다.
@@ -384,8 +390,7 @@ route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
   { client: "codex", warm: false, team: false, validate: (raw) => {
     validateClientFilters(raw, ["codex"]);
     validateInsightsProfile(raw);
-    if (raw.userExact !== undefined || raw.modelExact !== undefined)
-      throw new ValidationError("unsupported filter", "exact drilldowns require /api/clients/overview");
+    validateInsightsExactFilters(raw);
   } });
 
 route("/api/clients/claude-effort", (from, to, raw) => claudeEffort(from, to, raw),
@@ -505,10 +510,14 @@ route("/api/users/cost-efficiency", async (from, to, _q, filters) => {
 const groupParam = (query) => (query.group === undefined ? undefined : String(query.group));
 route("/api/users/daily", (from, to, query) => q.userDaily(from, to, String(query.email || ""), groupParam(query)), { warm: false, team: false });
 route("/api/users/decisions-by-tool", (from, to, query) => q.userDecisionsByTool(from, to, String(query.email || ""), groupParam(query)), { warm: false, team: false });
-route("/api/users/heatmap", (_from, to, query) => q.userHeatmap(to, String(query.email || ""), 91, groupParam(query)), { warm: false, team: false });
-route("/api/users/interactions", (from, to, query) => q.userInteractions(from, to, String(query.email || "")), { warm: false, team: false });
 // Range-only team lookups across enabled clients (filter options and the user display join).
 route("/api/teams", (from, to) => q.listTeams(from, to, clientConfig.enabledClients), { client: null, team: false });
+// Per-user task list from traces (Claude interactions, Codex turns); see docs/api-reference.md.
+route("/api/users/tasks", (from, to, raw) => userTasks(from, to, raw, clientConfig.enabledClients),
+  { client: null, warm: false, team: false, validate: (raw) => validateTaskQuery(raw, clientConfig.enabledClients) });
+// One task's spans in agent lanes; 404 unless the task belongs to userExact.
+route("/api/users/tasks/detail", (from, to, raw) => userTaskDetail(from, to, raw, clientConfig.enabledClients),
+  { client: null, warm: false, team: false, validate: (raw) => validateTaskDetailQuery(raw, clientConfig.enabledClients) });
 route("/api/users/teams", (from, to) => q.userTeams(from, to, clientConfig.enabledClients), { client: null, team: false });
 
 // 2026-08-11 스펙 동기화 — STEP 2/3/4 신규 패널. traces beta(권한 대기/TTFT)는 아직 라이브

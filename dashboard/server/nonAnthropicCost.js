@@ -44,6 +44,30 @@ const count = (value) => {
   return value !== "" && value !== null && value !== undefined && Number.isSafeInteger(n) && n >= 0 ? n : null;
 };
 
+// ADR-017 per-request AWS list estimate for one api_request (raw model and Claude token
+// counts, input excluding cache). null when a token count is unusable or the model is unpriced.
+// Exported so per-task trace costs (taskTraces.js) reuse this exact pricing path.
+export function requestListEstimate(row, priceTable = codexPrices()) {
+  const model = String(row.model || "");
+  const input = count(row.input_tokens), read = count(row.cache_read_tokens);
+  const write = count(row.cache_creation_tokens), output = count(row.output_tokens);
+  // Claude input excludes cache; the Codex pricer takes the inclusive total and subsets.
+  const total = input === null || read === null || write === null ? null : input + read + write;
+  // A bare id (e.g. "kimi-k3") prices as its unique "<vendor>.<id>" entry, which also gives it a
+  // backend; the factor key keeps the reported id. Ambiguous or unknown ids stay unpriced.
+  // A context-window suffix ("[1m]") names no separate rate; the context tier below prices it.
+  const unsuffixed = model.replace(/\[[^\]]*\]$/, "");
+  const priceModel = bareModelAlias(unsuffixed, priceTable) ?? unsuffixed;
+  const limit = priceTable[codexModel(priceModel)]?.short_context_limit;
+  const priced = total === null || output === null ? null : priceCodexUsage({
+    model: priceModel, backend: resolveBackend(priceModel, ""),
+    context_tier: limit !== undefined && total > limit ? "long" : "short",
+    input_tokens_total: total, cache_read_tokens: read, cache_write_tokens: write,
+    output_tokens: output, reasoning_tokens: 0,
+  }, priceTable).cost_usd;
+  return priced === undefined ? null : priced;
+}
+
 // Pure fold, exported for tests. rows: one per api_request log with raw model and counts.
 export function foldFactors(rows, normalize = normalizeModelId, priceTable = codexPrices()) {
   const groups = new Map();
@@ -52,25 +76,10 @@ export function foldFactors(rows, normalize = normalizeModelId, priceTable = cod
     if (!isNonAnthropicModel(model)) continue;
     const key = `${row.session}|${normalize(model)}`;
     const g = groups.get(key) || { estimate: 0, reported: 0, unpriced: false };
-    const input = count(row.input_tokens), read = count(row.cache_read_tokens);
-    const write = count(row.cache_creation_tokens), output = count(row.output_tokens);
     // A missing or unparsable report is unusable, not $0 (Number(null) would be 0).
     const raw = row.cost_usd;
     const reported = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
-    // Claude input excludes cache; the Codex pricer takes the inclusive total and subsets.
-    const total = input === null || read === null || write === null ? null : input + read + write;
-    // A bare id (e.g. "kimi-k3") prices as its unique "<vendor>.<id>" entry, which also gives it a
-    // backend; the factor key keeps the reported id. Ambiguous or unknown ids stay unpriced.
-    // A context-window suffix ("[1m]") names no separate rate; the context tier below prices it.
-    const unsuffixed = model.replace(/\[[^\]]*\]$/, "");
-    const priceModel = bareModelAlias(unsuffixed, priceTable) ?? unsuffixed;
-    const limit = priceTable[codexModel(priceModel)]?.short_context_limit;
-    const priced = total === null || output === null ? null : priceCodexUsage({
-      model: priceModel, backend: resolveBackend(priceModel, ""),
-      context_tier: limit !== undefined && total > limit ? "long" : "short",
-      input_tokens_total: total, cache_read_tokens: read, cache_write_tokens: write,
-      output_tokens: output, reasoning_tokens: 0,
-    }, priceTable).cost_usd;
+    const priced = requestListEstimate(row, priceTable);
     // A zero report beside positive usage has nothing to rescale and would inflate the ratio.
     if (priced === null || priced === undefined || !Number.isFinite(reported) || reported < 0
       || (reported === 0 && priced > 0)) g.unpriced = true;
