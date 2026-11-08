@@ -73,6 +73,7 @@ export function buildChatChart(spec, results) {
   // observed_records 0 and no idle counter observation (timeline_observed) is unavailable, not a known
   // zero (ADR-015; mirrors web clientPresentation.js). SQL rows carry no such markers.
   const unobserved = row => source.source === "dashboard" && row.observed_records === 0 && row.timeline_observed !== true;
+  const rejectionOnly = row => source.source === "dashboard" && row?.request_rejections_only === true;
   const data = rows.map(row => {
     if (!row || typeof row !== "object" || !own(row, spec.x)
         || !["string", "number"].includes(typeof row[spec.x]))
@@ -99,6 +100,13 @@ export function buildChatChart(spec, results) {
     cost_bases: [...new Set(costBases)],
     ...(source.effective_range ? { effective_range: source.effective_range } : {}),
     truncated: Boolean(source.truncated || source.rows.length > rows.length),
-    partial: source.rows.some(row => row?.cost_partial === true || row?.tokens_partial === true),
+    // ADR-016: a rejection-only Codex group is a recorded zero whose zero tooltip must disclose the
+    // rejected count. Points carry only the selected series, so unless rejected_requests is itself
+    // plotted that qualifier is lost; disclose the chart as partial rather than show a plain zero.
+    // Rows cut by the upstream row cap are invisible here; when truncated, the stored totals' flags
+    // (computed from the full fold) still cover them.
+    partial: source.rows.some(row => row?.cost_partial === true || row?.tokens_partial === true
+      || (rejectionOnly(row) && !keys.has("rejected_requests")))
+      || (source.truncated === true && (source.totals?.cost_partial === true || source.totals?.tokens_partial === true)),
   };
 }
