@@ -153,6 +153,7 @@ class PreparationTests(unittest.TestCase):
         policy.parent.mkdir(parents=True)
         (policy.parent / "role_review.py").write_bytes(MODULE.with_name("role_review.py").read_bytes())
         (policy.parent / "review_format.py").write_bytes(MODULE.with_name("review_format.py").read_bytes())
+        (policy.parent / "input_limits.py").write_bytes(MODULE.with_name("input_limits.py").read_bytes())
         material = b'{"schema_version":1,"extensions":[".png"]}\r\n'
         policy.write_bytes(material)
         self.git("add", ".")

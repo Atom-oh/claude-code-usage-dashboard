@@ -7,11 +7,12 @@ results feed aggregation and, when needed, the chair. See
 | Tag | Requested model | Scope |
 | --- | --- | --- |
 | codex | `global.openai.gpt-6-astra` | Implementation/tests |
-| kiro-fable | `claude-opus-5` | AWS/IAM/network |
-| kiro-sol | `gpt-5.6-sol` | Deployment/contracts/recovery |
+| kiro-fable | `claude-opus-5-5` | AWS/IAM/network |
+| kiro-sol | `claude-opus-5-5` | AWS resource deployment/contracts/recovery |
 | claude-self | `global.anthropic.claude-fable-5-1` | Auth/data/API/ADR |
 
-`kiro-fable` means Opus. `ROLES` governs specialists; legacy files govern legacy
+Both Kiro slots use Opus 5.5 in separate sessions; tags identify responsibilities,
+not model families. `ROLES` governs specialists; legacy files govern legacy
 execution. Kiro/Bedrock IDs differ. English is requested, not validated; configured
 IDs do not attest model weights.
 
@@ -21,7 +22,7 @@ IDs do not attest model weights.
 
 | Command | Contract |
 | --- | --- |
-| prepare | Diff/context, HEAD/base, work; optional paths/provenance → `role-plan.json`, `roles/TAG.txt/.diff`. |
+| prepare | Diff/context, HEAD/base, work; optional paths/provenance → `complete.diff`, `role-plan.json`, `roles/TAG.txt/.diff`. |
 | issue | Work/tag → nonce, exact `requests/TAG.prompt/.input`, `slot/TAG-request.json`. Call before each attempt. |
 | record | Tag, output/stderr, exit code, issued nonce → validated, scrubbed `slot/TAG-result.json`. |
 | aggregate | Validate results/receipts → `role-summary.json`, `responded.txt`, `chair-mode.txt`, applicable report/flag. |
@@ -47,9 +48,18 @@ deletions. Verify eligibility before withholding bodies.
 
 ## Coverage and lifecycle
 
-Codex/Claude are required for reviewable source; trusted routing may deactivate
-irrelevant Kiro roles. App Router React is conservative. Failed output is never
-N/A. Parsing misses whole omissions/some cut prefixes: verify Git scope/hashes.
+Codex/Claude independently receive the full raw change. Kiro V3 receives only
+AWS architecture/resource patches and operational docs, using a shared chair
+summary when its direct-input budget is exceeded.
+Removed definitions and rename source paths count; unrelated application SDK calls,
+ARN references, region names and unknown application paths do not activate Kiro.
+Each role records its expected paths, scoped diff hash/size and scope label.
+Request digests additionally bind the complete diff hash and any summary hash.
+Validation reconstructs the expected scope from `complete.diff` and immutable
+source identity, so rewriting plan/request digests cannot
+deactivate required Kiro coverage or substitute arbitrary subsets.
+Failed output is never N/A. Parsing misses whole omissions/some cut prefixes:
+verify Git scope/hashes.
 
 Exclusions-only NOT_APPLICABLE/PASS requires `--allow-exclusions-only --policy FILE`.
 The schema-1 policy bytes must match the 64-hex `input_policy_sha256`; the private
@@ -72,8 +82,8 @@ Exit 2 means blocked. Aggregate exit 0: `deterministic` permits the report when 
 blocking candidate/uncertainty exists (Minor/Info remain); `review` needs a chair.
 Blocked input yields deterministic FAIL; the chair cannot waive coverage failures.
 
-Publish scrubbed reports/receipts/metadata only; never raw `roles/*.diff` or
-`requests/*.input/.prompt`.
+Publish scrubbed reports/receipts/metadata only; never raw `complete.diff`, `roles/*.diff`,
+`aws-summary.json` or `requests/*.input/.prompt`.
 
 ## Review presentation
 
@@ -119,9 +129,19 @@ blocks retain the existing filter; their format is still checked afterwards.
 
 ## Limits and checks
 
-Limits: 95,000 diff bytes (UTF-8), 3,000 lines, 24,000 context bytes, <128 KiB
-request; projects may lower them. Oversize blocks. No chunk coordinator or
-combining partial PASS results; preserve custody/budgets.
+Codex/Claude: full diff up to 512,000 UTF-8 bytes / 12,000 lines, framed request
+below 640,000 bytes. Direct Kiro AWS patches: up to 95,000 bytes / 3,000 lines,
+with the complete V3 stdin request below 120,000 bytes. Larger AWS scopes need a
+shared chair packet of at most 64,000 bytes of compact JSON. Claude's instruction
+argument also stays below 120,000 bytes; its diff uses stdin. Context is at most
+24,000 bytes, reduced to
+20,000 by this repository's context builder. Projects may lower budgets.
+`input_limits.py` owns these budgets; see [verified headless limits](../../docs/reference/pr-review-headless-limits.md).
+Oversized full input blocks before provider calls. `aws_summary.py` validates
+every metadata/hunk unit and literal evidence against retained raw AWS input.
+Missing, invalid or incomplete summaries block required Kiro coverage; their
+uncertainties enter adjudication. Reports disclose the input basis. Accounting
+does not prove semantic completeness. No prefix or combined partial PASS earns coverage.
 
 Run `python3 -m unittest discover -s scripts/pr-review -p 'test_*role*.py'`.
 Offline CI: `.github/workflows/pr-review-roles-tests.yml`. Also verify

@@ -7,21 +7,35 @@ required coverage blocks the review. See [ADR-011](decisions/ADR-011-specialist-
 | Slot | Configured model | Responsibility |
 | --- | --- | --- |
 | `codex` | `global.openai.gpt-6-astra` | Implementation, concurrency, errors and tests |
-| `kiro-fable` | `claude-opus-5` | AWS architecture, IAM, networking and service constraints |
-| `kiro-sol` | `gpt-5.6-sol` | Deployment order, component contracts, lifecycle and recovery |
+| `kiro-fable` | `claude-opus-5-5` | AWS architecture, IAM, networking and service constraints |
+| `kiro-sol` | `claude-opus-5-5` | AWS resource deployment order, contracts, lifecycle and recovery |
 | `claude-self` | `global.anthropic.claude-fable-5-1` | Authentication, data boundaries, requirements, API and ADR consistency |
 
-The shared `kiro-fable` tag identifies the Opus slot. Kiro catalog aliases differ
-from Bedrock inference-profile IDs. These are configured model identities, not
-attestation of the provider's internal routing or weights.
+The shared Kiro tags are stable role identifiers; both slots use Opus 5.5 in
+separate sessions. Codex/Claude retain independent OpenAI/Anthropic full-change
+coverage. Kiro catalog aliases differ from Bedrock inference-profile IDs. These
+are configured identities, not attestation of provider routing or weights.
 
 ## Routing and evidence
 
 Trusted code determines which roles apply. Codex and Claude review the full change
 boundary, retaining independent OpenAI/Anthropic checks for sensitive changes.
-Kiro roles run for applicable AWS and operational changes, including relevant
-documentation. Unfamiliar paths route conservatively. Only deterministic routing
-may record NOT_APPLICABLE; provider failures never do.
+Kiro roles receive only AWS architecture/resource evidence:
+infrastructure directories and Terraform/Terragrunt files, CloudFormation/CDK/Pulumi
+declarations, SAM/Serverless configuration, Helm charts, AWS task definitions and
+CodeBuild/CodeDeploy specifications, architecture documents and relevant AWS deployment
+procedures. Removed definitions and rename source paths also participate in routing.
+The projection preserves every patch for each selected path, including multi-block
+file-type changes. Stable operation runbook paths apply even without AWS keywords
+in the changed hunk. Immutable old/new source identifies resource imports and
+workflow role assumption outside a property-only patch; no candidate source is
+executed. Source blobs above 2,000,000 bytes, unreadable/non-UTF-8 source or unavailable
+commit identities block classification and the review. Application SDK calls, ARN
+references, region strings, generic retries and
+unfamiliar application paths alone do not activate Kiro.
+Resource declarations in test fixtures remain conservatively applicable; routing
+does not execute source code to distinguish fixtures from deployable definitions.
+Only deterministic routing may record NOT_APPLICABLE; provider failures never do.
 
 `prepare_roles.py` verifies the pinned base checkout, resolves the immutable merge
 base, fetches Git objects and generates a complete diff without executing head
@@ -31,24 +45,51 @@ the base Git object. Candidate context is checked for availability, size and
 generated-source freshness, then discarded.
 The shared context ceiling is 24,000 bytes; repositories may enforce a smaller one.
 
-Every result confirms its role, HEAD and reviewed paths. Host metadata binds it
-to the prepared request and records the process status. Nonzero exits, malformed
+Every result confirms its role, HEAD and reviewed paths. Codex and Claude must
+cover all changed paths; Kiro must cover all projected paths. Host metadata binds
+each request to both the canonical complete diff hash and its own scope hash,
+and records the process status. Validation reconstructs scopes from `complete.diff`
+and pinned source identities. Collected merge-base provenance requires both source
+revisions;
+rewriting a plan digest cannot deactivate a required AWS review or select an
+arbitrary subset. Nonzero exits, malformed
 or empty reports, missing paths, invalid fingerprints, model selection errors,
 quota exhaustion and failed required roles block coverage. A JSON shape is
 evidence of protocol completion, not proof that the model found every defect.
 
-The common protocol accepts a complete diff within 3,000 lines and 95,000 UTF-8
-bytes. It blocks oversized input without awarding credit for a prefix. Existing
-repository-specific chunking is governed by its own implementation and budget;
-do not remove chunk attestations or raise limits to obtain a pass.
+Transport budgets are separate from model context windows:
+
+| Input | Diff bytes (UTF-8) | Diff lines | Framed request bytes |
+| --- | --- | --- | --- |
+| Codex / Claude full change | 512,000 | 12,000 | Below 640,000 |
+| Direct Kiro AWS patch | 95,000 | 3,000 | Below 120,000 |
+| Shared chair AWS packet | 64,000 compact JSON | Every metadata/hunk unit | Below 120,000 including context |
+
+The full-change budget matches the workflow's outer guard. Codex and Kiro V3 send
+instructions and evidence on stdin; Claude sends the diff on stdin and bounds its
+instruction argument below 120,000 bytes. These are repository budgets, not
+documented V3 maxima. See [verified headless limits](reference/pr-review-headless-limits.md).
+
+An oversized AWS scope triggers one shared chair packet while Codex and Claude
+retain the complete raw change. The packet must account for every metadata/hunk
+unit, bind HEAD/source hashes and quote literal source evidence. Each receipt using
+the packet binds its hash; reports disclose `chair_summary`. Missing, invalid, incomplete or
+oversized packets block required coverage. Packet uncertainties enter adjudication
+even if a specialist omits them. Unit accounting does not prove semantic completeness:
+Kiro must report insufficient detail. No raw prefix or combined partial PASS earns
+coverage.
 
 ## Execution and synthesis
 
-Each applicable model receives one specialist request. Both Kiro roles use fresh
-HOME/cwd directories and an explicit empty tool catalog with no MCP resources or
-hooks. In each isolated HOME, native settings disable Markdown rendering and
-JSON readback must confirm `chat.disableMarkdownRendering=true`. `--wrap never`
-alone still transforms JSON fences and string literals. Each preflight attempt
+Each applicable model receives one request covering its assigned paths and declared
+evidence basis.
+Application-only changes use two independent reviewers with no Kiro startup calls.
+Mixed changes add both Kiro roles for the AWS projection. Both Kiro roles use fresh
+HOME/cwd directories. The V3 profile has an empty tool list, excludes every tool,
+denies tool capabilities and disables MCP/power inclusion, resources and hooks.
+Legacy `allowedTools`/`toolsSettings` are omitted because V3 can skip unconverted
+profiles. In each isolated HOME, native settings disable Markdown rendering and
+JSON readback must confirm `chat.disableMarkdownRendering=true`. Each preflight attempt
 runs settings setup, readback and the fixed no-tools canary within its own
 `KIRO_PREFLIGHT_TIMEOUT` budget; a role makes up to `KIRO_PREFLIGHT_ATTEMPTS`
 attempts, and only timeouts and nonzero exits without a safety diagnostic are
@@ -81,7 +122,8 @@ coverage failure receives a deterministic failure; a chair cannot waive it.
 Minor/Info findings remain in the report.
 
 With all four roles active, the ordinary path uses four review calls and two
-Kiro startup checks. Adjudication adds one chair call; retries and fallback add
+Kiro startup checks. Oversized AWS input adds a shared summary call; adjudication
+adds a chair call. Retries and fallback add
 calls only when needed. This reduces duplicate requests, but is not a measured
 wall-clock speedup. Per-role timing artifacts support before/after measurement.
 

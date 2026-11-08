@@ -21,8 +21,8 @@ class IntegrityTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.work = self.root / "work"
         self.raw = (
-            "diff --git a/backend/worker.ts b/backend/worker.ts\n"
-            "--- a/backend/worker.ts\n+++ b/backend/worker.ts\n"
+            "diff --git a/infra/worker.tf b/infra/worker.tf\n"
+            "--- a/infra/worker.tf\n+++ b/infra/worker.tf\n"
             "@@ -1 +1 @@\n-return 1;\r\n+return 1;\n"
         )
         (self.root / "diff").write_bytes(self.raw.encode())
@@ -46,8 +46,8 @@ class IntegrityTests(unittest.TestCase):
     def response(self, tag):
         return json.dumps({
             "head_sha": self.plan["head_sha"], "role": self.plan["roles"][tag]["role"],
-            "scope_complete": True, "reviewed_paths": ["backend/worker.ts"],
-            "checks": [{"path": "backend/worker.ts", "evidence": "Checked changed return bytes."}],
+            "scope_complete": True, "reviewed_paths": ["infra/worker.tf"],
+            "checks": [{"path": "infra/worker.tf", "evidence": "Checked changed return bytes."}],
             "findings": [], "uncertainties": [],
         })
 
@@ -138,7 +138,7 @@ class IntegrityTests(unittest.TestCase):
                               if tag == "codex" else lambda *args: (0, response, ""))
                     with patch.object(run_role, "execute", side_effect=invoke) as execute:
                         run_role.run(self.work, tag)
-                delivered = execute.call_args.args[3] if tag == "codex" else execute.call_args.args[0][2]
+                delivered = execute.call_args.args[3]
                 self.assertIn(self.raw.encode(), delivered.encode())
                 self.assertIn("BEGIN DIFF ", delivered)
                 self.assertIn("END DIFF ", delivered)
@@ -150,6 +150,9 @@ class IntegrityTests(unittest.TestCase):
                 if tag == "codex":
                     self.assertEqual(execute.call_args.args[0][-1], "-")
                     self.assertIn("Review tag: codex", delivered)
+                else:
+                    self.assertNotIn(self.raw, execute.call_args.args[0])
+                    self.assertEqual(execute.call_args.args[0][-2:], ["--agent-engine", "v3"])
 
     def test_codex_tool_data_is_not_a_diagnostic_or_review(self):
         tool = ('Monthly request limit reached\n'

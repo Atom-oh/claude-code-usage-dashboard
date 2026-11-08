@@ -44,9 +44,34 @@ if name == "kiro-cli" and argv[1].startswith("Kiro startup safety check."):
 if name == "claude" and argv[1].startswith("You chair"):
     print("The supplied candidate remains a concrete regression.\nVERDICT: FAIL")
     raise SystemExit(0)
+if name == "claude" and argv[1].startswith("Produce a bounded AWS"):
+    assert argv[argv.index("--tools") + 1] == "" and "--setting-sources" in argv
+    if (root / "summary-failure").exists():
+        raise SystemExit(9)
+    sys.path.insert(0, str(root / "repo/scripts/pr-review"))
+    from aws_summary import units
+    plan = json.loads((root / "work/role-plan.json").read_text())
+    raw = (root / "work/roles/kiro-fable.diff").read_text()
+    entries = []
+    for unit in units(raw):
+        lines = unit["source"].splitlines()
+        number = next((i for i, line in enumerate(lines, 1)
+                       if line.startswith(("+", "-"))), 1)
+        entries.append({"id": unit["id"], "sha256": unit["sha256"],
+                        "summary": "Changed AWS resource configuration.",
+                        "evidence": [{"line": number, "excerpt": lines[number - 1][:80]}]})
+    print(json.dumps({"head_sha": plan["head_sha"],
+                     "source_sha256": plan["roles"]["kiro-fable"]["diff_sha256"],
+                     "complete": True, "entries": entries, "uncertainties": []}))
+    raise SystemExit(0)
 model = argv[argv.index("--model") + 1]
-tag = {"global.openai.gpt-6-astra":"codex", "claude-opus-5":"kiro-fable",
-       "gpt-5.6-sol":"kiro-sol", "global.anthropic.claude-fable-5-1":"claude-self"}[model]
+if name == "kiro-cli":
+    assert model == "claude-opus-5-5"
+    tag = next(tag for tag in ("kiro-fable", "kiro-sol")
+               if f"Review tag: {tag}\n" in stdin)
+else:
+    tag = {"global.openai.gpt-6-astra":"codex",
+           "global.anthropic.claude-fable-5-1":"claude-self"}[model]
 plan = json.loads((root / "work/role-plan.json").read_text())
 role = plan["roles"][tag]
 paths = role["paths"]
@@ -147,10 +172,14 @@ class EndToEndRoleTests(unittest.TestCase):
     def git(self, *arguments):
         return subprocess.check_output(["git", *arguments], cwd=self.repo, text=True)
 
-    def run_pipeline(self, path, content=b"export const result = 1;\n"):
+    def run_pipeline(self, path, content=b"export const result = 1;\n", extra_changes=None):
         changed = self.repo / path
         changed.parent.mkdir(parents=True, exist_ok=True)
         changed.write_bytes(content)
+        for extra_path, extra_content in (extra_changes or {}).items():
+            extra = self.repo / extra_path
+            extra.parent.mkdir(parents=True, exist_ok=True)
+            extra.write_bytes(extra_content)
         self.git("add", ".")
         self.git("commit", "-qm", "change")
         self.environment["HEAD_SHA"] = self.git("rev-parse", "HEAD").strip()
@@ -188,7 +217,7 @@ class EndToEndRoleTests(unittest.TestCase):
 
     def test_production_oversized_lockfile_is_blocked_without_model_calls(self):
         self.use_production_scope()
-        calls = self.run_pipeline("dashboard/server/package-lock.json", b"x" * 95001 + b"\n")
+        calls = self.run_pipeline("dashboard/server/package-lock.json", b"x" * 512001 + b"\n")
         self.assertEqual(calls, [])
         self.assertIn("diff_byte_limit", (self.work / "review.md").read_text())
         self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: FAIL\n"))
@@ -207,6 +236,46 @@ class EndToEndRoleTests(unittest.TestCase):
         self.assertEqual(sorted(call["name"] for call in calls), ["claude", "codex"])
         self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
 
+    def test_large_aws_change_uses_one_summary_and_two_bounded_v3_reviews(self):
+        self.environment["PYTHONPATH"] = str(SOURCE)
+        raw = b'resource "aws_vpc" "main" {}\n' + b"# long description " + b"x" * 150000 + b"\n"
+        calls = self.run_pipeline("infra/network.tf", raw)
+        chairs = [call for call in calls if call["name"] == "claude"
+                  and call["args"][1].startswith("Produce a bounded AWS")]
+        self.assertEqual(len(chairs), 1)
+        self.assertIn("x" * 150000, chairs[0]["stdin"])
+        for call in calls:
+            if call["name"] == "kiro-cli" and call["stdin"]:
+                self.assertLess(len(call["stdin"].encode()), 120000)
+                self.assertIn("Changed AWS resource configuration", call["stdin"])
+                self.assertNotIn("x" * 1000, call["stdin"])
+            elif call["name"] in {"claude", "codex"} and call not in chairs:
+                self.assertIn("x" * 150000, call["stdin"])
+        self.assertIn("chair_summary", (self.work / "review.md").read_text())
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+
+    def test_large_aws_summary_failure_blocks_without_delivering_kiro_input(self):
+        self.environment["PYTHONPATH"] = str(SOURCE)
+        (self.root / "summary-failure").touch()
+        calls = self.run_pipeline("infra/network.tf", b"# " + b"x" * 100000 + b"\n")
+        self.assertFalse(any(call["name"] == "kiro-cli" for call in calls))
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: FAIL\n"))
+
+    def test_property_only_patch_retains_source_resource_identity(self):
+        source = self.repo / "lib/arbitrary.py"
+        source.parent.mkdir()
+        prefix = "from aws_cdk import Stack\n\ndef unrelated():\n    pass\n\n" + "# unchanged\n" * 30
+        source.write_text(prefix + "memory = 128\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "existing stack")
+        self.base = self.git("rev-parse", "HEAD").strip()
+        (self.root / "base-sha").write_text(self.base)
+        self.environment["BASE_SHA"] = self.base
+        calls = self.run_pipeline("lib/arbitrary.py", (prefix + "memory = 256\n").encode())
+        self.assertEqual(sum(call["name"] == "kiro-cli" and bool(call["stdin"])
+                             for call in calls), 2)
+        self.assertNotIn("aws_cdk", (self.work / "roles/kiro-fable.diff").read_text())
+
     def test_aws_change_uses_four_reviews_and_two_safety_checks(self):
         calls = self.run_pipeline("infra/network.tf")
         model_calls = [call for call in calls if call["args"][0] != "settings"]
@@ -223,10 +292,46 @@ class EndToEndRoleTests(unittest.TestCase):
                              ["settings", "chat.disableMarkdownRendering", "true"])
             self.assertEqual(cell[1]["args"],
                              ["settings", "chat.disableMarkdownRendering", "--format", "json"])
-            self.assertTrue(all(call["cwd"] == home and call["stdin"] == "" for call in cell))
+            self.assertTrue(all(call["cwd"] == home for call in cell))
+            self.assertTrue(all(call["stdin"] == "" for call in cell[:3]))
+            for call in cell[2:]:
+                self.assertEqual(call["args"][call["args"].index("--model") + 1],
+                                 "claude-opus-5-5")
             self.assertIn("preflight-canary.txt", cell[2]["args"][1])
-            self.assertIn("BEGIN DIFF ", cell[3]["args"][1])
+            self.assertIn("BEGIN DIFF ", cell[3]["stdin"])
+            self.assertNotIn("BEGIN DIFF ", " ".join(cell[3]["args"]))
+            self.assertEqual(cell[3]["args"][-2:], ["--agent-engine", "v3"])
             self.assertFalse(Path(home).exists())
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+        plan = json.loads((self.work / "role-plan.json").read_text())
+        self.assertEqual({plan["roles"][tag]["role"] for tag in ("kiro-fable", "kiro-sol")},
+                         {"aws", "deployment"})
+        self.assertTrue(all(plan["roles"][tag]["family"] == "Anthropic"
+                            for tag in ("kiro-fable", "kiro-sol")))
+
+    def test_mixed_change_passes_only_resource_patches_to_kiro_processes(self):
+        calls = self.run_pipeline(
+            "dashboard/server/chat.js", b'const model = "bedrock";\n',
+            {"infra/network.tf": b'resource "aws_vpc" "main" {}\n'},
+        )
+        kiro_reviews = [call for call in calls
+                        if call["name"] == "kiro-cli" and "BEGIN DIFF " in call["stdin"]]
+        self.assertEqual(len(kiro_reviews), 2)
+        for call in calls:
+            if call["name"] == "kiro-cli" and "BEGIN DIFF " in call["stdin"]:
+                self.assertIn("infra/network.tf", call["stdin"])
+                self.assertNotIn("dashboard/server/chat.js", call["stdin"])
+                self.assertNotIn('const model = "bedrock"', call["stdin"])
+            elif call["name"] in {"codex", "claude"}:
+                self.assertIn("dashboard/server/chat.js", call["stdin"])
+                self.assertIn("infra/network.tf", call["stdin"])
+        self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
+
+    def test_large_application_change_uses_only_stdin_reviewers(self):
+        calls = self.run_pipeline("dashboard/server/large.js", b"x" * 150000 + b"\n")
+        self.assertEqual(sorted(call["name"] for call in calls), ["claude", "codex"])
+        for call in calls:
+            self.assertIn("x" * 150000, call["stdin"])
         self.assertTrue((self.work / "review.md").read_text().endswith("VERDICT: PASS\n"))
 
     def assert_kiro_literals_preserved(self, fenced):

@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MessageCircle, Send, X } from "lucide-react";
+import { Maximize2, MessageCircle, Minimize2, Send, X } from "lucide-react";
 import { cn } from "../cn.js";
 import { useChatStream, useStickToBottom } from "../useChatStream.js";
 import { ChatTrace } from "./ChatTrace.jsx";
 import { ChatCharts } from "./ChatCharts.jsx";
+import { DEFAULT_CHAT_SIZE, clampChatSize, expandedChatSize, loadChatSize, saveChatSize } from "../chatWindowSize.js";
 
 // Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/thinking/chart/status/done/error)를 읽는
 // 공용 로직은 useChatStream.js에 있다 — Analytics 탭도 같은 훅을 쓴다.
@@ -21,6 +22,57 @@ export function FloatingChat() {
   const [input, setInput] = useState("");
   const { msgs, busy, status, trace, ask, stop: stopStream } = useChatStream();
   const { containerRef, onScroll } = useStickToBottom([msgs, status, trace], trace.turn);
+  // 창 크기 — 좌상단 핸들 드래그/화살표 키로 조절하고 브라우저에 기억한다. 우하단 고정이라
+  // 왼쪽·위로 끌수록 커진다. 확대 버튼은 직전 크기를 기억했다가 되돌린다.
+  const viewport = () => ({ w: window.innerWidth, h: window.innerHeight });
+  const [size, setSize] = useState(() => clampChatSize(loadChatSize() ?? DEFAULT_CHAT_SIZE, viewport()));
+  const [restore, setRestore] = useState(null);
+  const drag = useRef(null);
+  useEffect(() => {
+    const onResize = () => setSize((s) => clampChatSize(s, viewport()));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const resizeTo = (next, { persist = true } = {}) => {
+    const clamped = clampChatSize(next, viewport());
+    setSize(clamped);
+    if (persist) saveChatSize(clamped);
+    return clamped;
+  };
+  const onHandleDown = (e) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h };
+    setRestore(null);
+  };
+  const onHandleMove = (e) => {
+    const d = drag.current;
+    if (!d) return;
+    resizeTo({ w: d.w + (d.x - e.clientX), h: d.h + (d.y - e.clientY) }, { persist: false });
+  };
+  const onHandleUp = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    saveChatSize(size);
+  };
+  const onHandleKey = (e) => {
+    const step = e.shiftKey ? 80 : 20;
+    const delta = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
+    if (!delta) return;
+    e.preventDefault();
+    setRestore(null);
+    resizeTo({ w: size.w + delta[0], h: size.h + delta[1] });
+  };
+  const toggleExpanded = () => {
+    if (restore) {
+      resizeTo(restore);
+      setRestore(null);
+    } else {
+      setRestore(size);
+      // The expanded preset is temporary; only the normal size is remembered.
+      resizeTo(expandedChatSize(viewport()), { persist: false });
+    }
+  };
 
   // 챗을 닫으면 진행 중인 스트림도 취소한다(대화 내용은 유지 — useChatStream 참고).
   const stop = () => {
@@ -37,15 +89,45 @@ export function FloatingChat() {
   return (
     <>
       {open && (
-        <div className="fixed bottom-20 right-6 z-50 flex h-[520px] max-h-[calc(100vh-7rem)] w-[400px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border border-ink-100 bg-card shadow-xl print:hidden">
+        <div
+          role="dialog"
+          aria-label="Ask Claude"
+          style={{ width: size.w, height: size.h }}
+          className="fixed bottom-20 right-6 z-50 flex max-h-[calc(100vh-7rem)] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border border-ink-100 bg-card shadow-xl print:hidden"
+        >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="채팅 창 크기 조절 (화살표 키, Shift로 크게)"
+            aria-valuenow={size.w}
+            tabIndex={0}
+            onPointerDown={onHandleDown}
+            onPointerMove={onHandleMove}
+            onPointerUp={onHandleUp}
+            onPointerCancel={onHandleUp}
+            onKeyDown={onHandleKey}
+            title="드래그해서 창 크기를 조절합니다"
+            className="absolute left-0 top-0 z-10 h-4 w-4 cursor-nwse-resize touch-none rounded-br-md border-b border-r border-ink-200 bg-ink-100/70 hover:bg-ink-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          />
           <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
             <div>
               <div className="text-[14px] font-semibold text-ink-800">Ask Claude</div>
               <div className="text-[11px] text-ink-400">사용량 데이터를 직접 조회해 답합니다</div>
             </div>
-            <button onClick={stop} className="rounded-md p-1 text-ink-400 hover:bg-ink-100">
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggleExpanded}
+                aria-label={restore ? "창 크기 되돌리기" : "창 크게 보기"}
+                title={restore ? "창 크기 되돌리기" : "창 크게 보기"}
+                className="rounded-md p-1 text-ink-400 hover:bg-ink-100"
+              >
+                {restore ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              </button>
+              <button onClick={stop} aria-label="닫기" className="rounded-md p-1 text-ink-400 hover:bg-ink-100">
+                <X size={16} />
+              </button>
+            </div>
           </div>
           <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
             {msgs.length === 0 && (
@@ -78,7 +160,7 @@ export function FloatingChat() {
                     m.charts?.length && "w-full"
                   )}
                 >
-                  {m.role === "user" ? m.content : m.content ? <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown> : "…"}
+                  {m.role === "user" ? m.content : m.content ? <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown> : busy && i === msgs.length - 1 ? "…" : null}
                   {m.role === "assistant" && <ChatCharts charts={m.charts} />}
                 </div>
               );
