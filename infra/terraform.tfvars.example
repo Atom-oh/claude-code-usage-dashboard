@@ -24,6 +24,11 @@ dashboard_image_tag = "REPLACE-WITH-A-PUSHED-TIMESTAMP-TAG"
 # Before applying to an existing installation, deploy an image that supports *_FILE secrets.
 # Follow the staged rollout in docs/runbooks/deploy-production.md first.
 
+# Chat conversation/final answer and data analysis use separate models.
+# Both IDs are included in the dashboard's Bedrock invocation policy.
+# chat_model_id     = "global.anthropic.claude-haiku-5-5"
+# analysis_model_id = "global.anthropic.claude-sonnet-5-5"
+
 # Dedicated commercial installation: create this Secret in the namespace through the
 # customer's secret manager with OIDC_CLIENT_SECRET and random SESSION_SECRET keys.
 # No secret values belong in this file. Existing Basic installations keep auth_mode=basic.

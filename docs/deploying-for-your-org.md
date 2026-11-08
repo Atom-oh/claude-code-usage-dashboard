@@ -89,7 +89,7 @@ existing workshop instances retain their configuration until replaced.
 | `range_cap_days` | `RANGE_CAP_DAYS` | Maximum requested range, integer at least the default range; default 90. Longer requests return 400. |
 | `pii_mask_enabled` | `PII_MASK_ENABLED` / `/api/config.piiMask` | Terraform defaults true; app defaults off. Controls UI email masking and conditional chat-result masking, not raw API authorization or data retention. |
 | `data_stale_minutes` | `DATA_STALE_MINUTES` | Freshness threshold, default 360; server requires a positive number below its seven-day probe window. |
-| `chat_model_id`, `bedrock_region` | `CHAT_MODEL_ID`, `BEDROCK_REGION` | Verify model/profile availability and applied IRSA in the calling account/region. Separate from infrastructure `region`. |
+| `chat_model_id`, `analysis_model_id`, `bedrock_region` | `CHAT_MODEL_ID`, `ANALYSIS_MODEL_ID`, `BEDROCK_REGION` | Verify both models/profiles and applied IRSA in the calling account/region. Separate from infrastructure `region`. See [chat agents](reference/agent-llm.md). |
 | `pricing_json`, `pricing_cache_write_ttl` | `PRICING_JSON`, `PRICING_CACHE_WRITE_TTL` | Optional token-price diagnostics. `PRICING_JSON` is inline JSON, not a file path. Keep unset values null; allowed TTL overrides are `1h` or `5m`. |
 
 Invalid boot settings can prevent startup. Reported spend remains distinct from computed

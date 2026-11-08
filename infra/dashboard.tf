@@ -313,6 +313,10 @@ resource "kubernetes_deployment_v1" "dashboard" {
             value = var.chat_model_id
           }
           env {
+            name  = "ANALYSIS_MODEL_ID"
+            value = var.analysis_model_id
+          }
+          env {
             name  = "CH_DB"
             value = "claude_code"
           }

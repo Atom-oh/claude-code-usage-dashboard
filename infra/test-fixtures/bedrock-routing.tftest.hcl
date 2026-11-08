@@ -18,7 +18,8 @@ variables {
 run "india_model_and_profile_arns_remain_exact" {
   command = plan
   variables {
-    chat_model_id = "in.anthropic.claude-opus-5"
+    chat_model_id     = "in.anthropic.claude-opus-5"
+    analysis_model_id = "in.anthropic.claude-opus-5"
   }
   assert {
     condition = jsondecode(aws_iam_role_policy.dashboard_bedrock.policy).Statement[0].Resource == [
@@ -46,7 +47,8 @@ run "india_model_and_profile_arns_remain_exact" {
 run "global_profile_keeps_existing_policy_scope" {
   command = plan
   variables {
-    chat_model_id = "global.anthropic.claude-opus-5"
+    chat_model_id     = "global.anthropic.claude-opus-5"
+    analysis_model_id = "global.anthropic.claude-opus-5"
   }
   assert {
     condition = jsondecode(aws_iam_role_policy.dashboard_bedrock.policy).Statement[0].Resource == [
@@ -60,5 +62,18 @@ run "global_profile_keeps_existing_policy_scope" {
       "bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"
     ]
     error_message = "Routing normalization must not add IAM actions."
+  }
+}
+
+run "separate_chat_and_analysis_models_are_scoped" {
+  command = plan
+  assert {
+    condition = jsondecode(aws_iam_role_policy.dashboard_bedrock.policy).Statement[0].Resource == [
+      "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-5-5",
+      "arn:aws:bedrock:*:000000000000:inference-profile/global.anthropic.claude-haiku-5-5",
+      "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:*:000000000000:inference-profile/global.anthropic.claude-sonnet-5-5"
+    ]
+    error_message = "Grant only the configured Haiku chat and Sonnet analysis models and profiles."
   }
 }

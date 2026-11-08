@@ -38,10 +38,13 @@ force readonly: the deployed readonly profile can reject setting changes.
 
 ## 2. Provider access or throttling
 
-For `AccessDeniedException`, inspect the deployed `CHAT_MODEL_ID`, effective
-`BEDROCK_REGION` (falling back to `AWS_REGION`, then `us-east-1`), account/model availability,
-and the dashboard ServiceAccount's IRSA policy. `infra/dashboard.tf` derives model/profile
-ARNs and the env value from `chat_model_id`, but verify the running pod and applied policy.
+For `AccessDeniedException`, inspect the deployed `CHAT_MODEL_ID` and `ANALYSIS_MODEL_ID`,
+effective `BEDROCK_REGION` (falling back to `AWS_REGION`, then `us-east-1`), account/model
+availability, and the dashboard ServiceAccount's IRSA policy. `infra/bedrock.tf` derives
+model/profile ARNs from `chat_model_id` and `analysis_model_id`, and `infra/dashboard.tf`
+injects both env values, but verify the running pod and applied policy. Changing a model ID
+default removes the previous model's invoke grant in the same apply; pods still running the
+old env value are denied until the rollout completes.
 The Workshop Studio region exception is documented in
 [Workshop Studio notes](../workshop-studio-notes.md).
 Do not switch model IDs based only on a familiar name from a different provider catalog.
@@ -86,7 +89,9 @@ is missing. Grouping is inferred per `SessionId`: any nonempty model not startin
 model gives Bedrock, otherwise unknown.
 It does not identify the emitting client or enforce a static experiment group.
 
-Cost-page spend and ordinary chat cost answers use client-reported `cost.usage`. Align the
+Cost-page spend uses client-reported `cost.usage`. The analysis prompt prefers
+`get_usage_summary`, which reuses the dashboard aggregation and pricing adapters, for chat
+cost answers; raw-SQL answers still read `cost.usage` directly. Align the
 window, filters, unknown-session inclusion, and report coverage before comparing them.
 Positive reports can still be incomplete; absent/zero reports with tokens are not confirmed
 free use. Token-price computed cost and cache-write TTL assumptions remain diagnostics.
