@@ -213,8 +213,9 @@ Participant infrastructure is separate from the admin stack. Provision the actua
 network path, SSM/KMS access, and ingest credentials before the workshop; do not assume an
 endpoint is live because its hostname appears in a template.
 
-For dashboard chat, inspect `chat_model_id`, `bedrock_region`, and the applied dashboard IRSA
-policy. `chat_model_id` drives both `CHAT_MODEL_ID` and model/profile ARN selection.
+For dashboard chat, inspect `chat_model_id`, `analysis_model_id`, `bedrock_region`, and the
+applied dashboard IRSA policy. `chat_model_id` and `analysis_model_id` drive `CHAT_MODEL_ID`,
+`ANALYSIS_MODEL_ID` and the model/profile ARN selection for both agents.
 The client chooses `BEDROCK_REGION`, then `AWS_REGION`, then `us-east-1`.
 **For the known Workshop Studio account configuration that permits Bedrock only in
 `us-west-2`, set `bedrock_region = "us-west-2"` when moving the dashboard image there.**

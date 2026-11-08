@@ -22,6 +22,17 @@ const toolTurn = (id = "one", sql = "SELECT 1") => ({
 });
 const done = { content: [{ text: "done" }], stopReason: "end_turn", truncatedToolIds: new Set() };
 const configuration = { limit: () => false };
+// Keep the existing SQL-path checks exercising the real analysis loop, through
+// the new conversation delegation boundary.
+function analysisHandler(options) {
+  const analysisTurn = options.runTurn;
+  return createChatHandler({ ...options, runTurn: async args => {
+    if (args.agent === "analysis") return analysisTurn(args);
+    return args.allowTools
+      ? { ...toolTurn(), content: [{ toolUse: { toolUseId: "delegate", name: "analyze_data", input: { question: "synthetic analysis" } } }] }
+      : done;
+  } });
+}
 
 test("chat rejects concurrent excess before SSE/model work and releases after settlement", async () => {
   const budget = createBudget(1);
@@ -50,7 +61,7 @@ test("active tool path bounds JSON context and preserves masking configuration",
     let turns = 0;
     const response = new Response();
     const rows = Array.from({ length: 30 }, (_, i) => ({ user: "fixture@example.invalid", i, value: "x".repeat(1500) }));
-    const handler = createChatHandler({ ...configuration, mask,
+    const handler = analysisHandler({ ...configuration, mask,
       query: async (_sql, signal) => {
         assert.ok(signal instanceof AbortSignal);
         return { rows, truncated: false };
@@ -81,7 +92,7 @@ test("disconnect aborts active SQL and prevents every later model/tool call", as
   let queries = 0;
   let signal;
   const response = new Response();
-  const handler = createChatHandler({ ...configuration,
+  const handler = analysisHandler({ ...configuration,
     runTurn: async () => { calls++; return toolTurn(); },
     query: (_sql, active) => {
       queries++; signal = active;
@@ -136,7 +147,7 @@ test("SQL validation still blocks unsafe statements before execution", async () 
   let queries = 0;
   let feedback;
   const response = new Response();
-  await createChatHandler({ ...configuration,
+  await analysisHandler({ ...configuration,
     query: async () => { queries++; throw new Error("must not execute"); },
     runTurn: async ({ messages }) => {
       if (!turns++) return toolTurn("unsafe", "DROP TABLE otel_logs");
@@ -154,7 +165,7 @@ test("existing hop and SQL budgets remain bounded independently", async () => {
   let turns = 0;
   let queries = 0;
   const toolsAllowed = [];
-  await createChatHandler({ ...configuration,
+  await analysisHandler({ ...configuration,
     query: async () => { queries++; return { rows: [], truncated: false }; },
     runTurn: async ({ allowTools }) => {
       toolsAllowed.push(allowTools); turns++;
