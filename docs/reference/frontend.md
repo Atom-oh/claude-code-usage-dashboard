@@ -282,7 +282,10 @@ client selection, the global backend and the detail's group (Claude only), never
 always shows the partial-collection badge, labels Codex cost as linked estimates, renders
 unknown tokens, cost, subagents or duration as not collected (never zero), shows the
 unattached Codex completion note and the `limited` coverage note, and skips the request for
-buckets older than the 90-day trace retention. Task ids are opaque and not displayed. The
+buckets older than the 90-day trace retention. Its sort control requests `sort=tokens`,
+`cost`, `subagents` or `duration`; under `cost` it notes when the server's
+`sort_candidates.limited` reports that Claude tasks were ranked within the token top 100.
+Task ids are opaque and not displayed. The
 selected bucket and task clear when the user, clients, group or range changes.
 
 Opening a task renders

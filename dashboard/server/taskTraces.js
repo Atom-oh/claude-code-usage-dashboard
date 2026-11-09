@@ -21,7 +21,10 @@ export const TASK_LIMIT = 20;
 // Subagent spans of a long task can start after the selected bucket ends (spec: ~12% of
 // subagent llm_request spans had no interaction in the same 7-day window).
 export const SPAN_SLACK_MS = 24 * 3600000;
-const SORTS = ["tokens", "duration"];
+export const SORTS = ["tokens", "cost", "subagents", "duration"];
+// Cost is priced in JS (reported cost from logs, else pricing), so SQL cannot order by it:
+// sort=cost folds the top interactions by tokens and orders that pool by cost.
+export const COST_CANDIDATES = 100;
 export const TOKEN_FIELDS = ["input", "cache_read", "cache_write", "output"];
 // Row guards: a user's turns/completions in one bucket stay far below these; hitting one
 // marks Codex coverage "limited" rather than silently dropping evidence.
@@ -48,7 +51,7 @@ export function validateTaskQuery(raw, enabledClients) {
   if (group && !clients.includes("claude"))
     throw new ValidationError("unsupported filter", "group applies only to Claude tasks");
   const sort = raw.sort ?? "tokens";
-  if (!SORTS.includes(sort)) throw new ValidationError("invalid sort", "sort accepts tokens or duration");
+  if (!SORTS.includes(sort)) throw new ValidationError("invalid sort", "sort accepts tokens, cost, subagents or duration");
   return { clients, userExact, backend, group, sort };
 }
 
@@ -76,8 +79,8 @@ export function claudeTaskListSql(from, to, q) {
       arrayExists(m -> ${claudeBackendSql("m")} = {backend:String}, s.raw_models))`);
     params.backend = q.backend;
   }
-  const order = q.sort === "duration"
-    ? "t.duration_ms DESC, s.sort_tokens DESC, t.TraceId"
+  const order = q.sort === "duration" ? "t.duration_ms DESC, s.sort_tokens DESC, t.TraceId"
+    : q.sort === "subagents" ? "s.subagents DESC, s.sort_tokens DESC, t.TraceId"
     : "s.sort_tokens DESC, t.duration_ms DESC, t.TraceId";
   const sql = `${GROUP_CTE}, interactions AS (
     SELECT TraceId, SessionId,
@@ -120,7 +123,7 @@ LEFT JOIN task_spans s ON t.TraceId = s.TraceId
 LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
 WHERE 1 = 1 ${conds.map(c => `AND ${c}`).join("\n  ")}
 ORDER BY ${order}
-LIMIT ${TASK_LIMIT}`;
+LIMIT ${q.sort === "cost" ? COST_CANDIDATES : TASK_LIMIT}`;
   return { sql, params };
 }
 
@@ -213,13 +216,25 @@ export function foldTask(row, costs) {
   };
 }
 
-const byTokens = (a, b) => (b.tokens.observed_tokens ?? -1) - (a.tokens.observed_tokens ?? -1)
-  || (b.duration_ms ?? -1) - (a.duration_ms ?? -1) || a.id.localeCompare(b.id);
-const byDuration = (a, b) => (b.duration_ms ?? -1) - (a.duration_ms ?? -1)
-  || (b.tokens.observed_tokens ?? -1) - (a.tokens.observed_tokens ?? -1) || a.id.localeCompare(b.id);
+// Descending with unknown (null, non-finite) values last: unknown is never ranked as zero.
+const descKnown = (a, b) => {
+  const x = Number.isFinite(a) ? a : null, y = Number.isFinite(b) ? b : null;
+  return x === null ? (y === null ? 0 : 1) : y === null ? -1 : y - x;
+};
+const tokensOf = (t) => t.tokens?.observed_tokens ?? null;
+const byTokens = (a, b) => descKnown(tokensOf(a), tokensOf(b))
+  || descKnown(a.duration_ms, b.duration_ms) || a.id.localeCompare(b.id);
+const byDuration = (a, b) => descKnown(a.duration_ms, b.duration_ms)
+  || descKnown(tokensOf(a), tokensOf(b)) || a.id.localeCompare(b.id);
+const byCost = (a, b) => descKnown(a.cost_usd, b.cost_usd)
+  || descKnown(tokensOf(a), tokensOf(b)) || a.id.localeCompare(b.id);
+// Codex subagents are null (no parent link): those tasks follow every known count.
+const bySubagents = (a, b) => descKnown(a.subagents, b.subagents)
+  || descKnown(tokensOf(a), tokensOf(b)) || a.id.localeCompare(b.id);
+const ORDERS = { tokens: byTokens, cost: byCost, subagents: bySubagents, duration: byDuration };
 
 export const sortTasks = (tasks, sort = "tokens") =>
-  [...tasks].sort(sort === "duration" ? byDuration : byTokens).slice(0, TASK_LIMIT);
+  [...tasks].sort(ORDERS[sort] ?? byTokens).slice(0, TASK_LIMIT);
 
 // Pure fold: SQL rows (one per interaction, per-call arrays) plus reported costs by request id.
 export function claudeCostMap(costRows) {
@@ -466,7 +481,7 @@ async function claudeTasks(from, to, q, run) {
     const cost = claudeCostSql(from, to, ids);
     costRows = await run(cost.sql, cost.params);
   }
-  return foldClaudeTasks(rows, costRows, { sort: q.sort });
+  return { tasks: foldClaudeTasks(rows, costRows, { sort: q.sort }), considered: rows.length };
 }
 
 async function codexTasks(from, to, q, run, prices) {
@@ -487,9 +502,12 @@ export async function userTasks(from, to, raw, enabledClients, run = defaultQuer
     q.clients.includes("claude") ? claudeTasks(from, to, q, run) : null,
     q.clients.includes("codex") ? codexTasks(from, to, q, run, prices) : null,
   ]);
+  let candidates = null;
   if (claude) {
-    tasks = claude;
-    coverage.claude = claude.length ? "observed" : "empty";
+    tasks = claude.tasks;
+    coverage.claude = claude.tasks.length ? "observed" : "empty";
+    if (q.sort === "cost") candidates = { claude: claude.considered, claude_limit: COST_CANDIDATES,
+      limited: claude.considered >= COST_CANDIDATES };
   }
   if (codex) {
     tasks = sortTasks([...tasks, ...codex.tasks], q.sort);
@@ -497,5 +515,6 @@ export async function userTasks(from, to, raw, enabledClients, run = defaultQuer
     unattached = { ...codex.unattached, cost_partial: codex.unattached.cost_partial || codex.limited,
       turns_without_conversation: codex.skipped_turns, turns_without_unique_id: codex.non_unique_turns };
   }
-  return { tasks, unattached_codex: unattached, coverage, partial: true };
+  return { tasks, unattached_codex: unattached, coverage, partial: true,
+    ...(candidates ? { sort_candidates: candidates } : {}) };
 }

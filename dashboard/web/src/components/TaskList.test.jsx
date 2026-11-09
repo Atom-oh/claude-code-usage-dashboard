@@ -166,6 +166,35 @@ test("sort toggle requests sort=duration", async () => {
   await waitFor(() => expect(taskRequests().some((u) => u.searchParams.get("sort") === "duration")).toBe(true));
 });
 
+test("each of the four sort options requests its sort", async () => {
+  mount();
+  await screen.findByText("claude-opus-5-5");
+  for (const [label, sort] of [["비용 높은 순", "cost"], ["서브에이전트 많은 순", "subagents"], ["느린 순", "duration"],
+    ["토큰 많은 순", "tokens"]]) {
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    await waitFor(() => expect(taskRequests().at(-1).searchParams.get("sort")).toBe(sort));
+    expect(screen.getByRole("button", { name: label }).getAttribute("aria-pressed")).toBe("true");
+  }
+});
+
+test("cost sort notes the Claude candidate pool only when it was full", async () => {
+  tasksBody = response({ sort_candidates: { claude: 100, claude_limit: 100, limited: true } });
+  mount();
+  await screen.findByText("claude-opus-5-5");
+  // The note belongs to the cost order only.
+  expect(screen.queryByText("Claude는 토큰 상위 100개 중 비용 순")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "비용 높은 순" }));
+  expect(await screen.findByText("Claude는 토큰 상위 100개 중 비용 순")).toBeTruthy();
+  cleanup();
+  tasksBody = response({ sort_candidates: { claude: 12, claude_limit: 100, limited: false } });
+  mount();
+  await screen.findByText("claude-opus-5-5");
+  fireEvent.click(screen.getByRole("button", { name: "비용 높은 순" }));
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("sort")).toBe("cost"));
+  await screen.findByText("claude-opus-5-5");
+  expect(screen.queryByText(/토큰 상위 100개 중 비용 순/)).toBeNull();
+});
+
 test("codex row shows estimated linkage", async () => {
   mount();
   await screen.findByText("gpt-6.1");
