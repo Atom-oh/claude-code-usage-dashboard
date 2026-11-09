@@ -136,7 +136,8 @@ shared chair packet of at most 64,000 bytes of compact JSON. Claude's instructio
 argument also stays below 120,000 bytes; its diff uses stdin. Context is at most
 24,000 bytes, reduced to
 20,000 by this repository's context builder. The builder also caps specialist
-instructions at 22,000 bytes, including context, paths and protocol framing.
+instruction templates at 22,000 bytes, including context, paths and response
+instructions, before invocation nonce framing.
 Projects may lower budgets. `input_limits.py` and `build-prompts.py` own these
 policy budgets. The 512,000-byte / 12,000-line guard
 has no recorded sizing experiment or provider derivation; it is not a measured

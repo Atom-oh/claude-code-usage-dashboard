@@ -43,6 +43,10 @@ instruction argument remains subject to both argument and aggregate limits.
 
 ## Selected model context
 
+These are the active `ROLE_REVIEW=1` defaults in
+[role_review.py](../../scripts/pr-review/role_review.py) and
+[synthesize_roles.py](../../scripts/pr-review/synthesize_roles.py).
+
 | Review slot | Primary default model | Published context | Published maximum output |
 | --- | --- | --- | --- |
 | Codex | `global.openai.gpt-6-astra` | 1,050,000 tokens | 128,000 tokens |
@@ -92,7 +96,7 @@ by this evidence update:
 | --- | --- |
 | Complete PR diff | At most 512,000 UTF-8 bytes and 12,000 lines |
 | Trusted context | At most 24,000 bytes; this repository uses 20,000 |
-| Specialist instructions | At most 22,000 UTF-8 bytes, including trusted context, paths and protocol framing |
+| Specialist instruction template | At most 22,000 UTF-8 bytes, including trusted context, paths and response instructions; before nonce framing |
 | Full reviewer or chair request | Below 640,000 bytes, including instructions and framing |
 | Direct Kiro AWS patch | At most 95,000 bytes and 3,000 lines |
 | Chair AWS packet | At most 64,000 bytes of compact JSON |
@@ -100,9 +104,12 @@ by this evidence update:
 | Claude instruction argument | Below 120,000 bytes |
 
 [prepare_context_roles.py](../../scripts/pr-review/prepare_context_roles.py)
-checks the complete specialist instructions against the 22,000-byte budget
-before provider calls. Context below 20,000 bytes can still fail after adding
-instructions and metadata. Guide selection follows the changed paths.
+checks the rendered instruction template against the 22,000-byte budget before
+provider calls. Context below 20,000 bytes can still fail after adding role and
+response instructions and metadata. Guide selection follows the changed paths.
+[frame_request](../../scripts/pr-review/role_review.py) later adds nonce boundary
+instructions and frames the evidence payload; the complete framed request has
+its own guard above.
 
 Commit `4e2dc91` introduced the 512,000-byte / 12,000-line guard on 2026-11-04;
 `7590682` centralized it on 2026-11-08. No sizing experiment, token-count
