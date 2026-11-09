@@ -11,6 +11,10 @@ It hides usage filters/chat and shows configuration, per-client receipt and sche
 Non-admin views make no diagnostic request. Refresh failure retains results only with a
 visible previous-result warning; receipt/empty/unavailable never become usage zeros.
 
+`/changelog` shows the release notes bundled in `releaseNotes.js` without usage filters
+and requests no page data. Its link sits outside `<nav>` under the navigation and marks a release this
+browser has not opened (`localStorage`, best effort). See [releases and tags](../runbooks/releases.md).
+
 The React 18/Vite 8/Tailwind 4 SPA (Node >=22.12) shares the Express image.
 See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions and
 [UI](ui.md) for component and export contracts.

@@ -150,3 +150,28 @@ test("revoked session during package download removes the collector setup", asyn
   expect(await screen.findByRole("heading", { name: "로그인 세션 만료" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: /패키지 다운로드/ })).toBeNull();
 });
+
+test("changelog route shows release notes without usage filters and clears the unseen dot", async () => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  const fetch = vi.fn(url => Promise.resolve({ ok: true, status: 200,
+    json: async () => String(url).startsWith("/api/health/data") ? { status: "ok", ageMinutes: 0, staleAfterMinutes: 360 } : [] }));
+  vi.stubGlobal("fetch", fetch);
+  localStorage.removeItem("ccdash.releaseNotesSeen");
+  const { container } = render(<MemoryRouter initialEntries={["/?client=all"]}>
+    <ConfigProvider config={{ enabledClients: ["claude", "codex"] }}><App /></ConfigProvider>
+  </MemoryRouter>);
+  const entry = screen.getByRole("link", { name: /^변경 내역, 최신 v\d+\.\d+\.\d+, 새 릴리스$/ });
+  // A utility link outside <nav>, so the route/nav contract above is unchanged.
+  expect(container.querySelector("nav").contains(entry)).toBe(false);
+  fireEvent.click(entry);
+  expect(await screen.findByRole("heading", { level: 1, name: "변경 내역" })).toBeTruthy();
+  // Like /installation: no FilterBar container, only the page itself.
+  expect(container.querySelector("main").children.length).toBe(1);
+  expect(screen.getAllByRole("link", { name: /바로 가기/ }).length).toBeGreaterThan(0);
+  const detailLink = screen.getAllByRole("link", { name: /바로 가기/ })
+    .map(a => new URL(a.href)).find(u => u.searchParams.get("view") === "detail");
+  expect(detailLink.searchParams.get("client")).toBe("claude");
+  expect(localStorage.getItem("ccdash.releaseNotesSeen")).toMatch(/^\d+\.\d+\.\d+$/);
+  // Stays on /changelog: ClientContext treats it as a dashboard path and does not redirect.
+  expect(screen.getByRole("link", { name: /^변경 내역, 최신 v\d+\.\d+\.\d+$/ })).toBeTruthy();
+});
