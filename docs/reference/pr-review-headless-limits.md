@@ -83,18 +83,26 @@ internal compaction.
 
 ## Existing repository policy
 
-[input_limits.py](../../scripts/pr-review/input_limits.py) owns the enforced
-budgets. They remain unchanged by this evidence update:
+[input_limits.py](../../scripts/pr-review/input_limits.py) owns transport and
+request budgets; [build-prompts.py](../../scripts/pr-review/build-prompts.py)
+owns this repository's context and instruction budgets. They remain unchanged
+by this evidence update:
 
 | Input | Existing policy budget |
 | --- | --- |
 | Complete PR diff | At most 512,000 UTF-8 bytes and 12,000 lines |
 | Trusted context | At most 24,000 bytes; this repository uses 20,000 |
+| Specialist instructions | At most 22,000 UTF-8 bytes, including trusted context, paths and protocol framing |
 | Full reviewer or chair request | Below 640,000 bytes, including instructions and framing |
 | Direct Kiro AWS patch | At most 95,000 bytes and 3,000 lines |
 | Chair AWS packet | At most 64,000 bytes of compact JSON |
 | Complete Kiro V3 request | Below 120,000 bytes, including context, metadata and framing |
 | Claude instruction argument | Below 120,000 bytes |
+
+[prepare_context_roles.py](../../scripts/pr-review/prepare_context_roles.py)
+checks the complete specialist instructions against the 22,000-byte budget
+before provider calls. Context below 20,000 bytes can still fail after adding
+instructions and metadata. Guide selection follows the changed paths.
 
 Commit `4e2dc91` introduced the 512,000-byte / 12,000-line guard on 2026-11-04;
 `7590682` centralized it on 2026-11-08. No sizing experiment, token-count

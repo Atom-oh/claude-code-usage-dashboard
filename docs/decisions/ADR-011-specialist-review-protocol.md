@@ -80,14 +80,3 @@ changes. Missing required output blocks. This supersedes the preceding CI select
 and coverage amendment. The production scope has no path exclusions; binary content
 and oversized input block instead of producing a partial pass. Existing safety,
 credential isolation, timeouts and SHA-bound publication remain in force.
-
-## Clarification 2026-11-09 — Input budget evidence
-
-The 512,000-byte / 12,000-line guard is repository policy, not a documented
-headless or model maximum. Its introduction has no recorded sizing experiment
-or provider derivation. Published context windows, CLI transport limits and
-account quotas use distinct scopes and units; none establishes this exact guard.
-This clarification retains existing enforcement and coverage requirements.
-Budget changes require dated evidence for the selected runner, model and
-provider, complete framed token/output accounting and boundary validation.
-See [limit evidence and update rules](../reference/pr-review-headless-limits.md).
