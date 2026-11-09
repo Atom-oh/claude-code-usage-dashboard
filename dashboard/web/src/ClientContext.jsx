@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConfig } from "./ConfigContext.jsx";
-import { clientPage, isDashboardPath } from "./clientNavigation.js";
+import { CHANGELOG_PATH, clientPage, isDashboardPath } from "./clientNavigation.js";
 
 export const CLIENT_LABELS = { all: "전체", claude: "Claude Code", codex: "Codex" };
 const ClientContext = createContext({ client: "claude", common: true, detail: false, enabledClients: ["claude"] });
@@ -22,6 +22,7 @@ export function ClientProvider({ children }) {
 
   useEffect(() => {
     document.title = pathname === "/installation" ? "설치 상태 · AI 사용량 대시보드"
+      : pathname === CHANGELOG_PATH ? "변경 내역 · AI 사용량 대시보드"
       : `${clientPage(pathname).label} · ${client === "all" ? "Claude + Codex" : CLIENT_LABELS[client]}${detail ? " 상세" : ""}`;
   }, [client, detail, pathname]);
 

@@ -203,6 +203,10 @@ abandoned server work; retain readonly and resource ceilings.
 
 ## Procedure
 
+Build a release tag ([releases and tags](releases.md)) and record it with the revision.
+Cut a release first when `main` has unreleased user-visible changes; an untagged revision
+remains deployable for fixes that cannot wait, recorded as untagged.
+
 ### 1. Refresh the price snapshot, record the revision and rollback image
 
 The image carries `dashboard/server/awsPriceSnapshot.json`, the AWS Price List rates used until

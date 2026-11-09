@@ -1,16 +1,62 @@
 # Changelog
 
 Notable changes follow the categories of Keep a Changelog and Semantic Versioning.
-All changes recorded here are under **Unreleased**. Entries describe changes at their
-recorded dates, not proof that infrastructure or migrations are deployed. Later entries
-supersede earlier behavior; current contracts live in [AGENTS.md](AGENTS.md), the
-[API reference](docs/api-reference.md) and [metrics glossary](docs/metrics.md).
+Each version is an annotated `vX.Y.Z` Git tag described in the
+[release runbook](docs/runbooks/releases.md); **Unreleased** holds changes merged since
+the latest tag. The dashboard's `/changelog` page shows the user-facing subset of each
+release. Entries describe changes at their recorded dates, not proof that infrastructure
+or migrations are deployed. Later entries supersede earlier behavior; current contracts
+live in [AGENTS.md](AGENTS.md), the [API reference](docs/api-reference.md) and
+[metrics glossary](docs/metrics.md).
 
 In particular, the September 10-11 reported-spend changes supersede earlier computed-primary
 UI behavior and billing-lower-bound wording. Neither reported nor computed estimates are
 invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
+
+## [1.1.0] - 2026-11-09
+
+### Added
+
+- In-app release notes at `/changelog`, reached from a version link under the sidebar
+  and mobile navigation that marks a release the browser has not opened yet. Notes ship
+  in the web bundle (`dashboard/web/src/releaseNotes.js`); tests keep them aligned with
+  this file and both package versions. Release tags follow the
+  [release runbook](docs/runbooks/releases.md).
+- `GET /api/users/tasks` and the task list accept `sort` = `tokens` (default), `cost`,
+  `subagents` or `duration`. `cost` orders the top 100 Claude interactions by tokens and
+  all Codex turns; the response discloses `sort_candidates` (#229).
+- The task detail groups LLM calls by model and call source (lanes, calls, known cost with
+  partial flag, tokens); selecting a row highlights that model in the timeline (#229).
+
+### Fixed
+
+- Name subagent lanes from the request log's `agent.name` when the spawning `Agent` span has
+  no `subagent_type`, then from the `agent.builtin.<type>` query source. Parallel lanes of
+  one type still share a name because task descriptions are not in telemetry (#228).
+
+## [1.0.0] - 2026-11-08
+
+First tagged release, tagged retroactively on `714fc3b`, the revision deployed on
+2026-11-08. It contains every entry below; the dated headings record when each change
+landed on `main`.
+
+### Added (2026-11-08 user task traces)
+
+- One full-width user detail for Claude Code and Codex replaces the legacy drawer on both
+  Users pages. Claude-only sections are labelled and show not-collected for Codex (#215).
+- `GET /api/users/tasks` lists the top 20 tasks of an exact user in a trend bucket: Claude
+  interaction traces and UUID-identified Codex turns with completions linked by
+  conversation and time. `GET /api/users/tasks/detail` returns main/subagent lanes,
+  allowlisted span attributes, per-call and cumulative cost and rule-based cost reasons,
+  bounded at 5000 spans. `/api/users/interactions` and `/api/users/heatmap` are removed (#215).
+
+### Added (2026-11-08 resizable floating chat)
+
+- Resize the floating chat from its top-left handle (pointer or arrow keys) or expand it
+  up to 960 px; the size is clamped to the viewport and remembered per browser. Charts show
+  their effective time range (#223).
 
 ### Changed (2026-11-08 chat and analysis agents)
 
@@ -22,6 +68,51 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Add `chart` SSE events built from stored query results (`show_chart`) and render them as
   fixed Recharts templates in both chat surfaces. Only the analysis agent requests adaptive
   summarized thinking.
+
+### Added (2026-11-07 user cost channel bars)
+
+- Shared Cost views combine identical emitted user IDs and show per-channel model bars
+  (CCB, C4E, unclassified, Codex) beside each amount; unknown-only lines stay unpriced (#214).
+
+### Changed (2026-11-06 dashboard security hardening)
+
+- Read dashboard secrets from read-only `*_FILE` mounts as well as environment values and
+  harden authentication, ClickHouse and health handling; the Basic failed-credential limit
+  stays keyed on the client address and is configurable (#209, #211).
+
+### Changed (2026-11-06 ClickHouse node)
+
+- Run ClickHouse on `c9g.2xlarge` without a CPU limit (request 6) and require replica
+  anti-affinity (#212).
+
+### Added (2026-11-05 team attribute and team cost)
+
+- Filter by the OTel `team` attribute, show a team column in every user view and add
+  `GET /api/cost/by-team` and `GET /api/cost/by-team-daily` with a team cost section on
+  the Claude detail Cost page (#200, #201, #202, #208).
+
+### Added (2026-11-05 Claude session providers)
+
+- Record reported Claude session providers (migration 009) and, with
+  `CLAUDE_PROVIDER_GROUPS=true`, prefer them when inferring session channels (#203, #204).
+
+### Added (2026-11-05 Bedrock price discovery)
+
+- Price newly observed Bedrock models from public AWS model-card Standard-tier rates in the
+  background; unsupported formats stay unknown and `AWS_PRICE_LIST=off` disables it (#207).
+
+### Added (2026-11-04 AWS Price List rates)
+
+- Merge AWS Price List rates (runtime refresh every `AWS_PRICE_REFRESH_HOURS`, build
+  snapshot fallback) under `PRICING_JSON`/`CODEX_PRICING_JSON` overrides for list-price
+  estimates; `/api/config` reports `pricing.priceList` metadata (#179, #184, #185).
+
+### Added (2026-11-04 session turns and daily insights)
+
+- `GET /api/overview/session-turns` and a Claude detail Overview card for turns per
+  session, cost per turn and top users/sessions with coverage counts (#186).
+- Optional daily Overview insights generated once per UTC day from pseudonymized
+  aggregates on `INSIGHTS_MODEL_ID` and stored in DynamoDB (#187).
 
 ### Changed (2026-11-04 specialist review coverage)
 

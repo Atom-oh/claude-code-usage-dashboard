@@ -13,4 +13,6 @@ export const COLLECTOR_PAGE = { to: "/collector", key: "collector", label: "ìˆ˜ì
 export const clientPage = (pathname) => pathname === COLLECTOR_PAGE.to ? COLLECTOR_PAGE
   : CLIENT_PAGES.find((p) => p.to === pathname) || CLIENT_PAGES[0];
 export const isClientPath = (pathname) => CLIENT_PAGES.some((p) => p.to === pathname);
-export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation" || pathname === COLLECTOR_PAGE.to;
+export const CHANGELOG_PATH = "/changelog";
+export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation"
+  || pathname === COLLECTOR_PAGE.to || pathname === CHANGELOG_PATH;

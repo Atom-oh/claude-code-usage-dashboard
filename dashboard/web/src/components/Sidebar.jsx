@@ -4,6 +4,7 @@ import { cn } from "../cn.js";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
 import { CLIENT_PAGES, COLLECTOR_PAGE } from "../clientNavigation.js";
 import { AccountMenu } from "./AccountMenu.jsx";
+import { ReleaseLink } from "./ReleaseLink.jsx";
 import { useConfig } from "../ConfigContext.jsx";
 
 const ICONS = [LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, UsersIcon, DollarSign, ShieldAlert, Sparkles];
@@ -74,6 +75,7 @@ export function Sidebar() {
           <NavItem {...item} key={item.to} />
         ))}
       </nav>
+      <ReleaseLink />
       <AccountMenu />
 
       <div className="mt-4 border-t border-chrome-border pt-3">

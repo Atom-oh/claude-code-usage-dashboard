@@ -32,6 +32,10 @@ CI harness discovers test-*.sh; absent gitignored .claude/ tooling: expected ski
 - Shared views: known costs/observed_tokens, partial flags; all-unknown unavailable. Strict canonical tokens for ratios: [coverage](docs/decisions/ADR-014-observed-token-subtotals.md).
 - No secrets/personal/customer data in commits/public reviews/site assets. UI masking is not API access control.
 
+## Releases
+
+Change PRs add CHANGELOG Unreleased entries; deploy tagged `vX.Y.Z` release PRs: [releases](docs/runbooks/releases.md).
+
 ## Review
 
 Engineering docs/guides/ADRs/PR prose: concise English over bilingual review templates; separate UI localization. Link owners; keep contracts/reasons/limits, no duplicate translations/transcripts/stale line refs.
