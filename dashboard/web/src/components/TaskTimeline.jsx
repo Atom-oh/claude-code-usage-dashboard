@@ -14,6 +14,8 @@ const LANE_H = 64, TOP = 8, BAR_H = 22, MARK_H = 7, TICKS = 4;
 const TOOL_FILL = "var(--ink-400)", WAIT_FILL = "var(--negative)";
 // SVG bars get no reliable native focus outline, so the focused bar draws its own ring.
 const FOCUS_STROKE = "var(--brand-600)", SELECTED_STROKE = "var(--ink-800)";
+// Opacity factor for LLM bars outside an active highlight.
+const DIM = 0.15;
 
 export function laneStats(lane, truncated) {
   if (truncated) return "합계 미표시";
@@ -37,7 +39,9 @@ export function TimeAxis({ end, y }) {
   </g>;
 }
 
-export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId, onSelect }) {
+// `highlight` (optional): a predicate over llm spans; when set, non-matching LLM bars are
+// dimmed (data-dimmed). Tool and wait marks are unaffected. Omitted = nothing dimmed.
+export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId, onSelect, highlight = null }) {
   const x = (ms) => X0 + (end > 0 ? (ms / end) * PLOT_W : 0);
   const width = (ms) => Math.max(2, end > 0 ? ((observedNumber(ms) ?? 0) / end) * PLOT_W : 2);
   const row = new Map(lanes.map((l, i) => [l.id, TOP + i * LANE_H]));
@@ -62,8 +66,12 @@ export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId
       style: focusedId === s.id ? { stroke: FOCUS_STROKE, strokeWidth: 2.5 }
         : { stroke: selectedId === s.id ? SELECTED_STROKE : "none", strokeWidth: 1.5 },
     };
-    if (s.kind === "llm") return <rect key={s.id} {...common} x={x(s.start_ms)} y={y + 2} width={width(s.duration_ms)} height={BAR_H}
-      rx={2} style={{ ...common.style, fill: color, opacity: ctx === null ? 0.45 : 0.3 + 0.7 * (ctx / maxContext) }} />;
+    if (s.kind === "llm") {
+      const dimmed = typeof highlight === "function" && !highlight(s);
+      const opacity = (ctx === null ? 0.45 : 0.3 + 0.7 * (ctx / maxContext)) * (dimmed ? DIM : 1);
+      return <rect key={s.id} {...common} data-dimmed={dimmed ? "" : undefined} x={x(s.start_ms)} y={y + 2}
+        width={width(s.duration_ms)} height={BAR_H} rx={2} style={{ ...common.style, fill: color, opacity }} />;
+    }
     return <rect key={s.id} {...common} x={x(s.start_ms)} y={y + BAR_H + 6} width={s.kind === "wait" ? Math.max(MARK_H, width(s.duration_ms))
       : width(s.duration_ms)} height={MARK_H} style={{ ...common.style, fill: s.kind === "wait" ? WAIT_FILL : TOOL_FILL }} />;
   };

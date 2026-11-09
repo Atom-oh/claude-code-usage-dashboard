@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
-  sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId } from "./taskTraces.js";
+  sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId, COST_CANDIDATES } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -31,6 +31,24 @@ test("validateTaskQuery requires userExact", () => {
 test("validateTaskQuery rejects sort=foo", () => {
   assert.throws(() => validateTaskQuery({ userExact: "a", sort: "foo" }, both), { name: "ValidationError" });
   assert.equal(validateTaskQuery({ userExact: "a", sort: "duration" }, both).sort, "duration");
+});
+
+test("validateTaskQuery accepts the four sorts and names them in the error", () => {
+  for (const sort of ["tokens", "cost", "subagents", "duration"])
+    assert.equal(validateTaskQuery({ userExact: "a", sort }, both).sort, sort);
+  assert.throws(() => validateTaskQuery({ userExact: "a", sort: "subagent" }, both),
+    (err) => err.name === "ValidationError" && /tokens, cost, subagents or duration/.test(err.detail ?? err.message));
+});
+
+test("claudeTaskListSql orders and limits per sort", () => {
+  const sqlFor = (sort) => claudeTaskListSql(from, to, validateTaskQuery({ userExact: "a", sort }, both)).sql;
+  const tail = (sql) => sql.slice(sql.lastIndexOf("ORDER BY"));
+  assert.match(tail(sqlFor("tokens")), /^ORDER BY s\.sort_tokens DESC, t\.duration_ms DESC, t\.TraceId\s+LIMIT 20$/);
+  assert.match(tail(sqlFor("duration")), /^ORDER BY t\.duration_ms DESC, s\.sort_tokens DESC, t\.TraceId\s+LIMIT 20$/);
+  assert.match(tail(sqlFor("subagents")), /^ORDER BY s\.subagents DESC, s\.sort_tokens DESC, t\.TraceId\s+LIMIT 20$/);
+  // Cost is priced in JS: SQL selects the token-ordered candidate pool.
+  assert.equal(COST_CANDIDATES, 100);
+  assert.match(tail(sqlFor("cost")), /^ORDER BY s\.sort_tokens DESC, t\.duration_ms DESC, t\.TraceId\s+LIMIT 100$/);
 });
 
 test("validateTaskQuery omits disabled codex", () => {
@@ -106,6 +124,20 @@ test("sort=duration orders by duration_ms", () => {
   assert.deepEqual(foldClaudeTasks(rows, [], { sort: "duration" }).map(t => t.id),
     ["claude:b", "claude:c", "claude:a"]);
   assert.equal(foldClaudeTasks(rows, [], { sort: "duration" })[0].duration_ms, 50);
+});
+
+test("sortTasks by cost and subagents keeps unknown values last", () => {
+  const t = (id, cost_usd, subagents, observed_tokens) => ({ id, cost_usd, subagents, duration_ms: 1,
+    tokens: { observed_tokens } });
+  const tasks = [t("claude:a", 0.5, 1, 10), t("claude:b", null, 3, 999), t("claude:c", 2, 0, 5),
+    t("claude:d", 0.5, 1, 50), t("codex:x:1", 0.1, null, 2000), t("claude:e", 0, 3, 1)];
+  assert.deepEqual(sortTasks(tasks, "cost").map(x => x.id),
+    ["claude:c", "claude:d", "claude:a", "codex:x:1", "claude:e", "claude:b"]);
+  assert.deepEqual(sortTasks(tasks, "subagents").map(x => x.id),
+    ["claude:b", "claude:e", "claude:d", "claude:a", "claude:c", "codex:x:1"]);
+  // Full ties fall back to the id.
+  assert.deepEqual(sortTasks([t("claude:z", 1, 1, 1), t("claude:y", 1, 1, 1)], "cost").map(x => x.id),
+    ["claude:y", "claude:z"]);
 });
 
 test("claudeCallCost uses reported cost for claude-opus", () => {
@@ -209,7 +241,9 @@ test("taskCacheKey isolates users, clients and sorts", () => {
   const joakim = taskCacheKey({ ...base, userExact: "joakim@x.com" }, both);
   const codex = taskCacheKey({ ...base, userExact: "kim@x.com", client: "codex" }, both);
   const slow = taskCacheKey({ ...base, userExact: "kim@x.com", sort: "duration" }, both);
-  assert.equal(new Set([kim, joakim, codex, slow]).size, 4);
+  const costly = taskCacheKey({ ...base, userExact: "kim@x.com", sort: "cost" }, both);
+  const agents = taskCacheKey({ ...base, userExact: "kim@x.com", sort: "subagents" }, both);
+  assert.equal(new Set([kim, joakim, codex, slow, costly, agents]).size, 6);
   // Unread parameters and order do not split the key.
   assert.equal(taskCacheKey({ userExact: "kim@x.com", x: "1", ...base }, both), kim);
   assert.equal(taskCacheKey({ ...base, userExact: "kim@x.com", sort: "tokens" }, both), kim);
@@ -424,6 +458,42 @@ test("merged list mixes clients sorted by tokens", () => {
   assert.deepEqual(sortTasks([...claude, ...codex], "tokens").map(t => t.id),
     ["claude:big", `codex:c1:${U1}`, "claude:small"]);
   assert.deepEqual(sortTasks([...claude, ...codex], "duration").map(t => t.id)[0], `codex:c1:${U1}`);
+});
+
+test("merged list puts Codex after known Claude subagent counts and ranks cost across clients", () => {
+  const claude = foldClaudeTasks([task({ trace_id: "few", subagents: "0", calls: [call("r1", "claude-opus-5", "500")] }),
+    task({ trace_id: "many", subagents: "4", calls: [call("r2", "claude-opus-5", "1")] })],
+  [{ request_id: "r1", cost_usd: 0.01 }, { request_id: "r2", cost_usd: 9 }]);
+  const { tasks: codex } = attachCompletions([turn()], [completion("2026-11-05T01:00:01Z")], opts);
+  assert.deepEqual(sortTasks([...codex, ...claude], "subagents").map(t => t.id),
+    ["claude:many", "claude:few", `codex:c1:${U1}`]);
+  const byCost = sortTasks([...codex, ...claude], "cost").map(t => t.id);
+  assert.equal(byCost[0], "claude:many");
+  assert.deepEqual([...byCost].sort(), ["claude:few", "claude:many", `codex:c1:${U1}`]);
+  assert.equal(byCost.indexOf("claude:few") > byCost.indexOf(`codex:c1:${U1}`), unitCost > 0.01);
+});
+
+test("userTasks sort=cost folds a 100-row pool, orders by cost and reports the pool", async () => {
+  // 100 candidate rows: the cheapest by tokens has the highest reported cost.
+  const rows = Array.from({ length: COST_CANDIDATES }, (_, i) =>
+    task({ trace_id: `t${i}`, calls: [call(`r${i}`, "claude-opus-5", String(1000 - i))] }));
+  const costRows = rows.map((_, i) => ({ request_id: `r${i}`, cost_usd: i / 100 }));
+  const sqls = [];
+  const run = async (sql) => { sqls.push(sql); return sql.includes("otel_traces") ? rows : costRows; };
+  const out = await userTasks(from, to, { userExact: "a", client: "claude", sort: "cost" }, both, run);
+  assert.match(sqls[0], /LIMIT 100$/);
+  assert.equal(out.tasks.length, 20);
+  assert.deepEqual(out.tasks.slice(0, 3).map(t => t.id), ["claude:t99", "claude:t98", "claude:t97"]);
+  assert.deepEqual(out.sort_candidates, { claude: 100, claude_limit: 100, limited: true });
+
+  const small = await userTasks(from, to, { userExact: "a", client: "claude", sort: "cost" }, both,
+    async (sql) => (sql.includes("otel_traces") ? rows.slice(0, 3) : costRows));
+  assert.deepEqual(small.sort_candidates, { claude: 3, claude_limit: 100, limited: false });
+  // Other sorts and Codex-only cost sorts carry no candidate report.
+  const tokens = await userTasks(from, to, { userExact: "a", client: "claude" }, both, async () => []);
+  assert.equal("sort_candidates" in tokens, false);
+  const codexCost = await userTasks(from, to, { userExact: "a", client: "codex", sort: "cost" }, both, async () => []);
+  assert.equal("sort_candidates" in codexCost, false);
 });
 
 test("userTasks merges Codex turns, counts skipped turns and keeps 20", async () => {

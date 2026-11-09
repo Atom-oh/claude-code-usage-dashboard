@@ -246,3 +246,47 @@ test("a keyboard-focused bar draws a visible focus ring", async () => {
   expect(bar.hasAttribute("data-focused")).toBe(false);
   expect(bar.style.stroke).toBe("var(--ink-800)"); // selected, no longer focused
 });
+
+test("model breakdown card lists calls by model and source and highlights one model's bars", async () => {
+  body.spans = body.spans.map((s) => (s.id === "llm-3"
+    ? { ...s, attrs: { model: "claude-sonnet-5", query_source_safe: "sdk" }, cost_usd: null }
+    : s.id === "llm-2" ? { ...s, attrs: { ...s.attrs, query_source_safe: "repl_main_thread" } } : s));
+  mount();
+  const card = await screen.findByRole("region", { name: "모델별 호출" });
+  for (const h of ["모델", "호출 출처", "레인", "호출", "비용"]) expect(within(card).getByRole("columnheader", { name: h })).toBeTruthy();
+  const rows = within(card).getAllByRole("row").slice(1);
+  expect(rows).toHaveLength(2);
+  expect(within(rows[0]).getByText("claude-opus-5-5")).toBeTruthy();
+  expect(rows[0].textContent).toContain("메인 세션, Explore");
+  expect(rows[0].textContent).toContain("$2.25");
+  expect(within(rows[1]).getByText("sdk")).toBeTruthy();
+  expect(within(rows[1]).getByText("미수집")).toBeTruthy(); // unknown cost, not $0
+  expect(card.innerHTML).not.toContain("agent-b");
+
+  const bars = () => screen.getAllByRole("button", { name: /^LLM 호출 #/ });
+  expect(bars().some((b) => b.hasAttribute("data-dimmed"))).toBe(false);
+  const sonnet = within(rows[1]).getByRole("button", { name: "claude-sonnet-5" });
+  fireEvent.click(sonnet);
+  expect(sonnet.getAttribute("aria-pressed")).toBe("true");
+  const dimmed = bars().filter((b) => b.hasAttribute("data-dimmed")).map((b) => b.getAttribute("aria-label"));
+  expect(dimmed).toEqual(["LLM 호출 #1 · 메인 세션", "LLM 호출 #2 · Explore"]);
+  expect(screen.getByRole("button", { name: "LLM 호출 #3 · 서브에이전트" }).hasAttribute("data-dimmed")).toBe(false);
+  // Tool and wait marks are never dimmed.
+  expect(screen.getByRole("button", { name: /Agent 도구/ }).hasAttribute("data-dimmed")).toBe(false);
+  // Clicking the same row again clears the highlight.
+  fireEvent.click(sonnet);
+  expect(sonnet.getAttribute("aria-pressed")).toBe("false");
+  expect(bars().some((b) => b.hasAttribute("data-dimmed"))).toBe(false);
+  // Clicking elsewhere in the row toggles too.
+  fireEvent.click(within(rows[0]).getByText("$2.25"));
+  expect(bars().filter((b) => b.hasAttribute("data-dimmed")).map((b) => b.getAttribute("aria-label")))
+    .toEqual(["LLM 호출 #3 · 서브에이전트"]);
+});
+
+test("truncated detail model breakdown shows counts without cost sums", async () => {
+  body = { ...claudeDetail(), truncated: true, span_total: 9000, why: [] };
+  mount();
+  const card = await screen.findByRole("region", { name: "모델별 호출" });
+  expect(within(card).getAllByText("합계 미표시")).toHaveLength(within(card).getAllByRole("row").length - 1);
+  expect(card.textContent).not.toContain("$");
+});

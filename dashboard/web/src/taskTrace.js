@@ -108,3 +108,48 @@ export function compactCount(value) {
   if (n >= 1e3) return `${trim(n / 1e3)}K`;
   return String(Math.round(n));
 }
+
+const labelOf = (v) => (typeof v === "string" && v !== "" ? v : null);
+
+// Model of an llm span as the side panel shows it (span attr, else the linked Codex
+// completion's model) and its allowlisted call source. Unknown stays null.
+export function modelOf(span) {
+  return { model: labelOf(span?.attrs?.model) ?? labelOf(span?.completion?.model),
+    source: labelOf(span?.attrs?.query_source_safe) };
+}
+
+// Stable group key of an llm span for modelBreakdown and timeline highlighting.
+export function modelKey(span) {
+  const { model, source } = modelOf(span);
+  return JSON.stringify([model, source]);
+}
+
+// LLM calls grouped by (model, call source), most calls first. `cost_usd` sums known call
+// costs (null when none is known) and `cost_partial` flags any call without a known cost
+// (a Codex sampling span without a linked completion has no `cost_usd` key). Tokens are the
+// sum of calls whose four canonical components are all known, flagged partial otherwise.
+export function modelBreakdown(spans = []) {
+  const groups = new Map();
+  for (const s of spans) {
+    if (s?.kind !== "llm") continue;
+    const key = modelKey(s);
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, ...modelOf(s), calls: 0, lanes: [], cost_usd: null, cost_partial: false,
+        observed_tokens: null, tokens_partial: false };
+      groups.set(key, g);
+    }
+    g.calls++;
+    if (!g.lanes.includes(s.lane)) g.lanes.push(s.lane);
+    const cost = Object.prototype.hasOwnProperty.call(s, "cost_usd") ? observedNumber(s.cost_usd) : null;
+    if (cost === null) g.cost_partial = true;
+    else g.cost_usd = (g.cost_usd ?? 0) + cost;
+    const parts = ["input", "cache_read", "cache_write", "output"].map((k) => observedNumber(s.tokens?.[k]));
+    if (parts.some((v) => v === null)) g.tokens_partial = true;
+    else g.observed_tokens = (g.observed_tokens ?? 0) + parts.reduce((a, b) => a + b, 0);
+  }
+  // Unknown labels sort after known ones on ties.
+  const byLabel = (x, y) => (x === y ? 0 : x === null ? 1 : y === null ? -1 : x.localeCompare(y));
+  return [...groups.values()].sort((a, b) => b.calls - a.calls
+    || byLabel(a.model, b.model) || byLabel(a.source, b.source));
+}

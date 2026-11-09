@@ -282,7 +282,10 @@ client selection, the global backend and the detail's group (Claude only), never
 always shows the partial-collection badge, labels Codex cost as linked estimates, renders
 unknown tokens, cost, subagents or duration as not collected (never zero), shows the
 unattached Codex completion note and the `limited` coverage note, and skips the request for
-buckets older than the 90-day trace retention. Task ids are opaque and not displayed. The
+buckets older than the 90-day trace retention. Its sort control requests `sort=tokens`,
+`cost`, `subagents` or `duration`; under `cost` it notes when the server's
+`sort_candidates.limited` reports that Claude tasks were ranked within the token top 100.
+Task ids are opaque and not displayed. The
 selected bucket and task clear when the user, clients, group or range changes.
 
 Opening a task renders
@@ -294,7 +297,13 @@ first, then lanes by first span; per-lane calls and cost; LLM bars shaded by inp
 tool bars and permission-wait marks; dashed connectors from a spawning span that is in the
 payload), a cumulative cost band stacked by lane colour with a hover tooltip
 ([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a side panel for the
-clicked span and the server's `why` rules. Pure helpers live in
+clicked span, the server's `why` rules and a per-model call table (`modelBreakdown()`:
+LLM calls grouped by the span's `model`, else its linked completion's model, and
+`query_source_safe`, with lanes, calls and known cost; unknown cost stays not collected
+and partial sums are labelled). Selecting a table row (a button) dims every other LLM bar
+in the timeline through TaskTimeline's optional `highlight` predicate; selecting it again
+clears it. A truncated detail counts only the returned spans and shows no cost sums there.
+Pure helpers live in
 [taskTrace.js](../../dashboard/web/src/taskTrace.js); lane hues are `LANE_COLOR` in
 [colors.js](../../dashboard/web/src/colors.js) and icons in
 [taskIcons.jsx](../../dashboard/web/src/components/taskIcons.jsx).

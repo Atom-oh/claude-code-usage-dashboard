@@ -11,7 +11,10 @@ import { clientName, formatClientTime, formatClientTimestamp, observedNumber } f
 const DAY = 86400000;
 const TRACE_RETENTION_DAYS = 90; // trace TTL
 const MISSING = "미수집";
-const SORTS = [{ value: "tokens", label: "토큰 많은 순" }, { value: "duration", label: "느린 순" }];
+export const SORTS = [
+  { value: "tokens", label: "토큰 많은 순" }, { value: "cost", label: "비용 높은 순" },
+  { value: "subagents", label: "서브에이전트 많은 순" }, { value: "duration", label: "느린 순" },
+];
 export const COST_BASIS = {
   client_reported: "클라이언트 보고", computed: "계산 추정", aws_list_estimate: "AWS 정가 추정",
   mixed: "혼합 기준", linked_estimate: "연결 추정",
@@ -91,7 +94,7 @@ export function TaskList({ user, clients, group = null, from, to, onOpen, select
 
   const title = "작업 목록 · 상위 20개";
   const subtitle = `${formatClientTimestamp(from)} ~ ${formatClientTimestamp(to)}`;
-  const right = <div className="flex items-center gap-2">
+  const right = <div className="flex flex-wrap items-center justify-end gap-2">
     <Badge tone="warning">부분 수집</Badge>
     {!expired && <SegmentedControl options={SORTS} value={sort} onChange={setSort} />}
   </div>;
@@ -110,10 +113,14 @@ export function TaskList({ user, clients, group = null, from, to, onOpen, select
   const unattached = data?.unattached_codex;
   const skipped = observedNumber(unattached?.turns_without_conversation) ?? 0;
   const nonUnique = observedNumber(unattached?.turns_without_unique_id) ?? 0;
+  // Claude cost is priced after the query, so sort=cost ranks the server's token-ordered pool.
+  const costPool = sort === "cost" && data?.sort_candidates?.limited === true;
   const showUnattached = unattached && ((observedNumber(unattached.completions) ?? 0) > 0 || skipped > 0 || nonUnique > 0);
   return <section aria-label="작업 목록" className="flex flex-col gap-2">
     {data?.coverage?.codex === "limited" && <p role="status" className="text-sm text-warning-text">
       Codex 로그가 조회 한도를 넘어 일부 Codex 작업과 연결 정보가 누락될 수 있습니다. 비용은 부분합입니다.</p>}
+    {costPool && <p role="note" className="text-[12px] text-ink-600">
+      {`Claude는 토큰 상위 ${formatObserved(data.sort_candidates.claude_limit ?? 100)}개 중 비용 순`}</p>}
     {showUnattached && <p className="text-[12px] text-ink-600">
       {`trace와 연결되지 않은 Codex completion ${formatObserved(unattached.completions ?? 0)}건 · ${orMissing(unattached.cost_usd, formatClientCost)}`}
       {unattached.cost_partial && " (부분합)"}
