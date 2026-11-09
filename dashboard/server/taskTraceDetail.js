@@ -225,8 +225,24 @@ function foldedExecutions(rows, byId) {
   return folded;
 }
 
+// Subagent type when the spawning Agent span lacks subagent_type: the api_request log's
+// agent.name for the lane's calls, else the call's query source (agent.builtin.<type>).
+function laneTypeFallback(laneRows, agentNames) {
+  for (const r of laneRows) {
+    const name = label(agentNames.get(r.request_id));
+    if (name) return name;
+  }
+  for (const r of laneRows) {
+    const source = r[column("query_source_safe")];
+    const builtin = typeof source === "string" && source.startsWith("agent.builtin.") ? label(source.slice(14)) : null;
+    if (builtin) return builtin;
+  }
+  return null;
+}
+
 function foldClaudeDetail(head, rows, costRows) {
   const costs = claudeCostMap(costRows);
+  const agentNames = new Map(costRows.filter(r => r.request_id && r.agent_name).map(r => [r.request_id, r.agent_name]));
   const t0 = count(head.start_ms);
   const total = spanTotal(rows);
   const truncated = total > rows.length;
@@ -273,7 +289,7 @@ function foldClaudeDetail(head, rows, costRows) {
     session_grp: head.session_grp, llm_calls: rawCalls.length, subagents: agents.size, calls: rawCalls }, costs);
   // Lanes: main first, then agents by first span. A subagent lane is spawned by the parent of
   // its first llm_request (the tool.execution span), reported as the drawn tool bar; its type
-  // comes from that span or its parent tool span (subagent_type).
+  // comes from that span or its parent tool span (subagent_type), else laneTypeFallback.
   const laneIds = ["main", ...new Set(spans.filter(s => s.lane !== "main").map(s => s.lane))];
   const lanes = laneIds.map(id => {
     const own = calls.filter(c => c.lane === id);
@@ -286,6 +302,7 @@ function foldClaudeDetail(head, rows, costRows) {
         spawnedBy = drawn(parent.span_id);
         type = label(parent[column("subagent_type")]) ?? label(byId.get(parent.parent_id)?.[column("subagent_type")]);
       }
+      type ??= laneTypeFallback(rows.filter(r => r.agent_id === id && r.span_type === "llm_request"), agentNames);
     }
     const lane = { id, label: id === "main" ? "main" : type, kind: id === "main" ? "main"
       : BUILTIN_AGENTS.includes(type) ? type : "custom", spawned_by: spawnedBy,
