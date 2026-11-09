@@ -601,6 +601,28 @@ test("subagent spans after the bucket end are included", () => {
   assert.equal(codex.spans.params.spanTo, "2026-11-07 00:00:00");
 });
 
+test("subagent lanes without subagent_type fall back to the log agent.name, then the query source", () => {
+  const rows = [
+    llm("m1", 0),
+    span("tool1", "tool", 100, { a_tool_name: "Agent" }),
+    span("exec1", "tool.execution", 110, { parent_id: "tool1" }),
+    llm("s1", 200, { agent_id: "agA", parent_id: "exec1" }),
+    llm("c1", 300, { agent_id: "agB", parent_id: "missing", a_query_source_safe: "agent.builtin.Explore" }),
+    llm("x1", 400, { agent_id: "agC", parent_id: "missing", a_query_source_safe: "agent.custom" }),
+  ];
+  const costs = [{ request_id: "r-s1", cost_usd: 0.1, agent_name: "co-agent:pr-autofix-implementer" },
+    { request_id: "r-x1", cost_usd: 0.1, agent_name: "has space" }];
+  const lanes = Object.fromEntries(foldTaskDetail({ client: "claude", ...header() }, rows, costs).lanes.map(l => [l.id, l]));
+  assert.deepEqual([lanes.agA.kind, lanes.agA.label, lanes.agA.spawned_by], ["custom", "co-agent:pr-autofix-implementer", "tool1"]);
+  assert.deepEqual([lanes.agB.kind, lanes.agB.label], ["Explore", "Explore"]);
+  // Free text never becomes a label; agent.custom has no type of its own.
+  assert.deepEqual([lanes.agC.kind, lanes.agC.label], ["custom", null]);
+});
+
+test("claudeCostSql also returns the request's agent name", () => {
+  assert.match(claudeCostSql(from, to, ["r1"]).sql, /LogAttributes\['agent\.name'\]/);
+});
+
 test("foldTaskDetail builds lanes from AgentId with subagent_type labels", () => {
   const rows = [
     llm("m1", 0),
