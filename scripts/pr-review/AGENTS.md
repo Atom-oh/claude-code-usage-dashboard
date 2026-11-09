@@ -9,9 +9,9 @@ trusted routing may deactivate roles. Failed/incomplete coverage blocks.
 
 - `build-prompts.py`: bounded English BASE contracts, updateable by PRs. Missing
   excerpts do not prove missing implementation; verify claims.
-- `input_limits.py`: no truncation. Kiro stdin/summary hashes cover every
-  metadata/hunk unit; disclose basis and propagate uncertainty. Accounting does
-  not prove semantic completeness. Keep raw input/packets private.
+- [Limits](../../docs/reference/pr-review-headless-limits.md): no truncation.
+  Kiro stdin/summary hashes cover every metadata/hunk unit; disclose basis/uncertainty.
+  Hashes do not prove semantic completeness. Keep raw input/packets private.
 - Reconstruct scopes from full diff/immutable source identity; lookup or summary
   failure blocks. Preserve complete pinned merge-base input, SHA-bound results,
   `role-input-scope.json`, scrubbing, timeouts, exact verdict, latest-HEAD and CI.

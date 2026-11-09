@@ -1,4 +1,10 @@
-"""Trusted UTF-8 review budgets, independent of model token windows."""
+"""Repository policy budgets, not measured CLI or model maxima.
+
+The 512000-byte / 12000-line guard was introduced in commit 4e2dc91 without
+a recorded sizing experiment. Retain the existing guard until a separately
+validated budget change; do not derive tokens from these UTF-8 byte counts.
+Evidence and update rules: docs/reference/pr-review-headless-limits.md.
+"""
 
 MAX_DIFF_BYTES = 512000
 MAX_DIFF_LINES = 12000

@@ -57,7 +57,8 @@ or empty reports, missing paths, invalid fingerprints, model selection errors,
 quota exhaustion and failed required roles block coverage. A JSON shape is
 evidence of protocol completion, not proof that the model found every defect.
 
-Transport budgets are separate from model context windows:
+Repository policy budgets are separate from measured transport limits and
+published model context windows:
 
 | Input | Diff bytes (UTF-8) | Diff lines | Framed request bytes |
 | --- | --- | --- | --- |
@@ -65,10 +66,13 @@ Transport budgets are separate from model context windows:
 | Direct Kiro AWS patch | 95,000 | 3,000 | Below 120,000 |
 | Shared chair AWS packet | 64,000 compact JSON | Every metadata/hunk unit | Below 120,000 including context |
 
-The full-change budget matches the workflow's outer guard. Codex and Kiro V3 send
+The full-change budget matches the workflow's outer guard; its exact size has
+no recorded sizing experiment or provider derivation. Codex and Kiro V3 send
 instructions and evidence on stdin; Claude sends the diff on stdin and bounds its
 instruction argument below 120,000 bytes. These are repository budgets, not
-documented V3 maxima. See [verified headless limits](reference/pr-review-headless-limits.md).
+documented CLI or model maxima. See [headless limit evidence and update rules](reference/pr-review-headless-limits.md)
+for published model windows, version-specific probes and the prerequisites for
+changing production budgets.
 
 An oversized AWS scope triggers one shared chair packet while Codex and Claude
 retain the complete raw change. The packet must account for every metadata/hunk
