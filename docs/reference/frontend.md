@@ -297,7 +297,13 @@ first, then lanes by first span; per-lane calls and cost; LLM bars shaded by inp
 tool bars and permission-wait marks; dashed connectors from a spawning span that is in the
 payload), a cumulative cost band stacked by lane colour with a hover tooltip
 ([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a side panel for the
-clicked span and the server's `why` rules. Pure helpers live in
+clicked span, the server's `why` rules and a per-model call table (`modelBreakdown()`:
+LLM calls grouped by the span's `model`, else its linked completion's model, and
+`query_source_safe`, with lanes, calls and known cost; unknown cost stays not collected
+and partial sums are labelled). Selecting a table row (a button) dims every other LLM bar
+in the timeline through TaskTimeline's optional `highlight` predicate; selecting it again
+clears it. A truncated detail counts only the returned spans and shows no cost sums there.
+Pure helpers live in
 [taskTrace.js](../../dashboard/web/src/taskTrace.js); lane hues are `LANE_COLOR` in
 [colors.js](../../dashboard/web/src/colors.js) and icons in
 [taskIcons.jsx](../../dashboard/web/src/components/taskIcons.jsx).

@@ -1,6 +1,7 @@
 // Full-screen detail of one task (/api/users/tasks/detail): KPI row, agent lane timeline
 // (TaskTimeline), cumulative cost band by lane (TaskCostBand), clicked-span side panel
-// (TaskSpanPanel) and the "왜 많이 썼나" rules. Task ids and raw identities are never shown.
+// (TaskSpanPanel), the "왜 많이 썼나" rules and the per-model call table (모델별 호출), whose
+// rows highlight that model's LLM bars. Task ids and raw identities are never shown.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBox, Loading } from "./Card.jsx";
 import { Badge } from "./Badge.jsx";
@@ -13,7 +14,7 @@ import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { clientName, formatClientTimestamp, observedNumber } from "../clientPresentation.js";
-import { compactCount, laneName, laneOrder, timelineEnd } from "../taskTrace.js";
+import { compactCount, laneName, laneOrder, modelBreakdown, modelKey, timelineEnd } from "../taskTrace.js";
 
 const MISSING = "미수집";
 const TRUNCATED = "일부 span만 표시 — 전체 합계 미표시";
@@ -64,7 +65,53 @@ function Why({ why, lanes, numbers, onSelect }) {
   </section>;
 }
 
-function Body({ data, selectedId, onSelect }) {
+// LLM calls by (model, call source). A row's button toggles the timeline highlight; a
+// truncated detail counts only the returned spans and shows no cost sums.
+function ModelCalls({ rows, lanes, truncated, activeKey, onToggle }) {
+  const laneText = (ids) => {
+    const counts = new Map();
+    for (const id of ids) {
+      const l = lanes.find((x) => x.id === id);
+      const name = l ? laneName(l) : "서브에이전트";
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return [...counts].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(", ");
+  };
+  const cost = (r) => {
+    if (truncated) return "합계 미표시";
+    if (r.cost_usd === null) return MISSING;
+    return `${formatClientCost(r.cost_usd)}${r.cost_partial ? " (부분합)" : ""}`;
+  };
+  const th = "px-2 py-1 font-medium";
+  return <section aria-label="모델별 호출" className="rounded-lg border border-ink-100 p-4">
+    <h3 className="mb-1 text-[14px] font-semibold text-ink-800">모델별 호출</h3>
+    <p className="mb-2 text-[12px] text-ink-500">행을 누르면 타임라인에서 그 모델의 LLM 호출만 강조합니다. 다시 누르면 해제됩니다.
+      {truncated && " 일부 span 기준입니다."}</p>
+    <div className="overflow-x-auto">
+      <table className="w-full text-[13px] text-ink-700">
+        <thead><tr className="text-left text-[12px] text-ink-500">
+          <th className={th}>모델</th><th className={th}>호출 출처</th><th className={th}>레인</th>
+          <th className={`${th} text-right`}>호출</th><th className={`${th} text-right`}>비용</th>
+        </tr></thead>
+        <tbody>{rows.map((r) => {
+          const active = r.key === activeKey;
+          return <tr key={r.key} data-active={active ? "" : undefined} onClick={() => onToggle(r.key)}
+            className={`cursor-pointer border-t border-ink-100 ${active ? "bg-brand-50" : "hover:bg-ink-50"}`}>
+            <td className="px-2 py-1"><button type="button" aria-pressed={active}
+              className="text-left underline-offset-2 hover:underline [overflow-wrap:anywhere]"
+              onClick={(e) => { e.stopPropagation(); onToggle(r.key); }}>{r.model ?? MISSING}</button></td>
+            <td className="px-2 py-1">{r.source ?? MISSING}</td>
+            <td className="px-2 py-1">{laneText(r.lanes)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{formatObserved(r.calls)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{cost(r)}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </div>
+  </section>;
+}
+
+function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
   const { task, truncated } = data;
   const spans = useMemo(() => data.spans || [], [data.spans]);
   const lanes = useMemo(() => laneOrder(data.lanes || [], spans), [data.lanes, spans]);
@@ -78,6 +125,9 @@ function Body({ data, selectedId, onSelect }) {
   const priced = spans.some((s) => s.kind === "llm" && Object.prototype.hasOwnProperty.call(s, "cost_usd"));
   const unplaced = spans.filter((s) => observedNumber(s.start_ms) === null).length;
   const unlinked = observedNumber(task.completions_without_span) ?? 0;
+  const models = useMemo(() => modelBreakdown(spans), [spans]);
+  const activeKey = models.some((m) => m.key === highlightKey) ? highlightKey : null;
+  const highlight = useMemo(() => (activeKey === null ? null : (s) => modelKey(s) === activeKey), [activeKey]);
   return <>
     {truncated ? <p role="status" className="rounded-md bg-warning-surface px-3 py-2 text-sm text-warning-text">
       <span>{TRUNCATED}</span>{` (span ${formatObserved(spans.length)} / ${formatObserved(data.span_total)})`}</p>
@@ -85,7 +135,7 @@ function Body({ data, selectedId, onSelect }) {
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
       <div className="min-w-0 rounded-lg border border-ink-100 p-4">
         {lanes.length ? <TaskTimeline lanes={lanes} spans={spans} numbers={numbers} end={end} truncated={truncated}
-          selectedId={selectedId} onSelect={onSelect} /> : <p className="text-sm text-ink-500">trace 미수집</p>}
+          selectedId={selectedId} onSelect={onSelect} highlight={highlight} /> : <p className="text-sm text-ink-500">trace 미수집</p>}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-500">
           <span>LLM 호출 (진할수록 입력 컨텍스트 큼)</span><span>회색 = 도구 실행</span><span>빨강 = 권한 대기</span>
           <span>점선 = 서브에이전트 생성</span>
@@ -105,16 +155,19 @@ function Body({ data, selectedId, onSelect }) {
         {!truncated && <Why why={data.why || []} lanes={lanes} numbers={numbers} onSelect={onSelect} />}
       </div>
     </div>
+    {models.length > 0 && <ModelCalls rows={models} lanes={lanes} truncated={truncated} activeKey={activeKey}
+      onToggle={(key) => onHighlight((k) => (k === key ? null : key))} />}
   </>;
 }
 
 export function TaskTraceOverlay({ taskId, user, from, to, onClose }) {
   const api = useApi("/api/users/tasks/detail", { id: taskId, from, to, userExact: user }, Boolean(taskId), { unfiltered: true });
   const [selectedId, setSelectedId] = useState(null);
+  const [highlightKey, setHighlightKey] = useState(null);
   const dialogRef = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  useEffect(() => { setSelectedId(null); }, [taskId]);
+  useEffect(() => { setSelectedId(null); setHighlightKey(null); }, [taskId]);
   useEffect(() => {
     dialogRef.current?.focus({ preventScroll: true });
     const onKey = (e) => { if (e.key === "Escape") closeRef.current?.(); };
@@ -140,7 +193,8 @@ export function TaskTraceOverlay({ taskId, user, from, to, onClose }) {
         <button type="button" onClick={() => onClose?.()} className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700">닫기</button>
       </div>
       {api.error ? <ErrorBox error={api.error} /> : pending || !api.data ? <Loading />
-        : <Body data={api.data} selectedId={selectedId} onSelect={setSelectedId} />}
+        : <Body data={api.data} selectedId={selectedId} onSelect={setSelectedId}
+          highlightKey={highlightKey} onHighlight={setHighlightKey} />}
     </div>
   </div>;
 }

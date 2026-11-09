@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { compactCount, cumulativeByLane, iconFor, laneName, laneOrder } from "./taskTrace.js";
+import { compactCount, cumulativeByLane, iconFor, laneName, laneOrder, modelBreakdown, modelKey } from "./taskTrace.js";
 
 const lane = (id, kind = "general-purpose", extra = {}) => ({ id, label: kind, kind, spawned_by: null,
   llm_calls: 1, cost_usd: 1, cost_partial: false, ...extra });
@@ -79,4 +79,54 @@ test("compactCount abbreviates large counts", () => {
   expect(compactCount(612000)).toBe("612K");
   expect(compactCount(173300000)).toBe("173.3M");
   expect(compactCount(null)).toBeNull();
+});
+
+const call = (id, laneId, model, source, cost, tokens = { input: 1, cache_read: 2, cache_write: 3, output: 4 }) => {
+  const s = { id, parent: null, lane: laneId, kind: "llm", name: "llm_request", start_ms: 0, duration_ms: 1,
+    attrs: { ...(model ? { model } : {}), ...(source ? { query_source_safe: source } : {}) }, tokens };
+  return cost === undefined ? s : { ...s, cost_usd: cost };
+};
+
+test("modelBreakdown groups llm calls by model and call source, most calls first", () => {
+  const spans = [
+    call("a", "main", "claude-opus-5-5", "repl_main_thread", 1),
+    call("b", "agent-1", "claude-sonnet-5", "sdk", 0.25),
+    call("c", "main", "claude-opus-5-5", "repl_main_thread", 2),
+    call("d", "agent-2", "claude-sonnet-5", "model_validation", 0.5),
+    call("e", "agent-1", "claude-sonnet-5", "sdk", 0.25),
+    call("f", "agent-2", "claude-sonnet-5", "sdk", 0),
+    { id: "t", lane: "main", kind: "tool", start_ms: 0, duration_ms: 1, attrs: { tool_name: "Bash" } },
+  ];
+  const rows = modelBreakdown(spans);
+  expect(rows.map((r) => [r.model, r.source, r.calls])).toEqual([
+    ["claude-sonnet-5", "sdk", 3], ["claude-opus-5-5", "repl_main_thread", 2], ["claude-sonnet-5", "model_validation", 1]]);
+  expect(rows[0].lanes).toEqual(["agent-1", "agent-2"]);
+  expect(rows[0].cost_usd).toBeCloseTo(0.5);
+  expect(rows[0].cost_partial).toBe(false);
+  expect(rows[0].observed_tokens).toBe(30);
+  expect(rows[1].cost_usd).toBe(3);
+  expect(rows[0].key).toBe(modelKey(spans[1]));
+  expect(rows[0].key).not.toBe(modelKey(spans[3]));
+});
+
+test("modelBreakdown keeps unknown cost null and flags partial sums", () => {
+  const rows = modelBreakdown([
+    call("a", "main", "gpt-6.1", null, undefined), // Codex sampling span without a linked completion
+    call("b", "main", "gpt-6.1", null, null),
+    call("c", "main", "claude-opus-5-5", null, 1, { input: null, cache_read: 2, cache_write: 3, output: 4 }),
+    call("d", "main", "claude-opus-5-5", null, null),
+    call("e", "main", null, null, 0.1),
+  ]);
+  const gpt = rows.find((r) => r.model === "gpt-6.1");
+  expect(gpt).toMatchObject({ source: null, calls: 2, cost_usd: null, cost_partial: true, observed_tokens: 20 });
+  const opus = rows.find((r) => r.model === "claude-opus-5-5");
+  expect(opus).toMatchObject({ cost_usd: 1, cost_partial: true, observed_tokens: 10, tokens_partial: true });
+  // A call without a model forms its own unknown-model group, sorted after known labels on ties.
+  expect(rows.at(-1)).toMatchObject({ model: null, calls: 1, cost_usd: 0.1, cost_partial: false });
+  expect(modelBreakdown([])).toEqual([]);
+});
+
+test("modelBreakdown labels a Codex call by its linked completion model when the span has none", () => {
+  const span = { ...call("s", "main", null, null, 0.2), completion: { model: "gpt-6.1", count: 1 } };
+  expect(modelBreakdown([span])[0]).toMatchObject({ model: "gpt-6.1", source: null, calls: 1 });
 });
