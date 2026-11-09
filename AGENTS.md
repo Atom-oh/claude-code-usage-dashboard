@@ -34,9 +34,7 @@ CI harness discovers test-*.sh; absent gitignored .claude/ tooling: expected ski
 
 ## Releases
 
-- Every user-visible, API, configuration or operational change PR adds an English entry under CHANGELOG `## [Unreleased]` with its PR number.
-- Deploy tagged revisions. Before deploying unreleased changes, cut a release PR: MINOR for new features, PATCH for fixes only, MAJOR for incompatible API/config/manual migration. It moves Unreleased under `## [X.Y.Z] - date`, bumps web and server versions, and adds Korean user-facing notes (where to find each feature) to `dashboard/web/src/releaseNotes.js`.
-- After merge, tag the merge commit `vX.Y.Z` (annotated, never moved), publish the GitHub release from the changelog section, and record the tag in the deployment record: [policy](docs/runbooks/releases.md).
+Change PRs add CHANGELOG Unreleased entries; deploy tagged `vX.Y.Z` release PRs: [releases](docs/runbooks/releases.md).
 
 ## Review
 
