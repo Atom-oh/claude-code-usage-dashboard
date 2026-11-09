@@ -15,6 +15,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- PR review guidance distinguishes published model context and verified CLI
+  transport behavior from repository policy budgets, with dated sources and
+  validation rules for budget changes. Existing review limits remain unchanged.
+
 ## [1.1.0] - 2026-11-09
 
 ### Added

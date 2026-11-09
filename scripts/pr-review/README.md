@@ -136,7 +136,11 @@ shared chair packet of at most 64,000 bytes of compact JSON. Claude's instructio
 argument also stays below 120,000 bytes; its diff uses stdin. Context is at most
 24,000 bytes, reduced to
 20,000 by this repository's context builder. Projects may lower budgets.
-`input_limits.py` owns these budgets; see [verified headless limits](../../docs/reference/pr-review-headless-limits.md).
+`input_limits.py` owns these policy budgets. The 512,000-byte / 12,000-line guard
+has no recorded sizing experiment or provider derivation; it is not a measured
+headless maximum. See [limit evidence and update rules](../../docs/reference/pr-review-headless-limits.md)
+before changing a budget. Published model tokens, decoded stdin string length
+and UTF-8 request bytes are distinct units.
 Oversized full input blocks before provider calls. `aws_summary.py` validates
 every metadata/hunk unit and literal evidence against retained raw AWS input.
 Missing, invalid or incomplete summaries block required Kiro coverage; their

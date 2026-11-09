@@ -12,7 +12,10 @@ UTF-8 bytes / 12,000 lines. Kiro V3 receives only AWS architecture/resource
 patches and operational docs. Above 95,000 bytes / 3,000 lines, or when framing
 exceeds its budget, the chair creates one shared packet of at most 64,000 bytes.
 The entire Kiro stdin request must remain below 120,000 bytes. These are project
-budgets; see [verified headless limits](../reference/pr-review-headless-limits.md).
+policy budgets, not measured CLI/model maxima. The 512,000-byte / 12,000-line
+guard has no recorded sizing experiment or provider derivation. See
+[limit evidence and update rules](../reference/pr-review-headless-limits.md)
+before changing them.
 Application-only changes invoke neither Kiro slot.
 
 Inspect `role-plan.json` or `role-summary.json`: each role records its scope,
@@ -120,8 +123,8 @@ approval. Coverage/safety failures still append a final FAIL regardless of the c
 
 ## Legacy limits and time budget
 
-Diffs over 12,000 lines or 512,000 bytes are blocked (`## Review blocked`, BLOCKED,
-`VERDICT: FAIL`), never truncated; the same limits as cc-on-bedrock. Both reviewers read the
+Diffs over the repository policy of 12,000 lines or 512,000 bytes are blocked
+(`## Review blocked`, BLOCKED, `VERDICT: FAIL`), never truncated. Both reviewers read the
 diff from stdin. Byte budgets do not establish token usage, model acceptance or
 pricing tiers. The former Kiro single-argument ceiling is historical: the active
 V3 specialist uses bounded stdin and chair summaries.
