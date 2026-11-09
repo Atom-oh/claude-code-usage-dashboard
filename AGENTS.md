@@ -32,6 +32,12 @@ CI harness discovers test-*.sh; absent gitignored .claude/ tooling: expected ski
 - Shared views: known costs/observed_tokens, partial flags; all-unknown unavailable. Strict canonical tokens for ratios: [coverage](docs/decisions/ADR-014-observed-token-subtotals.md).
 - No secrets/personal/customer data in commits/public reviews/site assets. UI masking is not API access control.
 
+## Releases
+
+- Every user-visible, API, configuration or operational change PR adds an English entry under CHANGELOG `## [Unreleased]` with its PR number.
+- Deploy tagged revisions. Before deploying unreleased changes, cut a release PR: MINOR for new features, PATCH for fixes only, MAJOR for incompatible API/config/manual migration. It moves Unreleased under `## [X.Y.Z] - date`, bumps web and server versions, and adds Korean user-facing notes (where to find each feature) to `dashboard/web/src/releaseNotes.js`.
+- After merge, tag the merge commit `vX.Y.Z` (annotated, never moved), publish the GitHub release from the changelog section, and record the tag in the deployment record: [policy](docs/runbooks/releases.md).
+
 ## Review
 
 Engineering docs/guides/ADRs/PR prose: concise English over bilingual review templates; separate UI localization. Link owners; keep contracts/reasons/limits, no duplicate translations/transcripts/stale line refs.

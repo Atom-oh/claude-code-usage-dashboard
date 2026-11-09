@@ -203,8 +203,9 @@ abandoned server work; retain readonly and resource ceilings.
 
 ## Procedure
 
-Prefer building a release tag ([releases and tags](releases.md)); record the tag, if any,
-with the revision. An untagged `main` revision remains deployable.
+Build a release tag ([releases and tags](releases.md)) and record it with the revision.
+Cut a release first when `main` has unreleased user-visible changes; an untagged revision
+remains deployable for fixes that cannot wait, recorded as untagged.
 
 ### 1. Refresh the price snapshot, record the revision and rollback image
 

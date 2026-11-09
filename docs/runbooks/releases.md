@@ -11,6 +11,9 @@ out. Follow the [deployment runbook](deploy-production.md) to ship a tagged revi
 | `vMAJOR.MINOR.PATCH` | Application release | Annotated, on a `main` commit, created after the release PR merges |
 | `docs-media-YYYYMMDD` | Immutable references to retired documentation media | Never moved; not a release |
 
+- Every user-visible, API, configuration or operational change PR adds its entry under
+  `## [Unreleased]`, so a release only moves entries and writes the in-app notes.
+- Deploy tagged revisions: cut a release before deploying unreleased user-visible changes.
 - Use the `v` prefix only for releases. Never move, delete or re-point a pushed release
   tag; correct a bad release with a new patch release.
 - Version numbers follow Semantic Versioning for this application:
@@ -59,9 +62,9 @@ out. Follow the [deployment runbook](deploy-production.md) to ship a tagged revi
 
 Build from the tag (`git checkout vX.Y.Z`) and record the tag with the image tag, digest
 and revision in the deployment record. Image tags stay timestamp tags. Deploying an
-untagged `main` revision is allowed; its `/changelog` then shows the latest release the
-build contains, not changes merged after it. The installation probe reports the image
-revision.
+untagged `main` revision is reserved for fixes that cannot wait; its `/changelog` then
+shows the latest release the build contains, not changes merged after it. The
+installation probe reports the image revision.
 
 ## Limits
 
