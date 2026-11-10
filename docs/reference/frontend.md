@@ -61,6 +61,20 @@ Means require scores for every returned user, and rankings omit unavailable scor
 estimated accepted-lines card is removed. Shared Productivity explains the external data
 needed for task outcome measures. See [definitions and coverage](../metrics.md#activity-and-flow-coverage).
 
+Shared `/productivity` renders numbered sections in one layout for every client selection:
+1 client summary, 2 per-model observed efficiency (plus the cache/reasoning card),
+3 activity and 4 code results. Sections 1, 3 and 4 have one row per selected client in
+the same columns. They join each overview `by_client` row (users, sessions, tokens, cost basis)
+with `/api/clients/productivity`, requested with the overview's effective bounds. A
+response for a different window is not joined (its values stay `—`) and CSV is disabled
+until the matching one arrives. A field the
+response marks unavailable renders as a localized chip for its reason: `not_collected`
+(no default OTel source), `not_aggregated` (no confirmed source metric) or `not_derived`
+(derived inputs missing). CSV exports the same label. Unknown values remain `—`, and measured zero stays `0`. A legend above the sections explains the three
+labels. Ratios use observed denominators; LOC per million tokens uses canonical overview
+tokens only. The Codex Effort block, support-scope card and outcome notice remain below
+the panels.
+
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
 chat. The floating chat window resizes from its top-left handle (pointer drag or arrow keys)
 and has an expand toggle; the size is clamped to the viewport and remembered in

@@ -1,6 +1,7 @@
 import express from "express";
 import { codexInsights, validateInsightsExactFilters, validateInsightsProfile } from "./codexInsights.js";
 import { claudeEffort, validateClaudeEffort } from "./claudeEffort.js";
+import { clientProductivity } from "./clientProductivity.js";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -285,7 +286,8 @@ function validateModelTime(raw) {
 function cacheKey(path, query) {
   if (path === "/api/users/tasks") return `${path}?${taskCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
-  if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort") {
+  if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort"
+      || path === "/api/clients/productivity") {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
       : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
@@ -304,6 +306,9 @@ function cacheKey(path, query) {
           ? 600 : clientNativeBucketSeconds(from, end);
         return { bucketSeconds: String(clientBucketSeconds(from, end, query.intervalHours, nativeSeconds)),
           nativeSeconds: String(nativeSeconds), effectiveTo: end.toISOString() };
+      })() : path === "/api/clients/productivity" ? (() => {
+        const { from, to } = parseRange(query, RANGE_OPTS);
+        return { effectiveTo: effectiveClientEnd(from, to, filters.clients).toISOString() };
       })() : {}) };
     return `${path}?${new URLSearchParams(Object.entries(normalized)
       .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString()}`;
@@ -385,6 +390,11 @@ route("/api/clients/overview",
   (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: true,
     validate: (raw) => { validateClientFilters(raw, clientConfig.enabledClients); validateModelTime(raw); validateClientView(raw); validateTimeFormat(raw); } });
+
+// Shared Productivity rows; users/sessions/tokens/costs stay in the overview response.
+route("/api/clients/productivity",
+  (from, to, raw) => clientProductivity(from, to, raw, clientConfig.enabledClients),
+  { client: null, warm: false, validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
 
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),
   { client: "codex", warm: false, team: false, validate: (raw) => {

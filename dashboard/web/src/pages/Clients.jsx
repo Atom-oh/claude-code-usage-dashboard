@@ -68,6 +68,9 @@ export default function Clients({ page = "overview" }) {
     effortEnabled && clients.includes("claude"), { linkedRange: true, hold: stale });
   const codexEffort = useApi("/api/codex/insights", { client: "codex", profile: "effort", ...effortBounds },
     effortEnabled && clients.includes("codex"), { linkedRange: true, hold: stale });
+  // Productivity rows join the overview's by_client rows over the overview's effective bounds.
+  const productivity = useApi("/api/clients/productivity", { client, ...effortBounds },
+    page === "productivity" && !loading && !error && Boolean(effortBounds.from), { linkedRange: true, hold: stale });
   const breakdowns = page === "cost" ? <CostBreakdowns clients={clients} data={data}
     loading={loading} error={error} empty={empty} claudeEffort={claudeEffort} codexEffort={codexEffort} /> : null;
 
@@ -112,7 +115,8 @@ export default function Clients({ page = "overview" }) {
       {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
         : <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}|${team}`}
           page={page} data={data} clients={clients} stale={stale}
-          previous={page === "trends" ? previous : undefined} breakdowns={breakdowns} /></section>}
+          previous={page === "trends" ? previous : undefined} breakdowns={breakdowns}
+          productivity={page === "productivity" ? productivity : undefined} /></section>}
       {(loading || error || empty) && breakdowns}
       {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
       {sections && clients.includes("codex") && <CodexInsights sections={sections}

@@ -19,6 +19,7 @@ import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { withoutZeroTokenModels } from "../modelRows.js";
 import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
 import { CostUsers } from "./ClientCostUsers.jsx";
+import { productivitySections } from "./ClientProductivity.jsx";
 import {
   basisLabel, clientName, costBasisLabel, formatClientTime, formatClientTimestamp, formatPercent, observedNumber, OBSERVED_TOKEN_HELP, presentationRow,
   tokenStatusLabel,
@@ -351,7 +352,7 @@ function Fractions({ rows }) {
   </Card>;
 }
 
-function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false, previous, breakdowns }) {
+function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false, previous, breakdowns, productivity }) {
   const { from, to } = useRange();
   const rangeKey = `${from.getTime()}|${to.getTime()}`;
   const [detailPick, setDetailPick] = useState(null);
@@ -412,14 +413,23 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
           rows={periods} exportName="clients_periods" stale={stale} />
       </>;
       break;
-    case "productivity":
+    case "productivity": {
+      const sections = productivitySections({ overview: data, productivity, clients: selected, stale });
       content = <>
-        {compare([TOKEN_SESSION, COST_SESSION, MILLION, BASIS], { title: "클라이언트별 관측 효율" })}
-        <Fractions rows={clientRows} />
+        {sections.legend}
+        <SectionLabel>1 · 클라이언트별 요약</SectionLabel>
+        {sections.summary}
+        <SectionLabel>2 · 관측 효율 · 모델별</SectionLabel>
         {table("모델별 관측 효율", [CLIENT, BACKEND, MODEL, TOKEN_SESSION, COST_SESSION, MILLION, CACHE, REASONING, BASIS],
           usageModels, "efficiency", "비율은 기존 전체 토큰·구성값 기준이며 관측 토큰 부분합으로 대체하지 않습니다. 모델별 작업 구성과 비용 기준이 달라 업무 생산성이나 코드 품질 순위로 해석할 수 없습니다.")}
+        <Fractions rows={clientRows} />
+        <SectionLabel>3 · 활동</SectionLabel>
+        {sections.activity}
+        <SectionLabel>4 · 코드 결과</SectionLabel>
+        {sections.code}
       </>;
       break;
+    }
     case "usage":
       content = <>
         <Card title="토큰 구성" subtitle={TOKEN_HELP}>

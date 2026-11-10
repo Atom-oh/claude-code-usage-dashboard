@@ -2535,6 +2535,102 @@ export function ttlSplitFields(r) {
   };
 }
 
+// Shared Productivity view (/api/clients/productivity), Claude side. Shared filters keep the
+// overview's vocabulary: user substring/userExact match the counter UserEmail or the log/span
+// identity; model, modelExact and backend select sessions whose token/cost counters match
+// (these events and counters carry no model, as with modelMixed); team is the session team.
+// All channels, including unknown, are included. Cumulative counters use incFlat.
+const PRODUCTIVITY_COUNTERS = [
+  ["active_user_seconds", "claude_code.active_time.total", "user"],
+  ["active_cli_seconds", "claude_code.active_time.total", "cli"],
+  ["commits", "claude_code.commit.count", ""],
+  ["prs", "claude_code.pull_request.count", ""],
+  ["loc_added", "claude_code.lines_of_code.count", "added"],
+  ["loc_removed", "claude_code.lines_of_code.count", "removed"],
+];
+const PRODUCTIVITY_EVENTS = ["user_prompt", "tool_result", "tool_decision"];
+
+function claudeProductivityScope(filters) {
+  const scoped = Boolean(filters.model || filters.modelExact || filters.backend);
+  const model = normModel("h.Model");
+  const cte = scoped ? `, claude_scope_sessions AS (
+    SELECT DISTINCT h.SessionId AS session
+    FROM claude_code.otel_metrics_sum_hourly h LEFT JOIN session_group ug ON h.SessionId = ug.SessionId
+    WHERE h.SessionId != '' AND h.MetricName IN ('claude_code.token.usage', 'claude_code.cost.usage')
+      AND h.hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND h.hour < {to:DateTime}
+      AND positionCaseInsensitive(${model}, {clientModel:String}) > 0
+      AND ({clientModelExact:String} = '' OR ${model} = {clientModelExact:String})
+      AND ({clientBackend:String} = ''
+        OR multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("h.Model", "''")}) = {clientBackend:String})
+  )` : "";
+  const where = (session, user) => [
+    `({clientUser:String} = '' OR positionCaseInsensitive(${user}, {clientUser:String}) > 0)`,
+    `({clientUserExact:String} = '' OR ${user} = {clientUserExact:String})`,
+    ...(scoped ? [`${session} IN (SELECT session FROM claude_scope_sessions)`] : []),
+    ...(filters.team ? [`${session} IN (SELECT session FROM (${sessionTeamsSql(["claude"])}) WHERE team = {clientTeam:String})`] : []),
+  ].map((c) => `AND ${c}`).join("\n      ");
+  const params = { clientUser: filters.user || "", clientUserExact: filters.userExact || "",
+    clientModel: normalizeModelId(filters.model || ""), clientModelExact: normalizeModelId(filters.modelExact || ""),
+    clientBackend: filters.backend || "", ...(filters.team ? { clientTeam: filters.team } : {}) };
+  return { cte, where, params };
+}
+
+export function clientProductivityClaudeSql(from, to, filters = {}) {
+  const span = to - from;
+  const scope = claudeProductivityScope(filters);
+  const metricFilter = `AND MetricName IN (${[...new Set(PRODUCTIVITY_COUNTERS.map(([, m]) => `'${m}'`))].join(", ")})`;
+  const counters = PRODUCTIVITY_COUNTERS.map(([name, metric, type]) => {
+    const match = `m.MetricName = '${metric}'${type ? ` AND m.TokenType = '${type}'` : ""}`;
+    return `sumIf(m.Value, ${match}) AS ${name},
+      countIf(${counterObserved} AND ${match}) > 0 AS ${name}_observed`;
+  }).join(",\n      ");
+  const logUser = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
+  const names = PRODUCTIVITY_EVENTS.flatMap((name) => [`'${name}'`, `'claude_code.${name}'`]).join(", ");
+  return {
+    counters: { sql: `${GROUP_CTE}${scope.cte}, ${counterObservations(metricFilter, span)}
+    SELECT ${counters}
+    FROM ${incFlat(metricFilter, span)} m
+    WHERE 1 = 1
+      ${scope.where("m.SessionId", "m.UserEmail")}`,
+    params: { ...range(from, to, incFlatRaw(span)), ...scope.params } },
+    // Exact duplicate deliveries share Timestamp and both maps; they count once.
+    logs: { sql: `${GROUP_CTE}${scope.cte}, claude_events AS (
+      SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
+        SessionId AS session, ${logUser} AS user,
+        replaceRegexpOne(EventName, '^claude_code\\\\.', '') AS event
+      FROM claude_code.otel_logs
+      WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND EventName IN (${names})
+    )
+    SELECT countIf(event = 'user_prompt') AS prompts,
+      countIf(event = 'tool_result') AS tool_calls,
+      countIf(event = 'tool_result' AND a['success'] = 'true' AND a['error'] = '') AS tool_successes,
+      countIf(event = 'tool_result' AND (a['success'] = 'false' OR a['error'] != '')) AS tool_failures,
+      countIf(event = 'tool_decision') AS decisions_total,
+      countIf(event = 'tool_decision' AND a['decision'] = 'accept') AS decisions_allowed,
+      countIf(event = 'tool_decision' AND a['decision'] = 'reject') AS decisions_denied
+    FROM claude_events
+    WHERE 1 = 1
+      ${scope.where("session", "user")}`,
+    params: { ...range(from, to, true), ...scope.params } },
+    // TTFT comes from beta llm_request spans (ttftComparison's source); a span without a valid
+    // ttft_ms attribute is not a zero. Repeated deliveries of one span count once.
+    traces: { sql: `${GROUP_CTE}${scope.cte}
+    SELECT countIf(valid) AS ttft_samples,
+      if(ttft_samples = 0, NULL, quantileExactLowIf(0.5)(ttft, valid)) AS ttft_p50_ms
+    FROM (
+      SELECT DISTINCT TraceId, SpanId, SessionId AS session,
+        coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') AS user,
+        ifNull(toFloat64OrNull(trimBoth(SpanAttributes['ttft_ms'])), -1) AS ttft,
+        isFinite(ttft) AND ttft >= 0 AS valid
+      FROM claude_code.otel_traces
+      WHERE SpanType = 'llm_request' AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+    )
+    WHERE 1 = 1
+      ${scope.where("session", "user")}`,
+    params: { ...range(from, to, true), ...scope.params } },
+  };
+}
+
 // =============================================================================
 // 2026-09-09 추가 패널 — project.name / app.entrypoint (clickhouse-migration-005.sql).
 // ProjectName은 incFlat/incBucketed가 나르지 않는 차원이고 시간별 롤업에도 없다(005는 롤업을
