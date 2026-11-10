@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { compactCount, cumulativeByLane, iconFor, laneName, laneOrder, modelBreakdown, modelKey } from "./taskTrace.js";
+import { compactCount, contextSummary, cumulativeByLane, iconFor, laneName, laneOrder, modelBreakdown, modelKey } from "./taskTrace.js";
 
 const lane = (id, kind = "general-purpose", extra = {}) => ({ id, label: kind, kind, spawned_by: null,
   llm_calls: 1, cost_usd: 1, cost_partial: false, ...extra });
@@ -129,4 +129,22 @@ test("modelBreakdown keeps unknown cost null and flags partial sums", () => {
 test("modelBreakdown labels a Codex call by its linked completion model when the span has none", () => {
   const span = { ...call("s", "main", null, null, 0.2), completion: { model: "gpt-6.1", count: 1 } };
   expect(modelBreakdown([span])[0]).toMatchObject({ model: "gpt-6.1", source: null, calls: 1 });
+});
+
+test("contextSummary: peak, main first/last, biggest compaction and limit shares", () => {
+  const s = contextSummary({ points: [{ span: "a", lane: "main", start_ms: 0, tokens: 100 },
+    { span: "b", lane: "ag", start_ms: 5, tokens: 900 }, { span: "c", lane: "main", start_ms: 9, tokens: 400 },
+    { span: "d", lane: "main", start_ms: 3, tokens: null }], missing: 1, partial: true,
+  compactions: [{ start_ms: 1, pre_tokens: 500, post_tokens: 100, trigger: "auto" },
+    { start_ms: 2, pre_tokens: 900, post_tokens: 50, trigger: "manual" }, { start_ms: 3, pre_tokens: null, post_tokens: 1 }],
+  limits: { context_window: 1800, auto_compact_token_limit: null } });
+  expect(s.peak.span).toBe("b");
+  expect([s.mainFirst, s.mainLast]).toEqual([100, 400]);
+  expect(s.compactions).toBe(3);
+  expect(s.biggestCompaction.trigger).toBe("manual");
+  expect(s.windowShare).toBe(0.5);
+  expect(s.limitShare).toBeNull();
+  expect([s.points, s.missing, s.partial]).toEqual([3, 1, true]);
+  const empty = contextSummary(null);
+  expect([empty.peak, empty.compactions, empty.mainLast, empty.points]).toEqual([null, null, null, 0]);
 });

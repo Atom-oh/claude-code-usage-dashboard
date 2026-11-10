@@ -293,6 +293,12 @@ buckets older than the 90-day trace retention. Its sort control requests `sort=t
 Task ids are opaque and not displayed. The
 selected bucket and task clear when the user, clients, group or range changes.
 
+A task's copy-link button copies `/tasks/<task id>/<bucket from>/<bucket to>` (each segment
+URI-encoded; no user, so masked identities never enter a URL). The bucket is in the path
+because RangeContext owns and rewrites the query string. That route renders the same overlay
+without filters; the server resolves the owner and the header masks it. Signing in from a
+shared link returns to it (`returnTo`). Without clipboard access the link is shown to copy.
+
 Opening a task renders
 [TaskTraceOverlay](../../dashboard/web/src/components/TaskTraceOverlay.jsx), a full-screen
 dialog (Escape or the close button clears the selected task) over `/api/users/tasks/detail`
@@ -301,7 +307,12 @@ lane timeline ([TaskTimeline](../../dashboard/web/src/components/TaskTimeline.js
 first, then lanes by first span; per-lane calls and cost; LLM bars shaded by input context;
 tool bars and permission-wait marks; dashed connectors from a spawning span that is in the
 payload), a cumulative cost band stacked by lane colour with a hover tooltip
-([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a side panel for the
+([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a context-size chart
+on the same time axis ([TaskContextChart](../../dashboard/web/src/components/TaskContextChart.jsx):
+one line per lane of per-call context, Claude compaction marks, the Codex auto-compaction
+limit line and shares of the reported limits; points select their span; a compaction
+outside the drawn spans is clamped to the axis edge; missing tokens, partial series and
+Claude's unreported window are disclosed), a side panel for the
 clicked span, the server's `why` rules and a per-model call table (`modelBreakdown()`:
 LLM calls grouped by the span's `model`, else its linked completion's model, and
 `query_source_safe`, with lanes, calls and known cost; unknown cost stays not collected

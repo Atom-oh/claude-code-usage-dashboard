@@ -7,6 +7,7 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,8 +40,14 @@ class MediaTests(unittest.TestCase):
     def test_fetch_and_verified_cache_do_not_repeat_network(self):
         MEDIA.hydrate(self.root, self.manifest, opener=self.opener)
         self.assertEqual(len(self.calls), 10)
+        for item in self.manifest["files"]:
+            target = self.root / item["path"]
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+            target.chmod(0o600)
         MEDIA.hydrate(self.root, self.manifest, offline=True)
         self.assertEqual(len(self.calls), 10)
+        for item in self.manifest["files"]:
+            self.assertEqual((self.root / item["path"]).stat().st_mode & 0o777, 0o644)
 
     def test_site_only_keeps_runtime_out_of_pages(self):
         MEDIA.hydrate(self.root, self.manifest, site_only=True, opener=self.opener)
@@ -70,10 +77,12 @@ class MediaTests(unittest.TestCase):
     def test_manifest_rejects_unpinned_sources_and_unsafe_inventory(self):
         mutations = [
             lambda m: m.update(commit="main"),
+            lambda m: m.update(commit=123),
             lambda m: m.update(repository="other/repo"),
             lambda m: m["files"][0].update(path="../escape"),
             lambda m: m["files"][0].update(bytes=MEDIA.MAX_FILE_BYTES + 1),
             lambda m: m["files"][0].update(sha256="x" * 64),
+            lambda m: m["files"][0].update(sha256=123),
             lambda m: m["files"].pop(),
             lambda m: m["files"].__setitem__(0, copy.deepcopy(m["files"][1])),
         ]
@@ -83,6 +92,8 @@ class MediaTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 MEDIA.hydrate(self.root, candidate, opener=self.opener)
         self.assertEqual(self.calls, [])
+        with self.assertRaises(ValueError):
+            MEDIA.validate_manifest([])
 
     def test_symlinks_are_rejected_before_any_download(self):
         outside = self.root / "outside"
@@ -104,6 +115,15 @@ class MediaTests(unittest.TestCase):
         for item in manifest["files"]:
             self.assertEqual(item["bytes"], records[item["path"]]["bytes"])
             self.assertEqual(item["sha256"], records[item["path"]]["sha256"])
+
+    def test_delivery_cache_is_ignored_and_absent_from_tracked_tree(self):
+        tracked = set(subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-files"], text=True).splitlines())
+        self.assertFalse(tracked & MEDIA.PATHS)
+        ignored = subprocess.check_output(
+            ["git", "-C", str(ROOT), "check-ignore", "--", *sorted(MEDIA.PATHS)],
+            text=True).splitlines()
+        self.assertEqual(set(ignored), MEDIA.PATHS)
 
 
 if __name__ == "__main__":

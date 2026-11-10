@@ -4,7 +4,7 @@
 
 Workshop Claude Code/Codex OTel → ClickHouse → Express → React; Terraform/docs site/separate video project. Not validated employee productivity/causal ROI.
 
-Behavior: code/tests. Follow root/nearest AGENTS.md; CLAUDE.md imports its adjacent guide. References: implementation; runbooks: operations; ADRs: decisions. Superseded ADRs/dated investigations are historical. Config/build success proves no deployment of images/migrations/Terraform/runtime options. User instructions win. Surface conflicts; missing excerpts prove no absence.
+Behavior: code/tests. Follow root/nearest AGENTS.md; CLAUDE.md imports its adjacent guide. References: implementation; runbooks: operations; ADRs: decisions. Superseded ADRs/dated investigations are historical. Config/build success does not prove deployment of images/migrations/Terraform/runtime options. User instructions win. Surface conflicts; missing excerpts do not prove absence; verify claims.
 
 ## Checks
 

@@ -8,7 +8,7 @@ applicable AWS/operations patches or bounded chair summary. Trusted routing alon
 deactivates roles. Failed/incomplete coverage blocks.
 
 - `build-prompts.py`: bounded English BASE contracts; PRs may update them.
-  Missing excerpts prove no absence.
+  Missing excerpts do not prove absence; verify claims.
 - [Limits](../../docs/reference/pr-review-headless-limits.md): no truncation.
   Kiro hashes cover every metadata/hunk unit; disclose basis/uncertainty.
   Hashes do not prove semantic completeness. Raw input/packets stay private.

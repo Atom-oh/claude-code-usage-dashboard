@@ -220,7 +220,8 @@ test("the user task list validates before the database and never leaks errors", 
 test("the task detail validates before the database and never leaks errors", async () => {
   const range = "from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z";
   const trace = "0123456789abcdef0123456789abcdef";
-  for (const qs of ["&userExact=a", `&id=claude:${trace}`, "&userExact=a&id=claude:x' OR 1=1",
+  // No userExact is a shared link (owner resolved); an empty one is still invalid.
+  for (const qs of ["&userExact=a", `&userExact=&id=claude:${trace}`, "&userExact=a&id=claude:x' OR 1=1",
     `&userExact=a&id=claude:${trace}&team=fsi`, "&userExact=a&id=codex:c1:t1;x"]) {
     const r = await fetch(`${base}/api/users/tasks/detail?${range}${qs}`);
     assert.equal(r.status, 400, qs);

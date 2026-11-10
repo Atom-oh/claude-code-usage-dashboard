@@ -264,11 +264,20 @@ users, so every result is partial. Rules:
 
 - Ownership: a Claude task is an `interaction` span of the exact user (`UserEmail`, else
   `EndUserId`) starting in `[from, to)`; a Codex task is a `client=codex` turn of that user
-  whose first span starts in `[from, to)`. Anything else is the same 404.
+  whose first span starts in `[from, to)`. Anything else is the same 404. A detail request
+  without a user (shared link) takes the identity of the trace's earliest interaction span
+  in the bucket (as the list keeps one interaction per trace) or, for Codex, the one
+  identity on the turn's spans of that conversation. An empty identity, or two Codex
+  identities, is the same 404.
 - Turn identity: Codex spans group by turn id alone, so only UUID-shaped turn ids identify
   a turn. Synthetic ids such as `auto-compact-N` repeat across conversations; those turns
   are unlinkable (counted in `turns_without_unique_id`, never listed, never win a
   completion), and the detail span query also requires the task's conversation id or none.
+- Context: compactions link to a Claude task only through the `prompt.id` of its
+  `api_request` logs (many compactions fall outside interaction spans, so a time window
+  would misattribute them); their log window opens one hour before `from`. Codex limits
+  come from the exact user's `codex.conversation_starts` for the conversation, at most
+  7 days before the turn. Prompt ids are never returned.
 - Windows: Claude spans of the `TraceId` are read in `[from, to + 24h)` because subagent
   spans can start hours after the interaction; Codex turn spans in `[from - 24h, to + 24h)`
   so a turn crossing a bucket edge belongs to its starting bucket only.

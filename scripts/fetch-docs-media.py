@@ -28,8 +28,9 @@ MAX_FILE_BYTES = 8_000_000
 
 
 def validate_manifest(manifest):
-    if (manifest.get("schema_version") != 1
+    if (not isinstance(manifest, dict) or manifest.get("schema_version") != 1
             or manifest.get("repository") != REPOSITORY
+            or not isinstance(manifest.get("commit"), str)
             or not re.fullmatch(r"[0-9a-f]{40}", manifest.get("commit", ""))):
         raise ValueError("invalid media snapshot identity")
     files = manifest.get("files")
@@ -40,6 +41,7 @@ def validate_manifest(manifest):
         if (not isinstance(item, dict) or item.get("path") not in PATHS
                 or type(item.get("bytes")) is not int
                 or not 0 < item["bytes"] <= MAX_FILE_BYTES
+                or not isinstance(item.get("sha256"), str)
                 or not re.fullmatch(r"[0-9a-f]{64}", item.get("sha256", ""))):
             raise ValueError("invalid media entry")
         names.append(item["path"])
@@ -74,6 +76,7 @@ def hydrate(root, manifest, site_only=False, offline=False, opener=urlopen):
     targets = [(item, destination(root, item["path"])) for item in selected]
     for item, target in targets:
         if matches(target, item):
+            target.chmod(0o644)
             print("Verified " + item["path"])
             continue
         if offline:
@@ -91,6 +94,7 @@ def hydrate(root, manifest, site_only=False, offline=False, opener=urlopen):
             with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as stream:
                 temporary = Path(stream.name)
                 stream.write(data)
+            temporary.chmod(0o644)
             temporary.replace(target)
         finally:
             if temporary is not None:
