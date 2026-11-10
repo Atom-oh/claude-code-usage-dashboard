@@ -13,7 +13,7 @@
   <link rel="alternate" hreflang="zh-CN" href="../zh/index.html" />
 </head>
 <body>
-  <a class="skip-link" href="#main">콘텐츠로 건너뛰기</a>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
     <nav class="tabs" aria-label="주요 탐색"><a href="index.html" aria-current="page">개요</a><a href="installation.html">설치</a><a href="architecture.html">아키텍처</a><a href="api.html">API</a><a href="operations.html">운영</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
@@ -36,7 +36,7 @@
       <track kind="captions" src="../assets/video/dashboard-demo-en-20261110.vtt" srclang="en" label="English" />
       브라우저에서 이 동영상을 재생할 수 없습니다. <a href="../assets/video/dashboard-demo-en-20261110.mp4">영어 데모 다운로드</a>.
     </video></div>
-    <p class="caption">2026년 11월 10일 제작 · 48초 · 화면 텍스트는 영어 · 무음. 합성 픽스처와 Luna가 번역한 표시 레이블을 사용한 실제 React 화면이며, 비용은 허구입니다. HyperFrames로 제작하고 렌더링했습니다.</p>
+    <p class="caption">2026년 11월 10일 제작 · 48초 · 화면 텍스트는 영어 · 무음. 합성 픽스처와 Luna가 번역한 표시 레이블을 사용한 실제 React 화면이며, 비용은 허구입니다. HyperFrames로 제작하고 렌더링했습니다. <a href="../assets/video/dashboard-demo-en-20261110.vtt">영어 대본</a>.</p>
   </div>
   <div>
     <h3>합계에서 설명까지</h3>
@@ -62,7 +62,7 @@
   <li>시간 범위와 클라이언트 필터를 선택합니다. <strong>사용자</strong> 또는 <strong>비용</strong>을 열고 사용자를 선택해 <strong>사용자 상세</strong>를 엽니다.</li>
   <li>해당 사용자의 추세에서 버킷을 클릭합니다. 작업 목록에는 해당 버킷에서 시작된 작업이 최대 20개 표시됩니다. 토큰, 비용, 하위 에이전트 또는 소요 시간 기준으로 정렬할 수 있습니다.</li>
   <li>작업을 선택해 <strong>작업 상세</strong>(Task Trace)를 엽니다. 토큰, 비용 산정 기준, LLM 호출, 하위 에이전트, 관측된 소요 시간을 확인합니다.</li>
-  <li>타임라인 막대를 클릭해 해당 호출이나 도구를 확인합니다. <strong>모델별 호출</strong>에서 행을 선택해 일치하는 LLM 막대를 강조 표시하고, 다시 선택하면 강조 표시가 해제됩니다. Escape 또는 <strong>닫기</strong>를 눌러 닫습니다.</li>
+  <li>타임라인 막대를 클릭해 해당 호출이나 도구를 확인합니다. <strong>모델별 호출</strong>에서 행을 선택해 일치하는 LLM 막대를 강조 표시하고, 다시 선택하면 강조 표시가 해제됩니다. Escape 또는 <strong>닫기</strong>(화면 닫기)를 눌러 닫습니다.</li>
 </ol>
 <figure><img src="../assets/img/task-trace.png" width="1320" height="1011" loading="lazy" alt="합성 데이터를 사용한 Task Trace: 기본 레인, 하위 에이전트 레인 2개, 누적 비용, 선택된 Explore 모델 호출" /><figcaption>합성 픽스처와 허구의 비용을 사용해 11월 10일 소스에서 캡처한 Task Trace입니다. 운영 텔레메트리는 포함되지 않았습니다.</figcaption></figure>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace 읽는 방법"><table>
@@ -71,7 +71,7 @@
     <tr><td>에이전트 레인</td><td>먼저 기본 세션이 표시되고, 그 뒤에 관측된 하위 에이전트가 표시됩니다. 색이 더 짙은 LLM 막대는 입력 컨텍스트가 더 큼을 나타내며, 회색 표시는 도구, 빨간색 표시는 권한 대기, 점선은 관측된 에이전트 시작을 연결합니다.</td></tr>
     <tr><td>누적 비용</td><td>레인 색상은 확인된 호출 비용을 누적해서 표시합니다. 마우스를 올리면 특정 시점의 정보를 확인할 수 있습니다. 일치하는 span이 없는 Codex 완료 기록은 띠에 나타나지 않더라도 작업 총계에 포함될 수 있습니다.</td></tr>
     <tr><td>선택한 span</td><td>사용 가능한 모델, 토큰 구성 요소, 비용 산정 기준, 시간 정보, 도구 또는 권한 메타데이터를 확인합니다. 원시 프롬프트, 명령, 경로는 표시되지 않습니다.</td></tr>
-    <tr><td>왜 많이 썼나</td><td>입력 데이터가 있는 경우 데이터 기반 규칙을 통해 캐시 읽기 비중, 컨텍스트 증가, 레인별 비용 비중, 고비용 호출, 재시도 또는 권한 대기를 설명합니다.</td></tr>
+    <tr><td>왜 많이 썼나</td><td>입력 데이터가 있는 경우 데이터 기반 규칙을 통해 캐시 읽기 비중, 컨텍스트 증가, 레인별 비용 비중, 고비용 호출, 재시도 또는 권한 대기를 설명합니다. 이 항목은 왜 비용이 많이 들었는지 설명합니다.</td></tr>
     <tr><td>모델 호출</td><td>레인, 호출 횟수, 확인된 비용을 기준으로 모델과 호출 출처를 비교합니다. 행을 강조 표시해도 타임라인의 강조만 바뀌며 합계는 바뀌지 않습니다.</td></tr>
   </tbody>
 </table></div>
@@ -92,7 +92,7 @@
   </main>
   <footer><div class="wrap">
     <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
-    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">전체 API 참조</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">변경 이력</a> · <a href="credits.html">데모 제작 정보</a></p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">전체 API 참조</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">변경 이력</a> · <a href="credits.html">데모 크레딧</a></p>
     <p>텔레메트리가 불완전할 수 있습니다. 보고 비용 및 정가 기준 예상치는 청구서가 아닙니다. 활동 지표만으로 직원 생산성이나 인과 관계에 기반한 ROI를 입증할 수 없습니다.</p>
   </div></footer>
 </body>

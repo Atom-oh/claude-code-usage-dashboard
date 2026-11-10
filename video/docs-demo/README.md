@@ -4,7 +4,7 @@ This is the November 10, 2026 English guide walkthrough. See the
 [brief](BRIEF.md), [storyboard](STORYBOARD.md) and [scoped instructions](AGENTS.md).
 The older project in the parent directory remains historical.
 
-Install Node 22+, Chromium, FFmpeg and ffprobe. The npm scripts pin HyperFrames
+Install Node 22.12+, Chromium, FFmpeg and ffprobe. The npm scripts pin HyperFrames
 0.7.77; do not upgrade it while reproducing this composition. Set
 `HYPERFRAMES_BROWSER_PATH`, `HYPERFRAMES_FFMPEG_PATH` and
 `HYPERFRAMES_FFPROBE_PATH` to verified executables if automatic discovery fails.

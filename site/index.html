@@ -36,7 +36,7 @@
       <track kind="captions" src="assets/video/dashboard-demo-en-20261110.vtt" srclang="en" label="English" />
       Your browser cannot play this video. <a href="assets/video/dashboard-demo-en-20261110.mp4">Download the English demo</a>.
     </video></div>
-    <p class="caption">Created November 10, 2026 · 48 seconds · English on-screen text · silent. Actual React screens with synthetic fixtures and Luna-translated display labels; fictional costs. Built and rendered with HyperFrames.</p>
+    <p class="caption">Created November 10, 2026 · 48 seconds · English on-screen text · silent. Actual React screens with synthetic fixtures and Luna-translated display labels; fictional costs. Built and rendered with HyperFrames. <a href="assets/video/dashboard-demo-en-20261110.vtt">Transcript (English)</a>.</p>
   </div>
   <div>
     <h3>From totals to an explanation</h3>
@@ -62,7 +62,7 @@
   <li>Choose your time range and client filters. Open <strong>Users</strong> or <strong>Cost</strong>, then select a user to open <strong>사용자 상세</strong> (user detail).</li>
   <li>Click a bucket in that user's trend. The task list shows up to 20 tasks starting in that bucket. Sort by tokens, cost, subagents or duration.</li>
   <li>Select a task to open <strong>작업 상세</strong> (Task Trace). Read its tokens, cost basis, LLM calls, subagents and observed duration.</li>
-  <li>Click a timeline bar to inspect that call or tool. Select a row in <strong>모델별 호출</strong> (model calls) to highlight matching LLM bars; select it again to clear. Press Escape or <strong>닫기</strong> to close.</li>
+  <li>Click a timeline bar to inspect that call or tool. Select a row in <strong>모델별 호출</strong> (model calls) to highlight matching LLM bars; select it again to clear. Press Escape or <strong>닫기</strong> (close) to close.</li>
 </ol>
 <figure><img src="assets/img/task-trace.png" width="1320" height="1011" loading="lazy" alt="Task Trace with a main lane, two subagent lanes, cumulative cost and a selected Explore model call, using synthetic data" /><figcaption>Task Trace captured from the November 10 source with synthetic fixtures and fictional costs. No production telemetry.</figcaption></figure>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace reading guide"><table>
@@ -71,7 +71,7 @@
     <tr><td>Agent lanes</td><td>The main session appears first, followed by observed subagents. Darker LLM bars indicate larger input context; gray marks are tools, red marks are permission waits, and dashed lines connect observed agent spawns.</td></tr>
     <tr><td>Cumulative cost</td><td>Lane colors stack known call costs. Hover to inspect a point in time. Codex completions without a matching span can contribute to the task total without appearing in the band.</td></tr>
     <tr><td>Selected span</td><td>Inspect available model, token components, cost basis, timing and tool or permission metadata. Raw prompts, commands and paths are not shown.</td></tr>
-    <tr><td>왜 많이 썼나</td><td>Data-backed rules explain cache-read share, context growth, lane cost share, expensive calls, retries or permission waits when their inputs are available.</td></tr>
+    <tr><td>왜 많이 썼나 (why it cost so much)</td><td>Data-backed rules explain cache-read share, context growth, lane cost share, expensive calls, retries or permission waits when their inputs are available.</td></tr>
     <tr><td>Model calls</td><td>Compare model and call source by lane, call count and known cost. Highlighting a row changes timeline emphasis, not the totals.</td></tr>
   </tbody>
 </table></div>

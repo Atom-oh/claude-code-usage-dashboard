@@ -13,10 +13,10 @@
   <link rel="alternate" hreflang="zh-CN" href="api.html" />
 </head>
 <body>
-  <a class="skip-link" href="#main">跳转到内容</a>
+  <a class="skip-link" href="#main">跳转到正文</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
-    <nav class="tabs" aria-label="主导航"><a href="index.html">概览</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html" aria-current="page">API</a><a href="operations.html">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <nav class="tabs" aria-label="主要导航"><a href="index.html">概览</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html" aria-current="page">API</a><a href="operations.html">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
     <div class="languages" role="group" aria-label="语言"><a href="../api.html" hreflang="en" lang="en">English</a><a href="../ko/api.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/api.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
   </div></header>
   <main class="wrap" id="main">
@@ -33,7 +33,7 @@
 <p><code>completion_usage</code> 描述去重后、包含用量数据的完成日志，其 <code>basis="recorded_completions"</code>。这并不表示所选时间范围内的每次 HTTP 尝试或每个会话都具有完整遥测数据。</p><div class="table-scroll" tabindex="0" role="region" aria-label="字段参考表"><table><thead><tr><th scope="col">字段</th><th scope="col">分母与范围</th></tr></thead><tbody><tr><td><code>cache_hit_rate</code>, <code>cache_write_share</code></td><td>在已记录的完成中，经验证的缓存读取/缓存写入子集占规范输入令牌的比例。</td></tr><tr><td><code>reasoning_share</code></td><td>该群组中，经验证的推理子集占规范输出令牌的比例。</td></tr><tr><td><code>tokens_per_completion</code></td><td>规范令牌数除以已记录的完成次数；已观测到的令牌小计不能替代缺失的规范组成部分。</td></tr><tr><td><code>cost_per_completion</code></td><td>已知的完成成本除以全部已记录的完成次数，并保留部分价格信息的披露。</td></tr><tr><td><code>cost_per_identified_session</code></td><td>只有包含 conversation ID 的完成记录才会计入成本分子和不同会话的分母。</td></tr><tr><td><code>unidentified_completions</code></td><td>单独计数，不纳入已识别会话的成本单位。</td></tr><tr><td><code>completeness</code></td><td>报告缺失的用量/会话证据、受限的汇总类别、不完整的令牌数据，以及可用的全时间范围请求/会话计数。</td></tr></tbody></table></div><div class="note"><p>组成部分缺失、子集值不可能、分母为零、所有价格均未知或用量有限时，结果仍可能为 <code>null</code>。现有的全时间范围 HTTP 请求/会话比率仍采用更严格的保护条件。界面会在可展开的区域中展示这些比率。</p></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/codex-observability.md">完整的完成、覆盖率和汇总限制语义</a></p></section><section id="device-api"><h2>采集器与设备 API</h2><div class="table-scroll" tabindex="0" role="region" aria-label="端点参考表"><table><thead><tr><th scope="col">端点</th><th scope="col">约定</th></tr></thead><tbody><tr><td><code>GET /api/collector</code></td><td>功能状态、已配置的公共数据摄取端点、版本、平台和令牌有效期。</td></tr><tr><td><code>GET /api/collector/devices</code></td><td>按所有者限定范围的设备，每页最多 50 个；请原样使用返回的游标。</td></tr><tr><td><code>POST /api/collector/devices</code></td><td>使用 <code>name</code> 和 <code>platform</code>（<code>darwin</code> 或 <code>linux</code>）注册。令牌仅返回一次。</td></tr><tr><td><code>DELETE /api/collector/devices/:id</code></td><td>撤销自己拥有的设备。</td></tr><tr><td><code>GET /api/collector/package/:platform</code></td><td>需身份验证的下载，不嵌入凭证。</td></tr><tr><td><code>POST /api/ingest/v1/{logs,metrics,traces}</code></td><td>仅接受设备 bearer token。支持 OTLP JSON/protobuf，最大 2 MiB，不支持内容压缩。</td></tr></tbody></table></div><p>管理和下载需要 OIDC <code>collector:manage</code> 权限（analyst/admin）。拒绝 viewer/demo 访问。设备端点不使用用量范围筛选条件；其响应和下载均为 <code>no-store</code>。</p></section><section id="health"><h2>健康状态与错误</h2>
 <p><code>/healthz</code> 用于存活检查；<code>/readyz</code> 用于就绪检查。受保护的 <code>/api/health/data</code> 会报告数据摄取的新鲜度。进程正常运行并不能证明遥测数据是最新的。</p>
 <p>格式错误的筛选条件会在查询前失败。刷新服务失败时可能返回 <code>503</code> 和 <code>Retry-After: 5</code>；凭证已过期或无效时需要登录。有界查询准入控制可在过载时拒绝请求，避免数据库工作量无限增长。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整路由列表、响应字段和错误</a></p></section>
-<section id="tasks"><h2>用户任务与 Trace API</h2>
+<section id="tasks"><h2>用户任务与追踪 API</h2>
 <p>使用通过会话身份验证的遥测访问。<code>userExact</code> 会在请求的时间桶范围内选择该任务的遥测所有者；它不会将仪表板读取者限制为只能查看自己的遥测数据。</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace 端点参考"><table>
   <thead><tr><th scope="col">端点</th><th scope="col">请求与响应</th></tr></thead>
@@ -46,20 +46,20 @@
   <li>两个路由都会拒绝 <code>team</code>。请原样传入返回的任务 ID；已禁用的客户端或格式错误的 ID 会被拒绝。</li>
   <li>Claude 成本排序会从观测到的令牌数最多的 100 个任务构成候选池，再对其排序。请查看 <code>sort_candidates.limited</code>；候选池之外成本更高的任务可能不会出现。Codex 轮次会先计算成本，再进行排序。</li>
   <li>详情最多返回最新的 5,000 个 span。Claude 详情被截断时，会隐藏整个任务和各 lane 的总计、模型及 <code>why</code>。基于 Codex 完成记录计算的任务总计不受 span 截断影响；但截断时，叠加层仍会隐藏 KPI 行和成本区间。</li>
-  <li>Span 属性采用允许列表。缺失的令牌组成部分、成本、时长或子代理证据仍不可用。由于 tracing 是可选的，任务响应始终为部分数据。</li>
+  <li>Span 属性采用允许列表。缺失的令牌组成部分、成本、时长或子智能体证据仍不可用。由于 tracing 是可选的，任务响应始终为部分数据。</li>
 </ul>
 <p><a href="index.html#task-trace">界面操作指南</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md#users">完整任务字段、身份验证和关联规则</a></p>
 </section>
-<section id="trace-preview"><h2>Codex 诊断 Trace 预览</h2>
+<section id="trace-preview"><h2>Codex 诊断追踪预览</h2>
 <p>默认的 <code>GET /api/codex/insights</code> 配置包含 <code>traces</code>、span 延迟汇总和 <code>coverage.traces</code>。它会返回最新的 50 条 trace，每条最多包含最新的 200 个 span。这些上限不同于 Task Trace 详情的 5,000 个 span 上限。</p>
 <p>统计数据描述当前显示的 span。模型筛选条件仅适用于带有模型属性的 span。发生截断或 span 身份冲突时，可能会隐藏 trace 级别的时长/错误统计和详情。不会将任何指标或 trace 中观测到的令牌计入完成日志用量或成本。</p>
-<p><code>effort</code>、<code>tools</code> 和 <code>performance</code> 配置不会查询 trace：覆盖状态为 <code>not_requested</code> 并不能证明未进行采集。只有 <code>profile=tools</code> 会接受 <code>userExact</code>；所有 Codex insights 配置都会拒绝 <code>modelExact</code>。</p>
+<p><code>effort</code>、<code>tools</code> 和 <code>performance</code> 配置不会查询追踪：覆盖状态为 <code>not_requested</code> 并不能证明未进行采集。只有 <code>profile=tools</code> 会接受 <code>userExact</code>；所有 Codex insights 配置都会拒绝 <code>modelExact</code>。</p>
 <p><a href="index.html#codex-traces">打开 Trace 标签页</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/codex-observability.md#api-and-bounds">预览限制与覆盖情况</a></p>
 </section>
   </main>
   <footer><div class="wrap">
     <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
-    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">测量指标定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示致谢</a></p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">测量指标定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示鸣谢</a></p>
     <p>遥测数据可能不完整。报告的成本和目录价格估算并非账单。活动指标不能证明员工生产力或因果关系上的投资回报。</p>
   </div></footer>
 </body>

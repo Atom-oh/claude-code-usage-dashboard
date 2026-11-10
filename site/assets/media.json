@@ -168,15 +168,18 @@
     "source_files": [
       {
         "path": "video/docs-demo/index.html",
-        "sha256": "b6b19cb3d4202ef17c3a7e30adba1277d98ccf7745778104a1bdc034127f922a"
+        "sha256": "b6b19cb3d4202ef17c3a7e30adba1277d98ccf7745778104a1bdc034127f922a",
+        "bytes": 8220
       },
       {
         "path": "video/docs-demo/styles.css",
-        "sha256": "e4c786c31b251ef0927e9065d69c0e6a092d65547d4db5b76cafe054b92ed454"
+        "sha256": "e4c786c31b251ef0927e9065d69c0e6a092d65547d4db5b76cafe054b92ed454",
+        "bytes": 3941
       },
       {
         "path": "video/docs-demo/package.json",
-        "sha256": "66398854d0b8572a0e03175683433c0bdf1b96b8a4876e7f1c6a5b8fb4fb855a"
+        "sha256": "66398854d0b8572a0e03175683433c0bdf1b96b8a4876e7f1c6a5b8fb4fb855a",
+        "bytes": 311
       }
     ],
     "webm_encoding": {

@@ -26,20 +26,20 @@
       <p class="lede">専用のインストール環境では、クライアントのテレメトリ、範囲を制限した取り込み経路、ClickHouse ストレージ、認証付きダッシュボードを組み合わせます。</p>
       <p class="caption">2026年11月10日更新 · ソースコードの動作を説明しています。インストール済みのリビジョンをご確認ください。</p>
     </div>
-    <section id="task-traces"><h2>ユーザー、タスク、スパンを関連付ける</h2>
-<p>ユーザー詳細では、正確なテレメトリ ID とトレンドのバケットを選択します。<code>/api/users/tasks</code> はそのバケット内で開始したタスクを一覧表示し、<code>/api/users/tasks/detail</code> は選択したタスクのレーン、スパン、根拠に基づくコストの説明を返します。</p>
+    <section id="task-traces"><h2>ユーザー、タスク、spanを関連付ける</h2>
+<p>ユーザー詳細では、正確なテレメトリ ID とトレンドのバケットを選択します。<code>/api/users/tasks</code> はそのバケット内で開始したタスクを一覧表示し、<code>/api/users/tasks/detail</code> は選択したタスクのレーン、span、根拠に基づくコストの説明を返します。</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace のデータソース"><table>
   <thead><tr><th scope="col">クライアント</th><th scope="col">タスクとタイミング</th><th scope="col">使用量とコスト</th></tr></thead>
   <tbody>
-    <tr><td>Claude Code</td><td><code>interaction</code> スパンがタスクと所要時間を特定します。LLM、ツール、権限待ちの各スパンでタイムラインを構成し、観測されたエージェント ID でレーンを構成します。</td><td>LLM スパンのトークンを使用します。利用可能な場合はログから結合した報告済みリクエストコストを、そうでない場合は該当する料金計算を使用します。表示される算定根拠が混在することがあります。</td></tr>
-    <tr><td>Codex</td><td>会話 ID と一意のターン ID を持つターンがタスクを特定します。所要時間は観測されたスパンの時間幅です。メインレーンのみ利用できます。</td><td>ターンの時間範囲に紐づく、使用量を含む一意の完了ログからトークンと AWS のリスト価格による推定額を取得します。サンプリングされたスパンには、表示用に対応する完了値を割り当てます。</td></tr>
+    <tr><td>Claude Code</td><td><code>interaction</code> spanがタスクと所要時間を特定します。LLM、ツール、権限待ちの各spanでタイムラインを構成し、観測されたエージェント ID でレーンを構成します。</td><td>LLM spanのトークンを使用します。利用可能な場合はログから結合した報告済みリクエストコストを、そうでない場合は該当する料金計算を使用します。表示される算定根拠が混在することがあります。</td></tr>
+    <tr><td>Codex</td><td>会話 ID と一意のターン ID を持つターンがタスクを特定します。所要時間は観測されたspanの時間幅です。メインレーンのみ利用できます。</td><td>ターンの時間範囲に紐づく、使用量を含む一意の完了ログからトークンと AWS のリスト価格による推定額を取得します。サンプリングされたspanには、表示用に対応する完了値を割り当てます。</td></tr>
   </tbody>
 </table></div>
-<p>Codex のタスク使用量は、紐づいた完了レコードの表示であり、別の会計情報源ではありません。未紐付けの完了は別途報告されます。一致するサンプリングスパンがない呼び出しは、累積コスト帯に含まれない場合があります。Analytics Trace のプレビューは診断スパンを独立して読み取ります。</p>
+<p>Codex のタスク使用量は、紐づいた完了レコードの表示であり、別の会計情報源ではありません。未紐付けの完了は別途報告されます。一致するサンプリングspanがない呼び出しは、累積コスト帯に含まれない場合があります。Analytics Trace のプレビューは診断spanを独立して読み取ります。</p>
 <p>タスク詳細のクエリでは、許可リストにあるメタデータを選択します。UI は ID をマスキングし、生のプロンプト、コマンド、パスを表示しません。この表示ポリシーは API アクセス制御を提供するものではありません。トレースデータの保持期間は90日で、使用量のロールアップとは別に管理されます。</p>
 <p><a href="index.html#task-trace">Task Trace の手順</a> · <a href="api.html#tasks">クエリの契約</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/data.md#user-task-traces">タスク ID、結合、プライバシー境界</a></p>
 </section>
-    <section id="pipeline"><h2>2つの収集経路</h2><div class="pipe" aria-label="デバイスのデータフロー">
+    <section id="pipeline"><h2>2つの収集経路</h2><div class="pipe" role="group" aria-label="デバイスのデータフロー">
   <div class="stage"><b>Claude Code + Codex</b><span>メトリクス、完了ログ、診断シグナル</span></div><div class="arrow" aria-hidden="true">→</div>
   <div class="stage"><b>ローカル Collector</b><span>ループバック受信機、フィルタリング、容量制限付きの永続キュー</span></div><div class="arrow" aria-hidden="true">→</div>
   <div class="stage"><b>デバイス取り込みゲートウェイ</b><span>HTTPS、デバイスのベアラートークン、サイズ制限付き OTLP リクエスト</span></div><div class="arrow" aria-hidden="true">→</div>
@@ -59,9 +59,8 @@
 <p>OIDC は署名済みの ID を検証し、明示的なグループ値を <code>viewer</code>、<code>analyst</code>、<code>admin</code> に割り当てます。認可された閲覧者は、インストール環境全体のテレメトリを読み取れます。これは従業員ごとに行を分離する仕組みではありません。</p>
 <p>デバイストークンが許可するのは取り込みのみです。所有者、期限、失効はそれぞれ個別に管理されます。テレメトリの帰属情報はクライアントから提供されます。SSO セッションやトークンの所有権によって、テレメトリに記録されたメールアドレスの正当性が自動的に保証されることはありません。</p>
 <p>個人情報のマスキングは表示機能であり、API アクセス制御ではありません。収集フィルターは既知のコンテンツフィールドを除去しますが、対応対象のメタデータに任意の形式で含められた秘密情報は検出できません。</p>
-<p><a href="operations.html#sso">SSO の設定とセッションの更新</a> · <a href="installation.html">Collector のインストール</a></p></section><section id="deployment"><h2>デプロイの境界</h2><p>ダッシュボードイメージには Web UI と API が含まれます。ClickHouse、そのスキーマ、OTel Collector は、すべてのプラットフォームで別コンポーネントです。現在の Compose ファイルには Collector が含まれません。EKS Terraform は既存のクラスター依存関係を再利用します。ECS/EC2 にはプラットフォームの設定が必要で、Lambda にはランタイムへの適応が必要です。</p><p><a href="installation.html#choose">必須コンポーネント</a> · <a href="installation.html#platforms">ホスティング方法の比較</a></p>
-<p>提供される Terraform は既存の EKS 環境を対象としています。アプリケーションコンテナは ClickHouse と通信し、開発にはローカル Compose を利用できます。ECS、Fargate、その他のランタイムには、それぞれのインフラストラクチャ、認証情報、ネットワーク、プローブ、永続化の設定を確認する必要があります。</p>
-<p>スキーマのライフサイクル、アプリケーションイメージ、Collector ポリシー、ランタイムのオプションは、それぞれ独立したデプロイ状態を持ちます。ビルドや Terraform の検証に成功しても、稼働中のロールアウトや移行が完了したことにはなりません。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">組織向けのデプロイ</a></p></section>
+<p><a href="operations.html#sso">SSO の設定とセッションの更新</a> · <a href="installation.html">Collector のインストール</a></p></section><section id="deployment"><h2>デプロイの境界</h2><p>ダッシュボードイメージにはWeb UIとAPIが含まれます。ClickHouse、そのスキーマ、OTel Collectorは、すべてのプラットフォームで別コンポーネントです。現在のComposeファイルにはCollectorが含まれず、EKS Terraformは既存のクラスター依存関係を再利用します。ECS/EC2ではインフラストラクチャ、認証情報、ネットワーク、プローブ、永続化の設定をレビューして用意する必要があります。Lambdaではアプリケーションをランタイムに適応させる必要があります。</p><p><a href="installation.html#choose">必須コンポーネント</a> · <a href="installation.html#platforms">ホスティング方法の比較</a></p>
+<p>スキーマのライフサイクル、アプリケーションイメージ、Collectorポリシー、ランタイムの選択肢は、それぞれ独立したデプロイ状態を持ちます。ビルドやTerraformの検証に成功しても、稼働中のロールアウトや移行が完了したことにはなりません。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">組織向けのデプロイ</a></p></section>
   </main>
   <footer><div class="wrap">
     <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>

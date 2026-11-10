@@ -13,7 +13,7 @@
   <link rel="alternate" hreflang="zh-CN" href="../zh/operations.html" />
 </head>
 <body>
-  <a class="skip-link" href="#main">本文へ移動</a>
+  <a class="skip-link" href="#main">本文へスキップ</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
     <nav class="tabs" aria-label="メインナビゲーション"><a href="index.html">概要</a><a href="installation.html">インストール</a><a href="architecture.html">アーキテクチャ</a><a href="api.html">API</a><a href="operations.html" aria-current="page">運用</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
@@ -69,10 +69,10 @@ SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
   <thead><tr><th scope="col">症状</th><th scope="col">確認する項目</th></tr></thead>
   <tbody>
     <tr><td>ユーザーの利用状況はあるがタスクがない</td><td>トレース設定、再起動時刻、エクスポートされたID、タスク開始の時間バケット、保持期間を確認します。過去の利用状況からトレースが遡って生成されることはありません。</td></tr>
-    <tr><td>Codexの完了がタスクに紐付かない</td><td>トレース対象ターンには、会話IDと一意のターンIDが必要です。対象となるターンがない完了は紐付きません。サンプリング対象のスパンを含まない紐付き完了は、コスト帯に表示されない場合があります。</td></tr>
-    <tr><td>Codexのサブエージェント数を確認できない</td><td>現在のタスクビューにはメインレーンしかなく、無関係なスパンからサブエージェント数を推定しません。</td></tr>
-    <tr><td>詳細データが大きいと合計が表示されない</td><td><code>truncated</code>と<code>span_total</code>を確認します。タスク詳細は5,000スパンに制限されています。別の診断プレビューでは、トレース数が50、トレースごとのスパン数が200に制限されます。</td></tr>
-    <tr><td>モデルフィルターを適用するとCodex Traceが表示されなくなる</td><td>このフィルターに一致するのはモデル属性を持つスパンだけです。他の診断スパンを調べるには、フィルターを解除してください。</td></tr>
+    <tr><td>Codexの完了がタスクに紐付かない</td><td>トレース対象ターンには、会話IDと一意のターンIDが必要です。対象となるターンがない完了は紐付きません。サンプリング対象のspanを含まない紐付き完了は、コスト帯に表示されない場合があります。</td></tr>
+    <tr><td>Codexのサブエージェント数を確認できない</td><td>現在のタスクビューにはメインレーンしかなく、無関係なspanからサブエージェント数を推定しません。</td></tr>
+    <tr><td>詳細データが大きいと合計が表示されない</td><td><code>truncated</code>と<code>span_total</code>を確認します。タスク詳細は5,000spanに制限されています。別の診断プレビューでは、トレース数が50、トレースごとのspan数が200に制限されます。</td></tr>
+    <tr><td>モデルフィルターを適用するとCodex Traceが表示されなくなる</td><td>このフィルターに一致するのはモデル属性を持つspanだけです。他の診断spanを調べるには、フィルターを解除してください。</td></tr>
   </tbody>
 </table></div>
 <p><a href="api.html#tasks">タスクエンドポイントの制限</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collectorの復旧</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">アプリケーションのリリース手順</a></p>
@@ -80,7 +80,7 @@ SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
   </main>
   <footer><div class="wrap">
     <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
-    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測項目の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモのクレジット</a></p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測項目の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモクレジット</a></p>
     <p>テレメトリは不完全な場合があります。報告されるコストや定価に基づく推定額は請求書ではありません。アクティビティ指標から、従業員の生産性や因果関係のあるROIを判断することはできません。</p>
   </div></footer>
 </body>

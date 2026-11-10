@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>サービス全体をビルドしてデプロイする — ccdash</title>
-  <meta name="description" content="ソースをクローンし、ダッシュボードのイメージをビルドして、ClickHouseスキーマとOTel Collectorを準備したうえで、EKS、ECS、EC2、またはLambdaへの移植を選択します。" />
+  <meta name="description" content="ソースをクローンし、ダッシュボードのイメージをビルドして、ClickHouseスキーマとOTel Collectorを準備したうえで、EKS、ECS、EC2を選択するか、アプリケーションをLambdaランタイムに適応させます。" />
   <link rel="stylesheet" href="../assets/site.css" />
   <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
   <link rel="alternate" hreflang="en" href="../installation.html" />
@@ -55,7 +55,7 @@ docker build --platform "$CCDASH_PLATFORM" \
 <tr><td>新規のレプリケーション構成EKS</td><td><code>infra/files/clickhouse-schema-replicated.sql</code> と、<code>infra/schema.tf</code> 内の生成済みコントラクトおよびschema-init Jobを使用します。宣言済みのクラスター／Keeperトポロジーと想定レプリカ数が必要です。</td></tr>
 <tr><td>既存のインストール</td><td>テーブル、台帳、過去データを確認してください。各ランブックに従い、必要な番号付き移行だけを適用します。アップグレードとしてブートストラップを再実行しないでください。</td></tr>
 </tbody></table></div>
-<p>EC2/Dockerでは、まず専用のブリッジネットワークと永続データボリュームを作成します。読み取り用／取り込み用／管理用アカウント、制限されたネットワーク、匿名のデフォルトアクセスなしを設定した保護済みの <code>users.d</code> XMLと、管理者クライアント設定を準備してください。選択したリリース向けにClickHouseイメージの適格性を確認して固定します。ローカルのCompose設定は出発点となる参考例です。<code>CLICKHOUSE_SKIP_USER_SETUP=1</code> は準備済みのアカウント設定を保持します。まず認証とネットワーク制限を検証してください。次のコマンドはデータベースのポートを公開せずに起動します。</p>
+<p>EC2/Dockerでは、次のものを準備してください。</p><ul><li>専用のブリッジネットワークと永続データボリューム。</li><li>読み取り用／取り込み用／管理用アカウント、制限されたネットワーク、匿名のデフォルトアクセスなしを設定した保護済みの <code>users.d</code> XMLと、管理者クライアント設定。</li><li>選択したリリース向けに適格性を確認して固定したClickHouseイメージ。ローカルのCompose設定は出発点となる参考例です。</li></ul><p><code>CLICKHOUSE_SKIP_USER_SETUP=1</code> は準備済みのアカウント設定を保持します。まず認証とネットワーク制限を検証してください。次のコマンドはデータベースのポートを公開せずに起動します。</p>
 <pre><code class="language-bash">: "${CCDASH_NETWORK:?Set the prepared private Docker network}"
 : "${CCDASH_CH_CONTAINER:?Set the ClickHouse container name}"
 : "${CCDASH_CH_IMAGE:?Set the reviewed ClickHouse image including its sha256 digest}"
@@ -70,7 +70,7 @@ docker run -d --name "$CCDASH_CH_CONTAINER" --restart unless-stopped \
   --mount "type=bind,src=$CCDASH_CH_ADMIN_CONFIG,dst=/run/ccdash-admin/client.xml,readonly" \
   "$CCDASH_CH_IMAGE"</code></pre>
 <p>ClickHouseの起動を待ち、マウントした管理者クライアント設定で認証します。下記のスキーマ用コマンドでは、コンテナ内のパスは <code>/run/ccdash-admin/client.xml</code> です。このネットワーク上のアプリとCollectorでは、データベースホストに <code>clickhouse.internal</code> を使用します。イメージとマウントした設定は、実行時のアーキテクチャおよびファイル読み取り権限に適合している必要があります。</p>
-<p><strong>新規で空の非レプリケーション</strong>データベースの場合、<code>CCDASH_CH_CONTAINER</code> に実行中のClickHouseコンテナを、<code>CCDASH_CH_CLIENT_CONFIG</code> にそのコンテナ内の保護された管理者クライアント設定のパスを設定します。永続ストレージを <code>/var/lib/clickhouse</code> にマウントし、取り込みを開始する前にユーザーを設定してください。ポート8123/9000は非公開のままにします。以下にパスワードは含まれていません。</p>
+<p><strong>新規で空の非レプリケーション</strong>データベースの場合、<code>CCDASH_CH_CONTAINER</code> に実行中のClickHouseコンテナを、<code>CCDASH_CH_CLIENT_CONFIG</code> にそのコンテナ内の保護された管理者クライアント設定のパスを設定します。</p>
 <pre><code class="language-bash">: "${CCDASH_CH_CONTAINER:?Set the prepared ClickHouse container name}"
 : "${CCDASH_CH_CLIENT_CONFIG:?Set the mounted admin client configuration path}"
 docker exec -i "$CCDASH_CH_CONTAINER" \
@@ -123,7 +123,7 @@ OIDC_CLIENT_ID=YOUR_APP_CLIENT_ID
 OIDC_ROLE_GROUPS={"viewer":["YOUR_VIEWER_GROUP"],"analyst":["YOUR_ANALYST_GROUP"],"admin":["YOUR_ADMIN_GROUP"]}
 OIDC_CLIENT_SECRET_FILE=/run/ccdash-secrets/OIDC_CLIENT_SECRET
 SESSION_SECRET_FILE=/run/ccdash-secrets/SESSION_SECRET</code></pre>
-<p>参照されている3つのシークレットファイルを、プラットフォームのシークレット管理機能で用意し、読み取り専用でマウントします。<code>SESSION_SECRET</code> はbase64url形式でエンコードした、32バイトのランダムキーである必要があります。ファイルの内容と権限を正確に保ってください。実行時のイメージは非rootの <code>node</code> ユーザーを使用します。EC2では、コンテナ設定に同じ絶対マウントパスを指定してください。ECS/EKSでは、対応するタスク／Podへのシークレット配信を実装します。公開デプロイで安全でない開発用認証を有効にしないでください。</p>
+<p>ダッシュボードを起動する前に、次のシークレット要件を満たしてください。</p><ul><li>参照されている3つのファイルをプラットフォームのシークレット管理機能で用意し、読み取り専用でマウントします。</li><li><code>SESSION_SECRET</code> にはbase64url形式でエンコードした32バイトのランダムキーを使用します。ファイルの内容と読み取り権限を正確に保ってください。実行時のイメージは非rootの <code>node</code> ユーザーを使用します。</li><li>EC2ではコンテナ設定に同じ絶対マウントパスを指定します。ECS/EKSでは対応するタスク／Podへのシークレット配信を実装します。</li></ul><p>公開デプロイで安全でない開発用認証を有効にしないでください。</p>
 <p>EC2/Dockerホストで <code>CCDASH_ENV_FILE</code> と <code>CCDASH_SECRET_DIR</code> を準備した後、別途設定したHTTPSリバースプロキシの背後でアプリを実行します。</p>
 <pre><code class="language-bash">: "${CCDASH_RELEASE:?Set the built release tag}"
 : "${CCDASH_ENV_FILE:?Set the prepared nonsecret environment file}"
@@ -137,7 +137,7 @@ docker run -d --name ccdash --restart unless-stopped \
   "ccdash:$CCDASH_RELEASE"</code></pre>
 <p>デバイス取り込みを有効にするには、前の手順にある内部トークンファイルのマウントと <code>INGEST_*</code> 設定も、アプリの実行時設定に追加します。この基本的なアプリ起動コマンドだけでは、デバイスレジストリの設定も取り込みの有効化も行われません。</p>
 <p><a href="operations.html#sso">OIDCとロールの設定</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/.env.example">環境設定リファレンス</a></p></section>
-<section id="platforms"><h2>EC2、ECS、EKS、Lambdaへの移植から選ぶ</h2>
+<section id="platforms"><h2>EC2、ECS、EKSを選ぶか、アプリケーションをLambdaに適応させる</h2>
 <div class="table-scroll" tabindex="0" role="region" aria-label="ホスティングの選択肢とリポジトリの対応状況"><table><thead><tr><th scope="col">選択肢</th><th scope="col">デプロイ構成</th><th scope="col">リポジトリの対応状況と残作業</th></tr></thead><tbody>
 <tr><td>EC2 + Docker</td><td>ダッシュボード、Collector、永続ClickHouseを、非公開ホストまたはネットワーク上で実行します。耐久性のあるデータベース／キューストレージとHTTPSの入口を使用してください。</td><td>アプリイメージと単一ノード用スキーマが提供されています。ホスト／サービスのライフサイクル、シークレット、データベースユーザー、ネットワーク経路、バックアップは自分で準備してください。ワークショップのuser-dataスクリプトが設定するのはクライアント収集であり、バックエンド全体ではありません。</td></tr>
 <tr><td>ECS / Fargate</td><td>アプリとCollectorのイメージをECRに公開し、別々のサービスまたは適切なサイドカーとして実行します。非公開ネットワークを使い、永続ClickHouseは別途管理します。</td><td>ECSのタスク／サービス用テンプレートは提供されていません。タスク／実行ロール、シークレット配信、CPU／メモリ、イメージアーキテクチャ、ヘルスチェック、サービス間接続を定義してください。データベースや永続キューに、一時的なタスクファイルシステムを使用しないでください。</td></tr>
@@ -152,15 +152,15 @@ docker run -d --name ccdash --restart unless-stopped \
 python3 dashboard/collector/install.py install \
   --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
 <p>インストーラーはmacOS/Linux上のPython 3.9以降を必要とし、トークンは非公開で入力するよう求めます。Linuxでは、ログアウト／再起動後もサービスを維持するために <code>sudo loginctl enable-linger "$USER"</code> を実行してから、通常ユーザーとしてインストールします。Collectorバイナリをダウンロードして検証します。このコマンドはダッシュボード、データベース、中央レシーバーを準備しません。デバイスの所有者が、出力されるテレメトリのIDとして自動的に使われるわけではありません。</p>
-<ul><li>Claude Code: telemetryとenhanced telemetryを有効にし、<code>OTEL_TRACES_EXPORTER=otlp</code> を設定します。ポート4317のローカルOTLP gRPC送信先を指定してください。</li><li>Codex: 個別に <code>[otel]</code> の <code>exporter</code>、<code>metrics_exporter</code>、<code>trace_exporter</code> を設定します。ポート4318のローカルOTLP HTTP送信先と、<code>log_user_prompt=false</code> を指定してください。</li></ul>
-<p>両方のクライアントを再起動して新しい作業を生成し、<a href="index.html#task-trace">ユーザー → トレンドバケット → タスク → Task Trace</a>をたどります。以前のアクティビティがトレースに遡及して取り込まれることはありません。Codexの診断スパンを確認するには、AnalyticsのTraceタブを開きます。</p></section>
+<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> と <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code> を設定し、<code>OTEL_TRACES_EXPORTER=otlp</code> とポート4317のローカルOTLP gRPC送信先を指定します。</li><li>Codex: 個別に <code>[otel]</code> の <code>exporter</code>、<code>metrics_exporter</code>、<code>trace_exporter</code> を設定します。ポート4318のローカルOTLP HTTP送信先と、<code>log_user_prompt=false</code> を指定してください。</li></ul>
+<p>両方のクライアントを再起動して新しい作業を生成し、<a href="index.html#task-trace">ユーザー → トレンドバケット → タスク → Task Trace</a>をたどります。以前のアクティビティがトレースに遡及して取り込まれることはありません。Codexの診断spanを確認するには、AnalyticsのTraceタブを開きます。</p></section>
 <section id="migration"><h2>既存のデバイスとデータベース</h2><p>デバイス移行時には、クライアントの非公開バックアップとエクスポーターのキューを保持してください。正体不明のサービスを停止せず、サポートされているmacOS/Linuxの移行手順に従います。データベースのアップグレードは、クライアントのインストールやアプリケーションのロールアウトとは別に、スキーマのランブックに従って行います。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">ソースインストーラーと移行ガイド</a></p></section>
 <section id="verify"><h2>6. すべての境界を検証する</h2><ol><li><code>/healthz</code> とClickHouseに依存する <code>/readyz</code> を確認してから認証し、インストール／スキーマ診断を確認します。</li><li>想定したテーブル、移行台帳、ビュー、データベース権限、Collectorの書き込み成功を確認します。スキーマが存在するだけでは、過去データが利用可能とは限りません。</li><li>新しいクライアント作業を送信し、意図したIDでログ、メトリクス、トレースが保存されていることを確認します。Collectorプロセスの稼働やデバイスの受信応答だけでは、データの永続化は証明されません。</li><li>選択したユーザーの利用状況とTask Traceを確認します。Codexのトレース／メトリクス観測は診断用であり、コスト合計に重ねて加算してはいけません。</li></ol><p><a href="operations.html#traces">トレースのトラブルシューティング</a> · <a href="api.html#tasks">APIの範囲</a></p></section>
 <section id="workshops"><h2>主催者が準備するワークショップ</h2><p>準備済みのワークショップには、独自のクライアントとCollectorのライフサイクルがあります。参加者は設定済みの環境を使用します。2つ目のバックエンドをデプロイしたり、準備済みサービスに別のCollectorをインストールしたりしません。主催者は <code>user-data.sh</code> を使う前に、スキーマ、シークレットの保存先、ブートストラップ用アセットを提供する必要があります。</p></section>
   </main>
   <footer><div class="wrap">
     <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
-    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測項目の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモのクレジット</a></p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測項目の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモクレジット</a></p>
     <p>テレメトリは不完全な場合があります。報告されるコストや定価に基づく見積もりは請求書ではありません。アクティビティ指標から、従業員の生産性や因果関係に基づくROIを立証することはできません。</p>
   </div></footer>
 </body>

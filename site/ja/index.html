@@ -36,7 +36,7 @@
       <track kind="captions" src="../assets/video/dashboard-demo-en-20261110.vtt" srclang="en" label="English" />
       お使いのブラウザーではこの動画を再生できません。<a href="../assets/video/dashboard-demo-en-20261110.mp4">英語のデモをダウンロード</a>。
     </video></div>
-    <p class="caption">2026年11月10日作成 · 48秒 · 画面上のテキストは英語 · 音声なし。合成フィクスチャとLunaによる翻訳表示ラベルを使った実際のReact画面です。コストは架空の値です。HyperFramesで作成・レンダリング。</p>
+    <p class="caption">2026年11月10日作成 · 48秒 · 画面上のテキストは英語 · 音声なし。合成フィクスチャとLunaによる翻訳表示ラベルを使った実際のReact画面です。コストは架空の値です。HyperFramesで作成・レンダリング。<a href="../assets/video/dashboard-demo-en-20261110.vtt">英語の文字起こし</a>。</p>
   </div>
   <div>
     <h3>合計値から内訳の確認へ</h3>
@@ -62,29 +62,29 @@
   <li>期間とクライアントのフィルターを選択します。<strong>Users</strong>または<strong>Cost</strong>を開き、ユーザーを選択して<strong>사용자 상세</strong>（ユーザー詳細）を開きます。</li>
   <li>そのユーザーのトレンドにあるバケットをクリックします。タスクリストには、そのバケット内に開始したタスクが最大20件表示されます。トークン数、コスト、サブエージェント数、所要時間で並べ替えられます。</li>
   <li>タスクを選択して<strong>작업 상세</strong>（Task Trace）を開きます。トークン数、コストの算出根拠、LLM呼び出し、サブエージェント、観測された所要時間を確認します。</li>
-  <li>タイムラインのバーをクリックして、その呼び出しまたはツールを調べます。<strong>모델별 호출</strong>（モデル呼び出し）の行を選択すると、一致するLLMバーが強調表示されます。もう一度選択すると解除されます。Escapeキーまたは<strong>닫기</strong>を押すと閉じます。</li>
+  <li>タイムラインのバーをクリックして、その呼び出しまたはツールを調べます。<strong>모델별 호출</strong>（モデル呼び出し）の行を選択すると、一致するLLMバーが強調表示されます。もう一度選択すると解除されます。Escapeキーまたは<strong>닫기</strong>（閉じる）を押すと閉じます。</li>
 </ol>
-<figure><img src="../assets/img/task-trace.png" width="1320" height="1011" loading="lazy" alt="メインレーン、2つのサブエージェントレーン、累積コスト、選択中のExploreモデル呼び出しを表示するTask Trace。合成データを使用" /><figcaption>11月10日のソースを合成フィクスチャと架空のコストで表示したTask Trace。実運用のテレメトリーは含まれません。</figcaption></figure>
+<figure><img src="../assets/img/task-trace.png" width="1320" height="1011" loading="lazy" alt="メインレーン、2つのサブエージェントレーン、累積コスト、選択中のExploreモデル呼び出しを表示するTask Trace。合成データを使用" /><figcaption>11月10日のソースを合成フィクスチャと架空のコストで表示したTask Trace。実運用のテレメトリは含まれません。</figcaption></figure>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Task Traceの読み方"><table>
   <thead><tr><th scope="col">表示項目</th><th scope="col">読み方</th></tr></thead>
   <tbody>
     <tr><td>エージェントレーン</td><td>最初にメインセッションが表示され、その後に観測されたサブエージェントが続きます。濃い色のLLMバーは入力コンテキストが大きいことを示します。灰色の印はツール、赤色の印は権限待ちを表し、破線は観測されたエージェントの起動元を結びます。</td></tr>
-    <tr><td>累積コスト</td><td>レーンの色は既知の呼び出しコストを積み上げて表示します。ポイントにカーソルを合わせると、その時点の情報を確認できます。一致するスパンがないCodexの完了記録は、帯には表示されずにタスク合計へ加算される場合があります。</td></tr>
-    <tr><td>選択中のスパン</td><td>利用可能なモデル、トークンの内訳、コストの算出根拠、タイミング、ツールまたは権限のメタデータを確認します。元のプロンプト、コマンド、パスは表示されません。</td></tr>
-    <tr><td>왜 많이 썼나</td><td>入力データがある場合、データに基づくルールでキャッシュ読み取り比率、コンテキストの増加、レーン別コスト比率、高コストの呼び出し、再試行、権限待ちを説明します。</td></tr>
+    <tr><td>累積コスト</td><td>レーンの色は既知の呼び出しコストを積み上げて表示します。ポイントにカーソルを合わせると、その時点の情報を確認できます。一致するspanがないCodexの完了記録は、帯には表示されずにタスク合計へ加算される場合があります。</td></tr>
+    <tr><td>選択中のspan</td><td>利用可能なモデル、トークンの内訳、コストの算出根拠、タイミング、ツールまたは権限のメタデータを確認します。元のプロンプト、コマンド、パスは表示されません。</td></tr>
+    <tr><td>왜 많이 썼나（なぜ多く使ったのか）</td><td>入力データがある場合、データに基づくルールでキャッシュ読み取り比率、コンテキストの増加、レーン別コスト比率、高コストの呼び出し、再試行、権限待ちを説明します。</td></tr>
     <tr><td>モデル呼び出し</td><td>レーン、呼び出し回数、既知のコストでモデルと呼び出し元を比較します。行を強調表示するとタイムラインの強調表示が変わりますが、合計値は変わりません。</td></tr>
   </tbody>
 </table></div>
-<p>Claudeのタスクは対話スパンを表します。Codexのタスクはトレースされたターンを表し、関連付けられた完了ログを使ってトークン数と推定コストを算出します。現在、Codexにはメインレーンが1つあり、サブエージェント数は収集されません。トレース収集は任意のため、このタスクリストはダッシュボードのアクティビティの一部のみを示します。トレースの保持期間は90日です。これより古いトレンドバケットからはタスクリストを開けません。</p>
+<p>Claudeのタスクは対話spanを表します。Codexのタスクはトレースされたターンを表し、関連付けられた完了ログを使ってトークン数と推定コストを算出します。現在、Codexにはメインレーンが1つあり、サブエージェント数は収集されません。トレース収集は任意のため、このタスクリストはダッシュボードのアクティビティの一部のみを示します。トレースの保持期間は90日です。これより古いトレンドバケットからはタスクリストを開けません。</p>
 <p><a href="installation.html#trace">収集の設定</a> · <a href="api.html#tasks">タスクAPIと制限</a> · <a href="operations.html#traces">タスクが表示されない場合のトラブルシューティング</a></p>
 </section>
 <section id="codex-traces"><h2>Codexの診断トレースを調べる</h2>
-<p>Codexを選択した状態で<strong>Analytics</strong>を開き、Codex詳細の<strong>Trace</strong>タブを選択します。Traceを展開すると、スパン、親ID、モデル、ツール、所要時間、ステータスを調べられます。または、スパン表をCSVとしてエクスポートできます。</p>
-<p>このプレビューには最新の50件のトレースが表示され、各トレースのスパンは最新のものから最大200件までです。統計値は表示中のスパンを対象とします。モデルフィルターではモデル属性を持つスパンのみが対象になります。長いトレースや競合するトレースでは、所要時間とエラーの合計が表示されない場合があります。</p>
-<p>診断スパンはダッシュボードの利用量やコストに加算されません。上記のTask TraceはCodexの完了ログをターンに関連付けますが、AnalyticsのTraceタブは別個の診断プレビューです。Chatの推論ステップとSQLステップも、さらに別の表示です。</p>
-<p><a href="api.html#trace-preview">診断API</a> · <a href="architecture.html#task-traces">タスクとスパンの関連付け</a></p>
+<p>Codexを選択した状態で<strong>Analytics</strong>を開き、Codex詳細の<strong>Trace</strong>タブを選択します。Traceを展開すると、span、親ID、モデル、ツール、所要時間、ステータスを調べられます。または、span表をCSVとしてエクスポートできます。</p>
+<p>このプレビューには最新の50件のトレースが表示され、各トレースのspanは最新のものから最大200件までです。統計値は表示中のspanを対象とします。モデルフィルターではモデル属性を持つspanのみが対象になります。長いトレースや競合するトレースでは、所要時間とエラーの合計が表示されない場合があります。</p>
+<p>診断spanはダッシュボードの利用量やコストに加算されません。上記のTask TraceはCodexの完了ログをターンに関連付けますが、AnalyticsのTraceタブは別個の診断プレビューです。Chatの推論ステップとSQLステップも、さらに別の表示です。</p>
+<p><a href="api.html#trace-preview">診断API</a> · <a href="architecture.html#task-traces">タスクとspanの関連付け</a></p>
 </section>
-<section id="costs"><h2>コストと対象範囲をあわせて確認する</h2><div class="table-scroll" tabindex="0" role="region" aria-label="計測項目の参照表"><table><thead><tr><th scope="col">計測項目</th><th scope="col">意味</th></tr></thead><tbody><tr><td>Claudeの報告コスト</td><td>Claudeの報告コスト経路には<code>reported_cost</code>を使用し、計算コストの診断情報は別途保持します。</td></tr><tr><td>AWS定価に基づく推定</td><td>CodexとAnthropic以外のClaudeの価格には、対応するAWS定価、ルーティング、リクエストの料金階層を使用します。クラウドの請求額ではありません。</td></tr><tr><td>既知のコスト小計</td><td>利用可能な価格を合計し、価格が不明な項目がある場合は一部の値であることを示します。すべての価格が不明な場合、コストは利用不可のままです。</td></tr><tr><td>観測されたトークン数</td><td>利用可能な入力・出力の組を保持し、欠けている項目があれば明示します。小計が正の値でも、標準のトークン内訳がすべてそろっているとは限りません。</td></tr><tr><td>アクティビティ指標</td><td>観測された導入状況、ツール、アクティビティを確認できます。従業員のパフォーマンスや生産性に対する因果的な効果を検証する指標ではありません。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測の定義</a>と<a href="api.html#completion">Codex完了データの仕様</a>を参照してください。</p></section><section id="resolution"><h2>適切な時間解像度を選ぶ</h2><div class="table-scroll" tabindex="0" role="region" aria-label="選択期間の参照表"><table><thead><tr><th scope="col">選択期間</th><th scope="col">CostとTrendsの設定</th></tr></thead><tbody><tr><td>24時間以内</td><td>10分、30分、1時間、1日、1週間。1日表示では1時間の解像度から始まります。</td></tr><tr><td>24時間超</td><td>1時間、1日、1週間。2日表示では10分の解像度を選択できません。</td></tr></tbody></table></div><p>返された間隔と実際に適用された時間範囲を確認してください。過去データの集計方法とテレメトリーの対象範囲によって、表示期間が変わる場合があります。</p><div class="shots"><figure><img src="../assets/img/cost-detail.png" width="1830" height="655" loading="lazy" alt="10月24日のダッシュボードに表示された、合成データによるユーザー別コストの推移" /><figcaption>選択したユーザーの詳細。10月24日に取得した合成データの画面。</figcaption></figure><figure><img src="../assets/img/model-share.png" width="1830" height="353" loading="lazy" alt="合成データによるモデル別コストの詳細。ユーザーごとの構成比を表示" /><figcaption>選択したモデルのユーザー別構成比。10月24日に取得した合成データの画面。</figcaption></figure></div></section><section id="boundaries"><h2>各ディメンションを分けて考える</h2>
+<section id="costs"><h2>コストと対象範囲をあわせて確認する</h2><div class="table-scroll" tabindex="0" role="region" aria-label="計測項目の参照表"><table><thead><tr><th scope="col">計測項目</th><th scope="col">意味</th></tr></thead><tbody><tr><td>Claudeの報告コスト</td><td>Claudeの報告コスト経路には<code>reported_cost</code>を使用し、計算コストの診断情報は別途保持します。</td></tr><tr><td>AWS定価に基づく推定</td><td>CodexとAnthropic以外のClaudeの価格には、対応するAWS定価、ルーティング、リクエストの料金階層を使用します。クラウドの請求額ではありません。</td></tr><tr><td>既知のコスト小計</td><td>利用可能な価格を合計し、価格が不明な項目がある場合は一部の値であることを示します。すべての価格が不明な場合、コストは利用不可のままです。</td></tr><tr><td>観測されたトークン数</td><td>利用可能な入力・出力の組を保持し、欠けている項目があれば明示します。小計が正の値でも、標準のトークン内訳がすべてそろっているとは限りません。</td></tr><tr><td>アクティビティ指標</td><td>観測された導入状況、ツール、アクティビティを確認できます。従業員のパフォーマンスや生産性に対する因果的な効果を検証する指標ではありません。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測の定義</a>と<a href="api.html#completion">Codex完了データの仕様</a>を参照してください。</p></section><section id="resolution"><h2>適切な時間解像度を選ぶ</h2><div class="table-scroll" tabindex="0" role="region" aria-label="選択期間の参照表"><table><thead><tr><th scope="col">選択期間</th><th scope="col">CostとTrendsの設定</th></tr></thead><tbody><tr><td>24時間以内</td><td>10分、30分、1時間、1日、1週間。1日表示では1時間の解像度から始まります。</td></tr><tr><td>24時間超</td><td>1時間、1日、1週間。2日表示では10分の解像度を選択できません。</td></tr></tbody></table></div><p>返された間隔と実際に適用された時間範囲を確認してください。過去データの集計方法とテレメトリの対象範囲によって、表示期間が変わる場合があります。</p><div class="shots"><figure><img src="../assets/img/cost-detail.png" width="1830" height="655" loading="lazy" alt="10月24日のダッシュボードに表示された、合成データによるユーザー別コストの推移" /><figcaption>選択したユーザーの詳細。10月24日に取得した合成データの画面。</figcaption></figure><figure><img src="../assets/img/model-share.png" width="1830" height="353" loading="lazy" alt="合成データによるモデル別コストの詳細。ユーザーごとの構成比を表示" /><figcaption>選択したモデルのユーザー別構成比。10月24日に取得した合成データの画面。</figcaption></figure></div></section><section id="boundaries"><h2>各ディメンションを分けて考える</h2>
 <p><strong>Client</strong>はデータを出力するアプリケーションを示します。<strong>Backend</strong>は観測または推定されたプロバイダー経路を示します。<strong>Model</strong>はモデルを示します。モデル名だけでは、コーディングクライアントを特定できません。</p>
 <p>Claudeの<code>bedrock</code>/<code>enterprise</code>比較は、推定されたセッションチャネルの表示です。ダッシュボードへのログインとは別であり、CodexのエンタープライズA/B比較でもありません。1人のユーザーが複数のチャネルに表示されることがあります。</p>
 <p>有効化されている場合、権限制御された読み取り専用のクエリ経路を通じて、Analyticsで追加の質問に回答できます。利用可否はロール、モデルへのアクセス、デプロイ設定によって異なります。</p>
@@ -93,7 +93,7 @@
   <footer><div class="wrap">
     <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
     <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモクレジット</a></p>
-    <p>テレメトリーは不完全な場合があります。報告コストと定価に基づく推定値は請求額ではありません。アクティビティ指標から従業員の生産性や因果的なROIを証明することはできません。</p>
+    <p>テレメトリは不完全な場合があります。報告コストと定価に基づく推定値は請求額ではありません。アクティビティ指標から従業員の生産性や因果的なROIを証明することはできません。</p>
   </div></footer>
 </body>
 </html>

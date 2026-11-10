@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>전체 서비스 빌드 및 배포 — ccdash</title>
-  <meta name="description" content="소스를 복제하고 대시보드 이미지를 빌드한 다음 ClickHouse 스키마와 OTel Collector를 준비하고 EKS, ECS, EC2 또는 Lambda 포트를 선택하세요." />
+  <meta name="description" content="소스를 복제하고 대시보드 이미지를 빌드한 다음 ClickHouse 스키마와 OTel Collector를 준비하세요. EKS, ECS, EC2를 선택하거나 Lambda 런타임에 맞게 앱을 조정하세요." />
   <link rel="stylesheet" href="../assets/site.css" />
   <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
   <link rel="alternate" hreflang="en" href="../installation.html" />
@@ -55,7 +55,7 @@ docker build --platform "$CCDASH_PLATFORM" \
 <tr><td>새 복제 EKS 설치</td><td><code>infra/files/clickhouse-schema-replicated.sql</code>과 생성된 계약 및 <code>infra/schema.tf</code>의 스키마 초기화 Job을 사용합니다. 선언된 클러스터/Keeper 토폴로지와 예상 복제본이 필요합니다.</td></tr>
 <tr><td>기존 설치</td><td>테이블, 원장 및 과거 데이터를 검사하세요. 런북에 따라 필요한 번호 지정 마이그레이션만 적용하세요. 부트스트랩을 업그레이드처럼 다시 실행하지 마세요.</td></tr>
 </tbody></table></div>
-<p>EC2/Docker에서는 먼저 전용 브리지 네트워크와 영구 데이터 볼륨을 만드세요. 익명 기본 액세스가 없고 네트워크가 제한된 reader/ingest/admin 계정을 포함하는 보호된 <code>users.d</code> XML과 관리자 클라이언트 구성을 준비하세요. 선택한 릴리스에 맞는 ClickHouse 이미지를 검증하고 고정하세요. 로컬 Compose 버전은 출발점으로 참고할 수 있습니다. <code>CLICKHOUSE_SKIP_USER_SETUP=1</code>은 준비된 계정 구성을 유지합니다. 먼저 인증과 네트워크 제한을 검증하세요. 다음 명령은 데이터베이스 포트를 공개하지 않고 시작합니다.</p>
+<p>EC2/Docker에서는 ClickHouse를 시작하기 전에 다음을 준비하세요.</p><ul><li>전용 브리지 네트워크와 영구 데이터 볼륨.</li><li>익명 기본 액세스를 비활성화하고 네트워크를 제한한 reader/ingest/admin 계정용 보호된 <code>users.d</code> XML, 그리고 관리자 클라이언트 구성.</li><li>검증하고 다이제스트를 고정한 ClickHouse 이미지. 로컬 Compose 버전은 참고용 시작점입니다.</li></ul><p><code>CLICKHOUSE_SKIP_USER_SETUP=1</code>은 준비한 계정 구성을 유지합니다. 먼저 인증 및 네트워크 제한을 검증하세요. 다음 명령은 데이터베이스 포트를 공개하지 않습니다.</p>
 <pre><code class="language-bash">: "${CCDASH_NETWORK:?Set the prepared private Docker network}"
 : "${CCDASH_CH_CONTAINER:?Set the ClickHouse container name}"
 : "${CCDASH_CH_IMAGE:?Set the reviewed ClickHouse image including its sha256 digest}"
@@ -70,7 +70,7 @@ docker run -d --name "$CCDASH_CH_CONTAINER" --restart unless-stopped \
   --mount "type=bind,src=$CCDASH_CH_ADMIN_CONFIG,dst=/run/ccdash-admin/client.xml,readonly" \
   "$CCDASH_CH_IMAGE"</code></pre>
 <p>ClickHouse가 시작될 때까지 기다린 뒤 마운트한 관리자 클라이언트 구성으로 인증하세요. 아래 스키마 명령에서 컨테이너 경로는 <code>/run/ccdash-admin/client.xml</code>입니다. 이 네트워크에서 앱과 Collector의 데이터베이스 호스트로 <code>clickhouse.internal</code>을 사용하세요. 이미지와 마운트한 구성은 런타임 아키텍처 및 파일 읽기 권한과 일치해야 합니다.</p>
-<p><strong>새 빈 비복제</strong> 데이터베이스의 경우, 실행 중인 ClickHouse 컨테이너 이름을 <code>CCDASH_CH_CONTAINER</code>에, 보호된 관리자 클라이언트 구성의 컨테이너 내부 경로를 <code>CCDASH_CH_CLIENT_CONFIG</code>에 설정하세요. 영구 저장소를 <code>/var/lib/clickhouse</code>에 마운트하고 수집을 열기 전에 사용자를 구성하세요. 포트 8123/9000은 비공개로 유지하세요. 아래에는 비밀번호가 포함되어 있지 않습니다.</p>
+<p><strong>새 빈 비복제</strong> 데이터베이스에만 적용하세요. 실행 중인 ClickHouse 컨테이너 이름을 <code>CCDASH_CH_CONTAINER</code>에, 보호된 관리자 클라이언트 구성의 컨테이너 내부 경로를 <code>CCDASH_CH_CLIENT_CONFIG</code>에 설정하세요.</p>
 <pre><code class="language-bash">: "${CCDASH_CH_CONTAINER:?Set the prepared ClickHouse container name}"
 : "${CCDASH_CH_CLIENT_CONFIG:?Set the mounted admin client configuration path}"
 docker exec -i "$CCDASH_CH_CONTAINER" \
@@ -123,7 +123,7 @@ OIDC_CLIENT_ID=YOUR_APP_CLIENT_ID
 OIDC_ROLE_GROUPS={"viewer":["YOUR_VIEWER_GROUP"],"analyst":["YOUR_ANALYST_GROUP"],"admin":["YOUR_ADMIN_GROUP"]}
 OIDC_CLIENT_SECRET_FILE=/run/ccdash-secrets/OIDC_CLIENT_SECRET
 SESSION_SECRET_FILE=/run/ccdash-secrets/SESSION_SECRET</code></pre>
-<p>참조된 보안 정보 파일 세 개를 플랫폼의 보안 정보 관리 방식으로 제공하고 읽기 전용으로 마운트하세요. <code>SESSION_SECRET</code>은 base64url로 인코딩된 32바이트 난수 키여야 합니다. 파일 내용과 권한을 정확히 유지하세요. 런타임 이미지는 루트가 아닌 <code>node</code> 사용자로 실행됩니다. EC2에서는 컨테이너 구성에 동일한 절대 마운트 경로를 사용하세요. ECS/EKS에서는 해당하는 태스크/파드 보안 정보 전달 방식을 구현하세요. 공개 배포에서 안전하지 않은 개발용 인증을 활성화하지 마세요.</p>
+<p>대시보드를 시작하기 전에 다음을 준비하세요.</p><ul><li>참조된 보안 정보 파일 세 개를 플랫폼의 보안 정보 관리 방식으로 제공하고 읽기 전용으로 마운트합니다.</li><li><code>SESSION_SECRET</code>에는 base64url로 인코딩된 32바이트 난수 키를 사용합니다. 파일 내용과 읽기 권한을 정확히 유지하세요. 런타임은 루트가 아닌 <code>node</code> 사용자로 실행됩니다.</li><li>EC2에서는 설정된 절대 컨테이너 경로를 유지합니다. ECS/EKS에서는 해당 태스크/파드 보안 정보 전달 방식을 제공합니다.</li></ul><p>공개 배포에서는 안전하지 않은 개발용 인증을 비활성화하세요.</p>
 <p>EC2/Docker 호스트에서 <code>CCDASH_ENV_FILE</code>과 <code>CCDASH_SECRET_DIR</code>을 준비한 다음, 별도로 구성한 HTTPS 리버스 프록시 뒤에서 앱을 실행합니다.</p>
 <pre><code class="language-bash">: "${CCDASH_RELEASE:?Set the built release tag}"
 : "${CCDASH_ENV_FILE:?Set the prepared nonsecret environment file}"
@@ -137,7 +137,7 @@ docker run -d --name ccdash --restart unless-stopped \
   "ccdash:$CCDASH_RELEASE"</code></pre>
 <p>장치 수집을 활성화하려면 이전 단계의 내부 토큰 파일 마운트와 <code>INGEST_*</code> 설정도 앱의 런타임 구성에 추가하세요. 이 기본 앱 명령만으로 장치 레지스트리가 구성되거나 수집이 활성화되지는 않습니다.</p>
 <p><a href="operations.html#sso">OIDC 및 역할 구성</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/.env.example">환경 변수 참고</a></p></section>
-<section id="platforms"><h2>EC2, ECS, EKS 또는 Lambda용 포팅 선택</h2>
+<section id="platforms"><h2>EC2, ECS, EKS를 선택하거나 Lambda용 앱 조정</h2>
 <div class="table-scroll" tabindex="0" role="region" aria-label="호스팅 옵션 및 저장소 지원"><table><thead><tr><th scope="col">옵션</th><th scope="col">배포 형태</th><th scope="col">저장소 지원 및 남은 작업</th></tr></thead><tbody>
 <tr><td>EC2 + Docker</td><td>비공개 호스트나 네트워크에서 대시보드, Collector 및 영구 ClickHouse를 실행합니다. 내구성 있는 데이터베이스/큐 저장소와 HTTPS 진입점을 사용하세요.</td><td>앱 이미지와 단일 노드 스키마가 제공됩니다. 호스트/서비스 수명 주기, 보안 정보, 데이터베이스 사용자, 네트워크 라우팅 및 백업은 직접 준비해야 합니다. 워크숍 user-data 스크립트는 클라이언트 수집을 구성하며 백엔드 전체를 구성하지 않습니다.</td></tr>
 <tr><td>ECS / Fargate</td><td>앱과 Collector 이미지를 ECR에 게시하고 별도 서비스 또는 적절한 사이드카로 실행합니다. 비공개 네트워킹과 별도로 관리되는 영구 ClickHouse 설치를 사용하세요.</td><td>ECS 태스크/서비스 템플릿은 제공되지 않습니다. 태스크/실행 역할, 보안 정보 전달, CPU/메모리, 이미지 아키텍처, 상태 확인 및 서비스 연결을 정의하세요. 데이터베이스나 내구성 있는 큐에 임시 태스크 파일 시스템을 사용하지 마세요.</td></tr>
@@ -152,8 +152,8 @@ docker run -d --name ccdash --restart unless-stopped \
 python3 dashboard/collector/install.py install \
   --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
 <p>설치 프로그램은 macOS/Linux에서 Python 3.9 이상이 필요하며 토큰을 비공개로 입력하라는 메시지를 표시합니다. Linux에서는 로그아웃/재부팅 후에도 서비스가 유지되도록 <code>sudo loginctl enable-linger "$USER"</code>를 실행한 다음 일반 사용자로 설치하세요. Collector 바이너리를 다운로드하고 검증합니다. 이 명령은 대시보드, 데이터베이스 또는 중앙 수신기를 준비하지 않습니다. 장치 소유자가 자동으로 텔레메트리의 사용자 식별 정보가 되는 것은 아닙니다.</p>
-<ul><li>Claude Code: 텔레메트리와 향상된 텔레메트리를 활성화하고 <code>OTEL_TRACES_EXPORTER=otlp</code>를 설정한 뒤 포트 4317의 로컬 OTLP gRPC 대상으로 보냅니다.</li><li>Codex: 별도의 <code>[otel]</code> <code>exporter</code>, <code>metrics_exporter</code> 및 <code>trace_exporter</code> 항목을 사용하고, 포트 4318의 로컬 OTLP HTTP 대상과 <code>log_user_prompt=false</code>를 설정합니다.</li></ul>
-<p>두 클라이언트를 다시 시작하고 새 작업을 생성한 뒤 <a href="index.html#task-trace">사용자 → 추세 버킷 → 작업 → Task Trace</a>를 따라가세요. 이전 활동은 트레이스로 소급 처리되지 않습니다. Codex 진단 스팬은 Analytics의 Trace 탭에서 확인하세요.</p></section>
+<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> 및 <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>을 설정하고, <code>OTEL_TRACES_EXPORTER=otlp</code>와 포트 4317의 로컬 OTLP gRPC 대상을 사용합니다.</li><li>Codex: 별도의 <code>[otel]</code> <code>exporter</code>, <code>metrics_exporter</code> 및 <code>trace_exporter</code> 항목을 사용하고, 포트 4318의 로컬 OTLP HTTP 대상과 <code>log_user_prompt=false</code>를 설정합니다.</li></ul>
+<p>두 클라이언트를 다시 시작하고 새 작업을 생성한 뒤 <a href="index.html#task-trace">사용자 → 추세 버킷 → 작업 → Task Trace</a>를 따라가세요. 이전 활동은 트레이스로 소급 처리되지 않습니다. Codex 진단 span은 Analytics의 Trace 탭에서 확인하세요.</p></section>
 <section id="migration"><h2>기존 장치 및 데이터베이스</h2><p>장치 마이그레이션 중에는 비공개 클라이언트 백업과 내보내기 큐를 보존하세요. 알 수 없는 서비스를 중지하는 대신 지원되는 macOS/Linux 마이그레이션 절차를 따르세요. 데이터베이스 업그레이드는 클라이언트 설치 및 애플리케이션 롤아웃과 별도로 스키마 런북을 따릅니다.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">소스 설치 프로그램 및 마이그레이션 안내서</a></p></section>
 <section id="verify"><h2>6. 모든 경계 검증</h2><ol><li><code>/healthz</code>와 ClickHouse 기반 <code>/readyz</code>를 확인한 다음 인증하고 설치/스키마 진단을 살펴보세요.</li><li>예상 테이블, 마이그레이션 원장, 뷰, 데이터베이스 권한 및 Collector 쓰기 성공을 확인하세요. 스키마가 있다는 사실만으로 과거 데이터가 준비된 것은 아닙니다.</li><li>새 클라이언트 작업을 보내고 의도한 사용자 식별 정보로 저장된 로그, 메트릭 및 트레이스를 확인하세요. Collector 프로세스 실행이나 장치 수신 확인만으로 데이터가 영구 저장되었다고 볼 수 없습니다.</li><li>선택한 사용자의 사용량과 Task Trace를 확인하세요. Codex 트레이스/메트릭 관측값은 진단 정보이므로 비용 합계를 추가해서는 안 됩니다.</li></ol><p><a href="operations.html#traces">트레이스 문제 해결</a> · <a href="api.html#tasks">API 경계값</a></p></section>
 <section id="workshops"><h2>조직이 준비한 워크숍</h2><p>준비된 워크숍은 자체 클라이언트 및 Collector 수명 주기를 가집니다. 참가자는 구성된 환경을 사용하며 두 번째 백엔드를 배포하거나 준비된 서비스 위에 Collector를 추가로 설치하지 않습니다. 주최자는 <code>user-data.sh</code>를 사용하기 전에 스키마, 보안 정보 대상 및 부트스트랩 자산을 제공해야 합니다.</p></section>

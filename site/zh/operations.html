@@ -16,7 +16,7 @@
   <a class="skip-link" href="#main">跳转到正文</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
-    <nav class="tabs" aria-label="主导航"><a href="index.html">概览</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html">API</a><a href="operations.html" aria-current="page">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <nav class="tabs" aria-label="主要导航"><a href="index.html">概览</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html">API</a><a href="operations.html" aria-current="page">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
     <div class="languages" role="group" aria-label="语言"><a href="../operations.html" hreflang="en" lang="en">English</a><a href="../ko/operations.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/operations.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
   </div></header>
   <main class="wrap" id="main">
@@ -70,7 +70,7 @@ SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
   <tbody>
     <tr><td>用户有用量记录，但没有任务</td><td>检查 Trace 配置、重启时间、导出的身份、任务开始时间桶和保留期限。不会将历史用量回填到 Trace 中。</td></tr>
     <tr><td>Codex 完成记录不属于任何任务</td><td>被 Trace 记录的轮次需要会话 ID 和唯一轮次 ID。不符合条件的轮次所对应的完成记录不会关联到任务；已关联但没有采样 span 的完成记录可能不会出现在成本范围中。</td></tr>
-    <tr><td>无法获取 Codex 子代理数量</td><td>当前任务视图仅包含主通道，不会根据无关的 span 推断子代理数量。</td></tr>
+    <tr><td>无法获取 Codex 子智能体数量</td><td>当前任务视图仅包含主泳道，不会根据无关的 span 推断子智能体数量。</td></tr>
     <tr><td>大型详情缺少总计</td><td>检查 <code>truncated</code> 和 <code>span_total</code>。任务详情最多包含 5,000 个 span；独立的诊断预览上限为 50 条 Trace，每条 Trace 最多 200 个 span。</td></tr>
     <tr><td>按模型筛选后 Codex Trace 消失</td><td>只有带有模型属性的 span 才会匹配该筛选条件。清除筛选条件即可查看其他诊断 span。</td></tr>
   </tbody>
