@@ -56,12 +56,45 @@ function Heatmap({ days, to, clients }) {
   const count = (n) => (n === null ? "미확인" : formatObserved(n ?? 0));
   const label = (c) => `${c.key} · 일별 관측 세션 ${count(c.n)}`
     + (clients.length > 1 ? ` (${clients.map((cl) => `${clientName(cl)} ${count(c.by[cl])}`).join(" · ")})` : "");
-  return <div className="flex gap-[3px] overflow-x-auto" role="img" aria-label="일별 관측 세션 히트맵">
-    {weeks.map((col, i) => <div key={i} className="flex flex-col gap-[3px]">
-      {col.map((c, j) => c === null ? <span key={j} className="h-3 w-3" />
-        : <span key={j} title={label(c)} className="h-3 w-3 rounded-[2px]"
-          style={{ background: c.n === null ? "var(--ink-200)" : LEVEL_BG[level(c.n)] }} />)}
-    </div>)}
+  const monthOf = (col) => col.filter(Boolean).at(-1).key.slice(0, 7);
+  const months = weeks.flatMap((col, i) => {
+    const month = monthOf(col);
+    const previous = i ? monthOf(weeks[i - 1]) : null;
+    return month === previous ? [] : [{ column: i, label: `${Number(month.slice(5))}월` }];
+  });
+  const columns = { gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` };
+  return <div className="w-full min-w-0" role="img" aria-label="일별 관측 세션 히트맵">
+    <div className="grid grid-cols-[24px_minmax(0,1fr)] gap-x-2 gap-y-2">
+      <div aria-hidden="true" />
+      <div className="grid gap-1 text-xs text-ink-500" style={columns} aria-hidden="true">
+        {months.map((month, i) => <span key={month.column}
+          className={`whitespace-nowrap ${(months[i + 1]?.column ?? weeks.length) - month.column === 1 ? "hidden sm:block" : ""}`}
+          style={{ gridColumn: `${month.column + 1} / span ${(months[i + 1]?.column ?? weeks.length) - month.column}` }}>
+          {month.label}
+        </span>)}
+      </div>
+      <div className="flex flex-col gap-1 text-xs text-ink-500" aria-hidden="true">
+        {["일", "월", "화", "수", "목", "금", "토"].map((day) =>
+          <span key={day} className="flex h-5 items-center justify-center sm:h-7">{day}</span>)}
+      </div>
+      <div className="grid min-w-0 gap-1" style={columns}>
+        {weeks.map((col, i) => <div key={i} className="flex min-w-0 flex-col gap-1">
+          {col.map((c, j) => c === null ? <span key={j} className="h-5 sm:h-7" aria-hidden="true" />
+            : <span key={j} title={label(c)}
+              className="flex h-5 items-center justify-center rounded text-[11px] tabular-nums text-ink-800 sm:h-7"
+              style={{ background: c.n === null ? "var(--ink-200)" : LEVEL_BG[level(c.n)] }}>
+              <span className="hidden sm:inline" aria-hidden="true">{Number(c.key.slice(8))}</span>
+            </span>)}
+        </div>)}
+      </div>
+    </div>
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500" aria-hidden="true">
+      <span>{new Date(firstMs).toISOString().slice(0, 10)} ~ {new Date(lastMs).toISOString().slice(0, 10)}</span>
+      <span className="flex items-center gap-1.5">
+        적음 {LEVEL_BG.map((background) => <span key={background} className="h-3 w-3 rounded-sm" style={{ background }} />)} 많음
+        <span className="ml-2 h-3 w-3 rounded-sm bg-ink-200" /> 미확인
+      </span>
+    </div>
   </div>;
 }
 
