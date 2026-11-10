@@ -20,7 +20,7 @@ function LocationSpy() {
   return null;
 }
 
-function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500, respond, session, resizeObserver = ResizeObserverStub } = {}) {
+function mount({ enabledClients, entry = "/", piiMask = true, response = clientOverview(), pending = false, failed = false, failStatus = 500, respond, other, session, resizeObserver = ResizeObserverStub } = {}) {
   setPiiMask(piiMask);
   const fetchMock = vi.fn((url) => {
     const path = String(url).split("?")[0];
@@ -31,7 +31,7 @@ function mount({ enabledClients, entry = "/", piiMask = true, response = clientO
       : path === "/api/clients/overview" ? respond?.(u) ?? { ...response, ...(exact ? {
         applied_filters: { userExact: u.searchParams.get("userExact") || "",
           modelExact: u.searchParams.get("modelExact") || "", backend: u.searchParams.get("backend") || "" },
-      } : {}) } : [];
+      } : {}) } : other?.(u) ?? [];
     if (path === "/api/clients/overview" && u.searchParams.get("view") === "cost")
       body = costClientOverview(body);
     return Promise.resolve({ ok: !(failed && path === "/api/clients/overview"), status: failed ? failStatus : 200, json: async () => body });
@@ -765,4 +765,30 @@ test("a failed baseline says so instead of loading", async () => {
   mountTrends(["codex"], current, () => Promise.resolve({ ok: false, status: 500, json: async () => ({ error: "x" }) }));
   const comparison = await screen.findByRole("region", { name: "클라이언트 비교" });
   await waitFor(() => expect(comparison.textContent).toContain("조회 실패"));
+});
+
+test("productivity-only evidence shows the productivity sections instead of the empty state", async () => {
+  const window = { from: "2026-09-01T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" };
+  const zero = { ...codexUsage, client: "claude", cost_basis: "client_reported",
+    tokens: 0, observed_tokens: 0, cost_usd: 0, sessions: 0, users: 0, observed_records: 0 };
+  const row = (extra) => ({ client: "claude", prompts: 0, tool_calls: 0, tool_successes: 0, tool_failures: 0,
+    tool_unknown: 0, tool_success_rate: null, decisions_total: 0, decisions_allowed: 0, decisions_denied: 0,
+    decisions_unknown: 0, permission_allow_rate: null, tool_calls_per_prompt: null, ttft_samples: 0, ttft_p50_ms: null,
+    active_user_seconds: null, active_cli_seconds: null, commits: null, prs: null, loc_added: null, loc_removed: null,
+    unavailable: {}, ...extra });
+  const empty = clientOverview({ clients: ["claude"], observed_records: 0, totals: zero, by_client: [zero],
+    by_model: [], by_user: [], tools: [], timeseries: [], effective_range: window });
+  let productivity = row({ prompts: 3, active_user_seconds: 600 });
+  mount({ enabledClients: ["claude"], entry: "/productivity?client=claude", response: empty,
+    other: (u) => u.pathname === "/api/clients/productivity"
+      ? { clients: ["claude"], by_client: [productivity], effective_range: window } : undefined });
+  const summary = await screen.findByText("클라이언트별 요약", { exact: true });
+  expect(summary.closest("[data-shared-client-panels]")).not.toBeNull();
+  cleanup();
+  productivity = row({});
+  mount({ enabledClients: ["claude"], entry: "/productivity?client=claude", response: empty,
+    other: (u) => u.pathname === "/api/clients/productivity"
+      ? { clients: ["claude"], by_client: [productivity], effective_range: window } : undefined });
+  expect(await screen.findByText("선택한 기간에 데이터가 없습니다.")).toBeTruthy();
+  expect(document.querySelector("[data-shared-client-panels]")).toBeNull();
 });

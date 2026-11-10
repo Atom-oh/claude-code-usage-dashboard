@@ -49,3 +49,14 @@ export function productivityRows(overviewRows = [], productivity = [], clients =
     };
   });
 }
+
+// Productivity evidence the overview does not count (Claude user_prompt and llm_request
+// spans, the commit/PR/LOC/active-time counters, Codex user_prompt): a window with only
+// these must render the productivity sections, not the overview's empty state. A counter
+// observed at 0 is evidence; null is not.
+const EVIDENCE = ["prompts", "tool_calls", "decisions_total", "ttft_samples"];
+const COUNTERS = ["active_user_seconds", "active_cli_seconds", "commits", "prs", "loc_added", "loc_removed"];
+export function hasProductivityObservations(data) {
+  return (data?.by_client || []).some((row) => EVIDENCE.some((key) => observedNumber(row?.[key]) > 0)
+    || COUNTERS.some((key) => observedNumber(row?.[key]) !== null));
+}

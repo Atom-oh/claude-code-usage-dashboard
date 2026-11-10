@@ -72,8 +72,10 @@ response marks unavailable renders as a localized chip for its reason: `not_coll
 (no default OTel source), `not_aggregated` (no confirmed source metric) or `not_derived`
 (derived inputs missing). CSV exports the same label. Unknown values remain `—`, and measured zero stays `0`. A legend above the sections explains the three
 labels. Ratios use observed denominators; LOC per million tokens uses canonical overview
-tokens only. The Codex Effort block, support-scope card and outcome notice remain below
-the panels.
+tokens only. The overview's observed records omit productivity-only evidence (prompts,
+spans, outcome and active-time counters), so an empty overview shows the sections when the
+productivity response has such observations or failed, and the empty state only otherwise.
+The Codex Effort block, support-scope card and outcome notice remain below the panels.
 
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
 chat. The floating chat window resizes from its top-left handle (pointer drag or arrow keys)
