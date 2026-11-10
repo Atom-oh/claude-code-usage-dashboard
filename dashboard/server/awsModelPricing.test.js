@@ -223,3 +223,65 @@ test("duplicate cards preserve index order regardless of fetch completion order"
   await createAwsModelPriceUpdater({ prices, fetchText, acceptPrices: next => Object.keys(next).length <= 1 }).refresh();
   assert.deepEqual(Object.keys(prices), ["openai.gpt-6.1-terra"]);
 });
+
+// Flat Standard-tier card (Moonshot Kimi K3.1 format, AWS model card 2026-11-10).
+const flatCard = `# Kimi K3.1 Pro - Highspeed
+## Pricing
+<a name="model-card-moonshot-ai-kimi-k3-1-highspeed-pricing"></a>
+
+| **Inference option** | **Input** | **Output** | **Cache read** | **Cache write (30 min)** | 
+| --- | --- | --- | --- | --- | 
+| Global CRIS | $4.00 | $20.00 | $0.20 | $5.00 | 
+| US CRIS | $4.40 | $22.00 | $0.22 | $5.50 | 
+| IN CRIS | $4.40 | $22.00 | $0.22 | $5.50 | 
+
+*All prices are per 1 million tokens. Pricing shown is for the Standard tier.*
+
+**Priority and Flex tier support:** Priority is billed at **1.75x** and Flex at **0.5x** the Standard rate.
+
+## Programmatic Access
+
+| **Endpoint** | **Model ID** | **In-Region endpoint URL** | **Geo inference ID** | **Global inference ID** | 
+| --- | --- | --- | --- | --- | 
+| bedrock-runtime | moonshotai.kimi-k3.1 | https://bedrock-runtime.{region}.amazonaws.com | us.moonshotai.kimi-k3.1 in the commercial AWS Regions, in.moonshotai.kimi-k3.1 in the India Regions | global.moonshotai.kimi-k3.1 | 
+
+## Service Tiers`;
+
+test("flat Standard-tier cards price Geo CRIS as regional and Global CRIS as global", () => {
+  const parsed = parseAwsModelCard(flatCard);
+  assert.equal(parsed.model, "moonshotai.kimi-k3.1");
+  assert.equal(parsed.price.runtime_in_region, false);
+  assert.equal(parsed.price.runtime_geo_prefix, undefined, "two geo prefixes with one rate");
+  assert.deepEqual(parsed.price.regional.short, { input: 4.4, cacheWrite: 5.5, cacheRead: 0.22, output: 22 });
+  assert.deepEqual(parsed.price.regional.long, parsed.price.regional.short, "no context tiers");
+  assert.deepEqual(parsed.price.global.short, { input: 4, cacheWrite: 5, cacheRead: 0.2, output: 20 });
+  const prices = { [parsed.model]: parsed.price };
+  const row = { backend: "bedrock-runtime", context_tier: "short", input_tokens_total: 1_000_000,
+    cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 1_000_000, reasoning_tokens: 0 };
+  assert.equal(priceCodexUsage({ ...row, model: "us.moonshotai.kimi-k3.1" }, prices).cost_usd, 26.4);
+  assert.equal(priceCodexUsage({ ...row, model: "in.moonshotai.kimi-k3.1", context_tier: "long" }, prices).cost_usd, 26.4);
+  assert.equal(priceCodexUsage({ ...row, model: "global.moonshotai.kimi-k3.1" }, prices).cost_usd, 24);
+  // No In-Region price row: unprefixed runtime calls stay unpriced.
+  assert.equal(priceCodexUsage({ ...row, model: "moonshotai.kimi-k3.1" }, prices).cost_usd, null);
+  // A single geo prefix is kept as the runtime restriction.
+  const usOnly = flatCard.replace("| IN CRIS | $4.40 | $22.00 | $0.22 | $5.50 | \n", "")
+    .replace(", in.moonshotai.kimi-k3.1 in the India Regions", "");
+  assert.equal(parseAwsModelCard(usOnly).price.runtime_geo_prefix, "us");
+});
+
+test("flat cards with ambiguous units, tiers, columns, routing or identity never become prices", () => {
+  for (const malformed of [
+    flatCard.replace("per 1 million tokens", "per 1 thousand tokens"),
+    flatCard.replace("Pricing shown is for the Standard tier.", "Pricing shown is for the Priority tier."),
+    flatCard.replace("| **Output** | **Cache read** |", "| **Cache read** | **Output** |"),
+    flatCard.replace("Cache write (30 min)", "Cache write (5 min)"),
+    flatCard.replace("| IN CRIS | $4.40", "| IN CRIS | $4.50"),
+    flatCard.replace("| Global CRIS | $4.00 | $20.00 | $0.20 | $5.00 | \n", ""),
+    flatCard.replace("$0.22 | $5.50 | \n| IN", "unknown | $5.50 | \n| IN"),
+    flatCard.replace("global.moonshotai.kimi-k3.1 |", "Not supported |"),
+    flatCard.replace("in.moonshotai.kimi-k3.1 in the India Regions", "eu.moonshotai.kimi-k3.1 in Europe"),
+    flatCard.replace("| **Inference option** |", "### Short context (256K input tokens or fewer)\n| **Inference option** |"),
+    flatCard.replace("| bedrock-runtime | moonshotai.kimi-k3.1", "| bedrock-mantle | moonshotai.kimi-k3.1 | https://x | Not supported | Not supported | \n| bedrock-runtime | moonshotai.kimi-k3.1"),
+    flatCard.replace("| bedrock-runtime | moonshotai.kimi-k3.1 |", "| bedrock-runtime | us.moonshotai.kimi-k3.1 |"),
+  ]) assert.equal(parseAwsModelCard(malformed), null);
+});

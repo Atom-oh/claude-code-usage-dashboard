@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 코딩 사용량과 비용 이해하기 — ccdash</title>
+  <meta name="description" content="Claude Code와 Codex 사용량을 살펴본 다음, 에이전트 레인, 모델 호출, 누적 비용이 표시된 사용자의 Task Trace를 확인하세요." />
+  <link rel="stylesheet" href="../assets/site.css" />
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="../index.html" />
+  <link rel="alternate" hreflang="ko" href="index.html" />
+  <link rel="alternate" hreflang="ja" href="../ja/index.html" />
+  <link rel="alternate" hreflang="zh-CN" href="../zh/index.html" />
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="주요 탐색"><a href="index.html" aria-current="page">개요</a><a href="installation.html">설치</a><a href="architecture.html">아키텍처</a><a href="api.html">API</a><a href="operations.html">운영</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="언어"><a href="../index.html" hreflang="en" lang="en">English</a><span lang="ko">한국어</span><a href="../ja/index.html" hreflang="ja" lang="ja">日本語</a><a href="../zh/index.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · 문서</p>
+      <h1>AI 코딩 사용량과 비용 이해하기</h1>
+      <p class="lede">Claude Code와 Codex 사용량을 살펴본 다음, 사용자의 시간 범위에서 Task Trace로 들어가 에이전트 레인, 모델 호출, 누적 비용을 확인하세요.</p>
+      <p class="caption">2026년 11월 10일 업데이트 · 소스 코드의 동작을 설명합니다. 설치된 리비전을 확인하세요.</p>
+      <p><a href="#task-trace">Task Trace 열기</a> · <a href="#codex-traces">Codex 진단 Trace 확인</a> · <a href="installation.html#trace">수집 활성화</a></p>
+    </div>
+    <section id="demo"><h2>설치 및 Task Trace 안내 영상 보기</h2>
+<div class="demo-layout">
+  <div>
+    <div class="video-frame"><video controls playsinline preload="none" poster="../assets/img/docs-demo-en-poster.jpg" aria-label="48초 분량의 영어 설치 및 Task Trace 안내 영상">
+      <source src="../assets/video/dashboard-demo-en-20261110.mp4" type="video/mp4" />
+      <source src="../assets/video/dashboard-demo-en-20261110.webm" type="video/webm" />
+      <track kind="captions" src="../assets/video/dashboard-demo-en-20261110.vtt" srclang="en" label="English" />
+      브라우저에서 이 동영상을 재생할 수 없습니다. <a href="../assets/video/dashboard-demo-en-20261110.mp4">영어 데모 다운로드</a>.
+    </video></div>
+    <p class="caption">2026년 11월 10일 제작 · 48초 · 화면 텍스트는 영어 · 무음. 합성 픽스처와 Luna가 번역한 표시 레이블을 사용한 실제 React 화면이며, 비용은 허구입니다. HyperFrames로 제작하고 렌더링했습니다. <a href="../assets/video/dashboard-demo-en-20261110.vtt">영어 대본</a>.</p>
+  </div>
+  <div>
+    <h3>합계에서 설명까지</h3>
+    <ol>
+      <li>소스를 클론하고 빌드한 다음 ClickHouse, 스키마, 중앙 Collector를 준비합니다.</li>
+      <li>사용자의 Task Trace를 열어 에이전트 레인과 누적 비용을 확인합니다.</li>
+      <li>호출을 선택해 캐시 토큰과 비용 산정 기준을 확인하거나, 모델 행을 선택해 해당 호출을 강조 표시합니다.</li>
+      <li>필수 조건을 갖춘 EC2, ECS 또는 EKS를 선택하세요. Lambda를 사용하려면 애플리케이션을 Lambda 런타임에 맞게 수정하거나 포팅해야 합니다.</li>
+    </ol>
+    <p><a class="button-link" href="installation.html">서비스 빌드 및 배포</a></p>
+    <p><a href="operations.html#sso">조직의 SSO 연결</a></p>
+  </div>
+</div></section><section id="latest"><h2>변경 사항</h2>
+<div class="cards">
+  <article class="card"><h3>Task Trace</h3><p>사용자의 추세 버킷을 열고 작업 순위를 확인한 다음, 에이전트 레인, 누적 비용, 개별 호출을 살펴봅니다. 모델 행을 선택하면 해당 호출이 강조 표시됩니다.</p><p><a href="#task-trace">안내 따라가기</a></p></article>
+  <article class="card"><h3>비용 상세 분석</h3><p>사용자와 모델을 선택하면 필터링된 세부 정보가 표시됩니다. 모델별 비중은 확인된 비용 소계를 기준으로 하며, 가격이 누락된 경우 이를 명시합니다.</p></article>
+  <article class="card"><h3>Codex 완료 효율성</h3><p>캐시 및 추론 비율, 완료당 토큰, 식별된 세션당 예상 비용에는 분모와 데이터 포괄 범위가 명시되어 있습니다.</p></article>
+  <article class="card"><h3>소스 기반 설치</h3><p>릴리스를 클론하고 애플리케이션 이미지를 빌드한 다음 ClickHouse 스키마와 OTel 백엔드를 준비합니다. 클라이언트를 연결하기 전에 EC2, ECS, EKS, Lambda 적용 방식을 비교하세요.</p><p><a href="installation.html">전체 설치 안내서</a></p></article>
+  <article class="card"><h3>구성 가능한 SSO</h3><p>서명된 OIDC 그룹을 애플리케이션 역할에 매핑합니다. ID 공급자가 갱신 계약을 지원하면 최대 30일의 고정 로그인 유효 기간을 설정할 수 있습니다.</p></article>
+</div></section>
+<section id="task-trace"><h2>사용자에서 Task Trace까지</h2>
+<ol>
+  <li>시간 범위와 클라이언트 필터를 선택합니다. <strong>사용자</strong> 또는 <strong>비용</strong>을 열고 사용자를 선택해 <strong>사용자 상세</strong>를 엽니다.</li>
+  <li>해당 사용자의 추세에서 버킷을 클릭합니다. 작업 목록에는 해당 버킷에서 시작된 작업이 최대 20개 표시됩니다. 토큰, 비용, 하위 에이전트 또는 소요 시간 기준으로 정렬할 수 있습니다.</li>
+  <li>작업을 선택해 <strong>작업 상세</strong>(Task Trace)를 엽니다. 토큰, 비용 산정 기준, LLM 호출, 하위 에이전트, 관측된 소요 시간을 확인합니다.</li>
+  <li>타임라인 막대를 클릭해 해당 호출이나 도구를 확인합니다. <strong>모델별 호출</strong>에서 행을 선택해 일치하는 LLM 막대를 강조 표시하고, 다시 선택하면 강조 표시가 해제됩니다. Escape 또는 <strong>닫기</strong>(화면 닫기)를 눌러 닫습니다.</li>
+</ol>
+<figure><img src="../assets/img/task-trace.png" width="1320" height="1011" loading="lazy" alt="합성 데이터를 사용한 Task Trace: 기본 레인, 하위 에이전트 레인 2개, 누적 비용, 선택된 Explore 모델 호출" /><figcaption>합성 픽스처와 허구의 비용을 사용해 11월 10일 소스에서 캡처한 Task Trace입니다. 운영 텔레메트리는 포함되지 않았습니다.</figcaption></figure>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace 읽는 방법"><table>
+  <thead><tr><th scope="col">보기</th><th scope="col">읽는 방법</th></tr></thead>
+  <tbody>
+    <tr><td>에이전트 레인</td><td>먼저 기본 세션이 표시되고, 그 뒤에 관측된 하위 에이전트가 표시됩니다. 색이 더 짙은 LLM 막대는 입력 컨텍스트가 더 큼을 나타내며, 회색 표시는 도구, 빨간색 표시는 권한 대기, 점선은 관측된 에이전트 시작을 연결합니다.</td></tr>
+    <tr><td>누적 비용</td><td>레인 색상은 확인된 호출 비용을 누적해서 표시합니다. 마우스를 올리면 특정 시점의 정보를 확인할 수 있습니다. 일치하는 span이 없는 Codex 완료 기록은 띠에 나타나지 않더라도 작업 총계에 포함될 수 있습니다.</td></tr>
+    <tr><td>선택한 span</td><td>사용 가능한 모델, 토큰 구성 요소, 비용 산정 기준, 시간 정보, 도구 또는 권한 메타데이터를 확인합니다. 원시 프롬프트, 명령, 경로는 표시되지 않습니다.</td></tr>
+    <tr><td>왜 많이 썼나</td><td>입력 데이터가 있는 경우 데이터 기반 규칙을 통해 캐시 읽기 비중, 컨텍스트 증가, 레인별 비용 비중, 고비용 호출, 재시도 또는 권한 대기를 설명합니다. 이 항목은 왜 비용이 많이 들었는지 설명합니다.</td></tr>
+    <tr><td>모델 호출</td><td>레인, 호출 횟수, 확인된 비용을 기준으로 모델과 호출 출처를 비교합니다. 행을 강조 표시해도 타임라인의 강조만 바뀌며 합계는 바뀌지 않습니다.</td></tr>
+  </tbody>
+</table></div>
+<p>Claude 작업은 상호작용 span을 나타냅니다. Codex 작업은 추적된 턴을 나타내며, 연결된 완료 로그를 토큰과 예상 비용에 사용합니다. 현재 Codex에는 기본 레인 하나만 있으며 하위 에이전트 수는 수집되지 않습니다. Trace 수집은 선택 사항이므로 이 작업 목록은 대시보드 활동의 일부만 포함합니다. Trace 보존 기간은 90일이며, 그보다 오래된 추세 버킷에서는 작업 목록을 열 수 없습니다.</p>
+<p><a href="installation.html#trace">수집 설정</a> · <a href="api.html#tasks">Task API 및 제한</a> · <a href="operations.html#traces">작업 누락 문제 해결</a></p>
+</section>
+<section id="codex-traces"><h2>Codex 진단 Trace 확인</h2>
+<p>Codex를 선택한 상태에서 <strong>Analytics</strong>를 열고 Codex 상세 화면의 <strong>Trace</strong> 탭을 선택합니다. Trace를 펼쳐 span, 상위 ID, 모델, 도구, 소요 시간, 상태를 확인하거나 span 표를 CSV로 내보낼 수 있습니다.</p>
+<p>이 미리 보기에는 최신 Trace 50개와 Trace당 최신 span 최대 200개가 표시됩니다. 통계는 표시된 span을 기준으로 합니다. 모델 필터는 모델 속성이 있는 span만 포함합니다. Trace가 너무 길거나 서로 충돌하는 경우 소요 시간 및 오류 합계가 표시되지 않을 수 있습니다.</p>
+<p>진단 span은 대시보드 사용량이나 비용에 추가되지 않습니다. 위의 Task Trace는 Codex 완료 로그를 턴에 연결하며, Analytics의 Trace 탭은 별도의 진단 미리 보기입니다. Chat의 추론 및 SQL 단계는 또 다른 별도 화면입니다.</p>
+<p><a href="api.html#trace-preview">진단 API</a> · <a href="architecture.html#task-traces">작업과 span의 연결 방식</a></p>
+</section>
+<section id="costs"><h2>비용과 데이터 포괄 범위를 함께 확인하기</h2><div class="table-scroll" tabindex="0" role="region" aria-label="측정 항목 참고 표"><table><thead><tr><th scope="col">측정 항목</th><th scope="col">의미</th></tr></thead><tbody><tr><td>Claude 보고 비용</td><td>Claude 보고 비용 경로에는 <code>reported_cost</code>를 사용하고, 계산된 비용 진단 정보는 별도로 유지합니다.</td></tr><tr><td>AWS 정가 기준 예상치</td><td>Codex 및 Anthropic 이외의 Claude 가격에는 지원되는 AWS 정가, 라우팅, 요청 등급을 사용합니다. 클라우드 청구서가 아닙니다.</td></tr><tr><td>확인된 비용 소계</td><td>사용 가능한 가격을 합산하고 가격 누락은 일부만 반영된 것으로 표시합니다. 모든 가격을 알 수 없는 경우 비용을 제공하지 않습니다.</td></tr><tr><td>관측된 토큰</td><td>사용 가능한 입력/출력 쌍을 유지하고 일부만 반영된 경우 이를 명시합니다. 소계가 양수여도 표준 토큰 구성 요소 전체가 포함되었다는 뜻은 아닙니다.</td></tr><tr><td>활동 지표</td><td>관측된 도입 현황, 도구, 활동을 살펴봅니다. 검증된 직원 성과 측정치나 생산성의 인과 관계를 입증하는 측정치는 아닙니다.</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a>와 <a href="api.html#completion">Codex 완료 의미</a>를 확인하세요.</p></section><section id="resolution"><h2>적절한 시간 해상도 선택하기</h2><div class="table-scroll" tabindex="0" role="region" aria-label="선택한 시간 범위 참고 표"><table><thead><tr><th scope="col">선택한 시간 범위</th><th scope="col">Cost 및 Trends 제어 항목</th></tr></thead><tbody><tr><td>최대 24시간</td><td>10분, 30분, 시간별, 일별 또는 주별. 하루 보기에서는 시간별 해상도로 시작합니다.</td></tr><tr><td>24시간 초과</td><td>시간별, 일별 또는 주별. 이틀 보기에서는 10분 해상도를 사용할 수 없습니다.</td></tr></tbody></table></div><p>반환된 간격과 적용된 시간 범위를 확인하세요. 과거 롤업 데이터와 텔레메트리 포괄 범위에 따라 표시 기간이 달라질 수 있습니다.</p><div class="shots"><figure><img src="../assets/img/cost-detail.png" width="1830" height="655" loading="lazy" alt="10월 24일 대시보드의 합성 사용자별 비용 추세" /><figcaption>선택한 사용자 상세 화면, 10월 24일 합성 캡처.</figcaption></figure><figure><img src="../assets/img/model-share.png" width="1830" height="353" loading="lazy" alt="사용자별 비용 비중을 보여주는 합성 모델 비용 상세 화면" /><figcaption>선택한 모델의 사용자별 비중, 10월 24일 합성 캡처.</figcaption></figure></div></section><section id="boundaries"><h2>각 차원을 구분해서 보기</h2>
+<p><strong>클라이언트</strong>는 이벤트를 내보낸 애플리케이션을 식별합니다. <strong>백엔드</strong>는 관측되거나 추정된 공급자 경로를 설명합니다. <strong>모델</strong>은 모델을 식별합니다. 모델 이름만으로 코딩 클라이언트를 식별할 수는 없습니다.</p>
+<p>Claude의 <code>bedrock</code>/<code>enterprise</code> 비교는 추정된 세션 채널 보기입니다. 대시보드 로그인과는 별개이며 Codex 엔터프라이즈 A/B 비교가 아닙니다. 한 사용자가 여러 채널에 표시될 수 있습니다.</p>
+<p>활성화된 경우 역할, 모델 액세스, 배포 구성에 따라 보호된 읽기 전용 쿼리 경로를 통해 Analytics에서 추가 질문에 답할 수 있습니다.</p>
+<p><a href="architecture.html">파이프라인 및 신뢰 경계 확인</a> · <a href="api.html">API 살펴보기</a></p></section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">전체 API 참조</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">변경 이력</a> · <a href="credits.html">데모 크레딧</a></p>
+    <p>텔레메트리가 불완전할 수 있습니다. 보고 비용 및 정가 기준 예상치는 청구서가 아닙니다. 활동 지표만으로 직원 생산성이나 인과 관계에 기반한 ROI를 입증할 수 없습니다.</p>
+  </div></footer>
+</body>
+</html>

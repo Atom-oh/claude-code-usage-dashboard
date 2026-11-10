@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>収集とクエリのパイプライン — ccdash</title>
+  <meta name="description" content="Claude Code と Codex のシグナルが、収集からユーザータスク、エージェントレーン、完了に紐づくコストへとつながる流れを確認します。" />
+  <link rel="stylesheet" href="../assets/site.css" />
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="../architecture.html" />
+  <link rel="alternate" hreflang="ko" href="../ko/architecture.html" />
+  <link rel="alternate" hreflang="ja" href="architecture.html" />
+  <link rel="alternate" hreflang="zh-CN" href="../zh/architecture.html" />
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へスキップ</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="メインナビゲーション"><a href="index.html">概要</a><a href="installation.html">インストール</a><a href="architecture.html" aria-current="page">アーキテクチャ</a><a href="api.html">API</a><a href="operations.html">運用</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="言語"><a href="../architecture.html" hreflang="en" lang="en">English</a><a href="../ko/architecture.html" hreflang="ko" lang="ko">한국어</a><span lang="ja">日本語</span><a href="../zh/architecture.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · ドキュメント</p>
+      <h1>収集とクエリのパイプライン</h1>
+      <p class="lede">専用のインストール環境では、クライアントのテレメトリ、範囲を制限した取り込み経路、ClickHouse ストレージ、認証付きダッシュボードを組み合わせます。</p>
+      <p class="caption">2026年11月10日更新 · ソースコードの動作を説明しています。インストール済みのリビジョンをご確認ください。</p>
+    </div>
+    <section id="task-traces"><h2>ユーザー、タスク、spanを関連付ける</h2>
+<p>ユーザー詳細では、正確なテレメトリ ID とトレンドのバケットを選択します。<code>/api/users/tasks</code> はそのバケット内で開始したタスクを一覧表示し、<code>/api/users/tasks/detail</code> は選択したタスクのレーン、span、根拠に基づくコストの説明を返します。</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace のデータソース"><table>
+  <thead><tr><th scope="col">クライアント</th><th scope="col">タスクとタイミング</th><th scope="col">使用量とコスト</th></tr></thead>
+  <tbody>
+    <tr><td>Claude Code</td><td><code>interaction</code> spanがタスクと所要時間を特定します。LLM、ツール、権限待ちの各spanでタイムラインを構成し、観測されたエージェント ID でレーンを構成します。</td><td>LLM spanのトークンを使用します。利用可能な場合はログから結合した報告済みリクエストコストを、そうでない場合は該当する料金計算を使用します。表示される算定根拠が混在することがあります。</td></tr>
+    <tr><td>Codex</td><td>会話 ID と一意のターン ID を持つターンがタスクを特定します。所要時間は観測されたspanの時間幅です。メインレーンのみ利用できます。</td><td>ターンの時間範囲に紐づく、使用量を含む一意の完了ログからトークンと AWS のリスト価格による推定額を取得します。サンプリングされたspanには、表示用に対応する完了値を割り当てます。</td></tr>
+  </tbody>
+</table></div>
+<p>Codex のタスク使用量は、紐づいた完了レコードの表示であり、別の会計情報源ではありません。未紐付けの完了は別途報告されます。一致するサンプリングspanがない呼び出しは、累積コスト帯に含まれない場合があります。Analytics Trace のプレビューは診断spanを独立して読み取ります。</p>
+<p>タスク詳細のクエリでは、許可リストにあるメタデータを選択します。UI は ID をマスキングし、生のプロンプト、コマンド、パスを表示しません。この表示ポリシーは API アクセス制御を提供するものではありません。トレースデータの保持期間は90日で、使用量のロールアップとは別に管理されます。</p>
+<p><a href="index.html#task-trace">Task Trace の手順</a> · <a href="api.html#tasks">クエリの契約</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/data.md#user-task-traces">タスク ID、結合、プライバシー境界</a></p>
+</section>
+    <section id="pipeline"><h2>2つの収集経路</h2><div class="pipe" role="group" aria-label="デバイスのデータフロー">
+  <div class="stage"><b>Claude Code + Codex</b><span>メトリクス、完了ログ、診断シグナル</span></div><div class="arrow" aria-hidden="true">→</div>
+  <div class="stage"><b>ローカル Collector</b><span>ループバック受信機、フィルタリング、容量制限付きの永続キュー</span></div><div class="arrow" aria-hidden="true">→</div>
+  <div class="stage"><b>デバイス取り込みゲートウェイ</b><span>HTTPS、デバイスのベアラートークン、サイズ制限付き OTLP リクエスト</span></div><div class="arrow" aria-hidden="true">→</div>
+  <div class="stage"><b>中央収集環境</b><span>プライベート Collector → ClickHouse → Express → React</span></div>
+</div>
+<p>任意のデバイス経路では <code>/api/ingest/v1/{logs,metrics,traces}</code> を使用します。ブラウザーのセッション Cookie では取り込みを認可できません。ClickHouse への書き込み認証情報は中央 Collector が保持し、PC には失効可能なデバイス認証情報を付与します。</p>
+<p>主催者が準備したワークショップ環境には、別途設定済みの収集経路があります。移行せずに、デバイス用パッケージを準備済みの Collector に重ねて導入しないでください。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">取り込みの信頼境界と制限</a></p></section><section id="signals"><h2>シグナルの意味を保つ</h2><div class="table-scroll" tabindex="0" role="region" aria-label="シグナルの参照表"><table><thead><tr><th scope="col">シグナル</th><th scope="col">解釈</th></tr></thead><tbody><tr><td>Claude のカウンター</td><td>系列の識別情報、累積または差分の時間性、ベースライン、リセットを考慮します。累積エクスポートを使用量として合算しないでください。</td></tr><tr><td>Codex の完了ログ</td><td>完全な識別情報を使って重複を排除し、使用量を含む完了を一度だけ料金計算します。ストリームの中間レコードを別の使用量合計に加算しません。</td></tr><tr><td>Codex のメトリクスとトレース</td><td>診断情報として使用します。トークンやコストの観測値を完了ログの使用量に加算しないでください。</td></tr><tr><td>キャッシュトークンと推論トークン</td><td>定義されている場合は、入力または出力の内訳として扱います。これらを標準合計に再度加えると、使用量を二重に数えることになります。</td></tr><tr><td>根拠の欠落または制限</td><td>既知の小計は部分データのフラグを付けて保持します。影響を受ける厳密な比率は算出せず、その理由を示します。欠落はゼロを意味しません。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/data.md">データの境界</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/codex-observability.md">Codex の可観測性</a></p></section><section id="dimensions"><h2>クライアント、バックエンド、セッションチャネル</h2><p>収集と API のルーティングでは、シグナルを送信したクライアントを識別します。プロバイダーの由来情報とモデルの根拠はバックエンドの分類に使用します。モデル ID だけではクライアントを特定できません。</p>
+<p>Claude のセッションチャネル分類では、<code>bedrock</code>、<code>enterprise</code>、<code>unknown</code> を区別します。観測された Bedrock モデルの根拠と、組織またはモデルのフォールバック規則はセッション単位で適用されます。この分類はダッシュボードユーザーの SSO ロールではありません。</p>
+<p>リージョン別・地域別の Bedrock モデル ID と、単独のプロバイダー ID は、料金計算とバックエンドの判定ロジックで正規化されます。すべてのモデル ID に価格があると仮定せず、未対応のスコープと不明な価格をそのまま保持してください。Codex にはエンタープライズの A/B 行はありません。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/decisions/ADR-017-backend-cost-fallback.md">バックエンド料金計算の決定</a></p></section><section id="queries"><h2>合計を変えずにクエリ処理を減らす</h2>
+<ul>
+  <li><code>view=cost</code> は、共有の概要画面で範囲を限定したコストプロファイルを選択し、未使用の診断情報を省略します。</li>
+  <li><code>profile=effort</code> は Codex のログのみの詳細を選択し、関連しないメトリクスやトレースのクエリをスキップします。</li>
+  <li>Codex のログ集約では、転送前に ClickHouse で完全な識別情報を持つイベントをまとめます。集約ファミリーの制限は表示されます。</li>
+  <li>Single-flight キャッシュと受付数の制限により、フィルターの識別情報、期限、過負荷エラーを維持しながら、繰り返し発生する処理を共有します。</li>
+</ul>
+<p>これらの仕組みは処理量を減らしますが、同時接続ユーザー140人に対するキャパシティを保証するものではありません。対象のインストール環境で、代表的なフィルターの多様性、キャッシュが空の状態のトラフィック、取り込み、クエリのレイテンシを測定してください。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">コストクエリのパフォーマンス</a></p></section><section id="auth"><h2>ダッシュボードとデバイスへのアクセス</h2>
+<p>OIDC は署名済みの ID を検証し、明示的なグループ値を <code>viewer</code>、<code>analyst</code>、<code>admin</code> に割り当てます。認可された閲覧者は、インストール環境全体のテレメトリを読み取れます。これは従業員ごとに行を分離する仕組みではありません。</p>
+<p>デバイストークンが許可するのは取り込みのみです。所有者、期限、失効はそれぞれ個別に管理されます。テレメトリの帰属情報はクライアントから提供されます。SSO セッションやトークンの所有権によって、テレメトリに記録されたメールアドレスの正当性が自動的に保証されることはありません。</p>
+<p>個人情報のマスキングは表示機能であり、API アクセス制御ではありません。収集フィルターは既知のコンテンツフィールドを除去しますが、対応対象のメタデータに任意の形式で含められた秘密情報は検出できません。</p>
+<p><a href="operations.html#sso">SSO の設定とセッションの更新</a> · <a href="installation.html">Collector のインストール</a></p></section><section id="deployment"><h2>デプロイの境界</h2><p>ダッシュボードイメージにはWeb UIとAPIが含まれます。ClickHouse、そのスキーマ、OTel Collectorは、すべてのプラットフォームで別コンポーネントです。現在のComposeファイルにはCollectorが含まれず、EKS Terraformは既存のクラスター依存関係を再利用します。ECS/EC2ではインフラストラクチャ、認証情報、ネットワーク、プローブ、永続化の設定をレビューして用意する必要があります。Lambdaではアプリケーションをランタイムに適応させる必要があります。</p><p><a href="installation.html#choose">必須コンポーネント</a> · <a href="installation.html#platforms">ホスティング方法の比較</a></p>
+<p>スキーマのライフサイクル、アプリケーションイメージ、Collectorポリシー、ランタイムの選択肢は、それぞれ独立したデプロイ状態を持ちます。ビルドやTerraformの検証に成功しても、稼働中のロールアウトや移行が完了したことにはなりません。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">組織向けのデプロイ</a></p></section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">API リファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">測定項目の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモのクレジット</a></p>
+    <p>テレメトリは不完全な場合があります。報告されるコストやリスト価格による推定額は請求額ではありません。アクティビティ指標から、従業員の生産性や因果関係に基づく ROI を立証することはできません。</p>
+  </div></footer>
+</body>
+</html>

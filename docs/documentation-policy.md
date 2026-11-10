@@ -5,6 +5,10 @@ README, changelog, agent instructions, reference docs, runbooks, templates, ADRs
 and checked-in historical/media notes. Product UI and rendered media localization
 are separate contracts.
 
+The public guides in `site/` have English, Korean, Japanese and Simplified Chinese
+editions at the user's request. Follow [their scoped guide](../site/AGENTS.md);
+these locale copies do not change the English engineering-documentation policy.
+
 ## Ownership
 
 | Content | Owner |

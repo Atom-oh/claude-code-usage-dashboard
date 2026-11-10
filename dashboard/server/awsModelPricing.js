@@ -1,4 +1,5 @@
 import { buildCodexLogAggregateQuery } from "./codexLogAggregates.js";
+import { FLAT_CONTEXT_LIMIT } from "./codexPricing.js";
 
 // AWS's published model-card index is public; no usage data or credentials are sent.
 // Only the explicitly described Standard, commercial, 30-minute-cache format is
@@ -60,8 +61,64 @@ function priceTable(text, kind, multipleTiers) {
   return { limit: Number(match[1]) * 1000, regional: values["In-Region"], global: values["Global CRIS"], geoPrefix };
 }
 
+const GEO_ROWS = { "US CRIS": "us", "EU CRIS": "eu", "APAC CRIS": "apac", "JP CRIS": "jp", "AU CRIS": "au", "IN CRIS": "in" };
+const FLAT_HEADER = ["Inference option", "Input", "Output", "Cache read", "Cache write (30 min)"];
+const ACCESS_HEADER = ["Endpoint", "Model ID", "In-Region endpoint URL", "Geo inference ID", "Global inference ID"];
+const MODEL_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+const ROUTED_ID = /^(us|eu|apac|jp|au|in|global)\./;
+const flatRates = (rates) => ({ short: rates, long: rates });
+
+// Second accepted format (e.g. Moonshot Kimi K3.1, verified 2026-11-10): one Standard-tier
+// table without context tiers, columns Input | Output | Cache read | Cache write (30 min),
+// a Global CRIS row and Geo CRIS rows (US/IN/...), and only a bedrock-runtime endpoint.
+// Geo rows map to the regional scope (as the AWS Price List does for these models) and must
+// agree; every geo prefix in the card must have its row. Without an In-Region row,
+// unprefixed calls stay unpriced. Anything else returns null.
+function parseFlatModelCard(document) {
+  const pricing = section(document, "Pricing");
+  if (!/\bAll prices are per 1 million tokens\b/i.test(pricing) || !/\bPricing shown is for the Standard tier\b/i.test(pricing)
+      || /^### /m.test(pricing) || /\b(short|long) context\b/i.test(pricing)) return null;
+  const rows = tableRows(pricing);
+  if (rows.length < 4 || JSON.stringify(rows[0]) !== JSON.stringify(FLAT_HEADER)) return null;
+  const values = {};
+  for (const row of rows.slice(2)) {
+    const label = row[0];
+    if (row.length !== 5 || !(label === "Global CRIS" || label === "In-Region" || GEO_ROWS[label]) || values[label]) return null;
+    if (row.slice(1).some(value => !/^\$\d+(?:\.\d+)?$/.test(value))) return null;
+    const [input, output, cacheRead, cacheWrite] = row.slice(1).map(value => Number(value.slice(1)));
+    if (![input, output, cacheRead, cacheWrite].every(Number.isFinite)) return null;
+    values[label] = { input, cacheWrite, cacheRead, output };
+  }
+  const geoLabels = Object.keys(values).filter(label => GEO_ROWS[label]);
+  if (!values["Global CRIS"] || !geoLabels.length) return null;
+  const geo = values[geoLabels[0]];
+  if (geoLabels.some(label => JSON.stringify(values[label]) !== JSON.stringify(geo))
+      || values["In-Region"] && JSON.stringify(values["In-Region"]) !== JSON.stringify(geo)) return null;
+  const access = tableRows(section(document, "Programmatic Access"));
+  const index = access.findIndex(row => JSON.stringify(row) === JSON.stringify(ACCESS_HEADER));
+  if (index < 0) return null;
+  const endpoints = access.slice(index + 2);
+  const runtime = endpoints.filter(row => row[0] === "bedrock-runtime");
+  if (runtime.length !== 1 || endpoints.some(row => row[0] !== "bedrock-runtime")) return null;
+  const [, model, url, geoIds, globalId] = runtime[0];
+  if (!MODEL_ID.test(model) || ROUTED_ID.test(model) || globalId !== `global.${model}`) return null;
+  const escaped = model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const listed = [...new Set([...geoIds.matchAll(new RegExp(`\\b([a-z]+)\\.${escaped}(?![a-z0-9._-])`, "g"))].map(m => m[1]))].sort();
+  const prefixes = geoLabels.map(label => GEO_ROWS[label]).sort();
+  if (JSON.stringify(listed) !== JSON.stringify(prefixes)) return null;
+  const inRegion = Boolean(values["In-Region"]);
+  if (inRegion && !/^https:\/\/bedrock-runtime\./.test(url)) return null;
+  return { model, price: { short_context_limit: FLAT_CONTEXT_LIMIT, runtime_in_region: inRegion,
+    ...(prefixes.length === 1 ? { runtime_geo_prefix: prefixes[0] } : {}),
+    regional: flatRates(geo), global: flatRates(values["Global CRIS"]) } };
+}
+
 export function parseAwsModelCard(document) {
   if (typeof document !== "string" || document.length > MAX_DOCUMENT_BYTES) return null;
+  return parseTieredModelCard(document) ?? parseFlatModelCard(document);
+}
+
+function parseTieredModelCard(document) {
   const pricing = section(document, "Pricing");
   if (!/\bUSD per 1 million tokens\b/i.test(pricing)
       || !(/for the Standard tier\b/i.test(pricing) || /Standard and Ultrafast prices\b/i.test(pricing))) return null;

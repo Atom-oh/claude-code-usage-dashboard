@@ -20,6 +20,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Expand the 90-day user activity heatmap across its card, with larger responsive
   day cells, month/weekday labels and an activity legend. Preserve UTC boundaries
   and observed-session counts, including unavailable values.
+## [1.3.1] - 2026-11-10
+
+### Fixed
+
+- Price Bedrock models whose AWS model card uses the flat Standard-tier table (one
+  table without context tiers, Global CRIS and Geo CRIS rows, `bedrock-runtime` only),
+  such as `moonshotai.kimi-k3.1`, which the Price List does not list yet. These were left
+  unpriced because the model-card fallback accepted only the context-tiered format (#238).
 
 ## [1.3.0] - 2026-11-10
 
@@ -34,6 +42,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   detail for any signed-in reader, without a user in the URL.
   `/api/users/tasks/detail` accepts a missing `userExact`, resolves the task's owner (404
   when none, or for two Codex identities) and returns `owner` (#235).
+
+### Changed
+
+- Provide English, Korean, Japanese and Simplified Chinese versions of all five
+  documentation-site guides and media credits, with Luna translation provenance.
+  Document source builds, platform deployment options, ClickHouse schema setup
+  and the required OTel backend, alongside Task Trace guidance and a current
+  synthetic screenshot. Replace the overview's Korean video with a newly rendered
+  48-second English HyperFrames walkthrough and an English caption track.
+  Deliver generated media from a pinned snapshot with size/SHA256 checks before
+  Pages upload; keep composition, captions and provenance as reviewed source.
 
 ## [1.2.0] - 2026-11-10
 

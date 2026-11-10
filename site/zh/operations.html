@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>管理自己的部署 — ccdash</title>
+  <meta name="description" content="连接组织单点登录 (SSO)，验证 Trace 数据传输，并排查自有部署中缺失的用户任务。" />
+  <link rel="stylesheet" href="../assets/site.css" />
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="../operations.html" />
+  <link rel="alternate" hreflang="ko" href="../ko/operations.html" />
+  <link rel="alternate" hreflang="ja" href="../ja/operations.html" />
+  <link rel="alternate" hreflang="zh-CN" href="operations.html" />
+</head>
+<body>
+  <a class="skip-link" href="#main">跳转到正文</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="主要导航"><a href="index.html">概览</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html">API</a><a href="operations.html" aria-current="page">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="语言"><a href="../operations.html" hreflang="en" lang="en">English</a><a href="../ko/operations.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/operations.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · 文档</p>
+      <h1>管理自己的部署</h1>
+      <p class="lede">配置组织身份验证，验证已部署组件，并按照运维手册执行发布与恢复。</p>
+      <p class="caption">更新于 2026 年 11 月 10 日 · 描述源代码中的行为；请核实已安装的版本。</p>
+      <p><a href="#traces">Trace 收集检查</a> · <a href="index.html#task-trace">Task Trace 操作指南</a></p>
+    </div>
+    <section id="sso"><h2>连接组织 SSO</h2>
+<p>将 <code>AUTH_MODE=oidc</code> 设为使用 discovery/JWKS、签名 ID token、授权码和 PKCE S256 的机密 OIDC 客户端。注册精确的回调地址 <code>https://dashboard.example.com/auth/callback</code>。</p>
+<p>一个共享的 Cognito 用户池可通过独立的应用客户端、回调地址、密钥和角色映射服务多个项目。应用专属的群组分配应在身份管理系统中完成。客户邮箱、域名和用户池 ID 属于配置内容，不是通用的应用规则。</p><div class="table-scroll" tabindex="0" role="region" aria-label="配置项参考表"><table><thead><tr><th scope="col">配置项</th><th scope="col">用途</th></tr></thead><tbody><tr><td><code>APP_PUBLIC_URL</code></td><td>精确的 HTTPS 源，不含路径、查询参数或片段。</td></tr><tr><td><code>OIDC_ISSUER</code>, <code>OIDC_CLIENT_ID</code></td><td>精确的颁发者标识符和专用应用客户端。</td></tr><tr><td><code>OIDC_CLIENT_SECRET</code>, <code>SESSION_SECRET</code></td><td>通过受保护的密钥引用进行配置。各副本必须共享会话密钥和身份配置。</td></tr><tr><td><code>OIDC_GROUPS_CLAIM</code></td><td>顶层签名群组声明：Cognito 使用 <code>cognito:groups</code>；其他情况使用提供方配置的声明。</td></tr><tr><td><code>OIDC_SCOPES</code></td><td>默认值为 <code>openid profile</code>。只添加配置的提供方所需的范围，包括签发刷新令牌所需的范围。</td></tr><tr><td><code>OIDC_ROLE_GROUPS</code></td><td>将 <code>viewer</code>、<code>analyst</code> 和 <code>admin</code> 映射到明确群组数组的 JSON 配置。</td></tr></tbody></table></div>
+<pre><code class="language-json">{
+  "viewer": ["YOUR_VIEWER_GROUP"],
+  "analyst": ["YOUR_EDITOR_GROUP"],
+  "admin": ["YOUR_ADMIN_GROUP"]
+}</code></pre>
+<p>界面中的 editor 角色映射到 <code>analyst</code>；<code>editor</code> 不是配置角色键。未映射的群组无法登录。匹配到多个角色时，以最高角色为准。</p><div class="table-scroll" tabindex="0" role="region" aria-label="角色参考表"><table><thead><tr><th scope="col">角色</th><th scope="col">权限</th></tr></thead><tbody><tr><td>viewer</td><td>读取整个部署的遥测数据；不能管理 Collector 或使用聊天功能。</td></tr><tr><td>analyst / editor</td><td>读取遥测数据、使用已启用的聊天功能、下载安装程序并管理所属设备。</td></tr><tr><td>admin</td><td>拥有 analyst 权限，并可查看部署诊断信息。</td></tr></tbody></table></div><p>Okta 和 Keycloak 可通过适当的范围和签名群组声明提供此 OIDC 契约。请核实实际客户使用的提供方；通用支持并不代表已完成提供方验收测试。登录不会为每位用户隔离数据。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/organization-sso.md">提供方设置与 SSO 运维</a></p></section><section id="sessions"><h2>让登录状态最多保持 30 天</h2>
+<p>持久登录为可选功能，默认禁用。可配置一小时的授权时限和固定的 30 天登录期限：</p>
+<pre><code class="language-bash">SESSION_MAX_AGE_SECONDS=3600
+SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
+<p>常规短会话的默认时长为 900 秒；允许值为 300–3600。刷新令牌有效期可以是 0（禁用），或 3600–2592000 秒。短会话还受提供方令牌到期时间限制，因此一小时是上限，并非保证的续期间隔。</p>
+<p>续期由请求触发，发生在短会话即将到期或到期之后，而不是后台每小时定时执行。30 天期限从首次登录开始计算，不会滚动延长。提供方可以提前终止会话。</p>
+<ul>
+  <li>刷新模式要求可重复使用且不轮换的刷新令牌、包含当前群组信息的新签名 ID token，以及使用 <code>client_secret_basic</code> 进行交换和撤销。</li>
+  <li>此模式不支持仅提供轮换令牌的提供方。刷新响应中的令牌一旦轮换，就必须重新登录。</li>
+  <li>使用加密的 Secure/HttpOnly cookie。会话 API 不会返回原始身份令牌。</li>
+  <li>登出会清除本地 cookie，并尝试撤销刷新令牌。它不会结束提供方的 SSO 会话，不会即时撤销已复制的短期 cookie，也不会撤销设备令牌。</li>
+</ul><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/decisions/ADR-021-refresh-token-sessions.md">刷新会话设计与限制</a></p></section><section id="deploy"><h2>部署经过审核的应用版本</h2>
+<ol>
+  <li>合并发布 PR，并在干净的构建上下文中部署不可变的 <code>vX.Y.Z</code> 标签。记录提交，并按照部署运维手册完成发布前检查。</li>
+  <li>确认 AWS 身份、目标集群、现有 Terraform 输入、迁移状态以及可用的回滚镜像。</li>
+  <li>针对目标架构进行构建，并发布不可变的镜像标签/摘要。提供的 EKS 部署目标架构为 arm64。</li>
+  <li>按需审核完整的基础设施计划。现有部署使用兼容性验证和显式升级，不会自动重试引导初始化。</li>
+  <li>执行滚动发布，检查就绪状态和实际镜像摘要，然后验证登录、API 行为、数据接收时效性及代表性数据。</li>
+</ol>
+<p>使用 <code>/healthz</code> 检查存活状态，使用 <code>/readyz</code> 检查就绪状态。源代码声明、构建成功和进程运行正常，都不能证明身份提供方可用、遥测数据及时到达或迁移已应用。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md">EKS 部署与回滚</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">数据库模式迁移流程</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">客户部署前提</a></p></section><section id="symptoms"><h2>从出错的环节开始排查</h2><div class="table-scroll" tabindex="0" role="region" aria-label="症状参考表"><table><thead><tr><th scope="col">症状</th><th scope="col">首先检查</th></tr></thead><tbody><tr><td>登录失败或提前结束</td><td>精确的源/回调地址/颁发者、已签名的映射群组、提供方到期时间和刷新契约。不要打印令牌值。</td></tr><tr><td>Collector 端口被占用</td><td>使用所选版本中的源安装程序；按照受支持的 macOS 迁移流程操作，或遵循现有服务所有者的手动流程。</td></tr><tr><td>用户无法识别或被拆分</td><td>检查预期的 <code>--user-id</code>、发出的身份信息和仪表板筛选条件。设备的 SSO 所有者不会自动成为遥测数据的归属用户。</td></tr><tr><td>已签发令牌但没有遥测数据</td><td>重启编码客户端并产生工作负载，检查本地服务/导出器错误和设备接收情况，然后确认数据已存储。</td></tr><tr><td>Codex 详情显示短横线</td><td>分别检查完成记录所属的统计群组和整个时间窗口的完整性。缺失的分母、价格或组件不能当作零。</td></tr><tr><td>成本详情响应较慢</td><td>检查查询准入、筛选条件和有效分辨率；使用成本/工作量配置，并在更改容量前测量目标工作负载。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector 限制与恢复</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">成本查询行为</a></p></section><section id="platforms"><h2>各平台的运维前提</h2><p>所有托管选项仍需要持久化的 ClickHouse 数据库模式（schema）和正常运行的 OTel 流水线。ECS 和 EC2 需要单独编写服务、密钥和存储配置；随附的 Terraform 面向现有 EKS 环境。Lambda 需要适配应用运行时，并使用外部数据库/Collector 服务。</p><p><a href="installation.html#platforms">部署选项与支持范围</a> · <a href="installation.html#schema">数据库模式初始化</a> · <a href="installation.html#collector">Collector 设置</a></p></section><section id="site"><h2>部署文档</h2>
+<p>本文档是 <code>site/</code> 目录中的静态 HTML。Pages 工作流会在 <code>main</code> 分支有变更合并后上传该目录。仅发布文档时，无需打包器构建，也无需发布应用或滚动更新 EKS。</p>
+<p>完整流程请参阅源代码中链接的运维手册。网站总结了受支持的行为，并不代表对任何特定客户部署配置的认证。</p></section>
+<section id="traces"><h2>验证 Trace 数据路径</h2>
+<p>从一次新的交互及其预期的遥测身份、客户端和时间桶开始检查。用量总计和 Trace 可用性来自不同信号；日志成功导出不能证明 Trace 已送达。</p>
+<ol>
+  <li>确认当前设备软件包或组织管理员管理的设置已启用 Trace 导出，然后重启编码客户端。参阅<a href="installation.html#trace">客户端配置参考</a>。</li>
+  <li>检查本地 Collector 服务和 Trace 导出器是否存在传输失败。继续检查经过身份验证的数据接收、中央 Trace 流水线以及存储的 <code>otel_traces</code> 记录。设备接收情况和进程健康状态只能确认各自所在的阶段。</li>
+  <li>在用户详情中，选择包含任务开始时间的趋势时间桶。检查目标身份和筛选条件；受支持的 Trace 任务会保留 90 天。</li>
+  <li>排查 Codex 问题时，使用完整的 insights 配置查看 Analytics 的 Trace 选项卡。成本/工作量、工具和性能配置会跳过 Trace 查询。</li>
+</ol>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Trace 症状参考"><table>
+  <thead><tr><th scope="col">症状</th><th scope="col">检查内容</th></tr></thead>
+  <tbody>
+    <tr><td>用户有用量记录，但没有任务</td><td>检查 Trace 配置、重启时间、导出的身份、任务开始时间桶和保留期限。不会将历史用量回填到 Trace 中。</td></tr>
+    <tr><td>Codex 完成记录不属于任何任务</td><td>被 Trace 记录的轮次需要会话 ID 和唯一轮次 ID。不符合条件的轮次所对应的完成记录不会关联到任务；已关联但没有采样 span 的完成记录可能不会出现在成本范围中。</td></tr>
+    <tr><td>无法获取 Codex 子智能体数量</td><td>当前任务视图仅包含主泳道，不会根据无关的 span 推断子智能体数量。</td></tr>
+    <tr><td>大型详情缺少总计</td><td>检查 <code>truncated</code> 和 <code>span_total</code>。任务详情最多包含 5,000 个 span；独立的诊断预览上限为 50 条 Trace，每条 Trace 最多 200 个 span。</td></tr>
+    <tr><td>按模型筛选后 Codex Trace 消失</td><td>只有带有模型属性的 span 才会匹配该筛选条件。清除筛选条件即可查看其他诊断 span。</td></tr>
+  </tbody>
+</table></div>
+<p><a href="api.html#tasks">任务端点限制</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector 恢复</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">应用发布流程</a></p>
+</section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">指标定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示鸣谢</a></p>
+    <p>遥测数据可能不完整。报告的成本和基于标价的估算并非账单。活动指标不能证明员工生产力或因果关系上的投资回报。</p>
+  </div></footer>
+</body>
+</html>
