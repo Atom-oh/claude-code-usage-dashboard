@@ -9,6 +9,29 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.3.0",
+    date: "2026-11-10",
+    summary: "작업 상세에서 컨텍스트 크기 추이를 보고, 작업을 링크로 공유할 수 있습니다.",
+    items: [
+      {
+        kind: "new",
+        title: "컨텍스트 크기 차트",
+        body: "작업 상세의 타임라인 아래에 호출별 컨텍스트 크기를 레인별 선으로 그립니다. Claude Code는 컴팩션 지점(전 → 후 토큰)을, Codex는 대화가 보고한 자동 컴팩션 한도와 컨텍스트 창 대비 비율을 함께 보여줍니다. 점을 누르면 그 호출이 오른쪽 패널에 열립니다.",
+        to: "/users",
+        where: "Users → 사용자 선택 → 추이 막대 클릭 → 태스크 열기 → 컨텍스트 크기",
+        refs: [234],
+      },
+      {
+        kind: "new",
+        title: "작업 공유 링크",
+        body: "작업 상세 오른쪽 위의 링크 복사 버튼으로 그 작업의 주소를 복사합니다. 받은 사람이 열면 같은 작업 상세가 바로 뜨고, 로그인이 필요하면 로그인 후 그 링크로 돌아옵니다. 주소에는 사용자 이메일이 들어가지 않습니다.",
+        to: null,
+        where: "작업 상세 → 링크 복사",
+        refs: [235],
+      },
+    ],
+  },
+  {
     version: "1.2.0",
     date: "2026-11-10",
     summary: "사이드바에서 사용설명서를 바로 열 수 있습니다.",
