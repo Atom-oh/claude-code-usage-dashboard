@@ -1,12 +1,13 @@
 name: Deploy docs site to GitHub Pages
 
-# site/ 는 빌드 단계가 없는 정적 HTML이다 — 그대로 업로드해 Pages로 서빙한다.
-# (Jekyll/번들러를 붙이지 않은 이유: 페이지 4장에 빌드 파이프라인은 과하다.)
+# Static HTML plus SHA256-verified media from the pinned documentation snapshot.
 on:
   push:
     branches: [main]
     paths:
       - "site/**"
+      - "scripts/fetch-docs-media.py"
+      - "video/docs-demo/media.lock.json"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -28,6 +29,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch and verify documentation media
+        run: python3 scripts/fetch-docs-media.py --site-only
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -16,5 +16,6 @@ customer telemetry. The English screenshot labels were translated by
 
 Run `npm run check`, inspect each scene's midpoint, render, and inspect encoded
 frames before claiming completion. Keep generated caches, snapshots and renders
-untracked. The reviewed MP4 belongs in `site/assets/video/`; local rendering does
-not authorize deployment or publication.
+untracked. Hydrate media/runtime with `scripts/fetch-docs-media.py` and preserve the
+immutable snapshot and SHA256 lock. See [delivery instructions](README.md).
+Local rendering does not authorize deployment or publication.

@@ -9,7 +9,7 @@ terraform.tfstate.*
 backend.hcl
 .claude/
 
-# Regenerable HyperFrames outputs; published MP4s are tracked in site/assets/video/.
+# Regenerable HyperFrames outputs.
 video/renders/
 video/snapshots/
 video/.hyperframes/
@@ -18,6 +18,18 @@ video/capture/assets/
 video/docs-demo/.hyperframes/
 video/docs-demo/renders/
 video/docs-demo/snapshots/
+
+# Immutable docs snapshot; hydrate with scripts/fetch-docs-media.py.
+site/assets/img/docs-demo-en-poster.jpg
+site/assets/img/task-trace.png
+site/assets/img/task-trace-en.png
+site/assets/img/task-trace-model-en.png
+site/assets/img/task-trace-model-table-en.png
+site/assets/img/task-trace-overview-en.png
+site/assets/video/dashboard-demo-en-20261110.mp4
+site/assets/video/dashboard-demo-en-20261110.webm
+video/docs-demo/runtime/NotoSans.ttf
+video/docs-demo/runtime/gsap.min.js
 
 # Local Python validation caches
 __pycache__/

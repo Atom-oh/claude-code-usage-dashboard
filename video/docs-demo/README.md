@@ -10,6 +10,15 @@ Install Node 22.12+, Chromium, FFmpeg and ffprobe. The npm scripts pin HyperFram
 `HYPERFRAMES_FFPROBE_PATH` to verified executables if automatic discovery fails.
 The relative `assets` symlink points to the shared site media, without copies.
 
+From the repository root, run `python3 scripts/fetch-docs-media.py` before previewing
+or rendering. It hydrates the images, encoded video and local runtime assets from
+the immutable commit in `media.lock.json`, checking every size and SHA256 before
+writing. The `docs-media-20261110` tag retains that snapshot; URLs use its commit
+identity. Use `--offline` to verify a populated cache without network access.
+Pages runs the same helper with `--site-only` and fails rather than publishing
+missing or corrupt media. HTML, captions, composition, provenance and licenses
+remain tracked source; generated media and the pinned runtime are ignored cache.
+
 Run from this directory:
 
 ```bash
@@ -26,10 +35,11 @@ ffmpeg -i renders/dashboard-demo-en.mp4 -an -c:v libvpx-vp9 \
 Inspect the six scene frames, decode the complete files, and verify 48 seconds,
 1920×1080, 24 fps and no audio stream. Test the site player and English VTT track:
 the WebM source also supports Chromium builds without H.264 decoding.
-Only copy verified delivery files into `site/assets/video/`, then refresh their
-checksums in `site/assets/media.json`. Rendering does not publish the site.
+For replacement media, retain a new immutable snapshot and update the lock and
+`site/assets/media.json` together after verification. Rendering does not publish
+the site.
 
-GSAP 3.14.2 retains its license header and standard-license URL. The bundled
+GSAP 3.14.2 retains its license header and standard-license URL. The hydrated
 Noto Sans 2.013 font includes its copyright notice and SIL Open Font License in
 `runtime/Noto-LICENSE.txt`. Source captures use synthetic fixtures and English
 display labels translated by `openai.gpt-6-luna`; product locale behavior is

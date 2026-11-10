@@ -30,6 +30,9 @@ Use synthetic fixtures, masked reserved identities and fictional costs only.
 English demo screenshots use translated DOM labels on the actual React component;
 they do not change product behavior. Keep file sizes, dimensions and checksums
 in `assets/media.json`. Shared images, CSS and videos have one owner in `assets/`.
+Hydrate the pinned generated media with `python3 scripts/fetch-docs-media.py
+--site-only` before local previews. Pages verifies the same snapshot before upload;
+see [delivery instructions](../video/docs-demo/README.md).
 
 ## Verification
 

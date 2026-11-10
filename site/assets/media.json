@@ -191,5 +191,11 @@
       "row_mt": 1,
       "threads": 2
     }
+  },
+  "delivery": {
+    "manifest": "../../video/docs-demo/media.lock.json",
+    "snapshot_commit": "fd1e956f3678f9703ee0edf46dd13c0d8c1c0fd4",
+    "snapshot_tag": "docs-media-20261110",
+    "verification": "scripts/fetch-docs-media.py validates file size and SHA256 before Pages upload or local rendering."
   }
 }

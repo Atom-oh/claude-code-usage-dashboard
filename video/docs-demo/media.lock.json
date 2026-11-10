@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "repository": "Atom-oh/claude-code-usage-dashboard",
+  "commit": "fd1e956f3678f9703ee0edf46dd13c0d8c1c0fd4",
+  "files": [
+    {
+      "path": "site/assets/img/docs-demo-en-poster.jpg",
+      "bytes": 169741,
+      "sha256": "4a65ed62bdaee13127ce579f168d0a20a0e32f31c35c685c7cb49ac8ff62479c"
+    },
+    {
+      "path": "site/assets/img/task-trace-en.png",
+      "bytes": 128177,
+      "sha256": "9bf56c5938b7bbd4efab3c1379271605d14e7c238aaee3c1fb101cf40951f7cd"
+    },
+    {
+      "path": "site/assets/img/task-trace-model-en.png",
+      "bytes": 128399,
+      "sha256": "ec3fb88f8c652500ce4de54e4528e4cb611a4393428ce6cc1e23dabc7b6ddbd2"
+    },
+    {
+      "path": "site/assets/img/task-trace-model-table-en.png",
+      "bytes": 11428,
+      "sha256": "e641c12a84aace9de671b34d944c4c45ec7ec69cc758c0d63329db4f9c855d76"
+    },
+    {
+      "path": "site/assets/img/task-trace-overview-en.png",
+      "bytes": 104065,
+      "sha256": "0045b8b04b8938328d72d95b4028db10d92eb07c254a80f21428a19545b78304"
+    },
+    {
+      "path": "site/assets/img/task-trace.png",
+      "bytes": 115050,
+      "sha256": "677ac1571045c760f58fe614568a8e5859947e57f2c0d8818eb4356e2c558ef7"
+    },
+    {
+      "path": "site/assets/video/dashboard-demo-en-20261110.mp4",
+      "bytes": 3569818,
+      "sha256": "56ecb1cc7c0e3afa99c5422d45823ef0358b20ea297adb38a1b5e27600741e46"
+    },
+    {
+      "path": "site/assets/video/dashboard-demo-en-20261110.webm",
+      "bytes": 1789382,
+      "sha256": "092abe80e52a4f6539eda4b31abc2580dfeca4fad813c6ac4a84242fd323d99d"
+    },
+    {
+      "path": "video/docs-demo/runtime/NotoSans.ttf",
+      "bytes": 635800,
+      "sha256": "8b23d6341a12454e68e35c2c0917f0504104ded6aa3024d18e9d462da06fadd3"
+    },
+    {
+      "path": "video/docs-demo/runtime/gsap.min.js",
+      "bytes": 72777,
+      "sha256": "19e3ad578c9c583ddf9bdca2ad87bb55c3d70b331058e28abacab898f799b2ee"
+    }
+  ]
+}

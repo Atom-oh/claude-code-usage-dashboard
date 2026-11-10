@@ -4,7 +4,7 @@
 
 Workshop Claude Code/Codex OTel → ClickHouse → Express → React; Terraform/docs site/separate video project. Not validated employee productivity/causal ROI.
 
-Behavior: code/tests. Follow this/nearest scoped AGENTS.md; CLAUDE.md imports adjacent guide. References: implementation; runbooks: operations; ADRs: scoped decisions. Superseded ADRs/dated investigations: historical evidence. Config/build success does not prove deployed images/migrations/Terraform changes/runtime options. Explicit user instructions win. Surface actual conflicts; missing excerpts do not prove missing implementation.
+Behavior: code/tests. Follow root/nearest AGENTS.md; CLAUDE.md imports its adjacent guide. References: implementation; runbooks: operations; ADRs: decisions. Superseded ADRs/dated investigations are historical. Config/build success proves no deployment of images/migrations/Terraform/runtime options. User instructions win. Surface conflicts; missing excerpts prove no absence.
 
 ## Checks
 
@@ -38,7 +38,7 @@ Change PRs add CHANGELOG Unreleased entries; deploy tagged `vX.Y.Z` release PRs:
 
 ## Review
 
-Engineering docs/guides/ADRs/PR prose: concise English over bilingual review templates; separate UI localization. Link owners; keep contracts/reasons/limits, no duplicate translations/transcripts/stale line refs.
+Engineering docs/guides/ADRs/PRs: concise English; UI localization is separate. Link owners; keep contracts/reasons/limits. No duplicate translations/transcripts/stale line refs.
 
 Review new behavior using code/tests/trusted base. Preferences/intentional conventions are not defects; report uncertainty. Correctness/security regressions block. Never weaken auth/no-tools checks/coverage/CI to pass. Follow user's latest-HEAD review/fix/push/merge.
 
