@@ -15,11 +15,20 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-10
+
+### Security
+
+- Install Alpine OS `zlib=1.4-r0` in the runtime image for `CVE-2026-4738`, the
+  Critical finding of the ECR enhanced scan on the 1.0.0 and 1.1.0 images (fixed in
+  `1.4-r0`), and require that version in actual image package metadata. Node's bundled
+  zlib is recorded separately; package inspection is not CVE clearance.
+
 ### Changed
 
 - PR review guidance distinguishes published model context and verified CLI
   transport behavior from repository policy budgets, with dated sources and
-  validation rules for budget changes. Existing review limits remain unchanged.
+  validation rules for budget changes. Existing review limits remain unchanged (#231).
 
 ## [1.1.0] - 2026-11-09
 
