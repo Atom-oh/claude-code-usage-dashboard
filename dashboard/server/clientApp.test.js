@@ -39,7 +39,8 @@ const db = http.createServer(async(req,res)=>{
       cost_counter_rows:1,observed_usage_rows:1}];
   } else if(sql.includes('codex_events') || sql.includes('claude_events')) {
     dataQueries++;
-    rows=[{prompts:sql.includes('codex_events')?3:1,tool_calls:2,tool_successes:2,tool_failures:0}];
+    rows=[{kind:'prompt',top:1,tool_key:'',events:sql.includes('codex_events')?3:1},
+      {kind:'result',top:1,tool_key:'shell',events:2,successes:2,failures:0}];
   } else if(sql.includes('FROM claude_code.otel_traces')) {
     rows=[1,2].map(duration_ns=>({timestamp:base.t,trace_id:'conflict',span_id:'one',duration_ns}));
   } else if(sql.includes('FROM claude_code.codex_metrics_sum')) {

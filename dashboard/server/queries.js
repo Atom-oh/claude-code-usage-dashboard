@@ -2575,6 +2575,34 @@ function claudeProductivityScope(filters) {
   return { cte, where, params };
 }
 
+// One log scan per client serves the shared Productivity page: totals are the sums of each
+// kind's rows (prompt, result, decision; Codex also ttft), and per kind the
+// PRODUCTIVITY_TOOL_LIMIT tools with the most events (ties by name) keep their own row and the
+// rest fold into one remainder row (top = 0) computed here, so its p50 stays exact. The source
+// CTE supplies kind, tool, source ('' for results), ok/bad/allow/deny flags and duration (-1
+// when invalid). source_counts is the exact (sources, counts) pair per row. The CTE is read
+// once: per-tool rows carry their valid durations and are ranked with a window function.
+export const PRODUCTIVITY_TOOL_LIMIT = 10;
+export function toolBreakdownSql(cte) {
+  return `
+  SELECT kind, top, if(top, tool, '') AS tool_key, count() AS tools, sum(n) AS events,
+    sum(n_ok) AS successes, sum(n_bad) AS failures, sum(n_allow) AS allowed, sum(n_deny) AS denied,
+    sumMap(sources.1, sources.2) AS source_counts, sum(length(durations)) AS duration_samples,
+    if(duration_samples = 0, NULL, quantileExactLowArray(0.5)(durations)) AS duration_p50_ms,
+    if(duration_samples = 0, NULL, quantileExactLowArray(0.9)(durations)) AS duration_p90_ms
+  FROM (
+    SELECT kind, tool, count() AS n, sum(ok) AS n_ok, sum(bad) AS n_bad, sum(allow) AS n_allow, sum(deny) AS n_deny,
+      sumMap([source], [toUInt64(1)]) AS sources, groupArrayIf(duration, duration >= 0) AS durations,
+      row_number() OVER (PARTITION BY kind ORDER BY n DESC, tool) <= ${PRODUCTIVITY_TOOL_LIMIT} AS top
+    FROM ${cte}
+    GROUP BY kind, tool
+  )
+  GROUP BY kind, top, tool_key`;
+}
+// A non-numeric, non-finite or missing millisecond attribute becomes -1 (invalid), never 0.
+export const validMs = (expr) =>
+  `if(isFinite(ifNull(toFloat64OrNull(trimBoth(${expr})), -1)), ifNull(toFloat64OrNull(trimBoth(${expr})), -1), -1)`;
+
 export function clientProductivityClaudeSql(from, to, filters = {}) {
   const span = to - from;
   const scope = claudeProductivityScope(filters);
@@ -2586,6 +2614,10 @@ export function clientProductivityClaudeSql(from, to, filters = {}) {
   }).join(",\n      ");
   const logUser = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
   const names = PRODUCTIVITY_EVENTS.flatMap((name) => [`'${name}'`, `'claude_code.${name}'`]).join(", ");
+  // Activity index inputs mirror userLeaderboard (session.count, added LOC, commits,
+  // code_edit_tool.decision, distinct hourly session.count days) under the shared scope.
+  const userMetrics = `AND MetricName IN ('claude_code.session.count', 'claude_code.lines_of_code.count',
+        'claude_code.commit.count', 'claude_code.code_edit_tool.decision')`;
   return {
     counters: { sql: `${GROUP_CTE}${scope.cte}, ${counterObservations(metricFilter, span)}
     SELECT ${counters}
@@ -2600,34 +2632,64 @@ export function clientProductivityClaudeSql(from, to, filters = {}) {
         replaceRegexpOne(EventName, '^claude_code\\\\.', '') AS event
       FROM claude_code.otel_logs
       WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND EventName IN (${names})
-    )
-    SELECT countIf(event = 'user_prompt') AS prompts,
-      countIf(event = 'tool_result') AS tool_calls,
-      countIf(event = 'tool_result' AND a['success'] = 'true' AND a['error'] = '') AS tool_successes,
-      countIf(event = 'tool_result' AND (a['success'] = 'false' OR a['error'] != '')) AS tool_failures,
-      countIf(event = 'tool_decision') AS decisions_total,
-      countIf(event = 'tool_decision' AND a['decision'] = 'accept') AS decisions_allowed,
-      countIf(event = 'tool_decision' AND a['decision'] = 'reject') AS decisions_denied
-    FROM claude_events
-    WHERE 1 = 1
-      ${scope.where("session", "user")}`,
+    ), tool_events AS (
+      SELECT multiIf(event = 'tool_result', 'result', event = 'tool_decision', 'decision', 'prompt') AS kind,
+        if(kind = 'prompt', '', a['tool_name']) AS tool,
+        if(event = 'tool_decision', a['source'], '') AS source,
+        event = 'tool_result' AND a['success'] = 'true' AND a['error'] = '' AS ok,
+        event = 'tool_result' AND (a['success'] = 'false' OR a['error'] != '') AS bad,
+        event = 'tool_decision' AND a['decision'] = 'accept' AS allow,
+        event = 'tool_decision' AND a['decision'] = 'reject' AS deny,
+        if(event = 'tool_result', ${validMs("a['duration_ms']")}, -1) AS duration
+      FROM claude_events
+      WHERE 1 = 1
+        ${scope.where("session", "user")}
+    )${toolBreakdownSql("tool_events")}`,
     params: { ...range(from, to, true), ...scope.params } },
-    // TTFT comes from beta llm_request spans (ttftComparison's source); a span without a valid
-    // ttft_ms attribute is not a zero. Repeated deliveries of one span count once.
+    // TTFT comes from beta llm_request spans (ttftComparison's source) and permission wait from
+    // tool.blocked_on_user duration_ms (permissionWaitOverhead's source). A span without a valid
+    // attribute is not a zero. Repeated deliveries of one span count once.
     traces: { sql: `${GROUP_CTE}${scope.cte}
-    SELECT countIf(valid) AS ttft_samples,
-      if(ttft_samples = 0, NULL, quantileExactLowIf(0.5)(ttft, valid)) AS ttft_p50_ms
+    SELECT countIf(ttft_valid) AS ttft_samples,
+      if(ttft_samples = 0, NULL, quantileExactLowIf(0.5)(ttft, ttft_valid)) AS ttft_p50_ms,
+      if(ttft_samples = 0, NULL, quantileExactLowIf(0.9)(ttft, ttft_valid)) AS ttft_p90_ms,
+      countIf(wait_valid) AS permission_wait_samples,
+      if(permission_wait_samples = 0, NULL, quantileExactLowIf(0.5)(wait, wait_valid)) AS permission_wait_p50_ms
     FROM (
-      SELECT DISTINCT TraceId, SpanId, SessionId AS session,
+      SELECT DISTINCT TraceId, SpanId, SpanType AS type, SessionId AS session,
         coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') AS user,
-        ifNull(toFloat64OrNull(trimBoth(SpanAttributes['ttft_ms'])), -1) AS ttft,
-        isFinite(ttft) AND ttft >= 0 AS valid
+        ${validMs("SpanAttributes['ttft_ms']")} AS ttft,
+        ${validMs("SpanAttributes['duration_ms']")} AS wait,
+        type = 'llm_request' AND ttft >= 0 AS ttft_valid,
+        type = 'tool.blocked_on_user' AND wait >= 0 AS wait_valid
       FROM claude_code.otel_traces
-      WHERE SpanType = 'llm_request' AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
+      WHERE SpanType IN ('llm_request', 'tool.blocked_on_user')
+        AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
     )
     WHERE 1 = 1
       ${scope.where("session", "user")}`,
     params: { ...range(from, to, true), ...scope.params } },
+    users: { sql: `${GROUP_CTE}${scope.cte}, user_active_days AS (
+      SELECT UserEmail AS user, uniqExact(toDate(hour, 'UTC')) AS active_days
+      FROM claude_code.otel_metrics_sum_hourly
+      WHERE UserEmail != '' AND MetricName = 'claude_code.session.count'
+        AND hour >= toStartOfHour({from:DateTime}) AND hour < {to:DateTime}
+        ${scope.where("SessionId", "UserEmail")}
+      GROUP BY user
+    )
+    SELECT m.UserEmail AS user,
+      sumIf(m.Value, m.MetricName = 'claude_code.session.count') AS sessions,
+      sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc,
+      sumIf(m.Value, m.MetricName = 'claude_code.commit.count') AS commits,
+      sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision' AND m.Decision = 'accept') AS accepted,
+      sumIf(m.Value, m.MetricName = 'claude_code.code_edit_tool.decision') AS decisions,
+      any(ad.active_days) AS active_days
+    FROM ${incFlat(userMetrics, span)} m
+    LEFT JOIN user_active_days ad ON m.UserEmail = ad.user
+    WHERE m.UserEmail != ''
+      ${scope.where("m.SessionId", "m.UserEmail")}
+    GROUP BY user`,
+    params: { ...range(from, to, incFlatRaw(span)), ...scope.params } },
   };
 }
 

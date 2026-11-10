@@ -18,10 +18,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 ### Added
 
 - Unify the shared Productivity page for Claude Code and Codex: client summary,
-  per-model efficiency, activity and code-result sections use one row per client in
-  the same columns, backed by the new `GET /api/clients/productivity`. Values a
-  client cannot provide show a not-collected, not-aggregated or not-derived label
-  instead of zero.
+  per-model efficiency, activity, code-result, per-tool permission decision, per-tool
+  result, response/wait latency and activity-index top-user sections use the same
+  columns for every client, backed by the new `GET /api/clients/productivity`. Per-tool
+  lists show the top ten tools plus a remainder row. Values a client cannot provide
+  show a not-collected, not-aggregated or not-derived label instead of zero. The Codex
+  efficiency/effort block moves off Productivity; it remains on Cost.
 
 ### Changed
 

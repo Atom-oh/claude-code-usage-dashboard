@@ -306,36 +306,65 @@ each row with the overview's `by_client` row for the same client.
 Each row has `client`, `prompts`, `tool_calls`, `tool_successes`, `tool_failures`,
 `tool_unknown`, `tool_success_rate`, `decisions_total`, `decisions_allowed`,
 `decisions_denied`, `decisions_unknown`, `permission_allow_rate`, `tool_calls_per_prompt`,
-`ttft_samples`, `ttft_p50_ms`, `ttft_source`, `active_user_seconds`, `active_cli_seconds`,
+`ttft_samples`, `ttft_p50_ms`, `ttft_p90_ms`, `ttft_source`, `permission_wait_samples`,
+`permission_wait_p50_ms`, `by_tool_decisions`, `by_tool_results`, `top_users`,
+`activity_index_users`, `activity_index_scored`, `active_user_seconds`, `active_cli_seconds`,
 `commits`, `prs`, `loc_added`, `loc_removed` and `unavailable`.
 
 | Field | Claude Code | Codex |
 |---|---|---|
 | `prompts` | `user_prompt` log events | `codex.user_prompt` log events (one per user turn) |
 | Tool outcomes | `tool_result`: success is `success=true` without `error`; failure is `success=false` or an `error` | `codex.tool_result` `success=true`/`false` |
-| Decisions | `tool_decision` `accept`/`reject` | `codex.tool_decision` approved/denied families, as in `/api/codex/insights` |
-| `ttft_p50_ms` | Beta `llm_request` span `ttft_ms` (per model request) | `codex.turn_ttft` `duration_ms` (per turn) |
+| Decisions | `tool_decision` `accept`/`reject`; source from `source` | `codex.tool_decision` approved/denied families and `source`, as in `/api/codex/insights` |
+| `ttft_p50_ms`, `ttft_p90_ms` | Beta `llm_request` span `ttft_ms` (per model request) | `codex.turn_ttft` `duration_ms` (per turn) |
+| `permission_wait_p50_ms` | Beta `tool.blocked_on_user` span `duration_ms` (the `permissionWaitOverhead` source, v2.1.214+) | null, `not_aggregated` |
+| `top_users` | Activity index over `userLeaderboard` inputs | null, `not_derived` |
 | Active time, commits, PRs, LOC | Counter increases (`incFlat`), null without in-window counter evidence | null; see `unavailable` |
+
+Totals and per-tool rows come from one log scan per client: each total is the sum of its
+kind's rows. `by_tool_results` and `by_tool_decisions` list, per client and kind, the ten
+tools with the most records (ties by name), then at most one remainder row with
+`other: true`, `tool: null` and `tools` (the number of folded tools); its values are
+computed over the folded records, so its p50 is exact. A missing tool name is `""`.
+Result rows have `tool`, `other`, `tools`, `calls`, `successes`, `failures`, `unknown`,
+`success_rate`, `duration_samples` and `duration_p50_ms` (valid `duration_ms` only).
+Decision rows have `tool`, `other`, `tools`, `decisions`, `allowed`, `denied`, `unknown`,
+`allow_rate`, `source` (the most frequent source, ties by name; `""` when missing) and
+`source_decisions`. An empty list is a measured absence; a missing response is null.
+Permission decisions include automatic approvals and are not code acceptance.
+
+`top_users` lists at most ten Claude users (`UserEmail`, unmasked like
+`/api/users/leaderboard`; the SPA masks them) with `user`, `productivity_score`,
+`accept_rate`, `loc_added`, `commits`, `sessions`, `active_days` and `decisions`. Inputs
+mirror `/api/users/leaderboard` (session count, added lines, commits, code-edit decisions
+from `incFlat`; distinct hourly session-count days) and `withProductivityScore` over the
+effective range, but per user across channels and under the shared filters below rather
+than the Claude detail grouping. Users rank by score; a user without code-edit decisions
+or with a malformed input has a null score and ranks last. `activity_index_users` counts
+the observed users and `activity_index_scored` those with a score.
 
 Log events are deduplicated by timestamp and both attribute maps; spans by trace and span
 id. Rates use known outcomes only (`tool_successes / (tool_successes + tool_failures)`,
 `decisions_allowed / (decisions_allowed + decisions_denied)`); the unknown remainder is
-reported separately, and an empty denominator yields null. P50 is the exact nearest-rank
-lower median of valid nonnegative samples; no samples yields null. A measured zero count
+reported separately, and an empty denominator yields null. P50/P90 are exact nearest-rank
+lower quantiles of valid nonnegative samples; no samples yields null. A measured zero count
 stays 0. `unavailable` maps a null field to a reason: `not_collected` (default OTel has no
 source; Codex `prs`, `commits`, `loc_added`, `loc_removed` need Git/CI evidence),
 `not_aggregated` (no confirmed source metric) or `not_derived` (a dashboard-derived value
 whose inputs are missing; Codex active time, because `codex.turn.e2e_duration_ms` is turn
-elapsed time, not human active time). Claude rows have an empty map.
+elapsed time, not human active time, and Codex `top_users`, because the activity index
+needs lines and commits Codex does not emit). Codex `permission_wait_p50_ms` is
+`not_aggregated`. Claude rows have an empty map.
 
 Filters: Codex follows the overview's event-level rules (user identity, model with
 same-session evidence for model-less events, backend from model/resource tag, session
 team). Claude events, spans and counters carry no usable model, so `model`, `modelExact`
 and `backend` select sessions whose token/cost counters match in the range plus the
 three-day lookback (the overview's counter backend rule); `user`/`userExact` match the
-counter `UserEmail` or the log/span identity; `team` is the session team. All Claude
-channels, including unknown, are included. These are activity observations, not
-productivity, code quality or saved time.
+counter `UserEmail` or the log/span identity; `team` is the session team. The same rules
+apply to the per-tool rows, latency and `top_users` (whose active days use the same session
+scope on the hourly rollup). All Claude channels, including unknown, are included. These
+are activity observations, not productivity, code quality or saved time.
 
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key; the shared default cost profile warms

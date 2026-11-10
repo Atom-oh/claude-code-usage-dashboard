@@ -427,6 +427,14 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {sections.activity}
         <SectionLabel>4 · 코드 결과</SectionLabel>
         {sections.code}
+        <SectionLabel>5 · 권한 결정 · 도구별</SectionLabel>
+        {sections.decisions}
+        <SectionLabel>6 · 도구 실행 결과 · 도구별</SectionLabel>
+        {sections.results}
+        <SectionLabel>7 · 응답·대기</SectionLabel>
+        {sections.latency}
+        <SectionLabel>8 · 활동 지수 · 상위 사용자</SectionLabel>
+        {sections.users}
       </>;
       break;
     }
