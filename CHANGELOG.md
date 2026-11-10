@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-10
+
 ### Added
 
 - Unify the shared Productivity page for Claude Code and Codex: client summary,
@@ -23,18 +25,20 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   columns for every client, backed by the new `GET /api/clients/productivity`. Per-tool
   lists show the top ten tools plus a remainder row. Values a client cannot provide
   show a not-collected, not-aggregated or not-derived label instead of zero. The Codex
-  efficiency/effort block moves off Productivity; it remains on Cost.
+  efficiency/effort block moves off Productivity; it remains on Cost (#241, #242).
 
 ### Changed
 
 - Add Amazon Polly English narration, matching captions and original background
-  music to the documentation walkthrough, with a pinned Remotion audio composition.
+  music to the documentation walkthrough, with a pinned Remotion audio composition (#240).
 
 ### Fixed
 
 - Expand the 90-day user activity heatmap across its card, with larger responsive
   day cells, month/weekday labels and an activity legend. Preserve UTC boundaries
-  and observed-session counts, including unavailable values.
+  and observed-session counts, including unavailable values (#239).
+- Treat scored activity-index users as Productivity evidence, so a window whose only
+  observations are top users is not shown as empty.
 
 ## [1.3.1] - 2026-11-10
 
