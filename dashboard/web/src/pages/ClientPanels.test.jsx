@@ -83,7 +83,9 @@ test.each(routes)("route %s has relevant, bounded content for each client select
     const headers = [...container.querySelectorAll("th")].map((h) => h.textContent);
     signatures.push(headers);
     await waitFor(() => expect(container.querySelector('.recharts-wrapper, svg circle[stroke-width="6"]')).not.toBeNull());
-    expect(container.querySelectorAll("table").length).toBeLessThanOrEqual(4);
+    // Productivity has eight approved sections (summary, model efficiency, activity, code,
+    // decisions, results, latency, top users); other routes stay at four tables.
+    expect(container.querySelectorAll("table").length).toBeLessThanOrEqual(page === "productivity" ? 8 : 4);
     expect(container.textContent).not.toMatch(/직원 ROI|절약 시간|커밋당|LOC/);
     if (!clients.includes("claude")) expect(container.textContent).not.toContain("Claude Code");
     if (!clients.includes("codex")) expect(container.textContent).not.toContain("Codex");

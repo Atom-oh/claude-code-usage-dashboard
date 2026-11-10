@@ -63,8 +63,16 @@ needed for task outcome measures. See [definitions and coverage](../metrics.md#a
 
 Shared `/productivity` renders numbered sections in one layout for every client selection:
 1 client summary, 2 per-model observed efficiency (plus the cache/reasoning card),
-3 activity and 4 code results. Sections 1, 3 and 4 have one row per selected client in
-the same columns. They join each overview `by_client` row (users, sessions, tokens, cost basis)
+3 activity, 4 code results, 5 permission decisions per tool, 6 tool results per tool,
+7 response and wait latency, and 8 activity-index top users. Sections 1, 3, 4 and 7 have
+one row per selected client and sections 5, 6 and 8 one row per client and tool or user,
+always in the same columns. Per-tool tables show each client's top ten tools and a
+remainder row (labelled with its folded tool count) kept last when sorted; an empty list
+shows one no-observed-tool row with measured zeros, and a missing response shows `—`. Section 5
+notes that permission decisions include automatic approvals and are not code acceptance.
+Section 8 masks user identities with `maskEmail` on screen and in CSV (the column has no
+`toText`) and never puts them in URLs; the Codex row shows the `not_derived` chip in every
+measure and Codex permission wait the `not_aggregated` chip. Sections join each overview `by_client` row (users, sessions, tokens, cost basis)
 with `/api/clients/productivity`, requested with the overview's effective bounds. A
 response for a different window is not joined (its values stay `—`) and CSV is disabled
 until the matching one arrives. A field the
@@ -75,7 +83,12 @@ labels. Ratios use observed denominators; LOC per million tokens uses canonical 
 tokens only. The overview's observed records omit productivity-only evidence (prompts,
 spans, outcome and active-time counters), so an empty overview shows the sections when the
 productivity response has such observations or failed, and the empty state only otherwise.
-The Codex Effort block, support-scope card and outcome notice remain below the panels.
+Productivity no longer renders the Codex insights efficiency/effort tab: its tool, approval and
+latency content is covered per client by sections 5–7, and the same Codex efficiency
+summary and per-effort usage/cost table remain on Cost (`INSIGHT_SECTIONS.cost`), which the
+support-scope card points to when Codex is selected. The support-scope card (with the
+Claude-only button that opens the Claude detail view, because the Claude detail page keeps grouped and
+version-level analyses) and the outcome notice remain below the panels.
 
 The shell includes desktop/mobile navigation, the filter bar, freshness banner and floating
 chat. The floating chat window resizes from its top-left handle (pointer drag or arrow keys)

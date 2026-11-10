@@ -19,8 +19,10 @@ import { costDefaultResolution, costResolutionLabel, costResolutionOptions } fro
 import CostBreakdowns from "../components/CostBreakdowns.jsx";
 import { hasProductivityObservations } from "../clientProductivity.js";
 
+// Productivity carries no Codex insights block: its tool/approval/latency sections cover every
+// client, and the Codex efficiency summary and effort table stay on Cost.
 const INSIGHT_SECTIONS = {
-  productivity: ["효율·Effort"], cost: ["효율·Effort"], usage: ["도구·승인"],
+  cost: ["효율·Effort"], usage: ["도구·승인"],
   reliability: ["성능"], analytics: ["런타임·메트릭", "Trace"],
 };
 
@@ -135,9 +137,12 @@ export default function Clients({ page = "overview" }) {
         <Card title="지표 지원 범위">
           <p className="text-sm text-ink-600">
             토큰·비용·사용자·도구·오류는 같은 기준의 화면에서 확인합니다.
-            LOC·커밋·PR 기반 활동은 Claude 전용 지표이며, Codex에서는 추가 계측이 필요합니다.
+            LOC·커밋·PR 기반 활동과 활동 지수는 Claude 전용 지표이며, Codex에서는 추가 계측이 필요합니다.
             관측값은 코드 품질이나 절감 시간을 증명하지 않습니다.
           </p>
+          {page === "productivity" && clients.includes("codex") && <p className="mt-2 text-sm text-ink-600">
+            Codex 효율 요약과 Effort별 사용량·비용은 비용 페이지의 Codex 상세 관측에서 확인합니다.
+          </p>}
           {client === "claude" && <button type="button" onClick={() => setDetail(true)}
             className="mt-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-700">
             Claude 전용 분석 열기

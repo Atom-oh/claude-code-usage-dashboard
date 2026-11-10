@@ -792,3 +792,13 @@ test("productivity-only evidence shows the productivity sections instead of the 
   expect(await screen.findByText("선택한 기간에 데이터가 없습니다.")).toBeTruthy();
   expect(document.querySelector("[data-shared-client-panels]")).toBeNull();
 });
+
+test("Productivity folds the Codex efficiency block into Cost and keeps the scope card", async () => {
+  const { fetchMock } = mount({ enabledClients: ["claude", "codex"], entry: "/productivity" });
+  expect(await screen.findByText("5 · 권한 결정 · 도구별")).toBeTruthy();
+  expect(screen.getByText("8 · 활동 지수 · 상위 사용자")).toBeTruthy();
+  expect(screen.getByText("지표 지원 범위")).toBeTruthy();
+  expect(screen.getByText(/Effort별 사용량·비용은 비용 페이지의 Codex 상세 관측에서 확인합니다/)).toBeTruthy();
+  expect(screen.queryByText("Codex 상세 관측")).toBeNull();
+  expect(requests(fetchMock).some((url) => url.pathname === "/api/codex/insights")).toBe(false);
+});
