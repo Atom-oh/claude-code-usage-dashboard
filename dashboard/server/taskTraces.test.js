@@ -621,9 +621,11 @@ test("parseTaskId rejects injection-shaped ids", () => {
     assert.throws(() => parseTaskId(bad), { name: "ValidationError" }, String(bad));
 });
 
-test("validateTaskDetailQuery rejects a disabled client and requires userExact", () => {
+test("validateTaskDetailQuery rejects a disabled client; userExact is optional but validated", () => {
   assert.throws(() => validateTaskDetailQuery({ id: `codex:c1:${U1}`, userExact: "a" }, ["claude"]), { name: "ValidationError" });
-  assert.throws(() => validateTaskDetailQuery({ id: `claude:${TRACE}` }, both), { name: "ValidationError" });
+  assert.equal(validateTaskDetailQuery({ id: `claude:${TRACE}` }, both).userExact, null);
+  for (const bad of ["", ["a"], "x".repeat(257)])
+    assert.throws(() => validateTaskDetailQuery({ id: `claude:${TRACE}`, userExact: bad }, both), { name: "ValidationError" });
   assert.equal(validateTaskDetailQuery({ id: `claude:${TRACE}`, userExact: "a" }, both).task.traceId, TRACE);
 });
 
@@ -872,7 +874,10 @@ test("codex detail links completions to sampling spans and keeps the list totals
 
 const fakeRun = (tables) => async (sql, params) => {
   if (sql.includes("SpanType = 'interaction'"))
-    return tables.owner === params.userExact && params.traceId === TRACE ? [header()] : [];
+    return (params.userExact === undefined || tables.owner === params.userExact) && params.traceId === TRACE
+      ? [header({ owner: tables.owner })] : [];
+  if (sql.includes("GROUP BY owner"))
+    return params.turnId === U1 && params.conversationId === "c1" ? [{ owner: tables.owner }] : [];
   // Claude spans are gated by the header; Codex spans carry the exact user.
   if (sql.includes("count() OVER ()"))
     return params.userExact === undefined || tables.owner === params.userExact ? [llm("a", 0, { total_spans: "1" })] : [];
@@ -930,4 +935,29 @@ test("index.js keys and routes the detail endpoint", async () => {
   assert.match(src, /path === "\/api\/users\/tasks\/detail"\) return `\$\{path\}\?\$\{taskDetailCacheKey\(query, clientConfig\.enabledClients\)\}`/);
   assert.match(src, /err instanceof NotFoundError\) return res\.status\(404\)\.json\(\{ error: "not found" \}\)/);
   assert.match(src, /route\("\/api\/users\/tasks\/detail"/);
+});
+
+test("a shared link (no userExact) resolves the task owner and returns it", async () => {
+  const run = fakeRun({ owner: "kim@x.com" });
+  const claude = await userTaskDetail(from, to, { id: `claude:${TRACE}` }, both, run);
+  assert.equal(claude.owner, "kim@x.com");
+  assert.equal(claude.task.cost_usd, 0.3);
+  const withUser = await userTaskDetail(from, to, { id: `claude:${TRACE}`, userExact: "kim@x.com" }, both, run);
+  assert.equal(withUser.owner, "kim@x.com");
+  const codex = await userTaskDetail(from, to, { id: `codex:c1:${U1}` }, both, run, DEFAULT_CODEX_PRICING);
+  assert.equal(codex.owner, "kim@x.com");
+  assert.equal(codex.task.id, `codex:c1:${U1}`);
+  // Unknown task, an identity-less owner or two owners of one turn: the same 404.
+  for (const [raw, tables] of [[{ id: `claude:${"f".repeat(32)}` }, { owner: "kim@x.com" }],
+    [{ id: `claude:${TRACE}` }, { owner: "" }], [{ id: `codex:c9:${U1}` }, { owner: "kim@x.com" }],
+    [{ id: `codex:c1:${U1}` }, { owner: "" }]]) {
+    const err = await userTaskDetail(from, to, raw, both, fakeRun(tables), DEFAULT_CODEX_PRICING).then(() => null, e => e);
+    assert.ok(err instanceof NotFoundError, JSON.stringify([raw, tables]));
+  }
+  const twoOwners = async (sql, params) => sql.includes("GROUP BY owner") ? [{ owner: "a" }, { owner: "b" }] : run(sql, params);
+  const err = await userTaskDetail(from, to, { id: `codex:c1:${U1}` }, both, twoOwners, DEFAULT_CODEX_PRICING).then(() => null, e => e);
+  assert.ok(err instanceof NotFoundError);
+  // Without a user the header has no user condition; with one it keeps EXACT_USER.
+  assert.ok(!claudeDetailSql(from, to, TRACE, { userExact: null }).header.sql.includes("{userExact:String}"));
+  assert.ok(claudeDetailSql(from, to, TRACE, { userExact: "a" }).header.sql.includes("{userExact:String}"));
 });

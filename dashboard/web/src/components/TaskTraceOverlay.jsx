@@ -15,6 +15,34 @@ import { maskEmail } from "../fmt.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { clientName, formatClientTimestamp, observedNumber } from "../clientPresentation.js";
 import { compactCount, laneName, laneOrder, modelBreakdown, modelKey, timelineEnd } from "../taskTrace.js";
+import { taskSharePath } from "../clientNavigation.js";
+
+// Copies the task's share link (/tasks/<id>/<from>/<to>; no user in the URL). Without
+// clipboard access the link is shown in a read-only field to copy by hand.
+function ShareLink({ taskId, from, to }) {
+  const [state, setState] = useState(null);
+  const url = typeof window === "undefined" ? taskSharePath(taskId, from, to)
+    : new URL(taskSharePath(taskId, from, to), window.location.origin).toString();
+  const copy = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("no clipboard");
+      await navigator.clipboard.writeText(url);
+      setState("copied");
+    } catch {
+      setState("manual");
+    }
+  };
+  return <div className="flex flex-col items-end gap-1">
+    <button type="button" onClick={copy} className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700 hover:bg-ink-50">
+      링크 복사</button>
+    {state === "copied" && <span role="status" className="text-[12px] text-positive-text">링크를 복사했습니다</span>}
+    {state === "manual" && <label className="flex flex-col items-end gap-1 text-[12px] text-ink-500">
+      자동 복사가 막혀 있어 직접 복사하세요
+      <input readOnly value={url} onFocus={(e) => e.target.select()} aria-label="작업 링크"
+        className="w-72 rounded border border-ink-200 px-2 py-1 text-[12px] text-ink-700" />
+    </label>}
+  </div>;
+}
 
 const MISSING = "미수집";
 const TRUNCATED = "일부 span만 표시 — 전체 합계 미표시";
@@ -160,8 +188,11 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
   </>;
 }
 
+// `user` is the exact user the task list belongs to. A shared link has none: the server
+// resolves the owner and returns it, and the header masks that instead.
 export function TaskTraceOverlay({ taskId, user, from, to, onClose }) {
-  const api = useApi("/api/users/tasks/detail", { id: taskId, from, to, userExact: user }, Boolean(taskId), { unfiltered: true });
+  const api = useApi("/api/users/tasks/detail", { id: taskId, from, to, userExact: user || undefined }, Boolean(taskId),
+    { unfiltered: true });
   const [selectedId, setSelectedId] = useState(null);
   const [highlightKey, setHighlightKey] = useState(null);
   const dialogRef = useRef(null);
@@ -186,11 +217,14 @@ export function TaskTraceOverlay({ taskId, user, from, to, onClose }) {
             {task && <Badge tone={task.client === "codex" ? "brand" : "neutral"}>{clientName(task.client)}</Badge>}
           </h2>
           <p className="text-[12px] text-ink-500 [overflow-wrap:anywhere]">
-            {[task ? formatClientTimestamp(task.started_at) : null, maskEmail(user),
+            {[task ? formatClientTimestamp(task.started_at) : null, user || api.data?.owner ? maskEmail(user || api.data.owner) : null,
               task?.models?.length ? task.models.join(", ") : null].filter(Boolean).join(" · ")}
             {" · trace를 켠 사용자만 수집 · 프롬프트·명령·경로 원문은 표시하지 않습니다"}</p>
         </div>
-        <button type="button" onClick={() => onClose?.()} className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700">닫기</button>
+        <div className="flex items-start gap-2">
+          <ShareLink taskId={taskId} from={from} to={to} />
+          <button type="button" onClick={() => onClose?.()} className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700">닫기</button>
+        </div>
       </div>
       {api.error ? <ErrorBox error={api.error} /> : pending || !api.data ? <Loading />
         : <Body data={api.data} selectedId={selectedId} onSelect={setSelectedId}

@@ -550,10 +550,14 @@ turn's window are unattached unless another turn wins them; otherwise it is null
 `/api/users/tasks/detail` (not warmed; `team` rejected) returns one task of the list:
 required `id` (exactly as listed: `claude:<32 lowercase hex>` or
 `codex:<conversation id>:<turn id>` with identifier characters and a UUID-shaped turn
-id; else 400), `userExact`,
+id; else 400), optional `userExact`,
 `from` and `to` (the list's bucket). A disabled client's id is 400. A task that does not
 belong to `userExact` in that bucket, or does not exist, returns 404 `{"error": "not found"}`
-either way. Response `{task, lanes, spans, truncated, span_total, why}`:
+either way. Without `userExact` (a shared task link) the owner is resolved: the Claude
+interaction's identity, or the single identity on the Codex turn's spans of that
+conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
+access. Response `{task, lanes, spans, truncated, span_total, why, owner}`, `owner` being
+the exact identity the task belongs to:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no `codex.sampling` span).

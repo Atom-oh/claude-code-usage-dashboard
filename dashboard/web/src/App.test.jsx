@@ -189,3 +189,30 @@ test("sidebar links the public user guide in a new tab outside the page nav", ()
   expect(guide.getAttribute("rel")).toContain("noreferrer");
   expect(container.querySelector("nav").contains(guide)).toBe(false);
 });
+
+test("a shared task link opens the task detail without a user and stays on its path", async () => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  const fetch = vi.fn(url => Promise.resolve({ ok: true, status: 200, json: async () => String(url).startsWith("/api/health/data")
+    ? { status: "ok", ageMinutes: 0, staleAfterMinutes: 360 } : String(url).startsWith("/api/users/tasks/detail")
+      ? { task: { client: "claude", started_at: "2026-11-10T06:00:00Z", duration_ms: 1000, models: [], tokens: {} },
+        lanes: [], spans: [], truncated: false, span_total: 0, why: [], owner: "kim@example.test" } : [] }));
+  vi.stubGlobal("fetch", fetch);
+  const id = "claude:0123456789abcdef0123456789abcdef";
+  const { container } = render(<MemoryRouter initialEntries={[
+    `/tasks/${[id, "2026-11-10T06:00:00.000Z", "2026-11-10T07:00:00.000Z"].map(encodeURIComponent).join("/")}?days=7`]}>
+    <ConfigProvider config={{ enabledClients: ["claude", "codex"], piiMask: true }}><App /></ConfigProvider>
+  </MemoryRouter>);
+  expect(await screen.findByRole("dialog", { name: "작업 상세" })).toBeTruthy();
+  await waitFor(() => expect(fetch.mock.calls.some(([u]) => String(u).startsWith("/api/users/tasks/detail"))).toBe(true));
+  const detail = new URL(String(fetch.mock.calls.find(([u]) => String(u).startsWith("/api/users/tasks/detail"))[0]), "http://x");
+  expect(detail.searchParams.get("id")).toBe(id);
+  expect(detail.searchParams.has("userExact")).toBe(false);
+  expect(detail.searchParams.get("from")).toBe("2026-11-10T06:00:00.000Z");
+  // No usage filter bar on this page.
+  expect(container.querySelector("main").children.length).toBe(1);
+  cleanup();
+  render(<MemoryRouter initialEntries={["/tasks/claude%3Aabc/bad/worse"]}>
+    <ConfigProvider config={{ enabledClients: ["claude"] }}><App /></ConfigProvider>
+  </MemoryRouter>);
+  expect(screen.getByRole("alert").textContent).toContain("작업 링크가 올바르지 않습니다");
+});

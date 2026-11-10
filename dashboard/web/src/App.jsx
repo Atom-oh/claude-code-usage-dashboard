@@ -25,7 +25,8 @@ import SessionBoundary from "./SessionBoundary.jsx";
 import Installation from "./pages/Installation.jsx";
 import CollectorSetup from "./pages/CollectorSetup.jsx";
 import Changelog from "./pages/Changelog.jsx";
-import { CHANGELOG_PATH } from "./clientNavigation.js";
+import SharedTask from "./pages/SharedTask.jsx";
+import { CHANGELOG_PATH, isTaskPath } from "./clientNavigation.js";
 import { TeamsProvider } from "./TeamsContext.jsx";
 
 export default function App() {
@@ -40,6 +41,7 @@ function Dashboard() {
   const installation = pathname === "/installation";
   const collector = pathname === "/collector";
   const changelog = pathname === CHANGELOG_PATH;
+  const sharedTask = isTaskPath(pathname);
   return (
     <RefreshProvider>
       <RangeProvider>
@@ -49,7 +51,7 @@ function Dashboard() {
               <MobileNav />
               <Sidebar />
               <main className="min-w-0 flex-1 overflow-y-auto animate-fade-in">
-                {installation ? <Installation /> : collector ? <CollectorSetup /> : changelog ? <Changelog /> : <TeamsProvider>
+                {installation ? <Installation /> : collector ? <CollectorSetup /> : changelog ? <Changelog /> : sharedTask ? <SharedTask /> : <TeamsProvider>
                 <FreshnessBanner className="mx-8 mt-3" />
                 <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
                   <FilterBar />
