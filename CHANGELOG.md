@@ -38,7 +38,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   day cells, month/weekday labels and an activity legend. Preserve UTC boundaries
   and observed-session counts, including unavailable values (#239).
 - Treat scored activity-index users as Productivity evidence, so a window whose only
-  observations are top users is not shown as empty.
+  observations are scored top users is not shown as empty; unscored users (lookback-only
+  counter samples) are not evidence (#243).
 
 ## [1.3.1] - 2026-11-10
 
