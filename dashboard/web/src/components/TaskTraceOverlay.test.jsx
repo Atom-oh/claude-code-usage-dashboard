@@ -40,6 +40,10 @@ const claudeDetail = () => ({
       cost_basis: "client_reported" },
   ],
   truncated: false, span_total: 5,
+  context: { points: [{ span: "llm-1", lane: "main", start_ms: 0, tokens: 3300 },
+    { span: "llm-2", lane: "agent-a", start_ms: 6000, tokens: 5400 },
+    { span: "llm-3", lane: "agent-b", start_ms: 70000, tokens: 1200 }], missing: 0, partial: false,
+  compactions: [{ start_ms: 50000, pre_tokens: 320000, post_tokens: 41000, trigger: "auto", success: true }], limits: null },
   why: [{ rule: "cache_read_share", value: 0.83 }, { rule: "top_lane_share", value: { lane: "agent-a", share: 0.5 } },
     { rule: "most_expensive_call", value: { span: "llm-2", cost_usd: 1.25 } }, { rule: "retries", value: 0 }],
 });
@@ -53,6 +57,8 @@ const codexDetail = () => ({
     attrs: { model: "gpt-6.1" }, tokens: tokens(200, 800, 0, 100), cost_usd: 0.25, cost_basis: "linked_estimate",
     completion: { model: "gpt-6.1", effort: "high", ttft_ms: null, duration_ms: 4800, count: 1 } }],
   truncated: false, span_total: 1,
+  context: { points: [{ span: "s1", lane: "main", start_ms: 0, tokens: 1000 }], missing: 0, partial: false,
+    compactions: null, limits: { context_window: 1000000, auto_compact_token_limit: 2000 } },
   why: [{ rule: "most_expensive_call", value: { span: null, cost_usd: 0.25 } }],
 });
 
@@ -315,4 +321,58 @@ test("without a user the request omits userExact and the header masks the return
   expect(req.searchParams.has("userExact")).toBe(false);
   expect(screen.getByRole("dialog").textContent).toContain("al******@example.test");
   expect(screen.getByRole("dialog").textContent).not.toContain(USER);
+});
+
+test("context chart: per-lane points, compaction mark and no window share for Claude", async () => {
+  mount();
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  const summary = within(section).getByRole("list", { name: "컨텍스트 요약" });
+  expect(summary.textContent).toContain("최대 5.4K (호출 #2)");
+  expect(summary.textContent).toContain("컴팩션 1회 (auto 320K → 41K)");
+  expect(summary.textContent).not.toContain("컨텍스트 창");
+  expect(section.querySelectorAll("[data-context-point]").length).toBe(3);
+  expect(section.querySelectorAll("[data-compaction]").length).toBe(1);
+  expect(section.querySelector("[data-context-limit]")).toBeNull();
+  expect(section.textContent).toContain("Claude Code는 컨텍스트 창 크기를 보내지 않아");
+  expect(section.textContent).toContain("컴팩션 토큰은 Claude Code가 보고한 값");
+  fireEvent.click(within(section).getByRole("button", { name: /^LLM 호출 #2 · Explore · 컨텍스트 5.4K/ }));
+  expect(within(panel()).getByText("5,400")).toBeTruthy();
+});
+
+test("context chart: Codex limit line and shares, unknown compactions not claimed", async () => {
+  body = codexDetail();
+  mount({ taskId: CODEX_ID });
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  const summary = within(section).getByRole("list", { name: "컨텍스트 요약" });
+  expect(summary.textContent).toContain("자동 컴팩션 한도 2K의 50%");
+  expect(summary.textContent).toContain("컨텍스트 창 1M의 <1%");
+  expect(summary.textContent).not.toContain("컴팩션 없음");
+  expect(section.querySelector("[data-context-limit]")).not.toBeNull();
+  expect(section.textContent).not.toContain("Claude Code는");
+});
+
+test("context chart: unknown compaction link and missing tokens are disclosed, absent context hides it", async () => {
+  body = claudeDetail();
+  body.context = { ...body.context, compactions: null, missing: 2,
+    points: [...body.context.points, { span: "x", lane: "main", start_ms: 1, tokens: null }] };
+  mount();
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  expect(section.textContent).toContain("컴팩션 미수집");
+  expect(section.textContent).toContain("토큰 미수집 호출 2개는 그리지 않음");
+  expect(section.querySelectorAll("[data-context-point]").length).toBe(3);
+  cleanup();
+  body = claudeDetail();
+  delete body.context;
+  mount();
+  await screen.findByRole("region", { name: "선택한 span 상세" });
+  expect(screen.queryByRole("region", { name: "컨텍스트 크기" })).toBeNull();
+});
+
+test("context chart clamps a compaction after the last span to the axis edge", async () => {
+  body = claudeDetail();
+  body.context = { ...body.context, compactions: [{ start_ms: 999999, pre_tokens: 9000, post_tokens: 100, trigger: "auto", success: true }] };
+  mount();
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  const mark = section.querySelector("[data-compaction] line");
+  expect(Number(mark.getAttribute("x1"))).toBeCloseTo(880, 0);
 });

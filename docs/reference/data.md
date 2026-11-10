@@ -271,6 +271,11 @@ users, so every result is partial. Rules:
   a turn. Synthetic ids such as `auto-compact-N` repeat across conversations; those turns
   are unlinkable (counted in `turns_without_unique_id`, never listed, never win a
   completion), and the detail span query also requires the task's conversation id or none.
+- Context: compactions link to a Claude task only through the `prompt.id` of its
+  `api_request` logs (many compactions fall outside interaction spans, so a time window
+  would misattribute them); their log window opens one hour before `from`. Codex limits
+  come from the exact user's `codex.conversation_starts` for the conversation, at most
+  7 days before the turn. Prompt ids are never returned.
 - Windows: Claude spans of the `TraceId` are read in `[from, to + 24h)` because subagent
   spans can start hours after the interaction; Codex turn spans in `[from - 24h, to + 24h)`
   so a turn crossing a bucket edge belongs to its starting bucket only.

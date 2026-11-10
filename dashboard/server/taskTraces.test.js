@@ -586,7 +586,8 @@ test("a turn spanning the bucket start is listed once, by its starting bucket", 
 // ── Task detail (taskTraceDetail.js) ─────────────────────────────────────
 const detail = await import("./taskTraceDetail.js");
 const { parseTaskId, claudeDetailSql, codexDetailSql, foldTaskDetail, userTaskDetail, taskDetailCacheKey,
-  validateTaskDetailQuery, SPAN_ATTRIBUTE_ALLOWLIST, SPAN_BOUND } = detail;
+  validateTaskDetailQuery, SPAN_ATTRIBUTE_ALLOWLIST, SPAN_BOUND, claudeCompactionSql, codexLimitsSql,
+  foldCompactions, foldLimits, COMPACTION_LIMIT } = detail;
 const { NotFoundError } = await import("./http.js");
 
 const TRACE = "0123456789abcdef0123456789abcdef";
@@ -960,4 +961,99 @@ test("a shared link (no userExact) resolves the task owner and returns it", asyn
   // Without a user the header has no user condition; with one it keeps EXACT_USER.
   assert.ok(!claudeDetailSql(from, to, TRACE, { userExact: null }).header.sql.includes("{userExact:String}"));
   assert.ok(claudeDetailSql(from, to, TRACE, { userExact: "a" }).header.sql.includes("{userExact:String}"));
+});
+
+test("context series: one point per call in time order, unknown tokens counted missing", () => {
+  const rows = [llm("b", 5000, { a_input_tokens: "20", a_cache_read_tokens: "300" }), llm("a", 1000),
+    llm("c", 9000, { agent_id: "ag1", a_cache_creation_tokens: "" })];
+  const out = foldTaskDetail({ client: "claude", ...header() }, rows, [{ request_id: "r-a", cost_usd: 0.1 }]);
+  assert.deepEqual(out.context.points, [{ span: "a", lane: "main", start_ms: 1000, tokens: 110 },
+    { span: "b", lane: "main", start_ms: 5000, tokens: 320 }, { span: "c", lane: "ag1", start_ms: 9000, tokens: null }]);
+  assert.equal(out.context.missing, 1);
+  assert.equal(out.context.partial, false);
+  // No prompt id on any call: the compaction link is unknown, not "no compaction".
+  assert.equal(out.context.compactions, null);
+  assert.equal(out.context.limits, null);
+});
+
+test("compactions link through prompt ids and are deduplicated and bounded", () => {
+  const rows = [llm("a", 1000)];
+  const costs = [{ request_id: "r-a", cost_usd: 0.1, prompt_id: "p1" }];
+  const at = String(t0 + 20000);
+  const comp = { ts_ms: at, prompt_id: "p1", pre_tokens: "320000", post_tokens: "41000", trigger: "auto", success: "true" };
+  const out = foldTaskDetail({ client: "claude", ...header() }, rows, costs, [comp, { ...comp },
+    { ...comp, ts_ms: String(t0 + 30000), pre_tokens: "x", trigger: "has space", success: "" }]);
+  assert.deepEqual(out.context.compactions, [
+    { start_ms: 20000, pre_tokens: 320000, post_tokens: 41000, trigger: "auto", success: true },
+    { start_ms: 30000, pre_tokens: null, post_tokens: 41000, trigger: null, success: null }]);
+  assert.deepEqual(foldTaskDetail({ client: "claude", ...header() }, rows, costs, []).context.compactions, []);
+  const many = Array.from({ length: COMPACTION_LIMIT + 5 }, (_, i) => ({ ...comp, ts_ms: String(t0 + i) }));
+  assert.equal(foldCompactions(many, t0).length, COMPACTION_LIMIT);
+  assert.ok(!JSON.stringify(out).includes("p1"), "prompt ids are never returned");
+});
+
+test("compaction and limit SQL bind every value", () => {
+  const c = claudeCompactionSql(from, to, ["p1", "p2"]);
+  assert.deepEqual(c.params.promptIds, ["p1", "p2"]);
+  assert.match(c.sql, /LogAttributes\['prompt\.id'\] IN \{promptIds:Array\(String\)\}/);
+  assert.match(c.sql, /EventName IN \('compaction', 'claude_code\.compaction'\)/);
+  assert.equal(c.params.logFrom, "2026-11-04 23:00:00", "an hour before the bucket");
+  assert.equal(c.params.logTo, "2026-11-07 00:00:00");
+  const start = ms("2026-11-05T10:00:00Z");
+  const l = codexLimitsSql({ userExact: "kim@x.com" }, "c1", start);
+  assert.equal(l.params.conversationId, "c1");
+  assert.equal(l.params.userExact, "kim@x.com");
+  assert.equal(l.params.logFrom, "2026-10-29 10:00:00");
+  assert.ok(l.params.beforeMs > start);
+  assert.match(l.sql, /ORDER BY Timestamp DESC\s+LIMIT 1/);
+  for (const { sql } of [c, l]) {
+    assert.ok(!sql.includes("kim@x.com") && !sql.includes("p1") && !sql.includes("c1"));
+    assert.ok(!/SELECT \*/.test(sql));
+  }
+});
+
+test("Codex limits: reported values, unknown when absent", () => {
+  assert.deepEqual(foldLimits([{ context_window: "1000000", auto_compact_token_limit: "180000" }]),
+    { context_window: 1000000, auto_compact_token_limit: 180000 });
+  assert.deepEqual(foldLimits([{ context_window: "1048576", auto_compact_token_limit: "" }]),
+    { context_window: 1048576, auto_compact_token_limit: null });
+  assert.equal(foldLimits([{ context_window: "", auto_compact_token_limit: "-1" }]), null);
+  assert.equal(foldLimits([]), null);
+});
+
+test("detail runs the compaction query only with prompt ids and the limits query for Codex", async () => {
+  const seen = [];
+  const run = async (sql, params) => {
+    seen.push(sql);
+    if (sql.includes("SpanType = 'interaction'")) return [header({ owner: "kim@x.com" })];
+    if (sql.includes("count() OVER ()")) return [llm("a", 0, { total_spans: "1" })];
+    if (sql.includes("request_id IN") || sql.includes("{requestIds:Array(String)}")) return [{ request_id: "r-a", cost_usd: 0.3, prompt_id: "p1" }];
+    if (sql.includes("'compaction'")) return [{ ts_ms: String(t0 + 10), prompt_id: "p1", pre_tokens: "9", post_tokens: "1", trigger: "manual", success: "true" }];
+    return [];
+  };
+  const out = await userTaskDetail(from, to, { id: `claude:${TRACE}`, userExact: "kim@x.com" }, both, run);
+  assert.equal(out.context.compactions.length, 1);
+  assert.ok(seen.some(s => s.includes("'compaction'")));
+  const noPrompt = [];
+  await userTaskDetail(from, to, { id: `claude:${TRACE}`, userExact: "kim@x.com" }, both, async (sql, p) => {
+    noPrompt.push(sql);
+    if (sql.includes("{requestIds:Array(String)}")) return [{ request_id: "r-a", cost_usd: 0.3 }];
+    return run(sql, p);
+  });
+  assert.ok(!noPrompt.some(s => s.includes("'compaction'")));
+});
+
+test("the detail cache key keeps a shared link apart from a literal null user", () => {
+  const base = { from: "2026-11-05T00:00:00Z", to: "2026-11-06T00:00:00Z", id: `claude:${TRACE}` };
+  const shared = taskDetailCacheKey(base, both);
+  const literal = taskDetailCacheKey({ ...base, userExact: "null" }, both);
+  assert.notEqual(shared, literal);
+  assert.ok(!shared.includes("userExact"));
+  assert.ok(literal.includes("userExact=null"));
+});
+
+test("Codex limits are bounded by the turn end plus slack", () => {
+  const start = ms("2026-11-05T10:00:00Z"), end = start + 600000;
+  assert.ok(codexLimitsSql({ userExact: "a" }, "c1", start, end).params.beforeMs > end);
+  assert.ok(codexLimitsSql({ userExact: "a" }, "c1", start).params.beforeMs > start);
 });

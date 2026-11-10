@@ -556,7 +556,7 @@ belong to `userExact` in that bucket, or does not exist, returns 404 `{"error": 
 either way. Without `userExact` (a shared task link) the owner is resolved: the Claude
 interaction's identity, or the single identity on the Codex turn's spans of that
 conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
-access. Response `{task, lanes, spans, truncated, span_total, why, owner}`, `owner` being
+access. Response `{task, lanes, spans, truncated, span_total, why, context, owner}`, `owner` being
 the exact identity the task belongs to:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
@@ -589,6 +589,18 @@ the exact identity the task belongs to:
   (`{span, cost_usd}`, all costs known), `retries` (calls with `attempt > 1`; omitted unless every call carries `attempt`) and
   `permission_wait` (Claude wait-span milliseconds). A rule whose inputs are unavailable is
   omitted, never zero-filled. Data rules: [data reference](reference/data.md#user-task-traces).
+- `context`: `{points, missing, partial, compactions, limits}`. `points` are
+  `{span, lane, start_ms, tokens}` per LLM call in time order: Claude input + cache read +
+  cache write, Codex the completion's input including cache (`span` null when no sampling
+  span matched). `tokens` is null when any part is unknown and counted in `missing`;
+  `partial` marks a truncated Claude detail or a limited Codex turn set. `compactions`
+  (Claude) are `{start_ms, pre_tokens, post_tokens, trigger, success}` of compaction events
+  whose `prompt.id` is a prompt of the task's calls, at most 100; null when no call has a
+  prompt id, and always null for Codex. `limits` (Codex) is the latest
+  `codex.conversation_starts` of the conversation stored up to the turn's end (a start can
+  be stored with the collector's later observed time), looking back 7 days:
+  `{context_window, auto_compact_token_limit}`, null when none is reported; always null for
+  Claude, which reports no context window.
 
 ### Teams
 

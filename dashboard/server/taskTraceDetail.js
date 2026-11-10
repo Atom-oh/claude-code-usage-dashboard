@@ -21,6 +21,11 @@ export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
 });
 // Newest spans returned per task; beyond it the detail is flagged truncated.
 export const SPAN_BOUND = 5000;
+// Claude compaction events per task (linked through the calls' prompt ids).
+export const COMPACTION_LIMIT = 100;
+// A Codex conversation reports its limits when it starts or resumes; look back this far.
+export const CONVERSATION_LOOKBACK_MS = 7 * 24 * 3600 * 1000;
+const PROMPT_LEAD_MS = 3600 * 1000;
 
 const NUMERIC_ATTRS = new Set(["input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
   "ttft_ms", "attempt", "status_code"]);
@@ -69,7 +74,9 @@ export function validateTaskDetailQuery(raw, enabledClients) {
 // Canonical cache key over every parameter the handler reads.
 export function taskDetailCacheKey(query, enabledClients) {
   const { id, userExact } = validateTaskDetailQuery(query, enabledClients);
-  const normalized = { from: query.from, to: query.to, id, userExact };
+  // An absent user (shared link) is left out of the key: null must never serialize to
+  // "null" and collide with a user whose identity string is literally "null".
+  const normalized = { from: query.from, to: query.to, id, ...(userExact === null ? {} : { userExact }) };
   return new URLSearchParams(Object.entries(normalized)
     .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString();
 }
@@ -182,6 +189,82 @@ LIMIT 2`,
   };
 }
 
+// Claude Code's compaction event carries the prompt.id of the prompt it compacted for; the
+// task's api_request logs give its prompt ids, so the link is exact (not a time window).
+// The log window opens an hour early: a prompt can compact before its interaction span starts.
+export function claudeCompactionSql(from, to, promptIds) {
+  return {
+    sql: `SELECT toString(toUnixTimestamp64Milli(Timestamp)) AS ts_ms,
+    LogAttributes['prompt.id'] AS prompt_id,
+    LogAttributes['pre_tokens'] AS pre_tokens,
+    LogAttributes['post_tokens'] AS post_tokens,
+    LogAttributes['trigger'] AS trigger,
+    LogAttributes['success'] AS success
+FROM claude_code.otel_logs
+PREWHERE Timestamp >= {logFrom:DateTime} AND Timestamp < {logTo:DateTime}
+  AND EventName IN ('compaction', 'claude_code.compaction')
+WHERE LogAttributes['prompt.id'] IN {promptIds:Array(String)}
+ORDER BY Timestamp
+LIMIT ${COMPACTION_LIMIT * 2}`,
+    params: { logFrom: toChDateTime(new Date(from.getTime() - PROMPT_LEAD_MS)),
+      logTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), promptIds },
+  };
+}
+
+// Limits the Codex conversation reported at its latest start or resume (codex.conversation_
+// starts: context_window, auto_compact_token_limit). Stored Timestamp can be the collector's
+// observed time for zero-source-time logs, so the bound is the turn's end, not its start.
+export function codexLimitsSql(q, conversationId, turnStartMs, turnEndMs = turnStartMs) {
+  const before = new Date(Math.max(turnStartMs, turnEndMs) + COMPLETION_SLACK_MS);
+  return {
+    sql: `SELECT LogAttributes['context_window'] AS context_window,
+    LogAttributes['auto_compact_token_limit'] AS auto_compact_token_limit
+FROM claude_code.otel_logs
+PREWHERE Timestamp >= {logFrom:DateTime} AND Timestamp < {logTo:DateTime}
+  AND EventName = 'codex.conversation_starts'
+  AND ${EXACT_USER}
+WHERE LogAttributes['conversation.id'] = {conversationId:String}
+  AND coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') = {userExact:String}
+  AND toUnixTimestamp64Milli(Timestamp) <= {beforeMs:Int64}
+ORDER BY Timestamp DESC
+LIMIT 1`,
+    params: { logFrom: toChDateTime(new Date(turnStartMs - CONVERSATION_LOOKBACK_MS)),
+      logTo: toChDateTime(new Date(before.getTime() + 1000)), userExact: q.userExact, conversationId,
+      beforeMs: before.getTime() },
+  };
+}
+
+// Per-call input context (input + cache read + cache write; Codex: input incl. cache), in
+// time order. A call with any unknown component has tokens null and counts as missing.
+function contextSeries(calls, t0, partial) {
+  const points = calls.map(c => ({ span: c.id ?? null, lane: c.lane,
+    start_ms: c.start !== null && c.start !== undefined && t0 !== null ? c.start - t0 : null, tokens: c.context }))
+    .sort((a, b) => (a.start_ms ?? Infinity) - (b.start_ms ?? Infinity) || String(a.span).localeCompare(String(b.span)));
+  return { points, missing: points.filter(p => p.tokens === null).length, partial };
+}
+
+export function foldCompactions(rows, t0) {
+  const seen = new Set(), out = [];
+  for (const r of rows) {
+    const key = [r.ts_ms, r.prompt_id, r.pre_tokens, r.post_tokens].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const ts = count(r.ts_ms);
+    out.push({ start_ms: ts !== null && t0 !== null ? ts - t0 : null, pre_tokens: count(r.pre_tokens),
+      post_tokens: count(r.post_tokens), trigger: label(r.trigger),
+      success: r.success === "true" ? true : r.success === "false" ? false : null });
+    if (out.length >= COMPACTION_LIMIT) break;
+  }
+  return out;
+}
+
+export function foldLimits(rows) {
+  const r = rows[0];
+  if (!r) return null;
+  const limits = { context_window: count(r.context_window), auto_compact_token_limit: count(r.auto_compact_token_limit) };
+  return limits.context_window === null && limits.auto_compact_token_limit === null ? null : limits;
+}
+
 function attrValue(key, raw) {
   if (raw === null || raw === undefined || raw === "") return undefined;
   if (NUMERIC_ATTRS.has(key)) return count(raw) ?? undefined;
@@ -263,7 +346,7 @@ function laneTypeFallback(laneRows, agentNames) {
   return null;
 }
 
-function foldClaudeDetail(head, rows, costRows) {
+function foldClaudeDetail(head, rows, costRows, compactionRows = []) {
   const costs = claudeCostMap(costRows);
   const agentNames = new Map(costRows.filter(r => r.request_id && r.agent_name).map(r => [r.request_id, r.agent_name]));
   const t0 = count(head.start_ms);
@@ -333,20 +416,24 @@ function foldClaudeDetail(head, rows, costRows) {
     cost_partial: known.length < own.length };
     return truncated ? { ...lane, llm_calls: null, cost_usd: null, cost_partial: true } : lane;
   });
+  // Compactions need the calls' prompt ids; without any the link is unknown (null), not none.
+  const prompts = costRows.some(r => r.prompt_id);
+  const context = { ...contextSeries(calls, t0, truncated),
+    compactions: prompts ? foldCompactions(compactionRows, t0) : null, limits: null };
   if (truncated) {
     // The newest SPAN_BOUND spans cannot produce whole-task totals or the task's model set:
     // withhold them.
     task = { ...task, models: null, llm_calls: null, subagents: null, tokens: null, cost_usd: null,
       cost_partial: true, cost_basis: null };
-    return { task, lanes, spans, truncated, span_total: total, why: [] };
+    return { task, lanes, spans, truncated, span_total: total, why: [], context };
   }
   return { task, lanes, spans, truncated, span_total: total,
-    why: whyRules({ task, calls, lanes, retries, waitMs }) };
+    why: whyRules({ task, calls, lanes, retries, waitMs }), context };
 }
 
 const sumField = (values) => values.every(v => v !== null && v !== undefined) ? sumKnown(values) : null;
 
-function foldCodexDetail({ turn, linked, limited = false }, rows) {
+function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []) {
   let task = foldCodexTask(turn, linked);
   if (limited) task = { ...task, cost_partial: true };
   const t0 = count(turn.start_ms);
@@ -395,14 +482,17 @@ function foldCodexDetail({ turn, linked, limited = false }, rows) {
   // Codex totals come from the turn aggregate and linked completions, not from the bounded
   // span list, so truncation does not withhold them. Codex has no retry or permission-wait
   // evidence: those rules are omitted.
+  // Codex sends no compaction event this detail reads: compactions are unavailable (null).
+  const context = { ...contextSeries(calls, t0, limited), compactions: null, limits: foldLimits(limitRows) };
   return { task, lanes, spans, truncated: total > rows.length, span_total: total,
-    why: whyRules({ task, calls, lanes, retries: null, waitMs: null }) };
+    why: whyRules({ task, calls, lanes, retries: null, waitMs: null }), context };
 }
 
 // Pure fold. Claude: task = { client: "claude", ...interaction header row }, evidence = cost
-// rows. Codex: task = { client: "codex", turn, linked, limited } from linkCompletions.
-export function foldTaskDetail(task, spanRows, evidence = []) {
-  return task.client === "codex" ? foldCodexDetail(task, spanRows) : foldClaudeDetail(task, spanRows, evidence);
+// rows, extra = compaction rows. Codex: task = { client: "codex", turn, linked, limited } from
+// linkCompletions, extra = conversation limit rows.
+export function foldTaskDetail(task, spanRows, evidence = [], extra = []) {
+  return task.client === "codex" ? foldCodexDetail(task, spanRows, extra) : foldClaudeDetail(task, spanRows, evidence, extra);
 }
 
 export async function userTaskDetail(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices()) {
@@ -414,12 +504,17 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     if (!head || !head.owner) throw new NotFoundError();
     const rows = await run(sql.spans.sql, sql.spans.params);
     const ids = [...new Set(rows.filter(r => r.span_type === "llm_request").map(r => r.request_id).filter(Boolean))];
-    let costRows = [];
+    let costRows = [], compactionRows = [];
     if (ids.length) {
       const cost = claudeCostSql(from, to, ids);
       costRows = await run(cost.sql, cost.params);
     }
-    return { ...foldTaskDetail({ client: "claude", ...head }, rows, costRows), owner: head.owner };
+    const promptIds = [...new Set(costRows.map(r => r.prompt_id).filter(Boolean))];
+    if (promptIds.length) {
+      const compaction = claudeCompactionSql(from, to, promptIds);
+      compactionRows = await run(compaction.sql, compaction.params);
+    }
+    return { ...foldTaskDetail({ client: "claude", ...head }, rows, costRows, compactionRows), owner: head.owner };
   }
   let owner = userExact;
   if (owner === null) {
@@ -438,6 +533,10 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   const entry = entries.find(e => e.inBucket && e.turn.turn_id === task.turnId
     && e.turn.conversation_id === task.conversationId);
   if (!entry) throw new NotFoundError();
-  const rows = await run(sql.spans.sql, sql.spans.params);
-  return { ...foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows), owner };
+  const turnStart = count(entry.turn.start_ms);
+  const limitsSql = turnStart === null ? null
+    : codexLimitsSql(q, task.conversationId, turnStart, count(entry.turn.end_ms) ?? turnStart);
+  const [rows, limitRows] = await Promise.all([run(sql.spans.sql, sql.spans.params),
+    limitsSql ? run(limitsSql.sql, limitsSql.params) : []]);
+  return { ...foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows), owner };
 }

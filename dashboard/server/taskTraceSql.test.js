@@ -35,12 +35,22 @@ const claudeSpan = (user, trace, id, parent, type, at, durationS, attrs = {}) =>
 const llm = (user, trace, id, parent, at, requestId, model, agent = "") => claudeSpan(user, trace, id, parent,
   "llm_request", at, 2, { request_id: requestId, model, input_tokens: "100", cache_read_tokens: "1000",
     cache_creation_tokens: "50", output_tokens: "20", ...(agent ? { agent_id: agent } : {}) });
-const apiRequest = (user, at, requestId, model, cost) => ({
+const apiRequest = (user, at, requestId, model, cost, prompt = "") => ({
   Timestamp: ts(at),
   ResourceAttributes: { "user.email": user, "service.name": "claude-code" },
   LogAttributes: { "event.name": "api_request", request_id: requestId, model,
     input_tokens: "100", cache_read_tokens: "1000", cache_creation_tokens: "50", output_tokens: "20",
-    ...(cost === undefined ? {} : { cost_usd: String(cost) }) },
+    ...(cost === undefined ? {} : { cost_usd: String(cost) }), ...(prompt ? { "prompt.id": prompt } : {}) },
+});
+const compaction = (user, at, prompt, pre, post) => ({
+  Timestamp: ts(at), ResourceAttributes: { "user.email": user, "service.name": "claude-code" },
+  LogAttributes: { "event.name": "compaction", "prompt.id": prompt, pre_tokens: String(pre),
+    post_tokens: String(post), trigger: "auto", success: "true" },
+});
+const conversationStart = (user, conversation, at, window, limit) => ({
+  Timestamp: ts(at), ResourceAttributes: codexResource(user),
+  LogAttributes: { "event.name": "codex.conversation_starts", "conversation.id": conversation,
+    context_window: String(window), auto_compact_token_limit: String(limit) },
 });
 
 const codexResource = (user) => ({ client: "codex", "user.email": user, backend: "bedrock-mantle" });
@@ -103,13 +113,21 @@ const traces = [
 ];
 const kimFirst = completion(KIM, "C1", "2026-11-05T10:00:20Z");
 const logs = [
-  apiRequest(KIM, "2026-11-05T22:30:07Z", "r1", ANTHROPIC, 0.01),
+  apiRequest(KIM, "2026-11-05T22:30:07Z", "r1", ANTHROPIC, 0.01, "PROMPT-KIM"),
   // Two deliveries of r2: one without a report; the reported one wins.
-  apiRequest(KIM, "2026-11-06T02:00:02Z", "r2", ANTHROPIC),
-  apiRequest(KIM, "2026-11-06T02:00:02Z", "r2", ANTHROPIC, 0.02),
+  apiRequest(KIM, "2026-11-06T02:00:02Z", "r2", ANTHROPIC, undefined, "PROMPT-KIM"),
+  apiRequest(KIM, "2026-11-06T02:00:02Z", "r2", ANTHROPIC, 0.02, "PROMPT-KIM"),
   // Non-Anthropic report is ignored for the ADR-017 list estimate.
-  apiRequest(KIM, "2026-11-06T02:05:02Z", "r3", NON_ANTHROPIC, 9.99),
-  apiRequest(JOAKIM, "2026-11-05T05:00:07Z", "rj", ANTHROPIC, 7),
+  apiRequest(KIM, "2026-11-06T02:05:02Z", "r3", NON_ANTHROPIC, 9.99, "PROMPT-KIM"),
+  apiRequest(JOAKIM, "2026-11-05T05:00:07Z", "rj", ANTHROPIC, 7, "PROMPT-JOAKIM"),
+  // kim's prompt compacted once (delivered twice); joakim's compaction never reaches kim's task.
+  compaction(KIM, "2026-11-05T23:00:00Z", "PROMPT-KIM", 320000, 41000),
+  compaction(KIM, "2026-11-05T23:00:00Z", "PROMPT-KIM", 320000, 41000),
+  compaction(JOAKIM, "2026-11-05T05:00:30Z", "PROMPT-JOAKIM", 99, 9),
+  // C1's limits: the start before U1 applies; a later resume and joakim's same id do not.
+  conversationStart(KIM, "C1", "2026-11-05T09:50:00Z", 1000000, 180000),
+  conversationStart(KIM, "C1", "2026-11-05T13:00:00Z", 400000, 300000),
+  conversationStart(JOAKIM, "C1", "2026-11-05T09:55:00Z", 5, 4),
   // kim's U1: two completions plus duplicate deliveries of the first.
   kimFirst, { ...kimFirst },
   // The same delivery with reordered map keys: still one event (sorted-map identity).
@@ -205,8 +223,15 @@ test("real ClickHouse task trace list, detail and exact-user drilldown", {
     assert.deepEqual(detail.spans.find(s => s.id === "t1").attrs, { tool_name: "Agent", subagent_type: "general-purpose" });
     assert.deepEqual(detail.spans.find(s => s.id === "w1").attrs, { decision: "accept", source: "user" });
     assert.equal(detail.spans.find(s => s.id === "l3").cost_basis, "aws_list_estimate");
-    for (const forbidden of [SECRET, "user_prompt", "full_command", "file_path", "r1", "r2", "session-"])
+    for (const forbidden of [SECRET, "user_prompt", "full_command", "file_path", "r1", "r2", "session-", "PROMPT-"])
       assert.ok(!JSON.stringify(detail).includes(forbidden), forbidden);
+    // Context series: one point per call; the compaction links through the prompt id.
+    assert.deepEqual(detail.context.points.map(p => [p.span, p.lane, p.tokens]),
+      [["l1", "main", 1150], ["l2", "ag1", 1150], ["l3", "ag1", 1150]]);
+    assert.equal(detail.context.missing, 0);
+    assert.deepEqual(detail.context.compactions, [{ start_ms: 30 * 60 * 1000, pre_tokens: 320000,
+      post_tokens: 41000, trigger: "auto", success: true }]);
+    assert.equal(detail.context.limits, null);
     for (const raw of [{ id: `claude:${JOAKIM_TRACE}`, userExact: KIM },
       { id: `claude:${KIM_TRACE}`, userExact: JOAKIM }, { id: `codex:CJ:${J1}`, userExact: KIM },
       { id: `codex:C2:${U2}`, userExact: KIM }, { id: `codex:C3:${U1}`, userExact: KIM }]) {
@@ -230,6 +255,10 @@ test("real ClickHouse task trace list, detail and exact-user drilldown", {
     assert.deepEqual(codexDetail.spans.map(s => s.id).sort(), ["e1", "s1", "s2"]);
     assert.equal(codexDetail.task.completions_without_span, 0);
     assert.deepEqual(codexDetail.spans.find(s => s.id === "e1").attrs, { tool_name: "shell", aborted: false });
+    assert.deepEqual(codexDetail.context.limits, { context_window: 1000000, auto_compact_token_limit: 180000 });
+    assert.equal(codexDetail.context.compactions, null);
+    assert.equal(codexDetail.context.points.length, 2);
+    assert.ok(codexDetail.context.points.every(p => p.tokens === usage.input_tokens_total), JSON.stringify(codexDetail.context));
     assert.ok(!JSON.stringify(codexDetail).includes(SECRET));
     // The detail span query keeps the requested conversation only (and spans without one).
     const compact = codexDetailSql(from, to, { userExact: KIM }, "C1", COMPACT).spans;

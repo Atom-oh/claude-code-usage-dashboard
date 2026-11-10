@@ -153,3 +153,29 @@ export function modelBreakdown(spans = []) {
   return [...groups.values()].sort((a, b) => b.calls - a.calls
     || byLabel(a.model, b.model) || byLabel(a.source, b.source));
 }
+
+// Summary of the detail's `context` (per-call input context, Claude compactions, Codex
+// limits). Unknown inputs stay null: no peak without a known point, no share without a limit.
+export function contextSummary(context) {
+  const points = (context?.points || []).filter((p) => observedNumber(p.tokens) !== null);
+  let peak = null;
+  for (const p of points) if (!peak || p.tokens > peak.tokens) peak = p;
+  const main = points.filter((p) => p.lane === "main" && observedNumber(p.start_ms) !== null)
+    .sort((a, b) => a.start_ms - b.start_ms);
+  const compactions = context?.compactions ?? null;
+  let biggest = null;
+  for (const c of compactions || []) {
+    const pre = observedNumber(c.pre_tokens), post = observedNumber(c.post_tokens);
+    if (pre === null || post === null) continue;
+    if (!biggest || pre - post > biggest.pre_tokens - biggest.post_tokens) biggest = { ...c, pre_tokens: pre, post_tokens: post };
+  }
+  const limit = observedNumber(context?.limits?.auto_compact_token_limit);
+  const window = observedNumber(context?.limits?.context_window);
+  const share = (v) => (peak && v ? peak.tokens / v : null);
+  return {
+    points: points.length, missing: observedNumber(context?.missing) ?? 0, partial: Boolean(context?.partial),
+    peak, mainFirst: main[0]?.tokens ?? null, mainLast: main.length > 1 ? main.at(-1).tokens : null,
+    compactions: compactions === null ? null : compactions.length, biggestCompaction: biggest,
+    autoCompactLimit: limit, contextWindow: window, limitShare: share(limit), windowShare: share(window),
+  };
+}

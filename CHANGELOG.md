@@ -17,6 +17,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- The task detail shows a context-size chart on the timeline's axis: per-call input
+  context by lane, Claude Code compactions (linked by `prompt.id`, pre → post tokens) and,
+  for Codex, the auto-compaction limit and context window the conversation reported.
+  `/api/users/tasks/detail` adds `context`; Claude reports no context window, so no share
+  of it is shown.
 - Task details have a copy-link button: `/tasks/<task id>/<from>/<to>` opens that task's
   detail for any signed-in reader, without a user in the URL.
   `/api/users/tasks/detail` accepts a missing `userExact`, resolves the task's owner (404
