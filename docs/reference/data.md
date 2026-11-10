@@ -94,7 +94,12 @@ unknown models are retried after six hours; failed scans are retried after five 
 when usage is observed again. Distinct unknowns share a scan and scans are limited to
 one per five minutes. Only recognized Standard-tier commercial prices
 with explicit model IDs, context limits, routing and 30-minute cache prices are applied.
-Other formats remain on the existing offline catalog or unpriced. Price List and
+A second, flat format is also accepted: one Standard-tier table without context tiers
+(Input, Output, Cache read, Cache write (30 min)) with Global CRIS and agreeing Geo CRIS
+rows and only a `bedrock-runtime` endpoint, such as Moonshot Kimi K3.1 (checked
+2026-11-10). Geo CRIS rates price the regional scope, as the Price List does for these
+models; each geo prefix in the card needs its row, and without an In-Region row unprefixed
+calls stay unpriced. Other formats remain on the existing offline catalog or unpriced. Price List and
 `CODEX_PRICING_JSON` entries take precedence; Anthropic pricing and its cache TTL remain unchanged.
 `AWS_PRICE_LIST=off` disables both runtime Price List and model-card requests. The
 refresh needs HTTPS access to `docs.aws.amazon.com` and does not send telemetry or use

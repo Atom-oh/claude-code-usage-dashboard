@@ -9,6 +9,21 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.3.1",
+    date: "2026-11-10",
+    summary: "AWS 가격 목록에 아직 없는 일부 Bedrock 모델의 비용을 모델 카드 가격으로 추정합니다.",
+    items: [
+      {
+        kind: "fixed",
+        title: "Kimi K3.1 등 신규 모델 비용 추정",
+        body: "AWS Price List에 아직 없는 모델은 AWS 모델 카드의 Standard 정가로 추정합니다. 구간 없이 표 하나로 된 카드(예: moonshotai.kimi-k3.1)를 읽지 못해 미산정으로 빠지던 문제를 고쳤습니다. 정가 기준 추정이며 청구서가 아닙니다.",
+        to: "/cost",
+        where: "Cost → 모델별 비용",
+        refs: [238],
+      },
+    ],
+  },
+  {
     version: "1.3.0",
     date: "2026-11-10",
     summary: "작업 상세에서 컨텍스트 크기 추이를 보고, 작업을 링크로 공유할 수 있습니다.",
