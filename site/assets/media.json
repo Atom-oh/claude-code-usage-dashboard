@@ -186,8 +186,8 @@
       },
       {
         "path": "video/docs-demo/package-lock.json",
-        "bytes": 70668,
-        "sha256": "4b21384025efcb9bcbf2bfdd43e08b32fd2bcb648e6d259fd5b6158e961f29f3"
+        "bytes": 144457,
+        "sha256": "ee6d453e38491c5e4b5e72fba21050b430895cd70e16110b4c14ef665c286a05"
       },
       {
         "path": "video/docs-demo/remotion.config.js",
