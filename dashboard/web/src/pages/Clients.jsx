@@ -17,6 +17,7 @@ import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { costDefaultResolution, costResolutionLabel, costResolutionOptions } from "../costResolution.js";
 import CostBreakdowns from "../components/CostBreakdowns.jsx";
+import { hasProductivityObservations } from "../clientProductivity.js";
 
 const INSIGHT_SECTIONS = {
   productivity: ["효율·Effort"], cost: ["효율·Effort"], usage: ["도구·승인"],
@@ -68,6 +69,17 @@ export default function Clients({ page = "overview" }) {
     effortEnabled && clients.includes("claude"), { linkedRange: true, hold: stale });
   const codexEffort = useApi("/api/codex/insights", { client: "codex", profile: "effort", ...effortBounds },
     effortEnabled && clients.includes("codex"), { linkedRange: true, hold: stale });
+  // Productivity rows join the overview's by_client rows over the overview's effective bounds.
+  const productivity = useApi("/api/clients/productivity", { client, ...effortBounds },
+    page === "productivity" && !loading && !error && Boolean(effortBounds.from), { linkedRange: true, hold: stale });
+  // The overview's observed records omit productivity-only evidence (prompts, spans, outcome
+  // and active-time counters), so on Productivity an empty overview waits for the productivity
+  // response and shows the sections when it has observations.
+  const productivityPage = page === "productivity" && effortBounds.from;
+  // A failed productivity request is shown as an error in its sections, never as "no data".
+  const pageEmpty = empty && !(productivityPage && (productivity.loading || productivity.error
+    || hasProductivityObservations(productivity.data)));
+  const productivityPending = empty && productivityPage && productivity.loading;
   const breakdowns = page === "cost" ? <CostBreakdowns clients={clients} data={data}
     loading={loading} error={error} empty={empty} claudeEffort={claudeEffort} codexEffort={codexEffort} /> : null;
 
@@ -109,11 +121,12 @@ export default function Clients({ page = "overview" }) {
           value={String(hours)} onChange={(value) => setResolution({ key: rangeKey, hours: Number(value) })} />
         <p className="w-full text-[12px] text-ink-500">1일 이하는 10분까지 선택할 수 있습니다. 더 긴 기간은 시간·일·주 단위로 집계합니다.</p>
       </div>}
-      {loading ? <Loading /> : error ? <ErrorBox error={error} /> : empty ? <EmptyState />
+      {loading || productivityPending ? <Loading /> : error ? <ErrorBox error={error} /> : pageEmpty ? <EmptyState />
         : <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}|${team}`}
           page={page} data={data} clients={clients} stale={stale}
-          previous={page === "trends" ? previous : undefined} breakdowns={breakdowns} /></section>}
-      {(loading || error || empty) && breakdowns}
+          previous={page === "trends" ? previous : undefined} breakdowns={breakdowns}
+          productivity={page === "productivity" ? productivity : undefined} /></section>}
+      {(loading || error || pageEmpty) && breakdowns}
       {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
       {sections && clients.includes("codex") && <CodexInsights sections={sections}
         range={!loading && !error ? data?.effective_range : null} enabled={page === "cost" ? effortEnabled : !loading}

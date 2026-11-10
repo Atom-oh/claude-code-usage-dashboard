@@ -37,6 +37,9 @@ const db = http.createServer(async(req,res)=>{
     rows=[{effort:'high',model:'claude-sonnet-5',backend:selected||'bedrock-runtime',
       reported_cost:selected==='anthropic'?3:2,input_tokens:49,output_tokens:30,
       cost_counter_rows:1,observed_usage_rows:1}];
+  } else if(sql.includes('codex_events') || sql.includes('claude_events')) {
+    dataQueries++;
+    rows=[{prompts:sql.includes('codex_events')?3:1,tool_calls:2,tool_successes:2,tool_failures:0}];
   } else if(sql.includes('FROM claude_code.otel_traces')) {
     rows=[1,2].map(duration_ns=>({timestamp:base.t,trace_id:'conflict',span_id:'one',duration_ns}));
   } else if(sql.includes('FROM claude_code.codex_metrics_sum')) {
@@ -137,6 +140,30 @@ test("Codex-only deployment gates legacy routes and preserves authenticated clie
   assert.equal(rows[5].status, 400);
   assert.equal(rows[5].dataQueries, 0);
   assert.equal(rows[6].status, 200);
+});
+
+test("shared productivity rows gate clients and filters before queries and isolate client caches", async () => {
+  const base = `/api/clients/productivity?${range}`;
+  const codexOnly = await scenario(false, true, [`${base}&unauth=1`, base, `${base}&client=claude`,
+    `${base}&group=enterprise`, `${base}&project=repo`]);
+  assert.equal(codexOnly[0].status, 401);
+  assert.equal(codexOnly[1].status, 200);
+  assert.equal(codexOnly[1].cache, "no-store");
+  assert.deepEqual(codexOnly[1].body.by_client.map((row) => row.client), ["codex"]);
+  assert.equal(codexOnly[1].body.by_client[0].prompts, 3);
+  assert.equal(codexOnly[1].body.by_client[0].commits, null);
+  assert.equal(codexOnly[1].body.by_client[0].unavailable.commits, "not_collected");
+  for (const row of codexOnly.slice(2)) {
+    assert.equal(row.status, 400);
+    assert.equal(row.dataQueries, 0);
+  }
+  const both = await scenario(true, true, [`${base}&client=codex`, `${base}&client=claude`,
+    `${base}&client=codex&backend=bedrock-mantle`, `${base}&client=codex`]);
+  assert.deepEqual(both.map((row) => row.body.by_client.map((r) => r.client)),
+    [["codex"], ["claude"], ["codex"], ["codex"]]);
+  assert.equal(both[1].body.by_client[0].prompts, 1);
+  assert.equal(both[2].dataQueries, 1);
+  assert.equal(both[3].dataQueries, 0);
 });
 
 test("chat serves Codex-only deployments behind the unchanged auth and readonly gates", async () => {

@@ -292,6 +292,51 @@ an observed token subtotal cannot replace a missing cache denominator. The
 Codex effort card and detail table share one `profile=effort` response using the
 overview's effective bounds.
 
+`GET /api/clients/productivity` returns shared Productivity rows for the selected enabled
+clients, in one shape:
+`{clients, by_client: [row], effective_range: {from, to, requested_to}}`. It accepts the
+overview's `client`, `user`, `userExact`, `model`, `modelExact`, `backend` and `team`
+parameters with the same validation; group/project, invalid backends and disabled clients
+return 400 before caching or database work. The effective end is the overview's default
+(Claude historical ends beyond four hours floor to the hour); the SPA passes the
+overview's effective bounds, which resolve unchanged. It is cached per filter set and
+not warmed. Users, sessions, tokens, cost and cost basis are not repeated: the page joins
+each row with the overview's `by_client` row for the same client.
+
+Each row has `client`, `prompts`, `tool_calls`, `tool_successes`, `tool_failures`,
+`tool_unknown`, `tool_success_rate`, `decisions_total`, `decisions_allowed`,
+`decisions_denied`, `decisions_unknown`, `permission_allow_rate`, `tool_calls_per_prompt`,
+`ttft_samples`, `ttft_p50_ms`, `ttft_source`, `active_user_seconds`, `active_cli_seconds`,
+`commits`, `prs`, `loc_added`, `loc_removed` and `unavailable`.
+
+| Field | Claude Code | Codex |
+|---|---|---|
+| `prompts` | `user_prompt` log events | `codex.user_prompt` log events (one per user turn) |
+| Tool outcomes | `tool_result`: success is `success=true` without `error`; failure is `success=false` or an `error` | `codex.tool_result` `success=true`/`false` |
+| Decisions | `tool_decision` `accept`/`reject` | `codex.tool_decision` approved/denied families, as in `/api/codex/insights` |
+| `ttft_p50_ms` | Beta `llm_request` span `ttft_ms` (per model request) | `codex.turn_ttft` `duration_ms` (per turn) |
+| Active time, commits, PRs, LOC | Counter increases (`incFlat`), null without in-window counter evidence | null; see `unavailable` |
+
+Log events are deduplicated by timestamp and both attribute maps; spans by trace and span
+id. Rates use known outcomes only (`tool_successes / (tool_successes + tool_failures)`,
+`decisions_allowed / (decisions_allowed + decisions_denied)`); the unknown remainder is
+reported separately, and an empty denominator yields null. P50 is the exact nearest-rank
+lower median of valid nonnegative samples; no samples yields null. A measured zero count
+stays 0. `unavailable` maps a null field to a reason: `not_collected` (default OTel has no
+source; Codex `prs`, `commits`, `loc_added`, `loc_removed` need Git/CI evidence),
+`not_aggregated` (no confirmed source metric) or `not_derived` (a dashboard-derived value
+whose inputs are missing; Codex active time, because `codex.turn.e2e_duration_ms` is turn
+elapsed time, not human active time). Claude rows have an empty map.
+
+Filters: Codex follows the overview's event-level rules (user identity, model with
+same-session evidence for model-less events, backend from model/resource tag, session
+team). Claude events, spans and counters carry no usable model, so `model`, `modelExact`
+and `backend` select sessions whose token/cost counters match in the range plus the
+three-day lookback (the overview's counter backend rule); `user`/`userExact` match the
+counter `UserEmail` or the log/span identity; `team` is the session team. All Claude
+channels, including unknown, are included. These are activity observations, not
+productivity, code quality or saved time.
+
 `modelTime=1` is accepted only by `/api/clients/overview`; any other value returns 400
 before caching. It is part of the cache key; the shared default cost profile warms
 `view=cost&modelTime=1&timeFormat=compact`. Custom windows, filters, resolutions and

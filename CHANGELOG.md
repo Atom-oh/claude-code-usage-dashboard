@@ -15,6 +15,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Unify the shared Productivity page for Claude Code and Codex: client summary,
+  per-model efficiency, activity and code-result sections use one row per client in
+  the same columns, backed by the new `GET /api/clients/productivity`. Values a
+  client cannot provide show a not-collected, not-aggregated or not-derived label
+  instead of zero.
+
 ### Changed
 
 - Add Amazon Polly English narration, matching captions and original background
