@@ -622,9 +622,11 @@ test("parseTaskId rejects injection-shaped ids", () => {
     assert.throws(() => parseTaskId(bad), { name: "ValidationError" }, String(bad));
 });
 
-test("validateTaskDetailQuery rejects a disabled client and requires userExact", () => {
+test("validateTaskDetailQuery rejects a disabled client; userExact is optional but validated", () => {
   assert.throws(() => validateTaskDetailQuery({ id: `codex:c1:${U1}`, userExact: "a" }, ["claude"]), { name: "ValidationError" });
-  assert.throws(() => validateTaskDetailQuery({ id: `claude:${TRACE}` }, both), { name: "ValidationError" });
+  assert.equal(validateTaskDetailQuery({ id: `claude:${TRACE}` }, both).userExact, null);
+  for (const bad of ["", ["a"], "x".repeat(257)])
+    assert.throws(() => validateTaskDetailQuery({ id: `claude:${TRACE}`, userExact: bad }, both), { name: "ValidationError" });
   assert.equal(validateTaskDetailQuery({ id: `claude:${TRACE}`, userExact: "a" }, both).task.traceId, TRACE);
 });
 
@@ -873,7 +875,10 @@ test("codex detail links completions to sampling spans and keeps the list totals
 
 const fakeRun = (tables) => async (sql, params) => {
   if (sql.includes("SpanType = 'interaction'"))
-    return tables.owner === params.userExact && params.traceId === TRACE ? [header()] : [];
+    return (params.userExact === undefined || tables.owner === params.userExact) && params.traceId === TRACE
+      ? [header({ owner: tables.owner })] : [];
+  if (sql.includes("GROUP BY owner"))
+    return params.turnId === U1 && params.conversationId === "c1" ? [{ owner: tables.owner }] : [];
   // Claude spans are gated by the header; Codex spans carry the exact user.
   if (sql.includes("count() OVER ()"))
     return params.userExact === undefined || tables.owner === params.userExact ? [llm("a", 0, { total_spans: "1" })] : [];
@@ -931,6 +936,31 @@ test("index.js keys and routes the detail endpoint", async () => {
   assert.match(src, /path === "\/api\/users\/tasks\/detail"\) return `\$\{path\}\?\$\{taskDetailCacheKey\(query, clientConfig\.enabledClients\)\}`/);
   assert.match(src, /err instanceof NotFoundError\) return res\.status\(404\)\.json\(\{ error: "not found" \}\)/);
   assert.match(src, /route\("\/api\/users\/tasks\/detail"/);
+});
+
+test("a shared link (no userExact) resolves the task owner and returns it", async () => {
+  const run = fakeRun({ owner: "kim@x.com" });
+  const claude = await userTaskDetail(from, to, { id: `claude:${TRACE}` }, both, run);
+  assert.equal(claude.owner, "kim@x.com");
+  assert.equal(claude.task.cost_usd, 0.3);
+  const withUser = await userTaskDetail(from, to, { id: `claude:${TRACE}`, userExact: "kim@x.com" }, both, run);
+  assert.equal(withUser.owner, "kim@x.com");
+  const codex = await userTaskDetail(from, to, { id: `codex:c1:${U1}` }, both, run, DEFAULT_CODEX_PRICING);
+  assert.equal(codex.owner, "kim@x.com");
+  assert.equal(codex.task.id, `codex:c1:${U1}`);
+  // Unknown task, an identity-less owner or two owners of one turn: the same 404.
+  for (const [raw, tables] of [[{ id: `claude:${"f".repeat(32)}` }, { owner: "kim@x.com" }],
+    [{ id: `claude:${TRACE}` }, { owner: "" }], [{ id: `codex:c9:${U1}` }, { owner: "kim@x.com" }],
+    [{ id: `codex:c1:${U1}` }, { owner: "" }]]) {
+    const err = await userTaskDetail(from, to, raw, both, fakeRun(tables), DEFAULT_CODEX_PRICING).then(() => null, e => e);
+    assert.ok(err instanceof NotFoundError, JSON.stringify([raw, tables]));
+  }
+  const twoOwners = async (sql, params) => sql.includes("GROUP BY owner") ? [{ owner: "a" }, { owner: "b" }] : run(sql, params);
+  const err = await userTaskDetail(from, to, { id: `codex:c1:${U1}` }, both, twoOwners, DEFAULT_CODEX_PRICING).then(() => null, e => e);
+  assert.ok(err instanceof NotFoundError);
+  // Without a user the header has no user condition; with one it keeps EXACT_USER.
+  assert.ok(!claudeDetailSql(from, to, TRACE, { userExact: null }).header.sql.includes("{userExact:String}"));
+  assert.ok(claudeDetailSql(from, to, TRACE, { userExact: "a" }).header.sql.includes("{userExact:String}"));
 });
 
 test("context series: one point per call in time order, unknown tokens counted missing", () => {
@@ -995,7 +1025,7 @@ test("detail runs the compaction query only with prompt ids and the limits query
   const seen = [];
   const run = async (sql, params) => {
     seen.push(sql);
-    if (sql.includes("SpanType = 'interaction'")) return [header()];
+    if (sql.includes("SpanType = 'interaction'")) return [header({ owner: "kim@x.com" })];
     if (sql.includes("count() OVER ()")) return [llm("a", 0, { total_spans: "1" })];
     if (sql.includes("request_id IN") || sql.includes("{requestIds:Array(String)}")) return [{ request_id: "r-a", cost_usd: 0.3, prompt_id: "p1" }];
     if (sql.includes("'compaction'")) return [{ ts_ms: String(t0 + 10), prompt_id: "p1", pre_tokens: "9", post_tokens: "1", trigger: "manual", success: "true" }];
@@ -1011,4 +1041,19 @@ test("detail runs the compaction query only with prompt ids and the limits query
     return run(sql, p);
   });
   assert.ok(!noPrompt.some(s => s.includes("'compaction'")));
+});
+
+test("the detail cache key keeps a shared link apart from a literal null user", () => {
+  const base = { from: "2026-11-05T00:00:00Z", to: "2026-11-06T00:00:00Z", id: `claude:${TRACE}` };
+  const shared = taskDetailCacheKey(base, both);
+  const literal = taskDetailCacheKey({ ...base, userExact: "null" }, both);
+  assert.notEqual(shared, literal);
+  assert.ok(!shared.includes("userExact"));
+  assert.ok(literal.includes("userExact=null"));
+});
+
+test("Codex limits are bounded by the turn end plus slack", () => {
+  const start = ms("2026-11-05T10:00:00Z"), end = start + 600000;
+  assert.ok(codexLimitsSql({ userExact: "a" }, "c1", start, end).params.beforeMs > end);
+  assert.ok(codexLimitsSql({ userExact: "a" }, "c1", start).params.beforeMs > start);
 });

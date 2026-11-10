@@ -293,6 +293,12 @@ buckets older than the 90-day trace retention. Its sort control requests `sort=t
 Task ids are opaque and not displayed. The
 selected bucket and task clear when the user, clients, group or range changes.
 
+A task's copy-link button copies `/tasks/<task id>/<bucket from>/<bucket to>` (each segment
+URI-encoded; no user, so masked identities never enter a URL). The bucket is in the path
+because RangeContext owns and rewrites the query string. That route renders the same overlay
+without filters; the server resolves the owner and the header masks it. Signing in from a
+shared link returns to it (`returnTo`). Without clipboard access the link is shown to copy.
+
 Opening a task renders
 [TaskTraceOverlay](../../dashboard/web/src/components/TaskTraceOverlay.jsx), a full-screen
 dialog (Escape or the close button clears the selected task) over `/api/users/tasks/detail`

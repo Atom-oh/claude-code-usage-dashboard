@@ -297,6 +297,32 @@ test("truncated detail model breakdown shows counts without cost sums", async ()
   expect(card.textContent).not.toContain("$");
 });
 
+test("link copy puts a user-free task link on the clipboard, with a manual fallback", async () => {
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  mount({ taskId: CODEX_ID });
+  fireEvent.click(await screen.findByRole("button", { name: "링크 복사" }));
+  await screen.findByText("링크를 복사했습니다");
+  const url = new URL(writeText.mock.calls[0][0]);
+  expect(url.pathname).toBe(`/tasks/${[CODEX_ID, BUCKET.from, BUCKET.to].map(encodeURIComponent).join("/")}`);
+  expect(url.search).toBe("");
+  expect(url.href).not.toContain("alice");
+  Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+  fireEvent.click(screen.getByRole("button", { name: "링크 복사" }));
+  const field = await screen.findByRole("textbox", { name: "작업 링크" });
+  expect(field.value).toBe(url.href);
+});
+
+test("without a user the request omits userExact and the header masks the returned owner", async () => {
+  body = { ...claudeDetail(), owner: USER };
+  mount({ user: undefined });
+  await screen.findByRole("region", { name: "선택한 span 상세" });
+  const [req] = detailRequests();
+  expect(req.searchParams.has("userExact")).toBe(false);
+  expect(screen.getByRole("dialog").textContent).toContain("al******@example.test");
+  expect(screen.getByRole("dialog").textContent).not.toContain(USER);
+});
+
 test("context chart: per-lane points, compaction mark and no window share for Claude", async () => {
   mount();
   const section = await screen.findByRole("region", { name: "컨텍스트 크기" });

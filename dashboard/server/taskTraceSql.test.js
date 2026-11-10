@@ -239,6 +239,16 @@ test("real ClickHouse task trace list, detail and exact-user drilldown", {
       assert.ok(err instanceof NotFoundError, JSON.stringify(raw));
     }
 
+    // Shared link: no userExact; the owner is resolved and the payload is the same task.
+    const shared = await userTaskDetail(from, to, { id: `claude:${KIM_TRACE}` }, both, run);
+    assert.equal(shared.owner, KIM);
+    assert.deepEqual(shared.task, detail.task);
+    const sharedCodex = await userTaskDetail(from, to, { id: `codex:C1:${U1}` }, both, run);
+    assert.equal(sharedCodex.owner, KIM);
+    assert.equal(sharedCodex.task.llm_calls, 2);
+    const err = await userTaskDetail(from, to, { id: `codex:C9:${U1}` }, both, run).then(() => null, e => e);
+    assert.ok(err instanceof NotFoundError, "an unknown conversation is not resolved");
+
     const codexDetail = await userTaskDetail(from, to, { id: `codex:C1:${U1}`, userExact: KIM }, both, run);
     for (const k of ["llm_calls", "tokens", "cost_usd", "duration_ms"])
       assert.deepEqual(codexDetail.task[k], codex[k], k);

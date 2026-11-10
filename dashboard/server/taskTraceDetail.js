@@ -58,26 +58,33 @@ export function parseTaskId(id) {
   throw new ValidationError("invalid id", "id must be claude:<trace id> or codex:<conversation id>:<turn id>");
 }
 
+// userExact is optional: a shared task link (/tasks/<id>) carries no user, so the server
+// resolves the task's owner (interaction span or turn spans in the bucket) instead. This
+// grants no new access: any reader of this API can already query any exact user.
 export function validateTaskDetailQuery(raw, enabledClients) {
   const task = parseTaskId(raw.id);
   if (!enabledClients.includes(task.client))
     throw new ValidationError("unsupported client", "the task's client is not enabled");
   const userExact = raw.userExact;
-  if (typeof userExact !== "string" || userExact === "" || userExact.length > 256)
-    throw new ValidationError("invalid filter", "userExact is required: a string of at most 256 characters");
-  return { task, userExact, id: raw.id };
+  if (userExact !== undefined && (typeof userExact !== "string" || userExact === "" || userExact.length > 256))
+    throw new ValidationError("invalid filter", "userExact must be a non-empty string of at most 256 characters");
+  return { task, userExact: userExact ?? null, id: raw.id };
 }
 
 // Canonical cache key over every parameter the handler reads.
 export function taskDetailCacheKey(query, enabledClients) {
   const { id, userExact } = validateTaskDetailQuery(query, enabledClients);
-  const normalized = { from: query.from, to: query.to, id, userExact };
+  // An absent user (shared link) is left out of the key: null must never serialize to
+  // "null" and collide with a user whose identity string is literally "null".
+  const normalized = { from: query.from, to: query.to, id, ...(userExact === null ? {} : { userExact }) };
   return new URLSearchParams(Object.entries(normalized)
     .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString();
 }
 
+const OWNER = "coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '')";
+
 // Header: the task's interaction span, which must start in [from, to) for the exact user
-// (the list's ownership rule). Spans: every span of the TraceId in [from, to + 24h) (subagent
+// (the list's ownership rule); without userExact, for whoever owns it (`owner`). Spans: every span of the TraceId in [from, to + 24h) (subagent
 // spans can start hours later), deduplicated like the list, newest SPAN_BOUND plus a total.
 export function claudeDetailSql(from, to, traceId, q) {
   const attrs = CLAUDE_ATTRS.map(k => k === "model" ? `Model AS ${column(k)}`
@@ -87,21 +94,22 @@ export function claudeDetailSql(from, to, traceId, q) {
     header: {
       sql: `${GROUP_CTE}
 SELECT t.TraceId AS trace_id, t.started_at AS started_at, t.start_ms AS start_ms,
-    t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp
+    t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, t.owner AS owner
 FROM (
-    SELECT TraceId, SessionId,
+    SELECT TraceId, SessionId, ${OWNER} AS owner,
         formatDateTime(Timestamp, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
         toString(toUnixTimestamp64Milli(Timestamp)) AS start_ms,
         intDiv(Duration, 1000000) AS duration_ms
     FROM claude_code.otel_traces
     WHERE SpanType = 'interaction' AND TraceId = {traceId:String}
-      AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
-      AND ${EXACT_USER}
+      AND Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}${q.userExact === null ? "" : `
+      AND ${EXACT_USER}`}
     ORDER BY Timestamp
     LIMIT 1
 ) t
 LEFT JOIN session_group ug ON t.SessionId = ug.SessionId`,
-      params: { from: toChDateTime(from), to: toChDateTime(to), traceId, userExact: q.userExact },
+      params: { from: toChDateTime(from), to: toChDateTime(to), traceId,
+        ...(q.userExact === null ? {} : { userExact: q.userExact }) },
     },
     spans: {
       sql: `SELECT span_id, parent_id, span_type, span_name, start_ms, duration_ms, agent_id, request_id,
@@ -164,6 +172,23 @@ LIMIT ${SPAN_BOUND}`,
   };
 }
 
+// Owner of a Codex turn for a shared link: the identity on the turn's spans of that
+// conversation in the turn window. Two identities (or none) cannot be resolved: 404.
+export function codexOwnerSql(from, to, conversationId, turnId) {
+  return {
+    sql: `SELECT ${OWNER} AS owner
+FROM claude_code.otel_traces
+PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
+WHERE ResourceAttributes['client'] = 'codex'
+  AND coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) = {turnId:String}
+  AND SpanAttributes['conversation.id'] = {conversationId:String}
+GROUP BY owner
+LIMIT 2`,
+    params: { spanFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
+      spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), turnId, conversationId },
+  };
+}
+
 // Claude Code's compaction event carries the prompt.id of the prompt it compacted for; the
 // task's api_request logs give its prompt ids, so the link is exact (not a time window).
 // The log window opens an hour early: a prompt can compact before its interaction span starts.
@@ -186,10 +211,11 @@ LIMIT ${COMPACTION_LIMIT * 2}`,
   };
 }
 
-// Limits the Codex conversation reported at its latest start or resume before the turn
-// (codex.conversation_starts: context_window, auto_compact_token_limit).
-export function codexLimitsSql(q, conversationId, turnStartMs) {
-  const before = new Date(turnStartMs + COMPLETION_SLACK_MS);
+// Limits the Codex conversation reported at its latest start or resume (codex.conversation_
+// starts: context_window, auto_compact_token_limit). Stored Timestamp can be the collector's
+// observed time for zero-source-time logs, so the bound is the turn's end, not its start.
+export function codexLimitsSql(q, conversationId, turnStartMs, turnEndMs = turnStartMs) {
+  const before = new Date(Math.max(turnStartMs, turnEndMs) + COMPLETION_SLACK_MS);
   return {
     sql: `SELECT LogAttributes['context_window'] AS context_window,
     LogAttributes['auto_compact_token_limit'] AS auto_compact_token_limit
@@ -471,12 +497,11 @@ export function foldTaskDetail(task, spanRows, evidence = [], extra = []) {
 
 export async function userTaskDetail(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices()) {
   const { task, userExact } = validateTaskDetailQuery(raw, enabledClients);
-  const q = { userExact };
   if (task.client === "claude") {
-    const sql = claudeDetailSql(from, to, task.traceId, q);
-    // Ownership first: no span query runs for a task of another user.
+    const sql = claudeDetailSql(from, to, task.traceId, { userExact });
+    // Ownership first: no span query runs for a task of another user (or of no one).
     const [head] = await run(sql.header.sql, sql.header.params);
-    if (!head) throw new NotFoundError();
+    if (!head || !head.owner) throw new NotFoundError();
     const rows = await run(sql.spans.sql, sql.spans.params);
     const ids = [...new Set(rows.filter(r => r.span_type === "llm_request").map(r => r.request_id).filter(Boolean))];
     let costRows = [], compactionRows = [];
@@ -489,8 +514,16 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
       const compaction = claudeCompactionSql(from, to, promptIds);
       compactionRows = await run(compaction.sql, compaction.params);
     }
-    return foldTaskDetail({ client: "claude", ...head }, rows, costRows, compactionRows);
+    return { ...foldTaskDetail({ client: "claude", ...head }, rows, costRows, compactionRows), owner: head.owner };
   }
+  let owner = userExact;
+  if (owner === null) {
+    const resolve = codexOwnerSql(from, to, task.conversationId, task.turnId);
+    const owners = await run(resolve.sql, resolve.params);
+    if (owners.length !== 1 || !owners[0].owner) throw new NotFoundError();
+    owner = owners[0].owner;
+  }
+  const q = { userExact: owner };
   const sql = codexDetailSql(from, to, q, task.conversationId, task.turnId);
   const [turns, completions] = await Promise.all([run(sql.turns.sql, sql.turns.params),
     run(sql.completions.sql, sql.completions.params)]);
@@ -501,8 +534,9 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     && e.turn.conversation_id === task.conversationId);
   if (!entry) throw new NotFoundError();
   const turnStart = count(entry.turn.start_ms);
-  const limitsSql = turnStart === null ? null : codexLimitsSql(q, task.conversationId, turnStart);
+  const limitsSql = turnStart === null ? null
+    : codexLimitsSql(q, task.conversationId, turnStart, count(entry.turn.end_ms) ?? turnStart);
   const [rows, limitRows] = await Promise.all([run(sql.spans.sql, sql.spans.params),
     limitsSql ? run(limitsSql.sql, limitsSql.params) : []]);
-  return foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows);
+  return { ...foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows), owner };
 }

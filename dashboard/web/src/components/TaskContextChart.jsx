@@ -114,7 +114,7 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
       {s.partial && <span>일부 호출 기준</span>}
       {compactions.length > 0 && <span>컴팩션 토큰은 Claude Code가 보고한 값으로, 호출별 입력 합계와 계산 기준이 다를 수 있습니다</span>}
       {client !== "codex" && <span>Claude Code는 컨텍스트 창 크기를 보내지 않아 창 대비 비율은 표시하지 않습니다</span>}
-      {client === "codex" && s.autoCompactLimit === null && s.contextWindow === null && <span>이 대화는 한도를 보고하지 않았습니다</span>}
+      {client === "codex" && s.autoCompactLimit === null && s.contextWindow === null && <span>이 대화의 한도를 찾지 못했습니다</span>}
       {client === "codex" && s.autoCompactLimit !== null && !limitInChart
         && <span>{`자동 컴팩션 한도 ${tokensText(s.autoCompactLimit)}은 차트 범위 밖`}</span>}
     </div>

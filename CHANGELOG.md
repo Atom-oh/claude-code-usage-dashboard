@@ -22,6 +22,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   for Codex, the auto-compaction limit and context window the conversation reported.
   `/api/users/tasks/detail` adds `context`; Claude reports no context window, so no share
   of it is shown.
+- Task details have a copy-link button: `/tasks/<task id>/<from>/<to>` opens that task's
+  detail for any signed-in reader, without a user in the URL.
+  `/api/users/tasks/detail` accepts a missing `userExact`, resolves the task's owner (404
+  when none or ambiguous) and returns `owner`.
 
 ## [1.2.0] - 2026-11-10
 
