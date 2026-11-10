@@ -89,6 +89,21 @@ test("renders combined summary for claude and codex", async () => {
   expect((await screen.findAllByText("Codex: 미수집")).length).toBeGreaterThan(0);
 });
 
+test("heatmap labels the calendar and preserves all 90 UTC days", async () => {
+  mount({ clients: ["claude", "codex"] });
+  const heatmap = await screen.findByRole("img", { name: "일별 관측 세션 히트맵" });
+  expect(within(heatmap).getByText("6월")).toBeTruthy();
+  expect(within(heatmap).getByText("9월")).toBeTruthy();
+  for (const day of ["일", "월", "화", "수", "목", "금", "토"])
+    expect(within(heatmap).getByText(day)).toBeTruthy();
+  const dates = [...heatmap.querySelectorAll("[title]")].map((cell) => cell.title);
+  expect(dates).toHaveLength(90);
+  expect(dates[0]).toContain("2026-06-06 · 일별 관측 세션 0");
+  expect(dates.at(-1)).toContain("2026-09-03 · 일별 관측 세션 0");
+  expect(dates.find((value) => value.startsWith("2026-09-01")))
+    .toContain("일별 관측 세션 2 (Claude Code 1 · Codex 1)");
+});
+
 test("codex-only hides Claude fetches and shows 미수집 for LOC", async () => {
   mount({ clients: ["codex"] });
   expect(await screen.findByText("Codex 도구 권한 결정")).toBeTruthy();
