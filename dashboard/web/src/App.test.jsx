@@ -175,3 +175,17 @@ test("changelog route shows release notes without usage filters and clears the u
   // Stays on /changelog: ClientContext treats it as a dashboard path and does not redirect.
   expect(screen.getByRole("link", { name: /^변경 내역, 최신 v\d+\.\d+\.\d+$/ })).toBeTruthy();
 });
+
+test("sidebar links the public user guide in a new tab outside the page nav", () => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  vi.stubGlobal("fetch", vi.fn(url => Promise.resolve({ ok: true, status: 200,
+    json: async () => String(url).startsWith("/api/health/data") ? { status: "ok", ageMinutes: 0, staleAfterMinutes: 360 } : [] })));
+  const { container } = render(<MemoryRouter initialEntries={["/?client=all"]}>
+    <ConfigProvider config={{ enabledClients: ["claude", "codex"] }}><App /></ConfigProvider>
+  </MemoryRouter>);
+  const guide = screen.getByRole("link", { name: "사용설명서 (새 탭)" });
+  expect(guide.getAttribute("href")).toBe("https://www.atomai.click/claude-code-usage-dashboard/");
+  expect(guide.getAttribute("target")).toBe("_blank");
+  expect(guide.getAttribute("rel")).toContain("noreferrer");
+  expect(container.querySelector("nav").contains(guide)).toBe(false);
+});

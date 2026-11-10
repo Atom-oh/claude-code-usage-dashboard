@@ -9,6 +9,21 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.2.0",
+    date: "2026-11-10",
+    summary: "사이드바에서 사용설명서를 바로 열 수 있습니다.",
+    items: [
+      {
+        kind: "new",
+        title: "사용설명서 링크",
+        body: "사이드바(모바일 메뉴 포함) 아래와 이 페이지 위쪽의 사용설명서 링크가 공개 문서 사이트를 새 탭으로 엽니다. 비용 해석 기준, 설치·운영 안내를 볼 수 있습니다.",
+        to: null,
+        where: "사이드바 아래 사용설명서",
+        refs: [],
+      },
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-11-10",
     summary: "실행 이미지의 zlib 보안 취약점을 패치했습니다. 화면과 기능은 바뀌지 않습니다.",

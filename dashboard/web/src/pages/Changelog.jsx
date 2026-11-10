@@ -4,6 +4,7 @@ import { ArrowRight, ExternalLink } from "lucide-react";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { Badge } from "../components/Badge.jsx";
 import { useClient } from "../ClientContext.jsx";
+import { USER_GUIDE_URL } from "../clientNavigation.js";
 import { LATEST_RELEASE, RELEASES, markSeen, releaseLink } from "../releaseNotes.js";
 
 const KIND = {
@@ -50,10 +51,16 @@ export default function Changelog() {
   return (
     <div>
       <PageHeader title="변경 내역" subtitle="릴리스마다 바뀐 점과 새 기능을 어디서 쓰는지 정리했습니다. 전체 기술 변경 기록은 CHANGELOG에 있습니다."
-        right={<a href={`${REPO}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">
-          CHANGELOG<ExternalLink size={13} aria-hidden="true" />
-        </a>} />
+        right={<>
+          <a href={USER_GUIDE_URL} target="_blank" rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">
+            사용설명서<ExternalLink size={13} aria-hidden="true" />
+          </a>
+          <a href={`${REPO}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">
+            CHANGELOG<ExternalLink size={13} aria-hidden="true" />
+          </a>
+        </>} />
       <div className="space-y-5 px-8 py-6">
         {RELEASES.map((release) => (
           <section key={release.version} aria-labelledby={`release-${release.version}`}

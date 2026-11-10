@@ -14,5 +14,7 @@ export const clientPage = (pathname) => pathname === COLLECTOR_PAGE.to ? COLLECT
   : CLIENT_PAGES.find((p) => p.to === pathname) || CLIENT_PAGES[0];
 export const isClientPath = (pathname) => CLIENT_PAGES.some((p) => p.to === pathname);
 export const CHANGELOG_PATH = "/changelog";
+// Public product documentation (site/, published by .github/workflows/pages.yml).
+export const USER_GUIDE_URL = "https://www.atomai.click/claude-code-usage-dashboard/";
 export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation"
   || pathname === COLLECTOR_PAGE.to || pathname === CHANGELOG_PATH;

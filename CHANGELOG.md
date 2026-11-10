@@ -15,6 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-10
+
+### Added
+
+- A user guide link under the sidebar and mobile navigation, and on the `/changelog` page,
+  opens the public documentation site in a new tab.
+
 ## [1.1.1] - 2026-11-10
 
 ### Security

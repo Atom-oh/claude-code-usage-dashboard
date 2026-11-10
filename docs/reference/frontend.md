@@ -13,7 +13,8 @@ visible previous-result warning; receipt/empty/unavailable never become usage ze
 
 `/changelog` shows the release notes bundled in `releaseNotes.js` without usage filters
 and requests no page data. Its link sits outside `<nav>` under the navigation and marks a release this
-browser has not opened (`localStorage`, best effort). See [releases and tags](../runbooks/releases.md).
+browser has not opened (`localStorage`, best effort). A user guide link beside it opens the
+public documentation site (`USER_GUIDE_URL`) in a new tab. See [releases and tags](../runbooks/releases.md).
 
 The React 18/Vite 8/Tailwind 4 SPA (Node >=22.12) shares the Express image.
 See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions and
