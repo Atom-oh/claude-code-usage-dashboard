@@ -4,7 +4,7 @@
 
 Workshop Claude Code/Codex OTel → ClickHouse → Express → React; Terraform/docs site/separate video project. Not validated employee productivity/causal ROI.
 
-Behavior: code/tests. Follow root/nearest AGENTS.md; CLAUDE.md imports its adjacent guide. References: implementation; runbooks: operations; ADRs: decisions. Superseded ADRs/dated investigations are historical. Config/build success does not prove deployment of images/migrations/Terraform/runtime options. User instructions win. Surface conflicts; missing excerpts do not prove absence; verify claims.
+Behavior: code/tests. Follow nearest AGENTS.md; CLAUDE.md imports the adjacent guide. References: implementation; runbooks: operations; ADRs: decisions. Superseded ADRs/dated investigations are historical. Build/config success cannot verify deployed images/migrations/Terraform/runtime options. User instructions win. Surface conflicts; verify absence beyond excerpts.
 
 ## Checks
 
@@ -18,7 +18,7 @@ terraform fmt -check -recursive infra/
 (cd infra && terraform init -backend=false && terraform validate)
 ```
 
-CI harness discovers test-*.sh; absent gitignored .claude/ tooling: expected skip. Production: deployment runbook.
+CI discovers test-*.sh; missing ignored .claude/ tooling: expected skip. Production: deployment runbook.
 
 ## Contracts
 
@@ -38,9 +38,9 @@ Change PRs add CHANGELOG Unreleased entries; deploy tagged `vX.Y.Z` release PRs:
 
 ## Review
 
-Engineering docs/guides/ADRs/PRs: concise English; UI localization is separate. Link owners; keep contracts/reasons/limits. No duplicate translations/transcripts/stale line refs.
+Engineering docs/guides/ADRs/PRs: concise English; localize UI separately. Link owners; keep contracts/reasons/limits. No duplicate translations/transcripts/stale line refs.
 
-Review new behavior using code/tests/trusted base. Preferences/intentional conventions are not defects; report uncertainty. Correctness/security regressions block. Never weaken auth/no-tools checks/coverage/CI to pass. Follow user's latest-HEAD review/fix/push/merge.
+Review changes against code/tests/trusted base. Preferences/intentional conventions are not defects; state uncertainty. Correctness/security regressions block. Never weaken auth/no-tools/coverage/CI. Follow user's latest-HEAD review/fix/push/merge.
 
 ROLE_REVIEW=1: Codex/Claude independently check the full raw change. Kiro V3 reviews applicable AWS/operations patches or a bounded, hash-bound chair summary when oversized; disclose its evidence basis. NOT_APPLICABLE only via trusted routing. Failed or incomplete required output blocks; no chair coverage waiver. Supersedes matrix/dropout rules: [review](docs/pr-review-specialists.md).
 

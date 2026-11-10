@@ -15,11 +15,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- Add Amazon Polly English narration, matching captions and original background
+  music to the documentation walkthrough, with a pinned Remotion audio composition.
+
 ### Fixed
 
 - Expand the 90-day user activity heatmap across its card, with larger responsive
   day cells, month/weekday labels and an activity legend. Preserve UTC boundaries
   and observed-session counts, including unavailable values.
+
 ## [1.3.1] - 2026-11-10
 
 ### Fixed

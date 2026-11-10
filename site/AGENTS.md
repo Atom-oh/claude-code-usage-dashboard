@@ -21,8 +21,9 @@ Do not claim that host-written translations came from a delegated model.
 
 ## Media
 
-The overview uses the English November 10 HyperFrames video in `assets/video/`,
-with its English VTT track and poster. The composition owner is
+The overview uses the English November 10 video in `assets/video/`, with
+HyperFrames visuals, Polly narration and Remotion audio composition. It includes
+an English VTT track and poster. The composition owner is
 [video/docs-demo](../video/docs-demo/AGENTS.md). Retain historical media provenance
 without applying its review score to newer artifacts.
 

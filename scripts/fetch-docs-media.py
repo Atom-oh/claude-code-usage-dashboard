@@ -23,6 +23,14 @@ PATHS = frozenset({
     "site/assets/video/dashboard-demo-en-20261110.webm",
     "video/docs-demo/runtime/NotoSans.ttf",
     "video/docs-demo/runtime/gsap.min.js",
+    "video/docs-demo/remotion/public/visual-base.mp4",
+    "video/docs-demo/remotion/public/follow.mp3",
+    "video/docs-demo/remotion/public/build.mp3",
+    "video/docs-demo/remotion/public/lanes.mp3",
+    "video/docs-demo/remotion/public/call.mp3",
+    "video/docs-demo/remotion/public/model.mp3",
+    "video/docs-demo/remotion/public/hosting.mp3",
+    "video/docs-demo/remotion/public/background.wav",
 })
 MAX_FILE_BYTES = 8_000_000
 

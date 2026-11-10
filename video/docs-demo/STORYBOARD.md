@@ -10,6 +10,8 @@
 | 40–48 s | Choose hosting and follow the guide | EC2/ECS/EKS choices, Lambda runtime adaptation, four guide locales |
 
 Every explanatory overlay is English. Screenshots use Luna-translated display
-labels and unchanged synthetic fixture values. The movie is silent; an English
-WebVTT transcript accompanies it. Source revision refers to the captured React
-code, while pending guide/video changes remain local.
+labels and unchanged synthetic fixture values. Six Amazon Polly Matthew neural
+clips explain these scenes in English; the matching WebVTT track contains their
+spoken text. A quiet original background score ducks under speech. Remotion
+composes this audio with the preserved HyperFrames visuals. Source revision refers
+to the captured React code; the media lock identifies the encoded delivery.

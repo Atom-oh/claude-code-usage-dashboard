@@ -1,0 +1,19 @@
+{
+  "language": "en-US",
+  "provider": "Amazon Polly",
+  "voice": "Matthew",
+  "engine": "neural",
+  "region": "us-east-1",
+  "sample_rate": 24000,
+  "speech_rate": "110%",
+  "fps": 24,
+  "duration_frames": 1152,
+  "scenes": [
+    {"id": "follow", "start_frame": 0, "text": "Follow a task from a user's time bucket. Inspect calls, agent lanes, and cumulative cost. This is synthetic data."},
+    {"id": "build", "start_frame": 192, "text": "Install ClickHouse and its schema, the OpenTelemetry Collector, and an authenticated dashboard. Then configure each client."},
+    {"id": "lanes", "start_frame": 384, "text": "Agent lanes show calls, tools, and waits. Costs retain their reported or estimated basis. Capture remains partial."},
+    {"id": "call", "start_frame": 576, "text": "Select a call to inspect input, output, and cache tokens. Missing fields stay unavailable. Tokens are not invoices."},
+    {"id": "model", "start_frame": 768, "text": "Select a model to highlight its calls. Codex diagnostic traces and metrics do not add to completion costs."},
+    {"id": "hosting", "start_frame": 960, "text": "Choose a virtual machine or container platform. Lambda needs runtime adaptation. Follow the guides for backend prerequisites."}
+  ]
+}

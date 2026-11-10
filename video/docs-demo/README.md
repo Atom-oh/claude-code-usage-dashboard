@@ -13,13 +13,50 @@ The relative `assets` symlink points to the shared site media, without copies.
 From the repository root, run `python3 scripts/fetch-docs-media.py` before previewing
 or rendering. It hydrates the images, encoded video and local runtime assets from
 the immutable commit in `media.lock.json`, checking every size and SHA256 before
-writing. The `docs-media-20261110` tag retains that snapshot; URLs use its commit
+writing. The `docs-media-20261110-narrated` tag retains that snapshot; URLs use its commit
 identity. Use `--offline` to verify a populated cache without network access.
 Pages runs the same helper with `--site-only` and fails rather than publishing
 missing or corrupt media. HTML, captions, composition, provenance and licenses
 remain tracked source; generated media and the pinned runtime are ignored cache.
 
-Run from this directory:
+The final film keeps the HyperFrames visuals and composes Amazon Polly English
+narration plus an original quiet score with Remotion 4.0.542. Cached Polly clips
+need no AWS credentials or cloud calls. Install the locked Remotion packages and
+render the narrated delivery from this directory:
+
+```bash
+npm ci
+npm run test:audio
+npm run render:narrated -- --browser-executable=/path/to/chromium
+npm run render:mix -- --browser-executable=/path/to/chromium
+ffmpeg -i renders/dashboard-demo-en-narrated.mp4 -i renders/narrated-mix.wav \
+  -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 160k \
+  -movflags +faststart -t 48 renders/dashboard-demo-en-final.mp4
+ffmpeg -i renders/dashboard-demo-en-final.mp4 \
+  -c:v libvpx-vp9 -crf 30 -b:v 0 -pix_fmt yuv420p -row-mt 1 -threads 2 \
+  -c:a libopus -b:a 96k renders/dashboard-demo-en-narrated.webm
+```
+
+Hydration supplies `remotion/public/visual-base.mp4`, the original silent
+HyperFrames output retained in commit `fd1e956f3678f9703ee0edf46dd13c0d8c1c0fd4`.
+The first Remotion pass re-encodes those visuals; the WAV pass composes the tracked
+speech and music. FFmpeg copies that Remotion video stream into the final delivery
+and encodes the WAV as AAC. There is no post-render audio correction or filter:
+the final gain and fade values live in `remotion/mix.mjs`. The visual content is
+preserved, but its encoded bytes differ from the original HyperFrames base.
+The lock identifies existing delivery bytes; a fresh encode need not be byte-identical.
+
+The explicit regeneration command `npm run audio` calls the paid Amazon Polly
+API using the caller's AWS credentials. It requires AWS CLI, FFmpeg and ffprobe.
+`remotion/narration.json` defines the English text, Matthew neural voice, region
+and scene timing. Each clip is normalized and measured; an overlong clip fails
+rather than cutting off words. Polly output can change across regeneration;
+the locked existing clip bytes identify this delivery. The score is synthesized
+locally from deterministic sine waves without external samples. Its gain falls
+under narration, with an opening fade and a two-second closing fade.
+
+To regenerate only the silent visual base, use the separate pinned HyperFrames
+scripts:
 
 ```bash
 npm run check -- --at 4,12,20,28,36,44 --strict
@@ -33,8 +70,9 @@ ffmpeg -i renders/dashboard-demo-en.mp4 -an -c:v libvpx-vp9 \
 ```
 
 Inspect the six scene frames, decode the complete files, and verify 48 seconds,
-1920×1080, 24 fps and no audio stream. Test the site player and English VTT track:
-the WebM source also supports Chromium builds without H.264 decoding.
+1920×1080, 24 fps and the AAC/Opus streams in the narrated delivery. Check complete
+speech, background ducking and the matching English VTT track.
+The WebM source also supports Chromium builds without H.264 decoding.
 For replacement media, retain a new immutable snapshot and update the lock and
 `site/assets/media.json` together after verification. Rendering does not publish
 the site.
@@ -44,3 +82,6 @@ Noto Sans 2.013 font includes its copyright notice and SIL Open Font License in
 `runtime/Noto-LICENSE.txt`. Source captures use synthetic fixtures and English
 display labels translated by `openai.gpt-6-luna`; product locale behavior is
 unchanged.
+
+Remotion's [license terms](https://github.com/remotion-dev/remotion/blob/v4.0.542/LICENSE.md)
+apply separately; this project does not modify or bundle its implementation.
