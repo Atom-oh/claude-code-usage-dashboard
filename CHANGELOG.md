@@ -29,6 +29,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   `/api/users/tasks/detail` accepts a missing `userExact`, resolves the task's owner (404
   when none, or for two Codex identities) and returns `owner` (#235).
 
+### Changed
+
+- Provide English, Korean, Japanese and Simplified Chinese versions of all five
+  documentation-site guides and media credits, with Luna translation provenance.
+  Document source builds, platform deployment options, ClickHouse schema setup
+  and the required OTel backend, alongside Task Trace guidance and a current
+  synthetic screenshot. Replace the overview's Korean video with a newly rendered
+  48-second English HyperFrames walkthrough and an English caption track.
+  Deliver generated media from a pinned snapshot with size/SHA256 checks before
+  Pages upload; keep composition, captions and provenance as reviewed source.
+
 ## [1.2.0] - 2026-11-10
 
 ### Added

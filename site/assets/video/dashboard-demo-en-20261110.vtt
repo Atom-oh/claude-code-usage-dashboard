@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00.000 --> 00:08.000
+Follow the task behind the total. Open Task Trace from a user's time bucket
+to inspect calls, agent lanes and cumulative cost. Synthetic data only.
+
+00:08.000 --> 00:16.000
+Clone a published release and build with dashboard/ as the context.
+Configure clients, the OTel Collector, ClickHouse schemas and the authenticated dashboard.
+
+00:16.000 --> 00:24.000
+Read one lane per agent and the cumulative cost chart.
+Explore accounts for 50% of this fictional $2.50 task. Capture remains partial.
+
+00:24.000 --> 00:32.000
+Select a call to inspect cache read, cache write, input and output tokens.
+Keep token components, missing fields and cost bases separate.
+
+00:32.000 --> 00:40.000
+Select a model row to highlight its calls. Select it again to clear.
+Codex diagnostic metrics and spans do not add to completion usage or cost.
+
+00:40.000 --> 00:48.000
+Choose EC2, ECS or EKS with their prerequisites. Lambda needs runtime adaptation.
+Follow the installation guide in English, Korean, Japanese or Simplified Chinese.

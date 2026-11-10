@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>자체 설치 환경 운영 — ccdash</title>
+  <meta name="description" content="자체 설치 환경에서 조직 SSO를 연결하고, 트레이스 전송을 확인하며, 사용자 작업이 누락되는 문제를 해결합니다." />
+  <link rel="stylesheet" href="../assets/site.css" />
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="../operations.html" />
+  <link rel="alternate" hreflang="ko" href="operations.html" />
+  <link rel="alternate" hreflang="ja" href="../ja/operations.html" />
+  <link rel="alternate" hreflang="zh-CN" href="../zh/operations.html" />
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="주요 탐색"><a href="index.html">개요</a><a href="installation.html">설치</a><a href="architecture.html">아키텍처</a><a href="api.html">API</a><a href="operations.html" aria-current="page">운영</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="언어"><a href="../operations.html" hreflang="en" lang="en">English</a><span lang="ko">한국어</span><a href="../ja/operations.html" hreflang="ja" lang="ja">日本語</a><a href="../zh/operations.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · 문서</p>
+      <h1>자체 설치 환경 운영</h1>
+      <p class="lede">조직의 ID를 구성하고, 배포된 구성 요소를 확인한 뒤, 롤아웃과 복구를 위한 운영 런북을 따르세요.</p>
+      <p class="caption">2026년 11월 10일 업데이트 · 소스 코드의 동작을 설명합니다. 설치된 리비전을 확인하세요.</p>
+      <p><a href="#traces">트레이스 수집 확인</a> · <a href="index.html#task-trace">Task Trace 안내</a></p>
+    </div>
+    <section id="sso"><h2>조직 SSO 연결</h2>
+<p>디스커버리/JWKS, 서명된 ID 토큰, authorization code 및 PKCE S256을 사용하는 기밀 OIDC 클라이언트에는 <code>AUTH_MODE=oidc</code>를 설정하세요. 콜백 주소 <code>https://dashboard.example.com/auth/callback</code>를 정확히 등록하세요.</p>
+<p>공유 Cognito 사용자 풀은 별도의 앱 클라이언트, 콜백, 시크릿 및 역할 매핑을 사용해 여러 프로젝트를 제공할 수 있습니다. 애플리케이션별 그룹 할당은 ID 관리에서 처리해야 합니다. 고객 이메일, 도메인 및 풀 ID는 구성값이며 일반적인 애플리케이션 규칙이 아닙니다.</p><div class="table-scroll" tabindex="0" role="region" aria-label="설정 참조 표"><table><thead><tr><th scope="col">설정</th><th scope="col">목적</th></tr></thead><tbody><tr><td><code>APP_PUBLIC_URL</code></td><td>경로, 쿼리 또는 프래그먼트가 없는 정확한 HTTPS 오리진입니다.</td></tr><tr><td><code>OIDC_ISSUER</code>, <code>OIDC_CLIENT_ID</code></td><td>정확한 발급자 식별자와 전용 애플리케이션 클라이언트입니다.</td></tr><tr><td><code>OIDC_CLIENT_SECRET</code>, <code>SESSION_SECRET</code></td><td>보호된 시크릿 참조를 통해 프로비저닝하세요. 복제본은 세션 키와 ID 구성을 공유해야 합니다.</td></tr><tr><td><code>OIDC_GROUPS_CLAIM</code></td><td>최상위 서명 그룹 클레임입니다. Cognito의 경우 <code>cognito:groups</code>를, 그 외에는 공급자가 구성한 클레임을 사용합니다.</td></tr><tr><td><code>OIDC_SCOPES</code></td><td>기본값은 <code>openid profile</code>입니다. 갱신 발급 요건을 포함해 구성된 공급자에 필요한 범위만 추가하세요.</td></tr><tr><td><code>OIDC_ROLE_GROUPS</code></td><td><code>viewer</code>, <code>analyst</code> 및 <code>admin</code>을 명시적 그룹 배열에 매핑하는 JSON입니다.</td></tr></tbody></table></div>
+<pre><code class="language-json">{
+  "viewer": ["YOUR_VIEWER_GROUP"],
+  "analyst": ["YOUR_EDITOR_GROUP"],
+  "admin": ["YOUR_ADMIN_GROUP"]
+}</code></pre>
+<p>UI의 편집자 역할은 <code>analyst</code>에 매핑됩니다. <code>editor</code>는 구성에서 역할 키로 사용할 수 없습니다. 매핑되지 않은 그룹은 로그인할 수 없습니다. 매핑된 역할 중 가장 높은 역할이 적용됩니다.</p><div class="table-scroll" tabindex="0" role="region" aria-label="역할 참조 표"><table><thead><tr><th scope="col">역할</th><th scope="col">권한</th></tr></thead><tbody><tr><td>viewer</td><td>설치 전체 텔레메트리 데이터를 읽을 수 있지만 Collector 관리와 채팅은 사용할 수 없습니다.</td></tr><tr><td>analyst / editor</td><td>텔레메트리 데이터를 읽고, 활성화된 채팅을 사용하고, 설치 프로그램을 다운로드하며, 소유한 디바이스를 관리할 수 있습니다.</td></tr><tr><td>admin</td><td>분석가 권한에 설치 진단 권한이 추가됩니다.</td></tr></tbody></table></div><p>Okta와 Keycloak은 적절한 범위와 서명된 그룹 클레임을 사용해 이 OIDC 계약을 제공할 수 있습니다. 실제 고객 공급자를 확인하세요. 일반 지원이 공급자 승인 테스트 완료를 뜻하지는 않습니다. 로그인은 사용자별 데이터 격리를 제공하지 않습니다.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/organization-sso.md">공급자 설정 및 SSO 운영</a></p></section><section id="sessions"><h2>로그인을 최대 30일간 유지</h2>
+<p>로그인 유지 기능은 선택 사항이며 기본적으로 비활성화되어 있습니다. 1시간의 인증 상한과 고정된 30일 로그인 한도는 다음과 같이 구성할 수 있습니다.</p>
+<pre><code class="language-bash">SESSION_MAX_AGE_SECONDS=3600
+SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
+<p>일반적인 짧은 세션의 기본값은 900초이며 허용 범위는 300–3600초입니다. 갱신 수명은 0(비활성화) 또는 3600–2592000초입니다. 짧은 세션은 공급자 토큰 만료 시점의 제한도 받으므로, 1시간은 상한일 뿐 보장된 갱신 간격이 아닙니다.</p>
+<p>갱신은 짧은 세션이 만료되기 전이나 만료된 후 요청이 들어올 때 수행되며, 백그라운드에서 매시간 실행되는 타이머 방식이 아닙니다. 30일 기한은 최초 로그인 시점부터 계산되며 연장되지 않습니다. 공급자가 이보다 일찍 세션을 종료할 수 있습니다.</p>
+<ul>
+  <li>갱신 모드에는 재사용할 수 있고 회전되지 않는 refresh token, 현재 그룹을 포함한 새 서명 ID 토큰, <code>client_secret_basic</code>을 사용하는 교환/폐기가 필요합니다.</li>
+  <li>이 모드에서는 회전만 지원하는 공급자를 사용할 수 없습니다. 갱신 응답에서 토큰이 회전되면 다시 로그인해야 합니다.</li>
+  <li>암호화된 Secure/HttpOnly 쿠키를 사용하세요. 세션 API는 원시 ID 토큰을 반환하지 않습니다.</li>
+  <li>로그아웃은 로컬 쿠키를 지우고 refresh token 폐기를 시도합니다. 공급자의 SSO 세션을 종료하거나, 복사된 단기 쿠키를 즉시 무효화하거나, 디바이스 토큰을 폐기하지는 않습니다.</li>
+</ul><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/decisions/ADR-021-refresh-token-sessions.md">갱신 세션 설계 및 제한</a></p></section><section id="deploy"><h2>검토된 애플리케이션 리비전 배포</h2>
+<ol>
+  <li>릴리스 PR을 병합하고, 깨끗한 빌드 컨텍스트에서 변경 불가능한 <code>vX.Y.Z</code> 태그를 배포하세요. 커밋을 기록하고 배포 런북의 사전 점검을 따르세요.</li>
+  <li>AWS 자격 증명, 대상 클러스터, 기존 Terraform 입력값, 마이그레이션 상태 및 사용 가능한 롤백 이미지를 확인하세요.</li>
+  <li>대상 아키텍처용으로 빌드하고 변경 불가능한 이미지 태그/다이제스트를 게시하세요. 제공된 EKS 배포 대상은 arm64입니다.</li>
+  <li>필요한 경우 전체 인프라 계획을 검토하세요. 기존 설치 환경에서는 자동 부트스트랩 재시도가 아니라 호환성 확인과 명시적 업그레이드를 사용합니다.</li>
+  <li>롤아웃하고 준비 상태와 실제 이미지 다이제스트를 확인한 뒤 로그인, API 동작, 수집 최신성 및 대표 데이터를 검증하세요.</li>
+</ol>
+<p>활성 상태 확인에는 <code>/healthz</code>를, 준비 상태 확인에는 <code>/readyz</code>를 사용하세요. 소스 코드 선언, 빌드 성공 및 정상 프로세스만으로는 ID 공급자의 정상 작동, 최신 텔레메트리 데이터 또는 마이그레이션 적용을 확인할 수 없습니다.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md">EKS 배포 및 롤백</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">스키마 마이그레이션 절차</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">고객 설치 사전 요건</a></p></section><section id="symptoms"><h2>문제가 발생한 경계부터 확인</h2><div class="table-scroll" tabindex="0" role="region" aria-label="증상 참조 표"><table><thead><tr><th scope="col">증상</th><th scope="col">우선 확인 항목</th></tr></thead><tbody><tr><td>로그인 실패 또는 조기 종료</td><td>정확한 오리진/콜백/발급자, 서명된 매핑 그룹, 공급자 만료 및 갱신 계약을 확인하세요. 토큰 값을 출력하지 마세요.</td></tr><tr><td>Collector 포트 사용 중</td><td>선택한 릴리스의 소스 설치 프로그램을 사용하세요. 지원되는 macOS 마이그레이션 또는 기존 서비스 소유자의 수동 절차를 따르세요.</td></tr><tr><td>사용자 식별 불가 또는 분리됨</td><td>의도한 <code>--user-id</code>, 전송된 ID 및 대시보드 필터를 확인하세요. 디바이스의 SSO 소유자가 텔레메트리 데이터에 자동으로 연결되는 것은 아닙니다.</td></tr><tr><td>토큰은 발급됐지만 텔레메트리 데이터 없음</td><td>코딩 클라이언트를 다시 시작하고 작업을 생성한 뒤 로컬 서비스/내보내기 오류와 디바이스 수신을 확인하고 저장된 데이터를 검증하세요.</td></tr><tr><td>Codex 세부 정보에 대시 표시</td><td>완료 코호트와 전체 기간의 완전성을 각각 확인하세요. 분모, 가격 또는 구성 요소가 누락된 경우 0으로 처리하면 안 됩니다.</td></tr><tr><td>비용 세부 정보가 느림</td><td>쿼리 허용 상태, 필터 및 적용 해상도를 확인하세요. 용량을 변경하기 전에 비용/노력 프로필을 사용하고 대상 워크로드를 측정하세요.</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector 제한 및 복구</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">비용 쿼리 동작</a></p></section><section id="platforms"><h2>플랫폼별 운영 사전 요건</h2><p>모든 호스팅 옵션에는 영구 ClickHouse 스키마와 정상 작동하는 OTel 파이프라인이 필요합니다. ECS와 EC2에는 별도로 작성한 서비스/시크릿/스토리지 구성이 필요하며, 제공된 Terraform은 기존 EKS 환경을 대상으로 합니다. Lambda에는 애플리케이션 런타임 조정과 외부 데이터베이스/Collector 서비스가 필요합니다.</p><p><a href="installation.html#platforms">배포 옵션 및 지원 범위</a> · <a href="installation.html#schema">스키마 초기화</a> · <a href="installation.html#collector">Collector 설정</a></p></section><section id="site"><h2>문서 배포</h2>
+<p>이 문서는 <code>site/</code>에 있는 정적 HTML입니다. Pages 워크플로는 <code>main</code>에 병합된 변경 사항이 있을 때 해당 디렉터리를 업로드합니다. 문서만 릴리스하는 경우 번들러 빌드나 애플리케이션/EKS 롤아웃은 없습니다.</p>
+<p>전체 절차는 소스에 연결된 런북을 사용하세요. 웹사이트는 지원되는 동작을 요약하며 특정 고객 설치 환경의 구성을 보증하지 않습니다.</p></section>
+<section id="traces"><h2>Trace 경로 확인</h2>
+<p>새 상호작용과 예상되는 텔레메트리 ID, 클라이언트 및 시간 버킷부터 확인하세요. 사용량 합계와 Trace 사용 가능 여부는 서로 다른 신호에서 나오므로 로그 내보내기가 성공했다고 트레이스가 전송된 것은 아닙니다.</p>
+<ol>
+  <li>현재 디바이스 패키지 또는 조직에서 관리하는 설정에 트레이스 내보내기가 활성화되어 있는지 확인한 다음 코딩 클라이언트를 다시 시작하세요. <a href="installation.html#trace">클라이언트 구성 참조</a>를 확인하세요.</li>
+  <li>로컬 Collector의 서비스와 트레이스 내보내기에서 전송 실패를 확인하세요. 인증된 수집, 중앙 트레이스 파이프라인 및 저장된 <code>otel_traces</code> 레코드까지 차례로 확인하세요. 디바이스 수신과 프로세스 상태는 각각 해당 단계만 확인합니다.</li>
+  <li>사용자 세부 정보에서 작업 시작 시각이 포함된 추세 버킷을 선택하세요. 의도한 ID와 필터를 확인하세요. 지원되는 트레이스 작업은 90일간 보관됩니다.</li>
+  <li>Codex 진단의 경우 전체 인사이트 프로필을 사용해 Analytics의 Trace 탭을 확인하세요. 비용/노력, 도구 및 성능 프로필은 트레이스 쿼리를 생략합니다.</li>
+</ol>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Trace 증상 참조"><table>
+  <thead><tr><th scope="col">증상</th><th scope="col">확인할 항목</th></tr></thead>
+  <tbody>
+    <tr><td>사용량은 있지만 작업이 표시되지 않음</td><td>트레이스 구성, 재시작 시각, 전송된 ID, 작업 시작 버킷 및 보존 기간을 확인하세요. 과거 사용량은 트레이스로 소급 입력되지 않습니다.</td></tr>
+    <tr><td>Codex 완료 항목이 작업에 포함되지 않음</td><td>추적된 턴에는 대화 ID와 고유 턴 ID가 필요합니다. 적격 턴이 없는 완료 항목은 연결되지 않습니다. 샘플링 span이 없는 연결 완료 항목은 비용 구간에서 누락될 수 있습니다.</td></tr>
+    <tr><td>Codex 하위 에이전트 수를 확인할 수 없음</td><td>현재 작업 뷰에는 기본 레인만 있으며, 관련 없는 span으로 하위 에이전트 수를 추정하지 않습니다.</td></tr>
+    <tr><td>세부 정보가 많을 때 합계가 생략됨</td><td><code>truncated</code>와 <code>span_total</code>을 확인하세요. 작업 세부 정보는 5,000개 span으로 제한됩니다. 별도의 진단 미리보기는 트레이스 50개, 트레이스당 span 200개를 사용합니다.</td></tr>
+    <tr><td>모델 필터를 적용하면 Codex Trace가 사라짐</td><td>모델 속성이 있는 span만 해당 필터와 일치합니다. 다른 진단 span을 확인하려면 필터를 지우세요.</td></tr>
+  </tbody>
+</table></div>
+<p><a href="api.html#tasks">작업 엔드포인트 제한</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector 복구</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">애플리케이션 릴리스 절차</a></p>
+</section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">전체 API 참조</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 항목 정의</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">변경 이력</a> · <a href="credits.html">데모 크레딧</a></p>
+    <p>텔레메트리 데이터가 불완전할 수 있습니다. 보고된 비용과 정가 기준 추정치는 청구서가 아닙니다. 활동 지표만으로 직원 생산성이나 인과적 투자수익률을 판단할 수 없습니다.</p>
+  </div></footer>
+</body>
+</html>

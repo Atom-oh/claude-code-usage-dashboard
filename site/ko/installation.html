@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>전체 서비스 빌드 및 배포 — ccdash</title>
+  <meta name="description" content="소스를 복제하고 대시보드 이미지를 빌드한 다음 ClickHouse 스키마와 OTel Collector를 준비하세요. EKS, ECS, EC2를 선택하거나 Lambda 런타임에 맞게 앱을 조정하세요." />
+  <link rel="stylesheet" href="../assets/site.css" />
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="../installation.html" />
+  <link rel="alternate" hreflang="ko" href="installation.html" />
+  <link rel="alternate" hreflang="ja" href="../ja/installation.html" />
+  <link rel="alternate" hreflang="zh-CN" href="../zh/installation.html" />
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="주요 탐색"><a href="index.html">개요</a><a href="installation.html" aria-current="page">설치</a><a href="architecture.html">아키텍처</a><a href="api.html">API</a><a href="operations.html">운영</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="언어"><a href="../installation.html" hreflang="en" lang="en">English</a><span lang="ko">한국어</span><a href="../ja/installation.html" hreflang="ja" lang="ja">日本語</a><a href="../zh/installation.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+  </div></header>
+  <main class="wrap" id="main">
+<div class="hero"><p class="eyebrow">Claude Code + Codex · 설치</p><h1>전체 서비스 빌드 및 배포</h1>
+<p class="lede">Git 소스에서 시작하세요. 코딩 클라이언트를 연결하기 전에 대시보드, ClickHouse와 스키마, OTel 수집 경로를 배포하세요.</p>
+<p class="caption">2026년 11월 10일 업데이트 · 소스 기반 안내입니다. 선택한 릴리스와 대상 환경을 확인하세요.</p>
+<p><a href="#setup">복제 및 빌드</a> · <a href="#schema">데이터베이스 스키마</a> · <a href="#collector">OTel 백엔드</a> · <a href="#platforms">호스팅 옵션</a> · <a href="#trace">클라이언트 트레이스</a></p></div>
+<section id="choose"><h2>설치해야 하는 항목</h2>
+<p>이 안내서는 게시된 애플리케이션 <code>.tar.gz</code> 파일에 의존하지 않습니다. 저장소를 복제하고 Docker 이미지를 빌드하세요. 선택적 장치 패키지는 설치된 대시보드에서 생성되며 백엔드를 설치하지 않습니다.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="필수 설치 구성 요소"><table><thead><tr><th scope="col">구성 요소</th><th scope="col">용도 및 출처</th></tr></thead><tbody>
+<tr><td>대시보드 애플리케이션</td><td><code>dashboard/Dockerfile</code>은 React와 Express를 단일 이미지로 빌드하고, 포트 8080에서 UI와 API를 제공합니다. ClickHouse나 OTel Collector를 실행하지 않습니다.</td></tr>
+<tr><td>ClickHouse 및 스키마</td><td>영구 데이터베이스, 텔레메트리 테이블, 머티리얼라이즈드 뷰 및 마이그레이션 원장입니다. 배포에 맞는 단일 노드 또는 복제 스키마를 선택하세요.</td></tr>
+<tr><td>OTel Collector</td><td>별도로 실행되는 Collector가 로그, 메트릭 및 트레이스를 수신하고 저장소의 필터와 변환을 적용한 다음 준비된 테이블에 기록합니다.</td></tr>
+<tr><td>인증 및 보안 정보</td><td>OIDC 또는 설정된 Basic 인증, HTTPS 액세스, 비공개 데이터베이스 연결, 별도의 읽기/수집/관리 자격 증명 및 보호된 보안 정보 마운트입니다.</td></tr>
+<tr><td>클라이언트 수집</td><td>Claude Code/Codex 내보내기 도구와 로컬 Collector 또는 조직 관리 수집 경로입니다. 백엔드 배포로 사용자의 클라이언트 설정이 변경되지는 않습니다.</td></tr>
+</tbody></table></div>
+<p>먼저 Git과 buildx가 포함된 Docker를 설치하세요. EKS의 경우 <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">조직 배포 사전 요구 사항</a>에 설명된 기존 클러스터 종속 항목, Terraform, AWS CLI 및 kubectl도 준비하세요.</p></section>
+<section id="setup"><h2>1. 릴리스를 복제하고 이미지 빌드</h2>
+<p><code>CCDASH_RELEASE</code>를 실제로 게시된 <code>vX.Y.Z</code> 릴리스 태그로 설정하세요. 런타임에 맞는 플랫폼을 선택하세요. 제공된 EKS 배포는 <code>linux/arm64</code>를 사용합니다.</p>
+<pre><code class="language-bash">: "${CCDASH_RELEASE:?Set a published vX.Y.Z release tag}"
+CCDASH_PLATFORM=linux/arm64
+git clone https://github.com/Atom-oh/claude-code-usage-dashboard.git
+cd claude-code-usage-dashboard
+git checkout --detach "$CCDASH_RELEASE"
+CCDASH_REVISION=$(git rev-parse HEAD)
+docker build --platform "$CCDASH_PLATFORM" \
+  --build-arg APP_REVISION="$CCDASH_REVISION" \
+  --tag "ccdash:$CCDASH_RELEASE" dashboard</code></pre>
+<p>빌드 컨텍스트는 저장소 루트가 아니라 <code>dashboard/</code>입니다. x86 런타임이라면 <code>linux/amd64</code>를 선택하고 해당 배포를 별도로 검증하세요. 다른 아키텍처에서 빌드하려면 크로스 플랫폼 빌더를 구성해야 합니다.</p>
+<p>프로덕션에서는 <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md#procedure">검토된 빌드, 검사, 레지스트리 게시 및 롤아웃 절차</a>를 따르세요. 릴리스, 소스 리비전 및 이미지 다이제스트를 보존하세요. 로컬 빌드 성공을 배포 완료로 간주하지 마세요.</p></section>
+<section id="schema"><h2>2. 수집을 시작하기 전에 ClickHouse 준비</h2>
+<p>먼저 영구 ClickHouse 저장소와 백업/복구를 구성하세요. 읽기 전용 대시보드 계정, 필요한 내보내기 권한이 있는 수집 계정, 관리용 마이그레이션 계정을 만드세요. 스키마 파일은 프로덕션 사용자를 구성하지 않습니다.</p>
+<p>제공된 계정 정책은 <code>otel_reader</code>에 <code>claude_code.*</code>에 대한 SELECT 권한을 부여합니다. 머티리얼라이즈드 뷰의 원본 읽기를 위해 <code>otel_ingest</code> 계정에는 <code>claude_code.*</code>에 대한 INSERT와 <code>claude_code.otel_metrics_sum</code>에 대한 SELECT가 필요합니다. INSERT만 부여하면 수집이 실패할 수 있습니다. 계정 네트워크를 제한하고 <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/infra/clickhouse.tf">저장소의 ClickHouse 계정 정책</a>을 참고해 보호된 자격 증명을 구성하세요.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="스키마 설치 경로"><table><thead><tr><th scope="col">배포 유형</th><th scope="col">스키마 경로</th></tr></thead><tbody>
+<tr><td>새 단일 노드 / 로컬 평가</td><td><code>clickhouse-schema.sql</code>: 비복제 테이블, 뷰, 롤업 및 현재 마이그레이션 가드입니다. Claude 텔레메트리와 Codex 전용 메트릭/비용/진단 테이블이 포함됩니다.</td></tr>
+<tr><td>새 복제 EKS 설치</td><td><code>infra/files/clickhouse-schema-replicated.sql</code>과 생성된 계약 및 <code>infra/schema.tf</code>의 스키마 초기화 Job을 사용합니다. 선언된 클러스터/Keeper 토폴로지와 예상 복제본이 필요합니다.</td></tr>
+<tr><td>기존 설치</td><td>테이블, 원장 및 과거 데이터를 검사하세요. 런북에 따라 필요한 번호 지정 마이그레이션만 적용하세요. 부트스트랩을 업그레이드처럼 다시 실행하지 마세요.</td></tr>
+</tbody></table></div>
+<p>EC2/Docker에서는 ClickHouse를 시작하기 전에 다음을 준비하세요.</p><ul><li>전용 브리지 네트워크와 영구 데이터 볼륨.</li><li>익명 기본 액세스를 비활성화하고 네트워크를 제한한 reader/ingest/admin 계정용 보호된 <code>users.d</code> XML, 그리고 관리자 클라이언트 구성.</li><li>검증하고 다이제스트를 고정한 ClickHouse 이미지. 로컬 Compose 버전은 참고용 시작점입니다.</li></ul><p><code>CLICKHOUSE_SKIP_USER_SETUP=1</code>은 준비한 계정 구성을 유지합니다. 먼저 인증 및 네트워크 제한을 검증하세요. 다음 명령은 데이터베이스 포트를 공개하지 않습니다.</p>
+<pre><code class="language-bash">: "${CCDASH_NETWORK:?Set the prepared private Docker network}"
+: "${CCDASH_CH_CONTAINER:?Set the ClickHouse container name}"
+: "${CCDASH_CH_IMAGE:?Set the reviewed ClickHouse image including its sha256 digest}"
+: "${CCDASH_CH_DATA_VOLUME:?Set the prepared persistent data volume}"
+: "${CCDASH_CH_USERS_DIR:?Set the protected users.d configuration directory}"
+: "${CCDASH_CH_ADMIN_CONFIG:?Set the protected admin client configuration file}"
+docker run -d --name "$CCDASH_CH_CONTAINER" --restart unless-stopped \
+  --network "$CCDASH_NETWORK" --network-alias clickhouse.internal \
+  --env CLICKHOUSE_SKIP_USER_SETUP=1 \
+  --mount "type=volume,src=$CCDASH_CH_DATA_VOLUME,dst=/var/lib/clickhouse" \
+  --mount "type=bind,src=$CCDASH_CH_USERS_DIR,dst=/etc/clickhouse-server/users.d,readonly" \
+  --mount "type=bind,src=$CCDASH_CH_ADMIN_CONFIG,dst=/run/ccdash-admin/client.xml,readonly" \
+  "$CCDASH_CH_IMAGE"</code></pre>
+<p>ClickHouse가 시작될 때까지 기다린 뒤 마운트한 관리자 클라이언트 구성으로 인증하세요. 아래 스키마 명령에서 컨테이너 경로는 <code>/run/ccdash-admin/client.xml</code>입니다. 이 네트워크에서 앱과 Collector의 데이터베이스 호스트로 <code>clickhouse.internal</code>을 사용하세요. 이미지와 마운트한 구성은 런타임 아키텍처 및 파일 읽기 권한과 일치해야 합니다.</p>
+<p><strong>새 빈 비복제</strong> 데이터베이스에만 적용하세요. 실행 중인 ClickHouse 컨테이너 이름을 <code>CCDASH_CH_CONTAINER</code>에, 보호된 관리자 클라이언트 구성의 컨테이너 내부 경로를 <code>CCDASH_CH_CLIENT_CONFIG</code>에 설정하세요.</p>
+<pre><code class="language-bash">: "${CCDASH_CH_CONTAINER:?Set the prepared ClickHouse container name}"
+: "${CCDASH_CH_CLIENT_CONFIG:?Set the mounted admin client configuration path}"
+docker exec -i "$CCDASH_CH_CONTAINER" \
+  clickhouse-client --config-file "$CCDASH_CH_CLIENT_CONFIG" \
+  --multiquery &lt; clickhouse-schema.sql
+
+docker exec "$CCDASH_CH_CONTAINER" clickhouse-client \
+  --config-file "$CCDASH_CH_CLIENT_CONFIG" \
+  --query "SELECT name FROM system.tables WHERE database='claude_code' ORDER BY name"</code></pre>
+<p><code>otel_logs</code>, <code>otel_traces</code>, Claude 메트릭 테이블, Codex 메트릭 테이블 4개, 뷰 및 <code>schema_migrations</code>를 확인하세요. Collector는 <code>create_schema: false</code>를 사용하므로 누락된 테이블을 만들 수 없습니다. 마이그레이션 003에서는 롤업을 SQL 문 단위로 전환해야 합니다. 타입 지정 읽기를 활성화하려면 테이블 존재 여부만으로는 부족하며 과거 및 실시간 데이터 범위도 검증해야 합니다.</p>
+<p>기존 <code>dashboard/docker-compose.yml</code>은 새 로컬 ClickHouse 볼륨과 합성 시드 데이터를 초기화합니다. 개발용 인증을 사용하며 OTel Collector 서비스는 없습니다. 이는 평가를 위한 출발점이지 완전한 프로덕션 설치가 아니며, 기존 볼륨은 다시 초기화되지 않습니다.</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">스키마 수명 주기 및 마이그레이션 순서</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/codex-cost-schema.md">Codex 비용 읽기 활성화</a></p></section>
+<section id="collector"><h2>3. OTel 백엔드 설치</h2>
+<p>ClickHouse 내보내기 도구와 필요한 프로세서를 포함하는 Collector 배포판을 실행하세요. 선택적 장치 토큰 경로의 경우 <code>dashboard/collector/generated/central.yaml</code>은 저장소의 비공개 중앙 수신기 정책입니다. <code>infra/device_ingest.tf</code>에 정의된 검토 및 다이제스트 고정 Contrib 이미지를 사용하세요.</p>
+<ol>
+<li>중앙 YAML을 Collector 구성으로 마운트하세요. <code>CH_HOST</code>, <code>CH_PORT</code>(네이티브 포트), <code>CH_DB=claude_code</code>, <code>CH_USER</code> 및 이에 맞는 <code>CLAUDE_ENABLED</code>/<code>CODEX_ENABLED</code> 플래그를 설정하세요.</li>
+<li>ClickHouse 수집 자격 증명을 <code>/var/run/ccdash-clickhouse/CH_PASSWORD</code>에, 내부 수신기 베어러 토큰을 <code>/var/run/ccdash-ingest/token</code>에 읽기 전용으로 마운트하세요. 컨테이너 사용자가 읽을 수 있어야 합니다. 이 내부 토큰을 클라이언트에 배포하지 마세요.</li>
+<li>수신기 포트 4318과 상태 확인 포트 13133을 비공개로 유지하세요. 생성된 중앙 정책은 베어러 인증이 적용된 OTLP HTTP와 비공개 네이티브 ClickHouse 연결을 사용합니다. 경계를 넘는 연결에는 적절한 TLS 정책이 필요합니다.</li>
+<li>필요한 파이프라인을 모두 활성화하세요. Claude 메트릭/로그/트레이스와 Codex 메트릭/로그/트레이스입니다. Codex 메트릭 파이프라인은 전용 테이블에 기록하고, 로그와 트레이스는 클라이언트 식별 정보를 유지하며 공유 테이블을 사용합니다.</li>
+<li>장치 수집을 위해 대시보드의 OIDC 게이트, DynamoDB 장치 레지스트리, 런타임 IAM 권한, <code>INGEST_ENABLED=1</code>, <code>INGEST_TOKEN_TABLE</code>, <code>INGEST_UPSTREAM_URL</code> 및 <code>INGEST_UPSTREAM_TOKEN_FILE</code>을 구성하세요. 백엔드는 인증된 장치를 비공개 수신기로 전달합니다.</li>
+</ol>
+<p>조직 관리 클라이언트의 경우 <code>collector-config.yaml</code>과 <code>user-data.sh</code>는 배포별 자격 증명 및 엔드포인트를 사용하는 별도의 로컬 Collector-to-ClickHouse 경로를 설명합니다. 구성을 그대로 복사해 두 경로를 결합하지 마세요.</p>
+<p>EC2/Docker 호스트에서는 ClickHouse에 액세스할 수 있는 비공개 Docker 네트워크, 비밀 정보가 아닌 Collector 환경 파일, 보호된 보안 정보 파일 두 개를 준비하세요. <code>infra/device_ingest.tf</code>에서 다이제스트가 고정된 이미지를 선택하세요. 파일은 해당 이미지의 런타임 사용자가 읽을 수 있어야 합니다. 대시보드는 이 네트워크에서 중앙 수신기에 연결할 수 있으며 OTLP 포트나 상태 확인 포트를 호스트에 공개하지 않습니다.</p>
+<pre><code class="language-bash">: "${CCDASH_NETWORK:?Set the existing private Docker network}"
+: "${CCDASH_COLLECTOR_IMAGE:?Set the pinned contrib image including its sha256 digest}"
+: "${CCDASH_COLLECTOR_ENV_FILE:?Set the prepared nonsecret Collector environment file}"
+: "${CCDASH_INGEST_SECRET_DIR:?Set the protected directory containing token}"
+: "${CCDASH_INGEST_CH_SECRET_DIR:?Set the protected directory containing CH_PASSWORD}"
+docker run -d --name ccdash-otel --restart unless-stopped \
+  --network "$CCDASH_NETWORK" \
+  --env-file "$CCDASH_COLLECTOR_ENV_FILE" \
+  --mount "type=bind,src=$PWD/dashboard/collector/generated/central.yaml,dst=/etc/otelcol-contrib/config.yaml,readonly" \
+  --mount "type=bind,src=$CCDASH_INGEST_SECRET_DIR,dst=/var/run/ccdash-ingest,readonly" \
+  --mount "type=bind,src=$CCDASH_INGEST_CH_SECRET_DIR,dst=/var/run/ccdash-clickhouse,readonly" \
+  "$CCDASH_COLLECTOR_IMAGE" --config=/etc/otelcol-contrib/config.yaml</code></pre>
+<p>이 네트워크에서 앱의 업스트림을 <code>http://ccdash-otel:4318</code>로 설정하고 동일한 내부 베어러 토큰을 <code>INGEST_UPSTREAM_TOKEN_FILE</code>에 마운트하세요. 이 토큰은 각 사용자의 장치 토큰과 다릅니다. 제공된 중앙 큐는 메모리 내에서 동작합니다. 운영 요구 사항에 맞춰 지속성/재시도와 손실 모니터링을 설계하세요.</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md#enable-on-eks">중앙 수신기 및 장치 레지스트리 설정</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/generated/central.yaml">중앙 Collector 구성</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/codex-telemetry.md">조직 관리 수집</a></p></section>
+<section id="backend"><h2>4. 대시보드를 구성하고 시작</h2>
+<p>이미지를 시작하기 전에 데이터베이스 연결 및 인증 설정을 제공하세요. 다음은 비밀 정보가 없는 구성 템플릿입니다. 예시 엔드포인트, 발급자, 클라이언트 ID 및 그룹 이름을 배포 환경의 값으로 바꾸세요.</p>
+<pre><code class="language-ini">CH_URL=http://clickhouse.internal:8123
+CH_DB=claude_code
+CH_USER=otel_reader
+CH_PASSWORD_FILE=/run/ccdash-secrets/CH_PASSWORD
+CLAUDE_ENABLED=true
+CODEX_ENABLED=true
+AUTH_MODE=oidc
+APP_PUBLIC_URL=https://dashboard.example.com
+OIDC_ISSUER=https://issuer.example.com
+OIDC_CLIENT_ID=YOUR_APP_CLIENT_ID
+OIDC_ROLE_GROUPS={"viewer":["YOUR_VIEWER_GROUP"],"analyst":["YOUR_ANALYST_GROUP"],"admin":["YOUR_ADMIN_GROUP"]}
+OIDC_CLIENT_SECRET_FILE=/run/ccdash-secrets/OIDC_CLIENT_SECRET
+SESSION_SECRET_FILE=/run/ccdash-secrets/SESSION_SECRET</code></pre>
+<p>대시보드를 시작하기 전에 다음을 준비하세요.</p><ul><li>참조된 보안 정보 파일 세 개를 플랫폼의 보안 정보 관리 방식으로 제공하고 읽기 전용으로 마운트합니다.</li><li><code>SESSION_SECRET</code>에는 base64url로 인코딩된 32바이트 난수 키를 사용합니다. 파일 내용과 읽기 권한을 정확히 유지하세요. 런타임은 루트가 아닌 <code>node</code> 사용자로 실행됩니다.</li><li>EC2에서는 설정된 절대 컨테이너 경로를 유지합니다. ECS/EKS에서는 해당 태스크/파드 보안 정보 전달 방식을 제공합니다.</li></ul><p>공개 배포에서는 안전하지 않은 개발용 인증을 비활성화하세요.</p>
+<p>EC2/Docker 호스트에서 <code>CCDASH_ENV_FILE</code>과 <code>CCDASH_SECRET_DIR</code>을 준비한 다음, 별도로 구성한 HTTPS 리버스 프록시 뒤에서 앱을 실행합니다.</p>
+<pre><code class="language-bash">: "${CCDASH_RELEASE:?Set the built release tag}"
+: "${CCDASH_ENV_FILE:?Set the prepared nonsecret environment file}"
+: "${CCDASH_SECRET_DIR:?Set the runtime-readable protected secret directory}"
+: "${CCDASH_NETWORK:?Set the existing private Docker network}"
+docker run -d --name ccdash --restart unless-stopped \
+  --network "$CCDASH_NETWORK" \
+  --publish 127.0.0.1:8080:8080 \
+  --env-file "$CCDASH_ENV_FILE" \
+  --mount "type=bind,src=$CCDASH_SECRET_DIR,dst=/run/ccdash-secrets,readonly" \
+  "ccdash:$CCDASH_RELEASE"</code></pre>
+<p>장치 수집을 활성화하려면 이전 단계의 내부 토큰 파일 마운트와 <code>INGEST_*</code> 설정도 앱의 런타임 구성에 추가하세요. 이 기본 앱 명령만으로 장치 레지스트리가 구성되거나 수집이 활성화되지는 않습니다.</p>
+<p><a href="operations.html#sso">OIDC 및 역할 구성</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/.env.example">환경 변수 참고</a></p></section>
+<section id="platforms"><h2>EC2, ECS, EKS를 선택하거나 Lambda용 앱 조정</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="호스팅 옵션 및 저장소 지원"><table><thead><tr><th scope="col">옵션</th><th scope="col">배포 형태</th><th scope="col">저장소 지원 및 남은 작업</th></tr></thead><tbody>
+<tr><td>EC2 + Docker</td><td>비공개 호스트나 네트워크에서 대시보드, Collector 및 영구 ClickHouse를 실행합니다. 내구성 있는 데이터베이스/큐 저장소와 HTTPS 진입점을 사용하세요.</td><td>앱 이미지와 단일 노드 스키마가 제공됩니다. 호스트/서비스 수명 주기, 보안 정보, 데이터베이스 사용자, 네트워크 라우팅 및 백업은 직접 준비해야 합니다. 워크숍 user-data 스크립트는 클라이언트 수집을 구성하며 백엔드 전체를 구성하지 않습니다.</td></tr>
+<tr><td>ECS / Fargate</td><td>앱과 Collector 이미지를 ECR에 게시하고 별도 서비스 또는 적절한 사이드카로 실행합니다. 비공개 네트워킹과 별도로 관리되는 영구 ClickHouse 설치를 사용하세요.</td><td>ECS 태스크/서비스 템플릿은 제공되지 않습니다. 태스크/실행 역할, 보안 정보 전달, CPU/메모리, 이미지 아키텍처, 상태 확인 및 서비스 연결을 정의하세요. 데이터베이스나 내구성 있는 큐에 임시 태스크 파일 시스템을 사용하지 마세요.</td></tr>
+<tr><td>EKS</td><td>기존 클러스터, ClickHouse/Keeper 오퍼레이터 및 영구 볼륨을 사용하고 저장소의 Terraform으로 앱과 선택적 중앙 수신기를 배포합니다.</td><td><code>infra/</code>는 기존 클러스터/VPC를 재사용합니다. 오퍼레이터, Karpenter, CSI/스토리지, DNS/인증서, IAM 및 보안 정보를 준비한 다음 계획/적용하고, 스키마 초기화를 확인하고, 검토된 이미지를 게시해 롤아웃하세요. 모든 사전 요구 사항이 자동으로 생성되지는 않습니다.</td></tr>
+<tr><td>Lambda</td><td>HTTP 애플리케이션을 Lambda 호환 런타임/어댑터로 포팅합니다. ClickHouse와 수집 Collector는 영구 외부 서비스로 유지하세요.</td><td>현재 Docker 이미지는 Express를 시작하며 Lambda 핸들러/런타임 통합이 없습니다. 바로 사용할 수 있는 Lambda 배포 구성은 제공되지 않습니다. 포팅 후 인증 쿠키, 스트리밍/채팅, 시간 제한, 네트워킹 및 장치 수집을 검증하세요. Lambda를 선택하는 것만으로 이 스택이 설치되지는 않습니다.</td></tr>
+</tbody></table></div>
+<p>공식 플랫폼 참고 자료: <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html">EC2</a> · <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html">ECS/Fargate 태스크 정의</a> · <a href="https://docs.aws.amazon.com/eks/latest/userguide/sample-deployment.html">EKS 애플리케이션 배포</a> · <a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html">Lambda 이미지/런타임 요구 사항</a>.</p></section>
+<section id="trace"><h2>5. 클라이언트 로그, 메트릭 및 트레이스 연결</h2>
+<p>백엔드가 동작하면 각 클라이언트의 로컬 Collector와 내보내기 대상 주소를 구성하세요. 장치 경로의 경우 analyst/admin이 배포된 대시보드에서 장치를 등록할 수 있습니다. 다운로드할 수 없다면 소스 설치 프로그램을 직접 사용하세요. 그래도 설치된 백엔드와 발급된 장치 토큰이 필요합니다.</p>
+<pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
+: "${CCDASH_USER_ID:?Set the intended telemetry attribution ID}"
+python3 dashboard/collector/install.py install \
+  --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
+<p>설치 프로그램은 macOS/Linux에서 Python 3.9 이상이 필요하며 토큰을 비공개로 입력하라는 메시지를 표시합니다. Linux에서는 로그아웃/재부팅 후에도 서비스가 유지되도록 <code>sudo loginctl enable-linger "$USER"</code>를 실행한 다음 일반 사용자로 설치하세요. Collector 바이너리를 다운로드하고 검증합니다. 이 명령은 대시보드, 데이터베이스 또는 중앙 수신기를 준비하지 않습니다. 장치 소유자가 자동으로 텔레메트리의 사용자 식별 정보가 되는 것은 아닙니다.</p>
+<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> 및 <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>을 설정하고, <code>OTEL_TRACES_EXPORTER=otlp</code>와 포트 4317의 로컬 OTLP gRPC 대상을 사용합니다.</li><li>Codex: 별도의 <code>[otel]</code> <code>exporter</code>, <code>metrics_exporter</code> 및 <code>trace_exporter</code> 항목을 사용하고, 포트 4318의 로컬 OTLP HTTP 대상과 <code>log_user_prompt=false</code>를 설정합니다.</li></ul>
+<p>두 클라이언트를 다시 시작하고 새 작업을 생성한 뒤 <a href="index.html#task-trace">사용자 → 추세 버킷 → 작업 → Task Trace</a>를 따라가세요. 이전 활동은 트레이스로 소급 처리되지 않습니다. Codex 진단 span은 Analytics의 Trace 탭에서 확인하세요.</p></section>
+<section id="migration"><h2>기존 장치 및 데이터베이스</h2><p>장치 마이그레이션 중에는 비공개 클라이언트 백업과 내보내기 큐를 보존하세요. 알 수 없는 서비스를 중지하는 대신 지원되는 macOS/Linux 마이그레이션 절차를 따르세요. 데이터베이스 업그레이드는 클라이언트 설치 및 애플리케이션 롤아웃과 별도로 스키마 런북을 따릅니다.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">소스 설치 프로그램 및 마이그레이션 안내서</a></p></section>
+<section id="verify"><h2>6. 모든 경계 검증</h2><ol><li><code>/healthz</code>와 ClickHouse 기반 <code>/readyz</code>를 확인한 다음 인증하고 설치/스키마 진단을 살펴보세요.</li><li>예상 테이블, 마이그레이션 원장, 뷰, 데이터베이스 권한 및 Collector 쓰기 성공을 확인하세요. 스키마가 있다는 사실만으로 과거 데이터가 준비된 것은 아닙니다.</li><li>새 클라이언트 작업을 보내고 의도한 사용자 식별 정보로 저장된 로그, 메트릭 및 트레이스를 확인하세요. Collector 프로세스 실행이나 장치 수신 확인만으로 데이터가 영구 저장되었다고 볼 수 없습니다.</li><li>선택한 사용자의 사용량과 Task Trace를 확인하세요. Codex 트레이스/메트릭 관측값은 진단 정보이므로 비용 합계를 추가해서는 안 됩니다.</li></ol><p><a href="operations.html#traces">트레이스 문제 해결</a> · <a href="api.html#tasks">API 경계값</a></p></section>
+<section id="workshops"><h2>조직이 준비한 워크숍</h2><p>준비된 워크숍은 자체 클라이언트 및 Collector 수명 주기를 가집니다. 참가자는 구성된 환경을 사용하며 두 번째 백엔드를 배포하거나 준비된 서비스 위에 Collector를 추가로 설치하지 않습니다. 주최자는 <code>user-data.sh</code>를 사용하기 전에 스키마, 보안 정보 대상 및 부트스트랩 자산을 제공해야 합니다.</p></section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">전체 API 참고 자료</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 항목 정의</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">변경 이력</a> · <a href="credits.html">데모 크레딧</a></p>
+    <p>텔레메트리가 불완전할 수 있습니다. 보고된 비용 및 정가 추정치는 청구서가 아닙니다. 활동 지표만으로 직원 생산성이나 인과적 투자수익률(ROI)을 입증할 수 없습니다.</p>
+  </div></footer>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>采集与查询管道 — ccdash</title>
+  <meta name="description" content="了解 Claude Code 和 Codex 信号如何从采集流向用户任务、智能体泳道，以及与任务完成记录关联的成本。" />
+  <link rel="stylesheet" href="../assets/site.css" />
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="../architecture.html" />
+  <link rel="alternate" hreflang="ko" href="../ko/architecture.html" />
+  <link rel="alternate" hreflang="ja" href="../ja/architecture.html" />
+  <link rel="alternate" hreflang="zh-CN" href="architecture.html" />
+</head>
+<body>
+  <a class="skip-link" href="#main">跳转到正文</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="主要导航"><a href="index.html">概览</a><a href="installation.html">安装</a><a href="architecture.html" aria-current="page">架构</a><a href="api.html">API</a><a href="operations.html">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="语言"><a href="../architecture.html" hreflang="en" lang="en">English</a><a href="../ko/architecture.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/architecture.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · 文档</p>
+      <h1>采集与查询管道</h1>
+      <p class="lede">专用安装将客户端遥测、受限的接收路径、ClickHouse 存储和经过身份验证的仪表板整合在一起。</p>
+      <p class="caption">更新于 2026 年 11 月 10 日 · 描述源代码行为；请核实你安装的版本。</p>
+    </div>
+    <section id="task-traces"><h2>关联用户、任务与span</h2>
+<p>用户详情会选择一个确切的遥测身份和趋势时间桶。<code>/api/users/tasks</code>会列出在该时间桶内开始的任务；<code>/api/users/tasks/detail</code>会返回所选任务的泳道、span 以及基于证据的成本说明。</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="任务追踪数据来源"><table>
+  <thead><tr><th scope="col">客户端</th><th scope="col">任务与计时</th><th scope="col">用量与成本</th></tr></thead>
+  <tbody>
+    <tr><td>Claude Code</td><td><code>interaction</code>span用于标识任务和持续时间。LLM、工具及权限等待span构成时间线；观测到的智能体 ID 构成泳道。</td><td>LLM span中的令牌数；如果有日志，则关联其中报告的请求成本，否则使用适用的定价计算。显示的成本依据可能混合多种来源。</td></tr>
+    <tr><td>Codex</td><td>包含会话 ID 和唯一轮次 ID 的轮次用于标识任务。持续时间取观测到的span时间窗口；仅提供主泳道。</td><td>与轮次时间窗口关联的、具有用量信息的唯一完成日志提供令牌数和 AWS 列表价估算。匹配的完成记录值也会显示在采样span上。</td></tr>
+  </tbody>
+</table></div>
+<p>Codex 任务用量是关联完成记录的视图，并非额外的记账来源。未关联的完成记录会单独报告；缺少匹配采样span的调用可能不会计入累计成本带。Analytics Trace 预览会独立读取诊断span。</p>
+<p>任务详情查询只选择允许列表中的元数据。界面会遮蔽身份信息，且不呈现原始提示词、命令或路径；此显示策略不构成 API 访问控制。追踪数据的保留期限为 90 天，与用量汇总数据分开管理。</p>
+<p><a href="index.html#task-trace">任务追踪演示</a> · <a href="api.html#tasks">查询约定</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/data.md#user-task-traces">任务身份、关联与隐私边界</a></p>
+</section>
+    <section id="pipeline"><h2>两条采集路径</h2><div class="pipe" role="group" aria-label="设备数据流">
+  <div class="stage"><b>Claude Code + Codex</b><span>指标、完成日志和诊断信号</span></div><div class="arrow" aria-hidden="true">→</div>
+  <div class="stage"><b>本地 Collector</b><span>回环接收器、过滤和有界持久化队列</span></div><div class="arrow" aria-hidden="true">→</div>
+  <div class="stage"><b>设备接收网关</b><span>HTTPS、设备承载令牌、有界 OTLP 请求</span></div><div class="arrow" aria-hidden="true">→</div>
+  <div class="stage"><b>集中式采集</b><span>私有 Collector → ClickHouse → Express → React</span></div>
+</div>
+<p>可选的设备路径使用 <code>/api/ingest/v1/{logs,metrics,traces}</code>。浏览器会话 Cookie 无权授权数据接收。集中式 Collector 持有 ClickHouse 写入凭证；PC 使用可撤销的设备凭证。</p>
+<p>由组织者预先配置的 Workshop 环境使用单独配置的采集路径。未经迁移，请勿将设备套件叠加到已准备好的 Collector 上。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">数据接收信任边界与限制</a></p></section><section id="signals"><h2>保留信号语义</h2><div class="table-scroll" tabindex="0" role="region" aria-label="信号参考表"><table><thead><tr><th scope="col">信号</th><th scope="col">解释</th></tr></thead><tbody><tr><td>Claude 计数器</td><td>遵循序列身份、累计/增量时间属性、基线和重置规则。切勿将累计导出值相加作为用量。</td></tr><tr><td>Codex 完成日志</td><td>按完整身份去重，并且只对包含用量信息的完成记录计价一次。中间流记录不会再增加一份用量总计。</td></tr><tr><td>Codex 指标与追踪</td><td>将其用作诊断信息。不要把其中观测到的令牌数或成本加到完成日志用量中。</td></tr><tr><td>缓存令牌和推理令牌</td><td>在定义如此时，将其视为输入/输出的子集。再次将它们加到规范总量中会造成用量重复计数。</td></tr><tr><td>证据缺失或受限</td><td>保留已知小计并标记为部分数据。对于受影响的严格比率，应不予提供并说明原因；缺失不代表为零。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/data.md">数据边界</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/codex-observability.md">Codex 可观测性</a></p></section><section id="dimensions"><h2>客户端、后端与会话渠道</h2><p>采集和 API 路由会识别发出信号的客户端。提供方来源信息和模型证据有助于判断后端；仅凭模型标识符无法识别客户端。</p>
+<p>Claude 会话渠道分类器会区分 <code>bedrock</code>、<code>enterprise</code> 和 <code>unknown</code>。观测到的 Bedrock 模型证据以及组织/模型回退规则会在会话范围内生效。此分类并非仪表板用户的 SSO 角色。</p>
+<p>定价/后端逻辑会规范化区域/地理范围的 Bedrock 模型标识符和裸提供方 ID。请保留不受支持的范围和未知价格，不要假设每个模型 ID 都有对应价格。Codex 没有企业版 A/B 行。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/decisions/ADR-017-backend-cost-fallback.md">后端定价决策</a></p></section><section id="queries"><h2>减少查询工作量，同时保持总量不变</h2>
+<ul>
+  <li><code>view=cost</code>会选择共享概览中的有界成本配置，省略未使用的诊断数据。</li>
+  <li><code>profile=effort</code>会选择仅基于 Codex 日志的详情，并跳过无关的指标/追踪查询。</li>
+  <li>Codex 日志聚合会先在 ClickHouse 中按完整身份压缩事件，再传输数据。聚合系列限制仍会显示。</li>
+  <li>Single-flight 缓存和有界准入机制会共享重复工作，同时保留筛选条件身份、截止时间和过载错误。</li>
+</ul>
+<p>这些机制可以减少工作量，但无法保证支持 140 个用户并发。请在目标安装环境中测量具有代表性的筛选条件多样性、冷缓存流量、数据接收情况和查询延迟。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">成本查询性能</a></p></section><section id="auth"><h2>仪表板访问与设备访问</h2>
+<p>OIDC 会验证已签名的身份，并将明确的组值映射到 <code>viewer</code>、<code>analyst</code> 或 <code>admin</code>。获授权的查看者可以读取整个安装环境的遥测数据；这不是按员工隔离行数据。</p>
+<p>设备令牌仅授予数据接收权限。令牌由独立主体管理、设有过期时间且可撤销。遥测归属由客户端提供；SSO 会话和令牌所有权都不会自动认证遥测电子邮件地址。</p>
+<p>PII 遮蔽是一项显示功能，不是 API 访问控制。采集过滤器会移除已知内容字段，但无法检测放入其他受支持元数据中的任意机密。</p>
+<p><a href="operations.html#sso">配置 SSO 并刷新会话</a> · <a href="installation.html">安装 Collector</a></p></section><section id="deployment"><h2>部署边界</h2><p>仪表板镜像包含 Web 界面和 API。在所有平台上，ClickHouse、其数据库模式和 OTel Collector 都是独立组件。当前 Compose 文件未包含 Collector；EKS Terraform 会复用现有集群依赖项。ECS/EC2 需要经过审核的基础设施、凭据、网络、探针和持久化配置；Lambda 需要将应用适配到其运行时。</p><p><a href="installation.html#choose">必需组件</a> · <a href="installation.html#platforms">比较托管选项</a></p>
+<p>数据库模式生命周期、应用镜像、Collector 策略和运行时选项各有独立的部署状态。构建成功或 Terraform 验证通过，都不能证明线上部署或迁移已成功。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">为组织部署</a></p></section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">度量定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示鸣谢</a></p>
+    <p>遥测数据可能不完整。报告的成本和列表价估算并非发票。活动指标不能证明员工生产力或因果关系上的投资回报率。</p>
+  </div></footer>
+</body>
+</html>

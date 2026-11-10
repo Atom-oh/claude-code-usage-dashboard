@@ -4,22 +4,28 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Operate your own installation — ccdash</title>
-  <meta name="description" content="Configure organization identity, verify deployed components and follow the owned runbooks for rollout and recovery." />
+  <meta name="description" content="Connect organization SSO, verify trace delivery and troubleshoot missing user tasks in your own installation." />
   <link rel="stylesheet" href="assets/site.css" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="operations.html" />
+  <link rel="alternate" hreflang="ko" href="ko/operations.html" />
+  <link rel="alternate" hreflang="ja" href="ja/operations.html" />
+  <link rel="alternate" hreflang="zh-CN" href="zh/operations.html" />
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
     <nav class="tabs" aria-label="Main navigation"><a href="index.html">Overview</a><a href="installation.html">Install</a><a href="architecture.html">Architecture</a><a href="api.html">API</a><a href="operations.html" aria-current="page">Operations</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="Language"><span lang="en">English</span><a href="ko/operations.html" hreflang="ko" lang="ko">한국어</a><a href="ja/operations.html" hreflang="ja" lang="ja">日本語</a><a href="zh/operations.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
   </div></header>
   <main class="wrap" id="main">
     <div class="hero">
       <p class="eyebrow">Claude Code + Codex · Documentation</p>
       <h1>Operate your own installation</h1>
       <p class="lede">Configure organization identity, verify deployed components and follow the owned runbooks for rollout and recovery.</p>
-      <p class="caption">Updated October 24, 2026 · Describes source behavior; verify your installed revision.</p>
+      <p class="caption">Updated November 10, 2026 · Describes source behavior; verify your installed revision.</p>
+      <p><a href="#traces">Trace collection checks</a> · <a href="index.html#task-trace">Task Trace walkthrough</a></p>
     </div>
     <section id="sso"><h2>Connect organization SSO</h2>
 <p>Set <code>AUTH_MODE=oidc</code> for a confidential OIDC client with discovery/JWKS, signed ID tokens, authorization code and PKCE S256. Register the exact callback <code>https://dashboard.example.com/auth/callback</code>.</p>
@@ -42,15 +48,35 @@ SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
   <li>Logout clears local cookies and attempts refresh revocation. It does not end the provider's SSO session, instantly revoke copied short-lived cookies, or revoke device tokens.</li>
 </ul><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/decisions/ADR-021-refresh-token-sessions.md">Refresh-session design and limits</a></p></section><section id="deploy"><h2>Deploy a reviewed application revision</h2>
 <ol>
-  <li>Use a clean, reviewed build context and record its commit. Follow the deployment runbook's preflight checks.</li>
+  <li>Merge the release PR and deploy its immutable <code>vX.Y.Z</code> tag from a clean build context. Record the commit and follow the deployment runbook's preflight checks.</li>
   <li>Confirm AWS identity, target cluster, existing Terraform inputs, migration state and a usable rollback image.</li>
   <li>Build for the target architecture and publish an immutable image tag/digest. The provided EKS deployment targets arm64.</li>
   <li>Review the complete infrastructure plan where needed. Existing installations use compatibility verification and explicit upgrades, not automatic bootstrap retries.</li>
   <li>Roll out, check readiness and actual image digests, then verify login, API behavior, ingestion freshness and representative data.</li>
 </ol>
-<p>Use <code>/healthz</code> for liveness and <code>/readyz</code> for readiness. Source declarations, passing builds and a healthy process do not establish a working identity provider, fresh telemetry or applied migrations.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md">EKS deployment and rollback</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">Schema migration procedure</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">Customer installation prerequisites</a></p></section><section id="symptoms"><h2>Start with the failing boundary</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Symptom reference table"><table><thead><tr><th scope="col">Symptom</th><th scope="col">First checks</th></tr></thead><tbody><tr><td>Login fails or ends early</td><td>Exact origin/callback/issuer, signed mapped groups, provider expiry and refresh contract. Do not print token values.</td></tr><tr><td>Collector port occupied</td><td>Download the latest package; follow guided macOS migration or the existing service owner's manual procedure.</td></tr><tr><td>Unidentified or split users</td><td>Check the intended <code>--user-id</code>, emitted identity and dashboard filters. A device's SSO owner is not automatic telemetry attribution.</td></tr><tr><td>Token issued but no telemetry</td><td>Restart coding clients, generate work, check local service/exporter errors and device receipt, then confirm stored data.</td></tr><tr><td>Codex detail shows a dash</td><td>Inspect completion cohort and whole-window completeness separately. Missing denominators, prices or components must not become zero.</td></tr><tr><td>Slow cost detail</td><td>Inspect query admission, filters and effective resolution; use cost/effort profiles and measure target workloads before changing capacity.</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector limits and recovery</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">Cost-query behavior</a></p></section><section id="site"><h2>Documentation deployment</h2>
+<p>Use <code>/healthz</code> for liveness and <code>/readyz</code> for readiness. Source declarations, passing builds and a healthy process do not establish a working identity provider, fresh telemetry or applied migrations.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md">EKS deployment and rollback</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">Schema migration procedure</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">Customer installation prerequisites</a></p></section><section id="symptoms"><h2>Start with the failing boundary</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Symptom reference table"><table><thead><tr><th scope="col">Symptom</th><th scope="col">First checks</th></tr></thead><tbody><tr><td>Login fails or ends early</td><td>Exact origin/callback/issuer, signed mapped groups, provider expiry and refresh contract. Do not print token values.</td></tr><tr><td>Collector port occupied</td><td>Use the source installer from the selected release; follow supported macOS migration or the existing service owner's manual procedure.</td></tr><tr><td>Unidentified or split users</td><td>Check the intended <code>--user-id</code>, emitted identity and dashboard filters. A device's SSO owner is not automatic telemetry attribution.</td></tr><tr><td>Token issued but no telemetry</td><td>Restart coding clients, generate work, check local service/exporter errors and device receipt, then confirm stored data.</td></tr><tr><td>Codex detail shows a dash</td><td>Inspect completion cohort and whole-window completeness separately. Missing denominators, prices or components must not become zero.</td></tr><tr><td>Slow cost detail</td><td>Inspect query admission, filters and effective resolution; use cost/effort profiles and measure target workloads before changing capacity.</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector limits and recovery</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">Cost-query behavior</a></p></section><section id="platforms"><h2>Operating prerequisites by platform</h2><p>Every hosting option still needs a persistent ClickHouse schema and a functioning OTel pipeline. ECS and EC2 need separately authored service/secret/storage configuration; the supplied Terraform targets an existing EKS environment. Lambda needs an application runtime adaptation and external database/Collector services.</p><p><a href="installation.html#platforms">Deployment options and support boundaries</a> · <a href="installation.html#schema">Schema initialization</a> · <a href="installation.html#collector">Collector setup</a></p></section><section id="site"><h2>Documentation deployment</h2>
 <p>This documentation is static HTML in <code>site/</code>. The Pages workflow uploads that directory on a merged <code>main</code> change. There is no bundler build and no application/EKS rollout for a documentation-only release.</p>
 <p>Use source-linked runbooks for complete procedures. The website summarizes supported behavior and does not attest to the configuration of a particular customer installation.</p></section>
+<section id="traces"><h2>Verify the Trace path</h2>
+<p>Start with a new interaction and its expected telemetry identity, client and time bucket. Usage totals and Trace availability come from different signals; a successful log export does not establish trace delivery.</p>
+<ol>
+  <li>Confirm the current device package or organizer-managed settings enable trace export, then restart the coding client. See the <a href="installation.html#trace">client configuration reference</a>.</li>
+  <li>Check the local Collector's service and trace exporter for delivery failures. Continue through authenticated ingestion, the central trace pipeline and stored <code>otel_traces</code> records. Device receipt and process health confirm only their own stage.</li>
+  <li>In user detail, choose the trend bucket containing the task's start. Check the intended identity and filters; supported traced tasks are retained for 90 days.</li>
+  <li>For Codex diagnostics, inspect Analytics' Trace tab using the full insights profile. Cost/effort, tool and performance profiles skip trace queries.</li>
+</ol>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Trace symptom reference"><table>
+  <thead><tr><th scope="col">Symptom</th><th scope="col">What to check</th></tr></thead>
+  <tbody>
+    <tr><td>User has usage but no tasks</td><td>Trace configuration, restart time, exported identity, task start bucket and retention. Historical usage is not backfilled into traces.</td></tr>
+    <tr><td>Codex completion is outside a task</td><td>A traced turn needs a conversation ID and unique turn ID. Completions without an eligible turn remain unattached; a linked completion without a sampling span can be absent from the cost band.</td></tr>
+    <tr><td>Codex subagent count is unavailable</td><td>The current task view has only a main lane and does not infer subagent counts from unrelated spans.</td></tr>
+    <tr><td>Large detail omits totals</td><td>Check <code>truncated</code> and <code>span_total</code>. Task detail is bounded at 5,000 spans; the separate diagnostic preview uses 50 traces and 200 spans per trace.</td></tr>
+    <tr><td>Codex Trace disappears under a model filter</td><td>Only spans carrying model attributes match that filter. Clear it to inspect other diagnostic spans.</td></tr>
+  </tbody>
+</table></div>
+<p><a href="api.html#tasks">Task endpoint limits</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector recovery</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">Application release procedure</a></p>
+</section>
   </main>
   <footer><div class="wrap">
     <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>

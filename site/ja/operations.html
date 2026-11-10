@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>独自環境を運用する — ccdash</title>
+  <meta name="description" content="組織のSSOを接続し、トレースの配信を確認して、独自環境でユーザーのタスクが表示されない場合のトラブルシューティングを行います。" />
+  <link rel="stylesheet" href="../assets/site.css" />
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="../operations.html" />
+  <link rel="alternate" hreflang="ko" href="../ko/operations.html" />
+  <link rel="alternate" hreflang="ja" href="operations.html" />
+  <link rel="alternate" hreflang="zh-CN" href="../zh/operations.html" />
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へスキップ</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="メインナビゲーション"><a href="index.html">概要</a><a href="installation.html">インストール</a><a href="architecture.html">アーキテクチャ</a><a href="api.html">API</a><a href="operations.html" aria-current="page">運用</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="言語"><a href="../operations.html" hreflang="en" lang="en">English</a><a href="../ko/operations.html" hreflang="ko" lang="ko">한국어</a><span lang="ja">日本語</span><a href="../zh/operations.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · ドキュメント</p>
+      <h1>独自環境を運用する</h1>
+      <p class="lede">組織のIDを設定し、デプロイ済みコンポーネントを確認して、ロールアウトと復旧に関する運用手順書に従います。</p>
+      <p class="caption">更新日：2026年11月10日 · ソースコードの動作を記載しています。インストール済みのリビジョンを確認してください。</p>
+      <p><a href="#traces">トレース収集の確認</a> · <a href="index.html#task-trace">Task Traceの手順</a></p>
+    </div>
+    <section id="sso"><h2>組織のSSOを接続する</h2>
+<p><code>AUTH_MODE=oidc</code>を設定すると、ディスカバリー/JWKS、署名済みIDトークン、認可コード、PKCE S256を使用する機密クライアント向けOIDCを有効にできます。コールバックには正確に<code>https://dashboard.example.com/auth/callback</code>を登録してください。</p>
+<p>共有のCognitoユーザープールは、アプリクライアント、コールバック、シークレット、ロールマッピングを個別に設定して、複数のプロジェクトで使用できます。アプリケーション固有のグループ割り当ては、ID管理側で行います。顧客のメールアドレス、ドメイン、ユーザープールIDは設定値であり、アプリケーション全般のルールではありません。</p><div class="table-scroll" tabindex="0" role="region" aria-label="設定項目の参照表"><table><thead><tr><th scope="col">設定項目</th><th scope="col">用途</th></tr></thead><tbody><tr><td><code>APP_PUBLIC_URL</code></td><td>パス、クエリ、フラグメントを含まない、正確なHTTPSオリジン。</td></tr><tr><td><code>OIDC_ISSUER</code>, <code>OIDC_CLIENT_ID</code></td><td>正確なIssuer識別子と、専用のアプリケーションクライアント。</td></tr><tr><td><code>OIDC_CLIENT_SECRET</code>, <code>SESSION_SECRET</code></td><td>保護されたシークレット参照を通じて設定します。レプリカ間でセッションキーとID設定を共有する必要があります。</td></tr><tr><td><code>OIDC_GROUPS_CLAIM</code></td><td>署名済みのトップレベルグループクレーム。Cognitoでは<code>cognito:groups</code>、それ以外ではプロバイダーで設定したクレームを指定します。</td></tr><tr><td><code>OIDC_SCOPES</code></td><td>既定値は<code>openid profile</code>です。更新トークンの発行要件を含め、設定済みプロバイダーに必要なスコープだけを追加します。</td></tr><tr><td><code>OIDC_ROLE_GROUPS</code></td><td><code>viewer</code>、<code>analyst</code>、<code>admin</code>を明示的なグループ配列に対応付けるJSONマッピング。</td></tr></tbody></table></div>
+<pre><code class="language-json">{
+  "viewer": ["YOUR_VIEWER_GROUP"],
+  "analyst": ["YOUR_EDITOR_GROUP"],
+  "admin": ["YOUR_ADMIN_GROUP"]
+}</code></pre>
+<p>UIのeditorロールは<code>analyst</code>に対応します。<code>editor</code>は設定上のロールキーではありません。マッピングされていないグループはログインできません。複数のロールに該当する場合は、最も権限の高いロールが適用されます。</p><div class="table-scroll" tabindex="0" role="region" aria-label="ロールの参照表"><table><thead><tr><th scope="col">ロール</th><th scope="col">権限</th></tr></thead><tbody><tr><td>viewer</td><td>インストール全体のテレメトリを閲覧できます。Collectorの管理とチャットは利用できません。</td></tr><tr><td>analyst / editor</td><td>テレメトリの閲覧、有効なチャットの利用、インストーラーのダウンロード、所有デバイスの管理ができます。</td></tr><tr><td>admin</td><td>analystの権限に加え、インストール環境の診断ができます。</td></tr></tbody></table></div><p>OktaとKeycloakは、適切なスコープと署名済みグループクレームを使って、このOIDC仕様を提供できます。実際の顧客プロバイダーで確認してください。一般的な対応をうたっていても、プロバイダーの受け入れテストが完了したことを意味しません。ログインしてもユーザーごとのデータ分離は行われません。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/organization-sso.md">プロバイダーの設定とSSOの運用</a></p></section><section id="sessions"><h2>ログイン状態を最大30日間維持する</h2>
+<p>ログイン状態の永続化は任意で、既定では無効です。認可期間の上限を1時間、ログイン期間の固定上限を30日にするには、次のように設定します。</p>
+<pre><code class="language-bash">SESSION_MAX_AGE_SECONDS=3600
+SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
+<p>通常の短期セッションの既定値は900秒で、設定可能な値は300～3600秒です。更新トークンの有効期間は、0（無効）または3600～2592000秒です。短期セッションはプロバイダーのトークン有効期限によっても制限されるため、1時間は上限であり、更新間隔が保証されるわけではありません。</p>
+<p>更新はバックグラウンドで毎時行われるのではなく、短期セッションの期限が近づいたとき、または期限切れ後のリクエストを契機に行われます。30日の期限は初回ログイン時に始まり、延長されません。プロバイダーによっては、それより早く終了することがあります。</p>
+<ul>
+  <li>更新モードには、再利用可能でローテーションされない更新トークン、現在のグループを含む新しい署名済みIDトークン、<code>client_secret_basic</code>によるトークン交換と失効処理が必要です。</li>
+  <li>このモードでは、ローテーションのみをサポートするプロバイダーは利用できません。更新トークンがローテーションされた場合は、再ログインが必要です。</li>
+  <li>暗号化されたSecure/HttpOnly Cookieを使用してください。セッションAPIは生のIDトークンを返しません。</li>
+  <li>ログアウト時はローカルCookieを消去し、更新トークンの失効を試みます。プロバイダーのSSOセッションは終了せず、コピー済みの短期Cookieを即座に失効させることも、デバイストークンを失効させることもありません。</li>
+</ul><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/decisions/ADR-021-refresh-token-sessions.md">更新セッションの設計と制限</a></p></section><section id="deploy"><h2>レビュー済みのアプリケーションリビジョンをデプロイする</h2>
+<ol>
+  <li>リリースPRをマージし、クリーンなビルドコンテキストから不変の<code>vX.Y.Z</code>タグをデプロイします。コミットを記録し、デプロイ手順書の事前確認に従ってください。</li>
+  <li>AWSのID、対象クラスター、既存のTerraform入力値、マイグレーションの状態、利用可能なロールバック用イメージを確認します。</li>
+  <li>対象アーキテクチャ向けにビルドし、不変のイメージタグ/ダイジェストを公開します。提供されているEKSデプロイの対象はarm64です。</li>
+  <li>必要に応じて、インフラストラクチャ計画全体をレビューします。既存のインストール環境では、互換性を確認したうえで明示的にアップグレードします。自動ブートストラップの再試行は行いません。</li>
+  <li>ロールアウトし、準備状態と実際のイメージダイジェストを確認してから、ログイン、APIの動作、データ取り込みの鮮度、代表的なデータを検証します。</li>
+</ol>
+<p>稼働状態には<code>/healthz</code>、準備状態には<code>/readyz</code>を使用します。ソース上の宣言、成功したビルド、正常なプロセスだけでは、IDプロバイダーの動作、テレメトリの鮮度、マイグレーションの適用は確認できません。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md">EKSのデプロイとロールバック</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">スキーマのマイグレーション手順</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">顧客環境へのインストール要件</a></p></section><section id="symptoms"><h2>問題が起きている境界から調べる</h2><div class="table-scroll" tabindex="0" role="region" aria-label="症状の参照表"><table><thead><tr><th scope="col">症状</th><th scope="col">最初に確認する項目</th></tr></thead><tbody><tr><td>ログインに失敗する、または早期に終了する</td><td>オリジン/コールバック/Issuerの正確性、署名済みグループのマッピング、プロバイダーの有効期限と更新仕様を確認します。トークンの値を出力しないでください。</td></tr><tr><td>Collectorのポートが使用中</td><td>選択したリリースのソースインストーラーを使用します。macOSのサポート対象の移行手順か、既存サービスの所有者による手動手順に従ってください。</td></tr><tr><td>ユーザーが特定できない、または分割されている</td><td>意図した<code>--user-id</code>、出力されたID、ダッシュボードのフィルターを確認します。デバイスのSSO所有者がテレメトリの属性に自動で反映されるわけではありません。</td></tr><tr><td>トークンは発行されたがテレメトリがない</td><td>コーディングクライアントを再起動して作業を実行し、ローカルサービス/エクスポーターのエラーとデバイスでの受信を確認した後、保存データを確認します。</td></tr><tr><td>Codexの詳細がダッシュで表示される</td><td>完了データのコホートと、ウィンドウ全体の完全性をそれぞれ確認します。分母、価格、コンポーネントが欠けている場合に、ゼロとして扱ってはいけません。</td></tr><tr><td>コスト詳細の表示が遅い</td><td>クエリの受け入れ状況、フィルター、有効な解像度を確認します。コスト/作業量プロファイルを使用し、容量を変更する前に対象ワークロードを測定してください。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collectorの制限と復旧</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">コストクエリの動作</a></p></section><section id="platforms"><h2>プラットフォーム別の運用要件</h2><p>どのホスティング方式でも、永続的なClickHouseスキーマと、正常に動作するOTelパイプラインが必要です。ECSとEC2では、サービス、シークレット、ストレージの設定を別途作成する必要があります。提供されているTerraformの対象は既存のEKS環境です。Lambdaには、アプリケーションランタイムへの適応と、外部データベース/Collectorサービスが必要です。</p><p><a href="installation.html#platforms">デプロイ方法とサポート範囲</a> · <a href="installation.html#schema">スキーマの初期化</a> · <a href="installation.html#collector">Collectorの設定</a></p></section><section id="site"><h2>ドキュメントのデプロイ</h2>
+<p>このドキュメントは<code>site/</code>内の静的HTMLです。Pagesワークフローは、<code>main</code>への変更がマージされると、このディレクトリをアップロードします。ドキュメントのみのリリースでは、バンドラーによるビルドも、アプリケーション/EKSのロールアウトもありません。</p>
+<p>完全な手順については、ソースにリンクされた運用手順書を参照してください。ウェブサイトにはサポート対象の動作を要約していますが、特定の顧客環境の設定を保証するものではありません。</p></section>
+<section id="traces"><h2>Traceの経路を確認する</h2>
+<p>新しいインタラクションと、想定されるテレメトリID、クライアント、時間バケットから確認を始めます。利用量の合計とTraceの利用可否は異なるシグナルに基づきます。ログのエクスポートに成功しても、トレースが配信されたことにはなりません。</p>
+<ol>
+  <li>現在のデバイスパッケージまたは管理者が適用した設定でトレースのエクスポートが有効になっていることを確認し、コーディングクライアントを再起動します。<a href="installation.html#trace">クライアント設定のリファレンス</a>を参照してください。</li>
+  <li>ローカルCollectorのサービスとトレースエクスポーターで、配信エラーを確認します。認証付きの取り込み、中央トレースパイプラインを順に確認し、保存された<code>otel_traces</code>レコードを調べます。デバイスでの受信とプロセスの正常性で確認できるのは、それぞれの段階だけです。</li>
+  <li>ユーザー詳細で、タスクの開始時刻を含むトレンドの時間バケットを選びます。想定したIDとフィルターを確認してください。サポート対象のトレース済みタスクは90日間保持されます。</li>
+  <li>Codexの診断では、完全なinsightsプロファイルを使用してAnalyticsのTraceタブを確認します。cost/effort、tool、performanceプロファイルではトレースクエリがスキップされます。</li>
+</ol>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Traceの症状に関する参照表"><table>
+  <thead><tr><th scope="col">症状</th><th scope="col">確認する項目</th></tr></thead>
+  <tbody>
+    <tr><td>ユーザーの利用状況はあるがタスクがない</td><td>トレース設定、再起動時刻、エクスポートされたID、タスク開始の時間バケット、保持期間を確認します。過去の利用状況からトレースが遡って生成されることはありません。</td></tr>
+    <tr><td>Codexの完了がタスクに紐付かない</td><td>トレース対象ターンには、会話IDと一意のターンIDが必要です。対象となるターンがない完了は紐付きません。サンプリング対象のspanを含まない紐付き完了は、コスト帯に表示されない場合があります。</td></tr>
+    <tr><td>Codexのサブエージェント数を確認できない</td><td>現在のタスクビューにはメインレーンしかなく、無関係なspanからサブエージェント数を推定しません。</td></tr>
+    <tr><td>詳細データが大きいと合計が表示されない</td><td><code>truncated</code>と<code>span_total</code>を確認します。タスク詳細は5,000spanに制限されています。別の診断プレビューでは、トレース数が50、トレースごとのspan数が200に制限されます。</td></tr>
+    <tr><td>モデルフィルターを適用するとCodex Traceが表示されなくなる</td><td>このフィルターに一致するのはモデル属性を持つspanだけです。他の診断spanを調べるには、フィルターを解除してください。</td></tr>
+  </tbody>
+</table></div>
+<p><a href="api.html#tasks">タスクエンドポイントの制限</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collectorの復旧</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">アプリケーションのリリース手順</a></p>
+</section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測項目の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモクレジット</a></p>
+    <p>テレメトリは不完全な場合があります。報告されるコストや定価に基づく推定額は請求書ではありません。アクティビティ指標から、従業員の生産性や因果関係のあるROIを判断することはできません。</p>
+  </div></footer>
+</body>
+</html>

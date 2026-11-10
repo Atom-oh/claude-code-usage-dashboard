@@ -4,24 +4,42 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>The collection and query pipeline — ccdash</title>
-  <meta name="description" content="A dedicated installation combines client telemetry, a bounded ingestion path, ClickHouse storage and an authenticated dashboard." />
+  <meta name="description" content="Follow Claude Code and Codex signals from collection to user tasks, agent lanes and completion-linked cost." />
   <link rel="stylesheet" href="assets/site.css" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="architecture.html" />
+  <link rel="alternate" hreflang="ko" href="ko/architecture.html" />
+  <link rel="alternate" hreflang="ja" href="ja/architecture.html" />
+  <link rel="alternate" hreflang="zh-CN" href="zh/architecture.html" />
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
     <nav class="tabs" aria-label="Main navigation"><a href="index.html">Overview</a><a href="installation.html">Install</a><a href="architecture.html" aria-current="page">Architecture</a><a href="api.html">API</a><a href="operations.html">Operations</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="Language"><span lang="en">English</span><a href="ko/architecture.html" hreflang="ko" lang="ko">한국어</a><a href="ja/architecture.html" hreflang="ja" lang="ja">日本語</a><a href="zh/architecture.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
   </div></header>
   <main class="wrap" id="main">
     <div class="hero">
       <p class="eyebrow">Claude Code + Codex · Documentation</p>
       <h1>The collection and query pipeline</h1>
       <p class="lede">A dedicated installation combines client telemetry, a bounded ingestion path, ClickHouse storage and an authenticated dashboard.</p>
-      <p class="caption">Updated October 24, 2026 · Describes source behavior; verify your installed revision.</p>
+      <p class="caption">Updated November 10, 2026 · Describes source behavior; verify your installed revision.</p>
     </div>
-    <section id="pipeline"><h2>Two collection paths</h2><div class="pipe" aria-label="Device data flow">
+    <section id="task-traces"><h2>Connect a user, task and span</h2>
+<p>User detail selects an exact telemetry identity and a trend bucket. <code>/api/users/tasks</code> lists tasks starting in that bucket; <code>/api/users/tasks/detail</code> returns the selected task's lanes, spans and evidence-based cost explanations.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace data sources"><table>
+  <thead><tr><th scope="col">Client</th><th scope="col">Task and timing</th><th scope="col">Usage and cost</th></tr></thead>
+  <tbody>
+    <tr><td>Claude Code</td><td>An <code>interaction</code> span identifies the task and duration. LLM, tool and permission-wait spans form the timeline; observed agent IDs form lanes.</td><td>LLM span tokens; reported request cost joined from logs when available, otherwise the applicable pricing calculation. The displayed basis can be mixed.</td></tr>
+    <tr><td>Codex</td><td>A turn with a conversation ID and unique turn ID identifies the task. Duration is the observed span window; only the main lane is available.</td><td>Unique usage-bearing completion logs linked to the turn window provide tokens and AWS list estimates. Sampling spans receive matching completion values for display.</td></tr>
+  </tbody>
+</table></div>
+<p>Codex task usage is a view of linked completion records, not an additional accounting source. Unattached completions are reported separately; calls lacking a matching sampling span can be absent from the cumulative cost band. The Analytics Trace preview reads diagnostic spans independently.</p>
+<p>Task-detail queries select allowlisted metadata. The UI masks identities and does not render raw prompts, commands or paths; this display policy does not provide API access control. Trace data has a 90-day retention window, separate from usage rollups.</p>
+<p><a href="index.html#task-trace">Task Trace walkthrough</a> · <a href="api.html#tasks">Query contracts</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/data.md#user-task-traces">Task identity, joins and privacy boundaries</a></p>
+</section>
+    <section id="pipeline"><h2>Two collection paths</h2><div class="pipe" role="group" aria-label="Device data flow">
   <div class="stage"><b>Claude Code + Codex</b><span>Metrics, completion logs and diagnostic signals</span></div><div class="arrow" aria-hidden="true">→</div>
   <div class="stage"><b>Local Collector</b><span>Loopback receivers, filtering and a bounded persistent queue</span></div><div class="arrow" aria-hidden="true">→</div>
   <div class="stage"><b>Device ingest gateway</b><span>HTTPS, device bearer token, bounded OTLP requests</span></div><div class="arrow" aria-hidden="true">→</div>
@@ -41,8 +59,7 @@
 <p>OIDC verifies signed identity and maps explicit group values to <code>viewer</code>, <code>analyst</code> or <code>admin</code>. Authorized viewers can read installation-wide telemetry; this is not per-employee row isolation.</p>
 <p>Device tokens grant ingestion only. They are separately owned, expired and revoked. Telemetry attribution is client-provided; neither an SSO session nor token ownership automatically certifies a telemetry email.</p>
 <p>PII masking is a display feature, not API access control. Collection filters remove known content fields but cannot detect arbitrary secrets placed in otherwise supported metadata.</p>
-<p><a href="operations.html#sso">Configure SSO and refresh sessions</a> · <a href="installation.html">Install a Collector</a></p></section><section id="deployment"><h2>Deployment boundaries</h2>
-<p>The supplied Terraform targets an existing EKS environment. The application container communicates with ClickHouse; local Compose is available for development. ECS, Fargate and other runtimes need their own reviewed infrastructure, credentials, networking, probes and persistence configuration.</p>
+<p><a href="operations.html#sso">Configure SSO and refresh sessions</a> · <a href="installation.html">Install a Collector</a></p></section><section id="deployment"><h2>Deployment boundaries</h2><p>The dashboard image contains the web UI and API. ClickHouse, its schema and the OTel Collector are separate components on every platform. The current Compose file omits the Collector; EKS Terraform reuses existing cluster dependencies. ECS/EC2 need reviewed infrastructure, credentials, networking, probes and persistence configuration; Lambda requires runtime adaptation.</p><p><a href="installation.html#choose">Required components</a> · <a href="installation.html#platforms">Compare hosting options</a></p>
 <p>Schema lifecycle, application images, Collector policies and runtime options have independent deployment state. A successful build or Terraform validation does not prove a live rollout or migration.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">Deploying for your organization</a></p></section>
   </main>
   <footer><div class="wrap">
