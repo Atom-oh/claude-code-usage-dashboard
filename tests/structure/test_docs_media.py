@@ -39,13 +39,13 @@ class MediaTests(unittest.TestCase):
 
     def test_fetch_and_verified_cache_do_not_repeat_network(self):
         MEDIA.hydrate(self.root, self.manifest, opener=self.opener)
-        self.assertEqual(len(self.calls), 10)
+        self.assertEqual(len(self.calls), len(MEDIA.PATHS))
         for item in self.manifest["files"]:
             target = self.root / item["path"]
             self.assertEqual(target.stat().st_mode & 0o777, 0o644)
             target.chmod(0o600)
         MEDIA.hydrate(self.root, self.manifest, offline=True)
-        self.assertEqual(len(self.calls), 10)
+        self.assertEqual(len(self.calls), len(MEDIA.PATHS))
         for item in self.manifest["files"]:
             self.assertEqual((self.root / item["path"]).stat().st_mode & 0o777, 0o644)
 
@@ -112,6 +112,8 @@ class MediaTests(unittest.TestCase):
         demo = metadata["current_demo"]
         records.update({("site/assets/" + item["path"]): item for item in demo["files"]})
         records.update({item["path"]: item for item in demo["runtime_assets"]})
+        records.update({item["path"]: item for item in demo["audio_assets"]})
+        records[demo["visual_base"]["path"]] = demo["visual_base"]
         for item in manifest["files"]:
             self.assertEqual(item["bytes"], records[item["path"]]["bytes"])
             self.assertEqual(item["sha256"], records[item["path"]]["sha256"])

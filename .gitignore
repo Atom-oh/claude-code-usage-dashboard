@@ -30,6 +30,7 @@ site/assets/video/dashboard-demo-en-20261110.mp4
 site/assets/video/dashboard-demo-en-20261110.webm
 video/docs-demo/runtime/NotoSans.ttf
 video/docs-demo/runtime/gsap.min.js
+video/docs-demo/remotion/public/
 
 # Local Python validation caches
 __pycache__/

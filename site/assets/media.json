@@ -114,7 +114,7 @@
     "composition": "video/docs-demo/index.html",
     "source_state": "React code captured from this revision; guide/composition authored in the November 10 working tree.",
     "duration_seconds": 48,
-    "format": "1920x1080 H.264 MP4 and VP9 WebM, 24 fps, 1152 frames each, silent",
+    "format": "1920x1080 H.264/AAC MP4 and VP9/Opus WebM, 24 fps, 1152 video frames, English narration and original background music",
     "render": {
       "hyperframes": "0.7.77",
       "gsap": "3.14.2",
@@ -122,25 +122,28 @@
       "ffmpeg": "7.0.2",
       "quality": "high",
       "workers": 2,
-      "font": "Bundled Noto Sans with SIL OFL"
+      "font": "Bundled Noto Sans with SIL OFL",
+      "remotion": "4.0.542",
+      "react": "18.3.1",
+      "audio_delivery": "Remotion WAV mix, FFmpeg AAC/Opus encoding; preserved Remotion-rendered video frames"
     },
     "privacy": "Actual React screens using synthetic fixtures with Luna-translated English display labels; no production telemetry.",
-    "validation": "HyperFrames strict lint/runtime/layout checks and contrast checks passed; full MP4/WebM decode, stream properties and six encoded MP4 scene frames checked. Browser playback and English captions tested with the VP9 WebM fallback because the test Chromium lacks H.264 decoding.",
+    "validation": "Preserved previously checked HyperFrames visuals; six encoded scene midpoint frames inspected. Full MP4/WebM decode passed (1152 video frames, 1920x1080, 24 fps). Three audio tests verify scene fit without truncation, background ducking and exact VTT text/timing. All four locale players decode audio, play, seek and load six English cues. Static checks cover 24 pages, 792 links, code parity and translation/media hashes; 48 desktop/mobile checks and 144 locale switches passed.",
     "files": [
       {
         "path": "video/dashboard-demo-en-20261110.mp4",
-        "bytes": 3569818,
-        "sha256": "56ecb1cc7c0e3afa99c5422d45823ef0358b20ea297adb38a1b5e27600741e46"
+        "bytes": 4275069,
+        "sha256": "96244acbd9328f1ce5d8c1361e0101df838699eb460fa0861f37ee06125184b8"
       },
       {
         "path": "video/dashboard-demo-en-20261110.webm",
-        "bytes": 1789382,
-        "sha256": "092abe80e52a4f6539eda4b31abc2580dfeca4fad813c6ac4a84242fd323d99d"
+        "bytes": 2837237,
+        "sha256": "dc02c297639481694dd3d2b70852b8b73b49b408a890201eeefc391d6c114551"
       },
       {
         "path": "video/dashboard-demo-en-20261110.vtt",
-        "bytes": 1045,
-        "sha256": "027eafde703ffa652b108cc07f61477b9385032b1730ff63b430234b02ac416e"
+        "bytes": 859,
+        "sha256": "668135d74f9e6af91d93690ad2d1e114517388fc430028d04f12d5cae38fedb2"
       },
       {
         "path": "img/docs-demo-en-poster.jpg",
@@ -168,34 +171,148 @@
     "source_files": [
       {
         "path": "video/docs-demo/index.html",
-        "sha256": "b6b19cb3d4202ef17c3a7e30adba1277d98ccf7745778104a1bdc034127f922a",
-        "bytes": 8220
+        "bytes": 8220,
+        "sha256": "b6b19cb3d4202ef17c3a7e30adba1277d98ccf7745778104a1bdc034127f922a"
       },
       {
         "path": "video/docs-demo/styles.css",
-        "sha256": "e4c786c31b251ef0927e9065d69c0e6a092d65547d4db5b76cafe054b92ed454",
-        "bytes": 3941
+        "bytes": 3941,
+        "sha256": "e4c786c31b251ef0927e9065d69c0e6a092d65547d4db5b76cafe054b92ed454"
       },
       {
         "path": "video/docs-demo/package.json",
-        "sha256": "66398854d0b8572a0e03175683433c0bdf1b96b8a4876e7f1c6a5b8fb4fb855a",
-        "bytes": 311
+        "bytes": 835,
+        "sha256": "b3219d641fd0e37b7b81fb6b10935024c8992173087def99c1dac8b665a10af9"
+      },
+      {
+        "path": "video/docs-demo/package-lock.json",
+        "bytes": 70668,
+        "sha256": "4b21384025efcb9bcbf2bfdd43e08b32fd2bcb648e6d259fd5b6158e961f29f3"
+      },
+      {
+        "path": "video/docs-demo/remotion.config.js",
+        "bytes": 87,
+        "sha256": "6ba9da783c6766233937800f7950919cec73dbad7f8490bc6ced9a94cb328cf4"
+      },
+      {
+        "path": "video/docs-demo/remotion/index.jsx",
+        "bytes": 1130,
+        "sha256": "6a23e20ce91e653060fee4fe82bb2390be39240b3397115b065e45b8d479bd10"
+      },
+      {
+        "path": "video/docs-demo/remotion/narration.json",
+        "bytes": 1246,
+        "sha256": "2ca7c806885f2ca6d3a6bc8f4e43fed2ba439e4dbd084690ba6416fefb5b8b2a"
+      },
+      {
+        "path": "video/docs-demo/remotion/audio.json",
+        "bytes": 1442,
+        "sha256": "579057f056a04b3b644de850743eac9144101d14743c5617d54663daf24f3b35"
+      },
+      {
+        "path": "video/docs-demo/remotion/mix.mjs",
+        "bytes": 668,
+        "sha256": "5e505c1e9ece84a1b589af33977661720c0bbed3a663a30381efecfc1bdb8e85"
+      },
+      {
+        "path": "video/docs-demo/remotion/prepare-audio.py",
+        "bytes": 4441,
+        "sha256": "afec35b2095662b85e88defb5e41d7da58aa8fd19074db805d592ccb0718b930"
       }
     ],
     "webm_encoding": {
-      "source": "Rendered English H.264 MP4",
+      "source": "Narrated English H.264/AAC MP4",
       "encoder": "FFmpeg 7.0.2 libvpx-vp9",
       "crf": 30,
       "bitrate_mode": "constant quality",
       "pixel_format": "yuv420p",
       "row_mt": 1,
-      "threads": 2
+      "threads": 2,
+      "audio_codec": "libopus",
+      "audio_bitrate_kbps": 96
+    },
+    "audio": {
+      "provider": "Amazon Polly",
+      "voice": "Matthew",
+      "engine": "neural",
+      "region": "us-east-1",
+      "language": "en-US",
+      "sample_rate": 24000,
+      "speech_rate": "110%",
+      "speech_offset_seconds": 0.25,
+      "music": "Original deterministic sine-pad score; no external recording or samples.",
+      "music_gain": {
+        "during_speech": 0.2,
+        "between_clips": 0.32
+      },
+      "speech_target_lufs": -18,
+      "measured_mix_lufs": -18.5,
+      "measured_mix_true_peak_dbfs": -5.11,
+      "encoded_webm_duration_seconds": 48.008,
+      "measured_encoded_aac_lufs": -18.52,
+      "measured_encoded_aac_true_peak_dbfs": -5.12
+    },
+    "audio_assets": [
+      {
+        "path": "video/docs-demo/remotion/public/follow.mp3",
+        "bytes": 85868,
+        "sha256": "8ef2d684e1a7a529c4d8e929f8ebb8259fc4b3b5e782b3ace5f41f474efdaa35"
+      },
+      {
+        "path": "video/docs-demo/remotion/public/build.mp3",
+        "bytes": 77228,
+        "sha256": "50539a6701820578bb7ae854e10ada7b01dd04393d6b80d48e35aa314fab15a5"
+      },
+      {
+        "path": "video/docs-demo/remotion/public/lanes.mp3",
+        "bytes": 85292,
+        "sha256": "09bd769ae54aa7c91238b12778ee7728b146cbf0d677a8a5b6ef8624ece8c98f"
+      },
+      {
+        "path": "video/docs-demo/remotion/public/call.mp3",
+        "bytes": 84428,
+        "sha256": "be4b945dcd53fa2878504dedafd9f01027174844cd7a19465ae2731d86992d26"
+      },
+      {
+        "path": "video/docs-demo/remotion/public/model.mp3",
+        "bytes": 68012,
+        "sha256": "03632fd244e886b236aba9d96132a4a99b928067b37c77e49f47a744bb38c8ad"
+      },
+      {
+        "path": "video/docs-demo/remotion/public/hosting.mp3",
+        "bytes": 82988,
+        "sha256": "d6660809691457240cb00e5ee413fd0886784dbad12eed4299d631a6d5845c8d"
+      },
+      {
+        "path": "video/docs-demo/remotion/public/background.wav",
+        "bytes": 2304044,
+        "sha256": "1c98eda9632d79981bc8aef8916690fcbe549a3eda4659cacf893c80e8fcd891"
+      }
+    ],
+    "visual_base": {
+      "path": "video/docs-demo/remotion/public/visual-base.mp4",
+      "bytes": 3569818,
+      "sha256": "56ecb1cc7c0e3afa99c5422d45823ef0358b20ea297adb38a1b5e27600741e46",
+      "origin_commit": "fd1e956f3678f9703ee0edf46dd13c0d8c1c0fd4"
+    },
+    "content_review": {
+      "reviewer": "aws-content-plugin/content-review-agent via Claude CLI",
+      "date": "2026-11-10",
+      "verdict": "PASS",
+      "score": 90,
+      "max_score": 90,
+      "normalized_score_100": 100,
+      "critical_count": 0,
+      "warning_count": 0,
+      "scope": "Source-only final correction review with prior unchanged coverage; coordinator performed final audiovisual/browser checks.",
+      "report_repository_path": "video/docs-demo/results/Narration_Review_Report.md",
+      "report_sha256": "7c65e3671fa958b27dc6cfb50a3f6c789c401851503eaecf242e480a006a169a"
     }
   },
   "delivery": {
     "manifest_repository_path": "video/docs-demo/media.lock.json",
-    "snapshot_commit": "fd1e956f3678f9703ee0edf46dd13c0d8c1c0fd4",
-    "snapshot_tag": "docs-media-20261110",
+    "snapshot_commit": "d71dd1c2b81227d5982b425228df594d7401ef3c",
+    "snapshot_tag": "docs-media-20261110-narrated",
     "verification": "scripts/fetch-docs-media.py validates file size and SHA256 before Pages upload or local rendering."
   }
 }

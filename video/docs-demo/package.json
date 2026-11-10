@@ -6,6 +6,16 @@
     "dev": "npx --yes hyperframes@0.7.77 preview",
     "check": "npx --yes hyperframes@0.7.77 check",
     "snapshot": "npx --yes hyperframes@0.7.77 snapshot",
-    "render": "npx --yes hyperframes@0.7.77 render"
+    "render": "npx --yes hyperframes@0.7.77 render",
+    "render:narrated": "remotion render remotion/index.jsx NarratedDocsDemo renders/dashboard-demo-en-narrated.mp4 --codec=h264 --crf=18 --concurrency=2",
+    "render:mix": "remotion render remotion/index.jsx NarratedDocsDemo renders/narrated-mix.wav --codec=wav --concurrency=2",
+    "audio": "python3 remotion/prepare-audio.py",
+    "test:audio": "node --test remotion/audio.test.mjs"
+  },
+  "devDependencies": {
+    "@remotion/cli": "4.0.542",
+    "remotion": "4.0.542",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }
