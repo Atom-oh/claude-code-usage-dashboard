@@ -301,7 +301,12 @@ lane timeline ([TaskTimeline](../../dashboard/web/src/components/TaskTimeline.js
 first, then lanes by first span; per-lane calls and cost; LLM bars shaded by input context;
 tool bars and permission-wait marks; dashed connectors from a spawning span that is in the
 payload), a cumulative cost band stacked by lane colour with a hover tooltip
-([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a side panel for the
+([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a context-size chart
+on the same time axis ([TaskContextChart](../../dashboard/web/src/components/TaskContextChart.jsx):
+one line per lane of per-call context, Claude compaction marks, the Codex auto-compaction
+limit line and shares of the reported limits; points select their span; a compaction
+outside the drawn spans is clamped to the axis edge; missing tokens, partial series and
+Claude's unreported window are disclosed), a side panel for the
 clicked span, the server's `why` rules and a per-model call table (`modelBreakdown()`:
 LLM calls grouped by the span's `model`, else its linked completion's model, and
 `query_source_safe`, with lanes, calls and known cost; unknown cost stays not collected
