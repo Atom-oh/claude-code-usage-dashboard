@@ -9,6 +9,29 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.4.0",
+    date: "2026-11-10",
+    summary: "Productivity를 Claude Code와 Codex가 같은 화면·같은 열로 보는 통합 화면으로 바꿨습니다.",
+    items: [
+      {
+        kind: "new",
+        title: "통합 Productivity",
+        body: "클라이언트별 요약, 모델별 관측 효율, 활동, 코드 결과, 도구별 권한 결정, 도구 실행 결과, 응답·대기, 활동 지수 상위 사용자를 클라이언트마다 같은 열로 보여줍니다. Codex가 보내지 않는 값은 0 대신 미수집·미집계·미산출로 표시합니다. Codex 효율·Effort 표는 Cost 페이지에서 봅니다.",
+        to: "/productivity",
+        where: "Productivity",
+        refs: [241, 242],
+      },
+      {
+        kind: "improved",
+        title: "90일 활동 히트맵",
+        body: "사용자 상세의 90일 활동 히트맵이 카드 너비에 맞게 커지고, 월·요일 라벨과 범례가 붙습니다.",
+        to: "/users",
+        where: "Users → 사용자 선택 → 활동 히트맵",
+        refs: [239],
+      },
+    ],
+  },
+  {
     version: "1.3.1",
     date: "2026-11-10",
     summary: "AWS 가격 목록에 아직 없는 일부 Bedrock 모델의 비용을 모델 카드 가격으로 추정합니다.",
