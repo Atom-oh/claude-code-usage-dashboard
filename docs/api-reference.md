@@ -553,7 +553,7 @@ required `id` (exactly as listed: `claude:<32 lowercase hex>` or
 id; else 400), `userExact`,
 `from` and `to` (the list's bucket). A disabled client's id is 400. A task that does not
 belong to `userExact` in that bucket, or does not exist, returns 404 `{"error": "not found"}`
-either way. Response `{task, lanes, spans, truncated, span_total, why}`:
+either way. Response `{task, lanes, spans, truncated, span_total, why, context}`:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no `codex.sampling` span).
@@ -585,6 +585,17 @@ either way. Response `{task, lanes, spans, truncated, span_total, why}`:
   (`{span, cost_usd}`, all costs known), `retries` (calls with `attempt > 1`; omitted unless every call carries `attempt`) and
   `permission_wait` (Claude wait-span milliseconds). A rule whose inputs are unavailable is
   omitted, never zero-filled. Data rules: [data reference](reference/data.md#user-task-traces).
+- `context`: `{points, missing, partial, compactions, limits}`. `points` are
+  `{span, lane, start_ms, tokens}` per LLM call in time order: Claude input + cache read +
+  cache write, Codex the completion's input including cache (`span` null when no sampling
+  span matched). `tokens` is null when any part is unknown and counted in `missing`;
+  `partial` marks a truncated Claude detail or a limited Codex turn set. `compactions`
+  (Claude) are `{start_ms, pre_tokens, post_tokens, trigger, success}` of compaction events
+  whose `prompt.id` is a prompt of the task's calls, at most 100; null when no call has a
+  prompt id, and always null for Codex. `limits` (Codex) is the latest
+  `codex.conversation_starts` of the conversation up to the turn start within 7 days:
+  `{context_window, auto_compact_token_limit}`, null when none is reported; always null for
+  Claude, which reports no context window.
 
 ### Teams
 

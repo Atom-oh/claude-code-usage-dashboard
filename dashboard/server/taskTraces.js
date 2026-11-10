@@ -132,11 +132,13 @@ LIMIT ${q.sort === "cost" ? COST_CANDIDATES : TASK_LIMIT}`;
 export function claudeCostSql(from, to, requestIds) {
   return {
     sql: `SELECT request_id, anyIf(reported, reported IS NOT NULL) AS cost_usd,
-        anyIf(agent_name, agent_name != '') AS agent_name
+        anyIf(agent_name, agent_name != '') AS agent_name,
+        anyIf(prompt_id, prompt_id != '') AS prompt_id
     FROM (
         SELECT LogAttributes['request_id'] AS request_id,
             toFloat64OrNull(LogAttributes['cost_usd']) AS reported,
-            LogAttributes['agent.name'] AS agent_name
+            LogAttributes['agent.name'] AS agent_name,
+            LogAttributes['prompt.id'] AS prompt_id
         FROM claude_code.otel_logs
         WHERE Timestamp >= {logFrom:DateTime} AND Timestamp < {logTo:DateTime}
           AND EventName IN ('api_request', 'claude_code.api_request')

@@ -1,5 +1,6 @@
 // Full-screen detail of one task (/api/users/tasks/detail): KPI row, agent lane timeline
-// (TaskTimeline), cumulative cost band by lane (TaskCostBand), clicked-span side panel
+// (TaskTimeline), cumulative cost band by lane (TaskCostBand), context size by lane
+// (TaskContextChart), clicked-span side panel
 // (TaskSpanPanel), the "왜 많이 썼나" rules and the per-model call table (모델별 호출), whose
 // rows highlight that model's LLM bars. Task ids and raw identities are never shown.
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,6 +10,7 @@ import { StatTile } from "./StatTile.jsx";
 import { COST_BASIS, formatTaskDuration } from "./TaskList.jsx";
 import { TaskTimeline } from "./TaskTimeline.jsx";
 import { TaskCostBand } from "./TaskCostBand.jsx";
+import { TaskContextChart } from "./TaskContextChart.jsx";
 import { TaskSpanPanel } from "./TaskSpanPanel.jsx";
 import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
@@ -146,6 +148,10 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
           <p className="mt-1 text-[12px] text-ink-500">누적 비용을 레인 색으로 쌓았습니다. 마우스를 올리면 그 시점의 레인별 누적 금액이 표시됩니다.
             {unlinked > 0 && ` span과 연결되지 않은 Codex completion ${formatObserved(unlinked)}건은 띠에 포함되지 않습니다.`}</p>
         </div> : <p className="mt-4 text-sm text-ink-500">호출별 비용 {MISSING}</p>)}
+        {data.context && <div className="mt-4 border-t border-ink-100 pt-3">
+          <TaskContextChart context={data.context} lanes={lanes} end={end} numbers={numbers} client={task.client}
+            selectedId={selectedId} onSelect={onSelect} />
+        </div>}
       </div>
       <div className="flex flex-col gap-4">
         <div className="rounded-lg border border-ink-100 p-4">
