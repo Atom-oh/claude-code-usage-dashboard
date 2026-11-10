@@ -9,6 +9,21 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.1.1",
+    date: "2026-11-10",
+    summary: "실행 이미지의 zlib 보안 취약점을 패치했습니다. 화면과 기능은 바뀌지 않습니다.",
+    items: [
+      {
+        kind: "fixed",
+        title: "zlib 보안 패치 (CVE-2026-4738)",
+        body: "컨테이너 이미지 스캔에서 발견된 OS zlib의 Critical 취약점을 Alpine zlib 1.4-r0으로 올려 해결했습니다. 대시보드 사용 방법은 그대로입니다.",
+        to: null,
+        where: "실행 이미지 (화면 변경 없음)",
+        refs: [],
+      },
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-11-09",
     summary: "태스크 트레이스 정렬·모델별 호출 분석과 앱 안 변경 내역을 추가했습니다.",

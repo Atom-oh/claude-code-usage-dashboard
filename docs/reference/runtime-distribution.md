@@ -22,8 +22,9 @@ Unused Node development headers are removed; their absence is not vulnerability 
 The entrypoint uses Node directly. Removing build tools does not establish that the
 remaining packages are free of vulnerabilities.
 
-The runtime stage installs authenticated Alpine `zlib=1.3.2-r1`, the vendor fix
-for the OS package finding `CVE-2026-85091` observed on the pinned base. Keep this
+The runtime stage installs authenticated Alpine `zlib=1.4-r0`, the vendor fix
+for the OS package findings `CVE-2026-85091` and `CVE-2026-4738` (ECR enhanced scan,
+fixed in `1.4-r0`, 2026-11-09) observed on the pinned base. Keep this
 literal pin and the inspector's required version aligned when refreshing packages.
 Unavailable package versions fail the build; never bypass APK signature checking.
 This OS package is separate from the zlib bundled into the Node binary.
