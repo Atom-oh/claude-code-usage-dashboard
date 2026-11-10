@@ -15,6 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- Price Bedrock models whose AWS model card uses the flat Standard-tier table (one
+  table without context tiers, Global CRIS and Geo CRIS rows, `bedrock-runtime` only),
+  such as `moonshotai.kimi-k3.1`, which the Price List does not list yet. These were left
+  unpriced because the model-card fallback accepted only the context-tiered format.
+
 ## [1.3.0] - 2026-11-10
 
 ### Added
