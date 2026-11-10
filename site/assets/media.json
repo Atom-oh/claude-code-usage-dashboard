@@ -3,6 +3,7 @@
   "source_revision": "4ae980c50030be4adb59fed5c24dc47b747f1c2b",
   "privacy": "Current application UI with synthetic fixtures only; no production telemetry.",
   "content_review": {
+    "scope": "October 24 video files only; the November 10 English video, images and translations are not covered by this historical score.",
     "score": 98.5,
     "verdict": "PASS",
     "date": "2026-10-24"
@@ -24,5 +25,168 @@
       "duration_seconds": 48.008,
       "format": "720x720 VP9/Opus"
     }
-  ]
+  ],
+  "images": [
+    {
+      "name": "task-trace.png",
+      "path": "img/task-trace.png",
+      "capture_date": "2026-11-10",
+      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
+      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
+      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
+      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
+      "width": 1320,
+      "height": 1011,
+      "bytes": 115050,
+      "sha256": "677ac1571045c760f58fe614568a8e5859947e57f2c0d8818eb4356e2c558ef7"
+    },
+    {
+      "name": "task-trace-overview-en.png",
+      "path": "img/task-trace-overview-en.png",
+      "capture_date": "2026-11-10",
+      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
+      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
+      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
+      "display_translation": "openai.gpt-6-luna translated Korean DOM labels to English for the capture; product UI behavior unchanged.",
+      "state": "Initial Task Trace overview",
+      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
+      "width": 1320,
+      "height": 879,
+      "bytes": 104065,
+      "sha256": "0045b8b04b8938328d72d95b4028db10d92eb07c254a80f21428a19545b78304"
+    },
+    {
+      "name": "task-trace-en.png",
+      "path": "img/task-trace-en.png",
+      "capture_date": "2026-11-10",
+      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
+      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
+      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
+      "display_translation": "openai.gpt-6-luna translated Korean DOM labels to English for the capture; product UI behavior unchanged.",
+      "state": "Most expensive Explore call selected",
+      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
+      "width": 1320,
+      "height": 1030,
+      "bytes": 128177,
+      "sha256": "9bf56c5938b7bbd4efab3c1379271605d14e7c238aaee3c1fb101cf40951f7cd"
+    },
+    {
+      "name": "task-trace-model-en.png",
+      "path": "img/task-trace-model-en.png",
+      "capture_date": "2026-11-10",
+      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
+      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
+      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
+      "display_translation": "openai.gpt-6-luna translated Korean DOM labels to English for the capture; product UI behavior unchanged.",
+      "state": "Model row selected to highlight matching calls",
+      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
+      "width": 1320,
+      "height": 1030,
+      "bytes": 128399,
+      "sha256": "ec3fb88f8c652500ce4de54e4528e4cb611a4393428ce6cc1e23dabc7b6ddbd2"
+    },
+    {
+      "name": "task-trace-model-table-en.png",
+      "path": "img/task-trace-model-table-en.png",
+      "capture_date": "2026-11-10",
+      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
+      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
+      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
+      "display_translation": "openai.gpt-6-luna translated Korean DOM labels to English for the capture; product UI behavior unchanged.",
+      "state": "Selected model table, captured from the same React state",
+      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
+      "width": 1238,
+      "height": 83,
+      "bytes": 11428,
+      "sha256": "e641c12a84aace9de671b34d944c4c45ec7ec69cc758c0d63329db4f9c855d76"
+    }
+  ],
+  "release_scope": "Historical October 24 video release. The current English demo is recorded in current_demo.",
+  "current_demo": {
+    "created_date": "2026-11-10",
+    "language": "en",
+    "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+    "composition": "video/docs-demo/index.html",
+    "source_state": "React code captured from this revision; guide/composition authored in the November 10 working tree.",
+    "duration_seconds": 48,
+    "format": "1920x1080 H.264 MP4 and VP9 WebM, 24 fps, 1152 frames each, silent",
+    "render": {
+      "hyperframes": "0.7.77",
+      "gsap": "3.14.2",
+      "chromium": "151.0.7922.34",
+      "ffmpeg": "7.0.2",
+      "quality": "high",
+      "workers": 2,
+      "font": "Bundled Noto Sans with SIL OFL"
+    },
+    "privacy": "Actual React screens using synthetic fixtures with Luna-translated English display labels; no production telemetry.",
+    "validation": "HyperFrames strict lint/runtime/layout checks and contrast checks passed; full MP4/WebM decode, stream properties and six encoded MP4 scene frames checked. Browser playback and English captions tested with the VP9 WebM fallback because the test Chromium lacks H.264 decoding.",
+    "files": [
+      {
+        "path": "video/dashboard-demo-en-20261110.mp4",
+        "bytes": 3569818,
+        "sha256": "56ecb1cc7c0e3afa99c5422d45823ef0358b20ea297adb38a1b5e27600741e46"
+      },
+      {
+        "path": "video/dashboard-demo-en-20261110.webm",
+        "bytes": 1789382,
+        "sha256": "092abe80e52a4f6539eda4b31abc2580dfeca4fad813c6ac4a84242fd323d99d"
+      },
+      {
+        "path": "video/dashboard-demo-en-20261110.vtt",
+        "bytes": 1045,
+        "sha256": "027eafde703ffa652b108cc07f61477b9385032b1730ff63b430234b02ac416e"
+      },
+      {
+        "path": "img/docs-demo-en-poster.jpg",
+        "bytes": 169741,
+        "sha256": "4a65ed62bdaee13127ce579f168d0a20a0e32f31c35c685c7cb49ac8ff62479c"
+      }
+    ],
+    "runtime_assets": [
+      {
+        "path": "video/docs-demo/runtime/gsap.min.js",
+        "bytes": 72777,
+        "sha256": "19e3ad578c9c583ddf9bdca2ad87bb55c3d70b331058e28abacab898f799b2ee"
+      },
+      {
+        "path": "video/docs-demo/runtime/NotoSans.ttf",
+        "bytes": 635800,
+        "sha256": "8b23d6341a12454e68e35c2c0917f0504104ded6aa3024d18e9d462da06fadd3"
+      },
+      {
+        "path": "video/docs-demo/runtime/Noto-LICENSE.txt",
+        "bytes": 4394,
+        "sha256": "d53686323beb25c7abd34af89df5b11dca2e23cf331fc9b4e2f87871c096b8a9"
+      }
+    ],
+    "source_files": [
+      {
+        "path": "video/docs-demo/index.html",
+        "sha256": "b6b19cb3d4202ef17c3a7e30adba1277d98ccf7745778104a1bdc034127f922a"
+      },
+      {
+        "path": "video/docs-demo/styles.css",
+        "sha256": "e4c786c31b251ef0927e9065d69c0e6a092d65547d4db5b76cafe054b92ed454"
+      },
+      {
+        "path": "video/docs-demo/package.json",
+        "sha256": "66398854d0b8572a0e03175683433c0bdf1b96b8a4876e7f1c6a5b8fb4fb855a"
+      }
+    ],
+    "webm_encoding": {
+      "source": "Rendered English H.264 MP4",
+      "encoder": "FFmpeg 7.0.2 libvpx-vp9",
+      "crf": 30,
+      "bitrate_mode": "constant quality",
+      "pixel_format": "yuv420p",
+      "row_mt": 1,
+      "threads": 2
+    }
+  }
 }

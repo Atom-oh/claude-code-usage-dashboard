@@ -47,6 +47,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+html:lang(ko) body {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
 .wrap {
   max-width: var(--wrap);
   margin: 0 auto;
@@ -122,6 +127,23 @@ nav.tabs a[aria-current="page"] {
   font-weight: 600;
 }
 
+.languages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 14px;
+}
+
+.languages span {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.languages a {
+  color: var(--bedrock);
+}
+
 /* — hero — */
 .hero {
   padding: 64px 0 8px;
@@ -164,8 +186,8 @@ h1 {
   display: block;
   width: 100%;
   height: auto;
-  /* Reserve the square demo's space before its metadata loads. */
-  aspect-ratio: 1;
+  /* Reserve the English walkthrough's space before metadata loads. */
+  aspect-ratio: 16 / 9;
   border-radius: 8px;
   background: var(--canvas);
 }

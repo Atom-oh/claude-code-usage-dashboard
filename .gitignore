@@ -15,6 +15,9 @@ video/snapshots/
 video/.hyperframes/
 video/assets/
 video/capture/assets/
+video/docs-demo/.hyperframes/
+video/docs-demo/renders/
+video/docs-demo/snapshots/
 
 # Local Python validation caches
 __pycache__/

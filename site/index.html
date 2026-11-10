@@ -4,51 +4,87 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Understand AI coding usage and cost — ccdash</title>
-  <meta name="description" content="Explore Claude Code and Codex usage in one dashboard, then follow costs into a time window, user, model or recorded completion." />
+  <meta name="description" content="Explore Claude Code and Codex usage, then inspect a user's Task Trace with agent lanes, model calls and cumulative cost." />
   <link rel="stylesheet" href="assets/site.css" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="index.html" />
+  <link rel="alternate" hreflang="ko" href="ko/index.html" />
+  <link rel="alternate" hreflang="ja" href="ja/index.html" />
+  <link rel="alternate" hreflang="zh-CN" href="zh/index.html" />
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
     <nav class="tabs" aria-label="Main navigation"><a href="index.html" aria-current="page">Overview</a><a href="installation.html">Install</a><a href="architecture.html">Architecture</a><a href="api.html">API</a><a href="operations.html">Operations</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="Language"><span lang="en">English</span><a href="ko/index.html" hreflang="ko" lang="ko">한국어</a><a href="ja/index.html" hreflang="ja" lang="ja">日本語</a><a href="zh/index.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
   </div></header>
   <main class="wrap" id="main">
     <div class="hero">
       <p class="eyebrow">Claude Code + Codex · Documentation</p>
       <h1>Understand AI coding usage and cost</h1>
-      <p class="lede">Explore Claude Code and Codex usage in one dashboard, then follow costs into a time window, user, model or recorded completion.</p>
-      <p class="caption">Updated October 24, 2026 · Describes source behavior; verify your installed revision.</p>
+      <p class="lede">Explore Claude Code and Codex usage, then follow a user's time window into Task Trace: agent lanes, model calls and cumulative cost.</p>
+      <p class="caption">Updated November 10, 2026 · Describes source behavior; verify your installed revision.</p>
+      <p><a href="#task-trace">Open a Task Trace</a> · <a href="#codex-traces">Inspect Codex diagnostic traces</a> · <a href="installation.html#trace">Enable collection</a></p>
     </div>
-    <section id="demo"><h2>See the current dashboard</h2>
+    <section id="demo"><h2>Watch the installation and Task Trace walkthrough</h2>
 <div class="demo-layout">
   <div>
-    <div class="video-frame"><video controls playsinline preload="metadata" poster="assets/img/demo-poster.png" aria-label="48-second ccdash demo with Korean captions and instrumental music">
-      <source src="https://github.com/Atom-oh/claude-code-usage-dashboard/releases/download/docs-media-20261024/dashboard-demo.mp4" type="video/mp4" />
-      <source src="https://github.com/Atom-oh/claude-code-usage-dashboard/releases/download/docs-media-20261024/dashboard-demo.webm" type="video/webm" />
-      Your browser cannot play this video. <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/releases/download/docs-media-20261024/dashboard-demo.mp4">Download the demo</a>.
+    <div class="video-frame"><video controls playsinline preload="none" poster="assets/img/docs-demo-en-poster.jpg" aria-label="48-second English installation and Task Trace walkthrough">
+      <source src="assets/video/dashboard-demo-en-20261110.mp4" type="video/mp4" />
+      <source src="assets/video/dashboard-demo-en-20261110.webm" type="video/webm" />
+      <track kind="captions" src="assets/video/dashboard-demo-en-20261110.vtt" srclang="en" label="English" />
+      Your browser cannot play this video. <a href="assets/video/dashboard-demo-en-20261110.mp4">Download the English demo</a>.
     </video></div>
-    <p class="caption">48 seconds · Korean captions · instrumental music. Current application screens with synthetic identities and fictional costs; no production telemetry.</p>
+    <p class="caption">Created November 10, 2026 · 48 seconds · English on-screen text · silent. Actual React screens with synthetic fixtures and Luna-translated display labels; fictional costs. Built and rendered with HyperFrames.</p>
   </div>
   <div>
     <h3>From totals to an explanation</h3>
     <ol>
-      <li>Compare Claude Code and Codex with separate cost bases.</li>
-      <li>Change cost trends from hourly to ten-minute buckets for a window of up to one day.</li>
-      <li>Select a user for their trend and models, or a model for its user cost shares.</li>
-      <li>Inspect Codex completion efficiency alongside coverage and missing-data reasons.</li>
+      <li>Clone and build the source, then prepare ClickHouse, schemas and the central Collector.</li>
+      <li>Open a user's Task Trace to inspect agent lanes and cumulative cost.</li>
+      <li>Select a call for its cache tokens and cost basis, or select a model row to highlight its calls.</li>
+      <li>Choose EC2, ECS or EKS with their prerequisites; Lambda requires adapting the application to its runtime.</li>
     </ol>
-    <p><a class="button-link" href="installation.html">Install a device Collector</a></p>
+    <p><a class="button-link" href="installation.html">Build and deploy the service</a></p>
     <p><a href="operations.html#sso">Connect your organization's SSO</a></p>
   </div>
 </div></section><section id="latest"><h2>What changed</h2>
 <div class="cards">
+  <article class="card"><h3>Task Trace</h3><p>Open a user's trend bucket, rank its tasks, then inspect agent lanes, cumulative cost and individual calls. Select a model row to highlight its calls.</p><p><a href="#task-trace">Follow the walkthrough</a></p></article>
   <article class="card"><h3>Cost drilldowns</h3><p>User and model selections open filtered details. Model shares use the known cost subtotal and disclose missing prices.</p></article>
   <article class="card"><h3>Codex completion efficiency</h3><p>Cache and reasoning ratios, tokens per completion, and estimated cost per identified session have explicit denominators and coverage.</p></article>
-  <article class="card"><h3>Device installation</h3><p>A macOS/Linux package configures both clients. Per-device tokens, revocation and a confirmed legacy macOS migration keep setup manageable.</p></article>
+  <article class="card"><h3>Source-based installation</h3><p>Clone a release and build the application image, then prepare ClickHouse schemas and an OTel backend. Compare EC2, ECS, EKS and Lambda adaptation before connecting clients.</p><p><a href="installation.html">Complete installation guide</a></p></article>
   <article class="card"><h3>Configurable SSO</h3><p>Map signed OIDC groups to application roles. Enable a fixed login lifetime of up to 30 days when the identity provider supports the refresh contract.</p></article>
-</div></section><section id="costs"><h2>Read cost and coverage together</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Measurement reference table"><table><thead><tr><th scope="col">Measurement</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td>Claude reported spend</td><td>Use <code>reported_cost</code> for the Claude reported-cost path; retain computed-cost diagnostics separately.</td></tr><tr><td>AWS list-price estimate</td><td>Codex and non-Anthropic Claude pricing use supported AWS list rates, routing and request tiers. This is not a cloud invoice.</td></tr><tr><td>Known cost subtotal</td><td>Sum usable prices and label missing prices as partial. An all-unknown cost stays unavailable.</td></tr><tr><td>Observed tokens</td><td>Keep usable input/output pairs with partial disclosure. A positive subtotal does not prove complete canonical token components.</td></tr><tr><td>Activity indicators</td><td>Explore observed adoption, tools and activity. These are not validated employee-performance or causal productivity measurements.</td></tr></tbody></table></div><p>See <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">measurement definitions</a> and <a href="api.html#completion">Codex completion semantics</a>.</p></section><section id="resolution"><h2>Choose the right time resolution</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Selected window reference table"><table><thead><tr><th scope="col">Selected window</th><th scope="col">Cost and Trends controls</th></tr></thead><tbody><tr><td>Up to 24 hours</td><td>10 minutes, 30 minutes, hourly, daily or weekly. A one-day view starts at hourly resolution.</td></tr><tr><td>More than 24 hours</td><td>Hourly, daily or weekly. A two-day view does not offer ten-minute resolution.</td></tr></tbody></table></div><p>Read the returned interval and effective time bounds. Historical rollups and telemetry coverage can affect the visible period.</p><div class="shots"><figure><img src="assets/img/cost-detail.png" width="1830" height="655" loading="lazy" alt="Synthetic user-specific cost trend in the current dashboard" /><figcaption>Selected-user detail, using synthetic data.</figcaption></figure><figure><img src="assets/img/model-share.png" width="1830" height="353" loading="lazy" alt="Synthetic model cost detail showing each user share" /><figcaption>Selected-model user shares, using synthetic data.</figcaption></figure></div></section><section id="boundaries"><h2>Keep the dimensions separate</h2>
+</div></section>
+<section id="task-trace"><h2>From a user to a Task Trace</h2>
+<ol>
+  <li>Choose your time range and client filters. Open <strong>Users</strong> or <strong>Cost</strong>, then select a user to open <strong>사용자 상세</strong> (user detail).</li>
+  <li>Click a bucket in that user's trend. The task list shows up to 20 tasks starting in that bucket. Sort by tokens, cost, subagents or duration.</li>
+  <li>Select a task to open <strong>작업 상세</strong> (Task Trace). Read its tokens, cost basis, LLM calls, subagents and observed duration.</li>
+  <li>Click a timeline bar to inspect that call or tool. Select a row in <strong>모델별 호출</strong> (model calls) to highlight matching LLM bars; select it again to clear. Press Escape or <strong>닫기</strong> to close.</li>
+</ol>
+<figure><img src="assets/img/task-trace.png" width="1320" height="1011" loading="lazy" alt="Task Trace with a main lane, two subagent lanes, cumulative cost and a selected Explore model call, using synthetic data" /><figcaption>Task Trace captured from the November 10 source with synthetic fixtures and fictional costs. No production telemetry.</figcaption></figure>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace reading guide"><table>
+  <thead><tr><th scope="col">View</th><th scope="col">How to read it</th></tr></thead>
+  <tbody>
+    <tr><td>Agent lanes</td><td>The main session appears first, followed by observed subagents. Darker LLM bars indicate larger input context; gray marks are tools, red marks are permission waits, and dashed lines connect observed agent spawns.</td></tr>
+    <tr><td>Cumulative cost</td><td>Lane colors stack known call costs. Hover to inspect a point in time. Codex completions without a matching span can contribute to the task total without appearing in the band.</td></tr>
+    <tr><td>Selected span</td><td>Inspect available model, token components, cost basis, timing and tool or permission metadata. Raw prompts, commands and paths are not shown.</td></tr>
+    <tr><td>왜 많이 썼나</td><td>Data-backed rules explain cache-read share, context growth, lane cost share, expensive calls, retries or permission waits when their inputs are available.</td></tr>
+    <tr><td>Model calls</td><td>Compare model and call source by lane, call count and known cost. Highlighting a row changes timeline emphasis, not the totals.</td></tr>
+  </tbody>
+</table></div>
+<p>Claude tasks represent interaction spans; Codex tasks represent traced turns and use linked completion logs for tokens and estimated cost. Codex currently has one main lane; subagent counts are not collected. Trace collection is optional, so this task list is a subset of dashboard activity. Trace retention is 90 days; older trend buckets cannot open a task list.</p>
+<p><a href="installation.html#trace">Collection setup</a> · <a href="api.html#tasks">Task API and limits</a> · <a href="operations.html#traces">Troubleshoot missing tasks</a></p>
+</section>
+<section id="codex-traces"><h2>Inspect Codex diagnostic traces</h2>
+<p>With Codex selected, open <strong>Analytics</strong> and choose the <strong>Trace</strong> tab in Codex detail. Expand a Trace to inspect spans, parent IDs, models, tools, duration and status, or export the span table as CSV.</p>
+<p>This preview shows the latest 50 traces and at most the latest 200 spans per trace. Its statistics describe displayed spans. A model filter includes only spans carrying model attributes. Long or conflicting traces can withhold duration and error totals.</p>
+<p>Diagnostic spans do not add usage or cost to the dashboard. The Task Trace above links Codex completion logs to turns; the Analytics Trace tab is a separate diagnostic preview. Chat's reasoning and SQL steps are a separate display again.</p>
+<p><a href="api.html#trace-preview">Diagnostic API</a> · <a href="architecture.html#task-traces">How tasks and spans connect</a></p>
+</section>
+<section id="costs"><h2>Read cost and coverage together</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Measurement reference table"><table><thead><tr><th scope="col">Measurement</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td>Claude reported spend</td><td>Use <code>reported_cost</code> for the Claude reported-cost path; retain computed-cost diagnostics separately.</td></tr><tr><td>AWS list-price estimate</td><td>Codex and non-Anthropic Claude pricing use supported AWS list rates, routing and request tiers. This is not a cloud invoice.</td></tr><tr><td>Known cost subtotal</td><td>Sum usable prices and label missing prices as partial. An all-unknown cost stays unavailable.</td></tr><tr><td>Observed tokens</td><td>Keep usable input/output pairs with partial disclosure. A positive subtotal does not prove complete canonical token components.</td></tr><tr><td>Activity indicators</td><td>Explore observed adoption, tools and activity. These are not validated employee-performance or causal productivity measurements.</td></tr></tbody></table></div><p>See <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">measurement definitions</a> and <a href="api.html#completion">Codex completion semantics</a>.</p></section><section id="resolution"><h2>Choose the right time resolution</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Selected window reference table"><table><thead><tr><th scope="col">Selected window</th><th scope="col">Cost and Trends controls</th></tr></thead><tbody><tr><td>Up to 24 hours</td><td>10 minutes, 30 minutes, hourly, daily or weekly. A one-day view starts at hourly resolution.</td></tr><tr><td>More than 24 hours</td><td>Hourly, daily or weekly. A two-day view does not offer ten-minute resolution.</td></tr></tbody></table></div><p>Read the returned interval and effective time bounds. Historical rollups and telemetry coverage can affect the visible period.</p><div class="shots"><figure><img src="assets/img/cost-detail.png" width="1830" height="655" loading="lazy" alt="Synthetic user-specific cost trend in the October 24 dashboard" /><figcaption>Selected-user detail, October 24 synthetic capture.</figcaption></figure><figure><img src="assets/img/model-share.png" width="1830" height="353" loading="lazy" alt="Synthetic model cost detail showing each user share" /><figcaption>Selected-model user shares, October 24 synthetic capture.</figcaption></figure></div></section><section id="boundaries"><h2>Keep the dimensions separate</h2>
 <p><strong>Client</strong> identifies the emitting application. <strong>Backend</strong> describes the observed or inferred provider path. <strong>Model</strong> identifies the model. A model name alone does not identify the coding client.</p>
 <p>The Claude <code>bedrock</code>/<code>enterprise</code> comparison is an inferred session-channel view. It is separate from dashboard login and is not a Codex enterprise A/B comparison. One user can appear in multiple channels.</p>
 <p>Analytics can answer additional questions through the guarded, read-only query path when enabled. Its availability depends on role, model access and deployment configuration.</p>

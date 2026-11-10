@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>API契約、コスト、Task Trace — ccdash</title>
+  <meta name="description" content="共有クライアント、ユーザータスク、Codex診断APIを、正確な識別子、範囲を限定した時間枠、明示的なシグナルの意味とともに利用します。" />
+  <link rel="stylesheet" href="../assets/site.css" />
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="../api.html" />
+  <link rel="alternate" hreflang="ko" href="../ko/api.html" />
+  <link rel="alternate" hreflang="ja" href="api.html" />
+  <link rel="alternate" hreflang="zh-CN" href="../zh/api.html" />
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+    <nav class="tabs" aria-label="メインナビゲーション"><a href="index.html">概要</a><a href="installation.html">インストール</a><a href="architecture.html">アーキテクチャ</a><a href="api.html" aria-current="page">API</a><a href="operations.html">運用</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="言語"><a href="../api.html" hreflang="en" lang="en">English</a><a href="../ko/api.html" hreflang="ko" lang="ko">한국어</a><span lang="ja">日本語</span><a href="../zh/api.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+  </div></header>
+  <main class="wrap" id="main">
+    <div class="hero">
+      <p class="eyebrow">Claude Code + Codex · ドキュメント</p>
+      <h1>API契約、コスト、Task Trace</h1>
+      <p class="lede">共有クライアント、ユーザータスク、Codex診断APIを、正確な識別子、範囲を限定した時間枠、明示的なシグナルの意味とともに利用します。</p>
+      <p class="caption">更新日：2026年11月10日 · ソースコードの動作を説明しています。インストール済みのリビジョンをご確認ください。</p>
+      <p><a href="#tasks">Task Trace API</a> · <a href="#trace-preview">診断Trace API</a></p>
+    </div>
+    <section id="access"><h2>認証</h2><p>OIDCモードでは、テレメトリAPIはセッションCookieを使用します。未認証のAPIリクエストは、<code>authentication_required</code>とログインURLを含むJSONの<code>401</code>を返します。セッションを使う変更系リクエストには、設定済みのOriginと権限が必要です。</p>
+<p>Basicモードでは、設定済みの認証情報が両方必要です。未認証のローカル開発は明示的に有効化する必要があります。パスワード設定が空でも、本番環境のログイン方式にはなりません。デバイス取り込みには、独自のBearerトークンによるゲートがあります。</p>
+<p><code>GET /api/session</code>は、ロール、権限、短期の<code>expiresAt</code>を返します。任意の<code>refreshExpiresAt</code>は、ログインの絶対期限です。IdPの生トークンは決して返しません。</p></section><section id="filters"><h2>時間とフィルター</h2><div class="table-scroll" tabindex="0" role="region" aria-label="パラメーター参照表"><table><thead><tr><th scope="col">パラメーター</th><th scope="col">仕様</th></tr></thead><tbody><tr><td><code>from</code>, <code>to</code></td><td>タイムゾーン付きのISO 8601形式を使い、<code>from &lt; to</code>を満たしてください。既定の範囲は2日、既定の上限は90日です。デプロイ設定で変更できます。</td></tr><tr><td><code>client</code></td><td>共有概要では<code>all</code>、<code>claude</code>、<code>codex</code>を指定できます。無効なソースは拒否されます。</td></tr><tr><td><code>backend</code></td><td>クライアントビューでは<code>all</code>、<code>bedrock-mantle</code>、<code>bedrock-runtime</code>、<code>anthropic</code>、<code>unknown</code>を指定できます。</td></tr><tr><td><code>user</code>, <code>model</code></td><td>既存の部分一致フィルターです。モデルの正規化と識別式はエンドポイントによって異なります。</td></tr><tr><td><code>userExact</code>, <code>modelExact</code></td><td>共有概要では、ドリルダウン用の行識別子を完全一致で指定します。返される<code>applied_filters</code>を確認してください。タスクの各ルートでは<code>userExact</code>が必須です。Codex insightsでは、<code>profile=tools</code>の場合に限り<code>userExact</code>を受け付け、<code>modelExact</code>は常に拒否します。</td></tr><tr><td><code>intervalHours</code></td><td>ラップされたルートでは、有限値<code>(0,744]</code>が必要です。共有概要は範囲を限定した1時間未満の解像度に対応します。実際の<code>bucket_hours</code>と<code>effective_range</code>を確認してください。</td></tr><tr><td><code>group</code></td><td>Claudeで推定されたセッションチャネルです。イベントを送信したクライアントやSSO認可グループではありません。</td></tr><tr><td><code>project</code></td><td>エンドポイントごとに異なり、共通フィルターではありません。適用する前にAPIリファレンス全体を確認してください。</td></tr></tbody></table></div><p>Cost/Trendsで10分・30分の選択肢を利用できるのは、時間範囲が24時間以内の場合だけです。それより古い範囲では1時間単位のロールアップを使います。任意のより細かい間隔が指定された場合、対応するネイティブのバケットにフォールバックすることがあります。</p></section><section id="shared"><h2>共有クライアントとコストのエンドポイント</h2><div class="table-scroll" tabindex="0" role="region" aria-label="エンドポイント参照表"><table><thead><tr><th scope="col">エンドポイント</th><th scope="col">用途</th></tr></thead><tbody><tr><td><code>GET /api/clients/overview</code></td><td>合計、クライアント・モデル・ユーザー別の内訳、時系列、カバレッジを返します。任意の<code>modelTime=1</code>を指定すると、モデル別の時系列も返します。</td></tr><tr><td><code>GET /api/clients/overview?view=cost</code></td><td>同じコスト、トークンカバレッジ、母集団、範囲を返し、使用されないプロジェクト・ツール・運用診断を省略します。省略されたフィールドはゼロを意味しません。</td></tr><tr><td><code>GET /api/codex/insights</code></td><td>Codexの完了効率に加え、ログ、メトリクス、Traceの診断情報を返します。</td></tr><tr><td><code>GET /api/codex/insights?profile=effort</code></td><td>コスト・使用量ビュー用のログのみの詳細です。メトリクスとTraceのカバレッジは<code>not_requested</code>です。</td></tr><tr><td><code>GET /api/cost/summary</code>, <code>/by-model</code>, <code>/by-user-model</code></td><td>従来のClaude専用コストルートです。複数クライアントの合計として扱わないでください。</td></tr></tbody></table></div><p>モデルごとのユーザー比率は、既知のユーザーコストを、選択したモデルの既知コスト小計で割って算出します。価格が不明な場合はその旨が示され、不明またはゼロの分母ではパーセンテージは返されません。</p></section><section id="completion"><h2>Codexの記録済み完了効率</h2>
+<p><code>completion_usage</code>は、使用量を含む重複排除済みの完了ログを表し、<code>basis="recorded_completions"</code>を指定します。選択した時間範囲内のすべてのHTTP試行やセッションで、テレメトリが完全に記録されていることを示すものではありません。</p><div class="table-scroll" tabindex="0" role="region" aria-label="フィールド参照表"><table><thead><tr><th scope="col">フィールド</th><th scope="col">分母と範囲</th></tr></thead><tbody><tr><td><code>cache_hit_rate</code>, <code>cache_write_share</code></td><td>記録済み完了内の正規化された入力トークンに対する、検証済みのキャッシュ読み取り・キャッシュ書き込みサブセットの比率です。</td></tr><tr><td><code>reasoning_share</code></td><td>このコホートにおける正規化された出力トークンに対する、検証済みの推論サブセットの比率です。</td></tr><tr><td><code>tokens_per_completion</code></td><td>正規化されたトークン数を記録済み完了数で割った値です。観測されたトークン小計を、欠落している正規化済みの構成要素の代わりにはできません。</td></tr><tr><td><code>cost_per_completion</code></td><td>既知の完了コストを記録済み完了数全体で割った値で、部分的な価格情報であることも示されます。</td></tr><tr><td><code>cost_per_identified_session</code></td><td>会話IDがある完了のみが、コストの分子と一意なセッション数の分母の両方に含まれます。</td></tr><tr><td><code>unidentified_completions</code></td><td>別途集計され、識別済みセッションあたりのコストには含まれません。</td></tr><tr><td><code>completeness</code></td><td>使用量・セッションの根拠の欠落、集約ファミリーの制限、未完了のトークン情報、利用可能な時間範囲全体のリクエスト数・セッション数を報告します。</td></tr></tbody></table></div><div class="note"><p>構成要素の欠落、あり得ないサブセット、ゼロの分母、価格がすべて不明な場合、または使用量が制限されている場合でも、<code>null</code>になることがあります。時間範囲全体に対する既存のHTTPリクエスト数・セッション数の比率には、引き続きより厳格な条件が適用されます。UIでは展開可能なセクションに表示されます。</p></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/codex-observability.md">完了、カバレッジ、集約制限の仕様全文</a></p></section><section id="device-api"><h2>CollectorとデバイスのAPI</h2><div class="table-scroll" tabindex="0" role="region" aria-label="エンドポイント参照表"><table><thead><tr><th scope="col">エンドポイント</th><th scope="col">仕様</th></tr></thead><tbody><tr><td><code>GET /api/collector</code></td><td>機能の状態、設定済みの公開取り込みエンドポイント、バージョン、プラットフォーム、トークンの有効期間を返します。</td></tr><tr><td><code>GET /api/collector/devices</code></td><td>所有者に紐づくデバイスを1ページ最大50件返します。返されたカーソルを変更せずに使用してください。</td></tr><tr><td><code>POST /api/collector/devices</code></td><td><code>name</code>と<code>platform</code>（<code>darwin</code>または<code>linux</code>）を指定して登録します。トークンは一度だけ返されます。</td></tr><tr><td><code>DELETE /api/collector/devices/:id</code></td><td>所有するデバイスの登録を取り消します。</td></tr><tr><td><code>GET /api/collector/package/:platform</code></td><td>認証が必要なダウンロードです。認証情報は埋め込まれていません。</td></tr><tr><td><code>POST /api/ingest/v1/{logs,metrics,traces}</code></td><td>デバイスのBearerトークンのみを使用します。OTLP JSON/protobuf、最大2 MiB、コンテンツ圧縮なしです。</td></tr></tbody></table></div><p>管理とダウンロードには、OIDCの<code>collector:manage</code>（analyst/admin）が必要です。viewer/demoのアクセスは拒否されます。デバイスの各エンドポイントは使用量の範囲フィルターを使いません。レスポンスとダウンロードには<code>no-store</code>が適用されます。</p></section><section id="health"><h2>ヘルスチェックとエラー</h2>
+<p><code>/healthz</code>は稼働確認用、<code>/readyz</code>はレディネス判定用です。保護された<code>/api/health/data</code>は、取り込みデータの鮮度を報告します。プロセスが稼働中でも、テレメトリが最新であるとは限りません。</p>
+<p>形式が不正なフィルターは、クエリの実行前に失敗します。更新サービスで障害が発生すると、<code>Retry-After: 5</code>を伴う<code>503</code>が返ることがあります。認証情報が期限切れまたは無効な場合は、ログインが必要です。クエリ数の上限に達すると、データベース処理が無制限に増えるのを避けるため、リクエストが拒否されることがあります。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">ルート一覧、レスポンスフィールド、エラーの詳細</a></p></section>
+<section id="tasks"><h2>ユーザータスクとTraceのAPI</h2>
+<p>セッション認証済みのテレメトリアクセスを使用します。<code>userExact</code>は、要求されたバケット内でタスクのテレメトリ所有者を選択します。ダッシュボード閲覧者自身のテレメトリだけに制限するものではありません。</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Task Traceエンドポイント参照"><table>
+  <thead><tr><th scope="col">エンドポイント</th><th scope="col">リクエストとレスポンス</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /api/users/tasks</code></td><td><code>userExact</code>が必須です。選択したバケットの<code>from</code>/<code>to</code>も指定します。任意で<code>client</code>、<code>backend</code>、Claude専用の<code>group</code>、<code>sort=tokens|cost|subagents|duration</code>を指定できます。最大20件のタスク、<code>unattached_codex</code>、クライアントごとの<code>coverage</code>、<code>partial=true</code>を返します。</td></tr>
+    <tr><td><code>GET /api/users/tasks/detail</code></td><td>一覧行の<code>id</code>、<code>userExact</code>、同じバケットの範囲指定が必須です。<code>task</code>、<code>lanes</code>、<code>spans</code>、<code>truncated</code>、<code>span_total</code>、<code>why</code>を返します。タスクが存在しない場合と、所有者またはバケットが一致しない場合はいずれも404を返します。</td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li>どちらのルートも<code>team</code>を拒否します。返されたタスクIDを変更せずに渡してください。無効なクライアントや形式不正なIDは拒否されます。</li>
+  <li>Claudeのコスト順ソートでは、観測されたトークン数が最も多い上位100件のタスクから候補を選びます。<code>sort_candidates.limited</code>を確認してください。候補外にあるコストの高いタスクは、結果に含まれないことがあります。Codexのターンはソート前にコストを算出します。</li>
+  <li>詳細で返すspanは最新の5,000件までです。切り詰められたClaudeの詳細では、タスク全体とレーンの合計、モデル、<code>why</code>を返しません。Codexの完了情報から算出するタスク合計はspanの切り詰めに左右されませんが、切り詰められている場合、オーバーレイではKPI行とコスト帯が非表示になります。</li>
+  <li>Span属性は許可リストで制限されています。トークン構成要素、コスト、時間、サブエージェントの根拠が欠落している場合、それらは利用できないままです。トレースは任意であるため、タスクのレスポンスは常に部分的です。</li>
+</ul>
+<p><a href="index.html#task-trace">UIの操作ガイド</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md#users">タスクフィールド、識別子の検証、紐付けルールの詳細</a></p>
+</section>
+<section id="trace-preview"><h2>Codex診断Traceのプレビュー</h2>
+<p>既定の<code>GET /api/codex/insights</code>プロファイルには、<code>traces</code>、spanのレイテンシ集計、<code>coverage.traces</code>が含まれます。最新のTraceを50件返し、各Traceにつき最新のspanを最大200件返します。この上限は、Task Trace詳細の5,000-span上限とは異なります。</p>
+<p>統計は表示されているspanを対象とします。モデルフィルターが適用されるのは、モデル属性を持つspanだけです。切り詰めやspan識別子の競合がある場合、Trace単位の所要時間・エラー統計や詳細が返されないことがあります。メトリクスまたはTraceで観測されたトークンが、完了ログの使用量やコストに加算されることはありません。</p>
+<p><code>effort</code>、<code>tools</code>、<code>performance</code>の各プロファイルはTraceを照会しません。カバレッジが<code>not_requested</code>でも、収集されていない証拠にはなりません。<code>userExact</code>を受け付けるのは<code>profile=tools</code>の場合だけです。Codex insightsのすべてのプロファイルで<code>modelExact</code>は拒否されます。</p>
+<p><a href="index.html#codex-traces">Traceタブを開く</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/codex-observability.md#api-and-bounds">プレビューの上限とカバレッジ</a></p>
+</section>
+  </main>
+  <footer><div class="wrap">
+    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">測定項目の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモのクレジット</a></p>
+    <p>テレメトリは不完全な場合があります。報告されたコストと定価による推定額は請求額ではありません。アクティビティ指標だけでは、従業員の生産性や因果関係に基づくROIを示せません。</p>
+  </div></footer>
+</body>
+</html>

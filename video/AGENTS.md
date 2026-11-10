@@ -1,9 +1,10 @@
 # Video project instructions
 
-This directory owns the historical silent demo, superseded on the documentation site
-on 2026-10-24 by a separate 48-second synthetic-data video. The current delivery and
-credits live in [site/assets/credits.html](../site/assets/credits.html). Follow
-[root guidance](../AGENTS.md); this file owns video-specific rules. `CLAUDE.md` imports it.
+The parent composition owns the historical silent demo, initially superseded on
+2026-10-24 by a separate synthetic-data video. The current English walkthrough is
+owned by [docs-demo](docs-demo/AGENTS.md); delivery and credits live in
+[site/assets/credits.html](../site/assets/credits.html). Follow
+[root guidance](../AGENTS.md); this file owns the parent video's rules. `CLAUDE.md` imports it.
 Documentation changes do not authorize recapturing the dashboard, changing captions,
 calling models, rendering, publishing, or upgrading dependencies.
 
@@ -55,7 +56,8 @@ cp capture/assets/{overview,cost,analytics}.png assets/
 Do not commit duplicate copies, `.hyperframes/`, `renders/`, or `snapshots/`.
 The old poster remains in that Git revision. The retained
 `../site/assets/video/dashboard-demo.mp4` is this historical composition. The current
-overview uses the separate versioned media release linked from the credits page.
+overview uses the November 10 English delivery under `site/assets/video/`. The
+October 24 media release remains historical and is linked from the credits page.
 
 Keep this demo's dated figures/captions separate from current application behavior. It shows
 historical computed spend; today's spend contract is reported-primary with opt-in computed

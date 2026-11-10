@@ -33,6 +33,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed
 
+- Provide English, Korean, Japanese and Simplified Chinese versions of all five
+  documentation-site guides and media credits, with Luna translation provenance.
+  Document source builds, platform deployment options, ClickHouse schema setup
+  and the required OTel backend, alongside Task Trace guidance and a current
+  synthetic screenshot. Replace the overview's Korean video with a newly rendered
+  48-second English HyperFrames walkthrough and an English caption track.
+
 - PR review guidance distinguishes published model context and verified CLI
   transport behavior from repository policy budgets, with dated sources and
   validation rules for budget changes. Existing review limits remain unchanged (#231).

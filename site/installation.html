@@ -3,75 +3,160 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Install the device Collector — ccdash</title>
-  <meta name="description" content="Connect an existing Claude Code and Codex installation on macOS or Linux, including EC2, through a device-specific ingestion token." />
+  <title>Build and deploy the complete service — ccdash</title>
+  <meta name="description" content="Clone the source, build the dashboard image, prepare ClickHouse schemas and an OTel Collector, then choose EKS, ECS, EC2 or a Lambda port." />
   <link rel="stylesheet" href="assets/site.css" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="alternate" hreflang="en" href="installation.html" />
+  <link rel="alternate" hreflang="ko" href="ko/installation.html" />
+  <link rel="alternate" hreflang="ja" href="ja/installation.html" />
+  <link rel="alternate" hreflang="zh-CN" href="zh/installation.html" />
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
     <nav class="tabs" aria-label="Main navigation"><a href="index.html">Overview</a><a href="installation.html" aria-current="page">Install</a><a href="architecture.html">Architecture</a><a href="api.html">API</a><a href="operations.html">Operations</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+    <div class="languages" role="group" aria-label="Language"><span lang="en">English</span><a href="ko/installation.html" hreflang="ko" lang="ko">한국어</a><a href="ja/installation.html" hreflang="ja" lang="ja">日本語</a><a href="zh/installation.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
   </div></header>
   <main class="wrap" id="main">
-    <div class="hero">
-      <p class="eyebrow">Claude Code + Codex · Documentation</p>
-      <h1>Install the device Collector</h1>
-      <p class="lede">Connect an existing Claude Code and Codex installation on macOS or Linux, including EC2, through a device-specific ingestion token.</p>
-      <p class="caption">Updated October 24, 2026 · Describes source behavior; verify your installed revision.</p>
-    </div>
-    <section id="choose"><h2>Choose your installation path</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Environment reference table"><table><thead><tr><th scope="col">Environment</th><th scope="col">Action</th></tr></thead><tbody><tr><td>Personal macOS or Linux machine</td><td>Follow the package setup below. Python 3.9+, outbound HTTPS to GitHub and the dashboard, and installed coding clients are required.</td></tr><tr><td>Existing device-token package</td><td>Register a replacement token and rerun installation with the same attribution ID.</td></tr><tr><td>Legacy personal macOS Collector</td><td>The current installer recognizes the supported legacy service and asks before migrating it.</td></tr><tr><td>Legacy Linux or unknown service</td><td>Follow the owner's manual migration procedure before installing.</td></tr><tr><td>Organizer-prepared Workshop Studio EC2</td><td>Use the prepared clients and Collector. Do not install a second Collector or register an individual device token.</td></tr></tbody></table></div><p>Packages support macOS/Linux on amd64 and arm64. The installer downloads Collector 0.163.1 from the official release and checks pinned SHA-256 values. Archives contain no binary or credential.</p></section><section id="setup"><h2>Download and run</h2><ol>
-  <li>Sign in to your dashboard as an editor (<code>analyst</code>) or admin and open <strong>Collector installation</strong>. Viewer/demo users cannot download packages or register devices.</li>
-  <li>Select your OS, download the archive and register a device. Keep its one-time token available until setup completes.</li>
-  <li>Move the archive to the machine running the clients. Open a terminal in its download directory and confirm <code>python3 --version</code> is 3.9 or later.</li>
-</ol>
-<h3>macOS</h3>
-<pre><code class="language-bash">tar -xzf ccdash-collector-darwin.tar.gz
-cd ccdash-collector</code></pre>
-<h3>Linux / EC2</h3>
-<pre><code class="language-bash">tar -xzf ccdash-collector-linux.tar.gz
-cd ccdash-collector
-sudo loginctl enable-linger "$USER"</code></pre>
-<p>Run only your platform's commands. If the browser already extracted the archive, enter its directory. On Linux, reconnect if the user service manager was unavailable. Run the installer as your normal user.</p>
-<h3>Set the telemetry identity</h3>
-<p>Use the attribution ID your organization expects, preserving the existing ID when migrating. Replace the example endpoint with the command shown by your dashboard.</p>
-<pre><code class="language-bash">(
-  printf 'Telemetry user ID/email: '
-  IFS= read -r ccdash_user_id
-  if [ -n "$ccdash_user_id" ]; then
-    python3 install.py install \
-      --endpoint 'https://dashboard.example.com/api/ingest' \
-      --user-id "$ccdash_user_id"
-  else
-    printf '%s\n' 'Enter a nonempty telemetry user ID/email before installing.'
-  fi
-)</code></pre>
-<p>Paste the device token at the hidden prompt. For automation, <code>--token-file</code> accepts an existing regular file owned by your user with mode <code>0600</code>. Do not put the token value in command arguments.</p>
-<div class="note"><p>The token owner is not automatically written into telemetry as an SSO email. <code>--user-id</code> is client-provided attribution, not verified identity. A fresh installation otherwise defaults to the local login name.</p></div>
-<p>The installer validates both client configurations, preserves model/provider/login settings and creates private backups. Custom <code>CODEX_HOME</code> or <code>CLAUDE_CONFIG_DIR</code> layouts need manual configuration.</p>
-<p>Restart Claude Code and Codex after setup. To include recognized Codex backend provenance, use:</p>
-<pre><code class="language-bash">python3 "$HOME/.local/share/ccdash-collector/launch-codex.py"</code></pre>
-<p>Direct Codex launches still collect, but can lack backend provenance. Unknown/custom providers and profile or project overrides can remain unknown.</p></section><section id="migration"><h2>Migrate an existing Collector</h2>
-<p>The supported personal macOS legacy service is <code>com.ccdash.otelcol</code>, using <code>~/.otelcol/config.yaml</code>. Close the coding clients and let the old queue drain before running the current installer.</p>
+<div class="hero"><p class="eyebrow">Claude Code + Codex · Installation</p><h1>Build and deploy the complete service</h1>
+<p class="lede">Start from Git source. Deploy the dashboard, ClickHouse and its schema, and an OTel collection path before connecting coding clients.</p>
+<p class="caption">Updated November 10, 2026 · Source-based instructions; verify the selected release and target environment.</p>
+<p><a href="#setup">Clone and build</a> · <a href="#schema">Database schema</a> · <a href="#collector">OTel backend</a> · <a href="#platforms">Hosting options</a> · <a href="#trace">Client traces</a></p></div>
+<section id="choose"><h2>What you must install</h2>
+<p>This guide does not depend on a published application <code>.tar.gz</code>. Clone the repository and build its Docker image. Optional device packages are generated by an installed dashboard; they do not install the backend.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Required installation components"><table><thead><tr><th scope="col">Component</th><th scope="col">Purpose and source</th></tr></thead><tbody>
+<tr><td>Dashboard application</td><td><code>dashboard/Dockerfile</code> builds React and Express into one image, serving UI and API on port 8080. It does not run ClickHouse or an OTel Collector.</td></tr>
+<tr><td>ClickHouse and schema</td><td>Persistent database, telemetry tables, materialized views and migration ledger. Select the single-node or replicated schema for your deployment.</td></tr>
+<tr><td>OTel Collector</td><td>A separately running Collector receives logs, metrics and traces, applies the repository's filters and transforms, and writes to the prepared tables.</td></tr>
+<tr><td>Authentication and secrets</td><td>OIDC or configured Basic authentication, HTTPS access, private database connectivity, separate reader/ingest/admin credentials and protected secret mounts.</td></tr>
+<tr><td>Client collection</td><td>Claude Code/Codex exporters and a local Collector or organizer-managed collection path. Backend deployment does not change users' client settings.</td></tr>
+</tbody></table></div>
+<p>Install Git and Docker with buildx first. For EKS, also prepare the existing cluster dependencies, Terraform, AWS CLI and kubectl described in the <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">organization deployment prerequisites</a>.</p></section>
+<section id="setup"><h2>1. Clone a release and build the image</h2>
+<p>Set <code>CCDASH_RELEASE</code> to an actual published <code>vX.Y.Z</code> release tag. Choose the platform to match your runtime; the supplied EKS deployment uses <code>linux/arm64</code>.</p>
+<pre><code class="language-bash">: "${CCDASH_RELEASE:?Set a published vX.Y.Z release tag}"
+CCDASH_PLATFORM=linux/arm64
+git clone https://github.com/Atom-oh/claude-code-usage-dashboard.git
+cd claude-code-usage-dashboard
+git checkout --detach "$CCDASH_RELEASE"
+CCDASH_REVISION=$(git rev-parse HEAD)
+docker build --platform "$CCDASH_PLATFORM" \
+  --build-arg APP_REVISION="$CCDASH_REVISION" \
+  --tag "ccdash:$CCDASH_RELEASE" dashboard</code></pre>
+<p>The build context is <code>dashboard/</code>, not the repository root. For an x86 runtime, select <code>linux/amd64</code> and qualify that deployment separately. A build on a different architecture needs a configured cross-platform builder.</p>
+<p>For production, follow the <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md#procedure">reviewed build, inspection, registry publication and rollout procedure</a>. Preserve the release, source revision and image digest; do not treat a successful local build as deployment.</p></section>
+<section id="schema"><h2>2. Prepare ClickHouse before starting ingestion</h2>
+<p>Provision persistent ClickHouse storage and backup/recovery first. Create a read-only dashboard account, an ingestion account with the required exporter grants, and an administrative migration account. The schema file does not provision your production users.</p>
+<p>The supplied account policy grants <code>otel_reader</code> SELECT on <code>claude_code.*</code>. The <code>otel_ingest</code> account needs INSERT on <code>claude_code.*</code> and SELECT on <code>claude_code.otel_metrics_sum</code> for the materialized-view source read; INSERT alone can fail ingestion. Restrict account networks and configure protected credentials using the <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/infra/clickhouse.tf">repository's ClickHouse account policy</a> as the reference.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Schema installation paths"><table><thead><tr><th scope="col">Deployment</th><th scope="col">Schema path</th></tr></thead><tbody>
+<tr><td>Fresh single node / local evaluation</td><td><code>clickhouse-schema.sql</code>: non-replicated tables, views, rollups and current migration guards. It includes Claude telemetry and dedicated Codex metric/cost/diagnostic tables.</td></tr>
+<tr><td>Fresh replicated EKS installation</td><td><code>infra/files/clickhouse-schema-replicated.sql</code> with the generated contract and schema-init Job in <code>infra/schema.tf</code>. Requires the declared cluster/Keeper topology and expected replicas.</td></tr>
+<tr><td>Existing installation</td><td>Inspect tables, ledger and historical data. Apply only the required numbered migrations following their runbooks; do not replay bootstrap as an upgrade.</td></tr>
+</tbody></table></div>
+<p>For EC2/Docker, first create a dedicated bridge network and persistent data volume. Prepare protected <code>users.d</code> XML with the reader/ingest/admin accounts, restricted networks and no anonymous default access, plus an admin client configuration. Qualify and pin the ClickHouse image for the selected release; the local Compose version is a starting reference. <code>CLICKHOUSE_SKIP_USER_SETUP=1</code> retains the prepared account configuration; validate its authentication and network restrictions first. This starts the database without publishing its ports:</p>
+<pre><code class="language-bash">: "${CCDASH_NETWORK:?Set the prepared private Docker network}"
+: "${CCDASH_CH_CONTAINER:?Set the ClickHouse container name}"
+: "${CCDASH_CH_IMAGE:?Set the reviewed ClickHouse image including its sha256 digest}"
+: "${CCDASH_CH_DATA_VOLUME:?Set the prepared persistent data volume}"
+: "${CCDASH_CH_USERS_DIR:?Set the protected users.d configuration directory}"
+: "${CCDASH_CH_ADMIN_CONFIG:?Set the protected admin client configuration file}"
+docker run -d --name "$CCDASH_CH_CONTAINER" --restart unless-stopped \
+  --network "$CCDASH_NETWORK" --network-alias clickhouse.internal \
+  --env CLICKHOUSE_SKIP_USER_SETUP=1 \
+  --mount "type=volume,src=$CCDASH_CH_DATA_VOLUME,dst=/var/lib/clickhouse" \
+  --mount "type=bind,src=$CCDASH_CH_USERS_DIR,dst=/etc/clickhouse-server/users.d,readonly" \
+  --mount "type=bind,src=$CCDASH_CH_ADMIN_CONFIG,dst=/run/ccdash-admin/client.xml,readonly" \
+  "$CCDASH_CH_IMAGE"</code></pre>
+<p>Wait for ClickHouse startup and authenticate with the mounted admin client configuration. For the schema command below, its container path is <code>/run/ccdash-admin/client.xml</code>. Use <code>clickhouse.internal</code> as the database host for the app and Collector on this network. The image and mounted configurations must match the runtime architecture and file-read permissions.</p>
+<p>For a <strong>new, empty, non-replicated</strong> database, set <code>CCDASH_CH_CONTAINER</code> to its running ClickHouse container and <code>CCDASH_CH_CLIENT_CONFIG</code> to the protected admin client configuration path inside it. Mount persistent storage at <code>/var/lib/clickhouse</code>, configure users before opening ingestion, and keep ports 8123/9000 private. No password is included below.</p>
+<pre><code class="language-bash">: "${CCDASH_CH_CONTAINER:?Set the prepared ClickHouse container name}"
+: "${CCDASH_CH_CLIENT_CONFIG:?Set the mounted admin client configuration path}"
+docker exec -i "$CCDASH_CH_CONTAINER" \
+  clickhouse-client --config-file "$CCDASH_CH_CLIENT_CONFIG" \
+  --multiquery &lt; clickhouse-schema.sql
+
+docker exec "$CCDASH_CH_CONTAINER" clickhouse-client \
+  --config-file "$CCDASH_CH_CLIENT_CONFIG" \
+  --query "SELECT name FROM system.tables WHERE database='claude_code' ORDER BY name"</code></pre>
+<p>Verify <code>otel_logs</code>, <code>otel_traces</code>, Claude metric tables, all four Codex metric tables, views and <code>schema_migrations</code>. The Collector uses <code>create_schema: false</code>; it cannot fill in missing tables. Migration 003 requires a statement-by-statement rollup cutover. Typed read activation also requires verified history/live coverage, not just table existence.</p>
+<p>The existing <code>dashboard/docker-compose.yml</code> initializes a fresh local ClickHouse volume and synthetic seed data. It uses development authentication and has no OTel Collector service. It is an evaluation starting point, not a complete production install; existing volumes are not reinitialized.</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">Schema lifecycle and migration ordering</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/codex-cost-schema.md">Codex cost read activation</a></p></section>
+<section id="collector"><h2>3. Install the OTel backend</h2>
+<p>Run a Collector distribution that includes the ClickHouse exporter and the required processors. For the optional device-token path, <code>dashboard/collector/generated/central.yaml</code> is the repository's private central receiver policy; use the reviewed, digest-pinned Contrib image from <code>infra/device_ingest.tf</code>.</p>
 <ol>
-  <li>The installer verifies the service and prompts for migration.</li>
-  <li>Confirmation permits the service transition and replacement of legacy Claude telemetry settings and old telemetry authentication headers.</li>
-  <li>Settings are backed up, the old LaunchAgent is disabled, and the device Collector is started. Failed installation attempts restore the previous state; recovery failures report the private backup directory.</li>
+<li>Mount the central YAML as the Collector config. Set <code>CH_HOST</code>, <code>CH_PORT</code> (native port), <code>CH_DB=claude_code</code>, <code>CH_USER</code> and matching <code>CLAUDE_ENABLED</code>/<code>CODEX_ENABLED</code> flags.</li>
+<li>Mount the ClickHouse ingest credential at <code>/var/run/ccdash-clickhouse/CH_PASSWORD</code> and the internal receiver bearer token at <code>/var/run/ccdash-ingest/token</code>, read-only. Ensure the container user can read them. Do not distribute this internal token to clients.</li>
+<li>Keep receiver port 4318 and health port 13133 private. The generated central policy uses OTLP HTTP with bearer authentication and a private native ClickHouse connection. Cross-boundary connections require the appropriate TLS policy.</li>
+<li>Enable all required pipelines: Claude metrics/logs/traces and Codex metrics/logs/traces. Codex metric pipelines write to their dedicated tables; logs and traces use the shared tables with retained client identity.</li>
+<li>For device ingestion, configure the dashboard's OIDC gate, DynamoDB device registry, runtime IAM permissions, <code>INGEST_ENABLED=1</code>, <code>INGEST_TOKEN_TABLE</code>, <code>INGEST_UPSTREAM_URL</code> and <code>INGEST_UPSTREAM_TOKEN_FILE</code>. The backend forwards authenticated devices to the private receiver.</li>
 </ol>
-<p>The old queue stays in <code>~/.otelcol</code> and is not imported. Do not delete it during migration. Unknown listeners are not stopped automatically; ports <code>4317</code>, <code>4318</code> and <code>13133</code> must belong to the supported service or be available.</p>
-<p>A package reporting <code>local Collector port is occupied; migrate the existing service first</code> predates the guided migration. Download the current package. For unmanaged Claude telemetry outside the recognized legacy service, review the old destination before using <code>--replace-claude-telemetry</code>.</p><p>Use the <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">complete installer guide</a> for Linux migration, recovery and conflict-specific commands.</p></section><section id="verify"><h2>Confirm receipt and manage devices</h2>
-<p>After restarting the clients, perform a small amount of work, refresh the device list and check a recent dashboard time window with the intended user filter.</p>
-<ul>
-  <li>Local health and <code>lastSeenAt</code> indicate stages of delivery, not database persistence or complete cost telemetry.</li>
-  <li>Device tokens expire 30 days after issuance. Revoke lost or unused devices; cached validation on another replica can remain valid for up to ten seconds.</li>
-  <li>Browser logout or group removal does not revoke device tokens. Include explicit device revocation in offboarding.</li>
-  <li>macOS uses a per-user LaunchAgent while logged in. Linux uses a user systemd service; linger enables persistence across logout and reboot.</li>
-</ul>
-<pre><code class="language-bash">python3 "$HOME/.local/share/ccdash-collector/install.py" uninstall</code></pre>
-<p>Uninstall removes the managed service and local token. Revoke the device in the dashboard too; client settings, queues and private backups need separate review.</p></section><section id="workshops"><h2>Workshop provisioning is a separate path</h2>
-<p>Organizers can prepare EC2 clients and the existing password-based ingest path centrally. Participants use that prepared environment. The device package accepts device tokens, not a ClickHouse password.</p>
-<p>The repository's <code>user-data.sh</code> requires deployment inputs and secret provisioning; it is not a generic command participants can run unchanged.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/workshop-studio-notes.md">Workshop Studio notes</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Device collection operations</a></p></section>
+<p>For organizer-managed clients, <code>collector-config.yaml</code> and <code>user-data.sh</code> describe a separate local-Collector-to-ClickHouse path with deployment-specific credentials and endpoints. Do not combine the two paths by copying a configuration unchanged.</p>
+<p>On an EC2/Docker host, prepare a private Docker network with access to ClickHouse, a nonsecret Collector environment file, and the two protected secret files. Select the digest-pinned image from <code>infra/device_ingest.tf</code>; the files must be readable by that image's runtime user. The central receiver is reachable by the dashboard on this network; no OTLP or health port is published to the host:</p>
+<pre><code class="language-bash">: "${CCDASH_NETWORK:?Set the existing private Docker network}"
+: "${CCDASH_COLLECTOR_IMAGE:?Set the pinned contrib image including its sha256 digest}"
+: "${CCDASH_COLLECTOR_ENV_FILE:?Set the prepared nonsecret Collector environment file}"
+: "${CCDASH_INGEST_SECRET_DIR:?Set the protected directory containing token}"
+: "${CCDASH_INGEST_CH_SECRET_DIR:?Set the protected directory containing CH_PASSWORD}"
+docker run -d --name ccdash-otel --restart unless-stopped \
+  --network "$CCDASH_NETWORK" \
+  --env-file "$CCDASH_COLLECTOR_ENV_FILE" \
+  --mount "type=bind,src=$PWD/dashboard/collector/generated/central.yaml,dst=/etc/otelcol-contrib/config.yaml,readonly" \
+  --mount "type=bind,src=$CCDASH_INGEST_SECRET_DIR,dst=/var/run/ccdash-ingest,readonly" \
+  --mount "type=bind,src=$CCDASH_INGEST_CH_SECRET_DIR,dst=/var/run/ccdash-clickhouse,readonly" \
+  "$CCDASH_COLLECTOR_IMAGE" --config=/etc/otelcol-contrib/config.yaml</code></pre>
+<p>For this network, set the app's upstream to <code>http://ccdash-otel:4318</code> and mount the same internal bearer token at <code>INGEST_UPSTREAM_TOKEN_FILE</code>. This token differs from each user's device token. The supplied central queue is in memory; design persistence/retry and loss monitoring for your operating requirements.</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md#enable-on-eks">Central receiver and device registry setup</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/generated/central.yaml">Central Collector configuration</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/codex-telemetry.md">Organizer-managed collection</a></p></section>
+<section id="backend"><h2>4. Configure and start the dashboard</h2>
+<p>Provide the database connection and authentication settings before starting the image. The following is a nonsecret configuration template; replace the example endpoint, issuer, client ID and group names with your deployment values.</p>
+<pre><code class="language-ini">CH_URL=http://clickhouse.internal:8123
+CH_DB=claude_code
+CH_USER=otel_reader
+CH_PASSWORD_FILE=/run/ccdash-secrets/CH_PASSWORD
+CLAUDE_ENABLED=true
+CODEX_ENABLED=true
+AUTH_MODE=oidc
+APP_PUBLIC_URL=https://dashboard.example.com
+OIDC_ISSUER=https://issuer.example.com
+OIDC_CLIENT_ID=YOUR_APP_CLIENT_ID
+OIDC_ROLE_GROUPS={"viewer":["YOUR_VIEWER_GROUP"],"analyst":["YOUR_ANALYST_GROUP"],"admin":["YOUR_ADMIN_GROUP"]}
+OIDC_CLIENT_SECRET_FILE=/run/ccdash-secrets/OIDC_CLIENT_SECRET
+SESSION_SECRET_FILE=/run/ccdash-secrets/SESSION_SECRET</code></pre>
+<p>Provision the three referenced secret files through your platform's secret mechanism and mount them read-only. <code>SESSION_SECRET</code> must be a base64url-encoded 32-byte random key. Preserve exact file content and permissions; the runtime image uses the non-root <code>node</code> user. On EC2, use the same absolute mount path in the container configuration. On ECS/EKS, implement the corresponding task/pod secret delivery. Do not enable insecure development authentication for a public deployment.</p>
+<p>After preparing <code>CCDASH_ENV_FILE</code> and <code>CCDASH_SECRET_DIR</code> on an EC2/Docker host, this runs the app behind a separately configured HTTPS reverse proxy:</p>
+<pre><code class="language-bash">: "${CCDASH_RELEASE:?Set the built release tag}"
+: "${CCDASH_ENV_FILE:?Set the prepared nonsecret environment file}"
+: "${CCDASH_SECRET_DIR:?Set the runtime-readable protected secret directory}"
+: "${CCDASH_NETWORK:?Set the existing private Docker network}"
+docker run -d --name ccdash --restart unless-stopped \
+  --network "$CCDASH_NETWORK" \
+  --publish 127.0.0.1:8080:8080 \
+  --env-file "$CCDASH_ENV_FILE" \
+  --mount "type=bind,src=$CCDASH_SECRET_DIR,dst=/run/ccdash-secrets,readonly" \
+  "ccdash:$CCDASH_RELEASE"</code></pre>
+<p>To enable device ingestion, also add the internal token file mount and <code>INGEST_*</code> settings from the previous step to the app's runtime configuration. This base app command does not configure the device registry or enable ingestion by itself.</p>
+<p><a href="operations.html#sso">OIDC and role configuration</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/.env.example">Environment reference</a></p></section>
+<section id="platforms"><h2>Choose EC2, ECS, EKS or a Lambda port</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Hosting options and repository support"><table><thead><tr><th scope="col">Option</th><th scope="col">Deployment shape</th><th scope="col">Repository support and remaining work</th></tr></thead><tbody>
+<tr><td>EC2 + Docker</td><td>Run the dashboard, a Collector, and persistent ClickHouse on private hosts or networks. Use durable database/queue storage and an HTTPS entry point.</td><td>The app image and single-node schema are supplied. Prepare host/service lifecycle, secrets, database users, network routing and backups yourself. The workshop user-data script configures client collection, not this whole backend.</td></tr>
+<tr><td>ECS / Fargate</td><td>Publish the app and Collector images to ECR; run separate services or appropriate sidecars. Use private networking and a separately managed persistent ClickHouse installation.</td><td>No ECS task/service templates are supplied. Define task/execution roles, secret delivery, CPU/memory, image architecture, health checks and service connectivity. Do not rely on an ephemeral task filesystem for the database or durable queues.</td></tr>
+<tr><td>EKS</td><td>Use the existing cluster, ClickHouse/Keeper operators and persistent volumes; deploy app and optional central receiver with the repository's Terraform.</td><td><code>infra/</code> reuses a cluster/VPC. Prepare operators, Karpenter, CSI/storage, DNS/certificates, IAM and secrets, then plan/apply, verify schema-init, publish the reviewed image and roll out. It does not create every prerequisite.</td></tr>
+<tr><td>Lambda</td><td>Port the HTTP application to a Lambda-compatible runtime/adapter. Keep ClickHouse and ingestion Collector on persistent external services.</td><td>The current Docker image starts Express and has no Lambda handler/runtime integration. No ready-made Lambda deployment is supplied. Validate auth cookies, streaming/chat, timeouts, networking and device ingestion after adaptation; selecting Lambda alone does not install this stack.</td></tr>
+</tbody></table></div>
+<p>Official platform references: <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html">EC2</a> · <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html">ECS/Fargate task definitions</a> · <a href="https://docs.aws.amazon.com/eks/latest/userguide/sample-deployment.html">EKS application deployment</a> · <a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html">Lambda image/runtime requirements</a>.</p></section>
+<section id="trace"><h2>5. Connect client logs, metrics and traces</h2>
+<p>After the backend works, configure each client's local Collector and exporter destination. For the device path, an analyst/admin can register a device in the deployed dashboard. If a download is unavailable, use the source installer directly; an installed backend and issued device token are still required.</p>
+<pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
+: "${CCDASH_USER_ID:?Set the intended telemetry attribution ID}"
+python3 dashboard/collector/install.py install \
+  --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
+<p>The installer requires Python 3.9+ on macOS/Linux and prompts privately for the token. On Linux, run <code>sudo loginctl enable-linger "$USER"</code> for service persistence after logout/reboot, then install as your normal user. It downloads and verifies the Collector binary; this command does not provision the dashboard, database or central receiver. A device owner is not automatically the emitted telemetry identity.</p>
+<ul><li>Claude Code: telemetry and enhanced telemetry enabled, <code>OTEL_TRACES_EXPORTER=otlp</code>, local OTLP gRPC destination on port 4317.</li><li>Codex: separate <code>[otel]</code> <code>exporter</code>, <code>metrics_exporter</code> and <code>trace_exporter</code> entries; local OTLP HTTP destinations on port 4318 and <code>log_user_prompt=false</code>.</li></ul>
+<p>Restart both clients, generate new work, and follow <a href="index.html#task-trace">user → trend bucket → task → Task Trace</a>. Earlier activity is not backfilled into traces. For Codex diagnostic spans, open Analytics' Trace tab.</p></section>
+<section id="migration"><h2>Existing devices and databases</h2><p>Preserve private client backups and exporter queues during device migration. Follow the supported macOS/Linux migration procedure instead of stopping an unknown service. Database upgrades follow the schema runbook independently of client installation and application rollout.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">Source installer and migration guide</a></p></section>
+<section id="verify"><h2>6. Verify every boundary</h2><ol><li>Check <code>/healthz</code> and ClickHouse-backed <code>/readyz</code>, then authenticate and inspect the installation/schema diagnostics.</li><li>Confirm expected tables, migration ledger, views, database grants and Collector write success; schema existence alone is not historical data readiness.</li><li>Send fresh client work and verify stored logs, metrics and traces under the intended identity. A Collector process or device receipt does not prove persistence.</li><li>Check the selected user's usage and Task Trace. Codex trace/metric observations are diagnostics and must not add another cost total.</li></ol><p><a href="operations.html#traces">Trace troubleshooting</a> · <a href="api.html#tasks">API bounds</a></p></section>
+<section id="workshops"><h2>Organizer-prepared workshops</h2><p>A prepared workshop has its own client and Collector lifecycle. Participants use the configured environment; they do not deploy a second backend or install another Collector over the prepared service. Organizers must supply the schema, secret destination and bootstrap assets before using <code>user-data.sh</code>.</p></section>
   </main>
   <footer><div class="wrap">
     <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
