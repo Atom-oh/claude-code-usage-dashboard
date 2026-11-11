@@ -57,7 +57,8 @@ Shared user details fetch their 90-day activity heatmap from `/api/clients/activ
 independently of the selected detail period. Daily session aggregates use the parent
 response's effective end and the exact selected user; global backend/model/team
 filters still apply. The calendar fills its container even when most days have no
-activity. The detail charts and task table continue to use `/api/clients/overview`.
+activity. The detail charts continue to use `/api/clients/overview`; the task table
+uses `/api/users/tasks`.
 
 Claude detail's Productivity page adds independent activity-density, permission-occupancy
 and tool-outcome tables with coverage and unavailable states. The legacy score is labelled
