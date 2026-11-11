@@ -46,6 +46,8 @@ jobs:
           python3 scripts/test-codex-cost-schema.py
       - name: Verify generated Claude provider schema
         run: node scripts/generate-claude-provider-schema.mjs --check
+      - name: Verify generated session turns schema
+        run: node scripts/generate-session-turns-schema.mjs --check
   diagnostics:
     runs-on: ubuntu-latest
     timeout-minutes: 20
