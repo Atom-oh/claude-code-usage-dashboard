@@ -275,6 +275,28 @@ class SchemaLifecycle(unittest.TestCase):
         sessions = self.fixture.rows(
             f"SELECT DISTINCT SessionId FROM {table} WHERE UserIdentity = '{user}' ORDER BY SessionId")
         self.assertEqual(sessions, [{"SessionId": "turns-lifecycle"}, {"SessionId": "turns-lifecycle-codex"}])
+        # The exact reader SQL, with bound parameters, over the backfilled table.
+        reader = subprocess.run(
+            ["node", "--input-type=module", "-e",
+             "import { turnsSql } from './dashboard/server/tokenEconomicsSource.js'; process.stdout.write(turnsSql());"],
+            cwd=ROOT, text=True, capture_output=True, check=True).stdout
+        def read_turns(clients):
+            text = self.fixture.query(
+                reader + " FORMAT JSONEachRow", param_from=bounds["start"], param_to=bounds["end"],
+                param_bucketSeconds=3600, param_clientUser="", param_clientUserExact="",
+                param_clients=clients, session_timezone="UTC").stdout
+            return [r for r in map(json.loads, text.splitlines()) if clients == "[]" or r["user"] == user]
+        result = read_turns("['claude','codex']")
+        window = [r for r in result if r["bucket"] == ""]
+        buckets = [r for r in result if r["bucket"] != ""]
+        self.assertTrue(window and buckets)
+        for r in buckets:
+            self.assertRegex(r["bucket"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+            self.assertEqual(r["bucket"], bounds["start"].replace(" ", "T") + "Z")
+        totals = {(r["Client"], r["Kind"]): int(r["keys"]) for r in self.fixture.rows(selected)}
+        self.assertEqual({(r["client"], r["kind"]): int(r["n"]) for r in window}, totals)
+        self.assertEqual({(r["client"], r["kind"]): int(r["n"]) for r in buckets}, totals)
+        self.assertEqual(read_turns("[]"), [])
 
     def test_session_turns_view_security_drift_is_rejected_without_repair(self):
         view = "claude_code.session_turns_v1_mv"
