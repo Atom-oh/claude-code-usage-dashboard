@@ -180,10 +180,14 @@ export function modelEconomics(facts = []) {
     .sort((a, b) => b.cost - a.cost || (a.model < b.model ? -1 : 1));
 }
 
-export function outcomeCost(facts = [], outcomes = [], cost = 0) {
+export function outcomeCost(facts = [], outcomes = null, cost = 0) {
+  // Missing outcome data is unavailable (null), not zero; an empty array is a real zero count.
+  if (!Array.isArray(outcomes)) {
+    return { commits: null, prs: null, loc_added: null, cost_per_commit: null, cost_per_pr: null, cost_per_kloc: null };
+  }
   const ids = new Set(facts.filter((f) => f.matched).map((f) => f.session));
   let commits = 0, prs = 0, loc = 0;
-  for (const o of outcomes || []) {
+  for (const o of outcomes) {
     if (!ids.has(o.session)) continue;
     commits += nn(o.commits) ?? 0; prs += nn(o.prs) ?? 0; loc += nn(o.loc_added) ?? 0;
   }
