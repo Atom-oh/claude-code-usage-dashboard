@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chain, lmdi, TERMS, BUNDLES } from "./tokenEconomics.js";
+import {
+  chain, lmdi, TERMS, BUNDLES, matchSessions, summarize, unitTrend, modelEconomics, outcomeCost, exemplars, isSmallModel,
+} from "./tokenEconomics.js";
 
 const CUR = { users: 42, sessions: 756, turns: 6804, requests: 43546, tokens: 1654748000, cost: 3144 };
 const PREV = { users: 34, sessions: 595, turns: 5712, requests: 34272, tokens: 1199520000, cost: 2519 };
@@ -83,4 +85,104 @@ test("near-equal costs stay finite", () => {
   assert.ok(Object.values(r.bundles).every(Number.isFinite));
   near(TERMS.reduce((s, k) => s + r.contributions[k], 0), r.total_change, 1e-9);
   assert.deepEqual(JSON.parse(JSON.stringify(r)), r);
+});
+
+const U = (o) => ({ client: "claude", session: "s", user: "u", bucket: "A", model: "claude-sonnet-4", backend: "b", tokens: 100, cache_read: 0, cache_den: 0, cost_usd: 1, cost_basis: "reported", requests: null, ...o });
+const T = (o) => ({ client: "claude", session: "s", user: "u", bucket: "", kind: "turn", model: "", n: 1, ...o });
+
+test("excludes sessions in reason order", () => {
+  const usage = [
+    U({ session: "a" }), // no turns
+    U({ session: "b" }), // turns, no requests
+    U({ session: "c", cost_usd: null }),
+    U({ session: "d", tokens: null }),
+  ];
+  const turns = ["b", "c", "d"].map((session) => T({ session }))
+    .concat(["c", "d"].map((session) => T({ session, kind: "request", model: "claude-sonnet-4", n: 2 })));
+  const facts = matchSessions(usage, turns);
+  assert.deepEqual(facts.map((f) => f.exclusion), ["no_turns", "no_requests", "cost_incomplete", "tokens_invalid"]);
+  const s = summarize(facts);
+  assert.deepEqual(s.coverage.excluded, { no_turns: 1, no_requests: 1, cost_incomplete: 1, tokens_invalid: 1 });
+  assert.equal(s.coverage.matched_sessions, 0);
+  assert.equal(s.coverage.cost_known, 3);
+  assert.equal(s.coverage.cost_matched, 0);
+});
+
+test("claude requests come from turn rows, codex from usage rows", () => {
+  const usage = [U({ session: "c1" }), U({ client: "codex", session: "x1", requests: 7, model: "gpt-6" })];
+  const turns = [
+    T({ session: "c1", n: 3 }), T({ session: "c1", kind: "request", model: "claude-sonnet-4", n: 12 }),
+    T({ client: "codex", session: "x1", n: 2 }),
+  ];
+  const facts = matchSessions(usage, turns);
+  assert.equal(facts.find((f) => f.session === "c1").requests, 12);
+  assert.equal(facts.find((f) => f.session === "x1").requests, 7);
+  assert.ok(facts.every((f) => f.matched));
+});
+
+test("window and bucket matching differ", () => {
+  const usage = [U({ bucket: "B" })];
+  const turns = [T({ bucket: "", n: 2 }), T({ bucket: "", kind: "request", model: "claude-sonnet-4", n: 4 }), T({ bucket: "A", n: 2 })];
+  assert.equal(matchSessions(usage, turns)[0].matched, true);
+  assert.equal(matchSessions(usage, turns, { bucket: "A" })[0].exclusion, "no_requests");
+  assert.equal(matchSessions(usage, turns, { bucket: "B" })[0].exclusion, "no_turns");
+});
+
+test("small model share", () => {
+  const usage = [U({ model: "claude-haiku-4-5" }), U({ model: "claude-sonnet-4" })];
+  const turns = [
+    T(), T({ kind: "request", model: "us.anthropic.claude-haiku-4-5-20251001-v1:0", n: 3 }),
+    T({ kind: "request", model: "claude-sonnet-4", n: 9 }),
+  ];
+  const [f] = matchSessions(usage, turns);
+  assert.equal(f.small_requests, 3);
+  assert.equal(f.requests, 12);
+  assert.equal(isSmallModel("global.openai.gpt-6-luna"), true);
+  assert.equal(isSmallModel("unknown-model"), false);
+  const m = modelEconomics([f]);
+  assert.equal(m.find((r) => r.model === "claude-haiku-4-5").requests, 3);
+  assert.equal(m.find((r) => r.model === "claude-haiku-4-5").small, true);
+});
+
+test("cache hit rate", () => {
+  const usage = [U({ cache_read: 900, cache_den: 1000 })];
+  const turns = [T({ bucket: "A" }), T({ bucket: "A", kind: "request", model: "claude-sonnet-4", n: 2 })];
+  const [row] = unitTrend(usage, turns, ["A", "Z"]);
+  assert.equal(row.cache_hit_rate, 0.9);
+  assert.equal(row.cost_per_user, 1);
+  assert.equal(row.cost_per_1k_requests, 500);
+  assert.equal(unitTrend(usage, turns, ["Z"])[0].cost_per_user, null);
+});
+
+test("outcome cost restricted to matched sessions", () => {
+  const usage = [U({ session: "m" }), U({ session: "x" })];
+  const turns = [T({ session: "m" }), T({ session: "m", kind: "request", model: "claude-sonnet-4", n: 1 }), T({ session: "x" })];
+  const facts = matchSessions(usage, turns);
+  const out = outcomeCost(facts, [{ session: "m", commits: 4, prs: 1, loc_added: 2000 }, { session: "x", commits: 100, prs: 9, loc_added: 9 }], 8);
+  assert.deepEqual(out, { commits: 4, prs: 1, loc_added: 2000, cost_per_commit: 2, cost_per_pr: 8, cost_per_kloc: 4 });
+  assert.equal(outcomeCost(facts, [], 8).cost_per_commit, null);
+});
+
+test("exemplars require activity", () => {
+  const usage = [], turns = [];
+  const add = (user, n, tokens, reqPerTurn) => {
+    for (let i = 0; i < n; i++) {
+      const session = `${user}${i}`;
+      usage.push(U({ session, user, tokens, cache_read: 50, cache_den: 100 }));
+      turns.push(T({ session, user, n: 5 }), T({ session, user, kind: "request", model: "claude-sonnet-4", n: 5 * reqPerTurn }));
+    }
+  };
+  add("small", 4, 100, 1); // 4 sessions, 80 turns: not eligible
+  add("a", 5, 1000, 2); add("b", 5, 500, 3); add("c", 5, 800, 1); add("d", 5, 100, 4);
+  const facts = matchSessions(usage, turns);
+  const ex = exemplars(facts, null);
+  assert.equal(ex.eligible_users, 4);
+  const tpr = ex.levers.find((l) => l.lever === "tokens_per_request");
+  assert.deepEqual(tpr.top.map((r) => r.user), ["d", "b", "a"]); // lowest tokens/request first
+  assert.equal(tpr.top[0].commits, null);
+  const rpt = ex.levers.find((l) => l.lever === "requests_per_turn");
+  assert.deepEqual(rpt.top.map((r) => r.user), ["c", "a", "b"]);
+  assert.equal(rpt.median, 2.5);
+  const withOut = exemplars(facts, [{ session: "c0", commits: 2 }]);
+  assert.equal(withOut.levers[1].top.find((r) => r.user === "c").commits, 2);
 });
