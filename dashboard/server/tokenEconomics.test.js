@@ -161,6 +161,10 @@ test("outcome cost restricted to matched sessions", () => {
   const out = outcomeCost(facts, [{ session: "m", commits: 4, prs: 1, loc_added: 2000 }, { session: "x", commits: 100, prs: 9, loc_added: 9 }], 8);
   assert.deepEqual(out, { commits: 4, prs: 1, loc_added: 2000, cost_per_commit: 2, cost_per_pr: 8, cost_per_kloc: 4 });
   assert.equal(outcomeCost(facts, [], 8).cost_per_commit, null);
+  assert.equal(outcomeCost(facts, [], 8).commits, 0);
+  for (const missing of [null, undefined, {}]) {
+    assert.deepEqual(outcomeCost(facts, missing, 8), { commits: null, prs: null, loc_added: null, cost_per_commit: null, cost_per_pr: null, cost_per_kloc: null });
+  }
 });
 
 test("exemplars require activity", () => {
