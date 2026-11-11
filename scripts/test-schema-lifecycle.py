@@ -52,7 +52,7 @@ class SchemaLifecycle(unittest.TestCase):
         self.assertEqual(
             [row["version"] for row in self.fixture.rows(
                 "SELECT version FROM claude_code.schema_migrations ORDER BY version"
-            )], [2, 3, 4, 5, 6, 7, 8, 9],
+            )], [2, 3, 4, 5, 6, 7, 8, 9, 10],
         )
 
     def test_populated_compatible_installation_only_reads_metadata(self):
@@ -205,6 +205,73 @@ class SchemaLifecycle(unittest.TestCase):
         try:
             result = self.verify_without_writes(False)
             self.assertIn("Claude provider view target or definer security differs", result.stderr)
+        finally:
+            self.fixture.query(f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER")
+
+    def test_session_turns_live_and_repeated_backfill_keep_exact_key_sets(self):
+        table = "claude_code.session_turns_v1"
+        bounds = self.fixture.rows(
+            "SELECT toString(toStartOfHour(now(), 'UTC')) AS start, "
+            "toString(toStartOfHour(now(), 'UTC') + INTERVAL 1 HOUR) AS end"
+        )[0]
+        user = "session-turns-lifecycle@example.invalid"
+        # (event, seconds into the hour, attributes). Duplicates repeat Timestamp and attributes.
+        claude = {"event.name": "user_prompt", "session.id": "turns-lifecycle"}
+        call = {"event.name": "api_request", "session.id": "turns-lifecycle", "model": "claude-sonnet-5"}
+        codex = {"event.name": "codex.user_prompt", "conversation.id": "turns-lifecycle-codex"}
+        rows = [
+            (1, {**claude, "prompt.id": "a"}), (2, {**claude, "prompt.id": "a"}),
+            (3, {**claude, "prompt.id": "b"}),
+            (4, {**call, "event.sequence": "1"}), (4, {**call, "event.sequence": "1"}),
+            (5, {**call, "event.sequence": "2"}),
+            (6, {**codex, "text": "x"}), (6, {**codex, "text": "x"}), (7, {**codex, "text": "y"}),
+            (8, {"event.name": "user_prompt", "prompt.id": "no-session"}),
+        ]
+        def attributes(attrs):
+            return ", ".join(f"'{key}', '{value}'" for key, value in attrs.items())
+        values = ",\n".join(
+            f"(toDateTime64('{bounds['start']}', 9, 'UTC') + {second}, "
+            f"map('user.email','{user}'), map({attributes(attrs)}))"
+            for second, attrs in rows
+        )
+        self.fixture.query(
+            f"INSERT INTO claude_code.otel_logs (Timestamp, ResourceAttributes, LogAttributes) VALUES {values}"
+        )
+        selected = f"""SELECT Client, Kind, toString(uniqExactMerge(Keys)) AS keys FROM {table}
+          WHERE UserIdentity = '{user}' GROUP BY Client, Kind ORDER BY Client, Kind"""
+        expected = [
+            {"Client": "claude", "Kind": "request", "keys": "2"},
+            {"Client": "claude", "Kind": "turn", "keys": "2"},
+            {"Client": "codex", "Kind": "turn", "keys": "2"},
+        ]
+        raw = f"""SELECT * FROM (
+          SELECT 'claude' AS Client, 'request' AS Kind,
+            toString(uniqExactIf(LogAttributes['event.sequence'], EventName = 'api_request')) AS keys
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'
+          UNION ALL SELECT 'claude', 'turn',
+            toString(uniqExactIf(LogAttributes['prompt.id'], EventName = 'user_prompt' AND SessionId != ''))
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'
+          UNION ALL SELECT 'codex', 'turn',
+            toString(uniqExactIf(LogAttributes['text'], EventName = 'codex.user_prompt'))
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'
+        ) ORDER BY Client, Kind"""
+        self.assertEqual(self.fixture.rows(raw), expected)
+        self.assertEqual(self.fixture.rows(selected), expected)
+        for zone in ("UTC", "Asia/Seoul", "UTC"):
+            self.fixture.query((ROOT / "clickhouse-backfill-010.sql").read_text(),
+                               param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                               session_timezone=zone, insert_deduplicate=0)
+            self.assertEqual(self.fixture.rows(selected), expected)
+        sessions = self.fixture.rows(
+            f"SELECT DISTINCT SessionId FROM {table} WHERE UserIdentity = '{user}' ORDER BY SessionId")
+        self.assertEqual(sessions, [{"SessionId": "turns-lifecycle"}, {"SessionId": "turns-lifecycle-codex"}])
+
+    def test_session_turns_view_security_drift_is_rejected_without_repair(self):
+        view = "claude_code.session_turns_v1_mv"
+        self.fixture.query(f"ALTER TABLE {view} MODIFY SQL SECURITY NONE")
+        try:
+            result = self.verify_without_writes(False)
+            self.assertIn("Session turns view target or definer security differs", result.stderr)
         finally:
             self.fixture.query(f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER")
 
@@ -386,7 +453,7 @@ class MultiReplicaSchemaLifecycle(unittest.TestCase):
             self.assertEqual(
                 [row["version"] for row in self.fixture.rows(
                     "SELECT version FROM claude_code.schema_migrations ORDER BY version", node_index=index
-                )], [2, 3, 4, 5, 6, 7, 8, 9],
+                )], [2, 3, 4, 5, 6, 7, 8, 9, 10],
             )
         self.verify_without_writes(True)
 
