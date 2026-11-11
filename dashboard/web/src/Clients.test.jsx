@@ -344,12 +344,12 @@ test("common dashboard preserves token subsets, tiny costs, unavailable operatio
   expect(screen.getByRole("region", { name: "클라이언트 비교" }).textContent).toContain("클라이언트 보고");
   expect(screen.getByText("사용량·비용 추이", { selector: "div" })).toBeTruthy();
   const intro = screen.getByText(/^Claude Code는/).textContent;
-  expect(intro).toContain("확인된 보고·추정 비용만 합산");
-  expect(intro).toContain("미산정 비용은 제외");
-  expect(intro).toContain("비용이 모두 미산정이면 —");
+  expect(intro).toContain("보고 비용을 기본으로 표시");
+  expect(intro).toContain("Codex는 AWS 정가 추정 비용");
+  expect(intro).not.toContain("미산정");
 });
 
-test.each([0.0042405, 0, null])("known cost %s retains partial/unknown status and quality counts", async (cost_usd) => {
+test.each([0.0042405, 0, null])("known cost %s retains partial/unknown status without the shared quality banner", async (cost_usd) => {
   mount({ enabledClients: ["codex"], response: clientOverview({
     totals: { ...codexUsage, cost_usd, cost_partial: true, unpriced: 1 },
     by_client: [{ ...codexUsage, cost_usd, cost_partial: true, unpriced: 1 }],
@@ -358,11 +358,8 @@ test.each([0.0042405, 0, null])("known cost %s retains partial/unknown status an
   await waitFor(() => expect(document.querySelector("main h1")).not.toBeNull());
   expect(tile("비용 (USD)").textContent).toContain(cost_usd === null ? "—" : `$${cost_usd}`);
   expect(tile("비용 (USD)").textContent).toContain(cost_usd === null ? "미산정" : "부분합");
-  const warning = screen.getAllByRole("status").find((node) => node.textContent.includes("미산정 1"));
-  expect(warning.textContent).toContain("미산정 1건 제외");
-  expect(warning.textContent).toContain("유효하지 않은 데이터 1");
-  expect(warning.textContent).toContain("알려진 비용");
-  expect(warning.textContent).toContain("부분합");
+  expect(screen.queryByText(/유효하지 않은 데이터/)).toBeNull();
+  expect(screen.queryByText(/알려진 비용만 부분합으로 표시하며/)).toBeNull();
   expect(document.body.textContent).not.toContain("합계를 제공하지 않을 수");
 });
 
@@ -377,9 +374,8 @@ test("invalid token quality does not label fully reported Claude costs as partia
   expect(tile("비용 (USD)").textContent).toContain("$12.5");
   expect(tile("비용 (USD)").textContent).not.toContain("부분합");
   expect(tile("관측 토큰").textContent).toContain("—");
-  const warning = screen.getAllByRole("status").find((node) => node.textContent.includes("유효하지 않은 데이터 1"));
-  expect(warning.textContent).not.toMatch(/부분합|미산정|제외/);
-  expect(warning.textContent).toContain("토큰 누락 여부는 별도로 유지합니다.");
+  expect(screen.queryByText(/유효하지 않은 데이터/)).toBeNull();
+  expect(screen.queryByText(/토큰 누락 여부는 별도로 유지합니다/)).toBeNull();
 });
 
 test("user CSV is masked, follows visible columns and sorted order, and omits hidden row fields", async () => {
@@ -798,7 +794,7 @@ test("Productivity folds the Codex efficiency block into Cost and keeps the scop
   expect(await screen.findByText("5 · 권한 결정 · 도구별")).toBeTruthy();
   expect(screen.getByText("8 · 활동 지수 · 상위 사용자")).toBeTruthy();
   expect(screen.getByText("지표 지원 범위")).toBeTruthy();
-  expect(screen.getByText(/Effort별 사용량·비용은 비용 페이지의 Codex 상세 관측에서 확인합니다/)).toBeTruthy();
-  expect(screen.queryByText("Codex 상세 관측")).toBeNull();
+  expect(screen.getByText(/Effort별 사용량·비용은 비용 페이지의 Codex 상세에서 확인합니다/)).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Codex 상세" })).toBeNull();
   expect(requests(fetchMock).some((url) => url.pathname === "/api/codex/insights")).toBe(false);
 });

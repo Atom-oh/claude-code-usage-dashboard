@@ -15,6 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- Simplify the Codex detail heading and move its cost explanation and exact query
+  period into the heading's information tooltip.
+- Remove the shared client cost-quality banner and repeated missing-cost
+  explanation. Metric-level cost basis, partial amounts and token coverage remain.
+
 ## [1.5.0] - 2026-11-11
 
 ### Changed

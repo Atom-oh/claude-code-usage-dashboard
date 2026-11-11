@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Info } from "lucide-react";
 import { Card, ErrorBox, Loading } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { StatTile } from "../components/StatTile.jsx";
@@ -73,17 +74,18 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
   const [search, setSearch] = useState("");
   const metrics = useMemo(() => (data?.metrics || []).filter((r) => r.name.toLowerCase().includes(search.toLowerCase())), [data?.metrics, search]);
   const summary = data?.summary || {};
+  const help = "비용은 AWS 정가 추정치입니다. 실행 지표는 실청구·코드 품질·절감 시간을 나타내지 않습니다."
+    + (!error && enabled && !loading && data?.range
+      ? `\n조회 기간: ${formatClientTimestamp(data.range.from)} ~ ${formatClientTimestamp(data.range.to)} (브라우저 시간)`
+      : "");
   return (
     <section aria-labelledby="codex-insights-heading" className="flex flex-col gap-5">
-      <div>
-        <h2 id="codex-insights-heading" className="text-xl font-semibold text-ink-800">Codex 상세 관측</h2>
-        <p className="mt-1 text-sm text-ink-600">Codex 비용은 AWS 정가 추정입니다. 실행 관측값은 실청구·코드 품질·절감 시간을 뜻하지 않습니다.</p>
+      <div className="flex items-center gap-2">
+        <h2 id="codex-insights-heading" className="text-xl font-semibold text-ink-800">Codex 상세</h2>
+        <Info size={14} className="shrink-0 text-ink-400" title={help} aria-label={help} />
       </div>
       {error ? <ErrorBox error={error} /> : !enabled || loading ? <Loading /> : (
         <>
-          {data?.range && <p className="text-sm text-ink-600">
-            상세 조회 구간: {formatClientTimestamp(data.range.from)} ~ {formatClientTimestamp(data.range.to)} (브라우저 시간)
-          </p>}
           <div className="flex flex-wrap gap-2" aria-label="신호 수집 상태">
             {["logs", "metrics", "traces"].filter((signal) =>
               data?.coverage?.[signal]?.status !== "not_requested").map((signal) => {
