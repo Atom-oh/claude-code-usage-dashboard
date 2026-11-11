@@ -55,7 +55,11 @@ GROUP BY Client, Kind ORDER BY Client, Kind;
 
 ## Activate and roll back
 
-Set `SESSION_TURNS_READ_FROM` to the start of the verified window and deploy. Hours before
-it keep the existing raw-log path.
+Set `SESSION_TURNS_READ_FROM` to the verified UTC start of the `session_turns_v1`
+backfill and deploy. There is no raw-log fallback. A window that starts before it, any
+window while it is unset or empty, and any window older than the 90-day log retention
+report chain/decomposition as unavailable (`not_backfilled` or `retention`), never zero
+and never raw-log values.
 
-Unset `SESSION_TURNS_READ_FROM` and redeploy to roll back. Retain the table and view.
+Unset `SESSION_TURNS_READ_FROM` and redeploy to roll back; this disables token-economics
+reads. Retain the table and view.
