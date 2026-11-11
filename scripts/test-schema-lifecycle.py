@@ -3,7 +3,9 @@
 
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import json
 import re
+import subprocess
 import time
 import unittest
 import xml.etree.ElementTree as ET
@@ -210,6 +212,11 @@ class SchemaLifecycle(unittest.TestCase):
 
     def test_session_turns_live_and_repeated_backfill_keep_exact_key_sets(self):
         table = "claude_code.session_turns_v1"
+        keys = json.loads(subprocess.run(
+            ["node", "--input-type=module", "-e",
+             "import * as m from './dashboard/server/sessionTurnsSchema.js';"
+             "console.log(JSON.stringify({turn: m.claudeTurnKeySql(''), call: m.claudeCallKeySql(''), codex: m.codexTurnKeySql()}))"],
+            cwd=ROOT, text=True, capture_output=True, check=True).stdout)
         bounds = self.fixture.rows(
             "SELECT toString(toStartOfHour(now(), 'UTC')) AS start, "
             "toString(toStartOfHour(now(), 'UTC') + INTERVAL 1 HOUR) AS end"
@@ -246,15 +253,18 @@ class SchemaLifecycle(unittest.TestCase):
         ]
         raw = f"""SELECT * FROM (
           SELECT 'claude' AS Client, 'request' AS Kind,
-            toString(uniqExactIf(LogAttributes['event.sequence'], EventName = 'api_request')) AS keys
-          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'
+            toString(uniqExactIf(cityHash64({keys['call']}), EventName IN ('api_request', 'claude_code.api_request'))) AS keys
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}' AND SessionId != ''
           UNION ALL SELECT 'claude', 'turn',
-            toString(uniqExactIf(LogAttributes['prompt.id'], EventName = 'user_prompt' AND SessionId != ''))
-          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'
+            toString(uniqExactIf(cityHash64({keys['turn']}), EventName IN ('user_prompt', 'claude_code.user_prompt')))
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}' AND SessionId != ''
           UNION ALL SELECT 'codex', 'turn',
-            toString(uniqExactIf(LogAttributes['text'], EventName = 'codex.user_prompt'))
+            toString(uniqExactIf(cityHash64({keys['codex']}), EventName = 'codex.user_prompt'))
           FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'
+            AND LogAttributes['conversation.id'] != ''
         ) ORDER BY Client, Kind"""
+        # The oracle reuses the transform key expressions emitted by the module that owns them;
+        # `expected` is hardcoded from the fixture rows.
         self.assertEqual(self.fixture.rows(raw), expected)
         self.assertEqual(self.fixture.rows(selected), expected)
         for zone in ("UTC", "Asia/Seoul", "UTC"):

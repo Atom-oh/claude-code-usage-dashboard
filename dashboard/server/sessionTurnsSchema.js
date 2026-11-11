@@ -29,6 +29,7 @@ const CLAUDE_PROMPT = "EventName IN ('user_prompt', 'claude_code.user_prompt')";
 const CLAUDE_REQUEST = "EventName IN ('api_request', 'claude_code.api_request')";
 const CODEX_PROMPT = "EventName = 'codex.user_prompt'";
 const CODEX_KEY = "concat(toString(Timestamp), toString(mapSort(ResourceAttributes)), toString(mapSort(LogAttributes)))";
+export const codexTurnKeySql = () => CODEX_KEY;
 
 export function turnsTransform(where = "1") {
   return `SELECT hour, Client, Sid AS SessionId, UserIdentity, Kind, Mdl AS Model,
