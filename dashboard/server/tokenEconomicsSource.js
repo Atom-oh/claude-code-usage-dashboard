@@ -30,7 +30,7 @@ export function turnsSql() {
     formatDateTime({from:DateTime} + intDiv(dateDiff('second', {from:DateTime}, hour), {bucketSeconds:UInt32}) * {bucketSeconds:UInt32},
       '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS bucket,
     Kind AS kind, Model AS model, uniqExactMerge(Keys) AS n
-  FROM ${TURNS_TABLE}
+  FROM claude_code.${TURNS_TABLE}
   PREWHERE hour >= {from:DateTime} AND hour < {to:DateTime}
     AND Client IN {clients:Array(String)}
     AND ({clientUser:String} = '' OR positionCaseInsensitive(UserIdentity, {clientUser:String}) > 0)

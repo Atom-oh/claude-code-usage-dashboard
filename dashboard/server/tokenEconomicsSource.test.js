@@ -25,7 +25,7 @@ test("turnsSql groups hour and window rows with bound params only", () => {
   const sql = turnsSql();
   assert.match(sql, /GROUPING SETS/);
   assert.match(sql, /uniqExactMerge\(Keys\)/);
-  assert.match(sql, /FROM session_turns_v1/);
+  assert.match(sql, /FROM claude_code\.session_turns_v1/);
   assert.match(sql, /PREWHERE hour >= \{from:DateTime\} AND hour < \{to:DateTime\}/);
   assert.match(sql, /\{bucketSeconds:UInt32\}/);
   assert.match(sql, /Client IN \{clients:Array\(String\)\}/);
