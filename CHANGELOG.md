@@ -15,6 +15,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- Load the 90-day user activity heatmap from daily session aggregates instead of
+  full cost and tool detail. Busy users no longer hit the overview's row limit
+  while loading their activity calendar; the existing request bounds remain.
+
 ## [1.4.0] - 2026-11-10
 
 ### Added

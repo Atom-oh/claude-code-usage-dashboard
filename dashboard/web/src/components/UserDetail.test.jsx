@@ -44,7 +44,12 @@ beforeEach(() => {
   vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-04T12:00:00.000Z").getTime());
   fetchMock = vi.fn((url) => {
     const u = new URL(String(url), "http://localhost");
-    const body = u.pathname === "/api/clients/overview" ? overview(u) : BODIES[u.pathname] ?? [];
+    let body = u.pathname === "/api/clients/overview" ? overview(u) : BODIES[u.pathname] ?? [];
+    if (u.pathname === "/api/clients/activity") {
+      const { clients, timeseries, effective_range, bucket_hours, applied_filters } = overview(u);
+      body = { clients, timeseries: timeseries.map(({ client, t, sessions }) => ({ client, t, sessions })),
+        effective_range, bucket_hours, applied_filters };
+    }
     return Promise.resolve({ ok: true, status: 200, json: async () => body });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -81,7 +86,8 @@ test("renders combined summary for claude and codex", async () => {
   expect(within(region).getByRole("button", { name: "상세 닫기" })).toBeTruthy();
   const overviews = byPath("/api/clients/overview");
   expect(overviews.every((u) => u.searchParams.get("client") === "all" && u.searchParams.get("userExact") === USER)).toBe(true);
-  const heat = overviews.find((u) => u.searchParams.get("intervalHours") === "24" && u.searchParams.get("to") === PARENT.to
+  expect(overviews.every((u) => u.searchParams.get("from") === PARENT.from)).toBe(true);
+  const heat = byPath("/api/clients/activity").find((u) => u.searchParams.get("intervalHours") === "24" && u.searchParams.get("to") === PARENT.to
     && u.searchParams.get("from") === "2026-06-06T00:00:00.000Z");
   expect(heat).toBeTruthy();
   expect(await screen.findByText("Codex 도구 권한 결정")).toBeTruthy();
@@ -134,7 +140,7 @@ test("group note appears and group is sent only to /api/users/* requests", async
     expect(u.searchParams.get("email")).toBe(USER);
   }
   expect(byPath("/api/users/daily").length).toBeGreaterThan(0);
-  for (const u of [...byPath("/api/clients/overview"), ...byPath("/api/codex/insights")])
+  for (const u of [...byPath("/api/clients/overview"), ...byPath("/api/clients/activity"), ...byPath("/api/codex/insights")])
     expect(u.searchParams.has("group")).toBe(false);
   const insights = byPath("/api/codex/insights");
   expect(insights.length).toBeGreaterThan(0);

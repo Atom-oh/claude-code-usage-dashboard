@@ -40,7 +40,7 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
   const { group, user, model, project, backend } = unfiltered ? {} : filters;
   const team = unfiltered || TEAMLESS.has(path) ? "" : filters.team;
   const clientOverview = path === "/api/clients/overview" || path === "/api/clients/claude-effort"
-    || path === "/api/codex/insights" || path === "/api/clients/productivity";
+    || path === "/api/codex/insights" || path === "/api/clients/productivity" || path === "/api/clients/activity";
   // 이중 안전 — 파싱 단계(urlState.js parseUrlState)에서 이미 걸러지므로 여기서 걸리는 값은
   // 정상 경로에는 없다. 그래도 요청 문자열을 실제로 만드는 지점에 같은 게이트를 둔다: 보이지
   // 않는 필터가 요청에 실리는 것 자체가 PR #31 리뷰의 지적이었고, 게이트가 한 곳뿐이면 그 한
@@ -164,7 +164,8 @@ export function useApi(path, extraParams = {}, enabled = true, { linkedRange = f
         // Client overview buckets follow the selected range like the other trend pages; Codex
         // insights have no timeline and ignore it.
         ...(clientOverview ? { group: undefined, project: undefined, backend: extraParams.backend || backend || undefined,
-          intervalHours: path === "/api/clients/overview" ? extraParams.intervalHours ?? intervalHours : undefined } : {}),
+          intervalHours: path === "/api/clients/overview" || path === "/api/clients/activity"
+            ? extraParams.intervalHours ?? intervalHours : undefined } : {}),
       },
       abort.signal
     )

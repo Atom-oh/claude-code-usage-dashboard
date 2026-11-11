@@ -434,7 +434,8 @@ export function rebucketRows(rows, from, bucketSeconds) {
 }
 
 export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), client = "codex",
-  bucketSeconds = clientNativeBucketSeconds(from, to), { costView = false, costSource = "raw" } = {}) {
+  bucketSeconds = clientNativeBucketSeconds(from, to),
+  { costView = false, costSource = "raw", activityOnly = false, activitySessions = false } = {}) {
   const isCodex = client === "codex";
   const facts = isCodex && costSource === "facts";
   const params = { from: toChDateTime(from), to: toChDateTime(to),
@@ -444,7 +445,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
     clientBucketSeconds: bucketSeconds, ...(filters.team ? { clientTeam: filters.team } : {}) };
   // Limits repeat across models; one parameter per distinct value keeps the request URL small
   // as the AWS Price List adds models.
-  const cases = Object.entries(prices).map(([model, rate], i) => {
+  const cases = (activityOnly ? [] : Object.entries(prices)).map(([model, rate], i) => {
     params[`priceModel${i}`] = model;
     params[`priceLimit${rate.short_context_limit}`] = rate.short_context_limit;
     return `base_model = {priceModel${i}:String}, {priceLimit${rate.short_context_limit}:UInt64}`;
@@ -502,9 +503,9 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
       AND positionCaseInsensitive(${queries.normModel("Model")}, {clientModel:String}) > 0
       AND ({clientModelExact:String} = '' OR ${queries.normModel("Model")} = {clientModelExact:String})`}
   ),` : "";
-  const sql = `${isCodex ? "WITH" : `${GROUP_CTE},`}
+  const eventSource = `${isCodex ? "WITH" : `${GROUP_CTE},`}
   unique_events AS (
-    ${facts ? costSourceSql({ diagnostics: !costView }) : `SELECT DISTINCT Timestamp, mapSort(ResourceAttributes) AS r, mapSort(LogAttributes) AS a,
+    ${facts ? costSourceSql({ diagnostics: !costView && !activityOnly }) : `SELECT ${activityOnly ? "" : "DISTINCT "}Timestamp, ${activityOnly ? "ResourceAttributes" : "mapSort(ResourceAttributes)"} AS r, ${activityOnly ? "LogAttributes" : "mapSort(LogAttributes)"} AS a,
       ${session} AS session,
       ${user} AS user,
       ${isCodex ? "a['model']" : queries.normModel("a['model']")} AS model,
@@ -515,7 +516,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
     ${prewhere}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
       AND ${isCodex ? `startsWith(EventName, 'codex.') AND NOT (${CODEX_DELTA_EVENT})`
-        : `EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})`}${isCodex ? `
+        : `EventName IN (${eventNames.map((name) => `'${name}'`).join(", ")})`}${isCodex && (!activityOnly || filters.model || filters.modelExact) ? `
     -- Stream deltas are ~99% of Codex log rows and only ever act as scope evidence, whose
     -- presence (not count) feeds requires_usage; the final SELECT drops those rows. One row per
     -- scope keeps that evidence without a full-row DISTINCT over millions of maps.
@@ -530,7 +531,30 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
     ${prewhere}
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND ${CODEX_DELTA_EVENT}
     GROUP BY session, user, model, backend, project, event_name` : ""}`}
-  ), ${modelSessions} typed AS (
+  )`;
+  if (activityOnly) {
+    const supported = facts ? "kind != 'scope_evidence'" : `(event_name IN (${eventNames
+      .filter(name => !["codex.sse_event", "codex.websocket_event"].includes(name))
+      .map(name => `'${name}'`).join(", ")})
+      OR (event_name IN ('codex.sse_event', 'codex.websocket_event')
+        AND a['event.kind'] IN ('response.completed', 'response.failed')))`;
+    return { sql: `${eventSource}${modelSessions ? `, ${modelSessions.trim().replace(/,$/, "")}` : ""}
+    -- coding-client:${client}-activity
+    SELECT formatDateTime(greatest(toStartOfDay(Timestamp, 'UTC'), {from:DateTime}),
+      '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
+      ${activitySessions ? "session" : "uniqExactIf(session, session != '') AS sessions"}
+    FROM unique_events
+    WHERE ${supported}
+      AND ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
+      AND ({clientUserExact:String} = '' OR user = {clientUserExact:String})
+      ${filters.model || filters.modelExact ? `AND (${modelMatch} OR (model = '' AND
+        (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}
+      AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
+      ${filters.team ? `AND session IN (SELECT session FROM (${queries.sessionTeamsSql([client])})
+        WHERE team = {clientTeam:String})` : ""}
+    GROUP BY t${activitySessions ? ", session" : ""} ORDER BY t`, params };
+  }
+  const sql = `${eventSource}, ${modelSessions} typed AS (
     SELECT *,
       ${codexModelSql("model")} AS base_model,
       ${facts ? "" : `multiIf(event_name IN ('codex.sse_event','codex.websocket_event')
@@ -646,4 +670,42 @@ export async function clientOverview(from, to, raw, enabledClients, externalSign
       applied_filters: { userExact: filters.userExact || "", modelExact: filters.modelExact || "", backend: filters.backend },
     } : {}),
     bucket_hours: bucketSeconds / 3600 };
+}
+
+export function validateClientActivity(raw, enabledClients) {
+  const filters = validateClientFilters(raw, enabledClients);
+  if (!filters.userExact)
+    throw new ValidationError("invalid filter", "activity requires userExact");
+  if (raw.intervalHours !== undefined && raw.intervalHours !== "24")
+    throw new ValidationError("invalid intervalHours", "activity uses daily buckets");
+  return filters;
+}
+
+// Aggregate sessions in ClickHouse before transporting rows. Heatmaps must not
+// depend on the overview's bounded per-session/model/tool cost result.
+export async function clientActivity(from, to, raw, enabledClients, externalSignal) {
+  const filters = validateClientActivity(raw, enabledClients);
+  const requestedTo = to;
+  to = effectiveClientEnd(from, to, filters.clients);
+  const jobs = filters.clients.map(client => async signal => {
+    const rows = client === "claude"
+      ? await queries.clientClaudeRows(from, to, filters, 3600, signal, undefined, {
+        activityOnly: true,
+        // Keep identities inside the SQL union: counters and operational logs may
+        // describe the same session, so summing their daily counts would double it.
+        activityEvents: buildCodexQuery(from, to, filters, {}, client, 86400,
+          { activityOnly: true, activitySessions: true }),
+      })
+      : await (() => {
+        const { sql, params } = buildCodexQuery(from, to, filters, {}, client, 86400,
+          { activityOnly: true, costSource: costSourceForRange(from) });
+        return query(sql, params, signal);
+      })();
+    return rows.map(row => ({ client, t: row.t || row.day, sessions: Number(row.sessions) }));
+  });
+  const timeseries = (await clientQueryBatch(jobs, externalSignal)).flat()
+    .sort((a, b) => a.t.localeCompare(b.t) || a.client.localeCompare(b.client));
+  return { clients: filters.clients, timeseries, bucket_hours: 24,
+    effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },
+    applied_filters: { userExact: filters.userExact, modelExact: filters.modelExact || "", backend: filters.backend } };
 }
