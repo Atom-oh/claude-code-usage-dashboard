@@ -9,6 +9,29 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.5.0",
+    date: "2026-11-11",
+    summary: "90일 활동 히트맵의 데이터 조회 오류를 고치고 AWS 모델 가격 목록을 갱신했습니다.",
+    items: [
+      {
+        kind: "fixed",
+        title: "90일 활동 히트맵 조회",
+        body: "활동이 많은 사용자의 90일 히트맵이 조회 한도를 초과해 불러오지 못하던 문제를 고쳤습니다. 날짜별 관측 세션 수를 집계해 표시합니다.",
+        to: "/users",
+        where: "Users → 사용자 선택 → 활동 히트맵",
+        refs: [244],
+      },
+      {
+        kind: "improved",
+        title: "AWS 모델 가격 목록 갱신",
+        body: "시작 시 사용하는 AWS 가격 목록에 gpt-6.1-terra 등 추가 모델 단가를 반영했습니다. 비용은 정가 기준 추정이며 청구서 금액이 아닙니다.",
+        to: "/cost",
+        where: "Cost → 모델별 비용",
+        refs: [],
+      },
+    ],
+  },
+  {
     version: "1.4.0",
     date: "2026-11-10",
     summary: "Productivity를 Claude Code와 Codex가 같은 화면·같은 열로 보는 통합 화면으로 바꿨습니다.",

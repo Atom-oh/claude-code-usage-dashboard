@@ -15,11 +15,19 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-11
+
+### Changed
+
+- Refresh the bundled AWS Price List snapshot used before the first successful
+  runtime refresh, including additional Bedrock model rates such as
+  `openai.gpt-6.1-terra`. Prices remain list-price estimates, not invoices.
+
 ### Fixed
 
 - Load the 90-day user activity heatmap from daily session aggregates instead of
   full cost and tool detail. Busy users no longer hit the overview's row limit
-  while loading their activity calendar; the existing request bounds remain.
+  while loading their activity calendar; the existing request bounds remain (#244).
 
 ## [1.4.0] - 2026-11-10
 
