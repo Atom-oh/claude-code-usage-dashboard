@@ -611,14 +611,15 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
       {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS day,
       uniqExactIf(session, session != '' AND changed) AS sessions
     FROM (
-      SELECT t, session, usage.active AS changed, token_seen OR cost_seen AS observed
-      FROM client_usage AS usage
-      WHERE usage.active OR (NOT usage.changed AND (token_seen OR cost_seen))
+      SELECT t, session, 1 AS changed FROM client_usage WHERE active
+      UNION ALL
+      -- Idle evidence keeps the overview's whole-native-bucket boundary.
+      SELECT t, '' AS session, 0 AS changed FROM client_usage AS usage
+      GROUP BY t HAVING max(usage.changed) = 0 AND max(token_seen OR cost_seen)
       ${activityEvents ? `UNION ALL
-      SELECT t, session, 1 AS changed, 1 AS observed FROM (${activityEvents.sql})` : ""}
+      SELECT t, session, 1 AS changed FROM (${activityEvents.sql})` : ""}
     )
     GROUP BY day
-    HAVING max(changed) OR max(observed)
     ORDER BY day` : `SELECT t, session, user, model, backend, any(channel) AS channel, 1 AS count,
       -- Bits mark omitted keys: detailed scopes = 0, bucket-only scopes = 15.
       GROUPING(session, user, model, backend) != 0 AS timeline_only,

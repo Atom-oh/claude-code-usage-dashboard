@@ -1249,6 +1249,38 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       assert.deepEqual((await clientActivity(from, end, unsupported, ["claude"])).timeseries,
         (await overview(unsupported, ["claude"], from, end)).timeseries
           .map(({ client, t, sessions }) => ({ client, t, sessions })));
+      await insertMetrics(["09:59:00", "10:01:00"].map(clock => ({
+        ...counter("claude_code.token.usage", "input", clock, 100),
+        Attributes: { ...counter("", "", clock, 0).Attributes, "session.id": "idle-side", type: "input" },
+        ResourceAttributes: { "user.email": "unknown-type-activity@example.invalid" },
+      })));
+      assert.deepEqual((await clientActivity(from, end, unsupported, ["claude"])).timeseries,
+        (await overview(unsupported, ["claude"], from, end)).timeseries
+          .map(({ client, t, sessions }) => ({ client, t, sessions })),
+        "idle observations use the same whole-native-bucket boundary as overview");
+    });
+    await t.test("Claude counter/log overlap and nested model/backend/team scopes match overview", async () => {
+      const userExact = "overlap-activity@example.invalid";
+      await insertMetrics(["09:59:00", "10:01:00"].map((clock, i) => {
+        const row = counter("claude_code.token.usage", "input", clock, 100 + i);
+        return { ...row, Attributes: { ...row.Attributes, "session.id": "activity-overlap" },
+          ResourceAttributes: { "user.email": userExact } };
+      }));
+      await insertLogs([log(960, "claude_code.tool_result", {
+        "session.id": "activity-overlap", model: "", success: "true",
+      }, { "user.email": userExact, team: "activity-team" })]);
+      const end = new Date(from.getTime() + 86400000);
+      for (const scope of [{}, { modelExact: "claude-sonnet-5" }, { backend: "anthropic" },
+        { team: "activity-team" }, { modelExact: "claude-haiku-5" }, { backend: "bedrock-mantle" },
+        { team: "another-team" }, { userExact: "' OR 1=1" }]) {
+        const filters = { client: "claude", userExact, intervalHours: "24", ...scope };
+        const actual = await clientActivity(from, end, filters, ["claude"]);
+        const expected = await overview(filters, ["claude"], from, end);
+        assert.deepEqual(actual.timeseries,
+          expected.timeseries.map(({ client, t, sessions }) => ({ client, t, sessions })), JSON.stringify(scope));
+        if (actual.timeseries.length) assert.equal(actual.timeseries[0].sessions, 1,
+          "one session observed through both counters and a model-less tool log");
+      }
     });
     await t.test("daily Codex activity excludes metadata and deltas, with matching raw and fact filters", async () => {
       const identity = "activity-scope@example.invalid";
