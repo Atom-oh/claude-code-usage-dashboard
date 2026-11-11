@@ -42,6 +42,17 @@ variable "codex_cost_read_from" {
   }
 }
 
+variable "session_turns_read_from" {
+  description = "Verified UTC start of the session_turns_v1 backfill; empty disables token-economics reads."
+  type        = string
+  default     = ""
+  nullable    = false
+  validation {
+    condition     = var.session_turns_read_from == "" || can(regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$", var.session_turns_read_from)) && can(formatdate("YYYY", var.session_turns_read_from))
+    error_message = "session_turns_read_from must be empty or a valid UTC timestamp such as 2026-10-01T00:00:00Z."
+  }
+}
+
 variable "codex_diagnostic_read_from" {
   description = "Verified UTC coverage boundary for migration 008 diagnostic states. Empty keeps raw reads; set only after replica and backfill verification."
   type        = string
@@ -405,6 +416,10 @@ resource "kubernetes_deployment_v1" "dashboard" {
           env {
             name  = "CODEX_COST_READ_FROM"
             value = var.codex_cost_read_from
+          }
+          env {
+            name  = "SESSION_TURNS_READ_FROM"
+            value = var.session_turns_read_from
           }
           env {
             name  = "CODEX_DIAGNOSTIC_READ_FROM"
