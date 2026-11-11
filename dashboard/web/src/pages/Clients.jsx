@@ -7,7 +7,6 @@ import EmptyState from "../components/EmptyState.jsx";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
 import { CLIENT_PAGES } from "../clientNavigation.js";
 import { useApi } from "../useApi.js";
-import { formatObserved } from "../clientUsage.js";
 import ClientPanels from "./ClientPanels.jsx";
 import CodexInsights from "./CodexInsights.jsx";
 import Analytics from "./Analytics.jsx";
@@ -61,7 +60,6 @@ export default function Clients({ page = "overview" }) {
     || Date.parse(baselineWindow?.to) !== Date.parse(previousRange.to) };
   const definition = CLIENT_PAGES.find((p) => p.key === page) || CLIENT_PAGES[0];
   const quality = data?.quality || {};
-  const hasUnpricedCost = data?.totals?.cost_partial === true || quality.unpriced > 0 || data?.totals?.unpriced > 0;
   const empty = data?.observed_records === 0 && !data?.timeseries?.length;
   const sections = INSIGHT_SECTIONS[page];
   const effortBounds = data?.effective_range?.from && data?.effective_range?.to
@@ -95,21 +93,12 @@ export default function Clients({ page = "overview" }) {
       <p className="text-sm text-ink-600">
         Claude Code는 보고 비용을 기본으로 표시하며, Anthropic 외 모델은 AWS 정가 추정 비용입니다.
         보고가 없어 계산으로 채운 비용은 별도 추정으로 표시합니다. Codex는 AWS 정가 추정 비용입니다.
-        확인된 보고·추정 비용만 합산하고 미산정 비용은 제외합니다.
-        일부가 제외되면 부분합, 비용이 모두 미산정이면 —로 표시합니다. 실청구와 다를 수 있습니다.
       </p>
       {data?.effective_range?.to !== data?.effective_range?.requested_to && data?.effective_range?.to &&
         <p role="status" className="text-sm text-ink-600">
           집계 종료 시각: {formatClientTimestamp(data.effective_range.to)} (브라우저 시간).
           선택한 클라이언트 모두 같은 구간을 사용합니다.
         </p>}
-      {(hasUnpricedCost || quality.invalid > 0) &&
-        <div role="status" className="rounded-lg border border-warning-border bg-warning-surface px-4 py-3 text-sm text-warning-text">
-          {hasUnpricedCost && <>미산정 {formatObserved(quality.unpriced ?? data?.totals?.unpriced)}건 제외 · </>}
-          유효하지 않은 데이터 {formatObserved(quality.invalid)}.
-          {hasUnpricedCost && <> 알려진 비용만 부분합으로 표시하며, 비용이 모두 미산정이면 —로 표시합니다.</>}
-          {" "}토큰 누락 여부는 별도로 유지합니다.
-        </div>}
       {(quality.missing_usage > 0 || data?.totals?.tokens_partial === true) &&
         <p role="status" aria-label="토큰 사용량 미확인" className="text-sm text-ink-600">
           일부 사용량 정보가 불완전해 관측 토큰은 확인된 값의 부분합으로 표시합니다.
@@ -141,7 +130,7 @@ export default function Clients({ page = "overview" }) {
             관측값은 코드 품질이나 절감 시간을 증명하지 않습니다.
           </p>
           {page === "productivity" && clients.includes("codex") && <p className="mt-2 text-sm text-ink-600">
-            Codex 효율 요약과 Effort별 사용량·비용은 비용 페이지의 Codex 상세 관측에서 확인합니다.
+            Codex 효율 요약과 Effort별 사용량·비용은 비용 페이지의 Codex 상세에서 확인합니다.
           </p>}
           {client === "claude" && <button type="button" onClick={() => setDetail(true)}
             className="mt-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-700">

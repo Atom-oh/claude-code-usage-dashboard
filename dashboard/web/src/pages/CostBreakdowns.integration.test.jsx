@@ -115,7 +115,7 @@ test.each(["pending", "failed", "empty"])("breakdown titles remain visible while
       await waitFor(() => expect(card(title).textContent).toContain("데이터를 불러오지 못했습니다."));
       expect(card(title).textContent).not.toContain("불러오는 중...");
     }
-    const details = screen.getByRole("heading", { name: "Codex 상세 관측" }).closest("section");
+    const details = screen.getByRole("heading", { name: "Codex 상세" }).closest("section");
     await waitFor(() => expect(details.textContent).toContain("데이터를 불러오지 못했습니다."));
     expect(details.textContent).not.toContain("불러오는 중...");
   }
