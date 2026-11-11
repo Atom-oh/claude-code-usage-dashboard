@@ -72,3 +72,15 @@ test("zero tokens keeps chain JSON-safe", () => {
   assert.ok(Object.values(c.factors).every(Number.isFinite));
   assert.equal(lmdi(chain(PREV), c).unavailable, "zero_factor");
 });
+
+test("near-equal costs stay finite", () => {
+  const c1 = 1e6 + 1.2e-10;
+  assert.notEqual(c1, 1e6);
+  const base = { users: 10, sessions: 100, turns: 1000, requests: 5000, tokens: 1e9 };
+  const r = lmdi(chain({ ...base, cost: 1e6 }), chain({ ...base, cost: c1 }));
+  assert.equal(r.unavailable, null);
+  assert.ok(TERMS.every((k) => Number.isFinite(r.contributions[k])));
+  assert.ok(Object.values(r.bundles).every(Number.isFinite));
+  near(TERMS.reduce((s, k) => s + r.contributions[k], 0), r.total_change, 1e-9);
+  assert.deepEqual(JSON.parse(JSON.stringify(r)), r);
+});

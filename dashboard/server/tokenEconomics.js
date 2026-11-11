@@ -40,7 +40,10 @@ export function lmdi(previous, current) {
   if (!positive(c0) || !positive(c1) || TERMS.some((k) => !positive(previous.factors[k]) || !positive(current.factors[k]))) {
     return { contributions: null, bundles: null, total_change: num(c1) - num(c0), unavailable: "zero_factor" };
   }
-  const L = c1 === c0 ? c1 : (c1 - c0) / (Math.log(c1) - Math.log(c0));
+  // log1p keeps the denominator nonzero for near-equal costs; fall back to the L = C1 limit if still degenerate.
+  const logRatio = Math.log1p((c1 - c0) / c0);
+  let L = c1 === c0 || logRatio === 0 ? c1 : (c1 - c0) / logRatio;
+  if (!Number.isFinite(L)) L = c1;
   const contributions = {};
   for (const k of TERMS) contributions[k] = L * Math.log(current.factors[k] / previous.factors[k]);
   const bundles = {};
