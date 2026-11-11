@@ -13,7 +13,7 @@ test("real ClickHouse client aggregation preserves transport identity and counte
   process.env.CH_PASSWORD = "";
   const { createClient } = await import("@clickhouse/client");
   const db = createClient({ url: process.env.CH_URL, database: "claude_code" });
-  const { clientOverview, buildCodexQuery } = await import("./clientMetrics.js");
+  const { clientOverview, clientActivity, buildCodexQuery } = await import("./clientMetrics.js");
   const day = new Date().toISOString().slice(0, 10);
   const from = new Date(`${day}T10:00:00Z`), to = new Date(`${day}T11:00:00Z`);
   const insertLogs = (values) => db.insert({ table: "otel_logs", values, format: "JSONEachRow" });
@@ -1210,6 +1210,92 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       assert.equal(performance.metrics.find(metric => metric.type === "histogram").mean, 50);
       assert.equal(performance.metrics.find(metric => metric.type === "exponential_histogram").mean, 10);
       assert.equal(performance.coverage.metrics.records, 4, "only selected metric exports count as coverage");
+    });
+    await t.test("daily activity preserves overview session counts and observed idle counters", async () => {
+      const end = new Date(from.getTime() + 86400000);
+      for (const client of ["claude", "codex"]) {
+        const filters = { client, userExact: `${client}@example.invalid`, intervalHours: "24" };
+        const expected = await overview(filters, ["claude", "codex"], from, end);
+        const actual = await clientActivity(from, end, filters, ["claude", "codex"]);
+        assert.deepEqual(actual.timeseries, expected.timeseries.map(({ client, t, sessions }) => ({ client, t, sessions })));
+        assert.deepEqual(actual.effective_range, expected.effective_range);
+      }
+      await insertMetrics(["09:59:00", "10:01:00"].map(clock => ({
+        ...counter("claude_code.token.usage", "input", clock, 100),
+        ResourceAttributes: { "user.email": "idle-activity@example.invalid" },
+      })));
+      const idle = await clientActivity(from, end, { client: "claude",
+        userExact: "idle-activity@example.invalid" }, ["claude", "codex"]);
+      assert.deepEqual(idle.timeseries, [{ client: "claude", t: from.toISOString().replace(".000Z", "Z"), sessions: 0 }]);
+      await insertLogs([log(950, "claude_code.tool_result", {
+        "session.id": "claude-log-only", model: "claude-sonnet-5", success: "true",
+      }, { "user.email": "claude-ops-activity@example.invalid" })]);
+      const filters = { client: "claude", userExact: "claude-ops-activity@example.invalid", intervalHours: "24" };
+      const operational = await clientActivity(from, end, filters, ["claude"]);
+      assert.deepEqual(operational.timeseries, [{ client: "claude",
+        t: from.toISOString().replace(".000Z", "Z"), sessions: 1 }]);
+      assert.deepEqual(operational.timeseries, (await overview(filters, ["claude"], from, end))
+        .timeseries.map(({ client, t, sessions }) => ({ client, t, sessions })));
+      await insertLogs([log(951, "api_error", {
+        "session.id": "claude-log-only", model: "claude-sonnet-5", status_code: "503",
+      }, { "user.email": "claude-ops-activity@example.invalid" })]);
+      assert.deepEqual((await clientActivity(from, end, filters, ["claude"])).timeseries,
+        operational.timeseries, "a second operational event in the same session is not another session");
+      await insertMetrics(["09:59:00", "10:01:00"].map((clock, i) => ({
+        ...counter("claude_code.token.usage", "future-type", clock, 100 + i),
+        ResourceAttributes: { "user.email": "unknown-type-activity@example.invalid" },
+      })));
+      const unsupported = { client: "claude", userExact: "unknown-type-activity@example.invalid", intervalHours: "24" };
+      assert.deepEqual((await clientActivity(from, end, unsupported, ["claude"])).timeseries,
+        (await overview(unsupported, ["claude"], from, end)).timeseries
+          .map(({ client, t, sessions }) => ({ client, t, sessions })));
+    });
+    await t.test("daily Codex activity excludes metadata and deltas, with matching raw and fact filters", async () => {
+      const identity = "activity-scope@example.invalid";
+      await insertLogs([
+        log(910, "codex.conversation_starts", { "conversation.id": "metadata-only" }, { "user.email": identity }),
+        log(911, "codex.sse_event", { "event.kind": "response.output_text.delta",
+          "conversation.id": "delta-only" }, { "user.email": identity }),
+        log(912, "codex.sse_event", { "event.kind": "response.output_text.delta",
+          "conversation.id": "model-scope" }, { "user.email": identity }),
+        log(913, "codex.tool_result", { "conversation.id": "model-scope", model: "", success: "true" },
+          { "user.email": identity }),
+        log(914, "codex.api_request", { "conversation.id": "other-model", model: "openai.other" },
+          { "user.email": identity }),
+        log(915, "codex.tool_result", { "conversation.id": "model-scope", model: "" },
+          { "user.email": "other-activity@example.invalid" }),
+        log(916, "codex.api_request", { "conversation.id": "" }, { "user.email": identity }),
+      ]);
+      for (const modelExact of ["", "openai.gpt-6-astra"]) {
+        const filters = { client: "codex", userExact: identity, modelExact, intervalHours: "24" };
+        const actual = await clientActivity(from, to, filters, ["codex"]);
+        assert.deepEqual(actual.timeseries, [{ client: "codex",
+          t: from.toISOString().replace(".000Z", "Z"), sessions: modelExact ? 1 : 2 }]);
+        const expected = await overview(filters);
+        assert.deepEqual(actual.timeseries, expected.timeseries.map(({ client, t, sessions }) => ({ client, t, sessions })));
+        const request = buildCodexQuery(from, to, filters, {}, "codex", 86400,
+          { activityOnly: true, costSource: "facts" });
+        const result = await db.query({ query: request.sql, query_params: request.params, format: "JSONEachRow" });
+        assert.deepEqual((await result.json()).map(row => ({ client: "codex", t: row.t,
+          sessions: Number(row.sessions) })), actual.timeseries);
+      }
+      assert.deepEqual((await clientActivity(from, to, { client: "codex", userExact: identity,
+        backend: "anthropic" }, ["codex"])).timeseries, []);
+      assert.deepEqual((await clientActivity(from, to, { client: "codex",
+        userExact: "' OR 1=1" }, ["codex"])).timeseries, []);
+    });
+    await t.test("a 90-day heatmap survives more than 50000 Claude session rows", async () => {
+      await db.command({ query: `INSERT INTO claude_code.otel_metrics_sum
+        (ResourceAttributes, Attributes, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic)
+        SELECT map('user.email', 'busy-activity@example.invalid'),
+          map('session.id', concat('activity-', toString(number)), 'model', 'claude-sonnet-5', 'type', 'input'),
+          'claude_code.token.usage', toDateTime64('${day} 09:00:00', 9),
+          toDateTime64('${day} 10:01:00', 9), 1, 2, 1 FROM numbers(50010)` });
+      const start = new Date(to.getTime() - 90 * 86400000);
+      const filters = { client: "claude", userExact: "busy-activity@example.invalid", intervalHours: "24" };
+      await assert.rejects(overview(filters, ["claude"], start, to), /too much client data/);
+      const actual = await clientActivity(start, to, filters, ["claude"]);
+      assert.deepEqual(actual.timeseries, [{ client: "claude", t: `${day}T00:00:00Z`, sessions: 50010 }]);
     });
   } finally {
     await db.close();

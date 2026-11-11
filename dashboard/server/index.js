@@ -29,7 +29,7 @@ import { startAlertLoop } from "./alerting.js";
 import { handleChat, piiMaskEnabled } from "./chat.js";
 import { parseClients } from "./clients.js";
 import { createInsightsFeature, validateInsightsQuery } from "./insights.js";
-import { clientOverview, validateClientFilters, validateClientView, validateTimeFormat, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
+import { clientOverview, clientActivity, validateClientActivity, validateClientFilters, validateClientView, validateTimeFormat, clientBucketSeconds, clientNativeBucketSeconds, effectiveClientEnd } from "./clientMetrics.js";
 import { RUNTIME_ID_ALIASES } from "./codexPricing.js";
 import { createAwsModelPriceUpdater, priceCatalogFits } from "./awsModelPricing.js";
 import { createPriceDiscovery, setPriceDiscoveryObserver } from "./pricingDiscovery.js";
@@ -287,7 +287,7 @@ function cacheKey(path, query) {
   if (path === "/api/users/tasks") return `${path}?${taskCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort"
-      || path === "/api/clients/productivity") {
+      || path === "/api/clients/productivity" || path === "/api/clients/activity") {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
       : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
@@ -306,7 +306,7 @@ function cacheKey(path, query) {
           ? 600 : clientNativeBucketSeconds(from, end);
         return { bucketSeconds: String(clientBucketSeconds(from, end, query.intervalHours, nativeSeconds)),
           nativeSeconds: String(nativeSeconds), effectiveTo: end.toISOString() };
-      })() : path === "/api/clients/productivity" ? (() => {
+      })() : path === "/api/clients/productivity" || path === "/api/clients/activity" ? (() => {
         const { from, to } = parseRange(query, RANGE_OPTS);
         return { effectiveTo: effectiveClientEnd(from, to, filters.clients).toISOString() };
       })() : {}) };
@@ -385,6 +385,10 @@ const installationProbe = createInstallationProbe({
 });
 route("/api/installation", installationProbe,
   { client: null, warm: false, permission: "installation:read", snapshot: true });
+
+route("/api/clients/activity",
+  (from, to, raw) => clientActivity(from, to, raw, clientConfig.enabledClients),
+  { client: null, warm: false, validate: raw => validateClientActivity(raw, clientConfig.enabledClients) });
 
 route("/api/clients/overview",
   (from, to, raw) => clientOverview(from, to, raw, clientConfig.enabledClients),

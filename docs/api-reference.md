@@ -110,6 +110,17 @@ responses and streaming chat keep their separate response handling.
 
 `GET /api/clients/overview` returns `clients`, `totals`, `by_client`, `by_model`,
 `by_user`, `by_project`, `timeseries`, `tools` and metadata below.
+`GET /api/clients/activity` returns daily `timeseries` rows containing `client`, `t`
+and `sessions`, plus `clients`, `bucket_hours=24`, `effective_range` and `applied_filters`.
+It requires `userExact`; `intervalHours` must be omitted or `24`. It uses the same
+authentication, range limits and client/backend/user/model/team filters as overview.
+The query aggregates in ClickHouse before returning rows, so a 90-day user heatmap
+does not consume overview's 50,000-row detail budget. Claude counts sessions with
+token/cost counter increments or supported operational logs, deduplicating the
+session across both sources with the existing baselines and historical end alignment.
+Codex counts sessions with supported operational or completion events;
+setup metadata and stream deltas only supply filter evidence. Counts are distinct
+within each client and UTC day, not across clients or the entire period.
 `client=all|claude|codex` selects enabled sources;
 `backend=all|bedrock-mantle|bedrock-runtime|anthropic|unknown`. Invalid/disabled clients,
 arrays and nonempty group/project filters fail before caching.

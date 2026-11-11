@@ -172,7 +172,7 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
   const heatFrom = new Date(Date.parse(heatTo) - HEATMAP_DAYS * DAY).toISOString();
   const overview = useApi("/api/clients/overview", { client, userExact: user, intervalHours: hours, ...bounds }, true,
     { linkedRange: linked, hold: stale });
-  const heat = useApi("/api/clients/overview", { client, userExact: user, intervalHours: 24, from: heatFrom, to: heatTo }, true,
+  const heat = useApi("/api/clients/activity", { client, userExact: user, intervalHours: 24, from: heatFrom, to: heatTo }, true,
     { linkedRange: linked, hold: stale });
   // Claude-only drilldowns: explicit identity and group, no global filters (these routes reject team).
   const claudeParams = { email: user, ...(group ? { group } : {}), ...bounds };

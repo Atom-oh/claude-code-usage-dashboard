@@ -16,7 +16,10 @@ const db = http.createServer(async(req,res)=>{
     backend:'bedrock-mantle',kind:'usage',context_tier:'short',count:1,input_tokens_total:100,
     cache_read_tokens:40,cache_write_tokens:11,output_tokens:30,reasoning_tokens:10,invalid:0};
   let rows=[];
-  if(sql.includes('unique_events')) {
+  if(sql.includes('coding-client:codex-activity') || sql.includes('coding-client:claude-activity')) {
+    dataQueries++;
+    rows=[{t:'2026-09-14T00:00:00Z',sessions:7},{t:'2026-09-15T00:00:00Z',sessions:0}];
+  } else if(sql.includes('unique_events')) {
     dataQueries++;
     if(sql.includes('AS family_limited')) rows=[
       ...['user_prompt','api_request','sse_event'].map(event=>({family:'event',
@@ -119,6 +122,57 @@ test("installation diagnostics enforce admin before any usage query and support 
       assert.ok(!JSON.stringify(result.body).includes("synthetic-client-secret"));
     }
   }
+});
+
+test("90-day user activity returns daily counts with authentication and exact filters", async () => {
+  const activityRange = "from=2026-06-17T01:56:00Z&to=2026-09-15T01:56:00Z";
+  const path = `/api/clients/activity?${activityRange}&client=all&userExact=fixture%40example.invalid&intervalHours=24`;
+  const [result, unauthorized, missingUser, unsupported, disabled] = await scenario(true, true, [
+    path, path + "&unauth=1",
+    `/api/clients/activity?${activityRange}&client=all`,
+    path + "&group=bedrock", path.replace("client=all", "client=other"),
+  ]);
+  assert.equal(result.status, 200);
+  assert.equal(result.cache, "no-store");
+  assert.deepEqual(result.body.clients, ["claude", "codex"]);
+  assert.equal(result.body.applied_filters.userExact, "fixture@example.invalid");
+  assert.deepEqual(result.body.timeseries.map(r => [r.client, r.sessions]),
+    [["claude", 7], ["codex", 7], ["claude", 0], ["codex", 0]]);
+  assert.equal(result.body.bucket_hours, 24);
+  assert.equal(unauthorized.status, 401);
+  assert.equal(unauthorized.dataQueries, 0);
+  for (const row of [missingUser, unsupported, disabled]) {
+    assert.equal(row.status, 400);
+    assert.equal(row.dataQueries, 0);
+  }
+});
+
+test("activity caches isolate exact identities and filters, with fixed daily intervals", async () => {
+  const path = `/api/clients/activity?${range}&client=codex&userExact=alice%40example.invalid`;
+  const rows = await scenario(true, true, [path,
+    path.replace("alice", "bob"), path + "&backend=bedrock-mantle",
+    path + "&modelExact=openai.gpt-6-astra", path + "&team=fixture",
+    path.replace("client=codex", "client=claude"), path + "&intervalHours=24",
+    path + "&intervalHours=1", path + "&userExact=other", path + "&project=fixture",
+  ]);
+  for (const row of rows.slice(0, 6)) {
+    assert.equal(row.status, 200);
+    assert.ok(row.dataQueries > 0, "each filter scope requires its own cache entry");
+  }
+  assert.equal(rows[1].body.applied_filters.userExact, "bob@example.invalid");
+  assert.equal(rows[6].status, 200);
+  assert.equal(rows[6].dataQueries, 0, "omitted and explicit daily intervals share the same entry");
+  for (const row of rows.slice(7)) {
+    assert.equal(row.status, 400);
+    assert.equal(row.dataQueries, 0);
+  }
+  const [unauthorized, authorized, disabled] = await scenario(false, true,
+    [path + "&unauth=1", path, path.replace("client=codex", "client=claude")], "viewer");
+  assert.equal(unauthorized.status, 401);
+  assert.equal(unauthorized.dataQueries, 0);
+  assert.equal(authorized.status, 200);
+  assert.equal(disabled.status, 400);
+  assert.equal(disabled.dataQueries, 0);
 });
 
 test("Codex-only deployment gates legacy routes and preserves authenticated client data", async () => {
