@@ -583,7 +583,7 @@ Both email drilldowns are excluded from cache warming.
 `/api/users/tasks` (not warmed; `team` rejected) lists at most **20** tasks for one
 exact user: required `userExact` (email, else `enduser.id`, equality match), optional
 `client`, `backend`, `group` (Claude tasks only; 400 unless Claude is selected),
-`workflowRunId` and `sort=tokens|cost|subagents|duration` (default `tokens`): most observed tokens, highest
+`workflowRunId`, `workflowName` and `sort=tokens|cost|subagents|duration` (default `tokens`): most observed tokens, highest
 known cost, most subagents, slowest. Unknown values (null cost, Codex `subagents`) sort
 after every known value; ties fall back to observed tokens, then the task id. Response
 `{tasks, unattached_codex, coverage, partial: true}`; `coverage.<client>` is `observed`,
@@ -596,15 +596,20 @@ observed tokens and orders that pool by cost; the response then adds `sort_candi
 full, so a costlier task outside the token top 100 may be missing). It is present only for
 `sort=cost` with Claude selected. `workflowRunId` (`wf_` plus 1-128 identifier characters,
 else 400) keeps Claude tasks with any span whose `workflow.run_id` equals it; a workflow's
-agents nest under the interaction that started it, so the run usually lists as one task. It
-requires `client=claude` alone (400 otherwise, including the default when Codex is enabled)
-and matches only trace-enabled clients' spans. Codex turns are all costed before sorting. A Claude task is one
+agents nest under the interaction that started it, so the run usually lists as one task.
+`workflowName` (a label: letter or digit, then up to 127 of letters, digits, `_.:-`; else
+400) keeps tasks with a span of that exact `workflow.name`. Both require `client=claude`
+alone (400 otherwise, including the default when Codex is enabled) and match only
+trace-enabled clients' spans. Codex turns are all costed before sorting. A Claude task is one
 `interaction` span starting in `[from, to)`; its `llm_request` spans are read through
 `to + 24h`. Each task has `id` (`claude:<TraceId>`), `started_at`, `duration_ms`
 (`duration_basis: "interaction_span"`), normalized `models`, `llm_calls`, `subagents`
 (distinct non-empty `agent_id`), `tokens` (`input`, `cache_read`, `cache_write`,
 `output` from span attributes, `observed_tokens`, `tokens_partial`; unknown is null)
-and `cost_usd`/`cost_partial`/`cost_basis`. Per call: Anthropic models use the
+and `cost_usd`/`cost_partial`/`cost_basis`. Claude tasks add `workflows`: one
+`{run_id, name}` per distinct valid run id on any of the trace's spans, sorted by run id
+(`[]` when none); `name` is null when missing or not label-shaped. Device collectors drop
+names that are not label-shaped before ingest. Per call: Anthropic models use the
 `api_request` `cost_usd` joined by request id (`client_reported`), else `computeCost()`
 (`computed`); non-Anthropic models use the ADR-017 per-request AWS list estimate
 (`aws_list_estimate`, null when unpriced). Calls with different bases make `mixed`;

@@ -38,6 +38,22 @@ export const TURN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 export const isUniqueTurnId = (id) => typeof id === "string" && TURN_ID.test(id);
 // Claude Code workflow run ids carry the `wf_` prefix; identifier characters only.
 export const WORKFLOW_RUN_ID = /^wf_[A-Za-z0-9_-]{1,128}$/;
+// Workflow names are script-chosen labels. Device collectors keep only names matching this
+// pattern (dashboard/collector/privacy-processors.yaml); the API applies it to every source.
+export const WORKFLOW_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
+
+// [run id, name] pairs from SQL: valid run ids once each, sorted; an invalid name is null.
+export function workflowPairs(raw) {
+  const byRun = new Map();
+  for (const pair of Array.isArray(raw) ? raw : []) {
+    const [runId, name] = Array.isArray(pair) ? pair : [];
+    if (typeof runId !== "string" || !WORKFLOW_RUN_ID.test(runId)) continue;
+    const label = typeof name === "string" && WORKFLOW_NAME.test(name) ? name : null;
+    const seen = byRun.get(runId);
+    if (seen === undefined || (label !== null && (seen === null || label < seen))) byRun.set(runId, label);
+  }
+  return [...byRun].sort(([a], [b]) => a.localeCompare(b)).map(([run_id, name]) => ({ run_id, name }));
+}
 
 export function validateTaskQuery(raw, enabledClients) {
   const clients = selectClients(raw.client, enabledClients);
@@ -55,19 +71,24 @@ export function validateTaskQuery(raw, enabledClients) {
   const workflowRunId = raw.workflowRunId ?? "";
   if (workflowRunId !== "" && (typeof workflowRunId !== "string" || !WORKFLOW_RUN_ID.test(workflowRunId)))
     throw new ValidationError("invalid filter", "workflowRunId must be wf_ followed by 1-128 identifier characters");
+  const workflowName = raw.workflowName ?? "";
+  if (workflowName !== "" && (typeof workflowName !== "string" || !WORKFLOW_NAME.test(workflowName)))
+    throw new ValidationError("invalid filter", "workflowName must be 1-128 letters, digits, '_', '.', ':' or '-'");
   // Only Claude Code emits workflow runs; listing Codex turns beside them would be unrelated.
-  if (workflowRunId && (clients.length !== 1 || clients[0] !== "claude"))
-    throw new ValidationError("unsupported filter", "workflowRunId applies only to Claude tasks; pass client=claude");
+  if ((workflowRunId || workflowName) && (clients.length !== 1 || clients[0] !== "claude"))
+    throw new ValidationError("unsupported filter", "workflow filters apply only to Claude tasks; pass client=claude");
   const sort = raw.sort ?? "tokens";
   if (!SORTS.includes(sort)) throw new ValidationError("invalid sort", "sort accepts tokens, cost, subagents or duration");
-  return { clients, userExact, backend, group, sort, ...(workflowRunId ? { workflowRunId } : {}) };
+  return { clients, userExact, backend, group, sort, ...(workflowRunId ? { workflowRunId } : {}),
+    ...(workflowName ? { workflowName } : {}) };
 }
 
 // Canonical cache key over the parameters the handler reads (validated, default sort folded).
 export function taskCacheKey(query, enabledClients) {
-  const { clients, userExact, backend, group, sort, workflowRunId } = validateTaskQuery(query, enabledClients);
+  const { clients, userExact, backend, group, sort, workflowRunId, workflowName } =
+    validateTaskQuery(query, enabledClients);
   const normalized = { from: query.from, to: query.to, client: clients.join(","), userExact, backend, group, sort,
-    workflowRunId };
+    workflowRunId, workflowName };
   return new URLSearchParams(Object.entries(normalized)
     .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString();
 }
@@ -82,10 +103,17 @@ export function claudeTaskListSql(from, to, q) {
     spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact };
   const conds = [];
   if (q.group) { conds.push(`${GROUP_EXPR} = {group:String}`); params.group = q.group; }
-  // A workflow's agents nest under the interaction that started it, so a task belongs to the
-  // run when any of its spans carries the id. The map lookup equals the WorkflowRunId column
-  // (migration 010) and also works before that migration is applied.
-  if (q.workflowRunId) { conds.push("has(s.workflow_run_ids, {workflowRunId:String})"); params.workflowRunId = q.workflowRunId; }
+  // A workflow's agents nest under the interaction that started it, so a task belongs to a
+  // run when any of its spans carries it. The map lookups equal the WorkflowRunId/WorkflowName
+  // columns (migration 010) and also work before that migration is applied.
+  if (q.workflowRunId) {
+    conds.push("arrayExists(w -> w[1] = {workflowRunId:String}, s.workflows)");
+    params.workflowRunId = q.workflowRunId;
+  }
+  if (q.workflowName) {
+    conds.push("arrayExists(w -> w[2] = {workflowName:String}, s.workflows)");
+    params.workflowName = q.workflowName;
+  }
   if (q.backend) {
     // Backend evidence comes from the task's call models; a task without models is unknown.
     conds.push(`if(empty(s.raw_models), 'unknown' = {backend:String},
@@ -112,7 +140,7 @@ export function claudeTaskListSql(from, to, q) {
         sumIf(ifNull(input_tokens + cache_read_tokens + cache_creation_tokens + output_tokens, 0),
           SpanType = 'llm_request') AS sort_tokens,
         groupUniqArrayIf(Model, SpanType = 'llm_request' AND Model != '') AS raw_models,
-        groupUniqArrayIf(workflow_run_id, workflow_run_id != '') AS workflow_run_ids,
+        groupUniqArrayIf([workflow_run_id, workflow_name], workflow_run_id != '') AS workflows,
         groupArrayIf([request_id, Model, ifNull(toString(input_tokens), ''),
           ifNull(toString(cache_read_tokens), ''), ifNull(toString(cache_creation_tokens), ''),
           ifNull(toString(output_tokens), '')], SpanType = 'llm_request') AS calls
@@ -120,6 +148,7 @@ export function claudeTaskListSql(from, to, q) {
         SELECT TraceId, SpanType, AgentId, Model,
             SpanAttributes['request_id'] AS request_id,
             SpanAttributes['workflow.run_id'] AS workflow_run_id,
+            SpanAttributes['workflow.name'] AS workflow_name,
             ${tokenAttr("input_tokens")} AS input_tokens,
             ${tokenAttr("cache_read_tokens")} AS cache_read_tokens,
             ${tokenAttr("cache_creation_tokens")} AS cache_creation_tokens,
@@ -132,7 +161,8 @@ export function claudeTaskListSql(from, to, q) {
     GROUP BY TraceId
 )
 SELECT t.TraceId AS trace_id, t.started_at AS started_at, t.duration_ms AS duration_ms,
-    ${GROUP_EXPR} AS session_grp, s.llm_calls AS llm_calls, s.subagents AS subagents, s.calls AS calls
+    ${GROUP_EXPR} AS session_grp, s.llm_calls AS llm_calls, s.subagents AS subagents, s.calls AS calls,
+    s.workflows AS workflows
 FROM interactions t
 LEFT JOIN task_spans s ON t.TraceId = s.TraceId
 LEFT JOIN session_group ug ON t.SessionId = ug.SessionId
@@ -228,6 +258,7 @@ export function foldTask(row, costs) {
     id: `claude:${row.trace_id}`, client: "claude", started_at: row.started_at,
     duration_ms: duration, duration_basis: "interaction_span",
     models: [...models].sort(), llm_calls: count(row.llm_calls) ?? 0, subagents: count(row.subagents) ?? 0,
+    workflows: workflowPairs(row.workflows),
     tokens: { ...sums, ...finishObservedTokens(observed, { partial: tokensPartial }) },
     cost_usd: Number.isFinite(cost) ? cost : null,
     cost_partial: unknownCost > 0 || (cost !== null && !Number.isFinite(cost)),

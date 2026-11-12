@@ -444,7 +444,9 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_traces ON CLUSTER 'replicated'
     ProjectName     LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
     Entrypoint      LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint'],
     -- Claude Code workflow run id (`wf_` prefix); empty outside workflow runs (migration 010).
-    WorkflowRunId   String MATERIALIZED SpanAttributes['workflow.run_id']
+    WorkflowRunId   String MATERIALIZED SpanAttributes['workflow.run_id'],
+    -- Script-chosen label; device collectors keep only label-shaped names (migration 010).
+    WorkflowName    LowCardinality(String) MATERIALIZED SpanAttributes['workflow.name']
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/otel_traces', '{replica}')
 PARTITION BY toYYYYMM(Timestamp)
@@ -991,17 +993,19 @@ AND (SELECT count() FROM claude_code.schema_migrations WHERE version=9) = 0;
 -- END GENERATED CLAUDE PROVIDER V1
 
 -- -----------------------------------------------------------------------------
--- 010 block — copy of clickhouse-migration-010.sql (otel_traces.WorkflowRunId).
+-- 010 block — copy of clickhouse-migration-010.sql (otel_traces.WorkflowRunId/WorkflowName).
 --    New installations are by definition at 010; the ALTER is a no-op after CREATE.
 -- -----------------------------------------------------------------------------
 ALTER TABLE claude_code.otel_traces ON CLUSTER 'replicated'
-    ADD COLUMN IF NOT EXISTS WorkflowRunId String MATERIALIZED SpanAttributes['workflow.run_id'];
+    ADD COLUMN IF NOT EXISTS WorkflowRunId String MATERIALIZED SpanAttributes['workflow.run_id'],
+    ADD COLUMN IF NOT EXISTS WorkflowName  LowCardinality(String) MATERIALIZED SpanAttributes['workflow.name'];
 
 SELECT throwIf(
   (SELECT count() FROM system.columns WHERE database='claude_code' AND table='otel_traces'
-    AND name='WorkflowRunId' AND type='String' AND default_kind='MATERIALIZED') != 1,
-  'otel_traces.WorkflowRunId differs; repair before recording migration 010');
+    AND (name,type) IN (('WorkflowRunId','String'),('WorkflowName','LowCardinality(String)'))
+    AND default_kind='MATERIALIZED') != 2,
+  'otel_traces workflow columns differ; repair before recording migration 010');
 
-INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 10, '010-trace-workflow-run-id', '4b13f566a926811e288bf0edeaea3bf2cd0f2002756628e7e4bde8b32479a882'
+INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 10, '010-trace-workflow-columns', 'e904a50eaa6bc691c55cb9fe4a16ce9eb8ec0f8f3a6ac8a4eb1b5aaaba071d4d'
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version=4) > 0
 AND (SELECT count() FROM claude_code.schema_migrations WHERE version=10) = 0;
