@@ -49,7 +49,7 @@ def compile_contract():
             "'/clickhouse/tables/{shard}/') AS path "
             "FROM system.replicas WHERE database = 'claude_code' ORDER BY table"
         )
-    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6, 7, 8, 9, 10]:
+    if [row["version"] for row in ledger] != [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]:
         raise RuntimeError("Reference schema did not record every required migration.")
     names = [row["name"] for row in tables]
     declared = re.findall(

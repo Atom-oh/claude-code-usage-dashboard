@@ -8,7 +8,7 @@ import { ValidationError, NotFoundError } from "./http.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
-  CODEX_COMPLETION_LIMIT, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
+  CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
   foldCodexTask, claudeCostSql, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
@@ -94,7 +94,13 @@ export function claudeDetailSql(from, to, traceId, q) {
     header: {
       sql: `${GROUP_CTE}
 SELECT t.TraceId AS trace_id, t.started_at AS started_at, t.start_ms AS start_ms,
-    t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, t.owner AS owner
+    t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, t.owner AS owner,
+    -- The list's workflow pairs over every span of the trace, unaffected by SPAN_BOUND.
+    (SELECT groupUniqArrayIf([SpanAttributes['workflow.run_id'], SpanAttributes['workflow.name']],
+        ${WORKFLOW_RUN_ID_SQL("SpanAttributes['workflow.run_id']")})
+      FROM claude_code.otel_traces
+      WHERE Timestamp >= {from:DateTime} AND Timestamp < {spanTo:DateTime}
+        AND TraceId = {traceId:String}) AS workflows
 FROM (
     SELECT TraceId, SessionId, ${OWNER} AS owner,
         formatDateTime(Timestamp, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
@@ -109,6 +115,7 @@ FROM (
 ) t
 LEFT JOIN session_group ug ON t.SessionId = ug.SessionId`,
       params: { from: toChDateTime(from), to: toChDateTime(to), traceId,
+        spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)),
         ...(q.userExact === null ? {} : { userExact: q.userExact }) },
     },
     spans: {
@@ -392,7 +399,8 @@ function foldClaudeDetail(head, rows, costRows, compactionRows = []) {
   // Retries are known only when every call carries `attempt`; partial evidence is unavailable.
   const retries = rawCalls.length && attempts !== null ? attempts : null;
   let task = foldTask({ trace_id: head.trace_id, started_at: head.started_at, duration_ms: head.duration_ms,
-    session_grp: head.session_grp, llm_calls: rawCalls.length, subagents: agents.size, calls: rawCalls }, costs);
+    session_grp: head.session_grp, llm_calls: rawCalls.length, subagents: agents.size, calls: rawCalls,
+    workflows: head.workflows }, costs);
   // Lanes: main first, then agents by first span. A subagent lane is spawned by the parent of
   // its first llm_request (the tool.execution span), reported as the drawn tool bar; its type
   // comes from that span or its parent tool span (subagent_type), else laneTypeFallback.

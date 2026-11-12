@@ -342,5 +342,6 @@ bearer token are mounted files, owned by the server deployment.
 
 Device policies scrub log bodies and known content keys and allowlist trace
 attributes used for diagnostics; span events and spans containing links are
-dropped. Attribution IDs and measurement metadata remain. These filters do not
+dropped. Attribution IDs and measurement metadata remain; span `workflow.name`
+remains only as a short label (no spaces, slashes or quotes). These filters do not
 detect arbitrary secrets placed in otherwise supported metadata fields.
