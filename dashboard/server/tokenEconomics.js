@@ -180,20 +180,29 @@ export function modelEconomics(facts = []) {
     .sort((a, b) => b.cost - a.cost || (a.model < b.model ? -1 : 1));
 }
 
+// OutcomeRow carries `<metric>_observed` flags (in-window counter evidence, ADR-018). A metric
+// without evidence in any matched session is unavailable (null), not a measured zero.
+const OUTCOME_KEYS = ["commits", "prs", "loc_added"];
+const observedFlag = (v) => v === true || v === 1 || v === "1" || v === "true";
+
 export function outcomeCost(facts = [], outcomes = null, cost = 0) {
-  // Missing outcome data is unavailable (null), not zero; an empty array is a real zero count.
+  // Missing outcome data is unavailable (null), not zero.
   if (!Array.isArray(outcomes)) {
     return { commits: null, prs: null, loc_added: null, cost_per_commit: null, cost_per_pr: null, cost_per_kloc: null };
   }
   const ids = new Set(facts.filter((f) => f.matched).map((f) => f.session));
-  let commits = 0, prs = 0, loc = 0;
+  const sums = { commits: 0, prs: 0, loc_added: 0 }, seen = { commits: false, prs: false, loc_added: false };
   for (const o of outcomes) {
     if (!ids.has(o.session)) continue;
-    commits += nn(o.commits) ?? 0; prs += nn(o.prs) ?? 0; loc += nn(o.loc_added) ?? 0;
+    for (const k of OUTCOME_KEYS) {
+      sums[k] += nn(o[k]) ?? 0;
+      seen[k] ||= observedFlag(o[`${k}_observed`]);
+    }
   }
+  const [commits, prs, loc] = OUTCOME_KEYS.map((k) => (seen[k] ? sums[k] : null));
   return {
     commits, prs, loc_added: loc,
-    cost_per_commit: div(cost, commits), cost_per_pr: div(cost, prs), cost_per_kloc: div(cost, loc / 1000),
+    cost_per_commit: div(cost, commits), cost_per_pr: div(cost, prs), cost_per_kloc: loc === null ? null : div(cost, loc / 1000),
   };
 }
 
@@ -212,22 +221,27 @@ function median(values) {
 }
 
 export function exemplars(facts = [], outcomes = null, { minSessions = 5, minTurns = 20, top = 3 } = {}) {
-  const commitsBySession = new Map();
-  if (Array.isArray(outcomes)) for (const o of outcomes) commitsBySession.set(o.session, (commitsBySession.get(o.session) || 0) + (nn(o.commits) ?? 0));
+  // A user's commits are null unless one of their matched sessions has commit evidence.
+  const commitsBySession = new Map(), commitsSeen = new Set();
+  if (Array.isArray(outcomes)) for (const o of outcomes) {
+    commitsBySession.set(o.session, (commitsBySession.get(o.session) || 0) + (nn(o.commits) ?? 0));
+    if (observedFlag(o.commits_observed)) commitsSeen.add(o.session);
+  }
   const users = new Map();
   for (const f of facts) {
     if (!f.matched || !f.user) continue;
-    const a = users.get(f.user) || { user: f.user, sessions: 0, turns: 0, requests: 0, tokens: 0, cache_read: 0, cache_den: 0, small_requests: 0, commits: 0 };
+    const a = users.get(f.user) || { user: f.user, sessions: 0, turns: 0, requests: 0, tokens: 0, cache_read: 0, cache_den: 0, small_requests: 0, commits: 0, commits_seen: false };
     a.sessions += 1; a.turns += f.turns; a.requests += f.requests; a.tokens += f.tokens;
     a.cache_read += f.cache_read; a.cache_den += f.cache_den; a.small_requests += f.small_requests;
     a.commits += commitsBySession.get(f.session) || 0;
+    a.commits_seen ||= commitsSeen.has(f.session);
     users.set(f.user, a);
   }
   const eligible = [...users.values()].filter((u) => u.sessions >= minSessions && u.turns >= minTurns);
   const levers = LEVERS.map(({ lever, direction, num, den }) => {
     const scored = eligible
       .filter((u) => den(u) > 0)
-      .map((u) => ({ user: u.user, value: num(u) / den(u), sessions: u.sessions, turns: u.turns, commits: Array.isArray(outcomes) ? u.commits : null }));
+      .map((u) => ({ user: u.user, value: num(u) / den(u), sessions: u.sessions, turns: u.turns, commits: u.commits_seen ? u.commits : null }));
     scored.sort((a, b) => (direction === "lower" ? a.value - b.value : b.value - a.value) || (a.user < b.user ? -1 : a.user > b.user ? 1 : 0));
     return { lever, direction, median: median(scored.map((s) => s.value)), top: scored.slice(0, top) };
   });

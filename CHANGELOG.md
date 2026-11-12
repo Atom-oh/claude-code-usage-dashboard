@@ -17,7 +17,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
-- Migration 010 adds `session_turns_v1`, exact per-session-hour turn/request key sets with an ingestion view and bounded backfill. No query reads it yet; see the [session turns runbook](docs/runbooks/session-turns-schema.md).
+- Migration 010 adds `session_turns_v1`, exact per-session-hour turn/request key sets with an ingestion view and bounded backfill. No query reads it yet; see [Session turns](docs/runbooks/schema-migrations.md#session-turns-migration-010) in the schema migrations runbook.
 
 ### Changed
 

@@ -158,10 +158,18 @@ test("outcome cost restricted to matched sessions", () => {
   const usage = [U({ session: "m" }), U({ session: "x" })];
   const turns = [T({ session: "m" }), T({ session: "m", kind: "request", model: "claude-sonnet-4", n: 1 }), T({ session: "x" })];
   const facts = matchSessions(usage, turns);
-  const out = outcomeCost(facts, [{ session: "m", commits: 4, prs: 1, loc_added: 2000 }, { session: "x", commits: 100, prs: 9, loc_added: 9 }], 8);
+  const seen = { commits_observed: 1, prs_observed: 1, loc_added_observed: 1 };
+  const out = outcomeCost(facts, [{ session: "m", commits: 4, prs: 1, loc_added: 2000, ...seen }, { session: "x", commits: 100, prs: 9, loc_added: 9, ...seen }], 8);
   assert.deepEqual(out, { commits: 4, prs: 1, loc_added: 2000, cost_per_commit: 2, cost_per_pr: 8, cost_per_kloc: 4 });
-  assert.equal(outcomeCost(facts, [], 8).cost_per_commit, null);
-  assert.equal(outcomeCost(facts, [], 8).commits, 0);
+  // An observed zero stays zero; ratios over it are null.
+  const zero = outcomeCost(facts, [{ session: "m", commits: 0, prs: 0, loc_added: 0, ...seen }], 8);
+  assert.deepEqual(zero, { commits: 0, prs: 0, loc_added: 0, cost_per_commit: null, cost_per_pr: null, cost_per_kloc: null });
+  // No in-window evidence for matched sessions is unavailable, not zero (ADR-018), per metric.
+  const unobserved = { commits: null, prs: null, loc_added: null, cost_per_commit: null, cost_per_pr: null, cost_per_kloc: null };
+  assert.deepEqual(outcomeCost(facts, [], 8), unobserved);
+  assert.deepEqual(outcomeCost(facts, [{ session: "x", commits: 3, ...seen }], 8), unobserved);
+  const partial = outcomeCost(facts, [{ session: "m", commits: 2, prs: 0, loc_added: 0, commits_observed: "1", prs_observed: 0, loc_added_observed: false }], 8);
+  assert.deepEqual(partial, { commits: 2, prs: null, loc_added: null, cost_per_commit: 4, cost_per_pr: null, cost_per_kloc: null });
   for (const missing of [null, undefined, {}]) {
     assert.deepEqual(outcomeCost(facts, missing, 8), { commits: null, prs: null, loc_added: null, cost_per_commit: null, cost_per_pr: null, cost_per_kloc: null });
   }
@@ -187,6 +195,10 @@ test("exemplars require activity", () => {
   const rpt = ex.levers.find((l) => l.lever === "requests_per_turn");
   assert.deepEqual(rpt.top.map((r) => r.user), ["c", "a", "b"]);
   assert.equal(rpt.median, 2.5);
-  const withOut = exemplars(facts, [{ session: "c0", commits: 2 }]);
+  const withOut = exemplars(facts, [{ session: "c0", commits: 2, commits_observed: 1 }]);
   assert.equal(withOut.levers[1].top.find((r) => r.user === "c").commits, 2);
+  // Users without commit evidence have unavailable commits, not zero.
+  assert.equal(withOut.levers[1].top.find((r) => r.user === "a").commits, null);
+  const unobserved = exemplars(facts, [{ session: "c0", commits: 0, commits_observed: 0 }]);
+  assert.equal(unobserved.levers[1].top.find((r) => r.user === "c").commits, null);
 });

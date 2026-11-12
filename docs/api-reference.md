@@ -451,8 +451,8 @@ rounded up to whole hours and at least one hour.
 | `coverage`, `previous_coverage` | `{sessions, matched_sessions, excluded: {no_turns, no_requests, cost_incomplete, tokens_invalid}, cost_known, cost_matched, cost_unattributed}`. `cost_known` includes `cost_unattributed`, the known cost of usage rows without a session. |
 | `trend` | Current-window buckets `{t, cost_per_user, cost_per_session, cost_per_1k_requests, tokens_per_request, cache_hit_rate}`; null values where the bucket's chain is unavailable (no matched session or no identified user). |
 | `models` | `{model, cost, requests, request_share, tokens, cost_per_million_tokens, small}` over matched sessions, by cost. |
-| `outcome`, `previous_outcome` | Claude: `{commits, prs, loc_added, cost_per_commit, cost_per_pr, cost_per_kloc}` over matched sessions. Codex: null (`unavailable.outcome = "not_collected"`). |
-| `exemplars` | `{eligible_users, levers: [{lever, direction, median, top: [{user, value, sessions, turns, commits}]}]}`; `commits` is null for Codex. Identities are unmasked like other per-user responses; the SPA masks them. |
+| `outcome`, `previous_outcome` | Claude: `{commits, prs, loc_added, cost_per_commit, cost_per_pr, cost_per_kloc}` over matched sessions; a count and its ratio are null without in-window counter evidence ([ADR-018](decisions/ADR-018-activity-observation-availability.md)). Codex: null (`unavailable.outcome = "not_collected"`). |
+| `exemplars` | `{eligible_users, levers: [{lever, direction, median, top: [{user, value, sessions, turns, commits}]}]}`; `commits` is null for Codex and for users without commit evidence. Identities are unmasked like other per-user responses; the SPA masks them. |
 | `combined` | `cost`/`previous_cost` sum the per-client matched costs, null if any client's chain is missing; `decomposition` sums per-factor contributions and is unavailable if any client's decomposition is. |
 
 Reasons: `window_too_short` (effective window under one hour), `not_backfilled`
@@ -462,8 +462,10 @@ Reasons: `window_too_short` (effective window under one hour), `not_backfilled`
 window) and `not_collected` (Codex outcomes). `window_too_short`, `not_backfilled` and
 `retention` apply to both windows and make every section null; no turn query runs.
 
-Filters: `user`/`userExact` and `team` pass to the usage sources, `user`/`userExact` also to
-the turns source (log identity). `model`, `modelExact` and `backend` select whole sessions with
+Filters: `team` passes to the usage sources and `user`/`userExact` to the turns source (log
+identity). Codex usage also applies `user`/`userExact` (the same log identity); Claude usage is
+read without them and kept for sessions whose turns matched, so counters without `UserEmail`
+(Bedrock) stay counted. `model`, `modelExact` and `backend` select whole sessions with
 at least one matching usage row (Claude normalized model, Codex raw model; backend equality).
 With a team, model or backend filter, sessions absent from the filtered usage rows are dropped
 from the turns as well, so they never enter coverage. Outcome counters are read per session and

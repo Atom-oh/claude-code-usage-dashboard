@@ -264,7 +264,7 @@ If either cost or any factor is zero in either window, the decomposition is unav
 | Cache hit rate | cache read / (input + cache read + cache creation) | cached tokens / `input_tokens_total` |
 
 Neither cost basis is an invoice. Turns and requests come from `session_turns_v1`
-([runbook](runbooks/session-turns-schema.md)); usage comes from the same counter and completion
+([runbook](runbooks/schema-migrations.md#session-turns-migration-010)); usage comes from the same counter and completion
 rows as the overview, re-bucketed onto the hour-aligned response grid.
 
 **Matched population.** A session is matched when it has at least one turn, at least one request,
@@ -295,9 +295,13 @@ windows. A positive total does not prove complete telemetry.
 productivity, code quality or causal ROI. Commits, PRs and lines are observed counters, not merged
 or verified outcomes. The combined view has no cross-client chain because identities differ; it
 sums per-client costs and per-factor contributions. Executive `costPerKloc` and cost efficiency
-keep their own population (all known cost, 180-day counters). Claude user filters match the counter
-`UserEmail` for usage and the log identity for turns, so a session whose counters lack `UserEmail`
-is excluded under a user filter as `cost_incomplete`.
+keep their own population (all known cost, 180-day counters). Claude user filters match the turns'
+log identity, as `/api/clients/productivity` does: counters are read without the user filter and kept
+for sessions whose turns match, so Bedrock sessions without counter `UserEmail` stay counted. Under a
+Claude user filter, sessionless usage counts as outside cost only when its counter `UserEmail` matches.
+Outcome counts follow [ADR-018](decisions/ADR-018-activity-observation-availability.md): a metric with
+no in-window counter evidence in any matched session is null, not zero, and so are an exemplar's commits
+without evidence in that user's matched sessions; an observed unchanged counter is a measured zero.
 
 ### Activity and flow coverage
 
