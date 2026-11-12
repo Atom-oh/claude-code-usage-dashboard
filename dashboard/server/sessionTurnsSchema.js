@@ -31,11 +31,9 @@ const CODEX_PROMPT = "EventName = 'codex.user_prompt'";
 const CODEX_KEY = "concat(toString(Timestamp), toString(mapSort(ResourceAttributes)), toString(mapSort(LogAttributes)))";
 export const codexTurnKeySql = () => CODEX_KEY;
 
-export function turnsTransform(where = "1") {
-  return `SELECT hour, Client, Sid AS SessionId, UserIdentity, Kind, Mdl AS Model,
-  uniqExactState(cityHash64(Key)) AS Keys
-FROM (
-  SELECT toStartOfHour(toDateTime(Timestamp, 'UTC')) AS hour,
+// One row per source record with its derived columns; Sid is the session.
+function turnRecords(where) {
+  return `SELECT toStartOfHour(toDateTime(Timestamp, 'UTC')) AS hour,
     multiIf(${CODEX_PROMPT}, 'codex', 'claude') AS Client,
     if(${CODEX_PROMPT}, LogAttributes['conversation.id'], SessionId) AS Sid,
     coalesce(nullIf(ResourceAttributes['user.email'], ''),
@@ -46,7 +44,14 @@ FROM (
       ${CLAUDE_REQUEST}, ${claudeCallKeySql("")},
       ${CODEX_KEY}) AS Key
   FROM claude_code.otel_logs
-  WHERE (${CLAUDE_PROMPT} OR ${CLAUDE_REQUEST} OR ${CODEX_PROMPT}) AND (${where})
+  WHERE (${CLAUDE_PROMPT} OR ${CLAUDE_REQUEST} OR ${CODEX_PROMPT}) AND (${where})`;
+}
+
+export function turnsTransform(where = "1") {
+  return `SELECT hour, Client, Sid AS SessionId, UserIdentity, Kind, Mdl AS Model,
+  uniqExactState(cityHash64(Key)) AS Keys
+FROM (
+  ${turnRecords(where)}
 )
 WHERE SessionId != ''
 GROUP BY hour, Client, SessionId, UserIdentity, Kind, Model`;
@@ -77,4 +82,30 @@ export function turnsBackfillSql() {
 
 INSERT INTO claude_code.${TURNS_TABLE} (${TURNS_COLUMNS.map(([name]) => name).join(", ")})
 ${turnsTransform(`Timestamp >= ${from} AND Timestamp < ${to}`)};`;
+}
+
+// Activation gate (runbook step 4): the table's merged key sets against uniqExact over the same
+// raw records, per Client and Kind, for one hour-aligned UTC window. Any differs = 1 row blocks.
+export function turnsVerifySql() {
+  const from = "{verifyFrom:DateTime('UTC')}", to = "{verifyTo:DateTime('UTC')}";
+  return `SELECT throwIf(${to} <= ${from}
+  OR toStartOfHour(${from}) != ${from} OR toStartOfHour(${to}) != ${to},
+  'Session turns verification requires a positive hour-aligned UTC window');
+
+SELECT Client, Kind, t.keys AS table_keys, r.keys AS raw_keys, table_keys != raw_keys AS differs
+FROM (
+  SELECT Client, Kind, uniqExactMerge(Keys) AS keys
+  FROM claude_code.${TURNS_TABLE}
+  WHERE hour >= ${from} AND hour < ${to}
+  GROUP BY Client, Kind
+) AS t
+FULL OUTER JOIN (
+  SELECT Client, Kind, uniqExact(cityHash64(Key)) AS keys
+  FROM (
+  ${turnRecords(`Timestamp >= ${from} AND Timestamp < ${to}`)}
+  )
+  WHERE Sid != ''
+  GROUP BY Client, Kind
+) AS r USING (Client, Kind)
+ORDER BY Client, Kind;`;
 }

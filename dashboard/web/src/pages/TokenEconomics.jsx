@@ -90,11 +90,12 @@ function EquationStrip({ row }) {
 }
 
 // ② Previous cost → six signed contributions → current cost (transparent stacked base).
-function Waterfall({ title, subtitle, previousCost, decomposition }) {
+// `fallback` is the reason shown when the decomposition itself is missing (no server row).
+function Waterfall({ title, subtitle, previousCost, decomposition, fallback }) {
   const c = useChartColors();
   const reason = decomposition?.unavailable;
   const steps = reason ? [] : waterfallSteps(previousCost, decomposition);
-  if (steps.length === 0) return <Card title={title} subtitle={subtitle}><Unavailable reason={reason || "no_previous"} /></Card>;
+  if (steps.length === 0) return <Card title={title} subtitle={subtitle}><Unavailable reason={reason || fallback || "no_previous"} /></Card>;
   const fill = { growth: c.palette[0], waste: c.palette[3], price: c.palette[2], total: c.axis };
   const data = steps.map((s) => ({ ...s, size: Math.abs(s.value) }));
   const stepText = (s) => (s.kind === "total" ? money(s.value) : signedMoney(s.value));
@@ -125,6 +126,47 @@ function Waterfall({ title, subtitle, previousCost, decomposition }) {
       <span>{`성장 ${signedMoney(bundles.growth)} · 낭비 ${signedMoney(bundles.waste)} · 단가 ${signedMoney(bundles.price)}`}</span>
     </p>
   </Card>;
+}
+
+const WATERFALL_SUBTITLE = "직전 기간 대비 변동을 항목별 금액으로 나눕니다(합 = 총 변동).";
+const decompositionReason = (row) => row.decomposition?.unavailable || row.unavailable?.decomposition
+  || row.unavailable?.chain || "no_previous";
+const ClientWaterfall = ({ row }) => <Waterfall title={`${clientName(row.client)} 드라이버 분해`}
+  subtitle={`${WATERFALL_SUBTITLE} 비용 기준: ${basisLabel(row.cost_basis)}`}
+  previousCost={row.previous?.cost} decomposition={row.decomposition} fallback={decompositionReason(row)} />;
+
+// Clients whose decomposition blocks the combined one: the server's list, else derived from the rows.
+function blockingClients(combined, rows) {
+  if (Array.isArray(combined?.unavailable_clients) && combined.unavailable_clients.length > 0) return combined.unavailable_clients;
+  return rows.filter((row) => !row.decomposition || row.decomposition.unavailable)
+    .map((row) => ({ client: row.client, reason: decompositionReason(row) }));
+}
+
+// Multi-client ②: the combined waterfall, or, when any client blocks it, the blocking clients
+// and each client's own waterfall. The combined sum stays unavailable, never zero.
+function CombinedDrivers({ combined, rows, bases }) {
+  const title = "합계 드라이버 분해";
+  const subtitle = `${WATERFALL_SUBTITLE} 비용 기준: ${bases} · 서로 다른 기준의 합계입니다.`;
+  const blocked = blockingClients(combined, rows);
+  if (blocked.length === 0 && waterfallSteps(combined?.previous_cost, combined?.decomposition).length > 0) {
+    return <Waterfall title={title} subtitle={subtitle} previousCost={combined.previous_cost} decomposition={combined.decomposition} />;
+  }
+  const cost = finite(combined?.cost);
+  return <>
+    <Card title={title} subtitle={subtitle}>
+      {blocked.length > 0 ? <div role="status" className="flex flex-col gap-2 text-sm text-ink-600">
+        <p className="flex flex-wrap items-center gap-2">
+          <span>합계 분해는 모든 클라이언트의 분해가 있어야 계산합니다. 막는 클라이언트:</span>
+          {blocked.map((b) => <ReasonBadge key={b.client} label={`${clientName(b.client)}: ${reasonLabel(b.reason) || "—"}`} />)}
+        </p>
+        <p>아래에 클라이언트별 분해를 표시합니다.</p>
+      </div> : <Unavailable reason={combined?.decomposition?.unavailable || "no_previous"} />}
+      {cost !== null && <p className="mt-2 text-sm text-ink-700">{`이번 기간 대상 세션 비용 합계 ${money(cost)}`}</p>}
+    </Card>
+    <div className="grid gap-4 2xl:grid-cols-2">
+      {rows.map((row) => <ClientWaterfall key={row.client} row={row} />)}
+    </div>
+  </>;
 }
 
 // ③ Unit economics over the current window's buckets; null buckets stay gaps ("미확인").
@@ -267,12 +309,7 @@ export default function TokenEconomics({ api, range, clients, stale = false }) {
         </div>
       </Card>
       <SectionLabel>토큰 경제 · 드라이버 분해</SectionLabel>
-      {multi ? <Waterfall title="합계 드라이버 분해"
-        subtitle={`직전 기간 대비 변동을 항목별 금액으로 나눕니다(합 = 총 변동). 비용 기준: ${bases} · 서로 다른 기준의 합계입니다.`}
-        previousCost={data.combined?.previous_cost} decomposition={data.combined?.decomposition} />
-        : <Waterfall title={`${clientName(single.client)} 드라이버 분해`}
-          subtitle={`직전 기간 대비 변동을 항목별 금액으로 나눕니다(합 = 총 변동). 비용 기준: ${basisLabel(single.cost_basis)}`}
-          previousCost={single.previous?.cost} decomposition={single.decomposition} />}
+      {multi ? <CombinedDrivers combined={data.combined} rows={rows} bases={bases} /> : <ClientWaterfall row={single} />}
       <SectionLabel>토큰 경제 · 단위 경제 추이</SectionLabel>
       {rows.map((row) => <UnitTrend key={row.client} row={row} bucketHours={Number(data.bucket_hours) || 1} stale={pending} />)}
       <SectionLabel>토큰 경제 · 모델 · 성과</SectionLabel>

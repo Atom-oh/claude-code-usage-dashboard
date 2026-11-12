@@ -286,15 +286,18 @@ independently, so bucket values need not combine to the window value.
 
 **Availability.** Each value is null with a reason, never zero: `window_too_short` (the
 hour-aligned window is under one hour), `not_backfilled` (`SESSION_TURNS_READ_FROM` unset or later
-than the previous window's start), `retention` (the previous window starts beyond the 90-day log
-retention), `no_matched_sessions`, `no_users`, `no_previous`, `zero_factor`, and `not_collected`
-for Codex outcomes (default OTel has no commit/PR/line source). The first three apply to both
-windows. A positive total does not prove complete telemetry.
+than the window's start), `retention` (the window starts beyond the 90-day log retention),
+`no_matched_sessions`, `no_users`, `no_previous`, `zero_factor`, and `not_collected` for Codex
+outcomes (default OTel has no commit/PR/line source). Each window is gated on its own: a gated
+current window makes every section unavailable; a gated previous window leaves the current
+sections and makes only the previous values and the decomposition unavailable. A positive total
+does not prove complete telemetry.
 
 **Limits.** These are cost-efficiency observations of telemetry activity, not validated employee
 productivity, code quality or causal ROI. Commits, PRs and lines are observed counters, not merged
 or verified outcomes. The combined view has no cross-client chain because identities differ; it
-sums per-client costs and per-factor contributions. Executive `costPerKloc` and cost efficiency
+sums per-client costs and per-factor contributions, and when any client's decomposition is
+unavailable it names that client and shows each client's own decomposition instead. Executive `costPerKloc` and cost efficiency
 keep their own population (all known cost, 180-day counters). Claude user filters match the turns'
 log identity, as `/api/clients/productivity` does: counters are read without the user filter and kept
 for sessions whose turns match, so Bedrock sessions without counter `UserEmail` stay counted. Under a

@@ -17,16 +17,20 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
-- Migration 010 adds `session_turns_v1`, exact per-session-hour turn/request key sets with an ingestion view and bounded backfill. Token economics (below) reads it; see [Session turns](docs/runbooks/schema-migrations.md#session-turns-migration-010) in the schema migrations runbook.
+- Migration 010 adds `session_turns_v1`, exact per-session-hour turn/request key sets with an ingestion view, bounded backfill and a read-only raw-log comparison (`clickhouse-verify-010.sql`) that gates activation. Token economics (below) reads it; see [Session turns](docs/runbooks/schema-migrations.md#session-turns-migration-010) in the schema migrations runbook.
 - Shared Productivity opens with token-economics sections from the new
   `GET /api/clients/token-economics`: the cost equation (users × sessions/user ×
   turns/session × requests/turn × tokens/request × cost/token, with change against the
   preceding window and matched-session coverage), an LMDI driver waterfall with
   growth/waste/price subtotals, unit-cost and request-efficiency trends, model economics,
   outcome cost (Claude Code only; Codex shows it as not collected) and exemplar users to contact about
-  their habits. Requires migration 010, its backfill and `SESSION_TURNS_READ_FROM`; until
-  then every section shows its unavailable reason, never zero. Observed telemetry
-  activity, not employee productivity, verified outcomes or ROI
+  their habits. Requires migration 010, its verified backfill, a latency check and
+  `SESSION_TURNS_READ_FROM` (Terraform, compose and `.env`); until then every section shows its
+  unavailable reason, never zero. Each window is gated on its own: when only the preceding
+  window is before the boundary or beyond log retention, the current sections stay and only
+  the comparison and decomposition are unavailable. With both clients, a client without a
+  decomposition is named and each client's own waterfall is shown instead of the combined one.
+  Observed telemetry activity, not employee productivity, verified outcomes or ROI
   ([token economics](docs/metrics.md#token-economics)).
 
 ### Changed

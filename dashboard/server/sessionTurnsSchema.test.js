@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { claudeCallKeySql, claudeTurnKeySql, turnsBackfillSql, turnsSchemaSql, turnsTransform } from "./sessionTurnsSchema.js";
+import { claudeCallKeySql, claudeTurnKeySql, codexTurnKeySql, turnsBackfillSql, turnsSchemaSql, turnsTransform, turnsVerifySql } from "./sessionTurnsSchema.js";
 
 const SEQ = "l.LogAttributes['event.sequence']";
 const RECORD = "concat('r:', toString(l.Timestamp), ':', toString(cityHash64(toString(mapSort(l.LogAttributes)))))";
@@ -37,4 +37,19 @@ test("backfill is bounded to one day", () => {
   assert.ok(sql.includes("dateDiff('second', {backfillFrom:DateTime('UTC')}, {backfillTo:DateTime('UTC')}) > 86400"));
   assert.ok(sql.includes("Timestamp >= {backfillFrom:DateTime('UTC')} AND Timestamp < {backfillTo:DateTime('UTC')}"));
   assert.ok(sql.includes("Session turns backfill requires a positive interval of at most one day"));
+});
+
+test("verification compares merged table keys with raw uniqExact over the transform's keys", () => {
+  const sql = turnsVerifySql();
+  for (const part of [claudeTurnKeySql(""), claudeCallKeySql(""), codexTurnKeySql(),
+    "uniqExactMerge(Keys) AS keys", "uniqExact(cityHash64(Key)) AS keys", "WHERE Sid != ''",
+    "FULL OUTER JOIN", "USING (Client, Kind)", "table_keys != raw_keys AS differs",
+    "hour >= {verifyFrom:DateTime('UTC')} AND hour < {verifyTo:DateTime('UTC')}",
+    "Timestamp >= {verifyFrom:DateTime('UTC')} AND Timestamp < {verifyTo:DateTime('UTC')}",
+    "'Session turns verification requires a positive hour-aligned UTC window'"])
+    assert.ok(sql.includes(part), part);
+  // The raw side reads the same records (events, session, key) as the transform.
+  const records = (text) => text.slice(text.indexOf("SELECT toStartOfHour"), text.indexOf(" AND ("));
+  assert.equal(records(sql), records(turnsTransform()));
+  assert.doesNotMatch(sql, /INSERT|ALTER|CREATE/);
 });

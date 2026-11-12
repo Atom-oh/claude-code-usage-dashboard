@@ -144,3 +144,48 @@ test("a failed request shows the error box", () => {
   mount({ data: null, error: new Error("boom") });
   expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeTruthy();
 });
+
+test("multi mode with one client blocking shows each client's waterfall and names the blocker", () => {
+  const idle = codex({ previous: null, previous_coverage: null,
+    decomposition: { contributions: null, bundles: null, total_change: null, unavailable: "no_previous" },
+    unavailable: { chain: null, decomposition: "no_previous", outcome: "not_collected" } });
+  mount({ data: response([claude(), idle], { combined: { cost: 6288, previous_cost: null,
+    decomposition: { contributions: null, bundles: null, total_change: null, unavailable: "no_previous" },
+    unavailable_clients: [{ client: "codex", reason: "no_previous" }] } }), clients: ["claude", "codex"] });
+  const combined = screen.getByText("합계 드라이버 분해").closest(".shadow-card");
+  expect(within(combined).getByText("Codex: 직전 기간 없음")).toBeTruthy();
+  expect(within(combined).queryByText("Claude Code: 직전 기간 없음")).toBeNull();
+  expect(within(combined).getByText("이번 기간 대상 세션 비용 합계 $6,288")).toBeTruthy();
+  // Claude's own decomposition renders its bars and steps; Codex's card shows its reason.
+  const claudeCard = screen.getByText("Claude Code 드라이버 분해").closest(".shadow-card");
+  expect(within(within(claudeCard).getByRole("list", { name: "드라이버 분해 단계" })).getByText("+$595.88")).toBeTruthy();
+  expect(within(claudeCard).getByText("성장 +$675.33 · 낭비 +$231.93 · 단가 −$282.26")).toBeTruthy();
+  const codexCard = screen.getByText("Codex 드라이버 분해").closest(".shadow-card");
+  expect(within(codexCard).getByText("직전 기간 없음")).toBeTruthy();
+  expect(within(codexCard).queryByRole("list", { name: "드라이버 분해 단계" })).toBeNull();
+  // The combined sum is not drawn.
+  expect(screen.getAllByRole("list", { name: "드라이버 분해 단계" })).toHaveLength(1);
+});
+
+test("a gated previous window keeps the current equation and labels only the decomposition", () => {
+  const row = claude({ previous: null, previous_coverage: null, previous_outcome: null,
+    decomposition: { contributions: null, bundles: null, total_change: null, unavailable: "not_backfilled" },
+    unavailable: { chain: null, decomposition: "not_backfilled", outcome: null } });
+  mount({ data: response([row]) });
+  const eq = strip("Claude Code");
+  expect(within(eq).getByText("$3,144")).toBeTruthy();
+  expect(within(eq).queryByText("백필 전")).toBeNull();
+  const card = screen.getByText("Claude Code 드라이버 분해").closest(".shadow-card");
+  expect(within(card).getByText("백필 전")).toBeTruthy();
+  expect(screen.queryByRole("list", { name: "드라이버 분해 단계" })).toBeNull();
+});
+
+test("a missing client row or combined block falls back to the chain reason", () => {
+  const { container } = mount({ data: response([claude()], { combined: undefined }), clients: ["claude", "codex"] });
+  const combined = screen.getByText("합계 드라이버 분해").closest(".shadow-card");
+  expect(within(combined).getByText("Codex: 대상 세션 없음")).toBeTruthy();
+  const codexCard = screen.getByText("Codex 드라이버 분해").closest(".shadow-card");
+  expect(within(codexCard).getByText("대상 세션 없음")).toBeTruthy();
+  expect(within(codexCard).queryByText("직전 기간 없음")).toBeNull();
+  expect(container.textContent).not.toContain("이번 기간 대상 세션 비용 합계");
+});

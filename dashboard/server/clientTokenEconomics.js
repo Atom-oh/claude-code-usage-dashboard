@@ -174,17 +174,20 @@ function trend(usage, turns, buckets) {
   return buckets.flatMap((b) => unitTrend(u.get(b) || [], t.get(b) || [], [b]));
 }
 
-function clientResult(client, cur, prev, outcomes, buckets) {
-  const c = chain(cur.totals), p = chain(prev.totals);
-  const current = c.unavailable ? null : c, previous = p.unavailable ? null : p;
-  const decomposition = lmdi(p, c);
+// `prev` is null when the previous window is gated (`previousGate`): the current sections stay,
+// the decomposition carries the gate. A missing current chain is the decomposition's own reason.
+function clientResult(client, cur, prev, outcomes, buckets, previousGate = null) {
+  const c = chain(cur.totals), p = prev ? chain(prev.totals) : null;
+  const current = c.unavailable ? null : c, previous = p && !p.unavailable ? p : null;
+  const decomposition = c.unavailable ? emptyDecomposition(c.unavailable)
+    : prev ? lmdi(p, c) : emptyDecomposition(previousGate);
   const claude = client === "claude";
   const outcome = claude && current ? outcomeCost(cur.facts, outcomes.current, current.cost) : null;
   const previousOutcome = claude && previous ? outcomeCost(prev.facts, outcomes.previous, previous.cost) : null;
   return { client, cost_basis: basis(client, cur.facts), current, previous, decomposition,
     unavailable: { chain: c.unavailable, decomposition: decomposition.unavailable,
       outcome: claude ? c.unavailable : "not_collected" },
-    coverage: cur.coverage, previous_coverage: prev.coverage,
+    coverage: cur.coverage, previous_coverage: prev ? prev.coverage : null,
     trend: trend(cur.usage, cur.turns, buckets), models: modelEconomics(cur.facts),
     outcome, previous_outcome: previousOutcome,
     exemplars: exemplars(cur.facts, claude ? outcomes.current : null) };
@@ -192,17 +195,20 @@ function clientResult(client, cur, prev, outcomes, buckets) {
 
 // Combined: no cross-client chain (identities differ). Cost sums per-client matched costs; the
 // decomposition sums per-term contributions and is unavailable if any client's is.
+// `unavailable_clients` names each blocking client and its reason (empty when combined).
 function combine(byClient) {
   const sum = (pick) => (byClient.every((c) => pick(c) !== null) ? byClient.reduce((s, c) => s + pick(c), 0) : null);
   const cost = sum((c) => c.current?.cost ?? null), previousCost = sum((c) => c.previous?.cost ?? null);
-  const blocked = byClient.find((c) => c.decomposition.unavailable);
-  if (blocked) {
-    return { cost, previous_cost: previousCost, decomposition: { ...emptyDecomposition(blocked.decomposition.unavailable),
-      total_change: cost !== null && previousCost !== null ? cost - previousCost : null } };
+  const blocked = byClient.filter((c) => c.decomposition.unavailable)
+    .map((c) => ({ client: c.client, reason: c.decomposition.unavailable }));
+  if (blocked.length) {
+    return { cost, previous_cost: previousCost, unavailable_clients: blocked,
+      decomposition: { ...emptyDecomposition(blocked[0].reason),
+        total_change: cost !== null && previousCost !== null ? cost - previousCost : null } };
   }
   const contributions = Object.fromEntries(TERMS.map((t) => [t, byClient.reduce((s, c) => s + c.decomposition.contributions[t], 0)]));
   const bundles = Object.fromEntries(Object.entries(BUNDLES).map(([name, keys]) => [name, keys.reduce((s, k) => s + contributions[k], 0)]));
-  return { cost, previous_cost: previousCost, decomposition: { contributions, bundles,
+  return { cost, previous_cost: previousCost, unavailable_clients: [], decomposition: { contributions, bundles,
     total_change: byClient.reduce((s, c) => s + c.decomposition.total_change, 0), unavailable: null } };
 }
 
@@ -217,14 +223,18 @@ export async function clientTokenEconomics(from, to, raw, enabledClients, signal
     previous_range: { from: w.previous.from.toISOString(), to: w.previous.to.toISOString() },
     bucket_hours: w.bucketSeconds / HOUR,
   };
-  // Gate before any query: a short window or a window the turns table cannot answer is unavailable.
-  const gate = w.length < HOUR * 1000 ? "window_too_short" : turnsReadiness(w.previous.from, now(), readFrom);
+  // Gate each window before any query. A short window, or a current window the turns table cannot
+  // answer, makes every section unavailable. A gated previous window is not queried; only the
+  // decomposition (and previous values) are unavailable.
+  const at = now();
+  const gate = w.length < HOUR * 1000 ? "window_too_short" : turnsReadiness(w.from, at, readFrom);
   if (gate) {
     const byClient = clients.map((client) => unavailableClient(client, gate));
     return { ...head, by_client: byClient, combined: combine(byClient) };
   }
+  const previousGate = turnsReadiness(w.previous.from, at, readFrom);
 
-  const windows = { current: { from: w.from, to: w.to }, previous: w.previous };
+  const windows = { current: { from: w.from, to: w.to }, ...(previousGate ? {} : { previous: w.previous }) };
   // Sources ignore model/backend; sessions are selected afterwards (sessionScope).
   const sourceFilters = { ...filters, model: "", modelExact: undefined, backend: "" };
   // Claude counters are read without the user filter; windowData applies it via turn identity.
@@ -269,7 +279,7 @@ export async function clientTokenEconomics(from, to, raw, enabledClients, signal
       return windowData(client, usage, got[name].turns.map(turnRow), filters);
     };
     const outcomes = { current: got.current.outcomes ?? null, previous: got.previous.outcomes ?? null };
-    return clientResult(client, data("current"), data("previous"), outcomes, buckets);
+    return clientResult(client, data("current"), previousGate ? null : data("previous"), outcomes, buckets, previousGate);
   });
   return { ...head, by_client: byClient, combined: combine(byClient) };
 }

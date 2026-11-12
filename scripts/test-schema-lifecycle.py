@@ -297,6 +297,28 @@ class SchemaLifecycle(unittest.TestCase):
         self.assertEqual({(r["client"], r["kind"]): int(r["n"]) for r in window}, totals)
         self.assertEqual({(r["client"], r["kind"]): int(r["n"]) for r in buckets}, totals)
         self.assertEqual(read_turns("[]"), [])
+        # The runbook's activation gate: table keys equal raw keys for the window, and a lost
+        # table state is reported as a difference until the backfill restores it.
+        verify = (ROOT / "clickhouse-verify-010.sql").read_text()
+        def compare():
+            text = self.fixture.query(verify, param_verifyFrom=bounds["start"], param_verifyTo=bounds["end"],
+                                      session_timezone="UTC", format="JSONEachRow").stdout
+            return {(r["Client"], r["Kind"]): r for r in map(json.loads, text.splitlines()) if "Client" in r}
+        rows = compare()
+        self.assertTrue({("claude", "request"), ("claude", "turn"), ("codex", "turn")} <= set(rows))
+        self.assertTrue(all(r["differs"] == 0 for r in rows.values()), rows)
+        self.fixture.query(f"ALTER TABLE {table} DELETE WHERE SessionId = 'turns-lifecycle-codex'",
+                           mutations_sync=2)
+        lost = compare()[("codex", "turn")]
+        self.assertEqual((lost["differs"], int(lost["raw_keys"]) - int(lost["table_keys"])), (1, 2))
+        self.fixture.query((ROOT / "clickhouse-backfill-010.sql").read_text(),
+                           param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                           session_timezone="UTC", insert_deduplicate=0)
+        self.assertTrue(all(r["differs"] == 0 for r in compare().values()))
+        bad = self.fixture.query(verify, param_verifyFrom=bounds["start"].replace(":00:00", ":30:00"),
+                                 param_verifyTo=bounds["end"], check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("hour-aligned", bad.stdout + bad.stderr)
 
     def test_session_turns_view_security_drift_is_rejected_without_repair(self):
         view = "claude_code.session_turns_v1_mv"
