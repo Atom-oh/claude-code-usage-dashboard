@@ -48,6 +48,8 @@ services:
       PII_MASK_ENABLED: "false"
       # Explicit opt-in after verified history/live coverage; bootstrap alone is insufficient.
       CODEX_COST_READ_FROM: "${CODEX_COST_READ_FROM:-}"
+      # Token economics reads stay unavailable until migration 010 is backfilled and verified.
+      SESSION_TURNS_READ_FROM: "${SESSION_TURNS_READ_FROM:-}"
 
 volumes:
   clickhouse-data:

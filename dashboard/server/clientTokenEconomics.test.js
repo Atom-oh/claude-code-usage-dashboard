@@ -125,19 +125,104 @@ test("unset boundary is not_backfilled, not zero", async () => {
   assert.equal(r.combined.cost, null);
   assert.equal(r.combined.previous_cost, null);
   assert.equal(r.combined.decomposition.unavailable, "not_backfilled");
+  assert.deepEqual(r.combined.unavailable_clients.map((b) => b.client), ["claude", "codex"]);
   assert.equal(calls.query.length + calls.claude.length, 0);
 });
 
-test("previous window before the boundary or beyond log retention gates both windows", async () => {
+// Current-window data for the per-window gate tests (window 2026-11-10, previous 2026-11-09).
+const currentOnly = () => ({
+  claude: { "2026-11-10T00:00:00.000Z": [claudeUsage({ reported_cost: 12 })] },
+  codex: { [CUR_FROM]: [codexUsage()] },
+  turns: { [CUR_FROM]: [...turnRows([{ n: 3 }, { kind: "request", model: "claude-sonnet-5", n: 6 }], "2026-11-10T00:00:00Z"),
+    ...turnRows([{ client: "codex", session: "c1", user: "bob@example.invalid", n: 2 }], "2026-11-10T00:00:00Z")] },
+  outcomes: { [CUR_FROM]: [{ session: "s1", commits: 3, prs: 1, loc_added: 900, commits_observed: 1, prs_observed: 1, loc_added_observed: 1 }] },
+});
+const queriedWindows = (calls) => new Set([...calls.query.map((q) => q.params?.from), ...calls.claude.map((c) => c.from.toISOString())]);
+
+test("a previous window before the boundary gates only the decomposition", async () => {
   // The current window starts after the boundary; the previous one does not.
-  const late = stub({ readFrom: new Date("2026-11-09T12:00:00Z") });
+  const { deps, calls } = stub({ ...currentOnly(), readFrom: new Date("2026-11-09T12:00:00Z") });
+  const r = await clientTokenEconomics(FROM, TO, {}, ["claude", "codex"], undefined, deps);
+  for (const c of r.by_client) {
+    assert.equal(c.unavailable.chain, null);
+    assert.ok(c.current.cost > 0);
+    assert.ok(Array.isArray(c.trend) && c.trend.length > 0);
+    assert.ok(Array.isArray(c.models) && c.models.length > 0);
+    assert.ok(c.exemplars);
+    assert.equal(c.previous, null);
+    assert.equal(c.previous_coverage, null);
+    assert.equal(c.previous_outcome, null);
+    assert.equal(c.unavailable.decomposition, "not_backfilled");
+    assert.deepEqual(c.decomposition, { contributions: null, bundles: null, total_change: null, unavailable: "not_backfilled" });
+  }
+  const [claude] = r.by_client;
+  assert.equal(claude.current.cost, 12);
+  assert.equal(claude.outcome.commits, 3);
+  assert.equal(claude.unavailable.outcome, null);
+  // Only the current window is queried.
+  assert.deepEqual(queriedWindows(calls), new Set([CUR_FROM, "2026-11-10T00:00:00.000Z"]));
+  assert.ok(calls.query.some((q) => q.sql.includes("session_turns_v1")));
+  // Combined: previous cost unknown, decomposition unavailable, each blocking client named.
+  assert.ok(r.combined.cost > 12);
+  assert.equal(r.combined.previous_cost, null);
+  assert.equal(r.combined.decomposition.unavailable, "not_backfilled");
+  assert.equal(r.combined.decomposition.total_change, null);
+  assert.deepEqual(r.combined.unavailable_clients, [{ client: "claude", reason: "not_backfilled" }, { client: "codex", reason: "not_backfilled" }]);
+});
+
+test("a previous window beyond log retention gates only the decomposition", async () => {
+  // Now 2026-11-11T12:00Z: the retained hours start 2026-08-13T13:00Z. The current window
+  // 2026-08-14..15 is retained; its previous window 2026-08-13..14 is not.
+  const from = new Date("2026-08-14T00:00:00Z"), to = new Date("2026-08-15T00:00:00Z");
+  const { deps, calls } = stub({
+    claude: { [from.toISOString()]: [claudeUsage({ t: "2026-08-14T03:00:00Z", reported_cost: 7 })] },
+    turns: { "2026-08-14 00:00:00": turnRows([{ n: 2 }, { kind: "request", model: "claude-sonnet-5", n: 3 }], "2026-08-14T00:00:00Z") },
+    readFrom: new Date("2026-01-01T00:00:00Z"),
+  });
+  const r = await clientTokenEconomics(from, to, {}, ["claude"], undefined, deps);
+  const c = r.by_client[0];
+  assert.equal(c.unavailable.chain, null);
+  assert.equal(c.current.cost, 7);
+  assert.equal(c.unavailable.decomposition, "retention");
+  assert.equal(c.previous, null);
+  assert.deepEqual(queriedWindows(calls), new Set(["2026-08-14 00:00:00", from.toISOString()]));
+  assert.equal(r.combined.previous_cost, null);
+  assert.deepEqual(r.combined.unavailable_clients, [{ client: "claude", reason: "retention" }]);
+});
+
+test("a current window before the boundary or beyond log retention gates every section", async () => {
+  const late = stub({ ...currentOnly(), readFrom: new Date("2026-11-10T12:00:00Z") });
   const r = await clientTokenEconomics(FROM, TO, {}, ["claude"], undefined, late.deps);
   assert.equal(r.by_client[0].unavailable.chain, "not_backfilled");
-  assert.equal(late.calls.query.length, 0);
-  const old = stub();
-  const o = await clientTokenEconomics(new Date("2026-08-14T00:00:00Z"), new Date("2026-08-20T00:00:00Z"), {}, ["claude"], undefined,
-    { ...old.deps, readFrom: new Date("2026-01-01T00:00:00Z") });
+  assert.equal(r.by_client[0].unavailable.decomposition, "not_backfilled");
+  assert.equal(r.by_client[0].current, null);
+  assert.equal(r.by_client[0].trend, null);
+  assert.equal(late.calls.query.length + late.calls.claude.length, 0);
+  const old = stub({ readFrom: new Date("2026-01-01T00:00:00Z") });
+  const o = await clientTokenEconomics(new Date("2026-08-12T00:00:00Z"), new Date("2026-08-13T00:00:00Z"), {}, ["claude"], undefined, old.deps);
   assert.equal(o.by_client[0].unavailable.chain, "retention");
+  assert.equal(old.calls.query.length + old.calls.claude.length, 0);
+});
+
+test("a client without a current chain blocks the combined decomposition with its own reason", async () => {
+  const cur = "2026-11-10T00:00:00.000Z", prev = "2026-11-09T00:00:00.000Z";
+  const { deps } = stub({
+    claude: { [cur]: [claudeUsage({ reported_cost: 30 })], [prev]: [claudeUsage({ t: "2026-11-09T01:00:00Z", reported_cost: 20 })] },
+    turns: {
+      [CUR_FROM]: turnRows([{ n: 2 }, { kind: "request", model: "claude-sonnet-5", n: 4 }], "2026-11-10T00:00:00Z"),
+      [PREV_FROM]: turnRows([{ n: 1 }, { kind: "request", model: "claude-sonnet-5", n: 3 }], "2026-11-09T00:00:00Z"),
+    },
+  });
+  const r = await clientTokenEconomics(FROM, TO, {}, ["claude", "codex"], undefined, deps);
+  const [cl, cx] = r.by_client;
+  assert.equal(cl.decomposition.unavailable, null);
+  near(cl.decomposition.total_change, 10);
+  // Codex is idle: no current chain, so its decomposition reports that, not no_previous.
+  assert.equal(cx.unavailable.chain, "no_matched_sessions");
+  assert.equal(cx.decomposition.unavailable, "no_matched_sessions");
+  assert.equal(r.combined.cost, null);
+  assert.equal(r.combined.decomposition.unavailable, "no_matched_sessions");
+  assert.deepEqual(r.combined.unavailable_clients, [{ client: "codex", reason: "no_matched_sessions" }]);
 });
 
 test("window shorter than an hour", async () => {
@@ -343,6 +428,7 @@ test("combined decomposition sums per-client contributions", async () => {
   for (const t of TERMS) near(r.combined.decomposition.contributions[t], cl.decomposition.contributions[t] + cx.decomposition.contributions[t]);
   near(r.combined.decomposition.total_change, r.combined.cost - r.combined.previous_cost);
   near(r.combined.decomposition.bundles.waste, cl.decomposition.bundles.waste + cx.decomposition.bundles.waste);
+  assert.deepEqual(r.combined.unavailable_clients, []);
 });
 
 test("window helper floors to the hour with buckets of at least one hour", () => {

@@ -266,24 +266,37 @@ migration identity rather than the collector identity:
    `backfillFrom`/`backfillTo` (positive, at most one day each), from the oldest retained log
    hour through installation plus one settled hour. `insert_deduplicate=0` is safe because
    states union.
-4. Compare the table with the raw logs for the backfilled window; any difference blocks
-   activation. Run the same grouping over `otel_logs` with the keys from
-   `sessionTurnsSchema.js` for the same `Timestamp` window. Expired raw rows cannot be
-   reconstructed, so hours before the first backfilled hour are a coverage gap, not an error.
+4. Compare the table with the raw logs; any difference blocks activation. Run
+   `clickhouse-verify-010.sql` (generated with the transform, read-only) on each shard for one
+   or more bounded, hour-aligned UTC windows inside the backfilled range. It returns per
+   `Client`/`Kind` the merged table keys (`uniqExactMerge(Keys)`) beside
+   `uniqExact(cityHash64(key))` over `otel_logs` for the same events, non-empty session and
+   key expressions as the transform; any row with `differs = 1` blocks activation. Expired raw
+   rows cannot be reconstructed, so hours before the first backfilled hour are a coverage gap,
+   not an error.
 
-```sql
-SELECT Client, Kind, uniqExactMerge(Keys) AS keys
-FROM claude_code.session_turns_v1
-WHERE hour >= {from:DateTime('UTC')} AND hour < {to:DateTime('UTC')}
-GROUP BY Client, Kind ORDER BY Client, Kind;
-```
+   ```bash
+   clickhouse-client --multiquery --param_verifyFrom='2026-11-01 00:00:00' \
+     --param_verifyTo='2026-11-02 00:00:00' < clickhouse-verify-010.sql
+   ```
 
-Activate by setting `SESSION_TURNS_READ_FROM` (Terraform `session_turns_read_from`) to the
-verified UTC start of the backfill and deploying. There is no raw-log fallback: a window starting
-before it, any window while it is unset or empty, and any window older than the 90-day log
-retention report token-economics chains as unavailable (`not_backfilled` or `retention`), never
-zero. To roll back, set it empty and redeploy; this disables token-economics reads. Retain the
-table and view.
+5. Measure latency before activating; this step is required. Keep the serving
+   `SESSION_TURNS_READ_FROM` empty and run a dashboard server that serves no users (for example
+   a local server against the deployed ClickHouse) with the candidate boundary. Time uncached
+   `GET /api/clients/token-economics` requests (a new filter set or after cache expiry) for
+   2-day and 30-day ranges whose previous windows are also backfilled (so both windows are
+   queried), with the clients the deployment enables; `system.query_log`
+   durations show the slowest of its queries. Activate only if both are within the page's
+   ~2 s p95. Otherwise leave `SESSION_TURNS_READ_FROM` unset, so the sections stay
+   unavailable, and record the timings for a query-shape fix.
+
+Activate by setting `SESSION_TURNS_READ_FROM` (Terraform `session_turns_read_from`, compose and
+`.env` `SESSION_TURNS_READ_FROM`) to the verified UTC start of the backfill and deploying. There
+is no raw-log fallback. Each window is gated on its own: a current window starting before the
+boundary, any window while it is unset or empty, or a window older than the 90-day log retention
+reports its values as unavailable (`not_backfilled` or `retention`), never zero; when only the
+previous window is gated, only the comparison and decomposition are unavailable. To roll back,
+set it empty and redeploy; this disables token-economics reads. Retain the table and view.
 
 ## Rollback
 
