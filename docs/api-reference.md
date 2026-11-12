@@ -598,7 +598,8 @@ full, so a costlier task outside the token top 100 may be missing). It is presen
 else 400) keeps Claude tasks with any span whose `workflow.run_id` equals it; a workflow's
 agents nest under the interaction that started it, so the run usually lists as one task.
 `workflowName` (a label: letter or digit, then up to 127 of letters, digits, `_.:-`; else
-400) keeps tasks with a span of that exact `workflow.name`. Both require `client=claude`
+400) keeps tasks with a span whose `workflow.name` equals it and whose `workflow.run_id` is
+non-empty (a name without a run id is not a workflow run). Both require `client=claude`
 alone (400 otherwise, including the default when Codex is enabled) and match only
 trace-enabled clients' spans. Codex turns are all costed before sorting. A Claude task is one
 `interaction` span starting in `[from, to)`; its `llm_request` spans are read through
