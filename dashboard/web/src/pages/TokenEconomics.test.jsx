@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider } from "../RangeContext.jsx";
 import { ConfigProvider } from "../ConfigContext.jsx";
@@ -106,6 +106,24 @@ test("an undefined factor renders — and keeps the known total", () => {
   expect(within(eq).getByText("$3,144")).toBeTruthy();
 });
 
+test("an isolated trend observation between empty buckets renders a dot", async () => {
+  // jsdom has no layout: supply the dimensions Recharts' ResponsiveContainer needs.
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 800, height: 300, top: 0, left: 0, right: 800, bottom: 300, x: 0, y: 0 });
+  const empty = (t) => ({ t, cost_per_user: null, cost_per_session: null, cost_per_1k_requests: null,
+    tokens_per_request: null, cache_hit_rate: null });
+  const trend = [empty("2026-09-08T00:00:00.000Z"),
+    { t: "2026-09-09T00:00:00.000Z", cost_per_user: 10, cost_per_session: 1, cost_per_1k_requests: 0.07,
+      tokens_per_request: 38000, cache_hit_rate: 0.7 },
+    empty("2026-09-10T00:00:00.000Z")];
+  const { container } = mount({ data: response([claude({ trend })]) });
+  await waitFor(() => expect(container.querySelectorAll(".recharts-line").length).toBeGreaterThan(0));
+  // Five series, each observed in one bucket only: one marker per series.
+  await waitFor(() => expect(container.querySelectorAll(".recharts-line-dot").length).toBe(5));
+  vi.restoreAllMocks();
+});
+
 test("an unavailable chain renders the reason label and no amount", () => {
   const { container } = mount({ data: response([gated("claude", "not_backfilled")], {
     combined: { cost: null, previous_cost: null, decomposition: { contributions: null, bundles: null,
@@ -136,16 +154,20 @@ test("model economics marks a partial cost and never shows an unknown cost as $0
   mount({ data: response([claude({ models })]) });
   const table = screen.getByText("모델 경제").closest(".shadow-card");
   const sonnet = within(table).getByText("claude-sonnet-5-5").closest("tr");
-  expect(within(sonnet).getAllByText("부분합").length).toBe(2);
+  // Cost, tokens and $/1M badges plus the 사용량 상태 cell.
+  expect(within(sonnet).getAllByText("부분합").length).toBe(4);
   expect(sonnet.textContent).toContain("$1,980");
   const opus = within(table).getByText("claude-opus-5-5").closest("tr");
   expect(opus.textContent).not.toContain("$0");
   expect(opus.textContent).not.toContain("부분합");
   expect(opus.textContent).toContain("—");
+  // CSV keeps numeric amounts and counts; coverage is its own column (ADR-013/014).
   const csv = toCsv(MODEL_COLUMNS, modelRows([claude({ models })])).split("\r\n");
-  expect(csv[1]).toContain("1980 (부분합)");
-  expect(csv[1]).toContain("2.4 (부분합)");
-  expect(csv[2]).not.toContain("부분합");
+  expect(csv[0]).toContain("사용량 상태");
+  expect(csv[1]).toContain(",1980,");
+  expect(csv[1]).toContain(",800000000,");
+  expect(csv[1].endsWith(",부분합")).toBe(true);
+  expect(csv[2].endsWith(",미확인")).toBe(true);
   expect(csv[2]).not.toMatch(/,0,/);
 });
 

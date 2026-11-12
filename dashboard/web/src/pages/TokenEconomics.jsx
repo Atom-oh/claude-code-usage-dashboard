@@ -7,8 +7,8 @@ import { SectionLabel } from "../components/SectionLabel.jsx";
 import { DualLineChart } from "../components/GroupCharts.jsx";
 import { axisTick, tooltipStyles, useChartColors } from "../useChartColors.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
-import { basisLabel, clientName, formatPercent } from "../clientPresentation.js";
-import { makeTickFmt, maskEmail } from "../fmt.js";
+import { basisLabel, clientName, formatClientTime, formatPercent } from "../clientPresentation.js";
+import { maskEmail } from "../fmt.js";
 import { BUNDLE_COLOR_VARS, BUNDLE_HELP, BUNDLE_LABELS, BUNDLE_OF, NOT_OBSERVED_LABEL, REASON_HELP, TERM_LABELS, TERMS,
   changePct, reasonLabel, responseWindowMatches, waterfallSteps } from "../tokenEconomics.js";
 
@@ -26,8 +26,6 @@ const pctText = (p) => (p === null ? "—" : `${p < 0 ? "−" : "+"}${Math.abs(p
 const percentOf = (fraction) => (finite(fraction) === null ? null : finite(fraction) * 100);
 const tint = (kind, amount) => `color-mix(in srgb, var(${BUNDLE_COLOR_VARS[kind]}) ${amount}%, var(--surface-card))`;
 const border = (kind) => `color-mix(in srgb, var(${BUNDLE_COLOR_VARS[kind]}) 45%, transparent)`;
-// The trend's ISO bucket starts become the dashboard's UTC label form (parseUtc, drag zoom).
-const chartTime = (t) => String(t).replace("T", " ").replace(/(?:\.\d+)?Z$/, "");
 
 function ReasonBadge({ reason, label = reasonLabel(reason) }) {
   return <Badge tone="neutral" className="text-[11px]">{label || "—"}</Badge>;
@@ -72,7 +70,10 @@ function EquationStrip({ row }) {
     value={cur ? termValue(term, cur) : <ReasonBadge reason={reason} />}
     hint={cur ? hint(prev?.factors?.[term], cur.factors?.[term]) : undefined}
     className="min-w-[8.5rem] flex-1" style={{ borderColor: border(BUNDLE_OF[term]), background: tint(BUNDLE_OF[term], 7) }} />);
-  const change = cur && prev ? `직전 대비 ${signedMoney(finite(cur.cost) - finite(prev.cost))} (${pctText(changePct(prev.cost, cur.cost))})` : cur ? previousHint : undefined;
+  const curCost = finite(cur?.cost), prevCost = finite(prev?.cost);
+  const change = cur && prev ? (curCost !== null && prevCost !== null
+    ? `직전 대비 ${signedMoney(curCost - prevCost)} (${pctText(changePct(prevCost, curCost))})` : "직전 대비 —")
+    : cur ? previousHint : undefined;
   return <div role="group" aria-label={`${name} 비용 방정식`} className="flex flex-col gap-2">
     <div className="text-sm font-semibold text-ink-800">{name} · {basisLabel(row.cost_basis)}</div>
     <div className="flex flex-wrap items-stretch gap-1.5">
@@ -170,28 +171,37 @@ function CombinedDrivers({ combined, rows, bases }) {
 }
 
 // ③ Unit economics over the current window's buckets; null buckets stay gaps ("미확인").
+// Bucket starts are numeric UTC instants on a time domain (the response's effective range),
+// as in ClientTrend, so an observation between two empty buckets still draws its marker.
 const moneyTick = (v) => `$${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 const numberTick = (v) => Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 2 });
 const trendTooltip = (value, _, item) => item?.dataKey === "cache_hit_pct" ? formatPercent(value)
   : item?.dataKey === "tokens_per_request" ? formatObserved(value) : money(value);
-function UnitTrend({ row, bucketHours, stale }) {
+function trendTimeDomain(rows, effectiveRange, bucketHours) {
+  const from = Date.parse(effectiveRange?.from), to = Date.parse(effectiveRange?.to);
+  if (Number.isFinite(from) && Number.isFinite(to) && from < to) return [from, to];
+  return rows.length ? [rows[0].t, rows.at(-1).t + bucketHours * 3600000] : undefined;
+}
+function UnitTrend({ row, bucketHours, effectiveRange, stale }) {
   const name = clientName(row.client);
   if (!Array.isArray(row.trend)) return <Card title={`${name} · 단위 경제 추이`}>
     <Unavailable reason={row.unavailable?.chain || "no_matched_sessions"} />
   </Card>;
-  const rows = row.trend.map((p) => ({ t: chartTime(p.t), cost_per_user: finite(p.cost_per_user),
+  const rows = row.trend.map((p) => ({ t: Date.parse(p.t), cost_per_user: finite(p.cost_per_user),
     cost_per_session: finite(p.cost_per_session), cost_per_1k_requests: finite(p.cost_per_1k_requests),
-    tokens_per_request: finite(p.tokens_per_request), cache_hit_pct: percentOf(p.cache_hit_rate) }));
-  const tickFormatter = makeTickFmt(bucketHours);
+    tokens_per_request: finite(p.tokens_per_request), cache_hit_pct: percentOf(p.cache_hit_rate) }))
+    .filter((p) => Number.isFinite(p.t));
+  const timeDomain = trendTimeDomain(rows, effectiveRange, bucketHours);
+  const tickFormatter = formatClientTime;
   return <div className="grid gap-4 xl:grid-cols-2">
     <DualLineChart title={`${name} · 단위 비용 추이`} subtitle={`비용 기준: ${basisLabel(row.cost_basis)} · 대상 세션 기준`}
-      rows={rows} xKey="t" bucketHours={bucketHours} tickFormatter={tickFormatter} valueTickFormatter={moneyTick}
+      rows={rows} xKey="t" bucketHours={bucketHours} timeDomain={timeDomain} tickFormatter={tickFormatter} valueTickFormatter={moneyTick}
       tooltipFormatter={trendTooltip} zoomDisabled={stale}
       lines={[{ key: "cost_per_user", label: "사용자당 비용", axis: "left" },
         { key: "cost_per_session", label: "세션당 비용", axis: "left" },
         { key: "cost_per_1k_requests", label: "1,000요청당 비용", axis: "right" }]} />
     <DualLineChart title={`${name} · 요청 효율 추이`} subtitle="캐시 히트율 = 캐시 읽기 ÷ (입력 + 캐시 읽기 + 캐시 쓰기)"
-      rows={rows} xKey="t" bucketHours={bucketHours} tickFormatter={tickFormatter} valueTickFormatter={numberTick}
+      rows={rows} xKey="t" bucketHours={bucketHours} timeDomain={timeDomain} tickFormatter={tickFormatter} valueTickFormatter={numberTick}
       tooltipFormatter={trendTooltip} zoomDisabled={stale}
       lines={[{ key: "tokens_per_request", label: "요청당 토큰", axis: "left" },
         { key: "cache_hit_pct", label: "캐시 히트율 (%)", axis: "right" }]} />
@@ -207,26 +217,31 @@ const unavailableRow = (row) => ({ client: row.client, reason: row.unavailable?.
 
 // A known cost subtotal (some matched sessions lack usage rows for the model) is labelled
 // 부분합 in the table and the CSV (ADR-013); an unknown cost is —, never $0.
-const partialCost = (key, label) => ({ key, label,
+// The CSV keeps numeric amounts and counts; coverage is the separate 사용량 상태 column.
+const partialMeasure = (key, label, format) => ({ key, label,
   render: (v, row) => row.reason ? <ReasonBadge reason={row.reason} />
-    : <span className="inline-flex items-center gap-1.5">{money(v)}{row.cost_partial && v !== null && <Badge tone="warning">부분합</Badge>}</span>,
-  toText: (v, row) => row.reason ? reasonLabel(row.reason) : v == null ? "" : row.cost_partial ? `${v} (부분합)` : v });
+    : <span className="inline-flex items-center gap-1.5">{format(v)}{row.cost_partial && v !== null && <Badge tone="warning">부분합</Badge>}</span>,
+  toText: (v, row) => row.reason ? reasonLabel(row.reason) : v ?? "" });
+const usageStatus = (row) => row.reason ? "" : row.cost === null ? "미확인" : row.cost_partial ? "부분합" : "확인됨";
 
 // ④ Model economics over matched sessions.
 export const MODEL_COLUMNS = [CLIENT,
   { key: "model", label: "모델", render: (v, row) => row.reason ? "—" : <span className="block min-w-[8rem] break-all">{v || "—"}</span>,
     toText: (v, row) => row.reason ? "" : v ?? "" },
-  partialCost("cost", "비용 (USD)"), measure("request_pct", "요청 점유율 (%)", formatPercent),
-  measure("requests", "요청"), measure("tokens", "토큰"),
-  partialCost("cost_per_million_tokens", "$ / 100만 토큰"),
+  partialMeasure("cost", "비용 (USD)", money), measure("request_pct", "요청 점유율 (%)", formatPercent),
+  measure("requests", "요청"), partialMeasure("tokens", "토큰", formatObserved),
+  partialMeasure("cost_per_million_tokens", "$ / 100만 토큰", money),
   { key: "small", label: "소형 모델", render: (v, row) => row.reason ? "—" : v ? <Badge tone="brand">소형</Badge> : "—",
-    toText: (v, row) => row.reason ? "" : v ? "소형" : "" }];
+    toText: (v, row) => row.reason ? "" : v ? "소형" : "" },
+  { key: "usage_status", label: "사용량 상태", render: (v, row) => row.reason ? "—" : v,
+    toText: (v, row) => row.reason ? "" : v }];
 export function modelRows(rows) {
   return rows.flatMap((row) => !Array.isArray(row.models) ? [unavailableRow(row)]
     : row.models.map((m) => ({ client: row.client, model: m.model, cost: finite(m.cost),
       cost_partial: m.cost_partial === true && finite(m.cost) !== null, requests: finite(m.requests),
       request_pct: percentOf(m.request_share), tokens: finite(m.tokens),
-      cost_per_million_tokens: finite(m.cost_per_million_tokens), small: m.small === true })));
+      cost_per_million_tokens: finite(m.cost_per_million_tokens), small: m.small === true }))
+      .map((m) => ({ ...m, usage_status: usageStatus(m) })));
 }
 
 // ⑤ Outcome cost. A ratio without its count is unavailable; with an observed count but no
@@ -319,7 +334,8 @@ export default function TokenEconomics({ api, range, clients, stale = false }) {
       <SectionLabel>토큰 경제 · 드라이버 분해</SectionLabel>
       {multi ? <CombinedDrivers combined={data.combined} rows={rows} bases={bases} /> : <ClientWaterfall row={single} />}
       <SectionLabel>토큰 경제 · 단위 경제 추이</SectionLabel>
-      {rows.map((row) => <UnitTrend key={row.client} row={row} bucketHours={Number(data.bucket_hours) || 1} stale={pending} />)}
+      {rows.map((row) => <UnitTrend key={row.client} row={row} bucketHours={Number(data.bucket_hours) || 1}
+        effectiveRange={data.effective_range} stale={pending} />)}
       <SectionLabel>토큰 경제 · 모델 · 성과</SectionLabel>
       <div className="grid gap-4 xl:grid-cols-2">
         <DataTable title="모델 경제" subtitle="대상 세션 기준 · 비용 순. 요청 점유율은 클라이언트 안에서의 비중입니다."
