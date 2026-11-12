@@ -8,7 +8,7 @@ import { ValidationError, NotFoundError } from "./http.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
-  CODEX_COMPLETION_LIMIT, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
+  CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
   foldCodexTask, claudeCostSql, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
@@ -97,7 +97,7 @@ SELECT t.TraceId AS trace_id, t.started_at AS started_at, t.start_ms AS start_ms
     t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, t.owner AS owner,
     -- The list's workflow pairs over every span of the trace, unaffected by SPAN_BOUND.
     (SELECT groupUniqArrayIf([SpanAttributes['workflow.run_id'], SpanAttributes['workflow.name']],
-        SpanAttributes['workflow.run_id'] != '')
+        ${WORKFLOW_RUN_ID_SQL("SpanAttributes['workflow.run_id']")})
       FROM claude_code.otel_traces
       WHERE Timestamp >= {from:DateTime} AND Timestamp < {spanTo:DateTime}
         AND TraceId = {traceId:String}) AS workflows

@@ -38,6 +38,8 @@ export const TURN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 export const isUniqueTurnId = (id) => typeof id === "string" && TURN_ID.test(id);
 // Claude Code workflow run ids carry the `wf_` prefix; identifier characters only.
 export const WORKFLOW_RUN_ID = /^wf_[A-Za-z0-9_-]{1,128}$/;
+// The same shape in SQL, so a filter never matches a pair that workflowPairs() would drop.
+export const WORKFLOW_RUN_ID_SQL = (expr) => `match(${expr}, '^wf_[A-Za-z0-9_-]{1,128}$')`;
 // Workflow names are script-chosen labels. Device collectors keep only names matching this
 // pattern (dashboard/collector/privacy-processors.yaml); the API applies it to every source.
 export const WORKFLOW_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -140,7 +142,7 @@ export function claudeTaskListSql(from, to, q) {
         sumIf(ifNull(input_tokens + cache_read_tokens + cache_creation_tokens + output_tokens, 0),
           SpanType = 'llm_request') AS sort_tokens,
         groupUniqArrayIf(Model, SpanType = 'llm_request' AND Model != '') AS raw_models,
-        groupUniqArrayIf([workflow_run_id, workflow_name], workflow_run_id != '') AS workflows,
+        groupUniqArrayIf([workflow_run_id, workflow_name], ${WORKFLOW_RUN_ID_SQL("workflow_run_id")}) AS workflows,
         groupArrayIf([request_id, Model, ifNull(toString(input_tokens), ''),
           ifNull(toString(cache_read_tokens), ''), ifNull(toString(cache_creation_tokens), ''),
           ifNull(toString(output_tokens), '')], SpanType = 'llm_request') AS calls

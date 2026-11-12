@@ -609,7 +609,8 @@ trace-enabled clients' spans. Codex turns are all costed before sorting. A Claud
 `output` from span attributes, `observed_tokens`, `tokens_partial`; unknown is null)
 and `cost_usd`/`cost_partial`/`cost_basis`. Claude tasks add `workflows`: one
 `{run_id, name}` per distinct valid run id on any of the trace's spans, sorted by run id
-(`[]` when none); `name` is null when missing or not label-shaped. Device collectors drop
+(`[]` when none); `name` is null when missing or not label-shaped, and the smallest valid
+label wins if spans of one run disagree. Only `wf_`-shaped run ids count, for the filters too. Device collectors drop
 names that are not label-shaped before ingest. Per call: Anthropic models use the
 `api_request` `cost_usd` joined by request id (`client_reported`), else `computeCost()`
 (`computed`); non-Anthropic models use the ADR-017 per-request AWS list estimate

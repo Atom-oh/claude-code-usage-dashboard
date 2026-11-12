@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
   sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId, COST_CANDIDATES,
-  workflowPairs } from "./taskTraces.js";
+  workflowPairs, WORKFLOW_RUN_ID } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -123,7 +123,10 @@ test("claudeTaskListSql filters workflow runs through a bound param over every s
   assert.ok(sql.includes("SpanAttributes['workflow.run_id'] AS workflow_run_id"));
   assert.ok(sql.includes("SpanAttributes['workflow.name'] AS workflow_name"));
   // Collected over all spans of the trace (agent spans), not only llm_request spans.
-  assert.ok(sql.includes("groupUniqArrayIf([workflow_run_id, workflow_name], workflow_run_id != '') AS workflows"));
+  assert.ok(sql.includes("groupUniqArrayIf([workflow_run_id, workflow_name], match(workflow_run_id, '^wf_[A-Za-z0-9_-]{1,128}$')) AS workflows"));
+  // SQL and fold agree on the run id shape, so a name match never reports an empty workflows list.
+  for (const id of ["wf_a", "wf_a-B_9", "wf_" + "a".repeat(128)]) assert.ok(WORKFLOW_RUN_ID.test(id));
+  for (const id of ["wf_", "x_a", "wf_a b", "wf_" + "a".repeat(129)]) assert.ok(!WORKFLOW_RUN_ID.test(id));
   assert.ok(sql.includes("AND arrayExists(w -> w[1] = {workflowRunId:String}, s.workflows)"));
   assert.ok(!sql.includes("{workflowName:String}"));
   const named = claudeTaskListSql(from, to,
