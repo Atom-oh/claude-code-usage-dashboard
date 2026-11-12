@@ -8,8 +8,9 @@ export const BUNDLES = {
 };
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-// Zero denominators yield 0, never NaN/Infinity; lmdi reports the zero as zero_factor.
-const ratio = (a, b) => (b > 0 ? a / b : 0);
+// A zero denominator leaves the ratio undefined (null), never 0, NaN or Infinity; the known
+// totals stay and lmdi reports the missing factor as zero_factor.
+const ratio = (a, b) => (b > 0 ? a / b : null);
 
 export function chain(totals = {}) {
   const t = {
@@ -105,7 +106,9 @@ export function matchSessions(usage = [], turns = [], { bucket = "" } = {}) {
     if (turnN === 0) exclusion = "no_turns";
     else if (requests === 0) exclusion = "no_requests";
     else if (!s.usage.length || s.usage.some((r) => nn(r.cost_usd) === null)) exclusion = "cost_incomplete";
-    else if (s.usage.some((r) => nn(r.tokens) === null)) exclusion = "tokens_invalid";
+    // Requests with zero canonical tokens leave cost per token undefined (cost and token
+    // counters are separate series and can diverge at a window edge).
+    else if (s.usage.some((r) => nn(r.tokens) === null) || sumKnown(s.usage, "tokens") === 0) exclusion = "tokens_invalid";
 
     const bases = [...new Set(s.usage.map((r) => r.cost_basis).filter(Boolean))];
     return {
