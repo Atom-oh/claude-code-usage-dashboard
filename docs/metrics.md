@@ -280,7 +280,7 @@ independently, so bucket values need not combine to the window value.
 |---|---|
 | Cost per user / session / 1,000 requests | cost / users, / sessions, / (requests / 1000) |
 | Tokens per request | tokens / requests |
-| Model economics | Per normalized model: cost, request share, cost per 1M tokens; `small` marks Haiku/Luna families |
+| Model economics | Per normalized model: cost, request share, cost per 1M tokens; `small` marks Haiku/Luna families. A model with requests but no counter usage rows has unknown cost and tokens (shown as —), and `cost_partial` marks a known subtotal |
 | Outcome cost (Claude) | cost / commits, / PRs, / (added lines / 1000); counter increases (`incFlat`) of matched sessions |
 | Exemplars | Users with at least 5 matched sessions and 20 turns; median and top 3 per lever: tokens per request and requests per turn (lower), cache hit rate and small-model request share (higher) |
 
