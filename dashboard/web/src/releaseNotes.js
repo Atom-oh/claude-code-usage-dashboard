@@ -9,6 +9,37 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.5.1",
+    date: "2026-11-12",
+    summary: "Productivity 맨 위에 토큰 경제 비용 방정식을 추가하고 Codex 상세 화면의 안내 문구를 정리했습니다.",
+    items: [
+      {
+        kind: "new",
+        title: "토큰 경제 비용 방정식",
+        body: "총 비용을 사용자 × 세션/사용자 × 턴/세션 × 요청/턴 × 토큰/요청 × 토큰당 단가로 나눠 직전 같은 길이 기간과 비교합니다. 비용 변화를 성장·낭비·단가 항목별 금액으로 분해하고, 단위 비용 추이, 모델 경제, 커밋·PR·추가 라인당 비용(Claude Code만), 사용 방식을 물어볼 모범 사용자를 보여줍니다. 운영자가 세션 턴 집계를 활성화하기 전에는 값 대신 '백필 전'으로 표시합니다. 관측된 텔레메트리 활동 기준이며 생산성·성과 평가가 아닙니다.",
+        to: "/productivity",
+        where: "Productivity → 맨 위 토큰 경제",
+        refs: [249, 250],
+      },
+      {
+        kind: "new",
+        title: "Claude Code 워크플로 실행별 작업 조회",
+        body: "사용자 작업 API에서 Claude Code 워크플로 실행 ID나 이름으로 작업을 거를 수 있고, 작업과 작업 상세가 관련 워크플로 실행을 함께 알려줍니다. 트레이스를 보내는 클라이언트에서만 값이 있습니다.",
+        to: null,
+        where: "API: /api/users/tasks (workflowRunId, workflowName)",
+        refs: [247],
+      },
+      {
+        kind: "improved",
+        title: "Codex 상세 안내 간소화",
+        body: "Codex 상세 제목 아래의 긴 비용 안내와 조회 기간을 제목 옆 정보 아이콘으로 옮기고, 화면 상단의 공통 비용 안내 배너를 없앴습니다. 지표별 비용 기준·부분합·토큰 범위 표시는 그대로입니다.",
+        to: "/cost",
+        where: "Cost → Codex 상세",
+        refs: [246],
+      },
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-11-11",
     summary: "90일 활동 히트맵의 데이터 조회 오류를 고치고 AWS 모델 가격 목록을 갱신했습니다.",
