@@ -2,6 +2,7 @@ import express from "express";
 import { codexInsights, validateInsightsExactFilters, validateInsightsProfile } from "./codexInsights.js";
 import { claudeEffort, validateClaudeEffort } from "./claudeEffort.js";
 import { clientProductivity } from "./clientProductivity.js";
+import { clientTokenEconomics, tokenEconomicsWindow } from "./clientTokenEconomics.js";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -287,7 +288,8 @@ function cacheKey(path, query) {
   if (path === "/api/users/tasks") return `${path}?${taskCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort"
-      || path === "/api/clients/productivity" || path === "/api/clients/activity") {
+      || path === "/api/clients/productivity" || path === "/api/clients/activity"
+      || path === "/api/clients/token-economics") {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
       : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
@@ -306,6 +308,12 @@ function cacheKey(path, query) {
           ? 600 : clientNativeBucketSeconds(from, end);
         return { bucketSeconds: String(clientBucketSeconds(from, end, query.intervalHours, nativeSeconds)),
           nativeSeconds: String(nativeSeconds), effectiveTo: end.toISOString() };
+      })() : path === "/api/clients/token-economics" ? (() => {
+        // Hour-aligned window and bucket grid; readiness also depends on the clock, which the
+        // cache TTL bounds.
+        const { from, to } = parseRange(query, RANGE_OPTS);
+        const w = tokenEconomicsWindow(from, to, filters.clients, query.intervalHours);
+        return { effectiveFrom: w.from.toISOString(), effectiveTo: w.to.toISOString(), bucketSeconds: String(w.bucketSeconds) };
       })() : path === "/api/clients/productivity" || path === "/api/clients/activity" ? (() => {
         const { from, to } = parseRange(query, RANGE_OPTS);
         return { effectiveTo: effectiveClientEnd(from, to, filters.clients).toISOString() };
@@ -398,6 +406,12 @@ route("/api/clients/overview",
 // Shared Productivity rows; users/sessions/tokens/costs stay in the overview response.
 route("/api/clients/productivity",
   (from, to, raw) => clientProductivity(from, to, raw, clientConfig.enabledClients),
+  { client: null, warm: false, validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
+
+// Token economics (cost chain, decomposition, unit/model/outcome economics, exemplars) over
+// session_turns_v1 and the overview's priced usage rows; unavailable until SESSION_TURNS_READ_FROM.
+route("/api/clients/token-economics",
+  (from, to, raw) => clientTokenEconomics(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: false, validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
 
 route("/api/codex/insights", (from, to, raw) => codexInsights(from, to, raw),

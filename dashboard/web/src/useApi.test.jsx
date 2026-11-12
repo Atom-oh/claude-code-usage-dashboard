@@ -477,6 +477,17 @@ test("path and non-range extra param changes still clear; a local intervalHours 
   expect(hook.state.data).toBeNull();
 });
 
+test("token economics keeps its trend interval while productivity drops it", async () => {
+  const pending = stubPending();
+  const probeProps = { path: "/api/clients/token-economics", params: { client: "claude", intervalHours: 6 } };
+  const view = mount({ probeProps });
+  await waitFor(() => expect(pending).toHaveLength(1));
+  expect(new URLSearchParams(pending[0].url.split("?")[1]).get("intervalHours")).toBe("6");
+  view.rerender(<Fixture probeProps={{ ...probeProps, path: "/api/clients/productivity" }} />);
+  await waitFor(() => expect(pending).toHaveLength(2));
+  expect(new URLSearchParams(pending[1].url.split("?")[1]).get("intervalHours")).toBeNull();
+});
+
 test("a client extra param change still clears the previous selection", async () => {
   const pending = stubPending();
   const probeProps = { path: "/api/clients/overview", params: { client: "codex" } };

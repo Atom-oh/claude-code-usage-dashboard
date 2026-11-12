@@ -96,11 +96,12 @@ server.closeAllConnections();server.close();db.closeAllConnections();db.close();
 process.exit(0);
 `;
 const range = "from=2026-09-14T00:00:00Z&to=2026-09-15T00:00:00Z";
-async function scenario(claude, codex, paths, role = "") {
+async function scenario(claude, codex, paths, role = "", extraEnv = {}) {
   const { stdout, stderr } = await run(process.execPath, ["--input-type=module", "-e", script], {
     cwd: new URL(".", import.meta.url),
     env: { ...process.env, CLAUDE_ENABLED: String(claude), CODEX_ENABLED: String(codex),
-      CODEX_PRICING_JSON: "", CLIENT_REQUESTS: JSON.stringify(paths), FIXTURE_OIDC_ROLE: role },
+      CODEX_PRICING_JSON: "", CLIENT_REQUESTS: JSON.stringify(paths), FIXTURE_OIDC_ROLE: role,
+      SESSION_TURNS_READ_FROM: "", ...extraEnv },
     timeout: 15000,
   });
   const out = JSON.parse(stdout.trim().split("\n").at(-1));
@@ -219,6 +220,37 @@ test("shared productivity rows gate clients and filters before queries and isola
   assert.equal(both[1].body.by_client[0].prompts, 1);
   assert.equal(both[2].dataQueries, 1);
   assert.equal(both[3].dataQueries, 0);
+});
+
+test("token economics route validates filters before queries and gates unbackfilled windows", async () => {
+  const base = `/api/clients/token-economics?${range}`;
+  const rows = await scenario(true, true, [`${base}&unauth=1`, `${base}&client=all`, `${base}&client=other`,
+    `${base}&group=bedrock`, `${base}&backend=bedrock`]);
+  assert.equal(rows[0].status, 401);
+  assert.equal(rows[1].status, 200);
+  assert.equal(rows[1].cache, "no-store");
+  assert.deepEqual(rows[1].body.by_client.map((row) => row.client), ["claude", "codex"]);
+  assert.equal(rows[1].body.by_client[0].unavailable.chain, "not_backfilled");
+  assert.equal(rows[1].body.by_client[0].current, null);
+  assert.equal(rows[1].body.combined.cost, null);
+  assert.equal(rows[1].dataQueries, 0);
+  for (const row of rows.slice(2)) {
+    assert.equal(row.status, 400);
+    assert.equal(row.dataQueries, 0);
+  }
+  // A ready window runs the real SQL builders against the fixture.
+  const day = 86400000, start = Math.floor(Date.now() / day) * day - 2 * day;
+  const ready = `/api/clients/token-economics?from=${new Date(start).toISOString()}&to=${new Date(start + day).toISOString()}`;
+  const [both, cached, codex] = await scenario(true, true, [`${ready}&client=all`, `${ready}&client=all`, `${ready}&client=codex`], "",
+    { SESSION_TURNS_READ_FROM: new Date(start - 2 * day).toISOString().replace(".000Z", "Z") });
+  assert.equal(both.status, 200);
+  assert.ok(both.dataQueries > 0);
+  assert.equal(both.body.bucket_hours, 1);
+  assert.equal(both.body.by_client[0].coverage.matched_sessions, 0);
+  assert.equal(both.body.by_client[1].unavailable.outcome, "not_collected");
+  assert.equal(cached.dataQueries, 0);
+  assert.deepEqual(codex.body.by_client.map((row) => row.client), ["codex"]);
+  assert.ok(codex.dataQueries > 0);
 });
 
 test("chat serves Codex-only deployments behind the unchanged auth and readonly gates", async () => {
