@@ -16,9 +16,9 @@ FROM (
       nullIf(ResourceAttributes['enduser.id'], ''), '') AS UserIdentity,
     if(EventName IN ('api_request', 'claude_code.api_request'), 'request', 'turn') AS Kind,
     if(EventName IN ('api_request', 'claude_code.api_request'), LogAttributes['model'], '') AS Mdl,
-    multiIf(EventName IN ('user_prompt', 'claude_code.user_prompt'), multiIf(PromptId != '', concat('p:', PromptId), LogAttributes['event.sequence'] != '', concat('s:', LogAttributes['event.sequence'], ':', toString(Timestamp)), concat('r:', toString(Timestamp), ':', toString(cityHash64(toString(mapSort(LogAttributes)))))),
-      EventName IN ('api_request', 'claude_code.api_request'), if(LogAttributes['event.sequence'] != '', concat('s:', LogAttributes['event.sequence'], ':', toString(Timestamp)), concat('r:', toString(Timestamp), ':', toString(cityHash64(toString(mapSort(LogAttributes)))))),
-      concat(toString(Timestamp), toString(mapSort(ResourceAttributes)), toString(mapSort(LogAttributes)))) AS Key
+    multiIf(EventName IN ('user_prompt', 'claude_code.user_prompt'), multiIf(PromptId != '', concat('p:', PromptId), LogAttributes['event.sequence'] != '', concat('s:', LogAttributes['event.sequence'], ':', toString(toTimeZone(Timestamp, 'UTC'))), concat('r:', toString(toTimeZone(Timestamp, 'UTC')), ':', toString(cityHash64(toString(mapSort(LogAttributes)))))),
+      EventName IN ('api_request', 'claude_code.api_request'), if(LogAttributes['event.sequence'] != '', concat('s:', LogAttributes['event.sequence'], ':', toString(toTimeZone(Timestamp, 'UTC'))), concat('r:', toString(toTimeZone(Timestamp, 'UTC')), ':', toString(cityHash64(toString(mapSort(LogAttributes)))))),
+      concat(toString(toTimeZone(Timestamp, 'UTC')), toString(mapSort(ResourceAttributes)), toString(mapSort(LogAttributes)))) AS Key
   FROM claude_code.otel_logs
   WHERE (EventName IN ('user_prompt', 'claude_code.user_prompt') OR EventName IN ('api_request', 'claude_code.api_request') OR EventName = 'codex.user_prompt') AND (Timestamp >= {backfillFrom:DateTime('UTC')} AND Timestamp < {backfillTo:DateTime('UTC')})
 )

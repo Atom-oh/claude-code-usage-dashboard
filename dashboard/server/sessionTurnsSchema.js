@@ -13,9 +13,12 @@ const ORDER = "Client, SessionId, hour, Kind, Model, UserIdentity";
 // Claude Code resumes may restart sequences and duplicate deliveries repeat
 // Timestamp, so a record is identified by prompt id, sequence or content hash.
 // `prefix` is a table alias ("l.") or empty.
-const recordKey = prefix => `concat('r:', toString(${prefix}Timestamp), ':', toString(cityHash64(toString(mapSort(${prefix}LogAttributes)))))`;
+// Timestamps are formatted in UTC: the view and a backfill under another session_timezone
+// must produce the same key for one record (as migration 008's identity key does).
+const utc = prefix => `toString(toTimeZone(${prefix}Timestamp, 'UTC'))`;
+const recordKey = prefix => `concat('r:', ${utc(prefix)}, ':', toString(cityHash64(toString(mapSort(${prefix}LogAttributes)))))`;
 const sequence = prefix => `${prefix}LogAttributes['event.sequence']`;
-const sequenceKey = prefix => `concat('s:', ${sequence(prefix)}, ':', toString(${prefix}Timestamp))`;
+const sequenceKey = prefix => `concat('s:', ${sequence(prefix)}, ':', ${utc(prefix)})`;
 
 export function claudeTurnKeySql(prefix = "") {
   return `multiIf(${prefix}PromptId != '', concat('p:', ${prefix}PromptId), ${sequence(prefix)} != '', ${sequenceKey(prefix)}, ${recordKey(prefix)})`;
@@ -28,7 +31,7 @@ export function claudeCallKeySql(prefix = "") {
 const CLAUDE_PROMPT = "EventName IN ('user_prompt', 'claude_code.user_prompt')";
 const CLAUDE_REQUEST = "EventName IN ('api_request', 'claude_code.api_request')";
 const CODEX_PROMPT = "EventName = 'codex.user_prompt'";
-const CODEX_KEY = "concat(toString(Timestamp), toString(mapSort(ResourceAttributes)), toString(mapSort(LogAttributes)))";
+const CODEX_KEY = `concat(${utc("")}, toString(mapSort(ResourceAttributes)), toString(mapSort(LogAttributes)))`;
 export const codexTurnKeySql = () => CODEX_KEY;
 
 // One row per source record with its derived columns; Sid is the session.
