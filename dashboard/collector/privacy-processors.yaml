@@ -1,5 +1,5 @@
   # Device packages may inherit content opt-ins. Keep trace schema measurements,
-  # but never trace events/links, free-text status, dynamic names or content keys.
+  # but never trace events/links, free-text status, dynamic span names or content keys.
   filter/claude_trace_content:
     error_mode: propagate
     traces:
@@ -29,7 +29,7 @@
             "agent_id", "parent_agent_id", "model", "decision", "app.entrypoint",
             "interaction.sequence", "interaction.duration_ms", "user_prompt_length",
             "parent.source", "gen_ai.system", "gen_ai.request.model", "query_source_safe",
-            "workflow.run_id", "speed", "effort", "llm_request.context", "first_content_ms",
+            "workflow.run_id", "workflow.name", "speed", "effort", "llm_request.context", "first_content_ms",
             "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
             "request_id", "gen_ai.response.id", "client_request_id", "attempt", "success",
             "status_code", "error_class", "response.has_tool_call", "stop_reason",
@@ -37,6 +37,8 @@
             "bash_argv0", "result_tokens", "tool_use_id", "gen_ai.tool.call.id", "source",
             "hook_event", "num_hooks", "num_success", "num_blocking",
             "num_non_blocking_error", "num_cancelled"])
+          # Workflow names are script-chosen: keep only short labels, never free text.
+          - delete_key(attributes, "workflow.name") where attributes["workflow.name"] != nil and not IsMatch(attributes["workflow.name"], "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
           - set(status.message, "")
           - set(trace_state, "")
           - set(name, "claude_code.operation") where not IsMatch(name, "^(claude_code[.])?(interaction|llm_request|tool|tool[.]blocked_on_user|tool[.]execution|hook)$")

@@ -125,6 +125,7 @@ class Runtime(unittest.TestCase):
                 "startTimeUnixNano": "1792540700000000000", "endTimeUnixNano": "1792540800000000000",
                 "attributes": attributes({"session.id": client + "-session", "span.type": "llm_request",
                                           "model": "fixture-model", "ttft_ms": "10",
+                                          "workflow.run_id": "wf_fixture", "workflow.name": "review-changes",
                                           "new_context": "sensitive-context", "tool_input": "sensitive-input"}),
                 "status": {"message": "sensitive-error", "code": 2},
                 "events": [{"timeUnixNano": "1792540750000000000", "name": "tool.output",
@@ -160,6 +161,8 @@ class Runtime(unittest.TestCase):
                         if key == "resourceSpans":
                             span = resource["scopeSpans"][0]["spans"][0]
                             self.assertEqual(values(span["attributes"])["ttft_ms"], "10")
+                            self.assertEqual(values(span["attributes"])["workflow.run_id"], "wf_fixture")
+                            self.assertEqual(values(span["attributes"])["workflow.name"], "review-changes")
                     if key == "resourceMetrics":
                         metric = resource["scopeMetrics"][0]["metrics"][0]["sum"]
                         self.assertEqual(metric["aggregationTemporality"], 2)
