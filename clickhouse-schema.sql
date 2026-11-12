@@ -496,9 +496,9 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_traces
     Decision        LowCardinality(String) MATERIALIZED SpanAttributes['decision'],
     ProjectName     LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
     Entrypoint      LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint'],
-    -- Claude Code workflow run id (`wf_` prefix); empty outside workflow runs (migration 010).
+    -- Claude Code workflow run id (`wf_` prefix), empty outside workflow runs (migration 010).
     WorkflowRunId   String MATERIALIZED SpanAttributes['workflow.run_id'],
-    -- Script-chosen label; device collectors keep only label-shaped names (migration 010).
+    -- Script-chosen label, device collectors keep only label-shaped names (migration 010).
     WorkflowName    LowCardinality(String) MATERIALIZED SpanAttributes['workflow.name']
 )
 -- 로컬 참조 사본이라 삭제 TTL만(cold tier 없음) — otel_logs와 동일 정책(90일), 라이브는
