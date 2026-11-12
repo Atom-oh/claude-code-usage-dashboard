@@ -798,3 +798,27 @@ test("Productivity folds the Codex efficiency block into Cost and keeps the scop
   expect(screen.queryByRole("heading", { name: "Codex 상세" })).toBeNull();
   expect(requests(fetchMock).some((url) => url.pathname === "/api/codex/insights")).toBe(false);
 });
+
+test("Productivity requests token economics over the overview's effective bounds before the shared panels", async () => {
+  const window = { from: "2026-09-01T00:00:00.000Z", to: "2026-09-08T00:00:00.000Z" };
+  const economics = { effective_range: window, previous_range: { from: "2026-08-25T00:00:00.000Z", to: window.from },
+    bucket_hours: 24, by_client: [{ client: "codex", cost_basis: "aws_list_estimate", current: null, previous: null,
+      decomposition: { contributions: null, bundles: null, total_change: null, unavailable: "not_backfilled" },
+      unavailable: { chain: "not_backfilled", decomposition: "not_backfilled", outcome: "not_collected" },
+      coverage: null, previous_coverage: null, trend: null, models: null, outcome: null, previous_outcome: null,
+      exemplars: null }],
+    combined: { cost: null, previous_cost: null, decomposition: { contributions: null, bundles: null,
+      total_change: null, unavailable: "not_backfilled" } } };
+  const { fetchMock } = mount({ enabledClients: ["codex"], entry: "/productivity?days=7",
+    response: clientOverview({ effective_range: { ...window, requested_to: window.to } }),
+    other: (u) => u.pathname === "/api/clients/token-economics" ? economics : undefined });
+  const section = await screen.findByRole("region", { name: "토큰 경제" });
+  const request = requests(fetchMock).find((url) => url.pathname === "/api/clients/token-economics");
+  expect(request.searchParams.get("from")).toBe(window.from);
+  expect(request.searchParams.get("to")).toBe(window.to);
+  expect(request.searchParams.get("intervalHours")).toBe("24");
+  await waitFor(() => expect(within(section).getAllByText("백필 전").length).toBeGreaterThan(0));
+  const panels = document.querySelector("[data-shared-client-panels]");
+  expect(panels).not.toBeNull();
+  expect(section.compareDocumentPosition(panels) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

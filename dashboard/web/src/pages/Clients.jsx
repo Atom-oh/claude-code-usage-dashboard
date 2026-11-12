@@ -17,6 +17,7 @@ import { SegmentedControl } from "../components/SegmentedControl.jsx";
 import { costDefaultResolution, costResolutionLabel, costResolutionOptions } from "../costResolution.js";
 import CostBreakdowns from "../components/CostBreakdowns.jsx";
 import { hasProductivityObservations } from "../clientProductivity.js";
+import TokenEconomics from "./TokenEconomics.jsx";
 
 // Productivity carries no Codex insights block: its tool/approval/latency sections cover every
 // client, and the Codex efficiency summary and effort table stay on Cost.
@@ -72,6 +73,9 @@ export default function Clients({ page = "overview" }) {
   // Productivity rows join the overview's by_client rows over the overview's effective bounds.
   const productivity = useApi("/api/clients/productivity", { client, ...effortBounds },
     page === "productivity" && !loading && !error && Boolean(effortBounds.from), { linkedRange: true, hold: stale });
+  // Token economics floors the same bounds to the hour; its trend follows the range's bucket.
+  const tokenEconomics = useApi("/api/clients/token-economics", { client, intervalHours: hours, ...effortBounds },
+    page === "productivity" && !loading && !error && Boolean(effortBounds.from), { linkedRange: true, hold: stale });
   // The overview's observed records omit productivity-only evidence (prompts, spans, outcome
   // and active-time counters), so on Productivity an empty overview waits for the productivity
   // response and shows the sections when it has observations.
@@ -113,10 +117,12 @@ export default function Clients({ page = "overview" }) {
         <p className="w-full text-[12px] text-ink-500">1일 이하는 10분까지 선택할 수 있습니다. 더 긴 기간은 시간·일·주 단위로 집계합니다.</p>
       </div>}
       {loading || productivityPending ? <Loading /> : error ? <ErrorBox error={error} /> : pageEmpty ? <EmptyState />
-        : <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}|${team}`}
+        : <>{productivityPage && <TokenEconomics api={tokenEconomics} range={data?.effective_range}
+          clients={clients} stale={stale} />}
+        <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}|${team}`}
           page={page} data={data} clients={clients} stale={stale}
           previous={page === "trends" ? previous : undefined} breakdowns={breakdowns}
-          productivity={page === "productivity" ? productivity : undefined} /></section>}
+          productivity={page === "productivity" ? productivity : undefined} /></section></>}
       {(loading || error || pageEmpty) && breakdowns}
       {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
       {sections && clients.includes("codex") && <CodexInsights sections={sections}
