@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-11-12
+
 ### Added
 
 - Migration 010 adds `session_turns_v1`, exact per-session-hour turn/request key sets with an ingestion view, bounded backfill and a read-only raw-log comparison (`clickhouse-verify-010.sql`) that gates activation. Token economics (below) reads it; see [Session turns](docs/runbooks/schema-migrations.md#session-turns-migration-010) in the schema migrations runbook.
