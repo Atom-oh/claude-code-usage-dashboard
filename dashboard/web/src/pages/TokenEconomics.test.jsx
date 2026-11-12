@@ -5,7 +5,8 @@ import { RangeProvider } from "../RangeContext.jsx";
 import { ConfigProvider } from "../ConfigContext.jsx";
 import { maskEmail, setPiiMask } from "../fmt.js";
 import { TERM_LABELS } from "../tokenEconomics.js";
-import TokenEconomics from "./TokenEconomics.jsx";
+import TokenEconomics, { MODEL_COLUMNS, modelRows } from "./TokenEconomics.jsx";
+import { toCsv } from "../csv.js";
 
 class ResizeObserverStub {
   observe() {}
@@ -112,6 +113,28 @@ test("Codex outcome renders 미수집 and a missing Claude count is never zero",
   expect(within(table).getByText("관측된 텔레메트리 활동 기준 · 머지된 PR/검증된 성과 아님")).toBeTruthy();
   const commits = within(table).getByText("커밋").closest("tr");
   expect(commits.textContent).not.toMatch(/(^|\D)0(\D|$)/);
+});
+
+test("model economics marks a partial cost and never shows an unknown cost as $0", () => {
+  const models = [
+    { model: "claude-sonnet-5-5", cost: 1980, cost_partial: true, requests: 25000, request_share: 0.58,
+      tokens: 800000000, cost_per_million_tokens: 2.4, small: false },
+    { model: "claude-opus-5-5", cost: null, cost_partial: false, requests: 400, request_share: 0.01,
+      tokens: null, cost_per_million_tokens: null, small: false }];
+  mount({ data: response([claude({ models })]) });
+  const table = screen.getByText("모델 경제").closest(".shadow-card");
+  const sonnet = within(table).getByText("claude-sonnet-5-5").closest("tr");
+  expect(within(sonnet).getAllByText("부분합").length).toBe(2);
+  expect(sonnet.textContent).toContain("$1,980");
+  const opus = within(table).getByText("claude-opus-5-5").closest("tr");
+  expect(opus.textContent).not.toContain("$0");
+  expect(opus.textContent).not.toContain("부분합");
+  expect(opus.textContent).toContain("—");
+  const csv = toCsv(MODEL_COLUMNS, modelRows([claude({ models })])).split("\r\n");
+  expect(csv[1]).toContain("1980 (부분합)");
+  expect(csv[1]).toContain("2.4 (부분합)");
+  expect(csv[2]).not.toContain("부분합");
+  expect(csv[2]).not.toMatch(/,0,/);
 });
 
 test("all clients render one strip per client and the combined waterfall", () => {

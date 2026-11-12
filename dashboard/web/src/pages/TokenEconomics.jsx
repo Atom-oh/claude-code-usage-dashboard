@@ -205,18 +205,26 @@ const measure = (key, label, format = formatObserved) => ({ key, label,
 const CLIENT = { key: "client", label: "클라이언트", render: clientName, toText: clientName };
 const unavailableRow = (row) => ({ client: row.client, reason: row.unavailable?.chain || "no_matched_sessions" });
 
+// A known cost subtotal (some matched sessions lack usage rows for the model) is labelled
+// 부분합 in the table and the CSV (ADR-013); an unknown cost is —, never $0.
+const partialCost = (key, label) => ({ key, label,
+  render: (v, row) => row.reason ? <ReasonBadge reason={row.reason} />
+    : <span className="inline-flex items-center gap-1.5">{money(v)}{row.cost_partial && v !== null && <Badge tone="warning">부분합</Badge>}</span>,
+  toText: (v, row) => row.reason ? reasonLabel(row.reason) : v == null ? "" : row.cost_partial ? `${v} (부분합)` : v });
+
 // ④ Model economics over matched sessions.
-const MODEL_COLUMNS = [CLIENT,
+export const MODEL_COLUMNS = [CLIENT,
   { key: "model", label: "모델", render: (v, row) => row.reason ? "—" : <span className="block min-w-[8rem] break-all">{v || "—"}</span>,
     toText: (v, row) => row.reason ? "" : v ?? "" },
-  measure("cost", "비용 (USD)", money), measure("request_pct", "요청 점유율 (%)", formatPercent),
+  partialCost("cost", "비용 (USD)"), measure("request_pct", "요청 점유율 (%)", formatPercent),
   measure("requests", "요청"), measure("tokens", "토큰"),
-  measure("cost_per_million_tokens", "$ / 100만 토큰", money),
+  partialCost("cost_per_million_tokens", "$ / 100만 토큰"),
   { key: "small", label: "소형 모델", render: (v, row) => row.reason ? "—" : v ? <Badge tone="brand">소형</Badge> : "—",
     toText: (v, row) => row.reason ? "" : v ? "소형" : "" }];
-function modelRows(rows) {
+export function modelRows(rows) {
   return rows.flatMap((row) => !Array.isArray(row.models) ? [unavailableRow(row)]
-    : row.models.map((m) => ({ client: row.client, model: m.model, cost: finite(m.cost), requests: finite(m.requests),
+    : row.models.map((m) => ({ client: row.client, model: m.model, cost: finite(m.cost),
+      cost_partial: m.cost_partial === true && finite(m.cost) !== null, requests: finite(m.requests),
       request_pct: percentOf(m.request_share), tokens: finite(m.tokens),
       cost_per_million_tokens: finite(m.cost_per_million_tokens), small: m.small === true })));
 }
@@ -315,7 +323,7 @@ export default function TokenEconomics({ api, range, clients, stale = false }) {
       <SectionLabel>토큰 경제 · 모델 · 성과</SectionLabel>
       <div className="grid gap-4 xl:grid-cols-2">
         <DataTable title="모델 경제" subtitle="대상 세션 기준 · 비용 순. 요청 점유율은 클라이언트 안에서의 비중입니다."
-          help="소형 모델은 서버의 모델 등급 목록(예: Haiku)에 있는 모델이며, 목록에 없는 모델은 소형으로 보지 않습니다."
+          help="소형 모델은 서버의 모델 등급 목록(예: Haiku)에 있는 모델이며, 목록에 없는 모델은 소형으로 보지 않습니다. 요청은 있으나 사용량 카운터가 없는 모델의 비용·토큰은 —, 일부 세션만 확인된 비용은 부분합으로 표시합니다."
           columns={MODEL_COLUMNS} rows={modelRows(rows)} exportName="clients_token_economics_models" stale={pending} />
         <DataTable title="성과 단위 비용" subtitle="관측된 텔레메트리 활동 기준 · 머지된 PR/검증된 성과 아님"
           help="Claude Code 커밋·PR·추가 라인 카운터 증가량을 대상 세션에 한정합니다. 되돌림률·리뷰 수락 같은 품질 지표는 없습니다. 괄호는 직전 기간 대비 변화입니다."

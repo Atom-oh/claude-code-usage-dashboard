@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { BUNDLE_LABELS, BUNDLE_OF, REASON_LABELS, TERM_LABELS, TERMS, changePct, expectedWindow,
+import { UNAVAILABLE_LABELS } from "./clientProductivity.js";
+import { BUNDLE_LABELS, BUNDLE_OF, NOT_OBSERVED_LABEL, REASON_LABELS, TERM_LABELS, TERMS, changePct, expectedWindow,
   responseWindowMatches, waterfallSteps } from "./tokenEconomics.js";
 
 const contributions = { users: 595.8845, sessions_per_user: 79.4409, turns_per_session: -181.9964,
@@ -39,7 +40,11 @@ test("changePct has no percentage for a zero or unknown baseline", () => {
 test("labels cover every term, bundle and server reason", () => {
   expect(REASON_LABELS).toEqual({ not_backfilled: "백필 전", retention: "보존 기간 초과", window_too_short: "기간 짧음",
     no_matched_sessions: "대상 세션 없음", no_users: "식별 사용자 없음", no_previous: "직전 기간 없음",
-    zero_factor: "산출 불가", not_collected: "미수집" });
+    zero_factor: "미산출", not_collected: "미수집" });
+  // Shared vocabulary with the rest of shared Productivity: 미수집 / 미집계 / 미산출.
+  expect(REASON_LABELS.not_collected).toBe(UNAVAILABLE_LABELS.not_collected);
+  expect(REASON_LABELS.zero_factor).toBe(UNAVAILABLE_LABELS.not_derived);
+  expect(NOT_OBSERVED_LABEL).toBe(UNAVAILABLE_LABELS.not_aggregated);
   expect(TERM_LABELS).toEqual({ users: "활성 사용자", sessions_per_user: "세션 / 사용자", turns_per_session: "턴 / 세션",
     requests_per_turn: "요청 / 턴", tokens_per_request: "토큰 / 요청", cost_per_token: "$ / 100만 토큰" });
   expect(BUNDLE_LABELS).toEqual({ growth: "성장", waste: "낭비", price: "단가" });
