@@ -87,11 +87,12 @@ export function matchSessions(usage = [], turns = [], { bucket = "" } = {}) {
     const models = new Map();
     const model = (m) => {
       const id = normalizeModelId(m);
-      if (!models.has(id)) models.set(id, { model: id, cost: 0, tokens: 0, requests: 0 });
+      if (!models.has(id)) models.set(id, { model: id, cost: 0, tokens: 0, requests: 0, usage_rows: 0 });
       return models.get(id);
     };
     for (const r of s.usage) {
       const m = model(r.model);
+      m.usage_rows += 1;
       m.cost += nn(r.cost_usd) ?? 0;
       m.tokens += nn(r.tokens) ?? 0;
       if (codex) m.requests += nn(r.requests) ?? 0;
@@ -158,26 +159,33 @@ export function unitTrend(usage, turns, buckets = []) {
   });
 }
 
+// A model seen only in request rows has no counter usage in that session (window margin or
+// counter/log coverage gap): its cost and tokens there are unknown, not zero. All-unknown is
+// null (ADR-013); a model known in some sessions only is a known subtotal with cost_partial.
 export function modelEconomics(facts = []) {
   const models = new Map();
   for (const f of facts) {
     if (!f.matched) continue;
     for (const m of f.models) {
-      const acc = models.get(m.model) || { model: m.model, cost: 0, requests: 0, tokens: 0 };
+      const acc = models.get(m.model) || { model: m.model, cost: 0, requests: 0, tokens: 0, known: 0, unknown: 0 };
       acc.cost += m.cost; acc.requests += m.requests; acc.tokens += m.tokens;
+      if ((m.usage_rows ?? 1) > 0) acc.known += 1; else acc.unknown += 1;
       models.set(m.model, acc);
     }
   }
   const rows = [...models.values()];
   const totalRequests = rows.reduce((s, m) => s + m.requests, 0);
   return rows
-    .map((m) => ({
+    .map(({ known, unknown, ...m }) => ({
       ...m,
+      cost: known > 0 ? m.cost : null,
+      tokens: known > 0 ? m.tokens : null,
+      cost_partial: known > 0 && unknown > 0,
       request_share: div(m.requests, totalRequests),
-      cost_per_million_tokens: m.tokens > 0 ? (m.cost / m.tokens) * 1e6 : null,
+      cost_per_million_tokens: known > 0 && m.tokens > 0 ? (m.cost / m.tokens) * 1e6 : null,
       small: isSmallModel(m.model),
     }))
-    .sort((a, b) => b.cost - a.cost || (a.model < b.model ? -1 : 1));
+    .sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1) || (a.model < b.model ? -1 : 1));
 }
 
 // OutcomeRow carries `<metric>_observed` flags (in-window counter evidence, ADR-018). A metric

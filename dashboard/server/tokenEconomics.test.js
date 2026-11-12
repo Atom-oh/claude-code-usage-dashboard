@@ -144,6 +144,42 @@ test("small model share", () => {
   assert.equal(m.find((r) => r.model === "claude-haiku-4-5").small, true);
 });
 
+test("model without usage rows is unavailable, not zero", () => {
+  // Claude request rows name a model that has no counter usage row in this session.
+  const usage = [U({ model: "claude-sonnet-4" })];
+  const turns = [T(), T({ kind: "request", model: "claude-sonnet-4", n: 2 }),
+    T({ kind: "request", model: "claude-haiku-4-5", n: 3 })];
+  const [f] = matchSessions(usage, turns);
+  assert.equal(f.matched, true);
+  const haiku = f.models.find((m) => m.model === "claude-haiku-4-5");
+  assert.equal(haiku.usage_rows, 0);
+  const rows = modelEconomics([f]);
+  const h = rows.find((r) => r.model === "claude-haiku-4-5");
+  assert.equal(h.requests, 3);
+  assert.equal(h.request_share, 0.6);
+  assert.equal(h.cost, null);
+  assert.equal(h.tokens, null);
+  assert.equal(h.cost_per_million_tokens, null);
+  assert.equal(h.cost_partial, false);
+  const s = rows.find((r) => r.model === "claude-sonnet-4");
+  assert.equal(s.cost, 1);
+  assert.equal(s.cost_partial, false);
+  assert.equal(rows.at(-1).model, "claude-haiku-4-5");
+});
+
+test("model with usage in only some sessions is a partial known subtotal", () => {
+  const usage = [U({ session: "a", model: "claude-haiku-4-5" }), U({ session: "b", model: "claude-sonnet-4" })];
+  const turns = [
+    T({ session: "a" }), T({ session: "a", kind: "request", model: "claude-haiku-4-5", n: 1 }),
+    T({ session: "b" }), T({ session: "b", kind: "request", model: "claude-sonnet-4", n: 1 }),
+    T({ session: "b", kind: "request", model: "claude-haiku-4-5", n: 1 }),
+  ];
+  const h = modelEconomics(matchSessions(usage, turns)).find((r) => r.model === "claude-haiku-4-5");
+  assert.equal(h.cost, 1);
+  assert.equal(h.requests, 2);
+  assert.equal(h.cost_partial, true);
+});
+
 test("cache hit rate", () => {
   const usage = [U({ cache_read: 900, cache_den: 1000 })];
   const turns = [T({ bucket: "A" }), T({ bucket: "A", kind: "request", model: "claude-sonnet-4", n: 2 })];
