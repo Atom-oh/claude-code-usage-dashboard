@@ -8,6 +8,7 @@ import { foldModelCostCells, MODEL_COST_ROW_LIMIT, TEAM_TREND_TOP, USER_TREND_TO
 import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetrics.js";
 import { knownReportedCost } from "./reportedCost.js";
 import { foldSessionTurns } from "./sessionTurns.js";
+import { claudeCallKeySql, claudeTurnKeySql } from "./sessionTurnsSchema.js";
 
 // Every query here goes through this wrapper: a query that prices Claude cost counters
 // (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-017).
@@ -1494,11 +1495,8 @@ export async function costByTeam(from, to, filters = {}) {
 
 // Session turns (docs/metrics.md): counter known costs and deduplicated logs over the same
 // bounds. A duplicate delivery repeats Timestamp; a resumed process may restart sequences.
-const SEQUENCE = "l.LogAttributes['event.sequence']";
-const RECORD_KEY = "concat('r:', toString(l.Timestamp), ':', toString(cityHash64(toString(mapSort(l.LogAttributes)))))";
-const SEQUENCE_KEY = `concat('s:', ${SEQUENCE}, ':', toString(l.Timestamp))`;
-const TURN_KEY = `multiIf(l.PromptId != '', concat('p:', l.PromptId), ${SEQUENCE} != '', ${SEQUENCE_KEY}, ${RECORD_KEY})`;
-const CALL_KEY = `if(${SEQUENCE} != '', ${SEQUENCE_KEY}, ${RECORD_KEY})`;
+const TURN_KEY = claudeTurnKeySql("l.");
+const CALL_KEY = claudeCallKeySql("l.");
 
 // Model filters select sessions, so each session keeps its whole cost and turn count.
 export async function sessionTurns(from, to, filters = {}, options = {}) {
@@ -2620,6 +2618,29 @@ export function toolBreakdownSql(cte) {
 // A non-numeric, non-finite or missing millisecond attribute becomes -1 (invalid), never 0.
 export const validMs = (expr) =>
   `if(isFinite(ifNull(toFloat64OrNull(trimBoth(${expr})), -1)), ifNull(toFloat64OrNull(trimBoth(${expr})), -1), -1)`;
+
+// Claude outcome counter increases per session over one window (incFlat deltas, never
+// summed samples), for token economics (clientTokenEconomics.js). Callers keep only the
+// rows of their matched sessions, so the user/team/model/backend filters apply through
+// that session restriction; filtering here by counter UserEmail would drop sessions whose
+// identity exists only in logs (ADR-002).
+// Each metric carries an ADR-018 observation flag (in-window evidence, as kpiSummary); a
+// session is returned when any outcome counter was observed, so an observed zero stays zero.
+export function claudeOutcomeBySessionSql(from, to) {
+  const span = to - from;
+  const metricFilter = "AND MetricName IN ('claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.lines_of_code.count')";
+  const metrics = [["commits", "m.MetricName = 'claude_code.commit.count'"],
+    ["prs", "m.MetricName = 'claude_code.pull_request.count'"],
+    ["loc_added", "m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added'"]];
+  return { sql: `WITH ${counterObservations(metricFilter, span)}
+    SELECT m.SessionId AS session,
+      ${metrics.map(([name, match]) => `sumIf(m.Value, ${match}) AS ${name},
+      countIf(${counterObserved} AND ${match}) > 0 AS ${name}_observed`).join(",\n      ")}
+    FROM ${incFlat(metricFilter, span)} m
+    WHERE m.SessionId != ''
+    GROUP BY m.SessionId
+    HAVING commits_observed OR prs_observed OR loc_added_observed`, params: range(from, to, incFlatRaw(span)) };
+}
 
 export function clientProductivityClaudeSql(from, to, filters = {}) {
   const span = to - from;

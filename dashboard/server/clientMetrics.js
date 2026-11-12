@@ -108,6 +108,8 @@ function usageScope(row, model = row.model || "") {
   return JSON.stringify(model === null ? identity : [...identity, row.backend || "unknown", model]);
 }
 
+// Exported for token economics (clientTokenEconomics.js), which prices the same counter rows.
+export { claudeUsage as priceClaudeUsage };
 function claudeUsage(row) {
   const counts = ["input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens"];
   const valid = counts.every((k) => finite(row[k]));

@@ -107,7 +107,7 @@ export function claudeTaskListSql(from, to, q) {
   if (q.group) { conds.push(`${GROUP_EXPR} = {group:String}`); params.group = q.group; }
   // A workflow's agents nest under the interaction that started it, so a task belongs to a
   // run when any of its spans carries it. The map lookups equal the WorkflowRunId/WorkflowName
-  // columns (migration 010) and also work before that migration is applied.
+  // columns (migration 011) and also work before that migration is applied.
   if (q.workflowRunId) {
     conds.push("arrayExists(w -> w[1] = {workflowRunId:String}, s.workflows)");
     params.workflowRunId = q.workflowRunId;

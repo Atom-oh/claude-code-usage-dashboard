@@ -422,6 +422,59 @@ supported. Malformed or unknown compact formats are unavailable, never zero.
 This reduces response and cache size; it does not reduce the underlying SQL scan
 or prove a fleet capacity limit.
 
+### `GET /api/clients/token-economics`
+
+Returns the token economics cost chain for the selected enabled
+clients. It accepts the overview's `client`, `user`, `userExact`, `model`, `modelExact`,
+`backend`, `team` and `intervalHours` parameters with the same validation; group/project,
+invalid backends and disabled clients return 400 before caching or database work. Only
+enabled clients are queried. It is cached per filter set, window and bucket, and not warmed.
+
+```text
+{ effective_range: {from, to}, previous_range: {from, to}, bucket_hours,
+  by_client: [{ client, cost_basis, current, previous, decomposition,
+    unavailable: {chain, decomposition, outcome},
+    coverage, previous_coverage, trend, models, outcome, previous_outcome, exemplars }],
+  combined: { cost, previous_cost, decomposition, unavailable_clients } }
+```
+
+`effective_range.from` floors `from` to the hour; `to` floors the overview's effective end to the
+hour. `previous_range` is the window of the same length ending at `effective_range.from`.
+`bucket_hours` is the trend bucket: the overview's bucket for the range and `intervalHours`,
+rounded up to whole hours and at least one hour.
+
+| Field | Content |
+|---|---|
+| `current`, `previous` | `{users, sessions, turns, requests, tokens, cost, factors, cost_per_million_tokens, unavailable: null}`; `factors` has `users`, `sessions_per_user`, `turns_per_session`, `requests_per_turn`, `tokens_per_request`, `cost_per_token`; a factor whose denominator is zero is null (undefined), not 0, while the totals stay. Null when that window's chain is unavailable or the window is gated. |
+| `decomposition` | `{contributions, bundles, total_change, unavailable}`; `contributions` per factor, `bundles` `growth`/`waste`/`price`. `total_change` is `current.cost - previous.cost`, null when either chain is missing. `unavailable` is the current chain's reason when it is missing, else the previous window's gate, `no_previous` or `zero_factor`. |
+| `unavailable` | Reason or null for `chain` (current window), `decomposition` and `outcome`. |
+| `coverage`, `previous_coverage` | `{sessions, matched_sessions, excluded: {no_turns, no_requests, cost_incomplete, tokens_invalid}, cost_known, cost_matched, cost_unattributed}`. `tokens_invalid` covers sessions with an unusable token subtotal or with requests but zero canonical tokens. `cost_known` includes `cost_unattributed`, the known cost of usage rows without a session. |
+| `trend` | Current-window buckets `{t, cost_per_user, cost_per_session, cost_per_1k_requests, tokens_per_request, cache_hit_rate}`; null values where the bucket's chain is unavailable (no matched session or no identified user). |
+| `models` | `{model, cost, cost_partial, requests, request_share, tokens, cost_per_million_tokens, small}` over matched sessions, by cost. A model seen only in request rows, with no counter usage row in any matched session, has `cost`, `tokens` and `cost_per_million_tokens` null (unavailable, not zero); `cost_partial` marks a known subtotal when some of its sessions lack usage rows. |
+| `outcome`, `previous_outcome` | Claude: `{commits, prs, loc_added, cost_per_commit, cost_per_pr, cost_per_kloc}` over matched sessions; a count and its ratio are null without in-window counter evidence ([ADR-018](decisions/ADR-018-activity-observation-availability.md)). Codex: null (`unavailable.outcome = "not_collected"`). |
+| `exemplars` | `{eligible_users, levers: [{lever, direction, median, top: [{user, value, sessions, turns, commits}]}]}`; `commits` is null for Codex and for users without commit evidence. Identities are unmasked like other per-user responses; the SPA masks them. |
+| `combined` | `cost`/`previous_cost` sum the per-client matched costs, null if any client's chain is missing; `decomposition` sums per-factor contributions and is unavailable (first blocking reason) if any client's decomposition is. `unavailable_clients` lists each blocking `{client, reason}` in `by_client` order, empty when the decomposition is available. |
+
+Reasons: `window_too_short` (effective window under one hour), `not_backfilled`
+(`SESSION_TURNS_READ_FROM` unset or after the window's start), `retention` (the window's start
+older than 90-day log retention), `no_matched_sessions`, `no_users`, `no_previous` (previous
+chain missing), `zero_factor` (a cost or factor is zero in either window) and `not_collected`
+(Codex outcomes). Each window is gated before any query. `window_too_short`, or
+`not_backfilled`/`retention` for `effective_range.from`, makes every section null and runs no
+query. `not_backfilled`/`retention` for `previous_range.from` skips only the previous-window
+queries: `previous`, `previous_coverage` and `previous_outcome` are null, `decomposition` and
+`unavailable.decomposition` carry the reason, `unavailable.chain` stays null, and the combined
+`previous_cost` is null.
+
+Filters: `team` passes to the usage sources and `user`/`userExact` to the turns source (log
+identity). Codex usage also applies `user`/`userExact` (the same log identity); Claude usage is
+read without them and kept for sessions whose turns matched, so counters without `UserEmail`
+(Bedrock) stay counted. `model`, `modelExact` and `backend` select whole sessions with
+at least one matching usage row (Claude normalized model, Codex raw model; backend equality).
+With a team, model or backend filter, sessions absent from the filtered usage rows are dropped
+from the turns as well, so they never enter coverage. Outcome counters are read per session and
+kept only for matched sessions.
+
 ## Filter scope
 
 Forwarded parameters are not universally implemented. [filterCond](../dashboard/server/queries.js)
