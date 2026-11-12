@@ -267,6 +267,12 @@ class SchemaLifecycle(unittest.TestCase):
         # `expected` is hardcoded from the fixture rows.
         self.assertEqual(self.fixture.rows(raw), expected)
         self.assertEqual(self.fixture.rows(selected), expected)
+        # The same record yields the same key under any session time zone (view vs backfill).
+        digest = f"""SELECT toString(sum(cityHash64({keys['turn']}, {keys['call']}, {keys['codex']}))) AS d
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'"""
+        digests = {zone: self.fixture.query(digest, session_timezone=zone, format="TSV").stdout
+                   for zone in ("UTC", "Asia/Seoul", "America/Los_Angeles")}
+        self.assertEqual(len(set(digests.values())), 1, digests)
         for zone in ("UTC", "Asia/Seoul", "UTC"):
             self.fixture.query((ROOT / "clickhouse-backfill-010.sql").read_text(),
                                param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],

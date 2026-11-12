@@ -1103,9 +1103,9 @@ FROM (
       nullIf(ResourceAttributes['enduser.id'], ''), '') AS UserIdentity,
     if(EventName IN ('api_request', 'claude_code.api_request'), 'request', 'turn') AS Kind,
     if(EventName IN ('api_request', 'claude_code.api_request'), LogAttributes['model'], '') AS Mdl,
-    multiIf(EventName IN ('user_prompt', 'claude_code.user_prompt'), multiIf(PromptId != '', concat('p:', PromptId), LogAttributes['event.sequence'] != '', concat('s:', LogAttributes['event.sequence'], ':', toString(Timestamp)), concat('r:', toString(Timestamp), ':', toString(cityHash64(toString(mapSort(LogAttributes)))))),
-      EventName IN ('api_request', 'claude_code.api_request'), if(LogAttributes['event.sequence'] != '', concat('s:', LogAttributes['event.sequence'], ':', toString(Timestamp)), concat('r:', toString(Timestamp), ':', toString(cityHash64(toString(mapSort(LogAttributes)))))),
-      concat(toString(Timestamp), toString(mapSort(ResourceAttributes)), toString(mapSort(LogAttributes)))) AS Key
+    multiIf(EventName IN ('user_prompt', 'claude_code.user_prompt'), multiIf(PromptId != '', concat('p:', PromptId), LogAttributes['event.sequence'] != '', concat('s:', LogAttributes['event.sequence'], ':', toString(toTimeZone(Timestamp, 'UTC'))), concat('r:', toString(toTimeZone(Timestamp, 'UTC')), ':', toString(cityHash64(toString(mapSort(LogAttributes)))))),
+      EventName IN ('api_request', 'claude_code.api_request'), if(LogAttributes['event.sequence'] != '', concat('s:', LogAttributes['event.sequence'], ':', toString(toTimeZone(Timestamp, 'UTC'))), concat('r:', toString(toTimeZone(Timestamp, 'UTC')), ':', toString(cityHash64(toString(mapSort(LogAttributes)))))),
+      concat(toString(toTimeZone(Timestamp, 'UTC')), toString(mapSort(ResourceAttributes)), toString(mapSort(LogAttributes)))) AS Key
   FROM claude_code.otel_logs
   WHERE (EventName IN ('user_prompt', 'claude_code.user_prompt') OR EventName IN ('api_request', 'claude_code.api_request') OR EventName = 'codex.user_prompt') AND (1)
 )
@@ -1123,7 +1123,7 @@ SELECT throwIf(
     ('session_turns_v1','Keys','AggregateFunction(uniqExact, UInt64)'))) != 7,
   'Session turns schema columns differ; repair before recording migration 010');
 
-INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 10, '010-session-turns', '447377628eafed693b5917ba4179014680e43a933d51df7fcbd8a034f4389e4a'
+INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 10, '010-session-turns', '217648fb2c6b0dbe9918f7606be6bbf5022f723c0e51adf60f42f537cae43be3'
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version=4) > 0
 AND (SELECT count() FROM claude_code.schema_migrations WHERE version=10) = 0;
 -- END GENERATED SESSION TURNS V1

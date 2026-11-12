@@ -3,14 +3,24 @@ import assert from "node:assert/strict";
 import { claudeCallKeySql, claudeTurnKeySql, codexTurnKeySql, turnsBackfillSql, turnsSchemaSql, turnsTransform, turnsVerifySql } from "./sessionTurnsSchema.js";
 
 const SEQ = "l.LogAttributes['event.sequence']";
-const RECORD = "concat('r:', toString(l.Timestamp), ':', toString(cityHash64(toString(mapSort(l.LogAttributes)))))";
-const SEQ_KEY = `concat('s:', ${SEQ}, ':', toString(l.Timestamp))`;
+// Timestamps in keys are pinned to UTC so the view and a backfill under another
+// session_timezone produce the same key for one record (as migration 008 does).
+const TS = "toString(toTimeZone(l.Timestamp, 'UTC'))";
+const RECORD = `concat('r:', ${TS}, ':', toString(cityHash64(toString(mapSort(l.LogAttributes)))))`;
+const SEQ_KEY = `concat('s:', ${SEQ}, ':', ${TS})`;
 
-test("claude key builders match the existing sessionTurns keys", () => {
+test("claude key builders pin timestamps to UTC", () => {
   assert.equal(claudeTurnKeySql("l."),
     `multiIf(l.PromptId != '', concat('p:', l.PromptId), ${SEQ} != '', ${SEQ_KEY}, ${RECORD})`);
   assert.equal(claudeCallKeySql("l."), `if(${SEQ} != '', ${SEQ_KEY}, ${RECORD})`);
   assert.doesNotMatch(claudeTurnKeySql("") + claudeCallKeySql(""), /l\./);
+});
+
+test("no key expression formats a timestamp in the session time zone", () => {
+  for (const key of [claudeTurnKeySql(""), claudeCallKeySql(""), codexTurnKeySql(), turnsTransform()]) {
+    assert.doesNotMatch(key, /toString\((l\.)?Timestamp\)/);
+  }
+  assert.match(codexTurnKeySql(), /^concat\(toString\(toTimeZone\(Timestamp, 'UTC'\)\), /);
 });
 
 test("schema uses aggregating engine and log retention", () => {
