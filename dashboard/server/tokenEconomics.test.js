@@ -66,13 +66,28 @@ test("no matched sessions", () => {
   assert.equal(chain({ users: 1 }).unavailable, "no_matched_sessions");
 });
 
-test("zero tokens keeps chain JSON-safe", () => {
-  const c = chain({ ...CUR, tokens: 0, cost: 0 });
+test("a zero denominator makes its ratio undefined (null), never zero", () => {
+  const c = chain({ ...CUR, tokens: 0, cost: 5 });
   assert.equal(c.unavailable, null);
+  assert.equal(c.cost, 5);
+  assert.equal(c.factors.cost_per_token, null);
+  assert.equal(c.factors.tokens_per_request, 0);
   assert.equal(c.cost_per_million_tokens, null);
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(c)));
-  assert.ok(Object.values(c.factors).every(Number.isFinite));
   assert.equal(lmdi(chain(PREV), c).unavailable, "zero_factor");
+  const noRequests = chain({ ...CUR, requests: 0 });
+  assert.equal(noRequests.factors.tokens_per_request, null);
+  assert.equal(noRequests.factors.requests_per_turn, 0);
+});
+
+test("a session with requests but zero tokens is token-invalid", () => {
+  // Cost and token counters are separate series; at a window edge cost can rise while tokens do not.
+  const usage = [U({ tokens: 0, cost_usd: 2 })];
+  const turns = [T(), T({ kind: "request", model: "claude-sonnet-4", n: 3 })];
+  const [f] = matchSessions(usage, turns);
+  assert.equal(f.exclusion, "tokens_invalid");
+  assert.equal(f.matched, false);
+  assert.equal(summarize([f]).coverage.cost_known, 2);
 });
 
 test("near-equal costs stay finite", () => {
