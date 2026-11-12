@@ -2619,6 +2619,23 @@ export function toolBreakdownSql(cte) {
 export const validMs = (expr) =>
   `if(isFinite(ifNull(toFloat64OrNull(trimBoth(${expr})), -1)), ifNull(toFloat64OrNull(trimBoth(${expr})), -1), -1)`;
 
+// Claude outcome counter increases per session over one window (incFlat deltas, never
+// summed samples), for token economics (clientTokenEconomics.js). Callers keep only the
+// rows of their matched sessions, so the user/team/model/backend filters apply through
+// that session restriction; filtering here by counter UserEmail would drop sessions whose
+// identity exists only in logs (ADR-002).
+export function claudeOutcomeBySessionSql(from, to) {
+  const metricFilter = "AND MetricName IN ('claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.lines_of_code.count')";
+  return { sql: `SELECT m.SessionId AS session,
+      sumIf(m.Value, m.MetricName = 'claude_code.commit.count') AS commits,
+      sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count') AS prs,
+      sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc_added
+    FROM ${incFlat(metricFilter, to - from)} m
+    WHERE m.SessionId != ''
+    GROUP BY m.SessionId
+    HAVING commits > 0 OR prs > 0 OR loc_added > 0`, params: range(from, to, incFlatRaw(to - from)) };
+}
+
 export function clientProductivityClaudeSql(from, to, filters = {}) {
   const span = to - from;
   const scope = claudeProductivityScope(filters);
