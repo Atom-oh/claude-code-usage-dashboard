@@ -34,7 +34,9 @@ function stub({ claude = {}, codex = {}, turns = {}, outcomes = {}, readFrom = R
     },
     query: async (sql, params) => {
       calls.query.push({ sql, params });
-      if (sql.includes("session_turns_v1")) return (turns[params.from] || []).filter((r) => params.clients.includes(r.client));
+      if (sql.includes("session_turns_v1")) return (turns[params.from] || []).filter((r) => params.clients.includes(r.client)
+        && (!params.clientUser || r.user.toLowerCase().includes(params.clientUser.toLowerCase()))
+        && (!params.clientUserExact || r.user === params.clientUserExact));
       if (sql.includes("claude_code.commit.count")) return outcomes[params.from] || [];
       if (sql.includes("conversation.id") || sql.includes("ConversationId")) return codex[params.from] || [];
       throw new Error(`unexpected SQL ${sql.slice(0, 80)}`);
@@ -79,7 +81,8 @@ test("returns chain, decomposition and coverage per client", async () => {
   near(c.trend[0].cost_per_session, 3144);
   near(c.trend[0].cache_hit_rate, 800 / 950);
   assert.deepEqual(c.models.map((m) => [m.model, m.requests, m.cost]), [["claude-sonnet-5", 57, 3144]]);
-  assert.deepEqual(c.outcome, { commits: 0, prs: 0, loc_added: 0, cost_per_commit: null, cost_per_pr: null, cost_per_kloc: null });
+  // No outcome counter evidence: unavailable per metric, not zero (ADR-018).
+  assert.deepEqual(c.outcome, { commits: null, prs: null, loc_added: null, cost_per_commit: null, cost_per_pr: null, cost_per_kloc: null });
   assert.equal(c.exemplars.eligible_users, 0);
   assert.equal(r.combined.cost, 3144);
   assert.equal(r.combined.previous_cost, 2519);
@@ -255,7 +258,8 @@ test("usage rows are re-bucketed onto the turns grid and outcomes use matched co
       turn({ bucket: "2026-11-10T06:00:00Z", n: 1 }), turn({ bucket: "2026-11-10T06:00:00Z", kind: "request", model: "claude-sonnet-5", n: 2 }),
       turn({ bucket: "2026-11-10T12:00:00Z", n: 1 }), turn({ bucket: "2026-11-10T12:00:00Z", kind: "request", model: "claude-sonnet-5", n: 3 }),
     ] },
-    outcomes: { [CUR_FROM]: [{ session: "s1", commits: 2, prs: 1, loc_added: 500 }, { session: "other", commits: 9, prs: 0, loc_added: 0 }] },
+    outcomes: { [CUR_FROM]: [{ session: "s1", commits: 2, prs: 0, loc_added: 500, commits_observed: 1, prs_observed: 1, loc_added_observed: 1 },
+      { session: "other", commits: 9, prs: 0, loc_added: 0, commits_observed: 1, prs_observed: 0, loc_added_observed: 0 }] },
   });
   const r = await clientTokenEconomics(FROM, TO, { intervalHours: "6" }, ["claude"], undefined, deps);
   const c = r.by_client[0];
@@ -263,6 +267,8 @@ test("usage rows are re-bucketed onto the turns grid and outcomes use matched co
   assert.deepEqual(c.trend.map((p) => p.t), ["2026-11-10T00:00:00Z", "2026-11-10T06:00:00Z", "2026-11-10T12:00:00Z", "2026-11-10T18:00:00Z"]);
   assert.deepEqual(c.trend.map((p) => p.cost_per_session), [null, 4, 6, null]);
   assert.equal(c.outcome.commits, 2);
+  assert.equal(c.outcome.prs, 0);
+  assert.equal(c.outcome.cost_per_pr, null);
   assert.equal(c.outcome.cost_per_commit, 5);
   assert.equal(c.outcome.cost_per_kloc, 20);
   assert.equal(c.previous_outcome, null);
@@ -270,6 +276,52 @@ test("usage rows are re-bucketed onto the turns grid and outcomes use matched co
   const turnsCall = calls.query.find((q) => q.sql.includes("session_turns_v1") && q.params.from === CUR_FROM);
   assert.equal(turnsCall.params.bucketSeconds, 6 * 3600);
   for (const call of calls.claude) assert.equal(call.nativeSeconds, 3600);
+});
+
+test("claude user filter uses the turns' log identity, so Bedrock sessions without UserEmail stay matched", async () => {
+  const cur = "2026-11-10T00:00:00.000Z";
+  const { deps, calls } = stub({
+    claude: { [cur]: [claudeUsage({ user: "", reported_cost: 2 }), claudeUsage({ session: "s2", user: "alice.other@example.invalid", reported_cost: 5 }),
+      claudeUsage({ session: "", user: "", reported_cost: 9 })] },
+    turns: { [CUR_FROM]: [
+      ...turnRows([{ n: 2 }, { kind: "request", model: "claude-sonnet-5", n: 3 }], "2026-11-10T03:00:00Z"),
+      ...turnRows([{ session: "s2", user: "carol@example.invalid", n: 2 }, { session: "s2", user: "carol@example.invalid", kind: "request", model: "claude-sonnet-5", n: 3 }], "2026-11-10T03:00:00Z"),
+    ] },
+  });
+  for (const raw of [{ user: "alice" }, { userExact: "alice@example.invalid" }]) {
+    const r = await clientTokenEconomics(FROM, TO, raw, ["claude"], undefined, deps);
+    const c = r.by_client[0];
+    assert.equal(c.unavailable.chain, null);
+    assert.equal(c.current.cost, 2);
+    assert.equal(c.current.users, 1);
+    // s2's counter identity contains "alice", but its log identity (carol) does not match.
+    assert.equal(c.coverage.sessions, 1);
+    assert.equal(c.coverage.cost_unattributed, 0);
+  }
+  for (const call of calls.claude) {
+    assert.equal(call.filters.user, "");
+    assert.equal(call.filters.userExact, undefined);
+  }
+  const turnCalls = calls.query.filter((q) => q.sql.includes("session_turns_v1"));
+  assert.ok(turnCalls.some((q) => q.params.clientUser === "alice"));
+  assert.ok(turnCalls.some((q) => q.params.clientUserExact === "alice@example.invalid"));
+});
+
+test("claude rows without token samples are token-invalid", async () => {
+  const cur = "2026-11-10T00:00:00.000Z";
+  const { deps } = stub({
+    claude: { [cur]: [claudeUsage({ input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, token_observed: 0, cost_observed: 1, reported_cost: 3 })] },
+    turns: { [CUR_FROM]: turnRows([{ n: 2 }, { kind: "request", model: "claude-sonnet-5", n: 3 }], "2026-11-10T03:00:00Z") },
+  });
+  const r = await clientTokenEconomics(FROM, TO, {}, ["claude"], undefined, deps);
+  assert.equal(r.by_client[0].coverage.excluded.tokens_invalid, 1);
+  assert.equal(r.by_client[0].current, null);
+});
+
+test("an unexpected query result is an error, not an empty window", async () => {
+  const { deps } = stub();
+  await assert.rejects(clientTokenEconomics(FROM, TO, {}, ["claude"], undefined, { ...deps, query: async () => null }),
+    /query returned no row list/);
 });
 
 test("combined decomposition sums per-client contributions", async () => {
@@ -306,6 +358,8 @@ test("outcome SQL takes counter increases per session with bound window paramete
   assert.match(sql, /'claude_code\.commit\.count', 'claude_code\.pull_request\.count', 'claude_code\.lines_of_code\.count'/);
   assert.match(sql, /m\.TokenType = 'added'/);
   assert.match(sql, /GROUP BY m\.SessionId/);
+  for (const name of ["commits", "prs", "loc_added"]) assert.match(sql, new RegExp(`IN \\(SELECT \\* FROM counter_observations\\)[^,]*AS ${name}_observed`));
+  assert.match(sql, /HAVING commits_observed OR prs_observed OR loc_added_observed/);
   assert.match(sql, /otel_metrics_sum_hourly/);
   assert.deepEqual(Object.keys(params).sort(), ["from", "to"]);
   assert.doesNotMatch(sql, /2026-11/);

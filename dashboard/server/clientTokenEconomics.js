@@ -52,11 +52,12 @@ function claudeUsageRows(rows, from, bucketSeconds) {
   if (active.length > ROW_LIMIT) throw new ValidationError("too much client data", "narrow the requested date range");
   return active.map((row) => {
     const priced = priceClaudeUsage(row);
-    const valid = priced.tokens !== null;
+    // A row whose cost was observed without token samples has no canonical tokens (ADR-014).
+    const valid = priced.tokens !== null && Number(row.token_observed ?? 1) !== 0;
     const read = num(row.cache_read_tokens);
     return { client: "claude", session: row.session || "", user: row.user || "",
       bucket: gridBucket(row.t, from, bucketSeconds), model: row.model || "", backend: row.backend || "unknown",
-      tokens: priced.tokens, cache_read: valid ? read : null,
+      tokens: valid ? priced.tokens : null, cache_read: valid ? read : null,
       cache_den: valid ? num(row.input_tokens) + read + num(row.cache_write_tokens) : null,
       cost_usd: priced.cost_usd, cost_basis: priced.cost_basis, requests: null };
   });
@@ -111,19 +112,31 @@ function sessionScope(client, filters) {
     && (!exact || r.model === exact) && (!filters.backend || r.backend === filters.backend);
 }
 
+// Claude user filters use the turns' log identity (user.email, else enduser.id), as
+// /api/clients/productivity does: counters often lack UserEmail on Bedrock (ADR-002), so
+// Claude usage is read without the user filter and kept for sessions whose turns matched.
+const userMatch = (filters) => (user) => (!filters.user || String(user).toLowerCase().includes(filters.user.toLowerCase()))
+  && (!filters.userExact || user === filters.userExact);
+
 function windowData(client, usage, turns, filters) {
   const scoped = Boolean(filters.model || filters.modelExact || filters.backend);
   const inScope = sessionScope(client, filters);
+  const claudeUser = client === "claude" && Boolean(filters.user || filters.userExact);
   // Sessionless usage cannot meet the turn source; its known cost (rows in the model/backend
-  // scope) still counts as outside the matched population.
-  const unattributed = usage.filter((r) => !r.session && (!scoped || inScope(r)))
+  // scope, and for a Claude user filter rows whose counter identity matches) still counts as
+  // outside the matched population.
+  const unattributed = usage.filter((r) => !r.session && (!scoped || inScope(r)) && (!claudeUser || userMatch(filters)(r.user)))
     .reduce((s, r) => s + (r.cost_usd ?? 0), 0);
+  let turnRows = turns.filter((r) => r.client === client);
   let rows = usage.filter((r) => r.session);
+  if (claudeUser) {
+    const sessions = new Set(turnRows.map((r) => r.session));
+    rows = rows.filter((r) => sessions.has(r.session));
+  }
   if (scoped) {
     const keep = new Set(rows.filter(inScope).map((r) => r.session));
     rows = rows.filter((r) => keep.has(r.session));
   }
-  let turnRows = turns.filter((r) => r.client === client);
   // Turns are not team/model/backend filtered at the source: other teams' sessions must not enter coverage.
   if (scoped || filters.team) {
     const sessions = new Set(rows.map((r) => r.session));
@@ -214,6 +227,8 @@ export async function clientTokenEconomics(from, to, raw, enabledClients, signal
   const windows = { current: { from: w.from, to: w.to }, previous: w.previous };
   // Sources ignore model/backend; sessions are selected afterwards (sessionScope).
   const sourceFilters = { ...filters, model: "", modelExact: undefined, backend: "" };
+  // Claude counters are read without the user filter; windowData applies it via turn identity.
+  const claudeFilters = { ...sourceFilters, user: "", userExact: undefined };
   const prices = codexPrices();
   const jobs = [], slots = [];
   const add = (slot, job) => { slots.push(slot); jobs.push(job); };
@@ -225,11 +240,13 @@ export async function clientTokenEconomics(from, to, raw, enabledClients, signal
     add([name, "turns"], (s) => run(turnsSql(), params, s));
     for (const client of clients) {
       if (client === "claude") {
-        add([name, "claude"], (s) => clientClaudeRows(win.from, win.to, sourceFilters, HOUR, s, prices));
+        add([name, "claude"], (s) => clientClaudeRows(win.from, win.to, claudeFilters, HOUR, s, prices));
         const outcome = queries.claudeOutcomeBySessionSql(win.from, win.to);
         add([name, "outcomes"], (s) => run(outcome.sql, outcome.params, s));
       } else {
-        const { sql, params: codexParams } = buildCodexQuery(win.from, win.to, sourceFilters, prices, "codex", HOUR,
+        // The previous window needs only window totals; coarse buckets keep its rows few.
+        const { sql, params: codexParams } = buildCodexQuery(win.from, win.to, sourceFilters, prices, "codex",
+          name === "current" ? HOUR : w.length / 1000,
           { costView: true, costSource: costSourceForRange(win.from) });
         add([name, "codex"], (s) => run(sql, codexParams, s));
       }
@@ -237,7 +254,10 @@ export async function clientTokenEconomics(from, to, raw, enabledClients, signal
   }
   const results = await clientQueryBatch(jobs, signal);
   const got = { current: {}, previous: {} };
-  slots.forEach(([name, part], i) => { got[name][part] = Array.isArray(results[i]) ? results[i] : []; });
+  slots.forEach(([name, part], i) => {
+    if (!Array.isArray(results[i])) throw new Error(`token economics ${name} ${part}: query returned no row list`);
+    got[name][part] = results[i];
+  });
 
   const buckets = [];
   for (let t = w.from.getTime(); t < w.to.getTime(); t += w.bucketSeconds * 1000) buckets.push(iso(t));

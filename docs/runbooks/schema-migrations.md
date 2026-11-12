@@ -19,7 +19,7 @@ installations use `clickhouse-schema.sql` instead.
 | `clickhouse-migration-007.sql` | Requires ledger 004. Add typed Codex cost events, scope evidence and ingestion views. Use the [cost schema runbook](codex-cost-schema.md) for separate bounded backfill and read activation. |
 | `clickhouse-migration-008.sql` | Requires ledger 004. Add exact Codex diagnostic identity states and an ingestion view. Use the [diagnostic schema runbook](codex-diagnostic-schema.md) for bounded backfill and tools/performance read activation. |
 | `clickhouse-migration-009.sql` | Requires ledger 004. Add Claude session provider membership and an ingestion view. Use the [provider schema runbook](claude-provider-schema.md) for bounded backfill and `CLAUDE_PROVIDER_GROUPS` activation. |
-| `clickhouse-migration-010.sql` | Requires ledger 004. Add exact turn/request key sets per session-hour. Use the [session turns runbook](session-turns-schema.md) for bounded backfill and `SESSION_TURNS_READ_FROM` activation. |
+| `clickhouse-migration-010.sql` | Requires ledger 004. Add exact turn/request key sets per session-hour. Follow [Session turns](#session-turns-migration-010) for bounded backfill and `SESSION_TURNS_READ_FROM` activation. |
 
 Run a numbered migration through one selected pod. `ON CLUSTER` DDL propagates through the
 cluster; the guarded ledger `INSERT` is **not** `ON CLUSTER` and replicates normally. Do not
@@ -230,6 +230,60 @@ grep -v 'INSERT INTO claude_code.schema_migrations' "$MIGRATION_FILE" \
 Keep the version, name, and checksum literals on the same physical line as `INSERT INTO
 claude_code.schema_migrations`, so the checksum does not include itself. Schema copies use
 that same numbered-file checksum even though their surrounding text differs.
+
+## Session turns (migration 010)
+
+Migration 010 adds `session_turns_v1` and its ingestion view `session_turns_v1_mv`. Per
+`(Client, SessionId, hour, Kind, Model, UserIdentity)` the table keeps an exact `uniqExact`
+state of 64-bit key hashes, so turns and API requests are counted per session and hour without
+scanning `otel_logs`. States union: repeated delivery, repeated backfill or overlap with the
+live view cannot change a count. Merge hourly states (`uniqExactMerge(Keys)`) over the window;
+never sum counts across hours.
+
+| Client | Source events | `SessionId` | `Kind` | `Model` | Key |
+|---|---|---|---|---|---|
+| `claude` | `user_prompt`, `claude_code.user_prompt` | `SessionId` | `turn` | empty | prompt id, else sequence plus timestamp, else timestamp plus attribute hash |
+| `claude` | `api_request`, `claude_code.api_request` | `SessionId` | `request` | `model` | sequence plus timestamp, else timestamp plus attribute hash |
+| `codex` | `codex.user_prompt` | `conversation.id` | `turn` | empty | timestamp plus resource and log attributes |
+
+Claude keys match `sessionTurns`; both come from
+[sessionTurnsSchema.js](../../dashboard/server/sessionTurnsSchema.js), so the live query and the
+table cannot drift. Rows without a session are excluded. `UserIdentity` is `user.email`, else
+`enduser.id`, else empty. Retention is 90 days (`DELETE`), with a 45-day move to `cold` when
+replicated. Codex rows are a diagnostic feed and never feed completion-log usage or cost
+([interpretation](../reference/codex-observability.md)). Installing the schema changes no query;
+a transform change requires a new table version and migration.
+
+Install and backfill, following the snapshot, replica and privilege checks in the
+[cost schema runbook](codex-cost-schema.md#1-install-without-activating-reads) with the stable
+migration identity rather than the collector identity:
+
+1. Require ledger 004. Execute `clickhouse-migration-010.sql` once through the selected writer
+   connection, then verify the table and view on every replica.
+2. Confirm the view uses explicit `SQL SECURITY DEFINER`, its creator still exists, and collector
+   inserts into `otel_logs` continue without new grants.
+3. Run `clickhouse-backfill-010.sql` serially on one replica per shard with bound UTC
+   `backfillFrom`/`backfillTo` (positive, at most one day each), from the oldest retained log
+   hour through installation plus one settled hour. `insert_deduplicate=0` is safe because
+   states union.
+4. Compare the table with the raw logs for the backfilled window; any difference blocks
+   activation. Run the same grouping over `otel_logs` with the keys from
+   `sessionTurnsSchema.js` for the same `Timestamp` window. Expired raw rows cannot be
+   reconstructed, so hours before the first backfilled hour are a coverage gap, not an error.
+
+```sql
+SELECT Client, Kind, uniqExactMerge(Keys) AS keys
+FROM claude_code.session_turns_v1
+WHERE hour >= {from:DateTime('UTC')} AND hour < {to:DateTime('UTC')}
+GROUP BY Client, Kind ORDER BY Client, Kind;
+```
+
+Activate by setting `SESSION_TURNS_READ_FROM` (Terraform `session_turns_read_from`) to the
+verified UTC start of the backfill and deploying. There is no raw-log fallback: a window starting
+before it, any window while it is unset or empty, and any window older than the 90-day log
+retention report token-economics chains as unavailable (`not_backfilled` or `retention`), never
+zero. To roll back, set it empty and redeploy; this disables token-economics reads. Retain the
+table and view.
 
 ## Rollback
 

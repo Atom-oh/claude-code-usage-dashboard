@@ -2624,16 +2624,22 @@ export const validMs = (expr) =>
 // rows of their matched sessions, so the user/team/model/backend filters apply through
 // that session restriction; filtering here by counter UserEmail would drop sessions whose
 // identity exists only in logs (ADR-002).
+// Each metric carries an ADR-018 observation flag (in-window evidence, as kpiSummary); a
+// session is returned when any outcome counter was observed, so an observed zero stays zero.
 export function claudeOutcomeBySessionSql(from, to) {
+  const span = to - from;
   const metricFilter = "AND MetricName IN ('claude_code.commit.count', 'claude_code.pull_request.count', 'claude_code.lines_of_code.count')";
-  return { sql: `SELECT m.SessionId AS session,
-      sumIf(m.Value, m.MetricName = 'claude_code.commit.count') AS commits,
-      sumIf(m.Value, m.MetricName = 'claude_code.pull_request.count') AS prs,
-      sumIf(m.Value, m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added') AS loc_added
-    FROM ${incFlat(metricFilter, to - from)} m
+  const metrics = [["commits", "m.MetricName = 'claude_code.commit.count'"],
+    ["prs", "m.MetricName = 'claude_code.pull_request.count'"],
+    ["loc_added", "m.MetricName = 'claude_code.lines_of_code.count' AND m.TokenType = 'added'"]];
+  return { sql: `WITH ${counterObservations(metricFilter, span)}
+    SELECT m.SessionId AS session,
+      ${metrics.map(([name, match]) => `sumIf(m.Value, ${match}) AS ${name},
+      countIf(${counterObserved} AND ${match}) > 0 AS ${name}_observed`).join(",\n      ")}
+    FROM ${incFlat(metricFilter, span)} m
     WHERE m.SessionId != ''
     GROUP BY m.SessionId
-    HAVING commits > 0 OR prs > 0 OR loc_added > 0`, params: range(from, to, incFlatRaw(to - from)) };
+    HAVING commits_observed OR prs_observed OR loc_added_observed`, params: range(from, to, incFlatRaw(span)) };
 }
 
 export function clientProductivityClaudeSql(from, to, filters = {}) {
