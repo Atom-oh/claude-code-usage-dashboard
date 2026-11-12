@@ -7,8 +7,8 @@ export const REASON_LABELS = { not_backfilled: "백필 전", retention: "보존 
   no_matched_sessions: "대상 세션 없음", no_users: "식별 사용자 없음", no_previous: "직전 기간 없음",
   zero_factor: "산출 불가", not_collected: "미수집" };
 export const REASON_HELP = {
-  not_backfilled: "세션 턴 집계(migration 010)의 백필이 이 기간과 직전 기간을 아직 포함하지 않습니다.",
-  retention: "직전 기간이 로그 보존 기간(90일)을 벗어납니다.",
+  not_backfilled: "세션 턴 집계(migration 010)의 백필이 이 기간 또는 비교할 직전 기간을 아직 포함하지 않습니다.",
+  retention: "이 기간 또는 비교할 직전 기간이 로그 보존 기간(90일)을 벗어납니다.",
   window_too_short: "1시간 이상의 기간에서만 계산합니다.",
   no_matched_sessions: "세션·턴·요청·토큰·비용이 모두 관측된 세션이 없습니다.",
   no_users: "식별된 사용자 ID가 있는 세션이 없습니다.",
