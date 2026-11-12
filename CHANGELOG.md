@@ -15,6 +15,21 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Migration 010 adds `session_turns_v1`, exact per-session-hour turn/request key sets with an ingestion view, bounded backfill and a read-only raw-log comparison (`clickhouse-verify-010.sql`) that gates activation. Token economics (below) reads it; see [Session turns](docs/runbooks/schema-migrations.md#session-turns-migration-010) in the schema migrations runbook.
+- `GET /api/clients/token-economics` returns, per enabled client, the token-economics cost
+  equation (users × sessions/user × turns/session × requests/turn × tokens/request ×
+  cost/token) over matched sessions, with change against the preceding window and coverage,
+  an additive LMDI decomposition with growth/waste/price subtotals, unit-cost and
+  request-efficiency trends, model economics, outcome cost (Claude Code only; Codex is not
+  collected) and exemplar users. Requires migration 010, its verified backfill, a latency
+  check and `SESSION_TURNS_READ_FROM` (Terraform, compose and `.env`); until then each window
+  reports its unavailable reason, never zero. Each window is gated on its own, and
+  `combined.unavailable_clients` names clients without a decomposition. Observed telemetry
+  activity, not employee productivity, verified outcomes or ROI
+  ([API](docs/api-reference.md#get-apiclientstoken-economics)).
+
 ### Changed
 
 - Simplify the Codex detail heading and move its cost explanation and exact query

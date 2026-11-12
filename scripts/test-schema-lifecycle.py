@@ -3,7 +3,9 @@
 
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import json
 import re
+import subprocess
 import time
 import unittest
 import xml.etree.ElementTree as ET
@@ -52,7 +54,7 @@ class SchemaLifecycle(unittest.TestCase):
         self.assertEqual(
             [row["version"] for row in self.fixture.rows(
                 "SELECT version FROM claude_code.schema_migrations ORDER BY version"
-            )], [2, 3, 4, 5, 6, 7, 8, 9],
+            )], [2, 3, 4, 5, 6, 7, 8, 9, 10],
         )
 
     def test_populated_compatible_installation_only_reads_metadata(self):
@@ -205,6 +207,131 @@ class SchemaLifecycle(unittest.TestCase):
         try:
             result = self.verify_without_writes(False)
             self.assertIn("Claude provider view target or definer security differs", result.stderr)
+        finally:
+            self.fixture.query(f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER")
+
+    def test_session_turns_live_and_repeated_backfill_keep_exact_key_sets(self):
+        table = "claude_code.session_turns_v1"
+        keys = json.loads(subprocess.run(
+            ["node", "--input-type=module", "-e",
+             "import * as m from './dashboard/server/sessionTurnsSchema.js';"
+             "console.log(JSON.stringify({turn: m.claudeTurnKeySql(''), call: m.claudeCallKeySql(''), codex: m.codexTurnKeySql()}))"],
+            cwd=ROOT, text=True, capture_output=True, check=True).stdout)
+        bounds = self.fixture.rows(
+            "SELECT toString(toStartOfHour(now(), 'UTC')) AS start, "
+            "toString(toStartOfHour(now(), 'UTC') + INTERVAL 1 HOUR) AS end"
+        )[0]
+        user = "session-turns-lifecycle@example.invalid"
+        # (event, seconds into the hour, attributes). Duplicates repeat Timestamp and attributes.
+        claude = {"event.name": "user_prompt", "session.id": "turns-lifecycle"}
+        call = {"event.name": "api_request", "session.id": "turns-lifecycle", "model": "claude-sonnet-5"}
+        codex = {"event.name": "codex.user_prompt", "conversation.id": "turns-lifecycle-codex"}
+        rows = [
+            (1, {**claude, "prompt.id": "a"}), (2, {**claude, "prompt.id": "a"}),
+            (3, {**claude, "prompt.id": "b"}),
+            (4, {**call, "event.sequence": "1"}), (4, {**call, "event.sequence": "1"}),
+            (5, {**call, "event.sequence": "2"}),
+            (6, {**codex, "text": "x"}), (6, {**codex, "text": "x"}), (7, {**codex, "text": "y"}),
+            (8, {"event.name": "user_prompt", "prompt.id": "no-session"}),
+        ]
+        def attributes(attrs):
+            return ", ".join(f"'{key}', '{value}'" for key, value in attrs.items())
+        values = ",\n".join(
+            f"(toDateTime64('{bounds['start']}', 9, 'UTC') + {second}, "
+            f"map('user.email','{user}'), map({attributes(attrs)}))"
+            for second, attrs in rows
+        )
+        self.fixture.query(
+            f"INSERT INTO claude_code.otel_logs (Timestamp, ResourceAttributes, LogAttributes) VALUES {values}"
+        )
+        selected = f"""SELECT Client, Kind, toString(uniqExactMerge(Keys)) AS keys FROM {table}
+          WHERE UserIdentity = '{user}' GROUP BY Client, Kind ORDER BY Client, Kind"""
+        expected = [
+            {"Client": "claude", "Kind": "request", "keys": "2"},
+            {"Client": "claude", "Kind": "turn", "keys": "2"},
+            {"Client": "codex", "Kind": "turn", "keys": "2"},
+        ]
+        raw = f"""SELECT * FROM (
+          SELECT 'claude' AS Client, 'request' AS Kind,
+            toString(uniqExactIf(cityHash64({keys['call']}), EventName IN ('api_request', 'claude_code.api_request'))) AS keys
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}' AND SessionId != ''
+          UNION ALL SELECT 'claude', 'turn',
+            toString(uniqExactIf(cityHash64({keys['turn']}), EventName IN ('user_prompt', 'claude_code.user_prompt')))
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}' AND SessionId != ''
+          UNION ALL SELECT 'codex', 'turn',
+            toString(uniqExactIf(cityHash64({keys['codex']}), EventName = 'codex.user_prompt'))
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'
+            AND LogAttributes['conversation.id'] != ''
+        ) ORDER BY Client, Kind"""
+        # The oracle reuses the transform key expressions emitted by the module that owns them;
+        # `expected` is hardcoded from the fixture rows.
+        self.assertEqual(self.fixture.rows(raw), expected)
+        self.assertEqual(self.fixture.rows(selected), expected)
+        # The same record yields the same key under any session time zone (view vs backfill).
+        digest = f"""SELECT toString(sum(cityHash64({keys['turn']}, {keys['call']}, {keys['codex']}))) AS d
+          FROM claude_code.otel_logs WHERE ResourceAttributes['user.email'] = '{user}'"""
+        digests = {zone: self.fixture.query(digest, session_timezone=zone, format="TSV").stdout
+                   for zone in ("UTC", "Asia/Seoul", "America/Los_Angeles")}
+        self.assertEqual(len(set(digests.values())), 1, digests)
+        for zone in ("UTC", "Asia/Seoul", "UTC"):
+            self.fixture.query((ROOT / "clickhouse-backfill-010.sql").read_text(),
+                               param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                               session_timezone=zone, insert_deduplicate=0)
+            self.assertEqual(self.fixture.rows(selected), expected)
+        sessions = self.fixture.rows(
+            f"SELECT DISTINCT SessionId FROM {table} WHERE UserIdentity = '{user}' ORDER BY SessionId")
+        self.assertEqual(sessions, [{"SessionId": "turns-lifecycle"}, {"SessionId": "turns-lifecycle-codex"}])
+        # The exact reader SQL, with bound parameters, over the backfilled table.
+        reader = subprocess.run(
+            ["node", "--input-type=module", "-e",
+             "import { turnsSql } from './dashboard/server/tokenEconomicsSource.js'; process.stdout.write(turnsSql());"],
+            cwd=ROOT, text=True, capture_output=True, check=True).stdout
+        def read_turns(clients):
+            text = self.fixture.query(
+                reader + " FORMAT JSONEachRow", param_from=bounds["start"], param_to=bounds["end"],
+                param_bucketSeconds=3600, param_clientUser="", param_clientUserExact="",
+                param_clients=clients, session_timezone="UTC").stdout
+            return [r for r in map(json.loads, text.splitlines()) if clients == "[]" or r["user"] == user]
+        result = read_turns("['claude','codex']")
+        window = [r for r in result if r["bucket"] == ""]
+        buckets = [r for r in result if r["bucket"] != ""]
+        self.assertTrue(window and buckets)
+        for r in buckets:
+            self.assertRegex(r["bucket"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+            self.assertEqual(r["bucket"], bounds["start"].replace(" ", "T") + "Z")
+        totals = {(r["Client"], r["Kind"]): int(r["keys"]) for r in self.fixture.rows(selected)}
+        self.assertEqual({(r["client"], r["kind"]): int(r["n"]) for r in window}, totals)
+        self.assertEqual({(r["client"], r["kind"]): int(r["n"]) for r in buckets}, totals)
+        self.assertEqual(read_turns("[]"), [])
+        # The runbook's activation gate: table keys equal raw keys for the window, and a lost
+        # table state is reported as a difference until the backfill restores it.
+        verify = (ROOT / "clickhouse-verify-010.sql").read_text()
+        def compare():
+            text = self.fixture.query(verify, param_verifyFrom=bounds["start"], param_verifyTo=bounds["end"],
+                                      session_timezone="UTC", format="JSONEachRow").stdout
+            return {(r["Client"], r["Kind"]): r for r in map(json.loads, text.splitlines()) if "Client" in r}
+        rows = compare()
+        self.assertTrue({("claude", "request"), ("claude", "turn"), ("codex", "turn")} <= set(rows))
+        self.assertTrue(all(r["differs"] == 0 for r in rows.values()), rows)
+        self.fixture.query(f"ALTER TABLE {table} DELETE WHERE SessionId = 'turns-lifecycle-codex'",
+                           mutations_sync=2)
+        lost = compare()[("codex", "turn")]
+        self.assertEqual((lost["differs"], int(lost["raw_keys"]) - int(lost["table_keys"])), (1, 2))
+        self.fixture.query((ROOT / "clickhouse-backfill-010.sql").read_text(),
+                           param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                           session_timezone="UTC", insert_deduplicate=0)
+        self.assertTrue(all(r["differs"] == 0 for r in compare().values()))
+        bad = self.fixture.query(verify, param_verifyFrom=bounds["start"].replace(":00:00", ":30:00"),
+                                 param_verifyTo=bounds["end"], check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("hour-aligned", bad.stdout + bad.stderr)
+
+    def test_session_turns_view_security_drift_is_rejected_without_repair(self):
+        view = "claude_code.session_turns_v1_mv"
+        self.fixture.query(f"ALTER TABLE {view} MODIFY SQL SECURITY NONE")
+        try:
+            result = self.verify_without_writes(False)
+            self.assertIn("Session turns view target or definer security differs", result.stderr)
         finally:
             self.fixture.query(f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER")
 
@@ -386,7 +513,7 @@ class MultiReplicaSchemaLifecycle(unittest.TestCase):
             self.assertEqual(
                 [row["version"] for row in self.fixture.rows(
                     "SELECT version FROM claude_code.schema_migrations ORDER BY version", node_index=index
-                )], [2, 3, 4, 5, 6, 7, 8, 9],
+                )], [2, 3, 4, 5, 6, 7, 8, 9, 10],
             )
         self.verify_without_writes(True)
 
