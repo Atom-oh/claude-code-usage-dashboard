@@ -94,6 +94,18 @@ test("the equation strip shows six terms joined by × and the total with the per
   expect(within(steps).getByText("−$182")).toBeTruthy();
 });
 
+test("an undefined factor renders — and keeps the known total", () => {
+  const row = claude();
+  row.current = { ...row.current, tokens: 0, cost_per_million_tokens: null,
+    factors: { ...row.current.factors, tokens_per_request: null, cost_per_token: null } };
+  mount({ data: response([row]) });
+  const eq = strip("Claude Code");
+  // Undefined tokens/request and $/1M tokens render —; their change is also — (no 0, no NaN).
+  expect(within(eq).getAllByText("—").length).toBe(2);
+  expect(eq.textContent).not.toContain("NaN");
+  expect(within(eq).getByText("$3,144")).toBeTruthy();
+});
+
 test("an unavailable chain renders the reason label and no amount", () => {
   const { container } = mount({ data: response([gated("claude", "not_backfilled")], {
     combined: { cost: null, previous_cost: null, decomposition: { contributions: null, bundles: null,
