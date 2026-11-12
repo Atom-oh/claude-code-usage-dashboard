@@ -51,5 +51,6 @@ test("every drag-zoomable time-series chart suspends zoom while its data hook is
   // ModelCostTrend replaced the two detail SeriesBarChart sites and added one shared site;
   // the detail Cost/Executive user cost trends add two more, and the Cost team cost trend one;
   // the team cost bar is categorical. UserDrawer's exempt site was removed with the drawer.
-  expect([found.guarded.length, found.categorical.length, found.exempt.length]).toEqual([18, 5, 0]);
+  // Token economics adds the two unit-trend sites.
+  expect([found.guarded.length, found.categorical.length, found.exempt.length]).toEqual([20, 5, 0]);
 });
