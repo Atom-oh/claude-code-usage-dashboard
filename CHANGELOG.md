@@ -17,7 +17,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
-- Migration 010 adds `session_turns_v1`, exact per-session-hour turn/request key sets with an ingestion view and bounded backfill. No query reads it yet; see [Session turns](docs/runbooks/schema-migrations.md#session-turns-migration-010) in the schema migrations runbook.
+- Migration 010 adds `session_turns_v1`, exact per-session-hour turn/request key sets with an ingestion view and bounded backfill. Token economics (below) reads it; see [Session turns](docs/runbooks/schema-migrations.md#session-turns-migration-010) in the schema migrations runbook.
+- Shared Productivity opens with token-economics sections from the new
+  `GET /api/clients/token-economics`: the cost equation (users × sessions/user ×
+  turns/session × requests/turn × tokens/request × cost/token, with change against the
+  preceding window and matched-session coverage), an LMDI driver waterfall with
+  growth/waste/price subtotals, unit-cost and request-efficiency trends, model economics,
+  outcome cost (Claude Code only; Codex shows it as not collected) and exemplar users to contact about
+  their habits. Requires migration 010, its backfill and `SESSION_TURNS_READ_FROM`; until
+  then every section shows its unavailable reason, never zero. Observed telemetry
+  activity, not employee productivity, verified outcomes or ROI
+  ([token economics](docs/metrics.md#token-economics)).
 
 ### Changed
 
