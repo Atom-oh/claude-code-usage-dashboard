@@ -582,8 +582,8 @@ Both email drilldowns are excluded from cache warming.
 
 `/api/users/tasks` (not warmed; `team` rejected) lists at most **20** tasks for one
 exact user: required `userExact` (email, else `enduser.id`, equality match), optional
-`client`, `backend`, `group` (Claude tasks only; 400 unless Claude is selected) and
-`sort=tokens|cost|subagents|duration` (default `tokens`): most observed tokens, highest
+`client`, `backend`, `group` (Claude tasks only; 400 unless Claude is selected),
+`workflowRunId` and `sort=tokens|cost|subagents|duration` (default `tokens`): most observed tokens, highest
 known cost, most subagents, slowest. Unknown values (null cost, Codex `subagents`) sort
 after every known value; ties fall back to observed tokens, then the task id. Response
 `{tasks, unattached_codex, coverage, partial: true}`; `coverage.<client>` is `observed`,
@@ -594,7 +594,11 @@ joined from logs, else pricing), so `sort=cost` folds the top 100 Claude interac
 observed tokens and orders that pool by cost; the response then adds `sort_candidates:
 {claude, claude_limit: 100, limited}` (`claude`: rows considered, `limited`: the pool was
 full, so a costlier task outside the token top 100 may be missing). It is present only for
-`sort=cost` with Claude selected. Codex turns are all costed before sorting. A Claude task is one
+`sort=cost` with Claude selected. `workflowRunId` (`wf_` plus 1-128 identifier characters,
+else 400) keeps Claude tasks with any span whose `workflow.run_id` equals it; a workflow's
+agents nest under the interaction that started it, so the run usually lists as one task. It
+requires `client=claude` alone (400 otherwise, including the default when Codex is enabled)
+and matches only trace-enabled clients' spans. Codex turns are all costed before sorting. A Claude task is one
 `interaction` span starting in `[from, to)`; its `llm_request` spans are read through
 `to + 24h`. Each task has `id` (`claude:<TraceId>`), `started_at`, `duration_ms`
 (`duration_basis: "interaction_span"`), normalized `models`, `llm_calls`, `subagents`

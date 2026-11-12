@@ -15,6 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Filter a user's task list by Claude Code workflow run with `workflowRunId` on
+  `/api/users/tasks` (`client=claude`). Migration 010 adds `otel_traces.WorkflowRunId`
+  for direct queries; existing installations must apply it before schema-init
+  verification passes. Only trace-enabled clients emit workflow run ids.
+
 ### Changed
 
 - Simplify the Codex detail heading and move its cost explanation and exact query

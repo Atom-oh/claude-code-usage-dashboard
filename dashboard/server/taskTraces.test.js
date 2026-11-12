@@ -97,6 +97,43 @@ test("claudeTaskListSql filters group and backend through bound params", () => {
   assert.ok(/ORDER BY t\.duration_ms DESC/.test(sql));
 });
 
+test("validateTaskQuery accepts workflowRunId only as a wf_ id for Claude alone", () => {
+  const id = "wf_abc-123_X";
+  assert.equal(validateTaskQuery({ userExact: "a", workflowRunId: id, client: "claude" }, both).workflowRunId, id);
+  assert.equal(validateTaskQuery({ userExact: "a", workflowRunId: id }, ["claude"]).workflowRunId, id);
+  assert.equal(validateTaskQuery({ userExact: "a", workflowRunId: "" }, both).workflowRunId, undefined);
+  for (const bad of ["abc", "wf_", "wf_a b", "wf_a'b", "wf_" + "a".repeat(129), ["wf_a", "wf_b"], 7])
+    assert.throws(() => validateTaskQuery({ userExact: "a", workflowRunId: bad, client: "claude" }, both),
+      { name: "ValidationError", message: "invalid filter" });
+  // Codex has no workflow runs: both clients (the default) or Codex alone is rejected.
+  for (const client of [undefined, "codex"])
+    assert.throws(() => validateTaskQuery({ userExact: "a", workflowRunId: id, client }, both),
+      { name: "ValidationError", message: "unsupported filter" });
+});
+
+test("claudeTaskListSql filters workflow runs through a bound param over every span", () => {
+  const plain = claudeTaskListSql(from, to, validateTaskQuery({ userExact: "a" }, both));
+  assert.ok(!plain.sql.includes("{workflowRunId:String}"));
+  assert.equal(plain.params.workflowRunId, undefined);
+  const q = validateTaskQuery({ userExact: "a", workflowRunId: "wf_run1", client: "claude" }, both);
+  const { sql, params } = claudeTaskListSql(from, to, q);
+  assert.equal(params.workflowRunId, "wf_run1");
+  assert.ok(!sql.includes("wf_run1"));
+  assert.ok(sql.includes("SpanAttributes['workflow.run_id'] AS workflow_run_id"));
+  // Collected over all spans of the trace (agent spans), not only llm_request spans.
+  assert.ok(sql.includes("groupUniqArrayIf(workflow_run_id, workflow_run_id != '') AS workflow_run_ids"));
+  assert.ok(sql.includes("AND has(s.workflow_run_ids, {workflowRunId:String})"));
+});
+
+test("userTasks with workflowRunId queries only Claude", async () => {
+  const seen = [];
+  const run = async (sql, params) => { seen.push({ sql, params }); return []; };
+  const out = await userTasks(from, to, { userExact: "a", workflowRunId: "wf_run1", client: "claude" }, both, run);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].params.workflowRunId, "wf_run1");
+  assert.deepEqual(out.coverage, { claude: "empty", codex: "not_requested" });
+});
+
 test("claudeCostSql binds request ids in the widened log window", () => {
   const { sql, params } = claudeCostSql(from, to, ["r1", "r2"]);
   assert.deepEqual(params.requestIds, ["r1", "r2"]);
@@ -247,6 +284,11 @@ test("taskCacheKey isolates users, clients and sorts", () => {
   // Unread parameters and order do not split the key.
   assert.equal(taskCacheKey({ userExact: "kim@x.com", x: "1", ...base }, both), kim);
   assert.equal(taskCacheKey({ ...base, userExact: "kim@x.com", sort: "tokens" }, both), kim);
+  const run1 = taskCacheKey({ ...base, userExact: "kim@x.com", client: "claude", workflowRunId: "wf_1" }, both);
+  const run2 = taskCacheKey({ ...base, userExact: "kim@x.com", client: "claude", workflowRunId: "wf_2" }, both);
+  const claudeOnly = taskCacheKey({ ...base, userExact: "kim@x.com", client: "claude" }, both);
+  assert.equal(new Set([run1, run2, claudeOnly]).size, 3);
+  assert.equal(taskCacheKey({ ...base, userExact: "kim@x.com", client: "claude", workflowRunId: "" }, both), claudeOnly);
 });
 
 test("index.js keys the task route through taskCacheKey", async () => {

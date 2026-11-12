@@ -36,6 +36,8 @@ export const EXACT_USER = "coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, '')
 // across conversations. A turn groups by its id alone, so only UUID-shaped ids identify a turn.
 export const TURN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUniqueTurnId = (id) => typeof id === "string" && TURN_ID.test(id);
+// Claude Code workflow run ids carry the `wf_` prefix; identifier characters only.
+export const WORKFLOW_RUN_ID = /^wf_[A-Za-z0-9_-]{1,128}$/;
 
 export function validateTaskQuery(raw, enabledClients) {
   const clients = selectClients(raw.client, enabledClients);
@@ -50,15 +52,22 @@ export function validateTaskQuery(raw, enabledClients) {
   // A channel group exists only for Claude sessions; it filters Claude tasks only.
   if (group && !clients.includes("claude"))
     throw new ValidationError("unsupported filter", "group applies only to Claude tasks");
+  const workflowRunId = raw.workflowRunId ?? "";
+  if (workflowRunId !== "" && (typeof workflowRunId !== "string" || !WORKFLOW_RUN_ID.test(workflowRunId)))
+    throw new ValidationError("invalid filter", "workflowRunId must be wf_ followed by 1-128 identifier characters");
+  // Only Claude Code emits workflow runs; listing Codex turns beside them would be unrelated.
+  if (workflowRunId && (clients.length !== 1 || clients[0] !== "claude"))
+    throw new ValidationError("unsupported filter", "workflowRunId applies only to Claude tasks; pass client=claude");
   const sort = raw.sort ?? "tokens";
   if (!SORTS.includes(sort)) throw new ValidationError("invalid sort", "sort accepts tokens, cost, subagents or duration");
-  return { clients, userExact, backend, group, sort };
+  return { clients, userExact, backend, group, sort, ...(workflowRunId ? { workflowRunId } : {}) };
 }
 
 // Canonical cache key over the parameters the handler reads (validated, default sort folded).
 export function taskCacheKey(query, enabledClients) {
-  const { clients, userExact, backend, group, sort } = validateTaskQuery(query, enabledClients);
-  const normalized = { from: query.from, to: query.to, client: clients.join(","), userExact, backend, group, sort };
+  const { clients, userExact, backend, group, sort, workflowRunId } = validateTaskQuery(query, enabledClients);
+  const normalized = { from: query.from, to: query.to, client: clients.join(","), userExact, backend, group, sort,
+    workflowRunId };
   return new URLSearchParams(Object.entries(normalized)
     .filter(([, value]) => value !== undefined && value !== "").sort(([a], [b]) => a.localeCompare(b))).toString();
 }
@@ -73,6 +82,10 @@ export function claudeTaskListSql(from, to, q) {
     spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact };
   const conds = [];
   if (q.group) { conds.push(`${GROUP_EXPR} = {group:String}`); params.group = q.group; }
+  // A workflow's agents nest under the interaction that started it, so a task belongs to the
+  // run when any of its spans carries the id. The map lookup equals the WorkflowRunId column
+  // (migration 010) and also works before that migration is applied.
+  if (q.workflowRunId) { conds.push("has(s.workflow_run_ids, {workflowRunId:String})"); params.workflowRunId = q.workflowRunId; }
   if (q.backend) {
     // Backend evidence comes from the task's call models; a task without models is unknown.
     conds.push(`if(empty(s.raw_models), 'unknown' = {backend:String},
@@ -99,12 +112,14 @@ export function claudeTaskListSql(from, to, q) {
         sumIf(ifNull(input_tokens + cache_read_tokens + cache_creation_tokens + output_tokens, 0),
           SpanType = 'llm_request') AS sort_tokens,
         groupUniqArrayIf(Model, SpanType = 'llm_request' AND Model != '') AS raw_models,
+        groupUniqArrayIf(workflow_run_id, workflow_run_id != '') AS workflow_run_ids,
         groupArrayIf([request_id, Model, ifNull(toString(input_tokens), ''),
           ifNull(toString(cache_read_tokens), ''), ifNull(toString(cache_creation_tokens), ''),
           ifNull(toString(output_tokens), '')], SpanType = 'llm_request') AS calls
     FROM (
         SELECT TraceId, SpanType, AgentId, Model,
             SpanAttributes['request_id'] AS request_id,
+            SpanAttributes['workflow.run_id'] AS workflow_run_id,
             ${tokenAttr("input_tokens")} AS input_tokens,
             ${tokenAttr("cache_read_tokens")} AS cache_read_tokens,
             ${tokenAttr("cache_creation_tokens")} AS cache_creation_tokens,

@@ -19,6 +19,7 @@ installations use `clickhouse-schema.sql` instead.
 | `clickhouse-migration-007.sql` | Requires ledger 004. Add typed Codex cost events, scope evidence and ingestion views. Use the [cost schema runbook](codex-cost-schema.md) for separate bounded backfill and read activation. |
 | `clickhouse-migration-008.sql` | Requires ledger 004. Add exact Codex diagnostic identity states and an ingestion view. Use the [diagnostic schema runbook](codex-diagnostic-schema.md) for bounded backfill and tools/performance read activation. |
 | `clickhouse-migration-009.sql` | Requires ledger 004. Add Claude session provider membership and an ingestion view. Use the [provider schema runbook](claude-provider-schema.md) for bounded backfill and `CLAUDE_PROVIDER_GROUPS` activation. |
+| `clickhouse-migration-010.sql` | Requires ledger 004 and `otel_traces`. Add `otel_traces.WorkflowRunId` (span `workflow.run_id`); deliberately no materialization. |
 
 Run a numbered migration through one selected pod. `ON CLUSTER` DDL propagates through the
 cluster; the guarded ledger `INSERT` is **not** `ON CLUSTER` and replicates normally. Do not
@@ -117,6 +118,17 @@ an existing incompatible table is not repaired by `CREATE IF NOT EXISTS`. See th
 [collection interface](codex-telemetry.md#storage-interface) and run the optional
 Collector/ClickHouse tests before enabling the new exporter. The standalone 006 file
 creates no mutations and avoids schema-init's older materialization statements.
+
+For 010, confirm ledger version 4 and `otel_traces` exist; both guards stop the file before
+the `ALTER` otherwise. Stream it through one selected replica:
+
+```bash
+CH_USER=otel_writer CH_SECRET=clickhouse-writer ch < clickhouse-migration-010.sql
+```
+
+Like 005 it schedules no `MATERIALIZE COLUMN`: older parts evaluate the map lookup on read.
+The task API's `workflowRunId` filter reads the span attribute directly, so it does not
+depend on this migration; schema-init compatibility verification does.
 
 ## 3. Bootstrap and existing-installation verification
 

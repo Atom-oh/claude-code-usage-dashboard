@@ -495,7 +495,9 @@ CREATE TABLE IF NOT EXISTS claude_code.otel_traces
     Model           LowCardinality(String) MATERIALIZED SpanAttributes['model'],
     Decision        LowCardinality(String) MATERIALIZED SpanAttributes['decision'],
     ProjectName     LowCardinality(String) MATERIALIZED ResourceAttributes['project.name'],
-    Entrypoint      LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint']
+    Entrypoint      LowCardinality(String) MATERIALIZED SpanAttributes['app.entrypoint'],
+    -- Claude Code workflow run id (`wf_` prefix); empty outside workflow runs (migration 010).
+    WorkflowRunId   String MATERIALIZED SpanAttributes['workflow.run_id']
 )
 -- 로컬 참조 사본이라 삭제 TTL만(cold tier 없음) — otel_logs와 동일 정책(90일), 라이브는
 -- infra/files/clickhouse-schema-replicated.sql에서 45일 cold 이동 + 90일 삭제.
@@ -1072,3 +1074,19 @@ INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 9, '009
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version=4) > 0
 AND (SELECT count() FROM claude_code.schema_migrations WHERE version=9) = 0;
 -- END GENERATED CLAUDE PROVIDER V1
+
+-- -----------------------------------------------------------------------------
+-- 010 block — copy of clickhouse-migration-010.sql (otel_traces.WorkflowRunId).
+--    New installations are by definition at 010; the ALTER is a no-op after CREATE.
+-- -----------------------------------------------------------------------------
+ALTER TABLE claude_code.otel_traces
+    ADD COLUMN IF NOT EXISTS WorkflowRunId String MATERIALIZED SpanAttributes['workflow.run_id'];
+
+SELECT throwIf(
+  (SELECT count() FROM system.columns WHERE database='claude_code' AND table='otel_traces'
+    AND name='WorkflowRunId' AND type='String' AND default_kind='MATERIALIZED') != 1,
+  'otel_traces.WorkflowRunId differs; repair before recording migration 010');
+
+INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 10, '010-trace-workflow-run-id', '4b13f566a926811e288bf0edeaea3bf2cd0f2002756628e7e4bde8b32479a882'
+WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version=4) > 0
+AND (SELECT count() FROM claude_code.schema_migrations WHERE version=10) = 0;
