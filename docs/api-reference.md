@@ -424,7 +424,7 @@ or prove a fleet capacity limit.
 
 ### `GET /api/clients/token-economics`
 
-Returns the token economics cost chain for the selected enabled
+Returns the [token economics](metrics.md#token-economics) cost chain for the selected enabled
 clients. It accepts the overview's `client`, `user`, `userExact`, `model`, `modelExact`,
 `backend`, `team` and `intervalHours` parameters with the same validation; group/project,
 invalid backends and disabled clients return 400 before caching or database work. Only

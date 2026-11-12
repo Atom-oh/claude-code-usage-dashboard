@@ -226,6 +226,86 @@ Model-less cost counters retain `model=""` in model, user/model, comparison and 
 results. Their usable reports remain spend; computed pricing stays unavailable. Cost
 labels them as an unknown model without inventing model attribution.
 
+### Token economics
+
+`/api/clients/token-economics` ([API](api-reference.md#get-apiclientstoken-economics)) applies
+the six-term cost equation per client to one matched population per window:
+
+```text
+cost = users × sessions/user × turns/session × requests/turn × tokens/request × cost/token
+```
+
+Factors are `users`, `sessions_per_user`, `turns_per_session`, `requests_per_turn`,
+`tokens_per_request` and `cost_per_token` (also shown as `cost_per_million_tokens`). Bundles:
+growth (users, sessions per user; an adoption measure, not a target to reduce), waste (turns per
+session, requests per turn, tokens per request) and price (cost per token). The product equals
+the matched cost only because every term is computed over the same sessions.
+
+The current window is compared with the preceding window of equal length. The change is
+attributed with additive LMDI, which is order-independent and exact:
+
+```text
+L = (C1 - C0) / (ln C1 - ln C0)          (L = C1 when C1 = C0)
+contribution_i = L × ln(x_i,1 / x_i,0)
+sum of contributions = C1 - C0
+```
+
+If either cost or any factor is zero in either window, the decomposition is unavailable
+(`zero_factor`) rather than partially filled.
+
+| Term | Claude Code | Codex |
+|---|---|---|
+| User | Log identity (`user.email`, else `enduser.id`) from the turns table; else the counter `UserEmail`. Sessions without identity count as sessions, not users. | Log identity as in the overview. |
+| Session | `SessionId` | `conversation.id` |
+| Turn | Deduplicated `user_prompt` ([session turns](#session-turns) rules) | `codex.user_prompt` |
+| Request | Deduplicated `api_request` | Usage-bearing `response.completed` records, not `codex.api_request` attempts (which include retries) |
+| Tokens | Strict canonical input + output + cache read + cache creation ([ADR-014](decisions/ADR-014-observed-token-subtotals.md)) | `input_tokens_total + output_tokens` |
+| Cost | Overview usage cost: `reported_cost` ([ADR-013](decisions/ADR-013-known-cost-subtotals.md)), [ADR-017](decisions/ADR-017-backend-cost-fallback.md) estimate for non-Anthropic models | AWS list estimate ([ADR-017](decisions/ADR-017-backend-cost-fallback.md)) |
+| Cache hit rate | cache read / (input + cache read + cache creation) | cached tokens / `input_tokens_total` |
+
+Neither cost basis is an invoice. Turns and requests come from `session_turns_v1`
+([runbook](runbooks/schema-migrations.md#session-turns-migration-010)); usage comes from the same counter and completion
+rows as the overview, re-bucketed onto the hour-aligned response grid.
+
+**Matched population.** A session is matched when it has at least one turn, at least one request,
+every usage row priced and every usage row token-valid. Exclusions, first match wins:
+`no_turns`, `no_requests`, `cost_incomplete` (including a Codex scope with activity but no usage),
+`tokens_invalid`. Coverage reports all sessions, matched sessions, excluded counts and the
+known cost inside and outside the matched population; usage without a session adds to the
+outside cost (`cost_unattributed`). The strip, decomposition, trend, model table, outcome cost and
+exemplars all use the matched population. Trend buckets match each session's in-bucket slices
+independently, so bucket values need not combine to the window value.
+
+| Measure | Formula |
+|---|---|
+| Cost per user / session / 1,000 requests | cost / users, / sessions, / (requests / 1000) |
+| Tokens per request | tokens / requests |
+| Model economics | Per normalized model: cost, request share, cost per 1M tokens; `small` marks Haiku/Luna families |
+| Outcome cost (Claude) | cost / commits, / PRs, / (added lines / 1000); counter increases (`incFlat`) of matched sessions |
+| Exemplars | Users with at least 5 matched sessions and 20 turns; median and top 3 per lever: tokens per request and requests per turn (lower), cache hit rate and small-model request share (higher) |
+
+**Availability.** Each value is null with a reason, never zero: `window_too_short` (the
+hour-aligned window is under one hour), `not_backfilled` (`SESSION_TURNS_READ_FROM` unset or later
+than the window's start), `retention` (the window starts beyond the 90-day log retention),
+`no_matched_sessions`, `no_users`, `no_previous`, `zero_factor`, and `not_collected` for Codex
+outcomes (default OTel has no commit/PR/line source). Each window is gated on its own: a gated
+current window makes every section unavailable; a gated previous window leaves the current
+sections and makes only the previous values and the decomposition unavailable. A positive total
+does not prove complete telemetry.
+
+**Limits.** These are cost-efficiency observations of telemetry activity, not validated employee
+productivity, code quality or causal ROI. Commits, PRs and lines are observed counters, not merged
+or verified outcomes. The combined view has no cross-client chain because identities differ; it
+sums per-client costs and per-factor contributions, and when any client's decomposition is
+unavailable it names that client and shows each client's own decomposition instead. Executive `costPerKloc` and cost efficiency
+keep their own population (all known cost, 180-day counters). Claude user filters match the turns'
+log identity, as `/api/clients/productivity` does: counters are read without the user filter and kept
+for sessions whose turns match, so Bedrock sessions without counter `UserEmail` stay counted. Under a
+Claude user filter, sessionless usage counts as outside cost only when its counter `UserEmail` matches.
+Outcome counts follow [ADR-018](decisions/ADR-018-activity-observation-availability.md): a metric with
+no in-window counter evidence in any matched session is null, not zero, and so are an exemplar's commits
+without evidence in that user's matched sessions; an observed unchanged counter is a measured zero.
+
 ### Activity and flow coverage
 
 [ProductivitySignals](../dashboard/web/src/pages/ProductivitySignals.jsx) shows the three
