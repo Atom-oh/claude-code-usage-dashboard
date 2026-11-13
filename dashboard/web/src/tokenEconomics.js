@@ -59,6 +59,28 @@ export function waterfallSteps(previousCost, decomposition) {
   return steps;
 }
 
+// Exemplar lever bars around the eligible users' median. Rate levers differ in percentage
+// points, the others in percent of the median (none without a positive median). `score` turns
+// the lever's direction into "positive is better", so the better side is always drawn right;
+// `width` is the share of the whole track (at most half: from the median line to an edge).
+const RATE_LEVERS = new Set(["cache_hit_rate", "small_model_share"]);
+export function exemplarBars(lever) {
+  const unit = RATE_LEVERS.has(lever?.lever) ? "pt" : "pct";
+  const median = finite(lever?.median);
+  const rows = (Array.isArray(lever?.top) ? lever.top : []).map((u) => {
+    const value = finite(u.value);
+    const delta = value === null || median === null ? null
+      : unit === "pt" ? (value - median) * 100 : median > 0 ? (value - median) / median * 100 : null;
+    const score = delta === null ? null : lever.direction === "lower" ? -delta : delta;
+    return { ...u, value, delta, score };
+  });
+  const max = Math.max(0, ...rows.map((r) => (r.score === null ? 0 : Math.abs(r.score))));
+  const bars = rows.map(({ score, ...r }) => ({ ...r,
+    better: score === null || score === 0 ? null : score > 0,
+    width: score === null || max === 0 ? 0 : Math.abs(score) / max * 50 }));
+  return { unit, median, bars };
+}
+
 // The server floors the requested (overview effective) bounds to the hour.
 const HOUR = 3600000;
 const floorIso = (value) => {

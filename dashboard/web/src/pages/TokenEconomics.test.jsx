@@ -5,7 +5,7 @@ import { RangeProvider } from "../RangeContext.jsx";
 import { ConfigProvider } from "../ConfigContext.jsx";
 import { maskEmail, setPiiMask } from "../fmt.js";
 import { TERM_LABELS } from "../tokenEconomics.js";
-import TokenEconomics, { MODEL_COLUMNS, modelRows } from "./TokenEconomics.jsx";
+import TokenEconomics, { EXEMPLAR_COLUMNS, MODEL_COLUMNS, exemplarRows, modelRows } from "./TokenEconomics.jsx";
 import { toCsv } from "../csv.js";
 
 class ResizeObserverStub {
@@ -185,6 +185,36 @@ test("exemplar identities pass through maskEmail and keep the contact caption", 
   expect(screen.getByText(maskEmail("carol@example.test"))).toBeTruthy();
   expect(container.textContent).not.toContain("alice@example.test");
   expect(screen.getByText("최소 활동량(세션 5개·턴 20개) 충족 사용자만 · 연락해 사용 방식을 공유받는 용도이며 성과 평가가 아닙니다")).toBeTruthy();
+});
+
+test("exemplar levers chart each user against the median instead of a median column", () => {
+  mount({ data: response([claude(), codex()]), clients: ["claude", "codex"] });
+  const tpr = screen.getByRole("list", { name: "Claude Code 토큰 / 요청 중앙값 대비" });
+  expect(screen.getByText("중앙값 41,000 · 낮을수록 좋음")).toBeTruthy();
+  const alice = within(tpr).getByRole("listitem");
+  expect(within(alice).getByText(maskEmail("alice@example.test"))).toBeTruthy();
+  expect(within(alice).getByText("22,000 · −46.3%")).toBeTruthy();
+  expect(alice.getAttribute("data-better")).toBe("true");
+  expect(alice.getAttribute("title")).toBe("세션 9 · 턴 80 · 커밋 12");
+  // Rate levers differ in percentage points; Codex commits stay unavailable, never zero.
+  const cache = screen.getByRole("list", { name: "Claude Code 캐시 히트율 중앙값 대비" });
+  expect(within(cache).getByText("93% · +22.0%p")).toBeTruthy();
+  const carol = within(screen.getByRole("list", { name: "Codex 요청 / 턴 중앙값 대비" })).getByRole("listitem");
+  expect(carol.getAttribute("title")).toBe("세션 5 · 턴 25 · 커밋 미수집");
+  expect(screen.queryByText("중앙값 (적격 사용자)")).toBeNull();
+  const card = screen.getByText("모범 사용자").closest(".shadow-card");
+  expect(within(card).getByRole("button", { name: /CSV/ })).toBeTruthy();
+});
+
+test("exemplar CSV keeps the median and the charted difference, and masks users", () => {
+  const csv = toCsv(EXEMPLAR_COLUMNS, exemplarRows([claude(), codex()]), { piiMask: true }).split("\r\n");
+  expect(csv[0].replace(/^\uFEFF/, "")).toBe("클라이언트,레버,중앙값 (적격 사용자),사용자,값,중앙값 대비,세션,턴,커밋");
+  expect(csv[1]).toBe(`Claude Code,토큰 / 요청 (낮을수록),41000,${maskEmail("alice@example.test")},22000,−46.3%,9,80,12`);
+  expect(csv[3].startsWith("Codex,요청 / 턴 (낮을수록),3,")).toBe(true);
+  expect(csv[3].endsWith(",−33.3%,5,25,미수집")).toBe(true);
+  const atMedian = codex({ exemplars: { eligible_users: 1, levers: [{ lever: "requests_per_turn", direction: "lower",
+    median: 3, top: [{ user: "carol@example.test", value: 3, sessions: 5, turns: 25, commits: null }] }] } });
+  expect(toCsv(EXEMPLAR_COLUMNS, exemplarRows([atMedian])).split("\r\n")[1]).toContain(",±0%,");
 });
 
 test.each([

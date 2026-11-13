@@ -231,7 +231,7 @@ function median(values) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-export function exemplars(facts = [], outcomes = null, { minSessions = 5, minTurns = 20, top = 3 } = {}) {
+export function exemplars(facts = [], outcomes = null, { minSessions = 5, minTurns = 20, top = 10 } = {}) {
   // A user's commits are null unless one of their matched sessions has commit evidence.
   const commitsBySession = new Map(), commitsSeen = new Set();
   if (Array.isArray(outcomes)) for (const o of outcomes) {

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { UNAVAILABLE_LABELS } from "./clientProductivity.js";
-import { BUNDLE_LABELS, BUNDLE_OF, NOT_OBSERVED_LABEL, REASON_LABELS, TERM_LABELS, TERMS, changePct, expectedWindow,
-  responseWindowMatches, waterfallSteps } from "./tokenEconomics.js";
+import { BUNDLE_LABELS, BUNDLE_OF, NOT_OBSERVED_LABEL, REASON_LABELS, TERM_LABELS, TERMS, changePct, exemplarBars,
+  expectedWindow, responseWindowMatches, waterfallSteps } from "./tokenEconomics.js";
 
 const contributions = { users: 595.8845, sessions_per_user: 79.4409, turns_per_session: -181.9964,
   requests_per_turn: 182.0223, tokens_per_request: 231.9086, cost_per_token: -282.2599 };
@@ -59,4 +59,41 @@ test("the response window is the overview window floored to the hour", () => {
   expect(responseWindowMatches(overview, { from: "2026-09-01T09:00:00.000Z", to: "2026-09-02T09:00:00.000Z" })).toBe(false);
   expect(responseWindowMatches(overview, undefined)).toBe(false);
   expect(responseWindowMatches(undefined, { from: "2026-09-01T10:00:00.000Z", to: "2026-09-02T09:00:00.000Z" })).toBe(false);
+});
+
+test("exemplar bars point the better side right for a lower-is-better lever", () => {
+  const { unit, median, bars } = exemplarBars({ lever: "tokens_per_request", direction: "lower", median: 200,
+    top: [{ user: "a", value: 100 }, { user: "b", value: 150 }, { user: "c", value: 250 }] });
+  expect(unit).toBe("pct");
+  expect(median).toBe(200);
+  expect(bars.map((b) => b.delta)).toEqual([-50, -25, 25]);
+  expect(bars.map((b) => b.better)).toEqual([true, true, false]);
+  // The largest difference spans half the track (from the median line to an edge).
+  expect(bars.map((b) => b.width)).toEqual([50, 25, 25]);
+});
+
+test("exemplar bars use percentage points for rate levers", () => {
+  const { unit, bars } = exemplarBars({ lever: "cache_hit_rate", direction: "higher", median: 0.9,
+    top: [{ user: "a", value: 0.95 }, { user: "b", value: 0.88 }] });
+  expect(unit).toBe("pt");
+  expect(bars[0].delta).toBeCloseTo(5, 9);
+  expect(bars[1].delta).toBeCloseTo(-2, 9);
+  expect(bars.map((b) => b.better)).toEqual([true, false]);
+  expect(bars[0].width).toBe(50);
+  expect(bars[1].width).toBeCloseTo(20, 9);
+});
+
+test("exemplar bars without a usable median have no difference and no bar", () => {
+  for (const median of [null, 0]) {
+    const { bars } = exemplarBars({ lever: "requests_per_turn", direction: "lower", median,
+      top: [{ user: "a", value: 3 }] });
+    expect(bars[0]).toMatchObject({ user: "a", value: 3, delta: null, better: null, width: 0 });
+  }
+  expect(exemplarBars({ lever: "requests_per_turn", direction: "lower", median: 2, top: null }).bars).toEqual([]);
+});
+
+test("an exemplar at the median is neither better nor worse", () => {
+  const { bars } = exemplarBars({ lever: "requests_per_turn", direction: "lower", median: 10,
+    top: [{ user: "a", value: 5 }, { user: "b", value: 10 }] });
+  expect(bars[1]).toMatchObject({ delta: 0, better: null, width: 0 });
 });

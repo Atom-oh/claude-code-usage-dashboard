@@ -241,10 +241,10 @@ test("exemplars require activity", () => {
   const ex = exemplars(facts, null);
   assert.equal(ex.eligible_users, 4);
   const tpr = ex.levers.find((l) => l.lever === "tokens_per_request");
-  assert.deepEqual(tpr.top.map((r) => r.user), ["d", "b", "a"]); // lowest tokens/request first
+  assert.deepEqual(tpr.top.map((r) => r.user), ["d", "b", "a", "c"]); // lowest tokens/request first
   assert.equal(tpr.top[0].commits, null);
   const rpt = ex.levers.find((l) => l.lever === "requests_per_turn");
-  assert.deepEqual(rpt.top.map((r) => r.user), ["c", "a", "b"]);
+  assert.deepEqual(rpt.top.map((r) => r.user), ["c", "a", "b", "d"]);
   assert.equal(rpt.median, 2.5);
   const withOut = exemplars(facts, [{ session: "c0", commits: 2, commits_observed: 1 }]);
   assert.equal(withOut.levers[1].top.find((r) => r.user === "c").commits, 2);
@@ -252,4 +252,23 @@ test("exemplars require activity", () => {
   assert.equal(withOut.levers[1].top.find((r) => r.user === "a").commits, null);
   const unobserved = exemplars(facts, [{ session: "c0", commits: 0, commits_observed: 0 }]);
   assert.equal(unobserved.levers[1].top.find((r) => r.user === "c").commits, null);
+});
+
+test("exemplars list up to ten users per lever", () => {
+  const usage = [], turns = [];
+  for (let u = 0; u < 12; u++) {
+    const user = `u${String(u).padStart(2, "0")}`;
+    for (let i = 0; i < 5; i++) {
+      const session = `${user}-${i}`;
+      usage.push(U({ session, user, tokens: 100 * (u + 1), cache_read: 50, cache_den: 100 }));
+      turns.push(T({ session, user, n: 5 }), T({ session, user, kind: "request", model: "claude-sonnet-4", n: 5 }));
+    }
+  }
+  const ex = exemplars(matchSessions(usage, turns), null);
+  assert.equal(ex.eligible_users, 12);
+  const tpr = ex.levers.find((l) => l.lever === "tokens_per_request");
+  assert.equal(tpr.top.length, 10);
+  assert.deepEqual(tpr.top.map((r) => r.user).slice(0, 2), ["u00", "u01"]);
+  // The median still covers every eligible user, not only the listed ten.
+  assert.equal(tpr.median, 130);
 });
