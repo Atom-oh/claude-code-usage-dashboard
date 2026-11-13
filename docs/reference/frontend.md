@@ -348,7 +348,7 @@ tool bars and permission-wait marks; dashed connectors from a spawning span that
 payload), a cumulative cost band stacked by lane colour with a hover tooltip
 ([TaskCostBand](../../dashboard/web/src/components/TaskCostBand.jsx)), a context-size chart
 on the same time axis ([TaskContextChart](../../dashboard/web/src/components/TaskContextChart.jsx):
-one line per lane of per-call context, Claude compaction marks, the Codex auto-compaction
+one line per lane of per-call context (`contextLines()`: only the lane's main `query_source_safe`; side sources such as `agent_summary` are unconnected points), Claude compaction marks, the Codex auto-compaction
 limit line and shares of the reported limits; points select their span; a compaction
 outside the drawn spans is clamped to the axis edge; missing tokens, partial series and
 Claude's unreported window are disclosed), a side panel for the
@@ -361,6 +361,7 @@ LLM calls grouped by the span's `model`, else its linked completion's model, and
 and partial sums are labelled). Selecting a table row (a button) dims every other LLM bar
 in the timeline through TaskTimeline's optional `highlight` predicate; selecting it again
 clears it. A truncated detail counts only the returned spans and shows no cost sums there.
+Same-name lanes are numbered and shaded by `withLaneIdentity()` so each reads as its own lane.
 Pure helpers live in
 [taskTrace.js](../../dashboard/web/src/taskTrace.js); lane hues are `LANE_COLOR` in
 [colors.js](../../dashboard/web/src/colors.js) and icons in

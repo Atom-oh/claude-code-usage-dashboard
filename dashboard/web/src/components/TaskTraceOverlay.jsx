@@ -16,7 +16,7 @@ import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { clientName, formatClientTimestamp, observedNumber } from "../clientPresentation.js";
-import { compactCount, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, timelineEnd } from "../taskTrace.js";
+import { compactCount, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, timelineEnd, withLaneIdentity } from "../taskTrace.js";
 import { taskSharePath } from "../clientNavigation.js";
 
 // Copies the task's share link (/tasks/<id>/<from>/<to>; no user in the URL). Without
@@ -158,7 +158,8 @@ function ModelCalls({ rows, lanes, truncated, activeKey, onToggle }) {
 function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
   const { task, truncated } = data;
   const spans = useMemo(() => data.spans || [], [data.spans]);
-  const lanes = useMemo(() => laneOrder(data.lanes || [], spans), [data.lanes, spans]);
+  // Display order, then same-name lanes numbered and shaded so each lane reads as its own.
+  const lanes = useMemo(() => withLaneIdentity(laneOrder(data.lanes || [], spans)), [data.lanes, spans]);
   const numbers = useMemo(() => {
     const m = new Map();
     spans.filter((s) => s.kind === "llm").forEach((s, i) => m.set(s.id, i + 1));
@@ -171,6 +172,11 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
   const unlinked = observedNumber(task.completions_without_span) ?? 0;
   const models = useMemo(() => modelBreakdown(spans), [spans]);
   const usage = useMemo(() => modelUsage(spans), [spans]);
+  // Call source per span id: the context chart joins only a lane's main source.
+  const sourceOf = useMemo(() => {
+    const m = new Map(spans.map((x) => [x.id, x.attrs?.query_source_safe ?? null]));
+    return (id) => m.get(id) ?? null;
+  }, [spans]);
   const activeKey = models.some((m) => m.key === highlightKey) ? highlightKey : null;
   const highlight = useMemo(() => (activeKey === null ? null : (s) => modelKey(s) === activeKey), [activeKey]);
   return <>
@@ -193,6 +199,7 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
         </div> : <p className="mt-4 text-sm text-ink-500">호출별 비용 {MISSING}</p>)}
         {data.context && <div className="mt-4 border-t border-ink-100 pt-3">
           <TaskContextChart context={data.context} lanes={lanes} end={end} numbers={numbers} client={task.client}
+            sourceOf={sourceOf}
             selectedId={selectedId} onSelect={onSelect} />
         </div>}
       </div>

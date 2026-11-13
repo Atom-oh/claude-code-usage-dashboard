@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { compactCount, contextSummary, cumulativeByLane, iconFor, laneName, laneOrder, modelBreakdown, modelKey, modelUsage } from "./taskTrace.js";
+import { compactCount, contextSummary, cumulativeByLane, iconFor, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, withLaneIdentity, contextLines } from "./taskTrace.js";
 
 const lane = (id, kind = "general-purpose", extra = {}) => ({ id, label: kind, kind, spawned_by: null,
   llm_calls: 1, cost_usd: 1, cost_partial: false, ...extra });
@@ -165,4 +165,42 @@ test("modelUsage folds call sources into one row per model, most expensive first
   // A model whose calls all lack a cost keeps it unknown and has no share.
   const unknown = modelUsage([call("x", "main", "gpt-6.1", null, undefined)]);
   expect(unknown[0]).toMatchObject({ model: "gpt-6.1", calls: 1, cost_usd: null, cost_partial: true, share: null });
+});
+
+test("lanes that share a name get numbered names and distinct colours", () => {
+  const lanes = withLaneIdentity([
+    { id: "main", kind: "main", label: "main" },
+    { id: "a", kind: "general-purpose", label: "general-purpose" },
+    { id: "b", kind: "Explore", label: "Explore" },
+    { id: "c", kind: "general-purpose", label: "general-purpose" },
+    { id: "d", kind: "general-purpose", label: "general-purpose" },
+  ]);
+  expect(lanes.map(laneName)).toEqual(["메인 세션", "general-purpose #1", "Explore", "general-purpose #2", "general-purpose #3"]);
+  const colors = lanes.map((l) => l.color);
+  // The first lane of a kind keeps its kind colour; later same-kind lanes get their own shade.
+  expect(colors[1]).toBe("var(--chart-3)");
+  expect(colors[2]).toBe("var(--chart-2)");
+  expect(new Set([colors[1], colors[3], colors[4]]).size).toBe(3);
+  expect(colors[3]).toContain("var(--chart-3)");
+  // A lane order without duplicates is unchanged.
+  expect(withLaneIdentity([{ id: "x", kind: "custom", label: "reviewer" }]).map(laneName)).toEqual(["reviewer"]);
+});
+
+test("a lane's context line joins only its main call source; side calls stay unconnected", () => {
+  const points = [
+    { span: "s1", lane: "gp", start_ms: 1, tokens: 60000 }, { span: "s2", lane: "gp", start_ms: 2, tokens: 70000 },
+    { span: "h1", lane: "gp", start_ms: 3, tokens: 1000 }, { span: "s3", lane: "gp", start_ms: 4, tokens: 80000 },
+    { span: "m1", lane: "main", start_ms: 0, tokens: 5000 }, { span: "m2", lane: "main", start_ms: 5, tokens: 6000 },
+  ];
+  const source = { s1: "agent.builtin.general-purpose", s2: "agent.builtin.general-purpose", s3: "agent.builtin.general-purpose",
+    h1: "agent_summary", m1: "repl_main_thread", m2: null };
+  const lines = contextLines(points, (id) => source[id] ?? null);
+  expect(lines.get("gp").line.map((p) => p.span)).toEqual(["s1", "s2", "s3"]);
+  expect([...lines.get("gp").side]).toEqual(["h1"]);
+  expect(lines.get("gp").source).toBe("agent.builtin.general-purpose");
+  // A tie keeps the source of the lane's first call; an unknown source is its own group.
+  expect(lines.get("main").line.map((p) => p.span)).toEqual(["m1"]);
+  expect([...lines.get("main").side]).toEqual(["m2"]);
+  // Without sources (Codex) every point of a lane is on its line.
+  expect(contextLines(points, () => null).get("gp").line).toHaveLength(4);
 });

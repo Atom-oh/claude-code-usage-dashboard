@@ -6,8 +6,7 @@ import { Badge } from "./Badge.jsx";
 import { COST_BASIS, formatTaskDuration } from "./TaskList.jsx";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { observedNumber } from "../clientPresentation.js";
-import { contextOf, iconFor, laneName } from "../taskTrace.js";
-import { laneColorFor } from "../colors.js";
+import { contextOf, iconFor, laneColor, laneName } from "../taskTrace.js";
 import { TaskIcon } from "./taskIcons.jsx";
 
 const MISSING = "미수집";
@@ -86,7 +85,7 @@ export function TaskSpanPanel({ span, lane, number, codex }) {
     : text(span.attrs?.tool_name ?? span.name);
   const icon = span.kind === "llm" ? iconFor(lane?.kind, "agent") : span.kind === "wait" ? "wait"
     : iconFor(span.attrs?.tool_name ?? span.name);
-  const color = span.kind === "llm" ? laneColorFor(lane?.kind) : span.kind === "wait" ? "var(--negative)" : "var(--ink-500)";
+  const color = span.kind === "llm" ? laneColor(lane) : span.kind === "wait" ? "var(--negative)" : "var(--ink-500)";
   const rows = span.kind === "llm" ? llmRows(span, codex) : span.kind === "wait" ? waitRows(span) : toolRows(span);
   return <section aria-label="선택한 span 상세">
     <h3 className="flex items-center gap-2 text-[14px] font-semibold text-ink-800">

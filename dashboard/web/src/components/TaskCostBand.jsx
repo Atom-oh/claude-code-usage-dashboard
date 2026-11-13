@@ -2,9 +2,8 @@
 // cumulative cost at that time. Once any lane's cost becomes unknown the stack stops and the
 // rest of the axis is drawn as "미수집" rather than a lower total.
 import { useMemo, useState } from "react";
-import { laneColorFor } from "../colors.js";
 import { formatClientCost } from "../clientUsage.js";
-import { cumulativeByLane, laneName } from "../taskTrace.js";
+import { cumulativeByLane, laneColor, laneName } from "../taskTrace.js";
 import { formatTaskDuration } from "./TaskList.jsx";
 import { TimeAxis, PLOT_W, VIEW_W, X0 } from "./TaskTimeline.jsx";
 import { tooltipStyles, useChartColors } from "../useChartColors.js";
@@ -35,7 +34,7 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
       let d = "";
       for (let i = 0; i <= lastKnown; i++) d += `${i ? "L" : "M"}${xAt(i).toFixed(1)} ${y(top[i]).toFixed(1)}`;
       for (let i = lastKnown; i >= 0; i--) d += `L${xAt(i).toFixed(1)} ${y(below[i]).toFixed(1)}`;
-      areas.push(<path key={l.id} d={`${d}Z`} style={{ fill: laneColorFor(l.kind), opacity: 0.8, stroke: c.surface, strokeWidth: 0.5 }} />);
+      areas.push(<path key={l.id} d={`${d}Z`} style={{ fill: laneColor(l), opacity: 0.8, stroke: c.surface, strokeWidth: 0.5 }} />);
       top.forEach((v, i) => { below[i] = v; });
     }
   }
@@ -56,7 +55,7 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
       <text x={8} y={16} style={{ fill: "var(--text-primary)", fontSize: 12, fontWeight: 600 }}>{title}</text>
       {lanes.map((l, i) => <g key={l.id} data-band-lane={i} aria-hidden="true">
         <rect data-band-legend="" x={8} y={LEGEND_TOP + i * LEGEND_ROW} width={10} height={10} rx={2}
-          style={{ fill: laneColorFor(l.kind) }} />
+          style={{ fill: laneColor(l) }} />
         <text x={24} y={LEGEND_TOP + 9 + i * LEGEND_ROW} style={{ fill: "var(--text-primary)", fontSize: 11 }}>{laneName(l)}</text>
         <text x={190} y={LEGEND_TOP + 9 + i * LEGEND_ROW} textAnchor="end" style={{ fill: "var(--text-secondary)", fontSize: 11 }}>
           {money(final.by_lane[l.id] ?? null)}</text>

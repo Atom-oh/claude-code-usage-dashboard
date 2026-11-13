@@ -4,10 +4,9 @@
 // conversation reported. Claude Code reports no context window, so no share of it is drawn.
 // The time axis matches the lane timeline above it (same X0/PLOT_W/end).
 import { useState } from "react";
-import { laneColorFor } from "../colors.js";
 import { formatObserved } from "../clientUsage.js";
 import { observedNumber } from "../clientPresentation.js";
-import { compactCount, contextSummary, laneName } from "../taskTrace.js";
+import { compactCount, contextLines, contextSummary, laneColor, laneName } from "../taskTrace.js";
 import { formatTaskDuration } from "./TaskList.jsx";
 import { TimeAxis, PLOT_W, VIEW_W, X0 } from "./TaskTimeline.jsx";
 
@@ -23,7 +22,7 @@ function niceMax(v) {
   return Math.ceil(v / step) * step;
 }
 
-export function TaskContextChart({ context, lanes, end, numbers, client, selectedId, onSelect }) {
+export function TaskContextChart({ context, lanes, end, numbers, client, selectedId, onSelect, sourceOf = () => null }) {
   const [focused, setFocused] = useState(null);
   const s = contextSummary(context);
   if (!s.points) return <p className="text-sm text-ink-500">컨텍스트 크기 미수집</p>;
@@ -38,6 +37,9 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
   const x = (ms) => X0 + (end > 0 ? (Math.max(0, Math.min(ms, end)) / end) * PLOT_W : 0);
   const y = (v) => BASE - (v / yMax) * (BASE - TOP);
   const shown = lanes.filter((l) => points.some((p) => p.lane === l.id));
+  const lines = contextLines(points, sourceOf);
+  const sideSources = [...new Set([...lines.values()].flatMap((g) => g.sideSources))];
+  const sideExample = sideSources.find((v) => v !== null) ?? "출처 미수집";
   const ticks = [0, 0.5, 1].map((f) => f * yMax);
   const label = (p) => {
     const lane = lanes.find((l) => l.id === p.lane);
@@ -67,7 +69,7 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
     <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" className="block" role="group"
       aria-label={`레인별 컨텍스트 크기, 최대 ${tokensText(s.peak.tokens)}`}>
       {shown.map((l, i) => <g key={l.id} aria-hidden="true">
-        <rect x={8} y={TOP + i * LEGEND_ROW} width={10} height={3} rx={1} style={{ fill: laneColorFor(l.kind) }} />
+        <rect x={8} y={TOP + i * LEGEND_ROW} width={10} height={3} rx={1} style={{ fill: laneColor(l) }} />
         <text x={24} y={TOP + 5 + i * LEGEND_ROW} style={{ fill: "var(--text-primary)", fontSize: 11 }}>{laneName(l)}</text>
       </g>)}
       {ticks.map((v) => <g key={v} aria-hidden="true">
@@ -86,23 +88,26 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
           {`컴팩션 ${tokensText(c.pre_tokens)} → ${tokensText(c.post_tokens)}`}</text>
       </g>)}
       {shown.map((l) => {
-        const own = points.filter((p) => p.lane === l.id);
+        const own = lines.get(l.id)?.line ?? [];
         return own.length > 1 && <polyline key={l.id} data-context-line={l.id} aria-hidden="true" fill="none"
           points={own.map((p) => `${x(p.start_ms).toFixed(1)},${y(p.tokens).toFixed(1)}`).join(" ")}
-          style={{ stroke: laneColorFor(l.kind), strokeWidth: 2, strokeLinejoin: "round", strokeLinecap: "round" }} />;
+          style={{ stroke: laneColor(l), strokeWidth: 2, strokeLinejoin: "round", strokeLinecap: "round" }} />;
       })}
       {points.map((p, i) => {
         const lane = lanes.find((l) => l.id === p.lane);
-        const color = laneColorFor(lane?.kind);
+        const color = laneColor(lane);
         const key = p.span ?? `p${i}`;
+        const side = Boolean(p.span && lines.get(p.lane)?.side.has(p.span));
         const active = p.span && (p.span === selectedId || key === focused);
         const props = p.span ? { role: "button", tabIndex: 0, "aria-label": label(p), "aria-pressed": p.span === selectedId,
           className: "cursor-pointer outline-none", onClick: () => onSelect(p.span), onFocus: () => setFocused(key),
           onBlur: () => setFocused((f) => (f === key ? null : f)),
           onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(p.span); } } }
           : { "aria-hidden": "true" };
-        return <circle key={key} {...props} data-context-point="" cx={x(p.start_ms)} cy={y(p.tokens)} r={active ? 5 : 3.5}
-          style={{ fill: active ? color : "var(--surface-card)", stroke: color, strokeWidth: 1.5 }}>
+        return <circle key={key} {...props} data-context-point="" data-context-side={side ? "" : undefined}
+          cx={x(p.start_ms)} cy={y(p.tokens)} r={active ? 5 : 3.5}
+          style={{ fill: active ? color : "var(--surface-card)", stroke: color, strokeWidth: 1.5,
+            strokeDasharray: side ? "2 1.5" : undefined }}>
           <title>{label(p)}</title>
         </circle>;
       })}
@@ -110,6 +115,7 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
     </svg>
     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-500">
       <span>점을 누르면 그 호출을 오른쪽 패널에서 봅니다</span>
+      {sideSources.length > 0 && <span>{`다른 호출 출처(예: ${sideExample})의 호출은 선으로 잇지 않고 점으로만 표시합니다`}</span>}
       {s.missing > 0 && <span>{`토큰 미수집 호출 ${formatObserved(s.missing)}개는 그리지 않음`}</span>}
       {s.partial && <span>일부 호출 기준</span>}
       {compactions.length > 0 && <span>컴팩션 토큰은 Claude Code가 보고한 값으로, 호출별 입력 합계와 계산 기준이 다를 수 있습니다</span>}
