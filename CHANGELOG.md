@@ -15,6 +15,24 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- The task detail's cost-explanation panel ends with a per-model summary (calls, known
+  cost and share of the task's known LLM cost, most expensive first), so a task with dozens
+  of calls reads as "Haiku ×N, Sonnet ×M" without opening each bar. Unknown cost stays
+  "not collected"; a partly known cost is marked as a partial sum.
+- User task lists show each Claude Code task's workflow runs as badges; a badge narrows the
+  list to that run (`workflowRunId`, Claude Code only) until the filter is cleared. The
+  task detail header names the task's workflow runs. A run without a valid name shows its
+  run id.
+
+### Fixed
+
+- The task list's cost-descending sort failed with HTTP 500 for users with many calls: the
+  request ids of the 100 candidate interactions (7,716 ids, 239 KB in one measured case)
+  exceeded ClickHouse's 128 KiB HTTP form-field limit. Cost lookups for task lists and
+  task details now run in chunks below 96 KiB.
+
 ## [1.5.1] - 2026-11-12
 
 ### Added

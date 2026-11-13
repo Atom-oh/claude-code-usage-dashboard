@@ -289,6 +289,24 @@ test("model breakdown card lists calls by model and source and highlights one mo
     .toEqual(["LLM 호출 #3 · 서브에이전트"]);
 });
 
+test("the why panel summarizes calls and cost per model before the individual bars", async () => {
+  body.spans = body.spans.map((s) => (s.id === "llm-3"
+    ? { ...s, attrs: { model: "claude-haiku-5-5", query_source_safe: "agent:builtin" } } : s));
+  mount();
+  const why = await screen.findByRole("region", { name: "왜 많이 썼나" });
+  const list = within(why).getByRole("list", { name: "모델별 사용" });
+  expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+    "claude-opus-5-5 2회 · $2.25 · 90%", "claude-haiku-5-5 1회 · $0.25 · 10%"]);
+});
+
+test("the why panel model summary keeps unknown cost unknown", async () => {
+  body.spans = body.spans.map((s) => (s.id === "llm-3" ? { ...s, attrs: { model: "claude-haiku-5-5" }, cost_usd: null } : s));
+  mount();
+  const list = within(await screen.findByRole("region", { name: "왜 많이 썼나" })).getByRole("list", { name: "모델별 사용" });
+  expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+    "claude-opus-5-5 2회 · $2.25 · 100%", "claude-haiku-5-5 1회 · 비용 미수집"]);
+});
+
 test("truncated detail model breakdown shows counts without cost sums", async () => {
   body = { ...claudeDetail(), truncated: true, span_total: 9000, why: [] };
   mount();
@@ -375,4 +393,11 @@ test("context chart clamps a compaction after the last span to the axis edge", a
   const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
   const mark = section.querySelector("[data-compaction] line");
   expect(Number(mark.getAttribute("x1"))).toBeCloseTo(880, 0);
+});
+
+test("the header names the task's workflow runs", async () => {
+  body = { ...claudeDetail(), task: { ...claudeDetail().task, workflows: [{ run_id: "wf_run-1", name: "nightly-translate" },
+    { run_id: "wf_run-2", name: null }] } };
+  mount();
+  expect(await screen.findByText("워크플로 nightly-translate, wf_run-2")).toBeTruthy();
 });

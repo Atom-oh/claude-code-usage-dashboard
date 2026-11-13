@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { compactCount, contextSummary, cumulativeByLane, iconFor, laneName, laneOrder, modelBreakdown, modelKey } from "./taskTrace.js";
+import { compactCount, contextSummary, cumulativeByLane, iconFor, laneName, laneOrder, modelBreakdown, modelKey, modelUsage } from "./taskTrace.js";
 
 const lane = (id, kind = "general-purpose", extra = {}) => ({ id, label: kind, kind, spawned_by: null,
   llm_calls: 1, cost_usd: 1, cost_partial: false, ...extra });
@@ -147,4 +147,22 @@ test("contextSummary: peak, main first/last, biggest compaction and limit shares
   expect([s.points, s.missing, s.partial]).toEqual([3, 1, true]);
   const empty = contextSummary(null);
   expect([empty.peak, empty.compactions, empty.mainLast, empty.points]).toEqual([null, null, null, 0]);
+});
+
+test("modelUsage folds call sources into one row per model, most expensive first", () => {
+  const rows = modelUsage([
+    call("a", "main", "claude-haiku-5-5", "sdk", 0.01),
+    call("b", "main", "claude-opus-5-5", "repl_main_thread", 1),
+    call("c", "agent-1", "claude-haiku-5-5", "agent:builtin", 0.02),
+    call("d", "agent-1", "claude-haiku-5-5", "agent:builtin", null),
+    call("e", "main", null, "sdk", 0.5),
+    { id: "t", lane: "main", kind: "tool", start_ms: 0, duration_ms: 1, attrs: { tool_name: "Bash" } },
+  ]);
+  expect(rows.map((r) => [r.model, r.calls])).toEqual([["claude-opus-5-5", 1], [null, 1], ["claude-haiku-5-5", 3]]);
+  expect(rows[0].share).toBeCloseTo(1 / 1.53);
+  expect(rows[2].cost_usd).toBeCloseTo(0.03);
+  expect(rows[2].cost_partial).toBe(true);
+  // A model whose calls all lack a cost keeps it unknown and has no share.
+  const unknown = modelUsage([call("x", "main", "gpt-6.1", null, undefined)]);
+  expect(unknown[0]).toMatchObject({ model: "gpt-6.1", calls: 1, cost_usd: null, cost_partial: true, share: null });
 });

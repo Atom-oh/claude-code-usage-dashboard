@@ -9,7 +9,7 @@ import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
   CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
-  foldCodexTask, claudeCostSql, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
+  foldCodexTask, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
   llm: ["model", "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens", "ttft_ms",
@@ -512,11 +512,8 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     if (!head || !head.owner) throw new NotFoundError();
     const rows = await run(sql.spans.sql, sql.spans.params);
     const ids = [...new Set(rows.filter(r => r.span_type === "llm_request").map(r => r.request_id).filter(Boolean))];
-    let costRows = [], compactionRows = [];
-    if (ids.length) {
-      const cost = claudeCostSql(from, to, ids);
-      costRows = await run(cost.sql, cost.params);
-    }
+    const costRows = await claudeCostRows(from, to, ids, run);
+    let compactionRows = [];
     const promptIds = [...new Set(costRows.map(r => r.prompt_id).filter(Boolean))];
     if (promptIds.length) {
       const compaction = claudeCompactionSql(from, to, promptIds);

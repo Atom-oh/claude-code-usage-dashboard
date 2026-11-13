@@ -259,3 +259,26 @@ test("row click opens the task and the raw id is not rendered", async () => {
   expect(req.searchParams.get("group")).toBe("bedrock");
   expect(req.searchParams.get("client")).toBe("claude");
 });
+
+test("a task's workflow runs show as badges that filter the list to that run", async () => {
+  tasksBody = response({ tasks: [{ ...claudeTask, workflows: [{ run_id: "wf_run-1", name: "nightly-translate" }] },
+    { ...codexTask, workflows: [] }] });
+  mount();
+  const badge = await screen.findByRole("button", { name: "워크플로 nightly-translate로 거르기" });
+  expect(within(rowOf("claude-opus-5-5")).getByText("nightly-translate")).toBeTruthy();
+  fireEvent.click(badge);
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("workflowRunId")).toBe("wf_run-1"));
+  // Workflow runs are Claude Code spans; the server filters them only for client=claude.
+  expect(taskRequests().at(-1).searchParams.get("client")).toBe("claude");
+  const chip = await screen.findByRole("status", { name: "워크플로 필터" });
+  expect(chip.textContent).toContain("nightly-translate");
+  fireEvent.click(within(chip).getByRole("button", { name: "워크플로 필터 해제" }));
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("workflowRunId")).toBeNull());
+  expect(taskRequests().at(-1).searchParams.get("client")).toBe("all");
+});
+
+test("a workflow run without a name shows its run id", async () => {
+  tasksBody = response({ tasks: [{ ...claudeTask, workflows: [{ run_id: "wf_run-2", name: null }] }] });
+  mount();
+  expect(await screen.findByRole("button", { name: "워크플로 wf_run-2로 거르기" })).toBeTruthy();
+});
