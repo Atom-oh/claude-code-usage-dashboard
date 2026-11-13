@@ -326,6 +326,9 @@ unattached Codex completion note and the `limited` coverage note, and skips the 
 buckets older than the 90-day trace retention. Its sort control requests `sort=tokens`,
 `cost`, `subagents` or `duration`; under `cost` it notes when the server's
 `sort_candidates.limited` reports that Claude tasks were ranked within the token top 100.
+A Claude task's `workflows` render as badges (the name, else the run id); a badge requests
+`workflowRunId` with `client=claude` and shows a clearable chip. The chosen run belongs to
+the user, bucket, clients, group and backend it was picked under and drops when any changes.
 Task ids are opaque and not displayed. The
 selected bucket and task clear when the user, clients, group or range changes.
 
@@ -349,7 +352,10 @@ one line per lane of per-call context, Claude compaction marks, the Codex auto-c
 limit line and shares of the reported limits; points select their span; a compaction
 outside the drawn spans is clamped to the axis edge; missing tokens, partial series and
 Claude's unreported window are disclosed), a side panel for the
-clicked span, the server's `why` rules and a per-model call table (`modelBreakdown()`:
+clicked span, the server's `why` rules followed by a per-model summary (`modelUsage()`: calls,
+known cost and share of the summed span costs per model, most expensive first; it notes
+when unknown costs or Codex completions without a span sit outside that base), the header's
+workflow runs, and a per-model call table (`modelBreakdown()`:
 LLM calls grouped by the span's `model`, else its linked completion's model, and
 `query_source_safe`, with lanes, calls and known cost; unknown cost stays not collected
 and partial sums are labelled). Selecting a table row (a button) dims every other LLM bar

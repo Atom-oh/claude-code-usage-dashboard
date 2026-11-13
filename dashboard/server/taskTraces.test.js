@@ -189,7 +189,8 @@ test("claudeCostRows splits request ids into parameters below the HTTP form fiel
   });
   assert.ok(COST_ID_PARAM_BYTES < 128 * 1024);
   assert.ok(calls.length > 1);
-  for (const p of calls) assert.ok(JSON.stringify(p.requestIds).length <= COST_ID_PARAM_BYTES);
+  // Budget the encoded size: the form body percent-encodes quotes, commas and brackets.
+  for (const p of calls) assert.ok(encodeURIComponent(JSON.stringify(p.requestIds)).length <= COST_ID_PARAM_BYTES);
   assert.deepEqual(calls.flatMap((p) => p.requestIds), ids);
   assert.equal(rows.length, ids.length);
   assert.deepEqual(await claudeCostRows(from, to, [], async () => { throw new Error("no query"); }), []);

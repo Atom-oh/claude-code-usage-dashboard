@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, ErrorBox, Loading } from "./Card.jsx";
 import { Badge } from "./Badge.jsx";
 import { DataTable } from "./DataTable.jsx";
@@ -81,10 +81,14 @@ function Cost({ row }) {
 // /api/users/tasks. Task ids are opaque and never displayed; rows show time and model instead.
 export function TaskList({ user, clients, group = null, from, to, onOpen, selectedId = null }) {
   const [sort, setSort] = useState("tokens");
-  // Workflow run chosen from a task's badge; it narrows the list to that run's interactions.
-  const [workflow, setWorkflow] = useState(null);
-  useEffect(() => { setWorkflow(null); }, [user, from, to]);
   const { backend } = useFilters();
+  // Workflow run chosen from a task's badge; it narrows the list to that run's interactions.
+  // It belongs to the scope it was picked in: a new user, bucket, client selection, group or
+  // backend drops it on the same render, so no request mixes the old run with the new scope.
+  const scope = JSON.stringify([user, from, to, clients, group, backend]);
+  const [picked, setPicked] = useState(null);
+  const workflow = picked?.scope === scope ? picked.run : null;
+  const setWorkflow = (run) => setPicked(run ? { scope, run } : null);
   const expired = Date.parse(from) < Date.now() - TRACE_RETENTION_DAYS * DAY;
   // Workflow runs are Claude Code spans: the server filters them only for client=claude.
   const client = workflow ? "claude" : clients.length > 1 ? "all" : clients[0];

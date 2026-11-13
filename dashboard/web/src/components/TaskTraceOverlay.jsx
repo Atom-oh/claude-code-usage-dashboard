@@ -69,7 +69,7 @@ function Kpis({ task }) {
 
 // One line per rule; a rule's inputs are never zero-filled by the server, so absent rules are
 // simply not listed.
-function Why({ why, lanes, numbers, onSelect, usage = [] }) {
+function Why({ why, lanes, numbers, onSelect, usage = [], unlinked = 0 }) {
   const lane = (id) => { const l = lanes.find((x) => x.id === id); return l ? laneName(l) : "서브에이전트"; };
   const items = why.map(({ rule, value }) => {
     if (rule === "cache_read_share") return { rule, text: `cache read ${pct(value)} — 큰 컨텍스트로 호출 반복` };
@@ -100,6 +100,11 @@ function Why({ why, lanes, numbers, onSelect, usage = [] }) {
             : `${formatClientCost(u.cost_usd)}${u.cost_partial ? " (부분합)" : ""}${u.share === null ? "" : ` · ${pct(u.share)}`}`}`}
         </li>)}
       </ul>
+      {/* Shares are over the summed span costs: disclose what that base leaves out. */}
+      {unlinked > 0 && <p className="mt-1 text-[12px] text-ink-500">
+        {`span과 연결되지 않은 Codex completion ${formatObserved(unlinked)}건은 모델별 사용과 비중에서 제외됩니다.`}</p>}
+      {usage.some((u) => u.cost_usd === null || u.cost_partial) && <p className="mt-1 text-[12px] text-ink-500">
+        비중은 비용이 확인된 호출 기준입니다.</p>}
     </div>}
   </section>;
 }
@@ -196,7 +201,8 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
           <TaskSpanPanel span={selected} lane={selected ? lanes.find((l) => l.id === selected.lane) : null}
             number={selected ? numbers.get(selected.id) : null} codex={task.client === "codex"} />
         </div>
-        {!truncated && <Why why={data.why || []} lanes={lanes} numbers={numbers} onSelect={onSelect} usage={usage} />}
+        {!truncated && <Why why={data.why || []} lanes={lanes} numbers={numbers} onSelect={onSelect} usage={usage}
+          unlinked={unlinked} />}
       </div>
     </div>
     {models.length > 0 && <ModelCalls rows={models} lanes={lanes} truncated={truncated} activeKey={activeKey}

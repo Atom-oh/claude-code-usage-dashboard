@@ -282,3 +282,18 @@ test("a workflow run without a name shows its run id", async () => {
   mount();
   expect(await screen.findByRole("button", { name: "워크플로 wf_run-2로 거르기" })).toBeTruthy();
 });
+
+test("changing the client selection clears the workflow filter", async () => {
+  tasksBody = response({ tasks: [{ ...claudeTask, workflows: [{ run_id: "wf_run-1", name: "nightly-translate" }] }] });
+  const tree = (clients) => <MemoryRouter><ConfigProvider config={{ piiMask: true }}>
+    <RefreshProvider><RangeProvider><FilterProvider><TaskList user={USER} clients={clients} group={null}
+      from={BUCKET.from} to={BUCKET.to} onOpen={() => {}} /></FilterProvider></RangeProvider></RefreshProvider>
+  </ConfigProvider></MemoryRouter>;
+  const { rerender } = render(tree(["claude", "codex"]));
+  fireEvent.click(await screen.findByRole("button", { name: "워크플로 nightly-translate로 거르기" }));
+  await screen.findByRole("status", { name: "워크플로 필터" });
+  rerender(tree(["codex"]));
+  await waitFor(() => expect(screen.queryByRole("status", { name: "워크플로 필터" })).toBeNull());
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("client")).toBe("codex"));
+  expect(taskRequests().at(-1).searchParams.get("workflowRunId")).toBeNull();
+});

@@ -305,6 +305,23 @@ test("the why panel model summary keeps unknown cost unknown", async () => {
   const list = within(await screen.findByRole("region", { name: "왜 많이 썼나" })).getByRole("list", { name: "모델별 사용" });
   expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
     "claude-opus-5-5 2회 · $2.25 · 100%", "claude-haiku-5-5 1회 · 비용 미수집"]);
+  expect(within(screen.getByRole("region", { name: "왜 많이 썼나" })).getByText("비중은 비용이 확인된 호출 기준입니다.")).toBeTruthy();
+});
+
+test("a Codex model summary names the completions it leaves out of the shares", async () => {
+  body = { ...codexDetail(), task: { ...codexDetail().task, completions_without_span: 2 } };
+  mount({ taskId: CODEX_ID });
+  const why = await screen.findByRole("region", { name: "왜 많이 썼나" });
+  expect(within(within(why).getByRole("list", { name: "모델별 사용" })).getAllByRole("listitem").map((li) => li.textContent))
+    .toEqual(["gpt-6.1 1회 · $0.25 · 100%"]);
+  expect(within(why).getByText("span과 연결되지 않은 Codex completion 2건은 모델별 사용과 비중에서 제외됩니다.")).toBeTruthy();
+});
+
+test("a fully known, fully linked model summary adds no basis note", async () => {
+  mount();
+  const why = await screen.findByRole("region", { name: "왜 많이 썼나" });
+  expect(within(why).getByRole("list", { name: "모델별 사용" })).toBeTruthy();
+  expect(within(why).queryByText(/비중은|제외됩니다/)).toBeNull();
 });
 
 test("truncated detail model breakdown shows counts without cost sums", async () => {
