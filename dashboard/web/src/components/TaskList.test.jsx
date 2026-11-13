@@ -259,3 +259,41 @@ test("row click opens the task and the raw id is not rendered", async () => {
   expect(req.searchParams.get("group")).toBe("bedrock");
   expect(req.searchParams.get("client")).toBe("claude");
 });
+
+test("a task's workflow runs show as badges that filter the list to that run", async () => {
+  tasksBody = response({ tasks: [{ ...claudeTask, workflows: [{ run_id: "wf_run-1", name: "nightly-translate" }] },
+    { ...codexTask, workflows: [] }] });
+  mount();
+  const badge = await screen.findByRole("button", { name: "워크플로 nightly-translate로 거르기" });
+  expect(within(rowOf("claude-opus-5-5")).getByText("nightly-translate")).toBeTruthy();
+  fireEvent.click(badge);
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("workflowRunId")).toBe("wf_run-1"));
+  // Workflow runs are Claude Code spans; the server filters them only for client=claude.
+  expect(taskRequests().at(-1).searchParams.get("client")).toBe("claude");
+  const chip = await screen.findByRole("status", { name: "워크플로 필터" });
+  expect(chip.textContent).toContain("nightly-translate");
+  fireEvent.click(within(chip).getByRole("button", { name: "워크플로 필터 해제" }));
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("workflowRunId")).toBeNull());
+  expect(taskRequests().at(-1).searchParams.get("client")).toBe("all");
+});
+
+test("a workflow run without a name shows its run id", async () => {
+  tasksBody = response({ tasks: [{ ...claudeTask, workflows: [{ run_id: "wf_run-2", name: null }] }] });
+  mount();
+  expect(await screen.findByRole("button", { name: "워크플로 wf_run-2로 거르기" })).toBeTruthy();
+});
+
+test("changing the client selection clears the workflow filter", async () => {
+  tasksBody = response({ tasks: [{ ...claudeTask, workflows: [{ run_id: "wf_run-1", name: "nightly-translate" }] }] });
+  const tree = (clients) => <MemoryRouter><ConfigProvider config={{ piiMask: true }}>
+    <RefreshProvider><RangeProvider><FilterProvider><TaskList user={USER} clients={clients} group={null}
+      from={BUCKET.from} to={BUCKET.to} onOpen={() => {}} /></FilterProvider></RangeProvider></RefreshProvider>
+  </ConfigProvider></MemoryRouter>;
+  const { rerender } = render(tree(["claude", "codex"]));
+  fireEvent.click(await screen.findByRole("button", { name: "워크플로 nightly-translate로 거르기" }));
+  await screen.findByRole("status", { name: "워크플로 필터" });
+  rerender(tree(["codex"]));
+  await waitFor(() => expect(screen.queryByRole("status", { name: "워크플로 필터" })).toBeNull());
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("client")).toBe("codex"));
+  expect(taskRequests().at(-1).searchParams.get("workflowRunId")).toBeNull();
+});

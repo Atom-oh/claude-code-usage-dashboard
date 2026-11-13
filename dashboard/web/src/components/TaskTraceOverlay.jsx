@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBox, Loading } from "./Card.jsx";
 import { Badge } from "./Badge.jsx";
 import { StatTile } from "./StatTile.jsx";
-import { COST_BASIS, formatTaskDuration } from "./TaskList.jsx";
+import { COST_BASIS, formatTaskDuration, workflowLabel } from "./TaskList.jsx";
 import { TaskTimeline } from "./TaskTimeline.jsx";
 import { TaskCostBand } from "./TaskCostBand.jsx";
 import { TaskContextChart } from "./TaskContextChart.jsx";
@@ -16,7 +16,7 @@ import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { clientName, formatClientTimestamp, observedNumber } from "../clientPresentation.js";
-import { compactCount, laneName, laneOrder, modelBreakdown, modelKey, timelineEnd } from "../taskTrace.js";
+import { compactCount, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, timelineEnd } from "../taskTrace.js";
 import { taskSharePath } from "../clientNavigation.js";
 
 // Copies the task's share link (/tasks/<id>/<from>/<to>; no user in the URL). Without
@@ -69,7 +69,7 @@ function Kpis({ task }) {
 
 // One line per rule; a rule's inputs are never zero-filled by the server, so absent rules are
 // simply not listed.
-function Why({ why, lanes, numbers, onSelect }) {
+function Why({ why, lanes, numbers, onSelect, usage = [], unlinked = 0 }) {
   const lane = (id) => { const l = lanes.find((x) => x.id === id); return l ? laneName(l) : "서브에이전트"; };
   const items = why.map(({ rule, value }) => {
     if (rule === "cache_read_share") return { rule, text: `cache read ${pct(value)} — 큰 컨텍스트로 호출 반복` };
@@ -92,6 +92,20 @@ function Why({ why, lanes, numbers, onSelect }) {
         ? <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => onSelect(it.span)}>{it.text}</button>
         : it.text}</li>)}
     </ul> : <p className="text-[13px] text-ink-500">근거 {MISSING}</p>}
+    {usage.length > 0 && <div className="mt-3 border-t border-ink-100 pt-3">
+      <h4 className="mb-1 text-[12px] font-semibold text-ink-600">모델별 사용</h4>
+      <ul aria-label="모델별 사용" className="flex flex-col gap-1 text-[13px] text-ink-700">
+        {usage.map((u) => <li key={String(u.model)} className="[overflow-wrap:anywhere]">
+          {`${u.model ?? "모델 미수집"} ${formatObserved(u.calls)}회 · ${u.cost_usd === null ? `비용 ${MISSING}`
+            : `${formatClientCost(u.cost_usd)}${u.cost_partial ? " (부분합)" : ""}${u.share === null ? "" : ` · ${pct(u.share)}`}`}`}
+        </li>)}
+      </ul>
+      {/* Shares are over the summed span costs: disclose what that base leaves out. */}
+      {unlinked > 0 && <p className="mt-1 text-[12px] text-ink-500">
+        {`span과 연결되지 않은 Codex completion ${formatObserved(unlinked)}건은 모델별 사용과 비중에서 제외됩니다.`}</p>}
+      {usage.some((u) => u.cost_usd === null || u.cost_partial) && <p className="mt-1 text-[12px] text-ink-500">
+        비중은 비용이 확인된 호출 기준입니다.</p>}
+    </div>}
   </section>;
 }
 
@@ -156,6 +170,7 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
   const unplaced = spans.filter((s) => observedNumber(s.start_ms) === null).length;
   const unlinked = observedNumber(task.completions_without_span) ?? 0;
   const models = useMemo(() => modelBreakdown(spans), [spans]);
+  const usage = useMemo(() => modelUsage(spans), [spans]);
   const activeKey = models.some((m) => m.key === highlightKey) ? highlightKey : null;
   const highlight = useMemo(() => (activeKey === null ? null : (s) => modelKey(s) === activeKey), [activeKey]);
   return <>
@@ -186,7 +201,8 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
           <TaskSpanPanel span={selected} lane={selected ? lanes.find((l) => l.id === selected.lane) : null}
             number={selected ? numbers.get(selected.id) : null} codex={task.client === "codex"} />
         </div>
-        {!truncated && <Why why={data.why || []} lanes={lanes} numbers={numbers} onSelect={onSelect} />}
+        {!truncated && <Why why={data.why || []} lanes={lanes} numbers={numbers} onSelect={onSelect} usage={usage}
+          unlinked={unlinked} />}
       </div>
     </div>
     {models.length > 0 && <ModelCalls rows={models} lanes={lanes} truncated={truncated} activeKey={activeKey}
@@ -226,6 +242,8 @@ export function TaskTraceOverlay({ taskId, user, from, to, onClose }) {
             {[task ? formatClientTimestamp(task.started_at) : null, user || api.data?.owner ? maskEmail(user || api.data.owner) : null,
               task?.models?.length ? task.models.join(", ") : null].filter(Boolean).join(" · ")}
             {" · trace를 켠 사용자만 수집 · 프롬프트·명령·경로 원문은 표시하지 않습니다"}</p>
+          {task?.workflows?.length > 0 && <p className="text-[12px] text-ink-600 [overflow-wrap:anywhere]">
+            {`워크플로 ${task.workflows.map(workflowLabel).join(", ")}`}</p>}
         </div>
         <div className="flex items-start gap-2">
           <ShareLink taskId={taskId} from={from} to={to} />

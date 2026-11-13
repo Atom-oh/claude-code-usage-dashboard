@@ -154,6 +154,24 @@ export function modelBreakdown(spans = []) {
     || byLabel(a.model, b.model) || byLabel(a.source, b.source));
 }
 
+// One row per model across call sources, most expensive first: calls, known cost (null when
+// no call's cost is known, `cost_partial` when any is unknown) and the share of the task's
+// known LLM cost. The summary the "왜 많이 썼나" panel lists before opening individual bars.
+export function modelUsage(spans = []) {
+  const byModel = new Map();
+  for (const r of modelBreakdown(spans)) {
+    const g = byModel.get(r.model) || { model: r.model, calls: 0, cost_usd: null, cost_partial: false };
+    g.calls += r.calls;
+    if (r.cost_usd !== null) g.cost_usd = (g.cost_usd ?? 0) + r.cost_usd;
+    g.cost_partial ||= r.cost_partial;
+    byModel.set(r.model, g);
+  }
+  const rows = [...byModel.values()];
+  const total = rows.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0);
+  return rows.map((r) => ({ ...r, share: r.cost_usd === null || total <= 0 ? null : r.cost_usd / total }))
+    .sort((a, b) => (b.cost_usd ?? -1) - (a.cost_usd ?? -1) || b.calls - a.calls);
+}
+
 // Summary of the detail's `context` (per-call input context, Claude compactions, Codex
 // limits). Unknown inputs stay null: no peak without a known point, no share without a limit.
 export function contextSummary(context) {

@@ -52,6 +52,21 @@ function TokenBar({ tokens }) {
   </span>;
 }
 
+// A workflow run as the API lists it ({run_id, name}); a run without a valid name shows its id.
+export const workflowLabel = (run) => run?.name || run?.run_id || MISSING;
+
+// Badges for a task's workflow runs; each narrows the list to that run. Clicking a badge does
+// not open the task (the row's own click handler).
+function Workflows({ runs, onPick }) {
+  if (!Array.isArray(runs) || runs.length === 0) return <span className="text-ink-400">—</span>;
+  return <span className="inline-flex flex-wrap gap-1">
+    {runs.map((run) => <button key={run.run_id} type="button" aria-label={`워크플로 ${workflowLabel(run)}로 거르기`}
+      title={run.run_id} onClick={(e) => { e.stopPropagation(); onPick(run); }}
+      className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100 [overflow-wrap:anywhere]">
+      {workflowLabel(run)}</button>)}
+  </span>;
+}
+
 function Cost({ row }) {
   if (observedNumber(row.cost_usd) === null) return <span className="text-ink-500">{MISSING}</span>;
   const basis = COST_BASIS[row.cost_basis] || row.cost_basis || "기준 미제공";
@@ -67,11 +82,20 @@ function Cost({ row }) {
 export function TaskList({ user, clients, group = null, from, to, onOpen, selectedId = null }) {
   const [sort, setSort] = useState("tokens");
   const { backend } = useFilters();
+  // Workflow run chosen from a task's badge; it narrows the list to that run's interactions.
+  // It belongs to the scope it was picked in: a new user, bucket, client selection, group or
+  // backend drops it on the same render, so no request mixes the old run with the new scope.
+  const scope = JSON.stringify([user, from, to, clients, group, backend]);
+  const [picked, setPicked] = useState(null);
+  const workflow = picked?.scope === scope ? picked.run : null;
+  const setWorkflow = (run) => setPicked(run ? { scope, run } : null);
   const expired = Date.parse(from) < Date.now() - TRACE_RETENTION_DAYS * DAY;
-  const client = clients.length > 1 ? "all" : clients[0];
+  // Workflow runs are Claude Code spans: the server filters them only for client=claude.
+  const client = workflow ? "claude" : clients.length > 1 ? "all" : clients[0];
   // group is Claude-only (the server rejects it otherwise); team never applies here.
   const params = { from, to, userExact: user, client, sort,
-    ...(group && clients.includes("claude") ? { group } : {}), ...(backend ? { backend } : {}) };
+    ...(group && clients.includes("claude") ? { group } : {}), ...(backend ? { backend } : {}),
+    ...(workflow ? { workflowRunId: workflow.run_id } : {}) };
   const api = useApi("/api/users/tasks", params, !expired, { unfiltered: true });
   const rows = useMemo(() => (api.data?.tasks || []).map((t) => ({
     ...t, model: t.models?.length ? t.models.join(", ") : null, observed_tokens: t.tokens?.observed_tokens ?? null,
@@ -83,6 +107,7 @@ export function TaskList({ user, clients, group = null, from, to, onOpen, select
       onClick={(e) => { e.stopPropagation(); open(r.id); }}>{formatClientTime(v)}</button> },
     { key: "client", label: "클라이언트", render: (v) => <Badge tone={v === "codex" ? "brand" : "neutral"}>{clientName(v)}</Badge> },
     { key: "model", label: "모델", render: (v) => v || MISSING },
+    { key: "workflows", label: "워크플로", render: (v) => <Workflows runs={v} onPick={setWorkflow} /> },
     { key: "llm_calls", label: "LLM 호출", render: (v) => orMissing(v) },
     { key: "subagents", label: "서브에이전트", render: (v) => orMissing(v) },
     { key: "tokens", label: "토큰 구성", render: (v) => <TokenBar tokens={v} /> },
@@ -117,6 +142,13 @@ export function TaskList({ user, clients, group = null, from, to, onOpen, select
   const costPool = sort === "cost" && data?.sort_candidates?.limited === true;
   const showUnattached = unattached && ((observedNumber(unattached.completions) ?? 0) > 0 || skipped > 0 || nonUnique > 0);
   return <section aria-label="작업 목록" className="flex flex-col gap-2">
+    {workflow && <p role="status" aria-label="워크플로 필터"
+      className="flex flex-wrap items-center gap-2 text-[12px] text-ink-700">
+      <Badge tone="brand">{`워크플로 ${workflowLabel(workflow)}`}</Badge>
+      <span>이 실행의 Claude Code 작업만 표시합니다</span>
+      <button type="button" aria-label="워크플로 필터 해제" onClick={() => setWorkflow(null)}
+        className="rounded border border-ink-200 px-2 py-0.5 text-[12px] text-ink-700 hover:bg-ink-50">해제</button>
+    </p>}
     {data?.coverage?.codex === "limited" && <p role="status" className="text-sm text-warning-text">
       Codex 로그가 조회 한도를 넘어 일부 Codex 작업과 연결 정보가 누락될 수 있습니다. 비용은 부분합입니다.</p>}
     {costPool && <p role="note" className="text-[12px] text-ink-600">

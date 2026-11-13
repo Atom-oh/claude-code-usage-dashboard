@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
   sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId, COST_CANDIDATES,
-  workflowPairs, WORKFLOW_RUN_ID } from "./taskTraces.js";
+  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -176,6 +176,24 @@ test("claudeCostSql binds request ids in the widened log window", () => {
   assert.equal(params.logTo, "2026-11-07 00:00:00");
   assert.ok(sql.includes("{requestIds:Array(String)}"));
   assert.ok(sql.includes("'api_request'"));
+});
+
+test("claudeCostRows splits request ids into parameters below the HTTP form field limit", async () => {
+  // sort=cost over 100 interactions measured 7,716 ids (239 KB as JSON) in production; one
+  // parameter that size fails ClickHouse's 128 KiB form-field limit with HTTP 500.
+  const ids = Array.from({ length: 7716 }, (_, i) => `req_${String(i).padStart(24, "0")}`);
+  const calls = [];
+  const rows = await claudeCostRows(from, to, ids, async (sql, params) => {
+    calls.push(params);
+    return params.requestIds.map((request_id) => ({ request_id, cost_usd: 0.01 }));
+  });
+  assert.ok(COST_ID_PARAM_BYTES < 128 * 1024);
+  assert.ok(calls.length > 1);
+  // Budget the encoded size: the form body percent-encodes quotes, commas and brackets.
+  for (const p of calls) assert.ok(encodeURIComponent(JSON.stringify(p.requestIds)).length <= COST_ID_PARAM_BYTES);
+  assert.deepEqual(calls.flatMap((p) => p.requestIds), ids);
+  assert.equal(rows.length, ids.length);
+  assert.deepEqual(await claudeCostRows(from, to, [], async () => { throw new Error("no query"); }), []);
 });
 
 test("foldClaudeTasks sorts by observed tokens and keeps 20", () => {

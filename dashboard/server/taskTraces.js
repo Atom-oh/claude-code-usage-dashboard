@@ -197,6 +197,35 @@ export function claudeCostSql(from, to, requestIds) {
   };
 }
 
+// ClickHouse rejects an HTTP form field over http_max_field_value_size (128 KiB by default),
+// and sort=cost over COST_CANDIDATES interactions can carry thousands of request ids. Each
+// chunk's id array stays below this budget, measured as the percent-encoded JSON array (an
+// upper bound for the form body: quotes, commas and brackets each grow to three bytes).
+// Request ids are disjoint across chunks, so the per-request GROUP BY rows simply concatenate.
+export const COST_ID_PARAM_BYTES = 96 * 1024;
+const ENCODED_BRACKETS = encodeURIComponent("[]").length, ENCODED_COMMA = encodeURIComponent(",").length;
+export async function claudeCostRows(from, to, requestIds, run) {
+  const chunks = [];
+  let chunk = [], bytes = ENCODED_BRACKETS;
+  for (const id of requestIds) {
+    const item = encodeURIComponent(JSON.stringify(id)).length;
+    if (chunk.length && bytes + ENCODED_COMMA + item > COST_ID_PARAM_BYTES) {
+      chunks.push(chunk);
+      chunk = [];
+      bytes = ENCODED_BRACKETS;
+    }
+    bytes += (chunk.length ? ENCODED_COMMA : 0) + item;
+    chunk.push(id);
+  }
+  if (chunk.length) chunks.push(chunk);
+  const results = [];
+  for (const ids of chunks) {
+    const cost = claudeCostSql(from, to, ids);
+    results.push(...await run(cost.sql, cost.params));
+  }
+  return results;
+}
+
 export const count = (value) => {
   if (!["number", "string"].includes(typeof value) || String(value).trim() === "") return null;
   const n = Number(value);
@@ -528,11 +557,7 @@ async function claudeTasks(from, to, q, run) {
   const rows = await run(list.sql, list.params);
   const ids = [...new Set(rows.flatMap(r => (Array.isArray(r.calls) ? r.calls : []).map(c => c[0]))
     .filter(Boolean))];
-  let costRows = [];
-  if (ids.length) {
-    const cost = claudeCostSql(from, to, ids);
-    costRows = await run(cost.sql, cost.params);
-  }
+  const costRows = await claudeCostRows(from, to, ids, run);
   return { tasks: foldClaudeTasks(rows, costRows, { sort: q.sort }), considered: rows.length };
 }
 
