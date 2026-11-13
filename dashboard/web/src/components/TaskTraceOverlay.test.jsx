@@ -418,3 +418,51 @@ test("the header names the task's workflow runs", async () => {
   mount();
   expect(await screen.findByText("워크플로 nightly-translate, wf_run-2")).toBeTruthy();
 });
+
+test("same-name subagents get separate, distinguishable context lines and legend entries", async () => {
+  const lane = (id) => ({ id, label: "general-purpose", kind: "general-purpose", spawned_by: "tool-1", llm_calls: 2,
+    cost_usd: 0.5, cost_partial: false });
+  const llm = (id, laneId, start, tokens) => ({ id, parent: null, lane: laneId, kind: "llm", name: "claude_code.llm_request",
+    start_ms: start, duration_ms: 500, attrs: { model: "claude-haiku-5-5" }, tokens: { input: 1, cache_read: tokens, cache_write: 0, output: 1 },
+    cost_usd: 0.25, cost_basis: "client_reported" });
+  body = { ...claudeDetail(),
+    lanes: [claudeDetail().lanes[0], lane("gp-a"), lane("gp-b")],
+    spans: [claudeDetail().spans[0], llm("a1", "gp-a", 1000, 1000), llm("a2", "gp-a", 3000, 2000),
+      llm("b1", "gp-b", 1500, 8000), llm("b2", "gp-b", 3500, 9000)],
+    context: { points: [{ span: "llm-1", lane: "main", start_ms: 0, tokens: 3300 },
+      { span: "a1", lane: "gp-a", start_ms: 1000, tokens: 1000 }, { span: "a2", lane: "gp-a", start_ms: 3000, tokens: 2000 },
+      { span: "b1", lane: "gp-b", start_ms: 1500, tokens: 8000 }, { span: "b2", lane: "gp-b", start_ms: 3500, tokens: 9000 }],
+    missing: 0, partial: false, compactions: [], limits: null },
+    why: [] };
+  mount();
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  const a = section.querySelector("[data-context-line='gp-a']"), b = section.querySelector("[data-context-line='gp-b']");
+  expect(a && b).toBeTruthy();
+  expect(a.style.stroke).not.toBe(b.style.stroke);
+  expect(section.textContent).toContain("general-purpose #1");
+  expect(section.textContent).toContain("general-purpose #2");
+  // The timeline bar and the context point both name the numbered lane.
+  expect(screen.getByRole("button", { name: "LLM 호출 #4 · general-purpose #2" })).toBeTruthy();
+  expect(within(section).getByRole("button", { name: /^LLM 호출 #4 · general-purpose #2 · 컨텍스트 8K/ })).toBeTruthy();
+});
+
+test("a subagent's side call (agent_summary) is drawn as a point, not on the lane's context line", async () => {
+  const sub = (id, start, tokens, source, model = "claude-sonnet-5-5") => ({ id, parent: null, lane: "agent-a", kind: "llm",
+    name: "claude_code.llm_request", start_ms: start, duration_ms: 300, attrs: { model, query_source_safe: source },
+    tokens: { input: 1, cache_read: tokens, cache_write: 0, output: 1 }, cost_usd: 0.1, cost_basis: "client_reported" });
+  body = { ...claudeDetail(),
+    spans: [claudeDetail().spans[0], claudeDetail().spans[1], sub("g1", 6000, 60000, "agent.builtin.general-purpose"),
+      sub("g2", 7000, 70000, "agent.builtin.general-purpose"), sub("sum", 8000, 1000, "agent_summary", "claude-haiku-5-5"),
+      sub("g3", 9000, 80000, "agent.builtin.general-purpose")],
+    context: { points: [{ span: "llm-1", lane: "main", start_ms: 0, tokens: 3300 },
+      ...[["g1", 6000, 60000], ["g2", 7000, 70000], ["sum", 8000, 1000], ["g3", 9000, 80000]]
+        .map(([span, start_ms, tokens]) => ({ span, lane: "agent-a", start_ms, tokens }))],
+    missing: 0, partial: false, compactions: [], limits: null },
+    why: [] };
+  mount();
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  const line = section.querySelector("[data-context-line='agent-a']");
+  expect(line.getAttribute("points").trim().split(/\s+/)).toHaveLength(3);
+  expect(section.querySelectorAll("[data-context-side]")).toHaveLength(1);
+  expect(section.textContent).toContain("다른 호출 출처(예: agent_summary)의 호출은 선으로 잇지 않고 점으로만 표시합니다");
+});

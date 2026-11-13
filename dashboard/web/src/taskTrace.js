@@ -1,6 +1,7 @@
 // Pure helpers for the task trace overlay (TaskTraceOverlay.jsx) over the
 // /api/users/tasks/detail payload. Unknown values stay null; nothing here fills a zero.
 import { observedNumber } from "./clientPresentation.js";
+import { laneColorFor } from "./colors.js";
 
 const AGENT_ICONS = new Set(["main", "general-purpose", "Explore", "fork", "custom"]);
 const TOOL_ICONS = new Set(["Bash", "Read", "Edit", "Write", "Grep", "Glob", "WebFetch", "WebSearch"]);
@@ -19,11 +20,34 @@ export function iconFor(name, kind = "tool") {
 }
 
 // Display name for a lane. A lane whose spawning span is missing (custom, label null) is a
-// generic subagent, never a guessed custom agent name.
+// generic subagent, never a guessed custom agent name. withLaneIdentity() sets `display`.
 export function laneName(lane) {
+  if (lane.display) return lane.display;
   if (lane.kind === "main" || lane.id === "main") return "메인 세션";
   return lane.label || "서브에이전트";
 }
+
+// Several subagents of one type (four general-purpose lanes, say) are separate lanes with the
+// same label and kind colour, so their lines and bands read as one. In the given (display)
+// order, same-name lanes get "#n" and every later lane of a kind a shade of its kind colour.
+const SHADES = [60, 35, 80, 45, 70];
+export function withLaneIdentity(lanes = []) {
+  const total = new Map(), seen = new Map(), kinds = new Map();
+  for (const l of lanes) total.set(laneName(l), (total.get(laneName(l)) ?? 0) + 1);
+  return lanes.map((l) => {
+    const name = laneName(l);
+    const n = (seen.get(name) ?? 0) + 1;
+    seen.set(name, n);
+    const k = kinds.get(l.kind) ?? 0;
+    kinds.set(l.kind, k + 1);
+    const base = laneColorFor(l.kind);
+    return { ...l, display: total.get(name) > 1 ? `${name} #${n}` : name,
+      color: k === 0 ? base : `color-mix(in srgb, ${base} ${SHADES[(k - 1) % SHADES.length]}%, var(--text-primary))` };
+  });
+}
+
+// A lane's drawing colour: its identity shade when set, else its kind colour.
+export const laneColor = (lane) => lane?.color ?? laneColorFor(lane?.kind);
 
 const startOf = (s) => observedNumber(s.start_ms);
 const endOf = (s) => {
@@ -170,6 +194,31 @@ export function modelUsage(spans = []) {
   const total = rows.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0);
   return rows.map((r) => ({ ...r, share: r.cost_usd === null || total <= 0 ? null : r.cost_usd / total }))
     .sort((a, b) => (b.cost_usd ?? -1) - (a.cost_usd ?? -1) || b.calls - a.calls);
+}
+
+// Context points per lane split by call source. A lane's line joins only its main source (most
+// calls; a tie keeps the source of its first call): side requests in the same lane, such as a
+// subagent's Haiku `agent_summary`, carry a different, much smaller context, and joining them
+// would draw a dive that is not the conversation's context. Side points stay unconnected.
+export function contextLines(points = [], sourceOf = () => null) {
+  const byLane = new Map();
+  for (const p of [...points].sort((a, b) => a.start_ms - b.start_ms)) {
+    const g = byLane.get(p.lane) || { points: [], counts: new Map(), first: undefined };
+    const source = sourceOf(p.span) ?? null;
+    if (g.first === undefined) g.first = source;
+    g.counts.set(source, (g.counts.get(source) ?? 0) + 1);
+    g.points.push({ p, source });
+    byLane.set(p.lane, g);
+  }
+  const lines = new Map();
+  for (const [lane, g] of byLane) {
+    const top = Math.max(...g.counts.values());
+    const source = g.counts.get(g.first) === top ? g.first : [...g.counts].find(([, n]) => n === top)[0];
+    const sideSources = [...new Set(g.points.filter((x) => x.source !== source).map((x) => x.source))];
+    lines.set(lane, { source, line: g.points.filter((x) => x.source === source).map((x) => x.p),
+      side: new Set(g.points.filter((x) => x.source !== source).map((x) => x.p.span)), sideSources });
+  }
+  return lines;
 }
 
 // Summary of the detail's `context` (per-call input context, Claude compactions, Codex

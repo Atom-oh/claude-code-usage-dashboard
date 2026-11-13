@@ -2,10 +2,9 @@
 // and "N 호출 · $X", LLM bars shaded by input context, tool bars and permission-wait marks
 // under the lane, dashed connectors from a spawning tool span to its subagent lane.
 import { useState } from "react";
-import { laneColorFor } from "../colors.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { observedNumber } from "../clientPresentation.js";
-import { contextOf, iconFor, laneName } from "../taskTrace.js";
+import { contextOf, iconFor, laneColor, laneName } from "../taskTrace.js";
 import { formatTaskDuration } from "./TaskList.jsx";
 import { TaskIconMark } from "./taskIcons.jsx";
 
@@ -54,7 +53,7 @@ export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId
   const [focusedId, setFocusedId] = useState(null);
 
   const bar = (s) => {
-    const y = row.get(s.lane), color = laneColorFor(lanes.find((l) => l.id === s.lane)?.kind);
+    const y = row.get(s.lane), color = laneColor(lanes.find((l) => l.id === s.lane));
     const ctx = s.kind === "llm" ? contextOf(s.tokens) : null;
     const common = {
       role: "button", tabIndex: 0, "aria-label": spanLabel(s, names.get(s.lane), numbers.get(s.id)),
@@ -78,7 +77,7 @@ export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId
 
   return <svg viewBox={`0 0 ${VIEW_W} ${height}`} width="100%" className="block" aria-label="에이전트 레인 타임라인">
     {lanes.map((l) => {
-      const y = row.get(l.id), color = laneColorFor(l.kind);
+      const y = row.get(l.id), color = laneColor(l);
       return <g key={l.id} role="group" aria-label={`${names.get(l.id)} 레인`}>
         <TaskIconMark icon={iconFor(l.kind, "agent")} x={8} y={y + 4} size={20} color={color} />
         <text x={36} y={y + 14} style={{ fill: "var(--text-primary)", fontSize: 12, fontWeight: 600 }}>{names.get(l.id)}</text>
@@ -91,7 +90,7 @@ export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId
       if (!spawn || observedNumber(spawn.start_ms) === null || !row.has(spawn.lane)) return null;
       const sx = x(spawn.start_ms);
       return <line key={`spawn-${l.id}`} data-spawn="" x1={sx} y1={row.get(spawn.lane) + BAR_H + 6} x2={sx} y2={row.get(l.id) + 2}
-        style={{ stroke: laneColorFor(l.kind), strokeDasharray: "3 3" }} aria-hidden="true" />;
+        style={{ stroke: laneColor(l), strokeDasharray: "3 3" }} aria-hidden="true" />;
     })}
     {placed.map(bar)}
     <TimeAxis end={end} y={height - 4} />
