@@ -705,7 +705,7 @@ belong to `userExact` in that bucket, or does not exist, returns 404 `{"error": 
 either way. Without `userExact` (a shared task link) the owner is resolved: the Claude
 interaction's identity, or the single identity on the Codex turn's spans of that
 conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
-access. Response `{task, lanes, spans, truncated, span_total, why, context, owner}`, `owner` being
+access. Response `{task, lanes, spans, truncated, span_total, why, context, environment, owner}`, `owner` being
 the exact identity the task belongs to:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
@@ -738,6 +738,14 @@ the exact identity the task belongs to:
   (`{span, cost_usd}`, all costs known), `retries` (calls with `attempt > 1`; omitted unless every call carries `attempt`) and
   `permission_wait` (Claude wait-span milliseconds). A rule whose inputs are unavailable is
   omitted, never zero-filled. Data rules: [data reference](reference/data.md#user-task-traces).
+- `environment`: what the Claude task's session carried, from its `mcp_server_connection` and
+  `plugin_loaded` events between 14 days before the task start and its end (`lookback_days`):
+  `mcp` `{connected, failed, other, servers: [{name, status}]}` by each server's latest status
+  (`name`/`status` null unless label-shaped) and `plugins` `{count, skills, agents, commands,
+  with_mcp, counts_partial}` (path counts summed where reported). Either is null when its
+  events are absent; `environment` is null when both are, and always null for Codex, which
+  emits neither. OTel carries no tool-definition count or schema size, so neither is
+  reported. The session id that keys the lookup is never returned.
 - `context`: `{points, missing, partial, compactions, limits}`. `points` are
   `{span, lane, start_ms, tokens}` per LLM call in time order: Claude input + cache read +
   cache write, Codex the completion's input including cache (`span` null when no sampling

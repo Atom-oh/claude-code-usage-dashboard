@@ -109,6 +109,48 @@ function Why({ why, lanes, numbers, onSelect, usage = [], unlinked = 0 }) {
   </section>;
 }
 
+// What the task's session carried: MCP servers by latest status and loaded plugins with their
+// skill/agent/command counts (Claude Code session events, looked up before the task starts),
+// plus the first call's input context as the session's setup cost. OTel sends neither the
+// tool-definition count nor its token size, so the card says so instead of estimating them.
+function SessionEnvironment({ environment, client, context }) {
+  const points = (context?.points || []).filter((p) => observedNumber(p.tokens) !== null && observedNumber(p.start_ms) !== null);
+  const main = points.filter((p) => p.lane === "main").sort((a, b) => a.start_ms - b.start_ms)[0];
+  const first = main ?? [...points].sort((a, b) => a.start_ms - b.start_ms)[0];
+  const mcp = environment?.mcp, plugins = environment?.plugins;
+  const days = environment?.lookback_days ?? 14;
+  let body;
+  if (client === "codex") body = <p className="text-[13px] text-ink-500">Codex는 MCP·plugin 세션 이벤트를 보내지 않아 미수집입니다.</p>;
+  else if (!environment) body = <p className="text-[13px] text-ink-500">{`세션 환경 이벤트 미수집 (작업 시작 ${days}일 전까지 찾음)`}</p>;
+  else body = <div className="flex flex-col gap-2 text-[13px] text-ink-700">
+    {mcp ? <div>
+      <div>{`MCP 서버 연결 ${formatObserved(mcp.connected)} · 실패 ${formatObserved(mcp.failed)}${
+        mcp.other > 0 ? ` · 기타 ${formatObserved(mcp.other)}` : ""}`}</div>
+      {mcp.servers?.length > 0 && <ul aria-label="MCP 서버" className="mt-1 flex min-w-0 flex-wrap gap-1">
+        {mcp.servers.filter((server) => server.name !== null).map((server) => <li key={server.name} className="min-w-0 max-w-full">
+          <Badge tone={server.status === "failed" ? "warning" : "neutral"} className="max-w-full text-[11px] whitespace-normal! [overflow-wrap:anywhere]">
+            {`${server.name}${server.status === "connected" ? "" : server.status === "failed" ? " 실패"
+              : ` ${server.status ?? MISSING}`}`}</Badge></li>)}
+        {/* Names that are not label-shaped are withheld by the server; count them once. */}
+        {mcp.servers.some((server) => server.name === null) && <li>
+          <Badge tone="neutral" className="text-[11px]">{`이름 비공개 ${formatObserved(mcp.servers.filter((server) => server.name === null).length)}개`}</Badge></li>}
+      </ul>}
+    </div> : <div className="text-ink-500">MCP 서버 미수집</div>}
+    {plugins ? <div>{`plugin ${formatObserved(plugins.count)}개 · skill ${formatObserved(plugins.skills)} · agent ${
+      formatObserved(plugins.agents)} · command ${formatObserved(plugins.commands)} · MCP 포함 plugin ${formatObserved(plugins.with_mcp)}개`}
+      {plugins.counts_partial && <span className="text-ink-500"> (일부 plugin의 개수 미수집)</span>}</div>
+      : <div className="text-ink-500">plugin 미수집</div>}
+  </div>;
+  return <section aria-label="세션 환경" className="rounded-lg border border-ink-100 p-4">
+    <h3 className="mb-2 text-[14px] font-semibold text-ink-800">세션 환경</h3>
+    {body}
+    {first && <p className="mt-2 text-[13px] text-ink-700">
+      {`첫 호출 컨텍스트 ${compactCount(first.tokens) ?? MISSING} (${main ? "메인 세션" : "첫 레인"})`}</p>}
+    <p className="mt-2 text-[12px] text-ink-500">
+      tool 정의 수와 토큰 크기는 Claude Code OTel이 보내지 않아 표시하지 않습니다. 첫 호출 컨텍스트에 도구·지침 적재량이 함께 들어 있습니다.</p>
+  </section>;
+}
+
 // LLM calls by (model, call source). A row's button toggles the timeline highlight; a
 // truncated detail counts only the returned spans and shows no cost sums.
 function ModelCalls({ rows, lanes, truncated, activeKey, onToggle }) {
@@ -210,6 +252,7 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
         </div>
         {!truncated && <Why why={data.why || []} lanes={lanes} numbers={numbers} onSelect={onSelect} usage={usage}
           unlinked={unlinked} />}
+        <SessionEnvironment environment={data.environment ?? null} client={task.client} context={data.context} />
       </div>
     </div>
     {models.length > 0 && <ModelCalls rows={models} lanes={lanes} truncated={truncated} activeKey={activeKey}

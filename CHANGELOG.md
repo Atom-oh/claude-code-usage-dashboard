@@ -15,6 +15,16 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- The task detail shows the session environment of a Claude Code task: MCP servers by
+  latest status (connected, failed) with their names, loaded plugins with their skill,
+  agent and command counts, and the first call's input context. `/api/users/tasks/detail`
+  adds `environment`, read from the session's `mcp_server_connection` and `plugin_loaded`
+  events up to 14 days before the task. OTel carries no tool-definition count or size, so
+  the card says so instead of estimating; Codex emits no such events and shows not
+  collected.
+
 ### Fixed
 
 - Task detail lanes of the same subagent type (several `general-purpose` lanes, say) are

@@ -466,3 +466,42 @@ test("a subagent's side call (agent_summary) is drawn as a point, not on the lan
   expect(section.querySelectorAll("[data-context-side]")).toHaveLength(1);
   expect(section.textContent).toContain("다른 호출 출처(예: agent_summary)의 호출은 선으로 잇지 않고 점으로만 표시합니다");
 });
+
+const environment = () => ({ lookback_days: 14,
+  mcp: { connected: 2, failed: 1, other: 0, servers: [{ name: "github", status: "connected" },
+    { name: "plugin:slack:slack", status: "failed" }, { name: null, status: "connected" }] },
+  plugins: { count: 25, skills: 37, agents: 12, commands: 30, with_mcp: 4, counts_partial: false } });
+
+test("the session environment card lists MCP servers, plugins and the first call's context", async () => {
+  body = { ...claudeDetail(), environment: environment() };
+  mount();
+  const card = await screen.findByRole("region", { name: "세션 환경" });
+  expect(card.textContent).toContain("MCP 서버 연결 2 · 실패 1");
+  const servers = within(card).getByRole("list", { name: "MCP 서버" });
+  expect(within(servers).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["github", "plugin:slack:slack 실패", "이름 비공개 1개"]);
+  expect(card.textContent).toContain("plugin 25개 · skill 37 · agent 12 · command 30 · MCP 포함 plugin 4개");
+  expect(card.textContent).toContain("첫 호출 컨텍스트 3.3K (메인 세션)");
+  expect(card.textContent).toContain("tool 정의 수와 토큰 크기는 Claude Code OTel이 보내지 않아 표시하지 않습니다");
+});
+
+test("missing environment evidence is not collected, never an empty environment", async () => {
+  body = { ...claudeDetail(), environment: null };
+  mount();
+  const card = await screen.findByRole("region", { name: "세션 환경" });
+  expect(card.textContent).toContain("세션 환경 이벤트 미수집 (작업 시작 14일 전까지 찾음)");
+  expect(card.textContent).not.toContain("MCP 서버 연결 0");
+  cleanup();
+  body = { ...claudeDetail(), environment: { ...environment(), mcp: null,
+    plugins: { ...environment().plugins, counts_partial: true } } };
+  mount();
+  const partial = await screen.findByRole("region", { name: "세션 환경" });
+  expect(partial.textContent).toContain("MCP 서버 미수집");
+  expect(partial.textContent).toContain("(일부 plugin의 개수 미수집)");
+});
+
+test("a Codex task says its session environment is not emitted", async () => {
+  body = { ...codexDetail(), environment: null };
+  mount({ taskId: CODEX_ID });
+  const card = await screen.findByRole("region", { name: "세션 환경" });
+  expect(card.textContent).toContain("Codex는 MCP·plugin 세션 이벤트를 보내지 않아 미수집입니다");
+});
