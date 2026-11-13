@@ -51,6 +51,8 @@
   </div>
 </div></section><section id="latest"><h2>What changed</h2>
 <div class="cards">
+  <article class="card"><h3>Token economics</h3><p>Productivity opens with the cost equation (users × sessions per user × turns per session × requests per turn × tokens per request × cost per token) against the preceding window, a driver waterfall, unit-cost trends, model economics and outcome cost. Exemplar users are charted against each lever's median. Operators enable it after the session-turn backfill.</p></article>
+  <article class="card"><h3>Task Trace: models, workflows and session environment</h3><p>The cost explanation lists calls and cost per model. Workflow-run badges filter a user's tasks, same-type subagents are numbered, and the session environment shows connected MCP servers, loaded plugins and the first call's context.</p><p><a href="#task-trace">Follow the walkthrough</a></p></article>
   <article class="card"><h3>Task Trace</h3><p>Open a user's trend bucket, rank its tasks, then inspect agent lanes, cumulative cost and individual calls. Select a model row to highlight its calls.</p><p><a href="#task-trace">Follow the walkthrough</a></p></article>
   <article class="card"><h3>Cost drilldowns</h3><p>User and model selections open filtered details. Model shares use the known cost subtotal and disclose missing prices.</p></article>
   <article class="card"><h3>Codex completion efficiency</h3><p>Cache and reasoning ratios, tokens per completion, and estimated cost per identified session have explicit denominators and coverage.</p></article>
@@ -60,7 +62,7 @@
 <section id="task-trace"><h2>From a user to a Task Trace</h2>
 <ol>
   <li>Choose your time range and client filters. Open <strong>Users</strong> or <strong>Cost</strong>, then select a user to open <strong>사용자 상세</strong> (user detail).</li>
-  <li>Click a bucket in that user's trend. The task list shows up to 20 tasks starting in that bucket. Sort by tokens, cost, subagents or duration.</li>
+  <li>Click a bucket in that user's trend. The task list shows up to 20 tasks starting in that bucket. Sort by tokens, cost, subagents or duration. Select a workflow badge to show only that run's tasks.</li>
   <li>Select a task to open <strong>작업 상세</strong> (Task Trace). Read its tokens, cost basis, LLM calls, subagents and observed duration.</li>
   <li>Click a timeline bar to inspect that call or tool. Select a row in <strong>모델별 호출</strong> (model calls) to highlight matching LLM bars; select it again to clear. Press Escape or <strong>닫기</strong> (close) to close.</li>
 </ol>
@@ -71,8 +73,9 @@
     <tr><td>Agent lanes</td><td>The main session appears first, followed by observed subagents. Darker LLM bars indicate larger input context; gray marks are tools, red marks are permission waits, and dashed lines connect observed agent spawns.</td></tr>
     <tr><td>Cumulative cost</td><td>Lane colors stack known call costs. Hover to inspect a point in time. Codex completions without a matching span can contribute to the task total without appearing in the band.</td></tr>
     <tr><td>Selected span</td><td>Inspect available model, token components, cost basis, timing and tool or permission metadata. Raw prompts, commands and paths are not shown.</td></tr>
-    <tr><td>왜 많이 썼나 (why it cost so much)</td><td>Data-backed rules explain cache-read share, context growth, lane cost share, expensive calls, retries or permission waits when their inputs are available.</td></tr>
+    <tr><td>왜 많이 썼나 (why it cost so much)</td><td>Data-backed rules explain cache-read share, context growth, lane cost share, expensive calls, retries or permission waits when their inputs are available. The panel then lists each model's calls, known cost and share of the cost.</td></tr>
     <tr><td>Model calls</td><td>Compare model and call source by lane, call count and known cost. Highlighting a row changes timeline emphasis, not the totals.</td></tr>
+    <tr><td>Session environment</td><td>MCP servers by latest status, loaded plugins with skill, agent and command counts, and the first call's input context. OpenTelemetry does not report tool-definition counts or sizes.</td></tr>
   </tbody>
 </table></div>
 <p>Claude tasks represent interaction spans; Codex tasks represent traced turns and use linked completion logs for tokens and estimated cost. Codex currently has one main lane; subagent counts are not collected. Trace collection is optional, so this task list is a subset of dashboard activity. Trace retention is 90 days; older trend buckets cannot open a task list.</p>
