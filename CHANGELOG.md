@@ -26,6 +26,16 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   task detail header names the task's workflow runs. A run without a valid name shows its
   run id.
 
+### Changed
+
+- Token-economics exemplar users chart each lever instead of listing it in a table: up to
+  ten eligible users per lever (was three) are drawn against the eligible users' median,
+  with the better direction always to the right. Rate levers (cache hit rate, small-model
+  share) differ in percentage points, the others in percent of the median. Sessions, turns
+  and commits stay on hover; the CSV keeps the median and adds the charted difference.
+  The median still covers every eligible user, and the card remains a contact list, not a
+  performance ranking.
+
 ### Fixed
 
 - The task list's cost-descending sort failed with HTTP 500 for users with many calls: the

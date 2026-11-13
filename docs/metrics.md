@@ -282,7 +282,7 @@ independently, so bucket values need not combine to the window value.
 | Tokens per request | tokens / requests |
 | Model economics | Per normalized model: cost, request share, cost per 1M tokens; `small` marks Haiku/Luna families. A model with requests but no counter usage rows has unknown cost and tokens (shown as —), and `cost_partial` marks a known subtotal |
 | Outcome cost (Claude) | cost / commits, / PRs, / (added lines / 1000); counter increases (`incFlat`) of matched sessions |
-| Exemplars | Users with at least 5 matched sessions and 20 turns; median and top 3 per lever: tokens per request and requests per turn (lower), cache hit rate and small-model request share (higher) |
+| Exemplars | Users with at least 5 matched sessions and 20 turns; median over all of them and up to 10 users per lever: tokens per request and requests per turn (lower), cache hit rate and small-model request share (higher) |
 
 **Availability.** Each value is null with a reason, never zero: `window_too_short` (the
 hour-aligned window is under one hour), `not_backfilled` (`SESSION_TURNS_READ_FROM` unset or later
