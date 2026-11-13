@@ -15,15 +15,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-11-13
+
 ### Fixed
 
 - Task detail lanes of the same subagent type (several `general-purpose` lanes, say) are
   numbered (`general-purpose #1`, `#2`, ...) and drawn in their own shade of the type's
   colour in the timeline, cost band, context chart and side panel, instead of sharing one
-  name and colour that made separate lanes read as one.
+  name and colour that made separate lanes read as one. (#255)
 - The task detail's context chart joins only a lane's main call source. Side requests in
   the same lane, such as a subagent's Haiku `agent_summary` with a much smaller context,
-  are drawn as unconnected points instead of pulling the lane's line down to near zero.
+  are drawn as unconnected points instead of pulling the lane's line down to near zero. (#255)
 
 ## [1.6.0] - 2026-11-13
 

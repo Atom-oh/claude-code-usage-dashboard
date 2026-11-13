@@ -9,6 +9,29 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.6.1",
+    date: "2026-11-13",
+    summary: "작업 상세에서 같은 종류의 서브에이전트가 하나처럼 보이던 문제와 컨텍스트 그래프가 0 근처로 꺾이던 문제를 고쳤습니다.",
+    items: [
+      {
+        kind: "fixed",
+        title: "같은 종류 서브에이전트 구분",
+        body: "general-purpose 같은 같은 종류의 서브에이전트가 여러 개면 #1, #2처럼 번호를 붙이고 색 농도를 달리해 타임라인·누적 비용·컨텍스트 크기·상세 패널에서 각각 구분해 보여줍니다.",
+        to: null,
+        where: "사용자 상세 → 작업 목록 → 작업 열기",
+        refs: [255],
+      },
+      {
+        kind: "fixed",
+        title: "컨텍스트 크기 그래프의 보조 호출",
+        body: "서브에이전트의 요약(agent_summary)처럼 같은 레인 안의 보조 호출은 선으로 잇지 않고 점으로만 표시해, 대화 컨텍스트 선이 0 근처로 꺾여 보이지 않습니다.",
+        to: null,
+        where: "사용자 상세 → 작업 목록 → 작업 열기 → 컨텍스트 크기",
+        refs: [255],
+      },
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-11-13",
     summary: "모범 사용자를 중앙값 대비 차트로 바꾸고, 작업 상세에 모델별 사용 요약과 워크플로 표시를 추가했으며, 비용 높은 순 정렬 오류를 고쳤습니다.",
