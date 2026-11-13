@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-13
+
 ### Added
 
 - The task detail shows the session environment of a Claude Code task: MCP servers by
@@ -23,7 +25,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   adds `environment`, read from the session's `mcp_server_connection` and `plugin_loaded`
   events up to 14 days before the task. OTel carries no tool-definition count or size, so
   the card says so instead of estimating; Codex emits no such events and shows not
-  collected.
+  collected. (#257)
 
 ## [1.6.1] - 2026-11-13
 

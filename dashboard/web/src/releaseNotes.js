@@ -9,6 +9,21 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.7.0",
+    date: "2026-11-13",
+    summary: "작업 상세에 세션이 들고 다니는 MCP 서버와 plugin을 보여주는 세션 환경 카드를 추가했습니다.",
+    items: [
+      {
+        kind: "new",
+        title: "작업 상세 세션 환경",
+        body: "Claude Code 작업의 세션에 연결된 MCP 서버(연결·실패와 이름), 로드된 plugin과 그 안의 skill·agent·command 수, 첫 호출의 입력 컨텍스트를 보여줍니다. 세션 시작 이벤트는 작업 시작 14일 전까지 찾고, 찾지 못하면 미수집으로 표시합니다. tool 정의 수와 토큰 크기는 OTel에 없어 표시하지 않으며, Codex는 이런 이벤트를 보내지 않아 미수집입니다.",
+        to: null,
+        where: "사용자 상세 → 작업 목록 → 작업 열기 → 세션 환경",
+        refs: [257],
+      },
+    ],
+  },
+  {
     version: "1.6.1",
     date: "2026-11-13",
     summary: "작업 상세에서 같은 종류의 서브에이전트가 하나처럼 보이던 문제와 컨텍스트 그래프가 0 근처로 꺾이던 문제를 고쳤습니다.",
