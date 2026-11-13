@@ -95,6 +95,8 @@ export function claudeDetailSql(from, to, traceId, q) {
       sql: `${GROUP_CTE}
 SELECT t.TraceId AS trace_id, t.started_at AS started_at, t.start_ms AS start_ms,
     t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, t.owner AS owner,
+    -- Internal: keys the session-environment read; never returned.
+    t.SessionId AS session_id,
     -- The list's workflow pairs over every span of the trace, unaffected by SPAN_BOUND.
     (SELECT groupUniqArrayIf([SpanAttributes['workflow.run_id'], SpanAttributes['workflow.name']],
         ${WORKFLOW_RUN_ID_SQL("SpanAttributes['workflow.run_id']")})
@@ -194,6 +196,59 @@ LIMIT 2`,
     params: { spanFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
       spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), turnId, conversationId },
   };
+}
+
+// Session environment: the MCP servers and plugins the task's session carried. Claude Code
+// emits mcp_server_connection and plugin_loaded at session start (and on reconnects), often
+// days before a given interaction, so the window looks back from the task's start; the
+// EventName-first sort key keeps that read small. Latest status per server up to the task's
+// end. OTel carries no tool-definition count or schema size, so neither is reported.
+export const ENVIRONMENT_LOOKBACK_DAYS = 14;
+const ENVIRONMENT_LIMIT = 500;
+export function claudeEnvironmentSql(sessionId, startMs, endMs) {
+  return {
+    sql: `SELECT EventName AS event,
+    if(EventName = 'mcp_server_connection', LogAttributes['server_name'], LogAttributes['plugin.name']) AS name,
+    argMax(LogAttributes['status'], Timestamp) AS status,
+    argMax(LogAttributes['skill_path_count'], Timestamp) AS skills,
+    argMax(LogAttributes['agent_path_count'], Timestamp) AS agents,
+    argMax(LogAttributes['command_path_count'], Timestamp) AS commands,
+    argMax(LogAttributes['has_mcp'], Timestamp) AS has_mcp
+FROM claude_code.otel_logs
+WHERE EventName IN ('mcp_server_connection', 'plugin_loaded')
+  AND Timestamp >= {envFrom:DateTime} AND Timestamp < {envTo:DateTime}
+  AND SessionId = {sessionId:String}
+GROUP BY event, name
+LIMIT ${ENVIRONMENT_LIMIT + 1}`,
+    params: { sessionId, envFrom: toChDateTime(new Date(startMs - ENVIRONMENT_LOOKBACK_DAYS * 86400000)),
+      envTo: toChDateTime(new Date(endMs + SPAN_SLACK_MS)) },
+  };
+}
+
+// MCP server names are shown only when label-shaped (label()); others count without a name.
+const pathCount = (v) => count(v);
+export function foldEnvironment(rows = []) {
+  const mcpRows = rows.filter((r) => r.event === "mcp_server_connection");
+  const pluginRows = rows.filter((r) => r.event === "plugin_loaded");
+  if (!mcpRows.length && !pluginRows.length) return null;
+  const mcp = mcpRows.length ? {
+    connected: mcpRows.filter((r) => r.status === "connected").length,
+    failed: mcpRows.filter((r) => r.status === "failed").length,
+    other: mcpRows.filter((r) => r.status !== "connected" && r.status !== "failed").length,
+    servers: mcpRows.map((r) => ({ name: label(r.name), status: label(r.status) }))
+      .sort((a, b) => (a.name === null) - (b.name === null) || String(a.name).localeCompare(String(b.name))),
+  } : null;
+  let partial = false;
+  const sum = (key) => pluginRows.reduce((total, r) => {
+    const n = pathCount(r[key]);
+    if (n === null) { partial = true; return total; }
+    return total + n;
+  }, 0);
+  const plugins = pluginRows.length ? { count: pluginRows.length, skills: sum("skills"), agents: sum("agents"),
+    commands: sum("commands"), with_mcp: pluginRows.filter((r) => r.has_mcp === "true").length } : null;
+  if (plugins) plugins.counts_partial = partial;
+  return { mcp, plugins, lookback_days: ENVIRONMENT_LOOKBACK_DAYS,
+    ...(rows.length > ENVIRONMENT_LIMIT ? { limited: true } : {}) };
 }
 
 // Claude Code's compaction event carries the prompt.id of the prompt it compacted for; the
@@ -519,7 +574,14 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
       const compaction = claudeCompactionSql(from, to, promptIds);
       compactionRows = await run(compaction.sql, compaction.params);
     }
-    return { ...foldTaskDetail({ client: "claude", ...head }, rows, costRows, compactionRows), owner: head.owner };
+    const { session_id: sessionId, ...headFields } = head;
+    const startMs = count(head.start_ms), durationMs = count(head.duration_ms) ?? 0;
+    let environment = null;
+    if (sessionId && startMs !== null) {
+      const env = claudeEnvironmentSql(sessionId, startMs, startMs + durationMs);
+      environment = foldEnvironment(await run(env.sql, env.params));
+    }
+    return { ...foldTaskDetail({ client: "claude", ...headFields }, rows, costRows, compactionRows), environment, owner: head.owner };
   }
   let owner = userExact;
   if (owner === null) {
@@ -543,5 +605,7 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     : codexLimitsSql(q, task.conversationId, turnStart, count(entry.turn.end_ms) ?? turnStart);
   const [rows, limitRows] = await Promise.all([run(sql.spans.sql, sql.spans.params),
     limitsSql ? run(limitsSql.sql, limitsSql.params) : []]);
-  return { ...foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows), owner };
+  // Codex emits no MCP or plugin session events: its environment is not collected.
+  return { ...foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows),
+    environment: null, owner };
 }

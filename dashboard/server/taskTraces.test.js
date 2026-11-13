@@ -685,7 +685,7 @@ test("a turn spanning the bucket start is listed once, by its starting bucket", 
 const detail = await import("./taskTraceDetail.js");
 const { parseTaskId, claudeDetailSql, codexDetailSql, foldTaskDetail, userTaskDetail, taskDetailCacheKey,
   validateTaskDetailQuery, SPAN_ATTRIBUTE_ALLOWLIST, SPAN_BOUND, claudeCompactionSql, codexLimitsSql,
-  foldCompactions, foldLimits, COMPACTION_LIMIT } = detail;
+  foldCompactions, foldLimits, COMPACTION_LIMIT, claudeEnvironmentSql, foldEnvironment, ENVIRONMENT_LOOKBACK_DAYS } = detail;
 const { NotFoundError } = await import("./http.js");
 
 const TRACE = "0123456789abcdef0123456789abcdef";
@@ -1163,4 +1163,57 @@ test("Codex limits are bounded by the turn end plus slack", () => {
   const start = ms("2026-11-05T10:00:00Z"), end = start + 600000;
   assert.ok(codexLimitsSql({ userExact: "a" }, "c1", start, end).params.beforeMs > end);
   assert.ok(codexLimitsSql({ userExact: "a" }, "c1", start).params.beforeMs > start);
+});
+
+test("claudeEnvironmentSql reads the session's MCP and plugin events before the task ends", () => {
+  const { sql, params } = claudeEnvironmentSql("sess-1", t0, t0 + 60000);
+  assert.equal(params.sessionId, "sess-1");
+  assert.equal(ENVIRONMENT_LOOKBACK_DAYS, 14);
+  assert.equal(params.envFrom, "2026-10-22 01:00:00");
+  assert.ok(params.envTo > "2026-11-05 01:01:00");
+  assert.ok(sql.includes("EventName IN ('mcp_server_connection', 'plugin_loaded')"));
+  assert.ok(sql.includes("SessionId = {sessionId:String}"));
+  assert.ok(sql.includes("argMax(LogAttributes['status'], Timestamp)"), "latest status per server");
+});
+
+test("foldEnvironment counts MCP servers by latest status and plugin paths, never inventing zeros", () => {
+  const env = foldEnvironment([
+    { event: "mcp_server_connection", name: "github", status: "connected" },
+    { event: "mcp_server_connection", name: "plugin:slack:slack", status: "failed" },
+    { event: "mcp_server_connection", name: "my server/with space", status: "connected" },
+    { event: "mcp_server_connection", name: "docs", status: "disconnected" },
+    { event: "plugin_loaded", name: "p1", skills: "3", agents: "1", commands: "2", has_mcp: "true" },
+    { event: "plugin_loaded", name: "p2", skills: null, agents: "0", commands: "4", has_mcp: "false" },
+  ]);
+  assert.deepEqual(env.mcp, { connected: 2, failed: 1, other: 1,
+    servers: [{ name: "docs", status: "disconnected" }, { name: "github", status: "connected" },
+      { name: "plugin:slack:slack", status: "failed" }, { name: null, status: "connected" }] });
+  assert.deepEqual(env.plugins, { count: 2, skills: 3, agents: 1, commands: 6, with_mcp: 1, counts_partial: true });
+  assert.equal(env.lookback_days, 14);
+  // No events at all is unknown, not an empty environment.
+  assert.equal(foldEnvironment([]), null);
+  // Only plugins observed: MCP stays unknown rather than zero.
+  assert.equal(foldEnvironment([{ event: "plugin_loaded", name: "p1", skills: "1", agents: "0", commands: "0", has_mcp: "false" }]).mcp, null);
+});
+
+test("the Claude detail carries the session environment and never the raw session id", async () => {
+  const base = fakeRun({ owner: "kim@x.com" });
+  const seen = [];
+  const run = async (sql, params) => {
+    if (sql.includes("'mcp_server_connection'")) {
+      seen.push(params);
+      return [{ event: "mcp_server_connection", name: "github", status: "connected" }];
+    }
+    if (sql.includes("SpanType = 'interaction'")) {
+      const rows = await base(sql, params);
+      return rows.map((r) => ({ ...r, session_id: "sess-secret-1" }));
+    }
+    return base(sql, params);
+  };
+  const out = await userTaskDetail(from, to, { id: `claude:${TRACE}`, userExact: "kim@x.com" }, both, run);
+  assert.equal(seen[0].sessionId, "sess-secret-1");
+  assert.equal(out.environment.mcp.connected, 1);
+  assert.ok(!JSON.stringify(out).includes("sess-secret-1"));
+  const codex = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, base, DEFAULT_CODEX_PRICING);
+  assert.equal(codex.environment, null);
 });

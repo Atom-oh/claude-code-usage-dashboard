@@ -362,6 +362,9 @@ and partial sums are labelled). Selecting a table row (a button) dims every othe
 in the timeline through TaskTimeline's optional `highlight` predicate; selecting it again
 clears it. A truncated detail counts only the returned spans and shows no cost sums there.
 Same-name lanes are numbered and shaded by `withLaneIdentity()` so each reads as its own lane.
+A session-environment card lists the response's `environment` (MCP servers by status with
+non-label names counted once, plugin/skill/agent/command counts, first call's context) and
+states that tool-definition counts and sizes are not in OTel; absent evidence is not collected.
 Pure helpers live in
 [taskTrace.js](../../dashboard/web/src/taskTrace.js); lane hues are `LANE_COLOR` in
 [colors.js](../../dashboard/web/src/colors.js) and icons in
