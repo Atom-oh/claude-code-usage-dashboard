@@ -9,8 +9,12 @@ import { axisTick, tooltipStyles, useChartColors } from "../useChartColors.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { basisLabel, clientName, formatClientTime, formatPercent } from "../clientPresentation.js";
 import { maskEmail } from "../fmt.js";
+import { Download } from "lucide-react";
+import { useRange } from "../RangeContext.jsx";
+import { useConfig } from "../ConfigContext.jsx";
+import { csvFilename, downloadCsv, toCsv } from "../csv.js";
 import { BUNDLE_COLOR_VARS, BUNDLE_HELP, BUNDLE_LABELS, BUNDLE_OF, NOT_OBSERVED_LABEL, REASON_HELP, TERM_LABELS, TERMS,
-  changePct, reasonLabel, responseWindowMatches, waterfallSteps } from "../tokenEconomics.js";
+  changePct, exemplarBars, reasonLabel, responseWindowMatches, waterfallSteps } from "../tokenEconomics.js";
 
 // Shared Productivity: the token-economics cost equation (docs/metrics.md#token-economics).
 // Every number comes from /api/clients/token-economics; an unavailable value renders its
@@ -278,31 +282,92 @@ const LEVERS = {
 };
 const DIRECTION = { lower: "낮을수록", higher: "높을수록" };
 const leverFormat = (row) => LEVERS[row.lever]?.format || formatObserved;
-const EXEMPLAR_COLUMNS = [CLIENT,
-  { key: "lever", label: "레버", render: (v, row) => row.reason ? "—" : <span className="block min-w-[9rem]">{`${LEVERS[v]?.label || v} (${DIRECTION[row.direction] || "—"})`}</span>,
-    toText: (v, row) => row.reason ? "" : `${LEVERS[v]?.label || v} (${DIRECTION[row.direction] || ""})` },
-  { key: "median", label: "중앙값 (적격 사용자)", render: (v, row) => row.reason ? <ReasonBadge reason={row.reason} /> : leverFormat(row)(v),
-    toText: (v, row) => row.reason ? reasonLabel(row.reason) : v ?? "" },
-  // No toText: csv.js masks the user column itself; the screen masks with maskEmail.
-  { key: "user", label: "사용자", render: (v) => v ? maskEmail(v) : "—" },
-  { key: "value", label: "값", render: (v, row) => row.reason ? "—" : leverFormat(row)(v),
-    toText: (v) => v ?? "" },
+// Difference from the median: percent of it, or percentage points for rate levers.
+const deltaText = (delta, unit) => {
+  if (delta === null) return "—";
+  const abs = Math.abs(delta);
+  if (abs < 0.005) return unit === "pt" ? "±0%p" : "±0%";
+  return `${delta < 0 ? "−" : "+"}${abs.toFixed(abs > 0 && abs < 1 ? 2 : 1)}${unit === "pt" ? "%p" : "%"}`;
+};
+// Codex has no commit counters; a Claude user without commit evidence is not zero.
+const commitsStatus = (row, commits) => row.unavailable?.outcome ? reasonLabel(row.unavailable.outcome)
+  : finite(commits) === null ? NOT_OBSERVED_LABEL : null;
+// CSV keeps the median and the difference the chart draws.
+export const EXEMPLAR_COLUMNS = [CLIENT,
+  { key: "lever", label: "레버", toText: (v, row) => row.reason ? "" : `${LEVERS[v]?.label || v} (${DIRECTION[row.direction] || ""})` },
+  { key: "median", label: "중앙값 (적격 사용자)", toText: (v, row) => row.reason ? reasonLabel(row.reason) : v ?? "" },
+  // No toText: csv.js masks the user column itself.
+  { key: "user", label: "사용자" },
+  { key: "value", label: "값", toText: (v) => v ?? "" },
+  { key: "delta", label: "중앙값 대비", toText: (v, row) => row.reason || v === null || v === undefined ? "" : deltaText(v, row.unit) },
   measure("sessions", "세션"), measure("turns", "턴"),
-  { key: "commits", label: "커밋", render: (v, row) => row.reason ? "—" : row.commits_status ? <ReasonBadge label={row.commits_status} /> : formatObserved(v),
-    toText: (v, row) => row.reason ? "" : row.commits_status ?? v ?? "" }];
-function exemplarRows(rows) {
+  { key: "commits", label: "커밋", toText: (v, row) => row.reason ? "" : row.commits_status ?? v ?? "" }];
+export function exemplarRows(rows) {
   return rows.flatMap((row) => {
     if (!row.exemplars) return [unavailableRow(row)];
-    // Codex has no commit counters; a Claude user without commit evidence is not zero.
-    const commitsStatus = (commits) => row.unavailable?.outcome ? reasonLabel(row.unavailable.outcome)
-      : finite(commits) === null ? NOT_OBSERVED_LABEL : null;
     return (row.exemplars.levers || []).flatMap((lever) => {
-      const base = { client: row.client, lever: lever.lever, direction: lever.direction, median: finite(lever.median) };
-      if (!Array.isArray(lever.top) || lever.top.length === 0) return [{ ...base, user: "", value: null, sessions: null, turns: null, commits: null }];
-      return lever.top.map((u) => ({ ...base, user: u.user, value: finite(u.value), sessions: finite(u.sessions),
-        turns: finite(u.turns), commits: finite(u.commits), commits_status: commitsStatus(u.commits) }));
+      const { unit, median, bars } = exemplarBars(lever);
+      const base = { client: row.client, lever: lever.lever, direction: lever.direction, median, unit };
+      if (bars.length === 0) return [{ ...base, user: "", value: null, delta: null, sessions: null, turns: null, commits: null }];
+      return bars.map((u) => ({ ...base, user: u.user, value: u.value, delta: u.delta, sessions: finite(u.sessions),
+        turns: finite(u.turns), commits: finite(u.commits), commits_status: commitsStatus(row, u.commits) }));
     });
   });
+}
+
+// One lever: the dashed line is the eligible users' median and the better side is always right.
+function LeverBars({ row, lever }) {
+  const { unit, median, bars } = exemplarBars(lever);
+  const label = LEVERS[lever.lever]?.label || lever.lever;
+  const format = leverFormat(lever);
+  const name = `${clientName(row.client)} ${label} 중앙값 대비`;
+  return <div className="flex min-w-0 flex-col gap-2">
+    <div>
+      <div className="text-[13px] font-semibold text-ink-800">{label}</div>
+      <div className="text-[12px] text-ink-500">{`중앙값 ${median === null ? "—" : format(median)} · ${DIRECTION[lever.direction] || ""} 좋음`}</div>
+    </div>
+    {bars.length === 0 ? <p className="text-[12px] text-ink-500">해당 사용자 없음</p> : <ul aria-label={name} className="flex flex-col gap-1.5">
+      {bars.map((b) => {
+        const commits = commitsStatus(row, b.commits) ?? formatObserved(finite(b.commits));
+        const color = b.better === null ? "var(--ink-400)" : b.better ? "var(--positive)" : "var(--warning)";
+        const left = b.better === false ? 50 - b.width : 50;
+        return <li key={b.user} data-better={b.better === null ? undefined : String(b.better)}
+          title={`세션 ${formatObserved(finite(b.sessions))} · 턴 ${formatObserved(finite(b.turns))} · 커밋 ${commits}`}
+          className="grid grid-cols-[minmax(0,10rem)_minmax(4rem,1fr)_10.5rem] items-center gap-2 text-[12px]">
+          <span className="truncate text-ink-700">{maskEmail(b.user)}</span>
+          <span aria-hidden="true" className="relative h-3.5 rounded bg-ink-100">
+            <span className="absolute -top-1 -bottom-1 left-1/2 border-l-2 border-dashed border-ink-400" />
+            <span className="absolute top-0.5 bottom-0.5 rounded-sm" style={{ left: `${left}%`, width: `${b.width}%`, background: color }} />
+          </span>
+          <span className="whitespace-nowrap text-right tabular-nums text-ink-700">{`${format(b.value)} · ${deltaText(b.delta, unit)}`}</span>
+        </li>;
+      })}
+    </ul>}
+  </div>;
+}
+
+function Exemplars({ rows, multi, eligible, stale }) {
+  const range = useRange();
+  const { piiMask } = useConfig();
+  const csvRows = exemplarRows(rows);
+  const csv = <button type="button" disabled={stale || csvRows.length === 0}
+    onClick={() => downloadCsv(csvFilename("clients_token_economics_exemplars", range?.from, range?.to), toCsv(EXEMPLAR_COLUMNS, csvRows, { piiMask }))}
+    className="flex items-center gap-1 rounded-md bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 whitespace-nowrap hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
+    title={stale ? "새 기간의 데이터를 불러오는 중에는 내보낼 수 없습니다" : "현재 차트의 값을 CSV로 내려받기"}>
+    <Download size={12} />CSV
+  </button>;
+  return <Card title="모범 사용자" subtitle="최소 활동량(세션 5개·턴 20개) 충족 사용자만 · 연락해 사용 방식을 공유받는 용도이며 성과 평가가 아닙니다"
+    help={`레버별 적격 사용자 중 상위 10명을 적격 사용자 중앙값과 비교합니다. 점선이 중앙값이며 오른쪽이 좋은 방향입니다. 비율 레버는 %p 차이입니다. 적격 사용자: ${eligible}. 표시는 PII 마스킹 설정을 따릅니다.`}
+    right={csv}>
+    <div className="flex flex-col gap-6">
+      {rows.map((row) => <section key={row.client} aria-label={`${clientName(row.client)} 모범 사용자`} className="flex flex-col gap-3">
+        {multi && <h3 className="text-[13px] font-semibold text-ink-700">{clientName(row.client)}</h3>}
+        {row.exemplars ? <div className="grid gap-x-8 gap-y-5 lg:grid-cols-2">
+          {(row.exemplars.levers || []).map((lever) => <LeverBars key={lever.lever} row={row} lever={lever} />)}
+        </div> : <Unavailable reason={row.unavailable?.chain || "no_matched_sessions"} />}
+      </section>)}
+    </div>
+  </Card>;
 }
 
 export default function TokenEconomics({ api, range, clients, stale = false }) {
@@ -346,9 +411,7 @@ export default function TokenEconomics({ api, range, clients, stale = false }) {
           columns={outcomeColumns} rows={outcomeItems} exportName="clients_token_economics_outcome" stale={pending} />
       </div>
       <SectionLabel>토큰 경제 · 모범 사용자</SectionLabel>
-      <DataTable title="모범 사용자" subtitle="최소 활동량(세션 5개·턴 20개) 충족 사용자만 · 연락해 사용 방식을 공유받는 용도이며 성과 평가가 아닙니다"
-        help={`레버별 적격 사용자 중앙값과 상위 3명입니다. 적격 사용자: ${eligible}. 표시는 PII 마스킹 설정을 따릅니다.`}
-        columns={EXEMPLAR_COLUMNS} rows={exemplarRows(rows)} exportName="clients_token_economics_exemplars" stale={pending} />
+      <Exemplars rows={rows} multi={multi} eligible={eligible} stale={pending} />
     </>;
   }
   return <section aria-label="토큰 경제" data-token-economics className="flex flex-col gap-4">{body}</section>;
