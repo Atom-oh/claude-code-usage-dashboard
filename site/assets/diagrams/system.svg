@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="548" viewBox="0 0 1320 548" role="img" aria-labelledby="title description">
+<title id="title">ccdash collection and query architecture</title>
+<desc id="description">The device collection path sends coding telemetry through a local Collector and authenticated ingest gateway to the central Collector and ClickHouse. Organization login authorizes the dashboard to read through the API.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#94a3b8" stroke-width="1.8"/></marker></defs>
+<rect width="1320" height="548" rx="24" fill="#f8fafc"/>
+<style>text{font-family:Arial,Helvetica,sans-serif}.group{font-size:13px;font-weight:700;letter-spacing:2px;fill:#64748b}.label{font-size:20px;font-weight:700;fill:#16243b}.sub{font-size:14px;fill:#53627a}.edge{font-size:13px;fill:#53627a}</style>
+<text x="30" y="28" class="group">COLLECT OBSERVED SIGNALS</text>
+<text x="30" y="320" class="group">SIGN IN AND EXPLORE</text>
+<path d="M280 126 L360 126" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="320.0" y="94" text-anchor="middle" class="edge">Local</text>
+<text x="320.0" y="110" text-anchor="middle" class="edge">OTLP</text>
+<path d="M610 126 L690 126" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="650.0" y="94" text-anchor="middle" class="edge">HTTPS +</text>
+<text x="650.0" y="110" text-anchor="middle" class="edge">token</text>
+<path d="M940 126 L1020 126" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="980.0" y="94" text-anchor="middle" class="edge">Private</text>
+<text x="980.0" y="110" text-anchor="middle" class="edge">OTLP</text>
+<path d="M1145 198 L1145 346" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<rect x="1080" y="257.0" width="106" height="22" rx="4" fill="#f8fafc"/>
+<text x="1133" y="272.0" text-anchor="middle" class="edge">Write signals</text>
+<path d="M280 418 L360 418" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="320.0" y="386" text-anchor="middle" class="edge">OIDC</text>
+<text x="320.0" y="402" text-anchor="middle" class="edge">sign-in</text>
+<path d="M610 418 L690 418" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="650.0" y="386" text-anchor="middle" class="edge">Session</text>
+<text x="650.0" y="402" text-anchor="middle" class="edge">cookie</text>
+<path d="M940 418 L1020 418" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="980.0" y="386" text-anchor="middle" class="edge">Read-only</text>
+<text x="980.0" y="402" text-anchor="middle" class="edge">SELECT</text>
+<g data-node="clients"><rect x="30" y="54" width="250" height="144" rx="16" fill="#fff" stroke="#dbe3ef"/>
+<rect x="50" y="74" width="8" height="8" rx="3" fill="#64748b"/>
+<text x="50" y="116" class="label">Claude Code · Codex</text>
+<text x="50" y="145" class="sub">Logs, metrics and traces</text>
+</g>
+<g data-node="local"><rect x="360" y="54" width="250" height="144" rx="16" fill="#fff" stroke="#dbe3ef"/>
+<rect x="380" y="74" width="8" height="8" rx="3" fill="#416bd6"/>
+<text x="380" y="116" class="label">Local Collector</text>
+<text x="380" y="145" class="sub">Filter and queue on the device</text>
+</g>
+<g data-node="ingest"><rect x="690" y="54" width="250" height="144" rx="16" fill="#fff" stroke="#dbe3ef"/>
+<rect x="710" y="74" width="8" height="8" rx="3" fill="#9567c9"/>
+<text x="710" y="116" class="label">Express · ingest</text>
+<text x="710" y="145" class="sub">Validate the device credential</text>
+</g>
+<g data-node="central"><rect x="1020" y="54" width="250" height="144" rx="16" fill="#fff" stroke="#dbe3ef"/>
+<rect x="1040" y="74" width="8" height="8" rx="3" fill="#416bd6"/>
+<text x="1040" y="116" class="label">Central Collector</text>
+<text x="1040" y="145" class="sub">Route signals into storage</text>
+</g>
+<g data-node="identity"><rect x="30" y="346" width="250" height="144" rx="16" fill="#fff" stroke="#dbe3ef"/>
+<rect x="50" y="366" width="8" height="8" rx="3" fill="#9567c9"/>
+<text x="50" y="408" class="label">Organization identity</text>
+<text x="50" y="437" class="sub">Roles from configured OIDC</text>
+</g>
+<g data-node="browser"><rect x="360" y="346" width="250" height="144" rx="16" fill="#fff" stroke="#dbe3ef"/>
+<rect x="380" y="366" width="8" height="8" rx="3" fill="#416bd6"/>
+<text x="380" y="408" class="label">React dashboard</text>
+<text x="380" y="437" class="sub">Users, tasks, tools and costs</text>
+</g>
+<g data-node="api"><rect x="690" y="346" width="250" height="144" rx="16" fill="#fff" stroke="#dbe3ef"/>
+<rect x="710" y="366" width="8" height="8" rx="3" fill="#416bd6"/>
+<text x="710" y="408" class="label">Express · read API</text>
+<text x="710" y="437" class="sub">Apply range, filters and</text>
+<text x="710" y="457" class="sub">coverage</text>
+</g>
+<g data-node="database"><rect x="1020" y="346" width="250" height="144" rx="16" fill="#fff" stroke="#dbe3ef"/>
+<rect x="1040" y="366" width="8" height="8" rx="3" fill="#1b8a74"/>
+<text x="1040" y="408" class="label">ClickHouse</text>
+<text x="1040" y="437" class="sub">Raw signals and usage rollups</text>
+</g>
+</svg>
