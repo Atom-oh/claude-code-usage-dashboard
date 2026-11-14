@@ -119,7 +119,9 @@ authentication, range limits and client/backend/user/model/team filters as overv
 The query aggregates in ClickHouse before returning rows, so a 90-day user heatmap
 does not consume overview's 50,000-row detail budget. Claude counts sessions with
 token/cost counter increments or supported operational logs, deduplicating the
-session across both sources with the existing baselines and historical end alignment.
+session across both sources with the existing baselines and historical end alignment:
+the counter and log reads run as separate identity-narrowed queries returning distinct
+day/session pairs, and the server unions them per day.
 Codex counts sessions with supported operational or completion events;
 setup metadata and stream deltas only supply filter evidence. Counts are distinct
 within each client and UTC day, not across clients or the entire period.

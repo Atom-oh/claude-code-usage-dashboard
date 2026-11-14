@@ -16,7 +16,12 @@ const db = http.createServer(async(req,res)=>{
     backend:'bedrock-mantle',kind:'usage',context_tier:'short',count:1,input_tokens_total:100,
     cache_read_tokens:40,cache_write_tokens:11,output_tokens:30,reasoning_tokens:10,invalid:0};
   let rows=[];
-  if(sql.includes('coding-client:codex-activity') || sql.includes('coding-client:claude-activity')) {
+  if(sql.includes('coding-client:claude-activity')) {
+    dataQueries++;
+    // Counter and log reads return the same (day, session) rows: the union counts each once.
+    rows=[...Array.from({length:7},(_,i)=>({day:'2026-09-14T00:00:00Z',t:'2026-09-14T00:00:00Z',session:'s'+i})),
+      {day:'2026-09-15T00:00:00Z',t:'2026-09-15T00:00:00Z',session:''}];
+  } else if(sql.includes('coding-client:codex-activity')) {
     dataQueries++;
     rows=[{t:'2026-09-14T00:00:00Z',sessions:7},{t:'2026-09-15T00:00:00Z',sessions:0}];
   } else if(sql.includes('unique_events')) {
