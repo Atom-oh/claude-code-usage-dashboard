@@ -17,14 +17,25 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Attribute teams from a Cognito user pool attribute chosen by an admin on `/settings`,
+  with labels, hourly sync, change history and device-provided markers; Terraform grants
+  the dashboard read access to that pool. `/api/teams` adds `sources`, `labels`,
+  `historyStart` and `directory`; `/api/users/teams` adds `sources`.
+
+## [1.9.0] - 2026-11-14
+
+### Added
+
+- Install a device collector without handling a token: the `curl | sh` command now
+  shows a confirmation code and approval link, the user approves the device in the
+  browser after SSO, and the installer finishes on its own. New installations use the
+  approving account's verified email as the attribution ID; reinstalls keep theirs.
+  The token flow remains available with `sh -s -- --token`.
 - Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
   provenance and verified message placeholders.
 - Add a persistent five-language picker to desktop, mobile and task detail.
   Localize shared controls, chart labels and feedback while retaining open tasks,
   filters and time ranges; guide links use available translations with an English fallback.
-- Attribute teams from a Cognito user pool attribute chosen by an admin on `/settings`, with labels,
-  hourly sync, change history and device-provided markers; Terraform grants the dashboard read access to
-  that pool. `/api/teams` adds `sources`, `labels`, `historyStart` and `directory`; `/api/users/teams` adds `sources`.
 
 ### Changed
 
@@ -49,11 +60,6 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
-- Install a device collector without handling a token: the `curl | sh` command now
-  shows a confirmation code and approval link, the user approves the device in the
-  browser after SSO, and the installer finishes on its own. New installations use the
-  approving account's verified email as the attribution ID; reinstalls keep theirs.
-  The token flow remains available with `sh -s -- --token`.
 - Add validated locale preference loading and Korean/English message catalogs
   for the multilingual interface.
 

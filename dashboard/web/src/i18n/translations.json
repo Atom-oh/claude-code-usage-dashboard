@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T13:32:49.166075+00:00",
-  "source_messages": 1845,
+  "updated_at": "2026-11-14T13:24:10.547651+00:00",
+  "source_messages": 1857,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 1845,
-      "bytes": 138289,
-      "sha256": "7e850622289eacfca08e53199f0b928f9f53446397c7d759a467baf86ef3b510"
+      "messages": 1857,
+      "bytes": 140103,
+      "sha256": "ae15ee9d3ccf825962aca8597d426db91d3c011b77bed9a41b0502c76f764e09"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 1845,
-      "bytes": 163046,
-      "sha256": "49236c704ca93015e85353d26a1374513d9d5b3535b1ed0cfa1567be7152750f"
+      "messages": 1857,
+      "bytes": 165211,
+      "sha256": "579206b141ee9f95774bee5d6a57a23607aaa88c68f4332d0e9c9abe5228b025"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 1845,
-      "bytes": 170037,
-      "sha256": "60e0754ecc8bb350a95305ed6e66b579da272cb55d414b8796bd8b6020d433b7"
+      "messages": 1857,
+      "bytes": 172405,
+      "sha256": "22f570d92830b6d291da76d11383594969d1373fb689709c522f7345e87c9ea6"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 1845,
-      "bytes": 146473,
-      "sha256": "6943406c937f9240e4a17faed3eb150ec4bc0f51dd64d36dc8c2a84be68beec8"
+      "messages": 1857,
+      "bytes": 148544,
+      "sha256": "c6e57f03b332fa027d01d6fb638208c5b3596e9f9d04d78d1ba7d22a361a52ff"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 1845,
-      "bytes": 130966,
-      "sha256": "1222da18c2c49975e4aa054abea645951a724eab6a316644ce3c945b0144fe8c"
+      "messages": 1857,
+      "bytes": 132690,
+      "sha256": "565b5ae86e3f7fd00c3272e658747ef74a463e3e266d0b7d7ce2d269b10fe399"
     }
   ],
   "catalog_calls": [
@@ -763,6 +763,25 @@
     "used_keys": [
       "md9cb56dff124"
     ]
+  },
+  "release_190_messages": {
+    "translated_by": "claude-opus-5-5 (release host, not the Luna batch pipeline)",
+    "keys": [
+      "m57f9a855051d",
+      "mc1253e8f47b5",
+      "mda1aeb980496",
+      "m9bbf458dcf9e",
+      "m5a403e2edac6",
+      "m001c87307e2d",
+      "m1d86e0280241",
+      "m382aa2697489",
+      "med06e0ad8e03",
+      "m676c44e3f7fc",
+      "ma2146a2f50ba",
+      "m37fe7a8c4947"
+    ],
+    "messages": 12,
+    "terminology": "Reused existing catalog terms (Cost by user, Cost share by model, Task list, Task details, Unclassified, LLM calls); product names, page names and channel codes stay untranslated."
   },
   "team_mapping_messages": {
     "requested_model": "openai.gpt-6-luna",
