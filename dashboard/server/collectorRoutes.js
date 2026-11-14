@@ -3,12 +3,15 @@ import { openSync, readFileSync, fstatSync, closeSync } from "node:fs";
 import { resolve } from "node:path";
 import { createDeviceTokenService, DeviceTokenError, TOKEN_LIFETIME_DAYS } from "./deviceTokens.js";
 import { createDynamoDeviceStore } from "./deviceTokenStore.js";
+import { collectorInstallScript } from "./collectorInstallScript.js";
 
 const BODY_LIMIT = 2 * 1024 * 1024;
 const RESPONSE_LIMIT = 64 * 1024;
 const TYPES = new Set(["application/json", "application/x-protobuf"]);
 const SIGNAL_PATHS = new Set(["/api/ingest/v1/metrics", "/api/ingest/v1/logs", "/api/ingest/v1/traces"]);
 const RENEW_PATH = "/api/ingest/renew";
+const INSTALL_PATH = "/api/ingest/install.sh";
+const DEVICE_PACKAGE_PATH = /^\/api\/ingest\/package\/([a-z]+)$/;
 const COLLECTOR_VERSION = "0.163.1";
 const mediaType = value => (value || "").split(";")[0].trim().toLowerCase();
 const fail = (code, status) => new DeviceTokenError(code, status);
@@ -140,6 +143,8 @@ export function createCollectorFeature({ env = process.env, authentication, pack
   const mintAllowed = fixedWindow(10, 3600000, now);
   const ingestAllowed = fixedWindow(120, 60000, now);
   const renewAllowed = fixedWindow(6, 3600000, now);
+  const packageAllowed = fixedWindow(10, 3600000, now);
+  const installScript = config.enabled ? collectorInstallScript(config.endpoint) : null;
   let active = 0;
   let pendingTouches = 0;
 
@@ -164,8 +169,56 @@ export function createCollectorFeature({ env = process.env, authentication, pack
     });
   }
 
+  const bearer = req => {
+    const authorization = /^Bearer (\S+)$/i.exec(req.get("authorization") || "");
+    return authorization && req.rawHeaders.filter((value, i) => i % 2 === 0
+      && value.toLowerCase() === "authorization").length === 1 ? authorization[1] : null;
+  };
+
+  function sendPackage(res, platform) {
+    const filename = `ccdash-collector-${platform}.tar.gz`;
+    res.set("Content-Type", "application/gzip");
+    res.download(resolve(packageDir, filename), filename, error => {
+      if (!error) return;
+      if (res.headersSent) { res.destroy(); return; }
+      res.removeHeader("Content-Disposition");
+      errorResponse(res, fail("package_unavailable", 503));
+    });
+  }
+
+  // Public bootstrap script and device-token package download for `curl | sh`; neither reads a body.
+  async function install(req, res, platform) {
+    if (!["GET", "HEAD"].includes(req.method)) {
+      res.set({ Allow: "GET, HEAD", Connection: "close" });
+      return errorResponse(res, fail("method_not_allowed", 405));
+    }
+    if (req.originalUrl.includes("?")) return errorResponse(res, fail("invalid_request", 400));
+    if (platform === undefined) return void res.type("text/plain; charset=utf-8").send(installScript);
+    if (!["linux", "darwin"].includes(platform)) return errorResponse(res, fail("not_found", 404));
+    const token = bearer(req);
+    if (!token) return errorResponse(res, fail("invalid_token", 401));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(fail("store_unavailable", 503)), 15000);
+    try {
+      const identity = await service.verify(token, { signal: controller.signal });
+      if (!identity) throw fail("invalid_token", 401);
+      if (!packageAllowed(`${identity.owner}:${identity.id}`)) {
+        res.set("Retry-After", "3600");
+        throw fail("package_rate_limited", 429);
+      }
+      sendPackage(res, platform);
+    } catch (error) {
+      errorResponse(res, error);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function ingest(req, res) {
     res.set("Cache-Control", "no-store");
+    if (config.enabled && req.path === INSTALL_PATH) return install(req, res);
+    const devicePackage = config.enabled && DEVICE_PACKAGE_PATH.exec(req.path);
+    if (devicePackage) return install(req, res, devicePackage[1]);
     // Closing early failures prevents unread upload bytes becoming another keep-alive request.
     const rejectEarly = (code, status) => {
       res.set("Connection", "close");
@@ -183,9 +236,8 @@ export function createCollectorFeature({ env = process.env, authentication, pack
     if (renewal && (req.get("transfer-encoding") || (length !== undefined && length !== "0")))
       return rejectEarly("invalid_request", 400);
     if (length && (!/^\d+$/.test(length) || Number(length) > BODY_LIMIT)) return rejectEarly("body_too_large", 413);
-    const authorization = /^Bearer (\S+)$/i.exec(req.get("authorization") || "");
-    if (!authorization || req.rawHeaders.filter((value, i) => i % 2 === 0 && value.toLowerCase() === "authorization").length !== 1)
-      return rejectEarly("invalid_token", 401);
+    const token = bearer(req);
+    if (!token) return rejectEarly("invalid_token", 401);
     if (active >= 8) { res.set("Retry-After", "1"); return rejectEarly("ingest_busy", 429); }
     active++;
     const controller = new AbortController();
@@ -203,12 +255,12 @@ export function createCollectorFeature({ env = process.env, authentication, pack
       const result = await Promise.race([aborted, (async () => {
         if (renewal) {
           // The only response that carries a secret: the one-time replacement token (no-store).
-          const reply = await service.renew(authorization[1], { signal,
+          const reply = await service.renew(token, { signal,
             admit: identity => renewAllowed(`${identity.owner}:${identity.id}`) });
           signal.throwIfAborted();
           return { reply };
         }
-        const identity = await service.verify(authorization[1], { signal });
+        const identity = await service.verify(token, { signal });
         signal.throwIfAborted();
         if (!identity) throw fail("invalid_token", 401);
         if (!ingestAllowed(`${identity.owner}:${identity.id}`)) throw fail("ingest_rate_limited", 429);
@@ -221,7 +273,7 @@ export function createCollectorFeature({ env = process.env, authentication, pack
           } catch { throw fail("invalid_json", 400); }
         }
         // A slow upload must not extend fixed expiry or the revocation cache window.
-        if (!await service.verify(authorization[1], { signal })) throw fail("invalid_token", 401);
+        if (!await service.verify(token, { signal })) throw fail("invalid_token", 401);
         signal.throwIfAborted();
         let upstream;
         let bytes;
@@ -280,7 +332,7 @@ export function createCollectorFeature({ env = process.env, authentication, pack
       const router = express.Router({ strict: true, caseSensitive: true });
       router.use(noStore, authentication.requirePermission("collector:manage"));
       router.get("/", (_req, res) => res.json({ enabled: config.enabled,
-        ...(config.enabled ? { endpoint: config.endpoint } : {}),
+        ...(config.enabled ? { endpoint: config.endpoint, installScriptUrl: `${config.endpoint}/install.sh` } : {}),
         tokenLifetimeDays: TOKEN_LIFETIME_DAYS, collectorVersion: COLLECTOR_VERSION, platforms: ["linux", "darwin"] }));
       router.use((req, res, next) => {
         if (!config.enabled) return errorResponse(res, fail("collector_disabled", 503));
@@ -307,14 +359,7 @@ export function createCollectorFeature({ env = process.env, authentication, pack
       }));
       router.get("/package/:platform", (req, res) => {
         if (!["linux", "darwin"].includes(req.params.platform)) return errorResponse(res, fail("not_found", 404));
-        const filename = `ccdash-collector-${req.params.platform}.tar.gz`;
-        res.set("Content-Type", "application/gzip");
-        res.download(resolve(packageDir, filename), filename, error => {
-          if (!error) return;
-          if (res.headersSent) { res.destroy(); return; }
-          res.removeHeader("Content-Disposition");
-          errorResponse(res, fail("package_unavailable", 503));
-        });
+        sendPackage(res, req.params.platform);
       });
       router.use((_req, res) => errorResponse(res, fail("not_found", 404)));
       router.use((error, _req, res, _next) => {

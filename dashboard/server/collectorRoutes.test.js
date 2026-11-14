@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request as httpRequest } from "node:http";
+import { spawnSync } from "node:child_process";
 import { createCollectorFeature } from "./collectorRoutes.js";
 
 const origin = "https://dashboard.example.invalid";
@@ -150,6 +151,8 @@ test("disabled feature is explicit and opt-in fails closed on invalid configurat
   assert.equal(metadata.headers.get("cache-control"), "no-store");
   assert.equal((await f.ingest("bad")).status, 404);
   assert.equal((await f.request("/api/ingest/renew", { method: "POST" })).status, 404);
+  assert.equal((await f.request("/api/ingest/install.sh")).status, 404);
+  assert.equal((await f.request("/api/ingest/package/linux")).status, 404);
   for (const bad of [{ INGEST_ENABLED: "true" }, { INGEST_TOKEN_TABLE: "" }, { OIDC_ISSUER: "" },
     { INGEST_UPSTREAM_TOKEN_FILE: "/missing" }, { APP_PUBLIC_URL: "https://a.invalid/path" },
     { INGEST_UPSTREAM_URL: "http://user:secret@internal/" }])
@@ -583,4 +586,68 @@ test("renewal and promotion log nothing", async t => {
   assert.equal(renewed.renewed, true);
   assert.equal((await f.ingest(renewed.token)).status, 200);
   assert.equal(logs.every(mock => mock.mock.callCount() === 0), true);
+});
+
+test("the public install script names this dashboard's endpoint and holds no secret", async t => {
+  const f = await fixture(t);
+  const metadata = await (await f.management("/api/collector")).json();
+  assert.equal(metadata.installScriptUrl, `${origin}/api/ingest/install.sh`);
+  const script = await f.request("/api/ingest/install.sh", { headers: { "x-fixture-role": "viewer" } });
+  assert.equal(script.status, 200);
+  assert.equal(script.headers.get("content-type"), "text/plain; charset=utf-8");
+  assert.equal(script.headers.get("cache-control"), "no-store");
+  const body = await script.text();
+  assert.match(body, /^#!\/bin\/sh\n/);
+  assert.match(body, new RegExp(`endpoint='${origin}/api/ingest'`));
+  assert.equal(body.includes("i".repeat(64)), false);
+  assert.equal(spawnSync("sh", ["-n"], { input: body }).status, 0);
+  assert.equal((await f.request("/api/ingest/install.sh", { method: "HEAD" })).status, 200);
+  const post = await f.request("/api/ingest/install.sh", { method: "POST" });
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get("allow"), "GET, HEAD");
+  assert.equal((await f.request("/api/ingest/install.sh?x=1")).status, 400);
+  assert.equal((await f.request("/api/ingest/install.sh/")).status, 404);
+});
+
+test("device package downloads require one valid device bearer and are rate limited per device", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { now: () => time });
+  const { token, device } = await f.issue();
+  const download = (bearer, init = {}) => f.request("/api/ingest/package/linux", { ...init,
+    headers: { ...(bearer ? { authorization: `Bearer ${bearer}` } : {}), ...init.headers } });
+  assert.equal((await download()).status, 401);
+  assert.equal((await download(null, { headers: { cookie: "__Host-session=browser", "x-fixture-role": "admin" } })).status, 401);
+  assert.equal((await download("ccd1.invalid")).status, 401);
+  const duplicate = await new Promise((resolveStatus, reject) => {
+    const request = httpRequest(f.base + "/api/ingest/package/linux", { headers: [
+      "Authorization", `Bearer ${token}`, "Authorization", `Bearer ${token}`] }, res => {
+      res.resume();
+      resolveStatus(res.statusCode);
+    });
+    request.on("error", reject);
+    request.end();
+  });
+  // Node may refuse the ambiguous request itself (400) before the route's single-header check (401).
+  assert.ok([400, 401].includes(duplicate), String(duplicate));
+  assert.equal((await f.request("/api/ingest/package/windows")).status, 404);
+  assert.equal((await download(token, { method: "POST" })).status, 405);
+  assert.equal((await f.request("/api/ingest/package/linux?x=1", { headers: { authorization: `Bearer ${token}` } })).status, 400);
+  const archive = await download(token);
+  assert.equal(archive.status, 200);
+  assert.equal(archive.headers.get("content-type"), "application/gzip");
+  assert.equal(archive.headers.get("cache-control"), "no-store");
+  assert.equal(await archive.text(), "archive-fixture");
+  assert.equal((await download(token, { headers: {} })).status, 200);
+  assert.equal((await f.request("/api/ingest/package/darwin", { headers: { authorization: `Bearer ${token}` } })).status, 503);
+  for (let i = 0; i < 7; i++) assert.equal((await download(token)).status, 200);
+  const limited = await download(token);
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get("retry-after"), "3600");
+  assert.deepEqual(await limited.json(), { error: "package_rate_limited" });
+  time += 3600000;
+  assert.equal((await download(token)).status, 200);
+  assert.equal(f.deliveries.length, 0);
+  assert.equal(f.store.records.get(`${token.split(".")[1]}:${device.id}`).lastSeenAt, undefined);
+  assert.equal((await f.management("/api/collector/devices/" + device.id, { method: "DELETE" })).status, 204);
+  assert.equal((await download(token)).status, 401);
 });

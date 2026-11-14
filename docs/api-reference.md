@@ -62,11 +62,13 @@ Unsafe requests retain the existing exact-Origin gate. Responses and downloads a
 
 | Method and path | Contract |
 |---|---|
-| `GET /api/collector` | Feature state, public ingestion endpoint, Collector version, supported platforms and 30-day token lifetime. |
+| `GET /api/collector` | Feature state, public ingestion endpoint, `installScriptUrl`, Collector version, supported platforms and 30-day token lifetime. |
 | `GET /api/collector/devices` | Owner-scoped `devices` and `nextCursor`; up to 50 records per page. Supply the returned `cursor` unchanged. |
 | `POST /api/collector/devices` | `{name, platform}` where name is 1–64 characters without controls and platform is `linux` or `darwin`; 201 returns `device` and the token once. |
 | `DELETE /api/collector/devices/:id` | Revoke an owned device; 204 for existing/already revoked, 404 for absent. |
 | `GET /api/collector/package/:platform` | Authenticated installer archive for `linux` or `darwin`; no credentials embedded. |
+| `GET /api/ingest/install.sh` | Public, `no-store` POSIX sh bootstrap for `curl -fsSL URL \| sh`; embeds only the ingestion endpoint. GET/HEAD only, no query. It prompts on the terminal for the attribution ID and device token. |
+| `GET /api/ingest/package/:platform` | Installer archive for `linux` or `darwin` with exactly one device bearer token; ten per device per hour (429 `package_rate_limited`, `Retry-After: 3600`). Does not update `lastSeenAt`. |
 | `POST /api/ingest/v1/{logs,metrics,traces}` | Device bearer token only; OTLP JSON/protobuf, at most 2 MiB, no content compression. |
 | `POST /api/ingest/renew` | Device bearer token; JSON content type, empty body; six per device per hour. 200 `{renewed: false, expiresAt}` while more than seven days remain or for an unused replacement, else `{renewed: true, token, expiresAt}` with a new 30-day token. Device views add `renewedAt` and `reuseDetectedAt` (first use of a superseded token). |
 

@@ -57,7 +57,7 @@ export function CollectorPreparation({ platform }) {
   const commands = COMMANDS[platform];
   return <div className="space-y-4 text-sm leading-relaxed text-ink-600">
     <p>수집할 Mac 또는 EC2에서 <code>python3 --version</code>으로 Python 3.9 이상인지 확인하세요.
-      Claude Code와 Codex는 별도로 설치되어 있어야 합니다. 다운로드한 압축 파일은 수집할 기기로 옮기세요.</p>
+      Claude Code와 Codex는 별도로 설치되어 있어야 합니다. 설치 명령이 최신 패키지를 대시보드에서 직접 내려받으므로 파일을 옮길 필요가 없습니다.</p>
     <p>처음 설치한다면 아래 설치 명령으로 진행하세요. 새 패키지로 이미 설치했다면 같은 명령을 다시 실행해 토큰을 교체할 수 있습니다.</p>
     <div className="rounded-lg border border-ink-200 p-4">
       <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}
@@ -65,12 +65,12 @@ export function CollectorPreparation({ platform }) {
         기존 수집기 전환 안내
       </button>
       {expanded && <div className="mt-3">
-        <p><code>local Collector port is occupied</code>는 이전 패키지의 메시지이므로 최신 패키지를 다시 받으세요.
+        <p><code>local Collector port is occupied</code>는 이전 패키지의 메시지이므로 아래 설치 명령을 다시 실행해 최신 패키지로 설치하세요.
           새 패키지의 <code>occupied by an unverified service</code>는 확인되지 않은 리스너가 있다는 뜻이며,
           <code>cannot check local port</code>는 권한 등으로 검사에 실패했다는 뜻입니다.
           기존 설치 스크립트 <code>setup-test-telemetry-all.sh</code> 또는 <code>setup-test-telemetry.sh</code>를 사용했다면 다음 순서로 전환하세요.</p>
         {platform === "darwin" && <div className="mt-3 rounded-lg bg-brand-50 p-3 text-ink-800">
-          <p>설치기가 기존 macOS 수집기를 확인하고 전환을 안내합니다. 최신 패키지로 아래 설치 명령을 실행하세요.</p>
+          <p>설치기가 기존 macOS 수집기를 확인하고 전환을 안내합니다. 아래 설치 명령을 실행하세요.</p>
           <p className="mt-2"><code>Migrate this legacy Collector now? [y/N]</code>가 나오면 확인 후 <code>y</code>를 입력하세요.
             새 Collector를 다운로드·검증한 뒤 기존 설정을 비공개 백업하고 전환합니다.
             새 서비스가 시작되지 않으면 기존 상태로 복구합니다.</p>

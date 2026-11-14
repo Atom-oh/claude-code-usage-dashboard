@@ -1,0 +1,143 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { collectorInstallScript } from "./collectorInstallScript.js";
+
+const endpoint = "https://dashboard.example.invalid/api/ingest";
+const token = `ccd1.${"a".repeat(64)}.${"b".repeat(32)}.${"C".repeat(43)}`;
+const python = spawnSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).stdout.trim();
+
+// Runs `cat install.sh | sh` on a pseudo-terminal and answers the prompts like a person would.
+const DRIVER = String.raw`
+import json, os, pty, sys
+script, answers = sys.argv[1], json.loads(sys.argv[2])
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("sh", ["sh", "-c", 'cat "$1" | sh', "sh", script])
+output, sent = b"", 0
+prompts = ["사용자 ID".encode(), "기기 토큰".encode()]
+while True:
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    output += chunk
+    while sent < len(answers) and prompts[sent] in output:
+        os.write(fd, (answers[sent] + "\n").encode())
+        sent += 1
+status = os.waitpid(pid, 0)[1]
+print(json.dumps({"status": os.waitstatus_to_exitcode(status), "output": output.decode("utf-8", "replace")}))
+`;
+
+const STUBS = {
+  uname: `#!/bin/sh\nprintf '%s\\n' "$CCDASH_TEST_UNAME"\n`,
+  curl: `#!/bin/sh
+printf '%s\\n' "$@" >"$CCDASH_TEST_OUT/curl-args"
+cat >"$CCDASH_TEST_OUT/curl-config"
+[ -z "\${CCDASH_TEST_CURL_FAIL:-}" ] || exit 22
+while [ $# -gt 0 ]; do [ "$1" != -o ] || out=$2; shift; done
+cp "$CCDASH_TEST_PACKAGE" "$out"
+`,
+  python3: `#!/bin/sh
+printf '%s\\n' "$@" >"$CCDASH_TEST_OUT/python-args"
+[ -t 0 ] && echo tty >"$CCDASH_TEST_OUT/python-stdin"
+while [ $# -gt 0 ]; do [ "$1" != --token-file ] || file=$2; shift; done
+printf '%s\\n' "$file" >"$CCDASH_TEST_OUT/token-path"
+stat -c %a "$file" >"$CCDASH_TEST_OUT/token-mode"
+cp "$file" "$CCDASH_TEST_OUT/token-copy"
+`,
+};
+
+function run(t, { answers = ["alice@example.com", token], uname = "Linux", curlFail = false } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "collector-install-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, "bin");
+  const out = join(root, "out");
+  const work = join(root, "tmp");
+  for (const directory of [bin, out, work, join(root, "package/ccdash-collector")])
+    mkdirSync(directory, { recursive: true });
+  for (const [name, body] of Object.entries(STUBS)) {
+    writeFileSync(join(bin, name), body);
+    chmodSync(join(bin, name), 0o755);
+  }
+  writeFileSync(join(root, "package/ccdash-collector/install.py"), "# fixture\n");
+  const archive = join(root, "package.tar.gz");
+  assert.equal(spawnSync("tar", ["-czf", archive, "-C", join(root, "package"), "ccdash-collector"]).status, 0);
+  const script = join(root, "install.sh");
+  writeFileSync(script, collectorInstallScript(endpoint));
+  const result = spawnSync(python, ["-I", "-c", DRIVER, script, JSON.stringify(answers)], {
+    encoding: "utf8", timeout: 20000,
+    env: { PATH: `${bin}:${process.env.PATH}`, TMPDIR: work, LANG: "C.UTF-8", CCDASH_TEST_OUT: out,
+      CCDASH_TEST_PACKAGE: archive, CCDASH_TEST_UNAME: uname, ...(curlFail ? { CCDASH_TEST_CURL_FAIL: "1" } : {}) },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const read = name => existsSync(join(out, name)) ? readFileSync(join(out, name), "utf8") : undefined;
+  return { ...JSON.parse(result.stdout), read, work };
+}
+
+const skip = !python || process.platform === "win32" ? "python3 and a POSIX pty are required" : false;
+
+test("curl | sh downloads with the device token off argv and installs from a private token file", { skip }, t => {
+  const { status, output, read, work } = run(t);
+  assert.equal(status, 0, output);
+  const curlArgs = read("curl-args").trimEnd().split("\n");
+  assert.deepEqual(curlArgs.slice(0, 5), ["-fsS", "--proto", "=https", "-K", "-"]);
+  assert.equal(curlArgs.at(-1), `${endpoint}/package/linux`);
+  assert.equal(read("curl-config"), `header = "Authorization: Bearer ${token}"\n`);
+  const pythonArgs = read("python-args").trimEnd().split("\n");
+  const tokenPath = read("token-path").trim();
+  assert.match(pythonArgs[1], /\/ccdash-install\.[^/]+\/ccdash-collector\/install\.py$/);
+  assert.deepEqual([pythonArgs[0], ...pythonArgs.slice(2)], ["-I", "install", "--endpoint", endpoint,
+    "--user-id", "alice@example.com", "--token-file", tokenPath]);
+  assert.equal(read("python-stdin"), "tty\n");
+  assert.equal(read("token-mode"), "600\n");
+  assert.equal(read("token-copy"), `${token}\n`);
+  for (const args of [read("curl-args"), read("python-args")]) assert.equal(args.includes(token), false);
+  assert.equal(output.includes(token), false, "the token prompt must not echo");
+  assert.equal(existsSync(tokenPath), false);
+  assert.equal(spawnSync("sh", ["-c", `ls -A "${work}"`], { encoding: "utf8" }).stdout, "");
+});
+
+test("macOS selects the darwin package", { skip }, t => {
+  const { status, output, read } = run(t, { uname: "Darwin" });
+  assert.equal(status, 0, output);
+  assert.equal(read("curl-args").trimEnd().split("\n").at(-1), `${endpoint}/package/darwin`);
+});
+
+test("missing input, malformed tokens and failed downloads stop before installing", { skip }, t => {
+  for (const [answers, message] of [
+    [[""], "사용자 ID를 입력한 뒤"],
+    [["alice", ""], "기기 토큰 형식이"],
+    [["alice", `${token}" -o /etc/x`], "기기 토큰 형식이"],
+  ]) {
+    const { status, output, read } = run(t, { answers });
+    assert.equal(status, 1, output);
+    assert.match(output, new RegExp(message));
+    assert.equal(read("curl-args"), undefined);
+    assert.equal(read("python-args"), undefined);
+  }
+  const failed = run(t, { curlFail: true });
+  assert.equal(failed.status, 1, failed.output);
+  assert.match(failed.output, /패키지를 내려받지 못했습니다/);
+  assert.equal(failed.read("python-args"), undefined);
+  assert.equal(spawnSync("sh", ["-c", `ls -A "${failed.work}"`], { encoding: "utf8" }).stdout, "");
+});
+
+test("unsupported systems and runs without a terminal fail with guidance", { skip }, t => {
+  const unsupported = run(t, { uname: "FreeBSD" });
+  assert.equal(unsupported.status, 1);
+  assert.match(unsupported.output, /지원하지 않는 운영체제/);
+  const root = mkdtempSync(join(tmpdir(), "collector-install-notty-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "install.sh"), collectorInstallScript(endpoint));
+  // setsid detaches the controlling terminal, as in cron or CI.
+  const result = spawnSync("setsid", ["sh", join(root, "install.sh")], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (result.error?.code === "ENOENT") return t.skip("setsid unavailable");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /터미널에서 실행하세요/);
+});
