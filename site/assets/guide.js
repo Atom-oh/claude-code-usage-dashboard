@@ -1,5 +1,12 @@
 // Documentation-only reading controls; ordinary image and anchor links work without JS.
 (() => {
+  // The page declares the required stylesheet version for returning readers.
+  const sheet = document.querySelector('link[rel="stylesheet"]');
+  const version = document.body.dataset.stylesheetVersion;
+  if (sheet && version) {
+    const url = new URL(sheet.href); url.searchParams.set('v', version);
+    if (sheet.href !== url.href) sheet.href = url.href;
+  }
   const language = document.documentElement.lang;
   const dictionaries = {"en": {"close": "Close", "zoom": "Original size", "fit": "Fit to screen", "hint": "Image detail"}, "ko": {"close": "닫기", "zoom": "원본 크기", "fit": "화면에 맞추기", "hint": "이미지 세부 정보"}, "ja": {"close": "閉じる", "zoom": "原寸大", "fit": "画面に合わせる", "hint": "画像の詳細"}, "zh-CN": {"close": "关闭", "zoom": "原始尺寸", "fit": "适合屏幕", "hint": "图片详细信息"}};
   const labels = dictionaries[language] || dictionaries.en;
