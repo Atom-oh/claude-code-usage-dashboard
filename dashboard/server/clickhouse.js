@@ -2,6 +2,7 @@ import { createClient } from "@clickhouse/client";
 import { readSecret } from "./secrets.js";
 import { createBudget, createQueuedBudget } from "./capacity.js";
 import { querySignal } from "./queryContext.js";
+import { directoryParams } from "./teamDirectoryParams.js";
 
 // ponytail: single shared client, no pool wrapper — @clickhouse/client already pools HTTP keep-alive connections.
 // max_open_connections 기본값 10은 index.js의 캐시 warmer(배치당 5개 동시 쿼리)와 실제 브라우저
@@ -49,7 +50,7 @@ export async function query(sql, query_params = {}, signal) {
   const release = await queryBudget.acquire(signal);
   try {
     signal?.throwIfAborted();
-    const rs = await client.query({ query: sql, query_params, format: "JSONEachRow",
+    const rs = await client.query({ query: sql, query_params: directoryParams(sql, query_params), format: "JSONEachRow",
       ...(signal ? { abort_signal: signal } : {}) });
     return await consumeRows(rs, signal);
   } catch (error) {
@@ -81,8 +82,10 @@ export async function queryReadonly(sql, externalSignal) {
     const signal = externalSignal ? AbortSignal.any([abort.signal, externalSignal]) : abort.signal;
     release = await queryBudget.acquire(signal);
     signal.throwIfAborted();
+    const query_params = directoryParams(sql, {});
     const rs = await client.query({
       query: `SELECT * FROM (${sql}) LIMIT 201`,
+      ...(Object.keys(query_params).length ? { query_params } : {}),
       format: "JSONEachRow",
       abort_signal: signal,
     });
