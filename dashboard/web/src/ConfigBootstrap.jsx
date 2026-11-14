@@ -1,5 +1,7 @@
+import { localizedMessage, messageText, translate, useLocale } from "./i18n/index.js";
 import { useEffect, useState } from "react";
 import { setPiiMask } from "./fmt.js";
+import { LanguagePicker } from "./components/LanguagePicker.jsx";
 
 function isConfig(config) {
   if (config === null || typeof config !== "object" || Array.isArray(config)) return false;
@@ -13,6 +15,7 @@ function isConfig(config) {
 
 // Only a successful config may initialize routes and their URL-backed state.
 export default function ConfigBootstrap({ children }) {
+  const _locale = useLocale();
   const [state, setState] = useState({ status: "loading", config: null, attempt: 0 });
   const { attempt } = state;
 
@@ -22,7 +25,7 @@ export default function ConfigBootstrap({ children }) {
     const timer = setTimeout(() => {
       abort.abort();
       // Show recovery even if a request/body reader does not settle on abort.
-      setState({ status: "error", config: null, attempt, error: "설정 응답 시간이 초과되었습니다. 다시 시도해 주세요." });
+      setState({ status: "error", config: null, attempt, error: localizedMessage("m158d30708d39") });
     }, 3_000);
 
     async function loadConfig() {
@@ -63,15 +66,15 @@ export default function ConfigBootstrap({ children }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-6">
       <section className="w-full max-w-md rounded-lg border border-ink-100 bg-card p-6 shadow-card" aria-labelledby="config-bootstrap-title">
-        <h1 id="config-bootstrap-title" className="text-lg font-semibold">대시보드 준비</h1>
+        <h1 id="config-bootstrap-title" className="text-lg font-semibold">{translate("mf86a01413135")}</h1>
         <p role={failed || unauthenticated ? "alert" : "status"} className="mt-3 break-keep text-sm text-ink-600">
-          {unauthenticated ? "로그인 확인이 필요합니다. 다시 로그인해 주세요." : failed
-            ? state.error || "설정을 불러오지 못했습니다. 연결 상태를 확인한 후 다시 시도해 주세요."
-            : "설정을 불러오는 중입니다."}
+          {unauthenticated ? translate("m79b3056dc5aa") : failed
+            ? messageText(state.error) || translate("m78f57b321326")
+            : translate("m908d650409a9")}
         </p>
         {unauthenticated && (state.basic
-          ? <button type="button" onClick={() => window.location.reload()} className="mt-5 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white">로그인 다시 확인</button>
-          : <a href="/auth/login" className="mt-5 inline-block rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">다시 로그인</a>)}
+          ? <button type="button" onClick={() => window.location.reload()} className="mt-5 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white">{translate("m750e9d510af4")}</button>
+          : <a href="/auth/login" className="mt-5 inline-block rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">{translate("m0f222845b51a")}</a>)}
         {failed && (
           <button
             type="button"
@@ -79,10 +82,9 @@ export default function ConfigBootstrap({ children }) {
             onClick={() => setState((current) => current.status === "error"
               ? { status: "loading", config: null, attempt: current.attempt + 1 }
               : current)}
-          >
-            다시 시도
-          </button>
+          >{translate("m196856a662bd")}</button>
         )}
+        <LanguagePicker />
       </section>
     </main>
   );

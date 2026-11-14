@@ -82,6 +82,13 @@ describe("locale store", () => {
     expect(store.getState()).toMatchObject({ locale: "ko", requested: "ko", pending: false });
   });
 
+  it("rejects inherited translations even when an extra key masks the missing own key", async () => {
+    const inherited = Object.assign(Object.create({ greeting: "Hello {0}" }), { empty: "Not collected", extra: "unused" });
+    const store = make({ loaders: { ko: async () => ko, en: async () => inherited } });
+    expect(await store.select("en")).toBe(false);
+    expect(store.getLocale()).toBe("ko");
+  });
+
   it("rejects incomplete or malformed catalogs instead of mixing languages", async () => {
     const store = make({ loaders: { ko: async () => ko, en: async () => ({ greeting: "Hello" }) } });
     expect(await store.select("en")).toBe(false);

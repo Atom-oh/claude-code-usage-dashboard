@@ -1,3 +1,4 @@
+import { richMessage, localize, translate, useLocale } from "../i18n/index.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "./SegmentedControl.jsx";
@@ -5,11 +6,11 @@ import { RefreshControl } from "./RefreshControl.jsx";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
 import { useTeams } from "../TeamsContext.jsx";
 
-const GROUP_OPTIONS = [
+const GROUP_OPTIONS = localize([
   { value: "", label: "전체" },
   { value: "bedrock", label: "bedrock" },
   { value: "enterprise", label: "enterprise" },
-];
+]);
 
 // 모든 페이지에서 useApi가 이 값을 자동으로 요청에 실어보낸다(useApi.js) — 페이지별로 따로 붙일
 // 필요 없음. model/user는 부분일치(대소문자 무시)라 텍스트 입력(300ms debounce는 FilterContext),
@@ -17,6 +18,7 @@ const GROUP_OPTIONS = [
 // 쿼리에서만 드롭되고(전체 응답의 ~11%), 사용자가 명시적으로 고를 그룹 옵션이 아니라 "필터
 // 없음"과 겹치는 상태라 탭으로 넣지 않는다(queries.js filterCond 정책표 참고).
 export function FilterBar() {
+  const _locale = useLocale();
   const { group, setGroup, userInput, setUser, modelInput, setModel, projectInput, setProject, team, setTeam, backendInput, setBackend } = useFilters();
   // Options are the teams observed in the range. With none the control is hidden, unless a linked
   // team is already applied: it must stay visible so it can be cleared.
@@ -26,18 +28,15 @@ export function FilterBar() {
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {enabledClients.length > 1 && (
-        <label className="flex items-center gap-2 text-[12px] text-ink-500">
-          클라이언트
-          <select aria-label="클라이언트" value={client} onChange={(e) => setClient(e.target.value)} className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none">
+        <label className="flex items-center gap-2 text-[12px] text-ink-500">{richMessage("m406fdb3a734b", [<select aria-label={translate("mb367c7d58dda")} value={client} onChange={(e) => setClient(e.target.value)} className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none">
             {["all", ...enabledClients].map((value) => <option key={value} value={value}>{CLIENT_LABELS[value]}</option>)}
-          </select>
-        </label>
+          </select>])}</label>
       )}
       {client === "claude" && setDetail && (
         <button type="button" aria-pressed={!common} onClick={() => setDetail(common)}
           className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700"
-          title="공통 비교 화면과 Claude 전용 채널·생산성·AI 분석을 전환합니다. 전용 필터는 별도입니다.">
-          {common ? "Claude 상세 보기" : "공통 보기"}
+          title={translate("m583ce4b88549")}>
+          {common ? translate("m5701bdd69625") : translate("m6e2f5e40b88a")}
         </button>
       )}
       {/* single 모드에서는 이 컨트롤이 채널이 하나인 조직에 두 개의 채널 이름을 권하게 된다.
@@ -53,8 +52,8 @@ export function FilterBar() {
         <input
           value={projectInput}
           onChange={(e) => setProject(e.target.value)}
-          placeholder="프로젝트"
-          title="프로젝트 이름이 정확히 일치하는 세션만 — 표의 프로젝트 열 값을 그대로 넣으세요. 이 필터는 Usage의 프로젝트·진입점·권한 모드·승인 출처 카드에만 적용됩니다."
+          placeholder={translate("mf05481bea1dd")}
+          title={translate("m1bf0f6804a06")}
           className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
         />
       )}
@@ -65,46 +64,42 @@ export function FilterBar() {
           규약이고, 빈 칸에서도 늘 띄우면 필터 줄이 경고문으로 덮인다. 전역 배선은 시간별 롤업에
           ProjectName이 없어 세션 세미조인 설계가 필요하다(별도 변경). */}
       {!common && schema?.projectColumns === true && projectInput && (
-        <span className="text-[11px] text-warning-text">
-          프로젝트 필터는 Usage의 프로젝트·진입점·권한 모드·승인 출처 카드에만 적용됩니다.
-        </span>
+        <span className="text-[11px] text-warning-text">{translate("m7c703a799fb4")}</span>
       )}
       <input
         value={userInput}
         onChange={(e) => setUser(e.target.value)}
-        placeholder="사용자 검색"
+        placeholder={translate("m735c008bd6ed")}
         className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
       />
       <input
         value={modelInput}
         onChange={(e) => setModel(e.target.value)}
-        placeholder="모델 검색"
+        placeholder={translate("m6fd1022f15b8")}
         className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
       />
       {teamOptions.length > 0 && (
-        <select aria-label="팀" value={team} onChange={(e) => setTeam(e.target.value)}
+        <select aria-label={translate("m321639b7ad86")} value={team} onChange={(e) => setTeam(e.target.value)}
           className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40">
-          <option value="">모든 팀</option>
+          <option value="">{translate("mc1083b8f46a4")}</option>
           {teamOptions.map((value) => <option key={value} value={value}>{value}</option>)}
         </select>
       )}
       {team && (
-        <span className="text-[11px] text-warning-text">
-          팀은 클라이언트가 보낸 속성이며, 로그(90일 보관)에서 팀이 확인된 세션만 포함합니다. 도입 지표·사용자 상세 차트·Codex 상세 진단에는 적용되지 않습니다.
-        </span>
+        <span className="text-[11px] text-warning-text">{translate("m2aba7ffff8d2")}</span>
       )}
       {common && (
         <select
           value={backendInput}
           onChange={(e) => setBackend(e.target.value)}
-          aria-label="백엔드"
+          aria-label={translate("m425269044a71")}
           className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40"
         >
-          <option value="">모든 백엔드</option>
+          <option value="">{translate("m12092d752790")}</option>
           <option value="bedrock-mantle">Bedrock Mantle</option>
           <option value="bedrock-runtime">Bedrock Runtime</option>
           <option value="anthropic">Anthropic</option>
-          <option value="unknown">미확인</option>
+          <option value="unknown">{translate("mdc0c487c9693")}</option>
         </select>
       )}
       <RefreshControl className="ml-auto" />

@@ -4,7 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import ConfigBootstrap from "./ConfigBootstrap.jsx";
 import { ConfigProvider } from "./ConfigContext.jsx";
+import { localeStore } from "./i18n/index.js";
 import "./index.css";
+
+void localeStore.initialize();
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>

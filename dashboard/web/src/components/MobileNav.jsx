@@ -1,3 +1,4 @@
+import { translate, useLocale } from "../i18n/index.js";
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Menu, X } from "lucide-react";
@@ -5,6 +6,7 @@ import { NavItem, useNavigation } from "./Sidebar.jsx";
 import { useClient } from "../ClientContext.jsx";
 import { AccountMenu } from "./AccountMenu.jsx";
 import { GuideLink, ReleaseLink } from "./ReleaseLink.jsx";
+import { LanguagePicker } from "./LanguagePicker.jsx";
 
 // lg(1024px) 미만에서는 SPA에 내비게이션이 아예 없었다 — Sidebar가 `hidden lg:flex`라
 // 모바일/태블릿에서 페이지를 옮길 방법이 주소창 말고 없다. 데스크톱과 같은 NAV·NavItem을
@@ -18,6 +20,7 @@ import { GuideLink, ReleaseLink } from "./ReleaseLink.jsx";
 // 사이드바 커버리지만 사라진다. 상단 바는 <main> 바깥에 놓는다 — 같은 테스트가 main의
 // 자식 수를 2로 고정한다.
 export function MobileNav() {
+  const _locale = useLocale();
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
   const { items, brand, subtitle } = useNavigation();
@@ -46,7 +49,7 @@ export function MobileNav() {
         </div>
         <button
           type="button"
-          aria-label="메뉴 열기"
+          aria-label={translate("mff7070c7c006")}
           aria-expanded={open}
           aria-controls="mobile-nav"
           onClick={() => setOpen((v) => !v)}
@@ -69,7 +72,7 @@ export function MobileNav() {
               <div className="text-[15px] font-semibold leading-tight text-chrome-fg">{brand}</div>
               <button
                 type="button"
-                aria-label="메뉴 닫기"
+                aria-label={translate("m3ffb0ab067f3")}
                 onClick={() => setOpen(false)}
                 className="shrink-0 rounded-md p-1.5 text-chrome-fg-muted hover:bg-ink-100 hover:text-chrome-fg"
               >
@@ -84,6 +87,7 @@ export function MobileNav() {
             <GuideLink />
             <ReleaseLink />
             <AccountMenu />
+            <LanguagePicker />
           </div>
         </>
       )}

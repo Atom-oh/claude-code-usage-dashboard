@@ -1,3 +1,4 @@
+import { localize, translate, useLocale } from "../i18n/index.js";
 import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert, Settings, Download } from "lucide-react";
 import { cn } from "../cn.js";
@@ -6,12 +7,14 @@ import { CLIENT_PAGES, COLLECTOR_PAGE } from "../clientNavigation.js";
 import { AccountMenu } from "./AccountMenu.jsx";
 import { GuideLink, ReleaseLink } from "./ReleaseLink.jsx";
 import { useConfig } from "../ConfigContext.jsx";
+import { LanguagePicker } from "./LanguagePicker.jsx";
 
 const ICONS = [LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, UsersIcon, DollarSign, ShieldAlert, Sparkles];
-export const NAV = CLIENT_PAGES.map((page, i) => ({ ...page, icon: ICONS[i] }));
+export const NAV = localize(CLIENT_PAGES.map((page, i) => ({ ...page, icon: ICONS[i] })));
 export const COMMON_NAV = NAV;
 
 export function useNavigation() {
+  const _locale = useLocale();
   const { common, enabledClients } = useClient();
   const { session } = useConfig();
   const items = [...NAV,
@@ -19,13 +22,13 @@ export function useNavigation() {
       ...COLLECTOR_PAGE, icon: Download,
     }] : []),
     ...(session?.permissions?.includes("installation:read") ? [{
-      to: "/installation", label: "설치 상태", hint: "연결·수집·조직 로그인", icon: Settings,
+      to: "/installation", label: translate("m3f34928ff1d0"), hint: translate("mc2dbd98c95f8"), icon: Settings,
     }] : []),
   ];
   return {
     items,
     brand: enabledClients.length > 1 ? "Claude + Codex" : CLIENT_LABELS[enabledClients[0]],
-    subtitle: common ? "통합 사용량 대시보드" : "Claude 상세 분석",
+    subtitle: common ? translate("me2ab514783bc") : translate("m9f46db9e8cee"),
     common,
   };
 }
@@ -33,10 +36,12 @@ export function useNavigation() {
 // ../awsops web/components/shell/Sidebar.tsx 포팅 (256px, 고정 nav — 계정/리전 셀렉터 등은 해당 없음).
 
 export function NavItem({ to, label, hint, icon: Icon, exact }) {
+  const _locale = useLocale();
   const { search } = useLocation();
   return (
     <NavLink
       to={{ pathname: to, search }}
+      title={`${label} — ${hint}`}
       end={exact}
       className={({ isActive }) =>
         cn(
@@ -59,6 +64,7 @@ export function NavItem({ to, label, hint, icon: Icon, exact }) {
 }
 
 export function Sidebar() {
+  const _locale = useLocale();
   const { items, brand, subtitle, common } = useNavigation();
   return (
     <aside className="hidden lg:flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-chrome-border bg-chrome-muted px-4 pb-4 pt-[22px]">
@@ -78,11 +84,12 @@ export function Sidebar() {
       <GuideLink />
       <ReleaseLink />
       <AccountMenu />
+      <LanguagePicker />
 
       <div className="mt-4 border-t border-chrome-border pt-3">
         <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-chrome-fg-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-positive" />
-          <span>{common ? "클라이언트별 수집 데이터 기준" : "채널(bedrock / enterprise)은 세션별로 자동 판별"}</span>
+          <span>{common ? translate("m345f5872b6e5") : translate("m34e13ff5066e")}</span>
         </div>
       </div>
     </aside>

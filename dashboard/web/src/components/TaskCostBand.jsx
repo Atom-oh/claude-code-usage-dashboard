@@ -1,3 +1,4 @@
+import { translate, useLocale } from "../i18n/index.js";
 // Cumulative cost of one task stacked by lane colour, with a hover tooltip of every lane's
 // cumulative cost at that time. Once any lane's cost becomes unknown the stack stops and the
 // rest of the axis is drawn as "미수집" rather than a lower total.
@@ -12,11 +13,12 @@ const BUCKETS = 120, LEGEND_TOP = 28, LEGEND_ROW = 18, AXIS_GAP = 20;
 // Height grows with the lane count so every legend row (swatch, name, final cost) stays inside
 // the viewBox; the plot fills the height above the time axis.
 export const bandHeight = (laneCount) => Math.max(150, LEGEND_TOP + laneCount * LEGEND_ROW + AXIS_GAP);
-const money = (v) => (v === null ? "미수집" : formatClientCost(v));
+const money = (v) => (v === null ? translate("m08a739493081") : formatClientCost(v));
 
 export function TaskCostBand({ lanes, spans, end, durationMs }) {
+  const _locale = useLocale();
   const c = useChartColors();
-  const points = useMemo(() => cumulativeByLane(spans, lanes, BUCKETS, durationMs), [spans, lanes, durationMs]);
+  const points = useMemo(() => cumulativeByLane(spans, lanes, BUCKETS, durationMs), [spans, lanes, durationMs, _locale]);
   const [hover, setHover] = useState(null);
   const VIEW_H = bandHeight(lanes.length), BASE = VIEW_H - AXIS_GAP, H = BASE - 20;
   const known = points.findIndex((p) => p.total === null);
@@ -48,10 +50,10 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
     setHover(Math.round(p * BUCKETS));
   };
   const point = hover === null ? null : points[hover];
-  const title = `누적 비용 ${money(final.total)}`;
+  const title = translate("mbc45ffdb9473", [money(final.total)]);
 
   return <div className="relative">
-    <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" className="block" role="img" aria-label={`에이전트별 ${title}`}>
+    <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" className="block" role="img" aria-label={translate("mbefbeafc7140", [title])}>
       <text x={8} y={16} style={{ fill: "var(--text-primary)", fontSize: 12, fontWeight: 600 }}>{title}</text>
       {lanes.map((l, i) => <g key={l.id} data-band-lane={i} aria-hidden="true">
         <rect data-band-legend="" x={8} y={LEGEND_TOP + i * LEGEND_ROW} width={10} height={10} rx={2}
@@ -64,8 +66,7 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
       {lastKnown < BUCKETS && <g aria-hidden="true">
         <rect x={xAt(Math.max(0, lastKnown))} y={BASE - H} width={X0 + PLOT_W - xAt(Math.max(0, lastKnown))} height={H}
           style={{ fill: "var(--ink-100)" }} />
-        <text x={X0 + PLOT_W - 6} y={BASE - H + 14} textAnchor="end" style={{ fill: "var(--text-secondary)", fontSize: 11 }}>
-          비용 미수집 구간</text>
+        <text x={X0 + PLOT_W - 6} y={BASE - H + 14} textAnchor="end" style={{ fill: "var(--text-secondary)", fontSize: 11 }}>{translate("m74e783b40375")}</text>
       </g>}
       {point && <line x1={xAt(hover)} x2={xAt(hover)} y1={BASE - H} y2={BASE} style={{ stroke: "var(--ink-600)", strokeDasharray: "2 3" }} />}
       <rect data-band-hit="" x={X0} y={0} width={PLOT_W} height={BASE} style={{ fill: "transparent" }}
@@ -75,7 +76,7 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
     {point && <div role="tooltip" className="pointer-events-none absolute top-6"
       style={{ ...tooltipStyles(c).contentStyle, color: c.tooltipFg, fontSize: 12,
         left: `${Math.min(70, (xAt(hover) / VIEW_W) * 100)}%` }}>
-      <div style={{ fontSize: 11, marginBottom: 2 }}>{`+${formatTaskDuration(point.t_ms)} · 합계 ${money(point.total)}`}</div>
+      <div style={{ fontSize: 11, marginBottom: 2 }}>{translate("mbbdbe3c0ef13", [formatTaskDuration(point.t_ms), money(point.total)])}</div>
       {lanes.map((l) => <div key={l.id}>{`${laneName(l)} ${money(point.by_lane[l.id] ?? null)}`}</div>)}
     </div>}
   </div>;

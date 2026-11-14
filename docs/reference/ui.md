@@ -1,8 +1,11 @@
 # UI Components and Display Contracts
 
-The UI uses Tailwind utilities and shared React components. Product labels remain primarily
-Korean; this documentation describes their meaning in English and identifies the responsible
-symbols. See [frontend state](frontend.md) and [web/AGENTS.md](../../dashboard/web/AGENTS.md).
+The UI uses Tailwind utilities and shared React components. Korean is the default;
+the shared navigation, charts and task dialogs can switch to English, Simplified
+Chinese, Japanese or Spanish. Route page bodies still contain Korean and require
+the next migration stage. Migrated authored messages use the catalogs; identifiers
+and user/telemetry text remain unchanged. This documentation describes contracts in English. See
+[frontend state](frontend.md) and [web/AGENTS.md](../../dashboard/web/AGENTS.md).
 
 | Source | Contract |
 |---|---|
@@ -16,6 +19,7 @@ symbols. See [frontend state](frontend.md) and [web/AGENTS.md](../../dashboard/w
 | [PageHeader.jsx](../../dashboard/web/src/components/PageHeader.jsx), [RangePicker.jsx](../../dashboard/web/src/components/RangePicker.jsx) | Page context, freshness and date selection |
 | [colors.js](../../dashboard/web/src/colors.js), [useChartColors.js](../../dashboard/web/src/useChartColors.js), [index.css](../../dashboard/web/src/index.css) | Channel/model colors and CSS-variable theme values |
 | [labels.js](../../dashboard/web/src/labels.js) | `effortLabel`, `unclassifiedLabel`, `decisionLabel` display mappings |
+| [i18n/](../../dashboard/web/src/i18n/README.md), [LanguagePicker.jsx](../../dashboard/web/src/components/LanguagePicker.jsx) | Per-viewer language, message slots, localized display formats and state-preserving selection |
 
 ## Spend formatting
 

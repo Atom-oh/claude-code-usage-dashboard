@@ -1,3 +1,4 @@
+import { translate, useLocale } from "../i18n/index.js";
 import { Inbox } from "lucide-react";
 import { cn } from "../cn.js";
 import { useFreshness } from "../FreshnessContext.jsx";
@@ -13,6 +14,7 @@ import { useFreshness } from "../FreshnessContext.jsx";
 // 레이아웃 클래스는 FreshnessBanner의 콜아웃과 같지만 색은 warning이 아니라
 // 중립(ink)이다 — 데이터가 없는 건 장애가 아니다.
 export default function EmptyState({ className }) {
+  const _locale = useLocale();
   const { status } = useFreshness();
   const neverCollected = status === "unknown";
   return (
@@ -24,11 +26,9 @@ export default function EmptyState({ className }) {
     >
       <Inbox size={15} className="mt-0.5 shrink-0 text-ink-400" aria-hidden="true" />
       <div className="text-[13px] leading-relaxed text-ink-400">
-        <div>{neverCollected ? "아직 수집된 데이터가 없습니다." : "선택한 기간에 데이터가 없습니다."}</div>
+        <div>{neverCollected ? translate("m29f86433b87b") : translate("m49f33f96e12c")}</div>
         {neverCollected && (
-          <div className="mt-0.5 text-[12px]">
-            텔레메트리 수집기가 실행 중인지 확인하세요.
-          </div>
+          <div className="mt-0.5 text-[12px]">{translate("m6937523b453d")}</div>
         )}
       </div>
     </div>

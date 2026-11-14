@@ -1,5 +1,6 @@
+import { localizedFormat, translate, translateSource } from "./i18n/index.js";
 // /api/config pricing.priceList → Cost page help sentence naming the rate source.
-const FETCHED_FORMAT = new Intl.DateTimeFormat("en-GB", {
+const FETCHED_FORMAT = localizedFormat("DateTimeFormat", {
   year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
   hourCycle: "h23", timeZoneName: "short",
 });
@@ -16,10 +17,10 @@ const FALLBACK = "목록에 없는 모델은 서버 내장 단가표를 쓰고, 
 
 export function priceSourceText(priceList, format) {
   const time = formatPriceListTime(priceList?.fetchedAt, format);
-  const at = time ? `${time} 조회` : "조회 시각 미확인";
-  const cards = priceList?.modelCardModels?.length ? " 일부 미등록 모델에는 AWS 모델 카드 단가를 사용합니다." : "";
-  if (priceList?.source === "runtime") return `단가 출처: AWS Price List 실시간 조회(${at}). ${FALLBACK}${cards}`;
-  if (priceList?.source === "snapshot") return `단가 출처: AWS Price List 빌드 스냅샷(${at}). ${FALLBACK}${cards}`;
-  if (priceList?.source === "code") return `단가 출처: 서버 내장 단가표(AWS Price List 단가 없음). 운영자 단가 설정이 있으면 그 값이 우선합니다.${cards}`;
-  return "단가 출처: 미확인.";
+  const at = time ? translate("m3e08e7ff8f10", [time]) : translate("mf6797a2f70ac");
+  const cards = priceList?.modelCardModels?.length ? translate("m11a2dc1d12c4") : "";
+  if (priceList?.source === "runtime") return translate("mad2318239f0a", [at, translateSource(FALLBACK), cards]);
+  if (priceList?.source === "snapshot") return translate("m4ba6d3a760c3", [at, translateSource(FALLBACK), cards]);
+  if (priceList?.source === "code") return translate("ma5efd98c6473", [cards]);
+  return translate("m5faccc2c617e");
 }

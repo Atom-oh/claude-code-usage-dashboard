@@ -1,9 +1,11 @@
+import { translate, useLocale } from "../i18n/index.js";
 import { useState } from "react";
 
 // Ask Claude 챗의 사고 과정(thinking)과 실행한 SQL을 접이식으로 보여준다 — FloatingChat과
 // Analytics가 공유. 기본은 접힘: 대부분의 질문에서 답변만 보면 되고, 근거를 확인하려는
 // 사용자만 펼친다(둘 다 펼쳐두면 답변이 스크롤 밖으로 밀린다).
 export function ChatTrace({ thinking, sqls = [] }) {
+  const _locale = useLocale();
   const [open, setOpen] = useState(false);
   if (!thinking && !sqls.length) return null;
   return (
@@ -13,9 +15,9 @@ export function ChatTrace({ thinking, sqls = [] }) {
         className="text-ink-400 hover:text-ink-600"
       >
         {/* thinking 없이 SQL만 있는 턴도 있다(모델이 추론 없이 바로 쿼리) — 그때 "사고 과정"은 거짓 라벨 */}
-        {open ? "▾" : "▸"} {thinking ? "사고 과정" : "실행한 쿼리"}
-        {sqls.length > 0 && thinking && ` · 쿼리 ${sqls.length}개`}
-        {sqls.length > 0 && !thinking && ` ${sqls.length}개`}
+        {open ? "▾" : "▸"} {thinking ? translate("m5b35ca79def6") : translate("m9588fa26128a")}
+        {sqls.length > 0 && thinking && translate("mcd4d8514e48c", [sqls.length])}
+        {sqls.length > 0 && !thinking && translate("m05eca627fbfc", [sqls.length])}
       </button>
       {open && (
         <div className="mt-1 flex flex-col gap-2 rounded-lg border border-ink-100 bg-ink-50 p-2">
