@@ -1,14 +1,15 @@
+import { localize, useLocale } from "./i18n/index.js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 // 자동 새로고침 주기. 0 = 끔. 값은 그대로 localStorage에 저장되므로 늘리거나 줄일 때
 // 예전 값이 목록에 없으면 DEFAULT로 접힌다(아래 readStored 참고).
-export const REFRESH_OPTIONS = [
+export const REFRESH_OPTIONS = localize([
   { value: 0, label: "끔" },
   { value: 15_000, label: "15초" },
   { value: 30_000, label: "30초" },
   { value: 60_000, label: "1분" },
   { value: 300_000, label: "5분" },
-];
+]);
 export const DEFAULT_REFRESH_MS = 60_000;
 const STORAGE_KEY = "ccdash.refreshMs";
 
@@ -46,6 +47,7 @@ function readStored() {
 }
 
 export function RefreshProvider({ children }) {
+  const _locale = useLocale();
   const [intervalMs, setIntervalMsState] = useState(readStored);
   const [tick, setTick] = useState(0);
   const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
@@ -125,9 +127,11 @@ export function RefreshProvider({ children }) {
 }
 
 export function useRefresh() {
+  const _locale = useLocale();
   return useContext(RefreshContext);
 }
 
 export function useRefreshCycle() {
+  const _locale = useLocale();
   return useContext(RefreshCycleContext);
 }

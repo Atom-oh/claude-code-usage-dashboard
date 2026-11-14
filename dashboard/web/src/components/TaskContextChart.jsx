@@ -1,3 +1,4 @@
+import { translate, useLocale } from "../i18n/index.js";
 // Context size of one task (/api/users/tasks/detail `context`): one line per lane of per-call
 // input context (input + cache read + cache write; Codex: input incl. cache), Claude Code
 // compaction marks (pre → post tokens) and, for Codex, the auto-compaction limit the
@@ -14,7 +15,7 @@ const VIEW_H = 210, TOP = 14, BASE = 184, LEGEND_ROW = 18;
 const COMPACTION = "var(--warning)", LIMIT = "var(--warning-text)";
 // A positive share below 1% reads "<1%", never 0%.
 const pct = (v) => (v > 0 && v < 0.01 ? "<1%" : `${Math.round(v * 100)}%`);
-const tokensText = (v) => compactCount(v) ?? "미수집";
+const tokensText = (v) => compactCount(v) ?? translate("m08a739493081");
 
 function niceMax(v) {
   if (!(v > 0)) return 1;
@@ -23,9 +24,10 @@ function niceMax(v) {
 }
 
 export function TaskContextChart({ context, lanes, end, numbers, client, selectedId, onSelect, sourceOf = () => null }) {
+  const _locale = useLocale();
   const [focused, setFocused] = useState(null);
   const s = contextSummary(context);
-  if (!s.points) return <p className="text-sm text-ink-500">컨텍스트 크기 미수집</p>;
+  if (!s.points) return <p className="text-sm text-ink-500">{translate("m7df1673873b6")}</p>;
   const points = context.points.filter((p) => observedNumber(p.tokens) !== null && observedNumber(p.start_ms) !== null);
   // A compaction can land just outside the drawn spans (e.g. right after the last call
   // ends); it is clamped to the axis edge rather than dropped.
@@ -39,35 +41,35 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
   const shown = lanes.filter((l) => points.some((p) => p.lane === l.id));
   const lines = contextLines(points, sourceOf);
   const sideSources = [...new Set([...lines.values()].flatMap((g) => g.sideSources))];
-  const sideExample = sideSources.find((v) => v !== null) ?? "출처 미수집";
+  const sideExample = sideSources.find((v) => v !== null) ?? translate("m283f54a8487c");
   const ticks = [0, 0.5, 1].map((f) => f * yMax);
   const label = (p) => {
     const lane = lanes.find((l) => l.id === p.lane);
     const n = p.span ? numbers.get(p.span) : null;
-    return `${n ? `LLM 호출 #${n}` : "LLM 호출"} · ${lane ? laneName(lane) : "서브에이전트"} · 컨텍스트 ${tokensText(p.tokens)}`
+    return translate("m1bf11e2e47f8", [n ? translate("m187e5a1cadcd", [n]) : translate("m5570150cd696"), lane ? laneName(lane) : translate("m7d688dae8673"), tokensText(p.tokens)])
       + ` · +${formatTaskDuration(p.start_ms)}`;
   };
   const stats = [
-    `최대 ${tokensText(s.peak.tokens)}${s.peak.span && numbers.get(s.peak.span) ? ` (호출 #${numbers.get(s.peak.span)})` : ""}`,
-    s.mainFirst !== null && s.mainLast !== null ? `메인 ${tokensText(s.mainFirst)} → ${tokensText(s.mainLast)}` : null,
-    client === "codex" ? null : s.compactions === null ? "컴팩션 미수집" : s.compactions === 0 ? "컴팩션 없음"
-      : `컴팩션 ${formatObserved(s.compactions)}회${s.biggestCompaction ? ` (${s.biggestCompaction.trigger ?? "trigger 미수집"} ${
-        tokensText(s.biggestCompaction.pre_tokens)} → ${tokensText(s.biggestCompaction.post_tokens)})` : ""}`,
-    s.limitShare !== null ? `자동 컴팩션 한도 ${tokensText(s.autoCompactLimit)}의 ${pct(s.limitShare)}` : null,
-    s.windowShare !== null ? `컨텍스트 창 ${tokensText(s.contextWindow)}의 ${pct(s.windowShare)}` : null,
+    translate("m3528f9e48b06", [tokensText(s.peak.tokens), s.peak.span && numbers.get(s.peak.span) ? translate("m21b99a2fe9bf", [numbers.get(s.peak.span)]) : ""]),
+    s.mainFirst !== null && s.mainLast !== null ? translate("m74c11bc77657", [tokensText(s.mainFirst), tokensText(s.mainLast)]) : null,
+    client === "codex" ? null : s.compactions === null ? translate("m5269a015879b") : s.compactions === 0 ? translate("m038c7026e148")
+      : translate("m235439579f37", [formatObserved(s.compactions), s.biggestCompaction ? ` (${s.biggestCompaction.trigger ?? translate("m8eccada106ef")} ${
+        tokensText(s.biggestCompaction.pre_tokens)} → ${tokensText(s.biggestCompaction.post_tokens)})` : ""]),
+    s.limitShare !== null ? translate("m95ef57e2dacc", [tokensText(s.autoCompactLimit), pct(s.limitShare)]) : null,
+    s.windowShare !== null ? translate("m295d47a93ce2", [tokensText(s.contextWindow), pct(s.windowShare)]) : null,
   ].filter(Boolean);
 
-  return <section aria-label="컨텍스트 크기">
+  return <section aria-label={translate("m9600ced928a8")}>
     <div className="mb-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h3 className="text-[13px] font-semibold text-ink-800">컨텍스트 크기</h3>
-      <span className="text-[12px] text-ink-500">{client === "codex" ? "응답별 입력 토큰 (캐시 포함)"
-        : "호출별 입력 합계 (입력 + 캐시 읽기 + 캐시 쓰기)"}</span>
+      <h3 className="text-[13px] font-semibold text-ink-800">{translate("m9600ced928a8")}</h3>
+      <span className="text-[12px] text-ink-500">{client === "codex" ? translate("m666aa5edcbbf")
+        : translate("mf883a64ab489")}</span>
     </div>
-    <ul aria-label="컨텍스트 요약" className="mb-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-700">
+    <ul aria-label={translate("m86199426f3bc")} className="mb-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-700">
       {stats.map((t) => <li key={t} className="tabular-nums">{t}</li>)}
     </ul>
     <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" className="block" role="group"
-      aria-label={`레인별 컨텍스트 크기, 최대 ${tokensText(s.peak.tokens)}`}>
+      aria-label={translate("m66ad2daffb39", [tokensText(s.peak.tokens)])}>
       {shown.map((l, i) => <g key={l.id} aria-hidden="true">
         <rect x={8} y={TOP + i * LEGEND_ROW} width={10} height={3} rx={1} style={{ fill: laneColor(l) }} />
         <text x={24} y={TOP + 5 + i * LEGEND_ROW} style={{ fill: "var(--text-primary)", fontSize: 11 }}>{laneName(l)}</text>
@@ -80,12 +82,12 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
         <line x1={X0} x2={X0 + PLOT_W} y1={y(s.autoCompactLimit)} y2={y(s.autoCompactLimit)}
           style={{ stroke: LIMIT, strokeWidth: 1.5, strokeDasharray: "6 4" }} />
         <text x={X0 + PLOT_W} y={y(s.autoCompactLimit) - 5} textAnchor="end" style={{ fill: LIMIT, fontSize: 11, fontWeight: 600 }}>
-          {`자동 컴팩션 한도 ${tokensText(s.autoCompactLimit)}`}</text>
+          {translate("ma319161131c0", [tokensText(s.autoCompactLimit)])}</text>
       </g>}
       {compactions.map((c, i) => <g key={`c${i}`} data-compaction="" aria-hidden="true">
         <line x1={x(c.start_ms)} x2={x(c.start_ms)} y1={TOP} y2={BASE} style={{ stroke: COMPACTION, strokeWidth: 1.5, strokeDasharray: "5 4" }} />
         <text x={x(c.start_ms) + 4} y={TOP + 10 + (i % 3) * 13} style={{ fill: "var(--warning-text)", fontSize: 11, fontWeight: 600 }}>
-          {`컴팩션 ${tokensText(c.pre_tokens)} → ${tokensText(c.post_tokens)}`}</text>
+          {translate("m0d145e525a4a", [tokensText(c.pre_tokens), tokensText(c.post_tokens)])}</text>
       </g>)}
       {shown.map((l) => {
         const own = lines.get(l.id)?.line ?? [];
@@ -114,15 +116,15 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
       <TimeAxis end={end} y={VIEW_H - 4} />
     </svg>
     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-500">
-      <span>점을 누르면 그 호출을 오른쪽 패널에서 봅니다</span>
-      {sideSources.length > 0 && <span>{`다른 호출 출처(예: ${sideExample})의 호출은 선으로 잇지 않고 점으로만 표시합니다`}</span>}
-      {s.missing > 0 && <span>{`토큰 미수집 호출 ${formatObserved(s.missing)}개는 그리지 않음`}</span>}
-      {s.partial && <span>일부 호출 기준</span>}
-      {compactions.length > 0 && <span>컴팩션 토큰은 Claude Code가 보고한 값으로, 호출별 입력 합계와 계산 기준이 다를 수 있습니다</span>}
-      {client !== "codex" && <span>Claude Code는 컨텍스트 창 크기를 보내지 않아 창 대비 비율은 표시하지 않습니다</span>}
-      {client === "codex" && s.autoCompactLimit === null && s.contextWindow === null && <span>이 대화의 한도를 찾지 못했습니다</span>}
+      <span>{translate("m4ba48b128574")}</span>
+      {sideSources.length > 0 && <span>{translate("m230a4032eef1", [sideExample])}</span>}
+      {s.missing > 0 && <span>{translate("m6dcc5db48d2f", [formatObserved(s.missing)])}</span>}
+      {s.partial && <span>{translate("me3ce4065ae02")}</span>}
+      {compactions.length > 0 && <span>{translate("m42a70e109062")}</span>}
+      {client !== "codex" && <span>{translate("m31448e365072")}</span>}
+      {client === "codex" && s.autoCompactLimit === null && s.contextWindow === null && <span>{translate("m5682cbb5ee40")}</span>}
       {client === "codex" && s.autoCompactLimit !== null && !limitInChart
-        && <span>{`자동 컴팩션 한도 ${tokensText(s.autoCompactLimit)}은 차트 범위 밖`}</span>}
+        && <span>{translate("m9ce6db5143da", [tokensText(s.autoCompactLimit)])}</span>}
     </div>
   </section>;
 }

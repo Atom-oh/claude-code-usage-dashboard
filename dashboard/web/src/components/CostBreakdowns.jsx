@@ -1,3 +1,4 @@
+import { richMessage, translate, useLocale } from "../i18n/index.js";
 import { Card, ErrorBox, Loading } from "./Card.jsx";
 import { DonutBody } from "./GroupCharts.jsx";
 import EmptyState from "./EmptyState.jsx";
@@ -9,14 +10,16 @@ import { sumKnownSpend } from "../spend.js";
 
 // Keep a card's question visible while its independently requested answer changes.
 export function CostBreakdownCard({ loading, error, limited, empty, children, ...props }) {
+  const _locale = useLocale();
   return <Card {...props}>
     {error ? <ErrorBox error={error} /> : loading ? <Loading /> : limited
-      ? <p role="status" className="text-sm text-warning-text">조회 한도를 넘어 비용 비중을 보류했습니다. 기간을 줄이면 확인할 수 있습니다.</p>
+      ? <p role="status" className="text-sm text-warning-text">{translate("m42062d2e94c2")}</p>
       : empty ? <EmptyState /> : children}
   </Card>;
 }
 
 function CostShare({ rows, colorOf, legendRenderer }) {
+  const _locale = useLocale();
   const values = rows.map((row) => ({ ...row, cost_usd: observedNumber(row.cost_usd),
     cost_partial: row.cost_partial === true || observedNumber(row.unpriced) > 0 }));
   const { total, partial } = sumKnownSpend(values, "cost_usd");
@@ -26,43 +29,44 @@ function CostShare({ rows, colorOf, legendRenderer }) {
   const bases = [...new Set(values.map((row) => basisLabel(row.cost_basis)))];
   return <>
     <p className="mb-3 text-[12px] text-ink-500">
-      {bases.join(" + ")}{total === null ? " · 비용 미산정" : partial ? " · 알려진 비용 부분합" : " · 알려진 비용"}
-      {hasUnpriced && " · 미산정 범위 포함"}
+      {bases.join(" + ")}{total === null ? translate("m698b5f402f04") : partial ? translate("m2457ff7a0742") : translate("m2a587ed86114")}
+      {hasUnpriced && translate("m8ed224a1744e")}
     </p>
-    {total === null ? <p className="text-sm text-ink-500">— · 비용 미산정</p>
+    {total === null ? <p className="text-sm text-ink-500">{translate("me4559fce2ced")}</p>
       : total === 0 ? <p className="tabular text-sm text-ink-600">{formatClientCost(0)}</p>
         : <DonutBody data={known} nameKey="label" valueKey="cost_usd"
           valueFormatter={formatClientCost} colorOf={colorOf} legendRenderer={legendRenderer} />}
     {unknown.length > 0 && <ul className="mt-3 text-[12px] text-ink-500">
-      {unknown.map((row, index) => <li key={index}>{row.label}: — · 미산정</li>)}
+      {unknown.map((row, index) => <li key={index}>{richMessage("m257b66b36f29", [row.label])}</li>)}
     </ul>}
   </>;
 }
 
 function InputCache({ row }) {
+  const _locale = useLocale();
   const canonical = presentationRow(row);
   const values = [canonical.input_tokens, canonical.cache_read_tokens, canonical.cache_write_tokens];
   if (values.some((value) => value === null) || !Number.isSafeInteger(canonical.input_total)) {
-    return <p className="text-sm text-ink-500">— · 입력·캐시 구성 미확인</p>;
+    return <p className="text-sm text-ink-500">{translate("mf3d03b2bd003")}</p>;
   }
-  const data = ["비캐시 입력", "캐시 읽기", "캐시 쓰기"].map((label, index) => ({
+  const data = [translate("mc43da268406e"), translate("m12be3da02b6d"), translate("m1be0e1388dc5")].map((label, index) => ({
     label, tokens: values[index],
   }));
-  return canonical.input_total === 0 ? <p className="tabular text-sm text-ink-600">0 토큰 · 전체 입력</p>
+  return canonical.input_total === 0 ? <p className="tabular text-sm text-ink-600">{translate("m54962e7598d5")}</p>
     : <DonutBody data={data} nameKey="label" valueKey="tokens" valueFormatter={formatObserved} />;
 }
 
-const backendLabel = (backend) => backend === "unknown" ? "백엔드 미제공" : backend;
-const modelLabel = (row) => [row.model || "(모델 미지정)", backendLabel(row.backend) || "백엔드 미제공"].join(" · ");
+const backendLabel = (backend) => backend === "unknown" ? translate("mf3637bf5089f") : backend;
+const modelLabel = (row) => [row.model || translate("m5ac69470a0da"), backendLabel(row.backend) || translate("mf3637bf5089f")].join(" · ");
 const modelLegend = (row) => <>
-  <span className="block truncate" title={row.model || "(모델 미지정)"}>
-    {row.model || "(모델 미지정)"}
+  <span className="block truncate" title={row.model || translate("m5ac69470a0da")}>
+    {row.model || translate("m5ac69470a0da")}
   </span>
   <span className="block break-words text-[11px] text-ink-500">
-    {backendLabel(row.backend) || "백엔드 미제공"}{row.basis_label && ` · ${row.basis_label}`}
+    {backendLabel(row.backend) || translate("mf3637bf5089f")}{row.basis_label && ` · ${row.basis_label}`}
   </span>
 </>;
-const effortLabel = (row) => [!row.effort || row.effort === "unknown" ? "미지정" : row.effort,
+const effortLabel = (row) => [!row.effort || row.effort === "unknown" ? translate("m050d981c6c43") : row.effort,
   backendLabel(row.backend)].filter(Boolean).join(" · ");
 const withBasis = (rows, label, fallback) => {
   const bases = new Set(rows.map((row) => row.cost_basis || fallback));
@@ -72,8 +76,9 @@ const withBasis = (rows, label, fallback) => {
 };
 
 export default function CostBreakdowns({ clients, data, loading, error, empty, claudeEffort, codexEffort }) {
+  const _locale = useLocale();
   const suffix = (title, client) => `${title}${clients.length > 1 ? ` — ${CLIENT_LABELS[client]}` : ""}`;
-  return <section aria-label="비용 구성" className="flex flex-col gap-4">
+  return <section aria-label={translate("m43ec4fd210c9")} className="flex flex-col gap-4">
     {clients.map((client) => {
       const row = (data?.by_client || []).find((source) => source.client === client);
       const clientEmpty = empty || row?.observed_records === 0;
@@ -84,22 +89,22 @@ export default function CostBreakdowns({ clients, data, loading, error, empty, c
       const effortLimited = client === "codex" && (effortCoverage?.status === "limited"
         || effortCoverage?.limited_sections?.includes("effort"));
       return <div key={client} className="grid items-start gap-4 xl:grid-cols-3">
-        <CostBreakdownCard title={suffix("모델별 비용 비중", client)}
-          subtitle="모델 버전·백엔드별 알려진 비용 · 실청구와 다를 수 있습니다."
+        <CostBreakdownCard title={suffix(translate("m05e49b4b2c5c"), client)}
+          subtitle={translate("m5854aaf94ba8")}
           loading={loading} error={error} empty={clientEmpty || modelRows.length === 0}>
           <CostShare rows={modelRows} legendRenderer={modelLegend} colorOf={(label, _index, theme) =>
             modelColorFor(modelRows.find((source) => source.label === label)?.model, theme)} />
         </CostBreakdownCard>
-        <CostBreakdownCard title={suffix("Effort별 비용 비중", client)}
+        <CostBreakdownCard title={suffix(translate("m8e1da84ed3c8"), client)}
           subtitle={client === "claude"
-            ? "보고·재산정 비용 카운터 기준 · 토큰 계산으로 채운 비용은 제외합니다."
-            : "기록된 완료 응답의 AWS 정가 추정 · 실청구와 다를 수 있습니다."}
+            ? translate("m7420c81ac222")
+            : translate("mfcca8ae98e08")}
           loading={loading || effortApi?.loading} error={error || effortApi?.error}
           limited={effortLimited} empty={effortRows.length === 0}>
           <CostShare rows={effortRows} />
         </CostBreakdownCard>
-        <CostBreakdownCard title={suffix("입력·캐시 구성", client)}
-          subtitle="전체 입력 = 비캐시 입력 + 캐시 읽기 + 캐시 쓰기 · 출력·추론은 별도입니다."
+        <CostBreakdownCard title={suffix(translate("mab19f4bdf408"), client)}
+          subtitle={translate("m6f54b5fd03b9")}
           loading={loading} error={error} empty={clientEmpty || !row}>
           <InputCache row={row} />
         </CostBreakdownCard>

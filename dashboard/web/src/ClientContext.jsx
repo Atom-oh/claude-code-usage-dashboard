@@ -1,12 +1,14 @@
+import { localize, translate, useLocale } from "./i18n/index.js";
 import { createContext, useContext, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConfig } from "./ConfigContext.jsx";
 import { CHANGELOG_PATH, clientPage, isDashboardPath, isTaskPath } from "./clientNavigation.js";
 
-export const CLIENT_LABELS = { all: "전체", claude: "Claude Code", codex: "Codex" };
+export const CLIENT_LABELS = localize({ all: "전체", claude: "Claude Code", codex: "Codex" });
 const ClientContext = createContext({ client: "claude", common: true, detail: false, enabledClients: ["claude"] });
 
 export function ClientProvider({ children }) {
+  const _locale = useLocale();
   const { enabledClients, piiMask } = useConfig();
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
@@ -21,10 +23,10 @@ export function ClientProvider({ children }) {
   const common = !detail;
 
   useEffect(() => {
-    document.title = pathname === "/installation" ? "설치 상태 · AI 사용량 대시보드"
-      : pathname === CHANGELOG_PATH ? "변경 내역 · AI 사용량 대시보드"
-      : isTaskPath(pathname) ? "작업 상세 · AI 사용량 대시보드"
-      : `${clientPage(pathname).label} · ${client === "all" ? "Claude + Codex" : CLIENT_LABELS[client]}${detail ? " 상세" : ""}`;
+    document.title = pathname === "/installation" ? translate("m0a57f170efad")
+      : pathname === CHANGELOG_PATH ? translate("m23a4a6961acc")
+      : isTaskPath(pathname) ? translate("m8ce0347bbd0c")
+      : `${clientPage(pathname).label} · ${client === "all" ? "Claude + Codex" : CLIENT_LABELS[client]}${detail ? translate("m9b0f12def109") : ""}`;
   }, [client, detail, pathname]);
 
   // Gate rendering immediately; normalization must never briefly mount a disabled route.
@@ -87,5 +89,6 @@ export function ClientProvider({ children }) {
 }
 
 export function useClient() {
+  const _locale = useLocale();
   return useContext(ClientContext);
 }

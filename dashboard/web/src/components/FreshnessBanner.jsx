@@ -1,3 +1,4 @@
+import { translate, useLocale } from "../i18n/index.js";
 import { AlertTriangle } from "lucide-react";
 import { cn } from "../cn.js";
 import { useFreshness } from "../FreshnessContext.jsx";
@@ -6,12 +7,13 @@ import { useFreshness } from "../FreshnessContext.jsx";
 // 장애 대응에서 바로 읽힌다.
 function formatAge(ageMinutes) {
   const m = Math.max(0, Number(ageMinutes) || 0);
-  if (m >= 1440) return `${Math.floor(m / 1440)}일 ${Math.floor((m % 1440) / 60)}시간`;
-  if (m >= 60) return `${Math.floor(m / 60)}시간 ${m % 60}분`;
-  return `${m}분`;
+  if (m >= 1440) return translate("m1ffdb75a3595", [Math.floor(m / 1440), Math.floor((m % 1440) / 60)]);
+  if (m >= 60) return translate("mb741be1f240d", [Math.floor(m / 60), m % 60]);
+  return translate("m949d9fec534d", [m]);
 }
 
 export default function FreshnessBanner({ className }) {
+  const _locale = useLocale();
   const { status, ageMinutes, staleAfterMinutes } = useFreshness();
   // ok는 물론 loading(첫 응답 전)에도 아무것도 그리지 않는다 — 정상 배포에서 배너가 한 프레임
   // 깜빡이면 그게 더 큰 오해를 만든다.
@@ -19,8 +21,8 @@ export default function FreshnessBanner({ className }) {
 
   const message =
     status === "stale"
-      ? `${staleAfterMinutes}분 넘게 새 텔레메트리가 수신되지 않았습니다. 마지막 데이터는 ${formatAge(ageMinutes)} 전에 수신되었습니다. 텔레메트리 수집기가 실행 중인지 확인하세요.`
-      : "데이터 수신 상태를 확인할 수 없습니다. 텔레메트리 수집기와 서버 연결 상태를 확인하세요.";
+      ? translate("m4560c4ff24ab", [staleAfterMinutes, formatAge(ageMinutes)])
+      : translate("mc7be4799aa68");
 
   return (
     <div

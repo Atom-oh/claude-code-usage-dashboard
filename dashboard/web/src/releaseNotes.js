@@ -1,3 +1,4 @@
+import { localize } from "./i18n/index.js";
 // In-app release notes: the user-facing subset of CHANGELOG.md for each tagged release.
 // CHANGELOG.md (English) stays the complete engineering record; the image build context is
 // dashboard/ only, so these notes ship with the bundle instead of reading the root file.
@@ -7,7 +8,7 @@
 // item.kind: "new" | "improved" | "fixed". item.to: an app route, or null when the feature
 // has no page (where explains how to reach it). item.detail: the route lives in Claude
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
-export const RELEASES = [
+export const RELEASES = localize([
   {
     version: "1.8.0",
     date: "2026-11-14",
@@ -373,7 +374,7 @@ export const RELEASES = [
       },
     ],
   },
-];
+]);
 
 export const LATEST_RELEASE = RELEASES[0];
 export const SEEN_KEY = "ccdash.releaseNotesSeen";

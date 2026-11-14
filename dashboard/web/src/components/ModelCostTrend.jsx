@@ -1,3 +1,4 @@
+import { translate, useLocale } from "../i18n/index.js";
 // Partial-preserving model cost stacked area: known amounts are drawn, unavailable and no-data
 // buckets break the areas instead of dipping to zero, and each bucket carries a state mark. SeriesBarChart keeps its all-or-nothing policy.
 import { useMemo, useState } from "react";
@@ -16,6 +17,7 @@ import { useDragZoom } from "./GroupCharts.jsx";
 // Same look as Card, but the header wraps: on narrow screens the controls drop below the title
 // instead of squeezing it (Card keeps its right slot shrink-0 for its other callers).
 function TrendCard({ title, subtitle, help, right, children, accent }) {
+  const _locale = useLocale();
   return (
     <div data-model-trend data-client-accent={accent}
       className={`bg-card border border-ink-100 rounded-lg shadow-card overflow-hidden${accent ? " border-t-[3px]" : ""}`}
@@ -43,6 +45,7 @@ const boundMs = (v) => (v instanceof Date ? v.getTime() : typeof v === "string" 
 // Recharts calls this once per row with the row as payload and the full plot band as
 // background, so the mark sits above the stack regardless of the bucket's values.
 function BucketMark({ x, width, payload, background, fmtTick, axis }) {
+  const _locale = useLocale();
   const bucket = payload.__bucket;
   const state = bucket.state;
   if (state !== "partial" && state !== "unavailable" && state !== "zero" && state !== "idle") {
@@ -54,7 +57,7 @@ function BucketMark({ x, width, payload, background, fmtTick, axis }) {
   const base = background.y + background.height;
   if (state === "partial") {
     return (
-      <g data-state="partial" role="img" aria-label={`${tick} 부분합 — 일부 비용 확인 불가`}>
+      <g data-state="partial" role="img" aria-label={translate("m2d5bfb444eb6", [tick])}>
         <circle cx={cx} cy={cy} r={6} fill="var(--warning-surface)" stroke="var(--warning-text)" strokeWidth={1.2} />
         <text x={cx} y={cy + 3.5} {...MARK_TEXT} fill="var(--warning-text)">!</text>
       </g>
@@ -62,7 +65,7 @@ function BucketMark({ x, width, payload, background, fmtTick, axis }) {
   }
   if (state === "unavailable") {
     return (
-      <g data-state="unavailable" role="img" aria-label={`${tick} 비용 확인 불가`}>
+      <g data-state="unavailable" role="img" aria-label={translate("m6a9bcb1669f7", [tick])}>
         <circle cx={cx} cy={cy} r={6} fill="none" stroke={axis} strokeWidth={1.2} strokeDasharray="2 2" />
         <text x={cx} y={cy + 3.5} {...MARK_TEXT} fill={axis}>?</text>
       </g>
@@ -70,13 +73,13 @@ function BucketMark({ x, width, payload, background, fmtTick, axis }) {
   }
   if (state === "zero") {
     return (
-      <g data-state="zero" role="img" aria-label={`${tick} $0 (측정값)`}>
+      <g data-state="zero" role="img" aria-label={translate("mfbc9fd94847e", [tick])}>
         <rect x={x} y={base - 2} width={width} height={2} fill={axis} />
       </g>
     );
   }
   return (
-    <g data-state="idle" role="img" aria-label={`${tick} 기록된 사용 없음`}>
+    <g data-state="idle" role="img" aria-label={translate("md6b010ac8999", [tick])}>
       <line x1={x} x2={x + width} y1={base - 1} y2={base - 1} stroke={axis} strokeDasharray="1 3" />
     </g>
   );
@@ -86,6 +89,7 @@ function BucketMark({ x, width, payload, background, fmtTick, axis }) {
 // Areas need two neighbours to show any width, so a known point between gaps gets a dot.
 // A zero contribution (no usage for that series) gets no dot.
 function IsolatedDot({ cx, cy, index, dataKey, rows, fill }) {
+  const _locale = useLocale();
   const has = (i) => rows[i] != null && rows[i][dataKey] != null;
   if (!(rows[index]?.[dataKey] > 0) || !Number.isFinite(cx) || !Number.isFinite(cy)
     || has(index - 1) || has(index + 1)) return null;
@@ -116,6 +120,7 @@ export function nextHidden(hidden, id, ids, toggle) {
 }
 
 function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
+  const _locale = useLocale();
   if (!active || !payload || payload.length === 0) return null;
   const b = payload[0].payload.__bucket;
   if (b.state === "nodata") return null;
@@ -132,9 +137,9 @@ function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
   const shownUnavailable = frame.series.some((s) => !hidden.has(legendId(s)) && b.partialSeries.includes(s.key))
     || (!hidden.has(OTHERS_ID) && b.othersPartial);
   const shownText = entries.length === 0
-    ? (shownUnavailable ? "확인 불가" : "기록된 사용 없음")
-    : `${shownUnavailable ? "(부분합) " : ""}${formatUsd(entries.reduce((sum, e) => sum + e.value, 0))}`;
-  const total = b.state === "unavailable" ? "확인 불가" : b.state === "idle" ? "기록된 사용 없음" : formatUsd(b.total);
+    ? (shownUnavailable ? translate("m298859a04696") : translate("m5eef64646a1b"))
+    : `${shownUnavailable ? translate("m9665243ca13b") : ""}${formatUsd(entries.reduce((sum, e) => sum + e.value, 0))}`;
+  const total = b.state === "unavailable" ? translate("m298859a04696") : b.state === "idle" ? translate("m5eef64646a1b") : formatUsd(b.total);
   return (
     <div data-mct-tooltip style={{ ...tooltipStyles(c).contentStyle, color: c.tooltipFg, fontSize: 12 }}>
       <div data-tooltip-label style={{ fontSize: 11, marginBottom: 2 }}>{fmtTick(b.t)}</div>
@@ -146,21 +151,22 @@ function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
         ))}
       </ul>
       {filtered && b.state !== "unavailable" && b.state !== "idle" && (
-        <div data-tooltip-shown>{`표시 계열 합계 ${shownText}`}</div>
+        <div data-tooltip-shown>{translate("mb885dbfb5796", [shownText])}</div>
       )}
-      <div data-tooltip-total>{`알려진 합계${filtered ? " (전체)" : ""}${b.state === "partial" ? " (부분합)" : ""} ${total}`}</div>
-      {b.hasEstimate && <div data-tooltip-estimate>계산 추정 포함 — 보고 비용이 없어 토큰 단가로 채운 값입니다</div>}
+      <div data-tooltip-total>{translate("m4e39720cce24", [filtered ? translate("m3445c6df4502") : "", b.state === "partial" ? translate("m830e860c2bd2") : "", total])}</div>
+      {b.hasEstimate && <div data-tooltip-estimate>{translate("mada64dc4372b")}</div>}
       {b.issues.length > 0 && (
-        <div data-tooltip-note>{`확인 필요: ${b.issues.map((i) => `${i.label} (${reasonLabels(i.reasons)})`).join(", ")}`}</div>
+        <div data-tooltip-note>{translate("m704897fb1f91", [b.issues.map((i) => `${i.label} (${reasonLabels(i.reasons)})`).join(", ")])}</div>
       )}
-      {b.state === "idle" && <div data-tooltip-note>기록된 사용 없음 — 수집 누락일 수 있습니다</div>}
+      {b.state === "idle" && <div data-tooltip-note>{translate("ma0ff51d7b53b")}</div>}
     </div>
   );
 }
 
 export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t", bucketHours, bounds,
   pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent, dimension = "model", userSuffix }) {
-  const noun = dimension === "user" ? "사용자" : dimension === "team" ? "팀" : "모델";
+  const _locale = useLocale();
+  const noun = dimension === "user" ? translate("m1ac6e422b7dc") : dimension === "team" ? translate("m321639b7ad86") : translate("mf9f4d4113aa1");
   const c = useChartColors();
   // One bucket-size fallback (the global interval, as useDragZoom uses) for zoom, ticks and grid.
   const { intervalHours } = useRange();
@@ -182,7 +188,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const fromMs = boundMs(bounds?.from), toMs = boundMs(bounds?.to);
   const frame = useMemo(() => (Array.isArray(cells)
     ? buildModelCostFrame(cells, { top, pinned: JSON.parse(pinnedKey), bounds: { from: fromMs, to: toMs }, bucketHours: hours, dimension, userSuffix })
-    : null), [cells, top, pinnedKey, fromMs, toMs, hours, dimension, userSuffix]);
+    : null), [cells, top, pinnedKey, fromMs, toMs, hours, dimension, userSuffix, _locale]);
 
   const chip = basis ? <span className="rounded-full border border-ink-200 px-2 py-0.5 text-[11px] text-ink-600"
     style={accent ? { borderColor: accent } : undefined}>{basis}</span> : null;
@@ -192,13 +198,11 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
       aria-pressed={showTable}
       onClick={() => setShowTable((v) => !v)}
       className="rounded-md border border-ink-200 px-2 py-0.5 text-[11px] text-ink-600"
-    >
-      표 보기
-    </button>
+    >{translate("m5e2e0e812c63")}</button>
   ) : null;
   const modeToggle = hasCells && cells.length > 0 && !frame.allUnavailable ? (
     <SegmentedControl className="[&_button]:h-[22px] [&_button]:px-2 [&_button]:text-[11px]"
-      options={[{ value: "stacked", label: "누적" }, { value: "lines", label: "기본" }]}
+      options={[{ value: "stacked", label: translate("m8daa76940700") }, { value: "lines", label: translate("m3603b4581160") }]}
       value={stacked ? "stacked" : "lines"} onChange={(v) => setStacked(v === "stacked")} />
   ) : null;
   const header = chip || toggle || modeToggle || right != null
@@ -208,7 +212,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   if (!hasCells) {
     return (
       <TrendCard title={title} subtitle={subtitle} help={help} right={header} accent={accent}>
-        <div role="status" className="text-sm text-ink-500">{`${noun}별 비용 정보가 없어 추이를 확인할 수 없습니다.`}</div>
+        <div role="status" className="text-sm text-ink-500">{translate("mdc6b9ec18451", [noun])}</div>
       </TrendCard>
     );
   }
@@ -240,44 +244,44 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
 
   const status = (
     <div role="status" className="mt-3 space-y-1 text-[12px] text-ink-500">
-      {frame.allUnavailable && <p data-status-all-unavailable>선택한 기간의 비용을 모두 확인할 수 없습니다.</p>}
+      {frame.allUnavailable && <p data-status-all-unavailable>{translate("m0ab525212cfa")}</p>}
       <p data-status-headline>
         {totals.issues.length > 0
-          ? `확인 필요 ${totals.reviewBuckets}개 버킷 · ${totals.identityCount}개 항목`
-          : "확인이 필요한 버킷이 없습니다."}
+          ? translate("m96a78c04043f", [totals.reviewBuckets, totals.identityCount])
+          : translate("m5f3ef071dadd")}
       </p>
       {totals.issues.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-5">
           {totals.issues.map((group) => (
             <li key={group.key} data-reason={group.key}>
-              {`${group.label} ${group.count}건 — ${group.identities.map((i) => `${i.label}${i.inOthers ? " (기타)" : ""} ${i.count}건`).join(", ")}`}
+              {translate("m4c512c3116b1", [group.label, group.count, group.identities.map((i) => translate("m7724e60d3127", [i.label, i.inOthers ? translate("m62221ecf0b2b") : "", i.count])).join(", ")])}
             </li>
           ))}
         </ul>
       )}
       {totals.issues.length > 0 && (
-        <p data-status-note>알려진 금액만 차트에 포함했고, 확인할 수 없는 금액은 0으로 그리지 않았습니다.</p>
+        <p data-status-note>{translate("m941b97e751a8")}</p>
       )}
       {totals.idleBuckets > 0 && (
-        <p data-status-idle>{`기록된 사용 없음 ${totals.idleBuckets}개 버킷 — 수집이 완전하다는 뜻은 아닙니다.`}</p>
+        <p data-status-idle>{translate("m33c0bea9747c", [totals.idleBuckets])}</p>
       )}
       {totals.estimateBuckets > 0 && (
-        <p data-status-estimate>{`계산 추정 포함 ${totals.estimateBuckets}개 버킷 — 보고 비용이 없어 토큰 단가로 채운 값입니다.`}</p>
+        <p data-status-estimate>{translate("mb922216b3a42", [totals.estimateBuckets])}</p>
       )}
     </div>
   );
 
   const tables = showTable ? (
-    <div role="region" aria-label={typeof title === "string" && title ? `${title} 표` : `${noun}별 비용 추이 표`} tabIndex={0}
+    <div role="region" aria-label={typeof title === "string" && title ? translate("mb96d90c8f577", [title]) : translate("m9e734340b9ff", [noun])} tabIndex={0}
       className="max-w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-500">
-      <table aria-label="버킷별 비용 표" className={TABLE_CLASS}>
+      <table aria-label={translate("m072bf5b38ceb")} className={TABLE_CLASS}>
         <thead>
           <tr>
-            <th className="whitespace-nowrap">버킷</th>
+            <th className="whitespace-nowrap">{translate("mce101f7dd9ff")}</th>
             {series.map((s) => <th key={s.key}>{s.label}</th>)}
             {showOthers && <th>{frame.others.label}</th>}
-            <th>알려진 합계</th>
-            <th>상태</th>
+            <th>{translate("mc67d7cf662cf")}</th>
+            <th>{translate("me10195a1239f")}</th>
           </tr>
         </thead>
         <tbody>
@@ -289,15 +293,15 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
               ))}
               {showOthers && <td>{formatUsdPrecise(b.others) + (b.othersPartial ? " ⚠" : "")}</td>}
               <td>{formatUsdPrecise(b.state === "idle" ? 0 : b.total)}</td>
-              <td>{STATE_LABELS[b.state] + (b.hasEstimate ? " · 추정" : "")}</td>
+              <td>{STATE_LABELS[b.state] + (b.hasEstimate ? translate("m8c415723e11e") : "")}</td>
             </tr>
           ))}
         </tbody>
       </table>
       {frame.othersBreakdown.length > 0 && (
-        <table aria-label={`기타 ${noun} 내역`} className={TABLE_CLASS}>
+        <table aria-label={translate("m447c5c7e8815", [noun])} className={TABLE_CLASS}>
           <thead>
-            <tr><th>{noun}</th>{dimension === "model" && <th>채널/백엔드</th>}<th>알려진 비용</th><th>확인 불가</th></tr>
+            <tr><th>{noun}</th>{dimension === "model" && <th>{translate("mee55b8dd6e2d")}</th>}<th>{translate("m3813ba066940")}</th><th>{translate("m298859a04696")}</th></tr>
           </thead>
           <tbody>
             {frame.othersBreakdown.map((entry) => (
@@ -305,7 +309,7 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
                 <td className="break-words">{entry.label}</td>
                 {dimension === "model" && <td>{entry.channel ?? "—"}</td>}
                 <td>{formatUsdPrecise(entry.known)}</td>
-                <td>{entry.unavailable > 0 ? `${entry.unavailable}건` : "—"}</td>
+                <td>{entry.unavailable > 0 ? translate("mefd506fcc7af", [entry.unavailable]) : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -359,13 +363,13 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
           {zoom.overlay}
         </ComposedChart>
       </ResponsiveContainer>
-      <ul aria-label="범례" className="mt-2 flex flex-wrap gap-x-1 gap-y-1 text-[11px] text-ink-500">
+      <ul aria-label={translate("m96b68d6b8f83")} className="mt-2 flex flex-wrap gap-x-1 gap-y-1 text-[11px] text-ink-500">
         {items.map((item) => {
           const shown = !hidden.has(item.id);
           return (
             <li key={item.id}>
               <button type="button" aria-pressed={shown} data-legend={item.key} onClick={onLegend(item.id)}
-                title="클릭: 이 계열만 보기 · Ctrl/⌘/Shift+클릭: 표시 전환"
+                title={translate("m7999a820160f")}
                 className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-ink-50 ${shown ? "" : "opacity-40 line-through"}`}>
                 <span aria-hidden="true" data-swatch={item.swatch}
                   className={`inline-block h-2.5 w-2.5 ${item.swatch === "others" ? "rounded-sm" : "rounded-[3px]"}`}
@@ -378,8 +382,8 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
       </ul>
       {hidden.size > 0 && (
         <p data-legend-filtered className="mt-1 text-[11px] text-ink-500">
-          {`${hidden.size}개 계열 숨김 — 상태 표시·확인 필요 목록·표는 전체 기준입니다. `}
-          <button type="button" className="underline" onClick={() => setHiddenIds(new Set())}>모두 보기</button>
+          {translate("m5a43e42ab8d1", [hidden.size])}
+          <button type="button" className="underline" onClick={() => setHiddenIds(new Set())}>{translate("m75e8bb70f13a")}</button>
         </p>
       )}
       {status}
