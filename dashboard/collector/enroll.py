@@ -163,11 +163,17 @@ def approved_identity(reply, user_id_override):
     return owner, device, digest, None if user_id_override else user_id
 
 
-def download_package(endpoint, platform, token, expected, http=fetch):
-    status, _headers, data = http("GET", endpoint + "/package/" + platform,
-                                  {"Authorization": "Bearer " + token}, limit=MAX_PACKAGE)
-    if status == 429:
-        raise EnrollmentError("패키지 다운로드 한도를 넘었습니다. 1시간 뒤 다시 실행하세요.")
+def download_package(endpoint, platform, token, expected, http=fetch, sleep=time.sleep):
+    for _attempt in range(4):
+        status, headers, data = http("GET", endpoint + "/package/" + platform,
+                                     {"Authorization": "Bearer " + token}, limit=MAX_PACKAGE)
+        if status != 429:
+            break
+        if parse_json(data).get("error") != "ingest_busy":
+            raise EnrollmentError("패키지 다운로드 한도를 넘었습니다. 1시간 뒤 다시 실행하세요.")
+        sleep(retry_after(headers, 5))
+    else:
+        raise EnrollmentError("대시보드가 바쁩니다. 잠시 후 다시 실행하세요.")
     if status != 200:
         raise EnrollmentError("패키지를 내려받지 못했습니다. 잠시 후 다시 실행하세요.")
     if hashlib.sha256(data).hexdigest() != expected:
@@ -242,7 +248,8 @@ def enroll(args, http=fetch, sleep=time.sleep, run=subprocess.call, browser=open
     work = tempfile.mkdtemp(prefix="ccdash-enroll-")
     try:
         try:
-            installer = extract_package(download_package(args.endpoint, args.platform, token, digest, http=http), work)
+            installer = extract_package(download_package(args.endpoint, args.platform, token, digest, http=http,
+                                                         sleep=sleep), work)
         except (tarfile.TarError, OSError, EOFError):
             raise EnrollmentError("패키지 압축을 풀지 못했습니다.") from None
         token_file = write_token(work, token)

@@ -38,10 +38,13 @@ downloads embeds no credential either. See [device collectors](../runbooks/devic
 Browser enrollment adds three anonymous routes. `GET /api/ingest/enroll.py` serves the
 helper whose SHA-256 the install script pins. `POST /api/ingest/enroll/start` accepts only
 a device-secret digest, name and platform (1 KiB) and returns a lookup link, confirmation
-code and a polling credential once; it is limited per replica to 200 per client address
-(`req.ip` behind the trusted proxy hop, so a workshop behind one NAT address can enroll) and
-1,200 in total per 10 minutes. `POST /api/ingest/enroll/poll` needs that
-polling credential (30 per request per minute). Enrollment uses its own 16 in-flight slots
+code and a polling credential once; it is limited to 200 per client address (`req.ip`
+behind the trusted proxy hop, so a workshop behind one NAT address can enroll) and 1,200 in
+total per 10 minutes, and is refused for a platform with no built package.
+`POST /api/ingest/enroll/poll` needs that polling credential: malformed credentials are
+rejected before any limiter, then polls are limited to 2,400 per client address per minute
+and 30 per verified enrollment per minute. All enrollment limits are per replica, so
+effective totals scale with replica count. Enrollment uses its own 16 in-flight slots
 and never consumes ingest admission. Neither route accepts cookies or grants ingestion:
 only an editor's explicit same-origin `POST /api/collector/enrollments/:handle/approve`
 creates the device, under the approver's owner key, from the stored digest. Requests expire
@@ -50,7 +53,8 @@ the device secret and polling credential, never either value; the raw device tok
 only on the device. Remote phishing remains possible (RFC 8628 section 5.4): the page
 warns users to approve only installations they started. Per-replica limits bound memory and
 store work. Many distributed sources can still exhaust the total and delay new enrollments
-(not ingestion); add edge rate limiting when that matters. The poll response returns the
+(not ingestion); when that matters, add an AWS WAF rate-based rule on the CloudFront
+distribution for `/api/ingest/enroll/*`. The poll response returns the
 approver's verified email (the default attribution ID) and owner key to the terminal only
 after explicit approval; the approval page shows the request time to help spot requests the
 user did not start.

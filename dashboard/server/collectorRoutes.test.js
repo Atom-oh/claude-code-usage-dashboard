@@ -74,7 +74,7 @@ async function fixture(t, overrides = {}) {
     writeFileSync(join(directory, "enroll.py"), "# enrollment helper fixture\n");
     writeFileSync(join(directory, "manifest.json"), JSON.stringify({ packages: {
       "ccdash-collector-linux.tar.gz": createHash("sha256").update("archive-fixture").digest("hex"),
-      "ccdash-collector-darwin.tar.gz": "f".repeat(64) } }));
+      ...(overrides.darwinPackage === false ? {} : { "ccdash-collector-darwin.tar.gz": "f".repeat(64) }) } }));
   }
   const authentication = {
     mode: "oidc",
@@ -914,6 +914,27 @@ test("polling is rate limited per request and recovers after the window", async 
   assert.equal(limited.headers.get("retry-after"), "10");
   time += 60000;
   assert.equal((await f.poll(started.pollToken)).status, 200);
+});
+
+test("unverified poll credentials never allocate per-enrollment limiter state", async t => {
+  const time = Date.now();
+  const f = await fixture(t, { now: () => time });
+  const started = await f.startEnrollment();
+  for (let i = 0; i < 2100; i++)
+    assert.equal((await f.poll(`cce1.${i.toString(16).padStart(32, "0")}.${"A".repeat(43)}`)).status, 401);
+  assert.equal((await f.poll(started.pollToken)).status, 200);
+  assert.equal((await f.poll("x")).status, 401);
+});
+
+test("enrollment refuses a platform without a built package", async t => {
+  const f = await fixture(t, { darwinPackage: false });
+  const start = platform => f.request("/api/ingest/enroll/start", { method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ secretHash: "a".repeat(64), name: "Mac", platform }) });
+  const refused = await start("darwin");
+  assert.equal(refused.status, 409);
+  assert.deepEqual(await refused.json(), { error: "platform_unavailable" });
+  assert.equal((await start("linux")).status, 201);
 });
 
 test("the launcher pins the served helper; without built packages only the manual flow exists", async t => {

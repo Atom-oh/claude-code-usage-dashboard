@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createDeviceTokenService, DeviceTokenError, TOKEN_LIFETIME_DAYS } from "./deviceTokens.js";
 import { createDynamoDeviceStore } from "./deviceTokenStore.js";
 import { collectorInstallScript } from "./collectorInstallScript.js";
-import { createEnrollmentService } from "./collectorEnrollment.js";
+import { createEnrollmentService, isPollToken } from "./collectorEnrollment.js";
 
 const BODY_LIMIT = 2 * 1024 * 1024;
 const RESPONSE_LIMIT = 64 * 1024;
@@ -173,6 +173,9 @@ export function createCollectorFeature({ env = process.env, authentication, pack
   // address can still start ~140 installs with retries; the global ceiling only bounds store work.
   const startFromSourceAllowed = fixedWindow(200, 600000, now);
   const startAllowed = fixedWindow(1200, 600000, now);
+  // Bounds anonymous poll traffic per client address before any per-enrollment state exists
+  // (sized for a workshop behind one NAT address: ~140 helpers polling every 5 s).
+  const pollFromSourceAllowed = fixedWindow(2400, 60000, now);
   const pollAllowed = fixedWindow(30, 60000, now);
   const decideAllowed = fixedWindow(30, 3600000, now);
   let active = 0;
@@ -280,10 +283,11 @@ export function createCollectorFeature({ env = process.env, authentication, pack
       if (req.get("transfer-encoding") || (length !== undefined && length !== "0"))
         return errorResponse(res, fail("invalid_request", 400));
       pollToken = bearer(req);
-      if (!pollToken) return errorResponse(res, fail("invalid_enrollment", 401));
-      // Keyed by the public handle part, so a guessed secret still spends that request's budget.
-      if (!pollAllowed(pollToken.split(".")[1] || "")) {
-        res.set("Retry-After", String(10));
+      if (!isPollToken(pollToken)) return errorResponse(res, fail("invalid_enrollment", 401));
+      // Anonymous traffic spends a per-source budget first; per-enrollment limiter state is
+      // allocated only after the polling credential verifies (see enrollment.poll admit).
+      if (!pollFromSourceAllowed(req.ip || req.socket?.remoteAddress || "unknown")) {
+        res.set("Retry-After", "10");
         return errorResponse(res, fail("poll_rate_limited", 429));
       }
     }
@@ -307,12 +311,14 @@ export function createCollectorFeature({ env = process.env, authentication, pack
         controller.signal.throwIfAborted();
         res.status(201);
       } else {
-        reply = await enrollment.poll(pollToken, { signal: controller.signal });
+        reply = await enrollment.poll(pollToken, { signal: controller.signal, admit: handle => pollAllowed(handle) });
         controller.signal.throwIfAborted();
       }
       res.json(reply);
     } catch (error) {
-      errorResponse(res, controller.signal.aborted ? controller.signal.reason : error);
+      const failure = controller.signal.aborted ? controller.signal.reason : error;
+      if (failure?.code === "poll_rate_limited") res.set("Retry-After", "10");
+      errorResponse(res, failure);
     } finally {
       clearTimeout(timer);
       res.off("close", closed);

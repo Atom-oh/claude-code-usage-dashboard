@@ -100,7 +100,7 @@ export function verifyRuntime({
   try {
     const directory = location("app/collector-packages");
     const names = readdirSync(directory).sort();
-    if (JSON.stringify(names) !== JSON.stringify([...packageNames, "manifest.json"].sort()))
+    if (JSON.stringify(names) !== JSON.stringify([...packageNames, "enroll.py", "manifest.json"].sort()))
       fail("unexpected collector package files");
     for (const name of names) {
       if (!lstatSync(path.join(directory, name)).isFile())
@@ -116,6 +116,10 @@ export function verifyRuntime({
       if (!bytes.length || !/^[a-f0-9]{64}$/.test(digest || "") || sha256(bytes) !== digest)
         fail("collector package digest differs");
     }
+    const helper = readFileSync(path.join(directory, "enroll.py"));
+    if (!helper.length || !/^[a-f0-9]{64}$/.test(collectorManifest.enrollHelper || "") ||
+        sha256(helper) !== collectorManifest.enrollHelper)
+      fail("collector enrollment helper digest differs");
   } catch (error) {
     if (error.message?.startsWith("runtime verification:")) throw error;
     fail("collector package inspection failed");
@@ -132,5 +136,6 @@ export function verifyRuntime({
     serverLockSha256,
     collectorVersion: collectorManifest.collectorVersion,
     collectorPackages: collectorManifest.packages,
+    collectorEnrollHelper: collectorManifest.enrollHelper,
   };
 }

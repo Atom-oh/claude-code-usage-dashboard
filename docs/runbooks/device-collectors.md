@@ -126,7 +126,9 @@ revocation does not revoke credentials previously issued for that path.
 - Deny unauthenticated and viewer management/download requests. Confirm a valid
   device token cannot read dashboard APIs and browser cookies cannot ingest or download
   `/api/ingest/package/*`. `/api/ingest/install.sh` and `/api/ingest/enroll.py` are
-  intentionally public and must contain only the ingestion endpoint and helper digest.
+  intentionally public: `install.sh` must contain only the ingestion endpoint and the
+  helper's SHA-256, and `enroll.py` contains no credential or digest of its own (it is
+  pinned by `install.sh`).
 - Run one browser enrollment end to end: anonymous start returns only a code, link and
   polling credential; approval needs an editor session and same-origin POST; the device
   appears under the approver's devices.

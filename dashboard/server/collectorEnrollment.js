@@ -14,6 +14,12 @@ const digest = value => createHash("sha256").update(value).digest("hex");
 const iso = value => new Date(value).toISOString();
 const fail = (code, status) => new DeviceTokenError(code, status);
 
+/** True only for a syntactically valid polling credential (canonical base64url secret). */
+export function isPollToken(token) {
+  const m = typeof token === "string" && POLL_TOKEN.exec(token);
+  return !!m && Buffer.from(m[2], "base64url").toString("base64url") === m[2];
+}
+
 /** Telemetry user ID derived from the approving login, or null when it has no usable verified email. */
 export function enrollmentUserId(principal) {
   return typeof principal?.email === "string" && USER_ID.test(principal.email) ? principal.email : null;
@@ -60,6 +66,8 @@ export function createEnrollmentService({ store, issuer, publicOrigin, now = Dat
       if (!input || typeof input !== "object" || typeof input.secretHash !== "string" || !SECRET_HASH.test(input.secretHash))
         throw fail("invalid_enrollment");
       const { name, platform } = deviceInput(input);
+      // Approval would otherwise create a 30-day device the helper can never install.
+      if (!packageHashes[platform]) throw fail("platform_unavailable", 409);
       const createdAt = now();
       const deadline = createdAt + ENROLLMENT_LIFETIME_MS;
       const handle = randomBytes(16).toString("hex");
@@ -112,14 +120,14 @@ export function createEnrollmentService({ store, issuer, publicOrigin, now = Dat
       throw fail("enrollment_unavailable", 409);
     },
 
-    async poll(token, options) {
-      const match = typeof token === "string" && POLL_TOKEN.exec(token);
-      if (!match || Buffer.from(match[2], "base64url").toString("base64url") !== match[2])
-        throw fail("invalid_enrollment", 401);
+    async poll(token, { admit, ...options } = {}) {
+      if (!isPollToken(token)) throw fail("invalid_enrollment", 401);
+      const match = POLL_TOKEN.exec(token);
       const record = await store.getEnrollment(match[1], options);
       if (!record || record.id !== match[1] || typeof record.pollHash !== "string" || !SECRET_HASH.test(record.pollHash)
         || !timingSafeEqual(Buffer.from(record.pollHash, "hex"), Buffer.from(digest(match[2]), "hex")))
         throw fail("invalid_enrollment", 401);
+      if (admit && !admit(match[1])) throw fail("poll_rate_limited", 429);
       // The absolute deadline also ends delivery of an approved result.
       if (record.deadline <= now()) throw fail("enrollment_expired", 410);
       if (record.status === "pending") return { status: "pending", interval: POLL_INTERVAL_SECONDS };

@@ -216,6 +216,19 @@ class Enrollment(unittest.TestCase):
                                                          ("ccdash-collector/install.py", b"#!\n")]), directory)
         self.assertEqual(stat.S_IMODE(os.stat(installer).st_mode), 0o700)
 
+    def test_busy_package_downloads_are_retried_and_quota_is_not(self):
+        data = b"package bytes"
+        expected = hashlib.sha256(data).hexdigest()
+        replies = [json_reply(429, {"error": "ingest_busy"}, {"Retry-After": "1"}), (200, {}, data)]
+        http = lambda *args, **kwargs: replies.pop(0)
+        sleeps = []
+        self.assertEqual(self.module.download_package(ENDPOINT, "linux", "t", expected, http=http,
+                                                      sleep=sleeps.append), data)
+        self.assertEqual(len(sleeps), 1)
+        quota = lambda *args, **kwargs: json_reply(429, {"error": "package_rate_limited"})
+        with self.assertRaisesRegex(self.module.EnrollmentError, "1시간"):
+            self.module.download_package(ENDPOINT, "linux", "t", expected, http=quota, sleep=sleeps.append)
+
     def test_start_rejects_foreign_links_and_reports_unsupported_dashboards(self):
         def reply(status, body):
             return lambda *args, **kwargs: json_reply(status, body)
