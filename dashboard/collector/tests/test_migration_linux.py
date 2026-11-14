@@ -281,6 +281,41 @@ class LinuxMigration(unittest.TestCase):
             self.install()
         self.assertEqual(self.sudo, [])
 
+    def existing_installation(self):
+        self.module.atomic(self.unit, "[Service]\n# " + self.module.MARKER + "\n", 0o600)
+
+    def test_reinstall_migrates_a_legacy_service_that_still_holds_the_ports(self):
+        self.existing_installation()  # the device service restarts without the ports
+        self.install()
+        self.assertTrue(self.masked and not self.active)
+        self.assertIn(self.unit.name, self.running)
+
+    def test_reinstall_after_a_finished_migration_changes_no_legacy_state(self):
+        self.existing_installation()
+        self.legacy.unlink()
+        self.legacy.symlink_to("/dev/null")
+        self.active, self.masked = False, True
+        self.install()
+        self.assertEqual(self.sudo, [])
+
+    def test_rollback_keeps_the_backup_when_the_unit_was_replaced_meanwhile(self):
+        self.start_error = True
+        original_privileged = self.privileged
+
+        def privileged(command):
+            result = original_privileged(command)
+            if command == ["systemctl", "mask", "otelcol.service"]:
+                # Something replaces the masked unit while the new Collector starts.
+                self.legacy.unlink()
+                self.module.atomic(self.legacy, "replaced by someone else", 0o644)
+                self.masked = False
+            return result
+        self.privileged = privileged
+        with self.assertRaisesRegex(ValueError, "rollback could not finish"):
+            self.install()
+        self.assertEqual(self.backup.read_bytes(), self.original[self.legacy], "the original unit is kept")
+        self.assertNotIn(["rm", str(self.backup)], self.sudo)
+
     def test_masked_legacy_is_already_migrated_and_never_touched(self):
         self.legacy.unlink()
         self.legacy.symlink_to("/dev/null")

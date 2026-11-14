@@ -634,7 +634,11 @@ def restore_legacy_linux(legacy):
         if unit.is_symlink():
             run(["sudo", "systemctl", "unmask", LEGACY_LINUX_SERVICE])
         if unit.exists() or unit.is_symlink():
-            run(["sudo", "rm", str(backup)])  # the unit was never removed
+            # The unit was never removed, unless something replaced it meanwhile: then keep the backup.
+            if unit.is_symlink() or file_state(unit)[1] != legacy["files"][unit][1]:
+                raise ValueError("legacy unit was replaced during installation; its original remains at "
+                                 + str(backup) + "; manual recovery required")
+            run(["sudo", "rm", str(backup)])
         else:
             run(["sudo", "mv", str(backup), str(unit)])
     elif not unit.exists() or unit.is_symlink():
@@ -729,7 +733,12 @@ def install(args, home, user, uid, root, unit):
     check_install_root(root)
     renewal = renewal_locations(home)
     check_services(unit, renewal, user)
-    legacy = legacy_state(home, uid, user) if not unit.exists() else None
+    # A legacy Collector that can still run is migrated on reinstall too: otherwise it keeps
+    # the local ports and the device Collector restarts without ever receiving telemetry.
+    legacy = legacy_state(home, uid, user)
+    if (legacy and unit.exists() and legacy.get("platform") != "linux"
+            and not legacy["loaded"] and legacy["disabled"]):
+        legacy = None  # a finished macOS migration: unloaded and disabled, nothing starts it again
     if not unit.exists():
         check_ports(legacy)
     if legacy:
@@ -798,9 +807,9 @@ def install(args, home, user, uid, root, unit):
             if client_plan(home, user_id, replace_claude_telemetry)[0] != changes:
                 raise ValueError("client configuration changed during preparation; rerun setup")
             check_services(unit, renewal, user)
+            if legacy and legacy_state(home, uid, user) != legacy:
+                raise ValueError("legacy service or configuration changed during preparation; rerun setup")
             if not unit.exists():
-                if legacy and legacy_state(home, uid, user) != legacy:
-                    raise ValueError("legacy service or configuration changed during preparation; rerun setup")
                 check_ports(legacy)
             if legacy:
                 backup_legacy(legacy, root)
@@ -810,11 +819,13 @@ def install(args, home, user, uid, root, unit):
             clients_attempted = False
             legacy_attempted = False
             try:
+                # Stop this package's own service first: stopping the legacy one waits for
+                # every local listener to be released.
+                if unit.exists():
+                    stop_service(unit, uid)
                 if legacy:
                     legacy_attempted = True
                     stop_legacy(legacy)
-                if unit.exists():
-                    stop_service(unit, uid)
                 if any(path.exists() for path in renewal):
                     stop_service(renewal[-1], uid, RENEW_LABEL)
                 assert_unchanged(clients_before)
@@ -851,6 +862,10 @@ def install(args, home, user, uid, root, unit):
                             continue
                         if current == expected:
                             restore_file(path, clients_before[path])
+                    # The legacy service held the ports before: restore it before restarting
+                    # a previous device installation.
+                    if legacy_attempted:
+                        restore_legacy(legacy, home, uid)
                     if old_running:
                         service_command(unit, "start", uid)
                     elif old_enabled and sys.platform == "linux":
@@ -860,8 +875,6 @@ def install(args, home, user, uid, root, unit):
                         run(["systemctl", "--user", "disable", unit.name])
                     if old_renewal:
                         service_command(renewal[-1], "start", uid, RENEW_LABEL)
-                    if legacy_attempted:
-                        restore_legacy(legacy, home, uid)
                 except BaseException:
                     keep_recovery = True
                     raise ValueError("installation rollback could not finish; private recovery files remain in "

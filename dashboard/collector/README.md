@@ -240,7 +240,10 @@ the existing Claude `user.email` as the attribution ID, backs up the unit, drop-
 your password) and starts the device Collector. A failed installation unmasks and restores
 the unit and returns the old service to its previous enabled and running state. Any other
 unit, a different configuration or user, or an unrelated listener is never changed: a
-running one stops installation before a device is registered. The manual procedure remains:
+running one stops installation before a device is registered. A reinstall also migrates a
+legacy Collector that can still run (on macOS: loaded or not disabled; on Linux: not masked),
+because it would otherwise keep the ports while the device Collector restarts. The manual
+procedure remains:
 
 ```bash
 sudo ss -ltnp '( sport = :4317 or sport = :4318 or sport = :13133 )'

@@ -190,6 +190,23 @@ class Migration(unittest.TestCase):
         }) + "\n")
         return path, path.read_bytes()
 
+    def test_reinstall_migrates_a_loaded_legacy_that_still_holds_the_ports(self):
+        # The device service exists but restarts without the ports: the legacy one holds them.
+        self.module.atomic(self.unit, "<plist><!-- " + self.module.MARKER + " --></plist>")
+        self.install()
+        self.assertFalse(self.loaded)
+        self.assertTrue(self.disabled)
+        self.assertTrue(self.new_running)
+        self.assertEqual(len(list(self.root.glob("legacy-backup-*"))), 1)
+
+    def test_reinstall_after_a_finished_migration_leaves_the_legacy_untouched(self):
+        self.module.atomic(self.unit, "<plist><!-- " + self.module.MARKER + " --></plist>")
+        self.loaded, self.disabled = False, True
+        self.install()
+        self.assertTrue(self.new_running)
+        self.assertEqual(list(self.root.glob("legacy-backup-*")), [], "no second migration")
+        self.assertNotIn("Found legacy", self.output.getvalue())
+
     def test_confirmed_migration_replaces_claude_exporters_and_backs_up_original(self):
         path, original = self.conflicting_claude_settings()
         self.args.migrate_legacy = False

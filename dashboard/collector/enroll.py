@@ -11,6 +11,8 @@ import io
 import json
 import os
 from pathlib import Path
+import plistlib
+import pwd
 import re
 import secrets
 import shutil
@@ -221,6 +223,7 @@ def write_token(directory, token):
 
 LOCAL_PORTS = (4317, 4318, 13133)
 LEGACY_LINUX_UNIT = Path("/etc/systemd/system/otelcol.service")
+LEGACY_MAC_LABEL = "com.ccdash.otelcol"
 
 
 def port_in_use(port):
@@ -232,21 +235,66 @@ def port_in_use(port):
             return False
 
 
-def local_conflict(platform, home=None, probe=port_in_use):
-    """Before a device is registered: who holds the local Collector ports?
+def command_output(command):
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.decode("utf-8", "replace") if result.returncode == 0 else None
 
-    A reinstall of this package replaces its own service, so it is never a conflict. Otherwise
-    report the busy ports and the historical personal Collector unit when one exists; install.py
-    still verifies that unit and its listeners before changing anything.
-    """
+
+def known_arguments(arguments, config):
+    return (isinstance(arguments, list) and len(arguments) >= 2 and isinstance(arguments[0], str)
+            and os.path.isabs(arguments[0]) and os.path.basename(arguments[0]) == "otelcol-contrib"
+            and arguments[1:] in (["--config=" + config], ["--config", config]))
+
+
+def verified_legacy(platform, home, user=None, output=command_output):
+    """The historical personal Collector that can still run, identified as install.py does: this
+    user's own ~/.otelcol/config.yaml, run by this user. install.py repeats the full ownership,
+    permission and port-owner checks before changing anything."""
+    config = str(home / ".otelcol/config.yaml")
+    if platform == "linux":
+        unit = LEGACY_LINUX_UNIT
+        if unit.is_symlink() or not unit.exists():
+            return None  # absent, or masked by an earlier migration
+        shown = output(["systemctl", "show", "otelcol.service",
+                        "--property=LoadState,FragmentPath,User,ExecStart"]) or ""
+        fields = dict(line.split("=", 1) for line in shown.splitlines() if "=" in line)
+        argv = re.findall(r"argv\[\]=([^;]*?) ;", fields.get("ExecStart", ""))
+        user = user or pwd.getpwuid(os.getuid()).pw_name
+        if (fields.get("LoadState") != "loaded" or fields.get("FragmentPath") != str(unit)
+                or fields.get("User") != user or len(argv) != 1 or not known_arguments(argv[0].split(" "), config)):
+            return None
+        return unit
+    plist = home / "Library/LaunchAgents" / (LEGACY_MAC_LABEL + ".plist")
+    if plist.is_symlink() or not plist.exists():
+        return None
+    try:
+        data = plistlib.loads(plist.read_bytes())
+    except Exception:
+        return None
+    if (not isinstance(data, dict) or data.get("Label") != LEGACY_MAC_LABEL
+            or not known_arguments(data.get("ProgramArguments"), config)):
+        return None
+    domain = "gui/" + str(os.getuid())
+    loaded = output(["launchctl", "print", domain + "/" + LEGACY_MAC_LABEL]) is not None
+    disabled_text = output(["launchctl", "print-disabled", domain]) or ""
+    override = re.search(r'"' + re.escape(LEGACY_MAC_LABEL) + r'"\s*=>\s*(\w+)', disabled_text)
+    disabled = override[1] in ("true", "disabled") if override else bool(data.get("Disabled", False))
+    return plist if loaded or not disabled else None  # unloaded and disabled: already migrated
+
+
+def local_conflict(platform, home=None, probe=port_in_use, legacy=verified_legacy):
+    """Before a device is registered: is a legacy Collector still able to run, or does another
+    service hold the local Collector ports? A reinstall of this package replaces its own
+    listeners, so only a legacy Collector matters then."""
     home = Path(home or os.path.expanduser("~"))
+    found = legacy(platform, home)
     if (home / ".local/share/ccdash-collector/state.json").exists():
-        return None
+        return {"ports": [port for port in LOCAL_PORTS if probe(port)], "legacy": found} if found else None
     ports = [port for port in LOCAL_PORTS if probe(port)]
-    if not ports:
-        return None
-    legacy = LEGACY_LINUX_UNIT if platform == "linux" else home / "Library/LaunchAgents/com.ccdash.otelcol.plist"
-    return {"ports": ports, "legacy": legacy if legacy.exists() and not legacy.is_symlink() else None}
+    return {"ports": ports, "legacy": found} if ports or found else None
 
 
 def confirm_migration(found, platform, ask, out):
@@ -256,7 +304,10 @@ def confirm_migration(found, platform, ask, out):
         raise EnrollmentError("로컬 포트 " + ports + "를 다른 서비스가 쓰고 있어 설치할 수 없습니다. `" + inspect
                               + "`로 확인하세요. 워크숍 수집기는 주최자에게 문의하세요. 기기는 등록하지 않았습니다.")
     out("")
-    out("이 기기에는 이전 방식 수집기(" + str(found["legacy"]) + ")가 포트 " + ports + "를 쓰고 있습니다.")
+    if ports:
+        out("이 기기에는 이전 방식 수집기(" + str(found["legacy"]) + ")가 포트 " + ports + "를 쓰고 있습니다.")
+    else:
+        out("이 기기에는 이전 방식 수집기(" + str(found["legacy"]) + ")가 설치되어 있어 다시 시작될 수 있습니다.")
     out("전환하면 기존 서비스와 설정을 백업한 뒤 중지하고, 같은 포트에서 새 수집기를 시작합니다. "
         "실패하면 기존 서비스로 되돌립니다. 기존 수집 사용자 ID는 그대로 유지합니다.")
     if platform == "linux":

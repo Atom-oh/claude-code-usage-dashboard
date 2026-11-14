@@ -36,6 +36,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 - Check local Collector port conflicts before browser approval, so a declined migration or
   an unrelated service holding the ports no longer leaves an approved, unused device to revoke.
+- Migrate a legacy Collector that can still run during a device reinstall on macOS and
+  Linux. Previously a reinstall skipped it, so the legacy service kept the local ports and
+  the device Collector restarted without ever delivering telemetry.
 
 ## [1.9.0] - 2026-11-14
 
