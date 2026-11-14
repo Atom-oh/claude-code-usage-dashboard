@@ -626,9 +626,99 @@
       "display_translation": "Unmodified Korean application UI with English technical menu names.",
       "privacy": "Fixed synthetic responses, reserved example.test identities and fictional prices.",
       "notes": "Select the masked Alice example.test identity to open detail."
+    },
+    {
+      "path": "img/tour-language-en.png",
+      "bytes": 422114,
+      "sha256": "181703bf7f9b605bbfd473c9a98ba6e7c8b625e1f5620212aaa33ea5c6dd0c90",
+      "name": "tour-language-en.png",
+      "capture_date": "2026-11-14",
+      "source_revision": "7bc26c09792d94634610a231a98a64aa601bbda2",
+      "capture_evidence": "video/product-tour/capture-evidence.json",
+      "fixture_source": "scripts/docs-capture/fixtures.mjs",
+      "display_translation": "Native five-language React interface; user and telemetry text remain unchanged.",
+      "privacy": "Synthetic reserved identities and fictional costs; no production data.",
+      "width": 2880,
+      "height": 2000,
+      "pixel_scale": 2
+    },
+    {
+      "path": "img/tour-session-environment.png",
+      "bytes": 52879,
+      "sha256": "0cd2973f505e3de77d646f90aed2e371a0f3b2a21fa89b8dc3dbd12af5e9504d",
+      "name": "tour-session-environment.png",
+      "capture_date": "2026-11-14",
+      "source_revision": "7bc26c09792d94634610a231a98a64aa601bbda2",
+      "capture_evidence": "video/product-tour/capture-evidence.json",
+      "fixture_source": "scripts/docs-capture/fixtures.mjs",
+      "display_translation": "Native five-language React interface; user and telemetry text remain unchanged.",
+      "privacy": "Synthetic reserved identities and fictional costs; no production data.",
+      "width": 660,
+      "height": 486,
+      "pixel_scale": 2
+    },
+    {
+      "path": "img/tour-task-list.png",
+      "bytes": 70994,
+      "sha256": "2b3e69565349b825f4e070c8ede7c1d0bc502d43637127540c38e6c2eaba692c",
+      "name": "tour-task-list.png",
+      "capture_date": "2026-11-14",
+      "source_revision": "7bc26c09792d94634610a231a98a64aa601bbda2",
+      "capture_evidence": "video/product-tour/capture-evidence.json",
+      "fixture_source": "scripts/docs-capture/fixtures.mjs",
+      "display_translation": "Native five-language React interface; user and telemetry text remain unchanged.",
+      "privacy": "Synthetic reserved identities and fictional costs; no production data.",
+      "width": 2240,
+      "height": 378,
+      "pixel_scale": 2
+    },
+    {
+      "path": "img/tour-task-trace.png",
+      "bytes": 381148,
+      "sha256": "598dfc2cb63a80cdecc4ea313a078be011edd3aeab81363a03c0203368e49e4a",
+      "name": "tour-task-trace.png",
+      "capture_date": "2026-11-14",
+      "source_revision": "7bc26c09792d94634610a231a98a64aa601bbda2",
+      "capture_evidence": "video/product-tour/capture-evidence.json",
+      "fixture_source": "scripts/docs-capture/fixtures.mjs",
+      "display_translation": "Native five-language React interface; user and telemetry text remain unchanged.",
+      "privacy": "Synthetic reserved identities and fictional costs; no production data.",
+      "width": 2880,
+      "height": 2000,
+      "pixel_scale": 2
+    },
+    {
+      "path": "img/tour-time-range.png",
+      "bytes": 34988,
+      "sha256": "a8b1dbda58111e6e27a09a00ac9802ffeabeb16e85f083cd8f57184e3c8f52fc",
+      "name": "tour-time-range.png",
+      "capture_date": "2026-11-14",
+      "source_revision": "7bc26c09792d94634610a231a98a64aa601bbda2",
+      "capture_evidence": "video/product-tour/capture-evidence.json",
+      "fixture_source": "scripts/docs-capture/fixtures.mjs",
+      "display_translation": "Native five-language React interface; user and telemetry text remain unchanged.",
+      "privacy": "Synthetic reserved identities and fictional costs; no production data.",
+      "width": 770,
+      "height": 482,
+      "pixel_scale": 2
+    },
+    {
+      "path": "img/tour-user-range.png",
+      "bytes": 138011,
+      "sha256": "5cd0febf46fcc9bfe54fa1889413a853e6666fa7d298b96a52256e2462a27f80",
+      "name": "tour-user-range.png",
+      "capture_date": "2026-11-14",
+      "source_revision": "7bc26c09792d94634610a231a98a64aa601bbda2",
+      "capture_evidence": "video/product-tour/capture-evidence.json",
+      "fixture_source": "scripts/docs-capture/fixtures.mjs",
+      "display_translation": "Native five-language React interface; user and telemetry text remain unchanged.",
+      "privacy": "Synthetic reserved identities and fictional costs; no production data.",
+      "width": 2240,
+      "height": 952,
+      "pixel_scale": 2
     }
   ],
-  "release_scope": "Historical October 24 video release. The current English demo is recorded in current_demo.",
+  "release_scope": "Historical October 24 video. current_demo preserves the short v1.8.0 example; detailed_tour owns the full product introduction.",
   "current_demo": {
     "created_date": "2026-11-14",
     "language": "en",
@@ -901,13 +991,14 @@
       ]
     },
     "covers_release": "v1.8.0",
-    "feature_scope": "v1.8.0 time selection, drag-to-task navigation, device installation and unit-cost guides, plus existing Task Trace and session-environment views."
+    "feature_scope": "v1.8.0 time selection, drag-to-task navigation, device installation and unit-cost guides, plus existing Task Trace and session-environment views.",
+    "role": "Historical 48-second release example, retained as a separate reproducible composition."
   },
   "delivery": {
     "manifest_repository_path": "video/docs-demo/media.lock.json",
-    "snapshot_commit": "3270b100745af2a862017b49b252abd8fb89df9f",
-    "snapshot_tag": "docs-media-20261114-visual-guide-r5",
-    "verification": "scripts/fetch-docs-media.py validates file size and SHA256 before Pages upload or local rendering."
+    "snapshot_commit": "d27a031727e624d13e67f7d53f54502e54f545f3",
+    "snapshot_tag": "docs-media-20261114-product-tour-r6",
+    "verification": "Exact allowlist, per-file byte bounds and SHA256; cached assets verified offline before publication."
   },
   "previous_demo": {
     "created_date": "2026-11-10",
@@ -1013,5 +1104,589 @@
     },
     "validation": "All 27 PNGs fully decode and are nonblank. Synthetic costs, tokens, exact-user filters, task cost bases and LMDI terms reconcile. Zero capture browser/console errors or unexpected requests. Final guide browser verification is recorded separately in the translation ledger.",
     "locale_validation": "Five locales including Spanish; desktop/mobile image enlargement and contents controls verified."
+  },
+  "detailed_tour": {
+    "date": "2026-11-14",
+    "language": "ko",
+    "caption_languages": [
+      "en",
+      "ko"
+    ],
+    "default_caption": "en",
+    "composition": "video/product-tour/index.html",
+    "scope": "All menus and practical usage, user/Trace, cost, tools and collection workflows; the collector scene demonstrates the retained manual-token installation path.",
+    "source_revision": "7bc26c09792d94634610a231a98a64aa601bbda2",
+    "source_state": "Synthetic captures from the five-language feature revision, combined with the separately frozen illustrated guide captures; this is not proof of a deployed application revision.",
+    "duration_seconds": 549.4166666666666,
+    "fps": 24,
+    "frames": 13186,
+    "scene_count": 25,
+    "chapters": [
+      {
+        "title": "01 · 시작하기",
+        "start": 0.0,
+        "frame": 0
+      },
+      {
+        "title": "02 · 전체 흐름 읽기",
+        "start": 87.29166666666667,
+        "frame": 2095
+      },
+      {
+        "title": "03 · 사용자와 Trace",
+        "start": 144.41666666666666,
+        "frame": 3466
+      },
+      {
+        "title": "04 · 비용과 효율",
+        "start": 262.7916666666667,
+        "frame": 6307
+      },
+      {
+        "title": "05 · 도구와 세션 환경",
+        "start": 352.0,
+        "frame": 8448
+      },
+      {
+        "title": "06 · 운영과 다음 행동",
+        "start": 436.5833333333333,
+        "frame": 10478
+      }
+    ],
+    "privacy": "Synthetic fixtures only, reserved identities and fictional costs; example architecture, no customer telemetry.",
+    "render": {
+      "framework": "HyperFrames 0.7.77",
+      "dimensions": [
+        1920,
+        1080
+      ],
+      "workers": 2,
+      "capture_path": "software screenshot renderer",
+      "validation": "Strict check: 0 errors, 0 warnings; all 25 scene midpoints inspected."
+    },
+    "audio": {
+      "provider": "Amazon Polly",
+      "voice": "Seoyeon",
+      "engine": "neural",
+      "language": "ko-KR",
+      "clips": 25,
+      "music": "Original deterministic sine-pad composition, ducked during narration.",
+      "mix": "Remotion 4.0.542 audio-only composition",
+      "measured_integrated_lufs": -18.6,
+      "measured_true_peak_dbfs": -5.3,
+      "generation": "Explicit paid audio:generate only; checks, renders and hydration use cached files."
+    },
+    "files": [
+      {
+        "path": "img/product-tour-ko-poster.jpg",
+        "bytes": 126161,
+        "sha256": "356139c68b26e8692fa3991e05854d9ce8aee2b452a305030d73d3e861204430"
+      },
+      {
+        "path": "video/product-tour-ko-20261114.mp4",
+        "bytes": 46138811,
+        "sha256": "4a6c8092dc79638a0570b23073c55e8be55c358d3b7335e8f8276dee8ceb19ed"
+      },
+      {
+        "path": "video/product-tour-ko-20261114.webm",
+        "bytes": 25741911,
+        "sha256": "a18d01222ba39c26e637f6d70acdf42a5b3ca66a52e51bdd8c2f01b4079aad96"
+      },
+      {
+        "path": "video/product-tour-en-20261114.vtt",
+        "bytes": 11553,
+        "sha256": "53ec68de51ea68e0e4125b2c268aeed138c8de6088b358f8f713d4c9e160f7f5"
+      },
+      {
+        "path": "video/product-tour-ko-20261114.vtt",
+        "bytes": 12851,
+        "sha256": "4e15751a35732140776512d2cff8b3854f28b1c66749641b15bc682d49aade88"
+      }
+    ],
+    "audio_assets": [
+      {
+        "path": "video/product-tour/audio/analytics.mp3",
+        "bytes": 309644,
+        "sha256": "889476c823bfd70887e7395a53893c8765202d4b439f8c8e48ddbbd44baac740"
+      },
+      {
+        "path": "video/product-tour/audio/architecture.mp3",
+        "bytes": 289484,
+        "sha256": "cbc5385858e422293a42580ed34fcb294ae22cc00a74d22e985c21b4260bab49"
+      },
+      {
+        "path": "video/product-tour/audio/background.mp3",
+        "bytes": 6594092,
+        "sha256": "65b3872e461b725ec864c39885babba3d3dd99ace3e109eec5825a0ba39e87ce"
+      },
+      {
+        "path": "video/product-tour/audio/call.mp3",
+        "bytes": 292652,
+        "sha256": "9ca060a643adbdfa453ed721936d5f88609b0d42ec0257439d150117e1e2bcbd"
+      },
+      {
+        "path": "video/product-tour/audio/collector.mp3",
+        "bytes": 301292,
+        "sha256": "c872336130c64f26e1b3bd34855b7117d313d0ccbc4d9386b46ac208ff3a8cb9"
+      },
+      {
+        "path": "video/product-tour/audio/context.mp3",
+        "bytes": 279980,
+        "sha256": "ba456fe095911235c3a6f30b6ccf246d08013ade0783a8da72e984065b1264a3"
+      },
+      {
+        "path": "video/product-tour/audio/cost.mp3",
+        "bytes": 303308,
+        "sha256": "3b6d862d0e2f5587a018fd15c8feaec541790074c0aceb8882258fffc49884f8"
+      },
+      {
+        "path": "video/product-tour/audio/economics.mp3",
+        "bytes": 299852,
+        "sha256": "0052cf6ee18811ef6732b2657c206ed3bf1581c8eadf86c2da205c2e41474a0e"
+      },
+      {
+        "path": "video/product-tour/audio/executive.mp3",
+        "bytes": 222956,
+        "sha256": "ab5a78d78000c444a4d463c73485964d7841823aa885e140d258ea5d09785913"
+      },
+      {
+        "path": "video/product-tour/audio/finish.mp3",
+        "bytes": 242252,
+        "sha256": "8657a2a024a47febc64a42592f2937cc700d243d8f6a6a719f1a67bedb050309"
+      },
+      {
+        "path": "video/product-tour/audio/installation.mp3",
+        "bytes": 218348,
+        "sha256": "d0a832ef4859b15e6d6fb455fe57668d41b7a7595dbf5301da2d535d07caeb33"
+      },
+      {
+        "path": "video/product-tour/audio/language.mp3",
+        "bytes": 188684,
+        "sha256": "3c96d91f9081192f61484808c956db1bd7b1845b5f34abdd56d2f46193ad5a28"
+      },
+      {
+        "path": "video/product-tour/audio/mcp.mp3",
+        "bytes": 204812,
+        "sha256": "5599314b87bcfd7a119ead800874b1a984f6af7bdbb872eba9962b3cc6792995"
+      },
+      {
+        "path": "video/product-tour/audio/overview.mp3",
+        "bytes": 231884,
+        "sha256": "b03bce95ee0c67e6615a6d212f89bad0fc00fad7baa81f908185669f05c56b55"
+      },
+      {
+        "path": "video/product-tour/audio/plugins.mp3",
+        "bytes": 218636,
+        "sha256": "1fd430b8931d1019b515d2844c70599579236b85e6bc16a9a8f33d51b52f9701"
+      },
+      {
+        "path": "video/product-tour/audio/range.mp3",
+        "bytes": 247724,
+        "sha256": "107f49b5b447006b4ac195d8c674e7ec092257c21007f2fadefa96f0fb9ed0bb"
+      },
+      {
+        "path": "video/product-tour/audio/reliability.mp3",
+        "bytes": 208268,
+        "sha256": "82466707d645369e2c848eb92e32b02f638927e8b30215e583b45e154b085f5e"
+      },
+      {
+        "path": "video/product-tour/audio/skills.mp3",
+        "bytes": 241388,
+        "sha256": "d1dd98cc4d422e85c2d3dbf171b6d6db38935a6e1fe5cd1fa7db047fa02b714d"
+      },
+      {
+        "path": "video/product-tour/audio/tools.mp3",
+        "bytes": 290348,
+        "sha256": "f20359b5bb7d83146160207a733f112047015d89f7ded7cf7f968837b0c21f7b"
+      },
+      {
+        "path": "video/product-tour/audio/trace.mp3",
+        "bytes": 294668,
+        "sha256": "d34ad6d963127fa5087c4d182d94735e4e9b9ae8ea384e3f5c9a79bb9668a38b"
+      },
+      {
+        "path": "video/product-tour/audio/trends.mp3",
+        "bytes": 185804,
+        "sha256": "0d18a9672910c1595277c73dc5d262bb11b038bea545de9256ce4e7fd826cdac"
+      },
+      {
+        "path": "video/product-tour/audio/unit.mp3",
+        "bytes": 194156,
+        "sha256": "54a53fb57e82ed5899db1505b0c6b2aa574a5290267d33c0672cd6b5ca604b19"
+      },
+      {
+        "path": "video/product-tour/audio/usage.mp3",
+        "bytes": 213452,
+        "sha256": "6740d75258f98dd2c049ebd3b1928ec28d4b2c11bafd327e0d3d268bd232032f"
+      },
+      {
+        "path": "video/product-tour/audio/users.mp3",
+        "bytes": 231020,
+        "sha256": "1e99c3640dd0927bf49e459eca61b72db27e7a74b8d168770f74aa7cd5c9d0e8"
+      },
+      {
+        "path": "video/product-tour/audio/welcome.mp3",
+        "bytes": 218060,
+        "sha256": "3968c52be8782466455949b0078af0280f9f77f8d30a687a7239284b69b1f799"
+      },
+      {
+        "path": "video/product-tour/audio/window.mp3",
+        "bytes": 291500,
+        "sha256": "6601d0ab8cec42aeb7fb561337be2acc974c29d774bcb9b1931781b83624854c"
+      }
+    ],
+    "runtime_assets": [
+      {
+        "path": "video/docs-demo/runtime/gsap.min.js",
+        "bytes": 72777,
+        "sha256": "19e3ad578c9c583ddf9bdca2ad87bb55c3d70b331058e28abacab898f799b2ee"
+      },
+      {
+        "path": "site/assets/fonts/PretendardVariable.woff2",
+        "bytes": 2057688,
+        "sha256": "9599f12fd42fc0bce1cd50b47a0c022e108d7aa64dd0d1bb0ed44f3282d900b4"
+      }
+    ],
+    "source_files": [
+      {
+        "path": "video/product-tour/AGENTS.md",
+        "bytes": 976,
+        "sha256": "3a582e7bd4281999eabd8ebb0ee92000116fb95924745f8e60d006415f6100c7"
+      },
+      {
+        "path": "video/product-tour/BRIEF.md",
+        "bytes": 1946,
+        "sha256": "5475231ace8c0f03ff8da2d756a2d16e437b32798f05ba595d2218ebcf513d30"
+      },
+      {
+        "path": "video/product-tour/CLAUDE.md",
+        "bytes": 36,
+        "sha256": "f0b1070f1b61c476ab8f26e923b8e7359c7c5822af1a6c03efd70f10965da15d"
+      },
+      {
+        "path": "video/product-tour/README.md",
+        "bytes": 2390,
+        "sha256": "9a5618489f6ab2cc44d76b2a125558ac9e97e1b6bfd188d030b5fe51438faab1"
+      },
+      {
+        "path": "video/product-tour/STORYBOARD.md",
+        "bytes": 8219,
+        "sha256": "f2ae7e58829f6f21ae6037aa4e89a15008726dfe1c2aad0328891c4933def219"
+      },
+      {
+        "path": "video/product-tour/audio.json",
+        "bytes": 17327,
+        "sha256": "87e9c76e635deaa6da4708f564f934d4dc1bba6cd14c240236d75e78f0068e3c"
+      },
+      {
+        "path": "video/product-tour/build.py",
+        "bytes": 10303,
+        "sha256": "954969da93e0fb47fd441e0c5b7eba9272566914c7e522db96cdd636ce77a78c"
+      },
+      {
+        "path": "video/product-tour/camera.js",
+        "bytes": 1035,
+        "sha256": "a2facbe86c6469c296b6fb9a21a0d993bb71283f41e95e93cd05f1b330fbff14"
+      },
+      {
+        "path": "video/product-tour/captions.en.json",
+        "bytes": 8907,
+        "sha256": "8a7f0c5e333022a88241525b6d1ff8e998f2def9c9606516f8ee83dc4abf7979"
+      },
+      {
+        "path": "video/product-tour/captions.en.vtt",
+        "bytes": 11553,
+        "sha256": "53ec68de51ea68e0e4125b2c268aeed138c8de6088b358f8f713d4c9e160f7f5"
+      },
+      {
+        "path": "video/product-tour/captions.ko.vtt",
+        "bytes": 12851,
+        "sha256": "4e15751a35732140776512d2cff8b3854f28b1c66749641b15bc682d49aade88"
+      },
+      {
+        "path": "video/product-tour/capture-evidence.json",
+        "bytes": 5568,
+        "sha256": "a390c6035f7367d1dd64c71bebe167d2c6744e81c44b888b735da3ec2bdc7a68"
+      },
+      {
+        "path": "video/product-tour/capture.mjs",
+        "bytes": 5496,
+        "sha256": "7b3a0053a174d9f7e9226f90c649505476675e65a15349f8a1190cc262207e8d"
+      },
+      {
+        "path": "video/product-tour/chapters.json",
+        "bytes": 580,
+        "sha256": "76c48098c1220c3417064b681958c52b3dfbe5bfc5daa2a4019f57410abc6631"
+      },
+      {
+        "path": "video/product-tour/compositions/analytics.html",
+        "bytes": 1948,
+        "sha256": "e0b730ce175135443f3ecba697c9f7c207d8abaef066894fc0171b536ffafd18"
+      },
+      {
+        "path": "video/product-tour/compositions/architecture.html",
+        "bytes": 1947,
+        "sha256": "dca28e7dc22046f219e61fe78ddb7b272889805f10e3c1748c9a8c373d6caff4"
+      },
+      {
+        "path": "video/product-tour/compositions/call.html",
+        "bytes": 2440,
+        "sha256": "5e38e6101ccda5a293d942d840f72ca718f4f99fd21773e5078783400c89c40a"
+      },
+      {
+        "path": "video/product-tour/compositions/collector.html",
+        "bytes": 2793,
+        "sha256": "f362a7544443eb116bdb2e0e6195639d0fb7bee01f0da1b44c31f9b4fc192cad"
+      },
+      {
+        "path": "video/product-tour/compositions/context.html",
+        "bytes": 3789,
+        "sha256": "42c49611c7790977309c6611e43c31b9ddefbc56a22992b3990ee5e0c16899ee"
+      },
+      {
+        "path": "video/product-tour/compositions/cost.html",
+        "bytes": 2710,
+        "sha256": "9cc88fe23a09b8024cdf15fc7f8c3e6ce3f41fe6cfd46d4fa687c78368c98853"
+      },
+      {
+        "path": "video/product-tour/compositions/economics.html",
+        "bytes": 2854,
+        "sha256": "3686ad48c9e27178fe7b3e74f962fe7cd941e602c0d006caaddf5bad9cc8eb4b"
+      },
+      {
+        "path": "video/product-tour/compositions/executive.html",
+        "bytes": 2862,
+        "sha256": "7e35c39d2ae59f35d4c540768677145078be6b65718e16cc5ae055a20f86d975"
+      },
+      {
+        "path": "video/product-tour/compositions/finish.html",
+        "bytes": 2258,
+        "sha256": "3d7de2ece3c8774ce483c0e4d45d531a56c708e0485d1952a3cd2658d53b6006"
+      },
+      {
+        "path": "video/product-tour/compositions/installation.html",
+        "bytes": 1996,
+        "sha256": "ec895651b238533c47087287d9b59df2c7638b012bef0d0c6be4323526114c90"
+      },
+      {
+        "path": "video/product-tour/compositions/language.html",
+        "bytes": 1934,
+        "sha256": "020754e2187cc7206a90f9034eb03a21b91a69a6bb23e0b60e58cbcaf68bb185"
+      },
+      {
+        "path": "video/product-tour/compositions/mcp.html",
+        "bytes": 1846,
+        "sha256": "2998039d31db67c511b5c10072dee1e29d4a023998773c205c1a1539945d901f"
+      },
+      {
+        "path": "video/product-tour/compositions/overview.html",
+        "bytes": 2835,
+        "sha256": "c9afa2675248117973cdb6183545925702d653ab35538a53982c0a86d0e14024"
+      },
+      {
+        "path": "video/product-tour/compositions/plugins.html",
+        "bytes": 2773,
+        "sha256": "c2e466ed08f92233a78be54aa5dc3c0bce69157352143cd407c1dcdf7fec8d87"
+      },
+      {
+        "path": "video/product-tour/compositions/range.html",
+        "bytes": 2765,
+        "sha256": "a378296d872ad7a6d02cbc07953ec39e947edfc78e0ec3a060f959d7a16b6db5"
+      },
+      {
+        "path": "video/product-tour/compositions/reliability.html",
+        "bytes": 1978,
+        "sha256": "23e7f07496609f559f2aee48675f57d3c7df8276c6980e965e7295809419867f"
+      },
+      {
+        "path": "video/product-tour/compositions/skills.html",
+        "bytes": 1880,
+        "sha256": "0bf9140cc7a491c5007064f1822c27f93234664f6bc73c3abc2c0f84eb401f0a"
+      },
+      {
+        "path": "video/product-tour/compositions/tools.html",
+        "bytes": 1913,
+        "sha256": "6b63628bf08b778a71d8f2a2c2c18c6848cfcb0244aea68664b5e400594c574f"
+      },
+      {
+        "path": "video/product-tour/compositions/trace.html",
+        "bytes": 1938,
+        "sha256": "40ae003e001a7421a00a5a2064dd8525f39eb57a7b50fdf169c9047ba85d8dbe"
+      },
+      {
+        "path": "video/product-tour/compositions/trends.html",
+        "bytes": 2805,
+        "sha256": "e89767ca33eeccd34c69eb85c9aab2833c30f9a84576039f1906815d241dc4e1"
+      },
+      {
+        "path": "video/product-tour/compositions/unit.html",
+        "bytes": 1863,
+        "sha256": "fb180ec43ff4839327af44c3a8f1cbb80fbb152b27f415d857cf38fbca1b5b17"
+      },
+      {
+        "path": "video/product-tour/compositions/usage.html",
+        "bytes": 1897,
+        "sha256": "aa574930715192e105eada2f6e933daecd3f4a7b7e9ec66a33fdba5b4c571fff"
+      },
+      {
+        "path": "video/product-tour/compositions/users.html",
+        "bytes": 2718,
+        "sha256": "519661c9146da9dc89d35dcabcfdffb57e0413b7a806fe8837bdd9abd7cc5ab0"
+      },
+      {
+        "path": "video/product-tour/compositions/welcome.html",
+        "bytes": 1924,
+        "sha256": "134dc724c0684cb0a19ac56d0a0c78d8f12a1a084bba436ab155683bad402ca9"
+      },
+      {
+        "path": "video/product-tour/compositions/window.html",
+        "bytes": 1894,
+        "sha256": "22bf44f63b72ba75463b1d4b572b45f99736ceb28b1a7dafa61ed754fb891e43"
+      },
+      {
+        "path": "video/product-tour/frame.md",
+        "bytes": 983,
+        "sha256": "d37288977df84583b9dcf87ccd4eb3dca4bbfa3515242eac5b24b2ac3d661a38"
+      },
+      {
+        "path": "video/product-tour/hyperframes.json",
+        "bytes": 318,
+        "sha256": "53dbce1e19aa713cbb12ee0bc4d206143b45ab15e6ffbfcaa8f69572d4d24d50"
+      },
+      {
+        "path": "video/product-tour/index.html",
+        "bytes": 6943,
+        "sha256": "86fe41283d87ac6fe79f78f5f0a6591034c05a214a678e7647443eaf31fe34d9"
+      },
+      {
+        "path": "video/product-tour/media.test.mjs",
+        "bytes": 2521,
+        "sha256": "3478b62a4215c27e5de82fe11dde83cbdcaf855e3301e4e4c0500e38689ed425"
+      },
+      {
+        "path": "video/product-tour/meta.json",
+        "bytes": 95,
+        "sha256": "33901d0bd3dd7ef301a97f664f2178d8cb88ffb5654303faabbe706e4303d628"
+      },
+      {
+        "path": "video/product-tour/package-lock.json",
+        "bytes": 144433,
+        "sha256": "8d92615311b8dbeee8f0e67d39172946fcb8ec4a17002fdda5aafc4733069dbb"
+      },
+      {
+        "path": "video/product-tour/package.json",
+        "bytes": 724,
+        "sha256": "4d6951680e0d05c028358adda308825336858abc532531da93374ef3211d245e"
+      },
+      {
+        "path": "video/product-tour/prepare-audio.py",
+        "bytes": 8987,
+        "sha256": "1c6de0542fb9281e4ac1c73ed310cb15a92ea4e1a25d399a6a17d219206fc745"
+      },
+      {
+        "path": "video/product-tour/registry.json",
+        "bytes": 461,
+        "sha256": "516ed6cfd2c8c7ad9b3690483ed084a61818fca774f6e52df1d67aa09bde8db3"
+      },
+      {
+        "path": "video/product-tour/remotion/index.jsx",
+        "bytes": 798,
+        "sha256": "d98b4497827e073ae7478583078f565f6ac0479d121c6d66c89abfdf81638667"
+      },
+      {
+        "path": "video/product-tour/remotion/mix.mjs",
+        "bytes": 510,
+        "sha256": "009bc6a3ec79232c8ac8a61ad47c686006bbcfa9d9ed0895f408acf4b5555c02"
+      },
+      {
+        "path": "video/product-tour/remotion.config.js",
+        "bytes": 75,
+        "sha256": "380342f0073f2216a399bf9f11dfb4c0ab191019de5322b1fe68d94d75a1b3ed"
+      },
+      {
+        "path": "video/product-tour/script.json",
+        "bytes": 18279,
+        "sha256": "b7909fb2ec7f62ba8a7e8a3a8f2a54a6832f4db102ac27cec5604ea83d1455d5"
+      },
+      {
+        "path": "video/product-tour/styles.css",
+        "bytes": 2354,
+        "sha256": "426a365b6d8b053c0baa477013891387ed27217fb97376bedd523896e3ea17e3"
+      },
+      {
+        "path": "video/product-tour/timing.json",
+        "bytes": 12107,
+        "sha256": "ec9fd027f8df50cee6eabfa74a1ac6e510f6b7c00faa97d4dd0d6ae5ec91b2f5"
+      },
+      {
+        "path": "video/product-tour/translations.json",
+        "bytes": 1776,
+        "sha256": "9f56b92bd2b9f439b404aa6e620fd93db345d39739b46ae80a8cca02ae426c1f"
+      },
+      {
+        "path": "video/product-tour/visual-evidence.json",
+        "bytes": 11668,
+        "sha256": "e8080af81fcd22998f9c9f058611725e177b129200fa15f323c4dfcf061212dc"
+      }
+    ],
+    "translations": "video/product-tour/translations.json",
+    "encoded_verification": {
+      "encodes": [
+        {
+          "format": "mp4",
+          "duration": 549.416667,
+          "frames": 13186,
+          "dimensions": [
+            1920,
+            1080
+          ],
+          "fps": 24,
+          "video_codec": "h264",
+          "audio_codec": "aac",
+          "bytes": 46138811,
+          "sha256": "4a6c8092dc79638a0570b23073c55e8be55c358d3b7335e8f8276dee8ceb19ed",
+          "full_decode": true
+        },
+        {
+          "format": "webm",
+          "duration": 549.424,
+          "frames": 13186,
+          "dimensions": [
+            1920,
+            1080
+          ],
+          "fps": 24,
+          "video_codec": "vp9",
+          "audio_codec": "opus",
+          "bytes": 25741911,
+          "sha256": "a18d01222ba39c26e637f6d70acdf42a5b3ca66a52e51bdd8c2f01b4079aad96",
+          "full_decode": true
+        }
+      ],
+      "scene_midpoints_per_encode": 25,
+      "all_scene_images_nonblank": true,
+      "cross_encode_comparisons": 25,
+      "maximum_allowed_mean_pixel_error": 8,
+      "embedded_english_cues": 92,
+      "embedded_text_matches_source": true
+    },
+    "browser_verification": {
+      "local_players_checked": 10,
+      "locales": [
+        "en",
+        "zh-CN",
+        "ja",
+        "es",
+        "ko"
+      ],
+      "widths": [
+        1440,
+        390
+      ],
+      "chapter_seeks": 15,
+      "english_cues": 92,
+      "errors": 0,
+      "evidence_sha256": "a01e1660351c5b412272bb29e7695efae8f9e8d7f9e7cb29b7996eab0ef4e2d3"
+    }
   }
 }

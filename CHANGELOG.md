@@ -17,6 +17,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Detailed nine-minute product tour with Korean narration, English captions and chapter navigation in all five guide languages; synthetic screenshots cover every menu, user/task traces, cost interpretation and tools. The earlier short release video remains available.
 - Complete localization across all application menus, token economics, user and
   cost analysis, tool usage, collector setup and installation status. Preserve
   selected decision-chart legend emphasis when changing language. Keep Codex

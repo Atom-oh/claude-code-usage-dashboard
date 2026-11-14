@@ -1,0 +1,405 @@
+WEBVTT
+
+welcome-1
+00:00:00.554 --> 00:00:07.559
+ccdash is a dashboard for viewing Claude Code and Codex usage, costs, and workflows
+together.
+
+welcome-2
+00:00:07.599 --> 00:00:14.521
+We’ll start with how to read the opening screen, then follow user activity, model calls,
+and tool usage.
+
+welcome-3
+00:00:14.561 --> 00:00:18.521
+The values on screen are example data for explaining the features.
+
+architecture-1
+00:00:19.970 --> 00:00:28.450
+In this example setup, a local Collector gathers telemetry and stores it in ClickHouse
+through an authenticated ingestion path.
+
+architecture-2
+00:00:28.490 --> 00:00:33.500
+The browser displays results queried by the Express API.
+
+architecture-3
+00:00:33.540 --> 00:00:37.975
+Browser sign-in and device ingestion credentials are separate.
+
+architecture-4
+00:00:38.015 --> 00:00:43.889
+The two Express boxes in the diagram represent logical roles within the same
+application.
+
+language-1
+00:00:45.345 --> 00:00:48.825
+Choose from five languages at the bottom of the sidebar.
+
+language-2
+00:00:48.865 --> 00:00:51.875
+On mobile, open the menu to make your selection.
+
+language-3
+00:00:51.915 --> 00:00:57.562
+Your selection persists across visits, and your open work and query period stay as they
+are.
+
+language-4
+00:00:57.602 --> 00:01:00.864
+The guide also opens in the same language.
+
+window-1
+00:01:02.179 --> 00:01:07.471
+Before comparing, align the client, backend, and supported user and model filters.
+
+window-2
+00:01:07.511 --> 00:01:13.546
+The date range lets you enter start and end times to the second, as well as dates.
+
+window-3
+00:01:13.586 --> 00:01:19.309
+Time fields use your browser’s time zone; the date picker uses the UTC calendar.
+
+window-4
+00:01:19.349 --> 00:01:26.391
+Share links preserve the same interval, but check the server’s aggregation interval and
+ingestion delay separately.
+
+overview-1
+00:01:27.845 --> 00:01:32.600
+In Overview, start with costs, observed tokens, sessions, and users.
+
+overview-2
+00:01:32.640 --> 00:01:36.675
+The trend below is a starting point for finding busy periods.
+
+overview-3
+00:01:36.715 --> 00:01:41.012
+Read the cost basis and partial-total indicators beside the totals.
+
+overview-4
+00:01:41.052 --> 00:01:46.964
+Unavailable data is not zero, and the presence of values alone does not mean collection
+is complete.
+
+executive-1
+00:01:48.429 --> 00:01:53.571
+Use Executive for a quick view of overall usage and cost composition.
+
+executive-2
+00:01:53.611 --> 00:01:59.046
+After aligning the period and collection scope, compare the client and model mix.
+
+executive-3
+00:01:59.086 --> 00:02:02.871
+Channels in Claude details are distinctions inferred from sessions.
+
+executive-4
+00:02:02.911 --> 00:02:06.804
+They do not represent experiment groups or individual performance.
+
+trends-1
+00:02:08.187 --> 00:02:14.492
+In Trends, compare with the previous period to see when tokens, costs, and activity
+changed.
+
+trends-2
+00:02:14.532 --> 00:02:23.541
+When you spot a spike, narrow to a shorter interval and open Users or Cost with the same
+filters to investigate.
+
+users-1
+00:02:24.958 --> 00:02:31.612
+Select a user row in Users to see that user’s totals, usage trend, and activity periods.
+
+users-2
+00:02:31.652 --> 00:02:38.887
+Finding users with high costs is a starting point for investigating work, not evaluating
+performance.
+
+users-3
+00:02:38.927 --> 00:02:44.017
+Distinguish the masked display from actual API access permissions.
+
+range-1
+00:02:45.470 --> 00:02:51.637
+Drag across the usage and cost charts in user details to narrow to the time range you
+want.
+
+range-2
+00:02:51.677 --> 00:02:58.362
+User details stay open, while the top 20 work items update to that period.
+
+range-3
+00:02:58.402 --> 00:03:01.625
+Select a bucket by clicking a point.
+
+range-4
+00:03:01.665 --> 00:03:05.909
+Check the model and workflow labels, then open the work you want to inspect.
+
+trace-1
+00:03:07.333 --> 00:03:13.225
+In Trace details, review total tokens, cost, and call count as you follow the timeline.
+
+trace-2
+00:03:13.265 --> 00:03:18.900
+Even when Explore types match, separate agents appear in separate lanes.
+
+trace-3
+00:03:18.940 --> 00:03:24.125
+Distinguish model calls, tool executions, and periods spent waiting for user approval.
+
+trace-4
+00:03:24.165 --> 00:03:31.696
+Use the cumulative cost chart and lanes together to find when and which agent
+accumulated costs.
+
+call-1
+00:03:33.012 --> 00:03:40.129
+Select a call bar to see the model, duration, input and output tokens, and cache tokens.
+
+call-2
+00:03:40.169 --> 00:03:45.067
+The cost source indicates whether it was reported by the client or calculated as an
+estimate.
+
+call-3
+00:03:45.107 --> 00:03:48.579
+Sources can differ even within the same work item.
+
+call-4
+00:03:48.619 --> 00:03:53.292
+TTFT and attempt details appear only when collected.
+
+call-5
+00:03:53.332 --> 00:03:57.320
+Do not interpret blank values as zero or as meaning there were no retries.
+
+context-1
+00:03:58.687 --> 00:04:03.617
+Select a point in the context graph to return to that call.
+
+context-2
+00:04:03.657 --> 00:04:07.879
+The model calls table helps highlight related calls.
+
+context-3
+00:04:07.919 --> 00:04:15.817
+In the session environment, check observed MCP connection status, loaded plugins, and
+the context of the first call.
+
+context-4
+00:04:15.857 --> 00:04:21.889
+Information that is not collected, such as the token size of each tool definition,
+cannot be determined from this screen alone.
+
+cost-1
+00:04:23.270 --> 00:04:28.400
+In Cost, compare how costs are distributed across models, users, and backends.
+
+cost-2
+00:04:28.440 --> 00:04:32.337
+First check the basis for reported and estimated costs.
+
+cost-3
+00:04:32.377 --> 00:04:38.187
+Claude reported values, AWS list-price estimates, and calculation diagnostics have
+different meanings.
+
+cost-4
+00:04:38.227 --> 00:04:41.762
+None of these values is an invoice or guarantees the actual bill.
+
+cost-5
+00:04:41.802 --> 00:04:48.416
+Zero-cost items appear in a collapsed list; items with unknown costs are marked
+unestimated.
+
+economics-1
+00:04:49.720 --> 00:04:57.600
+Productivity’s cost equation links users, sessions, turns, requests, tokens, and unit
+prices to explain total cost.
+
+economics-2
+00:04:57.640 --> 00:05:03.300
+The driver breakdown shows which factors increased or decreased the amount from the
+previous period.
+
+economics-3
+00:05:03.340 --> 00:05:08.225
+Even when unit prices fall, total costs can rise if usage increases by more.
+
+economics-4
+00:05:08.265 --> 00:05:14.628
+These are observed measures of activity and efficiency, not causal evidence of
+investment impact or employee productivity assessments.
+
+unit-1
+00:05:16.095 --> 00:05:22.512
+Compare cost per user, session, or amount of code only when the required denominator and
+collection scope are available.
+
+unit-2
+00:05:22.552 --> 00:05:28.262
+The dashed line in the unit-cost trend is a visual guide connecting unknown intervals
+for readability.
+
+unit-3
+00:05:28.302 --> 00:05:32.070
+Those intervals are not treated as measurements or calculated as zero.
+
+usage-1
+00:05:33.500 --> 00:05:40.117
+In Usage, compare the mix of input, output, and cache tokens alongside tool usage.
+
+usage-2
+00:05:40.157 --> 00:05:46.942
+Check whether cache and reasoning tokens are subsets of total usage to avoid double
+counting.
+
+usage-3
+00:05:46.982 --> 00:05:51.095
+Also look at changes in request counts and context size.
+
+tools-1
+00:05:52.479 --> 00:05:59.721
+In the tools table in Claude details, compare executions, errors, and latency to find
+recurring failures.
+
+tools-2
+00:05:59.761 --> 00:06:03.271
+The permission decision table is different from tool execution results.
+
+tools-3
+00:06:03.311 --> 00:06:09.946
+Approval does not mean execution succeeded; distinguish automatic approval from
+requiring user approval each time.
+
+tools-4
+00:06:09.986 --> 00:06:16.545
+If you find a problem period or user, return to the work Trace to inspect the actual
+calls.
+
+mcp-1
+00:06:18.062 --> 00:06:25.217
+In MCP, see which servers and connectors were used and compare their calls and success
+rates.
+
+mcp-2
+00:06:25.257 --> 00:06:29.517
+Connection status and actual usage are different kinds of information.
+
+mcp-3
+00:06:29.557 --> 00:06:34.875
+If you see failures, also check that work’s tool executions and session environment.
+
+skills-1
+00:06:36.292 --> 00:06:40.746
+In Skills, compare which skills were used and how they were invoked.
+
+skills-2
+00:06:40.786 --> 00:06:46.384
+Distinguish direct calls, automatic activation, and continuation from another skill.
+
+skills-3
+00:06:46.424 --> 00:06:51.884
+Costs attributed to a skill are not separate charges to add again to total costs.
+
+skills-4
+00:06:51.924 --> 00:06:56.215
+Read this as telemetry for finding related sessions and work.
+
+plugins-1
+00:06:57.604 --> 00:07:02.121
+The plugin list shows which extensions were loaded into a session.
+
+plugins-2
+00:07:02.161 --> 00:07:06.896
+Being loaded does not by itself mean a feature was executed.
+
+plugins-3
+00:07:06.936 --> 00:07:15.694
+Check the session environment along with model, agent, and command configuration to
+investigate why the same work differs across environments.
+
+reliability-1
+00:07:17.062 --> 00:07:22.729
+In Reliability, review errors, response times, versions, and cost diagnostics.
+
+reliability-2
+00:07:22.769 --> 00:07:27.492
+Look at distributions and periods where problems cluster, not just a single average.
+
+reliability-3
+00:07:27.532 --> 00:07:34.288
+When usage falls, first distinguish a real drop in activity from ingestion delays or
+missing data.
+
+analytics-1
+00:07:35.770 --> 00:07:39.925
+Analytics provides a closer look at models and diagnostic signals.
+
+analytics-2
+00:07:39.965 --> 00:07:45.162
+Question-based analysis is also available when permissions and model settings are in
+place.
+
+analytics-3
+00:07:45.202 --> 00:07:51.100
+For question-based analysis, check the executed query, the result period, and the cost
+basis.
+
+analytics-4
+00:07:51.140 --> 00:07:54.737
+This screen shows example diagnostic data.
+
+analytics-5
+00:07:54.777 --> 00:08:01.319
+Do not add Codex metrics or diagnostic Traces back into completion-log usage or cost.
+
+collector-1
+00:08:02.762 --> 00:08:12.979
+Once the server is ready, register a device from the Collector installation menu, then
+run the authenticated dashboard’s installation command in that device’s terminal.
+
+collector-2
+00:08:13.019 --> 00:08:20.992
+The device token is displayed once; store it as instructed, and do not expose its value
+in a command or screen share.
+
+collector-3
+00:08:21.032 --> 00:08:27.665
+In the device list, check registration details and revoke ingestion credentials when
+needed.
+
+installation-1
+00:08:29.145 --> 00:08:35.862
+In Installation status, check the database connection, per-client receipt status, and
+schema check results.
+
+installation-2
+00:08:35.902 --> 00:08:39.900
+Available menus and check scope depend on your permissions.
+
+installation-3
+00:08:39.940 --> 00:08:47.086
+If you find a problem, follow the guide’s installation and operations procedures, then
+check the same query interval again.
+
+finish-1
+00:08:48.479 --> 00:08:54.171
+Start by aligning the period, then select users where costs or usage differ.
+
+finish-2
+00:08:54.211 --> 00:08:59.084
+Follow the work, calls, and tools to find the next place to investigate.
+
+finish-3
+00:08:59.124 --> 00:09:05.796
+The guide includes every menu, practical procedures, and screens you can zoom in on.
+
+finish-4
+00:09:05.836 --> 00:09:08.537
+Continue exploring in whichever language you prefer.

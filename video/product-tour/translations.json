@@ -1,0 +1,37 @@
+{
+  "date": "2026-11-14",
+  "captions": {
+    "model": "GPT-6 (Codex; exact deployment identifier not exposed)",
+    "requested_model": "openai.gpt-6-luna",
+    "utc_timestamp": "2026-11-14T11:35:08Z",
+    "source": {
+      "path": "tour-caption-source.json",
+      "sha256": "e1dbcf76d2ce59c67fde30c3f7336b143565489106dbebb8e2d6530214f17039"
+    },
+    "output": {
+      "path": "video/product-tour/captions.en.json",
+      "sha256": "8a7f0c5e333022a88241525b6d1ff8e998f2def9c9606516f8ee83dc4abf7979"
+    },
+    "validation": {
+      "passed": true,
+      "scene_keys_match_in_order": true,
+      "array_lengths_match": true,
+      "all_captions_are_nonempty_strings": true,
+      "scene_count": 25,
+      "caption_count": 92
+    }
+  },
+  "caption_source_sha256": "e1dbcf76d2ce59c67fde30c3f7336b143565489106dbebb8e2d6530214f17039",
+  "captions_sha256": "8a7f0c5e333022a88241525b6d1ff8e998f2def9c9606516f8ee83dc4abf7979",
+  "caption_agent_record_sha256": "a3cb760dd920f4c3cf71a211386b11194d10922a6cbac42e312e9d46ed3739d1",
+  "site_copy": {
+    "requested_model": "openai.gpt-6-luna",
+    "selection_basis": "CLI invocation supplied by coordinator",
+    "timestamp_utc": "2026-11-14T12:10:09Z",
+    "source_sha256": "bbed52cd5d74e54a017b2d701fe0688e4dd23e12ae66c81dc3b044cf7cf73c88",
+    "output_sha256": "bc1169d309d9a80bc772e732d555010f04eb2bd9aa8e60d4c6772209ca79d367",
+    "model_provenance_note": "Records the requested CLI model only; hidden backend weights were not independently verified."
+  },
+  "site_copy_agent_record_sha256": "f315d48b867fa4bd6f7e24ab5105a305fc90c17a37dfa501ffe6eb8a6fca6400",
+  "validation": "25 scenes and 92 English caption cues; exact key and segment-count coverage. Technical names, missing-data qualifiers and cost-basis limits preserved."
+}

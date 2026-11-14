@@ -1,0 +1,165 @@
+{
+  "date": "2026-11-14",
+  "source_revision": "7bc26c09792d94634610a231a98a64aa601bbda2",
+  "fixture_sha256": "26cdcf4fba20a14a1b6b3491ca2eb2e174c9dba222db962a8d8166885ee73813",
+  "validation": {
+    "passed": true,
+    "totals": {
+      "client": "claude",
+      "backend": "bedrock-runtime",
+      "channel": "bedrock",
+      "group": "bedrock",
+      "reasoning_tokens": null,
+      "cost_basis": "mixed",
+      "cost_partial": false,
+      "tokens_partial": false,
+      "unpriced": 0,
+      "input_tokens": 3240000,
+      "cache_read_tokens": 97200000,
+      "cache_write_tokens": 6480000,
+      "output_tokens": 9720000,
+      "tokens": 116640000,
+      "observed_tokens": 116640000,
+      "cost_usd": 187.11000000000004,
+      "computed_cost": 180.3599999999999,
+      "requests": 144,
+      "api_errors": 6,
+      "tool_calls": 288,
+      "tool_errors": 0,
+      "sessions": 48,
+      "users": 3,
+      "request_duration_ms": 3000,
+      "ttft_ms": 750
+    },
+    "current": {
+      "users": 3,
+      "sessions": 48,
+      "turns": 96,
+      "requests": 144,
+      "tokens": 116640000,
+      "cost": 187.11000000000004,
+      "factors": {
+        "users": 3,
+        "sessions_per_user": 16,
+        "turns_per_session": 2,
+        "requests_per_turn": 1.5,
+        "tokens_per_request": 810000,
+        "cost_per_token": 0.000001604166666666667
+      },
+      "cost_per_million_tokens": 1.604166666666667,
+      "unavailable": null
+    },
+    "previous": {
+      "users": 3,
+      "sessions": 36,
+      "turns": 108,
+      "requests": 108,
+      "tokens": 90720000,
+      "cost": 160.08300000000008,
+      "factors": {
+        "users": 3,
+        "sessions_per_user": 12,
+        "turns_per_session": 3,
+        "requests_per_turn": 1,
+        "tokens_per_request": 840000,
+        "cost_per_token": 0.0000017645833333333342
+      },
+      "cost_per_million_tokens": 1.764583333333334,
+      "unavailable": null
+    },
+    "decomposition": {
+      "contributions": {
+        "users": 0,
+        "sessions_per_user": 49.83956173040674,
+        "turns_per_session": -70.24491694201784,
+        "requests_per_turn": 70.24491694201784,
+        "tokens_per_request": -6.300522765274464,
+        "cost_per_token": -16.512038965132334
+      },
+      "bundles": {
+        "growth": 49.83956173040674,
+        "waste": -6.300522765274464,
+        "price": -16.512038965132334
+      },
+      "total_change": 27.02699999999996,
+      "unavailable": null
+    },
+    "task_cost": 1.7325,
+    "trace_span_count": 6,
+    "missing_attempt_preserved": true,
+    "scope": "Costs, token components, models, users, time buckets, exact user filters, trace costs and LMDI equation/decomposition.",
+    "synthetic_prices_usd_per_million": {
+      "claude-sonnet-5-5": {
+        "input": 3,
+        "cache_read": 0.3,
+        "cache_write": 3.75,
+        "output": 15
+      },
+      "claude-haiku-5-5": {
+        "input": 1,
+        "cache_read": 0.1,
+        "cache_write": 1.25,
+        "output": 5
+      }
+    },
+    "limitations": [
+      "Skill costs are independent reported attribution and must not be added to total spend.",
+      "Trace list is a partially observed subset of usage.",
+      "Code outcomes and SQL chat are not supplied."
+    ]
+  },
+  "browser": "151.0.7922.34",
+  "screenshots": [
+    {
+      "path": "site/assets/img/tour-language-en.png",
+      "url": "http://127.0.0.1:4179/?client=claude&from=2026-11-12T00%3A00%3A00.000Z&to=2026-11-14T00%3A00%3A00.000Z",
+      "bytes": 422114,
+      "sha256": "181703bf7f9b605bbfd473c9a98ba6e7c8b625e1f5620212aaa33ea5c6dd0c90",
+      "width": 2880,
+      "height": 2000
+    },
+    {
+      "path": "site/assets/img/tour-time-range.png",
+      "url": "http://127.0.0.1:4179/?client=claude&from=2026-11-12T00%3A00%3A00.000Z&to=2026-11-14T00%3A00%3A00.000Z",
+      "bytes": 34988,
+      "sha256": "a8b1dbda58111e6e27a09a00ac9802ffeabeb16e85f083cd8f57184e3c8f52fc",
+      "width": 770,
+      "height": 482
+    },
+    {
+      "path": "site/assets/img/tour-user-range.png",
+      "url": "http://127.0.0.1:4179/users?client=claude&from=2026-11-12T22%3A00%3A00.000Z&to=2026-11-13T15%3A00%3A00.000Z",
+      "bytes": 138011,
+      "sha256": "5cd0febf46fcc9bfe54fa1889413a853e6666fa7d298b96a52256e2462a27f80",
+      "width": 2240,
+      "height": 952
+    },
+    {
+      "path": "site/assets/img/tour-task-list.png",
+      "url": "http://127.0.0.1:4179/users?client=claude&from=2026-11-12T22%3A00%3A00.000Z&to=2026-11-13T15%3A00%3A00.000Z",
+      "bytes": 70994,
+      "sha256": "2b3e69565349b825f4e070c8ede7c1d0bc502d43637127540c38e6c2eaba692c",
+      "width": 2240,
+      "height": 378
+    },
+    {
+      "path": "site/assets/img/tour-task-trace.png",
+      "url": "http://127.0.0.1:4179/users?client=claude&from=2026-11-12T22%3A00%3A00.000Z&to=2026-11-13T15%3A00%3A00.000Z",
+      "bytes": 381148,
+      "sha256": "598dfc2cb63a80cdecc4ea313a078be011edd3aeab81363a03c0203368e49e4a",
+      "width": 2880,
+      "height": 2000
+    },
+    {
+      "path": "site/assets/img/tour-session-environment.png",
+      "url": "http://127.0.0.1:4179/users?client=claude&from=2026-11-12T22%3A00%3A00.000Z&to=2026-11-13T15%3A00%3A00.000Z",
+      "bytes": 52879,
+      "sha256": "0cd2973f505e3de77d646f90aed2e371a0f3b2a21fa89b8dc3dbd12af5e9504d",
+      "width": 660,
+      "height": 486
+    }
+  ],
+  "request_count": 24,
+  "errors": [],
+  "notes": "Read-only synthetic API fixtures. Exact-time fields were filled without applying changes. Chart drag used the real pointer interaction and updated task bounds. No device or query was executed."
+}

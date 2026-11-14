@@ -1,0 +1,669 @@
+[
+  {
+    "scene": "welcome",
+    "image": "site/assets/img/guide-overview.png",
+    "sha256": "50ffe1c18728f9358d95f3a2cfd82cae3cb05526914ffcf5a1269a596b042e8d",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1220
+    ],
+    "focus": [
+      530,
+      390,
+      2260,
+      850
+    ]
+  },
+  {
+    "scene": "architecture",
+    "image": "site/assets/diagrams/system.svg",
+    "sha256": "153d0b8f7e84f358f27b2e715222037defbe2ef04743e936731a4e4bfd2cfd28",
+    "dimensions": [
+      1320.0,
+      548.0
+    ],
+    "roi": [
+      0,
+      0,
+      1320.0,
+      548.0
+    ],
+    "focus": null
+  },
+  {
+    "scene": "language",
+    "image": "site/assets/img/tour-language-en.png",
+    "sha256": "181703bf7f9b605bbfd473c9a98ba6e7c8b625e1f5620212aaa33ea5c6dd0c90",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      0,
+      0,
+      2880,
+      2000
+    ],
+    "focus": [
+      0,
+      1280,
+      860,
+      720
+    ]
+  },
+  {
+    "scene": "window",
+    "image": "site/assets/img/tour-time-range.png",
+    "sha256": "a8b1dbda58111e6e27a09a00ac9802ffeabeb16e85f083cd8f57184e3c8f52fc",
+    "dimensions": [
+      770,
+      482
+    ],
+    "roi": [
+      0,
+      0,
+      770,
+      482
+    ],
+    "focus": null
+  },
+  {
+    "scene": "overview",
+    "image": "site/assets/img/guide-overview.png",
+    "sha256": "50ffe1c18728f9358d95f3a2cfd82cae3cb05526914ffcf5a1269a596b042e8d",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1220
+    ],
+    "focus": [
+      530,
+      390,
+      2260,
+      850
+    ]
+  },
+  {
+    "scene": "overview",
+    "image": "site/assets/img/guide-overview-trend.png",
+    "sha256": "dcdcdc5243844da366a90d64e9cae4655b6ee779c04d1fd90c189a994318bec4",
+    "dimensions": [
+      2240,
+      916
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      916
+    ],
+    "focus": null
+  },
+  {
+    "scene": "executive",
+    "image": "site/assets/img/guide-executive.png",
+    "sha256": "5fa48b432415f8588f575535d7aa9ae41e04b9c873fece4d1baad077624c9057",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1400
+    ],
+    "focus": [
+      530,
+      400,
+      2260,
+      850
+    ]
+  },
+  {
+    "scene": "executive",
+    "image": "site/assets/img/guide-executive-charts.png",
+    "sha256": "92c031e60a9cdbd392a8b839488adbf990736e6bc045c7485a3bc5f3e8f563ae",
+    "dimensions": [
+      2240,
+      824
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      824
+    ],
+    "focus": null
+  },
+  {
+    "scene": "trends",
+    "image": "site/assets/img/guide-trends.png",
+    "sha256": "1d50e6d87964032ef25d2a7d812e18efea6384e7952e6a8f9266371817686798",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1450
+    ],
+    "focus": [
+      530,
+      370,
+      2260,
+      1000
+    ]
+  },
+  {
+    "scene": "trends",
+    "image": "site/assets/img/guide-trends-charts.png",
+    "sha256": "75a0c44d8c46493497749312ee2211e827db17855ba353ea3e5a95a85c29e2b7",
+    "dimensions": [
+      2240,
+      744
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      744
+    ],
+    "focus": null
+  },
+  {
+    "scene": "users",
+    "image": "site/assets/img/guide-users.png",
+    "sha256": "c97163e42b4423c54fd52445f1d8a3a1d541c51db93a89edfea8250618a14195",
+    "dimensions": [
+      2240,
+      506
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      506
+    ],
+    "focus": null
+  },
+  {
+    "scene": "users",
+    "image": "site/assets/img/guide-user-detail.png",
+    "sha256": "62cb6169492519b1f11c4992d039de045c055a239d4a4b1707234a7682ee052c",
+    "dimensions": [
+      2240,
+      1354
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      1354
+    ],
+    "focus": [
+      0,
+      0,
+      2240,
+      870
+    ]
+  },
+  {
+    "scene": "range",
+    "image": "site/assets/img/tour-user-range.png",
+    "sha256": "5cd0febf46fcc9bfe54fa1889413a853e6666fa7d298b96a52256e2462a27f80",
+    "dimensions": [
+      2240,
+      952
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      952
+    ],
+    "focus": null
+  },
+  {
+    "scene": "range",
+    "image": "site/assets/img/tour-task-list.png",
+    "sha256": "2b3e69565349b825f4e070c8ede7c1d0bc502d43637127540c38e6c2eaba692c",
+    "dimensions": [
+      2240,
+      378
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      378
+    ],
+    "focus": null
+  },
+  {
+    "scene": "trace",
+    "image": "site/assets/img/tour-task-trace.png",
+    "sha256": "598dfc2cb63a80cdecc4ea313a078be011edd3aeab81363a03c0203368e49e4a",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      230,
+      100,
+      2420,
+      1430
+    ],
+    "focus": [
+      260,
+      480,
+      1870,
+      790
+    ]
+  },
+  {
+    "scene": "call",
+    "image": "site/assets/img/guide-task-call-reported.png",
+    "sha256": "851555b2827d7be68a88ec926e99beb9263f03fdf15a78529b49d38673b93cb4",
+    "dimensions": [
+      592,
+      786
+    ],
+    "roi": [
+      0,
+      0,
+      592,
+      786
+    ],
+    "focus": null
+  },
+  {
+    "scene": "call",
+    "image": "site/assets/img/guide-task-call.png",
+    "sha256": "50a0c6a4f24befc1ef5861f75fc1c0d211c36b18bf874cb92bca0130560d27c7",
+    "dimensions": [
+      592,
+      786
+    ],
+    "roi": [
+      0,
+      0,
+      592,
+      786
+    ],
+    "focus": null
+  },
+  {
+    "scene": "context",
+    "image": "site/assets/img/guide-task-context.png",
+    "sha256": "a0217809aa7c15a7731af1beac0dc104646f65b5f8d991ea15c725c5d6880227",
+    "dimensions": [
+      2544,
+      1428
+    ],
+    "roi": [
+      0,
+      0,
+      1880,
+      850
+    ],
+    "focus": null
+  },
+  {
+    "scene": "context",
+    "image": "site/assets/img/guide-task-context.png",
+    "sha256": "a0217809aa7c15a7731af1beac0dc104646f65b5f8d991ea15c725c5d6880227",
+    "dimensions": [
+      2544,
+      1428
+    ],
+    "roi": [
+      0,
+      910,
+      2544,
+      518
+    ],
+    "focus": null
+  },
+  {
+    "scene": "context",
+    "image": "site/assets/img/tour-session-environment.png",
+    "sha256": "0cd2973f505e3de77d646f90aed2e371a0f3b2a21fa89b8dc3dbd12af5e9504d",
+    "dimensions": [
+      660,
+      486
+    ],
+    "roi": [
+      0,
+      0,
+      660,
+      486
+    ],
+    "focus": null
+  },
+  {
+    "scene": "cost",
+    "image": "site/assets/img/guide-cost-summary.png",
+    "sha256": "678987e694f7d176df65c3326662a44b9b91b544763c8c3eb189ea30784c9e3a",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1500
+    ],
+    "focus": [
+      530,
+      500,
+      2260,
+      870
+    ]
+  },
+  {
+    "scene": "cost",
+    "image": "site/assets/img/guide-cost.png",
+    "sha256": "18688c0b79002729cbcf6199f61fd3faeed9369d948a729cd6c8e3e26253ebed",
+    "dimensions": [
+      2240,
+      1054
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      1054
+    ],
+    "focus": [
+      0,
+      0,
+      2240,
+      800
+    ]
+  },
+  {
+    "scene": "economics",
+    "image": "site/assets/img/guide-economics.png",
+    "sha256": "db8ab3534e98268176c3144c538e344732ff9ee6bccc823be70eaed66483536e",
+    "dimensions": [
+      2240,
+      1802
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      870
+    ],
+    "focus": null
+  },
+  {
+    "scene": "economics",
+    "image": "site/assets/img/guide-economics.png",
+    "sha256": "db8ab3534e98268176c3144c538e344732ff9ee6bccc823be70eaed66483536e",
+    "dimensions": [
+      2240,
+      1802
+    ],
+    "roi": [
+      0,
+      950,
+      2240,
+      850
+    ],
+    "focus": null
+  },
+  {
+    "scene": "unit",
+    "image": "site/assets/img/guide-unit-cost.png",
+    "sha256": "276a7176fe02661cbd58366768570890e1742cd4e76c84d33144b17383e77518",
+    "dimensions": [
+      1104,
+      792
+    ],
+    "roi": [
+      0,
+      0,
+      1104,
+      792
+    ],
+    "focus": null
+  },
+  {
+    "scene": "usage",
+    "image": "site/assets/img/guide-usage.png",
+    "sha256": "4edcdc9f2c64f9c955d21edbf080341f9629bd1016c96bee5bffec50d404cef1",
+    "dimensions": [
+      2240,
+      1248
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      1248
+    ],
+    "focus": [
+      0,
+      0,
+      2240,
+      900
+    ]
+  },
+  {
+    "scene": "tools",
+    "image": "site/assets/img/guide-tools.png",
+    "sha256": "8027f493e67e2fec551f9ac52c3f0a9b07401d3d929bef677d69597f6cbf3202",
+    "dimensions": [
+      2240,
+      1138
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      1138
+    ],
+    "focus": [
+      0,
+      0,
+      2240,
+      900
+    ]
+  },
+  {
+    "scene": "mcp",
+    "image": "site/assets/img/guide-mcp.png",
+    "sha256": "ac3e2456c4dca213f87d1ada01aae12eaa9bf54f5d534f47eab1bd6997a4caf1",
+    "dimensions": [
+      2240,
+      806
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      806
+    ],
+    "focus": null
+  },
+  {
+    "scene": "skills",
+    "image": "site/assets/img/guide-skills.png",
+    "sha256": "0eb40d57f46793b13f3d1ebfe329a9b20cefb803695d08c4513586625df2ed04",
+    "dimensions": [
+      2240,
+      970
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      970
+    ],
+    "focus": null
+  },
+  {
+    "scene": "plugins",
+    "image": "site/assets/img/guide-plugins.png",
+    "sha256": "8034a1d761edb1ca3a5b1d1f2e0f3ad4e0788b3684409f0d76f46d2a333829f2",
+    "dimensions": [
+      2240,
+      386
+    ],
+    "roi": [
+      0,
+      0,
+      2240,
+      386
+    ],
+    "focus": null
+  },
+  {
+    "scene": "plugins",
+    "image": "site/assets/img/tour-session-environment.png",
+    "sha256": "0cd2973f505e3de77d646f90aed2e371a0f3b2a21fa89b8dc3dbd12af5e9504d",
+    "dimensions": [
+      660,
+      486
+    ],
+    "roi": [
+      0,
+      0,
+      660,
+      486
+    ],
+    "focus": null
+  },
+  {
+    "scene": "reliability",
+    "image": "site/assets/img/guide-reliability.png",
+    "sha256": "224f306a9d8411382a0f26c5801462585b978882ce36355edb7027b0f106dad7",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1450
+    ],
+    "focus": [
+      530,
+      400,
+      2260,
+      890
+    ]
+  },
+  {
+    "scene": "analytics",
+    "image": "site/assets/img/guide-analytics.png",
+    "sha256": "9228a41918299988924192b6cc2791634b4cebc1cdb25ca379761d8bebfe666d",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1500
+    ],
+    "focus": [
+      530,
+      420,
+      2260,
+      950
+    ]
+  },
+  {
+    "scene": "collector",
+    "image": "site/assets/img/guide-collector.png",
+    "sha256": "60f17c7573edb611fd3e3e74b5076fb400db302120763643146e359e1682b4d8",
+    "dimensions": [
+      2176,
+      736
+    ],
+    "roi": [
+      0,
+      0,
+      2176,
+      736
+    ],
+    "focus": null
+  },
+  {
+    "scene": "collector",
+    "image": "site/assets/img/guide-collector-devices.png",
+    "sha256": "9c311ceece0d13d404e2af85997a5bd29e4c1b7cb177d8dbaffe4d252f7557e2",
+    "dimensions": [
+      2176,
+      492
+    ],
+    "roi": [
+      0,
+      0,
+      2176,
+      492
+    ],
+    "focus": null
+  },
+  {
+    "scene": "installation",
+    "image": "site/assets/img/guide-installation.png",
+    "sha256": "93efb1eb99abf73617058ab6229dca7093f9ec5f880e0872a05732c48029e530",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1500
+    ],
+    "focus": [
+      530,
+      380,
+      2260,
+      1000
+    ]
+  },
+  {
+    "scene": "finish",
+    "image": "site/assets/img/guide-overview.png",
+    "sha256": "50ffe1c18728f9358d95f3a2cfd82cae3cb05526914ffcf5a1269a596b042e8d",
+    "dimensions": [
+      2880,
+      2000
+    ],
+    "roi": [
+      510,
+      180,
+      2320,
+      1220
+    ],
+    "focus": [
+      530,
+      390,
+      2260,
+      850
+    ]
+  }
+]

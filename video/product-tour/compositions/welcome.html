@@ -1,0 +1,14 @@
+<template>
+<link rel="stylesheet" href="styles.css" />
+<style>#root{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}</style>
+<div id="root" data-composition-id="tour-welcome" data-width="1920" data-height="1080" data-duration="19.4166666667">
+<div class="frame-content" id="tour-welcome-content" style="opacity:0">
+<div class="topline"><img class="brand-mark" src="assets/img/favicon.svg" alt="" /><span class="brand">ccdash</span><span class="chapter">01 · 시작하기</span><span class="proof">예시 데이터</span><span class="page-no">01 / 25</span></div>
+<h1 class="title">사용량에서 작업의 이유까지</h1><p class="cue">무엇을 썼는지, 어디에서 비용이 생겼는지</p>
+<div class="stage"><div id="tour-welcome-shot-0" class="shot" style="left:0px;width:1760px;opacity:1"><div id="tour-welcome-shot-0-world" class="world" data-layout-allow-overflow="true"><img id="tour-welcome-shot-0-image" data-layout-allow-overflow="true" src="assets/img/guide-overview.png" width="2880" height="2000" style="width:2880px;height:2000px;left:-560px;top:-682px" alt="무엇을 썼는지, 어디에서 비용이 생겼는지" /></div></div></div><p class="context-note">실제 애플리케이션 화면 · 예시 데이터</p>
+</div></div>
+<script>(function(){const tl=gsap.timeline({paused:true});window.tourCamera(tl, document.getElementById("tour-welcome-shot-0-world"), {"width": 2880, "height": 2000, "viewportWidth": 1760, "viewportHeight": 636, "roi": [510, 180, 2320, 1220], "focus": [530, 390, 2260, 850], "at": 2.5});gsap.set("#tour-welcome-shot-0", {opacity:1});
+tl.fromTo("#tour-welcome-content",{opacity:0,y:14},{opacity:1,y:0,duration:.45,ease:"power2.out"},0);
+tl.to("#tour-welcome-content",{opacity:0,duration:.20}, 19.2166666667);
+tl.to({},{duration:19.4166666667},0);window.__timelines=window.__timelines||{};window.__timelines["tour-welcome"]=tl;})();</script>
+</template>

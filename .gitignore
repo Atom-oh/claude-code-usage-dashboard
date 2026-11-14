@@ -41,6 +41,15 @@ site/assets/video/dashboard-demo-en-20261114.webm
 video/docs-demo/runtime/NotoSans.ttf
 video/docs-demo/runtime/gsap.min.js
 video/docs-demo/remotion/public/
+video/product-tour/.hyperframes/
+video/product-tour/audio/
+video/product-tour/renders/
+video/product-tour/snapshots/
+video/product-tour/remotion/public/
+site/assets/img/tour-*.png
+site/assets/img/product-tour-ko-poster.jpg
+site/assets/video/product-tour-ko-20261114.mp4
+site/assets/video/product-tour-ko-20261114.webm
 
 # Local Python validation caches
 __pycache__/
