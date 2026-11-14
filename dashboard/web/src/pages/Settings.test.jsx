@@ -1,9 +1,10 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ConfigProvider } from "../ConfigContext.jsx";
 import Settings from "./Settings.jsx";
+import { localeStore, translate } from "../i18n/index.js";
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(async () => { cleanup(); vi.unstubAllGlobals(); await act(() => localeStore.select("ko")); });
 const session = permissions => ({ mode: "oidc", role: "admin", permissions,
   expiresAt: new Date(Date.now() + 900000).toISOString() });
 const renderPage = (permissions = ["settings:manage"]) => render(
@@ -172,4 +173,27 @@ test("the first save says current directory values apply to all earlier usage; l
   renderPage();
   expect(await screen.findByText(/지금부터 적용됩니다. 이전 사용량의 팀은 바뀌지 않습니다/)).toBeTruthy();
   expect(screen.queryByText(/첫 저장 시/)).toBeNull();
+});
+
+
+test("language changes retain the draft, selected attribute and save error without new requests", async () => {
+  const fetch = stubApi({}, () => response({ error: "duplicate_label" }, 400));
+  renderPage();
+  const input = await screen.findByLabelText("platform 표시 이름");
+  fireEvent.change(input, { target: { value: "내 팀 {0}" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await screen.findByRole("alert");
+  const calls = fetch.mock.calls.length;
+  for (const locale of ["en", "zh-CN", "ja", "es", "ko"]) {
+    await act(async () => { expect(await localeStore.select(locale)).toBe(true); });
+    expect(screen.getByRole("heading", { name: translate("m115bced49291") })).toBeTruthy();
+    expect(screen.getByLabelText(translate("m102db82683f0", ["platform"]))).toBe(input);
+    expect(input.value).toBe("내 팀 {0}");
+    expect(screen.getByRole("radio", { name: /custom:team/ }).checked).toBe(true);
+    expect(screen.getByRole("alert").textContent).toBe(translate("mde7e132c2622"));
+    expect(fetch.mock.calls).toHaveLength(calls);
+  }
+  expect(putCalls(fetch)).toHaveLength(1);
+  const sent = JSON.parse(putCalls(fetch)[0][1].body);
+  expect(sent).toEqual({ attribute: "custom:team", version: 3, labels: { platform: "내 팀 {0}" } });
 });
