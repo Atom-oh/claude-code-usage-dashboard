@@ -1,10 +1,15 @@
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider } from "../RangeContext.jsx";
 import { toCsv } from "../csv.js";
 import { DEVICE_TEAM_MARKER, TeamsContext } from "../TeamsContext.jsx";
 import { TeamCostView, TEAM_COLUMNS, teamTableRows } from "./TeamCostSection.jsx";
+import { setTeamMask } from "../fmt.js";
+
+// Team logic under raw names; display masking has its own tests (TeamsContext.test.jsx).
+beforeEach(() => setTeamMask(false));
+afterEach(() => setTeamMask(true));
 afterEach(cleanup);
 
 const row = (team, cost, patch = {}) => ({ team, known_reported_cost: cost, reported_partial: false, reported_cost: cost,

@@ -87,6 +87,7 @@ existing workshop instances retain their configuration until replaced.
 | `group_mode` | `GROUP_MODE` | `ab` or `single`; single mode changes comparison presentation, not the underlying session classifier. Default `ab`. |
 | `default_range_days` | `DEFAULT_RANGE_DAYS` | Default query and cache-warmer window. Positive integer, default 2; wider ranges cost more query work. |
 | `range_cap_days` | `RANGE_CAP_DAYS` | Maximum requested range, integer at least the default range; default 90. Longer requests return 400. |
+| `team_mask_enabled` | `TEAM_MASK_ENABLED` / `/api/config.teamMask` | Default null follows `pii_mask_enabled`. Masks team names on screens and CSV as two characters plus a short digest; administrator labels show as is. An administrator can override it on the settings page when the settings store exists. Not an API boundary. |
 | `pii_mask_enabled` | `PII_MASK_ENABLED` / `/api/config.piiMask` | Terraform defaults true; app defaults off. Controls UI email masking and conditional chat-result masking, not raw API authorization or data retention. |
 | `data_stale_minutes` | `DATA_STALE_MINUTES` | Freshness threshold, default 360; server requires a positive number below its seven-day probe window. |
 | `chat_model_id`, `analysis_model_id`, `bedrock_region` | `CHAT_MODEL_ID`, `ANALYSIS_MODEL_ID`, `BEDROCK_REGION` | Verify both models/profiles and applied IRSA in the calling account/region. Separate from infrastructure `region`. See [chat agents](reference/agent-llm.md). |

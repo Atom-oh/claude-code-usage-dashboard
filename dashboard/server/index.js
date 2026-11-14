@@ -42,6 +42,7 @@ import { createDynamoDeviceStore } from "./deviceTokenStore.js";
 import { createCognitoDirectory } from "./cognitoDirectory.js";
 import { createTeamSync } from "./teamSync.js";
 import { createTeamSettings, teamDirectoryConfig } from "./teamSettingsRoutes.js";
+import { createDisplaySettings, deploymentTeamMask } from "./displaySettings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -138,6 +139,12 @@ const teamSync = teamDirectory.reason ? null
   : createTeamSync({ store: teamStore, directory: teamCognito, issuer: teamDirectory.issuer });
 createTeamSettings({ authentication, store: teamStore, directory: teamCognito, sync: teamSync,
   issuer: teamDirectory.issuer, poolId: teamDirectory.poolId, reason: teamDirectory.reason }).install(app);
+// Team-name masking: the deployment default (TEAM_MASK_ENABLED, else PII_MASK_ENABLED) with an
+// administrator override kept in the same settings store as team mapping. Invalid values fail startup.
+const displaySettings = createDisplaySettings({ authentication, store: teamStore,
+  deployment: deploymentTeamMask(process.env, piiMaskEnabled), issuer: teamDirectory.issuer,
+  reason: teamDirectory.reason });
+displaySettings.install(app);
 app.get("/api/session", (req, res) => res.json(authentication.sessionInfo(req)));
 
 // /api/* 응답 전체에 no-store. 라우트마다 res.set을 부르던 예전 방식은 route() 래퍼를 거치는
@@ -635,9 +642,10 @@ app.post("/api/chat", authentication.requirePermission("chat:query"), express.js
 // 같은 이유로 캐시쓰기 TTL 가정(pricingConfig)도 런타임에 노출한다 — build-once-deploy-many.
 // pricing.priceList names the active rate layer (runtime/snapshot/code) and when it was fetched;
 // metadata only, never rates.
-app.get("/api/config", (req, res) =>
+app.get("/api/config", async (req, res) =>
   res.json({
     piiMask: piiMaskEnabled,
+    teamMask: await displaySettings.teamMask(),
     pricing: { ...pricingConfig, priceList: priceListStatus() },
     schema: { segmentAwareSeriesKey, migrations: schemaMigrations, projectColumns },
     groupMode: GROUP_MODE,

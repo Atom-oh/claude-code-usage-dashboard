@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ConfigProvider } from "../ConfigContext.jsx";
 import Settings from "./Settings.jsx";
+import { maskTeam, setTeamMask } from "../fmt.js";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const session = permissions => ({ mode: "oidc", role: "admin", permissions,
@@ -20,9 +21,16 @@ const previews = {
   "custom:team": { attribute: "custom:team", values: [{ value: "platform", users: 5 }, { value: "data", users: 2 }], missing: 3, excluded: 1 },
   "custom:department": { attribute: "custom:department", values: [{ value: "eng", users: 7 }], missing: 0, excluded: 4 },
 };
-function stubApi(overrides = {}, put) {
+const display = (override = null, deployment = true, extra = {}) => ({ available: true, reason: null,
+  teamMask: { deployment, override, effective: override ?? deployment }, version: override === null ? null : 1, ...extra });
+function stubApi(overrides = {}, put, displayState = display()) {
   const fetch = vi.fn((url, options = {}) => {
     const path = String(url);
+    if (path.startsWith("/api/settings/display")) {
+      if (options.method !== "PUT") return Promise.resolve(response(displayState));
+      const { teamMask } = JSON.parse(options.body);
+      return Promise.resolve(response(display(teamMask, displayState.teamMask.deployment)));
+    }
     if (options.method === "PUT") return Promise.resolve(put ? put(options) : response(base));
     if (path.startsWith("/api/settings/teams/preview")) {
       const attribute = new URL(path, "http://x").searchParams.get("attribute");
@@ -33,7 +41,8 @@ function stubApi(overrides = {}, put) {
   vi.stubGlobal("fetch", fetch);
   return fetch;
 }
-const putCalls = fetch => fetch.mock.calls.filter(([, options]) => options?.method === "PUT");
+const putCalls = fetch => fetch.mock.calls.filter(([url, options]) => options?.method === "PUT"
+  && !String(url).startsWith("/api/settings/display"));
 
 test("users without settings:manage see a denial and make no requests", () => {
   const fetch = stubApi();
@@ -144,7 +153,7 @@ test("an unavailable directory hides the form and explains the reason", async ()
   stubApi({ available: false, reason: "basic_auth", status: null, options: [], current: null, version: null });
   renderPage();
   expect((await screen.findByRole("status")).textContent).toContain("조직 SSO");
-  expect(screen.queryByRole("radio")).toBeNull();
+  expect(screen.queryByRole("radio", { name: /custom:/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "저장" })).toBeNull();
 });
 
@@ -153,7 +162,7 @@ test("stale status warns and a directory outage disables the picker but keeps st
   renderPage();
   expect(await screen.findByText(/동기화가 오래되었습니다/)).toBeTruthy();
   expect(screen.getByText(/일시적으로 연결할 수 없어/)).toBeTruthy();
-  expect(screen.queryByRole("radio")).toBeNull();
+  expect(screen.queryByRole("radio", { name: /custom:/ })).toBeNull();
   expect(screen.getByText(/현재 기준: custom:team/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "저장" })).toBeNull();
   expect(fetch.mock.calls.some(([url]) => String(url).startsWith("/api/settings/teams/preview"))).toBe(false);
@@ -172,4 +181,26 @@ test("the first save says current directory values apply to all earlier usage; l
   renderPage();
   expect(await screen.findByText(/지금부터 적용됩니다. 이전 사용량의 팀은 바뀌지 않습니다/)).toBeTruthy();
   expect(screen.queryByText(/첫 저장 시/)).toBeNull();
+});
+
+test("team name masking shows the deployment default and saves an administrator override", async () => {
+  const fetch = stubApi({}, undefined, display(null, true));
+  renderPage();
+  expect(await screen.findByText(/배포 설정 따름 \(켜짐\)/)).toBeTruthy();
+  const save = screen.getByRole("button", { name: "마스킹 설정 저장" });
+  expect(save.disabled).toBe(true);
+  fireEvent.click(screen.getByRole("radio", { name: "끄기" }));
+  fireEvent.click(screen.getByRole("button", { name: "마스킹 설정 저장" }));
+  await screen.findByText(/저장했습니다. 이 화면에는 바로/);
+  const call = fetch.mock.calls.find(([url, options]) => String(url) === "/api/settings/display" && options?.method === "PUT");
+  expect(JSON.parse(call[1].body)).toEqual({ teamMask: false, version: null });
+  expect(maskTeam("alpha")).toBe("alpha", "the page applies the saved value at once");
+  setTeamMask(true);
+});
+
+test("without the settings store the deployment value applies and no override is offered", async () => {
+  stubApi({}, undefined, display(null, false, { available: false, reason: "ingest_disabled" }));
+  renderPage();
+  expect(await screen.findByText(/설정 저장소가 없어 배포 설정을 따릅니다/)).toBeTruthy();
+  expect(screen.queryByRole("radio", { name: "끄기" })).toBeNull();
 });

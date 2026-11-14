@@ -374,6 +374,13 @@ resource "kubernetes_deployment_v1" "dashboard" {
               value = env.value
             }
           }
+          dynamic "env" {
+            for_each = var.team_mask_enabled == null ? [] : [var.team_mask_enabled ? "1" : "0"]
+            content {
+              name  = "TEAM_MASK_ENABLED"
+              value = env.value
+            }
+          }
           env {
             name  = "DATA_STALE_MINUTES"
             value = tostring(var.data_stale_minutes)

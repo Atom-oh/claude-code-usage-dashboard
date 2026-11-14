@@ -22,6 +22,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Mask team names on shared screens and CSV exports, as emails are: two characters plus a
+  short digest, so different teams never share a masked name. Administrator display names
+  are shown as is. The deployment chooses the default (`team_mask_enabled`, else the email
+  masking setting) and an administrator can override it on the settings page. Filters, URLs
+  and API responses keep raw values.
 - Add a standalone 25-scene HyperFrames product-tour composition, Korean narration,
   English captions and verified MP4/WebM assets. It covers menu, user/task, cost
   and tool workflows with synthetic screenshots; site-player integration follows

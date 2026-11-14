@@ -115,6 +115,12 @@ not access to those payloads. The server defaults to masking off; the Terraform 
 explicitly disables it. [ADR-006](../decisions/ADR-006-client-side-pii-masking-baseline.md)
 records this shared-screen policy.
 
+Team names follow `TEAM_MASK_ENABLED` (unset follows `PII_MASK_ENABLED`) or an administrator
+override stored with the team settings (`/api/settings/display`). Masked team labels keep two
+characters plus a 4-hex FNV-1a digest so distinct teams stay distinct (prefix-only masking
+collided for short directory values); administrator display labels are shown as is, and filter
+values, URLs and API payloads keep raw team values. Directory values can be personal aliases.
+
 [fmt.js](../../dashboard/web/src/fmt.js) masks labels; [csv.js](../../dashboard/web/src/csv.js)
 applies the same policy centrally to exported `user` cells. Masked labels can collide and
 are not unique user IDs.

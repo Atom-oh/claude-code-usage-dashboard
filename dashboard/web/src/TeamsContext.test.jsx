@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ConfigProvider } from "./ConfigContext.jsx";
@@ -10,6 +10,11 @@ import { toCsv } from "./csv.js";
 import { ClientProvider } from "./ClientContext.jsx";
 import { FilterBar } from "./components/FilterBar.jsx";
 import { DEVICE_TEAM_MARKER, TeamsContext, TeamsProvider, teamDisplay, teamName, teamSuffix, teamText, teamsValue, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
+import { maskTeam, setTeamMask } from "./fmt.js";
+
+// Team logic under raw names; display masking has its own tests (TeamsContext.test.jsx).
+beforeEach(() => setTeamMask(false));
+afterEach(() => setTeamMask(true));
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -223,4 +228,27 @@ test("an older server without the new fields keeps raw values", () => {
   expect(teams.historyStart).toBeNull();
   expect(teams.directory).toBe(false);
   expect(teamText(teams, "a@example.invalid")).toBe("fsi");
+});
+
+// Display masking (PII_MASK_ENABLED): directory values can be personal aliases.
+test("masked team names keep two characters and a stable digest, so distinct teams stay distinct", () => {
+  setTeamMask(true);
+  const names = ["alpha", "alpine", "bravo", "bravado", "cobalt", "cobra"].map((raw) => maskTeam(raw));
+  expect(names[0]).toMatch(/^al\*\*·[0-9a-f]{4}$/);
+  expect(new Set(names).size).toBe(names.length);
+  expect(maskTeam("alpha")).toBe(names[0]);
+  expect(maskTeam("")).toBe("");
+  setTeamMask(false);
+  expect(maskTeam("alpha")).toBe("alpha");
+});
+
+test("an administrator label is shown as is while unlabelled teams are masked everywhere they render", () => {
+  setTeamMask(true);
+  const teams = { ...TEAMS, labels: { fsi: "결제플랫폼팀" } };
+  expect(teamName(teams, "fsi")).toBe("결제플랫폼팀");
+  expect(teamName(teams, "ops")).toBe(maskTeam("ops"));
+  expect(teamText(teams, "a@example.invalid")).toBe(`결제플랫폼팀, ${maskTeam("ops")}`);
+  expect(teamText(teams, "a@example.invalid", { csv: true })).toBe(`결제플랫폼팀, ${maskTeam("ops")}`);
+  expect(teamSuffix(teams, "b@example.invalid")).toBe(" · 결제플랫폼팀");
+  expect(teamText(teams, "a@example.invalid")).not.toContain("ops,");
 });

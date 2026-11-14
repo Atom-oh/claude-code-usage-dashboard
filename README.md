@@ -101,6 +101,7 @@ Key contracts:
 | `GROUP_MODE` | `ab` or `single`; affects Claude presentation, not channel inference or client selection. |
 | `DEFAULT_RANGE_DAYS`, `RANGE_CAP_DAYS` | Default window 2 days, maximum 90 days; invalid configuration fails startup. |
 | `PII_MASK_ENABLED` | Presentation/CSV/chat masking; not an authorization boundary for raw API access. |
+| `TEAM_MASK_ENABLED` | Team-name display masking; unset follows `PII_MASK_ENABLED`; administrators can override it in settings. |
 | `PRICING_JSON` | Inline JSON overrides for diagnostic token prices, not a filename. |
 | `PRICING_CACHE_WRITE_TTL` | Diagnostic cache-write assumption: `1h` or `5m`, default `1h`. |
 | `AWS_PRICE_LIST` | `on` (default) or `off`. On, the server refreshes AWS Price List rates (`pricing:GetProducts`, us-east-1) in the background after startup; off keeps the image's snapshot and code tables. Invalid values fail startup. See [ADR-017](docs/decisions/ADR-017-backend-cost-fallback.md#amendment-2026-10-28-aws-price-list-as-a-rate-source). |

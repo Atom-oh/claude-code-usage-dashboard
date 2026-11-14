@@ -797,6 +797,8 @@ reachable but directory teams are unavailable, so reads report why and `PUT` nev
 |---|---|
 | `GET /api/settings/teams` | `{available, reason, poolId, status, attributes, current, labels, options, directoryError, version}`. `available:false` carries `reason` `basic_auth`, `not_cognito` or `ingest_disabled` (directory teams need `AUTH_MODE=oidc`, a Cognito `OIDC_ISSUER` and `INGEST_TOKEN_TABLE`). `status` is the sync state (`lastSync`, `lastError`, `stale`, `users`, `historyStart`, `reason`; `reason` `directory_too_large` means more than 4,000 history intervals, so the directory is not applied). `attributes` is the timeline of selected attributes with their `from` times; `current` is the latest. `options` lists selectable Cognito attributes (string `custom:*`, `name`, derived `email_domain`). During a Cognito outage `options` is `null` with `directoryError: "directory_unavailable"` while stored settings stay readable. |
 | `GET /api/settings/teams/preview?attribute=` | `{attribute, values:[{value, users}], missing, excluded}`: user counts per value for attributable users. `missing` has no value; `excluded` has no usable (ASCII) email or shares an email with another user; such users get no new history, so sessions not covered by history stored earlier use device teams. Errors: `invalid_attribute` (400), `directory_unavailable` (503; 409 when unavailable). |
+| `GET /api/settings/display` | `settings:manage`. `{available, reason, teamMask:{deployment, override, effective}, version}`. `override` is `true`, `false` or `null` (follow the deployment). `available:false` (same `reason` values as team settings) means no settings store: only the deployment default applies. |
+| `PUT /api/settings/display` | Body `{teamMask, version}` with `teamMask` `true`, `false` or `null` and `version` the last read value (`null` before the first save). Returns the `GET` view. Errors: `invalid_team_mask`, `invalid_version`, `invalid_json` (400), `version_conflict` or `settings_unavailable` (409), `store_unavailable` (503), `body_too_large` (413). |
 | `PUT /api/settings/teams` | Body `{attribute, labels, version}` (at most 16 KiB; `version` is the last read value, `null` for the first save). Saves the attribute and labels and triggers a sync; returns the same view as `GET`. Errors: `invalid_attribute`, `invalid_labels`, `duplicate_label`, `invalid_version` (400), `version_conflict` (409), `directory_unavailable` (409 when unavailable, 503 on a Cognito failure), `store_unavailable`, `body_too_large` (413), `invalid_json` (400). |
 
 KPI rows also expose `commits_observed`, `prs_observed`, and `lines_of_code_observed`.
@@ -933,7 +935,7 @@ the stored aggregates. Operations: [daily insights](reference/iac.md#daily-insig
 | `/healthz` | HTTP 200 `{ok:boolean}` from ClickHouse ping, even when false. |
 | `/readyz` | `{ready:boolean}`, HTTP 200 when ready, 503 when draining or ping fails. |
 | `/api/health/data` | `{status, latest, ageMinutes, staleAfterMinutes}`; status is `ok`, `stale` or `unknown`. HTTP 200 only for `ok`, 503 otherwise. |
-| `/api/config` | `{piiMask, pricing, schema, groupMode, defaultRangeDays, rangeCapDays}`; reads in-memory configuration/probe snapshots and the in-memory price catalog status, with no query or AWS call in this handler. |
+| `/api/config` | `{piiMask, teamMask, pricing, schema, groupMode, defaultRangeDays, rangeCapDays}`; reads in-memory configuration/probe snapshots and the in-memory price catalog status, with no query or AWS call in this handler. |
 
 Freshness uses the maximum enabled-source timestamp (Claude raw metrics, Codex logs)
 over seven days, memoized for 30 seconds; one fresh source can mask another's outage.
@@ -947,6 +949,12 @@ Config fields:
 - `piiMask`: true for case-insensitive `PII_MASK_ENABLED=1` or `true`; otherwise false.
   Terraform defaults masking on. The frontend masks unless this response explicitly says
   false. Ordinary API payloads still contain raw identities.
+- `teamMask`: effective team-name display masking: an administrator override saved through
+  `PUT /api/settings/display`, else the deployment default `TEAM_MASK_ENABLED` (`1`/`true`,
+  `0`/`false`; unset follows `piiMask`). Each replica caches the override for 30 seconds; a
+  store outage keeps the last known value, else the deployment default. The frontend masks
+  team names unless this says false and falls back to `piiMask` when the field is absent.
+  Team values in API payloads stay raw.
 - `pricing`: `{cacheWriteTtl, overriddenModels, priceList}`. TTL is `1h` by default or `5m`
   when configured; invalid values fail startup. Override names come from `PRICING_JSON`.
   Rates are not exposed. Cost displays this TTL as an assumption in computed diagnostics.
