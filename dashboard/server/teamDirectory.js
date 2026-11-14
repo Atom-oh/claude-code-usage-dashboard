@@ -1,0 +1,60 @@
+import { createHash } from "node:crypto";
+
+const ISSUER = /^https:\/\/cognito-idp\.([a-z0-9-]+)\.amazonaws\.com\/([a-z0-9-]+_[A-Za-z0-9]+)\/?$/;
+const ASCII_EMAIL = /^[\x21-\x7e]+$/;
+const MAX_VALUE_LENGTH = 256;
+const OPEN_END = 4102444800000; // 2100-01-01T00:00:00Z
+const digest = value => createHash("sha256").update(value).digest("hex");
+
+export const DERIVED_ATTRIBUTES = ["email_domain"];
+
+export function parseCognitoIssuer(issuer) {
+  const match = typeof issuer === "string" ? ISSUER.exec(issuer) : null;
+  return match ? { region: match[1], poolId: match[2] } : null;
+}
+
+export function attributeValue(user, attribute) {
+  let raw;
+  if (attribute === "email_domain") {
+    const email = user?.email;
+    raw = typeof email === "string" && email.includes("@") ? email.slice(email.lastIndexOf("@") + 1).toLowerCase() : null;
+  } else {
+    raw = user?.attributes?.[attribute];
+  }
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  return value && value.length <= MAX_VALUE_LENGTH ? value : null;
+}
+
+export const userKey = (issuer, sub) => digest(`${issuer}\n${sub}`);
+
+export function emailKey(issuer, email) {
+  if (typeof email !== "string" || !ASCII_EMAIL.test(email) || !email.includes("@")) return null;
+  return digest(`${issuer}\n${email.toLowerCase()}`);
+}
+
+export function appendHistory(entries, { team, emailKey: key }, at) {
+  const latest = entries.at(-1);
+  if (latest && latest.team === team && latest.emailKey === key) return null;
+  return [...entries, { team, from: latest ? at : 0, emailKey: key }];
+}
+
+export function flattenIntervals({ attributes, histories, limit = 20000 }) {
+  const out = { keys: [], teams: [], froms: [], tos: [] };
+  for (const [index, { attribute, from: windowFrom }] of attributes.entries()) {
+    const windowTo = attributes[index + 1]?.from ?? OPEN_END;
+    for (const { entries } of histories[attribute] ?? []) {
+      for (const [i, entry] of entries.entries()) {
+        const from = Math.max(entry.from, windowFrom);
+        const to = Math.min(entries[i + 1]?.from ?? OPEN_END, windowTo);
+        if (from >= to) continue;
+        if (out.keys.length >= limit) return { error: "directory_too_large" };
+        out.keys.push(entry.emailKey);
+        out.teams.push(entry.team ?? "");
+        out.froms.push(from);
+        out.tos.push(to);
+      }
+    }
+  }
+  return out;
+}
