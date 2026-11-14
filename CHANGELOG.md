@@ -26,6 +26,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   filters and time ranges; guide links follow the selected language.
 - Complete localization across all application menus, token economics, user and
   cost analysis, tool usage, collector setup and installation status.
+- Add the Spanish documentation guide and five-language navigation, including
+  language-selection instructions and localized image-viewer controls.
 
 ## [1.8.1] - 2026-11-14
 
