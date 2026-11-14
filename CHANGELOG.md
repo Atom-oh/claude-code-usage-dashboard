@@ -15,6 +15,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
+  provenance and verified message placeholders.
+
 ## [1.8.2] - 2026-11-14
 
 ### Added

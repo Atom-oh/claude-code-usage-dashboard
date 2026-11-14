@@ -1,0 +1,740 @@
+{
+  "model": "openai.gpt-6-luna",
+  "source_locale": "ko",
+  "target_locales": [
+    "en",
+    "zh-CN",
+    "ja",
+    "es"
+  ],
+  "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
+  "updated_at": "2026-11-14T11:20:51.138899+00:00",
+  "source_messages": 1833,
+  "files": [
+    {
+      "locale": "en",
+      "path": "locales/en.json",
+      "messages": 1833,
+      "bytes": 136192,
+      "sha256": "7df1756f46fb9c67c135c402147ee51b8bd18bb1b82ae1d0ea1fbd8351abcc3a"
+    },
+    {
+      "locale": "es",
+      "path": "locales/es.json",
+      "messages": 1833,
+      "bytes": 160416,
+      "sha256": "8fb0b950e7c1ed944c70a80c27a2f6b20df4a6a06f8384124f0f14d7433ab896"
+    },
+    {
+      "locale": "ja",
+      "path": "locales/ja.json",
+      "messages": 1833,
+      "bytes": 167335,
+      "sha256": "216dafe3511c2a938a3ed996fbc7295fbcc23cb7e16cd33dbd84cbcaf5bd0f2b"
+    },
+    {
+      "locale": "ko",
+      "path": "locales/ko.json",
+      "messages": 1833,
+      "bytes": 144381,
+      "sha256": "39a5184b814d64d2f4590cd18570bbe9b7de3700c121c311bc5f96ca772dc9bf"
+    },
+    {
+      "locale": "zh-CN",
+      "path": "locales/zh-CN.json",
+      "messages": 1833,
+      "bytes": 129070,
+      "sha256": "c3fe0e828e5c0faf265f8a1d3083538103ba4dd8a0b2546e2e8ed0177f493117"
+    }
+  ],
+  "catalog_calls": [
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "en",
+      "batch": 0,
+      "messages": 250,
+      "source_sha256": "2b728747aebfdd7d9204c9848eddb1f292cbc3fcaa1ab4d2e36e2b0d74436140",
+      "output_sha256": "c5c915c85f20849abf89d2c0ca90d8ed2a5045aa0d3506c6161ed39b496ad11e",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5959,
+        "totalTokens": 13602,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 7641
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:40:29.670603+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "en",
+      "batch": 1,
+      "messages": 250,
+      "source_sha256": "8f25fdf2fe0dafa621c199c12f6a6c1aa8d7873804888221f678af81bcf07f1c",
+      "output_sha256": "fa21f72dde3179ede8d93c9d5d7eb19a68fa4fdb25c299580a6a6b5af5d2014b",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 4537,
+        "totalTokens": 10268,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 5729
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:40:21.080167+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "en",
+      "batch": 2,
+      "messages": 250,
+      "source_sha256": "a651e214656d048c2073fc5000f4ecef30e01171dae6e472e6016fc0d38e2763",
+      "output_sha256": "43f2199c7e67f4558965cd6522a42c7f1d60b8d1e963261467bca35309be4eb1",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 4418,
+        "totalTokens": 10129,
+        "cacheReadInputTokens": 5709,
+        "cacheWriteInputTokens": 0
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:46:50.412051+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "en",
+      "batch": 3,
+      "messages": 250,
+      "source_sha256": "1622e11265113a3d07cf78f385f1f59d18a5f2db4fdb79c2d912dd9f0426047f",
+      "output_sha256": "06c1fe792836d74e320d2d255616def8806d95a57beae332d55514a8af3f19b1",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 4929,
+        "totalTokens": 11418,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6487
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:40:52.472046+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "en",
+      "batch": 4,
+      "messages": 250,
+      "source_sha256": "916fe1fdda69cb45ed3c83cab061aa75ce4a22bf0b41507780729ed4c779afcf",
+      "output_sha256": "a3ef9fb2527109d0e6516dc6499bd5c50b2bc4e949a56128d37fdd85de458043",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5521,
+        "totalTokens": 12682,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 7159
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:41:07.041817+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "en",
+      "batch": 5,
+      "messages": 250,
+      "source_sha256": "201027d3da46d07af744c92cbbab76605687cde4475b353a85700e005a264aea",
+      "output_sha256": "24a5ef54ace85d2b4ef2197cd77ef15447f25ed4f588afe7f1824ea65abc65da",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 4902,
+        "totalTokens": 11411,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6507
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:41:15.732907+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "en",
+      "batch": 6,
+      "messages": 235,
+      "source_sha256": "3b2dcfa597602578acd50b16bf67fe2e2f5cc3a1dda109ba26a3d6c6dc5d39c6",
+      "output_sha256": "fda437f56e7700141965aaf9b5283134a3713ded20bbeee7ce0f3a4779daa315",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5064,
+        "totalTokens": 11336,
+        "cacheReadInputTokens": 6270,
+        "cacheWriteInputTokens": 0
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:50:19.289577+00:00",
+      "repair_attempt": 2
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "zh-CN",
+      "batch": 0,
+      "messages": 250,
+      "source_sha256": "2b728747aebfdd7d9204c9848eddb1f292cbc3fcaa1ab4d2e36e2b0d74436140",
+      "output_sha256": "62c02b8c71d6b0b598ac0ee8ef2ff358ae6576a895586d63215922d63d70c412",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 6569,
+        "totalTokens": 14214,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 7643
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:41:46.964213+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "zh-CN",
+      "batch": 1,
+      "messages": 250,
+      "source_sha256": "8f25fdf2fe0dafa621c199c12f6a6c1aa8d7873804888221f678af81bcf07f1c",
+      "output_sha256": "6343feba881c81d2bce327a09518677c5e30d42ec66ee41563b09667ff7ae801",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 4785,
+        "totalTokens": 10518,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 5731
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:41:50.769138+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "zh-CN",
+      "batch": 2,
+      "messages": 250,
+      "source_sha256": "a651e214656d048c2073fc5000f4ecef30e01171dae6e472e6016fc0d38e2763",
+      "output_sha256": "c0fa1f8a1f630eed0cc47c64fac78ce23021f349e4ff0ef7288fc2198a1094a2",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 4840,
+        "totalTokens": 10553,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 5711
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:42:09.498563+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "zh-CN",
+      "batch": 3,
+      "messages": 250,
+      "source_sha256": "1622e11265113a3d07cf78f385f1f59d18a5f2db4fdb79c2d912dd9f0426047f",
+      "output_sha256": "7666b406ae005fc93ce531456ec0fe955c73574f7535073646cf85d6b1180028",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5729,
+        "totalTokens": 12220,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6489
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:42:16.369584+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "zh-CN",
+      "batch": 4,
+      "messages": 250,
+      "source_sha256": "916fe1fdda69cb45ed3c83cab061aa75ce4a22bf0b41507780729ed4c779afcf",
+      "output_sha256": "8c4ddec0c27f51a23e15a837885aa99880a8826a065f2e34884ae678b0e6a5a8",
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:52:04.782216+00:00",
+      "repair": true,
+      "assembled_from_subcalls": [
+        {
+          "path": "catalog-zh-CN-4-part-0.evidence.json",
+          "sha256": "1baac26772eac6d8e858fd5585b21efdae0dcc015395657ce028ec7cb27ef894"
+        },
+        {
+          "path": "catalog-zh-CN-4-part-1.evidence.json",
+          "sha256": "974cae5fc790e3b4b600a00d9c275c242e96565e584b52f1a6f34eb8a188f132"
+        }
+      ],
+      "subcalls": [
+        {
+          "model": "openai.gpt-6-luna",
+          "inference_profile": "us.openai.gpt-6-luna",
+          "provider": "amazon-bedrock",
+          "region": "us-east-1",
+          "locale": "zh-CN",
+          "batch": 4,
+          "part": 0,
+          "messages": 125,
+          "source_sha256": "0a175df718e9c1fa501f0dd341772ac20384f155410b766d3376bef8ac71d7e1",
+          "output_sha256": "7d7f2a540b3f4d270b2a9cb22e15a361df53b9e722c5c544ce2c02a3c572de7a",
+          "usage": {
+            "inputTokens": 2,
+            "outputTokens": 3807,
+            "totalTokens": 7985,
+            "cacheReadInputTokens": 4176,
+            "cacheWriteInputTokens": 0
+          },
+          "stop_reason": "end_turn",
+          "timestamp": "2026-11-14T10:52:04.781161+00:00",
+          "repair_attempt": 2,
+          "prior_failed_attempts": [
+            {
+              "attempt": 1,
+              "response_sha256": "c3c0fca66c3b64c16a96902cfd3ae96b7a34ac67a98c6c95475167330c52c6a8",
+              "error": "key set or stop reason validation failed",
+              "missing_count": 1,
+              "missing_sample": [
+                "m1d48334bb262"
+              ],
+              "extra_count": 1,
+              "extra_sample": [
+                "m1d48334bb262f"
+              ],
+              "stop_reason": "end_turn"
+            }
+          ]
+        },
+        {
+          "model": "openai.gpt-6-luna",
+          "inference_profile": "us.openai.gpt-6-luna",
+          "provider": "amazon-bedrock",
+          "region": "us-east-1",
+          "locale": "zh-CN",
+          "batch": 4,
+          "part": 1,
+          "messages": 125,
+          "source_sha256": "8d03451c24dc5d689a38259742006c017191e694abdb7c987fcd356e4a213e85",
+          "output_sha256": "76772b82581fa8046dcaf592d4d9aab8bf9cf0e514b7dc9d9e2471989a9e7026",
+          "usage": {
+            "inputTokens": 2,
+            "outputTokens": 3209,
+            "totalTokens": 6605,
+            "cacheReadInputTokens": 0,
+            "cacheWriteInputTokens": 3394
+          },
+          "stop_reason": "end_turn",
+          "timestamp": "2026-11-14T10:51:44.567685+00:00",
+          "repair_attempt": 1,
+          "prior_failed_attempts": []
+        }
+      ]
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "zh-CN",
+      "batch": 5,
+      "messages": 250,
+      "source_sha256": "201027d3da46d07af744c92cbbab76605687cde4475b353a85700e005a264aea",
+      "output_sha256": "8a754faf9d38fa408530ff9da5f9231f1a9de8c047411fd04070ac158332c65d",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5494,
+        "totalTokens": 12005,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6509
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:42:42.653031+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "zh-CN",
+      "batch": 6,
+      "messages": 235,
+      "source_sha256": "3b2dcfa597602578acd50b16bf67fe2e2f5cc3a1dda109ba26a3d6c6dc5d39c6",
+      "output_sha256": "de7b341631178763d0f62ee0f1b070f5c2632746da7a9f14fac2a79811263d28",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5668,
+        "totalTokens": 11906,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6236
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:43:03.160023+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "ja",
+      "batch": 0,
+      "messages": 250,
+      "source_sha256": "2b728747aebfdd7d9204c9848eddb1f292cbc3fcaa1ab4d2e36e2b0d74436140",
+      "output_sha256": "e795ce16e50e1079859bec37723bfd5f3f8ff01fef79b797108ab07d7336f8fd",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 8022,
+        "totalTokens": 15665,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 7641
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:43:18.206162+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "ja",
+      "batch": 1,
+      "messages": 250,
+      "source_sha256": "8f25fdf2fe0dafa621c199c12f6a6c1aa8d7873804888221f678af81bcf07f1c",
+      "output_sha256": "6a0aa31d515fd6f4d83094ae8f381c0bcc0f37550fae5cebb40a2f8735ffddbf",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5552,
+        "totalTokens": 11283,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 5729
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:43:28.013572+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "ja",
+      "batch": 2,
+      "messages": 250,
+      "source_sha256": "a651e214656d048c2073fc5000f4ecef30e01171dae6e472e6016fc0d38e2763",
+      "output_sha256": "894901234f8cc380b1583cbd16a00aefa89b0e4dfaff1c721ddeee5d7a8463d3",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5683,
+        "totalTokens": 11394,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 5709
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:43:43.846669+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "ja",
+      "batch": 3,
+      "messages": 250,
+      "source_sha256": "1622e11265113a3d07cf78f385f1f59d18a5f2db4fdb79c2d912dd9f0426047f",
+      "output_sha256": "d943282f5869001fe3bf4a9b38814bea37101931cf15104a942e0e9d43202fd9",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 6501,
+        "totalTokens": 12990,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6487
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:43:55.883205+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "ja",
+      "batch": 4,
+      "messages": 250,
+      "source_sha256": "916fe1fdda69cb45ed3c83cab061aa75ce4a22bf0b41507780729ed4c779afcf",
+      "output_sha256": "021ff8f138a81106321a438d9857d37f74ea206aa4d5108732c152de01b12bb0",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 8202,
+        "totalTokens": 15363,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 7159
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:44:19.119488+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "ja",
+      "batch": 5,
+      "messages": 250,
+      "source_sha256": "201027d3da46d07af744c92cbbab76605687cde4475b353a85700e005a264aea",
+      "output_sha256": "c82e939d62a1e0d1d01656e7ba16c8f8e9f80a5a4290a738b34e9c8d65386ff5",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 6712,
+        "totalTokens": 13221,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6507
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:44:25.433403+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "ja",
+      "batch": 6,
+      "messages": 235,
+      "source_sha256": "3b2dcfa597602578acd50b16bf67fe2e2f5cc3a1dda109ba26a3d6c6dc5d39c6",
+      "output_sha256": "203a313e02efc4ca7820f2e070d32908c628a3ea606b6a46664d3bb90a3d1626",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 6464,
+        "totalTokens": 12700,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6234
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:44:47.056831+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "es",
+      "batch": 0,
+      "messages": 250,
+      "source_sha256": "2b728747aebfdd7d9204c9848eddb1f292cbc3fcaa1ab4d2e36e2b0d74436140",
+      "output_sha256": "066e37fbe571f844d484ef22251057c846c2d9e59221db9d3018f918a78987e5",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 7245,
+        "totalTokens": 14888,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 7641
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:44:59.081330+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "es",
+      "batch": 1,
+      "messages": 250,
+      "source_sha256": "8f25fdf2fe0dafa621c199c12f6a6c1aa8d7873804888221f678af81bcf07f1c",
+      "output_sha256": "3f73f6f3249d5fa3392818388b558c988e13450e1013b58fd59a58f7bb64b485",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5085,
+        "totalTokens": 10816,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 5729
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:45:09.666876+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "es",
+      "batch": 2,
+      "messages": 250,
+      "source_sha256": "a651e214656d048c2073fc5000f4ecef30e01171dae6e472e6016fc0d38e2763",
+      "output_sha256": "065a840176b300477267123df3cc46f379aa30515cde2495a746932f03a807e6",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5105,
+        "totalTokens": 10816,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 5709
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:45:22.554227+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "es",
+      "batch": 3,
+      "messages": 250,
+      "source_sha256": "1622e11265113a3d07cf78f385f1f59d18a5f2db4fdb79c2d912dd9f0426047f",
+      "output_sha256": "41b034098a9bf2f7fbce2f87481fe7af071f25dbe17648f8c7e2c8cdc550455f",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 6688,
+        "totalTokens": 13177,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6487
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:45:39.173822+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "es",
+      "batch": 4,
+      "messages": 250,
+      "source_sha256": "916fe1fdda69cb45ed3c83cab061aa75ce4a22bf0b41507780729ed4c779afcf",
+      "output_sha256": "d3c27cc46f96592c43206c8e250530db53a9ce61a20126605fc9af56c6114c3c",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 6468,
+        "totalTokens": 13629,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 7159
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:45:51.994158+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "es",
+      "batch": 5,
+      "messages": 250,
+      "source_sha256": "201027d3da46d07af744c92cbbab76605687cde4475b353a85700e005a264aea",
+      "output_sha256": "570d5c8510e18b54121af01c64890c0993c4bf52e9f9fa2fe6fe6982ebfa7325",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5812,
+        "totalTokens": 12321,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6507
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:46:05.867043+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "locale": "es",
+      "batch": 6,
+      "messages": 235,
+      "source_sha256": "3b2dcfa597602578acd50b16bf67fe2e2f5cc3a1dda109ba26a3d6c6dc5d39c6",
+      "output_sha256": "ead9d9b63c42ebb614357d36631089894bac7df9f70c92a4f486e749abc17b8d",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 5952,
+        "totalTokens": 12188,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 6234
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-14T10:46:19.252648+00:00"
+    }
+  ],
+  "additional_messages": {
+    "count": 86,
+    "source_sha256": "4059e7e8bee2b1f75ecddfb8f20584d6a9ed825682c61973adcd97dcab8b0122",
+    "output_sha256": {
+      "en": "e552804b867200d08c94c30b543fa052f8c2b246a736a0c683205a30c3897924",
+      "zh-CN": "0290c12ad855b03af9bc6a825964df85b714d1baaf146bbb8de36ae2f2a7d1aa",
+      "ja": "e6bcebf9d5aa6dc7ccf11978baab98261a7d71f6662381001f0a4cac0d764fb1",
+      "es": "ac92b1e5707ec091c2b2d56a6ac35699b13d1c07d9268333897188a04fcef655"
+    },
+    "agent_record_sha256": "a86fc5dafeffee68d617d058ef9883e59d87dca999f71ec04a63c04767a7228a"
+  },
+  "terminology_review": {
+    "source_sha256": "f589e7a3bf2bdd9d10d5318a2858a724ef5ba193bed90bb9863fb17be3426a98",
+    "output_sha256": "3b93c57d189922f874f2fb0107b0cc309aa65183ffef178d70d954c5254b85c9",
+    "agent_record_sha256": "fc368f436b75ed1018da4c392c24bdae306ed3f13694593860522491fa0fce0e",
+    "scope": "Cost origin labels and the language selector; distinguish provenance from selection criteria."
+  },
+  "agent_records": {
+    "catalog_sha256": "951c92bae3a40a50abc6136441ab01470a5ab7e4dd140ccc9b063916dd93f46b",
+    "additional_sha256": "a86fc5dafeffee68d617d058ef9883e59d87dca999f71ec04a63c04767a7228a",
+    "polish_sha256": "fc368f436b75ed1018da4c392c24bdae306ed3f13694593860522491fa0fce0e"
+  },
+  "validation": [
+    "Exact message-key coverage in every language.",
+    "Exact positional-placeholder multiset per message."
+  ],
+  "host_corrections": [
+    "Preserved authored leading/trailing JSX whitespace.",
+    "Combined separately verified original and additional catalogs without overlapping keys.",
+    "Applied the bounded Luna terminology review to seven labels per translated locale."
+  ],
+  "retry_summary": "English batches 2 and 6 and Simplified Chinese batch 4 required repairs. The Chinese batch was split; only validated outputs were assembled.",
+  "review_follow_up": {
+    "model": "openai.gpt-6-luna",
+    "source_sha256": "cef2847ae4ecffe68d16beceb597151590d94b7dfef9aa787a2ddd0300542415",
+    "output_sha256": "780ea901a0450b40bb2d8e3f1cdb8fecb5b9c06143aff699425ae9993ae6b6c0",
+    "agent_record_sha256": "6c3b0c0e2ee08232975a37e3c39c436eff1c5063b45d0910b6d5443ef725d571",
+    "scope": "Twelve messages for zero-cost rows and release notes; corrected the cost-unit numerator and distinguished unpriced from not-computed labels.",
+    "reviewed_keys": [
+      "m89cb5abb3cef",
+      "ma8761601c736",
+      "m9c7b40d07138",
+      "m346403545b96"
+    ]
+  },
+  "comparison_and_coverage_review": {
+    "requested_model": "openai.gpt-6-luna",
+    "input_sha256": "3c6353c3113b9087af8a9bb862908c03d71d94e282c603056c76e83a6592c389",
+    "output_sha256": "74a5982107dd255ee43598bc2167a4f0ca35c31a5f2a2e63115550b371f5bd0c",
+    "scope": {
+      "ja": [
+        "mb32003ca5083"
+      ],
+      "zh-CN": [
+        "mb32003ca5083",
+        "m1c02908f91d3"
+      ]
+    },
+    "reason": "Use the preceding equal-length period and distinguish uncollected data from measured zero."
+  }
+}
