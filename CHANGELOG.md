@@ -30,6 +30,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   task/session details. Synthetic captures and rendered media retain content hashes.
   All guide locales now use the dashboard favicon.
 
+### Fixed
+
+- Collapse known $0 rows in the model and effort cost-share cards into a closed
+  "$0 items" count, so zero-cost model/backend combinations no longer stretch the
+  card. Unknown costs stay listed separately as unpriced.
+
 ## [1.8.0] - 2026-11-14
 
 ### Added

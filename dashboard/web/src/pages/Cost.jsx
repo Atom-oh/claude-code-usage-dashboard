@@ -18,7 +18,7 @@ import { maskEmail } from "../fmt.js";
 import { isZeroTokenModel } from "../modelRows.js";
 import { colorFor, modelColorFor, byModelLegendOrder, groupModelColorFor, makeGroupBreakdownColorer, GROUP_SEGMENT_ORDER } from "../colors.js";
 import { useGroupsShown } from "../useGroupsShown.js";
-import { CostBreakdownCard } from "../components/CostBreakdowns.jsx";
+import { CostBreakdownCard, ZeroCostRows } from "../components/CostBreakdowns.jsx";
 import { effortLabel, unclassifiedLabel } from "../labels.js";
 import { asCostSummaryRows, asKnownSpendRows, asSpendRows, sumKnownSpend, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
@@ -65,13 +65,15 @@ const EFFORT_LABEL_ORDER = ["medium", "high", "xhigh", "미지정"];
 function ReportedCostDonut({ rows, nameKey, colorOf, listUnknown = false }) {
   if (rows.length === 0) return <EmptyState />;
   const { total, partial } = sumKnownSpend(rows);
-  const known = rows.filter((r) => r.cost !== null);
+  const known = rows.filter((r) => r.cost !== null && r.cost !== 0);
   return (
     <>
       {partial && <p className="mb-3 text-sm text-ink-500">알려진 보고 비용 부분합 · 일부 보고값 누락 또는 검증 불가</p>}
       {total === null ? <p className="text-sm text-ink-400">{unavailable}</p>
         : total === 0 ? <p className="tabular text-sm text-ink-600">{usd(total)}</p>
           : <DonutBody data={known} nameKey={nameKey} valueKey="cost" valueFormatter={usd} colorOf={colorOf} />}
+      <ZeroCostRows rows={rows.filter((r) => r.cost === 0)}
+        label={(r) => `${r[nameKey]}${r.cost_partial ? " (부분합)" : ""}`} />
       {listUnknown && rows.some((r) => r.cost === null) && (
         <ul className="mt-3 text-[12px] text-ink-400">
           {rows.filter((r) => r.cost === null).map((r) => <li key={r[nameKey]}>{r[nameKey]}: 확인 필요</li>)}

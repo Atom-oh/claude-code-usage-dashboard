@@ -16,11 +16,23 @@ export function CostBreakdownCard({ loading, error, limited, empty, children, ..
   </Card>;
 }
 
+// Known $0 rows add no slice; listing each one only stretches the card. Keep them countable instead.
+export function ZeroCostRows({ rows, label }) {
+  if (rows.length === 0) return null;
+  return <details className="mt-3 text-[12px] text-ink-500">
+    <summary className="cursor-pointer select-none">비용 {formatClientCost(0)} 항목 {rows.length}개</summary>
+    <ul className="mt-1.5 space-y-0.5 pl-3">
+      {rows.map((row, index) => <li key={index}>{label(row)}</li>)}
+    </ul>
+  </details>;
+}
+
 function CostShare({ rows, colorOf, legendRenderer }) {
   const values = rows.map((row) => ({ ...row, cost_usd: observedNumber(row.cost_usd),
     cost_partial: row.cost_partial === true || observedNumber(row.unpriced) > 0 }));
   const { total, partial } = sumKnownSpend(values, "cost_usd");
-  const known = values.filter((row) => row.cost_usd !== null);
+  const known = values.filter((row) => row.cost_usd !== null && row.cost_usd !== 0);
+  const zero = values.filter((row) => row.cost_usd === 0);
   const unknown = values.filter((row) => row.cost_usd === null);
   const hasUnpriced = values.some((row) => observedNumber(row.unpriced) > 0);
   const bases = [...new Set(values.map((row) => basisLabel(row.cost_basis)))];
@@ -36,6 +48,7 @@ function CostShare({ rows, colorOf, legendRenderer }) {
     {unknown.length > 0 && <ul className="mt-3 text-[12px] text-ink-500">
       {unknown.map((row, index) => <li key={index}>{row.label}: — · 미산정</li>)}
     </ul>}
+    <ZeroCostRows rows={zero} label={(row) => `${row.label}${row.cost_partial ? " · 알려진 비용 부분합" : ""}`} />
   </>;
 }
 
