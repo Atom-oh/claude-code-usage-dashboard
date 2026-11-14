@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Conozca ccdash a través de sus pantallas — ccdash</title>
+<meta content="Elija un período, revise las tareas de un usuario, explique los cambios de costo y explore la actividad de las herramientas. Siga las pantallas reales y una acción concreta en cada paso." name="description"/>
+<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
+<link href="../index.html" hreflang="en" rel="alternate"/>
+<link href="../ko/index.html" hreflang="ko" rel="alternate"/>
+<link href="../ja/index.html" hreflang="ja" rel="alternate"/>
+<link href="../zh/index.html" hreflang="zh-CN" rel="alternate"/>
+<link href="index.html" hreflang="es" rel="alternate"/>
+</head>
+<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<a class="skip-link" href="#main">Saltar al contenido</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+<nav aria-label="Navegación principal" class="tabs"><a aria-current="page" href="index.html">Resumen</a><a href="user-guide.html">Guía de usuario</a><a href="installation.html">Instalación</a><a href="architecture.html">Arquitectura</a><a href="api.html">API</a><a href="operations.html">Operaciones</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+<div aria-label="Idioma" class="languages" role="group"><a href="../index.html" hreflang="en" lang="en">English</a><a href="../zh/index.html" hreflang="zh-CN" lang="zh-CN">简体中文</a><a href="../ja/index.html" hreflang="ja" lang="ja">日本語</a><a aria-current="page" href="index.html" hreflang="es" lang="es">Español</a><a href="../ko/index.html" hreflang="ko" lang="ko">한국어</a></div>
+</div></header>
+<main class="wrap" id="main">
+<div class="hero hero-visual"><div class="hero-copy">
+<p class="eyebrow">Claude Code + Codex · Documentación del producto</p>
+<h1>Conozca ccdash a través de sus pantallas</h1>
+<p class="lede">Elija un período, revise las tareas de un usuario, explique los cambios de costo y explore la actividad de las herramientas. Siga las pantallas reales y una acción concreta en cada paso.</p>
+<p><a class="button-link" href="user-guide.html">Abrir las guías detalladas</a> <a class="button-link secondary" href="#system-overview">Ver la arquitectura</a></p>
+<p class="caption">Para quienes visitan el sitio por primera vez, analistas y operadores. Los menús dependen de los clientes habilitados, los permisos y la versión instalada.</p>
+</div><figure class="screen-shot hero-shot"><a data-lightbox="" href="../assets/img/guide-overview.png"><img alt="Resumen: elija el alcance, lea el resumen y revise la tendencia." decoding="async" height="2000" loading="lazy" src="../assets/img/guide-overview.png" width="2880"/></a><figcaption><span class="figure-number">01</span><span class="figure-text">Resumen: elija el alcance, lea el resumen y revise la tendencia.<small>Interfaz real en coreano · ejemplo sintético · seleccione la imagen para ampliarla</small></span></figcaption></figure></div><section id="learning-paths"><h2>Elija qué quiere investigar</h2><div class="learning-paths">
+<a class="learning-card" href="user-guide.html#trace-workflow"><img alt="Una tarea con carriles de agentes separados" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · USUARIOS Y TRAZAS</span><b>Siga el trabajo de un usuario</b><span class="card-description">Usuario → período → tarea → agente → llamada individual.</span></span></a>
+<a class="learning-card" href="user-guide.html#cost-workflow"><img alt="La ecuación de costo y los factores de cambio" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · COSTO Y EFICIENCIA</span><b>Explique un cambio de costo</b><span class="card-description">Base del costo, proporciones por modelo, costos unitarios, tokens y caché.</span></span></a>
+<a class="learning-card" href="user-guide.html#tools-workflow"><img alt="Llamadas a herramientas y resultados" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · HERRAMIENTAS Y MCP</span><b>Comprenda la actividad de las herramientas</b><span class="card-description">Llamadas a herramientas, permisos, Skills, MCP y contexto de sesión.</span></span></a>
+</div></section><section id="system-overview"><h2>De dónde vienen las cifras de la pantalla</h2><p>La recopilación de datos y el acceso al panel usan rutas distintas. El diagrama muestra la ruta opcional de recopilación desde dispositivos y la ruta de lectura autenticada; la recopilación de un taller preparado por un organizador puede usar una ruta configurada aparte. Este es un ejemplo de recopilación desde dispositivos con OIDC habilitado.</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="Arquitectura de recopilación y consultas." decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>Arquitectura de recopilación y consultas.</strong> Las señales llegan al almacenamiento; el panel lee resultados delimitados mediante su API. Los dos bloques de Express representan funciones lógicas de la misma aplicación.<small>Ruta lógica del dispositivo · etiquetas del diagrama en inglés · abra la vista interactiva</small></span></figcaption></figure><div class="reading-grid"><article><h3>Recopilación: cliente → observaciones almacenadas</h3><p>Claude Code y Codex exportan las señales admitidas a un Collector local. Un dispositivo registrado las envía a través de la puerta de enlace de ingesta autenticada y del Collector central hasta ClickHouse. La credencial del dispositivo es independiente del inicio de sesión en el navegador.</p></article><article><h3>Lectura: usuario autenticado → resultado del panel</h3><p>El inicio de sesión de la organización proporciona el rol configurado. La API aplica los filtros de período, cliente y otros compatibles antes de devolver las vistas de uso y diagnóstico. Revise la base del costo y la cobertura: una pantalla puede mostrar un subtotal conocido o una señal no disponible.</p></article></div><p><a href="architecture.html#pipeline">Rutas de recopilación y límites de confianza</a> · <a href="architecture.html#signals">Diferencias entre registros, métricas y trazas</a></p></section>
+<section id="start"><h2>Su primera visita</h2>
+<ol>
+<li><strong>Abra el panel de su organización e inicie sesión.</strong> Pida al organizador la dirección y el acceso. Este sitio público que está leyendo es la documentación. Consulte <a href="user-guide.html#access">cuentas y permisos</a>.</li>
+<li><strong>Elija un cliente y un período.</strong> Empiece con todos los clientes habilitados y un período que incluya trabajo reciente. Compruebe la zona horaria mostrada y si ya llegaron datos.</li>
+<li><strong>Lea el Resumen.</strong> Compare el costo conocido, los tokens observados, las sesiones y los usuarios. Lea las etiquetas de datos parciales o no disponibles antes de sacar conclusiones.</li>
+<li><strong>Elija el menú que corresponda a su pregunta.</strong> Use el mapa de abajo y siga la guía paso a paso. Las vistas comunes comparan clientes; el detalle de Claude ofrece vistas adicionales específicas de Claude.</li>
+<li><strong>Profundice y comparta la vista pertinente.</strong> Revise un modelo, usuario o tarea cuando esté disponible. Tenga en cuenta el período seleccionado y los filtros al exportar o compartir.</li>
+</ol>
+<div class="cards">
+<article class="card"><h3>Quiero consultar el panel</h3><p>Empiece por los <a href="user-guide.html#common-controls">controles compartidos</a>, y luego abra la guía del menú que necesita. Necesita acceso a una implementación existente.</p></article>
+<article class="card"><h3>Quiero conectar mi cliente de programación</h3><p>Use <a href="user-guide.html#collector">Configuración del Collector</a> para registrar un dispositivo si su rol lo permite, o pida instrucciones de instalación a un operador.</p></article>
+<article class="card"><h3>Opero el servicio</h3><p>Consulte <a href="installation.html">instalación</a> y <a href="operations.html">operaciones</a> para la implementación, la configuración del inicio de sesión, la recopilación y la recuperación.</p></article>
+</div></section>
+<section id="menu-map"><h2>Todos los menús del panel</h2>
+<p>La <a href="user-guide.html">guía de usuario completa</a> explica las secciones, las acciones y las diferencias entre las vistas comunes y el detalle de Claude en cada menú.</p>
+<div aria-label="Guía de menús del panel" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">Menú</th><th scope="col">Empiece aquí si quiere…</th></tr></thead><tbody>
+<tr><td><a href="user-guide.html#overview">Resumen</a></td><td>Obtener una visión general del uso observado, el costo conocido y la cobertura de datos.</td></tr>
+<tr><td><a href="user-guide.html#exec">Ejecutivo</a></td><td>Leer un resumen conciso de adopción y costos, junto con los límites de esos indicadores.</td></tr>
+<tr><td><a href="user-guide.html#trends">Tendencias</a></td><td>Localizar cambios a lo largo del tiempo y acotar el período que investiga.</td></tr>
+<tr><td><a href="user-guide.html#productivity">Productividad</a></td><td>Explorar la economía unitaria, los factores del costo y la actividad observada sin interpretarlos como rendimiento laboral.</td></tr>
+<tr><td><a href="user-guide.html#usage">Uso</a></td><td>Examinar la composición de tokens y los detalles disponibles sobre el uso de herramientas.</td></tr>
+<tr><td><a href="user-guide.html#users">Usuarios</a></td><td>Comparar usuarios observados, abrir el detalle de un usuario y buscar tareas en un período seleccionado.</td></tr>
+<tr><td><a href="user-guide.html#cost">Costo</a></td><td>Desglosar el gasto por cliente, backend, modelo o usuario y revisar la base de costo disponible.</td></tr>
+<tr><td><a href="user-guide.html#reliability">Fiabilidad</a></td><td>Investigar fallos notificados, latencia y señales de diagnóstico disponibles.</td></tr>
+<tr><td><a href="user-guide.html#analytics">Analítica</a></td><td>Explorar análisis detallados y las pestañas de diagnóstico disponibles para el cliente seleccionado.</td></tr>
+<tr><td><a href="user-guide.html#collector">Configuración del Collector (수집기 설치)</a></td><td>Registrar un dispositivo, instalar su Collector y administrar las credenciales de recopilación del dispositivo cuando tenga autorización.</td></tr>
+<tr><td><a href="user-guide.html#installation">Estado de instalación (설치 상태)</a></td><td>Comprobar la disponibilidad de la implementación, la base de datos y el inicio de sesión si su rol lo permite.</td></tr>
+</tbody></table></div>
+<p>También se explican: <a href="user-guide.html#tasks">trazas de tareas y enlaces compartidos a tareas</a>; <a href="user-guide.html#assistant">el asistente de IA opcional</a>; <a href="user-guide.html#access">los controles de cuenta y la ayuda</a> y <a href="user-guide.html#workflows">flujos de trabajo prácticos para investigar</a>.</p>
+</section>
+<section id="costs"><h2>Lea las cifras antes de interpretarlas</h2>
+<ul><li><strong>El costo conocido no es una factura.</strong> El gasto informado por Claude y las estimaciones admitidas basadas en precios de lista conservan su base de costo. La falta de precios puede hacer que un subtotal sea parcial.</li><li><strong>No disponible no significa cero.</strong> Los subtotales de tokens observados, los componentes completos de tokens y la cobertura de diagnóstico responden preguntas distintas. Un total positivo no demuestra que la recopilación esté completa.</li><li><strong>La actividad es una observación.</strong> Las sesiones, las herramientas y los cocientes de costo no demuestran el rendimiento de los empleados, las horas ahorradas ni una mejora causal de la productividad.</li></ul>
+<p><a href="user-guide.html#common-controls">Lea la cobertura y los estados mostrados</a> · <a href="api.html">Contratos de la API</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Definiciones de las mediciones</a></p>
+</section>
+<section id="resolution"><h2>Defina el período y use los gráficos</h2><figure class="screen-shot compact"><a data-lightbox="" href="../assets/img/time-range-en.png"><img alt="Elija las horas exactas de inicio y fin. Esta demostración anterior usa etiquetas en inglés." decoding="async" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Elija las horas exactas de inicio y fin. Esta demostración anterior usa etiquetas en inglés.<small>Abrir la imagen a tamaño completo</small></span></figcaption></figure>
+<p>Use fechas de calendario UTC o la pestaña <strong>날짜·시간</strong> (fecha y hora) para definir las horas exactas de inicio y fin según la hora local del navegador. La hora de fin es exclusiva. Revise el intervalo efectivo que se muestra: siguen aplicándose las agregaciones del servidor y el margen de ingesta.</p>
+<p>Arrastre los gráficos de series temporales compatibles para acotar el período de la página y use el control de restablecimiento para volver atrás. En el detalle de usuario, la lista de tareas sigue ese intervalo; al hacer clic en un punto se selecciona un intervalo. Los gráficos categóricos no permiten seleccionar un período.</p>
+<p><a href="user-guide.html#common-controls">Todos los controles de filtros, actualización, gráficos, tablas, exportación y uso compartido</a></p>
+</section>
+<section id="task-trace"><h2>Siga el trabajo de un usuario</h2><figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-trace.png"><img alt="Traza de tareas: revise el carril principal, los subagentes y las llamadas seleccionadas." decoding="async" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Traza de tareas: revise el carril principal, los subagentes y las llamadas seleccionadas.<small>Interfaz real en coreano · ejemplo sintético · seleccione la imagen para ampliarla</small></span></figcaption></figure>
+<p>Abra <strong>Usuarios</strong>; seleccione un usuario y revise la lista de tareas del período elegido. Al abrir una tarea verá la <strong>Traza de tareas</strong>: los carriles principal y de subagentes, las llamadas, los costos conocidos, el contexto de tokens, los modelos y el entorno de sesión disponible.</p>
+<p>El trazado es opcional. Las interacciones de Claude y los turnos trazados de Codex se basan en evidencias distintas; las llamadas, los atributos o los precios ausentes siguen sin estar disponibles. Las listas de tareas y sus detalles tienen límites explícitos.</p>
+<p><a href="user-guide.html#tasks">Guía completa de tareas y trazas</a> · <a href="api.html#tasks">Límites de la API de tareas</a> · <a href="operations.html#traces">Solucionar la falta de tareas</a></p>
+</section>
+<section id="codex-traces"><h2>Separe el uso de tareas de las trazas de diagnóstico</h2>
+<p>La pestaña Trace de diagnóstico de Codex en Analítica es una vista previa aparte de las trazas de tareas. Muestra tramos y sus metadatos disponibles; las métricas y los tramos de diagnóstico no se suman al uso ni al costo de los totales de registros de finalización.</p>
+<p><a href="user-guide.html#analytics">Pestañas de Analítica y diferencias entre clientes</a> · <a href="user-guide.html#assistant">El asistente de IA y la visualización de su propio razonamiento</a></p>
+</section>
+<section id="boundaries"><h2>Mantenga separadas las dimensiones</h2>
+<p><strong>Cliente</strong> identifica Claude Code o Codex; <strong>backend</strong> describe la ruta del proveedor; <strong>modelo</strong> identifica el modelo. El nombre del modelo por sí solo no identifica al cliente que lo emitió.</p>
+<p>La comparación de <strong>bedrock / enterprise</strong> de Claude usa canales de sesión inferidos. Estos son independientes del inicio de sesión en el panel y no ofrecen una comparación A/B de Codex Enterprise.</p>
+<p><a href="user-guide.html#common-controls">Elija la vista y los filtros adecuados</a> · <a href="architecture.html">Flujo de datos y límites de confianza</a></p>
+</section>
+<section id="demo"><h2>Ejemplo opcional: guía de la versión v1.8.0</h2>
+<p>Este video de 48 segundos muestra algunos cambios y funciones existentes de trazas de tareas. Consulte la <a href="user-guide.html">guía de usuario completa</a> para ver todos los menús y funciones.</p>
+<div class="video-frame"><video aria-label="Guía en inglés de 48 segundos sobre selección de período, configuración de dispositivos y trazas de tareas" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
+<source src="../assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
+<source src="../assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
+<track kind="captions" label="English" src="../assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
+      Su navegador no puede reproducir este video. <a href="../assets/video/dashboard-demo-en-20261114.mp4">Descargar la demostración en inglés</a>.
+    </video></div>
+<p class="caption">Creado el 14 de noviembre de 2026 · narración y subtítulos en inglés · capturas sintéticas de React con etiquetas traducidas y costos ficticios. <a href="../assets/video/dashboard-demo-en-20261114.vtt">Transcripción en inglés</a> · <a href="../assets/credits.html">Créditos de medios</a>.</p>
+</section>
+<section id="latest"><h2>Notas de la versión y siguientes pasos</h2>
+<p>Lea el historial de cambios del panel o las <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">notas de la versión</a> para conocer los cambios específicos de cada versión. Continúe con los <a href="user-guide.html#workflows">flujos de trabajo de investigación</a> o los <a href="user-guide.html#troubleshooting">primeras comprobaciones para solucionar problemas</a>.</p>
+</section>
+</main>
+<footer><div class="wrap">
+<p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Referencia completa de la API</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Definiciones de las mediciones</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Historial de cambios</a> · <a href="../assets/credits.html">Créditos de la demostración</a></p>
+<p>La telemetría puede estar incompleta. Los costos informados y las estimaciones basadas en precios de lista no son facturas. Los indicadores de actividad no demuestran la productividad de los empleados ni un retorno causal de la inversión.</p>
+</div></footer>
+<script defer="" src="../assets/guide.js?v=b92b0cfe"></script></body>
+</html>

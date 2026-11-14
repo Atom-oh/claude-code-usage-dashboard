@@ -22,6 +22,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   selected decision-chart legend emphasis when changing language. Keep Codex
   query profiles and selected tabs independent of translated labels, and retain
   Executive spend/permission help across languages.
+- Add the Spanish documentation guide and five-language navigation, including
+  language-selection instructions, matching app guide links and localized image-viewer controls.
 
 ## [1.9.0] - 2026-11-14
 

@@ -2,8 +2,8 @@
 
 The application defaults to Korean. The language picker selects English,
 Simplified Chinese, Japanese, Spanish or Korean and persists `ccdash.locale`.
-All route pages, shared controls and task dialogs use the catalogs. Spanish guide
-links use English until the Spanish guide lands. Other catalogs load on demand.
+All route pages, shared controls and task dialogs use the catalogs. Guide links
+open the matching language, including Spanish. Other catalogs load on demand.
 A failed load keeps the current language and can
 be retried; a newer selection supersedes an older request.
 

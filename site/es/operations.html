@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Opere su propia instalación — ccdash</title>
+<meta content="Conecte el SSO de la organización, verifique la entrega de trazas y solucione la falta de tareas de usuario en su propia instalación." name="description"/>
+<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
+<link href="../operations.html" hreflang="en" rel="alternate"/>
+<link href="../ko/operations.html" hreflang="ko" rel="alternate"/>
+<link href="../ja/operations.html" hreflang="ja" rel="alternate"/>
+<link href="../zh/operations.html" hreflang="zh-CN" rel="alternate"/>
+<link href="operations.html" hreflang="es" rel="alternate"/>
+</head>
+<body>
+<a class="skip-link" href="#main">Saltar al contenido</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+<nav aria-label="Navegación principal" class="tabs"><a href="index.html">Resumen</a><a href="user-guide.html">Guía de usuario</a><a href="installation.html">Instalación</a><a href="architecture.html">Arquitectura</a><a href="api.html">API</a><a aria-current="page" href="operations.html">Operaciones</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+<div aria-label="Idioma" class="languages" role="group"><a href="../operations.html" hreflang="en" lang="en">English</a><a href="../zh/operations.html" hreflang="zh-CN" lang="zh-CN">简体中文</a><a href="../ja/operations.html" hreflang="ja" lang="ja">日本語</a><a aria-current="page" href="operations.html" hreflang="es" lang="es">Español</a><a href="../ko/operations.html" hreflang="ko" lang="ko">한국어</a></div>
+</div></header>
+<main class="wrap" id="main">
+<div class="hero">
+<p class="eyebrow">Claude Code + Codex · Documentación</p>
+<h1>Opere su propia instalación</h1>
+<p class="lede">Configure la identidad de la organización, verifique los componentes implementados y siga los runbooks de despliegue y recuperación correspondientes.</p>
+<p class="caption">Actualizado el 14 de noviembre de 2026 · Describe el comportamiento del código fuente; verifique la revisión instalada.</p>
+<p><a href="#traces">Comprobaciones de recopilación de trazas</a> · <a href="index.html#task-trace">Guía de trazas de tareas</a></p>
+</div>
+<section id="sso"><h2>Conecte el SSO de la organización</h2>
+<p>Configure <code>AUTH_MODE=oidc</code> para un cliente OIDC confidencial con descubrimiento/JWKS, tokens de ID firmados, código de autorización y PKCE S256. Registre la URL exacta de retorno <code>https://dashboard.example.com/auth/callback</code>.</p>
+<p>Un grupo de usuarios de Cognito compartido puede servir a varios proyectos mediante clientes de aplicación, URL de retorno, secretos y asignaciones de roles separados. La asignación de grupos específica de cada aplicación se administra en el proveedor de identidad. Los correos, dominios e ID de grupos de usuarios de cada cliente son datos de configuración, no reglas generales de la aplicación.</p><div aria-label="Tabla de referencia de ajustes" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">Ajuste</th><th scope="col">Propósito</th></tr></thead><tbody><tr><td><code>APP_PUBLIC_URL</code></td><td>Origen HTTPS exacto, sin ruta, consulta ni fragmento.</td></tr><tr><td><code>OIDC_ISSUER</code>, <code>OIDC_CLIENT_ID</code></td><td>Identificador exacto del emisor y cliente de aplicación dedicado.</td></tr><tr><td><code>OIDC_CLIENT_SECRET</code>, <code>SESSION_SECRET</code></td><td>Aprovisione mediante referencias protegidas a secretos. Las réplicas deben compartir la clave de sesión y la configuración de identidad.</td></tr><tr><td><code>OIDC_GROUPS_CLAIM</code></td><td>Afirmación de grupos firmada de nivel superior: para Cognito, <code>cognito:groups</code>; en otros casos, la afirmación configurada del proveedor.</td></tr><tr><td><code>OIDC_SCOPES</code></td><td>Predeterminado <code>openid profile</code>. Añada solo los ámbitos que necesite el proveedor configurado, incluidos los requisitos para emitir tokens de actualización.</td></tr><tr><td><code>OIDC_ROLE_GROUPS</code></td><td>Asignación JSON desde <code>viewer</code>, <code>analyst</code> y <code>admin</code> a matrices explícitas de grupos.</td></tr></tbody></table></div>
+<pre><code class="language-json">{
+  "viewer": ["YOUR_VIEWER_GROUP"],
+  "analyst": ["YOUR_EDITOR_GROUP"],
+  "admin": ["YOUR_ADMIN_GROUP"]
+}</code></pre>
+<p>El rol de editor de la interfaz se asigna a <code>analyst</code>; <code>editor</code> no es una clave de rol de configuración. Los grupos sin asignación no pueden iniciar sesión. Se aplica el rol asignado de mayor nivel.</p><div aria-label="Tabla de referencia de roles" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">Rol</th><th scope="col">Permisos</th></tr></thead><tbody><tr><td>viewer</td><td>Consultar la telemetría de toda la instalación; sin administración de Collector ni acceso al chat.</td></tr><tr><td>analyst / editor</td><td>Consultar telemetría, usar el chat habilitado, descargar instaladores y administrar los dispositivos propios.</td></tr><tr><td>admin</td><td>Permisos de analista más diagnósticos de instalación.</td></tr></tbody></table></div><p>Okta y Keycloak pueden proporcionar este contrato OIDC con los ámbitos adecuados y afirmaciones de grupo firmadas. Verifique el proveedor real del cliente; la compatibilidad genérica no equivale a una prueba de aceptación completa del proveedor. El inicio de sesión no aísla los datos por usuario.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/organization-sso.md">Configuración del proveedor y operación de SSO</a></p></section><section id="sessions"><h2>Mantenga la sesión hasta 30 días</h2>
+<p>El inicio de sesión persistente es opcional y está deshabilitado de forma predeterminada. Se puede configurar un límite de autorización de una hora con una duración fija de inicio de sesión de 30 días de la siguiente manera:</p>
+<pre><code class="language-bash">SESSION_MAX_AGE_SECONDS=3600
+SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
+<p>La duración normal predeterminada de una sesión corta es de 900 segundos; se permiten valores de 300 a 3600. La duración del token de actualización es 0 (deshabilitado) o de 3600 a 2592000 segundos. Las sesiones cortas también están limitadas por el vencimiento del token del proveedor, así que una hora es un máximo, no un intervalo de renovación garantizado.</p>
+<p>La renovación se activa mediante solicitudes cerca del vencimiento de la sesión corta o después de este; no es un temporizador horario en segundo plano. El plazo de 30 días empieza al iniciar sesión por primera vez y no se desplaza. El proveedor puede terminar la sesión antes.</p>
+<ul>
+<li>El modo de actualización requiere un token de actualización reutilizable que no rote, un token ID firmado y reciente con los grupos actuales, e intercambio/revocación mediante <code>client_secret_basic</code>.</li>
+<li>Este modo no admite proveedores que solo permiten rotación. Si la respuesta de actualización rota el token, se debe iniciar sesión de nuevo.</li>
+<li>Use cookies Secure/HttpOnly cifradas. La API de sesión no devuelve tokens de identidad sin procesar.</li>
+<li>Cerrar sesión borra las cookies locales e intenta revocar el token de actualización. No termina la sesión SSO del proveedor, no revoca de inmediato las cookies de corta duración que se hayan copiado ni revoca los tokens de dispositivo.</li>
+</ul><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/decisions/ADR-021-refresh-token-sessions.md">Diseño y límites de actualización de sesión</a></p></section><section id="deploy"><h2>Implemente una revisión aprobada de la aplicación</h2>
+<ol>
+<li>Integre el PR de versión e implemente su etiqueta inmutable <code>vX.Y.Z</code> desde un contexto de compilación limpio. Registre la confirmación y siga las comprobaciones previas del runbook de implementación.</li>
+<li>Confirme la identidad de AWS, el clúster de destino, las entradas de Terraform existentes, el estado de las migraciones y una imagen utilizable para la reversión.</li>
+<li>Compile para la arquitectura de destino y publique una etiqueta/digest de imagen inmutable. La implementación de EKS proporcionada tiene como destino arm64.</li>
+<li>Revise el plan completo de infraestructura cuando sea necesario. Las instalaciones existentes usan verificación de compatibilidad y actualizaciones explícitas; no reintentan automáticamente el bootstrap.</li>
+<li>Despliegue, compruebe la disponibilidad y los digest reales de las imágenes, y luego verifique el inicio de sesión, el comportamiento de la API, la actualidad de la ingesta y datos representativos.</li>
+</ol>
+<p>Use <code>/healthz</code> para comprobar actividad y <code>/readyz</code> para comprobar disponibilidad. Las declaraciones del código fuente, las compilaciones correctas y un proceso saludable no demuestran que funcione el proveedor de identidad, que la telemetría sea reciente ni que se hayan aplicado las migraciones.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md">Implementación y reversión de EKS</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">Procedimiento de migración de esquema</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">Requisitos previos de instalación del cliente</a></p></section><section id="symptoms"><h2>Empiece por el límite que falla</h2><div aria-label="Tabla de referencia de síntomas" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">Síntoma</th><th scope="col">Primeras comprobaciones</th></tr></thead><tbody><tr><td>El inicio de sesión falla o termina antes de tiempo</td><td>Origen/URL de retorno/emisor exactos, grupos asignados firmados, vencimiento del proveedor y contrato de actualización. No imprima los valores de los tokens.</td></tr><tr><td>El puerto del Collector está ocupado</td><td>Use el instalador desde el código fuente de la versión seleccionada; siga el procedimiento de migración compatible con macOS o el procedimiento manual del propietario actual del servicio.</td></tr><tr><td>Usuarios sin identificar o duplicados</td><td>Compruebe el <code>--user-id</code>, la identidad emitida y los filtros del panel. Que alguien sea propietario del SSO de un dispositivo no significa que se le atribuya automáticamente la telemetría.</td></tr><tr><td>Se emitió el token, pero no hay telemetría</td><td>Reinicie los clientes de programación, genere actividad, compruebe los errores del servicio/exportador local y la recepción del dispositivo, y luego confirme que los datos se hayan almacenado.</td></tr><tr><td>El detalle de Codex muestra un guion</td><td>Examine por separado la cohorte de finalizaciones y la integridad de todo el período. Los denominadores, precios o componentes ausentes no deben convertirse en cero.</td></tr><tr><td>El detalle de costo es lento</td><td>Revise la admisión de consultas, los filtros y la resolución efectiva; use los perfiles de costo/esfuerzo y mida las cargas de destino antes de cambiar la capacidad.</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Límites y recuperación de Collector</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">Comportamiento de las consultas de costo</a></p></section><section id="platforms"><h2>Requisitos operativos previos por plataforma</h2><p>Todas las opciones de alojamiento requieren un esquema persistente de ClickHouse y una canalización OTel funcional. ECS y EC2 necesitan una configuración de servicio/secretos/almacenamiento definida por separado; Terraform está dirigido a un entorno EKS existente. Lambda requiere adaptar el runtime de la aplicación y usar servicios externos de base de datos y Collector.</p><p><a href="installation.html#platforms">Opciones de implementación y límites de compatibilidad</a> · <a href="installation.html#schema">Inicialización del esquema</a> · <a href="installation.html#collector">Configuración del Collector</a></p></section><section id="site"><h2>Implementación de la documentación</h2>
+<p>Esta documentación es HTML estático en <code>site/</code>. El flujo de Pages carga ese directorio cuando se integra un cambio en la rama <code>main</code>. No hay una compilación con bundler ni un despliegue de la aplicación/EKS para una versión que solo cambia la documentación.</p>
+<p>Use los runbooks enlazados al código fuente para conocer los procedimientos completos. El sitio web resume el comportamiento compatible y no certifica la configuración de una instalación particular del cliente.</p></section>
+<section id="traces"><h2>Verifique la ruta de trazas</h2>
+<p>Empiece con una interacción nueva y su identidad de telemetría, cliente e intervalo previstos. Los totales de uso y la disponibilidad de trazas provienen de señales distintas; exportar los registros correctamente no demuestra que se entreguen las trazas.</p>
+<ol>
+<li>Confirme que el paquete de dispositivo actual o la configuración administrada por el organizador habilite la exportación de trazas y reinicie el cliente de programación. Consulte la <a href="installation.html#trace">referencia de configuración del cliente</a>.</li>
+<li>Compruebe si hay errores de entrega en el servicio del Collector local y en el exportador de trazas. Siga la ruta por la ingesta autenticada, la canalización central de trazas y los registros almacenados <code>otel_traces</code> . La recepción del dispositivo y el estado del proceso solo confirman su propia etapa.</li>
+<li>En el detalle de usuario, elija un período que incluya el inicio de la tarea. La lista de tareas sigue el período efectivo; arrastre para acotarlo o haga clic en un intervalo. Use el restablecimiento de período completo para borrar la selección de un punto. Compruebe la identidad y los filtros previstos; las tareas trazadas compatibles se conservan durante 90 días.</li>
+<li>Para los diagnósticos de Codex, examine la pestaña Trace de Analítica con el perfil Insights completo. Los perfiles de costo/esfuerzo, herramientas y rendimiento omiten las consultas de trazas.</li>
+</ol>
+<div aria-label="Referencia de síntomas de trazas" class="table-scroll" role="region" tabindex="0"><table>
+<thead><tr><th scope="col">Síntoma</th><th scope="col">Qué debe comprobar</th></tr></thead>
+<tbody>
+<tr><td>El usuario tiene uso, pero no tareas</td><td>Configuración de trazas, hora de reinicio, identidad exportada, período de inicio de la tarea y retención. El uso histórico no se incorpora retroactivamente a las trazas.</td></tr>
+<tr><td>Una finalización de Codex está fuera de una tarea</td><td>Un turno trazado requiere un ID de conversación y un ID de turno único. Las finalizaciones sin un turno apto permanecen sin vincular; una finalización vinculada sin un tramo de muestreo puede faltar en la banda de costo.</td></tr>
+<tr><td>La cantidad de subagentes de Codex no está disponible</td><td>La vista de tareas actual solo tiene un carril principal y no deduce cantidades de subagentes a partir de tramos no relacionados.</td></tr>
+<tr><td>El detalle grande omite totales</td><td>Compruebe <code>truncated</code> y <code>span_total</code>. El detalle de tareas se limita a 5.000 tramos; la vista previa de diagnóstico independiente usa 50 trazas y 200 tramos por traza.</td></tr>
+<tr><td>Trace de Codex desaparece al aplicar un filtro de modelo</td><td>Solo coinciden con ese filtro los tramos que incluyen atributos de modelo. Bórrelo para examinar otros tramos de diagnóstico.</td></tr>
+<tr><td>Una línea discontinua aparece en el gráfico de costo unitario</td><td>Ese intervalo no tiene sesiones coincidentes que se puedan calcular. Los segmentos discontinuos solo conectan extremos observados; no completan los costos ausentes ni demuestran que no hubiera actividad.</td></tr></tbody>
+</table></div>
+<p><a href="api.html#tasks">Límites de endpoints de tareas</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Recuperación de Collector</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">Procedimiento de versión de la aplicación</a></p>
+</section>
+</main>
+<footer><div class="wrap">
+<p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Referencia completa de la API</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Definiciones de las mediciones</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Historial de cambios</a> · <a href="../assets/credits.html">Créditos de la demostración</a></p>
+<p>La telemetría puede estar incompleta. Los costos informados y las estimaciones basadas en precios de lista no son facturas. Los indicadores de actividad no demuestran la productividad de los empleados ni un retorno causal de la inversión.</p>
+</div></footer>
+</body>
+</html>

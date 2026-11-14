@@ -12,18 +12,19 @@
 <link href="../ko/user-guide.html" hreflang="ko" rel="alternate"/>
 <link href="user-guide.html" hreflang="ja" rel="alternate"/>
 <link href="../zh/user-guide.html" hreflang="zh-CN" rel="alternate"/>
+<link href="../es/user-guide.html" hreflang="es" rel="alternate"/>
 </head>
 <body class="visual-docs" data-stylesheet-version="4b6ff295">
 <a class="skip-link" href="#main">本文へスキップ</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
 <nav aria-label="メインナビゲーション" class="tabs"><a href="index.html">概要</a><a aria-current="page" href="user-guide.html">ユーザーガイド</a><a href="installation.html">インストール</a><a href="architecture.html">アーキテクチャ</a><a href="api.html">API</a><a href="operations.html">運用</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
-<div aria-label="言語" class="languages" role="group"><a href="../user-guide.html" hreflang="en" lang="en">English</a><a href="../ko/user-guide.html" hreflang="ko" lang="ko">한국어</a><span lang="ja">日本語</span><a href="../zh/user-guide.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+<div aria-label="言語" class="languages" role="group"><a href="../user-guide.html" hreflang="en" lang="en">English</a><a href="../zh/user-guide.html" hreflang="zh-CN" lang="zh-CN">简体中文</a><span lang="ja">日本語</span><a href="../es/user-guide.html" hreflang="es" lang="es">Español</a><a href="../ko/user-guide.html" hreflang="ko" lang="ko">한국어</a></div>
 </div></header>
 <main class="wrap" id="main">
 <div class="hero"><p class="eyebrow">Claude Code + Codex · ドキュメント</p><h1>ユーザー、コスト、ツールの実践ガイド</h1>
 <p class="lede">まず、1つの調査から始めましょう。スクリーンショットを見ながら進めたあと、メニューのリファレンスで利用可能なすべての操作と、クライアントごとの詳細を確認します。</p>
-<p class="caption">機能はインストール環境、権限、収集データによって異なります。このガイドでは各操作を説明し、韓国語が基本の画面で確認できるラベルを併記します。v1.8.0 のソースを基準に確認しています。</p>
+<p class="caption">利用できる機能は、インストール環境、権限、収集されたデータによって異なります。アプリケーションとこのガイドは、英語、簡体字中国語、日本語、スペイン語、韓国語に対応しています。スクリーンショットには韓国語の画面、または英語の例として明記した画面を使用しています。</p>
 </div>
 <div class="manual-shell">
 <details class="manual-nav" id="contents" open=""><summary>目次</summary><ul><li><span class="nav-group">実践的な手順</span></li><li><a href="#trace-workflow">ユーザーの作業をたどる</a></li><li><a href="#cost-workflow">コストと効率を説明する</a></li><li><a href="#tools-workflow">ツールの使用状況を確認する</a></li><li><a href="#system-overview">アーキテクチャを理解する</a></li><li><span class="nav-group">メニューと操作のリファレンス</span></li><li><a href="#start">まずはこちら</a></li><li><a href="#common-controls">操作と結果の読み方</a></li><li><a href="#overview">Overview</a></li><li><a href="#exec">Executive</a></li><li><a href="#trends">Trends</a></li><li><a href="#productivity">Productivity</a></li><li><a href="#usage">Usage</a></li><li><a href="#users">Users</a></li><li><a href="#cost">Cost</a></li><li><a href="#reliability">Reliability</a></li><li><a href="#analytics">Analytics</a></li><li><a href="#collector">コレクターの設定</a></li><li><a href="#installation">インストール状況</a></li><li><a href="#tasks">タスクとTrace</a></li><li><a href="#assistant">AIアシスタント</a></li><li><a href="#access">アカウントとヘルプ</a></li><li><a href="#workflows">定期的な作業手順</a></li><li><a href="#troubleshooting">トラブルシューティングと結果の解釈</a></li></ul></details>
@@ -71,6 +72,8 @@
 <li>調べたい内容に応じてページを選びます。モデル別またはユーザー別の内訳には <a href="#cost">Cost</a>、時間による変化には <a href="#trends">Trends</a>、ユーザーとその<a href="#tasks">タスク</a>には <a href="#users">Users</a> を使います。結果を比較するときは、同じデータソースと期間に戻ってください。</li></ol>
 <p>画面が狭い場合は、上部のメニュー (<strong>메뉴 열기</strong>) を開きます。ページを選ぶと、移動後にドロワーが閉じます。閉じるボタン、背景部分、または Escape キーでも閉じられます。</p><p><a href="#contents">目次に戻る</a></p>
 </section><section id="common-controls"><h2>操作と結果の読み方</h2>
+<h3 id="language-selection">言語を選択</h3><p>アプリケーションのサイドバー下部で言語を選択するか、モバイルではメニューを開いてください。選択した言語は、ページ遷移後や再読み込み後も保持されます。「ユーザーガイド」を開くと、同じ言語のガイドを読めます。言語を変更しても、選択中の期間と開いているタスクは維持され、技術識別子、ユーザーテキスト、収集された値は変わりません。言語を変更しても、タイムゾーンや表示期間の境界は変わりません。</p>
+
 <figure class="screen-shot compact"><a data-lightbox="" href="../assets/img/time-range-en.png"><img alt="開始時刻と終了時刻を正確に選択します。この旧デモでは、画面上のラベルは英語です。" decoding="async" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">開始時刻と終了時刻を正確に選択します。この旧デモでは、画面上のラベルは英語です。<small>画面を原寸大で開く</small></span></figcaption></figure>
 
 <h3>データソースとフィルター</h3>
@@ -222,6 +225,6 @@
 </div>
 </main>
 <footer><div class="wrap"><p>ccdash · OpenTelemetry → ClickHouse → Express → React</p><p><a href="index.html">ドキュメントの概要</a> · <a href="credits.html">デモクレジット</a></p><p>テレメトリは不完全な場合があります。報告されたコストや定価に基づく推定額は、請求書ではありません。アクティビティ指標だけでは、従業員の生産性や因果関係のあるROIは証明できません。</p></div></footer>
-<script defer src="../assets/guide.js?v=abac4d28"></script>
+<script defer src="../assets/guide.js?v=b92b0cfe"></script>
 </body>
 </html>
