@@ -60,7 +60,7 @@ test("parseCognitoIssuer accepts only Cognito pool issuers", () => {
 test("emailKey is case-insensitive", () => {
   assert.equal(emailKey("iss", "Alice@Example.com"), emailKey("iss", "alice@example.com"));
   assert.match(emailKey("iss", "a@b"), /^[a-f0-9]{64}$/);
-  assert.equal(emailKey("iss", "직원@example.com"), null);
+  assert.equal(emailKey("iss", "\u00e9mile@example.com"), null);
 });
 test("attributeValue ignores unusable values", () => {
   const user = { email: "a@Example.COM", attributes: { "custom:department": "  hana ", long: "x".repeat(257), empty: "" } };
@@ -154,7 +154,7 @@ test("flattenIntervals clips history to each attribute window", () => {
   - `a department change appends from the sync time` — second `syncOnce` with `now = () => 5000` and department `cs` → entries end with `{ team: "cs", from: 5000 }`.
   - `concurrent sync appends a change once` — store whose first `putTeamHistory` returns `false` and whose re-read already contains the change → no second write.
   - `first sync failure keeps device teams and reports stale` — directory `listUsers` rejects → `status()` has `stale: true`, `lastError: "directory_unavailable"`, and `directoryParams` still yields empty arrays.
-  - `users without a usable email are skipped` — users with no email and `직원@x` produce no writes.
+  - `users without a usable email are skipped` — users with no email and a non-ASCII email such as `\u00e9mile@x` (write it with the escape in the test) produce no writes.
   - `directoryParams leaves unrelated SQL untouched` — `directoryParams("SELECT 1", { a: 1 })` returns `{ a: 1 }`.
 - [ ] **Step 2: Run** `node --test teamSync.test.js` → FAIL.
 - [ ] **Step 3: Implement**; `start()` runs `syncOnce` immediately (errors captured, never thrown) and then on `setInterval(intervalMs).unref()`.
@@ -222,9 +222,9 @@ test("flattenIntervals clips history to each attribute window", () => {
 
 **Interfaces:**
 - Consumes: Task 5 `/api/teams` (`teams`, `sources`, `labels`, `historyStart`) and `/api/users/teams` (`sources`).
-- Produces: `teamsValue(list, users)` adds `labels` and `sources` maps; `teamName(teams, raw) -> string` (label or raw); `teamText(teams, user, { csv })` renders names, appending ` (기기 제공 값)` to device-sourced teams outside CSV; CSV gets names only.
+- Produces: `teamsValue(list, users)` adds `labels` and `sources` maps; `teamName(teams, raw) -> string` (label or raw); `teamText(teams, user, { csv })` renders names, appending a parenthesized Korean "device-provided value" marker (`DEVICE_TEAM_MARKER`, exported for tests) to device-sourced teams outside CSV; CSV gets names only.
 
-- [ ] **Step 1: Write failing tests:** `teamText shows labels and marks device teams` (`labels: { "field-ags-korea-all-cs": "Korea CS" }`, user teams `["field-ags-korea-all-cs", "dev"]` with sources `["directory", "device"]` → `"Korea CS, dev (기기 제공 값)"`; CSV → `"Korea CS, dev"`); FilterBar option text uses the label while the selected URL value stays raw; TeamCostSection shows `이 날짜 이전은 처음 동기화한 부서 기준입니다` with the date when the range starts before `historyStart`.
+- [ ] **Step 1: Write failing tests:** `teamText shows labels and marks device teams` (`labels: { "field-ags-korea-all-cs": "Korea CS" }`, user teams `["field-ags-korea-all-cs", "dev"]` with sources `["directory", "device"]` → `` `Korea CS, dev ${DEVICE_TEAM_MARKER}` ``; CSV → `"Korea CS, dev"`); FilterBar option text uses the label while the selected URL value stays raw; TeamCostSection shows a Korean note that usage before the date follows the department at the first sync, with the date, when the range starts before `historyStart`.
 - [ ] **Step 2: Run** `cd dashboard/web && npx vitest run src/TeamsContext.test.jsx src/components/FilterBar.test.jsx src/components/TeamCostSection.test.jsx` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** `npm test && npm run build` → PASS.
@@ -234,11 +234,11 @@ test("flattenIntervals clips history to each attribute window", () => {
 
 **Files:**
 - Create: `dashboard/web/src/pages/Settings.jsx`, `dashboard/web/src/pages/Settings.test.jsx`
-- Modify: `dashboard/web/src/App.jsx` (`/settings` rendered like `/installation`, outside `TeamsProvider`), `dashboard/web/src/components/Sidebar.jsx` (item `{ to: "/settings", label: "설정", hint: "팀 매핑" }` when `permissions` includes `settings:manage`), `dashboard/web/src/clientNavigation.js` (`isDashboardPath` allows `/settings`), `dashboard/web/src/App.test.jsx`
+- Modify: `dashboard/web/src/App.jsx` (`/settings` rendered like `/installation`, outside `TeamsProvider`), `dashboard/web/src/components/Sidebar.jsx` (item `{ to: "/settings" }` labelled in Korean as "Settings" with the hint "Team mapping" when `permissions` includes `settings:manage`), `dashboard/web/src/clientNavigation.js` (`isDashboardPath` allows `/settings`), `dashboard/web/src/App.test.jsx`
 
 **Interfaces:**
 - Consumes: Task 6 API.
-- Produces: page sections — directory status (pool, last sync, users, history start, stale warning), attribute picker (radio list from `options`, current marked), preview table (`값`, `사용자 수`, `표시 이름` input) loaded on selection, a missing-value count, save button (`저장하면 지금부터 이 기준으로 집계합니다. 이전 사용량은 바뀌지 않습니다.`), and an unavailable notice per `reason` (`basic_auth`: `팀 매핑은 조직 로그인(SSO)에서만 사용할 수 있습니다.`).
+- Produces: page sections — directory status (pool, last sync, users, history start, stale warning), attribute picker (radio list from `options`, current marked), preview table (value, user count and a display-name input; Korean headers) loaded on selection, a missing-value count, save button whose Korean help says saving applies this basis from now on and leaves earlier usage unchanged, and an unavailable notice per `reason` (`basic_auth`: Korean text saying team mapping needs organization SSO).
 
 - [ ] **Step 1: Write failing tests:** renders status and options; selecting an option requests `/api/settings/teams/preview?attribute=…` and shows counts without saving; save sends `PUT` with `{ attribute, labels, version }` and shows the success state; 409 `version_conflict` shows a reload prompt; `available: false` hides the form and shows the reason text; `App.test.jsx` asserts `/settings` is reachable and the sidebar item appears only with `settings:manage`.
 - [ ] **Step 2: Run** `npx vitest run src/pages/Settings.test.jsx src/App.test.jsx` → FAIL.

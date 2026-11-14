@@ -177,7 +177,7 @@ refine only if usage at bucket grain needs it; record the choice).
   reject two directory values with the same label. A directory label that equals a
   device-provided team name stays a separate team, distinguished by the source marker.
 - Team names show the label when one exists, else the raw value.
-- Device-provided teams carry a small "기기 제공 값" marker in the user list, filter options
+- Device-provided teams carry a small "device-provided value" marker (Korean UI copy) in the user list, filter options
   and team cost tables; directory teams carry none. Tooltips explain both.
 - The team cost section states the history start date when the selected range begins before
   it.
