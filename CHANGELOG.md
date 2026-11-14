@@ -17,16 +17,26 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
-- Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
-  provenance and verified message placeholders.
-- Add a persistent five-language picker to desktop, mobile and task detail.
-  Localize shared controls, chart labels and feedback while retaining open tasks,
-  filters and time ranges; guide links use available translations with an English fallback.
 - Complete localization across all application menus, token economics, user and
   cost analysis, tool usage, collector setup and installation status. Preserve
   selected decision-chart legend emphasis when changing language. Keep Codex
   query profiles and selected tabs independent of translated labels, and retain
   Executive spend/permission help across languages.
+
+## [1.9.0] - 2026-11-14
+
+### Added
+
+- Install a device collector without handling a token: the `curl | sh` command now
+  shows a confirmation code and approval link, the user approves the device in the
+  browser after SSO, and the installer finishes on its own. New installations use the
+  approving account's verified email as the attribution ID; reinstalls keep theirs.
+  The token flow remains available with `sh -s -- --token`.
+- Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
+  provenance and verified message placeholders.
+- Add a persistent five-language picker to desktop, mobile and task detail.
+  Localize shared controls, chart labels and feedback while retaining open tasks,
+  filters and time ranges; guide links use available translations with an English fallback.
 
 ### Changed
 
@@ -39,15 +49,18 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   next three follow and older versions share the fifth step; family hues avoid the client
   and channel colors. The newest Fable 5.2, Sonnet 5.5 and Haiku 5.5 are registered.
 
+### Fixed
+
+- Count LLM calls for Codex tasks from older versions (observed: 0.159.3; 0.162.1 and
+  later emit `codex.sampling`). Those versions emit no `codex.sampling` span, so their
+  tasks showed 0 LLM calls and no call spans in the task detail. A turn without
+  `codex.sampling` now counts its `run_sampling_request` spans (one per model call; the
+  `try_` retry wrapper is not counted), never both kinds in one turn.
+
 ## [1.8.2] - 2026-11-14
 
 ### Added
 
-- Install a device collector without handling a token: the `curl | sh` command now
-  shows a confirmation code and approval link, the user approves the device in the
-  browser after SSO, and the installer finishes on its own. New installations use the
-  approving account's verified email as the attribution ID; reinstalls keep theirs.
-  The token flow remains available with `sh -s -- --token`.
 - Add validated locale preference loading and Korean/English message catalogs
   for the multilingual interface.
 

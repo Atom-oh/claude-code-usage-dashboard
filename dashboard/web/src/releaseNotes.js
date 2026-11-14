@@ -10,6 +10,45 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    version: "1.9.0",
+    date: "2026-11-14",
+    summary: "화면 언어를 다섯 가지 중에서 고르고, 수집기를 브라우저 승인으로 설치하며, 클라이언트·모델 색을 화면 전체에서 같은 규칙으로 맞췄습니다.",
+    items: [
+      {
+        kind: "new",
+        title: "화면 언어 선택",
+        body: "한국어, English, 简体中文, 日本語, Español 중에서 화면 언어를 고를 수 있습니다. 공용 컨트롤·차트 라벨·안내 문구가 선택한 언어로 바뀌고, 열려 있던 작업·필터·기간은 그대로 유지됩니다. 사용자 가이드는 번역본이 있으면 그 언어로, 없으면 영어로 열립니다.",
+        to: null,
+        where: "사이드바의 언어 선택 (모바일 메뉴·작업 상세에도 있음)",
+        refs: [279],
+      },
+      {
+        kind: "new",
+        title: "브라우저 승인으로 수집기 설치",
+        body: "curl … | sh 명령을 실행하면 확인 코드와 승인 링크가 나오고, 브라우저에서 로그인해 기기를 승인하면 설치가 알아서 끝납니다. 기기 토큰을 복사해 붙여 넣을 필요가 없고, 새 설치는 승인한 계정의 이메일을 사용자 ID로 씁니다. 기존 토큰 방식도 계속 쓸 수 있습니다.",
+        to: null,
+        where: "사이드바 수집기 설치 → 터미널에서 설치 (editor·admin)",
+        refs: [268],
+      },
+      {
+        kind: "improved",
+        title: "클라이언트·모델 색 정리",
+        body: "Claude Code는 Claude 주황, Codex는 잉크색으로 모든 공용 화면에서 같은 색을 씁니다. 사용자별 비용의 채널 줄은 같은 주황의 진하기로 CCB·C4E·미분류를 구분합니다. 모델은 계열마다 한 가지 색을 쓰고, 최신 버전일수록 진하게 표시합니다.",
+        to: "/cost",
+        where: "Cost → 사용자별 비용·모델별 비용 비중, Trends → 클라이언트별 추이",
+        refs: [280],
+      },
+      {
+        kind: "fixed",
+        title: "이전 버전 Codex 작업의 LLM 호출 수",
+        body: "Codex 0.159.3 같은 이전 버전에서 보낸 작업의 LLM 호출이 0으로 나오고 작업 상세에 호출 구간이 비어 보이던 문제를 고쳤습니다. 이미 수집된 기록에도 바로 반영됩니다.",
+        to: "/users",
+        where: "Users → 사용자 선택 → 작업 목록·작업 상세",
+        refs: [282],
+      },
+    ],
+  },
+  {
     version: "1.8.2",
     date: "2026-11-14",
     summary: "활동이 많은 사용자의 90일 활동 히트맵이 열리지 않던 문제와, 기기 수집기 사용자의 작업에 모델이 비던 문제를 고쳤습니다.",

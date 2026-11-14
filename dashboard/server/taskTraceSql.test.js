@@ -277,3 +277,51 @@ test("real ClickHouse task trace list, detail and exact-user drilldown", {
     await db.close();
   }
 });
+
+// Older Codex (observed: 0.159.3) has no codex.sampling span: run_sampling_request is its model call.
+const LEGACY = "legacy@x.com";
+const L1 = "019a0000-0000-7000-8000-0000000000b1", M1 = "019a0000-0000-7000-8000-0000000000b2";
+const legacySpan = (name, conversation, turn, id, at, durationS, attrs = {}) => ({
+  Timestamp: ts(at), TraceId: `legacy-${conversation}`, SpanId: id, ParentSpanId: "",
+  SpanName: name, Duration: sec(durationS), ResourceAttributes: codexResource(LEGACY),
+  SpanAttributes: { turn_id: turn, ...attrs },
+});
+
+test("real ClickHouse Codex legacy turns count run_sampling_request calls", {
+  skip: !process.env.TASK_TRACE_SQL_TEST_URL,
+}, async () => {
+  const { createClient } = await import("@clickhouse/client");
+  const db = createClient({ url: process.env.TASK_TRACE_SQL_TEST_URL, database: "claude_code" });
+  const run = async (sql, params) =>
+    (await db.query({ query: sql, query_params: params, format: "JSONEachRow" })).json();
+  try {
+    await db.insert({ table: "otel_traces", format: "JSONEachRow", values: [
+      // Legacy turn: two calls, each wrapped by a try span that is not another call.
+      legacySpan("unified_exec.exec_command", "CL", L1, "le", "2026-11-05T16:00:05Z", 2, { "conversation.id": "CL" }),
+      legacySpan("run_sampling_request", "CL", L1, "lr1", "2026-11-05T16:00:00Z", 10, { model: NON_ANTHROPIC }),
+      legacySpan("try_run_sampling_request", "CL", L1, "lt1", "2026-11-05T16:00:00Z", 10, { model: NON_ANTHROPIC }),
+      legacySpan("run_sampling_request", "CL", L1, "lr2", "2026-11-05T16:00:20Z", 10, { model: NON_ANTHROPIC }),
+      legacySpan("try_run_sampling_request", "CL", L1, "lt2", "2026-11-05T16:00:20Z", 10, { model: NON_ANTHROPIC }),
+      // Mixed turn (later versions emit both): only codex.sampling counts.
+      { ...sampling(LEGACY, "CM", M1, "ms1", "2026-11-05T17:00:00Z", 10), TraceId: "legacy-CM" },
+      legacySpan("run_sampling_request", "CM", M1, "mr1", "2026-11-05T17:00:00Z", 10, { model: NON_ANTHROPIC }),
+    ] });
+    await db.insert({ table: "otel_logs", format: "JSONEachRow", values: [
+      completion(LEGACY, "CL", "2026-11-05T16:00:08Z"), completion(LEGACY, "CL", "2026-11-05T16:00:28Z"),
+      completion(LEGACY, "CM", "2026-11-05T17:00:08Z"),
+    ] });
+    const list = await userTasks(from, to, { userExact: LEGACY }, ["codex"], run);
+    const byId = Object.fromEntries(list.tasks.map(t => [t.id, t]));
+    assert.equal(byId[`codex:CL:${L1}`].llm_calls, 2);
+    assert.deepEqual(byId[`codex:CL:${L1}`].models, [NON_ANTHROPIC]);
+    assert.equal(byId[`codex:CM:${M1}`].llm_calls, 1);
+    const legacy = await userTaskDetail(from, to, { id: `codex:CL:${L1}`, userExact: LEGACY }, ["codex"], run);
+    assert.equal(legacy.task.llm_calls, 2);
+    assert.deepEqual(legacy.spans.filter(s => s.kind === "llm").map(s => s.id).sort(), ["lr1", "lr2"]);
+    assert.equal(legacy.task.completions_without_span, 0);
+    const mixed = await userTaskDetail(from, to, { id: `codex:CM:${M1}`, userExact: LEGACY }, ["codex"], run);
+    assert.deepEqual(mixed.spans.filter(s => s.kind === "llm").map(s => s.id), ["ms1"]);
+  } finally {
+    await db.close();
+  }
+});

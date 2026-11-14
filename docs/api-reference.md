@@ -688,7 +688,8 @@ turn crossing a bucket edge is listed once, by its starting bucket. Turns starti
 the neighbouring 24h are attachment context only: completions they win are neither
 listed nor unattached here.
 `duration_ms` is the observed span window (min start .. max end, `duration_basis:
-"observed_span_window"`), `llm_calls` counts `codex.sampling` spans, and `subagents` is
+"observed_span_window"`), `llm_calls` counts the turn's model-call spans (`codex.sampling`; a turn without one,
+from older Codex such as 0.159.3, counts `run_sampling_request` instead, never both), and `subagents` is
 null (no parent link). Spans carry no usage: tokens and cost come only from unique
 usage-bearing `response.completed` completions of the same conversation whose event
 time falls in `[start, end + 5s]` (latest-starting turn when several; each completion
@@ -719,7 +720,7 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
 the exact identity the task belongs to:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
-  `completions_without_span` (linked completions matching no `codex.sampling` span).
+  `completions_without_span` (linked completions matching no model-call span).
 - `lanes`: `{id, label, kind, spawned_by, llm_calls, cost_usd, cost_partial}`. Claude has
   `main` plus one lane per `agent_id`; `kind` is `general-purpose`, `Explore`, `fork` or
   `custom`, `label` is the spawning span's `subagent_type` (null when not found) and
@@ -732,8 +733,8 @@ the exact identity the task belongs to:
   tool span lacks; `execution_ms` is its duration, while `duration_ms` stays the whole
   call including permission wait), and children of the execution span point at the tool
   span. An execution span without its `tool` span is returned as the tool span. Codex
-  spans are the turn's spans that carry the task's conversation id or none. LLM spans add `tokens`, `cost_usd`, `cost_basis`; Codex `codex.sampling`
-  spans carry the linked completion's values and `completion: {model, effort, ttft_ms,
+  spans are the turn's spans that carry the task's conversation id or none. LLM spans add `tokens`, `cost_usd`, `cost_basis`; Codex model-call
+  spans (`codex.sampling`, or `run_sampling_request` for legacy turns) carry the linked completion's values and `completion: {model, effort, ttft_ms,
   duration_ms, count}`. `attrs` holds only allowlisted keys: LLM `model`, token counts,
   `ttft_ms`, `attempt`, `error_class`, `status_code`, `stop_reason`, `query_source_safe`,
   `effort`, `speed`; tool `tool_name`, `subagent_type`, `skill_name`,
