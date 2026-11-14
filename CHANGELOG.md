@@ -21,6 +21,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   in the browser time zone. Shared links preserve that mode, including UTC-midnight
   boundaries; UTC calendar-day selection remains available.
 
+### Changed
+
+- Collector installation is one terminal command, `curl -fsSL <dashboard>/api/ingest/install.sh | sh`
+  (Linux prefixes `sudo loginctl enable-linger`), instead of downloading the archive in the
+  browser, moving it to the device and extracting it. The script prompts on the terminal
+  for the attribution ID and device token, downloads the package from the new
+  device-token route `GET /api/ingest/package/:platform` (ten per device per hour) and runs
+  the installer with a private token file; the token stays out of process arguments. The
+  page drops its download button; `/api/collector/package/:platform` remains for manual
+  installs.
+
 ### Fixed
 
 - User detail stays open when the period changes. Its top-20 task list defaults to
