@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-11-14
+
 ### Changed
 
 - Rebuild the visual guide around illustrated user-Trace, cost-efficiency and tool
