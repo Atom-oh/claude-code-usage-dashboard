@@ -24,7 +24,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   filters and time ranges; guide links use available translations with an English fallback.
 - Complete localization across all application menus, token economics, user and
   cost analysis, tool usage, collector setup and installation status. Preserve
-  selected decision-chart legend emphasis when changing language.
+  selected decision-chart legend emphasis when changing language. Keep Codex
+  query profiles and selected tabs independent of translated labels, and retain
+  Executive spend/permission help across languages.
 
 ### Changed
 

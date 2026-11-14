@@ -35,17 +35,17 @@ test("an Effort-only section requests its profile and does not mislabel skipped 
   data.coverage.metrics = { status: "not_requested", records: null };
   data.coverage.traces = { status: "not_requested", records: null };
   state.result = { data, loading: false, error: null };
-  const { rerender } = render(<CodexInsights sections={["효율·Effort"]} />);
+  const { rerender } = render(<CodexInsights sections={["effort"]} />);
   expect(state.calls.at(-1)[1].profile).toBe("effort");
   expect(screen.getByText("Logs · 수집 확인 · 8개")).toBeTruthy();
   expect(screen.queryByText(/Metrics ·/)).toBeNull();
   expect(screen.queryByText(/Traces ·/)).toBeNull();
   expect(screen.getByText("high")).toBeTruthy();
-  rerender(<CodexInsights sections={["효율·Effort", "Trace"]} />);
+  rerender(<CodexInsights sections={["effort", "traces"]} />);
   expect(state.calls.at(-1)[1].profile).toBeUndefined();
 });
 
-test.each([["도구·승인", "tools"], ["성능", "performance"]])(
+test.each([["tools", "tools"], ["performance", "performance"]])(
   "the shared %s section requests only its diagnostic profile and restores full requests for mixed sections",
   (section, profile) => {
     const data = fixture();
@@ -64,7 +64,7 @@ test.each([["도구·승인", "tools"], ["성능", "performance"]])(
       expect(screen.getByText("Metrics · 관측 없음")).toBeTruthy();
       expect(screen.getByText("요청·도구·시작 단계 지연")).toBeTruthy();
     }
-    rerender(<CodexInsights sections={[section, "Trace"]} />);
+    rerender(<CodexInsights sections={[section, "traces"]} />);
     expect(state.calls.at(-1)[1].profile).toBeUndefined();
   });
 test.each([148, 0, null])("Codex observed token summary and effort export preserve %s independently of ratios", (observed_tokens) => {
@@ -270,11 +270,11 @@ test("partial extrema annotate a valid mean and conflicting traces withhold thei
 
 test("route sections expose only relevant details and choose a valid tab after navigation", () => {
   state.result = { data: fixture(), loading: false };
-  const { rerender } = render(<CodexInsights sections={["성능"]} />);
+  const { rerender } = render(<CodexInsights sections={["performance"]} />);
   expect(screen.getByText("요청·도구·시작 단계 지연")).toBeTruthy();
   expect(screen.queryByText("Effort별 사용량·비용")).toBeNull();
   expect(screen.queryByRole("button", { name: "런타임·메트릭" })).toBeNull();
-  rerender(<CodexInsights sections={["런타임·메트릭", "Trace"]} />);
+  rerender(<CodexInsights sections={["runtime", "traces"]} />);
   expect(screen.getByPlaceholderText("메트릭 이름 검색")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Trace", exact: true }));
   expect(screen.getByText("작업별 Span 지연")).toBeTruthy();
@@ -288,4 +288,38 @@ test("stale detail rows cannot be exported", () => {
   state.result = { data: fixture(), loading: false, error: null, stale: false };
   rerender(<CodexInsights />);
   expect(within(table).getByRole("button", { name: "CSV" }).disabled).toBe(false);
+});
+
+test.each(["effort", "tools", "performance"])("the %s profile is independent of all five display languages", async (profile) => {
+  const { act } = await import("@testing-library/react");
+  const { localeStore } = await import("../i18n/index.js");
+  state.result = { data: fixture(), loading: false, error: null };
+  render(<CodexInsights sections={[profile]} />);
+  try {
+    for (const locale of ["ko", "en", "zh-CN", "ja", "es"]) {
+      await act(() => localeStore.select(locale));
+      expect(state.calls.at(-1)[1]).toEqual({ client: "codex", profile });
+    }
+  } finally {
+    cleanup();
+    await localeStore.select("ko");
+  }
+});
+
+test("the selected diagnostic tab remains selected while its label changes", async () => {
+  const { act } = await import("@testing-library/react");
+  const { localeStore } = await import("../i18n/index.js");
+  show();
+  const selected = screen.getByRole("button", { name: "성능", exact: true });
+  fireEvent.click(selected);
+  try {
+    for (const locale of ["en", "zh-CN", "ja", "es", "ko"]) {
+      await act(() => localeStore.select(locale));
+      expect(screen.getByRole("button", { pressed: true })).toBe(selected);
+      expect(state.calls.at(-1)[1]).toEqual({ client: "codex" });
+    }
+  } finally {
+    cleanup();
+    await localeStore.select("ko");
+  }
 });

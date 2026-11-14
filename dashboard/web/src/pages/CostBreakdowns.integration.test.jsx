@@ -280,3 +280,27 @@ test("known $0 model and effort rows collapse into a count instead of growing th
   expect(within(card(TITLES[1])).getByText("비용 $0 항목 1개").closest("details").textContent)
     .toContain("high · 백엔드 미제공");
 });
+
+test.each([["cost", "effort"], ["usage", "tools"], ["reliability", "performance"]])(
+  "the shared %s route retains its Codex profile and request count across languages", async (page, profile) => {
+    const { localeStore } = await import("../i18n/index.js");
+    const data = overview({ clients: ["codex"], by_client: [codex], by_model: [codex] });
+    const { requests } = mount({ enabledClients: ["codex"], entry: `/${page}?client=codex`, data,
+      respond: url => url.pathname === "/api/clients/overview"
+        ? Promise.resolve(ok(page === "cost" ? costClientOverview(data) : data)) : undefined });
+    await screen.findByText("Logs · 수집 확인 · 1개", { exact: true });
+    const diagnosticRequests = () => requests.filter(url => url.pathname === "/api/codex/insights");
+    const initial = diagnosticRequests().map(url => url.href);
+    expect(initial.length).toBeGreaterThan(0);
+    expect(diagnosticRequests().every(url => url.searchParams.get("profile") === profile)).toBe(true);
+    try {
+      for (const locale of ["en", "zh-CN", "ja", "es", "ko"]) {
+        await act(() => localeStore.select(locale));
+        expect(diagnosticRequests().map(url => url.href)).toEqual(initial);
+      }
+    } finally {
+      cleanup();
+      await localeStore.select("ko");
+    }
+  },
+);

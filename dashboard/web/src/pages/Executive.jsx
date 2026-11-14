@@ -161,13 +161,13 @@ export default function Executive() {
   const abCostPerDev = (grp) => (abDevs[grp] > 0 && abCost[grp] != null ? abCost[grp] / abDevs[grp] : null);
   const abAutoRatio = (grp) => (abUserSec[grp] > 0 && abCliSec[grp] != null ? abCliSec[grp] / abUserSec[grp] : null);
   const scoreboardRows = [
-    { label: translate("m58fb8b612664"), bedrock: abDevs.bedrock, enterprise: abDevs.enterprise, format: "number", betterIs: "high" },
-    { label: translate("mb3349a79f4ca"), bedrock: abCost.bedrock, enterprise: abCost.enterprise, format: "usd", betterIs: null },
-    { label: translate("m5c615b8ee780"), bedrock: abCostPerDev("bedrock"), enterprise: abCostPerDev("enterprise"), format: "usd", betterIs: "low" },
-    { label: translate("m81ea6a128280"), bedrock: abLoc.bedrock, enterprise: abLoc.enterprise, format: "number", betterIs: "high" },
-    { label: translate("m928c37dd7e50"), bedrock: abAcceptRate("bedrock"), enterprise: abAcceptRate("enterprise"), format: "pct", betterIs: null },
-    { label: translate("mefe93359093f"), bedrock: abUserSec.bedrock != null ? abUserSec.bedrock / 3600 : null, enterprise: abUserSec.enterprise != null ? abUserSec.enterprise / 3600 : null, format: "hours", betterIs: null },
-    { label: translate("m3c3f535a641f"), bedrock: abAutoRatio("bedrock"), enterprise: abAutoRatio("enterprise"), format: "number", betterIs: null },
+    { id: "developers", label: translate("m58fb8b612664"), bedrock: abDevs.bedrock, enterprise: abDevs.enterprise, format: "number", betterIs: "high" },
+    { id: "cost", label: translate("mb3349a79f4ca"), bedrock: abCost.bedrock, enterprise: abCost.enterprise, format: "usd", betterIs: null },
+    { id: "cost_per_developer", label: translate("m5c615b8ee780"), bedrock: abCostPerDev("bedrock"), enterprise: abCostPerDev("enterprise"), format: "usd", betterIs: "low" },
+    { id: "lines_of_code", label: translate("m81ea6a128280"), bedrock: abLoc.bedrock, enterprise: abLoc.enterprise, format: "number", betterIs: "high" },
+    { id: "approval_rate", label: translate("m928c37dd7e50"), bedrock: abAcceptRate("bedrock"), enterprise: abAcceptRate("enterprise"), format: "pct", betterIs: null },
+    { id: "user_hours", label: translate("mefe93359093f"), bedrock: abUserSec.bedrock != null ? abUserSec.bedrock / 3600 : null, enterprise: abUserSec.enterprise != null ? abUserSec.enterprise / 3600 : null, format: "hours", betterIs: null },
+    { id: "automation_ratio", label: translate("m3c3f535a641f"), bedrock: abAutoRatio("bedrock"), enterprise: abAutoRatio("enterprise"), format: "number", betterIs: null },
   ];
 
   // single 모드에선 맞세울 상대가 없다 — 데이터가 있는 그룹의 값을 그대로 하나만 보여준다.
@@ -177,16 +177,15 @@ export default function Executive() {
     return fmtValue(row[g], row.format);
   };
 
-  // single 모드 StatTile의 help 문구 — scoreboardRows(ABScoreboard와 공유)에 필드를 얹는 대신
-  // label로 조회하는 별도 맵으로 둔다. docs/metrics.md의 정의 문장과 동일한 어휘를 쓴다.
+  // Help follows stable metric IDs, so translated labels never change its lookup.
   const SCOREBOARD_HELP = {
-    "활성 개발자": translate("me4687cbbf062"),
-    "기간 비용": translateSource(SPEND_HELP),
-    "개발자당 비용": translate("m4d1db515feee"),
-    "추가 코드 라인": translate("m611508110776"),
-    "권한 허용률": translateSource(APPROVAL_HELP),
-    "개발자 활성 시간": translate("m26c6d8a3d58b"),
-    "CLI / 사용자 활성 시간": translate("mf220a6fe077b"),
+    developers: translate("me4687cbbf062"),
+    cost: translateSource(SPEND_HELP),
+    cost_per_developer: translate("m4d1db515feee"),
+    lines_of_code: translate("m611508110776"),
+    approval_rate: translateSource(APPROVAL_HELP),
+    user_hours: translate("m26c6d8a3d58b"),
+    automation_ratio: translate("mf220a6fe077b"),
   };
 
   const headline =
@@ -230,7 +229,7 @@ export default function Executive() {
               >
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {scoreboardRows.map((row) => (
-                    <StatTile key={row.label} label={row.label} value={singleValue(row)} help={SCOREBOARD_HELP[row.label]} />
+                    <StatTile key={row.id} label={row.label} value={singleValue(row)} help={SCOREBOARD_HELP[row.id]} />
                   ))}
                 </div>
               </Card>

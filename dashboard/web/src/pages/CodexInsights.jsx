@@ -15,8 +15,15 @@ const text = (key, label) => ({ key, label, render: (v) => v || "—" });
 const numeric = (key, label) => ({ key, label, render: formatObserved });
 const ratio = (key, label) => ({ key, label, render: percent });
 const cost = (key, label) => ({ key, label, render: formatClientCost });
-const TABS = localize(["효율·Effort", "도구·승인", "성능", "런타임·메트릭", "Trace"]);
-const PROFILES = { "효율·Effort": "effort", "도구·승인": "tools", "성능": "performance" };
+// IDs and request profiles are transport/state values; only labels are localized.
+const TABS = [
+  { id: "effort", profile: "effort", label: () => translate("m174bcde43e79") },
+  { id: "tools", profile: "tools", label: () => translate("m95f5b9981936") },
+  { id: "performance", profile: "performance", label: () => translate("m3bae56d5ba50") },
+  { id: "runtime", label: () => translate("m85517f6cc782") },
+  { id: "traces", label: () => "Trace" },
+];
+const tabsFor = (sections) => sections?.length ? TABS.filter((tab) => sections.includes(tab.id)) : TABS;
 const STATUS = localize({ observed: "수집 확인", empty: "관측 없음", unavailable: "수집 미확인", limited: "조회 한도 초과" });
 const codexCostLabel = (row) => costBasisLabel({ ...row, cost_basis: "aws_list_estimate" });
 const EFFORT = localize([text("effort", "Effort"), numeric("requests", "완료 응답"), numeric("observed_tokens", "관측 토큰"),
@@ -62,8 +69,8 @@ export default function CodexInsights(props) {
 function RequestedCodexInsights({ range, enabled = true, hold = false, sections }) {
   const _locale = useLocale();
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
-  const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
-  const profile = allowedTabs.length === 1 ? PROFILES[allowedTabs[0]] : undefined;
+  const allowedTabs = tabsFor(sections);
+  const profile = allowedTabs.length === 1 ? allowedTabs[0].profile : undefined;
   const api = useApi("/api/codex/insights",
     { client: "codex", ...bounds, ...(profile ? { profile } : {}) }, enabled, { linkedRange: true, hold });
   return <CodexInsightsBody api={api} enabled={enabled} sections={sections} />;
@@ -72,9 +79,9 @@ function RequestedCodexInsights({ range, enabled = true, hold = false, sections 
 function CodexInsightsBody({ api, enabled = true, sections }) {
   const _locale = useLocale();
   const { data, loading, error, stale } = api;
-  const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
-  const [preferredTab, setTab] = useState(TABS[0]);
-  const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
+  const allowedTabs = tabsFor(sections);
+  const [preferredTab, setTab] = useState(TABS[0].id);
+  const tab = allowedTabs.some((item) => item.id === preferredTab) ? preferredTab : allowedTabs[0]?.id;
   const [search, setSearch] = useState("");
   const metrics = useMemo(() => (data?.metrics || []).filter((r) => r.name.toLowerCase().includes(search.toLowerCase())), [data?.metrics, search, _locale]);
   const summary = data?.summary || {};
@@ -107,11 +114,11 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
             <p role="status" className="text-sm text-warning-text">{translate("m1461153ebd23")}</p>}
           {data?.coverage?.logs?.limited_sections?.length > 0 && <p role="status" className="text-sm text-warning-text">{translate("m9b0f391b8d48")}</p>}
           {allowedTabs.length > 1 && <div className="flex flex-wrap gap-2" aria-label={translate("mbe07db24d3d9")}>
-            {allowedTabs.map((name) => <button key={name} type="button" aria-pressed={tab === name} onClick={() => setTab(name)}
-              className={`rounded-lg border px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${tab === name
-                ? "border-brand-500 bg-brand-600 text-white" : "border-ink-200 bg-card text-ink-700"}`}>{name}</button>)}
+            {allowedTabs.map((item) => <button key={item.id} type="button" aria-pressed={tab === item.id} onClick={() => setTab(item.id)}
+              className={`rounded-lg border px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${tab === item.id
+                ? "border-brand-500 bg-brand-600 text-white" : "border-ink-200 bg-card text-ink-700"}`}>{item.label()}</button>)}
           </div>}
-          {tab === TABS[0] && <>
+          {tab === "effort" && <>
             <CodexEfficiency summary={summary} completionUsage={data?.completion_usage}
               completeness={data?.completeness} />
             <DataTable title={translate("mfaccd8fb7fa7")} subtitle={translate("m7facc615af4d")}
@@ -119,7 +126,7 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
                 token_status: tokenStatusLabel(row), cost_basis_label: codexCostLabel(row) }))}
               columns={EFFORT} exportName="codex_effort" stale={stale} />
           </>}
-          {tab === TABS[1] && <>
+          {tab === "tools" && <>
             <div className="grid grid-cols-2 gap-4">
               <StatTile label={translate("m7a106e812ba0")} value={percent(summary.tool_success_rate)} help={translate("m50685eab7e6e")} />
               <StatTile label={translate("me3d2ea4e8a1c")} value={percent(summary.approval_rate)} help={translate("ma1b7c60c5e3d")} />
@@ -127,7 +134,7 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
             <DataTable title={translate("m9ad718b65dab")} columns={TOOLS} rows={data?.tools || []} exportName="codex_tools_detail" stale={stale} />
             <DataTable title={translate("m80ec68b9c495")} columns={APPROVALS} rows={data?.approvals || []} exportName="codex_approvals" stale={stale} />
           </>}
-          {tab === TABS[2] && <>
+          {tab === "performance" && <>
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
               <StatTile label={translate("md0076a3d5114")} value={percent(summary.retry_rate)} help={translate("m713987f36875")} />
               <StatTile label={translate("ma00b4d99712b")} value={formatObserved(summary.api_error_rate)}
@@ -146,7 +153,7 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
             <DataTable title={translate("m2939628cbdde")} subtitle={translate("m2aba4071bf3f")}
               columns={LATENCY} rows={data?.latency || []} exportName="codex_latency" stale={stale} />
           </>}
-          {tab === TABS[3] && <>
+          {tab === "runtime" && <>
             <div className="grid grid-cols-2 gap-4">
               <StatTile label={translate("mb6fcbcb9708a")} value={formatObserved(summary.prompts)} />
               <StatTile label={translate("m055e662c174b")} value={formatObserved(summary.prompt_length_mean)} help={translate("mf650f4fec99a")} />
@@ -160,7 +167,7 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
             <DataTable title={translate("md66c0215248d")} columns={METRICS} rows={metrics} exportName="codex_metrics" stale={stale} />
             <DataTable title={translate("m86d368467927")} columns={[text("event", translate("m46b289bb0a9e")), numeric("count", translate("m438641bb0f5d"))]} rows={data?.events || []} exportName="codex_events" stale={stale} />
           </>}
-          {tab === TABS[4] && <>
+          {tab === "traces" && <>
             <p className="text-sm text-ink-600">{translate("ma733b6ed7cb1")}</p>
             {data?.coverage?.traces?.truncated_traces > 0 && <p role="status" className="text-sm text-warning-text">{translate("mc64be2b3364d")}</p>}
             {data?.coverage?.traces?.partial && <p role="status" className="text-sm text-warning-text">{translate("m64e5e5d200ff")}</p>}

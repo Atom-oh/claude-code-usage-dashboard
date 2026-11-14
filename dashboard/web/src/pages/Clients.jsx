@@ -1,4 +1,4 @@
-import { richMessage, localize, translate, useLocale } from "../i18n/index.js";
+import { richMessage, translate, useLocale } from "../i18n/index.js";
 import { useMemo, useState } from "react";
 import { formatClientTimestamp } from "../clientPresentation.js";
 import { Card, ErrorBox, Loading } from "../components/Card.jsx";
@@ -22,10 +22,10 @@ import TokenEconomics from "./TokenEconomics.jsx";
 
 // Productivity carries no Codex insights block: its tool/approval/latency sections cover every
 // client, and the Codex efficiency summary and effort table stay on Cost.
-const INSIGHT_SECTIONS = localize({
-  cost: ["효율·Effort"], usage: ["도구·승인"],
-  reliability: ["성능"], analytics: ["런타임·메트릭", "Trace"],
-});
+const INSIGHT_SECTIONS = {
+  cost: ["effort"], usage: ["tools"],
+  reliability: ["performance"], analytics: ["runtime", "traces"],
+};
 
 export default function Clients({ page = "overview" }) {
   const _locale = useLocale();
