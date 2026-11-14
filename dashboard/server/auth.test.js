@@ -271,6 +271,18 @@ test("collector management uses signed generic roles and keeps unsafe origin che
   }
 });
 
+test("settings:manage belongs to admin only", async t => {
+  for (const [group, allowed] of [["dashboard-viewers", false], ["dashboard-analysts", false], ["dashboard-admins", true]]) {
+    const f = await fixture(t, { claims: { groups: [group] } });
+    const { session } = await f.complete();
+    const profile = await (await f.request("/api/session", { headers: { cookie: session } })).json();
+    assert.equal(profile.permissions.includes("settings:manage"), allowed, group);
+  }
+  // Basic and development mode report the admin permission set; team settings refuse saves there.
+  const development = createAuthentication({ env: { AUTH_ALLOW_INSECURE: "1" }, audit: () => {} });
+  assert.ok(development.sessionInfo({}).permissions.includes("settings:manage"));
+});
+
 test("valid identity without an authorized group is denied, not defaulted to viewer", async t => {
   for (const groups of [undefined, [], ["unrelated-group"], "dashboard-viewers"]) {
     const f = await fixture(t, { claims: { groups } });

@@ -12,7 +12,7 @@ const ROLES = ["viewer", "analyst", "admin"];
 const PERMISSIONS = {
   viewer: ["telemetry:read"],
   analyst: ["telemetry:read", "chat:query", "collector:manage"],
-  admin: ["telemetry:read", "chat:query", "installation:read", "collector:manage"],
+  admin: ["telemetry:read", "chat:query", "installation:read", "collector:manage", "settings:manage"],
 };
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
