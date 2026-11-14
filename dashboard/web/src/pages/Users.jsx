@@ -1,3 +1,4 @@
+import { localeTag, translate, translateSource, useLocale } from "../i18n/index.js";
 import { useEffect, useState } from "react";
 import { Card, Loading, ErrorBox } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
@@ -18,8 +19,8 @@ import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
 import { ACTIVITY_SCORE_HELP, averageActivityScore, formatActivityScore } from "../score.js";
 import { teamSuffix, useTeams, withTeamColumn, withTeams } from "../TeamsContext.jsx";
 
-const fmt = (n) => Number(n || 0).toLocaleString();
-const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const fmt = (n) => Number(n || 0).toLocaleString(localeTag());
+const usd = (n) => n == null ? translate("m84dd6e381dca") : `$${Number(n).toLocaleString(localeTag(), { maximumFractionDigits: 2 })}`;
 const pct = (n) => n == null ? "—" : `${(Number(n) * 100).toFixed(0)}%`;
 
 // bedrock/enterprise 대결 밴드 — 이 대시보드의 정체성(A/B 실험)을 Users 페이지 상단에도 드러낸다.
@@ -27,6 +28,7 @@ const pct = (n) => n == null ? "—" : `${(Number(n) * 100).toFixed(0)}%`;
 // 인원(count)은 straddler(두 그룹 모두 세션이 있는 유저)를 양쪽에 셀 수 있다 — leaderboard가
 // 유저×그룹으로 행이 갈라져 있기 때문(GROUP_ORDER 합계 ≥ distinct 유저 수).
 function GroupFaceOff({ rows }) {
+  const _locale = useLocale();
   const { groupMode } = useConfig();
   const shownGroups = useGroupsShown();
   const stats = shownGroups(rows).map((g) => {
@@ -44,7 +46,7 @@ function GroupFaceOff({ rows }) {
   });
 
   return (
-    <Card padded={false} title={groupLabel(groupMode, undefined, "채널 요약")} help={ACTIVITY_SCORE_HELP}>
+    <Card padded={false} title={groupLabel(groupMode, undefined, translate("m15f108bcf538"))} help={translateSource(ACTIVITY_SCORE_HELP)}>
       <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-ink-100">
         {stats.map((s, i) => (
           <div key={s.group} className="relative flex-1">
@@ -59,23 +61,23 @@ function GroupFaceOff({ rows }) {
                 <span className="text-[13px] font-semibold text-ink-800">{s.group}</span>
               </div>
               {s.count === 0 ? (
-                <div className="text-[12px] text-ink-400">데이터 없음</div>
+                <div className="text-[12px] text-ink-400">{translate("ma978eff66bcc")}</div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-[11px] text-ink-500">사용자</div>
+                    <div className="text-[11px] text-ink-500">{translate("m1ac6e422b7dc")}</div>
                     <div className="tabular text-[16px] font-semibold text-ink-800">{fmt(s.count)}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-ink-500">평균 활동 지수</div>
+                    <div className="text-[11px] text-ink-500">{translate("m9306e9f1c975")}</div>
                     <div className="tabular text-[16px] font-semibold text-ink-800">{formatActivityScore(s.avgScore)}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-ink-500">세션</div>
+                    <div className="text-[11px] text-ink-500">{translate("me600d4f5926e")}</div>
                     <div className="tabular text-[16px] font-semibold text-ink-800">{fmt(s.sessions)}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-ink-500">권한 허용률</div>
+                    <div className="text-[11px] text-ink-500">{translate("m928c37dd7e50")}</div>
                     <div className="tabular text-[16px] font-semibold text-ink-800">{pct(s.acceptRate)}</div>
                   </div>
                 </div>
@@ -89,6 +91,7 @@ function GroupFaceOff({ rows }) {
 }
 
 export default function Users() {
+  const _locale = useLocale();
   const [q, setQ] = useState("");
   const shownGroups = useGroupsShown();
   // Store only the clicked user+group: the leaderboard splits rows by user×group, so the email alone
@@ -147,15 +150,15 @@ export default function Users() {
   return (
     <div>
       <PageHeader
-        title="Users"
-        subtitle="사용자별 관측 활동과 도구·Skill 사용 현황 · 개인 성과 평가가 아닙니다"
+        title={translate("m6b0cc904d081")}
+        subtitle={translate("m151086478c4e")}
         right={
           <div className="flex items-center gap-2">
             <RangePicker />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="사용자 검색"
+              placeholder={translate("m735c008bd6ed")}
               className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-56"
             />
           </div>
@@ -175,16 +178,16 @@ export default function Users() {
                 return data.length ? (
                   <HBarList
                     key={g}
-                    title={`활동 지수 상위 10명 — ${g}`}
-                    help={ACTIVITY_SCORE_HELP}
-                    subtitle="계산 가능한 사용자만 표시 · 아래 표에서 사용자 상세 활동을 확인합니다"
+                    title={translate("m668ea2ecdde5", [g])}
+                    help={translateSource(ACTIVITY_SCORE_HELP)}
+                    subtitle={translate("m04256f41edaa")}
                     data={data.map((d) => ({ ...d, user: maskEmail(d.user) + teamSuffix(teams, d.user) }))}
                     labelKey="user"
                     valueKey="score"
                     color={colorFor(g)}
                   />
                 ) : (
-                  <Card key={g} title={`활동 지수 상위 10명 — ${g}`}>
+                  <Card key={g} title={translate("m668ea2ecdde5", [g])}>
                     <EmptyState />
                   </Card>
                 );
@@ -200,9 +203,9 @@ export default function Users() {
           <ErrorBox error={byUserModel.error} />
         ) : familyStats.length ? (
           <Card
-            title="모델 계열별 사용자당 평균 비용"
-            subtitle="해당 계열을 사용한 사용자 1인당 평균 비용"
-            help={`각 모델 계열의 보고 비용을 해당 계열의 사용자 수로 나눕니다. 보고값이 불완전한 계열은 평균을 표시하지 않습니다. 채널 미분류 세션도 포함합니다. ${SPEND_HELP}`}
+            title={translate("m6e77034ae9ff")}
+            subtitle={translate("ma11330a31ecd")}
+            help={translate("m5f4279dabbe0", [translateSource(SPEND_HELP)])}
           >
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {familyStats.map((s) => (
@@ -215,7 +218,7 @@ export default function Users() {
                     </span>
                   }
                   value={usd(s.avg)}
-                  hint={s.cost == null ? `사용자 ${fmt(s.users)}명 · 보고 비용 확인 필요` : `사용자 ${fmt(s.users)}명 · 총 비용 ${usd(s.cost)}`}
+                  hint={s.cost == null ? translate("m311879f75bff", [fmt(s.users)]) : translate("ma1cd76b536a3", [fmt(s.users), usd(s.cost)])}
                 />
               ))}
             </div>
@@ -229,25 +232,25 @@ export default function Users() {
             : shownGroups(leaderboard.data).map((g) => (
                 <DataTable
                   key={g}
-                  title={`사용자별 관측 활동 — ${g}`}
+                  title={translate("mcddf555253c7", [g])}
                   onRowClick={(r) => setSelected({ user: r.user, group: r.group })}
                   isRowSelected={(r) => selected?.user === r.user && selected?.group === r.group}
-                  subtitle="임의 가중치 기반 참고 지수 · 생산성이나 코드 품질을 측정하지 않습니다"
-                  help={ACTIVITY_SCORE_HELP}
+                  subtitle={translate("m2e911a610182")}
+                  help={translateSource(ACTIVITY_SCORE_HELP)}
                   columns={withTeamColumn([
-                    { key: "user", label: "사용자", render: maskEmail },
-                    { key: "productivity_score", label: "활동 지수", render: formatActivityScore },
-                    { key: "sessions", label: "세션", render: fmt },
-                    { key: "input_tokens", label: "입력 토큰", render: fmt },
-                    { key: "output_tokens", label: "출력 토큰", render: fmt },
-                    { key: "tokens", label: "전체 토큰", render: fmt },
-                    { key: "loc", label: "추가 코드 라인", render: fmt },
+                    { key: "user", label: translate("m1ac6e422b7dc"), render: maskEmail },
+                    { key: "productivity_score", label: translate("m52542cfd75c0"), render: formatActivityScore },
+                    { key: "sessions", label: translate("me600d4f5926e"), render: fmt },
+                    { key: "input_tokens", label: translate("me10fd8ddfcf8"), render: fmt },
+                    { key: "output_tokens", label: translate("m6f31589138ca"), render: fmt },
+                    { key: "tokens", label: translate("m950ed890e8a3"), render: fmt },
+                    { key: "loc", label: translate("m81ea6a128280"), render: fmt },
                     { key: "prs", label: "PR", render: fmt },
-                    { key: "commits", label: "커밋", render: fmt },
-                    { key: "accept_rate", label: "권한 허용률", render: (value, row) => row.decisions > 0 ? pct(value) : "—", toText: (value, row) => row.decisions > 0 ? pct(value) : "—" },
-                    { key: "active_days", label: "활성일", render: fmt },
-                    { key: "top_tool", label: "주요 도구" },
-                    { key: "top_skill", label: "주요 Skill" },
+                    { key: "commits", label: translate("ma5d6612cd595"), render: fmt },
+                    { key: "accept_rate", label: translate("m928c37dd7e50"), render: (value, row) => row.decisions > 0 ? pct(value) : "—", toText: (value, row) => row.decisions > 0 ? pct(value) : "—" },
+                    { key: "active_days", label: translate("m30b91d8a5785"), render: fmt },
+                    { key: "top_tool", label: translate("m6e148803a112") },
+                    { key: "top_skill", label: translate("mc8fa6d681bd8") },
                   ], teams)}
                   rows={withTeams(rows.filter((r) => r.group === g), teams)}
                   exportName={`users_leaderboard_${g}`}
@@ -268,11 +271,11 @@ export default function Users() {
             {shownGroups(tools.data).map((g) => (
               <DataTable
                 key={g}
-                title={`사용자별 도구 사용 내역 — ${g}`}
+                title={translate("m7739bb4c9736", [g])}
                 columns={withTeamColumn([
-                  { key: "user", label: "사용자", render: maskEmail },
-                  { key: "tool", label: "도구" },
-                  { key: "uses", label: "사용 횟수", render: fmt },
+                  { key: "user", label: translate("m1ac6e422b7dc"), render: maskEmail },
+                  { key: "tool", label: translate("m36c416ead2ce") },
+                  { key: "uses", label: translate("mc119b7984b53"), render: fmt },
                 ], teams)}
                 rows={withTeams((tools.data || []).filter((r) => r.group === g), teams)}
                 exportName={`users_tools_${g}`}
@@ -291,12 +294,12 @@ export default function Users() {
             {shownGroups(skills.data).map((g) => (
               <DataTable
                 key={g}
-                title={`사용자별 Skill 사용 내역 — ${g}`}
-                help="Skill 사용 횟수는 텔레메트리 보고 횟수 기준의 근사값입니다."
+                title={translate("m8a166e4d9f68", [g])}
+                help={translate("m6a73f7b3603b")}
                 columns={withTeamColumn([
-                  { key: "user", label: "사용자", render: maskEmail },
+                  { key: "user", label: translate("m1ac6e422b7dc"), render: maskEmail },
                   { key: "skill", label: "Skill" },
-                  { key: "invocations", label: "사용 횟수", render: fmt },
+                  { key: "invocations", label: translate("mc119b7984b53"), render: fmt },
                 ], teams)}
                 rows={withTeams((skills.data || []).filter((r) => r.group === g), teams)}
                 exportName={`users_skills_${g}`}

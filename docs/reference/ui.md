@@ -1,10 +1,9 @@
 # UI Components and Display Contracts
 
 The UI uses Tailwind utilities and shared React components. Korean is the default;
-the shared navigation, charts and task dialogs can switch to English, Simplified
-Chinese, Japanese or Spanish. Route page bodies still contain Korean and require
-the next migration stage. Migrated authored messages use the catalogs; identifiers
-and user/telemetry text remain unchanged. This documentation describes contracts in English. See
+viewers can choose English, Simplified Chinese, Japanese or Spanish. Authored
+messages use the locale catalogs, while identifiers and user/telemetry text remain
+unchanged. This documentation describes contracts in English. See
 [frontend state](frontend.md) and [web/AGENTS.md](../../dashboard/web/AGENTS.md).
 
 | Source | Contract |

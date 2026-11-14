@@ -1,3 +1,4 @@
+import { localize, translate, useLocale } from "../i18n/index.js";
 import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -14,48 +15,49 @@ import { useConfig } from "../ConfigContext.jsx";
 // 카테고리별 미리 준비된 분석 질문 — 클릭하면 그대로 /api/chat 에이전트(chat.js의 run_sql
 // 툴콜 루프)에게 물어본다. 질문 범위는 SYSTEM 프롬프트가 실제로 아는 스키마
 // (otel_metrics_sum/otel_logs, 누적 카운터 diff) 안으로만 한정한다.
-const CATEGORIES = [
+const CATEGORIES = localize([
   {
     label: "비용",
     prompts: [
-      (days) => `최근 ${days}일간 bedrock과 enterprise 그룹의 모델별 비용을 비교해줘`,
-      (days) => `최근 ${days}일간 일별 비용이 급증한 구간이 있는지 찾아줘`,
-      (days) => `캐시 토큰(cache_read/cache_write)이 최근 ${days}일 비용에 얼마나 영향을 줬는지 알려줘`,
+      (days) => translate("m2cc02a34e4d1", [days]),
+      (days) => translate("m25b08c1bf17b", [days]),
+      (days) => translate("m26f2d3060cdc", [days]),
     ],
   },
   {
     label: "도입 · 활동",
     prompts: [
-      (days) => `최근 ${days}일간 활성 사용자 추이와 그룹별 도입률을 알려줘`,
-      (days) => `최근 ${days}일간 세션 수 기준 상위 10명의 사용자를 보여줘`,
+      (days) => translate("m0a13cf3a528c", [days]),
+      (days) => translate("m2023fd00bda9", [days]),
     ],
   },
   {
     label: "사용자 · 도구",
     prompts: [
-      (days) => `최근 ${days}일간 사용자별로 가장 많이 쓴 도구(tool_name)와 클라이언트(Claude/Codex)를 알려줘`,
-      () => "최근 3시간 사용자별 사용 내역과 주로 사용한 도구를 요약해줘",
+      (days) => translate("m3b6669474373", [days]),
+      () => translate("m717f6fd9be82"),
     ],
   },
   {
     label: "생산성",
     prompts: [
-      (days) => `최근 ${days}일간 사용자별 코드 편집 권한 허용률을 비교해줘`,
-      (days) => `최근 ${days}일간 커밋과 PR 지표를 요약해줘`,
+      (days) => translate("meb7bfdfb7f0c", [days]),
+      (days) => translate("ma85ce58c08a7", [days]),
     ],
   },
   {
     label: "이상 탐지",
     prompts: [
-      (days) => `최근 ${days}일간 텔레메트리 수집이 끊긴 구간이 있는지 찾아줘`,
-      (days) => `최근 ${days}일간 비정상적으로 비용이 높은 세션이 있는지 찾아줘`,
+      (days) => translate("m04a1cb9c63e0", [days]),
+      (days) => translate("m2454284bd0cb", [days]),
     ],
   },
-];
+]);
 
 // embedded: 공통(전체·Codex) 뷰의 /analytics가 모델 진단 위에 같은 채팅 섹션을 넣을 때 쓴다
 // (Clients.jsx) — PageHeader 없이 렌더하고, 권한이 없으면 아무것도 그리지 않는다.
 export default function Analytics({ embedded = false }) {
+  const _locale = useLocale();
   const { from, to } = useRange();
   // 이번 달·달력 구간에서는 days가 마지막 프리셋 값이라 질문에 엉뚱한 기간이 실린다.
   const days = Math.max(1, Math.ceil((to - from) / 86400000));
@@ -73,13 +75,13 @@ export default function Analytics({ embedded = false }) {
     ask(text);
   };
 
-  if (!allowed) return embedded ? null : <div><PageHeader title="Analytics" subtitle="조직 데이터 분석" />
-    <p role="status" className="p-8 text-sm text-ink-600">SQL 채팅은 분석 또는 관리자 역할에서 사용할 수 있습니다.</p></div>;
+  if (!allowed) return embedded ? null : <div><PageHeader title={translate("m94c116ee118a")} subtitle={translate("mb0687ddaf68f")} />
+    <p role="status" className="p-8 text-sm text-ink-600">{translate("m5dfc0fceea35")}</p></div>;
 
   const Root = embedded ? "section" : "div";
   return (
-    <Root aria-label={embedded ? "데이터 질문" : undefined}>
-      {!embedded && <PageHeader title="Analytics" subtitle="질문을 입력하거나 미리 준비된 질문을 누르면 에이전트가 ClickHouse를 직접 조회해 답합니다." />}
+    <Root aria-label={embedded ? translate("mf741aa38c89e") : undefined}>
+      {!embedded && <PageHeader title={translate("m94c116ee118a")} subtitle={translate("m03d348ed1f41")} />}
       <div className={cn("flex flex-col gap-5", !embedded && "p-8")}>
         {/* 질문 입력은 대화 시작 여부와 상관없이 항상 맨 위에 둔다 — 프리셋만으로는 원하는 질문을 할 수 없다. */}
         <form
@@ -92,13 +94,13 @@ export default function Analytics({ embedded = false }) {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            aria-label="질문"
-            placeholder="예) 최근 3시간 동안 가장 많이 사용한 도구는 무엇인가요?"
+            aria-label={translate("m32729cc3f7b6")}
+            placeholder={translate("mc68156ce7b3d")}
             className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] focus:border-brand-500 focus:outline-none"
           />
           <button
             type="submit"
-            aria-label="질문 보내기"
+            aria-label={translate("m12d7bd98bbd6")}
             disabled={busy || !input.trim()}
             className="rounded-lg bg-brand-500 p-2 text-white disabled:opacity-40"
           >

@@ -1,3 +1,4 @@
+import { richMessage, localize, translate, useLocale } from "../i18n/index.js";
 import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ArrowRight, ExternalLink } from "lucide-react";
@@ -7,14 +8,15 @@ import { useClient } from "../ClientContext.jsx";
 import { USER_GUIDE_URL } from "../clientNavigation.js";
 import { LATEST_RELEASE, RELEASES, markSeen, releaseLink } from "../releaseNotes.js";
 
-const KIND = {
+const KIND = localize({
   new: { label: "새 기능", tone: "brand" },
   improved: { label: "개선", tone: "positive" },
   fixed: { label: "수정", tone: "neutral" },
-};
+});
 const REPO = "https://github.com/Atom-oh/claude-code-usage-dashboard";
 
 function ReleaseItem({ item, search, enabledClients }) {
+  const _locale = useLocale();
   const kind = KIND[item.kind] || KIND.improved;
   const target = releaseLink(item, search, enabledClients);
   return (
@@ -25,10 +27,9 @@ function ReleaseItem({ item, search, enabledClients }) {
       </div>
       <p className="mt-1.5 text-[13px] leading-relaxed text-ink-600">{item.body}</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-500">
-        <span>위치: {item.where}</span>
+        <span>{richMessage("m4523a8a104d8", [item.where])}</span>
         {target && (
-          <Link to={target} className="inline-flex items-center gap-1 font-medium text-brand-700 hover:underline">
-            바로 가기<ArrowRight size={12} aria-hidden="true" />
+          <Link to={target} className="inline-flex items-center gap-1 font-medium text-brand-700 hover:underline">{translate("m78436a6ca81f")}<ArrowRight size={12} aria-hidden="true" />
           </Link>
         )}
         {item.refs.length > 0 && (
@@ -44,17 +45,17 @@ function ReleaseItem({ item, search, enabledClients }) {
 }
 
 export default function Changelog() {
+  const _locale = useLocale();
   const { search } = useLocation();
   const { enabledClients } = useClient();
   // Opening the page acknowledges the latest release; the sidebar dot clears on navigation.
   useEffect(() => markSeen(LATEST_RELEASE.version), []);
   return (
     <div>
-      <PageHeader title="변경 내역" subtitle="릴리스마다 바뀐 점과 새 기능을 어디서 쓰는지 정리했습니다. 전체 기술 변경 기록은 CHANGELOG에 있습니다."
+      <PageHeader title={translate("m36682bfbe183")} subtitle={translate("m71d86b8ebe79")}
         right={<>
           <a href={USER_GUIDE_URL} target="_blank" rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">
-            사용설명서<ExternalLink size={13} aria-hidden="true" />
+            className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{translate("meea7e44c4a1e")}<ExternalLink size={13} aria-hidden="true" />
           </a>
           <a href={`${REPO}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">
@@ -70,7 +71,7 @@ export default function Changelog() {
                 <a href={`${REPO}/releases/tag/v${release.version}`} target="_blank" rel="noreferrer" className="hover:underline">v{release.version}</a>
               </h2>
               <time dateTime={release.date} className="text-[12px] text-ink-500">{release.date}</time>
-              {release === LATEST_RELEASE && <Badge tone="brand" dot>최신</Badge>}
+              {release === LATEST_RELEASE && <Badge tone="brand" dot>{translate("mb3ac1c8ffdd2")}</Badge>}
               <p className="w-full text-[13px] text-ink-600">{release.summary}</p>
             </header>
             <ul className="px-4">

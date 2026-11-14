@@ -234,3 +234,24 @@ test.each(["/cost?days=30", "/exec?days=30"])("%s detail adds a masked user cost
     .filter((u) => u.pathname === "/api/cost/by-user-daily").map((u) => u.searchParams.get("intervalHours"));
   expect(userRequests.at(-1)).toBe(dailyRequests().at(-1));
 });
+
+test("Executive single-channel help retains the spend and permission caveats in every language", async () => {
+  const { act } = await import("@testing-library/react");
+  const { localeStore, translateSource } = await import("../i18n/index.js");
+  const { SPEND_HELP } = await import("../spend.js");
+  const { APPROVAL_HELP } = await import("../score.js");
+  mount("/exec");
+  const panel = (await screen.findByText("핵심 지표", { exact: true })).closest(".shadow-card");
+  try {
+    for (const locale of ["ko", "en", "zh-CN", "ja", "es"]) {
+      await act(() => localeStore.select(locale));
+      const help = [...panel.querySelectorAll("svg[aria-label]")].map(node => node.getAttribute("aria-label"));
+      expect(help).toHaveLength(7);
+      expect(help).toContain(translateSource(SPEND_HELP));
+      expect(help).toContain(translateSource(APPROVAL_HELP));
+    }
+  } finally {
+    cleanup();
+    await localeStore.select("ko");
+  }
+});
