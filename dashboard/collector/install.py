@@ -488,7 +488,7 @@ def legacy_linux_state(home, uid, user):
     if unit.is_symlink() or not unit.exists():
         return None  # absent, or masked by an earlier migration
     shown = run(["systemctl", "show", LEGACY_LINUX_SERVICE, "--property=LoadState,ActiveState,UnitFileState,"
-                 "FragmentPath,DropInPaths,User,MainPID,ExecStart"], required=False, output=True)
+                 "FragmentPath,DropInPaths,User,MainPID,NeedDaemonReload,ExecStart"], required=False, output=True)
     if shown is None:
         raise ValueError("cannot inspect legacy " + LEGACY_LINUX_SERVICE + "; no service was changed")
     fields = dict(line.split("=", 1) for line in shown.splitlines() if "=" in line)
@@ -503,6 +503,10 @@ def legacy_linux_state(home, uid, user):
         # Not this user's personal Collector (for example an organizer's workshop unit):
         # never migrate it. A running one still blocks installation as an unverified port owner.
         return None
+    if fields.get("NeedDaemonReload") == "yes":
+        # The loaded definition was verified; the edited file on disk was not.
+        raise ValueError(LEGACY_LINUX_SERVICE + " changed on disk since systemd loaded it; run "
+                         "`sudo systemctl daemon-reload` and rerun. No service was changed.")
     backup = unit.with_name(unit.name + ".ccdash-backup")
     if backup.exists() or backup.is_symlink():
         raise ValueError("an earlier migration backup exists at " + str(backup)
@@ -678,7 +682,8 @@ def restore_legacy_linux(legacy):
     run(["sudo", "systemctl", "daemon-reload"])
     if legacy["enabled"]:
         run(["sudo", "systemctl", "enable", LEGACY_LINUX_SERVICE])
-    if legacy["active"]:
+    # A stop that failed part-way leaves the legacy service running with its listeners.
+    if legacy["active"] and not run(["systemctl", "is-active", "--quiet", LEGACY_LINUX_SERVICE], required=False):
         wait_for_free_ports()
         run(["sudo", "systemctl", "start", LEGACY_LINUX_SERVICE])
 

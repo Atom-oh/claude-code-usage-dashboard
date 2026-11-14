@@ -62,6 +62,8 @@ class LinuxMigration(unittest.TestCase):
         self.service_user = "fixture"
         self.port_pid = LEGACY_PID
         self.foreign = {}  # port -> PID of an unrelated listener
+        self.need_reload = "no"
+        self.fail_disable = False
         self.running = set()
         self.start_error = False
         self.sudo = []
@@ -104,6 +106,7 @@ class LinuxMigration(unittest.TestCase):
             "DropInPaths": str(self.dropin),
             "User": self.service_user,
             "MainPID": LEGACY_PID if self.active else "0",
+            "NeedDaemonReload": self.need_reload,
             "ExecStart": ("{ path=" + str(self.binary) + " ; argv[]=" + str(self.binary) + " --config="
                           + self.exec_config + " ; ignore_errors=no ; start_time=[n/a] ; pid=0 ; code=(null) }"),
         }
@@ -112,6 +115,8 @@ class LinuxMigration(unittest.TestCase):
     def external(self, command, required=True, output=False):
         if command[0].endswith("otelcol-contrib"):
             return True
+        if command == ["systemctl", "is-active", "--quiet", "otelcol.service"]:
+            return self.active
         if command[:2] == ["systemctl", "show"] and command[2] == "otelcol.service":
             return self.show() if output else True
         if command[0] == "ss":
@@ -152,6 +157,8 @@ class LinuxMigration(unittest.TestCase):
         elif command == ["cp", "-p", str(self.legacy), str(self.backup)]:
             shutil.copy2(self.legacy, self.backup)
         elif command == ["systemctl", "disable", "--now", "otelcol.service"]:
+            if self.fail_disable:
+                raise ValueError("simulated sudo failure")
             self.active = self.enabled = False
         elif command == ["rm", str(self.legacy)]:
             self.legacy.unlink()
@@ -335,6 +342,21 @@ class LinuxMigration(unittest.TestCase):
             self.install()
         self.assertEqual(self.backup.read_bytes(), self.original[self.legacy], "the original unit is kept")
         self.assertNotIn(["rm", str(self.backup)], self.sudo)
+
+    def test_unit_edited_without_daemon_reload_is_not_migrated(self):
+        self.need_reload = "yes"
+        with self.assertRaisesRegex(ValueError, "daemon-reload"):
+            self.install()
+        self.assertEqual(self.sudo, [])
+
+    def test_failed_stop_rolls_back_without_waiting_on_the_still_running_legacy(self):
+        self.fail_disable = True
+        with self.assertRaisesRegex(ValueError, "simulated sudo failure"):
+            self.install()
+        self.assertTrue(self.active and self.enabled)
+        self.assertEqual(self.legacy.read_bytes(), self.original[self.legacy])
+        self.assertFalse(self.backup.exists())
+        self.assertNotIn(["systemctl", "start", "otelcol.service"], self.sudo)
 
     def test_masked_legacy_is_already_migrated_and_never_touched(self):
         self.legacy.unlink()
