@@ -17,6 +17,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed
 
+- Add a complete four-language user guide covering every menu, common controls,
+  task analysis, optional assistant and permission-dependent setup features.
+  The homepage now starts with onboarding and a menu map; the v1.8.0 video is an
+  optional release example.
 - Refresh the four-language guides and 48-second narrated walkthrough for the
   v1.8.0 time-range, drag-to-task and device-installation changes, alongside existing
   task/session details. Synthetic captures and rendered media retain content hashes.

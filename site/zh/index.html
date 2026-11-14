@@ -1,102 +1,93 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>了解 AI 编程的使用情况与成本 — ccdash</title>
-  <meta name="description" content="了解 Claude Code 和 Codex 的使用情况，然后查看用户的 Task Trace，了解智能体泳道、模型调用和累计成本。" />
-  <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
-  <link rel="alternate" hreflang="en" href="../index.html" />
-  <link rel="alternate" hreflang="ko" href="../ko/index.html" />
-  <link rel="alternate" hreflang="ja" href="../ja/index.html" />
-  <link rel="alternate" hreflang="zh-CN" href="index.html" />
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>开始使用 ccdash — 完整产品文档</title>
+<meta content="面向初次使用者的指南，涵盖 ccdash 的所有菜单：使用情况、费用、用户、任务、诊断、AI 助手和设备设置。" name="description"/>
+<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
+<link href="../index.html" hreflang="en" rel="alternate"/>
+<link href="../ko/index.html" hreflang="ko" rel="alternate"/>
+<link href="../ja/index.html" hreflang="ja" rel="alternate"/>
+<link href="index.html" hreflang="zh-CN" rel="alternate"/>
 </head>
 <body>
-  <a class="skip-link" href="#main">跳转到正文</a>
-  <header class="top"><div class="wrap">
-    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
-    <nav class="tabs" aria-label="主要导航"><a href="index.html" aria-current="page">概览</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html">API</a><a href="operations.html">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
-    <div class="languages" role="group" aria-label="语言"><a href="../index.html" hreflang="en" lang="en">English</a><a href="../ko/index.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/index.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
-  </div></header>
-  <main class="wrap" id="main">
-    <div class="hero">
-      <p class="eyebrow">Claude Code + Codex · 文档</p>
-      <h1>了解 AI 编程的使用情况与成本</h1>
-      <p class="lede">了解 Claude Code 和 Codex 的使用情况，然后沿着用户的时间范围查看 Task Trace：智能体泳道、模型调用和累计成本。</p>
-      <p class="caption">更新于 2026 年 11 月 14 日 · 描述源代码行为；请核对您安装的版本。</p>
-      <p><a href="#task-trace">打开 Task Trace</a> · <a href="#codex-traces">查看 Codex 诊断追踪</a> · <a href="installation.html#trace">启用采集</a></p>
-    </div>
-    <section id="demo"><h2>观看时间选择、设备设置和任务追踪演示</h2>
-<div class="demo-layout">
-<div>
-<div class="video-frame"><video aria-label="48 秒英文版时间选择、设备设置和任务追踪演示" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
+<a class="skip-link" href="#main">跳转到正文</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+<nav aria-label="主要导航" class="tabs"><a aria-current="page" href="index.html">概览</a><a href="user-guide.html">用户指南</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html">API</a><a href="operations.html">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+<div aria-label="语言" class="languages" role="group"><a href="../index.html" hreflang="en" lang="en">English</a><a href="../ko/index.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/index.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
+</div></header>
+<main class="wrap" id="main"><div class="hero">
+<p class="eyebrow">Claude Code + Codex · 产品文档</p>
+<h1>开始使用 ccdash</h1>
+<p class="lede">了解如何查看编码客户端的使用情况、费用和活动，探索每个仪表板菜单，并调查数字背后的工作。</p>
+<p><a href="user-guide.html">阅读完整用户指南</a> · <a href="#menu-map">查找菜单</a> · <a href="installation.html">设置部署</a></p>
+<p class="caption">适用于初次阅读者、分析人员和运维人员。菜单取决于已启用的客户端、权限和已安装的版本。</p>
+</div><section id="start"><h2>首次访问</h2>
+<ol>
+<li><strong>打开组织的仪表板并登录。</strong>向组织者询问网址和访问权限。您正在阅读的公共网站是文档。请参阅<a href="user-guide.html#access">账户和权限</a>。</li>
+<li><strong>选择客户端和时间段。</strong>从所有已启用的客户端开始，并选择一个包含近期工作的时间段。检查显示的时区以及数据是否已到达。</li>
+<li><strong>查看 Overview。</strong>比较已知费用、已观测到的令牌数、会话数和用户数。得出结论前，请先查看数据不完整或不可用的标签。</li>
+<li><strong>选择与您的问题相符的菜单。</strong>使用下方的菜单图，然后按照其中的分步指南操作。常见视图可用于比较客户端；Claude 详细信息中还提供其他 Claude 专属视图。</li>
+<li><strong>深入查看并分享相关视图。</strong>在支持的情况下，检查模型、用户或任务。导出或分享时，请留意所选时间段和筛选条件。</li>
+</ol>
+<div class="cards">
+<article class="card"><h3>我想查看仪表板</h3><p>先从<a href="user-guide.html#common-controls">通用控件</a>开始，然后打开所需菜单的指南。您需要有权访问现有部署。</p></article>
+<article class="card"><h3>我想连接编码客户端</h3><p>如果您的角色允许，请使用<a href="user-guide.html#collector">Collector 设置</a>注册设备，或向运维人员索取安装说明。</p></article>
+<article class="card"><h3>我负责运维服务</h3><p>请参阅<a href="installation.html">安装</a>和<a href="operations.html">运维</a>，了解部署、登录配置、数据采集和恢复。</p></article>
+</div></section><section id="menu-map"><h2>仪表板中的每个菜单</h2>
+<p><a href="user-guide.html">完整用户指南</a>说明了每个菜单中的各个部分和操作，以及通用视图与 Claude 详细信息之间的差异。</p>
+<div aria-label="仪表板菜单指南" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">菜单</th><th scope="col">适用于您想要……的情况</th></tr></thead><tbody>
+<tr><td><a href="user-guide.html#overview">Overview</a></td><td>全面了解已观测到的使用情况、已知费用和数据覆盖范围。</td></tr>
+<tr><td><a href="user-guide.html#exec">Executive</a></td><td>查看简要的采用情况和费用摘要，并了解这些指标的局限性。</td></tr>
+<tr><td><a href="user-guide.html#trends">Trends</a></td><td>查找随时间变化的情况，并缩小调查时间段。</td></tr>
+<tr><td><a href="user-guide.html#productivity">Productivity</a></td><td>探索单位经济效益、费用驱动因素和已观测到的活动，但不要将它们视为员工绩效。</td></tr>
+<tr><td><a href="user-guide.html#usage">Usage</a></td><td>检查令牌构成和受支持的工具使用详情。</td></tr>
+<tr><td><a href="user-guide.html#users">Users</a></td><td>比较已观测到的用户，打开用户详情，并查找所选时间段内的任务。</td></tr>
+<tr><td><a href="user-guide.html#cost">Cost</a></td><td>按客户端、后端、模型或用户细分支出，并检查可用的费用估算依据。</td></tr>
+<tr><td><a href="user-guide.html#reliability">Reliability</a></td><td>调查报告的故障、延迟和可用的诊断信号。</td></tr>
+<tr><td><a href="user-guide.html#analytics">Analytics</a></td><td>探索详细分析，以及所选客户端支持的诊断选项卡。</td></tr>
+<tr><td><a href="user-guide.html#collector">Collector 设置 (수집기 설치)</a></td><td>在获得授权时注册设备、安装其 Collector 并管理设备数据采集凭证。</td></tr>
+<tr><td><a href="user-guide.html#installation">安装状态 (설치 상태)</a></td><td>在权限允许时检查部署、数据库和登录的就绪状态。</td></tr>
+</tbody></table></div>
+<p>指南还涵盖：<a href="user-guide.html#tasks">Task Trace 和共享任务链接</a>、<a href="user-guide.html#assistant">可选 AI 助手</a>、<a href="user-guide.html#access">账户控件和帮助</a>，以及<a href="user-guide.html#workflows">实用调查工作流程</a>。</p>
+</section><section id="costs"><h2>解读数字前，先了解其含义</h2>
+<ul><li><strong>已知费用不等于账单。</strong>Claude 报告的支出和受支持的标价估算都会保留各自的费用估算依据。缺少价格信息可能导致小计不完整。</li><li><strong>不可用不等于零。</strong>已观测到的令牌小计、完整的令牌组成数据和诊断覆盖范围回答的是不同问题。总数大于零并不能证明数据已完整采集。</li><li><strong>活动只是观测结果。</strong>会话数、工具使用情况和费用比率不能证明员工绩效、节省的时间或因果关系上的生产力提升。</li></ul>
+<p><a href="user-guide.html#common-controls">了解覆盖范围和显示状态</a> · <a href="api.html">API 契约</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">指标定义</a></p>
+</section><section id="resolution"><h2>设置时间段并使用图表</h2>
+<p>使用 UTC 日历日期，或使用日期选择器中的 <strong>날짜·시간</strong>（日期和时间）选项卡，设置精确的浏览器本地开始和结束时间。结束时间不包含在时间段内。请查看显示的实际生效时间范围：服务器汇总数据和数据接收宽限期仍会产生影响。</p>
+<p>拖动受支持的时间序列图表可缩小页面的时间范围；使用重置控件可恢复原范围。在用户详情中，任务列表会遵循该时间范围；单击某个数据点会选中一个时间分桶。分类图表不支持选择时间范围。</p>
+<p><a href="user-guide.html#common-controls">所有筛选、刷新、图表、表格、导出和分享控件</a></p>
+</section><section id="task-trace"><h2>跟进用户，查看其工作</h2>
+<p>打开 <strong>Users</strong>，选择一位用户，然后查看所选时间段内的任务列表。打开某项任务即可查看 <strong>Task Trace</strong>：主执行轨迹和子代理轨迹、调用、已知费用、令牌上下文、模型，以及可用的会话环境信息。</p>
+<p>任务跟踪是可选的。Claude 交互和 Codex 跟踪的轮次具有不同的证据；缺少的调用、属性或价格仍然不可用。任务列表和详情均有明确的限制。</p>
+<p><a href="user-guide.html#tasks">完整的任务和 Trace 操作指南</a> · <a href="api.html#tasks">任务 API 限制</a> · <a href="operations.html#traces">排查任务缺失问题</a></p>
+</section><section id="codex-traces"><h2>区分任务使用情况和诊断跟踪</h2>
+<p>Analytics 中的 Codex 诊断 Trace 选项卡是一个独立的预览功能，与 Task Trace 不同。它显示跟踪片段及其可用元数据；诊断指标和跟踪片段不会增加完成日志汇总中的使用量或费用。</p>
+<p><a href="user-guide.html#analytics">Analytics 选项卡和客户端差异</a> · <a href="user-guide.html#assistant">AI 助手及其独立的推理显示</a></p>
+</section><section id="boundaries"><h2>区分不同维度</h2>
+<p><strong>客户端</strong>用于标识 Claude Code 或 Codex；<strong>后端</strong>描述提供商路径；<strong>模型</strong>用于标识模型。仅凭模型名称无法确定发出请求的客户端。</p>
+<p>Claude 的 <strong>bedrock / enterprise</strong> 对比使用推断出的会话渠道。这些渠道与仪表板登录相互独立，也不提供 Codex 企业版 A/B 对比。</p>
+<p><a href="user-guide.html#common-controls">选择正确的视图和筛选条件</a> · <a href="architecture.html">数据管道和信任边界</a></p>
+</section><section id="demo"><h2>可选示例：v1.8.0 操作演示</h2>
+<p>这段 48 秒的视频演示了选定的变更和现有 Task Trace 功能。请参阅<a href="user-guide.html">完整用户指南</a>，了解每个菜单和功能。</p>
+<div class="video-frame"><video aria-label="48 秒英文演示：时间选择、设备设置和 Task Trace 操作指南" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
 <source src="../assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
 <source src="../assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
 <track kind="captions" label="英语" src="../assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
       您的浏览器无法播放此视频。<a href="../assets/video/dashboard-demo-en-20261114.mp4">下载英文演示视频</a>。
     </video></div>
-<p class="caption">创建于 2026 年 11 月 14 日 · 48 秒 · 英文文本和 Amazon Polly 配音 · 轻柔的背景音乐。使用合成测试数据的实际 React 界面，显示标签由 Luna 翻译；费用为虚构数据。视觉效果使用 HyperFrames 制作，音频使用 Remotion 合成。<a href="../assets/video/dashboard-demo-en-20261114.vtt">文字稿（英语）</a>。</p>
-</div>
-<div>
-<h3>从汇总数据到原因说明</h3>
-<ol>
-<li>选择精确的开始和结束时间，然后拖动用户趋势图，查看该时间段内的工作情况。</li>
-<li>注册设备后，通过一条终端命令为其安装设备 Collector。</li>
-<li>检查 Agent 轨道、模型调用、Token 组成部分，以及会话的 MCP 服务器和插件。</li>
-<li>查看单位成本趋势，其中虚线会跨越不可用区间。缺失值仍为不可用，而非零。</li>
-</ol>
-<p><a class="button-link" href="installation.html">构建并部署服务</a></p>
-<p><a href="operations.html#sso">连接您组织的 SSO</a></p>
-</div>
-</div></section><section id="latest"><h2>更新内容</h2>
-<div class="cards">
-<article class="card"><h3>Token 经济分析</h3><p>生产力页面从成本公式（用户数 × 每位用户的会话数 × 每个会话的轮次 × 每轮请求数 × 每次请求的 Token 数 × 每个 Token 的成本）开始，并与前一时间段进行比较；还提供驱动因素瀑布图、单位成本趋势、模型经济分析和结果成本。图表会将代表性用户与各项因素的中位数进行比较。运维人员需在会话轮次回填完成后启用此功能。</p></article>
-<article class="card"><h3>任务追踪：模型、工作流和会话环境</h3><p>成本说明会列出各模型的调用和成本。工作流运行标记可筛选用户任务，同类型子 Agent 会编号，会话环境则显示已连接的 MCP 服务器、已加载的插件，以及首次调用的上下文。</p><p><a href="#task-trace">查看操作演示</a></p></article>
-<article class="card"><h3>精确时间和拖动选择任务</h3><p>可在浏览器时区中精确到秒地选择开始和结束时间。更改时间段后，用户详情仍保持打开，其前 20 个任务列表会随所选范围更新。拖动使用量/成本图表可缩小两个视图的范围。</p><p><a href="#resolution">选择时间范围</a></p></article>
-<article class="card"><h3>成本明细</h3><p>选择用户和模型后，会打开经过筛选的详细信息。模型占比以已知成本小计为基准，并会说明缺失的价格数据。</p></article>
-<article class="card"><h3>Codex 完成效率</h3><p>缓存和推理比率、每次完成的 Token 数，以及每个已识别会话的估算成本，都明确标示其分母和覆盖范围。</p></article>
-<article class="card"><h3>从源代码安装</h3><p>克隆一个发行版本并构建应用镜像，然后准备 ClickHouse 架构和 OTel 后端。连接客户端之前，请先比较 EC2、ECS、EKS 和 Lambda 的适配方式。</p><p><a href="installation.html">查看完整安装指南</a></p></article>
-<article class="card"><h3>可配置的 SSO</h3><p>将已签名的 OIDC 组映射到应用角色。如果身份提供商支持相应的刷新协议，可启用最长 30 天的固定登录时长。</p></article>
-</div></section>
-<section id="task-trace"><h2>从用户到任务追踪</h2>
-<ol>
-<li>选择时间范围和客户端筛选条件。日期选择器中的“日期和时间”选项卡接受浏览器本地时间。打开<strong>用户</strong>，然后选择一位用户以打开<strong>用户详情</strong>。</li>
-<li>任务列表会立即显示概览有效范围内最多 20 个任务。拖动用户的使用量/成本趋势图，可同时缩小页面和任务列表的范围。单击某个数据点可选择一个区间；重置控件可恢复整个时间段。可按 Token 数、成本、子 Agent 数或时长排序。选择工作流标记，只显示该次运行的任务。</li>
-<li>选择一个任务以打开<strong>任务详情</strong>（任务追踪）。查看其 Token 数、成本依据、LLM 调用、子 Agent 和观测时长。</li>
-<li>单击时间线条形图可查看对应调用或工具。选择<strong>按模型调用</strong>中的一行可高亮相应的 LLM 条形图；再次选择该行可取消高亮。按 Escape 或<strong>关闭</strong>可关闭视图。</li>
-</ol>
-<figure><img alt="包含主轨道、两个子 Agent 轨道、累计成本和选中的 Explore 模型调用的任务追踪，使用合成数据" height="2812" loading="lazy" src="../assets/img/task-trace.png" width="2640"/><figcaption>任务追踪截图取自 11 月 14 日的源代码版本，使用合成测试数据和虚构成本。未使用生产遥测数据。</figcaption></figure>
-<div aria-label="任务追踪阅读指南" class="table-scroll" role="region" tabindex="0"><table>
-<thead><tr><th scope="col">视图</th><th scope="col">阅读方法</th></tr></thead>
-<tbody>
-<tr><td>Agent 轨道</td><td>首先显示主会话，其后是观测到的子 Agent。颜色较深的 LLM 条形图表示输入上下文较大；灰色标记表示工具，红色标记表示权限等待，虚线用于连接观测到的 Agent 启动事件。</td></tr>
-<tr><td>累计成本</td><td>不同轨道的颜色会累积显示已知调用成本。将鼠标悬停可查看某个时间点。没有匹配 Span 的 Codex 完成记录也可能计入任务总额，但不会显示在成本带中。</td></tr>
-<tr><td>选中的 Span</td><td>查看可用的模型、Token 组成部分、成本依据、时间信息以及工具或权限元数据。不会显示原始提示、命令和路径。</td></tr>
-<tr><td>为什么成本这么高</td><td>当相关输入数据可用时，有数据支持的规则会说明缓存读取占比、上下文增长、轨道成本占比、高成本调用、重试或权限等待情况。随后，面板会列出各模型的调用次数、已知成本和成本占比。</td></tr>
-<tr><td>模型调用</td><td>按轨道、调用次数和已知成本比较模型及调用来源。高亮某一行只会改变时间线强调效果，不会改变总额。</td></tr>
-<tr><td>会话环境</td><td>显示 MCP 服务器及其最新状态、已加载插件及其技能/Agent/命令数量，以及首次调用的输入上下文。OpenTelemetry 不会报告工具定义的数量或大小。</td></tr>
-</tbody>
-</table></div>
-<p>Claude 任务表示交互 Span；Codex 任务表示经过追踪的轮次，并使用关联的完成日志获取 Token 数和估算成本。目前 Codex 只有一个主轨道；不会收集子 Agent 数量。追踪收集为可选功能，因此此任务列表仅包含部分仪表板活动。追踪数据保留 90 天；较早的趋势区间无法打开任务列表。</p>
-<p><a href="installation.html#trace">收集配置</a> · <a href="api.html#tasks">任务 API 和限制</a> · <a href="operations.html#traces">排查缺失任务</a></p>
-</section>
-<section id="codex-traces"><h2>查看 Codex 诊断追踪</h2>
-<p>选择 Codex 后，打开 <strong>Analytics</strong>，并在 Codex 详情中选择 <strong>Trace</strong> 标签页。展开某条 Trace 可查看 span、父 ID、模型、工具、时长和状态，也可将 span 表格导出为 CSV。</p>
-<p>此预览最多显示最新的 50 条追踪，每条追踪最多显示最新的 200 个 span。统计数据仅描述当前显示的 span。模型筛选器只包含带有模型属性的 span。对于过长或存在冲突的追踪，可能不显示时长和错误总数。</p>
-<p>诊断 span 不会增加仪表板中的使用量或成本。上方的 Task Trace 会将 Codex 完成日志关联到轮次；Analytics 的 Trace 标签页是独立的诊断预览。Chat 中的推理和 SQL 步骤则是另一种独立视图。</p>
-<p><a href="api.html#trace-preview">诊断 API</a> · <a href="architecture.html#task-traces">了解任务与 span 的关联方式</a></p>
-</section>
-<section id="costs"><h2>同时查看成本与覆盖范围</h2><div class="table-scroll" tabindex="0" role="region" aria-label="计量参考表"><table><thead><tr><th scope="col">计量项</th><th scope="col">含义</th></tr></thead><tbody><tr><td>Claude 报告的支出</td><td>Claude 报告成本路径使用 <code>reported_cost</code>；计算成本诊断数据应单独保留。</td></tr><tr><td>AWS 标价估算</td><td>Codex 和非 Anthropic Claude 定价使用受支持的 AWS 标价、路由和请求层级。这不是云服务账单。</td></tr><tr><td>已知成本小计</td><td>汇总可用价格，并将缺失价格标注为部分数据。如果成本全部未知，则不可用。</td></tr><tr><td>观测到的令牌数</td><td>保留可用的输入/输出对，并说明数据不完整。小计大于零并不能证明规范令牌组成数据完整。</td></tr><tr><td>活动指标</td><td>用于了解观测到的采用情况、工具和活动。这些指标不是经过验证的员工绩效或因果生产力衡量标准。</td></tr></tbody></table></div><p>请参阅<a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">计量定义</a>和<a href="api.html#completion">Codex 完成记录语义</a>。</p></section><section id="resolution"><h2>选择时间范围和分辨率</h2><p>打开时间段选择器并选择<strong>日期和时间</strong>，即可在浏览器时区中输入精确到秒的开始和结束时间。结束时间不包含在范围内。共享链接会保留所选模式和 UTC 时间边界；日历日模式仍使用 UTC 日期。</p><figure><img alt="英文翻译版合成截图中的精确开始和结束时间选择器" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/><figcaption>当前 React 组件中的精确时间输入。演示中的显示标签经过翻译；这不会改变产品语言设置。</figcaption></figure><div aria-label="所选时间范围参考表" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">所选时间范围</th><th scope="col">成本和趋势控件</th></tr></thead><tbody><tr><td>不超过 24 小时</td><td>10 分钟、30 分钟、每小时、每天或每周。一日视图从每小时分辨率开始。</td></tr><tr><td>超过 24 小时</td><td>每小时、每天或每周。两日视图不提供 10 分钟分辨率。</td></tr></tbody></table></div><p>请查看返回的间隔和生效时间范围。精确输入不会改变数据摄取宽限期、服务器量化方式或历史汇总精度。在单位经济分析图表中，虚线段会跨过不可用区间连接观测到的端点；它们只是视觉参考线，并非测量值。</p><div class="shots"><figure><img alt="10 月 24 日仪表板中的合成用户成本趋势" height="655" loading="lazy" src="../assets/img/cost-detail.png" width="1830"/><figcaption>所选用户详情，10 月 24 日合成截图。</figcaption></figure><figure><img alt="显示各用户占比的合成模型成本详情" height="353" loading="lazy" src="../assets/img/model-share.png" width="1830"/><figcaption>所选模型的用户占比，10 月 24 日合成截图。</figcaption></figure></div></section><section id="boundaries"><h2>区分不同维度</h2>
-<p><strong>客户端</strong>标识发出数据的应用。<strong>后端</strong>描述观测到或推断出的提供商路径。<strong>模型</strong>标识所用模型。仅凭模型名称无法确定使用的是哪种编程客户端。</p>
-<p>Claude 的 <code>bedrock</code>/<code>enterprise</code> 比较是根据会话渠道推断的视图。它与仪表板登录相互独立，也不是 Codex 企业版 A/B 比较。同一用户可能出现在多个渠道中。</p>
-<p>启用后，Analytics 可通过受控的只读查询路径回答其他问题。其可用性取决于角色、模型访问权限和部署配置。</p>
-<p><a href="architecture.html">了解数据管道和信任边界</a> · <a href="api.html">浏览 API</a></p></section>
-  </main>
-  <footer><div class="wrap">
-    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
-    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">计量定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示鸣谢</a></p>
-    <p>遥测数据可能不完整。报告成本和标价估算并非账单。活动指标无法证明员工生产力或因果投资回报。</p>
-  </div></footer>
+<p class="caption">创建于 2026 年 11 月 14 日 · 英语旁白和字幕 · 使用合成 React 截图，显示标签已翻译，费用为虚构数据。<a href="../assets/video/dashboard-demo-en-20261114.vtt">英文文字稿</a> · <a href="credits.html">媒体鸣谢</a>。</p>
+</section><section id="latest"><h2>发行说明和后续步骤</h2>
+<p>请查看仪表板的变更历史，或阅读<a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">发行说明</a>，了解特定版本的变更。接下来可阅读<a href="user-guide.html#workflows">调查工作流程</a>或<a href="user-guide.html#troubleshooting">首要故障排查步骤</a>。</p>
+</section></main>
+<footer><div class="wrap">
+<p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">计量定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示鸣谢</a></p>
+<p>遥测数据可能不完整。报告成本和标价估算并非账单。活动指标无法证明员工生产力或因果投资回报。</p>
+</div></footer>
 </body>
 </html>

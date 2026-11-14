@@ -6,9 +6,9 @@ English, Korean, Japanese and Simplified Chinese public guides.
 
 ## Locales
 
-English source guides are `index.html`, `installation.html`, `architecture.html`,
-`api.html` and `operations.html`; English media credits are `assets/credits.html`.
-Mirror these six pages under `ko/`, `ja/` and `zh/`, with HTML language codes `ko`,
+English source guides are `index.html`, `user-guide.html`, `installation.html`,
+`architecture.html`, `api.html` and `operations.html`; English media credits are
+`assets/credits.html`. Mirror these seven pages under `ko/`, `ja/` and `zh/`, with HTML language codes `ko`,
 `ja` and `zh-CN`. Keep language switches on the equivalent page, four hreflang
 alternates, section IDs, endpoint/config identifiers and code examples aligned.
 Translate titles, descriptions, navigation, captions, alt text and accessible
@@ -20,6 +20,11 @@ source/output checksums and follow-up corrections in `assets/translations.json`.
 Do not claim that host-written translations came from a delegated model.
 
 ## Media
+
+The homepage introduces the complete product and links the menu-by-menu user
+guide. Keep its coverage aligned with the actual navigation and conditional
+features; see [coverage](../docs/reference/guide-coverage.md). Release changes
+and the November 14 video are optional examples, not the guide's primary scope.
 
 The overview uses the English November 14 video in `assets/video/`, with
 HyperFrames visuals, Polly narration and Remotion audio composition. It includes
