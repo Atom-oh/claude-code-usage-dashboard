@@ -23,6 +23,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed
 
+- Refresh the four-language guides and 48-second narrated walkthrough for exact
+  time ranges, drag-to-task navigation, one-command device setup, and current
+  task/session details. Synthetic captures and rendered media retain content hashes.
 - Collector installation is one terminal command, `curl -fsSL <dashboard>/api/ingest/install.sh | sh`
   (Linux prefixes `sudo loginctl enable-linger`), instead of downloading the archive in the
   browser, moving it to the device and extracting it. The script prompts on the terminal

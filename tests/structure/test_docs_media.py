@@ -51,7 +51,7 @@ class MediaTests(unittest.TestCase):
 
     def test_site_only_keeps_runtime_out_of_pages(self):
         MEDIA.hydrate(self.root, self.manifest, site_only=True, opener=self.opener)
-        self.assertEqual(len(self.calls), 8)
+        self.assertEqual(len(self.calls), 16)
         self.assertFalse((self.root / "video").exists())
 
     def test_corrupt_download_preserves_existing_file(self):

@@ -22,7 +22,7 @@
   <main class="wrap" id="main">
 <div class="hero"><p class="eyebrow">Claude Code + Codex · インストール</p><h1>サービス全体をビルドしてデプロイする</h1>
 <p class="lede">Gitソースから始めます。コーディングクライアントを接続する前に、ダッシュボード、ClickHouseとそのスキーマ、OTelの収集経路をデプロイします。</p>
-<p class="caption">更新日: 2026年11月10日 · ソースに基づく手順です。選択したリリースと対象環境を確認してください。</p>
+<p class="caption">更新日: 2026年11月14日 · ソースに基づく手順です。選択したリリースと対象環境を確認してください。</p>
 <p><a href="#setup">クローンとビルド</a> · <a href="#schema">データベーススキーマ</a> · <a href="#collector">OTelバックエンド</a> · <a href="#platforms">ホスティングの選択肢</a> · <a href="#trace">クライアントのトレース</a></p></div>
 <section id="choose"><h2>インストールが必要なもの</h2>
 <p>このガイドでは、公開済みのアプリケーション用 <code>.tar.gz</code> に依存しません。リポジトリをクローンしてDockerイメージをビルドします。オプションのデバイス用パッケージは、インストール済みのダッシュボードから生成されます。バックエンドをインストールするものではありません。</p>
@@ -145,15 +145,23 @@ docker run -d --name ccdash --restart unless-stopped \
 <tr><td>Lambda</td><td>HTTPアプリケーションをLambda対応のランタイム／アダプターに移植します。ClickHouseと取り込みCollectorは、永続性のある外部サービスで稼働させます。</td><td>現在のDockerイメージはExpressを起動し、Lambdaハンドラー／ランタイムとの統合はありません。すぐに使えるLambdaデプロイ構成も提供されていません。移植後に認証Cookie、ストリーミング／チャット、タイムアウト、ネットワーク、デバイス取り込みを検証してください。Lambdaを選ぶだけでは、このスタックはインストールされません。</td></tr>
 </tbody></table></div>
 <p>公式プラットフォーム資料: <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html">EC2</a> · <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html">ECS/Fargateのタスク定義</a> · <a href="https://docs.aws.amazon.com/eks/latest/userguide/sample-deployment.html">EKSアプリケーションのデプロイ</a> · <a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html">Lambdaのイメージ／ランタイム要件</a>。</p></section>
-<section id="trace"><h2>5. クライアントのログ、メトリクス、トレースを接続する</h2>
-<p>バックエンドが動作したら、各クライアントのローカルCollectorとエクスポーターの送信先を設定します。デバイス経路では、アナリストまたは管理者がデプロイ済みダッシュボードにデバイスを登録できます。ダウンロードできない場合は、ソースインストーラーを直接使用してください。その場合も、インストール済みのバックエンドと発行済みのデバイストークンが必要です。</p>
-<pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
+<section id="trace"><h2>5. クライアントのログ、メトリクス、トレースを接続</h2>
+<p>バックエンドの稼働後、各クライアントのローカル Collector とエクスポーターの送信先を設定します。デバイス経由の場合、アナリスト/管理者はデプロイ済みダッシュボードでデバイスを登録できます。デバイスのプラットフォームを選択して登録し、インストールコマンドをコピーします。ターミナルでテレメトリーの帰属 ID とデバイストークンを入力します。トークンはコマンドに埋め込まれません。インストール済みのバックエンドと発行済みのデバイストークンが必要です。</p>
+<h3>デバイスのインストール</h3><h4>macOS</h4>
+<pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
+curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
+<h4>Linux</h4>
+<pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
+sudo loginctl enable-linger "$USER" &amp;&amp;
+  curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
+<p>スクリプトはデバイスのベアラートークンでパッケージをダウンロードし、非公開のトークンファイルを使ってインストーラーを実行します。デバイストークンでダッシュボードに対話ログインすることはできません。</p>
+<h3>手動インストールへのフォールバック</h3><pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
 : "${CCDASH_USER_ID:?Set the intended telemetry attribution ID}"
 python3 dashboard/collector/install.py install \
   --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
-<p>インストーラーはmacOS/Linux上のPython 3.9以降を必要とし、トークンは非公開で入力するよう求めます。Linuxでは、ログアウト／再起動後もサービスを維持するために <code>sudo loginctl enable-linger "$USER"</code> を実行してから、通常ユーザーとしてインストールします。Collectorバイナリをダウンロードして検証します。このコマンドはダッシュボード、データベース、中央レシーバーを準備しません。デバイスの所有者が、出力されるテレメトリのIDとして自動的に使われるわけではありません。</p>
-<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> と <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code> を設定し、<code>OTEL_TRACES_EXPORTER=otlp</code> とポート4317のローカルOTLP gRPC送信先を指定します。</li><li>Codex: 個別に <code>[otel]</code> の <code>exporter</code>、<code>metrics_exporter</code>、<code>trace_exporter</code> を設定します。ポート4318のローカルOTLP HTTP送信先と、<code>log_user_prompt=false</code> を指定してください。</li></ul>
-<p>両方のクライアントを再起動して新しい作業を生成し、<a href="index.html#task-trace">ユーザー → トレンドバケット → タスク → Task Trace</a>をたどります。以前のアクティビティがトレースに遡及して取り込まれることはありません。Codexの診断spanを確認するには、AnalyticsのTraceタブを開きます。</p></section>
+<p>インストーラーには macOS/Linux で Python 3.9 以降が必要です。トークンは非公開で入力します。Linux では、ログアウト後や再起動後もサービスを継続するには <code>sudo loginctl enable-linger "$USER"</code> を実行し、その後、通常のユーザーとしてインストールします。Collector バイナリをダウンロードして検証します。このコマンドでは、ダッシュボード、データベース、中央レシーバーはプロビジョニングされません。デバイスの所有者が、出力されるテレメトリーの ID と自動的に一致するわけではありません。</p>
+<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> および <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>、 <code>OTEL_TRACES_EXPORTER=otlp</code>、4317番ポートのローカル OTLP gRPC 送信先。</li><li>Codex: 個別の <code>[otel]</code> <code>exporter</code>、 <code>metrics_exporter</code> および <code>trace_exporter</code> 項目。4318番ポートのローカル OTLP HTTP 送信先と <code>log_user_prompt=false</code>.</li></ul>
+<p>両方のクライアントを再起動して新しい作業を生成し、次の順で確認します。 <a href="index.html#task-trace">ユーザー → 選択した時間範囲 → タスク → Task Trace</a>。過去のアクティビティはトレースにバックフィルされません。Codex の診断スパンは Analytics の Trace タブで確認できます。</p></section>
 <section id="migration"><h2>既存のデバイスとデータベース</h2><p>デバイス移行時には、クライアントの非公開バックアップとエクスポーターのキューを保持してください。正体不明のサービスを停止せず、サポートされているmacOS/Linuxの移行手順に従います。データベースのアップグレードは、クライアントのインストールやアプリケーションのロールアウトとは別に、スキーマのランブックに従って行います。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">ソースインストーラーと移行ガイド</a></p></section>
 <section id="verify"><h2>6. すべての境界を検証する</h2><ol><li><code>/healthz</code> とClickHouseに依存する <code>/readyz</code> を確認してから認証し、インストール／スキーマ診断を確認します。</li><li>想定したテーブル、移行台帳、ビュー、データベース権限、Collectorの書き込み成功を確認します。スキーマが存在するだけでは、過去データが利用可能とは限りません。</li><li>新しいクライアント作業を送信し、意図したIDでログ、メトリクス、トレースが保存されていることを確認します。Collectorプロセスの稼働やデバイスの受信応答だけでは、データの永続化は証明されません。</li><li>選択したユーザーの利用状況とTask Traceを確認します。Codexのトレース／メトリクス観測は診断用であり、コスト合計に重ねて加算してはいけません。</li></ol><p><a href="operations.html#traces">トレースのトラブルシューティング</a> · <a href="api.html#tasks">APIの範囲</a></p></section>
 <section id="workshops"><h2>主催者が準備するワークショップ</h2><p>準備済みのワークショップには、独自のクライアントとCollectorのライフサイクルがあります。参加者は設定済みの環境を使用します。2つ目のバックエンドをデプロイしたり、準備済みサービスに別のCollectorをインストールしたりしません。主催者は <code>user-data.sh</code> を使う前に、スキーマ、シークレットの保存先、ブートストラップ用アセットを提供する必要があります。</p></section>

@@ -1,6 +1,6 @@
 # English documentation demo
 
-This project owns the November 10, 2026 English documentation video.
+This project owns the November 14, 2026 English documentation video.
 The user authorized synthetic captures, local rendering, Amazon Polly English
 narration and background music composed with Remotion. Follow the root
 and parent instructions; preserve the separate historical video project.

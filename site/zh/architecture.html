@@ -24,7 +24,7 @@
       <p class="eyebrow">Claude Code + Codex · 文档</p>
       <h1>采集与查询管道</h1>
       <p class="lede">专用安装将客户端遥测、受限的接收路径、ClickHouse 存储和经过身份验证的仪表板整合在一起。</p>
-      <p class="caption">更新于 2026 年 11 月 10 日 · 描述源代码行为；请核实你安装的版本。</p>
+      <p class="caption">更新于 2026 年 11 月 14 日 · 描述源代码行为；请核实你安装的版本。</p>
     </div>
     <section id="task-traces"><h2>关联用户、任务与span</h2>
 <p>用户详情会选择一个确切的遥测身份和趋势时间桶。<code>/api/users/tasks</code>会列出在该时间桶内开始的任务；<code>/api/users/tasks/detail</code>会返回所选任务的泳道、span 以及基于证据的成本说明。</p>
@@ -57,7 +57,7 @@
 </ul>
 <p>这些机制可以减少工作量，但无法保证支持 140 个用户并发。请在目标安装环境中测量具有代表性的筛选条件多样性、冷缓存流量、数据接收情况和查询延迟。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">成本查询性能</a></p></section><section id="auth"><h2>仪表板访问与设备访问</h2>
 <p>OIDC 会验证已签名的身份，并将明确的组值映射到 <code>viewer</code>、<code>analyst</code> 或 <code>admin</code>。获授权的查看者可以读取整个安装环境的遥测数据；这不是按员工隔离行数据。</p>
-<p>设备令牌仅授予数据接收权限。令牌由独立主体管理、设有过期时间且可撤销。遥测归属由客户端提供；SSO 会话和令牌所有权都不会自动认证遥测电子邮件地址。</p>
+<p>设备令牌允许采集遥测数据和下载安装程序包，但不允许浏览器访问。每个令牌由不同主体单独持有，并可过期或撤销。遥测归属信息由客户端提供；SSO 会话或令牌所有权均不会自动验证遥测电子邮件地址。</p>
 <p>PII 遮蔽是一项显示功能，不是 API 访问控制。采集过滤器会移除已知内容字段，但无法检测放入其他受支持元数据中的任意机密。</p>
 <p><a href="operations.html#sso">配置 SSO 并刷新会话</a> · <a href="installation.html">安装 Collector</a></p></section><section id="deployment"><h2>部署边界</h2><p>仪表板镜像包含 Web 界面和 API。在所有平台上，ClickHouse、其数据库模式和 OTel Collector 都是独立组件。当前 Compose 文件未包含 Collector；EKS Terraform 会复用现有集群依赖项。ECS/EC2 需要经过审核的基础设施、凭据、网络、探针和持久化配置；Lambda 需要将应用适配到其运行时。</p><p><a href="installation.html#choose">必需组件</a> · <a href="installation.html#platforms">比较托管选项</a></p>
 <p>数据库模式生命周期、应用镜像、Collector 策略和运行时选项各有独立的部署状态。构建成功或 Terraform 验证通过，都不能证明线上部署或迁移已成功。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">为组织部署</a></p></section>

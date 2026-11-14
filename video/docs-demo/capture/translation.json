@@ -1,0 +1,28 @@
+{
+  "model": "openai.gpt-6-luna",
+  "provider": "amazon-bedrock",
+  "inference_profile": "us.openai.gpt-6-luna",
+  "region": "us-east-1",
+  "date": "2026-11-14",
+  "target_language": "English",
+  "source_sha256": "d10cb1975f56aeef65fcc48bab99171efa0d30cdc6b62d5b7f518ff1d4e6d72b",
+  "output_sha256": "83372034ebbe671445cb1a9400827910132a155f6855a4e621df5c42a6fd113e",
+  "usage": {
+    "inputTokens": 2,
+    "outputTokens": 4062,
+    "totalTokens": 9668,
+    "cacheReadInputTokens": 0,
+    "cacheWriteInputTokens": 5604
+  },
+  "stop_reason": "end_turn",
+  "strings": 337,
+  "labels_sha256": "7743509ea8ebea8ed9447173bcd03295145b4dc9ef32efeae278cf647e877dae",
+  "host_corrections": [
+    {
+      "source": "search \uc2e4\ud328",
+      "model_output": "Search failed",
+      "corrected_output": "search failed",
+      "reason": "Preserve the lowercase synthetic MCP server identifier."
+    }
+  ]
+}

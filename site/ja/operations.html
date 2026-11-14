@@ -24,7 +24,7 @@
       <p class="eyebrow">Claude Code + Codex · ドキュメント</p>
       <h1>独自環境を運用する</h1>
       <p class="lede">組織のIDを設定し、デプロイ済みコンポーネントを確認して、ロールアウトと復旧に関する運用手順書に従います。</p>
-      <p class="caption">更新日：2026年11月10日 · ソースコードの動作を記載しています。インストール済みのリビジョンを確認してください。</p>
+      <p class="caption">更新日：2026年11月14日 · ソースコードの動作を記載しています。インストール済みのリビジョンを確認してください。</p>
       <p><a href="#traces">トレース収集の確認</a> · <a href="index.html#task-trace">Task Traceの手順</a></p>
     </div>
     <section id="sso"><h2>組織のSSOを接続する</h2>
@@ -57,25 +57,25 @@ SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
 <p>稼働状態には<code>/healthz</code>、準備状態には<code>/readyz</code>を使用します。ソース上の宣言、成功したビルド、正常なプロセスだけでは、IDプロバイダーの動作、テレメトリの鮮度、マイグレーションの適用は確認できません。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md">EKSのデプロイとロールバック</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">スキーマのマイグレーション手順</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">顧客環境へのインストール要件</a></p></section><section id="symptoms"><h2>問題が起きている境界から調べる</h2><div class="table-scroll" tabindex="0" role="region" aria-label="症状の参照表"><table><thead><tr><th scope="col">症状</th><th scope="col">最初に確認する項目</th></tr></thead><tbody><tr><td>ログインに失敗する、または早期に終了する</td><td>オリジン/コールバック/Issuerの正確性、署名済みグループのマッピング、プロバイダーの有効期限と更新仕様を確認します。トークンの値を出力しないでください。</td></tr><tr><td>Collectorのポートが使用中</td><td>選択したリリースのソースインストーラーを使用します。macOSのサポート対象の移行手順か、既存サービスの所有者による手動手順に従ってください。</td></tr><tr><td>ユーザーが特定できない、または分割されている</td><td>意図した<code>--user-id</code>、出力されたID、ダッシュボードのフィルターを確認します。デバイスのSSO所有者がテレメトリの属性に自動で反映されるわけではありません。</td></tr><tr><td>トークンは発行されたがテレメトリがない</td><td>コーディングクライアントを再起動して作業を実行し、ローカルサービス/エクスポーターのエラーとデバイスでの受信を確認した後、保存データを確認します。</td></tr><tr><td>Codexの詳細がダッシュで表示される</td><td>完了データのコホートと、ウィンドウ全体の完全性をそれぞれ確認します。分母、価格、コンポーネントが欠けている場合に、ゼロとして扱ってはいけません。</td></tr><tr><td>コスト詳細の表示が遅い</td><td>クエリの受け入れ状況、フィルター、有効な解像度を確認します。コスト/作業量プロファイルを使用し、容量を変更する前に対象ワークロードを測定してください。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collectorの制限と復旧</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">コストクエリの動作</a></p></section><section id="platforms"><h2>プラットフォーム別の運用要件</h2><p>どのホスティング方式でも、永続的なClickHouseスキーマと、正常に動作するOTelパイプラインが必要です。ECSとEC2では、サービス、シークレット、ストレージの設定を別途作成する必要があります。提供されているTerraformの対象は既存のEKS環境です。Lambdaには、アプリケーションランタイムへの適応と、外部データベース/Collectorサービスが必要です。</p><p><a href="installation.html#platforms">デプロイ方法とサポート範囲</a> · <a href="installation.html#schema">スキーマの初期化</a> · <a href="installation.html#collector">Collectorの設定</a></p></section><section id="site"><h2>ドキュメントのデプロイ</h2>
 <p>このドキュメントは<code>site/</code>内の静的HTMLです。Pagesワークフローは、<code>main</code>への変更がマージされると、このディレクトリをアップロードします。ドキュメントのみのリリースでは、バンドラーによるビルドも、アプリケーション/EKSのロールアウトもありません。</p>
 <p>完全な手順については、ソースにリンクされた運用手順書を参照してください。ウェブサイトにはサポート対象の動作を要約していますが、特定の顧客環境の設定を保証するものではありません。</p></section>
-<section id="traces"><h2>Traceの経路を確認する</h2>
-<p>新しいインタラクションと、想定されるテレメトリID、クライアント、時間バケットから確認を始めます。利用量の合計とTraceの利用可否は異なるシグナルに基づきます。ログのエクスポートに成功しても、トレースが配信されたことにはなりません。</p>
+<section id="traces"><h2>パラメーター参照表</h2>
+<p>Trace の経路を確認</p>
 <ol>
-  <li>現在のデバイスパッケージまたは管理者が適用した設定でトレースのエクスポートが有効になっていることを確認し、コーディングクライアントを再起動します。<a href="installation.html#trace">クライアント設定のリファレンス</a>を参照してください。</li>
-  <li>ローカルCollectorのサービスとトレースエクスポーターで、配信エラーを確認します。認証付きの取り込み、中央トレースパイプラインを順に確認し、保存された<code>otel_traces</code>レコードを調べます。デバイスでの受信とプロセスの正常性で確認できるのは、それぞれの段階だけです。</li>
-  <li>ユーザー詳細で、タスクの開始時刻を含むトレンドの時間バケットを選びます。想定したIDとフィルターを確認してください。サポート対象のトレース済みタスクは90日間保持されます。</li>
-  <li>Codexの診断では、完全なinsightsプロファイルを使用してAnalyticsのTraceタブを確認します。cost/effort、tool、performanceプロファイルではトレースクエリがスキップされます。</li>
+<li>新しいインタラクションと、想定されるテレメトリー ID、クライアント、時間バケットから始めます。使用量の合計と Trace の利用可否は別々のシグナルに基づきます。ログのエクスポートが成功しても、トレースの配信が確認できたことにはなりません。 <a href="installation.html#trace">現在のデバイスパッケージまたは組織管理の設定でトレースのエクスポートが有効になっていることを確認してから、コーディングクライアントを再起動します。</a>.</li>
+<li>クライアント設定のリファレンス <code>otel_traces</code> ローカル Collector のサービスとトレースエクスポーターで配信エラーを確認します。認証済みの取り込み、中央トレースパイプライン、保存された</li>
+<li>レコードまで順に確認します。デバイスでの受信とプロセスの稼働状況が確認できるのは、それぞれの段階のみです。</li>
+<li>ユーザー詳細で、タスクの開始時刻を含む時間範囲を選択します。タスクリストは有効な範囲に従います。ドラッグで絞り込むか、1つのバケットをクリックします。全期間リセットでポイント選択を解除します。想定される ID とフィルターを確認してください。対応するトレース済みタスクの保持期間は90日です。</li>
 </ol>
-<div class="table-scroll" tabindex="0" role="region" aria-label="Traceの症状に関する参照表"><table>
-  <thead><tr><th scope="col">症状</th><th scope="col">確認する項目</th></tr></thead>
-  <tbody>
-    <tr><td>ユーザーの利用状況はあるがタスクがない</td><td>トレース設定、再起動時刻、エクスポートされたID、タスク開始の時間バケット、保持期間を確認します。過去の利用状況からトレースが遡って生成されることはありません。</td></tr>
-    <tr><td>Codexの完了がタスクに紐付かない</td><td>トレース対象ターンには、会話IDと一意のターンIDが必要です。対象となるターンがない完了は紐付きません。サンプリング対象のspanを含まない紐付き完了は、コスト帯に表示されない場合があります。</td></tr>
-    <tr><td>Codexのサブエージェント数を確認できない</td><td>現在のタスクビューにはメインレーンしかなく、無関係なspanからサブエージェント数を推定しません。</td></tr>
-    <tr><td>詳細データが大きいと合計が表示されない</td><td><code>truncated</code>と<code>span_total</code>を確認します。タスク詳細は5,000spanに制限されています。別の診断プレビューでは、トレース数が50、トレースごとのspan数が200に制限されます。</td></tr>
-    <tr><td>モデルフィルターを適用するとCodex Traceが表示されなくなる</td><td>このフィルターに一致するのはモデル属性を持つspanだけです。他の診断spanを調べるには、フィルターを解除してください。</td></tr>
-  </tbody>
+<div aria-label="Trace の症状リファレンス" class="table-scroll" role="region" tabindex="0"><table>
+<thead><tr><th scope="col">Codex の診断情報は、完全な insights プロファイルを使って Analytics の Trace タブで確認します。cost/effort、tool、performance の各プロファイルではトレースを照会しません。</th><th scope="col">症状</th></tr></thead>
+<tbody>
+<tr><td>確認する内容</td><td>使用量はあるがタスクがない</td></tr>
+<tr><td>トレース設定、再起動時刻、エクスポートされた ID、タスク開始時刻の範囲、保持期間を確認します。過去の使用量はトレースにバックフィルされません。</td><td>Codex の完了がタスクに含まれない</td></tr>
+<tr><td>トレースされたターンには conversation ID と一意の turn ID が必要です。対象となるターンのない完了は関連付けられません。サンプリングスパンのない、関連付け済みの完了はコスト帯に表示されないことがあります。</td><td>Codex のサブエージェント数が利用不可</td></tr>
+<tr><td>現在のタスク表示にはメインレーンのみがあり、無関係なスパンからサブエージェント数を推定しません。</td><td>詳細が大きいと合計が表示されない <code>truncated</code> および <code>span_total</code>を確認してください。タスク詳細は5,000スパンまでに制限されます。別の診断プレビューでは、トレース50件、各トレース200スパンまでです。</td></tr>
+<tr><td>モデルフィルターを使うと Codex Trace が表示されない</td><td>そのフィルターに一致するのはモデル属性を持つスパンだけです。他の診断スパンを確認するには、フィルターを解除してください。</td></tr>
+<tr><td>単価グラフの線が破線になっている</td><td>その区間には計算可能な一致セッションがありません。破線は観測済みの端点を結ぶだけです。欠損コストを補完したり、アクティビティがなかったことを示したりはしません。</td></tr></tbody>
 </table></div>
-<p><a href="api.html#tasks">タスクエンドポイントの制限</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collectorの復旧</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">アプリケーションのリリース手順</a></p>
+<p><a href="api.html#tasks">タスクエンドポイントの制限</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector の復旧</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">アプリケーションのリリース手順</a></p>
 </section>
   </main>
   <footer><div class="wrap">

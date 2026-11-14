@@ -30,7 +30,7 @@ test('the music fades and ducks beneath narration at all six scene boundaries', 
 });
 
 test('English captions match the spoken explanation and measured clip timing', () => {
-  const vtt = readFileSync(new URL('../../../site/assets/video/dashboard-demo-en-20261110.vtt', import.meta.url), 'utf8');
+  const vtt = readFileSync(new URL('../../../site/assets/video/dashboard-demo-en-20261114.vtt', import.meta.url), 'utf8');
   const cues = vtt.trim().split(/\n\n/).slice(1);
   assert.equal(cues.length, narration.scenes.length);
   const seconds = (value) => {

@@ -1,47 +1,87 @@
 {
   "schema_version": 1,
   "repository": "Atom-oh/claude-code-usage-dashboard",
-  "commit": "d71dd1c2b81227d5982b425228df594d7401ef3c",
+  "commit": "ba85b014b7e98715348fde39380b0fbcbaca59b9",
   "files": [
     {
+      "path": "site/assets/img/call-detail-en.png",
+      "bytes": 70540,
+      "sha256": "aa65116484fce80ed201646d386ebca6d871b93ae51f467342a59e69d053ea8e"
+    },
+    {
+      "path": "site/assets/img/collector-setup-en.png",
+      "bytes": 140010,
+      "sha256": "3a95ee31f65150a20ed41b745409fa18e4db512b25ff0ed44b009a5f582daf8c"
+    },
+    {
       "path": "site/assets/img/docs-demo-en-poster.jpg",
-      "bytes": 169741,
-      "sha256": "4a65ed62bdaee13127ce579f168d0a20a0e32f31c35c685c7cb49ac8ff62479c"
+      "bytes": 129259,
+      "sha256": "912cdaae9b84fe490545e61031f42d08b8f2e769f2030f268dc4e6471432138b"
+    },
+    {
+      "path": "site/assets/img/task-environment-en.png",
+      "bytes": 63727,
+      "sha256": "61b59f4a8286ffc61edd20db3be73b4af71936dc161f87d9bc5ce4ba87d32730"
+    },
+    {
+      "path": "site/assets/img/task-lanes-en.png",
+      "bytes": 28293,
+      "sha256": "6e12e575c27aa7e04072a5abba6f2bb58b3a6bd39e4c0dd524409d68fd19932f"
+    },
+    {
+      "path": "site/assets/img/task-list-en.png",
+      "bytes": 89453,
+      "sha256": "5136905bf634c2976ef03900a1b520535ef9769e539abc970b19984ff779d1cc"
     },
     {
       "path": "site/assets/img/task-trace-en.png",
-      "bytes": 128177,
-      "sha256": "9bf56c5938b7bbd4efab3c1379271605d14e7c238aaee3c1fb101cf40951f7cd"
+      "bytes": 436803,
+      "sha256": "d565087fe413d1f6ac53dc8564b60ae3fbadc54f74542cbd9b52733205371066"
     },
     {
       "path": "site/assets/img/task-trace-model-en.png",
-      "bytes": 128399,
-      "sha256": "ec3fb88f8c652500ce4de54e4528e4cb611a4393428ce6cc1e23dabc7b6ddbd2"
+      "bytes": 416704,
+      "sha256": "12b96f9659a5374b64c9cec79289933ef86991aec03e432b2c40469285cc910c"
     },
     {
       "path": "site/assets/img/task-trace-model-table-en.png",
-      "bytes": 11428,
-      "sha256": "e641c12a84aace9de671b34d944c4c45ec7ec69cc758c0d63329db4f9c855d76"
+      "bytes": 56751,
+      "sha256": "247ed6286b0658929e0eaa6377b8bfd59948c0006cf7040844e4c8d0b8e2afdb"
     },
     {
       "path": "site/assets/img/task-trace-overview-en.png",
-      "bytes": 104065,
-      "sha256": "0045b8b04b8938328d72d95b4028db10d92eb07c254a80f21428a19545b78304"
+      "bytes": 422769,
+      "sha256": "fe900a700606400922a50c7a42751d76ab297e37907f53090366200a60cdc322"
     },
     {
       "path": "site/assets/img/task-trace.png",
-      "bytes": 115050,
-      "sha256": "677ac1571045c760f58fe614568a8e5859947e57f2c0d8818eb4356e2c558ef7"
+      "bytes": 379951,
+      "sha256": "0a0e42e971f463ec07a77258d58b1a47ba28b31440a43fb2813e1fa281b16b2e"
     },
     {
-      "path": "site/assets/video/dashboard-demo-en-20261110.mp4",
-      "bytes": 4275069,
-      "sha256": "96244acbd9328f1ce5d8c1361e0101df838699eb460fa0861f37ee06125184b8"
+      "path": "site/assets/img/time-range-en.png",
+      "bytes": 38588,
+      "sha256": "186ed8b2974e5e856bf1750a579ee8047d65c30c911f1757eece03968cc39e30"
     },
     {
-      "path": "site/assets/video/dashboard-demo-en-20261110.webm",
-      "bytes": 2837237,
-      "sha256": "dc02c297639481694dd3d2b70852b8b73b49b408a890201eeefc391d6c114551"
+      "path": "site/assets/img/unit-cost-en.png",
+      "bytes": 89531,
+      "sha256": "6365fd98e947c9343b3742462565ebc19f25f422a0300d52437feac82cb51d01"
+    },
+    {
+      "path": "site/assets/img/user-tasks-en.png",
+      "bytes": 158077,
+      "sha256": "dc11243b6bea0d28cb83206ba004895bc7fd3a000cd74474e806e4fe445176c5"
+    },
+    {
+      "path": "site/assets/video/dashboard-demo-en-20261114.mp4",
+      "bytes": 4192206,
+      "sha256": "2f8195a1f2ecc489c8ee39b81e3d2c529f84f61d362bda5930c0c8414e729cd4"
+    },
+    {
+      "path": "site/assets/video/dashboard-demo-en-20261114.webm",
+      "bytes": 2744037,
+      "sha256": "60e8785bcf8dc7ac8b37aee5ad11f2b89f382f8683a69b3ad77968581464e882"
     },
     {
       "path": "video/docs-demo/remotion/public/background.wav",
@@ -50,38 +90,38 @@
     },
     {
       "path": "video/docs-demo/remotion/public/build.mp3",
-      "bytes": 77228,
-      "sha256": "50539a6701820578bb7ae854e10ada7b01dd04393d6b80d48e35aa314fab15a5"
+      "bytes": 73484,
+      "sha256": "10fa2e6b1d615b5a912ca92b39f155b9f247f057dabf7dc33b738ad34519d27a"
     },
     {
       "path": "video/docs-demo/remotion/public/call.mp3",
-      "bytes": 84428,
-      "sha256": "be4b945dcd53fa2878504dedafd9f01027174844cd7a19465ae2731d86992d26"
+      "bytes": 77228,
+      "sha256": "cabc849a2f7d9aaf75b4d40f78d849905828cf1aece1f001c17f827ec8429239"
     },
     {
       "path": "video/docs-demo/remotion/public/follow.mp3",
-      "bytes": 85868,
-      "sha256": "8ef2d684e1a7a529c4d8e929f8ebb8259fc4b3b5e782b3ace5f41f474efdaa35"
+      "bytes": 59660,
+      "sha256": "37566e3f192642c183d49b5716895bd44dd0ca816576543f9b989d6129490733"
     },
     {
       "path": "video/docs-demo/remotion/public/hosting.mp3",
-      "bytes": 82988,
-      "sha256": "d6660809691457240cb00e5ee413fd0886784dbad12eed4299d631a6d5845c8d"
+      "bytes": 91916,
+      "sha256": "c3973cbc3698b64eefa706b987a566d26398654b284f2d770842cfa838fdbd1c"
     },
     {
       "path": "video/docs-demo/remotion/public/lanes.mp3",
-      "bytes": 85292,
-      "sha256": "09bd769ae54aa7c91238b12778ee7728b146cbf0d677a8a5b6ef8624ece8c98f"
+      "bytes": 65132,
+      "sha256": "104e131763216a987df1e622c5e2055bacc20bc632ab58d22062a0aaa80ff975"
     },
     {
       "path": "video/docs-demo/remotion/public/model.mp3",
-      "bytes": 68012,
-      "sha256": "03632fd244e886b236aba9d96132a4a99b928067b37c77e49f47a744bb38c8ad"
+      "bytes": 81260,
+      "sha256": "ced889fdcf31315a322a124d0274080547de30baedb318dc4fcf764d1da4df49"
     },
     {
       "path": "video/docs-demo/remotion/public/visual-base.mp4",
-      "bytes": 3569818,
-      "sha256": "56ecb1cc7c0e3afa99c5422d45823ef0358b20ea297adb38a1b5e27600741e46"
+      "bytes": 3719732,
+      "sha256": "8b80451af7dde63f9b4f6ab7044f5e89d3acc599dba215d6f06aa7892c59e5e7"
     },
     {
       "path": "video/docs-demo/runtime/NotoSans.ttf",

@@ -9,11 +9,35 @@
   "fps": 24,
   "duration_frames": 1152,
   "scenes": [
-    {"id": "follow", "start_frame": 0, "text": "Follow a task from a user's time bucket. Inspect calls, agent lanes, and cumulative cost. This is synthetic data."},
-    {"id": "build", "start_frame": 192, "text": "Install ClickHouse and its schema, the OpenTelemetry Collector, and an authenticated dashboard. Then configure each client."},
-    {"id": "lanes", "start_frame": 384, "text": "Agent lanes show calls, tools, and waits. Costs retain their reported or estimated basis. Capture remains partial."},
-    {"id": "call", "start_frame": 576, "text": "Select a call to inspect input, output, and cache tokens. Missing fields stay unavailable. Tokens are not invoices."},
-    {"id": "model", "start_frame": 768, "text": "Select a model to highlight its calls. Codex diagnostic traces and metrics do not add to completion costs."},
-    {"id": "hosting", "start_frame": 960, "text": "Choose a virtual machine or container platform. Lambda needs runtime adaptation. Follow the guides for backend prerequisites."}
+    {
+      "id": "follow",
+      "start_frame": 0,
+      "text": "Choose exact start and end times in your browser's time zone. Shared links keep the same window."
+    },
+    {
+      "id": "build",
+      "start_frame": 192,
+      "text": "Register your device, then run one installation command. Enter your attribution ID and token privately in the terminal."
+    },
+    {
+      "id": "lanes",
+      "start_frame": 384,
+      "text": "Drag the usage chart to narrow the period. User detail stays open, and the top twenty tasks update."
+    },
+    {
+      "id": "call",
+      "start_frame": 576,
+      "text": "Follow agent lanes, model calls, and cache tokens. Matching names remain separate lanes, with their own costs."
+    },
+    {
+      "id": "model",
+      "start_frame": 768,
+      "text": "Inspect connected MCP servers, loaded plugins, and the first call's context. Missing telemetry remains unavailable."
+    },
+    {
+      "id": "hosting",
+      "start_frame": 960,
+      "text": "Dashed cost lines connect observations across unknown intervals. They are guides, not measured values. Explore the complete documentation."
+    }
   ]
 }

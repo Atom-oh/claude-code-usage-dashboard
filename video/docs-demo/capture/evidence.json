@@ -1,0 +1,68 @@
+{
+  "date": "2026-11-14",
+  "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+  "drag_and_task_bounds_match": true,
+  "browser_errors": [],
+  "screenshots": [
+    {
+      "name": "time-range-en.png",
+      "width": 770,
+      "height": 482
+    },
+    {
+      "name": "user-tasks-en.png",
+      "width": 2560,
+      "height": 952
+    },
+    {
+      "name": "task-list-en.png",
+      "width": 2560,
+      "height": 390
+    },
+    {
+      "name": "task-trace-overview-en.png",
+      "width": 2640,
+      "height": 2460
+    },
+    {
+      "name": "task-lanes-en.png",
+      "width": 1784,
+      "height": 434
+    },
+    {
+      "name": "task-environment-en.png",
+      "width": 660,
+      "height": 522
+    },
+    {
+      "name": "task-trace-en.png",
+      "width": 2640,
+      "height": 2886
+    },
+    {
+      "name": "call-detail-en.png",
+      "width": 592,
+      "height": 786
+    },
+    {
+      "name": "task-trace-model-en.png",
+      "width": 2640,
+      "height": 2886
+    },
+    {
+      "name": "task-trace-model-table-en.png",
+      "width": 2544,
+      "height": 394
+    },
+    {
+      "name": "unit-cost-en.png",
+      "width": 1264,
+      "height": 826
+    },
+    {
+      "name": "collector-setup-en.png",
+      "width": 2176,
+      "height": 828
+    }
+  ]
+}

@@ -22,7 +22,7 @@
   <main class="wrap" id="main">
 <div class="hero"><p class="eyebrow">Claude Code + Codex · 설치</p><h1>전체 서비스 빌드 및 배포</h1>
 <p class="lede">Git 소스에서 시작하세요. 코딩 클라이언트를 연결하기 전에 대시보드, ClickHouse와 스키마, OTel 수집 경로를 배포하세요.</p>
-<p class="caption">2026년 11월 10일 업데이트 · 소스 기반 안내입니다. 선택한 릴리스와 대상 환경을 확인하세요.</p>
+<p class="caption">2026년 11월 14일 업데이트 · 소스 기반 안내입니다. 선택한 릴리스와 대상 환경을 확인하세요.</p>
 <p><a href="#setup">복제 및 빌드</a> · <a href="#schema">데이터베이스 스키마</a> · <a href="#collector">OTel 백엔드</a> · <a href="#platforms">호스팅 옵션</a> · <a href="#trace">클라이언트 트레이스</a></p></div>
 <section id="choose"><h2>설치해야 하는 항목</h2>
 <p>이 안내서는 게시된 애플리케이션 <code>.tar.gz</code> 파일에 의존하지 않습니다. 저장소를 복제하고 Docker 이미지를 빌드하세요. 선택적 장치 패키지는 설치된 대시보드에서 생성되며 백엔드를 설치하지 않습니다.</p>
@@ -145,15 +145,23 @@ docker run -d --name ccdash --restart unless-stopped \
 <tr><td>Lambda</td><td>HTTP 애플리케이션을 Lambda 호환 런타임/어댑터로 포팅합니다. ClickHouse와 수집 Collector는 영구 외부 서비스로 유지하세요.</td><td>현재 Docker 이미지는 Express를 시작하며 Lambda 핸들러/런타임 통합이 없습니다. 바로 사용할 수 있는 Lambda 배포 구성은 제공되지 않습니다. 포팅 후 인증 쿠키, 스트리밍/채팅, 시간 제한, 네트워킹 및 장치 수집을 검증하세요. Lambda를 선택하는 것만으로 이 스택이 설치되지는 않습니다.</td></tr>
 </tbody></table></div>
 <p>공식 플랫폼 참고 자료: <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html">EC2</a> · <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html">ECS/Fargate 태스크 정의</a> · <a href="https://docs.aws.amazon.com/eks/latest/userguide/sample-deployment.html">EKS 애플리케이션 배포</a> · <a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html">Lambda 이미지/런타임 요구 사항</a>.</p></section>
-<section id="trace"><h2>5. 클라이언트 로그, 메트릭 및 트레이스 연결</h2>
-<p>백엔드가 동작하면 각 클라이언트의 로컬 Collector와 내보내기 대상 주소를 구성하세요. 장치 경로의 경우 analyst/admin이 배포된 대시보드에서 장치를 등록할 수 있습니다. 다운로드할 수 없다면 소스 설치 프로그램을 직접 사용하세요. 그래도 설치된 백엔드와 발급된 장치 토큰이 필요합니다.</p>
-<pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
+<section id="trace"><h2>5. 클라이언트 로그, 메트릭 및 Trace 연결</h2>
+<p>백엔드가 작동하면 각 클라이언트의 로컬 Collector와 내보내기 대상 주소를 구성하세요. 기기 경로에서는 분석가/관리자가 배포된 대시보드에서 기기를 등록할 수 있습니다. 기기 플랫폼을 선택해 등록한 다음 설치 명령을 복사하세요. 터미널에서 텔레메트리 귀속 ID와 기기 토큰을 묻습니다. 토큰은 명령에 포함되지 않습니다. 설치된 백엔드와 발급된 기기 토큰이 필요합니다.</p>
+<h3>기기 설치</h3><h4>macOS</h4>
+<pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
+curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
+<h4>Linux</h4>
+<pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
+sudo loginctl enable-linger "$USER" &amp;&amp;
+  curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
+<p>스크립트는 기기 bearer 토큰으로 패키지를 다운로드한 다음 비공개 토큰 파일을 사용해 설치 프로그램을 실행합니다. 기기 토큰으로 대화형 대시보드에 로그인할 수는 없습니다.</p>
+<h3>수동 소스 대체 방법</h3><pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
 : "${CCDASH_USER_ID:?Set the intended telemetry attribution ID}"
 python3 dashboard/collector/install.py install \
   --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
-<p>설치 프로그램은 macOS/Linux에서 Python 3.9 이상이 필요하며 토큰을 비공개로 입력하라는 메시지를 표시합니다. Linux에서는 로그아웃/재부팅 후에도 서비스가 유지되도록 <code>sudo loginctl enable-linger "$USER"</code>를 실행한 다음 일반 사용자로 설치하세요. Collector 바이너리를 다운로드하고 검증합니다. 이 명령은 대시보드, 데이터베이스 또는 중앙 수신기를 준비하지 않습니다. 장치 소유자가 자동으로 텔레메트리의 사용자 식별 정보가 되는 것은 아닙니다.</p>
-<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> 및 <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>을 설정하고, <code>OTEL_TRACES_EXPORTER=otlp</code>와 포트 4317의 로컬 OTLP gRPC 대상을 사용합니다.</li><li>Codex: 별도의 <code>[otel]</code> <code>exporter</code>, <code>metrics_exporter</code> 및 <code>trace_exporter</code> 항목을 사용하고, 포트 4318의 로컬 OTLP HTTP 대상과 <code>log_user_prompt=false</code>를 설정합니다.</li></ul>
-<p>두 클라이언트를 다시 시작하고 새 작업을 생성한 뒤 <a href="index.html#task-trace">사용자 → 추세 버킷 → 작업 → Task Trace</a>를 따라가세요. 이전 활동은 트레이스로 소급 처리되지 않습니다. Codex 진단 span은 Analytics의 Trace 탭에서 확인하세요.</p></section>
+<p>설치 프로그램을 실행하려면 macOS/Linux에 Python 3.9+가 필요하며 토큰을 비공개로 입력하라는 안내가 표시됩니다. Linux에서는 로그아웃/재부팅 후에도 서비스가 유지되도록 다음을 실행한 후 일반 사용자로 설치하세요. Collector 바이너리를 다운로드하고 확인합니다. 이 명령으로 대시보드, 데이터베이스 또는 중앙 수신기가 프로비저닝되지는 않습니다. 기기 소유자가 자동으로 내보내는 텔레메트리의 ID가 되는 것은 아닙니다. <code>sudo loginctl enable-linger "$USER"</code> 로그아웃/재부팅 후 서비스가 유지되도록 Linux에서 다음을 실행한 다음 일반 사용자로 설치하세요. Collector 바이너리를 다운로드하고 확인합니다. 이 명령으로 대시보드, 데이터베이스 또는 중앙 수신기가 프로비저닝되지는 않습니다. 기기 소유자가 자동으로 내보내는 텔레메트리의 ID가 되는 것은 아닙니다.</p>
+<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> 및 <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>, <code>OTEL_TRACES_EXPORTER=otlp</code>, 포트 4317의 로컬 OTLP gRPC 대상 주소.</li><li>Codex: 별도의 <code>[otel]</code> <code>exporter</code>, <code>metrics_exporter</code> 및 <code>trace_exporter</code> 항목, 포트 4318의 로컬 OTLP HTTP 대상 주소 및 <code>log_user_prompt=false</code>.</li></ul>
+<p>두 클라이언트를 모두 다시 시작하고 새 작업을 생성한 다음 다음 경로를 따라가세요: <a href="index.html#task-trace">사용자 → 선택한 시간 범위 → 작업 → Task Trace</a>. 이전 활동은 Trace에 백필되지 않습니다. Codex 진단 스팬을 보려면 Analytics의 Trace 탭을 여세요.</p></section>
 <section id="migration"><h2>기존 장치 및 데이터베이스</h2><p>장치 마이그레이션 중에는 비공개 클라이언트 백업과 내보내기 큐를 보존하세요. 알 수 없는 서비스를 중지하는 대신 지원되는 macOS/Linux 마이그레이션 절차를 따르세요. 데이터베이스 업그레이드는 클라이언트 설치 및 애플리케이션 롤아웃과 별도로 스키마 런북을 따릅니다.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">소스 설치 프로그램 및 마이그레이션 안내서</a></p></section>
 <section id="verify"><h2>6. 모든 경계 검증</h2><ol><li><code>/healthz</code>와 ClickHouse 기반 <code>/readyz</code>를 확인한 다음 인증하고 설치/스키마 진단을 살펴보세요.</li><li>예상 테이블, 마이그레이션 원장, 뷰, 데이터베이스 권한 및 Collector 쓰기 성공을 확인하세요. 스키마가 있다는 사실만으로 과거 데이터가 준비된 것은 아닙니다.</li><li>새 클라이언트 작업을 보내고 의도한 사용자 식별 정보로 저장된 로그, 메트릭 및 트레이스를 확인하세요. Collector 프로세스 실행이나 장치 수신 확인만으로 데이터가 영구 저장되었다고 볼 수 없습니다.</li><li>선택한 사용자의 사용량과 Task Trace를 확인하세요. Codex 트레이스/메트릭 관측값은 진단 정보이므로 비용 합계를 추가해서는 안 됩니다.</li></ol><p><a href="operations.html#traces">트레이스 문제 해결</a> · <a href="api.html#tasks">API 경계값</a></p></section>
 <section id="workshops"><h2>조직이 준비한 워크숍</h2><p>준비된 워크숍은 자체 클라이언트 및 Collector 수명 주기를 가집니다. 참가자는 구성된 환경을 사용하며 두 번째 백엔드를 배포하거나 준비된 서비스 위에 Collector를 추가로 설치하지 않습니다. 주최자는 <code>user-data.sh</code>를 사용하기 전에 스키마, 보안 정보 대상 및 부트스트랩 자산을 제공해야 합니다.</p></section>

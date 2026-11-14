@@ -24,7 +24,7 @@
       <p class="eyebrow">Claude Code + Codex · Documentation</p>
       <h1>The collection and query pipeline</h1>
       <p class="lede">A dedicated installation combines client telemetry, a bounded ingestion path, ClickHouse storage and an authenticated dashboard.</p>
-      <p class="caption">Updated November 10, 2026 · Describes source behavior; verify your installed revision.</p>
+      <p class="caption">Updated November 14, 2026 · Describes source behavior; verify your installed revision.</p>
     </div>
     <section id="task-traces"><h2>Connect a user, task and span</h2>
 <p>User detail selects an exact telemetry identity and a trend bucket. <code>/api/users/tasks</code> lists tasks starting in that bucket; <code>/api/users/tasks/detail</code> returns the selected task's lanes, spans and evidence-based cost explanations.</p>
@@ -57,7 +57,7 @@
 </ul>
 <p>These mechanisms reduce work; they do not establish a capacity guarantee for 140 concurrent users. Measure representative filter diversity, cold-cache traffic, ingestion and query latency on the target installation.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">Cost query performance</a></p></section><section id="auth"><h2>Dashboard access and device access</h2>
 <p>OIDC verifies signed identity and maps explicit group values to <code>viewer</code>, <code>analyst</code> or <code>admin</code>. Authorized viewers can read installation-wide telemetry; this is not per-employee row isolation.</p>
-<p>Device tokens grant ingestion only. They are separately owned, expired and revoked. Telemetry attribution is client-provided; neither an SSO session nor token ownership automatically certifies a telemetry email.</p>
+<p>Device tokens authorize telemetry ingestion and installer-package downloads, not browser access. They are separately owned, expired and revoked. Telemetry attribution is client-provided; neither an SSO session nor token ownership automatically certifies a telemetry email.</p>
 <p>PII masking is a display feature, not API access control. Collection filters remove known content fields but cannot detect arbitrary secrets placed in otherwise supported metadata.</p>
 <p><a href="operations.html#sso">Configure SSO and refresh sessions</a> · <a href="installation.html">Install a Collector</a></p></section><section id="deployment"><h2>Deployment boundaries</h2><p>The dashboard image contains the web UI and API. ClickHouse, its schema and the OTel Collector are separate components on every platform. The current Compose file omits the Collector; EKS Terraform reuses existing cluster dependencies. ECS/EC2 need reviewed infrastructure, credentials, networking, probes and persistence configuration; Lambda requires runtime adaptation.</p><p><a href="installation.html#choose">Required components</a> · <a href="installation.html#platforms">Compare hosting options</a></p>
 <p>Schema lifecycle, application images, Collector policies and runtime options have independent deployment state. A successful build or Terraform validation does not prove a live rollout or migration.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">Deploying for your organization</a></p></section>
