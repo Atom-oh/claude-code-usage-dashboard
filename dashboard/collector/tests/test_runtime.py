@@ -95,7 +95,9 @@ class Runtime(unittest.TestCase):
     def collect(self, output):
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            rows = [json.loads(line) for line in output.read_text().splitlines()] if output.exists() else []
+            # File exporter writes can split a record across multiple writes.
+            lines = output.read_text().splitlines(keepends=True) if output.exists() else []
+            rows = [json.loads(line) for line in lines if line.endswith("\n")]
             total = sum(len(row.get(key, [])) for row in rows
                         for key in ("resourceLogs", "resourceMetrics", "resourceSpans"))
             if total >= 6:
@@ -129,7 +131,11 @@ class Runtime(unittest.TestCase):
                                           "new_context": "sensitive-context", "tool_input": "sensitive-input"}),
                 "status": {"message": "sensitive-error", "code": 2},
                 "events": [{"timeUnixNano": "1792540750000000000", "name": "tool.output",
-                            "attributes": attributes({"content": "sensitive-event"})}]}]}]})
+                            "attributes": attributes({"content": "sensitive-event"})}],
+                # Claude Code 2.1.325+ links most llm_request spans to another trace.
+                **({"links": [{"traceId": "44" * 16, "spanId": "55" * 8,
+                               "attributes": attributes({"link.type": "fixture-link"})}]}
+                   if client == "claude" else {})}]}]})
         with self.collector() as (port, output):
             for signal, key, records in (("logs", "resourceLogs", logs), ("metrics", "resourceMetrics", metrics),
                                          ("traces", "resourceSpans", traces)):
@@ -163,6 +169,9 @@ class Runtime(unittest.TestCase):
                             self.assertEqual(values(span["attributes"])["ttft_ms"], "10")
                             self.assertEqual(values(span["attributes"])["workflow.run_id"], "wf_fixture")
                             self.assertEqual(values(span["attributes"])["workflow.name"], "review-changes")
+                            # Linked spans are kept: links carry only trace/span IDs and link.type.
+                            self.assertEqual([values(link["attributes"]) for link in span["links"]],
+                                             [{"link.type": "fixture-link"}])
                     if key == "resourceMetrics":
                         metric = resource["scopeMetrics"][0]["metrics"][0]["sum"]
                         self.assertEqual(metric["aggregationTemporality"], 2)

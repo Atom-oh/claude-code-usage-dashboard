@@ -342,7 +342,10 @@ is never included in downloadable archives. Its ClickHouse password and internal
 bearer token are mounted files, owned by the server deployment.
 
 Device policies scrub log bodies and known content keys and allowlist trace
-attributes used for diagnostics; span events and spans containing links are
-dropped. Attribution IDs and measurement metadata remain; span `workflow.name`
+attributes used for diagnostics; span events are dropped. Claude spans keep their
+links (trace/span IDs and link attributes; Claude Code 2.1.325 sends only
+`link.type`) because Collector 0.163.1 cannot remove links alone and dropping
+linked `llm_request` spans erased task models, calls and cost. Codex spans
+containing links are still dropped. Attribution IDs and measurement metadata remain; span `workflow.name`
 remains only as a short label (no spaces, slashes or quotes). These filters do not
 detect arbitrary secrets placed in otherwise supported metadata fields.
