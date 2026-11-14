@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=1920, height=1080" />
-  <title>ccdash — Build the stack. Follow the task.</title>
+  <title>ccdash — Choose the window. Follow the work.</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="runtime/gsap.min.js"></script>
 </head>
@@ -11,112 +11,98 @@
 <div id="root" data-composition-id="docs-demo" data-start="0" data-duration="48" data-width="1920" data-height="1080">
   <section id="follow" class="scene clip" data-start="0" data-duration="8" data-track-index="0">
     <p class="eyebrow">CCDASH · CLAUDE CODE + CODEX</p>
-    <h1>Follow the task behind the total.</h1>
+    <h1>Choose the exact window.</h1>
+    <p class="sub">Start and end times, down to seconds.</p>
     <div class="columns">
       <div class="copy entrance">
-        <p>Open <span class="accent">Task Trace</span> from a user's time bucket.</p>
-        <p>See calls, agent lanes and cumulative cost together.</p>
-        <p class="note">Synthetic fixture · fictional costs<br />English demo labels</p>
+        <p><span class="accent">Your browser’s time zone.</span><br />The same bounds in a shared link.</p>
+        <p>UTC calendar-day selection remains available.</p>
+        <p class="note">The end time is exclusive.<br />Server rollup precision still applies.</p>
       </div>
-      <div class="shot overview entrance"><img src="assets/img/task-trace-overview-en.png" width="1320" height="879" data-layout-allow-overflow alt="Actual Task Trace overview with synthetic data and English display labels" /></div>
+      <div class="picker-stage entrance"><img src="assets/img/time-range-en.png" alt="Current exact time picker with translated English labels" /></div>
     </div>
-    <div class="footer"><span>November 10, 2026 · Source walkthrough</span><span>01 / 06</span></div>
+    <div class="footer"><span>November 14, 2026 · Synthetic fixtures · Source behavior</span><span>01 / 06</span></div>
   </section>
   <section id="build" class="scene clip" data-start="8" data-duration="8" data-track-index="1">
-    <p class="eyebrow">INSTALLATION · THE COMPLETE STACK</p>
-    <h2>Clone the source. Build the dashboard.</h2>
-    <p class="sub">Deploy the storage, schema and Collector before collecting client telemetry.</p>
-    <div class="stack entrance">
-      <div class="card"><span class="num">01 →</span><h3>Client exporters</h3><p>Configure each user's Claude Code or Codex.</p></div>
-      <div class="card"><span class="num">02 →</span><h3>OTel Collector</h3><p>Receive and transform logs, metrics and traces.</p></div>
-      <div class="card"><span class="num">03 →</span><h3>ClickHouse</h3><p>Persistent storage, users, schema and migrations.</p></div>
-      <div class="card"><span class="num">04</span><h3>Dashboard</h3><p>Express + React, protected by authentication.</p></div>
+    <p class="eyebrow">DEVICE SETUP · ONE TERMINAL COMMAND</p>
+    <h2>Register. Copy. Install.</h2>
+    <p class="sub">Use the command from your authenticated dashboard.</p>
+    <pre class="terminal entrance">curl -fsSL 'https://dashboard.example/api/ingest/install.sh' | sh</pre>
+    <div class="columns setup-columns">
+      <div class="copy entrance">
+        <p>Enter the attribution ID and device token <span class="accent">in the terminal</span>.</p>
+        <p class="note">Linux also enables user-service persistence.<br />The backend must already be installed.</p>
+      </div>
+      <div class="shot entrance"><img src="assets/img/collector-setup-en.png" alt="Current device installation panel without a token in its command" /></div>
     </div>
-    <pre class="terminal entrance">git clone https://github.com/Atom-oh/claude-code-usage-dashboard.git
-cd claude-code-usage-dashboard
-# Check out a published release, then build with dashboard/ as the context.
-docker build --platform "$CCDASH_PLATFORM" --build-arg APP_REVISION="$CCDASH_REVISION" \
-  --tag "ccdash:$CCDASH_RELEASE" dashboard</pre>
-    <p class="note">HTTPS · private database access · separate credentials · protected secret mounts</p>
-    <div class="footer"><span>See the installation guide for prerequisites and complete commands.</span><span>02 / 06</span></div>
+    <div class="footer"><span>Example origin · No credentials shown · macOS and Linux</span><span>02 / 06</span></div>
   </section>
   <section id="lanes" class="scene clip" data-start="16" data-duration="8" data-track-index="2">
-    <p class="eyebrow">TASK TRACE · LANES + COST</p>
-    <h2>See which agent used the budget.</h2>
-    <div class="columns">
+    <p class="eyebrow">USER DETAIL · DRAG TO THE WORK</p>
+    <h2>One range. The matching tasks.</h2>
+    <div class="columns task-columns">
       <div class="copy entrance">
-        <p><span class="accent">One lane per agent.</span><br />Calls, tools and waits share the task timeline.</p>
-        <div class="metric"><strong>50%</strong><span>Explore share in this fixture</span></div>
-        <p class="note">Cumulative cost is stacked by lane.<br />Reported costs and estimates retain their basis.</p>
+        <p><span class="accent">Drag the usage chart.</span><br />User detail stays open.</p>
+        <p>The top 20 tasks update with the selected period.</p>
+        <p class="note">A point click selects one bucket.<br />Reset to return to the full period.</p>
       </div>
-      <div class="shot timeline-crop entrance"><img src="assets/img/task-trace-en.png" width="1320" height="1030" id="lane-image" class="clip" data-start="16" data-duration="8" data-layout-allow-overflow alt="Enlarged actual agent lanes and cumulative cost chart" /></div>
+      <div class="image-stack entrance">
+        <div class="shot"><img src="assets/img/user-tasks-en.png" alt="Usage and cost chart after a real drag selection" /></div>
+        <div class="shot"><img src="assets/img/task-list-en.png" alt="Top tasks loaded for the selected time range with a workflow badge" /></div>
+      </div>
     </div>
-    <div class="footer"><span>Fictional $2.50 task · partial capture remains visible</span><span>03 / 06</span></div>
+    <div class="footer"><span>Actual React drag interaction · Fictional usage and costs</span><span>03 / 06</span></div>
   </section>
   <section id="call" class="scene clip" data-start="24" data-duration="8" data-track-index="3">
-    <p class="eyebrow">CALL DETAIL · CACHE + CONTEXT</p>
-    <h2>Select a call to inspect its token mix.</h2>
-    <div class="detail-columns">
-      <div class="detail-crop entrance"><img src="assets/img/task-trace-en.png" width="1320" height="1030" id="call-image" class="clip" data-start="24" data-duration="8" data-layout-allow-overflow alt="Actual selected Explore LLM call with token and cost detail" /></div>
+    <p class="eyebrow">TASK TRACE · AGENTS, MODELS, CALLS</p>
+    <h2>Keep each agent’s work in view.</h2>
+    <div class="trace-columns">
       <div class="entrance">
-        <div class="token-grid">
-          <div class="metric"><strong>5,000</strong><span>cache read tokens</span></div>
-          <div class="metric"><strong>300</strong><span>cache write tokens</span></div>
-          <div class="metric"><strong>100</strong><span>input tokens</span></div>
-          <div class="metric"><strong>400</strong><span>output tokens</span></div>
-        </div>
-        <p class="sub">Explore call #2 · fictional $1.25 estimate</p>
-        <p class="note">Read cache subsets and the cost basis together.<br />Token counts alone do not determine billed spend.</p>
-        <p class="note">Missing fields remain <span class="accent">Not Collected</span>.</p>
+        <div class="shot lane-shot"><img src="assets/img/task-lanes-en.png" alt="Actual timeline with distinct Explore number one and number two lanes" /></div>
+        <p class="sub">Repeated agent types keep separate lanes.</p>
+        <p class="note">Model rows highlight their calls.<br />Workflow badges narrow the task list.</p>
+        <p class="note">Reported and estimated costs retain their basis.</p>
       </div>
+      <div class="shot call-shot entrance"><img src="assets/img/call-detail-en.png" alt="Selected call with input, output, cache tokens and cost basis" /></div>
     </div>
-    <div class="footer"><span>Synthetic values from the TaskTraceOverlay test fixture</span><span>04 / 06</span></div>
+    <div class="footer"><span>Fictional $2.50 task · Partial capture remains visible</span><span>04 / 06</span></div>
   </section>
   <section id="model" class="scene clip" data-start="32" data-duration="8" data-track-index="4">
-    <p class="eyebrow">MODEL DETAIL · CALL HIGHLIGHTING</p>
-    <h2>Connect a model row to its calls.</h2>
-    <div class="model-columns">
-      <div class="entrance">
-        <div class="model-shot"><img src="assets/img/task-trace-model-en.png" width="1320" height="1030" data-layout-allow-overflow alt="Actual Task Trace timeline after selecting a model row" /></div>
-        <div class="model-table"><img src="assets/img/task-trace-model-table-en.png" width="1238" height="83" alt="Actual selected model row and its call totals" /></div>
-      </div>
-      <div class="copy entrance">
-        <p>Select a model row to <span class="accent">highlight its calls</span>.</p>
-        <p>Select it again to clear the highlight.</p>
-        <p class="note">Tracing must be enabled for the user.<br />Partial telemetry is not a complete task history.</p>
-        <p class="note">Codex diagnostic metrics and spans do not add to completion usage or cost.</p>
-      </div>
+    <p class="eyebrow">SESSION ENVIRONMENT · OBSERVED CONTEXT</p>
+    <h2>See what the session loaded.</h2>
+    <div class="environment-shot shot entrance"><img src="assets/img/task-environment-en.png" alt="Actual session environment with MCP server states, plugins and first-call context" /></div>
+    <div class="facts entrance">
+      <div><strong>MCP servers</strong><p>Connected and failed states.</p></div>
+      <div><strong>Plugins</strong><p>Skills, agents and commands.</p></div>
+      <div><strong>First-call context</strong><p>Observed input context.</p></div>
     </div>
-    <div class="footer"><span>Actual React interaction · translated display labels for this demo</span><span>05 / 06</span></div>
+    <p class="note entrance">Missing telemetry stays unavailable. Tool-definition counts and sizes are not emitted.</p>
+    <div class="footer"><span>Claude session events · Codex does not emit this environment feed</span><span>05 / 06</span></div>
   </section>
   <section id="hosting" class="scene clip" data-start="40" data-duration="8" data-track-index="5">
-    <p class="eyebrow">DEPLOYMENT · CHOOSE YOUR HOST</p>
-    <h2>Install the backend your platform needs.</h2>
-    <div class="platforms entrance">
-      <div class="card"><h3>EC2</h3><p>Run the containers with persistent storage and protected services.</p></div>
-      <div class="card"><h3>ECS / Fargate</h3><p>Prepare task roles, services, networking and persistent ClickHouse.</p></div>
-      <div class="card"><h3>EKS</h3><p>Use the repository's deployment with the required cluster dependencies.</p></div>
+    <p class="eyebrow">UNIT ECONOMICS · READ THE GAPS</p>
+    <h2>Follow the trend without inventing data.</h2>
+    <div class="columns economics-columns">
+      <div class="copy entrance">
+        <p><span class="accent">Solid: observed values.</span><br />Dashed: connections across unknown intervals.</p>
+        <p class="note">Guides are not measurements.<br />Unknown values remain unavailable.</p>
+        <p class="note">Explore the complete guides.<br />English · Korean · Japanese · Chinese</p>
+      </div>
+      <div class="shot economics-shot entrance"><img src="assets/img/unit-cost-en.png" alt="Actual unit-cost chart with dashed guides across unavailable buckets" /></div>
     </div>
-    <p class="note entrance"><span class="accent">Lambda needs runtime adaptation:</span> the current Express image has no Lambda handler.<br />Keep ClickHouse and the Collector in separately running services.</p>
-    <div class="guide entrance">
-      <strong>Start with the complete installation guide.</strong>
-      <p>English · Korean · Japanese · Simplified Chinese</p>
-      <p class="url">atom-oh.github.io/claude-code-usage-dashboard/installation.html</p>
-    </div>
-    <div class="footer"><span>Build success does not establish a deployed, working collector.</span><span>06 / 06</span></div>
+    <div class="footer"><span>atom-oh.github.io/claude-code-usage-dashboard</span><span>06 / 06</span></div>
   </section>
 </div>
 <script>
   window.__timelines = window.__timelines || {};
   const tl = gsap.timeline({ paused: true });
-  // Clip visibility comes from HyperFrames; entrances use absolute master time.
-  document.querySelectorAll(".scene").forEach(scene => {
+  document.querySelectorAll('.scene').forEach(scene => {
     const start = Number(scene.dataset.start);
-    tl.fromTo(scene.querySelectorAll(".entrance"), { y: 16, opacity: 0 },
-      { y: 0, opacity: 1, duration: 0.45, stagger: 0.08, ease: "power2.out" }, start + 0.12);
+    tl.fromTo(scene.querySelectorAll('.entrance'), { y: 16, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.45, stagger: 0.08, ease: 'power2.out' }, start + 0.12);
   });
   tl.to({}, { duration: 48 }, 0);
-  window.__timelines["docs-demo"] = tl;
+  window.__timelines['docs-demo'] = tl;
 </script>
 </body>
 </html>

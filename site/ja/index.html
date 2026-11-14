@@ -6,7 +6,7 @@
   <title>AIコーディングの利用状況とコストを把握する — ccdash</title>
   <meta name="description" content="Claude CodeとCodexの利用状況を確認し、ユーザーのTask Traceでエージェントレーン、モデル呼び出し、累積コストを調べます。" />
   <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="../index.html" />
   <link rel="alternate" hreflang="ko" href="../ko/index.html" />
   <link rel="alternate" hreflang="ja" href="index.html" />
@@ -24,62 +24,62 @@
       <p class="eyebrow">Claude Code + Codex · ドキュメント</p>
       <h1>AIコーディングの利用状況とコストを把握する</h1>
       <p class="lede">Claude CodeとCodexの利用状況を確認し、ユーザーの時間帯をたどってTask Traceを開きます。エージェントレーン、モデル呼び出し、累積コストを確認できます。</p>
-      <p class="caption">2026年11月10日更新 · ソースの動作を説明しています。インストール済みのリビジョンをご確認ください。</p>
+      <p class="caption">更新日: 2026年11月14日 · ソースの動作を説明しています。インストール済みのリビジョンで確認してください。</p>
       <p><a href="#task-trace">Task Traceを開く</a> · <a href="#codex-traces">Codexの診断トレースを調べる</a> · <a href="installation.html#trace">収集を有効にする</a></p>
     </div>
-    <section id="demo"><h2>インストールとTask Traceの操作ガイドを見る</h2>
+    <section id="demo"><h2>時間範囲の選択、デバイスのセットアップ、Task Trace のウォークスルーを見る</h2>
 <div class="demo-layout">
-  <div>
-    <div class="video-frame"><video controls playsinline preload="none" poster="../assets/img/docs-demo-en-poster.jpg" aria-label="英語による48秒のインストールとTask Traceの操作ガイド">
-      <source src="../assets/video/dashboard-demo-en-20261110.mp4" type="video/mp4" />
-      <source src="../assets/video/dashboard-demo-en-20261110.webm" type="video/webm" />
-      <track kind="captions" src="../assets/video/dashboard-demo-en-20261110.vtt" srclang="en" label="English" />
-      お使いのブラウザーではこの動画を再生できません。<a href="../assets/video/dashboard-demo-en-20261110.mp4">英語のデモをダウンロード</a>。
+<div>
+<div class="video-frame"><video aria-label="時間範囲の選択、デバイスのセットアップ、Task Trace のウォークスルー（48秒、英語）" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
+<source src="../assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
+<source src="../assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
+<track kind="captions" label="英語" src="../assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
+      お使いのブラウザーではこの動画を再生できません。<a href="../assets/video/dashboard-demo-en-20261114.mp4">英語版デモをダウンロード</a>してください。
     </video></div>
-    <p class="caption">2026年11月10日作成 · 48秒 · 英語の画面テキストとAmazon Pollyのナレーション · 控えめなBGM。合成フィクスチャとLunaが翻訳した表示ラベルを使った実際のReact画面です。コストは架空の値です。映像はHyperFramesで作成し、音声はRemotionで構成しました。<a href="../assets/video/dashboard-demo-en-20261110.vtt">英語の字幕</a>。</p>
-  </div>
-  <div>
-    <h3>合計値から内訳の確認へ</h3>
-    <ol>
-      <li>ソースをクローンしてビルドし、ClickHouse、スキーマ、中央Collectorを準備します。</li>
-      <li>ユーザーのTask Traceを開き、エージェントレーンと累積コストを調べます。</li>
-      <li>呼び出しを選択してキャッシュトークンとコストの算出根拠を確認するか、モデルの行を選択して該当する呼び出しを強調表示します。</li>
-      <li>前提条件を満たしたうえで EC2、ECS、または EKS を選択してください。Lambda を使用するには、アプリケーションを Lambda のランタイムに合わせて移植または変更する必要があります。</li>
-    </ol>
-    <p><a class="button-link" href="installation.html">サービスをビルドしてデプロイする</a></p>
-    <p><a href="operations.html#sso">組織のSSOを接続する</a></p>
-  </div>
+<p class="caption">作成日：2026年11月14日 · 48秒 · 英語のテキストと Amazon Polly のナレーション · 控えめな背景音楽。合成フィクスチャを使った実際の React 画面と、Luna が翻訳した表示ラベルを使用しています。コストは架空のものです。ビジュアルには HyperFrames、音声の合成には Remotion を使用しています。<a href="../assets/video/dashboard-demo-en-20261114.vtt">トランスクリプト（英語）</a>。</p>
+</div>
+<div>
+<h3>集計値から説明へ</h3>
+<ol>
+<li>開始時刻と終了時刻を正確に指定し、ユーザーのトレンドをドラッグして、その期間の作業を確認します。</li>
+<li>デバイスを登録した後、ターミナルでコマンドを1つ実行してデバイス Collector をインストールします。</li>
+<li>エージェントのレーン、モデル呼び出し、トークンの内訳、セッションの MCP サーバーとプラグインを確認します。</li>
+<li>利用できないバケットを破線で結んだ単価トレンドを確認します。欠損値はゼロではなく、利用不可のままです。</li>
+</ol>
+<p><a class="button-link" href="installation.html">サービスをビルドしてデプロイする</a></p>
+<p><a href="operations.html#sso">組織の SSO に接続する</a></p>
+</div>
 </div></section><section id="latest"><h2>変更点</h2>
 <div class="cards">
-  <article class="card"><h3>トークンの経済性</h3><p>Productivityでは、直前の期間と比較したコストの計算式（ユーザー数 × ユーザーあたりのセッション数 × セッションあたりのターン数 × ターンあたりのリクエスト数 × リクエストあたりのトークン数 × トークンあたりのコスト）、要因別のウォーターフォール、単位コストの推移、モデルの経済性、成果あたりのコストを最初に表示します。代表的なユーザーを各要因の中央値と比較してグラフに表示します。運用担当者は、セッションとターンのバックフィル後にこの機能を有効にします。</p></article>
-  <article class="card"><h3>Task Trace: モデル、ワークフロー、セッション環境</h3><p>コストの説明には、モデルごとの呼び出し回数とコストが表示されます。ワークフロー実行バッジでユーザーのタスクを絞り込み、同じ種類のサブエージェントには番号が付けられます。また、セッション環境には、接続済みのMCPサーバー、読み込まれたプラグイン、最初の呼び出しのコンテキストが表示されます。</p><p><a href="#task-trace">手順を見る</a></p></article>
-  <article class="card"><h3>Task Trace</h3><p>ユーザーのトレンドバケットを開いてタスクを順位付けし、エージェントレーン、累積コスト、個々の呼び出しを確認します。モデルの行を選択すると、該当する呼び出しが強調表示されます。</p><p><a href="#task-trace">操作ガイドを見る</a></p></article>
-  <article class="card"><h3>コストの詳細分析</h3><p>ユーザーとモデルを選択すると、絞り込んだ詳細が表示されます。モデルごとの構成比は既知のコスト小計を基準にし、価格が不明な項目を明示します。</p></article>
-  <article class="card"><h3>Codexの完了効率</h3><p>キャッシュと推論の比率、完了あたりのトークン数、識別されたセッションあたりの推定コストについて、分母と対象範囲を明示します。</p></article>
-  <article class="card"><h3>ソースからのインストール</h3><p>リリースをクローンしてアプリケーションイメージをビルドし、ClickHouseスキーマとOTelバックエンドを準備します。クライアントを接続する前に、EC2、ECS、EKS、Lambdaへの適応方法を比較します。</p><p><a href="installation.html">インストールガイド全文</a></p></article>
-  <article class="card"><h3>設定可能なSSO</h3><p>署名済みOIDCグループをアプリケーションのロールに対応付けます。IDプロバイダーがリフレッシュの仕様に対応している場合、最長30日までの固定ログイン期間を有効にできます。</p></article>
+<article class="card"><h3>トークンエコノミクス</h3><p>Productivity では、生産性のコスト方程式（ユーザー数 × ユーザーあたりのセッション数 × セッションあたりのターン数 × ターンあたりのリクエスト数 × リクエストあたりのトークン数 × トークンあたりのコスト）を直前の期間と比較するところから始まり、要因別ウォーターフォール、単価トレンド、モデルのコスト分析、成果あたりのコストを表示します。代表ユーザーは各要因の中央値と比較してグラフ化されます。セッションターンのバックフィル後に、運用担当者がこの機能を有効にします。</p></article>
+<article class="card"><h3>Task Trace：モデル、ワークフロー、セッション環境</h3><p>コストの説明には、モデルごとの呼び出し数とコストが表示されます。ワークフロー実行バッジでユーザーのタスクを絞り込み、同じ種類のサブエージェントには番号を付け、セッション環境には接続された MCP サーバー、読み込まれたプラグイン、最初の呼び出しのコンテキストを表示します。</p><p><a href="#task-trace">ウォークスルーを見る</a></p></article>
+<article class="card"><h3>正確な時刻の指定とドラッグによるタスク選択</h3><p>ブラウザーのタイムゾーンで、開始時刻と終了時刻を秒単位まで指定できます。期間を変更してもユーザー詳細は開いたままになり、上位20件のタスクリストは選択した範囲に追従します。利用状況／コストのグラフをドラッグして、両方の表示範囲を絞り込めます。</p><p><a href="#resolution">時間範囲を選択する</a></p></article>
+<article class="card"><h3>コストの詳細分析</h3><p>ユーザーやモデルを選択すると、絞り込み済みの詳細が開きます。モデルごとの構成比は既知のコスト小計を使い、価格が不明な場合はその旨を明示します。</p></article>
+<article class="card"><h3>Codex の完了効率</h3><p>キャッシュと推論の比率、完了あたりのトークン数、特定できたセッションあたりの推定コストには、分母とカバレッジが明示されます。</p></article>
+<article class="card"><h3>ソースからのインストール</h3><p>リリースをクローンしてアプリケーションイメージをビルドし、ClickHouse スキーマと OTel バックエンドを準備します。クライアントを接続する前に、EC2、ECS、EKS、Lambda への適応方法を比較します。</p><p><a href="installation.html">インストールガイド全文</a></p></article>
+<article class="card"><h3>設定可能な SSO</h3><p>署名済み OIDC グループをアプリケーションのロールに対応付けます。ID プロバイダーが更新の契約をサポートしている場合は、最長30日の固定ログイン有効期間を設定できます。</p></article>
 </div></section>
-<section id="task-trace"><h2>ユーザーからTask Traceを開く</h2>
+<section id="task-trace"><h2>ユーザーから Task Trace へ</h2>
 <ol>
-  <li>期間とクライアントのフィルターを選択します。<strong>Users</strong>または<strong>Cost</strong>を開き、ユーザーを選択して<strong>사용자 상세</strong>（ユーザー詳細）を開きます。</li>
-  <li>そのユーザーのトレンドにあるバケットをクリックします。タスクリストには、そのバケット内に開始したタスクが最大20件表示されます。トークン数、コスト、サブエージェント数、所要時間で並べ替えられます。 ワークフローバッジを選択すると、その実行のタスクのみが表示されます。</li>
-  <li>タスクを選択して<strong>작업 상세</strong>（Task Trace）を開きます。トークン数、コストの算出根拠、LLM呼び出し、サブエージェント、観測された所要時間を確認します。</li>
-  <li>タイムラインのバーをクリックして、その呼び出しまたはツールを調べます。<strong>모델별 호출</strong>（モデル呼び出し）の行を選択すると、一致するLLMバーが強調表示されます。もう一度選択すると解除されます。Escapeキーまたは<strong>닫기</strong>（閉じる）を押すと閉じます。</li>
+<li>時間範囲とクライアントのフィルターを選択します。日付ピッカーの「日付と時刻」タブでは、ブラウザーのローカル時刻を正確に指定できます。<strong>ユーザー</strong>を開き、ユーザーを選択して<strong>ユーザー詳細</strong>を開きます。</li>
+<li>タスクリストには、概要の有効範囲内のタスクがすぐに最大20件表示されます。ユーザーの利用状況／コストのトレンドをドラッグすると、ページとタスクリストの両方の範囲が絞り込まれます。ポイントをクリックすると1つのバケットが選択され、リセット操作で期間全体に戻ります。トークン数、コスト、サブエージェント数、期間で並べ替えられます。ワークフローバッジを選択すると、その実行のタスクだけが表示されます。</li>
+<li>タスクを選択して<strong>タスク詳細</strong>（Task Trace）を開きます。トークン数、コストの根拠、LLM 呼び出し、サブエージェント、観測された所要時間を確認します。</li>
+<li>タイムラインのバーをクリックすると、その呼び出しまたはツールを確認できます。<strong>モデル別呼び出し</strong>の行を選択すると、該当する LLM のバーが強調表示されます。もう一度選択すると解除されます。Escape キーまたは<strong>閉じる</strong>を押すと閉じます。</li>
 </ol>
-<figure><img src="../assets/img/task-trace.png" width="1320" height="1011" loading="lazy" alt="メインレーン、2つのサブエージェントレーン、累積コスト、選択中のExploreモデル呼び出しを表示するTask Trace。合成データを使用" /><figcaption>11月10日のソースを合成フィクスチャと架空のコストで表示したTask Trace。実運用のテレメトリは含まれません。</figcaption></figure>
-<div class="table-scroll" tabindex="0" role="region" aria-label="Task Traceの読み方"><table>
-  <thead><tr><th scope="col">表示項目</th><th scope="col">読み方</th></tr></thead>
-  <tbody>
-    <tr><td>エージェントレーン</td><td>最初にメインセッションが表示され、その後に観測されたサブエージェントが続きます。濃い色のLLMバーは入力コンテキストが大きいことを示します。灰色の印はツール、赤色の印は権限待ちを表し、破線は観測されたエージェントの起動元を結びます。</td></tr>
-    <tr><td>累積コスト</td><td>レーンの色は既知の呼び出しコストを積み上げて表示します。ポイントにカーソルを合わせると、その時点の情報を確認できます。一致するspanがないCodexの完了記録は、帯には表示されずにタスク合計へ加算される場合があります。</td></tr>
-    <tr><td>選択中のspan</td><td>利用可能なモデル、トークンの内訳、コストの算出根拠、タイミング、ツールまたは権限のメタデータを確認します。元のプロンプト、コマンド、パスは表示されません。</td></tr>
-    <tr><td>왜 많이 썼나（なぜ多く使ったのか）</td><td>入力データがある場合、データに基づくルールでキャッシュ読み取り比率、コンテキストの増加、レーン別コスト比率、高コストの呼び出し、再試行、権限待ちを説明します。 パネルには続いて、各モデルの呼び出し回数、既知のコスト、コストに占める割合が表示されます。</td></tr>
-    <tr><td>モデル呼び出し</td><td>レーン、呼び出し回数、既知のコストでモデルと呼び出し元を比較します。行を強調表示するとタイムラインの強調表示が変わりますが、合計値は変わりません。</td></tr>
-    <tr><td>セッション環境</td><td>最新のステータス別のMCPサーバー、スキル、エージェント、コマンドの数を含む読み込み済みプラグイン、および最初の呼び出しの入力コンテキスト。OpenTelemetryでは、ツール定義の数やサイズは報告されません。</td></tr>
-  </tbody>
+<figure><img alt="合成データを使った Task Trace。メインレーン、2つのサブエージェントレーン、累積コスト、選択された Explore モデル呼び出しを表示" height="2812" loading="lazy" src="../assets/img/task-trace.png" width="2640"/><figcaption>2026年11月14日のソースを、合成フィクスチャと架空のコストでキャプチャした Task Trace。実運用のテレメトリーは含みません。</figcaption></figure>
+<div aria-label="Task Trace の見方ガイド" class="table-scroll" role="region" tabindex="0"><table>
+<thead><tr><th scope="col">表示</th><th scope="col">見方</th></tr></thead>
+<tbody>
+<tr><td>エージェントのレーン</td><td>最初にメインセッションが表示され、その後に観測されたサブエージェントが続きます。濃い色の LLM バーは入力コンテキストが大きいことを示します。グレーのマークはツール、赤のマークは権限待ちを示し、破線は観測されたエージェントの起動をつなぎます。</td></tr>
+<tr><td>累積コスト</td><td>レーンの色は、既知の呼び出しコストを積み上げて表示します。ホバーすると、その時点の情報を確認できます。一致するスパンがない Codex の完了記録は、タスク全体の合計に含まれても、帯には表示されない場合があります。</td></tr>
+<tr><td>選択したスパン</td><td>利用可能なモデル、トークンの内訳、コストの根拠、タイミング、ツールや権限のメタデータを確認できます。生のプロンプト、コマンド、パスは表示されません。</td></tr>
+<tr><td>コストが高かった理由</td><td>データに基づくルールは、入力データが利用可能な場合に、キャッシュ読み取り比率、コンテキストの増加、レーンごとのコスト比率、高コストの呼び出し、再試行、権限待ちについて説明します。その後、各モデルの呼び出し数、既知のコスト、コストに占める割合を表示します。</td></tr>
+<tr><td>モデル呼び出し</td><td>レーン、呼び出し数、既知のコストごとに、モデルと呼び出し元を比較します。行を強調表示しても、タイムラインの表示が変わるだけで、合計値は変わりません。</td></tr>
+<tr><td>セッション環境</td><td>最新ステータス別の MCP サーバー、スキル・エージェント・コマンド数とともに表示される読み込み済みプラグイン、最初の呼び出しの入力コンテキストを表示します。OpenTelemetry では、ツール定義の件数やサイズは報告されません。</td></tr>
+</tbody>
 </table></div>
-<p>Claudeのタスクは対話spanを表します。Codexのタスクはトレースされたターンを表し、関連付けられた完了ログを使ってトークン数と推定コストを算出します。現在、Codexにはメインレーンが1つあり、サブエージェント数は収集されません。トレース収集は任意のため、このタスクリストはダッシュボードのアクティビティの一部のみを示します。トレースの保持期間は90日です。これより古いトレンドバケットからはタスクリストを開けません。</p>
-<p><a href="installation.html#trace">収集の設定</a> · <a href="api.html#tasks">タスクAPIと制限</a> · <a href="operations.html#traces">タスクが表示されない場合のトラブルシューティング</a></p>
+<p>Claude のタスクはインタラクションスパンを表します。Codex のタスクはトレースされたターンを表し、トークン数と推定コストには関連付けられた完了ログを使用します。現在、Codex のレーンはメインレーン1つのみで、サブエージェント数は収集されません。トレース収集は任意のため、このタスクリストはダッシュボードのアクティビティの一部です。トレースの保持期間は90日です。それより古いトレンドのバケットからタスクリストを開くことはできません。</p>
+<p><a href="installation.html#trace">収集の設定</a> · <a href="api.html#tasks">Task API と上限</a> · <a href="operations.html#traces">タスクが見つからない場合のトラブルシューティング</a></p>
 </section>
 <section id="codex-traces"><h2>Codexの診断トレースを調べる</h2>
 <p>Codexを選択した状態で<strong>Analytics</strong>を開き、Codex詳細の<strong>Trace</strong>タブを選択します。Traceを展開すると、span、親ID、モデル、ツール、所要時間、ステータスを調べられます。または、span表をCSVとしてエクスポートできます。</p>
@@ -87,7 +87,7 @@
 <p>診断spanはダッシュボードの利用量やコストに加算されません。上記のTask TraceはCodexの完了ログをターンに関連付けますが、AnalyticsのTraceタブは別個の診断プレビューです。Chatの推論ステップとSQLステップも、さらに別の表示です。</p>
 <p><a href="api.html#trace-preview">診断API</a> · <a href="architecture.html#task-traces">タスクとspanの関連付け</a></p>
 </section>
-<section id="costs"><h2>コストと対象範囲をあわせて確認する</h2><div class="table-scroll" tabindex="0" role="region" aria-label="計測項目の参照表"><table><thead><tr><th scope="col">計測項目</th><th scope="col">意味</th></tr></thead><tbody><tr><td>Claudeの報告コスト</td><td>Claudeの報告コスト経路には<code>reported_cost</code>を使用し、計算コストの診断情報は別途保持します。</td></tr><tr><td>AWS定価に基づく推定</td><td>CodexとAnthropic以外のClaudeの価格には、対応するAWS定価、ルーティング、リクエストの料金階層を使用します。クラウドの請求額ではありません。</td></tr><tr><td>既知のコスト小計</td><td>利用可能な価格を合計し、価格が不明な項目がある場合は一部の値であることを示します。すべての価格が不明な場合、コストは利用不可のままです。</td></tr><tr><td>観測されたトークン数</td><td>利用可能な入力・出力の組を保持し、欠けている項目があれば明示します。小計が正の値でも、標準のトークン内訳がすべてそろっているとは限りません。</td></tr><tr><td>アクティビティ指標</td><td>観測された導入状況、ツール、アクティビティを確認できます。従業員のパフォーマンスや生産性に対する因果的な効果を検証する指標ではありません。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測の定義</a>と<a href="api.html#completion">Codex完了データの仕様</a>を参照してください。</p></section><section id="resolution"><h2>適切な時間解像度を選ぶ</h2><div class="table-scroll" tabindex="0" role="region" aria-label="選択期間の参照表"><table><thead><tr><th scope="col">選択期間</th><th scope="col">CostとTrendsの設定</th></tr></thead><tbody><tr><td>24時間以内</td><td>10分、30分、1時間、1日、1週間。1日表示では1時間の解像度から始まります。</td></tr><tr><td>24時間超</td><td>1時間、1日、1週間。2日表示では10分の解像度を選択できません。</td></tr></tbody></table></div><p>返された間隔と実際に適用された時間範囲を確認してください。過去データの集計方法とテレメトリの対象範囲によって、表示期間が変わる場合があります。</p><div class="shots"><figure><img src="../assets/img/cost-detail.png" width="1830" height="655" loading="lazy" alt="10月24日のダッシュボードに表示された、合成データによるユーザー別コストの推移" /><figcaption>選択したユーザーの詳細。10月24日に取得した合成データの画面。</figcaption></figure><figure><img src="../assets/img/model-share.png" width="1830" height="353" loading="lazy" alt="合成データによるモデル別コストの詳細。ユーザーごとの構成比を表示" /><figcaption>選択したモデルのユーザー別構成比。10月24日に取得した合成データの画面。</figcaption></figure></div></section><section id="boundaries"><h2>各ディメンションを分けて考える</h2>
+<section id="costs"><h2>コストと対象範囲をあわせて確認する</h2><div class="table-scroll" tabindex="0" role="region" aria-label="計測項目の参照表"><table><thead><tr><th scope="col">計測項目</th><th scope="col">意味</th></tr></thead><tbody><tr><td>Claudeの報告コスト</td><td>Claudeの報告コスト経路には<code>reported_cost</code>を使用し、計算コストの診断情報は別途保持します。</td></tr><tr><td>AWS定価に基づく推定</td><td>CodexとAnthropic以外のClaudeの価格には、対応するAWS定価、ルーティング、リクエストの料金階層を使用します。クラウドの請求額ではありません。</td></tr><tr><td>既知のコスト小計</td><td>利用可能な価格を合計し、価格が不明な項目がある場合は一部の値であることを示します。すべての価格が不明な場合、コストは利用不可のままです。</td></tr><tr><td>観測されたトークン数</td><td>利用可能な入力・出力の組を保持し、欠けている項目があれば明示します。小計が正の値でも、標準のトークン内訳がすべてそろっているとは限りません。</td></tr><tr><td>アクティビティ指標</td><td>観測された導入状況、ツール、アクティビティを確認できます。従業員のパフォーマンスや生産性に対する因果的な効果を検証する指標ではありません。</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測の定義</a>と<a href="api.html#completion">Codex完了データの仕様</a>を参照してください。</p></section><section id="resolution"><h2>時間範囲と解像度を選択する</h2><p>期間ピッカーを開き、「<strong>日付と時刻</strong>」を選択して、ブラウザーのタイムゾーンで開始時刻と終了時刻を秒単位まで入力します。終了時刻は範囲に含まれません。共有リンクには、選択したモードと UTC の境界値が保持されます。カレンダー日モードでは引き続き UTC の日付が使用されます。</p><figure><img alt="英語に翻訳された合成キャプチャに表示された、開始時刻と終了時刻の正確な選択ピッカー" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/><figcaption>現在の React コンポーネントでの正確な時刻入力です。デモの表示ラベルは翻訳されていますが、製品のロケールは変更されません。</figcaption></figure><div aria-label="選択した時間範囲の参照表" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">選択した時間範囲</th><th scope="col">コストとトレンドの設定項目</th></tr></thead><tbody><tr><td>24時間以内</td><td>10分、30分、1時間、1日、または1週間。1日表示の解像度は1時間から始まります。</td></tr><tr><td>24時間超</td><td>1時間、1日、または1週間。2日表示では10分の解像度は選択できません。</td></tr></tbody></table></div><p>返された間隔と有効な時間範囲を確認します。正確な時刻を入力しても、取り込み猶予、サーバー側の量子化、過去データのロールアップ精度は変わりません。単位経済性のグラフでは、利用できないバケットをまたいで観測された端点を破線で結びます。これは視覚的なガイドであり、測定値ではありません。</p><div class="shots"><figure><img alt="10月24日のダッシュボードに表示された、合成データによるユーザー別コストトレンド" height="655" loading="lazy" src="../assets/img/cost-detail.png" width="1830"/><figcaption>選択したユーザーの詳細。10月24日の合成キャプチャ。</figcaption></figure><figure><img alt="ユーザーごとの構成比を表示した、合成データによるモデルコストの詳細" height="353" loading="lazy" src="../assets/img/model-share.png" width="1830"/><figcaption>選択したモデルのユーザー別構成比。10月24日の合成キャプチャ。</figcaption></figure></div></section><section id="boundaries"><h2>各ディメンションを分けて考える</h2>
 <p><strong>Client</strong>はデータを出力するアプリケーションを示します。<strong>Backend</strong>は観測または推定されたプロバイダー経路を示します。<strong>Model</strong>はモデルを示します。モデル名だけでは、コーディングクライアントを特定できません。</p>
 <p>Claudeの<code>bedrock</code>/<code>enterprise</code>比較は、推定されたセッションチャネルの表示です。ダッシュボードへのログインとは別であり、CodexのエンタープライズA/B比較でもありません。1人のユーザーが複数のチャネルに表示されることがあります。</p>
 <p>有効化されている場合、権限制御された読み取り専用のクエリ経路を通じて、Analyticsで追加の質問に回答できます。利用可否はロール、モデルへのアクセス、デプロイ設定によって異なります。</p>

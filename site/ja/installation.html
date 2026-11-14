@@ -6,7 +6,7 @@
   <title>サービス全体をビルドしてデプロイする — ccdash</title>
   <meta name="description" content="ソースをクローンし、ダッシュボードのイメージをビルドして、ClickHouseスキーマとOTel Collectorを準備したうえで、EKS、ECS、EC2を選択するか、アプリケーションをLambdaランタイムに適応させます。" />
   <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="../installation.html" />
   <link rel="alternate" hreflang="ko" href="../ko/installation.html" />
   <link rel="alternate" hreflang="ja" href="installation.html" />
@@ -22,7 +22,7 @@
   <main class="wrap" id="main">
 <div class="hero"><p class="eyebrow">Claude Code + Codex · インストール</p><h1>サービス全体をビルドしてデプロイする</h1>
 <p class="lede">Gitソースから始めます。コーディングクライアントを接続する前に、ダッシュボード、ClickHouseとそのスキーマ、OTelの収集経路をデプロイします。</p>
-<p class="caption">更新日: 2026年11月10日 · ソースに基づく手順です。選択したリリースと対象環境を確認してください。</p>
+<p class="caption">更新日: 2026年11月14日 · ソースに基づく手順です。選択したリリースと対象環境を確認してください。</p>
 <p><a href="#setup">クローンとビルド</a> · <a href="#schema">データベーススキーマ</a> · <a href="#collector">OTelバックエンド</a> · <a href="#platforms">ホスティングの選択肢</a> · <a href="#trace">クライアントのトレース</a></p></div>
 <section id="choose"><h2>インストールが必要なもの</h2>
 <p>このガイドでは、公開済みのアプリケーション用 <code>.tar.gz</code> に依存しません。リポジトリをクローンしてDockerイメージをビルドします。オプションのデバイス用パッケージは、インストール済みのダッシュボードから生成されます。バックエンドをインストールするものではありません。</p>
@@ -146,14 +146,22 @@ docker run -d --name ccdash --restart unless-stopped \
 </tbody></table></div>
 <p>公式プラットフォーム資料: <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html">EC2</a> · <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html">ECS/Fargateのタスク定義</a> · <a href="https://docs.aws.amazon.com/eks/latest/userguide/sample-deployment.html">EKSアプリケーションのデプロイ</a> · <a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html">Lambdaのイメージ／ランタイム要件</a>。</p></section>
 <section id="trace"><h2>5. クライアントのログ、メトリクス、トレースを接続する</h2>
-<p>バックエンドが動作したら、各クライアントのローカルCollectorとエクスポーターの送信先を設定します。デバイス経路では、アナリストまたは管理者がデプロイ済みダッシュボードにデバイスを登録できます。ダウンロードできない場合は、ソースインストーラーを直接使用してください。その場合も、インストール済みのバックエンドと発行済みのデバイストークンが必要です。</p>
-<pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
+<p>バックエンドが動作したら、各クライアントのローカル Collector とエクスポーターの宛先を設定します。デバイス経由で接続するには、アナリストまたは管理者がデプロイ済みダッシュボードでデバイスを登録します。デバイスのプラットフォームを選択して登録し、インストールコマンドをコピーします。ターミナルでテレメトリーの帰属 ID とデバイストークンを入力します。トークンはコマンドに埋め込まれません。バックエンドがインストール済みで、デバイストークンが発行されている必要があります。</p>
+<h3>デバイスのインストール</h3><h4>macOS</h4>
+<pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
+curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
+<h4>Linux</h4>
+<pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
+sudo loginctl enable-linger "$USER" &amp;&amp;
+  curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
+<p>スクリプトはデバイスのベアラートークンを使ってパッケージをダウンロードし、その後、非公開のトークンファイルを使ってインストーラーを実行します。デバイストークンでは、ダッシュボードに対話的にログインできません。</p>
+<h3>手動インストールの代替手順</h3><pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
 : "${CCDASH_USER_ID:?Set the intended telemetry attribution ID}"
 python3 dashboard/collector/install.py install \
   --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
-<p>インストーラーはmacOS/Linux上のPython 3.9以降を必要とし、トークンは非公開で入力するよう求めます。Linuxでは、ログアウト／再起動後もサービスを維持するために <code>sudo loginctl enable-linger "$USER"</code> を実行してから、通常ユーザーとしてインストールします。Collectorバイナリをダウンロードして検証します。このコマンドはダッシュボード、データベース、中央レシーバーを準備しません。デバイスの所有者が、出力されるテレメトリのIDとして自動的に使われるわけではありません。</p>
-<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> と <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code> を設定し、<code>OTEL_TRACES_EXPORTER=otlp</code> とポート4317のローカルOTLP gRPC送信先を指定します。</li><li>Codex: 個別に <code>[otel]</code> の <code>exporter</code>、<code>metrics_exporter</code>、<code>trace_exporter</code> を設定します。ポート4318のローカルOTLP HTTP送信先と、<code>log_user_prompt=false</code> を指定してください。</li></ul>
-<p>両方のクライアントを再起動して新しい作業を生成し、<a href="index.html#task-trace">ユーザー → トレンドバケット → タスク → Task Trace</a>をたどります。以前のアクティビティがトレースに遡及して取り込まれることはありません。Codexの診断spanを確認するには、AnalyticsのTraceタブを開きます。</p></section>
+<p>インストーラーの実行には macOS/Linux 上の Python 3.9 以降が必要で、トークンは非公開のプロンプトで入力します。Linux では、ログアウト後や再起動後もサービスを維持するために <code>sudo loginctl enable-linger "$USER"</code> を実行し、その後、通常のユーザーとしてインストールします。インストーラーは Collector バイナリをダウンロードして検証します。このコマンドではダッシュボード、データベース、中央レシーバーはプロビジョニングされません。デバイスの所有者が、出力されるテレメトリーの ID に自動的に設定されるわけではありません。</p>
+<ul><li>Claude Code：<code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> と <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>、<code>OTEL_TRACES_EXPORTER=otlp</code>、ポート4317のローカル OTLP gRPC 宛先。</li><li>Codex：<code>[otel]</code> の <code>exporter</code>、<code>metrics_exporter</code>、<code>trace_exporter</code> の各エントリーを個別に設定し、ポート4318のローカル OTLP HTTP 宛先と <code>log_user_prompt=false</code> を使用します。</li></ul>
+<p>両方のクライアントを再起動して新しい作業を実行し、<a href="index.html#task-trace">ユーザー → 選択した時間範囲 → タスク → Task Trace</a>の順に確認します。以前のアクティビティはトレースにバックフィルされません。Codex の診断スパンは Analytics の Trace タブで確認します。</p></section>
 <section id="migration"><h2>既存のデバイスとデータベース</h2><p>デバイス移行時には、クライアントの非公開バックアップとエクスポーターのキューを保持してください。正体不明のサービスを停止せず、サポートされているmacOS/Linuxの移行手順に従います。データベースのアップグレードは、クライアントのインストールやアプリケーションのロールアウトとは別に、スキーマのランブックに従って行います。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">ソースインストーラーと移行ガイド</a></p></section>
 <section id="verify"><h2>6. すべての境界を検証する</h2><ol><li><code>/healthz</code> とClickHouseに依存する <code>/readyz</code> を確認してから認証し、インストール／スキーマ診断を確認します。</li><li>想定したテーブル、移行台帳、ビュー、データベース権限、Collectorの書き込み成功を確認します。スキーマが存在するだけでは、過去データが利用可能とは限りません。</li><li>新しいクライアント作業を送信し、意図したIDでログ、メトリクス、トレースが保存されていることを確認します。Collectorプロセスの稼働やデバイスの受信応答だけでは、データの永続化は証明されません。</li><li>選択したユーザーの利用状況とTask Traceを確認します。Codexのトレース／メトリクス観測は診断用であり、コスト合計に重ねて加算してはいけません。</li></ol><p><a href="operations.html#traces">トレースのトラブルシューティング</a> · <a href="api.html#tasks">APIの範囲</a></p></section>
 <section id="workshops"><h2>主催者が準備するワークショップ</h2><p>準備済みのワークショップには、独自のクライアントとCollectorのライフサイクルがあります。参加者は設定済みの環境を使用します。2つ目のバックエンドをデプロイしたり、準備済みサービスに別のCollectorをインストールしたりしません。主催者は <code>user-data.sh</code> を使う前に、スキーマ、シークレットの保存先、ブートストラップ用アセットを提供する必要があります。</p></section>

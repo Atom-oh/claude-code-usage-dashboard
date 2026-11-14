@@ -51,7 +51,7 @@ class MediaTests(unittest.TestCase):
 
     def test_site_only_keeps_runtime_out_of_pages(self):
         MEDIA.hydrate(self.root, self.manifest, site_only=True, opener=self.opener)
-        self.assertEqual(len(self.calls), 8)
+        self.assertEqual(len(self.calls), 16)
         self.assertFalse((self.root / "video").exists())
 
     def test_corrupt_download_preserves_existing_file(self):
@@ -126,6 +126,20 @@ class MediaTests(unittest.TestCase):
             ["git", "-C", str(ROOT), "check-ignore", "--", *sorted(MEDIA.PATHS)],
             text=True).splitlines()
         self.assertEqual(set(ignored), MEDIA.PATHS)
+
+    def test_encoded_measurements_identify_locked_files(self):
+        manifest = json.loads((ROOT / MEDIA.MANIFEST).read_text())
+        locked = {item["path"]: item for item in manifest["files"]}
+        demo = json.loads((ROOT / "site/assets/media.json").read_text())["current_demo"]
+        measurements = demo["encoded_verification"]["encodes"]
+        self.assertEqual({item["format"] for item in measurements}, {"mp4", "webm"})
+        for measured in measurements:
+            files = [item for item in demo["files"]
+                     if item["path"].endswith("." + measured["format"])]
+            self.assertEqual(len(files), 1)
+            pinned = locked["site/assets/" + files[0]["path"]]
+            for key in ("bytes", "sha256"):
+                self.assertEqual(measured[key], pinned[key], (measured["format"], key))
 
 
 if __name__ == "__main__":

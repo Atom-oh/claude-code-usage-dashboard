@@ -1,6 +1,7 @@
 # Narrated documentation video review
 
 Date: November 10, 2026. Owner: [English demo](../AGENTS.md).
+This report covers the historical November 10 artifact, not the November 14 replacement.
 
 The AWS content plugin's `content-review-agent`, invoked through the Claude CLI
 with no tools or MCP servers, returned **PASS: 90/90, zero critical findings and

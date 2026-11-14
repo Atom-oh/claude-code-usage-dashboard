@@ -6,7 +6,7 @@
   <title>Operate your own installation — ccdash</title>
   <meta name="description" content="Connect organization SSO, verify trace delivery and troubleshoot missing user tasks in your own installation." />
   <link rel="stylesheet" href="assets/site.css" />
-  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="operations.html" />
   <link rel="alternate" hreflang="ko" href="ko/operations.html" />
   <link rel="alternate" hreflang="ja" href="ja/operations.html" />
@@ -24,7 +24,7 @@
       <p class="eyebrow">Claude Code + Codex · Documentation</p>
       <h1>Operate your own installation</h1>
       <p class="lede">Configure organization identity, verify deployed components and follow the owned runbooks for rollout and recovery.</p>
-      <p class="caption">Updated November 10, 2026 · Describes source behavior; verify your installed revision.</p>
+      <p class="caption">Updated November 14, 2026 · Describes source behavior; verify your installed revision.</p>
       <p><a href="#traces">Trace collection checks</a> · <a href="index.html#task-trace">Task Trace walkthrough</a></p>
     </div>
     <section id="sso"><h2>Connect organization SSO</h2>
@@ -62,18 +62,18 @@ SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
 <ol>
   <li>Confirm the current device package or organizer-managed settings enable trace export, then restart the coding client. See the <a href="installation.html#trace">client configuration reference</a>.</li>
   <li>Check the local Collector's service and trace exporter for delivery failures. Continue through authenticated ingestion, the central trace pipeline and stored <code>otel_traces</code> records. Device receipt and process health confirm only their own stage.</li>
-  <li>In user detail, choose the trend bucket containing the task's start. Check the intended identity and filters; supported traced tasks are retained for 90 days.</li>
+  <li>In user detail, choose a time range containing the task’s start. The task list follows the effective range; drag to narrow it or click one bucket. Use the full-period reset to clear a point selection. Check the intended identity and filters; supported traced tasks are retained for 90 days.</li>
   <li>For Codex diagnostics, inspect Analytics' Trace tab using the full insights profile. Cost/effort, tool and performance profiles skip trace queries.</li>
 </ol>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Trace symptom reference"><table>
   <thead><tr><th scope="col">Symptom</th><th scope="col">What to check</th></tr></thead>
   <tbody>
-    <tr><td>User has usage but no tasks</td><td>Trace configuration, restart time, exported identity, task start bucket and retention. Historical usage is not backfilled into traces.</td></tr>
+    <tr><td>User has usage but no tasks</td><td>Trace configuration, restart time, exported identity, task start range and retention. Historical usage is not backfilled into traces.</td></tr>
     <tr><td>Codex completion is outside a task</td><td>A traced turn needs a conversation ID and unique turn ID. Completions without an eligible turn remain unattached; a linked completion without a sampling span can be absent from the cost band.</td></tr>
     <tr><td>Codex subagent count is unavailable</td><td>The current task view has only a main lane and does not infer subagent counts from unrelated spans.</td></tr>
     <tr><td>Large detail omits totals</td><td>Check <code>truncated</code> and <code>span_total</code>. Task detail is bounded at 5,000 spans; the separate diagnostic preview uses 50 traces and 200 spans per trace.</td></tr>
     <tr><td>Codex Trace disappears under a model filter</td><td>Only spans carrying model attributes match that filter. Clear it to inspect other diagnostic spans.</td></tr>
-  </tbody>
+  <tr><td>A line is dashed in the unit-cost chart</td><td>That interval has no computable matched sessions. Dashed segments only connect observed endpoints; they do not fill missing costs or prove no activity.</td></tr></tbody>
 </table></div>
 <p><a href="api.html#tasks">Task endpoint limits</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector recovery</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">Application release procedure</a></p>
 </section>

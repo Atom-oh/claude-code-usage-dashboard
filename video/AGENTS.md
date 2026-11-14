@@ -56,7 +56,7 @@ cp capture/assets/{overview,cost,analytics}.png assets/
 Do not commit duplicate copies, `.hyperframes/`, `renders/`, or `snapshots/`.
 The old poster remains in that Git revision. The retained
 `../site/assets/video/dashboard-demo.mp4` is this historical composition. The current
-overview uses the November 10 English delivery under `site/assets/video/`. The
+overview uses the November 14 English delivery under `site/assets/video/`. The
 October 24 media release remains historical and is linked from the credits page.
 
 Keep this demo's dated figures/captions separate from current application behavior. It shows

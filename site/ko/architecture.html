@@ -6,7 +6,7 @@
   <title>수집 및 쿼리 파이프라인 — ccdash</title>
   <meta name="description" content="Claude Code와 Codex의 신호가 수집에서 사용자 작업, 에이전트 레인, 완료 기록과 연결된 비용으로 이어지는 과정을 살펴봅니다." />
   <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="../architecture.html" />
   <link rel="alternate" hreflang="ko" href="architecture.html" />
   <link rel="alternate" hreflang="ja" href="../ja/architecture.html" />
@@ -24,10 +24,10 @@
       <p class="eyebrow">Claude Code + Codex · 문서</p>
       <h1>수집 및 쿼리 파이프라인</h1>
       <p class="lede">전용 설치 환경은 클라이언트 텔레메트리, 제한된 수집 경로, ClickHouse 저장소, 인증된 대시보드를 하나로 구성합니다.</p>
-      <p class="caption">2026년 11월 10일 업데이트 · 소스의 동작을 설명합니다. 설치된 리비전을 확인하세요.</p>
+      <p class="caption">2026년 11월 14일 업데이트 · 소스의 동작을 설명합니다. 설치된 리비전을 확인하세요.</p>
     </div>
     <section id="task-traces"><h2>사용자, 작업, span 연결</h2>
-<p>사용자 상세 보기에서는 정확한 텔레메트리 식별 항목과 추세 구간을 선택합니다. <code>/api/users/tasks</code>는 해당 구간에 시작된 작업을 나열하고, <code>/api/users/tasks/detail</code>은 선택한 작업의 레인, span, 근거 기반 비용 설명을 반환합니다.</p>
+<p>사용자 상세 정보에서는 정확한 텔레메트리 ID와 시간 범위를 선택합니다. <code>/api/users/tasks</code>는 유효 범위 내에서 시작되는 작업을 나열합니다. 사용량 차트를 드래그하면 범위가 좁아지고, 지점을 클릭하면 한 구간이 선택됩니다. <code>/api/users/tasks/detail</code>은 선택한 작업의 레인, 스팬 및 근거에 기반한 비용 설명을 반환합니다.</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="작업 추적 데이터 소스"><table>
   <thead><tr><th scope="col">클라이언트</th><th scope="col">작업 및 타이밍</th><th scope="col">사용량 및 비용</th></tr></thead>
   <tbody>
@@ -57,7 +57,7 @@
 </ul>
 <p>이러한 메커니즘은 작업량을 줄여 주지만 동시 사용자 140명에 대한 용량을 보장하지는 않습니다. 대상 설치 환경에서 대표적인 필터 다양성, 캐시가 비어 있는 상태의 트래픽, 수집량, 쿼리 지연 시간을 측정하세요.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/reference/cost-query-performance.md">비용 쿼리 성능</a></p></section><section id="auth"><h2>대시보드 및 디바이스 접근</h2>
 <p>OIDC는 서명된 ID를 검증하고 명시적 그룹 값을 <code>viewer</code>, <code>analyst</code>, <code>admin</code>에 매핑합니다. 권한이 있는 뷰어는 설치 환경 전체의 텔레메트리를 읽을 수 있습니다. 이는 직원별 행 격리가 아닙니다.</p>
-<p>디바이스 토큰은 수집 권한만 부여합니다. 토큰은 별도로 관리되며 만료 및 취소됩니다. 텔레메트리 귀속 정보는 클라이언트가 제공합니다. SSO 세션이나 토큰 소유권만으로 텔레메트리 이메일의 유효성이 자동 확인되지는 않습니다.</p>
+<p>디바이스 토큰은 텔레메트리 수집 및 설치 패키지 다운로드를 허용하며, 브라우저 액세스는 허용하지 않습니다. 토큰은 각각 별도로 소유되며 만료되거나 취소됩니다. 텔레메트리 귀속 정보는 클라이언트가 제공합니다. SSO 세션이나 토큰 소유권만으로 텔레메트리 이메일의 진위가 자동으로 확인되는 것은 아닙니다.</p>
 <p>PII 마스킹은 표시 기능이며 API 접근 제어가 아닙니다. 수집 필터는 알려진 콘텐츠 필드를 제거하지만, 지원되는 다른 메타데이터에 임의로 입력된 비밀 정보까지 탐지할 수는 없습니다.</p>
 <p><a href="operations.html#sso">SSO 구성 및 세션 새로 고침</a> · <a href="installation.html">Collector 설치</a></p></section><section id="deployment"><h2>배포 경계</h2><p>대시보드 이미지에는 웹 UI와 API가 포함됩니다. ClickHouse, 스키마, OTel Collector는 모든 플랫폼에서 별도 구성 요소입니다. 현재 Compose 파일에는 Collector가 포함되지 않으며, EKS Terraform은 기존 클러스터 종속성을 재사용합니다. ECS/EC2에는 검토된 인프라, 자격 증명, 네트워킹, 상태 확인 및 영속성 구성이 필요하고, Lambda에는 애플리케이션 런타임 조정이 필요합니다.</p><p><a href="installation.html#choose">필수 구성 요소</a> · <a href="installation.html#platforms">호스팅 옵션 비교</a></p>
 <p>스키마 수명 주기, 애플리케이션 이미지, Collector 정책, 런타임 옵션은 각각 독립적인 배포 상태를 가집니다. 빌드 또는 Terraform 검증에 성공해도 실제 롤아웃이나 마이그레이션이 완료되었다고 볼 수 없습니다.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">조직 환경에 배포</a></p></section>

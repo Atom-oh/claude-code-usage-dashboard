@@ -1,6 +1,6 @@
 # English documentation video
 
-This is the November 10, 2026 English guide walkthrough. See the
+This is the November 14, 2026 English guide walkthrough. See the
 [brief](BRIEF.md), [storyboard](STORYBOARD.md) and [scoped instructions](AGENTS.md).
 The older project in the parent directory remains historical.
 
@@ -13,11 +13,12 @@ The relative `assets` symlink points to the shared site media, without copies.
 From the repository root, run `python3 scripts/fetch-docs-media.py` before previewing
 or rendering. It hydrates the images, encoded video and local runtime assets from
 the immutable commit in `media.lock.json`, checking every size and SHA256 before
-writing. The `docs-media-20261110-narrated` tag retains that snapshot; URLs use its commit
+writing. The `docs-media-20261114-narrated-r2` tag retains that snapshot; URLs use its commit
 identity. Use `--offline` to verify a populated cache without network access.
 Pages runs the same helper with `--site-only` and fails rather than publishing
 missing or corrupt media. HTML, captions, composition, provenance and licenses
 remain tracked source; generated media and the pinned runtime are ignored cache.
+Earlier captions remain tracked with their historical media provenance.
 
 The final film keeps the HyperFrames visuals and composes Amazon Polly English
 narration plus an original quiet score with Remotion 4.0.542. Cached Polly clips
@@ -37,14 +38,16 @@ ffmpeg -i renders/dashboard-demo-en-final.mp4 \
   -c:a libopus -b:a 96k renders/dashboard-demo-en-narrated.webm
 ```
 
-Hydration supplies `remotion/public/visual-base.mp4`, the original silent
-HyperFrames output retained in commit `fd1e956f3678f9703ee0edf46dd13c0d8c1c0fd4`.
+Hydration supplies `remotion/public/visual-base.mp4`, the current silent
+HyperFrames output identified by the same immutable media lock.
 The first Remotion pass re-encodes those visuals; the WAV pass composes the tracked
 speech and music. FFmpeg copies that Remotion video stream into the final delivery
 and encodes the WAV as AAC. There is no post-render audio correction or filter:
 the final gain and fade values live in `remotion/mix.mjs`. The visual content is
 preserved, but its encoded bytes differ from the original HyperFrames base.
 The lock identifies existing delivery bytes; a fresh encode need not be byte-identical.
+When a PR changes the media lock, push the referenced immutable media tag before the
+PR branch. An independent media snapshot is not included by pushing the branch alone.
 
 The explicit regeneration command `npm run audio` calls the paid Amazon Polly
 API using the caller's AWS credentials. It requires AWS CLI, FFmpeg and ffprobe.
@@ -85,3 +88,14 @@ unchanged.
 
 Remotion's [license terms](https://github.com/remotion-dev/remotion/blob/v4.0.542/LICENSE.md)
 apply separately; this project does not modify or bundle its implementation.
+
+## Refresh the synthetic captures
+
+Start the Vite server in `dashboard/web`, then run `capture/capture.mjs` from the
+repository with `CCDASH_CAPTURE_URL` set to its loopback URL and
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` set to Chromium if needed. `--collect <file>`
+collects the display strings for a separately authorized Luna translation call;
+the default mode uses `capture/labels.en.json` and writes the shared images.
+`capture/evidence.json` records the source revision, dimensions and browser errors.
+The runner intercepts API requests with fixed synthetic fixtures and never connects
+to production. It must not be used as an authentication or deployment test.

@@ -6,7 +6,7 @@
   <title>자체 설치 환경 운영 — ccdash</title>
   <meta name="description" content="자체 설치 환경에서 조직 SSO를 연결하고, 트레이스 전송을 확인하며, 사용자 작업이 누락되는 문제를 해결합니다." />
   <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="../operations.html" />
   <link rel="alternate" hreflang="ko" href="operations.html" />
   <link rel="alternate" hreflang="ja" href="../ja/operations.html" />
@@ -24,7 +24,7 @@
       <p class="eyebrow">Claude Code + Codex · 문서</p>
       <h1>자체 설치 환경 운영</h1>
       <p class="lede">조직의 ID를 구성하고, 배포된 구성 요소를 확인한 뒤, 롤아웃과 복구를 위한 운영 런북을 따르세요.</p>
-      <p class="caption">2026년 11월 10일 업데이트 · 소스 코드의 동작을 설명합니다. 설치된 리비전을 확인하세요.</p>
+      <p class="caption">2026년 11월 14일 업데이트 · 소스 코드의 동작을 설명합니다. 설치된 리비전을 확인하세요.</p>
       <p><a href="#traces">트레이스 수집 확인</a> · <a href="index.html#task-trace">Task Trace 안내</a></p>
     </div>
     <section id="sso"><h2>조직 SSO 연결</h2>
@@ -58,24 +58,24 @@ SESSION_REFRESH_MAX_AGE_SECONDS=2592000</code></pre>
 <p>이 문서는 <code>site/</code>에 있는 정적 HTML입니다. Pages 워크플로는 <code>main</code>에 병합된 변경 사항이 있을 때 해당 디렉터리를 업로드합니다. 문서만 릴리스하는 경우 번들러 빌드나 애플리케이션/EKS 롤아웃은 없습니다.</p>
 <p>전체 절차는 소스에 연결된 런북을 사용하세요. 웹사이트는 지원되는 동작을 요약하며 특정 고객 설치 환경의 구성을 보증하지 않습니다.</p></section>
 <section id="traces"><h2>Trace 경로 확인</h2>
-<p>새 상호작용과 예상되는 텔레메트리 ID, 클라이언트 및 시간 버킷부터 확인하세요. 사용량 합계와 Trace 사용 가능 여부는 서로 다른 신호에서 나오므로 로그 내보내기가 성공했다고 트레이스가 전송된 것은 아닙니다.</p>
+<p>새 상호작용과 예상 텔레메트리 ID, 클라이언트 및 시간 구간을 기준으로 확인을 시작합니다. 사용량 합계와 Trace 이용 가능 여부는 서로 다른 신호에서 나오므로, 로그 내보내기가 성공했다고 해서 트레이스 전달이 확인되는 것은 아닙니다.</p>
 <ol>
-  <li>현재 디바이스 패키지 또는 조직에서 관리하는 설정에 트레이스 내보내기가 활성화되어 있는지 확인한 다음 코딩 클라이언트를 다시 시작하세요. <a href="installation.html#trace">클라이언트 구성 참조</a>를 확인하세요.</li>
-  <li>로컬 Collector의 서비스와 트레이스 내보내기에서 전송 실패를 확인하세요. 인증된 수집, 중앙 트레이스 파이프라인 및 저장된 <code>otel_traces</code> 레코드까지 차례로 확인하세요. 디바이스 수신과 프로세스 상태는 각각 해당 단계만 확인합니다.</li>
-  <li>사용자 세부 정보에서 작업 시작 시각이 포함된 추세 버킷을 선택하세요. 의도한 ID와 필터를 확인하세요. 지원되는 트레이스 작업은 90일간 보관됩니다.</li>
-  <li>Codex 진단의 경우 전체 인사이트 프로필을 사용해 Analytics의 Trace 탭을 확인하세요. 비용/노력, 도구 및 성능 프로필은 트레이스 쿼리를 생략합니다.</li>
+<li>현재 기기 패키지 또는 조직에서 관리하는 설정으로 트레이스 내보내기가 활성화되어 있는지 확인한 다음 코딩 클라이언트를 재시작합니다. <a href="installation.html#trace">클라이언트 구성 참조</a>를 확인하세요.</li>
+<li>로컬 Collector의 서비스와 트레이스 내보내기에서 전달 실패 여부를 확인합니다. 인증된 수집, 중앙 트레이스 파이프라인, 저장된 <code>otel_traces</code> 레코드까지 확인합니다. 기기에서 수신했거나 프로세스가 정상이라는 사실은 해당 단계만 확인해 줍니다.</li>
+<li>사용자 상세 정보에서 작업 시작 시점을 포함하는 시간 범위를 선택합니다. 작업 목록은 유효 범위를 따릅니다. 드래그하여 범위를 좁히거나 한 구간을 클릭할 수 있습니다. 전체 기간 재설정을 사용하면 지점 선택이 해제됩니다. 원하는 ID와 필터를 확인합니다. 지원되는 추적 작업은 90일 동안 보존됩니다.</li>
+<li>Codex 진단을 위해서는 전체 인사이트 프로필을 사용하여 Analytics의 Trace 탭을 살펴봅니다. 비용/노력, 도구 및 성능 프로필에서는 트레이스를 조회하지 않습니다.</li>
 </ol>
-<div class="table-scroll" tabindex="0" role="region" aria-label="Trace 증상 참조"><table>
-  <thead><tr><th scope="col">증상</th><th scope="col">확인할 항목</th></tr></thead>
-  <tbody>
-    <tr><td>사용량은 있지만 작업이 표시되지 않음</td><td>트레이스 구성, 재시작 시각, 전송된 ID, 작업 시작 버킷 및 보존 기간을 확인하세요. 과거 사용량은 트레이스로 소급 입력되지 않습니다.</td></tr>
-    <tr><td>Codex 완료 항목이 작업에 포함되지 않음</td><td>추적된 턴에는 대화 ID와 고유 턴 ID가 필요합니다. 적격 턴이 없는 완료 항목은 연결되지 않습니다. 샘플링 span이 없는 연결 완료 항목은 비용 구간에서 누락될 수 있습니다.</td></tr>
-    <tr><td>Codex 하위 에이전트 수를 확인할 수 없음</td><td>현재 작업 뷰에는 기본 레인만 있으며, 관련 없는 span으로 하위 에이전트 수를 추정하지 않습니다.</td></tr>
-    <tr><td>세부 정보가 많을 때 합계가 생략됨</td><td><code>truncated</code>와 <code>span_total</code>을 확인하세요. 작업 세부 정보는 5,000개 span으로 제한됩니다. 별도의 진단 미리보기는 트레이스 50개, 트레이스당 span 200개를 사용합니다.</td></tr>
-    <tr><td>모델 필터를 적용하면 Codex Trace가 사라짐</td><td>모델 속성이 있는 span만 해당 필터와 일치합니다. 다른 진단 span을 확인하려면 필터를 지우세요.</td></tr>
-  </tbody>
+<div aria-label="Trace 증상 참조" class="table-scroll" role="region" tabindex="0"><table>
+<thead><tr><th scope="col">증상</th><th scope="col">확인할 항목</th></tr></thead>
+<tbody>
+<tr><td>사용량은 있지만 작업이 표시되지 않음</td><td>트레이스 구성, 재시작 시점, 내보낸 ID, 작업 시작 시간 범위 및 보존 기간을 확인합니다. 과거 사용량은 트레이스에 백필되지 않습니다.</td></tr>
+<tr><td>Codex 완료 이벤트가 작업에 포함되지 않음</td><td>추적된 턴에는 대화 ID와 고유한 턴 ID가 필요합니다. 적격 턴이 없는 완료 이벤트는 연결되지 않은 상태로 유지됩니다. 연결된 완료 이벤트에 샘플링 스팬이 없으면 비용 밴드에서 누락될 수 있습니다.</td></tr>
+<tr><td>Codex 하위 에이전트 수를 사용할 수 없음</td><td>현재 작업 보기에는 메인 레인만 있으며 관련 없는 스팬에서 하위 에이전트 수를 추론하지 않습니다.</td></tr>
+<tr><td>상세 정보에서 대규모 데이터의 합계가 누락됨</td><td><code>truncated</code> 및 <code>span_total</code>을 확인합니다. 작업 상세 정보는 5,000개 스팬으로 제한됩니다. 별도의 진단 미리보기는 총 50개 트레이스, 트레이스당 최대 200개 스팬을 사용합니다.</td></tr>
+<tr><td>모델 필터를 적용하면 Codex Trace가 사라짐</td><td>모델 속성이 있는 스팬만 해당 필터와 일치합니다. 필터를 지우고 다른 진단 스팬을 살펴봅니다.</td></tr>
+<tr><td>단위 비용 차트에 점선이 표시됨</td><td>해당 구간에는 계산 가능한 일치 세션이 없습니다. 점선 구간은 관측된 양 끝점만 연결하며 누락된 비용을 채우거나 활동이 없음을 입증하지 않습니다.</td></tr></tbody>
 </table></div>
-<p><a href="api.html#tasks">작업 엔드포인트 제한</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector 복구</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">애플리케이션 릴리스 절차</a></p>
+<p><a href="api.html#tasks">작업 엔드포인트 한도</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md">Collector 복구</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/releases.md">애플리케이션 릴리스 절차</a></p>
 </section>
   </main>
   <footer><div class="wrap">

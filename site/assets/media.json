@@ -3,7 +3,7 @@
   "source_revision": "4ae980c50030be4adb59fed5c24dc47b747f1c2b",
   "privacy": "Current application UI with synthetic fixtures only; no production telemetry.",
   "content_review": {
-    "scope": "October 24 video files only; the November 10 English video, images and translations are not covered by this historical score.",
+    "scope": "Historical October 24 video only. Neither the November 10 nor November 14 replacement is covered by this score.",
     "score": 98.5,
     "verdict": "PASS",
     "date": "2026-10-24"
@@ -30,125 +30,244 @@
     {
       "name": "task-trace.png",
       "path": "img/task-trace.png",
-      "capture_date": "2026-11-10",
-      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "bytes": 382529,
+      "sha256": "d15e110a4f8a680a01c8ef1ecce666e412601d19d175af7c3dd2dae48c17dfe9",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
-      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
-      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
-      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
-      "width": 1320,
-      "height": 1011,
-      "bytes": 115050,
-      "sha256": "677ac1571045c760f58fe614568a8e5859947e57f2c0d8818eb4356e2c558ef7"
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "Original Korean UI",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 2640,
+      "height": 2812,
+      "pixel_scale": 2
     },
     {
       "name": "task-trace-overview-en.png",
       "path": "img/task-trace-overview-en.png",
-      "capture_date": "2026-11-10",
-      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "bytes": 426843,
+      "sha256": "c9948ab5c848c2f6c580a996da0cd15f31266791b4c2ec781f511d06f3c13e36",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
-      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
-      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
-      "display_translation": "openai.gpt-6-luna translated Korean DOM labels to English for the capture; product UI behavior unchanged.",
-      "state": "Initial Task Trace overview",
-      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
-      "width": 1320,
-      "height": 879,
-      "bytes": 104065,
-      "sha256": "0045b8b04b8938328d72d95b4028db10d92eb07c254a80f21428a19545b78304"
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 2640,
+      "height": 2460,
+      "pixel_scale": 2
     },
     {
       "name": "task-trace-en.png",
       "path": "img/task-trace-en.png",
-      "capture_date": "2026-11-10",
-      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "bytes": 441019,
+      "sha256": "44c6f5e158da7a464d3f75ccfeda7bde50ca670e424d1134a5326c36faaaa1d7",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
-      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
-      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
-      "display_translation": "openai.gpt-6-luna translated Korean DOM labels to English for the capture; product UI behavior unchanged.",
-      "state": "Most expensive Explore call selected",
-      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
-      "width": 1320,
-      "height": 1030,
-      "bytes": 128177,
-      "sha256": "9bf56c5938b7bbd4efab3c1379271605d14e7c238aaee3c1fb101cf40951f7cd"
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 2640,
+      "height": 2886,
+      "pixel_scale": 2
     },
     {
       "name": "task-trace-model-en.png",
       "path": "img/task-trace-model-en.png",
-      "capture_date": "2026-11-10",
-      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "bytes": 419292,
+      "sha256": "2eaf1f805f38248427cb57d2931648bcb659196c4c409d1410f4f69347cd13ec",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
-      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
-      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
-      "display_translation": "openai.gpt-6-luna translated Korean DOM labels to English for the capture; product UI behavior unchanged.",
-      "state": "Model row selected to highlight matching calls",
-      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
-      "width": 1320,
-      "height": 1030,
-      "bytes": 128399,
-      "sha256": "ec3fb88f8c652500ce4de54e4528e4cb611a4393428ce6cc1e23dabc7b6ddbd2"
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 2640,
+      "height": 2886,
+      "pixel_scale": 2
     },
     {
       "name": "task-trace-model-table-en.png",
       "path": "img/task-trace-model-table-en.png",
-      "capture_date": "2026-11-10",
-      "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+      "bytes": 56751,
+      "sha256": "247ed6286b0658929e0eaa6377b8bfd59948c0006cf7040844e4c8d0b8e2afdb",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
-      "fixture_source": "dashboard/web/src/components/TaskTraceOverlay.test.jsx:claudeDetail",
-      "fixture_adjustments": "Use the capture date, omit the adversarial command attribute, and label the mixed call cost bases consistently.",
-      "display_translation": "openai.gpt-6-luna translated Korean DOM labels to English for the capture; product UI behavior unchanged.",
-      "state": "Selected model table, captured from the same React state",
-      "privacy": "Synthetic test fixture only; masked example.test identity and fictional costs; no production telemetry.",
-      "width": 1238,
-      "height": 83,
-      "bytes": 11428,
-      "sha256": "e641c12a84aace9de671b34d944c4c45ec7ec69cc758c0d63329db4f9c855d76"
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 2544,
+      "height": 394,
+      "pixel_scale": 2
+    },
+    {
+      "name": "call-detail-en.png",
+      "path": "img/call-detail-en.png",
+      "bytes": 70540,
+      "sha256": "aa65116484fce80ed201646d386ebca6d871b93ae51f467342a59e69d053ea8e",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
+      "component": "dashboard/web/src/components/TaskSpanPanel.jsx",
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 592,
+      "height": 786,
+      "pixel_scale": 2
+    },
+    {
+      "name": "collector-setup-en.png",
+      "path": "img/collector-setup-en.png",
+      "bytes": 140010,
+      "sha256": "3a95ee31f65150a20ed41b745409fa18e4db512b25ff0ed44b009a5f582daf8c",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
+      "component": "dashboard/web/src/pages/CollectorSetup.jsx",
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 2176,
+      "height": 828,
+      "pixel_scale": 2
+    },
+    {
+      "name": "task-environment-en.png",
+      "path": "img/task-environment-en.png",
+      "bytes": 63727,
+      "sha256": "61b59f4a8286ffc61edd20db3be73b4af71936dc161f87d9bc5ce4ba87d32730",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
+      "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 660,
+      "height": 522,
+      "pixel_scale": 2
+    },
+    {
+      "name": "task-lanes-en.png",
+      "path": "img/task-lanes-en.png",
+      "bytes": 28293,
+      "sha256": "6e12e575c27aa7e04072a5abba6f2bb58b3a6bd39e4c0dd524409d68fd19932f",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
+      "component": "dashboard/web/src/components/TaskTimeline.jsx",
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 1784,
+      "height": 434,
+      "pixel_scale": 2
+    },
+    {
+      "name": "task-list-en.png",
+      "path": "img/task-list-en.png",
+      "bytes": 94374,
+      "sha256": "036847367cade22d0e9d4a562cc0ebd7889cfce0a41c8fa28650c222edf330e3",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
+      "component": "dashboard/web/src/components/TaskList.jsx",
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 2560,
+      "height": 390,
+      "pixel_scale": 2
+    },
+    {
+      "name": "time-range-en.png",
+      "path": "img/time-range-en.png",
+      "bytes": 38588,
+      "sha256": "186ed8b2974e5e856bf1750a579ee8047d65c30c911f1757eece03968cc39e30",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
+      "component": "dashboard/web/src/components/DateRangePopover.jsx",
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 770,
+      "height": 482,
+      "pixel_scale": 2
+    },
+    {
+      "name": "unit-cost-en.png",
+      "path": "img/unit-cost-en.png",
+      "bytes": 89531,
+      "sha256": "6365fd98e947c9343b3742462565ebc19f25f422a0300d52437feac82cb51d01",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
+      "component": "dashboard/web/src/pages/TokenEconomics.jsx",
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 1264,
+      "height": 826,
+      "pixel_scale": 2
+    },
+    {
+      "name": "user-tasks-en.png",
+      "path": "img/user-tasks-en.png",
+      "bytes": 158077,
+      "sha256": "dc11243b6bea0d28cb83206ba004895bc7fd3a000cd74474e806e4fe445176c5",
+      "capture_date": "2026-11-14",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
+      "component": "dashboard/web/src/components/ClientTrend.jsx",
+      "fixture_source": "video/docs-demo/capture/fixtures.mjs",
+      "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
+      "privacy": "Synthetic fixtures, reserved masked identities and fictional costs; no production telemetry.",
+      "width": 2560,
+      "height": 952,
+      "pixel_scale": 2
     }
   ],
   "release_scope": "Historical October 24 video release. The current English demo is recorded in current_demo.",
   "current_demo": {
-    "created_date": "2026-11-10",
+    "created_date": "2026-11-14",
     "language": "en",
-    "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+    "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
     "composition": "video/docs-demo/index.html",
-    "source_state": "React code captured from this revision; guide/composition authored in the November 10 working tree.",
+    "source_state": "v1.8.0 React source; corrected synthetic task cost basis, models and missing-attempt evidence. Capture and composition source hashes identify the rendered state.",
     "duration_seconds": 48,
     "format": "1920x1080 H.264/AAC MP4 and VP9/Opus WebM, 24 fps, 1152 video frames, English narration and original background music",
     "render": {
       "hyperframes": "0.7.77",
       "gsap": "3.14.2",
-      "chromium": "151.0.7922.34",
+      "chromium": "Chromium 151.0.7922.34",
       "ffmpeg": "7.0.2",
       "quality": "high",
       "workers": 2,
       "font": "Bundled Noto Sans with SIL OFL",
       "remotion": "4.0.542",
       "react": "18.3.1",
-      "audio_delivery": "Remotion WAV mix, FFmpeg AAC/Opus encoding; preserved Remotion-rendered video frames"
+      "audio_delivery": "Remotion WAV mix, FFmpeg AAC/Opus encoding; preserved Remotion-rendered video frames",
+      "capture_mode": "screenshot",
+      "visual_render_seconds": 43.0
     },
     "privacy": "Actual React screens using synthetic fixtures with Luna-translated English display labels; no production telemetry.",
-    "validation": "Preserved previously checked HyperFrames visuals; six encoded scene midpoint frames inspected. Full MP4/WebM decode passed (1152 video frames, 1920x1080, 24 fps). Three audio tests verify scene fit without truncation, background ducking and exact VTT text/timing. All four locale players decode audio, play, seek and load six English cues. Static checks cover 24 pages, 792 links, code parity and translation/media hashes; 48 desktop/mobile checks and 144 locale switches passed.",
+    "validation": "HyperFrames strict check passed at all six scene midpoints, with 41/41 overlay contrast checks. Both encodes fully decode to 1152 frames at 1920x1080, 24 fps, with AAC/Opus audio. Six decoded MP4 midpoints were visually inspected and compared with snapshots. Audio tests confirm complete speech fit, ducking and exact VTT text/timing. Browser checks cover 24 pages at desktop/mobile sizes, 144 locale links, and all four players using automatic WebM fallback plus direct WebM playback. This Chromium build does not support H.264/AAC playback; MP4 is verified by FFmpeg, not browser playback.",
     "files": [
       {
-        "path": "video/dashboard-demo-en-20261110.mp4",
-        "bytes": 4275069,
-        "sha256": "96244acbd9328f1ce5d8c1361e0101df838699eb460fa0861f37ee06125184b8"
+        "path": "video/dashboard-demo-en-20261114.mp4",
+        "bytes": 4208464,
+        "sha256": "45610479e426c285fc0c215faa1f02f0dc19fb7eb949a361f0f3669f7d814524"
       },
       {
-        "path": "video/dashboard-demo-en-20261110.webm",
-        "bytes": 2837237,
-        "sha256": "dc02c297639481694dd3d2b70852b8b73b49b408a890201eeefc391d6c114551"
+        "path": "video/dashboard-demo-en-20261114.webm",
+        "bytes": 2753080,
+        "sha256": "16c49cde68fb254ce8907b2beb79002cf9a821f0b8b85c28f186747de318be8f"
       },
       {
-        "path": "video/dashboard-demo-en-20261110.vtt",
-        "bytes": 859,
-        "sha256": "668135d74f9e6af91d93690ad2d1e114517388fc430028d04f12d5cae38fedb2"
+        "path": "video/dashboard-demo-en-20261114.vtt",
+        "bytes": 840,
+        "sha256": "bb4872f48b673195709f386c5a4decf26ebfe9e4b6d68dd9a9be4dc8dea96529"
       },
       {
         "path": "img/docs-demo-en-poster.jpg",
-        "bytes": 169741,
-        "sha256": "4a65ed62bdaee13127ce579f168d0a20a0e32f31c35c685c7cb49ac8ff62479c"
+        "bytes": 129259,
+        "sha256": "912cdaae9b84fe490545e61031f42d08b8f2e769f2030f268dc4e6471432138b"
       }
     ],
     "runtime_assets": [
@@ -171,13 +290,13 @@
     "source_files": [
       {
         "path": "video/docs-demo/index.html",
-        "bytes": 8220,
-        "sha256": "b6b19cb3d4202ef17c3a7e30adba1277d98ccf7745778104a1bdc034127f922a"
+        "bytes": 6681,
+        "sha256": "a27ecfe86e213def4fa075b114942c58be0ab646f6aac6b33ac44ce25920ae67"
       },
       {
         "path": "video/docs-demo/styles.css",
-        "bytes": 3941,
-        "sha256": "e4c786c31b251ef0927e9065d69c0e6a092d65547d4db5b76cafe054b92ed454"
+        "bytes": 2710,
+        "sha256": "ec71ccc349b685e355cecef9ccf8eed81baa6ea5c9b87795ec6ac64eeca22587"
       },
       {
         "path": "video/docs-demo/package.json",
@@ -201,13 +320,13 @@
       },
       {
         "path": "video/docs-demo/remotion/narration.json",
-        "bytes": 1246,
-        "sha256": "2ca7c806885f2ca6d3a6bc8f4e43fed2ba439e4dbd084690ba6416fefb5b8b2a"
+        "bytes": 1371,
+        "sha256": "54db2378819c9e30124655abd84999ffa0703596349ac9a29bbaf254618b27b7"
       },
       {
         "path": "video/docs-demo/remotion/audio.json",
         "bytes": 1442,
-        "sha256": "579057f056a04b3b644de850743eac9144101d14743c5617d54663daf24f3b35"
+        "sha256": "58dfcfff7e402bf51c8b3139f2721d8769d31905e406ceee02c9dc441d72ed47"
       },
       {
         "path": "video/docs-demo/remotion/mix.mjs",
@@ -218,6 +337,31 @@
         "path": "video/docs-demo/remotion/prepare-audio.py",
         "bytes": 4441,
         "sha256": "afec35b2095662b85e88defb5e41d7da58aa8fd19074db805d592ccb0718b930"
+      },
+      {
+        "path": "video/docs-demo/capture/fixtures.mjs",
+        "bytes": 7617,
+        "sha256": "2843e958f8e7dbf600d9a4848dab5ffb185a5337f381f8e3dd5129ff181494d6"
+      },
+      {
+        "path": "video/docs-demo/capture/capture.mjs",
+        "bytes": 8483,
+        "sha256": "343c2ac366b8628829f1ae97deb38b97312b00722c48cce15b9cdd2acd3f2114"
+      },
+      {
+        "path": "video/docs-demo/capture/labels.en.json",
+        "bytes": 32745,
+        "sha256": "00faeaa82ff105b627f3ae1527d96f6b1f3f490771b24af4296d7573d442a30c"
+      },
+      {
+        "path": "video/docs-demo/capture/translation.json",
+        "bytes": 1784,
+        "sha256": "e23d9a6f705559555e24dd7a60aee500a83151c872eabaf1869af9455d149c97"
+      },
+      {
+        "path": "video/docs-demo/capture/evidence.json",
+        "bytes": 1282,
+        "sha256": "4a177bbe6532f5bea7a11afd4bcba196af319ddc34f9be1d857fb2ffd1b9183c"
       }
     ],
     "webm_encoding": {
@@ -246,42 +390,38 @@
         "between_clips": 0.32
       },
       "speech_target_lufs": -18,
-      "measured_mix_lufs": -18.5,
-      "measured_mix_true_peak_dbfs": -5.11,
-      "encoded_webm_duration_seconds": 48.008,
-      "measured_encoded_aac_lufs": -18.52,
-      "measured_encoded_aac_true_peak_dbfs": -5.12
+      "encoded_webm_duration_seconds": 48.008
     },
     "audio_assets": [
       {
         "path": "video/docs-demo/remotion/public/follow.mp3",
-        "bytes": 85868,
-        "sha256": "8ef2d684e1a7a529c4d8e929f8ebb8259fc4b3b5e782b3ace5f41f474efdaa35"
+        "bytes": 59660,
+        "sha256": "37566e3f192642c183d49b5716895bd44dd0ca816576543f9b989d6129490733"
       },
       {
         "path": "video/docs-demo/remotion/public/build.mp3",
-        "bytes": 77228,
-        "sha256": "50539a6701820578bb7ae854e10ada7b01dd04393d6b80d48e35aa314fab15a5"
+        "bytes": 73484,
+        "sha256": "10fa2e6b1d615b5a912ca92b39f155b9f247f057dabf7dc33b738ad34519d27a"
       },
       {
         "path": "video/docs-demo/remotion/public/lanes.mp3",
-        "bytes": 85292,
-        "sha256": "09bd769ae54aa7c91238b12778ee7728b146cbf0d677a8a5b6ef8624ece8c98f"
+        "bytes": 65132,
+        "sha256": "104e131763216a987df1e622c5e2055bacc20bc632ab58d22062a0aaa80ff975"
       },
       {
         "path": "video/docs-demo/remotion/public/call.mp3",
-        "bytes": 84428,
-        "sha256": "be4b945dcd53fa2878504dedafd9f01027174844cd7a19465ae2731d86992d26"
+        "bytes": 77228,
+        "sha256": "cabc849a2f7d9aaf75b4d40f78d849905828cf1aece1f001c17f827ec8429239"
       },
       {
         "path": "video/docs-demo/remotion/public/model.mp3",
-        "bytes": 68012,
-        "sha256": "03632fd244e886b236aba9d96132a4a99b928067b37c77e49f47a744bb38c8ad"
+        "bytes": 81260,
+        "sha256": "ced889fdcf31315a322a124d0274080547de30baedb318dc4fcf764d1da4df49"
       },
       {
         "path": "video/docs-demo/remotion/public/hosting.mp3",
-        "bytes": 82988,
-        "sha256": "d6660809691457240cb00e5ee413fd0886784dbad12eed4299d631a6d5845c8d"
+        "bytes": 91916,
+        "sha256": "c3973cbc3698b64eefa706b987a566d26398654b284f2d770842cfa838fdbd1c"
       },
       {
         "path": "video/docs-demo/remotion/public/background.wav",
@@ -291,10 +431,85 @@
     ],
     "visual_base": {
       "path": "video/docs-demo/remotion/public/visual-base.mp4",
-      "bytes": 3569818,
-      "sha256": "56ecb1cc7c0e3afa99c5422d45823ef0358b20ea297adb38a1b5e27600741e46",
-      "origin_commit": "fd1e956f3678f9703ee0edf46dd13c0d8c1c0fd4"
+      "bytes": 3735646,
+      "sha256": "fa72e98247125afe0627bd9964d9deff0df56a74b6204eecd8c0d65e8aae0a23",
+      "origin_commit": "c775db6d46f66b19587260088e2b3ee815b1342d"
     },
+    "encoded_verification": {
+      "encodes": [
+        {
+          "format": "mp4",
+          "duration": 48.0,
+          "frames": 1152,
+          "dimensions": [
+            1920,
+            1080
+          ],
+          "fps": 24,
+          "video_codec": "h264",
+          "audio_codec": "aac",
+          "bytes": 4208464,
+          "full_decode": true,
+          "sha256": "45610479e426c285fc0c215faa1f02f0dc19fb7eb949a361f0f3669f7d814524"
+        },
+        {
+          "format": "webm",
+          "duration": 48.008,
+          "frames": 1152,
+          "dimensions": [
+            1920,
+            1080
+          ],
+          "fps": 24,
+          "video_codec": "vp9",
+          "audio_codec": "opus",
+          "bytes": 2753080,
+          "full_decode": true,
+          "sha256": "16c49cde68fb254ce8907b2beb79002cf9a821f0b8b85c28f186747de318be8f"
+        }
+      ],
+      "midpoint_comparison": [
+        {
+          "time": 4,
+          "mean_pixel_error_out_of_255": 1.7985
+        },
+        {
+          "time": 12,
+          "mean_pixel_error_out_of_255": 2.0981
+        },
+        {
+          "time": 20,
+          "mean_pixel_error_out_of_255": 2.1634
+        },
+        {
+          "time": 28,
+          "mean_pixel_error_out_of_255": 1.9217
+        },
+        {
+          "time": 36,
+          "mean_pixel_error_out_of_255": 1.801
+        },
+        {
+          "time": 44,
+          "mean_pixel_error_out_of_255": 2.0217
+        }
+      ]
+    },
+    "covers_release": "v1.8.0",
+    "feature_scope": "v1.8.0 time selection, drag-to-task navigation, device installation and unit-cost guides, plus existing Task Trace and session-environment views."
+  },
+  "delivery": {
+    "manifest_repository_path": "video/docs-demo/media.lock.json",
+    "snapshot_commit": "c775db6d46f66b19587260088e2b3ee815b1342d",
+    "snapshot_tag": "docs-media-20261114-narrated-r2",
+    "verification": "scripts/fetch-docs-media.py validates file size and SHA256 before Pages upload or local rendering."
+  },
+  "previous_demo": {
+    "created_date": "2026-11-10",
+    "snapshot_commit": "d71dd1c2b81227d5982b425228df594d7401ef3c",
+    "snapshot_tag": "docs-media-20261110-narrated",
+    "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
+    "scope": "Historical November 10 delivery; review scores and validation do not apply to the replacement.",
     "content_review": {
       "reviewer": "aws-content-plugin/content-review-agent via Claude CLI",
       "date": "2026-11-10",
@@ -304,15 +519,9 @@
       "normalized_score_100": 100,
       "critical_count": 0,
       "warning_count": 0,
-      "scope": "Source-only final correction review with prior unchanged coverage; coordinator performed final audiovisual/browser checks.",
+      "scope": "Historical November 10 source review only; no score applies to the November 14 replacement.",
       "report_repository_path": "video/docs-demo/results/Narration_Review_Report.md",
-      "report_sha256": "7c65e3671fa958b27dc6cfb50a3f6c789c401851503eaecf242e480a006a169a"
+      "report_sha256": "020274d94acf9ac3f044c988f353fdf55a5c055749053ea8907aad010692ad5e"
     }
-  },
-  "delivery": {
-    "manifest_repository_path": "video/docs-demo/media.lock.json",
-    "snapshot_commit": "d71dd1c2b81227d5982b425228df594d7401ef3c",
-    "snapshot_tag": "docs-media-20261110-narrated",
-    "verification": "scripts/fetch-docs-media.py validates file size and SHA256 before Pages upload or local rendering."
   }
 }

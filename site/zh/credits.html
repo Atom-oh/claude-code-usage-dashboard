@@ -1,19 +1,20 @@
-<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>演示鸣谢 — ccdash</title><link rel="stylesheet" href="../assets/site.css" /><link rel="icon" type="image/png" href="../assets/img/favicon.png" />
-  <link rel="alternate" hreflang="en" href="../assets/credits.html" />
-  <link rel="alternate" hreflang="ko" href="../ko/credits.html" />
-  <link rel="alternate" hreflang="ja" href="../ja/credits.html" />
-  <link rel="alternate" hreflang="zh-CN" href="credits.html" />
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>演示鸣谢 — ccdash</title><link href="../assets/site.css" rel="stylesheet"/><link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
+<link href="../assets/credits.html" hreflang="en" rel="alternate"/>
+<link href="../ko/credits.html" hreflang="ko" rel="alternate"/>
+<link href="../ja/credits.html" hreflang="ja" rel="alternate"/>
+<link href="credits.html" hreflang="zh-CN" rel="alternate"/>
 </head>
-<body><main class="wrap"><div class="hero"><h1>演示鸣谢</h1><div class="languages" role="group" aria-label="语言"><a href="../assets/credits.html" hreflang="en" lang="en">English</a><a href="../ko/credits.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/credits.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
+<body><main class="wrap"><div class="hero"><h1>演示鸣谢</h1><div aria-label="语言" class="languages" role="group"><a href="../assets/credits.html" hreflang="en" lang="en">English</a><a href="../ko/credits.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/credits.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
 <p><a href="index.html">返回概览</a></p>
-<p>ccdash 应用界面是在本地使用合成 API 数据截取的。身份信息使用保留的 example.test 地址；费用为虚构数据。未使用任何生产环境遥测数据。</p>
-<p>Task Trace 图片于 2026 年 11 月 10 日使用当前 React 组件和合成测试样例截取。图中显示了选中的 Explore 调用、智能体泳道、累计费用和模型调用。源代码修订版本和图片校验和见<a href="../assets/media.json">媒体来源记录</a>。</p>
-<p>当前的 48 秒视频于 2026 年 11 月 10 日制作，画面文字为英文，配有 Amazon Polly 旁白和英文字幕轨道。讲解配有轻柔的背景音乐。Task Trace 界面来自使用合成样例的实际 React 组件；openai.gpt-6-luna 为视频翻译了界面显示标签。本次截取不会为应用添加英语本地化。</p>
-<p>韩语、日语和简体中文指南译文由 openai.gpt-6-luna 生成。<a href="../assets/translations.json">翻译来源记录</a>列出了源文件和输出文件的校验和。</p>
-<p>字体：随项目打包的 Noto Sans。<a href="../assets/Noto-LICENSE.txt">字体许可证</a>。</p>
-<p>画面使用 HyperFrames 0.7.77 和 GSAP 3.14.2 渲染；音频使用 Remotion 4.0.542、Chromium 和 FFmpeg 合成。Amazon Polly 使用英文 Matthew 神经语音。背景配乐是原创、确定性的正弦波垫音作品，不含外部录音或采样。<a href="https://github.com/Atom-oh/claude-code-usage-dashboard/tree/main/video/docs-demo">视频合成内容和分镜脚本</a>介绍了英文视频。GSAP 适用其<a href="https://gsap.com/standard-license">标准许可证</a>；Remotion 另有<a href="https://github.com/remotion-dev/remotion/blob/v4.0.542/LICENSE.md">许可证条款</a>。</p>
-<p><a href="../assets/video/dashboard-demo-en-20261110.mp4">英文 MP4 视频</a> · <a href="../assets/video/dashboard-demo-en-20261110.webm">WebM</a> · <a href="../assets/video/dashboard-demo-en-20261110.vtt">英文字幕</a> · <a href="../assets/media.json">媒体校验和及来源记录</a>。10 月 24 日的韩语视频仍是历史<a href="https://github.com/Atom-oh/claude-code-usage-dashboard/releases/tag/docs-media-20261024">文档媒体发布版本</a>；本地的 dashboard-demo.mp4 是另一个历史版本，为期 28 秒。这两者均未用于当前概览页面。</p>
-<p>OIDC 支持表示协议兼容性可配置。设备身份验证并不意味着已验证的 SSO 邮箱归属。本文不对员工生产力或产能作任何判断。</p>
+<p>ccdash 应用界面取自本地，并使用合成 API 数据。身份使用保留的 example.test 地址；成本为虚构数据。未使用生产遥测数据。</p>
+<p>任务追踪图片于 2026 年 11 月 14 日使用合成测试数据，从当前 React 组件截取。当前截图展示了精确时间选择、拖动导航到任务、设备安装、Agent 轨道、模型调用和会话环境。源代码修订版本和图片校验和记录在<a href="../assets/media.json">媒体来源记录</a>中。</p>
+<p>当前的 48 秒视频于 2026 年 11 月 14 日制作，包含英文屏幕文字、Amazon Polly 配音和英文字幕轨道。讲解配有轻柔的背景音乐。画面来自使用合成测试数据的实际 React 组件；视频中的显示标签由 openai.gpt-6-luna 翻译。此截图不会为应用添加英文本地化。</p>
+<p>指南的韩语、日语和简体中文翻译使用 openai.gpt-6-luna 完成。<a href="../assets/translations.json">翻译来源记录</a>包含源文件和输出文件的校验和。</p>
+<p>字体排版：捆绑的 Noto Sans。<a href="../assets/Noto-LICENSE.txt">字体许可证</a>。</p>
+<p>视觉效果使用 HyperFrames 0.7.77 和 GSAP 3.14.2 渲染；音频使用 Remotion 4.0.542、Chromium 和 FFmpeg 合成。Amazon Polly 使用英语 Matthew 神经语音。背景音乐是原创的确定性正弦波铺底配乐，不含外部录音或采样。<a href="https://github.com/Atom-oh/claude-code-usage-dashboard/tree/main/video/docs-demo">创作说明和分镜</a>介绍了英文视频。GSAP 采用其<a href="https://gsap.com/standard-license">标准许可证</a>；Remotion 则有自己的<a href="https://github.com/remotion-dev/remotion/blob/v4.0.542/LICENSE.md">许可证条款</a>。</p>
+<p><a href="../assets/video/dashboard-demo-en-20261114.mp4">英文 MP4</a> · <a href="../assets/video/dashboard-demo-en-20261114.webm">WebM</a> · <a href="../assets/video/dashboard-demo-en-20261114.vtt">英文字幕</a> · <a href="../assets/media.json">媒体校验和及来源记录</a>。10 月 24 日的韩语视频仍是历史<a href="https://github.com/Atom-oh/claude-code-usage-dashboard/releases/tag/docs-media-20261024">文档媒体发行版本</a>；本地的 dashboard-demo.mp4 是另一个历史的 28 秒项目。当前概览不会使用其中任何一个。</p>
+<p>OIDC 支持表示可配置的协议兼容性。设备身份验证并不意味着已验证 SSO 邮箱归属。本文不对员工生产力或产能作出任何声明。</p>
 </div></main></body></html>

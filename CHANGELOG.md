@@ -15,6 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- Refresh the four-language guides and 48-second narrated walkthrough for the
+  v1.8.0 time-range, drag-to-task and device-installation changes, alongside existing
+  task/session details. Synthetic captures and rendered media retain content hashes.
+  All guide locales now use the dashboard favicon.
+
 ## [1.8.0] - 2026-11-14
 
 ### Added

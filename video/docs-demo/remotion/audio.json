@@ -2,39 +2,39 @@
   "clips": [
     {
       "id": "follow",
-      "duration_seconds": 7.128,
-      "bytes": 85868,
-      "sha256": "8ef2d684e1a7a529c4d8e929f8ebb8259fc4b3b5e782b3ace5f41f474efdaa35"
+      "duration_seconds": 4.944,
+      "bytes": 59660,
+      "sha256": "37566e3f192642c183d49b5716895bd44dd0ca816576543f9b989d6129490733"
     },
     {
       "id": "build",
-      "duration_seconds": 6.408,
-      "bytes": 77228,
-      "sha256": "50539a6701820578bb7ae854e10ada7b01dd04393d6b80d48e35aa314fab15a5"
+      "duration_seconds": 6.096,
+      "bytes": 73484,
+      "sha256": "10fa2e6b1d615b5a912ca92b39f155b9f247f057dabf7dc33b738ad34519d27a"
     },
     {
       "id": "lanes",
-      "duration_seconds": 7.08,
-      "bytes": 85292,
-      "sha256": "09bd769ae54aa7c91238b12778ee7728b146cbf0d677a8a5b6ef8624ece8c98f"
+      "duration_seconds": 5.4,
+      "bytes": 65132,
+      "sha256": "104e131763216a987df1e622c5e2055bacc20bc632ab58d22062a0aaa80ff975"
     },
     {
       "id": "call",
-      "duration_seconds": 7.008,
-      "bytes": 84428,
-      "sha256": "be4b945dcd53fa2878504dedafd9f01027174844cd7a19465ae2731d86992d26"
+      "duration_seconds": 6.408,
+      "bytes": 77228,
+      "sha256": "cabc849a2f7d9aaf75b4d40f78d849905828cf1aece1f001c17f827ec8429239"
     },
     {
       "id": "model",
-      "duration_seconds": 5.64,
-      "bytes": 68012,
-      "sha256": "03632fd244e886b236aba9d96132a4a99b928067b37c77e49f47a744bb38c8ad"
+      "duration_seconds": 6.744,
+      "bytes": 81260,
+      "sha256": "ced889fdcf31315a322a124d0274080547de30baedb318dc4fcf764d1da4df49"
     },
     {
       "id": "hosting",
-      "duration_seconds": 6.888,
-      "bytes": 82988,
-      "sha256": "d6660809691457240cb00e5ee413fd0886784dbad12eed4299d631a6d5845c8d"
+      "duration_seconds": 7.632,
+      "bytes": 91916,
+      "sha256": "c3973cbc3698b64eefa706b987a566d26398654b284f2d770842cfa838fdbd1c"
     }
   ],
   "music": {
