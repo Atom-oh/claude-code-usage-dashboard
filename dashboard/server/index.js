@@ -37,6 +37,7 @@ import { createPriceDiscovery, setPriceDiscoveryObserver } from "./pricingDiscov
 import { clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
 import { taskCacheKey, userTasks, validateTaskQuery } from "./taskTraces.js";
 import { taskDetailCacheKey, userTaskDetail, validateTaskDetailQuery } from "./taskTraceDetail.js";
+import { directoryVersion } from "./teamDirectoryParams.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -284,7 +285,12 @@ function validateModelTime(raw) {
   if (raw.modelTime !== undefined && raw.modelTime !== "1")
     throw new ValidationError("invalid modelTime", "modelTime accepts only 1");
 }
+// Every cached response may resolve teams, so each key carries the directory version: a sync
+// or settings change then misses the old entries instead of serving stale team attribution.
 function cacheKey(path, query) {
+  return `${routeCacheKey(path, query)}&teamdir=${directoryVersion()}`;
+}
+function routeCacheKey(path, query) {
   if (path === "/api/users/tasks") return `${path}?${taskCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort"
