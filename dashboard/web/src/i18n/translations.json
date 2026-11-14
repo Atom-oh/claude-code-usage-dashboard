@@ -8,7 +8,7 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T15:02:19.345396+00:00",
+  "updated_at": "2026-11-14T15:09:58.804318+00:00",
   "source_messages": 1964,
   "files": [
     {
@@ -22,15 +22,15 @@
       "locale": "es",
       "path": "locales/es.json",
       "messages": 1964,
-      "bytes": 177368,
-      "sha256": "5cf20aa32fbf33c361d0b0985d9da3465c8c6fdf94cdd65e32aba0cc5b8c4195"
+      "bytes": 177374,
+      "sha256": "b74139f8714331fa88c8054f8d3e9c3268326b2a918e11c3b610a3d746caf0cb"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
       "messages": 1964,
-      "bytes": 186168,
-      "sha256": "f43707218091e0f5aed2e376485915283e51e2e31c00f012966eb58264c15e1f"
+      "bytes": 186166,
+      "sha256": "8d761c82e11b1dc92e7bd78611867f403d32cfe706c47ef0c852163ccb10c9ce"
     },
     {
       "locale": "ko",
@@ -960,6 +960,17 @@
       ],
       "source_sha256_verified": "10a993125cc94e367b4a19ab3de024ab066be7a674e548a6c8320d484246b5d9",
       "output_sha256_verified": "7c5fd3fbc9fa6d9712be3ced88b8edf9a1bebc1b4b2f78670ad19f7c2ce62522"
+    },
+    "precision_followup": {
+      "requested_model": "openai.gpt-6-luna",
+      "coordinator_cli_invocation": "codex",
+      "timestamp_utc": "2026-11-14T15:09:12Z",
+      "source_sha256": "3e014295c3b4d28bbf599518536ff30669942462e7c211a6b93a0cf81cbc38c2",
+      "output_sha256": "fa036a54c181e6b59bce4892c563cfea68de4d9789f9b56918dcfda49af68c62",
+      "used_keys": [
+        "m115bced49291"
+      ],
+      "note": "Use native Settings menu names; guide-only history corrections are recorded in the site ledger."
     }
   },
   "upstream_289_preserved": {
