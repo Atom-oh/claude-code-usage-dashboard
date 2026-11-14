@@ -62,7 +62,7 @@ const TIER_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "비캐시
 const TOKEN_TYPE_LABEL_ORDER = ["캐시 읽기", "캐시 쓰기", "출력", "입력"];
 const EFFORT_LABEL_ORDER = ["medium", "high", "xhigh", "미지정"];
 
-function ReportedCostDonut({ rows, nameKey, colorOf, listUnknown = false }) {
+function ReportedCostDonut({ rows, nameKey, colorOf, listUnknown = false, listZero = false }) {
   if (rows.length === 0) return <EmptyState />;
   const { total, partial } = sumKnownSpend(rows);
   const known = rows.filter((r) => r.cost !== null && r.cost !== 0);
@@ -72,8 +72,8 @@ function ReportedCostDonut({ rows, nameKey, colorOf, listUnknown = false }) {
       {total === null ? <p className="text-sm text-ink-400">{unavailable}</p>
         : total === 0 ? <p className="tabular text-sm text-ink-600">{usd(total)}</p>
           : <DonutBody data={known} nameKey={nameKey} valueKey="cost" valueFormatter={usd} colorOf={colorOf} />}
-      <ZeroCostRows rows={rows.filter((r) => r.cost === 0)}
-        label={(r) => `${r[nameKey]}${r.cost_partial ? " (부분합)" : ""}`} />
+      {listZero && <ZeroCostRows rows={rows.filter((r) => r.cost === 0)}
+        label={(r) => `${r[nameKey]}${r.cost_partial ? " (부분합)" : ""}`} />}
       {listUnknown && rows.some((r) => r.cost === null) && (
         <ul className="mt-3 text-[12px] text-ink-400">
           {rows.filter((r) => r.cost === null).map((r) => <li key={r[nameKey]}>{r[nameKey]}: 확인 필요</li>)}
@@ -622,6 +622,7 @@ export default function Cost() {
                 nameKey="model_label"
                 colorOf={(name, _index, theme) => groupModelColorFor(g, name, theme)}
                 listUnknown
+                listZero
               />
             </CostBreakdownCard>
           ))}
