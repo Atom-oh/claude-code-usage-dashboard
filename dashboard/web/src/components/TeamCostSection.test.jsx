@@ -3,7 +3,8 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider } from "../RangeContext.jsx";
 import { toCsv } from "../csv.js";
-import { TeamCostView, TEAM_COLUMNS, teamTableRows } from "./TeamCostSection.jsx";
+import { TeamsContext } from "../TeamsContext.jsx";
+import { HISTORY_NOTE, TeamCostView, TEAM_COLUMNS, teamTableRows } from "./TeamCostSection.jsx";
 afterEach(cleanup);
 
 const row = (team, cost, patch = {}) => ({ team, known_reported_cost: cost, reported_partial: false, reported_cost: cost,
@@ -71,4 +72,20 @@ test("tiles and the bar disclose partial and unavailable team spend", () => {
   view(ok([row("A", 3, { reported_partial: true }), row("B", null), row(null, 1)]));
   expect(screen.getAllByText(/부분합 포함/).length).toBeGreaterThan(1);
   expect(screen.getAllByText(/확인 필요 팀 1개 제외/).length).toBeGreaterThan(1);
+});
+
+test("the history note shows only when the range starts before the first directory sync", () => {
+  const withTeams = (historyStart) => render(
+    <TeamsContext.Provider value={{ options: [], byUser: null, loading: false, labels: { A: "Alpha" }, sources: {}, historyStart }}>
+      <TeamCostView table={ok(TABLE)} trend={ok([])} intervalHours={24} onIntervalHours={() => {}} />
+    </TeamsContext.Provider>, { wrapper: Providers });
+  const early = withTeams(Date.now() + 86400000);
+  expect(screen.getByText(new RegExp(HISTORY_NOTE))).toBeTruthy();
+  expect(screen.getAllByText("Alpha").length).toBeGreaterThan(0);
+  early.unmount();
+  withTeams(Date.now() - 365 * 86400000);
+  expect(screen.queryByText(new RegExp(HISTORY_NOTE))).toBeNull();
+  cleanup();
+  withTeams(null);
+  expect(screen.queryByText(new RegExp(HISTORY_NOTE))).toBeNull();
 });

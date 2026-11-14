@@ -7,7 +7,7 @@ import { RangeProvider } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
 import { useApi } from "./useApi.js";
 import { toCsv } from "./csv.js";
-import { TeamsProvider, teamSuffix, teamText, teamsValue, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
+import { DEVICE_TEAM_MARKER, TeamsProvider, teamName, teamSuffix, teamText, teamsValue, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -140,4 +140,27 @@ test("useApi forwards team only to endpoints that apply it", async () => {
   expect(first("/api/codex/insights").has("team")).toBe(false);
   expect(first("/api/cost/summary").has("team")).toBe(false);
   expect(first("/api/cost/summary").has("model")).toBe(false);
+});
+
+test("teamText shows labels and marks device teams", () => {
+  const list = { data: { teams: ["field-ags-korea-all-cs", "dev"], labels: { "field-ags-korea-all-cs": "Korea CS" },
+    sources: { "field-ags-korea-all-cs": "directory", dev: "device" }, historyStart: 1000 } };
+  const users = { data: { users: [{ user: "a@example.invalid", team: "field-ags-korea-all-cs",
+    teams: ["field-ags-korea-all-cs", "dev"], sources: ["directory", "device"] },
+    { user: "b@example.invalid", team: "x", teams: ["x"], sources: ["both"] }] } };
+  const teams = teamsValue(list, users);
+  expect(teamText(teams, "a@example.invalid")).toBe(`Korea CS, dev ${DEVICE_TEAM_MARKER}`);
+  expect(teamText(teams, "a@example.invalid", { csv: true })).toBe("Korea CS, dev");
+  expect(teamText(teams, "b@example.invalid")).toBe("x");
+  expect(teamSuffix(teams, "a@example.invalid")).toBe(` · Korea CS, dev ${DEVICE_TEAM_MARKER}`);
+  expect(teamName(teams, "field-ags-korea-all-cs")).toBe("Korea CS");
+  expect(teams.historyStart).toBe(1000);
+});
+
+test("an older server without the new fields keeps raw values", () => {
+  const teams = teamsValue({ data: { teams: ["fsi"] } }, { data: { users: [{ user: "a@example.invalid", teams: ["fsi"] }] } });
+  expect(teams.labels).toEqual({});
+  expect(teams.sources).toEqual({});
+  expect(teams.historyStart).toBeNull();
+  expect(teamText(teams, "a@example.invalid")).toBe("fsi");
 });

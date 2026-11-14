@@ -9,6 +9,8 @@ import { StatTile } from "./StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { fromByModelDaily } from "../modelCostTrend.js";
 import { SPEND_HELP } from "../spend.js";
+import { useRange } from "../RangeContext.jsx";
+import { teamName, useTeams } from "../TeamsContext.jsx";
 
 // /api/cost/by-team(-daily): Claude reported spend per session team. A total metric: the
 // unknown channel is included, so team rows plus 팀 없음 equal the 총 비용 tile.
@@ -17,6 +19,8 @@ const isNoTeam = (row) => row.team === null;
 const BASIS = "Claude 보고 비용 · 총 비용과 같은 기준(미분류 채널 포함) · 세션별 팀 귀속";
 const HELP = `${SPEND_HELP} 각 세션의 비용은 그 세션이 보낸 OTel team 값에 붙습니다. ${NO_TEAM}은 team 값을 보내지 않았거나 로그 보존 기간이 지나 팀을 확인할 수 없는 세션입니다. 세션은 기간 안에 사용 기록이 있는 세션 수라 상단 세션 타일과 다를 수 있습니다. 단가 계수를 확인할 수 없는 비Anthropic 모델 사용분은 해당 팀 부분만 확인 필요로 남으므로, 팀별 알려진 합계가 총 비용의 알려진 합계보다 클 수 있습니다.`;
 
+export const HISTORY_NOTE = "이 날짜 이전 사용량은 처음 동기화한 부서 기준입니다.";
+
 const usd = (n) => n == null || !Number.isFinite(Number(n)) ? "확인 필요"
   : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const num = (n) => Number(n || 0).toLocaleString();
@@ -24,10 +28,10 @@ const pct = (v) => v === null ? "" : `${v.toFixed(1)}%`;
 
 // Rows keep the server order (known teams by spend, 팀 없음 last) and gain a display share of
 // the known total; an all-unknown team has no share.
-export function teamTableRows(rows) {
+export function teamTableRows(rows, teams) {
   const list = Array.isArray(rows) ? rows : [];
   const total = list.reduce((s, r) => s + (r.known_reported_cost ?? 0), 0);
-  return list.map((r) => ({ ...r, label: r.team ?? NO_TEAM, cost: r.known_reported_cost,
+  return list.map((r) => ({ ...r, label: r.team === null ? NO_TEAM : teams ? teamName(teams, r.team) : r.team, cost: r.known_reported_cost,
     cost_partial: r.reported_partial === true,
     cost_status: r.reported_partial === true ? "부분합" : r.known_reported_cost === null ? "확인 필요" : "확인됨",
     share: r.known_reported_cost === null || total <= 0 ? null : (r.known_reported_cost / total) * 100 }));
@@ -55,7 +59,13 @@ export function coverageNote(rows) {
 }
 
 export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
-  const rows = useMemo(() => teamTableRows(table.data), [table.data]);
+  const teams = useTeams();
+  const range = useRange();
+  const rows = useMemo(() => teamTableRows(table.data, teams), [table.data, teams]);
+  // Earlier usage follows the departments of the first sync; shown only when the range reaches before it.
+  const historyNote = teams.historyStart !== null && range?.from && range.from.getTime() < teams.historyStart
+    ? `${HISTORY_NOTE} ${new Date(teams.historyStart).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })}`
+    : null;
   const cells = useMemo(() => fromByModelDaily(trend.data, { dimension: "team" }), [trend.data]);
   const known = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
   const teamed = rows.filter((r) => r.team !== null).reduce((s, r) => s + (r.cost ?? 0), 0);
@@ -64,6 +74,7 @@ export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
   return (
     <section className="flex flex-col gap-4" aria-label="팀별 비용">
       <h2 className="text-base font-semibold text-ink-800">팀별 비용</h2>
+      {historyNote && <p className="text-[12px] text-ink-500">{historyNote}</p>}
       {table.loading ? <Loading /> : table.error ? <ErrorBox error={table.error} /> : <>
         <div className="grid gap-3 sm:grid-cols-2">
           <StatTile label="활성 팀" value={num(activeTeams)} hint={note}

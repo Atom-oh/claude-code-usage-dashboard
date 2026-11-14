@@ -3,7 +3,7 @@ import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "./SegmentedControl.jsx";
 import { RefreshControl } from "./RefreshControl.jsx";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
-import { useTeams } from "../TeamsContext.jsx";
+import { teamDisplay, useTeams } from "../TeamsContext.jsx";
 
 const GROUP_OPTIONS = [
   { value: "", label: "전체" },
@@ -20,7 +20,8 @@ export function FilterBar() {
   const { group, setGroup, userInput, setUser, modelInput, setModel, projectInput, setProject, team, setTeam, backendInput, setBackend } = useFilters();
   // Options are the teams observed in the range. With none the control is hidden, unless a linked
   // team is already applied: it must stay visible so it can be cleared.
-  const teamOptions = [...new Set([...useTeams().options, ...(team ? [team] : [])])];
+  const teams = useTeams();
+  const teamOptions = [...new Set([...teams.options, ...(team ? [team] : [])])];
   const { groupMode, schema } = useConfig();
   const { client, setClient, common, setDetail, enabledClients } = useClient();
   return (
@@ -85,7 +86,7 @@ export function FilterBar() {
         <select aria-label="팀" value={team} onChange={(e) => setTeam(e.target.value)}
           className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40">
           <option value="">모든 팀</option>
-          {teamOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+          {teamOptions.map((value) => <option key={value} value={value}>{teamDisplay(teams, value, teams.sources?.[value])}</option>)}
         </select>
       )}
       {team && (

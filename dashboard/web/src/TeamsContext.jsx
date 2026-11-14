@@ -7,7 +7,10 @@ import { useApi } from "./useApi.js";
 // shown differently from a user without a team.
 // Exported so tests can supply a fixed lookup without the fetching provider.
 export const TeamsContext = createContext(null);
-const UNAVAILABLE = { options: [], byUser: null, loading: false };
+const UNAVAILABLE = { options: [], byUser: null, loading: false, labels: {}, sources: {}, userSources: new Map(), historyStart: null };
+
+// Appended to a team shown outside CSV when its value came only from the device (OTel), not the directory.
+export const DEVICE_TEAM_MARKER = "(기기 제공 값)";
 
 // A roster still showing the previous period (useApi stale) or loading is unavailable for the current
 // one: a user missing from it is not known to have no team, and its labels must not reach a new
@@ -19,8 +22,22 @@ export function teamsValue(list, users) {
     byUser: !pending && Array.isArray(users.data?.users)
       ? new Map(users.data.users.map((row) => [row.user, row.teams])) : null,
     loading: pending,
+    // Absent on an older server: no labels, no source information, no history boundary.
+    labels: list.data?.labels && typeof list.data.labels === "object" ? list.data.labels : {},
+    sources: list.data?.sources && typeof list.data.sources === "object" ? list.data.sources : {},
+    // user -> sources[], parallel to byUser's teams[] for the same user.
+    userSources: !pending && Array.isArray(users.data?.users)
+      ? new Map(users.data.users.map((row) => [row.user, Array.isArray(row.sources) ? row.sources : []])) : new Map(),
+    historyStart: Number.isFinite(list.data?.historyStart) ? list.data.historyStart : null,
   };
 }
+
+// Label when one exists, else the raw value. Raw values stay the filter/URL identity.
+export const teamName = (teams, raw) => teams.labels?.[raw] || raw;
+
+// Only a device-only source is marked; "directory" and "both" render alike.
+export const teamDisplay = (teams, raw, source) =>
+  source === "device" ? `${teamName(teams, raw)} ${DEVICE_TEAM_MARKER}` : teamName(teams, raw);
 
 export function TeamsProvider({ children }) {
   const list = useApi("/api/teams", {}, true, { unfiltered: true });
@@ -40,13 +57,17 @@ const teamsOf = (teams, user) => (teams.byUser ? teams.byUser.get(user) || [] : 
 export function teamText(teams, user, { csv = false } = {}) {
   const list = teamsOf(teams, user);
   if (!list) return teams.loading && !csv ? "…" : "확인 불가";
-  return list.length ? list.join(", ") : csv ? "" : "—";
+  if (!list.length) return csv ? "" : "—";
+  const sources = teams.userSources?.get(user) || [];
+  return list.map((raw, i) => csv ? teamName(teams, raw) : teamDisplay(teams, raw, sources[i])).join(", ");
 }
 
 // Chart labels carry a suffix only for a known team; unavailable and none add nothing.
 export function teamSuffix(teams, user) {
   const list = teamsOf(teams, user);
-  return list?.length ? ` · ${list.join(", ")}` : "";
+  if (!list?.length) return "";
+  const sources = teams.userSources?.get(user) || [];
+  return ` · ${list.map((raw, i) => teamDisplay(teams, raw, sources[i])).join(", ")}`;
 }
 
 // Team column right after the user column; rows gain a sortable primary `team` value.
