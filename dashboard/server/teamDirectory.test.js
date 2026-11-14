@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { parseCognitoIssuer, attributeValue, userKey, emailKey, appendHistory, flattenIntervals } from "./teamDirectory.js";
 
 test("parseCognitoIssuer accepts only Cognito pool issuers", () => {
@@ -55,4 +56,9 @@ test("flattenIntervals maps null team to empty string and drops empty intervals"
   const nul = flattenIntervals({ attributes: [{ attribute: "a", from: 0 }],
     histories: { a: [{ entries: [{ team: null, from: 0, emailKey: "k" }] }] } });
   assert.deepEqual(nul.teams, [""]);
+});
+test("key digests use a NUL separator", () => {
+  const sha = value => createHash("sha256").update(value).digest("hex");
+  assert.equal(emailKey("iss", "a@b"), sha("iss\0a@b"));
+  assert.equal(userKey("iss", "s"), sha("iss\0s"));
 });

@@ -26,11 +26,11 @@ export function attributeValue(user, attribute) {
   return value && value.length <= MAX_VALUE_LENGTH ? value : null;
 }
 
-export const userKey = (issuer, sub) => digest(`${issuer}\n${sub}`);
+export const userKey = (issuer, sub) => digest(`${issuer}\0${sub}`);
 
 export function emailKey(issuer, email) {
   if (typeof email !== "string" || !ASCII_EMAIL.test(email) || !email.includes("@")) return null;
-  return digest(`${issuer}\n${email.toLowerCase()}`);
+  return digest(`${issuer}\0${email.toLowerCase()}`);
 }
 
 export function appendHistory(entries, { team, emailKey: key }, at) {
