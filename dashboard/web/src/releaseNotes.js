@@ -9,6 +9,21 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.8.1",
+    date: "2026-11-14",
+    summary: "비용 비중 카드에 $0 항목이 줄줄이 나와 카드가 길어지던 문제를 고쳤습니다.",
+    items: [
+      {
+        kind: "fixed",
+        title: "비용 비중 카드의 $0 항목 정리",
+        body: "모델별·Effort별 비용 비중 카드에서 비용이 $0인 모델·백엔드 조합을 범례에 하나씩 나열하지 않고, 접힌 '비용 $0 항목 N개' 한 줄로 모읍니다. 펼치면 어떤 조합인지 볼 수 있고, 비용을 알 수 없는 항목은 지금처럼 미산정으로 따로 표시합니다.",
+        to: "/cost",
+        where: "비용 → 모델별 비용 비중·Effort별 비용 비중",
+        refs: [270],
+      },
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-11-14",
     summary: "수집기를 터미널 명령 한 줄로 설치하고, 기간을 날짜·시각 단위로 정확히 지정할 수 있습니다.",
