@@ -15,11 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-14
+
 ### Added
 
 - The shared period picker accepts exact start/end dates and times, down to seconds,
   in the browser time zone. Shared links preserve that mode, including UTC-midnight
-  boundaries; UTC calendar-day selection remains available.
+  boundaries; UTC calendar-day selection remains available. (#262)
 
 ### Changed
 
@@ -30,7 +32,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   device-token route `GET /api/ingest/package/:platform` (ten per device per hour) and runs
   the installer with a private token file; the token stays out of process arguments. The
   page drops its download button; `/api/collector/package/:platform` remains for manual
-  installs.
+  installs. Package token checks share the ingest gateway's eight in-flight slots; the
+  runbook and security reference record the anonymous, credential-free bootstrap. (#260, #264)
 - AI PR review no longer caps trusted context (24,000 and 20,000 bytes) or specialist
   instruction templates (22,000 bytes). A change touching several owner areas failed
   review on these policy budgets although every model call was far below its transport
@@ -38,15 +41,15 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   bytes for Codex/Claude, below 120,000 for Kiro), Claude's instruction argument and the
   legacy lens prompt argument (both below 120,000 bytes, under the measured 131,071-byte
   single-argument limit). `REVIEW_CONTEXT_CAP` and `role_review.py prepare --context-cap`
-  are removed; an empty context reports `context_empty`.
+  are removed; an empty context reports `context_empty`. (#263)
 
 ### Fixed
 
 - User detail stays open when the period changes. Its top-20 task list defaults to
   the overview's effective period and follows chart drag zoom; a point click still
-  narrows it to one bucket, with a control to restore the full period.
+  narrows it to one bucket, with a control to restore the full period. (#262)
 - Unit-economics charts connect observations across unknown buckets with labelled
-  dashed guides. Unknown values remain unavailable in tooltips and calculations.
+  dashed guides. Unknown values remain unavailable in tooltips and calculations. (#262)
 
 ## [1.7.0] - 2026-11-13
 
