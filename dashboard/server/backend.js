@@ -13,6 +13,14 @@ export function resolveBackend(model, tag) {
   return VALID_BACKENDS.includes(tag) ? tag : "unknown";
 }
 
+// JS mirror of grouping.js claudeBackendSql() for one Claude call.
+export function resolveClaudeBackend(model, sessionGroup, providerBedrock = false, hasOrg = false) {
+  const bare = String(model || "").startsWith("claude-");
+  if (sessionGroup === "enterprise" || (hasOrg && bare)) return "anthropic";
+  if (providerBedrock && bare) return "bedrock-runtime";
+  return resolveBackend(model, "");
+}
+
 // SQL mirror of resolveBackend(). Keep the two regexes identical to the ones above.
 export function backendSql(modelExpr, tagExpr) {
   return `multiIf(match(${modelExpr}, '^(us|us-gov|eu|apac|jp|au|in|global)\\\\.'), 'bedrock-runtime',

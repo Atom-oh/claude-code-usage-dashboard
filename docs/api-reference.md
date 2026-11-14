@@ -137,10 +137,11 @@ arrays and nonempty group/project filters fail before caching.
 An exact `team` filter is accepted with the session semantics in [Filter scope](#filter-scope),
 applied to Claude counters, Claude and Codex logs and the Codex cost facts;
 `/api/codex/insights` rejects it.
-Backend is resolved from the model id prefix first (region prefix → runtime, bare vendor
-namespace → mantle), falling back to the resource tag (Codex) or the enterprise channel
-(Claude → `anthropic`); otherwise `unknown`. See
-[ADR-017](decisions/ADR-017-backend-cost-fallback.md).
+Backend is resolved from the model id prefix (region prefix → runtime, bare vendor
+namespace → mantle), falling back to the resource tag (Codex); otherwise `unknown`. Claude
+rows are `anthropic` first for an enterprise session or a bare `claude-*` record that
+carried `organization.id`; see [Claude channels](reference/data.md#claude-channels-users-and-projects)
+and [ADR-017](decisions/ADR-017-backend-cost-fallback.md).
 
 Claude model terms normalize. Modeled rows match directly.
 Model-less rows use same-client model evidence (logs; Claude also uses token/cost

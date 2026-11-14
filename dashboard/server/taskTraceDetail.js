@@ -8,7 +8,7 @@ import { ValidationError, NotFoundError } from "./http.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
-  CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
+  CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
   foldCodexTask, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
@@ -94,7 +94,7 @@ export function claudeDetailSql(from, to, traceId, q) {
     header: {
       sql: `${GROUP_CTE}
 SELECT t.TraceId AS trace_id, t.started_at AS started_at, t.start_ms AS start_ms,
-    t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, t.owner AS owner,
+    t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, ug.provider_bedrock AS session_provider_bedrock, t.owner AS owner,
     -- Internal: keys the session-environment read; never returned.
     t.SessionId AS session_id,
     -- The list's workflow pairs over every span of the trace, unaffected by SPAN_BOUND.
@@ -121,7 +121,7 @@ LEFT JOIN session_group ug ON t.SessionId = ug.SessionId`,
         ...(q.userExact === null ? {} : { userExact: q.userExact }) },
     },
     spans: {
-      sql: `SELECT span_id, parent_id, span_type, span_name, start_ms, duration_ms, agent_id, request_id,
+      sql: `SELECT span_id, parent_id, span_type, span_name, start_ms, duration_ms, agent_id, request_id, org,
     ${CLAUDE_ATTRS.map(column).join(", ")},
     count() OVER () AS total_spans
 FROM (
@@ -131,6 +131,7 @@ FROM (
         toString(intDiv(Duration, 1000000)) AS duration_ms,
         AgentId AS agent_id,
         SpanAttributes['request_id'] AS request_id,
+        ${CALL_ORG_SQL} AS org,
         ${attrs.join(",\n        ")}
     FROM claude_code.otel_traces
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {spanTo:DateTime}
@@ -437,8 +438,8 @@ function foldClaudeDetail(head, rows, costRows, compactionRows = []) {
       span.execution_ms = count(exec.duration_ms);
     }
     if (kind === "llm") {
-      const raw = [r.request_id ?? "", r[column("model")] ?? "", ...CLAUDE_TOKEN_ATTRS.map(k => r[column(k)])];
-      const priced = priceClaudeCall(raw, head.session_grp, costs);
+      const raw = [r.request_id ?? "", r[column("model")] ?? "", ...CLAUDE_TOKEN_ATTRS.map(k => r[column(k)]), r.org ?? ""];
+      const priced = priceClaudeCall(raw, head.session_grp, costs, Number(head.session_provider_bedrock) === 1);
       Object.assign(span, { tokens: priced.tokens, cost_usd: priced.cost_usd, cost_basis: priced.basis });
       rawCalls.push(raw);
       const tk = priced.tokens;
@@ -454,7 +455,8 @@ function foldClaudeDetail(head, rows, costRows, compactionRows = []) {
   // Retries are known only when every call carries `attempt`; partial evidence is unavailable.
   const retries = rawCalls.length && attempts !== null ? attempts : null;
   let task = foldTask({ trace_id: head.trace_id, started_at: head.started_at, duration_ms: head.duration_ms,
-    session_grp: head.session_grp, llm_calls: rawCalls.length, subagents: agents.size, calls: rawCalls,
+    session_grp: head.session_grp, session_provider_bedrock: head.session_provider_bedrock,
+    llm_calls: rawCalls.length, subagents: agents.size, calls: rawCalls,
     workflows: head.workflows }, costs);
   // Lanes: main first, then agents by first span. A subagent lane is spawned by the parent of
   // its first llm_request (the tool.execution span), reported as the drawn tool bar; its type

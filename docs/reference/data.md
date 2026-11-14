@@ -215,9 +215,24 @@ and explicit backend instead. One user can have sessions in both channels; chann
 headcounts overlap.
 The stored `ExperimentGroup` resource attribute is not the dashboard classifier.
 
-Channel and `backend` are separate: `enterprise` still maps to `anthropic`, but elsewhere
-`backend` is resolved per row from the model id prefix, same as Codex ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)) —
-a `bedrock` channel row with a bare, unrecognized model is now `unknown`, not `bedrock-runtime`.
+Channel and `backend` are separate. Claude `backend` is resolved per row
+([grouping.js](../../dashboard/server/grouping.js) `claudeBackendSql`, JS mirror
+`resolveClaudeBackend`):
+
+1. An `enterprise` session is `anthropic`.
+2. A bare `claude-*` row whose own record carried `organization.id` is `anthropic`. Only a
+   Claude login emits that pair, and a resumed session can cross from Bedrock to a login;
+   the session channel stays `bedrock`, but that part's cost no longer becomes `unknown`.
+   Metric rows read the flag per series from the hourly rollup's `has_org`. `SeriesKey`
+   hashes the attributes, so the flag is constant per series. Request logs and trace spans
+   read the attribute from their own record. The organization id never leaves SQL.
+3. In provider mode, a bare `claude-*` row in a session that reported `bedrock` is
+   `bedrock-runtime`.
+4. Otherwise the model id prefix decides, as for Codex ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)).
+   A bare, unrecognized model is `unknown`.
+
+Without provider mode, Bedrock request logs that name a bare model still count as
+`unknown` requests with no cost; their counters carry the prefixed id.
 
 For Claude model breakdowns and diagnostic pricing, SQL `normModel` and JavaScript
 `normalizeModelId` strip the context-window suffix, routing prefix (`us`, `us-gov`, `eu`, `apac`, `jp`, `au`,
