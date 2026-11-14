@@ -59,15 +59,23 @@ function CostShare({ rows, colorOf, legendRenderer }) {
 function InputCache({ row }) {
   const _locale = useLocale();
   const canonical = presentationRow(row);
-  const values = [canonical.input_tokens, canonical.cache_read_tokens, canonical.cache_write_tokens];
-  if (values.some((value) => value === null) || !Number.isSafeInteger(canonical.input_total)) {
-    return <p className="text-sm text-ink-500">{translate("mf3d03b2bd003")}</p>;
-  }
+  const strict = [canonical.input_tokens, canonical.cache_read_tokens, canonical.cache_write_tokens];
+  const complete = !strict.some((value) => value === null) && Number.isSafeInteger(canonical.input_total);
+  // One response without collected usage nulls the strict parts; show the known subtotal instead, labelled.
+  const known = row?.observed_input;
+  const subtotal = [known?.input_tokens, known?.cache_read_tokens, known?.cache_write_tokens];
+  const partial = !complete && subtotal.every((value) => Number.isSafeInteger(value) && value >= 0)
+    && subtotal.some((value) => value > 0);
+  if (!complete && !partial) return <p className="text-sm text-ink-500">{translate("mf3d03b2bd003")}</p>;
+  const values = complete ? strict : subtotal;
   const data = [translate("mc43da268406e"), translate("m12be3da02b6d"), translate("m1be0e1388dc5")].map((label, index) => ({
     label, tokens: values[index],
   }));
-  return canonical.input_total === 0 ? <p className="tabular text-sm text-ink-600">{translate("m54962e7598d5")}</p>
-    : <DonutBody data={data} nameKey="label" valueKey="tokens" valueFormatter={formatObserved} />;
+  if (complete && canonical.input_total === 0) return <p className="tabular text-sm text-ink-600">{translate("m54962e7598d5")}</p>;
+  return <>
+    {partial && <p className="mb-3 text-[12px] text-warning-text">{translate("ma1a91661679d")}</p>}
+    <DonutBody data={data} nameKey="label" valueKey="tokens" valueFormatter={formatObserved} />
+  </>;
 }
 
 const backendLabel = (backend) => backend === "unknown" ? translate("mf3637bf5089f") : backend;

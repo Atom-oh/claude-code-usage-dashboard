@@ -97,6 +97,7 @@ function accumulator(meta, reasons = false) {
     _sessions: new Set(), _users: new Set(), _backends: new Set(), _missingUsage: new Set(),
     _missing: new Set(), _hasCost: false, _hasReportedCost: false, _hasEstimatedCost: false, _hasListEstimate: false,
     _observedTokens: createObservedTokens(),
+    _inputParts: { input_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, seen: false, missing: false },
     _reasons: reasons ? {} : null,
     _ops: false, _requestMs: 0, _requestN: 0, _ttftMs: 0, _ttftN: 0 };
 }
@@ -134,6 +135,23 @@ function claudeUsage(row) {
     unpriced: cost === null, unpriced_reason: cost === null ? unpriced_reason : null, invalid: !valid };
 }
 
+const INPUT_PARTS = ["input_tokens", "cache_read_tokens", "cache_write_tokens"];
+// Known input composition (non-cached input, cache reads, cache writes) from usage rows whose three
+// parts are all known. Strict totals stay null when any usage is missing; this subtotal does not.
+function addInputParts(parts, usage) {
+  if (!INPUT_PARTS.every((k) => finite(usage[k]) && Number(usage[k]) >= 0)) { parts.missing = true; return; }
+  parts.seen = true;
+  for (const k of INPUT_PARTS) parts[k] += Number(usage[k]);
+}
+
+// { input_tokens, cache_read_tokens, cache_write_tokens, partial }: known sums (null when none is
+// known or a sum is unsafe); partial when a usage row lacked a part or a request had no usage.
+export function observedInput({ _inputParts: parts }) {
+  const known = parts.seen && INPUT_PARTS.every((k) => Number.isSafeInteger(parts[k]));
+  return { ...Object.fromEntries(INPUT_PARTS.map((k) => [k, known ? parts[k] : null])),
+    partial: parts.missing || (parts.seen && !known) };
+}
+
 function accumulate(target, row, usage, missingScope) {
   if (row.session) target._sessions.add(`${row.client}:${row.session}`);
   if (row.user) target._users.add(row.user);
@@ -142,8 +160,12 @@ function accumulate(target, row, usage, missingScope) {
   // Logs supply deduplicated event counts; Claude counter rows each contribute one.
   // This is an observation/empty-state signal, not a cross-client request count.
   target.observed_records += n;
-  if (missingScope) target._missingUsage.add(missingScope);
+  if (missingScope) {
+    target._missingUsage.add(missingScope);
+    target._inputParts.missing = true;
+  }
   if (usage) {
+    addInputParts(target._inputParts, usage);
     addObservedTokens(target._observedTokens, usage.observed_tokens,
       Number(usage.observed_tokens_overflow) === 1);
     for (const k of TOKEN_KEYS) {
@@ -192,7 +214,7 @@ function claudeBasis(fallback, present) {
 
 function finish(target) {
   const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _hasReportedCost, _hasEstimatedCost, _hasListEstimate,
-    _observedTokens, _reasons,
+    _observedTokens, _inputParts, _reasons,
     _ops, _requestMs, _requestN, _ttftMs, _ttftN, ...out } = target;
   for (const k of _missing) out[k] = null;
   if (_missingUsage.size) {
@@ -375,7 +397,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     const rows = backedRows(key).sort(compare);
     return compactTime ? compactTimeRows(rows) : rows;
   };
-  const by_client = [...byClient.values()].map(finishRow);
+  const by_client = [...byClient.values()].map((target) => ({ ...finishRow(target), observed_input: observedInput(target) }));
   const total = finishRow(totals);
   const userTime = modelTime ? foldUserTime(groups, userTimeRows, finishRow) : null;
   quality.missing_usage = missingUsage.size;

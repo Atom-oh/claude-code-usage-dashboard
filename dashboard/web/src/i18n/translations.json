@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T14:51:17.195172+00:00",
-  "source_messages": 1949,
+  "updated_at": "2026-11-14T15:01:17.831345+00:00",
+  "source_messages": 1950,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 1949,
-      "bytes": 148008,
-      "sha256": "8ae9ef9b2eee474147cdcde8b66c67dc9c59a8887b65652d5efec43c0dcc70cf"
+      "messages": 1950,
+      "bytes": 148096,
+      "sha256": "5747fc7d2c0956c15d5083ab080c7194b3b6f51b694e944e3ba6b4181558ff1e"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 1949,
-      "bytes": 174681,
-      "sha256": "2fb2f44cfe25dbf8b3794d1deadea023d5b99b9559a4a92d131d67b8c878ee5b"
+      "messages": 1950,
+      "bytes": 174771,
+      "sha256": "712810ea3114b21b29167ecf427c84bba905267842b3bbb8e9fa5f8c994895b1"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 1949,
-      "bytes": 183485,
-      "sha256": "088eab270c74f59b81551c3459b6e07a67dcc5c7bc109eff15595c6f4b7d6f1c"
+      "messages": 1950,
+      "bytes": 183593,
+      "sha256": "028750604a4933b8cbb869605b492463b7b65cfa14ceacdd15a2285af38bb988"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 1949,
-      "bytes": 157518,
-      "sha256": "855648edc78cea0d34a37bc8f14f35e29b12e7df6eff2cf0bb6f4526e083306e"
+      "messages": 1950,
+      "bytes": 157627,
+      "sha256": "bd251dff5716b9733e9385110ae51548bc52ea409b65c495ea27507b8eb5239c"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 1949,
-      "bytes": 139951,
-      "sha256": "d73ffeaa7743109203c1aad34da04c528c08d67222d8c7cf84a3dbf2955200c5"
+      "messages": 1950,
+      "bytes": 140026,
+      "sha256": "bacebcf53a5c17dae81b32db0099b2192343902af6e62a104adc64b81b91e71a"
     }
   ],
   "catalog_calls": [
@@ -961,5 +961,12 @@
       "source_sha256_verified": "10a993125cc94e367b4a19ab3de024ab066be7a674e548a6c8320d484246b5d9",
       "output_sha256_verified": "7c5fd3fbc9fa6d9712be3ced88b8edf9a1bebc1b4b2f78670ad19f7c2ce62522"
     }
+  },
+  "upstream_289_preserved": {
+    "pr": 289,
+    "keys": [
+      "ma1a91661679d"
+    ],
+    "provenance": "Preserved unchanged from the reviewed upstream PR; these entries are outside the Settings translation batch."
   }
 }

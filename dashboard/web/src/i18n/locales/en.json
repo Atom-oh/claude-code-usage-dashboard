@@ -1947,5 +1947,6 @@
   "m9d004a4c403a": "Current basis: {0}",
   "mf995216032e2": "No value: {0} users — users without a value for this attribute.",
   "m17f6238a230c": "Excluded: {0} users — users with no email or an email shared by multiple accounts.",
-  "m2b6bc9e24fea": "Settings were changed elsewhere. Reload the latest settings before saving again."
+  "m2b6bc9e24fea": "Settings were changed elsewhere. Reload the latest settings before saving again.",
+  "ma1a91661679d": "Known subtotal · responses without collected usage are excluded."
 }

@@ -36,7 +36,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   `otelcol.service` running your own `~/.otelcol/config.yaml` holds the local ports, the
   installer asks first, keeps the existing Claude user ID, backs up the unit and settings,
   disables and masks the old service with sudo, and restores it if installation fails.
-  Other services and listeners are never changed.
+  Other services and listeners are never changed, and a unit edited on disk without
+  `systemctl daemon-reload` is not migrated.
 - Complete localization across all application menus, token economics, user and
   cost analysis, tool usage, collector setup and installation status. Preserve
   selected decision-chart legend emphasis when changing language. Keep Codex
@@ -58,6 +59,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Migrate a legacy Collector that can still run during a device reinstall on macOS and
   Linux. Previously a reinstall skipped it, so the legacy service kept the local ports and
   the device Collector restarted without ever delivering telemetry.
+- The input/cache composition card no longer turns unavailable for a whole range when one
+  Codex response has no collected usage (for example an interrupted stream). It shows the
+  known subtotal, labelled as such; strict totals for ratios and cost are unchanged.
 
 ## [1.9.0] - 2026-11-14
 

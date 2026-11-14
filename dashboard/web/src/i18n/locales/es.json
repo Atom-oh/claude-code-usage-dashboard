@@ -1947,5 +1947,6 @@
   "m9d004a4c403a": "Criterio actual: {0}",
   "mf995216032e2": "Sin valor: {0} usuarios — no tienen un valor para este atributo.",
   "m17f6238a230c": "Excluidos: {0} usuarios — no tienen correo electrónico o varias cuentas comparten el mismo correo.",
-  "m2b6bc9e24fea": "La configuración se modificó en otro lugar. Vuelve a cargar la configuración más reciente antes de guardar de nuevo."
+  "m2b6bc9e24fea": "La configuración se modificó en otro lugar. Vuelve a cargar la configuración más reciente antes de guardar de nuevo.",
+  "ma1a91661679d": "Subtotal conocido · se excluyen las respuestas sin uso recopilado."
 }
