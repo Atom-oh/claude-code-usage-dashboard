@@ -935,7 +935,7 @@ the stored aggregates. Operations: [daily insights](reference/iac.md#daily-insig
 | `/healthz` | HTTP 200 `{ok:boolean}` from ClickHouse ping, even when false. |
 | `/readyz` | `{ready:boolean}`, HTTP 200 when ready, 503 when draining or ping fails. |
 | `/api/health/data` | `{status, latest, ageMinutes, staleAfterMinutes}`; status is `ok`, `stale` or `unknown`. HTTP 200 only for `ok`, 503 otherwise. |
-| `/api/config` | `{piiMask, teamMask, pricing, schema, groupMode, defaultRangeDays, rangeCapDays}`; reads in-memory configuration/probe snapshots and the in-memory price catalog status, with no ClickHouse query. `teamMask` comes from a per-replica cache; when it is older than 30 seconds the handler starts one background DynamoDB read and answers from the cache, waiting at most 500 ms only before the replica's first successful read. |
+| `/api/config` | `{piiMask, teamMask, pricing, schema, groupMode, defaultRangeDays, rangeCapDays}`; reads in-memory configuration/probe snapshots and the in-memory price catalog status, with no ClickHouse query. `teamMask` comes from a per-replica cache; when it is older than 30 seconds the handler starts one DynamoDB read, waits at most 500 ms for it, then answers from the cache while a slower read finishes in the background. |
 
 Freshness uses the maximum enabled-source timestamp (Claude raw metrics, Codex logs)
 over seven days, memoized for 30 seconds; one fresh source can mask another's outage.
@@ -951,8 +951,8 @@ Config fields:
   false. Ordinary API payloads still contain raw identities.
 - `teamMask`: effective team-name display masking: an administrator override saved through
   `PUT /api/settings/display`, else the deployment default `TEAM_MASK_ENABLED` (`1`/`true`,
-  `0`/`false`; unset follows `piiMask`). Each replica caches the override for 30 seconds and
-  refreshes it in the background; a store outage keeps the last known value, and before a
+  `0`/`false`; unset follows `piiMask`). Each replica caches the override for 30 seconds, then
+  rereads it (waiting at most 500 ms); a store outage keeps the last known value, and before a
   replica's first successful read the answer is `true` (masked). The frontend masks
   team names unless this says false and falls back to `piiMask` when the field is absent.
   Team values in API payloads stay raw.

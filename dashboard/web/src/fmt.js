@@ -50,8 +50,8 @@ export const maskEmail = (s) => {
 // Team names follow the same display policy. Directory values can be personal aliases (for
 // example a lead's login), and team names are short, so prefix-only masking made different
 // teams look identical (6 of 19 production teams collided on two characters). The masked form
-// keeps two characters plus a stable 4-hex FNV-1a digest, so distinct teams stay distinct across
-// reloads. Raw values remain the filter/URL identity and API payloads stay raw (ADR-006).
+// keeps two characters plus a stable digest (see maskTeam). Raw values remain the filter/URL
+// and chart-grouping identity and API payloads stay raw (ADR-006).
 // Team masking has its own switch (/api/config teamMask: the deployment default or an
 // administrator override); like piiMask it starts on so a failed config never shows raw names.
 let teamMask = true;

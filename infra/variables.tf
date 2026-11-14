@@ -51,9 +51,10 @@ variable "pii_mask_enabled" {
 # independently. An administrator can still override it on the settings page when the settings
 # store (device ingestion) exists. Presentation only: API responses keep raw team values.
 variable "team_mask_enabled" {
-  type     = bool
-  default  = null
-  nullable = true
+  description = "Team-name display masking default (TEAM_MASK_ENABLED); null follows pii_mask_enabled. Administrators can override it in settings."
+  type        = bool
+  default     = null
+  nullable    = true
 }
 
 variable "domain" {

@@ -146,7 +146,7 @@ test("range-total bars group by the raw team even when two teams share a display
   const rows = teamTableRows([row("alpha", 3), row("alpine", 2), row("bravo", null), row(null, 1)])
     .map((r) => (r.team ? { ...r, label: "al**" } : r));
   const bars = teamBarRows(rows);
-  expect(bars.rows.map((r) => r.team)).toEqual(["alpha", "alpine", expect.any(String)]);
+  expect(bars.rows.map((r) => r.team)).toEqual(["team:alpha", "team:alpine", "none"]);
   expect(new Set(bars.rows.map((r) => r.team)).size).toBe(3);
   expect(bars.rows.map((r) => bars.label(r.team))).toEqual(["al**", "al**", "팀 없음"]);
 });

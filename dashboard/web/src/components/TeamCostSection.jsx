@@ -16,8 +16,6 @@ import { isDeviceMarked, teamDisplay, teamName, teamSourceHelp, useTeams } from 
 // /api/cost/by-team(-daily): Claude reported spend per session team. A total metric: the
 // unknown channel is included, so team rows plus 팀 없음 equal the 총 비용 tile.
 export const NO_TEAM = "팀 없음";
-// Chart key for the no-team row; raw team values never contain a NUL character.
-const NO_TEAM_KEY = "\u0000no-team";
 const isNoTeam = (row) => row.team === null;
 const BASIS = "Claude 보고 비용 · 총 비용과 같은 기준(미분류 채널 포함) · 세션별 팀 귀속";
 // The session's team: the directory team at session start when configured and matched, else the device value.
@@ -49,9 +47,11 @@ export function teamTableRows(rows, teams) {
 
 // Bars group by the raw team value: a masked name is a label only, and two teams could share one.
 export function teamBarRows(rows) {
+  // Namespaced keys: no raw team value can equal the no-team key.
+  const key = (team) => (team === null ? "none" : `team:${team}`);
   const known = rows.filter((r) => r.cost !== null);
-  const labels = new Map(known.map((r) => [r.team ?? NO_TEAM_KEY, r.label]));
-  return { rows: known.map((r) => ({ team: r.team ?? NO_TEAM_KEY, part: translate("m65cd7735272e"), value: r.cost })),
+  const labels = new Map(known.map((r) => [key(r.team), r.label]));
+  return { rows: known.map((r) => ({ team: key(r.team), part: translate("m65cd7735272e"), value: r.cost })),
     label: (key) => labels.get(key) ?? String(key) };
 }
 

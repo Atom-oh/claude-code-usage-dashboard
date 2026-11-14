@@ -104,8 +104,18 @@ test("another replica's change is picked up after the cache interval", async t =
   store.record = { teamMask: false, version: 1 };  // written by the other replica
   assert.equal(await config(f), true, "cached");
   f.time.now += 1000;
-  assert.equal(await config(f), true, "the stale value is served while the refresh runs");
+  assert.equal(await config(f), false, "a prompt refresh applies on the next load");
+});
+
+test("a slow refresh after the cache interval serves the cached value within the wait bound", async t => {
+  const store = storeFixture({ teamMask: false, version: 1 });
+  const f = await serve(t, { store, firstWaitMs: 50 });
   assert.equal(await config(f), false);
+  store.getDisplaySettings = () => new Promise(() => {});
+  f.time.now += 1000;
+  const started = Date.now();
+  assert.equal(await config(f), false, "last known value");
+  assert.ok(Date.now() - started < 1000, "bounded by firstWaitMs, not by the store");
 });
 
 test("a stalled store never holds the config response and an unknown value is masked", async t => {

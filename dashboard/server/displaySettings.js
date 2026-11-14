@@ -54,15 +54,13 @@ export function createDisplaySettings({ authentication, store, deployment, issue
   }
   const pause = ms => new Promise(resolve => { setTimeout(resolve, ms).unref?.(); });
 
-  // /api/config gates every page, so it never waits on the store beyond firstWaitMs: a known
-  // value is served at once and refreshed in the background. Until the first read succeeds the
-  // answer is masked, matching the SPA's fail-closed default.
+  // /api/config gates every page, so it never waits on the store beyond firstWaitMs: an expired
+  // cache waits that long for its refresh (so another replica's save shows on the next load), then
+  // answers from the cache while the read finishes in the background. Until the first read
+  // succeeds the answer is masked, matching the SPA's fail-closed default.
   async function teamMask() {
     if (!available) return deployment;
-    if (now() - cache.at >= ttlMs) {
-      const pending = refresh();
-      if (!cache.known) await Promise.race([pending, pause(firstWaitMs)]);
-    }
+    if (now() - cache.at >= ttlMs) await Promise.race([refresh(), pause(firstWaitMs)]);
     return cache.known ? cache.override ?? deployment : true;
   }
 
@@ -94,8 +92,10 @@ export function createDisplaySettings({ authentication, store, deployment, issue
         const record = { teamMask: value, updatedAt: now(), updatedBy: userKey(issuer, req.principal.subject) };
         if (!await store.putDisplaySettings(record, current.version)) throw new DisplayError("version_conflict", 409);
         generation++;
-        cache = { at: now(), override: value, version: current.version === null ? 1 : current.version + 1, known: true };
-        res.json(view(cache));
+        const saved = { at: now(), override: value, version: current.version === null ? 1 : current.version + 1, known: true };
+        // Two saves answered out of order must not leave the older one cached.
+        if (!cache.known || (cache.version ?? 0) < saved.version) cache = saved;
+        res.json(view(saved));
       }));
       router.use((error, _req, res, _next) => {
         if (error?.type === "entity.too.large") return res.status(413).json({ error: "body_too_large" });
