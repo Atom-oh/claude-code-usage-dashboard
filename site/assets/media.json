@@ -1355,8 +1355,8 @@
       },
       {
         "path": "site/assets/tour.js",
-        "bytes": 1573,
-        "sha256": "318c8900f3515e47c34cf460a3afdd28869f4f69e13c59fb8211a6f2d1755563"
+        "bytes": 1655,
+        "sha256": "500c5c75d9ac17893212cbf40eb003bafbaebd0bd5d253d3af6e005eb436f8b1"
       },
       {
         "path": "video/product-tour/AGENTS.md",
@@ -1599,11 +1599,6 @@
         "sha256": "516ed6cfd2c8c7ad9b3690483ed084a61818fca774f6e52df1d67aa09bde8db3"
       },
       {
-        "path": "video/product-tour/remotion.config.js",
-        "bytes": 75,
-        "sha256": "380342f0073f2216a399bf9f11dfb4c0ab191019de5322b1fe68d94d75a1b3ed"
-      },
-      {
         "path": "video/product-tour/remotion/index.jsx",
         "bytes": 798,
         "sha256": "d98b4497827e073ae7478583078f565f6ac0479d121c6d66c89abfdf81638667"
@@ -1612,6 +1607,11 @@
         "path": "video/product-tour/remotion/mix.mjs",
         "bytes": 510,
         "sha256": "009bc6a3ec79232c8ac8a61ad47c686006bbcfa9d9ed0895f408acf4b5555c02"
+      },
+      {
+        "path": "video/product-tour/remotion.config.js",
+        "bytes": 75,
+        "sha256": "380342f0073f2216a399bf9f11dfb4c0ab191019de5322b1fe68d94d75a1b3ed"
       },
       {
         "path": "video/product-tour/script.json",
@@ -1660,7 +1660,10 @@
           "audio_codec": "aac",
           "bytes": 46138811,
           "sha256": "4a6c8092dc79638a0570b23073c55e8be55c358d3b7335e8f8276dee8ceb19ed",
-          "full_decode": true
+          "full_decode": true,
+          "video_profile": "High",
+          "video_level": 50,
+          "audio_profile": "LC"
         },
         {
           "format": "webm",
@@ -1675,7 +1678,8 @@
           "audio_codec": "opus",
           "bytes": 25741911,
           "sha256": "a18d01222ba39c26e637f6d70acdf42a5b3ca66a52e51bdd8c2f01b4079aad96",
-          "full_decode": true
+          "full_decode": true,
+          "video_profile": "Profile 0"
         }
       ],
       "scene_midpoints_per_encode": 25,
@@ -1684,6 +1688,24 @@
       "maximum_allowed_mean_pixel_error": 8,
       "embedded_english_cues": 92,
       "embedded_text_matches_source": true
+    },
+    "browser_verification": {
+      "local_players_checked": 10,
+      "locales": [
+        "en",
+        "zh-CN",
+        "ja",
+        "es",
+        "ko"
+      ],
+      "widths": [
+        1440,
+        390
+      ],
+      "chapter_seeks": 15,
+      "english_cues": 92,
+      "errors": 0,
+      "evidence_sha256": "a01e1660351c5b412272bb29e7695efae8f9e8d7f9e7cb29b7996eab0ef4e2d3"
     }
   }
 }

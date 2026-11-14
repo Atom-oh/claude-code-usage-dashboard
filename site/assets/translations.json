@@ -1,7 +1,7 @@
 {
   "model": "openai.gpt-6-luna",
   "provider": "amazon-bedrock",
-  "translation_date": "2026-11-10",
+  "translation_date": "2026-11-14",
   "source_locale": "en",
   "target_locales": [
     "ko",
@@ -38,9 +38,9 @@
       "path": "ja/credits.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 7087,
-      "source_sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203",
-      "output_sha256": "1e6361cda457986fd9e1b8c6351f5de7baf02a89d427b4d9604b5ea66860f351",
+      "bytes": 7090,
+      "source_sha256": "ca2b8c1f165b98561713135dcc6377bbb2921576614da7e71c0f26e7dc72b0de",
+      "output_sha256": "e4a2566b1c0386979f36d9c88c855f59064ee94bceaf8191d53e4803417f1ffb",
       "initial_output_sha256": "951aae8517db2379b96d7833e069515765d1cd84810434a3cfe5943fb8cb007f",
       "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
     },
@@ -50,9 +50,9 @@
       "path": "ja/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 23034,
-      "source_sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59",
-      "output_sha256": "5f5add9fd031be1aefff802fc95ad3f83cddd7aaca0e337054bff146ce7d88da"
+      "bytes": 23045,
+      "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
+      "output_sha256": "030b31b2a2fdf70843653d8b8bb8881157945b0ee5718e417269223ddb61b91c"
     },
     {
       "locale": "ja",
@@ -112,9 +112,9 @@
       "path": "ko/credits.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 6454,
-      "source_sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203",
-      "output_sha256": "c6e7c46b4a4edeb3be9265ddf8f1d7135f7981f7e3607601bf02bed990d77db0",
+      "bytes": 6457,
+      "source_sha256": "ca2b8c1f165b98561713135dcc6377bbb2921576614da7e71c0f26e7dc72b0de",
+      "output_sha256": "de66da6eec6362eb371a005dc8dedfe994b8ae34d1eaefc46e4b4dd90ae010a1",
       "initial_output_sha256": "8c9001c5bf13662ffd2a57121ec3229cc8d40434f8d46d8859ab7deabc7cce2f",
       "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
     },
@@ -124,9 +124,9 @@
       "path": "ko/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 20934,
-      "source_sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59",
-      "output_sha256": "fa0f0880d8c720e2e7207a8f9407e53fde7d91de79158bd447a4ad112ec5a9ea"
+      "bytes": 20945,
+      "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
+      "output_sha256": "68b3c79cc7e084aab73840129475176276d1a0d251fa14dabf850e541cc36f8b"
     },
     {
       "locale": "ko",
@@ -186,9 +186,9 @@
       "path": "zh/credits.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 5367,
-      "source_sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203",
-      "output_sha256": "a03bff979a119b7725f1f39e0098a4a454b8ef4bd1ce85cf7bd4f6dd1b2bf2d4",
+      "bytes": 5370,
+      "source_sha256": "ca2b8c1f165b98561713135dcc6377bbb2921576614da7e71c0f26e7dc72b0de",
+      "output_sha256": "6048ca4e3303d0f6d8df6586865cea5a47cca1a9ec5852a7e2fd6a2dc7ec9ba0",
       "initial_output_sha256": "5797263de51f6d48885acf2d99df106f8a34f5fdb6059b634b75bf3a04baa6cb",
       "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
     },
@@ -198,9 +198,9 @@
       "path": "zh/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 18206,
-      "source_sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59",
-      "output_sha256": "396a1b9f0a1c0ecf03045bf67a383d7505345d97edd4da5aa5973da3c41e5eee"
+      "bytes": 18217,
+      "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
+      "output_sha256": "fe0c43bbb9a1fc45b4badfd4e9b9b661f95d5ba8de2278491967f056c5e5a398"
     },
     {
       "locale": "zh-CN",
@@ -264,9 +264,9 @@
       "path": "es/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 20655,
-      "source_sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59",
-      "output_sha256": "6e5978c435f514b27e3fb26ef56d872b6f1389126bdb867976418ddb53bd625b"
+      "bytes": 20666,
+      "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
+      "output_sha256": "6f4411bf45149d01df934710a6d1f16de5d0049e7421e6a4619fdfe5265f3c93"
     },
     {
       "locale": "es",
@@ -324,9 +324,9 @@
       "path": "es/credits.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 6408,
-      "source_sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203",
-      "output_sha256": "a20c5cd7ad02af2e7164d480ca29246b74603c0743748a72b64530980f8cfe33"
+      "bytes": 6411,
+      "source_sha256": "ca2b8c1f165b98561713135dcc6377bbb2921576614da7e71c0f26e7dc72b0de",
+      "output_sha256": "9771bbfd058f158629e75fbe186fff8e1540ccd5d5b8e1b63d49a8f4859a1408"
     }
   ],
   "semantic_review": {
@@ -398,11 +398,11 @@
     },
     "credits": {
       "path": "assets/credits.html",
-      "sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203"
+      "sha256": "ca2b8c1f165b98561713135dcc6377bbb2921576614da7e71c0f26e7dc72b0de"
     },
     "index": {
       "path": "index.html",
-      "sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59"
+      "sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0"
     },
     "installation": {
       "path": "installation.html",
@@ -915,7 +915,7 @@
     "host_corrections": [
       "Added and ordered equivalent-page language links and hreflang alternates for all five locales.",
       "Updated guide.js cache versions and connected Spanish image-viewer controls.",
-      "Clarified that changing language preserves time zones and range boundaries, including UTC calendar presets; the final sentence was corrected by the host in all locales."
+      "Clarified that changing language preserves time zones and range boundaries; the final sentence was corrected by the host in all locales."
     ],
     "validation": {
       "local_layout_checks": 60,
@@ -958,5 +958,7 @@
       "Preserved the historical short release example in credits and retained all guide screenshots and architecture.",
       "Updated common stylesheet and chapter script cache versions."
     ]
-  }
+  },
+  "initial_translation_date": "2026-11-10",
+  "provider_scope": "The initial batches used Amazon Bedrock. Later CLI translation receipts identify their requested model without independently verifying the backend."
 }

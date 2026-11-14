@@ -10,14 +10,16 @@
     pending = null;
     player.play().catch(() => {});
   };
-  player.addEventListener('loadedmetadata', () => {
+  const initialize = () => {
     const preferred = player.querySelector('track[data-default-caption]')?.track;
     if (preferred) {
       for (const track of player.textTracks) if (track.kind === 'captions' || track.kind === 'subtitles') track.mode = 'disabled';
       preferred.mode = 'showing';
     }
     seek();
-  }, { once: true });
+  };
+  if (player.readyState >= 1) initialize();
+  else player.addEventListener('loadedmetadata', initialize, { once: true });
   buttons.forEach(button => button.addEventListener('click', () => {
     const value = Number(button.dataset.videoSeek);
     if (!Number.isFinite(value) || value < 0) return;
