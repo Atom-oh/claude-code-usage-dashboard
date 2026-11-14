@@ -507,7 +507,9 @@
           "mean_pixel_error_out_of_255": 2.0217
         }
       ]
-    }
+    },
+    "covers_release": "v1.8.0",
+    "feature_scope": "v1.8.0 time selection, drag-to-task navigation, device installation and unit-cost guides, plus existing Task Trace and session-environment views."
   },
   "delivery": {
     "manifest_repository_path": "video/docs-demo/media.lock.json",
