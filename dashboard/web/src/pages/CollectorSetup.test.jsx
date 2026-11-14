@@ -5,6 +5,7 @@ import CollectorSetup from "./CollectorSetup.jsx";
 
 const config = {
   enabled: true, endpoint: "https://collector.example/api/ingest",
+  installScriptUrl: "https://collector.example/api/ingest/install.sh",
   tokenLifetimeDays: 30, collectorVersion: "0.163.1", platforms: ["linux", "darwin"],
 };
 const device = {
@@ -67,17 +68,17 @@ test("Mac setup uses installer migration while Linux retains its scoped manual c
 test("installation commands ask for attribution and keep endpoint quoting and token entry separate", async () => {
   const writeText = vi.fn().mockResolvedValue();
   vi.stubGlobal("navigator", { clipboard: { writeText } });
-  installFetch({ config: { ...config, endpoint: "https://another.example/api/ingest" } });
+  installFetch({ config: { ...config, installScriptUrl: "https://another.example/api/ingest/install.sh" } });
   mount();
   await screen.findByText("등록한 기기가 없습니다.");
   fireEvent.click(screen.getByRole("button", { name: "설치 명령 복사" }));
   await waitFor(() => expect(writeText).toHaveBeenCalled());
   const command = writeText.mock.calls[0][0];
-  expect(command).toContain("set -e");
-  expect(command).toContain("IFS= read -r ccdash_user_id");
-  expect(command).toContain('--user-id "$ccdash_user_id"');
-  expect(command).toContain("--endpoint 'https://another.example/api/ingest'");
+  expect(command).toBe('sudo loginctl enable-linger "$USER" &&\n'
+    + "curl -fsSL 'https://another.example/api/ingest/install.sh' | sh");
+  expect(command).not.toContain("tar -xzf");
   expect(command).not.toContain(token);
+  expect(screen.getByText(/사용자 ID와 기기 토큰을 차례로 묻습니다/)).toBeTruthy();
 });
 
 test("viewer and absent permissions make no requests and cannot access setup", () => {
@@ -126,8 +127,7 @@ test("issues once while pending, copies and clears a transient token without emb
   expect(JSON.parse(issue.body)).toEqual({ name: "작업용 Mac", platform: "darwin" });
   finish();
   expect((await screen.findByLabelText("기기 수집 토큰")).value).toBe(token);
-  expect(screen.getByLabelText("설치 명령").textContent).toContain("ccdash-collector-darwin.tar.gz");
-  expect(screen.getByLabelText("설치 명령").textContent).toContain("python3 ccdash-collector/install.py install --endpoint");
+  expect(screen.getByLabelText("설치 명령").textContent).toBe("curl -fsSL 'https://collector.example/api/ingest/install.sh' | sh");
   expect(screen.getByLabelText("설치 명령").textContent).not.toContain(token);
   fireEvent.click(screen.getByRole("button", { name: "토큰 복사" }));
   await screen.findByText("토큰을 복사했습니다.");
@@ -168,46 +168,13 @@ test("keeps cursor pagination and confirms revocation before changing a device",
   expect(fetch.mock.calls.find(([, options]) => options.method === "DELETE")[0]).toBe("/api/collector/devices/device-one");
 });
 
-test("downloads an authenticated archive and rejects JSON or failed responses", async () => {
-  const createObjectURL = vi.fn().mockReturnValue("blob:collector");
-  const revokeObjectURL = vi.fn();
-  vi.stubGlobal("URL", class extends URL {
-    static createObjectURL = createObjectURL;
-    static revokeObjectURL = revokeObjectURL;
-  });
-  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-  let download = response("archive", 200, "application/gzip");
-  const fetch = installFetch({
-    request: url => url.pathname.startsWith("/api/collector/package/") ? download : undefined,
-  });
+test("installs without a separate package download", async () => {
+  const fetch = installFetch();
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Linux 패키지 다운로드" }));
-  await waitFor(() => expect(click).toHaveBeenCalledOnce());
-  const [url, options] = fetch.mock.calls.find(([url]) => String(url).includes("/package/"));
-  expect(url).toBe("/api/collector/package/linux");
-  expect(options.credentials).toBe("same-origin");
-  expect(click.mock.instances[0].download).toBe("ccdash-collector-linux.tar.gz");
-  expect(createObjectURL).toHaveBeenCalledOnce();
-  await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith("blob:collector"));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Linux 패키지 다운로드" }).disabled).toBe(false));
-  download = response({ code: "package_unavailable" }, 503);
-  fireEvent.click(screen.getByRole("button", { name: "Linux 패키지 다운로드" }));
-  expect((await screen.findByRole("alert")).textContent).toContain("다운로드하지 못했습니다");
-  expect(click).toHaveBeenCalledOnce();
-  download = response({ error: "unexpected json" });
-  fireEvent.click(screen.getByRole("button", { name: "Linux 패키지 다운로드" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Linux 패키지 다운로드" }).disabled).toBe(false));
-  expect(click).toHaveBeenCalledOnce();
-});
-
-test("download session rejection triggers the shared authentication boundary", async () => {
-  const rejected = vi.fn();
-  window.addEventListener("ccdash:authentication-required", rejected);
-  installFetch({ request: url => url.pathname.includes("/package/") ? response({}, 401) : undefined });
-  mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Linux 패키지 다운로드" }));
-  await waitFor(() => expect(rejected).toHaveBeenCalledOnce());
-  window.removeEventListener("ccdash:authentication-required", rejected);
+  expect(await screen.findByRole("heading", { name: "운영체제 선택" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /다운로드/ })).toBeNull();
+  expect(screen.queryByText(/다운로드한 (파일|압축 파일)/)).toBeNull();
+  expect(fetch.mock.calls.some(([url]) => String(url).includes("/package/"))).toBe(false);
 });
 
 test("loading errors expose a retry and hide internal server details", async () => {
@@ -306,12 +273,12 @@ test("command copy feedback stays next to the terminal command", async () => {
   expect(message.parentElement.contains(screen.getByLabelText("설치 명령"))).toBe(true);
 });
 
-test("installation commands shell-quote endpoint apostrophes and expansions", async () => {
-  const endpoint = "https://collector.example/api/ingest?value='$(example)";
-  installFetch({ config: { ...config, endpoint } });
+test("installation commands shell-quote script URL apostrophes and expansions", async () => {
+  const installScriptUrl = "https://collector.example/api/ingest/install.sh?value='$(example)";
+  installFetch({ config: { ...config, installScriptUrl } });
   mount();
   expect((await screen.findByLabelText("설치 명령")).textContent).toContain(
-    "python3 ccdash-collector/install.py install --endpoint 'https://collector.example/api/ingest?value='\"'\"'$(example)' --user-id \"$ccdash_user_id\""
+    "curl -fsSL 'https://collector.example/api/ingest/install.sh?value='\"'\"'$(example)' | sh"
   );
 });
 
@@ -345,25 +312,27 @@ test("registration waits for the initial device list before submitting", async (
   expect((await screen.findByLabelText("기기 수집 토큰")).value).toBe(token);
 });
 
-test("removing collector permission unmounts the token and aborts pending download work", async () => {
-  let downloadOptions;
+test("removing collector permission unmounts the token and aborts pending device work", async () => {
+  let pageOptions;
   installFetch({ request: (url, options) => {
     if (options.method === "POST") return response({ device, token }, 201);
-    if (url.pathname.includes("/package/")) {
-      downloadOptions = options;
+    if (url.searchParams.has("cursor")) {
+      pageOptions = options;
       return new Promise(() => {});
     }
+    if (url.pathname === "/api/collector/devices") return response({ devices: [device], nextCursor: "next" });
   } });
   const view = mount();
   await register();
   await screen.findByLabelText("기기 수집 토큰");
-  fireEvent.click(screen.getByRole("button", { name: "macOS 패키지 다운로드" }));
+  fireEvent.click(screen.getByRole("button", { name: "기기 더 보기" }));
+  await waitFor(() => expect(pageOptions).toBeTruthy());
   view.rerender(<ConfigProvider config={{ session: { mode: "oidc", permissions: ["telemetry:read"] } }}>
     <CollectorSetup />
   </ConfigProvider>);
   expect(screen.queryByLabelText("기기 수집 토큰")).toBeNull();
-  expect(screen.queryByRole("button", { name: /패키지 다운로드/ })).toBeNull();
-  expect(downloadOptions.signal.aborted).toBe(true);
+  expect(screen.queryByRole("button", { name: "기기 더 보기" })).toBeNull();
+  expect(pageOptions.signal.aborted).toBe(true);
 });
 
 test("device dates use compact local time and preserve the exact ISO timestamp in the title", async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, Download, KeyRound, Laptop, RefreshCw, ShieldCheck, Terminal, Trash2 } from "lucide-react";
-import { apiGet, checkAuthentication, fetchWithCapacityRetry } from "../api.js";
+import { Check, Copy, KeyRound, Laptop, RefreshCw, ShieldCheck, Terminal, Trash2 } from "lucide-react";
+import { apiGet, checkAuthentication } from "../api.js";
 import { useConfig } from "../ConfigContext.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { Card, Loading } from "../components/Card.jsx";
@@ -53,7 +53,6 @@ function CollectorManager() {
   const [commandMessage, setCommandMessage] = useState("");
   const [issueError, setIssueError] = useState("");
   const [issuing, setIssuing] = useState(false);
-  const [download, setDownload] = useState({ pending: false, error: false, complete: false });
   const [devices, setDevices] = useState({ items: [], nextCursor: null, requestedCursor: null, loading: true, loaded: false, error: false });
   const [confirmId, setConfirmId] = useState(null);
   const [revoking, setRevoking] = useState(null);
@@ -62,7 +61,6 @@ function CollectorManager() {
   const [clock, setClock] = useState(Date.now);
   const requests = useRef(new Set());
   const issuePending = useRef(false);
-  const downloadPending = useRef(false);
   const listPending = useRef(false);
   const revokePending = useRef(false);
   const copyGeneration = useRef(0);
@@ -165,41 +163,6 @@ function CollectorManager() {
       if (!controller.signal.aborted) setIssuing(false);
     }
   };
-  const downloadPackage = async () => {
-    if (downloadPending.current) return;
-    downloadPending.current = true;
-    const controller = new AbortController();
-    requests.current.add(controller);
-    setDownload({ pending: true, error: false, complete: false });
-    try {
-      const response = await fetchWithCapacityRetry(`/api/collector/package/${platform}`, {
-        credentials: "same-origin", cache: "no-store", signal: controller.signal,
-      });
-      checkAuthentication(response);
-      const type = response.headers?.get("Content-Type")?.split(";")[0].trim().toLowerCase();
-      if (!response.ok || !["application/gzip", "application/x-gzip", "application/octet-stream"].includes(type))
-        throw new Error("download_failed");
-      const blob = await response.blob();
-      if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(blob);
-      try {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `ccdash-collector-${platform}.tar.gz`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      } finally {
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-      }
-      setDownload({ pending: false, error: false, complete: true });
-    } catch {
-      if (!controller.signal.aborted) setDownload({ pending: false, error: true, complete: false });
-    } finally {
-      requests.current.delete(controller);
-      downloadPending.current = false;
-    }
-  };
   const revoke = async device => {
     if (revokePending.current || listPending.current || issuePending.current) return;
     revokePending.current = true;
@@ -229,16 +192,10 @@ function CollectorManager() {
     }
   };
   const activePlatform = PLATFORMS[platform];
-  const prerequisite = platform === "linux" ? 'sudo loginctl enable-linger "$USER"\n' : "";
-  const command = setup.data?.endpoint
-    ? `(
-set -e
-${prerequisite}tar -xzf ccdash-collector-${platform}.tar.gz
-printf '수집 사용자 ID/이메일 (기존 설치는 동일한 값): '
-IFS= read -r ccdash_user_id
-test -n "$ccdash_user_id" || { printf '사용자 ID를 입력한 뒤 다시 실행하세요.\\n' >&2; exit 1; }
-python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.endpoint)} --user-id "$ccdash_user_id"
-)`
+  const prerequisite = platform === "linux" ? 'sudo loginctl enable-linger "$USER" &&\n' : "";
+  // The served script detects the OS and downloads the package with the device token itself.
+  const command = setup.data?.installScriptUrl
+    ? `${prerequisite}curl -fsSL ${quoteShell(setup.data.installScriptUrl)} | sh`
     : "";
   const busy = issuing || devices.loading || revoking !== null;
 
@@ -264,13 +221,13 @@ python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.e
           </div>
         </div>
         <div className="grid items-start gap-6 lg:grid-cols-2">
-          <Card title={<StepTitle number="1">운영체제와 다운로드</StepTitle>} subtitle="수집할 기기의 운영체제를 선택하세요.">
+          <Card title={<StepTitle number="1">운영체제 선택</StepTitle>} subtitle="수집할 기기의 운영체제를 선택하세요.">
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(PLATFORMS).filter(([key]) => setup.data.platforms?.includes(key)).map(([key, item]) => {
                 const Icon = item.icon;
                 return <button type="button" key={key} aria-label={`${item.label} 선택`} aria-pressed={key === platform}
-                  disabled={issuing || download.pending || !!issued}
-                  onClick={() => { setPlatform(key); setCommandMessage(""); setDownload({ pending: false, error: false, complete: false }); }}
+                  disabled={issuing || !!issued}
+                  onClick={() => { setPlatform(key); setCommandMessage(""); }}
                   className={`flex min-w-0 flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${key === platform ? "border-brand-500 bg-brand-50 text-brand-800" : "border-ink-200 hover:border-brand-300"}`}>
                   <Icon size={23} strokeWidth={1.6} aria-hidden="true" />
                   <span className="font-semibold">{item.label}</span>
@@ -278,12 +235,7 @@ python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.e
                 </button>;
               })}
             </div>
-            <button type="button" className={`${PRIMARY} mt-4 w-full`} disabled={download.pending} onClick={downloadPackage}>
-              <Download size={16} aria-hidden="true" />{download.pending ? "다운로드 중..." : `${activePlatform.label} 패키지 다운로드`}
-            </button>
-            <p className="mt-3 text-xs leading-relaxed text-ink-500">amd64 / arm64 지원 · Python 3.9+ 필요 · Collector {setup.data.collectorVersion}</p>
-            {download.error && <div className="mt-3"><Notice>패키지를 다운로드하지 못했습니다. 연결과 권한을 확인한 후 다시 다운로드해 주세요.</Notice></div>}
-            {download.complete && <p role="status" className="mt-3 text-sm text-positive-text">다운로드를 시작했습니다. 수집할 기기로 파일을 옮겨 주세요.</p>}
+            <p className="mt-3 text-xs leading-relaxed text-ink-500">amd64 / arm64 지원 · Python 3.9+ · curl 필요 · Collector {setup.data.collectorVersion}</p>
           </Card>
           <Card title={<StepTitle number="2">기기 등록과 토큰 발급</StepTitle>} subtitle="어느 기기인지 알아볼 수 있는 이름을 입력하세요.">
             <form onSubmit={issue}>
@@ -315,7 +267,7 @@ python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.e
         <Card title={<StepTitle number="3">설치 전 확인</StepTitle>}>
           <CollectorPreparation platform={platform} />
         </Card>
-        <Card title={<StepTitle number="4">터미널에서 설치</StepTitle>} subtitle="수집할 기기에서 다운로드한 파일이 있는 폴더를 여세요.">
+        <Card title={<StepTitle number="4">터미널에서 설치</StepTitle>} subtitle="수집할 기기의 터미널에서 실행하세요. 패키지를 따로 내려받을 필요가 없습니다.">
           {platform === "linux" && <p className="mb-3 text-sm leading-relaxed text-ink-600">SSH 로그아웃·재부팅 후에도 수집을 유지하려면 첫 명령으로 사용자 서비스의 지속 실행을 설정하세요.
             이 설정에만 sudo 권한이 필요하며, 수집기 설치 명령은 일반 사용자로 실행하세요.</p>}
           <div className="overflow-hidden rounded-lg bg-ink-900 text-ink-50">
@@ -330,7 +282,7 @@ python3 ccdash-collector/install.py install --endpoint ${quoteShell(setup.data.e
           <ol className="mt-4 space-y-2 text-sm leading-relaxed text-ink-600">
             <li>사용자 ID에는 기존 수집에 사용하던 ID/이메일을 입력하세요. 처음 설치한다면 조직에서 사용할 식별값을 입력하세요. 영문·숫자와 . _ + @ -만 사용할 수 있습니다.</li>
             {platform === "linux" && <li>사용자 서비스 연결 오류가 나면 다시 로그인한 뒤 수집기 설치 명령을 실행하세요.</li>}
-            <li>명령을 실행한 뒤 토큰 입력 안내가 나오면 복사한 토큰을 붙여 넣고 Enter를 누르세요. 입력 내용은 화면에 표시되지 않습니다.</li>
+            <li>명령은 사용자 ID와 기기 토큰을 차례로 묻습니다. 토큰 안내가 나오면 복사한 토큰을 붙여 넣고 Enter를 누르세요. 입력 내용은 화면에 표시되지 않습니다.</li>
             <li>설치 후 터미널을 새로 열고 Claude Code와 Codex에서 새 세션을 시작하세요.</li>
           </ol>
           <p className="mt-3 text-xs leading-relaxed text-ink-500">토큰을 명령에 직접 넣지 마세요. 실행 중인 기기는 만료 7일 전부터 토큰을 자동으로 갱신합니다.
