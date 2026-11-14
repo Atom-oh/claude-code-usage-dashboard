@@ -716,6 +716,21 @@
       "width": 2240,
       "height": 952,
       "pixel_scale": 2
+    },
+    {
+      "path": "img/guide-settings.png",
+      "bytes": 308606,
+      "sha256": "54c04b98134d009d81925aac23f4b40e5b526b24cbf039a2f9df147d7c771e80",
+      "width": 2880,
+      "height": 2200,
+      "pixel_scale": 2,
+      "name": "guide-settings.png",
+      "capture_date": "2026-11-14",
+      "source_revision": "a530304403dd36acc43d1140fa54dabb373546d6",
+      "capture_evidence": "scripts/docs-capture/settings-evidence.json",
+      "fixture_source": "scripts/docs-capture/settings.mjs",
+      "display_translation": "Native English React interface; synthetic directory values remain unchanged.",
+      "privacy": "Synthetic directory values and counts; no live APIs or account data."
     }
   ],
   "release_scope": "Historical October 24 video. current_demo preserves the short v1.8.0 example; detailed_tour owns the full product introduction.",
@@ -996,8 +1011,8 @@
   },
   "delivery": {
     "manifest_repository_path": "video/docs-demo/media.lock.json",
-    "snapshot_commit": "d27a031727e624d13e67f7d53f54502e54f545f3",
-    "snapshot_tag": "docs-media-20261114-product-tour-r6",
+    "snapshot_commit": "afe1466c905ce7249c1719ce621821ecec5fe422",
+    "snapshot_tag": "docs-media-20261114-team-settings-r7",
     "verification": "Exact allowlist, per-file byte bounds and SHA256; cached assets verified offline before publication."
   },
   "previous_demo": {
@@ -1103,7 +1118,24 @@
       "upstream_commit": "5c41199ea0024a9e0b2cb31735265056e5472d76"
     },
     "validation": "All 27 PNGs fully decode and are nonblank. Synthetic costs, tokens, exact-user filters, task cost bases and LMDI terms reconcile. Zero capture browser/console errors or unexpected requests. Final guide browser verification is recorded separately in the translation ledger.",
-    "locale_validation": "Five locales including Spanish; desktop/mobile image enlargement and contents controls verified."
+    "locale_validation": "Five locales including Spanish; desktop/mobile image enlargement and contents controls verified.",
+    "team_settings": {
+      "source_revision": "a530304403dd36acc43d1140fa54dabb373546d6",
+      "capture": "img/guide-settings.png",
+      "verification": "Five locales at desktop and mobile widths; no overflow, missing labels, browser errors or live API calls.",
+      "source_files": [
+        {
+          "path": "scripts/docs-capture/settings.mjs",
+          "bytes": 5575,
+          "sha256": "14e7b78b876eec8d160cb8bacb2780856e44398cf32806a8742c6ac5eba24211"
+        },
+        {
+          "path": "scripts/docs-capture/settings-evidence.json",
+          "bytes": 1215,
+          "sha256": "605f6bb8a8976f20a5d7751408ea4c73cbf7fe392f22c10e7033eaf2690a0388"
+        }
+      ]
+    }
   },
   "detailed_tour": {
     "date": "2026-11-14",

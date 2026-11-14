@@ -18,7 +18,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 ### Changed
 
 - Localize the administrator team-mapping screen in all five languages while
-  retaining unsaved labels, the selected attribute and existing save errors.
+  retaining unsaved labels, the selected attribute and existing save errors. Add
+  an illustrated administrator walkthrough to every language of the user guide.
 - Load translated catalogs through Vite's JSON modules in development without a
   conflicting native JSON import type.
 

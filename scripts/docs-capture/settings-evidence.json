@@ -1,0 +1,65 @@
+{
+  "source_revision": "a530304403dd36acc43d1140fa54dabb373546d6",
+  "fixture_sha256": "14e7b78b876eec8d160cb8bacb2780856e44398cf32806a8742c6ac5eba24211",
+  "privacy": "Synthetic directory values and counts; no live APIs or account data.",
+  "checks": [
+    {
+      "locale": "en",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "zh-CN",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "ja",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "es",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "ko",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "en",
+      "width": 390,
+      "errors": 0
+    },
+    {
+      "locale": "zh-CN",
+      "width": 390,
+      "errors": 0
+    },
+    {
+      "locale": "ja",
+      "width": 390,
+      "errors": 0
+    },
+    {
+      "locale": "es",
+      "width": 390,
+      "errors": 0
+    },
+    {
+      "locale": "ko",
+      "width": 390,
+      "errors": 0
+    }
+  ],
+  "image": {
+    "name": "guide-settings.png",
+    "bytes": 308606,
+    "sha256": "54c04b98134d009d81925aac23f4b40e5b526b24cbf039a2f9df147d7c771e80",
+    "width": 2880,
+    "height": 2200,
+    "pixel_scale": 2
+  }
+}
