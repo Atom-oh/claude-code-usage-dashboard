@@ -48,7 +48,7 @@ printf '%s\\n' "$@" >"$CCDASH_TEST_OUT/python-args"
 [ -t 0 ] && echo tty >"$CCDASH_TEST_OUT/python-stdin"
 while [ $# -gt 0 ]; do [ "$1" != --token-file ] || file=$2; shift; done
 printf '%s\\n' "$file" >"$CCDASH_TEST_OUT/token-path"
-stat -c %a "$file" >"$CCDASH_TEST_OUT/token-mode"
+{ stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file"; } >"$CCDASH_TEST_OUT/token-mode"
 cp "$file" "$CCDASH_TEST_OUT/token-copy"
 `,
 };

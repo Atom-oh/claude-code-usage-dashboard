@@ -651,3 +651,43 @@ test("device package downloads require one valid device bearer and are rate limi
   assert.equal((await f.management("/api/collector/devices/" + device.id, { method: "DELETE" })).status, 204);
   assert.equal((await download(token)).status, 401);
 });
+
+test("package verification shares the gateway's eight-slot admission before any store read", async t => {
+  const f = await fixture(t);
+  const { token } = await f.issue();
+  const get = f.store.get;
+  const waiting = [];
+  let reads = 0;
+  f.store.get = (...args) => {
+    reads++;
+    return new Promise(resolve => waiting.push(() => resolve(get(...args))));
+  };
+  const unknown = i => `ccd1.${"f".repeat(64)}.${String(i).padStart(32, "0")}.${"A".repeat(43)}`;
+  const pending = Array.from({ length: 8 }, (_, i) => f.request("/api/ingest/package/linux",
+    { headers: { authorization: `Bearer ${unknown(i)}` } }));
+  while (reads < 8) await new Promise(resolve => setTimeout(resolve, 5));
+  const busy = await f.request("/api/ingest/package/linux", { headers: { authorization: `Bearer ${unknown(9)}` } });
+  assert.equal(busy.status, 429);
+  assert.equal(busy.headers.get("retry-after"), "1");
+  assert.deepEqual(await busy.json(), { error: "ingest_busy" });
+  assert.equal((await f.ingest(token)).status, 429);
+  assert.equal(reads, 8);
+  waiting.splice(0).forEach(release => release());
+  for (const response of await Promise.all(pending)) assert.equal(response.status, 401);
+  f.store.get = get;
+  assert.equal((await f.request("/api/ingest/package/linux", { headers: { authorization: `Bearer ${token}` } })).status, 200);
+  assert.equal((await f.ingest(token)).status, 200);
+});
+
+test("package verification fails closed on store errors and releases its slot", async t => {
+  const f = await fixture(t);
+  const { token } = await f.issue();
+  const get = f.store.get;
+  f.store.get = async () => { throw new Error("dynamo down"); };
+  for (let i = 0; i < 9; i++) {
+    const failed = await f.request("/api/ingest/package/linux", { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(failed.status, 503);
+  }
+  f.store.get = get;
+  assert.equal((await f.request("/api/ingest/package/linux", { headers: { authorization: `Bearer ${token}` } })).status, 200);
+});

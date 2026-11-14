@@ -27,6 +27,14 @@ Startup validation checks syntax/required inputs; discovery happens at login.
 The application uses `strict-origin` referrers and `no-store` for authenticated static
 bundles as well as JSON, trading repeat-download caching for a uniform auth-response policy.
 
+Device collection routes under `/api/ingest` precede human authentication. OTLP,
+renewal and `GET /api/ingest/package/:platform` accept only one device bearer token,
+never browser cookies; their token checks share eight in-flight slots per process, and
+package downloads are limited to ten per device per hour.
+`GET /api/ingest/install.sh` is deliberately anonymous: it reveals that device ingestion
+is enabled and the public ingestion endpoint, and contains no credential. The archive it
+downloads embeds no credential either. See [device collectors](../runbooks/device-collectors.md).
+
 `POST /api/chat` additionally requires configured auth or `CHAT_ALLOW_INSECURE=1`, and a
 successful readonly-session probe. The two insecure flags are independent. `trust proxy=1`
 matches the intended CloudFront-to-NLB path and supplies `req.ip` to chat's per-process

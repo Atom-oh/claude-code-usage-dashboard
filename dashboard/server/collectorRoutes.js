@@ -197,21 +197,34 @@ export function createCollectorFeature({ env = process.env, authentication, pack
     if (!["linux", "darwin"].includes(platform)) return errorResponse(res, fail("not_found", 404));
     const token = bearer(req);
     if (!token) return errorResponse(res, fail("invalid_token", 401));
+    // Unknown tokens are never cached, so verification shares the gateway's store admission.
+    if (active >= 8) {
+      res.set("Retry-After", "1");
+      return errorResponse(res, fail("ingest_busy", 429));
+    }
+    active++;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(fail("store_unavailable", 503)), 15000);
+    const timer = setTimeout(() => controller.abort(fail("ingest_timeout", 504)), 15000);
+    const closed = () => controller.abort(fail("request_aborted", 400));
+    res.once("close", closed);
+    let identity;
     try {
-      const identity = await service.verify(token, { signal: controller.signal });
-      if (!identity) throw fail("invalid_token", 401);
-      if (!packageAllowed(`${identity.owner}:${identity.id}`)) {
-        res.set("Retry-After", "3600");
-        throw fail("package_rate_limited", 429);
-      }
-      sendPackage(res, platform);
+      identity = await service.verify(token, { signal: controller.signal });
+      controller.signal.throwIfAborted();
     } catch (error) {
-      errorResponse(res, error);
+      return errorResponse(res, controller.signal.aborted ? controller.signal.reason : error);
     } finally {
       clearTimeout(timer);
+      res.off("close", closed);
+      active--;
     }
+    if (!identity) return errorResponse(res, fail("invalid_token", 401));
+    // Charged before the file read so a missing archive still costs a request.
+    if (!packageAllowed(`${identity.owner}:${identity.id}`)) {
+      res.set("Retry-After", "3600");
+      return errorResponse(res, fail("package_rate_limited", 429));
+    }
+    sendPackage(res, platform);
   }
 
   async function ingest(req, res) {

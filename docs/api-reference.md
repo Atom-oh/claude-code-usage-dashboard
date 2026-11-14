@@ -68,7 +68,7 @@ Unsafe requests retain the existing exact-Origin gate. Responses and downloads a
 | `DELETE /api/collector/devices/:id` | Revoke an owned device; 204 for existing/already revoked, 404 for absent. |
 | `GET /api/collector/package/:platform` | Authenticated installer archive for `linux` or `darwin`; no credentials embedded. |
 | `GET /api/ingest/install.sh` | Public, `no-store` POSIX sh bootstrap for `curl -fsSL URL \| sh`; embeds only the ingestion endpoint. GET/HEAD only, no query. It prompts on the terminal for the attribution ID and device token. |
-| `GET /api/ingest/package/:platform` | Installer archive for `linux` or `darwin` with exactly one device bearer token; ten per device per hour (429 `package_rate_limited`, `Retry-After: 3600`). Does not update `lastSeenAt`. |
+| `GET /api/ingest/package/:platform` | Installer archive for `linux` or `darwin` with exactly one device bearer token; ten per device per hour (429 `package_rate_limited`, `Retry-After: 3600`), charged before the file is read, so a missing archive (503) or HEAD also counts. Token checks share the gateway's eight in-flight slots (429 `ingest_busy`). Does not update `lastSeenAt`. |
 | `POST /api/ingest/v1/{logs,metrics,traces}` | Device bearer token only; OTLP JSON/protobuf, at most 2 MiB, no content compression. |
 | `POST /api/ingest/renew` | Device bearer token; JSON content type, empty body; six per device per hour. 200 `{renewed: false, expiresAt}` while more than seven days remain or for an unused replacement, else `{renewed: true, token, expiresAt}` with a new 30-day token. Device views add `renewedAt` and `reuseDetectedAt` (first use of a superseded token). |
 
