@@ -2,7 +2,9 @@
 
 The application defaults to Korean. The language picker selects English,
 Simplified Chinese, Japanese, Spanish or Korean and persists `ccdash.locale`.
-Other catalogs load on demand. A failed load keeps the current language and can
+This stage localizes shared navigation, charts and task dialogs; route page
+bodies remain Korean pending migration. Spanish guide links use English until
+the Spanish guide lands. Other catalogs load on demand. A failed load keeps the current language and can
 be retried; a newer selection supersedes an older request.
 
 `useLocale()` subscribes a component without remounting it. `translate(key, values)`
@@ -15,7 +17,8 @@ descriptors for application feedback that must follow later language changes.
 Static presentation records can opt into `localize()`. Labels then resolve when
 read rather than freezing at module initialization; record identities remain
 stable. Do not apply it to API payloads, request parameters or user data.
-`translateSource` bridges existing authored string constants to their catalog
+`translateSource` bridges existing authored string constants, including the five
+server-authored chat status messages (not model replies or telemetry), to their catalog
 keys. Short dates and numbers use the selected locale; exact trace timestamps
 retain a padded numeric form in the browser time zone.
 

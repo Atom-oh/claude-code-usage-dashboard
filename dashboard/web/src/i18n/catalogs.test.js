@@ -35,3 +35,23 @@ it.each([["en", en], ["zh-CN", zh], ["ja", ja], ["es", es]])(
     }
   },
 );
+
+it("covers literal bridges, core help constants and server-authored chat status messages", async () => {
+  const sources = new Set(Object.values(ko));
+  const { SPEND_HELP } = await import("../spend.js");
+  const { APPROVAL_HELP } = await import("../score.js");
+  const { OBSERVED_TOKEN_HELP } = await import("../clientPresentation.js");
+  for (const message of [SPEND_HELP, APPROVAL_HELP, OBSERVED_TOKEN_HELP]) expect(sources.has(message), message).toBe(true);
+  const sourceRoot = resolve(process.cwd(), "src");
+  for (const name of readdirSync(sourceRoot, { recursive: true })) {
+    if (!/\.(js|jsx)$/.test(name) || name.includes(".test.")) continue;
+    const source = readFileSync(resolve(sourceRoot, name), "utf8");
+    for (const match of source.matchAll(/\btranslateSource\("([^"\\]*)"\)/g)) {
+      expect(sources.has(match[1]), `${name}: ${match[1]}`).toBe(true);
+    }
+  }
+  const server = readFileSync(resolve(process.cwd(), "../server/chat.js"), "utf8");
+  const statuses = [...server.matchAll(/send\("status", \{ message: "([^"\\]*)"/g)];
+  expect(statuses.length).toBeGreaterThan(0);
+  for (const [, message] of statuses) expect(sources.has(message), message).toBe(true);
+});

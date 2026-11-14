@@ -67,3 +67,21 @@ test("chart-only turns remain visible without entering model history", async () 
   const sent = JSON.parse(fetch.mock.calls.at(-1)[1].body);
   expect(sent.messages).toEqual([{ role: "user", content: "첫 질문\n다음 질문" }]);
 });
+
+test("an existing chat failure changes language without replaying the request or translating user text", async () => {
+  const { localeStore } = await import("./i18n/index.js");
+  stubStream(event("error", { message: "raw diagnostic 오류" }));
+  const { result } = renderHook(() => useChatStream());
+  await act(() => result.current.ask("사용자 원문"));
+  const korean = result.current.msgs.at(-1).content;
+  try {
+    await act(() => localeStore.select("en"));
+    expect(result.current.msgs.at(-1).content).not.toBe(korean);
+    expect(result.current.msgs.at(-1).content).toContain("raw diagnostic 오류");
+    expect(result.current.msgs[0].content).toBe("사용자 원문");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup();
+    await localeStore.select("ko");
+  }
+});

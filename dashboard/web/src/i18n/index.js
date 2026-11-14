@@ -6,7 +6,7 @@ export const LOCALES = [
   { code: "en", name: "English", tag: "en-US", guide: "" },
   { code: "zh-CN", name: "简体中文", tag: "zh-CN", guide: "zh/" },
   { code: "ja", name: "日本語", tag: "ja-JP", guide: "ja/" },
-  { code: "es", name: "Español", tag: "es-ES", guide: "es/" },
+  { code: "es", name: "Español", tag: "es-ES", guide: "" },
   { code: "ko", name: "한국어", tag: "ko-KR", guide: "ko/" },
 ];
 

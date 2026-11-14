@@ -24,7 +24,7 @@ export function ClientProvider({ children }) {
 
   useEffect(() => {
     document.title = pathname === "/installation" ? translate("m0a57f170efad")
-      : COLLECTOR_CONNECT_PATH.test(pathname) ? "기기 연결 승인 · AI 사용량 대시보드"
+      : COLLECTOR_CONNECT_PATH.test(pathname) ? translate("md9cb56dff124")
       : pathname === CHANGELOG_PATH ? translate("m23a4a6961acc")
       : isTaskPath(pathname) ? translate("m8ce0347bbd0c")
       : `${clientPage(pathname).label} · ${client === "all" ? "Claude + Codex" : CLIENT_LABELS[client]}${detail ? translate("m9b0f12def109") : ""}`;

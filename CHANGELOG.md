@@ -21,7 +21,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   provenance and verified message placeholders.
 - Add a persistent five-language picker to desktop, mobile and task detail.
   Localize shared controls, chart labels and feedback while retaining open tasks,
-  filters and time ranges; guide links follow the selected language.
+  filters and time ranges; guide links use available translations with an English fallback.
 
 ## [1.8.2] - 2026-11-14
 

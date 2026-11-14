@@ -1,5 +1,5 @@
 import { translateSource, translate, useLocale } from "./i18n/index.js";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { checkAuthentication } from "./api.js";
 import { validChatChart } from "./chatCharts.js";
 
@@ -181,7 +181,7 @@ export function useChatStream() {
       if (ac.signal.aborted) return; // 사용자가 닫거나 다시 보낸 경우 — 오류로 표시하지 않는다
       setMsgs((m) => {
         const next = [...m];
-        next[next.length - 1] = { ...next[next.length - 1], role: "assistant", content: translate("m7f0cde8733f9", [err.message]), error: true };
+        next[next.length - 1] = { ...next[next.length - 1], role: "assistant", content: err.message, error: true };
         return next;
       });
     } finally {
@@ -192,5 +192,7 @@ export function useChatStream() {
     }
   };
 
-  return { msgs, busy, status: translateSource(status), trace, ask, stop };
+  const displayedMessages = useMemo(() => msgs.map(message => message.error
+    ? { ...message, content: translate("m7f0cde8733f9", [message.content]) } : message), [msgs, _locale]);
+  return { msgs: displayedMessages, busy, status: translateSource(status), trace, ask, stop };
 }

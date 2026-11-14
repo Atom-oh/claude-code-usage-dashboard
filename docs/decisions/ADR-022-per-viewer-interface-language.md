@@ -40,12 +40,12 @@ Short dates, numbers and time units follow the selected locale. Exact diagnostic
 timestamps retain their padded numeric form in the browser time zone. Language
 selection does not change UTC calendar presets, exact-time boundaries, rollup
 precision, filters or permissions. The user-guide link selects the equivalent
-public guide locale.
+public guide locale when available, otherwise the English guide.
 
 ## Consequences
 
-One image serves all five languages, and viewers can change language while a
-task remains open. No deployment-specific language is baked into a separate
+The completed rollout will serve all five languages in one image, and viewers
+can change language while a task remains open. No deployment-specific language is baked into a separate
 frontend build. Preferences are local to one browser, not synchronized between
 devices, and may be lost when storage is cleared or blocked.
 
@@ -55,6 +55,15 @@ especially for cost origin and incomplete telemetry. The interface does not
 translate model-generated answers, captured prompts or other user content.
 Maintained engineering documentation remains English under
 [ADR-010](ADR-010-english-documentation-and-review-context.md).
+
+## Rollout state
+
+The current integration covers the locale store, catalogs, shared navigation,
+charts and task dialogs. Route page bodies remain Korean until their migration;
+the Spanish guide is a separate documentation change and uses English meanwhile.
+The accepted five-language requirement is complete only after both follow-ups
+land. Each stage must describe its actual coverage rather than claim the target
+is already deployed.
 
 ## Owners and evidence
 

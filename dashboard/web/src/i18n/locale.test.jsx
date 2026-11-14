@@ -88,3 +88,11 @@ it("preserves unknown telemetry values and positional punctuation", async () => 
   expect(formatUnit(1, "day")).toBe("1 día");
   expect(formatUnit(2, "day")).toBe("2 días");
 });
+
+it("every language guide link resolves to a page included in the site", async () => {
+  const { existsSync } = await import("node:fs");
+  const { resolve } = await import("node:path");
+  for (const locale of LOCALES) {
+    expect(existsSync(resolve(process.cwd(), "../../site", locale.guide, "user-guide.html")), locale.code).toBe(true);
+  }
+});

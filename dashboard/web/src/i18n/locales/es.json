@@ -1838,5 +1838,6 @@
   "m9ae4b7c2374c": "Usuarios → Seleccionar un usuario → Mapa de calor de actividad",
   "m1dd23c2aed59": "Modelos de tareas · llamadas LLM de usuarios del recopilador del dispositivo",
   "mb3ed32f01cc1": "Se corrigió un problema por el que el modelo, las llamadas LLM y los costos por llamada aparecían en blanco en la lista y los detalles de tareas para Claude Code 2.1.325 o posterior enviado mediante el recopilador del dispositivo. Se aplica a las tareas posteriores a la reinstalación del recopilador; los registros que ya faltaban no se recuperan.",
-  "mb0c557c70d69": "Usuarios → Seleccionar un usuario → Lista de tareas · Detalles de tareas"
+  "mb0c557c70d69": "Usuarios → Seleccionar un usuario → Lista de tareas · Detalles de tareas",
+  "md9cb56dff124": "Aprobar conexión del dispositivo · Panel de uso de IA"
 }

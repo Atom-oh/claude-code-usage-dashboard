@@ -22,7 +22,8 @@ requests render terminal outcomes. Users without `collector:manage` make no requ
 `/changelog` shows the release notes bundled in `releaseNotes.js` without usage filters
 and requests no page data. Its link sits outside `<nav>` under the navigation and marks a release this
 browser has not opened (`localStorage`, best effort). A user guide link beside it opens the
-equivalent language of the public user guide (`USER_GUIDE_URL`) in a new tab.
+available language of the public user guide (`USER_GUIDE_URL`) in a new tab.
+Spanish currently opens the English guide until the Spanish pages are added.
 See [releases and tags](../runbooks/releases.md).
 
 The React 18/Vite 8/Tailwind 4 SPA (Node >=22.12) shares the Express image.
@@ -36,6 +37,8 @@ the default. English, Simplified Chinese, Japanese and Spanish catalogs load on
 demand. Failed loads retain the current language, later choices supersede pending
 loads, and denied storage remains usable. The locale store updates subscribed
 components without remounting open user/task views or changing API parameters.
+This stage localizes shared controls and task dialogs; route page migration is
+separate and their authored page bodies currently remain Korean.
 See [ADR-022](../decisions/ADR-022-per-viewer-interface-language.md) and
 [locale ownership](../../dashboard/web/src/i18n/README.md).
 

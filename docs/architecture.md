@@ -170,9 +170,11 @@ columns and sorted rows; central `csv.js` masks exported `user` cells
 when enabled. [Metrics](metrics.md) defines the arbitrary activity score, permission-decision
 acceptance (including automatic decisions), timing proxies and unsupported beta results.
 UI wording does not turn these into code-quality or labor-savings measurements.
-The same image provides five interface languages through a browser locale
-preference and shared message catalogs. Locale changes retain range/filter/task
-state and do not alter the API or telemetry. See
+The locale store and shared controls offer five language choices in one image.
+This integration stage covers navigation, shared charts and task dialogs; route
+page bodies remain Korean until their separate migration. Locale changes retain
+range/filter/task state and do not alter the API or telemetry. The complete
+five-language interface remains the target in
 [ADR-022](decisions/ADR-022-per-viewer-interface-language.md).
 
 ## API, chat and trust boundary

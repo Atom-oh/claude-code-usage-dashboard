@@ -1838,5 +1838,6 @@
   "m9ae4b7c2374c": "Users → Select a user → Activity heatmap",
   "m1dd23c2aed59": "Device collector users’ task models · LLM calls",
   "mb3ed32f01cc1": "Fixed an issue where the model, LLM calls, and call costs appeared blank in the task list and task details for Claude Code 2.1.325 or later sent through the device collector. This applies to tasks after the collector is reinstalled; previously missing records are not recovered.",
-  "mb0c557c70d69": "Users → Select a user → Task list · Task details"
+  "mb0c557c70d69": "Users → Select a user → Task list · Task details",
+  "md9cb56dff124": "Approve device connection · AI Usage Dashboard"
 }
