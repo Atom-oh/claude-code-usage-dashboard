@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-11-14
+
 ### Added
 
 - Add validated locale preference loading and Korean/English message catalogs

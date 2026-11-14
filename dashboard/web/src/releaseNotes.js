@@ -9,6 +9,29 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.8.2",
+    date: "2026-11-14",
+    summary: "활동이 많은 사용자의 90일 활동 히트맵이 열리지 않던 문제와, 기기 수집기 사용자의 작업에 모델이 비던 문제를 고쳤습니다.",
+    items: [
+      {
+        kind: "fixed",
+        title: "90일 활동 히트맵 로드 실패",
+        body: "활동이 많은 사용자의 상세에서 '활동 히트맵 · 최근 90일'이 '데이터를 불러오지 못했습니다'로 나오던 문제를 고쳤습니다. 같은 세션이 사용량과 로그 양쪽에 있어도 한 번만 셉니다.",
+        to: "/users",
+        where: "사용자 → 사용자 선택 → 활동 히트맵",
+        refs: [276],
+      },
+      {
+        kind: "fixed",
+        title: "기기 수집기 사용자의 작업 모델·LLM 호출",
+        body: "기기 수집기로 보내는 Claude Code 2.1.325 이상에서 작업 목록·작업 상세의 모델, LLM 호출, 호출 비용이 비어 보이던 문제를 고쳤습니다. 수집기를 다시 설치한 뒤의 작업부터 반영되며, 이전에 누락된 기록은 복구되지 않습니다.",
+        to: "/users",
+        where: "사용자 → 사용자 선택 → 작업 목록·작업 상세",
+        refs: [276],
+      },
+    ],
+  },
+  {
     version: "1.8.1",
     date: "2026-11-14",
     summary: "비용 비중 카드에 $0 항목이 줄줄이 나와 카드가 길어지던 문제를 고쳤습니다.",
