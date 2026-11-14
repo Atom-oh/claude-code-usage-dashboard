@@ -3,9 +3,9 @@
 The application defaults to Korean. The language picker selects English,
 Simplified Chinese, Japanese, Spanish or Korean and persists `ccdash.locale`.
 All route pages, shared controls and task dialogs use the catalogs. Guide links
-open the matching language, including Spanish. Other catalogs load on demand.
-A failed load keeps the current language and can
-be retried; a newer selection supersedes an older request.
+open the matching language, including Spanish. Catalogs ship with the application
+bundle, so changing languages does not request another file. A failed validation
+keeps the current language; a newer selection supersedes an older request.
 
 `useLocale()` subscribes a component without remounting it. `translate(key, values)`
 formats authored messages with positional placeholders. Values are opaque:

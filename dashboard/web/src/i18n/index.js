@@ -1,5 +1,9 @@
 import { Fragment, createElement, useSyncExternalStore } from "react";
 import ko from "./locales/ko.json" with { type: "json" };
+import en from "./locales/en.json" with { type: "json" };
+import zh from "./locales/zh-CN.json" with { type: "json" };
+import ja from "./locales/ja.json" with { type: "json" };
+import es from "./locales/es.json" with { type: "json" };
 import { createLocaleStore } from "./store.js";
 
 export const LOCALES = [
@@ -14,11 +18,12 @@ export const localeStore = createLocaleStore({
   source: ko,
   loaders: {
     ko: async () => ko,
-    // Vite serves these JSON imports as JavaScript modules in development.
-    en: () => import("./locales/en.json"),
-    "zh-CN": () => import("./locales/zh-CN.json"),
-    ja: () => import("./locales/ja.json"),
-    es: () => import("./locales/es.json"),
+    // Keep catalogs with the running app so switching never needs an old chunk
+    // after a deployment, or a separate request that the browser may block.
+    en: async () => en,
+    "zh-CN": async () => zh,
+    ja: async () => ja,
+    es: async () => es,
   },
   onLocale: (locale) => { if (typeof document !== "undefined") document.documentElement.lang = locale; },
 });
