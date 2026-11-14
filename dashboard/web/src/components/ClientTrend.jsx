@@ -51,7 +51,7 @@ export function ClientTrend({ rows, clients, clientRows, bucketHours, effectiveR
     return <Card title={title}><p className="text-sm text-ink-500">표시할 관측값이 없습니다. {EMPTY_VALUE}</p></Card>;
   }
   return <DualLineChart title={title}
-    subtitle={`${bucketLabel(bucketHours)} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}${onBucket ? " 버킷을 클릭하면 그 구간의 작업 목록을 표시합니다." : ""}`}
+    subtitle={`${bucketLabel(bucketHours)} · 브라우저 시간 (${BROWSER_TIME_ZONE}) · 관측 사용량 없음은 0, 사용량 미확인은 공백으로 표시합니다.${metric !== "cost" ? " 관측 토큰은 수집된 값 중 확인된 합계이며, 사용량·메타데이터가 불완전하면 부분합입니다." : ""}${metric !== "tokens" ? " 비용은 알려진 값만 합산합니다." : ""}${onBucket ? " 좌우로 드래그하면 선택 기간으로 확대하고 작업 목록도 갱신합니다. 한 점을 클릭하면 해당 구간의 작업만 봅니다." : ""}`}
     help="0은 해당 시간에 집계된 사용량이 없다는 뜻입니다. 이벤트 자체의 전송 누락은 미사용과 구분할 수 없으며, 차트가 누락된 사용량을 복원하지는 않습니다."
     tooltipFormatter={(value, name, item) => {
       const client = String(item.dataKey).split("_")[0];

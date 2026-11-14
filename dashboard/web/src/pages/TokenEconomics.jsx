@@ -197,16 +197,17 @@ function UnitTrend({ row, bucketHours, effectiveRange, stale }) {
     .filter((p) => Number.isFinite(p.t));
   const timeDomain = trendTimeDomain(rows, effectiveRange, bucketHours);
   const tickFormatter = formatClientTime;
+  const gapHint = "빈 구간은 계산 가능한 세션이 없습니다. 점선은 관측값 사이의 연결이며 해당 구간의 측정값이 아닙니다.";
   return <div className="grid gap-4 xl:grid-cols-2">
-    <DualLineChart title={`${name} · 단위 비용 추이`} subtitle={`비용 기준: ${basisLabel(row.cost_basis)} · 대상 세션 기준`}
+    <DualLineChart title={`${name} · 단위 비용 추이`} subtitle={`비용 기준: ${basisLabel(row.cost_basis)} · 대상 세션 기준 · ${gapHint}`}
       rows={rows} xKey="t" bucketHours={bucketHours} timeDomain={timeDomain} tickFormatter={tickFormatter} valueTickFormatter={moneyTick}
-      tooltipFormatter={trendTooltip} zoomDisabled={stale}
+      tooltipFormatter={trendTooltip} zoomDisabled={stale} showGapConnections
       lines={[{ key: "cost_per_user", label: "사용자당 비용", axis: "left" },
         { key: "cost_per_session", label: "세션당 비용", axis: "left" },
         { key: "cost_per_1k_requests", label: "1,000요청당 비용", axis: "right" }]} />
-    <DualLineChart title={`${name} · 요청 효율 추이`} subtitle="캐시 히트율 = 캐시 읽기 ÷ (입력 + 캐시 읽기 + 캐시 쓰기)"
+    <DualLineChart title={`${name} · 요청 효율 추이`} subtitle={`캐시 히트율 = 캐시 읽기 ÷ (입력 + 캐시 읽기 + 캐시 쓰기) · ${gapHint}`}
       rows={rows} xKey="t" bucketHours={bucketHours} timeDomain={timeDomain} tickFormatter={tickFormatter} valueTickFormatter={numberTick}
-      tooltipFormatter={trendTooltip} zoomDisabled={stale}
+      tooltipFormatter={trendTooltip} zoomDisabled={stale} showGapConnections
       lines={[{ key: "tokens_per_request", label: "요청당 토큰", axis: "left" },
         { key: "cache_hit_pct", label: "캐시 히트율 (%)", axis: "right" }]} />
   </div>;

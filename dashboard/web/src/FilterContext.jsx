@@ -75,7 +75,7 @@ export function FilterProvider({ children }) {
       (prev) => {
         const next = serializeUrlState({ range: null, filters: { group, user, model, project, team }, piiMask, projectColumns });
         if (common && backend) next.set("backend", backend);
-        for (const k of ["days", "from", "to", "period", "client", "view"]) {
+        for (const k of ["days", "from", "to", "period", "rangeMode", "client", "view"]) {
           const v = prev.get(k);
           if (v) next.set(k, v);
         }

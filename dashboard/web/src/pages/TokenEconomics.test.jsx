@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider } from "../RangeContext.jsx";
 import { ConfigProvider } from "../ConfigContext.jsx";
@@ -121,6 +121,37 @@ test("an isolated trend observation between empty buckets renders a dot", async 
   await waitFor(() => expect(container.querySelectorAll(".recharts-line").length).toBeGreaterThan(0));
   // Five series, each observed in one bucket only: one marker per series.
   await waitFor(() => expect(container.querySelectorAll(".recharts-line-dot").length).toBe(5));
+  vi.restoreAllMocks();
+});
+
+test("two-day unit trends bridge internal unknown buckets with labelled dashed connections only", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 800, height: 300, top: 0, left: 0, right: 800, bottom: 300, x: 0, y: 0 });
+  const trend = Array.from({ length: 48 }, (_, h) => ({
+    t: new Date(Date.UTC(2026, 8, 8, h)).toISOString(),
+    cost_per_user: [1, 2, 5].includes(h) ? h : null,
+    cost_per_session: null, cost_per_1k_requests: null, tokens_per_request: null, cache_hit_rate: null,
+  }));
+  const range = { from: trend[0].t, to: "2026-09-10T00:00:00.000Z" };
+  const { container } = mount({ range, data: response([claude({ trend })], { effective_range: range, bucket_hours: 1 }) });
+  await waitFor(() => expect(container.querySelectorAll(".chart-gap-connector line")).toHaveLength(1));
+  const bridge = container.querySelector(".chart-gap-connector line");
+  expect(bridge.getAttribute("stroke-dasharray")).toBe("4 4");
+  expect(Number(bridge.getAttribute("x2"))).toBeGreaterThan(Number(bridge.getAttribute("x1")));
+  expect(screen.getAllByText(/점선은 관측값 사이의 연결이며/).length).toBeGreaterThan(0);
+  const chart = screen.getByText("Claude Code · 단위 비용 추이", { exact: true })
+    .closest(".shadow-card").querySelector(".recharts-wrapper");
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  fireEvent.mouseMove(chart, { clientX: left + (right - left) * 3 / 48, clientY: 60 });
+  await waitFor(() => {
+    const tooltip = chart.querySelector(".recharts-tooltip-wrapper");
+    expect(tooltip.textContent).toContain("사용자당 비용");
+    expect(tooltip.textContent).toContain("—");
+    expect(tooltip.textContent).not.toContain("$0");
+    expect(tooltip.textContent).not.toContain("$3");
+  });
   vi.restoreAllMocks();
 });
 

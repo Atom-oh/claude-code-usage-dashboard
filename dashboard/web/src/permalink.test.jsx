@@ -166,6 +166,62 @@ test("배타적 종료 경계는 재오픈 시 선택한 날짜 그대로 되돌
   expect(screen.getByLabelText("종료일").value).toBe("2026-09-04");
 });
 
+test("exact browser-local times reach the API and survive a shared link, including UTC midnights", async () => {
+  const fetchMock = stubFetch();
+  mount("/cost?group=bedrock&model=fixture", cfg());
+  fireEvent.click(screen.getByRole("button", { name: "기간 직접 선택" }));
+  fireEvent.click(screen.getByRole("button", { name: "날짜·시간", exact: true }));
+  fireEvent.change(screen.getByLabelText("시작 시각"), { target: { value: "2026-09-01T09:00:00" } });
+  fireEvent.change(screen.getByLabelText("종료 시각"), { target: { value: "2026-09-02T09:00:00" } });
+  fireEvent.click(screen.getByRole("button", { name: "적용", exact: true }));
+  await waitFor(() => {
+    const p = new URLSearchParams(loc.search);
+    expect(p.get("from")).toBe("2026-09-01T00:00:00.000Z");
+    expect(p.get("to")).toBe("2026-09-02T00:00:00.000Z");
+    expect(p.get("rangeMode")).toBe("time");
+    expect(p.get("group")).toBe("bedrock");
+    expect(p.get("model")).toBe("fixture");
+  });
+  const request = new URL(dataCalls(fetchMock, "/api/cost").at(-1), "http://localhost");
+  expect(request.searchParams.get("from")).toBe("2026-09-01T00:00:00.000Z");
+  expect(request.searchParams.get("to")).toBe("2026-09-02T00:00:00.000Z");
+  const link = loc.pathname + loc.search;
+  cleanup();
+  stubFetch();
+  mount(link, cfg());
+  fireEvent.click(screen.getByRole("button", { name: "기간 직접 선택" }));
+  expect(screen.getByLabelText("시작 시각").value).toMatch(/^2026-09-01T09:00(?::00)?$/);
+  expect(screen.getByLabelText("종료 시각").value).toMatch(/^2026-09-02T09:00(?::00)?$/);
+});
+
+test("exact time selection retains minutes and seconds and rejects empty, reversed or oversized ranges", async () => {
+  stubFetch();
+  mount("/cost", cfg({ rangeCapDays: 7 }));
+  fireEvent.click(screen.getByRole("button", { name: "기간 직접 선택" }));
+  fireEvent.click(screen.getByRole("button", { name: "날짜·시간", exact: true }));
+  const start = screen.getByLabelText("시작 시각"), end = screen.getByLabelText("종료 시각");
+  const apply = () => fireEvent.click(screen.getByRole("button", { name: "적용", exact: true }));
+  const before = loc.search;
+  fireEvent.change(start, { target: { value: "" } });
+  apply();
+  expect(screen.getByRole("alert").textContent).toContain("모두");
+  fireEvent.change(start, { target: { value: "2026-09-01T10:15:30" } });
+  fireEvent.change(end, { target: { value: "2026-09-01T10:15:30" } });
+  apply();
+  expect(screen.getByRole("alert").textContent).toContain("종료 시각");
+  fireEvent.change(end, { target: { value: "2026-09-08T10:15:31" } });
+  apply();
+  expect(screen.getByRole("alert").textContent).toContain("최대 7일");
+  expect(loc.search).toBe(before);
+  fireEvent.change(end, { target: { value: "2026-09-01T11:45:59" } });
+  apply();
+  await waitFor(() => {
+    const p = new URLSearchParams(loc.search);
+    expect(p.get("from")).toBe("2026-09-01T01:15:30.000Z");
+    expect(p.get("to")).toBe("2026-09-01T02:45:59.000Z");
+  });
+});
+
 test("상한과 정확히 같은 길이는 통과하고, 하루 더 긴 길이는 서버와 같은 기준으로 거부된다", async () => {
   const fetchMock = stubFetch();
   const { container } = mount("/cost", cfg({ rangeCapDays: 7 }));

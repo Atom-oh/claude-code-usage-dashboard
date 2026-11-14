@@ -729,7 +729,7 @@ test("users page shows one row per user across clients", () => {
   expect(within(zoe).getAllByRole("cell")[headers.indexOf("비용 (USD)")].textContent).toBe("—");
 });
 
-test("clicking a user opens 사용자 상세 for the selected clients and a range change closes it", async () => {
+test("clicking a user opens 사용자 상세 for the selected clients and keeps it open across range changes", async () => {
   const fetchMock = vi.fn((url) => {
     const u = new URL(String(url), "http://localhost");
     const body = u.pathname === "/api/clients/overview"
@@ -753,7 +753,7 @@ test("clicking a user opens 사용자 상세 for the selected clients and a rang
   expect(overview.every((u) => u.searchParams.get("client") === "codex"
     && u.searchParams.get("userExact") === "alice@example.test")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "range-7" }));
-  expect(screen.queryByRole("region", { name: "사용자 상세" })).toBeNull();
+  expect(screen.getByRole("region", { name: "사용자 상세" })).toBe(region);
 });
 
 test("a Users pick does not reopen as a Cost detail and a client change clears it", async () => {

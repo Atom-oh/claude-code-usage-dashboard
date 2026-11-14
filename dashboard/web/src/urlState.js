@@ -31,13 +31,14 @@ export function parseUrlState(searchParams, { defaultDays = 2, piiMask = true, p
   // 있으면 프리셋으로 접는다(서버도 from >= to를 400으로 거절한다).
   const customFrom = isIso(fromRaw) ? new Date(fromRaw) : null;
   const customTo = isIso(toRaw) ? new Date(toRaw) : null;
-  // 두 경계가 모두 정확히 UTC 자정이면 달력으로 고른 구간이다 — source는 URL에 담지 않고
-  // 이렇게 되살린다. 드래그 줌은 버킷 경계에서 온 값이라 자정에 걸리는 일이 사실상 없다.
+  // Preserve exact-time picks even when both bounds happen to be UTC midnight.
+  // Older links retain the existing calendar/zoom inference.
   const isUtcMidnight = (d) =>
     d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0;
   const custom =
     customFrom && customTo && customFrom < customTo
-      ? { from: customFrom, to: customTo, source: isUtcMidnight(customFrom) && isUtcMidnight(customTo) ? "calendar" : "zoom" }
+      ? { from: customFrom, to: customTo, source: get("rangeMode") === "time" ? "time"
+        : isUtcMidnight(customFrom) && isUtcMidnight(customTo) ? "calendar" : "zoom" }
       : null;
 
   const daysRaw = Number(get("days"));
@@ -62,6 +63,7 @@ export function serializeUrlState({ range, filters, piiMask = true, projectColum
   if (range?.custom) {
     p.set("from", range.custom.from.toISOString());
     p.set("to", range.custom.to.toISOString());
+    if (range.custom.source === "time") p.set("rangeMode", "time");
   } else if (range?.month) {
     p.set("period", "month");
   } else if (range?.days != null) {

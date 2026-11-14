@@ -360,9 +360,12 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
   const selected = clients;
   // Keyed by page and client selection as well: the shared panel stays mounted across routes, so a
   // Users pick must not reopen as a Cost detail (or the reverse), and client changes clear it.
-  const pickKey = `${page}|${rangeKey}|${selected.join(",")}`;
-  const selection = detailPick?.key === pickKey ? detailPick.row : null;
-  const select = (row) => setDetailPick({ key: pickKey, row });
+  const pickKey = `${page}|${selected.join(",")}`;
+  // Keep the user open while a drag or the global picker changes the period.
+  // Model drilldowns still belong to the range in which they were selected.
+  const selection = detailPick?.key === pickKey
+    && (detailPick.row.kind === "user-detail" || detailPick.rangeKey === rangeKey) ? detailPick.row : null;
+  const select = (row) => setDetailPick({ key: pickKey, rangeKey, row });
   const rows = (key) => (data?.[key] || []).filter((row) => selected.includes(row.client)).map(presentationRow);
   const clientRows = selected.map((client) => presentationRow(
     (data?.by_client || []).find((row) => row.client === client) || { client, observed_records: 0 },
