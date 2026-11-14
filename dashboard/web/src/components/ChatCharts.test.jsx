@@ -44,7 +44,7 @@ test("tiny positive costs remain visible instead of rounding to zero", () => {
 test("charts disclose effective time bounds and a shortened requested end", () => {
   const from = "2026-11-06T00:00:00.000Z", to = "2026-11-07T00:00:00.000Z";
   render(<ChatCharts charts={[{ ...chart, effective_range: { from, to, requested_to: "2026-11-07T00:30:00.000Z" } }]} />);
-  expect(screen.getByText(new RegExp(`집계 기간: ${new Date(from).toLocaleString()}`, "u"))).toBeTruthy();
+  expect(screen.getByText(new RegExp(`집계 기간: ${new Date(from).toLocaleString("ko-KR")}`, "u"))).toBeTruthy();
   expect(screen.getByText(/요청 종료 시각보다 짧은 집계/)).toBeTruthy();
 });
 

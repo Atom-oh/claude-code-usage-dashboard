@@ -58,7 +58,7 @@ Maintained engineering documentation remains English under
 
 ## Owners and evidence
 
-- [Locale store](../../dashboard/web/src/i18n/store.js)
+- [Locale implementation](../../dashboard/web/src/i18n/README.md)
 - [Catalog provenance](../../dashboard/web/src/i18n/translations.json)
-- [Locale-store tests](../../dashboard/web/src/i18n/store.test.js)
+- [Locale tests](../../dashboard/web/src/i18n/locale.test.jsx)
 - [Frontend state](../reference/frontend.md) and [display contracts](../reference/ui.md)

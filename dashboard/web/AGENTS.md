@@ -33,7 +33,14 @@ React 18/Vite 8/Tailwind 4/Recharts 3 SPA, Node 22.12+. Run npm test/npm run bui
 - Card/StatTile: help/loading/error/empty conventions; absent subtitles/hints: undefined.
 - One nav element except mobile drawer open; mobile: Sidebar NAV. Align route/navigation tests.
 - Time-series drag: whole-page zoom; categorical axes never zoom.
-- UI Korean-first, technical names/IDs English; engineering docs English. Never translate runtime strings in doc edits.
+- UI defaults to Korean and supports `en`, `zh-CN`, `ja`, `es`, and `ko` through
+  `src/i18n/`. Keep authored copy in the catalogs; preserve positional slots and
+  use complete messages for mixed text/values. Luna owns translated catalog text.
+  Keep technical names/IDs and telemetry/user text intact. Locale changes must
+  preserve component, filter, range and task state. Only authored static
+  presentation records may opt into `localize()`; never pass API payloads to it.
+  Engineering docs remain English; documentation-only edits do not authorize
+  translating runtime strings.
 
 [Frontend](../../docs/reference/frontend.md),
 [UI](../../docs/reference/ui.md); [Metrics](../../docs/metrics.md).

@@ -170,6 +170,10 @@ columns and sorted rows; central `csv.js` masks exported `user` cells
 when enabled. [Metrics](metrics.md) defines the arbitrary activity score, permission-decision
 acceptance (including automatic decisions), timing proxies and unsupported beta results.
 UI wording does not turn these into code-quality or labor-savings measurements.
+The same image provides five interface languages through a browser locale
+preference and shared message catalogs. Locale changes retain range/filter/task
+state and do not alter the API or telemetry. See
+[ADR-022](decisions/ADR-022-per-viewer-interface-language.md).
 
 ## API, chat and trust boundary
 

@@ -1,3 +1,4 @@
+import { localeTag } from "./i18n/index.js";
 function observed(value) {
   if (!["number", "string"].includes(typeof value) || String(value).trim() === "") return null;
   const n = Number(value);
@@ -6,13 +7,13 @@ function observed(value) {
 
 export function formatObserved(value) {
   const n = observed(value);
-  return n === null ? "—" : n.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
+  return n === null ? "—" : n.toLocaleString(localeTag(), { maximumFractionDigits: 2 });
 }
 
 export function formatClientCost(value) {
   const n = observed(value);
   if (n === null) return "—";
-  return `$${n.toLocaleString("en-US", n > 0 && n < 1
+  return `$${n.toLocaleString(localeTag(), n > 0 && n < 1
     ? { maximumSignificantDigits: 8 }
     : { maximumFractionDigits: 2 })}`;
 }

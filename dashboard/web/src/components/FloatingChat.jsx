@@ -1,3 +1,4 @@
+import { localize, translate, useLocale } from "../i18n/index.js";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,13 +12,14 @@ import { DEFAULT_CHAT_SIZE, clampChatSize, expandedChatSize, loadChatSize, saveC
 // Ask Claude — 우하단 플로팅 챗. POST /api/chat SSE(text/thinking/chart/status/done/error)를 읽는
 // 공용 로직은 useChatStream.js에 있다 — Analytics 탭도 같은 훅을 쓴다.
 
-const SUGGESTIONS = [
+const SUGGESTIONS = localize([
   "지난 7일간 모델별 토큰 사용량을 보여줘",
   "세션 수가 가장 많은 사용자 5명은?",
   "bedrock과 enterprise 채널의 비용을 비교해줘",
-];
+]);
 
 export function FloatingChat() {
+  const _locale = useLocale();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const { msgs, busy, status, trace, ask, stop: stopStream } = useChatStream();
@@ -98,7 +100,7 @@ export function FloatingChat() {
           <div
             role="separator"
             aria-orientation="vertical"
-            aria-label="채팅 창 크기 조절 (화살표 키, Shift로 크게)"
+            aria-label={translate("m4dd65b36a0cf")}
             aria-valuenow={size.w}
             tabIndex={0}
             onPointerDown={onHandleDown}
@@ -106,25 +108,25 @@ export function FloatingChat() {
             onPointerUp={onHandleUp}
             onPointerCancel={onHandleUp}
             onKeyDown={onHandleKey}
-            title="드래그해서 창 크기를 조절합니다"
+            title={translate("m032eeb54d78b")}
             className="absolute left-0 top-0 z-10 h-4 w-4 cursor-nwse-resize touch-none rounded-br-md border-b border-r border-ink-200 bg-ink-100/70 hover:bg-ink-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           />
           <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
             <div>
               <div className="text-[14px] font-semibold text-ink-800">Ask Claude</div>
-              <div className="text-[11px] text-ink-400">사용량 데이터를 직접 조회해 답합니다</div>
+              <div className="text-[11px] text-ink-400">{translate("m31c5ab0c8282")}</div>
             </div>
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={toggleExpanded}
-                aria-label={restore ? "창 크기 되돌리기" : "창 크게 보기"}
-                title={restore ? "창 크기 되돌리기" : "창 크게 보기"}
+                aria-label={restore ? translate("m660c2f9f44e4") : translate("m528d4ed93294")}
+                title={restore ? translate("m660c2f9f44e4") : translate("m528d4ed93294")}
                 className="rounded-md p-1 text-ink-400 hover:bg-ink-100"
               >
                 {restore ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
               </button>
-              <button onClick={stop} aria-label="닫기" className="rounded-md p-1 text-ink-400 hover:bg-ink-100">
+              <button onClick={stop} aria-label={translate("m1e8c10206f5b")} className="rounded-md p-1 text-ink-400 hover:bg-ink-100">
                 <X size={16} />
               </button>
             </div>
@@ -132,7 +134,7 @@ export function FloatingChat() {
           <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
             {msgs.length === 0 && (
               <div className="flex flex-col gap-2">
-                <div className="text-[11px] uppercase tracking-[0.04em] text-ink-400">이렇게 물어보세요</div>
+                <div className="text-[11px] uppercase tracking-[0.04em] text-ink-400">{translate("m9e2e82b50b2f")}</div>
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s}
@@ -180,7 +182,7 @@ export function FloatingChat() {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="사용량에 대해 질문하세요"
+              placeholder={translate("m57e26d26c5c7")}
               className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] focus:border-brand-500 focus:outline-none"
             />
             <button

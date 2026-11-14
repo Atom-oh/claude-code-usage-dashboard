@@ -21,6 +21,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   for the multilingual interface.
 - Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
   provenance and verified message placeholders.
+- Add a persistent five-language picker to desktop, mobile and task detail.
+  Localize shared controls, chart labels and feedback while retaining open tasks,
+  filters and time ranges; guide links follow the selected language.
 
 ## [1.8.1] - 2026-11-14
 
