@@ -31,6 +31,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   next three follow and older versions share the fifth step; family hues avoid the client
   and channel colors. The newest Fable 5.2, Sonnet 5.5 and Haiku 5.5 are registered.
 
+### Fixed
+
+- Count LLM calls for Codex tasks from older versions (observed: 0.159.3; 0.162.1 and
+  later emit `codex.sampling`). Those versions emit no `codex.sampling` span, so their
+  tasks showed 0 LLM calls and no call spans in the task detail. A turn without
+  `codex.sampling` now counts its `run_sampling_request` spans (one per model call; the
+  `try_` retry wrapper is not counted), never both kinds in one turn.
+
 ## [1.8.2] - 2026-11-14
 
 ### Added
