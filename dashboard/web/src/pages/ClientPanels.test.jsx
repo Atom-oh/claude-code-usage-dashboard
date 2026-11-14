@@ -779,3 +779,33 @@ test("a Users pick does not reopen as a Cost detail and a client change clears i
   rerender(tree("users", ["codex"]));
   expect(screen.queryByRole("region", { name: "사용자 상세" })).toBeNull();
 });
+
+test("token composition retains legend emphasis through every interface language", async () => {
+  const { act } = await import("@testing-library/react");
+  const { localeStore } = await import("../i18n/index.js");
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+    const height = this.classList.contains("recharts-legend-wrapper") ? 20 : 300;
+    return { width: 800, height, top: 0, left: 0, right: 800, bottom: height, x: 0, y: 0 };
+  });
+  mount("usage");
+  const panel = screen.getByText("클라이언트별 토큰 구성", { exact: true }).closest(".shadow-card");
+  const paths = () => [...panel.querySelectorAll(".recharts-bar-rectangle path")];
+  const fills = () => paths().map(path => path.getAttribute("fill"));
+  await waitFor(() => expect(paths().length).toBeGreaterThan(1));
+  const original = fills();
+  fireEvent.click(within(panel).getAllByRole("listitem")[0]);
+  await waitFor(() => expect(fills()).not.toEqual(original));
+  const focused = fills();
+  try {
+    for (const locale of ["en", "zh-CN", "ja", "es", "ko"]) {
+      await act(() => localeStore.select(locale));
+      expect(panel.isConnected).toBe(true);
+      expect(fills()).toEqual(focused);
+    }
+    fireEvent.click(within(panel).getAllByRole("listitem")[0]);
+    await waitFor(() => expect(fills()).toEqual(original));
+  } finally {
+    cleanup();
+    await localeStore.select("ko");
+  }
+});

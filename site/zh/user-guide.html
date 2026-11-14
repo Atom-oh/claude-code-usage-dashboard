@@ -12,18 +12,19 @@
 <link href="../ko/user-guide.html" hreflang="ko" rel="alternate"/>
 <link href="../ja/user-guide.html" hreflang="ja" rel="alternate"/>
 <link href="user-guide.html" hreflang="zh-CN" rel="alternate"/>
+<link href="../es/user-guide.html" hreflang="es" rel="alternate"/>
 </head>
 <body class="visual-docs" data-stylesheet-version="4b6ff295">
 <a class="skip-link" href="#main">跳转到正文</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
 <nav aria-label="主要导航" class="tabs"><a href="index.html">概览</a><a aria-current="page" href="user-guide.html">用户指南</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html">API</a><a href="operations.html">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
-<div aria-label="语言" class="languages" role="group"><a href="../user-guide.html" hreflang="en" lang="en">English</a><a href="../ko/user-guide.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/user-guide.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
+<div aria-label="语言" class="languages" role="group"><a href="../user-guide.html" hreflang="en" lang="en">English</a><span lang="zh-CN">简体中文</span><a href="../ja/user-guide.html" hreflang="ja" lang="ja">日本語</a><a href="../es/user-guide.html" hreflang="es" lang="es">Español</a><a href="../ko/user-guide.html" hreflang="ko" lang="ko">한국어</a></div>
 </div></header>
 <main class="wrap" id="main">
 <div class="hero"><p class="eyebrow">Claude Code + Codex · 文档</p><h1>用户、成本和工具实用指南</h1>
 <p class="lede">从一项调查开始。按照屏幕截图操作，然后使用菜单参考了解所有可用控件和特定客户端的详细信息。</p>
-<p class="caption">可用功能取决于安装环境、权限和收集到的数据。本指南说明各项操作，并保留以韩语为主的界面中的实际标签，便于查找。内容已对照 v1.8.0 源码核实。</p>
+<p class="caption">可用功能取决于您的安装环境、权限和已收集的数据。应用和本指南支持英语、简体中文、日语、西班牙语和韩语。截图展示韩语界面或明确标注的英语示例。</p>
 </div>
 <div class="manual-shell">
 <details class="manual-nav" id="contents" open=""><summary>目录</summary><ul><li><span class="nav-group">实用操作指南</span></li><li><a href="#trace-workflow">追踪用户的工作</a></li><li><a href="#cost-workflow">说明成本和效率</a></li><li><a href="#tools-workflow">检查工具使用情况</a></li><li><a href="#system-overview">了解架构</a></li><li><span class="nav-group">菜单和控件参考</span></li><li><a href="#start">从这里开始</a></li><li><a href="#common-controls">控件和结果解读</a></li><li><a href="#overview">Overview</a></li><li><a href="#exec">Executive</a></li><li><a href="#trends">Trends</a></li><li><a href="#productivity">Productivity</a></li><li><a href="#usage">Usage</a></li><li><a href="#users">Users</a></li><li><a href="#cost">Cost</a></li><li><a href="#reliability">Reliability</a></li><li><a href="#analytics">Analytics</a></li><li><a href="#collector">收集器设置</a></li><li><a href="#installation">安装状态</a></li><li><a href="#tasks">任务和 Trace</a></li><li><a href="#assistant">AI 助手</a></li><li><a href="#access">账户和帮助</a></li><li><a href="#workflows">常见工作流程</a></li><li><a href="#troubleshooting">故障排查和结果解读</a></li></ul></details>
@@ -71,6 +72,8 @@
 <li>根据您的问题选择相应页面：要按模型或用户查看明细，请使用<a href="#cost">Cost</a>；要查看一段时间内的变化，请使用<a href="#trends">Trends</a>；要查看用户及其<a href="#tasks">任务</a>，请使用<a href="#users">Users</a>。比较结果时，请使用相同的数据源和时间段。</li></ol>
 <p>在窄屏幕上，点击顶部的菜单按钮（<strong>메뉴 열기</strong>）。选择页面后，导航抽屉会自动关闭。点击关闭按钮、背景区域或按 Escape 键，也可以将其关闭。</p><p><a href="#contents">返回目录</a></p>
 </section><section id="common-controls"><h2>控件和结果解读</h2>
+<h3 id="language-selection">选择语言</h3><p>请在应用侧边栏底部选择语言，或在移动设备上打开菜单。页面导航和刷新后仍会保留所选语言。打开“用户指南”即可阅读相同语言版本的指南。更改语言会保留所选时间段和当前打开的任务；技术标识符、用户文本和已收集的值不会改变。切换语言不会改变时区或查询时间范围的边界。</p>
+
 <figure class="screen-shot compact"><a data-lightbox="" href="../assets/img/time-range-en.png"><img alt="选择准确的开始和结束时间。此较早版本的演示使用英文显示标签。" decoding="async" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">选择准确的开始和结束时间。此较早版本的演示使用英文显示标签。<small>打开原尺寸界面</small></span></figcaption></figure>
 
 <h3>数据源和筛选器</h3>
@@ -222,6 +225,6 @@
 </div>
 </main>
 <footer><div class="wrap"><p>ccdash · OpenTelemetry → ClickHouse → Express → React</p><p><a href="index.html">文档概览</a> · <a href="credits.html">演示致谢</a></p><p>遥测数据可能不完整。报告的费用和按目录价格估算的费用都不是发票金额。活动指标不能证明员工的生产力或因果关系上的投资回报率。</p></div></footer>
-<script defer src="../assets/guide.js?v=abac4d28"></script>
+<script defer src="../assets/guide.js?v=b92b0cfe"></script>
 </body>
 </html>

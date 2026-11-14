@@ -989,8 +989,8 @@
       },
       {
         "path": "site/assets/guide.js",
-        "bytes": 3785,
-        "sha256": "abac4d28b59ca56a6f83475d5777542731de978d6cf63965d29371cd3b0a463e"
+        "bytes": 3905,
+        "sha256": "b92b0cfe4182df6376c2ffa14d71e17ceab40cd1712d105da6d0dcf9947cc6d1"
       }
     ],
     "captures": 27,
@@ -1011,6 +1011,7 @@
       "license": "fonts/OFL.txt",
       "upstream_commit": "5c41199ea0024a9e0b2cb31735265056e5472d76"
     },
-    "validation": "All 27 PNGs fully decode and are nonblank. Synthetic costs, tokens, exact-user filters, task cost bases and LMDI terms reconcile. Zero capture browser/console errors or unexpected requests. Final guide browser verification is recorded separately in the translation ledger."
+    "validation": "All 27 PNGs fully decode and are nonblank. Synthetic costs, tokens, exact-user filters, task cost bases and LMDI terms reconcile. Zero capture browser/console errors or unexpected requests. Final guide browser verification is recorded separately in the translation ledger.",
+    "locale_validation": "Five locales including Spanish; desktop/mobile image enlargement and contents controls verified."
   }
 }
