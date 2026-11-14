@@ -14,10 +14,11 @@ export const localeStore = createLocaleStore({
   source: ko,
   loaders: {
     ko: async () => ko,
-    en: () => import("./locales/en.json", { with: { type: "json" } }),
-    "zh-CN": () => import("./locales/zh-CN.json", { with: { type: "json" } }),
-    ja: () => import("./locales/ja.json", { with: { type: "json" } }),
-    es: () => import("./locales/es.json", { with: { type: "json" } }),
+    // Vite serves these JSON imports as JavaScript modules in development.
+    en: () => import("./locales/en.json"),
+    "zh-CN": () => import("./locales/zh-CN.json"),
+    ja: () => import("./locales/ja.json"),
+    es: () => import("./locales/es.json"),
   },
   onLocale: (locale) => { if (typeof document !== "undefined") document.documentElement.lang = locale; },
 });

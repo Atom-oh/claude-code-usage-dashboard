@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T14:01:01.569525+00:00",
-  "source_messages": 1906,
+  "updated_at": "2026-11-14T15:01:17.831345+00:00",
+  "source_messages": 1950,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 1906,
-      "bytes": 144988,
-      "sha256": "c5d993ef91e94fea5ee42debe970ca416a944fd638f9d91adcf28e354b8d151b"
+      "messages": 1950,
+      "bytes": 148096,
+      "sha256": "5747fc7d2c0956c15d5083ab080c7194b3b6f51b694e944e3ba6b4181558ff1e"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 1906,
-      "bytes": 170906,
-      "sha256": "f9a403018494da9f948c94d96ead83e5d9d8431b0ddcee9b00399f00f5c80f56"
+      "messages": 1950,
+      "bytes": 174771,
+      "sha256": "712810ea3114b21b29167ecf427c84bba905267842b3bbb8e9fa5f8c994895b1"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 1906,
-      "bytes": 179446,
-      "sha256": "124f0d374a6e58d41df6191249867e3eeeb87be1e931e3620360dc44d0695b6c"
+      "messages": 1950,
+      "bytes": 183593,
+      "sha256": "028750604a4933b8cbb869605b492463b7b65cfa14ceacdd15a2285af38bb988"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 1906,
-      "bytes": 153925,
-      "sha256": "17d4fd649883673152c5d9c3700317e3fd67fd20941f980059c171bafc438f3a"
+      "messages": 1950,
+      "bytes": 157627,
+      "sha256": "bd251dff5716b9733e9385110ae51548bc52ea409b65c495ea27507b8eb5239c"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 1906,
-      "bytes": 137112,
-      "sha256": "b5dd056778419bcd409c740d464ece5718f7727d9a7b23116dd4d5c2ee899b07"
+      "messages": 1950,
+      "bytes": 140026,
+      "sha256": "bacebcf53a5c17dae81b32db0099b2192343902af6e62a104adc64b81b91e71a"
     }
   ],
   "catalog_calls": [
@@ -885,5 +885,88 @@
     ],
     "verification": "All catalog keys have nonempty strings in all five locales; positional placeholder multisets match.",
     "attestation_note": "The requested model is recorded. Hidden weights are not independently attested."
+  },
+  "settings_2026_11_14": {
+    "initial_receipt": {
+      "requested_model": "openai.gpt-6-luna",
+      "selection_basis": "coordinator CLI invocation",
+      "timestamp_utc": "2026-11-14T14:48:23Z",
+      "source_sha256": "cd4eec2b88abf2c355c296b33969656cfca6919ec94cfe7a37b78a36d23488a2",
+      "output_sha256": "9e6087ff3ff3dc2373d73ac1cd531e29d86d0774ac89e574c737fca9c1488ab0"
+    },
+    "followup_receipt": {
+      "requested_model": "openai.gpt-6-luna",
+      "selection_basis": "coordinator CLI invocation",
+      "timestamp_utc": "2026-11-14T14:49:54Z",
+      "source_sha256": "473287b01875b8254c3ceda3f03898916d20125b6fc9b77df19a204c8ed52e9a",
+      "output_sha256": "77661b33bb12f466156f500acbf70fa6e13d50e62ee21f0844eb3aba69e90d39",
+      "parent_receipt_sha256": "481d69e2a11b6501ba94235c8bc354b7b779f9fcf5b22860fadc4cfe1a07da12"
+    },
+    "used_keys": [
+      "m6c9f98d45131",
+      "mccfae6fc377c",
+      "m3256c952c3a2",
+      "mcc75da3889bd",
+      "mde7e132c2622",
+      "mb0274d6fd29d",
+      "mee1be3227c78",
+      "m24f0226619cb",
+      "m115bced49291",
+      "m0ee453b5794b",
+      "m83ebb5d0dc9a",
+      "m555fb7461e98",
+      "mda6baf39d0db",
+      "mbe0cd9bd9b6d",
+      "m3bea8a89ae15",
+      "m5424f5dd84a1",
+      "m783c0d01181a",
+      "m24a3d8ce95ce",
+      "mfe7bc674eb23",
+      "m9a317f8d47c0",
+      "m4099095c2117",
+      "m92c4796cf195",
+      "m5fb926229090",
+      "m66f508b7b7ed",
+      "m865d52f9da0b",
+      "mc442cebc7e44",
+      "m6316e2c8d172",
+      "m18881e245dff",
+      "m2f178e290973",
+      "m074cf57c8c5d",
+      "m36ac48a27925",
+      "mbcd902decf7c",
+      "mc7523b7f9689",
+      "m00bb702d1cab",
+      "m72d2bae2a744",
+      "m079b5e102e4d",
+      "m5566216e77e6",
+      "m9a9ec59c0f57",
+      "m102db82683f0",
+      "m9d004a4c403a",
+      "mf995216032e2",
+      "m17f6238a230c"
+    ],
+    "used_message_count": 42,
+    "selection": "Only UI keys in the corrected source were used; extracted markup fragments were discarded.",
+    "agent_record_sha256": "2c162f9fd052a1d9cf408bd679161b79204ea05d31a97f783da02718f74fcd88",
+    "conflict_message": {
+      "requested_model": "openai.gpt-6-luna",
+      "coordinator_cli_invocation": "Codex CLI",
+      "timestamp_utc": "2026-11-14T14:50:57Z",
+      "source_sha256": "10a993125cc94e367b4a19ab3de024ab066be7a674e548a6c8320d484246b5d9",
+      "output_sha256": "7c5fd3fbc9fa6d9712be3ced88b8edf9a1bebc1b4b2f78670ad19f7c2ce62522",
+      "used_keys": [
+        "m2b6bc9e24fea"
+      ],
+      "source_sha256_verified": "10a993125cc94e367b4a19ab3de024ab066be7a674e548a6c8320d484246b5d9",
+      "output_sha256_verified": "7c5fd3fbc9fa6d9712be3ced88b8edf9a1bebc1b4b2f78670ad19f7c2ce62522"
+    }
+  },
+  "upstream_289_preserved": {
+    "pr": 289,
+    "keys": [
+      "ma1a91661679d"
+    ],
+    "provenance": "Preserved unchanged from the reviewed upstream PR; these entries are outside the Settings translation batch."
   }
 }

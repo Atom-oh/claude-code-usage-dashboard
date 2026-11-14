@@ -57,6 +57,7 @@ PATHS = frozenset({
     "site/assets/img/guide-executive-charts.png",
     "site/assets/img/guide-executive.png",
     "site/assets/img/guide-installation.png",
+    "site/assets/img/guide-settings.png",
     "site/assets/img/guide-mcp.png",
     "site/assets/img/guide-overview-trend.png",
     "site/assets/img/guide-overview.png",

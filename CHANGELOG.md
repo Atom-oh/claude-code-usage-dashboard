@@ -17,6 +17,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed
 
+- Localize the administrator team-mapping screen in all five languages while
+  retaining unsaved labels, the selected attribute and existing save errors. Add
+  an illustrated administrator walkthrough to every language of the user guide.
+- Load translated catalogs through Vite's JSON modules in development without a
+  conflicting native JSON import type.
+
 - Document browser approval and distinguish the retained manual-token collector walkthrough.
 - Make the detailed product tour the primary guide video in all five languages, with chapter seeking, one default English caption track, local downloads and preserved historical media credits. Initialize captions even when metadata is already loaded, while retaining later viewer choices.
 

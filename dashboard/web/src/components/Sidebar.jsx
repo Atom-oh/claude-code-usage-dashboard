@@ -22,7 +22,7 @@ export function useNavigation() {
       ...COLLECTOR_PAGE, icon: Download,
     }] : []),
     ...(session?.permissions?.includes("settings:manage") ? [{
-      to: "/settings", label: "설정", hint: "팀 매핑", icon: Users2,
+      to: "/settings", label: translate("m115bced49291"), hint: translate("m5424f5dd84a1"), icon: Users2,
     }] : []),
     ...(session?.permissions?.includes("installation:read") ? [{
       to: "/installation", label: translate("m3f34928ff1d0"), hint: translate("mc2dbd98c95f8"), icon: Settings,
