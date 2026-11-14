@@ -33,8 +33,8 @@ test("Codex signal SQL against isolated ClickHouse", {
   function insert(type, rows) {
     execute(`INSERT INTO claude_code.codex_metrics_${type} FORMAT JSONEachRow\n${rows.map((row) => JSON.stringify(row)).join("\n")}`);
   }
-  function metric(type, filters = {}) {
-    const request = buildMetricQuery(type, from, to, filters);
+  function metric(type, filters = {}, options = {}) {
+    const request = buildMetricQuery(type, from, to, filters, options);
     const output = execute(`${request.sql} FORMAT JSONEachRow`, request.params);
     const rows = output ? output.split("\n").map((line) => JSON.parse(line)) : [];
     return { rows, ...foldCodexMetrics(rows, from, to) };
@@ -137,16 +137,30 @@ test("Codex signal SQL against isolated ClickHouse", {
       { ...row, MetricName: "codex.conflict", TimeUnix: "2026-09-14 23:59:00" },
       { ...row, MetricName: "codex.conflict", TimeUnix: "2026-09-14 23:59:00", Value: 11 },
       { ...row, MetricName: "codex.conflict", Value: 13 },
+      // An interior decrease the net change hides, and one below the baseline.
+      { ...row, MetricName: "codex.dip", TimeUnix: "2026-09-14 23:59:00" },
+      { ...row, MetricName: "codex.dip", Value: 13 },
+      { ...row, MetricName: "codex.dip", TimeUnix: "2026-09-15 00:02:00", Value: 12 },
+      { ...row, MetricName: "codex.dip", TimeUnix: "2026-09-15 00:03:00", Value: 18 },
+      { ...row, MetricName: "codex.below", TimeUnix: "2026-09-14 23:59:00" },
+      { ...row, MetricName: "codex.below", Value: 8 },
+      { ...row, MetricName: "codex.below", TimeUnix: "2026-09-15 00:02:00", Value: 12 },
+      // A conflicting retry at the latest in-window timestamp.
+      { ...row, MetricName: "codex.latest-conflict", TimeUnix: "2026-09-14 23:59:00" },
+      { ...row, MetricName: "codex.latest-conflict", Value: 13 },
+      { ...row, MetricName: "codex.latest-conflict", Value: 14 },
     ]);
     const result = metric("sum", { model: "fixture" });
     const counterRows = result.rows.filter((r) => r.name === "codex.counter");
-    assert.equal(counterRows.length, 4);
+    // Baseline and latest point of the first start, latest point of the restart.
+    assert.equal(counterRows.length, 3);
     const counter = result.metrics.find((r) => r.name === "codex.counter");
     assert.equal(counter.value, 10);
     assert.equal(counter.points, 3);
     assert.equal(counter.partial, false);
     assert(!result.rows.some((r) => r.name === "codex.inactive"));
-    for (const name of ["codex.missing", "codex.scope", "codex.stale", "codex.conflict"]) {
+    for (const name of ["codex.missing", "codex.scope", "codex.stale", "codex.conflict",
+      "codex.dip", "codex.below", "codex.latest-conflict"]) {
       assert.equal(result.metrics.find((r) => r.name === name).value, null);
       assert.equal(result.metrics.find((r) => r.name === name).partial, true);
     }
@@ -311,7 +325,7 @@ test("Codex signal SQL against isolated ClickHouse", {
       assert.equal(result.metrics[0].partial, type !== "sum", "cumulative histogram extremes remain unknown");
       insert(type, [{ ...prior, ...(type === "sum" ? { Value: 7 } : { Count: 7, Sum: 70 }) }]);
       result = metric(type, { model: "baseline-scale" });
-      assert.equal(result.rows.length, 3, "all conflicting latest points survive timestamp selection");
+      assert.equal(result.rows.length, 2, "a conflicting baseline tie folds into the latest point's flags");
       assert.equal(result.metrics[0].partial, true);
       assert.equal(result.metrics[0][type === "sum" ? "value" : "count"], null);
       assert.equal(result.metrics[0].points, 1);
@@ -319,23 +333,35 @@ test("Codex signal SQL against isolated ClickHouse", {
   }
 
   for (const type of ["sum", "gauge", "histogram", "exponential_histogram"]) {
-    await t.test(`${type} marks oversized non-DELTA windows before transferring payloads`, () => {
+    await t.test(`${type} bounds oversized non-DELTA windows before transferring payloads`, () => {
       const histogram = type.endsWith("histogram");
       const valueColumns = histogram ? "Count, Sum, Min, Max" : "Value";
-      const values = histogram ? "1, 10, 10, 10" : "1";
+      const values = histogram ? "number + 1, 10 * (number + 1), 10, 10" : "number + 1";
+      const [temporalityColumns, temporalityValues] = type === "gauge" ? ["", ""]
+        : type === "sum" ? ["AggregationTemporality, IsMonotonic,", "2, true,"] : ["AggregationTemporality,", "2,"];
       execute(`INSERT INTO claude_code.codex_metrics_${type}
         (ResourceAttributes, Attributes, MetricName, StartTimeUnix, TimeUnix,
-         ${type === "gauge" ? "" : "AggregationTemporality,"} ${valueColumns})
+         ${temporalityColumns} ${valueColumns})
         SELECT map('client','codex'), map('model','guard-scale'), 'codex.guard',
-          toDateTime64('2026-09-14 00:00:00',9),
+          toDateTime64('2026-09-15 00:00:00',9),
           addMicroseconds(toDateTime64('2026-09-15 00:00:00',9), number),
-          ${type === "gauge" ? "" : "2,"} ${values} FROM numbers(60000)`);
-      const request = buildMetricQuery(type, from, to, { model: "guard-scale" });
-      const output = execute(`${request.sql} FORMAT JSONEachRow`, request.params);
-      const rows = output.split("\n").map(JSON.parse);
-      assert.equal(rows.length, 1);
-      assert.equal(Number(rows[0].result_limited), 1);
-      assert.throws(() => foldCodexMetrics(rows, from, to), /too much signal data/);
+          ${temporalityValues} ${values} FROM numbers(60000)`);
+      const limited = (options) => {
+        const request = buildMetricQuery(type, from, to, { model: "guard-scale" }, options);
+        const rows = execute(`${request.sql} FORMAT JSONEachRow`, request.params).split("\n").map(JSON.parse);
+        assert.equal(rows.length, 1);
+        assert.equal(Number(rows[0].result_limited), 1);
+        assert.throws(() => foldCodexMetrics(rows, from, to), /too much signal data/);
+      };
+      if (type === "gauge") return limited();
+      // 60000 cumulative points of one series fold to its latest point.
+      const result = metric(type, { model: "guard-scale" });
+      assert.equal(result.rows.length, 1);
+      assert.equal(result.metrics[0][histogram ? "count" : "value"], 60000);
+      assert.equal(result.metrics[0].points, 60000);
+      assert.equal(result.metrics[0].partial, false);
+      // The scan budget, not the point count, marks the limit.
+      limited({ scanLimit: 59999 });
     });
   }
 });

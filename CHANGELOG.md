@@ -24,6 +24,15 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   an administrator can override it on the settings page. Filters, URLs and API responses
   keep raw values.
 
+### Fixed
+
+- Codex metrics on Reliability no longer always report "limited". Codex re-exports every
+  cumulative series each interval (about 120 million points over two days for 20 thousand
+  series), so the raw-point guard tripped for nearly any range. Cumulative series now fold
+  in SQL to their latest and baseline points, and a stored-row budget bounds the scan.
+  The full metric list (Analytics) still reports "limited": its three-day baseline lookback
+  alone exceeds the budget.
+
 ## [1.10.0] - 2026-11-14
 
 ### Changed
