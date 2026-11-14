@@ -1375,8 +1375,8 @@
       },
       {
         "path": "video/product-tour/README.md",
-        "bytes": 2503,
-        "sha256": "3c2fbb1b22c61719d4c3c42f8d31eabd1cfb0acae8cde42aa7450cb994c16ff9"
+        "bytes": 2625,
+        "sha256": "d1f7b4c4dde313104305e66ec5ce5f29f10f55b67ccada2705d47b6b8f940dbd"
       },
       {
         "path": "video/product-tour/STORYBOARD.md",
@@ -1590,8 +1590,8 @@
       },
       {
         "path": "video/product-tour/prepare-audio.py",
-        "bytes": 9292,
-        "sha256": "5ad16c573a45a7cdbbdb7e9ed3b738a986f6cf21fcedbac1e6a298a258ab4ed8"
+        "bytes": 10009,
+        "sha256": "da129542153fe2cbbf8ff2126fe40741bc759a9e9926701c88a065416b13433a"
       },
       {
         "path": "video/product-tour/registry.json",
@@ -1625,8 +1625,8 @@
       },
       {
         "path": "video/product-tour/test_audio_generation.py",
-        "bytes": 4208,
-        "sha256": "6285b0d2477f09cdb05b209983f2154a2b160150a35a1c00aed2ef6963c314f4"
+        "bytes": 7551,
+        "sha256": "bc194045ce65ee0d0ca7252c76f72d52e1e703795dc155a1e4bf4a2601aeb267"
       },
       {
         "path": "video/product-tour/timing.json",
