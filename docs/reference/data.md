@@ -293,7 +293,8 @@ users, so every result is partial. Rules:
 - Codex linkage: spans carry no usage. A unique usage-bearing `response.completed`
   completion links to the conversation's turn whose `[start, end + 5s]` contains its event
   time (latest start wins, each completion once), and in the detail to the latest-starting
-  `codex.sampling` span of that turn by the same rule. The detail re-runs the link over the
+  model-call span of that turn (`codex.sampling`, or `run_sampling_request` when the turn
+  has none) by the same rule. The detail re-runs the link over the
   whole conversation, so it picks the same turn as the list. Codex cost is
   `linked_estimate` (Codex AWS list estimate per completion); input already includes cache
   subsets and output includes reasoning (ADR-014).

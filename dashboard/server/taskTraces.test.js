@@ -382,6 +382,9 @@ test("codexTurnSql uses client=codex predicate and exact user", () => {
   assert.ok(sql.includes("coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id'])"));
   assert.ok(sql.includes("SpanAttributes['conversation.id']"));
   assert.ok(sql.includes("SpanName = 'codex.sampling'"));
+  // Legacy turns fall back to run_sampling_request; one span kind per turn, never both.
+  assert.ok(sql.includes("if(sampling_calls > 0, sampling_calls, legacy_calls) AS llm_calls"));
+  assert.ok(sql.includes("if(sampling_calls > 0, 'codex.sampling', 'run_sampling_request') AS sampling_span"));
   // Turn-id spans only, filtered in the inner query before the per-span dedupe.
   const inner = sql.slice(sql.indexOf("FROM claude_code.otel_traces"), sql.indexOf("LIMIT 1 BY TraceId, SpanId"));
   assert.ok(inner.includes("(SpanAttributes['turn_id'] != '' OR SpanAttributes['turn.id'] != '')"));
@@ -978,6 +981,26 @@ test("codex detail links completions to sampling spans and keeps the list totals
   assert.equal(out.spans.find(s => s.id === "e1").kind, "tool");
   assert.equal(s1.start_ms, 1000);
   assert.deepEqual(ruleMap(out).context_growth, { first: 100, last: 100, calls: 3 });
+});
+
+// Older Codex (observed: 0.159.3) emits no codex.sampling span; its model calls are run_sampling_request
+// spans (one per call, as codex.sampling in later versions). The turn row names the span kind.
+test("codex detail treats run_sampling_request as the model call of a legacy turn", () => {
+  const turnRow = turn({ in_bucket: 1, sampling_span: "run_sampling_request" });
+  const c1 = completion("2026-11-05T01:00:02Z");
+  const cspan = (id, name, at, dur) => ({ span_id: id, parent_id: "", span_name: name,
+    start_ms: String(ms(at)), duration_ms: String(dur), a_model: "", a_tool_name: "", a_aborted: "", total_spans: "2" });
+  const rows = [cspan("r1", "run_sampling_request", "2026-11-05T01:00:01Z", 1500),
+    cspan("t1", "try_run_sampling_request", "2026-11-05T01:00:01Z", 1500)];
+  const { entries } = linkCompletions([turnRow], [c1], { prices: DEFAULT_CODEX_PRICING });
+  const out = foldTaskDetail({ client: "codex", turn: entries[0].turn, linked: entries[0].linked }, rows, []);
+  assert.equal(out.spans.find(s => s.id === "r1").kind, "llm");
+  assert.equal(out.spans.find(s => s.id === "r1").completion.count, 1);
+  assert.equal(out.spans.find(s => s.id === "t1").kind, "tool", "the retry wrapper is not another call");
+  assert.equal(out.task.completions_without_span, 0);
+  // A turn without the field keeps the codex.sampling rule.
+  const modern = foldTaskDetail({ client: "codex", turn: turn({ in_bucket: 1 }), linked: [] }, rows, []);
+  assert.ok(modern.spans.every(s => s.kind === "tool"));
 });
 
 const fakeRun = (tables) => async (sql, params) => {
