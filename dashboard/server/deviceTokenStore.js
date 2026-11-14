@@ -2,6 +2,8 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { DeviceTokenError } from "./deviceTokens.js";
 
+export const ENROLLMENT_OWNER = "enrollment";
+
 /** A provided client is a DocumentClient. The default uses the SDK credential chain (including IRSA). */
 export function createDynamoDeviceStore({ tableName, client }) {
   if (typeof tableName !== "string" || !/^[A-Za-z0-9_.-]{3,255}$/.test(tableName))
@@ -88,6 +90,32 @@ export function createDynamoDeviceStore({ tableName, client }) {
         ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND attribute_not_exists(reuseDetectedAt)",
         UpdateExpression: "SET reuseDetectedAt = :at",
         ExpressionAttributeNames: keyNames, ExpressionAttributeValues: { ":at": at } }), options, true);
+      return result !== false;
+    },
+    // Browser enrollment requests share the table under a partition no device owner digest can equal.
+    async putEnrollment(record, options) {
+      await send(new PutCommand({ TableName: tableName, Item: { ...record, owner: ENROLLMENT_OWNER },
+        ConditionExpression: "attribute_not_exists(#owner) AND attribute_not_exists(#id)",
+        ExpressionAttributeNames: keyNames }), options);
+    },
+    async getEnrollment(handle, options) {
+      const result = await send(new GetCommand({ TableName: tableName, Key: { owner: ENROLLMENT_OWNER, id: handle },
+        ConsistentRead: true }), options);
+      return result.Item;
+    },
+    // Exactly one decision wins, and only before the request's absolute deadline.
+    async decideEnrollment(handle, decision, at, options) {
+      const names = { ...keyNames, "#status": "status" };
+      const values = { ":pending": "pending", ":at": at };
+      const assignments = Object.entries(decision).map(([key, value], index) => {
+        names[`#d${index}`] = key;
+        values[`:d${index}`] = value;
+        return `#d${index} = :d${index}`;
+      });
+      const result = await send(new UpdateCommand({ TableName: tableName, Key: { owner: ENROLLMENT_OWNER, id: handle },
+        ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND #status = :pending AND deadline > :at",
+        UpdateExpression: "SET " + assignments.join(", "),
+        ExpressionAttributeNames: names, ExpressionAttributeValues: values }), options, true);
       return result !== false;
     },
     async touch(owner, id, at, options) {

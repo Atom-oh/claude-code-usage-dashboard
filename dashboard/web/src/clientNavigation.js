@@ -33,5 +33,8 @@ export function parseTaskPath(pathname) {
   const valid = (v) => /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(Date.parse(v));
   return id && valid(from) && valid(to) && Date.parse(from) < Date.parse(to) ? { id, from, to } : null;
 }
+// Browser half of collector enrollment; the handle itself is validated by the page and server.
+export const COLLECTOR_CONNECT_PATH = /^\/collector\/connect\/([^/]+)$/;
 export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation"
-  || pathname === COLLECTOR_PAGE.to || pathname === CHANGELOG_PATH || isTaskPath(pathname);
+  || pathname === COLLECTOR_PAGE.to || COLLECTOR_CONNECT_PATH.test(pathname) || pathname === CHANGELOG_PATH
+  || isTaskPath(pathname);

@@ -1,14 +1,33 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const TOKEN_LIFETIME_DAYS = 30;
-const LIFETIME_MS = TOKEN_LIFETIME_DAYS * 86400000;
+export const TOKEN_LIFETIME_MS = TOKEN_LIFETIME_DAYS * 86400000;
+const LIFETIME_MS = TOKEN_LIFETIME_MS;
 // A device renews once its current token has at most seven days left.
 const RENEW_WINDOW_MS = 7 * 86400000;
 const TOKEN = /^ccd1\.([a-f0-9]{64})\.([a-f0-9]{32})\.([A-Za-z0-9_-]{43})$/;
 const ID = /^[a-f0-9]{32}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const digest = value => createHash("sha256").update(value).digest("hex");
-const purgeFor = expiresAt => Math.floor((expiresAt + 7 * 86400000) / 1000);
+export const purgeFor = expiresAt => Math.floor((expiresAt + 7 * 86400000) / 1000);
+export const DEVICE_ID = ID;
+export const SECRET_HASH = HASH;
+
+/** Issuer-scoped owner key shared by manual issuance and browser enrollment. */
+export function deviceOwner(issuer, subject) {
+  if (typeof subject !== "string" || !subject || subject.length > 1024)
+    throw new DeviceTokenError("authentication_required", 401);
+  return digest(issuer + "\0" + subject);
+}
+
+/** Bounded display name and supported platform for a registered device. */
+export function deviceInput(input) {
+  if (!input || typeof input.name !== "string" || /[\u0000-\u001f\u007f-\u009f]/u.test(input.name)
+    || !input.name.trim() || [...input.name.trim()].length > 64
+    || !["linux", "darwin"].includes(input.platform))
+    throw new DeviceTokenError("invalid_device");
+  return { name: input.name.trim(), platform: input.platform };
+}
 
 export class DeviceTokenError extends Error {
   constructor(code, status = 400) {
@@ -19,7 +38,7 @@ export class DeviceTokenError extends Error {
 }
 
 // Pending rotation fields are internal: views expose only the completed renewal time.
-function deviceView(record) {
+export function deviceView(record) {
   const date = value => Number.isFinite(value) ? new Date(value).toISOString() : null;
   return { id: record.id, name: record.name, platform: record.platform,
     createdAt: date(record.createdAt), expiresAt: date(record.expiresAt),
@@ -38,11 +57,7 @@ export function createDeviceTokenService({ store, issuer, now = Date.now }) {
   if (!store || typeof issuer !== "string" || !issuer)
     throw new Error("Device token service requires a store and issuer");
   const cache = new Map();
-  const ownerFor = subject => {
-    if (typeof subject !== "string" || !subject || subject.length > 1024)
-      throw new DeviceTokenError("authentication_required", 401);
-    return digest(issuer + "\0" + subject);
-  };
+  const ownerFor = subject => deviceOwner(issuer, subject);
   const cacheKey = (owner, id) => `${owner}:${id}`;
 
   // Matches the current secret, or promotes a pending one once. Results stay internal.
@@ -95,14 +110,11 @@ export function createDeviceTokenService({ store, issuer, now = Date.now }) {
   return {
     async issue(subject, input, options) {
       const owner = ownerFor(subject);
-      if (!input || typeof input.name !== "string" || /[\u0000-\u001f\u007f-\u009f]/u.test(input.name)
-        || !input.name.trim() || [...input.name.trim()].length > 64
-        || !["linux", "darwin"].includes(input.platform))
-        throw new DeviceTokenError("invalid_device");
+      const { name, platform } = deviceInput(input);
       const createdAt = now();
       const secret = randomBytes(32).toString("base64url");
       const record = { owner, id: randomBytes(16).toString("hex"),
-        name: input.name.trim(), platform: input.platform, secretHash: digest(secret),
+        name, platform, secretHash: digest(secret),
         createdAt, expiresAt: createdAt + LIFETIME_MS,
         purgeAt: Math.floor((createdAt + LIFETIME_MS + 7 * 86400000) / 1000) };
       await store.put(record, options);
