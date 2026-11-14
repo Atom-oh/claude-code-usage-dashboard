@@ -4,6 +4,12 @@ The [English user guide](../../site/user-guide.html) describes the v1.8.0 source
 at base `64791c7`. UI availability depends on configuration, permission, schema,
 retention and observed data. Implementation and tests remain authoritative.
 
+Illustrated paths: [user and task](../../site/user-guide.html#trace-workflow),
+[cost efficiency](../../site/user-guide.html#cost-workflow),
+[tools and MCP](../../site/user-guide.html#tools-workflow), and
+[architecture](../../site/user-guide.html#system-overview).
+[Capture sources](../../scripts/docs-capture/README.md) identify the synthetic examples.
+
 | Guide section | Routes or feature groups | Implementation owners |
 |---|---|---|
 | [Start](../../site/user-guide.html#start), [access](../../site/user-guide.html#access) | First visit, roles, session expiry, logout, mobile navigation, help and release notes | `dashboard/web/src/{App,SessionBoundary,ClientContext}.jsx`, `components/{Sidebar,MobileNav,AccountMenu,ReleaseLink}.jsx`, `pages/Changelog.jsx`, `clientNavigation.js`, `releaseNotes.js` |

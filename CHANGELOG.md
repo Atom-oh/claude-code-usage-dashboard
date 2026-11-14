@@ -23,8 +23,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   approving account's verified email as the attribution ID; reinstalls keep theirs.
   The token flow remains available with `sh -s -- --token`.
 
+## [1.8.1] - 2026-11-14
+
 ### Changed
 
+- Rebuild the visual guide around illustrated user-Trace, cost-efficiency and tool
+  workflows. Add current synthetic screens, an inline architecture preview with
+  an interactive view, readable typography, a persistent contents panel and
+  keyboard-accessible screenshot enlargement.
 - Add a complete four-language user guide covering every menu, common controls,
   task analysis, optional assistant and permission-dependent setup features.
   The homepage now starts with onboarding and a menu map; the v1.8.0 video is an
@@ -33,6 +39,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   v1.8.0 time-range, drag-to-task and device-installation changes, alongside existing
   task/session details. Synthetic captures and rendered media retain content hashes.
   All guide locales now use the dashboard favicon.
+
+### Fixed
+
+- Collapse known $0 rows in the model and effort cost-share cards into a closed
+  "$0 items" count, so zero-cost model/backend combinations no longer stretch the
+  card. Unknown costs stay listed separately as unpriced.
 
 ## [1.8.0] - 2026-11-14
 

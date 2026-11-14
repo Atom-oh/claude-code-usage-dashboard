@@ -260,3 +260,23 @@ test("a range change holds effort requests at the old response bounds until over
   await waitFor(() => expect(requests.filter((u) => u.pathname === "/api/codex/insights")).toHaveLength(2));
   expect(requests.filter((u) => u.pathname === "/api/codex/insights").at(-1).searchParams.get("from")).toBe(nextRange.from);
 });
+
+test("known $0 model and effort rows collapse into a count instead of growing the legend", async () => {
+  const zero = { ...claude, model: "claude-haiku-5-5", backend: "unknown", cost_usd: 0 };
+  mount({ enabledClients: ["claude"], entry: "/cost?client=claude",
+    data: overview({ clients: ["claude"], by_client: [claude], by_model: [claude, zero] }),
+    effort: claudeDetail([
+      { effort: "medium", backend: "anthropic", cost_usd: 3, cost_partial: false, cost_basis: "client_reported", unpriced: 0 },
+      { effort: "high", backend: "unknown", cost_usd: 0, cost_partial: false, cost_basis: "client_reported", unpriced: 0 },
+    ]) });
+  await waitFor(() => expect(card(TITLES[0]).textContent).toContain("claude-sonnet-5"));
+  const models = card(TITLES[0]);
+  const summary = within(models).getByText("비용 $0 항목 1개");
+  expect(summary.closest("details").open).toBe(false);
+  expect(within(models).getAllByRole("listitem").filter((li) => !li.closest("details"))
+    .map((li) => li.textContent).join()).not.toContain("claude-haiku-5-5");
+  expect(summary.closest("details").textContent).toContain("claude-haiku-5-5 · 백엔드 미제공");
+  await waitFor(() => expect(card(TITLES[1]).textContent).toContain("medium · anthropic"));
+  expect(within(card(TITLES[1])).getByText("비용 $0 항목 1개").closest("details").textContent)
+    .toContain("high · 백엔드 미제공");
+});

@@ -737,3 +737,27 @@ test("a period change holds the model user panel until the user rows are for the
   await act(async () => { for (const h of pending) h.resolve({ ok: true, status: 200, json: async () => USER_MODELS }); });
   await waitFor(() => expect(panel().textContent).toContain("100.0%"));
 });
+
+test("known $0 model rows collapse into a count while the effort card keeps its single full list", async () => {
+  mount("single", {
+    "/api/cost/summary": [summary],
+    "/api/cost/by-model": [
+      { group: "bedrock", model: "paid-model", cost: 9, reported_cost: 5, tokens: 100 },
+      { group: "bedrock", model: "free-model", cost: 0, reported_cost: 0, known_reported_cost: 0, tokens: 100 },
+    ],
+    "/api/cost/effort-mix": [
+      { group: "bedrock", effort: "high", reported_cost: 5, known_reported_cost: 5, tokens: 100 },
+      { group: "bedrock", effort: "medium", reported_cost: 0, known_reported_cost: 0, tokens: 100 },
+    ],
+  });
+  await waitFor(() => expect(screen.queryByText("모델별 비용 비중 — bedrock")).not.toBeNull());
+  const models = card("모델별 비용 비중 — bedrock");
+  await waitFor(() => expect(models.querySelector(".pointer-events-none .tabular")?.textContent).toBe("$5"));
+  const zero = within(models).getByText("비용 $0 항목 1개").closest("details");
+  expect(zero.open).toBe(false);
+  expect(zero.textContent).toContain("free-model");
+  expect(models.querySelector("ul:not(details ul)").textContent).not.toContain("free-model");
+  const effort = card("Effort 수준별 보고 비용 — bedrock");
+  expect(effort.querySelector("details")).toBeNull();
+  expect(effort.textContent.match(/medium/g)).toHaveLength(1);
+});

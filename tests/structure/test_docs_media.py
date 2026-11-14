@@ -51,7 +51,12 @@ class MediaTests(unittest.TestCase):
 
     def test_site_only_keeps_runtime_out_of_pages(self):
         MEDIA.hydrate(self.root, self.manifest, site_only=True, opener=self.opener)
-        self.assertEqual(len(self.calls), 16)
+        expected = {name for name in MEDIA.PATHS if name.startswith("site/")}
+        self.assertEqual(len(self.calls), len(expected))
+        self.assertEqual(
+            {path.relative_to(self.root).as_posix() for path in self.root.rglob("*") if path.is_file()},
+            expected,
+        )
         self.assertFalse((self.root / "video").exists())
 
     def test_corrupt_download_preserves_existing_file(self):
@@ -113,6 +118,8 @@ class MediaTests(unittest.TestCase):
         records.update({("site/assets/" + item["path"]): item for item in demo["files"]})
         records.update({item["path"]: item for item in demo["runtime_assets"]})
         records.update({item["path"]: item for item in demo["audio_assets"]})
+        records.update({("site/assets/" + item["path"]): item
+                        for item in metadata.get("guide", {}).get("assets", [])})
         records[demo["visual_base"]["path"]] = demo["visual_base"]
         for item in manifest["files"]:
             self.assertEqual(item["bytes"], records[item["path"]]["bytes"])

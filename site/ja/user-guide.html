@@ -13,22 +13,57 @@
 <link href="user-guide.html" hreflang="ja" rel="alternate"/>
 <link href="../zh/user-guide.html" hreflang="zh-CN" rel="alternate"/>
 </head>
-<body>
+<body class="visual-docs" data-stylesheet-version="4b6ff295">
 <a class="skip-link" href="#main">本文へスキップ</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
 <nav aria-label="メインナビゲーション" class="tabs"><a href="index.html">概要</a><a aria-current="page" href="user-guide.html">ユーザーガイド</a><a href="installation.html">インストール</a><a href="architecture.html">アーキテクチャ</a><a href="api.html">API</a><a href="operations.html">運用</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
 <div aria-label="言語" class="languages" role="group"><a href="../user-guide.html" hreflang="en" lang="en">English</a><a href="../ko/user-guide.html" hreflang="ko" lang="ko">한국어</a><span lang="ja">日本語</span><a href="../zh/user-guide.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
 </div></header>
-<main class="wrap" id="main"><div class="hero"><p class="eyebrow">Claude Code + Codex · ドキュメント</p><h1>ユーザーガイド</h1>
-<p class="lede">ダッシュボードに表示される情報、その調べ方、結果を判断するために追加の根拠が必要な場合について説明します。</p>
+<main class="wrap" id="main">
+<div class="hero"><p class="eyebrow">Claude Code + Codex · ドキュメント</p><h1>ユーザー、コスト、ツールの実践ガイド</h1>
+<p class="lede">まず、1つの調査から始めましょう。スクリーンショットを見ながら進めたあと、メニューのリファレンスで利用可能なすべての操作と、クライアントごとの詳細を確認します。</p>
 <p class="caption">機能はインストール環境、権限、収集データによって異なります。このガイドでは各操作を説明し、韓国語が基本の画面で確認できるラベルを併記します。v1.8.0 のソースを基準に確認しています。</p>
-</div><section id="contents"><h2>目次</h2><nav aria-label="ユーザーガイドの目次"><ul>
-<li><a href="#start">まずはこちら</a> · <a href="#common-controls">操作と結果の読み方</a></li>
-<li>メニュー: <a href="#overview">Overview</a> · <a href="#exec">Executive</a> · <a href="#trends">Trends</a> · <a href="#productivity">Productivity</a> · <a href="#usage">Usage</a> · <a href="#users">Users</a> · <a href="#cost">Cost</a> · <a href="#reliability">Reliability</a> · <a href="#analytics">Analytics</a></li>
-<li><a href="#collector">コレクターの設定</a> · <a href="#installation">インストール状況</a> · <a href="#tasks">タスクとTrace</a> · <a href="#assistant">AIアシスタント</a></li>
-<li><a href="#access">アカウントとヘルプ</a> · <a href="#workflows">定期的な作業手順</a> · <a href="#troubleshooting">トラブルシューティングと結果の解釈</a></li>
-</ul></nav></section><section id="start"><h2>まずはこちら</h2>
+</div>
+<div class="manual-shell">
+<details class="manual-nav" id="contents" open=""><summary>目次</summary><ul><li><span class="nav-group">実践的な手順</span></li><li><a href="#trace-workflow">ユーザーの作業をたどる</a></li><li><a href="#cost-workflow">コストと効率を説明する</a></li><li><a href="#tools-workflow">ツールの使用状況を確認する</a></li><li><a href="#system-overview">アーキテクチャを理解する</a></li><li><span class="nav-group">メニューと操作のリファレンス</span></li><li><a href="#start">まずはこちら</a></li><li><a href="#common-controls">操作と結果の読み方</a></li><li><a href="#overview">Overview</a></li><li><a href="#exec">Executive</a></li><li><a href="#trends">Trends</a></li><li><a href="#productivity">Productivity</a></li><li><a href="#usage">Usage</a></li><li><a href="#users">Users</a></li><li><a href="#cost">Cost</a></li><li><a href="#reliability">Reliability</a></li><li><a href="#analytics">Analytics</a></li><li><a href="#collector">コレクターの設定</a></li><li><a href="#installation">インストール状況</a></li><li><a href="#tasks">タスクとTrace</a></li><li><a href="#assistant">AIアシスタント</a></li><li><a href="#access">アカウントとヘルプ</a></li><li><a href="#workflows">定期的な作業手順</a></li><li><a href="#troubleshooting">トラブルシューティングと結果の解釈</a></li></ul></details>
+<div class="manual-body">
+<section id="learning-paths"><h2>調べたい内容を選ぶ</h2><div class="learning-paths">
+<a class="learning-card" href="user-guide.html#trace-workflow"><img alt="エージェントごとに分かれたレーンのあるタスク" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · ユーザーとトレース</span><b>1人のユーザーの作業をたどる</b><span class="card-description">ユーザー → 時間範囲 → タスク → エージェント → 個々の呼び出し。</span></span></a>
+<a class="learning-card" href="user-guide.html#cost-workflow"><img alt="コストの計算式と変化の要因" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · コストと効率</span><b>コストの変化を説明する</b><span class="card-description">コスト算定根拠、モデル別の割合、単位コスト、トークン、キャッシュ。</span></span></a>
+<a class="learning-card" href="user-guide.html#tools-workflow"><img alt="ツールの呼び出しと結果" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · ツールとMCP</span><b>ツールのアクティビティを理解する</b><span class="card-description">ツールの呼び出し、権限、Skills、MCP、セッションのコンテキスト。</span></span></a>
+</div></section>
+<section id="trace-workflow"><h2>01. 1人のユーザーの作業を、1回の呼び出しまでたどる</h2><p>ユーザーのコスト、トークン量、またはツールのアクティビティを詳しく調べる場合は、この手順を使います。タスクリストは、トレースされたアクティビティの一部です。そのため、まずユーザーの使用量合計を確認し、次に利用可能なタスクの証拠を調べます。</p>
+<ol class="procedure"><li><h3>対象のユーザーと期間を選ぶ</h3><p><strong>Users</strong>を開き、クライアントを選択して、対象の作業を含む期間を設定します。識別済みのユーザー行を選択すると、<strong>사용자 상세</strong>が開きます。カードやグラフを比較する前に、適用期間の行を確認してください。Claudeの詳細では、ユーザー詳細に有効なすべてのクライアントが含まれる場合があります。推定されたチャネルのフィルターは、Claude関連の領域にのみ適用されます。推定されたチャネルはクライアントでもログイングループでもありません。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-users.png"><img alt="識別済みのユーザーから調査を始めます。" decoding="async" height="506" loading="lazy" src="../assets/img/guide-users.png" width="2240"/></a><figcaption><span class="figure-number">01</span><span class="figure-text"><strong>識別済みのユーザーから調査を始めます。</strong>ユーザーテーブルには、クライアントごとのコスト算定根拠が保持されます。識別されていない行からはユーザー詳細を開けません。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 1"><li><h3>グラフを絞り込み、該当するタスクを確認する</h3><p>ユーザーの使用量／コストのグラフ上をドラッグし、調べたい期間を選びます。ページの期間とタスクリストが一緒に絞り込まれます。点をクリックすると、代わりに1つの時間バケットが選択されます。点の選択を解除するには<strong>전체 조회 기간의 작업</strong>を使います。ドラッグで選択した範囲を広げるには、ページの期間をリセットします。</p></li><li><h3>適切な並べ替え方法とコスト算定根拠でタスクを選ぶ</h3><p><strong>작업 목록 · 상위 20개</strong>で、トークン、コスト、サブエージェント、または所要時間を比較します。ワークフローのバッジを選択すると、その実行だけに絞り込めます。コストの高いタスクを選ぶ前に、コスト算定根拠のバッジを確認してください。Claudeのコスト順の並べ替えは、トークン数が最も多い100件の候補に限られる場合があるため、上位20件がコスト監査の全件を網羅するとは限りません。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-user-detail.png"><img alt="ユーザーの傾向グラフが、調査する期間を決めます。" decoding="async" height="1354" loading="lazy" src="../assets/img/guide-user-detail.png" width="2240"/></a><figcaption><span class="figure-number">02</span><span class="figure-text"><strong>ユーザーの傾向グラフが、調査する期間を決めます。</strong>適用される期間の境界を確認してから、ドラッグするか時間バケットを選択します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-list.png"><img alt="並べ替える前に、調べたい内容を決めます。" decoding="async" height="504" loading="lazy" src="../assets/img/guide-task-list.png" width="2240"/></a><figcaption><span class="figure-number">03</span><span class="figure-text"><strong>並べ替える前に、調べたい内容を決めます。</strong>トークン量、既知のコスト、サブエージェント数、観測された所要時間では、トレースされたタスクの異なる特性が順位付けされます。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 3"><li><h3>結論を出す前に、各レーンを確認する</h3><p>タスクを開きます。トークンの小計、コスト算定根拠、呼び出し回数、所要時間を確認し、メインレーンと観測されたサブエージェントをたどります。同じ種類のエージェントが繰り返し現れる場合も、それぞれ独立した番号付きレーンとして表示されます。バーの幅は観測された所要時間を表し、LLMのバーが濃いほど入力コンテキストが大きいことを示します。灰色のバーはツール、赤いマークは権限の待機、破線は観測されたエージェントの起動を示します。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-trace.png"><img alt="タスクの概要と呼び出しの順序を分けて確認します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/></a><figcaption><span class="figure-number">04</span><span class="figure-text"><strong>タスクの概要と呼び出しの順序を分けて確認します。</strong>Exploreレーンが2つある場合、種類が同じでも、観測されたエージェントが2つあることを示します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<div class="screen-pair"><div><h3>説明が必要な呼び出しを選択する</h3><p>LLM、ツール、または待機の区間をクリックします。サイドパネルには、選択した対象で利用可能な属性（モデル、トークンの内訳、タイミング、コスト算定根拠、ツールまたは権限のメタデータ）が表示されます。欠落している属性は<strong>미수집</strong>のままです。</p><p><strong>attempt</strong>を利用できるのは、Claudeのスパンにその情報が含まれる場合だけです。値がないからといって、試行が1回だった、または再試行が0回だったという意味にはなりません。Codexでは、このフィールドは提供されません。この画面には生のプロンプト、コマンド、パスは表示されません。内容の監査を完全に行える画面ではありません。</p></div><figure class="screen-shot panel"><a data-lightbox="" href="../assets/img/guide-task-call.png"><img alt="選択した呼び出しを調べます。" decoding="async" height="786" loading="lazy" src="../assets/img/guide-task-call.png" width="592"/></a><figcaption><span class="figure-number">05</span><span class="figure-text"><strong>選択した呼び出しを調べます。</strong>報告値または推定値のコスト算定根拠など、利用可能な属性を比較します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure></div>
+<ol class="procedure" style="counter-reset:procedure 4"><li><h3>コスト、コンテキスト、モデルを関連付ける</h3><p>累積コストの帯にポインターを合わせて、レーンごとの寄与を比較します。次に、コンテキストのグラフと<strong>왜 많이 썼나</strong>の観測結果を確認します。<strong>모델별 호출</strong>の行を選択すると、対応するLLMバーが強調表示されます。もう一度選択すると、強調表示が解除されます。強調表示で変わるのは表示上の強調であり、タスクの合計ではありません。次に何を調べるかを決める前に、大きなコンテキストの繰り返し、特定レーンの大きな寄与、コストの高い呼び出し、記録された待機がないかを確認します。</p></li><li><h3>セッションのコンテキストを確認し、同じ証拠を共有する</h3><p><strong>세션 환경</strong>には、観測されたClaude MCPのステータスと読み込まれたプラグインが表示されます。これらはセッションの観測情報であり、呼び出しごとのツール一覧ではありません。タスクと期間の境界を保持するには、タスクのリンクをコピーします。リンクの受信者にもアクセス権が必要です。Codexの完了数には、コストの帯に対応するサンプリングスパンがない関連レコードが含まれる場合があります。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-context.png"><img alt="コンテキストとモデルの情報を合わせて使います。" decoding="async" height="1428" loading="lazy" src="../assets/img/guide-task-context.png" width="2544"/></a><figcaption><span class="figure-number">06</span><span class="figure-text"><strong>コンテキストとモデルの情報を合わせて使います。</strong>大きなコンテキストやコストの割合は調査の手掛かりであり、無駄や作業の質の低さを証明するものではありません。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<div class="guide-callout"><p><strong>タスクが見つからない場合や不完全な場合：</strong>ユーザーの識別情報、期間、トレースの設定、90日間の保持期間を確認してください。詳細は最新の5,000スパンに制限されます。切り詰められたビューでは、必要に応じてタスク全体の概要が非表示になります。トレースに表示されないことは、アクティビティがなかった証拠にはなりません。</p></div><p><a href="#tasks">すべてのタスク操作とクライアントごとの差異</a> · <a href="operations.html#traces">トレースのトラブルシューティング</a></p></section>
+<section id="cost-workflow"><h2>02. コストの変化とトークン効率を説明する</h2><p>比較可能な期間とコスト算定根拠から始めます。合計からモデルまたはユーザーへと絞り込み、トークンの内訳とトレースされた作業を使って、観測された変化を理解します。</p>
+<ol class="procedure"><li><h3>比較する範囲を決める</h3><p>クライアント、バックエンド、期間を選びます。表示されている適用期間の境界を確認し、<strong>Trends</strong>で同じ長さの期間を比較します。<strong>Cost</strong>では、報告されたClaudeの支出、Anthropic以外のClaudeまたはCodexの推定支出、混在または一部のみの小計を区別します。価格がない場合、その値は引き続き利用不可です。表示されたコストはいずれも請求書ではありません。</p></li><li><h3>モデルまたはユーザーの寄与を見つける</h3><p>モデル別とユーザー別の内訳を使って、変化の要因を探します。対応している場合は、モデルを選択してそのモデルのユーザーを調べるか、ユーザーを選択して該当期間の詳細を表示します。モデル内のユーザー別割合は、既知のモデルコスト小計を分母に使います。既知のコストに占める割合では、価格が未設定の観測データは考慮されません。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-cost.png"><img alt="コストの合計から、対象となる集団へと絞り込みます。" decoding="async" height="1054" loading="lazy" src="../assets/img/guide-cost.png" width="2240"/></a><figcaption><span class="figure-number">07</span><span class="figure-text"><strong>コストの合計から、対象となる集団へと絞り込みます。</strong>結果を比較するときは、選択したモデル、ユーザー、期間、コスト算定根拠を表示したままにします。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 2"><li><h3>6つの要因からなるコスト計算式を読む</h3><p><strong>Productivity</strong>を開きます。セッションターンのデータが準備できている場合、<strong>비용 방정식</strong>では、アクティブユーザー数、ユーザーあたりのセッション数、セッションあたりのターン数、ターンあたりのリクエスト数、リクエストあたりのトークン数、トークン単価が関連付けられます。まず、計算に一致したセッション数と、除外された観測データを確認します。この計算式が表すのは、その条件を満たした対象集団です。</p></li><li><h3>増加分とリクエストあたりの変化を分けて考える</h3><p><strong>드라이버 분해</strong>を使い、観測されたコスト差に対する各要因のプラスまたはマイナスの寄与を確認します。前の期間と現在の期間の合計を、要因の合計と比較します。トークン数／リクエストや単価が下がっていても、ユーザー数やセッション数の増加によって支出が増える場合があります。画面上の<strong>낭비</strong>という分類は、選択された要因に付けられた会計上のラベルであり、特定のユーザーやリクエストが無駄だったという証拠ではありません。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-economics.png"><img alt="計算式と変化の要因分解では、別の質問に答えます。" decoding="async" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/></a><figcaption><span class="figure-number">08</span><span class="figure-text"><strong>計算式と変化の要因分解では、別の質問に答えます。</strong>計算式は現在の条件を満たす対象集団を表し、ウォーターフォールは観測された変化を各要因に割り当てます。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 4"><li><h3>分母を確認しながら、単位コスト、トークン、キャッシュを読む</h3><p>ユーザー／セッション／リクエストあたりのコストと、リクエストあたりのトークン数を確認し、その後、モデルのコスト特性と、利用可能なキャッシュや推論の割合を比較します。各指標の説明とデータの網羅範囲を確認してください。観測されたトークンの小計と、比率に使われる完全な構成要素は、同じ意味ではありません。単位コストのグラフでは、破線が利用不可の期間をまたいで観測済みの端点をつなぐことがあります。その区間のコストが測定されたことを示すものではありません。</p></li><li><h3>変更を加える前に、実際の作業に戻って確認する</h3><p>該当するユーザーを開き、トレースされたタスクをコスト順に並べ替えます。モデルの変更、繰り返されるコンテキスト、キャッシュの観測結果、ツールのアクティビティ、記録されたエラーや再試行を比較します。こうした観測結果は、プロンプトやワークフローを見直す際の手掛かりになりますが、コスト削減の因果関係、コードの品質、従業員の生産性を証明するものではありません。実際にワークフローを変更した後は、同じ範囲をもう一度確認します。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-unit-cost.png"><img alt="測定された傾向の変化を探します。" decoding="async" height="792" loading="lazy" src="../assets/img/guide-unit-cost.png" width="1104"/></a><figcaption><span class="figure-number">09</span><span class="figure-text"><strong>測定された傾向の変化を探します。</strong>利用できない期間の表示を残し、増減を解釈する前に分母を比較します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<div class="reading-grid"><article><h3>合計コストは増えたが、単位コストはほぼ同じ</h3><p>まず、アクティブユーザー数、セッション数、リクエスト数を確認します。観測されたアクティビティが増えれば、単位あたりの結果が悪化していなくても、合計が増えることがあります。</p></article><article><h3>リクエストあたりのトークン数またはモデルの価格が変化した</h3><p>利用可能であれば、モデル構成、effort／speedティア、コンテキスト、キャッシュの内訳を確認します。対象集団が一致していることを確かめてから、代表的なタスクを開きます。</p></article></div><p><a href="#productivity">Productivityのすべてのセクション</a> · <a href="#cost">Costの操作と比較</a> · <a href="api.html#shared">コストと網羅範囲に関する仕様</a></p></section>
+<section id="tools-workflow"><h2>03. ツール、MCP、Skills、権限を確認する</h2><p>ツールのアクティビティは、作業がどのように行われたかを理解する手掛かりになります。呼び出されたツール、権限の判断、その結果、セッションで読み込まれた環境を区別してから、件数を比較します。</p>
+<ol class="procedure"><li><h3>Usageと必要なデータから始める</h3><p>共有の<strong>Usage</strong>で、トークンの内訳と、クライアントごとに利用可能なツールのアクティビティを比較します。クライアントと期間は同じに保ちます。Claude固有のツール、MCP、Skillのセクションを確認するには、Claude Codeと<strong>Claude 상세 보기</strong>を選択します。クライアントが提供しないシグナルは、ゼロではなく利用不可として扱われます。</p></li><li><h3>呼び出しと結果を合わせて読む</h3><p>収集されている場合は、ツール名、件数、失敗、タイミングを比較します。読み取り／検索、編集、シェルの実行、エージェントの呼び出しといった一般的な操作を区別します。呼び出し回数が多いからといって、自動的に良い、または悪いとは限りません。タスクと、同じ操作が繰り返されていないかを調べてください。権限の承認と、実行の成功は別々の観測事項です。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-usage.png"><img alt="共有のUsageでは、クライアントとシグナルの違いを確認できます。" decoding="async" height="1248" loading="lazy" src="../assets/img/guide-usage.png" width="2240"/></a><figcaption><span class="figure-number">10</span><span class="figure-text"><strong>共有のUsageでは、クライアントとシグナルの違いを確認できます。</strong>トークンの内訳とツールの呼び出し回数は異なる量を表すため、足し合わせないでください。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-tools.png"><img alt="調べるツールを見つけます。" decoding="async" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/></a><figcaption><span class="figure-number">11</span><span class="figure-text"><strong>調べるツールを見つけます。</strong>表示された呼び出し、結果、タイミングの列を使い、トレースを利用できる場合は、該当するユーザーをたどってタスクを確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 2"><li><h3>サーバーと操作ごとにMCPを調べる</h3><p>観測されたMCPサーバーとツール名を確認します。セッション環境に接続済みのサーバーが表示されていても、確認できるのは接続の観測結果です。そのサーバーが提供するすべてのツールが実行された証拠にはなりません。失敗のステータスは調査の手掛かりであり、コストやタスクの失敗を完全に説明するものではありません。MCPイベントが欠落していると、このビューに何も表示されないことがあります。</p></li><li><h3>Skillの使用と読み込まれたプラグインを区別する</h3><p>利用可能なSkillの呼び出しと帰属に関するテーブルを確認します。読み込まれたプラグインの件数と、それに関連するセッションの観測情報は別々に確認してください。プラグインが読み込まれたことは、プラグインに含まれるすべてのSkillやコマンドが実行されたことと同じではありません。また、Skillに帰属するコストは、総支出に加算する別の金額ではありません。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-mcp.png"><img alt="MCPのアクティビティは、観測された証拠です。" decoding="async" height="806" loading="lazy" src="../assets/img/guide-mcp.png" width="2240"/></a><figcaption><span class="figure-number">12</span><span class="figure-text"><strong>MCPのアクティビティは、観測された証拠です。</strong>サーバー／ツールのアクティビティを、セッションのステータスおよび選択した期間と比較します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+<div class="screen-pair"><figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-skills.png"><img alt="観測されたSkillの使用状況を確認します。" decoding="async" height="970" loading="lazy" src="../assets/img/guide-skills.png" width="2240"/></a><figcaption><span class="figure-number">13</span><span class="figure-text"><strong>観測されたSkillの使用状況を確認します。</strong>帰属コストを比較する前に、表示された算定根拠を確認してください。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure><figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-plugins.png"><img alt="読み込まれたプラグインのコンテキストを別に確認します。" decoding="async" height="386" loading="lazy" src="../assets/img/guide-plugins.png" width="2240"/></a><figcaption><span class="figure-number">14</span><span class="figure-text"><strong>読み込まれたプラグインのコンテキストを別に確認します。</strong>セッションの件数は、すべての機能が実行されたことを意味しません。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure></div>
+<ol class="procedure" style="counter-reset:procedure 4"><li><h3>権限と待機を確認する</h3><p>UsageとProductivityで利用可能な権限モード、承認元、ツール結果のセクションを使います。自動承認の件数は、コードの受け入れ率ではありません。拒否された判断、実行エラー、権限待ちをそれぞれ別の段階として比較し、各テーブルに記載された対象集団を確認します。</p></li><li><h3>該当するタスクを開く</h3><p><strong>Users</strong>でユーザーと該当期間を開き、利用可能なTask Traceのツールと待機のスパンを確認します。ツールのメタデータ、観測された所要時間、親／エージェントの配置を読み取ります。モデルの呼び出しとコンテキストのビューを使って、ツールのアクティビティをLLMのアクティビティと関連付けます。スパンのパネルには、生のコマンド、プロンプト、パスは表示されません。</p></li></ol>
+<div class="guide-callout"><p><strong>テーブルが空の場合：</strong>クライアント、時間、フィルターが適用される条件、データ収集のバージョンを確認してください。シグナルがないことは、ツールが一度も使われなかった証拠ではありません。Codexの診断メトリクスとトレースは、完了ログの使用量合計とは別です。</p></div><p><a href="#usage">Usageのすべてのセクション</a> · <a href="#tasks">タスクとスパンの操作</a> · <a href="#reliability">エラーと応答の診断</a></p></section>
+<section id="system-overview"><h2>画面に表示される数値の出どころ</h2><p>データの収集とダッシュボードへのアクセスには、それぞれ異なる経路を使います。この図は、任意のデバイス収集経路と、認証された読み取り経路を示しています。主催者が準備するワークショップでの収集には、別途設定された経路を使う場合があります。 この図は OIDC ログインとデバイス収集を有効にした構成例です。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="収集とクエリのアーキテクチャ。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>収集とクエリのアーキテクチャ。</strong>シグナルはストレージに送られ、ダッシュボードはAPIを通じて、アクセス範囲が設定された結果を読み取ります。2つのExpressボックスは、同じアプリケーションの論理的な役割を表しています。<small>論理的なデバイス経路 · 図のラベルは英語 · インタラクティブ表示を開く</small></span></figcaption></figure><div class="reading-grid"><article><h3>収集：クライアント → 保存された観測データ</h3><p>Claude CodeとCodexは、対応するシグナルをローカルのCollectorにエクスポートします。登録済みのデバイスは、認証済みの取り込みゲートウェイと中央のCollectorを経由して、ClickHouseにデータを送信します。デバイスの認証情報は、ブラウザーへのログインとは別です。</p></article><article><h3>読み取り：サインインしたユーザー → ダッシュボードの結果</h3><p>組織のログインによって、設定済みのロールが適用されます。APIは、使用量と診断のビューを返す前に、時間、クライアント、および対応するフィルターを適用します。コスト算定根拠とデータの網羅範囲を確認してください。画面には、既知の小計が表示される場合も、シグナルが利用できないことが表示される場合もあります。</p></article></div><p><a href="architecture.html#pipeline">データ収集経路と信頼境界</a> · <a href="architecture.html#signals">ログ、メトリクス、トレースの違い</a></p></section>
+<section id="menu-reference"><h2>画面を見ながら確認できる、すべてのメニュー</h2><p>以下のリファレンスには、機能の説明がすべて掲載されています。必要に応じて、共有ビューとClaudeの詳細に関する注記を展開し、スクリーンショットで操作箇所を確認してください。</p></section><section id="start"><h2>まずはこちら</h2>
 <p>このダッシュボードは、有効化された Claude Code および／または Codex クライアントから送信されたテレメトリを要約します。観測された使用状況、推定または報告されたコスト、アクティビティ、診断情報を調べるのに役立ちます。請求書を表示するものではなく、従業員の生産性、コードの品質、投資収益率を証明するものでもありません。</p>
 <ol><li>所属組織のダッシュボードを開き、案内に従ってサインインします。組織ログインでは、viewer は許可されたテレメトリを閲覧できます。analyst と administrator のロールでは、自分のコレクターデバイスのチャットや管理も利用できる場合があります。インストール状況の確認は administrator の機能です。機能を利用するには、デプロイ環境で有効化・設定されている必要もあります。サインインできない場合やメニューが表示されない場合は、運用担当者にお問い合わせください。</li>
 <li>新しいインストール環境の場合、運用担当者がデータ収集とアクセスを設定します。許可されたデバイス所有者は、<a href="#collector">コレクターの設定</a>に従い、新しいクライアントセッションを開始してリクエストを行えます。データが届くまで時間をおいてください。データを受信しただけでは、収集が完全であるとは確認できません。</li>
@@ -36,6 +71,8 @@
 <li>調べたい内容に応じてページを選びます。モデル別またはユーザー別の内訳には <a href="#cost">Cost</a>、時間による変化には <a href="#trends">Trends</a>、ユーザーとその<a href="#tasks">タスク</a>には <a href="#users">Users</a> を使います。結果を比較するときは、同じデータソースと期間に戻ってください。</li></ol>
 <p>画面が狭い場合は、上部のメニュー (<strong>메뉴 열기</strong>) を開きます。ページを選ぶと、移動後にドロワーが閉じます。閉じるボタン、背景部分、または Escape キーでも閉じられます。</p><p><a href="#contents">目次に戻る</a></p>
 </section><section id="common-controls"><h2>操作と結果の読み方</h2>
+<figure class="screen-shot compact"><a data-lightbox="" href="../assets/img/time-range-en.png"><img alt="開始時刻と終了時刻を正確に選択します。この旧デモでは、画面上のラベルは英語です。" decoding="async" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">開始時刻と終了時刻を正確に選択します。この旧デモでは、画面上のラベルは英語です。<small>画面を原寸大で開く</small></span></figcaption></figure>
+
 <h3>データソースとフィルター</h3>
 <p><strong>클라이언트</strong> では、有効なクライアントすべて、Claude Code、または Codex を選択します。複数のクライアントが有効な場合に表示されます。9つのメニューは、最初は比較可能な列を使う共通ビューを表示します。Claude Code を選択して <strong>Claude 상세 보기</strong> を選ぶと、詳細ページが開きます。<strong>공통 보기</strong> を選ぶと共通ビューに戻ります。有効なクライアントのみが表示されます。</p>
 <p>共通ビューの <strong>백엔드</strong> では、Bedrock Runtime、Bedrock Mantle、Anthropic、不明など、観測された転送方法／プロバイダー経路を選択します。これはクライアントやモデルとは別のものです。Claude 詳細では、<strong>bedrock</strong> と <strong>enterprise</strong> という推定セッションチャネルが表示される場合があります。これらはクライアントの識別情報、認可グループ、または Codex との比較対象ではありません。分類されていないセッションは合計に含まれても、チャネル間の比較から除外される場合があります。チャネルが1つだけのインストール環境では、チャネル操作欄が非表示になることがあります。</p>
@@ -51,43 +88,103 @@
 <p><strong>—</strong>、利用不可 (<strong>미수집</strong> または <strong>미산정</strong>)、結果が空であることは、観測されたゼロとは異なります。一部データを示すラベル (<strong>부분합</strong>) は、既知の小計を意味し、完全な合計ではありません。合計が正の値でも、テレメトリが完全であるとは証明できません。読み込み中、リクエストエラー、短縮された期間、更新データが古いという警告には、それぞれ別の確認が必要です。ヘルプアイコンにマウスポインターを合わせ、カードのサブタイトルで対象範囲と分母を確認してください。</p>
 <p>Anthropic モデルの場合、Claude 詳細の支出額は引き続き報告値に基づきます。トークン価格から計算された値は、任意の診断情報です。共通ビューの概要では、報告値が欠けている場合、別途ラベルを付けた推定値で補うことがあります。Claude の Anthropic 以外のモデルと Codex では、AWS の定価に基づく推定値が使われます。複数の基準が混在する合計では、それぞれの基準と価格不明分が維持されます。いずれも請求書ではなく、請求額の保証された上限・下限でもありません。観測されたトークンの小計には一部の内訳が含まれない場合があります。比率の計算には、分母全体が揃っている必要があります。Codex のランタイム指標とトレースは診断データであり、完了ログの使用量やコストに加算してはいけません。</p><p><a href="#contents">目次に戻る</a></p>
 </section><section id="overview"><h2>Overview</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-overview.png"><img alt="Overview：対象範囲を選び、概要を読み、傾向を確認します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-overview.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Overview：対象範囲を選び、概要を読み、傾向を確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> コスト、観測されたトークン数、セッション数、ユーザー数から確認します。その後、クライアント別カード、使用状況の推移、モデル使用状況のテーブルを見ます。各クライアントのコスト基準を比較し、データの網羅性を確認してから、大きな値を Cost や Trends で詳しく調べてください。</p>
 <p><strong>Claude 詳細:</strong> 採用状況と継続利用状況、チャネルKPIの概要、全体のアクティブユーザーとトークンの推移 (トークングラフでは合計、入力、出力を選択)、キャッシュ効率、モデル・チャネル別のトークン分布を確認します。チャネル分類が欠けている場合があります。採用状況とチャネル比較では、対象となるユーザー群が異なります。表示される場合はチャネルセレクターを使います。セッション／ターンのコスト欄には、ターンとコストの概要、ユーザー上位20件とセッション上位20件のテーブルが含まれます。モデルフィルターを使うと、そのモデルを使用したセッション全体が選択されます。日次AIインサイトが有効な場合、<strong>인사이트 날짜</strong> で保存済みの日付を選ぶと、前日のUTCに関する要約、所見、注意事項が表示されます。保留中、失敗、空の場合があります。生成テキストは誤っている可能性があり、パフォーマンス評価ではありません。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="exec"><h2>Executive</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-executive.png"><img alt="Executive：観測されたアクティビティとコストの概要を比較します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-executive.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Executive：観測されたアクティビティとコストの概要を比較します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> 総コスト、トークン数、セッション数、ユーザー数を確認します。続いて、クライアント別の単価とアクティビティ、モデル別・ユーザー別のコスト推移、観測されたユーザー／セッションあたりのコストカード、クライアント別セッション数、モデル別コスト／アクティビティのテーブルを確認します。ユーザーIDの件数は従業員数ではありません。</p>
 <p><strong>Claude 詳細:</strong> チャネルKPIと比較スコアボードを確認してから、ユーザー、アクティビティ、コストの各セクションを見ます。モデルコストを前の同じ長さの期間と比較した後、日次アクティブユーザーとモデル別・ユーザー別のコスト推移を確認します。利用可能な場合、チャネルフィルターで対象を絞り込めます。アクティビティスコアは参考指標であり、妥当性が確認されたパフォーマンス指標ではありません。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="trends"><h2>Trends</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-trends.png"><img alt="Trends：時間の経過に伴う変化を見つけ、期間を比較します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-trends.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Trends：時間の経過に伴う変化を見つけ、期間を比較します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> 現在のコストと使用状況を、同じ長さの直前の適用期間と比較します。その後、クライアント比較、トークンとコストの推移、モデル別・ユーザー別のコスト推移、期間別テーブルを確認します。推移の解像度を選び、時間グラフにマウスポインターを合わせるか、ドラッグします。期間同士を一致させられない場合、直前期間との比較は表示されません。各区間のセッション数は、その区間内で個別に数えた値です。合計しても期間全体の個別セッション数にはなりません。</p>
 <p><strong>Claude 詳細:</strong> DAU、WAU、MAU、DAU/MAU継続利用率のカードと、アクティブユーザー数および継続利用率のグラフを確認します。これらは観測されたアクティビティであり、成果を測るものではありません。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="productivity"><h2>Productivity</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-economics.png"><img alt="Productivity：コスト計算式と、計算対象となる集団を確認します。" decoding="async" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Productivity：コスト計算式と、計算対象となる集団を確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> 利用可能な場合、トークン経済性のセクションには、コストの計算式、変化の要因、単価とリクエスト効率の推移、モデル別の経済性、観測された成果単位あたりのコスト、対象となるユーザーの例が表示されます。利用するには、インストール環境のセッション・ターンデータが準備されている必要があります。セクションが利用不可でも、値がゼロという意味ではありません。その下には8つのセクションがあります。(1) クライアント概要、(2) 観測されたモデル効率とキャッシュ／推論の比率、(3) アクティビティ、(4) コードの結果、(5) ツール別の権限判断、(6) ツールの結果、(7) 応答と待ち時間、(8) アクティビティ指数の上位ユーザーです。テーブルには、未収集、未集計、未算出の値が示されます。関連する結果には同じ適用期間が使われます。エクスポートする前に、現在の応答が届くまで待ってください。</p>
 <p><strong>Claude 詳細:</strong> アクティビティ指数の順位とユーザーアクティビティ、ユーザー／セッションとPRの推移、トークン100万個あたりの変更行数とコミット数、追加／削除行数、編集やツールの権限判断、アクティブ時間と言語別の編集、プロンプトあたりのツール呼び出し数、承認待ち時間、最初のトークンまでの時間、インタラクション時間の内訳を確認します。収集されている場合は、追加でアクティビティ密度、権限占有率、ツール結果のテーブルも表示されます。</p>
 <p>権限判断には自動承認も含まれ、コードが受け入れられたことを意味しません。Codex では、同じ既定のコード行、コミット、PR、アクティビティ指数の測定値は提供されません。外部の成果データが必要です。これらの観測値や任意のアクティビティ指数があっても、生産性、品質、時間短縮、因果関係のあるROIが証明されるわけではありません。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="usage"><h2>Usage</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-usage.png"><img alt="Usage：トークンの内訳とツールのアクティビティを比較します。" decoding="async" height="1248" loading="lazy" src="../assets/img/guide-usage.png" width="2240"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Usage：トークンの内訳とツールのアクティビティを比較します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> トークンの内訳、クライアント別の使用状況比較、トークン構成グラフ、ツール使用状況のテーブルを確認します。入力、キャッシュ読み取り、キャッシュ書き込み、出力の各内訳は二重計上されない形で表示されます。推論は出力の一部です。Codex を選択した場合、<strong>Codex 상세</strong> に <strong>도구·승인</strong> (ツールと承認) が含まれ、収集範囲に応じてツールの結果と承認／拒否の情報を確認できます。</p>
 <p><strong>Claude 詳細:</strong> エントリーポイント、利用可能な場合はプロジェクト、ツール／MCPの結果、権限判断、権限モードの変更と承認元、ツール処理時間、MCPコネクターの使用状況と接続状態、Skillの使用状況と起動タイプ、読み込まれたプラグイン、インタラクションあたりのサブエージェント数、コンテキストの圧縮、スラッシュコマンド、プロンプトの長さ、Hookの処理時間を調べます。対応するイベントが収集されていない場合、カードが空または利用不可になることがあります。任意のプロジェクトフィルターの適用範囲は、<a href="#common-controls">操作</a>で説明したとおり限定されています。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="users"><h2>Users</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-users.png"><img alt="Users：識別済みのユーザーを選択し、詳細とトレースされたタスクを確認します。" decoding="async" height="506" loading="lazy" src="../assets/img/guide-users.png" width="2240"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Users：識別済みのユーザーを選択し、詳細とトレースされたタスクを確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> クライアント間で観測されたユーザー数、セッション数、ユーザーあたりのコストを比較し、ユーザーテーブルを使います。同じ識別済みユーザーは、選択したクライアントをまたいでまとめられる場合があります。クライアント別の内訳では、それぞれのコスト基準が維持されます。クライアント別の個別ユーザー数は重複する場合があるため、合計して全体の人数を出すことはできません。識別済みのユーザーを選ぶと詳細が開きます。未識別の行からは詳細を開けません。</p>
 <p>詳細ページには、期間の概要と時間グラフ、別途読み込まれる過去90日間のUTC日次セッションヒートマップ、利用可能な場合のクライアント別ツール／権限情報、<a href="#tasks">タスク一覧</a>があります。ヒートマップの日次値は、観測された区間ごとのセッション数であり、個別セッションの合計ではありません。詳細は、親ページと同じ期間が適用されるまで待機します。点を選ぶとタスク一覧が1つの区間に絞り込まれ、ドラッグするとページの期間が変わります。<strong>전체 조회 기간의 작업</strong> を使うと、タスク一覧が期間全体に戻ります。詳細を閉じるとテーブルに戻ります。</p>
 <p><strong>Claude 詳細:</strong> チャネル概要、対象となるユーザーのアクティビティ指数順位、モデルファミリー別のユーザーあたり平均コスト、観測されたユーザーアクティビティ、ユーザー別のツール／Skillテーブルを確認します。ユーザー行を選ぶと詳細とタスクが開きます。ユーザーの観測アクティビティは、個人のパフォーマンス評価ではありません。</p><p>Claude 詳細では、別の <strong>사용자 검색</strong> 欄で観測アクティビティの行を絞り込めます。ユーザーを開くと、詳細には有効なすべてのクライアントが含まれます。選択した推定チャネルが適用されるのは、Claude関連の領域だけです。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="cost"><h2>Cost</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-cost-summary.png"><img alt="Cost：コスト算定根拠とともに、モデル別・ユーザー別の内訳を確認します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-cost-summary.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Cost：コスト算定根拠とともに、モデル別・ユーザー別の内訳を確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> 合計と単価のカードから確認し、クライアント別モデルとEffortのコスト比率、入力／キャッシュの内訳を見ます。コスト基準、価格不明の記録、全体の推移、モデル別・ユーザー別の推移を比較します。モデルとユーザーのテーブルでモデルまたはユーザーを選ぶと、同じ期間のコスト推移を表示できます。モデル詳細には、既知のモデルコストに対する各ユーザーの割合も表示されます。価格不明の値は除外され、分母が欠落またはゼロの場合は割合がありません。詳細を閉じるか選択を変更すると元に戻ります。利用可能な場合、Codex の <strong>효율·Effort</strong> セクションには、記録された完了処理の効率とEffort別の使用量／コストが追加されます。</p>
 <p><strong>Claude 詳細:</strong> 報告されたコストの合計、比較、予測、Effortとモデルのコスト比率、トークンの内訳、モデル別・ユーザー別の推移、モデル別コスト／トークンのテーブルを確認します。モデルを選ぶと、そのモデルのユーザー別コスト内訳が表示されます。チーム別のコスト分布、使用状況、推移 (チームなしの行を含む)、エージェントコスト、ユーザー／モデルのテーブル、観測された行数またはコミットあたりのコストのテーブルも確認できます。ユーザー上位数は10、20、50、100から選びます。チームへの割り当ては、セッションで報告されたチームに基づき、利用できない場合があります。任意の計算コスト比較 (<strong>계산 비용 교차검증</strong>) では、診断用の列とグラフが追加されますが、追加料金を意味するものではありません。結論を出す前に、価格、部分データのラベル、前提条件を確認してください。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="reliability"><h2>Reliability</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-reliability.png"><img alt="Reliability：報告されたエラーと、利用可能な応答の診断情報を確認します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-reliability.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Reliability：報告されたエラーと、利用可能な応答の診断情報を確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> リクエスト、エラー、ツール呼び出し、最初のトークンまでの時間のカードを確認します。クライアント別のリクエスト／エラー／時間の比較、リクエスト時間グラフ、ツールの信頼性、モデルのリクエスト診断も確認できます。観測されたエラー記録数とリクエスト数の比率は、失敗確率ではなく、1を超える場合があります。Codex を選択すると、<strong>성능</strong> に観測されたターン、リクエスト、ツール、起動時の遅延に関する診断情報が追加されます。</p>
 <p><strong>Claude 詳細:</strong> モデルとEffort別のAPI応答時間分布、拒否応答、再試行回数上限に達したケース、エラー率、ステータスコードを確認します。バージョンセクションでは、報告コストと計算コスト、キャッシュTTLのシナリオ、クライアントバージョンの分布、バージョン群ごとのコストを比較します。コスト差だけでは、その原因は分かりません。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="analytics"><h2>Analytics</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-analytics.png"><img alt="Analytics：選択したクライアントで利用できる診断情報を調べます。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-analytics.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Analytics：選択したクライアントで利用できる診断情報を調べます。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共通ビュー / Claude 詳細</summary><div class="mode-content">
+
 <p><strong>共通ビュー:</strong> チャットが許可されている場合は、診断パネルの上にある欄で質問します。その下では、クライアントのシグナルと最初のトークンまでの時間を比較し、モデル／バックエンドの診断、プロジェクトタグの使用状況、観測されたシグナルの網羅性を確認します。プロジェクトタグはクライアントから提供されたもので、請求用プロジェクトではありません。</p>
 <p>Codex を選択すると、<strong>Codex 상세</strong> に <strong>런타임·메트릭</strong> と <strong>Trace</strong> が表示されます。前者では、セッション開始時の設定、指標名の検索、収集された指標、イベントの網羅性を確認できます。Trace ではスパンの遅延と、件数に上限のある最近のトレースを表示します。利用可能な場合は、トレースを展開してスパンを調べられます。この診断プレビューは、ユーザーの<a href="#tasks">Task Trace</a>とは別のものです。対象は最新の50件のトレースと、トレース1件あたり最大200件のスパンです。切り詰められたトレースでも最近のスパンは表示されますが、トレース全体の所要時間とエラー合計は表示されません。スパンデータに矛盾がある場合、そのトレースの詳細が表示されないことがあります。指標とトレースは、完了処理の使用量に追加されるものではありません。</p>
 <p><strong>Claude 詳細:</strong> Analytics は質問と回答のページです。チャットが利用可能であり、権限がある場合に使えます。質問のプリセット、グラフ、制限については<a href="#assistant">AIアシスタント</a>を参照してください。</p><p><a href="#contents">目次に戻る</a></p>
+
+</div></details>
 </section><section id="collector"><h2>コレクターの設定 (수집기 설치)</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-collector.png"><img alt="Collectorのセットアップ：デバイスを登録し、インストールコマンドに従います。" decoding="async" height="736" loading="lazy" src="../assets/img/guide-collector.png" width="2176"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Collectorのセットアップ：デバイスを登録し、インストールコマンドに従います。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
 <p>このメニューを利用するには、組織ログインとデバイス管理権限 (通常は analyst または administrator)、およびデバイス取り込み機能の有効化が必要です。サインイン中のユーザー自身のデバイスを管理します。viewer は許可された運用担当者にお問い合わせください。所属組織で承認されたインストール手順に従ってください。</p>
 <ol><li>Linux または macOS を選び、準備手順を確認します。デバイス名を入力して登録します。</li><li>デバイストークンが表示されたらコピーし、秘密に保管します。ダッシュボードでトークンが表示されるのは一度だけです。表示されたインストールコマンドをコピーしてそのデバイスで実行し、ターミナルのプロンプトで求められたユーザーIDとトークンを入力します。トークンをコマンドに直接記述したり、他の人に共有したりしないでください。</li><li>新しいターミナルを開き、新しい Claude Code または Codex セッションを開始してリクエストを行います。ページ上の受信確認手順に従い、<strong>내 기기</strong> (自分のデバイス) で最近のデータ受信を確認します。</li><li>一覧を更新し、表示される場合はデバイスをさらに読み込み、登録済み、期限切れ、失効の状態、期限、最後の受信時刻を確認します。デバイスを停止するには <strong>해지</strong> を選び、<strong>해지 확인</strong> で確定します。再接続には新しいトークンが必要です。トークン再利用の警告が表示された場合は、トークンを失効させてから再登録してください。</li></ol>
 <p>現在のインストーラーで設定されている場合、有効なデバイスは有効期限の7日前から自動更新されます。期限切れまたは失効したデバイスでは、新しいトークンを取得してインストールし直す必要があります。ログアウトしてもデバイスのデータ収集は停止しません。最近データを受信していても、使用状況がすべて収集されたとは限りません。運用担当者向けの詳細は、<a href="installation.html">インストール</a>と<a href="operations.html">運用</a>を参照してください。</p><p><a href="#contents">目次に戻る</a></p>
 </section><section id="installation"><h2>インストール状況 (설치 상태)</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-installation.png"><img alt="インストール状況：権限がある場合、準備状況とデータ収集の確認項目を調べます。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-installation.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">インストール状況：権限がある場合、準備状況とデータ収集の確認項目を調べます。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
 <p>インストール状況の確認権限を持つ管理者は、<strong>상태 새로고침</strong> を使って、組織ログインとデータベース接続、読み取り専用アカウントの状態、有効なクライアントの最近のデータ受信、スキーマ確認、データ収集を開始する手順を確認できます。最近のデータ受信、古いデータ、空、利用不可などの状態は、それぞれ別に報告されます。更新に失敗した後、以前の結果が保持されている場合は、画面に警告が表示されます。</p>
 <p>確認に成功しても、テレメトリの完全性、実際のマイグレーション、MFA、バックアップからの復元が検証されたことにはなりません。運用担当者がこれらを別途確認する必要があります。プロジェクトフィルターを使うには、プロジェクト項目が確認されている必要があります。<a href="operations.html">運用</a>と<a href="architecture.html">アーキテクチャ</a>を参照してください。</p><p><a href="#contents">目次に戻る</a></p>
 </section><section id="tasks"><h2>タスクとTrace</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-trace.png"><img alt="Task Trace：メインレーン、サブエージェント、選択した呼び出しを確認します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Task Trace：メインレーン、サブエージェント、選択した呼び出しを確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
+
 <h3>タスクを見つける</h3>
 <ol><li><strong>Users</strong> を開き、識別済みユーザーを選んで、<strong>작업 목록 · 상위 20개</strong> (タスク一覧、上位20件) を探します。最初は、ユーザー詳細と同じ適用期間が使われます。対応しているユーザーグラフの点をクリックすると1つの区間に絞り込めます。期間をドラッグすると、ページと一覧が更新されます。</li>
 <li><strong>토큰 많은 순</strong> (トークン数の多い順)、<strong>비용 높은 순</strong> (コストの高い順)、<strong>서브에이전트 많은 순</strong> (サブエージェント数の多い順)、または <strong>느린 순</strong> (遅い順) を選びます。一覧には最大20件が表示されます。Claude のコスト順では、表示されている場合、トークン数上位100件までを候補にします。その候補に含まれない、より高コストのタスクが一覧から漏れる場合があります。</li>
@@ -120,7 +217,11 @@
 <li><strong>タスクやリンクが見つからない:</strong> ユーザー、適用期間、トレースの保存期間、有効なクライアント、任意のトレース機能、切り詰めに関する通知を確認してください。ワークフローフィルターや上位N件の上限によって、他のタスクが表示されない場合があります。共有リンクを開くには、アクセス権とリンク全体が必要です。</li>
 <li><strong>操作項目が表示されない:</strong> 表示内容は、クライアントの有効化、スキーマ、ロール、機能設定、収集イベントの影響を受けます。特に、デバイスの設定と状況確認には権限が必要です。チャットには、それに加えて専用の設定済みサービスと読み取り専用接続が必要です。</li></ul>
 <p>専門的な作業については、<a href="installation.html">インストール</a>、<a href="operations.html">運用</a>、<a href="architecture.html">アーキテクチャ</a>、<a href="api.html">APIコントラクト</a>を参照してください。</p><p><a href="#contents">目次に戻る</a></p>
-</section></main>
+</section>
+</div>
+</div>
+</main>
 <footer><div class="wrap"><p>ccdash · OpenTelemetry → ClickHouse → Express → React</p><p><a href="index.html">ドキュメントの概要</a> · <a href="credits.html">デモクレジット</a></p><p>テレメトリは不完全な場合があります。報告されたコストや定価に基づく推定額は、請求書ではありません。アクティビティ指標だけでは、従業員の生産性や因果関係のあるROIは証明できません。</p></div></footer>
+<script defer src="../assets/guide.js?v=abac4d28"></script>
 </body>
 </html>
