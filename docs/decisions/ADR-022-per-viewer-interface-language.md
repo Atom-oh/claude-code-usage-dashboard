@@ -44,8 +44,8 @@ public guide locale when available, otherwise the English guide.
 
 ## Consequences
 
-The completed rollout will serve all five languages in one image, and viewers
-can change language while a task remains open. No deployment-specific language is baked into a separate
+One image serves all five interface languages, and viewers can change language
+while a task remains open. No deployment-specific language is baked into a separate
 frontend build. Preferences are local to one browser, not synchronized between
 devices, and may be lost when storage is cleared or blocked.
 
@@ -58,12 +58,9 @@ Maintained engineering documentation remains English under
 
 ## Rollout state
 
-The current integration covers the locale store, catalogs, shared navigation,
-charts and task dialogs. Route page bodies remain Korean until their migration;
-the Spanish guide is a separate documentation change and uses English meanwhile.
-The accepted five-language requirement is complete only after both follow-ups
-land. Each stage must describe its actual coverage rather than claim the target
-is already deployed.
+All application route pages, shared controls and task dialogs are migrated. The
+Spanish guide is the remaining documentation stage; its link opens the existing
+English guide until the Spanish pages are added.
 
 ## Owners and evidence
 

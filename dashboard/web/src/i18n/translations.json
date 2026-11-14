@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T12:52:56.478436+00:00",
-  "source_messages": 1841,
+  "updated_at": "2026-11-14T12:54:52.678183+00:00",
+  "source_messages": 1890,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 1841,
-      "bytes": 137269,
-      "sha256": "0602d01125bde5fcae7d26dd3fbed98868a1656f8b777cd29bd7ac4d3bd2b822"
+      "messages": 1890,
+      "bytes": 142136,
+      "sha256": "38440a753341ff3ba66c7a91c65fa0c0d63ab41a79a59145dc53dbc68fddafa0"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 1841,
-      "bytes": 161786,
-      "sha256": "a6e4e31f639a3bffed33f26a64dbbefeefd658dc1066bcf2730f7ac015ca041e"
+      "messages": 1890,
+      "bytes": 167461,
+      "sha256": "8ebd689097080fe77cd8477cdf3cc5cbbdc2783439b26afbe22c1954dc23935c"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 1841,
-      "bytes": 168805,
-      "sha256": "3144094922f3aa4eb668df7c38068a6bdd6535bba0dff618adc39c4ebd6d9e12"
+      "messages": 1890,
+      "bytes": 175819,
+      "sha256": "0396a99a08c38f8be5ec4a900e4c6f28fd102c0352998f21958c1e70aff21663"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 1841,
-      "bytes": 145525,
-      "sha256": "7c8ab990ac9aa27e528ea8e2efe42448b2b8b0313876b636294ecf1a2c5a39ea"
+      "messages": 1890,
+      "bytes": 150906,
+      "sha256": "48864754e12e52a67267b658af6c1bfe12b61c0178e7d994572ab08ef9bf3245"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 1841,
-      "bytes": 130101,
-      "sha256": "a36223ed51fd1bd2e49d0668a6b635f622a6841f912dc620e0033f9848641be1"
+      "messages": 1890,
+      "bytes": 134499,
+      "sha256": "9be53e0a1da9ae492965a13a14218702286431e79eaa205dfc1005e6f0bb1ffe"
     }
   ],
   "catalog_calls": [
@@ -743,13 +743,30 @@
     "output_sha256": "74a5982107dd255ee43598bc2167a4f0ca35c31a5f2a2e63115550b371f5bd0c",
     "messages": 7
   },
+  "translation_receipts": [
+    {
+      "requested_model": "openai.gpt-6-luna",
+      "selection_basis": "coordinator CLI",
+      "timestamp_utc": "2026-11-14T12:41:37Z",
+      "source_sha256": "002d9ff32af4c786e3508b61aa775b2655c1831f490b1700c763ad89594da3a0",
+      "output_sha256": "631df3d21c164151d57379eee720c22e9f7d067844b89e312a8cb2373fa40d14",
+      "added_message_count": 50,
+      "source_locale": "ko",
+      "target_locales": [
+        "en",
+        "zh-CN",
+        "ja",
+        "es"
+      ],
+      "attestation_note": "The requested model is recorded. Hidden weights are not independently attested."
+    }
+  ],
   "collector_title_message": {
     "requested_model": "openai.gpt-6-luna",
     "selection_basis": "coordinator CLI",
     "timestamp_utc": "2026-11-14T12:41:37Z",
     "source_sha256": "002d9ff32af4c786e3508b61aa775b2655c1831f490b1700c763ad89594da3a0",
     "output_sha256": "631df3d21c164151d57379eee720c22e9f7d067844b89e312a8cb2373fa40d14",
-    "added_message_count": 50,
     "source_locale": "ko",
     "target_locales": [
       "en",
@@ -762,6 +779,8 @@
     "attestation_note": "The requested model is recorded. Hidden weights are not independently attested.",
     "used_keys": [
       "md9cb56dff124"
-    ]
+    ],
+    "translated_batch_message_count": 50,
+    "used_message_count": 1
   }
 }

@@ -22,6 +22,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Add a persistent five-language picker to desktop, mobile and task detail.
   Localize shared controls, chart labels and feedback while retaining open tasks,
   filters and time ranges; guide links use available translations with an English fallback.
+- Complete localization across all application menus, token economics, user and
+  cost analysis, tool usage, collector setup and installation status. Preserve
+  selected decision-chart legend emphasis when changing language.
 
 ### Changed
 
