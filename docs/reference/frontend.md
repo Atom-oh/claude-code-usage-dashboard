@@ -14,13 +14,22 @@ visible previous-result warning; receipt/empty/unavailable never become usage ze
 `/changelog` shows the release notes bundled in `releaseNotes.js` without usage filters
 and requests no page data. Its link sits outside `<nav>` under the navigation and marks a release this
 browser has not opened (`localStorage`, best effort). A user guide link beside it opens the
-public documentation site (`USER_GUIDE_URL`) in a new tab. See [releases and tags](../runbooks/releases.md).
+equivalent language of the public user guide (`USER_GUIDE_URL`) in a new tab.
+See [releases and tags](../runbooks/releases.md).
 
 The React 18/Vite 8/Tailwind 4 SPA (Node >=22.12) shares the Express image.
 See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions and
 [UI](ui.md) for component and export contracts.
 
 ## Routes and state
+
+The browser stores its validated language choice in `ccdash.locale`; Korean is
+the default. English, Simplified Chinese, Japanese and Spanish catalogs load on
+demand. Failed loads retain the current language, later choices supersede pending
+loads, and denied storage remains usable. The locale store updates subscribed
+components without remounting open user/task views or changing API parameters.
+See [ADR-022](../decisions/ADR-022-per-viewer-interface-language.md) and
+[locale ownership](../../dashboard/web/src/i18n/README.md).
 
 Charts use supported Recharts 3 public data-snap scales for pointer-driven zoom rather
 than stale tooltip state. Mouse drags preserve UTC bucket/range clamps and the existing

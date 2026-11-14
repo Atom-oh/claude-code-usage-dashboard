@@ -1,3 +1,4 @@
+import { formatUnit, localeTag } from "./i18n/index.js";
 // 서버가 내려주는 t 값은 ClickHouse DateTime을 그대로 문자열화한 "YYYY-MM-DD HH:MM:SS"
 // (또는 toDate 계열은 "YYYY-MM-DD") — 타임존 표기가 없다. new Date(그 문자열)로 바로 파싱하면
 // 브라우저가 "로컬 타임"으로 해석하는데, ClickHouse 값은 UTC 기준이라 non-UTC 브라우저에서
@@ -15,11 +16,11 @@ export function parseUtc(label) {
 // 확인 — daysInRange 자체의 계산은 이미 (to-from) 기준으로 정확하고, 표시 라벨만 오해를 준다).
 // 1일 미만이면 분/시간 단위로, 그 이상이면 기존처럼 올림한 일수로 표시한다.
 export function formatDuration(daysInRange) {
-  if (daysInRange >= 1) return `${Math.ceil(daysInRange)}일`;
+  if (daysInRange >= 1) return formatUnit(Math.ceil(daysInRange), "day");
   const totalMinutes = Math.round(daysInRange * 1440);
-  if (totalMinutes < 60) return `${totalMinutes}분`;
+  if (totalMinutes < 60) return formatUnit(totalMinutes, "minute");
   const hours = Math.round(totalMinutes / 60);
-  return `${hours}시간`;
+  return formatUnit(hours, "hour");
 }
 
 // 개인정보 보호 — 테이블/차트 표시용. 조인/드릴다운 키(row.user, API의 email 파라미터)는
@@ -50,7 +51,7 @@ export const maskEmail = (s) => {
 // 분 버킷(<1h, 드래그 줌)일 땐 분까지, 시간 버킷(<24h)일 땐 시각까지, 일/주 버킷일 땐 날짜만.
 export const makeTickFmt = (intervalHours) => (t) =>
   intervalHours < 1
-    ? parseUtc(t).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    ? parseUtc(t).toLocaleString(localeTag(), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
     : intervalHours < 24
-      ? parseUtc(t).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric" })
-      : parseUtc(t).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+      ? parseUtc(t).toLocaleString(localeTag(), { month: "numeric", day: "numeric", hour: "numeric" })
+      : parseUtc(t).toLocaleDateString(localeTag(), { month: "numeric", day: "numeric" });

@@ -1,3 +1,4 @@
+import { localize, translate } from "./i18n/index.js";
 import { basisLabel, costBasisLabel, observedNumber } from "./clientPresentation.js";
 import { observedTokens } from "./clientUsage.js";
 
@@ -58,8 +59,8 @@ export function combineCostUsers(userRows, modelRows, clients) {
       const amount = knownSum(pieces, part => part.cost_usd,
         part => part.cost_partial === true || part.unpriced > 0);
       row[`${client}_cost`] = amount.total;
-      row[`${client}_cost_status`] = !pieces.length ? "관측 없음" : amount.total === null
-        ? "미산정" : amount.partial ? "부분합" : "확인됨";
+      row[`${client}_cost_status`] = !pieces.length ? translate("mc07e42a9e296") : amount.total === null
+        ? translate("ma8761601c736") : amount.partial ? translate("md15c830a6f1c") : translate("mf2c10bf5d512");
     }
     row.cost_basis_label = costBasisLabel(row, bases);
     return row;
@@ -72,12 +73,12 @@ export function combineCostUsers(userRows, modelRows, clients) {
 // (`channel`: bedrock/enterprise); an unresolved or absent channel falls back to
 // the shared backend (enterprise → "anthropic", a `bedrock-*` route → CCB); Codex
 // is the emitting client. Never infer a client from a model.
-export const USER_COST_CHANNELS = [
+export const USER_COST_CHANNELS = localize([
   { key: "ccb", label: "CCB", title: "Claude Code · Bedrock 채널", color: "var(--series-bedrock)" },
   { key: "c4e", label: "C4E", title: "Claude Code · Enterprise(Anthropic) 채널", color: "var(--series-enterprise)" },
   { key: "claude_unknown", label: "미분류", title: "Claude Code · 채널 미분류", color: "var(--series-unknown)" },
   { key: "codex", label: "Codex", title: "Codex", color: "var(--chart-3)" },
-];
+]);
 
 export function userCostChannel(row) {
   if (row.client === "codex") return "codex";
@@ -97,7 +98,7 @@ export function userChannelLines(modelsByClient, order = (a, b) => String(a).loc
     const channel = userCostChannel(row);
     if (!channel) continue;
     const models = byChannel.get(channel) || new Map();
-    const model = row.model || "(미지정)";
+    const model = row.model || translate("md7588c178087");
     const entry = models.get(model) || { model, values: [], partial: false };
     entry.values.push(observedNumber(row.cost_usd));
     entry.partial ||= row.cost_partial === true || observedNumber(row.unpriced) > 0;

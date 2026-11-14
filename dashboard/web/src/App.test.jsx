@@ -188,7 +188,7 @@ test("sidebar links the public user guide in a new tab outside the page nav", ()
     <ConfigProvider config={{ enabledClients: ["claude", "codex"] }}><App /></ConfigProvider>
   </MemoryRouter>);
   const guide = screen.getByRole("link", { name: "사용설명서 (새 탭)" });
-  expect(guide.getAttribute("href")).toBe("https://www.atomai.click/claude-code-usage-dashboard/");
+  expect(guide.getAttribute("href")).toBe("https://www.atomai.click/claude-code-usage-dashboard/ko/user-guide.html");
   expect(guide.getAttribute("target")).toBe("_blank");
   expect(guide.getAttribute("rel")).toContain("noreferrer");
   expect(container.querySelector("nav").contains(guide)).toBe(false);

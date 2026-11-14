@@ -1,3 +1,4 @@
+import { localeTag, localize, translate } from "./i18n/index.js";
 // Partial-preserving model cost cells for ModelCostTrend: known amounts are summed as they are,
 // unavailable is never zero, a measured $0 stays distinct, and idle cells follow ADR-015.
 import { MODEL_TREND_COLORS, MODEL_TREND_OTHERS, MODEL_TREND_VENDOR_RAMPS, modelColorFor } from "./colors.js";
@@ -6,7 +7,7 @@ import { maskEmail } from "./fmt.js";
 export const MAX_INTERVALS = 5000;
 export const OTHERS_KEY = "__others";
 export const OTHERS_COLOR_KEY = "others";
-export const REASON_GROUPS = [
+export const REASON_GROUPS = localize([
   { key: "report_missing", label: "보고 비용 없음", reasons: ["report_missing"] },
   { key: "report_zero_with_tokens", label: "보고 0·토큰 있음", reasons: ["report_zero_with_tokens"] },
   { key: "scope", label: "범위·백엔드 불일치", reasons: ["scope", "unknown_backend"] },
@@ -14,11 +15,11 @@ export const REASON_GROUPS = [
   { key: "invalid_usage", label: "유효하지 않은 사용량", reasons: ["invalid_usage"] },
   { key: "missing_usage", label: "사용량 미기록", reasons: ["missing_usage"] },
   { key: "unspecified", label: "사유 미확인", reasons: ["unspecified"] },
-];
-export const STATE_LABELS = {
+]);
+export const STATE_LABELS = localize({
   known: "확인됨", zero: "$0 (측정값)", partial: "부분합",
   unavailable: "확인 불가", idle: "기록된 사용 없음", nodata: "데이터 없음",
-};
+});
 
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
@@ -84,68 +85,68 @@ export function displayModel(raw) {
 }
 
 export function modelLabel(displayKey) {
-  return displayKey === "" ? "(모델 미상)" : displayKey;
+  return displayKey === "" ? translate("m2ca73d8a5f02") : displayKey;
 }
 
 export function identityLabel(model, channel) {
-  const part = model === null ? "모델 미귀속" : model === "" ? "(모델 미상)" : model;
+  const part = model === null ? translate("mfda14cb3522a") : model === "" ? translate("m2ca73d8a5f02") : model;
   return typeof channel === "string" && channel !== "" ? `${part} · ${channel}` : part;
 }
 
 // Identity axis of a trend frame. A cell's `model` field holds the identity either way: the model
 // id for "model", the raw user identity for "user" (masked only in labels, never in keys).
-const MODEL_AXIS = {
+const MODEL_AXIS = localize({
   key: displayModel,
   label: modelLabel,
   identity: identityLabel,
   color: (key) => modelColorKey(key),
-  others: (n) => (n ? `기타 ${n}개 모델` : "모델 미귀속"),
+  others: (n) => (n ? translate("md9c571c212b0", [n]) : translate("mfda14cb3522a")),
   seriesEligible: () => true,
   weight: () => 1,
   breakdownChannels: true,
-};
+});
 // The detail endpoint folds users past its top list into one row; fromByModelDaily keys it here.
 export const REST_USERS_PREFIX = "\u0000rest:";
-const userLabel = (key) => (key === "" ? "(사용자 미상)"
-  : key.startsWith(REST_USERS_PREFIX) ? `그 외 ${key.slice(REST_USERS_PREFIX.length)}명` : maskEmail(key));
-const USER_AXIS = {
+const userLabel = (key) => (key === "" ? translate("m555afce0f97f")
+  : key.startsWith(REST_USERS_PREFIX) ? translate("mc974134d4390", [key.slice(REST_USERS_PREFIX.length)]) : maskEmail(key));
+const USER_AXIS = localize({
   key: (raw) => String(raw ?? ""),
   label: userLabel,
   identity: (user, channel) => {
-    const part = user === null ? "사용자 미귀속" : userLabel(user);
+    const part = user === null ? translate("m89fb5ebd56be") : userLabel(user);
     return typeof channel === "string" && channel !== "" ? `${part} · ${channel}` : part;
   },
   // Users have no stable color identity, so series colors follow rank within the frame.
   color: (key, rank) => ({ key: `user-${rank}` }),
-  others: (n) => (n ? `기타 ${n}명` : "사용자 미귀속"),
+  others: (n) => (n ? translate("mc1c9905d6374", [n]) : translate("m89fb5ebd56be")),
   // The server residual is already a fold, so it always joins 기타 and counts as its users.
   seriesEligible: (key) => !key.startsWith(REST_USERS_PREFIX),
   weight: (key) => (key.startsWith(REST_USERS_PREFIX) ? Number(key.slice(REST_USERS_PREFIX.length)) || 1 : 1),
   // The user table has no channel column, so one user's channels fold into one row.
   breakdownChannels: false,
-};
+});
 // /api/cost/by-team-daily: "" is 팀 없음 (never folded); the server residual is keyed like users'.
 export const REST_TEAMS_PREFIX = "\u0000rest-teams:";
-const teamLabel = (key) => (key === "" ? "팀 없음"
-  : key.startsWith(REST_TEAMS_PREFIX) ? `기타 ${key.slice(REST_TEAMS_PREFIX.length)}개 팀` : key);
-const TEAM_AXIS = {
+const teamLabel = (key) => (key === "" ? translate("mb02c62680e03")
+  : key.startsWith(REST_TEAMS_PREFIX) ? translate("m6e4782c34768", [key.slice(REST_TEAMS_PREFIX.length)]) : key);
+const TEAM_AXIS = localize({
   ...USER_AXIS,
   label: teamLabel,
-  identity: (team) => (team === null ? "팀 미귀속" : teamLabel(team)),
+  identity: (team) => (team === null ? translate("m0ffa13e2ef9a") : teamLabel(team)),
   color: (key, rank) => ({ key: `team-${rank}` }),
-  others: (n) => (n ? `기타 ${n}개 팀` : "팀 미귀속"),
+  others: (n) => (n ? translate("m6e4782c34768", [n]) : translate("m0ffa13e2ef9a")),
   seriesEligible: (key) => !key.startsWith(REST_TEAMS_PREFIX),
   weight: (key) => (key.startsWith(REST_TEAMS_PREFIX) ? Number(key.slice(REST_TEAMS_PREFIX.length)) || 1 : 1),
   // 팀 없음 is never folded into 기타 and does not take a top-N slot.
   alwaysSeries: (key) => key === "",
-};
+});
 // userSuffix (raw identity -> text) extends user series labels, e.g. with a team; keys stay raw.
 const axisFor = (dimension, userSuffix) => (dimension === "team" ? TEAM_AXIS : dimension !== "user" ? MODEL_AXIS
   : userSuffix ? { ...USER_AXIS, label: (key) => userLabel(key) + userSuffix(key) } : USER_AXIS);
 
 export function reasonLabel(reason) {
   const group = REASON_GROUPS.find((g) => g.reasons.includes(reason));
-  return group ? group.label : "사유 미확인";
+  return group ? group.label : translate("m3f28d2b269da");
 }
 
 function idleCell(t) {
@@ -570,12 +571,12 @@ export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucke
 export function formatUsd(v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return "—";
   if (v > 0 && v < 0.01) return "<$0.01";
-  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return "$" + v.toLocaleString(localeTag(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function formatUsdPrecise(v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return "—";
-  return "$" + v.toLocaleString("en-US", { maximumSignificantDigits: 6 });
+  return "$" + v.toLocaleString(localeTag(), { maximumSignificantDigits: 6 });
 }
 
 export function formatAxisUsd(v) {
@@ -583,8 +584,8 @@ export function formatAxisUsd(v) {
   if (v === 0) return "$0";
   const abs = Math.abs(v);
   if (abs >= 1000) return "$" + new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(v);
-  if (abs >= 1) return "$" + v.toLocaleString("en-US", { maximumFractionDigits: 1 });
-  return "$" + v.toLocaleString("en-US", { maximumSignificantDigits: 2 });
+  if (abs >= 1) return "$" + v.toLocaleString(localeTag(), { maximumFractionDigits: 1 });
+  return "$" + v.toLocaleString(localeTag(), { maximumSignificantDigits: 2 });
 }
 
 function nameHash(s) {

@@ -1,3 +1,4 @@
+import { translateSource, translate, useLocale } from "./i18n/index.js";
 import { useEffect, useRef, useState } from "react";
 import { checkAuthentication } from "./api.js";
 import { validChatChart } from "./chatCharts.js";
@@ -55,6 +56,7 @@ export async function streamChat(messages, { onText, onStatus, onThinking, onCha
 // resetKey(턴 번호)가 바뀌면 다시 따라가기 시작한다 — 위로 올려 읽던 상태에서 새 질문을 보내면
 // 새 답변은 따라가야 한다(안 그러면 FloatingChat에서 응답이 온 걸 못 본다).
 export function useStickToBottom(deps, resetKey) {
+  const _locale = useLocale();
   const containerRef = useRef(null);
   const stick = useRef(true);
 
@@ -86,6 +88,7 @@ export function useStickToBottom(deps, resetKey) {
 }
 
 export function useChatStream() {
+  const _locale = useLocale();
   const [msgs, setMsgs] = useState([]); // {role, content, charts?, error?}
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -178,7 +181,7 @@ export function useChatStream() {
       if (ac.signal.aborted) return; // 사용자가 닫거나 다시 보낸 경우 — 오류로 표시하지 않는다
       setMsgs((m) => {
         const next = [...m];
-        next[next.length - 1] = { ...next[next.length - 1], role: "assistant", content: `응답을 받지 못했습니다: ${err.message}`, error: true };
+        next[next.length - 1] = { ...next[next.length - 1], role: "assistant", content: translate("m7f0cde8733f9", [err.message]), error: true };
         return next;
       });
     } finally {
@@ -189,5 +192,5 @@ export function useChatStream() {
     }
   };
 
-  return { msgs, busy, status, trace, ask, stop };
+  return { msgs, busy, status: translateSource(status), trace, ask, stop };
 }
