@@ -1,1 +1,926 @@
-{"model":"openai.gpt-6-luna","provider":"amazon-bedrock","translation_date":"2026-11-10","source_locale":"en","target_locales":["ko","ja","zh-CN"],"scope":"Six guide pages and credits per target locale. The complete user guide and first-visit homepage cover the product; release media is an optional example.","validation":"HTML element/attribute structure, code identifiers and exact preformatted commands compared with source; local links and locale navigation checked separately.","pages":[{"locale":"ja","page":"api","path":"ja/api.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":21777,"source_sha256":"e9a846e1a3e7348651a93a8de8f3b2302d9496679d792bd2840f12f426af9fe0","output_sha256":"dac8f7d3e8bb8469cdd273478c9c16a1d5014ee1e300d5f45390551db52528aa"},{"locale":"ja","page":"architecture","path":"ja/architecture.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":17845,"source_sha256":"39699f7dbb79c366ce33634226067bc98f4de204535d1fd7f07ad90347ead196","output_sha256":"1768fb5a1fd92da7c72a3262fb687348ed076c1a0ec9dcbe7602f7412df2ee09"},{"locale":"ja","page":"credits","path":"ja/credits.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":5158,"source_sha256":"1e8c18957497d18600d35d5b6f292ac1c35796c79553403c00627a251c098c14","output_sha256":"ff87cbfe63178500660f28a113d212a66e5d5affd588271e6435cb24453ddce4","initial_output_sha256":"951aae8517db2379b96d7833e069515765d1cd84810434a3cfe5943fb8cb007f","asset_postprocessing":"Added the same WebM fallback source/link to all four locales; translated prose unchanged."},{"locale":"ja","page":"index","path":"ja/index.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":21824,"source_sha256":"5416e58c1544f988ef74aaa864a54adb68ee2041e6590502ede4d0e7999fd706","output_sha256":"74982578920f974470648f3f8498c9ef3928e9e927c7d042386bd798ac131e56"},{"locale":"ja","page":"installation","path":"ja/installation.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":33032,"source_sha256":"db72e14902f18bda90e8554b5eef39d1047a6f8b7ca0b86ec2b548509e4f38ce","output_sha256":"c1f045c840247e08579c1017728184610531dd984f1d3130a2cc59822daebed1"},{"locale":"ja","page":"operations","path":"ja/operations.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":19938,"source_sha256":"14f5588ed3a239f6145cf1411a18faeda0bd0753e2a68f349141ac6d9190a512","output_sha256":"f3698c09a384799c12e357a4bf43186d33b5231555a90591d01123fb1375ec6d","initial_output_sha256":"c44db60869c012503e689296ec3cf4113143288eca7f1b63ab098711a835643e","review_corrections":{"model":"openai.gpt-6-luna","review_response_sha256":"b00ae75696b2a2a4106abdee3fb78ea24dd83970735060e8c34a5186033f5fd2","correction_count":1}},{"locale":"ko","page":"api","path":"ko/api.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":19726,"source_sha256":"e9a846e1a3e7348651a93a8de8f3b2302d9496679d792bd2840f12f426af9fe0","output_sha256":"13f97cf0b8cc5501ae981102b97b710451b3277dc3edd3d350f7d6525d96e035","initial_output_sha256":"5ec341d3cf6f2782d04cdf060300f3b67010a9305d164af7210e6a38508aae44","review_corrections":{"model":"openai.gpt-6-luna","review_response_sha256":"13e74d8405ac506ce67d33fea3e72cb0ba1f19062932e75a85311a928089e660","correction_count":1}},{"locale":"ko","page":"architecture","path":"ko/architecture.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":15667,"source_sha256":"39699f7dbb79c366ce33634226067bc98f4de204535d1fd7f07ad90347ead196","output_sha256":"567af4a94834ecff0a58dfbb9d52a77096f8e7436cc49d575bc84c093bc11ae9"},{"locale":"ko","page":"credits","path":"ko/credits.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":4707,"source_sha256":"1e8c18957497d18600d35d5b6f292ac1c35796c79553403c00627a251c098c14","output_sha256":"4c25f2e60871f839ccb79248ed232c6620488d299fa3e3f65f82eb9a2c711478","initial_output_sha256":"8c9001c5bf13662ffd2a57121ec3229cc8d40434f8d46d8859ab7deabc7cce2f","asset_postprocessing":"Added the same WebM fallback source/link to all four locales; translated prose unchanged."},{"locale":"ko","page":"index","path":"ko/index.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":19726,"source_sha256":"5416e58c1544f988ef74aaa864a54adb68ee2041e6590502ede4d0e7999fd706","output_sha256":"a5b54c833c181c5bbd96be9d8c4fd1186e882a9b4a9bb7a86bc7995602504836"},{"locale":"ko","page":"installation","path":"ko/installation.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":29191,"source_sha256":"db72e14902f18bda90e8554b5eef39d1047a6f8b7ca0b86ec2b548509e4f38ce","output_sha256":"9c95a623f36023c8aee481127a954e1e1c7cf825664b3e82c20dde3fee11c4df","initial_output_sha256":"305af7689b4fc2468282ee094cebd7137dad341e42fbc191512d5d4ed59319aa","review_corrections":{"model":"openai.gpt-6-luna","review_response_sha256":"ff74beaf488da17283eaa2615a5608146a571eab38bb1aa3371488e28bb052e9","correction_count":3}},{"locale":"ko","page":"operations","path":"ko/operations.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":17595,"source_sha256":"14f5588ed3a239f6145cf1411a18faeda0bd0753e2a68f349141ac6d9190a512","output_sha256":"6341f70f0b37a93c21bcb530ad89f8189ef234478b7df4a3b20154b0330f9bed"},{"locale":"zh-CN","page":"api","path":"zh/api.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":16895,"source_sha256":"e9a846e1a3e7348651a93a8de8f3b2302d9496679d792bd2840f12f426af9fe0","output_sha256":"d5a79e1c370543d48515ec6c97f6111f0dc80d97c0378f1ad8e342194dc7bdb4"},{"locale":"zh-CN","page":"architecture","path":"zh/architecture.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":13177,"source_sha256":"39699f7dbb79c366ce33634226067bc98f4de204535d1fd7f07ad90347ead196","output_sha256":"433a20410a345b483b41daa54cef130611cc330fa5299bc37bd15d2e1a025977","initial_output_sha256":"3d529aaf68c3f7b82e0231df6f6ba0eb37d72388b6171ddc7deda155eaaa527c","review_corrections":{"model":"openai.gpt-6-luna","review_response_sha256":"a94f761802882ad26a8a7b03a8ed0bec7ac702994fe64d5b34ce57103f1a7e55","correction_count":1}},{"locale":"zh-CN","page":"credits","path":"zh/credits.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":3881,"source_sha256":"1e8c18957497d18600d35d5b6f292ac1c35796c79553403c00627a251c098c14","output_sha256":"277af840d8a6717da0c895814d2b34a3aa32709c8b763f850ad1c642771c250f","initial_output_sha256":"5797263de51f6d48885acf2d99df106f8a34f5fdb6059b634b75bf3a04baa6cb","asset_postprocessing":"Added the same WebM fallback source/link to all four locales; translated prose unchanged."},{"locale":"zh-CN","page":"index","path":"zh/index.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":17057,"source_sha256":"5416e58c1544f988ef74aaa864a54adb68ee2041e6590502ede4d0e7999fd706","output_sha256":"cb13d6a85231968dfdf1d69038425c48184930c3cf0e8d663a2036ff178edbd2"},{"locale":"zh-CN","page":"installation","path":"zh/installation.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":25039,"source_sha256":"db72e14902f18bda90e8554b5eef39d1047a6f8b7ca0b86ec2b548509e4f38ce","output_sha256":"7d0e4a98b0335f90dabc0c4bbaedc1b4a629a8bf9b571f626c286311e8910df2"},{"locale":"zh-CN","page":"operations","path":"zh/operations.html","status":"TRANSLATED","model":"openai.gpt-6-luna","bytes":14667,"source_sha256":"14f5588ed3a239f6145cf1411a18faeda0bd0753e2a68f349141ac6d9190a512","output_sha256":"36a6eff39fea2e7880f2d68bc436e765181df254cae37bc3c82f629385687f72","initial_output_sha256":"79d919ae841df010e8c7e77faf42584a5698ddc43e21198d8cc954934e4f8fbe","review_corrections":{"model":"openai.gpt-6-luna","review_response_sha256":"b00ae75696b2a2a4106abdee3fb78ea24dd83970735060e8c34a5186033f5fd2","correction_count":4}},{"locale":"ko","page":"user-guide","path":"ko/user-guide.html","model":"openai.gpt-6-luna","status":"TRANSLATED","bytes":80906,"output_sha256":"e38c247e1df4fc35ab01148035d22925a8dc15fc1438d9471ec9eb92d231cc7e","source_sha256":"053f5a6fd6744a4692648d70603e8bb9e79cc93cd294a2ce843c98ad95dceae6"},{"locale":"ja","page":"user-guide","path":"ja/user-guide.html","model":"openai.gpt-6-luna","status":"TRANSLATED","bytes":90514,"output_sha256":"906358315400316e20d16dbdfd266edc22d43ed632d2e8409f3c4fb71bb2b948","source_sha256":"053f5a6fd6744a4692648d70603e8bb9e79cc93cd294a2ce843c98ad95dceae6"},{"locale":"zh-CN","page":"user-guide","path":"zh/user-guide.html","model":"openai.gpt-6-luna","status":"TRANSLATED","bytes":66195,"output_sha256":"8a0e06462145fe76aa38590027facacc5e5e4506e998cb4f13f31f6da1dc1a07","source_sha256":"053f5a6fd6744a4692648d70603e8bb9e79cc93cd294a2ce843c98ad95dceae6"}],"semantic_review":{"model":"openai.gpt-6-luna","scope":"Historical initial translation review of six page sets; does not cover the November 14 replacement fragments.","terminology_corrections_applied":10,"additional_clarification":"Lambda adaptation sentence retranslated in all three locales after clarifying the English source.","date":"2026-11-10"},"capture_labels":{"model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","date":"2026-11-14","target_language":"English","source_sha256":"d10cb1975f56aeef65fcc48bab99171efa0d30cdc6b62d5b7f518ff1d4e6d72b","output_sha256":"83372034ebbe671445cb1a9400827910132a155f6855a4e621df5c42a6fd113e","usage":{"inputTokens":2,"outputTokens":4062,"totalTokens":9668,"cacheReadInputTokens":0,"cacheWriteInputTokens":5604},"stop_reason":"end_turn","strings":337,"labels_sha256":"7743509ea8ebea8ed9447173bcd03295145b4dc9ef32efeae278cf647e877dae","host_corrections":[{"source":"search 실패","model_output":"Search failed","corrected_output":"search failed","reason":"Preserve the lowercase synthetic MCP server identifier."},"Changed Luna Mixed criteria to Mixed basis and Authorization wait to Permission wait for consistent telemetry terminology."],"followup_calls":[{"model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","date":"2026-11-14","target_language":"English","source_sha256":"4885c80a7a0d2de19f506e9f67e85116e924de1f6dee034e302e28829c1b198d","output_sha256":"97208fcaea3ac8dda5f0dbef0407c1ff4cce127fd1dbba6e9bdde86812b8b793","usage":{"inputTokens":116,"outputTokens":131,"totalTokens":247,"cacheReadInputTokens":0,"cacheWriteInputTokens":0},"stop_reason":"end_turn","strings":2}],"current_labels_sha256":"00faeaa82ff105b627f3ae1527d96f6b1f3f490771b24af4296d7573d442a30c"},"english_sources":{"api":{"path":"api.html","sha256":"e9a846e1a3e7348651a93a8de8f3b2302d9496679d792bd2840f12f426af9fe0"},"architecture":{"path":"architecture.html","sha256":"39699f7dbb79c366ce33634226067bc98f4de204535d1fd7f07ad90347ead196"},"credits":{"path":"assets/credits.html","sha256":"1e8c18957497d18600d35d5b6f292ac1c35796c79553403c00627a251c098c14"},"index":{"path":"index.html","sha256":"5416e58c1544f988ef74aaa864a54adb68ee2041e6590502ede4d0e7999fd706"},"installation":{"path":"installation.html","sha256":"db72e14902f18bda90e8554b5eef39d1047a6f8b7ca0b86ec2b548509e4f38ce"},"operations":{"path":"operations.html","sha256":"14f5588ed3a239f6145cf1411a18faeda0bd0753e2a68f349141ac6d9190a512"},"user-guide":{"path":"user-guide.html","sha256":"053f5a6fd6744a4692648d70603e8bb9e79cc93cd294a2ce843c98ad95dceae6"}},"last_updated":"2026-11-14","capture_labels_2026_11_10":{"model":"openai.gpt-6-luna","source_strings":46,"source_sha256":"6f60b57c80c085eece048a25a455281a5c7e29fdd3a38992db56fc0b3b51d65d","translations_sha256":"f43c1de5aa29ae4016233dfa250036a318e6eba13bce507d07749423f082668a","scope":"Display labels in synthetic captured DOM only; no React product locale changes."},"feature_update_2026_11_14":{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","scope":"Exact browser-local time selection, range-to-task navigation, curl device installation, new narrated walkthrough and credits; 11 changed fragments per locale. Architecture device-credential scope was clarified in all four languages.","calls":[{"model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","date":"2026-11-14","target_language":"Korean","source_sha256":"c96a1c202418b4776f77deecbded38b2fbadfc77780dd8489b631a83bd5eb032","output_sha256":"a0916a537bcde5affa8d377ae238bf5d7f75537bcbadb0f5586ffb29907b71ea","usage":{"inputTokens":2,"outputTokens":5796,"totalTokens":10008,"cacheReadInputTokens":0,"cacheWriteInputTokens":4210},"stop_reason":"end_turn","strings":232},{"model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","date":"2026-11-14","target_language":"Japanese","source_sha256":"c96a1c202418b4776f77deecbded38b2fbadfc77780dd8489b631a83bd5eb032","output_sha256":"3217ebe9b2c1b89cfba23f8f9e7dfb57d40455cb5b0ea805684b8660a7bdbc9e","usage":{"inputTokens":2,"outputTokens":6810,"totalTokens":11022,"cacheReadInputTokens":0,"cacheWriteInputTokens":4210},"stop_reason":"end_turn","strings":232},{"model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","date":"2026-11-14","target_language":"Simplified Chinese","source_sha256":"c96a1c202418b4776f77deecbded38b2fbadfc77780dd8489b631a83bd5eb032","output_sha256":"05509394ce88d0b55d9067387780195d7c1edc8f790d9244c7eb5c6f19a70009","usage":{"inputTokens":2,"outputTokens":4754,"totalTokens":8968,"cacheReadInputTokens":0,"cacheWriteInputTokens":4212},"stop_reason":"end_turn","strings":232},{"model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","date":"2026-11-14","target_language":"the language indicated by each JSON key: ko is Korean, ja is Japanese, zh is Simplified Chinese","source_sha256":"f87a5da2173a616e60b395f2410fbbc98a8927ea1b2895c994dc75df0d3a9ec3","output_sha256":"1fba1325e6b30393005587e85bbbcfb1308dc9c6574f47b045264bc9735d24fd","usage":{"inputTokens":259,"outputTokens":385,"totalTokens":644,"cacheReadInputTokens":0,"cacheWriteInputTokens":0},"stop_reason":"end_turn","strings":3}],"host_corrections":["Retained locale navigation and adjusted relative asset/page paths mechanically.","Updated November 14 date numerals in the changed page headers.","Preserved code blocks and technical identifiers verbatim.","Removed the obsolete Cost-page entry from the task walkthrough; Users is the supported entry.","Updated image intrinsic dimensions from actual generated PNGs.","Split the unchanged terminal examples into separate macOS and Linux code blocks in all locales."],"validation":"Superseded text-node mapping by the review_corrections coherent-fragment translations. Final file checksums below identify the delivered pages.","discarded_attempts":[{"requests":3,"model_id":"openai.gpt-6-luna","outcome":"Converse validation rejected direct invocation without an inference profile."},{"requests":2,"model_id":"us.openai.gpt-6-luna","outcome":"Converse validation rejected the unsupported temperature field."},{"requests":1,"model_id":"us.openai.gpt-6-luna","target_language":"Korean","outcome":"Discarded a response that modified whitespace in text keys. Reissued with numeric keys; the discarded output was not retained or used."}],"review_corrections":{"calls":[{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Korean","source_sha256":"3c52edf5e47207ff3d1af7c2240eba4d6ff8f60bbf9546fb2c6657e1538b7c0e","output_sha256":"6922eb6529c6e8defa77a91a53c38a1964bbe524289e3d859842a2f1aca1d742","fragments":20,"approach":"Coherent HTML fragments; tag, attribute and per-cell/paragraph code parity.","usage":null,"note":"Response saved, but strict inline-code ordering assertion stopped usage metadata capture. Host verified grammar-driven reordering remained within the same paragraph/table cell."},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Japanese","source_sha256":"3c52edf5e47207ff3d1af7c2240eba4d6ff8f60bbf9546fb2c6657e1538b7c0e","output_sha256":"baa3874e96ac4efe0fac52f39a05c9dd87bfbaaf31f480ec9aad167c0f33ff71","usage":{"inputTokens":2,"outputTokens":9970,"totalTokens":16608,"cacheReadInputTokens":0,"cacheWriteInputTokens":6636},"stop_reason":"end_turn","fragments":20,"approach":"Coherent HTML fragments with tag/attribute/code parity; replaces indexed text-node mapping."},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Simplified Chinese","source_sha256":"3c52edf5e47207ff3d1af7c2240eba4d6ff8f60bbf9546fb2c6657e1538b7c0e","output_sha256":"88e3601f68126aa1088498fd1ab303525f386696711650154fb42083b13a8f9d","fragments":20,"approach":"Coherent HTML fragments; tag, attribute and per-cell/paragraph code parity.","usage":null,"note":"Response saved, but strict inline-code ordering assertion stopped usage metadata capture. Host verified grammar-driven reordering remained within the same paragraph/table cell."}],"scope":"Replaced indexed text-node translations with 20 coherent HTML fragments per locale, including all changed walkthrough/API/install/operations/credits content and the architecture task-range paragraph.","host_corrections":["Adjusted relative asset/page URLs and preserved locale switches.","Clarified Korean subhour wording as less than one hour.","Unified all 24 guide favicons with the dashboard SVG."],"validation":"Verified HTML tag/attribute parity and code identifiers per table cell, paragraph and list item; reviewed Japanese filter and symptom mappings, backend/group qualification, Chinese 50-trace/200-span limits and Korean fallback paragraph against English."}},"historical_follow_ups":{"repository_path":"site/assets/translations.json","commit":"e66089cf3538a8e3c0cb242162932a3bec5e6b91","keys":["content_review_follow_up","narration_follow_up","feature_update_2026_11_13"],"sha256":"9be28609d91632cf85281d6c9d1784fb9732286fcd9c0d20349a09d30ba29dd5","serialization":"UTF-8 JSON of the named fields, sorted keys, compact separators; prior records remain at the immutable commit."},"full_product_guide_2026_11_14":{"source_revision":"64791c768cee8297b6f6956a38460710982b4dc8","scope":"First-visit homepage, complete menu and feature guide, and links from every guide page.","authoring":{"model":"openai.gpt-6.1-terra","execution":"Ephemeral Codex subprocess through Amazon Bedrock; no persistent subagent or MCP servers.","task_sha256":"638f5634f07c6e5326614c731fdad04d8e1b9465ef3a23484af3945a3f6b2af5","usage":{"input_tokens":1846894,"cached_input_tokens":1719942,"cache_write_input_tokens":126910,"output_tokens":14845,"reasoning_output_tokens":814},"scope":"English user guide and source coverage map; host applied review corrections."},"review":{"model":"openai.gpt-6.1-terra","scope":"Independent read-only review of the new English guide and coverage map against source; did not review translations.","report_sha256":"2955a9118d66ec3ff578764a3d8dede05590621aef1c87647f3bbfa88d370845","usage":{"input_tokens":858565,"cached_input_tokens":744110,"cache_write_input_tokens":114429,"output_tokens":4658,"reasoning_output_tokens":709},"corrections":"Clarified user-detail client scope, reported-cost fallback, chat cost comparability and expandable query evidence, shared trend resolution, preset exception, diagnostic truncation and user-search scope."},"calls":[{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Korean","source_sha256":"3bb76ccdb0eba1d7a952eea9b4b799d001e4c5498fcb33bc8bcdd6b784114ca7","output_sha256":"f3d522b011669475d78b43e7d3a23b824e2f6e573f496bd8e2c8cc125be1b927","usage":{"inputTokens":2,"outputTokens":3445,"totalTokens":6217,"cacheReadInputTokens":0,"cacheWriteInputTokens":2770},"stop_reason":"end_turn","fragments":13},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Japanese","source_sha256":"3bb76ccdb0eba1d7a952eea9b4b799d001e4c5498fcb33bc8bcdd6b784114ca7","output_sha256":"cc9a5d65c59d5c96dc2b496516fb0f8e4815dffadab1b24e0040ce7fab9a5154","usage":{"inputTokens":2,"outputTokens":3955,"totalTokens":6727,"cacheReadInputTokens":0,"cacheWriteInputTokens":2770},"stop_reason":"end_turn","fragments":13},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Simplified Chinese","source_sha256":"3bb76ccdb0eba1d7a952eea9b4b799d001e4c5498fcb33bc8bcdd6b784114ca7","output_sha256":"8eaae91f5190d8f67c5b2a6735c88446112d84dc3e99bd6edde57cdd6c235909","usage":{"inputTokens":2,"outputTokens":3085,"totalTokens":5859,"cacheReadInputTokens":0,"cacheWriteInputTokens":2772},"stop_reason":"end_turn","fragments":13},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Korean","source_sha256":"cd283c8b956988019e2478e3052845f87c4a26f8be3ec2e7d0ec649a880820ad","output_sha256":"252edff039d312458d1586a3fe76f34ecd9b9b67db6aa12f9232f78cc4cf8dd8","usage":{"inputTokens":2,"outputTokens":10698,"totalTokens":18331,"cacheReadInputTokens":0,"cacheWriteInputTokens":7631},"stop_reason":"end_turn","fragments":23},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Japanese","source_sha256":"cd283c8b956988019e2478e3052845f87c4a26f8be3ec2e7d0ec649a880820ad","output_sha256":"8fe3148a0d244bc9ad367ff2854adbdc6802e1e26d270624894bdcd5ccf3bc88","usage":{"inputTokens":2,"outputTokens":12631,"totalTokens":20264,"cacheReadInputTokens":0,"cacheWriteInputTokens":7631},"stop_reason":"end_turn","fragments":23},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Simplified Chinese","source_sha256":"cd283c8b956988019e2478e3052845f87c4a26f8be3ec2e7d0ec649a880820ad","output_sha256":"53be76630c852fb5929f435fc29297766dc28138618795edc286b1087b679287","usage":{"inputTokens":2,"outputTokens":9092,"totalTokens":16727,"cacheReadInputTokens":0,"cacheWriteInputTokens":7633},"stop_reason":"end_turn","fragments":23}],"host_corrections":["Kept locale navigation and adjusted relative links mechanically.","Preserved Korean on-screen labels and allowed grammar-driven link order within the same list item.","Clarified the Installation status homepage row as readiness checks in all four languages.","Made the guide introduction language-neutral in all locales and aligned localized guide titles with navigation labels.","Used the existing responsive cards class for the three first-visit reading paths.","Applied PR review fixes: token is displayed once, not usable once, across all locales; corrected Korean Skill and duplicate Installation status wording; localized Japanese/Chinese caption-track labels.","Qualified account-name masking by deployment configuration in every locale, removed the duplicate Korean status heading, and moved prior homepage translation details behind an immutable historical reference."],"validation":"Local checks passed: 28 pages, 11 menu anchors per locale, 1004 local references, matching section IDs/code examples and translation hashes; 56 desktop/mobile layouts, 168 locale links, one shared favicon, and all four players using automatic WebM fallback and direct WebM with six matching caption cues. These checks do not establish deployment.","coverage_map_sha256":"b7f02b61c33ea181f3ae4ca0aacdafc283c9ec4ea2f38ee2d2f079c6435de9af"},"historical_homepage_translation":{"commit":"64791c768cee8297b6f6956a38460710982b4dc8","path":"site/assets/translations.json","records":"pages entries with page=index","scope":"Initial output hashes, Lambda-sentence follow-up and video-source postprocessing for the prior homepage; these do not describe the rewritten first-visit homepage."},"latest_update":"visual_guide_2026_11_14","visual_guide_2026_11_14":{"source_revision":"fcfd49d9d0988defa0fd8cd8649608a9bb6e8899","scope":"Illustrated user-Trace, cost-efficiency and tool workflows; screenshots, inline architecture, typography and reading controls. Existing full menu descriptions are retained.","calls":[{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Korean","source_sha256":"bc00cd7fe6e942062190053bf18e51991f761f02b73da5d9909403ea0ed3d6eb","output_sha256":"ad38364e81bc07f411c6d11f8b44afe95793e07b0877ff1138d02c5f7c385dae","usage":{"inputTokens":2,"outputTokens":6531,"totalTokens":11139,"cacheReadInputTokens":0,"cacheWriteInputTokens":4606},"stop_reason":"end_turn","fragments":40},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Japanese","source_sha256":"bc00cd7fe6e942062190053bf18e51991f761f02b73da5d9909403ea0ed3d6eb","output_sha256":"ca53633a203049ddf96b9cf429233e7fe6f8fa914067b70efad1f5bc06e6bed2","usage":{"inputTokens":2,"outputTokens":7423,"totalTokens":12031,"cacheReadInputTokens":0,"cacheWriteInputTokens":4606},"stop_reason":"end_turn","fragments":40},{"date":"2026-11-14","model":"openai.gpt-6-luna","provider":"amazon-bedrock","inference_profile":"us.openai.gpt-6-luna","region":"us-east-1","target_language":"Simplified Chinese","source_sha256":"bc00cd7fe6e942062190053bf18e51991f761f02b73da5d9909403ea0ed3d6eb","output_sha256":"6626c1351c5d936d99adb3a92d4fb631511ccde47d81f26a94c4d869a96e53aa","usage":{"inputTokens":2,"outputTokens":5250,"totalTokens":9860,"cacheReadInputTokens":0,"cacheWriteInputTokens":4608},"stop_reason":"end_turn","fragments":40}],"host_corrections":["Wrapped the Chinese credits fragment in its required paragraph element.","Applied a Korean editorial pass to analysis/action labels, first-visit introductions and cost-basis wording.","Adapted relative image, architecture, license and guide links; inserted intrinsic image dimensions.","Organized existing shared/Claude descriptions in native disclosure panels without dropping their contents.","Corrected Korean cost-basis particles and repeated captions; qualified the OIDC example."],"validation":"Passed: 28 guide pages, 1400 local references, locale IDs/code parity and hashes; 56 general desktop/mobile layouts and 168 locale links; 48 light/dark visual-page checks and 16 interaction checks for TOC, disclosures, zoom, close/Escape and focus return. Existing video and six captions passed in all four locales. Local checks do not establish deployment."}}
+{
+  "model": "openai.gpt-6-luna",
+  "provider": "amazon-bedrock",
+  "translation_date": "2026-11-10",
+  "source_locale": "en",
+  "target_locales": [
+    "ko",
+    "ja",
+    "zh-CN",
+    "es"
+  ],
+  "scope": "Seven public documentation pages in five languages, including the illustrated product guide and language-selection workflow.",
+  "validation": "HTML element/attribute structure, code identifiers and exact preformatted commands compared with source; local links and locale navigation checked separately.",
+  "pages": [
+    {
+      "locale": "ja",
+      "page": "api",
+      "path": "ja/api.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 21898,
+      "source_sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7",
+      "output_sha256": "1c2cf704544933b8ac81d2f2f2cee1d92263e7bc6712a36c7f89d13e74b6563c"
+    },
+    {
+      "locale": "ja",
+      "page": "architecture",
+      "path": "ja/architecture.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 17984,
+      "source_sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674",
+      "output_sha256": "f664541be56c1ba6298c6c6ce8bba295b25f5e29e84b9f569f00ee290eb011f8"
+    },
+    {
+      "locale": "ja",
+      "page": "credits",
+      "path": "ja/credits.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 5301,
+      "source_sha256": "76a07ae0fae9f0a4f05dd31bd00b39af6165a64e2165a42461c16183355d4323",
+      "output_sha256": "2058b3aaaa3f59180f3996764df6cb4b86f7364f1b2b6d9b6d7dc92f5a4359ab",
+      "initial_output_sha256": "951aae8517db2379b96d7833e069515765d1cd84810434a3cfe5943fb8cb007f",
+      "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
+    },
+    {
+      "locale": "ja",
+      "page": "index",
+      "path": "ja/index.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 21949,
+      "source_sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d",
+      "output_sha256": "6ad0be3ea7ff8f81b520433d423fd5cd39bf2c2c9829c965459083a44b015b80"
+    },
+    {
+      "locale": "ja",
+      "page": "installation",
+      "path": "ja/installation.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 33171,
+      "source_sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f",
+      "output_sha256": "7d54dbd4409a64c5206e8ae5b9e6992f475f32b85aaa7113b29ce2427ccb0f44"
+    },
+    {
+      "locale": "ja",
+      "page": "operations",
+      "path": "ja/operations.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 20073,
+      "source_sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad",
+      "output_sha256": "d067e678533057257ce6e1a53755c0b1b3bbd488cb81cf5446ef4fa59a77e435",
+      "initial_output_sha256": "c44db60869c012503e689296ec3cf4113143288eca7f1b63ab098711a835643e",
+      "review_corrections": {
+        "model": "openai.gpt-6-luna",
+        "review_response_sha256": "b00ae75696b2a2a4106abdee3fb78ea24dd83970735060e8c34a5186033f5fd2",
+        "correction_count": 1
+      }
+    },
+    {
+      "locale": "ko",
+      "page": "api",
+      "path": "ko/api.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 19847,
+      "source_sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7",
+      "output_sha256": "5224061c27184aea4bf7ecac9c8bbc6f52273d125ef92afa512280a04979490e",
+      "initial_output_sha256": "5ec341d3cf6f2782d04cdf060300f3b67010a9305d164af7210e6a38508aae44",
+      "review_corrections": {
+        "model": "openai.gpt-6-luna",
+        "review_response_sha256": "13e74d8405ac506ce67d33fea3e72cb0ba1f19062932e75a85311a928089e660",
+        "correction_count": 1
+      }
+    },
+    {
+      "locale": "ko",
+      "page": "architecture",
+      "path": "ko/architecture.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 15806,
+      "source_sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674",
+      "output_sha256": "d9ee5492d6ae29462e37e541e6b3ed803a5983449a92df9f30a4423efd7d2916"
+    },
+    {
+      "locale": "ko",
+      "page": "credits",
+      "path": "ko/credits.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 4850,
+      "source_sha256": "76a07ae0fae9f0a4f05dd31bd00b39af6165a64e2165a42461c16183355d4323",
+      "output_sha256": "578a9dae377dfa0a0323bc0e7f27dc1a309474b841e8ff979e70ad1b41154437",
+      "initial_output_sha256": "8c9001c5bf13662ffd2a57121ec3229cc8d40434f8d46d8859ab7deabc7cce2f",
+      "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
+    },
+    {
+      "locale": "ko",
+      "page": "index",
+      "path": "ko/index.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 19851,
+      "source_sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d",
+      "output_sha256": "36aaca20d7552a913c9b0682d1ef98d1200a4c8e7a6e447074f54a4a032bb023"
+    },
+    {
+      "locale": "ko",
+      "page": "installation",
+      "path": "ko/installation.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 29330,
+      "source_sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f",
+      "output_sha256": "ffe95aaab8bd22a19ad665f19ec4a9f684373d2e6664348813ffd20bbaa9274a",
+      "initial_output_sha256": "305af7689b4fc2468282ee094cebd7137dad341e42fbc191512d5d4ed59319aa",
+      "review_corrections": {
+        "model": "openai.gpt-6-luna",
+        "review_response_sha256": "ff74beaf488da17283eaa2615a5608146a571eab38bb1aa3371488e28bb052e9",
+        "correction_count": 3
+      }
+    },
+    {
+      "locale": "ko",
+      "page": "operations",
+      "path": "ko/operations.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 17730,
+      "source_sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad",
+      "output_sha256": "5405c8a0fa1e5b4693c06e9cec89707d00f6b47486e8143c3bc932277ff8dd8d"
+    },
+    {
+      "locale": "zh-CN",
+      "page": "api",
+      "path": "zh/api.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 17016,
+      "source_sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7",
+      "output_sha256": "9ee7018ffd252a141aa5754e82c741275922b0a84ede476c6d85b5c54ccf38c2"
+    },
+    {
+      "locale": "zh-CN",
+      "page": "architecture",
+      "path": "zh/architecture.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 13316,
+      "source_sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674",
+      "output_sha256": "bae3d36e234a9831f399e855a0c9445b27f4a3728e17ba208ba06d86c62aa985",
+      "initial_output_sha256": "3d529aaf68c3f7b82e0231df6f6ba0eb37d72388b6171ddc7deda155eaaa527c",
+      "review_corrections": {
+        "model": "openai.gpt-6-luna",
+        "review_response_sha256": "a94f761802882ad26a8a7b03a8ed0bec7ac702994fe64d5b34ce57103f1a7e55",
+        "correction_count": 1
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "page": "credits",
+      "path": "zh/credits.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 4024,
+      "source_sha256": "76a07ae0fae9f0a4f05dd31bd00b39af6165a64e2165a42461c16183355d4323",
+      "output_sha256": "ebd98c98a90fd33f79964162ed14c57537a97dcf202b8bbb24aac5ecccf66384",
+      "initial_output_sha256": "5797263de51f6d48885acf2d99df106f8a34f5fdb6059b634b75bf3a04baa6cb",
+      "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
+    },
+    {
+      "locale": "zh-CN",
+      "page": "index",
+      "path": "zh/index.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 17182,
+      "source_sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d",
+      "output_sha256": "d782134aa35ccb24c33c1eb7a98efb04e1e047d1ed711bba89f03e473185305a"
+    },
+    {
+      "locale": "zh-CN",
+      "page": "installation",
+      "path": "zh/installation.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 25178,
+      "source_sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f",
+      "output_sha256": "56fe9968e409b2887186d5e2eee18deaa2e0ca7258f00447f01f4130fc487f45"
+    },
+    {
+      "locale": "zh-CN",
+      "page": "operations",
+      "path": "zh/operations.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 14802,
+      "source_sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad",
+      "output_sha256": "155fb9638773a8f3972d4e8d1cf547af43b40061832bbae73f11cb93603d3f76",
+      "initial_output_sha256": "79d919ae841df010e8c7e77faf42584a5698ddc43e21198d8cc954934e4f8fbe",
+      "review_corrections": {
+        "model": "openai.gpt-6-luna",
+        "review_response_sha256": "b00ae75696b2a2a4106abdee3fb78ea24dd83970735060e8c34a5186033f5fd2",
+        "correction_count": 4
+      }
+    },
+    {
+      "locale": "ko",
+      "page": "user-guide",
+      "path": "ko/user-guide.html",
+      "model": "openai.gpt-6-luna",
+      "status": "TRANSLATED",
+      "bytes": 81661,
+      "output_sha256": "d96e4f7f0c7588fc94f1f2e6ee9667e59db1fae6403f39925e0cc63ad14f8ca3",
+      "source_sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e"
+    },
+    {
+      "locale": "ja",
+      "page": "user-guide",
+      "path": "ja/user-guide.html",
+      "model": "openai.gpt-6-luna",
+      "status": "TRANSLATED",
+      "bytes": 91407,
+      "output_sha256": "d6b039f7fa49ed6f5f1f8b4fb80f4685e95890577c162f05af18429218b537f9",
+      "source_sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e"
+    },
+    {
+      "locale": "zh-CN",
+      "page": "user-guide",
+      "path": "zh/user-guide.html",
+      "model": "openai.gpt-6-luna",
+      "status": "TRANSLATED",
+      "bytes": 66775,
+      "output_sha256": "4263ebc5976ab6dfa406de2ece634728e1a6a807bf99762ee7915ebbd27ef658",
+      "source_sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e"
+    },
+    {
+      "locale": "es",
+      "page": "index",
+      "path": "es/index.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 19594,
+      "source_sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d",
+      "output_sha256": "1f4aa80ef5ecd4e2ba42e87325edfbe2fa16480350e9de13725decfa4f90f9bc"
+    },
+    {
+      "locale": "es",
+      "page": "user-guide",
+      "path": "es/user-guide.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 78600,
+      "source_sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e",
+      "output_sha256": "82d60d3d8e10bd22bdfa7b81e624ff05d895fa70eae6595cc292082b1a7ece97"
+    },
+    {
+      "locale": "es",
+      "page": "installation",
+      "path": "es/installation.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 28923,
+      "source_sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f",
+      "output_sha256": "622c485300a014542d1f2123fb548af89abe9494c08c99ffac60440e7e5b50da"
+    },
+    {
+      "locale": "es",
+      "page": "architecture",
+      "path": "es/architecture.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 15686,
+      "source_sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674",
+      "output_sha256": "29356d718cbdf58d9a81454bf0b0d302dd07a7d0f8057c2b586af229cc692b63"
+    },
+    {
+      "locale": "es",
+      "page": "api",
+      "path": "es/api.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 19078,
+      "source_sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7",
+      "output_sha256": "12bdf22cf79af9b8697f413148963a20b63ef513081641e0b68311e588372e83"
+    },
+    {
+      "locale": "es",
+      "page": "operations",
+      "path": "es/operations.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 17718,
+      "source_sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad",
+      "output_sha256": "f92443dba06b3ca73f6c376f4a1673975c42403ca0af104a2671db85c49c6725"
+    },
+    {
+      "locale": "es",
+      "page": "credits",
+      "path": "es/assets/credits.html",
+      "status": "TRANSLATED",
+      "model": "openai.gpt-6-luna",
+      "bytes": 4906,
+      "source_sha256": "76a07ae0fae9f0a4f05dd31bd00b39af6165a64e2165a42461c16183355d4323",
+      "output_sha256": "03100fc903c7c1507577e7593591fa4f48a01552797d685744bdd79935895f67"
+    }
+  ],
+  "semantic_review": {
+    "model": "openai.gpt-6-luna",
+    "scope": "Historical initial translation review of six page sets; does not cover the November 14 replacement fragments.",
+    "terminology_corrections_applied": 10,
+    "additional_clarification": "Lambda adaptation sentence retranslated in all three locales after clarifying the English source.",
+    "date": "2026-11-10"
+  },
+  "capture_labels": {
+    "model": "openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "region": "us-east-1",
+    "date": "2026-11-14",
+    "target_language": "English",
+    "source_sha256": "d10cb1975f56aeef65fcc48bab99171efa0d30cdc6b62d5b7f518ff1d4e6d72b",
+    "output_sha256": "83372034ebbe671445cb1a9400827910132a155f6855a4e621df5c42a6fd113e",
+    "usage": {
+      "inputTokens": 2,
+      "outputTokens": 4062,
+      "totalTokens": 9668,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 5604
+    },
+    "stop_reason": "end_turn",
+    "strings": 337,
+    "labels_sha256": "7743509ea8ebea8ed9447173bcd03295145b4dc9ef32efeae278cf647e877dae",
+    "host_corrections": [
+      {
+        "source": "search 실패",
+        "model_output": "Search failed",
+        "corrected_output": "search failed",
+        "reason": "Preserve the lowercase synthetic MCP server identifier."
+      },
+      "Changed Luna Mixed criteria to Mixed basis and Authorization wait to Permission wait for consistent telemetry terminology."
+    ],
+    "followup_calls": [
+      {
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "date": "2026-11-14",
+        "target_language": "English",
+        "source_sha256": "4885c80a7a0d2de19f506e9f67e85116e924de1f6dee034e302e28829c1b198d",
+        "output_sha256": "97208fcaea3ac8dda5f0dbef0407c1ff4cce127fd1dbba6e9bdde86812b8b793",
+        "usage": {
+          "inputTokens": 116,
+          "outputTokens": 131,
+          "totalTokens": 247,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "strings": 2
+      }
+    ],
+    "current_labels_sha256": "00faeaa82ff105b627f3ae1527d96f6b1f3f490771b24af4296d7573d442a30c"
+  },
+  "english_sources": {
+    "api": {
+      "path": "api.html",
+      "sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7"
+    },
+    "architecture": {
+      "path": "architecture.html",
+      "sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674"
+    },
+    "credits": {
+      "path": "assets/credits.html",
+      "sha256": "76a07ae0fae9f0a4f05dd31bd00b39af6165a64e2165a42461c16183355d4323"
+    },
+    "index": {
+      "path": "index.html",
+      "sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d"
+    },
+    "installation": {
+      "path": "installation.html",
+      "sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f"
+    },
+    "operations": {
+      "path": "operations.html",
+      "sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad"
+    },
+    "user-guide": {
+      "path": "user-guide.html",
+      "sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e"
+    }
+  },
+  "last_updated": "2026-11-14",
+  "capture_labels_2026_11_10": {
+    "model": "openai.gpt-6-luna",
+    "source_strings": 46,
+    "source_sha256": "6f60b57c80c085eece048a25a455281a5c7e29fdd3a38992db56fc0b3b51d65d",
+    "translations_sha256": "f43c1de5aa29ae4016233dfa250036a318e6eba13bce507d07749423f082668a",
+    "scope": "Display labels in synthetic captured DOM only; no React product locale changes."
+  },
+  "feature_update_2026_11_14": {
+    "date": "2026-11-14",
+    "model": "openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "scope": "Exact browser-local time selection, range-to-task navigation, curl device installation, new narrated walkthrough and credits; 11 changed fragments per locale. Architecture device-credential scope was clarified in all four languages.",
+    "calls": [
+      {
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "date": "2026-11-14",
+        "target_language": "Korean",
+        "source_sha256": "c96a1c202418b4776f77deecbded38b2fbadfc77780dd8489b631a83bd5eb032",
+        "output_sha256": "a0916a537bcde5affa8d377ae238bf5d7f75537bcbadb0f5586ffb29907b71ea",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 5796,
+          "totalTokens": 10008,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 4210
+        },
+        "stop_reason": "end_turn",
+        "strings": 232
+      },
+      {
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "date": "2026-11-14",
+        "target_language": "Japanese",
+        "source_sha256": "c96a1c202418b4776f77deecbded38b2fbadfc77780dd8489b631a83bd5eb032",
+        "output_sha256": "3217ebe9b2c1b89cfba23f8f9e7dfb57d40455cb5b0ea805684b8660a7bdbc9e",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 6810,
+          "totalTokens": 11022,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 4210
+        },
+        "stop_reason": "end_turn",
+        "strings": 232
+      },
+      {
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "date": "2026-11-14",
+        "target_language": "Simplified Chinese",
+        "source_sha256": "c96a1c202418b4776f77deecbded38b2fbadfc77780dd8489b631a83bd5eb032",
+        "output_sha256": "05509394ce88d0b55d9067387780195d7c1edc8f790d9244c7eb5c6f19a70009",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 4754,
+          "totalTokens": 8968,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 4212
+        },
+        "stop_reason": "end_turn",
+        "strings": 232
+      },
+      {
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "date": "2026-11-14",
+        "target_language": "the language indicated by each JSON key: ko is Korean, ja is Japanese, zh is Simplified Chinese",
+        "source_sha256": "f87a5da2173a616e60b395f2410fbbc98a8927ea1b2895c994dc75df0d3a9ec3",
+        "output_sha256": "1fba1325e6b30393005587e85bbbcfb1308dc9c6574f47b045264bc9735d24fd",
+        "usage": {
+          "inputTokens": 259,
+          "outputTokens": 385,
+          "totalTokens": 644,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "strings": 3
+      }
+    ],
+    "host_corrections": [
+      "Retained locale navigation and adjusted relative asset/page paths mechanically.",
+      "Updated November 14 date numerals in the changed page headers.",
+      "Preserved code blocks and technical identifiers verbatim.",
+      "Removed the obsolete Cost-page entry from the task walkthrough; Users is the supported entry.",
+      "Updated image intrinsic dimensions from actual generated PNGs.",
+      "Split the unchanged terminal examples into separate macOS and Linux code blocks in all locales."
+    ],
+    "validation": "Superseded text-node mapping by the review_corrections coherent-fragment translations. Final file checksums below identify the delivered pages.",
+    "discarded_attempts": [
+      {
+        "requests": 3,
+        "model_id": "openai.gpt-6-luna",
+        "outcome": "Converse validation rejected direct invocation without an inference profile."
+      },
+      {
+        "requests": 2,
+        "model_id": "us.openai.gpt-6-luna",
+        "outcome": "Converse validation rejected the unsupported temperature field."
+      },
+      {
+        "requests": 1,
+        "model_id": "us.openai.gpt-6-luna",
+        "target_language": "Korean",
+        "outcome": "Discarded a response that modified whitespace in text keys. Reissued with numeric keys; the discarded output was not retained or used."
+      }
+    ],
+    "review_corrections": {
+      "calls": [
+        {
+          "date": "2026-11-14",
+          "model": "openai.gpt-6-luna",
+          "provider": "amazon-bedrock",
+          "inference_profile": "us.openai.gpt-6-luna",
+          "region": "us-east-1",
+          "target_language": "Korean",
+          "source_sha256": "3c52edf5e47207ff3d1af7c2240eba4d6ff8f60bbf9546fb2c6657e1538b7c0e",
+          "output_sha256": "6922eb6529c6e8defa77a91a53c38a1964bbe524289e3d859842a2f1aca1d742",
+          "fragments": 20,
+          "approach": "Coherent HTML fragments; tag, attribute and per-cell/paragraph code parity.",
+          "usage": null,
+          "note": "Response saved, but strict inline-code ordering assertion stopped usage metadata capture. Host verified grammar-driven reordering remained within the same paragraph/table cell."
+        },
+        {
+          "date": "2026-11-14",
+          "model": "openai.gpt-6-luna",
+          "provider": "amazon-bedrock",
+          "inference_profile": "us.openai.gpt-6-luna",
+          "region": "us-east-1",
+          "target_language": "Japanese",
+          "source_sha256": "3c52edf5e47207ff3d1af7c2240eba4d6ff8f60bbf9546fb2c6657e1538b7c0e",
+          "output_sha256": "baa3874e96ac4efe0fac52f39a05c9dd87bfbaaf31f480ec9aad167c0f33ff71",
+          "usage": {
+            "inputTokens": 2,
+            "outputTokens": 9970,
+            "totalTokens": 16608,
+            "cacheReadInputTokens": 0,
+            "cacheWriteInputTokens": 6636
+          },
+          "stop_reason": "end_turn",
+          "fragments": 20,
+          "approach": "Coherent HTML fragments with tag/attribute/code parity; replaces indexed text-node mapping."
+        },
+        {
+          "date": "2026-11-14",
+          "model": "openai.gpt-6-luna",
+          "provider": "amazon-bedrock",
+          "inference_profile": "us.openai.gpt-6-luna",
+          "region": "us-east-1",
+          "target_language": "Simplified Chinese",
+          "source_sha256": "3c52edf5e47207ff3d1af7c2240eba4d6ff8f60bbf9546fb2c6657e1538b7c0e",
+          "output_sha256": "88e3601f68126aa1088498fd1ab303525f386696711650154fb42083b13a8f9d",
+          "fragments": 20,
+          "approach": "Coherent HTML fragments; tag, attribute and per-cell/paragraph code parity.",
+          "usage": null,
+          "note": "Response saved, but strict inline-code ordering assertion stopped usage metadata capture. Host verified grammar-driven reordering remained within the same paragraph/table cell."
+        }
+      ],
+      "scope": "Replaced indexed text-node translations with 20 coherent HTML fragments per locale, including all changed walkthrough/API/install/operations/credits content and the architecture task-range paragraph.",
+      "host_corrections": [
+        "Adjusted relative asset/page URLs and preserved locale switches.",
+        "Clarified Korean subhour wording as less than one hour.",
+        "Unified all 24 guide favicons with the dashboard SVG."
+      ],
+      "validation": "Verified HTML tag/attribute parity and code identifiers per table cell, paragraph and list item; reviewed Japanese filter and symptom mappings, backend/group qualification, Chinese 50-trace/200-span limits and Korean fallback paragraph against English."
+    }
+  },
+  "historical_follow_ups": {
+    "repository_path": "site/assets/translations.json",
+    "commit": "e66089cf3538a8e3c0cb242162932a3bec5e6b91",
+    "keys": [
+      "content_review_follow_up",
+      "narration_follow_up",
+      "feature_update_2026_11_13"
+    ],
+    "sha256": "9be28609d91632cf85281d6c9d1784fb9732286fcd9c0d20349a09d30ba29dd5",
+    "serialization": "UTF-8 JSON of the named fields, sorted keys, compact separators; prior records remain at the immutable commit."
+  },
+  "full_product_guide_2026_11_14": {
+    "source_revision": "64791c768cee8297b6f6956a38460710982b4dc8",
+    "scope": "First-visit homepage, complete menu and feature guide, and links from every guide page.",
+    "authoring": {
+      "model": "openai.gpt-6.1-terra",
+      "execution": "Ephemeral Codex subprocess through Amazon Bedrock; no persistent subagent or MCP servers.",
+      "task_sha256": "638f5634f07c6e5326614c731fdad04d8e1b9465ef3a23484af3945a3f6b2af5",
+      "usage": {
+        "input_tokens": 1846894,
+        "cached_input_tokens": 1719942,
+        "cache_write_input_tokens": 126910,
+        "output_tokens": 14845,
+        "reasoning_output_tokens": 814
+      },
+      "scope": "English user guide and source coverage map; host applied review corrections."
+    },
+    "review": {
+      "model": "openai.gpt-6.1-terra",
+      "scope": "Independent read-only review of the new English guide and coverage map against source; did not review translations.",
+      "report_sha256": "2955a9118d66ec3ff578764a3d8dede05590621aef1c87647f3bbfa88d370845",
+      "usage": {
+        "input_tokens": 858565,
+        "cached_input_tokens": 744110,
+        "cache_write_input_tokens": 114429,
+        "output_tokens": 4658,
+        "reasoning_output_tokens": 709
+      },
+      "corrections": "Clarified user-detail client scope, reported-cost fallback, chat cost comparability and expandable query evidence, shared trend resolution, preset exception, diagnostic truncation and user-search scope."
+    },
+    "calls": [
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Korean",
+        "source_sha256": "3bb76ccdb0eba1d7a952eea9b4b799d001e4c5498fcb33bc8bcdd6b784114ca7",
+        "output_sha256": "f3d522b011669475d78b43e7d3a23b824e2f6e573f496bd8e2c8cc125be1b927",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 3445,
+          "totalTokens": 6217,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 2770
+        },
+        "stop_reason": "end_turn",
+        "fragments": 13
+      },
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Japanese",
+        "source_sha256": "3bb76ccdb0eba1d7a952eea9b4b799d001e4c5498fcb33bc8bcdd6b784114ca7",
+        "output_sha256": "cc9a5d65c59d5c96dc2b496516fb0f8e4815dffadab1b24e0040ce7fab9a5154",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 3955,
+          "totalTokens": 6727,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 2770
+        },
+        "stop_reason": "end_turn",
+        "fragments": 13
+      },
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Simplified Chinese",
+        "source_sha256": "3bb76ccdb0eba1d7a952eea9b4b799d001e4c5498fcb33bc8bcdd6b784114ca7",
+        "output_sha256": "8eaae91f5190d8f67c5b2a6735c88446112d84dc3e99bd6edde57cdd6c235909",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 3085,
+          "totalTokens": 5859,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 2772
+        },
+        "stop_reason": "end_turn",
+        "fragments": 13
+      },
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Korean",
+        "source_sha256": "cd283c8b956988019e2478e3052845f87c4a26f8be3ec2e7d0ec649a880820ad",
+        "output_sha256": "252edff039d312458d1586a3fe76f34ecd9b9b67db6aa12f9232f78cc4cf8dd8",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 10698,
+          "totalTokens": 18331,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 7631
+        },
+        "stop_reason": "end_turn",
+        "fragments": 23
+      },
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Japanese",
+        "source_sha256": "cd283c8b956988019e2478e3052845f87c4a26f8be3ec2e7d0ec649a880820ad",
+        "output_sha256": "8fe3148a0d244bc9ad367ff2854adbdc6802e1e26d270624894bdcd5ccf3bc88",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 12631,
+          "totalTokens": 20264,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 7631
+        },
+        "stop_reason": "end_turn",
+        "fragments": 23
+      },
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Simplified Chinese",
+        "source_sha256": "cd283c8b956988019e2478e3052845f87c4a26f8be3ec2e7d0ec649a880820ad",
+        "output_sha256": "53be76630c852fb5929f435fc29297766dc28138618795edc286b1087b679287",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 9092,
+          "totalTokens": 16727,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 7633
+        },
+        "stop_reason": "end_turn",
+        "fragments": 23
+      }
+    ],
+    "host_corrections": [
+      "Kept locale navigation and adjusted relative links mechanically.",
+      "Preserved Korean on-screen labels and allowed grammar-driven link order within the same list item.",
+      "Clarified the Installation status homepage row as readiness checks in all four languages.",
+      "Made the guide introduction language-neutral in all locales and aligned localized guide titles with navigation labels.",
+      "Used the existing responsive cards class for the three first-visit reading paths.",
+      "Applied PR review fixes: token is displayed once, not usable once, across all locales; corrected Korean Skill and duplicate Installation status wording; localized Japanese/Chinese caption-track labels.",
+      "Qualified account-name masking by deployment configuration in every locale, removed the duplicate Korean status heading, and moved prior homepage translation details behind an immutable historical reference."
+    ],
+    "validation": "Local checks passed: 28 pages, 11 menu anchors per locale, 1004 local references, matching section IDs/code examples and translation hashes; 56 desktop/mobile layouts, 168 locale links, one shared favicon, and all four players using automatic WebM fallback and direct WebM with six matching caption cues. These checks do not establish deployment.",
+    "coverage_map_sha256": "b7f02b61c33ea181f3ae4ca0aacdafc283c9ec4ea2f38ee2d2f079c6435de9af"
+  },
+  "historical_homepage_translation": {
+    "commit": "64791c768cee8297b6f6956a38460710982b4dc8",
+    "path": "site/assets/translations.json",
+    "records": "pages entries with page=index",
+    "scope": "Initial output hashes, Lambda-sentence follow-up and video-source postprocessing for the prior homepage; these do not describe the rewritten first-visit homepage."
+  },
+  "latest_update": "Five-language app and guide; Spanish pages and equivalent-page navigation.",
+  "visual_guide_2026_11_14": {
+    "source_revision": "fcfd49d9d0988defa0fd8cd8649608a9bb6e8899",
+    "scope": "Illustrated user-Trace, cost-efficiency and tool workflows; screenshots, inline architecture, typography and reading controls. Existing full menu descriptions are retained.",
+    "calls": [
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Korean",
+        "source_sha256": "bc00cd7fe6e942062190053bf18e51991f761f02b73da5d9909403ea0ed3d6eb",
+        "output_sha256": "ad38364e81bc07f411c6d11f8b44afe95793e07b0877ff1138d02c5f7c385dae",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 6531,
+          "totalTokens": 11139,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 4606
+        },
+        "stop_reason": "end_turn",
+        "fragments": 40
+      },
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Japanese",
+        "source_sha256": "bc00cd7fe6e942062190053bf18e51991f761f02b73da5d9909403ea0ed3d6eb",
+        "output_sha256": "ca53633a203049ddf96b9cf429233e7fe6f8fa914067b70efad1f5bc06e6bed2",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 7423,
+          "totalTokens": 12031,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 4606
+        },
+        "stop_reason": "end_turn",
+        "fragments": 40
+      },
+      {
+        "date": "2026-11-14",
+        "model": "openai.gpt-6-luna",
+        "provider": "amazon-bedrock",
+        "inference_profile": "us.openai.gpt-6-luna",
+        "region": "us-east-1",
+        "target_language": "Simplified Chinese",
+        "source_sha256": "bc00cd7fe6e942062190053bf18e51991f761f02b73da5d9909403ea0ed3d6eb",
+        "output_sha256": "6626c1351c5d936d99adb3a92d4fb631511ccde47d81f26a94c4d869a96e53aa",
+        "usage": {
+          "inputTokens": 2,
+          "outputTokens": 5250,
+          "totalTokens": 9860,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 4608
+        },
+        "stop_reason": "end_turn",
+        "fragments": 40
+      }
+    ],
+    "host_corrections": [
+      "Wrapped the Chinese credits fragment in its required paragraph element.",
+      "Applied a Korean editorial pass to analysis/action labels, first-visit introductions and cost-basis wording.",
+      "Adapted relative image, architecture, license and guide links; inserted intrinsic image dimensions.",
+      "Organized existing shared/Claude descriptions in native disclosure panels without dropping their contents.",
+      "Corrected Korean cost-basis particles and repeated captions; qualified the OIDC example."
+    ],
+    "validation": "Passed: 28 guide pages, 1400 local references, locale IDs/code parity and hashes; 56 general desktop/mobile layouts and 168 locale links; 48 light/dark visual-page checks and 16 interaction checks for TOC, disclosures, zoom, close/Escape and focus return. Existing video and six captions passed in all four locales. Local checks do not establish deployment."
+  },
+  "five_languages_2026_11_14": {
+    "model": "openai.gpt-6-luna",
+    "locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es",
+      "ko"
+    ],
+    "method": "Ephemeral Luna translation subagents; host integration and semantic validation.",
+    "spanish": {
+      "timestamp_utc": "2026-11-14T10:52:00Z",
+      "source_and_output_receipts": {
+        "site/index.html": {
+          "source_sha256": "38bfee997fbb1e461a636a932d85381d97603fece01c9b30372275c70c7da9c5",
+          "output_sha256": "214c3abbd58159edc3e9dc0f22a54210b3f4ce84333c99ad29dca238749c5b2a"
+        },
+        "site/user-guide.html": {
+          "source_sha256": "486f504dc3ad4b1b8e9dd98d6f7b099533cdcc06fed2440b31049ca372cb328c",
+          "output_sha256": "9c5af0489808cd47dfa7521557c2f13dce051c3c6e7fb6ff862ee208065b27e8"
+        },
+        "site/installation.html": {
+          "source_sha256": "7f7d0fea231ee871abb59843d23ef651dfa19fcad5624c797d0ba9e45a421417",
+          "output_sha256": "e6ded8623e529dd7f0f492bc8d45cb16596772cf15e541550f5eb4e11cb2b439"
+        },
+        "site/architecture.html": {
+          "source_sha256": "c035715ea0ce33e086047a7e19d68d7000f66c5431fb67aeb07decdc47612b6b",
+          "output_sha256": "f48bac829accb005a2c613a51d5297ba177ecd8d49c546326ed47ca14209ca07"
+        },
+        "site/api.html": {
+          "source_sha256": "716ee73c3835561e89d7b3c28b7fe658317f1e97bdaff499b9545c0b0f7180b5",
+          "output_sha256": "7fcc18a0927b340b88fc21c9474f636657104ca6c6cf9d9265cad1ffe6abcae3"
+        },
+        "site/operations.html": {
+          "source_sha256": "4f24ecd0d22805dc50e9065b05ab730f081ae200ee1e4ebb4d680a2ae6a4cbad",
+          "output_sha256": "3e106f1b5b5f2b05be76787d857a6d1bb4a30d7e3260d4ac697522caac38a74f"
+        },
+        "site/assets/credits.html": {
+          "source_sha256": "18d263a100ba4e823d50558a0c167b8001fa268b4ba2580b1be5222550b1fbe1",
+          "output_sha256": "01ede3fcd44100395cc8e3d0d30f44ef0df5e5e3c435b9bbde22758357ed0d37"
+        }
+      },
+      "agent_record_sha256": "cab46501d7348293b0c61bc76fd01806c01ef917bc011d234b9aa86a8070ae0f",
+      "corrections": [
+        "Aligned relative asset and locale URLs with the existing subdirectory translations.",
+        "Corrected Spanish phrasing and punctuation around inline code, UI labels and media links after structural review."
+      ]
+    },
+    "language_controls": {
+      "labels": {
+        "close": "Cerrar",
+        "zoom": "Tamaño original",
+        "fit": "Ajustar a la pantalla",
+        "hint": "Detalles de la imagen"
+      },
+      "source_keys": {
+        "close": "m1e8c10206f5b",
+        "zoom": "m6188ba34d463",
+        "fit": "m96aaea968a39",
+        "hint": "mc3b2d71b2a26"
+      },
+      "model": "openai.gpt-6-luna",
+      "script_sha256": "b92b0cfe4182df6376c2ffa14d71e17ceab40cd1712d105da6d0dcf9947cc6d1"
+    },
+    "guide_language_instructions": {
+      "input_sha256": "f589e7a3bf2bdd9d10d5318a2858a724ef5ba193bed90bb9863fb17be3426a98",
+      "output_sha256": "3b93c57d189922f874f2fb0107b0cc309aa65183ffef178d70d954c5254b85c9",
+      "agent_record_sha256": "fc368f436b75ed1018da4c392c24bdae306ed3f13694593860522491fa0fce0e"
+    },
+    "host_corrections": [
+      "Added and ordered equivalent-page language links and hreflang alternates for all five locales.",
+      "Updated guide.js cache versions and connected Spanish image-viewer controls.",
+      "Clarified that changing language preserves time zones and range boundaries, including UTC calendar presets; the final sentence was corrected by the host in all locales."
+    ],
+    "validation": {
+      "local_layout_checks": 60,
+      "image_viewer_and_contents_checks": 20,
+      "browser_errors": 0,
+      "scope": "Five locales, desktop/mobile, light/dark; index, illustrated user guide and architecture. Exact source/output hashes are recorded in pages."
+    }
+  }
+}

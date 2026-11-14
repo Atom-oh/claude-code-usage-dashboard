@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Construya e implemente el servicio completo — ccdash</title>
+<meta content="Clone el código fuente, compile la imagen del panel, prepare los esquemas de ClickHouse y un Collector OTel; luego elija EKS, ECS o EC2, o adapte la aplicación para Lambda." name="description"/>
+<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
+<link href="../installation.html" hreflang="en" rel="alternate"/>
+<link href="../ko/installation.html" hreflang="ko" rel="alternate"/>
+<link href="../ja/installation.html" hreflang="ja" rel="alternate"/>
+<link href="../zh/installation.html" hreflang="zh-CN" rel="alternate"/>
+<link href="installation.html" hreflang="es" rel="alternate"/>
+</head>
+<body>
+<a class="skip-link" href="#main">Saltar al contenido</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+<nav aria-label="Navegación principal" class="tabs"><a href="index.html">Resumen</a><a href="user-guide.html">Guía de usuario</a><a aria-current="page" href="installation.html">Instalación</a><a href="architecture.html">Arquitectura</a><a href="api.html">API</a><a href="operations.html">Operaciones</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+<div aria-label="Idioma" class="languages" role="group"><a href="../installation.html" hreflang="en" lang="en">English</a><a href="../zh/installation.html" hreflang="zh-CN" lang="zh-CN">简体中文</a><a href="../ja/installation.html" hreflang="ja" lang="ja">日本語</a><a aria-current="page" href="installation.html" hreflang="es" lang="es">Español</a><a href="../ko/installation.html" hreflang="ko" lang="ko">한국어</a></div>
+</div></header>
+<main class="wrap" id="main">
+<div class="hero"><p class="eyebrow">Claude Code + Codex · Instalación</p><h1>Construya e implemente el servicio completo</h1>
+<p class="lede">Empiece con el código fuente de Git. Implemente el panel, ClickHouse y su esquema, además de una ruta de recopilación OTel antes de conectar los clientes de programación.</p>
+<p class="caption">Actualizado el 14 de noviembre de 2026 · Instrucciones basadas en el código fuente; verifique la versión seleccionada y el entorno de destino.</p>
+<p><a href="#setup">Clonar y compilar</a> · <a href="#schema">Esquema de la base de datos</a> · <a href="#collector">Backend OTel</a> · <a href="#platforms">Opciones de alojamiento</a> · <a href="#trace">Trazas de clientes</a></p></div>
+<section id="choose"><h2>Qué debe instalar</h2>
+<p>Esta guía no depende de que haya una imagen de aplicación publicada <code>.tar.gz</code>. Clone el repositorio y compile su imagen Docker. Los paquetes opcionales para dispositivos los genera un panel ya instalado; no instalan el backend.</p>
+<div aria-label="Componentes de instalación necesarios" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">Componente</th><th scope="col">Propósito y origen</th></tr></thead><tbody>
+<tr><td>Aplicación del panel</td><td><code>dashboard/Dockerfile</code> compila React y Express en una sola imagen que sirve la interfaz y la API en el puerto 8080. No ejecuta ClickHouse ni un Collector OTel.</td></tr>
+<tr><td>ClickHouse y esquema</td><td>Base de datos persistente, tablas de telemetría, vistas materializadas y registro de migraciones. Elija el esquema de nodo único o replicado para su implementación.</td></tr>
+<tr><td>Collector OTel</td><td>Un Collector independiente recibe registros, métricas y trazas, aplica los filtros y transformaciones del repositorio y escribe en las tablas preparadas.</td></tr>
+<tr><td>Autenticación y secretos</td><td>OIDC o autenticación Basic configurada, acceso HTTPS, conectividad privada con la base de datos, credenciales separadas de lectura/ingesta/administración y montajes protegidos de secretos.</td></tr>
+<tr><td>Recopilación de clientes</td><td>Exportadores de Claude Code/Codex y un Collector local o una ruta de recopilación administrada por el organizador. La implementación del backend no cambia la configuración de los clientes de los usuarios.</td></tr>
+</tbody></table></div>
+<p>Primero instale Git y Docker con buildx. Para EKS, prepare también las dependencias del clúster existente, Terraform, AWS CLI y kubectl que se describen en <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/deploying-for-your-org.md">requisitos previos de implementación de la organización</a>.</p></section>
+<section id="setup"><h2>1. Clone una versión y compile la imagen</h2>
+<p>Defina <code>CCDASH_RELEASE</code> con la etiqueta de versión publicada <code>vX.Y.Z</code>. Elija la plataforma que coincida con su entorno de ejecución; la implementación EKS proporcionada usa <code>linux/arm64</code>.</p>
+<pre><code class="language-bash">: "${CCDASH_RELEASE:?Set a published vX.Y.Z release tag}"
+CCDASH_PLATFORM=linux/arm64
+git clone https://github.com/Atom-oh/claude-code-usage-dashboard.git
+cd claude-code-usage-dashboard
+git checkout --detach "$CCDASH_RELEASE"
+CCDASH_REVISION=$(git rev-parse HEAD)
+docker build --platform "$CCDASH_PLATFORM" \
+  --build-arg APP_REVISION="$CCDASH_REVISION" \
+  --tag "ccdash:$CCDASH_RELEASE" dashboard</code></pre>
+<p>El contexto de compilación es <code>dashboard/</code>, no la raíz del repositorio. Para un entorno de ejecución x86, seleccione <code>linux/amd64</code> y valide esa implementación por separado. Para compilar en otra arquitectura se requiere un generador multiplataforma configurado.</p>
+<p>Para producción, siga el <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/deploy-production.md#procedure">procedimiento revisado de compilación, inspección, publicación en el registro e implementación</a>. Conserve la versión, la revisión del código fuente y el digest de la imagen; no considere que una compilación local correcta sea una implementación.</p></section>
+<section id="schema"><h2>2. Prepare ClickHouse antes de iniciar la ingesta</h2>
+<p>Primero aprovisione almacenamiento persistente de ClickHouse y configure las copias de seguridad y la recuperación. Cree una cuenta de solo lectura para el panel, una cuenta de ingesta con los permisos necesarios para los exportadores y una cuenta administrativa para las migraciones. El archivo de esquema no aprovisiona las cuentas de producción.</p>
+<p>La política de cuentas proporcionada concede <code>otel_reader</code> SELECT sobre <code>claude_code.*</code>. La <code>otel_ingest</code> requiere INSERT en <code>claude_code.*</code> y SELECT en <code>claude_code.otel_metrics_sum</code> para leer el origen de la vista materializada; INSERT por sí solo puede hacer que falle la ingesta. Restrinja las redes de las cuentas y configure las credenciales protegidas tomando como referencia la <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/infra/clickhouse.tf">política de cuentas de ClickHouse del repositorio</a>.</p>
+<div aria-label="Rutas de instalación del esquema" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">Implementación</th><th scope="col">Ruta del esquema</th></tr></thead><tbody>
+<tr><td>Nodo único nuevo / evaluación local</td><td><code>clickhouse-schema.sql</code>: tablas no replicadas, vistas, agregaciones y protecciones actuales de migración. Incluye telemetría de Claude y tablas específicas para métricas, costos y diagnósticos de Codex.</td></tr>
+<tr><td>Instalación EKS replicada nueva</td><td><code>infra/files/clickhouse-schema-replicated.sql</code> con el contrato generado y el Job de inicialización de esquema en <code>infra/schema.tf</code>. Requiere la topología de clúster/Keeper declarada y las réplicas previstas.</td></tr>
+<tr><td>Instalación existente</td><td>Inspeccione las tablas, el registro y los datos históricos. Aplique solo las migraciones numeradas necesarias y siga sus procedimientos operativos; no vuelva a ejecutar el inicialización como si fuera una actualización.</td></tr>
+</tbody></table></div>
+<p>Para EC2/Docker, prepare estos requisitos antes de iniciar ClickHouse:</p><ul><li>Una red puente privada y un volumen de datos persistente.</li><li>Protegido <code>users.d</code> XML para las cuentas de lectura, ingesta y administración, redes restringidas, acceso anónimo predeterminado deshabilitado y configuración de cliente administrador.</li><li>Una imagen de ClickHouse cualificada y fijada por digest; la versión de Compose local es solo una referencia inicial.</li></ul><p><code>CLICKHOUSE_SKIP_USER_SETUP=1</code> conserva esa configuración de cuentas. Primero valide la autenticación y las restricciones de red. Este comando no publica los puertos de la base de datos:</p>
+<pre><code class="language-bash">: "${CCDASH_NETWORK:?Set the prepared private Docker network}"
+: "${CCDASH_CH_CONTAINER:?Set the ClickHouse container name}"
+: "${CCDASH_CH_IMAGE:?Set the reviewed ClickHouse image including its sha256 digest}"
+: "${CCDASH_CH_DATA_VOLUME:?Set the prepared persistent data volume}"
+: "${CCDASH_CH_USERS_DIR:?Set the protected users.d configuration directory}"
+: "${CCDASH_CH_ADMIN_CONFIG:?Set the protected admin client configuration file}"
+docker run -d --name "$CCDASH_CH_CONTAINER" --restart unless-stopped \
+  --network "$CCDASH_NETWORK" --network-alias clickhouse.internal \
+  --env CLICKHOUSE_SKIP_USER_SETUP=1 \
+  --mount "type=volume,src=$CCDASH_CH_DATA_VOLUME,dst=/var/lib/clickhouse" \
+  --mount "type=bind,src=$CCDASH_CH_USERS_DIR,dst=/etc/clickhouse-server/users.d,readonly" \
+  --mount "type=bind,src=$CCDASH_CH_ADMIN_CONFIG,dst=/run/ccdash-admin/client.xml,readonly" \
+  "$CCDASH_CH_IMAGE"</code></pre>
+<p>Espere a que ClickHouse se inicie y autentíquese con la configuración de cliente administrador montada. Para el comando de esquema que sigue, la ruta dentro del contenedor es <code>/run/ccdash-admin/client.xml</code>. Use <code>clickhouse.internal</code> como host de base de datos para la aplicación y el Collector en esta red. La imagen y las configuraciones montadas deben coincidir con la arquitectura de ejecución y los permisos de lectura de archivos.</p>
+<p>Para una base de datos <strong>nueva, vacía y no replicada</strong>, defina <code>CCDASH_CH_CONTAINER</code> como el contenedor de ClickHouse en ejecución y <code>CCDASH_CH_CLIENT_CONFIG</code> como la ruta de la configuración protegida de cliente administrador dentro de él.</p>
+<pre><code class="language-bash">: "${CCDASH_CH_CONTAINER:?Set the prepared ClickHouse container name}"
+: "${CCDASH_CH_CLIENT_CONFIG:?Set the mounted admin client configuration path}"
+docker exec -i "$CCDASH_CH_CONTAINER" \
+  clickhouse-client --config-file "$CCDASH_CH_CLIENT_CONFIG" \
+  --multiquery &lt; clickhouse-schema.sql
+
+docker exec "$CCDASH_CH_CONTAINER" clickhouse-client \
+  --config-file "$CCDASH_CH_CLIENT_CONFIG" \
+  --query "SELECT name FROM system.tables WHERE database='claude_code' ORDER BY name"</code></pre>
+<p>Verifique <code>otel_logs</code>, <code>otel_traces</code>, las tablas de métricas de Claude, las cuatro tablas de métricas de Codex, las vistas y <code>schema_migrations</code>. El Collector usa <code>create_schema: false</code>; no puede crear las tablas que faltan. La migración 003 requiere cambiar las agregaciones instrucción por instrucción. La activación de lectura tipada también exige verificar la cobertura histórica y en tiempo real; no basta con que existan las tablas.</p>
+<p>El <code>dashboard/docker-compose.yml</code> existente inicializa un volumen local nuevo de ClickHouse y carga datos sintéticos de ejemplo. Usa autenticación de desarrollo y no incluye un servicio Collector OTel. Es un punto de partida para evaluación, no una instalación de producción completa; los volúmenes existentes no se vuelven a inicializar.</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/schema-migrations.md">Ciclo de vida del esquema y orden de migraciones</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/codex-cost-schema.md">Activación de lectura de costos de Codex</a></p></section>
+<section id="collector"><h2>3. Instale el backend OTel</h2>
+<p>Ejecute una distribución de Collector que incluya el exportador de ClickHouse y los procesadores necesarios. Para la ruta opcional con token de dispositivo, <code>dashboard/collector/generated/central.yaml</code> es la política del receptor central privado del repositorio; use la imagen Contrib revisada y fijada por digest de <code>infra/device_ingest.tf</code>.</p>
+<ol>
+<li>Monte el YAML central como configuración del Collector. Defina <code>CH_HOST</code>, <code>CH_PORT</code> (puerto nativo), <code>CH_DB=claude_code</code>, <code>CH_USER</code> y las opciones correspondientes <code>CLAUDE_ENABLED</code>/<code>CODEX_ENABLED</code>.</li>
+<li>Monte la credencial de ingesta de ClickHouse en <code>/var/run/ccdash-clickhouse/CH_PASSWORD</code> y el token bearer interno del receptor en <code>/var/run/ccdash-ingest/token</code>, en modo de solo lectura. Asegúrese de que el usuario del contenedor pueda leerlos. No distribuya este token interno a los clientes.</li>
+<li>Mantenga privados el puerto 4318 del receptor y el puerto 13133 de estado. La política central generada usa OTLP HTTP con autenticación bearer y una conexión nativa privada con ClickHouse. Las conexiones que cruzan límites requieren la política TLS adecuada.</li>
+<li>Habilite todas las canalizaciones necesarias: métricas/registros/trazas de Claude y métricas/registros/trazas de Codex. Las canalizaciones de métricas de Codex escriben en sus tablas específicas; los registros y las trazas usan tablas compartidas que conservan la identidad del cliente.</li>
+<li>Para la ingesta de dispositivos, configure la puerta OIDC del panel, el registro de dispositivos de DynamoDB, los permisos IAM de ejecución, <code>INGEST_ENABLED=1</code>, <code>INGEST_TOKEN_TABLE</code>, <code>INGEST_UPSTREAM_URL</code> y <code>INGEST_UPSTREAM_TOKEN_FILE</code>. El backend reenvía los dispositivos autenticados al receptor privado.</li>
+</ol>
+<p>Para los clientes administrados por el organizador, <code>collector-config.yaml</code> y <code>user-data.sh</code>describen una ruta separada desde un Collector local hasta ClickHouse, con credenciales y endpoints específicos de la implementación. No combine las dos rutas copiando una configuración sin modificarla.</p>
+<p>En un host EC2/Docker, prepare una red Docker privada con acceso a ClickHouse, un archivo de entorno del Collector sin secretos y los dos archivos de secretos protegidos. Seleccione la imagen fijada por digest de <code>infra/device_ingest.tf</code>; los archivos deben ser legibles por el usuario de ejecución de esa imagen. El panel puede acceder al receptor central en esta red; no se publica ningún puerto OTLP ni de estado en el host:</p>
+<pre><code class="language-bash">: "${CCDASH_NETWORK:?Set the existing private Docker network}"
+: "${CCDASH_COLLECTOR_IMAGE:?Set the pinned contrib image including its sha256 digest}"
+: "${CCDASH_COLLECTOR_ENV_FILE:?Set the prepared nonsecret Collector environment file}"
+: "${CCDASH_INGEST_SECRET_DIR:?Set the protected directory containing token}"
+: "${CCDASH_INGEST_CH_SECRET_DIR:?Set the protected directory containing CH_PASSWORD}"
+docker run -d --name ccdash-otel --restart unless-stopped \
+  --network "$CCDASH_NETWORK" \
+  --env-file "$CCDASH_COLLECTOR_ENV_FILE" \
+  --mount "type=bind,src=$PWD/dashboard/collector/generated/central.yaml,dst=/etc/otelcol-contrib/config.yaml,readonly" \
+  --mount "type=bind,src=$CCDASH_INGEST_SECRET_DIR,dst=/var/run/ccdash-ingest,readonly" \
+  --mount "type=bind,src=$CCDASH_INGEST_CH_SECRET_DIR,dst=/var/run/ccdash-clickhouse,readonly" \
+  "$CCDASH_COLLECTOR_IMAGE" --config=/etc/otelcol-contrib/config.yaml</code></pre>
+<p>En esta red, configure el upstream de la aplicación como <code>http://ccdash-otel:4318</code> y monte el mismo token bearer interno en <code>INGEST_UPSTREAM_TOKEN_FILE</code>. Este token es distinto del token de dispositivo de cada usuario. La cola central proporcionada reside en memoria; diseñe la persistencia, los reintentos y la supervisión de pérdidas según sus requisitos operativos.</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/device-collectors.md#enable-on-eks">Configuración del receptor central y el registro de dispositivos</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/generated/central.yaml">Configuración del Collector central</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/runbooks/codex-telemetry.md">Recopilación administrada por el organizador</a></p></section>
+<section id="backend"><h2>4. Configure e inicie el panel</h2>
+<p>Configure la conexión a la base de datos y los ajustes de autenticación antes de iniciar la imagen. La siguiente plantilla no contiene secretos; sustituya el endpoint, el emisor, el ID del cliente y los nombres de grupo de ejemplo por los valores de su implementación.</p>
+<pre><code class="language-ini">CH_URL=http://clickhouse.internal:8123
+CH_DB=claude_code
+CH_USER=otel_reader
+CH_PASSWORD_FILE=/run/ccdash-secrets/CH_PASSWORD
+CLAUDE_ENABLED=true
+CODEX_ENABLED=true
+AUTH_MODE=oidc
+APP_PUBLIC_URL=https://dashboard.example.com
+OIDC_ISSUER=https://issuer.example.com
+OIDC_CLIENT_ID=YOUR_APP_CLIENT_ID
+OIDC_ROLE_GROUPS={"viewer":["YOUR_VIEWER_GROUP"],"analyst":["YOUR_ANALYST_GROUP"],"admin":["YOUR_ADMIN_GROUP"]}
+OIDC_CLIENT_SECRET_FILE=/run/ccdash-secrets/OIDC_CLIENT_SECRET
+SESSION_SECRET_FILE=/run/ccdash-secrets/SESSION_SECRET</code></pre>
+<p>Prepare los secretos antes de iniciar el panel:</p><ul><li>Aprovisione los tres archivos mencionados mediante el mecanismo de secretos de la plataforma y móntelos en modo de solo lectura.</li><li>Use una clave aleatoria de 32 bytes codificada en base64url para <code>SESSION_SECRET</code>. Conserve el contenido exacto y los permisos de lectura para el usuario no root <code>node</code>.</li><li>En EC2, conserve las rutas absolutas configuradas dentro del contenedor. En ECS/EKS, configure la entrega de secretos correspondiente a la tarea o el pod.</li></ul><p>Mantenga deshabilitada la autenticación de desarrollo insegura en las implementaciones públicas.</p>
+<p>Después de preparar <code>CCDASH_ENV_FILE</code> y <code>CCDASH_SECRET_DIR</code> en un host EC2/Docker, este comando ejecuta la aplicación detrás de un proxy inverso HTTPS configurado por separado:</p>
+<pre><code class="language-bash">: "${CCDASH_RELEASE:?Set the built release tag}"
+: "${CCDASH_ENV_FILE:?Set the prepared nonsecret environment file}"
+: "${CCDASH_SECRET_DIR:?Set the runtime-readable protected secret directory}"
+: "${CCDASH_NETWORK:?Set the existing private Docker network}"
+docker run -d --name ccdash --restart unless-stopped \
+  --network "$CCDASH_NETWORK" \
+  --publish 127.0.0.1:8080:8080 \
+  --env-file "$CCDASH_ENV_FILE" \
+  --mount "type=bind,src=$CCDASH_SECRET_DIR,dst=/run/ccdash-secrets,readonly" \
+  "ccdash:$CCDASH_RELEASE"</code></pre>
+<p>Para habilitar la ingesta de dispositivos, añada también el montaje del archivo de token interno y los ajustes <code>INGEST_*</code> del paso anterior a la configuración de ejecución de la aplicación. Este comando básico de la aplicación no configura por sí solo el registro de dispositivos ni habilita la ingesta.</p>
+<p><a href="operations.html#sso">Configuración de OIDC y roles</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/.env.example">Referencia de variables de entorno</a></p></section>
+<section id="platforms"><h2>Elija EC2, ECS, EKS o adapte la aplicación para Lambda</h2>
+<div aria-label="Opciones de alojamiento y compatibilidad del repositorio" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">Opción</th><th scope="col">Forma de implementación</th><th scope="col">Compatibilidad del repositorio y trabajo pendiente</th></tr></thead><tbody>
+<tr><td>EC2 + Docker</td><td>Ejecute el panel, un Collector y ClickHouse persistente en hosts o redes privadas. Use almacenamiento duradero para la base de datos y las colas, y un punto de entrada HTTPS.</td><td>Se proporcionan la imagen de la aplicación y el esquema de nodo único. Prepare por su cuenta el ciclo de vida del host/servicio, los secretos, los usuarios de base de datos, el enrutamiento de red y las copias de seguridad. El script user-data del taller configura la recopilación de clientes, no todo este backend.</td></tr>
+<tr><td>ECS / Fargate</td><td>Publique las imágenes de la aplicación y del Collector en ECR; ejecute servicios separados o contenedores auxiliares adecuados. Use una red privada y una instalación persistente de ClickHouse administrada por separado.</td><td>No se proporcionan plantillas de tareas/servicios de ECS. Defina los roles de tarea/ejecución, la entrega de secretos, la CPU/memoria, la arquitectura de imagen, las comprobaciones de estado y la conectividad de los servicios. No dependa de un sistema de archivos efímero de tareas para la base de datos ni para colas duraderas.</td></tr>
+<tr><td>EKS</td><td>Use el clúster existente, los operadores de ClickHouse/Keeper y los volúmenes persistentes; implemente la aplicación y el receptor central opcional con Terraform del repositorio.</td><td><code>infra/</code> reutiliza un clúster/VPC. Prepare los operadores, Karpenter, CSI/almacenamiento, DNS/certificados, IAM y secretos; luego ejecute plan/apply, verifique schema-init, publique la imagen revisada y despliegue. No crea todos los requisitos previos.</td></tr>
+<tr><td>Lambda</td><td>Adapte la aplicación HTTP a un entorno de ejecución o adaptador compatible con Lambda. Mantenga ClickHouse y el Collector de ingesta en servicios externos persistentes.</td><td>La imagen Docker actual inicia Express y no integra un manejador ni entorno de ejecución de Lambda. No se proporciona una implementación Lambda lista para usar. Después de adaptarla, valide las cookies de autenticación, la transmisión/chat, los tiempos de espera, la red y la ingesta de dispositivos; elegir Lambda por sí solo no instala esta arquitectura.</td></tr>
+</tbody></table></div>
+<p>Referencias oficiales de las plataformas: <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html">EC2</a> · <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html">Definiciones de tareas de ECS/Fargate</a> · <a href="https://docs.aws.amazon.com/eks/latest/userguide/sample-deployment.html">Implementación de aplicaciones en EKS</a> · <a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html">Requisitos de imágenes/entorno de ejecución de Lambda</a>.</p></section>
+<section id="trace"><h2>5. Conecte los registros, las métricas y las trazas de los clientes</h2>
+<p>Cuando el backend funcione, configure el Collector local de cada cliente y el destino del exportador. Para la ruta de dispositivos, un analista o administrador puede registrar un dispositivo en el panel implementado. Elija la plataforma del dispositivo, regístrelo y copie el comando de instalación. La terminal solicita el ID de atribución de telemetría y el token del dispositivo; el token no se incluye en el comando. Se requiere un backend instalado y un token de dispositivo emitido.</p>
+<h3>Instalación en dispositivos</h3><h4>macOS</h4>
+<pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
+curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
+<h4>Linux</h4>
+<pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
+sudo loginctl enable-linger "$USER" &amp;&amp;
+  curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
+<p>El script descarga el paquete usando el token bearer del dispositivo y luego ejecuta el instalador con un archivo de token privado. El token del dispositivo no autoriza el inicio de sesión interactivo en el panel.</p>
+<h3>Alternativa de instalación manual desde el código fuente</h3><pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
+: "${CCDASH_USER_ID:?Set the intended telemetry attribution ID}"
+python3 dashboard/collector/install.py install \
+  --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
+<p>El instalador requiere Python 3.9 o posterior en macOS/Linux y solicita el token de forma privada. En Linux, ejecute <code>sudo loginctl enable-linger "$USER"</code> para mantener el servicio después de cerrar sesión o reiniciar; luego instale como usuario normal. Descarga y verifica el binario del Collector; este comando no aprovisiona el panel, la base de datos ni el receptor central. El propietario del dispositivo no se convierte automáticamente en la identidad de telemetría emitida.</p>
+<ul><li>Claude Code: <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> y <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>, <code>OTEL_TRACES_EXPORTER=otlp</code>, destino gRPC OTLP local en el puerto 4317.</li><li>Codex: entradas separadas <code>[otel]</code> <code>exporter</code>, <code>metrics_exporter</code> y <code>trace_exporter</code>; destinos HTTP OTLP locales en el puerto 4318 y <code>log_user_prompt=false</code>.</li></ul>
+<p>Reinicie ambos clientes, genere trabajo nuevo y siga la ruta <a href="index.html#task-trace">usuario → período seleccionado → tarea → Traza de tareas</a>. La actividad anterior no se incorpora retroactivamente a las trazas. Para los tramos de diagnóstico de Codex, abra la pestaña Trace de Analítica.</p></section>
+<section id="migration"><h2>Dispositivos y bases de datos existentes</h2><p>Durante la migración de dispositivos, conserve las copias de seguridad privadas de los clientes y las colas de los exportadores. Siga el procedimiento de migración compatible con macOS/Linux en lugar de detener un servicio desconocido. Las actualizaciones de la base de datos siguen el procedimiento operativo de esquema, independientemente de la instalación de clientes y el despliegue de la aplicación.</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">Instalador desde el código fuente y guía de migración</a></p></section>
+<section id="verify"><h2>6. Verifique cada límite</h2><ol><li>Compruebe <code>/healthz</code> y <code>/readyz</code>; después, autentíquese y examine los diagnósticos de instalación y esquema.</li><li>Confirme las tablas previstas, el registro de migraciones, las vistas, los permisos de base de datos y que el Collector escriba correctamente; la existencia del esquema por sí sola no significa que haya datos históricos disponibles.</li><li>Genere actividad nueva en el cliente y compruebe que los registros, las métricas y las trazas se almacenen con la identidad prevista. Un proceso Collector o la recepción de un dispositivo no demuestran que los datos persistan.</li><li>Compruebe el uso del usuario seleccionado y su Traza de tareas. Las observaciones de trazas y métricas de Codex son diagnósticos y no deben sumar otro total de costo.</li></ol><p><a href="operations.html#traces">Solución de problemas de trazas</a> · <a href="api.html#tasks">Límites de la API</a></p></section>
+<section id="workshops"><h2>Talleres preparados por un organizador</h2><p>Un taller preparado tiene su propio ciclo de vida de cliente y Collector. Los participantes usan el entorno configurado; no implementan un segundo backend ni instalan otro Collector sobre el servicio preparado. Antes de usar <code>user-data.sh</code>.</p></section>
+</main>
+<footer><div class="wrap">
+<p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Referencia completa de la API</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Definiciones de las mediciones</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Historial de cambios</a> · <a href="../assets/credits.html">Créditos de la demostración</a></p>
+<p>La telemetría puede estar incompleta. Los costos informados y las estimaciones basadas en precios de lista no son facturas. Los indicadores de actividad no demuestran la productividad de los empleados ni un retorno causal de la inversión.</p>
+</div></footer>
+</body>
+</html>
