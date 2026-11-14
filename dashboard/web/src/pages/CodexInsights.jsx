@@ -1,3 +1,4 @@
+import { richMessage, localeTag, localize, translate, useLocale } from "../i18n/index.js";
 import { useMemo, useState } from "react";
 import { Info } from "lucide-react";
 import { Card, ErrorBox, Loading } from "../components/Card.jsx";
@@ -9,39 +10,39 @@ import { useApi } from "../useApi.js";
 import { formatClientCost, formatObserved, observedTokens } from "../clientUsage.js";
 import { costBasisLabel, formatClientTimestamp, tokenStatusLabel } from "../clientPresentation.js";
 
-const percent = (v) => v == null ? "—" : `${(v * 100).toLocaleString("ko-KR", { maximumFractionDigits: 2 })}%`;
+const percent = (v) => v == null ? "—" : `${(v * 100).toLocaleString(localeTag(), { maximumFractionDigits: 2 })}%`;
 const text = (key, label) => ({ key, label, render: (v) => v || "—" });
 const numeric = (key, label) => ({ key, label, render: formatObserved });
 const ratio = (key, label) => ({ key, label, render: percent });
 const cost = (key, label) => ({ key, label, render: formatClientCost });
-const TABS = ["효율·Effort", "도구·승인", "성능", "런타임·메트릭", "Trace"];
+const TABS = localize(["효율·Effort", "도구·승인", "성능", "런타임·메트릭", "Trace"]);
 const PROFILES = { "효율·Effort": "effort", "도구·승인": "tools", "성능": "performance" };
-const STATUS = { observed: "수집 확인", empty: "관측 없음", unavailable: "수집 미확인", limited: "조회 한도 초과" };
+const STATUS = localize({ observed: "수집 확인", empty: "관측 없음", unavailable: "수집 미확인", limited: "조회 한도 초과" });
 const codexCostLabel = (row) => costBasisLabel({ ...row, cost_basis: "aws_list_estimate" });
-const EFFORT = [text("effort", "Effort"), numeric("requests", "완료 응답"), numeric("observed_tokens", "관측 토큰"),
+const EFFORT = localize([text("effort", "Effort"), numeric("requests", "완료 응답"), numeric("observed_tokens", "관측 토큰"),
   text("token_status", "토큰 상태"),
   cost("cost_usd", "추정 비용 (USD)"), numeric("unpriced", "미산정"),
   { key: "cost_basis_label", label: "비용 기준·미산정",
     render: (value) => <span className="block min-w-[10rem]">{value}</span>, toText: (value) => value },
-  ratio("cache_hit_rate", "캐시 읽기 비율"), ratio("reasoning_share", "추론 비중")];
-const TOOLS = [text("tool", "도구"), numeric("calls", "호출"), numeric("successes", "성공"),
+  ratio("cache_hit_rate", "캐시 읽기 비율"), ratio("reasoning_share", "추론 비중")]);
+const TOOLS = localize([text("tool", "도구"), numeric("calls", "호출"), numeric("successes", "성공"),
   numeric("failures", "실패"), numeric("unknown", "결과 미확인"), ratio("success_rate", "성공률"),
-  numeric("average_ms", "평균 (ms)"), numeric("p95_ms", "P95 (ms)")];
-const APPROVALS = [text("tool", "도구"), text("decision", "결정"), text("source", "결정 출처"), numeric("count", "건수")];
-const LATENCY = [text("name", "측정 대상"), numeric("count", "표본"), numeric("average_ms", "평균 (ms)"),
-  numeric("p50_ms", "P50 (ms)"), numeric("p95_ms", "P95 (ms)"), numeric("max_ms", "최대 (ms)")];
-const RUNTIME = [text("model", "모델"), text("version", "버전"), text("provider", "공급자"), text("effort", "시작 Effort"),
-  text("sandbox_policy", "Sandbox"), text("approval_policy", "승인 정책"), numeric("sessions", "세션")];
-const METRICS = [text("name", "메트릭"), text("type", "유형"), text("unit", "단위"),
+  numeric("average_ms", "평균 (ms)"), numeric("p95_ms", "P95 (ms)")]);
+const APPROVALS = localize([text("tool", "도구"), text("decision", "결정"), text("source", "결정 출처"), numeric("count", "건수")]);
+const LATENCY = localize([text("name", "측정 대상"), numeric("count", "표본"), numeric("average_ms", "평균 (ms)"),
+  numeric("p50_ms", "P50 (ms)"), numeric("p95_ms", "P95 (ms)"), numeric("max_ms", "최대 (ms)")]);
+const RUNTIME = localize([text("model", "모델"), text("version", "버전"), text("provider", "공급자"), text("effort", "시작 Effort"),
+  text("sandbox_policy", "Sandbox"), text("approval_policy", "승인 정책"), numeric("sessions", "세션")]);
+const METRICS = localize([text("name", "메트릭"), text("type", "유형"), text("unit", "단위"),
   { key: "dimensions", label: "차원", render: (v) => JSON.stringify(v || {}), toText: (v) => JSON.stringify(v || {}) },
   numeric("points", "수집 표본"), numeric("value", "카운터 증분 / 최근 Gauge"),
   numeric("count", "Histogram 관측 수"), numeric("mean", "평균"), numeric("min", "최소"), numeric("max", "최대"),
-  { key: "partial", label: "구간 상태", render: (v) => v ? "불완전" : "확인", toText: (v) => v ? "불완전" : "확인" }];
-const SPANS = [text("name", "Span"), numeric("count", "건수"), numeric("errors", "오류 상태"),
-  numeric("average_ms", "평균 (ms)"), numeric("p95_ms", "P95 (ms)")];
-const TRACE_DETAIL = [text("name", "작업"), text("span_id", "Span ID"), text("parent_span_id", "부모 Span ID"),
+  { key: "partial", label: "구간 상태", render: (v) => v ? translate("m2559b2f335d9") : translate("m1aacb54c4992"), toText: (v) => v ? translate("m2559b2f335d9") : translate("m1aacb54c4992") }]);
+const SPANS = localize([text("name", "Span"), numeric("count", "건수"), numeric("errors", "오류 상태"),
+  numeric("average_ms", "평균 (ms)"), numeric("p95_ms", "P95 (ms)")]);
+const TRACE_DETAIL = localize([text("name", "작업"), text("span_id", "Span ID"), text("parent_span_id", "부모 Span ID"),
   text("model", "모델"), text("tool_name", "도구"), text("effort", "Effort"),
-  { key: "start_time", label: "시작 (브라우저 시간)", render: formatClientTimestamp, toText: formatClientTimestamp }, numeric("duration_ms", "시간 (ms)"), text("status", "상태")];
+  { key: "start_time", label: "시작 (브라우저 시간)", render: formatClientTimestamp, toText: formatClientTimestamp }, numeric("duration_ms", "시간 (ms)"), text("status", "상태")]);
 function metricMean(rows, name, tokenType) {
   const selected = (rows || []).filter((r) => r.name === name
     && (!tokenType || r.dimensions?.token_type === tokenType));
@@ -51,13 +52,15 @@ function metricMean(rows, name, tokenType) {
 }
 const milliseconds = (value) => value == null ? "—" : `${formatObserved(value)} ms`;
 const partialHint = (rows, name) => rows?.some((r) => r.name === name && r.partial)
-  ? "일부 원본 통계 미확인" : undefined;
+  ? translate("m671de31ae493") : undefined;
 
 export default function CodexInsights(props) {
+  const _locale = useLocale();
   return props.api ? <CodexInsightsBody {...props} /> : <RequestedCodexInsights {...props} />;
 }
 
 function RequestedCodexInsights({ range, enabled = true, hold = false, sections }) {
+  const _locale = useLocale();
   const bounds = range?.from && range?.to ? { from: range.from, to: range.to } : {};
   const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
   const profile = allowedTabs.length === 1 ? PROFILES[allowedTabs[0]] : undefined;
@@ -67,46 +70,43 @@ function RequestedCodexInsights({ range, enabled = true, hold = false, sections 
 }
 
 function CodexInsightsBody({ api, enabled = true, sections }) {
+  const _locale = useLocale();
   const { data, loading, error, stale } = api;
   const allowedTabs = sections?.length ? TABS.filter((name) => sections.includes(name)) : TABS;
   const [preferredTab, setTab] = useState(TABS[0]);
   const tab = allowedTabs.includes(preferredTab) ? preferredTab : allowedTabs[0];
   const [search, setSearch] = useState("");
-  const metrics = useMemo(() => (data?.metrics || []).filter((r) => r.name.toLowerCase().includes(search.toLowerCase())), [data?.metrics, search]);
+  const metrics = useMemo(() => (data?.metrics || []).filter((r) => r.name.toLowerCase().includes(search.toLowerCase())), [data?.metrics, search, _locale]);
   const summary = data?.summary || {};
-  const help = "비용은 AWS 정가 추정치입니다. 실행 지표는 실청구·코드 품질·절감 시간을 나타내지 않습니다."
+  const help = translate("m8384921a7240")
     + (!error && enabled && !loading && data?.range
-      ? `\n조회 기간: ${formatClientTimestamp(data.range.from)} ~ ${formatClientTimestamp(data.range.to)} (브라우저 시간)`
+      ? translate("mec9670388829", [formatClientTimestamp(data.range.from), formatClientTimestamp(data.range.to)])
       : "");
   return (
     <section aria-labelledby="codex-insights-heading" className="flex flex-col gap-5">
       <div className="flex items-center gap-2">
-        <h2 id="codex-insights-heading" className="text-xl font-semibold text-ink-800">Codex 상세</h2>
+        <h2 id="codex-insights-heading" className="text-xl font-semibold text-ink-800">{translate("mcf989a7d79a0")}</h2>
         <Info size={14} className="shrink-0 text-ink-400" title={help} aria-label={help} />
       </div>
       {error ? <ErrorBox error={error} /> : !enabled || loading ? <Loading /> : (
         <>
-          <div className="flex flex-wrap gap-2" aria-label="신호 수집 상태">
+          <div className="flex flex-wrap gap-2" aria-label={translate("md6d3954eb9f3")}>
             {["logs", "metrics", "traces"].filter((signal) =>
               data?.coverage?.[signal]?.status !== "not_requested").map((signal) => {
               const c = data?.coverage?.[signal];
               return <span key={signal} className="rounded-lg border border-ink-200 bg-card px-3 py-2 text-sm text-ink-700"
-                title={c?.last_seen ? `최근 관측: ${formatClientTimestamp(c.last_seen)}` : "선택한 구간의 수집 상태"}>
-                {signal[0].toUpperCase() + signal.slice(1)} · {STATUS[c?.status] || "수집 미확인"}
-                {c?.status === "observed" && ` · ${formatObserved(c.records)}개`}
-                {c?.partial && " · 일부 미확인"}
-                {signal === "traces" && c?.selection === "latest_50_traces" && " · 최근 50 Trace"}
+                title={c?.last_seen ? translate("mea77786c78f3", [formatClientTimestamp(c.last_seen)]) : translate("m25527d35b81c")}>
+                {signal[0].toUpperCase() + signal.slice(1)} · {STATUS[c?.status] || translate("m36ba290fac59")}
+                {c?.status === "observed" && translate("m2f8fe086f3f8", [formatObserved(c.records)])}
+                {c?.partial && translate("m42f419f9b0da")}
+                {signal === "traces" && c?.selection === "latest_50_traces" && translate("mbea1999fdc5b")}
               </span>;
             })}
           </div>
           {["logs", "metrics"].some((signal) => data?.coverage?.[signal]?.status === "limited") &&
-            <p role="status" className="text-sm text-warning-text">
-              일부 상세 신호가 조회 한도를 넘었습니다. 해당 신호의 수치는 표시하지 않으며, 기간을 줄이면 확인할 수 있습니다. 공통 지표와 다른 신호는 유지됩니다.
-            </p>}
-          {data?.coverage?.logs?.limited_sections?.length > 0 && <p role="status" className="text-sm text-warning-text">
-            일부 로그 항목의 집계 결과가 조회 한도를 넘었습니다. 해당 항목은 보류하고, 확인 가능한 사용량·비용과 다른 집계는 유지합니다.
-          </p>}
-          {allowedTabs.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Codex 상세 보기">
+            <p role="status" className="text-sm text-warning-text">{translate("m1461153ebd23")}</p>}
+          {data?.coverage?.logs?.limited_sections?.length > 0 && <p role="status" className="text-sm text-warning-text">{translate("m9b0f391b8d48")}</p>}
+          {allowedTabs.length > 1 && <div className="flex flex-wrap gap-2" aria-label={translate("mbe07db24d3d9")}>
             {allowedTabs.map((name) => <button key={name} type="button" aria-pressed={tab === name} onClick={() => setTab(name)}
               className={`rounded-lg border px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${tab === name
                 ? "border-brand-500 bg-brand-600 text-white" : "border-ink-200 bg-card text-ink-700"}`}>{name}</button>)}
@@ -114,70 +114,62 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
           {tab === TABS[0] && <>
             <CodexEfficiency summary={summary} completionUsage={data?.completion_usage}
               completeness={data?.completeness} />
-            <DataTable title="Effort별 사용량·비용" subtitle="유효한 입력·출력 쌍을 합산하고 미확인 쌍은 제외합니다. 사용량·메타데이터가 불완전해도 유효한 쌍은 포함하며 부분합으로 표시합니다. 비율은 기존 전체 토큰·구성값 기준입니다. 알려진 비용만 합산하고 미산정 기록은 제외합니다."
+            <DataTable title={translate("mfaccd8fb7fa7")} subtitle={translate("m7facc615af4d")}
               rows={(data?.effort || []).map((row) => ({ ...row, observed_tokens: observedTokens(row),
                 token_status: tokenStatusLabel(row), cost_basis_label: codexCostLabel(row) }))}
               columns={EFFORT} exportName="codex_effort" stale={stale} />
           </>}
           {tab === TABS[1] && <>
             <div className="grid grid-cols-2 gap-4">
-              <StatTile label="도구 성공률" value={percent(summary.tool_success_rate)} help="명시적인 성공·실패 결과 기준이며, 미확인 결과가 있으면 전체 성공률을 제공하지 않을 수 있습니다." />
-              <StatTile label="도구 승인 비율" value={percent(summary.approval_rate)} help="자동 승인을 포함한 권한 결정입니다. 코드 수락률이 아닙니다." />
+              <StatTile label={translate("m7a106e812ba0")} value={percent(summary.tool_success_rate)} help={translate("m50685eab7e6e")} />
+              <StatTile label={translate("me3d2ea4e8a1c")} value={percent(summary.approval_rate)} help={translate("ma1b7c60c5e3d")} />
             </div>
-            <DataTable title="도구 실행 결과" columns={TOOLS} rows={data?.tools || []} exportName="codex_tools_detail" stale={stale} />
-            <DataTable title="승인·거절과 결정 출처" columns={APPROVALS} rows={data?.approvals || []} exportName="codex_approvals" stale={stale} />
+            <DataTable title={translate("m9ad718b65dab")} columns={TOOLS} rows={data?.tools || []} exportName="codex_tools_detail" stale={stale} />
+            <DataTable title={translate("m80ec68b9c495")} columns={APPROVALS} rows={data?.approvals || []} exportName="codex_approvals" stale={stale} />
           </>}
           {tab === TABS[2] && <>
             <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
-              <StatTile label="재시도 요청 비율" value={percent(summary.retry_rate)} help="attempt가 0보다 큰 요청 / attempt가 확인된 요청입니다." />
-              <StatTile label="요청당 API 오류 기록" value={formatObserved(summary.api_error_rate)}
-                help="HTTP 및 스트림 오류 기록 / 관측된 HTTP 요청입니다. 한 요청에 여러 오류가 기록될 수 있습니다." />
-              <StatTile label="평균 턴 처리 시간" value={milliseconds(metricMean(data?.metrics, "codex.turn.e2e_duration_ms"))}
+              <StatTile label={translate("md0076a3d5114")} value={percent(summary.retry_rate)} help={translate("m713987f36875")} />
+              <StatTile label={translate("ma00b4d99712b")} value={formatObserved(summary.api_error_rate)}
+                help={translate("m60b4a2f9d598")} />
+              <StatTile label={translate("m7deb89394b80")} value={milliseconds(metricMean(data?.metrics, "codex.turn.e2e_duration_ms"))}
                 hint={partialHint(data?.metrics, "codex.turn.e2e_duration_ms")}
-                help="Codex가 보고한 턴 Histogram의 평균입니다. 사람의 작업시간이나 절감 시간이 아닙니다." />
-              <StatTile label="평균 턴 첫 토큰 시간" value={milliseconds(metricMean(data?.metrics, "codex.turn.ttft.duration_ms"))}
+                help={translate("m9b4eecfb0b4d")} />
+              <StatTile label={translate("m60ad83b14489")} value={milliseconds(metricMean(data?.metrics, "codex.turn.ttft.duration_ms"))}
                 hint={partialHint(data?.metrics, "codex.turn.ttft.duration_ms")} />
-              <StatTile label="턴당 평균 도구 호출" value={formatObserved(metricMean(data?.metrics, "codex.turn.tool.call"))}
+              <StatTile label={translate("me36fde2306f5")} value={formatObserved(metricMean(data?.metrics, "codex.turn.tool.call"))}
                 hint={partialHint(data?.metrics, "codex.turn.tool.call")} />
-              <StatTile label="턴당 평균 토큰" value={formatObserved(metricMean(data?.metrics, "codex.turn.token_usage", "total"))}
+              <StatTile label={translate("mfe1bf2436492")} value={formatObserved(metricMean(data?.metrics, "codex.turn.token_usage", "total"))}
                 hint={partialHint(data?.metrics, "codex.turn.token_usage")}
-                help="턴 메트릭의 별도 관측입니다. 위 사용량·비용 합계에 더하지 않습니다." />
+                help={translate("m23ed08363d8d")} />
             </div>
-            <DataTable title="요청·도구·시작 단계 지연" subtitle="관측된 로그 시간의 분포입니다. SSE 이벤트 처리 시간과 전체 생성 시간은 다릅니다."
+            <DataTable title={translate("m2939628cbdde")} subtitle={translate("m2aba4071bf3f")}
               columns={LATENCY} rows={data?.latency || []} exportName="codex_latency" stale={stale} />
           </>}
           {tab === TABS[3] && <>
             <div className="grid grid-cols-2 gap-4">
-              <StatTile label="프롬프트 이벤트" value={formatObserved(summary.prompts)} />
-              <StatTile label="평균 프롬프트 길이" value={formatObserved(summary.prompt_length_mean)} help="Codex가 보고한 길이입니다. 프롬프트 본문은 수집하지 않습니다." />
+              <StatTile label={translate("mb6fcbcb9708a")} value={formatObserved(summary.prompts)} />
+              <StatTile label={translate("m055e662c174b")} value={formatObserved(summary.prompt_length_mean)} help={translate("mf650f4fec99a")} />
             </div>
-            <DataTable title="세션 시작 설정" subtitle="시작 시점 관측입니다. 세션 중 설정 변경까지 보장하지 않습니다." rows={data?.runtime || []} columns={RUNTIME} exportName="codex_runtime" stale={stale} />
-            <Card title="관측 메트릭 검색">
-              <input aria-label="메트릭 이름 검색" placeholder="메트릭 이름 검색" value={search} onChange={(e) => setSearch(e.target.value)}
+            <DataTable title={translate("m51c4e539db31")} subtitle={translate("m65bc779f410a")} rows={data?.runtime || []} columns={RUNTIME} exportName="codex_runtime" stale={stale} />
+            <Card title={translate("m2289a1e0388f")}>
+              <input aria-label={translate("mca6e754aef54")} placeholder={translate("mca6e754aef54")} value={search} onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm" />
-              <p className="mt-2 text-sm text-ink-600">카운터는 증분, Histogram은 관측 수와 평균입니다. 누적 기준값이나 원본 필드의 존재를 확인하지 못한 값은 —로 표시합니다. 비용 합계에는 더하지 않습니다.</p>
+              <p className="mt-2 text-sm text-ink-600">{translate("me9f19d169d18")}</p>
             </Card>
-            <DataTable title="수집된 메트릭" columns={METRICS} rows={metrics} exportName="codex_metrics" stale={stale} />
-            <DataTable title="이벤트 수집 현황" columns={[text("event", "이벤트"), numeric("count", "건수")]} rows={data?.events || []} exportName="codex_events" stale={stale} />
+            <DataTable title={translate("md66c0215248d")} columns={METRICS} rows={metrics} exportName="codex_metrics" stale={stale} />
+            <DataTable title={translate("m86d368467927")} columns={[text("event", translate("m46b289bb0a9e")), numeric("count", translate("m438641bb0f5d"))]} rows={data?.events || []} exportName="codex_events" stale={stale} />
           </>}
           {tab === TABS[4] && <>
-            <p className="text-sm text-ink-600">최근 50개 Trace의 각 최근 200개 span까지 표시합니다. 통계도 표시된 span 기준이며, 전체 조회 구간이나 완전한 턴의 통계는 아닙니다. 모델 필터는 모델 속성이 있는 span에만 적용됩니다.</p>
-            {data?.coverage?.traces?.truncated_traces > 0 && <p role="status" className="text-sm text-warning-text">
-              긴 Trace는 일부 span만 표시하므로 전체 소요 시간과 오류 합계를 제공하지 않습니다.
-            </p>}
-            {data?.coverage?.traces?.partial && <p role="status" className="text-sm text-warning-text">
-              일부 Trace 데이터가 충돌해 해당 Trace의 통계를 제공하지 않습니다. 다른 신호의 집계는 유지됩니다.
-            </p>}
-            <DataTable title="작업별 Span 지연" columns={SPANS} rows={data?.spans || []} exportName="codex_spans" stale={stale} />
+            <p className="text-sm text-ink-600">{translate("ma733b6ed7cb1")}</p>
+            {data?.coverage?.traces?.truncated_traces > 0 && <p role="status" className="text-sm text-warning-text">{translate("mc64be2b3364d")}</p>}
+            {data?.coverage?.traces?.partial && <p role="status" className="text-sm text-warning-text">{translate("m64e5e5d200ff")}</p>}
+            <DataTable title={translate("m2688d96b0338")} columns={SPANS} rows={data?.spans || []} exportName="codex_spans" stale={stale} />
             {(data?.traces || []).length === 0 ? <EmptyState /> : data.traces.map((trace) => (
               <details key={trace.trace_id} className="rounded-lg border border-ink-200 bg-card p-4">
-                <summary className="cursor-pointer break-all text-sm font-medium text-ink-700">
-                  {trace.trace_id} · {formatObserved(trace.span_count)} spans · {formatObserved(trace.wall_ms)} ms · 오류 {formatObserved(trace.errors)}
-                  {trace.partial && " · 불완전"}
-                  {trace.truncated && " · 최근 span만 표시"}
-                </summary>
+                <summary className="cursor-pointer break-all text-sm font-medium text-ink-700">{richMessage("m3ef405944985", [trace.trace_id, formatObserved(trace.span_count), formatObserved(trace.wall_ms), formatObserved(trace.errors), trace.partial && translate("m10a7f30503b2"), trace.truncated && translate("mec4711ef3cbd")])}</summary>
                 <div className="mt-4">{trace.partial
-                  ? <p className="text-sm text-ink-600">같은 Span ID의 값이 충돌해 세부 내역을 보류했습니다.</p>
+                  ? <p className="text-sm text-ink-600">{translate("m8c2c1fb12b63")}</p>
                   : <DataTable title={`Trace ${trace.trace_id}`} columns={TRACE_DETAIL} rows={trace.spans || []} exportName="codex_trace_spans" stale={stale} />}</div>
               </details>
             ))}

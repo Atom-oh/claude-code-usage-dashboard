@@ -1,3 +1,4 @@
+import { localeTag, localize, translate, translateSource, useLocale } from "../i18n/index.js";
 import { Badge } from "../components/Badge.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
@@ -18,11 +19,12 @@ import { decisionLabel, unclassifiedLabel } from "../labels.js";
 import { asSpendRows, sumSpend } from "../spend.js";
 import { sumObservedMetric } from "../metricCoverage.js";
 
-const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const usd = (n) => n == null ? translate("m84dd6e381dca") : `$${Number(n).toLocaleString(localeTag(), { maximumFractionDigits: 2 })}`;
 
 // 비용 셀의 그룹 스택 바 — 한 줄짜리, 색 분할 = 그룹(bedrock/enterprise[/unknown]), 길이 =
 // 컬럼 최대 사용자 보고 비용 대비. 확인되지 않은 합계에는 막대를 그리지 않는다.
 function CostGroupBar({ split, max }) {
+  const _locale = useLocale();
   const segs = GROUP_SEGMENT_ORDER.map((g) => ({ group: g, value: Number(split?.[g] || 0) })).filter((x) => x.value > 0);
   const total = segs.reduce((sum, x) => sum + x.value, 0);
   if (!total || !(max > 0)) return null;
@@ -51,33 +53,33 @@ function CostGroupBar({ split, max }) {
   );
 }
 
-const fmt = (n) => n == null ? "—" : Number(n).toLocaleString();
+const fmt = (n) => n == null ? "—" : Number(n).toLocaleString(localeTag());
 const pct = (n) => n == null ? "—" : `${(Number(n) * 100).toFixed(0)}%`;
 const STATUS_COLOR = { accept: "var(--positive)", reject: "var(--negative)" };
 
 // 2026-08-11 traces beta 패널(권한대기/TTFT) — 서버가 {unsupported, rows} 모양을 내려준다.
 // unsupported=true는 "0"이 아니라 "이 구간엔 해당 스팬이 없음"(베타 미배포 또는 v2.1.214
 // 미만)이라는 뜻이라 DataTable의 기본 "데이터 없음"과 구분되는 안내를 별도로 보여준다.
-const PERMISSION_WAIT_COLUMNS = [
+const PERMISSION_WAIT_COLUMNS = localize([
   { key: "group", label: "채널" },
   { key: "app_version", label: "Claude Code 버전" },
   { key: "p50_wait_ms", label: "p50 대기 (ms)", render: fmt },
   { key: "p95_wait_ms", label: "p95 대기 (ms)", render: fmt },
   { key: "n", label: "샘플 수", render: fmt },
-];
+]);
 
-const TTFT_COLUMNS = [
+const TTFT_COLUMNS = localize([
   { key: "group", label: "채널" },
   { key: "model", label: "모델" },
   { key: "p50_ttft_ms", label: "p50 TTFT (ms)", render: fmt },
   { key: "p95_ttft_ms", label: "p95 TTFT (ms)", render: fmt },
   { key: "n", label: "샘플 수", render: fmt },
-];
+]);
 
 // 2026-08-31 — 인터랙션 시간 분해. 비중 합계가 1을 넘을 수 있다(자식 스팬은 동시 실행될 수 있고
 // tool 스팬 duration_ms는 권한 대기 + 실행을 함께 담는다) — 구성비가 아니라 "인터랙션 총 시간
 // 대비 각 종류가 쓴 시간의 배수"다. 100%를 넘는 값이 보이면 버그가 아니다.
-const INTERACTION_BREAKDOWN_COLUMNS = [
+const INTERACTION_BREAKDOWN_COLUMNS = localize([
   { key: "group", label: "채널" },
   { key: "interactions", label: "인터랙션 수", render: fmt },
   { key: "p50_interaction_ms", label: "p50 소요 (ms)", render: fmt },
@@ -85,23 +87,24 @@ const INTERACTION_BREAKDOWN_COLUMNS = [
   { key: "llm_share", label: "모델 응답 비중", render: pct, toText: pct },
   { key: "tool_exec_share", label: "도구 실행 비중", render: pct, toText: pct },
   { key: "blocked_share", label: "권한 대기 비중", render: pct, toText: pct },
-];
+]);
 
-const LANGUAGE_COLUMNS = [
+const LANGUAGE_COLUMNS = localize([
   { key: "language", label: "언어", render: unclassifiedLabel, toText: unclassifiedLabel },
   { key: "edits", label: "편집 수", render: fmt },
   { key: "accept_rate", label: "권한 허용률", render: pct, toText: pct },
-];
+]);
 
 function TracesBetaPanel({ resp, title, subtitle, help, columns, exportName }) {
+  const _locale = useLocale();
   if (resp.loading) return <Loading />;
   if (resp.error) return <ErrorBox error={resp.error} />;
   if (resp.data?.unsupported) {
     return (
       <DataTable
         title={title}
-        subtitle="이 기간에는 수집되지 않은 지표입니다"
-        help="확장 텔레메트리 옵션이 켜진 최신 Claude Code에서만 수집되는 지표입니다. 값이 0이라는 뜻이 아니라 아직 수집된 데이터가 없다는 뜻입니다."
+        subtitle={translate("mc4b581e2627b")}
+        help={translate("m1c02908f91d3")}
         columns={columns}
         rows={[]}
         exportName={exportName}
@@ -113,6 +116,7 @@ function TracesBetaPanel({ resp, title, subtitle, help, columns, exportName }) {
 }
 
 export default function Productivity() {
+  const _locale = useLocale();
   const shownGroups = useGroupsShown();
   const { intervalHours, from, to } = useRange();
   const fmtTick = makeTickFmt(intervalHours);
@@ -200,8 +204,8 @@ export default function Productivity() {
   return (
     <div>
       <PageHeader
-        title="Productivity"
-        subtitle="채널별 관측 활동·실행 흐름 · 생산성이나 코드 품질의 검증된 측정값은 아닙니다"
+        title={translate("mf42bca637cb3")}
+        subtitle={translate("ma2e1b970d446")}
         right={<RangePicker />}
       />
       <div className="p-8 flex flex-col gap-4">
@@ -212,13 +216,13 @@ export default function Productivity() {
           <ErrorBox error={kpi.error || decisions.error} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatTile label="관측 PR 생성" value={kpi.data?.length ? fmt(outcomeTotals.prs) : "—"} variant="accent" />
-            <StatTile label="추가 코드 라인" value={kpi.data?.length ? fmt(outcomeTotals.loc) : "—"} />
-            <StatTile label="권한 허용률" value={pct(acceptRate)} help={APPROVAL_HELP} />
+            <StatTile label={translate("m3bb7eea13626")} value={kpi.data?.length ? fmt(outcomeTotals.prs) : "—"} variant="accent" />
+            <StatTile label={translate("m81ea6a128280")} value={kpi.data?.length ? fmt(outcomeTotals.loc) : "—"} />
+            <StatTile label={translate("m928c37dd7e50")} value={pct(acceptRate)} help={translateSource(APPROVAL_HELP)} />
             <StatTile
-              label="관측 권한 결정"
+              label={translate("md2ba40cf73cd")}
               value={decisions.data?.length ? fmt(decisionTotals.total) : "—"}
-              hint="코드 라인별 수락 여부는 수집하지 않습니다"
+              hint={translate("m797b8cafc713")}
             />
           </div>
         )}
@@ -229,9 +233,9 @@ export default function Productivity() {
           <ErrorBox error={leaderboard.error} />
         ) : (
           <HBarList
-            title="활동 지수 상위 10위"
-            subtitle="계산 가능한 사용자만 표시 · 임의 가중치 기반 참고 지수"
-            help={ACTIVITY_SCORE_HELP}
+            title={translate("m462a4adfd34b")}
+            subtitle={translate("md61c8caba118")}
+            help={translateSource(ACTIVITY_SCORE_HELP)}
             data={top10ByScore.map((r) => ({ ...r, score: Number(r.productivity_score) }))}
             labelKey="label"
             valueKey="score"
@@ -244,15 +248,15 @@ export default function Productivity() {
           <ErrorBox error={byUserCost.error} />
         ) : (
           <DataTable
-            title="사용자별 관측 활동"
-            subtitle="사용자 단위로 합산 · 비용은 Claude Code 보고값 · 막대 색은 채널"
-            help={`${ACTIVITY_SCORE_HELP} 여러 채널의 원시 활동을 합친 뒤 지수를 다시 계산합니다. 비용 막대의 색은 채널, 길이는 가장 큰 사용자 대비 비율입니다.`}
+            title={translate("m020e65a63b6f")}
+            subtitle={translate("m296f47d7d9c5")}
+            help={translate("ma7869b1ca074", [translateSource(ACTIVITY_SCORE_HELP)])}
             columns={withTeamColumn([
-              { key: "user", label: "사용자", render: maskEmail },
-              { key: "productivity_score", label: "활동 지수", render: formatActivityScore, bar: true },
+              { key: "user", label: translate("m1ac6e422b7dc"), render: maskEmail },
+              { key: "productivity_score", label: translate("m52542cfd75c0"), render: formatActivityScore, bar: true },
               {
                 key: "cost",
-                label: "보고 비용",
+                label: translate("m65cd7735272e"),
                 render: (v, r) => (
                   <span className="inline-flex items-center gap-2">
                     <span className="min-w-[4rem]">{usd(v)}</span>
@@ -267,12 +271,12 @@ export default function Productivity() {
                   return split ? `${usd(v)} — ${split}` : usd(v);
                 },
               },
-              { key: "loc", label: "추가 코드 라인", render: fmt, bar: true },
-              { key: "commits", label: "커밋", render: fmt },
+              { key: "loc", label: translate("m81ea6a128280"), render: fmt, bar: true },
+              { key: "commits", label: translate("ma5d6612cd595"), render: fmt },
               { key: "prs", label: "PR", render: fmt },
-              { key: "accept_rate", label: "권한 허용률", render: (value, row) => pct(row.decisions > 0 ? value : null), toText: (value, row) => pct(row.decisions > 0 ? value : null) },
-              { key: "sessions", label: "세션", render: fmt },
-              { key: "active_days", label: "활성일", render: fmt },
+              { key: "accept_rate", label: translate("m928c37dd7e50"), render: (value, row) => pct(row.decisions > 0 ? value : null), toText: (value, row) => pct(row.decisions > 0 ? value : null) },
+              { key: "sessions", label: translate("me600d4f5926e"), render: fmt },
+              { key: "active_days", label: translate("m30b91d8a5785"), render: fmt },
             ], teams)}
             rows={withTeams(userProductivityRows, teams)}
             exportName="productivity_by_user"
@@ -287,27 +291,27 @@ export default function Productivity() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             <DualLineChart
-              title="사용자와 세션 추이"
-              subtitle="사용자 수와 세션 수"
+              title={translate("mb66893cb027c")}
+              subtitle={translate("md675b25c1f3b")}
               rows={engagement.data}
               xKey="t"
               zoomDisabled={engagement.stale}
               tickFormatter={fmtTick}
               lines={[
-                { key: "users", label: "사용자", axis: "left" },
-                { key: "sessions", label: "세션", axis: "right" },
+                { key: "users", label: translate("m1ac6e422b7dc"), axis: "left" },
+                { key: "sessions", label: translate("me600d4f5926e"), axis: "right" },
               ]}
             />
             <DualLineChart
-              title="사용자당 PR"
-              subtitle="사용자 수와 사용자당 PR 수"
+              title={translate("m01f10c9cd708")}
+              subtitle={translate("m8e4c88bdd256")}
               rows={engagement.data}
               xKey="t"
               zoomDisabled={engagement.stale}
               tickFormatter={fmtTick}
               lines={[
-                { key: "users", label: "사용자", axis: "left" },
-                { key: "prs_per_user", label: "사용자당 PR", axis: "right" },
+                { key: "users", label: translate("m1ac6e422b7dc"), axis: "left" },
+                { key: "prs_per_user", label: translate("m01f10c9cd708"), axis: "right" },
               ]}
             />
           </div>
@@ -316,23 +320,23 @@ export default function Productivity() {
         <div className="grid gap-4 md:grid-cols-2">
           {norm.loading ? <Loading /> : norm.error ? <ErrorBox error={norm.error} /> : (
             <GroupBarChart
-              title="백만 토큰당 추가 코드 라인"
-              help="채널 간 비교에는 비용 대신 토큰 사용량 기준으로 정규화한 지표를 사용합니다."
+              title={translate("m81c8c032e651")}
+              help={translate("m2b22a1c9864b")}
               rows={norm.data}
               valueKey="loc_per_million_tokens"
             />
           )}
           {norm.loading ? <Loading /> : norm.error ? <ErrorBox error={norm.error} /> : (
-            <GroupBarChart title="백만 토큰당 커밋" rows={norm.data} valueKey="commits_per_million_tokens" />
+            <GroupBarChart title={translate("m3590c9eb34e0")} rows={norm.data} valueKey="commits_per_million_tokens" />
           )}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           {locTrend.loading ? <Loading /> : locTrend.error ? <ErrorBox error={locTrend.error} /> : (
-            <GroupAreaChart title="추가된 코드 라인 추이" rows={locTrend.data} xKey="t" zoomDisabled={locTrend.stale} valueKey="loc_added" tickFormatter={fmtTick} />
+            <GroupAreaChart title={translate("md377bcd4903c")} rows={locTrend.data} xKey="t" zoomDisabled={locTrend.stale} valueKey="loc_added" tickFormatter={fmtTick} />
           )}
           {locTrend.loading ? <Loading /> : locTrend.error ? <ErrorBox error={locTrend.error} /> : (
-            <GroupAreaChart title="제거된 코드 라인 추이" rows={locTrend.data} xKey="t" zoomDisabled={locTrend.stale} valueKey="loc_removed" tickFormatter={fmtTick} />
+            <GroupAreaChart title={translate("m676dbf1a6b06")} rows={locTrend.data} xKey="t" zoomDisabled={locTrend.stale} valueKey="loc_removed" tickFormatter={fmtTick} />
           )}
         </div>
 
@@ -342,12 +346,12 @@ export default function Productivity() {
           <ErrorBox error={decisions.error} />
         ) : (
           <GroupBarChart
-            title="코드 편집 권한 허용/거부"
-            subtitle="채널별"
+            title={translate("m4b1fe5163d89")}
+            subtitle={translate("mc879db8055fc")}
             right={
               <div className="flex gap-2">
-                <Badge tone="positive" dot>허용</Badge>
-                <Badge tone="negative" dot>거부</Badge>
+                <Badge tone="positive" dot>{translate("m688200c48345")}</Badge>
+                <Badge tone="negative" dot>{translate("me3ecc00b93af")}</Badge>
               </div>
             }
             rows={decisions.data}
@@ -364,12 +368,12 @@ export default function Productivity() {
             <ErrorBox error={decisionsByTool.error} />
           ) : (
             <GroupBarChart
-              title="도구별 권한 허용/거부"
-              subtitle="채널 합산"
+              title={translate("m328cf4c90a1e")}
+              subtitle={translate("m8baf32d9c599")}
               right={
                 <div className="flex gap-2">
-                  <Badge tone="positive" dot>허용</Badge>
-                  <Badge tone="negative" dot>거부</Badge>
+                  <Badge tone="positive" dot>{translate("m688200c48345")}</Badge>
+                  <Badge tone="negative" dot>{translate("me3ecc00b93af")}</Badge>
                 </div>
               }
               rows={decisionsByToolAgg}
@@ -384,8 +388,8 @@ export default function Productivity() {
             <ErrorBox error={decisionsByTool.error} />
           ) : (
             <SeriesBarChart
-              title="도구별 결정 분포"
-              subtitle="권한 허용·거부 누적 비교, 채널 합산"
+              title={translate("mcf866ed32f53")}
+              subtitle={translate("m77137c9d3747")}
               rows={(decisionsByTool.data || []).map((r) => ({ ...r, decision: decisionLabel(r.decision) }))}
               xKey="tool"
               seriesKey="decision"
@@ -395,7 +399,7 @@ export default function Productivity() {
         </div>
 
         {active.loading ? <Loading /> : active.error ? <ErrorBox error={active.error} /> : (
-          <GroupAreaChart title="활성 사용 시간" subtitle="채널별 추이 (단위: 시간)" rows={activeHours} xKey="t" zoomDisabled={active.stale} valueKey="active_seconds" tickFormatter={fmtTick} />
+          <GroupAreaChart title={translate("mba1ab477a77e")} subtitle={translate("m12514e323812")} rows={activeHours} xKey="t" zoomDisabled={active.stale} valueKey="active_seconds" tickFormatter={fmtTick} />
         )}
 
         {activeSummary.loading || kpi.loading ? (
@@ -404,18 +408,18 @@ export default function Productivity() {
           <ErrorBox error={activeSummary.error || kpi.error} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatTile label="개발자 활성 시간" value={userHours == null ? "—" : `${userHours.toFixed(1)}시간`} hint="해당 카운터가 관측된 채널 기준 · 미관측은 —" />
-            <StatTile label="Claude Code 작업 시간" value={cliHours == null ? "—" : `${cliHours.toFixed(1)}시간`} hint="해당 카운터가 관측된 채널 기준 · 미관측은 —" />
+            <StatTile label={translate("mefe93359093f")} value={userHours == null ? "—" : translate("m9a58de84ee31", [userHours.toFixed(1)])} hint={translate("m45d1a20d0942")} />
+            <StatTile label={translate("me85bac4ab2d8")} value={cliHours == null ? "—" : translate("m9a58de84ee31", [cliHours.toFixed(1)])} hint={translate("m45d1a20d0942")} />
             <StatTile
-              label="CLI / 사용자 활성 시간"
+              label={translate("m3c3f535a641f")}
               value={activeTotals.user > 0 && activeTotals.cli != null ? `×${(activeTotals.cli / activeTotals.user).toFixed(1)}` : "—"}
               variant="accent"
-              hint="실행 시간 비율 · 자율 작업 성공이나 절감 시간이 아닙니다"
+              hint={translate("mde13128436ba")}
             />
             <StatTile
-              label="시간당 추가 코드 라인"
+              label={translate("mfec47c59d7f8")}
               value={userHours > 0 && outcomeTotals.loc != null ? fmt(Math.round(outcomeTotals.loc / userHours)) : "—"}
-              hint="추가된 코드 라인을 개발자 활성 시간으로 나눈 값"
+              hint={translate("m9208a513db22")}
             />
           </div>
         )}
@@ -429,9 +433,9 @@ export default function Productivity() {
             {shownGroups(languages.data).map((g) => (
               <DataTable
                 key={g}
-                title={`언어별 코드 편집 — ${g}`}
-                subtitle="편집 수 상위 10개 언어"
-                help={APPROVAL_HELP}
+                title={translate("m140169e808f6", [g])}
+                subtitle={translate("mc3c56764551b")}
+                help={translateSource(APPROVAL_HELP)}
                 columns={LANGUAGE_COLUMNS}
                 rows={langRowsFor(g)}
                 exportName={`productivity_languages_${g}`}
@@ -447,8 +451,8 @@ export default function Productivity() {
           <ErrorBox error={agentic.error} />
         ) : (
           <GroupAreaChart
-            title="프롬프트당 도구 호출 수"
-            subtitle="높을수록 한 번의 요청에 더 많은 작업을 위임"
+            title={translate("m4a68fba9a6b6")}
+            subtitle={translate("m758b5e927ba1")}
             rows={agentic.data}
             xKey="t"
             zoomDisabled={agentic.stale}
@@ -459,25 +463,25 @@ export default function Productivity() {
 
         <TracesBetaPanel
           resp={permissionWait}
-          title="권한 승인 대기 시간"
-          subtitle="사용자 승인을 기다린 시간, Claude Code 버전별"
-          help="값이 클수록 권한 확인 때문에 작업이 오래 멈춘다는 뜻입니다."
+          title={translate("ma0f69869f2ce")}
+          subtitle={translate("m1029ec1abe88")}
+          help={translate("m4712d04b5328")}
           columns={PERMISSION_WAIT_COLUMNS}
           exportName="productivity_permission_wait"
         />
         <TracesBetaPanel
           resp={ttft}
-          title="첫 응답 시간 (TTFT)"
-          subtitle="모델별 첫 토큰 도착까지 걸린 시간"
-          help="채널 간 체감 응답 속도를 비교할 때 보는 지표입니다."
+          title={translate("m3cadec8f0efb")}
+          subtitle={translate("m41f1f59e9594")}
+          help={translate("m30ebf95b8d3a")}
           columns={TTFT_COLUMNS}
           exportName="productivity_ttft"
         />
         <TracesBetaPanel
           resp={interactionBreakdown}
-          title="인터랙션 시간 구성"
-          subtitle="모델 응답, 도구 실행, 권한 대기가 차지한 비중"
-          help="각 비중은 인터랙션 전체 시간에 대한 배수입니다. 여러 작업이 동시에 진행될 수 있고 도구 실행 시간에는 권한 대기가 포함되어, 합계가 100%를 넘을 수 있습니다."
+          title={translate("m6c492e213b8b")}
+          subtitle={translate("mf054bfaac328")}
+          help={translate("md629dc8a547f")}
           columns={INTERACTION_BREAKDOWN_COLUMNS}
           exportName="productivity_interaction_breakdown"
         />
