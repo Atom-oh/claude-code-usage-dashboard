@@ -11,6 +11,14 @@ It hides usage filters/chat and shows configuration, per-client receipt and sche
 Non-admin views make no diagnostic request. Refresh failure retains results only with a
 visible previous-result warning; receipt/empty/unavailable never become usage zeros.
 
+`/collector/connect/:handle` is the browser half of collector enrollment, also outside client
+navigation and without filters/chat. It shows the terminal's request (code, device, OS and
+the resulting attribution ID) with a read-only GET and decides it only on an explicit
+**Connect this device** or **Deny** click; approved, denied, expired, unavailable and unknown
+requests render terminal outcomes. Users without `collector:manage` make no request.
+`/collector` leads with the token-free command when `/api/collector` reports
+`browserEnrollment`, keeping token issuance as an advanced manual section.
+
 `/changelog` shows the release notes bundled in `releaseNotes.js` without usage filters
 and requests no page data. Its link sits outside `<nav>` under the navigation and marks a release this
 browser has not opened (`localStorage`, best effort). A user guide link beside it opens the

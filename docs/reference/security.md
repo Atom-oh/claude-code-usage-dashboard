@@ -35,6 +35,34 @@ package downloads are limited to ten per device per hour.
 is enabled and the public ingestion endpoint, and contains no credential. The archive it
 downloads embeds no credential either. See [device collectors](../runbooks/device-collectors.md).
 
+Browser enrollment adds three anonymous routes. `GET /api/ingest/enroll.py` serves the
+helper whose SHA-256 the install script pins. `POST /api/ingest/enroll/start` accepts only
+a device-secret digest, name and platform (1 KiB) and returns a lookup link, confirmation
+code and a polling credential once; it is limited to 200 per client address (`req.ip`
+behind the trusted proxy hop, so a workshop behind one NAT address can enroll) and 1,200 in
+total per 10 minutes, and is refused for a platform with no built package.
+`POST /api/ingest/enroll/poll` needs that polling credential: malformed credentials are
+rejected before any limiter, then polls are limited to 2,400 per client address per minute
+and 30 per verified enrollment per minute. All enrollment limits are per replica, so
+effective totals scale with replica count. Enrollment uses its own 16 in-flight slots
+and never consumes ingest admission. Neither route accepts cookies or grants ingestion:
+only an editor's explicit same-origin `POST /api/collector/enrollments/:handle/approve`
+creates the device, under the approver's owner key, from the stored digest. Requests expire
+after ten minutes and are decided once with conditional writes. The store holds digests of
+the device secret and polling credential, never either value; the raw device token exists
+only on the device. Remote phishing remains possible (RFC 8628 section 5.4): the page
+warns users to approve only installations they started. Per-replica limits bound memory and
+store work. Many distributed sources can still exhaust the total and delay new enrollments
+(not ingestion); when that matters, add an AWS WAF rate-based rule on the CloudFront
+distribution for `/api/ingest/enroll/*`. The poll response returns the
+approver's verified email (the default attribution ID) and owner key to the terminal only
+after explicit approval; the approval page shows the request time to help spot requests the
+user did not start.
+
+OIDC sessions keep the IdP-verified `email` claim (when `email_verified` is true) in the
+encrypted principal cookie solely as the default collector attribution ID. It is not
+returned by `/api/session`, audited or used for authorization.
+
 `POST /api/chat` additionally requires configured auth or `CHAT_ALLOW_INSECURE=1`, and a
 successful readonly-session probe. The two insecure flags are independent. `trust proxy=1`
 matches the intended CloudFront-to-NLB path and supplies `req.ip` to chat's per-process

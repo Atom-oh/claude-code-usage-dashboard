@@ -82,3 +82,31 @@ test("renewal staging and promotion are conditional updates on verified hashes",
     ConditionExpression: "attribute_exists(#owner) AND attribute_exists(#id) AND attribute_not_exists(reuseDetectedAt)",
     UpdateExpression: "SET reuseDetectedAt = :at", ExpressionAttributeValues: { ":at": 16 } });
 });
+
+test("enrollment requests live in their own partition and decisions are single, pending and before the deadline", async () => {
+  const commands = [];
+  let conflict = false;
+  const store = createDynamoDeviceStore({ tableName: "devices", client: {
+    async send(command) {
+      commands.push(command);
+      if (conflict) throw Object.assign(new Error("conflict"), { name: "ConditionalCheckFailedException" });
+      return command.constructor.name === "GetCommand" ? { Item: { owner: "enrollment", id: "h" } } : {};
+    },
+  } });
+  await store.putEnrollment({ owner: "spoofed", id: "h", status: "pending" });
+  assert.equal(commands[0].input.Item.owner, "enrollment");
+  assert.equal(commands[0].input.ConditionExpression, "attribute_not_exists(#owner) AND attribute_not_exists(#id)");
+  assert.deepEqual(await store.getEnrollment("h"), { owner: "enrollment", id: "h" });
+  assert.deepEqual(commands[1].input, { TableName: "devices", Key: { owner: "enrollment", id: "h" }, ConsistentRead: true });
+  assert.equal(await store.decideEnrollment("h", { status: "approved", deviceId: "d" }, 500), true);
+  const decision = commands[2].input;
+  assert.equal(decision.ConditionExpression,
+    "attribute_exists(#owner) AND attribute_exists(#id) AND #status = :pending AND deadline > :at");
+  assert.equal(decision.UpdateExpression, "SET #d0 = :d0, #d1 = :d1");
+  assert.deepEqual(decision.ExpressionAttributeNames, { "#owner": "owner", "#id": "id", "#status": "status",
+    "#d0": "status", "#d1": "deviceId" });
+  assert.deepEqual(decision.ExpressionAttributeValues, { ":pending": "pending", ":at": 500, ":d0": "approved", ":d1": "d" });
+  conflict = true;
+  assert.equal(await store.decideEnrollment("h", { status: "denied" }, 600), false);
+  await assert.rejects(store.putEnrollment({ id: "h" }), { code: "store_unavailable" });
+});

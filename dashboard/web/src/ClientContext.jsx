@@ -2,7 +2,7 @@ import { localize, translate, useLocale } from "./i18n/index.js";
 import { createContext, useContext, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConfig } from "./ConfigContext.jsx";
-import { CHANGELOG_PATH, clientPage, isDashboardPath, isTaskPath } from "./clientNavigation.js";
+import { CHANGELOG_PATH, COLLECTOR_CONNECT_PATH, clientPage, isDashboardPath, isTaskPath } from "./clientNavigation.js";
 
 export const CLIENT_LABELS = localize({ all: "전체", claude: "Claude Code", codex: "Codex" });
 const ClientContext = createContext({ client: "claude", common: true, detail: false, enabledClients: ["claude"] });
@@ -24,10 +24,11 @@ export function ClientProvider({ children }) {
 
   useEffect(() => {
     document.title = pathname === "/installation" ? translate("m0a57f170efad")
+      : COLLECTOR_CONNECT_PATH.test(pathname) ? "기기 연결 승인 · AI 사용량 대시보드"
       : pathname === CHANGELOG_PATH ? translate("m23a4a6961acc")
       : isTaskPath(pathname) ? translate("m8ce0347bbd0c")
       : `${clientPage(pathname).label} · ${client === "all" ? "Claude + Codex" : CLIENT_LABELS[client]}${detail ? translate("m9b0f12def109") : ""}`;
-  }, [client, detail, pathname]);
+  }, [client, detail, pathname, _locale]);
 
   // Gate rendering immediately; normalization must never briefly mount a disabled route.
   useEffect(() => {

@@ -13,10 +13,10 @@ const python = spawnSync("sh", ["-c", "command -v python3"], { encoding: "utf8" 
 // Runs `cat install.sh | sh` on a pseudo-terminal and answers the prompts like a person would.
 const DRIVER = String.raw`
 import json, os, pty, sys
-script, answers = sys.argv[1], json.loads(sys.argv[2])
+script, answers, extra = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3])
 pid, fd = pty.fork()
 if pid == 0:
-    os.execvp("sh", ["sh", "-c", 'cat "$1" | sh', "sh", script])
+    os.execvp("sh", ["sh", "-c", 'script=$1; shift; cat "$script" | sh -s -- "$@"', "sh", script, *extra])
 output, sent = b"", 0
 prompts = ["사용자 ID".encode(), "기기 토큰".encode()]
 while True:
@@ -44,7 +44,15 @@ while [ $# -gt 0 ]; do [ "$1" != -o ] || out=$2; shift; done
 cp "$CCDASH_TEST_PACKAGE" "$out"
 `,
   python3: `#!/bin/sh
+if [ "$1" = -I ] && [ "$2" = -c ]; then
+  case "$3" in
+    *version_info*) exit "\${CCDASH_TEST_PYTHON_OLD:-0}" ;;
+    *hashlib*) printf '%s\\n' "$CCDASH_TEST_HELPER_SHA"; exit 0 ;;
+  esac
+fi
 printf '%s\\n' "$@" >"$CCDASH_TEST_OUT/python-args"
+[ -t 0 ] && echo tty >"$CCDASH_TEST_OUT/python-stdin"
+case "$2" in */enroll.py) exit 0 ;; esac
 [ -t 0 ] && echo tty >"$CCDASH_TEST_OUT/python-stdin"
 while [ $# -gt 0 ]; do [ "$1" != --token-file ] || file=$2; shift; done
 printf '%s\\n' "$file" >"$CCDASH_TEST_OUT/token-path"
@@ -53,7 +61,10 @@ cp "$file" "$CCDASH_TEST_OUT/token-copy"
 `,
 };
 
-function run(t, { answers = ["alice@example.com", token], uname = "Linux", curlFail = false } = {}) {
+const helperSha = "d".repeat(64);
+
+function run(t, { answers = ["alice@example.com", token], uname = "Linux", curlFail = false, args = [],
+  digest = null, servedSha = helperSha, pythonOld = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "collector-install-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, "bin");
@@ -69,11 +80,12 @@ function run(t, { answers = ["alice@example.com", token], uname = "Linux", curlF
   const archive = join(root, "package.tar.gz");
   assert.equal(spawnSync("tar", ["-czf", archive, "-C", join(root, "package"), "ccdash-collector"]).status, 0);
   const script = join(root, "install.sh");
-  writeFileSync(script, collectorInstallScript(endpoint));
-  const result = spawnSync(python, ["-I", "-c", DRIVER, script, JSON.stringify(answers)], {
+  writeFileSync(script, collectorInstallScript(endpoint, digest));
+  const result = spawnSync(python, ["-I", "-c", DRIVER, script, JSON.stringify(answers), JSON.stringify(args)], {
     encoding: "utf8", timeout: 20000,
     env: { PATH: `${bin}:${process.env.PATH}`, TMPDIR: work, LANG: "C.UTF-8", CCDASH_TEST_OUT: out,
-      CCDASH_TEST_PACKAGE: archive, CCDASH_TEST_UNAME: uname, ...(curlFail ? { CCDASH_TEST_CURL_FAIL: "1" } : {}) },
+      CCDASH_TEST_PACKAGE: archive, CCDASH_TEST_UNAME: uname, CCDASH_TEST_HELPER_SHA: servedSha,
+      ...(curlFail ? { CCDASH_TEST_CURL_FAIL: "1" } : {}), ...(pythonOld ? { CCDASH_TEST_PYTHON_OLD: "1" } : {}) },
   });
   assert.equal(result.status, 0, result.stderr);
   const read = name => existsSync(join(out, name)) ? readFileSync(join(out, name), "utf8") : undefined;
@@ -140,4 +152,47 @@ test("unsupported systems and runs without a terminal fail with guidance", { ski
   if (result.error?.code === "ENOENT") return t.skip("setsid unavailable");
   assert.equal(result.status, 1);
   assert.match(result.stderr, /터미널에서 실행하세요/);
+});
+
+test("by default the launcher runs the digest-pinned browser enrollment helper on the terminal", { skip }, t => {
+  const { status, output, read, work } = run(t, { digest: helperSha, answers: [] });
+  assert.equal(status, 0, output);
+  const curlArgs = read("curl-args").trimEnd().split("\n");
+  // No -L: a redirect away from this dashboard fails instead of fetching another helper.
+  assert.deepEqual([...curlArgs.slice(0, 4), curlArgs.at(-1)], ["-fsS", "--proto", "=https", "-o", `${endpoint}/enroll.py`]);
+  assert.equal(curlArgs.includes("-L"), false);
+  assert.equal(read("curl-config"), "");
+  const pythonArgs = read("python-args").trimEnd().split("\n");
+  assert.match(pythonArgs[1], /\/ccdash-install\.[^/]+\/enroll\.py$/);
+  assert.deepEqual([pythonArgs[0], ...pythonArgs.slice(2)], ["-I", "--endpoint", endpoint, "--platform", "linux"]);
+  assert.equal(read("python-stdin"), "tty\n");
+  assert.equal(/사용자 ID|기기 토큰/.test(output), false, "browser enrollment asks for neither");
+  assert.equal(spawnSync("sh", ["-c", `ls -A "${work}"`], { encoding: "utf8" }).stdout, "");
+});
+
+test("a user ID override reaches the helper and --token keeps the manual flow", { skip }, t => {
+  const override = run(t, { digest: helperSha, answers: [], args: ["--user-id", "bob@example.com"] });
+  assert.equal(override.status, 0, override.output);
+  assert.deepEqual(override.read("python-args").trimEnd().split("\n").slice(2),
+    ["--endpoint", endpoint, "--platform", "linux", "--user-id", "bob@example.com"]);
+  const manual = run(t, { digest: helperSha, args: ["--token"] });
+  assert.equal(manual.status, 0, manual.output);
+  assert.equal(manual.read("curl-args").trimEnd().split("\n").at(-1), `${endpoint}/package/linux`);
+  assert.equal(manual.read("token-copy"), `${token}\n`);
+});
+
+test("a helper digest mismatch, old Python or unknown option stops before running anything", { skip }, t => {
+  const mismatch = run(t, { digest: helperSha, answers: [], servedSha: "e".repeat(64) });
+  assert.equal(mismatch.status, 1, mismatch.output);
+  assert.match(mismatch.output, /설치 도우미 버전이 맞지 않습니다/);
+  assert.equal(mismatch.read("python-args"), undefined);
+  assert.equal(spawnSync("sh", ["-c", `ls -A "${mismatch.work}"`], { encoding: "utf8" }).stdout, "");
+  const old = run(t, { digest: helperSha, answers: [], pythonOld: true });
+  assert.equal(old.status, 1);
+  assert.match(old.output, /Python 3\.9 이상/);
+  assert.equal(old.read("curl-args"), undefined);
+  const unknown = run(t, { digest: helperSha, answers: [], args: ["--sudo"] });
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.output, /알 수 없는 옵션/);
+  assert.throws(() => collectorInstallScript(endpoint, "not-a-digest"), /invalid helper digest/);
 });

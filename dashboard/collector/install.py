@@ -464,6 +464,15 @@ def confirm_legacy(args, legacy):
         raise ValueError("migration cancelled; the existing service is unchanged")
 
 
+def installed_user_id(root):
+    """Keep a reinstall's attribution unless --user-id explicitly replaces it."""
+    try:
+        value = json.loads((root / "state.json").read_text()).get("userId")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._+@-]+", value) else None
+
+
 def migration_user_id(args, home):
     if args.user_id:
         return args.user_id
@@ -614,7 +623,8 @@ def install(args, home, user, uid, root, unit):
         check_ports(legacy)
     if legacy:
         confirm_legacy(args, legacy)
-    user_id = migration_user_id(args, home) if legacy else args.user_id or user
+    user_id = migration_user_id(args, home) if legacy else (
+        args.user_id or installed_user_id(root) or getattr(args, "default_user_id", None) or user)
     replace_claude_telemetry = bool(legacy) or getattr(args, "replace_claude_telemetry", False)
     changes, notes = client_plan(home, user_id, replace_claude_telemetry)
     for note in notes:
@@ -859,7 +869,9 @@ def main():
     parser.add_argument("action", choices=("install", "status", "check", "uninstall", "renew"))
     parser.add_argument("--endpoint", help="dashboard HTTPS /api/ingest URL")
     parser.add_argument("--token-file", type=Path, help="private mode 0600 file; token values are never CLI arguments")
-    parser.add_argument("--user-id", help="nonsecret telemetry attribution ID (defaults to local login)")
+    parser.add_argument("--user-id", help="nonsecret telemetry attribution ID; replaces an existing installation's ID")
+    parser.add_argument("--default-user-id", help="attribution ID for a new installation (browser enrollment passes "
+                                                  "the approving account's verified email); defaults to local login")
     parser.add_argument("--migrate-legacy", action="store_true",
                         help="approve verified legacy personal macOS Collector migration, including Claude "
                              "telemetry replacement, without a prompt")

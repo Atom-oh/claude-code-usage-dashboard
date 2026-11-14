@@ -112,6 +112,7 @@ async function fixture(t, options = {}) {
   app.get("/api/data", authentication.requirePermission("telemetry:read"), (_req, res) => res.json({ rows: 1 }));
   app.post("/api/chat", authentication.requirePermission("chat:query"), (_req, res) => res.json({ queried: true }));
   app.post("/api/collector/access", authentication.requirePermission("collector:manage"), (_req, res) => res.json({ allowed: true }));
+  app.get("/api/principal-email", (req, res) => res.json({ email: req.principal?.email ?? null }));
   app.get("/asset.js", (_req, res) => res.type("js").send("private fixture asset"));
   app.get("/", (_req, res) => res.send("private dashboard"));
   const server = app.listen(0, "127.0.0.1");
@@ -268,6 +269,23 @@ test("collector management uses signed generic roles and keeps unsafe origin che
     for (const headers of [{ cookie: session }, { cookie: session, origin: "https://untrusted.example.invalid" }]) {
       assert.equal((await f.request("/api/collector/access", { method: "POST", headers })).status, 403);
     }
+  }
+});
+
+test("only an IdP-verified email is kept for the collector user ID and session metadata omits it", async t => {
+  for (const [claims, expected] of [
+    [{ email: "alice@example.com", email_verified: true }, "alice@example.com"],
+    [{ email: "alice@example.com", email_verified: "true" }, "alice@example.com"],
+    [{ email: "alice@example.com", email_verified: false }, null],
+    [{ email: "alice@example.com" }, null],
+    [{ email: "a".repeat(255), email_verified: true }, null],
+  ]) {
+    const f = await fixture(t, { claims });
+    const { session } = await f.complete();
+    assert.equal((await (await f.request("/api/principal-email", { headers: { cookie: session } })).json()).email, expected);
+    const profile = await (await f.request("/api/session", { headers: { cookie: session } })).json();
+    assert.equal("email" in profile, false);
+    assert.equal(JSON.stringify(f.events).includes("alice@example.com"), false);
   }
 });
 
