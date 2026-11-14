@@ -34,6 +34,11 @@ test("appendHistory records only changes and starts at epoch", () => {
   assert.equal(appendHistory(first, { team: "hana", emailKey: "k" }, 900), null);
   assert.deepEqual(appendHistory(first, { team: "cs", emailKey: "k" }, 900).at(-1), { team: "cs", from: 900, emailKey: "k" });
 });
+test("appendHistory starts the first entry at firstFrom", () => {
+  assert.deepEqual(appendHistory([], { team: "hana", emailKey: "k" }, 500, { firstFrom: 500 }), [{ team: "hana", from: 500, emailKey: "k" }]);
+  const first = [{ team: "hana", from: 0, emailKey: "k" }];
+  assert.deepEqual(appendHistory(first, { team: "cs", emailKey: "k" }, 900, { firstFrom: 500 }).at(-1), { team: "cs", from: 900, emailKey: "k" });
+});
 test("flattenIntervals clips history to each attribute window", () => {
   const out = flattenIntervals({
     attributes: [{ attribute: "custom:department", from: 0 }, { attribute: "email_domain", from: 1000 }],

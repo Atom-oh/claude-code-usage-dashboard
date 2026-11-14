@@ -187,6 +187,69 @@ test("a directory above the interval limit publishes empty with a reason", async
   assert.equal(directoryMeta().directory, false, "a disabled directory renders teams as before");
 });
 
+test("a user's first value after history began starts at that sync, not at epoch", async () => {
+  const store = fakeStore(settings());
+  let clock = 1000;
+  let users = [{ sub: "sa", email: "a@x", attributes: { [DEPT]: "hana" } }, { sub: "sb", email: "b@x", attributes: {} }];
+  const sync = createTeamSync({ store, directory: { listUsers: async () => users }, issuer: ISSUER, now: () => clock });
+  await sync.syncOnce();
+  assert.equal(sync.status().historyStart, 1000);
+  assert.deepEqual(store.state.puts.map((p) => p.entries), [[{ team: "hana", from: 0, emailKey: emailKey(ISSUER, "a@x") }]]);
+  clock = 5000;
+  users = [users[0], { sub: "sb", email: "b@x", attributes: { [DEPT]: "cs" } },
+    { sub: "sc", email: "c@x", attributes: { [DEPT]: "dev" } }];
+  await sync.syncOnce();
+  const { userKey } = await import("./teamDirectory.js");
+  assert.deepEqual(store.histories.get(`${DEPT}|${userKey(ISSUER, "sb")}`).entries,
+    [{ team: "cs", from: 5000, emailKey: emailKey(ISSUER, "b@x") }]);
+  assert.deepEqual(store.histories.get(`${DEPT}|${userKey(ISSUER, "sc")}`).entries,
+    [{ team: "dev", from: 5000, emailKey: emailKey(ISSUER, "c@x") }], "a new pool user also starts at the sync");
+});
+
+test("a stale read that loses the conditional write does not append after a newer observation", async () => {
+  const key = emailKey(ISSUER, "a@x");
+  const initial = [{ team: "gamma", from: 0, emailKey: key }];
+  // Replica B (read at t=200, sees beta) writes between replica A's read (t=100, sees alpha) and A's put.
+  const store = fakeStore({ ...settings(), historyStart: 50 }, {
+    failFirstPut: true,
+    afterFailedPut: (histories, attribute, id) => {
+      histories.set(`${attribute}|${id}`, { entries: [...initial, { team: "beta", from: 200, emailKey: key }], version: 3 });
+    },
+  });
+  const id = (await import("./teamDirectory.js")).userKey(ISSUER, "s");
+  store.histories.set(`${DEPT}|${id}`, { entries: initial, version: 2 });
+  const sync = createTeamSync({ store, directory: directory([user("alpha")]), issuer: ISSUER, now: () => 100 });
+  await sync.syncOnce();
+  assert.equal(store.state.puts.length, 1, "no write after the re-read shows a newer observation");
+  assert.deepEqual(store.histories.get(`${DEPT}|${id}`).entries,
+    [...initial, { team: "beta", from: 200, emailKey: key }]);
+});
+
+test("a read older than the latest stored entry appends nothing", async () => {
+  const key = emailKey(ISSUER, "a@x");
+  const stored = [{ team: "gamma", from: 0, emailKey: key }, { team: "beta", from: 200, emailKey: key }];
+  const store = fakeStore({ ...settings(), historyStart: 50 });
+  const id = (await import("./teamDirectory.js")).userKey(ISSUER, "s");
+  store.histories.set(`${DEPT}|${id}`, { entries: stored, version: 3 });
+  const sync = createTeamSync({ store, directory: directory([user("alpha")]), issuer: ISSUER, now: () => 100 });
+  await sync.syncOnce();
+  assert.equal(store.state.puts.length, 0);
+  assert.deepEqual(directoryParams("{dirKey:Array(String)}", {}).dirTeam, ["gamma", "beta"]);
+});
+
+test("a directory within the interval limit but above the encoded size limit publishes empty", async () => {
+  const count = 3000;
+  const many = Array.from({ length: count }, (_, i) => ({ sub: `s${i}`, email: `u${i}@x`, attributes: { [DEPT]: "t".repeat(256) } }));
+  const store = fakeStore(settings());
+  const sync = createTeamSync({ store, directory: directory(many), issuer: ISSUER, now: () => 10 });
+  await sync.syncOnce();
+  assert.equal(store.state.puts.length, count, "every interval is stored; only publishing is refused");
+  const status = sync.status();
+  assert.equal(status.reason, "directory_too_large");
+  assert.deepEqual(directoryParams("{dirKey:Array(String)}", {}).dirKey, []);
+  assert.equal(directoryMeta().directory, false);
+});
+
 test("calls during a run coalesce into one follow-up that reads the newer settings", async () => {
   // historyStart is already set, so the first run does not rewrite the settings record.
   const store = fakeStore({ ...settings(), historyStart: 500 });

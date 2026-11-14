@@ -7,7 +7,9 @@ import { RangeProvider } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
 import { useApi } from "./useApi.js";
 import { toCsv } from "./csv.js";
-import { DEVICE_TEAM_MARKER, TeamsProvider, teamName, teamSuffix, teamText, teamsValue, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
+import { ClientProvider } from "./ClientContext.jsx";
+import { FilterBar } from "./components/FilterBar.jsx";
+import { DEVICE_TEAM_MARKER, TeamsContext, TeamsProvider, teamDisplay, teamName, teamSuffix, teamText, teamsValue, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -179,6 +181,39 @@ test("the team column explains sources where a device marker appears", () => {
   expect(cell.textContent).toBe(`dev ${DEVICE_TEAM_MARKER}`);
   expect(cell.title).toBe("표시 없음: 조직 디렉터리(Cognito) 기준 · (기기 제공 값): 기기가 보낸 team 값");
   expect(column.toText(null, { user: "a@example.invalid" })).toBe("dev");
+});
+
+test("team values naming inherited properties render as raw strings", () => {
+  const raws = ["__proto__", "constructor", "toString"];
+  const users = { data: { users: [{ user: "a@example.invalid", teams: raws, sources: ["device", "device", "device"] }] } };
+  for (const list of [{ data: { teams: raws } }, { data: { teams: raws, labels: {}, sources: {}, directory: true } },
+    { data: JSON.parse('{"teams":["__proto__"],"labels":{"__proto__":{"x":1},"constructor":7},"directory":false}') }]) {
+    const teams = teamsValue(list, users);
+    for (const raw of raws) {
+      expect(teamName(teams, raw)).toBe(raw);
+      expect(teamDisplay(teams, raw)).toBe(raw);
+    }
+    expect(teamText(teams, "a@example.invalid", { csv: true })).toBe("__proto__, constructor, toString");
+  }
+  for (const raw of raws) expect(teamName({ labels: {} }, raw)).toBe(raw);
+  expect(teamText({ ...TEAMS, labels: {}, byUser: new Map([["a@example.invalid", raws]]) }, "a@example.invalid"))
+    .toBe("__proto__, constructor, toString");
+});
+
+test("the filter control renders a __proto__ team without throwing", () => {
+  render(
+    <MemoryRouter initialEntries={["/cost"]}>
+      <ClientProvider><FilterProvider>
+        <TeamsContext.Provider value={{ options: ["__proto__", "constructor"], byUser: new Map(), loading: false,
+          labels: {}, sources: {}, directory: true }}>
+          <FilterBar />
+        </TeamsContext.Provider>
+      </FilterProvider></ClientProvider>
+    </MemoryRouter>
+  );
+  const select = screen.getByRole("combobox", { name: "팀" });
+  expect([...select.options].map((o) => [o.value, o.textContent]))
+    .toEqual([["", "모든 팀"], ["__proto__", "__proto__"], ["constructor", "constructor"]]);
 });
 
 test("an older server without the new fields keeps raw values", () => {

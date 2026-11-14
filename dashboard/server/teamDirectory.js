@@ -45,10 +45,11 @@ export function attributableUsers(issuer, listed) {
   return { users, excluded: listed.length - users.length };
 }
 
-export function appendHistory(entries, { team, emailKey: key }, at) {
+/** `firstFrom` is the first entry's start: epoch on the first sync, the observation time once history began. */
+export function appendHistory(entries, { team, emailKey: key }, at, { firstFrom = 0 } = {}) {
   const latest = entries.at(-1);
   if (latest && latest.team === team && latest.emailKey === key) return null;
-  return [...entries, { team, from: latest ? at : 0, emailKey: key }];
+  return [...entries, { team, from: latest ? at : firstFrom, emailKey: key }];
 }
 
 export const INTERVAL_LIMIT = 4000;

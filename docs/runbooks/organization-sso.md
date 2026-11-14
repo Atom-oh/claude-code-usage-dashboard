@@ -115,14 +115,16 @@ OTel `team`. Prerequisites: `AUTH_MODE=oidc`, a Cognito `OIDC_ISSUER` and device
 otherwise `/settings` reports `basic_auth`, `not_cognito` or `ingest_disabled`.
 
 1. Apply Terraform before rolling out the image: it adds the `cognito-idp:ListUsers` and `DescribeUserPool`
-   grant on the pool. Without it the sync fails with `directory_unavailable`.
+   grant on the pool. Without it the sync fails with `directory_unavailable`. The grant assumes the pool is
+   in the deployment account and the `aws` partition.
 2. Open `/settings` as an admin and choose the attribute. Options are string `custom:*` attributes, `name`
    and the derived `email_domain`; `email` is excluded. Use the preview counts to pick one that groups
-   people into teams. Users without a usable ASCII email, and users sharing an email, are excluded and keep
-   device teams.
+   people into teams. Users without a usable ASCII email, and users sharing an email, are excluded: they get
+   no new history, so sessions not covered by history stored before they became excluded use device teams.
 3. Optionally label raw values (1-80 characters, unique). Filters, grouping and URLs keep raw values;
    display and CSV use labels.
-4. Save. The first save applies each user's current value to the whole past. A later attribute switch
+4. Save. The first sync applies each user's current value to the whole past; a user who first gets a value
+   (or joins the pool) later is attributed from the sync that saw it. A later attribute switch
    applies from its save time; a changed value applies from the sync that saw it (hourly, so times are
    accurate to about one hour). Past usage keeps the earlier team. Other replicas pick up a save within
    about a minute.

@@ -21,6 +21,10 @@ export const teamSourceHelp = () => translate("m38089c0f4351", [translateSource(
 // A roster still showing the previous period (useApi stale) or loading is unavailable for the current
 // one: a user missing from it is not known to have no team, and its labels must not reach a new
 // range's table or CSV.
+// Team values are client-provided, so lookups by them must never reach inherited properties ("__proto__").
+const ownStrings = (value) => value && typeof value === "object"
+  ? Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === "string")) : {};
+
 export function teamsValue(list, users) {
   const pending = users.loading || users.stale;
   return {
@@ -29,8 +33,8 @@ export function teamsValue(list, users) {
       ? new Map(users.data.users.map((row) => [row.user, row.teams])) : null,
     loading: pending,
     // Absent on an older server: no labels, no source information, no history boundary.
-    labels: list.data?.labels && typeof list.data.labels === "object" ? list.data.labels : {},
-    sources: list.data?.sources && typeof list.data.sources === "object" ? list.data.sources : {},
+    labels: ownStrings(list.data?.labels),
+    sources: ownStrings(list.data?.sources),
     // user -> sources[], parallel to byUser's teams[] for the same user.
     userSources: !pending && Array.isArray(users.data?.users)
       ? new Map(users.data.users.map((row) => [row.user, Array.isArray(row.sources) ? row.sources : []])) : new Map(),
@@ -41,7 +45,12 @@ export function teamsValue(list, users) {
 }
 
 // Label when one exists, else the raw value. Raw values stay the filter/URL identity.
-export const teamName = (teams, raw) => teams.labels?.[raw] || raw;
+// Only an own, non-empty string label counts; inherited properties never do.
+export function teamName(teams, raw) {
+  const labels = teams.labels;
+  const label = labels && typeof labels === "object" && Object.hasOwn(labels, raw) ? labels[raw] : null;
+  return typeof label === "string" && label ? label : raw;
+}
 
 // Only a device-only source is marked, and only while directory teams apply; "directory" and "both" render alike.
 export const isDeviceMarked = (teams, source) => teams.directory === true && source === "device";
