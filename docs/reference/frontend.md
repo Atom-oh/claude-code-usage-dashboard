@@ -37,8 +37,8 @@ the default. English, Simplified Chinese, Japanese and Spanish catalogs load on
 demand. Failed loads retain the current language, later choices supersede pending
 loads, and denied storage remains usable. The locale store updates subscribed
 components without remounting open user/task views or changing API parameters.
-This stage localizes shared controls and task dialogs; route page migration is
-separate and their authored page bodies currently remain Korean.
+All route pages now use the catalogs, including collector approval and setup;
+telemetry and user-authored content remain unchanged.
 See [ADR-022](../decisions/ADR-022-per-viewer-interface-language.md) and
 [locale ownership](../../dashboard/web/src/i18n/README.md).
 

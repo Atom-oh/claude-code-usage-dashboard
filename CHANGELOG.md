@@ -17,6 +17,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Complete localization across all application menus, token economics, user and
+  cost analysis, tool usage, collector setup and installation status. Preserve
+  selected decision-chart legend emphasis when changing language. Keep Codex
+  query profiles and selected tabs independent of translated labels, and retain
+  Executive spend/permission help across languages.
 - Attribute teams from a Cognito user pool attribute chosen by an admin on `/settings`,
   with labels, hourly sync, change history and device-provided markers; Terraform grants
   the dashboard read access to that pool. `/api/teams` adds `sources`, `labels`,

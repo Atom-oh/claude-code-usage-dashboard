@@ -388,3 +388,38 @@ test.each(animationCases)("%s renders its final geometry immediately (series ani
     }
   }
 });
+
+test("translated series labels preserve legend focus on the raw series key", async () => {
+  // The legend is one text row, not the 300 px plot height used by the shared stub.
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+    const height = this.classList.contains("recharts-legend-wrapper") ? 20 : 300;
+    return { width: 800, height, top: 0, left: 0, right: 800, bottom: height, x: 0, y: 0 };
+  });
+  const { act } = await import("@testing-library/react");
+  const { localeStore } = await import("../i18n/index.js");
+  const { decisionLabel } = await import("../labels.js");
+  const rows = [
+    { tool: "Bash", decision: "accept", n: 4 },
+    { tool: "Bash", decision: "reject", n: 2 },
+  ];
+  const { container } = render(<SeriesBarChart title="Decisions" rows={rows}
+    xKey="tool" seriesKey="decision" valueKey="n" seriesLabel={decisionLabel} />, { wrapper: Providers });
+  const paths = () => [...container.querySelectorAll(".recharts-bar-rectangle path")];
+  const fills = () => paths().map(path => path.getAttribute("fill"));
+  await waitFor(() => expect(paths()).toHaveLength(2));
+  const initial = fills();
+  fireEvent.click(screen.getByText("허용", { exact: true }));
+  await waitFor(() => expect(fills()[1]).not.toBe(initial[1]));
+  const focused = fills();
+  try {
+    await act(() => localeStore.select("en"));
+    expect(screen.getByText("Allowed", { exact: true })).toBeTruthy();
+    expect(screen.queryByText("허용", { exact: true })).toBeNull();
+    expect(fills()).toEqual(focused);
+    fireEvent.click(screen.getByText("Allowed", { exact: true }));
+    await waitFor(() => expect(fills()).toEqual(initial));
+  } finally {
+    cleanup();
+    await localeStore.select("ko");
+  }
+});

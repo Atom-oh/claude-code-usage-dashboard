@@ -223,7 +223,7 @@ export function GroupBarChart({ title, subtitle, help, right, rows, xKey = "grou
 // horizontal: 카테고리가 많거나(예: 유저 20명) 라벨이 길 때(이메일) 세로 막대는 라벨이 겹치거나
 // 다 안 보인다 — Recharts의 layout="vertical"(막대는 가로)로 뒤집고 카테고리 축을 Y로 옮긴다.
 // Horizontal bars have category Y and numeric X; they never select a time range.
-export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort, zoomDisabled = false }) {
+export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort, seriesLabel, zoomDisabled = false }) {
   const _locale = useLocale();
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours, undefined, zoomDisabled || horizontal);
@@ -257,7 +257,7 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
           <ul className="mt-1 list-disc space-y-1 pl-5">
             {visible.map((row) => (
               <li key={JSON.stringify([row[xKey], row[seriesKey]])} className="break-words">
-                {tickFormatter ? tickFormatter(row[xKey]) : String(row[xKey] ?? translate("m050d981c6c43"))} — {String(row[seriesKey] ?? translate("m050d981c6c43"))}
+                {tickFormatter ? tickFormatter(row[xKey]) : String(row[xKey] ?? translate("m050d981c6c43"))} — {String((seriesLabel ? seriesLabel(row[seriesKey]) : row[seriesKey]) ?? translate("m050d981c6c43"))}
               </li>
             ))}
           </ul>
@@ -289,10 +289,11 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
               <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={56} tickFormatter={fmt} />
             </>
           )}
-          <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} formatter={(v) => fmt(v)} />
+          <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} formatter={(v, name) => seriesLabel ? [fmt(v), seriesLabel(name)] : fmt(v)} />
           {series.length > 1 && (
             <Legend
               {...legendProps(c)}
+              formatter={(value) => <span style={{ color: c.ink }}>{seriesLabel ? seriesLabel(value) : value}</span>}
               onClick={(e) => setFocus((f) => (f === e.value ? null : e.value))}
               wrapperStyle={{ fontSize: 12, cursor: "pointer" }}
             />

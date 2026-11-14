@@ -108,3 +108,34 @@ test("a request without a verified email names the installer default", async () 
   mount();
   expect(await screen.findByText("설치 기기의 로그인 이름")).toBeTruthy();
 });
+
+test("language changes retain the approval request and failure without network side effects", async () => {
+  const { act } = await import("@testing-library/react");
+  const { localeStore } = await import("../i18n/index.js");
+  const fetch = installFetch({ decision: () => response({ error: "store_unavailable" }, 503) });
+  mount();
+  const code = await screen.findByLabelText("확인 코드");
+  try {
+    for (const locale of ["en", "zh-CN", "ja", "es", "ko"]) {
+      await act(() => localeStore.select(locale));
+      expect(screen.getByText("BCDF-GHJK")).toBe(code);
+      expect(screen.getByText("EC2 dev")).toBeTruthy();
+      expect(screen.getByText("alice@example.com")).toBeTruthy();
+      expect(fetch).toHaveBeenCalledTimes(1);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "이 기기 연결" }));
+    const alert = await screen.findByRole("alert");
+    const korean = alert.textContent;
+    for (const locale of ["en", "zh-CN", "ja", "es"]) {
+      await act(() => localeStore.select(locale));
+      expect(screen.getByRole("alert")).toBe(alert);
+      expect(alert.textContent).not.toBe(korean);
+      expect(screen.getByText("BCDF-GHJK")).toBe(code);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(posts(fetch)).toHaveLength(1);
+    }
+  } finally {
+    cleanup();
+    await localeStore.select("ko");
+  }
+});
