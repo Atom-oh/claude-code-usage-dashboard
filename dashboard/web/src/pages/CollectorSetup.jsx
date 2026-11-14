@@ -1,3 +1,4 @@
+import { richMessage, localizedMessage, messageText, localizedFormat, translate, useLocale } from "../i18n/index.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, KeyRound, Laptop, RefreshCw, ShieldCheck, Terminal, Trash2 } from "lucide-react";
 import { apiGet, checkAuthentication } from "../api.js";
@@ -12,11 +13,12 @@ const PRIMARY = `${BUTTON} bg-brand-600 text-white hover:bg-brand-700`;
 const PLATFORMS = { linux: { label: "Linux", hint: "EC2 · systemd", icon: Terminal },
   darwin: { label: "macOS", hint: "Apple Silicon · Intel", icon: Laptop } };
 const quoteShell = value => `'${value.replaceAll("'", "'\"'\"'")}'`;
-const deviceTime = new Intl.DateTimeFormat("ko-KR", {
+const deviceTime = localizedFormat("DateTimeFormat", {
   year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
 });
 
 function DeviceTime({ value }) {
+  const _locale = useLocale();
   if (!value) return "—";
   const date = new Date(/(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value.replace(" ", "T")}Z`);
   if (!Number.isFinite(date.getTime())) return "—";
@@ -24,10 +26,12 @@ function DeviceTime({ value }) {
 }
 
 function Notice({ children }) {
+  const _locale = useLocale();
   return <p role="alert" className="rounded-md border border-negative-border bg-negative-surface px-3 py-2.5 text-sm leading-relaxed text-negative-text">{children}</p>;
 }
 
 function StepTitle({ number, children }) {
+  const _locale = useLocale();
   return <div className="flex items-center gap-2.5">
     <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-semibold text-brand-700">{number}</span>
     <h2>{children}</h2>
@@ -35,15 +39,17 @@ function StepTitle({ number, children }) {
 }
 
 export default function CollectorSetup() {
+  const _locale = useLocale();
   const { session } = useConfig();
   if (!session?.permissions?.includes("collector:manage")) return <div>
-    <PageHeader title="수집기 설치" />
-    <div className="p-4 sm:p-8"><Notice>기기 등록과 수집기 다운로드 권한이 없습니다. 조직 관리자에게 권한을 요청해 주세요.</Notice></div>
+    <PageHeader title={translate("m8398b2a440cd")} />
+    <div className="p-4 sm:p-8"><Notice>{translate("m0612b78edcb3")}</Notice></div>
   </div>;
   return <CollectorManager />;
 }
 
 function CollectorManager() {
+  const _locale = useLocale();
   const [attempt, setAttempt] = useState(0);
   const [setup, setSetup] = useState({ loading: true, data: null, error: false });
   const [platform, setPlatform] = useState("linux");
@@ -115,7 +121,7 @@ function CollectorManager() {
   const clearToken = () => {
     copyGeneration.current++;
     setIssued(null);
-    setTokenMessage("화면에서 토큰을 지웠습니다. 다시 표시할 수 없습니다.");
+    setTokenMessage(localizedMessage("m7ee914a8f309"));
   };
   const copy = async (value, kind) => {
     const generation = ++copyGeneration.current;
@@ -123,10 +129,10 @@ function CollectorManager() {
     try {
       await navigator.clipboard.writeText(value);
       if (copyGeneration.current !== generation) return;
-      feedback(kind === "token" ? "토큰을 복사했습니다." : "설치 명령을 복사했습니다.");
+      feedback(kind === "token" ? localizedMessage("mc159433c5f9c") : localizedMessage("mc1a369351b59"));
     } catch {
       if (copyGeneration.current !== generation) return;
-      feedback("복사하지 못했습니다. 내용을 직접 선택해 복사해 주세요.");
+      feedback(localizedMessage("m781e74d9ccef"));
     }
   };
   const issue = async event => {
@@ -134,7 +140,7 @@ function CollectorManager() {
     if (issuePending.current || listPending.current || revokePending.current || issued) return;
     const trimmed = name.trim();
     if (!trimmed || trimmed.length > 64 || /[\u0000-\u001f\u007f-\u009f]/.test(trimmed)) {
-      setIssueError("기기 이름을 제어 문자 없이 1~64자로 입력해 주세요.");
+      setIssueError(localizedMessage("m083b26f6625a"));
       return;
     }
     issuePending.current = true;
@@ -156,7 +162,7 @@ function CollectorManager() {
       setDevices(previous => ({ ...previous, items: [data.device, ...previous.items], loaded: true }));
       setName("");
     } catch {
-      if (!controller.signal.aborted) setIssueError("토큰을 발급하지 못했습니다. 연결과 권한을 확인해 주세요. 응답을 받지 못한 기기가 목록에 있다면 해지한 후 다시 등록하세요.");
+      if (!controller.signal.aborted) setIssueError(localizedMessage("m2513ea2d6b0f"));
     } finally {
       requests.current.delete(controller);
       issuePending.current = false;
@@ -182,9 +188,9 @@ function CollectorManager() {
         ? { ...item, revokedAt: new Date().toISOString() } : item) }));
       if (issued?.device.id === device.id) clearToken();
       setConfirmId(null);
-      setDeviceMessage(`${device.name} 기기를 해지했습니다. 수집 중단까지 최대 10초가 걸릴 수 있습니다.`);
+      setDeviceMessage(localizedMessage("m1d48334bb262", [device.name]));
     } catch {
-      if (!controller.signal.aborted) setRevokeError("기기를 해지하지 못했습니다. 연결과 권한을 확인한 후 다시 시도해 주세요.");
+      if (!controller.signal.aborted) setRevokeError(localizedMessage("m6cbdc506336f"));
     } finally {
       requests.current.delete(controller);
       revokePending.current = false;
@@ -200,32 +206,31 @@ function CollectorManager() {
   const busy = issuing || devices.loading || revoking !== null;
 
   return <div>
-    <PageHeader title="수집기 설치" subtitle="내 기기에 Claude Code와 Codex 수집을 연결하고, 기기별로 관리하세요." />
+    <PageHeader title={translate("m8398b2a440cd")} subtitle={translate("mfb85dfcdfba7")} />
     <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-8">
       {setup.loading && <Loading />}
       {setup.error && <div className="space-y-3">
-        <Notice>수집기 설정을 불러오지 못했습니다. 연결과 권한을 확인한 후 다시 시도해 주세요.</Notice>
-        <button type="button" className={SECONDARY} onClick={() => setAttempt(value => value + 1)}>다시 시도</button>
+        <Notice>{translate("mf4fbc13fea44")}</Notice>
+        <button type="button" className={SECONDARY} onClick={() => setAttempt(value => value + 1)}>{translate("m196856a662bd")}</button>
       </div>}
       {setup.data && !setup.data.enabled && <Card>
         <div className="flex items-start gap-3"><ShieldCheck size={22} className="shrink-0 text-ink-400" aria-hidden="true" />
-          <div><h2 className="font-semibold">기기 수집이 아직 활성화되지 않았습니다.</h2>
-            <p className="mt-2 text-sm text-ink-600">조직 관리자에게 수집기 연결 설정을 요청해 주세요.</p></div></div>
+          <div><h2 className="font-semibold">{translate("m0e0ce5bac1c8")}</h2>
+            <p className="mt-2 text-sm text-ink-600">{translate("m1142d013f90a")}</p></div></div>
       </Card>}
       {setup.data?.enabled && <>
         <div className="flex items-start gap-3 rounded-lg border border-brand-100 bg-brand-50 p-4 sm:p-5">
           <ShieldCheck size={23} className="mt-0.5 shrink-0 text-brand-600" aria-hidden="true" />
-          <div><p className="font-medium text-brand-900">한 번의 설치로 Claude Code와 Codex를 연결하세요.</p>
-            <p className="mt-1 text-sm leading-relaxed text-brand-800">기기 토큰은 수집 전용이며 대시보드 조회 권한이 없습니다.
-              유효기간은 {setup.data.tokenLifetimeDays}일로 브라우저 로그인 세션과 별개입니다.</p>
+          <div><p className="font-medium text-brand-900">{translate("m78ab8c55b036")}</p>
+            <p className="mt-1 text-sm leading-relaxed text-brand-800">{richMessage("m46e99af071cf", [setup.data.tokenLifetimeDays])}</p>
           </div>
         </div>
         <div className="grid items-start gap-6 lg:grid-cols-2">
-          <Card title={<StepTitle number="1">운영체제 선택</StepTitle>} subtitle="수집할 기기의 운영체제를 선택하세요.">
+          <Card title={<StepTitle number="1">{translate("mec051fdf6d04")}</StepTitle>} subtitle={translate("mcf5e6d79c468")}>
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(PLATFORMS).filter(([key]) => setup.data.platforms?.includes(key)).map(([key, item]) => {
                 const Icon = item.icon;
-                return <button type="button" key={key} aria-label={`${item.label} 선택`} aria-pressed={key === platform}
+                return <button type="button" key={key} aria-label={translate("m6aca100eeed4", [item.label])} aria-pressed={key === platform}
                   disabled={issuing || !!issued}
                   onClick={() => { setPlatform(key); setCommandMessage(""); }}
                   className={`flex min-w-0 flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${key === platform ? "border-brand-500 bg-brand-50 text-brand-800" : "border-ink-200 hover:border-brand-300"}`}>
@@ -235,118 +240,111 @@ function CollectorManager() {
                 </button>;
               })}
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-ink-500">amd64 / arm64 지원 · Python 3.9+ · curl 필요 · Collector {setup.data.collectorVersion}</p>
+            <p className="mt-3 text-xs leading-relaxed text-ink-500">{richMessage("m10b497709383", [setup.data.collectorVersion])}</p>
           </Card>
-          <Card title={<StepTitle number="2">기기 등록과 토큰 발급</StepTitle>} subtitle="어느 기기인지 알아볼 수 있는 이름을 입력하세요.">
+          <Card title={<StepTitle number="2">{translate("m86703e2a17a1")}</StepTitle>} subtitle={translate("m7554649d3881")}>
             <form onSubmit={issue}>
-              <label htmlFor="collector-device-name" className="block text-sm font-medium">기기 이름</label>
+              <label htmlFor="collector-device-name" className="block text-sm font-medium">{translate("m2834016a200a")}</label>
               <input id="collector-device-name" autoComplete="off" maxLength={64} required value={name}
-                disabled={issuing || !!issued} placeholder="예: 작업용 Mac, EC2 개발"
+                disabled={issuing || !!issued} placeholder={translate("m78d5db1b18eb")}
                 onChange={event => setName(event.target.value)}
                 className="mt-2 w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm placeholder:text-ink-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-ink-50" />
-              <p className="mt-2 text-xs text-ink-500">{activePlatform.label} 기기로 등록합니다. 이름은 최대 64자입니다.</p>
+              <p className="mt-2 text-xs text-ink-500">{richMessage("m571e8daa1327", [activePlatform.label])}</p>
               <button type="submit" className={`${PRIMARY} mt-4 w-full`} disabled={busy || !!issued || !name.trim()}>
-                <KeyRound size={16} aria-hidden="true" />{issuing ? "발급 중..." : "기기 등록 및 토큰 발급"}
+                <KeyRound size={16} aria-hidden="true" />{issuing ? translate("ma723c53b87a2") : translate("m0bc5b9c69a9c")}
               </button>
             </form>
-            {issueError && <div className="mt-3"><Notice>{issueError}</Notice></div>}
-            {issued && <section aria-label="발급된 기기 토큰" className="mt-4 rounded-lg border border-positive-border bg-positive-surface p-3">
-              <p className="flex items-center gap-2 text-sm font-semibold text-positive-text"><Check size={16} aria-hidden="true" />토큰은 지금 한 번만 표시됩니다.</p>
-              <p className="mt-2 text-xs leading-relaxed text-ink-600">{issued.device.name} · 만료 <DeviceTime value={issued.device.expiresAt} /></p>
-              <textarea readOnly aria-label="기기 수집 토큰" value={issued.token} rows={3} spellCheck={false}
+            {issueError && <div className="mt-3"><Notice>{messageText(issueError)}</Notice></div>}
+            {issued && <section aria-label={translate("meb8b292d38fc")} className="mt-4 rounded-lg border border-positive-border bg-positive-surface p-3">
+              <p className="flex items-center gap-2 text-sm font-semibold text-positive-text">{richMessage("m42282a15c5a4", [<Check size={16} aria-hidden="true" />])}</p>
+              <p className="mt-2 text-xs leading-relaxed text-ink-600">{richMessage("m863f1f19d005", [issued.device.name, <DeviceTime value={issued.device.expiresAt} />])}</p>
+              <textarea readOnly aria-label={translate("m1384460df5c7")} value={issued.token} rows={3} spellCheck={false}
                 className="mt-3 w-full resize-none rounded-md border border-positive-border bg-white p-2.5 font-mono text-xs leading-relaxed text-ink-800" />
               <div className="mt-2 flex flex-wrap gap-2">
-                <button type="button" className={SECONDARY} onClick={() => copy(issued.token, "token")}><Copy size={14} aria-hidden="true" />토큰 복사</button>
-                <button type="button" className={SECONDARY} onClick={clearToken}>화면에서 토큰 지우기</button>
+                <button type="button" className={SECONDARY} onClick={() => copy(issued.token, "token")}>{richMessage("m738bd42c00c9", [<Copy size={14} aria-hidden="true" />])}</button>
+                <button type="button" className={SECONDARY} onClick={clearToken}>{translate("mffac6cd46a72")}</button>
               </div>
-              <p className="mt-3 text-xs leading-relaxed text-ink-600">설치할 때 붙여 넣으세요. 화면을 떠나거나 지우면 다시 볼 수 없습니다. 잃어버리면 이 기기를 해지하고 새로 등록하세요.</p>
+              <p className="mt-3 text-xs leading-relaxed text-ink-600">{translate("mbf67948bb243")}</p>
             </section>}
-            {tokenMessage && <p role="status" className="mt-3 text-sm text-ink-600">{tokenMessage}</p>}
+            {tokenMessage && <p role="status" className="mt-3 text-sm text-ink-600">{messageText(tokenMessage)}</p>}
           </Card>
         </div>
-        <Card title={<StepTitle number="3">설치 전 확인</StepTitle>}>
+        <Card title={<StepTitle number="3">{translate("mf3b7242cce41")}</StepTitle>}>
           <CollectorPreparation platform={platform} />
         </Card>
-        <Card title={<StepTitle number="4">터미널에서 설치</StepTitle>} subtitle="수집할 기기의 터미널에서 실행하세요. 패키지를 따로 내려받을 필요가 없습니다.">
-          {platform === "linux" && <p className="mb-3 text-sm leading-relaxed text-ink-600">SSH 로그아웃·재부팅 후에도 수집을 유지하려면 첫 명령으로 사용자 서비스의 지속 실행을 설정하세요.
-            이 설정에만 sudo 권한이 필요하며, 수집기 설치 명령은 일반 사용자로 실행하세요.</p>}
+        <Card title={<StepTitle number="4">{translate("m7864c23f62a6")}</StepTitle>} subtitle={translate("mae0c2f5f3c26")}>
+          {platform === "linux" && <p className="mb-3 text-sm leading-relaxed text-ink-600">{translate("mabc396cb50eb")}</p>}
           <div className="overflow-hidden rounded-lg bg-ink-900 text-ink-50">
             <div className="flex items-center justify-between border-b border-ink-700 px-4 py-2.5">
-              <span className="flex items-center gap-2 text-xs text-ink-300"><Terminal size={14} aria-hidden="true" />{activePlatform.label} 터미널</span>
-              <button type="button" onClick={() => copy(command, "command")} className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-ink-100 hover:bg-ink-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400">
-                <Copy size={13} aria-hidden="true" />설치 명령 복사</button>
+              <span className="flex items-center gap-2 text-xs text-ink-300">{richMessage("me88a9611d2c4", [<Terminal size={14} aria-hidden="true" />, activePlatform.label])}</span>
+              <button type="button" onClick={() => copy(command, "command")} className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-ink-100 hover:bg-ink-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400">{richMessage("mf82b8171e154", [<Copy size={13} aria-hidden="true" />])}</button>
             </div>
-            <pre aria-label="설치 명령" className="overflow-x-auto p-4 font-mono text-xs leading-7 sm:text-sm"><code>{command}</code></pre>
+            <pre aria-label={translate("m3086d9bb06c6")} className="overflow-x-auto p-4 font-mono text-xs leading-7 sm:text-sm"><code>{command}</code></pre>
           </div>
-          {commandMessage && <p role="status" className="mt-3 text-sm text-ink-600">{commandMessage}</p>}
+          {commandMessage && <p role="status" className="mt-3 text-sm text-ink-600">{messageText(commandMessage)}</p>}
           <ol className="mt-4 space-y-2 text-sm leading-relaxed text-ink-600">
-            <li>사용자 ID에는 기존 수집에 사용하던 ID/이메일을 입력하세요. 처음 설치한다면 조직에서 사용할 식별값을 입력하세요. 영문·숫자와 . _ + @ -만 사용할 수 있습니다.</li>
-            {platform === "linux" && <li>사용자 서비스 연결 오류가 나면 다시 로그인한 뒤 수집기 설치 명령을 실행하세요.</li>}
-            <li>명령은 사용자 ID와 기기 토큰을 차례로 묻습니다. 토큰 안내가 나오면 복사한 토큰을 붙여 넣고 Enter를 누르세요. 입력 내용은 화면에 표시되지 않습니다.</li>
-            <li>설치 후 터미널을 새로 열고 Claude Code와 Codex에서 새 세션을 시작하세요.</li>
+            <li>{translate("m4a32040bfd23")}</li>
+            {platform === "linux" && <li>{translate("me464149bea91")}</li>}
+            <li>{translate("m309f6073e255")}</li>
+            <li>{translate("m579c2c702a6e")}</li>
           </ol>
-          <p className="mt-3 text-xs leading-relaxed text-ink-500">토큰을 명령에 직접 넣지 마세요. 실행 중인 기기는 만료 7일 전부터 토큰을 자동으로 갱신합니다.
-            만료·해지된 기기는 새 토큰으로 설치를 다시 실행하세요. 이전 패키지 설치는 README 안내대로 다시 설치해야 갱신이 켜집니다.</p>
+          <p className="mt-3 text-xs leading-relaxed text-ink-500">{translate("md1a9f9274589")}</p>
         </Card>
-        <Card title={<StepTitle number="5">수신 확인</StepTitle>}>
+        <Card title={<StepTitle number="5">{translate("m6bbeb44e673f")}</StepTitle>}>
           <CollectorVerification platform={platform} />
         </Card>
-        <Card title={<h2>내 기기</h2>} subtitle="내가 등록한 기기의 만료일과 최근 수신을 확인하세요."
+        <Card title={<h2>{translate("me3b0f13d702f")}</h2>} subtitle={translate("mb3225bc29528")}
           right={<button type="button" className={SECONDARY} disabled={busy} onClick={() => loadDevices()}>
-            <RefreshCw size={14} aria-hidden="true" /><span>목록 새로고침</span></button>}>
+            <RefreshCw size={14} aria-hidden="true" /><span>{translate("mb9254a0b59f1")}</span></button>}>
           {devices.loading && !devices.loaded && <Loading />}
-          {devices.error && <div className="mb-4 space-y-3"><Notice>기기 목록을 불러오지 못했습니다.
-            {devices.loaded && " 아래 내용은 이전 확인 결과입니다."}</Notice>
-            <button type="button" className={SECONDARY} disabled={busy} onClick={() => loadDevices(devices.requestedCursor)}>기기 목록 다시 시도</button></div>}
+          {devices.error && <div className="mb-4 space-y-3"><Notice>{translate("mc46564b51815")}{devices.loaded && translate("md6dd6128067f")}</Notice>
+            <button type="button" className={SECONDARY} disabled={busy} onClick={() => loadDevices(devices.requestedCursor)}>{translate("mb171f7ca3226")}</button></div>}
           {devices.loaded && !devices.items.length && <div className="rounded-md bg-ink-50 px-4 py-7 text-center">
             <Laptop size={26} className="mx-auto text-ink-400" aria-hidden="true" />
-            <p className="mt-3 text-sm font-medium">등록한 기기가 없습니다.</p>
-            <p className="mt-1 text-sm text-ink-500">위에서 기기를 등록하고 설치를 시작하세요.</p>
+            <p className="mt-3 text-sm font-medium">{translate("m262329fddc4f")}</p>
+            <p className="mt-1 text-sm text-ink-500">{translate("mb14c9b0c804f")}</p>
           </div>}
           <div className="divide-y divide-ink-100">
             {devices.items.map(device => {
               const expired = Date.parse(device.expiresAt) <= Math.max(clock, Date.now());
               const disabled = !!device.revokedAt || expired;
-              return <section key={device.id} aria-label={`${device.name} 기기`} className="py-4 first:pt-0 last:pb-0">
+              return <section key={device.id} aria-label={translate("m68557178a053", [device.name])} className="py-4 first:pt-0 last:pb-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2"><h3 className="break-all text-sm font-semibold">{device.name}</h3>
                       <span className={`rounded-full px-2 py-0.5 text-[11px] ${disabled ? "bg-ink-100 text-ink-600" : "bg-brand-50 text-brand-700"}`}>
-                        {device.revokedAt ? "해지됨" : expired ? "만료됨" : "등록됨"}</span>
+                        {device.revokedAt ? translate("mb6d4dd12b920") : expired ? translate("mf0aaba281f34") : translate("m1b9cb0328ad9")}</span>
                     </div>
                     <p className="mt-1 text-xs text-ink-500">{PLATFORMS[device.platform]?.label || device.platform}</p>
                   </div>
-                  {!device.revokedAt && <button type="button" className={SECONDARY} aria-label={`${device.name} 해지`} disabled={busy}
-                    onClick={() => { setConfirmId(device.id); setRevokeError(""); }}>
-                    <Trash2 size={14} aria-hidden="true" />해지</button>}
+                  {!device.revokedAt && <button type="button" className={SECONDARY} aria-label={translate("medace76aa167", [device.name])} disabled={busy}
+                    onClick={() => { setConfirmId(device.id); setRevokeError(""); }}>{richMessage("mdc9d03f7ee1b", [<Trash2 size={14} aria-hidden="true" />])}</button>}
                 </div>
                 <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
-                  <div><dt className="text-ink-500">등록</dt><dd className="mt-1 text-ink-700"><DeviceTime value={device.createdAt} /></dd></div>
-                  <div><dt className="text-ink-500">만료</dt><dd className="mt-1 text-ink-700"><DeviceTime value={device.expiresAt} /></dd></div>
-                  <div><dt className="text-ink-500">최근 수신</dt><dd className="mt-1 text-ink-700">{device.lastSeenAt ? <DeviceTime value={device.lastSeenAt} /> : "수신 기록 없음"}</dd></div>
+                  <div><dt className="text-ink-500">{translate("mbb216f104fde")}</dt><dd className="mt-1 text-ink-700"><DeviceTime value={device.createdAt} /></dd></div>
+                  <div><dt className="text-ink-500">{translate("mc64674dc5592")}</dt><dd className="mt-1 text-ink-700"><DeviceTime value={device.expiresAt} /></dd></div>
+                  <div><dt className="text-ink-500">{translate("m56ba41779428")}</dt><dd className="mt-1 text-ink-700">{device.lastSeenAt ? <DeviceTime value={device.lastSeenAt} /> : translate("mf28cf1b64817")}</dd></div>
                 </dl>
-                {device.revokedAt && <p className="mt-2 text-xs text-ink-500">해지 시각: <DeviceTime value={device.revokedAt} /></p>}
-                {device.renewedAt && <p className="mt-2 text-xs text-ink-500">자동 갱신 <DeviceTime value={device.renewedAt} /></p>}
-                {device.reuseDetectedAt && !device.revokedAt && <p role="alert" className="mt-2 rounded-md border border-warning-border bg-warning-surface p-2 text-xs text-warning-text">
-                  교체된 이전 토큰이 다시 사용됐습니다(<DeviceTime value={device.reuseDetectedAt} />). 토큰이 유출됐을 수 있으니 이 기기를 해지하고 새로 등록하세요.</p>}
-                {confirmId === device.id && !device.revokedAt && <div role="group" aria-label={`${device.name} 해지 확인`}
+                {device.revokedAt && <p className="mt-2 text-xs text-ink-500">{richMessage("m79c35add742c", [<DeviceTime value={device.revokedAt} />])}</p>}
+                {device.renewedAt && <p className="mt-2 text-xs text-ink-500">{richMessage("m3f65984a5fad", [<DeviceTime value={device.renewedAt} />])}</p>}
+                {device.reuseDetectedAt && !device.revokedAt && <p role="alert" className="mt-2 rounded-md border border-warning-border bg-warning-surface p-2 text-xs text-warning-text">{richMessage("md792b5666314", [<DeviceTime value={device.reuseDetectedAt} />])}</p>}
+                {confirmId === device.id && !device.revokedAt && <div role="group" aria-label={translate("m0454b3a47f2b", [device.name])}
                   className="mt-3 rounded-md border border-warning-border bg-warning-surface p-3">
-                  <p className="text-sm text-warning-text">이 기기의 수집을 중단할까요? 다시 연결하려면 새 토큰이 필요합니다.</p>
+                  <p className="text-sm text-warning-text">{translate("m2800dc1c7ff6")}</p>
                   <div className="mt-3 flex gap-2">
                     <button type="button" className={`${BUTTON} bg-negative text-white`} disabled={busy} onClick={() => revoke(device)}>
-                      {revoking === device.id ? "해지 중..." : "해지 확인"}</button>
-                    <button type="button" className={SECONDARY} disabled={revoking !== null} onClick={() => setConfirmId(null)}>취소</button>
+                      {revoking === device.id ? translate("m00b12b48ffbc") : translate("m5ec81f076613")}</button>
+                    <button type="button" className={SECONDARY} disabled={revoking !== null} onClick={() => setConfirmId(null)}>{translate("mbe876433993a")}</button>
                   </div>
-                  {revokeError && <div className="mt-3"><Notice>{revokeError}</Notice></div>}
+                  {revokeError && <div className="mt-3"><Notice>{messageText(revokeError)}</Notice></div>}
                 </div>}
               </section>;
             })}
           </div>
           {devices.nextCursor && <button type="button" className={`${SECONDARY} mt-4 w-full`} disabled={busy}
-            onClick={() => loadDevices(devices.nextCursor)}>{devices.loading ? "불러오는 중..." : "기기 더 보기"}</button>}
-          {deviceMessage && <p role="status" className="mt-3 text-sm text-positive-text">{deviceMessage}</p>}
-          <p className="mt-4 border-t border-ink-100 pt-4 text-xs leading-relaxed text-ink-500">표시 시간대: {deviceTime.resolvedOptions().timeZone}. 로그아웃해도 기기 수집은 계속됩니다. 중단하려면 기기를 해지하세요.
-            최근 수신이 전체 사용량의 수집이나 집계 완료를 보장하지는 않습니다.</p>
+            onClick={() => loadDevices(devices.nextCursor)}>{devices.loading ? translate("m1035a5731b39") : translate("ma03efdadf195")}</button>}
+          {deviceMessage && <p role="status" className="mt-3 text-sm text-positive-text">{messageText(deviceMessage)}</p>}
+          <p className="mt-4 border-t border-ink-100 pt-4 text-xs leading-relaxed text-ink-500">{richMessage("m7612bf864609", [deviceTime.resolvedOptions().timeZone])}</p>
         </Card>
       </>}
     </div>
