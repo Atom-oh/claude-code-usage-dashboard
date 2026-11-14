@@ -15,6 +15,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Install a device collector without handling a token: the `curl | sh` command now
+  shows a confirmation code and approval link, the user approves the device in the
+  browser after SSO, and the installer finishes on its own. New installations use the
+  approving account's verified email as the attribution ID; reinstalls keep theirs.
+  The token flow remains available with `sh -s -- --token`.
+
 ### Changed
 
 - Add a complete four-language user guide covering every menu, common controls,

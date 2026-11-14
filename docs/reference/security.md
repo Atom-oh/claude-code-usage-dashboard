@@ -35,6 +35,26 @@ package downloads are limited to ten per device per hour.
 is enabled and the public ingestion endpoint, and contains no credential. The archive it
 downloads embeds no credential either. See [device collectors](../runbooks/device-collectors.md).
 
+Browser enrollment adds three anonymous routes. `GET /api/ingest/enroll.py` serves the
+helper whose SHA-256 the install script pins. `POST /api/ingest/enroll/start` accepts only
+a device-secret digest, name and platform (1 KiB) and returns a lookup link, confirmation
+code and a polling credential once; it is limited per replica (600 per 10 minutes, so a
+workshop behind one NAT address can enroll). `POST /api/ingest/enroll/poll` needs that
+polling credential (30 per request per minute). Enrollment uses its own 16 in-flight slots
+and never consumes ingest admission. Neither route accepts cookies or grants ingestion:
+only an editor's explicit same-origin `POST /api/collector/enrollments/:handle/approve`
+creates the device, under the approver's owner key, from the stored digest. Requests expire
+after ten minutes and are decided once with conditional writes. The store holds digests of
+the device secret and polling credential, never either value; the raw device token exists
+only on the device. Remote phishing remains possible (RFC 8628 section 5.4): the page
+warns users to approve only installations they started. Per-replica limits bound memory and
+store work, but an anonymous flood can still delay new enrollments (not ingestion); add edge
+rate limiting when that matters.
+
+OIDC sessions keep the IdP-verified `email` claim (when `email_verified` is true) in the
+encrypted principal cookie solely as the default collector attribution ID. It is not
+returned by `/api/session`, audited or used for authorization.
+
 `POST /api/chat` additionally requires configured auth or `CHAT_ALLOW_INSECURE=1`, and a
 successful readonly-session probe. The two insecure flags are independent. `trust proxy=1`
 matches the intended CloudFront-to-NLB path and supplies `req.ip` to chat's per-process

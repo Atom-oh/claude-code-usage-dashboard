@@ -9,11 +9,15 @@ navigation nor management/download API access. Group names remain configurable t
 
 1. Select Linux or macOS. Both packages configure Claude Code and Codex; install those
    clients separately if absent.
-2. Register a named device. Copy its token once; the server stores only a hash.
-3. On the device, run the page's `curl -fsSL <origin>/api/ingest/install.sh | sh`
-   command. The script asks for the attribution ID, then the token at a hidden terminal
-   prompt, and downloads the package with that token. Do not put the token in shell
-   arguments, URLs, screenshots or shared files.
+2. On the device, run the page's `curl -fsSL <origin>/api/ingest/install.sh | sh`
+   command. It downloads the digest-pinned `enroll.py` helper, which prints a
+   confirmation code and an approval link and opens the browser on a desktop. On a
+   headless host, open the link on another computer.
+3. Sign in, check that the page shows the terminal's code, and select **Connect this device**.
+   Approve only an installation you started; a link and code sent by someone else can
+   enroll their device under your account. The helper then builds the device token
+   locally from its own secret, downloads and hash-checks the package, and runs the
+   installer with a private token file. No token is shown or pasted.
 4. Follow the included README for Python prerequisites, configuration checks, service
    status and uninstall. Linux uses a user systemd service; EC2 reboot persistence
    requires `loginctl enable-linger` for that user. macOS uses a per-user LaunchAgent,
@@ -25,8 +29,24 @@ navigation nor management/download API access. Group names remain configurable t
 Existing model/provider/login settings are preserved. Conflicting unmanaged OTel
 settings/services are rejected; migrate their owner explicitly. Codex's
 `analytics.enabled=false` disables its custom metrics export too; the installer does
-not silently override this privacy choice. Identity entered during setup is
-client-provided telemetry attribution, not verified SSO identity.
+not silently override this privacy choice. Browser enrollment sets a new installation's
+attribution ID to the approving account's IdP-verified email (otherwise the local login
+name); a reinstall keeps its existing ID, and `| sh -s -- --user-id ID` overrides it.
+This attribution is still client-configured telemetry, not verified per-event identity:
+a device owner can edit it locally.
+
+The approval request lasts ten minutes and is decided once (approve or deny); a later
+approval by another account fails. Opening the link or returning from SSO never decides
+it. Delivery of an approved result ends at the same deadline, so a helper that misses it
+leaves a registered device to revoke. A failed installation after approval does the same.
+Deployments without built packages (no `enroll.py`/`manifest.json`) and Basic-auth
+deployments offer only the manual flow.
+
+Manual flow (recovery, or when browser approval is unavailable): register a named device
+in the advanced **manual token installation** section, copy its token once (the server stores only a hash),
+and run `curl -fsSL <origin>/api/ingest/install.sh | sh -s -- --token`. The script asks for
+the attribution ID and then the token at a hidden prompt. Do not put the token in shell
+arguments, URLs, screenshots or shared files.
 
 The [package guide](../../dashboard/collector/README.md) includes the complete personal
 installation flow, legacy macOS/Linux service migration, receipt checks and recovery.
@@ -105,8 +125,11 @@ revocation does not revoke credentials previously issued for that path.
 
 - Deny unauthenticated and viewer management/download requests. Confirm a valid
   device token cannot read dashboard APIs and browser cookies cannot ingest or download
-  `/api/ingest/package/*`. `/api/ingest/install.sh` is intentionally public and must
-  contain only the ingestion endpoint.
+  `/api/ingest/package/*`. `/api/ingest/install.sh` and `/api/ingest/enroll.py` are
+  intentionally public and must contain only the ingestion endpoint and helper digest.
+- Run one browser enrollment end to end: anonymous start returns only a code, link and
+  polling credential; approval needs an editor session and same-origin POST; the device
+  appears under the approver's devices.
 - Send isolated Claude and Codex OTLP fixtures through the gateway, then inspect
   the correct existing-schema tables and retained client/backend identities.
 - Revoke one fixture token and verify both API replicas reject it after ten seconds.

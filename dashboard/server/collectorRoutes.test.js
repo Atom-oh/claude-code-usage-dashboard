@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { spawnSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { createCollectorFeature } from "./collectorRoutes.js";
 
 const origin = "https://dashboard.example.invalid";
@@ -22,6 +23,18 @@ function storeFixture() {
       const record = records.get(`${owner}:${id}`);
       if (!record) return false;
       record.revokedAt ??= at;
+      return true;
+    },
+    async putEnrollment(record) {
+      const key = `enrollment:${record.id}`;
+      if (records.has(key)) throw new Error("collision");
+      records.set(key, structuredClone({ ...record, owner: "enrollment" }));
+    },
+    async getEnrollment(handle) { return structuredClone(records.get(`enrollment:${handle}`)); },
+    async decideEnrollment(handle, decision, at) {
+      const record = records.get(`enrollment:${handle}`);
+      if (!record || record.status !== "pending" || !(record.deadline > at)) return false;
+      Object.assign(record, structuredClone(decision));
       return true;
     },
     async touch(owner, id, at) {
@@ -57,6 +70,12 @@ async function fixture(t, overrides = {}) {
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   writeFileSync(join(directory, "upstream-token"), "i".repeat(64));
   writeFileSync(join(directory, "ccdash-collector-linux.tar.gz"), "archive-fixture");
+  if (overrides.enrollment !== false) {
+    writeFileSync(join(directory, "enroll.py"), "# enrollment helper fixture\n");
+    writeFileSync(join(directory, "manifest.json"), JSON.stringify({ packages: {
+      "ccdash-collector-linux.tar.gz": createHash("sha256").update("archive-fixture").digest("hex"),
+      "ccdash-collector-darwin.tar.gz": "f".repeat(64) } }));
+  }
   const authentication = {
     mode: "oidc",
     requirePermission(permission) {
@@ -81,7 +100,8 @@ async function fixture(t, overrides = {}) {
   app.use((req, res, next) => {
     const role = req.get("x-fixture-role");
     if (!role) return res.status(401).json({ error: "authentication_required" });
-    req.principal = { role, subject: req.get("x-fixture-subject") || "alice" };
+    req.principal = { role, subject: req.get("x-fixture-subject") || "alice",
+      ...(req.get("x-fixture-email") ? { email: req.get("x-fixture-email") } : {}) };
     if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && req.get("origin") !== origin)
       return res.status(403).json({ error: "origin_not_allowed" });
     next();
@@ -110,7 +130,22 @@ async function fixture(t, overrides = {}) {
   });
   const renew = (token, init = {}) => request("/api/ingest/renew", { method: "POST", ...init,
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
-  return { request, management, issue, ingest, renew, deliveries, directory, feature, store, base, env, authentication };
+  const startEnrollment = async (input = {}) => {
+    const secret = randomBytes(32).toString("base64url");
+    const response = await request("/api/ingest/enroll/start", { method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ secretHash: createHash("sha256").update(secret).digest("hex"),
+        name: "EC2 dev", platform: "linux", ...input }) });
+    assert.equal(response.status, 201);
+    const body = await response.json();
+    return { ...body, secret, handle: body.verificationUrl.split("/").at(-1) };
+  };
+  const poll = pollToken => request("/api/ingest/enroll/poll", { method: "POST",
+    headers: { authorization: `Bearer ${pollToken}` } });
+  const decide = (handle, decision, headers = {}, role = "analyst") =>
+    management(`/api/collector/enrollments/${handle}/${decision}`, { method: "POST", headers }, role);
+  return { request, management, issue, ingest, renew, deliveries, directory, feature, store, base, env, authentication,
+    startEnrollment, poll, decide };
 }
 
 async function uploadAfterAdmission(t, f, token, beforeBody) {
@@ -690,4 +725,186 @@ test("package verification fails closed on store errors and releases its slot", 
   }
   f.store.get = get;
   assert.equal((await f.request("/api/ingest/package/linux", { headers: { authorization: `Bearer ${token}` } })).status, 200);
+});
+
+test("browser enrollment pairs a terminal with one approval and never shows a credential to the browser", async t => {
+  const f = await fixture(t);
+  const started = await f.startEnrollment();
+  assert.match(started.verificationUrl, new RegExp(`^${origin}/collector/connect/[a-f0-9]{32}$`));
+  assert.match(started.code, /^[B-DF-HJ-NP-TV-XZ]{4}-[B-DF-HJ-NP-TV-XZ]{4}$/);
+  assert.match(started.pollToken, /^cce1\.[a-f0-9]{32}\.[A-Za-z0-9_-]{43}$/);
+  assert.equal(started.pollToken.split(".")[1], started.handle);
+  assert.equal(started.interval, 5);
+  let pending = await f.poll(started.pollToken);
+  assert.equal(pending.status, 200);
+  assert.equal(pending.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await pending.json(), { status: "pending", interval: 5 });
+
+  // Viewing (as after the SSO return) is read-only and reveals no polling credential.
+  const viewHeaders = { headers: { "x-fixture-email": "alice@example.com" } };
+  const view = await f.management(`/api/collector/enrollments/${started.handle}`, viewHeaders);
+  const details = await view.json();
+  assert.deepEqual({ ...details, expiresAt: undefined }, { name: "EC2 dev", platform: "linux", code: started.code,
+    status: "pending", expiresAt: undefined, userId: "alice@example.com" });
+  assert.equal(JSON.stringify(details).includes(started.pollToken.split(".")[2]), false);
+  assert.deepEqual(await (await f.poll(started.pollToken)).json(), { status: "pending", interval: 5 });
+
+  assert.equal((await f.decide(started.handle, "approve", {}, "viewer")).status, 403);
+  assert.equal((await f.decide(started.handle, "approve", { origin: "https://evil.invalid" })).status, 403);
+  assert.equal((await f.request(`/api/collector/enrollments/${started.handle}/approve`, { method: "POST" })).status, 401);
+  assert.equal((await f.management(`/api/collector/enrollments/${started.handle}/approve`)).status, 404);
+
+  const approved = await f.decide(started.handle, "approve", { "x-fixture-email": "alice@example.com" });
+  assert.equal(approved.status, 200);
+  const approval = await approved.json();
+  assert.equal(approval.status, "approved");
+  assert.equal(approval.userId, "alice@example.com");
+  assert.equal(JSON.stringify(approval).includes("ccd1."), false);
+  const again = await (await f.decide(started.handle, "approve", { "x-fixture-email": "alice@example.com" })).json();
+  assert.equal(again.device.id, approval.device.id);
+  assert.equal((await f.decide(started.handle, "approve", { "x-fixture-subject": "bob" })).status, 409);
+  assert.equal((await f.decide(started.handle, "deny")).status, 409);
+
+  const delivered = await (await f.poll(started.pollToken)).json();
+  assert.equal(delivered.status, "approved");
+  assert.equal(delivered.id, approval.device.id);
+  assert.equal(delivered.userId, "alice@example.com");
+  assert.equal(delivered.packageSha256, createHash("sha256").update("archive-fixture").digest("hex"));
+  assert.equal(delivered.expiresAt, approval.device.expiresAt);
+  assert.deepEqual(await (await f.poll(started.pollToken)).json(), delivered, "lost responses can be recovered");
+
+  const token = `ccd1.${delivered.owner}.${delivered.id}.${started.secret}`;
+  assert.equal((await f.ingest(token)).status, 200);
+  const devicePackage = await f.request("/api/ingest/package/linux", { headers: { authorization: `Bearer ${token}` } });
+  assert.equal(devicePackage.status, 200);
+  assert.equal(await devicePackage.text(), "archive-fixture");
+  const devices = (await (await f.management("/api/collector/devices")).json()).devices;
+  assert.deepEqual(devices.map(device => device.id), [approval.device.id]);
+  assert.equal((await (await f.management("/api/collector/devices", { headers: { "x-fixture-subject": "bob" } })).json())
+    .devices.length, 0);
+  // Neither the device secret nor the polling secret is stored.
+  const stored = JSON.stringify([...f.store.records.values()]);
+  assert.equal(stored.includes(started.secret), false);
+  assert.equal(stored.includes(started.pollToken.split(".")[2]), false);
+});
+
+test("approval without a verified email leaves the user ID to the installer default", async t => {
+  const f = await fixture(t);
+  const started = await f.startEnrollment();
+  const view = await (await f.management(`/api/collector/enrollments/${started.handle}`)).json();
+  assert.equal(view.userId, null);
+  assert.equal((await f.decide(started.handle, "approve", { "x-fixture-email": "bad address" })).status, 200);
+  assert.equal((await (await f.poll(started.pollToken)).json()).userId, null);
+});
+
+test("denial and expiry are terminal and create no device", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { now: () => time });
+  const denied = await f.startEnrollment();
+  assert.deepEqual(await (await f.decide(denied.handle, "deny")).json(), { status: "denied" });
+  assert.deepEqual(await (await f.decide(denied.handle, "deny")).json(), { status: "denied" });
+  const deniedPoll = await f.poll(denied.pollToken);
+  assert.equal(deniedPoll.status, 403);
+  assert.deepEqual(await deniedPoll.json(), { error: "enrollment_denied" });
+  assert.equal((await f.decide(denied.handle, "approve")).status, 409);
+
+  const expired = await f.startEnrollment();
+  const approvedLate = await f.startEnrollment();
+  assert.equal((await f.decide(approvedLate.handle, "approve")).status, 200);
+  time += 10 * 60000;
+  assert.equal((await f.poll(expired.pollToken)).status, 410);
+  assert.equal((await f.decide(expired.handle, "approve")).status, 410);
+  assert.equal((await f.decide(expired.handle, "deny")).status, 410);
+  assert.equal((await (await f.management(`/api/collector/enrollments/${expired.handle}`)).json()).status, "expired");
+  assert.equal((await f.poll(approvedLate.pollToken)).status, 410, "delivery never outlives the deadline");
+  assert.equal((await (await f.management("/api/collector/devices")).json()).devices.length, 1);
+});
+
+test("revocation before delivery is never reversed and a failed device write is repaired by polling", async t => {
+  const f = await fixture(t);
+  const revoked = await f.startEnrollment();
+  const { device } = await (await f.decide(revoked.handle, "approve")).json();
+  assert.equal((await f.management(`/api/collector/devices/${device.id}`, { method: "DELETE" })).status, 204);
+  const poll = await f.poll(revoked.pollToken);
+  assert.equal(poll.status, 410);
+  assert.deepEqual(await poll.json(), { error: "device_revoked" });
+  assert.equal((await (await f.decide(revoked.handle, "approve")).json()).device.revokedAt !== null, true);
+
+  const repaired = await f.startEnrollment();
+  const put = f.store.put;
+  f.store.put = async () => { throw Object.assign(new Error("unavailable"), { status: 503 }); };
+  assert.equal((await f.decide(repaired.handle, "approve")).status, 503);
+  f.store.put = put;
+  const delivered = await (await f.poll(repaired.pollToken)).json();
+  assert.equal(delivered.status, "approved");
+  assert.equal((await f.ingest(`ccd1.${delivered.owner}.${delivered.id}.${repaired.secret}`)).status, 200);
+});
+
+test("concurrent approvals by different editors bind exactly one owner and device", async t => {
+  const f = await fixture(t);
+  const started = await f.startEnrollment();
+  const results = await Promise.all(["alice", "bob", "carol"].map(subject =>
+    f.decide(started.handle, "approve", { "x-fixture-subject": subject })));
+  assert.deepEqual(results.map(result => result.status).sort(), [200, 409, 409]);
+  const devices = [...f.store.records.values()].filter(record => record.owner !== "enrollment");
+  assert.equal(devices.length, 1);
+});
+
+test("enrollment requests are bounded, validated and need the private polling credential", async t => {
+  const f = await fixture(t);
+  const start = (body, headers = { "content-type": "application/json" }, path = "/api/ingest/enroll/start") =>
+    f.request(path, { method: "POST", headers, body });
+  const valid = { secretHash: "a".repeat(64), name: "Mac", platform: "darwin" };
+  assert.equal((await start(JSON.stringify({ ...valid, secretHash: "short" }))).status, 400);
+  assert.equal((await start(JSON.stringify({ ...valid, platform: "windows" }))).status, 400);
+  assert.equal((await start(JSON.stringify({ ...valid, name: "x".repeat(65) }))).status, 400);
+  assert.equal((await start("{")).status, 400);
+  assert.equal((await start(JSON.stringify(valid), { "content-type": "text/plain" })).status, 415);
+  assert.equal((await start(JSON.stringify({ ...valid, pad: "x".repeat(2000) }))).status, 413);
+  assert.equal((await start(JSON.stringify(valid), { "content-type": "application/json" }, "/api/ingest/enroll/start?x=1")).status, 400);
+  assert.equal((await f.request("/api/ingest/enroll/start")).status, 405);
+  assert.equal((await start(JSON.stringify(valid))).status, 201);
+
+  const started = await f.startEnrollment();
+  const [, handle, secret] = started.pollToken.split(".");
+  for (const token of [`cce1.${handle}.${"A".repeat(43)}`, `cce1.${"0".repeat(32)}.${secret}`, handle, "x"])
+    assert.equal((await f.poll(token)).status, 401);
+  assert.equal((await f.request("/api/ingest/enroll/poll", { method: "POST" })).status, 401);
+  assert.equal((await f.request("/api/ingest/enroll/poll", { method: "POST", body: "{}",
+    headers: { authorization: `Bearer ${started.pollToken}`, "content-type": "application/json" } })).status, 400);
+  // Ingest credentials and browser handles do not authorize polling, and polling tokens do not ingest.
+  assert.equal((await f.ingest(started.pollToken)).status, 401);
+  assert.equal((await f.management(`/api/collector/enrollments/${"0".repeat(32)}`)).status, 404);
+  assert.equal((await f.management("/api/collector/enrollments/not-a-handle")).status, 404);
+});
+
+test("polling is rate limited per request and recovers after the window", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { now: () => time });
+  const started = await f.startEnrollment();
+  for (let i = 0; i < 30; i++) assert.equal((await f.poll(started.pollToken)).status, 200);
+  const limited = await f.poll(started.pollToken);
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get("retry-after"), "10");
+  time += 60000;
+  assert.equal((await f.poll(started.pollToken)).status, 200);
+});
+
+test("the launcher pins the served helper; without built packages only the manual flow exists", async t => {
+  const f = await fixture(t);
+  const helper = await f.request("/api/ingest/enroll.py");
+  assert.equal(helper.status, 200);
+  assert.equal(helper.headers.get("content-type"), "text/x-python; charset=utf-8");
+  const digest = createHash("sha256").update(Buffer.from(await helper.arrayBuffer())).digest("hex");
+  assert.match(await (await f.request("/api/ingest/install.sh")).text(), new RegExp(`helper_sha256='${digest}'`));
+  assert.equal((await (await f.management("/api/collector")).json()).browserEnrollment, true);
+  assert.equal((await f.request("/api/ingest/enroll.py", { method: "POST" })).status, 405);
+
+  const manual = await fixture(t, { enrollment: false });
+  assert.match(await (await manual.request("/api/ingest/install.sh")).text(), /helper_sha256=''/);
+  assert.equal((await manual.request("/api/ingest/enroll.py")).status, 404);
+  assert.equal((await manual.request("/api/ingest/enroll/start", { method: "POST",
+    headers: { "content-type": "application/json" }, body: "{}" })).status, 404);
+  assert.equal((await (await manual.management("/api/collector")).json()).browserEnrollment, false);
+  assert.equal((await manual.management(`/api/collector/enrollments/${"0".repeat(32)}`)).status, 503);
 });

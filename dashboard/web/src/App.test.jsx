@@ -134,6 +134,25 @@ test("direct collector route denies viewers and gives analysts and admins a dedi
   }
 });
 
+test("the device connection link opens its approval page without chat or a filter bar", async () => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  const handle = "a".repeat(32);
+  const fetch = vi.fn(url => Promise.resolve({ ok: true, status: 200, json: async () =>
+    String(url).startsWith(`/api/collector/enrollments/${handle}`) ? { name: "EC2 dev", platform: "linux",
+      code: "BCDF-GHJK", status: "pending", expiresAt: new Date(Date.now() + 600000).toISOString(), userId: "alice@example.com" }
+      : String(url).startsWith("/api/health/data") ? { status: "ok" } : [] }));
+  vi.stubGlobal("fetch", fetch);
+  const session = { mode: "oidc", role: "analyst", name: "Alice", expiresAt: new Date(Date.now() + 900000).toISOString(),
+    permissions: ["telemetry:read", "chat:query", "collector:manage"] };
+  render(<MemoryRouter initialEntries={[`/collector/connect/${handle}`]}>
+    <ConfigProvider config={{ enabledClients: ["claude", "codex"], session }}><App /></ConfigProvider>
+  </MemoryRouter>);
+  expect(screen.getByRole("heading", { level: 1, name: "기기 연결 승인" })).toBeTruthy();
+  expect((await screen.findByLabelText("확인 코드")).textContent).toBe("BCDF-GHJK");
+  expect(screen.queryByRole("button", { name: "Ask Claude" })).toBeNull();
+  expect(fetch.mock.calls.every(([, options]) => !options?.method)).toBe(true);
+});
+
 test("revoked session during device registration removes the collector setup", async () => {
   vi.stubGlobal("fetch", vi.fn((url, options = {}) => Promise.resolve({ ok: options.method !== "POST",
     status: options.method === "POST" ? 401 : 200,

@@ -1,6 +1,7 @@
 # Collector installation with browser SSO
 
-Status: proposed; implementation and deployment have not started.
+Status: implemented (2026-11-14); not yet released or deployed. Implementation decisions
+that refine this proposal are recorded in [Implementation](#implementation).
 
 ## Intent
 
@@ -18,11 +19,11 @@ currently deployed manual flow. This proposal does not claim deployed behavior.
 1. **Collector installation** shows one command for both operating systems:
 
    ```sh
-   curl -fsS --proto '=https' https://dashboard.example.com/install/collector.sh | sh
+   curl -fsSL https://dashboard.example.com/api/ingest/install.sh | sh
    ```
 
-   This is a proposed endpoint. The actual command uses the installation's
-   configured public origin, without a baked-in domain.
+   The command uses the installation's configured public origin, without a baked-in
+   domain.
 2. The launcher uses `uname` to detect Darwin/Linux and a supported architecture,
    checks Python 3.9+, and starts the enrollment helper. Unsupported environments
    receive actionable instructions before any client or service changes.
@@ -141,10 +142,10 @@ recover a lost response. Retrying must never create a second device, extend the
 30-day lifetime, or reverse revocation. Before returning approved metadata or a
 package, verify that the registered device remains unrevoked and unexpired.
 
-The polling credential also permits downloading the matching platform package
-and its expected hash until the enrollment deadline. It grants no dashboard or
-general management access. The completed ingest token itself does not become a
-package-download credential.
+Approval returns the expected package hash. The helper downloads the package with
+the locally constructed device token through the existing device package route
+(v1.8.0 made device tokens package credentials for the manual `curl | sh` flow). The
+polling credential grants no package, dashboard or management access.
 
 The helper creates a mode-0600 temporary token file within a private directory
 and passes only its path through the existing `--token-file` interface. Clean
@@ -170,9 +171,10 @@ storage remains private. Never extend enrollment after its absolute deadline.
   package managers, or enable Linux user lingering with implicit privileges.
   Preserve existing prerequisite and service-persistence guidance.
 - Preserve current telemetry attribution on a recognized migration/reinstall.
-  For new installations use the existing local-login default, with an optional
-  `--user-id` override. The approving SSO account owns the device, but does not
-  make client-provided telemetry identity verified.
+  New installations default to the approving account's IdP-verified email, falling
+  back to the local login, with an optional `--user-id` override. The approving SSO
+  account owns the device; the attribution remains client-configured and editable on
+  the device, not verified per-event identity.
 - An aborted or failed installation after approval leaves a revocable device
   entry. Explain how to remove it; do not imply that local rollback revokes it.
 - Collect no additional diagnostic telemetry for the enrollment process.
@@ -227,6 +229,29 @@ Route names, component layout, confirmation-code alphabet, transaction wrapper,
 private scratch paths, rate-limit constants and retry presentation may be chosen
 during planning within the requirements above. The product decision requiring
 review is the single explicit browser confirmation after SSO.
+
+## Implementation
+
+- Routes: `GET /api/ingest/enroll.py`, `POST /api/ingest/enroll/start`,
+  `POST /api/ingest/enroll/poll` (public); `GET /api/collector/enrollments/:handle`,
+  `POST .../approve`, `POST .../deny` (`collector:manage`, same origin); the page is
+  `/collector/connect/:handle`. See the [API reference](../../api-reference.md).
+- `install.sh` runs browser enrollment by default and pins the helper's SHA-256;
+  `sh -s -- --token` keeps the manual flow, which is the only flow when packages or the
+  helper are absent. `collector/build-packages.mjs` publishes `enroll.py` beside the
+  archives, outside them.
+- Enrollment records use the existing table under the `enrollment` partition key, which no
+  owner digest can equal, with a TTL one day after the deadline. Approval is a conditional
+  pending-to-approved update that fixes the owner, device ID and approval time; the device
+  record is then written with the existing conditional put. If that write fails, a retried
+  approval or the next poll writes the same record, so no transaction or new IAM action is
+  needed. A revoked device is never recreated.
+- The OIDC principal cookie keeps a verified `email` only for this default. Approval stores
+  it on the enrollment, never in logs.
+- Limits per replica: 600 starts per ten minutes, 30 polls per request per minute,
+  30 decisions per account per hour, 16 enrollment requests in flight (separate from the
+  eight ingest slots), 1 KiB start bodies and a ten-second request deadline.
+- Not implemented: approval/denial audit events. The routes log nothing, like renewal.
 
 ## References
 
