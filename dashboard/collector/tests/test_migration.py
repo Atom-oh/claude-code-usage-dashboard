@@ -66,6 +66,7 @@ class Migration(unittest.TestCase):
         self.output = io.StringIO()
         contexts = [
             patch.object(self.module.sys, "platform", "darwin"),
+            patch.object(self.module, "LEGACY_LINUX_UNIT", self.home / "absent/otelcol.service"),
             patch.object(self.module, "run", self.external),
             patch.object(self.module, "download_binary", self.download),
             patch.object(self.module.socket, "socket"),
@@ -112,6 +113,8 @@ class Migration(unittest.TestCase):
     def external(self, command, required=True, output=False):
         domain = "gui/" + str(os.getuid())
         target = domain + "/com.ccdash.otelcol"
+        if command[0] == "ss":
+            return None  # Linux port-owner query: no owner reported
         if command[0] == "lsof":
             port = next(int(x[6:]) for x in command if x.startswith("-iTCP:"))
             return "p999\n" if port == self.extra_port else ("p1321\n" if self.loaded else None)
@@ -186,6 +189,31 @@ class Migration(unittest.TestCase):
             },
         }) + "\n")
         return path, path.read_bytes()
+
+    def test_reinstall_migrates_a_loaded_legacy_that_still_holds_the_ports(self):
+        # The device service exists but restarts without the ports: the legacy one holds them.
+        self.module.atomic(self.unit, "<plist><!-- " + self.module.MARKER + " --></plist>")
+        self.install()
+        self.assertFalse(self.loaded)
+        self.assertTrue(self.disabled)
+        self.assertTrue(self.new_running)
+        self.assertEqual(len(list(self.root.glob("legacy-backup-*"))), 1)
+
+    def test_reinstall_after_a_finished_migration_tolerates_removed_legacy_files(self):
+        self.module.atomic(self.unit, "<plist><!-- " + self.module.MARKER + " --></plist>")
+        self.loaded, self.disabled = False, True
+        self.config.unlink()
+        self.env.unlink()
+        self.install()
+        self.assertTrue(self.new_running)
+
+    def test_reinstall_after_a_finished_migration_leaves_the_legacy_untouched(self):
+        self.module.atomic(self.unit, "<plist><!-- " + self.module.MARKER + " --></plist>")
+        self.loaded, self.disabled = False, True
+        self.install()
+        self.assertTrue(self.new_running)
+        self.assertEqual(list(self.root.glob("legacy-backup-*")), [], "no second migration")
+        self.assertNotIn("Found legacy", self.output.getvalue())
 
     def test_confirmed_migration_replaces_claude_exporters_and_backs_up_original(self):
         path, original = self.conflicting_claude_settings()

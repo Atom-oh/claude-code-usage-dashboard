@@ -190,6 +190,11 @@ test("team-capable routes validate team before the database", async () => {
     assert.equal((await fetch(`${base}${path}?${range}&team=fsi`)).status, 500, path);
 });
 
+test("every cache key carries the team directory version", () => {
+  const src = readFileSync(new URL("./index.js", import.meta.url), "utf8");
+  assert.match(src, /function cacheKey\(path, query\) \{\n  return `\$\{routeCacheKey\(path, query\)\}&teamdir=\$\{directoryVersion\(\)\}`;\n\}/);
+});
+
 test("the Codex diagnostics route declares the team filter unsupported", () => {
   const src = readFileSync(new URL("./index.js", import.meta.url), "utf8");
   assert.match(src, /route\("\/api\/codex\/insights"[\s\S]{0,200}?team: false/);

@@ -71,6 +71,8 @@ class Installer(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("collector_installer", ROOT / "install.py")
         cls.module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.module)
+        # Never read this host's real /etc/systemd/system/otelcol.service.
+        cls.module.LEGACY_LINUX_UNIT = Path("/nonexistent/ccdash-test/otelcol.service")
 
     def test_only_public_https_ingestion_urls_are_accepted(self):
         self.assertEqual(self.module.endpoint("https://dashboard.example/api/ingest/"),

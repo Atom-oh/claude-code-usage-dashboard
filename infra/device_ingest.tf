@@ -68,7 +68,8 @@ resource "aws_dynamodb_table" "device_tokens" {
     attribute_name = "purgeAt"
     enabled        = true
   }
-  # AWS-managed DynamoDB KMS key; no cleartext owner identifiers are stored.
+  # Also holds the team-mapping settings (owner "settings") and team history (owner
+  # "team-history#<attribute>", sort key a sha256 user digest). AWS-managed DynamoDB KMS key; no cleartext owner identifiers are stored.
   server_side_encryption { enabled = true }
 }
 

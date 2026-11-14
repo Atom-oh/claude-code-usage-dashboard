@@ -1901,5 +1901,9 @@
   "m13a94afb24ac": "The current workshop boot template installs the collector using ingest credentials from an SSM SecureString. The organizer must configure any EC2 instance that is not ready. To collect from a personal Mac, use the install command on this page.",
   "m29f900219c52": "Expired or revoked token, or authentication error: Run the install command again to reconnect the device (or install with a new token), then revoke the previous device.",
   "me7bcfd8c0da5": "Collection user ID",
+  "m03aa73df1eaf": "(Device-provided value)",
+  "m38089c0f4351": "Unmarked: based on the organization directory (Cognito) · {0}: team value sent by the device",
+  "m8e6bd3eb9fab": "Usage before {0} is based on the department at the time of the first sync.",
+  "m7332992d4824": "{0} Each session's cost is attributed to the team at the time the session started. If team mapping to the organization directory (Cognito) is configured and the user is in the directory, the directory team at that time is used; otherwise, the team value sent by the device is used. {1} represents sessions that did not receive a team value or whose team cannot be determined because the log retention period has elapsed. The session count includes sessions with usage during the period, so it may differ from the session tile above. For non-Anthropic model usage where the unit price multiplier cannot be determined, only that team's portion is marked as needing review. As a result, the known team totals may exceed the known total cost.",
   "ma1a91661679d": "Known subtotal · responses without collected usage are excluded."
 }

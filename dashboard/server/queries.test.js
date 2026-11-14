@@ -633,13 +633,16 @@ test("sessionTeamsSql resolves the most frequent team per client session from re
     "'claude' AS client",
     "SessionId AS session",
     "coalesce(nullIf(ResourceAttributes['team'], ''), nullIf(LogAttributes['team'], '')) AS value",
-    "AND NOT startsWith(EventName, 'codex.') AND session != '' AND value IS NOT NULL",
+    "AND NOT startsWith(EventName, 'codex.') AND session != ''",
     "GROUP BY session, value",
-    "argMin(value, (-n, value)) AS team",
-    "argMax(identity, seen) AS user",
-    "max(seen) AS last_seen",
+    "argMinIf(value, (-n, value), value IS NOT NULL) AS device_team",
+    "argMaxIf(identity, seen, value IS NOT NULL) AS device_user",
+    "maxIf(seen, value IS NOT NULL) AS device_seen",
     "GROUP BY client, session",
+    "WHERE team IS NOT NULL",
   ]) assert.ok(claude.includes(part), part);
+  // A session whose only team evidence is the directory still reaches the directory lookup.
+  assert.ok(!claude.includes("AND value IS NOT NULL"));
   assert.ok(!claude.includes("conversation.id"));
   assert.ok(!claude.includes("UNION ALL"));
 
@@ -656,6 +659,68 @@ test("sessionTeamsSql resolves the most frequent team per client session from re
   assert.throws(() => queries.sessionTeamsSql(["opencode"]), /unknown client opencode/);
 });
 
+test("sessionTeamsSql prefers the directory team valid at the session start", () => {
+  const sql = queries.sessionTeamsSql(["claude"]);
+  for (const part of [
+    "{dirKey:Array(String)}",
+    "{dirFrom:Array(DateTime)}",
+    "{dirTo:Array(DateTime)}",
+    "lower(hex(SHA256(concat({dirIssuer:String}, '\\0', lower(session_user))))) AS user_key",
+    "argMax(identity, latest) AS session_user",
+    "toDateTime(min(first_seen)) AS started",
+    "k = user_key AND f <= started AND started < t",
+    "dir_index > 0 AND {dirTeam:Array(String)}[dir_index] != '' AS dir_hit",
+    "if(dir_hit, {dirTeam:Array(String)}[dir_index], device_team) AS team",
+    "multiIf(dir_hit, 'directory', device_team IS NOT NULL, 'device', NULL) AS team_source",
+    "if(dir_hit, session_user, device_user) AS user",
+    "if(dir_hit, session_seen, device_seen) AS last_seen",
+  ]) assert.ok(sql.includes(part), part);
+  assert.ok(!sql.includes("DateTime64"), "directory intervals bind as DateTime seconds");
+});
+
+test("listTeams marks teams seen from both sources and carries directory labels", async () => {
+  let sql = "";
+  const out = await queries.listTeams(new Date("2026-11-14T00:00:00Z"), new Date("2026-11-14T01:00:00Z"),
+    ["claude"], async (text) => {
+      sql = text;
+      return [{ team: "dev", team_source: "device" }, { team: "hana", team_source: "directory" },
+        { team: "hana", team_source: "device" }];
+    });
+  assert.ok(sql.includes("SELECT DISTINCT team, team_source FROM"));
+  assert.deepEqual(out.teams, ["dev", "hana"]);
+  assert.deepEqual(out.sources, { dev: "device", hana: "both" });
+  assert.deepEqual(out.labels, {});
+  assert.equal(out.historyStart, null);
+  assert.equal(out.directory, false, "no published snapshot: no directory");
+});
+
+test("listTeams reports directory only for a snapshot that applies directory teams", async () => {
+  const { setDirectorySnapshot } = await import("./teamDirectoryParams.js");
+  const run = async () => [{ team: "dev", team_source: "device" }];
+  const from = new Date("2026-11-14T00:00:00Z");
+  const to = new Date("2026-11-14T01:00:00Z");
+  try {
+    for (const [directory, expected] of [[true, true], [false, false]]) {
+      setDirectorySnapshot({ issuer: "i", keys: [], teams: [], froms: [], tos: [], labels: { dev: "Dev" }, historyStart: 5, directory }, "v");
+      const out = await queries.listTeams(from, to, ["claude"], run);
+      assert.equal(out.directory, expected);
+      assert.deepEqual(out.labels, { dev: "Dev" });
+    }
+  } finally {
+    setDirectorySnapshot(null, "none");
+  }
+});
+
+test("foldUserTeams keeps the source of each team", () => {
+  const rows = [{ user: "u", team: "hana", team_source: "directory", seen: "2" },
+    { user: "u", team: "dev", team_source: "device", seen: "1" }];
+  assert.deepEqual(queries.foldUserTeams(rows),
+    [{ user: "u", team: "hana", teams: ["hana", "dev"], sources: ["directory", "device"] }]);
+  // One team from both sources is listed once, at its latest sighting.
+  assert.deepEqual(queries.foldUserTeams([...rows, { user: "u", team: "dev", team_source: "directory", seen: "3" }]),
+    [{ user: "u", team: "dev", teams: ["dev", "hana"], sources: ["both", "directory"] }]);
+});
+
 test("foldUserTeams lists every team of a user, most recent first, ties lexically", () => {
   const rows = [
     { user: "b@example.invalid", team: "A", seen: "2026-11-04 10:05:00.000000000" },
@@ -666,9 +731,9 @@ test("foldUserTeams lists every team of a user, most recent first, ties lexicall
     { user: "c@example.invalid", team: "", seen: "2026-11-04 10:00:00.000000000" },
     { user: "d@example.invalid", team: null, seen: "2026-11-04 10:00:00.000000000" },
   ];
-  assert.deepEqual(queries.foldUserTeams(rows), [
-    { user: "a@example.invalid", team: "Y", teams: ["Y", "Z"] },
-    { user: "b@example.invalid", team: "B", teams: ["B", "A"] },
+  assert.deepEqual(queries.foldUserTeams(rows.map((row) => ({ ...row, team_source: "device" }))), [
+    { user: "a@example.invalid", team: "Y", teams: ["Y", "Z"], sources: ["device", "device"] },
+    { user: "b@example.invalid", team: "B", teams: ["B", "A"], sources: ["device", "device"] },
   ]);
   assert.deepEqual(queries.foldUserTeams([]), []);
 });

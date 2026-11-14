@@ -1,5 +1,5 @@
 import { localeTag, localize, translate, translateSource, useLocale } from "../i18n/index.js";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { Badge } from "./Badge.jsx";
 import { Card, ErrorBox, Loading } from "./Card.jsx";
 import { DataTable } from "./DataTable.jsx";
@@ -10,13 +10,18 @@ import { StatTile } from "./StatTile.jsx";
 import { useApi } from "../useApi.js";
 import { fromByModelDaily } from "../modelCostTrend.js";
 import { SPEND_HELP } from "../spend.js";
+import { useRange } from "../RangeContext.jsx";
+import { isDeviceMarked, teamDisplay, teamName, teamSourceHelp, useTeams } from "../TeamsContext.jsx";
 
 // /api/cost/by-team(-daily): Claude reported spend per session team. A total metric: the
 // unknown channel is included, so team rows plus 팀 없음 equal the 총 비용 tile.
 export const NO_TEAM = "팀 없음";
 const isNoTeam = (row) => row.team === null;
 const BASIS = "Claude 보고 비용 · 총 비용과 같은 기준(미분류 채널 포함) · 세션별 팀 귀속";
-const helpText = () => translate("md0e41539dd65", [translateSource(SPEND_HELP), translateSource(NO_TEAM)]);
+// The session's team: the directory team at session start when configured and matched, else the device value.
+const helpText = () => translate("m7332992d4824", [translateSource(SPEND_HELP), translateSource(NO_TEAM)]);
+const historyNote = (start) => translate("m8e6bd3eb9fab",
+  [new Date(start).toLocaleDateString(localeTag(), { year: "numeric", month: "long", day: "numeric" })]);
 
 const usd = (n) => n == null || !Number.isFinite(Number(n)) ? translate("m84dd6e381dca")
   : `$${Number(n).toLocaleString(localeTag(), { maximumFractionDigits: 2 })}`;
@@ -24,18 +29,25 @@ const num = (n) => Number(n || 0).toLocaleString(localeTag());
 const pct = (v) => v === null ? "" : `${v.toFixed(1)}%`;
 
 // Rows keep the server order (known teams by spend, 팀 없음 last) and gain a display share of
-// the known total; an all-unknown team has no share.
-export function teamTableRows(rows) {
+// the known total; an all-unknown team has no share. `label` is the displayed name (with the device
+// marker while a directory applies), `name` the CSV name (label or raw value, never a marker).
+export function teamTableRows(rows, teams) {
   const list = Array.isArray(rows) ? rows : [];
   const total = list.reduce((s, r) => s + (r.known_reported_cost ?? 0), 0);
-  return list.map((r) => ({ ...r, label: r.team ?? translateSource(NO_TEAM), cost: r.known_reported_cost,
+  const source = (team) => teams?.sources?.[team];
+  return list.map((r) => ({ ...r,
+    label: r.team === null ? translateSource(NO_TEAM) : teams ? teamDisplay(teams, r.team, source(r.team)) : r.team,
+    name: r.team === null ? translateSource(NO_TEAM) : teams ? teamName(teams, r.team) : r.team,
+    marked: r.team !== null && !!teams && isDeviceMarked(teams, source(r.team)),
+    cost: r.known_reported_cost,
     cost_partial: r.reported_partial === true,
     cost_status: r.reported_partial === true ? translate("md15c830a6f1c") : r.known_reported_cost === null ? translate("m84dd6e381dca") : translate("mf2c10bf5d512"),
     share: r.known_reported_cost === null || total <= 0 ? null : (r.known_reported_cost / total) * 100 }));
 }
 
 export const TEAM_COLUMNS = localize([
-  { key: "label", label: "팀", toText: (v) => v },
+  { key: "label", label: "팀", render: (v, r) => (r.marked ? <span title={teamSourceHelp()}>{v}</span> : v),
+    toText: (_v, r) => r.name },
   { key: "cost", label: "비용", render: (v, r) => r.cost_partial
     ? <span className="inline-flex items-center gap-1.5">{usd(v)}<Badge tone="warning">{translate("md15c830a6f1c")}</Badge></span> : usd(v),
     toText: (v) => v ?? "" },
@@ -57,8 +69,15 @@ export function coverageNote(rows) {
 
 export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
   const _locale = useLocale();
-  const rows = useMemo(() => teamTableRows(table.data), [table.data, _locale]);
+  const teams = useTeams();
+  const range = useRange();
+  const rows = useMemo(() => teamTableRows(table.data, teams), [table.data, teams, _locale]);
+  // Earlier usage follows the departments of the first sync; shown only when the range reaches before it.
+  const historyText = teams.historyStart !== null && range?.from && range.from.getTime() < teams.historyStart
+    ? historyNote(teams.historyStart) : null;
   const cells = useMemo(() => fromByModelDaily(trend.data, { dimension: "team" }), [trend.data, _locale]);
+  // The trend names teams exactly like the table.
+  const trendTeamLabel = useCallback((raw) => teamDisplay(teams, raw, teams.sources?.[raw]), [teams, _locale]);
   const known = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
   const teamed = rows.filter((r) => r.team !== null).reduce((s, r) => s + (r.cost ?? 0), 0);
   const activeTeams = rows.filter((r) => r.team !== null).length;
@@ -66,6 +85,7 @@ export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
   return (
     <section className="flex flex-col gap-4" aria-label={translate("mf0b752e9eb98")}>
       <h2 className="text-base font-semibold text-ink-800">{translate("mf0b752e9eb98")}</h2>
+      {historyText && <p className="text-[12px] text-ink-500">{historyText}</p>}
       {table.loading ? <Loading /> : table.error ? <ErrorBox error={table.error} /> : <>
         <div className="grid gap-3 sm:grid-cols-2">
           <StatTile label={translate("m38f428eabffd")} value={num(activeTeams)} hint={note}
@@ -82,7 +102,7 @@ export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
       </>}
       {trend.loading ? <Loading /> : trend.error ? <ErrorBox error={trend.error} /> : (
         <ModelCostTrend title={translate("ma8d00e5049ba")} subtitle={translate("m54c5ea01dad7", [translateSource(BASIS)])} cells={cells} help={helpText()} top={8}
-          basis={translate("ma029ac069435")} xKey="t" dimension="team" bucketHours={intervalHours} zoomDisabled={trend.stale}
+          basis={translate("ma029ac069435")} xKey="t" dimension="team" teamLabel={trendTeamLabel} bucketHours={intervalHours} zoomDisabled={trend.stale}
           right={onIntervalHours ? <SegmentedControl options={[{ value: "1", label: translate("mdeb162691363") },
             { value: "24", label: translate("m58ea1d09d2dd") }, { value: "168", label: translate("m2392bb5e3aa6") }]} value={String(intervalHours)}
             onChange={(v) => onIntervalHours(Number(v))} /> : undefined} />

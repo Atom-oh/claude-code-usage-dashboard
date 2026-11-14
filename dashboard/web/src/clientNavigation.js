@@ -36,6 +36,6 @@ export function parseTaskPath(pathname) {
 }
 // Browser half of collector enrollment; the handle itself is validated by the page and server.
 export const COLLECTOR_CONNECT_PATH = /^\/collector\/connect\/([^/]+)$/;
-export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation"
+export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation" || pathname === "/settings"
   || pathname === COLLECTOR_PAGE.to || COLLECTOR_CONNECT_PATH.test(pathname) || pathname === CHANGELOG_PATH
   || isTaskPath(pathname);

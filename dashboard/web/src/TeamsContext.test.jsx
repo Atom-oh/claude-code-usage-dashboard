@@ -7,7 +7,9 @@ import { RangeProvider } from "./RangeContext.jsx";
 import { FilterProvider } from "./FilterContext.jsx";
 import { useApi } from "./useApi.js";
 import { toCsv } from "./csv.js";
-import { TeamsProvider, teamSuffix, teamText, teamsValue, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
+import { ClientProvider } from "./ClientContext.jsx";
+import { FilterBar } from "./components/FilterBar.jsx";
+import { DEVICE_TEAM_MARKER, TeamsContext, TeamsProvider, teamDisplay, teamName, teamSuffix, teamText, teamsValue, useTeams, withTeamColumn, withTeams } from "./TeamsContext.jsx";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -140,4 +142,85 @@ test("useApi forwards team only to endpoints that apply it", async () => {
   expect(first("/api/codex/insights").has("team")).toBe(false);
   expect(first("/api/cost/summary").has("team")).toBe(false);
   expect(first("/api/cost/summary").has("model")).toBe(false);
+});
+
+test("teamText shows labels and marks device teams", () => {
+  const list = { data: { teams: ["field-ags-korea-all-cs", "dev"], labels: { "field-ags-korea-all-cs": "Korea CS" },
+    sources: { "field-ags-korea-all-cs": "directory", dev: "device" }, historyStart: 1000, directory: true } };
+  const users = { data: { users: [{ user: "a@example.invalid", team: "field-ags-korea-all-cs",
+    teams: ["field-ags-korea-all-cs", "dev"], sources: ["directory", "device"] },
+    { user: "b@example.invalid", team: "x", teams: ["x"], sources: ["both"] }] } };
+  const teams = teamsValue(list, users);
+  expect(teamText(teams, "a@example.invalid")).toBe(`Korea CS, dev ${DEVICE_TEAM_MARKER}`);
+  expect(teamText(teams, "a@example.invalid", { csv: true })).toBe("Korea CS, dev");
+  expect(teamText(teams, "b@example.invalid")).toBe("x");
+  expect(teamSuffix(teams, "a@example.invalid")).toBe(` · Korea CS, dev ${DEVICE_TEAM_MARKER}`);
+  expect(teamName(teams, "field-ags-korea-all-cs")).toBe("Korea CS");
+  expect(teams.historyStart).toBe(1000);
+  expect(teams.directory).toBe(true);
+});
+
+test("without a directory, device teams are not marked and labels still apply", () => {
+  const list = { data: { teams: ["dev", "x"], labels: { x: "X팀" }, sources: { dev: "device", x: "device" }, historyStart: null, directory: false } };
+  const users = { data: { users: [{ user: "a@example.invalid", team: "dev", teams: ["dev", "x"], sources: ["device", "device"] }] } };
+  const teams = teamsValue(list, users);
+  expect(teams.directory).toBe(false);
+  expect(teamText(teams, "a@example.invalid")).toBe("dev, X팀");
+  expect(teamSuffix(teams, "a@example.invalid")).toBe(" · dev, X팀");
+  const [, column] = withTeamColumn([{ key: "user" }], teams);
+  expect(column.render(null, { user: "a@example.invalid" })).toBe("dev, X팀");
+});
+
+test("the team column explains sources where a device marker appears", () => {
+  const list = { data: { teams: ["dev"], sources: { dev: "device" }, directory: true } };
+  const users = { data: { users: [{ user: "a@example.invalid", team: "dev", teams: ["dev"], sources: ["device"] }] } };
+  const teams = teamsValue(list, users);
+  const [, column] = withTeamColumn([{ key: "user" }], teams);
+  const { container } = render(<>{column.render(null, { user: "a@example.invalid" })}</>);
+  const cell = container.querySelector("span");
+  expect(cell.textContent).toBe(`dev ${DEVICE_TEAM_MARKER}`);
+  expect(cell.title).toBe("표시 없음: 조직 디렉터리(Cognito) 기준 · (기기 제공 값): 기기가 보낸 team 값");
+  expect(column.toText(null, { user: "a@example.invalid" })).toBe("dev");
+});
+
+test("team values naming inherited properties render as raw strings", () => {
+  const raws = ["__proto__", "constructor", "toString"];
+  const users = { data: { users: [{ user: "a@example.invalid", teams: raws, sources: ["device", "device", "device"] }] } };
+  for (const list of [{ data: { teams: raws } }, { data: { teams: raws, labels: {}, sources: {}, directory: true } },
+    { data: JSON.parse('{"teams":["__proto__"],"labels":{"__proto__":{"x":1},"constructor":7},"directory":false}') }]) {
+    const teams = teamsValue(list, users);
+    for (const raw of raws) {
+      expect(teamName(teams, raw)).toBe(raw);
+      expect(teamDisplay(teams, raw)).toBe(raw);
+    }
+    expect(teamText(teams, "a@example.invalid", { csv: true })).toBe("__proto__, constructor, toString");
+  }
+  for (const raw of raws) expect(teamName({ labels: {} }, raw)).toBe(raw);
+  expect(teamText({ ...TEAMS, labels: {}, byUser: new Map([["a@example.invalid", raws]]) }, "a@example.invalid"))
+    .toBe("__proto__, constructor, toString");
+});
+
+test("the filter control renders a __proto__ team without throwing", () => {
+  render(
+    <MemoryRouter initialEntries={["/cost"]}>
+      <ClientProvider><FilterProvider>
+        <TeamsContext.Provider value={{ options: ["__proto__", "constructor"], byUser: new Map(), loading: false,
+          labels: {}, sources: {}, directory: true }}>
+          <FilterBar />
+        </TeamsContext.Provider>
+      </FilterProvider></ClientProvider>
+    </MemoryRouter>
+  );
+  const select = screen.getByRole("combobox", { name: "팀" });
+  expect([...select.options].map((o) => [o.value, o.textContent]))
+    .toEqual([["", "모든 팀"], ["__proto__", "__proto__"], ["constructor", "constructor"]]);
+});
+
+test("an older server without the new fields keeps raw values", () => {
+  const teams = teamsValue({ data: { teams: ["fsi"] } }, { data: { users: [{ user: "a@example.invalid", teams: ["fsi"] }] } });
+  expect(teams.labels).toEqual({});
+  expect(teams.sources).toEqual({});
+  expect(teams.historyStart).toBeNull();
+  expect(teams.directory).toBe(false);
+  expect(teamText(teams, "a@example.invalid")).toBe("fsi");
 });

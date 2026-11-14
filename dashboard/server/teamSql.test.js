@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { emailKey } from "./teamDirectory.js";
+import { setDirectorySnapshot } from "./teamDirectoryParams.js";
 
 test("team resolution, lookups and session filters agree in ClickHouse", {
   skip: !process.env.TEAM_SQL_TEST_URL,
@@ -61,10 +63,10 @@ test("team resolution, lookups and session filters agree in ClickHouse", {
     assert.deepEqual((await q.listTeams(from, to, clients)).teams.filter((t) => t.startsWith(id)),
       [T("A"), T("B"), T("C"), T("a-team")]);
     assert.deepEqual((await q.userTeams(from, to, clients)).users.filter((r) => r.user.includes(id)), [
-      { user: U("cx"), team: T("A"), teams: [T("A")] },
-      { user: U("u1"), team: T("B"), teams: [T("B"), T("A")] },
-      { user: U("u2"), team: T("a-team"), teams: [T("a-team")] },
-      { user: U("u4"), team: T("C"), teams: [T("C")] },
+      { user: U("cx"), team: T("A"), teams: [T("A")], sources: ["device"] },
+      { user: U("u1"), team: T("B"), teams: [T("B"), T("A")], sources: ["device", "device"] },
+      { user: U("u2"), team: T("a-team"), teams: [T("a-team")], sources: ["device"] },
+      { user: U("u4"), team: T("C"), teams: [T("C")], sources: ["device"] },
     ]);
 
     const sessions = async (clients, team) => (await query(
@@ -94,7 +96,32 @@ test("team resolution, lookups and session filters agree in ClickHouse", {
       assert.equal(Number(summary[0].reported_cost), cost);
       assert.equal(Number(summary[0].input_tokens), input);
     }
+
+    // Directory history: the team valid at each session's start wins over the device value;
+    // unmatched users keep the device team. The email digest is computed by ClickHouse itself.
+    const issuer = "https://cognito-idp.ap-northeast-2.amazonaws.com/ap-northeast-2_fixture";
+    const change = Date.parse(`${day}T14:30:00Z`), open = 4102444800000;
+    const key = (user) => emailKey(issuer, user.toUpperCase());
+    setDirectorySnapshot({ issuer, directory: true, labels: {}, historyStart: 0,
+      keys: [key(U("u1")), key(U("u1")), key(U("u2"))], teams: [T("dirA"), T("dirB"), T("dir")],
+      froms: [0, change, 0], tos: [change, open, open] }, `fixture-${id}`);
+    assert.deepEqual(await sessions(["claude"], T("dirA")), [T("s-freq")]);
+    assert.deepEqual(await sessions(["claude"], T("dirB")), [T("s-recent")]);
+    assert.deepEqual(await sessions(["claude"], T("dir")), [T("s-tie")]);
+    assert.deepEqual(await sessions(["claude"], T("a-team")), []);
+    assert.deepEqual(await sessions(["claude"], T("C")), [T("s-logonly")]);
+    assert.deepEqual((await q.userTeams(from, to, clients)).users.filter((r) => r.user.includes(id)), [
+      { user: U("cx"), team: T("A"), teams: [T("A")], sources: ["device"] },
+      { user: U("u1"), team: T("dirB"), teams: [T("dirB"), T("dirA")], sources: ["directory", "directory"] },
+      { user: U("u2"), team: T("dir"), teams: [T("dir")], sources: ["directory"] },
+      { user: U("u4"), team: T("C"), teams: [T("C")], sources: ["device"] },
+    ]);
+    const listed = await q.listTeams(from, to, clients);
+    assert.equal(listed.directory, true);
+    assert.equal(listed.sources[T("dirA")], "directory");
+    assert.equal(listed.sources[T("C")], "device");
   } finally {
+    setDirectorySnapshot(null);
     await db.close();
   }
 });

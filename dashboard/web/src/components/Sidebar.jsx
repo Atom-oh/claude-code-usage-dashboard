@@ -1,6 +1,6 @@
 import { localize, translate, useLocale } from "../i18n/index.js";
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert, Settings, Download } from "lucide-react";
+import { LayoutDashboard, Briefcase, LineChart, TrendingUp, Wrench, Users as UsersIcon, DollarSign, Sparkles, ShieldAlert, Settings, Download, UsersRound as Users2 } from "lucide-react";
 import { cn } from "../cn.js";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
 import { CLIENT_PAGES, COLLECTOR_PAGE } from "../clientNavigation.js";
@@ -20,6 +20,9 @@ export function useNavigation() {
   const items = [...NAV,
     ...(session?.permissions?.includes("collector:manage") ? [{
       ...COLLECTOR_PAGE, icon: Download,
+    }] : []),
+    ...(session?.permissions?.includes("settings:manage") ? [{
+      to: "/settings", label: "설정", hint: "팀 매핑", icon: Users2,
     }] : []),
     ...(session?.permissions?.includes("installation:read") ? [{
       to: "/installation", label: translate("m3f34928ff1d0"), hint: translate("mc2dbd98c95f8"), icon: Settings,
