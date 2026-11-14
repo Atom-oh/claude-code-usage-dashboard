@@ -8,7 +8,7 @@
     if (sheet.href !== url.href) sheet.href = url.href;
   }
   const language = document.documentElement.lang;
-  const dictionaries = {"en": {"close": "Close", "zoom": "Original size", "fit": "Fit to screen", "hint": "Image detail"}, "ko": {"close": "닫기", "zoom": "원본 크기", "fit": "화면에 맞추기", "hint": "이미지 세부 정보"}, "ja": {"close": "閉じる", "zoom": "原寸大", "fit": "画面に合わせる", "hint": "画像の詳細"}, "zh-CN": {"close": "关闭", "zoom": "原始尺寸", "fit": "适合屏幕", "hint": "图片详细信息"}};
+  const dictionaries = {"en": {"close": "Close", "zoom": "Original size", "fit": "Fit to screen", "hint": "Image detail"}, "ko": {"close": "닫기", "zoom": "원본 크기", "fit": "화면에 맞추기", "hint": "이미지 세부 정보"}, "ja": {"close": "閉じる", "zoom": "原寸大", "fit": "画面に合わせる", "hint": "画像の詳細"}, "zh-CN": {"close": "关闭", "zoom": "原始尺寸", "fit": "适合屏幕", "hint": "图片详细信息"}, "es": {"close": "Cerrar", "zoom": "Tamaño original", "fit": "Ajustar a la pantalla", "hint": "Detalles de la imagen"}};
   const labels = dictionaries[language] || dictionaries.en;
   const links = [...document.querySelectorAll('a[data-lightbox]')];
   if (links.length && typeof HTMLDialogElement !== 'undefined') {
