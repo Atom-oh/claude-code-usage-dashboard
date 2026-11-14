@@ -1,3 +1,4 @@
+import { localeTag, localize, translate, translateSource, useLocale } from "../i18n/index.js";
 import { useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { RangePicker } from "../components/RangePicker.jsx";
@@ -21,13 +22,14 @@ import { asSpendRows, sumSpend, SPEND_HELP } from "../spend.js";
 import { fromByModelDaily, modelLabel } from "../modelCostTrend.js";
 import { sumObservedMetric } from "../metricCoverage.js";
 
-const COST_BUCKETS = [{ value: "1", label: "시간별" }, { value: "24", label: "일간" }, { value: "168", label: "주간" }];
+const COST_BUCKETS = localize([{ value: "1", label: "시간별" }, { value: "24", label: "일간" }, { value: "168", label: "주간" }]);
 
-const fmt = (n) => n == null ? "—" : Number(n).toLocaleString();
-const usd = (n) => n == null ? "확인 필요" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const fmt = (n) => n == null ? "—" : Number(n).toLocaleString(localeTag());
+const usd = (n) => n == null ? translate("m84dd6e381dca") : `$${Number(n).toLocaleString(localeTag(), { maximumFractionDigits: 0 })}`;
 
 // 생산성 점수 링 게이지 — SVG 원 2개, 점수에 따라 색상 램프.
 function ScoreGauge({ score }) {
+  const _locale = useLocale();
   const r = 26;
   const c = 2 * Math.PI * r;
   const color = score == null ? "var(--ink-300)" : score >= 70 ? "var(--positive)" : score >= 40 ? "var(--brand-500)" : "var(--negative)";
@@ -43,6 +45,7 @@ function ScoreGauge({ score }) {
 }
 
 export default function Executive() {
+  const _locale = useLocale();
   const { from, to } = useRange();
   const { group, model } = useFilters();
   const { groupMode } = useConfig();
@@ -62,9 +65,9 @@ export default function Executive() {
   const [costPick, setCostPick] = useState(null);
   const costHours = costPick?.key === rangeKey ? costPick.hours : (to - from) / 86400000 > 30 ? 168 : 24;
   const costDaily = useApi("/api/cost/by-model-daily", { intervalHours: costHours });
-  const costCells = useMemo(() => fromByModelDaily(costDaily.data), [costDaily.data]);
+  const costCells = useMemo(() => fromByModelDaily(costDaily.data), [costDaily.data, _locale]);
   const userDaily = useApi("/api/cost/by-user-daily", { intervalHours: costHours });
-  const userCells = useMemo(() => fromByModelDaily(userDaily.data, { dimension: "user" }), [userDaily.data]);
+  const userCells = useMemo(() => fromByModelDaily(userDaily.data, { dimension: "user" }), [userDaily.data, _locale]);
   const costCompare = useApi("/api/cost/by-model-compare");
   const decisions = useApi("/api/productivity/decisions");
   const leaderboard = useApi("/api/users/leaderboard");
@@ -108,8 +111,8 @@ export default function Executive() {
   // (예: 10분 줌이 "7/12 → 7/12"로만 표시) — 1일 미만이면 시각까지 함께 보여준다.
   const formatRangeBoundary = (d) =>
     daysInRange < 1
-      ? d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
-      : d.toLocaleDateString("ko-KR");
+      ? d.toLocaleString(localeTag(), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString(localeTag());
   // cost(costSummary)와 users(activeUsers)는 둘 다 excludeUnknown:false라 같은 모수(unknown
   // 세션 포함)를 쓴다(queries.js filterCond 주석 참조) — 분자·분모가 어긋나지 않는다.
   const costPerDev = cost != null && users > 0 ? cost / users : null;
@@ -158,13 +161,13 @@ export default function Executive() {
   const abCostPerDev = (grp) => (abDevs[grp] > 0 && abCost[grp] != null ? abCost[grp] / abDevs[grp] : null);
   const abAutoRatio = (grp) => (abUserSec[grp] > 0 && abCliSec[grp] != null ? abCliSec[grp] / abUserSec[grp] : null);
   const scoreboardRows = [
-    { label: "활성 개발자", bedrock: abDevs.bedrock, enterprise: abDevs.enterprise, format: "number", betterIs: "high" },
-    { label: "기간 비용", bedrock: abCost.bedrock, enterprise: abCost.enterprise, format: "usd", betterIs: null },
-    { label: "개발자당 비용", bedrock: abCostPerDev("bedrock"), enterprise: abCostPerDev("enterprise"), format: "usd", betterIs: "low" },
-    { label: "추가 코드 라인", bedrock: abLoc.bedrock, enterprise: abLoc.enterprise, format: "number", betterIs: "high" },
-    { label: "권한 허용률", bedrock: abAcceptRate("bedrock"), enterprise: abAcceptRate("enterprise"), format: "pct", betterIs: null },
-    { label: "개발자 활성 시간", bedrock: abUserSec.bedrock != null ? abUserSec.bedrock / 3600 : null, enterprise: abUserSec.enterprise != null ? abUserSec.enterprise / 3600 : null, format: "hours", betterIs: null },
-    { label: "CLI / 사용자 활성 시간", bedrock: abAutoRatio("bedrock"), enterprise: abAutoRatio("enterprise"), format: "number", betterIs: null },
+    { label: translate("m58fb8b612664"), bedrock: abDevs.bedrock, enterprise: abDevs.enterprise, format: "number", betterIs: "high" },
+    { label: translate("mb3349a79f4ca"), bedrock: abCost.bedrock, enterprise: abCost.enterprise, format: "usd", betterIs: null },
+    { label: translate("m5c615b8ee780"), bedrock: abCostPerDev("bedrock"), enterprise: abCostPerDev("enterprise"), format: "usd", betterIs: "low" },
+    { label: translate("m81ea6a128280"), bedrock: abLoc.bedrock, enterprise: abLoc.enterprise, format: "number", betterIs: "high" },
+    { label: translate("m928c37dd7e50"), bedrock: abAcceptRate("bedrock"), enterprise: abAcceptRate("enterprise"), format: "pct", betterIs: null },
+    { label: translate("mefe93359093f"), bedrock: abUserSec.bedrock != null ? abUserSec.bedrock / 3600 : null, enterprise: abUserSec.enterprise != null ? abUserSec.enterprise / 3600 : null, format: "hours", betterIs: null },
+    { label: translate("m3c3f535a641f"), bedrock: abAutoRatio("bedrock"), enterprise: abAutoRatio("enterprise"), format: "number", betterIs: null },
   ];
 
   // single 모드에선 맞세울 상대가 없다 — 데이터가 있는 그룹의 값을 그대로 하나만 보여준다.
@@ -177,19 +180,19 @@ export default function Executive() {
   // single 모드 StatTile의 help 문구 — scoreboardRows(ABScoreboard와 공유)에 필드를 얹는 대신
   // label로 조회하는 별도 맵으로 둔다. docs/metrics.md의 정의 문장과 동일한 어휘를 쓴다.
   const SCOREBOARD_HELP = {
-    "활성 개발자": "선택한 기간에 세션이 1건 이상 있었던 개발자 수입니다. 채널이 판별된 세션만 집계합니다.",
-    "기간 비용": SPEND_HELP,
-    "개발자당 비용": "채널별 비용을 해당 채널의 활성 개발자 수로 나눈 값입니다.",
-    "추가 코드 라인": "선택한 기간에 추가된 코드 라인 수의 합계입니다.",
-    "권한 허용률": APPROVAL_HELP,
-    "개발자 활성 시간": "개발자가 Claude Code와 직접 상호작용한 시간입니다. Claude Code가 작업을 수행한 시간은 포함하지 않습니다.",
-    "CLI / 사용자 활성 시간": "CLI 활성 시간을 사용자 활성 시간으로 나눈 값입니다. 자율 작업 성공이나 절감 시간을 뜻하지 않습니다.",
+    "활성 개발자": translate("me4687cbbf062"),
+    "기간 비용": translateSource(SPEND_HELP),
+    "개발자당 비용": translate("m4d1db515feee"),
+    "추가 코드 라인": translate("m611508110776"),
+    "권한 허용률": translateSource(APPROVAL_HELP),
+    "개발자 활성 시간": translate("m26c6d8a3d58b"),
+    "CLI / 사용자 활성 시간": translate("mf220a6fe077b"),
   };
 
   const headline =
-    `선택한 ${formatDuration(daysInRange)} 동안 ${fmt(users)}명의 개발자가 ${fmt(t.sessions)}개 세션에서 ` +
-    `코드 ${fmt(t.loc)}라인(커밋 ${fmt(t.commits)}건, PR ${fmt(t.prs)}건)이 관측되었으며 권한 허용률은 ${d.total > 0 ? `${(acceptRate * 100).toFixed(0)}%` : "미확인"}입니다. ` +
-    `기간 비용은 ${usd(cost)}이며, 현재 추세가 이어지면 30일 기준 ${usd(projection30d)}로 예상됩니다. 평균 활동 지수는 ${orgScore == null ? "미확인" : `${Math.round(orgScore)}/100`}이며 검증된 생산성 점수가 아닙니다.`;
+    translate("m1d0677e7180f", [formatDuration(daysInRange), fmt(users), fmt(t.sessions)]) +
+    translate("mf763ce6c70e9", [fmt(t.loc), fmt(t.commits), fmt(t.prs), d.total > 0 ? `${(acceptRate * 100).toFixed(0)}%` : translate("mdc0c487c9693")]) +
+    translate("m95d23e222fe6", [usd(cost), usd(projection30d), orgScore == null ? translate("mdc0c487c9693") : `${Math.round(orgScore)}/100`]);
 
   // 섹션별로 게이트한다 — 페이지 전체를 가리면 일부만 비어 있을 때도 아무것도 안 보이고,
   // 반대로 게이트가 없으면 신규 설치가 "$0", "0%", "활성 개발자 0"을 실제 측정값처럼 보여준다.
@@ -201,17 +204,15 @@ export default function Executive() {
   return (
     <div>
       <PageHeader
-        title="Executive"
-        subtitle={`${formatRangeBoundary(from)} → ${formatRangeBoundary(to)} (${formatDuration(daysInRange)}) 기준`}
+        title={translate("mf7fb9001d913")}
+        subtitle={translate("m560ebaea3849", [formatRangeBoundary(from), formatRangeBoundary(to), formatDuration(daysInRange)])}
         right={
           <div className="flex items-center gap-2 print:hidden">
             <RangePicker />
             <button
               onClick={() => window.print()}
               className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white hover:bg-ink-50 text-ink-600"
-            >
-              PDF 저장
-            </button>
+            >{translate("m84c20a98e3ff")}</button>
           </div>
         }
       />
@@ -224,8 +225,8 @@ export default function Executive() {
           <>
             {groupMode === "single" || focusGroup ? (
               <Card
-                title={focusGroup ? `핵심 지표 — ${focusGroup}` : "핵심 지표"}
-                subtitle={focusGroup ? "상단 채널 필터 적용 · 채널이 판별된 세션 기준" : "채널이 판별된 세션 기준, 미분류 세션 제외"}
+                title={focusGroup ? translate("mab3b1fb014c6", [focusGroup]) : translate("mab8a47f2ab01")}
+                subtitle={focusGroup ? translate("mcc0ac46b33e2") : translate("mc73feae8d982")}
               >
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {scoreboardRows.map((row) => (
@@ -237,11 +238,9 @@ export default function Executive() {
               <Card
                 title={
                   <>
-                    <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400 mb-0.5">A/B 실험 현황</span>
-                    Bedrock vs Enterprise 스코어보드
-                  </>
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400 mb-0.5">{translate("m6f166fc7a12d")}</span>{translate("mb709eb065739")}</>
                 }
-                subtitle="채널이 판별된 세션 기준, 미분류 세션 제외"
+                subtitle={translate("mc73feae8d982")}
               >
                 <ABScoreboard rows={scoreboardRows} />
                 {/* 스코어보드는 지표당 절대값, 아래 다이버징 바는 지표 간 "격차 크기" 비교 —
@@ -253,72 +252,72 @@ export default function Executive() {
             )}
 
             <div>
-              <SectionLabel>사용자</SectionLabel>
+              <SectionLabel>{translate("m1ac6e422b7dc")}</SectionLabel>
               {/* DAU/MAU는 session.count에 Model attribute가 없어 model 필터가 적용되지
                   않는다 — Productivity/Cost 섹션은 필터되므로 침묵 불일치를 배지로 알린다. */}
               {model && (
-                <p className="text-[11px] text-warning-text mt-1">모델 필터는 사용자 지표에 적용되지 않습니다. 아래 값은 전체 모델 기준입니다.</p>
+                <p className="text-[11px] text-warning-text mt-1">{translate("mbd324d40f5a6")}</p>
               )}
               {peopleEmpty ? (
                 <EmptyState className="mt-2" />
               ) : (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
                   <StatTile
-                    label="활성 개발자"
+                    label={translate("m58fb8b612664")}
                     value={fmt(users)}
                     variant="accent"
-                    hint="기간 내 세션 1건 이상"
-                    help="선택한 기간에 세션이 1건 이상 있었던 개발자 수입니다. 채널이 판별되지 않은 세션도 포함합니다."
+                    hint={translate("mcba9378102d7")}
+                    help={translate("m5776e7a3c599")}
                   />
                   <StatTile
-                    label="평균 DAU"
+                    label={translate("m204276e29df5")}
                     value={avgDau.toFixed(1)}
-                    hint={`최대 ${peakDau}`}
-                    help="선택한 기간의 일간 활성 사용자 수 평균입니다."
+                    hint={translate("mb5d991df1d0f", [peakDau])}
+                    help={translate("ma4be161d9d50")}
                   />
                   <StatTile
                     label="MAU"
                     value={fmt(adoption.data?.mau)}
-                    hint={`전체 사용자 ${fmt(adoption.data?.total_members)}`}
-                    help="기간 종료 시점 기준 최근 30일 안에 세션이 있었던 사용자 수입니다."
+                    hint={translate("mdeff26065086", [fmt(adoption.data?.total_members)])}
+                    help={translate("mc696b847d43a")}
                   />
                   <StatTile
-                    label="월간 도입률"
+                    label={translate("me46e89c51d2b")}
                     value={adoption.data?.total_members > 0 ? `${((adoption.data.mau / adoption.data.total_members) * 100).toFixed(0)}%` : "—"}
-                    hint="MAU ÷ 전체 사용자"
-                    help="MAU를 기간 종료 시점까지 텔레메트리에 기록된 전체 사용자 수로 나눈 비율입니다."
+                    hint={translate("mde3df2dce804")}
+                    help={translate("mcf1fbeb99cc7")}
                   />
                 </div>
               )}
             </div>
 
             <div>
-              <SectionLabel>생산성</SectionLabel>
+              <SectionLabel>{translate("m97e833011434")}</SectionLabel>
               {productivityEmpty ? (
                 <EmptyState className="mt-2" />
               ) : (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
                   <StatTile
-                    label="추가 코드 라인"
+                    label={translate("m81ea6a128280")}
                     value={fmt(t.loc)}
-                    hint={`커밋 ${fmt(t.commits)} · PR ${fmt(t.prs)}`}
-                    help="선택한 기간에 추가된 코드 라인 수의 합계입니다."
+                    hint={translate("md1cc2fee1b6a", [fmt(t.commits), fmt(t.prs)])}
+                    help={translate("m611508110776")}
                   />
                   <StatTile
-                    label="권한 허용률"
+                    label={translate("m928c37dd7e50")}
                     value={d.total > 0 ? `${(acceptRate * 100).toFixed(0)}%` : "—"}
-                    help={APPROVAL_HELP}
+                    help={translateSource(APPROVAL_HELP)}
                   />
                   <StatTile
-                    label="개발자당 일평균 세션"
+                    label={translate("me2de08f0eb7a")}
                     value={sessionsPerDevDay.toFixed(1)}
-                    help="세션 수를 활성 개발자 수와 기간의 일수로 나눈 값입니다."
+                    help={translate("m55cf768e10cb")}
                   />
-                  <div title={ACTIVITY_SCORE_HELP} className="relative overflow-hidden bg-card border border-ink-100 rounded-lg shadow-card p-4 flex items-center gap-4">
+                  <div title={translateSource(ACTIVITY_SCORE_HELP)} className="relative overflow-hidden bg-card border border-ink-100 rounded-lg shadow-card p-4 flex items-center gap-4">
                     <ScoreGauge score={orgScore} />
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400">활동 지수</div>
-                      <div className="text-[11px] text-ink-400 mt-1">임의 가중치 · 사용자별 지수 평균 (0–100)</div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-400">{translate("m52542cfd75c0")}</div>
+                      <div className="text-[11px] text-ink-400 mt-1">{translate("md6658609969c")}</div>
                     </div>
                   </div>
                 </div>
@@ -326,42 +325,42 @@ export default function Executive() {
             </div>
 
             <div>
-              <SectionLabel>비용</SectionLabel>
+              <SectionLabel>{translate("m24423dd67b3a")}</SectionLabel>
               {costEmpty ? (
                 <EmptyState className="mt-2" />
               ) : (
                 <>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
                     <StatTile
-                      label="기간 비용"
+                      label={translate("mb3349a79f4ca")}
                       value={usd(cost)}
                       variant="accent"
-                      hint={cost == null ? "보고 비용 확인 필요" : `개발자당 ${usd(costPerDev)} · Claude Code 보고값`}
-                      help={SPEND_HELP}
+                      hint={cost == null ? translate("me9ee0d313d83") : translate("m799bfdfaaf0c", [usd(costPerDev)])}
+                      help={translateSource(SPEND_HELP)}
                     />
                     <StatTile
-                      label="30일 예상 비용"
+                      label={translate("m0b693e4cf87c")}
                       value={usd(projection30d)}
-                      hint={`일평균 ${usd(dailyAvg)} × 30일`}
-                      help="선택한 기간의 일평균 비용을 30일 기준으로 환산한 값입니다."
+                      hint={translate("m261fb803c499", [usd(dailyAvg)])}
+                      help={translate("md0e101b2e5eb")}
                     />
                     <StatTile
-                      label="코드 1,000라인당 비용"
+                      label={translate("m3a8baa9d9339")}
                       value={usd(costPerKloc)}
-                      help="기간 비용을 추가된 코드 라인 수로 나눠 1,000라인 기준으로 환산한 값입니다."
+                      help={translate("mcf2a977ec968")}
                     />
                     <StatTile
-                      label="일평균 비용"
+                      label={translate("ma196eb4073bd")}
                       value={usd(dailyAvg)}
-                      help="기간 비용을 기간의 일수로 나눈 값입니다."
+                      help={translate("m122589cc59db")}
                     />
                   </div>
                   {/* 두 기간의 보고값이 모두 확인된 모델만 비교한다. */}
                   {!costCompare.loading && !costCompare.error && (
                     <div className="mt-4">
                       <DumbbellChart
-                        title="모델별 비용 — 전기간 대비"
-                        subtitle="회색 점은 직전 같은 길이의 기간, 색 점은 이번 기간"
+                        title={translate("mb32003ca5083")}
+                        subtitle={translate("me29599354cae")}
                         valuePrefix="$"
                         colorOf={modelColorFor}
                         data={asSpendRows(costCompare.data || [])
@@ -381,7 +380,7 @@ export default function Executive() {
                 <EmptyState />
               ) : (
                 <p className="text-[14px] leading-relaxed text-ink-800">
-                  <span className="font-semibold">요약:</span> {headline}
+                  <span className="font-semibold">{translate("mb4b1e5ae297e")}</span> {headline}
                 </p>
               )}
             </Card>
@@ -393,7 +392,7 @@ export default function Executive() {
                 <ErrorBox error={adoptionTs.error} />
               ) : (
                 <DualLineChart
-                  title="일간 활성 사용자"
+                  title={translate("m9a36cd9caa89")}
                   rows={adoptionTs.data}
                   xKey="t"
                   zoomDisabled={adoptionTs.stale}
@@ -408,12 +407,12 @@ export default function Executive() {
                 <ErrorBox error={costDaily.error} />
               ) : (
                 <ModelCostTrend
-                  title="모델별 비용 추이"
+                  title={translate("m25cddb8e4cf4")}
                   right={<SegmentedControl options={COST_BUCKETS} value={String(costHours)}
                     onChange={(v) => setCostPick({ key: rangeKey, hours: Number(v) })} />}
                   cells={costCells}
-                  help={SPEND_HELP}
-                  basis="Claude 보고 비용"
+                  help={translateSource(SPEND_HELP)}
+                  basis={translate("ma029ac069435")}
                   xKey="t"
                   pinned={model ? [model] : undefined}
                   bucketHours={costHours}
@@ -427,11 +426,11 @@ export default function Executive() {
                 <ErrorBox error={userDaily.error} />
               ) : (
                 <ModelCostTrend
-                  title="사용자별 비용 추이"
-                  subtitle="상위 사용자 ID 기준 · 모델별 비용 추이와 같은 버킷"
+                  title={translate("mafd8327e1623")}
+                  subtitle={translate("m7d08d8867934")}
                   cells={userCells}
-                  help={SPEND_HELP}
-                  basis="Claude 보고 비용"
+                  help={translateSource(SPEND_HELP)}
+                  basis={translate("ma029ac069435")}
                   xKey="t"
                   dimension="user"
                   bucketHours={costHours}
