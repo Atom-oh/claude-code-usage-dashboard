@@ -199,6 +199,14 @@ class Migration(unittest.TestCase):
         self.assertTrue(self.new_running)
         self.assertEqual(len(list(self.root.glob("legacy-backup-*"))), 1)
 
+    def test_reinstall_after_a_finished_migration_tolerates_removed_legacy_files(self):
+        self.module.atomic(self.unit, "<plist><!-- " + self.module.MARKER + " --></plist>")
+        self.loaded, self.disabled = False, True
+        self.config.unlink()
+        self.env.unlink()
+        self.install()
+        self.assertTrue(self.new_running)
+
     def test_reinstall_after_a_finished_migration_leaves_the_legacy_untouched(self):
         self.module.atomic(self.unit, "<plist><!-- " + self.module.MARKER + " --></plist>")
         self.loaded, self.disabled = False, True

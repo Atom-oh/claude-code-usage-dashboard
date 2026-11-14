@@ -236,8 +236,14 @@ def port_in_use(port):
 
 
 def command_output(command):
+    environment = dict(os.environ)
+    runtime = Path("/run/user") / str(os.getuid())
+    if sys.platform == "linux" and (runtime / "bus").exists():  # as install.py: reach the user manager
+        environment["XDG_RUNTIME_DIR"] = str(runtime)
+        environment["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + str(runtime / "bus")
     try:
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20,
+                                env=environment)
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout.decode("utf-8", "replace") if result.returncode == 0 else None
@@ -259,14 +265,15 @@ def verified_legacy(platform, home, user=None, output=command_output):
         if unit.is_symlink() or not unit.exists():
             return None  # absent, or masked by an earlier migration
         shown = output(["systemctl", "show", "otelcol.service",
-                        "--property=LoadState,FragmentPath,User,ExecStart"]) or ""
+                        "--property=LoadState,FragmentPath,User,MainPID,ExecStart"]) or ""
         fields = dict(line.split("=", 1) for line in shown.splitlines() if "=" in line)
         argv = re.findall(r"argv\[\]=([^;]*?) ;", fields.get("ExecStart", ""))
         user = user or pwd.getpwuid(os.getuid()).pw_name
         if (fields.get("LoadState") != "loaded" or fields.get("FragmentPath") != str(unit)
                 or fields.get("User") != user or len(argv) != 1 or not known_arguments(argv[0].split(" "), config)):
             return None
-        return unit
+        pid = fields.get("MainPID", "")
+        return {"path": unit, "pid": pid if pid.isdigit() and pid != "0" else None}
     plist = home / "Library/LaunchAgents" / (LEGACY_MAC_LABEL + ".plist")
     if plist.is_symlink() or not plist.exists():
         return None
@@ -278,23 +285,60 @@ def verified_legacy(platform, home, user=None, output=command_output):
             or not known_arguments(data.get("ProgramArguments"), config)):
         return None
     domain = "gui/" + str(os.getuid())
-    loaded = output(["launchctl", "print", domain + "/" + LEGACY_MAC_LABEL]) is not None
+    printed = output(["launchctl", "print", domain + "/" + LEGACY_MAC_LABEL])
+    loaded = printed is not None
     disabled_text = output(["launchctl", "print-disabled", domain]) or ""
     override = re.search(r'"' + re.escape(LEGACY_MAC_LABEL) + r'"\s*=>\s*(\w+)', disabled_text)
     disabled = override[1] in ("true", "disabled") if override else bool(data.get("Disabled", False))
-    return plist if loaded or not disabled else None  # unloaded and disabled: already migrated
+    if not loaded and disabled:
+        return None  # unloaded and disabled: already migrated
+    match = re.search(r"^\tpid = ([0-9]+)$", printed or "", re.MULTILINE)
+    return {"path": plist, "pid": match[1] if match else None}
 
 
-def local_conflict(platform, home=None, probe=port_in_use, legacy=verified_legacy):
-    """Before a device is registered: is a legacy Collector still able to run, or does another
-    service hold the local Collector ports? A reinstall of this package replaces its own
-    listeners, so only a legacy Collector matters then."""
+def port_owners(platform, port, output=command_output):
+    """PIDs listening on a local port (the caller's own processes are visible without root)."""
+    if platform == "linux":
+        return set(re.findall(r"pid=([0-9]+)", output(["ss", "-ltnpH", "sport = :" + str(port)]) or ""))
+    text = output(["lsof", "-nP", "-a", "-iTCP:" + str(port), "-sTCP:LISTEN", "-Fp"]) or ""
+    return set(re.findall(r"^p([0-9]+)$", text, re.MULTILINE))
+
+
+def service_file(platform, home):
+    """This package's own service file: its presence makes the run a reinstall, as in install.py."""
+    return (home / ".config/systemd/user/ccdash-collector.service" if platform == "linux"
+            else home / "Library/LaunchAgents/org.ccdash.collector.plist")
+
+
+def own_pids(platform, home, output=command_output):
+    if platform == "linux":
+        text = (output(["systemctl", "--user", "show", "--property=MainPID", "--value",
+                        "ccdash-collector.service"]) or "").strip()
+        return {text} if text.isdigit() and text != "0" else set()
+    text = output(["launchctl", "print", "gui/" + str(os.getuid()) + "/org.ccdash.collector"]) or ""
+    match = re.search(r"^\tpid = ([0-9]+)$", text, re.MULTILINE)
+    return {match[1]} if match else set()
+
+
+def local_conflict(platform, home=None, probe=port_in_use, legacy=verified_legacy, owners=port_owners,
+                   own=own_pids):
+    """Before a device is registered, mirror install.py's decision: every busy local port must
+    belong to a verified legacy Collector or, on reinstall, to this package's own Collector.
+    Returns None (nothing to resolve), the ports held by anything else (installation stops), or
+    the verified legacy Collector to migrate."""
     home = Path(home or os.path.expanduser("~"))
     found = legacy(platform, home)
-    if (home / ".local/share/ccdash-collector/state.json").exists():
-        return {"ports": [port for port in LOCAL_PORTS if probe(port)], "legacy": found} if found else None
-    ports = [port for port in LOCAL_PORTS if probe(port)]
-    return {"ports": ports, "legacy": found} if ports or found else None
+    reinstall = service_file(platform, home).exists()
+    busy = [port for port in LOCAL_PORTS if probe(port)]
+    if reinstall and not found:
+        return None  # install.py replaces its own service and listeners
+    allowed = ({found["pid"]} if found and found.get("pid") else set()) | (own(platform, home) if reinstall else set())
+    foreign = [port for port in busy if not owners(platform, port) or not owners(platform, port) <= allowed]
+    if foreign:
+        return {"ports": foreign, "legacy": None}
+    if found:
+        return {"ports": busy, "legacy": found["path"]}
+    return None
 
 
 def confirm_migration(found, platform, ask, out):

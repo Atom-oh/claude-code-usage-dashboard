@@ -367,7 +367,21 @@ def occupied_ports():
     return ports
 
 
-def check_ports(legacy=None):
+def service_pids(unit, uid):
+    """PID of this package's own running Collector, if any (it legitimately holds the ports on reinstall)."""
+    if sys.platform == "darwin":
+        output = run(["launchctl", "print", "gui/" + str(uid) + "/" + LABEL], required=False, output=True)
+        match = re.search(r"^\tpid = ([0-9]+)$", output if isinstance(output, str) else "", re.MULTILINE)
+        return {match[1]} if match else set()
+    output = run(["systemctl", "--user", "show", "--property=MainPID", "--value", unit.name],
+                 required=False, output=True)
+    return {output} if isinstance(output, str) and output.isdigit() and output != "0" else set()
+
+
+def check_ports(legacy=None, allowed=frozenset()):
+    """Every busy local port must belong to the verified legacy Collector (or, on reinstall, to
+    this package's own Collector); nothing is stopped otherwise."""
+    allowed = set(allowed) | ({legacy["pid"]} if legacy and legacy.get("pid") else set())
     ports = occupied_ports()
     for port in ports:
         # Read PID fields only; process arguments and environments may contain secrets.
@@ -380,7 +394,7 @@ def check_ports(legacy=None):
             # ss shows the owning PID for the caller's own processes without root.
             output = run(["ss", "-ltnpH", "sport = :" + str(port)], required=False, output=True)
             owners = set(re.findall(r"pid=([0-9]+)", output or ""))
-        if not legacy or not legacy["pid"] or owners != {legacy["pid"]}:
+        if not owners or not owners <= allowed:
             detail = " (PID " + ", ".join(sorted(owners)) + ")" if owners else ""
             inspect = "lsof -nP -iTCP -sTCP:LISTEN" if sys.platform == "darwin" else "ss -ltnp"
             raise ValueError("local port " + str(port) + detail
@@ -454,7 +468,10 @@ def legacy_file_states(paths, owner, message, private_parent=False):
     for path in paths:
         if any(p.is_symlink() for p in (path, *path.parents)):
             raise ValueError("legacy service/configuration has a symlink; manual migration required")
-        info = path.stat()
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            raise ValueError("legacy configuration is missing (" + str(path) + "); manual migration required") from None
         writable = info.st_mode & 0o022
         if writable and private_parent:
             parent = path.parent.stat()
@@ -511,6 +528,21 @@ def legacy_linux_state(home, uid, user):
 
 def legacy_state(home, uid, user):
     return legacy_mac_state(home, uid) if sys.platform == "darwin" else legacy_linux_state(home, uid, user)
+
+
+def mac_migration_finished(home, uid):
+    """Unloaded and disabled: an earlier migration finished and nothing starts the job again.
+    Decided from launchd alone, because obsolete legacy files may be removed afterwards."""
+    unit = home / "Library/LaunchAgents" / (LEGACY_LABEL + ".plist")
+    if not unit.exists() and not unit.is_symlink():
+        return True
+    domain = "gui/" + str(uid)
+    if run(["launchctl", "print", domain + "/" + LEGACY_LABEL], required=False):
+        return False
+    disabled = run(["launchctl", "print-disabled", domain], required=False, output=True)
+    override = re.search(r'^\s*"' + re.escape(LEGACY_LABEL) + r'"\s*=>\s*(.*?)\s*$',
+                         disabled if isinstance(disabled, str) else "", re.MULTILINE)
+    return bool(override and override[1] in ("true", "disabled"))
 
 
 def confirm_legacy(args, legacy):
@@ -735,19 +767,23 @@ def install(args, home, user, uid, root, unit):
     check_services(unit, renewal, user)
     # A legacy Collector that can still run is migrated on reinstall too: otherwise it keeps
     # the local ports and the device Collector restarts without ever receiving telemetry.
-    legacy = legacy_state(home, uid, user)
-    if (legacy and unit.exists() and legacy.get("platform") != "linux"
-            and not legacy["loaded"] and legacy["disabled"]):
-        legacy = None  # a finished macOS migration: unloaded and disabled, nothing starts it again
-    if not unit.exists():
-        check_ports(legacy)
+    reinstall = unit.exists()
+    if reinstall and sys.platform == "darwin" and mac_migration_finished(home, uid):
+        legacy = None
+    else:
+        legacy = legacy_state(home, uid, user)
+    # On reinstall this package's own Collector may hold the ports; nothing else may.
+    own = service_pids(unit, uid) if reinstall else set()
+    if not reinstall or legacy:
+        check_ports(legacy, own)
     if legacy:
         confirm_legacy(args, legacy)
         if legacy.get("platform") == "linux":
             # Ask for the sudo password now, before any download or file change.
             run(["sudo", "-v"])
-    user_id = migration_user_id(args, home) if legacy else (
-        args.user_id or installed_user_id(root) or getattr(args, "default_user_id", None) or user)
+    # A reinstall keeps its recorded attribution even while migrating a legacy Collector.
+    user_id = args.user_id or installed_user_id(root) or (
+        migration_user_id(args, home) if legacy else getattr(args, "default_user_id", None) or user)
     replace_claude_telemetry = bool(legacy) or getattr(args, "replace_claude_telemetry", False)
     changes, notes = client_plan(home, user_id, replace_claude_telemetry)
     for note in notes:
@@ -809,8 +845,8 @@ def install(args, home, user, uid, root, unit):
             check_services(unit, renewal, user)
             if legacy and legacy_state(home, uid, user) != legacy:
                 raise ValueError("legacy service or configuration changed during preparation; rerun setup")
-            if not unit.exists():
-                check_ports(legacy)
+            if not reinstall or legacy:
+                check_ports(legacy, own | service_pids(unit, uid) if reinstall else own)
             if legacy:
                 backup_legacy(legacy, root)
                 if legacy_state(home, uid, user) != legacy:

@@ -61,6 +61,7 @@ class LinuxMigration(unittest.TestCase):
         self.exec_config = str(self.config)
         self.service_user = "fixture"
         self.port_pid = LEGACY_PID
+        self.foreign = {}  # port -> PID of an unrelated listener
         self.running = set()
         self.start_error = False
         self.sudo = []
@@ -89,6 +90,8 @@ class LinuxMigration(unittest.TestCase):
         self.module.atomic(stage / "otelcol-contrib", "new binary", 0o700)
 
     def bind(self, address):
+        if address[1] in self.foreign:
+            raise OSError(errno.EADDRINUSE, "unrelated listener")
         if address[1] in (4317, 4318, 13133) and (self.active or self.unit.name in self.running):
             raise OSError(errno.EADDRINUSE, "address in use")
 
@@ -112,9 +115,12 @@ class LinuxMigration(unittest.TestCase):
         if command[:2] == ["systemctl", "show"] and command[2] == "otelcol.service":
             return self.show() if output else True
         if command[0] == "ss":
+            port = command[-1].split(":")[-1]
+            if int(port) in self.foreign:
+                return ("LISTEN 0 4096 127.0.0.1:" + port + " 0.0.0.0:* users:((\"other\",pid="
+                        + self.foreign[int(port)] + ",fd=3))")
             if not self.active:
                 return ""
-            port = command[-1].split(":")[-1]
             return ("LISTEN 0 4096 127.0.0.1:" + port + " 0.0.0.0:* users:((\"otelcol-contrib\",pid="
                     + self.port_pid + ",fd=9))")
         if command[0] == "sudo":
@@ -289,6 +295,20 @@ class LinuxMigration(unittest.TestCase):
         self.install()
         self.assertTrue(self.masked and not self.active)
         self.assertIn(self.unit.name, self.running)
+
+    def test_reinstall_with_an_unrelated_listener_stops_before_touching_either_collector(self):
+        self.existing_installation()
+        self.foreign = {13133: "999"}
+        with self.assertRaisesRegex(ValueError, "unverified service"):
+            self.install()
+        self.assertEqual(self.sudo, [])
+        self.assertTrue(self.active and not self.masked)
+
+    def test_reinstall_keeps_the_recorded_attribution_while_migrating(self):
+        self.existing_installation()
+        self.module.atomic(self.root / "state.json", json.dumps({"managedBy": self.module.MARKER, "userId": "installed@example.invalid"}))
+        self.install()
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "installed@example.invalid")
 
     def test_reinstall_after_a_finished_migration_changes_no_legacy_state(self):
         self.existing_installation()

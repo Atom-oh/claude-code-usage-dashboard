@@ -242,7 +242,8 @@ the unit and returns the old service to its previous enabled and running state. 
 unit, a different configuration or user, or an unrelated listener is never changed: a
 running one stops installation before a device is registered. A reinstall also migrates a
 legacy Collector that can still run (on macOS: loaded or not disabled; on Linux: not masked),
-because it would otherwise keep the ports while the device Collector restarts. The manual
+because it would otherwise keep the ports while the device Collector restarts; every busy port
+must then belong to the legacy Collector or this package's own Collector. The manual
 procedure remains:
 
 ```bash
