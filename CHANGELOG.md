@@ -24,6 +24,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Executive spend/permission help across languages.
 - Add the Spanish documentation guide and five-language navigation, including
   language-selection instructions, matching app guide links and localized image-viewer controls.
+- Correct Spanish installation prerequisites and localized credits links; keep token
+  composition emphasis across language changes and clarify translated cost help.
 
 ## [1.9.0] - 2026-11-14
 

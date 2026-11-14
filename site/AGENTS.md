@@ -8,7 +8,7 @@ English, Korean, Japanese, Simplified Chinese and Spanish public guides.
 
 English source guides are `index.html`, `user-guide.html`, `installation.html`,
 `architecture.html`, `api.html` and `operations.html`; English media credits are
-`assets/credits.html`. Mirror these seven pages under `ko/`, `ja/`, `zh/` and `es/`, with HTML language codes `ko`,
+`assets/credits.html`; translated credits are `<locale>/credits.html`. Mirror these seven pages under `ko/`, `ja/`, `zh/` and `es/`, with HTML language codes `ko`,
 `ja`, `zh-CN` and `es`. Keep language switches on the equivalent page, five hreflang
 alternates, section IDs, endpoint/config identifiers and code examples aligned.
 Translate titles, descriptions, navigation, captions, alt text and accessible
