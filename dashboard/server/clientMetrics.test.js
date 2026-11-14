@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldClientMetrics, compactTimeRows, validateTimeFormat, validateClientFilters, validateClientView, buildCodexQuery, clientBucketSeconds, rebucketRows, effectiveClientEnd } from "./clientMetrics.js";
+import { foldClientMetrics, compactTimeRows, validateTimeFormat, validateClientFilters, validateClientView, buildCodexQuery, clientBucketSeconds, rebucketRows, effectiveClientEnd, mergeClaudeActivity } from "./clientMetrics.js";
 
 const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", session: "conversation-1",
   user: "person@example.invalid", backend: "bedrock-mantle", model: "openai.gpt-6-astra",
@@ -73,7 +73,48 @@ test("Codex user prefilter keeps native fallback, original checks and both dedup
   assert.equal(params.clientUserExact, "fixture@example.invalid");
   assert(!sql.includes("fixture@example.invalid"));
   assert(!buildCodexQuery(from, to).sql.includes("PREWHERE"));
-  assert(!buildCodexQuery(from, to, { user: "fixture" }, {}, "claude").sql.includes("PREWHERE"));
+  assert(!buildCodexQuery(from, to, {}, {}, "claude").sql.includes("PREWHERE"));
+});
+
+// A one-user Claude read (e.g. the 90-day heatmap) otherwise decodes every user's
+// log maps in the range and exceeds the per-query memory limit.
+test("Claude log reads prefilter promoted identity before the session-group join", () => {
+  const from = new Date("2026-09-14"), to = new Date("2026-12-13");
+  for (const [filters, options] of [
+    [{ userExact: "fixture@example.invalid" }, {}],
+    [{ user: "fixture" }, {}],
+    [{ userExact: "fixture@example.invalid" }, { activityOnly: true, activitySessions: true }],
+  ]) {
+    const { sql } = buildCodexQuery(from, to, filters, {}, "claude", 86400, options);
+    assert.equal((sql.match(/PREWHERE/g) || []).length, 1, JSON.stringify(options));
+    assert.match(sql, /LEFT JOIN session_group ug USING \(SessionId\)\s+PREWHERE\s+Timestamp >= \{from:DateTime\}/);
+    assert.match(sql, /PREWHERE[\s\S]*coalesce\(nullIf\(UserEmail, ''\), nullIf\(EndUserId, ''\), ''\) = \{clientUserExact:String\}/);
+    // The map-derived identity stays the final semantic check.
+    assert.match(sql, /\{clientUserExact:String\} = '' OR user = \{clientUserExact:String\}/);
+  }
+});
+
+test("Claude activity merges counter and log sessions per day without double counting", () => {
+  const counters = [
+    { day: "2026-09-14T00:00:00Z", session: "both" },
+    { day: "2026-09-14T00:00:00Z", session: "counter-only" },
+    // Idle counter evidence keeps its day as an observed zero.
+    { day: "2026-09-15T00:00:00Z", session: "" },
+  ];
+  const logs = [
+    { t: "2026-09-14T00:00:00Z", session: "both" },
+    { t: "2026-09-14T00:00:00Z", session: "log-only" },
+    // A log without a session id shows the day without adding a session.
+    { t: "2026-09-16T00:00:00Z", session: "" },
+    { t: "2026-09-17T00:00:00Z", session: "late" },
+  ];
+  assert.deepEqual(mergeClaudeActivity([counters, logs]), [
+    { client: "claude", t: "2026-09-14T00:00:00Z", sessions: 3 },
+    { client: "claude", t: "2026-09-15T00:00:00Z", sessions: 0 },
+    { client: "claude", t: "2026-09-16T00:00:00Z", sessions: 0 },
+    { client: "claude", t: "2026-09-17T00:00:00Z", sessions: 1 },
+  ]);
+  assert.deepEqual(mergeClaudeActivity([[], []]), []);
 });
 
 test("idle Claude counter observations fill only the timeline, not active population or totals", () => {

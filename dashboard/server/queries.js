@@ -559,7 +559,7 @@ const counterObserved = "(m.SessionId, m.UserEmail, m.MetricName, m.TokenType) I
 // Client summaries reuse the existing counter and boundary semantics without adding
 // dimensions to shared helpers. Operational Codex events never enter these counters.
 export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, signal, priceTable,
-  { activityOnly = false, activityEvents } = {}) {
+  { activityOnly = false } = {}) {
   const metricFilter = "AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')";
   // User/model are partition dimensions in the local counter window, so narrowing them
   // throughout the lookback preserves the baseline. Session channel/backend inference stays global.
@@ -575,7 +575,9 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
     ? { raw: true, params: {}, sub: incBucketedRaw(
       `if(TimeUnix >= {from:DateTime}, greatest(${rawBucket}, {from:DateTime}), ${rawBucket})`,
       `${metricFilter} ${inputFilter.where}`) }
-    : incBucket(1, metricFilter);
+    // Hourly reads narrow the same partition dimensions: an unfiltered 90-day window
+    // over every user's rollup exceeds the per-query memory limit for one-user views.
+    : incBucket(1, `${metricFilter} ${inputFilter.where}`);
   const f = filterCond({ ...filters, excludeUnknown: false },
     { user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   // Hourly helpers can emit a baseline-only first bucket. Check actual samples
@@ -608,19 +610,18 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
     GROUP BY t, session, user, model, backend
     )
     ${activityOnly ? `-- coding-client:claude-activity
+    -- Distinct (day, session) rows; clientActivity unions them with the log sessions.
+    -- An empty session marks an observed idle day.
     SELECT formatDateTime(greatest(toStartOfDay(parseDateTimeBestEffort(t, 'UTC')),
-      {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS day,
-      uniqExactIf(session, session != '' AND changed) AS sessions
+      {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS day, session
     FROM (
-      SELECT t, session, 1 AS changed FROM client_usage WHERE active
+      SELECT t, session FROM client_usage WHERE active
       UNION ALL
       -- Idle evidence keeps the overview's whole-native-bucket boundary.
-      SELECT t, '' AS session, 0 AS changed FROM client_usage AS usage
+      SELECT t, '' AS session FROM client_usage AS usage
       GROUP BY t HAVING max(usage.changed) = 0 AND max(token_seen OR cost_seen)
-      ${activityEvents ? `UNION ALL
-      SELECT t, session, 1 AS changed FROM (${activityEvents.sql})` : ""}
     )
-    GROUP BY day
+    GROUP BY day, session
     ORDER BY day` : `SELECT t, session, user, model, backend, any(channel) AS channel, 1 AS count,
       -- Bits mark omitted keys: detailed scopes = 0, bucket-only scopes = 15.
       GROUPING(session, user, model, backend) != 0 AS timeline_only,
@@ -637,7 +638,7 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
       OR (timeline_only AND max(changed) = 0 AND (token_observed OR cost_observed))
     ORDER BY t LIMIT 50001 BY timeline_only`}`,
   { ...range(from, to, b.raw), ...b.params, ...f.params, clientBackend: filters.backend || "",
-    ...(fine ? { clientMinutes: nativeSeconds / 60 } : {}), ...activityEvents?.params }, signal, priceTable);
+    ...(fine ? { clientMinutes: nativeSeconds / 60 } : {}) }, signal, priceTable);
 }
 
 // 패널1: 그룹별 KPI 요약. excludeUnknown: false — 이 응답의 합계(클라이언트에서 groupBy 없이
