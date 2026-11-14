@@ -257,6 +257,29 @@ resource "aws_iam_role_policy" "dashboard_price_list" {
   })
 }
 
+# Team attribution from the Cognito user pool (dashboard/server/cognitoDirectory.js). Only a Cognito
+# issuer under organization OIDC yields a pool; any other issuer leaves the grant out and the
+# dashboard reports the directory teams as unavailable (not_cognito).
+locals {
+  cognito_issuer_match = var.auth_mode == "oidc" && var.oidc_issuer != null ? try(regex("^https://cognito-idp\\.([a-z0-9-]+)\\.amazonaws\\.com/([a-z0-9-]+_[A-Za-z0-9]+)/?$", var.oidc_issuer), null) : null
+  cognito_pool_arn     = local.cognito_issuer_match == null ? null : "arn:aws:cognito-idp:${local.cognito_issuer_match[0]}:${data.aws_caller_identity.current.account_id}:userpool/${local.cognito_issuer_match[1]}"
+}
+
+# ListUsers and DescribeUserPool are read-only and scoped to the one user pool that signs users in.
+resource "aws_iam_role_policy" "dashboard_team_directory" {
+  count = local.cognito_pool_arn == null ? 0 : 1
+  name  = "cognito-team-directory-read"
+  role  = aws_iam_role.dashboard_bedrock.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["cognito-idp:ListUsers", "cognito-idp:DescribeUserPool"]
+      Resource = local.cognito_pool_arn
+    }]
+  })
+}
+
 resource "kubernetes_deployment_v1" "dashboard" {
   # ECR엔 아직 이미지가 없다 — apply 시점에 rollout이 안 끝나는 게 정상이므로 여기서 막지 않는다.
   # 이미지 push 후 `kubectl rollout restart`로 실제로 뜬다.

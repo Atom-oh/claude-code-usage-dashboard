@@ -42,6 +42,11 @@ The legacy Tailwind theme is explicitly loaded through `@config` under Tailwind 
 | `/reliability` | Reliability |
 | `/analytics` | Analytics |
 
+`/settings` (admin, `settings:manage`) is a separate page like `/installation`: it edits the Cognito team
+attribute and labels, previews value counts and shows sync status (stale, `directory_too_large`). Elsewhere,
+a team that came only from the device shows a Korean "device-provided value" marker; CSV exports carry team names
+only, and the team cost section notes the history start date when a range begins before it.
+
 All, Claude and Codex default to shared metrics from `/api/clients/overview`, with
 the same navigation, headers, filters, cards and table columns. Client switching
 preserves valid routes and date/model/unmasked-user state; unknown paths normalize to `/`.

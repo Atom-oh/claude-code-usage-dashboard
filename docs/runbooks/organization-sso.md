@@ -108,6 +108,27 @@ Preserve a Referrer Policy compatible with same-origin form POST Origin, such as
 application's `strict-origin`; do not override it with `no-referrer`.
 Test logout in a real browser through the actual edge and directly through the test origin.
 
+## Team attribution from Cognito
+
+With a Cognito issuer, an admin can derive teams from a user pool attribute instead of the client-provided
+OTel `team`. Prerequisites: `AUTH_MODE=oidc`, a Cognito `OIDC_ISSUER` and device ingestion (`INGEST_TOKEN_TABLE`);
+otherwise `/settings` reports `basic_auth`, `not_cognito` or `ingest_disabled`.
+
+1. Apply Terraform before rolling out the image: it adds the `cognito-idp:ListUsers` and `DescribeUserPool`
+   grant on the pool. Without it the sync fails with `directory_unavailable`.
+2. Open `/settings` as an admin and choose the attribute. Options are string `custom:*` attributes, `name`
+   and the derived `email_domain`; `email` is excluded. Use the preview counts to pick one that groups
+   people into teams. Users without a usable ASCII email, and users sharing an email, are excluded and keep
+   device teams.
+3. Optionally label raw values for display (1-80 characters, unique). Labels never change filters or CSV.
+4. Save. The first sync applies each user's current value to the whole past. A later attribute switch, or a
+   changed value, applies only from the sync that saw it (hourly, so times are accurate to about one hour).
+   Past usage keeps the earlier team.
+5. A failed sync keeps the last snapshot and marks it stale; during a Cognito outage `/settings` still shows
+   stored settings. More than 20,000 history intervals pause directory teams (`directory_too_large`).
+
+Until an admin saves an attribute, behavior is unchanged.
+
 ## Provider configuration
 
 The application authorizes only signed, explicitly mapped group claims. Email addresses,

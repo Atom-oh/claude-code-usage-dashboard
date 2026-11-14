@@ -769,10 +769,21 @@ Both lookups are range-only over enabled clients: they reject `team` and ignore 
 
 | Path | Fields and grain |
 |---|---|
-| `/api/teams` | **Object** `{teams}`: sorted distinct resolved teams of sessions with team evidence inside the range. |
-| `/api/users/teams` | **Object** `{users}`: per raw user identity (email, else `enduser.id`), `{user, team, teams}` with every resolved team of the user's sessions with in-range team evidence, most recent first; `team` is the first. Users without team evidence are absent. IDs are raw like other user APIs; UI masking is not access control. |
+| `/api/teams` | **Object** `{teams, sources, labels, historyStart}`: sorted distinct resolved teams of sessions with team evidence inside the range. `sources` maps each team to `"directory"`, `"device"` or `"both"` (where its sessions' team came from). `labels` maps raw team values to display names (display only; filters and CSV use raw values), `{}` when no directory is active. `historyStart` is the epoch-ms time of the first directory history write, or `null`. |
+| `/api/users/teams` | **Object** `{users}`: per raw user identity (email, else `enduser.id`), `{user, team, teams, sources}` with every resolved team of the user's sessions with in-range team evidence, most recent first; `team` is the first; `sources[i]` (`"directory"`, `"device"` or `"both"`) is where `teams[i]` came from. Users without team evidence are absent. IDs are raw like other user APIs; UI masking is not access control. |
 
 Logs are retained 90 days ([data retention](reference/data.md)), so older counter-only sessions have no team.
+
+#### Team settings
+
+Admin-only (`settings:manage`); responses are `Cache-Control: no-store`. In Basic mode the routes are
+reachable but directory teams are unavailable, so reads report why and `PUT` never saves.
+
+| Path | Behavior |
+|---|---|
+| `GET /api/settings/teams` | `{available, reason, poolId, status, attributes, current, labels, options, directoryError, version}`. `available:false` carries `reason` `basic_auth`, `not_cognito` or `ingest_disabled` (directory teams need `AUTH_MODE=oidc`, a Cognito `OIDC_ISSUER` and `INGEST_TOKEN_TABLE`). `status` is the sync state (`lastSync`, `lastError`, `stale`, `users`, `historyStart`, `reason`; `reason` `directory_too_large` means more than 20,000 history intervals, so the directory is not applied). `attributes` is the timeline of selected attributes with their `from` times; `current` is the latest. `options` lists selectable Cognito attributes (string `custom:*`, `name`, derived `email_domain`). During a Cognito outage `options` is `null` with `directoryError: "directory_unavailable"` while stored settings stay readable. |
+| `GET /api/settings/teams/preview?attribute=` | `{attribute, values:[{value, users}], missing, excluded}`: user counts per value for attributable users. `missing` has no value; `excluded` has no usable (ASCII) email or shares an email with another user, and keeps device teams. Errors: `invalid_attribute` (400), `directory_unavailable` (503; 409 when unavailable). |
+| `PUT /api/settings/teams` | Body `{attribute, labels, version}` (at most 16 KiB; `version` is the last read value, `null` for the first save). Saves the attribute and labels and triggers a sync; returns the same view as `GET`. Errors: `invalid_attribute`, `invalid_labels`, `duplicate_label`, `invalid_version` (400), `version_conflict` (409), `directory_unavailable` (409 when unavailable, 503 on a Cognito failure), `store_unavailable`, `body_too_large` (413), `invalid_json` (400). |
 
 KPI rows also expose `commits_observed`, `prs_observed`, and `lines_of_code_observed`.
 Active-time rows expose separate user/CLI observation flags. These require in-window

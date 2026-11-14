@@ -15,6 +15,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Attribute teams from a Cognito user pool attribute chosen by an admin on `/settings`, with labels,
+  hourly sync, change history and device-provided markers; Terraform grants the dashboard read access to
+  that pool. `/api/teams` and `/api/users/teams` add `sources`.
+
 ## [1.8.2] - 2026-11-14
 
 ### Added
