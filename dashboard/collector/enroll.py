@@ -10,6 +10,9 @@ import hashlib
 import io
 import json
 import os
+from pathlib import Path
+import plistlib
+import pwd
 import re
 import secrets
 import shutil
@@ -218,8 +221,154 @@ def write_token(directory, token):
     return path
 
 
-def install_command(installer, endpoint, token_file, user_id_override, approved_user_id):
+LOCAL_PORTS = (4317, 4318, 13133)
+LEGACY_LINUX_UNIT = Path("/etc/systemd/system/otelcol.service")
+LEGACY_MAC_LABEL = "com.ccdash.otelcol"
+
+
+def port_in_use(port):
+    with socket.socket() as probe:
+        probe.settimeout(0.2)
+        try:
+            return probe.connect_ex(("127.0.0.1", port)) == 0
+        except OSError:
+            return False
+
+
+def command_output(command):
+    environment = dict(os.environ)
+    runtime = Path("/run/user") / str(os.getuid())
+    if sys.platform == "linux" and (runtime / "bus").exists():  # as install.py: reach the user manager
+        environment["XDG_RUNTIME_DIR"] = str(runtime)
+        environment["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + str(runtime / "bus")
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20,
+                                env=environment)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.decode("utf-8", "replace") if result.returncode == 0 else None
+
+
+def known_arguments(arguments, config):
+    return (isinstance(arguments, list) and len(arguments) >= 2 and isinstance(arguments[0], str)
+            and os.path.isabs(arguments[0]) and os.path.basename(arguments[0]) == "otelcol-contrib"
+            and arguments[1:] in (["--config=" + config], ["--config", config]))
+
+
+def verified_legacy(platform, home, user=None, output=command_output):
+    """The historical personal Collector that can still run, identified as install.py does: this
+    user's own ~/.otelcol/config.yaml, run by this user. install.py repeats the full ownership,
+    permission and port-owner checks before changing anything."""
+    config = str(home / ".otelcol/config.yaml")
+    if platform == "linux":
+        unit = LEGACY_LINUX_UNIT
+        if unit.is_symlink() or not unit.exists():
+            return None  # absent, or masked by an earlier migration
+        shown = output(["systemctl", "show", "otelcol.service",
+                        "--property=LoadState,FragmentPath,User,MainPID,ExecStart"]) or ""
+        fields = dict(line.split("=", 1) for line in shown.splitlines() if "=" in line)
+        argv = re.findall(r"argv\[\]=([^;]*?) ;", fields.get("ExecStart", ""))
+        user = user or pwd.getpwuid(os.getuid()).pw_name
+        if (fields.get("LoadState") != "loaded" or fields.get("FragmentPath") != str(unit)
+                or fields.get("User") != user or len(argv) != 1 or not known_arguments(argv[0].split(" "), config)):
+            return None
+        pid = fields.get("MainPID", "")
+        return {"path": unit, "pid": pid if pid.isdigit() and pid != "0" else None}
+    plist = home / "Library/LaunchAgents" / (LEGACY_MAC_LABEL + ".plist")
+    if plist.is_symlink() or not plist.exists():
+        return None
+    try:
+        data = plistlib.loads(plist.read_bytes())
+    except Exception:
+        return None
+    if (not isinstance(data, dict) or data.get("Label") != LEGACY_MAC_LABEL
+            or not known_arguments(data.get("ProgramArguments"), config)):
+        return None
+    domain = "gui/" + str(os.getuid())
+    printed = output(["launchctl", "print", domain + "/" + LEGACY_MAC_LABEL])
+    loaded = printed is not None
+    disabled_text = output(["launchctl", "print-disabled", domain]) or ""
+    override = re.search(r'"' + re.escape(LEGACY_MAC_LABEL) + r'"\s*=>\s*(\w+)', disabled_text)
+    disabled = override[1] in ("true", "disabled") if override else bool(data.get("Disabled", False))
+    if not loaded and disabled:
+        return None  # unloaded and disabled: already migrated
+    match = re.search(r"^\tpid = ([0-9]+)$", printed or "", re.MULTILINE)
+    return {"path": plist, "pid": match[1] if match else None}
+
+
+def port_owners(platform, port, output=command_output):
+    """PIDs listening on a local port (the caller's own processes are visible without root)."""
+    if platform == "linux":
+        return set(re.findall(r"pid=([0-9]+)", output(["ss", "-ltnpH", "sport = :" + str(port)]) or ""))
+    text = output(["lsof", "-nP", "-a", "-iTCP:" + str(port), "-sTCP:LISTEN", "-Fp"]) or ""
+    return set(re.findall(r"^p([0-9]+)$", text, re.MULTILINE))
+
+
+def service_file(platform, home):
+    """This package's own service file: its presence makes the run a reinstall, as in install.py."""
+    return (home / ".config/systemd/user/ccdash-collector.service" if platform == "linux"
+            else home / "Library/LaunchAgents/org.ccdash.collector.plist")
+
+
+def own_pids(platform, home, output=command_output):
+    if platform == "linux":
+        text = (output(["systemctl", "--user", "show", "--property=MainPID", "--value",
+                        "ccdash-collector.service"]) or "").strip()
+        return {text} if text.isdigit() and text != "0" else set()
+    text = output(["launchctl", "print", "gui/" + str(os.getuid()) + "/org.ccdash.collector"]) or ""
+    match = re.search(r"^\tpid = ([0-9]+)$", text, re.MULTILINE)
+    return {match[1]} if match else set()
+
+
+def local_conflict(platform, home=None, probe=port_in_use, legacy=verified_legacy, owners=port_owners,
+                   own=own_pids):
+    """Before a device is registered, mirror install.py's decision: every busy local port must
+    belong to a verified legacy Collector or, on reinstall, to this package's own Collector.
+    Returns None (nothing to resolve), the ports held by anything else (installation stops), or
+    the verified legacy Collector to migrate."""
+    home = Path(home or os.path.expanduser("~"))
+    found = legacy(platform, home)
+    reinstall = service_file(platform, home).exists()
+    busy = [port for port in LOCAL_PORTS if probe(port)]
+    if reinstall and not found:
+        return None  # install.py replaces its own service and listeners
+    allowed = ({found["pid"]} if found and found.get("pid") else set()) | (own(platform, home) if reinstall else set())
+    foreign = [port for port in busy if not owners(platform, port) or not owners(platform, port) <= allowed]
+    if foreign:
+        return {"ports": foreign, "legacy": None}
+    if found:
+        return {"ports": busy, "legacy": found["path"]}
+    return None
+
+
+def confirm_migration(found, platform, ask, out):
+    ports = ", ".join(str(port) for port in found["ports"])
+    if not found["legacy"]:
+        inspect = "ss -ltnp" if platform == "linux" else "lsof -nP -iTCP -sTCP:LISTEN"
+        raise EnrollmentError("로컬 포트 " + ports + "를 다른 서비스가 쓰고 있어 설치할 수 없습니다. `" + inspect
+                              + "`로 확인하세요. 워크숍 수집기는 주최자에게 문의하세요. 기기는 등록하지 않았습니다.")
+    out("")
+    if ports:
+        out("이 기기에는 이전 방식 수집기(" + str(found["legacy"]) + ")가 포트 " + ports + "를 쓰고 있습니다.")
+    else:
+        out("이 기기에는 이전 방식 수집기(" + str(found["legacy"]) + ")가 설치되어 있어 다시 시작될 수 있습니다.")
+    out("전환하면 기존 서비스와 설정을 백업한 뒤 중지하고, 같은 포트에서 새 수집기를 시작합니다. "
+        "실패하면 기존 서비스로 되돌립니다. 기존 수집 사용자 ID는 그대로 유지합니다.")
+    if platform == "linux":
+        out("Linux에서는 기존 시스템 서비스를 바꾸려고 sudo를 사용하며, 비밀번호를 물을 수 있습니다.")
+    out("Claude Code와 Codex를 먼저 종료해 두세요.")
+    try:
+        answer = ask("기존 수집기를 새 수집기로 전환할까요? [y/N]: ")
+    except EOFError:
+        answer = ""
+    if answer.strip().lower() not in ("y", "yes"):
+        raise EnrollmentError("전환을 취소했습니다. 기존 수집기는 그대로이고 기기는 등록하지 않았습니다.")
+
+
+def install_command(installer, endpoint, token_file, user_id_override, approved_user_id, migrate=False):
     command = [sys.executable, "-I", installer, "install", "--endpoint", endpoint, "--token-file", token_file]
+    if migrate:
+        command.append("--migrate-legacy")  # confirmed before approval; install.py still verifies it
     if user_id_override:
         command += ["--user-id", user_id_override]
     elif approved_user_id:
@@ -228,7 +377,13 @@ def install_command(installer, endpoint, token_file, user_id_override, approved_
     return command
 
 
-def enroll(args, http=fetch, sleep=time.sleep, run=subprocess.call, browser=open_browser, out=print):
+def enroll(args, http=fetch, sleep=time.sleep, run=subprocess.call, browser=open_browser, out=print,
+           conflict=local_conflict, ask=input):
+    # Resolve a local Collector conflict before registering a device, so a declined or
+    # impossible installation leaves nothing to revoke.
+    found = conflict(args.platform)
+    if found:
+        confirm_migration(found, args.platform, ask, out)
     secret = secrets.token_urlsafe(32)
     request = start(args.endpoint, args.platform, hashlib.sha256(secret.encode()).hexdigest(),
                     args.name or device_name(), http=http, sleep=sleep)
@@ -254,7 +409,8 @@ def enroll(args, http=fetch, sleep=time.sleep, run=subprocess.call, browser=open
             raise EnrollmentError("패키지 압축을 풀지 못했습니다.") from None
         token_file = write_token(work, token)
         token = None
-        status = run(install_command(installer, args.endpoint, token_file, args.user_id, approved_user_id))
+        status = run(install_command(installer, args.endpoint, token_file, args.user_id, approved_user_id,
+                                     migrate=bool(found)))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     if status != 0:
