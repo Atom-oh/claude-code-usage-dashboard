@@ -1,0 +1,12 @@
+{
+  "component": "ui-focus-zoom",
+  "registry": "https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry",
+  "retrieved_at": "2026-11-14",
+  "source_sha256": "137fca93541c222f37026c8636111a1fe0d79e459546f25050d04c35638d9981",
+  "adaptation": "camera.js",
+  "changes": [
+    "Real screenshot geometry replaces the skeleton slot.",
+    "No drift, halo or network dependency.",
+    "Bounded source-image pan and one deterministic focus move."
+  ]
+}

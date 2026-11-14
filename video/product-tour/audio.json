@@ -1,0 +1,659 @@
+{
+  "script_sha256": "b7909fb2ec7f62ba8a7e8a3a8f2a54a6832f4db102ac27cec5604ea83d1455d5",
+  "provider": "Amazon Polly",
+  "voice": "Seoyeon",
+  "engine": "neural",
+  "clips": [
+    {
+      "id": "welcome",
+      "path": "audio/welcome.mp3",
+      "source_sha256": "7b195a14f47a7dbfd0af2ba4d9cdf88c2cf1a6ae72d9663e94546e1bb1d2f908",
+      "sha256": "3968c52be8782466455949b0078af0280f9f77f8d30a687a7239284b69b1f799",
+      "bytes": 218060,
+      "duration_seconds": 18.144,
+      "generated_at": "2026-11-14T11:38:42.225737+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.137
+        },
+        {
+          "segment": 1,
+          "time_seconds": 7.182
+        },
+        {
+          "segment": 2,
+          "time_seconds": 14.144
+        }
+      ]
+    },
+    {
+      "id": "architecture",
+      "path": "audio/architecture.mp3",
+      "source_sha256": "b5b3929f12bd819cb5830875db9a029c4ce60325e0d6d6545603c04d55fb1ebd",
+      "sha256": "cbc5385858e422293a42580ed34fcb294ae22cc00a74d22e985c21b4260bab49",
+      "bytes": 289484,
+      "duration_seconds": 24.096,
+      "generated_at": "2026-11-14T11:38:42.624090+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.137
+        },
+        {
+          "segment": 1,
+          "time_seconds": 8.657
+        },
+        {
+          "segment": 2,
+          "time_seconds": 13.707
+        },
+        {
+          "segment": 3,
+          "time_seconds": 18.182
+        }
+      ]
+    },
+    {
+      "id": "language",
+      "path": "audio/language.mp3",
+      "source_sha256": "ef9c8fae20bad903c87ba0aa1adc71b41eb33b86f181f64f4fe0ec97268526ce",
+      "sha256": "3c96d91f9081192f61484808c956db1bd7b1845b5f34abdd56d2f46193ad5a28",
+      "bytes": 188684,
+      "duration_seconds": 15.696,
+      "generated_at": "2026-11-14T11:38:45.218338+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.137
+        },
+        {
+          "segment": 1,
+          "time_seconds": 3.657
+        },
+        {
+          "segment": 2,
+          "time_seconds": 6.707
+        },
+        {
+          "segment": 3,
+          "time_seconds": 12.394
+        }
+      ]
+    },
+    {
+      "id": "window",
+      "path": "audio/window.mp3",
+      "source_sha256": "22341f4d5a944f43059c9416a3ec75ca9245c694159fe67a6c885fe9af3ddc7f",
+      "sha256": "6601d0ab8cec42aeb7fb561337be2acc974c29d774bcb9b1931781b83624854c",
+      "bytes": 291500,
+      "duration_seconds": 24.264,
+      "generated_at": "2026-11-14T11:38:45.976796+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.012
+        },
+        {
+          "segment": 1,
+          "time_seconds": 5.344
+        },
+        {
+          "segment": 2,
+          "time_seconds": 11.419
+        },
+        {
+          "segment": 3,
+          "time_seconds": 17.182
+        }
+      ]
+    },
+    {
+      "id": "overview",
+      "path": "audio/overview.mp3",
+      "source_sha256": "788516bba6b6f864bae57ef9492cd21ed5c26a91037ce7d30bf4e28d82dffc51",
+      "sha256": "b03bce95ee0c67e6615a6d212f89bad0fc00fad7baa81f908185669f05c56b55",
+      "bytes": 231884,
+      "duration_seconds": 19.296,
+      "generated_at": "2026-11-14T11:38:48.282697+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.137
+        },
+        {
+          "segment": 1,
+          "time_seconds": 4.932
+        },
+        {
+          "segment": 2,
+          "time_seconds": 9.007
+        },
+        {
+          "segment": 3,
+          "time_seconds": 13.344
+        }
+      ]
+    },
+    {
+      "id": "executive",
+      "path": "audio/executive.mp3",
+      "source_sha256": "a8cb400b9720061181b50b6a42091e34680ce3b7672b3f248fd366488c437b93",
+      "sha256": "ab5a78d78000c444a4d463c73485964d7841823aa885e140d258ea5d09785913",
+      "bytes": 222956,
+      "duration_seconds": 18.552,
+      "generated_at": "2026-11-14T11:38:49.132137+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.137
+        },
+        {
+          "segment": 1,
+          "time_seconds": 5.319
+        },
+        {
+          "segment": 2,
+          "time_seconds": 10.794
+        },
+        {
+          "segment": 3,
+          "time_seconds": 14.619
+        }
+      ]
+    },
+    {
+      "id": "trends",
+      "path": "audio/trends.mp3",
+      "source_sha256": "f932ada484ccb2605aff8dfec61574649bbf9fccf408abbecc2e44c8025102aa",
+      "sha256": "0d18a9672910c1595277c73dc5d262bb11b038bea545de9256ce4e7fd826cdac",
+      "bytes": 185804,
+      "duration_seconds": 15.456,
+      "generated_at": "2026-11-14T11:38:51.275147+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.062
+        },
+        {
+          "segment": 1,
+          "time_seconds": 6.407
+        }
+      ]
+    },
+    {
+      "id": "users",
+      "path": "audio/users.mp3",
+      "source_sha256": "50a905a90e7f0eebcf9dc16edf288e36a9c2c0a2bc4c8296de5136675e594fa0",
+      "sha256": "1e99c3640dd0927bf49e459eca61b72db27e7a74b8d168770f74aa7cd5c9d0e8",
+      "bytes": 231020,
+      "duration_seconds": 19.224,
+      "generated_at": "2026-11-14T11:38:52.167542+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.125
+        },
+        {
+          "segment": 1,
+          "time_seconds": 6.819
+        },
+        {
+          "segment": 2,
+          "time_seconds": 14.094
+        }
+      ]
+    },
+    {
+      "id": "range",
+      "path": "audio/range.mp3",
+      "source_sha256": "a9d6b815e26b20630d675410a80fdf261c03309d252a8526ce731530502a0642",
+      "sha256": "107f49b5b447006b4ac195d8c674e7ec092257c21007f2fadefa96f0fb9ed0bb",
+      "bytes": 247724,
+      "duration_seconds": 20.616,
+      "generated_at": "2026-11-14T11:38:54.319313+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.137
+        },
+        {
+          "segment": 1,
+          "time_seconds": 6.344
+        },
+        {
+          "segment": 2,
+          "time_seconds": 13.069
+        },
+        {
+          "segment": 3,
+          "time_seconds": 16.332
+        }
+      ]
+    },
+    {
+      "id": "trace",
+      "path": "audio/trace.mp3",
+      "source_sha256": "7200c38aa8b04f744c95fea764607c67a854abf3fcb1d0a09688f765d4340e29",
+      "sha256": "d34ad6d963127fa5087c4d182d94735e4e9b9ae8ea384e3f5c9a79bb9668a38b",
+      "bytes": 294668,
+      "duration_seconds": 24.528,
+      "generated_at": "2026-11-14T11:38:55.416026+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.125
+        },
+        {
+          "segment": 1,
+          "time_seconds": 6.057
+        },
+        {
+          "segment": 2,
+          "time_seconds": 11.732
+        },
+        {
+          "segment": 3,
+          "time_seconds": 16.957
+        }
+      ]
+    },
+    {
+      "id": "call",
+      "path": "audio/call.mp3",
+      "source_sha256": "570be7c13da1458efa4695afbe02f969591acbd1f83c7c71c3c798c8ef92d02b",
+      "sha256": "9ca060a643adbdfa453ed721936d5f88609b0d42ec0257439d150117e1e2bcbd",
+      "bytes": 292652,
+      "duration_seconds": 24.36,
+      "generated_at": "2026-11-14T11:38:57.597016+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.012
+        },
+        {
+          "segment": 1,
+          "time_seconds": 7.169
+        },
+        {
+          "segment": 2,
+          "time_seconds": 12.107
+        },
+        {
+          "segment": 3,
+          "time_seconds": 15.619
+        },
+        {
+          "segment": 4,
+          "time_seconds": 20.332
+        }
+      ]
+    },
+    {
+      "id": "context",
+      "path": "audio/context.mp3",
+      "source_sha256": "af2c7420446721960ede461c9709c125a954d21ed1ff15f36f019ccde27ea516",
+      "sha256": "ba456fe095911235c3a6f30b6ccf246d08013ade0783a8da72e984065b1264a3",
+      "bytes": 279980,
+      "duration_seconds": 23.304,
+      "generated_at": "2026-11-14T11:38:58.686674+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.062
+        },
+        {
+          "segment": 1,
+          "time_seconds": 5.032
+        },
+        {
+          "segment": 2,
+          "time_seconds": 9.294
+        },
+        {
+          "segment": 3,
+          "time_seconds": 17.232
+        }
+      ]
+    },
+    {
+      "id": "cost",
+      "path": "audio/cost.mp3",
+      "source_sha256": "de138286e729a327782ab4662d9c539049830223dfcac25a09350ed06bd0bdd5",
+      "sha256": "3b6d862d0e2f5587a018fd15c8feaec541790074c0aceb8882258fffc49884f8",
+      "bytes": 303308,
+      "duration_seconds": 25.248,
+      "generated_at": "2026-11-14T11:39:00.977925+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.062
+        },
+        {
+          "segment": 1,
+          "time_seconds": 5.232
+        },
+        {
+          "segment": 2,
+          "time_seconds": 9.169
+        },
+        {
+          "segment": 3,
+          "time_seconds": 15.019
+        },
+        {
+          "segment": 4,
+          "time_seconds": 18.594
+        }
+      ]
+    },
+    {
+      "id": "economics",
+      "path": "audio/economics.mp3",
+      "source_sha256": "69cd2ddba4a042567055ad92e507621fed3a0003b62277faf749e0e6c0cc384f",
+      "sha256": "0052cf6ee18811ef6732b2657c206ed3bf1581c8eadf86c2da205c2e41474a0e",
+      "bytes": 299852,
+      "duration_seconds": 24.96,
+      "generated_at": "2026-11-14T11:39:01.961435+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.012
+        },
+        {
+          "segment": 1,
+          "time_seconds": 7.932
+        },
+        {
+          "segment": 2,
+          "time_seconds": 13.632
+        },
+        {
+          "segment": 3,
+          "time_seconds": 18.557
+        }
+      ]
+    },
+    {
+      "id": "unit",
+      "path": "audio/unit.mp3",
+      "source_sha256": "f8f209bb65557a6d387d447ec4cbb38cf5835329de958dd2947723a5c14898ac",
+      "sha256": "54a53fb57e82ed5899db1505b0c6b2aa574a5290267d33c0672cd6b5ca604b19",
+      "bytes": 194156,
+      "duration_seconds": 16.152,
+      "generated_at": "2026-11-14T11:39:04.086411+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.137
+        },
+        {
+          "segment": 1,
+          "time_seconds": 6.594
+        },
+        {
+          "segment": 2,
+          "time_seconds": 12.344
+        }
+      ]
+    },
+    {
+      "id": "usage",
+      "path": "audio/usage.mp3",
+      "source_sha256": "b451e96ab7b377d77b3fb46a22d3ec273fe7a1d970d30a01daaf487b3ac53691",
+      "sha256": "6740d75258f98dd2c049ebd3b1928ec28d4b2c11bafd327e0d3d268bd232032f",
+      "bytes": 213452,
+      "duration_seconds": 17.76,
+      "generated_at": "2026-11-14T11:39:05.140888+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.125
+        },
+        {
+          "segment": 1,
+          "time_seconds": 6.782
+        },
+        {
+          "segment": 2,
+          "time_seconds": 13.607
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "path": "audio/tools.mp3",
+      "source_sha256": "16fd6fa0ca0da2a3e612adc0f5b4e8971adaa7771ec4be93007ff5825fd0ac6c",
+      "sha256": "f20359b5bb7d83146160207a733f112047015d89f7ded7cf7f968837b0c21f7b",
+      "bytes": 290348,
+      "duration_seconds": 24.168,
+      "generated_at": "2026-11-14T11:39:07.328683+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.062
+        },
+        {
+          "segment": 1,
+          "time_seconds": 7.344
+        },
+        {
+          "segment": 2,
+          "time_seconds": 10.894
+        },
+        {
+          "segment": 3,
+          "time_seconds": 17.569
+        }
+      ]
+    },
+    {
+      "id": "mcp",
+      "path": "audio/mcp.mp3",
+      "source_sha256": "cb47be677aad99c5fa11a34c812b7b30a8abe3119c4a351367b4ead2b2b78bd6",
+      "sha256": "5599314b87bcfd7a119ead800874b1a984f6af7bdbb872eba9962b3cc6792995",
+      "bytes": 204812,
+      "duration_seconds": 17.04,
+      "generated_at": "2026-11-14T11:39:08.127500+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.187
+        },
+        {
+          "segment": 1,
+          "time_seconds": 7.382
+        },
+        {
+          "segment": 2,
+          "time_seconds": 11.682
+        }
+      ]
+    },
+    {
+      "id": "skills",
+      "path": "audio/skills.mp3",
+      "source_sha256": "32a0c3c791924a7b813f3f8db04458cb0ccbf475e4346bab282b8758fa51e311",
+      "sha256": "d1dd98cc4d422e85c2d3dbf171b6d6db38935a6e1fe5cd1fa7db047fa02b714d",
+      "bytes": 241388,
+      "duration_seconds": 20.088,
+      "generated_at": "2026-11-14T11:39:10.531316+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.125
+        },
+        {
+          "segment": 1,
+          "time_seconds": 4.619
+        },
+        {
+          "segment": 2,
+          "time_seconds": 10.257
+        },
+        {
+          "segment": 3,
+          "time_seconds": 15.757
+        }
+      ]
+    },
+    {
+      "id": "plugins",
+      "path": "audio/plugins.mp3",
+      "source_sha256": "35c68c76a951be2574f98c50fbe954664b117ca7c1dfb80c876f65e6942b2d21",
+      "sha256": "1fd430b8931d1019b515d2844c70599579236b85e6bc16a9a8f33d51b52f9701",
+      "bytes": 218636,
+      "duration_seconds": 18.192,
+      "generated_at": "2026-11-14T11:39:11.180958+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.062
+        },
+        {
+          "segment": 1,
+          "time_seconds": 4.619
+        },
+        {
+          "segment": 2,
+          "time_seconds": 9.394
+        }
+      ]
+    },
+    {
+      "id": "reliability",
+      "path": "audio/reliability.mp3",
+      "source_sha256": "66ae4a56aeff8a6ec1df9f01cc7f60532342e4c5c1d0b1d06e2afa895f69984f",
+      "sha256": "82466707d645369e2c848eb92e32b02f638927e8b30215e583b45e154b085f5e",
+      "bytes": 208268,
+      "duration_seconds": 17.328,
+      "generated_at": "2026-11-14T11:39:13.581914+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.062
+        },
+        {
+          "segment": 1,
+          "time_seconds": 5.769
+        },
+        {
+          "segment": 2,
+          "time_seconds": 10.532
+        }
+      ]
+    },
+    {
+      "id": "analytics",
+      "path": "audio/analytics.mp3",
+      "source_sha256": "bf8ce34508a1a69aa118ca5aa7723b0f2252ce3c7cf4847b6841a676cd73de56",
+      "sha256": "889476c823bfd70887e7395a53893c8765202d4b439f8c8e48ddbbd44baac740",
+      "bytes": 309644,
+      "duration_seconds": 25.776,
+      "generated_at": "2026-11-14T11:39:14.435811+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.187
+        },
+        {
+          "segment": 1,
+          "time_seconds": 4.382
+        },
+        {
+          "segment": 2,
+          "time_seconds": 9.619
+        },
+        {
+          "segment": 3,
+          "time_seconds": 15.557
+        },
+        {
+          "segment": 4,
+          "time_seconds": 19.194
+        }
+      ]
+    },
+    {
+      "id": "collector",
+      "path": "audio/collector.mp3",
+      "source_sha256": "dd2d2c2a45bc82bb319e4b4cb37c424bc3f51653202a354da900a2a042c351c4",
+      "sha256": "c872336130c64f26e1b3bd34855b7117d313d0ccbc4d9386b46ac208ff3a8cb9",
+      "bytes": 301292,
+      "duration_seconds": 25.08,
+      "generated_at": "2026-11-14T11:39:16.804040+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.137
+        },
+        {
+          "segment": 1,
+          "time_seconds": 10.394
+        },
+        {
+          "segment": 2,
+          "time_seconds": 18.407
+        }
+      ]
+    },
+    {
+      "id": "installation",
+      "path": "audio/installation.mp3",
+      "source_sha256": "6da7222c8dc69f071c19ff65321e957c68edeb61978256349fe2232be96ed8ea",
+      "sha256": "d0a832ef4859b15e6d6fb455fe57668d41b7a7595dbf5301da2d535d07caeb33",
+      "bytes": 218348,
+      "duration_seconds": 18.168,
+      "generated_at": "2026-11-14T11:39:17.661510+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.187
+        },
+        {
+          "segment": 1,
+          "time_seconds": 6.944
+        },
+        {
+          "segment": 2,
+          "time_seconds": 10.982
+        }
+      ]
+    },
+    {
+      "id": "finish",
+      "path": "audio/finish.mp3",
+      "source_sha256": "3c449e1fdb24dce02f1e7183f7eb3d1c30ff89479d8cc7f94809b12dbfe153b4",
+      "sha256": "8657a2a024a47febc64a42592f2937cc700d243d8f6a6a719f1a67bedb050309",
+      "bytes": 242252,
+      "duration_seconds": 20.16,
+      "generated_at": "2026-11-14T11:39:19.989827+00:00",
+      "marks": [
+        {
+          "segment": 0,
+          "time_seconds": 0.062
+        },
+        {
+          "segment": 1,
+          "time_seconds": 5.794
+        },
+        {
+          "segment": 2,
+          "time_seconds": 10.707
+        },
+        {
+          "segment": 3,
+          "time_seconds": 17.419
+        }
+      ]
+    }
+  ],
+  "music": {
+    "path": "audio/background.mp3",
+    "duration_seconds": 549.48,
+    "bytes": 6594092,
+    "sha256": "65b3872e461b725ec864c39885babba3d3dd99ace3e109eec5825a0ba39e87ce",
+    "source": "Original deterministic sine-pad score; low-pass and presence cut leave room for narration."
+  },
+  "normalization": "Speech: loudnorm I=-18, TP=-2, LRA=7. Music is additionally ducked in the audio composition."
+}

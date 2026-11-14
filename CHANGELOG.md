@@ -17,6 +17,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Add a standalone 25-scene HyperFrames product-tour composition, Korean narration,
+  English captions and verified MP4/WebM assets. It covers menu, user/task, cost
+  and tool workflows with synthetic screenshots; site-player integration follows
+  separately. Paid speech generation reuses valid receipts and stops on failure.
 - Migrate the legacy Linux personal Collector during device installation: when the known
   `otelcol.service` running your own `~/.otelcol/config.yaml` holds the local ports, the
   installer asks first, keeps the existing Claude user ID, backs up the unit and settings,

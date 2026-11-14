@@ -1,0 +1,14 @@
+<template>
+<link rel="stylesheet" href="styles.css" />
+<style>#root{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}</style>
+<div id="root" data-composition-id="tour-window" data-width="1920" data-height="1080" data-duration="25.5416666667">
+<div class="frame-content" id="tour-window-content" style="opacity:0">
+<div class="topline"><img class="brand-mark" src="assets/img/favicon.svg" alt="" /><span class="brand">ccdash</span><span class="chapter">01 · 시작하기</span><span class="proof">예시 데이터</span><span class="page-no">04 / 25</span></div>
+<h1 class="title">먼저 같은 시간 구간을 맞추세요</h1><p class="cue">클라이언트 → 필터 → 정확한 시작·끝 시각</p>
+<div class="stage"><div id="tour-window-shot-0" class="shot" style="left:0px;width:1760px;opacity:1"><div id="tour-window-shot-0-world" class="world" data-layout-allow-overflow="true"><img id="tour-window-shot-0-image" data-layout-allow-overflow="true" src="assets/img/tour-time-range.png" width="770" height="482" style="width:770px;height:482px;left:495px;top:77px" alt="클라이언트 → 필터 → 정확한 시작·끝 시각" /></div></div></div><p class="context-note">실제 애플리케이션 화면 · 예시 데이터</p>
+</div></div>
+<script>(function(){const tl=gsap.timeline({paused:true});window.tourCamera(tl, document.getElementById("tour-window-shot-0-world"), {"width": 770, "height": 482, "viewportWidth": 1760, "viewportHeight": 636, "roi": [0, 0, 770, 482], "focus": null, "at": 2.5});gsap.set("#tour-window-shot-0", {opacity:1});
+tl.fromTo("#tour-window-content",{opacity:0,y:14},{opacity:1,y:0,duration:.45,ease:"power2.out"},0);
+tl.to("#tour-window-content",{opacity:0,duration:.20}, 25.3416666667);
+tl.to({},{duration:25.5416666667},0);window.__timelines=window.__timelines||{};window.__timelines["tour-window"]=tl;})();</script>
+</template>

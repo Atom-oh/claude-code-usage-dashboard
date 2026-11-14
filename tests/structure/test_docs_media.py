@@ -100,6 +100,21 @@ class MediaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             MEDIA.validate_manifest([])
 
+    def test_long_tour_limits_are_explicit_and_do_not_relax_other_media(self):
+        for name, limit in MEDIA.FILE_SIZE_LIMITS.items():
+            candidate = copy.deepcopy(self.manifest)
+            entry = next(item for item in candidate["files"] if item["path"] == name)
+            entry["bytes"] = limit
+            MEDIA.validate_manifest(candidate)
+            entry["bytes"] = limit + 1
+            with self.assertRaises(ValueError):
+                MEDIA.validate_manifest(candidate)
+        candidate = copy.deepcopy(self.manifest)
+        entry = next(item for item in candidate["files"] if item["path"] not in MEDIA.FILE_SIZE_LIMITS)
+        entry["bytes"] = MEDIA.MAX_FILE_BYTES + 1
+        with self.assertRaises(ValueError):
+            MEDIA.validate_manifest(candidate)
+
     def test_symlinks_are_rejected_before_any_download(self):
         outside = self.root / "outside"
         outside.mkdir()
@@ -121,6 +136,10 @@ class MediaTests(unittest.TestCase):
         records.update({("site/assets/" + item["path"]): item
                         for item in metadata.get("guide", {}).get("assets", [])})
         records[demo["visual_base"]["path"]] = demo["visual_base"]
+        tour = metadata.get("detailed_tour", {})
+        records.update({("site/assets/" + item["path"]): item for item in tour.get("files", [])})
+        records.update({item["path"]: item for item in tour.get("audio_assets", [])})
+        records.update({item["path"]: item for item in tour.get("runtime_assets", [])})
         for item in manifest["files"]:
             self.assertEqual(item["bytes"], records[item["path"]]["bytes"])
             self.assertEqual(item["sha256"], records[item["path"]]["sha256"])
@@ -137,16 +156,33 @@ class MediaTests(unittest.TestCase):
     def test_encoded_measurements_identify_locked_files(self):
         manifest = json.loads((ROOT / MEDIA.MANIFEST).read_text())
         locked = {item["path"]: item for item in manifest["files"]}
-        demo = json.loads((ROOT / "site/assets/media.json").read_text())["current_demo"]
-        measurements = demo["encoded_verification"]["encodes"]
-        self.assertEqual({item["format"] for item in measurements}, {"mp4", "webm"})
-        for measured in measurements:
-            files = [item for item in demo["files"]
-                     if item["path"].endswith("." + measured["format"])]
-            self.assertEqual(len(files), 1)
-            pinned = locked["site/assets/" + files[0]["path"]]
-            for key in ("bytes", "sha256"):
-                self.assertEqual(measured[key], pinned[key], (measured["format"], key))
+        metadata = json.loads((ROOT / "site/assets/media.json").read_text())
+        for owner in ("current_demo", "detailed_tour"):
+            demo = metadata[owner]
+            measurements = demo["encoded_verification"]["encodes"]
+            self.assertEqual({item["format"] for item in measurements}, {"mp4", "webm"})
+            for measured in measurements:
+                files = [item for item in demo["files"]
+                         if item["path"].endswith("." + measured["format"])]
+                self.assertEqual(len(files), 1)
+                pinned = locked["site/assets/" + files[0]["path"]]
+                for key in ("bytes", "sha256"):
+                    self.assertEqual(measured[key], pinned[key], (owner, measured["format"], key))
+
+
+    def test_tour_source_records_and_delivered_captions_match_their_files(self):
+        metadata = json.loads((ROOT / "site/assets/media.json").read_text())["detailed_tour"]
+        for item in metadata["source_files"]:
+            path = ROOT / item["path"]
+            self.assertEqual(path.stat().st_size, item["bytes"], item["path"])
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), item["sha256"], item["path"])
+        project = ROOT / "video/product-tour"
+        translation = json.loads((project / "translations.json").read_text())
+        self.assertEqual(hashlib.sha256((project / "captions.en.json").read_bytes()).hexdigest(),
+                         translation["captions_sha256"])
+        for locale in ("en", "ko"):
+            self.assertEqual((project / f"captions.{locale}.vtt").read_bytes(),
+                             (ROOT / f"site/assets/video/product-tour-{locale}-20261114.vtt").read_bytes())
 
 
 if __name__ == "__main__":

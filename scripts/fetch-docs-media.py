@@ -13,6 +13,41 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = "video/docs-demo/media.lock.json"
 REPOSITORY = "Atom-oh/claude-code-usage-dashboard"
 PATHS = frozenset({
+    "video/product-tour/audio/welcome.mp3",
+    "video/product-tour/audio/architecture.mp3",
+    "video/product-tour/audio/language.mp3",
+    "video/product-tour/audio/window.mp3",
+    "video/product-tour/audio/overview.mp3",
+    "video/product-tour/audio/executive.mp3",
+    "video/product-tour/audio/trends.mp3",
+    "video/product-tour/audio/users.mp3",
+    "video/product-tour/audio/range.mp3",
+    "video/product-tour/audio/trace.mp3",
+    "video/product-tour/audio/call.mp3",
+    "video/product-tour/audio/context.mp3",
+    "video/product-tour/audio/cost.mp3",
+    "video/product-tour/audio/economics.mp3",
+    "video/product-tour/audio/unit.mp3",
+    "video/product-tour/audio/usage.mp3",
+    "video/product-tour/audio/tools.mp3",
+    "video/product-tour/audio/mcp.mp3",
+    "video/product-tour/audio/skills.mp3",
+    "video/product-tour/audio/plugins.mp3",
+    "video/product-tour/audio/reliability.mp3",
+    "video/product-tour/audio/analytics.mp3",
+    "video/product-tour/audio/collector.mp3",
+    "video/product-tour/audio/installation.mp3",
+    "video/product-tour/audio/finish.mp3",
+    "video/product-tour/audio/background.mp3",
+    "site/assets/img/tour-language-en.png",
+    "site/assets/img/tour-session-environment.png",
+    "site/assets/img/tour-task-list.png",
+    "site/assets/img/tour-task-trace.png",
+    "site/assets/img/tour-time-range.png",
+    "site/assets/img/tour-user-range.png",
+    "site/assets/img/product-tour-ko-poster.jpg",
+    "site/assets/video/product-tour-ko-20261114.mp4",
+    "site/assets/video/product-tour-ko-20261114.webm",
     "site/assets/img/guide-analytics.png",
     "site/assets/img/guide-collector-devices.png",
     "site/assets/img/guide-collector.png",
@@ -71,6 +106,12 @@ PATHS = frozenset({
     "video/docs-demo/remotion/public/background.wav",
 })
 MAX_FILE_BYTES = 8_000_000
+# The detailed nine-minute tour has two explicitly bounded delivery files.
+# All screenshots, fonts, speech clips and older media retain the 8 MB limit.
+FILE_SIZE_LIMITS = {
+    "site/assets/video/product-tour-ko-20261114.mp4": 64_000_000,
+    "site/assets/video/product-tour-ko-20261114.webm": 64_000_000,
+}
 
 
 def validate_manifest(manifest):
@@ -86,7 +127,7 @@ def validate_manifest(manifest):
     for item in files:
         if (not isinstance(item, dict) or item.get("path") not in PATHS
                 or type(item.get("bytes")) is not int
-                or not 0 < item["bytes"] <= MAX_FILE_BYTES
+                or not 0 < item["bytes"] <= FILE_SIZE_LIMITS.get(item["path"], MAX_FILE_BYTES)
                 or not isinstance(item.get("sha256"), str)
                 or not re.fullmatch(r"[0-9a-f]{64}", item.get("sha256", ""))):
             raise ValueError("invalid media entry")

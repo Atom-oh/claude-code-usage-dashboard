@@ -1,0 +1,14 @@
+<template>
+<link rel="stylesheet" href="styles.css" />
+<style>#root{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}</style>
+<div id="root" data-composition-id="tour-language" data-width="1920" data-height="1080" data-duration="16.9583333333">
+<div class="frame-content" id="tour-language-content" style="opacity:0">
+<div class="topline"><img class="brand-mark" src="assets/img/favicon.svg" alt="" /><span class="brand">ccdash</span><span class="chapter">01 · 시작하기</span><span class="proof">예시 데이터</span><span class="page-no">03 / 25</span></div>
+<h1 class="title">편한 언어로 시작하세요</h1><p class="cue">English · 简体中文 · 日本語 · Español · 한국어</p>
+<div class="stage"><div id="tour-language-shot-0" class="shot" style="left:0px;width:1760px;opacity:1"><div id="tour-language-shot-0-world" class="world" data-layout-allow-overflow="true"><img id="tour-language-shot-0-image" data-layout-allow-overflow="true" src="assets/img/tour-language-en.png" width="2880" height="2000" style="width:2880px;height:2000px;left:-560px;top:-682px" alt="English · 简体中文 · 日本語 · Español · 한국어" /></div></div></div><p class="context-note">실제 애플리케이션 화면 · 예시 데이터</p>
+</div></div>
+<script>(function(){const tl=gsap.timeline({paused:true});window.tourCamera(tl, document.getElementById("tour-language-shot-0-world"), {"width": 2880, "height": 2000, "viewportWidth": 1760, "viewportHeight": 636, "roi": [0, 0, 2880, 2000], "focus": [0, 1280, 860, 720], "at": 2.5});gsap.set("#tour-language-shot-0", {opacity:1});
+tl.fromTo("#tour-language-content",{opacity:0,y:14},{opacity:1,y:0,duration:.45,ease:"power2.out"},0);
+tl.to("#tour-language-content",{opacity:0,duration:.20}, 16.7583333333);
+tl.to({},{duration:16.9583333333},0);window.__timelines=window.__timelines||{};window.__timelines["tour-language"]=tl;})();</script>
+</template>
