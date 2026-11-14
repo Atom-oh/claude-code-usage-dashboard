@@ -59,12 +59,15 @@ export const setTeamMask = (v) => {
   teamMask = !!v;
 };
 
+// Masked team: two leading characters plus a 24-bit FNV-1a digest, so similar names stay apart
+// on screen. Distinct teams can still collide (unlikely, not impossible): group by the raw value
+// and use this for labels only.
 export const maskTeam = (s) => {
   const str = String(s ?? "");
   if (!teamMask || !str) return str;
   let hash = 0x811c9dc5;
   for (const byte of new TextEncoder().encode(str)) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
-  return `${str.slice(0, 2)}**·${hash.toString(16).padStart(8, "0").slice(0, 4)}`;
+  return `${str.slice(0, 2)}**·${hash.toString(16).padStart(8, "0").slice(0, 6)}`;
 };
 
 // 버킷 크기에 맞춰 라벨 세밀도를 바꾼다 — 안 그러면 같은 값이 반복 표시돼 구분이 안 된다.

@@ -117,9 +117,12 @@ records this shared-screen policy.
 
 Team names follow `TEAM_MASK_ENABLED` (unset follows `PII_MASK_ENABLED`) or an administrator
 override stored with the team settings (`/api/settings/display`). Masked team labels keep two
-characters plus a 4-hex FNV-1a digest so distinct teams stay distinct (prefix-only masking
-collided for short directory values); administrator display labels are shown as is, and filter
-values, URLs and API payloads keep raw team values. Directory values can be personal aliases.
+characters plus a 6-hex (24-bit) FNV-1a digest, so similar names stay apart (prefix-only masking
+collided for short directory values). Two teams can still share a label, so charts and tables
+group by the raw value and use the mask as a label only. The digest is unsalted and therefore
+not anonymization: anyone who can guess candidate values can confirm one, and the raw values
+are in API responses anyway. Administrator display labels are shown as is, and filter values,
+URLs and API payloads keep raw team values. Directory values can be personal aliases.
 
 [fmt.js](../../dashboard/web/src/fmt.js) masks labels; [csv.js](../../dashboard/web/src/csv.js)
 applies the same policy centrally to exported `user` cells. Masked labels can collide and

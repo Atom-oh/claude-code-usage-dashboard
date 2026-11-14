@@ -29,7 +29,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 ### Added
 
 - Mask team names on shared screens and CSV exports, as emails are: two characters plus a
-  short digest, so different teams never share a masked name. Administrator display names
+  six-hex digest, so similar team names stay apart (a collision is unlikely, not impossible;
+  charts group by the raw value). Administrator display names
   are shown as is. The deployment chooses the default (`team_mask_enabled`, else the email
   masking setting) and an administrator can override it on the settings page. Filters, URLs
   and API responses keep raw values.

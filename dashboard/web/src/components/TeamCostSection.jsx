@@ -16,6 +16,8 @@ import { isDeviceMarked, teamDisplay, teamName, teamSourceHelp, useTeams } from 
 // /api/cost/by-team(-daily): Claude reported spend per session team. A total metric: the
 // unknown channel is included, so team rows plus 팀 없음 equal the 총 비용 tile.
 export const NO_TEAM = "팀 없음";
+// Chart key for the no-team row; raw team values never contain a NUL character.
+const NO_TEAM_KEY = "\u0000no-team";
 const isNoTeam = (row) => row.team === null;
 const BASIS = "Claude 보고 비용 · 총 비용과 같은 기준(미분류 채널 포함) · 세션별 팀 귀속";
 // The session's team: the directory team at session start when configured and matched, else the device value.
@@ -45,6 +47,14 @@ export function teamTableRows(rows, teams) {
     share: r.known_reported_cost === null || total <= 0 ? null : (r.known_reported_cost / total) * 100 }));
 }
 
+// Bars group by the raw team value: a masked name is a label only, and two teams could share one.
+export function teamBarRows(rows) {
+  const known = rows.filter((r) => r.cost !== null);
+  const labels = new Map(known.map((r) => [r.team ?? NO_TEAM_KEY, r.label]));
+  return { rows: known.map((r) => ({ team: r.team ?? NO_TEAM_KEY, part: translate("m65cd7735272e"), value: r.cost })),
+    label: (key) => labels.get(key) ?? String(key) };
+}
+
 export const TEAM_COLUMNS = localize([
   { key: "label", label: "팀", render: (v, r) => (r.marked ? <span title={teamSourceHelp()}>{v}</span> : v),
     toText: (_v, r) => r.name },
@@ -72,6 +82,7 @@ export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
   const teams = useTeams();
   const range = useRange();
   const rows = useMemo(() => teamTableRows(table.data, teams), [table.data, teams, _locale]);
+  const { rows: barRows, label: barLabel } = useMemo(() => teamBarRows(rows), [rows]);
   // Earlier usage follows the departments of the first sync; shown only when the range reaches before it.
   const historyText = teams.historyStart !== null && range?.from && range.from.getTime() < teams.historyStart
     ? historyNote(teams.historyStart) : null;
@@ -95,7 +106,7 @@ export function TeamCostView({ table, trend, intervalHours, onIntervalHours }) {
         </div>
         {/* Known spend only: an all-unknown team has no bar (its table cell reads 확인 필요). */}
         <SeriesBarChart title={translate("m2ef1e524d747")} subtitle={[translate("me18ec02dd663", [translateSource(BASIS)]), note].filter(Boolean).join(" · ")} help={helpText()}
-          rows={rows.filter((r) => r.cost !== null).map((r) => ({ team: r.label, part: translate("m65cd7735272e"), value: r.cost }))}
+          rows={barRows} tickFormatter={barLabel}
           xKey="team" seriesKey="part" valueKey="value" valuePrefix="$" horizontal />
         <DataTable title={translate("m5c1c03432d39")} subtitle={translateSource(BASIS)} help={helpText()} columns={TEAM_COLUMNS} rows={rows}
           groupKey={null} exportName="team-cost" stale={table.stale || trend.stale} pinLast={isNoTeam} />

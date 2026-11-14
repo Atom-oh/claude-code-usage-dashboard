@@ -39,6 +39,11 @@ variable "chat_model_id" { default = "fixture" }
 variable "analysis_model_id" { default = "fixture-analysis" }
 variable "bedrock_region" { default = "" }
 variable "pii_mask_enabled" { default = false }
+variable "team_mask_enabled" {
+  type     = bool
+  default  = null
+  nullable = true
+}
 variable "auth_mode" { default = "basic" }
 variable "oidc_secret_name" { default = "fixture-oidc" }
 variable "device_ingest_enabled" { default = false }

@@ -222,6 +222,22 @@ test("team name masking shows the deployment default and saves an administrator 
   setTeamMask(true);
 });
 
+test("the masking card follows the selected language, including the save confirmation", async () => {
+  stubApi({}, undefined, display(null, true));
+  renderPage();
+  fireEvent.click(await screen.findByRole("radio", { name: "끄기" }));
+  fireEvent.click(screen.getByRole("button", { name: "마스킹 설정 저장" }));
+  await screen.findByText(/저장했습니다. 이 화면에는 바로/);
+  for (const locale of ["en", "zh-CN", "ja", "es", "ko"]) {
+    await act(async () => { expect(await localeStore.select(locale)).toBe(true); });
+    expect(screen.getByText(translate("m9c03c20c5604"), { selector: "h2, h3, legend" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: translate("mdd8b273b7cee") }).checked).toBe(true);
+    expect(screen.getByRole("button", { name: translate("m64ce1b37ca97") })).toBeTruthy();
+    expect(screen.getByText(translate("m32099c994906"))).toBeTruthy();
+  }
+  setTeamMask(true);
+});
+
 test("without the settings store the deployment value applies and no override is offered", async () => {
   stubApi({}, undefined, display(null, false, { available: false, reason: "ingest_disabled" }));
   renderPage();

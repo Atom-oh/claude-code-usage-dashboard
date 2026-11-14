@@ -230,11 +230,11 @@ test("an older server without the new fields keeps raw values", () => {
   expect(teamText(teams, "a@example.invalid")).toBe("fsi");
 });
 
-// Display masking (PII_MASK_ENABLED): directory values can be personal aliases.
-test("masked team names keep two characters and a stable digest, so distinct teams stay distinct", () => {
+// Display masking (TEAM_MASK_ENABLED): directory values can be personal aliases.
+test("masked team names keep two characters and a stable digest that tells similar teams apart", () => {
   setTeamMask(true);
   const names = ["alpha", "alpine", "bravo", "bravado", "cobalt", "cobra"].map((raw) => maskTeam(raw));
-  expect(names[0]).toMatch(/^al\*\*·[0-9a-f]{4}$/);
+  expect(names[0]).toMatch(/^al\*\*·[0-9a-f]{6}$/);
   expect(new Set(names).size).toBe(names.length);
   expect(maskTeam("alpha")).toBe(names[0]);
   expect(maskTeam("")).toBe("");

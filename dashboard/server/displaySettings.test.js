@@ -34,12 +34,12 @@ function storeFixture(record = null) {
   };
 }
 
-async function serve(t, { store = storeFixture(), deployment = true, reason = null, clock } = {}) {
+async function serve(t, { store = storeFixture(), deployment = true, reason = null, clock, firstWaitMs = 50 } = {}) {
   const authentication = createAuthentication({ env: oidcEnv, audit: () => {},
     discoverClient: async () => { throw new Error("discovery is not expected"); } });
   const time = clock ?? { now: 10_000 };
   const display = createDisplaySettings({ authentication, store: reason ? null : store, deployment, issuer, reason,
-    now: () => time.now, ttlMs: 1000 });
+    now: () => time.now, ttlMs: 1000, firstWaitMs });
   const app = express();
   app.use(authentication.middleware);
   display.install(app);
@@ -104,7 +104,35 @@ test("another replica's change is picked up after the cache interval", async t =
   store.record = { teamMask: false, version: 1 };  // written by the other replica
   assert.equal(await config(f), true, "cached");
   f.time.now += 1000;
+  assert.equal(await config(f), true, "the stale value is served while the refresh runs");
   assert.equal(await config(f), false);
+});
+
+test("a stalled store never holds the config response and an unknown value is masked", async t => {
+  const stalled = Object.assign(storeFixture(), { getDisplaySettings: () => new Promise(() => {}) });
+  const f = await serve(t, { store: stalled, deployment: false, firstWaitMs: 50 });
+  const started = Date.now();
+  assert.equal(await config(f), true, "fail-closed until the first read succeeds");
+  assert.ok(Date.now() - started < 1000, "bounded by firstWaitMs, not by the store");
+});
+
+test("a read that started before a save cannot overwrite the saved value", async t => {
+  let release;
+  const store = storeFixture({ teamMask: true, version: 1 });
+  const f = await serve(t, { store });
+  assert.equal(await config(f), true);
+  const original = store.getDisplaySettings.bind(store);
+  store.getDisplaySettings = () => new Promise(resolve => { release = () => resolve(original()); });
+  f.time.now += 1000;
+  const stale = config(f);  // starts a background read of the old record
+  await new Promise(resolve => setTimeout(resolve, 20));
+  store.getDisplaySettings = original;
+  assert.equal((await f.request("/api/settings/display", put({ teamMask: false, version: 1 }))).status, 200);
+  store.record = { teamMask: true, version: 1 };  // what the slow read will return
+  release();
+  await stale;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(await config(f), false, "the save wins over the older read");
 });
 
 test("a store outage keeps the last known value, else the deployment default", async t => {
@@ -114,8 +142,8 @@ test("a store outage keeps the last known value, else the deployment default", a
   store.fail = true;
   f.time.now += 1000;
   assert.equal(await config(f), false, "last known override");
-  const fresh = await serve(t, { store: Object.assign(storeFixture(), { fail: true }) });
-  assert.equal(await config(fresh), true, "deployment default");
+  const fresh = await serve(t, { store: Object.assign(storeFixture(), { fail: true }), deployment: false });
+  assert.equal(await config(fresh), true, "never read: masked (fail-closed)");
   const response = await f.request("/api/settings/display", { headers: { cookie: session("admin") } });
   assert.equal(response.status, 503);
 });

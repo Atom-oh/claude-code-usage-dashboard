@@ -24,25 +24,46 @@ export function deploymentTeamMask(env, piiMask) {
 }
 
 export function createDisplaySettings({ authentication, store, deployment, issuer, reason, now = Date.now,
-  ttlMs = 30_000 }) {
+  ttlMs = 30_000, firstWaitMs = 500 }) {
   const available = !reason && Boolean(store);
   // Each replica caches the stored override; another replica's change applies within ttlMs.
   let cache = { at: -Infinity, override: null, version: null, known: false };
+  // A save bumps the generation, so a slower read that started earlier cannot overwrite it.
+  let generation = 0;
+  let inflight = null;
 
   const overrideOf = record => (typeof record?.teamMask === "boolean" ? record.teamMask : null);
-  async function load(signal) {
-    const record = await store.getDisplaySettings({ signal });
+  const remember = (record, started) => {
+    if (generation !== started) return cache;
     cache = { at: now(), override: overrideOf(record), version: record?.version ?? null, known: true };
     return cache;
+  };
+  async function load(signal) {
+    const started = generation;
+    return remember(await store.getDisplaySettings({ signal }), started);
   }
+  // One background read at a time; an outage keeps the last known value and retries after ttlMs.
+  function refresh() {
+    if (!inflight) {
+      const started = generation;
+      inflight = store.getDisplaySettings({})
+        .then(record => { remember(record, started); }, () => { cache = { ...cache, at: now() }; })
+        .finally(() => { inflight = null; });
+    }
+    return inflight;
+  }
+  const pause = ms => new Promise(resolve => { setTimeout(resolve, ms).unref?.(); });
 
+  // /api/config gates every page, so it never waits on the store beyond firstWaitMs: a known
+  // value is served at once and refreshed in the background. Until the first read succeeds the
+  // answer is masked, matching the SPA's fail-closed default.
   async function teamMask() {
     if (!available) return deployment;
     if (now() - cache.at >= ttlMs) {
-      // An outage keeps the last known value (else the deployment default) and retries after ttlMs.
-      try { await load(); } catch { cache = { ...cache, at: now() }; }
+      const pending = refresh();
+      if (!cache.known) await Promise.race([pending, pause(firstWaitMs)]);
     }
-    return cache.override ?? deployment;
+    return cache.known ? cache.override ?? deployment : true;
   }
 
   const view = state => ({ available, reason: available ? null : reason ?? "ingest_disabled",
@@ -54,6 +75,7 @@ export function createDisplaySettings({ authentication, store, deployment, issue
   return {
     teamMask,
     install(app) {
+      if (available) refresh();  // warm the cache at startup without delaying it
       const router = express.Router({ strict: true, caseSensitive: true });
       router.use(noStore, authentication.requirePermission("settings:manage"));
       router.get("/", handle(async (_req, res) => {
@@ -71,6 +93,7 @@ export function createDisplaySettings({ authentication, store, deployment, issue
         if (version !== current.version) throw new DisplayError("version_conflict", 409);
         const record = { teamMask: value, updatedAt: now(), updatedBy: userKey(issuer, req.principal.subject) };
         if (!await store.putDisplaySettings(record, current.version)) throw new DisplayError("version_conflict", 409);
+        generation++;
         cache = { at: now(), override: value, version: current.version === null ? 1 : current.version + 1, known: true };
         res.json(view(cache));
       }));
