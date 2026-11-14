@@ -6,7 +6,7 @@
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>화면으로 익히는 ccdash 사용 가이드 — ccdash</title>
 <meta content="기간과 사용자를 선택하고, 작업의 개별 호출까지 따라가 보세요. 비용 변화와 토큰 효율, 도구 사용을 실제 화면과 단계별 설명으로 확인할 수 있습니다." name="description"/>
-<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/site.css?v=1a1bb92a" rel="stylesheet"/>
 <link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="../index.html" hreflang="en" rel="alternate"/>
 <link href="index.html" hreflang="ko" rel="alternate"/>
@@ -14,7 +14,7 @@
 <link href="../zh/index.html" hreflang="zh-CN" rel="alternate"/>
 <link href="../es/index.html" hreflang="es" rel="alternate"/>
 </head>
-<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<body class="visual-docs" data-stylesheet-version="1a1bb92a">
 <a class="skip-link" href="#main">본문으로 건너뛰기</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -31,7 +31,17 @@
 <a class="learning-card" href="user-guide.html#trace-workflow"><img alt="에이전트별 레인이 분리된 작업" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · 사용자 및 추적</span><b>사용자 한 명의 작업 따라가기</b><span class="card-description">사용자 → 기간 → 작업 → 에이전트 → 개별 호출.</span></span></a>
 <a class="learning-card" href="user-guide.html#cost-workflow"><img alt="비용 계산식과 변동 요인" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · 비용 및 효율성</span><b>비용 변화 설명하기</b><span class="card-description">비용 기준, 모델별 비중, 단위 비용, 토큰 및 캐시.</span></span></a>
 <a class="learning-card" href="user-guide.html#tools-workflow"><img alt="도구 호출과 결과" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · 도구 및 MCP</span><b>도구 활동 이해하기</b><span class="card-description">도구 호출, 권한, 스킬, MCP 및 세션 컨텍스트.</span></span></a>
-</div></section><section id="system-overview"><h2>화면에 표시되는 숫자의 출처</h2><p>데이터 수집과 대시보드 액세스에는 서로 다른 경로가 사용됩니다. 다이어그램은 선택적 기기 데이터 수집 경로와 인증된 읽기 경로를 보여 줍니다. 주최자가 준비하는 워크숍 데이터 수집에는 별도로 구성된 경로를 사용할 수 있습니다. 이 그림은 OIDC 로그인과 기기 수집을 사용하는 구성 예입니다.</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="데이터 수집 및 쿼리 아키텍처." decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>데이터 수집 및 쿼리 아키텍처.</strong> 신호가 저장소로 이동하고, 대시보드는 API를 통해 범위가 지정된 결과를 읽습니다. 두 Express 상자는 같은 애플리케이션의 논리적 역할을 나타냅니다.<small>논리적 기기 경로 · 영어 다이어그램 레이블 · 대화형 보기 열기</small></span></figcaption></figure><div class="reading-grid"><article><h3>데이터 수집: 클라이언트 → 저장된 관측 데이터</h3><p>Claude Code와 Codex는 지원되는 신호를 로컬 Collector로 내보냅니다. 등록된 기기는 인증된 수집 게이트웨이와 중앙 Collector를 거쳐 ClickHouse로 데이터를 보냅니다. 기기 자격 증명은 브라우저 로그인과 별개입니다.</p></article><article><h3>읽기: 로그인한 사용자 → 대시보드 결과</h3><p>조직 로그인이 구성된 역할을 제공합니다. API는 결과를 반환하기 전에 시간, 클라이언트 및 지원되는 필터를 적용합니다. 비용 기준과 데이터 범위를 확인하세요. 화면에는 확인된 소계가 표시될 수도 있고, 사용할 수 없는 신호가 표시될 수도 있습니다.</p></article></div><p><a href="architecture.html#pipeline">데이터 수집 경로 및 신뢰 경계</a> · <a href="architecture.html#signals">로그, 메트릭, 트레이스의 차이</a></p></section><section id="start"><h2>처음 방문하셨나요?</h2>
+</div></section><section id="demo"><h2>제품 전체 둘러보기</h2><p>개요, 사용자 작업, 개별 모델 호출, 비용 효율성, 도구와 설정을 25개 장면으로 안내합니다.</p>
+<p class="tour-meta"><span class="tour-runtime">9:09</span><span>한국어 내레이션과 영어 자막을 제공합니다. 화면에 표시된 데이터는 모두 합성 데이터이며, 아키텍처는 논리적 예시입니다.</span></p>
+<div class="video-frame"><video id="product-tour" aria-label="제품 전체 둘러보기" controls playsinline preload="metadata" poster="../assets/img/product-tour-ko-poster.jpg">
+<source src="../assets/video/product-tour-ko-20261114.mp4" type='video/mp4; codecs="avc1.640028, mp4a.40.2"'/>
+<source src="../assets/video/product-tour-ko-20261114.webm" type='video/webm; codecs="vp9, opus"'/>
+<track kind="captions" label="English" srclang="en" src="../assets/video/product-tour-en-20261114.vtt" default data-default-caption/>
+<track kind="captions" label="한국어" srclang="ko" src="../assets/video/product-tour-ko-20261114.vtt"/>
+</video></div><h3>챕터로 이동</h3><ol class="video-chapters"><li><button type="button" data-video-seek="0.000000"><time>0:00</time><span>시작하기</span></button></li><li><button type="button" data-video-seek="87.291667"><time>1:27</time><span>개요 및 추이</span></button></li><li><button type="button" data-video-seek="144.416667"><time>2:24</time><span>사용자 및 Trace</span></button></li><li><button type="button" data-video-seek="262.791667"><time>4:22</time><span>비용 효율성</span></button></li><li><button type="button" data-video-seek="352.000000"><time>5:52</time><span>도구 및 세션 환경</span></button></li><li><button type="button" data-video-seek="436.583333"><time>7:16</time><span>운영 및 다음 단계</span></button></li></ol>
+<p><a href="../assets/video/product-tour-ko-20261114.mp4">동영상 다운로드</a> · <a href="../assets/video/product-tour-en-20261114.vtt">영어 자막</a> · <a href="../assets/video/product-tour-ko-20261114.vtt">한국어 자막</a></p>
+<p class="caption"><a href="../assets/video/dashboard-demo-en-20261114.mp4">이전 48초 영어 안내 영상은 v1.8.0 릴리스의 선택 가능한 역사적 예시로 계속 제공됩니다.</a></p></section>
+<section id="system-overview"><h2>화면에 표시되는 숫자의 출처</h2><p>데이터 수집과 대시보드 액세스에는 서로 다른 경로가 사용됩니다. 다이어그램은 선택적 기기 데이터 수집 경로와 인증된 읽기 경로를 보여 줍니다. 주최자가 준비하는 워크숍 데이터 수집에는 별도로 구성된 경로를 사용할 수 있습니다. 이 그림은 OIDC 로그인과 기기 수집을 사용하는 구성 예입니다.</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="데이터 수집 및 쿼리 아키텍처." decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>데이터 수집 및 쿼리 아키텍처.</strong> 신호가 저장소로 이동하고, 대시보드는 API를 통해 범위가 지정된 결과를 읽습니다. 두 Express 상자는 같은 애플리케이션의 논리적 역할을 나타냅니다.<small>논리적 기기 경로 · 영어 다이어그램 레이블 · 대화형 보기 열기</small></span></figcaption></figure><div class="reading-grid"><article><h3>데이터 수집: 클라이언트 → 저장된 관측 데이터</h3><p>Claude Code와 Codex는 지원되는 신호를 로컬 Collector로 내보냅니다. 등록된 기기는 인증된 수집 게이트웨이와 중앙 Collector를 거쳐 ClickHouse로 데이터를 보냅니다. 기기 자격 증명은 브라우저 로그인과 별개입니다.</p></article><article><h3>읽기: 로그인한 사용자 → 대시보드 결과</h3><p>조직 로그인이 구성된 역할을 제공합니다. API는 결과를 반환하기 전에 시간, 클라이언트 및 지원되는 필터를 적용합니다. 비용 기준과 데이터 범위를 확인하세요. 화면에는 확인된 소계가 표시될 수도 있고, 사용할 수 없는 신호가 표시될 수도 있습니다.</p></article></div><p><a href="architecture.html#pipeline">데이터 수집 경로 및 신뢰 경계</a> · <a href="architecture.html#signals">로그, 메트릭, 트레이스의 차이</a></p></section><section id="start"><h2>처음 방문하셨나요?</h2>
 <ol>
 <li><strong>조직의 대시보드를 열고 로그인합니다.</strong> 주소와 접근 권한은 담당자에게 문의하세요. 지금 보고 있는 공개 사이트는 문서 사이트입니다. <a href="user-guide.html#access">계정 및 권한</a>을 참조하세요.</li>
 <li><strong>클라이언트와 기간을 선택합니다.</strong> 활성화된 모든 클라이언트와 최근 작업이 포함된 기간으로 시작하세요. 표시된 시간대와 데이터가 도착했는지 확인하세요.</li>
@@ -77,15 +87,6 @@
 <p><strong>클라이언트</strong>는 Claude Code 또는 Codex를 식별하고, <strong>백엔드</strong>는 공급자 경로를 설명하며, <strong>모델</strong>은 모델을 식별합니다. 모델 이름만으로는 이벤트를 발생시킨 클라이언트를 식별할 수 없습니다.</p>
 <p>Claude의 <strong>bedrock / enterprise</strong> 비교에는 추론된 세션 채널이 사용됩니다. 이 채널은 대시보드 로그인과 별개이며 Codex enterprise A/B 비교를 제공하지 않습니다.</p>
 <p><a href="user-guide.html#common-controls">올바른 보기 및 필터 선택</a> · <a href="architecture.html">파이프라인 및 신뢰 경계</a></p>
-</section><section id="demo"><h2>선택 사항인 예시: v1.8.0 안내 영상</h2>
-<p>이 48초 영상에서는 선택된 변경 사항과 기존 Task Trace 기능을 보여줍니다. 모든 메뉴와 기능에 대한 안내는 <a href="user-guide.html">전체 사용자 안내서</a>를 참조하세요.</p>
-<div class="video-frame"><video aria-label="시간 선택, 기기 설정 및 Task Trace를 안내하는 48초 영어 영상" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
-<source src="../assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
-<source src="../assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
-<track kind="captions" label="영어" src="../assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
-      브라우저에서 이 영상을 재생할 수 없습니다. <a href="../assets/video/dashboard-demo-en-20261114.mp4">영어 데모 다운로드</a>.
-    </video></div>
-<p class="caption">2026년 11월 14일 제작 · 영어 음성 및 자막 · 번역된 표시 레이블과 가상 비용을 사용한 합성 React 화면 캡처. <a href="../assets/video/dashboard-demo-en-20261114.vtt">영어 대본</a> · <a href="credits.html">미디어 크레딧</a>.</p>
 </section><section id="latest"><h2>릴리스 노트 및 다음 단계</h2>
 <p>대시보드의 변경 내역 또는 <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">릴리스 노트</a>에서 버전별 변경 사항을 확인하세요. 이어서 <a href="user-guide.html#workflows">조사 워크플로</a> 또는 <a href="user-guide.html#troubleshooting">첫 번째 문제 해결 확인 사항</a>을 살펴보세요.</p>
 </section></main>
@@ -94,5 +95,6 @@
 <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">전체 API 참조</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">변경 이력</a> · <a href="credits.html">데모 크레딧</a></p>
 <p>텔레메트리가 불완전할 수 있습니다. 보고 비용 및 정가 기준 예상치는 청구서가 아닙니다. 활동 지표만으로 직원 생산성이나 인과 관계에 기반한 ROI를 입증할 수 없습니다.</p>
 </div></footer>
-<script defer="" src="../assets/guide.js?v=b92b0cfe"></script></body>
+<script defer="" src="../assets/guide.js?v=b92b0cfe"></script><script src="../assets/tour.js?v=500c5c75"></script>
+</body>
 </html>

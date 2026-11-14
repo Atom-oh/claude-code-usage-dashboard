@@ -15,6 +15,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- Document browser approval and distinguish the retained manual-token collector walkthrough.
+- Make the detailed product tour the primary guide video in all five languages, with chapter seeking, one default English caption track, local downloads and preserved historical media credits. Initialize captions even when metadata is already loaded, while retaining later viewer choices.
+
 ### Added
 
 - Add a standalone 25-scene HyperFrames product-tour composition, Korean narration,

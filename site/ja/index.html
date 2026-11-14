@@ -6,7 +6,7 @@
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>画面を見ながら学ぶ ccdash — ccdash</title>
 <meta content="期間を選び、ユーザーのタスクを確認し、コストの変化を説明して、ツールのアクティビティを調べます。実際の画面と、各手順で次に行う具体的な操作を確認しましょう。" name="description"/>
-<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/site.css?v=1a1bb92a" rel="stylesheet"/>
 <link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="../index.html" hreflang="en" rel="alternate"/>
 <link href="../ko/index.html" hreflang="ko" rel="alternate"/>
@@ -14,7 +14,7 @@
 <link href="../zh/index.html" hreflang="zh-CN" rel="alternate"/>
 <link href="../es/index.html" hreflang="es" rel="alternate"/>
 </head>
-<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<body class="visual-docs" data-stylesheet-version="1a1bb92a">
 <a class="skip-link" href="#main">コンテンツへスキップ</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -31,7 +31,17 @@
 <a class="learning-card" href="user-guide.html#trace-workflow"><img alt="エージェントごとに分かれたレーンのあるタスク" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · ユーザーとトレース</span><b>1人のユーザーの作業をたどる</b><span class="card-description">ユーザー → 時間範囲 → タスク → エージェント → 個々の呼び出し。</span></span></a>
 <a class="learning-card" href="user-guide.html#cost-workflow"><img alt="コストの計算式と変化の要因" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · コストと効率</span><b>コストの変化を説明する</b><span class="card-description">コスト算定根拠、モデル別の割合、単位コスト、トークン、キャッシュ。</span></span></a>
 <a class="learning-card" href="user-guide.html#tools-workflow"><img alt="ツールの呼び出しと結果" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · ツールとMCP</span><b>ツールのアクティビティを理解する</b><span class="card-description">ツールの呼び出し、権限、Skills、MCP、セッションのコンテキスト。</span></span></a>
-</div></section><section id="system-overview"><h2>画面に表示される数値の出どころ</h2><p>データの収集とダッシュボードへのアクセスには、それぞれ異なる経路を使います。この図は、任意のデバイス収集経路と、認証された読み取り経路を示しています。主催者が準備するワークショップでの収集には、別途設定された経路を使う場合があります。 この図は OIDC ログインとデバイス収集を有効にした構成例です。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="収集とクエリのアーキテクチャ。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>収集とクエリのアーキテクチャ。</strong>シグナルはストレージに送られ、ダッシュボードはAPIを通じて、アクセス範囲が設定された結果を読み取ります。2つのExpressボックスは、同じアプリケーションの論理的な役割を表しています。<small>論理的なデバイス経路 · 図のラベルは英語 · インタラクティブ表示を開く</small></span></figcaption></figure><div class="reading-grid"><article><h3>収集：クライアント → 保存された観測データ</h3><p>Claude CodeとCodexは、対応するシグナルをローカルのCollectorにエクスポートします。登録済みのデバイスは、認証済みの取り込みゲートウェイと中央のCollectorを経由して、ClickHouseにデータを送信します。デバイスの認証情報は、ブラウザーへのログインとは別です。</p></article><article><h3>読み取り：サインインしたユーザー → ダッシュボードの結果</h3><p>組織のログインによって、設定済みのロールが適用されます。APIは、使用量と診断のビューを返す前に、時間、クライアント、および対応するフィルターを適用します。コスト算定根拠とデータの網羅範囲を確認してください。画面には、既知の小計が表示される場合も、シグナルが利用できないことが表示される場合もあります。</p></article></div><p><a href="architecture.html#pipeline">データ収集経路と信頼境界</a> · <a href="architecture.html#signals">ログ、メトリクス、トレースの違い</a></p></section><section id="start"><h2>初めてのアクセス</h2>
+</div></section><section id="demo"><h2>製品全体の詳しいご案内</h2><p>概要、ユーザーのタスク、個々のモデル呼び出し、コスト効率、ツール、セットアップを25のガイド付きシーンで順に紹介します。</p>
+<p class="tour-meta"><span class="tour-runtime">9:09</span><span>ナレーションは韓国語、字幕は英語です。画面上のデータはすべて合成データで、アーキテクチャは論理構成の例です。</span></p>
+<div class="video-frame"><video id="product-tour" aria-label="製品全体の詳しいご案内" controls playsinline preload="metadata" poster="../assets/img/product-tour-ko-poster.jpg">
+<source src="../assets/video/product-tour-ko-20261114.mp4" type='video/mp4; codecs="avc1.640028, mp4a.40.2"'/>
+<source src="../assets/video/product-tour-ko-20261114.webm" type='video/webm; codecs="vp9, opus"'/>
+<track kind="captions" label="English" srclang="en" src="../assets/video/product-tour-en-20261114.vtt" default data-default-caption/>
+<track kind="captions" label="한국어" srclang="ko" src="../assets/video/product-tour-ko-20261114.vtt"/>
+</video></div><h3>チャプターへ移動</h3><ol class="video-chapters"><li><button type="button" data-video-seek="0.000000"><time>0:00</time><span>はじめに</span></button></li><li><button type="button" data-video-seek="87.291667"><time>1:27</time><span>概要と傾向</span></button></li><li><button type="button" data-video-seek="144.416667"><time>2:24</time><span>ユーザーとTrace</span></button></li><li><button type="button" data-video-seek="262.791667"><time>4:22</time><span>コスト効率</span></button></li><li><button type="button" data-video-seek="352.000000"><time>5:52</time><span>ツールとセッション環境</span></button></li><li><button type="button" data-video-seek="436.583333"><time>7:16</time><span>運用と次のステップ</span></button></li></ol>
+<p><a href="../assets/video/product-tour-ko-20261114.mp4">動画をダウンロード</a> · <a href="../assets/video/product-tour-en-20261114.vtt">英語字幕</a> · <a href="../assets/video/product-tour-ko-20261114.vtt">韓国語字幕</a></p>
+<p class="caption"><a href="../assets/video/dashboard-demo-en-20261114.mp4">以前の48秒の英語版ウォークスルーは、v1.8.0の過去のリリース例として引き続きご覧いただけます（任意）。</a></p></section>
+<section id="system-overview"><h2>画面に表示される数値の出どころ</h2><p>データの収集とダッシュボードへのアクセスには、それぞれ異なる経路を使います。この図は、任意のデバイス収集経路と、認証された読み取り経路を示しています。主催者が準備するワークショップでの収集には、別途設定された経路を使う場合があります。 この図は OIDC ログインとデバイス収集を有効にした構成例です。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="収集とクエリのアーキテクチャ。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>収集とクエリのアーキテクチャ。</strong>シグナルはストレージに送られ、ダッシュボードはAPIを通じて、アクセス範囲が設定された結果を読み取ります。2つのExpressボックスは、同じアプリケーションの論理的な役割を表しています。<small>論理的なデバイス経路 · 図のラベルは英語 · インタラクティブ表示を開く</small></span></figcaption></figure><div class="reading-grid"><article><h3>収集：クライアント → 保存された観測データ</h3><p>Claude CodeとCodexは、対応するシグナルをローカルのCollectorにエクスポートします。登録済みのデバイスは、認証済みの取り込みゲートウェイと中央のCollectorを経由して、ClickHouseにデータを送信します。デバイスの認証情報は、ブラウザーへのログインとは別です。</p></article><article><h3>読み取り：サインインしたユーザー → ダッシュボードの結果</h3><p>組織のログインによって、設定済みのロールが適用されます。APIは、使用量と診断のビューを返す前に、時間、クライアント、および対応するフィルターを適用します。コスト算定根拠とデータの網羅範囲を確認してください。画面には、既知の小計が表示される場合も、シグナルが利用できないことが表示される場合もあります。</p></article></div><p><a href="architecture.html#pipeline">データ収集経路と信頼境界</a> · <a href="architecture.html#signals">ログ、メトリクス、トレースの違い</a></p></section><section id="start"><h2>初めてのアクセス</h2>
 <ol>
 <li><strong>組織のダッシュボードを開いてサインインします。</strong> アドレスとアクセス方法を管理者に確認してください。今ご覧の公開サイトはドキュメントです。<a href="user-guide.html#access">アカウントと権限</a>をご覧ください。</li>
 <li><strong>クライアントと期間を選択します。</strong> まず、すべての有効なクライアントと、最近の作業が含まれる期間を選択してください。表示されているタイムゾーンと、データが届いているかを確認します。</li>
@@ -77,15 +87,6 @@
 <p><strong>クライアント</strong>は Claude Code または Codex を示し、<strong>バックエンド</strong>はプロバイダーへの経路を表し、<strong>モデル</strong>はモデルを識別します。モデル名だけでは、データを送信したクライアントを特定できません。</p>
 <p>Claude の <strong>bedrock / enterprise</strong> 比較には、推定されたセッションチャネルが使われます。これらはダッシュボードへのログインとは別のもので、Codex のエンタープライズ A/B 比較を提供するものではありません。</p>
 <p><a href="user-guide.html#common-controls">適切なビューとフィルターを選ぶ</a> · <a href="architecture.html">パイプラインと信頼境界</a></p>
-</section><section id="demo"><h2>任意の例: v1.8.0 のウォークスルー</h2>
-<p>この 48 秒の動画では、選択した変更点と既存の Task Trace 機能を紹介します。すべてのメニューと機能については、<a href="user-guide.html">ユーザーガイド完全版</a>をご覧ください。</p>
-<div class="video-frame"><video aria-label="期間選択、デバイス設定、Task Trace の手順を紹介する 48 秒の英語動画" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
-<source src="../assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
-<source src="../assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
-<track kind="captions" label="英語" src="../assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
-      お使いのブラウザーではこの動画を再生できません。<a href="../assets/video/dashboard-demo-en-20261114.mp4">英語版デモをダウンロード</a>してください。
-    </video></div>
-<p class="caption">2026 年 11 月 14 日作成 · 英語のナレーションと字幕 · 表示ラベルを翻訳した、架空のコストを使用する合成 React 画面。<a href="../assets/video/dashboard-demo-en-20261114.vtt">英語の文字起こし</a> · <a href="credits.html">メディアクレジット</a>。</p>
 </section><section id="latest"><h2>リリースノートと次の手順</h2>
 <p>ダッシュボードの変更履歴、またはバージョンごとの変更点を記載した<a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">リリースノート</a>をご覧ください。続けて、<a href="user-guide.html#workflows">調査手順</a>または<a href="user-guide.html#troubleshooting">最初に確認するトラブルシューティング項目</a>をご覧ください。</p>
 </section></main>
@@ -94,5 +95,6 @@
 <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモクレジット</a></p>
 <p>テレメトリは不完全な場合があります。報告コストと定価に基づく推定値は請求額ではありません。アクティビティ指標から従業員の生産性や因果的なROIを証明することはできません。</p>
 </div></footer>
-<script defer="" src="../assets/guide.js?v=b92b0cfe"></script></body>
+<script defer="" src="../assets/guide.js?v=b92b0cfe"></script><script src="../assets/tour.js?v=500c5c75"></script>
+</body>
 </html>

@@ -6,7 +6,7 @@
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>ユーザーガイド — ccdash</title>
 <meta content="Claude Code と Codex の使用状況ダッシュボード、メニュー、タスクのトレース、アクセス方法、データの制限について、初心者向けに説明します。" name="description"/>
-<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/site.css?v=1a1bb92a" rel="stylesheet"/>
 <link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="../user-guide.html" hreflang="en" rel="alternate"/>
 <link href="../ko/user-guide.html" hreflang="ko" rel="alternate"/>
@@ -14,7 +14,7 @@
 <link href="../zh/user-guide.html" hreflang="zh-CN" rel="alternate"/>
 <link href="../es/user-guide.html" hreflang="es" rel="alternate"/>
 </head>
-<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<body class="visual-docs" data-stylesheet-version="1a1bb92a">
 <a class="skip-link" href="#main">本文へスキップ</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -178,7 +178,7 @@
 <figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-collector.png"><img alt="Collectorのセットアップ：デバイスを登録し、インストールコマンドに従います。" decoding="async" height="736" loading="lazy" src="../assets/img/guide-collector.png" width="2176"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Collectorのセットアップ：デバイスを登録し、インストールコマンドに従います。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
 
 <p>このメニューを利用するには、組織ログインとデバイス管理権限 (通常は analyst または administrator)、およびデバイス取り込み機能の有効化が必要です。サインイン中のユーザー自身のデバイスを管理します。viewer は許可された運用担当者にお問い合わせください。所属組織で承認されたインストール手順に従ってください。</p>
-<ol><li>Linux または macOS を選び、準備手順を確認します。デバイス名を入力して登録します。</li><li>デバイストークンが表示されたらコピーし、秘密に保管します。ダッシュボードでトークンが表示されるのは一度だけです。表示されたインストールコマンドをコピーしてそのデバイスで実行し、ターミナルのプロンプトで求められたユーザーIDとトークンを入力します。トークンをコマンドに直接記述したり、他の人に共有したりしないでください。</li><li>新しいターミナルを開き、新しい Claude Code または Codex セッションを開始してリクエストを行います。ページ上の受信確認手順に従い、<strong>내 기기</strong> (自分のデバイス) で最近のデータ受信を確認します。</li><li>一覧を更新し、表示される場合はデバイスをさらに読み込み、登録済み、期限切れ、失効の状態、期限、最後の受信時刻を確認します。デバイスを停止するには <strong>해지</strong> を選び、<strong>해지 확인</strong> で確定します。再接続には新しいトークンが必要です。トークン再利用の警告が表示された場合は、トークンを失効させてから再登録してください。</li></ol>
+<h3>ブラウザーで接続</h3><p>ブラウザー接続が利用できる場合は、トークンをコピーせずにインストールできます。自分のデバイスで今開始したインストールだけを承認してください。</p><ol><li>Linux または macOS を選択し、準備手順を読んでから、インストールコマンドをコピーしてそのデバイスのターミナルで実行します。</li><li>ターミナルに表示された承認リンクを開き、ダッシュボードにサインインして確認コードを照合します。デバイスとアカウントを確認してから承認してください。自分で開始していないリクエストは拒否してください。他の人から送られたリンクやコードは絶対に承認しないでください。</li><li>インストールが完了するまでターミナルに戻ります。新規インストールでは、利用可能な場合、承認したアカウントの確認済みメールアドレスが使用されます。再インストールでは既存のコレクター ユーザー ID が引き継がれます。新しいターミナルと新しい Claude Code または Codex セッションを開き、「自分のデバイス」で接続を確認してください。</li></ol><h3>トークンの手動インストール</h3><p>スクリーンショットと動画では、この手動インストール方法を説明しています。ブラウザー承認を利用できない場合は、手動インストールのオプションを展開して、以下の手順に従ってください。トークンは秘密にしてください。ダッシュボードに表示されるのは一度だけです。</p><ol><li>Linux または macOS を選び、準備手順を確認します。デバイス名を入力して登録します。</li><li>デバイストークンが表示されたらコピーし、秘密に保管します。ダッシュボードでトークンが表示されるのは一度だけです。表示されたインストールコマンドをコピーしてそのデバイスで実行し、ターミナルのプロンプトで求められたユーザーIDとトークンを入力します。トークンをコマンドに直接記述したり、他の人に共有したりしないでください。</li><li>新しいターミナルを開き、新しい Claude Code または Codex セッションを開始してリクエストを行います。ページ上の受信確認手順に従い、<strong>내 기기</strong> (自分のデバイス) で最近のデータ受信を確認します。</li><li>一覧を更新し、表示される場合はデバイスをさらに読み込み、登録済み、期限切れ、失効の状態、期限、最後の受信時刻を確認します。デバイスを停止するには <strong>해지</strong> を選び、<strong>해지 확인</strong> で確定します。再接続には新しいトークンが必要です。トークン再利用の警告が表示された場合は、トークンを失効させてから再登録してください。</li></ol>
 <p>現在のインストーラーで設定されている場合、有効なデバイスは有効期限の7日前から自動更新されます。期限切れまたは失効したデバイスでは、新しいトークンを取得してインストールし直す必要があります。ログアウトしてもデバイスのデータ収集は停止しません。最近データを受信していても、使用状況がすべて収集されたとは限りません。運用担当者向けの詳細は、<a href="installation.html">インストール</a>と<a href="operations.html">運用</a>を参照してください。</p><p><a href="#contents">目次に戻る</a></p>
 </section><section id="installation"><h2>インストール状況 (설치 상태)</h2>
 <figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-installation.png"><img alt="インストール状況：権限がある場合、準備状況とデータ収集の確認項目を調べます。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-installation.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">インストール状況：権限がある場合、準備状況とデータ収集の確認項目を調べます。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>

@@ -6,7 +6,7 @@
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>用户指南 — ccdash</title>
 <meta content="面向初学者的 Claude Code 和 Codex 使用情况仪表板指南，介绍菜单、任务追踪、访问权限和数据限制。" name="description"/>
-<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/site.css?v=1a1bb92a" rel="stylesheet"/>
 <link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="../user-guide.html" hreflang="en" rel="alternate"/>
 <link href="../ko/user-guide.html" hreflang="ko" rel="alternate"/>
@@ -14,7 +14,7 @@
 <link href="user-guide.html" hreflang="zh-CN" rel="alternate"/>
 <link href="../es/user-guide.html" hreflang="es" rel="alternate"/>
 </head>
-<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<body class="visual-docs" data-stylesheet-version="1a1bb92a">
 <a class="skip-link" href="#main">跳转到正文</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -178,7 +178,7 @@
 <figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-collector.png"><img alt="Collector 设置：注册设备并按照安装命令操作。" decoding="async" height="736" loading="lazy" src="../assets/img/guide-collector.png" width="2176"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Collector 设置：注册设备并按照安装命令操作。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
 
 <p>此菜单需要组织登录和设备管理权限（通常为分析员或管理员），并且必须启用设备数据摄取。此功能用于管理登录用户自己的设备。查看者应向获准的运营人员寻求帮助。请遵循您所在组织批准的安装说明。</p>
-<ol><li>选择 Linux 或 macOS，并阅读准备说明。输入设备名称并注册设备。</li><li>设备令牌显示时，请复制并妥善保密。仪表板只会显示该令牌一次。复制显示的安装命令，在该设备上运行，然后在终端提示时输入所需的用户 ID 和令牌。不要将令牌直接放入命令中，也不要分享令牌。</li><li>打开新的终端，启动新的 Claude Code 或 Codex 会话并发出请求。按照页面上的收件验证步骤操作，并在<strong>내 기기</strong>（我的设备）中检查最近是否收到数据。</li><li>刷新列表；如果有加载更多选项，请加载更多设备；然后检查设备的已注册、已过期或已撤销状态、过期时间和最近收件时间。如需停止某台设备，请选择<strong>해지</strong>并确认<strong>해지 확인</strong>。要重新连接，必须使用新令牌。如果出现令牌重复使用警告，请先撤销设备，再重新注册。</li></ol>
+<h3>通过浏览器连接</h3><p>提供浏览器连接方式时，您无需复制令牌即可安装。只批准您刚刚在自己的设备上发起的安装。</p><ol><li>选择 Linux 或 macOS，阅读准备步骤，复制安装命令，并在该设备的终端中运行。</li><li>打开终端中显示的批准链接，登录仪表板并核对确认码。检查设备和账户后再批准。拒绝您未发起的请求；绝不要批准他人发送的链接或代码。</li><li>安装完成期间返回终端。新安装会在可用时使用批准账户的已验证邮箱；重新安装会保留现有的采集器用户 ID。打开一个新终端和一个新的 Claude Code 或 Codex 会话，然后在“我的设备”中确认已收到连接。</li></ol><h3>手动令牌安装</h3><p>截图和视频演示的是此手动安装方式。如果无法使用浏览器批准，请展开手动安装选项，然后按照以下步骤操作。请妥善保管令牌；仪表板只显示一次。</p><ol><li>选择 Linux 或 macOS，并阅读准备说明。输入设备名称并注册设备。</li><li>设备令牌显示时，请复制并妥善保密。仪表板只会显示该令牌一次。复制显示的安装命令，在该设备上运行，然后在终端提示时输入所需的用户 ID 和令牌。不要将令牌直接放入命令中，也不要分享令牌。</li><li>打开新的终端，启动新的 Claude Code 或 Codex 会话并发出请求。按照页面上的收件验证步骤操作，并在<strong>내 기기</strong>（我的设备）中检查最近是否收到数据。</li><li>刷新列表；如果有加载更多选项，请加载更多设备；然后检查设备的已注册、已过期或已撤销状态、过期时间和最近收件时间。如需停止某台设备，请选择<strong>해지</strong>并确认<strong>해지 확인</strong>。要重新连接，必须使用新令牌。如果出现令牌重复使用警告，请先撤销设备，再重新注册。</li></ol>
 <p>如果当前安装程序已配置自动续期，活跃设备会在过期前七天开始自动续期。已过期或已撤销的设备需要新令牌和重新安装。退出登录不会停止设备数据收集。最近收到数据不代表已收集所有使用数据。运营人员可参阅<a href="installation.html">安装</a>和<a href="operations.html">运营</a>部分了解更多信息。</p><p><a href="#contents">返回目录</a></p>
 </section><section id="installation"><h2>安装状态 (설치 상태)</h2>
 <figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-installation.png"><img alt="安装状态：在获得授权后检查就绪状态和采集情况。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-installation.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">安装状态：在获得授权后检查就绪状态和采集情况。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>

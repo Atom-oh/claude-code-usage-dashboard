@@ -6,7 +6,7 @@
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>Conozca ccdash a través de sus pantallas — ccdash</title>
 <meta content="Elija un período, revise las tareas de un usuario, explique los cambios de costo y explore la actividad de las herramientas. Siga las pantallas reales y una acción concreta en cada paso." name="description"/>
-<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/site.css?v=1a1bb92a" rel="stylesheet"/>
 <link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="../index.html" hreflang="en" rel="alternate"/>
 <link href="../ko/index.html" hreflang="ko" rel="alternate"/>
@@ -14,7 +14,7 @@
 <link href="../zh/index.html" hreflang="zh-CN" rel="alternate"/>
 <link href="index.html" hreflang="es" rel="alternate"/>
 </head>
-<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<body class="visual-docs" data-stylesheet-version="1a1bb92a">
 <a class="skip-link" href="#main">Saltar al contenido</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -32,7 +32,17 @@
 <a class="learning-card" href="user-guide.html#trace-workflow"><img alt="Una tarea con carriles de agentes separados" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · USUARIOS Y TRAZAS</span><b>Siga el trabajo de un usuario</b><span class="card-description">Usuario → período → tarea → agente → llamada individual.</span></span></a>
 <a class="learning-card" href="user-guide.html#cost-workflow"><img alt="La ecuación de costo y los factores de cambio" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · COSTO Y EFICIENCIA</span><b>Explique un cambio de costo</b><span class="card-description">Base del costo, proporciones por modelo, costos unitarios, tokens y caché.</span></span></a>
 <a class="learning-card" href="user-guide.html#tools-workflow"><img alt="Llamadas a herramientas y resultados" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · HERRAMIENTAS Y MCP</span><b>Comprenda la actividad de las herramientas</b><span class="card-description">Llamadas a herramientas, permisos, Skills, MCP y contexto de sesión.</span></span></a>
-</div></section><section id="system-overview"><h2>De dónde vienen las cifras de la pantalla</h2><p>La recopilación de datos y el acceso al panel usan rutas distintas. El diagrama muestra la ruta opcional de recopilación desde dispositivos y la ruta de lectura autenticada; la recopilación de un taller preparado por un organizador puede usar una ruta configurada aparte. Este es un ejemplo de recopilación desde dispositivos con OIDC habilitado.</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="Arquitectura de recopilación y consultas." decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>Arquitectura de recopilación y consultas.</strong> Las señales llegan al almacenamiento; el panel lee resultados delimitados mediante su API. Los dos bloques de Express representan funciones lógicas de la misma aplicación.<small>Ruta lógica del dispositivo · etiquetas del diagrama en inglés · abra la vista interactiva</small></span></figcaption></figure><div class="reading-grid"><article><h3>Recopilación: cliente → observaciones almacenadas</h3><p>Claude Code y Codex exportan las señales admitidas a un Collector local. Un dispositivo registrado las envía a través de la puerta de enlace de ingesta autenticada y del Collector central hasta ClickHouse. La credencial del dispositivo es independiente del inicio de sesión en el navegador.</p></article><article><h3>Lectura: usuario autenticado → resultado del panel</h3><p>El inicio de sesión de la organización proporciona el rol configurado. La API aplica los filtros de período, cliente y otros compatibles antes de devolver las vistas de uso y diagnóstico. Revise la base del costo y la cobertura: una pantalla puede mostrar un subtotal conocido o una señal no disponible.</p></article></div><p><a href="architecture.html#pipeline">Rutas de recopilación y límites de confianza</a> · <a href="architecture.html#signals">Diferencias entre registros, métricas y trazas</a></p></section>
+</div></section><section id="demo"><h2>Recorrido completo por el producto</h2><p>Explore la vista general, las tareas de usuario, las llamadas individuales a modelos, la eficiencia de costos, las herramientas y la configuración en 25 escenas guiadas.</p>
+<p class="tour-meta"><span class="tour-runtime">9:09</span><span>Locución en coreano con subtítulos en inglés. Todos los datos en pantalla son sintéticos; la arquitectura es un ejemplo lógico.</span></p>
+<div class="video-frame"><video id="product-tour" aria-label="Recorrido completo por el producto" controls playsinline preload="metadata" poster="../assets/img/product-tour-ko-poster.jpg">
+<source src="../assets/video/product-tour-ko-20261114.mp4" type='video/mp4; codecs="avc1.640028, mp4a.40.2"'/>
+<source src="../assets/video/product-tour-ko-20261114.webm" type='video/webm; codecs="vp9, opus"'/>
+<track kind="captions" label="English" srclang="en" src="../assets/video/product-tour-en-20261114.vtt" default data-default-caption/>
+<track kind="captions" label="한국어" srclang="ko" src="../assets/video/product-tour-ko-20261114.vtt"/>
+</video></div><h3>Ir a un capítulo</h3><ol class="video-chapters"><li><button type="button" data-video-seek="0.000000"><time>0:00</time><span>Primeros pasos</span></button></li><li><button type="button" data-video-seek="87.291667"><time>1:27</time><span>Vista general y tendencias</span></button></li><li><button type="button" data-video-seek="144.416667"><time>2:24</time><span>Usuarios y Trace</span></button></li><li><button type="button" data-video-seek="262.791667"><time>4:22</time><span>Eficiencia de costos</span></button></li><li><button type="button" data-video-seek="352.000000"><time>5:52</time><span>Herramientas y entorno de sesión</span></button></li><li><button type="button" data-video-seek="436.583333"><time>7:16</time><span>Operaciones y próximos pasos</span></button></li></ol>
+<p><a href="../assets/video/product-tour-ko-20261114.mp4">Descargar el video</a> · <a href="../assets/video/product-tour-en-20261114.vtt">Subtítulos en inglés</a> · <a href="../assets/video/product-tour-ko-20261114.vtt">Subtítulos en coreano</a></p>
+<p class="caption"><a href="../assets/video/dashboard-demo-en-20261114.mp4">El recorrido anterior en inglés, de 48 segundos, sigue disponible como ejemplo histórico opcional de la versión v1.8.0.</a></p></section>
+<section id="system-overview"><h2>De dónde vienen las cifras de la pantalla</h2><p>La recopilación de datos y el acceso al panel usan rutas distintas. El diagrama muestra la ruta opcional de recopilación desde dispositivos y la ruta de lectura autenticada; la recopilación de un taller preparado por un organizador puede usar una ruta configurada aparte. Este es un ejemplo de recopilación desde dispositivos con OIDC habilitado.</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="Arquitectura de recopilación y consultas." decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>Arquitectura de recopilación y consultas.</strong> Las señales llegan al almacenamiento; el panel lee resultados delimitados mediante su API. Los dos bloques de Express representan funciones lógicas de la misma aplicación.<small>Ruta lógica del dispositivo · etiquetas del diagrama en inglés · abra la vista interactiva</small></span></figcaption></figure><div class="reading-grid"><article><h3>Recopilación: cliente → observaciones almacenadas</h3><p>Claude Code y Codex exportan las señales admitidas a un Collector local. Un dispositivo registrado las envía a través de la puerta de enlace de ingesta autenticada y del Collector central hasta ClickHouse. La credencial del dispositivo es independiente del inicio de sesión en el navegador.</p></article><article><h3>Lectura: usuario autenticado → resultado del panel</h3><p>El inicio de sesión de la organización proporciona el rol configurado. La API aplica los filtros de período, cliente y otros compatibles antes de devolver las vistas de uso y diagnóstico. Revise la base del costo y la cobertura: una pantalla puede mostrar un subtotal conocido o una señal no disponible.</p></article></div><p><a href="architecture.html#pipeline">Rutas de recopilación y límites de confianza</a> · <a href="architecture.html#signals">Diferencias entre registros, métricas y trazas</a></p></section>
 <section id="start"><h2>Su primera visita</h2>
 <ol>
 <li><strong>Abra el panel de su organización e inicie sesión.</strong> Pida al organizador la dirección y el acceso. Este sitio público que está leyendo es la documentación. Consulte <a href="user-guide.html#access">cuentas y permisos</a>.</li>
@@ -86,16 +96,7 @@
 <p>La comparación de <strong>bedrock / enterprise</strong> de Claude usa canales de sesión inferidos. Estos son independientes del inicio de sesión en el panel y no ofrecen una comparación A/B de Codex Enterprise.</p>
 <p><a href="user-guide.html#common-controls">Elija la vista y los filtros adecuados</a> · <a href="architecture.html">Flujo de datos y límites de confianza</a></p>
 </section>
-<section id="demo"><h2>Ejemplo opcional: guía de la versión v1.8.0</h2>
-<p>Este video de 48 segundos muestra algunos cambios y funciones existentes de trazas de tareas. Consulte la <a href="user-guide.html">guía de usuario completa</a> para ver todos los menús y funciones.</p>
-<div class="video-frame"><video aria-label="Guía en inglés de 48 segundos sobre selección de período, configuración de dispositivos y trazas de tareas" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
-<source src="../assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
-<source src="../assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
-<track kind="captions" label="English" src="../assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
-      Su navegador no puede reproducir este video. <a href="../assets/video/dashboard-demo-en-20261114.mp4">Descargar la demostración en inglés</a>.
-    </video></div>
-<p class="caption">Creado el 14 de noviembre de 2026 · narración y subtítulos en inglés · capturas sintéticas de React con etiquetas traducidas y costos ficticios. <a href="../assets/video/dashboard-demo-en-20261114.vtt">Transcripción en inglés</a> · <a href="credits.html">Créditos de medios</a>.</p>
-</section>
+
 <section id="latest"><h2>Notas de la versión y siguientes pasos</h2>
 <p>Lea el historial de cambios del panel o las <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">notas de la versión</a> para conocer los cambios específicos de cada versión. Continúe con los <a href="user-guide.html#workflows">flujos de trabajo de investigación</a> o los <a href="user-guide.html#troubleshooting">primeras comprobaciones para solucionar problemas</a>.</p>
 </section>
@@ -105,5 +106,6 @@
 <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Referencia completa de la API</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Definiciones de las mediciones</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Historial de cambios</a> · <a href="credits.html">Créditos de la demostración</a></p>
 <p>La telemetría puede estar incompleta. Los costos informados y las estimaciones basadas en precios de lista no son facturas. Los indicadores de actividad no demuestran la productividad de los empleados ni un retorno causal de la inversión.</p>
 </div></footer>
-<script defer="" src="../assets/guide.js?v=b92b0cfe"></script></body>
+<script defer="" src="../assets/guide.js?v=b92b0cfe"></script><script src="../assets/tour.js?v=500c5c75"></script>
+</body>
 </html>
