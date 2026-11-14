@@ -225,6 +225,30 @@ test("accepted, uncertain and mixed requests still require completion usage", ()
   }
   assert.equal(foldClientMetrics([{ ...rejected, model: "" }, event], ["codex"]).quality.missing_usage, 0);
 });
+test("client rows keep a known input composition when a request has no usage", () => {
+  const usage = [event, { ...event, t: "2026-09-14 11:00:00", input_tokens_total: 40, cache_read_tokens: 10,
+    cache_write_tokens: 5, output_tokens: 10, reasoning_tokens: 1 }];
+  const partial = foldClientMetrics([...usage, { ...event, kind: "request", session: "missing-usage" }], ["codex"]);
+  const [row] = partial.by_client;
+  assert.equal(row.input_tokens, null);
+  assert.equal(row.cache_read_tokens, null);
+  assert.equal(row.cache_write_tokens, null);
+  assert.deepEqual(row.observed_input, { input_tokens: 74, cache_read_tokens: 50, cache_write_tokens: 16, partial: true });
+  // Complete usage: the subtotal equals the strict values and is not partial.
+  const complete = foldClientMetrics(usage, ["codex"]).by_client[0];
+  assert.deepEqual(complete.observed_input, { input_tokens: complete.input_tokens,
+    cache_read_tokens: complete.cache_read_tokens, cache_write_tokens: complete.cache_write_tokens, partial: false });
+  // No known part at all stays unavailable rather than zero.
+  const none = foldClientMetrics([{ ...event, kind: "request", session: "missing-usage" }], ["codex"]).by_client[0];
+  assert.deepEqual(none.observed_input, { input_tokens: null, cache_read_tokens: null, cache_write_tokens: null, partial: true });
+  // An invalid usage row marks the subtotal partial without poisoning the known rows.
+  const invalid = foldClientMetrics([...usage, { ...event, session: "bad", cache_write_tokens: null }], ["codex"]).by_client[0];
+  assert.equal(invalid.observed_input.partial, true);
+  assert.equal(invalid.observed_input.cache_write_tokens, 16);
+  // Only client rows carry it; time-series rows keep their shape.
+  assert.equal(Object.hasOwn(partial.timeseries[0], "observed_input"), false);
+});
+
 test("known observed tokens survive an unmatched usage scope without changing canonical coverage or cost", () => {
   const out = foldClientMetrics([
     event,
