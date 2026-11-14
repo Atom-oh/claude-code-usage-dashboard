@@ -21,7 +21,7 @@ const UNAVAILABLE = {
 const SAVE_ERRORS = {
   invalid_attribute: "선택한 속성을 사용할 수 없습니다. 다른 속성을 선택해 주세요.",
   duplicate_label: "서로 다른 값에 같은 표시 이름을 쓸 수 없습니다.",
-  invalid_labels: "표시 이름은 1~80자여야 합니다.",
+  invalid_labels: "표시 이름은 1~80자여야 하고, 값이 너무 긴 항목에는 이름을 붙일 수 없습니다.",
   directory_unavailable: "사용자 디렉터리에 연결할 수 없어 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
   store_unavailable: "설정 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
 };
@@ -98,8 +98,8 @@ function TeamMapping() {
     setSelected(attribute);
     setSaved(false);
     setSaveError("");
-    // Labels belong to the stored attribute; another attribute starts from blank names.
-    loadPreview(attribute, attribute === data.current ? data.labels : {});
+    // Labels are keyed by raw value, so stored names prefill any attribute's matching values.
+    loadPreview(attribute, data.labels);
   };
 
   const save = async () => {
@@ -109,9 +109,13 @@ function TeamMapping() {
     setSaveError("");
     setSaved(false);
     try {
-      const body = { attribute: selected, version: data.version,
-        labels: Object.fromEntries(preview.data.values.map(row => [row.value, (labels[row.value] ?? "").trim()])
-          .filter(([, label]) => label)) };
+      // PUT replaces the whole map: keep stored names for values outside this preview, let rows override or clear theirs.
+      const merged = new Map(Object.entries(data.labels));
+      for (const row of preview.data.values) {
+        const label = (labels[row.value] ?? "").trim();
+        if (label) merged.set(row.value, label); else merged.delete(row.value);
+      }
+      const body = { attribute: selected, version: data.version, labels: Object.fromEntries(merged) };
       const response = await fetch("/api/settings/teams", {
         method: "PUT", credentials: "same-origin", cache: "no-store",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -160,6 +164,8 @@ function TeamMapping() {
           <div><dt className="text-ink-500">이력 시작일</dt><dd className="font-medium text-ink-800">{formatTime(status.historyStart, dateOnly)}</dd></div>
         </dl> : <p className="text-sm text-ink-500">동기화 상태를 확인할 수 없습니다.</p>}
         {status?.stale && <div className="mt-4"><Notice tone="warning" role="status">디렉터리 동기화가 오래되었습니다. 팀 정보가 최신이 아닐 수 있습니다.</Notice></div>}
+        {status?.reason === "directory_too_large" && <div className="mt-4"><Notice tone="warning" role="status">디렉터리 이력 항목이 너무 많아 디렉터리 기반 팀 적용을 일시 중단했습니다.</Notice></div>}
+        {status?.lastError && <div className="mt-4"><Notice tone="warning" role="status">디렉터리 또는 저장소 동기화에 실패했습니다. 마지막으로 성공한 데이터를 유지합니다.</Notice></div>}
         {data.directoryError && <div className="mt-4"><Notice tone="warning" role="status">사용자 디렉터리에 일시적으로 연결할 수 없어 속성을 바꿀 수 없습니다. 저장된 설정은 그대로 표시합니다.</Notice></div>}
       </Card>
 

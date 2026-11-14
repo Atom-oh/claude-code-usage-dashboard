@@ -82,16 +82,41 @@ test("save sends attribute, non-blank labels and version, then shows success", a
     labels: { platform: "플랫폼", data: "데이터" } });
 });
 
-test("switching attribute saves only the new attribute's labels", async () => {
-  const fetch = stubApi();
+test("saving keeps stored labels for values outside the preview", async () => {
+  const fetch = stubApi({ labels: { platform: "플랫폼", retired: "옛 팀" } });
+  renderPage();
+  fireEvent.change(await screen.findByLabelText("data 표시 이름"), { target: { value: "데이터" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() => expect(putCalls(fetch)).toHaveLength(1));
+  expect(JSON.parse(putCalls(fetch)[0][1].body).labels).toEqual({ platform: "플랫폼", retired: "옛 팀", data: "데이터" });
+});
+
+test("clearing a row's name removes only that key", async () => {
+  const fetch = stubApi({ labels: { platform: "플랫폼", retired: "옛 팀" } });
+  renderPage();
+  fireEvent.change(await screen.findByLabelText("platform 표시 이름"), { target: { value: " " } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() => expect(putCalls(fetch)).toHaveLength(1));
+  expect(JSON.parse(putCalls(fetch)[0][1].body).labels).toEqual({ retired: "옛 팀" });
+});
+
+test("switching attribute prefills matching stored labels and saves the merged map", async () => {
+  const fetch = stubApi({ labels: { platform: "플랫폼", eng: "엔지니어링" } });
   renderPage();
   await screen.findByLabelText("platform 표시 이름");
   fireEvent.click(screen.getByRole("radio", { name: /custom:department/ }));
-  fireEvent.change(await screen.findByLabelText("eng 표시 이름"), { target: { value: "엔지니어링" } });
+  expect((await screen.findByLabelText("eng 표시 이름")).value).toBe("엔지니어링");
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   await waitFor(() => expect(putCalls(fetch)).toHaveLength(1));
   expect(JSON.parse(putCalls(fetch)[0][1].body)).toEqual({ attribute: "custom:department", version: 3,
-    labels: { eng: "엔지니어링" } });
+    labels: { platform: "플랫폼", eng: "엔지니어링" } });
+});
+
+test("status reason and last error are explained", async () => {
+  stubApi({ status: { ...base.status, reason: "directory_too_large", lastError: "sync_failed" } });
+  renderPage();
+  expect(await screen.findByText(/이력 항목이 너무 많아/)).toBeTruthy();
+  expect(screen.getByText(/동기화에 실패했습니다/)).toBeTruthy();
 });
 
 test("a version conflict asks for a reload and reloading refetches the settings", async () => {
