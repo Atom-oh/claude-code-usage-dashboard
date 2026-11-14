@@ -75,7 +75,13 @@ try {
     assert(dimensions.content <= dimensions.viewport + 1, `Overflow at ${locale}/${width}`);
     const text = await page.locator("main").innerText();
     assert(text.length > 200);
-    if (locale !== "ko") assert(!/[가-힣]/.test(text), `Korean authored text remains in ${locale}`);
+    if (locale !== "ko") {
+      assert(!/[가-힣]/.test(text), `Korean authored text remains in ${locale}`);
+      if (width === 1440) {
+        const menu = await page.locator('nav a[href^="/settings"]').innerText();
+        assert(!/[가-힣]/.test(menu), `Korean Settings navigation remains in ${locale}`);
+      }
+    }
     if (locale === "en" && width === 1440) {
       const target = new URL("../../site/assets/img/guide-settings.png", import.meta.url);
       await page.screenshot({ path: fileURLToPath(target), animations: "disabled" });
