@@ -22,6 +22,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   browser after SSO, and the installer finishes on its own. New installations use the
   approving account's verified email as the attribution ID; reinstalls keep theirs.
   The token flow remains available with `sh -s -- --token`.
+- Add validated locale preference loading and Korean/English message catalogs
+  for the multilingual interface.
 
 ## [1.8.1] - 2026-11-14
 
