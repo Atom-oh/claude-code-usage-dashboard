@@ -4,8 +4,8 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>开始使用 ccdash — 完整产品文档</title>
-<meta content="面向初次使用者的指南，涵盖 ccdash 的所有菜单：使用情况、费用、用户、任务、诊断、AI 助手和设备设置。" name="description"/>
+<title>通过界面了解 ccdash — ccdash</title>
+<meta content="选择时间段，查看用户的任务，说明成本变化，并探索工具活动。每一步都配有真实界面和具体的后续操作。" name="description"/>
 <link href="../assets/site.css" rel="stylesheet"/>
 <link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="../index.html" hreflang="en" rel="alternate"/>
@@ -13,20 +13,24 @@
 <link href="../ja/index.html" hreflang="ja" rel="alternate"/>
 <link href="index.html" hreflang="zh-CN" rel="alternate"/>
 </head>
-<body>
+<body class="visual-docs">
 <a class="skip-link" href="#main">跳转到正文</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
 <nav aria-label="主要导航" class="tabs"><a aria-current="page" href="index.html">概览</a><a href="user-guide.html">用户指南</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html">API</a><a href="operations.html">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
 <div aria-label="语言" class="languages" role="group"><a href="../index.html" hreflang="en" lang="en">English</a><a href="../ko/index.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/index.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
 </div></header>
-<main class="wrap" id="main"><div class="hero">
+<main class="wrap" id="main"><div class="hero hero-visual"><div class="hero-copy">
 <p class="eyebrow">Claude Code + Codex · 产品文档</p>
-<h1>开始使用 ccdash</h1>
-<p class="lede">了解如何查看编码客户端的使用情况、费用和活动，探索每个仪表板菜单，并调查数字背后的工作。</p>
-<p><a href="user-guide.html">阅读完整用户指南</a> · <a href="#menu-map">查找菜单</a> · <a href="installation.html">设置部署</a></p>
+<h1>通过界面了解 ccdash</h1>
+<p class="lede">选择时间段，查看用户的任务，说明成本变化，并探索工具活动。每一步都配有真实界面和具体的后续操作。</p>
+<p><a class="button-link" href="user-guide.html">打开详细操作指南</a> <a class="button-link secondary" href="#system-overview">查看架构</a></p>
 <p class="caption">适用于初次阅读者、分析人员和运维人员。菜单取决于已启用的客户端、权限和已安装的版本。</p>
-</div><section id="start"><h2>首次访问</h2>
+</div><figure class="screen-shot hero-shot"><a data-lightbox="" href="../assets/img/guide-overview.png"><img alt="Overview：选择范围、查看摘要并检查趋势。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-overview.png" width="2880"/></a><figcaption><span class="figure-number">01</span><span class="figure-text">Overview：选择范围、查看摘要并检查趋势。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure></div><section id="learning-paths"><h2>选择您想调查的内容</h2><div class="learning-paths">
+<a class="learning-card" href="user-guide.html#trace-workflow"><img alt="包含多个独立代理泳道的任务" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · 用户和追踪</span><b>追踪一位用户的工作</b><span class="card-description">用户 → 时间范围 → 任务 → 代理 → 单个调用。</span></span></a>
+<a class="learning-card" href="user-guide.html#cost-workflow"><img alt="成本公式和变化因素" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · 成本和效率</span><b>说明成本变化</b><span class="card-description">成本依据、模型占比、单位成本、令牌和缓存。</span></span></a>
+<a class="learning-card" href="user-guide.html#tools-workflow"><img alt="工具调用和结果" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · 工具和 MCP</span><b>了解工具活动</b><span class="card-description">工具调用、权限、Skills、MCP 和会话上下文。</span></span></a>
+</div></section><section id="system-overview"><h2>界面上的数字来自哪里</h2><p>数据采集和仪表板访问使用不同的路径。此图显示可选的设备采集路径和经过身份验证的读取路径；由组织者准备的研讨会数据采集也可以使用单独配置的路径。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="采集和查询架构。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>采集和查询架构。</strong>信号进入存储；仪表板通过 API 读取经过范围限定的结果。两个 Express 方框表示同一应用程序的逻辑角色。<small>逻辑设备路径 · 英文图表标签 · 打开交互视图</small></span></figcaption></figure><div class="reading-grid"><article><h3>采集：客户端 → 已存储的观测数据</h3><p>Claude Code 和 Codex 将受支持的信号导出到本地 Collector。已注册的设备通过经过身份验证的摄取网关和中央 Collector 将数据发送到 ClickHouse。设备凭据与浏览器登录凭据相互独立。</p></article><article><h3>读取：已登录用户 → 仪表板结果</h3><p>组织登录会提供已配置的角色。API 会先应用时间、客户端和受支持的筛选条件，然后再返回使用情况和诊断视图。请查看成本依据和覆盖范围：屏幕中可能显示已知的小计，也可能显示不可用的信号。</p></article></div><p><a href="architecture.html#pipeline">采集路径和信任边界</a> · <a href="architecture.html#signals">日志、指标和追踪数据有何不同</a></p></section><section id="start"><h2>首次访问</h2>
 <ol>
 <li><strong>打开组织的仪表板并登录。</strong>向组织者询问网址和访问权限。您正在阅读的公共网站是文档。请参阅<a href="user-guide.html#access">账户和权限</a>。</li>
 <li><strong>选择客户端和时间段。</strong>从所有已启用的客户端开始，并选择一个包含近期工作的时间段。检查显示的时区以及数据是否已到达。</li>
@@ -57,11 +61,11 @@
 </section><section id="costs"><h2>解读数字前，先了解其含义</h2>
 <ul><li><strong>已知费用不等于账单。</strong>Claude 报告的支出和受支持的标价估算都会保留各自的费用估算依据。缺少价格信息可能导致小计不完整。</li><li><strong>不可用不等于零。</strong>已观测到的令牌小计、完整的令牌组成数据和诊断覆盖范围回答的是不同问题。总数大于零并不能证明数据已完整采集。</li><li><strong>活动只是观测结果。</strong>会话数、工具使用情况和费用比率不能证明员工绩效、节省的时间或因果关系上的生产力提升。</li></ul>
 <p><a href="user-guide.html#common-controls">了解覆盖范围和显示状态</a> · <a href="api.html">API 契约</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">指标定义</a></p>
-</section><section id="resolution"><h2>设置时间段并使用图表</h2>
+</section><section id="resolution"><h2>设置时间段并使用图表</h2><figure class="screen-shot compact"><a data-lightbox="" href="../assets/img/time-range-en.png"><img alt="选择准确的开始和结束时间。此较早版本的演示使用英文显示标签。" decoding="async" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">选择准确的开始和结束时间。此较早版本的演示使用英文显示标签。<small>选择准确的开始和结束时间。此较早版本的演示使用英文显示标签。</small></span></figcaption></figure>
 <p>使用 UTC 日历日期，或使用日期选择器中的 <strong>날짜·시간</strong>（日期和时间）选项卡，设置精确的浏览器本地开始和结束时间。结束时间不包含在时间段内。请查看显示的实际生效时间范围：服务器汇总数据和数据接收宽限期仍会产生影响。</p>
 <p>拖动受支持的时间序列图表可缩小页面的时间范围；使用重置控件可恢复原范围。在用户详情中，任务列表会遵循该时间范围；单击某个数据点会选中一个时间分桶。分类图表不支持选择时间范围。</p>
 <p><a href="user-guide.html#common-controls">所有筛选、刷新、图表、表格、导出和分享控件</a></p>
-</section><section id="task-trace"><h2>跟进用户，查看其工作</h2>
+</section><section id="task-trace"><h2>跟进用户，查看其工作</h2><figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-trace.png"><img alt="Task Trace：检查主泳道、子代理和选中的调用。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Task Trace：检查主泳道、子代理和选中的调用。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
 <p>打开 <strong>Users</strong>，选择一位用户，然后查看所选时间段内的任务列表。打开某项任务即可查看 <strong>Task Trace</strong>：主执行轨迹和子代理轨迹、调用、已知费用、令牌上下文、模型，以及可用的会话环境信息。</p>
 <p>任务跟踪是可选的。Claude 交互和 Codex 跟踪的轮次具有不同的证据；缺少的调用、属性或价格仍然不可用。任务列表和详情均有明确的限制。</p>
 <p><a href="user-guide.html#tasks">完整的任务和 Trace 操作指南</a> · <a href="api.html#tasks">任务 API 限制</a> · <a href="operations.html#traces">排查任务缺失问题</a></p>
@@ -89,5 +93,5 @@
 <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">计量定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示鸣谢</a></p>
 <p>遥测数据可能不完整。报告成本和标价估算并非账单。活动指标无法证明员工生产力或因果投资回报。</p>
 </div></footer>
-</body>
+<script defer="" src="../assets/guide.js"></script></body>
 </html>

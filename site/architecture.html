@@ -12,7 +12,7 @@
   <link rel="alternate" hreflang="ja" href="ja/architecture.html" />
   <link rel="alternate" hreflang="zh-CN" href="zh/architecture.html" />
 </head>
-<body>
+<body class="visual-docs">
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -26,6 +26,7 @@
       <p class="lede">A dedicated installation combines client telemetry, a bounded ingestion path, ClickHouse storage and an authenticated dashboard.</p>
       <p class="caption">Updated November 14, 2026 · Describes source behavior; verify your installed revision.</p>
     </div>
+<section id="system-overview"><h2>Where the screen’s numbers come from</h2><p>Collection and dashboard access use different paths. The diagram shows the optional device-collection path and the authenticated read path; organizer-prepared workshop collection can use a separate configured path.</p><figure class="screen-shot system"><a href="assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="The collection and query architecture." decoding="async" height="548" loading="lazy" src="assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>The collection and query architecture.</strong> Signals move into storage; the dashboard reads scoped results through its API. The two Express boxes represent logical roles of the same application.<small>Logical device path · English diagram labels · open the interactive view</small></span></figcaption></figure><div class="reading-grid"><article><h3>Collection: client → stored observations</h3><p>Claude Code and Codex export supported signals to a local Collector. A registered device sends them through the authenticated ingestion gateway and central Collector to ClickHouse. The device credential is separate from browser login.</p></article><article><h3>Reading: signed-in user → dashboard result</h3><p>Organization login supplies the configured role. The API applies time, client and supported filters before returning usage and diagnostic views. Read the cost basis and coverage: a screen can contain a known subtotal or an unavailable signal.</p></article></div><p><a href="architecture.html#pipeline">Collection paths and trust boundaries</a> · <a href="architecture.html#signals">How logs, metrics and traces differ</a></p></section>
     <section id="task-traces"><h2>Connect a user, task and span</h2>
 <p>User detail selects an exact telemetry identity and time range. <code>/api/users/tasks</code> lists tasks starting in the effective range; dragging the usage chart narrows the range, while clicking a point selects one bucket. <code>/api/users/tasks/detail</code> returns the selected task's lanes, spans and evidence-based cost explanations.</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace data sources"><table>
@@ -67,5 +68,6 @@
     <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Full API reference</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Measurement definitions</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Change history</a> · <a href="assets/credits.html">Demo credits</a></p>
     <p>Telemetry may be incomplete. Reported costs and list-price estimates are not invoices. Activity indicators do not establish employee productivity or causal ROI.</p>
   </div></footer>
+<script defer src="assets/guide.js"></script>
 </body>
 </html>

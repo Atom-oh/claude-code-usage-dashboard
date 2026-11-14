@@ -13,22 +13,57 @@
 <link href="../ja/user-guide.html" hreflang="ja" rel="alternate"/>
 <link href="user-guide.html" hreflang="zh-CN" rel="alternate"/>
 </head>
-<body>
+<body class="visual-docs">
 <a class="skip-link" href="#main">跳转到正文</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
 <nav aria-label="主要导航" class="tabs"><a href="index.html">概览</a><a aria-current="page" href="user-guide.html">用户指南</a><a href="installation.html">安装</a><a href="architecture.html">架构</a><a href="api.html">API</a><a href="operations.html">运维</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
 <div aria-label="语言" class="languages" role="group"><a href="../user-guide.html" hreflang="en" lang="en">English</a><a href="../ko/user-guide.html" hreflang="ko" lang="ko">한국어</a><a href="../ja/user-guide.html" hreflang="ja" lang="ja">日本語</a><span lang="zh-CN">简体中文</span></div>
 </div></header>
-<main class="wrap" id="main"><div class="hero"><p class="eyebrow">Claude Code + Codex · 文档</p><h1>用户指南</h1>
-<p class="lede">了解仪表板显示的内容、如何查看数据，以及何时需要更多证据才能得出结论。</p>
+<main class="wrap" id="main">
+<div class="hero"><p class="eyebrow">Claude Code + Codex · 文档</p><h1>用户、成本和工具实用指南</h1>
+<p class="lede">从一项调查开始。按照屏幕截图操作，然后使用菜单参考了解所有可用控件和特定客户端的详细信息。</p>
 <p class="caption">可用功能取决于安装环境、权限和收集到的数据。本指南说明各项操作，并保留以韩语为主的界面中的实际标签，便于查找。内容已对照 v1.8.0 源码核实。</p>
-</div><section id="contents"><h2>目录</h2><nav aria-label="用户指南目录"><ul>
-<li><a href="#start">从这里开始</a> · <a href="#common-controls">控件和结果解读</a></li>
-<li>菜单：<a href="#overview">Overview</a> · <a href="#exec">Executive</a> · <a href="#trends">Trends</a> · <a href="#productivity">Productivity</a> · <a href="#usage">Usage</a> · <a href="#users">Users</a> · <a href="#cost">Cost</a> · <a href="#reliability">Reliability</a> · <a href="#analytics">Analytics</a></li>
-<li><a href="#collector">收集器设置</a> · <a href="#installation">安装状态</a> · <a href="#tasks">任务和 Trace</a> · <a href="#assistant">AI 助手</a></li>
-<li><a href="#access">账户和帮助</a> · <a href="#workflows">常见工作流程</a> · <a href="#troubleshooting">故障排查和结果解读</a></li>
-</ul></nav></section><section id="start"><h2>从这里开始</h2>
+</div>
+<div class="manual-shell">
+<details class="manual-nav" id="contents" open=""><summary>目录</summary><ul><li><span class="nav-group">实用操作指南</span></li><li><a href="#trace-workflow">追踪用户的工作</a></li><li><a href="#cost-workflow">说明成本和效率</a></li><li><a href="#tools-workflow">检查工具使用情况</a></li><li><a href="#system-overview">了解架构</a></li><li><span class="nav-group">菜单和控件参考</span></li><li><a href="#start">从这里开始</a></li><li><a href="#common-controls">控件和结果解读</a></li><li><a href="#overview">Overview</a></li><li><a href="#exec">Executive</a></li><li><a href="#trends">Trends</a></li><li><a href="#productivity">Productivity</a></li><li><a href="#usage">Usage</a></li><li><a href="#users">Users</a></li><li><a href="#cost">Cost</a></li><li><a href="#reliability">Reliability</a></li><li><a href="#analytics">Analytics</a></li><li><a href="#collector">收集器设置</a></li><li><a href="#installation">安装状态</a></li><li><a href="#tasks">任务和 Trace</a></li><li><a href="#assistant">AI 助手</a></li><li><a href="#access">账户和帮助</a></li><li><a href="#workflows">常见工作流程</a></li><li><a href="#troubleshooting">故障排查和结果解读</a></li></ul></details>
+<div class="manual-body">
+<section id="learning-paths"><h2>选择您想调查的内容</h2><div class="learning-paths">
+<a class="learning-card" href="user-guide.html#trace-workflow"><img alt="包含多个独立代理泳道的任务" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · 用户和追踪</span><b>追踪一位用户的工作</b><span class="card-description">用户 → 时间范围 → 任务 → 代理 → 单个调用。</span></span></a>
+<a class="learning-card" href="user-guide.html#cost-workflow"><img alt="成本公式和变化因素" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · 成本和效率</span><b>说明成本变化</b><span class="card-description">成本依据、模型占比、单位成本、令牌和缓存。</span></span></a>
+<a class="learning-card" href="user-guide.html#tools-workflow"><img alt="工具调用和结果" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · 工具和 MCP</span><b>了解工具活动</b><span class="card-description">工具调用、权限、Skills、MCP 和会话上下文。</span></span></a>
+</div></section>
+<section id="trace-workflow"><h2>01. 追踪用户的工作，深入到单个调用</h2><p>当您需要进一步查看用户的成本、令牌量或工具活动时，请使用此操作流程。任务列表只包含经过追踪的部分活动，因此请先查看用户的使用情况总计，再检查可用的任务证据。</p>
+<ol class="procedure"><li><h3>选择目标用户和时间段</h3><p>打开 <strong>Users</strong>，选择客户端并设置包含相关工作的时间段。选择一个已识别的用户行，打开 <strong>사용자 상세</strong>。比较卡片和图表之前，请先查看有效时间段说明。在 Claude 详细信息中，用户详细信息可以包含所有已启用的客户端；推断出的渠道筛选条件仅适用于 Claude 区域。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-users.png"><img alt="从已识别的用户开始。" decoding="async" height="506" loading="lazy" src="../assets/img/guide-users.png" width="2240"/></a><figcaption><span class="figure-number">01</span><span class="figure-text"><strong>从已识别的用户开始。</strong>用户表会保留各客户端的成本依据。未识别的用户行不会打开用户详细信息。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 1"><li><h3>缩小图表范围并查看匹配的任务</h3><p>在用户的使用情况/成本图表上拖动，选中所需的时间范围。页面时间段和任务列表会同步缩小范围。单击某个数据点则会选中一个时间分段。使用 <strong>전체 조회 기간의 작업</strong> 清除数据点选择，或者重置页面时间段，扩大拖动选择的范围。</p></li><li><h3>选择合适的排序方式和成本依据</h3><p>在 <strong>작업 목록 · 상위 20개</strong> 中比较令牌、成本、子代理或时长。选择工作流徽标，可筛选出对应的运行。选择高成本任务之前，请先查看成本依据徽标；Claude 的成本排名可能仅限于令牌量最高的 100 个候选项，因此前 20 项并不能代表完整的成本审计。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-user-detail.png"><img alt="用户趋势决定调查时间范围。" decoding="async" height="1354" loading="lazy" src="../assets/img/guide-user-detail.png" width="2240"/></a><figcaption><span class="figure-number">02</span><span class="figure-text"><strong>用户趋势决定调查时间范围。</strong>检查有效时间边界，然后拖动图表或选择某个时间分段。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-list.png"><img alt="先确定要调查的问题，再选择排序方式。" decoding="async" height="504" loading="lazy" src="../assets/img/guide-task-list.png" width="2240"/></a><figcaption><span class="figure-number">03</span><span class="figure-text"><strong>先确定要调查的问题，再选择排序方式。</strong>令牌量、已知成本、子代理数量和观测时长，反映的是经过追踪的任务的不同属性。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 3"><li><h3>先查看各泳道，再得出结论</h3><p>打开一个任务。查看其令牌小计、成本依据、调用次数和时长，然后沿着主泳道查看观测到的子代理。同类型的代理会分别显示在带编号的泳道中。条形宽度表示观测时长；颜色较深的 LLM 条形表示输入上下文更大。灰色条形表示工具，红色标记表示权限等待，虚线连接表示观测到的代理启动。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-trace.png"><img alt="将任务摘要与调用顺序分开查看。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/></a><figcaption><span class="figure-number">04</span><span class="figure-text"><strong>将任务摘要与调用顺序分开查看。</strong>两个 Explore 泳道代表两个观测到的代理，即使它们属于同一类型。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<div class="screen-pair"><div><h3>选择需要说明的调用</h3><p>单击 LLM、工具或等待区段。侧边面板会显示所选项目的可用属性：模型、令牌组成、时间、成本依据、工具或权限元数据。缺失的属性仍会标记为 <strong>미수집</strong>。</p><p>只有 Claude span 提供了 <strong>attempt</strong> 时才会显示此字段。值缺失并不代表尝试了一次或重试次数为零。此处 Codex 不提供此字段。屏幕不会显示原始提示词、命令和路径，因此它不是完整的内容审计。</p></div><figure class="screen-shot panel"><a data-lightbox="" href="../assets/img/guide-task-call.png"><img alt="检查选中的单个调用。" decoding="async" height="786" loading="lazy" src="../assets/img/guide-task-call.png" width="592"/></a><figcaption><span class="figure-number">05</span><span class="figure-text"><strong>检查选中的单个调用。</strong>比较可用属性，包括报告的或估算的成本依据。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure></div>
+<ol class="procedure" style="counter-reset:procedure 4"><li><h3>关联查看成本、上下文和模型</h3><p>将鼠标悬停在累计成本带上，比较各泳道的贡献。然后查看上下文图表和 <strong>왜 많이 썼나</strong> 观测信息。选择 <strong>모델별 호출</strong> 行，可突出显示对应的 LLM 条形；再次选择该行可取消突出显示。突出显示只改变视觉重点，不会改变任务总量。接下来可以调查的线索包括：反复出现的大上下文、占主导地位的泳道、成本高的调用或记录到的等待。</p></li><li><h3>检查会话上下文并分享相同证据</h3><p><strong>세션 환경</strong> 显示观测到的 Claude MCP 状态和已加载的插件。这些是会话级观测，不是逐次调用的工具清单。复制任务链接可以保留任务和时间边界；收件人仍需拥有访问权限。Codex 完成情况总计可能包含有关联记录、但在成本带中没有匹配采样 span 的项目。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-context.png"><img alt="结合上下文和模型证据进行判断。" decoding="async" height="1428" loading="lazy" src="../assets/img/guide-task-context.png" width="2544"/></a><figcaption><span class="figure-number">06</span><span class="figure-text"><strong>结合上下文和模型证据进行判断。</strong>较大的上下文或成本占比是进一步调查的线索，并不能证明存在浪费或工作质量低下。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<div class="guide-callout"><p><strong>如果任务缺失或不完整：</strong>请检查身份、时间段、追踪配置和 90 天保留期限。详细信息最多显示最新的 5,000 个 span。在需要时，截断的视图会隐藏整个任务的摘要；追踪中没有显示某项活动，并不能证明没有发生该活动。</p></div><p><a href="#tasks">查看所有任务控件和客户端差异</a> · <a href="operations.html#traces">追踪故障排查</a></p></section>
+<section id="cost-workflow"><h2>02. 说明成本变化和令牌效率</h2><p>从可进行比较的时间段和成本依据开始。先查看总量，再查看某个模型或用户，然后利用令牌成本分析和追踪到的工作了解观测到的变化。</p>
+<ol class="procedure"><li><h3>确定比较范围</h3><p>选择客户端、后端和时间段。查看显示的有效时间边界，并在 <strong>Trends</strong> 中比较时长相同的时间段。在 <strong>Cost</strong> 中区分 Claude 报告支出、非 Anthropic Claude 或 Codex 的估算支出，以及混合或部分小计。缺少价格时，成本应显示为不可用；屏幕上显示的任何成本都不是发票金额。</p></li><li><h3>查找模型或用户的贡献</h3><p>使用模型和用户细分数据定位变化。在支持的情况下，选择一个模型以查看其用户，或选择一个用户以查看对应时间段的详细信息。模型的用户占比以该模型已知成本小计为分母。已知成本的占比不包含未定价的观测数据。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-cost.png"><img alt="从成本总量转到具体人群。" decoding="async" height="1054" loading="lazy" src="../assets/img/guide-cost.png" width="2240"/></a><figcaption><span class="figure-number">07</span><span class="figure-text"><strong>从成本总量转到具体人群。</strong>比较结果时，请始终查看所选模型、用户、时间段和成本依据。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 2"><li><h3>查看六因素成本公式</h3><p>打开 <strong>Productivity</strong>。会话轮次数据就绪后，<strong>비용 방정식</strong> 会关联活跃用户数、每位用户的会话数、每个会话的轮次、每轮请求数、每次请求的令牌数和令牌单价。首先查看有多少个会话符合计算条件，以及排除了哪些观测数据。此公式描述的是符合条件的人群。</p></li><li><h3>区分总量增长和单次请求变化</h3><p>使用 <strong>드라이버 분해</strong> 查看每个因素对观测到的成本差额所做的正向或负向贡献。比较前一时期和当前时期的总量与各因素贡献之和。即使每次请求的令牌数或单位价格下降，用户或会话增多仍可能导致支出上升。屏幕中的 <strong>낭비</strong> 分组是对特定因素的会计分类，并不能证明某个人或请求造成了浪费。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-economics.png"><img alt="公式和变化因素回答的是不同问题。" decoding="async" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/></a><figcaption><span class="figure-number">08</span><span class="figure-text"><strong>公式和变化因素回答的是不同问题。</strong>公式描述当前符合条件的人群；瀑布图则按因素说明观测到的变化。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 4"><li><h3>结合分母查看单位成本、令牌和缓存</h3><p>查看每位用户/每个会话/每次请求的成本和每次请求的令牌数，然后比较模型成本以及可用的缓存或推理占比。查看每项指标的帮助说明和覆盖范围：观测到的令牌小计，不能与比率计算所需的完整组成数据互换。单位成本图表中，虚线段会跨越不可用区间连接观测到的端点；这并不表示该间隔内的成本经过了测量。</p></li><li><h3>在采取行动前回到实际工作中核查</h3><p>打开相关用户，并按成本对其经过追踪的任务排序。比较模型变化、反复出现的上下文、缓存观测、工具活动以及记录到的错误或重试。这些观测可以帮助您审查提示词或工作流，但不能证明因果节省、代码质量或员工生产力。实际调整工作流后，请用相同范围再次检查。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-unit-cost.png"><img alt="查找测量趋势中的变化。" decoding="async" height="792" loading="lazy" src="../assets/img/guide-unit-cost.png" width="1104"/></a><figcaption><span class="figure-number">09</span><span class="figure-text"><strong>查找测量趋势中的变化。</strong>保留不可用的间隔，并在解读上升或下降之前比较分母。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<div class="reading-grid"><article><h3>总成本上升，单位成本基本不变</h3><p>先检查活跃用户数、会话数和请求数。观测到的活动增多，可能会导致总量增加，但每单位结果并未恶化。</p></article><article><h3>每次请求的令牌数或模型价格发生变化</h3><p>检查模型组合、可用时的 effort/speed 档位、上下文和缓存组成。比较人群相符的数据，然后打开有代表性的任务。</p></article></div><p><a href="#productivity">查看所有 Productivity 部分</a> · <a href="#cost">成本控件和比较</a> · <a href="api.html#shared">成本和覆盖范围的数据约定</a></p></section>
+<section id="tools-workflow"><h2>03. 检查工具、MCP、Skills 和权限</h2><p>工具活动有助于说明工作的执行方式。在比较次数之前，请分别查看工具调用、权限决定、调用结果和会话加载的环境。</p>
+<ol class="procedure"><li><h3>从 Usage 和所需的数据来源开始</h3><p>在共享的 <strong>Usage</strong> 中比较令牌组成和可用的客户端工具活动。保持客户端和时间段不变。要查看 Claude 专属的工具、MCP 和 Skill 部分，请选择 Claude Code 和 <strong>Claude 상세 보기</strong>。客户端不提供的信号会显示为不可用，而不是零。</p></li><li><h3>结合调用和结果进行查看</h3><p>比较采集到的工具名称、次数、失败情况和耗时。区分常见操作，例如读取/搜索、编辑、shell 执行和代理调用。调用次数较多并不一定代表更好或更差；请检查任务，并查看是否重复执行了相同操作。权限获批和执行成功是两种不同的观测结果。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-usage.png"><img alt="共享 Usage 会显示客户端和信号之间的差异。" decoding="async" height="1248" loading="lazy" src="../assets/img/guide-usage.png" width="2240"/></a><figcaption><span class="figure-number">10</span><span class="figure-text"><strong>共享 Usage 会显示客户端和信号之间的差异。</strong>令牌组成和工具调用表示不同的数量，不应将两者相加。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-tools.png"><img alt="查找需要调查的工具。" decoding="async" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/></a><figcaption><span class="figure-number">11</span><span class="figure-text"><strong>查找需要调查的工具。</strong>查看显示的调用、结果和耗时列；如果有追踪数据，再转到相关用户的任务。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<ol class="procedure" style="counter-reset:procedure 2"><li><h3>按服务器和操作检查 MCP</h3><p>查看观测到的 MCP 服务器和工具名称。会话环境中显示已连接的服务器，表示观测到了连接；这并不能证明该服务器公布的每个工具都实际运行过。失败状态是需要调查的信号，并不能完整解释成本或任务失败的原因。缺少 MCP 事件时，此视图可能为空。</p></li><li><h3>区分 Skill 使用情况和已加载插件</h3><p>查看可用的 Skill 调用和归因表。单独检查已加载的插件数量和相关会话观测。加载插件并不等于执行了其中的每个 Skill 或命令；归因给 Skill 的成本也不是应额外加到总支出中的金额。</p></li></ol>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-mcp.png"><img alt="MCP 活动是观测到的证据。" decoding="async" height="806" loading="lazy" src="../assets/img/guide-mcp.png" width="2240"/></a><figcaption><span class="figure-number">12</span><span class="figure-text"><strong>MCP 活动是观测到的证据。</strong>结合会话状态和所选时间范围比较服务器/工具活动。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+<div class="screen-pair"><figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-skills.png"><img alt="查看观测到的 Skill 使用情况。" decoding="async" height="970" loading="lazy" src="../assets/img/guide-skills.png" width="2240"/></a><figcaption><span class="figure-number">13</span><span class="figure-text"><strong>查看观测到的 Skill 使用情况。</strong>比较归因成本之前，请先检查显示的计算依据。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure><figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-plugins.png"><img alt="单独查看已加载的插件上下文。" decoding="async" height="386" loading="lazy" src="../assets/img/guide-plugins.png" width="2240"/></a><figcaption><span class="figure-number">14</span><span class="figure-text"><strong>单独查看已加载的插件上下文。</strong>会话数量并不表示执行了所有功能。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure></div>
+<ol class="procedure" style="counter-reset:procedure 4"><li><h3>检查权限和等待情况</h3><p>使用 Usage 和 Productivity 中可用的权限模式、审批来源和工具结果部分。自动审批不代表代码验收率。请将拒绝决定、执行错误和权限等待视为不同阶段，并查看每张表所说明的人群范围。</p></li><li><h3>打开相关任务</h3><p>在 <strong>Users</strong> 中打开用户和对应时间段，然后检查可用的 Task Trace 工具和等待区段。查看工具元数据、观测时长以及父级/代理位置。使用模型调用和上下文视图，关联工具活动与 LLM 活动。span 面板不会显示原始命令、提示词和路径。</p></li></ol>
+<div class="guide-callout"><p><strong>表格为空时：</strong>请检查客户端、时间、筛选条件是否适用以及采集版本。缺少信号并不能证明从未使用该工具。Codex 诊断指标和追踪数据与完成日志中的使用情况总计相互独立。</p></div><p><a href="#usage">查看所有 Usage 部分</a> · <a href="#tasks">任务和 span 控件</a> · <a href="#reliability">错误和响应诊断</a></p></section>
+<section id="system-overview"><h2>界面上的数字来自哪里</h2><p>数据采集和仪表板访问使用不同的路径。此图显示可选的设备采集路径和经过身份验证的读取路径；由组织者准备的研讨会数据采集也可以使用单独配置的路径。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="采集和查询架构。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>采集和查询架构。</strong>信号进入存储；仪表板通过 API 读取经过范围限定的结果。两个 Express 方框表示同一应用程序的逻辑角色。<small>逻辑设备路径 · 英文图表标签 · 打开交互视图</small></span></figcaption></figure><div class="reading-grid"><article><h3>采集：客户端 → 已存储的观测数据</h3><p>Claude Code 和 Codex 将受支持的信号导出到本地 Collector。已注册的设备通过经过身份验证的摄取网关和中央 Collector 将数据发送到 ClickHouse。设备凭据与浏览器登录凭据相互独立。</p></article><article><h3>读取：已登录用户 → 仪表板结果</h3><p>组织登录会提供已配置的角色。API 会先应用时间、客户端和受支持的筛选条件，然后再返回使用情况和诊断视图。请查看成本依据和覆盖范围：屏幕中可能显示已知的小计，也可能显示不可用的信号。</p></article></div><p><a href="architecture.html#pipeline">采集路径和信任边界</a> · <a href="architecture.html#signals">日志、指标和追踪数据有何不同</a></p></section>
+<section id="menu-reference"><h2>查看屏幕，了解每个菜单</h2><p>以下参考保留了完整的功能说明。根据需要展开共享视图和 Claude 详细信息说明；使用屏幕截图查找控件。</p></section><section id="start"><h2>从这里开始</h2>
 <p>仪表板汇总已启用的 Claude Code 和/或 Codex 客户端发送的遥测数据。您可以用它查看观测到的使用情况、估算或报告的费用、活动和诊断信号。它不显示发票，也不能证明员工生产力、代码质量或投资回报率。</p>
 <ol><li>打开您所在组织的仪表板，并按指示登录。在组织登录模式下，查看者可以阅读获准查看的遥测数据；分析员和管理员角色还可能可以使用聊天功能并管理自己的收集器设备。安装状态是管理员专用功能。使用功能还要求部署已启用并配置这些功能。如果无法登录或缺少某个菜单，请咨询运营人员。</li>
 <li>如果这是新安装，运营人员需要设置数据收集和访问权限。获准的设备所有者可以按照<a href="#collector">收集器设置</a>进行操作，启动新的客户端会话并发出请求。请留出时间等待数据到达；收到数据本身并不能证明收集完整。</li>
@@ -36,6 +71,8 @@
 <li>根据您的问题选择相应页面：要按模型或用户查看明细，请使用<a href="#cost">Cost</a>；要查看一段时间内的变化，请使用<a href="#trends">Trends</a>；要查看用户及其<a href="#tasks">任务</a>，请使用<a href="#users">Users</a>。比较结果时，请使用相同的数据源和时间段。</li></ol>
 <p>在窄屏幕上，点击顶部的菜单按钮（<strong>메뉴 열기</strong>）。选择页面后，导航抽屉会自动关闭。点击关闭按钮、背景区域或按 Escape 键，也可以将其关闭。</p><p><a href="#contents">返回目录</a></p>
 </section><section id="common-controls"><h2>控件和结果解读</h2>
+<figure class="screen-shot compact"><a data-lightbox="" href="../assets/img/time-range-en.png"><img alt="选择准确的开始和结束时间。此较早版本的演示使用英文显示标签。" decoding="async" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">选择准确的开始和结束时间。此较早版本的演示使用英文显示标签。<small>打开原尺寸界面</small></span></figcaption></figure>
+
 <h3>数据源和筛选器</h3>
 <p><strong>클라이언트</strong>用于选择所有已启用的客户端、Claude Code 或 Codex。启用的客户端不止一个时，此控件才会显示。九个菜单最初使用具有可比列的共享视图。选择 Claude Code，再选择<strong>Claude 상세 보기</strong>，即可打开 Claude 的详细页面；<strong>공통 보기</strong>会返回共享视图。只会显示已启用的客户端。</p>
 <p>在共享视图中，<strong>백엔드</strong>用于选择观测到的传输/提供方路径，例如 Bedrock Runtime、Bedrock Mantle、Anthropic 或未知。它与客户端和模型分别显示。在 Claude 详细视图中，还可能提供<strong>bedrock</strong>和<strong>enterprise</strong>这两种推断的会话渠道；它们不是客户端身份、授权组，也不能用来与 Codex 作比较。未分类的会话可能会计入总计，但会从渠道比较中排除。只安装了一个渠道时，渠道控件可能会隐藏。</p>
@@ -51,43 +88,103 @@
 <p><strong>—</strong>、不可用（<strong>미수집</strong>或<strong>미산정</strong>）和空结果都不等同于观测到的零值。部分标签（<strong>부분합</strong>）表示已知的小计，不代表完整总计。总计为正数也不能证明遥测数据完整。加载中、请求错误、范围被缩短和刷新结果过时等警告，都需要分别留意。将鼠标悬停在帮助图标上，并阅读卡片副标题，了解其统计对象和分母。</p>
 <p>对于 Anthropic 模型，Claude 详细视图中的支出仍基于报告数据；按令牌价格计算的数值是可选诊断信息。共享概览可能会用单独标记的估算值填补缺失的报告数据。Claude 的非 Anthropic 模型和 Codex 使用 AWS 目录价格进行估算。混合总计会保留各自的依据，并保留价格未知的数据。这些数值都不是发票金额，也不保证构成计费上限。观测到的令牌小计可能会遗漏某些组成部分；计算比率时需要使用完整的分母。Codex 运行时指标和追踪记录是诊断数据流，不能与完成日志中的使用量或费用相加。</p><p><a href="#contents">返回目录</a></p>
 </section><section id="overview"><h2>Overview</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-overview.png"><img alt="Overview：选择范围、查看摘要并检查趋势。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-overview.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Overview：选择范围、查看摘要并检查趋势。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>先查看费用、观测到的令牌数、会话数和用户数，然后查看各客户端卡片、使用趋势和模型使用情况表。比较每个客户端的费用依据，并检查数据覆盖情况，再继续查看 Cost 或 Trends 中的较大数值。</p>
 <p><strong>Claude 详细视图：</strong>查看采用情况和用户黏性、渠道 KPI 汇总、整体活跃用户数和令牌趋势（在令牌图表中选择总量、输入或输出）、缓存效率以及按模型和渠道划分的令牌分布。渠道分类可能缺失；采用情况和渠道比较所使用的统计对象不同。显示渠道选择器时，请使用它。会话/轮次费用部分包含轮次和费用汇总，以及排名前 20 的用户和会话表；模型筛选器会选择使用过该模型的整个会话。如果启用了每日 AI 洞察，请在<strong>인사이트 날짜</strong>下选择已存储的日期，以阅读前一个 UTC 日的摘要、发现和注意事项。洞察可能处于待处理、失败或为空的状态；生成的文本可能有误，也不是绩效评估。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="exec"><h2>Executive</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-executive.png"><img alt="Executive：比较观测到的活动和成本摘要。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-executive.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Executive：比较观测到的活动和成本摘要。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>查看总费用、令牌数、会话数和用户数；各客户端的单位费用和活动；模型和用户费用趋势；每位观测用户/每个会话的费用卡片；按客户端划分的会话数；以及模型费用/活动表。用户 ID 数量并不等同于员工人数。</p>
 <p><strong>Claude 详细视图：</strong>查看渠道 KPI 和比较记分板，然后查看用户、活动和费用部分。模型费用会将当前时间段与之前等长的时间段进行比较，随后显示每日活跃用户数以及模型/用户费用趋势。提供渠道筛选器时，可以用它聚焦视图。活动评分是参考指数，不是经过验证的绩效指标。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="trends"><h2>Trends</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-trends.png"><img alt="Trends：查找随时间变化的情况并比较时间段。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-trends.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Trends：查找随时间变化的情况并比较时间段。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>将当前费用和使用情况与之前等长的生效时间段进行比较，然后查看客户端比较、令牌和费用趋势、模型/用户费用趋势以及时间段表。选择趋势分辨率，并将鼠标悬停在时间图表上或拖动选择范围。如果两个时间段无法匹配，则不显示前一时间段的比较结果。每个分桶中的会话数是在该分桶内去重的；将各分桶的会话数相加，不能得出整个时间段的去重会话数。</p>
 <p><strong>Claude 详细视图：</strong>查看 DAU、WAU、MAU 和 DAU/MAU 用户黏性卡片，以及对应的活跃用户数和用户黏性图表。这些是观测到的活动，不是结果指标。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="productivity"><h2>Productivity</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-economics.png"><img alt="Productivity：查看成本公式和符合条件的人群。" decoding="async" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Productivity：查看成本公式和符合条件的人群。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>如果有数据，令牌经济效益部分会显示费用公式、变化因素、单位费用和请求效率趋势、模型经济效益、观测到的结果单位费用以及符合条件的示例用户。此部分需要安装中的会话轮次数据准备就绪；不可用不等于零。下方有八个部分：(1) 客户端摘要，(2) 观测到的模型效率和缓存/推理占比，(3) 活动，(4) 代码结果，(5) 按工具划分的权限决定，(6) 工具结果，(7) 响应和等待时间，以及 (8) 活动指数排名靠前的用户。表格会标明未收集、未汇总和未推导的值。相关结果使用相匹配的生效时间段；导出前请等待当前响应完成。</p>
 <p><strong>Claude 详细视图：</strong>查看活动指数排名和用户活动；用户/会话及 PR 趋势；每百万令牌的代码行数和提交数；新增/删除行数；编辑和工具权限决定；活跃时段和语言代码编辑；每次提示的工具调用数；审批等待时间、首令牌时间和交互时间构成。收集到相关数据时，还会显示其他活动密度、权限占用情况和工具结果表。</p>
 <p>权限决定包括自动批准，但这不代表代码已被接受。Codex 默认不会提供相同的代码行数、提交数、PR 数或活动指数指标；这些指标需要外部结果数据。即使存在这些观测数据和任意活动指数，也不能证明生产力、质量、节省的时间或因果关系上的投资回报率。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="usage"><h2>Usage</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-usage.png"><img alt="Usage：比较令牌组成和工具活动。" decoding="async" height="1248" loading="lazy" src="../assets/img/guide-usage.png" width="2240"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Usage：比较令牌组成和工具活动。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>查看令牌构成、客户端使用情况对比、令牌组成图表和工具使用表。输入、缓存读取、缓存写入和输出组成部分不会重复计数；推理是输出的一部分。选择 Codex 时，<strong>Codex 상세</strong>包含<strong>도구·승인</strong>（工具和审批）：根据数据覆盖情况查看工具结果以及审批/拒绝来源。</p>
 <p><strong>Claude 详细视图：</strong>查看入口点，以及有数据时的项目；工具/MCP 结果、权限决定、权限模式变化和审批来源；工具耗时；MCP 连接器使用情况和连接状态；Skill 使用情况和触发类型；已加载的插件；每次交互的子代理数；上下文压缩；斜杠命令；提示长度；以及 Hook 耗时。如果没有收集对应事件，卡片可能为空或不可用。可选的项目筛选器仅适用范围请参阅<a href="#common-controls">控件</a>部分。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="users"><h2>Users</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-users.png"><img alt="Users：选择已识别的用户，查看详细信息和经过追踪的任务。" decoding="async" height="506" loading="lazy" src="../assets/img/guide-users.png" width="2240"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Users：选择已识别的用户，查看详细信息和经过追踪的任务。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>先比较各客户端的观测用户数、会话数和每位用户的费用，然后查看用户表。同一已识别用户可在所选客户端之间合并；按客户端划分的构成仍保留各自的费用依据。不同客户端的唯一用户数可能重叠，因此不能相加后当作总人数。选择已识别的用户以打开详细视图；无法打开未识别用户对应的详细视图。</p>
 <p>详细视图包含时间段摘要和时间图表、单独加载的 90 天 UTC 每日会话热图、有数据时按客户端划分的工具/权限信息，以及<a href="#tasks">任务列表</a>。热图的每日数值是观测到的分桶会话数，并非去重会话总数。详细视图会等待与父级相匹配的时间范围；选择数据点会将任务列表缩小到一个时间分桶，拖动则会更改页面时间范围。使用<strong>전체 조회 기간의 작업</strong>可将任务列表恢复为完整时间段；关闭详细视图即可返回表格。</p>
 <p><strong>Claude 详细视图：</strong>查看渠道摘要、符合条件的活动指数排名、按模型系列划分的用户平均费用、观测到的用户活动，以及按用户划分的工具和 Skill 表。选择用户行以查看详细信息和任务。用户观测到的活动不是个人绩效评估。</p><p>在 Claude 详细视图中，单独的<strong>사용자 검색</strong>字段用于筛选观测活动行。打开用户详细视图时会包含所有已启用的客户端；所选的推断渠道仅适用于 Claude 的相关区域。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="cost"><h2>Cost</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-cost-summary.png"><img alt="Cost：根据成本依据检查模型和用户细分数据。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-cost-summary.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Cost：根据成本依据检查模型和用户细分数据。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>从总费用和单位费用卡片开始查看，然后查看按客户端划分的模型和 Effort 费用占比以及输入/缓存构成。比较费用依据、未定价记录、整体趋势和模型/用户趋势。模型表和用户表允许您选择模型或用户，打开相匹配时间段的费用趋势；模型详细视图还会显示每位用户占已知模型费用的比例。未知价格会被排除；分母未知或为零时，不会计算占比。关闭详细视图或更改选择即可返回。Codex 的<strong>효율·Effort</strong>部分会在有数据时增加已记录完成量的效率，以及按 Effort 划分的使用情况/费用。</p>
 <p><strong>Claude 详细视图：</strong>查看报告费用总额、比较和预测；Effort 和模型费用占比、令牌构成、模型和用户趋势，以及模型费用/令牌表。选择模型可查看其用户费用明细。查看团队费用分布、使用情况和趋势（包括无团队的行）；代理费用；以及用户/模型和每个观测代码行数或提交数的费用表。选择 10、20、50 或 100 来设置排名靠前的用户数量。团队归属使用会话报告的团队信息，也可能不可用。可选的计算费用比较（<strong>계산 비용 교차검증</strong>）会添加诊断列和图表；它不是额外收费。得出结论前，请核对定价、部分数据标签和假设。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="reliability"><h2>Reliability</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-reliability.png"><img alt="Reliability：检查报告的错误和可用的响应诊断信息。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-reliability.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Reliability：检查报告的错误和可用的响应诊断信息。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>查看请求、错误、工具调用和首令牌卡片；客户端请求数/错误数/耗时比较；请求耗时图表；工具可靠性；以及模型请求诊断信息。观测到的错误记录数/请求数之比不是失败概率，而且可能大于 1。选择 Codex 时，<strong>성능</strong>会增加观测到的轮次、请求、工具和启动延迟诊断信息。</p>
 <p><strong>Claude 详细视图：</strong>查看按模型和 Effort 划分的 API 响应时间分布、拒绝响应、重试次数耗尽情况、错误率和状态码。版本部分会比较报告费用和计算费用、缓存 TTL 情景、客户端版本分布以及版本队列费用。仅凭费用差异无法确定其原因。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="analytics"><h2>Analytics</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-analytics.png"><img alt="Analytics：探索所选客户端可用的诊断信息。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-analytics.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Analytics：探索所选客户端可用的诊断信息。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
+<details class="mode-panel"><summary>共享视图 / Claude 详细视图</summary><div class="mode-content">
+
 <p><strong>共享视图：</strong>如果允许使用聊天功能，请在诊断面板上方提问。下方可比较客户端信号和首令牌时间，然后查看模型/后端诊断信息、项目标签使用情况和观测到的信号覆盖情况。项目标签由客户端提供，不是计费项目。</p>
 <p>选择 Codex 时，<strong>Codex 상세</strong>提供<strong>런타임·메트릭</strong>和<strong>Trace</strong>。前者显示会话启动设置、指标名称搜索、已收集的指标和事件覆盖情况。Trace 显示跨度耗时和数量有限的近期追踪记录；有数据时，展开追踪记录即可查看其中的跨度。这种诊断预览不同于用户的<a href="#tasks">Task Trace</a>。它最多显示最近 50 条追踪记录，每条最多显示 200 个跨度；被截断的追踪记录仍会显示最近的跨度，但不提供整个追踪记录的耗时和错误总数。跨度数据相互冲突时，该追踪记录的详细信息可能会被隐藏。指标和追踪记录不是额外的完成量使用数据。</p>
 <p><strong>Claude 详细视图：</strong>Analytics 是问答页面，能否使用取决于聊天功能是否可用以及用户权限。有关示例问题、图表和限制，请参阅<a href="#assistant">AI 助手</a>。</p><p><a href="#contents">返回目录</a></p>
+
+</div></details>
 </section><section id="collector"><h2>收集器设置 (수집기 설치)</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-collector.png"><img alt="Collector 设置：注册设备并按照安装命令操作。" decoding="async" height="736" loading="lazy" src="../assets/img/guide-collector.png" width="2176"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Collector 设置：注册设备并按照安装命令操作。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
 <p>此菜单需要组织登录和设备管理权限（通常为分析员或管理员），并且必须启用设备数据摄取。此功能用于管理登录用户自己的设备。查看者应向获准的运营人员寻求帮助。请遵循您所在组织批准的安装说明。</p>
 <ol><li>选择 Linux 或 macOS，并阅读准备说明。输入设备名称并注册设备。</li><li>设备令牌显示时，请复制并妥善保密。仪表板只会显示该令牌一次。复制显示的安装命令，在该设备上运行，然后在终端提示时输入所需的用户 ID 和令牌。不要将令牌直接放入命令中，也不要分享令牌。</li><li>打开新的终端，启动新的 Claude Code 或 Codex 会话并发出请求。按照页面上的收件验证步骤操作，并在<strong>내 기기</strong>（我的设备）中检查最近是否收到数据。</li><li>刷新列表；如果有加载更多选项，请加载更多设备；然后检查设备的已注册、已过期或已撤销状态、过期时间和最近收件时间。如需停止某台设备，请选择<strong>해지</strong>并确认<strong>해지 확인</strong>。要重新连接，必须使用新令牌。如果出现令牌重复使用警告，请先撤销设备，再重新注册。</li></ol>
 <p>如果当前安装程序已配置自动续期，活跃设备会在过期前七天开始自动续期。已过期或已撤销的设备需要新令牌和重新安装。退出登录不会停止设备数据收集。最近收到数据不代表已收集所有使用数据。运营人员可参阅<a href="installation.html">安装</a>和<a href="operations.html">运营</a>部分了解更多信息。</p><p><a href="#contents">返回目录</a></p>
 </section><section id="installation"><h2>安装状态 (설치 상태)</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-installation.png"><img alt="安装状态：在获得授权后检查就绪状态和采集情况。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-installation.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">安装状态：在获得授权后检查就绪状态和采集情况。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
 <p>拥有安装状态权限的管理员可以使用<strong>상태 새로고침</strong>检查组织登录和数据库连接、只读账户状态、已启用客户端的最近收件情况、架构检查以及启动数据收集的步骤。系统会分别报告最近收件、数据过时、为空、不可用和其他状态。如果刷新失败且保留了之前的结果，界面会显示相应警告。</p>
 <p>检查成功并不能验证遥测数据是否完整、迁移是否实际完成、MFA 是否正常或备份能否恢复。运营人员必须单独验证这些项目。项目筛选依赖已确认的项目字段。请参阅<a href="operations.html">运营</a>和<a href="architecture.html">架构</a>部分。</p><p><a href="#contents">返回目录</a></p>
 </section><section id="tasks"><h2>任务和 Trace</h2>
+<figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-trace.png"><img alt="Task Trace：检查主泳道、子代理和选中的调用。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Task Trace：检查主泳道、子代理和选中的调用。<small>实际韩语界面 · 合成示例 · 选择图片可放大</small></span></figcaption></figure>
+
 <h3>查找任务</h3>
 <ol><li>打开<strong>Users</strong>，选择已识别的用户，然后找到<strong>작업 목록 · 상위 20개</strong>（任务列表，前 20 项）。列表最初使用与用户详细视图相匹配的生效时间段。在受支持的用户图表中点击一个数据点可选择一个分桶，或拖动时间范围以更新页面和列表。</li>
 <li>选择<strong>토큰 많은 순</strong>（令牌数最多）、<strong>비용 높은 순</strong>（费用最高）、<strong>서브에이전트 많은 순</strong>（子代理最多）或<strong>느린 순</strong>（耗时最长）。列表最多显示 20 项。如有提示，Claude 费用排序最多会考虑令牌数排名前 100 的候选任务，因此候选范围之外的更贵任务可能不会显示。</li>
@@ -120,7 +217,11 @@
 <li><strong>任务或链接缺失：</strong>检查用户、生效时间段、追踪保留期限、已启用客户端、可选追踪功能和截断通知。工作流程筛选和前 N 项限制可能会隐藏其他任务。分享链接要求接收者有访问权限，且链接必须完整。</li>
 <li><strong>缺少控件：</strong>客户端启用状态、架构、角色、功能配置和已收集的事件都会影响界面显示内容。特别是，设备设置和状态需要相应权限；聊天功能还需要单独配置的服务和只读连接。</li></ul>
 <p>如需专业说明，请参阅<a href="installation.html">安装</a>、<a href="operations.html">运营</a>、<a href="architecture.html">架构</a>和<a href="api.html">API 合约</a>。</p><p><a href="#contents">返回目录</a></p>
-</section></main>
+</section>
+</div>
+</div>
+</main>
 <footer><div class="wrap"><p>ccdash · OpenTelemetry → ClickHouse → Express → React</p><p><a href="index.html">文档概览</a> · <a href="credits.html">演示致谢</a></p><p>遥测数据可能不完整。报告的费用和按目录价格估算的费用都不是发票金额。活动指标不能证明员工的生产力或因果关系上的投资回报率。</p></div></footer>
+<script defer src="../assets/guide.js"></script>
 </body>
 </html>

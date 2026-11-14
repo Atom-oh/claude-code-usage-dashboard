@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "How ccdash collects and explains usage",
+    "subtitle": "Logical device-collection path and authenticated dashboard queries. Ingest and read API are roles of the same Express application.",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "visual_preset": "editorial",
+    "repository": {
+      "url": "https://github.com/Atom-oh/claude-code-usage-dashboard",
+      "revision": "fcfd49d9d0988defa0fd8cd8649608a9bb6e8899"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      90,
+      80
+    ],
+    "cols": 4,
+    "gapX": 105,
+    "gapY": 352,
+    "cellW": 220,
+    "cellH": 100
+  },
+  "components": [
+    {
+      "id": "clients",
+      "type": "external",
+      "label": "Claude Code \u00b7 Codex",
+      "sublabel": "Logs, metrics and traces",
+      "row": 0,
+      "col": 0,
+      "sources": [
+        {
+          "path": "dashboard/collector/install.py"
+        }
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "local",
+      "type": "backend",
+      "label": "Local Collector",
+      "sublabel": "Filter and queue on the device",
+      "row": 0,
+      "col": 1,
+      "sources": [
+        {
+          "path": "dashboard/collector/install.py"
+        }
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "ingest",
+      "type": "security",
+      "label": "Express \u00b7 ingest",
+      "sublabel": "Validate the device credential",
+      "row": 0,
+      "col": 2,
+      "sources": [
+        {
+          "path": "dashboard/server/collectorRoutes.js"
+        }
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "central",
+      "type": "backend",
+      "label": "Central Collector",
+      "sublabel": "Route signals into storage",
+      "row": 0,
+      "col": 3,
+      "sources": [
+        {
+          "path": "dashboard/collector/generated/central.yaml"
+        }
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "identity",
+      "type": "security",
+      "label": "Organization identity",
+      "sublabel": "Roles from configured OIDC",
+      "row": 1,
+      "col": 0,
+      "sources": [
+        {
+          "path": "dashboard/server/auth.js"
+        }
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "React dashboard",
+      "sublabel": "Users, tasks, tools and costs",
+      "row": 1,
+      "col": 1,
+      "sources": [
+        {
+          "path": "dashboard/web/src/App.jsx"
+        }
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Express \u00b7 read API",
+      "sublabel": "Apply range, filters and coverage",
+      "row": 1,
+      "col": 2,
+      "sources": [
+        {
+          "path": "dashboard/server/index.js"
+        }
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "database",
+      "type": "database",
+      "label": "ClickHouse",
+      "sublabel": "Raw signals and usage rollups",
+      "row": 1,
+      "col": 3,
+      "sources": [
+        {
+          "path": "dashboard/collector/generated/central.yaml"
+        }
+      ],
+      "size": [
+        220,
+        100
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-export",
+      "from": "clients",
+      "to": "local",
+      "label": "Local OTLP"
+    },
+    {
+      "id": "device-upload",
+      "from": "local",
+      "to": "ingest",
+      "label": "HTTPS + token"
+    },
+    {
+      "id": "forward",
+      "from": "ingest",
+      "to": "central",
+      "label": "Private OTLP"
+    },
+    {
+      "id": "store",
+      "from": "central",
+      "to": "database",
+      "label": "Write signals",
+      "labelAt": [
+        1175,
+        267
+      ]
+    },
+    {
+      "id": "login",
+      "from": "identity",
+      "to": "browser",
+      "label": "OIDC sign-in"
+    },
+    {
+      "id": "browse",
+      "from": "browser",
+      "to": "api",
+      "label": "Session cookie"
+    },
+    {
+      "id": "query",
+      "from": "api",
+      "to": "database",
+      "label": "Read-only SELECT"
+    }
+  ]
+}

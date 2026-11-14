@@ -12,7 +12,7 @@
   <link rel="alternate" hreflang="ja" href="../ja/architecture.html" />
   <link rel="alternate" hreflang="zh-CN" href="architecture.html" />
 </head>
-<body>
+<body class="visual-docs">
   <a class="skip-link" href="#main">跳转到正文</a>
   <header class="top"><div class="wrap">
     <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -26,6 +26,7 @@
       <p class="lede">专用安装将客户端遥测、受限的接收路径、ClickHouse 存储和经过身份验证的仪表板整合在一起。</p>
       <p class="caption">更新于 2026 年 11 月 14 日 · 描述源代码行为；请核实你安装的版本。</p>
     </div>
+<section id="system-overview"><h2>界面上的数字来自哪里</h2><p>数据采集和仪表板访问使用不同的路径。此图显示可选的设备采集路径和经过身份验证的读取路径；由组织者准备的研讨会数据采集也可以使用单独配置的路径。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="采集和查询架构。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>采集和查询架构。</strong>信号进入存储；仪表板通过 API 读取经过范围限定的结果。两个 Express 方框表示同一应用程序的逻辑角色。<small>逻辑设备路径 · 英文图表标签 · 打开交互视图</small></span></figcaption></figure><div class="reading-grid"><article><h3>采集：客户端 → 已存储的观测数据</h3><p>Claude Code 和 Codex 将受支持的信号导出到本地 Collector。已注册的设备通过经过身份验证的摄取网关和中央 Collector 将数据发送到 ClickHouse。设备凭据与浏览器登录凭据相互独立。</p></article><article><h3>读取：已登录用户 → 仪表板结果</h3><p>组织登录会提供已配置的角色。API 会先应用时间、客户端和受支持的筛选条件，然后再返回使用情况和诊断视图。请查看成本依据和覆盖范围：屏幕中可能显示已知的小计，也可能显示不可用的信号。</p></article></div><p><a href="architecture.html#pipeline">采集路径和信任边界</a> · <a href="architecture.html#signals">日志、指标和追踪数据有何不同</a></p></section>
     <section id="task-traces"><h2>关联用户、任务与span</h2>
 <p>用户详情会选择精确的遥测身份和时间范围。<code>/api/users/tasks</code>会列出在有效范围内开始的任务；拖动使用量图表可缩小范围，而单击数据点可选择一个区间。<code>/api/users/tasks/detail</code>会返回所选任务的轨道、Span 和基于证据的成本说明。</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="任务追踪数据来源"><table>
@@ -67,5 +68,6 @@
     <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">度量定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示鸣谢</a></p>
     <p>遥测数据可能不完整。报告的成本和列表价估算并非发票。活动指标不能证明员工生产力或因果关系上的投资回报率。</p>
   </div></footer>
+<script defer src="../assets/guide.js"></script>
 </body>
 </html>

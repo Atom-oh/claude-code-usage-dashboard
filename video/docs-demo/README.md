@@ -13,8 +13,9 @@ The relative `assets` symlink points to the shared site media, without copies.
 From the repository root, run `python3 scripts/fetch-docs-media.py` before previewing
 or rendering. It hydrates the images, encoded video and local runtime assets from
 the immutable commit in `media.lock.json`, checking every size and SHA256 before
-writing. The `docs-media-20261114-narrated-r2` tag retains that snapshot; URLs use its commit
-identity. Use `--offline` to verify a populated cache without network access.
+writing. The `docs-media-20261114-visual-guide-r3` tag retains the shared snapshot, including
+the illustrated guide, diagram and font; URLs use its commit identity. The original
+November 14 video snapshot remains under `docs-media-20261114-narrated-r2`. Use `--offline` to verify a populated cache without network access.
 Pages runs the same helper with `--site-only` and fails rather than publishing
 missing or corrupt media. HTML, captions, composition, provenance and licenses
 remain tracked source; generated media and the pinned runtime are ignored cache.

@@ -49,3 +49,10 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Generated visual guide assets are pinned in the documentation media snapshot.
+site/assets/img/guide-*.png
+site/assets/diagrams/system.html
+site/assets/diagrams/system.svg
+site/assets/diagrams/system.visual-check*
+site/assets/fonts/*.woff2

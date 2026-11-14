@@ -4,8 +4,8 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>ccdash を使い始める — 製品ドキュメント完全版</title>
-<meta content="ccdash のすべてのメニューを初めて使う方向けのガイドです。使用状況、コスト、ユーザー、タスク、診断、AI アシスタント、デバイスの設定について説明します。" name="description"/>
+<title>画面を見ながら学ぶ ccdash — ccdash</title>
+<meta content="期間を選び、ユーザーのタスクを確認し、コストの変化を説明して、ツールのアクティビティを調べます。実際の画面と、各手順で次に行う具体的な操作を確認しましょう。" name="description"/>
 <link href="../assets/site.css" rel="stylesheet"/>
 <link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="../index.html" hreflang="en" rel="alternate"/>
@@ -13,20 +13,24 @@
 <link href="index.html" hreflang="ja" rel="alternate"/>
 <link href="../zh/index.html" hreflang="zh-CN" rel="alternate"/>
 </head>
-<body>
+<body class="visual-docs">
 <a class="skip-link" href="#main">コンテンツへスキップ</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
 <nav aria-label="メインナビゲーション" class="tabs"><a aria-current="page" href="index.html">概要</a><a href="user-guide.html">ユーザーガイド</a><a href="installation.html">インストール</a><a href="architecture.html">アーキテクチャ</a><a href="api.html">API</a><a href="operations.html">運用</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
 <div aria-label="言語" class="languages" role="group"><a href="../index.html" hreflang="en" lang="en">English</a><a href="../ko/index.html" hreflang="ko" lang="ko">한국어</a><span lang="ja">日本語</span><a href="../zh/index.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
 </div></header>
-<main class="wrap" id="main"><div class="hero">
+<main class="wrap" id="main"><div class="hero hero-visual"><div class="hero-copy">
 <p class="eyebrow">Claude Code + Codex · 製品ドキュメント</p>
-<h1>ccdash を使い始める</h1>
-<p class="lede">コーディングクライアントの使用状況、コスト、アクティビティの読み方、ダッシュボードのすべてのメニューの使い方、数値の背景にある作業の調査方法を学びましょう。</p>
-<p><a href="user-guide.html">ユーザーガイド完全版を読む</a> · <a href="#menu-map">メニューを探す</a> · <a href="installation.html">デプロイを設定する</a></p>
+<h1>画面を見ながら学ぶ ccdash</h1>
+<p class="lede">期間を選び、ユーザーのタスクを確認し、コストの変化を説明して、ツールのアクティビティを調べます。実際の画面と、各手順で次に行う具体的な操作を確認しましょう。</p>
+<p><a class="button-link" href="user-guide.html">詳しい手順を見る</a> <a class="button-link secondary" href="#system-overview">アーキテクチャを見る</a></p>
 <p class="caption">初めて利用する方、アナリスト、運用担当者向け。メニューは、有効なクライアント、権限、インストール済みのバージョンによって異なります。</p>
-</div><section id="start"><h2>初めてのアクセス</h2>
+</div><figure class="screen-shot hero-shot"><a data-lightbox="" href="../assets/img/guide-overview.png"><img alt="Overview：対象範囲を選び、概要を読み、傾向を確認します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-overview.png" width="2880"/></a><figcaption><span class="figure-number">01</span><span class="figure-text">Overview：対象範囲を選び、概要を読み、傾向を確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure></div><section id="learning-paths"><h2>調べたい内容を選ぶ</h2><div class="learning-paths">
+<a class="learning-card" href="user-guide.html#trace-workflow"><img alt="エージェントごとに分かれたレーンのあるタスク" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · ユーザーとトレース</span><b>1人のユーザーの作業をたどる</b><span class="card-description">ユーザー → 時間範囲 → タスク → エージェント → 個々の呼び出し。</span></span></a>
+<a class="learning-card" href="user-guide.html#cost-workflow"><img alt="コストの計算式と変化の要因" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · コストと効率</span><b>コストの変化を説明する</b><span class="card-description">コスト算定根拠、モデル別の割合、単位コスト、トークン、キャッシュ。</span></span></a>
+<a class="learning-card" href="user-guide.html#tools-workflow"><img alt="ツールの呼び出しと結果" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · ツールとMCP</span><b>ツールのアクティビティを理解する</b><span class="card-description">ツールの呼び出し、権限、Skills、MCP、セッションのコンテキスト。</span></span></a>
+</div></section><section id="system-overview"><h2>画面に表示される数値の出どころ</h2><p>データの収集とダッシュボードへのアクセスには、それぞれ異なる経路を使います。この図は、任意のデバイス収集経路と、認証された読み取り経路を示しています。主催者が準備するワークショップでの収集には、別途設定された経路を使う場合があります。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="収集とクエリのアーキテクチャ。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>収集とクエリのアーキテクチャ。</strong>シグナルはストレージに送られ、ダッシュボードはAPIを通じて、アクセス範囲が設定された結果を読み取ります。2つのExpressボックスは、同じアプリケーションの論理的な役割を表しています。<small>論理的なデバイス経路 · 図のラベルは英語 · インタラクティブ表示を開く</small></span></figcaption></figure><div class="reading-grid"><article><h3>収集：クライアント → 保存された観測データ</h3><p>Claude CodeとCodexは、対応するシグナルをローカルのCollectorにエクスポートします。登録済みのデバイスは、認証済みの取り込みゲートウェイと中央のCollectorを経由して、ClickHouseにデータを送信します。デバイスの認証情報は、ブラウザーへのログインとは別です。</p></article><article><h3>読み取り：サインインしたユーザー → ダッシュボードの結果</h3><p>組織のログインによって、設定済みのロールが適用されます。APIは、使用量と診断のビューを返す前に、時間、クライアント、および対応するフィルターを適用します。コスト算定根拠とデータの網羅範囲を確認してください。画面には、既知の小計が表示される場合も、シグナルが利用できないことが表示される場合もあります。</p></article></div><p><a href="architecture.html#pipeline">データ収集経路と信頼境界</a> · <a href="architecture.html#signals">ログ、メトリクス、トレースの違い</a></p></section><section id="start"><h2>初めてのアクセス</h2>
 <ol>
 <li><strong>組織のダッシュボードを開いてサインインします。</strong> アドレスとアクセス方法を管理者に確認してください。今ご覧の公開サイトはドキュメントです。<a href="user-guide.html#access">アカウントと権限</a>をご覧ください。</li>
 <li><strong>クライアントと期間を選択します。</strong> まず、すべての有効なクライアントと、最近の作業が含まれる期間を選択してください。表示されているタイムゾーンと、データが届いているかを確認します。</li>
@@ -57,11 +61,11 @@
 </section><section id="costs"><h2>数値を解釈する前に確認する</h2>
 <ul><li><strong>確認済みのコストは請求額ではありません。</strong> Claude が報告した支出と、対応する定価に基づく見積もりには、それぞれの算出根拠が保持されています。価格が不明な場合、小計は一部のみの値になることがあります。</li><li><strong>利用不可はゼロとは異なります。</strong> 観測されたトークンの小計、トークン構成要素がすべて揃っているかどうか、診断データのカバー範囲は、それぞれ異なる問いへの答えです。合計値が正の値でも、データ収集が完全であることを示すわけではありません。</li><li><strong>アクティビティは観測結果です。</strong> セッション、ツール、コスト比率から、従業員のパフォーマンス、削減できた時間、生産性との因果関係が明らかになるわけではありません。</li></ul>
 <p><a href="user-guide.html#common-controls">カバー範囲と表示状態を確認する</a> · <a href="api.html">API の仕様</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">測定の定義</a></p>
-</section><section id="resolution"><h2>期間を設定してグラフを使う</h2>
+</section><section id="resolution"><h2>期間を設定してグラフを使う</h2><figure class="screen-shot compact"><a data-lightbox="" href="../assets/img/time-range-en.png"><img alt="開始時刻と終了時刻を正確に選択します。この旧デモでは、画面上のラベルは英語です。" decoding="async" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">開始時刻と終了時刻を正確に選択します。この旧デモでは、画面上のラベルは英語です。<small>開始時刻と終了時刻を正確に選択します。この旧デモでは、画面上のラベルは英語です。</small></span></figcaption></figure>
 <p>UTC のカレンダー日付を使うか、期間選択ツールの <strong>날짜·시간</strong> (日付と時刻) タブで、ブラウザーのローカル時刻による開始時刻と終了時刻を正確に指定します。終了時刻は範囲に含まれません。表示された実効期間を確認してください。サーバーの集計とデータ取り込みの猶予時間が適用されます。</p>
 <p>対応する時系列グラフをドラッグするとページの期間を絞り込めます。リセットコントロールを使うと元に戻せます。ユーザー詳細では、タスクリストがその期間に合わせて表示されます。点をクリックすると、1 つの時間区間が選択されます。カテゴリ別のグラフでは期間を選択できません。</p>
 <p><a href="user-guide.html#common-controls">フィルター、更新、グラフ、テーブル、エクスポート、共有の各コントロール</a></p>
-</section><section id="task-trace"><h2>ユーザーから作業の詳細をたどる</h2>
+</section><section id="task-trace"><h2>ユーザーから作業の詳細をたどる</h2><figure class="screen-shot"><a data-lightbox="" href="../assets/img/guide-task-trace.png"><img alt="Task Trace：メインレーン、サブエージェント、選択した呼び出しを確認します。" decoding="async" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Task Trace：メインレーン、サブエージェント、選択した呼び出しを確認します。<small>実際の韓国語UI · 合成データの例 · 画像を選択して拡大</small></span></figcaption></figure>
 <p><strong>Users</strong> を開いてユーザーを選択し、選択した期間のタスクリストを確認します。タスクを開くと <strong>Task Trace</strong> が表示されます。ここでは、メインとサブエージェントのレーン、呼び出し、確認済みのコスト、トークンのコンテキスト、モデル、利用可能なセッション環境を確認できます。</p>
 <p>トレース機能は任意です。Claude のインタラクションと、トレースされた Codex のターンでは、得られる証拠が異なります。呼び出し、属性、価格が不明な場合は、引き続き利用不可として扱われます。タスクリストと詳細には明示的な上限があります。</p>
 <p><a href="user-guide.html#tasks">タスクと Trace の完全な手順</a> · <a href="api.html#tasks">タスク API の制限</a> · <a href="operations.html#traces">タスクが見つからない場合のトラブルシューティング</a></p>
@@ -89,5 +93,5 @@
 <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">APIリファレンス全文</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">計測の定義</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">変更履歴</a> · <a href="credits.html">デモクレジット</a></p>
 <p>テレメトリは不完全な場合があります。報告コストと定価に基づく推定値は請求額ではありません。アクティビティ指標から従業員の生産性や因果的なROIを証明することはできません。</p>
 </div></footer>
-</body>
+<script defer="" src="../assets/guide.js"></script></body>
 </html>
