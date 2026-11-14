@@ -1839,5 +1839,17 @@
   "m1dd23c2aed59": "Device collector users’ task models · LLM calls",
   "mb3ed32f01cc1": "Fixed an issue where the model, LLM calls, and call costs appeared blank in the task list and task details for Claude Code 2.1.325 or later sent through the device collector. This applies to tasks after the collector is reinstalled; previously missing records are not recovered.",
   "mb0c557c70d69": "Users → Select a user → Task list · Task details",
-  "md9cb56dff124": "Approve device connection · AI Usage Dashboard"
+  "md9cb56dff124": "Approve device connection · AI Usage Dashboard",
+  "m57f9a855051d": "Choose from five display languages, install collectors through browser approval, and see client and model colors follow one rule across every screen.",
+  "mc1253e8f47b5": "Display language selection",
+  "mda1aeb980496": "Choose the display language from 한국어, English, 简体中文, 日本語 and Español. Shared controls, chart labels and guidance switch to the selected language, while open tasks, filters and time ranges stay as they were. The user guide opens in that language when a translation exists, otherwise in English.",
+  "m9bbf458dcf9e": "Language picker in the sidebar (also in the mobile menu and task details)",
+  "m5a403e2edac6": "Install collectors through browser approval",
+  "m001c87307e2d": "Running the curl … | sh command shows a confirmation code and an approval link; sign in in the browser and approve the device, and the installation finishes on its own. There is no device token to copy and paste, and new installations use the approving account's email as the user ID. The existing token flow is still available.",
+  "m1d86e0280241": "Consistent client and model colors",
+  "m382aa2697489": "Claude Code uses Claude orange and Codex uses ink on every shared screen. In cost by user, channel lines tell CCB, C4E and unclassified apart by shades of the same orange. Each model family has one color, and newer versions are shown darker.",
+  "med06e0ad8e03": "Cost → Cost by user · Cost share by model, Trends → trends by client",
+  "m676c44e3f7fc": "LLM call counts for older Codex tasks",
+  "ma2146a2f50ba": "Fixed tasks sent from older versions such as Codex 0.159.3 showing 0 LLM calls and no call spans in task details. Records already collected are corrected right away.",
+  "m37fe7a8c4947": "Users → select a user → Task list · Task details"
 }
