@@ -34,6 +34,7 @@ const errors = [], checks = [];
 let image;
 try {
   for (const width of [1440, 390]) for (const locale of ["en", "zh-CN", "ja", "es", "ko"]) {
+    console.log(`Checking Settings ${locale}/${width}`);
     const context = await browser.newContext({
       viewport: { width, height: width === 1440 ? 1100 : 844 }, deviceScaleFactor: 2, timezoneId: "UTC",
     });
@@ -63,7 +64,10 @@ try {
     await page.clock.setFixedTime(new Date("2026-11-14T12:00:00Z"));
     await page.goto(`${base}/settings`);
     await page.locator('input[placeholder="platform"]').waitFor();
-    await page.waitForFunction((value) => document.documentElement.lang === value, locale);
+    await page.waitForFunction((value) => document.documentElement.lang === value, locale, { timeout: 10000 }).catch(async (error) => {
+      console.log(JSON.stringify(await page.evaluate(() => ({ language: document.documentElement.lang, saved: localStorage.getItem("ccdash.locale"), pickers: [...document.querySelectorAll("select")].map(s => ({ label: s.getAttribute("aria-label"), value: s.value })), text: document.body.innerText.slice(0, 500) }))));
+      throw error;
+    });
     await page.evaluate(() => document.fonts.ready);
     assert.equal(await page.locator('input[type="radio"]').count(), 2);
     assert.equal(await page.getByRole("alert").count(), 0);
