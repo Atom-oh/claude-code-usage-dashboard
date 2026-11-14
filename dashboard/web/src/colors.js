@@ -24,43 +24,53 @@ export function colorFor(group) {
   return GROUP_COLOR[group] || GROUP_COLOR.unknown;
 }
 
-// Hue identifies the model family; bounded shades distinguish versions without fading
-// old/unregistered models into the card surface. Backend and emitting client remain separate.
+// Hue identifies the model family; lightness identifies the version. Each family has five
+// steps: its newest model takes the first (darkest on light cards, brightest on dark ones),
+// the next three versions follow, and every older version shares the fifth ("older").
+// Orange/brown hues stay free for the Claude client and its channels (index.css --client-*,
+// --channel-*); Codex is ink. Every step keeps >=3:1 against its card surface, and adjacent
+// steps differ by >=7 CIE L*. Backend and emitting client remain separate.
+const OTHER_LIGHT = ["#606B7B", "#707989", "#7F8896", "#556171", "#657383", "#77818F"];
+const OTHER_DARK = ["#9AA5B5", "#A8B1BF", "#8C99AC", "#B3BCC9", "#9AAABE", "#A6B4C4"];
+
 export const MODEL_FAMILY_COLORS = {
   light: {
-    opus: ["#B4532E", "#C66136", "#D37145", "#A84B27", "#BC603C", "#CC6B41"],
-    sonnet: ["#355FC7", "#426CCE", "#2D56BA", "#547ADB", "#335EAD", "#496CBC"],
-    haiku: ["#167A63", "#20856D", "#2B9077", "#116F59", "#23816B", "#318A75"],
-    fable: ["#AF3C70", "#BC4A7C", "#C65889", "#9F3463", "#AF527B", "#BA6087"],
-    sol: ["#A76B0F", "#B67A1C", "#C18728", "#94600E", "#AA7729", "#B88536"],
-    terra: ["#856044", "#936C4D", "#9F7656", "#78543B", "#89674E", "#97755A"],
-    luna: ["#137A9B", "#2287A6", "#3291AF", "#0E6E8F", "#29809C", "#388BA5"],
-    astra: ["#7545B8", "#8353C5", "#9062CF", "#6939AA", "#8056B6", "#8D66C0"],
-    other: ["#606B7B", "#707989", "#7F8896", "#556171", "#657383", "#77818F"],
+    fable: ["#8C064B", "#A3275E", "#BB3F72", "#D25586", "#E76898"],
+    opus: ["#244193", "#3E53A8", "#5666BE", "#6D7AD5", "#808CE9"],
+    sonnet: ["#034B6E", "#0C5F88", "#0974A5", "#0289C4", "#039DDE"],
+    haiku: ["#015226", "#016831", "#007E3D", "#25934F", "#3DA660"],
+    astra: ["#6C3065", "#814479", "#96578D", "#AC6CA2", "#BF7EB5"],
+    sol: ["#584400", "#6F5600", "#856A13", "#9B7E29", "#AF8F3B"],
+    terra: ["#2E4F00", "#3B6400", "#4B790C", "#608E25", "#73A138"],
+    luna: ["#064F56", "#03636C", "#0D7883", "#088F9B", "#0EA2B0"],
+    other: OTHER_LIGHT,
   },
   dark: {
-    opus: ["#D9855F", "#E5936B", "#CE7851", "#E29A7A", "#D18161", "#DB8E70"],
-    sonnet: ["#7898E8", "#89A6EF", "#6F8BDA", "#96B0F1", "#7E9DDF", "#8BA7E5"],
-    haiku: ["#52B99A", "#65C5A7", "#43AC8D", "#76CDB3", "#5FB699", "#70C0A5"],
-    fable: ["#D97BA6", "#E48DB5", "#CA6B97", "#EA9EC0", "#D886AA", "#E098B8"],
-    sol: ["#D5A046", "#E1AF58", "#C59236", "#E8BB70", "#CCA15A", "#D8AF6A"],
-    terra: ["#B88B69", "#C69A78", "#AA7D5D", "#CDA588", "#B89073", "#C29D81"],
-    luna: ["#51AECA", "#64BCD4", "#409FBF", "#77C6DC", "#58ACC5", "#6AB8CE"],
-    astra: ["#AB87E3", "#B99AEF", "#9B76D3", "#C4A9F2", "#AB8BCF", "#B79CDD"],
-    other: ["#9AA5B5", "#A8B1BF", "#8C99AC", "#B3BCC9", "#9AAABE", "#A6B4C4"],
+    fable: ["#FFB0CA", "#FE92B8", "#F676A6", "#E16393", "#CC5081"],
+    opus: ["#BFC1FF", "#A7ADFE", "#8E99F7", "#7B87E3", "#6775CF"],
+    sonnet: ["#8FCDFE", "#51BDFF", "#17AAF0", "#1497D5", "#1284BB"],
+    haiku: ["#74DC91", "#60C87E", "#4CB46C", "#36A15B", "#1D8E4A"],
+    astra: ["#F5B0EA", "#E19DD6", "#CD8BC3", "#BA78B0", "#A6669D"],
+    sol: ["#E7C26C", "#D2AF5A", "#BE9D48", "#AA8A36", "#967824"],
+    terra: ["#A7D569", "#93C157", "#80AE45", "#6D9B32", "#5B891F"],
+    luna: ["#01DBED", "#19C5D6", "#14B1C0", "#0F9DAA", "#0A8995"],
+    other: OTHER_DARK,
   },
 };
 
+// Known versions per family, newest first. Add a new version at the front when it ships:
+// every older version then moves one step lighter, and the fifth step collects the rest.
 const FAMILY_MODELS = {
+  fable: ["claude-fable-5-2", "claude-fable-5-1", "claude-fable-5"],
   opus: ["claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5"],
-  sonnet: ["claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5"],
-  haiku: ["claude-haiku-4-5", "claude-haiku-3-5"],
-  fable: ["claude-fable-5-1", "claude-fable-5"],
+  sonnet: ["claude-sonnet-5-5", "claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5"],
+  haiku: ["claude-haiku-5-5", "claude-haiku-4-5", "claude-haiku-3-5"],
+  astra: ["gpt-6.1-astra", "gpt-6-astra"],
   sol: ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"],
   terra: ["gpt-6-terra", "gpt-5.6-terra"],
   luna: ["gpt-6-luna", "gpt-5.6-luna"],
-  astra: ["gpt-6-astra", "gpt-6.1-astra"],
 };
+const VERSION_STEPS = 5;
 
 function normalizedFamilyModel(model) {
   return String(model ?? "").trim().toLowerCase()
@@ -79,13 +89,41 @@ export function modelFamily(model) {
     ?? null;
 }
 
+// Version numbers of a normalized family model: claude-opus-5-5 -> [5, 5], gpt-6.1-sol -> [6, 1].
+function versionOf(name, family) {
+  const match = name.match(new RegExp(`^claude-${family}-(\\d+(?:-\\d+)*)$`))
+    ?? name.match(new RegExp(`^gpt-(\\d+(?:\\.\\d+)?)-${family}$`));
+  return match ? match[1].split(/[-.]/).map(Number) : null;
+}
+
+function compareVersions(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
+// Position from the newest known version: a registered version uses its registry index; an
+// unregistered one newer than every registered version counts as the newest (-1), anything
+// else (older or unparsable) as older than the whole registry.
+function versionPosition(name, family) {
+  const known = FAMILY_MODELS[family] ?? [];
+  const index = known.indexOf(name);
+  if (index >= 0) return index;
+  const version = versionOf(name, family), newest = known[0] && versionOf(known[0], family);
+  return version && newest && compareVersions(version, newest) > 0 ? -1 : known.length;
+}
+
 function familyShade(model, family, theme) {
   const name = normalizedFamilyModel(model);
   const palette = MODEL_FAMILY_COLORS[theme === "dark" ? "dark" : "light"][family];
-  const registered = FAMILY_MODELS[family]?.indexOf(name) ?? -1;
-  let hash = 0;
-  for (const ch of name) hash = (Math.imul(hash, 31) + ch.codePointAt(0)) >>> 0;
-  return palette[(registered >= 0 ? registered : hash) % palette.length];
+  if (family === "other") {
+    let hash = 0;
+    for (const ch of name) hash = (Math.imul(hash, 31) + ch.codePointAt(0)) >>> 0;
+    return palette[hash % palette.length];
+  }
+  return palette[Math.min(Math.max(versionPosition(name, family), 0), VERSION_STEPS - 1)];
 }
 
 export function familyColorFor(family, theme = "light") {
@@ -97,16 +135,16 @@ export function modelColorFor(model, theme = "light") {
   return family ? familyShade(model, family, theme) : null;
 }
 
-// Legend/stack order follows the family registry, independent of spend rankings.
-// Unregistered versions follow registered versions; unrecognized families come last.
-export const FAMILY_LEGEND_ORDER = ["fable", "opus", "sonnet", "haiku", "sol", "terra", "luna", "astra"];
+// Legend/stack order follows the family registry, independent of spend rankings: Claude
+// families from the top tier down, then GPT families from astra. Newer versions come first;
+// unrecognized families come last.
+export const FAMILY_LEGEND_ORDER = ["fable", "opus", "sonnet", "haiku", "astra", "sol", "terra", "luna"];
 
 export function modelLegendRank(model) {
   const m = normalizedFamilyModel(model);
   const fam = modelFamily(m);
   const famIdx = fam ? FAMILY_LEGEND_ORDER.indexOf(fam) : FAMILY_LEGEND_ORDER.length;
-  const versionIdx = FAMILY_MODELS[fam]?.indexOf(m) ?? -1;
-  return famIdx * 100 + (versionIdx >= 0 ? versionIdx : 99);
+  return famIdx * 100 + (fam ? versionPosition(m, fam) + 1 : 99);
 }
 
 export function byModelLegendOrder(a, b) {

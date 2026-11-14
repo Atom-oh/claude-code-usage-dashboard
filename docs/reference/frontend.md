@@ -247,9 +247,13 @@ partial-preserving stacked areas over the pure helpers in
 detail `/api/cost/by-model-daily` rows and `fromByModelTime` the shared `by_model_time` rows.
 The frame keeps the top six series by known cost plus an Others segment with fixed membership.
 Model colors are stable per name and theme. Model donuts and trends share the
-[family palette](../../dashboard/web/src/colors.js): Claude Opus, Sonnet, Haiku and
-Fable; OpenAI Sol, Terra, Luna and Astra. Versions remain separate and use bounded
-shades within their family's hue; regional aliases keep the same color across
+[family palette](../../dashboard/web/src/colors.js): Claude Fable, Opus, Sonnet and
+Haiku; OpenAI Astra, Sol, Terra and Luna (legend order). Each family has one hue and five
+lightness steps: its newest registered version takes the first (darkest on light cards),
+the next three follow, and older versions share the fifth. An unregistered version newer
+than the registry takes the first step, otherwise the fifth; a new release is added at the
+front of `FAMILY_MODELS`, which moves older versions one step lighter. Family hues avoid the
+Claude client/channel oranges and Codex ink; regional aliases keep the same color across
 backend cards. Unrecognized models use neutral shades, and the aggregate Others
 segment keeps an exclusive neutral. Family names do not identify emitting clients.
 Series are monotone stacked areas; unavailable and no-data buckets are gaps (null,
@@ -276,8 +280,9 @@ combines identical emitted user IDs from `by_user` (known-cost sum, mixed basis 
 beside each amount, draws Claude detail's line-per-channel model bars from `by_user_model`:
 CCB and C4E (the inferred Claude session `channel`, bedrock/enterprise, so Bedrock spend on a
 bare model id with an `unknown` backend stays CCB; an unresolved or absent channel falls back
-to the backend), a Claude unclassified line, and Codex (the client). Dots carry the channel colour,
-segments the model colour; an all-unknown line reads unavailable, never $0. Column structure
+to the backend), a Claude unclassified line, and Codex (the client). Dots carry the channel colour
+(index.css `--channel-*`: CCB deep clay, C4E Claude orange, unclassified light clay with an
+outline, Codex ink), segments the model colour; an all-unknown line reads unavailable, never $0. Column structure
 is identical for every client selection, and help text names only the selected clients.
 Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`
 (`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; in both sources the
@@ -296,7 +301,7 @@ the series key, never the raw identity.
 
 Sibling rule: the shared Claude and Codex cards come from one response, share its effective
 range and bucket origins, are never summed and keep separate y-scales. Client-colored
-header accents identify the cards independently of model color, including when Codex uses
+(`--client-claude` clay orange, `--client-codex` ink) header accents identify the cards independently of model color, including when Codex uses
 a Claude model. Texture never represents client identity or availability. Bucket defaults: Cost
 uses the global interval; Executive renders 24h up to 30 days, else 168h. Shared charts
 never render below `bucket_hours` and roll up so the first bucket is floored.

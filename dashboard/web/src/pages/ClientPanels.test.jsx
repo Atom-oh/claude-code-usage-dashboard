@@ -523,8 +523,8 @@ test.each([["cost", "시간별*"], ["exec", "일간*"]])(
     expect(trendTitles()).toEqual(["Claude Code 모델별 비용 추이", "Codex 모델별 비용 추이"]);
     expect(toggle()).toEqual(["시간별", "일간", "주간"].map((label) => (`${label}*` === active ? active : label)));
     const [claude, codex] = trendCards();
-    expect(claude.dataset.clientAccent).toBe("var(--chart-1)");
-    expect(codex.dataset.clientAccent).toBe("var(--chart-2)");
+    expect(claude.dataset.clientAccent).toBe("var(--client-claude)");
+    expect(codex.dataset.clientAccent).toBe("var(--client-codex)");
     expect(claude.textContent).toContain("Claude 보고 비용");
     expect(claude.textContent).not.toContain("Codex AWS 정가 추정");
     expect(codex.textContent).toContain("Codex AWS 정가 추정");
@@ -544,11 +544,11 @@ test("shared model color does not replace explicit client identity on the paired
   ];
   mount("cost", data);
   const [claude, codex] = trendCards();
-  expect(claude.dataset.clientAccent).toBe("var(--chart-1)");
-  expect(codex.dataset.clientAccent).toBe("var(--chart-2)");
+  expect(claude.dataset.clientAccent).toBe("var(--client-claude)");
+  expect(codex.dataset.clientAccent).toBe("var(--client-codex)");
   await waitFor(() => {
     for (const node of [claude, codex])
-      expect(node.querySelector(".recharts-area-area")?.getAttribute("fill")).toBe("#355FC7");
+      expect(node.querySelector(".recharts-area-area")?.getAttribute("fill")).toBe("#0C5F88");
   });
   for (const node of [claude, codex]) expect(node.querySelector("pattern")).toBeNull();
 });

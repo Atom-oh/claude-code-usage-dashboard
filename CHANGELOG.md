@@ -20,6 +20,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
   provenance and verified message placeholders.
 
+### Changed
+
+- Use client brand colors in shared views: Claude Code is Claude clay orange and Codex is
+  ink in client trends, tiles and the user cost table. Claude channel lines are lightness
+  steps of the same orange (CCB darker, C4E the brand hue, unclassified lighter with an
+  outline), so one color no longer means Codex in one chart and a Claude channel in another.
+- Give each model family its own hue and five version steps: Fable, Opus, Sonnet and Haiku;
+  Astra, Sol, Terra and Luna, now listed in that order. The newest version is darkest, the
+  next three follow and older versions share the fifth step; family hues avoid the client
+  and channel colors. The newest Fable 5.2, Sonnet 5.5 and Haiku 5.5 are registered.
+
 ## [1.8.2] - 2026-11-14
 
 ### Added

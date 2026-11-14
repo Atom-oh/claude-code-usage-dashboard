@@ -197,8 +197,8 @@ test("model versions and their backend identities remain separate and keep famil
   expect(within(model).getByText("claude-sonnet-4-5", { exact: true })).toBeTruthy();
   expect(within(model).getByText("bedrock-runtime", { exact: true })).toBeTruthy();
   const swatches = [...model.querySelectorAll("li span[style]")].map((node) => node.style.background);
-  expect(swatches).toContain("rgb(53, 95, 199)");
-  expect(swatches).toContain("rgb(45, 86, 186)");
+  expect(swatches).toContain("rgb(12, 95, 136)");
+  expect(swatches).toContain("rgb(2, 137, 196)");
 });
 
 test("effort requests share effective bounds and supported filters while independent failures leave model and cache usable", async () => {

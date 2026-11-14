@@ -618,24 +618,25 @@ test("vendor ramp keys resolve to the solid palette shades", () => {
   expect([modelColorKey("xai.grok-4.6"), trendColor(modelColorKey("xai.grok-4.6").key)]).toEqual([{ key: "other-0" }, "#606B7B"]);
 });
 
-// Registered and future versions stay in their family hue, with theme-specific shades.
+// Registered and future versions stay in their family hue, with theme-specific version steps
+// (newest first; an unregistered newer version takes the newest step).
 test.each([
-  ["claude-sonnet-4-5", "#2D56BA", "#6F8BDA"],
-  ["us.anthropic.claude-sonnet-4-6-v1:0", "#426CCE", "#89A6EF"],
-  ["claude-opus-4-7", "#A84B27", "#E29A7A"],
-  ["claude-haiku-3-5", "#20856D", "#65C5A7"], ["claude-opus-9", "#D37145", "#CE7851"],
+  ["claude-sonnet-4-5", "#0289C4", "#1497D5"],
+  ["us.anthropic.claude-sonnet-4-6-v1:0", "#0974A5", "#17AAF0"],
+  ["claude-opus-4-7", "#6D7AD5", "#7B87E3"],
+  ["claude-haiku-3-5", "#007E3D", "#4CB46C"], ["claude-opus-9", "#244193", "#BFC1FF"],
 ])("known Claude model %s stays solid in its family hue", (model, light, dark) => {
   const { key } = modelColorKey(model);
   expect([trendColor(key), trendColor(key, "dark")]).toEqual([light, dark]);
 });
 
 test("trendColor resolves model, 기타 and fallback colors per theme; chartTheme reads the surface", () => {
-  expect(trendColor("claude-sonnet-5")).toBe("#355FC7");
-  expect(trendColor("claude-sonnet-5", "dark")).toBe("#7898E8");
-  expect(trendColor("openai.gpt-6-astra")).toBe("#7545B8");
-  expect(trendColor("openai.gpt-6-astra", "dark")).toBe("#AB87E3");
-  expect(trendColor("openai.gpt-5.6-luna")).toBe("#2287A6");
-  expect(trendColor("openai.gpt-5.6-luna", "dark")).toBe("#64BCD4");
+  expect(trendColor("claude-sonnet-5")).toBe("#0C5F88");
+  expect(trendColor("claude-sonnet-5", "dark")).toBe("#51BDFF");
+  expect(trendColor("openai.gpt-6-astra")).toBe("#814479");
+  expect(trendColor("openai.gpt-6-astra", "dark")).toBe("#E19DD6");
+  expect(trendColor("openai.gpt-5.6-luna")).toBe("#03636C");
+  expect(trendColor("openai.gpt-5.6-luna", "dark")).toBe("#19C5D6");
   expect(trendColor(OTHERS_COLOR_KEY)).toBe("#A3A9B6");
   expect(trendColor(OTHERS_COLOR_KEY, "dark")).toBe("#5E6678");
   expect(trendColor("nope")).toBe("#A3A9B6");
@@ -686,7 +687,7 @@ test("essential trend strokes contrast with actual surfaces while preserving pas
       expect((high + 0.05) / (low + 0.05), `${color} on ${surface}: ${stroke}`).toBeGreaterThanOrEqual(3);
     }
   }
-  expect(trendColor(modelColorKey("claude-sonnet-4-5").key)).toBe("#2D56BA");
+  expect(trendColor(modelColorKey("claude-sonnet-4-5").key)).toBe("#0289C4");
   expect(trendStrokeColor("#B7C0F5")).not.toBe("#B7C0F5");
   expect(trendStrokeColor("#025A8D")).toBe("#025A8D");
   expect(trendStrokeColor("#b7c0f5", "rgb(255, 255, 255)")).toBe(trendStrokeColor("#b7c0f5", "#fff"));
@@ -694,12 +695,13 @@ test("essential trend strokes contrast with actual surfaces while preserving pas
 });
 
 test.each([
-  ["claude-sonnet-5", "#355FC7"], ["claude-sonnet-4-6", "#426CCE"], ["claude-sonnet-4-5", "#2D56BA"],
-  ["claude-opus-5", "#C66136"], ["claude-opus-4-8", "#D37145"], ["claude-opus-4-7", "#A84B27"],
-  ["claude-opus-4-6", "#BC603C"], ["claude-opus-4-5", "#CC6B41"], ["claude-haiku-4-5", "#167A63"],
-  ["claude-haiku-3-5", "#20856D"], ["claude-3-5-haiku", "#20856D"], ["claude-fable-5", "#BC4A7C"],
-  ["claude-fable-5-1", "#AF3C70"], ["claude-opus-5-5", "#B4532E"], ["claude-sonnet-9", "#335EAD"],
-  ["claude-haiku-9", "#116F59"], ["zai.glm-5", null], ["openai.gpt-6-astra", "#7545B8"], ["", null],
+  ["claude-sonnet-5", "#0C5F88"], ["claude-sonnet-4-6", "#0974A5"], ["claude-sonnet-4-5", "#0289C4"],
+  ["claude-opus-5", "#3E53A8"], ["claude-opus-4-8", "#5666BE"], ["claude-opus-4-7", "#6D7AD5"],
+  // Past the fourth version, every older Opus shares the fifth ("older") step.
+  ["claude-opus-4-6", "#808CE9"], ["claude-opus-4-5", "#808CE9"], ["claude-haiku-4-5", "#016831"],
+  ["claude-haiku-3-5", "#007E3D"], ["claude-3-5-haiku", "#007E3D"], ["claude-fable-5", "#BB3F72"],
+  ["claude-fable-5-1", "#A3275E"], ["claude-opus-5-5", "#244193"], ["claude-sonnet-9", "#034B6E"],
+  ["claude-haiku-9", "#015226"], ["zai.glm-5", null], ["openai.gpt-6-astra", "#814479"], ["", null],
 ])("modelColorFor(%s) keeps a stable family shade", (model, expected) => {
   expect(modelColorFor(model)).toBe(expected);
 });

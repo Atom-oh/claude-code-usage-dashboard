@@ -73,10 +73,11 @@ export function combineCostUsers(userRows, modelRows, clients) {
 // the shared backend (enterprise → "anthropic", a `bedrock-*` route → CCB); Codex
 // is the emitting client. Never infer a client from a model.
 export const USER_COST_CHANNELS = [
-  { key: "ccb", label: "CCB", title: "Claude Code · Bedrock 채널", color: "var(--series-bedrock)" },
-  { key: "c4e", label: "C4E", title: "Claude Code · Enterprise(Anthropic) 채널", color: "var(--series-enterprise)" },
-  { key: "claude_unknown", label: "미분류", title: "Claude Code · 채널 미분류", color: "var(--series-unknown)" },
-  { key: "codex", label: "Codex", title: "Codex", color: "var(--chart-3)" },
+  { key: "ccb", label: "CCB", title: "Claude Code · Bedrock 채널", color: "var(--channel-ccb)" },
+  { key: "c4e", label: "C4E", title: "Claude Code · Enterprise(Anthropic) 채널", color: "var(--channel-c4e)" },
+  // The light unclassified step needs an outline to stay visible on white cards.
+  { key: "claude_unknown", label: "미분류", title: "Claude Code · 채널 미분류", color: "var(--channel-claude-unknown)", ring: true },
+  { key: "codex", label: "Codex", title: "Codex", color: "var(--client-codex)" },
 ];
 
 export function userCostChannel(row) {
