@@ -4,8 +4,8 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>Start using ccdash — complete product documentation</title>
-<meta content="A first-time guide to every ccdash menu: usage, costs, users, tasks, diagnostics, AI assistance and device setup." name="description"/>
+<title>Learn ccdash through its screens — ccdash</title>
+<meta content="Choose a period, inspect a user’s tasks, explain cost changes and explore tool activity. Follow real screens and a concrete next action at each step." name="description"/>
 <link href="assets/site.css" rel="stylesheet"/>
 <link href="assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="index.html" hreflang="en" rel="alternate"/>
@@ -13,7 +13,7 @@
 <link href="ja/index.html" hreflang="ja" rel="alternate"/>
 <link href="zh/index.html" hreflang="zh-CN" rel="alternate"/>
 </head>
-<body>
+<body class="visual-docs" data-stylesheet-version="4b6ff295">
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -21,13 +21,17 @@
 <div aria-label="Language" class="languages" role="group"><span lang="en">English</span><a href="ko/index.html" hreflang="ko" lang="ko">한국어</a><a href="ja/index.html" hreflang="ja" lang="ja">日本語</a><a href="zh/index.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
 </div></header>
 <main class="wrap" id="main">
-<div class="hero">
+<div class="hero hero-visual"><div class="hero-copy">
 <p class="eyebrow">Claude Code + Codex · Product documentation</p>
-<h1>Start using ccdash</h1>
-<p class="lede">Learn how to read coding-client usage, costs and activity, explore every dashboard menu, and investigate the work behind a number.</p>
-<p><a href="user-guide.html">Read the complete user guide</a> · <a href="#menu-map">Find a menu</a> · <a href="installation.html">Set up a deployment</a></p>
+<h1>Learn ccdash through its screens</h1>
+<p class="lede">Choose a period, inspect a user’s tasks, explain cost changes and explore tool activity. Follow real screens and a concrete next action at each step.</p>
+<p><a class="button-link" href="user-guide.html">Open the detailed walkthroughs</a> <a class="button-link secondary" href="#system-overview">See the architecture</a></p>
 <p class="caption">For first-time readers, analysts and operators. Menus depend on enabled clients, permissions and the installed version.</p>
-</div>
+</div><figure class="screen-shot hero-shot"><a data-lightbox="" href="assets/img/guide-overview.png"><img alt="Overview: choose the scope, read the summary and inspect the trend." decoding="async" height="2000" loading="lazy" src="assets/img/guide-overview.png" width="2880"/></a><figcaption><span class="figure-number">01</span><span class="figure-text">Overview: choose the scope, read the summary and inspect the trend.<small>Actual Korean UI · synthetic example · select the image to enlarge</small></span></figcaption></figure></div><section id="learning-paths"><h2>Choose what you want to investigate</h2><div class="learning-paths">
+<a class="learning-card" href="user-guide.html#trace-workflow"><img alt="A task with separate agent lanes" height="2000" loading="lazy" src="assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · USERS &amp; TRACE</span><b>Follow one user’s work</b><span class="card-description">User → time range → task → agent → individual call.</span></span></a>
+<a class="learning-card" href="user-guide.html#cost-workflow"><img alt="The cost equation and change drivers" height="1802" loading="lazy" src="assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · COST &amp; EFFICIENCY</span><b>Explain a cost change</b><span class="card-description">Cost basis, model shares, unit costs, tokens and cache.</span></span></a>
+<a class="learning-card" href="user-guide.html#tools-workflow"><img alt="Tool calls and results" height="1138" loading="lazy" src="assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · TOOLS &amp; MCP</span><b>Understand tool activity</b><span class="card-description">Tool calls, permissions, Skills, MCP and session context.</span></span></a>
+</div></section><section id="system-overview"><h2>Where the screen’s numbers come from</h2><p>Collection and dashboard access use different paths. The diagram shows the optional device-collection path and the authenticated read path; organizer-prepared workshop collection can use a separate configured path. This is an OIDC-enabled device-collection example.</p><figure class="screen-shot system"><a href="assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="The collection and query architecture." decoding="async" height="548" loading="lazy" src="assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>The collection and query architecture.</strong> Signals move into storage; the dashboard reads scoped results through its API. The two Express boxes represent logical roles of the same application.<small>Logical device path · English diagram labels · open the interactive view</small></span></figcaption></figure><div class="reading-grid"><article><h3>Collection: client → stored observations</h3><p>Claude Code and Codex export supported signals to a local Collector. A registered device sends them through the authenticated ingestion gateway and central Collector to ClickHouse. The device credential is separate from browser login.</p></article><article><h3>Reading: signed-in user → dashboard result</h3><p>Organization login supplies the configured role. The API applies time, client and supported filters before returning usage and diagnostic views. Read the cost basis and coverage: a screen can contain a known subtotal or an unavailable signal.</p></article></div><p><a href="architecture.html#pipeline">Collection paths and trust boundaries</a> · <a href="architecture.html#signals">How logs, metrics and traces differ</a></p></section>
 <section id="start"><h2>Your first visit</h2>
 <ol>
 <li><strong>Open your organization's dashboard and sign in.</strong> Ask the organizer for its address and access. The public site you are reading is the documentation. See <a href="user-guide.html#access">accounts and permissions</a>.</li>
@@ -62,12 +66,12 @@
 <ul><li><strong>Known cost is not an invoice.</strong> Claude reported spend and supported list-price estimates retain their cost basis. Missing prices can make a subtotal partial.</li><li><strong>Unavailable is different from zero.</strong> Observed token subtotals, complete token components and diagnostic coverage answer different questions. A positive total does not establish complete collection.</li><li><strong>Activity is an observation.</strong> Sessions, tools and cost ratios do not establish employee performance, saved hours or causal productivity.</li></ul>
 <p><a href="user-guide.html#common-controls">Read coverage and display states</a> · <a href="api.html">API contracts</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Measurement definitions</a></p>
 </section>
-<section id="resolution"><h2>Set the period and use the charts</h2>
+<section id="resolution"><h2>Set the period and use the charts</h2><figure class="screen-shot compact"><a data-lightbox="" href="assets/img/time-range-en.png"><img alt="Choose exact start and end times. This earlier demo uses English display labels." decoding="async" height="482" loading="lazy" src="assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Choose exact start and end times. This earlier demo uses English display labels.<small>Open the full-size screen</small></span></figcaption></figure>
 <p>Use UTC calendar dates or the picker’s <strong>날짜·시간</strong> (date and time) tab for exact browser-local start and end times. The end is exclusive. Read the displayed effective interval: server rollups and ingestion grace still apply.</p>
 <p>Drag supported time-series charts to narrow the page period and use the reset control to return. In user detail, the task list follows that range; clicking a point selects one bucket. Categorical charts do not provide time-range selection.</p>
 <p><a href="user-guide.html#common-controls">All filters, refresh, chart, table, export and sharing controls</a></p>
 </section>
-<section id="task-trace"><h2>Follow a user into the work</h2>
+<section id="task-trace"><h2>Follow a user into the work</h2><figure class="screen-shot"><a data-lightbox="" href="assets/img/guide-task-trace.png"><img alt="Task Trace: inspect the main lane, subagents and selected calls." decoding="async" height="2000" loading="lazy" src="assets/img/guide-task-trace.png" width="2880"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Task Trace: inspect the main lane, subagents and selected calls.<small>Actual Korean UI · synthetic example · select the image to enlarge</small></span></figcaption></figure>
 <p>Open <strong>Users</strong>, select a user and inspect the task list for the selected period. A task opens <strong>Task Trace</strong>: main and subagent lanes, calls, known costs, token context, models and available session environment.</p>
 <p>Tracing is optional. Claude interactions and Codex traced turns have different evidence; missing calls, attributes or prices remain unavailable. Task lists and detail have explicit limits.</p>
 <p><a href="user-guide.html#tasks">Complete task and Trace walkthrough</a> · <a href="api.html#tasks">Task API limits</a> · <a href="operations.html#traces">Troubleshoot missing tasks</a></p>
@@ -100,5 +104,5 @@
 <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Full API reference</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Measurement definitions</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Change history</a> · <a href="assets/credits.html">Demo credits</a></p>
 <p>Telemetry may be incomplete. Reported costs and list-price estimates are not invoices. Activity indicators do not establish employee productivity or causal ROI.</p>
 </div></footer>
-</body>
+<script defer="" src="assets/guide.js?v=abac4d28"></script></body>
 </html>

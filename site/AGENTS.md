@@ -25,6 +25,10 @@ The homepage introduces the complete product and links the menu-by-menu user
 guide. Keep its coverage aligned with the actual navigation and conditional
 features; see [coverage](../docs/reference/guide-coverage.md). Release changes
 and the November 14 video are optional examples, not the guide's primary scope.
+Keep the user, cost-efficiency and tool workflows illustrated with readable
+synthetic captures and numbered actions. Retain an inline architecture preview.
+Menu coverage alone is not a usability check: inspect typography, reading width,
+screen detail and mobile navigation before replacing an existing guide.
 
 The overview uses the English November 14 video in `assets/video/`, with
 HyperFrames visuals, Polly narration and Remotion audio composition. It includes
@@ -45,5 +49,7 @@ see [delivery instructions](../video/docs-demo/README.md).
 Check local links and anchors, four-locale navigation, identical executable code
 examples, translation/media checksums, and all pages at desktop and mobile widths.
 Verify video playback and the VTT track as well as the encoded MP4 properties.
+For the visual guide, also verify screenshot enlargement, original-size viewing,
+Escape/close behavior, focus return, and the mobile contents control.
 Run the documentation group in `tests/run-all.sh` for English Markdown checks.
 Local verification and rendering do not establish deployment.

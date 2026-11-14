@@ -1,8 +1,23 @@
 {
   "schema_version": 1,
   "repository": "Atom-oh/claude-code-usage-dashboard",
-  "commit": "c775db6d46f66b19587260088e2b3ee815b1342d",
+  "commit": "3270b100745af2a862017b49b252abd8fb89df9f",
   "files": [
+    {
+      "path": "site/assets/diagrams/system.html",
+      "bytes": 712183,
+      "sha256": "4a567efa657eb46beb37fbf2034f81de1eb68ca39beae6bde7bd9200a4b75f4f"
+    },
+    {
+      "path": "site/assets/diagrams/system.svg",
+      "bytes": 5360,
+      "sha256": "153d0b8f7e84f358f27b2e715222037defbe2ef04743e936731a4e4bfd2cfd28"
+    },
+    {
+      "path": "site/assets/fonts/PretendardVariable.woff2",
+      "bytes": 2057688,
+      "sha256": "9599f12fd42fc0bce1cd50b47a0c022e108d7aa64dd0d1bb0ed44f3282d900b4"
+    },
     {
       "path": "site/assets/img/call-detail-en.png",
       "bytes": 70540,
@@ -17,6 +32,141 @@
       "path": "site/assets/img/docs-demo-en-poster.jpg",
       "bytes": 129259,
       "sha256": "912cdaae9b84fe490545e61031f42d08b8f2e769f2030f268dc4e6471432138b"
+    },
+    {
+      "path": "site/assets/img/guide-analytics.png",
+      "bytes": 327784,
+      "sha256": "9228a41918299988924192b6cc2791634b4cebc1cdb25ca379761d8bebfe666d"
+    },
+    {
+      "path": "site/assets/img/guide-collector-devices.png",
+      "bytes": 62925,
+      "sha256": "9c311ceece0d13d404e2af85997a5bd29e4c1b7cb177d8dbaffe4d252f7557e2"
+    },
+    {
+      "path": "site/assets/img/guide-collector.png",
+      "bytes": 131679,
+      "sha256": "60f17c7573edb611fd3e3e74b5076fb400db302120763643146e359e1682b4d8"
+    },
+    {
+      "path": "site/assets/img/guide-cost-summary.png",
+      "bytes": 401112,
+      "sha256": "678987e694f7d176df65c3326662a44b9b91b544763c8c3eb189ea30784c9e3a"
+    },
+    {
+      "path": "site/assets/img/guide-cost.png",
+      "bytes": 210618,
+      "sha256": "18688c0b79002729cbcf6199f61fd3faeed9369d948a729cd6c8e3e26253ebed"
+    },
+    {
+      "path": "site/assets/img/guide-economics.png",
+      "bytes": 214889,
+      "sha256": "db8ab3534e98268176c3144c538e344732ff9ee6bccc823be70eaed66483536e"
+    },
+    {
+      "path": "site/assets/img/guide-executive-charts.png",
+      "bytes": 50942,
+      "sha256": "92c031e60a9cdbd392a8b839488adbf990736e6bc045c7485a3bc5f3e8f563ae"
+    },
+    {
+      "path": "site/assets/img/guide-executive.png",
+      "bytes": 307752,
+      "sha256": "5fa48b432415f8588f575535d7aa9ae41e04b9c873fece4d1baad077624c9057"
+    },
+    {
+      "path": "site/assets/img/guide-installation.png",
+      "bytes": 432568,
+      "sha256": "93efb1eb99abf73617058ab6229dca7093f9ec5f880e0872a05732c48029e530"
+    },
+    {
+      "path": "site/assets/img/guide-mcp.png",
+      "bytes": 89897,
+      "sha256": "ac3e2456c4dca213f87d1ada01aae12eaa9bf54f5d534f47eab1bd6997a4caf1"
+    },
+    {
+      "path": "site/assets/img/guide-overview-trend.png",
+      "bytes": 145416,
+      "sha256": "dcdcdc5243844da366a90d64e9cae4655b6ee779c04d1fd90c189a994318bec4"
+    },
+    {
+      "path": "site/assets/img/guide-overview.png",
+      "bytes": 354594,
+      "sha256": "50ffe1c18728f9358d95f3a2cfd82cae3cb05526914ffcf5a1269a596b042e8d"
+    },
+    {
+      "path": "site/assets/img/guide-plugins.png",
+      "bytes": 41926,
+      "sha256": "8034a1d761edb1ca3a5b1d1f2e0f3ad4e0788b3684409f0d76f46d2a333829f2"
+    },
+    {
+      "path": "site/assets/img/guide-reliability.png",
+      "bytes": 314695,
+      "sha256": "224f306a9d8411382a0f26c5801462585b978882ce36355edb7027b0f106dad7"
+    },
+    {
+      "path": "site/assets/img/guide-skills.png",
+      "bytes": 107871,
+      "sha256": "0eb40d57f46793b13f3d1ebfe329a9b20cefb803695d08c4513586625df2ed04"
+    },
+    {
+      "path": "site/assets/img/guide-task-call-reported.png",
+      "bytes": 58198,
+      "sha256": "851555b2827d7be68a88ec926e99beb9263f03fdf15a78529b49d38673b93cb4"
+    },
+    {
+      "path": "site/assets/img/guide-task-call.png",
+      "bytes": 58831,
+      "sha256": "50a0c6a4f24befc1ef5861f75fc1c0d211c36b18bf874cb92bca0130560d27c7"
+    },
+    {
+      "path": "site/assets/img/guide-task-context.png",
+      "bytes": 220955,
+      "sha256": "a0217809aa7c15a7731af1beac0dc104646f65b5f8d991ea15c725c5d6880227"
+    },
+    {
+      "path": "site/assets/img/guide-task-list.png",
+      "bytes": 94141,
+      "sha256": "b083dcba9bc3ce4192e3c052b1486f67cd9e558c530f4d36ed9aa14bacc34ad1"
+    },
+    {
+      "path": "site/assets/img/guide-task-trace.png",
+      "bytes": 380491,
+      "sha256": "88119050a5f4051c06ae46217c84856c6b97129e3674cd465a206f161b83d2de"
+    },
+    {
+      "path": "site/assets/img/guide-tools.png",
+      "bytes": 141615,
+      "sha256": "8027f493e67e2fec551f9ac52c3f0a9b07401d3d929bef677d69597f6cbf3202"
+    },
+    {
+      "path": "site/assets/img/guide-trends-charts.png",
+      "bytes": 115082,
+      "sha256": "75a0c44d8c46493497749312ee2211e827db17855ba353ea3e5a95a85c29e2b7"
+    },
+    {
+      "path": "site/assets/img/guide-trends.png",
+      "bytes": 396866,
+      "sha256": "1d50e6d87964032ef25d2a7d812e18efea6384e7952e6a8f9266371817686798"
+    },
+    {
+      "path": "site/assets/img/guide-unit-cost.png",
+      "bytes": 70249,
+      "sha256": "276a7176fe02661cbd58366768570890e1742cd4e76c84d33144b17383e77518"
+    },
+    {
+      "path": "site/assets/img/guide-usage.png",
+      "bytes": 118294,
+      "sha256": "4edcdc9f2c64f9c955d21edbf080341f9629bd1016c96bee5bffec50d404cef1"
+    },
+    {
+      "path": "site/assets/img/guide-user-detail.png",
+      "bytes": 206663,
+      "sha256": "62cb6169492519b1f11c4992d039de045c055a239d4a4b1707234a7682ee052c"
+    },
+    {
+      "path": "site/assets/img/guide-users.png",
+      "bytes": 140196,
+      "sha256": "c97163e42b4423c54fd52445f1d8a3a1d541c51db93a89edfea8250618a14195"
     },
     {
       "path": "site/assets/img/task-environment-en.png",

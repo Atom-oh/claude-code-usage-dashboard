@@ -17,6 +17,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed
 
+- Rebuild the visual guide around illustrated user-Trace, cost-efficiency and tool
+  workflows. Add current synthetic screens, an inline architecture preview with
+  an interactive view, readable typography, a persistent contents panel and
+  keyboard-accessible screenshot enlargement.
 - Add a complete four-language user guide covering every menu, common controls,
   task analysis, optional assistant and permission-dependent setup features.
   The homepage now starts with onboarding and a menu map; the v1.8.0 video is an
