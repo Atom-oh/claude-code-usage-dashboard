@@ -59,7 +59,9 @@ export function createLocaleStore({ source, loaders, storage = () => globalThis.
       onLocale(state.locale);
     },
     translate: (key, values = []) => {
-      const message = catalogs.get(state.locale)?.[key] ?? source[key] ?? key;
+      const catalog = catalogs.get(state.locale);
+      const message = catalog && Object.hasOwn(catalog, key) ? catalog[key]
+        : Object.hasOwn(source, key) ? source[key] : key;
       // Interpolated values are opaque. Do not translate or interpret telemetry/user text.
       return message.replace(/\{(\d+)\}/g, (match, index) =>
         index < values.length ? String(values[index] ?? "") : match);

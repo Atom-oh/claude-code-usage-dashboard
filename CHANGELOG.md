@@ -19,6 +19,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 - Add validated locale preference loading and Korean/English message catalogs
   for the multilingual interface.
+- Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
+  provenance and verified message placeholders.
 
 ## [1.8.1] - 2026-11-14
 
