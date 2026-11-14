@@ -1975,5 +1975,8 @@
   "mf4a53b277b13": "Activado",
   "m6609ccb10fbd": "Desactivado",
   "m64ce1b37ca97": "Guardar configuración de enmascaramiento",
-  "m6a630c788363": "No hay un almacén de configuración disponible, así que se sigue la configuración del despliegue. Puede cambiarse durante el despliegue con TEAM_MASK_ENABLED (Terraform team_mask_enabled)."
+  "m6a630c788363": "No hay un almacén de configuración disponible, así que se sigue la configuración del despliegue. Puede cambiarse durante el despliegue con TEAM_MASK_ENABLED (Terraform team_mask_enabled).",
+  "m3d9182b62b0a": "Enmascara los nombres de equipo en las pantallas compartidas como las direcciones de correo electrónico, y permite que admin active o desactive esta opción desde la página Configuración.",
+  "m41b6e20d5ba7": "En las pantallas que ven varias personas (como las demostraciones), los nombres de equipo se enmascaran con los dos primeros caracteres y un identificador corto. De forma predeterminada, se sigue la configuración de despliegue (si no se especifica, se aplica el mismo enmascaramiento que a las direcciones de correo electrónico), y admin puede activar o desactivar esta opción desde la página Configuración. Los equipos que tengan un nombre visible mostrarán ese nombre tal cual. Esto solo cambia lo que se muestra en pantalla y en CSV; las respuestas de API no cambian.",
+  "m310ac7be73ac": "Configuración → Enmascaramiento del nombre de equipo (admin)"
 }

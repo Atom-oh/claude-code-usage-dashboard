@@ -1975,5 +1975,8 @@
   "mf4a53b277b13": "On",
   "m6609ccb10fbd": "Off",
   "m64ce1b37ca97": "Save masking settings",
-  "m6a630c788363": "No settings store is available, so this follows the deployment setting. You can change it at deployment with TEAM_MASK_ENABLED (Terraform team_mask_enabled)."
+  "m6a630c788363": "No settings store is available, so this follows the deployment setting. You can change it at deployment with TEAM_MASK_ENABLED (Terraform team_mask_enabled).",
+  "m3d9182b62b0a": "Mask team names on shared screens like email addresses, and let admin turn this on or off from the Settings page.",
+  "m41b6e20d5ba7": "On screens viewed by multiple people (such as demos), team names are masked with the first two characters and a short identifier. The default follows the deployment setting (if none is specified, it matches email masking), and admin can turn it on or off from the Settings page. Teams with a display name set will show that name as is. This only changes what is shown on screens and in CSV; API responses remain unchanged.",
+  "m310ac7be73ac": "Settings → Team name masking (admin)"
 }

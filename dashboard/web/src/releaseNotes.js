@@ -10,6 +10,23 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    "version": "1.11.0",
+    "date": "2026-11-14",
+    "summary": "공유 화면에서 팀 이름을 이메일처럼 가리고, 관리자가 설정 화면에서 켜고 끌 수 있습니다.",
+    "items": [
+      {
+        "kind": "new",
+        "title": "팀 이름 마스킹",
+        "body": "여러 사람이 보는 화면(데모 등)에서 팀 이름을 앞 두 글자와 짧은 식별값으로 가립니다. 기본값은 배포 설정(지정하지 않으면 이메일 마스킹과 같음)을 따르고, 관리자가 설정 화면에서 켜기·끄기로 바꿀 수 있습니다. 표시 이름을 붙인 팀은 그 이름을 그대로 보여 줍니다. 화면과 CSV 표시만 바꾸며 API 응답은 그대로입니다.",
+        "to": null,
+        "where": "설정 → 팀 이름 마스킹 (admin)",
+        "refs": [
+          292
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.10.0",
     "date": "2026-11-14",
     "summary": "모든 대시보드 화면과 사용설명서를 다섯 언어로 살펴보고, 한국어 내레이션과 영어 자막의 상세 소개 영상으로 주요 사용 흐름을 익힐 수 있습니다.",

@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-14
+
 ### Added
 
 - Mask team names on shared screens and CSV exports, as emails are: two characters plus a
@@ -22,7 +24,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   charts group by the raw value). Administrator display names are shown as is. The
   deployment chooses the default (`team_mask_enabled`, else the email masking setting) and
   an administrator can override it on the settings page. Filters, URLs and API responses
-  keep raw values.
+  keep raw values. (#292)
 
 ## [1.10.0] - 2026-11-14
 
