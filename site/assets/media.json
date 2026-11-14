@@ -1365,8 +1365,8 @@
       },
       {
         "path": "video/product-tour/README.md",
-        "bytes": 2390,
-        "sha256": "9a5618489f6ab2cc44d76b2a125558ac9e97e1b6bfd188d030b5fe51438faab1"
+        "bytes": 2503,
+        "sha256": "3c2fbb1b22c61719d4c3c42f8d31eabd1cfb0acae8cde42aa7450cb994c16ff9"
       },
       {
         "path": "video/product-tour/STORYBOARD.md",
@@ -1575,18 +1575,23 @@
       },
       {
         "path": "video/product-tour/package.json",
-        "bytes": 724,
-        "sha256": "4d6951680e0d05c028358adda308825336858abc532531da93374ef3211d245e"
+        "bytes": 789,
+        "sha256": "d511cdc7b442b19a0138c4787ef5f5e029e750fd1c958f32343ece9790132c36"
       },
       {
         "path": "video/product-tour/prepare-audio.py",
-        "bytes": 8987,
-        "sha256": "1c6de0542fb9281e4ac1c73ed310cb15a92ea4e1a25d399a6a17d219206fc745"
+        "bytes": 9292,
+        "sha256": "5ad16c573a45a7cdbbdb7e9ed3b738a986f6cf21fcedbac1e6a298a258ab4ed8"
       },
       {
         "path": "video/product-tour/registry.json",
         "bytes": 461,
         "sha256": "516ed6cfd2c8c7ad9b3690483ed084a61818fca774f6e52df1d67aa09bde8db3"
+      },
+      {
+        "path": "video/product-tour/remotion.config.js",
+        "bytes": 75,
+        "sha256": "380342f0073f2216a399bf9f11dfb4c0ab191019de5322b1fe68d94d75a1b3ed"
       },
       {
         "path": "video/product-tour/remotion/index.jsx",
@@ -1599,11 +1604,6 @@
         "sha256": "009bc6a3ec79232c8ac8a61ad47c686006bbcfa9d9ed0895f408acf4b5555c02"
       },
       {
-        "path": "video/product-tour/remotion.config.js",
-        "bytes": 75,
-        "sha256": "380342f0073f2216a399bf9f11dfb4c0ab191019de5322b1fe68d94d75a1b3ed"
-      },
-      {
         "path": "video/product-tour/script.json",
         "bytes": 18279,
         "sha256": "b7909fb2ec7f62ba8a7e8a3a8f2a54a6832f4db102ac27cec5604ea83d1455d5"
@@ -1612,6 +1612,11 @@
         "path": "video/product-tour/styles.css",
         "bytes": 2354,
         "sha256": "426a365b6d8b053c0baa477013891387ed27217fb97376bedd523896e3ea17e3"
+      },
+      {
+        "path": "video/product-tour/test_audio_generation.py",
+        "bytes": 4208,
+        "sha256": "6285b0d2477f09cdb05b209983f2154a2b160150a35a1c00aed2ef6963c314f4"
       },
       {
         "path": "video/product-tour/timing.json",
@@ -1669,24 +1674,6 @@
       "maximum_allowed_mean_pixel_error": 8,
       "embedded_english_cues": 92,
       "embedded_text_matches_source": true
-    },
-    "browser_verification": {
-      "local_players_checked": 10,
-      "locales": [
-        "en",
-        "zh-CN",
-        "ja",
-        "es",
-        "ko"
-      ],
-      "widths": [
-        1440,
-        390
-      ],
-      "chapter_seeks": 15,
-      "english_cues": 92,
-      "errors": 0,
-      "evidence_sha256": "a01e1660351c5b412272bb29e7695efae8f9e8d7f9e7cb29b7996eab0ef4e2d3"
     }
   }
 }

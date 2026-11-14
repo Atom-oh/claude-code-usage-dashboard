@@ -38,8 +38,10 @@ Set `HYPERFRAMES_BROWSER_PATH`, `HYPERFRAMES_FFMPEG_PATH` and
 The CLI remains pinned to HyperFrames 0.7.77; Remotion audio uses 4.0.542.
 
 `npm run audio:generate` is the explicit paid Polly regeneration command. It
-reuses clips whose SSML/voice hashes match, stores completed clip receipts before
-requesting speech marks, and cancels queued work after an error. Checks, rendering
+validates both the manifest and per-clip receipts against the current speech and
+audio hashes. It stores completed audio before requesting speech marks and stops
+before the next scene after an error; a retry reuses valid audio and requests only
+missing marks. Checks, rendering
 and hydration do not call Polly. Never trim speech to fit an estimated duration.
 
 Inspect all scene midpoints and the encoded result. The English and Korean VTT

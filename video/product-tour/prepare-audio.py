@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Explicit paid Polly generation; cached clips are reused by source hash."""
 from array import array
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -39,6 +38,22 @@ def probe(path):
     return float(json.loads(raw)["format"]["duration"])
 
 
+def cached_clip(target, receipt, previous, source_hash):
+    """Use only metadata matching both the current speech source and audio bytes."""
+    if not target.is_file():
+        return None
+    try:
+        saved = json.loads(receipt.read_text()) if receipt.exists() else None
+    except (OSError, ValueError):
+        saved = None
+    digest = sha(target.read_bytes())
+    candidates = [item for item in (saved, previous)
+                  if isinstance(item, dict) and item.get("source_sha256") == source_hash
+                  and item.get("sha256") == digest]
+    return next((item for item in candidates if item.get("marks")),
+                candidates[0] if candidates else None)
+
+
 def main():
     for command in ("aws", "ffmpeg", "ffprobe"):
         if not shutil.which(command):
@@ -59,8 +74,8 @@ def main():
             "region": script["region"], "sample_rate": script["sample_rate"]}, ensure_ascii=False, sort_keys=True).encode())
         target = audio_dir / (scene["id"] + ".mp3")
         receipt = audio_dir / (scene["id"] + ".receipt.json")
-        cached = old.get(scene["id"]) or (json.loads(receipt.read_text()) if receipt.exists() else None)
-        valid_audio = cached and cached.get("source_sha256") == source_hash and target.exists() and sha(target.read_bytes()) == cached["sha256"]
+        cached = cached_clip(target, receipt, old.get(scene["id"]), source_hash)
+        valid_audio = cached is not None
         if valid_audio and cached.get("marks"):
             print(scene["id"] + ": verified cached audio", flush=True)
             return cached
@@ -93,20 +108,13 @@ def main():
         print(scene["id"] + ": " + str(round(duration, 3)) + " seconds", flush=True)
         return result
 
-    # Each finished clip has a receipt even if a later provider request fails.
+    # Paid requests run in scene order. A failure stops before the next scene,
+    # while a completed audio receipt lets a retry request only missing marks.
     clips = []
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = [pool.submit(generate, scene) for scene in script["scenes"]]
-        try:
-            for job in jobs:
-                clip = job.result()
-                clips.append(clip)
-                old_file.write_text(json.dumps({"script_sha256": sha(script_bytes), "provider": script["provider"],
-                    "voice": script["voice"], "engine": script["engine"], "clips": clips}, indent=2) + "\n")
-        except Exception:
-            for job in jobs:
-                job.cancel()
-            raise
+    for scene in script["scenes"]:
+        clips.append(generate(scene))
+        old_file.write_text(json.dumps({"script_sha256": sha(script_bytes), "provider": script["provider"],
+            "voice": script["voice"], "engine": script["engine"], "clips": clips}, indent=2) + "\n")
 
     fps = script["fps"]
     lead = math.ceil(script["lead_seconds"] * fps)

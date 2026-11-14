@@ -17,7 +17,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
-- Detailed nine-minute product tour with Korean narration, English captions and chapter navigation in all five guide languages; synthetic screenshots cover every menu, user/task traces, cost interpretation and tools. The earlier short release video remains available.
+- Add a standalone 25-scene HyperFrames product-tour composition, Korean narration,
+  English captions and verified MP4/WebM assets. It covers menu, user/task, cost
+  and tool workflows with synthetic screenshots; site-player integration follows
+  separately. Paid speech generation reuses valid receipts and stops on failure.
 - Complete localization across all application menus, token economics, user and
   cost analysis, tool usage, collector setup and installation status. Preserve
   selected decision-chart legend emphasis when changing language. Keep Codex

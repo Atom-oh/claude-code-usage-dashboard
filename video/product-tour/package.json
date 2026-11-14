@@ -11,7 +11,7 @@
     "build": "python3 build.py",
     "audio:generate": "python3 prepare-audio.py",
     "audio:mix": "remotion render remotion/index.jsx TourAudio renders/mix.wav --codec=wav --concurrency=2",
-    "test": "node --test media.test.mjs"
+    "test": "node --test media.test.mjs && python3 -m unittest discover -s . -p test_audio_generation.py"
   },
   "devDependencies": {
     "@remotion/cli": "4.0.542",
