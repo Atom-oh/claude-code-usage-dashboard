@@ -62,3 +62,10 @@ test("key digests use a NUL separator", () => {
   assert.equal(emailKey("iss", "a@b"), sha("iss\0a@b"));
   assert.equal(userKey("iss", "s"), sha("iss\0s"));
 });
+
+test("flattenIntervals allows 4,000 intervals by default and refuses one more", () => {
+  const history = (count) => ({ a: Array.from({ length: count }, (_, i) => ({ entries: [{ team: "t", from: 0, emailKey: `k${i}` }] })) });
+  const attributes = [{ attribute: "a", from: 0 }];
+  assert.equal(flattenIntervals({ attributes, histories: history(4000) }).keys.length, 4000);
+  assert.deepEqual(flattenIntervals({ attributes, histories: history(4001) }), { error: "directory_too_large" });
+});

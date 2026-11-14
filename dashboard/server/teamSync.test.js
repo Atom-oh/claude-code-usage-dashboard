@@ -33,6 +33,11 @@ function fakeStore(settings, { failFirstPut = false, afterFailedPut } = {}) {
       histories.set(`${attribute}|${id}`, { entries, version: (expected ?? 0) + 1 });
       return true;
     },
+    async getTeamHistory(attribute, id) {
+      state.historyGets = (state.historyGets ?? 0) + 1;
+      const record = histories.get(`${attribute}|${id}`);
+      return record ? { id, entries: record.entries, version: record.version } : null;
+    },
   };
 }
 const directory = (users) => ({ async listUsers() { if (users instanceof Error) throw users; return users; } });
@@ -52,7 +57,7 @@ test("first sync records the department from epoch and publishes intervals", asy
   assert.equal(params.dirIssuer, ISSUER);
   assert.deepEqual(params.dirFrom, ["1970-01-01 00:00:00"]);
   assert.deepEqual(params.dirTo, ["2100-01-01 00:00:00"]);
-  assert.deepEqual(directoryMeta(), { labels: { hana: "Hana" }, historyStart: 1000 });
+  assert.deepEqual(directoryMeta(), { labels: { hana: "Hana" }, historyStart: 1000, directory: true });
   assert.equal(store.state.settingsPuts[0].expected, 1);
   assert.equal(store.state.settingsPuts[0].record.historyStart, 1000);
   const status = sync.status();
@@ -111,6 +116,7 @@ test("a lost write is retried once against the re-read record", async () => {
   const sync = createTeamSync({ store, directory: directory([user("hana")]), issuer: ISSUER, now: () => 1000 });
   await sync.syncOnce();
   assert.equal(store.state.puts.length, 2);
+  assert.equal(store.state.historyGets, 1, "the re-read fetches the one record, not the partition");
   assert.deepEqual(directoryParams("{dirKey:Array(String)}", {}).dirTeam, ["hana"]);
 });
 
@@ -122,9 +128,9 @@ test("first sync failure keeps device teams and reports stale", async () => {
   assert.equal(status.stale, true);
   assert.equal(status.lastError, "directory_unavailable");
   assert.equal(status.lastSync, null);
+  // Nothing is stored yet, so the published snapshot holds no intervals: every session keeps its device team.
   const params = directoryParams("{dirKey:Array(String)}", {});
   assert.deepEqual(params.dirKey, []);
-  assert.equal(params.dirIssuer, "");
 });
 
 test("a later failure keeps the previous snapshot", async () => {
@@ -157,6 +163,7 @@ test("missing settings publish an empty snapshot", async () => {
   assert.equal(params.dirIssuer, ISSUER);
   assert.equal(sync.status().stale, false);
   assert.equal(sync.status().lastSync, 7);
+  assert.equal(directoryMeta().directory, false);
 });
 
 test("users without a usable email are skipped", async () => {
@@ -177,6 +184,7 @@ test("a directory above the interval limit publishes empty with a reason", async
   assert.equal(status.reason, "directory_too_large");
   assert.equal(status.stale, false);
   assert.deepEqual(directoryParams("{dirKey:Array(String)}", {}).dirKey, []);
+  assert.equal(directoryMeta().directory, false, "a disabled directory renders teams as before");
 });
 
 test("calls during a run coalesce into one follow-up that reads the newer settings", async () => {
@@ -234,7 +242,7 @@ test("users sharing an email digest are skipped, unique users are written", asyn
   assert.equal(sync.status().users, 1);
 });
 
-test("historyStart is set only by a sync that wrote history", async () => {
+test("historyStart waits until the latest attribute has stored history", async () => {
   const store = fakeStore(settings());
   let users = [];
   let clock = 1000;
@@ -259,5 +267,84 @@ test("settings without attributes behave like no settings", async () => {
     assert.equal(sync.status().lastError, null);
     assert.equal(store.state.puts.length, 0);
     assert.equal(directoryParams("{dirKey:Array(String)}", {}).dirIssuer, ISSUER);
+  }
+});
+
+test("a directory failure on a fresh sync still publishes stored history and reports stale", async () => {
+  const store = fakeStore({ ...settings(), historyStart: 500 });
+  const id = (await import("./teamDirectory.js")).userKey(ISSUER, "s");
+  store.histories.set(`${DEPT}|${id}`, { entries: [{ team: "hana", from: 0, emailKey: emailKey(ISSUER, "a@x") }], version: 1 });
+  const sync = createTeamSync({ store, directory: directory(new Error("throttled")), issuer: ISSUER, now: () => 1000 });
+  await sync.syncOnce();
+  assert.deepEqual(directoryParams("{dirKey:Array(String)}", {}).dirTeam, ["hana"]);
+  assert.deepEqual(directoryMeta(), { labels: { hana: "Hana" }, historyStart: 500, directory: true });
+  const status = sync.status();
+  assert.equal(status.stale, true);
+  assert.equal(status.lastError, "directory_unavailable");
+  assert.equal(status.historyStart, 500);
+  assert.equal(store.state.puts.length, 0, "nothing is appended without a directory read");
+});
+
+test("a settings version change seen by the poll triggers a sync; the same version does not", async () => {
+  const store = fakeStore({ ...settings(), historyStart: 500 });
+  let reads = 0;
+  const get = store.getTeamSettings.bind(store);
+  store.getTeamSettings = async () => { reads++; return get(); };
+  let listed = 0;
+  const sync = createTeamSync({ store, directory: { async listUsers() { listed++; return [user("hana")]; } },
+    issuer: ISSUER, now: () => 1000, intervalMs: 3600000, settingsPollMs: 10 });
+  sync.start();
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  await wait(60);
+  assert.equal(listed, 1, "unchanged version: only the startup sync ran");
+  assert.ok(reads > 1, "the poll read the settings");
+  // Another replica saves new settings.
+  store.state.settings = { ...store.state.settings, labels: { hana: "하나" }, version: 2 };
+  await wait(60);
+  sync.stop();
+  assert.equal(listed, 2, "one sync for the new version");
+  assert.deepEqual(directoryMeta().labels, { hana: "하나" });
+  const after = reads;
+  await wait(40);
+  assert.equal(reads, after, "stop clears the poll");
+});
+
+test("historyStart is still set after losing the settings write to a concurrent save", async () => {
+  const store = fakeStore(settings());
+  // The first settings write loses to an admin save that bumped the version in between.
+  store.putTeamSettings = async (record, expected) => {
+    store.state.settingsPuts.push({ record, expected });
+    if (store.state.settingsPuts.length === 1) {
+      store.state.settings = { ...store.state.settings, labels: { hana: "Hana 2" }, version: 2 };
+      return false;
+    }
+    if (expected !== store.state.settings.version) return false;
+    store.state.settings = { ...record, version: expected + 1 };
+    return true;
+  };
+  let clock = 1000;
+  const sync = createTeamSync({ store, directory: directory([user("hana")]), issuer: ISSUER, now: () => clock });
+  await sync.syncOnce();
+  assert.equal(store.state.settings.historyStart, undefined);
+  clock = 2000;
+  await sync.syncOnce();
+  assert.equal(store.state.puts.length, 1, "the second sync writes no history");
+  assert.equal(store.state.settings.historyStart, 2000);
+  assert.deepEqual(store.state.settings.labels, { hana: "Hana 2" }, "the save is preserved");
+  assert.equal(sync.status().historyStart, 2000);
+});
+
+test("empty and too-large snapshot versions follow the settings version", async () => {
+  for (const [record, options] of [
+    [(version) => ({ attributes: [], labels: { a: String(version) }, version }), {}],
+    [(version) => ({ ...settings(), historyStart: 5, version }), { intervalLimit: 0 }],
+  ]) {
+    const store = fakeStore(record(1));
+    const sync = createTeamSync({ store, directory: directory([user("hana")]), issuer: ISSUER, now: () => 9, ...options });
+    await sync.syncOnce();
+    const first = directoryVersion();
+    store.state.settings = record(2);
+    await sync.syncOnce();
+    assert.notEqual(directoryVersion(), first);
   }
 });

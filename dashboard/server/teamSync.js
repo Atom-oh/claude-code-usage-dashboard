@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { appendHistory, attributableUsers, attributeValue, emailKey, flattenIntervals, userKey } from "./teamDirectory.js";
+import { INTERVAL_LIMIT, appendHistory, attributableUsers, attributeValue, emailKey, flattenIntervals, userKey } from "./teamDirectory.js";
 import { setDirectorySnapshot } from "./teamDirectoryParams.js";
 
 const STAGE_ERROR = { directory: "directory_unavailable", store: "store_unavailable" };
+const EMPTY = { keys: [], teams: [], froms: [], tos: [] };
 
 /** Runs one stage and tags any failure with a short code; AWS message text never leaves this module. */
 async function stage(name, work) {
@@ -13,14 +14,27 @@ async function stage(name, work) {
   }
 }
 
-export function createTeamSync({ store, directory, issuer, now = Date.now, intervalMs = 3600000, intervalLimit }) {
+/**
+ * settingsPollMs: how often each replica re-reads the settings record. A version other than the one it
+ * last synced (a save on another replica) triggers a sync, so labels and attribute switches propagate
+ * without waiting for the hourly directory sync.
+ */
+export function createTeamSync({ store, directory, issuer, now = Date.now, intervalMs = 3600000,
+  settingsPollMs = 60000, intervalLimit = INTERVAL_LIMIT }) {
   let timer = null;
+  let pollTimer = null;
   let running = null;
   let followUp = null;
+  let syncedVersion;
   let state = { lastSync: null, lastError: null, stale: false, users: 0, historyStart: null, reason: null };
 
-  const publish = (intervals, settings, version) => setDirectorySnapshot(
-    { issuer, ...intervals, labels: settings?.labels || {}, historyStart: settings?.historyStart ?? null }, version);
+  // `directory` marks a snapshot that resolves directory teams: settings with an attribute and history
+  // within the bound. Empty and too-large snapshots keep labels but resolve device teams only.
+  const publish = (intervals, settings, version, directoryTeams) => {
+    setDirectorySnapshot({ issuer, ...intervals, labels: settings?.labels || {},
+      historyStart: settings?.historyStart ?? null, directory: directoryTeams }, version);
+    syncedVersion = settings?.version ?? null;
+  };
 
   async function writeUserHistory(attribute, user, histories, signal) {
     const key = emailKey(issuer, user.email);
@@ -29,49 +43,61 @@ export function createTeamSync({ store, directory, issuer, now = Date.now, inter
     let current = histories.get(id);
     for (let attempt = 0; attempt < 2; attempt++) {
       const entries = current?.entries ?? [];
-      if (!entries.length && team === null) return false;
+      if (!entries.length && team === null) return;
       const next = appendHistory(entries, { team, emailKey: key }, now());
-      if (!next) return false;
-      if (await store.putTeamHistory(attribute, { id, entries: next }, current?.version ?? null, { signal })) return true;
-      current = (await store.listTeamHistory(attribute, { signal })).find((record) => record.id === id);
+      if (!next) return;
+      if (await store.putTeamHistory(attribute, { id, entries: next }, current?.version ?? null, { signal })) return;
+      current = await store.getTeamHistory(attribute, id, { signal });
     }
-    return false;
   }
 
   async function run(signal) {
     let settings = await stage("store", () => store.getTeamSettings({ signal }));
     if (!settings?.attributes?.length) {
-      publish({ keys: [], teams: [], froms: [], tos: [] }, null, "empty");
+      // No attribute selected: no labels either (pre-directory behavior).
+      publish(EMPTY, null, `empty:${settings?.version ?? 0}`, false);
+      syncedVersion = settings?.version ?? null;
       state = { lastSync: now(), lastError: null, stale: false, users: 0, historyStart: null, reason: null };
       return;
     }
     const latest = settings.attributes.at(-1).attribute;
-    // Users without a usable email and users sharing an email digest fall back to device teams.
-    const { users } = attributableUsers(issuer, await stage("directory", () => directory.listUsers(signal)));
-    await stage("store", async () => {
-      const existing = new Map((await store.listTeamHistory(latest, { signal })).map((record) => [record.id, record]));
-      let wrote = false;
-      for (const user of users) wrote = (await writeUserHistory(latest, user, existing, signal)) || wrote;
-      if (wrote && settings.historyStart == null) {
-        const historyStart = now();
-        if (await store.putTeamSettings({ ...settings, historyStart }, settings.version, { signal }))
-          settings = { ...settings, historyStart, version: settings.version + 1 };
-      }
-    });
+    // A directory outage skips only the append step: stored history is still read and published (stale).
+    let users = null;
+    try {
+      // Users without a usable email and users sharing an email digest fall back to device teams.
+      ({ users } = attributableUsers(issuer, await stage("directory", () => directory.listUsers(signal))));
+    } catch (error) {
+      state = { ...state, stale: true, lastError: error.code };
+    }
+    if (users) {
+      await stage("store", async () => {
+        const existing = new Map((await store.listTeamHistory(latest, { signal })).map((record) => [record.id, record]));
+        for (const user of users) await writeUserHistory(latest, user, existing, signal);
+      });
+    }
     const histories = {};
     await stage("store", async () => {
       for (const { attribute } of settings.attributes) histories[attribute] = await store.listTeamHistory(attribute, { signal });
     });
-    const intervals = flattenIntervals({ attributes: settings.attributes, histories, ...(intervalLimit ? { limit: intervalLimit } : {}) });
+    // History begins once the latest attribute has any stored history, whichever run (or replica) wrote it;
+    // a write lost to a concurrent save is retried by a later run.
+    if (settings.historyStart == null && histories[latest].some((record) => record.entries?.length)) {
+      const historyStart = now();
+      if (await stage("store", () => store.putTeamSettings({ ...settings, historyStart }, settings.version, { signal }))) {
+        settings = { ...settings, historyStart, version: settings.version + 1 };
+      }
+    }
+    const intervals = flattenIntervals({ attributes: settings.attributes, histories, limit: intervalLimit });
+    const base = users
+      ? { lastSync: now(), lastError: null, stale: false, users: users.length }
+      : { lastSync: state.lastSync, lastError: state.lastError, stale: true, users: state.users };
     if (intervals.error) {
-      publish({ keys: [], teams: [], froms: [], tos: [] }, settings, "too-large");
-      state = { lastSync: now(), lastError: null, stale: false, users: users.length,
-        historyStart: settings.historyStart ?? null, reason: intervals.error };
+      publish(EMPTY, settings, `too-large:${settings.version}`, false);
+      state = { ...base, historyStart: settings.historyStart ?? null, reason: intervals.error };
       return;
     }
-    publish(intervals, settings, createHash("sha256").update(JSON.stringify(intervals) + settings.version).digest("hex"));
-    state = { lastSync: now(), lastError: null, stale: false, users: users.length,
-      historyStart: settings.historyStart ?? null, reason: null };
+    publish(intervals, settings, createHash("sha256").update(JSON.stringify(intervals) + settings.version).digest("hex"), true);
+    state = { ...base, historyStart: settings.historyStart ?? null, reason: null };
   }
 
   function launch(signal) {
@@ -99,16 +125,31 @@ export function createTeamSync({ store, directory, issuer, now = Date.now, inter
     return followUp.promise;
   }
 
+  async function pollSettings() {
+    // A run in flight publishes (and records) its version; the next poll compares again.
+    if (running) return;
+    try {
+      const settings = await store.getTeamSettings();
+      if ((settings?.version ?? null) !== syncedVersion) await syncOnce();
+    } catch {
+      // The next poll or the hourly sync retries; a sync's own failure is reported through status().
+    }
+  }
+
   return {
     start() {
       if (timer) return;
       syncOnce();
       timer = setInterval(() => { syncOnce(); }, intervalMs);
       timer.unref();
+      pollTimer = setInterval(pollSettings, settingsPollMs);
+      pollTimer.unref();
     },
     stop() {
       clearInterval(timer);
+      clearInterval(pollTimer);
       timer = null;
+      pollTimer = null;
     },
     syncOnce,
     status: () => ({ available: true, ...state }),

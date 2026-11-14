@@ -144,7 +144,7 @@ test("useApi forwards team only to endpoints that apply it", async () => {
 
 test("teamText shows labels and marks device teams", () => {
   const list = { data: { teams: ["field-ags-korea-all-cs", "dev"], labels: { "field-ags-korea-all-cs": "Korea CS" },
-    sources: { "field-ags-korea-all-cs": "directory", dev: "device" }, historyStart: 1000 } };
+    sources: { "field-ags-korea-all-cs": "directory", dev: "device" }, historyStart: 1000, directory: true } };
   const users = { data: { users: [{ user: "a@example.invalid", team: "field-ags-korea-all-cs",
     teams: ["field-ags-korea-all-cs", "dev"], sources: ["directory", "device"] },
     { user: "b@example.invalid", team: "x", teams: ["x"], sources: ["both"] }] } };
@@ -155,6 +155,30 @@ test("teamText shows labels and marks device teams", () => {
   expect(teamSuffix(teams, "a@example.invalid")).toBe(` · Korea CS, dev ${DEVICE_TEAM_MARKER}`);
   expect(teamName(teams, "field-ags-korea-all-cs")).toBe("Korea CS");
   expect(teams.historyStart).toBe(1000);
+  expect(teams.directory).toBe(true);
+});
+
+test("without a directory, device teams are not marked and labels still apply", () => {
+  const list = { data: { teams: ["dev", "x"], labels: { x: "X팀" }, sources: { dev: "device", x: "device" }, historyStart: null, directory: false } };
+  const users = { data: { users: [{ user: "a@example.invalid", team: "dev", teams: ["dev", "x"], sources: ["device", "device"] }] } };
+  const teams = teamsValue(list, users);
+  expect(teams.directory).toBe(false);
+  expect(teamText(teams, "a@example.invalid")).toBe("dev, X팀");
+  expect(teamSuffix(teams, "a@example.invalid")).toBe(" · dev, X팀");
+  const [, column] = withTeamColumn([{ key: "user" }], teams);
+  expect(column.render(null, { user: "a@example.invalid" })).toBe("dev, X팀");
+});
+
+test("the team column explains sources where a device marker appears", () => {
+  const list = { data: { teams: ["dev"], sources: { dev: "device" }, directory: true } };
+  const users = { data: { users: [{ user: "a@example.invalid", team: "dev", teams: ["dev"], sources: ["device"] }] } };
+  const teams = teamsValue(list, users);
+  const [, column] = withTeamColumn([{ key: "user" }], teams);
+  const { container } = render(<>{column.render(null, { user: "a@example.invalid" })}</>);
+  const cell = container.querySelector("span");
+  expect(cell.textContent).toBe(`dev ${DEVICE_TEAM_MARKER}`);
+  expect(cell.title).toBe("표시 없음: 조직 디렉터리(Cognito) 기준 · (기기 제공 값): 기기가 보낸 team 값");
+  expect(column.toText(null, { user: "a@example.invalid" })).toBe("dev");
 });
 
 test("an older server without the new fields keeps raw values", () => {
@@ -162,5 +186,6 @@ test("an older server without the new fields keeps raw values", () => {
   expect(teams.labels).toEqual({});
   expect(teams.sources).toEqual({});
   expect(teams.historyStart).toBeNull();
+  expect(teams.directory).toBe(false);
   expect(teamText(teams, "a@example.invalid")).toBe("fsi");
 });

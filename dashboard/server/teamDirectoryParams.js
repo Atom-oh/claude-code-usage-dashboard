@@ -15,8 +15,8 @@ export const directoryVersion = () => version;
 
 export function directoryMeta() {
   return snapshot
-    ? { labels: snapshot.labels || {}, historyStart: snapshot.historyStart ?? null }
-    : { labels: {}, historyStart: null };
+    ? { labels: snapshot.labels || {}, historyStart: snapshot.historyStart ?? null, directory: snapshot.directory === true }
+    : { labels: {}, historyStart: null, directory: false };
 }
 
 export function directoryParams(sql, params) {

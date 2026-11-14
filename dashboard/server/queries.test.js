@@ -691,6 +691,24 @@ test("listTeams marks teams seen from both sources and carries directory labels"
   assert.deepEqual(out.sources, { dev: "device", hana: "both" });
   assert.deepEqual(out.labels, {});
   assert.equal(out.historyStart, null);
+  assert.equal(out.directory, false, "no published snapshot: no directory");
+});
+
+test("listTeams reports directory only for a snapshot that applies directory teams", async () => {
+  const { setDirectorySnapshot } = await import("./teamDirectoryParams.js");
+  const run = async () => [{ team: "dev", team_source: "device" }];
+  const from = new Date("2026-11-14T00:00:00Z");
+  const to = new Date("2026-11-14T01:00:00Z");
+  try {
+    for (const [directory, expected] of [[true, true], [false, false]]) {
+      setDirectorySnapshot({ issuer: "i", keys: [], teams: [], froms: [], tos: [], labels: { dev: "Dev" }, historyStart: 5, directory }, "v");
+      const out = await queries.listTeams(from, to, ["claude"], run);
+      assert.equal(out.directory, expected);
+      assert.deepEqual(out.labels, { dev: "Dev" });
+    }
+  } finally {
+    setDirectorySnapshot(null, "none");
+  }
 });
 
 test("foldUserTeams keeps the source of each team", () => {

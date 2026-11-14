@@ -158,3 +158,18 @@ test("stale status warns and a directory outage disables the picker but keeps st
   expect(screen.queryByRole("button", { name: "저장" })).toBeNull();
   expect(fetch.mock.calls.some(([url]) => String(url).startsWith("/api/settings/teams/preview"))).toBe(false);
 });
+
+test("the first save says current directory values apply to all earlier usage; later saves apply from now", async () => {
+  stubApi({ attributes: [], current: null, labels: {}, version: null,
+    status: { ...base.status, historyStart: null, lastSync: null, users: 0 } });
+  renderPage();
+  fireEvent.click(await screen.findByRole("radio", { name: /custom:department/ }));
+  expect(await screen.findByText(/첫 저장 시 지금 디렉터리 값이 이전 사용량 전체에도 적용됩니다/)).toBeTruthy();
+  expect(screen.getByText(/이후 기준을 바꾸면 저장한 시점부터 적용됩니다/)).toBeTruthy();
+  expect(screen.queryByText(/이전 사용량의 팀은 바뀌지 않습니다/)).toBeNull();
+  cleanup();
+  stubApi();
+  renderPage();
+  expect(await screen.findByText(/지금부터 적용됩니다. 이전 사용량의 팀은 바뀌지 않습니다/)).toBeTruthy();
+  expect(screen.queryByText(/첫 저장 시/)).toBeNull();
+});

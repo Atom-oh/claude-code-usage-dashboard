@@ -191,7 +191,9 @@ function TeamMapping() {
           </div>
         </>}
         <div className="space-y-3">
-          <p className="text-xs leading-relaxed text-ink-500">저장하면 이 기준이 지금부터 적용됩니다. 이전 사용량의 팀은 바뀌지 않습니다.</p>
+          <p className="text-xs leading-relaxed text-ink-500">{data.current == null
+            ? "첫 저장 시 지금 디렉터리 값이 이전 사용량 전체에도 적용됩니다. 이후 기준을 바꾸면 저장한 시점부터 적용됩니다."
+            : "저장하면 이 기준이 지금부터 적용됩니다. 이전 사용량의 팀은 바뀌지 않습니다."}</p>
           {conflict && <Notice>다른 곳에서 설정이 먼저 바뀌었습니다. 최신 설정을 불러온 뒤 다시 저장해 주세요.
             <button type="button" className={`${SECONDARY} ml-3`} onClick={() => { setSaved(false); setAttempt(n => n + 1); }}>최신 설정 불러오기</button></Notice>}
           {saveError && <Notice>{saveError}</Notice>}

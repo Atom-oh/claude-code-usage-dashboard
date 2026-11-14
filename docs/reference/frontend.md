@@ -64,8 +64,11 @@ The legacy Tailwind theme is explicitly loaded through `@config` under Tailwind 
 
 `/settings` (admin, `settings:manage`) is a separate page like `/installation`: it edits the Cognito team
 attribute and labels, previews value counts and shows sync status (stale, `directory_too_large`). Elsewhere,
-a team that came only from the device shows a Korean "device-provided value" marker; CSV exports carry team names
-only, and the team cost section notes the history start date when a range begins before it.
+labels replace raw team names in display and CSV (filters and URLs keep raw values). While directory teams
+apply (`/api/teams` `directory: true`), a team that came only from the device shows a localized
+"device-provided value" marker with a tooltip explaining both sources, in the filter, user lists, the team
+cost table and trend; CSV carries names without the marker. Without a directory, teams render unmarked.
+The team cost section notes the history start date when a range begins before it.
 
 All, Claude and Codex default to shared metrics from `/api/clients/overview`, with
 the same navigation, headers, filters, cards and table columns. Client switching

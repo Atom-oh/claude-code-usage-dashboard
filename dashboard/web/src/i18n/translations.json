@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T12:52:56.478436+00:00",
-  "source_messages": 1841,
+  "updated_at": "2026-11-14T13:32:49.166075+00:00",
+  "source_messages": 1845,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 1841,
-      "bytes": 137269,
-      "sha256": "0602d01125bde5fcae7d26dd3fbed98868a1656f8b777cd29bd7ac4d3bd2b822"
+      "messages": 1845,
+      "bytes": 138289,
+      "sha256": "7e850622289eacfca08e53199f0b928f9f53446397c7d759a467baf86ef3b510"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 1841,
-      "bytes": 161786,
-      "sha256": "a6e4e31f639a3bffed33f26a64dbbefeefd658dc1066bcf2730f7ac015ca041e"
+      "messages": 1845,
+      "bytes": 163046,
+      "sha256": "49236c704ca93015e85353d26a1374513d9d5b3535b1ed0cfa1567be7152750f"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 1841,
-      "bytes": 168805,
-      "sha256": "3144094922f3aa4eb668df7c38068a6bdd6535bba0dff618adc39c4ebd6d9e12"
+      "messages": 1845,
+      "bytes": 170037,
+      "sha256": "60e0754ecc8bb350a95305ed6e66b579da272cb55d414b8796bd8b6020d433b7"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 1841,
-      "bytes": 145525,
-      "sha256": "7c8ab990ac9aa27e528ea8e2efe42448b2b8b0313876b636294ecf1a2c5a39ea"
+      "messages": 1845,
+      "bytes": 146473,
+      "sha256": "6943406c937f9240e4a17faed3eb150ec4bc0f51dd64d36dc8c2a84be68beec8"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 1841,
-      "bytes": 130101,
-      "sha256": "a36223ed51fd1bd2e49d0668a6b635f622a6841f912dc620e0033f9848641be1"
+      "messages": 1845,
+      "bytes": 130966,
+      "sha256": "1222da18c2c49975e4aa054abea645951a724eab6a316644ce3c945b0144fe8c"
     }
   ],
   "catalog_calls": [
@@ -763,5 +763,76 @@
     "used_keys": [
       "md9cb56dff124"
     ]
+  },
+  "team_mapping_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-14T13:32:49.166075+00:00",
+    "added_message_count": 4,
+    "added_keys": [
+      "m03aa73df1eaf",
+      "m38089c0f4351",
+      "m7332992d4824",
+      "m8e6bd3eb9fab"
+    ],
+    "source_sha256": "95fe29c07a8de13b5088c0a6e44e7137a5546344aaeb696172168f9e1947800c",
+    "calls": [
+      {
+        "locale": "en",
+        "usage": {
+          "inputTokens": 377,
+          "outputTokens": 669,
+          "totalTokens": 1046,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "539d8bf63018f57a6ea9173a73b0c264b01be48229a5cffe756a759ded77ad01"
+      },
+      {
+        "locale": "zh-CN",
+        "usage": {
+          "inputTokens": 379,
+          "outputTokens": 566,
+          "totalTokens": 945,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "8e3791f850731303e15b69880b390428843b2a12e4b0654ebb4267ed2af3eb00"
+      },
+      {
+        "locale": "ja",
+        "usage": {
+          "inputTokens": 377,
+          "outputTokens": 728,
+          "totalTokens": 1105,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "8a58e289caf50c017a415ef6a961dd0a17f03bfb0477b356f3c82426721fd074"
+      },
+      {
+        "locale": "es",
+        "usage": {
+          "inputTokens": 377,
+          "outputTokens": 944,
+          "totalTokens": 1321,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "eb5d9fb25504029de6f77ca3f2650faa92fbad06f1da6de55bb5a3e8375c1885"
+      }
+    ],
+    "serialization": "source and outputs: UTF-8 JSON objects of the added keys, sorted keys, ensure_ascii false",
+    "host_corrections": [
+      "m38089c0f4351: 표시 없음 means no source marker, not no display label; rendered as Unmarked / 未标记 / マークなし / Sin marca."
+    ],
+    "verification": "All catalog keys have nonempty strings in all five locales; positional placeholder multisets match.",
+    "attestation_note": "The requested model is recorded. Hidden weights are not independently attested."
   }
 }

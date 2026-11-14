@@ -126,6 +126,11 @@ export function createDynamoDeviceStore({ tableName, client }) {
       } while (cursor);
       return history;
     },
+    async getTeamHistory(attribute, id, options) {
+      const result = await send(new GetCommand({ TableName: tableName, Key: { owner: teamHistoryOwner(attribute), id },
+        ConsistentRead: true }), options);
+      return result.Item ? { id: result.Item.id, entries: result.Item.entries, version: result.Item.version } : null;
+    },
     async putTeamHistory(attribute, { id, entries }, expectedVersion, options) {
       return putVersioned({ owner: teamHistoryOwner(attribute), id, entries }, expectedVersion, options);
     },

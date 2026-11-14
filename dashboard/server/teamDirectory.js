@@ -51,7 +51,9 @@ export function appendHistory(entries, { team, emailKey: key }, at) {
   return [...entries, { team, from: latest ? at : 0, emailKey: key }];
 }
 
-export function flattenIntervals({ attributes, histories, limit = 20000 }) {
+export const INTERVAL_LIMIT = 4000;
+
+export function flattenIntervals({ attributes, histories, limit = INTERVAL_LIMIT }) {
   const out = { keys: [], teams: [], froms: [], tos: [] };
   for (const [index, { attribute, from: windowFrom }] of attributes.entries()) {
     const windowTo = attributes[index + 1]?.from ?? OPEN_END;

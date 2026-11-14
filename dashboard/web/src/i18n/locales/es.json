@@ -1839,5 +1839,9 @@
   "m1dd23c2aed59": "Modelos de tareas · llamadas LLM de usuarios del recopilador del dispositivo",
   "mb3ed32f01cc1": "Se corrigió un problema por el que el modelo, las llamadas LLM y los costos por llamada aparecían en blanco en la lista y los detalles de tareas para Claude Code 2.1.325 o posterior enviado mediante el recopilador del dispositivo. Se aplica a las tareas posteriores a la reinstalación del recopilador; los registros que ya faltaban no se recuperan.",
   "mb0c557c70d69": "Usuarios → Seleccionar un usuario → Lista de tareas · Detalles de tareas",
-  "md9cb56dff124": "Aprobar conexión del dispositivo · Panel de uso de IA"
+  "md9cb56dff124": "Aprobar conexión del dispositivo · Panel de uso de IA",
+  "m03aa73df1eaf": "(Valor proporcionado por el dispositivo)",
+  "m38089c0f4351": "Sin marca: según el directorio de usuarios de la organización (Cognito) · {0}: valor de team enviado por el dispositivo",
+  "m8e6bd3eb9fab": "El uso anterior a {0} se basa en el departamento de la primera sincronización.",
+  "m7332992d4824": "{0} El costo de cada sesión se atribuye al equipo al inicio de la sesión. Si se ha configurado la asignación de equipos del directorio de usuarios de la organización (Cognito) y el usuario está en el directorio, se usa el equipo que figura allí en ese momento; de lo contrario, se usa el valor de team enviado por el dispositivo. {1} son sesiones en las que no se recibió un valor de team o no se pudo determinar el equipo porque venció el período de conservación de registros. El número de sesiones corresponde a las sesiones con registros de uso durante el período, por lo que puede diferir del valor de la tarjeta de sesiones de la parte superior. El uso de modelos que no son Anthropic cuyo factor de tarifa unitaria no se puede determinar queda marcado como «requiere revisión» solo para la parte correspondiente a ese equipo; por eso, la suma conocida por equipo puede ser superior al costo total conocido."
 }

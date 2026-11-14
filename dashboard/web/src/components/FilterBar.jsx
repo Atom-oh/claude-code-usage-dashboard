@@ -4,7 +4,7 @@ import { useFilters } from "../FilterContext.jsx";
 import { SegmentedControl } from "./SegmentedControl.jsx";
 import { RefreshControl } from "./RefreshControl.jsx";
 import { CLIENT_LABELS, useClient } from "../ClientContext.jsx";
-import { teamDisplay, useTeams } from "../TeamsContext.jsx";
+import { isDeviceMarked, teamDisplay, teamSourceHelp, useTeams } from "../TeamsContext.jsx";
 
 const GROUP_OPTIONS = localize([
   { value: "", label: "전체" },
@@ -81,9 +81,11 @@ export function FilterBar() {
       />
       {teamOptions.length > 0 && (
         <select aria-label={translate("m321639b7ad86")} value={team} onChange={(e) => setTeam(e.target.value)}
+          title={teams.directory ? teamSourceHelp() : undefined}
           className="text-sm px-3 py-1.5 rounded-lg border border-ink-200 bg-white focus:border-brand-500 focus:outline-none w-40">
           <option value="">{translate("mc1083b8f46a4")}</option>
-          {teamOptions.map((value) => <option key={value} value={value}>{teamDisplay(teams, value, teams.sources?.[value])}</option>)}
+          {teamOptions.map((value) => <option key={value} value={value}
+            title={isDeviceMarked(teams, teams.sources?.[value]) ? teamSourceHelp() : undefined}>{teamDisplay(teams, value, teams.sources?.[value])}</option>)}
         </select>
       )}
       {team && (

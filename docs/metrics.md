@@ -67,14 +67,15 @@ the directory team of the session's user (the Cognito attribute an admin selecte
 effect at the session's start time), else the OTel `team` (most frequent value in its logs). The
 directory applies only to sessions whose user email matches a Cognito user; `user.email` is
 client-provided, so the match is not verified identity. The directory team can change a session's team
-for past sessions: the first sync applies the current value to the whole past, and later
-attribute switches or value changes apply only from their sync time (accurate to the hourly sync
-interval). Labels rename teams for display only. When a range starts before the recorded history
+for past sessions: the first save applies the current value to the whole past. A later attribute
+switch applies from its save time; a changed value applies from the sync that saw it (accurate to the
+hourly sync interval). Labels rename teams for display and CSV only. When a range starts before the recorded history
 start, the section notes that earlier usage follows the department seen at the first sync.
 Team spend is a total metric that includes the unknown channel, so team rows plus the no-team row match
 the total cost tile when every amount is known (an unusable non-Anthropic factor leaves only the
 affected team slice unknown, so the team known sum can exceed the tile's), while its trend is
-not bucket-comparable with the model trend, which excludes that channel. Team sessions count distinct sessions with usage, not `claude_code.session.count`.
+not bucket-comparable with the model trend, which excludes that channel.
+Team sessions count distinct sessions with usage, not `claude_code.session.count`.
 "Share of spend with a known team" is the known spend with a team over all known spend.
 
 Shared pages use the client overview's `cost_usd` and label its basis: Claude reports

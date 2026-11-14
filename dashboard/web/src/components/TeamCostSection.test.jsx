@@ -3,8 +3,8 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider } from "../RangeContext.jsx";
 import { toCsv } from "../csv.js";
-import { TeamsContext } from "../TeamsContext.jsx";
-import { HISTORY_NOTE, TeamCostView, TEAM_COLUMNS, teamTableRows } from "./TeamCostSection.jsx";
+import { DEVICE_TEAM_MARKER, TeamsContext } from "../TeamsContext.jsx";
+import { TeamCostView, TEAM_COLUMNS, teamTableRows } from "./TeamCostSection.jsx";
 afterEach(cleanup);
 
 const row = (team, cost, patch = {}) => ({ team, known_reported_cost: cost, reported_partial: false, reported_cost: cost,
@@ -74,18 +74,65 @@ test("tiles and the bar disclose partial and unavailable team spend", () => {
   expect(screen.getAllByText(/확인 필요 팀 1개 제외/).length).toBeGreaterThan(1);
 });
 
-test("the history note shows only when the range starts before the first directory sync", () => {
+const NOTE = /이전 사용량은 처음 동기화한 부서 기준입니다\./;
+
+test("the history note names the first-sync date and shows only when the range starts before it", () => {
   const withTeams = (historyStart) => render(
     <TeamsContext.Provider value={{ options: [], byUser: null, loading: false, labels: { A: "Alpha" }, sources: {}, historyStart }}>
       <TeamCostView table={ok(TABLE)} trend={ok([])} intervalHours={24} onIntervalHours={() => {}} />
     </TeamsContext.Provider>, { wrapper: Providers });
-  const early = withTeams(Date.now() + 86400000);
-  expect(screen.getByText(new RegExp(HISTORY_NOTE))).toBeTruthy();
+  const start = Date.now() + 86400000;
+  const early = withTeams(start);
+  const date = new Date(start).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+  expect(screen.getByText(NOTE).textContent).toBe(`${date} 이전 사용량은 처음 동기화한 부서 기준입니다.`);
   expect(screen.getAllByText("Alpha").length).toBeGreaterThan(0);
   early.unmount();
   withTeams(Date.now() - 365 * 86400000);
-  expect(screen.queryByText(new RegExp(HISTORY_NOTE))).toBeNull();
+  expect(screen.queryByText(NOTE)).toBeNull();
   cleanup();
   withTeams(null);
-  expect(screen.queryByText(new RegExp(HISTORY_NOTE))).toBeNull();
+  expect(screen.queryByText(NOTE)).toBeNull();
+});
+
+const directoryTeams = (directory) => ({ options: [], byUser: null, loading: false, labels: { A: "Alpha", B: "Beta" },
+  sources: { A: "directory", B: "device" }, historyStart: null, directory });
+const day = "2026-11-01T00:00:00Z";
+const trendCell = (team, cost) => ({ day, group: "enterprise", team, reported_cost: cost, reported_unavailable: 0,
+  reported_reasons: {}, reported_partial: false, observed_tokens: 1 });
+const withDirectory = (directory, trend = ok([])) => render(
+  <TeamsContext.Provider value={directoryTeams(directory)}>
+    <TeamCostView table={ok(TABLE)} trend={trend} intervalHours={24} onIntervalHours={() => {}} />
+  </TeamsContext.Provider>, { wrapper: Providers });
+const firstColumn = () => within(screen.getByRole("table")).getAllByRole("row").slice(1)
+  .map((r) => within(r).getAllByRole("cell")[0]);
+
+test("the team table marks device teams with a source tooltip while a directory applies; CSV keeps names", () => {
+  withDirectory(true);
+  const cells = firstColumn();
+  expect(cells.map((c) => c.textContent)).toEqual(["Alpha", `Beta ${DEVICE_TEAM_MARKER}`, "팀 없음"]);
+  expect(cells[1].querySelector("[title]").title).toContain("조직 디렉터리(Cognito)");
+  expect(cells[0].querySelector("[title]")).toBeNull();
+  const rows = teamTableRows(TABLE, directoryTeams(true));
+  expect(toCsv(TEAM_COLUMNS, rows, { piiMask: true }).split("\r\n").slice(1, 4).map((l) => l.split(",")[0]))
+    .toEqual(["Alpha", "Beta", "팀 없음"]);
+});
+
+test("without a directory the team table shows labels and no marker", () => {
+  withDirectory(false);
+  expect(firstColumn().map((c) => c.textContent)).toEqual(["Alpha", "Beta", "팀 없음"]);
+});
+
+test("the team trend uses the same team names as the table", () => {
+  withDirectory(true, ok([trendCell("A", 5), trendCell("B", 3)]));
+  expect(screen.getAllByText("Alpha").length).toBeGreaterThan(1);
+  expect(screen.getAllByText(`Beta ${DEVICE_TEAM_MARKER}`).length).toBeGreaterThan(1);
+  expect(screen.queryByText("A")).toBeNull();
+});
+
+test("the help explains directory teams at session start, else the device value", () => {
+  view();
+  const help = screen.getAllByLabelText(/세션 시작 시점의 팀/)[0].getAttribute("aria-label");
+  expect(help).toContain("조직 디렉터리(Cognito)");
+  expect(help).toContain("기기가 보낸 team 값");
+  expect(help).not.toContain("OTel team 값에 붙습니다");
 });

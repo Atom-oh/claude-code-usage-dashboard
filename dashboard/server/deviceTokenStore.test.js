@@ -146,6 +146,20 @@ test("team history lists every page", async () => {
   assert.deepEqual(calls[1].input.ExclusiveStartKey, { owner: "team-history#t", id: "u1" });
 });
 
+test("one team history record is read consistently by key", async () => {
+  const calls = [];
+  const store = createDynamoDeviceStore({ tableName: "devices", client: {
+    async send(command) {
+      calls.push(command);
+      return calls.length === 1 ? {} : { Item: { owner: "team-history#t", id: "u1", entries: [1], version: 3 } };
+    },
+  } });
+  assert.equal(await store.getTeamHistory("t", "u1"), null);
+  assert.deepEqual(await store.getTeamHistory("t", "u1"), { id: "u1", entries: [1], version: 3 });
+  assert.equal(calls[0].constructor.name, "GetCommand");
+  assert.deepEqual(calls[0].input, { TableName: "devices", Key: { owner: "team-history#t", id: "u1" }, ConsistentRead: true });
+});
+
 test("enrollment requests live in their own partition and decisions are single, pending and before the deadline", async () => {
   const commands = [];
   let conflict = false;
