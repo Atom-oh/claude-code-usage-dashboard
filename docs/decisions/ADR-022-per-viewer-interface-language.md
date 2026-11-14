@@ -56,12 +56,6 @@ translate model-generated answers, captured prompts or other user content.
 Maintained engineering documentation remains English under
 [ADR-010](ADR-010-english-documentation-and-review-context.md).
 
-## Rollout state
-
-All application route pages, shared controls and task dialogs are migrated. The
-Spanish guide is the remaining documentation stage; its link opens the existing
-English guide until the Spanish pages are added.
-
 ## Owners and evidence
 
 - [Locale implementation](../../dashboard/web/src/i18n/README.md)

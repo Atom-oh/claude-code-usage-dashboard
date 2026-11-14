@@ -8,29 +8,29 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T13:32:18.045167+00:00",
+  "updated_at": "2026-11-14T14:01:01.569525+00:00",
   "source_messages": 1902,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
       "messages": 1902,
-      "bytes": 143950,
-      "sha256": "9c300fade7e909919c9f55521d4a7afed48d61ff84e24aa82d5af8768e8cd941"
+      "bytes": 143968,
+      "sha256": "c5d0c9d5448fe5670cc995b47c3f34343fd9a5a5a50033ffdb97a6eb887428b7"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
       "messages": 1902,
-      "bytes": 169626,
-      "sha256": "60ff769f82d879b89deed4035d8a5f99b869e98e2a354654b9c2c10950ef3ca1"
+      "bytes": 169646,
+      "sha256": "8c474e92705362beae9d748af1448dfe35f67aac5ae21d8af5044760c879ce43"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
       "messages": 1902,
-      "bytes": 178187,
-      "sha256": "883e811447b4f4f08075cad8180a20add42b5f5422de1cb2d14cb0c919476bb6"
+      "bytes": 178214,
+      "sha256": "252112f554fecc79a3e42d8aa568ed854b85c482326a12ee869bab9af50e2fd4"
     },
     {
       "locale": "ko",
@@ -43,8 +43,8 @@
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
       "messages": 1902,
-      "bytes": 136223,
-      "sha256": "3f7528f30f0349ff7dee13d0683bd91d0b060f0b51c1a64dd6573cc6416a73f1"
+      "bytes": 136247,
+      "sha256": "7f46cd55fe209f156fe367632d7ce663baabce3e075d88f4bc0ec03469b0235f"
     }
   ],
   "catalog_calls": [
@@ -801,5 +801,18 @@
       ],
       "attestation_note": "The requested model is recorded. Hidden weights are not independently attested."
     }
-  ]
+  ],
+  "help_paragraph_review": {
+    "requested_model": "openai.gpt-6-luna",
+    "selection_basis": "coordinator CLI invocation",
+    "timestamp_utc": "2026-11-14T13:58:24Z",
+    "source_sha256": "4bf15a850730e8f0f164a9eb82f1f4e11392650219fd57b006c0e862ce6f2af1",
+    "output_sha256": "0c6ef852d02a41bc2a32ab1f3b38415a61c3b0da90700a57be6dafabe962c09d",
+    "agent_record_sha256": "bf7db41df6b713416a695482dc9edc235cacada2c298085796c33088c4ed49de",
+    "keys": [
+      "mcd0e2e55edc9",
+      "mdb92e3e3d57f"
+    ],
+    "meaning": "Interpolation slots contain complete help paragraphs; keep them outside noun phrases."
+  }
 }

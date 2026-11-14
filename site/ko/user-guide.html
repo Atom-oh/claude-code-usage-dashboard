@@ -12,18 +12,19 @@
 <link href="user-guide.html" hreflang="ko" rel="alternate"/>
 <link href="../ja/user-guide.html" hreflang="ja" rel="alternate"/>
 <link href="../zh/user-guide.html" hreflang="zh-CN" rel="alternate"/>
+<link href="../es/user-guide.html" hreflang="es" rel="alternate"/>
 </head>
 <body class="visual-docs" data-stylesheet-version="4b6ff295">
 <a class="skip-link" href="#main">본문으로 건너뛰기</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
 <nav aria-label="주요 탐색" class="tabs"><a href="index.html">개요</a><a aria-current="page" href="user-guide.html">사용자 안내서</a><a href="installation.html">설치</a><a href="architecture.html">아키텍처</a><a href="api.html">API</a><a href="operations.html">운영</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
-<div aria-label="언어" class="languages" role="group"><a href="../user-guide.html" hreflang="en" lang="en">English</a><span lang="ko">한국어</span><a href="../ja/user-guide.html" hreflang="ja" lang="ja">日本語</a><a href="../zh/user-guide.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+<div aria-label="언어" class="languages" role="group"><a href="../user-guide.html" hreflang="en" lang="en">English</a><a href="../zh/user-guide.html" hreflang="zh-CN" lang="zh-CN">简体中文</a><a href="../ja/user-guide.html" hreflang="ja" lang="ja">日本語</a><a href="../es/user-guide.html" hreflang="es" lang="es">Español</a><span lang="ko">한국어</span></div>
 </div></header>
 <main class="wrap" id="main">
 <div class="hero"><p class="eyebrow">Claude Code + Codex · 문서</p><h1>사용자, 비용, 도구를 위한 실용 가이드</h1>
 <p class="lede">화면과 단계별 설명을 따라가며 기능을 익혀보세요. 사용자 Trace, 비용 효율, 도구 사용부터 살펴보고, 모든 메뉴의 세부 기능은 아래 메뉴별 상세 설명에서 확인할 수 있습니다.</p>
-<p class="caption">기능은 설치 환경, 권한 및 수집된 데이터에 따라 달라집니다. 이 안내서는 각 조작 방법을 설명하고, 한국어가 기본인 화면에서 찾을 수 있는 실제 레이블을 함께 표시합니다. v1.8.0 소스를 기준으로 확인했습니다.</p>
+<p class="caption">사용 가능한 기능은 설치 환경, 권한 및 수집된 데이터에 따라 달라집니다. 애플리케이션과 이 가이드는 영어, 중국어(간체), 일본어, 스페인어 및 한국어를 지원합니다. 스크린샷은 한국어 또는 영어 예시임을 명시한 화면을 사용합니다.</p>
 </div>
 <div class="manual-shell">
 <details class="manual-nav" id="contents" open=""><summary>목차</summary><ul><li><span class="nav-group">실용적인 단계별 안내</span></li><li><a href="#trace-workflow">사용자의 작업 추적</a></li><li><a href="#cost-workflow">비용 및 효율성 설명</a></li><li><a href="#tools-workflow">도구 사용량 확인</a></li><li><a href="#system-overview">아키텍처 이해</a></li><li><span class="nav-group">메뉴 및 컨트롤 참조</span></li><li><a href="#start">여기서 시작하기</a></li><li><a href="#common-controls">컨트롤과 결과 읽기</a></li><li><a href="#overview">Overview</a></li><li><a href="#exec">Executive</a></li><li><a href="#trends">Trends</a></li><li><a href="#productivity">Productivity</a></li><li><a href="#usage">Usage</a></li><li><a href="#users">Users</a></li><li><a href="#cost">Cost</a></li><li><a href="#reliability">Reliability</a></li><li><a href="#analytics">Analytics</a></li><li><a href="#collector">수집기 설정</a></li><li><a href="#installation">설치 상태</a></li><li><a href="#tasks">작업과 Trace</a></li><li><a href="#assistant">AI 어시스턴트</a></li><li><a href="#access">계정 및 도움말</a></li><li><a href="#workflows">반복 작업 흐름</a></li><li><a href="#troubleshooting">문제 해결 및 결과 해석</a></li></ul></details>
@@ -71,6 +72,8 @@
 <li>궁금한 내용에 맞는 메뉴를 선택합니다. 모델이나 사용자별로 나누어 보려면 <a href="#cost">Cost</a>, 시간에 따른 변화를 보려면 <a href="#trends">Trends</a>, 사용자의 <a href="#tasks">작업</a>을 보려면 <a href="#users">Users</a>를 사용합니다. 결과를 비교할 때는 동일한 데이터 소스와 기간으로 돌아가세요.</li></ol>
 <p>화면이 좁으면 상단의 메뉴(<strong>메뉴 열기</strong>)를 엽니다. 페이지를 선택하면 이동 후 메뉴 패널이 닫힙니다. 닫기 버튼, 배경 또는 Escape 키를 사용해 패널을 닫을 수도 있습니다.</p><p><a href="#contents">목차로 돌아가기</a></p>
 </section><section id="common-controls"><h2>컨트롤과 결과 읽기</h2>
+<h3 id="language-selection">언어 선택</h3><p>애플리케이션 사이드바 하단에서 언어를 선택하거나 모바일에서는 메뉴를 여세요. 선택한 언어는 페이지를 이동하거나 새로고침한 뒤에도 유지됩니다. 사용자 가이드를 열면 같은 언어로 된 가이드를 읽을 수 있습니다. 언어를 변경해도 선택한 기간과 열린 작업은 유지되며 기술 식별자, 사용자 텍스트 및 수집된 값은 변경되지 않습니다. 언어를 바꿔도 시간대나 조회 구간의 경계는 바뀌지 않습니다.</p>
+
 <figure class="screen-shot compact"><a data-lightbox="" href="../assets/img/time-range-en.png"><img alt="정확한 시작 및 종료 시간을 선택합니다. 이 이전 데모에서는 영어 표시 레이블을 사용합니다." decoding="async" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">정확한 시작 및 종료 시간을 선택합니다. 이 이전 데모에서는 영어 표시 레이블을 사용합니다.<small>전체 크기 화면 열기</small></span></figcaption></figure>
 
 <h3>데이터 소스와 필터</h3>
@@ -222,6 +225,6 @@
 </div>
 </main>
 <footer><div class="wrap"><p>ccdash · OpenTelemetry → ClickHouse → Express → React</p><p><a href="index.html">문서 개요</a> · <a href="credits.html">데모 출처</a></p><p>텔레메트리가 불완전할 수 있습니다. 보고된 비용과 정가 기반 추정치는 청구서가 아닙니다. 활동 지표만으로는 직원의 생산성이나 인과관계가 있는 ROI를 입증할 수 없습니다.</p></div></footer>
-<script defer src="../assets/guide.js?v=abac4d28"></script>
+<script defer src="../assets/guide.js?v=b92b0cfe"></script>
 </body>
 </html>
