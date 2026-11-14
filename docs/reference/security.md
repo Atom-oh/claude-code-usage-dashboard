@@ -70,7 +70,7 @@ runs only with `AUTH_MODE=oidc`, a Cognito `OIDC_ISSUER` and `INGEST_TOKEN_TABLE
 
 - Terraform grants the dashboard role `cognito-idp:ListUsers` and `cognito-idp:DescribeUserPool` on the one
   user pool parsed from `oidc_issuer` ([dashboard.tf](../../infra/dashboard.tf)); nothing else, no networking change.
-- `/api/settings/teams*` requires `settings:manage`, held only by `admin`. Basic mode reads but never saves.
+- `/api/settings/teams*` requires `settings:manage`, held only by `admin`. In Basic mode the settings report `available: false` with reason `basic_auth` and a save returns 409 `directory_unavailable`.
 - The DynamoDB table stores only `sha256(issuer + "\0" + sub)` and `sha256(issuer + "\0" + lower(email))`
   digests as identities; team names (raw directory values) and display labels are stored in clear.
 - Directory values reach ClickHouse only as bound parameters of server queries
