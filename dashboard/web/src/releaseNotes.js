@@ -9,6 +9,29 @@
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = [
   {
+    version: "1.9.0",
+    date: "2026-11-14",
+    summary: "수집기를 토큰 없이 브라우저 승인으로 설치하고, Claude Code·Codex와 모델 색을 화면 전체에서 같은 규칙으로 맞췄습니다.",
+    items: [
+      {
+        kind: "new",
+        title: "브라우저 승인으로 수집기 설치",
+        body: "curl … | sh 명령을 실행하면 확인 코드와 승인 링크가 나오고, 브라우저에서 로그인해 기기를 승인하면 설치가 알아서 끝납니다. 기기 토큰을 복사해 붙여 넣을 필요가 없고, 새 설치는 승인한 계정의 이메일을 사용자 ID로 씁니다. 기존 토큰 방식도 계속 쓸 수 있습니다.",
+        to: null,
+        where: "사이드바 수집기 설치 → 터미널에서 설치 (editor·admin)",
+        refs: [268],
+      },
+      {
+        kind: "improved",
+        title: "클라이언트·모델 색 정리",
+        body: "Claude Code는 Claude 주황, Codex는 잉크색으로 모든 공용 화면에서 같은 색을 씁니다. 사용자별 비용의 채널 줄은 같은 주황의 진하기로 CCB·C4E·미분류를 구분합니다. 모델은 계열마다 한 가지 색을 쓰고, 최신 버전일수록 진하게 표시합니다.",
+        to: "/cost",
+        where: "Cost → 사용자별 비용·모델별 비용 비중, Trends → 클라이언트별 추이",
+        refs: [280],
+      },
+    ],
+  },
+  {
     version: "1.8.2",
     date: "2026-11-14",
     summary: "활동이 많은 사용자의 90일 활동 히트맵이 열리지 않던 문제와, 기기 수집기 사용자의 작업에 모델이 비던 문제를 고쳤습니다.",
