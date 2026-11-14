@@ -5,6 +5,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { Card, Loading } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
+import { setTeamMask } from "../fmt.js";
 
 const BUTTON = "inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
 const PRIMARY = `${BUTTON} bg-brand-600 text-white hover:bg-brand-700`;
@@ -48,6 +49,91 @@ export default function Settings() {
     <div className="p-4 sm:p-8"><Notice>{translate("m865d52f9da0b")}</Notice></div>
   </div>;
   return <TeamMapping />;
+}
+
+const MASK_CHOICES = ["default", "on", "off"];
+const choiceOf = override => (override === true ? "on" : override === false ? "off" : "default");
+const overrideOf = choice => (choice === "on" ? true : choice === "off" ? false : null);
+const onOff = value => translate(value ? "mf4a53b277b13" : "m6609ccb10fbd");
+const choiceLabel = (choice, deployment) => choice === "default"
+  ? translate("m5a4e7862b524", [onOff(deployment)]) : translate(choice === "on" ? "m6e943b56e74c" : "mdd8b273b7cee");
+
+// Team-name masking for shared screens such as public demos: the deployment chooses the default,
+// an administrator may override it. Screens and CSV only; API responses keep raw values.
+function TeamMasking() {
+  useLocale();
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState({ loading: true, data: null, error: false });
+  const [choice, setChoice] = useState("default");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState({ tone: null, key: null });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setState({ loading: true, data: null, error: false });
+    apiGet("/api/settings/display", {}, controller.signal).then(data => {
+      if (controller.signal.aborted) return;
+      if (!data?.teamMask) throw new Error("invalid display settings");
+      setState({ loading: false, data, error: false });
+      setChoice(choiceOf(data.teamMask.override));
+    }).catch(() => {
+      if (!controller.signal.aborted) setState({ loading: false, data: null, error: true });
+    });
+    return () => controller.abort();
+  }, [attempt]);
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    setMessage({ tone: null, key: null });
+    try {
+      const response = await fetch("/api/settings/display", {
+        method: "PUT", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamMask: overrideOf(choice), version: state.data.version }),
+      });
+      checkAuthentication(response);
+      if (response.ok) {
+        const next = await response.json();
+        setState({ loading: false, data: next, error: false });
+        setTeamMask(next.teamMask.effective);
+        setMessage({ tone: "positive", key: "m32099c994906" });
+        return;
+      }
+      const code = (await response.json().catch(() => ({}))).error;
+      setMessage({ tone: "negative", key: code === "version_conflict" ? "m2b6bc9e24fea" : "m0ee453b5794b" });
+      if (code === "version_conflict") setAttempt(n => n + 1);
+    } catch {
+      setMessage({ tone: "negative", key: "m83ebb5d0dc9a" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const data = state.data;
+  return <Card title={translate("m9c03c20c5604")} subtitle={translate("m86715afb32a9")}>
+    {state.loading ? <Loading /> : state.error ? <div className="space-y-3">
+      <Notice>{translate("m0914ab14247b")}</Notice>
+      <button type="button" className={SECONDARY} onClick={() => setAttempt(n => n + 1)}>{translate("m196856a662bd")}</button>
+    </div> : <div className="space-y-3">
+      <p className="text-sm text-ink-700">{richMessage("m487afec16342", [<strong key="effective">{onOff(data.teamMask.effective)}</strong>])}
+        <span className="text-ink-500"> · {translate("m42ae812e29e8", [onOff(data.teamMask.deployment)])}</span></p>
+      {data.available ? <>
+        <fieldset className="space-y-2">
+          <legend className="sr-only">{translate("m9c03c20c5604")}</legend>
+          {MASK_CHOICES.map(option => <label key={option} className="flex items-center gap-2 text-sm text-ink-800">
+            <input type="radio" name="team-mask" value={option} checked={choice === option}
+              onChange={() => { setChoice(option); setMessage({ tone: null, key: null }); }} />
+            <span>{choiceLabel(option, data.teamMask.deployment)}</span>
+          </label>)}
+        </fieldset>
+        {message.key && (message.tone === "positive"
+          ? <p role="status" className="text-sm text-positive-text">{translate(message.key)}</p> : <Notice>{translate(message.key)}</Notice>)}
+        <button type="button" className={PRIMARY} disabled={saving || choice === choiceOf(data.teamMask.override)}
+          onClick={save}>{saving ? translate("m92c4796cf195") : translate("m64ce1b37ca97")}</button>
+      </> : <Notice tone="warning" role="status">{translate("m6a630c788363")}</Notice>}
+    </div>}
+  </Card>;
 }
 
 function TeamMapping() {
@@ -208,6 +294,6 @@ function TeamMapping() {
 
   return <div>
     <PageHeader title={translate("m115bced49291")} subtitle={translate("m66f508b7b7ed")} />
-    <div className="p-4 sm:p-8">{body}</div>
+    <div className="space-y-6 p-4 sm:p-8"><TeamMasking />{body}</div>
   </div>;
 }

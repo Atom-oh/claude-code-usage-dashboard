@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ConfigProvider } from "../ConfigContext.jsx";
@@ -6,6 +6,11 @@ import { FilterProvider } from "../FilterContext.jsx";
 import { FilterBar } from "./FilterBar.jsx";
 import { ClientProvider } from "../ClientContext.jsx";
 import { DEVICE_TEAM_MARKER, TeamsContext } from "../TeamsContext.jsx";
+import { maskTeam, setTeamMask } from "../fmt.js";
+
+// Team logic under raw names; display masking has its own tests (TeamsContext.test.jsx).
+beforeEach(() => setTeamMask(false));
+afterEach(() => setTeamMask(true));
 
 afterEach(() => cleanup());
 
@@ -156,4 +161,20 @@ test("without a directory, device teams render unmarked as before", () => {
   const select = screen.getByRole("combobox", { name: "팀" });
   expect([...select.options].map((o) => o.textContent)).toEqual(["모든 팀", "dev"]);
   expect(select.title).toBe("");
+});
+
+test("masked team options keep raw values, so filtering still matches", () => {
+  setTeamMask(true);
+  render(
+    <MemoryRouter initialEntries={["/cost"]}>
+      <ClientProvider><FilterProvider>
+        <TeamsContext.Provider value={{ options: ["alpha", "ops"], labels: { ops: "운영팀" }, byUser: new Map(), loading: false }}>
+          <FilterBar />
+        </TeamsContext.Provider>
+      </FilterProvider></ClientProvider>
+    </MemoryRouter>
+  );
+  const select = screen.getByRole("combobox", { name: "팀" });
+  expect([...select.options].map((o) => [o.value, o.textContent]))
+    .toEqual([["", "모든 팀"], ["alpha", maskTeam("alpha")], ["ops", "운영팀"]]);
 });

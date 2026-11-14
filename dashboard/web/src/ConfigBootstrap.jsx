@@ -1,6 +1,6 @@
 import { localizedMessage, messageText, translate, useLocale } from "./i18n/index.js";
 import { useEffect, useState } from "react";
-import { setPiiMask } from "./fmt.js";
+import { setPiiMask, setTeamMask } from "./fmt.js";
 import { LanguagePicker } from "./components/LanguagePicker.jsx";
 
 function isConfig(config) {
@@ -22,6 +22,7 @@ export default function ConfigBootstrap({ children }) {
   useEffect(() => {
     const abort = new AbortController();
     setPiiMask(true);
+    setTeamMask(true);
     const timer = setTimeout(() => {
       abort.abort();
       // Show recovery even if a request/body reader does not settle on abort.
@@ -45,6 +46,8 @@ export default function ConfigBootstrap({ children }) {
         if (abort.signal.aborted) return;
         if (!isConfig(config)) throw new Error("Invalid config response");
         setPiiMask(config.piiMask !== false);
+        // Older servers send no teamMask: team names then follow the email masking setting.
+        setTeamMask(typeof config.teamMask === "boolean" ? config.teamMask : config.piiMask !== false);
         setState({ status: "ready", config, attempt });
       } catch {
         if (!abort.signal.aborted) setState({ status: "error", config: null, attempt });

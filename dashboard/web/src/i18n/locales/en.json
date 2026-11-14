@@ -1962,5 +1962,18 @@
   "m87376b27b5a1": "Install Collector · Switch from an existing installation",
   "m6fa378eb3d69": "Set teams from the organization directory",
   "m1aa2715fa84e": "Administrators can select Cognito user attributes and team display names in Settings, then preview the user distribution before applying them. Selected attributes, entered names, and save errors remain the same when the interface language changes.",
-  "m7878a6c9d698": "Sidebar → Settings → Team attribute"
+  "m7878a6c9d698": "Sidebar → Settings → Team attribute",
+  "m9c03c20c5604": "Team name masking",
+  "m86715afb32a9": "On screens shared by multiple people (such as demos), team names are masked using the first two characters and a short identifier. This only changes what appears on screen and in CSV; API responses remain unchanged. Teams with a display name show that name as is.",
+  "m32099c994906": "Saved. Changes take effect immediately on this screen and for other users after a refresh (up to 30 seconds).",
+  "m0914ab14247b": "Failed to load team name masking settings.",
+  "m487afec16342": "Currently applied: {0}",
+  "m42ae812e29e8": "Deployment setting: {0}",
+  "m5a4e7862b524": "Following deployment setting ({0})",
+  "m6e943b56e74c": "Turn on",
+  "mdd8b273b7cee": "Turn off",
+  "mf4a53b277b13": "On",
+  "m6609ccb10fbd": "Off",
+  "m64ce1b37ca97": "Save masking settings",
+  "m6a630c788363": "No settings store is available, so this follows the deployment setting. You can change it at deployment with TEAM_MASK_ENABLED (Terraform team_mask_enabled)."
 }

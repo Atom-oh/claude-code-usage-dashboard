@@ -47,6 +47,29 @@ export const maskEmail = (s) => {
   return at === -1 ? `${str.slice(0, 2)}******` : `${str.slice(0, Math.min(2, at))}******${str.slice(at)}`;
 };
 
+// Team names follow the same display policy. Directory values can be personal aliases (for
+// example a lead's login), and team names are short, so prefix-only masking made different
+// teams look identical (6 of 19 production teams collided on two characters). The masked form
+// keeps two characters plus a stable digest (see maskTeam). Raw values remain the filter/URL
+// and chart-grouping identity and API payloads stay raw (ADR-006).
+// Team masking has its own switch (/api/config teamMask: the deployment default or an
+// administrator override); like piiMask it starts on so a failed config never shows raw names.
+let teamMask = true;
+export const setTeamMask = (v) => {
+  teamMask = !!v;
+};
+
+// Masked team: two leading characters plus a 24-bit FNV-1a digest, so similar names stay apart
+// on screen. Distinct teams can still collide (unlikely, not impossible): group by the raw value
+// and use this for labels only.
+export const maskTeam = (s) => {
+  const str = String(s ?? "");
+  if (!teamMask || !str) return str;
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(str)) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  return `${str.slice(0, 2)}**·${hash.toString(16).padStart(8, "0").slice(0, 6)}`;
+};
+
 // 버킷 크기에 맞춰 라벨 세밀도를 바꾼다 — 안 그러면 같은 값이 반복 표시돼 구분이 안 된다.
 // 분 버킷(<1h, 드래그 줌)일 땐 분까지, 시간 버킷(<24h)일 땐 시각까지, 일/주 버킷일 땐 날짜만.
 export const makeTickFmt = (intervalHours) => (t) =>

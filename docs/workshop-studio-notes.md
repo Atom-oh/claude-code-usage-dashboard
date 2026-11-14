@@ -225,6 +225,7 @@ An empty `bedrock_region` omits the override and follows the infrastructure regi
 
 The workshop can disable `pii_mask_enabled` so participants recognize synthetic `@ws`
 identifiers, but verify Enterprise sessions have not introduced real emails before doing so.
+Team-name masking follows it unless `team_mask_enabled` is set.
 UI masking is not an API boundary. Basic Auth and chat's readonly probe remain required.
 Basic Auth rejects every request from a client address after 20 failed credentials in a minute
 (per dashboard process), including correct ones; participants behind one corporate egress share

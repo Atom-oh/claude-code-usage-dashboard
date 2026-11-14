@@ -35,3 +35,22 @@ run "oidc_files_reference_the_external_secret" {
     error_message = "OIDC must mount only the required keys from its external secret."
   }
 }
+
+run "team_mask_default_follows_email_masking" {
+  command = plan
+  assert {
+    condition     = length([for e in kubernetes_deployment_v1.dashboard.spec[0].template[0].spec[0].container[0].env : e if e.name == "TEAM_MASK_ENABLED"]) == 0
+    error_message = "A null team_mask_enabled must leave TEAM_MASK_ENABLED unset so the server follows PII_MASK_ENABLED."
+  }
+}
+
+run "team_mask_explicit_value_is_passed" {
+  command = plan
+  variables {
+    team_mask_enabled = false
+  }
+  assert {
+    condition     = one([for e in kubernetes_deployment_v1.dashboard.spec[0].template[0].spec[0].container[0].env : e.value if e.name == "TEAM_MASK_ENABLED"]) == "0"
+    error_message = "An explicit team_mask_enabled must reach the dashboard as TEAM_MASK_ENABLED."
+  }
+}

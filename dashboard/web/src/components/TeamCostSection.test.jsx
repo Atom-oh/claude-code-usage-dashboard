@@ -1,10 +1,15 @@
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RangeProvider } from "../RangeContext.jsx";
 import { toCsv } from "../csv.js";
 import { DEVICE_TEAM_MARKER, TeamsContext } from "../TeamsContext.jsx";
-import { TeamCostView, TEAM_COLUMNS, teamTableRows } from "./TeamCostSection.jsx";
+import { TeamCostView, TEAM_COLUMNS, teamBarRows, teamTableRows } from "./TeamCostSection.jsx";
+import { setTeamMask } from "../fmt.js";
+
+// Team logic under raw names; display masking has its own tests (TeamsContext.test.jsx).
+beforeEach(() => setTeamMask(false));
+afterEach(() => setTeamMask(true));
 afterEach(cleanup);
 
 const row = (team, cost, patch = {}) => ({ team, known_reported_cost: cost, reported_partial: false, reported_cost: cost,
@@ -135,4 +140,13 @@ test("the help explains directory teams at session start, else the device value"
   expect(help).toContain("조직 디렉터리(Cognito)");
   expect(help).toContain("기기가 보낸 team 값");
   expect(help).not.toContain("OTel team 값에 붙습니다");
+});
+
+test("range-total bars group by the raw team even when two teams share a displayed name", () => {
+  const rows = teamTableRows([row("alpha", 3), row("alpine", 2), row("bravo", null), row(null, 1)])
+    .map((r) => (r.team ? { ...r, label: "al**" } : r));
+  const bars = teamBarRows(rows);
+  expect(bars.rows.map((r) => r.team)).toEqual(["team:alpha", "team:alpine", "none"]);
+  expect(new Set(bars.rows.map((r) => r.team)).size).toBe(3);
+  expect(bars.rows.map((r) => bars.label(r.team))).toEqual(["al**", "al**", "팀 없음"]);
 });

@@ -46,6 +46,17 @@ variable "pii_mask_enabled" {
   default = true
 }
 
+# Team-name display masking. null (default) follows pii_mask_enabled, so a standard deployment
+# masks team names and a workshop that disables email masking shows them. Set true/false to choose
+# independently. An administrator can still override it on the settings page when the settings
+# store (device ingestion) exists. Presentation only: API responses keep raw team values.
+variable "team_mask_enabled" {
+  description = "Team-name display masking default (TEAM_MASK_ENABLED); null follows pii_mask_enabled. Administrators can override it in settings."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
 variable "domain" {
   description = "Route53 호스팅 존의 apex 도메인(예: example.com)."
 }

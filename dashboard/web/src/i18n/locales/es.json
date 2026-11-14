@@ -1962,5 +1962,18 @@
   "m87376b27b5a1": "Instalar Collector · Cambiar desde una instalación existente",
   "m6fa378eb3d69": "Configurar equipos desde el directorio de la organización",
   "m1aa2715fa84e": "Los administradores pueden seleccionar atributos de usuario de Cognito y nombres visibles de equipo en Settings, y previsualizar la distribución de usuarios antes de aplicarlos. Los atributos seleccionados, los nombres introducidos y los errores de guardado se mantienen aunque cambie el idioma de la interfaz.",
-  "m7878a6c9d698": "Barra lateral → Settings → Atributo de equipo"
+  "m7878a6c9d698": "Barra lateral → Settings → Atributo de equipo",
+  "m9c03c20c5604": "Enmascaramiento del nombre del equipo",
+  "m86715afb32a9": "En las pantallas compartidas por varias personas (como las demostraciones), los nombres de los equipos se enmascaran con los dos primeros caracteres y un identificador breve. Esto solo cambia lo que se muestra en pantalla y en CSV; las respuestas de la API no cambian. Los equipos con un nombre visible muestran ese nombre tal cual.",
+  "m32099c994906": "Guardado. Se aplica de inmediato en esta pantalla y, para otros usuarios, después de actualizarla (hasta 30 segundos).",
+  "m0914ab14247b": "No se pudo cargar la configuración de enmascaramiento de nombres de equipos.",
+  "m487afec16342": "Aplicado actualmente: {0}",
+  "m42ae812e29e8": "Configuración del despliegue: {0}",
+  "m5a4e7862b524": "Seguir la configuración del despliegue ({0})",
+  "m6e943b56e74c": "Activar",
+  "mdd8b273b7cee": "Desactivar",
+  "mf4a53b277b13": "Activado",
+  "m6609ccb10fbd": "Desactivado",
+  "m64ce1b37ca97": "Guardar configuración de enmascaramiento",
+  "m6a630c788363": "No hay un almacén de configuración disponible, así que se sigue la configuración del despliegue. Puede cambiarse durante el despliegue con TEAM_MASK_ENABLED (Terraform team_mask_enabled)."
 }

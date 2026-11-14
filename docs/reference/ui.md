@@ -81,6 +81,9 @@ shows the team. Team is a client-provided OTel attribute, not verified identity.
 
 When masking is enabled, `toCsv` centrally applies `maskEmail` to the `user` column after
 `toText`, preventing custom formatters from bypassing that display policy. It is not a
-general PII scanner for every column. [fmt.js](../../dashboard/web/src/fmt.js) holds the
-shared masking state and UTC timestamp parsing. See [security](security.md) for the raw
+general PII scanner for every column. Team names are masked separately (`/api/config`
+`teamMask`): `teamName()` in [TeamsContext.jsx](../../dashboard/web/src/TeamsContext.jsx) is the
+single display path for screens and CSV, administrator labels show as is, and charts group by
+the raw team value. [fmt.js](../../dashboard/web/src/fmt.js) holds the shared masking state and
+UTC timestamp parsing. See [security](security.md) for the raw
 API-data boundary.
