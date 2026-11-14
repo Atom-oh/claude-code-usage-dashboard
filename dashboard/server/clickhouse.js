@@ -82,10 +82,8 @@ export async function queryReadonly(sql, externalSignal) {
     const signal = externalSignal ? AbortSignal.any([abort.signal, externalSignal]) : abort.signal;
     release = await queryBudget.acquire(signal);
     signal.throwIfAborted();
-    const query_params = directoryParams(sql, {});
     const rs = await client.query({
       query: `SELECT * FROM (${sql}) LIMIT 201`,
-      ...(Object.keys(query_params).length ? { query_params } : {}),
       format: "JSONEachRow",
       abort_signal: signal,
     });

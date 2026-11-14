@@ -161,7 +161,7 @@ test("missing settings publish an empty snapshot", async () => {
 
 test("users without a usable email are skipped", async () => {
   const store = fakeStore(settings());
-  const users = [{ sub: "a", attributes: { [DEPT]: "hana" } }, user("hana", "émile@x"), user("hana", "no-at")];
+  const users = [{ sub: "a", attributes: { [DEPT]: "hana" } }, user("hana", "\u00e9mile@x"), user("hana", "no-at")];
   const sync = createTeamSync({ store, directory: directory(users), issuer: ISSUER });
   await sync.syncOnce();
   assert.equal(store.state.puts.length, 0);
@@ -190,4 +190,44 @@ test("start runs immediately, never throws, and stop clears the timer", async ()
 
 test("directoryParams leaves unrelated SQL untouched", () => {
   assert.deepEqual(directoryParams("SELECT 1", { a: 1 }), { a: 1 });
+});
+
+test("users sharing an email digest are skipped, unique users are written", async () => {
+  const store = fakeStore(settings());
+  const users = [{ sub: "d1", email: "A@x", attributes: { [DEPT]: "hana" } },
+    { sub: "d2", email: "a@x", attributes: { [DEPT]: "cs" } },
+    { sub: "u", email: "b@x", attributes: { [DEPT]: "dev" } }];
+  const sync = createTeamSync({ store, directory: directory(users), issuer: ISSUER, now: () => 1000 });
+  await sync.syncOnce();
+  assert.equal(store.state.puts.length, 1);
+  assert.deepEqual(store.state.puts[0].entries.map((e) => e.team), ["dev"]);
+  assert.equal(sync.status().users, 1);
+});
+
+test("historyStart is set only by a sync that wrote history", async () => {
+  const store = fakeStore(settings());
+  let users = [];
+  let clock = 1000;
+  const sync = createTeamSync({ store, directory: { listUsers: async () => users }, issuer: ISSUER, now: () => clock });
+  await sync.syncOnce();
+  assert.equal(store.state.settingsPuts.length, 0);
+  assert.equal(sync.status().historyStart, null);
+  clock = 2000;
+  users = [user("hana")];
+  await sync.syncOnce();
+  assert.equal(store.state.settingsPuts.length, 1);
+  assert.equal(sync.status().historyStart, 2000);
+});
+
+test("settings without attributes behave like no settings", async () => {
+  for (const record of [{ labels: {}, version: 1 }, { attributes: [], labels: {}, version: 1 }]) {
+    setDirectorySnapshot(null, "none");
+    const store = fakeStore(record);
+    const sync = createTeamSync({ store, directory: directory([user("hana")]), issuer: ISSUER, now: () => 9 });
+    await sync.syncOnce();
+    assert.equal(sync.status().stale, false);
+    assert.equal(sync.status().lastError, null);
+    assert.equal(store.state.puts.length, 0);
+    assert.equal(directoryParams("{dirKey:Array(String)}", {}).dirIssuer, ISSUER);
+  }
 });

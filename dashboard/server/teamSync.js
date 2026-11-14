@@ -28,28 +28,34 @@ export function createTeamSync({ store, directory, issuer, now = Date.now, inter
     let current = histories.get(id);
     for (let attempt = 0; attempt < 2; attempt++) {
       const entries = current?.entries ?? [];
-      if (!entries.length && team === null) return;
+      if (!entries.length && team === null) return false;
       const next = appendHistory(entries, { team, emailKey: key }, now());
-      if (!next) return;
-      if (await store.putTeamHistory(attribute, { id, entries: next }, current?.version ?? null, { signal })) return;
+      if (!next) return false;
+      if (await store.putTeamHistory(attribute, { id, entries: next }, current?.version ?? null, { signal })) return true;
       current = (await store.listTeamHistory(attribute, { signal })).find((record) => record.id === id);
     }
+    return false;
   }
 
   async function run(signal) {
     let settings = await stage("store", () => store.getTeamSettings({ signal }));
-    if (!settings) {
+    if (!settings?.attributes?.length) {
       publish({ keys: [], teams: [], froms: [], tos: [] }, null, "empty");
       state = { lastSync: now(), lastError: null, stale: false, users: 0, historyStart: null, reason: null };
       return;
     }
     const latest = settings.attributes.at(-1).attribute;
-    const users = (await stage("directory", () => directory.listUsers(signal)))
+    const listed = (await stage("directory", () => directory.listUsers(signal)))
       .filter((user) => user?.sub && emailKey(issuer, user.email));
+    // Users sharing an email digest are ambiguous; they fall back to device teams.
+    const emailCounts = new Map();
+    for (const { email } of listed) emailCounts.set(emailKey(issuer, email), (emailCounts.get(emailKey(issuer, email)) ?? 0) + 1);
+    const users = listed.filter(({ email }) => emailCounts.get(emailKey(issuer, email)) === 1);
     await stage("store", async () => {
       const existing = new Map((await store.listTeamHistory(latest, { signal })).map((record) => [record.id, record]));
-      for (const user of users) await writeUserHistory(latest, user, existing, signal);
-      if (settings.historyStart == null) {
+      let wrote = false;
+      for (const user of users) wrote = (await writeUserHistory(latest, user, existing, signal)) || wrote;
+      if (wrote && settings.historyStart == null) {
         const historyStart = now();
         if (await store.putTeamSettings({ ...settings, historyStart }, settings.version, { signal }))
           settings = { ...settings, historyStart, version: settings.version + 1 };
