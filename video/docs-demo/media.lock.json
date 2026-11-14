@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "Atom-oh/claude-code-usage-dashboard",
-  "commit": "eaa399c1d8582ed6be8fafa6401df48a0797a528",
+  "commit": "3270b100745af2a862017b49b252abd8fb89df9f",
   "files": [
     {
       "path": "site/assets/diagrams/system.html",
@@ -150,8 +150,8 @@
     },
     {
       "path": "site/assets/img/guide-unit-cost.png",
-      "bytes": 77132,
-      "sha256": "cff9088e0246431f4b944979441898c92773cf16db7159bd1fb32630d4afbe55"
+      "bytes": 70249,
+      "sha256": "276a7176fe02661cbd58366768570890e1742cd4e76c84d33144b17383e77518"
     },
     {
       "path": "site/assets/img/guide-usage.png",

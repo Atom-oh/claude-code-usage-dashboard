@@ -570,10 +570,10 @@
     {
       "name": "guide-unit-cost.png",
       "path": "img/guide-unit-cost.png",
-      "bytes": 77132,
-      "sha256": "cff9088e0246431f4b944979441898c92773cf16db7159bd1fb32630d4afbe55",
+      "bytes": 70249,
+      "sha256": "276a7176fe02661cbd58366768570890e1742cd4e76c84d33144b17383e77518",
       "capture_date": "2026-11-14",
-      "source_revision": "fcfd49d9d0988defa0fd8cd8649608a9bb6e8899",
+      "source_revision": "343b02524b93b27514fa921e834d23b7284e0bc5",
       "width": 1104,
       "height": 792,
       "pixel_scale": 2,
@@ -905,8 +905,8 @@
   },
   "delivery": {
     "manifest_repository_path": "video/docs-demo/media.lock.json",
-    "snapshot_commit": "eaa399c1d8582ed6be8fafa6401df48a0797a528",
-    "snapshot_tag": "docs-media-20261114-visual-guide-r4",
+    "snapshot_commit": "3270b100745af2a862017b49b252abd8fb89df9f",
+    "snapshot_tag": "docs-media-20261114-visual-guide-r5",
     "verification": "scripts/fetch-docs-media.py validates file size and SHA256 before Pages upload or local rendering."
   },
   "previous_demo": {
@@ -931,7 +931,7 @@
   },
   "guide": {
     "date": "2026-11-14",
-    "source_revision": "fcfd49d9d0988defa0fd8cd8649608a9bb6e8899",
+    "source_revision": "343b02524b93b27514fa921e834d23b7284e0bc5",
     "previous_snapshot_commit": "c775db6d46f66b19587260088e2b3ee815b1342d",
     "scope": "Illustrated user-Trace, cost-efficiency and tool workflows, all menu references, inline architecture and reading controls.",
     "assets": [
@@ -959,13 +959,13 @@
       },
       {
         "path": "scripts/docs-capture/fixtures.mjs",
-        "bytes": 23151,
-        "sha256": "04c3ff71ddf2c1a3d58f15cdeebf50a942dcf35e8862cd2bee8bcbced3bb0243"
+        "bytes": 23744,
+        "sha256": "26cdcf4fba20a14a1b6b3491ca2eb2e174c9dba222db962a8d8166885ee73813"
       },
       {
         "path": "scripts/docs-capture/evidence.json",
-        "bytes": 27240,
-        "sha256": "00c1a5dcd01f157f507f7acfe2dff692ed212d9c6bf3975ae4d9679d475754f9"
+        "bytes": 26625,
+        "sha256": "8067ee1d083f766ce9d91f82e0ecc164c772159b7b2a7ca39ca4c08978c08110"
       },
       {
         "path": "scripts/docs-capture/system.architecture.json",

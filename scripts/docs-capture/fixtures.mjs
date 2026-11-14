@@ -186,7 +186,15 @@ const decomposition = { contributions, bundles: {
   price: contributions.cost_per_token,
 }, total_change: current.cost - previous.cost, unavailable: null };
 function economics(url) {
-  const o = overview(url);
+  const o = overview(url), rows = new Map(o.timeseries.map((r) => [Date.parse(r.t), r]));
+  const step = o.bucket_hours * 3600000, trend = [];
+  for (let t = Math.floor(Date.parse(o.effective_range.from) / step) * step; t < Date.parse(o.effective_range.to); t += step) {
+    const r = rows.get(t);
+    trend.push({ t: new Date(t).toISOString(), cost_per_user: r ? r.cost_usd / r.users : null,
+      cost_per_session: r ? r.cost_usd / r.sessions : null, cost_per_1k_requests: r ? r.cost_usd / r.requests * 1000 : null,
+      tokens_per_request: r ? r.tokens / r.requests : null,
+      cache_hit_rate: r ? r.cache_read_tokens / (r.input_tokens + r.cache_read_tokens + r.cache_write_tokens) : null });
+  }
   return { effective_range: o.effective_range, previous_range: { from: "2026-11-10T00:00:00.000Z", to: from },
     bucket_hours: o.bucket_hours, by_client: [{
       client: "claude", cost_basis: "mixed", current, previous, decomposition,
@@ -194,9 +202,7 @@ function economics(url) {
       coverage: { sessions: current.sessions, matched_sessions: current.sessions, cost_known: current.cost,
         cost_matched: current.cost, cost_unattributed: 0,
         excluded: { no_turns: 0, no_requests: 0, cost_incomplete: 0, tokens_invalid: 0 } },
-      trend: o.timeseries.map((r) => ({ t: r.t, cost_per_user: r.cost_usd / r.users,
-        cost_per_session: r.cost_usd / r.sessions, cost_per_1k_requests: r.cost_usd / r.requests * 1000,
-        tokens_per_request: r.tokens / r.requests, cache_hit_rate: r.cache_read_tokens / (r.input_tokens + r.cache_read_tokens + r.cache_write_tokens) })),
+      trend,
       models: o.by_model.map((r) => ({ model: r.model, cost: r.cost_usd, requests: r.requests,
         request_share: r.requests / current.requests, tokens: r.tokens, cost_per_million_tokens: r.cost_usd / r.tokens * 1e6,
         small: r.model.includes("haiku") })),
@@ -315,6 +321,9 @@ export function validateFixtures() {
     if (single.by_user.length !== 1 || single.by_user[0].user !== identity) throw new Error("User filter leaked");
     near(single.totals.cost_usd, o.by_user.find((r) => r.user === identity).cost_usd, "selected user cost");
   }
+  const trend = economics(new URL(`http://127.0.0.1/?from=${from}&to=${to}`)).by_client[0].trend;
+  near(trend.length, 48, "unit-cost hourly buckets");
+  if (!trend.some((r) => r.cost_per_session === null)) throw new Error("Unit-cost gaps missing");
   return { passed: true, totals: o.totals, current, previous, decomposition,
     task_cost: task.cost_usd, trace_span_count: detail.span_total, missing_attempt_preserved: true,
     scope: "Costs, token components, models, users, time buckets, exact user filters, trace costs and LMDI equation/decomposition.",
