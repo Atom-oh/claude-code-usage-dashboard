@@ -108,7 +108,7 @@ test("direct collector route denies viewers and gives analysts and admins a dedi
   const fetch = vi.fn(url => Promise.resolve({ ok: true, status: 200, json: async () =>
     String(url).startsWith("/api/collector/devices") ? { devices: [], nextCursor: null }
       : String(url).startsWith("/api/collector") ? { enabled: true, endpoint: "https://collector.example/api/ingest",
-        tokenLifetimeDays: 30, collectorVersion: "0.163.1", platforms: ["linux", "darwin"] }
+        installScriptUrl: "https://collector.example/api/ingest/install.sh", tokenLifetimeDays: 30, collectorVersion: "0.163.1", platforms: ["linux", "darwin"] }
         : String(url).startsWith("/api/health/data") ? { status: "ok" } : [] }));
   vi.stubGlobal("fetch", fetch);
   for (const role of ["viewer", "analyst", "admin"]) {
@@ -127,28 +127,32 @@ test("direct collector route denies viewers and gives analysts and admins a dedi
       expect(screen.getByRole("alert").textContent).toContain("권한");
       expect(fetch.mock.calls.some(([url]) => String(url).includes("/api/collector"))).toBe(false);
     } else {
-      await screen.findByRole("button", { name: "Linux 패키지 다운로드" });
+      await screen.findByRole("button", { name: "기기 등록 및 토큰 발급" });
       const requests = fetch.mock.calls.filter(([url]) => String(url).includes("/api/collector"));
       expect(requests.every(([url]) => !String(url).includes("days=") && !String(url).includes("model="))).toBe(true);
     }
   }
 });
 
-test("revoked session during package download removes the collector setup", async () => {
-  vi.stubGlobal("fetch", vi.fn(url => Promise.resolve({ ok: !String(url).includes("/package/"),
-    status: String(url).includes("/package/") ? 401 : 200,
+test("revoked session during device registration removes the collector setup", async () => {
+  vi.stubGlobal("fetch", vi.fn((url, options = {}) => Promise.resolve({ ok: options.method !== "POST",
+    status: options.method === "POST" ? 401 : 200,
     json: async () => String(url).startsWith("/api/collector/devices") ? { devices: [], nextCursor: null }
       : String(url).startsWith("/api/collector") ? { enabled: true, endpoint: "https://collector.example/api/ingest",
-        tokenLifetimeDays: 30, collectorVersion: "0.163.1", platforms: ["linux", "darwin"] } : { status: "ok" } })));
+        installScriptUrl: "https://collector.example/api/ingest/install.sh", tokenLifetimeDays: 30,
+        collectorVersion: "0.163.1", platforms: ["linux", "darwin"] } : { status: "ok" } })));
   const session = { mode: "oidc", role: "analyst", permissions: ["telemetry:read", "collector:manage"],
     expiresAt: new Date(Date.now() + 900000).toISOString() };
   render(<MemoryRouter initialEntries={["/collector"]}>
     <ConfigProvider config={{ session }}><App /></ConfigProvider>
   </MemoryRouter>);
-  const button = await screen.findByRole("button", { name: "Linux 패키지 다운로드" });
+  await screen.findByText("등록한 기기가 없습니다.");
+  fireEvent.change(screen.getByLabelText("기기 이름"), { target: { value: "EC2" } });
+  const button = screen.getByRole("button", { name: "기기 등록 및 토큰 발급" });
+  await waitFor(() => expect(button.disabled).toBe(false));
   fireEvent.click(button);
   expect(await screen.findByRole("heading", { name: "로그인 세션 만료" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /패키지 다운로드/ })).toBeNull();
+  expect(screen.queryByLabelText("기기 이름")).toBeNull();
 });
 
 test("changelog route shows release notes without usage filters and clears the unseen dot", async () => {

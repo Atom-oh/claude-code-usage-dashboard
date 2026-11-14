@@ -26,29 +26,11 @@ inputs and secret provisioning and is not a ready-to-run generic instance setup.
 ## Install
 
 1. Sign in as an editor/admin, open **Collector installation**, select your OS, and
-   download the package. Viewer/demo accounts cannot download or register devices.
-2. Register a device and keep its one-time token available until setup finishes.
-3. On the machine that will run Claude Code/Codex, run `python3 --version`. Install a
+   register the device. Keep its one-time token available until setup finishes.
+   Viewer/demo accounts cannot register devices or download packages.
+2. On the machine that will run Claude Code/Codex, run `python3 --version`. Install a
    supported Python if absent or older than 3.9. Install the clients separately.
-4. Move the archive to that machine and open a terminal in the archive's directory.
-   Extract the archive for your platform and enter the package directory:
-
-```bash
-# macOS
-tar -xzf ccdash-collector-darwin.tar.gz
-cd ccdash-collector
-```
-
-```bash
-# EC2 / Linux
-tar -xzf ccdash-collector-linux.tar.gz
-cd ccdash-collector
-```
-
-Run only your platform's commands. If the browser already extracted the archive,
-enter its `ccdash-collector` directory and skip extraction.
-
-On EC2/Linux, enable the user service at boot and after logout once:
+3. On EC2/Linux, enable the user service at boot and after logout once:
 
 ```bash
 sudo loginctl enable-linger "$USER"
@@ -59,13 +41,32 @@ and logout persistence even when `systemctl --user` currently works. The install
 detects the user manager before changing files. Do not run the installer with sudo.
 macOS uses a per-user LaunchAgent, which runs while that user is logged in.
 
-From the extracted package directory, enter your existing attribution ID/email to
-preserve user grouping. New users should choose their organization's intended identifier.
-Allowed characters are letters, numbers, `.`, `_`, `+`, `@`, and `-`.
-Replace `YOUR-DASHBOARD` with your dashboard host; the web page supplies the configured
-endpoint in its copyable command.
+4. Run the copyable command from the web page in a terminal on that machine. Replace
+   `YOUR-DASHBOARD` with your dashboard host:
 
 ```bash
+curl -fsSL 'https://YOUR-DASHBOARD/api/ingest/install.sh' | sh
+```
+
+The script detects Linux or macOS and asks for the attribution ID/email and then the
+device token, reading both from the terminal (it refuses to run without one). Enter your
+existing attribution ID/email to preserve user grouping; new users should choose their
+organization's intended identifier. Allowed characters are letters, numbers, `.`, `_`,
+`+`, `@`, and `-`. The token prompt does not echo. The script downloads this package from
+`/api/ingest/package/<platform>` with the token as a bearer header passed through curl's
+standard-input configuration, extracts it into a private temporary directory, runs
+`install.py install --token-file` with a mode 0600 copy, and deletes the directory on
+exit. The token never appears in process arguments or the environment.
+
+### Manual install from the archive
+
+The **Collector installation** page no longer offers the archive, but signed-in
+editors/admins can still fetch it from `/api/collector/package/<linux|darwin>`. Extract it
+on the target machine and run the installer from the package directory:
+
+```bash
+tar -xzf ccdash-collector-linux.tar.gz   # or ccdash-collector-darwin.tar.gz
+cd ccdash-collector
 (
 printf 'Telemetry user ID/email: '
 IFS= read -r ccdash_user_id
