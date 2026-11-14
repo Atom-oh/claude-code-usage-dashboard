@@ -41,7 +41,8 @@ The CLI remains pinned to HyperFrames 0.7.77; Remotion audio uses 4.0.542.
 validates both the manifest and per-clip receipts against the current speech and
 audio hashes. It stores completed audio before requesting speech marks and stops
 before the next scene after an error; a retry reuses valid audio and requests only
-missing marks. Checks, rendering
+missing marks. The previous manifest remains intact until every scene succeeds;
+metadata writes are atomic, including per-clip receipts. Checks, rendering
 and hydration do not call Polly. Never trim speech to fit an estimated duration.
 
 Inspect all scene midpoints and the encoded result. The English and Korean VTT

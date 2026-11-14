@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shutil
@@ -36,6 +37,22 @@ def text_ssml(text):
 def probe(path):
     raw = subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)], text=True)
     return float(json.loads(raw)["format"]["duration"])
+
+
+def write_json(path, value):
+    """Publish metadata atomically so a failed write leaves the old cache intact."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix="." + path.name + ".", delete=False) as output:
+            temporary = Path(output.name)
+            output.write(json.dumps(value, indent=2) + "\n")
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def cached_clip(target, receipt, previous, source_hash):
@@ -94,7 +111,7 @@ def main():
                 cached = {"id": scene["id"], "path": "audio/" + target.name, "source_sha256": source_hash,
                     "sha256": sha(target.read_bytes()), "bytes": target.stat().st_size,
                     "duration_seconds": probe(target), "generated_at": datetime.now(timezone.utc).isoformat()}
-                receipt.write_text(json.dumps(cached, indent=2) + "\n")
+                write_json(receipt, cached)
             marks_file = scratch / "marks.jsonl"
             # The following named option terminates the CLI's variadic mark-type list.
             subprocess.run(common + ["--speech-mark-types", "ssml", "--output-format", "json", str(marks_file)], check=True, stdout=subprocess.DEVNULL)
@@ -104,7 +121,7 @@ def main():
             duration = cached["duration_seconds"]
             assert duration > marks[-1]["time_seconds"]
         result = {**cached, "marks": marks}
-        receipt.write_text(json.dumps(result, indent=2) + "\n")
+        write_json(receipt, result)
         print(scene["id"] + ": " + str(round(duration, 3)) + " seconds", flush=True)
         return result
 
@@ -113,8 +130,11 @@ def main():
     clips = []
     for scene in script["scenes"]:
         clips.append(generate(scene))
-        old_file.write_text(json.dumps({"script_sha256": sha(script_bytes), "provider": script["provider"],
-            "voice": script["voice"], "engine": script["engine"], "clips": clips}, indent=2) + "\n")
+    # Until every clip succeeds, retain all prior entries, including unprocessed
+    # hydrated clips that do not have local receipts. Completed changes already
+    # have their own receipts, so the next attempt can reuse both sources.
+    write_json(old_file, {"script_sha256": sha(script_bytes), "provider": script["provider"],
+        "voice": script["voice"], "engine": script["engine"], "clips": clips})
 
     fps = script["fps"]
     lead = math.ceil(script["lead_seconds"] * fps)
@@ -126,8 +146,8 @@ def main():
         scenes.append({"id": scene["id"], "start_frame": start, "duration_frames": duration_frames,
             "speech_start_frame": start + lead, "speech_duration_seconds": clip["duration_seconds"], "marks": clip["marks"]})
         start += duration_frames
-    (ROOT / "timing.json").write_text(json.dumps({"fps": fps, "duration_frames": start, "duration_seconds": start / fps,
-        "script_sha256": sha(script_bytes), "scenes": scenes}, indent=2) + "\n")
+    write_json(ROOT / "timing.json", {"fps": fps, "duration_frames": start, "duration_seconds": start / fps,
+        "script_sha256": sha(script_bytes), "scenes": scenes})
 
     # Original deterministic pad, generated once per 48-second cycle and repeated.
     rate = script["sample_rate"]
@@ -156,7 +176,7 @@ def main():
     data["music"] = {"path": "audio/background.mp3", "duration_seconds": probe(bed), "bytes": bed.stat().st_size,
         "sha256": sha(bed.read_bytes()), "source": "Original deterministic sine-pad score; low-pass and presence cut leave room for narration."}
     data["normalization"] = "Speech: loudnorm I=-18, TP=-2, LRA=7. Music is additionally ducked in the audio composition."
-    old_file.write_text(json.dumps(data, indent=2) + "\n")
+    write_json(old_file, data)
     print("Total timeline: " + str(round(start / fps, 3)) + " seconds", flush=True)
 
 

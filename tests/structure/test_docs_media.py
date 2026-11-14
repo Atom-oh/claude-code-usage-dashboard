@@ -170,5 +170,20 @@ class MediaTests(unittest.TestCase):
                     self.assertEqual(measured[key], pinned[key], (owner, measured["format"], key))
 
 
+    def test_tour_source_records_and_delivered_captions_match_their_files(self):
+        metadata = json.loads((ROOT / "site/assets/media.json").read_text())["detailed_tour"]
+        for item in metadata["source_files"]:
+            path = ROOT / item["path"]
+            self.assertEqual(path.stat().st_size, item["bytes"], item["path"])
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), item["sha256"], item["path"])
+        project = ROOT / "video/product-tour"
+        translation = json.loads((project / "translations.json").read_text())
+        self.assertEqual(hashlib.sha256((project / "captions.en.json").read_bytes()).hexdigest(),
+                         translation["captions_sha256"])
+        for locale in ("en", "ko"):
+            self.assertEqual((project / f"captions.{locale}.vtt").read_bytes(),
+                             (ROOT / f"site/assets/video/product-tour-{locale}-20261114.vtt").read_bytes())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -72,6 +72,63 @@ class AudioGenerationTests(unittest.TestCase):
                     AUDIO.main()
                 self.assertEqual(calls, [("first", "json")])
 
+class HydratedCacheTests(unittest.TestCase):
+    def test_three_clip_hydrated_cache_survives_a_middle_marks_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = {"speech_rate": "100%", "voice": "Seoyeon", "engine": "neural",
+                      "region": "ap-northeast-2", "sample_rate": 16, "provider": "Amazon Polly",
+                      "fps": 10, "lead_seconds": 0.1, "tail_seconds": 0.1,
+                      "scenes": [{"id": name, "segments": [name]} for name in ("first", "middle", "last")]}
+            script_file = root / "script.json"
+            script_file.write_text(json.dumps(script))
+            calls = []
+            fail_middle_marks = False
+
+            def run(command, **_kwargs):
+                target = Path(command[-1])
+                if command[0] == "aws":
+                    speech = Path(command[command.index("--text") + 1].removeprefix("file://")).read_text()
+                    name = next(name for name in ("first", "middle", "last") if name in speech)
+                    kind = command[command.index("--output-format") + 1]
+                    calls.append((name, kind))
+                    if kind == "json":
+                        if name == "middle" and fail_middle_marks:
+                            raise RuntimeError("middle marks failed")
+                        target.write_text(json.dumps({"type": "ssml", "value": "s0", "time": 100}) + "\n")
+                    else:
+                        target.write_bytes(speech.encode())
+                elif command[0] == "ffmpeg":
+                    target.write_bytes(b"normalized:" + Path(command[command.index("-i") + 1]).read_bytes())
+                else:
+                    self.fail("Unexpected process: " + command[0])
+
+            with patch.object(AUDIO, "ROOT", root), patch.object(AUDIO.shutil, "which", return_value="mock"), \
+                    patch.object(AUDIO, "probe", return_value=1.0), patch.object(AUDIO.subprocess, "run", side_effect=run):
+                AUDIO.main()
+                manifest = root / "audio.json"
+                before = manifest.read_bytes()
+                # Hydration ships audio.json and MP3s, but no local generation receipts.
+                for receipt in (root / "audio").glob("*.receipt.json"):
+                    receipt.unlink()
+                script["scenes"][1]["segments"] = ["middle changed"]
+                script_file.write_text(json.dumps(script))
+                calls.clear()
+                fail_middle_marks = True
+                with self.assertRaisesRegex(RuntimeError, "middle marks failed"):
+                    AUDIO.main()
+                self.assertEqual(calls, [("middle", "mp3"), ("middle", "json")])
+                self.assertEqual(manifest.read_bytes(), before)
+                calls.clear()
+                fail_middle_marks = False
+                AUDIO.main()
+                self.assertEqual(calls, [("middle", "json")])
+                result = json.loads(manifest.read_text())
+                self.assertEqual([clip["id"] for clip in result["clips"]], ["first", "middle", "last"])
+                previous = json.loads(before)
+                self.assertEqual(result["clips"][0], previous["clips"][0])
+                self.assertEqual(result["clips"][2], previous["clips"][2])
+
 
 if __name__ == "__main__":
     unittest.main()
