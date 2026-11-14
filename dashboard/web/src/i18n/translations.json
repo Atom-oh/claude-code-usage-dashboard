@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T15:01:17.831345+00:00",
-  "source_messages": 1950,
+  "updated_at": "2026-11-14T15:09:58.804318+00:00",
+  "source_messages": 1964,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 1950,
-      "bytes": 148096,
-      "sha256": "5747fc7d2c0956c15d5083ab080c7194b3b6f51b694e944e3ba6b4181558ff1e"
+      "messages": 1964,
+      "bytes": 150271,
+      "sha256": "86b59213de39b04f657aed999cbb1683637c360917eebba857296d1150613ecf"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 1950,
-      "bytes": 174771,
-      "sha256": "712810ea3114b21b29167ecf427c84bba905267842b3bbb8e9fa5f8c994895b1"
+      "messages": 1964,
+      "bytes": 177374,
+      "sha256": "b74139f8714331fa88c8054f8d3e9c3268326b2a918e11c3b610a3d746caf0cb"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 1950,
-      "bytes": 183593,
-      "sha256": "028750604a4933b8cbb869605b492463b7b65cfa14ceacdd15a2285af38bb988"
+      "messages": 1964,
+      "bytes": 186166,
+      "sha256": "8d761c82e11b1dc92e7bd78611867f403d32cfe706c47ef0c852163ccb10c9ce"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 1950,
-      "bytes": 157627,
-      "sha256": "bd251dff5716b9733e9385110ae51548bc52ea409b65c495ea27507b8eb5239c"
+      "messages": 1964,
+      "bytes": 159852,
+      "sha256": "9c4aea2d9ce4cf0d27aba1e94e7197edb52ae0e218f95bc057011b2e743b0d7a"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 1950,
-      "bytes": 140026,
-      "sha256": "bacebcf53a5c17dae81b32db0099b2192343902af6e62a104adc64b81b91e71a"
+      "messages": 1964,
+      "bytes": 142002,
+      "sha256": "b7e5fc628f224868f88d4771b1a07faa420924a5572f276b0c685eb4c01464c7"
     }
   ],
   "catalog_calls": [
@@ -960,6 +960,17 @@
       ],
       "source_sha256_verified": "10a993125cc94e367b4a19ab3de024ab066be7a674e548a6c8320d484246b5d9",
       "output_sha256_verified": "7c5fd3fbc9fa6d9712be3ced88b8edf9a1bebc1b4b2f78670ad19f7c2ce62522"
+    },
+    "precision_followup": {
+      "requested_model": "openai.gpt-6-luna",
+      "coordinator_cli_invocation": "codex",
+      "timestamp_utc": "2026-11-14T15:09:12Z",
+      "source_sha256": "3e014295c3b4d28bbf599518536ff30669942462e7c211a6b93a0cf81cbc38c2",
+      "output_sha256": "fa036a54c181e6b59bce4892c563cfea68de4d9789f9b56918dcfda49af68c62",
+      "used_keys": [
+        "m115bced49291"
+      ],
+      "note": "Use native Settings menu names; guide-only history corrections are recorded in the site ledger."
     }
   },
   "upstream_289_preserved": {
@@ -968,5 +979,69 @@
       "ma1a91661679d"
     ],
     "provenance": "Preserved unchanged from the reviewed upstream PR; these entries are outside the Settings translation batch."
+  },
+  "release_110_messages": {
+    "whole_product_notes": {
+      "requested_model": "openai.gpt-6-luna",
+      "selection_basis": "coordinator CLI invocation",
+      "timestamp_utc": "2026-11-14T14:12:44Z",
+      "sha256": {
+        "source": "30b3648fef49ce29bd1a691da3b9a8b6d5ff98c803d282fe667bfc622746b7c3",
+        "output": "d94ce5863888c7698777a15dcda9ae9d46cd46b138e19d855ed65c5ab73c3b0c"
+      },
+      "used_keys": [
+        "m076dafe73ad6",
+        "m38271be1c388",
+        "m59165170ff41",
+        "ma8e165da1a1a",
+        "m060d1db5c606"
+      ],
+      "used_message_count": 5
+    },
+    "tour_notes": {
+      "requested_model": "openai.gpt-6-luna",
+      "selection_basis": "coordinator CLI invocation",
+      "timestamp_utc": "2026-11-14T12:46:28.302970Z",
+      "input_sha256": "1f366a659b8f0515475bd1883ee08040a719895495a2729993262005b4e305bb",
+      "output_sha256": "73b4306c96c57a7965a2222e7b0baecde738c741e571ec0934b66ddc293ce61f",
+      "source_group": "release",
+      "used_keys": [
+        "m2ffa0bd0a770",
+        "m34ec4528a652",
+        "m90e607677d8b"
+      ],
+      "used_message_count": 3
+    },
+    "agent_record_sha256": "1eae3e0b5eb6867c9c14b60dded42a15774df992c2543cdf833712f9c2ee6a0e",
+    "collector_migration": {
+      "requested_model": "openai.gpt-6-luna",
+      "selection_basis": "coordinator CLI invocation",
+      "created_at_utc": "2026-11-14T14:40:18+00:00",
+      "source_sha256": "b66964ea6f0e4595afe9234ee2e711d1298008ccfcfe0d88e9309290e51b1953",
+      "output_sha256": "48d063e912b8e1830b9e1b16f9e23f9f4afc0b6730da328a05186ab94dd7326b",
+      "used_keys": [
+        "m86916df86de5",
+        "m027b891afeb5",
+        "m87376b27b5a1"
+      ],
+      "used_message_count": 3,
+      "agent_record_sha256": "34c80b2a675c2251ed6ca1d6d275efd56cff4d8fbc8a7eda92935acce3e8c101"
+    },
+    "directory_settings": {
+      "requested_model": "openai.gpt-6-luna",
+      "selection_basis": "coordinator CLI invocation",
+      "timestamp_utc": "2026-11-14T14:49:54Z",
+      "source_sha256": "473287b01875b8254c3ceda3f03898916d20125b6fc9b77df19a204c8ed52e9a",
+      "output_sha256": "77661b33bb12f466156f500acbf70fa6e13d50e62ee21f0844eb3aba69e90d39",
+      "parent_receipt_sha256": "481d69e2a11b6501ba94235c8bc354b7b779f9fcf5b22860fadc4cfe1a07da12",
+      "source_group": "guide",
+      "used_keys": [
+        "m6fa378eb3d69",
+        "m1aa2715fa84e",
+        "m7878a6c9d698"
+      ],
+      "used_message_count": 3,
+      "agent_record_sha256": "2c162f9fd052a1d9cf408bd679161b79204ea05d31a97f783da02718f74fcd88"
+    }
   }
 }

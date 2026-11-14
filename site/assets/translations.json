@@ -234,9 +234,9 @@
       "path": "ko/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 85730,
-      "output_sha256": "62cdf86cac20f8612cd20041e1bdeb92abbde57bf46201901244db62bbfb422a",
-      "source_sha256": "f6a4e4fbc7a05763a9a682609b0476abd1c93cfac605e09a9a2da7aac5a5f474"
+      "bytes": 86196,
+      "output_sha256": "a7c3496aa2a0a9c11b45f56781c116b70d7863f271fd376cf9dff1f583ba8558",
+      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2"
     },
     {
       "locale": "ja",
@@ -244,9 +244,9 @@
       "path": "ja/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 96492,
-      "output_sha256": "67f833edd4aacf12a11a1fc766058ef8b9f2df88bac45dfab655afa606986c41",
-      "source_sha256": "f6a4e4fbc7a05763a9a682609b0476abd1c93cfac605e09a9a2da7aac5a5f474"
+      "bytes": 97087,
+      "output_sha256": "0bbf37e2f46c8aa8b93ac6a7ab755cbff468db151bb74fc52dc548881b28559e",
+      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2"
     },
     {
       "locale": "zh-CN",
@@ -254,9 +254,9 @@
       "path": "zh/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 70179,
-      "output_sha256": "39758a123f9f78248e3473f38c81eb7f174f6a2427c95a92a010e4aaf1711fc6",
-      "source_sha256": "f6a4e4fbc7a05763a9a682609b0476abd1c93cfac605e09a9a2da7aac5a5f474"
+      "bytes": 70591,
+      "output_sha256": "2cf809b7559b16ec73fb34f1a9b31b370a702a2415a090b52c36c7ab396a3165",
+      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2"
     },
     {
       "locale": "es",
@@ -274,9 +274,9 @@
       "path": "es/user-guide.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 83185,
-      "source_sha256": "f6a4e4fbc7a05763a9a682609b0476abd1c93cfac605e09a9a2da7aac5a5f474",
-      "output_sha256": "4ac17b5b4464a4a963132fc0a45305277329ef11391c8bc48a3a8a5b7a0e8095"
+      "bytes": 83809,
+      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2",
+      "output_sha256": "7c4154a1e059e7c1c2d1ebbd5c595d256b86f9651cdd4e170e129e72359d8f79"
     },
     {
       "locale": "es",
@@ -414,7 +414,7 @@
     },
     "user-guide": {
       "path": "user-guide.html",
-      "sha256": "f6a4e4fbc7a05763a9a682609b0476abd1c93cfac605e09a9a2da7aac5a5f474"
+      "sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2"
     }
   },
   "last_updated": "2026-11-14",
@@ -991,6 +991,21 @@
     "host_integration": "Inserted translated team-settings sections and matching contents links in the five user guides; capture uses synthetic directory data and native English UI.",
     "source_sha256": "473287b01875b8254c3ceda3f03898916d20125b6fc9b77df19a204c8ed52e9a",
     "output_sha256": "77661b33bb12f466156f500acbf70fa6e13d50e62ee21f0844eb3aba69e90d39",
-    "source_locale": "ko"
+    "source_locale": "ko",
+    "precision_followup": {
+      "requested_model": "openai.gpt-6-luna",
+      "coordinator_cli_invocation": "codex",
+      "timestamp_utc": "2026-11-14T15:09:12Z",
+      "source_sha256": "3e014295c3b4d28bbf599518536ff30669942462e7c211a6b93a0cf81cbc38c2",
+      "output_sha256": "fa036a54c181e6b59bce4892c563cfea68de4d9789f9b56918dcfda49af68c62",
+      "source_locale": "ko",
+      "used_keys": [
+        "guide_title",
+        "step_1",
+        "step_3",
+        "interpretation"
+      ],
+      "host_integration": "Aligned literal Settings references in the Japanese and Spanish introductory paragraphs with the delegated native menu names."
+    }
   }
 }

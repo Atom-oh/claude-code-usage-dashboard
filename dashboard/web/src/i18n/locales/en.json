@@ -1948,5 +1948,19 @@
   "mf995216032e2": "No value: {0} users — users without a value for this attribute.",
   "m17f6238a230c": "Excluded: {0} users — users with no email or an email shared by multiple accounts.",
   "m2b6bc9e24fea": "Settings were changed elsewhere. Reload the latest settings before saving again.",
-  "ma1a91661679d": "Known subtotal · responses without collected usage are excluded."
+  "ma1a91661679d": "Known subtotal · responses without collected usage are excluded.",
+  "m076dafe73ad6": "Explore every dashboard screen and usage guide in five languages, and learn key workflows with a detailed introduction video featuring Korean narration and English subtitles.",
+  "m38271be1c388": "Every screen, localized in five languages",
+  "m59165170ff41": "Guidance in Korean, English, Simplified Chinese, Japanese, and Spanish covers everything from Overview to cost, user, and tool analysis, Codex diagnostics, collector setup, and task details. Switching languages preserves your selected tab, task, time range, and chart highlights.",
+  "ma8e165da1a1a": "Detailed usage guides in five languages",
+  "m060d1db5c606": "In all five languages, including Spanish, explore the purpose of every menu and how to read it, along with user Trace, cost interpretation, tool usage, and collector setup steps. Zoom in on the screens and follow the complete workflow alongside the architecture.",
+  "m2ffa0bd0a770": "A detailed video tour of all features",
+  "m34ec4528a652": "You can watch a 9-minute introduction video with Korean narration and English subtitles on the first screen of the user guide. Select a chapter to jump to user Trace, cost interpretation, or the tools and collector guide.",
+  "m90e607677d8b": "Sidebar → User Guide → Introduction video",
+  "m86916df86de5": "Safely switch an existing Collector",
+  "m027b891afeb5": "On personal Linux, checks the existing otelcol.service and switches to the device Collector after you consent. Preserves the user ID and configuration, and restores the existing service if installation fails. On macOS and Linux reinstalls, checks for an existing runnable Collector and checks for port conflicts before browser approval.",
+  "m87376b27b5a1": "Install Collector · Switch from an existing installation",
+  "m6fa378eb3d69": "Set teams from the organization directory",
+  "m1aa2715fa84e": "Administrators can select Cognito user attributes and team display names in Settings, then preview the user distribution before applying them. Selected attributes, entered names, and save errors remain the same when the interface language changes.",
+  "m7878a6c9d698": "Sidebar → Settings → Team attribute"
 }
