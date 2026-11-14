@@ -17,10 +17,28 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
-- Add validated locale preference loading and Korean/English message catalogs
-  for the multilingual interface.
 - Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
   provenance and verified message placeholders.
+
+## [1.8.2] - 2026-11-14
+
+### Added
+
+- Add validated locale preference loading and Korean/English message catalogs
+  for the multilingual interface.
+
+### Fixed
+
+- Keep linked Claude spans in device Collector policies. Claude Code 2.1.325 links
+  most `llm_request` spans to another trace, and the device policy dropped any span
+  with links, so device-collected tasks showed no models, LLM calls or call costs.
+  Links (trace/span IDs and `link.type`) are now retained, as in the central
+  Collector configuration; span events stay dropped. Previously dropped spans are
+  not recovered, and devices need the regenerated policy.
+- Load the 90-day user activity heatmap for active users. One-user Claude counter and
+  log reads now narrow identity before aggregation (hourly counter lookback and a
+  promoted-identity log prefilter), and counters and logs run as separate queries
+  whose sessions are unioned per day, so a session in both still counts once.
 
 ## [1.8.1] - 2026-11-14
 

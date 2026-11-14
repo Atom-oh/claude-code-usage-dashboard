@@ -29,8 +29,8 @@
       "locale": "ja",
       "path": "locales/ja.json",
       "messages": 1833,
-      "bytes": 167314,
-      "sha256": "51d02f9ad24f27c9020948a108337042a93b9be4d276d0db2eada12386789861"
+      "bytes": 167335,
+      "sha256": "216dafe3511c2a938a3ed996fbc7295fbcc23cb7e16cd33dbd84cbcaf5bd0f2b"
     },
     {
       "locale": "ko",
@@ -43,8 +43,8 @@
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
       "messages": 1833,
-      "bytes": 129076,
-      "sha256": "48a9735030badf3047c8404366e36148e5560f7145949f484e5432c08cb86801"
+      "bytes": 129070,
+      "sha256": "c3fe0e828e5c0faf265f8a1d3083538103ba4dd8a0b2546e2e8ed0177f493117"
     }
   ],
   "catalog_calls": [
@@ -721,5 +721,20 @@
       "m9c7b40d07138",
       "m346403545b96"
     ]
+  },
+  "comparison_and_coverage_review": {
+    "requested_model": "openai.gpt-6-luna",
+    "input_sha256": "3c6353c3113b9087af8a9bb862908c03d71d94e282c603056c76e83a6592c389",
+    "output_sha256": "74a5982107dd255ee43598bc2167a4f0ca35c31a5f2a2e63115550b371f5bd0c",
+    "scope": {
+      "ja": [
+        "mb32003ca5083"
+      ],
+      "zh-CN": [
+        "mb32003ca5083",
+        "m1c02908f91d3"
+      ]
+    },
+    "reason": "Use the preceding equal-length period and distinguish uncollected data from measured zero."
   }
 }

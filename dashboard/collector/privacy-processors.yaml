@@ -1,10 +1,12 @@
   # Device packages may inherit content opt-ins. Keep trace schema measurements,
-  # but never trace events/links, free-text status, dynamic span names or content keys.
+  # but never trace events, free-text status, dynamic span names or content keys.
+  # Span links stay: Claude Code 2.1.325+ links most llm_request spans to another
+  # trace (IDs plus `link.type`), and dropping the span would lose task models,
+  # calls and cost. The central collector-config.yaml Claude pipeline keeps them too.
+  # Collector 0.163.1 OTTL has no span-link context, so links cannot be scrubbed alone.
   filter/claude_trace_content:
     error_mode: propagate
     traces:
-      span:
-        - 'Len(links) > 0'
       spanevent:
         - 'true'
   transform/claude_trace_content:

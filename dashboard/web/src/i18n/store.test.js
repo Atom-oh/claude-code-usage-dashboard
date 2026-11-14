@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createLocaleStore } from "./store.js";
 import koreanCatalog from "./locales/ko.json";
 import englishCatalog from "./locales/en.json";
+import chineseCatalog from "./locales/zh-CN.json";
+import japaneseCatalog from "./locales/ja.json";
+import spanishCatalog from "./locales/es.json";
 
 const ko = { greeting: "안녕하세요 {0}", empty: "미수집" };
 const en = { greeting: "Hello {0}", empty: "Not collected" };
@@ -22,13 +25,13 @@ describe("locale store", () => {
     for (const key of ["constructor", "toString", "__proto__"]) expect(store.translate(key)).toBe(key);
   });
 
-  it("loads the complete shipped English catalog through the real validator", async () => {
+  it.each([["en", englishCatalog], ["zh-CN", chineseCatalog], ["ja", japaneseCatalog], ["es", spanishCatalog]])("loads the complete shipped %s catalog through the real validator", async (locale, catalog) => {
     const store = createLocaleStore({
       source: koreanCatalog,
-      loaders: { ko: async () => koreanCatalog, en: async () => englishCatalog },
+      loaders: { ko: async () => koreanCatalog, [locale]: async () => catalog },
     });
-    expect(await store.select("en")).toBe(true);
-    for (const [key, value] of Object.entries(englishCatalog)) expect(store.translate(key)).toBe(value);
+    expect(await store.select(locale)).toBe(true);
+    for (const [key, value] of Object.entries(catalog)) expect(store.translate(key)).toBe(value);
   });
 
   it("persists only supported locales and tolerates blocked storage", async () => {

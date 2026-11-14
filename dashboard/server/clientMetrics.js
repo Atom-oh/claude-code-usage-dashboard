@@ -488,8 +488,10 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
   const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
   // Promoted identities let PREWHERE reject other users before reading wide maps.
   // The original map-derived predicate below remains the final semantic check.
+  // Both clients: UserEmail/EndUserId materialize from the same resource keys, and a
+  // one-user Claude read (the 90-day heatmap) otherwise decodes every user's maps.
   const earlyUser = "coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '')";
-  const prewhere = isCodex && (filters.user || filters.userExact) ? `PREWHERE
+  const prewhere = filters.user || filters.userExact ? `PREWHERE
       Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime}
       AND ({clientUser:String} = '' OR positionCaseInsensitive(${earlyUser}, {clientUser:String}) > 0)
       AND ({clientUserExact:String} = '' OR ${earlyUser} = {clientUserExact:String})` : "";
@@ -683,29 +685,46 @@ export function validateClientActivity(raw, enabledClients) {
   return filters;
 }
 
-// Aggregate sessions in ClickHouse before transporting rows. Heatmaps must not
-// depend on the overview's bounded per-session/model/tool cost result.
+// Claude counters and operational logs can describe the same session, so their daily
+// counts cannot be summed. Each side returns distinct (day, session) rows and the
+// union happens here: an empty session marks an observed day without adding a session.
+export function mergeClaudeActivity(lists) {
+  const days = new Map();
+  for (const row of lists.flat()) {
+    const day = row.t || row.day;
+    if (!days.has(day)) days.set(day, new Set());
+    if (row.session) days.get(day).add(row.session);
+  }
+  return [...days].map(([t, sessions]) => ({ client: "claude", t, sessions: sessions.size }));
+}
+
+// Heatmaps must not depend on the overview's bounded per-session/model/tool cost result.
+// Codex aggregates sessions in ClickHouse. Claude runs its counter and log reads as
+// separate queries: inside one UNION they share one per-query memory limit, which a
+// 90-day read of an active user exceeds.
 export async function clientActivity(from, to, raw, enabledClients, externalSignal) {
   const filters = validateClientActivity(raw, enabledClients);
   const requestedTo = to;
   to = effectiveClientEnd(from, to, filters.clients);
-  const jobs = filters.clients.map(client => async signal => {
-    const rows = client === "claude"
-      ? await queries.clientClaudeRows(from, to, filters, 3600, signal, undefined, {
-        activityOnly: true,
-        // Keep identities inside the SQL union: counters and operational logs may
-        // describe the same session, so summing their daily counts would double it.
-        activityEvents: buildCodexQuery(from, to, filters, {}, client, 86400,
-          { activityOnly: true, activitySessions: true }),
-      })
-      : await (() => {
-        const { sql, params } = buildCodexQuery(from, to, filters, {}, client, 86400,
-          { activityOnly: true, costSource: costSourceForRange(from) });
+  const claude = filters.clients.includes("claude");
+  const jobs = [
+    ...(claude ? [
+      signal => queries.clientClaudeRows(from, to, filters, 3600, signal, undefined, { activityOnly: true }),
+      signal => {
+        const { sql, params } = buildCodexQuery(from, to, filters, {}, "claude", 86400,
+          { activityOnly: true, activitySessions: true });
         return query(sql, params, signal);
-      })();
-    return rows.map(row => ({ client, t: row.t || row.day, sessions: Number(row.sessions) }));
-  });
-  const timeseries = (await clientQueryBatch(jobs, externalSignal)).flat()
+      },
+    ] : []),
+    ...filters.clients.filter(client => client !== "claude").map(client => async signal => {
+      const { sql, params } = buildCodexQuery(from, to, filters, {}, client, 86400,
+        { activityOnly: true, costSource: costSourceForRange(from) });
+      return (await query(sql, params, signal)).map(row => ({ client, t: row.t, sessions: Number(row.sessions) }));
+    }),
+  ];
+  const results = await clientQueryBatch(jobs, externalSignal);
+  const rows = claude ? [mergeClaudeActivity(results.slice(0, 2)), ...results.slice(2)] : results;
+  const timeseries = rows.flat()
     .sort((a, b) => a.t.localeCompare(b.t) || a.client.localeCompare(b.client));
   return { clients: filters.clients, timeseries, bucket_hours: 24,
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() },

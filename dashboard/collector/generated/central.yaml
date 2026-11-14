@@ -199,8 +199,6 @@ processors:
   filter/claude_trace_content:
     error_mode: propagate
     traces:
-      span:
-        - 'Len(links) > 0'
       spanevent:
         - 'true'
   transform/claude_trace_content:
