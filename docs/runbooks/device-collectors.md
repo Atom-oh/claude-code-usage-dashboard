@@ -7,13 +7,12 @@ role open **Collector installation** (`/collector`). Viewer/demo users have neit
 navigation nor management/download API access. Group names remain configurable through
 [organization OIDC](organization-sso.md); no account or domain is hardcoded.
 
-1. Select Linux or macOS. Both packages configure Claude Code and Codex; install those
-   clients separately if absent.
+1. Download the Linux or macOS archive while signed in. Both configure Claude Code
+   and Codex; install those clients separately if absent.
 2. Register a named device. Copy its token once; the server stores only a hash.
-3. On the device, run the page's `curl -fsSL <origin>/api/ingest/install.sh | sh`
-   command. The script asks for the attribution ID, then the token at a hidden terminal
-   prompt, and downloads the package with that token. Do not put the token in shell
-   arguments, URLs, screenshots or shared files.
+3. Extract the archive and run the command shown on the page. Supply the HTTPS
+   dashboard ingestion endpoint, then paste the token at the hidden prompt. Do not
+   put it in shell arguments, URLs, screenshots or shared files.
 4. Follow the included README for Python prerequisites, configuration checks, service
    status and uninstall. Linux uses a user systemd service; EC2 reboot persistence
    requires `loginctl enable-linger` for that user. macOS uses a per-user LaunchAgent,
@@ -104,9 +103,7 @@ revocation does not revoke credentials previously issued for that path.
 ## Verify and recover
 
 - Deny unauthenticated and viewer management/download requests. Confirm a valid
-  device token cannot read dashboard APIs and browser cookies cannot ingest or download
-  `/api/ingest/package/*`. `/api/ingest/install.sh` is intentionally public and must
-  contain only the ingestion endpoint.
+  device token cannot read dashboard APIs and browser cookies cannot ingest.
 - Send isolated Claude and Codex OTLP fixtures through the gateway, then inspect
   the correct existing-schema tables and retained client/backend identities.
 - Revoke one fixture token and verify both API replicas reject it after ten seconds.
@@ -115,7 +112,7 @@ revocation does not revoke credentials previously issued for that path.
 - Check `/readyz`, receiver health, errors and telemetry receipt after rollout.
 
 Gateway admission is separate from expensive query admission: eight in-flight
-requests (OTLP, renewal and device package token checks share them), a 15-second deadline and a 2 MiB uncompressed body maximum per process.
+requests, a 15-second deadline and a 2 MiB uncompressed body maximum per process.
 Only JSON/protobuf OTLP POST is accepted, with no content compression. Local packages
 configure OTLP/HTTP `compression: none`. Metadata-store failures fail authentication
 closed after cached validations expire. Last-delivery time is metadata, not a meter.
