@@ -179,6 +179,36 @@ test("a directory above the interval limit publishes empty with a reason", async
   assert.deepEqual(directoryParams("{dirKey:Array(String)}", {}).dirKey, []);
 });
 
+test("calls during a run coalesce into one follow-up that reads the newer settings", async () => {
+  // historyStart is already set, so the first run does not rewrite the settings record.
+  const store = fakeStore({ ...settings(), historyStart: 500 });
+  const reads = [];
+  const get = store.getTeamSettings.bind(store);
+  store.getTeamSettings = async () => { const value = await get(); reads.push(value); return value; };
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let listed = 0;
+  const users = { async listUsers() { listed++; if (listed === 1) await gate; return [user("hana")]; } };
+  const sync = createTeamSync({ store, directory: users, issuer: ISSUER, now: () => 1000 });
+  const first = sync.syncOnce();
+  await new Promise((resolve) => setImmediate(resolve));
+  // A save lands while the first run is in flight (it already read the old settings).
+  store.state.settings = { ...store.state.settings, attributes: [...store.state.settings.attributes,
+    { attribute: "name", from: 900 }], version: 2 };
+  const second = sync.syncOnce();
+  const third = sync.syncOnce();
+  assert.equal(second, third, "further calls share one follow-up");
+  assert.notEqual(second, first);
+  release();
+  await first;
+  await second;
+  assert.equal(reads.length, 2, "exactly two runs");
+  assert.deepEqual(reads[1].attributes.map((a) => a.attribute), [DEPT, "name"]);
+  assert.equal(listed, 2);
+  await sync.syncOnce();
+  assert.equal(reads.length, 3, "an idle call starts a fresh run");
+});
+
 test("start runs immediately, never throws, and stop clears the timer", async () => {
   const store = fakeStore(settings());
   const sync = createTeamSync({ store, directory: directory(new Error("x")), issuer: ISSUER, intervalMs: 50 });

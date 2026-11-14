@@ -33,6 +33,18 @@ export function emailKey(issuer, email) {
   return digest(`${issuer}\0${email.toLowerCase()}`);
 }
 
+/**
+ * Splits listed directory users into those the sync can attribute and a count of the rest: users without
+ * a `sub` or a usable email digest, and users sharing an email digest (ambiguous; they keep device teams).
+ */
+export function attributableUsers(issuer, listed) {
+  const keyed = listed.filter((user) => user?.sub && emailKey(issuer, user.email));
+  const counts = new Map();
+  for (const { email } of keyed) counts.set(emailKey(issuer, email), (counts.get(emailKey(issuer, email)) ?? 0) + 1);
+  const users = keyed.filter(({ email }) => counts.get(emailKey(issuer, email)) === 1);
+  return { users, excluded: listed.length - users.length };
+}
+
 export function appendHistory(entries, { team, emailKey: key }, at) {
   const latest = entries.at(-1);
   if (latest && latest.team === team && latest.emailKey === key) return null;

@@ -22,6 +22,12 @@ const USERS = [
   { sub: "sub-4", email: "four@example.org", attributes: { "custom:department": "Billing", name: "Four" } },
   { sub: "sub-5", email: "five@example.org", attributes: { "custom:department": "  ", name: "Five" } },
   { sub: "sub-6", email: "six@example.org", attributes: { name: "Six" } },
+  // Excluded like the sync does: a shared email digest (case-insensitive), no email, non-ASCII email, no sub.
+  { sub: "sub-7", email: "Shared@example.net", attributes: { "custom:department": "Platform" } },
+  { sub: "sub-8", email: "shared@example.net", attributes: { "custom:department": "Platform" } },
+  { sub: "sub-9", attributes: { "custom:department": "Platform" } },
+  { sub: "sub-10", email: "\u00e9mile@example.net", attributes: { "custom:department": "Platform" } },
+  { email: "nosub@example.net", attributes: { "custom:department": "Platform" } },
 ];
 const STATUS = { available: true, lastSync: 5000, lastError: null, stale: false, users: 6, historyStart: 4000, reason: null };
 
@@ -102,7 +108,7 @@ test("admins can read team settings", async t => {
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(await response.json(), { available: true, reason: null, poolId: "us-east-1_Example1",
     status: STATUS, attributes: [{ attribute: "custom:department", from: 0 }], current: "custom:department",
-    labels: { Platform: "플랫폼" }, options: OPTIONS, version: 2 });
+    labels: { Platform: "플랫폼" }, options: OPTIONS, directoryError: null, version: 2 });
 });
 
 test("an empty store reads as no attribute yet", async t => {
@@ -119,7 +125,7 @@ test("Basic mode reads but cannot save", async t => {
   const read = await f.request("/api/settings/teams", { headers: { authorization } });
   assert.equal(read.status, 200);
   assert.deepEqual(await read.json(), { available: false, reason: "basic_auth", poolId: null, status: null,
-    attributes: [], current: null, labels: {}, options: [], version: null });
+    attributes: [], current: null, labels: {}, options: [], directoryError: null, version: null });
   const save = await f.request("/api/settings/teams", { method: "PUT",
     headers: { authorization, "content-type": "application/json" },
     body: JSON.stringify({ attribute: "name", labels: {}, version: null }) });
@@ -153,7 +159,7 @@ test("saving a new attribute appends it from the save time", async t => {
   assert.ok(!JSON.stringify(f.store.settings).includes("admin-subject"));
   assert.deepEqual(body, { available: true, reason: null, poolId: "us-east-1_Example1", status: STATUS,
     attributes: f.store.settings.attributes, current: "email_domain", labels: { "example.com": "예시" },
-    options: OPTIONS, version: 4 });
+    options: OPTIONS, directoryError: null, version: 4 });
   assert.equal(f.sync.calls, 1);
 });
 
@@ -255,11 +261,12 @@ test("preview groups users without saving", async t => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(await response.json(), { attribute: "custom:department",
-    values: [{ value: "Platform", users: 2 }, { value: "Billing", users: 1 }, { value: "Data", users: 1 }], missing: 2 });
+    values: [{ value: "Platform", users: 2 }, { value: "Billing", users: 1 }, { value: "Data", users: 1 }],
+    missing: 2, excluded: 5 });
   const domains = await (await f.request("/api/settings/teams/preview?attribute=email_domain",
     { headers: { cookie: session("admin") } })).json();
   assert.deepEqual(domains.values, [{ value: "example.org", users: 4 }, { value: "example.com", users: 2 }]);
-  assert.equal(domains.missing, 0);
+  assert.deepEqual([domains.missing, domains.excluded], [0, 5]);
   for (const query of ["?attribute=email", "?attribute=name&attribute=email_domain", ""]) {
     const invalid = await f.request("/api/settings/teams/preview" + query, { headers: { cookie: session("admin") } });
     assert.equal(invalid.status, 400);
@@ -282,21 +289,40 @@ test("PUT without the configured Origin is refused", async t => {
   assert.equal(f.store.writes, 0);
 });
 
-test("store and directory failures are unavailable, not empty", async t => {
+test("a store failure makes settings unavailable, not empty", async t => {
   const store = storeFixture();
   store.getTeamSettings = async () => { throw new DeviceTokenError("store_unavailable", 503); };
   const f = await serve(t, { store });
   const read = await f.request("/api/settings/teams", { headers: { cookie: session("admin") } });
   assert.equal(read.status, 503);
   assert.deepEqual(await read.json(), { error: "store_unavailable" });
+});
+
+test("a directory outage keeps stored settings and status readable", async t => {
+  const settings = { attributes: [{ attribute: "custom:department", from: 0 }], labels: { Platform: "플랫폼" },
+    historyStart: 4000, version: 2 };
   const directory = { attributeNames: async () => { throw new Error("AWS detail must not leak"); },
     listUsers: async () => { throw new Error("AWS detail must not leak"); } };
-  const g = await serve(t, { directory });
-  for (const path of ["/api/settings/teams", "/api/settings/teams/preview?attribute=name"]) {
-    const response = await g.request(path, { headers: { cookie: session("admin") } });
+  const sync = syncFixture();
+  sync.status = () => ({ ...STATUS, stale: true, lastError: "directory_unavailable" });
+  const f = await serve(t, { store: storeFixture(settings), directory, sync });
+  const read = await f.request("/api/settings/teams", { headers: { cookie: session("admin") } });
+  assert.equal(read.status, 200);
+  const text = await read.text();
+  assert.ok(!text.includes("AWS detail"));
+  assert.deepEqual(JSON.parse(text), { available: true, reason: null, poolId: "us-east-1_Example1",
+    status: { ...STATUS, stale: true, lastError: "directory_unavailable" },
+    attributes: [{ attribute: "custom:department", from: 0 }], current: "custom:department",
+    labels: { Platform: "플랫폼" }, options: null, directoryError: "directory_unavailable", version: 2 });
+  // Preview and save need the directory, so they fail with the code only.
+  for (const init of [{ headers: { cookie: session("admin") } },
+    put({ attribute: "custom:department", labels: {}, version: 2 })]) {
+    const path = init.method === "PUT" ? "/api/settings/teams" : "/api/settings/teams/preview?attribute=name";
+    const response = await f.request(path, init);
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), { error: "directory_unavailable" });
   }
+  assert.equal(f.store.writes, 0);
 });
 
 test("team directory configuration reports the first missing condition", () => {

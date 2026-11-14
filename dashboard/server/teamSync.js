@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendHistory, attributeValue, emailKey, flattenIntervals, userKey } from "./teamDirectory.js";
+import { appendHistory, attributableUsers, attributeValue, emailKey, flattenIntervals, userKey } from "./teamDirectory.js";
 import { setDirectorySnapshot } from "./teamDirectoryParams.js";
 
 const STAGE_ERROR = { directory: "directory_unavailable", store: "store_unavailable" };
@@ -16,6 +16,7 @@ async function stage(name, work) {
 export function createTeamSync({ store, directory, issuer, now = Date.now, intervalMs = 3600000, intervalLimit }) {
   let timer = null;
   let running = null;
+  let followUp = null;
   let state = { lastSync: null, lastError: null, stale: false, users: 0, historyStart: null, reason: null };
 
   const publish = (intervals, settings, version) => setDirectorySnapshot(
@@ -45,12 +46,8 @@ export function createTeamSync({ store, directory, issuer, now = Date.now, inter
       return;
     }
     const latest = settings.attributes.at(-1).attribute;
-    const listed = (await stage("directory", () => directory.listUsers(signal)))
-      .filter((user) => user?.sub && emailKey(issuer, user.email));
-    // Users sharing an email digest are ambiguous; they fall back to device teams.
-    const emailCounts = new Map();
-    for (const { email } of listed) emailCounts.set(emailKey(issuer, email), (emailCounts.get(emailKey(issuer, email)) ?? 0) + 1);
-    const users = listed.filter(({ email }) => emailCounts.get(emailKey(issuer, email)) === 1);
+    // Users without a usable email and users sharing an email digest fall back to device teams.
+    const { users } = attributableUsers(issuer, await stage("directory", () => directory.listUsers(signal)));
     await stage("store", async () => {
       const existing = new Map((await store.listTeamHistory(latest, { signal })).map((record) => [record.id, record]));
       let wrote = false;
@@ -77,11 +74,29 @@ export function createTeamSync({ store, directory, issuer, now = Date.now, inter
       historyStart: settings.historyStart ?? null, reason: null };
   }
 
-  function syncOnce(signal) {
-    running ||= run(signal).catch((error) => {
+  function launch(signal) {
+    running = run(signal).catch((error) => {
       state = { ...state, stale: true, lastError: error?.code || "sync_failed" };
-    }).finally(() => { running = null; });
+    }).finally(() => {
+      running = null;
+      if (!followUp) return;
+      const next = followUp;
+      followUp = null;
+      launch(next.signal).then(next.resolve);
+    });
     return running;
+  }
+
+  // A call during a run (for example after a settings save) cannot rely on that run, which may have
+  // read the old settings: it gets one follow-up run after the current one. Further calls share it,
+  // and the first such caller's signal governs it.
+  function syncOnce(signal) {
+    if (!running) return launch(signal);
+    if (!followUp) {
+      const { promise, resolve } = Promise.withResolvers();
+      followUp = { promise, resolve, signal };
+    }
+    return followUp.promise;
   }
 
   return {

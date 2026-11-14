@@ -1,5 +1,5 @@
 import express from "express";
-import { attributeValue, parseCognitoIssuer, userKey } from "./teamDirectory.js";
+import { attributableUsers, attributeValue, parseCognitoIssuer, userKey } from "./teamDirectory.js";
 
 const TABLE_NAME = /^[A-Za-z0-9_.-]{3,255}$/;
 const MAX_LABEL_LENGTH = 80;
@@ -61,13 +61,14 @@ export function createTeamSettings({ authentication, store, directory, sync, now
     }
   }
 
+  // options null means the directory schema could not be read; the stored settings stay visible.
   function view(settings, options) {
     if (!available) return { available: false, reason, poolId: null, status: null, attributes: [], current: null,
-      labels: {}, options: [], version: null };
+      labels: {}, options: [], directoryError: null, version: null };
     const attributes = settings?.attributes ?? [];
     return { available: true, reason: null, poolId, status: sync.status(), attributes,
       current: attributes.at(-1)?.attribute ?? null, labels: settings?.labels ?? {}, options,
-      version: settings?.version ?? null };
+      directoryError: options ? null : "directory_unavailable", version: settings?.version ?? null };
   }
 
   const requireDirectory = (_req, _res, next) =>
@@ -81,7 +82,9 @@ export function createTeamSettings({ authentication, store, directory, sync, now
       router.get("/", handle(async (_req, res) => {
         if (!available) return res.json(view(null, []));
         const signal = requestSignal(res);
-        const [settings, options] = await Promise.all([store.getTeamSettings({ signal }), attributeOptions(signal)]);
+        // A directory outage keeps the stored settings and sync status readable; a store outage does not.
+        const [settings, options] = await Promise.all([store.getTeamSettings({ signal }),
+          attributeOptions(signal).catch(() => null)]);
         res.json(view(settings, options));
       }));
       router.get("/preview", requireDirectory, handle(async (req, res) => {
@@ -91,16 +94,18 @@ export function createTeamSettings({ authentication, store, directory, sync, now
           throw new SettingsError("invalid_attribute", 400);
         let users;
         try { users = await directory.listUsers(signal); } catch { throw new SettingsError("directory_unavailable", 503); }
+        // Count only users the sync can attribute; the others keep device teams and are reported apart.
+        const { users: attributable, excluded } = attributableUsers(issuer, users);
         const counts = new Map();
         let missing = 0;
-        for (const user of users) {
+        for (const user of attributable) {
           const value = attributeValue(user, attribute);
           if (value === null) missing++;
           else counts.set(value, (counts.get(value) ?? 0) + 1);
         }
         const values = [...counts].map(([value, count]) => ({ value, users: count }))
           .sort((a, b) => b.users - a.users || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
-        res.json({ attribute, values, missing });
+        res.json({ attribute, values, missing, excluded });
       }));
       router.put("/", requireDirectory, express.json({ limit: "16kb" }), handle(async (req, res) => {
         const signal = requestSignal(res);
