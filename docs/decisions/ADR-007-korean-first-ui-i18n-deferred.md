@@ -9,6 +9,11 @@ deployment-time preference below; see
 [ADR-022](ADR-022-per-viewer-interface-language.md). This document retains the
 original decision as historical context.
 
+The explicit five-language requirement supersedes the product deferral and
+deployment-time preference below; see
+[ADR-022](ADR-022-per-viewer-interface-language.md). This document retains the
+original decision as historical context.
+
 ## Context
 
 The workshop audience primarily uses Korean. The SPA contains Korean explanatory

@@ -17,7 +17,7 @@ export function createLocaleStore({ source, loaders, storage = () => globalThis.
     try { storage()?.setItem(STORAGE_KEY, locale); } catch { /* Storage is optional. */ }
   };
   const valid = (catalog) => catalog && Object.keys(catalog).length === keys.length
-    && keys.every((key) => typeof catalog[key] === "string" && catalog[key].trim()
+    && keys.every((key) => Object.hasOwn(catalog, key) && typeof catalog[key] === "string" && catalog[key].trim()
       && placeholders(catalog[key]) === placeholders(source[key]));
 
   const select = async (locale) => {

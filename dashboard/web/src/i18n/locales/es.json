@@ -1831,5 +1831,12 @@
   "m8e2b4f4f0053": "Parte inferior de la barra lateral → Idioma · Detalles de la tarea → Idioma",
   "m2a298755c140": "Guía del usuario en tu idioma",
   "m073517e682a7": "La guía del usuario se abre en el idioma seleccionado en la aplicación. En los cinco idiomas, incluido el español, puedes consultar User Trace, la eficiencia de costos, las herramientas y los pasos de instalación con la misma estructura.",
-  "mdade20781fe8": "Barra lateral → Guía del usuario"
+  "mdade20781fe8": "Barra lateral → Guía del usuario",
+  "m9c797dc5a9a0": "Se corrigió un problema que impedía abrir el mapa de calor de actividad de 90 días para los usuarios con mucha actividad y otro que dejaba en blanco el modelo de las tareas de los usuarios del recopilador del dispositivo.",
+  "m2cee6c61c265": "Error al cargar el mapa de calor de actividad de 90 días",
+  "mb1dcc1302200": "Se corrigió un problema por el que, en los detalles de usuarios con mucha actividad, «Mapa de calor de actividad · últimos 90 días» mostraba «No se pudieron cargar los datos». La misma sesión se cuenta una sola vez, aunque aparezca tanto en el uso como en los registros.",
+  "m9ae4b7c2374c": "Usuarios → Seleccionar un usuario → Mapa de calor de actividad",
+  "m1dd23c2aed59": "Modelos de tareas · llamadas LLM de usuarios del recopilador del dispositivo",
+  "mb3ed32f01cc1": "Se corrigió un problema por el que el modelo, las llamadas LLM y los costos por llamada aparecían en blanco en la lista y los detalles de tareas para Claude Code 2.1.325 o posterior enviado mediante el recopilador del dispositivo. Se aplica a las tareas posteriores a la reinstalación del recopilador; los registros que ya faltaban no se recuperan.",
+  "mb0c557c70d69": "Usuarios → Seleccionar un usuario → Lista de tareas · Detalles de tareas"
 }

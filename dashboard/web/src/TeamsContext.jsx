@@ -1,3 +1,4 @@
+import { translate, useLocale } from "./i18n/index.js";
 import { createContext, useContext, useMemo } from "react";
 import { useApi } from "./useApi.js";
 
@@ -23,6 +24,7 @@ export function teamsValue(list, users) {
 }
 
 export function TeamsProvider({ children }) {
+  const _locale = useLocale();
   const list = useApi("/api/teams", {}, true, { unfiltered: true });
   const users = useApi("/api/users/teams", {}, true, { unfiltered: true });
   const value = useMemo(() => teamsValue(list, users),
@@ -31,6 +33,7 @@ export function TeamsProvider({ children }) {
 }
 
 export function useTeams() {
+  const _locale = useLocale();
   return useContext(TeamsContext) || UNAVAILABLE;
 }
 
@@ -39,7 +42,7 @@ const teamsOf = (teams, user) => (teams.byUser ? teams.byUser.get(user) || [] : 
 
 export function teamText(teams, user, { csv = false } = {}) {
   const list = teamsOf(teams, user);
-  if (!list) return teams.loading && !csv ? "…" : "확인 불가";
+  if (!list) return teams.loading && !csv ? "…" : translate("m298859a04696");
   return list.length ? list.join(", ") : csv ? "" : "—";
 }
 
@@ -53,7 +56,7 @@ export function teamSuffix(teams, user) {
 export function withTeamColumn(columns, teams) {
   const index = columns.findIndex((column) => column.key === "user");
   if (index < 0) return columns;
-  const column = { key: "team", label: "팀", render: (_value, row) => teamText(teams, row.user),
+  const column = { key: "team", label: translate("m321639b7ad86"), render: (_value, row) => teamText(teams, row.user),
     toText: (_value, row) => teamText(teams, row.user, { csv: true }) };
   return [...columns.slice(0, index + 1), column, ...columns.slice(index + 1)];
 }

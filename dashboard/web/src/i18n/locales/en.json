@@ -1831,5 +1831,12 @@
   "m8e2b4f4f0053": "Bottom of sidebar → Language · Task details → Language",
   "m2a298755c140": "User guide in your language",
   "m073517e682a7": "The user guide opens in the language selected in the app. In all five languages, including Spanish, you can explore User Trace, cost efficiency, tools, and installation steps in the same structure.",
-  "mdade20781fe8": "Sidebar → User guide"
+  "mdade20781fe8": "Sidebar → User guide",
+  "m9c797dc5a9a0": "Fixed an issue where the 90-day activity heatmap would not open for highly active users, and an issue where the model was blank on tasks for device collector users.",
+  "m2cee6c61c265": "90-day activity heatmap failed to load",
+  "mb1dcc1302200": "Fixed an issue where “Activity heatmap · Last 90 days” showed “Failed to load data” on the details page for highly active users. The same session is counted only once, even if it appears in both usage and logs.",
+  "m9ae4b7c2374c": "Users → Select a user → Activity heatmap",
+  "m1dd23c2aed59": "Device collector users’ task models · LLM calls",
+  "mb3ed32f01cc1": "Fixed an issue where the model, LLM calls, and call costs appeared blank in the task list and task details for Claude Code 2.1.325 or later sent through the device collector. This applies to tasks after the collector is reinstalled; previously missing records are not recovered.",
+  "mb0c557c70d69": "Users → Select a user → Task list · Task details"
 }

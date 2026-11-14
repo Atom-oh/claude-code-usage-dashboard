@@ -1,3 +1,4 @@
+import { translate } from "./i18n/index.js";
 // Pure helpers for the task trace overlay (TaskTraceOverlay.jsx) over the
 // /api/users/tasks/detail payload. Unknown values stay null; nothing here fills a zero.
 import { observedNumber } from "./clientPresentation.js";
@@ -23,8 +24,8 @@ export function iconFor(name, kind = "tool") {
 // generic subagent, never a guessed custom agent name. withLaneIdentity() sets `display`.
 export function laneName(lane) {
   if (lane.display) return lane.display;
-  if (lane.kind === "main" || lane.id === "main") return "메인 세션";
-  return lane.label || "서브에이전트";
+  if (lane.kind === "main" || lane.id === "main") return translate("m532fa5422839");
+  return lane.label || translate("m7d688dae8673");
 }
 
 // Several subagents of one type (four general-purpose lanes, say) are separate lanes with the
