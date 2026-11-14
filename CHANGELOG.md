@@ -22,6 +22,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   selected decision-chart legend emphasis when changing language. Keep Codex
   query profiles and selected tabs independent of translated labels, and retain
   Executive spend/permission help across languages.
+- Add the Spanish documentation guide and five-language navigation, including
+  language-selection instructions, matching app guide links and localized image-viewer controls.
+- Correct Spanish installation prerequisites and localized credits links; keep token
+  composition emphasis across language changes and clarify translated cost help.
 - Attribute teams from a Cognito user pool attribute chosen by an admin on `/settings`,
   with labels, hourly sync, change history and device-provided markers; Terraform grants
   the dashboard read access to that pool. `/api/teams` adds `sources`, `labels`,

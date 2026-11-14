@@ -459,8 +459,9 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
         {compare(USAGE, { title: translate("m205053711ad7") })}
         <SeriesBarChart title={translate("md382a04533c1")} subtitle={translate("m05a8d473d0d5")}
           rows={clientRows.flatMap((row) => TOKEN_PARTS.map((part) => ({
-            client: clientName(row.client), part: part.label, value: row[part.key],
-          })))} xKey="client" seriesKey="part" valueKey="value" horizontal />
+            client: clientName(row.client), part: part.key, value: row[part.key],
+          })))} xKey="client" seriesKey="part" valueKey="value" horizontal
+          seriesLabel={(key) => TOKEN_PARTS.find((part) => part.key === key)?.label ?? key} />
         <ToolTable rows={tools} stale={stale} />
       </>;
       break;

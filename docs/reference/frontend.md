@@ -22,8 +22,7 @@ requests render terminal outcomes. Users without `collector:manage` make no requ
 `/changelog` shows the release notes bundled in `releaseNotes.js` without usage filters
 and requests no page data. Its link sits outside `<nav>` under the navigation and marks a release this
 browser has not opened (`localStorage`, best effort). A user guide link beside it opens the
-available language of the public user guide (`USER_GUIDE_URL`) in a new tab.
-Spanish currently opens the English guide until the Spanish pages are added.
+equivalent language of the public user guide (`USER_GUIDE_URL`) in a new tab.
 See [releases and tags](../runbooks/releases.md).
 
 The React 18/Vite 8/Tailwind 4 SPA (Node >=22.12) shares the Express image.

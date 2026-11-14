@@ -8,29 +8,29 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-14T13:32:18.045167+00:00",
+  "updated_at": "2026-11-14T14:01:01.569525+00:00",
   "source_messages": 1906,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
       "messages": 1906,
-      "bytes": 144970,
-      "sha256": "189e870daabd07138db20759ad39d1e2548cd732e0ef731cbcab42505df1bc7a"
+      "bytes": 144988,
+      "sha256": "c5d993ef91e94fea5ee42debe970ca416a944fd638f9d91adcf28e354b8d151b"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
       "messages": 1906,
-      "bytes": 170886,
-      "sha256": "98a61faf0901fee0f003e06052ef2278230aa499fc2b50b35070a108b3a16d72"
+      "bytes": 170906,
+      "sha256": "f9a403018494da9f948c94d96ead83e5d9d8431b0ddcee9b00399f00f5c80f56"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
       "messages": 1906,
-      "bytes": 179419,
-      "sha256": "0146259b892ae3aef5901bdeb9343c45f41440bed037aa388640591e07949e35"
+      "bytes": 179446,
+      "sha256": "124f0d374a6e58d41df6191249867e3eeeb87be1e931e3620360dc44d0695b6c"
     },
     {
       "locale": "ko",
@@ -43,8 +43,8 @@
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
       "messages": 1906,
-      "bytes": 137088,
-      "sha256": "e0addae981af3289002fcb54710f4a707a8427e90752b396fcb0a811e5f4f3f1"
+      "bytes": 137112,
+      "sha256": "b5dd056778419bcd409c740d464ece5718f7727d9a7b23116dd4d5c2ee899b07"
     }
   ],
   "catalog_calls": [
@@ -802,6 +802,19 @@
       "attestation_note": "The requested model is recorded. Hidden weights are not independently attested."
     }
   ],
+  "help_paragraph_review": {
+    "requested_model": "openai.gpt-6-luna",
+    "selection_basis": "coordinator CLI invocation",
+    "timestamp_utc": "2026-11-14T13:58:24Z",
+    "source_sha256": "4bf15a850730e8f0f164a9eb82f1f4e11392650219fd57b006c0e862ce6f2af1",
+    "output_sha256": "0c6ef852d02a41bc2a32ab1f3b38415a61c3b0da90700a57be6dafabe962c09d",
+    "agent_record_sha256": "bf7db41df6b713416a695482dc9edc235cacada2c298085796c33088c4ed49de",
+    "keys": [
+      "mcd0e2e55edc9",
+      "mdb92e3e3d57f"
+    ],
+    "meaning": "Interpolation slots contain complete help paragraphs; keep them outside noun phrases."
+  },
   "team_mapping_messages": {
     "requested_model": "openai.gpt-6-luna",
     "inference_profile": "us.openai.gpt-6-luna",

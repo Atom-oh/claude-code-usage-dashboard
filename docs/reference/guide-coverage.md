@@ -1,14 +1,17 @@
 # Product guide coverage map
 
-The [English user guide](../../site/user-guide.html) describes the v1.8.0 source
-at base `64791c7`. UI availability depends on configuration, permission, schema,
-retention and observed data. Implementation and tests remain authoritative.
+The [English user guide](../../site/user-guide.html) covers the product menus and
+five-language interface. UI availability depends on configuration, permission,
+schema, retention and observed data. Implementation and tests remain authoritative.
 
 Illustrated paths: [user and task](../../site/user-guide.html#trace-workflow),
 [cost efficiency](../../site/user-guide.html#cost-workflow),
 [tools and MCP](../../site/user-guide.html#tools-workflow), and
 [architecture](../../site/user-guide.html#system-overview).
 [Capture sources](../../scripts/docs-capture/README.md) identify the synthetic examples.
+Language selection and state retention are owned by
+`dashboard/web/src/i18n/` and `components/LanguagePicker.jsx`; translated copy does
+not change collected values, identifiers, time-zone conventions or API filters.
 
 | Guide section | Routes or feature groups | Implementation owners |
 |---|---|---|
