@@ -153,8 +153,8 @@ function CodexDecisions({ api }) {
   </section>;
 }
 
-// Full-width in-page detail for one exact user across the selected clients. Clicking a trend bucket
-// lists that bucket's tasks (TaskList); `onBucket({ from, to })` is also notified when provided.
+// Tasks default to the overview's effective range. A click narrows them to one bucket;
+// a global range change (including chart drag) resets that override and the open task.
 export function UserDetail({ user, clients, group = null, hours, parentRange, stale, onClose, onBucket = null, children }) {
   const range = useRange();
   const teams = useTeams();
@@ -188,17 +188,18 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
     range.custom?.from?.getTime?.(), range.custom?.to?.getTime?.()]);
   const [selection, setSelection] = useState(null);
   const current = selection?.key === selectionKey ? selection : null;
-  const bucket = current?.bucket ?? null;
+  const pending = stale || overview.loading || overview.stale;
+  const supported = overview.data?.applied_filters?.userExact === user;
+  const ready = !pending && !overview.error && supported;
+  const bucket = ready ? current?.bucket ?? overview.data?.effective_range : null;
   const taskId = current?.taskId ?? null;
   const selectBucket = (next) => {
     setSelection({ key: selectionKey, bucket: next, taskId: null });
     onBucket?.(next);
   };
-  const openTask = (id) => setSelection((s) => (s?.key === selectionKey ? { ...s, taskId: id } : s));
+  const openTask = (id) => setSelection({ key: selectionKey, bucket: current?.bucket ?? null, taskId: id });
   const closeTask = () => setSelection((s) => (s?.key === selectionKey ? { ...s, taskId: null } : s));
 
-  const pending = stale || overview.loading || overview.stale;
-  const supported = overview.data?.applied_filters?.userExact === user;
   const heatSupported = heat.data?.applied_filters?.userExact === user;
   return <section aria-label="사용자 상세" className="flex flex-col gap-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -220,7 +221,13 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
           bucketHours={overview.data.bucket_hours || hours} effectiveRange={overview.data.effective_range}
           onBucket={selectBucket} />
       </>}
-    {bucket && <TaskList user={user} clients={clients} group={group}
+    {ready && current?.bucket && <div>
+      <button type="button" onClick={() => setSelection(null)}
+        className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700 hover:bg-ink-50">
+        전체 조회 기간의 작업
+      </button>
+    </div>}
+    {bucket?.from && bucket?.to && <TaskList user={user} clients={clients} group={group}
       from={bucket.from} to={bucket.to} onOpen={openTask} selectedId={taskId} />}
     {bucket && taskId && <TaskTraceOverlay key={taskId} taskId={taskId} user={user} from={bucket.from} to={bucket.to}
       onClose={closeTask} />}

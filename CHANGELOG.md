@@ -15,6 +15,20 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- The shared period picker accepts exact start/end dates and times, down to seconds,
+  in the browser time zone. Shared links preserve that mode, including UTC-midnight
+  boundaries; UTC calendar-day selection remains available.
+
+### Fixed
+
+- User detail stays open when the period changes. Its top-20 task list defaults to
+  the overview's effective period and follows chart drag zoom; a point click still
+  narrows it to one bucket, with a control to restore the full period.
+- Unit-economics charts connect observations across unknown buckets with labelled
+  dashed guides. Unknown values remain unavailable in tooltips and calculations.
+
 ## [1.7.0] - 2026-11-13
 
 ### Added

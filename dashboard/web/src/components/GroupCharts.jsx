@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, DefaultTooltipContent, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis, usePlotArea, useXAxisInverseDataSnapScale } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, DefaultTooltipContent, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, usePlotArea, useXAxisInverseDataSnapScale } from "recharts";
 import { cn } from "../cn.js";
 import { colorFor } from "../colors.js";
 import { parseUtc } from "../fmt.js";
@@ -318,7 +318,24 @@ function AvailableTooltipContent(props) {
     payload={props.payload?.map(entry => entry.value == null ? { ...entry, value: "미확인" } : entry)} />;
 }
 
-function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c, timeDomain, tooltipFormatter, clickable = false }) {
+// Visual guides only: preserve unknown values in both the series and tooltip.
+// No extrapolation before the first observation or after the last.
+function gapConnections(rows, xKey, line) {
+  const gaps = [];
+  let previous = -1;
+  rows.forEach((row, i) => {
+    if (!Number.isFinite(row[line.key])) return;
+    if (previous >= 0 && i > previous + 1) {
+      gaps.push(<ReferenceLine key={`${line.key}-${i}`} className="chart-gap-connector"
+        segment={[{ x: rows[previous][xKey], y: rows[previous][line.key] }, { x: row[xKey], y: row[line.key] }]}
+        stroke={line.color} strokeWidth={1.5} strokeDasharray="4 4" strokeOpacity={0.6} />);
+    }
+    previous = i;
+  });
+  return gaps;
+}
+
+function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c, timeDomain, tooltipFormatter, clickable = false, showGapConnections = false }) {
   return (
     <ResponsiveContainer width="100%" height={height} className={cn(zoom.className, clickable && "cursor-pointer")}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} syncId="dual" {...zoom.handlers}>
@@ -337,6 +354,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
         <YAxis tick={axisTick(c)} tickLine={false} axisLine={false} width={48} tickFormatter={valueTickFormatter} />
         <Tooltip {...tooltipStyles(c)} labelFormatter={tickFormatter} formatter={tooltipFormatter}
           filterNull={!tooltipFormatter} content={tooltipFormatter ? <AvailableTooltipContent /> : undefined} />
+        {showGapConnections && timeDomain && panelLines.flatMap((line) => gapConnections(rows, xKey, line))}
         {panelLines.map((l, i) => (
           <Line
             key={l.key}
@@ -365,7 +383,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
 }
 
 // onBucketClick(startMs): optional; a click on a time-axis bucket (not a drag) reports its start.
-export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter, zoomDisabled = false, onBucketClick }) {
+export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter, zoomDisabled = false, onBucketClick, showGapConnections = false }) {
   const c = useChartColors();
   const domain = Array.isArray(timeDomain) && timeDomain.length === 2
     && timeDomain.every(Number.isFinite) && timeDomain[0] < timeDomain[1] ? timeDomain : undefined;
@@ -412,6 +430,7 @@ export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines,
               timeDomain={domain}
               tooltipFormatter={tooltipFormatter}
               clickable={Boolean(onBucketClick)}
+              showGapConnections={showGapConnections}
             />
           </div>
         ))}

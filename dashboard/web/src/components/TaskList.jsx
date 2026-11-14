@@ -77,7 +77,7 @@ function Cost({ row }) {
   </span>;
 }
 
-// Top-20 tasks (Claude interactions, Codex turns) of one exact user in one trend bucket, from
+// Top-20 tasks (Claude interactions, Codex turns) of one exact user in the selected range, from
 // /api/users/tasks. Task ids are opaque and never displayed; rows show time and model instead.
 export function TaskList({ user, clients, group = null, from, to, onOpen, selectedId = null }) {
   const [sort, setSort] = useState("tokens");

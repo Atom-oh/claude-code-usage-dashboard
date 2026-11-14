@@ -119,14 +119,19 @@ range, cap, pricing assumptions and schema status. `GROUP_MODE=single` changes p
 it does not change SQL filtering.
 
 [RangeContext.jsx](../../dashboard/web/src/RangeContext.jsx) supports presets, current UTC
-month, and custom ranges from the calendar or drag zoom. Presets use hourly buckets for
-at most two days, daily otherwise; calendar ranges use the same rule. Drag zoom chooses
+month, and custom ranges from UTC calendar dates, exact browser-local dates and times
+(second precision), or drag zoom. Exact end times are exclusive; calendar selections
+include the selected last day. Presets use hourly buckets for
+at most two days, daily otherwise; calendar ranges use the same rule. Exact times and drag zoom choose
 from a resolution ladder targeting at most 96 buckets, with minute buckets limited to
 four-hour windows. Month mode uses daily buckets.
 
 [FilterContext.jsx](../../dashboard/web/src/FilterContext.jsx) debounces user, model and
 project inputs by 300 ms. [urlState.js](../../dashboard/web/src/urlState.js) serializes one
-range shape: `days`, `period=month`, or `from`/`to`. Masked-mode URLs omit user identity;
+range shape: `days`, `period=month`, or `from`/`to`. Exact time picks also use
+`rangeMode=time` so UTC-midnight bounds reopen as times rather than calendar days.
+These inputs do not change the server's quantization, ingestion grace or rollup grain.
+Masked-mode URLs omit user identity;
 project URL state requires `schema.projectColumns === true`. The `team` filter is a select
 without debounce, kept in URL state for shared and Claude detail views, preserved across range
 and client changes, and kept when masking is on because it is not a user identity. The control
@@ -222,6 +227,10 @@ response) are suspended too, so no drag selects a range from the previous period
 Categorical axes do not zoom.
 [zoomGuard.test.js](../../dashboard/web/src/zoomGuard.test.js) checks every call site.
 
+Unit-economics trends opt into dashed connections across internal unknown buckets.
+These guides join observed endpoints without adding values or extending the series
+beyond its first/last observation; tooltips and calculations keep unavailable values.
+
 ## Model cost trend
 
 `ModelCostTrend` ([component](../../dashboard/web/src/components/ModelCostTrend.jsx)) draws
@@ -312,13 +321,17 @@ side drawer is removed. Shared Users combines `by_user` into one row per exact i
 IDs are client-scoped), known tokens and costs add with partial flags, and empty identities stay
 per client. The combined cost can mix bases, so the basis column lists every contributing basis
 and a client-parts column keeps each client's value and basis (also in CSV). The detail uses the
-page's selected clients and closes on range, page or client-selection changes. Claude
+page's selected clients and stays open across range changes; page, filter or client
+changes clear it. Claude
 detail Users opens it from a leaderboard row with every enabled client and that row's
 bedrock/enterprise group; the group applies only to the Claude-only sections.
 
-Clicking a trend bucket (a click, not a drag; drags still zoom) opens
-[TaskList](../../dashboard/web/src/components/TaskList.jsx) for that bucket's UTC bounds,
-clamped to the detail's effective range. It reads `/api/users/tasks` with the detail's
+[TaskList](../../dashboard/web/src/components/TaskList.jsx) initially lists the top 20 tasks
+in the detail overview's effective range. Drag zoom changes the page range and updates
+the task list after the new overview arrives. Clicking one point instead narrows the
+list to that bucket's UTC bounds, clamped to the effective range; a reset control
+restores the full period. Pending or failed overview loads cannot show old tasks as
+current. It reads `/api/users/tasks` with the detail's
 client selection, the global backend and the detail's group (Claude only), never team. It
 always shows the partial-collection badge, labels Codex cost as linked estimates, renders
 unknown tokens, cost, subagents or duration as not collected (never zero), shows the

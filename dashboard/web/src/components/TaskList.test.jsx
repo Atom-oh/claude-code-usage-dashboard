@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { ConfigProvider } from "../ConfigContext.jsx";
 import { RefreshProvider } from "../RefreshContext.jsx";
-import { RangeProvider } from "../RangeContext.jsx";
+import { RangeProvider, useRange } from "../RangeContext.jsx";
 import { FilterProvider } from "../FilterContext.jsx";
 import { setPiiMask } from "../fmt.js";
 import { clientOverview, codexUsage } from "../test/clientOverview.js";
@@ -102,7 +102,9 @@ test("clicking a trend bucket loads tasks for that bucket", async () => {
   const { container } = wrap(<UserDetail user={USER} clients={["claude", "codex"]} hours={24} parentRange={parent}
     stale={false} onClose={() => {}} onBucket={onBucket} />);
   await waitFor(() => expect(container.querySelector(".recharts-wrapper")).not.toBeNull());
-  expect(taskRequests()).toHaveLength(0);
+  await waitFor(() => expect(taskRequests().length).toBeGreaterThan(0));
+  expect(taskRequests().at(-1).searchParams.get("from")).toBe(parent.from);
+  expect(taskRequests().at(-1).searchParams.get("to")).toBe(parent.to);
   const chart = container.querySelector(".recharts-wrapper");
   const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
   const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
@@ -111,7 +113,8 @@ test("clicking a trend bucket loads tasks for that bucket", async () => {
   fireEvent.mouseUp(chart, { clientX: x, clientY: 60 });
   expect(await screen.findByText("claude-opus-5-5")).toBeTruthy();
   expect(onBucket).toHaveBeenCalledWith(BUCKET);
-  const [req] = taskRequests();
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("from")).toBe(BUCKET.from));
+  const req = taskRequests().at(-1);
   expect(req.searchParams.get("from")).toBe(BUCKET.from);
   expect(req.searchParams.get("to")).toBe(BUCKET.to);
   expect(req.searchParams.get("userExact")).toBe(USER);
@@ -121,6 +124,38 @@ test("clicking a trend bucket loads tasks for that bucket", async () => {
   expect(req.searchParams.has("team")).toBe(false);
   // No custom range was set: a click selects a bucket, it does not zoom.
   expect(screen.getAllByText("부분 수집").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "전체 조회 기간의 작업" }));
+  await waitFor(() => expect(taskRequests().at(-1).searchParams.get("from")).toBe(parent.from));
+  expect(taskRequests().at(-1).searchParams.get("to")).toBe(parent.to);
+});
+
+test.each([false, true])("dragging either direction loads the selected range's tasks without a point click (reverse=%s)", async (reverse) => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 800, height: 300, top: 0, left: 0, right: 800, bottom: 300, x: 0, y: 0,
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const parent = { from: "2026-09-01T00:00:00.000Z", to: "2026-09-04T00:00:00.000Z" };
+  function Detail() {
+    const { custom } = useRange();
+    const bounds = custom ? { from: custom.from.toISOString(), to: custom.to.toISOString() } : parent;
+    return <UserDetail user={USER} clients={["claude", "codex"]} hours={24} parentRange={bounds}
+      stale={false} onClose={() => {}} />;
+  }
+  const { container } = wrap(<Detail />);
+  await waitFor(() => expect(container.querySelector(".recharts-wrapper")).not.toBeNull());
+  const chart = container.querySelector(".recharts-wrapper");
+  const grid = chart.querySelector(".recharts-cartesian-grid-horizontal line");
+  const left = Number(grid.getAttribute("x1")), right = Number(grid.getAttribute("x2"));
+  const x1 = left + 1, x2 = left + (right - left) / 3;
+  fireEvent.mouseDown(chart, { clientX: reverse ? x2 : x1, clientY: 60 });
+  fireEvent.mouseMove(chart, { clientX: reverse ? x1 : x2, clientY: 60 });
+  fireEvent.mouseUp(chart, { clientX: reverse ? x1 : x2, clientY: 60 });
+  await waitFor(() => {
+    const request = taskRequests().at(-1);
+    expect(request?.searchParams.get("from")).toBe(parent.from);
+    expect(request?.searchParams.get("to")).toBe("2026-09-03T00:00:00.000Z");
+  });
+  expect(screen.getByRole("region", { name: "사용자 상세" })).toBeTruthy();
 });
 
 test("opening a task shows its trace overlay for the bucket and Escape closes it", async () => {
