@@ -1,102 +1,93 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI 코딩 사용량과 비용 이해하기 — ccdash</title>
-  <meta name="description" content="Claude Code와 Codex 사용량을 살펴본 다음, 에이전트 레인, 모델 호출, 누적 비용이 표시된 사용자의 Task Trace를 확인하세요." />
-  <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
-  <link rel="alternate" hreflang="en" href="../index.html" />
-  <link rel="alternate" hreflang="ko" href="index.html" />
-  <link rel="alternate" hreflang="ja" href="../ja/index.html" />
-  <link rel="alternate" hreflang="zh-CN" href="../zh/index.html" />
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>ccdash 시작하기 — 제품 전체 문서</title>
+<meta content="ccdash의 모든 메뉴를 처음 사용하는 사람을 위한 안내서: 사용량, 비용, 사용자, 작업, 진단, AI 지원 및 기기 설정." name="description"/>
+<link href="../assets/site.css" rel="stylesheet"/>
+<link href="../assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
+<link href="../index.html" hreflang="en" rel="alternate"/>
+<link href="index.html" hreflang="ko" rel="alternate"/>
+<link href="../ja/index.html" hreflang="ja" rel="alternate"/>
+<link href="../zh/index.html" hreflang="zh-CN" rel="alternate"/>
 </head>
 <body>
-  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
-  <header class="top"><div class="wrap">
-    <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
-    <nav class="tabs" aria-label="주요 탐색"><a href="index.html" aria-current="page">개요</a><a href="installation.html">설치</a><a href="architecture.html">아키텍처</a><a href="api.html">API</a><a href="operations.html">운영</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
-    <div class="languages" role="group" aria-label="언어"><a href="../index.html" hreflang="en" lang="en">English</a><span lang="ko">한국어</span><a href="../ja/index.html" hreflang="ja" lang="ja">日本語</a><a href="../zh/index.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
-  </div></header>
-  <main class="wrap" id="main">
-    <div class="hero">
-      <p class="eyebrow">Claude Code + Codex · 문서</p>
-      <h1>AI 코딩 사용량과 비용 이해하기</h1>
-      <p class="lede">Claude Code와 Codex 사용량을 살펴본 다음, 사용자의 시간 범위에서 Task Trace로 들어가 에이전트 레인, 모델 호출, 누적 비용을 확인하세요.</p>
-      <p class="caption">2026년 11월 14일 업데이트 · 소스 동작을 설명하며, 설치된 리비전을 확인하세요.</p>
-      <p><a href="#task-trace">Task Trace 열기</a> · <a href="#codex-traces">Codex 진단 Trace 확인</a> · <a href="installation.html#trace">수집 활성화</a></p>
-    </div>
-    <section id="demo"><h2>시간 선택, 기기 설정 및 Task Trace 둘러보기</h2>
-<div class="demo-layout">
-<div>
-<div class="video-frame"><video aria-label="시간 선택, 기기 설정 및 Task Trace를 소개하는 48초 영어 동영상" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
+<a class="skip-link" href="#main">본문으로 건너뛰기</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
+<nav aria-label="주요 탐색" class="tabs"><a aria-current="page" href="index.html">개요</a><a href="user-guide.html">사용자 안내서</a><a href="installation.html">설치</a><a href="architecture.html">아키텍처</a><a href="api.html">API</a><a href="operations.html">운영</a><a href="https://github.com/Atom-oh/claude-code-usage-dashboard">GitHub</a></nav>
+<div aria-label="언어" class="languages" role="group"><a href="../index.html" hreflang="en" lang="en">English</a><span lang="ko">한국어</span><a href="../ja/index.html" hreflang="ja" lang="ja">日本語</a><a href="../zh/index.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></div>
+</div></header>
+<main class="wrap" id="main"><div class="hero">
+<p class="eyebrow">Claude Code + Codex · 제품 문서</p>
+<h1>ccdash 시작하기</h1>
+<p class="lede">코딩 클라이언트의 사용량, 비용 및 활동을 읽고, 대시보드의 모든 메뉴를 살펴보고, 숫자가 나타내는 작업을 확인하는 방법을 알아보세요.</p>
+<p><a href="user-guide.html">전체 사용자 안내서 읽기</a> · <a href="#menu-map">메뉴 찾기</a> · <a href="installation.html">배포 설정하기</a></p>
+<p class="caption">처음 사용하는 독자, 분석가 및 운영자를 위한 안내서입니다. 메뉴는 활성화된 클라이언트, 권한 및 설치된 버전에 따라 달라집니다.</p>
+</div><section id="start"><h2>처음 방문하셨나요?</h2>
+<ol>
+<li><strong>조직의 대시보드를 열고 로그인합니다.</strong> 주소와 접근 권한은 담당자에게 문의하세요. 지금 보고 있는 공개 사이트는 문서 사이트입니다. <a href="user-guide.html#access">계정 및 권한</a>을 참조하세요.</li>
+<li><strong>클라이언트와 기간을 선택합니다.</strong> 활성화된 모든 클라이언트와 최근 작업이 포함된 기간으로 시작하세요. 표시된 시간대와 데이터가 도착했는지 확인하세요.</li>
+<li><strong>Overview를 읽습니다.</strong> 확인된 비용, 관측된 토큰, 세션 및 사용자를 비교하세요. 결론을 내리기 전에 부분 또는 사용 불가 상태를 나타내는 표시를 읽으세요.</li>
+<li><strong>궁금한 점에 맞는 메뉴를 선택합니다.</strong> 아래 메뉴 안내를 사용한 다음, 해당 메뉴의 단계별 안내를 따르세요. 일반 보기는 클라이언트를 비교하고, Claude 세부 보기에는 Claude 전용 보기가 추가로 제공됩니다.</li>
+<li><strong>상세 정보를 확인하고 관련 보기를 공유합니다.</strong> 지원되는 경우 모델, 사용자 또는 작업을 살펴보세요. 내보내거나 공유할 때 선택한 기간과 필터를 고려하세요.</li>
+</ol>
+<div class="cards">
+<article class="card"><h3>대시보드를 읽고 싶습니다</h3><p><a href="user-guide.html#common-controls">공통 컨트롤</a>부터 확인한 다음 필요한 메뉴의 안내서를 여세요. 기존 배포 환경에 대한 접근 권한이 필요합니다.</p></article>
+<article class="card"><h3>코딩 클라이언트를 연결하고 싶습니다</h3><p>권한이 있는 경우 <a href="user-guide.html#collector">수집기 설정</a>을 사용해 기기를 등록하거나, 운영자에게 설치 안내를 요청하세요.</p></article>
+<article class="card"><h3>서비스를 운영합니다</h3><p><a href="installation.html">설치</a> 및 <a href="operations.html">운영</a> 안내에 따라 배포, 로그인 구성, 수집 및 복구를 진행하세요.</p></article>
+</div></section><section id="menu-map"><h2>대시보드의 모든 메뉴</h2>
+<p><a href="user-guide.html">전체 사용자 안내서</a>에서 각 메뉴의 섹션과 작업, 그리고 일반 보기와 Claude 세부 보기의 차이를 설명합니다.</p>
+<div aria-label="대시보드 메뉴 안내" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">메뉴</th><th scope="col">다음 작업을 하려면 여기서 시작하세요…</th></tr></thead><tbody>
+<tr><td><a href="user-guide.html#overview">Overview</a></td><td>관측된 사용량, 확인된 비용 및 데이터 범위의 전반적인 상황을 파악합니다.</td></tr>
+<tr><td><a href="user-guide.html#exec">Executive</a></td><td>도입 및 비용 요약을 간결하게 읽고, 지표의 한계를 확인합니다.</td></tr>
+<tr><td><a href="user-guide.html#trends">Trends</a></td><td>시간에 따른 변화를 찾아보고 조사할 기간을 좁힙니다.</td></tr>
+<tr><td><a href="user-guide.html#productivity">Productivity</a></td><td>직원 성과로 간주하지 않으면서 단위 경제성, 비용 요인 및 관측된 활동을 살펴봅니다.</td></tr>
+<tr><td><a href="user-guide.html#usage">Usage</a></td><td>토큰 구성 및 지원되는 도구 사용 세부 정보를 살펴봅니다.</td></tr>
+<tr><td><a href="user-guide.html#users">Users</a></td><td>관측된 사용자를 비교하고, 사용자 세부 정보를 열고, 선택한 기간의 작업을 찾습니다.</td></tr>
+<tr><td><a href="user-guide.html#cost">Cost</a></td><td>클라이언트, 백엔드, 모델 또는 사용자별 지출을 분석하고, 사용 가능한 비용 산정 기준을 확인합니다.</td></tr>
+<tr><td><a href="user-guide.html#reliability">Reliability</a></td><td>보고된 오류, 지연 시간 및 사용 가능한 진단 신호를 조사합니다.</td></tr>
+<tr><td><a href="user-guide.html#analytics">Analytics</a></td><td>선택한 클라이언트에서 사용할 수 있는 상세 분석과 지원되는 진단 탭을 살펴봅니다.</td></tr>
+<tr><td><a href="user-guide.html#collector">Collector 설정(수집기 설치)</a></td><td>권한이 있는 경우 기기를 등록하고 Collector를 설치하며 기기 수집 자격 증명을 관리합니다.</td></tr>
+<tr><td><a href="user-guide.html#installation">설치 상태(설치 상태)</a></td><td>권한이 허용되는 경우 배포, 데이터베이스 및 로그인 준비 상태를 확인합니다.</td></tr>
+</tbody></table></div>
+<p>다음 항목도 다룹니다: <a href="user-guide.html#tasks">Task Trace 및 공유 작업 링크</a>, <a href="user-guide.html#assistant">선택 사항인 AI 어시스턴트</a>, <a href="user-guide.html#access">계정 컨트롤 및 도움말</a>, <a href="user-guide.html#workflows">실용적인 조사 워크플로</a>.</p>
+</section><section id="costs"><h2>숫자를 해석하기 전에 의미를 확인하세요</h2>
+<ul><li><strong>확인된 비용은 청구서가 아닙니다.</strong> Claude가 보고한 지출과 지원되는 정가 추정치에는 각각의 비용 산정 기준이 유지됩니다. 가격 정보가 누락되면 소계가 부분 값일 수 있습니다.</li><li><strong>사용 불가는 0과 다릅니다.</strong> 관측된 토큰 소계, 완전한 토큰 구성 요소 및 진단 범위는 서로 다른 질문에 답합니다. 합계가 양수라고 해서 수집이 완전하다는 뜻은 아닙니다.</li><li><strong>활동은 관측 결과입니다.</strong> 세션, 도구 및 비용 비율만으로 직원 성과, 절약된 시간 또는 생산성의 인과 관계를 입증할 수는 없습니다.</li></ul>
+<p><a href="user-guide.html#common-controls">데이터 범위 및 표시 상태 읽기</a> · <a href="api.html">API 계약</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a></p>
+</section><section id="resolution"><h2>기간을 설정하고 차트를 사용하세요</h2>
+<p>UTC 기준 날짜를 사용하거나 날짜 선택기의 <strong>날짜·시간</strong> 탭에서 브라우저 현지 시간 기준의 정확한 시작 및 종료 시간을 설정하세요. 종료 시각은 범위에 포함되지 않습니다. 표시된 실제 적용 구간을 확인하세요. 서버 롤업과 데이터 수집 유예 기간이 계속 적용됩니다.</p>
+<p>지원되는 시계열 차트를 드래그하여 페이지 기간을 좁히고, 초기화 컨트롤을 사용해 원래 범위로 돌아가세요. 사용자 세부 정보에서는 작업 목록이 해당 범위를 따릅니다. 한 지점을 클릭하면 하나의 구간이 선택됩니다. 범주형 차트에서는 시간 범위를 선택할 수 없습니다.</p>
+<p><a href="user-guide.html#common-controls">모든 필터, 새로고침, 차트, 표, 내보내기 및 공유 컨트롤</a></p>
+</section><section id="task-trace"><h2>사용자에서 실제 작업으로 이어서 살펴보기</h2>
+<p><strong>Users</strong>를 열고 사용자를 선택한 다음 선택한 기간의 작업 목록을 살펴보세요. 작업을 열면 <strong>Task Trace</strong>가 표시됩니다. 여기에서 기본 및 하위 에이전트 레인, 호출, 확인된 비용, 토큰 컨텍스트, 모델 및 사용 가능한 세션 환경을 확인할 수 있습니다.</p>
+<p>추적 기능은 선택 사항입니다. Claude 상호작용과 추적된 Codex 턴은 서로 다른 증거를 제공하며, 누락된 호출, 속성 또는 가격은 계속 사용 불가 상태로 표시됩니다. 작업 목록과 세부 정보에는 명시적인 제한이 있습니다.</p>
+<p><a href="user-guide.html#tasks">작업 및 Trace 전체 안내</a> · <a href="api.html#tasks">작업 API의 제한 사항</a> · <a href="operations.html#traces">누락된 작업 문제 해결</a></p>
+</section><section id="codex-traces"><h2>작업 사용량과 진단 추적을 구분하세요</h2>
+<p>Analytics의 Codex 진단 Trace 탭은 Task Trace와 별개인 미리 보기입니다. 이 탭은 스팬과 사용 가능한 메타데이터를 보여줍니다. 진단 지표와 스팬은 완료 로그 합계에 사용량이나 비용을 더하지 않습니다.</p>
+<p><a href="user-guide.html#analytics">Analytics 탭 및 클라이언트별 차이</a> · <a href="user-guide.html#assistant">AI 어시스턴트 및 자체 추론 표시</a></p>
+</section><section id="boundaries"><h2>각 차원을 구분하세요</h2>
+<p><strong>클라이언트</strong>는 Claude Code 또는 Codex를 식별하고, <strong>백엔드</strong>는 공급자 경로를 설명하며, <strong>모델</strong>은 모델을 식별합니다. 모델 이름만으로는 이벤트를 발생시킨 클라이언트를 식별할 수 없습니다.</p>
+<p>Claude의 <strong>bedrock / enterprise</strong> 비교에는 추론된 세션 채널이 사용됩니다. 이 채널은 대시보드 로그인과 별개이며 Codex enterprise A/B 비교를 제공하지 않습니다.</p>
+<p><a href="user-guide.html#common-controls">올바른 보기 및 필터 선택</a> · <a href="architecture.html">파이프라인 및 신뢰 경계</a></p>
+</section><section id="demo"><h2>선택 사항인 예시: v1.8.0 안내 영상</h2>
+<p>이 48초 영상에서는 선택된 변경 사항과 기존 Task Trace 기능을 보여줍니다. 모든 메뉴와 기능에 대한 안내는 <a href="user-guide.html">전체 사용자 안내서</a>를 참조하세요.</p>
+<div class="video-frame"><video aria-label="시간 선택, 기기 설정 및 Task Trace를 안내하는 48초 영어 영상" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
 <source src="../assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
 <source src="../assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
 <track kind="captions" label="영어" src="../assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
-      브라우저에서 이 동영상을 재생할 수 없습니다. <a href="../assets/video/dashboard-demo-en-20261114.mp4">영어 데모 다운로드</a>.
+      브라우저에서 이 영상을 재생할 수 없습니다. <a href="../assets/video/dashboard-demo-en-20261114.mp4">영어 데모 다운로드</a>.
     </video></div>
-<p class="caption">2026년 11월 14일 제작 · 48초 · 영어 텍스트 및 Amazon Polly 내레이션 · 잔잔한 배경 음악. 합성 테스트 데이터를 사용한 실제 React 화면이며 Luna가 표시 레이블을 번역했습니다. 비용은 허구입니다. HyperFrames 시각 자료와 Remotion으로 구성한 오디오를 사용했습니다. <a href="../assets/video/dashboard-demo-en-20261114.vtt">대본 (영어)</a>.</p>
-</div>
-<div>
-<h3>합계에서 설명까지</h3>
-<ol>
-<li>정확한 시작 및 종료 시간을 선택한 다음, 사용자의 추세를 드래그하여 해당 기간의 작업을 살펴봅니다.</li>
-<li>기기를 등록한 후 터미널 명령 하나로 기기 Collector를 설치합니다.</li>
-<li>에이전트 레인, 모델 호출, 토큰 구성 요소, 세션의 MCP 서버와 플러그인을 살펴봅니다.</li>
-<li>사용할 수 없는 구간을 가로지르는 점선 안내선과 함께 단위 비용 추세를 확인합니다. 누락된 값은 0이 아니라 사용할 수 없는 값으로 유지됩니다.</li>
-</ol>
-<p><a class="button-link" href="installation.html">서비스 빌드 및 배포</a></p>
-<p><a href="operations.html#sso">조직의 SSO 연결</a></p>
-</div>
-</div></section><section id="latest"><h2>변경 사항</h2>
-<div class="cards">
-<article class="card"><h3>토큰 경제성</h3><p>생산성 페이지에는 비용 방정식(사용자 수 × 사용자당 세션 수 × 세션당 턴 수 × 턴당 요청 수 × 요청당 토큰 수 × 토큰당 비용)이 이전 기간과 비교해 표시되고, 이어서 요인별 워터폴, 단위 비용 추세, 모델 경제성 및 결과 비용이 표시됩니다. 대표 사용자는 각 요인의 중앙값과 비교해 차트에 표시됩니다. 운영자는 세션 턴 백필 후 이 기능을 활성화합니다.</p></article>
-<article class="card"><h3>Task Trace: 모델, 워크플로 및 세션 환경</h3><p>비용 설명에는 모델별 호출 수와 비용이 표시됩니다. 워크플로 실행 배지를 사용하면 사용자의 작업을 필터링할 수 있고, 같은 유형의 하위 에이전트에는 번호가 매겨집니다. 세션 환경에는 연결된 MCP 서버, 로드된 플러그인 및 첫 호출의 컨텍스트가 표시됩니다.</p><p><a href="#task-trace">둘러보기</a></p></article>
-<article class="card"><h3>정확한 시간 및 드래그로 작업 선택</h3><p>브라우저 시간대 기준으로 초 단위까지 시작 및 종료 시간을 선택합니다. 사용자 상세 정보는 기간을 변경해도 열린 상태로 유지되며 상위 20개 작업 목록은 선택한 범위를 따릅니다. 사용량/비용 차트를 드래그하여 두 보기를 모두 좁힐 수 있습니다.</p><p><a href="#resolution">시간 범위 선택</a></p></article>
-<article class="card"><h3>비용 상세 보기</h3><p>사용자 및 모델을 선택하면 필터링된 세부 정보가 열립니다. 모델별 비중은 확인된 비용 소계를 기준으로 하며, 누락된 가격을 명시합니다.</p></article>
-<article class="card"><h3>Codex 완료 효율성</h3><p>캐시 및 추론 비율, 완료당 토큰 수, 식별된 세션당 예상 비용에 분모와 데이터 범위가 명시됩니다.</p></article>
-<article class="card"><h3>소스 기반 설치</h3><p>릴리스를 복제하고 애플리케이션 이미지를 빌드한 다음 ClickHouse 스키마와 OTel 백엔드를 준비합니다. 클라이언트를 연결하기 전에 EC2, ECS, EKS 및 Lambda에 맞게 조정하는 방법을 비교합니다.</p><p><a href="installation.html">전체 설치 가이드</a></p></article>
-<article class="card"><h3>구성 가능한 SSO</h3><p>서명된 OIDC 그룹을 애플리케이션 역할에 매핑합니다. ID 공급자가 갱신 계약을 지원하는 경우 최대 30일의 고정 로그인 수명을 활성화할 수 있습니다.</p></article>
-</div></section>
-<section id="task-trace"><h2>사용자에서 Task Trace까지</h2>
-<ol>
-<li>시간 범위와 클라이언트 필터를 선택합니다. 날짜 선택기의 Date and time 탭에서 브라우저 현지 시간 기준의 정확한 시간을 입력할 수 있습니다. <strong>Users</strong>를 열고 사용자를 선택해 <strong>사용자 상세</strong>(사용자 상세 정보)를 엽니다.</li>
-<li>작업 목록에는 개요의 유효 범위에 해당하는 작업이 즉시 최대 20개 표시됩니다. 사용자의 사용량/비용 추세를 드래그하여 페이지와 작업 목록 범위를 함께 좁힙니다. 지점을 클릭하면 하나의 구간이 선택되고, 재설정 컨트롤을 사용하면 전체 기간으로 돌아갑니다. 토큰, 비용, 하위 에이전트 또는 기간별로 정렬할 수 있습니다. 워크플로 배지를 선택하면 해당 실행의 작업만 표시됩니다.</li>
-<li>작업을 선택해 <strong>작업 상세</strong>(Task Trace)를 엽니다. 토큰, 비용 산정 기준, LLM 호출, 하위 에이전트 및 관측된 기간을 확인합니다.</li>
-<li>타임라인 막대를 클릭해 해당 호출이나 도구를 살펴봅니다. <strong>모델별 호출</strong>에서 행을 선택하면 일치하는 LLM 막대가 강조 표시되고, 다시 선택하면 강조가 해제됩니다. Escape 또는 <strong>닫기</strong>를 눌러 닫습니다.</li>
-</ol>
-<figure><img alt="합성 데이터로 표시한 메인 레인, 두 개의 하위 에이전트 레인, 누적 비용 및 선택된 Explore 모델 호출이 있는 Task Trace" height="2812" loading="lazy" src="../assets/img/task-trace.png" width="2640"/><figcaption>합성 테스트 데이터와 허구의 비용을 사용해 11월 14일 소스에서 캡처한 Task Trace입니다. 프로덕션 텔레메트리는 사용하지 않았습니다.</figcaption></figure>
-<div aria-label="Task Trace 읽는 방법" class="table-scroll" role="region" tabindex="0"><table>
-<thead><tr><th scope="col">보기</th><th scope="col">읽는 방법</th></tr></thead>
-<tbody>
-<tr><td>에이전트 레인</td><td>먼저 메인 세션이 표시되고, 이어서 관측된 하위 에이전트가 표시됩니다. 색이 짙은 LLM 막대는 입력 컨텍스트가 더 큼을 나타냅니다. 회색 표시는 도구, 빨간색 표시는 권한 대기이며, 점선은 관측된 에이전트 시작을 연결합니다.</td></tr>
-<tr><td>누적 비용</td><td>레인 색상은 확인된 호출 비용을 누적해 보여줍니다. 마우스를 올려 특정 시점의 정보를 확인합니다. 일치하는 스팬이 없는 Codex 완료 이벤트는 밴드에는 표시되지 않더라도 작업 합계에 반영될 수 있습니다.</td></tr>
-<tr><td>선택한 스팬</td><td>사용 가능한 모델, 토큰 구성 요소, 비용 산정 기준, 타이밍, 도구 또는 권한 메타데이터를 살펴봅니다. 원시 프롬프트, 명령 및 경로는 표시되지 않습니다.</td></tr>
-<tr><td>왜 많이 썼나 (비용이 많이 든 이유)</td><td>입력 데이터가 있는 경우 캐시 읽기 비중, 컨텍스트 증가, 레인별 비용 비중, 고비용 호출, 재시도 또는 권한 대기를 데이터에 기반한 규칙으로 설명합니다. 그런 다음 모델별 호출 수, 확인된 비용 및 비용 비중을 표시합니다.</td></tr>
-<tr><td>모델 호출</td><td>레인, 호출 수 및 확인된 비용을 기준으로 모델과 호출 출처를 비교합니다. 행을 강조해도 타임라인 강조만 달라지며 합계는 변하지 않습니다.</td></tr>
-<tr><td>세션 환경</td><td>최신 상태별 MCP 서버, 스킬·에이전트·명령 개수와 함께 표시되는 로드된 플러그인, 첫 호출의 입력 컨텍스트가 표시됩니다. OpenTelemetry는 도구 정의의 개수나 크기를 보고하지 않습니다.</td></tr>
-</tbody>
-</table></div>
-<p>Claude 작업은 상호작용 스팬을 나타냅니다. Codex 작업은 추적된 턴을 나타내며 토큰과 예상 비용에는 연결된 완료 로그를 사용합니다. 현재 Codex에는 메인 레인 하나만 있으며 하위 에이전트 수는 수집되지 않습니다. 트레이스 수집은 선택 사항이므로 이 작업 목록에는 대시보드 활동의 일부만 포함됩니다. 트레이스 보존 기간은 90일이며, 그보다 오래된 추세 구간에서는 작업 목록을 열 수 없습니다.</p>
-<p><a href="installation.html#trace">수집 설정</a> · <a href="api.html#tasks">작업 API 및 한도</a> · <a href="operations.html#traces">작업 누락 문제 해결</a></p>
-</section>
-<section id="codex-traces"><h2>Codex 진단 Trace 확인</h2>
-<p>Codex를 선택한 상태에서 <strong>Analytics</strong>를 열고 Codex 상세 화면의 <strong>Trace</strong> 탭을 선택합니다. Trace를 펼쳐 span, 상위 ID, 모델, 도구, 소요 시간, 상태를 확인하거나 span 표를 CSV로 내보낼 수 있습니다.</p>
-<p>이 미리 보기에는 최신 Trace 50개와 Trace당 최신 span 최대 200개가 표시됩니다. 통계는 표시된 span을 기준으로 합니다. 모델 필터는 모델 속성이 있는 span만 포함합니다. Trace가 너무 길거나 서로 충돌하는 경우 소요 시간 및 오류 합계가 표시되지 않을 수 있습니다.</p>
-<p>진단 span은 대시보드 사용량이나 비용에 추가되지 않습니다. 위의 Task Trace는 Codex 완료 로그를 턴에 연결하며, Analytics의 Trace 탭은 별도의 진단 미리 보기입니다. Chat의 추론 및 SQL 단계는 또 다른 별도 화면입니다.</p>
-<p><a href="api.html#trace-preview">진단 API</a> · <a href="architecture.html#task-traces">작업과 span의 연결 방식</a></p>
-</section>
-<section id="costs"><h2>비용과 데이터 포괄 범위를 함께 확인하기</h2><div class="table-scroll" tabindex="0" role="region" aria-label="측정 항목 참고 표"><table><thead><tr><th scope="col">측정 항목</th><th scope="col">의미</th></tr></thead><tbody><tr><td>Claude 보고 비용</td><td>Claude 보고 비용 경로에는 <code>reported_cost</code>를 사용하고, 계산된 비용 진단 정보는 별도로 유지합니다.</td></tr><tr><td>AWS 정가 기준 예상치</td><td>Codex 및 Anthropic 이외의 Claude 가격에는 지원되는 AWS 정가, 라우팅, 요청 등급을 사용합니다. 클라우드 청구서가 아닙니다.</td></tr><tr><td>확인된 비용 소계</td><td>사용 가능한 가격을 합산하고 가격 누락은 일부만 반영된 것으로 표시합니다. 모든 가격을 알 수 없는 경우 비용을 제공하지 않습니다.</td></tr><tr><td>관측된 토큰</td><td>사용 가능한 입력/출력 쌍을 유지하고 일부만 반영된 경우 이를 명시합니다. 소계가 양수여도 표준 토큰 구성 요소 전체가 포함되었다는 뜻은 아닙니다.</td></tr><tr><td>활동 지표</td><td>관측된 도입 현황, 도구, 활동을 살펴봅니다. 검증된 직원 성과 측정치나 생산성의 인과 관계를 입증하는 측정치는 아닙니다.</td></tr></tbody></table></div><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a>와 <a href="api.html#completion">Codex 완료 의미</a>를 확인하세요.</p></section><section id="resolution"><h2>시간 범위와 해상도 선택</h2><p>기간 선택기를 열고 <strong>Date and time</strong>을 선택하여 브라우저 시간대 기준으로 초 단위까지 시작 및 종료 시간을 입력합니다. 종료 시간은 포함되지 않습니다. 공유 링크에는 선택한 모드와 UTC 기준 범위가 유지되며, 달력 날짜 모드는 계속 UTC 날짜를 사용합니다.</p><figure><img alt="영어로 번역된 합성 캡처 화면의 정확한 시작 및 종료 시간 선택기" height="482" loading="lazy" src="../assets/img/time-range-en.png" width="770"/><figcaption>현재 React 구성 요소의 정확한 시간 입력입니다. 데모 표시 레이블을 번역했으며, 이는 제품 로캘을 변경하지 않습니다.</figcaption></figure><div aria-label="선택한 시간 범위 참고 표" class="table-scroll" role="region" tabindex="0"><table><thead><tr><th scope="col">선택한 시간 범위</th><th scope="col">비용 및 추세 컨트롤</th></tr></thead><tbody><tr><td>최대 24시간</td><td>10분, 30분, 시간별, 일별 또는 주별. 하루 보기의 기본 해상도는 시간별입니다.</td></tr><tr><td>24시간 초과</td><td>시간별, 일별 또는 주별. 이틀 보기에서는 10분 해상도를 선택할 수 없습니다.</td></tr></tbody></table></div><p>반환된 간격과 유효 시간 범위를 확인합니다. 정확한 시간 입력은 수집 유예 기간, 서버 양자화 또는 과거 롤업 정밀도를 변경하지 않습니다. 단위 경제성 차트의 점선 구간은 사용할 수 없는 구간을 가로질러 관측된 양 끝점을 연결합니다. 이는 시각적 안내선이지 측정값이 아닙니다.</p><div class="shots"><figure><img alt="10월 24일 대시보드의 합성 사용자별 비용 추세" height="655" loading="lazy" src="../assets/img/cost-detail.png" width="1830"/><figcaption>선택한 사용자 상세 보기, 10월 24일 합성 캡처.</figcaption></figure><figure><img alt="각 사용자 비중을 보여주는 합성 모델 비용 상세 보기" height="353" loading="lazy" src="../assets/img/model-share.png" width="1830"/><figcaption>선택한 모델의 사용자별 비중, 10월 24일 합성 캡처.</figcaption></figure></div></section><section id="boundaries"><h2>각 차원을 구분해서 보기</h2>
-<p><strong>클라이언트</strong>는 이벤트를 내보낸 애플리케이션을 식별합니다. <strong>백엔드</strong>는 관측되거나 추정된 공급자 경로를 설명합니다. <strong>모델</strong>은 모델을 식별합니다. 모델 이름만으로 코딩 클라이언트를 식별할 수는 없습니다.</p>
-<p>Claude의 <code>bedrock</code>/<code>enterprise</code> 비교는 추정된 세션 채널 보기입니다. 대시보드 로그인과는 별개이며 Codex 엔터프라이즈 A/B 비교가 아닙니다. 한 사용자가 여러 채널에 표시될 수 있습니다.</p>
-<p>활성화된 경우 역할, 모델 액세스, 배포 구성에 따라 보호된 읽기 전용 쿼리 경로를 통해 Analytics에서 추가 질문에 답할 수 있습니다.</p>
-<p><a href="architecture.html">파이프라인 및 신뢰 경계 확인</a> · <a href="api.html">API 살펴보기</a></p></section>
-  </main>
-  <footer><div class="wrap">
-    <p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
-    <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">전체 API 참조</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">변경 이력</a> · <a href="credits.html">데모 크레딧</a></p>
-    <p>텔레메트리가 불완전할 수 있습니다. 보고 비용 및 정가 기준 예상치는 청구서가 아닙니다. 활동 지표만으로 직원 생산성이나 인과 관계에 기반한 ROI를 입증할 수 없습니다.</p>
-  </div></footer>
+<p class="caption">2026년 11월 14일 제작 · 영어 음성 및 자막 · 번역된 표시 레이블과 가상 비용을 사용한 합성 React 화면 캡처. <a href="../assets/video/dashboard-demo-en-20261114.vtt">영어 대본</a> · <a href="credits.html">미디어 크레딧</a>.</p>
+</section><section id="latest"><h2>릴리스 노트 및 다음 단계</h2>
+<p>대시보드의 변경 내역 또는 <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">릴리스 노트</a>에서 버전별 변경 사항을 확인하세요. 이어서 <a href="user-guide.html#workflows">조사 워크플로</a> 또는 <a href="user-guide.html#troubleshooting">첫 번째 문제 해결 확인 사항</a>을 살펴보세요.</p>
+</section></main>
+<footer><div class="wrap">
+<p>ccdash · OpenTelemetry → ClickHouse → Express → React</p>
+<p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">전체 API 참조</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">측정 정의</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">변경 이력</a> · <a href="credits.html">데모 크레딧</a></p>
+<p>텔레메트리가 불완전할 수 있습니다. 보고 비용 및 정가 기준 예상치는 청구서가 아닙니다. 활동 지표만으로 직원 생산성이나 인과 관계에 기반한 ROI를 입증할 수 없습니다.</p>
+</div></footer>
 </body>
 </html>
