@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+from pathlib import Path
 import re
 import secrets
 import shutil
@@ -218,8 +219,61 @@ def write_token(directory, token):
     return path
 
 
-def install_command(installer, endpoint, token_file, user_id_override, approved_user_id):
+LOCAL_PORTS = (4317, 4318, 13133)
+LEGACY_LINUX_UNIT = Path("/etc/systemd/system/otelcol.service")
+
+
+def port_in_use(port):
+    with socket.socket() as probe:
+        probe.settimeout(0.2)
+        try:
+            return probe.connect_ex(("127.0.0.1", port)) == 0
+        except OSError:
+            return False
+
+
+def local_conflict(platform, home=None, probe=port_in_use):
+    """Before a device is registered: who holds the local Collector ports?
+
+    A reinstall of this package replaces its own service, so it is never a conflict. Otherwise
+    report the busy ports and the historical personal Collector unit when one exists; install.py
+    still verifies that unit and its listeners before changing anything.
+    """
+    home = Path(home or os.path.expanduser("~"))
+    if (home / ".local/share/ccdash-collector/state.json").exists():
+        return None
+    ports = [port for port in LOCAL_PORTS if probe(port)]
+    if not ports:
+        return None
+    legacy = LEGACY_LINUX_UNIT if platform == "linux" else home / "Library/LaunchAgents/com.ccdash.otelcol.plist"
+    return {"ports": ports, "legacy": legacy if legacy.exists() and not legacy.is_symlink() else None}
+
+
+def confirm_migration(found, platform, ask, out):
+    ports = ", ".join(str(port) for port in found["ports"])
+    if not found["legacy"]:
+        inspect = "ss -ltnp" if platform == "linux" else "lsof -nP -iTCP -sTCP:LISTEN"
+        raise EnrollmentError("로컬 포트 " + ports + "를 다른 서비스가 쓰고 있어 설치할 수 없습니다. `" + inspect
+                              + "`로 확인하세요. 워크숍 수집기는 주최자에게 문의하세요. 기기는 등록하지 않았습니다.")
+    out("")
+    out("이 기기에는 이전 방식 수집기(" + str(found["legacy"]) + ")가 포트 " + ports + "를 쓰고 있습니다.")
+    out("전환하면 기존 서비스와 설정을 백업한 뒤 중지하고, 같은 포트에서 새 수집기를 시작합니다. "
+        "실패하면 기존 서비스로 되돌립니다. 기존 수집 사용자 ID는 그대로 유지합니다.")
+    if platform == "linux":
+        out("Linux에서는 기존 시스템 서비스를 바꾸려고 sudo를 사용하며, 비밀번호를 물을 수 있습니다.")
+    out("Claude Code와 Codex를 먼저 종료해 두세요.")
+    try:
+        answer = ask("기존 수집기를 새 수집기로 전환할까요? [y/N]: ")
+    except EOFError:
+        answer = ""
+    if answer.strip().lower() not in ("y", "yes"):
+        raise EnrollmentError("전환을 취소했습니다. 기존 수집기는 그대로이고 기기는 등록하지 않았습니다.")
+
+
+def install_command(installer, endpoint, token_file, user_id_override, approved_user_id, migrate=False):
     command = [sys.executable, "-I", installer, "install", "--endpoint", endpoint, "--token-file", token_file]
+    if migrate:
+        command.append("--migrate-legacy")  # confirmed before approval; install.py still verifies it
     if user_id_override:
         command += ["--user-id", user_id_override]
     elif approved_user_id:
@@ -228,7 +282,13 @@ def install_command(installer, endpoint, token_file, user_id_override, approved_
     return command
 
 
-def enroll(args, http=fetch, sleep=time.sleep, run=subprocess.call, browser=open_browser, out=print):
+def enroll(args, http=fetch, sleep=time.sleep, run=subprocess.call, browser=open_browser, out=print,
+           conflict=local_conflict, ask=input):
+    # Resolve a local Collector conflict before registering a device, so a declined or
+    # impossible installation leaves nothing to revoke.
+    found = conflict(args.platform)
+    if found:
+        confirm_migration(found, args.platform, ask, out)
     secret = secrets.token_urlsafe(32)
     request = start(args.endpoint, args.platform, hashlib.sha256(secret.encode()).hexdigest(),
                     args.name or device_name(), http=http, sleep=sleep)
@@ -254,7 +314,8 @@ def enroll(args, http=fetch, sleep=time.sleep, run=subprocess.call, browser=open
             raise EnrollmentError("패키지 압축을 풀지 못했습니다.") from None
         token_file = write_token(work, token)
         token = None
-        status = run(install_command(installer, args.endpoint, token_file, args.user_id, approved_user_id))
+        status = run(install_command(installer, args.endpoint, token_file, args.user_id, approved_user_id,
+                                     migrate=bool(found)))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     if status != 0:

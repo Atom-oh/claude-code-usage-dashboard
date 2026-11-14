@@ -38,6 +38,11 @@ RENEW_LABEL = "org.ccdash.collector.renew"
 RENEW_UNITS = ("ccdash-collector-renew.service", "ccdash-collector-renew.timer")
 RENEW_OUTCOMES = ("renewed", "not_due", "unauthorized", "restart_failed", "failed")
 LEGACY_LABEL = "com.ccdash.otelcol"
+# The historical Linux personal Collector: a root-owned system unit that runs the user's
+# own ~/.otelcol/config.yaml as that user (setup-test-telemetry-all.sh).
+LEGACY_LINUX_SERVICE = "otelcol.service"
+LEGACY_LINUX_UNIT = Path("/etc/systemd/system") / LEGACY_LINUX_SERVICE
+LEGACY_LINUX_OWNER = 0
 MARKER = "ccdash-device-collector-v1"
 TOKEN_PATTERN = re.compile(r"ccd1\.[a-f0-9]{64}\.[a-f0-9]{32}\.[A-Za-z0-9_-]{43}")
 MAINTENANCE_FILES = (
@@ -371,6 +376,10 @@ def check_ports(legacy=None):
             output = run(["lsof", "-nP", "-a", "-iTCP:" + str(port), "-sTCP:LISTEN", "-Fp"],
                          required=False, output=True)
             owners = set(re.findall(r"^p([0-9]+)$", output or "", re.MULTILINE))
+        elif sys.platform == "linux":
+            # ss shows the owning PID for the caller's own processes without root.
+            output = run(["ss", "-ltnpH", "sport = :" + str(port)], required=False, output=True)
+            owners = set(re.findall(r"pid=([0-9]+)", output or ""))
         if not legacy or not legacy["pid"] or owners != {legacy["pid"]}:
             detail = " (PID " + ", ".join(sorted(owners)) + ")" if owners else ""
             inspect = "lsof -nP -iTCP -sTCP:LISTEN" if sys.platform == "darwin" else "ss -ltnp"
@@ -390,14 +399,8 @@ def legacy_mac_state(home, uid):
         path = home / ".otelcol" / name
         if path.exists() or path.is_symlink():
             paths.append(path)
-    states = {}
-    for path in paths:
-        if any(p.is_symlink() for p in (path, *path.parents)):
-            raise ValueError("legacy service/configuration has a symlink; manual migration required")
-        info = path.stat()
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != uid or info.st_mode & 0o022:
-            raise ValueError("legacy service/configuration must be regular files owned by you, not writable by others")
-        states[path] = file_state(path)
+    states = legacy_file_states(paths, uid, "legacy service/configuration must be regular files owned by you, "
+                                "not writable by others")
     try:
         data = plistlib.loads(unit.read_bytes())
     except (ValueError, plistlib.InvalidFileException, ExpatError):
@@ -445,9 +448,79 @@ def legacy_mac_state(home, uid):
             "loaded": loaded is not None, "disabled": is_disabled, "pid": pid}
 
 
+def legacy_file_states(paths, owner, message, private_parent=False):
+    """private_parent: a group/other-writable file is still private inside an owner-only directory."""
+    states = {}
+    for path in paths:
+        if any(p.is_symlink() for p in (path, *path.parents)):
+            raise ValueError("legacy service/configuration has a symlink; manual migration required")
+        info = path.stat()
+        writable = info.st_mode & 0o022
+        if writable and private_parent:
+            parent = path.parent.stat()
+            writable = parent.st_uid != owner or parent.st_mode & 0o077
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != owner or writable:
+            raise ValueError(message + " (" + str(path) + ")")
+        states[path] = file_state(path)
+    return states
+
+
+def legacy_linux_state(home, uid, user):
+    """Recognize only the historical personal system unit running this user's own configuration."""
+    unit = LEGACY_LINUX_UNIT
+    if unit.is_symlink() or not unit.exists():
+        return None  # absent, or masked by an earlier migration
+    shown = run(["systemctl", "show", LEGACY_LINUX_SERVICE, "--property=LoadState,ActiveState,UnitFileState,"
+                 "FragmentPath,DropInPaths,User,MainPID,ExecStart"], required=False, output=True)
+    if shown is None:
+        raise ValueError("cannot inspect legacy " + LEGACY_LINUX_SERVICE + "; no service was changed")
+    fields = dict(line.split("=", 1) for line in shown.splitlines() if "=" in line)
+    config = home / ".otelcol/config.yaml"
+    # systemd renders ExecStart as "{ path=... ; argv[]=<arguments> ; ... }".
+    argv = re.findall(r"argv\[\]=([^;]*?) ;", fields.get("ExecStart", ""))
+    arguments = argv[0].split(" ") if len(argv) == 1 else []
+    if (fields.get("LoadState") != "loaded" or fields.get("FragmentPath") != str(unit)
+            or fields.get("User") != user or not arguments or not Path(arguments[0]).is_absolute()
+            or Path(arguments[0]).name != "otelcol-contrib"
+            or arguments[1:] not in (["--config=" + str(config)], ["--config", str(config)])):
+        # Not this user's personal Collector (for example an organizer's workshop unit):
+        # never migrate it. A running one still blocks installation as an unverified port owner.
+        return None
+    backup = unit.with_name(unit.name + ".ccdash-backup")
+    if backup.exists() or backup.is_symlink():
+        raise ValueError("an earlier migration backup exists at " + str(backup)
+                         + "; inspect it before migrating again. No service was changed.")
+    dropin_dir = unit.with_name(unit.name + ".d")
+    dropins = [Path(path) for path in fields.get("DropInPaths", "").split()]
+    if any(path.parent != dropin_dir for path in dropins):
+        raise ValueError("legacy " + LEGACY_LINUX_SERVICE + " has drop-ins outside " + str(dropin_dir)
+                         + "; manual migration required")
+    states = legacy_file_states([unit, *dropins], LEGACY_LINUX_OWNER,
+                                "legacy system unit files must be root-owned regular files not writable by others; "
+                                "manual migration required")
+    user_files = [config] + [home / ".otelcol" / name for name in ("env", "enable-test-telemetry.sh")
+                             if (home / ".otelcol" / name).exists() or (home / ".otelcol" / name).is_symlink()]
+    states.update(legacy_file_states(user_files, uid, "legacy configuration must be regular files owned by you, "
+                                     "not writable by others; fix with chmod go-w", private_parent=True))
+    active = fields.get("ActiveState") == "active"
+    pid = fields.get("MainPID")
+    return {"platform": "linux", "unit": unit, "backup": backup, "user": user, "files": states,
+            "active": active, "enabled": fields.get("UnitFileState") == "enabled",
+            "pid": pid if active and pid and pid != "0" else None}
+
+
+def legacy_state(home, uid, user):
+    return legacy_mac_state(home, uid) if sys.platform == "darwin" else legacy_linux_state(home, uid, user)
+
+
 def confirm_legacy(args, legacy):
-    print("Found legacy macOS Collector: " + str(legacy["unit"]))
-    print("Migration will back up its settings, disable its LaunchAgent, and start the device Collector.")
+    if legacy.get("platform") == "linux":
+        print("Found legacy Linux Collector: " + str(legacy["unit"]) + " (runs ~/.otelcol/config.yaml)")
+        print("Migration will back up its unit and settings, then use sudo to disable, remove and mask "
+              + LEGACY_LINUX_SERVICE + " and start the device Collector. sudo may ask for your password.")
+    else:
+        print("Found legacy macOS Collector: " + str(legacy["unit"]))
+        print("Migration will back up its settings, disable its LaunchAgent, and start the device Collector.")
     print("Claude telemetry exporter overrides will be replaced with local loopback settings, "
           "and old telemetry authentication headers cleared. Model/provider/login settings are preserved.")
     print("Close Claude Code/Codex and let the old queue drain first. The old queue stays in ~/.otelcol; "
@@ -512,8 +585,11 @@ def backup_legacy(legacy, root):
         copy_atomic(path, directory / path.name, 0o600)
         if file_state(path) != state or file_state(directory / path.name)[1] != state[1]:
             raise ValueError("legacy configuration changed while backing up; no service was changed")
+    service = ({"service": str(legacy["unit"]), "active": legacy["active"], "enabled": legacy["enabled"],
+                "unitBackup": str(legacy["backup"])} if legacy.get("platform") == "linux" else
+               {"service": str(legacy["unit"]), "loaded": legacy["loaded"], "disabled": legacy["disabled"]})
     atomic(directory / "migration.json", json.dumps({
-        "service": str(legacy["unit"]), "loaded": legacy["loaded"], "disabled": legacy["disabled"],
+        **service,
         "files": [{"path": str(path), "backup": path.name, "mode": state[0], "sha256": state[1].hex()}
                   for path, state in legacy["files"].items()],
         "queue": "Preserved in place at ~/.otelcol/queue; not imported.",
@@ -532,13 +608,48 @@ def wait_for_free_ports():
 
 
 def stop_legacy(legacy):
+    if legacy.get("platform") == "linux":
+        # The README's manual procedure: keep the unit under a backup name, then mask the
+        # service so the legacy shell helper cannot start it again.
+        run(["sudo", "cp", "-p", str(legacy["unit"]), str(legacy["backup"])])
+        run(["sudo", "systemctl", "disable", "--now", LEGACY_LINUX_SERVICE])
+        run(["sudo", "rm", str(legacy["unit"])])
+        run(["sudo", "systemctl", "mask", LEGACY_LINUX_SERVICE])
+        wait_for_free_ports()
+        return
     run(["launchctl", "disable", legacy["target"]])
     if legacy["loaded"]:
         run(["launchctl", "bootout", legacy["target"]])
     wait_for_free_ports()
 
 
+def restore_legacy_linux(legacy):
+    unit, backup = legacy["unit"], legacy["backup"]
+    for path, state in legacy["files"].items():
+        if path not in (unit,) and file_state(path) != state:
+            raise ValueError("legacy files changed during installation; manual recovery required")
+    if backup.exists() and not backup.is_symlink():
+        if file_state(backup)[1] != legacy["files"][unit][1]:
+            raise ValueError("legacy unit backup changed during installation; manual recovery required")
+        if unit.is_symlink():
+            run(["sudo", "systemctl", "unmask", LEGACY_LINUX_SERVICE])
+        if unit.exists() or unit.is_symlink():
+            run(["sudo", "rm", str(backup)])  # the unit was never removed
+        else:
+            run(["sudo", "mv", str(backup), str(unit)])
+    elif not unit.exists() or unit.is_symlink():
+        raise ValueError("legacy unit backup is missing; manual recovery required")
+    run(["sudo", "systemctl", "daemon-reload"])
+    if legacy["enabled"]:
+        run(["sudo", "systemctl", "enable", LEGACY_LINUX_SERVICE])
+    if legacy["active"]:
+        wait_for_free_ports()
+        run(["sudo", "systemctl", "start", LEGACY_LINUX_SERVICE])
+
+
 def restore_legacy(legacy, home, uid):
+    if legacy.get("platform") == "linux":
+        return restore_legacy_linux(legacy)
     current = legacy_mac_state(home, uid)
     if current is None or current["files"] != legacy["files"]:
         raise ValueError("legacy files changed during installation; manual recovery required")
@@ -618,11 +729,14 @@ def install(args, home, user, uid, root, unit):
     check_install_root(root)
     renewal = renewal_locations(home)
     check_services(unit, renewal, user)
-    legacy = legacy_mac_state(home, uid) if sys.platform == "darwin" and not unit.exists() else None
+    legacy = legacy_state(home, uid, user) if not unit.exists() else None
     if not unit.exists():
         check_ports(legacy)
     if legacy:
         confirm_legacy(args, legacy)
+        if legacy.get("platform") == "linux":
+            # Ask for the sudo password now, before any download or file change.
+            run(["sudo", "-v"])
     user_id = migration_user_id(args, home) if legacy else (
         args.user_id or installed_user_id(root) or getattr(args, "default_user_id", None) or user)
     replace_claude_telemetry = bool(legacy) or getattr(args, "replace_claude_telemetry", False)
@@ -685,12 +799,12 @@ def install(args, home, user, uid, root, unit):
                 raise ValueError("client configuration changed during preparation; rerun setup")
             check_services(unit, renewal, user)
             if not unit.exists():
-                if legacy and legacy_mac_state(home, uid) != legacy:
+                if legacy and legacy_state(home, uid, user) != legacy:
                     raise ValueError("legacy service or configuration changed during preparation; rerun setup")
                 check_ports(legacy)
             if legacy:
                 backup_legacy(legacy, root)
-                if legacy_mac_state(home, uid) != legacy:
+                if legacy_state(home, uid, user) != legacy:
                     raise ValueError("legacy service or configuration changed during backup; rerun setup")
             written = []
             clients_attempted = False
@@ -873,8 +987,8 @@ def main():
     parser.add_argument("--default-user-id", help="attribution ID for a new installation (browser enrollment passes "
                                                   "the approving account's verified email); defaults to local login")
     parser.add_argument("--migrate-legacy", action="store_true",
-                        help="approve verified legacy personal macOS Collector migration, including Claude "
-                             "telemetry replacement, without a prompt")
+                        help="approve verified legacy personal Collector migration (macOS LaunchAgent or Linux "
+                             "otelcol.service), including Claude telemetry replacement, without a prompt")
     parser.add_argument("--replace-claude-telemetry", action="store_true",
                         help="replace Claude telemetry exporter settings with local defaults and clear old "
                              "telemetry headers; preserve model/provider/login settings")

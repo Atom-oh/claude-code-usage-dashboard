@@ -66,6 +66,7 @@ class Migration(unittest.TestCase):
         self.output = io.StringIO()
         contexts = [
             patch.object(self.module.sys, "platform", "darwin"),
+            patch.object(self.module, "LEGACY_LINUX_UNIT", self.home / "absent/otelcol.service"),
             patch.object(self.module, "run", self.external),
             patch.object(self.module, "download_binary", self.download),
             patch.object(self.module.socket, "socket"),
@@ -112,6 +113,8 @@ class Migration(unittest.TestCase):
     def external(self, command, required=True, output=False):
         domain = "gui/" + str(os.getuid())
         target = domain + "/com.ccdash.otelcol"
+        if command[0] == "ss":
+            return None  # Linux port-owner query: no owner reported
         if command[0] == "lsof":
             port = next(int(x[6:]) for x in command if x.startswith("-iTCP:"))
             return "p999\n" if port == self.extra_port else ("p1321\n" if self.loaded else None)

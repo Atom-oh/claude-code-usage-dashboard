@@ -45,6 +45,8 @@ class Transactions(unittest.TestCase):
         self.renewal_failure = False
         self.commands = []
         self.patches = [
+            # Never read this host's real /etc/systemd/system/otelcol.service.
+            patch.object(self.module, "LEGACY_LINUX_UNIT", self.home / "absent/otelcol.service"),
             patch.object(self.module, "run", self.external),
             patch.object(self.module, "download_binary", self.download),
             patch.object(self.module.socket, "socket"),

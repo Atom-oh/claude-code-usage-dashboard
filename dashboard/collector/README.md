@@ -14,7 +14,7 @@ Python 3.9/3.10 use the included MIT-licensed Tomli parser.
 | Already using this device-token package | Rerun installation with a replacement token and the same attribution ID. |
 | Installed before automatic token renewal | See Automatic token renewal below. |
 | Legacy personal macOS Collector (`com.ccdash.otelcol`) | Run Install; confirm the installer's migration prompt. |
-| Legacy Linux Collector | Follow Migrate a legacy local Collector below first. |
+| Legacy Linux Collector (`otelcol.service`) | Run Install; confirm the migration prompt (uses sudo). |
 | Workshop EC2 prepared by the organizer | Use the prepared clients; do not install a second Collector or issue an individual token. |
 
 The device package requires a device token, not a ClickHouse password. The organizer's
@@ -230,6 +230,17 @@ launchd diagnostic format also stops automatic migration. `org.ccdash.collector`
 the new package: update it through its installer instead of stopping another service.
 
 ### EC2 / Linux personal installation
+
+The installer migrates the known personal unit itself: a root-owned
+`/etc/systemd/system/otelcol.service` that runs your own `~/.otelcol/config.yaml` as you,
+with listeners owned by that service. The `curl | sh` helper asks before any device is
+registered; `install.py install` asks again unless `--migrate-legacy` is given. It keeps
+the existing Claude `user.email` as the attribution ID, backs up the unit, drop-ins and
+`~/.otelcol` settings privately, then runs the commands below with `sudo` (which may ask for
+your password) and starts the device Collector. A failed installation unmasks and restores
+the unit and returns the old service to its previous enabled and running state. Any other
+unit, a different configuration or user, or an unrelated listener is never changed: a
+running one stops installation before a device is registered. The manual procedure remains:
 
 ```bash
 sudo ss -ltnp '( sport = :4317 or sport = :4318 or sport = :13133 )'

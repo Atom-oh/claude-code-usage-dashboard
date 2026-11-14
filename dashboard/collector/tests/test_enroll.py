@@ -95,8 +95,13 @@ class Enrollment(unittest.TestCase):
         values.update(overrides)
         return SimpleNamespace(**values)
 
-    def run_enroll(self, dashboard, status=0, **overrides):
+    def run_enroll(self, dashboard, status=0, conflict=None, answer=None, **overrides):
         seen = {}
+        self.questions = []
+
+        def ask(prompt):
+            self.questions.append(prompt)
+            return answer if answer is not None else ""
 
         def installer(command):
             token_file = command[command.index("--token-file") + 1]
@@ -107,8 +112,53 @@ class Enrollment(unittest.TestCase):
             return status
 
         result = self.module.enroll(self.args(**overrides), http=dashboard, sleep=self.sleeps.append,
-                                    run=installer, browser=lambda url, platform: False, out=self.output.append)
+                                    run=installer, browser=lambda url, platform: False, out=self.output.append,
+                                    conflict=lambda platform: conflict, ask=ask)
         return result, seen
+
+    def test_unknown_local_port_owner_stops_before_registering_a_device(self):
+        dashboard = Dashboard(["approved"])
+        with self.assertRaisesRegex(self.module.EnrollmentError, "등록하지 않았습니다"):
+            self.run_enroll(dashboard, conflict={"ports": [4317, 4318], "legacy": None})
+        self.assertEqual(dashboard.requests, [], "no enrollment request before the conflict is resolved")
+        self.assertEqual(self.questions, [])
+
+    def test_legacy_collector_migration_is_confirmed_before_approval(self):
+        dashboard = Dashboard(["approved"])
+        legacy = Path("/etc/systemd/system/otelcol.service")
+        result, seen = self.run_enroll(dashboard, conflict={"ports": [4317], "legacy": legacy}, answer="y")
+        self.assertEqual(result, 0)
+        self.assertEqual(len(self.questions), 1)
+        self.assertIn("--migrate-legacy", seen["command"])
+        text = "\n".join(self.output)
+        self.assertLess(text.index(str(legacy)), text.index("BCDF-GHJK"), "asked before the approval code")
+        self.assertIn("sudo", text)
+
+    def test_declined_legacy_migration_leaves_no_registered_device(self):
+        dashboard = Dashboard(["approved"])
+        for answer in ("", "n", "no"):
+            with self.subTest(answer=answer):
+                with self.assertRaisesRegex(self.module.EnrollmentError, "등록하지 않았습니다"):
+                    self.run_enroll(dashboard, conflict={"ports": [4317], "legacy": Path("/x/otelcol.service")},
+                                    answer=answer)
+        self.assertEqual(dashboard.requests, [])
+
+    def test_local_conflict_ignores_this_package_and_free_ports(self):
+        home = Path(self.temp.name) / "home"
+        busy = {4317}
+        self.assertEqual(self.module.local_conflict("linux", home, probe=lambda port: False), None)
+        found = self.module.local_conflict("linux", home, probe=lambda port: port in busy)
+        self.assertEqual(found["ports"], [4317])
+        state = home / ".local/share/ccdash-collector/state.json"
+        state.parent.mkdir(parents=True)
+        state.write_text("{}")
+        self.assertIsNone(self.module.local_conflict("linux", home, probe=lambda port: True),
+                          "a reinstall replaces this package's own Collector")
+        plist = home / "Library/LaunchAgents/com.ccdash.otelcol.plist"
+        state.unlink()
+        plist.parent.mkdir(parents=True)
+        plist.write_text("<plist/>")
+        self.assertEqual(self.module.local_conflict("darwin", home, probe=lambda port: True)["legacy"], plist)
 
     def test_approval_installs_with_a_private_token_built_from_the_local_secret(self):
         dashboard = Dashboard([json_reply(200, {"status": "pending", "interval": 5}), "approved"])
