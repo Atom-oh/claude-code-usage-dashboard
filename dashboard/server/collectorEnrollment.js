@@ -79,7 +79,7 @@ export function createEnrollmentService({ store, issuer, publicOrigin, now = Dat
       let status = effectiveStatus(record, now());
       if (status === "approved" && record.deviceOwner !== owner) status = "unavailable";
       return { name: record.name, platform: record.platform, code: record.code, status,
-        expiresAt: iso(record.deadline), userId: status === "approved" ? record.userId ?? null : enrollmentUserId(principal) };
+        createdAt: iso(record.createdAt), expiresAt: iso(record.deadline), userId: status === "approved" ? record.userId ?? null : enrollmentUserId(principal) };
     },
 
     async approve(principal, handle, options) {

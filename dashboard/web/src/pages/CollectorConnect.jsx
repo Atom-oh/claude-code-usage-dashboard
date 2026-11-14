@@ -127,7 +127,9 @@ function ConnectRequest({ handle, account }) {
             || "설치 기기의 로그인 이름"}</dd></div>
         </dl>
         <p className="mt-3 text-xs leading-relaxed text-ink-500">이미 수집기가 설치된 기기는 기존 수집 사용자 ID를 그대로 사용합니다.
-          승인 기한 <time dateTime={data.expiresAt}>{time.format(new Date(data.expiresAt))}</time>.</p>
+          {data.createdAt && <> 요청 시각 <time dateTime={data.createdAt}>{time.format(new Date(data.createdAt))}</time> ·</>}
+          {" "}승인 기한 <time dateTime={data.expiresAt}>{time.format(new Date(data.expiresAt))}</time>.
+          방금 직접 실행하지 않은 요청이라면 거부하세요.</p>
         <div className="mt-5 rounded-md border border-warning-border bg-warning-surface p-3 text-sm leading-relaxed text-warning-text">
           <p className="font-semibold">본인이 방금 터미널에서 시작한 설치만 연결하세요.</p>
           <p className="mt-1">다른 사람이 보낸 링크나 코드는 연결하지 마세요. 연결한 기기는 대시보드 조회 권한 없이 사용량 수집만 할 수 있습니다.

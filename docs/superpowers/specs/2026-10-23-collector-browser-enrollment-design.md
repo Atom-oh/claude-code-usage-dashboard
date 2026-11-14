@@ -248,7 +248,7 @@ review is the single explicit browser confirmation after SSO.
   needed. A revoked device is never recreated.
 - The OIDC principal cookie keeps a verified `email` only for this default. Approval stores
   it on the enrollment, never in logs.
-- Limits per replica: 600 starts per ten minutes, 30 polls per request per minute,
+- Limits per replica: 200 starts per client address and 1,200 in total per ten minutes, 30 polls per request per minute,
   30 decisions per account per hour, 16 enrollment requests in flight (separate from the
   eight ingest slots), 1 KiB start bodies and a ten-second request deadline.
 - Not implemented: approval/denial audit events. The routes log nothing, like renewal.

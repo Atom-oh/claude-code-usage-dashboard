@@ -169,8 +169,10 @@ export function createCollectorFeature({ env = process.env, authentication, pack
   const enrollment = artifacts ? createEnrollmentService({ store: deviceStore, issuer: config.issuer,
     publicOrigin: config.publicOrigin, now, packageHashes: artifacts.packageHashes }) : null;
   const installScript = config.enabled ? collectorInstallScript(config.endpoint, artifacts?.helperSha256 ?? null) : null;
-  // Per replica: a workshop sharing one NAT address must still be able to start ~140 installs.
-  const startAllowed = fixedWindow(600, 600000, now);
+  // Per replica. Per source (req.ip behind the trusted proxy hop): a workshop sharing one NAT
+  // address can still start ~140 installs with retries; the global ceiling only bounds store work.
+  const startFromSourceAllowed = fixedWindow(200, 600000, now);
+  const startAllowed = fixedWindow(1200, 600000, now);
   const pollAllowed = fixedWindow(30, 60000, now);
   const decideAllowed = fixedWindow(30, 3600000, now);
   let active = 0;
@@ -269,7 +271,11 @@ export function createCollectorFeature({ env = process.env, authentication, pack
       if (mediaType(req.get("content-type")) !== "application/json") return errorResponse(res, fail("unsupported_media_type", 415));
       if (length && (!/^\d+$/.test(length) || Number(length) > ENROLL_BODY_LIMIT))
         return errorResponse(res, fail("body_too_large", 413));
-      if (!startAllowed("all")) { res.set("Retry-After", "60"); return errorResponse(res, fail("enroll_rate_limited", 429)); }
+      // The source check runs first so one source exhausting its budget never spends the global one.
+      if (!startFromSourceAllowed(req.ip || req.socket?.remoteAddress || "unknown") || !startAllowed("all")) {
+        res.set("Retry-After", "60");
+        return errorResponse(res, fail("enroll_rate_limited", 429));
+      }
     } else {
       if (req.get("transfer-encoding") || (length !== undefined && length !== "0"))
         return errorResponse(res, fail("invalid_request", 400));

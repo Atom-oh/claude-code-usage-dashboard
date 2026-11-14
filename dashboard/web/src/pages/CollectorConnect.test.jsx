@@ -5,7 +5,7 @@ import CollectorConnect from "./CollectorConnect.jsx";
 
 const handle = "a".repeat(32);
 const pending = { name: "EC2 dev", platform: "linux", code: "BCDF-GHJK", status: "pending",
-  expiresAt: "2026-11-14T10:00:00.000Z", userId: "alice@example.com" };
+  createdAt: "2026-11-14T09:50:00.000Z", expiresAt: "2026-11-14T10:00:00.000Z", userId: "alice@example.com" };
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status,
   headers: new Headers({ "Content-Type": "application/json" }), json: async () => body });
 
@@ -47,6 +47,7 @@ test("opening the link only shows the request; one explicit click approves it", 
   expect(screen.getByText("Alice")).toBeTruthy();
   expect(screen.getByText("alice@example.com")).toBeTruthy();
   expect(screen.getByText(/본인이 방금 터미널에서 시작한 설치만/)).toBeTruthy();
+  expect(screen.getByText(/요청 시각/).querySelector(`time[datetime="${pending.createdAt}"]`)).toBeTruthy();
   expect(posts(fetch)).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "이 기기 연결" }));
   expect((await screen.findByRole("status")).textContent).toContain("이 기기를 연결했습니다");

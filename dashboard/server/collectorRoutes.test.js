@@ -744,8 +744,9 @@ test("browser enrollment pairs a terminal with one approval and never shows a cr
   const viewHeaders = { headers: { "x-fixture-email": "alice@example.com" } };
   const view = await f.management(`/api/collector/enrollments/${started.handle}`, viewHeaders);
   const details = await view.json();
-  assert.deepEqual({ ...details, expiresAt: undefined }, { name: "EC2 dev", platform: "linux", code: started.code,
-    status: "pending", expiresAt: undefined, userId: "alice@example.com" });
+  assert.deepEqual({ ...details, createdAt: undefined, expiresAt: undefined }, { name: "EC2 dev", platform: "linux",
+    code: started.code, status: "pending", createdAt: undefined, expiresAt: undefined, userId: "alice@example.com" });
+  assert.equal(Date.parse(details.expiresAt) - Date.parse(details.createdAt), 10 * 60000);
   assert.equal(JSON.stringify(details).includes(started.pollToken.split(".")[2]), false);
   assert.deepEqual(await (await f.poll(started.pollToken)).json(), { status: "pending", interval: 5 });
 
@@ -876,6 +877,31 @@ test("enrollment requests are bounded, validated and need the private polling cr
   assert.equal((await f.ingest(started.pollToken)).status, 401);
   assert.equal((await f.management(`/api/collector/enrollments/${"0".repeat(32)}`)).status, 404);
   assert.equal((await f.management("/api/collector/enrollments/not-a-handle")).status, 404);
+});
+
+test("one source cannot exhaust enrollment starts for every other source", async t => {
+  let time = Date.now();
+  const f = await fixture(t, { now: () => time });
+  const body = JSON.stringify({ secretHash: "a".repeat(64), name: "Mac", platform: "darwin" });
+  const start = () => f.request("/api/ingest/enroll/start", { method: "POST",
+    headers: { "content-type": "application/json" }, body });
+  for (let i = 0; i < 200; i++) assert.equal((await start()).status, 201);
+  const limited = await start();
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get("retry-after"), "60");
+  assert.deepEqual(await limited.json(), { error: "enroll_rate_limited" });
+  // Refused source requests did not spend the global budget: another source still starts.
+  const other = express();
+  other.set("trust proxy", true);
+  f.feature.installIngest(other);
+  const server = other.listen(0, "127.0.0.1");
+  await new Promise(resolve => server.once("listening", resolve));
+  t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); });
+  const otherStart = await fetch(`http://127.0.0.1:${server.address().port}/api/ingest/enroll/start`, { method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.7" }, body });
+  assert.equal(otherStart.status, 201);
+  time += 600000;
+  assert.equal((await start()).status, 201);
 });
 
 test("polling is rate limited per request and recovers after the window", async t => {

@@ -38,8 +38,9 @@ downloads embeds no credential either. See [device collectors](../runbooks/devic
 Browser enrollment adds three anonymous routes. `GET /api/ingest/enroll.py` serves the
 helper whose SHA-256 the install script pins. `POST /api/ingest/enroll/start` accepts only
 a device-secret digest, name and platform (1 KiB) and returns a lookup link, confirmation
-code and a polling credential once; it is limited per replica (600 per 10 minutes, so a
-workshop behind one NAT address can enroll). `POST /api/ingest/enroll/poll` needs that
+code and a polling credential once; it is limited per replica to 200 per client address
+(`req.ip` behind the trusted proxy hop, so a workshop behind one NAT address can enroll) and
+1,200 in total per 10 minutes. `POST /api/ingest/enroll/poll` needs that
 polling credential (30 per request per minute). Enrollment uses its own 16 in-flight slots
 and never consumes ingest admission. Neither route accepts cookies or grants ingestion:
 only an editor's explicit same-origin `POST /api/collector/enrollments/:handle/approve`
@@ -48,8 +49,11 @@ after ten minutes and are decided once with conditional writes. The store holds 
 the device secret and polling credential, never either value; the raw device token exists
 only on the device. Remote phishing remains possible (RFC 8628 section 5.4): the page
 warns users to approve only installations they started. Per-replica limits bound memory and
-store work, but an anonymous flood can still delay new enrollments (not ingestion); add edge
-rate limiting when that matters.
+store work. Many distributed sources can still exhaust the total and delay new enrollments
+(not ingestion); add edge rate limiting when that matters. The poll response returns the
+approver's verified email (the default attribution ID) and owner key to the terminal only
+after explicit approval; the approval page shows the request time to help spot requests the
+user did not start.
 
 OIDC sessions keep the IdP-verified `email` claim (when `email_verified` is true) in the
 encrypted principal cookie solely as the default collector attribution ID. It is not
