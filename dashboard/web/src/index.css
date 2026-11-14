@@ -88,6 +88,16 @@
   --series-bedrock: var(--chart-1);
   --series-enterprise: var(--chart-2);
   --series-unknown: var(--ink-400);
+  /* Client and Claude channel identity in shared views: Claude Code is Claude clay orange,
+     Codex is ink, and Claude channels are lightness steps of the same orange (CCB darker,
+     C4E the brand hue, unclassified lighter with --channel-ring). Model families keep other
+     hues (colors.js). Claude detail A/B comparisons still use --series-bedrock/enterprise. */
+  --client-claude: #d97757;
+  --client-codex: #1f1e1d;
+  --channel-ccb: #8e4830;
+  --channel-c4e: var(--client-claude);
+  --channel-claude-unknown: #e69f7f;
+  --channel-ring: var(--ink-300);
   /* ABScoreboard 좌우 틴트 — series 색이 var() 참조라 rgba()로 알파를 못 얹어 color-mix로 만든다 */
   --series-bedrock-tint: color-mix(in srgb, var(--series-bedrock) 6%, transparent);
   --series-enterprise-tint: color-mix(in srgb, var(--series-enterprise) 6%, transparent);

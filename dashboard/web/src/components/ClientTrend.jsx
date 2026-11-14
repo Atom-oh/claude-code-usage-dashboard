@@ -8,7 +8,8 @@ import { clientTimeline, formatObserved } from "../clientUsage.js";
 import { basisLabel, BROWSER_TIME_ZONE, clientName, formatClientTime, observedNumber } from "../clientPresentation.js";
 
 const compactAxis = localizedFormat("NumberFormat", { notation: "compact", maximumSignificantDigits: 3 });
-export const clientColor = (client) => client === "claude" ? "var(--chart-1)" : "var(--chart-2)";
+// Client identity tokens (index.css): Claude Code clay orange, Codex ink.
+export const clientColor = (client) => client === "claude" ? "var(--client-claude)" : "var(--client-codex)";
 const color = clientColor;
 export const EMPTY_VALUE = "—는 미수집·미지원·미산정 값입니다. 관측된 0과 구분합니다.";
 
