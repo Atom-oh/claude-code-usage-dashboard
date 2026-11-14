@@ -6,7 +6,7 @@
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>User guide — ccdash</title>
 <meta content="A beginner's guide to the Claude Code and Codex usage dashboard, its menus, task traces, access and data limits." name="description"/>
-<link href="assets/site.css" rel="stylesheet"/>
+<link href="assets/site.css?v=1a1bb92a" rel="stylesheet"/>
 <link href="assets/img/favicon.svg" rel="icon" type="image/svg+xml"/>
 <link href="user-guide.html" hreflang="en" rel="alternate"/>
 <link href="ko/user-guide.html" hreflang="ko" rel="alternate"/>
@@ -14,7 +14,7 @@
 <link href="zh/user-guide.html" hreflang="zh-CN" rel="alternate"/>
 <link href="es/user-guide.html" hreflang="es" rel="alternate"/>
 </head>
-<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<body class="visual-docs" data-stylesheet-version="1a1bb92a">
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -190,7 +190,7 @@
 <figure class="screen-shot"><a data-lightbox="" href="assets/img/guide-collector.png"><img alt="Collector setup: register the device and follow its installation command." decoding="async" height="736" loading="lazy" src="assets/img/guide-collector.png" width="2176"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text">Collector setup: register the device and follow its installation command.<small>Actual Korean UI · synthetic example · select the image to enlarge</small></span></figcaption></figure>
 
 <p>This menu requires organization login and device-management permission, typically analyst or administrator, plus enabled device ingestion. It manages the signed-in person's devices. A viewer should ask an authorized operator for help. Follow your organization's approved installation instructions.</p>
-<ol><li>Choose Linux or macOS and read the preparation instructions. Enter a device name and register it.</li><li>Copy the device token when it appears; the dashboard displays it only once. Keep it secret. Copy the displayed installation command, run it on that device and enter the requested user ID and token at the terminal prompt. Do not put the token directly in the command or share it.</li><li>Open a new terminal, start a new Claude Code or Codex session and make a request. Use the on-page receipt verification steps and check <strong>내 기기</strong> (my devices) for recent receipt.</li><li>Refresh the list, load more devices if offered, and inspect registered, expired or revoked state, expiry and last receipt. To stop a device, choose <strong>해지</strong> and confirm <strong>해지 확인</strong>. Reconnecting requires a new token. If a token-reuse warning appears, revoke and register again.</li></ol>
+<h3>Connect through the browser</h3><p>When browser connection is offered, you can install without copying a token. Only approve an installation you just started on your own device.</p><ol><li>Choose Linux or macOS, read the preparation steps, copy the installation command and run it in that device’s terminal.</li><li>Open the approval link shown in the terminal, sign in to the dashboard and compare the confirmation code. Check the device and account, then approve. Reject requests you did not start; never approve a link or code sent by someone else.</li><li>Return to the terminal while installation completes. New installations use the approving account’s verified email when available; reinstalls retain their existing collection user ID. Open a new terminal and a new Claude Code or Codex session, then verify receipt in My devices.</li></ol><h3>Manual token installation</h3><p>The screenshot and video demonstrate this manual path. Expand the manual-install option when browser approval is unavailable, then follow the steps below. Keep the token secret; the dashboard displays it only once.</p><ol><li>Choose Linux or macOS and read the preparation instructions. Enter a device name and register it.</li><li>Copy the device token when it appears; the dashboard displays it only once. Keep it secret. Copy the displayed installation command, run it on that device and enter the requested user ID and token at the terminal prompt. Do not put the token directly in the command or share it.</li><li>Open a new terminal, start a new Claude Code or Codex session and make a request. Use the on-page receipt verification steps and check <strong>내 기기</strong> (my devices) for recent receipt.</li><li>Refresh the list, load more devices if offered, and inspect registered, expired or revoked state, expiry and last receipt. To stop a device, choose <strong>해지</strong> and confirm <strong>해지 확인</strong>. Reconnecting requires a new token. If a token-reuse warning appears, revoke and register again.</li></ol>
 <p>Active devices renew automatically starting seven days before expiry when configured by the current installer. Expired or revoked devices need a new token and installation. Logging out does not stop device collection. Recent receipt does not prove all usage was collected. See <a href="installation.html">installation</a> and <a href="operations.html">operations</a> for operator details.</p><p><a href="#contents">Back to contents</a></p>
 </section>
 <section id="installation"><h2>Installation status (설치 상태)</h2>

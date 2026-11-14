@@ -14,7 +14,7 @@
 <link href="index.html" hreflang="zh-CN" rel="alternate"/>
 <link href="../es/index.html" hreflang="es" rel="alternate"/>
 </head>
-<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<body class="visual-docs" data-stylesheet-version="1a1bb92a">
 <a class="skip-link" href="#main">跳转到正文</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -31,7 +31,17 @@
 <a class="learning-card" href="user-guide.html#trace-workflow"><img alt="包含多个独立代理泳道的任务" height="2000" loading="lazy" src="../assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · 用户和追踪</span><b>追踪一位用户的工作</b><span class="card-description">用户 → 时间范围 → 任务 → 代理 → 单个调用。</span></span></a>
 <a class="learning-card" href="user-guide.html#cost-workflow"><img alt="成本公式和变化因素" height="1802" loading="lazy" src="../assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · 成本和效率</span><b>说明成本变化</b><span class="card-description">成本依据、模型占比、单位成本、令牌和缓存。</span></span></a>
 <a class="learning-card" href="user-guide.html#tools-workflow"><img alt="工具调用和结果" height="1138" loading="lazy" src="../assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · 工具和 MCP</span><b>了解工具活动</b><span class="card-description">工具调用、权限、Skills、MCP 和会话上下文。</span></span></a>
-</div></section><section id="system-overview"><h2>界面上的数字来自哪里</h2><p>数据采集和仪表板访问使用不同的路径。此图显示可选的设备采集路径和经过身份验证的读取路径；由组织者准备的研讨会数据采集也可以使用单独配置的路径。 此图展示启用 OIDC 登录和设备收集的配置示例。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="采集和查询架构。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>采集和查询架构。</strong>信号进入存储；仪表板通过 API 读取经过范围限定的结果。两个 Express 方框表示同一应用程序的逻辑角色。<small>逻辑设备路径 · 英文图表标签 · 打开交互视图</small></span></figcaption></figure><div class="reading-grid"><article><h3>采集：客户端 → 已存储的观测数据</h3><p>Claude Code 和 Codex 将受支持的信号导出到本地 Collector。已注册的设备通过经过身份验证的摄取网关和中央 Collector 将数据发送到 ClickHouse。设备凭据与浏览器登录凭据相互独立。</p></article><article><h3>读取：已登录用户 → 仪表板结果</h3><p>组织登录会提供已配置的角色。API 会先应用时间、客户端和受支持的筛选条件，然后再返回使用情况和诊断视图。请查看成本依据和覆盖范围：屏幕中可能显示已知的小计，也可能显示不可用的信号。</p></article></div><p><a href="architecture.html#pipeline">采集路径和信任边界</a> · <a href="architecture.html#signals">日志、指标和追踪数据有何不同</a></p></section><section id="start"><h2>首次访问</h2>
+</div></section><section id="demo"><h2>完整产品导览</h2><p>通过 25 个引导式场景，依次了解概览、用户任务、单个模型调用、成本效率、工具和设置。</p>
+<p class="tour-meta"><span class="tour-runtime">9:09</span><span>韩语旁白配英语字幕。屏幕上的数据均为合成数据；架构是逻辑示例。</span></p>
+<div class="video-frame"><video id="product-tour" aria-label="完整产品导览" controls playsinline preload="metadata" poster="../assets/img/product-tour-ko-poster.jpg">
+<source src="../assets/video/product-tour-ko-20261114.mp4" type='video/mp4; codecs="avc1.640028, mp4a.40.2"'/>
+<source src="../assets/video/product-tour-ko-20261114.webm" type='video/webm; codecs="vp9, opus"'/>
+<track kind="captions" label="English" srclang="en" src="../assets/video/product-tour-en-20261114.vtt" default data-default-caption/>
+<track kind="captions" label="한국어" srclang="ko" src="../assets/video/product-tour-ko-20261114.vtt"/>
+</video></div><h3>跳转到章节</h3><ol class="video-chapters"><li><button type="button" data-video-seek="0.000000"><time>0:00</time><span>开始使用</span></button></li><li><button type="button" data-video-seek="87.291667"><time>1:27</time><span>概览与趋势</span></button></li><li><button type="button" data-video-seek="144.416667"><time>2:24</time><span>用户与 Trace</span></button></li><li><button type="button" data-video-seek="262.791667"><time>4:22</time><span>成本效率</span></button></li><li><button type="button" data-video-seek="352.000000"><time>5:52</time><span>工具与会话环境</span></button></li><li><button type="button" data-video-seek="436.583333"><time>7:16</time><span>运维与后续步骤</span></button></li></ol>
+<p><a href="../assets/video/product-tour-ko-20261114.mp4">下载视频</a> · <a href="../assets/video/product-tour-en-20261114.vtt">英语字幕</a> · <a href="../assets/video/product-tour-ko-20261114.vtt">韩语字幕</a></p>
+<p class="caption"><a href="../assets/video/dashboard-demo-en-20261114.mp4">此前的 48 秒英文版导览仍可作为 v1.8.0 的历史发布示例选看。</a></p></section>
+<section id="system-overview"><h2>界面上的数字来自哪里</h2><p>数据采集和仪表板访问使用不同的路径。此图显示可选的设备采集路径和经过身份验证的读取路径；由组织者准备的研讨会数据采集也可以使用单独配置的路径。 此图展示启用 OIDC 登录和设备收集的配置示例。</p><figure class="screen-shot system"><a href="../assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="采集和查询架构。" decoding="async" height="548" loading="lazy" src="../assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>采集和查询架构。</strong>信号进入存储；仪表板通过 API 读取经过范围限定的结果。两个 Express 方框表示同一应用程序的逻辑角色。<small>逻辑设备路径 · 英文图表标签 · 打开交互视图</small></span></figcaption></figure><div class="reading-grid"><article><h3>采集：客户端 → 已存储的观测数据</h3><p>Claude Code 和 Codex 将受支持的信号导出到本地 Collector。已注册的设备通过经过身份验证的摄取网关和中央 Collector 将数据发送到 ClickHouse。设备凭据与浏览器登录凭据相互独立。</p></article><article><h3>读取：已登录用户 → 仪表板结果</h3><p>组织登录会提供已配置的角色。API 会先应用时间、客户端和受支持的筛选条件，然后再返回使用情况和诊断视图。请查看成本依据和覆盖范围：屏幕中可能显示已知的小计，也可能显示不可用的信号。</p></article></div><p><a href="architecture.html#pipeline">采集路径和信任边界</a> · <a href="architecture.html#signals">日志、指标和追踪数据有何不同</a></p></section><section id="start"><h2>首次访问</h2>
 <ol>
 <li><strong>打开组织的仪表板并登录。</strong>向组织者询问网址和访问权限。您正在阅读的公共网站是文档。请参阅<a href="user-guide.html#access">账户和权限</a>。</li>
 <li><strong>选择客户端和时间段。</strong>从所有已启用的客户端开始，并选择一个包含近期工作的时间段。检查显示的时区以及数据是否已到达。</li>
@@ -77,15 +87,6 @@
 <p><strong>客户端</strong>用于标识 Claude Code 或 Codex；<strong>后端</strong>描述提供商路径；<strong>模型</strong>用于标识模型。仅凭模型名称无法确定发出请求的客户端。</p>
 <p>Claude 的 <strong>bedrock / enterprise</strong> 对比使用推断出的会话渠道。这些渠道与仪表板登录相互独立，也不提供 Codex 企业版 A/B 对比。</p>
 <p><a href="user-guide.html#common-controls">选择正确的视图和筛选条件</a> · <a href="architecture.html">数据管道和信任边界</a></p>
-</section><section id="demo"><h2>可选示例：v1.8.0 操作演示</h2>
-<p>这段 48 秒的视频演示了选定的变更和现有 Task Trace 功能。请参阅<a href="user-guide.html">完整用户指南</a>，了解每个菜单和功能。</p>
-<div class="video-frame"><video aria-label="48 秒英文演示：时间选择、设备设置和 Task Trace 操作指南" controls="" playsinline="" poster="../assets/img/docs-demo-en-poster.jpg" preload="none">
-<source src="../assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
-<source src="../assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
-<track kind="captions" label="英语" src="../assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
-      您的浏览器无法播放此视频。<a href="../assets/video/dashboard-demo-en-20261114.mp4">下载英文演示视频</a>。
-    </video></div>
-<p class="caption">创建于 2026 年 11 月 14 日 · 英语旁白和字幕 · 使用合成 React 截图，显示标签已翻译，费用为虚构数据。<a href="../assets/video/dashboard-demo-en-20261114.vtt">英文文字稿</a> · <a href="credits.html">媒体鸣谢</a>。</p>
 </section><section id="latest"><h2>发行说明和后续步骤</h2>
 <p>请查看仪表板的变更历史，或阅读<a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">发行说明</a>，了解特定版本的变更。接下来可阅读<a href="user-guide.html#workflows">调查工作流程</a>或<a href="user-guide.html#troubleshooting">首要故障排查步骤</a>。</p>
 </section></main>
@@ -94,5 +95,6 @@
 <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">完整 API 参考</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">计量定义</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">变更历史</a> · <a href="credits.html">演示鸣谢</a></p>
 <p>遥测数据可能不完整。报告成本和标价估算并非账单。活动指标无法证明员工生产力或因果投资回报。</p>
 </div></footer>
-<script defer="" src="../assets/guide.js?v=b92b0cfe"></script></body>
+<script defer="" src="../assets/guide.js?v=b92b0cfe"></script><script src="../assets/tour.js?v=318c8900"></script>
+</body>
 </html>

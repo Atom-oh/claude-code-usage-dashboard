@@ -1075,8 +1075,8 @@
       },
       {
         "path": "site/assets/site.css",
-        "bytes": 19994,
-        "sha256": "4b6ff29577dd8859c5bdc53e91d3ccf723c660209456e8ff420ed9923f511351"
+        "bytes": 21579,
+        "sha256": "1a1bb92a4b28cc9a4dfd102dd323b05171f37751095c9450d25b7c98a985e006"
       },
       {
         "path": "site/assets/guide.js",
@@ -1348,6 +1348,16 @@
       }
     ],
     "source_files": [
+      {
+        "path": "site/assets/site.css",
+        "bytes": 21579,
+        "sha256": "1a1bb92a4b28cc9a4dfd102dd323b05171f37751095c9450d25b7c98a985e006"
+      },
+      {
+        "path": "site/assets/tour.js",
+        "bytes": 1573,
+        "sha256": "318c8900f3515e47c34cf460a3afdd28869f4f69e13c59fb8211a6f2d1755563"
+      },
       {
         "path": "video/product-tour/AGENTS.md",
         "bytes": 976,

@@ -18,9 +18,9 @@
       "path": "ja/api.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 21898,
-      "source_sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7",
-      "output_sha256": "1c2cf704544933b8ac81d2f2f2cee1d92263e7bc6712a36c7f89d13e74b6563c"
+      "bytes": 21909,
+      "source_sha256": "71163b93e76dd5319deb78310bf391a428826332545f66c88600c359c5f4bec3",
+      "output_sha256": "12dfaa305cac853b94414feb4e2cc50fc2a31a53ec7c53dfccfa67018380bca8"
     },
     {
       "locale": "ja",
@@ -28,9 +28,9 @@
       "path": "ja/architecture.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 17984,
-      "source_sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674",
-      "output_sha256": "f664541be56c1ba6298c6c6ce8bba295b25f5e29e84b9f569f00ee290eb011f8"
+      "bytes": 17995,
+      "source_sha256": "b477f3a77c661244a7e001e5697b9657f6154a39a95a148adbd51dc091b81e0a",
+      "output_sha256": "20c8bb40b2e54270565cbc16b3633a3b43a1cbbd48494bfed4f9f35057904110"
     },
     {
       "locale": "ja",
@@ -38,9 +38,9 @@
       "path": "ja/credits.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 5351,
-      "source_sha256": "46fd3dab9564e372d5d006448af7f94463933d77ba37eb40624e25d305708178",
-      "output_sha256": "98e0d991227f44764157394d2e20aa4fe9ce0b97a65f9b004bde14544dfebdb1",
+      "bytes": 7087,
+      "source_sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203",
+      "output_sha256": "1e6361cda457986fd9e1b8c6351f5de7baf02a89d427b4d9604b5ea66860f351",
       "initial_output_sha256": "951aae8517db2379b96d7833e069515765d1cd84810434a3cfe5943fb8cb007f",
       "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
     },
@@ -50,9 +50,9 @@
       "path": "ja/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 21949,
-      "source_sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d",
-      "output_sha256": "6ad0be3ea7ff8f81b520433d423fd5cd39bf2c2c9829c965459083a44b015b80"
+      "bytes": 23034,
+      "source_sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59",
+      "output_sha256": "5f5add9fd031be1aefff802fc95ad3f83cddd7aaca0e337054bff146ce7d88da"
     },
     {
       "locale": "ja",
@@ -60,9 +60,9 @@
       "path": "ja/installation.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 33171,
-      "source_sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f",
-      "output_sha256": "7d54dbd4409a64c5206e8ae5b9e6992f475f32b85aaa7113b29ce2427ccb0f44"
+      "bytes": 33182,
+      "source_sha256": "d64ec02cb322b549bf531864db403c1565aca287088785ada039786c5de510f4",
+      "output_sha256": "8c6d02d9960211ec0ef8b4396bb4b4f965b01d1c1df5ea7860fda0dfc93c0e90"
     },
     {
       "locale": "ja",
@@ -70,9 +70,9 @@
       "path": "ja/operations.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 20073,
-      "source_sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad",
-      "output_sha256": "d067e678533057257ce6e1a53755c0b1b3bbd488cb81cf5446ef4fa59a77e435",
+      "bytes": 20084,
+      "source_sha256": "6fdadd39fba25d03dac7f8c819f883d03440a35c0a4addac3deef6659b281ea5",
+      "output_sha256": "a15c5a87947fe8358b3d0dcf32ab6aa3febd962632fe06c5ad6e9730e8a34c8a",
       "initial_output_sha256": "c44db60869c012503e689296ec3cf4113143288eca7f1b63ab098711a835643e",
       "review_corrections": {
         "model": "openai.gpt-6-luna",
@@ -86,9 +86,9 @@
       "path": "ko/api.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 19847,
-      "source_sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7",
-      "output_sha256": "5224061c27184aea4bf7ecac9c8bbc6f52273d125ef92afa512280a04979490e",
+      "bytes": 19858,
+      "source_sha256": "71163b93e76dd5319deb78310bf391a428826332545f66c88600c359c5f4bec3",
+      "output_sha256": "c4e8a061d78d26b7deefc64747c13707f09b9a9dd2235bf8c0514187ad9aa9b2",
       "initial_output_sha256": "5ec341d3cf6f2782d04cdf060300f3b67010a9305d164af7210e6a38508aae44",
       "review_corrections": {
         "model": "openai.gpt-6-luna",
@@ -102,9 +102,9 @@
       "path": "ko/architecture.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 15806,
-      "source_sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674",
-      "output_sha256": "d9ee5492d6ae29462e37e541e6b3ed803a5983449a92df9f30a4423efd7d2916"
+      "bytes": 15817,
+      "source_sha256": "b477f3a77c661244a7e001e5697b9657f6154a39a95a148adbd51dc091b81e0a",
+      "output_sha256": "937b2d49cbd73ce1944e572e1e8d3a8cf00f0c71466108a7cacbe7b3bfd7f4f7"
     },
     {
       "locale": "ko",
@@ -112,9 +112,9 @@
       "path": "ko/credits.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 4908,
-      "source_sha256": "46fd3dab9564e372d5d006448af7f94463933d77ba37eb40624e25d305708178",
-      "output_sha256": "04d0978dfc6c7e613a22e9757ee0d30cb15f89be1435c3e8116617514edd9845",
+      "bytes": 6454,
+      "source_sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203",
+      "output_sha256": "c6e7c46b4a4edeb3be9265ddf8f1d7135f7981f7e3607601bf02bed990d77db0",
       "initial_output_sha256": "8c9001c5bf13662ffd2a57121ec3229cc8d40434f8d46d8859ab7deabc7cce2f",
       "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
     },
@@ -124,9 +124,9 @@
       "path": "ko/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 19851,
-      "source_sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d",
-      "output_sha256": "36aaca20d7552a913c9b0682d1ef98d1200a4c8e7a6e447074f54a4a032bb023"
+      "bytes": 20934,
+      "source_sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59",
+      "output_sha256": "fa0f0880d8c720e2e7207a8f9407e53fde7d91de79158bd447a4ad112ec5a9ea"
     },
     {
       "locale": "ko",
@@ -134,9 +134,9 @@
       "path": "ko/installation.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 29330,
-      "source_sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f",
-      "output_sha256": "ffe95aaab8bd22a19ad665f19ec4a9f684373d2e6664348813ffd20bbaa9274a",
+      "bytes": 29341,
+      "source_sha256": "d64ec02cb322b549bf531864db403c1565aca287088785ada039786c5de510f4",
+      "output_sha256": "4d98799283464bd003325aaf099d4e48a0585ba8ac5fe8ffa394137300249d8d",
       "initial_output_sha256": "305af7689b4fc2468282ee094cebd7137dad341e42fbc191512d5d4ed59319aa",
       "review_corrections": {
         "model": "openai.gpt-6-luna",
@@ -150,9 +150,9 @@
       "path": "ko/operations.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 17730,
-      "source_sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad",
-      "output_sha256": "5405c8a0fa1e5b4693c06e9cec89707d00f6b47486e8143c3bc932277ff8dd8d"
+      "bytes": 17741,
+      "source_sha256": "6fdadd39fba25d03dac7f8c819f883d03440a35c0a4addac3deef6659b281ea5",
+      "output_sha256": "6cf5a6120b1f93df6e8ecefebb497b4b78e4b6797d1db0e2706fbbd7a1a93a4e"
     },
     {
       "locale": "zh-CN",
@@ -160,9 +160,9 @@
       "path": "zh/api.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 17016,
-      "source_sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7",
-      "output_sha256": "9ee7018ffd252a141aa5754e82c741275922b0a84ede476c6d85b5c54ccf38c2"
+      "bytes": 17027,
+      "source_sha256": "71163b93e76dd5319deb78310bf391a428826332545f66c88600c359c5f4bec3",
+      "output_sha256": "6f16568cf17d8350a9212b8fa6e916754f424f172ffc548560959a873e485df3"
     },
     {
       "locale": "zh-CN",
@@ -170,9 +170,9 @@
       "path": "zh/architecture.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 13316,
-      "source_sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674",
-      "output_sha256": "bae3d36e234a9831f399e855a0c9445b27f4a3728e17ba208ba06d86c62aa985",
+      "bytes": 13327,
+      "source_sha256": "b477f3a77c661244a7e001e5697b9657f6154a39a95a148adbd51dc091b81e0a",
+      "output_sha256": "49f60dde28ad142675452ea8f77a81da9a66c92b898af0c00522a336c45969b2",
       "initial_output_sha256": "3d529aaf68c3f7b82e0231df6f6ba0eb37d72388b6171ddc7deda155eaaa527c",
       "review_corrections": {
         "model": "openai.gpt-6-luna",
@@ -186,9 +186,9 @@
       "path": "zh/credits.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 4073,
-      "source_sha256": "46fd3dab9564e372d5d006448af7f94463933d77ba37eb40624e25d305708178",
-      "output_sha256": "0f413eccc5b3454161e7e2c830b52bff15c2754db882eda49a4a2facbb0be21e",
+      "bytes": 5367,
+      "source_sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203",
+      "output_sha256": "a03bff979a119b7725f1f39e0098a4a454b8ef4bd1ce85cf7bd4f6dd1b2bf2d4",
       "initial_output_sha256": "5797263de51f6d48885acf2d99df106f8a34f5fdb6059b634b75bf3a04baa6cb",
       "asset_postprocessing": "Added the same WebM fallback source/link to all four locales; translated prose unchanged."
     },
@@ -198,9 +198,9 @@
       "path": "zh/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 17182,
-      "source_sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d",
-      "output_sha256": "d782134aa35ccb24c33c1eb7a98efb04e1e047d1ed711bba89f03e473185305a"
+      "bytes": 18206,
+      "source_sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59",
+      "output_sha256": "396a1b9f0a1c0ecf03045bf67a383d7505345d97edd4da5aa5973da3c41e5eee"
     },
     {
       "locale": "zh-CN",
@@ -208,9 +208,9 @@
       "path": "zh/installation.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 25178,
-      "source_sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f",
-      "output_sha256": "56fe9968e409b2887186d5e2eee18deaa2e0ca7258f00447f01f4130fc487f45"
+      "bytes": 25189,
+      "source_sha256": "d64ec02cb322b549bf531864db403c1565aca287088785ada039786c5de510f4",
+      "output_sha256": "5167586328f2a93dde7a209b100f278e7a70da8c684246a7e8d4613280efa627"
     },
     {
       "locale": "zh-CN",
@@ -218,9 +218,9 @@
       "path": "zh/operations.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 14802,
-      "source_sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad",
-      "output_sha256": "155fb9638773a8f3972d4e8d1cf547af43b40061832bbae73f11cb93603d3f76",
+      "bytes": 14813,
+      "source_sha256": "6fdadd39fba25d03dac7f8c819f883d03440a35c0a4addac3deef6659b281ea5",
+      "output_sha256": "f06632afcdd51652adceece0d53cbaad1d75b6cc2b83c42eca27d3f5d6228488",
       "initial_output_sha256": "79d919ae841df010e8c7e77faf42584a5698ddc43e21198d8cc954934e4f8fbe",
       "review_corrections": {
         "model": "openai.gpt-6-luna",
@@ -234,9 +234,9 @@
       "path": "ko/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 81661,
-      "output_sha256": "d96e4f7f0c7588fc94f1f2e6ee9667e59db1fae6403f39925e0cc63ad14f8ca3",
-      "source_sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e"
+      "bytes": 83003,
+      "output_sha256": "f9bc07fb4086365b6e7803b53fe1de6d61c9022e3fbebb4555cfab4649511676",
+      "source_sha256": "84fd45ce42f8f2a90b9a2e183263667b425ea67d9df826ba87432016e1971c59"
     },
     {
       "locale": "ja",
@@ -244,9 +244,9 @@
       "path": "ja/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 91407,
-      "output_sha256": "d6b039f7fa49ed6f5f1f8b4fb80f4685e95890577c162f05af18429218b537f9",
-      "source_sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e"
+      "bytes": 93165,
+      "output_sha256": "3babea78a9ea341493548eab2f0b5f157836603f479652ccc5dc9cde3b383f07",
+      "source_sha256": "84fd45ce42f8f2a90b9a2e183263667b425ea67d9df826ba87432016e1971c59"
     },
     {
       "locale": "zh-CN",
@@ -254,9 +254,9 @@
       "path": "zh/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 66775,
-      "output_sha256": "4263ebc5976ab6dfa406de2ece634728e1a6a807bf99762ee7915ebbd27ef658",
-      "source_sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e"
+      "bytes": 67781,
+      "output_sha256": "8e093f774fcdcaf7f6c93ba06864179db560093664648dfb0db63775336fbc26",
+      "source_sha256": "84fd45ce42f8f2a90b9a2e183263667b425ea67d9df826ba87432016e1971c59"
     },
     {
       "locale": "es",
@@ -264,9 +264,9 @@
       "path": "es/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 19528,
-      "source_sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d",
-      "output_sha256": "24c05ec659909421243c0c73d1a01ef44700934eabf599d2ddabe2002702cee9"
+      "bytes": 20655,
+      "source_sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59",
+      "output_sha256": "6e5978c435f514b27e3fb26ef56d872b6f1389126bdb867976418ddb53bd625b"
     },
     {
       "locale": "es",
@@ -274,9 +274,9 @@
       "path": "es/user-guide.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 78539,
-      "source_sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e",
-      "output_sha256": "5daa398cd64e52fa3d24fc964e5d42b29a83e7452e970d86d19c507878d7b9bb"
+      "bytes": 79919,
+      "source_sha256": "84fd45ce42f8f2a90b9a2e183263667b425ea67d9df826ba87432016e1971c59",
+      "output_sha256": "58481cda6641e039af579e1b98a765ada379a81cb979ca986cbd68719d3b76e5"
     },
     {
       "locale": "es",
@@ -284,9 +284,9 @@
       "path": "es/installation.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 28976,
-      "source_sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f",
-      "output_sha256": "d4f56ba0c94335ff753588eb14269fd0a803aeab4aa4d0c370fae3d897bd029e"
+      "bytes": 28987,
+      "source_sha256": "d64ec02cb322b549bf531864db403c1565aca287088785ada039786c5de510f4",
+      "output_sha256": "b60a07a94bb24e92b4521b7f765fc8fcfd8ceabb2aebab91c87d55dc546df9ce"
     },
     {
       "locale": "es",
@@ -294,9 +294,9 @@
       "path": "es/architecture.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 15623,
-      "source_sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674",
-      "output_sha256": "9039445042d87514c16a49c925e2a08d2b51043383919110eb4bb5d61ff0387d"
+      "bytes": 15634,
+      "source_sha256": "b477f3a77c661244a7e001e5697b9657f6154a39a95a148adbd51dc091b81e0a",
+      "output_sha256": "58ab2f4b83e1e5e3c4136b86a4537edd303b90d829c592b06e9b6364f76f2ab3"
     },
     {
       "locale": "es",
@@ -304,9 +304,9 @@
       "path": "es/api.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 19051,
-      "source_sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7",
-      "output_sha256": "6bca42dae8776f3cc2da261ddc21183bbd28b0dac9feb4af676b26f89e464286"
+      "bytes": 19062,
+      "source_sha256": "71163b93e76dd5319deb78310bf391a428826332545f66c88600c359c5f4bec3",
+      "output_sha256": "ef4768cf66863dea288df09e6378fa8ba0d6079bbe4f0b5be3aabd2f606d7652"
     },
     {
       "locale": "es",
@@ -314,9 +314,9 @@
       "path": "es/operations.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 17657,
-      "source_sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad",
-      "output_sha256": "35b7de695133e98e0c149d0cf335f729c5a9cf394525fa98b126668824aed96e"
+      "bytes": 17668,
+      "source_sha256": "6fdadd39fba25d03dac7f8c819f883d03440a35c0a4addac3deef6659b281ea5",
+      "output_sha256": "11266316ff1617cbd95f2b40455b7d4805532eb6831ddd36de552c2a9c3bc319"
     },
     {
       "locale": "es",
@@ -324,9 +324,9 @@
       "path": "es/credits.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 4813,
-      "source_sha256": "46fd3dab9564e372d5d006448af7f94463933d77ba37eb40624e25d305708178",
-      "output_sha256": "96120a86eddb24e8e4984501725bb53be2f5f5b41cca1d4e3c1a51541870946b"
+      "bytes": 6408,
+      "source_sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203",
+      "output_sha256": "a20c5cd7ad02af2e7164d480ca29246b74603c0743748a72b64530980f8cfe33"
     }
   ],
   "semantic_review": {
@@ -390,31 +390,31 @@
   "english_sources": {
     "api": {
       "path": "api.html",
-      "sha256": "2f060924ae489499dd11eddf4322d4c574f657022a441f1fa22e84e00c90cac7"
+      "sha256": "71163b93e76dd5319deb78310bf391a428826332545f66c88600c359c5f4bec3"
     },
     "architecture": {
       "path": "architecture.html",
-      "sha256": "0a7d56d73b31925bc4d3cd0a2782af93a00fa55a9a99ccac06f8a50874a62674"
+      "sha256": "b477f3a77c661244a7e001e5697b9657f6154a39a95a148adbd51dc091b81e0a"
     },
     "credits": {
       "path": "assets/credits.html",
-      "sha256": "46fd3dab9564e372d5d006448af7f94463933d77ba37eb40624e25d305708178"
+      "sha256": "18b180cfb5f66972f465ef7a169bc7083bee19c3525fafaeb144182709beb203"
     },
     "index": {
       "path": "index.html",
-      "sha256": "ee19865b0bfc9594d8a791f9888501a61d893be98120de364f867c8e754e7b4d"
+      "sha256": "b8460008918cd058e9d87d54e20b78115102d1574fe41fc0c3ab0db94422dd59"
     },
     "installation": {
       "path": "installation.html",
-      "sha256": "ee30937d0f83689a706db14212b6011ce811b83d71fc7425ab41f1b2f1964b4f"
+      "sha256": "d64ec02cb322b549bf531864db403c1565aca287088785ada039786c5de510f4"
     },
     "operations": {
       "path": "operations.html",
-      "sha256": "6833f6673987cec44f759edcbef54be18577564afb24d6657f3cb34ec5f40aad"
+      "sha256": "6fdadd39fba25d03dac7f8c819f883d03440a35c0a4addac3deef6659b281ea5"
     },
     "user-guide": {
       "path": "user-guide.html",
-      "sha256": "1c9e60494ab0286afd71f35c2e7cf2ee6c2ea83d961631d631fe1eaeaa24963e"
+      "sha256": "84fd45ce42f8f2a90b9a2e183263667b425ea67d9df826ba87432016e1971c59"
     }
   },
   "last_updated": "2026-11-14",
@@ -770,7 +770,7 @@
     "records": "pages entries with page=index",
     "scope": "Initial output hashes, Lambda-sentence follow-up and video-source postprocessing for the prior homepage; these do not describe the rewritten first-visit homepage."
   },
-  "latest_update": "Five-language app and guide; Spanish pages and equivalent-page navigation.",
+  "latest_update": "Detailed Korean-narrated product tour with English captions, chapter navigation and five-language introduction/credits.",
   "visual_guide_2026_11_14": {
     "source_revision": "fcfd49d9d0988defa0fd8cd8649608a9bb6e8899",
     "scope": "Illustrated user-Trace, cost-efficiency and tool workflows; screenshots, inline architecture, typography and reading controls. Existing full menu descriptions are retained.",
@@ -936,6 +936,27 @@
       "Moved Spanish credits to es/credits.html and repaired local/equivalent-page links.",
       "Aligned the Spanish current-language marker with other locales.",
       "Original translator receipts remain separate from current page hashes."
+    ]
+  },
+  "detailed_tour_2026_11_14": {
+    "requested_model": "openai.gpt-6-luna",
+    "selection_basis": "CLI invocation supplied by coordinator",
+    "timestamp_utc": "2026-11-14T12:10:09Z",
+    "source_sha256": "bbed52cd5d74e54a017b2d701fe0688e4dd23e12ae66c81dc3b044cf7cf73c88",
+    "output_sha256": "bc1169d309d9a80bc772e732d555010f04eb2bd9aa8e60d4c6772209ca79d367",
+    "model_provenance_note": "Records the requested CLI model only; hidden backend weights were not independently verified.",
+    "agent_record_sha256": "f315d48b867fa4bd6f7e24ab5105a305fc90c17a37dfa501ffe6eb8a6fca6400",
+    "locales": [
+      "ko",
+      "ja",
+      "zh-CN",
+      "es"
+    ],
+    "source_messages": 16,
+    "host_integration": [
+      "Inserted translated introduction and chapter copy into all five landing pages.",
+      "Preserved the historical short release example in credits and retained all guide screenshots and architecture.",
+      "Updated common stylesheet and chapter script cache versions."
     ]
   }
 }

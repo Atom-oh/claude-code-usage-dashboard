@@ -14,7 +14,7 @@
 <link href="zh/index.html" hreflang="zh-CN" rel="alternate"/>
 <link href="es/index.html" hreflang="es" rel="alternate"/>
 </head>
-<body class="visual-docs" data-stylesheet-version="4b6ff295">
+<body class="visual-docs" data-stylesheet-version="1a1bb92a">
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="top"><div class="wrap">
 <a class="brand" href="index.html"><span class="mark">CC</span> ccdash</a>
@@ -32,7 +32,17 @@
 <a class="learning-card" href="user-guide.html#trace-workflow"><img alt="A task with separate agent lanes" height="2000" loading="lazy" src="assets/img/guide-task-trace.png" width="2880"/><span class="card-copy"><span class="card-kicker">01 · USERS &amp; TRACE</span><b>Follow one user’s work</b><span class="card-description">User → time range → task → agent → individual call.</span></span></a>
 <a class="learning-card" href="user-guide.html#cost-workflow"><img alt="The cost equation and change drivers" height="1802" loading="lazy" src="assets/img/guide-economics.png" width="2240"/><span class="card-copy"><span class="card-kicker">02 · COST &amp; EFFICIENCY</span><b>Explain a cost change</b><span class="card-description">Cost basis, model shares, unit costs, tokens and cache.</span></span></a>
 <a class="learning-card" href="user-guide.html#tools-workflow"><img alt="Tool calls and results" height="1138" loading="lazy" src="assets/img/guide-tools.png" width="2240"/><span class="card-copy"><span class="card-kicker">03 · TOOLS &amp; MCP</span><b>Understand tool activity</b><span class="card-description">Tool calls, permissions, Skills, MCP and session context.</span></span></a>
-</div></section><section id="system-overview"><h2>Where the screen’s numbers come from</h2><p>Collection and dashboard access use different paths. The diagram shows the optional device-collection path and the authenticated read path; organizer-prepared workshop collection can use a separate configured path. This is an OIDC-enabled device-collection example.</p><figure class="screen-shot system"><a href="assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="The collection and query architecture." decoding="async" height="548" loading="lazy" src="assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>The collection and query architecture.</strong> Signals move into storage; the dashboard reads scoped results through its API. The two Express boxes represent logical roles of the same application.<small>Logical device path · English diagram labels · open the interactive view</small></span></figcaption></figure><div class="reading-grid"><article><h3>Collection: client → stored observations</h3><p>Claude Code and Codex export supported signals to a local Collector. A registered device sends them through the authenticated ingestion gateway and central Collector to ClickHouse. The device credential is separate from browser login.</p></article><article><h3>Reading: signed-in user → dashboard result</h3><p>Organization login supplies the configured role. The API applies time, client and supported filters before returning usage and diagnostic views. Read the cost basis and coverage: a screen can contain a known subtotal or an unavailable signal.</p></article></div><p><a href="architecture.html#pipeline">Collection paths and trust boundaries</a> · <a href="architecture.html#signals">How logs, metrics and traces differ</a></p></section>
+</div></section><section id="demo"><h2>The complete product walkthrough</h2><p>Follow the overview, user tasks, individual model calls, cost efficiency, tools and setup in 25 guided scenes.</p>
+<p class="tour-meta"><span class="tour-runtime">9:09</span><span>Korean narration with English captions. All screen data is synthetic; the architecture is a logical example.</span></p>
+<div class="video-frame"><video id="product-tour" aria-label="The complete product walkthrough" controls playsinline preload="metadata" poster="assets/img/product-tour-ko-poster.jpg">
+<source src="assets/video/product-tour-ko-20261114.mp4" type='video/mp4; codecs="avc1.640028, mp4a.40.2"'/>
+<source src="assets/video/product-tour-ko-20261114.webm" type='video/webm; codecs="vp9, opus"'/>
+<track kind="captions" label="English" srclang="en" src="assets/video/product-tour-en-20261114.vtt" default data-default-caption/>
+<track kind="captions" label="한국어" srclang="ko" src="assets/video/product-tour-ko-20261114.vtt"/>
+</video></div><h3>Jump to a chapter</h3><ol class="video-chapters"><li><button type="button" data-video-seek="0.000000"><time>0:00</time><span>Getting started</span></button></li><li><button type="button" data-video-seek="87.291667"><time>1:27</time><span>Overview and trends</span></button></li><li><button type="button" data-video-seek="144.416667"><time>2:24</time><span>Users and Trace</span></button></li><li><button type="button" data-video-seek="262.791667"><time>4:22</time><span>Cost efficiency</span></button></li><li><button type="button" data-video-seek="352.000000"><time>5:52</time><span>Tools and session environment</span></button></li><li><button type="button" data-video-seek="436.583333"><time>7:16</time><span>Operations and next steps</span></button></li></ol>
+<p><a href="assets/video/product-tour-ko-20261114.mp4">Download the video</a> · <a href="assets/video/product-tour-en-20261114.vtt">English captions</a> · <a href="assets/video/product-tour-ko-20261114.vtt">Korean captions</a></p>
+<p class="caption"><a href="assets/video/dashboard-demo-en-20261114.mp4">The earlier 48-second English walkthrough remains available as a v1.8.0 release example.</a></p></section>
+<section id="system-overview"><h2>Where the screen’s numbers come from</h2><p>Collection and dashboard access use different paths. The diagram shows the optional device-collection path and the authenticated read path; organizer-prepared workshop collection can use a separate configured path. This is an OIDC-enabled device-collection example.</p><figure class="screen-shot system"><a href="assets/diagrams/system.html" rel="noopener" target="_blank"><img alt="The collection and query architecture." decoding="async" height="548" loading="lazy" src="assets/diagrams/system.svg" width="1320"/></a><figcaption><span class="figure-number">↗</span><span class="figure-text"><strong>The collection and query architecture.</strong> Signals move into storage; the dashboard reads scoped results through its API. The two Express boxes represent logical roles of the same application.<small>Logical device path · English diagram labels · open the interactive view</small></span></figcaption></figure><div class="reading-grid"><article><h3>Collection: client → stored observations</h3><p>Claude Code and Codex export supported signals to a local Collector. A registered device sends them through the authenticated ingestion gateway and central Collector to ClickHouse. The device credential is separate from browser login.</p></article><article><h3>Reading: signed-in user → dashboard result</h3><p>Organization login supplies the configured role. The API applies time, client and supported filters before returning usage and diagnostic views. Read the cost basis and coverage: a screen can contain a known subtotal or an unavailable signal.</p></article></div><p><a href="architecture.html#pipeline">Collection paths and trust boundaries</a> · <a href="architecture.html#signals">How logs, metrics and traces differ</a></p></section>
 <section id="start"><h2>Your first visit</h2>
 <ol>
 <li><strong>Open your organization's dashboard and sign in.</strong> Ask the organizer for its address and access. The public site you are reading is the documentation. See <a href="user-guide.html#access">accounts and permissions</a>.</li>
@@ -86,16 +96,7 @@
 <p>Claude’s <strong>bedrock / enterprise</strong> comparison uses inferred session channels. These are separate from dashboard login and do not provide a Codex enterprise A/B comparison.</p>
 <p><a href="user-guide.html#common-controls">Choose the right view and filters</a> · <a href="architecture.html">Pipeline and trust boundaries</a></p>
 </section>
-<section id="demo"><h2>Optional example: the v1.8.0 walkthrough</h2>
-<p>This 48-second video demonstrates selected changes and existing Task Trace features. Use the <a href="user-guide.html">complete user guide</a> for every menu and feature.</p>
-<div class="video-frame"><video aria-label="48-second English time selection, device setup and Task Trace walkthrough" controls="" playsinline="" poster="assets/img/docs-demo-en-poster.jpg" preload="none">
-<source src="assets/video/dashboard-demo-en-20261114.mp4" type="video/mp4"/>
-<source src="assets/video/dashboard-demo-en-20261114.webm" type="video/webm"/>
-<track kind="captions" label="English" src="assets/video/dashboard-demo-en-20261114.vtt" srclang="en"/>
-      Your browser cannot play this video. <a href="assets/video/dashboard-demo-en-20261114.mp4">Download the English demo</a>.
-    </video></div>
-<p class="caption">Created November 14, 2026 · English narration and captions · synthetic React captures with translated display labels and fictional costs. <a href="assets/video/dashboard-demo-en-20261114.vtt">English transcript</a> · <a href="assets/credits.html">Media credits</a>.</p>
-</section>
+
 <section id="latest"><h2>Release notes and next steps</h2>
 <p>Read the dashboard’s change history or the <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">release notes</a> for version-specific changes. Continue with the <a href="user-guide.html#workflows">investigation workflows</a> or <a href="user-guide.html#troubleshooting">first troubleshooting checks</a>.</p>
 </section>
@@ -105,5 +106,6 @@
 <p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/api-reference.md">Full API reference</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/docs/metrics.md">Measurement definitions</a> · <a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/CHANGELOG.md">Change history</a> · <a href="assets/credits.html">Demo credits</a></p>
 <p>Telemetry may be incomplete. Reported costs and list-price estimates are not invoices. Activity indicators do not establish employee productivity or causal ROI.</p>
 </div></footer>
-<script defer="" src="assets/guide.js?v=b92b0cfe"></script></body>
+<script defer="" src="assets/guide.js?v=b92b0cfe"></script><script src="assets/tour.js?v=318c8900"></script>
+</body>
 </html>
