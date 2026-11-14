@@ -18,6 +18,7 @@ identity. Use `--offline` to verify a populated cache without network access.
 Pages runs the same helper with `--site-only` and fails rather than publishing
 missing or corrupt media. HTML, captions, composition, provenance and licenses
 remain tracked source; generated media and the pinned runtime are ignored cache.
+Earlier captions remain tracked with their historical media provenance.
 
 The final film keeps the HyperFrames visuals and composes Amazon Polly English
 narration plus an original quiet score with Remotion 4.0.542. Cached Polly clips

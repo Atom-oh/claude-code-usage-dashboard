@@ -448,8 +448,9 @@
           "fps": 24,
           "video_codec": "h264",
           "audio_codec": "aac",
-          "bytes": 4192206,
-          "full_decode": true
+          "bytes": 4208464,
+          "full_decode": true,
+          "sha256": "45610479e426c285fc0c215faa1f02f0dc19fb7eb949a361f0f3669f7d814524"
         },
         {
           "format": "webm",
@@ -462,8 +463,9 @@
           "fps": 24,
           "video_codec": "vp9",
           "audio_codec": "opus",
-          "bytes": 2744037,
-          "full_decode": true
+          "bytes": 2753080,
+          "full_decode": true,
+          "sha256": "16c49cde68fb254ce8907b2beb79002cf9a821f0b8b85c28f186747de318be8f"
         }
       ],
       "midpoint_comparison": [
@@ -477,7 +479,7 @@
         },
         {
           "time": 20,
-          "mean_pixel_error_out_of_255": 2.142
+          "mean_pixel_error_out_of_255": 2.1634
         },
         {
           "time": 28,

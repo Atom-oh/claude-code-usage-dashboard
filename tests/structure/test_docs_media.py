@@ -127,6 +127,20 @@ class MediaTests(unittest.TestCase):
             text=True).splitlines()
         self.assertEqual(set(ignored), MEDIA.PATHS)
 
+    def test_encoded_measurements_identify_locked_files(self):
+        manifest = json.loads((ROOT / MEDIA.MANIFEST).read_text())
+        locked = {item["path"]: item for item in manifest["files"]}
+        demo = json.loads((ROOT / "site/assets/media.json").read_text())["current_demo"]
+        measurements = demo["encoded_verification"]["encodes"]
+        self.assertEqual({item["format"] for item in measurements}, {"mp4", "webm"})
+        for measured in measurements:
+            files = [item for item in demo["files"]
+                     if item["path"].endswith("." + measured["format"])]
+            self.assertEqual(len(files), 1)
+            pinned = locked["site/assets/" + files[0]["path"]]
+            for key in ("bytes", "sha256"):
+                self.assertEqual(measured[key], pinned[key], (measured["format"], key))
+
 
 if __name__ == "__main__":
     unittest.main()
